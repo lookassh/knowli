@@ -45,12 +45,34 @@ export {
 } from "./modules/item-payload";
 export { classifyRevisionImpact, buildSkillCriteria } from "./domain/revision-impact";
 export { computeTargetKey, normalizeTargetText } from "./domain/target-key";
+export { selectTask } from "./domain/scheduler";
+export type {
+  ScheduleCandidate,
+  ScheduleInput,
+  SchedulePeer,
+  SkillSnapshot,
+  TaskPlan,
+  ScheduleReason,
+  PlannedOption,
+} from "./domain/scheduler";
 export {
   ttsFingerprint,
   imageFingerprint,
   illustrationPrompt,
 } from "./domain/media-fingerprint";
-export { SKILLS, isSkill, type Skill } from "./domain/types";
+export { SKILLS, isSkill, type Skill, type ExerciseType } from "./domain/types";
+export { LEARNING_V1_POLICY } from "./policies/learning-v1";
+export { ensureLearningPolicy, loadPolicy, CURRENT_POLICY_ID, PolicyConfigSchema } from "./policies/registry";
+export {
+  startSession,
+  nextTask,
+  endSession,
+  completePresentation,
+  RESUME_WINDOW_MS,
+  SESSION_TIME_LIMIT_MS,
+  DEFAULT_TASK_BUDGET,
+} from "./modules/sessions";
+export { recordEvent, authorizeDisclosure } from "./modules/events";
 export type {
   LlmProvider,
   LlmGenerateDeckInput,

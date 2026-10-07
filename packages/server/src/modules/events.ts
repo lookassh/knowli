@@ -1,0 +1,166 @@
+import { randomUUID } from "node:crypto";
+import { and, eq, inArray } from "drizzle-orm";
+import {
+  DisclosureInputSchema,
+  EventInputSchema,
+  type DisclosureDto,
+  type DisclosureInput,
+  type EventInput,
+} from "@learning/contracts";
+import type { Services } from "../config";
+import type { Tx } from "../db/client";
+import { deckVersions, eventExposures, itemRevisions, learningEvents, learningSessions, sessionTasks } from "../db/schema";
+import { AppError } from "../errors";
+import { computeTargetKey } from "../domain/target-key";
+
+/** Rodzaje zdarzeń pisanych wyłącznie przez serwer (arch §9.2). */
+export type ServerEventKind =
+  | "contact"
+  | "prompt_issued"
+  | "audio_issued"
+  | "hint_issued"
+  | "feedback_issued"
+  | "presentation_completed";
+
+export interface SealedEventInput {
+  childId: string;
+  taskId: string;
+  itemId: string;
+  kind: ServerEventKind;
+  stepId: string;
+  occurredAt: Date;
+  clientEventId?: string;
+  /** Klucze ujawnianych celów — komplet przed jakąkolwiek odpowiedzią HTTP. */
+  exposures: readonly string[];
+}
+
+/**
+ * Zapisuje zdarzenie z kompletem ekspozycji i pieczęcią w jednej transakcji:
+ * insert (sealed=false) → event_exposures → update (sealed=true). Dopiero commit
+ * zwalnia odpowiedź HTTP — utracona odpowiedź sieciowa nie usuwa ujawnienia.
+ */
+export async function writeSealedEvent(tx: Tx, input: SealedEventInput): Promise<string> {
+  const eventId = randomUUID();
+  await tx.insert(learningEvents).values({
+    id: eventId,
+    childId: input.childId,
+    taskId: input.taskId,
+    itemId: input.itemId,
+    clientEventId: input.clientEventId ?? null,
+    sealed: false,
+    stepId: input.stepId,
+    kind: input.kind,
+    occurredAt: input.occurredAt,
+    context: {},
+  });
+  const exposures = [...new Set(input.exposures)];
+  if (exposures.length > 0) {
+    await tx.insert(eventExposures).values(
+      exposures.map((targetKey) => ({ childId: input.childId, eventId, targetKey })),
+    );
+  }
+  await tx.update(learningEvents).set({ sealed: true }).where(eq(learningEvents.id, eventId));
+  return eventId;
+}
+
+/** Zadanie + blokada wiersza jego sesji — wspólna kolejność dla wszystkich operacji. */
+export async function lockTaskWithSession(tx: Tx, taskId: string) {
+  const task = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, taskId)))[0];
+  if (!task) {
+    throw new AppError("not_found");
+  }
+  const session = (
+    await tx.select().from(learningSessions).where(eq(learningSessions.id, task.sessionId)).for("update")
+  )[0]!;
+  const revision = (
+    await tx.select({ itemId: itemRevisions.itemId }).from(itemRevisions).where(eq(itemRevisions.id, task.itemRevisionId))
+  )[0]!;
+  return { task, session, itemId: revision.itemId };
+}
+
+/** Obserwacja klienta (display_confirmed/audio_played) — opcjonalna, idempotentna. */
+export async function recordEvent(services: Services, input: EventInput): Promise<void> {
+  const valid = EventInputSchema.parse(input);
+  await services.db.transaction(async (tx) => {
+    const task = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, valid.taskId)))[0];
+    if (!task) {
+      throw new AppError("not_found");
+    }
+    const revision = (
+      await tx.select({ itemId: itemRevisions.itemId }).from(itemRevisions).where(eq(itemRevisions.id, task.itemRevisionId))
+    )[0]!;
+    await tx
+      .insert(learningEvents)
+      .values({
+        id: randomUUID(),
+        childId: task.childId,
+        taskId: task.id,
+        itemId: revision.itemId,
+        clientEventId: valid.clientEventId,
+        sealed: true,
+        stepId: valid.stepId ?? `${task.id}:observation`,
+        kind: valid.kind,
+        occurredAt: services.clock.now(),
+        context: {},
+      })
+      .onConflictDoNothing({ target: [learningEvents.childId, learningEvents.clientEventId] });
+  });
+}
+
+/**
+ * Wydaje podpowiedź albo autoryzuje odtworzenie wzorca (arch §9.2). Serwer
+ * określa stepId i zapisuje ekspozycję celu przed zwroceniem zgody; przeglądarka
+ * nie odtwarza wzorca z cache bez tego potwierdzenia. Ponowne wywołanie
+ * (reload, retry) rejestruje nowy czas możliwej ekspozycji.
+ */
+export async function authorizeDisclosure(services: Services, input: DisclosureInput): Promise<DisclosureDto> {
+  const valid = DisclosureInputSchema.parse(input);
+  return services.db.transaction(async (tx) => {
+    const { task, session, itemId } = await lockTaskWithSession(tx, valid.taskId);
+    if (session.state !== "active") {
+      throw new AppError("conflict", { message: "session is closed" });
+    }
+    if (task.state !== "issued") {
+      throw new AppError("conflict", { message: "task is no longer issued" });
+    }
+
+    const revision = (
+      await tx
+        .select({ payload: itemRevisions.payload, targetLocale: deckVersions.targetLocale })
+        .from(itemRevisions)
+        .innerJoin(deckVersions, eq(deckVersions.id, itemRevisions.deckVersionId))
+        .where(eq(itemRevisions.id, task.itemRevisionId))
+    )[0]!;
+    const target = (revision.payload as { target: string }).target;
+    const targetKey = computeTargetKey(target, revision.targetLocale);
+
+    const prior = await tx
+      .select({ id: learningEvents.id })
+      .from(learningEvents)
+      .where(
+        and(
+          eq(learningEvents.taskId, task.id),
+          inArray(learningEvents.kind, ["audio_issued", "hint_issued"]),
+        ),
+      );
+    const stepId = `${task.id}:d${prior.length + 1}`;
+    const now = services.clock.now();
+
+    await writeSealedEvent(tx, {
+      childId: task.childId,
+      taskId: task.id,
+      itemId,
+      kind: valid.kind === "audio" ? "audio_issued" : "hint_issued",
+      stepId,
+      occurredAt: now,
+      exposures: [targetKey],
+    });
+
+    return {
+      taskId: task.id,
+      stepId,
+      kind: valid.kind,
+      reveal: valid.kind === "hint" ? { target } : null,
+    };
+  });
+}

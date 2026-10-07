@@ -25,9 +25,9 @@ export function isSkill(value: string): value is Skill {
 /** Kierunek ćwiczenia rozpoznawania tekstu (SPEC §12.3–12.4, arch §9.3). */
 export type ReadingDirection = "target_to_source" | "source_to_target";
 
-/** Typy ćwiczeń MVP (SPEC §12). */
+/** Typy ćwiczeń MVP (SPEC §12); prezentacja materiału to „exposure” (SPEC §11). */
 export type ExerciseType =
-  | "presentation"
+  | "exposure"
   | "listening"
   | "reading"
   | "reverse_recognition"

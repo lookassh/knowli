@@ -49,7 +49,7 @@ function skillsForExercise(exerciseType: ExerciseType): readonly Skill[] {
       // Jedna samodzielna odpowiedź pisemna daje po jednym wyniku dla
       // przypomnienia i pisowni (SPEC §18, §12.5, §12.8).
       return ["recall", "spelling"];
-    case "presentation":
+    case "exposure":
     case "speech":
       return [];
   }

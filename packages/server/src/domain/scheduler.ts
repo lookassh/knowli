@@ -1,0 +1,409 @@
+import { computeTargetKey } from "./target-key";
+import type { ExerciseType, Policy, ProgressStatus, ReadingDirection, Skill } from "./types";
+
+/**
+ * Scheduler v1 — jawne priorytety zamiast losowego score (architecture.md §9.3).
+ * Czysta funkcja nad migawką stanu: zegar, polityka i postęp przychodzą jako
+ * dane, więc decyzje są w pełni powtarzalne i testowalne bez bazy.
+ *
+ * Rezerwacje: dopóki czeka należne niezależne sprawdzenie Recall/pisowni,
+ * jego cel nie może zostać pokazany, odtworzony ani użyty jako dystraktor
+ * w innym zadaniu. Zwalnianie rezerwacji (po sprawdzeniu albo pominięciu)
+ * należy do modułu sesji, który prowadzi kontekst.
+ */
+
+/** Migawka projekcji jednej umiejętności elementu (child_skill_progress). */
+export interface SkillSnapshot {
+  status: ProgressStatus;
+  nextReviewAt: string | null;
+}
+
+/** Kandydat: rewizja elementu w przypiętej wersji zestawu. */
+export interface ScheduleCandidate {
+  itemRevisionId: string;
+  itemId: string;
+  position: number;
+  target: string;
+  source: string;
+  acceptedAnswers: readonly string[];
+  targetLocale: string;
+  progress: Partial<Record<Skill, SkillSnapshot>>;
+  /** Nieudane oceniane próby w bieżącej sesji od ostatniego wsparcia. */
+  failuresThisSession: number;
+  /** Czy pokazano już prezentację wsparcia po dwóch błędach. */
+  supportedThisSession: boolean;
+  /** Liczba zadań tego elementu w bieżącej sesji. */
+  usedThisSession: number;
+  /** Ordinal ostatniego zadania tego elementu w bieżącej sesji. */
+  lastUsedOrdinal: number | null;
+  /** Reading: wystąpienia kierunków zadań tego elementu w bieżącej sesji. */
+  readingDirections: Partial<Record<ReadingDirection, number>>;
+  /** Zadania rozpoznawania tego elementu w bieżącej sesji, per typ. */
+  practiceMix: { listening: number; reading: number };
+}
+
+/** Inne elementy wersji — pula dystraktorów. */
+export interface SchedulePeer {
+  itemRevisionId: string;
+  position: number;
+  target: string;
+  source: string;
+  targetLocale: string;
+}
+
+export interface ScheduleInput {
+  now: string;
+  policy: Policy;
+  microphoneEnabled: boolean;
+  /** Pozostały budżet zadań ocenianych. */
+  assessedRemaining: number;
+  /** Ordinal, jaki otrzyma nowo wydane zadanie. */
+  nextOrdinal: number;
+  candidates: readonly ScheduleCandidate[];
+  peers: readonly SchedulePeer[];
+  /** Klucze celów objętych aktywną rezerwacją w kontekście sesji. */
+  reservedTargetKeys: readonly string[];
+}
+
+export interface PlannedOption {
+  itemRevisionId: string;
+  text: string;
+  correct: boolean;
+}
+
+/** Jawna przyczyna decyzji — trafia do kontekstu zadania i sesji. */
+export type ScheduleReason =
+  | "due-check"
+  | "support"
+  | "retry-after-support"
+  | "new-material"
+  | "new-practice"
+  | "due-review"
+  | "filler-practice";
+
+export interface TaskPlan {
+  itemRevisionId: string;
+  exerciseType: ExerciseType;
+  direction?: ReadingDirection;
+  options?: PlannedOption[];
+  /** Klucze celów ujawniane przez publiczną treść zadania. */
+  revealsTargetKeys: string[];
+  assessed: boolean;
+  reason: ScheduleReason;
+  /** Rezerwacje utrzymywane po tej decyzji (zapis do kontekstu sesji). */
+  keepsReservations: string[];
+}
+
+/** Umiejętności z należnym niezależnym sprawdzeniem (rezerwowane). */
+const CHECK_SKILLS: readonly Skill[] = ["recall", "spelling"];
+
+function keyOf(target: string, locale: string): string {
+  return computeTargetKey(target, locale);
+}
+
+function isDue(snapshot: SkillSnapshot | undefined, now: string): boolean {
+  return (
+    snapshot !== undefined &&
+    (snapshot.status === "needs_confirmation" || snapshot.status === "needs_reconfirmation") &&
+    snapshot.nextReviewAt !== null &&
+    snapshot.nextReviewAt <= now
+  );
+}
+
+/** Najbliższy termin należnego sprawdzenia Recall/pisowni elementu. */
+function dueCheckAt(candidate: ScheduleCandidate, now: string): string | null {
+  let earliest: string | null = null;
+  for (const skill of CHECK_SKILLS) {
+    const snapshot = candidate.progress[skill];
+    if (!isDue(snapshot, now)) continue;
+    if (earliest === null || snapshot!.nextReviewAt! < earliest) {
+      earliest = snapshot!.nextReviewAt!;
+    }
+  }
+  return earliest;
+}
+
+function oldestDue(candidates: readonly ScheduleCandidate[], now: string): ScheduleCandidate | null {
+  let best: { candidate: ScheduleCandidate; due: string } | null = null;
+  for (const candidate of candidates) {
+    const due = dueCheckAt(candidate, now);
+    if (due === null) continue;
+    if (best === null || due < best.due || (due === best.due && candidate.position < best.candidate.position)) {
+      best = { candidate, due };
+    }
+  }
+  return best?.candidate ?? null;
+}
+
+function unseenFresh(candidates: readonly ScheduleCandidate[]): ScheduleCandidate[] {
+  return candidates
+    .filter(
+      (c) =>
+        c.usedThisSession === 0 &&
+        Object.values(c.progress).every((s) => s === undefined || s.status === "not_assessed"),
+    )
+    .sort((a, b) => a.position - b.position);
+}
+
+/** Pokazane dokładnie raz w tej sesji — czekają na pierwsze rozpoznawanie. */
+function presentedOnce(candidates: readonly ScheduleCandidate[]): ScheduleCandidate[] {
+  return candidates.filter((c) => c.usedThisSession === 1).sort((a, b) => a.position - b.position);
+}
+
+/** Widziane elementy od najrzadziej używanych; remis: pozycja. */
+function leastUsedSeen(candidates: readonly ScheduleCandidate[]): ScheduleCandidate[] {
+  return candidates
+    .filter((c) => c.usedThisSession > 0)
+    .sort((a, b) => a.usedThisSession - b.usedThisSession || a.position - b.position);
+}
+
+/** Dystraktory z puli rówieśników; cele objęte rezerwacją są pomijane. */
+function pickDistractors(
+  self: ScheduleCandidate,
+  peers: readonly SchedulePeer[],
+  reserved: ReadonlySet<string>,
+  count: number,
+  rotateBy: number,
+): SchedulePeer[] {
+  const pool = peers
+    .filter((p) => p.itemRevisionId !== self.itemRevisionId)
+    .filter((p) => !reserved.has(keyOf(p.target, p.targetLocale)))
+    .sort((a, b) => a.position - b.position);
+  const picked: SchedulePeer[] = [];
+  for (let i = 0; i < Math.min(count, pool.length); i++) {
+    picked.push(pool[(rotateBy + i) % pool.length]!);
+  }
+  return picked;
+}
+
+/** Kierunek reading o mniejszej liczbie wystąpień; remis: target_to_source. */
+function weakerDirection(directions: Partial<Record<ReadingDirection, number>>): ReadingDirection {
+  const t2s = directions.target_to_source ?? 0;
+  const s2t = directions.source_to_target ?? 0;
+  return s2t < t2s ? "source_to_target" : "target_to_source";
+}
+
+export function selectTask(input: ScheduleInput): TaskPlan | null {
+  if (input.candidates.length === 0 || input.assessedRemaining <= 0) {
+    return null;
+  }
+
+  const reserved = new Set(input.reservedTargetKeys);
+  for (const candidate of input.candidates) {
+    if (dueCheckAt(candidate, input.now) !== null) {
+      reserved.add(keyOf(candidate.target, candidate.targetLocale));
+    }
+  }
+  const keepsReservations = [...reserved];
+  const keyOfCandidate = (c: ScheduleCandidate): string => keyOf(c.target, c.targetLocale);
+
+  // 1. Zarezerwowane sprawdzenie Recall/pisowni wykonujemy pierwsze: jedna
+  //    pisemna odpowiedź dostarcza obu wyników, zanim feedback ujawni słowo.
+  const due = oldestDue(input.candidates, input.now);
+  if (due) {
+    return {
+      itemRevisionId: due.itemRevisionId,
+      exerciseType: "recall",
+      revealsTargetKeys: [],
+      assessed: true,
+      reason: "due-check",
+      keepsReservations,
+    };
+  }
+
+  // 2. Dwa błędy: prezentacja wsparcia ujawnia wzorzec (SPEC §16); to jedyny
+  //    wyjątek od zasady niepowracania do elementu bezpośrednio po trudności.
+  const needsSupport = input.candidates.find(
+    (c) => c.failuresThisSession >= input.policy.supportAfterFailures && !c.supportedThisSession,
+  );
+  if (needsSupport) {
+    return {
+      itemRevisionId: needsSupport.itemRevisionId,
+      exerciseType: "exposure",
+      revealsTargetKeys: [keyOfCandidate(needsSupport)],
+      assessed: false,
+      reason: "support",
+      keepsReservations,
+    };
+  }
+
+  // 3. Po wsparciu łatwiejsze ćwiczenie dopiero po przerwie na inne zadania.
+  const retryAfterSupport = input.candidates
+    .filter(
+      (c) =>
+        c.supportedThisSession &&
+        c.lastUsedOrdinal !== null &&
+        input.nextOrdinal - c.lastUsedOrdinal >= 2,
+    )
+    .sort((a, b) => (a.lastUsedOrdinal ?? 0) - (b.lastUsedOrdinal ?? 0))[0];
+  if (retryAfterSupport) {
+    return {
+      itemRevisionId: retryAfterSupport.itemRevisionId,
+      exerciseType: "listening",
+      revealsTargetKeys: [keyOfCandidate(retryAfterSupport)],
+      assessed: true,
+      reason: "retry-after-support",
+      keepsReservations,
+    };
+  }
+
+  // 4. Nowy materiał porcjami 2–3: prezentacje przeplatane łatwym
+  //    rozpoznawaniem ze słuchu świeżo pokazanych elementów (SPEC §13).
+  const fresh = presentedOnce(input.candidates);
+  if (fresh.length >= 2 || (fresh.length === 1 && unseenFresh(input.candidates).length === 0)) {
+    const target = fresh[0]!;
+    return {
+      itemRevisionId: target.itemRevisionId,
+      exerciseType: "listening",
+      options: [
+        { itemRevisionId: target.itemRevisionId, text: target.source, correct: true },
+        ...pickDistractors(target, input.peers, reserved, 2, input.nextOrdinal).map((d) => ({
+          itemRevisionId: d.itemRevisionId,
+          text: d.source,
+          correct: false,
+        })),
+      ],
+      revealsTargetKeys: [keyOfCandidate(target)],
+      assessed: true,
+      reason: "new-practice",
+      keepsReservations,
+    };
+  }
+  const nextUnseen = unseenFresh(input.candidates)[0];
+  if (nextUnseen) {
+    return {
+      itemRevisionId: nextUnseen.itemRevisionId,
+      exerciseType: "exposure",
+      revealsTargetKeys: [keyOfCandidate(nextUnseen)],
+      assessed: false,
+      reason: "new-material",
+      keepsReservations,
+    };
+  }
+
+  // 5. Zaległe powtórki wg umiejętności; najstarsza należność pierwsza.
+  //    Cel objęty rezerwacją nie wraca do zadań rozpoznawania.
+  type DueSkill = { candidate: ScheduleCandidate; skill: Skill; due: string };
+  const dueSkills: DueSkill[] = [];
+  for (const candidate of input.candidates) {
+    if (reserved.has(keyOfCandidate(candidate))) continue;
+    for (const [skill, snapshot] of Object.entries(candidate.progress) as [Skill, SkillSnapshot][]) {
+      if (skill === "recall" || skill === "spelling") continue; // obsłużone jako due-check
+      if (skill === "pronunciation" && !input.microphoneEnabled) continue;
+      if (isDue(snapshot, input.now)) {
+        dueSkills.push({ candidate, skill, due: snapshot.nextReviewAt! });
+      }
+    }
+  }
+  dueSkills.sort(
+    (a, b) =>
+      a.due < b.due ? -1 : a.due > b.due ? 1 : a.candidate.position - b.candidate.position,
+  );
+  const dueSkill = dueSkills[0];
+  if (dueSkill) {
+    if (dueSkill.skill === "reading") {
+      const target = dueSkill.candidate;
+      const direction = weakerDirection(target.readingDirections);
+      if (direction === "source_to_target") {
+        const distractors = pickDistractors(target, input.peers, reserved, 2, input.nextOrdinal);
+        return {
+          itemRevisionId: target.itemRevisionId,
+          exerciseType: "reverse_recognition",
+          direction,
+          options: [
+            { itemRevisionId: target.itemRevisionId, text: target.target, correct: true },
+            ...distractors.map((d) => ({ itemRevisionId: d.itemRevisionId, text: d.target, correct: false })),
+          ],
+          revealsTargetKeys: [
+            keyOfCandidate(target),
+            ...distractors.map((d) => keyOf(d.target, d.targetLocale)),
+          ],
+          assessed: true,
+          reason: "due-review",
+          keepsReservations,
+        };
+      }
+      return {
+        itemRevisionId: target.itemRevisionId,
+        exerciseType: "reading",
+        direction,
+        options: [
+          { itemRevisionId: target.itemRevisionId, text: target.source, correct: true },
+          ...pickDistractors(target, input.peers, reserved, 2, input.nextOrdinal).map((d) => ({
+            itemRevisionId: d.itemRevisionId,
+            text: d.source,
+            correct: false,
+          })),
+        ],
+        revealsTargetKeys: [keyOfCandidate(target)],
+        assessed: true,
+        reason: "due-review",
+        keepsReservations,
+      };
+    }
+    return {
+      itemRevisionId: dueSkill.candidate.itemRevisionId,
+      exerciseType: dueSkill.skill === "pronunciation" ? "speech" : "listening",
+      revealsTargetKeys: [keyOfCandidate(dueSkill.candidate)],
+      assessed: true,
+      reason: "due-review",
+      keepsReservations,
+    };
+  }
+
+  // 6. Lekkie utrwalanie widzianych elementów, gdy nic nie jest należne.
+  //    Miks rozpoznawania per element: słuch, potem naprzemienne kierunki
+  //    tekstu, aby oba kierunki reading zbierały dowody.
+  const filler = leastUsedSeen(input.candidates).find((c) => !reserved.has(keyOfCandidate(c)));
+  if (filler) {
+    if (filler.practiceMix.listening < filler.practiceMix.reading) {
+      return {
+        itemRevisionId: filler.itemRevisionId,
+        exerciseType: "listening",
+        revealsTargetKeys: [keyOfCandidate(filler)],
+        assessed: true,
+        reason: "filler-practice",
+        keepsReservations,
+      };
+    }
+    const direction = weakerDirection(filler.readingDirections);
+    if (direction === "source_to_target") {
+      const distractors = pickDistractors(filler, input.peers, reserved, 2, input.nextOrdinal);
+      return {
+        itemRevisionId: filler.itemRevisionId,
+        exerciseType: "reverse_recognition",
+        direction,
+        options: [
+          { itemRevisionId: filler.itemRevisionId, text: filler.target, correct: true },
+          ...distractors.map((d) => ({ itemRevisionId: d.itemRevisionId, text: d.target, correct: false })),
+        ],
+        revealsTargetKeys: [
+          keyOfCandidate(filler),
+          ...distractors.map((d) => keyOf(d.target, d.targetLocale)),
+        ],
+        assessed: true,
+        reason: "filler-practice",
+        keepsReservations,
+      };
+    }
+    return {
+      itemRevisionId: filler.itemRevisionId,
+      exerciseType: "reading",
+      direction,
+      options: [
+        { itemRevisionId: filler.itemRevisionId, text: filler.source, correct: true },
+        ...pickDistractors(filler, input.peers, reserved, 2, input.nextOrdinal).map((d) => ({
+          itemRevisionId: d.itemRevisionId,
+          text: d.source,
+          correct: false,
+        })),
+      ],
+      revealsTargetKeys: [keyOfCandidate(filler)],
+      assessed: true,
+      reason: "filler-practice",
+      keepsReservations,
+    };
+  }
+
+  return null;
+}
