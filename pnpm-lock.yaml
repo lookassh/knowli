@@ -65,6 +65,22 @@ importers:
         specifier: ^5.8.0
         version: 5.9.3
 
+  apps/worker:
+    dependencies:
+      '@learning/server':
+        specifier: workspace:*
+        version: link:../../packages/server
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.0
+        version: 22.20.5
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.15
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+
   packages/contracts:
     dependencies:
       zod:
@@ -86,6 +102,9 @@ importers:
       pg:
         specifier: ^8.16.0
         version: 8.23.1
+      zod:
+        specifier: ^4.0.0
+        version: 4.6.5
     devDependencies:
       '@types/pg':
         specifier: ^8.15.0

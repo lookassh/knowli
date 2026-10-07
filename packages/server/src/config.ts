@@ -1,4 +1,6 @@
 import type { Database } from "./db/client";
+import type { ImageProvider, LlmProvider, TtsProvider } from "./ports/ai";
+import type { MediaStore } from "./ports/media";
 
 /** Zegar jako zależność — domena i moduły nie wołają Date.now() bezpośrednio. */
 export interface Clock {
@@ -8,14 +10,62 @@ export interface Clock {
 export const systemClock: Clock = { now: () => new Date() };
 
 /**
- * Zależności serwowe przekazywane do przypadków użycia. Rosną wraz z zadaniami
- * (providers, media, policyRegistry dojdą w zadaniach 3+).
+ * Tożsamość ustawień medialnych używana w fingerprintach. Samo nazewnictwo
+ * providerów/modeli nie jest sekretem; klucze API żyją w adapterach.
+ */
+export interface MediaSettings {
+  tts: { provider: string; model: string; voice: string; format: "mp3" };
+  image: { provider: string; model: string; size: string };
+}
+
+export const defaultMediaSettings: MediaSettings = {
+  tts: { provider: "openai", model: "gpt-4o-mini-tts", voice: "alloy", format: "mp3" },
+  image: { provider: "openai", model: "gpt-image-1", size: "1024x1024" },
+};
+
+/** Nadpisywalne zmiennymi środowiskowymi (nazwy, nie sekrety). */
+export function mediaSettingsFromEnv(env: Record<string, string | undefined>): MediaSettings {
+  return {
+    tts: {
+      provider: env.UMIEM_TTS_PROVIDER ?? defaultMediaSettings.tts.provider,
+      model: env.UMIEM_TTS_MODEL ?? defaultMediaSettings.tts.model,
+      voice: env.UMIEM_TTS_VOICE ?? defaultMediaSettings.tts.voice,
+      format: "mp3",
+    },
+    image: {
+      provider: env.UMIEM_IMAGE_PROVIDER ?? defaultMediaSettings.image.provider,
+      model: env.UMIEM_IMAGE_MODEL ?? defaultMediaSettings.image.model,
+      size: env.UMIEM_IMAGE_SIZE ?? defaultMediaSettings.image.size,
+    },
+  };
+}
+
+/** Zależności wykonywania generacji: tylko worker (i testy) je posiadają. */
+export interface GenerationDeps {
+  llm: LlmProvider;
+  tts: TtsProvider;
+  image: ImageProvider;
+  mediaStore: MediaStore;
+}
+
+/**
+ * Zależności serwowe przekazywane do przypadków użycia. `media` pozwala webowi
+ * uzgadniać zasoby w transakcji edycji; `generation` wykonuje pracę w tle.
  */
 export interface Services {
   db: Database;
   clock: Clock;
+  media?: MediaSettings;
+  generation?: GenerationDeps;
 }
 
-export function createServices(input: { db: Database; clock?: Clock }): Services {
-  return { db: input.db, clock: input.clock ?? systemClock };
+export function createServices(
+  input: { db: Database; clock?: Clock; media?: MediaSettings; generation?: GenerationDeps },
+): Services {
+  return {
+    db: input.db,
+    clock: input.clock ?? systemClock,
+    ...(input.media ? { media: input.media } : {}),
+    ...(input.generation ? { generation: input.generation } : {}),
+  };
 }

@@ -67,18 +67,19 @@ async function attachFakeReadyAudio(deckVersionId: string, itemIndex: number): P
     )
   )[0]!;
   const assetId = randomUUID();
+  const fingerprint = `fp-${randomUUID()}`;
   await pool.query(
     `insert into learning_app.media_assets
        (id, kind, fingerprint, generation_number, state, storage_key, content_sha256,
         mime_type, byte_count, provider, model)
      values ($1,'tts',$2,1,'ready',$3,$4,'audio/mpeg',1024,'fake','fake-tts')`,
-    [assetId, `fp-${randomUUID()}`, `blob/${assetId}`, `sha-${assetId}`],
+    [assetId, fingerprint, `blob/${assetId}`, `sha-${assetId}`],
   );
   await pool.query(
     `insert into learning_app.revision_assets
        (item_revision_id, role, asset_id, expected_fingerprint, state)
      values ($1,'target_audio',$2,$3,'approved')`,
-    [revision.id, assetId, `fp-${assetId}`],
+    [revision.id, assetId, fingerprint],
   );
   return revision.id;
 }

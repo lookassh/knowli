@@ -14,6 +14,9 @@ export type Tx = PgTransaction<
   ExtractTablesWithRelations<typeof schema>
 >;
 
+/** Wspólny kształt dla pomocników działających i na bazie, i wewnątrz transakcji. */
+export type Executor = Pick<Database, "select" | "insert" | "update" | "delete" | "execute">;
+
 export function createDatabase(connectionString: string): { db: Database; pool: Pool } {
   const pool = new Pool({ connectionString });
   const db = drizzle(pool, { schema }) as Database;

@@ -2,6 +2,7 @@ import type { Pool } from "pg";
 import {
   createDatabase,
   createServices,
+  mediaSettingsFromEnv,
   systemClock,
   type Services,
 } from "@learning/server";
@@ -20,7 +21,10 @@ function initialize(): { services: Services; pool: Pool } {
     throw new Error("DATABASE_URL is not configured");
   }
   const { db, pool } = createDatabase(databaseUrl);
-  return { services: createServices({ db, clock: systemClock }), pool };
+  return {
+    services: createServices({ db, clock: systemClock, media: mediaSettingsFromEnv(process.env) }),
+    pool,
+  };
 }
 
 /** Wyłącznie na potrzeby testów i graceful shutdown. */

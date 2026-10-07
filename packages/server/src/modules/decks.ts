@@ -17,7 +17,6 @@ import {
   itemRevisions,
   itemRevisionSkills,
   learningItems,
-  mediaAssets,
   revisionAssets,
   skillVersions,
 } from "../db/schema";
@@ -25,58 +24,8 @@ import { AppError } from "../errors";
 import { buildSkillCriteria, classifyRevisionImpact } from "../domain/revision-impact";
 import { computeTargetKey } from "../domain/target-key";
 import { SKILLS, type Skill } from "../domain/types";
-
-interface ItemPayload {
-  source: string;
-  target: string;
-  acceptedAnswers: string[];
-  example?: string;
-  visualType: string;
-  visualData?: Record<string, unknown>;
-  sourceLocale: string;
-  targetLocale: string;
-}
-
-function buildPayload(item: VocabularyItemInput): Record<string, unknown> {
-  return {
-    source: item.source,
-    target: item.target,
-    acceptedAnswers: item.acceptedAnswers,
-    ...(item.example === undefined ? {} : { example: item.example }),
-    visualType: item.visualType,
-    ...(item.visualData === undefined ? {} : { visualData: item.visualData }),
-    sourceLocale: item.locales.source,
-    targetLocale: item.locales.target,
-  };
-}
-
-function payloadToItem(payload: Record<string, unknown>): VocabularyItemInput {
-  const p = payload as unknown as ItemPayload;
-  return {
-    source: p.source,
-    target: p.target,
-    acceptedAnswers: p.acceptedAnswers,
-    ...(p.example === undefined ? {} : { example: p.example }),
-    visualType: p.visualType as VocabularyItemInput["visualType"],
-    ...(p.visualData === undefined ? {} : { visualData: p.visualData }),
-    locales: { source: p.sourceLocale, target: p.targetLocale },
-  };
-}
-
-function validateItems(items: VocabularyItemInput[]): void {
-  const first = items[0]!.locales;
-  if (items.some((i) => i.locales.source !== first.source || i.locales.target !== first.target)) {
-    throw new AppError("validation", { message: "all items must share one locale pair" });
-  }
-  const seen = new Set<string>();
-  for (const item of items) {
-    const key = computeTargetKey(item.target, item.locales.target);
-    if (seen.has(key)) {
-      throw new AppError("validation", { message: `duplicate target: ${item.target}` });
-    }
-    seen.add(key);
-  }
-}
+import { buildPayload, payloadToItem, validateItems } from "./item-payload";
+import { assertAssetPublishable, reconcileDraftAssetsTx, requiredAssetsFor } from "./media-reconciliation";
 
 async function lockVersion(tx: Tx, draftId: string) {
   const rows = await tx
@@ -272,7 +221,8 @@ async function loadCurrentRevisions(tx: Tx, versionId: string): Promise<CurrentR
 /** Pozycje tymczasowe (1000+) omijają UNIQUE(deck_version_id, position) przy przepisaniu. */
 const TEMP_POSITION_OFFSET = 1000;
 
-async function applyItems(
+/** Nadpisuje elementy wersji szkicu; używane też przy zapisie wyniku generacji. */
+export async function applyItems(
   tx: Tx,
   versionId: string,
   deckId: string,
@@ -390,6 +340,8 @@ export async function editDraft(
       .update(deckVersions)
       .set({ editNumber: sql`${deckVersions.editNumber} + 1` })
       .where(eq(deckVersions.id, draftId));
+    // każda edycja uzgadnia powiązania zasobów w tej samej transakcji
+    await reconcileDraftAssetsTx(tx, services, version);
     return readDraftDto(tx, draftId);
   });
 }
@@ -409,7 +361,11 @@ export async function publishDraft(
     }
 
     const revisions = await tx
-      .select({ id: itemRevisions.id, itemId: itemRevisions.itemId })
+      .select({
+        id: itemRevisions.id,
+        itemId: itemRevisions.itemId,
+        payload: itemRevisions.payload,
+      })
       .from(itemRevisions)
       .where(eq(itemRevisions.deckVersionId, draftId))
       .orderBy(asc(itemRevisions.position));
@@ -422,58 +378,60 @@ export async function publishDraft(
       .from(revisionAssets)
       .where(inArray(revisionAssets.itemRevisionId, revisionIds));
 
-    // Walidator publikacji: obowiązkowe audio approved+ready, obraz świadomie
-    // approved+ready albo omitted. Do zadania 3 testy podpinają fake-ready media.
-    const referencedAssetIds = assets
-      .map((a) => a.assetId)
-      .filter((id): id is string => id !== null);
-    const readyAssets = new Set(
-      referencedAssetIds.length
-        ? (
-            await tx
-              .select({ id: mediaAssets.id })
-              .from(mediaAssets)
-              .where(and(inArray(mediaAssets.id, referencedAssetIds), eq(mediaAssets.state, "ready")))
-          ).map((a) => a.id)
-        : [],
-    );
-
+    // Walidator publikacji: obowiązkowe audio gotowe i zgodne z fingerprintem,
+    // obraz świadomie pominięty albo gotowy. Wymagany TTS nie może być pominięty.
+    const settings = services.media;
     for (const revision of revisions) {
       const mine = assets.filter((a) => a.itemRevisionId === revision.id);
-      const targetAudio = mine.find((a) => a.role === "target_audio");
-      if (
-        !targetAudio ||
-        targetAudio.state !== "approved" ||
-        targetAudio.assetId === null ||
-        !readyAssets.has(targetAudio.assetId)
-      ) {
-        throw new AppError("validation", {
-          message: `missing ready target audio for revision ${revision.id}`,
+      const requiredHere = settings
+        ? new Map(
+            requiredAssetsFor(payloadToItem(revision.payload), settings).map((r) => [r.role, r]),
+          )
+        : null;
+
+      const checkLinked = async (
+        role: "target_audio" | "example_audio" | "illustration",
+      ): Promise<void> => {
+        const row = mine.find((a) => a.role === role);
+        if (!row || row.assetId === null) {
+          throw new AppError("validation", {
+            message: `missing ready ${role} for revision ${revision.id}`,
+          });
+        }
+        await assertAssetPublishable(tx, {
+          itemRevisionId: revision.id,
+          role,
+          assetId: row.assetId,
+          expectedFingerprint: row.expectedFingerprint,
         });
-      }
+        const required = requiredHere?.get(role);
+        if (requiredHere && (!required || required.fingerprint !== row.expectedFingerprint)) {
+          throw new AppError("validation", {
+            message: `stale ${role} link for revision ${revision.id}`,
+          });
+        }
+      };
+
+      await checkLinked("target_audio");
+
+      // decyzja o obrazie jest potrzebna tylko, gdy karta naprawdę go wymaga;
+      // kolor/liczba/sekwencja renderują się deterministycznie
       const illustration = mine.find((a) => a.role === "illustration");
-      if (!illustration) {
-        throw new AppError("validation", {
-          message: `illustration not decided for revision ${revision.id}`,
-        });
+      const illustrationRequired = requiredHere ? requiredHere.has("illustration") : true;
+      if (illustrationRequired) {
+        if (!illustration) {
+          throw new AppError("validation", {
+            message: `illustration not decided for revision ${revision.id}`,
+          });
+        }
+        if (illustration.state !== "omitted") {
+          await checkLinked("illustration");
+        }
       }
-      if (
-        illustration.state === "approved" &&
-        (illustration.assetId === null || !readyAssets.has(illustration.assetId))
-      ) {
-        throw new AppError("validation", {
-          message: `illustration not ready for revision ${revision.id}`,
-        });
-      }
+
       const exampleAudio = mine.find((a) => a.role === "example_audio");
-      if (
-        exampleAudio &&
-        exampleAudio.state === "approved" &&
-        (exampleAudio.assetId === null || !readyAssets.has(exampleAudio.assetId))
-      ) {
-        throw new AppError("validation", {
-          message: `example audio not ready for revision ${revision.id}`,
-        });
+      if (exampleAudio && exampleAudio.state !== "omitted") {
+        await checkLinked("example_audio");
       }
     }
 

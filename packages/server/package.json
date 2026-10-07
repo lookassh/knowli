@@ -9,7 +9,8 @@
   "dependencies": {
     "@learning/contracts": "workspace:*",
     "drizzle-orm": "^0.44.0",
-    "pg": "^8.16.0"
+    "pg": "^8.16.0",
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/pg": "^8.15.0",
