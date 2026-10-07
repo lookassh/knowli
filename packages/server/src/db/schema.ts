@@ -1,0 +1,626 @@
+import { sql } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
+import {
+  bigint,
+  boolean,
+  check,
+  date,
+  foreignKey,
+  index,
+  integer,
+  jsonb,
+  numeric,
+  pgSchema,
+  primaryKey,
+  smallint,
+  text,
+  timestamp,
+  unique,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
+
+/**
+ * Autorytatywne odwzorowanie docs/schema.sql (projekt 1.2) w Drizzle.
+ * Triggery i funkcje zabezpieczeń nie są wyrażalne tutaj — żyją jako jawne
+ * migracje SQL w packages/server/drizzle (plik guards). Od tej pory źródłem
+ * prawdy jest ten plik i przeglądane migracje, nie schema.sql.
+ */
+export const app = pgSchema("learning_app");
+
+const timestamps = (name: string) => timestamp(name, { withTimezone: true });
+
+export const familySettings = app.table(
+  "family_settings",
+  {
+    id: smallint("id").primaryKey().default(1),
+    timezone: text("timezone").notNull().default("Europe/Warsaw"),
+  },
+  (t) => [check("family_settings_single_row", sql`${t.id} = 1`)],
+);
+
+export const parentCredentials = app.table(
+  "parent_credentials",
+  {
+    id: smallint("id").primaryKey().default(1),
+    passwordHash: text("password_hash").notNull(),
+    updatedAt: timestamps("updated_at").notNull().defaultNow(),
+  },
+  (t) => [check("parent_credentials_single_row", sql`${t.id} = 1`)],
+);
+
+export const parentSessions = app.table(
+  "parent_sessions",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    createdAt: timestamps("created_at").notNull().defaultNow(),
+    expiresAt: timestamps("expires_at").notNull(),
+  },
+  (t) => [
+    check("parent_sessions_expires_after_creation", sql`${t.expiresAt} > ${t.createdAt}`),
+    index("parent_sessions_expiry_idx").on(t.expiresAt),
+  ],
+);
+
+export const childProfiles = app.table(
+  "child_profiles",
+  {
+    id: uuid("id").primaryKey(),
+    displayName: text("display_name").notNull(),
+    avatarKey: text("avatar_key").notNull(),
+    birthYear: smallint("birth_year"),
+    createdAt: timestamps("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    check("child_profiles_display_name_length", sql`length(${t.displayName}) between 1 and 80`),
+    check("child_profiles_birth_year_range", sql`${t.birthYear} is null or ${t.birthYear} between 1900 and 2200`),
+  ],
+);
+
+export const learningPolicies = app.table(
+  "learning_policies",
+  {
+    id: text("id").primaryKey(),
+    config: jsonb("config").$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamps("created_at").notNull().defaultNow(),
+  },
+  (t) => [check("learning_policies_config_object", sql`jsonb_typeof(${t.config}) = 'object'`)],
+);
+
+export const deckVersions = app.table(
+  "deck_versions",
+  {
+    id: uuid("id").primaryKey(),
+    deckId: uuid("deck_id")
+      .notNull()
+      .references((): AnyPgColumn => decks.id),
+    versionNumber: integer("version_number").notNull(),
+    editNumber: integer("edit_number").notNull().default(1),
+    // review: szkic kompletny po generacji, oczekuje na przegląd; nadal edytowalny
+    state: text("state").notNull(),
+    title: text("title").notNull(),
+    sourceLocale: text("source_locale").notNull().default("pl-PL"),
+    targetLocale: text("target_locale").notNull().default("en-GB"),
+    generationPrompt: text("generation_prompt"),
+    createdAt: timestamps("created_at").notNull().defaultNow(),
+    publishedAt: timestamps("published_at"),
+  },
+  (t) => [
+    check("deck_versions_version_positive", sql`${t.versionNumber} > 0`),
+    check("deck_versions_edit_number_positive", sql`${t.editNumber} > 0`),
+    check("deck_versions_state_allowed", sql`${t.state} in ('draft', 'review', 'published')`),
+    check(
+      "deck_versions_published_iff_published_at",
+      sql`(${t.state} = 'published') = (${t.publishedAt} is not null)`,
+    ),
+    unique("deck_versions_version_number_unique").on(t.deckId, t.versionNumber),
+    unique("deck_versions_id_deck_unique").on(t.id, t.deckId),
+    uniqueIndex("one_editable_version_per_deck")
+      .on(t.deckId)
+      .where(sql`${t.state} in ('draft', 'review')`),
+  ],
+);
+
+export const decks = app.table(
+  "decks",
+  {
+    id: uuid("id").primaryKey(),
+    title: text("title").notNull(),
+    kind: text("kind").notNull().default("vocabulary"),
+    publishedVersionId: uuid("published_version_id"),
+    archivedAt: timestamps("archived_at"),
+    createdAt: timestamps("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // Aplikacja ustawia published_version_id wyłącznie na state=published.
+    foreignKey({
+      name: "published_version_belongs_to_deck",
+      columns: [t.publishedVersionId, t.id],
+      foreignColumns: [deckVersions.id, deckVersions.deckId],
+    }),
+  ],
+);
+
+export const learningItems = app.table(
+  "learning_items",
+  {
+    id: uuid("id").primaryKey(),
+    deckId: uuid("deck_id")
+      .notNull()
+      .references((): AnyPgColumn => decks.id),
+    kind: text("kind").notNull().default("vocabulary"),
+    retiredAt: timestamps("retired_at"),
+  },
+  (t) => [unique("learning_items_id_deck_unique").on(t.id, t.deckId)],
+);
+
+export const skillVersions = app.table(
+  "skill_versions",
+  {
+    id: uuid("id").primaryKey(),
+    itemId: uuid("item_id")
+      .notNull()
+      .references((): AnyPgColumn => learningItems.id),
+    // listening, reading, recall, pronunciation, spelling
+    skill: text("skill").notNull(),
+    revisionNumber: integer("revision_number").notNull(),
+    criteria: jsonb("criteria").$type<Record<string, unknown>>().notNull(),
+    criteriaHash: text("criteria_hash").notNull(),
+    predecessorId: uuid("predecessor_id"),
+    createdAt: timestamps("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    check("skill_versions_revision_positive", sql`${t.revisionNumber} > 0`),
+    check("skill_versions_criteria_object", sql`jsonb_typeof(${t.criteria}) = 'object'`),
+    unique("skill_versions_item_skill_revision_unique").on(t.itemId, t.skill, t.revisionNumber),
+    unique("skill_versions_id_item_skill_unique").on(t.id, t.itemId, t.skill),
+    // Kompozytowy self-FK (predecessor_id, item_id, skill) -> (id, item_id, skill)
+    // wyrazony w jawnej migracji SQL: cykl self-referencji jest nieinferowalny
+    // w definicji tabeli (TS7022). Zobacz drizzle/0001_guards_and_seed.sql.
+  ],
+);
+
+export const itemRevisions = app.table(
+  "item_revisions",
+  {
+    id: uuid("id").primaryKey(),
+    itemId: uuid("item_id").notNull(),
+    deckId: uuid("deck_id").notNull(),
+    deckVersionId: uuid("deck_version_id").notNull(),
+    position: integer("position").notNull(),
+    payloadVersion: integer("payload_version").notNull().default(1),
+    // payload: source, target, acceptedAnswers, example, visualType, visualData,
+    // sourceLocale, targetLocale. Reguły oceny są w skill_versions.criteria.
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+    targetKey: text("target_key").notNull(),
+  },
+  (t) => [
+    check("item_revisions_position_nonnegative", sql`${t.position} >= 0`),
+    check("item_revisions_payload_version_positive", sql`${t.payloadVersion} > 0`),
+    check("item_revisions_payload_object", sql`jsonb_typeof(${t.payload}) = 'object'`),
+    foreignKey({
+      name: "item_revisions_item_fk",
+      columns: [t.itemId, t.deckId],
+      foreignColumns: [learningItems.id, learningItems.deckId],
+    }),
+    foreignKey({
+      name: "item_revisions_deck_version_fk",
+      columns: [t.deckVersionId, t.deckId],
+      foreignColumns: [deckVersions.id, deckVersions.deckId],
+    }),
+    unique("item_revisions_version_item_unique").on(t.deckVersionId, t.itemId),
+    unique("item_revisions_version_position_unique").on(t.deckVersionId, t.position),
+    unique("item_revisions_id_item_unique").on(t.id, t.itemId),
+    unique("item_revisions_id_version_unique").on(t.id, t.deckVersionId),
+  ],
+);
+
+export const itemRevisionSkills = app.table(
+  "item_revision_skills",
+  {
+    itemRevisionId: uuid("item_revision_id").notNull(),
+    itemId: uuid("item_id").notNull(),
+    skill: text("skill").notNull(),
+    skillVersionId: uuid("skill_version_id").notNull(),
+  },
+  (t) => [
+    primaryKey({ name: "item_revision_skills_pk", columns: [t.itemRevisionId, t.skill] }),
+    unique("item_revision_skills_revision_skill_version_unique").on(
+      t.itemRevisionId,
+      t.skill,
+      t.skillVersionId,
+    ),
+    foreignKey({
+      name: "item_revision_skills_revision_fk",
+      columns: [t.itemRevisionId, t.itemId],
+      foreignColumns: [itemRevisions.id, itemRevisions.itemId],
+    }),
+    foreignKey({
+      name: "item_revision_skills_skill_version_fk",
+      columns: [t.skillVersionId, t.itemId, t.skill],
+      foreignColumns: [skillVersions.id, skillVersions.itemId, skillVersions.skill],
+    }),
+  ],
+);
+
+export const assignments = app.table(
+  "assignments",
+  {
+    id: uuid("id").primaryKey(),
+    childId: uuid("child_id")
+      .notNull()
+      .references((): AnyPgColumn => childProfiles.id, { onDelete: "cascade" }),
+    deckId: uuid("deck_id")
+      .notNull()
+      .references((): AnyPgColumn => decks.id),
+    testDate: date("test_date"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamps("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    unique("assignments_child_deck_unique").on(t.childId, t.deckId),
+    unique("assignments_id_child_deck_unique").on(t.id, t.childId, t.deckId),
+  ],
+);
+
+export const mediaAssets = app.table(
+  "media_assets",
+  {
+    id: uuid("id").primaryKey(),
+    kind: text("kind").notNull(),
+    fingerprint: text("fingerprint").notNull(),
+    generationNumber: integer("generation_number").notNull().default(1),
+    state: text("state").notNull(),
+    // immutable content-addressed blob; może być współdzielony
+    storageKey: text("storage_key"),
+    contentSha256: text("content_sha256"),
+    leaseToken: uuid("lease_token"),
+    leaseUntil: timestamps("lease_until"),
+    mimeType: text("mime_type"),
+    byteCount: bigint("byte_count", { mode: "number" }),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamps("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    check("media_assets_kind_allowed", sql`${t.kind} in ('tts', 'illustration')`),
+    check("media_assets_generation_positive", sql`${t.generationNumber} > 0`),
+    check("media_assets_state_allowed", sql`${t.state} in ('pending', 'ready', 'failed')`),
+    check("media_assets_byte_count_nonnegative", sql`${t.byteCount} is null or ${t.byteCount} >= 0`),
+    check(
+      "media_assets_lease_pairing",
+      sql`(${t.leaseToken} is null) = (${t.leaseUntil} is null)`,
+    ),
+    check(
+      "media_assets_ready_complete",
+      sql`${t.state} <> 'ready' or (${t.storageKey} is not null and ${t.mimeType} is not null and ${t.byteCount} is not null and ${t.contentSha256} is not null and ${t.leaseToken} is null)`,
+    ),
+    unique("media_assets_fingerprint_generation_unique").on(t.fingerprint, t.generationNumber),
+  ],
+);
+
+export const revisionAssets = app.table(
+  "revision_assets",
+  {
+    itemRevisionId: uuid("item_revision_id")
+      .notNull()
+      .references((): AnyPgColumn => itemRevisions.id),
+    role: text("role").notNull(),
+    assetId: uuid("asset_id").references((): AnyPgColumn => mediaAssets.id),
+    expectedFingerprint: text("expected_fingerprint").notNull(),
+    state: text("state").notNull(),
+  },
+  (t) => [
+    check("revision_assets_role_allowed", sql`${t.role} in ('target_audio', 'example_audio', 'illustration')`),
+    check("revision_assets_state_allowed", sql`${t.state} in ('pending', 'approved', 'omitted')`),
+    check("revision_assets_approved_has_asset", sql`${t.state} <> 'approved' or ${t.assetId} is not null`),
+    check("revision_assets_only_illustration_omitted", sql`${t.state} <> 'omitted' or ${t.role} = 'illustration'`),
+    primaryKey({ name: "revision_assets_pk", columns: [t.itemRevisionId, t.role] }),
+  ],
+);
+
+export const generationRuns = app.table(
+  "generation_runs",
+  {
+    id: uuid("id").primaryKey(),
+    deckVersionId: uuid("deck_version_id").references((): AnyPgColumn => deckVersions.id),
+    expectedEditNumber: integer("expected_edit_number"),
+    assetId: uuid("asset_id").references((): AnyPgColumn => mediaAssets.id),
+    kind: text("kind").notNull(),
+    dedupeKey: text("dedupe_key").notNull(),
+    state: text("state").notNull(),
+    input: jsonb("input").$type<Record<string, unknown>>().notNull(),
+    leaseToken: uuid("lease_token"),
+    leaseUntil: timestamps("lease_until"),
+    attempts: integer("attempts").notNull().default(0),
+    errorCode: text("error_code"),
+    createdAt: timestamps("created_at").notNull().defaultNow(),
+    finishedAt: timestamps("finished_at"),
+  },
+  (t) => [
+    check("generation_runs_kind_allowed", sql`${t.kind} in ('deck', 'tts', 'illustration')`),
+    check(
+      "generation_runs_state_allowed",
+      sql`${t.state} in ('queued', 'running', 'succeeded', 'failed', 'superseded')`,
+    ),
+    check("generation_runs_attempts_nonnegative", sql`${t.attempts} >= 0`),
+    check("generation_runs_expected_edit_positive", sql`${t.expectedEditNumber} is null or ${t.expectedEditNumber} > 0`),
+    check("generation_runs_lease_pairing", sql`(${t.leaseToken} is null) = (${t.leaseUntil} is null)`),
+    check(
+      "generation_runs_kind_shape",
+      sql`(${t.kind} = 'deck' and ${t.deckVersionId} is not null and ${t.expectedEditNumber} is not null and ${t.assetId} is null) or (${t.kind} in ('tts', 'illustration') and ${t.assetId} is not null and ${t.deckVersionId} is null and ${t.expectedEditNumber} is null)`,
+    ),
+    // media używają lease z media_assets
+    check("generation_runs_deck_without_lease", sql`${t.kind} <> 'deck' or ${t.leaseToken} is null`),
+    unique("generation_runs_dedupe_key_unique").on(t.dedupeKey),
+    uniqueIndex("one_run_per_asset").on(t.assetId).where(sql`${t.assetId} is not null`),
+    index("generation_runs_state_idx").on(t.state, t.createdAt),
+  ],
+);
+
+export const learningSessions = app.table(
+  "learning_sessions",
+  {
+    id: uuid("id").primaryKey(),
+    childId: uuid("child_id")
+      .notNull()
+      .references((): AnyPgColumn => childProfiles.id, { onDelete: "cascade" }),
+    assignmentId: uuid("assignment_id").notNull(),
+    deckId: uuid("deck_id").notNull(),
+    deckVersionId: uuid("deck_version_id").notNull(),
+    policyId: text("policy_id")
+      .notNull()
+      .references((): AnyPgColumn => learningPolicies.id),
+    microphoneEnabled: boolean("microphone_enabled").notNull(),
+    // completed: jawny koniec z podsumowaniem; ended: zamknięcie systemowe
+    state: text("state").notNull(),
+    taskBudget: integer("task_budget").notNull().default(12),
+    startedAt: timestamps("started_at").notNull().defaultNow(),
+    endedAt: timestamps("ended_at"),
+    // snapshot kontaktów z poprzednich sesji i ustawień terminu/strefy
+    context: jsonb("context").$type<Record<string, unknown>>().notNull().default({}),
+  },
+  (t) => [
+    check("learning_sessions_state_allowed", sql`${t.state} in ('active', 'completed', 'ended')`),
+    check("learning_sessions_budget_positive", sql`${t.taskBudget} > 0`),
+    check("learning_sessions_active_iff_not_ended", sql`(${t.state} = 'active') = (${t.endedAt} is null)`),
+    foreignKey({
+      name: "learning_sessions_assignment_fk",
+      columns: [t.assignmentId, t.childId, t.deckId],
+      foreignColumns: [assignments.id, assignments.childId, assignments.deckId],
+    }),
+    foreignKey({
+      name: "learning_sessions_deck_version_fk",
+      columns: [t.deckVersionId, t.deckId],
+      foreignColumns: [deckVersions.id, deckVersions.deckId],
+    }),
+    unique("learning_sessions_id_child_unique").on(t.id, t.childId),
+    unique("learning_sessions_id_version_unique").on(t.id, t.deckVersionId),
+    uniqueIndex("one_active_session_per_child").on(t.childId).where(sql`${t.state} = 'active'`),
+    index("learning_sessions_child_time_idx").on(t.childId, t.startedAt.desc()),
+  ],
+);
+
+export const sessionTasks = app.table(
+  "session_tasks",
+  {
+    id: uuid("id").primaryKey(),
+    sessionId: uuid("session_id").notNull(),
+    childId: uuid("child_id").notNull(),
+    deckVersionId: uuid("deck_version_id").notNull(),
+    itemRevisionId: uuid("item_revision_id").notNull(),
+    ordinal: integer("ordinal").notNull(),
+    exerciseType: text("exercise_type").notNull(),
+    direction: text("direction"),
+    state: text("state").notNull(),
+    publicPrompt: jsonb("public_prompt").$type<Record<string, unknown>>().notNull(),
+    answerKey: jsonb("answer_key").$type<Record<string, unknown>>().notNull(),
+    context: jsonb("context").$type<Record<string, unknown>>().notNull().default({}),
+    issuedAt: timestamps("issued_at").notNull().defaultNow(),
+  },
+  (t) => [
+    check("session_tasks_ordinal_nonnegative", sql`${t.ordinal} >= 0`),
+    check("session_tasks_state_allowed", sql`${t.state} in ('issued', 'answered', 'completed', 'skipped')`),
+    check("session_tasks_completed_only_exposure", sql`${t.state} <> 'completed' or ${t.exerciseType} = 'exposure'`),
+    check("session_tasks_answered_never_exposure", sql`${t.state} <> 'answered' or ${t.exerciseType} <> 'exposure'`),
+    foreignKey({
+      name: "session_tasks_session_child_fk",
+      columns: [t.sessionId, t.childId],
+      foreignColumns: [learningSessions.id, learningSessions.childId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "session_tasks_session_version_fk",
+      columns: [t.sessionId, t.deckVersionId],
+      foreignColumns: [learningSessions.id, learningSessions.deckVersionId],
+    }),
+    foreignKey({
+      name: "session_tasks_revision_fk",
+      columns: [t.itemRevisionId, t.deckVersionId],
+      foreignColumns: [itemRevisions.id, itemRevisions.deckVersionId],
+    }),
+    unique("session_tasks_session_ordinal_unique").on(t.sessionId, t.ordinal),
+    unique("session_tasks_id_child_unique").on(t.id, t.childId),
+    unique("session_tasks_id_revision_unique").on(t.id, t.itemRevisionId),
+    uniqueIndex("one_issued_task_per_session").on(t.sessionId).where(sql`${t.state} = 'issued'`),
+  ],
+);
+
+export const attempts = app.table(
+  "attempts",
+  {
+    id: uuid("id").primaryKey(),
+    childId: uuid("child_id")
+      .notNull()
+      .references((): AnyPgColumn => childProfiles.id, { onDelete: "cascade" }),
+    taskId: uuid("task_id").notNull(),
+    itemRevisionId: uuid("item_revision_id").notNull(),
+    clientAttemptId: uuid("client_attempt_id").notNull(),
+    requestHash: text("request_hash").notNull(),
+    attemptNumber: integer("attempt_number").notNull(),
+    modality: text("modality").notNull(),
+    state: text("state").notNull(),
+    // tylko tekst/opcja/transkrypcja; żadnych bytes/URL nagrania
+    answer: jsonb("answer").$type<Record<string, unknown>>(),
+    context: jsonb("context").$type<Record<string, unknown>>().notNull(),
+    feedback: jsonb("feedback").$type<Record<string, unknown>>(),
+    policyId: text("policy_id")
+      .notNull()
+      .references((): AnyPgColumn => learningPolicies.id),
+    receivedAt: timestamps("received_at").notNull().defaultNow(),
+    completedAt: timestamps("completed_at"),
+  },
+  (t) => [
+    check("attempts_modality_allowed", sql`${t.modality} in ('choice', 'text', 'audio', 'dont_remember', 'skip')`),
+    check("attempts_state_allowed", sql`${t.state} in ('processing', 'completed')`),
+    check("attempts_number_positive", sql`${t.attemptNumber} > 0`),
+    check("attempts_completed_iff_completed_at", sql`(${t.state} = 'completed') = (${t.completedAt} is not null)`),
+    foreignKey({
+      name: "attempts_task_child_fk",
+      columns: [t.taskId, t.childId],
+      foreignColumns: [sessionTasks.id, sessionTasks.childId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "attempts_task_revision_fk",
+      columns: [t.taskId, t.itemRevisionId],
+      foreignColumns: [sessionTasks.id, sessionTasks.itemRevisionId],
+    }),
+    unique("attempts_child_client_id_unique").on(t.childId, t.clientAttemptId),
+    unique("attempts_task_number_unique").on(t.taskId, t.attemptNumber),
+    unique("attempts_id_revision_unique").on(t.id, t.itemRevisionId),
+    unique("attempts_id_child_unique").on(t.id, t.childId),
+    uniqueIndex("one_processing_attempt_per_task").on(t.taskId).where(sql`${t.state} = 'processing'`),
+    index("attempts_stale_idx").on(t.receivedAt).where(sql`${t.state} = 'processing'`),
+  ],
+);
+
+export const assessments = app.table(
+  "assessments",
+  {
+    childId: uuid("child_id")
+      .notNull()
+      .references((): AnyPgColumn => childProfiles.id, { onDelete: "cascade" }),
+    attemptId: uuid("attempt_id").notNull(),
+    itemRevisionId: uuid("item_revision_id").notNull(),
+    skill: text("skill").notNull(),
+    skillVersionId: uuid("skill_version_id").notNull(),
+    outcome: text("outcome").notNull(),
+    reason: text("reason"),
+    independent: boolean("independent").notNull(),
+    confirmationEligible: boolean("confirmation_eligible").notNull(),
+    provider: text("provider"),
+    providerModel: text("provider_model"),
+    providerPolicyVersion: text("provider_policy_version"),
+    score: numeric("score"),
+    scoreScale: text("score_scale"),
+    details: jsonb("details").$type<Record<string, unknown>>().notNull().default({}),
+  },
+  (t) => [
+    check("assessments_outcome_allowed", sql`${t.outcome} in ('correct', 'incorrect', 'unassessed')`),
+    check(
+      "assessments_unassessed_no_score",
+      sql`${t.outcome} <> 'unassessed' or (${t.score} is null and not ${t.confirmationEligible})`,
+    ),
+    check(
+      "assessments_score_needs_provider",
+      sql`${t.score} is null or (${t.provider} is not null and ${t.scoreScale} is not null)`,
+    ),
+    primaryKey({ name: "assessments_pk", columns: [t.attemptId, t.skill] }),
+    foreignKey({
+      name: "assessments_attempt_child_fk",
+      columns: [t.attemptId, t.childId],
+      foreignColumns: [attempts.id, attempts.childId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "assessments_attempt_revision_fk",
+      columns: [t.attemptId, t.itemRevisionId],
+      foreignColumns: [attempts.id, attempts.itemRevisionId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "assessments_revision_skill_fk",
+      columns: [t.itemRevisionId, t.skill, t.skillVersionId],
+      foreignColumns: [itemRevisionSkills.itemRevisionId, itemRevisionSkills.skill, itemRevisionSkills.skillVersionId],
+    }),
+    index("assessments_skill_history_idx").on(t.skillVersionId, t.attemptId),
+  ],
+);
+
+export const learningEvents = app.table(
+  "learning_events",
+  {
+    id: uuid("id").primaryKey(),
+    childId: uuid("child_id")
+      .notNull()
+      .references((): AnyPgColumn => childProfiles.id, { onDelete: "cascade" }),
+    taskId: uuid("task_id").notNull(),
+    itemId: uuid("item_id")
+      .notNull()
+      .references((): AnyPgColumn => learningItems.id),
+    // opcjonalny dla obserwacji klienta; ujawnienie zapisuje serwer
+    clientEventId: uuid("client_event_id"),
+    sealed: boolean("sealed").notNull().default(false),
+    stepId: text("step_id").notNull(),
+    kind: text("kind").notNull(),
+    occurredAt: timestamps("occurred_at").notNull().defaultNow(),
+    context: jsonb("context").$type<Record<string, unknown>>().notNull().default({}),
+  },
+  (t) => [
+    check(
+      "learning_events_kind_allowed",
+      sql`${t.kind} in ('contact', 'prompt_issued', 'audio_issued', 'hint_issued', 'feedback_issued', 'display_confirmed', 'audio_played', 'presentation_completed')`,
+    ),
+    foreignKey({
+      name: "learning_events_task_child_fk",
+      columns: [t.taskId, t.childId],
+      foreignColumns: [sessionTasks.id, sessionTasks.childId],
+    }).onDelete("cascade"),
+    unique("learning_events_child_client_id_unique").on(t.childId, t.clientEventId),
+    unique("learning_events_id_child_unique").on(t.id, t.childId),
+    index("learning_events_contact_idx").on(t.childId, t.itemId, t.occurredAt.desc()),
+  ],
+);
+
+export const eventExposures = app.table(
+  "event_exposures",
+  {
+    childId: uuid("child_id")
+      .notNull()
+      .references((): AnyPgColumn => childProfiles.id, { onDelete: "cascade" }),
+    eventId: uuid("event_id").notNull(),
+    targetKey: text("target_key").notNull(),
+  },
+  (t) => [
+    primaryKey({ name: "event_exposures_pk", columns: [t.eventId, t.targetKey] }),
+    foreignKey({
+      name: "event_exposures_event_fk",
+      columns: [t.eventId, t.childId],
+      foreignColumns: [learningEvents.id, learningEvents.childId],
+    }).onDelete("cascade"),
+    index("event_exposures_target_idx").on(t.targetKey, t.eventId),
+  ],
+);
+
+export const childSkillProgress = app.table(
+  "child_skill_progress",
+  {
+    childId: uuid("child_id")
+      .notNull()
+      .references((): AnyPgColumn => childProfiles.id, { onDelete: "cascade" }),
+    skillVersionId: uuid("skill_version_id")
+      .notNull()
+      .references((): AnyPgColumn => skillVersions.id),
+    status: text("status").notNull(),
+    independentSuccessStreak: integer("independent_success_streak").notNull().default(0),
+    lastReviewedAt: timestamps("last_reviewed_at"),
+    nextReviewAt: timestamps("next_review_at"),
+    delayedConfirmationAt: timestamps("delayed_confirmation_at"),
+    projectionVersion: text("projection_version").notNull(),
+    updatedAt: timestamps("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    check("child_skill_progress_status_allowed", sql`${t.status} in ('unseen', 'practicing', 'needs_confirmation', 'mastered')`),
+    check("child_skill_progress_streak_nonnegative", sql`${t.independentSuccessStreak} >= 0`),
+    primaryKey({ name: "child_skill_progress_pk", columns: [t.childId, t.skillVersionId] }),
+    index("child_skill_due_idx").on(t.childId, t.nextReviewAt),
+  ],
+);

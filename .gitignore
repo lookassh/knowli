@@ -1,0 +1,14 @@
+node_modules/
+.next/
+dist/
+coverage/
+*.tsbuildinfo
+
+# środowisko i sekrety nigdy nie trafiają do repo
+.env
+.env.*
+!.env.example
+
+# konfiguracja IDE
+.idea/
+.vscode/

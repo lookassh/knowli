@@ -1,0 +1,12 @@
+import { defineConfig } from "vitest/config";
+
+// Testy domenowe: czysta logika z kontrolowanym zegarem, bez bazy i sieci.
+// Do czasu zadania 5 nie ma jeszcze plików domenowych; passWithNoTests utrzymuje
+// skrypt użyteczny od pierwszego zadania.
+export default defineConfig({
+  test: {
+    include: ["packages/*/src/**/*.test.ts"],
+    passWithNoTests: true,
+    environment: "node",
+  },
+});

@@ -1,0 +1,21 @@
+{
+  "name": "knowli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Knowli / Umiem! — prywatna, self-hostowana aplikacja rodzinna do nauki",
+  "packageManager": "pnpm@10.34.6",
+  "scripts": {
+    "test:unit": "vitest run --config vitest.unit.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p packages/contracts/tsconfig.json && tsc --noEmit -p packages/server/tsconfig.json && tsc --noEmit -p apps/web/tsconfig.json"
+  },
+  "dependencies": {
+    "@learning/contracts": "workspace:*",
+    "@learning/server": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  }
+}
