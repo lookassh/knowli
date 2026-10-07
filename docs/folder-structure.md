@@ -1,6 +1,6 @@
 # Struktura projektu
 
-Propozycja 1.1 • 7 października 2026  
+Propozycja 1.2 • 7 października 2026  
 Podstawa: architecture.md oraz SPEC.md 1.1. To plan plików; repozytorium aplikacji nie zostało jeszcze utworzone.
 
 ## 1. Organizacja
@@ -35,6 +35,7 @@ Nazwy pakietów: @learning/contracts, @learning/kid-ui i @learning/server. apps/
 | apps/web/src/app/api/v1/parent/[...path]/route.ts | Cienki dispatch zatwierdzonych operacji Parent API |
 | apps/web/src/app/api/v1/kid/[...path]/route.ts | Cienki dispatch zatwierdzonych operacji Kid API |
 | apps/web/src/app/api/v1/media/[id]/route.ts | Odczyt autoryzowanego zasobu |
+| apps/web/src/app/api/health/route.ts | Liveness i readiness web (proces + baza) dla Compose |
 | apps/web/src/app/manifest.ts | Manifest PWA |
 | apps/web/src/http/parent-router.ts | Jawna tabela endpointów rodzica |
 | apps/web/src/http/kid-router.ts | Jawna tabela endpointów dziecka |
@@ -78,6 +79,7 @@ Nie importujemy tutaj next/navigation, next/image, Server Actions ani @learning/
 | packages/contracts/src/decks.ts | Publiczne schematy zestawów i poleceń rodzica |
 | packages/contracts/src/kid.ts | Publiczne TaskDto, AttemptInput, AttemptDto, SessionDto, DisclosureInput/Dto, PresentationCompletionInput/Dto |
 | packages/contracts/src/progress.ts | Podsumowanie per umiejętność |
+| packages/contracts/src/messages.ts | Jeden katalog polskich komunikatów UI współdzielony przez web i kid-ui; bez logiki |
 | packages/server/src/domain/types.ts | Prywatne AnswerKey, Grade, History, Policy |
 | packages/server/src/domain/evaluate.ts | Reguły treści i pisowni |
 | packages/server/src/domain/independence.ts | Kwalifikacja próby i ekspozycje |
@@ -88,6 +90,8 @@ Nie importujemy tutaj next/navigation, next/image, Server Actions ani @learning/
 | packages/server/src/domain/policies/learning-v1.ts | Jawne parametry i wersja algorytmu |
 
 Typy bazy nie są DTO. Pole answer_key nigdy nie jest częścią eksportu packages/contracts. Biblioteka domeny nie odczytuje Date.now() ani zmiennych środowiskowych; czas i konfiguracja są argumentami.
+
+Komunikaty wynikowe generowane przez domenę (feedback.ts) trafiają do klienta w DTO; statyczne etykiety ekranów, przycisków i błędów UI dla web oraz kid-ui pochodzą wyłącznie z messages.ts. Locale UI, treści i wymowy pozostają osobnymi wartościami; nie budujemy przełącznika języka ani systemu tłumaczeń.
 
 ## 5. Przypadki użycia i infrastruktura
 

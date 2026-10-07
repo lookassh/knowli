@@ -8,7 +8,7 @@
 
 **Tech Stack:** Next.js, React, TypeScript, Zod, PostgreSQL, Drizzle, Graphile Worker, Tailwind, Docker/Coolify, Vitest, Playwright.
 
-**Spec:** SPEC.md 1.1; architecture.md 1.1, schema.sql i folder-structure.md. Przy przenoszeniu do repo wszystkie dokumenty umieścić w docs/. Ten plan umieścić w docs/implementation-plan.md.
+**Spec:** SPEC.md 1.1; architecture.md 1.2, schema.sql 1.2 i folder-structure.md 1.2. Przy przenoszeniu do repo wszystkie dokumenty umieścić w docs/. Ten plan umieścić w docs/implementation-plan.md.
 
 ## Global Constraints
 
@@ -89,13 +89,14 @@ Nie eksportować Services, Grade ani AnswerKey do pakietu przeglądarkowego.
 
 ## Zadanie 1 — uruchamialny fundament, dostęp rodzica i profile
 
-**Pliki:** workspace package.json, pnpm-workspace.yaml, apps/web/src/composition.ts, packages/contracts/src/{common,decks}.ts, packages/server/src/{config,db/client,db/schema,modules/auth,modules/profiles}.ts, packages/server/drizzle/, apps/web/src/http/security.ts, API login i profiles, tests/integration/auth-profiles.test.ts.
+**Pliki:** workspace package.json, pnpm-workspace.yaml, apps/web/src/composition.ts, packages/contracts/src/{common,decks,messages}.ts, packages/server/src/{config,db/client,db/schema,modules/auth,modules/profiles}.ts, packages/server/drizzle/, apps/web/src/http/security.ts, API login i profiles, tests/integration/auth-profiles.test.ts.
 
 **Consumes:** schema.sql jako projekt do odwzorowania; decyzje fazy 0 nie są potrzebne dla profili.
 
 **Produces:** createChild(s: Services, input: ChildInput): Promise<ChildDto>; deleteChild(s, childId): Promise<void>; loginParent(s, secret: string): Promise<{token: string; expiresAt: string}>; requireParent(s, token: string): Promise<void>.
 
 - [ ] Utworzyć minimalny workspace i skrypty sprawdzeń wraz z testem integracyjnym: poprawny login działa, błędny nie tworzy sesji, parent endpoint bez cookie zwraca 401, dwa profile mają różne ID.
+- [ ] Dodać test pierwszego uruchomienia: przy braku parent_credentials jednorazowy setup tworzy poświadczenia i przestaje być dostępny; równoległa konfiguracja nie tworzy drugiego wiersza.
 - [ ] Uruchomić pnpm test:integration tests/integration/auth-profiles.test.ts; oczekiwane RED z powodu brakujących przypadków użycia.
 - [ ] Odwzorować DDL w Drizzle, zachować klucze złożone i triggery jako jawne migracje. Zaimplementować transakcje, sesje, scrypt, limity loginu oraz walidację danych profilu; wszystkie query mają określone typy.
 - [ ] Uruchomić powyższy test oraz pnpm typecheck. Wynik: PASS; baza po ponownym uruchomieniu zachowuje profile.
@@ -155,6 +156,7 @@ Nie eksportować Services, Grade ani AnswerKey do pakietu przeglądarkowego.
 
 - [ ] Napisać testy z kontrolowanym czasem: Monday jest poprawne, monday nie zalicza pełnej pisowni, zatwierdzony wariant działa, przypadkowy podobny wyraz nie jest samoczynnie poprawny. Pierwsze 299 sekund od ekspozycji nie kwalifikuje Recall, 300 sekund spełnia warunek czasu.
 - [ ] Napisać testy: trzy kwalifikujące sukcesy z przerwą spełniają regułę; sukces–błąd–sukces nie daje serii trzech; 23:59 → 00:01 nie spełnia 12 godzin; nieocenione nie resetuje serii; nie pamiętam w sprawdzaniu resetuje ją; błędna pisownia nie kasuje poprawnego Recall.
+- [ ] Napisać test kierunków reading: trzy kwalifikujące sukcesy w jednym kierunku nie opanowują umiejętności; ocena zapisuje direction w details, a projekcja wymaga obu kierunków.
 - [ ] Uruchomić pnpm test:unit; oczekiwane RED dla nowych funkcji.
 - [ ] Zaimplementować funkcje bez efektów ubocznych i rzeczywistego zegara. Oddzielić provider score od polityki oceny; nie wprowadzać uniwersalnego progu 80.
 - [ ] Uruchomić pnpm test:unit i uzyskać PASS dla granic czasu, kapitalizacji i DST w Europe/Warsaw.
@@ -169,6 +171,7 @@ Nie eksportować Services, Grade ani AnswerKey do pakietu przeglądarkowego.
 **Produces:** startSession(s, input: SessionInput): Promise<SessionDto>; nextTask(s, sessionId): Promise<TaskDto | null>; recordEvent(s, input: EventInput): Promise<void>; authorizeDisclosure(s, input: DisclosureInput): Promise<DisclosureDto>; completePresentation(s, input: PresentationCompletionInput): Promise<PresentationCompletionDto>; selectTask(input: ScheduleInput): TaskPlan | null; endSession(s, sessionId): Promise<SessionSummaryDto>.
 
 - [ ] Napisać testy: dwa równoległe starty dają jedną sesję; next retry zwraca to samo issued task; brak mikrofonu wyklucza pronunciation; dwie pomyłki dają wsparcie i przerwę od elementu; końcowe trzy zadania nie rosną.
+- [ ] Napisać test cyklu życia sesji: start dla innej talii zamyka aktywną sesję jako ended; sesja bez zdarzeń przez ponad 30 minut zamyka się zamiast być wznawiana; limit czasu kończy sesję między zadaniami i nigdy po obietnicy „Jeszcze N”.
 - [ ] Napisać test Review Focus 2: audio/wybór ujawnia target także w innym ćwiczeniu; dystraktor Wednesday staje się ekspozycją Wednesday. Zapis ujawnienia poprzedza odpowiedź HTTP i działa bez ACK; test obejmuje utracony ACK, reload, retry feedbacku i drugi klient. Ten sam clientEventId nie tworzy dwóch obserwacji; każde ponowne wydanie treści odświeża możliwą ekspozycję.
 - [ ] Uruchomić pnpm test:integration tests/integration/sessions.test.ts oraz pnpm test:unit scheduler; oczekiwane RED.
 - [ ] Dodać test: exposure → complete-presentation → next działa bez attempt/assessment i bez zużycia budżetu; retry completion nie kończy kolejnego zadania. Odrzucić completion dla zadania ocenianego.
@@ -186,6 +189,7 @@ Nie eksportować Services, Grade ani AnswerKey do pakietu przeglądarkowego.
 **Produces:** submitAttempt(s, input: AttemptInput): Promise<AttemptDto>; readAttempt(s, attemptId): Promise<AttemptDto>; finalizeAttempt(s, attemptId, grade: Grade): Promise<AttemptDto>.
 
 - [ ] Napisać testy: powtórzone clientAttemptId z tą samą treścią zwraca ten sam wynik; inna treść daje 409; wynik drugiego dziecka nie może trafić do zadania pierwszego; awaria w połowie transakcji nie pozostawia zaktualizowanej tylko połowy postępu.
+- [ ] Napisać test leniwej finalizacji: processing starsze niż 60 sekund zamienia się w nieocenione przy readAttempt oraz przy złożeniu nowej próby tego samego zadania, bez osobnego joba w tle.
 - [ ] Napisać test Review Focus 4: publikacja zmienionego słowa podczas sesji nie pozwala starej próbie awansować nowego skill_version. Przycisk „Nie pamiętam” tworzy trudność bez confusion; skip nie udaje błędu.
 - [ ] Uruchomić pnpm test:integration tests/integration/attempts.test.ts tests/integration/history.test.ts; oczekiwane RED.
 - [ ] Dodać testy history.test.ts: nie można zmienić answer_key wydanego zadania, ekspozycji ani usunąć/ponownie wstawić oceny zakończonej próby; usunięcie profilu usuwa całą jego historię. Weryfikować blokady assessment insert kontra finalizacja.

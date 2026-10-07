@@ -23,8 +23,8 @@ Pierwszy moduł to angielskie słownictwo dla początkującego dziecka w wieku o
 Przed zmianami przeczytaj dokumenty dotyczące zadania:
 
 1. `docs/SPEC.md` — wymagania i kryteria akceptacji, wersja bazowa 1.1.
-2. `docs/architecture.md` — decyzje i kontrakty, wersja bazowa 1.1 po review.
-3. `docs/schema.sql` — początkowy projekt bazy, wersja bazowa 1.1.
+2. `docs/architecture.md` — decyzje i kontrakty, wersja bazowa 1.2 po review.
+3. `docs/schema.sql` — początkowy projekt bazy, wersja bazowa 1.2.
 4. `docs/folder-structure.md` — uzgodnione granice i ścieżki.
 5. `docs/implementation-plan.md` — małe zadania, zależności oraz regresje R01–R07.
 

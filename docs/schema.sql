@@ -1,5 +1,5 @@
--- Rodzinny asystent nauki: początkowy model PostgreSQL, projekt 1.1.
--- Podstawa: SPEC.md 1.1 i architecture.md 1.1. Nie jest wykonanym wdrożeniem.
+-- Rodzinny asystent nauki: początkowy model PostgreSQL, projekt 1.2.
+-- Podstawa: SPEC.md 1.1 i architecture.md 1.2. Nie jest wykonanym wdrożeniem.
 -- UUID nadaje aplikacja. Czasy timestamptz; test_date jest datą strefy rodziny.
 -- Graphile Worker tworzy i migruje swój schemat osobno.
 -- JSONB zawsze podlega walidacji Zod przed zapisem.
@@ -53,6 +53,7 @@ CREATE TABLE deck_versions (
   deck_id uuid NOT NULL REFERENCES decks(id),
   version_number integer NOT NULL CHECK (version_number > 0),
   edit_number integer NOT NULL DEFAULT 1 CHECK (edit_number > 0),
+  -- review: szkic kompletny po generacji, oczekuje na przegląd; nadal edytowalny
   state text NOT NULL CHECK (state IN ('draft','review','published')),
   title text NOT NULL,
   source_locale text NOT NULL DEFAULT 'pl-PL',
@@ -197,6 +198,7 @@ CREATE TABLE learning_sessions (
   deck_version_id uuid NOT NULL,
   policy_id text NOT NULL REFERENCES learning_policies(id),
   microphone_enabled boolean NOT NULL,
+  -- completed: jawny koniec z podsumowaniem; ended: zamknięcie systemowe
   state text NOT NULL CHECK (state IN ('active','completed','ended')),
   task_budget integer NOT NULL DEFAULT 12 CHECK (task_budget > 0),
   started_at timestamptz NOT NULL DEFAULT now(),
@@ -293,7 +295,8 @@ CREATE TABLE assessments (
 CREATE INDEX assessments_skill_history_idx ON assessments(skill_version_id, attempt_id);
 -- Pasma score są właściwe providerowi, bez uniwersalnego 0-100.
 -- details może zawierać expectedItemId/answeredItemId dla wiarygodnej pomyłki,
--- wordMatch/lettersCorrect/capitalizationCorrect oraz powód wsparcia.
+-- wordMatch/lettersCorrect/capitalizationCorrect, powód wsparcia oraz
+-- direction (en->pl / pl->en) dla ocen rozpoznawania tekstu.
 
 CREATE TABLE learning_events (
   id uuid PRIMARY KEY,

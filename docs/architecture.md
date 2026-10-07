@@ -1,10 +1,12 @@
 # Architektura — Rodzinny asystent nauki AI
 
-Wersja: 1.1, po poprawkach z review • 7 października 2026  
+Wersja: 1.2, po review pakietu przed implementacją • 7 października 2026  
 Podstawa: SPEC.md 1.1 oraz późniejsze ustalenia: Next.js + TypeScript, PWA z możliwością późniejszego użycia Kid Mode w Capacitor.  
-Dokumenty towarzyszące: schema.sql, folder-structure.md, implementation-plan.md — cały pakiet w wersji 1.1.
+Dokumenty towarzyszące: schema.sql, folder-structure.md, implementation-plan.md — wersja 1.2; SPEC pozostaje w wersji 1.1.
 
 Poprawki 1.1: serwerowe rejestrowanie ujawnień, niezmienne zasoby i historia, jawne zakończenie Exposure, planowanie sprawdzeń przed podpowiedziami, generowanie zasobów niezależne od edycji szkicu i poprawna ocena wariantów odpowiedzi ustnych.
+
+Poprawki 1.2: bootstrap pierwszego rodzica, zakres ochrony endpointu mediów, pełny cykl życia sesji (wznowienie, przeterminowanie, stany terminalne), nośnik kierunku dla opanowania reading, leniwa finalizacja przeterminowanych prób, egzekwowanie limitu czasu sesji, semantyka stanów review i retired_at, mapowanie błędów triggerów oraz wspólny katalog komunikatów UI.
 
 ## 1. Decyzja główna
 
@@ -52,7 +54,7 @@ SQL w schema.sql jest przeglądowym modelem początkowym. Podczas implementacji 
 
 | Część | Odpowiedzialność | Czego nie robi |
 | --- | --- | --- |
-| contracts | DTO, walidacja i typy bez sekretów | Nie importuje bazy ani SDK AI |
+| contracts | DTO, walidacja, typy bez sekretów oraz wspólny katalog komunikatów UI | Nie importuje bazy ani SDK AI |
 | kid-ui | Zadania, ekran profilu, audio, mikrofon, feedback | Nie oblicza autorytatywnego postępu |
 | server/domain | Reguły nauki, wsparcie, ocenianie pisowni i harmonogram | Nie zna Next.js, SQL ani Azure |
 | server/modules | Przypadki użycia i granice transakcji | Nie renderuje UI |
@@ -89,7 +91,7 @@ skill_version zawiera niezmienne kryteria i opcjonalny poprzedni klucz. Dla nowe
 
 child_skill_progress ma klucz (child_id, skill_version_id). Jest cache'em aktualnego wyniku, a nie jedyną historią. Źródłem są attempts, assessments i wydarzenia ekspozycji. Zapis oceny oraz aktualizacja projekcji następują w jednej transakcji. Rekalkulację wykonujemy jawnie z wersjonowanym algorytmem; nie przepisuje ona historycznych ocen.
 
-Po wydaniu zadania nie można zmieniać jego treści, klucza odpowiedzi, przypiętych identyfikatorów ani kontekstu. Zmienia się wyłącznie stan zadania. Oceny wolno wstawić tylko do próby processing, pod blokadą jej wiersza, przed jednokrotną finalizacją. Wydarzenia i ich ekspozycje są zapisywane atomowo i zamrażane przed udostępnieniem treści. SQL blokuje późniejsze dopisanie/usunięcie/zastąpienie ocen i zmianę ekspozycji. Usuwanie tych rekordów jest dozwolone przez kontrolowane usunięcie profilu: triggery dopuszczają kaskadę tylko wtedy, gdy nadrzędny profil już nie istnieje. Zwykłe usunięcie próby, zadania lub oceny przy istniejącym profilu jest zabronione.
+Po wydaniu zadania nie można zmieniać jego treści, klucza odpowiedzi, przypiętych identyfikatorów ani kontekstu. Zmienia się wyłącznie stan zadania. Oceny wolno wstawić tylko do próby processing, pod blokadą jej wiersza, przed jednokrotną finalizacją. Wydarzenia i ich ekspozycje są zapisywane atomowo i zamrażane przed udostępnieniem treści. SQL blokuje późniejsze dopisanie/usunięcie/zastąpienie ocen i zmianę ekspozycji. Usuwanie tych rekordów jest dozwolone przez kontrolowane usunięcie profilu: triggery dopuszczają kaskadę tylko wtedy, gdy nadrzędny profil już nie istnieje. Zwykłe usunięcie próby, zadania lub oceny przy istniejącym profilu jest zabronione. Wyjątki z triggerów zabezpieczeń są mapowane na wspólny format błędu API z kodem typu immutable/conflict i krótkim polskim komunikatem; surowy tekst SQL nie trafia do klienta.
 
 Nie ma pojedynczego stage dla karty. Zestaw i materiały są wspólne, a przypisanie, termin sprawdzianu, sesje i postęp należą do dziecka.
 
@@ -97,13 +99,13 @@ Nie ma pojedynczego stage dla karty. Zestaw i materiały są wspólne, a przypis
 
 schema.sql zawiera FK i klucze złożone chroniące przed przypisaniem sesji do cudzej wersji zestawu lub wyniku do innego dziecka. JSONB przechowuje wersjonowane treści i kontekst, ale profile, przypisania, próby i powiązania pozostają relacyjne. Domena waliduje JSON przez Zod.
 
-Zestaw może zostać wycofany bez fizycznego usuwania jego rewizji. Usunięcie profilu usuwa jego sesje, próby, wydarzenia i projekcje w transakcji, zachowując wspólne materiały. Fizycznego kasowania opublikowanego materiału z historią nie ma w zwykłym edytorze.
+Zestaw może zostać wycofany bez fizycznego usuwania jego rewizji. Usunięcie elementu ze szkicu sprawia, że znika on z nowej wersji, a learning_items.retired_at oznacza element nieobecny w bieżącej wersji — historia jego prób pozostaje czytelna. Ponowne dodanie tego samego słowa tworzy nowy learning_item z nowymi kluczami umiejętności; stara historia nowego klucza nie awansuje. Usunięcie profilu usuwa jego sesje, próby, wydarzenia i projekcje w transakcji, zachowując wspólne materiały. Fizycznego kasowania opublikowanego materiału z historią nie ma w zwykłym edytorze.
 
 ## 7. Przygotowanie i publikowanie zestawu
 
 1. POST rodzica przyjmuje prompt i klucz idempotencji; tworzy deck, draft oraz generation_run.
 2. Ta sama transakcja rejestruje zadanie w Graphile Worker przez SQL na tej samej sesji bazy. Nie ma luki „zapisano rekord, lecz nie wysłano zadania”.
-3. Worker wywołuje LLM, waliduje JSON, zapisuje elementy i proponowane warianty odpowiedzi. Nie publikuje.
+3. Worker wywołuje LLM, waliduje JSON, zapisuje elementy i proponowane warianty odpowiedzi. Nie publikuje. Po sukcesie generacji draft przechodzi w stan review — szkic kompletny, oczekujący na przegląd rodzica; stany draft i review są równie edytowalne, a indeks one_editable_version_per_deck obejmuje oba.
 4. Osobne, współdzielone zadania zasobów przygotowują wymagane TTS oraz sensowne ilustracje object/action. Kolory, liczby i sekwencje to dane do deterministycznego renderowania.
 5. Rodzic przegląda treść oraz zasoby. Po każdej edycji reconcileDraftAssets porównuje wymagane fingerprinty ze stanem powiązań: zachowuje zgodne, odłącza niezgodne i w tej samej transakcji rezerwuje/zleca brakujące. Zmiana tytułu nie unieważnia zadań audio. Po zmianie tekstu zmienia się fingerprint audio; stary plik nie jest podpinany do nowej treści.
 6. Publikacja jest transakcją: sprawdza wersję draftu, kompletność obowiązkowego audio, zatwierdzenie treści i stan obrazów. Obraz może być świadomie pominięty. Wymagany TTS nie może być pominięty dla pełnego zestawu językowego.
@@ -127,7 +129,7 @@ Odpowiedź usługi może zaginąć po opłaconym wykonaniu, więc nie obiecujemy
 
 Retry: maksymalnie trzy automatyczne próby, opóźnienia i jitter. Błędy walidacji/konfiguracji nie są bez końca ponawiane. Wątpliwy timeout płatnej generacji jest pokazywany rodzicowi przed ręcznym ponowieniem. Początkowa równoległość: 2, z limitem 1 dla obrazów. Postęp jest odczytywany przez polling.
 
-MediaStore ma putImmutable/get; MVP używa prywatnego wolumenu. Odczyt zatwierdzonego zasobu odbywa się po opaque media ID, nie po ścieżce od klienta. Worker ma RW, web RO przy konwersji głosu w pamięci. Kid API wydaje autoryzację odsłuchu w kontekście kroku zadania po zapisaniu ekspozycji, a sam endpoint pliku nie wyznacza czasu ekspozycji. Publicznego katalogu /data nie udostępniamy.
+MediaStore ma putImmutable/get; MVP używa prywatnego wolumenu. Odczyt zatwierdzonego zasobu odbywa się po opaque media ID, nie po ścieżce od klienta. Ochrona endpointu mediów jest konkretna: zwraca wyłącznie zasoby state=ready, działa tylko same-origin z wyłączonym CORS (przyszły host mobilny będzie wymagał świadomej zmiany tej zasady), nie listuje zawartości i nie przyjmuje ścieżek. Kid Mode nie ma własnej autoryzacji — dostępnością steruje fakt, że media ID dziecko otrzymuje wyłącznie w DTO zadania albo w zgłoszeniu odsłuchu po zapisanej ekspozycji, a rodzic w DTO szkicu. Worker ma RW, web RO przy konwersji głosu w pamięci. Kid API wydaje autoryzację odsłuchu w kontekście kroku zadania po zapisaniu ekspozycji, a sam endpoint pliku nie wyznacza czasu ekspozycji. Publicznego katalogu /data nie udostępniamy.
 
 ## 9. Sesja, ekspozycje i harmonogram
 
@@ -135,13 +137,13 @@ MediaStore ma putImmutable/get; MVP używa prywatnego wolumenu. Odczyt zatwierdz
 
 SessionTask zapisuje typ, rewizję elementu, wersję polityki, opcje z nieznaczącymi identyfikatorami oraz prywatny answer_key. Publiczny DTO nie zawiera rozwiązania ukrytego zadania, ocen ani parametrów providera. Pokazanie odpowiedzi następuje po odpowiedzi lub świadomym „Nie pamiętam”.
 
-Start/resume zamyka lub wznawia jedyną aktywną sesję dziecka, zamiast tworzyć dwie konkurujące sesje na dwóch urządzeniach. Jedna sesja nie oznacza wyłączności przeglądarki: ujawnienia i odpowiedzi wszystkich klientów podlegają tej samej blokadzie serwerowej. Unikalny indeks w bazie wymusza tę zasadę. Krótka blokada wiersza sesji serializuje kolejne zadania i próby, bez blokowania na czas odpowiedzi dziecka.
+Start/resume zapewnia jedną aktywną sesję dziecka, zamiast dwóch konkurujących na dwóch urządzeniach: start dla tej samej talii wznawia aktywną sesję, a start dla innej talii kończy ją stanem ended i tworzy nową. Aktywna sesja jest wznawialna do 30 minut od ostatniego zdarzenia (wydanie zadania, próba albo ujawnienie); późniejszy start lub wznowienie zamyka przeterminowaną sesję jako ended i otwiera nową. Wartość 30 minut to parametr startowy. Stany terminalne różnią się znaczeniem: completed to jawny koniec z podsumowaniem (POST /end po wyczerpaniu budżetu lub decyzji dziecka), a ended to zamknięcie systemowe bez podsumowania (nadpisanie nową sesją albo przeterminowanie). Jedna sesja nie oznacza wyłączności przeglądarki: ujawnienia i odpowiedzi wszystkich klientów podlegają tej samej blokadzie serwerowej. Unikalny indeks w bazie wymusza tę zasadę. Krótka blokada wiersza sesji serializuje kolejne zadania i próby, bez blokowania na czas odpowiedzi dziecka.
 
 ### 9.1a. Zakończenie prezentacji i zadania
 
 POST /api/v1/kid/tasks/:id/complete-presentation przyjmuje clientCommandId i kończy tylko zadanie exposure: issued → completed. Nie tworzy attempt ani assessment i nie zużywa budżetu ocenianych zadań. Endpoint attempts odrzuca odpowiedzi do exposure; prezentację można również zakończyć przez zamknięcie całej sesji. Kolejne wywołanie dla tego samego zakończonego task zwraca ten sam rezultat, bez zakończenia nowego zadania. Polecenie dla zadania ocenianego jest odrzucane.
 
-Dla zadań ocenianych pierwsza błędna odpowiedź może pozostawić task w issued dla drugiej próby. Poprawna odpowiedź kończy task jako answered. Drugi błąd lub „Nie pamiętam” kończy go jako answered i kieruje do wsparcia, a „Pomiń” do skipped. Błąd techniczny nie nalicza błędu wiedzy i pozwala ponowić nagranie albo pominąć. next nie zamyka zadań domyślnie: dla issued zwraca to samo zadanie, a nowe tworzy dopiero po terminalnym stanie poprzedniego. Serwer kontroluje warunki przejścia pod blokadą sesji; odpowiedź dla zakończonego task nie tworzy kolejnej próby. Transportowy retry istniejącego attempt zwraca jego wynik.
+Dla zadań ocenianych pierwsza błędna odpowiedź może pozostawić task w issued dla drugiej próby. Poprawna odpowiedź kończy task jako answered. Drugi błąd lub „Nie pamiętam” kończy go jako answered i kieruje do wsparcia, a „Pomiń” do skipped. „Nie pamiętam” w kontekście niezależnym zapisujemy jako ocenę incorrect z reason dont_remember i independent=true: przerywa serię sukcesów, ale nie tworzy mylonej pary; „Pomiń” zostawia wyłącznie próbę modality skip, bez ocen. Błąd techniczny nie nalicza błędu wiedzy i pozwala ponowić nagranie albo pominąć. next nie zamyka zadań domyślnie: dla issued zwraca to samo zadanie, a nowe tworzy dopiero po terminalnym stanie poprzedniego. Serwer kontroluje warunki przejścia pod blokadą sesji; odpowiedź dla zakończonego task nie tworzy kolejnej próby. Transportowy retry istniejącego attempt zwraca jego wynik.
 
 ### 9.2. Wydarzenia kontaktu i ujawnienia
 
@@ -161,11 +163,11 @@ Sesja i client response zawierają identyfikator zadania/kroku. Odpowiedź dla s
 
 learning_policy jest niezmiennym JSON-em identyfikowanym np. learning-v1, przypiętym do sesji. Odwzorowuje SPEC: 300 sekund od ujawnienia, trzy ostatnie kwalifikujące sukcesy, potwierdzenie innego dnia i po 12 godzinach, dwa błędy przed wsparciem. Warunek 12 godzin bierze kontakt z poprzednich sesji zapisany przy starcie aktualnej sesji; późniejszy kontakt w bieżącej sesji nie kasuje tej historycznej podstawy, lecz nadal obowiązuje warunek 300 sekund.
 
-Recall i spelling mają osobne wyniki. Dla reading kierunek ćwiczenia jest zachowany; status opanowania wymaga sukcesów obejmujących oba kierunki. Listening i reading wstępnie używają trzech wiarygodnych prób z potwierdzeniem po przerwie, bez reguły 300 sekund odnoszącej się do przypominania angielskiego rozwiązania. Wymowa korzysta z pasm skalibrowanych w próbie technicznej i potwierdzenia w późniejszej sesji; widoczny wzorzec jest dla niej dozwolony.
+Recall i spelling mają osobne wyniki. Dla reading kierunek ćwiczenia jest zachowany: ocena rozpoznawania zapisuje direction (en→pl albo pl→en) w details, a opanowanie wymaga, aby wśród trzech ostatnich kwalifikujących sukcesów znalazł się co najmniej jeden w każdym kierunku. Projekcja liczy kierunki z ocen; child_skill_progress nie dostaje osobnej kolumny kierunku. Listening i reading wstępnie używają trzech wiarygodnych prób z potwierdzeniem po przerwie, bez reguły 300 sekund odnoszącej się do przypominania angielskiego rozwiązania. Wymowa korzysta z pasm skalibrowanych w próbie technicznej i potwierdzenia w późniejszej sesji; widoczny wzorzec jest dla niej dozwolony.
 
 Proponowany scheduler v1: priorytety zamiast trudnego do wyjaśnienia losowego score.
 
-Na początku planowania serwer rezerwuje należne, już kwalifikujące się sprawdzenia Recall/pisowni przed ponownym ujawnieniem ich celów. Dopóki taki sprawdzian oczekuje, inne zadanie nie może pokazać/odtworzyć celu ani użyć go jako dystraktora lub jawnego fragmentu wyrazu. Scheduler dobiera inne dystraktory, mniej opcji albo najpierw wykonuje zarezerwowany sprawdzian. Zapisuje decyzję w kontekście sesji. Po sprawdzeniu lub świadomym pominięciu zwalnia rezerwację; podpowiedź poproszona przez dziecko kończy niezależne sprawdzanie jako wspomagane. Gdy ten sam cel wymaga Recall i pisowni, jedna odpowiedź pisemna może dostarczyć obu wyników, zanim feedback ujawni słowo.
+Na początku planowania serwer rezerwuje należne, już kwalifikujące się sprawdzenia Recall/pisowni przed ponownym ujawnieniem ich celów. Dopóki taki sprawdzian oczekuje, inne zadanie nie może pokazać/odtworzyć celu ani użyć go jako dystraktora lub jawnego fragmentu wyrazu. Scheduler dobiera inne dystraktory, mniej opcji albo najpierw wykonuje zarezerwowany sprawdzian. Zapisuje decyzję w kontekście sesji. Po sprawdzeniu lub świadomym pominięciu zwalnia rezerwację; podpowiedź poproszona przez dziecko kończy niezależne sprawdzanie jako wspomagane. Feedback ujawnia wyłącznie rozwiązanie własnego zadania i treści, które to zadanie już pokazało; nie nazywa celów objętych aktywną rezerwacją. Gdy ten sam cel wymaga Recall i pisowni, jedna odpowiedź pisemna może dostarczyć obu wyników, zanim feedback ujawni słowo.
 
 Nie wymuszamy sprawdzania nieznanych słów ani oczekiwania na zegar. Jeśli warunek przerwy nie jest spełniony, wybieramy utrwalanie i planujemy niezależny sprawdzian na później. Testy obejmują kolejną sesję znającego materiał dziecka, nie tylko pierwszą naukę.
 
@@ -173,7 +175,7 @@ Po tej ochronie kolejności obowiązują pozostałe priorytety. Najpierw zaległ
 
 Początkowe odstępy po sukcesach: 1 dzień, 3 dni, 7 dni; po trudności — powrót po innych elementach w sesji oraz następnego dnia. Błędy techniczne nie przesuwają harmonogramu jak błędy wiedzy. Przy sprawdzianie w ciągu 48 godzin trudności i pisownia mają pierwszeństwo przed nowym materiałem, ale progi opanowania nie zmieniają się.
 
-Sesja domyślnie ma budżet 12 ocenianych zadań i do 10 minut, z możliwością wcześniejszego końca. To maksymalny budżet, nie obowiązek. Ponowienia i zadania wspomagające mieszczą się w nim; prezentacja/feedback nie powiększają go. Po komunikacie „Jeszcze 3” rezerwujemy trzy pozostałe zadania, bez dokładania zadań naprawczych poza budżetem. Parametry są propozycjami startowymi architektury, do kalibracji z dzieckiem.
+Sesja domyślnie ma budżet 12 ocenianych zadań i do 10 minut, z możliwością wcześniejszego końca. To maksymalny budżet, nie obowiązek. Ponowienia i zadania wspomagające mieszczą się w nim; prezentacja/feedback nie powiększają go. Po komunikacie „Jeszcze 3” rezerwujemy trzy pozostałe zadania, bez dokładania zadań naprawczych poza budżetem. Limit czasu egzekwujemy tylko między zadaniami, przy planowaniu next: po jego przekroczeniu serwer nie wydaje nowych zadań ocenianych i prowadzi sesję do zakończenia; nie przerywa zadania w trakcie ani obietnicy „Jeszcze N” — zarezerwowane zadania są dokończone, bo obietnica wobec dziecka waży więcej niż miękki limit. Parametry są propozycjami startowymi architektury, do kalibracji z dzieckiem.
 
 ## 10. Zapis odpowiedzi i niezawodność
 
@@ -181,7 +183,7 @@ POST attempts przyjmuje clientAttemptId, taskId i odpowiedź. Unikalność (chil
 
 Dla odpowiedzi tekstowej cała ocena, zapis próby, ocen per umiejętność i projekcji jest jedną transakcją. Dla mowy rezerwujemy attempt w processing, wykonujemy analizę poza transakcją, następnie atomowo finalizujemy rekord i projekcje. Finalizacja jest jednokrotna przez compare-and-set stanu. Próby completed są niezmienne.
 
-Retry przy completed zwraca ten sam wynik. Retry przy processing nie uruchamia drugiej płatnej analizy; klient otrzymuje 202 z adresem odczytu statusu. Jeśli proces padł, stare processing po 60 sekundach finalizuje się jako nieocenione; nowe nagranie jest nową próbą. Nie odtwarzamy analizy z utrwalonego audio, bo go nie przechowujemy.
+Retry przy completed zwraca ten sam wynik. Retry przy processing nie uruchamia drugiej płatnej analizy; klient otrzymuje 202 z adresem odczytu statusu. Jeśli proces padł, stare processing po 60 sekundach finalizuje się jako nieocenione; nowe nagranie jest nową próbą. Finalizacja przeterminowanych prób jest leniwa i nie ma osobnego joba w tle: readAttempt oraz submitAttempt dla tego samego zadania przed obsługą żądania zamieniają processing starsze niż 60 sekund w nieocenione, co otwiera drogę nowej próbie. Nie odtwarzamy analizy z utrwalonego audio, bo go nie przechowujemy.
 
 Nie gwarantujemy zapisu odpowiedzi, która nigdy nie dotarła do serwera. UI pokazuje błąd/stan zapisu, a nie fałszywy sukces. Nie wprowadzamy pełnej kolejki offline.
 
@@ -224,13 +226,15 @@ Wspólny format błędu: {code, message, retryable, requestId}. Walidacja na gra
 | Kid | POST /api/v1/kid/tasks/:id/attempts | Wynik tekstowy/wybór/nie pamiętam; multipart dla audio |
 | Kid | GET /api/v1/kid/attempts/:id | Wynik trwającej lub zakończonej oceny |
 | Kid | POST /api/v1/kid/sessions/:id/end | Koniec i podsumowanie |
-| Media | GET /api/v1/media/:id | Chroniony plik zatwierdzonego materiału |
+| Media | GET /api/v1/media/:id | Zasób state=ready po opaque ID; same-origin, bez CORS; nie wyznacza ekspozycji |
 
-Edycja obrazów, dodawanie/usuwanie kart i ponawianie konkretnego zasobu korzystają z PATCH draft lub dedykowanego polecenia retry generationRun; nie wymagają oddzielnego frameworka workflow. Szczegółowe DTO zdefiniuje pierwsza implementacja contracts na podstawie tych operacji.
+Edycja obrazów, dodawanie/usuwanie kart i ponawianie konkretnego zasobu korzystają z PATCH draft lub dedykowanego polecenia retry generationRun; nie wymagają oddzielnego frameworka workflow. Szczegółowe DTO zdefiniuje pierwsza implementacja contracts na podstawie tych operacji. Całość Kid API, w tym odczyt attempts/:id, działa w zaufanym modelu bez autoryzacji dziecka (sekcja 13); odczyt zwraca stan i feedback, nigdy answer_key ani techniczny score.
 
 ## 13. Autoryzacja i prywatność
 
-MVP pozostaje jednorodzinne. Hash hasła/PIN rodzica jest w bazie; scrypt z parametrami zapisanymi w formacie hasha, stałoczasowa weryfikacja i limit prób logowania. Cookie HttpOnly, Secure przy HTTPS, SameSite oraz kontrola Origin/CSRF przy mutacjach. Surowe tokeny sesji nigdy nie trafiają do bazy; przechowujemy ich hash i czas wygaśnięcia.
+MVP pozostaje jednorodzinne. Hash hasła/PIN rodzica jest w bazie; scrypt z parametrami zapisanymi w formacie hasha, stałoczasowa weryfikacja i limit prób logowania. Cookie HttpOnly, Secure przy HTTPS, SameSite oraz kontrola Origin/CSRF przy mutacjach. Surowe tokeny sesji nigdy nie trafiają do bazy; przechowujemy ich hash i czas wygaśnięcia. Wygasłe parent_sessions są usuwane leniwie przy weryfikacji i przy logowaniu; indeks na expires_at ułatwia porządkowanie.
+
+Pierwsze uruchomienie: dopóki w parent_credentials nie ma wiersza, ekran logowania pokazuje jednorazowy setup początkowego PIN-u/hasła zamiast formularza logowania. Pojedynczy wiersz o kluczu głównym id = 1 rozstrzyga próbę równoczesnej konfiguracji — wygrywa pierwsza, pozostałe dostają błąd i zwykły formularz. Po utworzeniu poświadczeń setup jest niedostępny; zmiana danych wymaga zalogowania.
 
 Kid Mode nie ma kont dzieci. Wybór profilu nie jest zabezpieczeniem przed rodzeństwem. Dostęp do całej instancji jest zaufanym dostępem rodzinnym. Do czasu osobnego ustalenia zdalnego dostępu instancja nie jest publicznie wystawiana. Zalecany pierwszy wariant zdalny to prywatny VPN/brama dostępu przed aplikacją; wybór produktu jest poza tym etapem. Sam PIN rodzica nie zabezpiecza publicznego Kid API.
 
