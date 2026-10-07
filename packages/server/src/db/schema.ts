@@ -97,7 +97,7 @@ export const deckVersions = app.table(
     versionNumber: integer("version_number").notNull(),
     editNumber: integer("edit_number").notNull().default(1),
     // review: szkic kompletny po generacji, oczekuje na przegląd; nadal edytowalny
-    state: text("state").notNull(),
+    state: text("state").$type<"draft" | "review" | "published">().notNull(),
     title: text("title").notNull(),
     sourceLocale: text("source_locale").notNull().default("pl-PL"),
     targetLocale: text("target_locale").notNull().default("en-GB"),
@@ -306,10 +306,10 @@ export const revisionAssets = app.table(
     itemRevisionId: uuid("item_revision_id")
       .notNull()
       .references((): AnyPgColumn => itemRevisions.id),
-    role: text("role").notNull(),
+    role: text("role").$type<"target_audio" | "example_audio" | "illustration">().notNull(),
     assetId: uuid("asset_id").references((): AnyPgColumn => mediaAssets.id),
     expectedFingerprint: text("expected_fingerprint").notNull(),
-    state: text("state").notNull(),
+    state: text("state").$type<"pending" | "approved" | "omitted">().notNull(),
   },
   (t) => [
     check("revision_assets_role_allowed", sql`${t.role} in ('target_audio', 'example_audio', 'illustration')`),

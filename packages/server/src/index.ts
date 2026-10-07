@@ -11,3 +11,11 @@ export {
   SESSION_TTL_MS,
 } from "./modules/auth";
 export { listChildren, createChild, deleteChild } from "./modules/profiles";
+export {
+  createDraft,
+  editDraft,
+  publishDraft,
+} from "./modules/decks";
+export { classifyRevisionImpact, buildSkillCriteria } from "./domain/revision-impact";
+export { computeTargetKey, normalizeTargetText } from "./domain/target-key";
+export { SKILLS, isSkill, type Skill } from "./domain/types";
