@@ -82,7 +82,10 @@ function answerKeyOf(task: TaskRow): AnswerKey {
 
 /**
  * Wsparcie użyte w zadaniu przed próbą (SPEC §13.2). Odsłuch w zadaniu ze słuchu
- * to pytanie, nie wsparcie; widoczne litery uzupełniania są podpowiedzią z definicji.
+ * to pytanie, nie wsparcie; widoczne litery uzupełniania są podpowiedzią z
+ * definicji. Wzorzec w ćwiczeniu wymowy jest oczekiwaną częścią nauki i nie
+ * dyskwalifikuje oceny samej wymowy — wsparciem jest tylko tam, gdzie ujawnia
+ * rozwiązanie (zadania przypominania i pisowni).
  */
 async function assistanceFor(tx: Tx, task: TaskRow): Promise<AssistanceKind[]> {
   const kinds: AssistanceKind[] = [];
@@ -96,7 +99,7 @@ async function assistanceFor(tx: Tx, task: TaskRow): Promise<AssistanceKind[]> {
   for (const row of disclosures) {
     if (row.kind === "hint_issued") {
       kinds.push("answer_reveal");
-    } else if (task.exerciseType !== "listening") {
+    } else if (RECALL_LIKE.has(task.exerciseType)) {
       kinds.push("model_audio");
     }
   }
@@ -147,6 +150,9 @@ function gradeOf(input: AttemptInput, key: AnswerKey, ctx: EvaluationContext): G
       return evaluateNonAnswer("dont_remember", key, ctx);
     case "skip":
       return evaluateNonAnswer("skip", key, ctx);
+    case "audio":
+      // nieosiągalne: ścieżka audio przechodzi przez submitSpeechAttempt
+      throw new AppError("validation", { message: "speech attempts require the audio path" });
   }
 }
 
@@ -325,7 +331,11 @@ async function finalizeAttemptRow(
   const correctText = correctTextOf(task, key);
   const feedback: FeedbackDto = chooseFeedback(grade, correctText);
   const chosenText =
-    modality === "choice" ? ((attempt.answer as { optionText?: string } | null)?.optionText ?? "") : null;
+    modality === "choice"
+      ? ((attempt.answer as { optionText?: string } | null)?.optionText ?? "")
+      : modality === "audio"
+        ? ((attempt.answer as { transcript?: string | null } | null)?.transcript ?? null)
+        : null;
 
   if (modality !== "skip") {
     const skillRows = await tx
@@ -341,8 +351,9 @@ async function finalizeAttemptRow(
       }
       const details: Record<string, unknown> = { ...(skillGrade.details ?? {}) };
       if (chosenText !== null && skillGrade.outcome === "incorrect") {
-        // konkretna pomyłka z zachowaniem kierunku (SPEC §21); „Nie pamiętam”
-        // i próby niewiarygodne pary nie tworzą
+        // konkretna pomyłka z zachowaniem kierunku (SPEC §21); „Nie pamiętam”,
+        // próby techniczne i niepewne rozpoznanie pary nie tworzą — dla mowy
+        // transkrypcja trafia tutaj tylko przy wiarygodnym rozpoznaniu
         details.confusion = { expected: correctText, answered: chosenText };
       }
       await tx.insert(assessments).values({
@@ -424,6 +435,126 @@ async function rereadTaskState(tx: Tx, taskId: string): Promise<string> {
 }
 
 /**
+ * Wynik rozpoczęcia próby: istniejąca/processing odpowiedź klienta albo komplet
+ * danych świeżej próby z zamrożonym kontekstem (wspólne dla odpowiedzi pisemnych
+ * i ścieżki mowy z zadania 8).
+ */
+export type AttemptStart =
+  | { kind: "dto"; dto: AttemptDto }
+  | {
+      kind: "fresh";
+      task: TaskRow;
+      session: SessionRow;
+      itemId: string;
+      policy: Policy;
+      frozen: FrozenContext;
+      key: AnswerKey;
+      targetKey: string;
+      attemptNumber: number;
+      requestHash: string;
+      receivedAt: Date;
+    };
+
+/**
+ * Wspólny wstęp przyjęcia odpowiedzi (arch §9.1a, §9.2): blokada sesji,
+ * idempotencja clientAttemptId, leniwa finalizacja przeterminowanych prób,
+ * walidacje stanu i zamrożenie kontekstu kwalifikacji przy received_at.
+ */
+export async function startAttempt(
+  tx: Tx,
+  services: Services,
+  valid: AttemptInput,
+): Promise<AttemptStart> {
+  const { task, session, itemId } = await lockTaskWithSession(tx, valid.taskId);
+  const now = services.clock.now();
+
+  const existing = (
+    await tx
+      .select()
+      .from(attempts)
+      .where(and(eq(attempts.childId, task.childId), eq(attempts.clientAttemptId, valid.clientAttemptId)))
+  )[0];
+  if (existing) {
+    if (existing.requestHash !== requestHashOf(valid)) {
+      throw new AppError("conflict", { message: "clientAttemptId reused with different answer" });
+    }
+    await lazyFinalizeProcessing(tx, task, session, itemId, now);
+    const fresh = (await tx.select().from(attempts).where(eq(attempts.id, existing.id)))[0]!;
+    const state = await rereadTaskState(tx, task.id);
+    if (fresh.state === "completed" && fresh.feedback) {
+      const stepId = await discloseFeedback(
+        tx,
+        task,
+        task.childId,
+        itemId,
+        fresh.feedback as FeedbackDto,
+        await targetKeyOf(tx, task),
+        now,
+      );
+      return { kind: "dto", dto: dtoOf(fresh, state, stepId) };
+    }
+    return { kind: "dto", dto: dtoOf(fresh, state) };
+  }
+
+  // leniwa finalizacja najpierw: zwalnia jedyną próbę processing zadania
+  await lazyFinalizeProcessing(tx, task, session, itemId, now);
+
+  if (session.state !== "active") {
+    throw new AppError("conflict", { message: "session is closed" });
+  }
+  if (task.exerciseType === "exposure") {
+    throw new AppError("validation", { message: "presentation tasks take no attempts" });
+  }
+  if (task.state !== "issued") {
+    throw new AppError("conflict", { message: "task is no longer issued" });
+  }
+
+  // świeża próba processing (audio) nie uruchamia drugiej analizy — klient
+  // dostaje ten sam rekord do odpytywania (arch §9.2a)
+  const processing = (
+    await tx
+      .select()
+      .from(attempts)
+      .where(and(eq(attempts.taskId, task.id), eq(attempts.state, "processing")))
+  )[0];
+  if (processing) {
+    return { kind: "dto", dto: dtoOf(processing, await rereadTaskState(tx, task.id)) };
+  }
+
+  const priorAttempts = await tx.select({ id: attempts.id }).from(attempts).where(eq(attempts.taskId, task.id));
+  const attemptNumber = priorAttempts.length + 1;
+
+  const policy = await loadPolicy(tx, session.policyId);
+  const targetKey = await targetKeyOf(tx, task);
+  const sessionContext = contextOf(session);
+  const frozen: FrozenContext = {
+    receivedAt: now.toISOString(),
+    policyVersion: policy.version,
+    lastExposureAt: RECALL_LIKE.has(task.exerciseType)
+      ? await lastExposureAt(tx, task.childId, targetKey)
+      : null,
+    firstTry: attemptNumber === 1,
+    assistance: await assistanceFor(tx, task),
+    previousSessionContactAt: sessionContext.previousContact[itemId] ?? null,
+    timezone: sessionContext.timezone,
+  };
+
+  return {
+    kind: "fresh",
+    task,
+    session,
+    itemId,
+    policy,
+    frozen,
+    key: answerKeyOf(task),
+    targetKey,
+    attemptNumber,
+    requestHash: requestHashOf(valid),
+    receivedAt: now,
+  };
+}
+
+/**
  * Przyjmuje odpowiedź dziecka (arch §9.1a, §9.2). Kontekst kwalifikacji zamraża
  * się przy received_at pod blokadą sesji; dla odpowiedzi pisemnych cała ocena,
  * projekcja i ujawnienie feedbacku są jedną transakcją. `clientAttemptId`
@@ -431,109 +562,53 @@ async function rereadTaskState(tx: Tx, taskId: string): Promise<string> {
  */
 export async function submitAttempt(services: Services, input: AttemptInput): Promise<AttemptDto> {
   const valid = AttemptInputSchema.parse(input);
+  if (valid.modality === "audio") {
+    // bajty nagrania nie podróżują w JSON — ścieżka mowy jest osobna (arch §11)
+    throw new AppError("validation", { message: "speech attempts require the audio path" });
+  }
   return services.db.transaction(async (tx) => {
-    const { task, session, itemId } = await lockTaskWithSession(tx, valid.taskId);
-    const now = services.clock.now();
-
-    const existing = (
-      await tx
-        .select()
-        .from(attempts)
-        .where(and(eq(attempts.childId, task.childId), eq(attempts.clientAttemptId, valid.clientAttemptId)))
-    )[0];
-    if (existing) {
-      if (existing.requestHash !== requestHashOf(valid)) {
-        throw new AppError("conflict", { message: "clientAttemptId reused with different answer" });
-      }
-      await lazyFinalizeProcessing(tx, task, session, itemId, now);
-      const fresh = (await tx.select().from(attempts).where(eq(attempts.id, existing.id)))[0]!;
-      const state = await rereadTaskState(tx, task.id);
-      if (fresh.state === "completed" && fresh.feedback) {
-        const stepId = await discloseFeedback(
-          tx,
-          task,
-          task.childId,
-          itemId,
-          fresh.feedback as FeedbackDto,
-          await targetKeyOf(tx, task),
-          now,
-        );
-        return dtoOf(fresh, state, stepId);
-      }
-      return dtoOf(fresh, state);
+    const started = await startAttempt(tx, services, valid);
+    if (started.kind !== "fresh") {
+      return started.dto;
     }
-
-    // leniwa finalizacja najpierw: zwalnia jedyną próbę processing zadania
-    await lazyFinalizeProcessing(tx, task, session, itemId, now);
-
-    if (session.state !== "active") {
-      throw new AppError("conflict", { message: "session is closed" });
-    }
-    if (task.exerciseType === "exposure") {
-      throw new AppError("validation", { message: "presentation tasks take no attempts" });
-    }
-    if (task.state !== "issued") {
-      throw new AppError("conflict", { message: "task is no longer issued" });
-    }
-
-    // świeża próba processing (audio) nie uruchamia drugiej analizy — klient
-    // dostaje ten sam rekord do odpytywania (arch §9.2a)
-    const processing = (
-      await tx
-        .select()
-        .from(attempts)
-        .where(and(eq(attempts.taskId, task.id), eq(attempts.state, "processing")))
-    )[0];
-    if (processing) {
-      return dtoOf(processing, await rereadTaskState(tx, task.id));
-    }
-
-    const priorAttempts = await tx.select({ id: attempts.id }).from(attempts).where(eq(attempts.taskId, task.id));
-    const attemptNumber = priorAttempts.length + 1;
-
-    const policy = await loadPolicy(tx, session.policyId);
-    const targetKey = await targetKeyOf(tx, task);
-    const sessionContext = contextOf(session);
-    const frozen: FrozenContext = {
-      receivedAt: now.toISOString(),
-      policyVersion: policy.version,
-      lastExposureAt: RECALL_LIKE.has(task.exerciseType)
-        ? await lastExposureAt(tx, task.childId, targetKey)
-        : null,
-      firstTry: attemptNumber === 1,
-      assistance: await assistanceFor(tx, task),
-      previousSessionContactAt: sessionContext.previousContact[itemId] ?? null,
-      timezone: sessionContext.timezone,
-    };
-    const ctx: EvaluationContext = { ...frozen, policy };
-
-    const key = answerKeyOf(task);
-    const grade = gradeOf(valid, key, ctx);
+    const ctx: EvaluationContext = { ...started.frozen, policy: started.policy };
+    const grade = gradeOf(valid, started.key, ctx);
 
     const answer =
       valid.modality === "text"
         ? { text: valid.text }
         : valid.modality === "choice"
-          ? { optionId: valid.optionId, optionText: optionTextOf(task, valid.optionId) }
+          ? { optionId: valid.optionId, optionText: optionTextOf(started.task, valid.optionId) }
           : null;
     const attemptId = randomUUID();
     await tx.insert(attempts).values({
       id: attemptId,
-      childId: task.childId,
-      taskId: task.id,
-      itemRevisionId: task.itemRevisionId,
+      childId: started.task.childId,
+      taskId: started.task.id,
+      itemRevisionId: started.task.itemRevisionId,
       clientAttemptId: valid.clientAttemptId,
-      requestHash: requestHashOf(valid),
-      attemptNumber,
+      requestHash: started.requestHash,
+      attemptNumber: started.attemptNumber,
       modality: valid.modality,
       state: "processing",
       answer,
-      context: frozen as unknown as Record<string, unknown>,
-      policyId: session.policyId,
-      receivedAt: now,
+      context: started.frozen as unknown as Record<string, unknown>,
+      policyId: started.session.policyId,
+      receivedAt: started.receivedAt,
     });
     const attempt = (await tx.select().from(attempts).where(eq(attempts.id, attemptId)))[0]!;
-    return finalizeAttemptRow(tx, task, session, itemId, attempt, valid.modality, grade, policy, targetKey, now);
+    return finalizeAttemptRow(
+      tx,
+      started.task,
+      started.session,
+      started.itemId,
+      attempt,
+      valid.modality,
+      grade,
+      started.policy,
+      started.targetKey,
+      started.receivedAt,
+    );
   });
 }
 
@@ -572,10 +647,27 @@ export async function readAttempt(services: Services, attemptId: string): Promis
 }
 
 /**
+ * Zachowany wynik ścieżki mowy zapisywany w answer (SPEC §20, §26): potrzebna
+ * transkrypcja i identyfikacja providerów — nigdy surowe odpowiedzi usług
+ * ani bajty nagrania.
+ */
+export interface AttemptAnswerPatch {
+  transcript: string | null;
+  sttProvider: string | null;
+  pronunciationProvider: string | null;
+}
+
+/**
  * Finalizacja próby z gotową oceną — ścieżka oceny mowy (zadanie 8) i testów
  * awarii. Idempotentna: ponowne wywołanie dla próby completed zwraca jej wynik.
+ * `answer` uzupełnia rekord przetworzonej próby w tej samej transakcji.
  */
-export async function finalizeAttempt(services: Services, attemptId: string, grade: Grade): Promise<AttemptDto> {
+export async function finalizeAttempt(
+  services: Services,
+  attemptId: string,
+  grade: Grade,
+  answer?: AttemptAnswerPatch,
+): Promise<AttemptDto> {
   const id = UuidSchema.parse(attemptId);
   return services.db.transaction(async (tx) => {
     const taskRef = (await tx.select({ taskId: attempts.taskId }).from(attempts).where(eq(attempts.id, id)))[0];
@@ -608,14 +700,30 @@ export async function finalizeAttempt(services: Services, attemptId: string, gra
       return dtoOf(attempt, freshTask.state);
     }
 
+    if (answer) {
+      await tx
+        .update(attempts)
+        .set({
+          answer: {
+            transcript: answer.transcript === null ? null : answer.transcript.slice(0, 200),
+            stt: answer.sttProvider,
+            pronunciation: answer.pronunciationProvider,
+          } as unknown as Record<string, unknown>,
+        })
+        .where(and(eq(attempts.id, id), eq(attempts.state, "processing")));
+    }
+    const current = answer
+      ? (await tx.select().from(attempts).where(eq(attempts.id, id)))[0]!
+      : attempt;
+
     const policy = await loadPolicy(tx, attempt.policyId);
     return finalizeAttemptRow(
       tx,
       task,
       session,
       itemId,
-      attempt,
-      attempt.modality as AnyModality,
+      current,
+      current.modality as AnyModality,
       grade,
       policy,
       targetKey,

@@ -60,7 +60,13 @@ export {
   imageFingerprint,
   illustrationPrompt,
 } from "./domain/media-fingerprint";
-export { SKILLS, isSkill, type Skill, type ExerciseType } from "./domain/types";
+export {
+  SKILLS,
+  isSkill,
+  type Skill,
+  type ExerciseType,
+  type PronunciationDetails,
+} from "./domain/types";
 export { LEARNING_V1_POLICY } from "./policies/learning-v1";
 export { ensureLearningPolicy, loadPolicy, CURRENT_POLICY_ID, PolicyConfigSchema } from "./policies/registry";
 export {
@@ -92,12 +98,34 @@ export type {
   TtsSynthesizeInput,
   ImageProvider,
   ImageGenerateInput,
+  AudioInput,
+  TranscriptionResult,
+  PronunciationResult,
+  SpeechEvidence,
+  SttProvider,
+  PronunciationProvider,
 } from "./ports/ai";
 export type { MediaStore, StoredBlob } from "./ports/media";
 export { createLocalMediaStore } from "./providers/media/local";
 export { createOpenAiLlmProvider } from "./providers/openai/llm";
 export { createOpenAiTtsProvider } from "./providers/openai/tts";
 export { createOpenAiImageProvider } from "./providers/images/openai";
+export { createAzureSttProvider } from "./providers/azure/stt";
+export { createAzurePronunciationProvider } from "./providers/azure/pronunciation";
+export {
+  MAX_AUDIO_BYTES,
+  MAX_AUDIO_SECONDS,
+  MULTIPART_OVERHEAD_BYTES,
+  normalizeAudioInput,
+} from "./providers/audio/normalize";
+export {
+  analyzeSpeech,
+  assessSpeechEvidence,
+  submitSpeechAttempt,
+  MIN_STT_CONFIDENCE,
+  SPEECH_ANALYSIS_TIMEOUT_MS,
+  type SpeechAttemptInput,
+} from "./modules/speech";
 export {
   deterministicBytes,
   fakeGenerationDeps,

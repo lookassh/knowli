@@ -35,5 +35,9 @@ export function chooseFeedback(grade: Grade, correctText: string): FeedbackChoic
     );
     return capitalization ? { kind: "capitalization_hint", correctText } : { kind: "almost" };
   }
+  // wymowa blisko progu — „Prawie! Posłuchaj jeszcze raz” (SPEC §16, §18)
+  if (assessed.some((skill) => skill.details?.pronunciation?.band === "partial")) {
+    return { kind: "almost" };
+  }
   return { kind: "incorrect", correctText };
 }

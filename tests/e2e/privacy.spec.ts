@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import {
   ApiErrorSchema,
@@ -117,6 +118,63 @@ test("kid API prowadzi sesję bez ujawniania kluczy odpowiedzi", async ({ page }
   const session = await sessionResponse.json();
   expect(SessionDtoSchema.safeParse(session).success).toBe(true);
   expectNoSecrets(session);
+
+  // ścieżka mowy (zadanie 8): multipart z realnym kontenerem przechodzi przez
+  // router, ale odpowiedź ustna należy tylko do zadań recall/speech — zadanie
+  // rozpoznawania odrzuca ją walidacją, a limit strumienia ucina nadmiar
+  let speechTask: { taskId: string; exerciseType: string } | null = null;
+  for (let step = 0; step < 10 && speechTask === null; step++) {
+    const response = await parent.post(`/api/v1/kid/sessions/${session.sessionId}/next`);
+    expect(response.status()).toBe(200);
+    const task = await response.json();
+    if (task === null) break;
+    if (task.exerciseType !== "exposure") {
+      speechTask = task;
+      break;
+    }
+    await parent.post(`/api/v1/kid/tasks/${task.taskId}/complete-presentation`, {
+      data: { clientCommandId: randomUUID() },
+    });
+  }
+  expect(speechTask).not.toBeNull();
+
+  // krótkie WAV 8 kHz mono 16-bit — rzeczywisty kontener z wyliczalnym czasem
+  const dataBytes = 8000;
+  const wav = Buffer.alloc(44 + dataBytes);
+  wav.write("RIFF", 0, "ascii");
+  wav.writeUInt32LE(36 + dataBytes, 4);
+  wav.write("WAVE", 8, "ascii");
+  wav.write("fmt ", 12, "ascii");
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20);
+  wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(8000, 24);
+  wav.writeUInt32LE(16000, 28);
+  wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write("data", 36, "ascii");
+  wav.writeUInt32LE(dataBytes, 40);
+
+  const speech = await parent.post(`/api/v1/kid/tasks/${speechTask!.taskId}/attempts`, {
+    multipart: {
+      clientAttemptId: randomUUID(),
+      audio: { name: "recording.wav", mimeType: "audio/wav", buffer: wav },
+    },
+  });
+  expect(speech.status()).toBe(400);
+  const speechError = await speech.json();
+  expect(ApiErrorSchema.safeParse(speechError).success).toBe(true);
+  expectNoSecrets(speechError);
+
+  // nadmiarowy multipart odrzuca limit strumienia przed pełnym buforowaniem
+  const oversized = await parent.post(`/api/v1/kid/tasks/${speechTask!.taskId}/attempts`, {
+    multipart: {
+      clientAttemptId: randomUUID(),
+      audio: { name: "big.wav", mimeType: "audio/wav", buffer: Buffer.alloc(3 * 1024 * 1024, 1) },
+    },
+  });
+  expect(oversized.status()).toBe(400);
+  expect(ApiErrorSchema.safeParse(await oversized.json()).success).toBe(true);
 
   // kilkanaście kroków nauki: prezentacje kończymy, oceniane zadania obsługujemy
   const seenBodies: unknown[] = [session];

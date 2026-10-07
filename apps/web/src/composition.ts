@@ -4,6 +4,7 @@ import {
   createLocalMediaStore,
   createServices,
   mediaSettingsFromEnv,
+  speechFromEnv,
   systemClock,
   type Services,
 } from "@learning/server";
@@ -22,6 +23,7 @@ function initialize(): { services: Services; pool: Pool } {
     throw new Error("DATABASE_URL is not configured");
   }
   const { db, pool } = createDatabase(databaseUrl);
+  const speech = speechFromEnv(process.env);
   return {
     services: createServices({
       db,
@@ -29,6 +31,8 @@ function initialize(): { services: Services; pool: Pool } {
       media: mediaSettingsFromEnv(process.env),
       // web tylko wydaje gotowe zasoby (podgląd rodzica); generację wykonuje worker
       mediaStore: createLocalMediaStore(process.env.MEDIA_ROOT ?? "./data/media"),
+      // ścieżka mowy to krótkie żądanie web → provider, bez kolejki (arch §11)
+      ...(speech ? { speech } : {}),
     }),
     pool,
   };

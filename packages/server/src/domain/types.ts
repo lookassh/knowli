@@ -142,9 +142,20 @@ export interface SpellingDetails {
   capitalizationOnlyDefect: boolean;
 }
 
+/**
+ * Zachowany wynik usługi wymowy (SPEC §20, §23): identyfikacja providera
+ * i wynik ogólny; `band` powstaje tylko przy skalibrowanych pasmach polityki.
+ */
+export interface PronunciationDetails {
+  provider: string;
+  score: number;
+  band?: "correct" | "partial" | "below";
+}
+
 export interface SkillGradeDetails {
   direction?: ReadingDirection;
   spelling?: SpellingDetails;
+  pronunciation?: PronunciationDetails;
 }
 
 /**

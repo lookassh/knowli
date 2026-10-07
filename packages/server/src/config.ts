@@ -1,6 +1,14 @@
 import type { Database } from "./db/client";
-import type { ImageProvider, LlmProvider, TtsProvider } from "./ports/ai";
+import type {
+  ImageProvider,
+  LlmProvider,
+  PronunciationProvider,
+  SttProvider,
+  TtsProvider,
+} from "./ports/ai";
 import type { MediaStore } from "./ports/media";
+import { createAzurePronunciationProvider } from "./providers/azure/pronunciation";
+import { createAzureSttProvider } from "./providers/azure/stt";
 
 /** Zegar jako zależność — domena i moduły nie wołają Date.now() bezpośrednio. */
 export interface Clock {
@@ -49,9 +57,21 @@ export interface GenerationDeps {
 }
 
 /**
+ * Zależności ścieżki mowy (arch §11): krótkie żądanie web → provider, bez
+ * kolejki i bez trwałego audio. `analysisTimeoutMs` pozwala testom skrócić
+ * 30-sekundowy deadline produkcyjny.
+ */
+export interface SpeechDeps {
+  stt: SttProvider;
+  pronunciation: PronunciationProvider;
+  analysisTimeoutMs?: number;
+}
+
+/**
  * Zależności serwowe przekazywane do przypadków użycia. `media` pozwala webowi
  * uzgadniać zasoby w transakcji edycji; `generation` wykonuje pracę w tle;
- * `mediaStore` służy webowi do wydawania gotowych zasobów (podgląd rodzica).
+ * `mediaStore` służy webowi do wydawania gotowych zasobów (podgląd rodzica);
+ * `speech` obsługuje odpowiedzi ustne dziecka.
  */
 export interface Services {
   db: Database;
@@ -59,6 +79,7 @@ export interface Services {
   media?: MediaSettings;
   generation?: GenerationDeps;
   mediaStore?: MediaStore;
+  speech?: SpeechDeps;
 }
 
 export function createServices(
@@ -68,6 +89,7 @@ export function createServices(
     media?: MediaSettings;
     generation?: GenerationDeps;
     mediaStore?: MediaStore;
+    speech?: SpeechDeps;
   },
 ): Services {
   return {
@@ -76,5 +98,23 @@ export function createServices(
     ...(input.media ? { media: input.media } : {}),
     ...(input.generation ? { generation: input.generation } : {}),
     ...(input.mediaStore ? { mediaStore: input.mediaStore } : {}),
+    ...(input.speech ? { speech: input.speech } : {}),
+  };
+}
+
+/**
+ * Providerzy mowy ze zmiennych środowiskowych. Azure jest pierwszym kandydatem
+ * (arch §11); bez kluczy zależność pozostaje nieobecna i próby ustne kończą
+ * się wynikiem technicznym zamiast udawanej oceny.
+ */
+export function speechFromEnv(env: Record<string, string | undefined>): SpeechDeps | undefined {
+  const subscriptionKey = env.AZURE_SPEECH_KEY;
+  const region = env.AZURE_SPEECH_REGION;
+  if (!subscriptionKey || !region) {
+    return undefined;
+  }
+  return {
+    stt: createAzureSttProvider({ subscriptionKey, region }),
+    pronunciation: createAzurePronunciationProvider({ subscriptionKey, region }),
   };
 }

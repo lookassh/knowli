@@ -10,6 +10,9 @@ import {
   recordEvent,
   startSession,
   submitAttempt,
+  submitSpeechAttempt,
+  MULTIPART_OVERHEAD_BYTES,
+  MAX_AUDIO_BYTES,
   type Services,
 } from "@learning/server";
 import {
@@ -20,6 +23,7 @@ import {
 } from "@learning/contracts";
 import { readJson } from "@/http/errors";
 import { assertSameOrigin } from "@/http/security";
+import { readCappedFormData } from "./multipart";
 
 /**
  * Router Kid API pod /api/v1/kid/* (ścieżki wg architecture.md §12). Model
@@ -88,6 +92,31 @@ export async function handleKidApi(
       );
     }
     if (request.method === "POST" && third === "attempts") {
+      const contentType = request.headers.get("content-type") ?? "";
+      if (contentType.startsWith("multipart/form-data")) {
+        // odpowiedź ustna: multipart z bajtami nagrania (arch §11–12); limit
+        // strumienia odrzuca nadmiarowy payload przed pełnym buforowaniem
+        const form = await readCappedFormData(request, MAX_AUDIO_BYTES + MULTIPART_OVERHEAD_BYTES);
+        const audio = form.get("audio");
+        const clientAttemptId = form.get("clientAttemptId");
+        if (!(audio instanceof File) || typeof clientAttemptId !== "string") {
+          throw new AppError("validation", { message: "audio file and clientAttemptId are required" });
+        }
+        const attempt = await submitSpeechAttempt(
+          services,
+          {
+            taskId: second,
+            clientAttemptId: UuidSchema.parse(clientAttemptId),
+          },
+          {
+            bytes: new Uint8Array(await audio.arrayBuffer()),
+            mimeType: audio.type || "application/octet-stream",
+            locale: "en-GB",
+          },
+          request.signal,
+        );
+        return Response.json(attempt, { status: attempt.state === "processing" ? 202 : 200 });
+      }
       const input = AttemptInputSchema.parse({ ...((await readJson(request)) as object), taskId: second });
       const attempt = await submitAttempt(services, input);
       return Response.json(attempt, { status: attempt.state === "processing" ? 202 : 200 });

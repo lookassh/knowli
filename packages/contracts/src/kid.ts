@@ -176,13 +176,14 @@ export const FeedbackDtoSchema = z.object({
 });
 export type FeedbackDto = z.infer<typeof FeedbackDtoSchema>;
 
-export const AttemptModalitySchema = z.enum(["choice", "text", "dont_remember", "skip"]);
+export const AttemptModalitySchema = z.enum(["choice", "text", "audio", "dont_remember", "skip"]);
 export type AttemptModality = z.infer<typeof AttemptModalitySchema>;
 
 /**
  * Odpowiedź dziecka na zadanie (arch §12). `clientAttemptId` zabezpiecza retry
  * transportowy; ponowne użycie tego samego klucza z inną treścią daje 409.
- * Modality audio wprowadza zadanie 8 (ocena mowy).
+ * Odpowiedź audio idzie multipartem (bajty nagrania poza JSON) i jest
+ * oceniana ścieżką mowy: rezerwacja processing → analiza → finalizacja.
  */
 export const AttemptInputSchema = z.discriminatedUnion("modality", [
   z.object({
@@ -196,6 +197,11 @@ export const AttemptInputSchema = z.discriminatedUnion("modality", [
     clientAttemptId: UuidSchema,
     modality: z.literal("text"),
     text: z.string().max(500),
+  }),
+  z.object({
+    taskId: UuidSchema,
+    clientAttemptId: UuidSchema,
+    modality: z.literal("audio"),
   }),
   z.object({
     taskId: UuidSchema,
