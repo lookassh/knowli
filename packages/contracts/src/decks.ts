@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { UuidSchema } from "./common";
+import { GenerationDtoSchema } from "./generation";
 
 /**
  * Profil dziecka. Input pochodzi od rodzica; DTO dodaje identyfikator.
@@ -81,6 +82,7 @@ export const RevisionAssetDtoSchema = z.object({
   itemRevisionId: UuidSchema,
   role: z.enum(["target_audio", "example_audio", "illustration"]),
   state: z.enum(["pending", "approved", "omitted"]),
+  assetId: UuidSchema.nullable(),
 });
 export type RevisionAssetDto = z.infer<typeof RevisionAssetDtoSchema>;
 
@@ -94,3 +96,74 @@ export const DraftDtoSchema = z.object({
   assets: z.array(RevisionAssetDtoSchema),
 });
 export type DraftDto = z.infer<typeof DraftDtoSchema>;
+
+/** Lokalna data rodziny (termin sprawdzianu): YYYY-MM-DD w strefie rodziny. */
+export function isFamilyDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+export const DeckStateSchema = z.enum(["draft", "review", "published", "archived"]);
+export type DeckState = z.infer<typeof DeckStateSchema>;
+
+export const DeckSummaryDtoSchema = z.object({
+  deckId: UuidSchema,
+  title: z.string(),
+  state: DeckStateSchema,
+  editableVersionId: UuidSchema.nullable(),
+  publishedVersionId: UuidSchema.nullable(),
+});
+export type DeckSummaryDto = z.infer<typeof DeckSummaryDtoSchema>;
+
+export const AssignmentDtoSchema = z.object({
+  childId: UuidSchema,
+  displayName: z.string(),
+  testDate: z.string().nullable(),
+  active: z.boolean(),
+});
+export type AssignmentDto = z.infer<typeof AssignmentDtoSchema>;
+
+/**
+ * Widok zestawu dla panelu rodzica: edytowalny szkic (lub null), opublikowana
+ * wersja, najnowszy run generacji szkicu oraz przypisania dzieci.
+ */
+export const DeckDtoSchema = z.object({
+  id: UuidSchema,
+  title: z.string(),
+  state: DeckStateSchema,
+  draft: DraftDtoSchema.nullable(),
+  published: DraftDtoSchema.nullable(),
+  generation: GenerationDtoSchema.nullable(),
+  assignments: z.array(AssignmentDtoSchema),
+});
+export type DeckDto = z.infer<typeof DeckDtoSchema>;
+
+/** PUT /parent/assignments/:childId/:deckId — przypisanie i termin sprawdzianu. */
+export const AssignmentPutSchema = z.object({
+  testDate: z
+    .string()
+    .nullable()
+    .refine((value) => value === null || isFamilyDate(value), {
+      message: "testDate must be YYYY-MM-DD or null",
+    }),
+});
+export type AssignmentPut = z.infer<typeof AssignmentPutSchema>;
+
+export const PublishCommandSchema = z.object({
+  expectedEditNumber: z.number().int().positive(),
+});
+export type PublishCommand = z.infer<typeof PublishCommandSchema>;
+
+export const RevisionAssetCommandSchema = z.object({
+  itemRevisionId: UuidSchema,
+  role: z.enum(["target_audio", "example_audio", "illustration"]),
+});
+export type RevisionAssetCommand = z.infer<typeof RevisionAssetCommandSchema>;
+
+export const OmitIllustrationSchema = z.object({
+  itemRevisionId: UuidSchema,
+});
+export type OmitIllustration = z.infer<typeof OmitIllustrationSchema>;

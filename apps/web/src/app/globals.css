@@ -1,0 +1,165 @@
+/* Panel rodzica Umiem! — mobile first, duże pola dotykowe, zero zależności.
+   Kid UI (packages/kid-ui) wprowadzi właściwy system stylowania. */
+
+:root {
+  color-scheme: light;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.45;
+}
+
+body {
+  margin: 0;
+  background: #f6f6fb;
+  color: #1d1d2b;
+}
+
+.container {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+h1 {
+  font-size: 1.5rem;
+}
+h2 {
+  font-size: 1.25rem;
+}
+h3 {
+  font-size: 1.1rem;
+}
+
+label {
+  display: block;
+  margin: 8px 0;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+input,
+select,
+textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 4px;
+  min-height: 44px;
+  padding: 8px 12px;
+  font-size: 16px;
+  border: 1px solid #c9c9d6;
+  border-radius: 12px;
+  background: #fff;
+}
+
+button {
+  min-height: 44px;
+  padding: 8px 16px;
+  font-size: 16px;
+  border: 1px solid #c9c9d6;
+  border-radius: 12px;
+  background: #eef0fb;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+button[type="submit"],
+form button {
+  background: #3b5bdb;
+  border-color: #3b5bdb;
+  color: #fff;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #e4e4ee;
+  border-radius: 16px;
+  padding: 16px;
+  margin: 12px 0;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.row.space {
+  justify-content: space-between;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+@media (max-width: 480px) {
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.tabs button[aria-current="true"] {
+  background: #3b5bdb;
+  border-color: #3b5bdb;
+  color: #fff;
+}
+
+.badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #eef0fb;
+  font-size: 0.85rem;
+}
+
+.badge.ok {
+  background: #d9f0e2;
+  color: #1d6a3f;
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 1.2rem;
+}
+
+.deck-row {
+  width: 100%;
+  text-align: left;
+}
+
+.error {
+  color: #b02a37;
+  background: #fbe9eb;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.info {
+  background: #e8f0fd;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.illustration {
+  max-width: 180px;
+  border-radius: 12px;
+  display: block;
+  margin: 8px 0;
+}
+
+ul.plain {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}

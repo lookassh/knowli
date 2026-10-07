@@ -1,22 +1,33 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
+import { z } from "zod";
 import {
   DraftInputSchema,
   DraftPatchSchema,
+  isFamilyDate,
+  type AssignmentDto,
+  type DeckDto,
+  type DeckState,
+  type DeckSummaryDto,
   type DraftDto,
   type DraftItemDto,
   type DraftInput,
   type DraftPatch,
+  type GenerationDto,
   type VocabularyItemInput,
 } from "@learning/contracts";
 import type { Services } from "../config";
-import type { Tx } from "../db/client";
+import type { Executor, Tx } from "../db/client";
 import {
+  assignments,
+  childProfiles,
   deckVersions,
   decks,
+  generationRuns,
   itemRevisions,
   itemRevisionSkills,
   learningItems,
+  mediaAssets,
   revisionAssets,
   skillVersions,
 } from "../db/schema";
@@ -102,22 +113,33 @@ async function insertRevision(
   return revisionId;
 }
 
-async function readDraftDto(tx: Tx, versionId: string): Promise<DraftDto> {
-  const version = (await tx.select().from(deckVersions).where(eq(deckVersions.id, versionId)))[0]!;
-  const revisions = await tx
+/**
+ * Odczyt wersji w kształcie DTO. Stan zasobu to projekcja: wiersz może być
+ * wciąż pending, podczas gdy gotowy blob w media_assets już czeka — rodzic
+ * widzi wtedy "approved". Stan omitted pozostaje decyzją, nie projekcją.
+ */
+async function readDraftDto(db: Executor, versionId: string): Promise<DraftDto> {
+  const version = (await db.select().from(deckVersions).where(eq(deckVersions.id, versionId)))[0];
+  if (!version) {
+    throw new AppError("not_found");
+  }
+  const revisions = await db
     .select()
     .from(itemRevisions)
     .where(eq(itemRevisions.deckVersionId, versionId))
     .orderBy(asc(itemRevisions.position));
   const revisionIds = revisions.map((r) => r.id);
   const assets = revisionIds.length
-    ? await tx
+    ? await db
         .select({
           itemRevisionId: revisionAssets.itemRevisionId,
           role: revisionAssets.role,
-          state: revisionAssets.state,
+          decisionState: revisionAssets.state,
+          assetId: revisionAssets.assetId,
+          assetState: mediaAssets.state,
         })
         .from(revisionAssets)
+        .leftJoin(mediaAssets, eq(mediaAssets.id, revisionAssets.assetId))
         .where(inArray(revisionAssets.itemRevisionId, revisionIds))
     : [];
 
@@ -134,7 +156,12 @@ async function readDraftDto(tx: Tx, versionId: string): Promise<DraftDto> {
     status: version.state as DraftDto["status"],
     title: version.title,
     items,
-    assets,
+    assets: assets.map((a) => ({
+      itemRevisionId: a.itemRevisionId,
+      role: a.role,
+      state: a.decisionState === "omitted" ? "omitted" : a.assetState === "ready" ? "approved" : "pending",
+      assetId: a.assetId,
+    })),
   };
 }
 
@@ -459,4 +486,195 @@ export async function publishDraft(
       );
     return { deckVersionId: draftId };
   });
+}
+
+/** Odczyt istniejącego szkicu/wersji — podgląd i polling po odświeżeniu strony. */
+export async function readDraft(services: Services, draftId: string): Promise<DraftDto> {
+  return readDraftDto(services.db, z.uuid().parse(draftId));
+}
+
+/** Najnowszy run generacji zestawu dla wersji; brak runów daje null. */
+async function latestDeckRun(services: Services, deckVersionId: string): Promise<GenerationDto | null> {
+  const run = (
+    await services.db
+      .select()
+      .from(generationRuns)
+      .where(and(eq(generationRuns.deckVersionId, deckVersionId), eq(generationRuns.kind, "deck")))
+      .orderBy(desc(generationRuns.createdAt))
+      .limit(1)
+  )[0];
+  if (!run) {
+    return null;
+  }
+  return {
+    id: run.id,
+    deckId: (
+      await services.db
+        .select({ deckId: deckVersions.deckId })
+        .from(deckVersions)
+        .where(eq(deckVersions.id, deckVersionId))
+    )[0]?.deckId ?? null,
+    deckVersionId: run.deckVersionId ?? null,
+    state: run.state as GenerationDto["state"],
+    attempts: run.attempts,
+    errorCode: run.errorCode ?? null,
+  };
+}
+
+async function deckAssignments(services: Services, deckId: string): Promise<AssignmentDto[]> {
+  return services.db
+    .select({
+      childId: assignments.childId,
+      displayName: childProfiles.displayName,
+      testDate: assignments.testDate,
+      active: assignments.active,
+    })
+    .from(assignments)
+    .innerJoin(childProfiles, eq(childProfiles.id, assignments.childId))
+    .where(eq(assignments.deckId, deckId))
+    .orderBy(asc(childProfiles.createdAt), asc(childProfiles.id));
+}
+
+function deckStateOf(deck: { archivedAt: Date | null; publishedVersionId: string | null }, editableState: "draft" | "review" | null): DeckState {
+  if (deck.archivedAt) {
+    return "archived";
+  }
+  if (editableState) {
+    return editableState;
+  }
+  return deck.publishedVersionId ? "published" : "draft";
+}
+
+/**
+ * Pełny widok zestawu dla panelu rodzica: edytowalny szkic, opublikowana wersja,
+ * najnowszy run generacji szkicu i przypisania dzieci z terminami.
+ */
+export async function readDeck(services: Services, deckId: string): Promise<DeckDto> {
+  const id = z.uuid().parse(deckId);
+  const deck = (await services.db.select().from(decks).where(eq(decks.id, id)))[0];
+  if (!deck) {
+    throw new AppError("not_found");
+  }
+  const editable = (
+    await services.db
+      .select()
+      .from(deckVersions)
+      .where(and(eq(deckVersions.deckId, id), inArray(deckVersions.state, ["draft", "review"])))
+  )[0];
+  const publishedVersionId = deck.publishedVersionId ?? null;
+  return {
+    id: deck.id,
+    title: deck.title,
+    state: deckStateOf(deck, editable ? (editable.state as "draft" | "review") : null),
+    draft: editable ? await readDraftDto(services.db, editable.id) : null,
+    published: publishedVersionId ? await readDraftDto(services.db, publishedVersionId) : null,
+    generation: editable ? await latestDeckRun(services, editable.id) : null,
+    assignments: await deckAssignments(services, id),
+  };
+}
+
+/** Lista zestawów najnowszymi pierwszymi; stan wynika z wersji i archiwum. */
+export async function listDecks(services: Services): Promise<DeckSummaryDto[]> {
+  const rows = await services.db
+    .select({
+      id: decks.id,
+      title: decks.title,
+      archivedAt: decks.archivedAt,
+      publishedVersionId: decks.publishedVersionId,
+    })
+    .from(decks)
+    .orderBy(desc(decks.createdAt));
+  const editable = await services.db
+    .select({ deckId: deckVersions.deckId, id: deckVersions.id, state: deckVersions.state })
+    .from(deckVersions)
+    .where(inArray(deckVersions.state, ["draft", "review"]));
+  const editableByDeck = new Map(editable.map((v) => [v.deckId, v]));
+  return rows.map((row) => {
+    const edit = editableByDeck.get(row.id);
+    return {
+      deckId: row.id,
+      title: row.title,
+      state: deckStateOf(row, edit ? (edit.state as "draft" | "review") : null),
+      editableVersionId: edit?.id ?? null,
+      publishedVersionId: row.publishedVersionId ?? null,
+    };
+  });
+}
+
+const UpsertAssignmentSchema = z.object({
+  childId: z.uuid(),
+  deckId: z.uuid(),
+  testDate: z
+    .string()
+    .nullable()
+    .refine((value) => value === null || isFamilyDate(value), {
+      message: "testDate must be YYYY-MM-DD or null",
+    }),
+});
+
+/**
+ * Przypisanie (lub aktualizacja terminu) zestawu dziecku. Termin sprawdzianu
+ * jest opcjonalny i należy do pary dziecko–zestaw: jedno zestaw, różne daty.
+ * Archiwum wycofano z nowych sesji; nieopublikowany zestaw nie jest jeszcze
+ * materiałem dziecka.
+ */
+export async function upsertAssignment(
+  services: Services,
+  childId: string,
+  deckId: string,
+  testDate: string | null,
+): Promise<void> {
+  const valid = UpsertAssignmentSchema.parse({ childId, deckId, testDate });
+  const deck = (
+    await services.db.select().from(decks).where(eq(decks.id, valid.deckId))
+  )[0];
+  if (!deck) {
+    throw new AppError("not_found");
+  }
+  if (deck.archivedAt) {
+    throw new AppError("conflict");
+  }
+  if (!deck.publishedVersionId) {
+    throw new AppError("validation", { message: "deck is not published" });
+  }
+  try {
+    await services.db
+      .insert(assignments)
+      .values({
+        id: randomUUID(),
+        childId: valid.childId,
+        deckId: valid.deckId,
+        testDate: valid.testDate,
+        active: true,
+      })
+      .onConflictDoUpdate({
+        target: [assignments.childId, assignments.deckId],
+        set: { testDate: valid.testDate, active: true },
+      });
+  } catch (error) {
+    // nieznany profil dziecka: FK zamiast mglistego błędu sterownika (drizzle
+    // opakowuje błąd pg, kod ConstraintErrorCode siedzi w cause)
+    const pgCode =
+      (error as { code?: string }).code ??
+      (error as { cause?: { code?: string } }).cause?.code;
+    if (pgCode === "23503") {
+      throw new AppError("not_found");
+    }
+    throw error;
+  }
+}
+
+/** Wycofanie zestawu z nowych sesji; idempotentne, historia zostaje. */
+export async function archiveDeck(services: Services, deckId: string): Promise<void> {
+  const id = z.uuid().parse(deckId);
+  const deck = (await services.db.select().from(decks).where(eq(decks.id, id)))[0];
+  if (!deck) {
+    throw new AppError("not_found");
+  }
+  if (deck.archivedAt === null) {
+    await services.db
+      .update(decks)
+      .set({ archivedAt: services.clock.now() })
+      .where(eq(decks.id, id));
+  }
 }

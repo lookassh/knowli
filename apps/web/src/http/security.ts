@@ -76,8 +76,10 @@ export async function requireParentSession(
 
 /**
  * Kontrola Origin/CSRF dla mutacji. Przeglądarka wysyła Origin przy żądaniach
- * cross-site; jego brak oznacza klienta nieprzeglądarkowego. Niedopasowany
- * origin lub cross-site Sec-Fetch-Site → forbidden.
+ * cross-site; jego brak oznacza klienta nieprzeglądarkowego. Host żądania
+ * bierzemy z x-forwarded-host (proxy), potem z nagłówka Host, a dopiero na
+ * końcu z request.url — nagłówek jest wiarygodniejszy niż URL przekształcany
+ * przez runtime. Niedopasowany origin lub cross-site Sec-Fetch-Site → forbidden.
  */
 export function assertSameOrigin(request: Request): void {
   const origin = request.headers.get("origin");
@@ -88,7 +90,9 @@ export function assertSameOrigin(request: Request): void {
     } catch {
       originHost = null;
     }
-    if (originHost === null || originHost !== new URL(request.url).host) {
+    const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+    const host = forwardedHost || request.headers.get("host") || new URL(request.url).host;
+    if (originHost === null || originHost !== host) {
       throw new AppError("forbidden");
     }
   }

@@ -7,5 +7,5 @@
       "@/*": ["apps/web/src/*"]
     }
   },
-  "include": ["tests/**/*.ts", "vitest.*.config.ts"]
+  "include": ["tests/**/*.ts", "vitest.*.config.ts", "playwright.config.ts"]
 }

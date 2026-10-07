@@ -12,3 +12,7 @@ coverage/
 # konfiguracja IDE
 .idea/
 .vscode/
+
+# artefakty Playwright
+test-results/
+playwright-report/

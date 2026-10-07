@@ -15,6 +15,11 @@ export {
   createDraft,
   editDraft,
   publishDraft,
+  readDraft,
+  readDeck,
+  listDecks,
+  upsertAssignment,
+  archiveDeck,
   applyItems,
 } from "./modules/decks";
 export {
@@ -30,6 +35,8 @@ export {
 export {
   reconcileDraftAssets,
   regenerateRevisionAsset,
+  omitRevisionAsset,
+  readReadyMedia,
 } from "./modules/media-reconciliation";
 export {
   buildPayload,
@@ -58,3 +65,14 @@ export { createLocalMediaStore } from "./providers/media/local";
 export { createOpenAiLlmProvider } from "./providers/openai/llm";
 export { createOpenAiTtsProvider } from "./providers/openai/tts";
 export { createOpenAiImageProvider } from "./providers/images/openai";
+export {
+  deterministicBytes,
+  fakeGenerationDeps,
+  fakeMediaSettings,
+  DEFAULT_FAKE_DECK_ITEMS,
+  FakeImageProvider,
+  FakeLlmProvider,
+  FakeTtsProvider,
+  type LlmBehavior,
+} from "./providers/fake";
+export { createGenerationDepsFromEnv } from "./providers/generation-env";

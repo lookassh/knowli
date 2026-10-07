@@ -288,6 +288,69 @@ const RegenerateInputSchema = z.object({
   role: z.enum(["target_audio", "example_audio", "illustration"]),
 });
 
+const OmitInputSchema = z.object({
+  draftId: z.uuid(),
+  itemRevisionId: z.uuid(),
+});
+
+/**
+ * Świadoma decyzja rodzica o pominięciu ilustracji (CHECK: tylko rola
+ * illustration może być omitted). Zły obraz przestaje blokować publikację;
+ * pominięcie trwa przy niezmienionym fingerprintcie, a jawna regeneracja
+ * przywraca stan pending.
+ */
+export async function omitRevisionAsset(
+  services: Services,
+  input: z.infer<typeof OmitInputSchema>,
+): Promise<void> {
+  const valid = OmitInputSchema.parse(input);
+  const settings = services.media;
+  if (!settings) {
+    throw new AppError("internal", { message: "media settings not configured" });
+  }
+  return services.db.transaction(async (tx) => {
+    const version = (
+      await tx.select().from(deckVersions).where(eq(deckVersions.id, valid.draftId)).for("update")
+    )[0];
+    if (!version) {
+      throw new AppError("not_found");
+    }
+    if (version.state === "published") {
+      throw new AppError("immutable");
+    }
+    const revision = (
+      await tx
+        .select({ payload: itemRevisions.payload })
+        .from(itemRevisions)
+        .where(
+          and(eq(itemRevisions.id, valid.itemRevisionId), eq(itemRevisions.deckVersionId, valid.draftId)),
+        )
+    )[0];
+    if (!revision) {
+      throw new AppError("not_found");
+    }
+    const req = requiredAssetsFor(payloadToItem(revision.payload), settings).find(
+      (r) => r.role === "illustration",
+    );
+    if (!req) {
+      throw new AppError("validation", { message: "illustration not required by item" });
+    }
+    await tx
+      .insert(revisionAssets)
+      .values({
+        itemRevisionId: valid.itemRevisionId,
+        role: "illustration",
+        assetId: null,
+        expectedFingerprint: req.fingerprint,
+        state: "omitted",
+      })
+      .onConflictDoUpdate({
+        target: [revisionAssets.itemRevisionId, revisionAssets.role],
+        set: { state: "omitted" },
+      });
+  });
+}
+
 /**
  * Świadoma regeneracja: nowy numer generacji i nowy asset_id także dla tych
  * samych ustawień. Zatwierdzone zasoby starej wersji pozostają nietknięte;
@@ -371,6 +434,36 @@ export async function regenerateRevisionAsset(
       });
     return { assetId };
   });
+}
+
+/**
+ * Wydanie gotowego zasobu do podglądu (GET /api/v1/media/:id). Tylko stan
+ * ready; identyfikator jest nieprzejrzysty i nie wyznacza ekspozycji dziecka.
+ */
+export async function readReadyMedia(
+  services: Services,
+  assetId: string,
+): Promise<{ bytes: Uint8Array; mimeType: string } | null> {
+  const parsed = z.uuid().safeParse(assetId);
+  if (!parsed.success) {
+    return null;
+  }
+  const id = parsed.data;
+  const asset = (
+    await services.db
+      .select({ state: mediaAssets.state, storageKey: mediaAssets.storageKey, mimeType: mediaAssets.mimeType })
+      .from(mediaAssets)
+      .where(eq(mediaAssets.id, id))
+  )[0];
+  if (!asset || asset.state !== "ready" || !asset.storageKey || !services.mediaStore) {
+    return null;
+  }
+  const blob = await services.mediaStore.get(asset.storageKey);
+  if (!blob) {
+    return null;
+  }
+  // kopia do własnego ArrayBuffer: BodyInit/BlobPart wymagają Uint8Array<ArrayBuffer>
+  return { bytes: new Uint8Array(blob.bytes), mimeType: asset.mimeType ?? blob.mimeType };
 }
 
 /** Publikacja sprawdza gotowość i zgodność fingerprintu powiązanego zasobu. */

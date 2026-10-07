@@ -1,9 +1,6 @@
 import {
   createDatabase,
-  createLocalMediaStore,
-  createOpenAiImageProvider,
-  createOpenAiLlmProvider,
-  createOpenAiTtsProvider,
+  createGenerationDepsFromEnv,
   createServices,
   mediaSettingsFromEnv,
   type Services,
@@ -11,26 +8,24 @@ import {
 
 type WorkerPool = ReturnType<typeof createDatabase>["pool"];
 
-/** Składanie zależności workera: baza, adaptery OpenAI i lokalny wolumen mediów. */
+/**
+ * Składanie zależności workera: baza + adaptery providerów wg env
+ * (UMIEM_FAKE_PROVIDERS=1 dla środowisk bez kluczy) i lokalny wolumen mediów.
+ */
 export function buildWorkerServices(): { services: Services; pool: WorkerPool } {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is not configured");
   }
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENAI_API_KEY is not configured");
+  const generation = createGenerationDepsFromEnv(process.env);
+  if (!generation) {
+    throw new Error("OPENAI_API_KEY is not configured (albo ustaw UMIEM_FAKE_PROVIDERS=1)");
   }
   const { db, pool } = createDatabase(databaseUrl);
   const services = createServices({
     db,
     media: mediaSettingsFromEnv(process.env),
-    generation: {
-      llm: createOpenAiLlmProvider({ apiKey }),
-      tts: createOpenAiTtsProvider({ apiKey }),
-      image: createOpenAiImageProvider({ apiKey }),
-      mediaStore: createLocalMediaStore(process.env.MEDIA_ROOT ?? "./data/media"),
-    },
+    generation,
   });
   return { services, pool };
 }

@@ -50,22 +50,31 @@ export interface GenerationDeps {
 
 /**
  * Zależności serwowe przekazywane do przypadków użycia. `media` pozwala webowi
- * uzgadniać zasoby w transakcji edycji; `generation` wykonuje pracę w tle.
+ * uzgadniać zasoby w transakcji edycji; `generation` wykonuje pracę w tle;
+ * `mediaStore` służy webowi do wydawania gotowych zasobów (podgląd rodzica).
  */
 export interface Services {
   db: Database;
   clock: Clock;
   media?: MediaSettings;
   generation?: GenerationDeps;
+  mediaStore?: MediaStore;
 }
 
 export function createServices(
-  input: { db: Database; clock?: Clock; media?: MediaSettings; generation?: GenerationDeps },
+  input: {
+    db: Database;
+    clock?: Clock;
+    media?: MediaSettings;
+    generation?: GenerationDeps;
+    mediaStore?: MediaStore;
+  },
 ): Services {
   return {
     db: input.db,
     clock: input.clock ?? systemClock,
     ...(input.media ? { media: input.media } : {}),
     ...(input.generation ? { generation: input.generation } : {}),
+    ...(input.mediaStore ? { mediaStore: input.mediaStore } : {}),
   };
 }

@@ -1,6 +1,7 @@
 import type { Pool } from "pg";
 import {
   createDatabase,
+  createLocalMediaStore,
   createServices,
   mediaSettingsFromEnv,
   systemClock,
@@ -22,7 +23,13 @@ function initialize(): { services: Services; pool: Pool } {
   }
   const { db, pool } = createDatabase(databaseUrl);
   return {
-    services: createServices({ db, clock: systemClock, media: mediaSettingsFromEnv(process.env) }),
+    services: createServices({
+      db,
+      clock: systemClock,
+      media: mediaSettingsFromEnv(process.env),
+      // web tylko wydaje gotowe zasoby (podgląd rodzica); generację wykonuje worker
+      mediaStore: createLocalMediaStore(process.env.MEDIA_ROOT ?? "./data/media"),
+    }),
     pool,
   };
 }
