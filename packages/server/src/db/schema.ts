@@ -618,7 +618,10 @@ export const childSkillProgress = app.table(
     updatedAt: timestamps("updated_at").notNull().defaultNow(),
   },
   (t) => [
-    check("child_skill_progress_status_allowed", sql`${t.status} in ('unseen', 'practicing', 'needs_confirmation', 'mastered')`),
+    check(
+      "child_skill_progress_status_allowed",
+      sql`${t.status} in ('unseen', 'practicing', 'needs_confirmation', 'needs_reconfirmation', 'mastered')`,
+    ),
     check("child_skill_progress_streak_nonnegative", sql`${t.independentSuccessStreak} >= 0`),
     primaryKey({ name: "child_skill_progress_pk", columns: [t.childId, t.skillVersionId] }),
     index("child_skill_due_idx").on(t.childId, t.nextReviewAt),

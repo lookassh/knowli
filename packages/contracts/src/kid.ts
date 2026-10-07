@@ -147,3 +147,81 @@ export const SessionSummaryDtoSchema = z.object({
   endedAt: InstantSchema,
 });
 export type SessionSummaryDto = z.infer<typeof SessionSummaryDtoSchema>;
+
+/** Widok profilu dla ekranu dziecka: tylko nazwa i awatar (arch §12). */
+export const KidProfileDtoSchema = z.object({
+  childId: UuidSchema,
+  displayName: z.string().min(1),
+  avatarKey: z.string().min(1),
+});
+export type KidProfileDto = z.infer<typeof KidProfileDtoSchema>;
+
+/** Zestaw przypisany dziecku, dostępny do nauki (arch §12). */
+export const KidDeckDtoSchema = z.object({
+  deckId: UuidSchema,
+  title: z.string().min(1),
+  /** Termin sprawdzianu z przypisania (lokalna data rodziny) lub null. */
+  testDate: z.string().nullable(),
+});
+export type KidDeckDto = z.infer<typeof KidDeckDtoSchema>;
+
+/**
+ * Feedback dla dziecka po próbie — wybór treści pochodzi z reguł domeny
+ * (SPEC §16). `correctText` to rozwiązanie własnego zadania, ujawniane
+ * wyłącznie wraz z ekspozycją zapisaną przed odpowiedzią HTTP.
+ */
+export const FeedbackDtoSchema = z.object({
+  kind: z.enum(["great", "capitalization_hint", "almost", "incorrect", "not_assessed"]),
+  correctText: z.string().min(1).optional(),
+});
+export type FeedbackDto = z.infer<typeof FeedbackDtoSchema>;
+
+export const AttemptModalitySchema = z.enum(["choice", "text", "dont_remember", "skip"]);
+export type AttemptModality = z.infer<typeof AttemptModalitySchema>;
+
+/**
+ * Odpowiedź dziecka na zadanie (arch §12). `clientAttemptId` zabezpiecza retry
+ * transportowy; ponowne użycie tego samego klucza z inną treścią daje 409.
+ * Modality audio wprowadza zadanie 8 (ocena mowy).
+ */
+export const AttemptInputSchema = z.discriminatedUnion("modality", [
+  z.object({
+    taskId: UuidSchema,
+    clientAttemptId: UuidSchema,
+    modality: z.literal("choice"),
+    optionId: UuidSchema,
+  }),
+  z.object({
+    taskId: UuidSchema,
+    clientAttemptId: UuidSchema,
+    modality: z.literal("text"),
+    text: z.string().max(500),
+  }),
+  z.object({
+    taskId: UuidSchema,
+    clientAttemptId: UuidSchema,
+    modality: z.literal("dont_remember"),
+  }),
+  z.object({
+    taskId: UuidSchema,
+    clientAttemptId: UuidSchema,
+    modality: z.literal("skip"),
+  }),
+]);
+export type AttemptInput = z.infer<typeof AttemptInputSchema>;
+
+export const AttemptDtoSchema = z.object({
+  attemptId: UuidSchema,
+  taskId: UuidSchema,
+  state: z.enum(["processing", "completed"]),
+  modality: AttemptModalitySchema,
+  /** Reguły domeny; null dopóki ocena trwa (audio). */
+  feedback: FeedbackDtoSchema.nullable(),
+  /** Stan zadania po próbie: „issued” pozwala na drugie podejście. */
+  taskState: z.enum(["issued", "answered", "completed", "skipped"]),
+  /** Serwerowy krok ujawnienia feedbacku — pole dla późniejszych ACK obserwacji. */
+  stepId: z.string().min(1).nullable(),
+  receivedAt: InstantSchema,
+  completedAt: InstantSchema.nullable(),
+});
+export type AttemptDto = z.infer<typeof AttemptDtoSchema>;

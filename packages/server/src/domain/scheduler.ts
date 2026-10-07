@@ -61,8 +61,10 @@ export interface ScheduleInput {
   nextOrdinal: number;
   candidates: readonly ScheduleCandidate[];
   peers: readonly SchedulePeer[];
-  /** Klucze celów objętych aktywną rezerwacją w kontekście sesji. */
+  /** Klucze celów objęte aktywną rezerwacją w kontekście sesji. */
   reservedTargetKeys: readonly string[];
+  /** Klucze sprawdzeń rozliczonych w tej sesji (wykonane albo pominięte). */
+  settledCheckTargetKeys?: readonly string[];
 }
 
 export interface PlannedOption {
@@ -102,9 +104,11 @@ function keyOf(target: string, locale: string): string {
 }
 
 function isDue(snapshot: SkillSnapshot | undefined, now: string): boolean {
+  // termin powrotu niesie wyłącznie oceniana umiejętność; nieznane słowa
+  // nie mają nextReviewAt, więc nie są sprawdzane przed nauką (SPEC §13)
   return (
     snapshot !== undefined &&
-    (snapshot.status === "needs_confirmation" || snapshot.status === "needs_reconfirmation") &&
+    snapshot.status !== "not_assessed" &&
     snapshot.nextReviewAt !== null &&
     snapshot.nextReviewAt <= now
   );
@@ -123,11 +127,16 @@ function dueCheckAt(candidate: ScheduleCandidate, now: string): string | null {
   return earliest;
 }
 
-function oldestDue(candidates: readonly ScheduleCandidate[], now: string): ScheduleCandidate | null {
+function oldestDue(
+  candidates: readonly ScheduleCandidate[],
+  now: string,
+  settled: ReadonlySet<string>,
+): ScheduleCandidate | null {
   let best: { candidate: ScheduleCandidate; due: string } | null = null;
   for (const candidate of candidates) {
     const due = dueCheckAt(candidate, now);
     if (due === null) continue;
+    if (settled.has(keyOf(candidate.target, candidate.targetLocale))) continue;
     if (best === null || due < best.due || (due === best.due && candidate.position < best.candidate.position)) {
       best = { candidate, due };
     }
@@ -189,17 +198,20 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
   }
 
   const reserved = new Set(input.reservedTargetKeys);
+  const settled = new Set(input.settledCheckTargetKeys ?? []);
+  const keyOfCandidate = (c: ScheduleCandidate): string => keyOf(c.target, c.targetLocale);
   for (const candidate of input.candidates) {
-    if (dueCheckAt(candidate, input.now) !== null) {
-      reserved.add(keyOf(candidate.target, candidate.targetLocale));
+    if (dueCheckAt(candidate, input.now) !== null && !settled.has(keyOfCandidate(candidate))) {
+      reserved.add(keyOfCandidate(candidate));
     }
   }
   const keepsReservations = [...reserved];
-  const keyOfCandidate = (c: ScheduleCandidate): string => keyOf(c.target, c.targetLocale);
 
   // 1. Zarezerwowane sprawdzenie Recall/pisowni wykonujemy pierwsze: jedna
   //    pisemna odpowiedź dostarcza obu wyników, zanim feedback ujawni słowo.
-  const due = oldestDue(input.candidates, input.now);
+  //    Sprawdzenie rozliczone w tej sesji (odpowiedź, „Nie pamiętam”, pominięcie
+  //    albo zdradzająca podpowiedź) nie jest wydawane ponownie.
+  const due = oldestDue(input.candidates, input.now, settled);
   if (due) {
     return {
       itemRevisionId: due.itemRevisionId,

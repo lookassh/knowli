@@ -9,9 +9,35 @@ import {
 } from "@learning/contracts";
 import type { Services } from "../config";
 import type { Tx } from "../db/client";
-import { deckVersions, eventExposures, itemRevisions, learningEvents, learningSessions, sessionTasks } from "../db/schema";
+import {
+  deckVersions,
+  eventExposures,
+  itemRevisions,
+  learningEvents,
+  learningSessions,
+  sessionTasks,
+} from "../db/schema";
 import { AppError } from "../errors";
 import { computeTargetKey } from "../domain/target-key";
+
+export interface SessionContextShape {
+  timezone: string;
+  previousContact: Record<string, string>;
+  /** Klucze celów objęte aktywną rezerwacją należnego sprawdzenia. */
+  reservations: string[];
+  /** Klucze sprawdzeń rozliczonych w tej sesji (odpowiedź/pominięcie/podpowiedź). */
+  settledChecks: string[];
+}
+
+export function contextOf(session: { context: Record<string, unknown> }): SessionContextShape {
+  const raw = session.context as Partial<SessionContextShape>;
+  return {
+    timezone: typeof raw.timezone === "string" ? raw.timezone : "Europe/Warsaw",
+    previousContact: raw.previousContact ?? {},
+    reservations: raw.reservations ?? [],
+    settledChecks: raw.settledChecks ?? [],
+  };
+}
 
 /** Rodzaje zdarzeń pisanych wyłącznie przez serwer (arch §9.2). */
 export type ServerEventKind =
@@ -155,6 +181,24 @@ export async function authorizeDisclosure(services: Services, input: DisclosureI
       occurredAt: now,
       exposures: [targetKey],
     });
+
+    // Podpowiedź zawsze ujawnia rozwiązanie, a odsłuch wzorca psuje samodzielność
+    // przypomnienia/pisowni — rezerwacja należnego sprawdzenia jest zwalniana,
+    // żeby cel mógł wrócić jako dystraktor, a sprawdzenie nie było wydawane
+    // ponownie w tej sesji (arch §9.3).
+    const spoilsCheck =
+      valid.kind === "hint" || ["recall", "spelling", "letter_completion"].includes(task.exerciseType);
+    if (spoilsCheck) {
+      const context = contextOf(session);
+      const reservations = context.reservations.filter((k) => k !== targetKey);
+      const settledChecks = [...new Set([...context.settledChecks, targetKey])];
+      if (reservations.length !== context.reservations.length || settledChecks.length !== context.settledChecks.length) {
+        await tx
+          .update(learningSessions)
+          .set({ context: { ...context, reservations, settledChecks } as unknown as Record<string, unknown> })
+          .where(eq(learningSessions.id, session.id));
+      }
+    }
 
     return {
       taskId: task.id,

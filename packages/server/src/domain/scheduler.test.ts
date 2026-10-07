@@ -256,3 +256,45 @@ describe("selectTask — mikrofon i kierunki", () => {
     expect([...plan!.revealsTargetKeys].sort()).toEqual([KEY_THURSDAY, KEY_WEDNESDAY, KEY_FRIDAY].sort());
   });
 });
+
+describe("selectTask — rozliczone sprawdzenia nie wracają w tej sesji (arch §9.3)", () => {
+  const dueThursday = candidate({
+    progress: {
+      recall: { status: "needs_confirmation", nextReviewAt: PAST },
+      spelling: { status: "needs_confirmation", nextReviewAt: PAST },
+    },
+  });
+
+  it("pominięte sprawdzenie nie jest wydawane ponownie ani rezerwowane", () => {
+    const other = candidate({ itemRevisionId: "rev-2", itemId: "item-2", position: 1, target: "Friday", source: "piątek", usedThisSession: 1 });
+    const plan = selectTask(
+      input({
+        candidates: [dueThursday, other],
+        peers: [peer(dueThursday), peer(other)],
+        settledCheckTargetKeys: [KEY_THURSDAY],
+      }),
+    );
+    // czwartek rozliczony: nie wraca jako due-check, nie blokuje dystraktorów ani zadań
+    expect(plan).toMatchObject({ itemRevisionId: "rev-2", reason: "new-practice", exerciseType: "listening" });
+    expect(plan!.options!.map((o) => o.text)).toContain("czwartek");
+  });
+
+  it("rozliczony cel może znów służyć jako dystraktor", () => {
+    const reader = candidate({
+      progress: { reading: { status: "needs_confirmation", nextReviewAt: PAST } },
+      readingDirections: { target_to_source: 0, source_to_target: 2 },
+      usedThisSession: 2,
+    });
+    const plan = selectTask(
+      input({
+        candidates: [reader, dueThursday],
+        peers: [peer(reader), peer(dueThursday)],
+        settledCheckTargetKeys: [KEY_THURSDAY],
+        nextOrdinal: 3,
+      }),
+    );
+    expect(plan).toMatchObject({ exerciseType: "reading", reason: "due-review" });
+    expect(plan!.options!.map((o) => o.text)).toContain("czwartek");
+    expect(plan!.keepsReservations).not.toContain(KEY_THURSDAY);
+  });
+});

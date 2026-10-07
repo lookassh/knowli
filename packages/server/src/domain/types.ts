@@ -90,7 +90,9 @@ export interface Policy {
 /**
  * Prywatny klucz odpowiedzi wydanego zadania (arch §9.1). `target` to kanoniczna
  * odpowiedź, `acceptedAnswers` zatwierdzone warianty bez kanonicznej; warianty
- * podlegają tym samym regułom co odpowiedź główna (A36).
+ * podlegają tym samym regułom co odpowiedź główna (A36). `correctOptionId` to
+ * serwerowe id poprawnej opcji w zadaniach zamkniętych — porównanie po id,
+ * nie po tekście, bo opcje mogą się powtarzać między zadaniami.
  */
 export interface AnswerKey {
   exerciseType: ExerciseType;
@@ -98,8 +100,8 @@ export interface AnswerKey {
   acceptedAnswers: readonly string[];
   /** Nadpisanie kierunku dla zadań reading. */
   direction?: ReadingDirection;
-  /** Prezentowane opcje w zadaniach zamkniętych (mapowanie opcji). */
-  options?: readonly string[];
+  /** Serwerowy identyfikator poprawnej opcji (zadania zamknięte). */
+  correctOptionId?: string;
 }
 
 /**

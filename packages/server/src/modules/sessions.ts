@@ -15,6 +15,7 @@ import {
 import type { Services } from "../config";
 import type { Tx } from "../db/client";
 import {
+  assessments,
   assignments,
   attempts,
   childProfiles,
@@ -38,7 +39,7 @@ import {
 } from "../domain/scheduler";
 import type { ProgressStatus, ReadingDirection, Skill } from "../domain/types";
 import { loadPolicy, ensureLearningPolicy, CURRENT_POLICY_ID } from "../policies/registry";
-import { lockTaskWithSession, writeSealedEvent } from "./events";
+import { lockTaskWithSession, writeSealedEvent, contextOf, type SessionContextShape } from "./events";
 import { payloadToItem } from "./item-payload";
 
 /** Okno wznowienia aktywnej sesji od ostatniego zdarzenia (arch §9.1). */
@@ -50,21 +51,6 @@ const PROMISE_REMAINING = 3;
 /** Startowy budżet zadań ocenianych; prezentacje go nie powiększają. */
 export const DEFAULT_TASK_BUDGET = 12;
 
-interface SessionContextShape {
-  timezone: string;
-  previousContact: Record<string, string>;
-  reservations: string[];
-}
-
-function contextOf(session: { context: Record<string, unknown> }): SessionContextShape {
-  const raw = session.context as Partial<SessionContextShape>;
-  return {
-    timezone: typeof raw.timezone === "string" ? raw.timezone : "Europe/Warsaw",
-    previousContact: raw.previousContact ?? {},
-    reservations: raw.reservations ?? [],
-  };
-}
-
 /** Statusy child_skill_progress odwzorowane na domenową projekcję zadania 5. */
 function mapStatus(dbStatus: string): ProgressStatus {
   switch (dbStatus) {
@@ -74,6 +60,8 @@ function mapStatus(dbStatus: string): ProgressStatus {
       return "learning";
     case "needs_confirmation":
       return "needs_confirmation";
+    case "needs_reconfirmation":
+      return "needs_reconfirmation";
     case "mastered":
       return "mastered";
     default:
@@ -252,6 +240,7 @@ export async function startSession(services: Services, input: SessionInput): Pro
       timezone: await readTimezone(tx),
       previousContact: await previousContactSnapshot(tx, valid.childId, version.id, now),
       reservations: [],
+      settledChecks: [],
     };
     const id = randomUUID();
     const [row] = await tx
@@ -384,6 +373,37 @@ async function planNextTask(
     }
   }
 
+  // Trudności z prób tej sesji: oceniony błąd liczy się pojedynczo, a jedno
+  // „Nie pamiętam” nasycie próg wsparcia — deklarowana trudność prowadzi do
+  // wsparcia bez czekania na drugi błąd (SPEC §15.1, §16).
+  const policy = await loadPolicy(tx, session.policyId);
+  const gradedRows = await tx
+    .select({
+      attemptId: attempts.id,
+      itemRevisionId: sessionTasks.itemRevisionId,
+      modality: attempts.modality,
+      outcome: assessments.outcome,
+    })
+    .from(attempts)
+    .innerJoin(sessionTasks, eq(sessionTasks.id, attempts.taskId))
+    .leftJoin(assessments, eq(assessments.attemptId, attempts.id))
+    .where(eq(sessionTasks.sessionId, session.id));
+  const failuresByRevision = new Map<string, number>();
+  const incorrectAttempts = new Set<string>();
+  for (const row of gradedRows) {
+    if (row.outcome === "incorrect") {
+      incorrectAttempts.add(row.attemptId);
+    }
+  }
+  for (const row of gradedRows) {
+    const current = failuresByRevision.get(row.itemRevisionId) ?? 0;
+    if (incorrectAttempts.has(row.attemptId)) {
+      failuresByRevision.set(row.itemRevisionId, current + 1);
+    } else if (row.modality === "dont_remember" && !incorrectAttempts.has(row.attemptId)) {
+      failuresByRevision.set(row.itemRevisionId, current + policy.supportAfterFailures);
+    }
+  }
+
   const items = new Map<string, PlannedItem>(
     revisions.map((r) => {
       const item = payloadToItem(r.payload as Record<string, unknown>);
@@ -422,8 +442,8 @@ async function planNextTask(
       acceptedAnswers: item.acceptedAnswers,
       targetLocale: item.targetLocale,
       progress,
-      // próby i ich wyniki wprowadza zadanie 7; scheduler dostaje zero
-      failuresThisSession: 0,
+      // trudności z prawdziwych prób tej sesji (błędy i „Nie pamiętam”)
+      failuresThisSession: failuresByRevision.get(r.id) ?? 0,
       supportedThisSession: stats.supportedThisSession,
       usedThisSession: stats.usedThisSession,
       lastUsedOrdinal: stats.lastUsedOrdinal,
@@ -439,7 +459,7 @@ async function planNextTask(
     targetLocale: c.targetLocale,
   }));
 
-  const policy = await loadPolicy(tx, session.policyId);
+  const sessionContext = contextOf(session);
   const plan = selectTask({
     now: now.toISOString(),
     policy,
@@ -448,7 +468,8 @@ async function planNextTask(
     nextOrdinal,
     candidates,
     peers,
-    reservedTargetKeys: contextOf(session).reservations,
+    reservedTargetKeys: sessionContext.reservations,
+    settledCheckTargetKeys: sessionContext.settledChecks,
   });
   if (!plan) {
     return null;

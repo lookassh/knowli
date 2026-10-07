@@ -386,6 +386,11 @@ export async function publishDraft(
     if (version.editNumber !== expectedEditNumber) {
       throw new AppError("conflict");
     }
+    // Publikacja uzgadnia powiązania zasobów jak każda edycja: promuje gotowe
+    // bloby do approved i zleca brakujące, zanim walidator oceni gotowość.
+    // Bez tego zestaw opublikowany zaraz po generacji zostawiałby target_audio
+    // w stanie pending i sesje dziecka nie znajdowałyby gotowego audio.
+    await reconcileDraftAssetsTx(tx, services, version);
 
     const revisions = await tx
       .select({

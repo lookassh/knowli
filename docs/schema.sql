@@ -326,7 +326,7 @@ CREATE INDEX event_exposures_target_idx ON event_exposures(target_key, event_id)
 CREATE TABLE child_skill_progress (
   child_id uuid NOT NULL REFERENCES child_profiles(id) ON DELETE CASCADE,
   skill_version_id uuid NOT NULL REFERENCES skill_versions(id),
-  status text NOT NULL CHECK (status IN ('unseen','practicing','needs_confirmation','mastered')),
+  status text NOT NULL CHECK (status IN ('unseen','practicing','needs_confirmation','needs_reconfirmation','mastered')),
   independent_success_streak integer NOT NULL DEFAULT 0 CHECK (independent_success_streak >= 0),
   last_reviewed_at timestamptz,
   next_review_at timestamptz,

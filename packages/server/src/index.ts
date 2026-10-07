@@ -72,7 +72,18 @@ export {
   SESSION_TIME_LIMIT_MS,
   DEFAULT_TASK_BUDGET,
 } from "./modules/sessions";
-export { recordEvent, authorizeDisclosure } from "./modules/events";
+export { recordEvent, authorizeDisclosure, contextOf } from "./modules/events";
+export type { SessionContextShape } from "./modules/events";
+export {
+  submitAttempt,
+  readAttempt,
+  finalizeAttempt,
+  ATTEMPT_PROCESSING_TIMEOUT_MS,
+} from "./modules/attempts";
+export { listKidProfiles, listKidDecks } from "./modules/kid";
+export { evaluateWritten, evaluateChoice, evaluateNonAnswer, assessedSkills } from "./domain/evaluate";
+export { chooseFeedback } from "./domain/feedback";
+export { projectProgress } from "./domain/progress";
 export type {
   LlmProvider,
   LlmGenerateDeckInput,

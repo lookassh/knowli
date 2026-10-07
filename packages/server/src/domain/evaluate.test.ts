@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateNonAnswer, evaluateWritten } from "./evaluate";
+import { evaluateChoice, evaluateNonAnswer, evaluateWritten } from "./evaluate";
 import { LEARNING_V1_POLICY } from "../policies/learning-v1";
 import type { AnswerKey, EvaluationContext } from "./types";
 
@@ -160,5 +160,38 @@ describe("evaluateNonAnswer — „Nie pamiętam” i „Pomiń” (arch §9.1a,
     const grade = evaluateNonAnswer("skip", key(), ctx());
     expect(grade.skills.recall).toMatchObject({ outcome: "unevaluated", reason: "skipped" });
     expect(grade.skills.spelling).toMatchObject({ outcome: "unevaluated", reason: "skipped" });
+  });
+});
+
+describe("evaluateChoice — odpowiedź zamknięta porównywana po serwerowym id opcji (SPEC §12.2–12.4)", () => {
+  const choiceKey = key({
+    exerciseType: "reverse_recognition",
+    target: "Thursday",
+    direction: "source_to_target",
+    correctOptionId: "opt-correct",
+  });
+
+  it("wybrana poprawna opcja zalicza umiejętność i niesie kierunek", () => {
+    const grade = evaluateChoice("opt-correct", choiceKey, ctx());
+    expect(grade.attempt).toEqual({ independent: true, confirmationEligible: false });
+    expect(grade.skills.reading).toMatchObject({ outcome: "correct", independent: true });
+    expect(grade.skills.reading?.details?.direction).toBe("source_to_target");
+  });
+
+  it("zła opcja jest błędem, ale bez szczegółów pisowni", () => {
+    const grade = evaluateChoice("opt-wrong", choiceKey, ctx());
+    expect(grade.skills.reading).toMatchObject({ outcome: "incorrect", independent: true });
+    expect(grade.skills.reading?.details?.spelling).toBeUndefined();
+  });
+
+  it("klucz bez poprawnej opcji nie zalicza żadnej odpowiedzi", () => {
+    const grade = evaluateChoice("opt-correct", key({ exerciseType: "listening", target: "Thursday", correctOptionId: undefined }), ctx());
+    expect(grade.skills.listening?.outcome).toBe("incorrect");
+  });
+
+  it("próba wspomagana nie jest niezależna także w zadaniu zamkniętym", () => {
+    const grade = evaluateChoice("opt-correct", choiceKey, ctx({ assistance: ["model_audio"] }));
+    expect(grade.skills.reading?.independent).toBe(false);
+    expect(grade.skills.reading?.confirmationEligible).toBe(false);
   });
 });

@@ -55,6 +55,11 @@ function skillsForExercise(exerciseType: ExerciseType): readonly Skill[] {
   }
 }
 
+/** Umiejętności oceniane w danym typie ćwiczenia (puste dla prezentacji). */
+export function assessedSkills(exerciseType: ExerciseType): readonly Skill[] {
+  return skillsForExercise(exerciseType);
+}
+
 function directionFor(key: AnswerKey): ReadingDirection | undefined {
   if (key.exerciseType !== "reading" && key.exerciseType !== "reverse_recognition") {
     return undefined;
@@ -115,6 +120,29 @@ export function evaluateWritten(answer: string, key: AnswerKey, ctx: EvaluationC
       continue;
     }
     skills[skill] = gradeSkill(skill, match, attempt, direction);
+  }
+
+  return { skills, attempt };
+}
+
+/**
+ * Ocenia odpowiedź zamkniętą: poprawność rozstrzyga serwerowe id opcji
+ * z klucza, nie porównanie tekstu — opcje zadań rozpoznawania są polskie
+ * albo się powtarzają między zadaniami (SPEC §12.2–12.4).
+ */
+export function evaluateChoice(chosenOptionId: string, key: AnswerKey, ctx: EvaluationContext): Grade {
+  const attempt = qualifyAttempt(ctx);
+  const direction = directionFor(key);
+  const correct = key.correctOptionId !== undefined && chosenOptionId === key.correctOptionId;
+  const skills: Partial<Record<Skill, SkillGrade>> = {};
+
+  for (const skill of skillsForExercise(key.exerciseType)) {
+    skills[skill] = {
+      outcome: correct ? "correct" : "incorrect",
+      independent: attempt.independent,
+      confirmationEligible: attempt.independent && attempt.confirmationEligible && correct,
+      ...(direction !== undefined ? { details: { direction } } : {}),
+    };
   }
 
   return { skills, attempt };
