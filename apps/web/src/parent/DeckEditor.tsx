@@ -131,8 +131,46 @@ export default function DeckEditor({
     );
   };
 
+  // nowy element ląduje na końcu listy; bez id serwer tworzy learning_item
+  // z kluczami umiejętności v1 i zleca media w tej samej transakcji zapisu
+  const addItem = () => {
+    dirty.current = true;
+    setForm((current) => {
+      if (!current) {
+        return current;
+      }
+      const locales = current.items[0]?.locales ?? { source: "pl-PL", target: "en-GB" };
+      return {
+        ...current,
+        items: [
+          ...current.items,
+          { id: undefined, source: "", target: "", accepted: "", example: "", visualType: "image", locales },
+        ],
+      };
+    });
+  };
+
+  // usunięcie jest częścią formularza: obowiązuje dopiero po „Zapisz",
+  // cofnięcie = wyjście bez zapisu; ostatniej karty nie da się usunąć
+  const removeItem = (index: number) => {
+    dirty.current = true;
+    setForm((current) =>
+      current ? { ...current, items: current.items.filter((_, position) => position !== index) } : current,
+    );
+  };
+
   const save = async () => {
     if (!draft || !form) {
+      return;
+    }
+    // pusta karta lub tytuł odrzuciłyby cały PATCH po stronie Zoda; blokujemy
+    // lokalnie polskim komunikatem, żeby zapis innych poprawek nie utknął
+    if (form.title.trim().length === 0) {
+      setError(messages.decks.titleIncomplete);
+      return;
+    }
+    if (form.items.some((item) => item.source.trim().length === 0 || item.target.trim().length === 0)) {
+      setError(messages.decks.itemIncomplete);
       return;
     }
     setBusy(true);
@@ -310,6 +348,18 @@ export default function DeckEditor({
         </p>
       )}
 
+      {form && (
+        <label>
+          {messages.decks.titleLabel}
+          <input
+            data-testid="editor-title"
+            value={form.title}
+            disabled={!editable}
+            onChange={(event) => mutate("title", event.target.value)}
+          />
+        </label>
+      )}
+
       {form?.items.map((item, index) => {
         const revisionId = active?.items[index]?.revisionId ?? "";
         const targetAudio = assetOf(revisionId, "target_audio");
@@ -317,6 +367,18 @@ export default function DeckEditor({
         const illustration = assetOf(revisionId, "illustration");
         return (
           <article className="card" key={revisionId || index} data-testid={`item-card-${index}`}>
+            {editable && (
+              <div className="row">
+                <button
+                  type="button"
+                  data-testid={`item-remove-${index}`}
+                  disabled={(form?.items.length ?? 0) <= 1}
+                  onClick={() => removeItem(index)}
+                >
+                  {messages.decks.removeItem}
+                </button>
+              </div>
+            )}
             <div className="grid-2">
               <label>
                 {messages.decks.sourceLabel}
@@ -448,6 +510,14 @@ export default function DeckEditor({
           </article>
         );
       })}
+
+      {editable && (
+        <div className="row">
+          <button type="button" data-testid="add-item" onClick={addItem}>
+            {messages.decks.addItem}
+          </button>
+        </div>
+      )}
 
       {deck?.state === "published" && !draft && (
         <div className="row">

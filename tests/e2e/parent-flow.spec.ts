@@ -160,3 +160,78 @@ test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page,
   const kid = await request.get("/api/v1/kid/decks?childId=00000000-0000-0000-0000-000000000000");
   expect(kid.status()).toBe(404);
 });
+
+const MANUAL_DECK_TITLE = "Dni tygodnia — edycja ręczna";
+
+test("ręczna edycja zestawu: dodaj element, usuń element, zmień tytuł", async ({ page }) => {
+  test.slow();
+
+  await page.goto("/");
+  await page.getByTestId("auth-secret").fill("1234");
+  await page.getByTestId("auth-submit").click();
+  await expect(page.getByTestId("tab-decks")).toBeVisible();
+
+  await page.getByTestId("deck-prompt").fill("angielskie dni tygodnia dla początkującego dziecka");
+  await page.getByTestId("deck-title").fill(MANUAL_DECK_TITLE);
+  await page.getByTestId("generate-submit").click();
+  const manualRow = page.locator('[data-testid^="deck-row"]').filter({ hasText: MANUAL_DECK_TITLE });
+  await expect(manualRow).toContainText(MANUAL_DECK_TITLE);
+  await manualRow.click();
+  await expect(page.getByTestId("item-card-0")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId("item-card-6")).toBeVisible();
+
+  // Nowa, pusta karta na końcu listy — dopóki rodzic nie wypełni pól.
+  await page.getByTestId("add-item").click();
+  await expect(page.getByTestId("item-card-7")).toBeVisible();
+  await expect(page.getByTestId("item-source-7")).toHaveValue("");
+
+  // Pusta karta blokuje zapis całości: polski komunikat zanim PATCH poleci na serwer.
+  await page.getByTestId("save-items").click();
+  await expect(page.getByTestId("api-error")).toContainText(messages.decks.itemIncomplete);
+
+  // Uzupełniona karta zapisuje się jako nowy element; serwer zleca jej media.
+  await page.getByTestId("item-source-7").fill("gruszka");
+  await page.getByTestId("item-target-7").fill("pear");
+  const added = page.waitForResponse(
+    (response) => response.request().method() === "PATCH" && response.url().includes("/drafts/"),
+  );
+  await page.getByTestId("save-items").click();
+  const addedResponse = await added;
+  expect(addedResponse.status()).toBe(200);
+  const addedDraft = (await addedResponse.json()) as { items: { source: string }[] };
+  expect(addedDraft.items).toHaveLength(8);
+  expect(addedDraft.items[7]!.source).toBe("gruszka");
+  await expect(page.getByTestId("item-audio-state-7")).toContainText("generowanie");
+  await expect(page.getByTestId("item-audio-state-7")).toContainText("gotowe", { timeout: 60_000 });
+
+  // Usunięcie karty jest częścią formularza: znika po zapisie jako element wersji.
+  await page.getByTestId("item-remove-0").click();
+  await expect(page.getByTestId("item-card-7")).toHaveCount(0);
+  await expect(page.getByTestId("item-source-0")).toHaveValue("wtorek");
+  const removed = page.waitForResponse(
+    (response) => response.request().method() === "PATCH" && response.url().includes("/drafts/"),
+  );
+  await page.getByTestId("save-items").click();
+  const removedResponse = await removed;
+  expect(removedResponse.status()).toBe(200);
+  const removedDraft = (await removedResponse.json()) as { items: { source: string }[] };
+  expect(removedDraft.items).toHaveLength(7);
+  expect(removedDraft.items.map((item) => item.source)).not.toContain("poniedziałek");
+
+  // Tytuł edytujemy w tym samym formularzu; wiersz zestawu na liście podąży
+  // dopiero po publikacji, więc trwałość sprawdzamy w polu szkicu.
+  await page.getByTestId("editor-title").fill(`${MANUAL_DECK_TITLE} v2`);
+  const retitled = page.waitForResponse(
+    (response) => response.request().method() === "PATCH" && response.url().includes("/drafts/"),
+  );
+  await page.getByTestId("save-items").click();
+  expect((await retitled).status()).toBe(200);
+
+  await page.reload();
+  await manualRow.click();
+  await expect(page.getByTestId("editor-title")).toHaveValue(`${MANUAL_DECK_TITLE} v2`);
+  await expect(page.getByTestId("item-card-6")).toBeVisible();
+  await expect(page.getByTestId("item-card-7")).toHaveCount(0);
+  await expect(page.getByTestId("item-source-6")).toHaveValue("gruszka");
+  await expect(page.getByTestId("item-target-0")).toHaveValue("tuesday");
+});
