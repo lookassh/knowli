@@ -5,6 +5,7 @@ import {
   editDraft,
   executeMediaAsset,
   publishDraft,
+  readDraft,
   reconcileDraftAssets,
   regenerateRevisionAsset,
   runDueGenerationWork,
@@ -233,6 +234,13 @@ describe("zasoby medialne i uzgodnienia szkicu (integracja)", () => {
     expect(illRun.state).toBe("failed");
     expect(illRun.error_code).toBe("attempts_exhausted");
     expect(fakes.image.requests).toHaveLength(3);
+
+    // DTO dla rodzica mówi wprost o porażce — nie "generowanie…" na zawsze
+    const failedDraft = await readDraft(services, dto.id);
+    const failedAssets = failedDraft.assets.filter((a) => a.role === "illustration");
+    expect(failedAssets).toHaveLength(1);
+    expect(failedAssets[0]!.state).toBe("failed");
+    expect(failedDraft.assets.filter((a) => a.role === "target_audio")[0]!.state).toBe("approved");
 
     // szkic żyje: edycja działa, publikacja blokowana niezdecydowaną ilustracją
     await editDraft(services, dto.id, { title: "Dni tygodnia", expectedEditNumber: 1 });

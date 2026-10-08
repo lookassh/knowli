@@ -80,10 +80,12 @@ export const messages = {
     audioState: {
       ready: "Audio: gotowe",
       pending: "Audio: generowanie…",
+      failed: "Audio: nie udało się wygenerować",
     } as Record<string, string>,
     imageState: {
       ready: "Obraz: gotowy",
       pending: "Obraz: generowanie…",
+      failed: "Obraz: nie udało się wygenerować",
       omitted: "Obraz: pominięty",
     } as Record<string, string>,
     omitImage: "Pomiń obraz",

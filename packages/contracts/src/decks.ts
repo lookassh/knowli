@@ -81,7 +81,8 @@ export type DraftItemDto = z.infer<typeof DraftItemDtoSchema>;
 export const RevisionAssetDtoSchema = z.object({
   itemRevisionId: UuidSchema,
   role: z.enum(["target_audio", "example_audio", "illustration"]),
-  state: z.enum(["pending", "approved", "omitted"]),
+  /** failed = wyczerpane próby generacji; rodzic widzi porażkę, nie wieczny spinner */
+  state: z.enum(["pending", "approved", "failed", "omitted"]),
   assetId: UuidSchema.nullable(),
 });
 export type RevisionAssetDto = z.infer<typeof RevisionAssetDtoSchema>;

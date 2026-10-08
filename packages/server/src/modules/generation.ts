@@ -436,7 +436,12 @@ export async function executeMediaAsset(services: Services, assetId: string): Pr
       // przegrany CAS przy niedokończonym zasobie: nasz blob zostaje osierocony
     });
   } catch (error) {
-    // porażka providera wraca do kolejki; wyczerpany budżet zamyka zasób
+    // porażka providera wraca do kolejki; wyczerpany budżet zamyka zasób.
+    // Przyczyna trafia do logów (bez promptu i sekretów) — inaczej failed asset
+    // w bazie jest jedynym śladem po stronie operacyjnej.
+    console.warn(
+      `[generation] ${asset.kind} nie udało się (próba ${attempts ?? "?"}/${MAX_AUTOMATIC_ATTEMPTS}, asset ${assetId}): ${error instanceof Error ? error.message : String(error)}`,
+    );
     if (attempts !== null && attempts >= MAX_AUTOMATIC_ATTEMPTS) {
       await failMediaAsset(services, assetId, leaseToken, "attempts_exhausted");
       return;

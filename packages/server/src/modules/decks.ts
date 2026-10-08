@@ -159,7 +159,14 @@ async function readDraftDto(db: Executor, versionId: string): Promise<DraftDto> 
     assets: assets.map((a) => ({
       itemRevisionId: a.itemRevisionId,
       role: a.role,
-      state: a.decisionState === "omitted" ? "omitted" : a.assetState === "ready" ? "approved" : "pending",
+      state:
+        a.decisionState === "omitted"
+          ? "omitted"
+          : a.assetState === "ready"
+            ? "approved"
+            : a.assetState === "failed"
+              ? "failed"
+              : "pending",
       assetId: a.assetId,
     })),
   };
