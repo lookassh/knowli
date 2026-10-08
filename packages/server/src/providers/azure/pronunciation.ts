@@ -4,8 +4,9 @@ import { AppError } from "../../errors";
 /**
  * Adapter Azure Pronunciation Assessment (REST, arch §11, SPEC §23). Ocenia
  * wymowę względem JEDNEGO oczekiwanego tekstu — poprawności treści rozstrzyga
- * osobna transkrypcja STT, nigdy ten wynik. UWAGA: niezweryfikowany względem
- * żywej usługi — wymaga próby technicznej z zadania 0 (klucze, progi pasm).
+ * osobna transkrypcja STT, nigdy ten wynik. Kształt odpowiedzi (score na
+ * NBest[0]) potwierdzony próbą techniczną zadania 0; progi pasm opisuje
+ * docs/speech-spike.md.
  */
 export interface AzurePronunciationOptions {
   subscriptionKey: string;
@@ -21,7 +22,8 @@ interface AzurePronunciationResponse {
   DisplayText?: string;
   NBest?: {
     Confidence?: number;
-    PronunciationAssessment?: { AccuracyScore?: number };
+    /** REST zwraca score bezpośrednio na NBest[0] (forma SDK je zagnieżdża). */
+    AccuracyScore?: number;
   }[];
 }
 
@@ -75,7 +77,7 @@ export function createAzurePronunciationProvider(options: AzurePronunciationOpti
         if (payload.RecognitionStatus !== "Success" || !best) {
           return { status: "no_speech", overallScore: null, recognizedText: null };
         }
-        const score = best.PronunciationAssessment?.AccuracyScore;
+        const score = best.AccuracyScore;
         return {
           status: "ok",
           overallScore: typeof score === "number" ? score : null,

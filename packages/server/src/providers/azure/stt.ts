@@ -3,8 +3,9 @@ import { AppError } from "../../errors";
 
 /**
  * Adapter Azure Speech-to-text (REST, arch §11, SPEC §23). Rozpoznaje treść —
- * nie ocenia wymowy. UWAGA: niezweryfikowany względem żywej usługi — wymaga
- * próby technicznej z zadania 0 (klucze, kodek, wariant en-GB).
+ * nie ocenia wymowy. Kształty odpowiedzi (w tym cisza jako Success z pustym
+ * DisplayText) potwierdzone próbą techniczną zadania 0; klient musi wysyłać
+ * WAV PCM, bo kompresja zwraca pusty wynik zamiast błędu (docs/speech-spike.md).
  */
 export interface AzureSttOptions {
   subscriptionKey: string;
