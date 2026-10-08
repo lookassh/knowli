@@ -19,3 +19,6 @@ playwright-report/
 
 # plik świata E2E (połączenie do bazy testowej)
 tests/e2e/.world.json
+
+# wyjście tymczasowej próby mowy i mediów (zadanie 0) — audio nigdy do repo
+spike/out/
