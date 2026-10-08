@@ -27,12 +27,29 @@ describe("ttsFingerprint", () => {
 });
 
 describe("imageFingerprint", () => {
+  const imageBase = {
+    prompt: "cat",
+    provider: "openai",
+    model: "gpt-image-1",
+    size: "1024x1024",
+    quality: "low",
+    format: "webp",
+  } as const;
+
   it("obejmuje prompt, provider, model i rozmiar", () => {
-    const base = imageFingerprint({ prompt: "cat", provider: "openai", model: "gpt-image-1", size: "1024x1024" });
+    const base = imageFingerprint(imageBase);
     expect(base).toMatch(/^[0-9a-f]{64}$/);
-    expect(imageFingerprint({ prompt: "cat", provider: "openai", model: "gpt-image-1", size: "1024x1024" })).toBe(base);
-    expect(imageFingerprint({ prompt: "dog", provider: "openai", model: "gpt-image-1", size: "1024x1024" })).not.toBe(base);
-    expect(imageFingerprint({ prompt: "cat", provider: "openai", model: "gpt-image-1", size: "512x512" })).not.toBe(base);
+    expect(imageFingerprint({ ...imageBase })).toBe(base);
+    expect(imageFingerprint({ ...imageBase, prompt: "dog" })).not.toBe(base);
+    expect(imageFingerprint({ ...imageBase, provider: "azure" })).not.toBe(base);
+    expect(imageFingerprint({ ...imageBase, model: "gpt-image-1-mini" })).not.toBe(base);
+    expect(imageFingerprint({ ...imageBase, size: "512x512" })).not.toBe(base);
+  });
+
+  it("różni się dla jakości i formatu — zmiana kosztu/formatu to inne żądanie", () => {
+    const base = imageFingerprint(imageBase);
+    expect(imageFingerprint({ ...imageBase, quality: "high" })).not.toBe(base);
+    expect(imageFingerprint({ ...imageBase, format: "png" })).not.toBe(base);
   });
 });
 

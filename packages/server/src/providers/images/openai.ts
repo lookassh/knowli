@@ -9,16 +9,22 @@ export interface OpenAiImageOptions {
 const DEFAULT_MODEL = "gpt-image-1";
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 
+const MIME_BY_FORMAT: Record<string, string> = {
+  png: "image/png",
+  webp: "image/webp",
+  jpeg: "image/jpeg",
+};
+
 /**
- * Adapter ilustracji (/v1/images/generations, b64_json). Niezweryfikowany do
- * czasu próby technicznej z zadania 0 (dobór modelu i rozmiaru).
+ * Adapter ilustracji (/v1/images/generations, b64_json). Model, jakość i format
+ * (output_format) pochodzą z żądania, nie z konstruktora — fingerprint zasobu
+ * i faktyczne wywołanie API nie mogą się rozjechać.
  */
 export function createOpenAiImageProvider(options: OpenAiImageOptions): ImageProvider {
-  const model = options.model ?? DEFAULT_MODEL;
   const baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
   return {
     name: "openai",
-    model,
+    model: options.model ?? DEFAULT_MODEL,
     async generate(input: ImageGenerateInput, signal?: AbortSignal) {
       const response = await fetch(`${baseUrl}/images/generations`, {
         method: "POST",
@@ -26,7 +32,13 @@ export function createOpenAiImageProvider(options: OpenAiImageOptions): ImagePro
           authorization: `Bearer ${options.apiKey}`,
           "content-type": "application/json",
         },
-        body: JSON.stringify({ model, prompt: input.prompt, size: input.size }),
+        body: JSON.stringify({
+          model: input.model,
+          prompt: input.prompt,
+          size: input.size,
+          quality: input.quality,
+          output_format: input.format,
+        }),
         signal,
       });
       if (!response.ok) {
@@ -40,7 +52,7 @@ export function createOpenAiImageProvider(options: OpenAiImageOptions): ImagePro
         throw new Error("openai images returned no data");
       }
       const bytes = Uint8Array.from(Buffer.from(b64, "base64"));
-      return { bytes, mimeType: "image/png" };
+      return { bytes, mimeType: MIME_BY_FORMAT[input.format] ?? "image/png" };
     },
   };
 }

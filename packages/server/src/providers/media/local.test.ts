@@ -49,4 +49,11 @@ describe("LocalMediaStore", () => {
     expect(blob!.mimeType).toBe("image/png");
     expect(await store.get("aa/missing.png")).toBeNull();
   });
+
+  it("obsługuje webp — domyślny format ilustracji", async () => {
+    const stored = await store.putImmutable(bytesA, "image/webp");
+    expect(stored.storageKey).toMatch(/\.webp$/);
+    const blob = await store.get(stored.storageKey);
+    expect(blob!.mimeType).toBe("image/webp");
+  });
 });

@@ -23,12 +23,14 @@ export const systemClock: Clock = { now: () => new Date() };
  */
 export interface MediaSettings {
   tts: { provider: string; model: string; voice: string; format: "mp3" };
-  image: { provider: string; model: string; size: string };
+  image: { provider: string; model: string; size: string; quality: string; format: string };
 }
 
+/** Domyślnie low+webp: karty dziecka wyświetlają obraz ~300 px, high/png
+ *  kosztowało ~0,17 USD/szt. (pełny zestaw ~5 USD) przy znikomej korzyści. */
 export const defaultMediaSettings: MediaSettings = {
   tts: { provider: "openai", model: "gpt-4o-mini-tts", voice: "alloy", format: "mp3" },
-  image: { provider: "openai", model: "gpt-image-1", size: "1024x1024" },
+  image: { provider: "openai", model: "gpt-image-1", size: "1024x1024", quality: "low", format: "webp" },
 };
 
 /** Nadpisywalne zmiennymi środowiskowymi (nazwy, nie sekrety). */
@@ -44,6 +46,8 @@ export function mediaSettingsFromEnv(env: Record<string, string | undefined>): M
       provider: env.UMIEM_IMAGE_PROVIDER ?? defaultMediaSettings.image.provider,
       model: env.UMIEM_IMAGE_MODEL ?? defaultMediaSettings.image.model,
       size: env.UMIEM_IMAGE_SIZE ?? defaultMediaSettings.image.size,
+      quality: env.UMIEM_IMAGE_QUALITY ?? defaultMediaSettings.image.quality,
+      format: env.UMIEM_IMAGE_FORMAT ?? defaultMediaSettings.image.format,
     },
   };
 }

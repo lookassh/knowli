@@ -126,14 +126,26 @@ export class FakeImageProvider implements ImageProvider {
   readonly name = "fake-image";
   readonly model = "fake-image-1";
   failuresLeft = 0;
-  readonly requests: Array<{ prompt: string; size: string }> = [];
+  readonly requests: Array<{
+    prompt: string;
+    model: string;
+    size: string;
+    quality: string;
+    format: string;
+  }> = [];
   readonly #delayMs: number;
 
   constructor(options: { delayMs?: number } = {}) {
     this.#delayMs = options.delayMs ?? 0;
   }
 
-  async generate(input: { prompt: string; size: string }): Promise<{ bytes: Uint8Array; mimeType: string }> {
+  async generate(input: {
+    prompt: string;
+    model: string;
+    size: string;
+    quality: string;
+    format: string;
+  }): Promise<{ bytes: Uint8Array; mimeType: string }> {
     this.requests.push(input);
     if (this.#delayMs > 0) {
       await sleep(this.#delayMs);
@@ -142,9 +154,11 @@ export class FakeImageProvider implements ImageProvider {
       this.failuresLeft -= 1;
       throw new Error("image unavailable");
     }
+    const mimeType =
+      input.format === "webp" ? "image/webp" : input.format === "jpeg" ? "image/jpeg" : "image/png";
     return {
       bytes: deterministicBytes(`img|${input.prompt}|${input.size}`),
-      mimeType: "image/png",
+      mimeType,
     };
   }
 }
@@ -152,7 +166,7 @@ export class FakeImageProvider implements ImageProvider {
 /** Fake'owe ustawienia medialne — muszą zgadzać się z fingerprintami fake'ów. */
 export const fakeMediaSettings = {
   tts: { provider: "fake-tts", model: "fake-tts-1", voice: "fake-voice", format: "mp3" },
-  image: { provider: "fake-image", model: "fake-image-1", size: "512x512" },
+  image: { provider: "fake-image", model: "fake-image-1", size: "512x512", quality: "low", format: "webp" },
 } as const;
 
 /** Komplet zależności generacji na fake'ach dla wskazanego magazynu mediów. */

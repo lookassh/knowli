@@ -7,16 +7,18 @@ const EXT_BY_MIME: Record<string, string> = {
   "audio/mpeg": "mp3",
   "image/png": "png",
   "image/jpeg": "jpg",
+  "image/webp": "webp",
 };
 
 const MIME_BY_EXT: Record<string, string> = {
   mp3: "audio/mpeg",
   png: "image/png",
   jpg: "image/jpeg",
+  webp: "image/webp",
 };
 
 // storageKey ma zawsze postać "xx/hash.ext" — odrzucamy wszystko inne.
-const KEY_PATTERN = /^[0-9a-f]{2}\/[0-9a-f]{64}\.(mp3|png|jpg)$/;
+const KEY_PATTERN = /^[0-9a-f]{2}\/[0-9a-f]{64}\.(mp3|png|jpg|webp)$/;
 
 function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");

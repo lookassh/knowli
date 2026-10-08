@@ -46,7 +46,10 @@ export interface TtsProvider {
 
 export interface ImageGenerateInput {
   prompt: string;
+  model: string;
   size: string;
+  quality: string;
+  format: string;
 }
 
 export interface ImageProvider {

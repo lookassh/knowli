@@ -29,16 +29,19 @@ w zadaniu 11); konwersja do WAV jest kodekowo-agnostyczna.
 | --- | --- | --- |
 | LLM | OpenAI `gpt-4o-mini` | domyślny adapter `createOpenAiLlmProvider` |
 | TTS | OpenAI `gpt-4o-mini-tts`, format mp3 | głos `alloy` (decyzja po próbie: domyślny na start); zmiana np. na `fable` przez `UMIEM_TTS_VOICE` bez zmiany kodu |
-| Ilustracje | OpenAI `gpt-image-1`, `1024x1024`, PNG | ~30 s na obraz — praca tła workera; prompt bez tekstu w obrazie |
+| Ilustracje | OpenAI `gpt-image-1`, `1024x1024`, quality `low`, WebP | ~30 s na obraz — praca tła workera; prompt bez tekstu w obrazie. Domyślnie low+webp: high/png kosztowało ~0,17 USD/szt. (~5 USD za 31-elementowy zestaw 2026-10-08), low+webp to ~0,01–0,02 USD/szt. Budżetowa alternatywa przez env: `gpt-image-1-mini` (~0,005 USD/szt. w low) |
 | Env | `OPENAI_API_KEY` (jeden klucz do trzech usług) | tylko worker; web nie zna tego klucza |
 
 ## Ustawienia medialne i fingerprinty
 
-`UMIEM_TTS_PROVIDER/MODEL/VOICE` oraz `UMIEM_IMAGE_PROVIDER/MODEL/SIZE` wchodzą
-do fingerprintów zasobów. Zasady potwierdzone próbą:
+`UMIEM_TTS_PROVIDER/MODEL/VOICE` oraz `UMIEM_IMAGE_PROVIDER/MODEL/SIZE/QUALITY/FORMAT`
+wchodzą do fingerprintów zasobów. Zasady potwierdzone próbą:
 
 - web i worker muszą mieć **identyczne** wartości (fingerprint liczony w obu
   procesach);
+- model, jakość i format obrazu płyną metadanymi zasobu aż do adaptera, więc
+  `UMIEM_IMAGE_MODEL` faktycznie steruje wywołaniem API (także
+  `gpt-image-1-mini`), a żądanie nie może się rozjechać z fingerprintem;
 - zmiana po wygenerowaniu materiału = nowa generacja przy następnej edycji
   (zgodnie z projektem — nic nie nadpisuje gotowych zasobów);
 - zapis `MediaStore.putImmutable` jest idempotentny i adresowany treścią;

@@ -375,7 +375,10 @@ export async function executeMediaAsset(services: Services, assetId: string): Pr
     locale?: string;
     voice?: string;
     prompt?: string;
+    model?: string;
     size?: string;
+    quality?: string;
+    format?: string;
   };
   try {
     const result =
@@ -386,7 +389,15 @@ export async function executeMediaAsset(services: Services, assetId: string): Pr
             voice: metadata.voice!,
             format: "mp3",
           })
-        : await deps.image.generate({ prompt: metadata.prompt!, size: metadata.size! });
+        : await deps.image.generate({
+            prompt: metadata.prompt!,
+            // Starsze zasoby sprzed parametryzacji quality/format: odtwarzamy
+            // żądanie zgodne z ich fingerprintem (gpt-image-1, high, png).
+            model: metadata.model ?? deps.image.model,
+            size: metadata.size!,
+            quality: metadata.quality ?? "high",
+            format: metadata.format ?? "png",
+          });
     const stored = await deps.mediaStore.putImmutable(result.bytes, result.mimeType);
 
     await services.db.transaction(async (tx) => {

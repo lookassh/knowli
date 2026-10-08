@@ -84,8 +84,19 @@ export function requiredAssetsFor(
         provider: settings.image.provider,
         model: settings.image.model,
         size: settings.image.size,
+        quality: settings.image.quality,
+        format: settings.image.format,
       }),
-      metadata: { kind: "illustration", prompt, size: settings.image.size },
+      // Pełne żądanie w metadanych: executor i fingerprint widzą to samo,
+      // także gdy env zmieni się między planowaniem a wykonaniem.
+      metadata: {
+        kind: "illustration",
+        prompt,
+        model: settings.image.model,
+        size: settings.image.size,
+        quality: settings.image.quality,
+        format: settings.image.format,
+      },
     });
   }
   return required;

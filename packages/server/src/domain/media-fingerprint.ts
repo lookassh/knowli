@@ -37,6 +37,8 @@ export interface ImageFingerprintInput {
   provider: string;
   model: string;
   size: string;
+  quality: string;
+  format: string;
 }
 
 export function imageFingerprint(input: ImageFingerprintInput): string {
@@ -46,6 +48,8 @@ export function imageFingerprint(input: ImageFingerprintInput): string {
     provider: input.provider,
     model: input.model,
     size: input.size,
+    quality: input.quality,
+    format: input.format,
   });
 }
 
