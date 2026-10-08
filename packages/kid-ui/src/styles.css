@@ -24,6 +24,11 @@
   text-align: center;
 }
 
+/* Sekcja „Rekomendowane” wyróżniona kolorem sukcesu. */
+.kid-recommended-title {
+  color: #1d6a3f;
+}
+
 .kid-hint,
 .kid-notice {
   text-align: center;

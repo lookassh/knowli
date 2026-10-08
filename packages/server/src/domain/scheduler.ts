@@ -81,7 +81,8 @@ export type ScheduleReason =
   | "new-material"
   | "new-practice"
   | "due-review"
-  | "filler-practice";
+  | "filler-practice"
+  | "extra-practice";
 
 export interface TaskPlan {
   itemRevisionId: string;
@@ -213,6 +214,55 @@ function weakerDirection(directions: Partial<Record<ReadingDirection, number>>):
   return s2t < t2s ? "source_to_target" : "target_to_source";
 }
 
+/** Czy element ma już jakąkolwiek ocenioną umiejętność (materiał rozpoczęty). */
+function isStarted(candidate: ScheduleCandidate): boolean {
+  return Object.values(candidate.progress).some((s) => s !== undefined && s.status !== "not_assessed");
+}
+
+/** Czy wszystkie znane umiejętności elementu są opanowane — idą na koniec kolejki. */
+function isFullyMastered(candidate: ScheduleCandidate): boolean {
+  const snapshots = Object.values(candidate.progress).filter((s) => s !== undefined);
+  return snapshots.length > 0 && snapshots.every((s) => s!.status === "mastered");
+}
+
+/** Obciążenie jednego elementu zestawu dla rekomendacji (arch §12). */
+export interface DeckWorkloadItem {
+  /**
+   * Migawki umiejętności elementu; puste = materiał nieprzerobiony przez
+   * dziecko (prezentacja jeszcze się nie odbyła lub nie było żadnej próby).
+   */
+  progress: ReadonlyArray<SkillSnapshot>;
+}
+
+/**
+ * Czy zestaw ma teraz pracę zaplanowaną przez harmonogram: należne
+ * sprawdzenie Recall/pisowni, powtórka umiejętności albo nowy materiał?
+ * To podstawa rekomendacji na liście zestawów dziecka; dodatkowe
+ * utrwalanie (extra-practice) jest dostępne zawsze i nie czyni zestawu
+ * rekomendowanym — rekomendacja wskazuje wartość zaplanowaną.
+ */
+export function hasScheduledWork(items: readonly DeckWorkloadItem[], now: string): boolean {
+  for (const item of items) {
+    let started = false;
+    for (const snapshot of item.progress) {
+      if (snapshot.status !== "not_assessed") {
+        started = true;
+      }
+      if (isDue(snapshot, now)) {
+        return true;
+      }
+    }
+    if (!started) {
+      return true; // nowy materiał do prezentacji
+    }
+  }
+  return false;
+}
+
+function keyOfCandidate(c: ScheduleCandidate): string {
+  return keyOf(c.target, c.targetLocale);
+}
+
 export function selectTask(input: ScheduleInput): TaskPlan | null {
   if (input.candidates.length === 0 || input.assessedRemaining <= 0) {
     return null;
@@ -220,7 +270,6 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
 
   const reserved = new Set(input.reservedTargetKeys);
   const settled = new Set(input.settledCheckTargetKeys ?? []);
-  const keyOfCandidate = (c: ScheduleCandidate): string => keyOf(c.target, c.targetLocale);
   for (const candidate of input.candidates) {
     if (dueCheckAt(candidate, input.now) !== null && !settled.has(keyOfCandidate(candidate))) {
       reserved.add(keyOfCandidate(candidate));
@@ -394,55 +443,101 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
   //    tekstu, aby oba kierunki reading zbierały dowody.
   const filler = leastUsedSeen(input.candidates).find((c) => !reserved.has(keyOfCandidate(c)));
   if (filler) {
-    if (filler.practiceMix.listening < filler.practiceMix.reading) {
-      return {
-        itemRevisionId: filler.itemRevisionId,
-        exerciseType: "listening",
-        options: listeningOptions(filler, input.peers, reserved, input.nextOrdinal),
-        revealsTargetKeys: [keyOfCandidate(filler)],
-        assessed: true,
-        reason: "filler-practice",
-        keepsReservations,
-      };
-    }
-    const direction = weakerDirection(filler.readingDirections);
-    if (direction === "source_to_target") {
-      const distractors = pickDistractors(filler, input.peers, reserved, 2, input.nextOrdinal);
-      return {
-        itemRevisionId: filler.itemRevisionId,
-        exerciseType: "reverse_recognition",
-        direction,
-        options: [
-          { itemRevisionId: filler.itemRevisionId, text: filler.target, correct: true },
-          ...distractors.map((d) => ({ itemRevisionId: d.itemRevisionId, text: d.target, correct: false })),
-        ],
-        revealsTargetKeys: [
-          keyOfCandidate(filler),
-          ...distractors.map((d) => keyOf(d.target, d.targetLocale)),
-        ],
-        assessed: true,
-        reason: "filler-practice",
-        keepsReservations,
-      };
-    }
-    return {
-      itemRevisionId: filler.itemRevisionId,
-      exerciseType: "reading",
-      direction,
-      options: [
-        { itemRevisionId: filler.itemRevisionId, text: filler.source, correct: true },
-        ...pickDistractors(filler, input.peers, reserved, 2, input.nextOrdinal).map((d) => ({
-          itemRevisionId: d.itemRevisionId,
-          text: d.source,
-          correct: false,
-        })),
-      ],
-      revealsTargetKeys: [keyOfCandidate(filler)],
-      assessed: true,
-      reason: "filler-practice",
+    return recognitionPlan(
+      filler,
+      input,
+      reserved,
       keepsReservations,
-    };
+      "filler-practice",
+      filler.practiceMix.listening < filler.practiceMix.reading,
+    );
+  }
+
+  // 7. Ćwiczenie zestawu bez blokady harmonogramu (arch §9.3: nie wymuszamy
+  //    oczekiwania na zegar): gdy nic nie jest należne, a materiał był już
+  //    rozpoczęty, wydajemy lekkie utrwalanie rozpoznawania. Jakość dowodów
+  //    chroni reguła niezależności (SPEC §18.1) — próba w ciągu 5 minut od
+  //    ujawnienia wzorca to utrwalanie, nie samodzielne sprawdzenie, więc
+  //    dodatkowe ćwiczenie nie zawyża serii kwalifikujących ani nie zastępuje
+  //    zaplanowanego sprawdzianu. Budżet sesji obowiązuje jak zwykle.
+  const extraPool = input.candidates
+    .filter((c) => !reserved.has(keyOfCandidate(c)) && isStarted(c))
+    .sort((a, b) => Number(isFullyMastered(a)) - Number(isFullyMastered(b)) || a.position - b.position);
+  if (extraPool.length > 0) {
+    const target = extraPool[input.nextOrdinal % extraPool.length]!;
+    return recognitionPlan(
+      target,
+      input,
+      reserved,
+      keepsReservations,
+      "extra-practice",
+      input.nextOrdinal % 2 === 0,
+    );
   }
 
   return null;
+}
+
+/**
+ * Lekkie ćwiczenie rozpoznawania: słuch albo tekst z dystraktorami rówieśników.
+ * Wspólne dla utrwalania w sesji (filler-practice) i dodatkowego ćwiczenia
+ * poza harmonogramem (extra-practice); cele objęte rezerwacją nie mogą być
+ * ani celem, ani dystraktorem.
+ */
+function recognitionPlan(
+  target: ScheduleCandidate,
+  input: ScheduleInput,
+  reserved: ReadonlySet<string>,
+  keepsReservations: string[],
+  reason: "filler-practice" | "extra-practice",
+  preferListening: boolean,
+): TaskPlan {
+  if (preferListening) {
+    return {
+      itemRevisionId: target.itemRevisionId,
+      exerciseType: "listening",
+      options: listeningOptions(target, input.peers, reserved, input.nextOrdinal),
+      revealsTargetKeys: [keyOfCandidate(target)],
+      assessed: true,
+      reason,
+      keepsReservations,
+    };
+  }
+  const direction = weakerDirection(target.readingDirections);
+  if (direction === "source_to_target") {
+    const distractors = pickDistractors(target, input.peers, reserved, 2, input.nextOrdinal);
+    return {
+      itemRevisionId: target.itemRevisionId,
+      exerciseType: "reverse_recognition",
+      direction,
+      options: [
+        { itemRevisionId: target.itemRevisionId, text: target.target, correct: true },
+        ...distractors.map((d) => ({ itemRevisionId: d.itemRevisionId, text: d.target, correct: false })),
+      ],
+      revealsTargetKeys: [
+        keyOfCandidate(target),
+        ...distractors.map((d) => keyOf(d.target, d.targetLocale)),
+      ],
+      assessed: true,
+      reason,
+      keepsReservations,
+    };
+  }
+  return {
+    itemRevisionId: target.itemRevisionId,
+    exerciseType: "reading",
+    direction,
+    options: [
+      { itemRevisionId: target.itemRevisionId, text: target.source, correct: true },
+      ...pickDistractors(target, input.peers, reserved, 2, input.nextOrdinal).map((d) => ({
+        itemRevisionId: d.itemRevisionId,
+        text: d.source,
+        correct: false,
+      })),
+    ],
+    revealsTargetKeys: [keyOfCandidate(target)],
+    assessed: true,
+    reason,
+    keepsReservations,
+  };
 }

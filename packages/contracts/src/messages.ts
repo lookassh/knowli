@@ -136,6 +136,8 @@ export const messages = {
     profilesTitle: "Kto się dziś uczy?",
     noProfiles: "Poproś rodzica o dodanie profilu w panelu.",
     decksTitle: "Co dziś robimy?",
+    recommendedTitle: "Rekomendowane",
+    otherDecksTitle: "Wszystkie zestawy",
     noDecks: "Nie masz jeszcze zestawów do nauki.",
     testDateLabel: "Sprawdzian",
     microphone: "Mikrofon",

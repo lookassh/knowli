@@ -171,6 +171,8 @@ Na początku planowania serwer rezerwuje należne, już kwalifikujące się spra
 
 Nie wymuszamy sprawdzania nieznanych słów ani oczekiwania na zegar. Jeśli warunek przerwy nie jest spełniony, wybieramy utrwalanie i planujemy niezależny sprawdzian na później. Testy obejmują kolejną sesję znającego materiał dziecka, nie tylko pierwszą naukę.
 
+Zestaw można ćwiczyć w dowolnym momencie (uzupełnienie wersji 1.1): gdy dla dziecka nic nie jest należne i nie ma nowego materiału, scheduler wydaje jako ostatni priorytet lekkie utrwalanie rozpoznawania (słuch/tekst) już rozpoczętych elementów — reason `extra-practice`, obrót deterministyczny wg pozycji i ordinalu, elementy w pełni opanowane na końcu kolejki, rezerwacje sprawdzeń obowiązują jak w każdej innej ścieżce. Zadanie jest oceniane i mieści się w zwykłym budżecie sesji; jakość dowodów chroni reguła niezależności (SPEC §18: próba w ciągu 5 minut od ujawnienia wzorca to utrwalanie), więc dodatkowe ćwiczenie nie zawyża serii kwalifikujących ani nie zastępuje zaplanowanego sprawdzianu. Lista zestawów dziecka zawiera pole `recommended` (true, gdy w wersji jest teraz zaplanowana praca: należne sprawdzenie, powtórka albo nieprzerobiony element); klient pokazuje te zestawy w sekcji „Rekomendowane”, a wybór dowolnego przypisanego zestawu pozostaje możliwy zawsze.
+
 Po tej ochronie kolejności obowiązują pozostałe priorytety. Najpierw zaległe sprawdzenia i trudności aktualnego zestawu, potem znane łatwiejsze elementy i nowe porcje po 2–3. Co najmniej co trzecie zadanie po serii trudności jest łatwiejsze. Ten sam element nie wraca od razu po dwóch błędach; wyjątkiem jest pokazanie wzorca jako wsparcie.
 
 Początkowe odstępy po sukcesach: 1 dzień, 3 dni, 7 dni; po trudności — powrót po innych elementach w sesji oraz następnego dnia. Błędy techniczne nie przesuwają harmonogramu jak błędy wiedzy. Przy sprawdzianie w ciągu 48 godzin trudności i pisownia mają pierwszeństwo przed nowym materiałem, ale progi opanowania nie zmieniają się.
@@ -217,7 +219,7 @@ Wspólny format błędu: {code, message, retryable, requestId}. Walidacja na gra
 | Parent | POST /api/v1/parent/decks/:id/archive | Wycofanie z nowych sesji |
 | Parent | GET /api/v1/parent/progress?childId=&deckId= | Podsumowanie umiejętności i pomyłek |
 | Kid | GET /api/v1/kid/profiles | Tylko nazwa i awatar |
-| Kid | GET /api/v1/kid/decks?childId= | Przypisane opublikowane zestawy |
+| Kid | GET /api/v1/kid/decks?childId= | Przypisane opublikowane zestawy z flagą `recommended` |
 | Kid | POST /api/v1/kid/sessions | Start lub resume z przypiętą wersją |
 | Kid | POST /api/v1/kid/sessions/:id/next | Idempotentne wydanie aktywnego zadania |
 | Kid | POST /api/v1/kid/tasks/:id/events | Opcjonalne potwierdzenie obserwacji; nie tworzy jedynego dowodu ujawnienia |

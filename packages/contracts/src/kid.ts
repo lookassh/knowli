@@ -162,6 +162,12 @@ export const KidDeckDtoSchema = z.object({
   title: z.string().min(1),
   /** Termin sprawdzianu z przypisania (lokalna data rodziny) lub null. */
   testDate: z.string().nullable(),
+  /**
+   * Czy harmonogram ma teraz dla dziecka zaplanowaną pracę w tym zestawie
+   * (należne sprawdzenia/powtórki albo nowy materiał)? Podstawa sekcji
+   * „Rekomendowane”; ćwiczyć można każdy zestaw w dowolnym momencie.
+   */
+  recommended: z.boolean(),
 });
 export type KidDeckDto = z.infer<typeof KidDeckDtoSchema>;
 

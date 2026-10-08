@@ -183,7 +183,12 @@ function makeApi(state: ApiState): KidApi {
   };
 }
 
-const DECK: KidDeckDto = { deckId: "33333333-3333-3333-3333-333333333333", title: "Dni tygodnia", testDate: null };
+const DECK: KidDeckDto = {
+  deckId: "33333333-3333-3333-3333-333333333333",
+  title: "Dni tygodnia",
+  testDate: null,
+  recommended: true,
+};
 
 function makeHarness(state: ApiState, recorderOpts: { failStart?: boolean } = {}) {
   const recorder = makeRecorder(recorderOpts);

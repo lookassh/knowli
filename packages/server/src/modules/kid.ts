@@ -1,8 +1,10 @@
-import { and, asc, eq, isNotNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 import type { KidDeckDto, KidProfileDto } from "@learning/contracts";
 import type { Services } from "../config";
-import { assignments, childProfiles, decks } from "../db/schema";
+import { hasScheduledWork, type DeckWorkloadItem, type SkillSnapshot } from "../domain/scheduler";
+import { assignments, childProfiles, childSkillProgress, decks, itemRevisionSkills, itemRevisions } from "../db/schema";
 import { AppError } from "../errors";
+import { mapStatus } from "./sessions";
 
 /**
  * Widoki startowe Kid Mode (arch §12): profile dzieci (tylko nazwa i awatar)
@@ -24,8 +26,8 @@ export async function listKidDecks(services: Services, childId: string): Promise
   if (!child) {
     throw new AppError("not_found");
   }
-  return services.db
-    .select({ deckId: decks.id, title: decks.title, testDate: assignments.testDate })
+  const rows = await services.db
+    .select({ deckId: decks.id, title: decks.title, testDate: assignments.testDate, versionId: decks.publishedVersionId })
     .from(assignments)
     .innerJoin(decks, eq(decks.id, assignments.deckId))
     .where(
@@ -36,4 +38,58 @@ export async function listKidDecks(services: Services, childId: string): Promise
       ),
     )
     .orderBy(asc(decks.createdAt));
+  if (rows.length === 0) {
+    return [];
+  }
+
+  // Rekomendacja (arch §9.3, §12): czy w wersji jest teraz zaplanowana praca
+  // dla tego dziecka? Elementy bez postępu to nowy materiał; rozpoczęte
+  // sprawdzamy pod kątem należnych terminów. Utrwalanie dodatkowe jest
+  // dostępne zawsze i nie czyni zestawu rekomendowanym.
+  const versionIds = rows.map((row) => row.versionId!);
+  const revisions = await services.db
+    .select({ revisionId: itemRevisions.id, versionId: itemRevisions.deckVersionId })
+    .from(itemRevisions)
+    .where(inArray(itemRevisions.deckVersionId, versionIds));
+  const progressRows = await services.db
+    .select({
+      revisionId: itemRevisionSkills.itemRevisionId,
+      status: childSkillProgress.status,
+      nextReviewAt: childSkillProgress.nextReviewAt,
+    })
+    .from(itemRevisionSkills)
+    .innerJoin(
+      childSkillProgress,
+      and(
+        eq(childSkillProgress.skillVersionId, itemRevisionSkills.skillVersionId),
+        eq(childSkillProgress.childId, childId),
+      ),
+    )
+    .where(
+      inArray(
+        itemRevisionSkills.itemRevisionId,
+        revisions.map((r) => r.revisionId),
+      ),
+    );
+
+  const progressByRevision = new Map<string, SkillSnapshot[]>();
+  for (const row of progressRows) {
+    const list = progressByRevision.get(row.revisionId) ?? [];
+    list.push({ status: mapStatus(row.status), nextReviewAt: row.nextReviewAt?.toISOString() ?? null });
+    progressByRevision.set(row.revisionId, list);
+  }
+  const now = services.clock.now().toISOString();
+  const itemsByVersion = new Map<string, DeckWorkloadItem[]>();
+  for (const revision of revisions) {
+    const list = itemsByVersion.get(revision.versionId) ?? [];
+    list.push({ progress: progressByRevision.get(revision.revisionId) ?? [] });
+    itemsByVersion.set(revision.versionId, list);
+  }
+
+  return rows.map((row) => ({
+    deckId: row.deckId,
+    title: row.title,
+    testDate: row.testDate,
+    recommended: hasScheduledWork(itemsByVersion.get(row.versionId!) ?? [], now),
+  }));
 }

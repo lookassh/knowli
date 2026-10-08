@@ -105,6 +105,7 @@ Wymagania:
 - widoczny przycisk ponownego odsłuchania;
 - feedback przez tekst, symbol i dźwięk tam, gdzie pomaga; kolor nie jest jedyną informacją;
 - możliwość zakończenia sesji bez utraty już zapisanych prób;
+- lista zestawów z sekcją „Rekomendowane” (zestawy z zaplanowaną pracą) i możliwością wyboru dowolnego przypisanego zestawu w każdym momencie;
 - brak ustawień AI, modeli, promptów, CEFR i administracji zestawami;
 - brak procentowych ocen i technicznych wyników wymowy.
 
@@ -378,6 +379,8 @@ Nie pokazujemy „ŹLE”, kar, rankingów ani technicznego „37%”. Nie chwal
 ## 17. Sesje i adaptacyjne powtórki
 
 Domyślna sesja trwa około 5–10 minut. Algorytm dobiera skończoną porcję zadań, uwzględniając czas i trudności. Dziecko może zakończyć wcześniej.
+
+Zestaw można ćwiczyć w dowolnym momencie; harmonogram nie blokuje wyboru. Gdy dla danego dziecka nic nie jest w danym momencie należne (żadne sprawdzenie, powtórka ani nowy materiał), sesja wydaje lekkie utrwalanie rozpoznawania już rozpoczętych elementów. Takie dodatkowe ćwiczenie mieści się w zwykłym budżecie sesji, a próby klasyfikujemy według reguł niezależności (§18) — utrwalanie tuż po ujawnieniu wzorca nie zalicza się jako samodzielne sprawdzenie i nie zawyża postępu. Listę zestawów dziecka porządkuje sekcja „Rekomendowane”: zestawy, w których harmonogram ma teraz zaplanowaną pracę (należne sprawdzenia, powtórki albo nowy materiał).
 
 Zamiast „37 kart do zrobienia” pokazujemy krótki, osiągalny cel. Jeśli aplikacja informuje „Jeszcze 3 i koniec”, nie dokłada potem niezapowiedzianych zadań.
 

@@ -6,14 +6,16 @@ import {
   createChild,
   createDraft,
   endSession,
+  listKidDecks,
   nextTask,
   publishDraft,
   recordEvent,
   startSession,
+  submitAttempt,
   upsertAssignment,
   type AppError,
 } from "@learning/server";
-import type { TaskDto } from "@learning/contracts";
+import { TaskDtoSchema, type TaskDto } from "@learning/contracts";
 import {
   buildTestServices,
   openRestartedServices,
@@ -581,5 +583,98 @@ describe("ujawnienia i ekspozycje (Review Focus 2)", () => {
       )
     ).map((r) => r.target_key);
     expect(keys.map((k) => k.target_key).sort()).toEqual([...expectedKeys].sort());
+  });
+});
+
+describe("ćwiczenie zestawu w dowolnym momencie (extra-practice + rekomendacja)", () => {
+  let services: ReturnType<typeof buildTestServices>["services"];
+  let clock: ManualClock;
+  let childId: string;
+
+  beforeEach(async () => {
+    await truncateCoreTables();
+    await pool.query(
+      `truncate learning_app.revision_assets, learning_app.media_assets, learning_app.item_revision_skills,
+              learning_app.item_revisions, learning_app.skill_versions, learning_app.learning_items,
+              learning_app.deck_versions, learning_app.decks cascade`,
+    );
+    const built = buildTestServices();
+    services = built.services;
+    clock = built.clock;
+    const child = await createChild(services, { displayName: "Ola", avatarKey: "fox" });
+    childId = child.id;
+  });
+
+  /** Poprawna odpowiedź na zadanie wyboru lub tekstowe wg klucza z bazy. */
+  async function answerCorrectly(task: TaskDto): Promise<void> {
+    const key = (
+      await query<{ target: string; correct_option_id: string | null }>(
+        `select answer_key->>'target' as target, answer_key->>'correctOptionId' as correct_option_id
+           from learning_app.session_tasks where id = $1`,
+        [task.taskId],
+      )
+    )[0]!;
+    await submitAttempt(
+      services,
+      key.correct_option_id === null
+        ? { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: key.target }
+        : { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: key.correct_option_id },
+    );
+  }
+
+  it("po wyczerpaniu materiału zestaw nie jest rekomendowany, ale od razu wydaje extra-practice", async () => {
+    const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 4));
+
+    // nowy materiał → rekomendacja przed nauką
+    await expect(listKidDecks(services, childId)).resolves.toMatchObject([{ deckId, recommended: true }]);
+
+    // sesja 1: cały materiał przerobiony poprawnie, budżet wyczerpany
+    const first = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    let assessed = 0;
+    for (let step = 0; step < 60; step++) {
+      const task = await nextTask(services, first.sessionId);
+      if (!task) break;
+      if (task.exerciseType === "exposure") {
+        await completePresentation(services, { taskId: task.taskId });
+        continue;
+      }
+      await answerCorrectly(task);
+      assessed += 1;
+    }
+    expect(assessed).toBe(12); // budżet domyślny
+    await endSession(services, first.sessionId);
+
+    // wszystkie powtórki w przyszłości → brak rekomendacji, ale bez blokady
+    await expect(listKidDecks(services, childId)).resolves.toMatchObject([{ deckId, recommended: false }]);
+
+    // druga sesja tego samego dnia: utrwalanie rozpoznawania zamiast „Na dziś wystarczy”
+    const second = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    expect(second.resumed).toBe(false);
+    const extra = await nextTask(services, second.sessionId);
+    expect(extra).not.toBeNull();
+    expect(extra!.exerciseType === "listening" || extra!.exerciseType === "reading").toBe(true);
+    expect(TaskDtoSchema.safeParse(extra).success).toBe(true);
+    if (extra!.prompt.kind === "listening" || extra!.prompt.kind === "reading") {
+      expect(extra!.prompt.options.length).toBeGreaterThanOrEqual(1);
+    }
+    const row = (
+      await query<{ context: Record<string, unknown> }>(
+        `select context from learning_app.session_tasks where id = $1`,
+        [extra!.taskId],
+      )
+    )[0]!;
+    expect(row.context).toMatchObject({ reason: "extra-practice" });
+
+    // odpowiedź działa normalnie i zamyka zadanie
+    await answerCorrectly(extra!);
+    const closed = (
+      await query<{ state: string }>(`select state from learning_app.session_tasks where id = $1`, [extra!.taskId])
+    )[0]!;
+    expect(closed.state).toBe("answered");
+    await endSession(services, second.sessionId);
+
+    // po dojściu terminów (25h) zestaw wraca do rekomendowanych
+    clock.advanceHours(25);
+    await expect(listKidDecks(services, childId)).resolves.toMatchObject([{ deckId, recommended: true }]);
   });
 });

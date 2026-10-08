@@ -52,7 +52,7 @@ const PROMISE_REMAINING = 3;
 export const DEFAULT_TASK_BUDGET = 12;
 
 /** Statusy child_skill_progress odwzorowane na domenową projekcję zadania 5. */
-function mapStatus(dbStatus: string): ProgressStatus {
+export function mapStatus(dbStatus: string): ProgressStatus {
   switch (dbStatus) {
     case "unseen":
       return "not_assessed";

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  hasScheduledWork,
   selectTask,
   type ScheduleCandidate,
   type ScheduleInput,
@@ -265,11 +266,15 @@ describe("selectTask — listening zawsze z opcjami (kontrakt kid.ts: min 1)", (
 });
 
 describe("selectTask — mikrofon i kierunki", () => {
-  it("brak mikrofonu wyklucza wymowę", () => {
+  it("brak mikrofonu wyklucza wymowę, ale nie blokuje ćwiczenia", () => {
     const speaker = candidate({
       progress: { pronunciation: { status: "needs_confirmation", nextReviewAt: PAST } },
     });
-    expect(selectTask(input({ candidates: [speaker], peers: [peer(speaker)], microphoneEnabled: false }))).toBeNull();
+    const withoutMic = selectTask(
+      input({ candidates: [speaker], peers: [peer(speaker)], microphoneEnabled: false }),
+    );
+    expect(withoutMic).toMatchObject({ reason: "extra-practice", assessed: true });
+    expect(withoutMic!.exerciseType).not.toBe("speech");
     expect(selectTask(input({ candidates: [speaker], peers: [peer(speaker)] }))).toMatchObject({
       exerciseType: "speech",
       reason: "due-review",
@@ -336,5 +341,107 @@ describe("selectTask — rozliczone sprawdzenia nie wracają w tej sesji (arch �
     expect(plan).toMatchObject({ exerciseType: "reading", reason: "due-review" });
     expect(plan!.options!.map((o) => o.text)).toContain("czwartek");
     expect(plan!.keepsReservations).not.toContain(KEY_THURSDAY);
+  });
+});
+
+describe("selectTask — extra-practice: ćwiczenie bez blokady harmonogramu", () => {
+  const FUTURE = "2026-10-08T16:00:00.000Z";
+
+  function startedCandidate(overrides: Partial<ScheduleCandidate> = {}): ScheduleCandidate {
+    return candidate({
+      progress: { listening: { status: "learning", nextReviewAt: FUTURE } },
+      ...overrides,
+    });
+  }
+
+  it("świeża sesja z samymi przyszłymi powtórkami wydaje utrwalanie rozpoznawania", () => {
+    const a = startedCandidate({ itemRevisionId: "rev-a", position: 0 });
+    const b = startedCandidate({
+      itemRevisionId: "rev-b",
+      position: 1,
+      target: "Friday",
+      source: "piątek",
+      progress: { listening: { status: "needs_confirmation", nextReviewAt: FUTURE } },
+    });
+    const plan = selectTask(input({ candidates: [a, b], peers: [peer(a), peer(b)] }));
+    expect(plan).toMatchObject({ itemRevisionId: "rev-a", reason: "extra-practice", assessed: true });
+    expect(plan!.options!.filter((o) => o.correct).map((o) => o.text)).toEqual(["czwartek"]);
+  });
+
+  it("naprzemiennie słuch i tekst wg parzystości ordinalu", () => {
+    const a = startedCandidate({ itemRevisionId: "rev-a", position: 0 });
+    const peers = [peer(a)];
+    const listening = selectTask(input({ candidates: [a], peers, nextOrdinal: 0 }));
+    expect(listening).toMatchObject({ exerciseType: "listening", reason: "extra-practice" });
+    const reading = selectTask(input({ candidates: [a], peers, nextOrdinal: 1 }));
+    expect(reading).toMatchObject({
+      exerciseType: "reading",
+      direction: "target_to_source",
+      reason: "extra-practice",
+    });
+  });
+
+  it("cel objęty rezerwacją kontekstu nie jest celem utrwalania", () => {
+    const reservedItem = startedCandidate({ itemRevisionId: "rev-r", position: 0 });
+    const other = startedCandidate({
+      itemRevisionId: "rev-o",
+      position: 1,
+      target: "Friday",
+      source: "piątek",
+    });
+    // rezerwacja utrzymywana w kontekście sesji chroni czwartek także w utrwalaniu
+    const plan = selectTask(
+      input({
+        candidates: [reservedItem, other],
+        peers: [peer(reservedItem), peer(other)],
+        reservedTargetKeys: [KEY_THURSDAY],
+        nextOrdinal: 2,
+      }),
+    );
+    expect(plan).toMatchObject({ itemRevisionId: "rev-o", reason: "extra-practice" });
+    expect(plan!.options!.map((o) => o.text)).not.toContain("czwartek");
+  });
+
+  it("elementy w pełni opanowane idą na koniec kolejki", () => {
+    const mastered = startedCandidate({
+      itemRevisionId: "rev-m",
+      position: 0,
+      progress: { listening: { status: "mastered", nextReviewAt: FUTURE } },
+    });
+    const learning = startedCandidate({
+      itemRevisionId: "rev-l",
+      position: 1,
+      target: "Friday",
+      source: "piątek",
+    });
+    const plan = selectTask(input({ candidates: [mastered, learning], peers: [peer(mastered), peer(learning)] }));
+    expect(plan).toMatchObject({ itemRevisionId: "rev-l", reason: "extra-practice" });
+  });
+
+  it("nieprzerobiony element to nadal nowy materiał, nie utrwalanie", () => {
+    const plan = selectTask(input({ candidates: [candidate()], peers: [peer()] }));
+    expect(plan).toMatchObject({ reason: "new-material", exerciseType: "exposure" });
+  });
+});
+
+describe("hasScheduledWork — rekomendacja zestawu na liście dziecka", () => {
+  const FUTURE = "2026-10-08T16:00:00.000Z";
+
+  it("brak postępu oznacza nowy materiał do nauki", () => {
+    expect(hasScheduledWork([{ progress: [] }], NOW)).toBe(true);
+  });
+
+  it("wyłącznie niezaocenione umiejętności to nadal nowy materiał", () => {
+    expect(hasScheduledWork([{ progress: [{ status: "not_assessed", nextReviewAt: PAST }] }], NOW)).toBe(true);
+  });
+
+  it("należna powtórka czyni zestaw rekomendowanym", () => {
+    expect(
+      hasScheduledWork([{ progress: [{ status: "learning", nextReviewAt: PAST }] }], NOW),
+    ).toBe(true);
+  });
+
+  it("rozpoczęty materiał z samymi przyszłymi terminami nie jest rekomendowany", () => {
+    expect(hasScheduledWork([{ progress: [{ status: "learning", nextReviewAt: FUTURE }] }], NOW)).toBe(false);
   });
 });

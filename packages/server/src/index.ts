@@ -46,8 +46,9 @@ export {
 } from "./modules/item-payload";
 export { classifyRevisionImpact, buildSkillCriteria } from "./domain/revision-impact";
 export { computeTargetKey, normalizeTargetText } from "./domain/target-key";
-export { selectTask } from "./domain/scheduler";
+export { hasScheduledWork, selectTask } from "./domain/scheduler";
 export type {
+  DeckWorkloadItem,
   ScheduleCandidate,
   ScheduleInput,
   SchedulePeer,
