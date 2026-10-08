@@ -116,6 +116,46 @@ test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page,
   await expect(page.getByTestId("assignment-row-0")).toContainText(alaDate);
   await expect(page.getByTestId("assignment-row-1")).toContainText(bartekDate);
 
+  // Nowa wersja opublikowanego materiału (SPEC §84): wgląd w opublikowane
+  // elementy, szkic v2 z kopią treści i mediów, zmiana znaczenia słowa,
+  // ponowna publikacja. Opublikowana wersja pozostaje niezmieniona.
+  await expect(page.getByTestId("item-target-0")).toHaveValue("monday");
+  await expect(page.getByTestId("item-source-0")).toBeDisabled();
+  await page.getByTestId("new-version").click();
+  await expect(page.getByTestId("item-source-0")).toBeEnabled();
+  const mondaySource = await page.getByTestId("item-source-0").inputValue();
+  await page.getByTestId("item-source-0").fill(`${mondaySource} (dzień)`);
+
+  // Klik nie czeka na PATCH: stan mediów weryfikujemy w odpowiedzi zapisu,
+  // a nie na DOM, który chwilę po kliknięciu pokazuje jeszcze stan przed zapisem.
+  const saved = page.waitForResponse(
+    (response) => response.request().method() === "PATCH" && response.url().includes("/drafts/"),
+  );
+  await page.getByTestId("save-items").click();
+  const savedResponse = await saved;
+  expect(savedResponse.status()).toBe(200);
+  const savedDraft = (await savedResponse.json()) as {
+    items: { revisionId: string }[];
+    assets: { itemRevisionId: string; role: string; state: string }[];
+  };
+  const mondayRevision = savedDraft.items[0]!.revisionId;
+  // niezmieniony angielski cel zachowuje gotowe audio bez regeneracji
+  const mondayAudio = savedDraft.assets.find(
+    (asset) => asset.role === "target_audio" && asset.itemRevisionId === mondayRevision,
+  );
+  expect(mondayAudio?.state).toBe("approved");
+  // obraz ilustruje znaczenie — zmiana źródła planuje nową generację
+  const mondayImage = savedDraft.assets.find(
+    (asset) => asset.role === "illustration" && asset.itemRevisionId === mondayRevision,
+  );
+  expect(mondayImage?.state).toBe("pending");
+
+  // publikacja dopiero, gdy nowy obraz dojrzeje w workerze (fake delay 3 s)
+  await expect(page.getByTestId("item-image-state-0")).toContainText("generowanie");
+  await expect(page.getByTestId("item-image-state-0")).toContainText("gotowy", { timeout: 60_000 });
+  await page.getByTestId("publish-deck").click();
+  await expect(page.getByTestId("publish-status")).toContainText(messages.decks.published);
+
   // Nieopublikowana treść nie jest dostępna w Kid API.
   const kid = await request.get("/api/v1/kid/decks?childId=00000000-0000-0000-0000-000000000000");
   expect(kid.status()).toBe(404);

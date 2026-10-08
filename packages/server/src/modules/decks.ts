@@ -213,6 +213,117 @@ interface CurrentRevision {
   skills: Map<Skill, { skillVersionId: string; revisionNumber: number }>;
 }
 
+/**
+ * Nowy edytowalny szkic z aktualnie opublikowanej wersji zestawu
+ * (architecture.md §12: POST /decks/:id/draft, SPEC §84). Kopiuje rewizje
+ * z tymi samymi kluczami umiejętności i decyzjami o mediach — dopiero edycja
+ * szkicu tworzy nowe skill_versions z predecessorami. Opublikowana wersja
+ * pozostaje nietknięta i prowadzi sesje dziecka do publikacji nowej.
+ */
+export async function createDraftFromPublished(
+  services: Services,
+  deckId: string,
+): Promise<DraftDto> {
+  const id = z.uuid().parse(deckId);
+  return services.db.transaction(async (tx) => {
+    // blokada wiersza zestawu serializuje równoległe forki (indeks częściowy
+    // one_editable_version_per_deck to ostateczny strażnik) i wyścig z archiwum
+    const deck = (await tx.select().from(decks).where(eq(decks.id, id)).for("update"))[0];
+    if (!deck) {
+      throw new AppError("not_found");
+    }
+    if (deck.archivedAt) {
+      throw new AppError("conflict");
+    }
+    if (!deck.publishedVersionId) {
+      throw new AppError("validation", { message: "deck is not published" });
+    }
+    const editable = (
+      await tx
+        .select({ id: deckVersions.id })
+        .from(deckVersions)
+        .where(and(eq(deckVersions.deckId, id), inArray(deckVersions.state, ["draft", "review"])))
+    )[0];
+    if (editable) {
+      throw new AppError("conflict");
+    }
+    const source = (
+      await tx.select().from(deckVersions).where(eq(deckVersions.id, deck.publishedVersionId))
+    )[0]!;
+    const maxVersion = (
+      await tx
+        .select({ max: sql<number>`max(${deckVersions.versionNumber})::int` })
+        .from(deckVersions)
+        .where(eq(deckVersions.deckId, id))
+    )[0]!;
+
+    const versionId = randomUUID();
+    await tx.insert(deckVersions).values({
+      id: versionId,
+      deckId: id,
+      versionNumber: maxVersion.max + 1,
+      editNumber: 1,
+      state: "draft",
+      title: source.title,
+      sourceLocale: source.sourceLocale,
+      targetLocale: source.targetLocale,
+    });
+
+    const revisions = await tx
+      .select()
+      .from(itemRevisions)
+      .where(eq(itemRevisions.deckVersionId, source.id))
+      .orderBy(asc(itemRevisions.position));
+    const revisionIds = revisions.map((r) => r.id);
+    const skills = revisionIds.length
+      ? await tx
+          .select({
+            itemRevisionId: itemRevisionSkills.itemRevisionId,
+            skill: itemRevisionSkills.skill,
+            skillVersionId: itemRevisionSkills.skillVersionId,
+          })
+          .from(itemRevisionSkills)
+          .where(inArray(itemRevisionSkills.itemRevisionId, revisionIds))
+      : [];
+    const assets = revisionIds.length
+      ? await tx.select().from(revisionAssets).where(inArray(revisionAssets.itemRevisionId, revisionIds))
+      : [];
+
+    for (const revision of revisions) {
+      const copyId = randomUUID();
+      await tx.insert(itemRevisions).values({
+        id: copyId,
+        itemId: revision.itemId,
+        deckId: id,
+        deckVersionId: versionId,
+        position: revision.position,
+        payload: revision.payload,
+        targetKey: revision.targetKey,
+      });
+      for (const skill of skills.filter((row) => row.itemRevisionId === revision.id)) {
+        await tx.insert(itemRevisionSkills).values({
+          itemRevisionId: copyId,
+          itemId: revision.itemId,
+          skill: skill.skill,
+          skillVersionId: skill.skillVersionId,
+        });
+      }
+      // decyzje rodzica o mediach (approved/omitted, fingerprinty) przechodzą
+      // do szkicu; uzgodnienie przy każdej edycji zadba o zmiany treści
+      for (const asset of assets.filter((row) => row.itemRevisionId === revision.id)) {
+        await tx.insert(revisionAssets).values({
+          itemRevisionId: copyId,
+          role: asset.role,
+          assetId: asset.assetId,
+          expectedFingerprint: asset.expectedFingerprint,
+          state: asset.state,
+        });
+      }
+    }
+    return readDraftDto(tx, versionId);
+  });
+}
+
 async function loadCurrentRevisions(tx: Tx, versionId: string): Promise<CurrentRevision[]> {
   const revisions = await tx
     .select()

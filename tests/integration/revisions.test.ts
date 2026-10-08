@@ -1,6 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { createDraft, editDraft, publishDraft, type AppError } from "@learning/server";
+import {
+  archiveDeck,
+  createDraft,
+  createDraftFromPublished,
+  editDraft,
+  publishDraft,
+  readDeck,
+  type AppError,
+} from "@learning/server";
 import type { VocabularyItemInput } from "@learning/contracts";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
 import type { ManualClock } from "./helpers";
@@ -258,6 +266,118 @@ describe("wersje zestawów i umiejętności (integracja)", () => {
       "immutable",
     );
   });
+
+  it("szkic v2 z opublikowanej wersji kopiuje elementy, klucze umiejętności i decyzje o mediach", async () => {
+    const { services } = buildTestServices();
+    const v1 = await createDraft(services, {
+      title: "Dni",
+      items: [vocabItem(), vocabItem({ source: "piątek", target: "Friday" })],
+    });
+    await attachFakeReadyAudio(v1.id, 0);
+    await attachFakeReadyAudio(v1.id, 1);
+    await omitIllustration(v1.id, 0);
+    await omitIllustration(v1.id, 1);
+    await publishDraft(services, v1.id, 1);
+    const v1Skills = await skillsOfVersion(v1.id);
+
+    const v2 = await createDraftFromPublished(services, v1.deckId);
+
+    // świeży szkic: edit_number od 1, kolejny numer wersji, te same itemy
+    expect(v2.status).toBe("draft");
+    expect(v2.editNumber).toBe(1);
+    expect(v2.items.map((item) => [item.id, item.source, item.target])).toEqual(
+      v1.items.map((item) => [item.id, item.source, item.target]),
+    );
+    const version = await versionRow(v2.id);
+    expect(version?.version_number).toBe(2);
+    expect(version?.state).toBe("draft");
+    expect(version?.title).toBe("Dni");
+
+    // nic się nie zmieniło: rewizje v2 wskazują te same skill_version co v1
+    const v2Skills = await skillsOfVersion(v2.id);
+    for (const [skill, row] of v2Skills) {
+      expect(row.skill_version_id).toBe(v1Skills.get(skill)!.skill_version_id);
+    }
+
+    // decyzje o mediach przechodzą do szkicu: komplet powiązań v2 równy v1
+    // (audio approved, obraz omitted, te same assety i fingerprinty)
+    const assetsOf = (deckVersionId: string) =>
+      query<{
+        position: number;
+        role: string;
+        asset_id: string | null;
+        state: string;
+        expected_fingerprint: string;
+      }>(
+        `select ir.position, ra.role, ra.asset_id, ra.state, ra.expected_fingerprint
+           from learning_app.revision_assets ra
+           join learning_app.item_revisions ir on ir.id = ra.item_revision_id
+          where ir.deck_version_id = $1 order by ir.position, ra.role`,
+        [deckVersionId],
+      );
+    expect(await assetsOf(v2.id)).toEqual(await assetsOf(v1.id));
+
+    // panel widzi jednocześnie szkic v2 i wciąż opublikowaną v1
+    const deck = await readDeck(services, v1.deckId);
+    expect(deck.state).toBe("draft");
+    expect(deck.draft?.id).toBe(v2.id);
+    expect(deck.published?.id).toBe(v1.id);
+    expect((await versionRow(v1.id))?.state).toBe("published");
+  });
+
+  it("szkic v2 wymaga publikacji i tylko jeden; zmiana znaczenia i publikacja prowadzą łańcuch kluczy", async () => {
+    const { services } = buildTestServices();
+    const v1 = await createDraft(services, { title: "Dni", items: [vocabItem()] });
+    await attachFakeReadyAudio(v1.id, 0);
+    await omitIllustration(v1.id, 0);
+
+    // nieopublikowany zestaw nie ma wersji do skopiowania
+    await expectAppError(createDraftFromPublished(services, v1.deckId), "validation");
+    await expectAppError(
+      createDraftFromPublished(services, "00000000-0000-0000-0000-000000000000"),
+      "not_found",
+    );
+
+    await publishDraft(services, v1.id, 1);
+    const v2 = await createDraftFromPublished(services, v1.deckId);
+
+    // jeden edytowalny szkic na zestaw (indeks częściowy one_editable_version_per_deck)
+    await expectAppError(createDraftFromPublished(services, v1.deckId), "conflict");
+
+    // zmiana znaczenia w v2 tworzy nowe klucze z predecessorami kluczy v1
+    const before = await skillsOfVersion(v2.id);
+    await editDraft(services, v2.id, {
+      items: [{ ...vocabItem({ source: "czwartek (dzień)" }), id: v2.items[0]!.id }],
+      expectedEditNumber: v2.editNumber,
+    });
+    const after = await skillsOfVersion(v2.id);
+    for (const skill of ["listening", "reading", "recall"]) {
+      expect(after.get(skill)!.predecessor_id).toBe(before.get(skill)!.skill_version_id);
+      expect(after.get(skill)!.revision_number).toBe(2);
+    }
+    for (const skill of ["pronunciation", "spelling"]) {
+      expect(after.get(skill)!.skill_version_id).toBe(before.get(skill)!.skill_version_id);
+    }
+
+    // publikacja v2 przekierowuje zestaw; v1 pozostaje niezmieniona w historii
+    await publishDraft(services, v2.id, v2.editNumber + 1);
+    const deck = (
+      await query<{ published_version_id: string }>(
+        "select published_version_id from learning_app.decks where id = $1",
+        [v1.deckId],
+      )
+    )[0]!;
+    expect(deck.published_version_id).toBe(v2.id);
+    expect((await versionRow(v1.id))?.state).toBe("published");
+    expect((await versionRow(v2.id))?.state).toBe("published");
+
+    // po publikacji v2 można zacząć v3, ale zarchiwizowany zestaw już nie
+    const v3 = await createDraftFromPublished(services, v1.deckId);
+    expect((await versionRow(v3.id))?.version_number).toBe(3);
+    await archiveDeck(services, v1.deckId);
+    await expectAppError(createDraftFromPublished(services, v1.deckId), "conflict");
+  });
+
 
   it("publikacja wymaga gotowego audio i świadomej decyzji o ilustracji", async () => {
     const { services, clock } = buildTestServices();

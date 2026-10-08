@@ -4,8 +4,10 @@ import {
   completePresentation,
   createChild,
   createDraft,
+  createDraftFromPublished,
   createServices,
   deleteChild,
+  editDraft,
   endSession,
   getProgress,
   nextTask,
@@ -203,74 +205,25 @@ async function answerCorrectly(
 }
 
 /**
- * Fixture wersji 2 po zmianie znaczenia elementu: odtwarza kształt danych,
- jaki produkuje edycja szkicu (nowe klucze listening/reading/recall z
- * predecessorami, zachowane wymowa/pisownia), bo przepływ „edytuj opublikowany
- * zestaw → nowy szkic” nie istnieje jeszcze w aplikacji. Guardy niezmienności
- * wymagają kolejności: szkic v2 → rewizje → flip na published.
+ * Prawdziwy przepływ rodzica po zmianie znaczenia elementu (SPEC §84, §90):
+ * szkic v2 z opublikowanej wersji → edycja znaczenia (nowe klucze
+ * listening/reading/recall z predecessorami, zachowane wymowa/pisownia) →
+ * publikacja v2, która przekierowuje zestaw. Historia zostaje przy v1.
  */
 async function publishSecondVersionWithMeaningChange(
+  services: ReturnType<typeof buildTestServices>["services"],
   deckId: string,
-  v1Id: string,
   changedIndex: number,
   newSource: string,
-): Promise<string> {
-  const v2 = randomUUID();
-  await pool.query(
-    `insert into learning_app.deck_versions
-       (id, deck_id, version_number, edit_number, state, title, source_locale, target_locale)
-     select $2, deck_id, version_number + 1, 1, 'draft', title, source_locale, target_locale
-       from learning_app.deck_versions where id = $1`,
-    [v1Id, v2],
-  );
-  const items = await query<{ id: string; item_id: string; position: number; payload: Record<string, unknown>; target_key: string }>(
-    `select id, item_id, position, payload, target_key from learning_app.item_revisions
-      where deck_version_id = $1 order by position`,
-    [v1Id],
-  );
-  for (const [index, item] of items.entries()) {
-    const revId = randomUUID();
-    const payload = index === changedIndex ? { ...item.payload, source: newSource } : item.payload;
-    await pool.query(
-      `insert into learning_app.item_revisions (id, item_id, deck_id, deck_version_id, position, payload, target_key)
-       values ($1,$2,$3,$4,$5,$6,$7)`,
-      [revId, item.item_id, deckId, v2, item.position, JSON.stringify(payload), item.target_key],
-    );
-    const skills = await query<{
-      skill: string;
-      skill_version_id: string;
-      item_id: string;
-      revision_number: number;
-      criteria: Record<string, unknown>;
-      criteria_hash: string;
-    }>(
-      `select irs.skill, irs.skill_version_id, sv.item_id, sv.revision_number, sv.criteria, sv.criteria_hash
-         from learning_app.item_revision_skills irs
-         join learning_app.skill_versions sv on sv.id = irs.skill_version_id
-        where irs.item_revision_id = $1`,
-      [item.id],
-    );
-    for (const row of skills) {
-      let versionId = row.skill_version_id;
-      if (index === changedIndex && ["listening", "reading", "recall"].includes(row.skill)) {
-        versionId = randomUUID();
-        await pool.query(
-          `insert into learning_app.skill_versions
-             (id, item_id, skill, revision_number, criteria, criteria_hash, predecessor_id)
-           values ($1,$2,$3,$4,$5,$6,$7)`,
-          [versionId, row.item_id, row.skill, row.revision_number + 1, JSON.stringify(row.criteria), row.criteria_hash, row.skill_version_id],
-        );
-      }
-      await pool.query(
-        `insert into learning_app.item_revision_skills (item_revision_id, item_id, skill, skill_version_id)
-         values ($1,$2,$3,$4)`,
-        [revId, item.item_id, row.skill, versionId],
-      );
-    }
-  }
-  await pool.query(`update learning_app.deck_versions set state = 'published', published_at = now() where id = $1`, [v2]);
-  await pool.query(`update learning_app.decks set published_version_id = $1 where id = $2`, [v2, deckId]);
-  return v2;
+): Promise<void> {
+  const v2 = await createDraftFromPublished(services, deckId);
+  const edited = await editDraft(services, v2.id, {
+    items: v2.items.map((item, index) =>
+      index === changedIndex ? { ...item, source: newSource } : item,
+    ),
+    expectedEditNumber: v2.editNumber,
+  });
+  await publishDraft(services, v2.id, edited.editNumber);
 }
 
 describe("panel postępów rodzica (integracja)", () => {
@@ -475,7 +428,7 @@ describe("panel postępów rodzica (integracja)", () => {
     expect(thursday.meaningChanged).toBe(false);
 
     // rodzic zmienia znaczenie słowa i publikuje wersję 2
-    await publishSecondVersionWithMeaningChange(deckId, versionId, 0, "czwartek (dzień)");
+    await publishSecondVersionWithMeaningChange(services, deckId, 0, "czwartek (dzień)");
 
     const after = await getProgress(services, childA, deckId);
     const changed = after.items.find((item) => item.target === "Thursday")!;

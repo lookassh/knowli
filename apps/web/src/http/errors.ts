@@ -60,8 +60,9 @@ export function errorResponse(error: unknown, requestId = randomUUID()): Respons
     const mapped = mapTriggerError(error);
     appError = mapped ?? new AppError("internal", { cause: error });
   }
-  // Log bez treści żądania: kod, requestId i przyczyna dla korelacji.
-  console.error("[api]", appError.code, requestId, appError.cause ?? "");
+  // Log bez treści żądania: kod, requestId, komunikat przypadku użycia
+  // (własne teksty angielskie, nie SQL) i przyczyna dla korelacji.
+  console.error("[api]", appError.code, requestId, appError.message, appError.cause ?? "");
   return Response.json(toApiError(appError.code, requestId), { status: appError.status });
 }
 

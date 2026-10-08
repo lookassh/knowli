@@ -4,6 +4,7 @@ import {
   archiveDeck,
   createChild,
   createDraft,
+  createDraftFromPublished,
   createServices,
   editDraft,
   enqueueDeckGeneration,
@@ -278,5 +279,51 @@ describe("zarządzanie zestawami i przypisaniami (integracja)", () => {
     expect(deck.assignments).toEqual([
       { childId: ala, displayName: "Ala", testDate: "2026-10-14", active: true },
     ]);
+  });
+
+  it("szkic v2 po zmianie znaczenia publikuje się, zachowując zgodne media", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = mediaServices(fakes);
+    const v1 = await createDraft(services, {
+      title: "Dni",
+      items: [
+        item({ example: "I go to school on monday.", visualType: "image" }),
+        item({ source: "wtorek", target: "tuesday", example: "See you on tuesday.", visualType: "image" }),
+      ],
+    });
+    await editDraft(services, v1.id, { title: "Dni", expectedEditNumber: v1.editNumber });
+    for (let pass = 0; pass < 6; pass++) {
+      await runDueGenerationWork(services);
+    }
+    await omitRevisionAsset(services, { draftId: v1.id, itemRevisionId: v1.items[1]!.revisionId });
+    await publishDraft(services, v1.id, v1.editNumber + 1);
+
+    const v2 = await createDraftFromPublished(services, v1.deckId);
+    const edited = await editDraft(services, v2.id, {
+      items: v2.items.map((card, index) =>
+        index === 0 ? { ...card, source: "poniedziałek (dzień)" } : card,
+      ),
+      expectedEditNumber: v2.editNumber,
+    });
+    // nowa ilustracja dla zmienionego znaczenia; audio celu bez regeneracji
+    const pendingIllustration = edited.assets.find(
+      (a) => a.role === "illustration" && a.itemRevisionId === v2.items[0]!.revisionId,
+    );
+    expect(pendingIllustration?.state).toBe("pending");
+    for (let pass = 0; pass < 6; pass++) {
+      await runDueGenerationWork(services);
+    }
+
+    await publishDraft(services, v2.id, edited.editNumber);
+
+    const deck = await readDeck(services, v1.deckId);
+    expect(deck.published?.id).toBe(v2.id);
+    // media niezmienionych elementów są współdzielone: jeden nowy zasób (ilustracja)
+    const counts = await query<{ kind: string; count: number }>(
+      `select kind, count(*)::int as count from learning_app.media_assets group by kind`,
+    );
+    expect(counts.find((c) => c.kind === "tts")).toMatchObject({ count: 4 });
+    expect(counts.find((c) => c.kind === "illustration")).toMatchObject({ count: 3 });
   });
 });

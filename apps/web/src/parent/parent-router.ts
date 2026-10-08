@@ -1,6 +1,7 @@
 import {
   AppError,
   archiveDeck,
+  createDraftFromPublished,
   editDraft,
   enqueueDeckGeneration,
   getProgress,
@@ -53,6 +54,10 @@ export async function handleParentApi(
     }
     if (request.method === "GET" && second !== undefined && third === undefined) {
       return Response.json(await readDeck(services, second));
+    }
+    if (request.method === "POST" && second !== undefined && third === "draft" && fourth === undefined) {
+      // nowy edytowalny szkic z bieżącej opublikowanej wersji (architecture.md §12)
+      return Response.json(await createDraftFromPublished(services, second), { status: 201 });
     }
     if (request.method === "POST" && second !== undefined && third === "archive" && fourth === undefined) {
       await archiveDeck(services, second);

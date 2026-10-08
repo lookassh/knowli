@@ -210,7 +210,7 @@ Wspólny format błędu: {code, message, retryable, requestId}. Walidacja na gra
 | Parent | POST /api/v1/parent/decks/generate | 202 + generationRunId + deckId |
 | Parent | GET /api/v1/parent/generation/:id | Stan i zwięzły błąd |
 | Parent | GET /api/v1/parent/decks/:id | Draft, wersja publikowana, zasoby |
-| Parent | POST /api/v1/parent/decks/:id/draft | Nowy szkic z bieżącej wersji |
+| Parent | POST /api/v1/parent/decks/:id/draft | 201 + nowy szkic z bieżącej opublikowanej wersji (elementy, klucze umiejętności i decyzje o mediach) |
 | Parent | PATCH /api/v1/parent/drafts/:id | Edycja z expectedEditNumber |
 | Parent | POST /api/v1/parent/drafts/:id/publish | Atomowa publikacja lub konflikt |
 | Parent | PUT /api/v1/parent/assignments/:childId/:deckId | Przypisanie i termin |

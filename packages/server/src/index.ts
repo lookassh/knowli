@@ -13,6 +13,7 @@ export {
 export { listChildren, createChild, deleteChild } from "./modules/profiles";
 export {
   createDraft,
+  createDraftFromPublished,
   editDraft,
   publishDraft,
   readDraft,

@@ -62,6 +62,7 @@ export const messages = {
     saved: "Zapisano",
     publish: "Publikuj",
     published: "Opublikowany",
+    newVersion: "Utwórz nową wersję",
     archive: "Archiwuj",
     sourceLabel: "Po polsku",
     targetLabel: "Po angielsku",

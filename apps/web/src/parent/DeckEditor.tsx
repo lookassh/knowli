@@ -92,13 +92,14 @@ export default function DeckEditor({
     return () => clearInterval(timer);
   }, [generating, assetsPending, load]);
 
-  // formularz podąża za szkicem, dopóki rodzic nie zaczął pisać
+  // formularz podąża za widoczną wersją (szkic albo opublikowana do wglądu),
+  // dopóki rodzic nie zaczął pisać
   useEffect(() => {
-    if (!draft || dirty.current) {
+    if (!active || dirty.current) {
       return;
     }
-    setForm(toEditable(draft));
-  }, [draft?.id, draft?.editNumber, draft]);
+    setForm(toEditable(active));
+  }, [active?.id, active?.editNumber, active]);
 
   const mutate = (field: "source" | "target" | "accepted" | "example" | "title", value: string, index?: number) => {
     dirty.current = true;
@@ -190,6 +191,22 @@ export default function DeckEditor({
     setError(null);
     try {
       await apiFetch("POST", `/api/v1/parent/decks/${deckId}/archive`);
+      await load();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // edycja opublikowanego materiału zaczyna się od nowego szkicu (SPEC §84):
+  // opublikowana wersja prowadzi sesje dziecka do czasu publikacji nowej
+  const startNewVersion = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await apiFetch("POST", `/api/v1/parent/decks/${deckId}/draft`);
+      dirty.current = false;
       await load();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -431,6 +448,14 @@ export default function DeckEditor({
           </article>
         );
       })}
+
+      {deck?.state === "published" && !draft && (
+        <div className="row">
+          <button type="button" data-testid="new-version" onClick={startNewVersion} disabled={busy}>
+            {messages.decks.newVersion}
+          </button>
+        </div>
+      )}
 
       {editable && (
         <div className="row">
