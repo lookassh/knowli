@@ -87,7 +87,7 @@ describe("auth i profile dzieci (integracja)", () => {
   });
 
   it("poprawny login działa, błędny nie tworzy sesji", async () => {
-    const { services } = buildTestServices();
+    const { services, clock } = buildTestServices();
     await setupParent(services, "rodzinny-pin-1");
 
     const bad = await expectAppError(loginParent(services, "zly-pin"), "invalid_credentials");
@@ -96,7 +96,9 @@ describe("auth i profile dzieci (integracja)", () => {
 
     const good = await loginParent(services, "rodzinny-pin-1");
     expect(good.token.length).toBeGreaterThan(20);
-    expect(new Date(good.expiresAt).getTime()).toBeGreaterThan(Date.now());
+    // wygaśnięcie liczone względem zegara usług, nie rzeczywistego — test
+    // nie może starzeć się wraz z kalendarzem
+    expect(new Date(good.expiresAt).getTime()).toBeGreaterThan(clock.now().getTime());
     expect(await countRows("parent_sessions")).toBe(1);
 
     await expect(requireParent(services, good.token)).resolves.toBeUndefined();

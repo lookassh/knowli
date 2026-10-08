@@ -1,4 +1,4 @@
-import type { RecordedAudio, SpeechRecorder } from "./platform";
+import type { AudioPlayer, PlatformMedia, RecordedAudio, SpeechRecorder } from "./platform";
 
 /** Limit nagrania po stronie klienta — odpowiada limitowi serwera (arch §11). */
 export const MAX_RECORDING_MS = 15_000;
@@ -202,4 +202,52 @@ export class BrowserRecorder implements SpeechRecorder {
     this.#releaseStream();
     this.#chunks = [];
   }
+}
+
+/**
+ * Odtwarzacz na elemencie Audio: plik wzorca pobierany fetchem sięga w
+ * immutable cache media, więc ponowny odsłuch nie wywołuje TTS (SPEC A19).
+ * Awaria sieci jest zwykłym TypeError; błąd dekodowania lub zablokowany
+ * autoplay odrzucamy jako zwykły Error — to nie jest utrata połączenia
+ * i nie zamyka sesji ekranem offline.
+ */
+export class BrowserAudioPlayer implements AudioPlayer {
+  #audio: { element: HTMLAudioElement; objectUrl: string } | null = null;
+
+  async play(url: string): Promise<void> {
+    this.stop();
+    const AudioCtor = (globalThis as { Audio?: typeof Audio }).Audio;
+    if (!AudioCtor) {
+      throw new Error("audio playback is unavailable");
+    }
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`media request failed: ${response.status}`);
+    }
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const audio = new AudioCtor(objectUrl);
+    this.#audio = { element: audio, objectUrl };
+    return new Promise<void>((resolve, reject) => {
+      audio.onended = () => resolve();
+      audio.onerror = () => reject(new Error("audio decode failed"));
+      audio.play().catch((error: unknown) => reject(error instanceof Error ? error : new Error("playback blocked")));
+    });
+  }
+
+  stop(): void {
+    if (this.#audio !== null) {
+      this.#audio.element.pause();
+      URL.revokeObjectURL(this.#audio.objectUrl);
+      this.#audio = null;
+    }
+  }
+}
+
+/** Adaptery przeglądarkowe za portami PlatformMedia (plan zadania 9). */
+export function createBrowserMedia(): PlatformMedia {
+  return {
+    createRecorder: () => new BrowserRecorder(),
+    player: new BrowserAudioPlayer(),
+  };
 }

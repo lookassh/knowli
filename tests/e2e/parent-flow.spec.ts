@@ -1,10 +1,17 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { messages } from "@learning/contracts";
 
 /**
  * Pełny obieg rodzica z zadania 4: generuj → preview/edit → publikuj → przypisz.
- * Świat (baza, web, worker z fake providerami) stawia global-setup.
+ * Świat (baza, web, worker z fake providerami) stawia global-setup i jest
+ * współdzielony z innymi specami — własne wiersze lokalizujemy po treści.
  */
+
+const DECK_TITLE = "Dni tygodnia — obieg rodzica";
+
+function deckRow(page: Page) {
+  return page.locator('[data-testid^="deck-row"]').filter({ hasText: DECK_TITLE });
+}
 
 function isoDate(daysAhead: number): string {
   const date = new Date(Date.now() + daysAhead * 86_400_000);
@@ -16,36 +23,36 @@ function isoDate(daysAhead: number): string {
 test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page, request }) => {
   test.slow();
 
-  // Pierwsze uruchomienie: setup PIN rodzica i automatyczne zalogowanie.
+  // Pierwsze uruchomienie w czystym świecie: setup PIN rodzica; w świecie
+  // współdzielonym z innymi specami ten sam formularz loguje istniejącym PIN-em.
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: messages.auth.setupTitle })).toBeVisible();
   await page.getByTestId("auth-secret").fill("1234");
   await page.getByTestId("auth-submit").click();
   await expect(page.getByTestId("tab-decks")).toBeVisible();
 
-  // Profile dwojga dzieci.
+  // Profile dwojga dzieci — świat współdzieli bazę z innymi specami,
+  // więc szukamy wierszy po imieniu, a nie po indeksie.
   await page.getByTestId("tab-children").click();
   await page.getByTestId("child-name").fill("Ala");
   await page.getByTestId("child-year").fill("2018");
   await page.getByTestId("child-add").click();
-  await expect(page.getByTestId("child-row-0")).toContainText("Ala");
+  await expect(page.locator('[data-testid^="child-row"]').filter({ hasText: "Ala" })).toHaveCount(1);
   await page.getByTestId("child-name").fill("Bartek");
   await page.getByTestId("child-add").click();
-  await expect(page.getByTestId("child-row-1")).toContainText("Bartek");
+  await expect(page.locator('[data-testid^="child-row"]').filter({ hasText: "Bartek" })).toHaveCount(1);
 
   // Nowy zestaw o znanym terminie sprawdzianu (za siedem dni).
   await page.getByTestId("tab-decks").click();
   await page.getByTestId("deck-prompt").fill("angielskie dni tygodnia dla początkującego dziecka");
-  await page.getByTestId("deck-title").fill("Dni tygodnia");
+  await page.getByTestId("deck-title").fill(DECK_TITLE);
   await page.getByTestId("generate-submit").click();
   // panel pokazuje nowy zestaw od razu po przyjęciu polecenia (202)
-  await expect(page.getByTestId("deck-row-0")).toContainText("Dni tygodnia");
+  await expect(deckRow(page)).toContainText(DECK_TITLE);
 
   // Odświeżenie strony w trakcie generowania: panel dalej prowadzi przegląd.
   await page.reload();
-  const deckRow = page.getByTestId("deck-row-0");
-  await expect(deckRow).toContainText("Dni tygodnia");
-  await deckRow.click();
+  await expect(deckRow(page)).toContainText(DECK_TITLE);
+  await deckRow(page).click();
   await expect(page.getByTestId("generation-banner")).toContainText(messages.decks.generating);
   await expect(page.getByTestId("item-card-0")).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId("item-card-6")).toBeVisible();
@@ -94,16 +101,18 @@ test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page,
   // Przypisanie dwojgu dzieciom z różnymi terminami sprawdzianu.
   const alaDate = isoDate(7);
   const bartekDate = isoDate(14);
-  await page.getByTestId("assign-date-0").fill(alaDate);
-  await page.getByTestId("assign-submit-0").click();
+  const alaAssignRow = page.locator('[data-testid^="assign-row-"]').filter({ hasText: "Ala" });
+  await alaAssignRow.locator('[data-testid^="assign-date-"]').fill(alaDate);
+  await alaAssignRow.locator('[data-testid^="assign-submit-"]').click();
   await expect(page.getByTestId("assignment-row-0")).toContainText(alaDate);
-  await page.getByTestId("assign-date-1").fill(bartekDate);
-  await page.getByTestId("assign-submit-1").click();
+  const bartekAssignRow = page.locator('[data-testid^="assign-row-"]').filter({ hasText: "Bartek" });
+  await bartekAssignRow.locator('[data-testid^="assign-date-"]').fill(bartekDate);
+  await bartekAssignRow.locator('[data-testid^="assign-submit-"]').click();
   await expect(page.getByTestId("assignment-row-1")).toContainText(bartekDate);
 
   // Przypisania przeżywają odświeżenie strony.
   await page.reload();
-  await page.getByTestId("deck-row-0").click();
+  await deckRow(page).click();
   await expect(page.getByTestId("assignment-row-0")).toContainText(alaDate);
   await expect(page.getByTestId("assignment-row-1")).toContainText(bartekDate);
 

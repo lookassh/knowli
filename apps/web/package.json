@@ -5,6 +5,7 @@
   "type": "module",
   "dependencies": {
     "@learning/contracts": "workspace:*",
+    "@learning/kid-ui": "workspace:*",
     "@learning/server": "workspace:*",
     "next": "^15.3.0",
     "pg": "^8.16.0",

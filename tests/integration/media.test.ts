@@ -91,11 +91,13 @@ async function runOfAsset(assetId: string): Promise<{ id: string; state: string;
 }
 
 /** Zajmuje lease zasobu w imieniu "workera A" — symulacja zadania w locie. */
+/** Lease względem zegara usług — SQL now() żyje w czasie rzeczywistym i postarzałby test. */
 async function holdLease(assetId: string, token: string, expiresInMinutes: number): Promise<void> {
+  const base = new ManualClock().now().toISOString();
   await pool.query(
-    `update learning_app.media_assets set lease_token = $1, lease_until = now() + ($2 || ' minutes')::interval
-      where id = $3`,
-    [token, String(expiresInMinutes), assetId],
+    `update learning_app.media_assets set lease_token = $1, lease_until = $2::timestamptz + ($3 || ' minutes')::interval
+      where id = $4`,
+    [token, base, String(expiresInMinutes), assetId],
   );
 }
 

@@ -9,6 +9,12 @@ export default defineConfig({
   workers: 1,
   timeout: 240_000,
   expect: { timeout: 20_000 },
-  use: { baseURL: "http://127.0.0.1:24500", locale: "pl-PL" },
+  use: {
+    baseURL: "http://127.0.0.1:24500",
+    locale: "pl-PL",
+    // sztuczne urządzenie medialne: przyznany mikrofon produkuje strumień,
+    // a brak zgody nadal kończy się odmową (deterministyczne RF5)
+    launchOptions: { args: ["--use-fake-device-for-media-stream"] },
+  },
   reporter: [["list"]],
 });

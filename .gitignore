@@ -16,3 +16,6 @@ coverage/
 # artefakty Playwright
 test-results/
 playwright-report/
+
+# plik świata E2E (połączenie do bazy testowej)
+tests/e2e/.world.json

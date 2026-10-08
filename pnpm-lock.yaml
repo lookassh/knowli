@@ -33,6 +33,9 @@ importers:
       '@learning/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@learning/kid-ui':
+        specifier: workspace:*
+        version: link:../../packages/kid-ui
       '@learning/server':
         specifier: workspace:*
         version: link:../../packages/server
@@ -94,7 +97,21 @@ importers:
         specifier: ^5.8.0
         version: 5.9.3
 
-  packages/kid-ui: {}
+  packages/kid-ui:
+    dependencies:
+      '@learning/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+    devDependencies:
+      '@types/react':
+        specifier: ^19.1.0
+        version: 19.3.0
+      react:
+        specifier: ^19.1.0
+        version: 19.3.0
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
 
   packages/server:
     dependencies:

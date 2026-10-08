@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -106,6 +106,12 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
     const port = hostPort(await docker("port", CONTAINER, "5432/tcp"));
     const databaseUrl = `postgres://postgres:test@127.0.0.1:${port}/postgres`;
     await migrateDatabase(databaseUrl, join(repoRoot, "packages/server/drizzle"));
+
+    // świat przekazuje połączenie do bazowym testom (seedowanie należnych
+    // sprawdzeń bez czekania na realny upływ dni)
+    const worldFile = join(repoRoot, "tests/e2e/.world.json");
+    await writeFile(worldFile, JSON.stringify({ databaseUrl }, null, 2));
+    cleanup.push(() => rm(worldFile, { force: true }));
 
     const mediaRoot = await mkdtemp(join(tmpdir(), "knowli-e2e-media-"));
     cleanup.push(() => rm(mediaRoot, { recursive: true, force: true }));

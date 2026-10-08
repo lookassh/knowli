@@ -13,11 +13,24 @@ export interface RecordedAudio {
 
 /** Rejestrator jednokrotnego użycia: start → stop albo cancel. */
 export interface SpeechRecorder {
-  /** Prosi o mikrofon i zaczyna nagrywać; odrzuca przy braku uprawnienia. */
+  /** Prosi o mikrofon i zaczyna nagrywanie; odrzuca przy braku uprawnienia. */
   start(): Promise<void>;
   /** Kończy nagranie i zwraca bajty; zwalnia mikrofon i bufory także po błędzie. */
   stop(): Promise<RecordedAudio>;
   /** Porzuca nagranie: zatrzymuje strumień, wyrzuca bufory, odrzuca oczekujący stop. */
   cancel(): void;
   readonly active: boolean;
+}
+
+/** Odtwarzacz wzorca z cache media; stop zwalnia zasoby audio. */
+export interface AudioPlayer {
+  /** Odtwarza do końca; rzuca przy błędzie odtwarzania/sieci. */
+  play(url: string): Promise<void>;
+  stop(): void;
+}
+
+/** Adaptery platformowe za portami — domena UI ich nie zna (plan zadania 9). */
+export interface PlatformMedia {
+  createRecorder(): SpeechRecorder;
+  player: AudioPlayer;
 }
