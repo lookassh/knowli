@@ -354,6 +354,7 @@ async function planNextTask(
       skill: itemRevisionSkills.skill,
       status: childSkillProgress.status,
       nextReviewAt: childSkillProgress.nextReviewAt,
+      streak: childSkillProgress.independentSuccessStreak,
     })
     .from(itemRevisionSkills)
     .leftJoin(
@@ -460,6 +461,29 @@ async function planNextTask(
   // kontakt z poprzednich sesji zamrożony przy starcie (arch §9.3) —
   // porządek rotacji utrwalania na rozpoczętym zestawie
   const sessionContext = contextOf(session);
+
+  // Etapy już wprowadzone zadaniem w dowolnej sesji dziecka (SPEC §13): pierwsze
+  // recall/wymowa nie może czekać na postęp, którego bez tego zadania nie będzie;
+  // technicznie nieoceniona próba wymowy nie zapętla wprowadzania.
+  const introRows = await tx
+    .select({ itemRevisionId: sessionTasks.itemRevisionId, exerciseType: sessionTasks.exerciseType })
+    .from(sessionTasks)
+    .innerJoin(learningSessions, eq(learningSessions.id, sessionTasks.sessionId))
+    .where(
+      and(
+        eq(learningSessions.childId, session.childId),
+        inArray(sessionTasks.itemRevisionId, revisionIds),
+        inArray(sessionTasks.exerciseType, ["recall", "speech"]),
+      ),
+    );
+  const introducedByRevision = new Map<string, { recall: boolean; pronunciation: boolean }>();
+  for (const row of introRows) {
+    const flags = introducedByRevision.get(row.itemRevisionId) ?? { recall: false, pronunciation: false };
+    if (row.exerciseType === "recall") flags.recall = true;
+    if (row.exerciseType === "speech") flags.pronunciation = true;
+    introducedByRevision.set(row.itemRevisionId, flags);
+  }
+
   const candidates: ScheduleCandidate[] = revisions.map((r) => {
     const item = items.get(r.id)!;
     const stats = statsByRevision.get(r.id)!;
@@ -469,6 +493,7 @@ async function planNextTask(
       progress[row.skill as Skill] = {
         status: mapStatus(row.status),
         nextReviewAt: row.nextReviewAt?.toISOString() ?? null,
+        streak: row.streak ?? 0,
       };
     }
     return {
@@ -489,6 +514,7 @@ async function planNextTask(
       lastUsedOrdinal: stats.lastUsedOrdinal,
       readingDirections: stats.readingDirections,
       practiceMix: stats.practiceMix,
+      introducedSkills: introducedByRevision.get(r.id) ?? { recall: false, pronunciation: false },
     };
   });
   const peers = candidates.map((c) => ({

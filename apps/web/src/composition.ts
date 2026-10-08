@@ -3,6 +3,7 @@ import {
   createDatabase,
   createLocalMediaStore,
   createServices,
+  fakeSpeechDeps,
   mediaSettingsFromEnv,
   speechFromEnv,
   systemClock,
@@ -23,7 +24,9 @@ function initialize(): { services: Services; pool: Pool } {
     throw new Error("DATABASE_URL is not configured");
   }
   const { db, pool } = createDatabase(databaseUrl);
-  const speech = speechFromEnv(process.env);
+  // tryb fake (E2E/smoke bez kluczy): odpowiedzi ustne przechodzą pełny cykl
+  // na deterministycznych providerach zamiast kończyć się wynikiem technicznym
+  const speech = speechFromEnv(process.env) ?? (process.env.UMIEM_FAKE_PROVIDERS === "1" ? fakeSpeechDeps() : undefined);
   return {
     services: createServices({
       db,

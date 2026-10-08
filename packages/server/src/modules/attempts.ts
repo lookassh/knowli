@@ -166,6 +166,14 @@ function nextTaskState(modality: AnyModality, grade: Grade, attemptNumber: numbe
   if (modality === "skip") {
     return "skipped";
   }
+  // ćwiczenie wymowy: wypowiedzenie właściwego słowa wykonuje zadanie także
+  // bez oceny wymowy (SPEC §15.4); druga wiarygodna rozbieżność kończy bez
+  // ocen wiedzy — dziecko nie może utknąć na jednym słowie (§15.3)
+  if (grade.speechAttempt) {
+    if (grade.speechAttempt.contentMatched || attemptNumber >= 2) {
+      return "answered";
+    }
+  }
   const values = Object.values(grade.skills);
   const anyCorrect = values.some((s) => s.outcome === "correct");
   const anyIncorrect = values.some((s) => s.outcome === "incorrect");

@@ -2,6 +2,7 @@ import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 import type { KidDeckDto, KidProfileDto } from "@learning/contracts";
 import type { Services } from "../config";
 import { hasScheduledWork, type DeckWorkloadItem, type SkillSnapshot } from "../domain/scheduler";
+import type { Skill } from "../domain/types";
 import { assignments, childProfiles, childSkillProgress, decks, itemRevisionSkills, itemRevisions } from "../db/schema";
 import { AppError } from "../errors";
 import { mapStatus } from "./sessions";
@@ -54,8 +55,10 @@ export async function listKidDecks(services: Services, childId: string): Promise
   const progressRows = await services.db
     .select({
       revisionId: itemRevisionSkills.itemRevisionId,
+      skill: itemRevisionSkills.skill,
       status: childSkillProgress.status,
       nextReviewAt: childSkillProgress.nextReviewAt,
+      streak: childSkillProgress.independentSuccessStreak,
     })
     .from(itemRevisionSkills)
     .innerJoin(
@@ -72,10 +75,15 @@ export async function listKidDecks(services: Services, childId: string): Promise
       ),
     );
 
-  const progressByRevision = new Map<string, SkillSnapshot[]>();
+  const progressByRevision = new Map<string, Array<SkillSnapshot & { skill: Skill }>>();
   for (const row of progressRows) {
     const list = progressByRevision.get(row.revisionId) ?? [];
-    list.push({ status: mapStatus(row.status), nextReviewAt: row.nextReviewAt?.toISOString() ?? null });
+    list.push({
+      skill: row.skill as Skill,
+      status: mapStatus(row.status),
+      nextReviewAt: row.nextReviewAt?.toISOString() ?? null,
+      streak: row.streak ?? 0,
+    });
     progressByRevision.set(row.revisionId, list);
   }
   const now = services.clock.now().toISOString();

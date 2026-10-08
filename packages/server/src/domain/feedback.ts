@@ -11,6 +11,7 @@ export type FeedbackKind =
   | "capitalization_hint"
   | "almost"
   | "incorrect"
+  | "content_matched"
   | "not_assessed";
 
 export interface FeedbackChoice {
@@ -21,7 +22,13 @@ export interface FeedbackChoice {
 
 export function chooseFeedback(grade: Grade, correctText: string): FeedbackChoice {
   const assessed = Object.values(grade.skills).filter((skill) => skill.outcome !== "unevaluated");
-  if (assessed.length === 0) return { kind: "not_assessed" };
+  if (assessed.length === 0) {
+    // ćwiczenie wymowy: usłyszane właściwe słowo bez oceny wymowy (SPEC §15.4)
+    // albo rozbieżna treść — szczery komunikat zamiast udawanej oceny
+    if (grade.speechAttempt?.contentMatched) return { kind: "content_matched" };
+    if (grade.speechAttempt) return { kind: "incorrect", correctText };
+    return { kind: "not_assessed" };
+  }
 
   const anyCorrect = assessed.some((skill) => skill.outcome === "correct");
   const allCorrect = assessed.every((skill) => skill.outcome === "correct");

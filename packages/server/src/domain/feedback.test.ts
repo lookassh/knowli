@@ -67,4 +67,16 @@ describe("chooseFeedback — feedback zgodny z rzeczywistym wynikiem (SPEC §16,
     const g = grade({ pronunciation: sg("unevaluated", { reason: "technical" }) });
     expect(chooseFeedback(g, "Thursday")).toEqual({ kind: "not_assessed" });
   });
+
+  it("ćwiczenie wymowy: właściwe słowo bez oceny wymowy to wykonane ćwiczenie (SPEC §15.4)", () => {
+    const g = grade({ pronunciation: sg("unevaluated") });
+    g.speechAttempt = { contentMatched: true };
+    expect(chooseFeedback(g, "Thursday")).toEqual({ kind: "content_matched" });
+  });
+
+  it("ćwiczenie wymowy: rozbieżna treść nie jest chwalona — prowadzi do wzorca", () => {
+    const g = grade({});
+    g.speechAttempt = { contentMatched: false };
+    expect(chooseFeedback(g, "Thursday")).toEqual({ kind: "incorrect", correctText: "Thursday" });
+  });
 });

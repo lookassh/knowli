@@ -20,4 +20,8 @@ describe("feedbackTone — tło feedbacku odpowiada wynikowi (SPEC §16)", () =>
     expect(feedbackTone({ kind: "not_assessed" })).toBe("");
     expect(feedbackTone(null)).toBe("");
   });
+
+  it("wymowa usłyszana bez oceny pozostaje neutralna — bez udawanego wyniku", () => {
+    expect(feedbackTone({ kind: "content_matched" })).toBe("");
+  });
 });

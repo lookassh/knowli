@@ -836,3 +836,114 @@ describe("ćwiczenie zestawu w dowolnym momencie (extra-practice + rekomendacja)
     await endSession(services, second.sessionId);
   });
 });
+
+describe("wprowadzanie kolejnych etapów (SPEC §13)", () => {
+  let services: ReturnType<typeof buildTestServices>["services"];
+  let childId: string;
+
+  beforeEach(async () => {
+    await truncateCoreTables();
+    await pool.query(
+      `truncate learning_app.revision_assets, learning_app.media_assets, learning_app.item_revision_skills,
+              learning_app.item_revisions, learning_app.skill_versions, learning_app.learning_items,
+              learning_app.deck_versions, learning_app.decks cascade`,
+    );
+    const built = buildTestServices();
+    services = built.services;
+    const child = await createChild(services, { displayName: "Ola", avatarKey: "fox" });
+    childId = child.id;
+  });
+
+  /** Poprawna odpowiedź na zadanie wyboru lub tekstowe wg klucza z bazy. */
+  async function answerCorrectly(task: TaskDto): Promise<void> {
+    const key = (
+      await query<{ target: string; correct_option_id: string | null }>(
+        `select answer_key->>'target' as target, answer_key->>'correctOptionId' as correct_option_id
+           from learning_app.session_tasks where id = $1`,
+        [task.taskId],
+      )
+    )[0]!;
+    await submitAttempt(
+      services,
+      key.correct_option_id === null
+        ? { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: key.target }
+        : { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: key.correct_option_id },
+    );
+  }
+
+  /** Prowadzi sesję prawdziwymi próbami (postęp rośnie) do zadania oczekiwanego typu. */
+  async function driveRealUntil(
+    sessionId: string,
+    wanted: TaskDto["exerciseType"],
+    maxSteps = 30,
+  ): Promise<TaskDto | null> {
+    for (let step = 0; step < maxSteps; step++) {
+      const task = await nextTask(services, sessionId);
+      if (!task) return null;
+      if (task.exerciseType === wanted) return task;
+      if (task.exerciseType === "exposure") {
+        await completePresentation(services, { taskId: task.taskId });
+      } else {
+        await answerCorrectly(task);
+      }
+    }
+    return null;
+  }
+
+  it("po samodzielnym sukcesie rozpoznawania sesja wprowadza przypominanie, a potem wymowę", async () => {
+    const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 4));
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: true });
+
+    // przypominanie pojawia się samo — bez ręcznie zasianego terminu powtórki
+    const recall = await driveRealUntil(session.sessionId, "recall");
+    expect(recall).not.toBeNull();
+    expect(recall!.prompt.kind).toBe("recall");
+    expect(TaskDtoSchema.safeParse(recall).success).toBe(true);
+    const recallContext = (
+      await query<{ context: Record<string, unknown> }>(
+        `select context from learning_app.session_tasks where id = $1`,
+        [recall!.taskId],
+      )
+    )[0]!;
+    expect(recallContext.context).toMatchObject({ reason: "stage-introduction" });
+    await answerCorrectly(recall!);
+
+    // wymowa wchodzi jako kolejny etap tego samego elementu (mikrofon zgłoszony)
+    const speech = await driveRealUntil(session.sessionId, "speech");
+    expect(speech).not.toBeNull();
+    expect(speech!.prompt.kind).toBe("speech");
+    expect(TaskDtoSchema.safeParse(speech).success).toBe(true);
+    const speechContext = (
+      await query<{ context: Record<string, unknown> }>(
+        `select context from learning_app.session_tasks where id = $1`,
+        [speech!.taskId],
+      )
+    )[0]!;
+    expect(speechContext.context).toMatchObject({ reason: "stage-introduction" });
+    // widok wymowy niesie wzorzec audio (SPEC §12.6)
+    if (speech!.prompt.kind === "speech") {
+      expect(speech!.prompt.audioAssetId).not.toBeNull();
+    }
+    await endSession(services, session.sessionId);
+  });
+
+  it("bez mikrofonu wymowa się nie pojawia, a przypominanie działa (SPEC §14)", async () => {
+    const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 4));
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+
+    const types: string[] = [];
+    for (let step = 0; step < 60; step++) {
+      const task = await nextTask(services, session.sessionId);
+      if (!task) break;
+      types.push(task.exerciseType);
+      if (task.exerciseType === "exposure") {
+        await completePresentation(services, { taskId: task.taskId });
+      } else {
+        await answerCorrectly(task);
+      }
+    }
+    expect(types).not.toContain("speech");
+    expect(types).toContain("recall");
+    await endSession(services, session.sessionId);
+  });
+});

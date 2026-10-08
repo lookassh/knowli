@@ -1,10 +1,14 @@
 import { createHash } from "node:crypto";
-import type { GenerationDeps } from "../config";
+import type { GenerationDeps, SpeechDeps } from "../config";
 import type {
+  AudioInput,
   ImageProvider,
   LlmGeneratedItem,
   LlmGenerateDeckInput,
   LlmProvider,
+  PronunciationProvider,
+  PronunciationResult,
+  SttProvider,
   TtsProvider,
   TtsSynthesizeInput,
 } from "../ports/ai";
@@ -168,6 +172,35 @@ export const fakeMediaSettings = {
   tts: { provider: "fake-tts", model: "fake-tts-1", voice: "fake-voice", format: "mp3" },
   image: { provider: "fake-image", model: "fake-image-1", size: "512x512", quality: "low", format: "webp" },
 } as const;
+
+/**
+ * Fake STT zwraca stałą wiarygodną transkrypcję „monday” (pierwsze słowo
+ * fake'owego zestawu) — audio nie niesie treści, więc dopasowanie do klucza
+ * zadziała dla tego słowa, a dla pozostałych domknie zadanie dopiero druga
+ * rozbieżność (SPEC §15.3). Wystarcza do przejścia pełnego cyklu mowy w E2E.
+ */
+export class FakeSttProvider implements SttProvider {
+  readonly name = "fake-stt";
+  async transcribe(): Promise<{ status: "ok"; text: string; confidence: number }> {
+    return { status: "ok", text: "monday", confidence: 0.9 };
+  }
+}
+
+/** Fake oceny wymowy: zawsze wysoki wynik dla oczekiwanego tekstu. */
+export class FakePronunciationProvider implements PronunciationProvider {
+  readonly name = "fake-pron";
+  async assess(_audio: AudioInput, expectedText: string): Promise<PronunciationResult> {
+    return { status: "ok", overallScore: 95, recognizedText: expectedText };
+  }
+}
+
+/** Zależności ścieżki mowy na fake'ach — tryb bez kluczy (E2E, lokalny smoke). */
+export function fakeSpeechDeps(): SpeechDeps {
+  return {
+    stt: new FakeSttProvider(),
+    pronunciation: new FakePronunciationProvider(),
+  };
+}
 
 /** Komplet zależności generacji na fake'ach dla wskazanego magazynu mediów. */
 export function fakeGenerationDeps(

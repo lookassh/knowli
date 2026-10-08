@@ -226,6 +226,22 @@ async function driveUntil(page: Page, stop: () => Promise<boolean>): Promise<voi
       await page.getByTestId("kid-next").click();
       continue;
     }
+    if ((await page.getByTestId("kid-record").count()) > 0) {
+      // ćwiczenie wymowy: nagranie i zatrzymanie domyka zadanie
+      await page.getByTestId("kid-record").click();
+      await expect(page.getByTestId("kid-recording")).toBeVisible();
+      await page.getByTestId("kid-stop-record").click();
+      await expect(page.getByTestId("kid-feedback")).toBeVisible();
+      await page.getByTestId("kid-next").click();
+      continue;
+    }
+    if ((await page.getByTestId("kid-input").count()) === 0 && (await page.getByTestId("kid-skip").count()) > 0) {
+      // wymowa bez mikrofonu — pominięcie bez oceny
+      await page.getByTestId("kid-skip").click();
+      await expect(page.getByTestId("kid-feedback")).toBeVisible();
+      await page.getByTestId("kid-next").click();
+      continue;
+    }
     await page.waitForTimeout(500);
   }
   throw new Error("driveUntil: przekroczono liczbę kroków");
@@ -233,6 +249,9 @@ async function driveUntil(page: Page, stop: () => Promise<boolean>): Promise<voi
 
 test("jeden profil pomija wybór i prowadzi sesję do obiecanego końca", async ({ page }) => {
   test.slow();
+  // sesja z mikrofonem wprowadza też ćwiczenie wymowy (SPEC §13) — fake media
+  // podmienia tylko getUserMedia/MediaRecorder, odpowiedź przechodzi prawdziwy kod
+  await injectFakeMediaPlatform(page);
   const parent = await parentSession(page);
   const child = await createChild(parent, "Ola", "fox");
   await createAssignedDeck(parent, child.id, "Dni tygodnia", `kid-flow-1-${randomUUID()}`);
@@ -262,6 +281,7 @@ test("jeden profil pomija wybór i prowadzi sesję do obiecanego końca", async 
   let sawRemaining = false;
   let sawIllustration = false;
   let sawExampleAudio = false;
+  let sawSpeech = false;
   for (let step = 0; step < 90; step++) {
     await page.waitForSelector('[data-task-id], [data-testid="kid-summary"]', { timeout: 30_000 });
     await settled(page);
@@ -308,9 +328,19 @@ test("jeden profil pomija wybór i prowadzi sesję do obiecanego końca", async 
         );
         throw new Error("wedge on option click");
       }
-    } else {
+    } else if ((await page.getByTestId("kid-input").count()) > 0) {
       await page.getByTestId("kid-input").fill(await answerTarget(taskId));
       await page.getByTestId("kid-submit").click();
+    } else if ((await page.getByTestId("kid-record").count()) > 0) {
+      // ćwiczenie wymowy po sukcesie rozpoznawania (SPEC §12.6, §13): fake
+      // mikrofon nagrywa 2 s webm, odpowiedź ustna domyka zadanie
+      sawSpeech = true;
+      await page.getByTestId("kid-record").click();
+      await expect(page.getByTestId("kid-recording")).toBeVisible();
+      await page.getByTestId("kid-stop-record").click();
+    } else {
+      // wymowa bez działającego mikrofonu — świadome pominięcie bez oceny
+      await page.getByTestId("kid-skip").click();
     }
     await expect(page.getByTestId("kid-feedback")).toBeVisible();
     await page.getByTestId("kid-next").click();
@@ -318,6 +348,7 @@ test("jeden profil pomija wybór i prowadzi sesję do obiecanego końca", async 
   await expect(page.getByTestId("kid-summary")).toBeVisible();
   expect(sawRemaining).toBe(true);
   expect(sawIllustration).toBe(true);
+  expect(sawSpeech).toBe(true);
   expect(sawExampleAudio).toBe(true);
   // obiecany koniec jest też końcem po stronie serwera
   const sessions = await query<{ state: string }>(
@@ -546,12 +577,20 @@ async function injectFakeMediaPlatform(page: Page): Promise<void> {
       configurable: true,
       value: { getUserMedia: async () => fakeStream },
     });
+    // minimalny ważny webm: EBML header + Segment→Info→Duration 2000 (2 s) —
+    // serwer czyta czas trwania z metadanych i odrzuca nagrania bez niego
+    const webm = new Uint8Array([
+      0x1a, 0x45, 0xdf, 0xa3, 0x80,
+      0x18, 0x53, 0x80, 0x67, 0x8c,
+      0x15, 0x49, 0xa9, 0x66, 0x87,
+      0x44, 0x89, 0x84, 0x44, 0x7a, 0x00, 0x00,
+    ]);
     class FakeMediaRecorder {
       static isTypeSupported(mimeType: string): boolean {
         return mimeType.includes("webm");
       }
       state = "inactive";
-      ondataavailable: ((event: { data: { size: number } }) => void) | null = null;
+      ondataavailable: ((event: { data: Blob }) => void) | null = null;
       onstop: (() => void) | null = null;
       onerror: (() => void) | null = null;
       start(): void {
@@ -559,6 +598,11 @@ async function injectFakeMediaPlatform(page: Page): Promise<void> {
       }
       stop(): void {
         this.state = "inactive";
+        // BrowserRecorder składa bajty z ondataavailable i domyka się na onstop
+        queueMicrotask(() => {
+          this.ondataavailable?.({ data: new Blob([webm]) });
+          this.onstop?.();
+        });
       }
     }
     (window as unknown as { MediaRecorder: typeof FakeMediaRecorder }).MediaRecorder = FakeMediaRecorder;

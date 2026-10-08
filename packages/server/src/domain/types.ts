@@ -174,6 +174,13 @@ export interface SkillGrade {
 export interface Grade {
   skills: Partial<Record<Skill, SkillGrade>>;
   attempt: AttemptQualification;
+  /**
+   * Wynik ćwiczenia wymowy (SPEC §12.6): zgodna z kluczem treść wypowiedzi
+   * oznacza ćwiczenie wykonane — zadanie zamyka się także wtedy, gdy samej
+   * wymowy nie udało się ocenić (§15.4 wynik częściowy), a druga wiarygodna
+   * rozbieżność domyka zadanie bez ocen wiedzy (§15.3 kontynuowanie).
+   */
+  speechAttempt?: { contentMatched: boolean };
 }
 
 /**

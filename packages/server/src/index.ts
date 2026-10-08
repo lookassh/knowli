@@ -133,9 +133,12 @@ export {
   deterministicBytes,
   fakeGenerationDeps,
   fakeMediaSettings,
+  fakeSpeechDeps,
   DEFAULT_FAKE_DECK_ITEMS,
   FakeImageProvider,
   FakeLlmProvider,
+  FakePronunciationProvider,
+  FakeSttProvider,
   FakeTtsProvider,
   type LlmBehavior,
 } from "./providers/fake";

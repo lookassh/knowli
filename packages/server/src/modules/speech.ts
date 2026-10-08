@@ -122,6 +122,9 @@ export function assessSpeechEvidence(
   }
 
   const match = matchWrittenAnswer(t.text!, key);
+  // ćwiczenie wymowy: treść wypowiedzi decyduje o wykonaniu zadania —
+  // ocena wymowy może pozostać nieoceniona (§12.6, §15.4)
+  const speechAttempt = key.exerciseType === "speech" ? { contentMatched: match.ci } : undefined;
   if (assessesContent) {
     skills.recall = {
       outcome: match.ci ? "correct" : "incorrect",
@@ -134,19 +137,19 @@ export function assessSpeechEvidence(
   if (!match.ci) {
     // wiarygodny tekst spoza zatwierdzonego zbioru: wynik wymowy oczekiwanego
     // słowa byłby nieadekwatny — w ogóle go nie oceniamy (Review Focus 3)
-    return { skills, attempt };
+    return { skills, attempt, ...(speechAttempt ? { speechAttempt } : {}) };
   }
   if (!p || p.status !== "ok" || p.overallScore === null || p.expectedText !== match.matchedVariant) {
     // oceny nie ma albo dotyczy innego wariantu — pronunciation nieocenione
     skills.pronunciation = unevaluated(p?.status === "failed" ? "technical" : undefined);
-    return { skills, attempt };
+    return { skills, attempt, ...(speechAttempt ? { speechAttempt } : {}) };
   }
 
   const details: PronunciationDetails = { provider: p.provider, score: p.overallScore };
   const bands = ctx.policy.pronunciationBands[p.provider];
   if (!bands) {
     skills.pronunciation = { ...unevaluated(undefined), details: { pronunciation: details } };
-    return { skills, attempt };
+    return { skills, attempt, ...(speechAttempt ? { speechAttempt } : {}) };
   }
   const band: PronunciationDetails["band"] =
     p.overallScore >= bands.correctMinScore
@@ -160,7 +163,7 @@ export function assessSpeechEvidence(
     confirmationEligible: attempt.independent && attempt.confirmationEligible && band === "correct",
     details: { pronunciation: { ...details, band } },
   };
-  return { skills, attempt };
+  return { skills, attempt, ...(speechAttempt ? { speechAttempt } : {}) };
 }
 
 /** Dowody „nagranie było, analizy nie było” — np. brak skonfigurowanych kluczy. */

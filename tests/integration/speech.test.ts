@@ -9,6 +9,7 @@ import {
   publishDraft,
   readAttempt,
   startSession,
+  submitAttempt,
   submitSpeechAttempt,
   upsertAssignment,
   type PronunciationProvider,
@@ -232,6 +233,37 @@ async function recallSession(
   const task = (await nextTask(services, session.sessionId))!;
   expect(task.exerciseType).toBe("recall");
   return { sessionId: session.sessionId, task };
+}
+
+/**
+ * Sesja doprowadzona do zadania ćwiczenia wymowy danego elementu — należna
+ * powtórka wymowy czeka za prezentacjami nowego materiału (arch §9.3).
+ */
+async function speechSession(
+  services: Services,
+  childId: string,
+  deckId: string,
+  versionId: string,
+  itemIndex: number,
+): Promise<{ sessionId: string; task: TaskDto }> {
+  await setDueProgress(childId, versionId, itemIndex, "pronunciation");
+  const session = await startSession(services, { childId, deckId, microphoneEnabled: true });
+  for (let step = 0; step < 30; step++) {
+    const candidate = (await nextTask(services, session.sessionId))!;
+    expect(candidate).not.toBeNull();
+    if (candidate.exerciseType === "speech") {
+      return { sessionId: session.sessionId, task: candidate };
+    }
+    if (candidate.exerciseType === "exposure") {
+      await completePresentation(services, { taskId: candidate.taskId });
+    } else {
+      await pool.query(
+        `update learning_app.session_tasks set state = 'answered' where id = $1 and state = 'issued'`,
+        [candidate.taskId],
+      );
+    }
+  }
+  throw new Error("speechSession: nie wydano zadania wymowy");
 }
 
 async function answerKeyTarget(taskId: string): Promise<string> {
@@ -565,37 +597,56 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
 
   it("ćwiczenie wymowy ocenia samą wymowę i pokazuje słowo bez psucia samodzielności", async () => {
     const { deckId, versionId } = await publishDeckWithAssignment(baseServices, childId, ITEMS);
-    await setDueProgress(childId, versionId, 0, "pronunciation");
     const fakes = makeFakes(clock);
     const services = speechServices(clock, fakes);
-    const session = await startSession(services, { childId, deckId, microphoneEnabled: true });
+    const { task } = await speechSession(services, childId, deckId, versionId, 0);
 
-    let task: TaskDto | null = null;
-    for (let step = 0; step < 30 && task === null; step++) {
-      const candidate = (await nextTask(services, session.sessionId))!;
-      expect(candidate).not.toBeNull();
-      if (candidate.exerciseType === "speech") {
-        task = candidate;
-      } else if (candidate.exerciseType === "exposure") {
-        await completePresentation(services, { taskId: candidate.taskId });
-      } else {
-        await pool.query(
-          `update learning_app.session_tasks set state = 'answered' where id = $1 and state = 'issued'`,
-          [candidate.taskId],
-        );
-      }
-    }
-    expect(task).not.toBeNull();
-    expect(task!.prompt.kind).toBe("speech");
-
-    const dto = await submitSpeechAttempt(services, { taskId: task!.taskId, clientAttemptId: randomUUID() }, wavInput(1));
-    const [attempt] = await attemptRows(task!.taskId);
+    const dto = await submitSpeechAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID() }, wavInput(1));
+    const [attempt] = await attemptRows(task.taskId);
     const assessments = await assessmentsOf(attempt.id);
     expect(assessments.map((a) => a.skill)).toEqual(["pronunciation"]);
     expect(assessments[0]).toMatchObject({ outcome: "unassessed" });
     expect(assessments[0]!.details.pronunciation).toEqual({ provider: "fake-pron", score: 95 });
-    // bez pasm wynik nie kończy zadania — wymowa pozostaje do skalibrowania
-    expect(dto.taskState).toBe("issued");
+    // wypowiedziane właściwe słowo wykonuje ćwiczenie także bez pasm oceny
+    // wymowy (SPEC §15.4) — dziecko nie utyka na jednym zadaniu
+    expect(dto.taskState).toBe("answered");
+    expect(dto.feedback?.kind).toBe("content_matched");
+  });
+
+  it("ćwiczenie wymowy: druga wiarygodna rozbieżność domyka zadanie bez ocen wiedzy", async () => {
+    const { deckId, versionId } = await publishDeckWithAssignment(baseServices, childId, ITEMS);
+    const fakes = makeFakes(clock, { transcription: { status: "ok", text: "Friday", confidence: 0.9 } });
+    const services = speechServices(clock, fakes);
+    const { task } = await speechSession(services, childId, deckId, versionId, 0);
+
+    const first = await submitSpeechAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID() }, wavInput(1));
+    expect(first.taskState).toBe("issued");
+    expect(first.feedback?.kind).toBe("incorrect");
+    // rozbieżna treść nie ocenia wymowy oczekiwanego słowa (arch §11)
+    expect(await assessmentsOf((await attemptRows(task.taskId))[0]!.id)).toEqual([]);
+
+    const second = await submitSpeechAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID() }, wavInput(1));
+    expect(second.taskState).toBe("answered");
+    const rows = await attemptRows(task.taskId);
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(await assessmentsOf(row.id)).toEqual([]);
+    }
+  });
+
+  it("ćwiczenie wymowy: próba techniczna zostawia drugie podejście, a „Pomiń” jest zawsze dostępny", async () => {
+    const { deckId, versionId } = await publishDeckWithAssignment(baseServices, childId, ITEMS);
+    const fakes = makeFakes(clock, { transcription: { status: "failed", text: null, confidence: null } });
+    const services = speechServices(clock, fakes);
+    const { task } = await speechSession(services, childId, deckId, versionId, 0);
+
+    const technical = await submitSpeechAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID() }, wavInput(1));
+    expect(technical.taskState).toBe("issued");
+    expect(technical.feedback?.kind).toBe("not_assessed");
+
+    // świadome pominięcie zamyka zadanie bez oceny (SPEC §15.3 kontynuowanie)
+    const skipped = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "skip" });
+    expect(skipped.taskState).toBe("skipped");
   });
 
   it("brak providerów mowy kończy próbę wynikiem technicznym bez fałszywego sukcesu", async () => {

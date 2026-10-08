@@ -15,6 +15,8 @@ function feedbackText(feedback: FeedbackDto | null): string {
       return format(messages.kid.feedbackCapitalization, { word: dto.correctText ?? "" });
     case "incorrect":
       return format(messages.kid.feedbackIncorrect, { word: dto.correctText ?? "" });
+    case "content_matched":
+      return messages.kid.feedbackContentMatched;
     case "not_assessed":
       return messages.kid.feedbackNotAssessed;
   }
@@ -34,6 +36,8 @@ export function feedbackTone(feedback: FeedbackDto | null): string {
     case "almost":
     case "incorrect":
       return "kid-feedback--retry";
+    // treść usłyszana, ale wymowa bez oceny — neutralnie, bez udawanego wyniku
+    case "content_matched":
     case "not_assessed":
       return "";
   }

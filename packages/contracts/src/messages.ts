@@ -177,6 +177,7 @@ export const messages = {
     feedbackAlmost: "Prawie! Posłuchaj jeszcze raz",
     feedbackCapitalization: "To właściwe słowo! {word} piszemy wielką literą",
     feedbackIncorrect: "Posłuchaj: {word}. Poćwiczymy razem",
+    feedbackContentMatched: "Usłyszałem! Nie udało się ocenić wymowy",
     feedbackNotAssessed: "Nie udało się ocenić. Spróbuj jeszcze raz",
     offlineMessage: "Nie ma internetu. Zaczekaj chwilę.",
     offlineRetry: "Spróbuj ponownie",

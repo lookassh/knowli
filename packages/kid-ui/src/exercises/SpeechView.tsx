@@ -49,13 +49,13 @@ export function SpeechView({ task, busy, recording, micAvailable, mediaUrl, hand
             </button>
           ))}
       </div>
-      {!micAvailable && (
-        <div className="kid-secondary-actions">
-          <button type="button" data-testid="kid-skip" disabled={busy} onClick={handlers.onSkip}>
-            {messages.kid.skip}
-          </button>
-        </div>
-      )}
+      <div className="kid-secondary-actions">
+        {/* świadome pominięcie bez oceny — także po awarii technicznej próby,
+            żeby dziecko nie utknęło na jednym słowie (SPEC §15.3) */}
+        <button type="button" data-testid="kid-skip" disabled={busy} onClick={handlers.onSkip}>
+          {messages.kid.skip}
+        </button>
+      </div>
     </section>
   );
 }

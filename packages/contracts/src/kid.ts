@@ -191,7 +191,7 @@ export type KidDeckDto = z.infer<typeof KidDeckDtoSchema>;
  * wyłącznie wraz z ekspozycją zapisaną przed odpowiedzią HTTP.
  */
 export const FeedbackDtoSchema = z.object({
-  kind: z.enum(["great", "capitalization_hint", "almost", "incorrect", "not_assessed"]),
+  kind: z.enum(["great", "capitalization_hint", "almost", "incorrect", "content_matched", "not_assessed"]),
   correctText: z.string().min(1).optional(),
 });
 export type FeedbackDto = z.infer<typeof FeedbackDtoSchema>;

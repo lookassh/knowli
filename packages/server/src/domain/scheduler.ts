@@ -16,6 +16,8 @@ import type { ExerciseType, Policy, ProgressStatus, ReadingDirection, Skill } fr
 export interface SkillSnapshot {
   status: ProgressStatus;
   nextReviewAt: string | null;
+  /** Aktualna seria samodzielnych sukcesów; 0 = ostatnia samodzielna próba nie była sukcesem. */
+  streak: number;
 }
 
 /** Kandydat: rewizja elementu w przypiętej wersji zestawu. */
@@ -44,6 +46,8 @@ export interface ScheduleCandidate {
   readingDirections: Partial<Record<ReadingDirection, number>>;
   /** Zadania rozpoznawania tego elementu w bieżącej sesji, per typ. */
   practiceMix: { listening: number; reading: number };
+  /** Etapy już wprowadzone zadaniem w jakiejkolwiek sesji dziecka. */
+  introducedSkills: { recall: boolean; pronunciation: boolean };
 }
 
 /** Inne elementy wersji — pula dystraktorów. */
@@ -82,6 +86,7 @@ export type ScheduleReason =
   | "due-check"
   | "support"
   | "retry-after-support"
+  | "stage-introduction"
   | "new-material"
   | "new-practice"
   | "due-review"
@@ -243,6 +248,60 @@ function isStarted(candidate: ScheduleCandidate): boolean {
   return Object.values(candidate.progress).some((s) => s !== undefined && s.status !== "not_assessed");
 }
 
+/** Czy element ma samodzielny sukces rozpoznawania (słuch albo tekst). */
+function recognitionSucceeded(candidate: ScheduleCandidate): boolean {
+  const listening = candidate.progress.listening;
+  const reading = candidate.progress.reading;
+  return (listening?.streak ?? 0) >= 1 || (reading?.streak ?? 0) >= 1;
+}
+
+/**
+ * Pierwsze zadanie kolejnego etapu (SPEC §13): po samodzielnym sukcesie
+ * rozpoznawania element przechodzi do przypominania — jedna pisemna odpowiedź
+ * ocenia też pisownię — a potem do wymowy. Elementy głębsze w stopniowaniu
+ * (przypominanie wprowadzone, wymowa czeka) mają pierwszeństwo przed nową
+ * falą przypomnień, więc pary „wpisz, potem powiedz" układają się blisko
+ * siebie zamiast tyrać całą talię jednym typem zadania. Zadanie wydaje się
+ * raz: etap „wprowadzony” pamięta historia zadań, więc próba technicznie
+ * nieoceniona nie zapętla wprowadzania. Cel objęty rezerwacją pomijamy
+ * w całości — speech ujawnia angielskie słowo zarezerwowane dla sprawdzenia.
+ */
+function introductionPlan(
+  candidates: readonly ScheduleCandidate[],
+  input: ScheduleInput,
+  reserved: ReadonlySet<string>,
+  keepsReservations: string[],
+): TaskPlan | null {
+  const pool = practicePool(candidates).slice().sort(
+    (a, b) => Number(b.introducedSkills.recall) - Number(a.introducedSkills.recall),
+  );
+  for (const target of pool) {
+    if (reserved.has(keyOfCandidate(target))) continue;
+    if (!recognitionSucceeded(target)) continue;
+    if (!target.introducedSkills.recall) {
+      return {
+        itemRevisionId: target.itemRevisionId,
+        exerciseType: "recall",
+        revealsTargetKeys: [],
+        assessed: true,
+        reason: "stage-introduction",
+        keepsReservations,
+      };
+    }
+    if (!target.introducedSkills.pronunciation && input.microphoneEnabled) {
+      return {
+        itemRevisionId: target.itemRevisionId,
+        exerciseType: "speech",
+        revealsTargetKeys: [keyOfCandidate(target)],
+        assessed: true,
+        reason: "stage-introduction",
+        keepsReservations,
+      };
+    }
+  }
+  return null;
+}
+
 /** Czy wszystkie znane umiejętności elementu są opanowane — idą na koniec kolejki. */
 function isFullyMastered(candidate: ScheduleCandidate): boolean {
   const snapshots = Object.values(candidate.progress).filter((s) => s !== undefined);
@@ -252,22 +311,25 @@ function isFullyMastered(candidate: ScheduleCandidate): boolean {
 /** Obciążenie jednego elementu zestawu dla rekomendacji (arch §12). */
 export interface DeckWorkloadItem {
   /**
-   * Migawki umiejętności elementu; puste = materiał nieprzerobiony przez
-   * dziecko (prezentacja jeszcze się nie odbyła lub nie było żadnej próby).
+   * Migawki umiejętności elementu z etykietą umiejętności; puste = materiał
+   * nieprzerobiony przez dziecko (prezentacja jeszcze się nie odbyła lub nie
+   * było żadnej próby).
    */
-  progress: ReadonlyArray<SkillSnapshot>;
+  progress: ReadonlyArray<SkillSnapshot & { skill: Skill }>;
 }
 
 /**
  * Czy zestaw ma teraz pracę zaplanowaną przez harmonogram: należne
- * sprawdzenie Recall/pisowni, powtórka umiejętności albo nowy materiał?
- * To podstawa rekomendacji na liście zestawów dziecka; dodatkowe
- * utrwalanie (extra-practice) jest dostępne zawsze i nie czyni zestawu
- * rekomendowanym — rekomendacja wskazuje wartość zaplanowaną.
+ * sprawdzenie Recall/pisowni, powtórka umiejętności, wprowadzenie kolejnego
+ * etapu albo nowy materiał? To podstawa rekomendacji na liście zestawów
+ * dziecka; dodatkowe utrwalanie (extra-practice) jest dostępne zawsze i nie
+ * czyni zestawu rekomendowanym — rekomendacja wskazuje wartość zaplanowaną.
  */
 export function hasScheduledWork(items: readonly DeckWorkloadItem[], now: string): boolean {
   for (const item of items) {
     let started = false;
+    let recognitionStreak = 0;
+    let recallAssessed = false;
     for (const snapshot of item.progress) {
       if (snapshot.status !== "not_assessed") {
         started = true;
@@ -275,9 +337,20 @@ export function hasScheduledWork(items: readonly DeckWorkloadItem[], now: string
       if (isDue(snapshot, now)) {
         return true;
       }
+      if (snapshot.skill === "listening" || snapshot.skill === "reading") {
+        recognitionStreak = Math.max(recognitionStreak, snapshot.streak);
+      }
+      if (snapshot.skill === "recall") {
+        recallAssessed = true;
+      }
     }
     if (!started) {
       return true; // nowy materiał do prezentacji
+    }
+    // wprowadzenie przypominania czeka (SPEC §13); samej wymowy nie sprawdzamy,
+    // bo rekomendacja nie może zależeć od mikrofonu — wymowa wchodzi w sesji
+    if (recognitionStreak >= 1 && !recallAssessed) {
+      return true;
     }
   }
   return false;
@@ -352,6 +425,17 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
       reason: "retry-after-support",
       keepsReservations,
     };
+  }
+
+  // 3.5 Wprowadzanie kolejnych etapów (SPEC §13): rozpoznany element przechodzi
+  //     do przypominania, a potem wymowy. Co drugi slot sesji, aby nowy materiał
+  //     i należne powtórki nie czekały na całą falę nowego etapu, a sesja
+  //     zachowywała miks typów zadań.
+  if (input.nextOrdinal % 2 === 1) {
+    const introduction = introductionPlan(input.candidates, input, reserved, keepsReservations);
+    if (introduction) {
+      return introduction;
+    }
   }
 
   // 4. Nowy materiał porcjami 2–3: prezentacje przeplatane łatwym
