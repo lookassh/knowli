@@ -25,6 +25,8 @@ function candidate(overrides: Partial<ScheduleCandidate> = {}): ScheduleCandidat
     failuresThisSession: 0,
     supportedThisSession: false,
     usedThisSession: 0,
+    presentationsThisSession: 0,
+    lastContactAt: null,
     lastUsedOrdinal: null,
     readingDirections: {},
     practiceMix: { listening: 0, reading: 0 },
@@ -91,8 +93,8 @@ describe("selectTask — nowy materiał (SPEC §13)", () => {
   });
 
   it("porcje 2–3: po dwóch prezentacjach łatwe rozpoznawanie najstarszego elementu", () => {
-    const a = candidate({ itemRevisionId: "rev-a", position: 0, target: "Monday", source: "poniedziałek", usedThisSession: 1 });
-    const b = candidate({ itemRevisionId: "rev-b", position: 1, target: "Tuesday", source: "wtorek", usedThisSession: 1 });
+    const a = candidate({ itemRevisionId: "rev-a", position: 0, target: "Monday", source: "poniedziałek", usedThisSession: 1, presentationsThisSession: 1 });
+    const b = candidate({ itemRevisionId: "rev-b", position: 1, target: "Tuesday", source: "wtorek", usedThisSession: 1, presentationsThisSession: 1 });
     const c = candidate({ itemRevisionId: "rev-c", position: 2, target: "Wednesday", source: "środa" });
     const peers = [peer(a), peer(b), peer(c)] as SchedulePeer[];
     const plan = selectTask(input({ candidates: [a, b, c], peers }));
@@ -132,8 +134,8 @@ describe("selectTask — rezerwacje należnych sprawdzeń (arch §9.3)", () => {
 
   it("zarezerwowany cel nie pojawia się jako dystraktor", () => {
     const reserved = candidate({ itemRevisionId: "rev-w", position: 2, target: "Wednesday", source: "środa" });
-    const b = candidate({ itemRevisionId: "rev-b", position: 1, target: "Tuesday", source: "wtorek", usedThisSession: 1 });
-    const c = candidate({ itemRevisionId: "rev-c", position: 0, target: "Friday", source: "piątek", usedThisSession: 1 });
+    const b = candidate({ itemRevisionId: "rev-b", position: 1, target: "Tuesday", source: "wtorek", usedThisSession: 1, presentationsThisSession: 1 });
+    const c = candidate({ itemRevisionId: "rev-c", position: 0, target: "Friday", source: "piątek", usedThisSession: 1, presentationsThisSession: 1 });
     const peers = [peer(reserved), peer(b), peer(c)];
     const plan = selectTask(
       input({
@@ -150,8 +152,8 @@ describe("selectTask — rezerwacje należnych sprawdzeń (arch §9.3)", () => {
 
   it("zwolniona rezerwacja przywraca cel w puli dystraktorów", () => {
     const freed = candidate({ itemRevisionId: "rev-w", position: 2, target: "Wednesday", source: "środa" });
-    const b = candidate({ itemRevisionId: "rev-b", position: 1, target: "Tuesday", source: "wtorek", usedThisSession: 1 });
-    const c = candidate({ itemRevisionId: "rev-c", position: 0, target: "Friday", source: "piątek", usedThisSession: 1 });
+    const b = candidate({ itemRevisionId: "rev-b", position: 1, target: "Tuesday", source: "wtorek", usedThisSession: 1, presentationsThisSession: 1 });
+    const c = candidate({ itemRevisionId: "rev-c", position: 0, target: "Friday", source: "piątek", usedThisSession: 1, presentationsThisSession: 1 });
     const plan = selectTask(input({ candidates: [freed, b, c], peers: [peer(freed), peer(b), peer(c)] }));
     expect(plan!.options!.map((o) => o.text)).toContain("środa");
   });
@@ -311,7 +313,7 @@ describe("selectTask — rozliczone sprawdzenia nie wracają w tej sesji (arch �
   });
 
   it("pominięte sprawdzenie nie jest wydawane ponownie ani rezerwowane", () => {
-    const other = candidate({ itemRevisionId: "rev-2", itemId: "item-2", position: 1, target: "Friday", source: "piątek", usedThisSession: 1 });
+    const other = candidate({ itemRevisionId: "rev-2", itemId: "item-2", position: 1, target: "Friday", source: "piątek", usedThisSession: 1, presentationsThisSession: 1 });
     const plan = selectTask(
       input({
         candidates: [dueThursday, other],
@@ -421,6 +423,107 @@ describe("selectTask — extra-practice: ćwiczenie bez blokady harmonogramu", (
   it("nieprzerobiony element to nadal nowy materiał, nie utrwalanie", () => {
     const plan = selectTask(input({ candidates: [candidate()], peers: [peer()] }));
     expect(plan).toMatchObject({ reason: "new-material", exerciseType: "exposure" });
+  });
+});
+
+describe("selectTask — rotacja rozpoczętego zestawu (regresja „zawsze styczeń”)", () => {
+  const FUTURE = "2026-10-08T16:00:00.000Z";
+  const MONTHS = [
+    "styczeń", "luty", "marzec", "kwiecień", "maj", "czerwiec",
+    "lipiec", "sierpień", "wrzesień", "październik", "listopad", "grudzień",
+  ];
+
+  /** Element „Miesiący”: listening w trakcie nauki, powtórka dopiero jutro. */
+  function monthCandidate(position: number, lastContactAt: string | null): ScheduleCandidate {
+    return candidate({
+      itemRevisionId: `rev-${position}`,
+      itemId: `item-${position}`,
+      position,
+      target: `target-${position}`,
+      source: MONTHS[position]!,
+      lastContactAt,
+      progress: { listening: { status: "learning", nextReviewAt: FUTURE } },
+    });
+  }
+
+  function monthPeers(items: readonly ScheduleCandidate[]): SchedulePeer[] {
+    return items.map((c) =>
+      peer({ itemRevisionId: c.itemRevisionId, position: c.position, target: c.target, source: c.source }),
+    );
+  }
+
+  /** 12 miesięcy rozpoczętych o 08:38; „styczeń” (pozycja 0) miał kontakt najpóźniej. */
+  function startedMonths(): ScheduleCandidate[] {
+    return MONTHS.map((_, position) =>
+      monthCandidate(position, position === 0 ? "2026-10-08T11:56:00.000Z" : "2026-10-08T08:38:43.000Z"),
+    );
+  }
+
+  /** Puszcza budżet sesji, lokalnie licząc użycia; zwraca kolejne wybory. */
+  function runSession(items: ScheduleCandidate[], steps: number): string[] {
+    const used = new Map(items.map((c) => [c.itemRevisionId, 0]));
+    const picks: string[] = [];
+    for (let ordinal = 0; ordinal < steps; ordinal++) {
+      const plan = selectTask(
+        input({
+          candidates: items.map((c) => ({ ...c, usedThisSession: used.get(c.itemRevisionId) ?? 0 })),
+          peers: monthPeers(items),
+          nextOrdinal: ordinal,
+          assessedRemaining: steps - ordinal,
+        }),
+      );
+      if (!plan) break;
+      picks.push(plan.itemRevisionId);
+      used.set(plan.itemRevisionId, (used.get(plan.itemRevisionId) ?? 0) + 1);
+    }
+    return picks;
+  }
+
+  it("start sesji omija pozycję 0: najpierw najdawniej widziany element", () => {
+    const items = startedMonths();
+    const [first] = runSession(items, 1);
+    expect(first).toBe("rev-1"); // luty — kontakt z 08:38, „styczeń” widziany później
+  });
+
+  it("pełny budżet rozkłada się na wszystkie elementy bez powtórek pod rząd", () => {
+    const picks = runSession(startedMonths(), 12);
+    expect(picks).toHaveLength(12);
+    expect(new Set(picks).size).toBe(12); // każdy element dokładnie raz
+    // „styczeń” (najświeższy kontakt) idzie na koniec kolejki
+    expect(picks.indexOf("rev-0")).toBe(11);
+  });
+
+  it("po dwóch błędach wsparcie, potem inne elementy i retry dopiero po przerwie", () => {
+    const items = startedMonths();
+    // czerwiec (rev-5): dwa błędy w tej sesji
+    const withFailure = items.map((c) =>
+      c.itemRevisionId === "rev-5"
+        ? { ...c, failuresThisSession: 2, usedThisSession: 2, lastUsedOrdinal: 3 }
+        : c,
+    );
+    const support = selectTask(input({ candidates: withFailure, peers: monthPeers(items), nextOrdinal: 4 }));
+    expect(support).toMatchObject({ itemRevisionId: "rev-5", exerciseType: "exposure", reason: "support" });
+
+    const afterSupport = withFailure.map((c) =>
+      c.itemRevisionId === "rev-5"
+        ? { ...c, supportedThisSession: true, usedThisSession: 3, lastUsedOrdinal: 4 }
+        : c,
+    );
+    // przerwa za krótka (1 zadanie): czerwiec czeka, sesja idzie dalej innym elementem
+    const gap1 = selectTask(input({ candidates: afterSupport, peers: monthPeers(items), nextOrdinal: 5 }));
+    expect(gap1!.itemRevisionId).not.toBe("rev-5");
+    // po dwóch innych zadaniach wraca łatwe rozpoznawanie ze słuchu
+    const retry = selectTask(input({ candidates: afterSupport, peers: monthPeers(items), nextOrdinal: 6 }));
+    expect(retry).toMatchObject({ itemRevisionId: "rev-5", exerciseType: "listening", reason: "retry-after-support" });
+  });
+
+  it("zadanie utrwalania nie czyni elementu „raz pokazanym” do natychmiastowej powtórki", () => {
+    const items = startedMonths();
+    // po pierwszym zadaniu „lutego” (utrwalanie, nie prezentacja) kolejne zadanie
+    // nie może być natychmiastową powtórką tego samego elementu
+    const afterFirst = items.map((c) => (c.itemRevisionId === "rev-1" ? { ...c, usedThisSession: 1 } : c));
+    const plan = selectTask(input({ candidates: afterFirst, peers: monthPeers(afterFirst), nextOrdinal: 1 }));
+    expect(plan!.itemRevisionId).not.toBe("rev-1");
   });
 });
 

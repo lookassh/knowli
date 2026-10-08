@@ -281,6 +281,7 @@ interface PlannedTask {
 
 interface ItemStats {
   usedThisSession: number;
+  presentationsThisSession: number;
   lastUsedOrdinal: number | null;
   supportedThisSession: boolean;
   readingDirections: Partial<Record<ReadingDirection, number>>;
@@ -339,6 +340,7 @@ async function planNextTask(
       r.id,
       {
         usedThisSession: 0,
+        presentationsThisSession: 0,
         lastUsedOrdinal: null,
         supportedThisSession: false,
         readingDirections: {},
@@ -361,6 +363,9 @@ async function planNextTask(
     if (!stats) continue;
     stats.usedThisSession += 1;
     stats.lastUsedOrdinal = Math.max(stats.lastUsedOrdinal ?? -1, row.ordinal);
+    if (row.exerciseType === "exposure") {
+      stats.presentationsThisSession += 1;
+    }
     if ((row.context as { reason?: string } | null)?.reason === "support") {
       stats.supportedThisSession = true;
     }
@@ -422,6 +427,9 @@ async function planNextTask(
     }),
   );
 
+  // kontakt z poprzednich sesji zamrożony przy starcie (arch §9.3) —
+  // porządek rotacji utrwalania na rozpoczętym zestawie
+  const sessionContext = contextOf(session);
   const candidates: ScheduleCandidate[] = revisions.map((r) => {
     const item = items.get(r.id)!;
     const stats = statsByRevision.get(r.id)!;
@@ -446,6 +454,8 @@ async function planNextTask(
       failuresThisSession: failuresByRevision.get(r.id) ?? 0,
       supportedThisSession: stats.supportedThisSession,
       usedThisSession: stats.usedThisSession,
+      presentationsThisSession: stats.presentationsThisSession,
+      lastContactAt: sessionContext.previousContact[r.itemId] ?? null,
       lastUsedOrdinal: stats.lastUsedOrdinal,
       readingDirections: stats.readingDirections,
       practiceMix: stats.practiceMix,
@@ -459,7 +469,6 @@ async function planNextTask(
     targetLocale: c.targetLocale,
   }));
 
-  const sessionContext = contextOf(session);
   const plan = selectTask({
     now: now.toISOString(),
     policy,

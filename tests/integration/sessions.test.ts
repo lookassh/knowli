@@ -677,4 +677,45 @@ describe("ćwiczenie zestawu w dowolnym momencie (extra-practice + rekomendacja)
     clock.advanceHours(25);
     await expect(listKidDecks(services, childId)).resolves.toMatchObject([{ deckId, recommended: true }]);
   });
+
+  it("druga sesja tego samego dnia rotuje elementy zamiast wiercić jeden (regresja „zawsze styczeń”)", async () => {
+    const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 4));
+
+    // sesja 1: cały materiał przerobiony poprawnie, budżet wyczerpany
+    const first = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    for (let step = 0; step < 60; step++) {
+      const task = await nextTask(services, first.sessionId);
+      if (!task) break;
+      if (task.exerciseType === "exposure") {
+        await completePresentation(services, { taskId: task.taskId });
+        continue;
+      }
+      await answerCorrectly(task);
+    }
+    await endSession(services, first.sessionId);
+
+    // sesja 2 tego samego dnia: kolejne zadania dotyczą różnych elementów —
+    // na 4-elementowym zestawie pierwsze 4 zadania to 4 różne rewizje
+    const second = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const seenRevisions: string[] = [];
+    for (let step = 0; step < 4; step++) {
+      const task = await nextTask(services, second.sessionId);
+      expect(task).not.toBeNull();
+      const row = (
+        await query<{ item_revision_id: string }>(
+          `select item_revision_id from learning_app.session_tasks where id = $1`,
+          [task!.taskId],
+        )
+      )[0]!;
+      expect(seenRevisions).not.toContain(row.item_revision_id);
+      seenRevisions.push(row.item_revision_id);
+      if (task!.exerciseType === "exposure") {
+        await completePresentation(services, { taskId: task!.taskId });
+      } else {
+        await answerCorrectly(task!);
+      }
+    }
+    expect(seenRevisions).toHaveLength(4);
+    await endSession(services, second.sessionId);
+  });
 });

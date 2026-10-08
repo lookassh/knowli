@@ -34,6 +34,10 @@ export interface ScheduleCandidate {
   supportedThisSession: boolean;
   /** Liczba zadań tego elementu w bieżącej sesji. */
   usedThisSession: number;
+  /** Prezentacje (exposure) tego elementu w bieżącej sesji. */
+  presentationsThisSession: number;
+  /** Ostatni kontakt z poprzednich sesji (zamrożony previousContact); null = brak. */
+  lastContactAt: string | null;
   /** Ordinal ostatniego zadania tego elementu w bieżącej sesji. */
   lastUsedOrdinal: number | null;
   /** Reading: wystąpienia kierunków zadań tego elementu w bieżącej sesji. */
@@ -155,16 +159,36 @@ function unseenFresh(candidates: readonly ScheduleCandidate[]): ScheduleCandidat
     .sort((a, b) => a.position - b.position);
 }
 
-/** Pokazane dokładnie raz w tej sesji — czekają na pierwsze rozpoznawanie. */
+/**
+ * Pokazane dokładnie raz prezentacją w tej sesji — czekają na pierwsze
+ * rozpoznawanie. Zadanie rozpoznawania nie jest prezentacją: element
+ * dotknięty utrwalaniem nie wraca natychmiast jako „świeżo pokazany”.
+ */
 function presentedOnce(candidates: readonly ScheduleCandidate[]): ScheduleCandidate[] {
-  return candidates.filter((c) => c.usedThisSession === 1).sort((a, b) => a.position - b.position);
+  return candidates
+    .filter((c) => c.usedThisSession === 1 && c.presentationsThisSession === 1)
+    .sort((a, b) => a.position - b.position);
 }
 
-/** Widziane elementy od najrzadziej używanych; remis: pozycja. */
-function leastUsedSeen(candidates: readonly ScheduleCandidate[]): ScheduleCandidate[] {
+/**
+ * Pula lekkiego ćwiczenia rozpoznawania: elementy widziane w tej sesji
+ * (utrwalanie) oraz rozpoczęte w poprzednich (ćwiczenie bez blokady
+ * harmonogramu). Kolejność: nieopanowane najpierw, najrzadziej użyte
+ * w tej sesji, najdawniej widziane (previousContact, brak kontaktu
+ * liczy się jako najstarszy), na końcu pozycja. Dzięki temu sesja na
+ * w pełni rozpoczętym zestawie rotuje całym materiałem zamiast wiercić
+ * jeden element (regresja „zawsze styczeń”).
+ */
+function practicePool(candidates: readonly ScheduleCandidate[]): ScheduleCandidate[] {
   return candidates
-    .filter((c) => c.usedThisSession > 0)
-    .sort((a, b) => a.usedThisSession - b.usedThisSession || a.position - b.position);
+    .filter((c) => c.usedThisSession > 0 || isStarted(c))
+    .sort(
+      (a, b) =>
+        Number(isFullyMastered(a)) - Number(isFullyMastered(b)) ||
+        a.usedThisSession - b.usedThisSession ||
+        (a.lastContactAt ?? "").localeCompare(b.lastContactAt ?? "") ||
+        a.position - b.position,
+    );
 }
 
 /** Dystraktory z puli rówieśników; cele objęte rezerwacją są pomijane. */
@@ -438,40 +462,28 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
     };
   }
 
-  // 6. Lekkie utrwalanie widzianych elementów, gdy nic nie jest należne.
-  //    Miks rozpoznawania per element: słuch, potem naprzemienne kierunki
-  //    tekstu, aby oba kierunki reading zbierały dowody.
-  const filler = leastUsedSeen(input.candidates).find((c) => !reserved.has(keyOfCandidate(c)));
-  if (filler) {
+  // 6. Lekkie ćwiczenie rozpoznawania bez należnych zadań: jedna pula dla
+  //     utrwalania elementów widzianych w tej sesji (filler-practice) i dla
+  //     ćwiczenia zestawu w dowolnym momencie (extra-practice, arch §9.3 —
+  //     nie wymuszamy oczekiwania na zegar). Miks rozpoznawania per element:
+  //     słuch, potem naprzemienne kierunki tekstu, aby oba kierunki reading
+  //     zbierały dowody. Jakość dowodów chroni reguła niezależności
+  //     (SPEC §18.1) — próba w ciągu 5 minut od ujawnienia wzorca to
+  //     utrwalanie, nie samodzielne sprawdzenie, więc dodatkowe ćwiczenie
+  //     nie zawyża serii kwalifikujących ani nie zastępuje sprawdzianu.
+  //     Budżet sesji obowiązuje jak zwykle.
+  const practiceTarget = practicePool(input.candidates).find((c) => !reserved.has(keyOfCandidate(c)));
+  if (practiceTarget) {
+    const consolidating = practiceTarget.usedThisSession > 0;
     return recognitionPlan(
-      filler,
+      practiceTarget,
       input,
       reserved,
       keepsReservations,
-      "filler-practice",
-      filler.practiceMix.listening < filler.practiceMix.reading,
-    );
-  }
-
-  // 7. Ćwiczenie zestawu bez blokady harmonogramu (arch §9.3: nie wymuszamy
-  //    oczekiwania na zegar): gdy nic nie jest należne, a materiał był już
-  //    rozpoczęty, wydajemy lekkie utrwalanie rozpoznawania. Jakość dowodów
-  //    chroni reguła niezależności (SPEC §18.1) — próba w ciągu 5 minut od
-  //    ujawnienia wzorca to utrwalanie, nie samodzielne sprawdzenie, więc
-  //    dodatkowe ćwiczenie nie zawyża serii kwalifikujących ani nie zastępuje
-  //    zaplanowanego sprawdzianu. Budżet sesji obowiązuje jak zwykle.
-  const extraPool = input.candidates
-    .filter((c) => !reserved.has(keyOfCandidate(c)) && isStarted(c))
-    .sort((a, b) => Number(isFullyMastered(a)) - Number(isFullyMastered(b)) || a.position - b.position);
-  if (extraPool.length > 0) {
-    const target = extraPool[input.nextOrdinal % extraPool.length]!;
-    return recognitionPlan(
-      target,
-      input,
-      reserved,
-      keepsReservations,
-      "extra-practice",
-      input.nextOrdinal % 2 === 0,
+      consolidating ? "filler-practice" : "extra-practice",
+      consolidating
+        ? practiceTarget.practiceMix.listening < practiceTarget.practiceMix.reading
+        : input.nextOrdinal % 2 === 0,
     );
   }
 
