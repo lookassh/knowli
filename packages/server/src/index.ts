@@ -87,6 +87,7 @@ export {
   ATTEMPT_PROCESSING_TIMEOUT_MS,
 } from "./modules/attempts";
 export { listKidProfiles, listKidDecks } from "./modules/kid";
+export { getProgress } from "./modules/reporting";
 export { evaluateWritten, evaluateChoice, evaluateNonAnswer, assessedSkills } from "./domain/evaluate";
 export { chooseFeedback } from "./domain/feedback";
 export { projectProgress } from "./domain/progress";

@@ -411,6 +411,17 @@ test("recall z należnego sprawdzenia: pisemna pisownia, Nie pamiętam i Pomiń"
     [taskId3],
   );
   expect(task3[0]!.state).toBe("skipped");
+
+  // A22: rodzic widzi osobno przypominanie, pisownię i brak oceny wymowy
+  await page.goto("/");
+  await page.getByTestId("tab-progress").click();
+  await page.getByTestId("progress-child").selectOption({ label: "Cezary" });
+  await page.getByTestId("progress-deck").selectOption({ label: "Dni tygodnia dla Cezarego" });
+  await page.getByTestId("progress-load").click();
+  await expect(page.getByTestId("progress-heading")).toContainText("Cezary");
+  await expect(page.getByTestId("progress-skill-recall")).toContainText("w trakcie nauki: 2");
+  await expect(page.getByTestId("progress-skill-spelling")).toContainText("w trakcie nauki: 2");
+  await expect(page.getByTestId("progress-pronunciation")).toContainText("Nie sprawdzono");
 });
 
 test("odmowa mikrofonu przełącza na tryb bez nagrywania", async ({ page }) => {

@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
 import {
   createChild,
   deleteChild,
@@ -194,6 +195,47 @@ describe("auth i profile dzieci (integracja)", () => {
     await deleteChild(services, child.id);
     expect(await listChildren(services)).toEqual([]);
     await expectAppError(deleteChild(services, child.id), "not_found");
+  });
+
+  it("DELETE profilu przez API wymaga sesji i tego samego Origin; nieznany profil daje 404", async () => {
+    const { services } = buildTestServices();
+    await setupParent(services, "pin-usun");
+    const child = await createChild(services, { displayName: "Ala", avatarKey: "fox" });
+    const origin = { origin: BASE };
+
+    // sesja przez route — cookie w pełni spójne z usługami route handlera
+    const loginResponse = await login(jsonRequest("/api/v1/parent/login", "POST", { secret: "pin-usun" }, origin));
+    expect(loginResponse.status).toBe(200);
+    const cookie = sessionCookieFrom(loginResponse);
+
+    // bez sesji — 401; z sesją, ale z obcym Origin — 403 (mutacja)
+    const anonymous = await deleteChildRoute(
+      jsonRequest(`/api/v1/parent/children/${child.id}`, "DELETE", undefined, origin),
+      childRouteContext(child.id),
+    );
+    expect(anonymous.status).toBe(401);
+    const crossOrigin = await deleteChildRoute(
+      jsonRequest(`/api/v1/parent/children/${child.id}`, "DELETE", undefined, {
+        cookie,
+        origin: "https://evil.example",
+      }),
+      childRouteContext(child.id),
+    );
+    expect(crossOrigin.status).toBe(403);
+    expect(await listChildren(services)).toHaveLength(1);
+
+    // właściwe żądanie usuwa profil; powtórzone zwraca 404
+    const ok = await deleteChildRoute(
+      jsonRequest(`/api/v1/parent/children/${child.id}`, "DELETE", undefined, { cookie, ...origin }),
+      childRouteContext(child.id),
+    );
+    expect(ok.status).toBe(204);
+    const unknown = await deleteChildRoute(
+      jsonRequest(`/api/v1/parent/children/${randomUUID()}`, "DELETE", undefined, { cookie, ...origin }),
+      childRouteContext(randomUUID()),
+    );
+    expect(unknown.status).toBe(404);
+    expect(await listChildren(services)).toEqual([]);
   });
 
   it("baza po ponownym otwarciu połączenia zachowuje profile", async () => {

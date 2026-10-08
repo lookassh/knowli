@@ -5,9 +5,10 @@ import { messages, type ChildDto, type DeckSummaryDto } from "@learning/contract
 import { apiFetch, errorMessage } from "./api";
 import ChildEditor from "./ChildEditor";
 import DecksPanel from "./DecksPanel";
+import ProgressPanel from "./ProgressPanel";
 
 type Phase = "loading" | "setup" | "login" | "panel";
-type Tab = "decks" | "children";
+type Tab = "decks" | "children" | "progress";
 
 interface AuthStateDto {
   authenticated: boolean;
@@ -143,11 +144,21 @@ export default function ParentApp() {
         >
           {messages.children.title}
         </button>
+        <button
+          type="button"
+          data-testid="tab-progress"
+          aria-current={tab === "progress"}
+          onClick={() => setTab("progress")}
+        >
+          {messages.progress.title}
+        </button>
       </nav>
       {tab === "decks" ? (
         <DecksPanel decks={decks} childrenList={childrenList} onChanged={refreshDecks} />
-      ) : (
+      ) : tab === "children" ? (
         <ChildEditor childrenList={childrenList} onChanged={refreshChildren} />
+      ) : (
+        <ProgressPanel childrenList={childrenList} decks={decks} />
       )}
     </main>
   );

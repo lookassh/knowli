@@ -3,6 +3,7 @@ import {
   archiveDeck,
   editDraft,
   enqueueDeckGeneration,
+  getProgress,
   listDecks,
   omitRevisionAsset,
   publishDraft,
@@ -98,6 +99,16 @@ export async function handleParentApi(
       await upsertAssignment(services, second, third, cmd.testDate);
       return new Response(null, { status: 204 });
     }
+  }
+
+  if (first === "progress" && second === undefined && request.method === "GET") {
+    // GET /api/v1/parent/progress?childId=&deckId= (architecture.md §12)
+    const childId = new URL(request.url).searchParams.get("childId");
+    const deckId = new URL(request.url).searchParams.get("deckId");
+    if (!childId || !deckId) {
+      throw new AppError("validation", { message: "childId and deckId are required" });
+    }
+    return Response.json(await getProgress(services, childId, deckId));
   }
 
   throw new AppError("not_found");
