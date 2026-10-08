@@ -2,6 +2,8 @@ import type { TaskDto } from "@learning/contracts";
 
 export interface ExerciseHandlers {
   onPlay(): void;
+  /** Odsłuch zdania przykładowego prezentacji (SPEC §22). */
+  onPlayExample(): void;
   onAnswerChoice(optionId: string): void;
   onSubmitText(text: string): void;
   onNotRemember(): void;

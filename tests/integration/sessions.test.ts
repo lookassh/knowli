@@ -61,7 +61,7 @@ const DAY_ITEMS: { source: string; target: string }[] = [
   { source: "czarny", target: "black" },
 ];
 
-function vocabItem(pair: { source: string; target: string }) {
+function vocabItem(pair: { source: string; target: string }, example?: string) {
   return {
     source: pair.source,
     target: pair.target,
@@ -69,6 +69,7 @@ function vocabItem(pair: { source: string; target: string }) {
     locales: { source: "pl-PL", target: "en-GB" },
     visualType: "color" as const,
     visualData: { color: "#4169e1" },
+    ...(example !== undefined ? { example } : {}),
   };
 }
 
@@ -123,14 +124,52 @@ async function attachApprovedIllustration(deckVersionId: string, itemIndex: numb
   return assetId;
 }
 
+async function attachApprovedExampleAudio(deckVersionId: string, itemIndex: number): Promise<string> {
+  const revision = (
+    await query<{ id: string }>(
+      `select id from learning_app.item_revisions
+        where deck_version_id = $1 order by position offset $2 limit 1`,
+      [deckVersionId, itemIndex],
+    )
+  )[0]!;
+  const assetId = randomUUID();
+  const fingerprint = `fp-${randomUUID()}`;
+  await pool.query(
+    `insert into learning_app.media_assets
+       (id, kind, fingerprint, generation_number, state, storage_key, content_sha256,
+        mime_type, byte_count, provider, model)
+     values ($1,'tts',$2,1,'ready',$3,$4,'audio/mpeg',2048,'fake','fake-tts')`,
+    [assetId, fingerprint, `blob/${assetId}`, `sha-${assetId}`],
+  );
+  await pool.query(
+    `insert into learning_app.revision_assets
+       (item_revision_id, role, asset_id, expected_fingerprint, state)
+     values ($1,'example_audio',$2,$3,'approved')`,
+    [revision.id, assetId, fingerprint],
+  );
+  return assetId;
+}
+
 async function publishDeckWithAssignment(
   services: ReturnType<typeof buildTestServices>["services"],
   childId: string,
   pairs: { source: string; target: string }[],
   illustrationFor?: number,
-): Promise<{ deckId: string; versionId: string; illustrationAssetId?: string }> {
-  const draft = await createDraft(services, { title: `Zestaw ${pairs[0]!.target}`, items: pairs.map(vocabItem) });
+  exampleFor?: number,
+): Promise<{
+  deckId: string;
+  versionId: string;
+  illustrationAssetId?: string;
+  exampleAudioAssetId?: string;
+}> {
+  const draft = await createDraft(services, {
+    title: `Zestaw ${pairs[0]!.target}`,
+    items: pairs.map((pair, index) =>
+      vocabItem(pair, index === exampleFor ? `${pair.target} is a nice day.` : undefined),
+    ),
+  });
   let illustrationAssetId: string | undefined;
+  let exampleAudioAssetId: string | undefined;
   for (const index of pairs.keys()) {
     await attachFakeReadyAudio(draft.id, index);
     const revision = (
@@ -140,6 +179,9 @@ async function publishDeckWithAssignment(
         [draft.id, index],
       )
     )[0]!;
+    if (index === exampleFor) {
+      exampleAudioAssetId = await attachApprovedExampleAudio(draft.id, index);
+    }
     if (index === illustrationFor) {
       illustrationAssetId = await attachApprovedIllustration(draft.id, index);
       continue;
@@ -153,7 +195,7 @@ async function publishDeckWithAssignment(
   }
   await publishDraft(services, draft.id, 1);
   await upsertAssignment(services, childId, draft.deckId, null);
-  return { deckId: draft.deckId, versionId: draft.id, illustrationAssetId };
+  return { deckId: draft.deckId, versionId: draft.id, illustrationAssetId, exampleAudioAssetId };
 }
 
 /** Symulacja finalizacji próby (zadanie 7): zadanie oceniane przechodzi w answered. */
@@ -367,6 +409,28 @@ describe("cykl życia sesji (integracja)", () => {
     expect(second).not.toBeNull();
     expect(second!.taskId).not.toBe(first!.taskId);
     expect(second!.prompt).toMatchObject({ kind: "exposure", imageAssetId: null });
+  });
+
+  it("prezentacja niesie audio zdania przykładowego, a karta bez przykładu dostaje null (SPEC §12.1, §22)", async () => {
+    const { deckId, exampleAudioAssetId } = await publishDeckWithAssignment(
+      services,
+      childId,
+      DAY_ITEMS.slice(0, 3),
+      0,
+      0,
+    );
+    expect(exampleAudioAssetId).toBeDefined();
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: true });
+
+    const first = await nextTask(services, session.sessionId);
+    expect(first!.prompt).toMatchObject({ kind: "exposure", exampleAudioAssetId });
+
+    // karta bez zdania przykładowego: brak audio przykładu nie jest błędem
+    await completePresentation(services, { taskId: first!.taskId, clientCommandId: randomUUID() });
+    const second = await driveUntilExercise(services, session.sessionId, "exposure");
+    expect(second).not.toBeNull();
+    expect(second!.taskId).not.toBe(first!.taskId);
+    expect(second!.prompt).toMatchObject({ kind: "exposure", exampleAudioAssetId: null });
   });
 
   it("limit czasu kończy wydawanie zadań między zadaniami", async () => {

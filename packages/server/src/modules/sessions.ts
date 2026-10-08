@@ -278,6 +278,7 @@ interface PlannedTask {
   item: PlannedItem;
   audioAssetId: string | null;
   imageAssetId: string | null;
+  exampleAudioAssetId: string | null;
 }
 
 interface ItemStats {
@@ -318,6 +319,20 @@ async function planNextTask(
       ),
     );
   const audioByRevision = new Map(audioRows.map((a) => [a.itemRevisionId, a.assetId]));
+
+  // Audio zdania przykładowego (SPEC §22): odtwarzane z pliku przygotowanego
+  // z zestawem; karta bez przykładu po prostu dostaje null.
+  const exampleRows = await tx
+    .select({ itemRevisionId: revisionAssets.itemRevisionId, assetId: revisionAssets.assetId })
+    .from(revisionAssets)
+    .where(
+      and(
+        inArray(revisionAssets.itemRevisionId, revisionIds),
+        eq(revisionAssets.role, "example_audio"),
+        eq(revisionAssets.state, "approved"),
+      ),
+    );
+  const exampleByRevision = new Map(exampleRows.map((a) => [a.itemRevisionId, a.assetId]));
 
   // Pomoc wizualna prezentacji (SPEC §12.1): zatwierdzona ilustracja rodzica;
   // pominięty obraz pozostaje null i nie blokuje zadania.
@@ -503,6 +518,7 @@ async function planNextTask(
     item: items.get(plan.itemRevisionId)!,
     audioAssetId: audioByRevision.get(plan.itemRevisionId) ?? null,
     imageAssetId: imageByRevision.get(plan.itemRevisionId) ?? null,
+    exampleAudioAssetId: exampleByRevision.get(plan.itemRevisionId) ?? null,
   };
 }
 
@@ -520,6 +536,7 @@ function materializeTask(
   item: PlannedItem,
   audioAssetId: string | null,
   imageAssetId: string | null,
+  exampleAudioAssetId: string | null,
 ): { prompt: TaskPrompt; answerKey: Record<string, unknown> } {
   const optionIds = new Map(
     (plan.options ?? []).map((o) => [o.text, randomUUID()] as const),
@@ -546,6 +563,7 @@ function materializeTask(
         target: item.target,
         example: item.example ?? null,
         audioAssetId,
+        exampleAudioAssetId,
         imageAssetId,
       };
       break;
@@ -625,8 +643,8 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
     if (!planned) {
       return null;
     }
-    const { plan, item, audioAssetId, imageAssetId } = planned;
-    const materialized = materializeTask(plan, item, audioAssetId, imageAssetId);
+    const { plan, item, audioAssetId, imageAssetId, exampleAudioAssetId } = planned;
+    const materialized = materializeTask(plan, item, audioAssetId, imageAssetId, exampleAudioAssetId);
     const taskId = randomUUID();
 
     await tx.insert(sessionTasks).values({
@@ -677,6 +695,17 @@ function issuedTaskDto(
   task: IssuedShape,
   assessedBefore: number,
 ): TaskDto {
+  // Treść wydanego zadania jest niezmienna: promptom sprzed dodania pola
+  // uzupełniamy brakujące nullable na odtworzeniu, żeby klient przeszedł
+  // walidację schematu — bez zmiany znaczenia starego zadania.
+  const prompt = { ...(task.publicPrompt as Record<string, unknown>) };
+  if (prompt.kind === "exposure") {
+    if (prompt.exampleAudioAssetId === undefined) prompt.exampleAudioAssetId = null;
+    if (prompt.imageAssetId === undefined) prompt.imageAssetId = null;
+  }
+  if (prompt.kind === "speech" && prompt.imageAssetId === undefined) {
+    prompt.imageAssetId = null;
+  }
   return {
     taskId: task.id,
     sessionId: session.id,
@@ -684,7 +713,7 @@ function issuedTaskDto(
     exerciseType: task.exerciseType as TaskDto["exerciseType"],
     direction: (task.direction ?? null) as TaskDto["direction"],
     state: "issued",
-    prompt: task.publicPrompt as TaskPrompt,
+    prompt: prompt as TaskPrompt,
     remainingAssessed: session.taskBudget - assessedBefore,
   };
 }

@@ -34,6 +34,12 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     example: z.string().nullable(),
     audioAssetId: UuidSchema.nullable(),
     /**
+     * Audio zdania przykładowego przygotowane z zestawem (SPEC §22); null, gdy
+     * karta nie ma przykładu. Treść zdania jest już widoczna na prezentacji,
+     * więc odsłuch nie wymaga osobnej ekspozycji (arch §12).
+     */
+    exampleAudioAssetId: UuidSchema.nullable(),
+    /**
      * Zatwierdzona przez rodzica ilustracja — pomoc wizualna prezentacji
      * (SPEC §12.1, §24); null, gdy karta nie ma obrazu. Bajty przez route
      * media, bez dodatkowej ekspozycji (arch §12).

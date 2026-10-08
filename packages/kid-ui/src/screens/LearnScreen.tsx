@@ -56,6 +56,7 @@ export function LearnScreen({
   const micAvailable = screen.session.microphoneEnabled && !screen.micDenied;
   const handlers: ExerciseHandlers = {
     onPlay: () => void controller.playTaskAudio(),
+    onPlayExample: () => void controller.playExampleAudio(),
     onAnswerChoice: (optionId) => void controller.answerChoice(optionId),
     onSubmitText: (text) => void controller.answerText(text),
     onNotRemember: () => void controller.notRemember(),

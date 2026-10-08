@@ -29,7 +29,23 @@ export function ExposureView({ task, busy, mediaUrl, handlers }: ExerciseProps) 
       <p className="kid-source" data-testid="kid-source">
         {task.prompt.source}
       </p>
-      {task.prompt.example !== null && <p className="kid-example">{task.prompt.example}</p>}
+      {task.prompt.example !== null && (
+        <div className="kid-example-block">
+          <p className="kid-example" data-testid="kid-example">
+            {task.prompt.example}
+          </p>
+          {task.prompt.exampleAudioAssetId !== null && (
+            <button
+              type="button"
+              data-testid="kid-play-example"
+              disabled={busy}
+              onClick={handlers.onPlayExample}
+            >
+              🔊 {messages.kid.listenExample}
+            </button>
+          )}
+        </div>
+      )}
       <div className="kid-actions">
         {task.prompt.audioAssetId !== null && (
           <button type="button" data-testid="kid-play" disabled={busy} onClick={handlers.onPlay}>

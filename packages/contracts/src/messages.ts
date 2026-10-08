@@ -149,6 +149,7 @@ export const messages = {
     microphone: "Mikrofon",
     microphoneDeniedHint: "Mikrofon jest wyłączony. Możesz uczyć się bez nagrywania.",
     listen: "Posłuchaj",
+    listenExample: "Posłuchaj zdania",
     understand: "Rozumiem",
     listenQuestion: "Posłuchaj i wybierz",
     chooseAnswer: "Wybierz odpowiedź",

@@ -244,7 +244,7 @@ describe("LearningSessionController", () => {
   });
 
   it("exposure zamyka prezentację bez próby; koniec zadań kończy sesję", async () => {
-    const exposure = taskDto("t1", { kind: "exposure", source: "czwartek", target: "Thursday", example: null, audioAssetId: null, imageAssetId: null });
+    const exposure = taskDto("t1", { kind: "exposure", source: "czwartek", target: "Thursday", example: null, audioAssetId: null, exampleAudioAssetId: null, imageAssetId: null });
     const state = baseState();
     const harness = await startAtTask(state, exposure);
     // brak audioAssetId → bez autoodtwarzania i bez próby
@@ -337,6 +337,34 @@ describe("LearningSessionController", () => {
     expect(harness.controller.getScreen()).toMatchObject({ feedback: { dto: { kind: "great" } } });
   });
 
+  it("pytanie słuchowe odtwarza się samo po wyświetleniu (SPEC §12.2)", async () => {
+    const listening = taskDto("t1", { kind: "listening", options: [], audioAssetId: "asset-q" });
+    const listenHarness = await startAtTask(baseState(), listening);
+    expect(listenHarness.media.playUrls).toEqual(["https://media.test/asset-q"]);
+
+    // zadanie tekstowe nie ma audio — nic nie gra samo z siebie
+    const reading = taskDto("t2", { kind: "reading", text: "Thursday", options: [] });
+    const readHarness = await startAtTask(baseState(), reading);
+    expect(readHarness.media.playUrls).toEqual([]);
+  });
+
+  it("przycisk przykładu odtwarza audio zdania bez zgody serwera (SPEC §22)", async () => {
+    const exposure = taskDto("t1", {
+      kind: "exposure",
+      source: "czereśnia",
+      target: "cherry",
+      example: "Cherries are perfect for making pie.",
+      audioAssetId: "asset-word",
+      exampleAudioAssetId: "asset-example",
+      imageAssetId: null,
+    });
+    const harness = await startAtTask(baseState(), exposure);
+    await harness.controller.playExampleAudio();
+    // prezentacja sama odtwarza słowo; przycisk dokładuje zdanie przykładowe
+    expect(harness.media.playUrls).toEqual(["https://media.test/asset-word", "https://media.test/asset-example"]);
+    expect(harness.state.disclosures).toHaveLength(0);
+  });
+
   it("wzorzec w recall wymaga zgody serwera; pytanie słuchowe nie", async () => {
     const recall = taskDto("t1", { kind: "recall", prompt: "czwartek" });
     const recallHarness = await startAtTask(baseState(), recall);
@@ -346,8 +374,9 @@ describe("LearningSessionController", () => {
 
     const listening = taskDto("t2", { kind: "listening", options: [], audioAssetId: "asset-1" });
     const listenHarness = await startAtTask(baseState(), listening);
-    await listenHarness.controller.playTaskAudio();
+    // pytanie słuchowe odtwarza się już samo po wyświetleniu (SPEC §12.2)
     expect(listenHarness.media.playUrls).toEqual(["https://media.test/asset-1"]);
+    await listenHarness.controller.playTaskAudio();
     expect(listenHarness.state.disclosures).toHaveLength(0);
 
     const speech = taskDto("t3", { kind: "speech", text: "Thursday", audioAssetId: "asset-2", imageAssetId: null });

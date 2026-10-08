@@ -261,6 +261,7 @@ test("jeden profil pomija wybór i prowadzi sesję do obiecanego końca", async 
 
   let sawRemaining = false;
   let sawIllustration = false;
+  let sawExampleAudio = false;
   for (let step = 0; step < 90; step++) {
     await page.waitForSelector('[data-task-id], [data-testid="kid-summary"]', { timeout: 30_000 });
     await settled(page);
@@ -271,6 +272,11 @@ test("jeden profil pomija wybór i prowadzi sesję do obiecanego końca", async 
       // obrazu (sobota/niedziela w fake providerze) pokazują placeholder
       if (await page.getByTestId("kid-illustration").isVisible()) {
         sawIllustration = true;
+      }
+      // karta ze zdaniem przykładowym ma przycisk jego odsłuchu (SPEC §22)
+      if (await page.getByTestId("kid-play-example").isVisible()) {
+        await page.getByTestId("kid-play-example").click();
+        sawExampleAudio = true;
       }
       await page.getByTestId("kid-done").click();
       continue;
@@ -312,6 +318,7 @@ test("jeden profil pomija wybór i prowadzi sesję do obiecanego końca", async 
   await expect(page.getByTestId("kid-summary")).toBeVisible();
   expect(sawRemaining).toBe(true);
   expect(sawIllustration).toBe(true);
+  expect(sawExampleAudio).toBe(true);
   // obiecany koniec jest też końcem po stronie serwera
   const sessions = await query<{ state: string }>(
     `select state from learning_app.learning_sessions where child_id = $1 order by started_at`,

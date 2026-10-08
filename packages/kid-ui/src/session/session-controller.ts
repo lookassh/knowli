@@ -249,9 +249,10 @@ export class LearningSessionController {
         error: null,
       };
       this.#emit();
-      if (task.exerciseType === "exposure") {
-        // świadome odtworzenie po „Start” sesji; ograniczenia urządzenia
-        // łapiemy cicho — pozostaje widoczny przycisk odsłuchu (SPEC §12.1)
+      // prezentacja od razu odtwarza wzorcową wymowę, a pytanie słuchowe
+      // stanowi treść zadania (SPEC §12.1, §12.2); ograniczenia urządzenia
+      // łapiemy cicho — pozostaje widoczny przycisk odsłuchu
+      if (task.exerciseType === "exposure" || task.exerciseType === "listening") {
         void this.playTaskAudio().catch(() => undefined);
       }
     } catch (error) {
@@ -434,17 +435,39 @@ export class LearningSessionController {
     }
     try {
       await this.#media.player.play(this.#api.mediaUrl(assetId));
+      if (task.exerciseType === "listening") {
+        // liczba odsłuchów pytania jest zapisywana jako obserwacja (§13.2);
+        // tylko faktycznie rozpoczęte odtwarzanie — zablokowany autoplay
+        // nie jest odsłuchem
+        void this.#api
+          .recordObservation({ taskId: task.taskId, clientEventId: randomUUID(), kind: "audio_played" })
+          .catch(() => undefined);
+      }
     } catch (error) {
       // zablokowany autoplay nie jest awarią; brak sieci jest
       if (isNetworkError(error)) {
         this.#handleFailure(error);
       }
     }
-    if (task.exerciseType === "listening") {
-      // liczba odsłuchów pytania jest zapisywana jako obserwacja (§13.2)
-      void this.#api
-        .recordObservation({ taskId: task.taskId, clientEventId: randomUUID(), kind: "audio_played" })
-        .catch(() => undefined);
+  }
+
+  /**
+   * Odsłuch zdania przykładowego prezentacji (SPEC §22): plik przygotowany
+   * z zestawem, treść zdania jest już widoczna na karcie, więc odtworzenie
+   * nie wymaga zgody serwera ani nie ujawnia niczego nowego.
+   */
+  async playExampleAudio(): Promise<void> {
+    const screen = this.#learning();
+    if (!screen?.task || screen.offline) return;
+    if (screen.task.prompt.kind !== "exposure") return;
+    const assetId = screen.task.prompt.exampleAudioAssetId;
+    if (assetId === null) return;
+    try {
+      await this.#media.player.play(this.#api.mediaUrl(assetId));
+    } catch (error) {
+      if (isNetworkError(error)) {
+        this.#handleFailure(error);
+      }
     }
   }
 
