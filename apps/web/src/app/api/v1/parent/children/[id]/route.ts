@@ -7,10 +7,13 @@ interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
-export const DELETE = withApi<RouteContext>(async (request, context) => {
+const dispatch = withApi<RouteContext>(async (request, context) => {
   assertSameOrigin(request);
   await requireParentSession(request, getServerServices());
   const { id } = await context.params;
   await deleteChild(getServerServices(), id);
   return new Response(null, { status: 204 });
 });
+
+export const DELETE = (request: Request, context: RouteContext): Promise<Response> =>
+  dispatch(request, context);

@@ -1,0 +1,16 @@
+node_modules
+**/node_modules
+.next
+**/.next
+dist
+coverage
+test-results
+playwright-report
+.git
+.env
+.env.*
+backups
+data
+spike
+tests/e2e/.world.json
+*.tsbuildinfo

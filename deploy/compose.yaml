@@ -1,0 +1,110 @@
+# Stack rodzinny Knowli/Umiem! (zadanie 11).
+# Uruchamiaj z korzenia repozytorium:
+#   docker compose --env-file .env -f deploy/compose.yaml up -d --build
+#
+# Tylko serwis web dostaje port hosta (HTTPS zapewnia reverse proxy, w domu
+# Coolify); baza i worker pozostają prywatne w sieci compose. Wszystkie trzy
+# procesy aplikacyjne czytają ten sam plik ../.env (klucze providerów i
+# ustawienia medialne muszą być identyczne dla fingerprintów — patrz
+# docs/provider-config.md); DATABASE_URL i MEDIA_ROOT nadpisuje compose,
+# bo wewnątrz sieci dane są pod innymi adresami niż w lokalnym dev.
+
+name: knowli
+
+x-app-env: &app-env
+  DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:?ustaw POSTGRES_PASSWORD w .env}@db:5432/${POSTGRES_DB:-knowli}
+  MEDIA_ROOT: /data/media
+
+services:
+  db:
+    image: postgres:17.11-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?ustaw POSTGRES_PASSWORD w .env}
+      POSTGRES_DB: ${POSTGRES_DB:-knowli}
+    volumes:
+      - knowli-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 10s
+
+  # Jednorazowe migracje; web i worker czekają na service_completed_successfully.
+  migrate:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: worker
+    restart: "no"
+    env_file:
+      - path: ../.env
+        required: false
+    environment:
+      <<: *app-env
+    volumes:
+      - knowli-media:/data/media
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["node", "apps/worker/node_modules/tsx/dist/cli.mjs", "deploy/migrate.ts"]
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: web
+    restart: unless-stopped
+    env_file:
+      - path: ../.env
+        required: false
+    environment:
+      <<: *app-env
+    volumes:
+      - knowli-media:/data/media
+    ports:
+      - "${WEB_PORT:-8080}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/v1/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: worker
+    restart: unless-stopped
+    env_file:
+      - path: ../.env
+        required: false
+    environment:
+      <<: *app-env
+    volumes:
+      - knowli-media:/data/media
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -q -O /dev/null http://127.0.0.1:$${WORKER_HEALTH_PORT:-9301}/health || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  knowli-db:
+  knowli-media:

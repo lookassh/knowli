@@ -1,0 +1,31 @@
+# Nadpisania testu dymnego (deploy/smoke.sh): deterministyczni fake providerzy
+# bez kluczy i wywołań sieciowych, port web tylko na localhost, szybki polling.
+# Ustawienia medialne MUSZĄ się zgadzać z fake'ami (fingerprinty zasobów) —
+# wzorem tests/e2e/global-setup.ts.
+
+services:
+  migrate:
+    environment:
+      UMIEM_FAKE_PROVIDERS: "1"
+
+  web:
+    ports: !override
+      - "127.0.0.1:${SMOKE_PORT:-24700}:3000"
+    environment:
+      UMIEM_TTS_PROVIDER: fake-tts
+      UMIEM_TTS_MODEL: fake-tts-1
+      UMIEM_TTS_VOICE: fake-voice
+      UMIEM_IMAGE_PROVIDER: fake-image
+      UMIEM_IMAGE_MODEL: fake-image-1
+      UMIEM_IMAGE_SIZE: 512x512
+
+  worker:
+    environment:
+      UMIEM_FAKE_PROVIDERS: "1"
+      WORKER_POLL_MS: "500"
+      UMIEM_TTS_PROVIDER: fake-tts
+      UMIEM_TTS_MODEL: fake-tts-1
+      UMIEM_TTS_VOICE: fake-voice
+      UMIEM_IMAGE_PROVIDER: fake-image
+      UMIEM_IMAGE_MODEL: fake-image-1
+      UMIEM_IMAGE_SIZE: 512x512

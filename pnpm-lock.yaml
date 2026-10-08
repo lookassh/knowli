@@ -76,13 +76,13 @@ importers:
       '@learning/server':
         specifier: workspace:*
         version: link:../../packages/server
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.15
     devDependencies:
       '@types/node':
         specifier: ^22.15.0
         version: 22.20.5
-      tsx:
-        specifier: ^4.19.2
-        version: 4.23.15
       typescript:
         specifier: ^5.8.0
         version: 5.9.3

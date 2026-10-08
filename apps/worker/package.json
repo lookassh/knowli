@@ -8,11 +8,11 @@
     "start": "tsx src/main.ts"
   },
   "dependencies": {
-    "@learning/server": "workspace:*"
+    "@learning/server": "workspace:*",
+    "tsx": "^4.19.2"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
-    "tsx": "^4.19.2",
     "typescript": "^5.8.0"
   }
 }

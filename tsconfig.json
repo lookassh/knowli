@@ -8,5 +8,5 @@
       "@/*": ["apps/web/src/*"]
     }
   },
-  "include": ["tests/**/*.ts", "vitest.*.config.ts", "playwright.config.ts"]
+  "include": ["tests/**/*.ts", "deploy/**/*.ts", "vitest.*.config.ts", "playwright.config.ts"]
 }
