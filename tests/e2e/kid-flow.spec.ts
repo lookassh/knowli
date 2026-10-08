@@ -377,6 +377,7 @@ test("recall z należnego sprawdzenia: pisemna pisownia, Nie pamiętam i Pomiń"
   await page.getByTestId("kid-input").fill(await answerTarget(taskId1));
   await page.getByTestId("kid-submit").click();
   await expect(page.getByTestId("kid-feedback")).toContainText("Świetnie");
+  await expect(page.getByTestId("kid-feedback")).toHaveClass(/kid-feedback--correct/);
   const grades1 = await query<{ skill: string }>(
     `select skill from learning_app.assessments where attempt_id in
        (select id from learning_app.attempts where task_id = $1)`,
@@ -394,6 +395,8 @@ test("recall z należnego sprawdzenia: pisemna pisownia, Nie pamiętam i Pomiń"
   await expect(page.getByTestId("kid-reveal")).toContainText(target2);
   await page.getByTestId("kid-next").click();
   await expect(page.getByTestId("kid-feedback")).toBeVisible();
+  // zadeklarowana trudność dostaje tło pomyłki, nie sukcesu (SPEC §16)
+  await expect(page.getByTestId("kid-feedback")).toHaveClass(/kid-feedback--retry/);
   const modality2 = await query<{ modality: string }>(
     `select modality from learning_app.attempts where task_id = $1`,
     [taskId2],
@@ -406,6 +409,8 @@ test("recall z należnego sprawdzenia: pisemna pisownia, Nie pamiętam i Pomiń"
   const taskId3 = await currentTaskId(page);
   await page.getByTestId("kid-skip").click();
   await expect(page.getByTestId("kid-feedback")).toBeVisible();
+  // brak oceny wiedzy nie jest ani sukcesem, ani pomyłką — tło neutralne
+  expect(await page.getByTestId("kid-feedback").getAttribute("class")).not.toContain("kid-feedback--");
   const task3 = await query<{ state: string }>(
     `select state from learning_app.session_tasks where id = $1`,
     [taskId3],

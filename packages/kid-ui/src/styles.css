@@ -290,8 +290,20 @@ button {
 }
 
 .kid-feedback {
+  border-color: #e4e6f4;
+  background: #fff;
+}
+
+/* tło feedbacku odpowiada wynikowi (SPEC §16): sukces zielony,
+   pomyłka ciepły bursztyn, próba nieoceniona neutralna */
+.kid-feedback--correct {
   border-color: #bfe3cd;
   background: #f2fbf5;
+}
+
+.kid-feedback--retry {
+  border-color: #f0dcbc;
+  background: #fdf6ec;
 }
 
 .kid-feedback-text {

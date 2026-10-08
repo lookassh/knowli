@@ -21,6 +21,25 @@ function feedbackText(feedback: FeedbackDto | null): string {
 }
 
 /**
+ * Tło feedbacku odpowiada wynikowi (SPEC §16): sukces na zielono, pomyłka
+ * na ciepły bursztyn, próba nieoceniona pozostaje neutralna. Nigdy nie
+ * chwalimy błędnej odpowiedzi sukcesem — także kolorem.
+ */
+export function feedbackTone(feedback: FeedbackDto | null): string {
+  const dto = feedback ?? { kind: "not_assessed" as const };
+  switch (dto.kind) {
+    case "great":
+    case "capitalization_hint":
+      return "kid-feedback--correct";
+    case "almost":
+    case "incorrect":
+      return "kid-feedback--retry";
+    case "not_assessed":
+      return "";
+  }
+}
+
+/**
  * Ekran nauki: jedno jasne zadanie na ekranie. Po utracie sieci treść
  * zadania znika (ukrycie wzorców), odsłuchy i oceniane próby są zablokowane,
  * a sukces może pochodzić wyłącznie z odpowiedzi serwera (plan zadania 9).
@@ -109,7 +128,13 @@ export function LearnScreen({
       )}
 
       {screen.feedback !== null && (
-        <section className="kid-card kid-feedback" data-testid="kid-feedback" role="status">
+        <section
+          className={["kid-card", "kid-feedback", feedbackTone(screen.feedback.dto)]
+            .filter(Boolean)
+            .join(" ")}
+          data-testid="kid-feedback"
+          role="status"
+        >
           <p className="kid-feedback-text">{feedbackText(screen.feedback.dto)}</p>
           <button type="button" className="kid-primary" data-testid="kid-next" onClick={() => void controller.continueLearning()}>
             {screen.feedback.retry ? messages.kid.feedbackRetry : messages.kid.feedbackNext}
