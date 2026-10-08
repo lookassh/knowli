@@ -221,6 +221,46 @@ describe("selectTask — wsparcie po dwóch błędach (SPEC §16)", () => {
       input({ candidates: [supported, other], peers: [peer(supported), peer(other)], nextOrdinal: 7 }),
     );
     expect(afterGap).toMatchObject({ itemRevisionId: "rev-1", reason: "retry-after-support", exerciseType: "listening" });
+    expect(afterGap!.options!.filter((o) => o.correct).map((o) => o.text)).toEqual(["czwartek"]);
+    expect(afterGap!.options!.map((o) => o.text)).toContain("piątek");
+  });
+});
+
+describe("selectTask — listening zawsze z opcjami (kontrakt kid.ts: min 1)", () => {
+  it("należna powtórka słuchu dostaje opcję poprawną i dystraktory z pominięciem rezerwacji", () => {
+    const listener = candidate({
+      usedThisSession: 2,
+      progress: { listening: { status: "needs_confirmation", nextReviewAt: PAST } },
+    });
+    const sroda = peer({ itemRevisionId: "rev-w", position: 1, target: "Wednesday", source: "środa" });
+    const piatek = peer({ itemRevisionId: "rev-f", position: 2, target: "Friday", source: "piątek" });
+    const plan = selectTask(
+      input({
+        candidates: [listener],
+        peers: [peer(listener), sroda, piatek],
+        reservedTargetKeys: [KEY_WEDNESDAY],
+      }),
+    );
+    expect(plan).toMatchObject({ exerciseType: "listening", reason: "due-review" });
+    expect(plan!.options!.map((o) => o.text)).toEqual(["czwartek", "piątek"]);
+    expect(plan!.options!.filter((o) => o.correct)).toHaveLength(1);
+  });
+
+  it("utrwalanie bez należności: słuch ma komplet opcji", () => {
+    const seen = candidate({ usedThisSession: 3, practiceMix: { listening: 0, reading: 2 } });
+    const piatek = peer({ itemRevisionId: "rev-f", position: 1, target: "Friday", source: "piątek" });
+    const sroda = peer({ itemRevisionId: "rev-w", position: 2, target: "Wednesday", source: "środa" });
+    const plan = selectTask(input({ candidates: [seen], peers: [peer(seen), piatek, sroda] }));
+    expect(plan).toMatchObject({ exerciseType: "listening", reason: "filler-practice" });
+    expect(plan!.options!.map((o) => o.text)).toEqual(["czwartek", "piątek", "środa"]);
+    expect(plan!.options!.filter((o) => o.correct)).toHaveLength(1);
+  });
+
+  it("talia z jednym elementem: opcja poprawna istnieje mimo braku dystraktorów", () => {
+    const lonely = candidate({ usedThisSession: 3, practiceMix: { listening: 0, reading: 1 } });
+    const plan = selectTask(input({ candidates: [lonely], peers: [peer(lonely)] }));
+    expect(plan).toMatchObject({ exerciseType: "listening", reason: "filler-practice" });
+    expect(plan!.options!.filter((o) => o.correct).map((o) => o.text)).toEqual(["czwartek"]);
   });
 });
 

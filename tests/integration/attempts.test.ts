@@ -14,7 +14,7 @@ import {
   upsertAssignment,
   type AppError,
 } from "@learning/server";
-import { AttemptDtoSchema, type TaskDto } from "@learning/contracts";
+import { AttemptDtoSchema, TaskDtoSchema, type TaskDto } from "@learning/contracts";
 import {
   buildTestServices,
   openRestartedServices,
@@ -427,6 +427,44 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
     expect(support.exerciseType).toBe("exposure");
     const context = await taskRow(support.taskId);
     expect((context.context as { reason?: string }).reason).toBe("support");
+  });
+
+  it("zadanie retry po wsparciu spełnia kontrakt Kid DTO (regresja: puste options w listening)", async () => {
+    const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 4));
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const task = await firstAssessedTask(services, session.sessionId);
+    await submitWrong(services, task);
+    await submitWrong(services, task);
+    const support = (await nextTask(services, session.sessionId))!;
+    expect(support.exerciseType).toBe("exposure");
+    await completePresentation(services, { taskId: support.taskId });
+
+    // przerwa co najmniej dwóch zadań, potem łatwiejsze ćwiczenie po wsparciu;
+    // kid-ui waliduje odpowiedź schematem kontraktu, więc listening bez opcji
+    // pokazywałby dziecku ogólny błąd aplikacji
+    let retry: TaskDto | null = null;
+    for (let step = 0; step < 12 && retry === null; step++) {
+      const next = await nextTask(services, session.sessionId);
+      if (!next) break;
+      if (next.exerciseType === "exposure") {
+        await completePresentation(services, { taskId: next.taskId });
+        continue;
+      }
+      const row = await taskRow(next.taskId);
+      if ((row.context as { reason?: string }).reason === "retry-after-support") {
+        retry = next;
+      } else {
+        await submitCorrect(services, next);
+      }
+    }
+    expect(retry).not.toBeNull();
+    const parsed = TaskDtoSchema.safeParse(retry);
+    expect(parsed.success).toBe(true);
+    if (parsed.success && parsed.data.prompt.kind === "listening") {
+      expect(parsed.data.prompt.options.length).toBeGreaterThanOrEqual(1);
+    } else if (parsed.success) {
+      throw new Error(`oczekiwano listening, otrzymano ${parsed.data.prompt.kind}`);
+    }
   });
 
   it("„Nie pamiętam” to trudność bez mylonej pary; „Pomiń” nie udaje błędu", async () => {

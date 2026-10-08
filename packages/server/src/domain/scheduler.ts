@@ -185,6 +185,27 @@ function pickDistractors(
   return picked;
 }
 
+/**
+ * Opcje rozpoznawania ze słuchu: potwierdzenie + dystraktory rówieśników.
+ * Kontrakt kid.ts wymaga min 1 opcji — każde zadanie listening jest wyborem,
+ * także powtórki i utrwalanie (regresja: retry-after-support bez opcji).
+ */
+function listeningOptions(
+  target: ScheduleCandidate,
+  peers: readonly SchedulePeer[],
+  reserved: ReadonlySet<string>,
+  rotateBy: number,
+): PlannedOption[] {
+  return [
+    { itemRevisionId: target.itemRevisionId, text: target.source, correct: true },
+    ...pickDistractors(target, peers, reserved, 2, rotateBy).map((d) => ({
+      itemRevisionId: d.itemRevisionId,
+      text: d.source,
+      correct: false,
+    })),
+  ];
+}
+
 /** Kierunek reading o mniejszej liczbie wystąpień; remis: target_to_source. */
 function weakerDirection(directions: Partial<Record<ReadingDirection, number>>): ReadingDirection {
   const t2s = directions.target_to_source ?? 0;
@@ -252,6 +273,7 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
     return {
       itemRevisionId: retryAfterSupport.itemRevisionId,
       exerciseType: "listening",
+      options: listeningOptions(retryAfterSupport, input.peers, reserved, input.nextOrdinal),
       revealsTargetKeys: [keyOfCandidate(retryAfterSupport)],
       assessed: true,
       reason: "retry-after-support",
@@ -267,14 +289,7 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
     return {
       itemRevisionId: target.itemRevisionId,
       exerciseType: "listening",
-      options: [
-        { itemRevisionId: target.itemRevisionId, text: target.source, correct: true },
-        ...pickDistractors(target, input.peers, reserved, 2, input.nextOrdinal).map((d) => ({
-          itemRevisionId: d.itemRevisionId,
-          text: d.source,
-          correct: false,
-        })),
-      ],
+      options: listeningOptions(target, input.peers, reserved, input.nextOrdinal),
       revealsTargetKeys: [keyOfCandidate(target)],
       assessed: true,
       reason: "new-practice",
@@ -353,9 +368,20 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
         keepsReservations,
       };
     }
+    if (dueSkill.skill === "pronunciation") {
+      return {
+        itemRevisionId: dueSkill.candidate.itemRevisionId,
+        exerciseType: "speech",
+        revealsTargetKeys: [keyOfCandidate(dueSkill.candidate)],
+        assessed: true,
+        reason: "due-review",
+        keepsReservations,
+      };
+    }
     return {
       itemRevisionId: dueSkill.candidate.itemRevisionId,
-      exerciseType: dueSkill.skill === "pronunciation" ? "speech" : "listening",
+      exerciseType: "listening",
+      options: listeningOptions(dueSkill.candidate, input.peers, reserved, input.nextOrdinal),
       revealsTargetKeys: [keyOfCandidate(dueSkill.candidate)],
       assessed: true,
       reason: "due-review",
@@ -372,6 +398,7 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
       return {
         itemRevisionId: filler.itemRevisionId,
         exerciseType: "listening",
+        options: listeningOptions(filler, input.peers, reserved, input.nextOrdinal),
         revealsTargetKeys: [keyOfCandidate(filler)],
         assessed: true,
         reason: "filler-practice",
