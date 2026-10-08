@@ -277,6 +277,7 @@ interface PlannedTask {
   plan: TaskPlan;
   item: PlannedItem;
   audioAssetId: string | null;
+  imageAssetId: string | null;
 }
 
 interface ItemStats {
@@ -317,6 +318,20 @@ async function planNextTask(
       ),
     );
   const audioByRevision = new Map(audioRows.map((a) => [a.itemRevisionId, a.assetId]));
+
+  // Pomoc wizualna prezentacji (SPEC §12.1): zatwierdzona ilustracja rodzica;
+  // pominięty obraz pozostaje null i nie blokuje zadania.
+  const imageRows = await tx
+    .select({ itemRevisionId: revisionAssets.itemRevisionId, assetId: revisionAssets.assetId })
+    .from(revisionAssets)
+    .where(
+      and(
+        inArray(revisionAssets.itemRevisionId, revisionIds),
+        eq(revisionAssets.role, "illustration"),
+        eq(revisionAssets.state, "approved"),
+      ),
+    );
+  const imageByRevision = new Map(imageRows.map((a) => [a.itemRevisionId, a.assetId]));
 
   const progressRows = await tx
     .select({
@@ -483,7 +498,12 @@ async function planNextTask(
   if (!plan) {
     return null;
   }
-  return { plan, item: items.get(plan.itemRevisionId)!, audioAssetId: audioByRevision.get(plan.itemRevisionId) ?? null };
+  return {
+    plan,
+    item: items.get(plan.itemRevisionId)!,
+    audioAssetId: audioByRevision.get(plan.itemRevisionId) ?? null,
+    imageAssetId: imageByRevision.get(plan.itemRevisionId) ?? null,
+  };
 }
 
 /** Deterministyczny fragment uzupełniania liter: co druga litera widoczna. */
@@ -499,6 +519,7 @@ function materializeTask(
   plan: TaskPlan,
   item: PlannedItem,
   audioAssetId: string | null,
+  imageAssetId: string | null,
 ): { prompt: TaskPrompt; answerKey: Record<string, unknown> } {
   const optionIds = new Map(
     (plan.options ?? []).map((o) => [o.text, randomUUID()] as const),
@@ -525,6 +546,7 @@ function materializeTask(
         target: item.target,
         example: item.example ?? null,
         audioAssetId,
+        imageAssetId,
       };
       break;
     case "listening":
@@ -546,7 +568,7 @@ function materializeTask(
       prompt = { kind: "letter_completion", prompt: item.source, fragment: letterFragment(item.target) };
       break;
     case "speech":
-      prompt = { kind: "speech", text: item.target, audioAssetId };
+      prompt = { kind: "speech", text: item.target, audioAssetId, imageAssetId };
       break;
   }
   return { prompt, answerKey };
@@ -603,8 +625,8 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
     if (!planned) {
       return null;
     }
-    const { plan, item, audioAssetId } = planned;
-    const materialized = materializeTask(plan, item, audioAssetId);
+    const { plan, item, audioAssetId, imageAssetId } = planned;
+    const materialized = materializeTask(plan, item, audioAssetId, imageAssetId);
     const taskId = randomUUID();
 
     await tx.insert(sessionTasks).values({

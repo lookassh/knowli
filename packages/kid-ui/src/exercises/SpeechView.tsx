@@ -7,13 +7,22 @@ import type { ExerciseProps } from "./types";
  * usłyszeć wzorzec (oczekiwana część nauki — §13.2), potem je wypowiada.
  * Bez działającego mikrofonu pozostaje komunikat i „Pomiń” — bez oceny.
  */
-export function SpeechView({ task, busy, recording, micAvailable, handlers }: ExerciseProps) {
+export function SpeechView({ task, busy, recording, micAvailable, mediaUrl, handlers }: ExerciseProps) {
   if (task.prompt.kind !== "speech") {
     return null;
   }
   return (
     <section className="kid-card">
-      <Visual text={task.prompt.text} />
+      {task.prompt.imageAssetId !== null ? (
+        <img
+          className="kid-illustration"
+          data-testid="kid-illustration"
+          src={mediaUrl(task.prompt.imageAssetId)}
+          alt={task.prompt.text}
+        />
+      ) : (
+        <Visual text={task.prompt.text} />
+      )}
       <p className="kid-word" data-testid="kid-target">
         {task.prompt.text}
       </p>

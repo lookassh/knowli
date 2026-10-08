@@ -111,6 +111,7 @@ export function LearnScreen({
               busy={busy || screen.feedback !== null || screen.reveal !== null}
               recording={screen.recording}
               micAvailable={micAvailable}
+              mediaUrl={(assetId) => controller.mediaUrl(assetId)}
               handlers={handlers}
             />
           </div>

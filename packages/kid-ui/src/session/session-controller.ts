@@ -539,6 +539,11 @@ export class LearningSessionController {
     return task !== null && task.remainingAssessed <= REMAINING_BANNER_FROM ? task.remainingAssessed : null;
   }
 
+  /** URL niezmiennej treści medialnej (audio, ilustracja) przez klienta API. */
+  mediaUrl(assetId: string): string {
+    return this.#api.mediaUrl(assetId);
+  }
+
   #handleFailure(error: unknown): void {
     if (this.#screen.kind !== "learning") return;
     if (isNetworkError(error)) {

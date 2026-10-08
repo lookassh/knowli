@@ -97,12 +97,40 @@ async function attachFakeReadyAudio(deckVersionId: string, itemIndex: number): P
   );
 }
 
+async function attachApprovedIllustration(deckVersionId: string, itemIndex: number): Promise<string> {
+  const revision = (
+    await query<{ id: string }>(
+      `select id from learning_app.item_revisions
+        where deck_version_id = $1 order by position offset $2 limit 1`,
+      [deckVersionId, itemIndex],
+    )
+  )[0]!;
+  const assetId = randomUUID();
+  const fingerprint = `fp-ill-${randomUUID()}`;
+  await pool.query(
+    `insert into learning_app.media_assets
+       (id, kind, fingerprint, generation_number, state, storage_key, content_sha256,
+        mime_type, byte_count, provider, model)
+     values ($1,'illustration',$2,1,'ready',$3,$4,'image/webp',1024,'fake','fake-image')`,
+    [assetId, fingerprint, `blob/${assetId}`, `sha-${assetId}`],
+  );
+  await pool.query(
+    `insert into learning_app.revision_assets
+       (item_revision_id, role, asset_id, expected_fingerprint, state)
+     values ($1,'illustration',$2,$3,'approved')`,
+    [revision.id, assetId, fingerprint],
+  );
+  return assetId;
+}
+
 async function publishDeckWithAssignment(
   services: ReturnType<typeof buildTestServices>["services"],
   childId: string,
   pairs: { source: string; target: string }[],
-): Promise<{ deckId: string; versionId: string }> {
+  illustrationFor?: number,
+): Promise<{ deckId: string; versionId: string; illustrationAssetId?: string }> {
   const draft = await createDraft(services, { title: `Zestaw ${pairs[0]!.target}`, items: pairs.map(vocabItem) });
+  let illustrationAssetId: string | undefined;
   for (const index of pairs.keys()) {
     await attachFakeReadyAudio(draft.id, index);
     const revision = (
@@ -112,6 +140,10 @@ async function publishDeckWithAssignment(
         [draft.id, index],
       )
     )[0]!;
+    if (index === illustrationFor) {
+      illustrationAssetId = await attachApprovedIllustration(draft.id, index);
+      continue;
+    }
     await pool.query(
       `insert into learning_app.revision_assets
          (item_revision_id, role, asset_id, expected_fingerprint, state)
@@ -121,7 +153,7 @@ async function publishDeckWithAssignment(
   }
   await publishDraft(services, draft.id, 1);
   await upsertAssignment(services, childId, draft.deckId, null);
-  return { deckId: draft.deckId, versionId: draft.id };
+  return { deckId: draft.deckId, versionId: draft.id, illustrationAssetId };
 }
 
 /** Symulacja finalizacji próby (zadanie 7): zadanie oceniane przechodzi w answered. */
@@ -314,6 +346,27 @@ describe("cykl życia sesji (integracja)", () => {
     expect(events[0]!.kind).toBe("prompt_issued");
     expect(events[0]!.sealed).toBe(true);
     expect(events[0]!.target_keys).not.toBeNull();
+  });
+
+  it("prezentacja niesie zatwierdzoną ilustrację, a karta bez obrazu dostaje null (SPEC §12.1)", async () => {
+    const { deckId, illustrationAssetId } = await publishDeckWithAssignment(
+      services,
+      childId,
+      DAY_ITEMS.slice(0, 3),
+      0,
+    );
+    expect(illustrationAssetId).toBeDefined();
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: true });
+
+    const first = await nextTask(services, session.sessionId);
+    expect(first!.prompt).toMatchObject({ kind: "exposure", imageAssetId: illustrationAssetId });
+
+    // karta z pominiętym obrazem: pomoc wizualna jest nieobecna, nie błędna
+    await completePresentation(services, { taskId: first!.taskId, clientCommandId: randomUUID() });
+    const second = await driveUntilExercise(services, session.sessionId, "exposure");
+    expect(second).not.toBeNull();
+    expect(second!.taskId).not.toBe(first!.taskId);
+    expect(second!.prompt).toMatchObject({ kind: "exposure", imageAssetId: null });
   });
 
   it("limit czasu kończy wydawanie zadań między zadaniami", async () => {

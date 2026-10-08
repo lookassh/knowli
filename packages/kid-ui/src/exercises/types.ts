@@ -18,5 +18,7 @@ export interface ExerciseProps {
   recording: boolean;
   /** Mikrofon dostępny: sesja włączona i brak odmowy. */
   micAvailable: boolean;
+  /** URL niezmiennej ilustracji karty (route media hosta). */
+  mediaUrl: (assetId: string) => string;
   handlers: ExerciseHandlers;
 }

@@ -7,13 +7,22 @@ import type { ExerciseProps } from "./types";
  * wizualna; wzorcowa wymowa odtwarzana po świadomym „Start” sesji, ponowny
  * odsłuch na żądanie. Bez odpowiedzi i bez oceny.
  */
-export function ExposureView({ task, busy, handlers }: ExerciseProps) {
+export function ExposureView({ task, busy, mediaUrl, handlers }: ExerciseProps) {
   if (task.prompt.kind !== "exposure") {
     return null;
   }
   return (
     <section className="kid-card">
-      <Visual text={task.prompt.target} />
+      {task.prompt.imageAssetId !== null ? (
+        <img
+          className="kid-illustration"
+          data-testid="kid-illustration"
+          src={mediaUrl(task.prompt.imageAssetId)}
+          alt={task.prompt.target}
+        />
+      ) : (
+        <Visual text={task.prompt.target} />
+      )}
       <p className="kid-word" data-testid="kid-target">
         {task.prompt.target}
       </p>

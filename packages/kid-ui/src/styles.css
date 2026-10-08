@@ -152,6 +152,17 @@
   height: 96px;
 }
 
+/* Ilustracja karty (SPEC §24): obraz wspiera znaczenie, duża i zaokrąglona,
+   żeby czytać się dobrze na telefonie; brak obrazu wraca do .kid-visual. */
+.kid-illustration {
+  width: min(60vw, 260px);
+  height: min(60vw, 260px);
+  object-fit: cover;
+  border-radius: 16px;
+  border: 4px solid #e4e6f4;
+  background: #fff;
+}
+
 .kid-options {
   list-style: none;
   margin: 0;

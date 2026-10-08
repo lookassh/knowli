@@ -33,6 +33,12 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     target: z.string().min(1),
     example: z.string().nullable(),
     audioAssetId: UuidSchema.nullable(),
+    /**
+     * Zatwierdzona przez rodzica ilustracja — pomoc wizualna prezentacji
+     * (SPEC §12.1, §24); null, gdy karta nie ma obrazu. Bajty przez route
+     * media, bez dodatkowej ekspozycji (arch §12).
+     */
+    imageAssetId: UuidSchema.nullable(),
   }),
   z.object({
     kind: z.literal("listening"),
@@ -60,6 +66,8 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     kind: z.literal("speech"),
     text: z.string().min(1),
     audioAssetId: UuidSchema.nullable(),
+    /** Ilustracja karty; cel i tak jest widoczny w treści zadania (SPEC §24). */
+    imageAssetId: UuidSchema.nullable(),
   }),
 ]);
 export type TaskPrompt = z.infer<typeof TaskPromptSchema>;

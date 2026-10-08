@@ -213,6 +213,11 @@ async function startAtTask(state: ApiState, task: TaskDto, recorderOpts?: { fail
 }
 
 describe("LearningSessionController", () => {
+  it("mediaUrl deleguje do klienta API — wspólne źródło URL obrazka i audio", () => {
+    const harness = makeHarness(baseState());
+    expect(harness.controller.mediaUrl("asset-1")).toBe("https://media.test/asset-1");
+  });
+
   it("jeden profil pomija ekran wyboru", async () => {
     const harness = makeHarness({ ...baseState(), profiles: [PROFILE_A] });
     await harness.controller.start();
@@ -239,7 +244,7 @@ describe("LearningSessionController", () => {
   });
 
   it("exposure zamyka prezentację bez próby; koniec zadań kończy sesję", async () => {
-    const exposure = taskDto("t1", { kind: "exposure", source: "czwartek", target: "Thursday", example: null, audioAssetId: null });
+    const exposure = taskDto("t1", { kind: "exposure", source: "czwartek", target: "Thursday", example: null, audioAssetId: null, imageAssetId: null });
     const state = baseState();
     const harness = await startAtTask(state, exposure);
     // brak audioAssetId → bez autoodtwarzania i bez próby
@@ -345,7 +350,7 @@ describe("LearningSessionController", () => {
     expect(listenHarness.media.playUrls).toEqual(["https://media.test/asset-1"]);
     expect(listenHarness.state.disclosures).toHaveLength(0);
 
-    const speech = taskDto("t3", { kind: "speech", text: "Thursday", audioAssetId: "asset-2" });
+    const speech = taskDto("t3", { kind: "speech", text: "Thursday", audioAssetId: "asset-2", imageAssetId: null });
     const speechHarness = await startAtTask(baseState(), speech);
     await speechHarness.controller.playTaskAudio();
     expect(speechHarness.state.disclosures).toEqual([{ taskId: "t3", kind: "audio" }]);
