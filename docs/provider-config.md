@@ -28,7 +28,7 @@ w zadaniu 11); konwersja do WAV jest kodekowo-agnostyczna.
 | Element | Wartość | Uwagi |
 | --- | --- | --- |
 | LLM | OpenAI `gpt-4o-mini` | domyślny adapter `createOpenAiLlmProvider` |
-| TTS | OpenAI `gpt-4o-mini-tts`, format mp3 | głos: kandydat `fable` (en-GB) vs domyślny `alloy` — decyzja po odsłuchu przez rodzica |
+| TTS | OpenAI `gpt-4o-mini-tts`, format mp3 | głos `alloy` (decyzja po próbie: domyślny na start); zmiana np. na `fable` przez `UMIEM_TTS_VOICE` bez zmiany kodu |
 | Ilustracje | OpenAI `gpt-image-1`, `1024x1024`, PNG | ~30 s na obraz — praca tła workera; prompt bez tekstu w obrazie |
 | Env | `OPENAI_API_KEY` (jeden klucz do trzech usług) | tylko worker; web nie zna tego klucza |
 
@@ -44,9 +44,10 @@ do fingerprintów zasobów. Zasady potwierdzone próbą:
 - zapis `MediaStore.putImmutable` jest idempotentny i adresowany treścią;
   replay z lokalnego wolumenu trwa < 1 ms i nie woła API.
 
-Zmiana domyślnego głosu w `defaultMediaSettings` (np. `alloy` → `fable`)
-jest tania dopóki żaden realny materiał nie został wygenerowany — po decyzji
-rodzica ustawić ją RAZ przed pierwszym produkcyjnym generowaniem.
+Decyzja po próbie: domyślny głos pozostaje `alloy`. Ewentualna zmiana w
+`defaultMediaSettings` (np. `alloy` → `fable`) jest tania dopóki żaden realny
+materiał nie został wygenerowany — zastosować ją RAZ przed pierwszym
+produkcyjnym generowaniem.
 
 ## Bezpieczeństwo i retencja
 
