@@ -67,6 +67,13 @@ Nie budujemy ogólnego frameworka repozytoriów ani osobnego pakietu na każdą 
 
 ## 5. Przygotowanie do Androida
 
+### Trasy web rodzica i dziecka
+
+- `/` renderuje panel rodzica.
+- `/learn` osadza KidApp. Gdy rodzina ma wiele profili, dziecko wybiera profil; przy jednym profilu ekran wyboru jest pomijany. Jest to także `start_url` PWA.
+- `/kids/{childId}/learn` otwiera naukę z wybranym profilem. Trasa używa trwałego UUID profilu, a host przekazuje go do KidApp jako `initialChildId`. Nieznany lub usunięty identyfikator wraca do listy dostępnych profili.
+- Panel rodzica pokazuje przy każdym profilu link do jego trasy nauki. Kid UI nie zawiera linku do panelu rodzica.
+
 Kid Mode komunikuje się przez /api/v1/kid. Nie używa Server Actions ani pobierania danych przez Server Components jako warunku działania sesji. Next.js dostarcza tylko stronę startową i osadza KidApp. Routing wewnętrzny dziecka pozostaje w prostym module widoków; do wznowienia sesji wystarczy identyfikator zapisany lokalnie.
 
 API klienta ma konfigurowalny baseUrl. W web jest same-origin. W przyszłości mały host Vite + Capacitor może spakować tę samą bibliotekę kid-ui i wskazać zdalne API. Nie eksportujemy całego Next.js statycznie i nie przenosimy backendu do telefonu.

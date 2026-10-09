@@ -165,6 +165,9 @@ export default function ChildEditor({
               {child.birthYear ? ` (${child.birthYear})` : ""}
             </span>
             <div className="row">
+              <a className="button-link" data-testid="child-learn-link" href={`/kids/${child.id}/learn`}>
+                {messages.children.startLearning} · {child.displayName}
+              </a>
               <button
                 type="button"
                 data-testid={`child-settings-${index}`}

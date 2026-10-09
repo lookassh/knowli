@@ -14,8 +14,23 @@ import type { LocalPreferences } from "./storage";
  * HTTP z baseUrl, adaptery przeglądarkowe i pamięć lokalną; przyszły host
  * Capacitor podmieni wyłącznie te zależności.
  */
-export function KidApp({ api, media, storage }: { api: KidApi; media: PlatformMedia; storage: LocalPreferences }) {
-  const { controller, screen } = useLearningSession({ api, media, storage });
+export function KidApp({
+  api,
+  media,
+  storage,
+  initialChildId,
+}: {
+  api: KidApi;
+  media: PlatformMedia;
+  storage: LocalPreferences;
+  initialChildId?: string;
+}) {
+  const { controller, screen } = useLearningSession({
+    api,
+    media,
+    storage,
+    ...(initialChildId === undefined ? {} : { initialChildId }),
+  });
 
   switch (screen.kind) {
     case "loading":

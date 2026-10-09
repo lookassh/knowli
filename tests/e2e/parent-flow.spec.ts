@@ -37,10 +37,17 @@ test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page,
   await page.getByTestId("child-name").fill("Ala");
   await page.getByTestId("child-year").fill("2018");
   await page.getByTestId("child-add").click();
-  await expect(page.locator('[data-testid^="child-row"]').filter({ hasText: "Ala" })).toHaveCount(1);
+  const alaRow = page.locator('[data-testid^="child-row"]').filter({ hasText: "Ala" });
+  await expect(alaRow).toHaveCount(1);
+  const alaLearnLink = alaRow.getByTestId("child-learn-link");
+  await expect(alaLearnLink).toHaveAttribute("href", /^\/kids\/[0-9a-f-]{36}\/learn$/);
   await page.getByTestId("child-name").fill("Bartek");
   await page.getByTestId("child-add").click();
-  await expect(page.locator('[data-testid^="child-row"]').filter({ hasText: "Bartek" })).toHaveCount(1);
+  const bartekRow = page.locator('[data-testid^="child-row"]').filter({ hasText: "Bartek" });
+  await expect(bartekRow).toHaveCount(1);
+  const bartekLearnLink = bartekRow.getByTestId("child-learn-link");
+  await expect(bartekLearnLink).toHaveAttribute("href", /^\/kids\/[0-9a-f-]{36}\/learn$/);
+  expect(await alaLearnLink.getAttribute("href")).not.toBe(await bartekLearnLink.getAttribute("href"));
 
   // Nowy zestaw o znanym terminie sprawdzianu (za siedem dni).
   await page.getByTestId("tab-decks").click();

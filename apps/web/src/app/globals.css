@@ -61,6 +61,20 @@ button {
   cursor: pointer;
 }
 
+.button-link {
+  min-height: 44px;
+  padding: 8px 16px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #3b5bdb;
+  border-radius: 12px;
+  background: #3b5bdb;
+  color: #fff;
+  text-decoration: none;
+}
+
 button:disabled {
   opacity: 0.55;
   cursor: default;

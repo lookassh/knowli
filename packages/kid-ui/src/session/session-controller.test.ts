@@ -190,14 +190,18 @@ const DECK: KidDeckDto = {
   recommended: true,
 };
 
-function makeHarness(state: ApiState, recorderOpts: { failStart?: boolean } = {}) {
-  const recorder = makeRecorder(recorderOpts);
+function makeHarness(
+  state: ApiState,
+  options: { failStart?: boolean; initialChildId?: string } = {},
+) {
+  const recorder = makeRecorder(options);
   const media = makeMedia(recorder);
   const storage = createMemoryPreferences();
   const controller = new LearningSessionController({
     api: makeApi(state),
     media,
     storage,
+    ...(options.initialChildId === undefined ? {} : { initialChildId: options.initialChildId }),
     pollIntervalMs: 1,
   });
   return { controller, recorder, media, storage, state };
@@ -222,6 +226,25 @@ describe("LearningSessionController", () => {
     const harness = makeHarness({ ...baseState(), profiles: [PROFILE_A] });
     await harness.controller.start();
     expect(harness.controller.getScreen()).toMatchObject({ kind: "deck", childId: PROFILE_A.childId });
+  });
+
+  it("link z profilem otwiera wskazane dziecko bez ekranu wyboru", async () => {
+    const harness = makeHarness(baseState(), { initialChildId: PROFILE_B.childId });
+
+    await harness.controller.start();
+
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "deck", childId: PROFILE_B.childId });
+  });
+
+  it("nieaktualny link z profilem pokazuje dostępne profile", async () => {
+    const harness = makeHarness(
+      { ...baseState(), profiles: [PROFILE_A] },
+      { initialChildId: "99999999-9999-9999-9999-999999999999" },
+    );
+
+    await harness.controller.start();
+
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "profile", profiles: [PROFILE_A] });
   });
 
   it("dwa profile wymagają wyboru i prowadzą osobne sesje", async () => {

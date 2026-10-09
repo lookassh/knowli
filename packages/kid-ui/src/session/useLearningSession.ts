@@ -14,6 +14,7 @@ export function useLearningSession(deps: {
   api: KidApi;
   media: PlatformMedia;
   storage: LocalPreferences;
+  initialChildId?: string;
   pollIntervalMs?: number;
 }): { controller: LearningSessionController; screen: KidScreen } {
   const controller = useMemo(
@@ -22,9 +23,10 @@ export function useLearningSession(deps: {
         api: deps.api,
         media: deps.media,
         storage: deps.storage,
+        ...(deps.initialChildId === undefined ? {} : { initialChildId: deps.initialChildId }),
         ...(deps.pollIntervalMs === undefined ? {} : { pollIntervalMs: deps.pollIntervalMs }),
       }),
-    [deps.api, deps.media, deps.storage, deps.pollIntervalMs],
+    [deps.api, deps.media, deps.storage, deps.initialChildId, deps.pollIntervalMs],
   );
   const screen = useSyncExternalStore(
     controller.subscribe,

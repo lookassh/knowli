@@ -374,8 +374,12 @@ test("dwa profile mają osobne sesje", async ({ page }) => {
   await expect(page.getByTestId("kid-profile").filter({ hasText: "Zosia" })).toHaveCount(1);
   await expect(page.getByTestId("kid-profile").filter({ hasText: "Ewa" })).toHaveCount(1);
 
+  // Bezpośredni link rodzica wybiera Zosię i pomija wybór profilu.
+  await page.goto(`/kids/${ola.id}/learn`);
+  await expect(page.getByTestId("kid-profile")).toHaveCount(0);
+  await expect(page.getByTestId("kid-deck").filter({ hasText: "Dni tygodnia dla Oli" })).toHaveCount(1);
+
   // Zosia: krótka sesja zakończona wcześniej przez dziecko
-  await page.getByTestId("kid-profile").filter({ hasText: "Zosia" }).click();
   await page.getByTestId("kid-deck").first().click();
   await expect(page.locator("[data-task-id]")).toBeVisible();
   await page.getByTestId("kid-end").click();
@@ -552,9 +556,9 @@ test("błąd sieci pokazuje brak połączenia i nie dopisuje sukcesu", async ({ 
 
 /**
  * Headless-shell Chromium nie udostępnia urządzeń medialnych, więc polyfill
- * zastępuje wyłącznie platformowe API (getUserMedia/MediaRecorder) fałszywym
- * strumieniem, który liczy zatrzymania ścieżek w sessionStorage — reszta
- * (kontroler, BrowserRecorder, cykl życia UI) działa na prawdziwym kodzie.
+ * zastępuje API platformowe (getUserMedia/MediaRecorder/Web Audio) fałszywym
+ * strumieniem i dekoderem — reszta (kontroler, BrowserRecorder, cykl życia
+ * UI i wysyłka PCM WAV) działa na prawdziwym kodzie.
  */
 async function injectFakeMediaPlatform(page: Page): Promise<void> {
   await page.addInitScript(() => {
@@ -607,6 +611,32 @@ async function injectFakeMediaPlatform(page: Page): Promise<void> {
       }
     }
     (window as unknown as { MediaRecorder: typeof FakeMediaRecorder }).MediaRecorder = FakeMediaRecorder;
+
+    const decodedBuffer = (length: number, sampleRate: number) => ({
+      duration: length / sampleRate,
+      length,
+      sampleRate,
+      numberOfChannels: 1,
+      getChannelData: () => new Float32Array(length),
+    });
+    class FakeAudioContext {
+      async decodeAudioData(): Promise<AudioBuffer> {
+        return decodedBuffer(96_000, 48_000) as AudioBuffer;
+      }
+      async close(): Promise<void> {}
+    }
+    class FakeOfflineAudioContext {
+      readonly destination = {};
+      constructor(readonly channels: number, readonly length: number, readonly sampleRate: number) {}
+      createBufferSource() {
+        return { buffer: null as AudioBuffer | null, connect: () => undefined, start: () => undefined };
+      }
+      async startRendering(): Promise<AudioBuffer> {
+        return decodedBuffer(this.length, this.sampleRate) as AudioBuffer;
+      }
+    }
+    Object.defineProperty(window, "AudioContext", { configurable: true, value: FakeAudioContext });
+    Object.defineProperty(window, "OfflineAudioContext", { configurable: true, value: FakeOfflineAudioContext });
   });
 }
 
