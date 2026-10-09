@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { readTestRunConfig } from "../test-run-config";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { createDatabase } from "@learning/server";
 
@@ -22,7 +23,7 @@ let worldPool: WorldPool | null = null;
 async function pool(): Promise<WorldPool> {
   if (worldPool === null) {
     const world = JSON.parse(
-      await readFile(join(process.cwd(), "tests/e2e/.world.json"), "utf8"),
+      await readFile(join(process.cwd(), readTestRunConfig(process.env).worldFile), "utf8"),
     ) as { databaseUrl: string };
     worldPool = createDatabase(world.databaseUrl).pool;
   }

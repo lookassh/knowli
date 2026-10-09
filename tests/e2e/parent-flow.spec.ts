@@ -129,7 +129,7 @@ for (const paddedName of [false, true]) {
     const secondContext = await browser.newContext({ storageState: await page.context().storageState() });
     try {
       const secondPage = await secondContext.newPage();
-      await secondPage.goto("http://127.0.0.1:24500/");
+      await secondPage.goto("/");
       await secondPage.getByTestId("tab-children").click();
       const secondRow = secondPage.locator('li[data-testid^="child-row-"]')
         .filter({ has: secondPage.locator(`a[href="/kids/${child.id}/learn"]`) });
