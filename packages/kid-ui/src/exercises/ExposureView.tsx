@@ -27,9 +27,23 @@ export function ExposureView({ task, busy, mediaUrl, handlers }: ExerciseProps) 
           visualData={task.prompt.visualData}
         />
       )}
-      <p className="kid-word" data-testid="kid-target">
-        {task.prompt.target}
-      </p>
+      <div className="kid-word-row">
+        <p className="kid-word" data-testid="kid-target">
+          {task.prompt.target}
+        </p>
+        {task.prompt.audioAssetId !== null && (
+          <button
+            type="button"
+            className="kid-audio-round"
+            data-testid="kid-play"
+            disabled={busy}
+            onClick={handlers.onPlay}
+            aria-label={messages.kid.listen}
+          >
+            🔊
+          </button>
+        )}
+      </div>
       <p className="kid-source" data-testid="kid-source">
         {task.prompt.source}
       </p>
@@ -41,21 +55,18 @@ export function ExposureView({ task, busy, mediaUrl, handlers }: ExerciseProps) 
           {task.prompt.exampleAudioAssetId !== null && (
             <button
               type="button"
+              className="kid-audio-round kid-audio-round-sm"
               data-testid="kid-play-example"
               disabled={busy}
               onClick={handlers.onPlayExample}
+              aria-label={messages.kid.listenExample}
             >
-              🔊 {messages.kid.listenExample}
+              🔊
             </button>
           )}
         </div>
       )}
       <div className="kid-actions">
-        {task.prompt.audioAssetId !== null && (
-          <button type="button" data-testid="kid-play" disabled={busy} onClick={handlers.onPlay}>
-            🔊 {messages.kid.listen}
-          </button>
-        )}
         <button
           type="button"
           className="kid-primary"
