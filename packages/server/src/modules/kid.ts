@@ -76,6 +76,7 @@ export async function listKidDecks(services: Services, childId: string): Promise
     );
 
   const progressByRevision = new Map<string, Array<SkillSnapshot & { skill: Skill }>>();
+  const independentlyRecalledRevisions = new Set<string>();
   for (const row of progressRows) {
     const list = progressByRevision.get(row.revisionId) ?? [];
     list.push({
@@ -85,6 +86,9 @@ export async function listKidDecks(services: Services, childId: string): Promise
       streak: row.streak ?? 0,
     });
     progressByRevision.set(row.revisionId, list);
+    if (row.skill === "recall" && row.status === "mastered") {
+      independentlyRecalledRevisions.add(row.revisionId);
+    }
   }
   const now = services.clock.now().toISOString();
   const itemsByVersion = new Map<string, DeckWorkloadItem[]>();
@@ -93,10 +97,22 @@ export async function listKidDecks(services: Services, childId: string): Promise
     list.push({ progress: progressByRevision.get(revision.revisionId) ?? [] });
     itemsByVersion.set(revision.versionId, list);
   }
-
+  const itemCountByVersion = new Map<string, number>();
+  const recalledCountByVersion = new Map<string, number>();
+  for (const revision of revisions) {
+    itemCountByVersion.set(revision.versionId, (itemCountByVersion.get(revision.versionId) ?? 0) + 1);
+    if (independentlyRecalledRevisions.has(revision.revisionId)) {
+      recalledCountByVersion.set(
+        revision.versionId,
+        (recalledCountByVersion.get(revision.versionId) ?? 0) + 1,
+      );
+    }
+  }
   return rows.map((row) => ({
     deckId: row.deckId,
     title: row.title,
+    itemCount: itemCountByVersion.get(row.versionId!) ?? 0,
+    independentlyRecalledCount: recalledCountByVersion.get(row.versionId!) ?? 0,
     testDate: row.testDate,
     recommended: hasScheduledWork(itemsByVersion.get(row.versionId!) ?? [], now),
   }));

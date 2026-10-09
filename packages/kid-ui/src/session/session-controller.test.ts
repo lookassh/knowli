@@ -186,6 +186,8 @@ function makeApi(state: ApiState): KidApi {
 const DECK: KidDeckDto = {
   deckId: "33333333-3333-3333-3333-333333333333",
   title: "Dni tygodnia",
+  itemCount: 7,
+  independentlyRecalledCount: 0,
   testDate: null,
   recommended: true,
 };

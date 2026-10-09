@@ -199,6 +199,10 @@ export type KidProfileDto = z.infer<typeof KidProfileDtoSchema>;
 export const KidDeckDtoSchema = z.object({
   deckId: UuidSchema,
   title: z.string().min(1),
+  /** Liczba słów w przypiętej, opublikowanej wersji zestawu. */
+  itemCount: z.number().int().nonnegative(),
+  /** Elementy z opanowaną umiejętnością samodzielnego Recall. */
+  independentlyRecalledCount: z.number().int().nonnegative(),
   /** Termin sprawdzianu z przypisania (lokalna data rodziny) lub null. */
   testDate: z.string().nullable(),
   /**

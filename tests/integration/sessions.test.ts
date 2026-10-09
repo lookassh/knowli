@@ -752,6 +752,34 @@ describe("ćwiczenie zestawu w dowolnym momencie (extra-practice + rekomendacja)
     );
   }
 
+  it("lista tematów podaje liczbę słów i liczy tylko opanowany Recall", async () => {
+    const { deckId, versionId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 4));
+    await expect(listKidDecks(services, childId)).resolves.toMatchObject([
+      { deckId, itemCount: 4, independentlyRecalledCount: 0 },
+    ]);
+    const skillRows = await query<{ skill: string; skill_version_id: string }>(
+      `select irs.skill, irs.skill_version_id
+         from learning_app.item_revision_skills irs
+         join learning_app.item_revisions ir on ir.id = irs.item_revision_id
+        where ir.deck_version_id = $1 and ir.position = 0 and irs.skill in ('recall', 'reading')`,
+      [versionId],
+    );
+    expect(skillRows.map((row) => row.skill).sort()).toEqual(["reading", "recall"]);
+
+    for (const row of skillRows) {
+      await pool.query(
+        `insert into learning_app.child_skill_progress
+           (child_id, skill_version_id, status, projection_version)
+         values ($1, $2, 'mastered', 'learning-v1')`,
+        [childId, row.skill_version_id],
+      );
+    }
+
+    await expect(listKidDecks(services, childId)).resolves.toMatchObject([
+      { deckId, itemCount: 4, independentlyRecalledCount: 1 },
+    ]);
+  });
+
   it("po wyczerpaniu materiału zestaw nie jest rekomendowany, ale od razu wydaje extra-practice", async () => {
     const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 4));
 
