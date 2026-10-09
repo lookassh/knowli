@@ -460,6 +460,39 @@ describe("LearningSessionController", () => {
     expect(screen.feedback?.chosenOptionId).toBeUndefined();
   });
 
+  it("próba wymowy w nowej sesji nie dziedziczy wybranej opcji po awarii", async () => {
+    const chosen = "88888888-8888-8888-8888-888888888888";
+    const listening = taskDto("t1", {
+      kind: "listening",
+      options: [{ id: chosen, text: "czwartek" }],
+      audioAssetId: "99999999-9999-9999-9999-999999999999",
+    });
+    const state = baseState();
+    const harness = await startAtTask(state, listening);
+
+    // wybór rozbija się o brak sieci; „Koniec" domyka sesję z wiszącym wyborem
+    state.networkDown = true;
+    await harness.controller.answerChoice(chosen);
+    expect(harness.controller.getScreen()).toMatchObject({ offline: true });
+    state.networkDown = false;
+    await harness.controller.endNow();
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "summary" });
+
+    // nowa sesja zaczyna od odpowiedzi ustnej — feedback wymowy pełny,
+    // bez dziedziczenia chosenOptionId (pasek wyboru nie zjada heardText)
+    state.tasks = [taskDto("t2", { kind: "recall", prompt: "czwartek" })];
+    state.attempts = [attemptDto({ modality: "audio", feedback: { kind: "not_assessed" }, taskState: "issued" })];
+    await harness.controller.learnAgain();
+    await harness.controller.startLearning(DECK.deckId);
+    await harness.controller.startRecording();
+    await harness.controller.stopRecording();
+    const screen = harness.controller.getScreen() as {
+      feedback: { dto: FeedbackDto | null; chosenOptionId?: string } | null;
+    };
+    expect(screen.feedback?.dto).toMatchObject({ kind: "not_assessed" });
+    expect(screen.feedback?.chosenOptionId).toBeUndefined();
+  });
+
   it("druga próba po błędzie zostaje na zadaniu, a koniec nie dokładuje zadań", async () => {
     const recall = taskDto("t1", { kind: "recall", prompt: "czwartek" });
     const state = baseState();

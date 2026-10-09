@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { messages, type FeedbackDto } from "@learning/contracts";
 import { ExerciseView } from "../exercises/ExerciseView";
 import type { ExerciseHandlers } from "../exercises/types";
@@ -63,6 +64,18 @@ export function LearnScreen({
   const { task, offline, busy } = screen;
   const remaining = controller.remainingFor(task);
   const micAvailable = screen.session.microphoneEnabled && !screen.micDenied;
+  // feedback próby wyboru = pasek wyniku zamiast karteczki
+  const feedback = screen.feedback;
+  const choiceFeedback =
+    feedback !== null && feedback.chosenOptionId !== undefined && !offline && screen.error === null;
+  const feedbackBarRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const bar = feedbackBarRef.current;
+    if (bar === null) return;
+    // pasek w przepływie: przewijamy go w widok, by wynik był od razu czytelny
+    bar.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+    bar.scrollIntoView({ block: "end" });
+  }, [screen.feedback]);
   // podświetlenia opcji żyją tylko przy feedbacku próby wyboru
   const outcomes =
     task !== null && screen.feedback?.chosenOptionId !== undefined
@@ -148,11 +161,13 @@ export function LearnScreen({
         </section>
       )}
 
-      {screen.feedback !== null && !offline && screen.error === null && screen.feedback.chosenOptionId !== undefined && (
-        // próba wyboru: wynik podświetla przyciski, a pasek na dole nie zasłania
-        // siatki odpowiedzi (design 2026-10-09); te same komunikaty i tony co karteczka
+      {choiceFeedback && (
+        // próba wyboru: wynik podświetla przyciski, a pasek w przepływie pod
+        // zadaniem nie zasłania siatki odpowiedzi (design 2026-10-09);
+        // te same komunikaty i tony co karteczka
         <section
-          className={["kid-card", "kid-feedback-inline", feedbackTone(screen.feedback.dto)]
+          ref={feedbackBarRef}
+          className={["kid-card", "kid-feedback-inline", feedbackTone(feedback.dto)]
             .filter(Boolean)
             .join(" ")}
           data-testid="kid-feedback"
@@ -160,30 +175,30 @@ export function LearnScreen({
           aria-labelledby="kid-feedback-title"
         >
           <div className="kid-feedback-content">
-            <p className="kid-feedback-text" id="kid-feedback-title">{feedbackText(screen.feedback.dto)}</p>
+            <p className="kid-feedback-text" id="kid-feedback-title">{feedbackText(feedback.dto)}</p>
           </div>
-          <button type="button" className="kid-primary" data-testid="kid-next" autoFocus disabled={busy} onClick={() => void controller.continueLearning()}>
-            {screen.feedback.retry ? messages.kid.feedbackRetry : messages.kid.feedbackNext}
+          <button type="button" className="kid-primary" data-testid="kid-next" disabled={busy} onClick={() => void controller.continueLearning()}>
+            {feedback.retry ? messages.kid.feedbackRetry : messages.kid.feedbackNext}
           </button>
         </section>
       )}
 
-      {screen.feedback !== null && !offline && screen.error === null && screen.feedback.chosenOptionId === undefined && (
+      {feedback !== null && !offline && screen.error === null && feedback.chosenOptionId === undefined && (
         <FeedbackDialog
-          className={["kid-card", "kid-feedback", feedbackTone(screen.feedback.dto)]
+          className={["kid-card", "kid-feedback", feedbackTone(feedback.dto)]
             .filter(Boolean)
             .join(" ")}
         >
           <div className="kid-feedback-content">
-            <p className="kid-feedback-text" id="kid-feedback-title">{feedbackText(screen.feedback.dto)}</p>
-            {screen.feedback.dto?.heardText && (
+            <p className="kid-feedback-text" id="kid-feedback-title">{feedbackText(feedback.dto)}</p>
+            {feedback.dto?.heardText && (
               <p className="kid-heard-text" data-testid="kid-heard-text">
-                {format(messages.kid.feedbackHeard, { word: screen.feedback.dto.heardText })}
+                {format(messages.kid.feedbackHeard, { word: feedback.dto.heardText })}
               </p>
             )}
-            {screen.feedback.dto?.fragments && screen.feedback.dto.fragments.length > 0 && (
+            {feedback.dto?.fragments && feedback.dto.fragments.length > 0 && (
               <p className="kid-fragments" data-testid="kid-fragments">
-                {screen.feedback.dto.fragments.map((fragment, index) => (
+                {feedback.dto.fragments.map((fragment, index) => (
                   <span
                     key={index}
                     className={`kid-fragment kid-fragment--${fragment.verdict}`}
@@ -196,7 +211,7 @@ export function LearnScreen({
             )}
           </div>
           <button type="button" className="kid-primary" data-testid="kid-next" disabled={busy} onClick={() => void controller.continueLearning()}>
-            {screen.feedback.retry ? messages.kid.feedbackRetry : messages.kid.feedbackNext}
+            {feedback.retry ? messages.kid.feedbackRetry : messages.kid.feedbackNext}
           </button>
         </FeedbackDialog>
       )}

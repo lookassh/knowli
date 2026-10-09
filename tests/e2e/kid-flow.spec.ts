@@ -479,12 +479,24 @@ test("popup wyniku mieści się w ekranie telefonu bez przewijania", async ({ pa
   expect(await page.evaluate(() => document.body.style.overflow)).toBe("");
   const barBox = await feedback.boundingBox();
   expect(barBox!.y).toBeGreaterThanOrEqual(0);
-  expect(barBox!.y + barBox!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+  // +1 px: wyrównanie scrollIntoView zostawia ułamkowy piksel krawędzi
+  expect(barBox!.y + barBox!.height).toBeLessThanOrEqual(page.viewportSize()!.height + 1);
+  // pasek nie może zakrywać podświetlonych opcji — każda kończy się nad nim
+  const optionBoxes = await Promise.all(
+    (await page.getByTestId("kid-option").elementHandles()).map(async (option) => await option.boundingBox()),
+  );
+  expect(optionBoxes).toHaveLength(3);
+  for (const box of optionBoxes) {
+    expect(box).not.toBeNull();
+    expect(box!.y + box!.height).toBeLessThanOrEqual(barBox!.y + 1);
+  }
 
   // druga próba zaczyna bez podświetleń — to nie przepisywanie zielonego
   await next.click();
   await expect(feedback).toHaveCount(0);
-  await expect(page.getByTestId("kid-option").first()).not.toHaveClass(/kid-option--/);
+  for (const option of await page.getByTestId("kid-option").elementHandles()) {
+    expect((await option.getAttribute("class")) ?? "").not.toMatch(/kid-option--/);
+  }
 
   await correct.click();
   await expect(feedback).toContainText("Świetnie");

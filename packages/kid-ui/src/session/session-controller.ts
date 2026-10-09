@@ -221,6 +221,8 @@ export class LearningSessionController {
     const { childId, microphone } = this.#screen;
     this.#epoch += 1;
     const epoch = this.#epoch;
+    // nowa sesja nie dziedziczy wyboru z poprzedniej (np. przerwanego awarią)
+    this.#pendingChoice = null;
     try {
       const session = await this.#api.startSession({ childId, deckId, microphoneEnabled: microphone });
       if (epoch !== this.#epoch) return;
@@ -337,7 +339,6 @@ export class LearningSessionController {
   }
 
   async answerChoice(optionId: string): Promise<void> {
-    this.#pendingChoice = optionId;
     await this.#submitAnswer({ modality: "choice", optionId });
   }
 
@@ -378,9 +379,8 @@ export class LearningSessionController {
   async #submitAnswer(input: AnswerPayload): Promise<void> {
     const screen = this.#learning();
     if (!screen?.task || screen.busy || screen.offline) return;
-    if (input.modality !== "choice") {
-      this.#pendingChoice = null;
-    }
+    // przypisujemy dopiero za strażnikiem — odrzucone kliknięcie nie śmieci
+    this.#pendingChoice = input.modality === "choice" ? input.optionId : null;
     const epoch = this.#epoch;
     const taskId = screen.task.taskId;
     const clientAttemptId = randomUUID();
@@ -530,6 +530,9 @@ export class LearningSessionController {
       this.#setLearning({ processing: true, busy: true });
       const clientAttemptId = randomUUID();
       const send = async (): Promise<void> => {
+        // odpowiedź ustna nie jest wyborem — czyścimy, by feedback wymowy
+        // nie dziedziczył podświetlenia opcji (pełny modal z heardText)
+        this.#pendingChoice = null;
         const attempt = await this.#api.submitSpeech(taskId, clientAttemptId, audio);
         await this.#applyAttempt(attempt, epoch);
       };
