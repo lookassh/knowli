@@ -332,6 +332,12 @@ button {
   text-align: center;
 }
 
+.kid-heard-text {
+  margin: 0.5rem 0 0;
+  font-size: 1.1rem;
+  text-align: center;
+}
+
 .kid-fragments {
   display: flex;
   gap: 0.25rem;

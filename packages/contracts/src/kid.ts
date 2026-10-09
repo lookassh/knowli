@@ -198,6 +198,7 @@ export const PronunciationFragmentDtoSchema = z.object({
 export const FeedbackDtoSchema = z.object({
   kind: z.enum(["great", "capitalization_hint", "almost", "incorrect", "content_matched", "not_assessed"]),
   correctText: z.string().min(1).optional(),
+  heardText: z.string().min(1).max(200).optional(),
   fragments: z.array(PronunciationFragmentDtoSchema).max(6).optional(),
 });
 export type FeedbackDto = z.infer<typeof FeedbackDtoSchema>;

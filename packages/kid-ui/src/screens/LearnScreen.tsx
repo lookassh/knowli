@@ -142,6 +142,11 @@ export function LearnScreen({
           role="status"
         >
           <p className="kid-feedback-text">{feedbackText(screen.feedback.dto)}</p>
+          {screen.feedback.dto?.heardText && (
+            <p className="kid-heard-text" data-testid="kid-heard-text">
+              {format(messages.kid.feedbackHeard, { word: screen.feedback.dto.heardText })}
+            </p>
+          )}
           {screen.feedback.dto?.fragments && screen.feedback.dto.fragments.length > 0 && (
             <p className="kid-fragments" data-testid="kid-fragments">
               {screen.feedback.dto.fragments.map((fragment, index) => (

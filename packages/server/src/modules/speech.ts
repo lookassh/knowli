@@ -135,6 +135,10 @@ export function assessSpeechEvidence(
     skills.pronunciation = unevaluated("ambiguous");
     return { skills, attempt };
   }
+  // Pokazujemy dziecku rozpoznany tekst wyłącznie wtedy, gdy nie został
+  // odrzucony jako niepewny. To wynik STT, nie zapis dźwięku ani score.
+  const recognizedText = t.text.normalize("NFC").trim().slice(0, 200) || undefined;
+  const recognized = recognizedText ? { recognizedText } : {};
   // ćwiczenie wymowy: treść wypowiedzi decyduje o wykonaniu zadania —
   // ocena wymowy może pozostać nieoceniona (§12.6, §15.4)
   const speechAttempt = key.exerciseType === "speech" ? { contentMatched: match.ci } : undefined;
@@ -150,19 +154,19 @@ export function assessSpeechEvidence(
   if (!match.ci) {
     // wiarygodny tekst spoza zatwierdzonego zbioru: wynik wymowy oczekiwanego
     // słowa byłby nieadekwatny — w ogóle go nie oceniamy (Review Focus 3)
-    return { skills, attempt, ...(speechAttempt ? { speechAttempt } : {}) };
+    return { skills, attempt, ...recognized, ...(speechAttempt ? { speechAttempt } : {}) };
   }
   if (!p || p.status !== "ok" || p.overallScore === null || p.expectedText !== match.matchedVariant) {
     // oceny nie ma albo dotyczy innego wariantu — pronunciation nieocenione
     skills.pronunciation = unevaluated(p?.status === "failed" ? "technical" : undefined);
-    return { skills, attempt, ...(speechAttempt ? { speechAttempt } : {}) };
+    return { skills, attempt, ...recognized, ...(speechAttempt ? { speechAttempt } : {}) };
   }
 
   const details: PronunciationDetails = { provider: p.provider, score: p.overallScore };
   const bands = ctx.policy.pronunciationBands[p.provider];
   if (!bands) {
     skills.pronunciation = { ...unevaluated(undefined), details: { pronunciation: details } };
-    return { skills, attempt, ...(speechAttempt ? { speechAttempt } : {}) };
+    return { skills, attempt, ...recognized, ...(speechAttempt ? { speechAttempt } : {}) };
   }
   const band: PronunciationDetails["band"] =
     p.overallScore >= bands.correctMinScore
@@ -193,6 +197,7 @@ export function assessSpeechEvidence(
   return {
     skills,
     attempt,
+    ...recognized,
     ...(speechAttempt ? { speechAttempt } : {}),
     ...(speechFragments ? { speechFragments } : {}),
   };

@@ -189,6 +189,7 @@ export const messages = {
     feedbackIncorrect: "Posłuchaj: {word}. Poćwiczymy razem",
     feedbackContentMatched: "Usłyszałem! Nie udało się ocenić wymowy",
     feedbackNotAssessed: "Nie udało się ocenić. Spróbuj jeszcze raz",
+    feedbackHeard: "Usłyszałem: {word}",
     offlineMessage: "Nie ma internetu. Zaczekaj chwilę.",
     offlineRetry: "Spróbuj ponownie",
     micDenied: "Nie udało się włączyć mikrofonu. Możesz uczyć się bez nagrywania.",

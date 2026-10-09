@@ -180,6 +180,8 @@ export interface SpeechFragment {
 export interface Grade {
   skills: Partial<Record<Skill, SkillGrade>>;
   attempt: AttemptQualification;
+  /** Wiarygodny tekst rozpoznany z mowy; przekazywany dziecku bez score. */
+  recognizedText?: string;
   /**
    * Wynik ćwiczenia wymowy (SPEC §12.6): zgodna z kluczem treść wypowiedzi
    * oznacza ćwiczenie wykonane — zadanie zamyka się także wtedy, gdy samej
