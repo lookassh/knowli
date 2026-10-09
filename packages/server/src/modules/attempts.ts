@@ -159,7 +159,12 @@ function gradeOf(input: AttemptInput, key: AnswerKey, ctx: EvaluationContext): G
  * z kierunkiem na wsparcie, „Pomiń” zamyka bez oceny. Próby bez oceny
  * (techniczne, niejednoznaczne) nie są błędem wiedzy i nie zamykają zadania.
  */
-function nextTaskState(modality: AnyModality, grade: Grade, attemptNumber: number): "issued" | "answered" | "skipped" {
+function nextTaskState(
+  modality: AnyModality,
+  grade: Grade,
+  attemptNumber: number,
+  incorrectAttemptCount: number,
+): "issued" | "answered" | "skipped" {
   if (modality === "skip") {
     return "skipped";
   }
@@ -180,7 +185,7 @@ function nextTaskState(modality: AnyModality, grade: Grade, attemptNumber: numbe
   if (modality === "dont_remember") {
     return "answered";
   }
-  if (anyIncorrect && attemptNumber >= 2) {
+  if (anyIncorrect && incorrectAttemptCount >= 2) {
     return "answered";
   }
   return "issued";
@@ -284,7 +289,17 @@ async function finalizeAttemptRow(
     }
   }
 
-  const taskState = nextTaskState(modality, grade, attempt.attemptNumber);
+  const incorrectAttempts = await tx
+    .selectDistinct({ id: attempts.id })
+    .from(attempts)
+    .innerJoin(assessments, eq(assessments.attemptId, attempts.id))
+    .where(and(eq(attempts.taskId, task.id), eq(assessments.outcome, "incorrect")));
+  const taskState = nextTaskState(
+    modality,
+    grade,
+    attempt.attemptNumber,
+    incorrectAttempts.length,
+  );
   if (taskState !== "issued") {
     await tx.update(sessionTasks).set({ state: taskState }).where(eq(sessionTasks.id, task.id));
   }

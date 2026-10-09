@@ -1,6 +1,7 @@
 import { computeTargetKey } from "./target-key";
 import { isTestPreparationWindow } from "./test-preparation";
 import type { ExerciseType, Policy, ProgressStatus, ReadingDirection, Skill } from "./types";
+import type { SupportState } from "./support-cycle";
 
 /**
  * Scheduler v1 — jawne priorytety zamiast losowego score (architecture.md §9.3).
@@ -35,6 +36,8 @@ export interface ScheduleCandidate {
   failuresThisSession: number;
   /** Czy pokazano już prezentację wsparcia po dwóch błędach. */
   supportedThisSession: boolean;
+  /** Odtwarzalny stan ograniczonego cyklu wsparcia. */
+  support?: SupportState;
   /** Liczba zadań tego elementu w bieżącej sesji. */
   usedThisSession: number;
   /** Prezentacje (exposure) tego elementu w bieżącej sesji. */
@@ -113,6 +116,8 @@ export interface TaskPlan {
   revealsTargetKeys: string[];
   assessed: boolean;
   reason: ScheduleReason;
+  /** Prywatny identyfikator źródłowego zadania trudności. */
+  supportCycleId?: string;
   /** Rezerwacje utrzymywane po tej decyzji (zapis do kontekstu sesji). */
   keepsReservations: string[];
 }
@@ -444,8 +449,8 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
 
   // 2. Dwa błędy: prezentacja wsparcia ujawnia wzorzec (SPEC §16); to jedyny
   //    wyjątek od zasady niepowracania do elementu bezpośrednio po trudności.
-  const needsSupport = input.candidates.find(
-    (c) => c.failuresThisSession >= input.policy.supportAfterFailures && !c.supportedThisSession,
+  const needsSupport = input.candidates.find((c) =>
+    c.support ? c.support.phase === "needed" : c.failuresThisSession >= input.policy.supportAfterFailures && !c.supportedThisSession,
   );
   if (needsSupport) {
     return {
@@ -454,6 +459,7 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
       revealsTargetKeys: [keyOfCandidate(needsSupport)],
       assessed: false,
       reason: "support",
+      supportCycleId: needsSupport.support?.sourceTaskId ?? undefined,
       keepsReservations,
     };
   }
@@ -462,19 +468,23 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
   const retryAfterSupport = input.candidates
     .filter(
       (c) =>
-        c.supportedThisSession &&
+        (c.support ? c.support.phase === "waiting" || c.support.phase === "retry_due" : c.supportedThisSession) &&
         c.lastUsedOrdinal !== null &&
         input.nextOrdinal - c.lastUsedOrdinal >= 2,
     )
     .sort((a, b) => (a.lastUsedOrdinal ?? 0) - (b.lastUsedOrdinal ?? 0))[0];
   if (retryAfterSupport) {
+    const retryType = retryAfterSupport.support?.retryType ?? "listening";
     return {
       itemRevisionId: retryAfterSupport.itemRevisionId,
-      exerciseType: "listening",
-      options: listeningOptions(retryAfterSupport, input.peers, reserved, input.nextOrdinal),
+      exerciseType: retryType,
+      ...(retryType === "listening"
+        ? { options: listeningOptions(retryAfterSupport, input.peers, reserved, input.nextOrdinal) }
+        : {}),
       revealsTargetKeys: [keyOfCandidate(retryAfterSupport)],
       assessed: true,
       reason: "retry-after-support",
+      supportCycleId: retryAfterSupport.support?.cycleId ?? retryAfterSupport.support?.sourceTaskId ?? undefined,
       keepsReservations,
     };
   }

@@ -48,6 +48,7 @@ import { payloadToItem } from "./item-payload";
 import { summarizeSessionAssessments } from "../domain/session-summary";
 import { computeTargetKey } from "../domain/target-key";
 import { addLegacyTaskPromptDefaults } from "./task-prompt-compat";
+import { deriveSupportStates, type SupportAttempt, type SupportTask } from "../domain/support-cycle";
 
 /** Okno wznowienia aktywnej sesji od ostatniego zdarzenia (arch §9.1). */
 export const RESUME_WINDOW_MS = 30 * 60_000;
@@ -395,11 +396,13 @@ async function planNextTask(
   );
   const taskRows = await tx
     .select({
+      id: sessionTasks.id,
       itemRevisionId: sessionTasks.itemRevisionId,
       exerciseType: sessionTasks.exerciseType,
       direction: sessionTasks.direction,
       ordinal: sessionTasks.ordinal,
       context: sessionTasks.context,
+      state: sessionTasks.state,
     })
     .from(sessionTasks)
     .where(eq(sessionTasks.sessionId, session.id))
@@ -431,29 +434,40 @@ async function planNextTask(
   const gradedRows = await tx
     .select({
       attemptId: attempts.id,
+      taskId: attempts.taskId,
       itemRevisionId: sessionTasks.itemRevisionId,
       modality: attempts.modality,
+      skill: assessments.skill,
       outcome: assessments.outcome,
     })
     .from(attempts)
     .innerJoin(sessionTasks, eq(sessionTasks.id, attempts.taskId))
     .leftJoin(assessments, eq(assessments.attemptId, attempts.id))
     .where(eq(sessionTasks.sessionId, session.id));
-  const failuresByRevision = new Map<string, number>();
-  const incorrectAttempts = new Set<string>();
+  const attemptsById = new Map<string, SupportAttempt>();
   for (const row of gradedRows) {
-    if (row.outcome === "incorrect") {
-      incorrectAttempts.add(row.attemptId);
+    const current = attemptsById.get(row.attemptId) ?? {
+      attemptId: row.attemptId, taskId: row.taskId, modality: row.modality,
+      outcomes: [] as { skill: Skill; outcome: "correct" | "incorrect" | "unevaluated" }[],
+    };
+    if (row.skill !== null && row.outcome !== null) {
+      current.outcomes = [...current.outcomes, { skill: row.skill as Skill, outcome: row.outcome === "unassessed" ? "unevaluated" : row.outcome as "correct" | "incorrect" }];
     }
+    attemptsById.set(row.attemptId, current);
   }
-  for (const row of gradedRows) {
-    const current = failuresByRevision.get(row.itemRevisionId) ?? 0;
-    if (incorrectAttempts.has(row.attemptId)) {
-      failuresByRevision.set(row.itemRevisionId, current + 1);
-    } else if (row.modality === "dont_remember" && !incorrectAttempts.has(row.attemptId)) {
-      failuresByRevision.set(row.itemRevisionId, current + policy.supportAfterFailures);
-    }
-  }
+  const supportTasks: SupportTask[] = taskRows.map((row) => {
+    const context = row.context as { reason?: string; supportCycleId?: string } | null;
+    return {
+      taskId: row.id,
+      itemRevisionId: row.itemRevisionId,
+      ordinal: row.ordinal,
+      exerciseType: row.exerciseType as SupportTask["exerciseType"],
+      state: row.state === "completed" || row.state === "answered" || row.state === "skipped" ? row.state : "issued",
+      reason: context?.reason ?? "",
+      ...(context?.supportCycleId ? { supportCycleId: context.supportCycleId } : {}),
+    };
+  });
+  const supportByRevision = deriveSupportStates(supportTasks, [...attemptsById.values()], policy.supportAfterFailures);
 
   const items = new Map<string, PlannedItem>(
     revisions.map((r) => {
@@ -551,8 +565,9 @@ async function planNextTask(
       targetLocale: item.targetLocale,
       progress,
       // trudności z prawdziwych prób tej sesji (błędy i „Nie pamiętam”)
-      failuresThisSession: failuresByRevision.get(r.id) ?? 0,
+      failuresThisSession: 0,
       supportedThisSession: stats.supportedThisSession,
+      support: supportByRevision.get(r.id),
       usedThisSession: stats.usedThisSession,
       presentationsThisSession: stats.presentationsThisSession,
       lastContactAt: sessionContext.previousContact[r.itemId] ?? null,
@@ -767,7 +782,7 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
       state: "issued",
       publicPrompt: materialized.prompt as unknown as Record<string, unknown>,
       answerKey: materialized.answerKey,
-      context: { reason: plan.reason },
+      context: { reason: plan.reason, ...(plan.supportCycleId ? { supportCycleId: plan.supportCycleId } : {}) },
       issuedAt: now,
     });
     await writeSealedEvent(tx, {

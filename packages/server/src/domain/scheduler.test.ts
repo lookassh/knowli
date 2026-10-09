@@ -228,6 +228,26 @@ describe("selectTask — wsparcie po dwóch błędach (SPEC §16)", () => {
     expect(afterGap!.options!.filter((o) => o.correct).map((o) => o.text)).toEqual(["czwartek"]);
     expect(afterGap!.options!.map((o) => o.text)).toContain("piątek");
   });
+
+  it("odtwarza terminalny cykl jako settled i kieruje trudną pisownię do letter completion", () => {
+    const source = candidate({
+      support: { phase: "waiting", cycleId: "task-source", sourceTaskId: "task-source", retryType: "letter_completion" },
+      supportedThisSession: true,
+      lastUsedOrdinal: 4,
+    });
+    const plan = selectTask(input({ candidates: [source], peers: [peer(source)], nextOrdinal: 6 }));
+    expect(plan).toMatchObject({
+      itemRevisionId: "rev-1", exerciseType: "letter_completion", reason: "retry-after-support", supportCycleId: "task-source",
+    });
+    expect(plan).not.toHaveProperty("options");
+
+    const settled = candidate({
+      support: { phase: "settled", cycleId: "task-source", sourceTaskId: "task-source", retryType: "letter_completion" },
+      supportedThisSession: true,
+      lastUsedOrdinal: 4,
+    });
+    expect(selectTask(input({ candidates: [settled], peers: [peer(settled)], nextOrdinal: 8 }))?.reason).not.toBe("retry-after-support");
+  });
 });
 
 describe("selectTask — wprowadzanie kolejnych etapów (SPEC §13)", () => {
