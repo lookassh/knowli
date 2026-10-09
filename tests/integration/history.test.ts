@@ -14,6 +14,7 @@ import {
   submitAttempt,
   upsertAssignment,
 } from "@learning/server";
+import type { TaskDto } from "@learning/contracts";
 import {
   buildTestServices,
   testDatabase,
@@ -130,6 +131,51 @@ async function sessionWithAttempt(childId: string): Promise<{ taskId: string; at
   throw new Error("nie wydano zadania ocenianego");
 }
 
+async function answerCorrectly(task: TaskDto): Promise<void> {
+  const row = (await query<{ answer_key: { correctOptionId?: string; target?: string } }>(
+    `select answer_key from learning_app.session_tasks where id = $1`, [task.taskId],
+  ))[0]!;
+  await submitAttempt(buildTestServices().services, {
+    taskId: task.taskId,
+    clientAttemptId: randomUUID(),
+    ...(row.answer_key.correctOptionId
+      ? { modality: "choice" as const, optionId: row.answer_key.correctOptionId }
+      : { modality: "text" as const, text: row.answer_key.target! }),
+  });
+}
+
+async function sharedDeckForChildren(childIds: readonly string[]): Promise<{ deckId: string; versionId: string }> {
+  const services = buildTestServices().services;
+  const draft = await createDraft(services, { title: "Wspólna historia", items: PAIRS.map(vocabItem) });
+  for (const index of PAIRS.keys()) {
+    await attachFakeReadyAudio(draft.id, index);
+    const revision = (await query<{ id: string }>(
+      `select id from learning_app.item_revisions where deck_version_id = $1 order by position offset $2 limit 1`,
+      [draft.id, index],
+    ))[0]!;
+    await pool.query(
+      `insert into learning_app.revision_assets (item_revision_id, role, asset_id, expected_fingerprint, state)
+       values ($1,'illustration',null,$2,'omitted')`,
+      [revision.id, `fp-ill-${randomUUID()}`],
+    );
+  }
+  await publishDraft(services, draft.id, 1);
+  for (const childId of childIds) await upsertAssignment(services, childId, draft.deckId, null);
+  return { deckId: draft.deckId, versionId: draft.id };
+}
+
+async function nextLearningExercise(childId: string, deckId: string, type: TaskDto["exerciseType"]): Promise<TaskDto> {
+  const services = buildTestServices().services;
+  const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+  for (let step = 0; step < 40; step++) {
+    const task = (await nextTask(services, session.sessionId))!;
+    if (task.exerciseType === type) return task;
+    if (task.exerciseType === "exposure") await completePresentation(services, { taskId: task.taskId });
+    else await answerCorrectly(task);
+  }
+  throw new Error(`Nie wydano zadania ${type}`);
+}
+
 describe("niezmienność historii prób (integracja)", () => {
   let childId: string;
 
@@ -170,6 +216,31 @@ describe("niezmienność historii prób (integracja)", () => {
       [taskId],
       /Terminal task cannot be reopened/,
     );
+  });
+
+  it("nie wlicza historii rodzeństwa do projekcji tego samego skill version", async () => {
+    const services = buildTestServices().services;
+    const childB = (await createChild(services, { displayName: "Iga", avatarKey: "owl" })).id;
+    const { deckId, versionId } = await sharedDeckForChildren([childId, childB]);
+    const taskA = await nextLearningExercise(childId, deckId, "listening");
+    await answerCorrectly(taskA);
+    const taskB = await nextLearningExercise(childB, deckId, "listening");
+    await answerCorrectly(taskB);
+
+    const rows = await query<{ child_id: string; skill: string; independent_success_streak: number }>(
+      `select p.child_id, s.skill, p.independent_success_streak
+         from learning_app.child_skill_progress p
+         join learning_app.item_revision_skills s on s.skill_version_id = p.skill_version_id
+         join learning_app.item_revisions r on r.id = s.item_revision_id
+        where r.deck_version_id = $1 and p.child_id = $2 and s.skill = 'listening'`,
+      [versionId, childB],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.independent_success_streak).toBe(1);
+    const assessmentChildren = await query<{ child_id: string }>(
+      `select child_id from learning_app.assessments where skill = 'listening'`,
+    );
+    expect([...new Set(assessmentChildren.map((row) => row.child_id))].sort()).toEqual([childId, childB].sort());
   });
 
   it("zakończona próba jest niezmieniona, a oceny nie podlegają edycji ani wymianie", async () => {

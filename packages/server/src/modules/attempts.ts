@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, asc, eq, inArray, max } from "drizzle-orm";
+import { and, eq, inArray, max } from "drizzle-orm";
 import {
   AttemptInputSchema,
   UuidSchema,
@@ -12,7 +12,6 @@ import type { Tx } from "../db/client";
 import {
   assessments,
   attempts,
-  childSkillProgress,
   eventExposures,
   itemRevisions,
   itemRevisionSkills,
@@ -23,7 +22,6 @@ import {
 import { AppError } from "../errors";
 import { assessedSkills, evaluateChoice, evaluateNonAnswer, evaluateWritten } from "../domain/evaluate";
 import { chooseFeedback } from "../domain/feedback";
-import { projectProgress } from "../domain/progress";
 import { qualifyAttempt } from "../domain/independence";
 import type {
   AnswerKey,
@@ -31,19 +29,17 @@ import type {
   EvaluationContext,
   ExerciseType,
   Grade,
-  History,
-  HistoryEntry,
   Policy,
   Skill,
   SkillGrade,
 } from "../domain/types";
 import { loadPolicy } from "../policies/registry";
 import { lockTaskWithSession, writeSealedEvent, contextOf } from "./events";
+import { readSkillHistory } from "./skill-history";
+import { persistSkillProjection } from "./skill-projections";
 
 /** Leniwa finalizacja przeterminowanych prób processing (arch §9.2a). */
 export const ATTEMPT_PROCESSING_TIMEOUT_MS = 60_000;
-/** Wersja algorytmyki projekcji zapisywana w child_skill_progress. */
-const PROJECTION_VERSION = "proj-1";
 
 /** Zadania, w których ujawnienie angielskiego rozwiązania psuje samodzielność (SPEC §12.5–12.8). */
 const RECALL_LIKE: ReadonlySet<string> = new Set(["recall", "spelling", "letter_completion"]);
@@ -193,101 +189,6 @@ function dbOutcome(outcome: SkillGrade["outcome"]): "correct" | "incorrect" | "u
   return outcome === "unevaluated" ? "unassessed" : outcome;
 }
 
-/** Projekcja domenowa → statusy child_skill_progress (zadanie 5 vs schemat). */
-function dbStatus(status: string): string {
-  switch (status) {
-    case "not_assessed":
-      return "unseen";
-    case "learning":
-      return "practicing";
-    default:
-      return status;
-  }
-}
-
-/** Historia ocen jednej wersji kryteriów — źródło projekcji (SPEC §20, §18). */
-async function historyForSkill(tx: Tx, skillVersionId: string, skill: Skill): Promise<History> {
-  const rows = await tx
-    .select({
-      receivedAt: attempts.receivedAt,
-      policyId: attempts.policyId,
-      outcome: assessments.outcome,
-      reason: assessments.reason,
-      independent: assessments.independent,
-      confirmationEligible: assessments.confirmationEligible,
-      details: assessments.details,
-    })
-    .from(assessments)
-    .innerJoin(attempts, eq(attempts.id, assessments.attemptId))
-    .where(and(eq(assessments.skillVersionId, skillVersionId), eq(assessments.skill, skill)))
-    .orderBy(asc(attempts.receivedAt), asc(attempts.id));
-  return rows.map((row) => ({
-    receivedAt: row.receivedAt.toISOString(),
-    policyVersion: row.policyId,
-    skill,
-    outcome: row.outcome === "unassessed" ? "unevaluated" : (row.outcome as "correct" | "incorrect"),
-    ...(row.reason === null ? {} : { reason: row.reason as HistoryEntry["reason"] }),
-    independent: row.independent,
-    confirmationEligible: row.confirmationEligible,
-    details: row.details as HistoryEntry["details"],
-  }));
-}
-
-/** Przelicza i zapisuje projekcję jednej umiejętności w tej samej transakcji. */
-async function updateProjection(
-  tx: Tx,
-  childId: string,
-  skillVersionId: string,
-  skill: Skill,
-  policy: Policy,
-  now: Date,
-  receivedAt: Date,
-): Promise<void> {
-  const history = await historyForSkill(tx, skillVersionId, skill);
-  const existing = (
-    await tx
-      .select({ skillVersionId: childSkillProgress.skillVersionId })
-      .from(childSkillProgress)
-      .where(and(eq(childSkillProgress.childId, childId), eq(childSkillProgress.skillVersionId, skillVersionId)))
-  )[0];
-  // sama próba techniczna nie tworzy wiersza „ćwiczonego” — umiejętność
-  // pozostaje nie sprawdzona, dopóki nie ma wiarygodnej oceny (SPEC §15)
-  if (!existing && !history.some((entry) => entry.outcome !== "unevaluated")) {
-    return;
-  }
-  const progress = projectProgress(history, policy, now.toISOString());
-  const projected = progress.skills[skill];
-  if (!projected) {
-    return;
-  }
-  const nextReviewAt = projected.nextReviewAt === null ? null : new Date(projected.nextReviewAt);
-  await tx
-    .insert(childSkillProgress)
-    .values({
-      childId,
-      skillVersionId,
-      status: dbStatus(projected.status),
-      independentSuccessStreak: projected.streak,
-      lastReviewedAt: receivedAt,
-      nextReviewAt,
-      delayedConfirmationAt: null,
-      projectionVersion: PROJECTION_VERSION,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [childSkillProgress.childId, childSkillProgress.skillVersionId],
-      set: {
-        status: dbStatus(projected.status),
-        independentSuccessStreak: projected.streak,
-        lastReviewedAt: receivedAt,
-        nextReviewAt,
-        delayedConfirmationAt: null,
-        projectionVersion: PROJECTION_VERSION,
-        updatedAt: now,
-      },
-    });
-}
-
 /** Ujawnienie feedbacku: ekspozycja celu zapisana przed odpowiedzią HTTP (arch §9.2). */
 async function discloseFeedback(
   tx: Tx,
@@ -376,7 +277,9 @@ async function finalizeAttemptRow(
         confirmationEligible: skillGrade.confirmationEligible,
         details,
       });
-      await updateProjection(tx, session.childId, skillVersionId, skill, policy, now, attempt.receivedAt);
+      const scope = { childId: session.childId, skillVersionId, skill };
+      const history = await readSkillHistory(tx, scope);
+      await persistSkillProjection(tx, scope, history, policy, now, attempt.receivedAt);
     }
   }
 
