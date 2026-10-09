@@ -22,7 +22,7 @@ function isoDate(daysAhead: number): string {
 }
 
 async function profileForEditing(page: Page, avatarKey = "fox", paddedName = false) {
-  await page.goto("/");
+  await page.goto("/parent");
   await page.getByTestId("auth-secret").fill("1234");
   await page.getByTestId("auth-submit").click();
   await expect(page.getByTestId("tab-children")).toBeVisible();
@@ -129,7 +129,7 @@ for (const paddedName of [false, true]) {
     const secondContext = await browser.newContext({ storageState: await page.context().storageState() });
     try {
       const secondPage = await secondContext.newPage();
-      await secondPage.goto("/");
+      await secondPage.goto("/parent");
       await secondPage.getByTestId("tab-children").click();
       const secondRow = secondPage.locator('li[data-testid^="child-row-"]')
         .filter({ has: secondPage.locator(`a[href="/kids/${child.id}/learn"]`) });
@@ -223,7 +223,7 @@ test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page,
 
   // Pierwsze uruchomienie w czystym świecie: setup PIN rodzica; w świecie
   // współdzielonym z innymi specami ten sam formularz loguje istniejącym PIN-em.
-  await page.goto("/");
+  await page.goto("/parent");
   await page.getByTestId("auth-secret").fill("1234");
   await page.getByTestId("auth-submit").click();
   await expect(page.getByTestId("tab-decks")).toBeVisible();
@@ -372,7 +372,7 @@ const MANUAL_DECK_TITLE = "Dni tygodnia — edycja ręczna";
 test("ręczna edycja zestawu: dodaj element, usuń element, zmień tytuł", async ({ page }) => {
   test.slow();
 
-  await page.goto("/");
+  await page.goto("/parent");
   await page.getByTestId("auth-secret").fill("1234");
   await page.getByTestId("auth-submit").click();
   await expect(page.getByTestId("tab-decks")).toBeVisible();
@@ -442,7 +442,7 @@ test("ręczna edycja zestawu: dodaj element, usuń element, zmień tytuł", asyn
 });
 
 test("rodzic edytuje progi wymowy i otwiera listę kalibracyjną", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/parent");
   await page.getByTestId("auth-secret").fill("1234");
   await page.getByTestId("auth-submit").click();
   await expect(page.getByTestId("tab-children")).toBeVisible();

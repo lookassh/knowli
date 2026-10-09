@@ -90,6 +90,12 @@ export default function ParentApp() {
   if (phase === "setup" || phase === "login") {
     return (
       <main className="container">
+        <header className="row space">
+          <span className="brand">{messages.app.name}</span>
+          <a href="/" className="nav-link" data-testid="to-learning">
+            {messages.auth.toLearning}
+          </a>
+        </header>
         <h1>{phase === "setup" ? messages.auth.setupTitle : messages.auth.loginTitle}</h1>
         {phase === "setup" && <p>{messages.auth.setupHint}</p>}
         <form
@@ -126,9 +132,24 @@ export default function ParentApp() {
     <main className="container">
       <header className="row space">
         <span className="brand">{messages.app.name}</span>
-        <button type="button" data-testid="parent-logout" onClick={() => leaveGuard.requestLeave(logout)}>
-          {messages.auth.logoutButton}
-        </button>
+        <div className="row" style={{ gap: "12px", alignItems: "center" }}>
+          <a
+            href="/"
+            className="nav-link"
+            data-testid="to-learning"
+            onClick={(event) => {
+              event.preventDefault();
+              leaveGuard.requestLeave(() => {
+                window.location.href = "/";
+              });
+            }}
+          >
+            {messages.auth.toLearning}
+          </a>
+          <button type="button" data-testid="parent-logout" onClick={() => leaveGuard.requestLeave(logout)}>
+            {messages.auth.logoutButton}
+          </button>
+        </div>
       </header>
       <nav className="tabs" aria-label="panel">
         <button

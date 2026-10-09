@@ -6,7 +6,7 @@ async function enterParent(page: Page): Promise<void> {
   await request.post("/api/v1/parent/setup", { data: { secret: "1234" } });
   const login = await request.post("/api/v1/parent/login", { data: { secret: "1234" } });
   expect(login.status()).toBe(200);
-  await page.goto("/");
+  await page.goto("/parent");
   await expect(page.getByTestId("tab-decks")).toBeVisible();
   await page.getByTestId("tab-decks").click();
 }

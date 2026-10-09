@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { messages } from "@learning/contracts";
 import type { KidApi } from "./api/KidApi";
 import type { PlatformMedia } from "./media/platform";
@@ -7,6 +8,11 @@ import { ProfileScreen } from "./screens/ProfileScreen";
 import { SummaryScreen } from "./screens/SummaryScreen";
 import { useLearningSession } from "./session/useLearningSession";
 import type { LocalPreferences } from "./storage";
+
+export interface ParentLinkConfig {
+  label: string;
+  href: string;
+}
 
 /**
  * Przenośny interfejs dziecka (plan zadania 9): KidApp({api, media, storage}).
@@ -19,11 +25,15 @@ export function KidApp({
   media,
   storage,
   initialChildId,
+  parentLink,
+  headerActions,
 }: {
   api: KidApi;
   media: PlatformMedia;
   storage: LocalPreferences;
   initialChildId?: string;
+  parentLink?: ParentLinkConfig;
+  headerActions?: ReactNode;
 }) {
   const { controller, screen } = useLearningSession({
     api,
@@ -31,6 +41,12 @@ export function KidApp({
     storage,
     ...(initialChildId === undefined ? {} : { initialChildId }),
   });
+
+  const actions = headerActions ?? (parentLink ? (
+    <a href={parentLink.href} className="kid-parent-link" data-testid="kid-parent-link">
+      {parentLink.label}
+    </a>
+  ) : undefined);
 
   switch (screen.kind) {
     case "loading":
@@ -46,7 +62,13 @@ export function KidApp({
         </main>
       );
     case "profile":
-      return <ProfileScreen profiles={screen.profiles} onSelect={(childId) => void controller.selectProfile(childId)} />;
+      return (
+        <ProfileScreen
+          profiles={screen.profiles}
+          onSelect={(childId) => void controller.selectProfile(childId)}
+          headerActions={actions}
+        />
+      );
     case "deck":
       return (
         <DeckScreen
@@ -56,6 +78,7 @@ export function KidApp({
           micDenied={screen.micDenied}
           onToggleMicrophone={(on) => controller.setMicrophone(on)}
           onStart={(deckId) => void controller.startLearning(deckId)}
+          headerActions={actions}
         />
       );
     case "learning":

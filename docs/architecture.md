@@ -69,10 +69,10 @@ Nie budujemy ogólnego frameworka repozytoriów ani osobnego pakietu na każdą 
 
 ### Trasy web rodzica i dziecka
 
-- `/` renderuje panel rodzica.
-- `/learn` osadza KidApp. Gdy rodzina ma wiele profili, dziecko wybiera profil; przy jednym profilu ekran wyboru jest pomijany. Jest to także `start_url` PWA.
+- `/` renderuje aplikację dziecka (KidApp osadzony przez KidLearningHost). Dziecko zawsze zaczyna od ekranu wyboru profilu (także przy jednym profilu). Ekrany wyboru profilu oraz talii zawierają link do panelu rodzica `/parent`, ukryty podczas sesji ćwiczeń. Jest to także `start_url` PWA.
+- `/parent` renderuje panel rodzica (ParentApp) chroniony PIN-em, z linkiem powrotnym „Do nauki” (`/`).
 - `/kids/{childId}/learn` otwiera naukę z wybranym profilem. Trasa używa trwałego UUID profilu, a host przekazuje go do KidApp jako `initialChildId`. Nieznany lub usunięty identyfikator wraca do listy dostępnych profili.
-- Panel rodzica pokazuje przy każdym profilu link do jego trasy nauki. Kid UI nie zawiera linku do panelu rodzica.
+- Panel rodzica pokazuje przy każdym profilu link do jego trasy nauki (`/kids/{childId}/learn`).
 
 Kid Mode komunikuje się przez /api/v1/kid. Nie używa Server Actions ani pobierania danych przez Server Components jako warunku działania sesji. Next.js dostarcza tylko stronę startową i osadza KidApp. Routing wewnętrzny dziecka pozostaje w prostym module widoków; do wznowienia sesji wystarczy identyfikator zapisany lokalnie.
 

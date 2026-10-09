@@ -1,4 +1,4 @@
-import { KidLearningHost } from "@/app/learn/KidLearningHost";
+import { KidLearningHost } from "@/kid/KidLearningHost";
 
 export default async function ChildLearnPage({ params }: { params: Promise<{ childId: string }> }) {
   const { childId } = await params;

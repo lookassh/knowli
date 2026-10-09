@@ -1,5 +1,5 @@
-import ParentApp from "@/parent/ParentApp";
+import { KidLearningHost } from "@/kid/KidLearningHost";
 
 export default function Page() {
-  return <ParentApp />;
+  return <KidLearningHost />;
 }

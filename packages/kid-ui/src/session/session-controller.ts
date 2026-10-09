@@ -167,9 +167,6 @@ export class LearningSessionController {
         }
         // A stale or mistyped profile URL falls back to the available profiles.
         this.#screen = { kind: "profile", profiles: this.#profiles };
-      } else if (this.#profiles.length === 1) {
-        await this.#openDeckScreen(this.#profiles[0]!.childId);
-        return;
       } else {
         this.#screen = { kind: "profile", profiles: this.#profiles };
       }

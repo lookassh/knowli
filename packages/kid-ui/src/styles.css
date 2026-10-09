@@ -12,6 +12,36 @@
   gap: 12px;
 }
 
+.kid-top-bar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 4px 0;
+  width: 100%;
+}
+
+.kid-parent-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #4a5568;
+  text-decoration: none;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  background: #edf2f7;
+  border: 1px solid #cbd5e0;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.kid-parent-link:hover,
+.kid-parent-link:focus-visible {
+  background: #e2e8f0;
+  color: #1a202c;
+  outline: none;
+}
+
 .kid-screen h1 {
   font-size: 1.6rem;
   margin: 8px 0 4px;
