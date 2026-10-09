@@ -175,7 +175,8 @@ function makeApi(state: ApiState): KidApi {
     },
     async endSession(sessionId): Promise<SessionSummaryDto> {
       state.endedSessions.push(sessionId);
-      return { sessionId, state: "completed", tasksIssued: 3, assessedTasksIssued: 2, endedAt: "2026-10-07T16:05:00.000Z" };
+      return { sessionId, state: "completed", tasksIssued: 3, assessedTasksIssued: 2, endedAt: "2026-10-07T16:05:00.000Z",
+        independentSuccesses: { recall: 0, spelling: 0 }, practiceItems: [] };
     },
     mediaUrl(assetId) {
       return `https://media.test/${assetId}`;

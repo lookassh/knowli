@@ -367,6 +367,25 @@ button {
   text-align: center;
 }
 
+.kid-summary-practice {
+  background: #fff4d6;
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.kid-summary-practice li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px 12px;
+  overflow-wrap: anywhere;
+}
+
+.kid-summary-practice strong {
+  font-size: 1.2rem;
+}
+
 .kid-actions {
   display: flex;
   flex-direction: column;

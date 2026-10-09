@@ -3,6 +3,7 @@ import { and, asc, eq, inArray, lt, max } from "drizzle-orm";
 import {
   PresentationCompletionInputSchema,
   SessionInputSchema,
+  SessionSummaryDtoSchema,
   UuidSchema,
   type PresentationCompletionDto,
   type PresentationCompletionInput,
@@ -41,6 +42,8 @@ import type { ProgressStatus, ReadingDirection, Skill } from "../domain/types";
 import { loadPolicy, ensureLearningPolicy, CURRENT_POLICY_ID } from "../policies/registry";
 import { lockTaskWithSession, writeSealedEvent, contextOf, type SessionContextShape } from "./events";
 import { payloadToItem } from "./item-payload";
+import { summarizeSessionAssessments } from "../domain/session-summary";
+import { computeTargetKey } from "../domain/target-key";
 
 /** Okno wznowienia aktywnej sesji od ostatniego zdarzenia (arch §9.1). */
 export const RESUME_WINDOW_MS = 30 * 60_000;
@@ -812,12 +815,52 @@ export async function endSession(services: Services, sessionId: string): Promise
         .where(eq(learningSessions.id, id));
     }
     const counts = await taskCounts(tx, id);
-    return {
+    const saved = SessionSummaryDtoSchema.safeParse(session.context.summary);
+    const rows = saved.success ? [] : await tx
+      .select({
+        itemId: itemRevisions.itemId, payload: itemRevisions.payload,
+        skill: assessments.skill, outcome: assessments.outcome, independent: assessments.independent,
+      })
+      .from(assessments)
+      .innerJoin(attempts, eq(attempts.id, assessments.attemptId))
+      .innerJoin(sessionTasks, eq(sessionTasks.id, attempts.taskId))
+      .innerJoin(itemRevisions, eq(itemRevisions.id, assessments.itemRevisionId))
+      .where(and(eq(sessionTasks.sessionId, id), eq(attempts.state, "completed")))
+      .orderBy(asc(attempts.receivedAt), asc(sessionTasks.ordinal), asc(attempts.attemptNumber));
+    const summary: SessionSummaryDto = saved.success ? saved.data : {
       sessionId: id,
       state,
       tasksIssued: counts.total,
       assessedTasksIssued: counts.assessed,
       endedAt: endedAt!.toISOString(),
+      ...summarizeSessionAssessments(rows.map(row => ({ ...row, target: payloadToItem(row.payload).target }))),
     };
+    if (!saved.success) {
+      await tx.update(learningSessions)
+        .set({ context: { ...session.context, summary } })
+        .where(eq(learningSessions.id, id));
+    }
+    // Lista pokazuje wzorce także przy ponownym odczycie. Każda odpowiedź
+    // ma nową, zamkniętą ekspozycję; snapshot wyników pozostaje ten sam.
+    if (summary.practiceItems.length > 0) {
+      const items = await tx.select({ taskId: sessionTasks.id, itemId: itemRevisions.itemId, payload: itemRevisions.payload })
+        .from(sessionTasks)
+        .innerJoin(itemRevisions, eq(itemRevisions.id, sessionTasks.itemRevisionId))
+        .where(and(eq(sessionTasks.sessionId, id), inArray(itemRevisions.itemId, summary.practiceItems.map(item => item.itemId))))
+        .orderBy(asc(sessionTasks.ordinal));
+      const disclosed = new Set<string>();
+      for (const item of items) {
+        if (disclosed.has(item.itemId)) continue;
+        disclosed.add(item.itemId);
+        const vocabulary = payloadToItem(item.payload);
+        await writeSealedEvent(tx, {
+          childId: session.childId, taskId: item.taskId, itemId: item.itemId,
+          kind: "feedback_issued", stepId: `${id}:summary:${item.itemId}`,
+          occurredAt: services.clock.now(),
+          exposures: [computeTargetKey(vocabulary.target, vocabulary.locales.target)],
+        });
+      }
+    }
+    return summary;
   });
 }

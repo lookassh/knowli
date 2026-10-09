@@ -13,15 +13,43 @@ export function SummaryScreen({
   onAgain: () => void;
   onSwitchProfile: () => void;
 }) {
+  const { recall, spelling } = summary.independentSuccesses;
+  const wordCount = (n: number) => {
+    const plural = new Intl.PluralRules("pl-PL").select(n);
+    return format(plural === "one" ? messages.kid.summaryWordOne
+      : plural === "few" ? messages.kid.summaryWordFew : messages.kid.summaryWordMany, { n });
+  };
   return (
     <main className="kid-screen">
       <h1 data-testid="kid-summary">{messages.kid.summaryTitle}</h1>
-      {summary.tasksIssued === 0 ? (
-        <p className="kid-hint">{messages.kid.summaryEmpty}</p>
-      ) : (
-        <p className="kid-summary-counts" data-testid="kid-summary-counts">
-          {format(messages.kid.summaryTasks, { n: summary.tasksIssued, m: summary.assessedTasksIssued })}
+      {recall > 0 && (
+        <p className="kid-summary-counts" data-testid="kid-summary-recall">
+          {format(messages.kid.summaryRecall, { words: wordCount(recall) })}
         </p>
+      )}
+      {spelling > 0 && (
+        <p className="kid-summary-counts" data-testid="kid-summary-spelling">
+          {format(messages.kid.summarySpelling, { words: wordCount(spelling) })}
+        </p>
+      )}
+      {recall === 0 && spelling === 0 && (
+        <p className="kid-hint" data-testid="kid-summary-neutral">
+          {summary.tasksIssued === 0 ? messages.kid.summaryEmpty : messages.kid.summaryNeutral}
+        </p>
+      )}
+      {summary.practiceItems.length > 0 && (
+        <section className="kid-summary-practice" aria-labelledby="kid-summary-practice-title" data-testid="kid-summary-practice">
+          <h2 id="kid-summary-practice-title">{messages.kid.summaryPractice}</h2>
+          <ul className="kid-list">
+            {summary.practiceItems.map(item => (
+              <li key={item.itemId}>
+                <strong lang="en-GB">{item.target}</strong>
+                <span>{item.skills.map(skill => skill === "recall"
+                  ? messages.kid.summarySkillRecall : messages.kid.summarySkillSpelling).join(", ")}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
       <div className="kid-actions">
         <button type="button" className="kid-primary" data-testid="kid-again" onClick={onAgain}>

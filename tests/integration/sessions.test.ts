@@ -6,6 +6,7 @@ import {
   createChild,
   createDraft,
   endSession,
+  finalizeAttempt,
   listKidDecks,
   nextTask,
   publishDraft,
@@ -15,7 +16,7 @@ import {
   upsertAssignment,
   type AppError,
 } from "@learning/server";
-import { TaskDtoSchema, type TaskDto } from "@learning/contracts";
+import { SessionSummaryDtoSchema, TaskDtoSchema, type TaskDto } from "@learning/contracts";
 import {
   buildTestServices,
   openRestartedServices,
@@ -206,6 +207,15 @@ async function answerIssuedAssessedTask(sessionId: string): Promise<number> {
     [sessionId],
   );
   return result.rowCount ?? 0;
+}
+
+async function seedSummaryCheck(childId: string, versionId: string): Promise<void> {
+  await pool.query(`insert into learning_app.child_skill_progress
+    (child_id, skill_version_id, status, independent_success_streak, next_review_at, projection_version)
+    select $1, s.skill_version_id, 'needs_confirmation', 2, '2026-10-01T00:00:00Z', 'test'
+    from learning_app.item_revision_skills s
+    join learning_app.item_revisions r on r.id = s.item_revision_id
+    where r.deck_version_id = $2 and s.skill in ('recall','spelling')`, [childId, versionId]);
 }
 
 async function countSessionRows(sessionId: string, table: string): Promise<number> {
@@ -490,6 +500,86 @@ describe("cykl życia sesji (integracja)", () => {
     expect(assessedRows[0]!.count).toBe(12);
   });
 
+  it("podsumowanie rozdziela Recall i pisownię oraz zamyka ekspozycje przed odpowiedzią", async () => {
+    const { deckId, versionId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 1));
+    await seedSummaryCheck(childId, versionId);
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const task = (await nextTask(services, session.sessionId))!;
+    expect(task.exerciseType).toBe("recall");
+    await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: "monday" });
+    clock.advanceMs(1000);
+    const [summary, secondClient] = await Promise.all([
+      endSession(services, session.sessionId), endSession(services, session.sessionId),
+    ]);
+    expect(secondClient).toEqual(summary);
+    expect(SessionSummaryDtoSchema.safeParse(summary).success).toBe(true);
+    expect(summary).toMatchObject({
+      independentSuccesses: { recall: 1, spelling: 0 },
+      practiceItems: [{ target: "Monday", skills: ["spelling"] }],
+    });
+    const events = (await sessionEvents(session.sessionId)).filter(e => e.step_id.startsWith(`${session.sessionId}:summary:`));
+    expect(events).toHaveLength(2);
+    expect(events.every(e => e.sealed && e.target_keys?.length === 1)).toBe(true);
+    clock.advanceMs(1000);
+    expect(await endSession(services, session.sessionId)).toEqual(summary);
+    const latest = await query<{ occurred_at: Date }>(`select occurred_at from learning_app.learning_events
+      where step_id like $1 order by occurred_at desc limit 1`, [`${session.sessionId}:summary:%`]);
+    expect(latest[0]!.occurred_at).toEqual(clock.now());
+  });
+
+  it.each(["dont_remember", "skip", "assisted"] as const)("podsumowanie klasyfikuje %s bez fałszywego samodzielnego sukcesu", async (action) => {
+    const { deckId, versionId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 1));
+    await seedSummaryCheck(childId, versionId);
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const task = (await nextTask(services, session.sessionId))!;
+    if (action === "assisted") await authorizeDisclosure(services, { taskId: task.taskId, kind: "hint" });
+    await submitAttempt(services, action === "assisted"
+      ? { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: "Monday" }
+      : { taskId: task.taskId, clientAttemptId: randomUUID(), modality: action });
+    const summary = await endSession(services, session.sessionId);
+    expect(summary).toMatchObject({ independentSuccesses: { recall: 0, spelling: 0 } });
+    expect(summary.practiceItems).toEqual(action === "dont_remember"
+      ? [{ itemId: expect.any(String), target: "Monday", skills: ["recall", "spelling"] }] : []);
+  });
+
+  it("podsumowanie dwóch umiejętności korzysta wyłącznie z ocen bieżącej sesji", async () => {
+    const { deckId, versionId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 1));
+    await seedSummaryCheck(childId, versionId);
+    const first = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const task = (await nextTask(services, first.sessionId))!;
+    const input = { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text" as const, text: "Monday" };
+    await submitAttempt(services, input);
+    await submitAttempt(services, input);
+    const summary = await endSession(services, first.sessionId);
+    expect(summary).toMatchObject({ independentSuccesses: { recall: 1, spelling: 1 }, practiceItems: [] });
+    const second = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    expect(await endSession(services, second.sessionId)).toMatchObject({ independentSuccesses: { recall: 0, spelling: 0 }, practiceItems: [] });
+  });
+
+  it("spóźniona finalizacja próby mowy nie przepisuje pokazanego podsumowania", async () => {
+    const { deckId, versionId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 1));
+    await seedSummaryCheck(childId, versionId);
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: true });
+    const task = (await nextTask(services, session.sessionId))!;
+    const attemptId = randomUUID();
+    await pool.query(`insert into learning_app.attempts
+      (id, child_id, task_id, item_revision_id, client_attempt_id, request_hash, attempt_number,
+       modality, state, context, policy_id, received_at)
+      select $1, child_id, id, item_revision_id, $2, 'hash', 1, 'audio', 'processing', '{}', $3, $4
+      from learning_app.session_tasks where id = $5`,
+      [attemptId, randomUUID(), session.policyId, clock.now(), task.taskId]);
+    const summary = await endSession(services, session.sessionId);
+    expect(summary).toMatchObject({ independentSuccesses: { recall: 0, spelling: 0 }, practiceItems: [] });
+    clock.advanceMs(1000);
+    await finalizeAttempt(services, attemptId, {
+      skills: { recall: { outcome: "incorrect", independent: true, confirmationEligible: false } },
+      attempt: { independent: true, confirmationEligible: false },
+    });
+    expect(await endSession(services, session.sessionId)).toEqual(summary);
+    const rows = await query<{ count: number }>(`select count(*)::int as count from learning_app.assessments where attempt_id = $1`, [attemptId]);
+    expect(rows[0]!.count).toBe(1);
+  });
+
   it("endSession jest idempotentny i zwraca podsumowanie", async () => {
     const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 2));
     const session = await startSession(services, { childId, deckId, microphoneEnabled: true });
@@ -499,6 +589,7 @@ describe("cykl życia sesji (integracja)", () => {
     expect(summary.state).toBe("completed");
     expect(summary.tasksIssued).toBe(1);
     expect(summary.assessedTasksIssued).toBe(0);
+    expect(summary).toMatchObject({ independentSuccesses: { recall: 0, spelling: 0 }, practiceItems: [] });
     expect(summary.endedAt).not.toBeNull();
 
     const again = await endSession(services, session.sessionId);
