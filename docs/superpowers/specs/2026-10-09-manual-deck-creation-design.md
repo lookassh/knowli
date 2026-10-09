@@ -163,7 +163,8 @@ Nie rozwija niezależnie początkowego schema.sql, ponieważ model bazy się nie
 - [x] Pisemna specyfikacja.
 - [x] Przegląd specyfikacji: zakres, spójność, brak placeholderów,
   rozróżnienie pustego szkicu i gotowego materiału, bezpieczeństwo ponowienia.
-- [ ] Przegląd i zatwierdzenie tego dokumentu przez właściciela.
+- [x] Przegląd i zatwierdzenie tego dokumentu przez właściciela (2026-10-09).
+- [x] Pisemny plan implementacji i jego własny przegląd.
 - [ ] Writing-plans: pisemny plan, przegląd właściciela i wybór wykonania.
 - [ ] Executing-plans oraz TDD z dowodem RED.
 - [ ] Weryfikacja implementacji i końcowy przegląd checklisty.
