@@ -76,6 +76,7 @@ export async function readLearningSnapshot(
     skillVersionId: itemRevisionSkills.skillVersionId,
     exerciseType: sessionTasks.exerciseType,
     state: sessionTasks.state,
+    context: sessionTasks.context,
     issuedAt: sessionTasks.issuedAt,
   }).from(sessionTasks)
     .innerJoin(learningSessions, eq(learningSessions.id, sessionTasks.sessionId))
@@ -110,7 +111,12 @@ export async function readLearningSnapshot(
       }
     }
     introducedByVersion.set(row.skillVersionId, flags);
-    if (row.exerciseType === "exposure" && row.state === "completed" && scope.revisionIds.includes(row.itemRevisionId)) {
+    if (
+      row.exerciseType === "exposure" &&
+      row.state === "completed" &&
+      (row.context as { reason?: string } | null)?.reason === "new-material" &&
+      scope.revisionIds.includes(row.itemRevisionId)
+    ) {
       ownPresentationCompleted.add(row.itemRevisionId);
     }
   }

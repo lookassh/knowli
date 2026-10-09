@@ -3,6 +3,7 @@ import { isTestPreparationWindow } from "./test-preparation";
 import type { ExerciseType, Policy, ProgressStatus, ReadingDirection, Skill } from "./types";
 import type { SupportState } from "./support-cycle";
 import type { SkillWork } from "./learning-work";
+import { buildRecognitionOptions } from "./recognition-options";
 
 /**
  * Scheduler v1 — jawne priorytety zamiast losowego score (architecture.md §9.3).
@@ -43,6 +44,7 @@ export interface ScheduleCandidate {
   work?: Partial<Record<"recall" | "spelling" | "pronunciation", SkillWork>>;
   ownPresentationCompleted?: boolean;
   readingEvidenceDirections?: Partial<Record<ReadingDirection, number>>;
+  recognitionFallbackUsedThisSession?: boolean;
   /** Liczba zadań tego elementu w bieżącej sesji. */
   usedThisSession: number;
   /** Prezentacje (exposure) tego elementu w bieżącej sesji. */
@@ -70,6 +72,7 @@ export interface SchedulePeer {
   target: string;
   source: string;
   targetLocale: string;
+  acceptedAnswers: readonly string[];
 }
 
 export interface ScheduleInput {
@@ -107,6 +110,7 @@ export type ScheduleReason =
   | "test-preparation-break"
   | "stage-introduction"
   | "new-material"
+  | "recognition-fallback"
   | "new-practice"
   | "due-review"
   | "filler-practice"
@@ -185,6 +189,7 @@ function unseenFresh(candidates: readonly ScheduleCandidate[]): ScheduleCandidat
     .filter(
       (c) =>
         c.usedThisSession === 0 &&
+        !c.ownPresentationCompleted &&
         Object.values(c.progress).every((s) => s === undefined || s.status === "not_assessed"),
     )
     .sort((a, b) => a.position - b.position);
@@ -212,7 +217,7 @@ function presentedOnce(candidates: readonly ScheduleCandidate[]): ScheduleCandid
  */
 function practicePool(candidates: readonly ScheduleCandidate[]): ScheduleCandidate[] {
   return candidates
-    .filter((c) => c.usedThisSession > 0 || isStarted(c))
+    .filter((c) => c.usedThisSession > 0 || isStarted(c) || c.ownPresentationCompleted === true)
     .sort(
       (a, b) =>
         Number(isFullyMastered(a)) - Number(isFullyMastered(b)) ||
@@ -222,44 +227,77 @@ function practicePool(candidates: readonly ScheduleCandidate[]): ScheduleCandida
     );
 }
 
-/** Dystraktory z puli rówieśników; cele objęte rezerwacją są pomijane. */
-function pickDistractors(
-  self: ScheduleCandidate,
-  peers: readonly SchedulePeer[],
-  reserved: ReadonlySet<string>,
-  count: number,
-  rotateBy: number,
-): SchedulePeer[] {
-  const pool = peers
-    .filter((p) => p.itemRevisionId !== self.itemRevisionId)
-    .filter((p) => !reserved.has(keyOf(p.target, p.targetLocale)))
-    .sort((a, b) => a.position - b.position);
-  const picked: SchedulePeer[] = [];
-  for (let i = 0; i < Math.min(count, pool.length); i++) {
-    picked.push(pool[(rotateBy + i) % pool.length]!);
-  }
-  return picked;
+const RECOGNITION_DIRECTIONS: readonly (ReadingDirection | "listening")[] = [
+  "listening", "target_to_source", "source_to_target",
+];
+
+function recognitionPossibleWithoutReservations(target: ScheduleCandidate, peers: readonly SchedulePeer[]): boolean {
+  return RECOGNITION_DIRECTIONS.some((direction) => buildRecognitionOptions({
+    target, peers, direction, reservedTargetKeys: [], rotateBy: 0,
+  }) !== null);
 }
 
-/**
- * Opcje rozpoznawania ze słuchu: potwierdzenie + dystraktory rówieśników.
- * Kontrakt kid.ts wymaga min 1 opcji — każde zadanie listening jest wyborem,
- * także powtórki i utrwalanie (regresja: retry-after-support bez opcji).
- */
-function listeningOptions(
+function recognitionFallback(
   target: ScheduleCandidate,
-  peers: readonly SchedulePeer[],
   reserved: ReadonlySet<string>,
-  rotateBy: number,
-): PlannedOption[] {
-  return [
-    { itemRevisionId: target.itemRevisionId, text: target.source, correct: true },
-    ...pickDistractors(target, peers, reserved, 2, rotateBy).map((d) => ({
-      itemRevisionId: d.itemRevisionId,
-      text: d.source,
-      correct: false,
-    })),
-  ];
+  peers: readonly SchedulePeer[],
+  keepsReservations: string[],
+): TaskPlan | null {
+  if (
+    target.recognitionFallbackUsedThisSession ||
+    reserved.has(keyOfCandidate(target)) ||
+    recognitionPossibleWithoutReservations(target, peers)
+  ) return null;
+  return {
+    itemRevisionId: target.itemRevisionId,
+    exerciseType: "exposure",
+    revealsTargetKeys: [keyOfCandidate(target)],
+    assessed: false,
+    reason: "recognition-fallback",
+    keepsReservations,
+  };
+}
+
+function recognitionTaskPlan(
+  target: ScheduleCandidate,
+  input: ScheduleInput,
+  reserved: ReadonlySet<string>,
+  keepsReservations: string[],
+  reason: ScheduleReason,
+  direction: ReadingDirection | "listening",
+  allowAlternative = false,
+): TaskPlan | null {
+  const directions = allowAlternative
+    ? [direction, ...RECOGNITION_DIRECTIONS.filter((item) => item !== direction)]
+    : [direction];
+  for (const selectedDirection of directions) {
+    const built = buildRecognitionOptions({
+      target,
+      peers: input.peers,
+      direction: selectedDirection,
+      reservedTargetKeys: [...reserved],
+      rotateBy: input.nextOrdinal,
+    });
+    if (!built) continue;
+    return {
+      itemRevisionId: target.itemRevisionId,
+      exerciseType: selectedDirection === "listening"
+        ? "listening"
+        : selectedDirection === "source_to_target" ? "reverse_recognition" : "reading",
+      ...(selectedDirection === "listening" ? {} : { direction: selectedDirection }),
+      options: built.options,
+      revealsTargetKeys: built.revealsTargetKeys,
+      assessed: true,
+      reason,
+      keepsReservations,
+    };
+  }
+  const fallbackEligible = reason === "new-practice" || reason === "filler-practice" ||
+    reason === "extra-practice" || reason === "test-preparation-break";
+  const hasDueRecognition = isDue(target.progress.listening, input.now) || isDue(target.progress.reading, input.now);
+  return fallbackEligible && !hasDueRecognition
+    ? recognitionFallback(target, reserved, input.peers, keepsReservations)
+    : null;
 }
 
 /** Wypełnia brakujący dowód; gdy historia nie rozstrzyga, rotuje sesję. */
@@ -310,7 +348,9 @@ function introductionPlan(
   );
   for (const target of pool) {
     if (reserved.has(keyOfCandidate(target))) continue;
-    if (!recognitionSucceeded(target)) continue;
+    const noRecognitionEvidenceAvailable =
+      target.ownPresentationCompleted === true && !recognitionPossibleWithoutReservations(target, input.peers);
+    if (!recognitionSucceeded(target) && !noRecognitionEvidenceAvailable) continue;
     if (!target.introducedSkills.recall) {
       return {
         itemRevisionId: target.itemRevisionId,
@@ -498,18 +538,22 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
     .sort((a, b) => (a.lastUsedOrdinal ?? 0) - (b.lastUsedOrdinal ?? 0))[0];
   if (retryAfterSupport) {
     const retryType = retryAfterSupport.support?.retryType ?? "listening";
-    return {
-      itemRevisionId: retryAfterSupport.itemRevisionId,
-      exerciseType: retryType,
-      ...(retryType === "listening"
-        ? { options: listeningOptions(retryAfterSupport, input.peers, reserved, input.nextOrdinal) }
-        : {}),
-      revealsTargetKeys: [keyOfCandidate(retryAfterSupport)],
-      assessed: true,
-      reason: "retry-after-support",
-      supportCycleId: retryAfterSupport.support?.cycleId ?? retryAfterSupport.support?.sourceTaskId ?? undefined,
-      keepsReservations,
-    };
+    if (retryType === "listening") {
+      const retryPlan = recognitionTaskPlan(
+        retryAfterSupport, input, reserved, keepsReservations, "retry-after-support", "listening",
+      );
+      if (retryPlan) return { ...retryPlan, supportCycleId: retryAfterSupport.support?.cycleId ?? retryAfterSupport.support?.sourceTaskId ?? undefined };
+    } else {
+      return {
+        itemRevisionId: retryAfterSupport.itemRevisionId,
+        exerciseType: retryType,
+        revealsTargetKeys: [keyOfCandidate(retryAfterSupport)],
+        assessed: true,
+        reason: "retry-after-support",
+        supportCycleId: retryAfterSupport.support?.cycleId ?? retryAfterSupport.support?.sourceTaskId ?? undefined,
+        keepsReservations,
+      };
+    }
   }
 
   const recentReasons = input.recentAssessedReasons ?? [];
@@ -518,7 +562,8 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
   if (needsPreparationBreak) {
     const safeKnown = practicePool(input.candidates).find((candidate) => !reserved.has(keyOfCandidate(candidate)));
     if (safeKnown) {
-      return recognitionPlan(safeKnown, input, reserved, keepsReservations, "test-preparation-break", true);
+      const plan = recognitionPlan(safeKnown, input, reserved, keepsReservations, "test-preparation-break", true);
+      if (plan) return plan;
     }
   }
 
@@ -548,7 +593,9 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
   //     do przypominania, a potem wymowy. Co drugi slot sesji, aby nowy materiał
   //     i należne powtórki nie czekały na całą falę nowego etapu, a sesja
   //     zachowywała miks typów zadań.
-  if (input.nextOrdinal % 2 === 1) {
+  if (input.nextOrdinal % 2 === 1 || input.candidates.some((candidate) =>
+    candidate.ownPresentationCompleted && !recognitionPossibleWithoutReservations(candidate, input.peers),
+  )) {
     const introduction = introductionPlan(input.candidates, input, reserved, keepsReservations);
     if (introduction) {
       return introduction;
@@ -560,15 +607,8 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
   const fresh = presentedOnce(input.candidates);
   if (fresh.length >= 2 || (fresh.length === 1 && unseenFresh(input.candidates).length === 0)) {
     const target = fresh[0]!;
-    return {
-      itemRevisionId: target.itemRevisionId,
-      exerciseType: "listening",
-      options: listeningOptions(target, input.peers, reserved, input.nextOrdinal),
-      revealsTargetKeys: [keyOfCandidate(target)],
-      assessed: true,
-      reason: "new-practice",
-      keepsReservations,
-    };
+    const plan = recognitionTaskPlan(target, input, reserved, keepsReservations, "new-practice", "listening", true);
+    if (plan) return plan;
   }
   const nextUnseen = unseenFresh(input.candidates)[0];
   if (nextUnseen) {
@@ -600,47 +640,13 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
     (a, b) =>
       a.due < b.due ? -1 : a.due > b.due ? 1 : a.candidate.position - b.candidate.position,
   );
-  const dueSkill = dueSkills[0];
-  if (dueSkill) {
+  for (const dueSkill of dueSkills) {
     if (dueSkill.skill === "reading") {
       const target = dueSkill.candidate;
       const direction = chooseReadingDirection(target.readingEvidenceDirections ?? {}, target.readingDirections);
-      if (direction === "source_to_target") {
-        const distractors = pickDistractors(target, input.peers, reserved, 2, input.nextOrdinal);
-        return {
-          itemRevisionId: target.itemRevisionId,
-          exerciseType: "reverse_recognition",
-          direction,
-          options: [
-            { itemRevisionId: target.itemRevisionId, text: target.target, correct: true },
-            ...distractors.map((d) => ({ itemRevisionId: d.itemRevisionId, text: d.target, correct: false })),
-          ],
-          revealsTargetKeys: [
-            keyOfCandidate(target),
-            ...distractors.map((d) => keyOf(d.target, d.targetLocale)),
-          ],
-          assessed: true,
-          reason: "due-review",
-          keepsReservations,
-        };
-      }
-      return {
-        itemRevisionId: target.itemRevisionId,
-        exerciseType: "reading",
-        direction,
-        options: [
-          { itemRevisionId: target.itemRevisionId, text: target.source, correct: true },
-          ...pickDistractors(target, input.peers, reserved, 2, input.nextOrdinal).map((d) => ({
-            itemRevisionId: d.itemRevisionId,
-            text: d.source,
-            correct: false,
-          })),
-        ],
-        revealsTargetKeys: [keyOfCandidate(target)],
-        assessed: true,
-        reason: "due-review",
-        keepsReservations,
-      };
+      const plan = recognitionTaskPlan(target, input, reserved, keepsReservations, "due-review", direction);
+      if (plan) return plan;
+      continue;
     }
     if (dueSkill.skill === "pronunciation") {
       return {
@@ -652,15 +658,8 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
         keepsReservations,
       };
     }
-    return {
-      itemRevisionId: dueSkill.candidate.itemRevisionId,
-      exerciseType: "listening",
-      options: listeningOptions(dueSkill.candidate, input.peers, reserved, input.nextOrdinal),
-      revealsTargetKeys: [keyOfCandidate(dueSkill.candidate)],
-      assessed: true,
-      reason: "due-review",
-      keepsReservations,
-    };
+    const plan = recognitionTaskPlan(dueSkill.candidate, input, reserved, keepsReservations, "due-review", "listening");
+    if (plan) return plan;
   }
 
   // 6. Lekkie ćwiczenie rozpoznawania bez należnych zadań: jedna pula dla
@@ -704,53 +703,9 @@ function recognitionPlan(
   keepsReservations: string[],
   reason: "filler-practice" | "extra-practice" | "test-preparation-break",
   preferListening: boolean,
-): TaskPlan {
-  if (preferListening) {
-    return {
-      itemRevisionId: target.itemRevisionId,
-      exerciseType: "listening",
-      options: listeningOptions(target, input.peers, reserved, input.nextOrdinal),
-      revealsTargetKeys: [keyOfCandidate(target)],
-      assessed: true,
-      reason,
-      keepsReservations,
-    };
-  }
-  const direction = chooseReadingDirection(target.readingEvidenceDirections ?? {}, target.readingDirections);
-  if (direction === "source_to_target") {
-    const distractors = pickDistractors(target, input.peers, reserved, 2, input.nextOrdinal);
-    return {
-      itemRevisionId: target.itemRevisionId,
-      exerciseType: "reverse_recognition",
-      direction,
-      options: [
-        { itemRevisionId: target.itemRevisionId, text: target.target, correct: true },
-        ...distractors.map((d) => ({ itemRevisionId: d.itemRevisionId, text: d.target, correct: false })),
-      ],
-      revealsTargetKeys: [
-        keyOfCandidate(target),
-        ...distractors.map((d) => keyOf(d.target, d.targetLocale)),
-      ],
-      assessed: true,
-      reason,
-      keepsReservations,
-    };
-  }
-  return {
-    itemRevisionId: target.itemRevisionId,
-    exerciseType: "reading",
-    direction,
-    options: [
-      { itemRevisionId: target.itemRevisionId, text: target.source, correct: true },
-      ...pickDistractors(target, input.peers, reserved, 2, input.nextOrdinal).map((d) => ({
-        itemRevisionId: d.itemRevisionId,
-        text: d.source,
-        correct: false,
-      })),
-    ],
-    revealsTargetKeys: [keyOfCandidate(target)],
-    assessed: true,
-    reason,
-    keepsReservations,
-  };
+): TaskPlan | null {
+  const direction = preferListening
+    ? "listening"
+    : chooseReadingDirection(target.readingEvidenceDirections ?? {}, target.readingDirections);
+  return recognitionTaskPlan(target, input, reserved, keepsReservations, reason, direction, true);
 }

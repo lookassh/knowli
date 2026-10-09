@@ -361,6 +361,28 @@ describe("cykl życia sesji (integracja)", () => {
     expect(second.microphoneEnabled).toBe(false);
   });
 
+  it("singleton po własnej ekspozycji przechodzi do Recall bez fikcyjnego wyniku rozpoznawania", async () => {
+    const { deckId, versionId } = await publishDeckWithAssignment(services, childId, [DAY_ITEMS[0]!]);
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const exposure = await nextTask(services, session.sessionId);
+    expect(exposure?.exerciseType).toBe("exposure");
+    await completePresentation(services, { taskId: exposure!.taskId });
+
+    const recall = await nextTask(services, session.sessionId);
+    expect(recall?.exerciseType).toBe("recall");
+
+    const recognitionRows = await query<{ skill: string; independent_success_streak: number | null }>(
+      `select s.skill, p.independent_success_streak
+         from learning_app.item_revision_skills s
+         join learning_app.item_revisions r on r.id = s.item_revision_id
+         left join learning_app.child_skill_progress p on p.skill_version_id = s.skill_version_id and p.child_id = $1
+        where r.deck_version_id = $2 and s.skill in ('listening','reading')`,
+      [childId, versionId],
+    );
+    expect(recognitionRows).toHaveLength(2);
+    expect(recognitionRows.every((row) => row.independent_success_streak === null)).toBe(true);
+  });
+
   it("przypina datę sprawdzianu do sesji, wznowienia i kolejnego startu", async () => {
     const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 2));
     await upsertAssignment(services, childId, deckId, "2026-10-11");

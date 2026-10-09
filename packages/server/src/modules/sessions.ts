@@ -302,6 +302,7 @@ interface ItemStats {
   presentationsThisSession: number;
   lastUsedOrdinal: number | null;
   supportedThisSession: boolean;
+  recognitionFallbackUsedThisSession: boolean;
   readingDirections: Partial<Record<ReadingDirection, number>>;
   practiceMix: { listening: number; reading: number };
 }
@@ -390,6 +391,7 @@ async function planNextTask(
         presentationsThisSession: 0,
         lastUsedOrdinal: null,
         supportedThisSession: false,
+        recognitionFallbackUsedThisSession: false,
         readingDirections: {},
         practiceMix: { listening: 0, reading: 0 },
       },
@@ -418,6 +420,9 @@ async function planNextTask(
     }
     if ((row.context as { reason?: string } | null)?.reason === "support") {
       stats.supportedThisSession = true;
+    }
+    if ((row.context as { reason?: string } | null)?.reason === "recognition-fallback") {
+      stats.recognitionFallbackUsedThisSession = true;
     }
     if (row.exerciseType === "listening") {
       stats.practiceMix.listening += 1;
@@ -584,6 +589,7 @@ async function planNextTask(
       support: supportByRevision.get(r.id),
       work: learning?.work,
       ownPresentationCompleted: learning?.ownPresentationCompleted ?? false,
+      recognitionFallbackUsedThisSession: stats.recognitionFallbackUsedThisSession,
       readingEvidenceDirections: learning?.readingEvidenceDirections ?? {},
       usedThisSession: stats.usedThisSession,
       presentationsThisSession: stats.presentationsThisSession,
@@ -606,6 +612,7 @@ async function planNextTask(
     target: c.target,
     source: c.source,
     targetLocale: c.targetLocale,
+    acceptedAnswers: c.acceptedAnswers,
   }));
 
   const plan = selectTask({

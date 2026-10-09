@@ -24,6 +24,7 @@ function candidate(overrides: Partial<ScheduleCandidate> = {}): ScheduleCandidat
     progress: {},
     failuresThisSession: 0,
     supportedThisSession: false,
+    recognitionFallbackUsedThisSession: true,
     usedThisSession: 0,
     presentationsThisSession: 0,
     lastContactAt: null,
@@ -42,6 +43,7 @@ function peer(overrides: Partial<SchedulePeer> = {}): SchedulePeer {
     target: "Thursday",
     source: "czwartek",
     targetLocale: "en-GB",
+    acceptedAnswers: [],
     ...overrides,
   };
 }
@@ -173,7 +175,7 @@ describe("selectTask — rezerwacje należnych sprawdzeń (arch §9.3)", () => {
     const plan = selectTask(
       input({
         candidates: [reserved, other],
-        peers: [peer(reserved), peer(other)],
+        peers: [peer(reserved), peer(other), peer({ itemRevisionId: "rev-w", position: 2, target: "Wednesday", source: "środa" })],
         reservedTargetKeys: [KEY_THURSDAY],
       }),
     );
@@ -254,7 +256,7 @@ describe("selectTask — wsparcie po dwóch błędach (SPEC §16)", () => {
       progress: { reading: { status: "learning", nextReviewAt: PAST, streak: 3 } },
       readingEvidenceDirections: { target_to_source: 3, source_to_target: 0 },
     });
-    const plan = selectTask(input({ candidates: [target], peers: [peer(target)], nextOrdinal: 2 }));
+    const plan = selectTask(input({ candidates: [target], peers: [peer(target), peer({ itemRevisionId: "rev-f", position: 1, target: "Friday", source: "piątek" })], nextOrdinal: 2 }));
     expect(plan).toMatchObject({ exerciseType: "reverse_recognition", direction: "source_to_target" });
   });
 
@@ -267,7 +269,7 @@ describe("selectTask — wsparcie po dwóch błędach (SPEC §16)", () => {
       readingDirections: { source_to_target: 1 },
     });
     const plan = selectTask(input({
-      candidates: [target], peers: [peer(target)], nextOrdinal: 2,
+      candidates: [target], peers: [peer(target), peer({ itemRevisionId: "rev-f", position: 1, target: "Friday", source: "piątek" })], nextOrdinal: 2,
     }));
     expect(plan).toMatchObject({ exerciseType: "reading", direction: "target_to_source" });
   });
@@ -301,7 +303,7 @@ describe("selectTask — wprowadzanie kolejnych etapów (SPEC §13)", () => {
 
   it("wprowadzenie bierze co drugi slot — parzysty zostaje bieżącej strategii", () => {
     const plan = selectTask(
-      input({ candidates: [recognized({ usedThisSession: 2 })], peers: [peer()], nextOrdinal: 0 }),
+      input({ candidates: [recognized({ usedThisSession: 2 })], peers: [peer(), peer({ itemRevisionId: "rev-f", position: 1, target: "Friday", source: "piątek" })], nextOrdinal: 0 }),
     );
     expect(plan).toMatchObject({ reason: "filler-practice" });
     expect(plan!.exerciseType).not.toBe("recall");
@@ -338,7 +340,7 @@ describe("selectTask — wprowadzanie kolejnych etapów (SPEC §13)", () => {
     const plan = selectTask(
       input({
         candidates: [recognized({ introducedSkills: { recall: true, pronunciation: false } })],
-        peers: [peer()],
+        peers: [peer(), peer({ itemRevisionId: "rev-f", position: 1, target: "Friday", source: "piątek" })],
         nextOrdinal: 1,
       }),
     );
@@ -356,7 +358,7 @@ describe("selectTask — wprowadzanie kolejnych etapów (SPEC §13)", () => {
             introducedSkills: { recall: true, pronunciation: false },
           }),
         ],
-        peers: [peer()],
+        peers: [peer(), peer({ itemRevisionId: "rev-f", position: 1, target: "Friday", source: "piątek" })],
         nextOrdinal: 1,
         microphoneEnabled: false,
       }),
@@ -374,11 +376,11 @@ describe("selectTask — wprowadzanie kolejnych etapów (SPEC §13)", () => {
             introducedSkills: { recall: true, pronunciation: true },
           }),
         ],
-        peers: [peer()],
+        peers: [peer(), peer({ itemRevisionId: "rev-f", position: 1, target: "Friday", source: "piątek" })],
         nextOrdinal: 1,
       }),
     );
-    expect(plan!.reason).not.toBe("stage-introduction");
+    expect(plan?.reason).not.toBe("stage-introduction");
     expect(plan).toMatchObject({ reason: "filler-practice" });
   });
 
@@ -392,7 +394,7 @@ describe("selectTask — wprowadzanie kolejnych etapów (SPEC §13)", () => {
         nextOrdinal: 1,
       }),
     );
-    expect(plan!.reason).not.toBe("stage-introduction");
+    expect(plan?.reason).not.toBe("stage-introduction");
   });
 
   it("cel objęty rezerwacją nie jest wprowadzany — wymowa ujawniłaby słowo", () => {
@@ -439,11 +441,41 @@ describe("selectTask — listening zawsze z opcjami (kontrakt kid.ts: min 1)", (
     expect(plan!.options!.filter((o) => o.correct)).toHaveLength(1);
   });
 
-  it("talia z jednym elementem: opcja poprawna istnieje mimo braku dystraktorów", () => {
-    const lonely = candidate({ usedThisSession: 3, practiceMix: { listening: 0, reading: 1 } });
+  it("talia z jednym elementem: po pierwszej prezentacji jednorazowo pokazuje bezpieczną ekspozycję", () => {
+    const lonely = candidate({ usedThisSession: 3, recognitionFallbackUsedThisSession: false, practiceMix: { listening: 0, reading: 1 } });
     const plan = selectTask(input({ candidates: [lonely], peers: [peer(lonely)] }));
-    expect(plan).toMatchObject({ exerciseType: "listening", reason: "filler-practice" });
-    expect(plan!.options!.filter((o) => o.correct).map((o) => o.text)).toEqual(["czwartek"]);
+    expect(plan).toMatchObject({ exerciseType: "exposure", reason: "recognition-fallback", assessed: false });
+    expect(plan!.revealsTargetKeys).toEqual([KEY_THURSDAY]);
+  });
+
+  it("po ukończonej ekspozycji singleton przechodzi do samodzielnego przypominania", () => {
+    const lonely = candidate({ ownPresentationCompleted: true, usedThisSession: 2 });
+    const plan = selectTask(input({ candidates: [lonely], peers: [peer(lonely)], microphoneEnabled: false }));
+    expect(plan).toMatchObject({ exerciseType: "recall", reason: "stage-introduction", assessed: true });
+  });
+
+  it("jednorazowa ekspozycja awaryjna nie zapętla się", () => {
+    const lonely = candidate({ usedThisSession: 3, recognitionFallbackUsedThisSession: true });
+    expect(selectTask(input({ candidates: [lonely], peers: [peer(lonely)] }))).toBeNull();
+  });
+
+  it("chwilowo zarezerwowany dystraktor nie uruchamia ekspozycji awaryjnej", () => {
+    const lonely = candidate({ usedThisSession: 3 });
+    const other = peer({ itemRevisionId: "rev-other", position: 1, target: "Friday", source: "piątek" });
+    expect(selectTask(input({
+      candidates: [lonely],
+      peers: [peer(lonely), other],
+      reservedTargetKeys: [computeTargetKey("Friday", "en-GB")],
+    }))).toBeNull();
+  });
+
+  it("brak dystraktora nie zastępuje należnej samodzielnej powtórki ekspozycją", () => {
+    const lonely = candidate({
+      usedThisSession: 3,
+      recognitionFallbackUsedThisSession: false,
+      progress: { listening: { status: "needs_confirmation", nextReviewAt: PAST, streak: 2 } },
+    });
+    expect(selectTask(input({ candidates: [lonely], peers: [peer(lonely)] }))).toBeNull();
   });
 });
 
@@ -453,7 +485,7 @@ describe("selectTask — mikrofon i kierunki", () => {
       progress: { pronunciation: { status: "needs_confirmation", nextReviewAt: PAST, streak: 3 } },
     });
     const withoutMic = selectTask(
-      input({ candidates: [speaker], peers: [peer(speaker)], microphoneEnabled: false }),
+      input({ candidates: [speaker], peers: [peer(speaker), peer({ itemRevisionId: "rev-f", position: 1, target: "Friday", source: "piątek" })], microphoneEnabled: false }),
     );
     expect(withoutMic).toMatchObject({ reason: "extra-practice", assessed: true });
     expect(withoutMic!.exerciseType).not.toBe("speech");
@@ -516,7 +548,7 @@ describe("selectTask — rozliczone sprawdzenia nie wracają w tej sesji (arch �
     const plan = selectTask(
       input({
         candidates: [reader, dueThursday],
-        peers: [peer(reader), peer(dueThursday)],
+        peers: [peer(reader), peer(dueThursday), peer({ itemRevisionId: "rev-w", position: 2, target: "Wednesday", source: "środa" })],
         settledCheckTargetKeys: [KEY_THURSDAY],
         nextOrdinal: 3,
       }),
@@ -553,7 +585,7 @@ describe("selectTask — extra-practice: ćwiczenie bez blokady harmonogramu", (
 
   it("naprzemiennie słuch i tekst wg parzystości ordinalu", () => {
     const a = startedCandidate({ itemRevisionId: "rev-a", position: 0 });
-    const peers = [peer(a)];
+    const peers = [peer(a), peer({ itemRevisionId: "rev-f", position: 1, target: "Friday", source: "piątek" })];
     const listening = selectTask(input({ candidates: [a], peers, nextOrdinal: 0 }));
     expect(listening).toMatchObject({ exerciseType: "listening", reason: "extra-practice" });
     const reading = selectTask(input({ candidates: [a], peers, nextOrdinal: 1 }));
@@ -572,11 +604,12 @@ describe("selectTask — extra-practice: ćwiczenie bez blokady harmonogramu", (
       target: "Friday",
       source: "piątek",
     });
+    const third = peer({ itemRevisionId: "rev-w", position: 2, target: "Wednesday", source: "środa" });
     // rezerwacja utrzymywana w kontekście sesji chroni czwartek także w utrwalaniu
     const plan = selectTask(
       input({
         candidates: [reservedItem, other],
-        peers: [peer(reservedItem), peer(other)],
+        peers: [peer(reservedItem), peer(other), third],
         reservedTargetKeys: [KEY_THURSDAY],
         nextOrdinal: 2,
       }),
