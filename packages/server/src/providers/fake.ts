@@ -13,6 +13,7 @@ import type {
   TtsSynthesizeInput,
 } from "../ports/ai";
 import type { MediaStore } from "../ports/media";
+import { letterGroups } from "../domain/pronunciation-fragments";
 
 /**
  * Deterministyczni providerzy bez sieci: te same dane wejściowe dają te same
@@ -186,11 +187,24 @@ export class FakeSttProvider implements SttProvider {
   }
 }
 
-/** Fake oceny wymowy: zawsze wysoki wynik dla oczekiwanego tekstu. */
+/** Fake oceny wymowy: wysoki wynik i fonemy zgrane z grupami liter. */
 export class FakePronunciationProvider implements PronunciationProvider {
   readonly name = "fake-pron";
   async assess(_audio: AudioInput, expectedText: string): Promise<PronunciationResult> {
-    return { status: "ok", overallScore: 95, recognizedText: expectedText };
+    const word = expectedText.trim().toLowerCase();
+    return {
+      status: "ok",
+      overallScore: 95,
+      recognizedText: expectedText,
+      words: [
+        {
+          text: word,
+          accuracyScore: 95,
+          errorType: null,
+          phonemes: letterGroups(word).map((group) => ({ phoneme: group, accuracyScore: 96 })),
+        },
+      ],
+    };
   }
 }
 

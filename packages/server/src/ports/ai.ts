@@ -84,6 +84,20 @@ export interface TranscriptionResult {
   confidence: number | null;
 }
 
+/** Pojedynczy fonem oceny wymowy (Azure, Granularity Phoneme). */
+export interface PronunciationPhoneme {
+  phoneme: string;
+  accuracyScore: number | null;
+}
+
+/** Jedno słowo oceny wymowy z fonemami; ErrorType null = bez zastrzeżeń. */
+export interface PronunciationWord {
+  text: string;
+  accuracyScore: number | null;
+  errorType: string | null;
+  phonemes: PronunciationPhoneme[];
+}
+
 /** Wynik oceny wymowy względem JEDNEGO oczekiwanego tekstu (SPEC §23). */
 export interface PronunciationResult {
   status: "ok" | "no_speech" | "failed";
@@ -91,6 +105,8 @@ export interface PronunciationResult {
   overallScore: number | null;
   /** Tekst rozpoznany przez usługę wymowy — odrębny od transkrypcji STT. */
   recognizedText: string | null;
+  /** Szczegóły fonemów, jeśli provider je zwraca. */
+  words?: PronunciationWord[];
 }
 
 export interface SttProvider {

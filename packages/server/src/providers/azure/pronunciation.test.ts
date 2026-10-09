@@ -38,7 +38,12 @@ describe("createAzurePronunciationProvider", () => {
       fetchImpl: async () => jsonResponse(liveShape),
     });
     const result = await provider.assess(audio, "wednesday");
-    expect(result).toEqual({ status: "ok", overallScore: 88, recognizedText: "Wednesday." });
+    expect(result).toEqual({
+      status: "ok",
+      overallScore: 88,
+      recognizedText: "Wednesday.",
+      words: [{ text: "wednesday", accuracyScore: 88, errorType: null, phonemes: [] }],
+    });
   });
 
   it("inne słowo niż expectedText ma niski Confidence — treść rozstrzyga STT", async () => {
@@ -82,5 +87,55 @@ describe("createAzurePronunciationProvider", () => {
     });
     const result = await provider.assess(audio, "wednesday");
     expect(result).toEqual({ status: "failed", overallScore: null, recognizedText: null });
+  });
+
+  it("parsuje Words/Phonemes z Granularity Phoneme i normalizuje ErrorType None", async () => {
+    let assessmentHeader = "";
+    const provider = createAzurePronunciationProvider({
+      subscriptionKey: "k",
+      region: "germanywestcentral",
+      fetchImpl: async (_url, init) => {
+        assessmentHeader = init.headers["Pronunciation-Assessment"]!;
+        return jsonResponse({
+          RecognitionStatus: "Success",
+          DisplayText: "cherry.",
+          NBest: [
+            {
+              AccuracyScore: 82,
+              Words: [
+                {
+                  Word: "cherry",
+                  AccuracyScore: 82,
+                  ErrorType: "None",
+                  Phonemes: [
+                    { Phoneme: "tʃ", AccuracyScore: 90 },
+                    { Phoneme: "ɛ", AccuracyScore: 61 },
+                    { Phoneme: "r", AccuracyScore: 88 },
+                    { Phoneme: "i", AccuracyScore: 85 },
+                  ],
+                },
+              ],
+            },
+          ],
+        });
+      },
+    });
+    const result = await provider.assess(audio, "cherry");
+    expect(result.status).toBe("ok");
+    expect(result.overallScore).toBe(82);
+    expect(result.words).toEqual([
+      {
+        text: "cherry",
+        accuracyScore: 82,
+        errorType: null,
+        phonemes: [
+          { phoneme: "tʃ", accuracyScore: 90 },
+          { phoneme: "ɛ", accuracyScore: 61 },
+          { phoneme: "r", accuracyScore: 88 },
+          { phoneme: "i", accuracyScore: 85 },
+        ],
+      },
+    ]);
+    expect(JSON.parse(Buffer.from(assessmentHeader, "base64").toString("utf8")).Granularity).toBe("Phoneme");
   });
 });

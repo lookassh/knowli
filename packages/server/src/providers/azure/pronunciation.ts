@@ -1,5 +1,6 @@
 import type { AudioInput, PronunciationProvider, PronunciationResult } from "../../ports/ai";
 import { AppError } from "../../errors";
+import { z } from "zod";
 
 /**
  * Adapter Azure Pronunciation Assessment (REST, arch §11, SPEC §23). Ocenia
@@ -17,15 +18,24 @@ export interface AzurePronunciationOptions {
   ) => Promise<Response>;
 }
 
-interface AzurePronunciationResponse {
-  RecognitionStatus?: string;
-  DisplayText?: string;
-  NBest?: {
-    Confidence?: number;
-    /** REST zwraca score bezpośrednio na NBest[0] (forma SDK je zagnieżdża). */
-    AccuracyScore?: number;
-  }[];
-}
+const WordSchema = z.object({
+  Word: z.string(),
+  AccuracyScore: z.number().nullish(),
+  ErrorType: z.string().nullish(),
+  Phonemes: z.array(z.object({ Phoneme: z.string(), AccuracyScore: z.number().nullish() })).optional(),
+});
+
+const ResponseSchema = z.object({
+  RecognitionStatus: z.string().optional(),
+  DisplayText: z.string().optional(),
+  NBest: z.array(
+    z.object({
+      Confidence: z.number().optional(),
+      AccuracyScore: z.number().optional(),
+      Words: z.array(WordSchema).optional(),
+    }),
+  ).optional(),
+});
 
 function failed(): PronunciationResult {
   return { status: "failed", overallScore: null, recognizedText: null };
@@ -49,7 +59,7 @@ export function createAzurePronunciationProvider(options: AzurePronunciationOpti
         JSON.stringify({
           ReferenceText: expectedText,
           GradingSystem: "HundredMark",
-          Granularity: "Word",
+          Granularity: "Phoneme",
           Dimension: "Comprehensive",
         }),
         "utf8",
@@ -72,7 +82,7 @@ export function createAzurePronunciationProvider(options: AzurePronunciationOpti
         if (!response.ok) {
           return failed();
         }
-        const payload = (await response.json()) as AzurePronunciationResponse;
+        const payload = ResponseSchema.parse(await response.json());
         const best = payload.NBest?.[0];
         if (payload.RecognitionStatus !== "Success" || !best) {
           return { status: "no_speech", overallScore: null, recognizedText: null };
@@ -82,6 +92,19 @@ export function createAzurePronunciationProvider(options: AzurePronunciationOpti
           status: "ok",
           overallScore: typeof score === "number" ? score : null,
           recognizedText: payload.DisplayText?.trim() || null,
+          ...(best.Words
+            ? {
+                words: best.Words.map((word) => ({
+                  text: word.Word.toLowerCase(),
+                  accuracyScore: word.AccuracyScore ?? null,
+                  errorType: word.ErrorType && word.ErrorType !== "None" ? word.ErrorType : null,
+                  phonemes: (word.Phonemes ?? []).map((phoneme) => ({
+                    phoneme: phoneme.Phoneme,
+                    accuracyScore: phoneme.AccuracyScore ?? null,
+                  })),
+                })),
+              }
+            : {}),
         };
       } catch (error) {
         if (error instanceof AppError) throw error;
