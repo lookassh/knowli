@@ -77,7 +77,7 @@ export async function analyzeSpeech(
     transcription.text !== null &&
     (transcription.confidence === null || transcription.confidence >= MIN_STT_CONFIDENCE)
   ) {
-    const match = matchWrittenAnswer(transcription.text, key);
+    const match = matchSpokenAnswer(transcription.text, key);
     if (match.ci && match.matchedVariant === key.target) {
       const result = await deps.pronunciation.assess(audio, key.target, deadline).then(
         (scored) => (deadline.aborted ? ({ status: "failed", overallScore: null, recognizedText: null } satisfies PronunciationResult) : scored),
@@ -87,6 +87,21 @@ export async function analyzeSpeech(
     }
   }
   return { sttProvider: deps.stt.name, transcription, pronunciation };
+}
+
+/**
+ * STT may add sentence punctuation around a one-word reply (for example a
+ * trailing period). Ignore only boundary punctuation when matching speech;
+ * punctuation inside a word remains significant. Typed spelling keeps its
+ * existing strict comparison.
+ */
+function matchSpokenAnswer(answer: string, key: AnswerKey) {
+  const withoutBoundaryPunctuation = answer
+    .normalize("NFC")
+    .trim()
+    .replace(/^[\p{P}\p{S}]+|[\p{P}\p{S}]+$/gu, "")
+    .trim();
+  return matchWrittenAnswer(withoutBoundaryPunctuation, key);
 }
 
 /**
@@ -122,7 +137,7 @@ export function assessSpeechEvidence(
     return { skills, attempt };
   }
 
-  const match = matchWrittenAnswer(t.text!, key);
+  const match = matchSpokenAnswer(t.text!, key);
   // ćwiczenie wymowy: treść wypowiedzi decyduje o wykonaniu zadania —
   // ocena wymowy może pozostać nieoceniona (§12.6, §15.4)
   const speechAttempt = key.exerciseType === "speech" ? { contentMatched: match.ci } : undefined;
