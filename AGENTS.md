@@ -91,7 +91,7 @@ Nie dodawaj mikroserwisów, Redis, osobnego backendu, ogólnego frameworka plugi
 
 ## Sposób implementacji i sprawdzania
 
-- Przed rozpoczęciem zadania sprawdź dostępne skillsy Superpowers i użyj tych, które pasują do pracy; stosuj ich workflow. Przykładowo: brainstorming przed projektowaniem funkcji, writing-plans przed wieloetapową implementacją, systematic-debugging przy błędach, test-driven-development przy poprawkach i verification-before-completion przed uznaniem pracy za zakończoną. Polecenia właściciela i instrukcje tego pliku mają pierwszeństwo.
+- Przed rozpoczęciem zadania sprawdź dostępne skillsy Superpowers i użyj tych, które pasują do pracy; stosuj ich workflow. Przykładowo: brainstorming przed projektowaniem funkcji, writing-plans przed wieloetapową implementacją, systematic-debugging przy błędach, test-driven-development przy poprawkach, verification-before-completion przed uznaniem pracy za zakończoną oraz finishing-a-development-branch przy scalaniu gałęzi roboczej. Polecenia właściciela i instrukcje tego pliku mają pierwszeństwo.
 - Realizuj uzgodniony plan małymi zadaniami z działającym, sprawdzalnym rezultatem. Nie traktuj odczytania tego pliku jako polecenia zbudowania całego MVP.
 - Próbę mowy i mediów wykonaj zgodnie z zadaniem 0. Bez kluczy lub docelowego urządzenia opisz brakujące dowody; tekstowy fundament może powstawać dalej. Nie deklaruj gotowej oceny wymowy bez tej próby.
 - Nie dodawaj funkcji poza aktualnym zadaniem. Deleguj pracę innym agentom tylko po wyraźnej zgodzie użytkownika.
@@ -106,6 +106,7 @@ Nie dodawaj mikroserwisów, Redis, osobnego backendu, ogólnego frameworka plugi
 - Przeczytanie lub wymienienie skilla nie oznacza wykonania jego workflow. Przed implementacją utwórz i aktualizuj checklistę wymaganych kroków, artefaktów oraz zatwierdzeń.
 - Klasyfikuj zadanie według całego zakresu zmian. Zmiana publicznego DTO/API, modelu danych lub współpracy klient–serwer wymaga ścieżki architectural. Nie traktuj jej jako bounded tylko dlatego, że widoczny efekt dotyczy jednego ekranu.
 - Dla wieloetapowej implementacji użyj writing-plans, a następnie executing-plans. Zachowaj wymagane przez brainstorming etapy zatwierdzania. Delegacja nadal wymaga wyraźnej zgody właściciela.
+- Gdy pracujesz w worktree (lub na gałęzi roboczej), scalanie zmian do głównej gałęzi (`main`) wykonuj skillem finishing-a-development-branch, nie ręcznym merge'em — także wtedy, gdy właściciel prosi o „zmerguj do mastera" bez wskazania sposobu. Obejmuje to pełny workflow skilla: weryfikację przed scaleniem, integrację i sprzątnięcie gałęzi oraz worktree.
 - Przy TDD uruchom test nowego zachowania przed napisaniem odpowiadającego mu kodu i potwierdź oczekiwaną porażkę. Późniejsze przejście testów nie zastępuje dowodu RED.
 - Przed raportem końcowym sprawdź checklistę workflow. Każdy pominięty krok ujawnij z powodem; nie deklaruj pełnego zastosowania skilla, jeśli wykonano tylko część jego instrukcji.
 
