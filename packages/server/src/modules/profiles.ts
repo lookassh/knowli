@@ -13,7 +13,7 @@ import {
 import { childProfiles, learningPolicies } from "../db/schema";
 import { AppError } from "../errors";
 import type { Services } from "../config";
-import { CURRENT_POLICY_ID, loadPolicy, PolicyConfigSchema } from "../policies/registry";
+import { CURRENT_POLICY_ID, ensureLearningPolicy, loadPolicy, PolicyConfigSchema } from "../policies/registry";
 
 export async function listChildren(services: Services): Promise<ChildDto[]> {
   const rows = await services.db
@@ -61,6 +61,7 @@ export async function getPronunciationSettings(services: Services, childId: stri
     return PronunciationSettingsDtoSchema.parse({ pronunciationAvailable: false, thresholds: null, attempts: [] });
   }
 
+  await ensureLearningPolicy(services.db);
   const policy = await loadPolicy(services.db, child.policyId ?? CURRENT_POLICY_ID);
   const bands = policy.pronunciationBands[provider];
   const attemptRows = await services.db.execute(sql`
@@ -100,6 +101,7 @@ export async function updatePronunciationBands(
   if (!parsed.success) throw new AppError("validation", { cause: parsed.error });
 
   await services.db.transaction(async (tx) => {
+    await ensureLearningPolicy(tx);
     const child = (await tx.select().from(childProfiles).where(eq(childProfiles.id, childId)).for("update"))[0];
     if (!child) throw new AppError("not_found");
     const base = await loadPolicy(tx, child.policyId ?? CURRENT_POLICY_ID);

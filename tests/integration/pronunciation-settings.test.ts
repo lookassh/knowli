@@ -145,7 +145,6 @@ describe("ustawienia wymowy per dziecko (design 2026-10-09)", () => {
   it("GET zwraca learning-v2 przy providerze i unavailable bez providera", async () => {
     const { services: bare, clock } = buildTestServices();
     const child = await createChild(bare, { displayName: "Szymon", avatarKey: "fox" });
-    await ensureLearningPolicy(bare.db);
     const withoutProvider = await getPronunciationSettings(bare, child.id);
     expect(withoutProvider).toMatchObject({ pronunciationAvailable: false, thresholds: null, attempts: [] });
 
@@ -159,7 +158,6 @@ describe("ustawienia wymowy per dziecko (design 2026-10-09)", () => {
     const { services: bare, clock } = buildTestServices();
     const child = await createChild(bare, { displayName: "Krzyś", avatarKey: "owl" });
     const services = createServices({ db: testDatabase().db, clock, speech: fakeSpeechDeps() });
-    await ensureLearningPolicy(services.db);
     await updatePronunciationBands(services, child.id, { correctMinScore: 75, partialMinScore: 55 });
     await updatePronunciationBands(services, child.id, { correctMinScore: 80, partialMinScore: 60 });
 
