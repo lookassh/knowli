@@ -93,6 +93,18 @@ Rodzic może:
 
 Szkic wygenerowany przez AI nie jest automatycznie dostępny dziecku. Po edycji opublikowanej treści nowa wersja również wymaga zatwierdzenia. Historyczne odpowiedzi muszą nadal odnosić się do treści, którą dziecko faktycznie widziało.
 
+Edytor zestawu chroni lokalne, niezapisane poprawki przy zmianie zakładki,
+powrocie i wylogowaniu. Po konflikcie wersji pokazuje osobno formularz lokalny
+i najnowszą wersję; nie ponawia zapisu automatycznie z nowszym numerem edycji.
+Wczytanie wersji zdalnej wymaga potwierdzenia i pozostawia porównanie do
+ręcznego przeniesienia wybranych zmian. Jeśli szkic został już opublikowany,
+rodzic zaczyna nową wersję przed ponownym zapisem.
+
+Po niepewnym wyniku wysłania generacji rodzic może ponowić dokładnie to samo
+polecenie z tym samym kluczem idempotencji. Niepoprawne lub nieczytelne
+potwierdzenie 202 nie otwiera zestawu. Poprawne identyfikatory otwierają edytor
+niezależnie od odświeżenia listy; nowe świadome generowanie otrzymuje nowy klucz.
+
 Zasady wpływu edycji na postęp:
 
 - Zmiany kosmetyczne, np. ilustracji, formatowania lub opisu zestawu, zachowują postęp.
@@ -448,7 +460,13 @@ W ustawieniach profilu rodzic może zmienić progi „dobrze” i „prawie” o
 
 Termin jest opcjonalny i dotyczy przypisania materiału konkretnemu dziecku. Dni i terminy interpretuje się w strefie czasowej rodziny, domyślnie Europe/Warsaw.
 
-Bliski sprawdzian zwiększa priorytet wskazanego zestawu, słabych punktów i pisowni. Nie zmienia definicji opanowania ani nie powoduje nieograniczonego wydłużania sesji.
+Od lokalnej północy dwa dni przed terminem scheduler przeznacza część zwykłego budżetu sesji na pisemne przypominanie wcześniej ujawnionych i rozpoznawanych słów, które wymagają jeszcze Recall lub pisowni. Okno otwiera się dokładnie 48 godzin przed początkiem lokalnego dnia sprawdzianu i trwa przez cały ten dzień; granice wyznacza strefa rodziny, także przy zmianie czasu. Zadanie pokazuje polskie znaczenie i pole wpisania odpowiedzi, bez gotowych odpowiedzi i bez wymogu mikrofonu. W pierwszej kolejności wracają umiejętności potrzebujące ponownego potwierdzenia, potem pisownia i Recall.
+
+Należne samodzielne sprawdzenia, wsparcie po trudnościach i zaplanowana poprawka po wsparciu pozostają wcześniejsze od przygotowania. Po dwóch kolejnych zadaniach przygotowawczych scheduler wstawia bezpieczne, łatwe rozpoznawanie; rezerwacje nadal chronią cele przed ujawnieniem i użyciem jako dystraktorów. Pominięcie nie jest dowodem błędnej wiedzy, a „Nie pamiętam” prowadzi do wsparcia. Wydane zadanie przygotowawcze nie wraca w tej samej sesji.
+
+Data i strefa zostają przypięte do sesji przy jej rozpoczęciu. Zmiana terminu przypisania działa od następnej nowej sesji, a wznowienie zachowuje pierwotny kontekst. Starsza sesja bez przypiętej daty nadal korzysta z dotychczasowych reguł.
+
+Priorytet sprawdzianu nie zmienia definicji opanowania ani nie powoduje nieograniczonego wydłużania sesji.
 
 Materiał przećwiczony dzień przed sprawdzianem może nadal mieć status „potrzebuje potwierdzenia po przerwie”. Aplikacja nie ukrywa tej różnicy. Po sprawdzianie nauka i powtórki mogą być kontynuowane.
 

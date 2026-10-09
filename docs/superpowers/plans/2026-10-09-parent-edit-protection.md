@@ -1,0 +1,85 @@
+# Ochrona edycji rodzica — plan implementacji
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Bez delegacji bez zgody właściciela.
+
+**Goal:** Zachować lokalne poprawki przy konflikcie i zapobiec przypadkowemu opuszczeniu edytora.
+
+**Architecture:** Formularz przypina wersję bazową niezależnie od pollingu. ParentApp koordynuje wyjścia; panel konfliktu porównuje zachowane poprawki z aktualnymi danymi. Przenoszenie poprawek ręczne, bez automatycznego nadpisania cudzej wersji.
+
+**Tech Stack:** TypeScript, React, istniejące Parent API, Vitest, Playwright.
+
+**Spec:** `../specs/2026-10-09-learning-and-parent-reliability-design.md` §4, §6; odbiór wspólny w `2026-10-09-learning-and-parent-reliability.md`.
+
+## Global Constraints
+
+- Jawny zapis; brak autosave/localStorage i automatycznego PATCH z podniesioną wersją.
+- Dialog „Zostań” / „Opuść bez zapisu”; busy blokuje przejścia.
+- Karty identyfikowane po ID, nie pozycji. Zachować locale, warianty i visualData. Wszystkie teksty w messages.ts.
+
+## Review Focus
+
+Polling w trakcie edycji, dwie nowe karty bez ID, publikacja w drugim oknie,
+spóźniony GET oraz refresh failed po udanym PATCH są pokryte w B1–B3.
+
+### Task 1: Bazowa migawka i zapis (B1)
+
+**Files:** Create `apps/web/src/parent/{deck-editor-state.ts,deck-editor-state.test.ts}`; Modify `DeckEditor.tsx`, `packages/contracts/src/messages.ts`; Create `tests/e2e/parent-edit-protection.spec.ts`.
+
+**Interfaces:** `EditableDeckForm` i `EditableDeckItem` = obecne pola plus `clientKey:string`, `visualData?:Record<string,unknown>`. `EditorSnapshot = {draftId:string; editNumber:number; form:EditableDeckForm}`. `createEditorSnapshot(draft:DraftDto,newKey:()=>string):EditorSnapshot`; `toDraftPatch(snapshot:EditorSnapshot):DraftPatch`. Existing item key = id; nowy key generowany raz, nie wysyłany do API.
+
+- [x] Unit: snapshot z editNumber=3 wysyła 3 mimo otrzymanego remote=4; usunięcie środkowej karty nie zmienia ID/visualData innych. Nowe karty mają różne clientKey bez serializacji do API; pusty szkic wysyła tylko tytuł bez items. RED potwierdzony brakiem modułu, GREEN: 4 testy.
+  Asercje `keeps_base_revision_after_remote_refresh`:
+  ```ts
+  expect(toDraftPatch(snapshotFromRevision3).expectedEditNumber).toBe(3);
+  expect(toDraftPatch(snapshotAfterMiddleRemoval).items?.map(item => item.id)).toEqual([firstId,lastId]);
+  expect(toDraftPatch(emptySnapshot).items).toBeUndefined();
+  ```
+- [x] E2E polling: pending media podtrzymują GET; okno A wpisuje poprawkę, B zapisuje wersję 4, A odbiera ją pollingiem, PATCH A wysyła 3 i dostaje 409. Najpierw poprawiono helper sesji; właściwy RED: oczekiwano 409, otrzymano 200.
+- [x] Oddzielić snapshot od aktualnych mediów. Aktualizować bazę tylko przy braku dirty i nierozstrzygniętego konfliktu. Media mapować item.id → revisionId; nowa lub zmieniona lokalnie karta nie uruchamia mediów dla innej pozycji. Podczas dirty zablokować regenerację/omit do zapisu.
+- [x] Zapis ma synchroniczną blokadę ref i używa snapshotu. Pola, dodawanie/usuwanie, operacje mediów zablokowane podczas zapisu. Sukces PATCH daje zapisany DraftDto jako bazę; GET mediów to oddzielny refresh z osobnym komunikatem błędu. Stare odpowiedzi po unmount/zmianie deckId lub nowszym GET nie modyfikują bieżącego formularza.
+- [x] E2E delayed PATCH blokuje wszystkie pola; PATCH sukces + GET fail daje dirty=false i brak powtórnego zapisu. RED dla osobnego komunikatu refreshu: najpierw test odebrał surowe „refresh unavailable”. Blokada pól była już obecna w bazowym `busy` i została objęta testem regresyjnym; nie zmieniała się w tej części.
+- [x] GREEN: unit 4/4, E2E 3/3, `pnpm typecheck`.
+- [x] Commit `fix: keep draft edits tied to their original revision` (`98139b5`).
+
+### Task 2: Kontrola wyjścia (B2)
+
+**Files:** Create `apps/web/src/parent/{useParentLeaveGuard.ts,LeaveEditorDialog.tsx}`; Modify `ParentApp.tsx`, `DecksPanel.tsx`, `DeckEditor.tsx`, `apps/web/src/app/globals.css`, `messages.ts`, `tests/e2e/parent-edit-protection.spec.ts`.
+
+**Interfaces:** `EditorLeaveState = {dirty:boolean; busy:boolean}`. `useParentLeaveGuard(): {register:(state:EditorLeaveState)=>void; requestLeave:(action:()=>void|Promise<void>)=>void; pending:boolean; stay:()=>void; leave:()=>Promise<void>}`. ParentApp posiada guard, DecksPanel przekazuje callbacki do edytora; unmount resetuje rejestrację. Dialog przyjmuje open/onStay/onLeave.
+
+- [x] E2E: dirty + powrót/zakładka/logout daje dialog; Zostań i Escape zachowują wpisy i fokus; Opuść wykonuje akcję raz bez zapisu. Busy blokuje akcję bez kolejkowania logoutu. RED potwierdzony brakiem dialogu po powrocie.
+- [x] E2E sprawdza `beforeunload` tylko dla dirty przez dispatch zdarzenia, zachowanie wpisu i czysty reload po zapisie. Próba natywnego dirty reload w Playwright blokowała test na nierozstrzygniętej nawigacji po dismiss; nie użyto tekstu dialogu przeglądarki.
+  Asercje `leave_stay_preserves_local_text` po kliknięciu powrotu i „Zostań”:
+  ```ts
+  await expect(page.getByTestId("leave-editor-dialog")).not.toBeVisible();
+  await expect(page.getByTestId("item-target-0")).toHaveValue("local correction");
+  expect(patchRequests).toHaveLength(0);
+  ```
+- [x] Implementować wspólny guard i natywny modal `<dialog>`: natywny focus trap, Escape=Zostań, powrót fokusu. Beforeunload tylko dirty, cleanup przy unmount; brak storage. `DecksPanel.onAuthExpired:()=>void` przekazywany przez ParentApp dla późniejszego planu C.
+- [x] GREEN E2E 6/6, `pnpm typecheck`.
+- [x] Commit `feat: protect unsaved parent edits when leaving` (`e55dcca`).
+
+### Task 3: Konflikt i porównanie (B3)
+
+**Files:** Create `apps/web/src/parent/DeckConflictPanel.tsx`; Modify `deck-editor-state.ts`, `deck-editor-state.test.ts`, `DeckEditor.tsx`, `messages.ts`, `globals.css`, `tests/e2e/parent-edit-protection.spec.ts`, `docs/{SPEC,architecture,folder-structure,implementation-plan}.md`.
+
+**Interfaces:** `EditorConflict = {local:EditorSnapshot; remote:DeckDto|null; loadError:string|null}`. `compareEditorForms(local:EditableDeckForm,remote:EditableDeckForm): {title:{local:string;remote:string};rows:{key:string;local:EditableDeckItem|null;remote:EditableDeckItem|null}[]}`. Panel bierze conflict i callbacki onReloadRemote/onLoadRemote/onDismissComparison; nie wykonuje PATCH.
+
+- [x] Unit comparison: usunięta karta tylko z jednej strony; dwie nowe bez ID nie zlewają się, przesunięta istniejąca karta nadal dopasowana po id. RED unit (`compareEditorForms is not a function`), potem helper; 5/5.
+  Asercje `compares_removed_and_new_cards_by_identity`:
+  ```ts
+  expect(comparison.rows.find(row => row.key === removedId)?.local).toBeNull();
+  expect(comparison.rows.filter(row => row.key.startsWith("local:")).length).toBe(2);
+  ```
+  Lokalne clientKey nadać z prefiksem `local:`; existing keys równe item.id.
+- [x] E2E dwóch okien: 409 zachowuje inputs; aktualna wersja osobno; brak automatycznego PATCH. Wczytanie remote wymaga potwierdzenia, porównanie ze starym local zostaje do przepisania wybranych wartości. Drugi konflikt zachowuje najnowszy lokalny snapshot.
+- [x] E2E: opublikowany remote nie przyjmuje zmian; A tworzy nową wersję po potwierdzeniu i zachowuje lokalną poprawkę do przepisania. Remote GET failed zachowuje local i daje retry odczytu. RED w `parent-edit-protection.spec.ts` dla braku panelu konfliktu.
+- [x] Implementować zachowanie dirty po 409, osobny GET i blokadę zapisu do jawnego przejścia na remote. Porównanie przechowywane w pamięci; stare nieprzeniesione poprawki nadal objęte leave guardem. Zamknięcie panelu wymaga potwierdzenia; po udanym zapisie rodzic może jawnie zakończyć porównanie. Backendowy optimistic locking bez zmian.
+- [x] GREEN: unit 5/5, conflict E2E 7/7, manual-deck-flow i parent-flow 24/24, `pnpm typecheck`. Viewporty 390×844, 768×1024 i 1440×900 obejrzane; potwierdzenia/fokus obsłużone w dialogach.
+- [x] Commit `feat: preserve parent edits across draft conflicts`.
+
+## Checklista
+
+- [x] Self-review: §4, wersja bazowa, tożsamości, wszystkie wyjścia i Review Focus.
+- [ ] Akceptacja planu i wykonania.
+- [x] B1–B3 z RED/GREEN i commitami; odbiór wspólny, w tym R06.

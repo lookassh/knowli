@@ -85,6 +85,7 @@ test("saves an empty draft title without sending an items array", async ({ page 
   await expect(page.getByTestId("editor-title")).toHaveValue(title);
   expect(patchBody).toBeDefined();
   expect(patchBody).not.toHaveProperty("items");
+  await expect(page.getByTestId("save-items")).toBeEnabled();
   await page.getByTestId("editor-back").click();
   await page.getByTestId("deck-row-0").click();
   await expect(page.getByTestId("editor-title")).toHaveValue(title);

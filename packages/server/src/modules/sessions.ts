@@ -24,6 +24,7 @@ import {
   childSkillProgress,
   deckVersions,
   decks,
+  eventExposures,
   familySettings,
   itemRevisions,
   itemRevisionSkills,
@@ -36,6 +37,7 @@ import { AppError } from "../errors";
 import {
   selectTask,
   type ScheduleCandidate,
+  type ScheduleReason,
   type SkillSnapshot,
   type TaskPlan,
 } from "../domain/scheduler";
@@ -247,6 +249,7 @@ export async function startSession(services: Services, input: SessionInput): Pro
     )[0];
     const context: SessionContextShape = {
       timezone: await readTimezone(tx),
+      testDate: assignment.testDate,
       previousContact: await previousContactSnapshot(tx, valid.childId, version.id, now),
       reservations: [],
       settledChecks: [],
@@ -399,7 +402,8 @@ async function planNextTask(
       context: sessionTasks.context,
     })
     .from(sessionTasks)
-    .where(eq(sessionTasks.sessionId, session.id));
+    .where(eq(sessionTasks.sessionId, session.id))
+    .orderBy(asc(sessionTasks.ordinal));
   for (const row of taskRows) {
     const stats = statsByRevision.get(row.itemRevisionId);
     if (!stats) continue;
@@ -475,6 +479,34 @@ async function planNextTask(
   // porządek rotacji utrwalania na rozpoczętym zestawie
   const sessionContext = contextOf(session);
 
+  // Każda ujawniona treść (cel lub dystraktor) ma wcześniej zapieczętowany
+  // event_exposures. Używamy klucza odpowiedzi, nie samej historii zadań,
+  // żeby nie uznać nieujawnionego/legacy tasku za znane słowo.
+  const targetKeysByRevision = new Map(
+    revisions.map((revision) => {
+      const item = items.get(revision.id)!;
+      return [revision.id, computeTargetKey(item.target, item.targetLocale)] as const;
+    }),
+  );
+  const historicalExposureRows = await tx
+    .select({ targetKey: eventExposures.targetKey })
+    .from(eventExposures)
+    .innerJoin(learningEvents, eq(learningEvents.id, eventExposures.eventId))
+    .where(
+      and(
+        eq(eventExposures.childId, session.childId),
+        eq(learningEvents.sealed, true),
+        inArray(eventExposures.targetKey, [...targetKeysByRevision.values()]),
+      ),
+    );
+  const historicallyExposed = new Set(historicalExposureRows.map((row) => row.targetKey));
+
+  const recentAssessedReasons = taskRows
+    .filter((row) => row.exerciseType !== "exposure")
+    .map((row) => (row.context as { reason?: unknown } | null)?.reason)
+    .filter((reason): reason is ScheduleReason => typeof reason === "string")
+    .slice(-2);
+
   // Etapy już wprowadzone zadaniem w dowolnej sesji dziecka (SPEC §13): pierwsze
   // recall/wymowa nie może czekać na postęp, którego bez tego zadania nie będzie;
   // technicznie nieoceniona próba wymowy nie zapętla wprowadzania.
@@ -528,6 +560,12 @@ async function planNextTask(
       readingDirections: stats.readingDirections,
       practiceMix: stats.practiceMix,
       introducedSkills: introducedByRevision.get(r.id) ?? { recall: false, pronunciation: false },
+      hasBeenPresented: historicallyExposed.has(targetKeysByRevision.get(r.id)!),
+      testPreparationIssued: taskRows.some(
+        (row) =>
+          row.itemRevisionId === r.id &&
+          (row.context as { reason?: unknown } | null)?.reason === "test-preparation",
+      ),
     };
   });
   const peers = candidates.map((c) => ({
@@ -548,6 +586,10 @@ async function planNextTask(
     peers,
     reservedTargetKeys: sessionContext.reservations,
     settledCheckTargetKeys: sessionContext.settledChecks,
+    ...(sessionContext.testDate === undefined
+      ? {}
+      : { testPreparation: { testDate: sessionContext.testDate, timezone: sessionContext.timezone } }),
+    recentAssessedReasons,
   });
   if (!plan) {
     return null;

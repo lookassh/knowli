@@ -1,4 +1,5 @@
 import { computeTargetKey } from "./target-key";
+import { isTestPreparationWindow } from "./test-preparation";
 import type { ExerciseType, Policy, ProgressStatus, ReadingDirection, Skill } from "./types";
 
 /**
@@ -48,6 +49,10 @@ export interface ScheduleCandidate {
   practiceMix: { listening: number; reading: number };
   /** Etapy już wprowadzone zadaniem w jakiejkolwiek sesji dziecka. */
   introducedSkills: { recall: boolean; pronunciation: boolean };
+  /** Czy treść tego elementu była wcześniej ujawniona dziecku. */
+  hasBeenPresented?: boolean;
+  /** Czy zadanie przygotowawcze dla tego celu wydano już w tej sesji. */
+  testPreparationIssued?: boolean;
 }
 
 /** Inne elementy wersji — pula dystraktorów. */
@@ -73,6 +78,10 @@ export interface ScheduleInput {
   reservedTargetKeys: readonly string[];
   /** Klucze sprawdzeń rozliczonych w tej sesji (wykonane albo pominięte). */
   settledCheckTargetKeys?: readonly string[];
+  /** Prywatny, przypięty do sesji kontekst przygotowania do sprawdzianu. */
+  testPreparation?: { testDate: string | null; timezone: string };
+  /** Ostatnie dwa oceniane powody w kolejności chronologicznej. */
+  recentAssessedReasons?: readonly ScheduleReason[];
 }
 
 export interface PlannedOption {
@@ -86,6 +95,8 @@ export type ScheduleReason =
   | "due-check"
   | "support"
   | "retry-after-support"
+  | "test-preparation"
+  | "test-preparation-break"
   | "stage-introduction"
   | "new-material"
   | "new-practice"
@@ -360,6 +371,47 @@ function keyOfCandidate(c: ScheduleCandidate): string {
   return keyOf(c.target, c.targetLocale);
 }
 
+function testPreparationPriority(candidate: ScheduleCandidate): readonly [number, number, number, number] {
+  const recall = candidate.progress.recall;
+  const spelling = candidate.progress.spelling;
+  const needsReconfirmation = Number(
+    recall?.status === "needs_reconfirmation" || spelling?.status === "needs_reconfirmation",
+  );
+  const spellingNeeded = Number(
+    spelling !== undefined && spelling.status !== "not_assessed" && spelling.status !== "mastered",
+  );
+  const recallNeeded = Number(
+    recall !== undefined && recall.status !== "not_assessed" && recall.status !== "mastered",
+  );
+  return [-needsReconfirmation, -spellingNeeded, -recallNeeded, candidate.position];
+}
+
+function comparePriority(a: readonly number[], b: readonly number[]): number {
+  for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
+    const difference = (a[index] ?? 0) - (b[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+
+function testPreparationCandidate(
+  candidates: readonly ScheduleCandidate[],
+  reserved: ReadonlySet<string>,
+  settled: ReadonlySet<string>,
+): ScheduleCandidate | null {
+  return candidates
+    .filter((candidate) =>
+      candidate.hasBeenPresented === true &&
+      recognitionSucceeded(candidate) &&
+      !(candidate.progress.recall?.status === "mastered" && candidate.progress.spelling?.status === "mastered") &&
+      candidate.testPreparationIssued !== true &&
+      !reserved.has(keyOfCandidate(candidate)) &&
+      !settled.has(keyOfCandidate(candidate)),
+    )
+    .slice()
+    .sort((a, b) => comparePriority(testPreparationPriority(a), testPreparationPriority(b)))[0] ?? null;
+}
+
 export function selectTask(input: ScheduleInput): TaskPlan | null {
   if (input.candidates.length === 0 || input.assessedRemaining <= 0) {
     return null;
@@ -425,6 +477,38 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
       reason: "retry-after-support",
       keepsReservations,
     };
+  }
+
+  const recentReasons = input.recentAssessedReasons ?? [];
+  const needsPreparationBreak =
+    recentReasons.length >= 2 && recentReasons.slice(-2).every((reason) => reason === "test-preparation");
+  if (needsPreparationBreak) {
+    const safeKnown = practicePool(input.candidates).find((candidate) => !reserved.has(keyOfCandidate(candidate)));
+    if (safeKnown) {
+      return recognitionPlan(safeKnown, input, reserved, keepsReservations, "test-preparation-break", true);
+    }
+  }
+
+  if (
+    !needsPreparationBreak &&
+    input.testPreparation &&
+    isTestPreparationWindow({
+      now: input.now,
+      testDate: input.testPreparation.testDate,
+      timezone: input.testPreparation.timezone,
+    })
+  ) {
+    const target = testPreparationCandidate(input.candidates, reserved, settled);
+    if (target) {
+      return {
+        itemRevisionId: target.itemRevisionId,
+        exerciseType: "recall",
+        revealsTargetKeys: [],
+        assessed: true,
+        reason: "test-preparation",
+        keepsReservations,
+      };
+    }
   }
 
   // 3.5 Wprowadzanie kolejnych etapów (SPEC §13): rozpoznany element przechodzi
@@ -585,7 +669,7 @@ function recognitionPlan(
   input: ScheduleInput,
   reserved: ReadonlySet<string>,
   keepsReservations: string[],
-  reason: "filler-practice" | "extra-practice",
+  reason: "filler-practice" | "extra-practice" | "test-preparation-break",
   preferListening: boolean,
 ): TaskPlan {
   if (preferListening) {

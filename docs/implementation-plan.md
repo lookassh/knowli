@@ -1,5 +1,9 @@
 # Rodzinny asystent nauki — plan implementacji MVP
 
+## Uzupełnienie — niezawodność panelu rodzica (2026-10-09)
+
+Panel zachowuje bazowy numer edycji podczas pollingu, ostrzega przed utratą niezapisanych zmian i po konflikcie pokazuje lokalną oraz zdalną wersję. Rodzic jawnie wybiera zdalną wersję, ręcznie przenosi potrzebne poprawki i zatwierdza zakończenie porównania. Nowa wersja po publikacji używa istniejącego przepływu szkicu. Szczegóły i dowody: `superpowers/plans/2026-10-09-parent-edit-protection.md`; testy `parent-edit-protection.spec.ts` (7/7), `manual-deck-flow.spec.ts` i `parent-flow.spec.ts` (24/24), `pnpm typecheck`. Natywne zachowanie `beforeunload` zależy od przeglądarki; automatyzacja sprawdza samo zdarzenie i czysty reload po zapisie.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Wybór trybu należy do użytkownika przed rozpoczęciem implementacji; bieżące zadanie obejmuje wyłącznie dokumentację.
 
 **Goal:** Uruchomić rodzinne MVP, w którym rodzic przygotowuje i zatwierdza materiał, a dzieci uczą się z oddzielną historią, wymową i pisownią.
@@ -64,7 +68,7 @@ Implementacja contracts definiuje typy runtime przez Zod, a TypeScript wyprowadz
 | EvaluationContext | receivedAt, policy, lastExposureAt, firstTry, assistance, previousSessionContactAt, timezone; zamrożone przy przyjęciu próby; server/domain/types.ts |
 | Grade | wyniki per skill: outcome, reason, independent, confirmationEligible, details; server/domain/types.ts |
 | History / Progress | uporządkowane oceny z czasem/polityką / status, streak, nextReviewAt; server/domain/types.ts |
-| ScheduleInput / TaskPlan | przypięta treść, postęp, trudności, budżet, termin, rezerwacje celów samodzielnego sprawdzenia, now / element, exerciseType, wsparcie; server/domain/types.ts |
+| ScheduleInput / TaskPlan | przypięta treść, postęp, trudności, budżet, termin, rezerwacje celów samodzielnego sprawdzenia, now / element, exerciseType, wsparcie; server/domain/scheduler.ts |
 | AudioInput / SpeechEvidence | krótkotrwałe bytes, mime, locale / transkrypcja i osobny wynik wymowy; server/ports/ai.ts |
 | ProgressDto | osobne umiejętności, stan nieoceniony, trudne elementy, kierunkowe pomyłki; contracts/progress.ts |
 
@@ -325,3 +329,21 @@ poziomego overflow.
 ### Uzupełnienie: edycja profilu dziecka (2026-10-09)
 
 Kontrakt `updateChild(s: Services, childId: string, input: ChildPatch): Promise<ChildDto>` i PATCH profilu uzupełniają zadanie 1. Testy `auth-profiles.test.ts` obejmują częściową aktualizację, bezpieczeństwo, walidację i dwóch klientów. `history.test.ts` rozszerza R03: edycja zachowuje pełne rekordy historii, politykę, przypisania i dane drugiego dziecka, podczas gdy DELETE nadal usuwa historię przez CASCADE. Plan szczegółowy: `superpowers/plans/2026-10-09-child-profile-edit.md`.
+
+### Uzupełnienie: przygotowanie do sprawdzianu i izolacja runnerów (2026-10-09)
+
+Runner Vitest/Playwright przyjmuje walidowany `UMIEM_TEST_RUN_ID` oraz `UMIEM_E2E_PORT`, a kontener E2E, prefiks kontenerów integracyjnych i plik `.world` są rozdzielane dla danego przebiegu. Domena `test-preparation.ts` liczy lokalne okno od początku dnia sprawdzianu w IANA timezone, bez zakładania stałego offsetu ani 24-godzinnego dnia. Nowa sesja zapisuje datę z przypisania w prywatnym kontekście; scheduler korzysta z pieczętowanej historii ekspozycji, pozostawia należne sprawdzenia/wsparcie/poprawkę wyżej, wydaje pisemne Recall dla znanych słów i wstawia bezpieczne rozpoznawanie po dwóch kolejnych próbach przygotowawczych. Zadania generacji, POST Kid API, schemat bazy i DTO publiczne nie są zmieniane.
+
+### Uzupełnienie: ochrona zmian rodzica i ponawianie generacji (2026-10-09)
+
+Plan wykonania: `docs/superpowers/plans/2026-10-09-learning-and-parent-reliability.md`.
+Edycja zachowuje bazową rewizję i lokalne poprawki przy konflikcie; wyjście
+w stanie dirty wymaga decyzji rodzica. Generowanie po utracie odpowiedzi
+ponawia ten sam payload i klucz, waliduje oba UUID odpowiedzi 202 oraz otwiera
+otrzymany edytor niezależnie od odświeżenia listy. Nie dodano endpointu ani
+trwałego stanu klienta. E2E sprawdzają utraconą odpowiedź i jedną operację
+w PostgreSQL, uszkodzone potwierdzenia, błędy transportu/autoryzacji,
+podwójne kliknięcie, refresh fail i nowy klucz dla kolejnej generacji.
+Pełny odbiór 2026-10-09: unit 288/288, integration 139/139, E2E 54/54,
+typecheck sześciu projektów i produkcyjny build przeszły. Testowa baza
+potwierdziła jeden generation_run i jeden deck dla ponowionego klucza.

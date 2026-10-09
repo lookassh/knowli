@@ -8,38 +8,23 @@ import {
   type DraftDto,
   type VisualType,
 } from "@learning/contracts";
+import {
+  createEditorSnapshot,
+  createNewEditableItem,
+  sameEditableItem,
+  toDraftPatch,
+  type EditableDeckForm,
+  type EditorSnapshot,
+} from "./deck-editor-state";
 import { apiFetch, errorMessage } from "./api";
-
-interface EditableItem {
-  id: string | undefined;
-  source: string;
-  target: string;
-  accepted: string;
-  example: string;
-  visualType: VisualType;
-  locales: { source: string; target: string };
-}
+import type { EditorLeaveState } from "./useParentLeaveGuard";
+import DeckConflictPanel, { type EditorConflict } from "./DeckConflictPanel";
 
 const VISUAL_TYPES: VisualType[] = ["image", "color", "number", "sequence", "none"];
 
 /** DTO używa "approved", katalog komunikatów kluczem "ready". */
 function mediaStateText(catalogue: Record<string, string>, state: string): string {
   return catalogue[state === "approved" ? "ready" : state] ?? "";
-}
-
-function toEditable(draft: DraftDto): { title: string; items: EditableItem[] } {
-  return {
-    title: draft.title,
-    items: draft.items.map((item) => ({
-      id: item.id,
-      source: item.source,
-      target: item.target,
-      accepted: item.acceptedAnswers.join(", "),
-      example: item.example ?? "",
-      visualType: item.visualType,
-      locales: item.locales,
-    })),
-  };
 }
 
 /**
@@ -52,34 +37,132 @@ export default function DeckEditor({
   deckId,
   childrenList,
   onBack,
+  onEditorStateChange,
+  onAuthExpired,
 }: {
   deckId: string;
   childrenList: ChildDto[];
   onBack: () => void;
+  onEditorStateChange: (state: EditorLeaveState) => void;
+  onAuthExpired: () => void;
 }) {
   const [deck, setDeck] = useState<DeckDto | null>(null);
-  const [form, setForm] = useState<{ title: string; items: EditableItem[] } | null>(null);
+  const [form, setForm] = useState<EditableDeckForm | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [conflict, setConflict] = useState<EditorConflict | null>(null);
+  const [remoteApplied, setRemoteApplied] = useState(false);
   const [assignDates, setAssignDates] = useState<Record<string, string>>({});
   const dirty = useRef(false);
+  const conflictActive = useRef(false);
+  const busyRef = useRef(false);
+  const baseSnapshot = useRef<EditorSnapshot | null>(null);
+  const baseRevisionIds = useRef(new Map<string, string>());
+  const loadVersion = useRef(0);
+  const deckIdRef = useRef(deckId);
+  deckIdRef.current = deckId;
+  const newKey = useCallback(() => crypto.randomUUID(), []);
+  const setBusyState = (value: boolean) => {
+    busyRef.current = value;
+    setBusy(value);
+    onEditorStateChange({ dirty: dirty.current, busy: value });
+  };
   const markDirty = () => {
     dirty.current = true;
     setIsDirty(true);
+    onEditorStateChange({ dirty: true, busy: busyRef.current });
   };
 
-  const load = useCallback(async () => {
+  useEffect(() => {
+    onEditorStateChange({ dirty: isDirty || conflict !== null, busy });
+    return () => onEditorStateChange({ dirty: false, busy: false });
+  }, [onEditorStateChange, isDirty, busy, conflict]);
+
+  const load = useCallback(async (): Promise<boolean> => {
+    const requestVersion = ++loadVersion.current;
     try {
-      setDeck(await apiFetch<DeckDto>("GET", `/api/v1/parent/decks/${deckId}`));
+      const result = await apiFetch<DeckDto>("GET", `/api/v1/parent/decks/${deckId}`);
+      if (requestVersion === loadVersion.current && deckIdRef.current === deckId && !dirty.current && !conflictActive.current) {
+        setDeck(result);
+        return true;
+      }
+      return true;
     } catch (cause) {
-      setError(errorMessage(cause));
+      if (requestVersion === loadVersion.current && deckIdRef.current === deckId && !dirty.current && !conflictActive.current) {
+        setError(errorMessage(cause));
+      }
+      return false;
     }
   }, [deckId]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  const refreshConflict = useCallback(async (local: EditorSnapshot) => {
+    conflictActive.current = true;
+    setConflict({ local, remote: null, loadError: null });
+    try {
+      const remote = await apiFetch<DeckDto>("GET", `/api/v1/parent/decks/${deckId}`);
+      setConflict((current) => current ? { ...current, remote, loadError: null } : current);
+      setError(null);
+    } catch {
+      setConflict((current) => current ? { ...current, loadError: messages.decks.conflictLoadFailed } : current);
+      setError(messages.decks.conflictDetected);
+    }
+  }, [deckId]);
+
+  const applyRemoteConflict = async (remote: DeckDto) => {
+    setBusyState(true);
+    setError(null);
+    try {
+      let current = remote;
+      if (!current.draft && current.published) {
+        await apiFetch("POST", `/api/v1/parent/decks/${deckId}/draft`);
+        current = await apiFetch<DeckDto>("GET", `/api/v1/parent/decks/${deckId}`);
+      }
+      if (!current.draft) {
+        setConflict((existing) => existing ? { ...existing, remote: current, loadError: messages.decks.conflictNotFound } : existing);
+        return;
+      }
+      const snapshot = createEditorSnapshot(current.draft, newKey);
+      baseSnapshot.current = snapshot;
+      baseRevisionIds.current = new Map(current.draft.items.flatMap((item) => item.id ? [[item.id, item.revisionId] as const] : []));
+      setDeck(current);
+      setForm(snapshot.form);
+      dirty.current = false;
+      setIsDirty(false);
+      setRemoteApplied(true);
+      setConflict((existing) => existing ? { ...existing, remote: current, loadError: null } : existing);
+    } catch (cause) {
+      setConflict((existing) => existing ? { ...existing, loadError: errorMessage(cause) } : existing);
+    } finally {
+      setBusyState(false);
+    }
+  };
+
+  const finishConflict = (remote: DeckDto) => {
+    conflictActive.current = false;
+    const latest = remote.draft ?? remote.published;
+    setDeck(remote);
+    if (remote.draft && latest) {
+      baseSnapshot.current = createEditorSnapshot(remote.draft, newKey);
+      baseRevisionIds.current = new Map(remote.draft.items.flatMap((item) => item.id ? [[item.id, item.revisionId] as const] : []));
+      setForm(baseSnapshot.current.form);
+    } else if (latest) {
+      baseSnapshot.current = null;
+      setForm(createEditorSnapshot(latest, newKey).form);
+    } else {
+      baseSnapshot.current = null;
+      setForm(null);
+    }
+    dirty.current = false;
+    setIsDirty(false);
+    setRemoteApplied(false);
+    setConflict(null);
+    setError(null);
+  };
 
   const draft = deck?.draft ?? null;
   const active = draft ?? deck?.published ?? null;
@@ -103,8 +186,18 @@ export default function DeckEditor({
     if (!active || dirty.current) {
       return;
     }
-    setForm(toEditable(active));
-  }, [active?.id, active?.editNumber, active]);
+    if (draft) {
+      baseSnapshot.current = createEditorSnapshot(draft, newKey);
+      baseRevisionIds.current = new Map(draft.items.flatMap((item) => item.id ? [[item.id, item.revisionId] as const] : []));
+      setForm(baseSnapshot.current.form);
+    } else {
+      setForm(createEditorSnapshot(active, newKey).form);
+    }
+  }, [active, draft, newKey]);
+
+  useEffect(() => () => {
+    loadVersion.current += 1;
+  }, [deckId]);
 
   const mutate = (field: "source" | "target" | "accepted" | "example" | "title", value: string, index?: number) => {
     markDirty();
@@ -147,10 +240,7 @@ export default function DeckEditor({
       const locales = current.items[0]?.locales ?? { source: "pl-PL", target: "en-GB" };
       return {
         ...current,
-        items: [
-          ...current.items,
-          { id: undefined, source: "", target: "", accepted: "", example: "", visualType: "image", locales },
-        ],
+        items: [...current.items, createNewEditableItem(locales, newKey)],
       };
     });
   };
@@ -165,7 +255,8 @@ export default function DeckEditor({
   };
 
   const save = async () => {
-    if (!draft || !form) {
+    const currentBase = baseSnapshot.current;
+    if (!draft || !form || !currentBase || busyRef.current || !dirty.current || currentBase.draftId !== draft.id || (conflict !== null && !remoteApplied)) {
       return;
     }
     // pusta karta lub tytuł odrzuciłyby cały PATCH po stronie Zoda; blokujemy
@@ -178,45 +269,44 @@ export default function DeckEditor({
       setError(messages.decks.itemIncomplete);
       return;
     }
-    setBusy(true);
+    const snapshot = { ...currentBase, form: structuredClone(form) };
+    busyRef.current = true;
+    setBusyState(true);
     setError(null);
     try {
-      await apiFetch("PATCH", `/api/v1/parent/drafts/${draft.id}`, {
-        title: form.title.trim(),
-        ...(form.items.length > 0 ? { items: form.items.map((item) => ({
-          ...(item.id ? { id: item.id } : {}),
-          source: item.source,
-          target: item.target,
-          acceptedAnswers: item.accepted
-            .split(",")
-            .map((variant) => variant.trim())
-            .filter((variant) => variant.length > 0),
-          locales: item.locales,
-          ...(item.example ? { example: item.example } : {}),
-          visualType: item.visualType,
-        })) } : {}),
-        expectedEditNumber: draft.editNumber,
-      });
+      const saved = await apiFetch<DraftDto>("PATCH", `/api/v1/parent/drafts/${snapshot.draftId}`, toDraftPatch(snapshot));
+      baseSnapshot.current = createEditorSnapshot(saved, newKey);
+      baseRevisionIds.current = new Map(saved.items.flatMap((item) => item.id ? [[item.id, item.revisionId] as const] : []));
+      setForm(baseSnapshot.current.form);
       dirty.current = false;
+      onEditorStateChange({ dirty: false, busy: true });
       setIsDirty(false);
-      await load();
+      setDeck((current) => current ? { ...current, draft: saved, title: saved.title } : current);
+      setConflict((current) => current?.remote
+        ? { ...current, remote: { ...current.remote, draft: saved, title: saved.title }, loadError: null }
+        : current);
+      if (!(await load())) {
+        setError(messages.decks.savedRefreshFailed);
+      }
     } catch (cause) {
-      setError(errorMessage(cause));
-      if ((cause as { code?: string }).code === "conflict") {
-        dirty.current = false;
-        setIsDirty(false);
-        await load();
+      if (["conflict", "immutable"].includes((cause as { code?: string }).code ?? "")) {
+        const localSnapshot = { ...snapshot, form: structuredClone(form) };
+        setError(messages.decks.conflictDetected);
+        setRemoteApplied(false);
+        void refreshConflict(localSnapshot);
+      } else {
+        setError(errorMessage(cause));
       }
     } finally {
-      setBusy(false);
+      setBusyState(false);
     }
   };
 
   const publish = async () => {
-    if (!draft || busy || isDirty || draft.items.length === 0) {
+    if (!draft || busy || isDirty || conflict !== null || draft.items.length === 0) {
       return;
     }
-    setBusy(true);
+    setBusyState(true);
     setError(null);
     try {
       await apiFetch("POST", `/api/v1/parent/drafts/${draft.id}/publish`, {
@@ -228,12 +318,12 @@ export default function DeckEditor({
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
-      setBusy(false);
+      setBusyState(false);
     }
   };
 
   const archive = async () => {
-    setBusy(true);
+    setBusyState(true);
     setError(null);
     try {
       await apiFetch("POST", `/api/v1/parent/decks/${deckId}/archive`);
@@ -241,14 +331,14 @@ export default function DeckEditor({
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
-      setBusy(false);
+      setBusyState(false);
     }
   };
 
   // edycja opublikowanego materiału zaczyna się od nowego szkicu (SPEC §84):
   // opublikowana wersja prowadzi sesje dziecka do czasu publikacji nowej
   const startNewVersion = async () => {
-    setBusy(true);
+    setBusyState(true);
     setError(null);
     try {
       await apiFetch("POST", `/api/v1/parent/decks/${deckId}/draft`);
@@ -257,7 +347,7 @@ export default function DeckEditor({
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
-      setBusy(false);
+      setBusyState(false);
     }
   };
 
@@ -356,6 +446,16 @@ export default function DeckEditor({
         </p>
       )}
 
+      {conflict && (
+        <DeckConflictPanel
+          conflict={conflict}
+          busy={busy}
+          onRetry={() => void refreshConflict(conflict.local)}
+          onLoadRemote={(remote) => void applyRemoteConflict(remote)}
+          onDismissComparison={finishConflict}
+        />
+      )}
+
       {form && (
         <label>
           {messages.decks.titleLabel}
@@ -369,12 +469,14 @@ export default function DeckEditor({
       )}
 
       {form?.items.map((item, index) => {
-        const revisionId = active?.items[index]?.revisionId ?? "";
+        const original = baseSnapshot.current?.form.items.find((baseItem) => baseItem.clientKey === item.clientKey);
+        const itemUnchanged = original !== undefined && sameEditableItem(item, original);
+        const revisionId = itemUnchanged && item.id ? baseRevisionIds.current.get(item.id) ?? "" : "";
         const targetAudio = assetOf(revisionId, "target_audio");
         const exampleAudio = assetOf(revisionId, "example_audio");
         const illustration = assetOf(revisionId, "illustration");
         return (
-          <article className="card" key={revisionId || index} data-testid={`item-card-${index}`}>
+          <article className="card" key={item.clientKey} data-testid={`item-card-${index}`}>
             {editable && (
               <div className="row">
                 <button
@@ -458,7 +560,7 @@ export default function DeckEditor({
                   <button
                     type="button"
                     data-testid={`item-regen-audio-${index}`}
-                    disabled={busy}
+                    disabled={busy || isDirty}
                     onClick={() => regenerate(revisionId, "target_audio")}
                   >
                     {messages.decks.regenerateAudio}
@@ -499,7 +601,7 @@ export default function DeckEditor({
                     <button
                       type="button"
                       data-testid={`item-omit-image-${index}`}
-                      disabled={busy}
+                      disabled={busy || isDirty}
                       onClick={() => omitIllustration(revisionId)}
                     >
                       {messages.decks.omitImage}
@@ -509,7 +611,7 @@ export default function DeckEditor({
                     <button
                       type="button"
                       data-testid={`item-regen-image-${index}`}
-                      disabled={busy}
+                      disabled={busy || isDirty}
                       onClick={() => regenerate(revisionId, "illustration")}
                     >
                       {messages.decks.regenerateImage}
@@ -546,13 +648,13 @@ export default function DeckEditor({
 
       {editable && (
         <div className="row">
-          <button type="button" data-testid="save-items" onClick={save} disabled={busy}>
+          <button type="button" data-testid="save-items" onClick={save} disabled={busy || (conflict !== null && !remoteApplied)}>
             {messages.decks.save}
           </button>
-          <button type="button" data-testid="publish-deck" onClick={publish} disabled={busy || isDirty || (draft?.items.length ?? 0) === 0}>
+          <button type="button" data-testid="publish-deck" onClick={publish} disabled={busy || isDirty || conflict !== null || (draft?.items.length ?? 0) === 0}>
             {messages.decks.publish}
           </button>
-          <button type="button" data-testid="archive-deck" onClick={archive} disabled={busy}>
+          <button type="button" data-testid="archive-deck" onClick={archive} disabled={busy || conflict !== null}>
             {messages.decks.archive}
           </button>
         </div>

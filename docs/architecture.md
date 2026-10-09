@@ -118,6 +118,15 @@ Zestaw może zostać wycofany bez fizycznego usuwania jego rewizji. Usunięcie e
 6. Publikacja jest transakcją: sprawdza wersję draftu, kompletność obowiązkowego audio, zatwierdzenie treści i stan obrazów. Obraz może być świadomie pominięty. Wymagany TTS nie może być pominięty dla pełnego zestawu językowego.
 7. Transakcja ustawia stan published i aktualny wskaźnik deck.published_version_id. Nie podmienia wersji aktywnych sesji.
 
+Panel klienta przechowuje polecenie generacji i jego klucz do rozstrzygnięcia
+niepewnej odpowiedzi transportowej. Retry ręczne wysyła identyczny payload;
+klient uznaje 202 dopiero po walidacji UUID runu i zestawu, a następnie otwiera
+edytor. Niepoprawna odpowiedź, 5xx lub utrata sieci pozostają niepewne.
+Walidacja 400 i odmowa 401/403 kończą bieżące polecenie. Po potwierdzonym
+sukcesie odświeżenie listy nie uruchamia ponownej generacji. Stan klienta nie
+jest utrwalany i znika po przeładowaniu strony; kontrakt HTTP i deduplikacja
+serwerowa pozostają bez zmian.
+
 Domyślne ograniczenia MVP: do 50 elementów na zestaw, do 120 znaków celu/źródła, 300 znaków przykładu i 4000 znaków promptu. To limity operacyjne do zmiany w konfiguracji, nie nowe wymagania dydaktyczne. Niepełny zestaw trafia do poprawy. Kompletność zamkniętych tematów, np. dni tygodnia, można sprawdzić prostą regułą; nie budujemy uniwersalnego katalogu wiedzy.
 
 ## 8. Zadania w tle i zasoby
@@ -184,7 +193,11 @@ Wprowadzanie kolejnych etapów (uzupełnienie wersji 1.2, SPEC §13): element, k
 
 Po tej ochronie kolejności obowiązują pozostałe priorytety. Najpierw zaległe sprawdzenia i trudności aktualnego zestawu, potem znane łatwiejsze elementy i nowe porcje po 2–3. Co najmniej co trzecie zadanie po serii trudności jest łatwiejsze. Ten sam element nie wraca od razu po dwóch błędach; wyjątkiem jest pokazanie wzorca jako wsparcie.
 
-Początkowe odstępy po sukcesach: 1 dzień, 3 dni, 7 dni; po trudności — powrót po innych elementach w sesji oraz następnego dnia. Błędy techniczne nie przesuwają harmonogramu jak błędy wiedzy. Przy sprawdzianie w ciągu 48 godzin trudności i pisownia mają pierwszeństwo przed nowym materiałem, ale progi opanowania nie zmieniają się.
+Początkowe odstępy po sukcesach: 1 dzień, 3 dni, 7 dni; po trudności — powrót po innych elementach w sesji oraz następnego dnia. Błędy techniczne nie przesuwają harmonogramu jak błędy wiedzy.
+
+Termin sprawdzianu jest opcjonalny i należy do przypisania dziecka. Nowa sesja kopiuje `assignment.testDate` oraz strefę rodziny do prywatnego `learning_sessions.context`; resume używa tej migawki, a legacy bez pola nie pobiera późniejszej daty przypisania. Czysta funkcja `isTestPreparationWindow` wyznacza granice przez lokalny początek dnia w IANA timezone: otwarcie dokładnie 48 godzin wcześniej i cały lokalny dzień sprawdzianu. Nie dodajemy kolumny sesji ani DTO dziecka.
+
+Po należnym sprawdzeniu Recall/pisowni, wsparciu i poprawce po wsparciu scheduler wybiera w tym oknie wcześniej ujawniony cel z sukcesem rozpoznawania, który nie ma jednocześnie opanowanych Recall i pisowni. Deterministyczne sortowanie preferuje `needs_reconfirmation`, potem wymagającą ćwiczeń pisownię, Recall i pozycję w talii. Zadanie jest zwykłym ocenianym `recall` bez ujawnionych celów i zużywa istniejący budżet. Historia pieczętowanych `event_exposures` określa, czy słowo było wcześniej widoczne; historia `session_tasks.context.reason` zapobiega ponownemu wydaniu tego samego przygotowania i przechowuje dwa ostatnie oceniane powody. Po dwóch kolejnych `test-preparation` scheduler wstawia `test-preparation-break` z łatwym rozpoznawaniem, jeśli istnieje bezpieczny rozpoczęty element. Przy braku kandydata kontynuuje zwykłe bezpieczne priorytety. Rezerwacje chronią cele i dystraktory jak w innych zadaniach. Zmiana terminu nie wpływa na aktywną sesję; kryteria opanowania, obsługa pominięcia i „Nie pamiętam” pozostają bez zmian.
 
 Sesja domyślnie ma budżet 12 ocenianych zadań i do 10 minut, z możliwością wcześniejszego końca. To maksymalny budżet, nie obowiązek. Ponowienia i zadania wspomagające mieszczą się w nim; prezentacja/feedback nie powiększają go. Po komunikacie „Jeszcze 3” rezerwujemy trzy pozostałe zadania, bez dokładania zadań naprawczych poza budżetem. Limit czasu egzekwujemy tylko między zadaniami, przy planowaniu next: po jego przekroczeniu serwer nie wydaje nowych zadań ocenianych i prowadzi sesję do zakończenia; nie przerywa zadania w trakcie ani obietnicy „Jeszcze N” — zarezerwowane zadania są dokończone, bo obietnica wobec dziecka waży więcej niż miękki limit. Parametry są propozycjami startowymi architektury, do kalibracji z dzieckiem.
 
@@ -243,6 +256,13 @@ Wspólny format błędu: {code, message, retryable, requestId}. Walidacja na gra
 | Kid | GET /api/v1/kid/attempts/:id | Wynik trwającej lub zakończonej oceny |
 | Kid | POST /api/v1/kid/sessions/:id/end | Koniec i podsumowanie |
 | Media | GET /api/v1/media/:id | Zasób state=ready po opaque ID; same-origin, bez CORS; nie wyznacza ekspozycji |
+
+Klient rodzica zachowuje migawkę formularza wraz z jego bazowym
+`expectedEditNumber`. Polling nie zastępuje formularza rozpoczętego lokalnie;
+409 ani próba edycji opublikowanego szkicu nie są ponawiane z nowszą wersją.
+Po osobnym odczycie rodzic wybiera, czy jawnie przejść do aktualnego szkicu,
+czy utworzyć nową wersję z opublikowanego materiału. To zachowanie nie dodaje
+endpointu ani nie zmienia optimistic locking w API.
 
 Podsumowanie sesji (SPEC §17, uzupełnienie 2026-10-09): `SessionSummaryDto` zawiera `independentSuccesses: { recall, spelling }` (liczby różnych elementów z poprawną niezależną oceną w tej sesji) oraz `practiceItems: [{ itemId, target, skills }]`, gdzie `skills` to przypominanie i/lub pisownia. Wpis do ćwiczenia powstaje z błędnej oceny, w tym „Nie pamiętam”; późniejszy poprawny niezależny wynik usuwa trudność tylko tej umiejętności. Poprawne odpowiedzi ze wsparciem, pominięcia i wyniki nieocenione nie usuwają trudności ani nie zwiększają samodzielnych sukcesów. Historia innych sesji i projekcja ogólnego postępu nie są wynikiem bieżącej sesji. Wynik jest utrwalany pod blokadą w `learning_sessions.context.summary` przy pierwszym zakończeniu; oczekująca analiza mowy nie przepisuje już pokazanego podsumowania. Kolejny odczyt zwraca ten sam wynik, ale ponownie zapisuje zamknięte ekspozycje wszystkich wyświetlanych wzorców przed odpowiedzią HTTP. Ekran pokazuje neutralny komunikat bez samodzielnych sukcesów i nie deklaruje opanowania słów.
 

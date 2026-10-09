@@ -4,13 +4,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { migrateDatabase } from "@learning/server";
+import { readTestRunConfig } from "../test-run-config";
 
 const exec = promisify(execFile);
 
 // Playwright uruchamiany jest zawsze z korzenia repozytorium.
 const repoRoot = process.cwd();
-const CONTAINER = "knowli-e2e";
-const PORT = 24500;
+const TEST_RUN_CONFIG = readTestRunConfig(process.env);
+const CONTAINER = TEST_RUN_CONFIG.e2eContainer;
+const PORT = TEST_RUN_CONFIG.e2ePort;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 
 async function docker(...args: string[]): Promise<string> {
@@ -109,7 +111,7 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
 
     // świat przekazuje połączenie do bazowym testom (seedowanie należnych
     // sprawdzeń bez czekania na realny upływ dni)
-    const worldFile = join(repoRoot, "tests/e2e/.world.json");
+    const worldFile = join(repoRoot, TEST_RUN_CONFIG.worldFile);
     await writeFile(worldFile, JSON.stringify({ databaseUrl }, null, 2));
     cleanup.push(() => rm(worldFile, { force: true }));
 
@@ -129,6 +131,7 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
       UMIEM_IMAGE_PROVIDER: "fake-image",
       UMIEM_IMAGE_MODEL: "fake-image-1",
       UMIEM_IMAGE_SIZE: "512x512",
+      WORKER_HEALTH_PORT: String(TEST_RUN_CONFIG.workerHealthPort),
     };
 
     const web = spawn(

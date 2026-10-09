@@ -3,6 +3,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   authorizeDisclosure,
   completePresentation,
+  contextOf,
   createChild,
   createDraft,
   endSession,
@@ -34,6 +35,14 @@ async function query<T>(sql: string, params: unknown[] = []): Promise<T[]> {
 
 afterAll(async () => {
   await pool.end();
+});
+
+describe("contextOf — kontekst przypięty do sesji", () => {
+  it("zachowuje testDate tylko wtedy, gdy pole istnieje w kontekście", () => {
+    expect(contextOf({ context: { testDate: "2026-10-11" } }).testDate).toBe("2026-10-11");
+    expect(contextOf({ context: { testDate: null } }).testDate).toBeNull();
+    expect(contextOf({ context: {} })).not.toHaveProperty("testDate");
+  });
 });
 
 async function expectAppError(promise: Promise<unknown>, code: string): Promise<void> {
@@ -226,6 +235,32 @@ async function seedSummaryCheck(childId: string, versionId: string): Promise<voi
     where r.deck_version_id = $2 and s.skill in ('recall','spelling')`, [childId, versionId]);
 }
 
+async function seedPresentedRecognitionAndSpelling(
+  childId: string,
+  versionId: string,
+  position = 0,
+): Promise<void> {
+  const rows = await query<{ skill: string; skill_version_id: string }>(
+    `select s.skill, s.skill_version_id
+       from learning_app.item_revision_skills s
+       join learning_app.item_revisions r on r.id = s.item_revision_id
+      where r.deck_version_id = $1 and r.position = $2 and s.skill in ('listening','spelling')`,
+    [versionId, position],
+  );
+  for (const row of rows) {
+    await pool.query(
+      `insert into learning_app.child_skill_progress
+         (child_id, skill_version_id, status, independent_success_streak, next_review_at, projection_version)
+       values ($1,$2,'practicing',$3,'2030-01-01T00:00:00Z','test')
+       on conflict (child_id, skill_version_id) do update set
+         status = 'practicing', independent_success_streak = excluded.independent_success_streak,
+         next_review_at = excluded.next_review_at`,
+      [childId, row.skill_version_id, row.skill === "listening" ? 1 : 0],
+    );
+  }
+  expect(rows.map((row) => row.skill).sort()).toEqual(["listening", "spelling"]);
+}
+
 async function countSessionRows(sessionId: string, table: string): Promise<number> {
   const sql =
     table === "learning_sessions"
@@ -324,6 +359,102 @@ describe("cykl życia sesji (integracja)", () => {
     expect(second.sessionId).toBe(first.sessionId);
     expect(second.resumed).toBe(true);
     expect(second.microphoneEnabled).toBe(false);
+  });
+
+  it("przypina datę sprawdzianu do sesji, wznowienia i kolejnego startu", async () => {
+    const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 2));
+    await upsertAssignment(services, childId, deckId, "2026-10-11");
+    const first = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const firstContext = (await query<{ context: Record<string, unknown> }>(
+      "select context from learning_app.learning_sessions where id = $1", [first.sessionId],
+    ))[0]!.context;
+    expect(firstContext.testDate).toBe("2026-10-11");
+
+    await upsertAssignment(services, childId, deckId, "2026-10-12");
+    const resumed = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const resumedContext = (await query<{ context: Record<string, unknown> }>(
+      "select context from learning_app.learning_sessions where id = $1", [resumed.sessionId],
+    ))[0]!.context;
+    expect(resumed.sessionId).toBe(first.sessionId);
+    expect(resumedContext.testDate).toBe("2026-10-11");
+
+    await endSession(services, first.sessionId);
+    const next = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const newContext = (await query<{ context: Record<string, unknown> }>(
+      "select context from learning_app.learning_sessions where id = $1", [next.sessionId],
+    ))[0]!.context;
+    expect(next.sessionId).not.toBe(first.sessionId);
+    expect(newContext.testDate).toBe("2026-10-12");
+  });
+
+  it("prior exposure and recognition put written preparation before unseen material", async () => {
+    const { deckId, versionId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 2));
+    await upsertAssignment(services, childId, deckId, "2026-10-09");
+
+    const prior = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const exposure = await nextTask(services, prior.sessionId);
+    expect(exposure?.exerciseType).toBe("exposure");
+    await completePresentation(services, { taskId: exposure!.taskId });
+    await endSession(services, prior.sessionId);
+    await seedPresentedRecognitionAndSpelling(childId, versionId);
+
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const [first, retry] = await Promise.all([
+      nextTask(services, session.sessionId),
+      nextTask(services, session.sessionId),
+    ]);
+    expect(first?.exerciseType).toBe("recall");
+    expect(first?.taskId).toBe(retry?.taskId);
+    const taskRow = (await query<{ context: Record<string, unknown>; ordinal: number }>(
+      "select context, ordinal from learning_app.session_tasks where id = $1", [first!.taskId],
+    ))[0]!;
+    expect(taskRow.context).toMatchObject({ reason: "test-preparation" });
+    expect(taskRow.ordinal).toBe(0);
+    expect(first!.remainingAssessed).toBe(12);
+    expect(retry!.remainingAssessed).toBe(12);
+    expect(await countSessionRows(session.sessionId, "session_tasks")).toBe(1);
+
+    await pool.query("update learning_app.session_tasks set state = 'skipped' where id = $1", [first!.taskId]);
+    expect(await countSessionRows(session.sessionId, "assessments")).toBe(0);
+    const next = await nextTask(services, session.sessionId);
+    expect(next?.exerciseType).toBe("exposure");
+    const nextRow = (await query<{ context: Record<string, unknown> }>(
+      "select context from learning_app.session_tasks where id = $1", [next!.taskId],
+    ))[0]!;
+    expect(nextRow.context).toMatchObject({ reason: "new-material" });
+
+    await endSession(services, session.sessionId);
+    const secondSession = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const secondPreparation = await nextTask(services, secondSession.sessionId);
+    expect(secondPreparation?.exerciseType).toBe("recall");
+    await submitAttempt(services, {
+      taskId: secondPreparation!.taskId,
+      clientAttemptId: randomUUID(),
+      modality: "dont_remember",
+    });
+    const support = await nextTask(services, secondSession.sessionId);
+    expect(support).toMatchObject({ exerciseType: "exposure" });
+    const supportRow = (await query<{ context: Record<string, unknown> }>(
+      "select context from learning_app.session_tasks where id = $1", [support!.taskId],
+    ))[0]!;
+    expect(supportRow.context).toMatchObject({ reason: "support" });
+  });
+
+  it("legacy context without testDate keeps the ordinary scheduler", async () => {
+    const { deckId, versionId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 2));
+    await upsertAssignment(services, childId, deckId, "2026-10-09");
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    await pool.query("update learning_app.learning_sessions set context = context - 'testDate' where id = $1", [session.sessionId]);
+
+    const exposure = await nextTask(services, session.sessionId);
+    expect(exposure?.exerciseType).toBe("exposure");
+    await completePresentation(services, { taskId: exposure!.taskId });
+    await seedPresentedRecognitionAndSpelling(childId, versionId);
+    const next = await nextTask(services, session.sessionId);
+    const row = (await query<{ context: Record<string, unknown> }>(
+      "select context from learning_app.session_tasks where id = $1", [next!.taskId],
+    ))[0]!;
+    expect(row.context.reason).not.toBe("test-preparation");
   });
 
   it("start dla innej talii zamyka aktywną sesję jako ended", async () => {

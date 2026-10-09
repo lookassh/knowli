@@ -24,6 +24,8 @@ import { computeTargetKey } from "../domain/target-key";
 
 export interface SessionContextShape {
   timezone: string;
+  /** Data sprawdzianu przypięta przy rozpoczęciu nowej sesji; brak w legacy. */
+  testDate?: string | null;
   previousContact: Record<string, string>;
   /** Klucze celów objęte aktywną rezerwacją należnego sprawdzenia. */
   reservations: string[];
@@ -38,6 +40,7 @@ export function contextOf(session: { context: Record<string, unknown> }): Sessio
   const summary = SessionSummaryDtoSchema.safeParse(raw.summary);
   return {
     timezone: typeof raw.timezone === "string" ? raw.timezone : "Europe/Warsaw",
+    ...(typeof raw.testDate === "string" || raw.testDate === null ? { testDate: raw.testDate } : {}),
     previousContact: raw.previousContact ?? {},
     reservations: raw.reservations ?? [],
     settledChecks: raw.settledChecks ?? [],

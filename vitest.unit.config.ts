@@ -5,7 +5,7 @@ import { defineConfig } from "vitest/config";
 // skrypt użyteczny od pierwszego zadania.
 export default defineConfig({
   test: {
-    include: ["packages/*/src/**/*.test.ts", "apps/*/src/**/*.test.ts"],
+    include: ["packages/*/src/**/*.test.ts", "apps/*/src/**/*.test.ts", "tests/test-run-config.test.ts"],
     passWithNoTests: true,
     environment: "node",
   },

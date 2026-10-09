@@ -1,10 +1,11 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { migrateDatabase } from "@learning/server";
+import { readTestRunConfig } from "../test-run-config";
 
 const exec = promisify(execFile);
 
-const CONTAINER_PREFIX = "knowli-it-";
+const CONTAINER_PREFIX = readTestRunConfig(process.env).integrationContainerPrefix;
 const POSTGRES_IMAGE = "postgres:17-alpine";
 
 function containerName(): string {

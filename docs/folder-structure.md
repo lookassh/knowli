@@ -1,7 +1,7 @@
 # Struktura projektu
 
 Propozycja 1.2 • 7 października 2026  
-Podstawa: architecture.md oraz SPEC.md 1.1. To plan plików; repozytorium aplikacji nie zostało jeszcze utworzone.
+Podstawa: architecture.md oraz SPEC.md 1.1. Tabele opisują uzgodnione granice; repozytorium jest już implementowane zgodnie z tym układem.
 
 ## 1. Organizacja
 
@@ -43,6 +43,11 @@ Nazwy pakietów: @learning/contracts, @learning/kid-ui i @learning/server. apps/
 | apps/web/src/http/security.ts | Sesja, Origin/CSRF, limity żądań |
 | apps/web/src/parent/DeckEditor.tsx | Formularz szkicu, warianty i zasoby |
 | apps/web/src/parent/DecksPanel.tsx | Lista zestawów, generowanie AI i tworzenie pustych szkiców |
+| apps/web/src/parent/deck-editor-state.ts | Migawka formularza, serializacja PATCH i porównanie kart |
+| apps/web/src/parent/DeckConflictPanel.tsx | Porównanie lokalnej i aktualnej wersji szkicu |
+| apps/web/src/parent/generation-request.ts | Walidacja potwierdzenia 202 i klasyfikacja definitywnych odrzuceń generacji |
+| apps/web/src/parent/useParentLeaveGuard.ts | Kontrola wyjścia z niezapisanej edycji rodzica |
+| apps/web/src/parent/LeaveEditorDialog.tsx | Dostępny dialog „Zostań / Opuść bez zapisu” |
 | apps/web/src/parent/ChildEditor.tsx | Profile i przypisania |
 | apps/web/src/parent/ProgressPanel.tsx | Widok postępu i pomyłek |
 | apps/web/src/composition.ts | Złożenie zależności serwerowych dla web |
@@ -86,6 +91,7 @@ Nie importujemy tutaj next/navigation, next/image, Server Actions ani @learning/
 | packages/server/src/domain/independence.ts | Kwalifikacja próby i ekspozycje |
 | packages/server/src/domain/progress.ts | Wyliczanie projekcji z historii |
 | packages/server/src/domain/scheduler.ts | Wybór ćwiczenia z ochroną celów oczekujących na samodzielne sprawdzenie |
+| packages/server/src/domain/test-preparation.ts | Czyste wyznaczanie 48-godzinnego okna terminu w strefie rodziny, z obsługą DST |
 | packages/server/src/domain/feedback.ts | Komunikaty zgodne z wynikiem |
 | packages/server/src/domain/revision-impact.ts | Mapa wpływu zmiany treści na skill_versions |
 | packages/server/src/domain/policies/learning-v1.ts | Jawne parametry i wersja algorytmu |
@@ -103,8 +109,8 @@ Komunikaty wynikowe generowane przez domenę (feedback.ts) trafiają do klienta 
 | packages/server/src/modules/decks.ts | Szkice, rewizje, przypisania, publikacja |
 | packages/server/src/modules/generation.ts | Zlecanie i wykonywanie generacji |
 | packages/server/src/modules/media-reconciliation.ts | Dopasowanie fingerprintów szkicu, zachowanie zgodnych zasobów i enqueue brakujących |
-| packages/server/src/modules/sessions.ts | Start/resume, next, completePresentation, koniec |
-| packages/server/src/modules/events.ts | Zapis i zamknięcie ujawnienia przed odpowiedzią HTTP; opcjonalne potwierdzenia klienta |
+| packages/server/src/modules/sessions.ts | Start/resume z przypięciem terminu, next, historia ekspozycji, completePresentation, koniec |
+| packages/server/src/modules/events.ts | Kontekst sesji i zapis/zamknięcie ujawnienia przed HTTP; opcjonalne potwierdzenia klienta |
 | packages/server/src/modules/attempts.ts | Rezerwacja i finalizacja prób |
 | packages/server/src/modules/speech.ts | Krótka analiza nagrania i wynik częściowy |
 | packages/server/src/modules/reporting.ts | Postęp i mylone pary |
@@ -132,12 +138,15 @@ DocumentAnalysisProvider pojawi się dopiero podczas budowy source_material. Nie
 | Ścieżka | Rola |
 | --- | --- |
 | packages/server/src/domain/*.test.ts | Testy reguł z kontrolowanym zegarem |
+| tests/test-run-config.ts | Izolacja zasobów równoległych przebiegów Vitest i Playwright przez run ID |
+| tests/test-run-config.test.ts | Walidacja run ID, portu i wartości domyślnych runnerów |
 | tests/integration/auth-profiles.test.ts | Sesje rodzica, profile, usuwanie |
 | tests/integration/revisions.test.ts | Niezmienność wersji i wpływ edycji |
 | tests/integration/generation.test.ts | Idempotencja, retry, stary draft, reconcile i asset lease |
 | tests/integration/media.test.ts | Niezmienność gotowych zasobów i zapis no-clobber przy spóźnionym workerze |
 | tests/integration/history.test.ts | Niezmienne zadania/oceny/ujawnienia i usunięcie profilu |
 | tests/integration/sessions.test.ts | Granice sesji, completePresentation, budżet, wersje i ujawnienia bez ACK |
+| tests/e2e/test-preparation.spec.ts | Wcześniejsza ekspozycja → sprawdzian → pisemne Recall bez mikrofonu |
 | tests/integration/attempts.test.ts | Atomowość i retry odpowiedzi |
 | tests/integration/speech.test.ts | Timeouty, zatwierdzone warianty, częściowy wynik, brak audio na dysku |
 | tests/integration/reporting.test.ts | Rozdzielenie dzieci i mylonych par |

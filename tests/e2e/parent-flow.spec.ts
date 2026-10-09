@@ -129,7 +129,7 @@ for (const paddedName of [false, true]) {
     const secondContext = await browser.newContext({ storageState: await page.context().storageState() });
     try {
       const secondPage = await secondContext.newPage();
-      await secondPage.goto("http://127.0.0.1:24500/");
+      await secondPage.goto("/");
       await secondPage.getByTestId("tab-children").click();
       const secondRow = secondPage.locator('li[data-testid^="child-row-"]')
         .filter({ has: secondPage.locator(`a[href="/kids/${child.id}/learn"]`) });
@@ -251,8 +251,9 @@ test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page,
   await page.getByTestId("deck-prompt").fill("angielskie dni tygodnia dla początkującego dziecka");
   await page.getByTestId("deck-title").fill(DECK_TITLE);
   await page.getByTestId("generate-submit").click();
-  // panel pokazuje nowy zestaw od razu po przyjęciu polecenia (202)
-  await expect(deckRow(page)).toContainText(DECK_TITLE);
+  // Po zweryfikowanym 202 panel otwiera utworzony edytor.
+  await expect(page.getByTestId("editor-title")).toHaveValue(DECK_TITLE);
+  await expect(page.getByTestId("generation-banner")).toBeVisible();
 
   // Odświeżenie strony w trakcie generowania: panel dalej prowadzi przegląd.
   await page.reload();
@@ -380,8 +381,7 @@ test("ręczna edycja zestawu: dodaj element, usuń element, zmień tytuł", asyn
   await page.getByTestId("deck-title").fill(MANUAL_DECK_TITLE);
   await page.getByTestId("generate-submit").click();
   const manualRow = page.locator('[data-testid^="deck-row"]').filter({ hasText: MANUAL_DECK_TITLE });
-  await expect(manualRow).toContainText(MANUAL_DECK_TITLE);
-  await manualRow.click();
+  await expect(page.getByTestId("editor-title")).toHaveValue(MANUAL_DECK_TITLE);
   await expect(page.getByTestId("item-card-0")).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId("item-card-6")).toBeVisible();
 
