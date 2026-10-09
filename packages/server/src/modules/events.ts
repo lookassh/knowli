@@ -3,9 +3,11 @@ import { and, eq, inArray } from "drizzle-orm";
 import {
   DisclosureInputSchema,
   EventInputSchema,
+  SessionSummaryDtoSchema,
   type DisclosureDto,
   type DisclosureInput,
   type EventInput,
+  type SessionSummaryDto,
 } from "@learning/contracts";
 import type { Services } from "../config";
 import type { Tx } from "../db/client";
@@ -27,15 +29,19 @@ export interface SessionContextShape {
   reservations: string[];
   /** Klucze sprawdzeń rozliczonych w tej sesji (odpowiedź/pominięcie/podpowiedź). */
   settledChecks: string[];
+  /** Niezmienny wynik jawnego zakończenia, zachowany także przy spóźnionej finalizacji mowy. */
+  summary?: SessionSummaryDto;
 }
 
 export function contextOf(session: { context: Record<string, unknown> }): SessionContextShape {
   const raw = session.context as Partial<SessionContextShape>;
+  const summary = SessionSummaryDtoSchema.safeParse(raw.summary);
   return {
     timezone: typeof raw.timezone === "string" ? raw.timezone : "Europe/Warsaw",
     previousContact: raw.previousContact ?? {},
     reservations: raw.reservations ?? [],
     settledChecks: raw.settledChecks ?? [],
+    ...(summary.success ? { summary: summary.data } : {}),
   };
 }
 

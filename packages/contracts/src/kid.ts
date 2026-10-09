@@ -178,7 +178,20 @@ export const PresentationCompletionDtoSchema = z.object({
 });
 export type PresentationCompletionDto = z.infer<typeof PresentationCompletionDtoSchema>;
 
-export const SessionSummaryDtoSchema = z.object({
+export const SessionSummaryResultsSchema = z.object({
+  independentSuccesses: z.object({
+    recall: z.number().int().nonnegative(),
+    spelling: z.number().int().nonnegative(),
+  }),
+  practiceItems: z.array(z.object({
+    itemId: UuidSchema,
+    target: z.string().min(1),
+    skills: z.array(z.enum(["recall", "spelling"])).min(1),
+  })),
+});
+export type SessionSummaryResults = z.infer<typeof SessionSummaryResultsSchema>;
+
+export const SessionSummaryDtoSchema = SessionSummaryResultsSchema.extend({
   sessionId: UuidSchema,
   state: z.enum(["completed", "ended"]),
   tasksIssued: z.number().int().nonnegative(),
