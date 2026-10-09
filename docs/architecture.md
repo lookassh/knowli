@@ -307,3 +307,7 @@ Parametry schedulera, progi wiarygodności wymowy i zachowanie klawiatury wymaga
 - Azure, ocena wymowy: https://learn.microsoft.com/en-us/azure/ai-services/speech-service/how-to-pronunciation-assessment
 
 Dokumentacja wspiera możliwości narzędzi. Wybór granic modułów, wersjonowania i polityki nauki jest propozycją projektową dla tej aplikacji.
+
+### Edycja danych profilu (2026-10-09)
+
+`PATCH /api/v1/parent/children/{id}` przyjmuje co najmniej jedno z pól `displayName` (trim, 1–80) i `avatarKey` (1–40); nieznane pola odrzuca. Wymaga sesji rodzica i kontroli Origin/CSRF. Zwraca 200 z `ChildDto`, 400 dla błędnych danych/UUID, 401/403 dla braku uprawnień i 404 dla nieistniejącego profilu. `updateChild(services, childId, input: ChildPatch): Promise<ChildDto>` wykonuje pojedynczy UPDATE tylko dostarczonych pól; zachowuje UUID, rok urodzenia, datę utworzenia, politykę i historię. Dwie edycje różnych pól nie nadpisują się; dla tego samego pola obowiązuje ostatni zapis w bazie. Brak migracji. Szczegóły: `superpowers/specs/2026-10-09-child-profile-edit-design.md`.

@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { messages, type ChildDto, type PronunciationSettingsDto } from "@learning/contracts";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { messages, type ChildDto, type ChildPatch, type PronunciationSettingsDto } from "@learning/contracts";
 import { apiFetch, errorMessage } from "./api";
 
 const AVATARS: Array<{ key: string; emoji: string }> = [
@@ -106,7 +106,7 @@ function PronunciationSettings({ childId }: { childId: string }) {
   );
 }
 
-/** Profile dzieci: dodawanie i usuwanie; usunięcie zabiera historię dziecka. */
+/** Edycja zachowuje historię; tylko usunięcie profilu kasuje dane nauki. */
 export default function ChildEditor({
   childrenList,
   onChanged,
@@ -120,6 +120,83 @@ export default function ChildEditor({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [openSettings, setOpenSettings] = useState<string | null>(null);
+  const [editing, setEditing] = useState<ChildDto | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editAvatar, setEditAvatar] = useState("");
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editBusy, setEditBusy] = useState(false);
+  const [editStatus, setEditStatus] = useState<string | null>(null);
+  const editLock = useRef(false);
+  const editNameRef = useRef<HTMLInputElement>(null);
+  const editButtons = useRef(new Map<string, HTMLButtonElement>());
+  const restoreFocus = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (editing) editNameRef.current?.focus();
+  }, [editing?.id]);
+
+  useEffect(() => {
+    if (editing && !childrenList.some((child) => child.id === editing.id)) {
+      setEditing(null);
+      setEditError(null);
+    }
+  }, [childrenList, editing]);
+
+  useEffect(() => {
+    if (!editing && !editBusy && restoreFocus.current) {
+      editButtons.current.get(restoreFocus.current)?.focus();
+      restoreFocus.current = null;
+    }
+  }, [editing, editBusy]);
+
+  const startEdit = (child: ChildDto) => {
+    if (editLock.current) return;
+    setEditing(child);
+    setEditName(child.displayName);
+    setEditAvatar(child.avatarKey);
+    setEditError(null);
+    setEditStatus(null);
+  };
+
+  const cancelEdit = () => {
+    if (editLock.current) return;
+    restoreFocus.current = editing?.id ?? null;
+    setEditing(null);
+    setEditError(null);
+  };
+
+  const trimmedName = editName.trim();
+  const nameChanged = editing !== null && trimmedName !== editing.displayName.trim();
+  const editChanged = editing !== null && (nameChanged || editAvatar !== editing.avatarKey);
+
+  const saveEdit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editing || editLock.current || !trimmedName || !editChanged) return;
+    const patch: ChildPatch = {
+      ...(nameChanged ? { displayName: trimmedName } : {}),
+      ...(editAvatar !== editing.avatarKey ? { avatarKey: editAvatar } : {}),
+    };
+    editLock.current = true;
+    setEditBusy(true);
+    setEditError(null);
+    setEditStatus(null);
+    try {
+      await apiFetch<ChildDto>("PATCH", `/api/v1/parent/children/${editing.id}`, patch);
+      restoreFocus.current = editing.id;
+      setEditing(null);
+      setEditStatus(messages.children.saved);
+      try {
+        await onChanged();
+      } catch {
+        setEditStatus(messages.children.savedRefreshFailed);
+      }
+    } catch (cause) {
+      setEditError(errorMessage(cause));
+    } finally {
+      editLock.current = false;
+      setEditBusy(false);
+    }
+  };
 
   const add = async () => {
     setBusy(true);
@@ -141,6 +218,7 @@ export default function ChildEditor({
   };
 
   const remove = async (childId: string) => {
+    if (editLock.current && editing?.id === childId) return;
     if (!window.confirm(messages.children.removeConfirm)) {
       return;
     }
@@ -156,18 +234,30 @@ export default function ChildEditor({
   return (
     <section>
       <h2>{messages.children.title}</h2>
+      {editStatus && <p role="status">{editStatus}</p>}
       {childrenList.length === 0 && <p>{messages.children.empty}</p>}
       <ul className="plain">
         {childrenList.map((child, index) => (
           <li className="card row space" key={child.id} data-testid={`child-row-${index}`}>
-            <span>
+            <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>
               {avatarEmoji(child.avatarKey)} {child.displayName}
               {child.birthYear ? ` (${child.birthYear})` : ""}
             </span>
-            <div className="row">
-              <a className="button-link" data-testid="child-learn-link" href={`/kids/${child.id}/learn`}>
+            <div className="row" style={{ minWidth: 0, maxWidth: "100%" }}>
+              <a className="button-link" style={{ maxWidth: "100%", overflowWrap: "anywhere" }} data-testid="child-learn-link" href={`/kids/${child.id}/learn`}>
                 {messages.children.startLearning} · {child.displayName}
               </a>
+              <button
+                type="button"
+                data-testid="child-edit"
+                ref={(button) => { if (button) editButtons.current.set(child.id, button); else editButtons.current.delete(child.id); }}
+                aria-expanded={editing?.id === child.id}
+                aria-controls={`child-edit-form-${child.id}`}
+                disabled={editBusy}
+                onClick={() => editing?.id === child.id ? cancelEdit() : startEdit(child)}
+              >
+                {messages.children.edit}
+              </button>
               <button
                 type="button"
                 data-testid={`child-settings-${index}`}
@@ -176,10 +266,38 @@ export default function ChildEditor({
               >
                 {messages.children.pronunciationTitle}
               </button>
-              <button type="button" onClick={() => remove(child.id)}>
+              <button type="button" disabled={editBusy && editing?.id === child.id} onClick={() => remove(child.id)}>
                 {messages.children.remove}
               </button>
             </div>
+            {editing?.id === child.id && (
+              <form id={`child-edit-form-${child.id}`} style={{ flexBasis: "100%", minWidth: 0 }} onSubmit={saveEdit}>
+                <div className="grid-2">
+                  <label>
+                    {messages.children.displayName}
+                    <input ref={editNameRef} data-testid="child-edit-name" value={editName} maxLength={80}
+                      disabled={editBusy} onChange={(event) => setEditName(event.target.value)} />
+                  </label>
+                  <div>
+                    <label htmlFor={`child-edit-avatar-${child.id}`}>{messages.children.avatar}</label>
+                    <select id={`child-edit-avatar-${child.id}`} data-testid="child-edit-avatar" value={editAvatar} disabled={editBusy}
+                      onChange={(event) => setEditAvatar(event.target.value)}>
+                      {!AVATARS.some((option) => option.key === editAvatar) && <option value={editAvatar}>🙂</option>}
+                      {AVATARS.map((option) => <option key={option.key} value={option.key}>{option.emoji}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="row">
+                  <button type="submit" data-testid="child-edit-save" disabled={editBusy || !trimmedName || !editChanged}>
+                    {messages.children.save}
+                  </button>
+                  <button type="button" data-testid="child-edit-cancel" disabled={editBusy} onClick={cancelEdit}>
+                    {messages.children.cancel}
+                  </button>
+                </div>
+                {editError && <p className="error" role="alert">{editError}</p>}
+              </form>
+            )}
             {openSettings === child.id && <PronunciationSettings childId={child.id} />}
           </li>
         ))}

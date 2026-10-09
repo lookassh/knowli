@@ -13,6 +13,15 @@ export const ChildInputSchema = z.object({
 });
 export type ChildInput = z.infer<typeof ChildInputSchema>;
 
+/** Częściowa edycja danych profilu, bez zmiany tożsamości i historii. */
+export const ChildPatchSchema = z.object({
+  displayName: z.string().trim().min(1).max(80).optional(),
+  avatarKey: z.string().min(1).max(40).optional(),
+}).strict().refine((input) => input.displayName !== undefined || input.avatarKey !== undefined, {
+  message: "At least one profile field is required",
+});
+export type ChildPatch = z.infer<typeof ChildPatchSchema>;
+
 export const ChildDtoSchema = ChildInputSchema.extend({
   id: UuidSchema,
 });

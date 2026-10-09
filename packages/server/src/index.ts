@@ -10,7 +10,7 @@ export {
   logoutParent,
   SESSION_TTL_MS,
 } from "./modules/auth";
-export { listChildren, createChild, deleteChild, getPronunciationSettings, updatePronunciationBands } from "./modules/profiles";
+export { listChildren, createChild, updateChild, deleteChild, getPronunciationSettings, updatePronunciationBands } from "./modules/profiles";
 export {
   createEmptyDeck,
   createDraft,

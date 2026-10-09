@@ -322,3 +322,6 @@ usuwa własne syntetyczne profile pozostałe po wcześniejszych testach; test
 pełnego przypisania czeka na potwierdzenie zapisu przed odczytem Kid API.
 Zrzuty listy i edytora na 390×844, 768×1024 i 1440×900 obejrzano; nie ma
 poziomego overflow.
+### Uzupełnienie: edycja profilu dziecka (2026-10-09)
+
+Kontrakt `updateChild(s: Services, childId: string, input: ChildPatch): Promise<ChildDto>` i PATCH profilu uzupełniają zadanie 1. Testy `auth-profiles.test.ts` obejmują częściową aktualizację, bezpieczeństwo, walidację i dwóch klientów. `history.test.ts` rozszerza R03: edycja zachowuje pełne rekordy historii, politykę, przypisania i dane drugiego dziecka, podczas gdy DELETE nadal usuwa historię przez CASCADE. Plan szczegółowy: `superpowers/plans/2026-10-09-child-profile-edit.md`.
