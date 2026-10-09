@@ -12,6 +12,7 @@ export {
 } from "./modules/auth";
 export { listChildren, createChild, deleteChild, getPronunciationSettings, updatePronunciationBands } from "./modules/profiles";
 export {
+  createEmptyDeck,
   createDraft,
   createDraftFromPublished,
   editDraft,

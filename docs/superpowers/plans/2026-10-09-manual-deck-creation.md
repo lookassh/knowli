@@ -50,7 +50,7 @@
 Istniejące helpers.ts, fakes.ts i testy AI/mediów służą jako wzorce i regresje.
 Nie zmieniać konfiguracji runnerów bez stwierdzonej potrzeby.
 
-### Zadanie 1: Kontrakt i atomowe tworzenie pustego szkicu
+### Task 1: Kontrakt i atomowe tworzenie pustego szkicu
 
 **Pliki:** kontrakty i messages z mapy, server/modules/decks.ts, server/index.ts; nowe manual-decks.test.ts w contracts oraz tests/integration.
 
@@ -59,7 +59,7 @@ Nie zmieniać konfiguracji runnerów bez stwierdzonej potrzeby.
 - Produces: `CreateEmptyDeckCommandSchema`, `type CreateEmptyDeckCommand = { deckId: string; title?: string }`, `CreateEmptyDeckResultSchema`, `type CreateEmptyDeckResult = { deckId: string }`.
 - Produces: `createEmptyDeck(services: Services, input: CreateEmptyDeckCommand): Promise<{ deckId: string; created: boolean }>`; created jest wewnętrznym znacznikiem dla statusu HTTP i nie występuje w publicznej odpowiedzi.
 
-- [ ] Napisz testy kontraktu: poprawny UUID, opcjonalny tytuł, trim, puste spacje odrzucone przy podanym title, 200 znaków poprawne, 201 odrzucone. Odrzuć prompt/items przez strict schema. Zweryfikuj odpowiedź UUID. Zachowaj test odrzucenia pustych items w DraftInputSchema i DraftPatchSchema.
+- [x] Napisz testy kontraktu: poprawny UUID, opcjonalny tytuł, trim, puste spacje odrzucone przy podanym title, 200 znaków poprawne, 201 odrzucone. Odrzuć prompt/items przez strict schema. Zweryfikuj odpowiedź UUID. Zachowaj test odrzucenia pustych items w DraftInputSchema i DraftPatchSchema.
 
 ```ts
 expect(CreateEmptyDeckCommandSchema.parse({ deckId, title: "  Zwierzęta  " }))
@@ -69,9 +69,9 @@ expect(CreateEmptyDeckCommandSchema.safeParse({ deckId, title: "a".repeat(201) }
 expect(CreateEmptyDeckResultSchema.safeParse({ deckId: "invalid" }).success).toBe(false);
 ```
 
-- [ ] Uruchom `pnpm test:unit packages/contracts/src/manual-decks.test.ts`; zapisz dowód RED brakującego nowego kontraktu. Błędy narzędzi lub instalacji nie są RED.
-- [ ] Dodaj wskazane schematy i eksporty przez istniejący `export * from "./decks"`. W messages dodaj `decks.createEmpty = "Utwórz pusty zestaw"`, `defaultTitle = "Nowy zestaw"`, `emptyDraft = "Dodaj pierwsze słówko"`, `saveBeforePublish = "Najpierw zapisz zmiany"`, `emptyPublish = "Dodaj i zapisz przynajmniej jedno słówko."`; zmień addItem na „Dodaj słówko”.
-- [ ] Napisz testy integracyjne z istniejącym testDatabase/ManualClock i czyszczeniem tabel zestawów jak w decks-management.test.ts. Utworzenie bez providerów musi działać. Z fakeGeneration szpieguj generateDeck i potwierdź brak wywołań. Sprawdź wszystkie zerowe liczniki wymienione w ograniczeniach.
+- [x] Uruchom `pnpm test:unit packages/contracts/src/manual-decks.test.ts`; RED: 3 awarie przez brak eksportowanych schematów.
+- [x] Dodaj wskazane schematy i eksporty przez istniejący `export * from "./decks"`. W messages dodaj `decks.createEmpty = "Utwórz pusty zestaw"`, `defaultTitle = "Nowy zestaw"`, `emptyDraft = "Dodaj pierwsze słówko"`, `saveBeforePublish = "Najpierw zapisz zmiany"`, `emptyPublish = "Dodaj i zapisz przynajmniej jedno słówko."`; zmień addItem na „Dodaj słówko”.
+- [x] Napisz testy integracyjne z istniejącym testDatabase/ManualClock i czyszczeniem tabel zestawów jak w decks-management.test.ts. Utworzenie bez providerów musi działać. Z fakeGeneration szpieguj generateDeck i potwierdź brak wywołań. Sprawdź wszystkie zerowe liczniki wymienione w ograniczeniach.
 
 ```ts
 const result = await createEmptyDeck(services, { deckId });
@@ -88,14 +88,14 @@ expect(duplicates.filter((result) => result.created)).toHaveLength(1);
 // SQL: dokładnie jedna deck_version dla secondId; tytuł pochodzi od zwycięzcy.
 ```
 
-- [ ] Dodaj test: zmień tytuł pustego draftu przez PATCH domeny, ponów tworzenie z tym samym UUID i potwierdź brak resetu editNumber/tytułu wersji; analogicznie po publikacji nie zmienia się publishedVersionId. Niepoprawny tytuł nie zapisuje deck ani wersji.
-- [ ] Uruchom `pnpm test:integration tests/integration/manual-decks.test.ts`; potwierdź RED brakującej funkcji.
-- [ ] Implementuj createEmptyDeck: walidacja przed transakcją; INSERT deck z onConflictDoNothing na id i returning; jeśli brak wstawionego wiersza, zwróć created=false bez zmiany istniejącego deck. Jeśli wstawiono, INSERT deck_version v1 z losowym UUID, editNumber=1, state=draft, title i locale. Transakcja obejmuje oba INSERT-y; równoległy konflikt klucza oczekuje na zakończenie pierwszej transakcji. Nie zlecaj kolejki i nie wywołuj createDraft wymagającego kart.
-- [ ] Dodaj test pełnej ścieżki domeny: pusta publikacja rzuca validation; zapis jednej kompletnej karty tworzy pięć skill_versions i zleca TTS; publikacja przed wykonaniem TTS odrzucona, po fake-workerze dozwolona. Z użyciem visualType=image sprawdź obecną możliwość pominięcia ilustracji. Liczba wywołań LLM pozostaje zero.
-- [ ] Uruchom oba powyższe testy oraz `pnpm test:integration tests/integration/revisions.test.ts tests/integration/decks-management.test.ts tests/integration/media.test.ts`; wymagane PASS, w tym R06. Zweryfikuj typecheck.
+- [x] Dodaj test: zmień tytuł pustego draftu przez PATCH domeny, ponów tworzenie z tym samym UUID i potwierdź brak resetu editNumber/tytułu wersji; analogicznie po publikacji nie zmienia się publishedVersionId. Niepoprawny tytuł nie zapisuje deck ani wersji.
+- [x] Uruchom `pnpm test:integration tests/integration/manual-decks.test.ts`; RED: 3 awarie „createEmptyDeck is not a function”.
+- [x] Implementuj createEmptyDeck: walidacja przed transakcją; INSERT deck z onConflictDoNothing na id i returning; jeśli brak wstawionego wiersza, zwróć created=false bez zmiany istniejącego deck. Jeśli wstawiono, INSERT deck_version v1 z losowym UUID, editNumber=1, state=draft, title i locale. Transakcja obejmuje oba INSERT-y; równoległy konflikt klucza oczekuje na zakończenie pierwszej transakcji. Nie zlecaj kolejki i nie wywołuj createDraft wymagającego kart.
+- [x] Dodaj test pełnej ścieżki domeny: pusta publikacja rzuca validation; zapis jednej kompletnej karty tworzy pięć skill_versions i zleca TTS; publikacja przed wykonaniem TTS odrzucona, po fake-workerze dozwolona. Z użyciem visualType=image sprawdź obecną możliwość pominięcia ilustracji. Liczba wywołań LLM pozostaje zero.
+- [x] Uruchom `pnpm test:integration tests/integration/manual-decks.test.ts tests/integration/revisions.test.ts tests/integration/decks-management.test.ts tests/integration/media.test.ts`; PASS: 32 integracyjne. `pnpm test:unit` PASS: 232 testy. `pnpm typecheck` PASS.
 - [ ] Zacommituj wyłącznie pliki zadania: `feat: create empty vocabulary decks without generation`.
 
-### Zadanie 2: Zabezpieczone Parent API
+### Task 2: Zabezpieczone Parent API
 
 **Pliki:** parent-router.ts, tests/integration/manual-decks-api.test.ts; docs/architecture.md (nowa trasa).
 
@@ -117,7 +117,7 @@ expect(await response.json()).toEqual({ deckId });
 - [ ] Powtórz testy API i `pnpm test:integration tests/integration/auth-profiles.test.ts tests/integration/generation.test.ts`; oczekiwane PASS. Uruchom typecheck.
 - [ ] Commit: `feat: expose authenticated manual deck creation API`.
 
-### Zadanie 3: Przycisk i bezpieczna edycja pustego szkicu
+### Task 3: Przycisk i bezpieczna edycja pustego szkicu
 
 **Pliki:** DecksPanel.tsx, DeckEditor.tsx, tests/e2e/manual-deck-flow.spec.ts; docs/SPEC.md i docs/folder-structure.md.
 
@@ -145,7 +145,7 @@ await expect(page.getByTestId("publish-deck")).toBeDisabled();
 - [ ] SPEC: dodaj ręczne tworzenie od zera i kryterium pustego szkicu. folder-structure: zaktualizuj rzeczywiste ścieżki panelu/routera objęte zadaniem, bez przebudowy pozostałej dokumentacji.
 - [ ] Commit: `feat: open empty decks in the parent editor`.
 
-### Zadanie 4: Pełny przepływ, regresje i odbiór
+### Task 4: Pełny przepływ, regresje i odbiór
 
 **Pliki:** tests/e2e/manual-deck-flow.spec.ts, docs/implementation-plan.md; ten plan i spec (checklista).
 
