@@ -22,6 +22,64 @@ const defaultTimers = {
 };
 
 /**
+ * Azure speech endpoints accept PCM WAV reliably; MediaRecorder WebM blobs do
+ * not carry a Duration element, which the server needs for its duration cap.
+ * Decode and resample in memory, then send mono 16 kHz PCM WAV.
+ */
+async function convertToWav(bytes: Uint8Array, mimeType: string): Promise<RecordedAudio> {
+  const AudioContextCtor = globalThis.AudioContext;
+  const OfflineAudioContextCtor = globalThis.OfflineAudioContext;
+  // Non-browser unit harnesses may not provide Web Audio APIs. Real browsers
+  // that support MediaRecorder also provide these constructors.
+  if (!AudioContextCtor || !OfflineAudioContextCtor) return { bytes, mimeType };
+
+  const decoder = new AudioContextCtor();
+  try {
+    const decoded = await decoder.decodeAudioData(bytes.slice().buffer);
+    if (decoded.duration <= 0 || decoded.duration > MAX_RECORDING_MS / 1000 + 0.5) {
+      throw new Error("recording duration is outside the supported limit");
+    }
+    const sampleRate = 16_000;
+    const frameCount = Math.ceil(decoded.duration * sampleRate);
+    const offline = new OfflineAudioContextCtor(1, frameCount, sampleRate);
+    const source = offline.createBufferSource();
+    source.buffer = decoded;
+    source.connect(offline.destination);
+    source.start(0);
+    const rendered = await offline.startRendering();
+    const samples = rendered.getChannelData(0);
+    const dataBytes = samples.length * 2;
+    const wav = new Uint8Array(44 + dataBytes);
+    const view = new DataView(wav.buffer);
+    const writeAscii = (offset: number, value: string) => {
+      for (let index = 0; index < value.length; index += 1) {
+        view.setUint8(offset + index, value.charCodeAt(index));
+      }
+    };
+    writeAscii(0, "RIFF");
+    view.setUint32(4, 36 + dataBytes, true);
+    writeAscii(8, "WAVE");
+    writeAscii(12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); // PCM
+    view.setUint16(22, 1, true); // mono
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true); // block align
+    view.setUint16(34, 16, true);
+    writeAscii(36, "data");
+    view.setUint32(40, dataBytes, true);
+    for (let index = 0; index < samples.length; index += 1) {
+      const sample = Math.max(-1, Math.min(1, samples[index]!));
+      view.setInt16(44 + index * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+    }
+    return { bytes: wav, mimeType: "audio/wav" };
+  } finally {
+    await decoder.close().catch(() => undefined);
+  }
+}
+
+/**
  * Rejestrator mowy na MediaRecorder (plan zadania 8). Jednorazowy: start →
  * stop (bajty) albo cancel (porzucenie). Mikrofon i bufory zwalniane są na
  * KAŻDEJ ścieżce wyjścia — końcu, błędzie i anulowaniu — także po automatycznym
@@ -154,9 +212,18 @@ export class BrowserRecorder implements SpeechRecorder {
     this.#releaseStream();
     try {
       const blob = new Blob(chunks, { type: this.#mimeType });
-      const bytes = new Uint8Array(await blob.arrayBuffer());
+      const webmBytes = new Uint8Array(await blob.arrayBuffer());
+      let audio: RecordedAudio;
+      try {
+        audio = await convertToWav(webmBytes, this.#mimeType);
+      } catch (error) {
+        webmBytes.fill(0);
+        throw error;
+      }
+      if (audio.bytes !== webmBytes) webmBytes.fill(0);
       if (this.#cancelled) {
         // nagranie anulowane w trakcie składania — bufor zostaje porzucony
+        audio.bytes.fill(0);
         this.#state = "idle";
         this.#captured = null;
         return;
@@ -166,12 +233,12 @@ export class BrowserRecorder implements SpeechRecorder {
       this.#pendingReject = null;
       if (resolve) {
         this.#state = "idle";
-        resolve({ bytes, mimeType: this.#mimeType });
+        resolve(audio);
         return;
       }
       // automatyczne domknięcie limitem — nagranie czeka na stop() klienta
       this.#state = "captured";
-      this.#captured = { bytes, mimeType: this.#mimeType };
+      this.#captured = audio;
     } catch (error) {
       const reject = this.#pendingReject;
       this.#pendingStop = null;
