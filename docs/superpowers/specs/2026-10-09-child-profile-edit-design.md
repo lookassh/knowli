@@ -2,7 +2,7 @@
 
 Data: 2026-10-09. Stan bazowy: `875869f`, czysty worktree.
 Ścieżka workflow: architectural, ponieważ zmiana obejmuje kontrakt API i współpracę klient–serwer.
-Projekt w rozmowie zatwierdzony przez właściciela. Niniejsza specyfikacja oczekuje na jego przegląd przed przygotowaniem planu implementacji.
+Projekt i niniejsza pisemna specyfikacja zatwierdzone przez właściciela w rozmowie. Plan implementacji wymaga osobnego przeglądu i wyboru sposobu wykonania.
 
 ## 1. Cel i zakres
 
@@ -98,7 +98,7 @@ Istniejące skrypty to `pnpm test:unit`, `pnpm test:integration`, `pnpm test:e2e
 - [x] Przedstawienie alternatyw i konkretnego projektu.
 - [x] Zatwierdzenie projektu w rozmowie.
 - [x] Zapis specyfikacji i przegląd własny: zakres, spójność, kompletność i jednoznaczność.
-- [ ] Przegląd i zatwierdzenie tej specyfikacji przez właściciela.
+- [x] Przegląd i zatwierdzenie tej specyfikacji przez właściciela.
 - [ ] Writing-plans: pisemny plan oraz wybór wykonania przez właściciela.
 - [ ] Executing-plans, TDD z dowodem RED oraz końcowa weryfikacja.
 
