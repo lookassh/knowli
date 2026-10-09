@@ -2,7 +2,7 @@
 
 Data: 2026-10-09. Stan bazowy: `875869f`, czysty worktree.
 Ścieżka workflow: architectural, ponieważ zmiana obejmuje kontrakt API i współpracę klient–serwer.
-Projekt i niniejsza pisemna specyfikacja zatwierdzone przez właściciela w rozmowie. Plan implementacji wymaga osobnego przeglądu i wyboru sposobu wykonania.
+Projekt i niniejsza pisemna specyfikacja zatwierdzone przez właściciela w rozmowie. Plan implementacji także zatwierdzony przez właściciela; wybrano wykonanie samodzielne w tej rozmowie, bez delegacji.
 
 ## 1. Cel i zakres
 
@@ -99,7 +99,7 @@ Istniejące skrypty to `pnpm test:unit`, `pnpm test:integration`, `pnpm test:e2e
 - [x] Zatwierdzenie projektu w rozmowie.
 - [x] Zapis specyfikacji i przegląd własny: zakres, spójność, kompletność i jednoznaczność.
 - [x] Przegląd i zatwierdzenie tej specyfikacji przez właściciela.
-- [ ] Writing-plans: pisemny plan oraz wybór wykonania przez właściciela.
-- [ ] Executing-plans, TDD z dowodem RED oraz końcowa weryfikacja.
+- [x] Writing-plans: pisemny plan oraz wybór wykonania przez właściciela.
+- [x] Executing-plans, TDD z dowodem RED oraz końcowa weryfikacja.
 
-Companion wizualny nie był potrzebny do rozstrzygnięcia wariantu. Nie delegowano pracy. Implementacja nie została rozpoczęta.
+Companion wizualny nie był potrzebny do rozstrzygnięcia wariantu. Nie delegowano pracy. Implementacja zakończona; wyniki i odstępstwa workflow opisano w planie implementacji.

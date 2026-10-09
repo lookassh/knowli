@@ -164,40 +164,45 @@ function escapeRegex(text: string): string {
 test("szczegółowe podsumowanie pokazuje samodzielne wyniki i słowa do ćwiczenia na telefonie i tablecie", async ({ page }, testInfo) => {
   const parent = await parentSession(page);
   const child = await createChild(parent, "Podsumowanie", "fox");
-  const { deckId, publishedVersionId } = await createAssignedDeck(parent, child.id, "Podsumowanie słów", `summary-${randomUUID()}`);
-  await seedDue(child.id, publishedVersionId, 0, "recall");
-  await seedDue(child.id, publishedVersionId, 0, "spelling");
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`/kids/${child.id}/learn`);
-  await expect(page.getByTestId("kid-deck")).toBeVisible();
-  await page.getByTestId("kid-mic-toggle").uncheck();
-  await page.getByTestId("kid-deck").filter({ hasText: "Podsumowanie słów" }).click();
-  await expect(page.getByTestId("kid-input")).toBeVisible();
-  const target = await answerTarget(await currentTaskId(page));
-  // Fake materiał akceptuje monday i Monday; MONDAY zalicza treść, ale nie pisownię.
-  await page.getByTestId("kid-input").fill(target.toUpperCase());
-  await page.getByTestId("kid-submit").click();
-  await expect(page.getByTestId("kid-feedback")).toBeVisible();
-  await page.getByTestId("kid-end").click();
-  await expect(page.getByTestId("kid-summary-recall")).toContainText("1 słowo");
-  await expect(page.getByTestId("kid-summary-spelling")).toHaveCount(0);
-  await expect(page.getByTestId("kid-summary-practice")).toContainText(target);
-  await expect(page.getByTestId("kid-summary-practice")).toContainText("pisownia");
-  await expect(page.getByTestId("kid-summary-practice")).not.toContainText("przypominanie");
-  for (const width of [390, 768]) {
-    await page.setViewportSize({ width, height: 1024 });
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await page.screenshot({ path: testInfo.outputPath(`summary-${width}.png`), fullPage: true });
+  try {
+    const { deckId, publishedVersionId } = await createAssignedDeck(parent, child.id, "Podsumowanie słów", `summary-${randomUUID()}`);
+    await seedDue(child.id, publishedVersionId, 0, "recall");
+    await seedDue(child.id, publishedVersionId, 0, "spelling");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`/kids/${child.id}/learn`);
+    await expect(page.getByTestId("kid-deck")).toBeVisible();
+    await page.getByTestId("kid-mic-toggle").uncheck();
+    await page.getByTestId("kid-deck").filter({ hasText: "Podsumowanie słów" }).click();
+    await expect(page.getByTestId("kid-input")).toBeVisible();
+    const target = await answerTarget(await currentTaskId(page));
+    // Fake materiał akceptuje monday i Monday; MONDAY zalicza treść, ale nie pisownię.
+    await page.getByTestId("kid-input").fill(target.toUpperCase());
+    await page.getByTestId("kid-submit").click();
+    await expect(page.getByTestId("kid-feedback")).toBeVisible();
+    await page.getByTestId("kid-end").click();
+    await expect(page.getByTestId("kid-summary-recall")).toContainText("1 słowo");
+    await expect(page.getByTestId("kid-summary-spelling")).toHaveCount(0);
+    await expect(page.getByTestId("kid-summary-practice")).toContainText(target);
+    await expect(page.getByTestId("kid-summary-practice")).toContainText("pisownia");
+    await expect(page.getByTestId("kid-summary-practice")).not.toContainText("przypominanie");
+    for (const width of [390, 768]) {
+      await page.setViewportSize({ width, height: 1024 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`summary-${width}.png`), fullPage: true });
+    }
+    // Kolejna sesja z prezentacją nie dziedziczy poprzedniego sukcesu.
+    await page.getByTestId("kid-again").click();
+    await expect(page.getByTestId("kid-deck")).toBeVisible();
+    await page.getByTestId("kid-deck").filter({ hasText: "Podsumowanie słów" }).click();
+    await expect(page.locator("[data-task-id]")).toBeVisible();
+    await page.getByTestId("kid-end").click();
+    await expect(page.getByTestId("kid-summary-neutral")).toBeVisible();
+    await expect(page.getByTestId("kid-summary-recall")).toHaveCount(0);
+    await expect(page.getByTestId("kid-summary-practice")).toHaveCount(0);
+  } finally {
+    // Ten test poprzedza scenariusz z dokładnie jednym profilem.
+    expect((await parent.delete(`/api/v1/parent/children/${child.id}`)).status()).toBe(204);
   }
-  // Kolejna sesja z prezentacją nie dziedziczy poprzedniego sukcesu.
-  await page.getByTestId("kid-again").click();
-  await expect(page.getByTestId("kid-deck")).toBeVisible();
-  await page.getByTestId("kid-deck").filter({ hasText: "Podsumowanie słów" }).click();
-  await expect(page.locator("[data-task-id]")).toBeVisible();
-  await page.getByTestId("kid-end").click();
-  await expect(page.getByTestId("kid-summary-neutral")).toBeVisible();
-  await expect(page.getByTestId("kid-summary-recall")).toHaveCount(0);
-  await expect(page.getByTestId("kid-summary-practice")).toHaveCount(0);
 });
 
 /**
@@ -315,6 +320,7 @@ test("jeden profil pomija wybór i prowadzi sesję do obiecanego końca", async 
   ).toBe(0);
 
   // pojedynczy profil pomija ekran wyboru — od razu zestawy
+  await expect(page.getByTestId("kid-deck").first()).toBeVisible();
   await expect(page.getByTestId("kid-profile")).toHaveCount(0);
   await page.getByTestId("kid-deck").first().click();
 

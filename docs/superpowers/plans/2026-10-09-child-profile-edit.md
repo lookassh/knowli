@@ -1,6 +1,6 @@
 # Edycja profilu dziecka — plan implementacji
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Delegacja przez superpowers:subagent-driven-development wymaga wyraźnej zgody właściciela. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Delegacja przez superpowers:subagent-driven-development wymaga wyraźnej zgody właściciela. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Rodzic zmienia imię lub awatar dziecka, zachowując jego identyfikator, historię nauki i ustawienia.
 
@@ -42,7 +42,7 @@ Zadanie 2 korzysta z kontraktu zadania 1; zadanie 3 z gotowego API. Nie wydziela
 
 **Interfaces:** Consumes: istniejący `ChildDto`. Produces: `ChildPatchSchema`, `type ChildPatch = z.infer<typeof ChildPatchSchema>` eksportowane przez istniejący barrel contracts.
 
-- [ ] Dodać `child-profile.test.ts` z testami poniższych asercji oraz osobnymi przypadkami granic długości: 80/81 dla imienia po trimowaniu i 40/41 dla awatara.
+- [x] Dodać `child-profile.test.ts` z testami poniższych asercji oraz osobnymi przypadkami granic długości: 80/81 dla imienia po trimowaniu i 40/41 dla awatara.
 
 ```ts
 expect(ChildPatchSchema.parse({ displayName: "  Krzyś  " })).toEqual({ displayName: "Krzyś" });
@@ -56,16 +56,16 @@ for (const input of [{}, null, { displayName: "  " }, { avatarKey: "" },
 }
 ```
 
-- [ ] RED: `pnpm test:unit packages/contracts/src/child-profile.test.ts` — oczekiwana porażka z powodu brakującego `ChildPatchSchema`.
-- [ ] Zdefiniować strict object z opcjonalnymi polami i refinementem wymagającym co najmniej jednej zdefiniowanej wartości. Zachować istniejące `ChildInputSchema` i `ChildDtoSchema`.
-- [ ] GREEN: ta sama komenda i `pnpm typecheck` — PASS.
-- [ ] Selektywnie commitować kontrakt i test: `feat: add child profile patch contract`.
+- [x] RED: `pnpm test:unit packages/contracts/src/child-profile.test.ts` — oczekiwana porażka z powodu brakującego `ChildPatchSchema`.
+- [x] Zdefiniować strict object z opcjonalnymi polami i refinementem wymagającym co najmniej jednej zdefiniowanej wartości. Zachować istniejące `ChildInputSchema` i `ChildDtoSchema`.
+- [x] GREEN: ta sama komenda i `pnpm typecheck` — PASS.
+- [x] Selektywnie commitować kontrakt i test: `feat: add child profile patch contract`.
 
 ## Zadanie 2: Aktualizacja profilu i ochrona historii
 
 **Interfaces:** Consumes: `ChildPatchSchema`, `ChildPatch`, `UuidSchema`, `Services`, `toChildDto`, istniejące helpery HTTP. Produces: `updateChild(services: Services, childId: string, input: ChildPatch): Promise<ChildDto>` i eksport `PATCH(request: Request, context: RouteContext): Promise<Response>`.
 
-- [ ] W `auth-profiles.test.ts` dodać testy aktualizacji imienia, awatara i obu pól. Korzystać z `buildTestServices`, `createChild`, `listChildren`, istniejących `jsonRequest`, `childRouteContext` i cookie logowania. Przykład testu przypadku użycia:
+- [x] W `auth-profiles.test.ts` dodać testy aktualizacji imienia, awatara i obu pól. Korzystać z `buildTestServices`, `createChild`, `listChildren`, istniejących `jsonRequest`, `childRouteContext` i cookie logowania. Przykład testu przypadku użycia:
 
 ```ts
 const original = await createChild(services, { displayName: "Ola", avatarKey: "fox", birthYear: 2018 });
@@ -75,22 +75,22 @@ expect(await updateChild(services, original.id, { avatarKey: "cat" }))
   .toEqual({ ...original, displayName: "Ala", avatarKey: "cat" });
 ```
 
-- [ ] Dodać test handlera: poprawna sesja → 200 i równość DTO; brak cookie → 401; poprawne cookie i obcy Origin lub `sec-fetch-site: cross-site` → 403; niepoprawny UUID/JSON/wejście → 400; nieistniejący UUID → 404. Po każdym błędzie porównać stan profilu z wcześniejszym odczytem. Sprawdzić DTO nie zawiera `policyId` ani `createdAt`.
-- [ ] Dodać test dwóch połączeń do tej samej bazy przez `openRestartedServices`: równoległe `updateChild(id, {displayName: "Ala"})` i `updateChild(id, {avatarKey: "panda"})` przez `Promise.all` dają profil z obiema wartościami. Po `deleteChild` aktualizacja tego UUID ma kod `not_found`, a profil nie pojawia się na liście. Zamknąć dodatkową pulę w `finally`.
-- [ ] W `history.test.ts` użyć istniejącego `sessionWithAttempt(childId)`. Utworzyć także drugie dziecko z historią i ustawić poprawną istniejącą `policyId` profilu. Odczytać stabilnie posortowane pełne rekordy tabel sesji, zadań, prób, ocen, zdarzeń, ekspozycji, projekcji i przypisań oraz materiału. Porównać przed i po `updateChild`; same liczniki nie wystarczają. Asercje: wszystkie te rekordy identyczne i niepuste dla badanego dziecka, drugi profil identyczny, `birthYear`, `createdAt`, `policyId` bez zmian, jedynie nazwa/awatar badanego profilu zmienione. Aktywna sesja zachowuje wersję zestawu i polityki.
-- [ ] RED: `pnpm test:integration tests/integration/auth-profiles.test.ts tests/integration/history.test.ts` — oczekiwana porażka nowych testów z powodu braku `updateChild`/PATCH, przy działającym setupie PostgreSQL.
-- [ ] Zaimplementować `updateChild`: parse UUID/input, jawne warunkowe `.set` wyłącznie z dostarczonymi polami, pojedynczy UPDATE z RETURNING, brak wiersza → `AppError("not_found")`, wynik → `toChildDto`. Eksportować z server/index.
-- [ ] Dodać PATCH do istniejącego route: Origin, sesja, parse JSON i schematu, wywołanie przypadku użycia, JSON 200. Zachować DELETE i runtime serwera. Nie dublować logiki domenowej w handlerze.
-- [ ] Uzupełnić dokumentację o kontrakt PATCH, `updateChild`, odpowiedzialność modułu i rozszerzenie R03. Bez zmiany projektowego SQL.
-- [ ] GREEN: powtórzyć integrację i `pnpm typecheck`; dotychczasowe testy DELETE i niezmienności historii również muszą przechodzić.
-- [ ] Selektywnie commitować pliki tego zadania: `feat: update child profiles without deleting history`.
+- [x] Dodać test handlera: poprawna sesja → 200 i równość DTO; brak cookie → 401; poprawne cookie i obcy Origin lub `sec-fetch-site: cross-site` → 403; niepoprawny UUID/JSON/wejście → 400; nieistniejący UUID → 404. Po każdym błędzie porównać stan profilu z wcześniejszym odczytem. Sprawdzić DTO nie zawiera `policyId` ani `createdAt`.
+- [x] Dodać test dwóch połączeń do tej samej bazy przez `openRestartedServices`: równoległe `updateChild(id, {displayName: "Ala"})` i `updateChild(id, {avatarKey: "panda"})` przez `Promise.all` dają profil z obiema wartościami. Po `deleteChild` aktualizacja tego UUID ma kod `not_found`, a profil nie pojawia się na liście. Zamknąć dodatkową pulę w `finally`.
+- [x] W `history.test.ts` użyć istniejącego `sessionWithAttempt(childId)`. Utworzyć także drugie dziecko z historią i ustawić poprawną istniejącą `policyId` profilu. Odczytać stabilnie posortowane pełne rekordy tabel sesji, zadań, prób, ocen, zdarzeń, ekspozycji, projekcji i przypisań oraz materiału. Porównać przed i po `updateChild`; same liczniki nie wystarczają. Asercje: wszystkie te rekordy identyczne i niepuste dla badanego dziecka, drugi profil identyczny, `birthYear`, `createdAt`, `policyId` bez zmian, jedynie nazwa/awatar badanego profilu zmienione. Aktywna sesja zachowuje wersję zestawu i polityki.
+- [x] RED: `pnpm test:integration tests/integration/auth-profiles.test.ts tests/integration/history.test.ts` — oczekiwana porażka nowych testów z powodu braku `updateChild`/PATCH, przy działającym setupie PostgreSQL.
+- [x] Zaimplementować `updateChild`: parse UUID/input, jawne warunkowe `.set` wyłącznie z dostarczonymi polami, pojedynczy UPDATE z RETURNING, brak wiersza → `AppError("not_found")`, wynik → `toChildDto`. Eksportować z server/index.
+- [x] Dodać PATCH do istniejącego route: Origin, sesja, parse JSON i schematu, wywołanie przypadku użycia, JSON 200. Zachować DELETE i runtime serwera. Nie dublować logiki domenowej w handlerze.
+- [x] Uzupełnić dokumentację o kontrakt PATCH, `updateChild`, odpowiedzialność modułu i rozszerzenie R03. Bez zmiany projektowego SQL.
+- [x] GREEN: powtórzyć integrację i `pnpm typecheck`; dotychczasowe testy DELETE i niezmienności historii również muszą przechodzić.
+- [x] Selektywnie commitować pliki tego zadania: `feat: update child profiles without deleting history`.
 
 ## Zadanie 3: Formularz rodzica i zachowanie w przeglądarce
 
 **Interfaces:** Consumes: PATCH z zadania 2, `ChildDto`, `apiFetch<T>`, `errorMessage`, istniejący prop `onChanged: () => Promise<void>`. Produces: istniejący `ChildEditor` z edycją jednego profilu i komunikatami w katalogu.
 
-- [ ] Dodać niezależne testy Playwright z syntetycznym profilem o unikalnym imieniu. Logowanie korzysta z istniejącego przebiegu setup/login. Lokalizować karty przez href UUID, a nie zmienne imię lub indeks.
-- [ ] Test „edycja i anulowanie zachowują profil”: otwarcie pokazuje aktualne wartości; fokus jest w imieniu; Anuluj nie wysyła PATCH, przywraca fokus, ponowne otwarcie pokazuje stare dane. Zmienić imię i awatar, zapisać przez Enter, oczekiwać jednego PATCH i zachowanego href. Reload pokazuje nowe wartości. Asercje kluczowe:
+- [x] Dodać niezależne testy Playwright z syntetycznym profilem o unikalnym imieniu. Logowanie korzysta z istniejącego przebiegu setup/login. Lokalizować karty przez href UUID, a nie zmienne imię lub indeks.
+- [x] Test „edycja i anulowanie zachowują profil”: otwarcie pokazuje aktualne wartości; fokus jest w imieniu; Anuluj nie wysyła PATCH, przywraca fokus, ponowne otwarcie pokazuje stare dane. Zmienić imię i awatar, zapisać przez Enter, oczekiwać jednego PATCH i zachowanego href. Reload pokazuje nowe wartości. Asercje kluczowe:
 
 ```ts
 await expect(row.getByTestId("child-edit-name")).toHaveValue(originalName);
@@ -99,22 +99,22 @@ await expect(row.getByTestId("child-learn-link")).toHaveAttribute("href", origin
 expect(patchBody).toEqual({ displayName: updatedName, avatarKey: "cat" });
 ```
 
-- [ ] Testy UI sprawdzają brak aktywnego zapisu dla imienia `"  "` i braku zmian; tylko jedno rozwinięcie; przełączenie dziecka odrzuca robocze dane. Zmiana wyłącznie imienia wysyła body `{displayName: updatedName}`. Profil z `avatarKey: "legacy"` zachowuje tę wartość po edycji imienia.
-- [ ] Testy błędów przez `page.route`: PATCH 500 pozostawia wartości i alert, retry może się udać; udany PATCH + przechwycony kolejny GET 500 pokazuje osobny komunikat odświeżenia i zamyka edycję. Usunięcie przez drugiego klienta + PATCH 404 pozostawia czytelny błąd, nie tworzy profilu; po reload karta znika.
-- [ ] Test blokad: zatrzymać odpowiedź PATCH przez sterowany promise w routingu. W trakcie żądania pola, Anuluj, Usuń i akcje zmiany edytowanego profilu są nieaktywne; próba ponownego submit nie zwiększa liczby PATCH. Uwolnić promise w `finally`. Gdy odświeżenie listy usunie otwarty profil, formularz znika.
-- [ ] RED: `pnpm test:e2e tests/e2e/parent-flow.spec.ts --grep "edycja profilu"` — nadać wszystkim nowym testom ten fragment nazwy; oczekiwana porażka braku przycisku/formularza, nie awaria setupu.
-- [ ] Dodać w messages.children klucze `edit`, `cancel`, `saved`, `savedRefreshFailed` z dokładnym tekstem specyfikacji. Zachować istniejący `save`.
-- [ ] W ChildEditor dodać stan edytowanego UUID, bazowych wartości, roboczych pól, zapisu, błędu i potwierdzenia. Użyć osobnego semantycznego formularza w karcie, nazwanych pól z testid `child-edit-name`, `child-edit-avatar`, przycisków `child-edit`, `child-edit-save`, `child-edit-cancel`. Obliczać PATCH przez porównanie trimowanego imienia/awatara z bazą. Jedna ścieżka submit obsługuje Enter i kliknięcie; chronić przed równoległym żądaniem również synchroniczną blokadą.
-- [ ] Obsłużyć sukces PATCH osobno od `onChanged`, fokus i zamknięcie przy braku profilu. Zachować nieznany awatar jako dodatkową bieżącą opcję. Ustawienia wymowy i dodawanie/usuwanie zachowują dotychczasowe zachowanie.
-- [ ] GREEN: powtórzyć nowy grep, następnie cały `pnpm test:e2e tests/e2e/parent-flow.spec.ts`. Wypełniony widok sprawdzić także przy viewportach 390×844 i 768×1024: brak poziomego overflow, pola i przyciski widoczne oraz dostępne, fokus i etykiety poprawne. Zachować screenshoty jako dowód kontroli wyglądu.
-- [ ] Selektywnie commitować UI, katalog komunikatów i E2E: `feat: edit child name and avatar in parent panel`.
+- [x] Testy UI sprawdzają brak aktywnego zapisu dla imienia `"  "` i braku zmian; tylko jedno rozwinięcie; przełączenie dziecka odrzuca robocze dane. Zmiana wyłącznie imienia wysyła body `{displayName: updatedName}`. Profil z `avatarKey: "legacy"` zachowuje tę wartość po edycji imienia.
+- [x] Testy błędów przez `page.route`: PATCH 500 pozostawia wartości i alert, retry może się udać; udany PATCH + przechwycony kolejny GET 500 pokazuje osobny komunikat odświeżenia i zamyka edycję. Usunięcie przez drugiego klienta + PATCH 404 pozostawia czytelny błąd, nie tworzy profilu; po reload karta znika.
+- [x] Test blokad: zatrzymać odpowiedź PATCH przez sterowany promise w routingu. W trakcie żądania pola, Anuluj, Usuń i akcje zmiany edytowanego profilu są nieaktywne; próba ponownego submit nie zwiększa liczby PATCH. Uwolnić promise w `finally`. Gdy odświeżenie listy usunie otwarty profil, formularz znika.
+- [x] RED: `pnpm test:e2e tests/e2e/parent-flow.spec.ts --grep "edycja profilu"` — nadać wszystkim nowym testom ten fragment nazwy; oczekiwana porażka braku przycisku/formularza, nie awaria setupu.
+- [x] Dodać w messages.children klucze `edit`, `cancel`, `saved`, `savedRefreshFailed` z dokładnym tekstem specyfikacji. Zachować istniejący `save`.
+- [x] W ChildEditor dodać stan edytowanego UUID, bazowych wartości, roboczych pól, zapisu, błędu i potwierdzenia. Użyć osobnego semantycznego formularza w karcie, nazwanych pól z testid `child-edit-name`, `child-edit-avatar`, przycisków `child-edit`, `child-edit-save`, `child-edit-cancel`. Obliczać PATCH przez porównanie trimowanego imienia/awatara z bazą. Jedna ścieżka submit obsługuje Enter i kliknięcie; chronić przed równoległym żądaniem również synchroniczną blokadą.
+- [x] Obsłużyć sukces PATCH osobno od `onChanged`, fokus i zamknięcie przy braku profilu. Zachować nieznany awatar jako dodatkową bieżącą opcję. Ustawienia wymowy i dodawanie/usuwanie zachowują dotychczasowe zachowanie.
+- [x] GREEN: powtórzyć nowy grep, następnie cały `pnpm test:e2e tests/e2e/parent-flow.spec.ts`. Wypełniony widok sprawdzić także przy viewportach 390×844 i 768×1024: brak poziomego overflow, pola i przyciski widoczne oraz dostępne, fokus i etykiety poprawne. Zachować screenshoty jako dowód kontroli wyglądu.
+- [x] Selektywnie commitować UI, katalog komunikatów i E2E: `feat: edit child name and avatar in parent panel`.
 
 ## Końcowa weryfikacja i przekazanie
 
-- [ ] Użyć verification-before-completion; uruchomić `pnpm test:unit`, `pnpm test:integration`, `pnpm test:e2e`, `pnpm typecheck`, `pnpm build`. Nie powtarzać tych samych pełnych sprawdzeń bez kolejnych zmian lub nowych problemów.
-- [ ] `git diff --check` oraz przegląd diffu: brak migracji, sekretów w DTO, zmian pól chronionych i obcego kodu. Review zgodnie z requesting-code-review; jeśli bez zgody na delegację, wykonać własny przegląd i ujawnić brak niezależnego review.
-- [ ] Uaktualnić checklisty specyfikacji i planu rzeczywistymi dowodami RED/GREEN. Raportować środowiskowe blokady oddzielnie od wyniku testu. Nie deklarować wdrożenia ani zdrowia produkcji.
-- [ ] Podsumować zmianę i faktycznie uruchomione testy; odnotować ewentualnie pominięte kroki workflow i powody. Bez push/merge/deploy.
+- [x] Użyć verification-before-completion; uruchomić `pnpm test:unit`, `pnpm test:integration`, `pnpm test:e2e`, `pnpm typecheck`, `pnpm build`. Nie powtarzać tych samych pełnych sprawdzeń bez kolejnych zmian lub nowych problemów.
+- [x] `git diff --check` oraz przegląd diffu: brak migracji, sekretów w DTO, zmian pól chronionych i obcego kodu. Review zgodnie z requesting-code-review; jeśli bez zgody na delegację, wykonać własny przegląd i ujawnić brak niezależnego review.
+- [x] Uaktualnić checklisty specyfikacji i planu rzeczywistymi dowodami RED/GREEN. Raportować środowiskowe blokady oddzielnie od wyniku testu. Nie deklarować wdrożenia ani zdrowia produkcji.
+- [x] Podsumować zmianę i faktycznie uruchomione testy; odnotować ewentualnie pominięte kroki workflow i powody. Bez push/merge/deploy.
 
 ## Przegląd planu i stan workflow
 
@@ -122,8 +122,27 @@ Przegląd własny wykonany: sekcje specyfikacji mają zadania, nazwy kontraktów
 
 - [x] Pisemna specyfikacja zatwierdzona przez właściciela.
 - [x] Writing-plans: zapis planu i przegląd własny.
-- [ ] Przegląd planu przez właściciela oraz wybór sposobu wykonania.
-- [ ] Executing-plans, test-driven-development i rzeczywiste RED/GREEN.
-- [ ] Review i verification-before-completion.
+- [x] Przegląd planu przez właściciela oraz wybór wykonania bez delegacji.
+- [x] Executing-plans, test-driven-development i rzeczywiste RED/GREEN.
+- [x] Review i verification-before-completion.
 
-Rekomendowane wykonanie: samodzielnie w tej rozmowie, bez delegacji. Trzy zadania są małe i zależą kolejno od jednego kontraktu. Jeśli właściciel wybierze agentów, jego odpowiedź musi wyraźnie zezwolić na delegację, w tym review. Kod produktu nie został jeszcze zmieniony.
+Rekomendowane wykonanie: samodzielnie w tej rozmowie, bez delegacji. Trzy zadania są małe i zależą kolejno od jednego kontraktu. Jeśli właściciel wybierze agentów, jego odpowiedź musi wyraźnie zezwolić na delegację, w tym review. Implementacja została zakończona i zweryfikowana.
+
+## Wyniki wykonania — 2026-10-09
+
+- RED kontraktu: 14 testów nie przeszło z powodu brakującego `ChildPatchSchema`; GREEN: 14/14.
+- RED API: 4 nowe testy integracyjne nie przeszły z powodu brakujących `updateChild`/PATCH; GREEN z dotychczasowymi: 18/18 na PostgreSQL.
+- RED formularza: 7 nowych E2E nie przeszło z powodu brakującego przycisku edycji. GREEN po implementacji i poprawce dostępnej etykiety awatara; dodatkowy test dwóch niezależnych kontekstów przeglądarki potwierdził zachowanie różnych zmienianych pól.
+- Końcowe `pnpm test:unit`: 243/243; `pnpm test:integration`: 128/128; `pnpm test:e2e`: 19/19; `pnpm typecheck` i `pnpm build`: exit 0. Node 22.19.0, pnpm 11.25.0, Docker/PostgreSQL i fake providerzy. Lockfile i zależności bez zmian.
+- Obejrzano zrzuty formularza dla 390×844 i 768×1024; testy potwierdziły brak poziomego overflow, etykiety, fokus, zapis Enter, anulowanie, retry, nieudane odświeżenie po udanym zapisie i usunięcie przez innego klienta.
+- Przegląd całości zmian wykonany samodzielnie według requesting-code-review. Brak pozostałych problemów blokujących i odłożonych uwag.
+
+Decyzje i odstępstwa workflow:
+
+1. Zgodnie z zatwierdzonym wykonaniem bez delegacji nie powołano niezależnego reviewera. Koszt: brak drugiej, niezależnej oceny.
+2. Użyto PowerShell i ręcznego ledger/checklist zamiast Bash task-start/task-done z ekstrakcją angielskich nagłówków z polskiego planu. Uruchomiono sdd-workspace i review-package. Koszt: ręczna kontrola postępu; dowody RED/GREEN sprawdzono i zachowano w tym raporcie.
+3. Pełny E2E ujawnił istniejącą zależność kolejności: test podsumowania zostawiał profil, a kolejny scenariusz zakładał jeden profil i czekał na niewydany ekran zestawów. Zmiana w `tests/e2e/kid-flow.spec.ts` sprząta wyłącznie syntetyczny profil w finally i sprawdza widoczność zestawów po hydratacji. Koszt: niewielkie rozszerzenie zakresu o izolację istniejącego testu, bez zmiany aplikacji. Dowód: wcześniejszy timeout 12 minut, po poprawce ten scenariusz PASS w 9.9 s i pełny zestaw PASS.
+
+Dwa uruchomienia pełnego E2E zatrzymały się podczas startu na EADDRINUSE portu 24500. Zakończono wyłącznie procesy tego przebiegu, sprawdzono możliwość związania portu, a finalny przebieg zakończył się PASS. Nie zmieniano konfiguracji testów ani portów aplikacji.
+
+Worktree zachowany zgodnie z planem; brak push, merge i deploy. Weryfikacja lokalna nie stanowi potwierdzenia wdrożenia.
