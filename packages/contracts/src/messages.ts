@@ -28,6 +28,7 @@ export const messages = {
     setupTitle: "Pierwsze uruchomienie",
     setupHint: "Ustaw PIN lub hasło rodzica. Będzie potrzebny do wejścia w panel.",
     setupButton: "Ustaw PIN",
+    toLearning: "Do nauki",
   },
   children: {
     title: "Dzieci",
@@ -194,6 +195,7 @@ export const messages = {
     historyUnsupported: "(z wsparciem)",
   },
   kid: {
+    parentZone: "Strefa rodzica",
     profilesTitle: "Kto się dziś uczy?",
     noProfiles: "Poproś rodzica o dodanie profilu w panelu.",
     decksTitle: "Co dziś robimy?",

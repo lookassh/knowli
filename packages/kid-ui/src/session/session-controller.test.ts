@@ -226,10 +226,10 @@ describe("LearningSessionController", () => {
     expect(harness.controller.mediaUrl("asset-1")).toBe("https://media.test/asset-1");
   });
 
-  it("jeden profil pomija ekran wyboru", async () => {
+  it("pojedynczy profil bez initialChildId zatrzymuje się na ekranie wyboru profilu", async () => {
     const harness = makeHarness({ ...baseState(), profiles: [PROFILE_A] });
     await harness.controller.start();
-    expect(harness.controller.getScreen()).toMatchObject({ kind: "deck", childId: PROFILE_A.childId });
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "profile", profiles: [PROFILE_A] });
   });
 
   it("link z profilem otwiera wskazane dziecko bez ekranu wyboru", async () => {
