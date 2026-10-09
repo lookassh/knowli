@@ -6,6 +6,8 @@ import type { Skill } from "../domain/types";
 import { assignments, childProfiles, childSkillProgress, decks, itemRevisionSkills, itemRevisions } from "../db/schema";
 import { AppError } from "../errors";
 import { mapStatus } from "./sessions";
+import { CURRENT_POLICY_ID, loadPolicy } from "../policies/registry";
+import { readLearningSnapshot } from "./learning-snapshot";
 
 /**
  * Widoki startowe Kid Mode (arch §12): profile dzieci (tylko nazwa i awatar)
@@ -22,7 +24,7 @@ export async function listKidProfiles(services: Services): Promise<KidProfileDto
 
 export async function listKidDecks(services: Services, childId: string): Promise<KidDeckDto[]> {
   const child = (
-    await services.db.select({ id: childProfiles.id }).from(childProfiles).where(eq(childProfiles.id, childId))
+    await services.db.select({ id: childProfiles.id, policyId: childProfiles.policyId }).from(childProfiles).where(eq(childProfiles.id, childId))
   )[0];
   if (!child) {
     throw new AppError("not_found");
@@ -91,10 +93,43 @@ export async function listKidDecks(services: Services, childId: string): Promise
     }
   }
   const now = services.clock.now().toISOString();
+  const policy = await loadPolicy(services.db, child.policyId ?? CURRENT_POLICY_ID);
+  const snapshots = await readLearningSnapshot(services.db, {
+    childId,
+    revisionIds: revisions.map((revision) => revision.revisionId),
+    policy,
+    now,
+  });
+  const snapshotByRevision = new Map(snapshots.map((snapshot) => [snapshot.itemRevisionId, snapshot]));
+  for (const snapshot of snapshots) {
+    const reconstructed = progressByRevision.get(snapshot.itemRevisionId) ?? [];
+    for (const [skill, progress] of Object.entries(snapshot.progress) as [Skill, SkillSnapshot][]) {
+      const current = reconstructed.find((row) => row.skill === skill);
+      if (current) {
+        current.status = progress.status;
+        current.nextReviewAt = progress.nextReviewAt;
+        current.streak = progress.streak;
+      } else {
+        reconstructed.push({ skill, ...progress });
+      }
+    }
+    progressByRevision.set(snapshot.itemRevisionId, reconstructed);
+  }
   const itemsByVersion = new Map<string, DeckWorkloadItem[]>();
   for (const revision of revisions) {
     const list = itemsByVersion.get(revision.versionId) ?? [];
-    list.push({ progress: progressByRevision.get(revision.revisionId) ?? [] });
+    const learning = snapshotByRevision.get(revision.revisionId);
+    const scheduledChecks = [learning?.work.recall?.eligibleAt, learning?.work.spelling?.eligibleAt]
+      .filter((value): value is string => value !== null && value !== undefined)
+      .sort();
+    const recognitionStreak = (progressByRevision.get(revision.revisionId) ?? [])
+      .filter((snapshot) => snapshot.skill === "listening" || snapshot.skill === "reading")
+      .reduce((best, snapshot) => Math.max(best, snapshot.streak), 0);
+    list.push({
+      progress: progressByRevision.get(revision.revisionId) ?? [],
+      pendingCheckAt: scheduledChecks[0] ?? null,
+      recallIntroductionNeeded: recognitionStreak >= 1 && !learning?.introducedSkills.recall,
+    });
     itemsByVersion.set(revision.versionId, list);
   }
   const itemCountByVersion = new Map<string, number>();

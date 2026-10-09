@@ -10,6 +10,7 @@ import {
   ensureLearningPolicy,
   CURRENT_POLICY_ID,
   nextTask,
+  loadPolicy,
   publishDraft,
   startSession,
   submitAttempt,
@@ -21,6 +22,7 @@ import {
   testDatabase,
   truncateCoreTables,
 } from "./helpers";
+import { readLearningSnapshot } from "../../packages/server/src/modules/learning-snapshot";
 
 /**
  * Historia prób (zadanie 7): klucz odpowiedzi wydanego zadania, ekspozycje
@@ -169,12 +171,12 @@ async function nextLearningExercise(childId: string, deckId: string, type: TaskD
   return (await openLearningExercise(childId, deckId, type)).task;
 }
 
-async function openLearningExercise(childId: string, deckId: string, type: TaskDto["exerciseType"]): Promise<{
+async function openLearningExercise(childId: string, deckId: string, type: TaskDto["exerciseType"], suppliedServices?: ReturnType<typeof buildTestServices>["services"]): Promise<{
   services: ReturnType<typeof buildTestServices>["services"];
   sessionId: string;
   task: TaskDto;
 }> {
-  const services = buildTestServices().services;
+  const services = suppliedServices ?? buildTestServices().services;
   const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
   for (let step = 0; step < 40; step++) {
     const task = (await nextTask(services, session.sessionId))!;
@@ -265,6 +267,32 @@ describe("niezmienność historii prób (integracja)", () => {
       [task.taskId],
     );
     expect(assessment[0]).toMatchObject({ outcome: "correct", independent: false, confirmation_eligible: false });
+  });
+
+  it("zachowuje termin samodzielnego Recall 24 godziny po pierwszym wydaniu", async () => {
+    const { services, clock } = buildTestServices();
+    const { deckId, versionId } = await sharedDeckForChildren([childId]);
+    const { task } = await openLearningExercise(childId, deckId, "recall", services);
+    await answerCorrectly(task);
+    const policy = await loadPolicy(services.db, CURRENT_POLICY_ID);
+    const revision = (await query<{ id: string }>(
+      `select id from learning_app.item_revisions where deck_version_id = $1 order by position limit 1`, [versionId],
+    ))[0]!;
+    const before = await readLearningSnapshot(services.db, {
+      childId, revisionIds: [revision.id], policy, now: clock.now().toISOString(),
+    });
+    const dueAt = before[0]!.work.recall!.reviewDueAt;
+    expect(dueAt).toBe(new Date(clock.now().getTime() + 24 * 60 * 60 * 1000).toISOString());
+    expect(before[0]!.work.recall!.dueNow).toBe(false);
+
+    clock.advanceHours(24);
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const dueTask = await nextTask(services, session.sessionId);
+    expect(dueTask?.exerciseType).toBe("recall");
+    const after = await readLearningSnapshot(services.db, {
+      childId, revisionIds: [revision.id], policy, now: clock.now().toISOString(),
+    });
+    expect(after[0]!.work.recall!.dueNow).toBe(true);
   });
 
   it("zakończona próba jest niezmieniona, a oceny nie podlegają edycji ani wymianie", async () => {

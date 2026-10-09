@@ -2,6 +2,7 @@ import { computeTargetKey } from "./target-key";
 import { isTestPreparationWindow } from "./test-preparation";
 import type { ExerciseType, Policy, ProgressStatus, ReadingDirection, Skill } from "./types";
 import type { SupportState } from "./support-cycle";
+import type { SkillWork } from "./learning-work";
 
 /**
  * Scheduler v1 — jawne priorytety zamiast losowego score (architecture.md §9.3).
@@ -38,6 +39,10 @@ export interface ScheduleCandidate {
   supportedThisSession: boolean;
   /** Odtwarzalny stan ograniczonego cyklu wsparcia. */
   support?: SupportState;
+  /** Odtwarzalna, niezakończona praca Recall/pisowni/wymowy. */
+  work?: Partial<Record<"recall" | "spelling" | "pronunciation", SkillWork>>;
+  ownPresentationCompleted?: boolean;
+  readingEvidenceDirections?: Partial<Record<ReadingDirection, number>>;
   /** Liczba zadań tego elementu w bieżącej sesji. */
   usedThisSession: number;
   /** Prezentacje (exposure) tego elementu w bieżącej sesji. */
@@ -123,7 +128,7 @@ export interface TaskPlan {
 }
 
 /** Umiejętności z należnym niezależnym sprawdzeniem (rezerwowane). */
-const CHECK_SKILLS: readonly Skill[] = ["recall", "spelling"];
+const CHECK_SKILLS: readonly ("recall" | "spelling")[] = ["recall", "spelling"];
 
 function keyOf(target: string, locale: string): string {
   return computeTargetKey(target, locale);
@@ -144,6 +149,11 @@ function isDue(snapshot: SkillSnapshot | undefined, now: string): boolean {
 function dueCheckAt(candidate: ScheduleCandidate, now: string): string | null {
   let earliest: string | null = null;
   for (const skill of CHECK_SKILLS) {
+    const work = candidate.work?.[skill];
+    if (work?.eligibleAt !== null && work !== undefined) {
+      if (work.dueNow && (earliest === null || work.eligibleAt < earliest)) earliest = work.eligibleAt;
+      continue;
+    }
     const snapshot = candidate.progress[skill];
     if (!isDue(snapshot, now)) continue;
     if (earliest === null || snapshot!.nextReviewAt! < earliest) {
@@ -332,6 +342,10 @@ export interface DeckWorkloadItem {
    * było żadnej próby).
    */
   progress: ReadonlyArray<SkillSnapshot & { skill: Skill }>;
+  /** Najwcześniejszy termin zachowanego sprawdzenia bez projekcji. */
+  pendingCheckAt?: string | null;
+  /** Wprowadzony etap Recall nadal nie został wydany. */
+  recallIntroductionNeeded?: boolean;
 }
 
 /**
@@ -343,7 +357,9 @@ export interface DeckWorkloadItem {
  */
 export function hasScheduledWork(items: readonly DeckWorkloadItem[], now: string): boolean {
   for (const item of items) {
-    let started = false;
+    if (item.pendingCheckAt !== undefined && item.pendingCheckAt !== null && item.pendingCheckAt <= now) return true;
+    if (item.recallIntroductionNeeded) return true;
+    let started = item.pendingCheckAt !== undefined && item.pendingCheckAt !== null;
     let recognitionStreak = 0;
     let recallAssessed = false;
     for (const snapshot of item.progress) {

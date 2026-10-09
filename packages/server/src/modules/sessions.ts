@@ -49,6 +49,7 @@ import { summarizeSessionAssessments } from "../domain/session-summary";
 import { computeTargetKey } from "../domain/target-key";
 import { addLegacyTaskPromptDefaults } from "./task-prompt-compat";
 import { deriveSupportStates, type SupportAttempt, type SupportTask } from "../domain/support-cycle";
+import { readLearningSnapshot } from "./learning-snapshot";
 
 /** Okno wznowienia aktywnej sesji od ostatniego zdarzenia (arch §9.1). */
 export const RESUME_WINDOW_MS = 30 * 60_000;
@@ -431,6 +432,13 @@ async function planNextTask(
   // „Nie pamiętam” nasycie próg wsparcia — deklarowana trudność prowadzi do
   // wsparcia bez czekania na drugi błąd (SPEC §15.1, §16).
   const policy = await loadPolicy(tx, session.policyId);
+  const learningSnapshots = await readLearningSnapshot(tx, {
+    childId: session.childId,
+    revisionIds,
+    policy,
+    now: now.toISOString(),
+  });
+  const snapshotByRevision = new Map(learningSnapshots.map((snapshot) => [snapshot.itemRevisionId, snapshot]));
   const gradedRows = await tx
     .select({
       attemptId: attempts.id,
@@ -546,6 +554,7 @@ async function planNextTask(
   const candidates: ScheduleCandidate[] = revisions.map((r) => {
     const item = items.get(r.id)!;
     const stats = statsByRevision.get(r.id)!;
+    const learning = snapshotByRevision.get(r.id);
     const progress: Partial<Record<Skill, SkillSnapshot>> = {};
     for (const row of progressRows) {
       if (row.itemRevisionId !== r.id || row.status === null) continue;
@@ -554,6 +563,11 @@ async function planNextTask(
         nextReviewAt: row.nextReviewAt?.toISOString() ?? null,
         streak: row.streak ?? 0,
       };
+    }
+    if (learning) {
+      for (const [skill, snapshot] of Object.entries(learning.progress) as [Skill, SkillSnapshot][]) {
+        progress[skill] = snapshot;
+      }
     }
     return {
       itemRevisionId: r.id,
@@ -568,13 +582,16 @@ async function planNextTask(
       failuresThisSession: 0,
       supportedThisSession: stats.supportedThisSession,
       support: supportByRevision.get(r.id),
+      work: learning?.work,
+      ownPresentationCompleted: learning?.ownPresentationCompleted ?? false,
+      readingEvidenceDirections: learning?.readingEvidenceDirections ?? {},
       usedThisSession: stats.usedThisSession,
       presentationsThisSession: stats.presentationsThisSession,
       lastContactAt: sessionContext.previousContact[r.itemId] ?? null,
       lastUsedOrdinal: stats.lastUsedOrdinal,
       readingDirections: stats.readingDirections,
       practiceMix: stats.practiceMix,
-      introducedSkills: introducedByRevision.get(r.id) ?? { recall: false, pronunciation: false },
+      introducedSkills: learning?.introducedSkills ?? introducedByRevision.get(r.id) ?? { recall: false, pronunciation: false },
       hasBeenPresented: historicallyExposed.has(targetKeysByRevision.get(r.id)!),
       testPreparationIssued: taskRows.some(
         (row) =>

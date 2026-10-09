@@ -710,6 +710,16 @@ describe("hasScheduledWork — rekomendacja zestawu na liście dziecka", () => {
     ).toBe(false);
   });
 
+  it("rekomenduje zachowany sprawdzian dopiero po jego terminie", () => {
+    const item = { progress: [], pendingCheckAt: FUTURE };
+    expect(hasScheduledWork([item], NOW)).toBe(false);
+    expect(hasScheduledWork([item], FUTURE)).toBe(true);
+  });
+
+  it("nie odkłada wprowadzenia Recall po rozpoznaniu materiału", () => {
+    expect(hasScheduledWork([{ progress: [], recallIntroductionNeeded: true }], NOW)).toBe(true);
+  });
+
   it("rozpoznany element bez wprowadzonego przypominania ma zaplanowane wprowadzenie etapu", () => {
     expect(
       hasScheduledWork([{ progress: [{ skill: "listening", status: "learning", nextReviewAt: FUTURE, streak: 1 }] }], NOW),
