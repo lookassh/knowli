@@ -46,7 +46,7 @@ kandydata są pokryte poniżej; R01/R04/R05 testujemy wraz z istniejącymi regre
 
 **Interfaces:** `isTestPreparationWindow(input: {now:string; testDate:string|null; timezone:string}): boolean`; bez rzeczywistego zegara i nowych zależności.
 
-- [ ] Napisać granice:
+- [x] Napisać granice:
   ```ts
   expect(isTestPreparationWindow({now:"2026-10-08T22:00:00.000Z",testDate:"2026-10-11",timezone:"Europe/Warsaw"})).toBe(true);
   expect(isTestPreparationWindow({now:"2026-10-08T21:59:59.999Z",testDate:"2026-10-11",timezone:"Europe/Warsaw"})).toBe(false);
@@ -54,9 +54,9 @@ kandydata są pokryte poniżej; R01/R04/R05 testujemy wraz z istniejącymi regre
   expect(isTestPreparationWindow({now:"2026-10-23T23:00:00.000Z",testDate:"2026-10-26",timezone:"Europe/Warsaw"})).toBe(true); // 48 h
   ```
   Dodać cały dzień i jego koniec, datę przeszłą, null, UTC, błędną datę/strefę oraz wiosenne DST: 2027-03-29 zaczyna się 2027-03-28T22:00Z.
-- [ ] RED: `pnpm test:unit packages/server/src/domain/test-preparation.test.ts`; oczekiwana porażka brakującego modułu.
-- [ ] Implementować wyznaczanie lokalnego początku dnia przez Intl na absolutnych instantach; bez parsowania dnia jako UTC i bez sztywnego dodawania 24 h. Wadliwe dane wewnętrzne wyłączają priorytet zamiast blokować sesję.
-- [ ] GREEN: powtórzyć test i typecheck; commit `feat: define family test preparation window`.
+- [x] RED: `pnpm test:unit packages/server/src/domain/test-preparation.test.ts`; moduł brakował zgodnie z oczekiwaniem. Skorygowano błędny fixture wiosennej granicy, który przypadkowo sprawdzał czas już wewnątrz okna.
+- [x] Implementować wyznaczanie lokalnego początku dnia przez Intl na absolutnych instantach; bez parsowania dnia jako UTC i bez sztywnego dodawania 24 h. Wadliwe dane wewnętrzne wyłączają priorytet zamiast blokować sesję.
+- [x] GREEN: test 5/5 i typecheck zakończone powodzeniem; commit `5ba5963 feat: define family test preparation window`.
 
 ### Task 3: Scheduler (A2)
 
