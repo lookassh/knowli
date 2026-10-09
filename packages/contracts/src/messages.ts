@@ -80,6 +80,7 @@ export const messages = {
     back: "Wróć",
     save: "Zapisz zmiany",
     saved: "Zapisano",
+    savedRefreshFailed: "Zapisano, ale nie udało się odświeżyć szkicu.",
     publish: "Publikuj",
     published: "Opublikowany",
     newVersion: "Utwórz nową wersję",

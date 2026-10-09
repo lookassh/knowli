@@ -27,18 +27,19 @@ spóźniony GET oraz refresh failed po udanym PATCH są pokryte w B1–B3.
 
 **Interfaces:** `EditableDeckForm` i `EditableDeckItem` = obecne pola plus `clientKey:string`, `visualData?:Record<string,unknown>`. `EditorSnapshot = {draftId:string; editNumber:number; form:EditableDeckForm}`. `createEditorSnapshot(draft:DraftDto,newKey:()=>string):EditorSnapshot`; `toDraftPatch(snapshot:EditorSnapshot):DraftPatch`. Existing item key = id; nowy key generowany raz, nie wysyłany do API.
 
-- [ ] Unit: snapshot z editNumber=3 wysyła 3 mimo otrzymanego remote=4; usunięcie środkowej karty nie zmienia ID/visualData innych. Nowe karty mają różne clientKey bez serializacji do API; pusty szkic wysyła tylko tytuł bez items. RED `pnpm test:unit apps/web/src/parent/deck-editor-state.test.ts`, potem funkcje konwersji.
+- [x] Unit: snapshot z editNumber=3 wysyła 3 mimo otrzymanego remote=4; usunięcie środkowej karty nie zmienia ID/visualData innych. Nowe karty mają różne clientKey bez serializacji do API; pusty szkic wysyła tylko tytuł bez items. RED potwierdzony brakiem modułu, GREEN: 4 testy.
   Asercje `keeps_base_revision_after_remote_refresh`:
   ```ts
   expect(toDraftPatch(snapshotFromRevision3).expectedEditNumber).toBe(3);
   expect(toDraftPatch(snapshotAfterMiddleRemoval).items?.map(item => item.id)).toEqual([firstId,lastId]);
   expect(toDraftPatch(emptySnapshot).items).toBeUndefined();
   ```
-- [ ] E2E polling: pending media podtrzymują GET; okno A wpisuje poprawkę, B zapisuje wersję 4, A odbiera ją pollingiem, PATCH A wysyła 3 i dostaje 409. RED `pnpm test:e2e tests/e2e/parent-edit-protection.spec.ts --grep polling` przed zmianą komponentu.
-- [ ] Oddzielić snapshot od aktualnych mediów. Aktualizować bazę tylko przy braku dirty i nierozstrzygniętego konfliktu. Media mapować item.id → revisionId; nowa lub zmieniona lokalnie karta nie uruchamia mediów dla innej pozycji. Podczas dirty zablokować regenerację/omit do zapisu.
-- [ ] Zapis ma synchroniczną blokadę ref i używa snapshotu. Pola, dodawanie/usuwanie, operacje mediów zablokowane podczas zapisu. Sukces PATCH daje zapisany DraftDto jako bazę; GET mediów to oddzielny refresh z osobnym komunikatem błędu. Stare odpowiedzi po unmount/zmianie deckId lub nowszym GET nie modyfikują bieżącego formularza.
-- [ ] E2E delayed PATCH blokuje wszystkie pola; PATCH sukces + GET fail daje dirty=false i brak powtórnego zapisu. Napisać i uruchomić te przypadki RED przed odpowiadającą obsługą; kontrola przejść jest w B2.
-- [ ] GREEN unit/E2E/typecheck; commit `fix: keep draft edits tied to their original revision`.
+- [x] E2E polling: pending media podtrzymują GET; okno A wpisuje poprawkę, B zapisuje wersję 4, A odbiera ją pollingiem, PATCH A wysyła 3 i dostaje 409. Najpierw poprawiono helper sesji; właściwy RED: oczekiwano 409, otrzymano 200.
+- [x] Oddzielić snapshot od aktualnych mediów. Aktualizować bazę tylko przy braku dirty i nierozstrzygniętego konfliktu. Media mapować item.id → revisionId; nowa lub zmieniona lokalnie karta nie uruchamia mediów dla innej pozycji. Podczas dirty zablokować regenerację/omit do zapisu.
+- [x] Zapis ma synchroniczną blokadę ref i używa snapshotu. Pola, dodawanie/usuwanie, operacje mediów zablokowane podczas zapisu. Sukces PATCH daje zapisany DraftDto jako bazę; GET mediów to oddzielny refresh z osobnym komunikatem błędu. Stare odpowiedzi po unmount/zmianie deckId lub nowszym GET nie modyfikują bieżącego formularza.
+- [x] E2E delayed PATCH blokuje wszystkie pola; PATCH sukces + GET fail daje dirty=false i brak powtórnego zapisu. RED dla osobnego komunikatu refreshu: najpierw test odebrał surowe „refresh unavailable”. Blokada pól była już obecna w bazowym `busy` i została objęta testem regresyjnym; nie zmieniała się w tej części.
+- [x] GREEN: unit 4/4, E2E 3/3, `pnpm typecheck`.
+- [ ] Commit `fix: keep draft edits tied to their original revision`.
 
 ### Task 2: Kontrola wyjścia (B2)
 
