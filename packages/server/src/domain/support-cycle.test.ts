@@ -28,6 +28,21 @@ describe("deriveSupportStates", () => {
     expect(deriveSupportStates(tasks, attempts, 2).get("item-a")?.phase).toBe("settled");
   });
 
+  it("chooses a written fragment retry after a spelling failure and settles it once", () => {
+    const tasks = [
+      task({ taskId: "source", exerciseType: "recall", state: "answered", reason: "due-check" }),
+      task({ taskId: "support", ordinal: 2, exerciseType: "exposure", state: "completed", reason: "support", supportCycleId: "source" }),
+      task({ taskId: "retry", ordinal: 4, exerciseType: "letter_completion", state: "completed", reason: "retry-after-support", supportCycleId: "source" }),
+    ];
+    const attempts: SupportAttempt[] = [
+      { attemptId: "bad-1", taskId: "source", modality: "text", outcomes: [{ skill: "spelling", outcome: "incorrect" }] },
+      { attemptId: "bad-2", taskId: "source", modality: "text", outcomes: [{ skill: "spelling", outcome: "incorrect" }] },
+      { attemptId: "good", taskId: "retry", modality: "text", outcomes: [{ skill: "spelling", outcome: "correct" }] },
+    ];
+    const state = deriveSupportStates(tasks, attempts, 2).get("item-a");
+    expect(state).toMatchObject({ phase: "settled", retryType: "letter_completion", sourceTaskId: "source" });
+  });
+
   it("keeps technical retry attempts from closing the issued task", () => {
     const tasks = [task({ state: "issued" })];
     const attempts: SupportAttempt[] = [

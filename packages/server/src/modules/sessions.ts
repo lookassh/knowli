@@ -47,6 +47,7 @@ import { lockTaskWithSession, writeSealedEvent, contextOf, type SessionContextSh
 import { payloadToItem } from "./item-payload";
 import { summarizeSessionAssessments } from "../domain/session-summary";
 import { computeTargetKey } from "../domain/target-key";
+import { buildLetterFragment } from "../domain/letter-fragment";
 import { addLegacyTaskPromptDefaults } from "./task-prompt-compat";
 import { deriveSupportStates, type SupportAttempt, type SupportTask } from "../domain/support-cycle";
 import { readLearningSnapshot } from "./learning-snapshot";
@@ -642,15 +643,6 @@ async function planNextTask(
   };
 }
 
-/** Deterministyczny fragment uzupełniania liter: co druga litera widoczna. */
-function letterFragment(target: string): string {
-  const chars = [...target];
-  if (chars.length <= 2) {
-    return chars[0] ?? target;
-  }
-  return chars.map((char, index) => (index % 2 === 0 ? char : "_")).join("");
-}
-
 /** Tasowanie Fishera–Yatesa; pętla nie wykonuje się dla 0/1 elementów. */
 function shuffled<T>(items: readonly T[]): T[] {
   const out = [...items];
@@ -721,7 +713,7 @@ export function materializeTask(
       prompt = { kind: "spelling", prompt: item.source };
       break;
     case "letter_completion":
-      prompt = { kind: "letter_completion", prompt: item.source, fragment: letterFragment(item.target) };
+      prompt = { kind: "letter_completion", prompt: item.source, fragment: buildLetterFragment(item.target) };
       break;
     case "speech":
       prompt = {

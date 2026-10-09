@@ -237,7 +237,7 @@ describe("selectTask — wsparcie po dwóch błędach (SPEC §16)", () => {
       supportedThisSession: true,
       lastUsedOrdinal: 4,
     });
-    const plan = selectTask(input({ candidates: [source], peers: [peer(source)], nextOrdinal: 6 }));
+    const plan = selectTask(input({ candidates: [source], peers: [peer(source)], nextOrdinal: 6, microphoneEnabled: false }));
     expect(plan).toMatchObject({
       itemRevisionId: "rev-1", exerciseType: "letter_completion", reason: "retry-after-support", supportCycleId: "task-source",
     });

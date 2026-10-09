@@ -1,0 +1,132 @@
+import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { createDatabase } from "@learning/server";
+import { readTestRunConfig } from "../test-run-config";
+
+let db: ReturnType<typeof createDatabase> | null = null;
+async function query<T>(sql: string, params: unknown[] = []): Promise<T[]> {
+  if (!db) {
+    const world = JSON.parse(await readFile(join(process.cwd(), readTestRunConfig(process.env).worldFile), "utf8")) as { databaseUrl: string };
+    db = createDatabase(world.databaseUrl);
+  }
+  return (await db.pool.query(sql, params)).rows as T[];
+}
+
+test.afterAll(async () => { await db?.pool.end(); });
+
+async function createAssignedDeck(parent: APIRequestContext, childId: string): Promise<{ deckId: string; versionId: string }> {
+  const title = `Pisownia ${randomUUID()}`;
+  const deckId = randomUUID();
+  expect((await parent.post("/api/v1/parent/decks", { data: { deckId, title } })).status()).toBe(201);
+  const deck = await (await parent.get(`/api/v1/parent/decks/${deckId}`)).json() as { draft: { id: string } };
+  expect(deck.draft?.id).toBeTruthy();
+  const saved = await parent.patch(`/api/v1/parent/drafts/${deck.draft.id}`, {
+    data: {
+      title,
+      expectedEditNumber: 1,
+      items: ["Monday", "Tuesday"].map((target, index) => ({
+        source: ["poniedziałek", "wtorek"][index]!, target, acceptedAnswers: [],
+        locales: { source: "pl-PL", target: "en-GB" }, visualType: "none",
+      })),
+    },
+  });
+  expect(saved.status()).toBe(200);
+  let published = false;
+  for (let i = 0; i < 90 && !published; i += 1) {
+    const current = await (await parent.get(`/api/v1/parent/drafts/${deck.draft.id}`)).json();
+    if (current.assets.some((asset: { role: string; state: string }) => asset.role === "target_audio" && asset.state !== "approved")) {
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      continue;
+    }
+    published = (await parent.post(`/api/v1/parent/drafts/${deck.draft.id}/publish`, {
+      data: { expectedEditNumber: current.editNumber },
+    })).status() === 200;
+  }
+  expect(published).toBe(true);
+  expect((await parent.put(`/api/v1/parent/assignments/${childId}/${deckId}`, { data: { testDate: null } })).status()).toBe(204);
+  const publishedDeck = await (await parent.get(`/api/v1/parent/decks/${deckId}`)).json() as { published: { id: string } };
+  return { deckId, versionId: publishedDeck.published.id };
+}
+
+async function seedDue(childId: string, versionId: string): Promise<void> {
+  const rows = await query<{ skill_version_id: string }>(
+    `select s.skill_version_id from learning_app.item_revision_skills s
+      join learning_app.item_revisions r on r.id = s.item_revision_id
+     where r.deck_version_id = $1 and r.position = 0 and s.skill in ('recall','spelling')`,
+    [versionId],
+  );
+  for (const row of rows) await query(
+    `insert into learning_app.child_skill_progress
+       (child_id, skill_version_id, status, independent_success_streak, next_review_at, projection_version)
+     values ($1,$2,'needs_confirmation',2,'2026-10-01T00:00:00Z','test')
+     on conflict (child_id, skill_version_id) do update set
+       status = excluded.status, independent_success_streak = excluded.independent_success_streak,
+       next_review_at = excluded.next_review_at`,
+    [childId, row.skill_version_id],
+  );
+  expect(rows).toHaveLength(2);
+}
+
+async function taskInfo(taskId: string): Promise<{ exercise_type: string; state: string; answer_key: { target: string } }> {
+  return (await query<{ exercise_type: string; state: string; answer_key: { target: string } }>(
+    `select exercise_type, state, answer_key from learning_app.session_tasks where id = $1`, [taskId],
+  ))[0]!;
+}
+
+test("letter_completion remains text-only when microphone is enabled", async ({ page }) => {
+  test.slow();
+  const parent = page.request;
+  await parent.post("/api/v1/parent/setup", { data: { secret: "1234" } });
+  expect((await parent.post("/api/v1/parent/login", { data: { secret: "1234" } })).status()).toBe(200);
+  const child = await (await parent.post("/api/v1/parent/children", {
+    data: { displayName: `Litery-${randomUUID()}`, avatarKey: "fox", birthYear: 2018 },
+  })).json() as { id: string; displayName: string };
+  const { deckId, versionId } = await createAssignedDeck(parent, child.id);
+  await seedDue(child.id, versionId);
+  const firstDeckList = await parent.get(`/api/v1/kid/decks?childId=${child.id}`);
+  expect(firstDeckList.ok()).toBeTruthy();
+
+  const started = await parent.post("/api/v1/kid/sessions", {
+    data: { childId: child.id, deckId, microphoneEnabled: true },
+  });
+  const { sessionId } = await started.json() as { sessionId: string };
+  const source = await (await parent.post(`/api/v1/kid/sessions/${sessionId}/next`)).json() as { taskId: string; exerciseType: string };
+  expect(source.exerciseType).toBe("recall");
+  for (let failure = 0; failure < 2; failure += 1) {
+    expect((await parent.post(`/api/v1/kid/tasks/${source.taskId}/attempts`, {
+      data: { clientAttemptId: randomUUID(), modality: "text", text: "wrong" },
+    })).status()).toBe(200);
+  }
+  const support = await (await parent.post(`/api/v1/kid/sessions/${sessionId}/next`)).json() as { taskId: string; exerciseType: string };
+  expect(support.exerciseType).toBe("exposure");
+  await parent.post(`/api/v1/kid/tasks/${support.taskId}/complete-presentation`);
+  const other = await (await parent.post(`/api/v1/kid/sessions/${sessionId}/next`)).json() as { taskId: string; exerciseType: string };
+  expect(other.exerciseType).toBe("exposure");
+  await parent.post(`/api/v1/kid/tasks/${other.taskId}/complete-presentation`);
+  const retry = await (await parent.post(`/api/v1/kid/sessions/${sessionId}/next`)).json() as { taskId: string; exerciseType: string };
+  expect(retry.exerciseType).toBe("letter_completion");
+
+  await page.goto("/learn");
+  await page.waitForSelector('[data-testid="kid-profile"], [data-testid="kid-deck"]', { timeout: 30_000 });
+  if (await page.getByTestId("kid-profile").count()) await page.getByTestId("kid-profile").filter({ hasText: child.displayName }).click();
+  await page.getByTestId("kid-mic-toggle").check();
+  await page.getByTestId("kid-deck").filter({ hasText: `Pisownia` }).first().click();
+
+  await expect(page.getByTestId("kid-input")).toBeVisible();
+  const letterTaskId = retry.taskId;
+  expect((await taskInfo(letterTaskId)).exercise_type).toBe("letter_completion");
+  await expect(page.getByTestId("kid-fragment")).toHaveText(/_/);
+  await expect(page.getByTestId("kid-letter-instruction")).toHaveText("Wpisz całe słowo. Pokazane litery Ci pomogą.");
+  await expect(page.getByTestId("kid-input")).toHaveAttribute("autocorrect", "off");
+  await expect(page.getByTestId("kid-input")).toHaveAttribute("autocapitalize", "off");
+  await expect(page.getByTestId("kid-input")).toHaveAttribute("spellcheck", "false");
+  await expect(page.getByTestId("kid-record")).toHaveCount(0);
+
+  await page.getByTestId("kid-input").fill((await taskInfo(letterTaskId!)).answer_key.target);
+  await page.getByTestId("kid-submit").click();
+  await expect(page.getByTestId("kid-feedback")).toContainText("Świetnie");
+  await page.getByTestId("kid-next").click();
+  expect(await taskInfo(letterTaskId)).toMatchObject({ exercise_type: "letter_completion", state: "answered" });
+});

@@ -6,8 +6,9 @@ import type { ExerciseProps } from "./types";
  * Samodzielne przypomnienie, uzupełnianie liter i samodzielna pisownia
  * (SPEC §12.5, §12.7, §12.8). Pola pisowni wyłączają autokorektę, sprawdzanie
  * pisowni, autouzupełnianie i automatyczną kapitalizację w zakresie dostępnym
- * na urządzeniu. Dostępne: odpowiedź ustna (gdy mikrofon działa), „Nie
- * pamiętam — pokaż” i „Pomiń”.
+ * na urządzeniu. Odpowiedź ustna jest dostępna wyłącznie dla samodzielnego
+ * Recall; wsparcie pisowni pozostaje zadaniem tekstowym. Dostępne są też
+ * „Nie pamiętam — pokaż” i „Pomiń”.
  */
 export function WrittenView({ task, busy, recording, micAvailable, handlers }: ExerciseProps) {
   const [text, setText] = useState("");
@@ -22,9 +23,10 @@ export function WrittenView({ task, busy, recording, micAvailable, handlers }: E
         {task.prompt.prompt}
       </p>
       {task.prompt.kind === "letter_completion" && (
-        <p className="kid-fragment" data-testid="kid-fragment">
-          {task.prompt.fragment}
-        </p>
+        <>
+          <p className="kid-fragment" data-testid="kid-fragment">{task.prompt.fragment}</p>
+          <p data-testid="kid-letter-instruction">{messages.kid.typeWholeWordWithLetters}</p>
+        </>
       )}
       <form
         className="kid-written"
@@ -52,7 +54,7 @@ export function WrittenView({ task, busy, recording, micAvailable, handlers }: E
           {messages.kid.check}
         </button>
       </form>
-      {micAvailable &&
+      {micAvailable && task.prompt.kind === "recall" &&
         (recording ? (
           <div className="kid-recording-row">
             <span className="kid-recording" data-testid="kid-recording" role="status">

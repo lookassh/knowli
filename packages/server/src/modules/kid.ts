@@ -6,7 +6,7 @@ import type { Skill } from "../domain/types";
 import { assignments, childProfiles, childSkillProgress, decks, itemRevisionSkills, itemRevisions } from "../db/schema";
 import { AppError } from "../errors";
 import { mapStatus } from "./sessions";
-import { CURRENT_POLICY_ID, loadPolicy } from "../policies/registry";
+import { CURRENT_POLICY_ID, ensureLearningPolicy, loadPolicy } from "../policies/registry";
 import { readLearningSnapshot } from "./learning-snapshot";
 
 /**
@@ -93,6 +93,7 @@ export async function listKidDecks(services: Services, childId: string): Promise
     }
   }
   const now = services.clock.now().toISOString();
+  await ensureLearningPolicy(services.db);
   const policy = await loadPolicy(services.db, child.policyId ?? CURRENT_POLICY_ID);
   const snapshots = await readLearningSnapshot(services.db, {
     childId,

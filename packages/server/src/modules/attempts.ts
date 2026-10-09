@@ -44,6 +44,8 @@ export const ATTEMPT_PROCESSING_TIMEOUT_MS = 60_000;
 
 /** Zadania, w których ujawnienie angielskiego rozwiązania psuje samodzielność (SPEC §12.5–12.8). */
 const RECALL_LIKE: ReadonlySet<string> = new Set(["recall", "spelling", "letter_completion"]);
+const CHOICE_EXERCISES: ReadonlySet<string> = new Set(["listening", "reading", "reverse_recognition"]);
+const WRITTEN_EXERCISES: ReadonlySet<string> = new Set(["recall", "spelling", "letter_completion"]);
 
 type AttemptRow = typeof attempts.$inferSelect;
 type TaskRow = typeof sessionTasks.$inferSelect;
@@ -434,6 +436,12 @@ export async function startAttempt(
   }
   if (task.state !== "issued") {
     throw new AppError("conflict", { message: "task is no longer issued" });
+  }
+  if (
+    (valid.modality === "choice" && !CHOICE_EXERCISES.has(task.exerciseType)) ||
+    (valid.modality === "text" && !WRITTEN_EXERCISES.has(task.exerciseType))
+  ) {
+    throw new AppError("validation", { message: "attempt modality does not match exercise" });
   }
 
   // świeża próba processing (audio) nie uruchamia drugiej analizy — klient
