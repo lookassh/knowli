@@ -231,6 +231,7 @@ async function driveUntil(page: Page, stop: () => Promise<boolean>): Promise<voi
       await page.getByTestId("kid-record").click();
       await expect(page.getByTestId("kid-recording")).toBeVisible();
       await page.getByTestId("kid-stop-record").click();
+      await expect(page.getByTestId("kid-fragment").first()).toHaveClass(/kid-fragment--good/);
       await expect(page.getByTestId("kid-feedback")).toBeVisible();
       await page.getByTestId("kid-next").click();
       continue;

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { randomUUID } from "node:crypto";
 import { messages } from "@learning/contracts";
 
 /**
@@ -234,4 +235,36 @@ test("ręczna edycja zestawu: dodaj element, usuń element, zmień tytuł", asyn
   await expect(page.getByTestId("item-card-7")).toHaveCount(0);
   await expect(page.getByTestId("item-source-6")).toHaveValue("gruszka");
   await expect(page.getByTestId("item-target-0")).toHaveValue("tuesday");
+});
+
+test("rodzic edytuje progi wymowy i otwiera listę kalibracyjną", async ({ page }) => {
+  await page.goto("/");
+  await page.getByTestId("auth-secret").fill("1234");
+  await page.getByTestId("auth-submit").click();
+  await expect(page.getByTestId("tab-children")).toBeVisible();
+  await page.getByTestId("tab-children").click();
+
+  const childIndex = await page.locator('[data-testid^="child-row-"]').count();
+  const childName = `Kalibracja-${randomUUID().slice(0, 8)}`;
+  await page.getByTestId("child-name").fill(childName);
+  await page.getByTestId("child-add").click();
+  const row = page.locator('[data-testid^="child-row"]').filter({ hasText: childName });
+  await expect(row).toBeVisible();
+  await page.getByTestId(`child-settings-${childIndex}`).click();
+  await expect(page.getByTestId("child-threshold-good")).toHaveValue("70");
+  await expect(page.getByTestId("child-threshold-almost")).toHaveValue("50");
+  await expect(page.getByTestId("child-attempts")).toBeVisible();
+
+  await page.getByTestId("child-threshold-good").fill("75");
+  await page.getByTestId("child-threshold-almost").fill("55");
+  const saved = page.waitForResponse(
+    (response) => response.url().includes("/pronunciation") && response.request().method() === "PUT" && response.status() === 204,
+  );
+  await page.getByTestId("child-settings-save").click();
+  await saved;
+  await page.reload();
+  await page.getByTestId("tab-children").click();
+  await page.getByTestId(`child-settings-${childIndex}`).click();
+  await expect(page.getByTestId("child-threshold-good")).toHaveValue("75");
+  await expect(page.getByTestId("child-threshold-almost")).toHaveValue("55");
 });
