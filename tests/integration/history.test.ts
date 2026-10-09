@@ -94,7 +94,7 @@ async function attachFakeReadyAudio(deckVersionId: string, itemIndex: number): P
   );
 }
 
-/** Sesja z jedną zakończoną próbą tekstową; zwraca id zadania i próby. */
+/** Sesja z jedną zakończoną próbą; używa modality zgodnego z wydanym zadaniem. */
 async function sessionWithAttempt(childId: string): Promise<{ taskId: string; attemptId: string }> {
   const services = buildTestServices().services;
   const draft = await createDraft(services, { title: "Historia", items: PAIRS.map(vocabItem) });
@@ -121,11 +121,16 @@ async function sessionWithAttempt(childId: string): Promise<{ taskId: string; at
   for (let step = 0; step < 10; step++) {
     const task = (await nextTask(services, session.sessionId))!;
     if (task.exerciseType !== "exposure") {
+      const answer = (await query<{ target: string; optionId: string | null }>(
+        `select answer_key->>'target' as target, answer_key->>'correctOptionId' as "optionId"
+           from learning_app.session_tasks where id=$1`, [task.taskId],
+      ))[0]!;
       const dto = await submitAttempt(services, {
         taskId: task.taskId,
         clientAttemptId: randomUUID(),
-        modality: "text",
-        text: "monday",
+        ...(answer.optionId === null
+          ? { modality: "text" as const, text: answer.target }
+          : { modality: "choice" as const, optionId: answer.optionId }),
       });
       return { taskId: task.taskId, attemptId: dto.attemptId };
     }

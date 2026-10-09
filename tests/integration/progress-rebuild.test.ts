@@ -32,7 +32,7 @@ describe("rebuildProgress (integracja PostgreSQL)", () => {
   });
 
   it("dry-run nie zapisuje, apply odtwarza projekcje per dziecko i jest idempotentne", async () => {
-    const { services } = buildTestServices();
+    const { services, clock } = buildTestServices();
     const children = await Promise.all([
       createChild(services, { displayName: "Dziecko A", avatarKey: "fox" }),
       createChild(services, { displayName: "Dziecko B", avatarKey: "cat" }),
@@ -82,6 +82,25 @@ describe("rebuildProgress (integracja PostgreSQL)", () => {
       expect(answered).toBe(true);
       await endSession(services, session.sessionId);
     }
+
+    // Zmień wersję polityki dziecka między sesjami; historia tej samej
+    // umiejętności ma teraz dowód learning-v2 i nowszy learning-v1.
+    await pool.query(`update learning_app.child_profiles set policy_id='learning-v1' where id=$1`, [children[0]!.id]);
+    clock.advanceHours(24);
+    const policySession = await startSession(services, { childId: children[0]!.id, deckId: draft.deckId, microphoneEnabled: false });
+    const dueTask = await nextTask(services, policySession.sessionId);
+    expect(dueTask?.exerciseType).toBe("listening");
+    const dueAnswer = (await query<{ target: string; optionId: string | null }>(
+      `select answer_key->>'target' as target, answer_key->>'correctOptionId' as "optionId"
+         from learning_app.session_tasks where id=$1`, [dueTask!.taskId],
+    ))[0]!;
+    await submitAttempt(services, dueAnswer.optionId === null
+      ? { taskId: dueTask!.taskId, clientAttemptId: randomUUID(), modality: "text", text: dueAnswer.target }
+      : { taskId: dueTask!.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: dueAnswer.optionId });
+    await endSession(services, policySession.sessionId);
+    expect(await query<{ policy_id: string }>(
+      `select distinct a.policy_id from learning_app.attempts a where a.child_id=$1 order by a.policy_id`, [children[0]!.id],
+    )).toEqual([{ policy_id: "learning-v1" }, { policy_id: "learning-v2" }]);
 
     const skillVersion = (await query<{ id: string }>(
       `select s.id from learning_app.skill_versions s join learning_app.item_revisions r on r.item_id = s.item_id
