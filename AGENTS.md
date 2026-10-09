@@ -91,6 +91,7 @@ Nie dodawaj mikroserwisów, Redis, osobnego backendu, ogólnego frameworka plugi
 
 ## Sposób implementacji i sprawdzania
 
+- Przed rozpoczęciem zadania sprawdź dostępne skillsy Superpowers i użyj tych, które pasują do pracy; stosuj ich workflow. Przykładowo: brainstorming przed projektowaniem funkcji, writing-plans przed wieloetapową implementacją, systematic-debugging przy błędach, test-driven-development przy poprawkach i verification-before-completion przed uznaniem pracy za zakończoną. Polecenia właściciela i instrukcje tego pliku mają pierwszeństwo.
 - Realizuj uzgodniony plan małymi zadaniami z działającym, sprawdzalnym rezultatem. Nie traktuj odczytania tego pliku jako polecenia zbudowania całego MVP.
 - Próbę mowy i mediów wykonaj zgodnie z zadaniem 0. Bez kluczy lub docelowego urządzenia opisz brakujące dowody; tekstowy fundament może powstawać dalej. Nie deklaruj gotowej oceny wymowy bez tej próby.
 - Nie dodawaj funkcji poza aktualnym zadaniem. Deleguj pracę innym agentom tylko po wyraźnej zgodzie użytkownika.
