@@ -368,6 +368,103 @@ test("jeden profil pomija wybór i prowadzi sesję do obiecanego końca", async 
   expect(sessions.at(-1)!.state).toBe("completed");
 });
 
+test("popup wyniku mieści się w ekranie telefonu bez przewijania", async ({ page }) => {
+  test.slow();
+  await page.setViewportSize({ width: 360, height: 640 });
+  const parent = await parentSession(page);
+  const child = await createChild(parent, "Popup", "fox");
+  const { publishedVersionId } = await createAssignedDeck(parent, child.id, "Popup", `popup-${randomUUID()}`);
+  await seedDue(child.id, publishedVersionId, 0, "recall");
+  await openLearn(page, "Popup");
+  await page.getByTestId("kid-deck").first().click();
+  await expect(page.getByTestId("kid-input")).toBeVisible();
+  const taskId = await currentTaskId(page);
+  await page.getByTestId("kid-input").fill("wrong");
+  await page.getByTestId("kid-submit").click();
+
+  const feedback = page.getByTestId("kid-feedback");
+  const next = page.getByTestId("kid-next");
+  async function assertVisibleWithoutScrolling() {
+    await expect(feedback).toBeVisible();
+    // toBeVisible() alone allows elements below the viewport. Bounding boxes
+    // are read before click(), which otherwise scrolls automatically.
+    for (const locator of [feedback, next]) {
+      const box = await locator.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.y).toBeGreaterThanOrEqual(0);
+      expect(box!.y + box!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+    }
+    await expect(next).toBeFocused();
+    expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
+  }
+
+  await assertVisibleWithoutScrolling();
+  await expect(feedback).toHaveClass(/kid-feedback--retry/);
+  await page.keyboard.press("Escape");
+  await expect(feedback).toBeVisible();
+  await next.click();
+  await expect(feedback).toHaveCount(0);
+  await expect(page.getByTestId("kid-input")).toBeEnabled();
+  expect(await currentTaskId(page)).toBe(taskId);
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe("");
+
+  await page.getByTestId("kid-input").fill(await answerTarget(taskId));
+  await page.getByTestId("kid-input").press("Enter");
+  await expect(feedback).toContainText("Świetnie");
+  for (const viewport of [{ width: 360, height: 640 }, { width: 390, height: 844 },
+    { width: 768, height: 1024 }, { width: 1280, height: 800 }]) {
+    await page.setViewportSize(viewport);
+    await assertVisibleWithoutScrolling();
+  }
+
+  // Stress only the rendered content: a long transcript must scroll inside
+  // the popup, while the continuation action stays in the viewport.
+  await page.setViewportSize({ width: 360, height: 640 });
+  await page.locator(".kid-feedback-content").evaluate((element) => {
+    const transcript = document.createElement("p");
+    transcript.textContent = "Długi tekst odpowiedzi. ".repeat(150);
+    element.append(transcript);
+  });
+  await assertVisibleWithoutScrolling();
+  await page.screenshot({ path: test.info().outputPath("feedback-mobile-long.png") });
+  expect(await page.locator(".kid-feedback-content").evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+  const scrollBefore = await page.evaluate(() => window.scrollY);
+  await page.mouse.move(5, 5);
+  await page.mouse.wheel(0, 600);
+  expect(await page.evaluate(() => window.scrollY)).toBe(scrollBefore);
+  await page.keyboard.press("Tab");
+  // Chromium may move Tab to browser chrome after the sole modal control.
+  // The contract is that focus cannot reach the inert exercise/header.
+  expect(await page.evaluate(() =>
+    [document.querySelector(".kid-task"), document.querySelector(".kid-header")]
+      .some((element) => element?.contains(document.activeElement)),
+  )).toBe(false);
+
+  // An unavailable next step must expose the existing recovery action,
+  // rather than leave an inert error panel behind the modal.
+  let releaseRequest!: () => void;
+  const requestGate = new Promise<void>((resolve) => { releaseRequest = resolve; });
+  await page.route("**/api/v1/kid/sessions/*/next", async (route) => {
+    await requestGate;
+    await route.abort();
+  });
+  await next.click();
+  await expect(next).toBeDisabled();
+  releaseRequest();
+  await expect(page.getByTestId("kid-offline")).toBeVisible();
+  await expect(feedback).toHaveCount(0);
+  await page.unroute("**/api/v1/kid/sessions/*/next");
+  await page.getByTestId("kid-retry").click();
+  await driveUntil(page, async () => (await page.getByTestId("kid-option").count()) > 0);
+  await page.setViewportSize({ width: 360, height: 640 });
+  const choiceId = await currentTaskId(page);
+  await page.getByTestId("kid-option").filter({ hasText: new RegExp(`^\\s*${escapeRegex(await correctOptionText(choiceId))}\\s*$`) }).first().click();
+  await expect(feedback).toContainText("Świetnie");
+  await assertVisibleWithoutScrolling();
+  await next.click();
+  await expect(feedback).toHaveCount(0);
+});
+
 test("dwa profile mają osobne sesje", async ({ page }) => {
   test.slow();
   const parent = await parentSession(page);
@@ -513,6 +610,8 @@ test("odmowa mikrofonu przełącza na tryb bez nagrywania", async ({ page }) => 
   await expect(page.getByTestId("kid-feedback")).toContainText("Świetnie");
 
   // odmowa zapamiętana lokalnie: kolejna sesja startuje bez mikrofonu
+  await page.getByTestId("kid-next").click();
+  await expect(page.getByTestId("kid-feedback")).toHaveCount(0);
   await page.getByTestId("kid-end").click();
   await expect(page.getByTestId("kid-summary")).toBeVisible();
   await page.getByTestId("kid-again").click();
@@ -700,6 +799,8 @@ test("szczegółowe podsumowanie pokazuje samodzielne wyniki i słowa do ćwicze
     await page.getByTestId("kid-input").fill(target.toUpperCase());
     await page.getByTestId("kid-submit").click();
     await expect(page.getByTestId("kid-feedback")).toBeVisible();
+    await page.getByTestId("kid-next").click();
+    await expect(page.getByTestId("kid-feedback")).toHaveCount(0);
     await page.getByTestId("kid-end").click();
     await expect(page.getByTestId("kid-summary-recall")).toContainText("1 słowo");
     await expect(page.getByTestId("kid-summary-spelling")).toHaveCount(0);

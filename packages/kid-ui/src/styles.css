@@ -326,8 +326,33 @@ button {
 }
 
 .kid-feedback {
+  box-sizing: border-box;
+  width: min(528px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  overflow: hidden;
   border-color: #e4e6f4;
   background: #fff;
+}
+
+.kid-feedback:not([open]) {
+  display: none;
+}
+
+.kid-feedback::backdrop {
+  background: rgb(29 29 43 / 45%);
+}
+
+.kid-feedback-content {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  width: 100%;
+}
+
+.kid-feedback > button {
+  flex-shrink: 0;
 }
 
 /* tło feedbacku odpowiada wynikowi (SPEC §16): sukces zielony,

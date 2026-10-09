@@ -2,6 +2,7 @@ import { messages, type FeedbackDto } from "@learning/contracts";
 import { ExerciseView } from "../exercises/ExerciseView";
 import type { ExerciseHandlers } from "../exercises/types";
 import { format } from "../format";
+import { FeedbackDialog } from "./FeedbackDialog";
 import type { LearningSessionController, LearningScreen as LearningScreenState } from "../session/session-controller";
 
 function feedbackText(feedback: FeedbackDto | null): string {
@@ -133,37 +134,37 @@ export function LearnScreen({
         </section>
       )}
 
-      {screen.feedback !== null && (
-        <section
+      {screen.feedback !== null && !offline && screen.error === null && (
+        <FeedbackDialog
           className={["kid-card", "kid-feedback", feedbackTone(screen.feedback.dto)]
             .filter(Boolean)
             .join(" ")}
-          data-testid="kid-feedback"
-          role="status"
         >
-          <p className="kid-feedback-text">{feedbackText(screen.feedback.dto)}</p>
-          {screen.feedback.dto?.heardText && (
-            <p className="kid-heard-text" data-testid="kid-heard-text">
-              {format(messages.kid.feedbackHeard, { word: screen.feedback.dto.heardText })}
-            </p>
-          )}
-          {screen.feedback.dto?.fragments && screen.feedback.dto.fragments.length > 0 && (
-            <p className="kid-fragments" data-testid="kid-fragments">
-              {screen.feedback.dto.fragments.map((fragment, index) => (
-                <span
-                  key={index}
-                  className={`kid-fragment kid-fragment--${fragment.verdict}`}
-                  data-testid="kid-fragment"
-                >
-                  {fragment.text}
-                </span>
-              ))}
-            </p>
-          )}
-          <button type="button" className="kid-primary" data-testid="kid-next" onClick={() => void controller.continueLearning()}>
+          <div className="kid-feedback-content">
+            <p className="kid-feedback-text" id="kid-feedback-title">{feedbackText(screen.feedback.dto)}</p>
+            {screen.feedback.dto?.heardText && (
+              <p className="kid-heard-text" data-testid="kid-heard-text">
+                {format(messages.kid.feedbackHeard, { word: screen.feedback.dto.heardText })}
+              </p>
+            )}
+            {screen.feedback.dto?.fragments && screen.feedback.dto.fragments.length > 0 && (
+              <p className="kid-fragments" data-testid="kid-fragments">
+                {screen.feedback.dto.fragments.map((fragment, index) => (
+                  <span
+                    key={index}
+                    className={`kid-fragment kid-fragment--${fragment.verdict}`}
+                    data-testid="kid-fragment"
+                  >
+                    {fragment.text}
+                  </span>
+                ))}
+              </p>
+            )}
+          </div>
+          <button type="button" className="kid-primary" data-testid="kid-next" disabled={busy} onClick={() => void controller.continueLearning()}>
             {screen.feedback.retry ? messages.kid.feedbackRetry : messages.kid.feedbackNext}
           </button>
-        </section>
+        </FeedbackDialog>
       )}
 
       {task === null && !offline && screen.error === null && (
