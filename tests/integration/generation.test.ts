@@ -73,6 +73,54 @@ describe("trwałe generowanie zestawu (integracja)", () => {
     expect(dto.deckVersionId).toBeTruthy();
   });
 
+  it("zapisuje dane liczby z wyniku LLM po walidacji kontraktu", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = generationServices(fakes);
+
+    fakes.llm.queue({
+      items: [{
+        source: "jedenascie",
+        target: "Eleven",
+        acceptedAnswers: [],
+        visualType: "number",
+        visualData: { count: 11 },
+      }],
+    });
+    const { runId } = await enqueueDeckGeneration(services, { ...COMMAND, idempotencyKey: "visual-data-1" });
+    await executeGeneration(services, runId);
+
+    const dto = await readGeneration(services, runId);
+    expect(dto.state).toBe("succeeded");
+    const [revision] = await query<{ payload: { visualType: string; visualData: { count: number } } }>(
+      "select payload from learning_app.item_revisions where deck_version_id = $1",
+      [dto.deckVersionId!],
+    );
+    expect(revision!.payload).toMatchObject({ visualType: "number", visualData: { count: 11 } });
+  });
+
+  it("odrzuca wygenerowaną pozycję dnia tygodnia sprzeczną ze słowem", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = generationServices(fakes);
+
+    fakes.llm.queue({
+      items: [{
+        source: "poniedziałek",
+        target: "Monday",
+        acceptedAnswers: [],
+        visualType: "sequence",
+        visualData: { position: 2, total: 7, sequenceStart: "Monday" },
+      }],
+    });
+    const { runId } = await enqueueDeckGeneration(services, { ...COMMAND, idempotencyKey: "wrong-weekday-sequence-1" });
+    await executeGeneration(services, runId);
+
+    const dto = await readGeneration(services, runId);
+    expect(dto.state).toBe("failed");
+    expect(dto.errorCode).toBe("validation");
+  });
+
   it("niepoprawny wynik LLM kończy run porażką walidacji i nie zmienia szkicu", async () => {
     const fakes = await fakeGeneration();
     disposers.push(fakes.dispose);

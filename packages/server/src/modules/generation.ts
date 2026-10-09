@@ -6,6 +6,7 @@ import {
   type GenerationCommand,
   type GenerationDto,
   type VocabularyItemInput,
+  isVisualDataValid,
 } from "@learning/contracts";
 import type { Clock, GenerationDeps, Services } from "../config";
 import type { Executor } from "../db/client";
@@ -27,6 +28,10 @@ const GeneratedItemSchema = z.object({
   acceptedAnswers: z.array(z.string().min(1).max(120)).max(20).default([]),
   example: z.string().min(1).max(300).optional(),
   visualType: z.enum(["image", "color", "number", "sequence", "none"]).default("none"),
+  visualData: z.record(z.string(), z.unknown()).optional(),
+}).refine((item) => isVisualDataValid(item.visualType, item.visualData, item.target), {
+  path: ["visualData"],
+  message: "visualData does not match visualType",
 });
 const GeneratedDeckSchema = z.object({
   items: z.array(GeneratedItemSchema).min(1).max(50),
@@ -255,6 +260,7 @@ export async function executeGeneration(services: Services, runId: string): Prom
     acceptedAnswers: item.acceptedAnswers,
     ...(item.example === undefined ? {} : { example: item.example }),
     visualType: item.visualType,
+    ...(item.visualData === undefined ? {} : { visualData: item.visualData }),
     locales: runInput.locales,
   }));
   try {

@@ -59,6 +59,135 @@ export function toChildDto(row: {
 export const VisualTypeSchema = z.enum(["image", "color", "number", "sequence", "none"]);
 export type VisualType = z.infer<typeof VisualTypeSchema>;
 
+export const ColorVisualDataSchema = z.object({
+  color: z.string().regex(/^#[\da-f]{6}$/i),
+}).strict();
+export const NumberVisualDataSchema = z.object({
+  count: z.number().int().min(1).max(50),
+}).strict();
+export const SequenceVisualDataSchema = z.object({
+  position: z.number().int().min(1).max(12),
+  total: z.number().int().min(1).max(12),
+  sequenceStart: z.string().min(1).max(40),
+}).strict().refine(({ position, total }) => position <= total);
+
+const WEEKDAY_POSITIONS: Record<string, number> = {
+  monday: 1,
+  tuesday: 2,
+  wednesday: 3,
+  thursday: 4,
+  friday: 5,
+  saturday: 6,
+  sunday: 7,
+};
+
+const ENGLISH_NUMBER_VALUES: Record<string, number> = {
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+  thirteen: 13,
+  fourteen: 14,
+  fifteen: 15,
+  sixteen: 16,
+  seventeen: 17,
+  eighteen: 18,
+  nineteen: 19,
+  twenty: 20,
+  thirty: 30,
+  forty: 40,
+  fifty: 50,
+};
+
+const ENGLISH_NUMBER_UNITS: Record<string, number> = {
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+};
+
+const ENGLISH_COLOR_HEXES: Record<string, string> = {
+  red: "#ff0000",
+  blue: "#0000ff",
+  green: "#008000",
+  yellow: "#ffff00",
+  orange: "#ffa500",
+  purple: "#800080",
+  pink: "#ffc0cb",
+  black: "#000000",
+  white: "#ffffff",
+  brown: "#a52a2a",
+  gray: "#808080",
+  grey: "#808080",
+};
+
+function knownEnglishNumber(target: string | undefined): number | undefined {
+  const word = target?.trim().toLowerCase().replace(/[\s-]/g, "");
+  if (!word) return undefined;
+  if (/^\d+$/.test(word)) {
+    const numeric = Number(word);
+    return Number.isInteger(numeric) && numeric >= 1 && numeric <= 50 ? numeric : undefined;
+  }
+  const exact = ENGLISH_NUMBER_VALUES[word];
+  if (exact !== undefined) return exact;
+  for (const [tensWord, tensValue] of Object.entries(ENGLISH_NUMBER_VALUES)) {
+    if (tensValue < 20 || tensValue % 10 !== 0 || !word.startsWith(tensWord)) continue;
+    const unitValue = ENGLISH_NUMBER_UNITS[word.slice(tensWord.length) ?? ""];
+    if (unitValue !== undefined) return tensValue + unitValue;
+  }
+  return undefined;
+}
+
+/** Waliduje dane rendererów deterministycznych przy granicy kontraktu. */
+export function isVisualDataValid(
+  visualType: VisualType,
+  visualData: Record<string, unknown> | undefined,
+  target?: string,
+): boolean {
+  if (visualData === undefined) {
+    return visualType !== "color" && visualType !== "number" && visualType !== "sequence";
+  }
+  switch (visualType) {
+    case "color": {
+      const parsed = ColorVisualDataSchema.safeParse(visualData);
+      if (!parsed.success) return false;
+      const expectedColor = target === undefined ? undefined : ENGLISH_COLOR_HEXES[target.trim().toLowerCase()];
+      return expectedColor === undefined || parsed.data.color.toLowerCase() === expectedColor;
+    }
+    case "number": {
+      const parsed = NumberVisualDataSchema.safeParse(visualData);
+      if (!parsed.success) return false;
+      const expectedCount = knownEnglishNumber(target);
+      return expectedCount === undefined || parsed.data.count === expectedCount;
+    }
+    case "sequence": {
+      const parsed = SequenceVisualDataSchema.safeParse(visualData);
+      if (!parsed.success) return false;
+      const weekdayPosition = target === undefined ? undefined : WEEKDAY_POSITIONS[target.trim().toLowerCase()];
+      if (weekdayPosition === undefined) return true;
+      return parsed.data.position === weekdayPosition &&
+        parsed.data.total === 7 &&
+        parsed.data.sequenceStart.trim().toLowerCase() === "monday";
+    }
+    case "image":
+    case "none":
+      return true;
+  }
+}
+
 export const LocalesSchema = z.object({
   source: z.string().min(2).max(10),
   target: z.string().min(2).max(10),
@@ -79,6 +208,9 @@ export const VocabularyItemInputSchema = z.object({
   example: z.string().min(1).max(300).optional(),
   visualType: VisualTypeSchema,
   visualData: z.record(z.string(), z.unknown()).optional(),
+}).refine((item) => isVisualDataValid(item.visualType, item.visualData, item.target), {
+  path: ["visualData"],
+  message: "visualData does not match visualType",
 });
 export type VocabularyItemInput = z.infer<typeof VocabularyItemInputSchema>;
 

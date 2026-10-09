@@ -1,5 +1,20 @@
 import { z } from "zod";
 import { InstantSchema, UuidSchema } from "./common";
+import { isVisualDataValid, VisualTypeSchema } from "./decks";
+
+const visualPromptFields = {
+  visualType: VisualTypeSchema.default("none"),
+  visualData: z.record(z.string(), z.unknown()).optional(),
+};
+
+function validateVisualPrompt(
+  prompt: { visualType: z.infer<typeof VisualTypeSchema>; visualData?: Record<string, unknown>; target: string },
+  ctx: z.RefinementCtx,
+) {
+  if (!isVisualDataValid(prompt.visualType, prompt.visualData, prompt.target)) {
+    ctx.addIssue({ code: "custom", path: ["visualData"], message: "visualData does not match visualType" });
+  }
+}
 
 /**
  * Kontrakty Kid API (architecture.md §9). Publiczne DTO nigdy nie zawierają
@@ -45,6 +60,7 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
      * media, bez dodatkowej ekspozycji (arch §12).
      */
     imageAssetId: UuidSchema.nullable(),
+    ...visualPromptFields,
   }),
   z.object({
     kind: z.literal("listening"),
@@ -74,8 +90,17 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     audioAssetId: UuidSchema.nullable(),
     /** Ilustracja karty; cel i tak jest widoczny w treści zadania (SPEC §24). */
     imageAssetId: UuidSchema.nullable(),
+    ...visualPromptFields,
   }),
-]);
+]).superRefine((prompt, ctx) => {
+  if (prompt.kind === "exposure" || prompt.kind === "speech") {
+    validateVisualPrompt({
+      visualType: prompt.visualType,
+      ...(prompt.visualData === undefined ? {} : { visualData: prompt.visualData }),
+      target: prompt.kind === "exposure" ? prompt.target : prompt.text,
+    }, ctx);
+  }
+});
 export type TaskPrompt = z.infer<typeof TaskPromptSchema>;
 
 export const SessionInputSchema = z.object({

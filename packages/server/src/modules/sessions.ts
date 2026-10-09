@@ -11,6 +11,7 @@ import {
   type SessionSummaryDto,
   type TaskDto,
   type TaskPrompt,
+  type VisualType,
 } from "@learning/contracts";
 import type { Services } from "../config";
 import type { Tx } from "../db/client";
@@ -41,6 +42,7 @@ import type { ProgressStatus, ReadingDirection, Skill } from "../domain/types";
 import { loadPolicy, ensureLearningPolicy, CURRENT_POLICY_ID } from "../policies/registry";
 import { lockTaskWithSession, writeSealedEvent, contextOf, type SessionContextShape } from "./events";
 import { payloadToItem } from "./item-payload";
+import { addLegacyTaskPromptDefaults } from "./task-prompt-compat";
 
 /** Okno wznowienia aktywnej sesji od ostatniego zdarzenia (arch §9.1). */
 export const RESUME_WINDOW_MS = 30 * 60_000;
@@ -272,6 +274,8 @@ interface PlannedItem {
   source: string;
   target: string;
   acceptedAnswers: string[];
+  visualType: VisualType;
+  visualData?: Record<string, unknown>;
   example?: string;
   sourceLocale: string;
   targetLocale: string;
@@ -454,6 +458,8 @@ async function planNextTask(
           source: item.source,
           target: item.target,
           acceptedAnswers: [...item.acceptedAnswers],
+          visualType: item.visualType,
+          ...(item.visualData === undefined ? {} : { visualData: item.visualData }),
           ...(item.example === undefined ? {} : { example: item.example }),
           sourceLocale: item.locales.source,
           targetLocale: item.locales.target,
@@ -595,6 +601,10 @@ function materializeTask(
         audioAssetId,
         exampleAudioAssetId,
         imageAssetId,
+        visualType: item.visualType,
+        ...(item.visualType !== "image" && item.visualType !== "none" && item.visualData !== undefined
+          ? { visualData: item.visualData }
+          : {}),
       };
       break;
     case "listening":
@@ -616,7 +626,16 @@ function materializeTask(
       prompt = { kind: "letter_completion", prompt: item.source, fragment: letterFragment(item.target) };
       break;
     case "speech":
-      prompt = { kind: "speech", text: item.target, audioAssetId, imageAssetId };
+      prompt = {
+        kind: "speech",
+        text: item.target,
+        audioAssetId,
+        imageAssetId,
+        visualType: item.visualType,
+        ...(item.visualType !== "image" && item.visualType !== "none" && item.visualData !== undefined
+          ? { visualData: item.visualData }
+          : {}),
+      };
       break;
   }
   return { prompt, answerKey };
@@ -725,17 +744,8 @@ function issuedTaskDto(
   task: IssuedShape,
   assessedBefore: number,
 ): TaskDto {
-  // Treść wydanego zadania jest niezmienna: promptom sprzed dodania pola
-  // uzupełniamy brakujące nullable na odtworzeniu, żeby klient przeszedł
-  // walidację schematu — bez zmiany znaczenia starego zadania.
-  const prompt = { ...(task.publicPrompt as Record<string, unknown>) };
-  if (prompt.kind === "exposure") {
-    if (prompt.exampleAudioAssetId === undefined) prompt.exampleAudioAssetId = null;
-    if (prompt.imageAssetId === undefined) prompt.imageAssetId = null;
-  }
-  if (prompt.kind === "speech" && prompt.imageAssetId === undefined) {
-    prompt.imageAssetId = null;
-  }
+  // Zachowaj znaczenie snapshotów i dopełnij jedynie brakujące pola kontraktu.
+  const prompt = addLegacyTaskPromptDefaults(task.publicPrompt as Record<string, unknown>);
   return {
     taskId: task.id,
     sessionId: session.id,

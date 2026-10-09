@@ -61,6 +61,14 @@ const DAY_ITEMS: { source: string; target: string }[] = [
   { source: "czarny", target: "black" },
 ];
 
+const TEST_COLOR_HEXES: Record<string, string> = {
+  red: "#ff0000",
+  blue: "#0000ff",
+  green: "#008000",
+  yellow: "#ffff00",
+  black: "#000000",
+};
+
 function vocabItem(pair: { source: string; target: string }, example?: string) {
   return {
     source: pair.source,
@@ -68,7 +76,7 @@ function vocabItem(pair: { source: string; target: string }, example?: string) {
     acceptedAnswers: [],
     locales: { source: "pl-PL", target: "en-GB" },
     visualType: "color" as const,
-    visualData: { color: "#4169e1" },
+    visualData: { color: TEST_COLOR_HEXES[pair.target.toLowerCase()] ?? "#4169e1" },
     ...(example !== undefined ? { example } : {}),
   };
 }
@@ -379,7 +387,12 @@ describe("cykl życia sesji (integracja)", () => {
     const task = await nextTask(services, session.sessionId);
 
     expect(task!.exerciseType).toBe("exposure");
-    expect(task!.prompt).toMatchObject({ kind: "exposure", target: "Monday" });
+    expect(task!.prompt).toMatchObject({
+      kind: "exposure",
+      target: "Monday",
+      visualType: "color",
+      visualData: { color: "#4169e1" },
+    });
     expect(task!.remainingAssessed).toBe(session.taskBudget);
 
     // zapis ujawnienia poprzedza odpowiedź HTTP i działa bez ACK klienta

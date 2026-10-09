@@ -13,7 +13,7 @@ export function SpeechView({ task, busy, recording, micAvailable, mediaUrl, hand
   }
   return (
     <section className="kid-card">
-      {task.prompt.imageAssetId !== null ? (
+      {task.prompt.visualType === "image" && task.prompt.imageAssetId !== null ? (
         <img
           className="kid-illustration"
           data-testid="kid-illustration"
@@ -21,7 +21,11 @@ export function SpeechView({ task, busy, recording, micAvailable, mediaUrl, hand
           alt={task.prompt.text}
         />
       ) : (
-        <Visual text={task.prompt.text} />
+        <Visual
+          text={task.prompt.text}
+          visualType={task.prompt.visualType}
+          visualData={task.prompt.visualData}
+        />
       )}
       <p className="kid-word" data-testid="kid-target">
         {task.prompt.text}
