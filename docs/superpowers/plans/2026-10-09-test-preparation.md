@@ -58,18 +58,18 @@ kandydata są pokryte poniżej; R01/R04/R05 testujemy wraz z istniejącymi regre
 - [x] Implementować wyznaczanie lokalnego początku dnia przez Intl na absolutnych instantach; bez parsowania dnia jako UTC i bez sztywnego dodawania 24 h. Wadliwe dane wewnętrzne wyłączają priorytet zamiast blokować sesję.
 - [x] GREEN: test 5/5 i typecheck zakończone powodzeniem; commit `5ba5963 feat: define family test preparation window`.
 
-### Task 3: Scheduler (A2)
+### Task 3: Scheduler (A2) — wykonano w `e9c548e`
 
 **Files:** Modify `packages/server/src/domain/{scheduler.ts,scheduler.test.ts}`; Create `packages/server/src/domain/test-preparation-scheduler.test.ts`.
 
 **Interfaces:** `ScheduleInput.testPreparation?: {testDate:string|null; timezone:string}`, `recentAssessedReasons?: readonly ScheduleReason[]` = ostatnie dwa chronologicznie; `ScheduleCandidate.hasBeenPresented?:boolean`, `testPreparationIssued?:boolean`. Brak nowych pól oznacza dotychczasowe zachowanie. `ScheduleReason` rozszerzyć o `test-preparation` i `test-preparation-break`. `recognitionPlan` akceptuje dodatkowy reason break.
 
-- [ ] Test: znana karta z wcześniejszą prezentacją, sukcesem listening i spelling learning + unseen wcześniejsze w liście. W oknie oczekiwać `{itemRevisionId:known.id,exerciseType:"recall",reason:"test-preparation",revealsTargetKeys:[]}`; bez terminu dotychczasowego new-material.
-- [ ] Dodać kolejność needs_reconfirmation → spelling → recall → position; nieznane nie jest przepytywane; mastered Recall+spelling nie jest kandydatem. Brak wcześniejszego recall nie blokuje przygotowania po prezentacji i rozpoznaniu.
-- [ ] Dodać due-check i support przed preparation, odstęp po wsparciu, wykluczenie settled i preparation-issued; wszystkie ujawniane cele/dystraktory chronią rezerwacje. Dwa ostatnie assessed reasons preparation → łatwe rozpoznawanie przed nowym materiałem, jeśli istnieje bezpieczny znany kandydat. Brak takiego kandydata wraca do zwykłych bezpiecznych priorytetów. Budżet zero daje null.
-- [ ] RED: `pnpm test:unit packages/server/src/domain/test-preparation-scheduler.test.ts`; oczekiwana porażka kolejności, nie błędnego fixture.
-- [ ] Implementować priorytet po retry-after-support, przed stage-introduction. Deterministyczne sortowanie i istniejące recognitionPlan, bez osobnej oceny wiedzy lub luzowania kwalifikacji.
-- [ ] GREEN: `pnpm test:unit packages/server/src/domain`; commit `feat: prioritize written practice before family tests`.
+- [x] Test: znana karta z wcześniejszą prezentacją, sukcesem listening i spelling learning + unseen wcześniejsze w liście. W oknie oczekiwać `{itemRevisionId:known.id,exerciseType:"recall",reason:"test-preparation",revealsTargetKeys:[]}`; bez terminu dotychczasowego new-material.
+- [x] Dodać kolejność needs_reconfirmation → spelling → recall → position; nieznane nie jest przepytywane; mastered Recall+spelling nie jest kandydatem. Brak wcześniejszego recall nie blokuje przygotowania po prezentacji i rozpoznaniu.
+- [x] Dodać due-check i support przed preparation, odstęp po wsparciu, wykluczenie settled i preparation-issued; wszystkie ujawniane cele/dystraktory chronią rezerwacje. Dwa ostatnie assessed reasons preparation → łatwe rozpoznawanie przed nowym materiałem, jeśli istnieje bezpieczny znany kandydat. Brak takiego kandydata wraca do zwykłych bezpiecznych priorytetów. Budżet zero daje null.
+- [x] RED: `pnpm test:unit packages/server/src/domain/test-preparation-scheduler.test.ts`; 3 oczekiwane porażki potwierdziły brak priorytetu i przerwy.
+- [x] Implementować priorytet po retry-after-support, przed stage-introduction. Deterministyczne sortowanie i istniejące recognitionPlan, bez osobnej oceny wiedzy lub luzowania kwalifikacji.
+- [x] GREEN: domain 12 plików/147 testów, typecheck; commit `e9c548e feat: prioritize written practice before family tests`.
 
 ### Task 4: Sesje, historia i HTTP (A3)
 
