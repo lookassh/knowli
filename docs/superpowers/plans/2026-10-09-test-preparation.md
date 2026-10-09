@@ -25,7 +25,7 @@ kandydata są pokryte poniżej; R01/R04/R05 testujemy wraz z istniejącymi regre
 
 **Files:** Create `tests/{test-run-config.ts,test-run-config.test.ts}`; Modify `vitest.unit.config.ts`, `playwright.config.ts`, `tests/integration/global-setup.ts`, `tests/e2e/{global-setup.ts,kid-flow.spec.ts}`.
 
-**Interfaces:** `readTestRunConfig(env: Record<string,string|undefined>): {integrationContainerPrefix:string; e2eContainer:string; e2ePort:number; worldFile:string}`. `UMIEM_TEST_RUN_ID` = `[a-z0-9-]+`, `UMIEM_E2E_PORT` = integer 1024–65535. Brak env zachowuje obecne nazwy, port 24500 i `.world.json`; ID wyznacza unikalny prefiks/nazwę/world file. Port wspólny dla setup i Playwright; konfiguracja odczytywana tylko raz na proces.
+**Interfaces:** `readTestRunConfig(env: Record<string,string|undefined>): {integrationContainerPrefix:string; e2eContainer:string; e2ePort:number; workerHealthPort:number; worldFile:string}`. `UMIEM_TEST_RUN_ID` = `[a-z0-9-]+`, `UMIEM_E2E_PORT` i `UMIEM_WORKER_HEALTH_PORT` = integer 1024–65535. Brak env zachowuje obecne nazwy, porty 24500/9301 i `.world.json`; ID wyznacza unikalny prefiks/nazwę/world file oraz domyślny port health workera pochodny od E2E. Porty można nadpisać osobno; setup i Playwright czytają wspólną konfigurację.
 
 - [x] Napisać test dwóch ID: różne kontenery/prefiksy/worldFile; przypisany port jest identyczny dla wszystkich odbiorców. Odrzucić niepoprawny ID i port; sprawdzić defaults. Dopisać tylko ten test do include konfiguracji unit.
   ```ts
@@ -39,6 +39,7 @@ kandydata są pokryte poniżej; R01/R04/R05 testujemy wraz z istniejącymi regre
   ```
 - [x] RED: `pnpm test:unit tests/test-run-config.test.ts` (12 testów; 11 oczekiwanych porażek przed implementacją). Następnie implementować helper i podłączyć wszystkie miejsca. Stale cleanup integration ograniczyć do własnego prefiksu. `kid-flow` odczytuje skonfigurowany world file.
 - [x] GREEN: unit 28 plików/258 testów, integration 13 plików/135 testów, E2E 35/35, typecheck; run ID `b2d0-reliability`, port 24510. Commit `test: isolate database and browser test runs`.
+- [x] Uzupełnienie A0: równoległy worker z głównego checkoutu zajmował stały port health 9301; RED wykazał brak pola i 7 porażek testu konfiguracji. Port workera jest teraz osobny dla przebiegów. Test konfiguracji 17/17 i typecheck przechodzą; rerun E2E po tej poprawce.
 
 ### Task 2: Okno terminu (A1)
 

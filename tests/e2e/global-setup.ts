@@ -131,6 +131,7 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
       UMIEM_IMAGE_PROVIDER: "fake-image",
       UMIEM_IMAGE_MODEL: "fake-image-1",
       UMIEM_IMAGE_SIZE: "512x512",
+      WORKER_HEALTH_PORT: String(TEST_RUN_CONFIG.workerHealthPort),
     };
 
     const web = spawn(

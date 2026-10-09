@@ -9,8 +9,11 @@ describe("readTestRunConfig", () => {
     expect(a.integrationContainerPrefix).not.toBe(b.integrationContainerPrefix);
     expect(a.e2eContainer).not.toBe(b.e2eContainer);
     expect(a.worldFile).not.toBe(b.worldFile);
+    expect(a.workerHealthPort).not.toBe(b.workerHealthPort);
     expect(a.e2ePort).toBe(24510);
     expect(b.e2ePort).toBe(24511);
+    expect(a.workerHealthPort).toBe(34510);
+    expect(b.workerHealthPort).toBe(34511);
   });
 
   it("preserves the current runner defaults", () => {
@@ -18,6 +21,7 @@ describe("readTestRunConfig", () => {
       integrationContainerPrefix: "knowli-it-",
       e2eContainer: "knowli-e2e",
       e2ePort: 24500,
+      workerHealthPort: 9301,
       worldFile: "tests/e2e/.world.json",
     });
   });
@@ -28,5 +32,9 @@ describe("readTestRunConfig", () => {
 
   it.each(["", "abc", "1023", "65536", "24x10"])("rejects invalid E2E port %j", (port) => {
     expect(() => readTestRunConfig({ UMIEM_E2E_PORT: port })).toThrow(/UMIEM_E2E_PORT/);
+  });
+
+  it.each(["", "abc", "1023", "65536", "24x10"])("rejects invalid worker health port %j", (port) => {
+    expect(() => readTestRunConfig({ UMIEM_WORKER_HEALTH_PORT: port })).toThrow(/UMIEM_WORKER_HEALTH_PORT/);
   });
 });

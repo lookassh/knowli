@@ -2,6 +2,7 @@ export interface TestRunConfig {
   integrationContainerPrefix: string;
   e2eContainer: string;
   e2ePort: number;
+  workerHealthPort: number;
   worldFile: string;
 }
 
@@ -20,10 +21,22 @@ export function readTestRunConfig(env: Record<string, string | undefined>): Test
     throw new Error("UMIEM_E2E_PORT must be an integer from 1024 to 65535");
   }
 
+  const rawWorkerPort = env.UMIEM_WORKER_HEALTH_PORT;
+  if (rawWorkerPort !== undefined && !/^\d+$/.test(rawWorkerPort)) {
+    throw new Error("UMIEM_WORKER_HEALTH_PORT must be an integer from 1024 to 65535");
+  }
+  const workerHealthPort = rawWorkerPort === undefined
+    ? runId ? 10_000 + (e2ePort % 50_000) : 9301
+    : Number(rawWorkerPort);
+  if (!Number.isInteger(workerHealthPort) || workerHealthPort < 1024 || workerHealthPort > 65535) {
+    throw new Error("UMIEM_WORKER_HEALTH_PORT must be an integer from 1024 to 65535");
+  }
+
   return {
     integrationContainerPrefix: runId ? `knowli-it-${runId}-` : "knowli-it-",
     e2eContainer: runId ? `knowli-e2e-${runId}` : "knowli-e2e",
     e2ePort,
+    workerHealthPort,
     worldFile: `tests/e2e/${runId ? `.world-${runId}.json` : ".world.json"}`,
   };
 }

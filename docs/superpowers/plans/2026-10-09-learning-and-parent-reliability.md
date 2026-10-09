@@ -45,6 +45,7 @@ obsługi wygasłej autoryzacji w ParentApp; nie dzieli stanu generacji z edytore
 - [x] Zweryfikować istniejący zarządzany worktree i detached HEAD. Użyć workflow using-git-worktrees dla istniejącego środowiska; nie tworzyć drugiego checkoutu bez potrzeby.
 - [x] Uruchomić `pnpm test:unit`, potem `pnpm typecheck`. Przed przygotowaniem zależności nie uruchamiać dwóch pnpm równolegle — ten host automatycznie przygotowuje node_modules.
 - [x] Wykonać A0: izolacja kontenera, portu i world file. Nie uruchamiać domyślnego runnera, który usuwa kontenery innych przebiegów.
+- [x] Uzupełnić A0 o izolację portu health workera po wykryciu równoległego przebiegu w głównym checkoutcie; test konfiguracji RED/GREEN w `2026-10-09-test-preparation.md`.
 
 ## Odbiór pakietu
 
