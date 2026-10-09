@@ -10,14 +10,19 @@ async function enterParent(page: Page): Promise<void> {
   await page.getByTestId("tab-decks").click();
 }
 
-test("polling conflict sends the form's base edit number and keeps local correction", async ({ page }) => {
+test("polling conflict sends the form's base edit number and keeps local correction", async ({ page }, testInfo) => {
   const pageB = await page.context().newPage();
   let holdNextGet = false;
+  let blockConflictReads = false;
   let releaseHeldGet: (() => void) | undefined;
   let notifyHeldGet: (() => void) | undefined;
   const heldGet = new Promise<void>((resolve) => { notifyHeldGet = resolve; });
   const releaseGet = new Promise<void>((resolve) => { releaseHeldGet = resolve; });
   await page.route("**/api/v1/parent/decks/*", async (route: Route) => {
+    if (route.request().method() === "GET" && blockConflictReads) {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ code: "internal", message: "temporary conflict read failure" }) });
+      return;
+    }
     if (route.request().method() === "GET" && holdNextGet) {
       holdNextGet = false;
       notifyHeldGet?.();
@@ -61,6 +66,7 @@ test("polling conflict sends the form's base edit number and keeps local correct
   expect((await remoteSave).status()).toBe(200);
   releaseHeldGet?.();
   await remoteRead;
+  blockConflictReads = true;
 
   let conflictStatus: number | undefined;
   const localSave = page.waitForResponse((response) => {
@@ -71,8 +77,55 @@ test("polling conflict sends the form's base edit number and keeps local correct
   await page.getByTestId("save-items").click();
   await localSave;
   expect(conflictStatus).toBe(409);
+  await expect(page.getByTestId("deck-conflict-panel")).toBeVisible();
+  await expect(page.getByTestId("conflict-load-error")).toBeVisible();
+  await expect(page.getByTestId("item-source-0")).toHaveValue(localValue);
+  blockConflictReads = false;
+  await page.getByTestId("conflict-retry").click();
+  await expect(page.getByTestId("conflict-remote-title")).toContainText("remote version");
   await expect(page.getByTestId("item-source-0")).toHaveValue(localValue);
   await expect(page.getByTestId("editor-title")).toHaveValue(title);
+  for (const [width, height] of [[390, 844], [768, 1024], [1440, 900]]) {
+    await page.setViewportSize({ width, height });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`conflict-${width}.png`), fullPage: true });
+  }
+  expect(conflictStatus).toBe(409);
+  await page.waitForTimeout(100);
+  expect(conflictStatus).toBe(409);
+
+  await page.getByTestId("conflict-load-remote").click();
+  await expect(page.getByTestId("conflict-confirm")).toBeVisible();
+  await page.getByTestId("conflict-cancel").click();
+  await expect(page.getByTestId("item-source-0")).toHaveValue(localValue);
+  await page.getByTestId("conflict-load-remote").click();
+  await page.getByTestId("conflict-confirm").click();
+  await expect(page.getByTestId("editor-title")).toHaveValue("remote version");
+  await expect(page.getByTestId("item-target-0")).toHaveValue("cat");
+  await expect(page.getByTestId("deck-conflict-panel")).toContainText(localValue);
+
+  await pageB.getByTestId("editor-title").fill("remote version 2");
+  const remoteSaveAgain = pageB.waitForResponse((response) => response.request().method() === "PATCH" && response.url().includes("/api/v1/parent/drafts/"));
+  await pageB.getByTestId("save-items").click();
+  expect((await remoteSaveAgain).status()).toBe(200);
+  await page.getByTestId("item-target-0").fill(localValue);
+  const secondConflict = page.waitForResponse((response) => response.request().method() === "PATCH" && response.url().includes("/api/v1/parent/drafts/"));
+  await page.getByTestId("save-items").click();
+  expect((await secondConflict).status()).toBe(409);
+  await expect(page.getByTestId("conflict-remote-title")).toContainText("remote version 2");
+  await expect(page.getByTestId("item-target-0")).toHaveValue(localValue);
+  await page.getByTestId("conflict-load-remote").click();
+  await page.getByTestId("conflict-confirm").click();
+  await expect(page.getByTestId("editor-title")).toHaveValue("remote version 2");
+  await expect(page.getByTestId("item-target-0")).toHaveValue("cat");
+  await page.getByTestId("item-target-0").fill(localValue);
+  const reappliedSave = page.waitForResponse((response) => response.request().method() === "PATCH" && response.url().includes("/api/v1/parent/drafts/"));
+  await page.getByTestId("save-items").click();
+  expect((await reappliedSave).status()).toBe(200);
+  await page.getByTestId("conflict-finish").click();
+  await expect(page.getByTestId("conflict-confirm")).toBeVisible();
+  await page.getByTestId("conflict-confirm").click();
+  await expect(page.getByTestId("deck-conflict-panel")).toHaveCount(0);
   await pageB.close();
 });
 
@@ -241,4 +294,52 @@ test("beforeunload warns only while the editor has unsaved changes", async ({ pa
   expect(cleanBeforeUnload).toBe(false);
   await page.reload();
   await expect(page.getByTestId("tab-decks")).toBeVisible();
+});
+
+test("a published remote draft requires creating a new version before local edits can be saved", async ({ page }) => {
+  const title = `Konflikt publikacji ${Date.now()}`;
+  const pageB = await page.context().newPage();
+  await enterParent(page);
+  await page.getByTestId("deck-title").fill(title);
+  await page.getByTestId("create-empty-submit").click();
+  await page.getByTestId("add-item").click();
+  await page.getByTestId("item-source-0").fill("kot");
+  await page.getByTestId("item-target-0").fill("cat");
+  await page.getByTestId("item-visual-0").selectOption("none");
+  const initialSave = page.waitForResponse((response) => response.request().method() === "PATCH" && response.url().includes("/api/v1/parent/drafts/"));
+  await page.getByTestId("save-items").click();
+  const initialResponse = await initialSave;
+  expect(initialResponse.status()).toBe(200);
+  const oldDraftId = initialResponse.url().split("/").at(-1);
+  await page.getByTestId("item-source-0").fill("kociak");
+
+  await enterParent(pageB);
+  await pageB.locator('[data-testid^="deck-row-"]').filter({ hasText: title }).click();
+  await expect(pageB.getByTestId("item-source-0")).toHaveValue("kot");
+  await expect(pageB.getByTestId("item-audio-state-0")).toContainText("gotowe", { timeout: 60_000 });
+  await pageB.getByTestId("publish-deck").click();
+  await expect(pageB.getByTestId("publish-status")).toBeVisible();
+
+  const conflictSave = page.waitForResponse((response) => response.request().method() === "PATCH" && response.url().includes("/api/v1/parent/drafts/"));
+  await page.getByTestId("save-items").click();
+  const conflictResponse = await conflictSave;
+  expect(conflictResponse.status()).toBe(409);
+  await expect(page.getByTestId("deck-conflict-panel")).toBeVisible();
+  await expect(page.getByTestId("conflict-remote-title")).toContainText(title);
+  await expect(page.getByTestId("conflict-load-remote")).toContainText("Utwórz nowy szkic");
+  await page.getByTestId("conflict-load-remote").click();
+  const createVersion = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/draft"));
+  await page.getByTestId("conflict-confirm").click();
+  expect((await createVersion).status()).toBe(201);
+  await expect(page.getByTestId("item-source-0")).toHaveValue("kot");
+  await expect(page.getByTestId("deck-conflict-panel")).toContainText("kociak");
+  await page.getByTestId("item-source-0").fill("kociak");
+  const newVersionSave = page.waitForResponse((response) => response.request().method() === "PATCH" && response.url().includes("/api/v1/parent/drafts/"));
+  await page.getByTestId("save-items").click();
+  const savedNewVersion = await newVersionSave;
+  expect(savedNewVersion.status()).toBe(200);
+  expect(savedNewVersion.url().split("/").at(-1)).not.toBe(oldDraftId);
+  await page.getByTestId("conflict-finish").click();
+  await page.getByTestId("conflict-confirm").click();
+  await pageB.close();
 });

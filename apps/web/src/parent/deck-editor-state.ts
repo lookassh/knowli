@@ -23,6 +23,11 @@ export interface EditorSnapshot {
   form: EditableDeckForm;
 }
 
+export interface EditorFormComparison {
+  title: { local: string; remote: string };
+  rows: { key: string; local: EditableDeckItem | null; remote: EditableDeckItem | null }[];
+}
+
 export function createEditorSnapshot(
   draft: DraftDto,
   newKey: () => string,
@@ -96,4 +101,23 @@ export function sameEditableItem(left: EditableDeckItem, right: EditableDeckItem
     && left.locales.source === right.locales.source
     && left.locales.target === right.locales.target
     && JSON.stringify(left.visualData) === JSON.stringify(right.visualData);
+}
+
+export function compareEditorForms(
+  local: EditableDeckForm,
+  remote: EditableDeckForm,
+): EditorFormComparison {
+  const remoteByKey = new Map(remote.items.map((item) => [item.clientKey, item]));
+  const localKeys = new Set(local.items.map((item) => item.clientKey));
+  const rows: EditorFormComparison["rows"] = local.items.map((item) => ({
+    key: item.clientKey,
+    local: item,
+    remote: remoteByKey.get(item.clientKey) ?? null,
+  }));
+  for (const item of remote.items) {
+    if (!localKeys.has(item.clientKey)) {
+      rows.push({ key: item.clientKey, local: null, remote: item });
+    }
+  }
+  return { title: { local: local.title, remote: remote.title }, rows };
 }

@@ -93,6 +93,13 @@ Rodzic może:
 
 Szkic wygenerowany przez AI nie jest automatycznie dostępny dziecku. Po edycji opublikowanej treści nowa wersja również wymaga zatwierdzenia. Historyczne odpowiedzi muszą nadal odnosić się do treści, którą dziecko faktycznie widziało.
 
+Edytor zestawu chroni lokalne, niezapisane poprawki przy zmianie zakładki,
+powrocie i wylogowaniu. Po konflikcie wersji pokazuje osobno formularz lokalny
+i najnowszą wersję; nie ponawia zapisu automatycznie z nowszym numerem edycji.
+Wczytanie wersji zdalnej wymaga potwierdzenia i pozostawia porównanie do
+ręcznego przeniesienia wybranych zmian. Jeśli szkic został już opublikowany,
+rodzic zaczyna nową wersję przed ponownym zapisem.
+
 Zasady wpływu edycji na postęp:
 
 - Zmiany kosmetyczne, np. ilustracji, formatowania lub opisu zestawu, zachowują postęp.

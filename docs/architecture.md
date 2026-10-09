@@ -248,6 +248,13 @@ Wspólny format błędu: {code, message, retryable, requestId}. Walidacja na gra
 | Kid | POST /api/v1/kid/sessions/:id/end | Koniec i podsumowanie |
 | Media | GET /api/v1/media/:id | Zasób state=ready po opaque ID; same-origin, bez CORS; nie wyznacza ekspozycji |
 
+Klient rodzica zachowuje migawkę formularza wraz z jego bazowym
+`expectedEditNumber`. Polling nie zastępuje formularza rozpoczętego lokalnie;
+409 ani próba edycji opublikowanego szkicu nie są ponawiane z nowszą wersją.
+Po osobnym odczycie rodzic wybiera, czy jawnie przejść do aktualnego szkicu,
+czy utworzyć nową wersję z opublikowanego materiału. To zachowanie nie dodaje
+endpointu ani nie zmienia optimistic locking w API.
+
 Podsumowanie sesji (SPEC §17, uzupełnienie 2026-10-09): `SessionSummaryDto` zawiera `independentSuccesses: { recall, spelling }` (liczby różnych elementów z poprawną niezależną oceną w tej sesji) oraz `practiceItems: [{ itemId, target, skills }]`, gdzie `skills` to przypominanie i/lub pisownia. Wpis do ćwiczenia powstaje z błędnej oceny, w tym „Nie pamiętam”; późniejszy poprawny niezależny wynik usuwa trudność tylko tej umiejętności. Poprawne odpowiedzi ze wsparciem, pominięcia i wyniki nieocenione nie usuwają trudności ani nie zwiększają samodzielnych sukcesów. Historia innych sesji i projekcja ogólnego postępu nie są wynikiem bieżącej sesji. Wynik jest utrwalany pod blokadą w `learning_sessions.context.summary` przy pierwszym zakończeniu; oczekująca analiza mowy nie przepisuje już pokazanego podsumowania. Kolejny odczyt zwraca ten sam wynik, ale ponownie zapisuje zamknięte ekspozycje wszystkich wyświetlanych wzorców przed odpowiedzią HTTP. Ekran pokazuje neutralny komunikat bez samodzielnych sukcesów i nie deklaruje opanowania słów.
 
 Edycja obrazów, dodawanie/usuwanie kart i ponawianie konkretnego zasobu korzystają z PATCH draft lub dedykowanego polecenia retry generationRun; nie wymagają oddzielnego frameworka workflow. Szczegółowe DTO zdefiniuje pierwsza implementacja contracts na podstawie tych operacji. Całość Kid API, w tym odczyt attempts/:id, działa w zaufanym modelu bez autoryzacji dziecka (sekcja 13); odczyt zwraca stan i feedback, nigdy answer_key ani techniczny score.

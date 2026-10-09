@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DraftDto } from "@learning/contracts";
-import { createEditorSnapshot, toDraftPatch } from "./deck-editor-state";
+import { compareEditorForms, createEditorSnapshot, toDraftPatch } from "./deck-editor-state";
 
 function draft(editNumber = 3): DraftDto {
   return {
@@ -85,5 +85,29 @@ describe("editor snapshot and draft patch", () => {
   it("does not send an invalid empty items array for an empty draft", () => {
     const snapshot = createEditorSnapshot({ ...draft(), items: [] }, () => "unused");
     expect(toDraftPatch(snapshot).items).toBeUndefined();
+  });
+});
+
+describe("editor form comparison", () => {
+  it("matches existing cards by ID after reorder and keeps removed/new cards distinct", () => {
+    const local = createEditorSnapshot(draft(), () => "unused").form;
+    local.items = [
+      local.items[2]!,
+      { clientKey: "local:new-1", source: "czwartek", target: "Thursday", accepted: "", example: "", visualType: "none", locales: { source: "pl-PL", target: "en-GB" } },
+      { clientKey: "local:new-2", source: "piątek", target: "Friday", accepted: "", example: "", visualType: "none", locales: { source: "pl-PL", target: "en-GB" } },
+    ];
+    const remote = createEditorSnapshot(draft(), () => "unused").form;
+    const comparison = compareEditorForms(local, remote);
+
+    const removed = comparison.rows.find((row) => row.key === "00000000-0000-4000-8000-000000000012");
+    expect(removed?.local).toBeNull();
+    expect(removed?.remote?.source).toBe("wtorek");
+    const moved = comparison.rows.find((row) => row.key === "00000000-0000-4000-8000-000000000013");
+    expect(moved?.local?.target).toBe("Wednesday");
+    expect(moved?.remote?.target).toBe("Wednesday");
+    expect(comparison.rows.filter((row) => row.key.startsWith("local:")).map((row) => row.key)).toEqual([
+      "local:new-1",
+      "local:new-2",
+    ]);
   });
 });

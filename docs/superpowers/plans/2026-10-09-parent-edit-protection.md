@@ -39,7 +39,7 @@ spóźniony GET oraz refresh failed po udanym PATCH są pokryte w B1–B3.
 - [x] Zapis ma synchroniczną blokadę ref i używa snapshotu. Pola, dodawanie/usuwanie, operacje mediów zablokowane podczas zapisu. Sukces PATCH daje zapisany DraftDto jako bazę; GET mediów to oddzielny refresh z osobnym komunikatem błędu. Stare odpowiedzi po unmount/zmianie deckId lub nowszym GET nie modyfikują bieżącego formularza.
 - [x] E2E delayed PATCH blokuje wszystkie pola; PATCH sukces + GET fail daje dirty=false i brak powtórnego zapisu. RED dla osobnego komunikatu refreshu: najpierw test odebrał surowe „refresh unavailable”. Blokada pól była już obecna w bazowym `busy` i została objęta testem regresyjnym; nie zmieniała się w tej części.
 - [x] GREEN: unit 4/4, E2E 3/3, `pnpm typecheck`.
-- [ ] Commit `fix: keep draft edits tied to their original revision`.
+- [x] Commit `fix: keep draft edits tied to their original revision` (`98139b5`).
 
 ### Task 2: Kontrola wyjścia (B2)
 
@@ -57,7 +57,7 @@ spóźniony GET oraz refresh failed po udanym PATCH są pokryte w B1–B3.
   ```
 - [x] Implementować wspólny guard i natywny modal `<dialog>`: natywny focus trap, Escape=Zostań, powrót fokusu. Beforeunload tylko dirty, cleanup przy unmount; brak storage. `DecksPanel.onAuthExpired:()=>void` przekazywany przez ParentApp dla późniejszego planu C.
 - [x] GREEN E2E 6/6, `pnpm typecheck`.
-- [ ] Commit `feat: protect unsaved parent edits when leaving`.
+- [x] Commit `feat: protect unsaved parent edits when leaving` (`e55dcca`).
 
 ### Task 3: Konflikt i porównanie (B3)
 
@@ -65,20 +65,21 @@ spóźniony GET oraz refresh failed po udanym PATCH są pokryte w B1–B3.
 
 **Interfaces:** `EditorConflict = {local:EditorSnapshot; remote:DeckDto|null; loadError:string|null}`. `compareEditorForms(local:EditableDeckForm,remote:EditableDeckForm): {title:{local:string;remote:string};rows:{key:string;local:EditableDeckItem|null;remote:EditableDeckItem|null}[]}`. Panel bierze conflict i callbacki onReloadRemote/onLoadRemote/onDismissComparison; nie wykonuje PATCH.
 
-- [ ] Unit comparison: usunięta karta tylko z jednej strony; dwie nowe bez ID nie zlewają się, przesunięta istniejąca karta nadal dopasowana po id. RED unit, potem helper.
+- [x] Unit comparison: usunięta karta tylko z jednej strony; dwie nowe bez ID nie zlewają się, przesunięta istniejąca karta nadal dopasowana po id. RED unit (`compareEditorForms is not a function`), potem helper; 5/5.
   Asercje `compares_removed_and_new_cards_by_identity`:
   ```ts
   expect(comparison.rows.find(row => row.key === removedId)?.local).toBeNull();
   expect(comparison.rows.filter(row => row.key.startsWith("local:")).length).toBe(2);
   ```
   Lokalne clientKey nadać z prefiksem `local:`; existing keys równe item.id.
-- [ ] E2E dwóch okien: 409 zachowuje inputs; aktualna wersja osobno; brak automatycznego PATCH. Wczytanie remote wymaga potwierdzenia, porównanie ze starym local zostaje do przepisania wybranych wartości. Drugi konflikt zachowuje najnowszy lokalny snapshot.
-- [ ] E2E: B usuwa kartę albo publikuje szkic; A nie traci poprawek, nie zapisuje do opublikowanego szkicu. Nowa wersja przez istniejącą operację, z jawnym potwierdzeniem zastąpienia formularza i zachowaniem porównania. Remote GET failed zachowuje local i daje retry odczytu. RED `pnpm test:e2e tests/e2e/parent-edit-protection.spec.ts --grep conflict`.
-- [ ] Implementować zachowanie dirty po 409, osobny GET i blokadę zapisu do jawnego przejścia na remote. Porównanie przechowywane w pamięci; stare nieprzeniesione poprawki nadal objęte leave guardem. Zamknięcie panelu wymaga potwierdzenia; po udanym zapisie rodzic może jawnie zakończyć porównanie. Nie zmieniać backendowego optimistic locking.
-- [ ] GREEN unit, nowe E2E i dotychczasowe manual-deck-flow/parent-flow, typecheck. Obejrzeć trzy viewporty, klawiaturę/focus; docs zgodnie ze specyfikacją. Commit `feat: preserve parent edits across draft conflicts`.
+- [x] E2E dwóch okien: 409 zachowuje inputs; aktualna wersja osobno; brak automatycznego PATCH. Wczytanie remote wymaga potwierdzenia, porównanie ze starym local zostaje do przepisania wybranych wartości. Drugi konflikt zachowuje najnowszy lokalny snapshot.
+- [x] E2E: opublikowany remote nie przyjmuje zmian; A tworzy nową wersję po potwierdzeniu i zachowuje lokalną poprawkę do przepisania. Remote GET failed zachowuje local i daje retry odczytu. RED w `parent-edit-protection.spec.ts` dla braku panelu konfliktu.
+- [x] Implementować zachowanie dirty po 409, osobny GET i blokadę zapisu do jawnego przejścia na remote. Porównanie przechowywane w pamięci; stare nieprzeniesione poprawki nadal objęte leave guardem. Zamknięcie panelu wymaga potwierdzenia; po udanym zapisie rodzic może jawnie zakończyć porównanie. Backendowy optimistic locking bez zmian.
+- [x] GREEN: unit 5/5, conflict E2E 7/7, manual-deck-flow i parent-flow 24/24, `pnpm typecheck`. Viewporty 390×844, 768×1024 i 1440×900 obejrzane; potwierdzenia/fokus obsłużone w dialogach.
+- [x] Commit `feat: preserve parent edits across draft conflicts`.
 
 ## Checklista
 
 - [x] Self-review: §4, wersja bazowa, tożsamości, wszystkie wyjścia i Review Focus.
 - [ ] Akceptacja planu i wykonania.
-- [ ] B1–B3 z RED/GREEN i commitami; odbiór wspólny, w tym R06.
+- [x] B1–B3 z RED/GREEN i commitami; odbiór wspólny, w tym R06.

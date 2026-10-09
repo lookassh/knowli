@@ -18,6 +18,7 @@ import {
 } from "./deck-editor-state";
 import { apiFetch, errorMessage } from "./api";
 import type { EditorLeaveState } from "./useParentLeaveGuard";
+import DeckConflictPanel, { type EditorConflict } from "./DeckConflictPanel";
 
 const VISUAL_TYPES: VisualType[] = ["image", "color", "number", "sequence", "none"];
 
@@ -50,8 +51,11 @@ export default function DeckEditor({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [conflict, setConflict] = useState<EditorConflict | null>(null);
+  const [remoteApplied, setRemoteApplied] = useState(false);
   const [assignDates, setAssignDates] = useState<Record<string, string>>({});
   const dirty = useRef(false);
+  const conflictActive = useRef(false);
   const busyRef = useRef(false);
   const baseSnapshot = useRef<EditorSnapshot | null>(null);
   const baseRevisionIds = useRef(new Map<string, string>());
@@ -71,21 +75,21 @@ export default function DeckEditor({
   };
 
   useEffect(() => {
-    onEditorStateChange({ dirty: isDirty, busy });
+    onEditorStateChange({ dirty: isDirty || conflict !== null, busy });
     return () => onEditorStateChange({ dirty: false, busy: false });
-  }, [onEditorStateChange, isDirty, busy]);
+  }, [onEditorStateChange, isDirty, busy, conflict]);
 
   const load = useCallback(async (): Promise<boolean> => {
     const requestVersion = ++loadVersion.current;
     try {
       const result = await apiFetch<DeckDto>("GET", `/api/v1/parent/decks/${deckId}`);
-      if (requestVersion === loadVersion.current && deckIdRef.current === deckId) {
+      if (requestVersion === loadVersion.current && deckIdRef.current === deckId && !dirty.current && !conflictActive.current) {
         setDeck(result);
         return true;
       }
       return true;
     } catch (cause) {
-      if (requestVersion === loadVersion.current && deckIdRef.current === deckId) {
+      if (requestVersion === loadVersion.current && deckIdRef.current === deckId && !dirty.current && !conflictActive.current) {
         setError(errorMessage(cause));
       }
       return false;
@@ -95,6 +99,70 @@ export default function DeckEditor({
   useEffect(() => {
     void load();
   }, [load]);
+
+  const refreshConflict = useCallback(async (local: EditorSnapshot) => {
+    conflictActive.current = true;
+    setConflict({ local, remote: null, loadError: null });
+    try {
+      const remote = await apiFetch<DeckDto>("GET", `/api/v1/parent/decks/${deckId}`);
+      setConflict((current) => current ? { ...current, remote, loadError: null } : current);
+      setError(null);
+    } catch {
+      setConflict((current) => current ? { ...current, loadError: messages.decks.conflictLoadFailed } : current);
+      setError(messages.decks.conflictDetected);
+    }
+  }, [deckId]);
+
+  const applyRemoteConflict = async (remote: DeckDto) => {
+    setBusyState(true);
+    setError(null);
+    try {
+      let current = remote;
+      if (!current.draft && current.published) {
+        await apiFetch("POST", `/api/v1/parent/decks/${deckId}/draft`);
+        current = await apiFetch<DeckDto>("GET", `/api/v1/parent/decks/${deckId}`);
+      }
+      if (!current.draft) {
+        setConflict((existing) => existing ? { ...existing, remote: current, loadError: messages.decks.conflictNotFound } : existing);
+        return;
+      }
+      const snapshot = createEditorSnapshot(current.draft, newKey);
+      baseSnapshot.current = snapshot;
+      baseRevisionIds.current = new Map(current.draft.items.flatMap((item) => item.id ? [[item.id, item.revisionId] as const] : []));
+      setDeck(current);
+      setForm(snapshot.form);
+      dirty.current = false;
+      setIsDirty(false);
+      setRemoteApplied(true);
+      setConflict((existing) => existing ? { ...existing, remote: current, loadError: null } : existing);
+    } catch (cause) {
+      setConflict((existing) => existing ? { ...existing, loadError: errorMessage(cause) } : existing);
+    } finally {
+      setBusyState(false);
+    }
+  };
+
+  const finishConflict = (remote: DeckDto) => {
+    conflictActive.current = false;
+    const latest = remote.draft ?? remote.published;
+    setDeck(remote);
+    if (remote.draft && latest) {
+      baseSnapshot.current = createEditorSnapshot(remote.draft, newKey);
+      baseRevisionIds.current = new Map(remote.draft.items.flatMap((item) => item.id ? [[item.id, item.revisionId] as const] : []));
+      setForm(baseSnapshot.current.form);
+    } else if (latest) {
+      baseSnapshot.current = null;
+      setForm(createEditorSnapshot(latest, newKey).form);
+    } else {
+      baseSnapshot.current = null;
+      setForm(null);
+    }
+    dirty.current = false;
+    setIsDirty(false);
+    setRemoteApplied(false);
+    setConflict(null);
+    setError(null);
+  };
 
   const draft = deck?.draft ?? null;
   const active = draft ?? deck?.published ?? null;
@@ -188,7 +256,7 @@ export default function DeckEditor({
 
   const save = async () => {
     const currentBase = baseSnapshot.current;
-    if (!draft || !form || !currentBase || busyRef.current || !dirty.current || currentBase.draftId !== draft.id) {
+    if (!draft || !form || !currentBase || busyRef.current || !dirty.current || currentBase.draftId !== draft.id || (conflict !== null && !remoteApplied)) {
       return;
     }
     // pusta karta lub tytuł odrzuciłyby cały PATCH po stronie Zoda; blokujemy
@@ -214,18 +282,28 @@ export default function DeckEditor({
       onEditorStateChange({ dirty: false, busy: true });
       setIsDirty(false);
       setDeck((current) => current ? { ...current, draft: saved, title: saved.title } : current);
+      setConflict((current) => current?.remote
+        ? { ...current, remote: { ...current.remote, draft: saved, title: saved.title }, loadError: null }
+        : current);
       if (!(await load())) {
         setError(messages.decks.savedRefreshFailed);
       }
     } catch (cause) {
-      setError(errorMessage(cause));
+      if (["conflict", "immutable"].includes((cause as { code?: string }).code ?? "")) {
+        const localSnapshot = { ...snapshot, form: structuredClone(form) };
+        setError(messages.decks.conflictDetected);
+        setRemoteApplied(false);
+        void refreshConflict(localSnapshot);
+      } else {
+        setError(errorMessage(cause));
+      }
     } finally {
       setBusyState(false);
     }
   };
 
   const publish = async () => {
-    if (!draft || busy || isDirty || draft.items.length === 0) {
+    if (!draft || busy || isDirty || conflict !== null || draft.items.length === 0) {
       return;
     }
     setBusyState(true);
@@ -366,6 +444,16 @@ export default function DeckEditor({
         <p className="error" data-testid="api-error" role="alert">
           {error}
         </p>
+      )}
+
+      {conflict && (
+        <DeckConflictPanel
+          conflict={conflict}
+          busy={busy}
+          onRetry={() => void refreshConflict(conflict.local)}
+          onLoadRemote={(remote) => void applyRemoteConflict(remote)}
+          onDismissComparison={finishConflict}
+        />
       )}
 
       {form && (
@@ -560,13 +648,13 @@ export default function DeckEditor({
 
       {editable && (
         <div className="row">
-          <button type="button" data-testid="save-items" onClick={save} disabled={busy}>
+          <button type="button" data-testid="save-items" onClick={save} disabled={busy || (conflict !== null && !remoteApplied)}>
             {messages.decks.save}
           </button>
-          <button type="button" data-testid="publish-deck" onClick={publish} disabled={busy || isDirty || (draft?.items.length ?? 0) === 0}>
+          <button type="button" data-testid="publish-deck" onClick={publish} disabled={busy || isDirty || conflict !== null || (draft?.items.length ?? 0) === 0}>
             {messages.decks.publish}
           </button>
-          <button type="button" data-testid="archive-deck" onClick={archive} disabled={busy}>
+          <button type="button" data-testid="archive-deck" onClick={archive} disabled={busy || conflict !== null}>
             {messages.decks.archive}
           </button>
         </div>

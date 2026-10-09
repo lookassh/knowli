@@ -1,5 +1,9 @@
 # Rodzinny asystent nauki — plan implementacji MVP
 
+## Uzupełnienie — niezawodność panelu rodzica (2026-10-09)
+
+Panel zachowuje bazowy numer edycji podczas pollingu, ostrzega przed utratą niezapisanych zmian i po konflikcie pokazuje lokalną oraz zdalną wersję. Rodzic jawnie wybiera zdalną wersję, ręcznie przenosi potrzebne poprawki i zatwierdza zakończenie porównania. Nowa wersja po publikacji używa istniejącego przepływu szkicu. Szczegóły i dowody: `superpowers/plans/2026-10-09-parent-edit-protection.md`; testy `parent-edit-protection.spec.ts` (7/7), `manual-deck-flow.spec.ts` i `parent-flow.spec.ts` (24/24), `pnpm typecheck`. Natywne zachowanie `beforeunload` zależy od przeglądarki; automatyzacja sprawdza samo zdarzenie i czysty reload po zapisie.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Wybór trybu należy do użytkownika przed rozpoczęciem implementacji; bieżące zadanie obejmuje wyłącznie dokumentację.
 
 **Goal:** Uruchomić rodzinne MVP, w którym rodzic przygotowuje i zatwierdza materiał, a dzieci uczą się z oddzielną historią, wymową i pisownią.
