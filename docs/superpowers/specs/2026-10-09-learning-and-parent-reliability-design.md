@@ -3,8 +3,8 @@
 Data: 2026-10-09. Stan bazowy: `fc7fd9a`.
 Ścieżka Superpowers: architectural — zmiana współpracy klient–serwer
 i danych kontekstu sesji. Właściciel zaakceptował rekomendacje i ich
-kolejność. Dokument jest projektem do przeglądu, nie zatwierdzonym planem
-implementacji ani dowodem wykonania zmian.
+kolejność. Specyfikacja została zatwierdzona przez właściciela w rozmowie
+2026-10-09. Nie jest zatwierdzonym planem implementacji ani dowodem wykonania zmian.
 
 ## 1. Cel i podział pracy
 
@@ -220,8 +220,10 @@ do providerów na potrzeby testów. Żywej oceny mowy nie zmieniamy.
 - [x] Zapis specyfikacji z kontraktami oraz kryteriami akceptacji.
 - [x] Samodzielny przegląd specyfikacji: zakres, kontrakty, granice czasu,
       zgodność mapowania regresji i brak nierozstrzygniętych placeholderów.
-- [ ] Właściciel przegląda i zatwierdza pisemną specyfikację.
-- [ ] Writing-plans: szczegółowy plan z plikami, RED, sprawdzeniami i zależnościami.
+- [x] Właściciel przejrzał i zatwierdził pisemną specyfikację (2026-10-09).
+- [x] Writing-plans: plan zbiorczy `../plans/2026-10-09-learning-and-parent-reliability.md`
+      oraz trzy osobne plany podsystemów z plikami, RED i sprawdzeniami;
+      zapisane i samodzielnie przejrzane, oczekują na akceptację właściciela.
 - [ ] Właściciel przegląda plan i wybiera metodę wykonania; bez zgody
       na delegację wykonanie bezpośrednie przez executing-plans.
 - [ ] Executing-plans: małe kroki i aktualizowana checklista wykonania.
