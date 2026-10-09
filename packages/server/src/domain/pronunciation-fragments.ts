@@ -88,6 +88,16 @@ function align(target: string, phonemes: FragmentInput["phonemes"]): AlignedGrou
   for (let g = 0; g < groups.length; g += 1) {
     const group = groups[g]!;
     const head = phonemes[p];
+    const next = phonemes[p + 1];
+    const rDigraph = ["er", "ir", "ur", "ar", "or"].includes(group);
+    if (rDigraph && head && next && groupMatches(group[0]!, head.phoneme) && groupMatches("r", next.phoneme)) {
+      aligned.push(
+        { text: group[0]!, scores: head.accuracyScore === null ? [] : [head.accuracyScore] },
+        { text: "r", scores: next.accuracyScore === null ? [] : [next.accuracyScore] },
+      );
+      p += 2;
+      continue;
+    }
     if (head && groupMatches(group, head.phoneme)) {
       aligned.push({ text: group, scores: head.accuracyScore === null ? [] : [head.accuracyScore] });
       p += 1;
