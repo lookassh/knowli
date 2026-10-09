@@ -21,6 +21,171 @@ function isoDate(daysAhead: number): string {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
+async function profileForEditing(page: Page, avatarKey = "fox") {
+  await page.goto("/");
+  await page.getByTestId("auth-secret").fill("1234");
+  await page.getByTestId("auth-submit").click();
+  await expect(page.getByTestId("tab-children")).toBeVisible();
+  const name = `Edycja-${randomUUID()}`;
+  const response = await page.request.post("/api/v1/parent/children", {
+    data: { displayName: name, avatarKey, birthYear: 2018 },
+  });
+  expect(response.status()).toBe(201);
+  const child = await response.json() as { id: string; displayName: string; avatarKey: string; birthYear: number };
+  await page.reload();
+  await page.getByTestId("tab-children").click();
+  const href = `/kids/${child.id}/learn`;
+  const row = page.locator('li[data-testid^="child-row-"]').filter({ has: page.locator(`a[href="${href}"]`) });
+  await expect(row).toBeVisible();
+  await expect(row.getByTestId("child-edit")).toBeVisible({ timeout: 5_000 });
+  return { child, row, href, path: `/api/v1/parent/children/${child.id}` };
+}
+
+test("edycja profilu: anulowanie, zapis Enter i trwałość danych", async ({ page }) => {
+  const { child, row, href, path } = await profileForEditing(page);
+  let patches = 0;
+  let patchBody: unknown;
+  page.on("request", (request) => {
+    if (request.method() === "PATCH" && new URL(request.url()).pathname === path) {
+      patches++;
+      patchBody = request.postDataJSON();
+    }
+  });
+  await row.getByTestId("child-edit").click();
+  await expect(row.getByTestId("child-edit-name")).toHaveValue(child.displayName);
+  await expect(row.getByTestId("child-edit-avatar")).toHaveValue("fox");
+  await expect(row.getByTestId("child-edit-name")).toBeFocused();
+  await expect(row.getByTestId("child-edit-save")).toBeDisabled();
+  await row.getByTestId("child-edit-name").fill("  ");
+  await expect(row.getByTestId("child-edit-save")).toBeDisabled();
+  await row.getByTestId("child-edit-cancel").click();
+  await expect(row.getByTestId("child-edit")).toBeFocused();
+  expect(patches).toBe(0);
+  await row.getByTestId("child-edit").click();
+  await expect(row.getByTestId("child-edit-name")).toHaveValue(child.displayName);
+  const newName = `Nowe-${randomUUID()}`;
+  await row.getByTestId("child-edit-name").fill(` ${newName} `);
+  await row.getByTestId("child-edit-avatar").selectOption("cat");
+  await row.getByTestId("child-edit-name").press("Enter");
+  await expect(row).toContainText(newName);
+  await expect(row.getByTestId("child-edit")).toBeFocused();
+  expect(patches).toBe(1);
+  expect(patchBody).toEqual({ displayName: newName, avatarKey: "cat" });
+  await expect(row.getByTestId("child-learn-link")).toHaveAttribute("href", href);
+  await page.reload();
+  await page.getByTestId("tab-children").click();
+  await row.getByTestId("child-edit").click();
+  await expect(row.getByTestId("child-edit-name")).toHaveValue(newName);
+  await expect(row.getByTestId("child-edit-avatar")).toHaveValue("cat");
+  const saved = await (await page.request.get("/api/v1/parent/children")).json();
+  expect(saved.find((value: { id: string }) => value.id === child.id)).toEqual({ ...child, displayName: newName, avatarKey: "cat" });
+});
+
+test("edycja profilu: nieznany awatar i przełączanie formularzy", async ({ page }) => {
+  const { child, row, path } = await profileForEditing(page, "legacy");
+  const otherResponse = await page.request.post("/api/v1/parent/children", { data: { displayName: `Inne-${randomUUID()}`, avatarKey: "owl" } });
+  const other = await otherResponse.json();
+  await page.reload();
+  await page.getByTestId("tab-children").click();
+  const otherRow = page.locator('li[data-testid^="child-row-"]').filter({ has: page.locator(`a[href="/kids/${other.id}/learn"]`) });
+  await row.getByTestId("child-edit").click();
+  await expect(row.getByTestId("child-edit-avatar")).toHaveValue("legacy");
+  await row.getByTestId("child-edit-name").fill("Niezapisane");
+  await otherRow.getByTestId("child-edit").click();
+  await expect(page.getByTestId("child-edit-name")).toHaveCount(1);
+  await row.getByTestId("child-edit").click();
+  await expect(row.getByTestId("child-edit-name")).toHaveValue(child.displayName);
+  await row.getByTestId("child-edit-name").fill("Poprawione");
+  const request = page.waitForRequest((request) => request.method() === "PATCH" && new URL(request.url()).pathname === path);
+  await row.getByTestId("child-edit-save").click();
+  expect((await request).postDataJSON()).toEqual({ displayName: "Poprawione" });
+  await expect(row).toContainText("Poprawione");
+  const children = await (await page.request.get("/api/v1/parent/children")).json();
+  expect(children.find((value: { id: string }) => value.id === child.id).avatarKey).toBe("legacy");
+});
+
+test("edycja profilu: błąd zapisu zachowuje wartości i pozwala ponowić", async ({ page }) => {
+  const { row, path } = await profileForEditing(page);
+  await page.route(`**${path}`, async (route) => {
+    if (route.request().method() === "PATCH") await route.fulfill({ status: 500, json: { code: "internal", message: "Błąd zapisu" } });
+    else await route.continue();
+  });
+  await row.getByTestId("child-edit").click();
+  await row.getByTestId("child-edit-name").fill("Retry");
+  await row.getByTestId("child-edit-avatar").selectOption("panda");
+  await row.getByTestId("child-edit-save").click();
+  await expect(row.getByRole("alert")).toContainText("Błąd zapisu");
+  await expect(row.getByTestId("child-edit-name")).toHaveValue("Retry");
+  await expect(row.getByTestId("child-edit-avatar")).toHaveValue("panda");
+  await page.unroute(`**${path}`);
+  await row.getByTestId("child-edit-save").click();
+  await expect(row).toContainText("Retry");
+  await expect(row.getByTestId("child-edit-name")).toHaveCount(0);
+});
+
+test("edycja profilu: udany zapis i błąd odświeżenia mają osobny komunikat", async ({ page }) => {
+  const { child, row } = await profileForEditing(page);
+  await row.getByTestId("child-edit").click();
+  await row.getByTestId("child-edit-name").fill("Zapisane");
+  await page.route("**/api/v1/parent/children", async (route) => {
+    if (route.request().method() === "GET") await route.fulfill({ status: 500, json: { code: "internal", message: "Błąd listy" } });
+    else await route.continue();
+  });
+  await row.getByTestId("child-edit-save").click();
+  await expect(page.getByRole("status")).toContainText("Zapisano zmiany, ale nie udało się odświeżyć listy");
+  await expect(row.getByTestId("child-edit-name")).toHaveCount(0);
+  await page.unroute("**/api/v1/parent/children");
+  const list = await (await page.request.get("/api/v1/parent/children")).json();
+  expect(list.find((value: { id: string }) => value.id === child.id).displayName).toBe("Zapisane");
+});
+
+test("edycja profilu: blokada podczas żądania i usunięcie w drugim kliencie", async ({ page }) => {
+  const { row, path } = await profileForEditing(page);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  let patches = 0;
+  await page.route(`**${path}`, async (route) => {
+    if (route.request().method() === "PATCH") { patches++; await gate; }
+    await route.continue();
+  });
+  await row.getByTestId("child-edit").click();
+  await row.getByTestId("child-edit-name").fill("Usunięte");
+  try {
+    await row.getByTestId("child-edit-name").press("Enter");
+    await expect(row.getByTestId("child-edit-name")).toBeDisabled();
+    await expect(row.getByTestId("child-edit-avatar")).toBeDisabled();
+    await expect(row.getByTestId("child-edit-save")).toBeDisabled();
+    await expect(row.getByTestId("child-edit-cancel")).toBeDisabled();
+    await expect(row.getByRole("button", { name: "Usuń", exact: true })).toBeDisabled();
+    await row.locator("form").evaluate((form: HTMLFormElement) => form.requestSubmit());
+    expect((await page.request.delete(path)).status()).toBe(204);
+  } finally { release(); }
+  await expect(row.getByRole("alert")).toBeVisible();
+  expect(patches).toBe(1);
+  await expect(row.getByTestId("child-edit-name")).toHaveValue("Usunięte");
+  await page.reload();
+  await page.getByTestId("tab-children").click();
+  await expect(row).toHaveCount(0);
+});
+
+for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }]) {
+  test(`edycja profilu: układ ${viewport.width}px i zniknięcie po odświeżeniu`, async ({ page }, testInfo) => {
+    await page.setViewportSize(viewport);
+    const { row, child } = await profileForEditing(page);
+    await row.getByTestId("child-edit").click();
+    await expect(row.getByLabel("Imię", { exact: true })).toBeVisible();
+    await expect(row.getByLabel("Obrazek", { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await row.screenshot({ path: testInfo.outputPath(`profile-edit-${viewport.width}.png`) });
+    expect((await page.request.delete(`/api/v1/parent/children/${child.id}`)).status()).toBe(204);
+    // Dodanie innego profilu wywołuje istniejące onChanged bez reload.
+    await page.getByTestId("child-name").fill(`Nowe-${randomUUID()}`);
+    await page.getByTestId("child-add").click();
+    await expect(row).toHaveCount(0);
+    await expect(page.getByTestId("child-edit-name")).toHaveCount(0);
+  });
+}
+
 test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page, request }) => {
   test.slow();
 

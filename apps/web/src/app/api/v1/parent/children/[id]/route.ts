@@ -19,7 +19,7 @@ const dispatch = withApi<RouteContext>(async (request, context) => {
 export const DELETE = (request: Request, context: RouteContext): Promise<Response> =>
   dispatch(request, context);
 
-export const PATCH = withApi<RouteContext>(async (request, context) => {
+const patchDispatch = withApi<RouteContext>(async (request, context) => {
   const services = getServerServices();
   assertSameOrigin(request);
   await requireParentSession(request, services);
@@ -27,3 +27,6 @@ export const PATCH = withApi<RouteContext>(async (request, context) => {
   const input = ChildPatchSchema.parse(await readJson(request));
   return Response.json(await updateChild(services, id, input));
 });
+
+export const PATCH = (request: Request, context: RouteContext): Promise<Response> =>
+  patchDispatch(request, context);
