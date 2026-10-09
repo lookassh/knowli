@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import type { Tx } from "../db/client";
 import { childSkillProgress } from "../db/schema";
 import { projectProgress } from "../domain/progress";
-import type { History, Policy } from "../domain/types";
+import type { History, Policy, SkillProgress } from "../domain/types";
 import type { HistoryScope } from "./skill-history";
 
 const PROJECTION_VERSION = "proj-2";
@@ -30,12 +30,23 @@ export async function persistSkillProjection(
 
   const projected = projectProgress(history, policy, now.toISOString()).skills[scope.skill];
   if (!projected) return;
+  await writeSkillProjection(tx, scope, projected, receivedAt, now);
+}
+
+/** Wspólny zapis wartości odtworzonej dla zwykłej finalizacji i rebuild. */
+export async function writeSkillProjection(
+  tx: Tx,
+  scope: HistoryScope,
+  projected: SkillProgress,
+  reviewedAt: Date,
+  now: Date,
+): Promise<void> {
   await tx.insert(childSkillProgress).values({
     childId: scope.childId,
     skillVersionId: scope.skillVersionId,
     status: dbStatus(projected.status),
     independentSuccessStreak: projected.streak,
-    lastReviewedAt: receivedAt,
+    lastReviewedAt: reviewedAt,
     nextReviewAt: projected.nextReviewAt === null ? null : new Date(projected.nextReviewAt),
     delayedConfirmationAt: null,
     projectionVersion: PROJECTION_VERSION,
@@ -45,7 +56,7 @@ export async function persistSkillProjection(
     set: {
       status: dbStatus(projected.status),
       independentSuccessStreak: projected.streak,
-      lastReviewedAt: receivedAt,
+      lastReviewedAt: reviewedAt,
       nextReviewAt: projected.nextReviewAt === null ? null : new Date(projected.nextReviewAt),
       delayedConfirmationAt: null,
       projectionVersion: PROJECTION_VERSION,

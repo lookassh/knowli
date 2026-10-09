@@ -93,6 +93,7 @@ export { listKidProfiles, listKidDecks } from "./modules/kid";
 export { getProgress } from "./modules/reporting";
 export { readSkillHistory, readSkillHistories, skillHistoryKey } from "./modules/skill-history";
 export { persistSkillProjection } from "./modules/skill-projections";
+export { rebuildProgress, type RebuildProgressOptions, type RebuildProgressReport } from "./modules/progress-rebuild";
 export { evaluateWritten, evaluateChoice, evaluateNonAnswer, assessedSkills } from "./domain/evaluate";
 export { chooseFeedback } from "./domain/feedback";
 export { projectProgress } from "./domain/progress";
