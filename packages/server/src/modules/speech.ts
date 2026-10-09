@@ -157,12 +157,18 @@ export function assessSpeechEvidence(
       : p.overallScore >= bands.partialMinScore
         ? "partial"
         : "below";
-  skills.pronunciation = {
-    outcome: band === "correct" ? "correct" : "incorrect",
-    independent: attempt.independent,
-    confirmationEligible: attempt.independent && attempt.confirmationEligible && band === "correct",
-    details: { pronunciation: { ...details, band } },
-  };
+  if (band === "below") {
+    // poniżej progu „prawie” to niepewna ocena, nie błąd wiedzy (design
+    // 2026-10-09, docs/speech-spike.md) — wynik zostaje w details dla rodzica
+    skills.pronunciation = { ...unevaluated(undefined), details: { pronunciation: { ...details, band } } };
+  } else {
+    skills.pronunciation = {
+      outcome: band === "correct" ? "correct" : "incorrect",
+      independent: attempt.independent,
+      confirmationEligible: attempt.independent && attempt.confirmationEligible && band === "correct",
+      details: { pronunciation: { ...details, band } },
+    };
+  }
   return { skills, attempt, ...(speechAttempt ? { speechAttempt } : {}) };
 }
 

@@ -148,7 +148,7 @@ describe("assessSpeechEvidence — treść z transkrypcji, wymowa osobno (SPEC �
       recallKey(),
       ctx({ policy: bandedPolicy() }),
     );
-    expect(below.skills.pronunciation?.outcome).toBe("incorrect");
+    expect(below.skills.pronunciation?.outcome).toBe("unevaluated");
     expect(below.skills.pronunciation?.details?.pronunciation?.band).toBe("below");
   });
 
@@ -172,5 +172,55 @@ describe("assessSpeechEvidence — treść z transkrypcji, wymowa osobno (SPEC �
     const grade = assessSpeechEvidence(evidence(), recallKey(), ctx({ assistance: ["model_audio"] }));
     expect(grade.skills.recall?.independent).toBe(false);
     expect(grade.skills.pronunciation?.independent).toBe(false);
+  });
+});
+
+describe("pasma wymowy (design 2026-10-09)", () => {
+  it("below pozostaje nieocenione — niepewna ocena, nie błąd wiedzy", () => {
+    const grade = assessSpeechEvidence(
+      evidence({
+        pronunciation: { status: "ok", overallScore: 30, recognizedText: "Thursday", provider: "fake-pron", expectedText: "Thursday" },
+      }),
+      speechKey(),
+      ctx({ policy: bandedPolicy() }),
+    );
+    expect(grade.skills.pronunciation?.outcome).toBe("unevaluated");
+    expect(grade.skills.pronunciation?.details?.pronunciation).toMatchObject({ score: 30, band: "below" });
+  });
+
+  it("speechAttempt jest obecny przy ocenie z pasm — treść domyka zadanie niezależnie od bandu", () => {
+    for (const overallScore of [95, 45, 30]) {
+      const grade = assessSpeechEvidence(
+        evidence({
+          pronunciation: { status: "ok", overallScore, recognizedText: "Thursday", provider: "fake-pron", expectedText: "Thursday" },
+        }),
+        speechKey(),
+        ctx({ policy: bandedPolicy() }),
+      );
+      expect(grade.speechAttempt).toEqual({ contentMatched: true });
+    }
+  });
+
+  it("partial to trudność (incorrect z bandem), correct zalicza", () => {
+    const partial = assessSpeechEvidence(
+      evidence({
+        pronunciation: { status: "ok", overallScore: 45, recognizedText: "Thursday", provider: "fake-pron", expectedText: "Thursday" },
+      }),
+      speechKey(),
+      ctx({ policy: bandedPolicy() }),
+    );
+    expect(partial.skills.pronunciation?.outcome).toBe("incorrect");
+    expect(partial.skills.pronunciation?.details?.pronunciation).toMatchObject({ band: "partial" });
+    expect(partial.skills.pronunciation?.confirmationEligible).toBe(false);
+
+    const correct = assessSpeechEvidence(
+      evidence({
+        pronunciation: { status: "ok", overallScore: 80, recognizedText: "Thursday", provider: "fake-pron", expectedText: "Thursday" },
+      }),
+      speechKey(),
+      ctx({ policy: bandedPolicy(), previousSessionContactAt: "2026-10-06T10:00:00.000Z" }),
+    );
+    expect(correct.skills.pronunciation?.outcome).toBe("correct");
+    expect(correct.skills.pronunciation?.confirmationEligible).toBe(true);
   });
 });
