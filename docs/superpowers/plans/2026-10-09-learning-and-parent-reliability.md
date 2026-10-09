@@ -41,10 +41,10 @@ obsługi wygasłej autoryzacji w ParentApp; nie dzieli stanu generacji z edytore
 
 ## Przygotowanie wykonania
 
-- [ ] Przeczytać executing-plans, using-git-worktrees i test-driven-development; sprawdzić status, git-dir, git-common-dir i aktualną gałąź.
-- [ ] Zweryfikować istniejący zarządzany worktree i detached HEAD. Użyć workflow using-git-worktrees dla istniejącego środowiska; nie tworzyć drugiego checkoutu bez potrzeby.
-- [ ] Uruchomić `pnpm test:unit`, potem `pnpm typecheck`. Przed przygotowaniem zależności nie uruchamiać dwóch pnpm równolegle — ten host automatycznie przygotowuje node_modules.
-- [ ] Wykonać A0: izolacja kontenera, portu i world file. Nie uruchamiać domyślnego runnera, który usuwa kontenery innych przebiegów.
+- [x] Przeczytać executing-plans, using-git-worktrees i test-driven-development; sprawdzić status, git-dir, git-common-dir i aktualną gałąź.
+- [x] Zweryfikować istniejący zarządzany worktree i detached HEAD. Użyć workflow using-git-worktrees dla istniejącego środowiska; nie tworzyć drugiego checkoutu bez potrzeby.
+- [x] Uruchomić `pnpm test:unit`, potem `pnpm typecheck`. Przed przygotowaniem zależności nie uruchamiać dwóch pnpm równolegle — ten host automatycznie przygotowuje node_modules.
+- [x] Wykonać A0: izolacja kontenera, portu i world file. Nie uruchamiać domyślnego runnera, który usuwa kontenery innych przebiegów.
 
 ## Odbiór pakietu
 
@@ -57,6 +57,6 @@ obsługi wygasłej autoryzacji w ParentApp; nie dzieli stanu generacji z edytore
 ## Stan workflow
 
 - [x] Spec zatwierdzona; trzy niezależne plany zapisane i samodzielnie przejrzane.
-- [ ] Właściciel przegląda plany i wybiera wykonanie. Rekomendacja: bezpośrednio w tej rozmowie, bez delegacji.
-- [ ] Implementacja A, B, C z TDD i małymi commitami.
+- [x] Właściciel zaakceptował bezpośrednie wykonanie w tej rozmowie, bez delegacji.
+- [ ] Implementacja A (pozostały A1–A3), B, C z TDD i małymi commitami.
 - [ ] Pełny odbiór, audyt checklisty i raport. Obecny etap zmienia tylko dokumentację.

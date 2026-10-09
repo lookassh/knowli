@@ -21,13 +21,13 @@
 DST, historyczna prezentacja, skip, retry next i brak bezpiecznego łatwego
 kandydata są pokryte poniżej; R01/R04/R05 testujemy wraz z istniejącymi regresjami.
 
-### Task 1: Izolacja runnerów potrzebna integracji i E2E (A0)
+### Task 1: Izolacja runnerów potrzebna integracji i E2E (A0) — wykonano w `40380ca`
 
 **Files:** Create `tests/{test-run-config.ts,test-run-config.test.ts}`; Modify `vitest.unit.config.ts`, `playwright.config.ts`, `tests/integration/global-setup.ts`, `tests/e2e/{global-setup.ts,kid-flow.spec.ts}`.
 
 **Interfaces:** `readTestRunConfig(env: Record<string,string|undefined>): {integrationContainerPrefix:string; e2eContainer:string; e2ePort:number; worldFile:string}`. `UMIEM_TEST_RUN_ID` = `[a-z0-9-]+`, `UMIEM_E2E_PORT` = integer 1024–65535. Brak env zachowuje obecne nazwy, port 24500 i `.world.json`; ID wyznacza unikalny prefiks/nazwę/world file. Port wspólny dla setup i Playwright; konfiguracja odczytywana tylko raz na proces.
 
-- [ ] Napisać test dwóch ID: różne kontenery/prefiksy/worldFile; przypisany port jest identyczny dla wszystkich odbiorców. Odrzucić niepoprawny ID i port; sprawdzić defaults. Dopisać tylko ten test do include konfiguracji unit.
+- [x] Napisać test dwóch ID: różne kontenery/prefiksy/worldFile; przypisany port jest identyczny dla wszystkich odbiorców. Odrzucić niepoprawny ID i port; sprawdzić defaults. Dopisać tylko ten test do include konfiguracji unit.
   ```ts
   it("isolates runner resources by run ID", () => {
     const a = readTestRunConfig({UMIEM_TEST_RUN_ID:"run-a",UMIEM_E2E_PORT:"24510"});
@@ -37,8 +37,8 @@ kandydata są pokryte poniżej; R01/R04/R05 testujemy wraz z istniejącymi regre
     expect(a.e2ePort).toBe(24510);
   });
   ```
-- [ ] RED: `pnpm test:unit tests/test-run-config.test.ts`. Następnie implementować helper i podłączyć wszystkie miejsca. Stale cleanup integration ograniczyć do własnego prefiksu. `kid-flow` odczytuje skonfigurowany world file.
-- [ ] GREEN: powtórzyć unit i typecheck; ustawić `$env:UMIEM_TEST_RUN_ID='b2d0-reliability'` oraz wolny port np. 24510 po jego sprawdzeniu. Commit `test: isolate database and browser test runs`.
+- [x] RED: `pnpm test:unit tests/test-run-config.test.ts` (12 testów; 11 oczekiwanych porażek przed implementacją). Następnie implementować helper i podłączyć wszystkie miejsca. Stale cleanup integration ograniczyć do własnego prefiksu. `kid-flow` odczytuje skonfigurowany world file.
+- [x] GREEN: unit 28 plików/258 testów, integration 13 plików/135 testów, E2E 35/35, typecheck; run ID `b2d0-reliability`, port 24510. Commit `test: isolate database and browser test runs`.
 
 ### Task 2: Okno terminu (A1)
 
@@ -95,5 +95,5 @@ kandydata są pokryte poniżej; R01/R04/R05 testujemy wraz z istniejącymi regre
 ## Checklista
 
 - [x] Self-review: §3, interfejsy, DST, współbieżność i Review Focus.
-- [ ] Akceptacja planu i wykonania.
+- [x] Akceptacja planu i wykonania.
 - [ ] A0–A3 z RED/GREEN i commitami; pełny odbiór wspólnego pakietu.
