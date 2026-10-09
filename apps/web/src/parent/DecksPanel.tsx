@@ -1,14 +1,16 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   messages,
   type ChildDto,
   type CreateEmptyDeckCommand,
   type CreateEmptyDeckResult,
   type DeckSummaryDto,
+  type GenerationCommand,
 } from "@learning/contracts";
 import { apiFetch, errorMessage } from "./api";
+import { isDefinitiveGenerationRejection, readGenerationAcceptance } from "./generation-request";
 import DeckEditor from "./DeckEditor";
 import type { EditorLeaveState } from "./useParentLeaveGuard";
 
@@ -36,29 +38,63 @@ export default function DecksPanel({
   const [activeDeckId, setActiveDeckId] = useState<string | null>(null);
   const pendingEmptyCommand = useRef<CreateEmptyDeckCommand | null>(null);
   const creatingEmptyRef = useRef(false);
+  const pendingGenerationCommand = useRef<GenerationCommand | null>(null);
+  const generatingRef = useRef(false);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const generate = async () => {
+    if (generatingRef.current || creatingEmptyRef.current) {
+      return;
+    }
+    generatingRef.current = true;
     setGenerating(true);
     setError(null);
+    const command = pendingGenerationCommand.current ?? {
+      prompt: prompt.trim(),
+      idempotencyKey: crypto.randomUUID(),
+      ...(title.trim() ? { title: title.trim() } : {}),
+    };
+    pendingGenerationCommand.current = command;
     try {
-      // unikalny klucz idempotencji: ponowne kliknięcie to nowe polecenie
-      await apiFetch("POST", "/api/v1/parent/decks/generate", {
-        prompt,
-        idempotencyKey: crypto.randomUUID(),
-        ...(title ? { title } : {}),
-      });
-      setPrompt("");
-      setTitle("");
-      await onChanged();
+      const response = await apiFetch<unknown>("POST", "/api/v1/parent/decks/generate", command);
+      const acceptance = readGenerationAcceptance(response);
+      if (!acceptance) {
+        if (mounted.current) setError(messages.decks.generationUncertain);
+        return;
+      }
+      pendingGenerationCommand.current = null;
+      if (mounted.current) {
+        setPrompt("");
+        setTitle("");
+        setActiveDeckId(acceptance.deckId);
+        void onChanged().catch(() => undefined);
+      }
     } catch (cause) {
-      setError(errorMessage(cause));
+      if (isDefinitiveGenerationRejection(cause)) {
+        pendingGenerationCommand.current = null;
+        if ((cause as { status?: number }).status === 401) {
+          if (mounted.current) onAuthExpired();
+          return;
+        }
+        if (mounted.current) setError(errorMessage(cause));
+      } else if (mounted.current) {
+        setError(messages.decks.generationUncertain);
+      }
     } finally {
-      setGenerating(false);
+      generatingRef.current = false;
+      if (mounted.current) setGenerating(false);
     }
   };
 
   const createEmpty = async () => {
-    if (creatingEmptyRef.current) {
+    if (creatingEmptyRef.current || generatingRef.current || pendingGenerationCommand.current !== null) {
       return;
     }
     creatingEmptyRef.current = true;
@@ -115,7 +151,7 @@ export default function DecksPanel({
         <h2>{messages.decks.newTitle}</h2>
         <label>
           {messages.decks.titleLabel}
-          <input data-testid="deck-title" value={title} onChange={(event) => setTitle(event.target.value)} />
+          <input data-testid="deck-title" value={title} disabled={generating || pendingGenerationCommand.current !== null || creatingEmpty} onChange={(event) => setTitle(event.target.value)} />
         </label>
         <label>
           {messages.decks.promptLabel}
@@ -124,6 +160,7 @@ export default function DecksPanel({
             rows={3}
             placeholder={messages.decks.promptPlaceholder}
             value={prompt}
+            disabled={generating || pendingGenerationCommand.current !== null || creatingEmpty}
             onChange={(event) => setPrompt(event.target.value)}
           />
         </label>
@@ -131,15 +168,15 @@ export default function DecksPanel({
           type="button"
           data-testid="generate-submit"
           onClick={generate}
-          disabled={generating || creatingEmpty || prompt.trim().length === 0}
+          disabled={generating || creatingEmpty || creatingEmptyRef.current || (!pendingGenerationCommand.current && prompt.trim().length === 0)}
         >
-          {messages.decks.generate}
+          {generating ? messages.decks.generating : pendingGenerationCommand.current ? messages.decks.retryGenerationRequest : messages.decks.generate}
         </button>
         <button
           type="button"
           data-testid="create-empty-submit"
           onClick={createEmpty}
-          disabled={generating || creatingEmpty}
+          disabled={generating || creatingEmpty || pendingGenerationCommand.current !== null}
         >
           {messages.decks.createEmpty}
         </button>

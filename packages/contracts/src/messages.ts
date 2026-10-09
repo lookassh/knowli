@@ -69,6 +69,8 @@ export const messages = {
     titleLabel: "Nazwa zestawu",
     generate: "Generuj",
     generating: "Generuję zestaw…",
+    generationUncertain: "Zlecenie mogło zostać przyjęte. Ponów tworzenie, aby sprawdzić jego wynik.",
+    retryGenerationRequest: "Ponów tworzenie",
     generationFailed: "Generowanie nie udało się.",
     retryGeneration: "Ponów generowanie",
     states: {
