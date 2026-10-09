@@ -225,7 +225,7 @@ Wspólny format błędu: {code, message, retryable, requestId}. Walidacja na gra
 | Parent | POST /api/v1/parent/decks/:id/archive | Wycofanie z nowych sesji |
 | Parent | GET /api/v1/parent/progress?childId=&deckId= | Podsumowanie umiejętności i pomyłek |
 | Kid | GET /api/v1/kid/profiles | Tylko nazwa i awatar |
-| Kid | GET /api/v1/kid/decks?childId= | Przypisane opublikowane zestawy z flagą `recommended` |
+| Kid | GET /api/v1/kid/decks?childId= | Przypisane opublikowane zestawy z flagą `recommended`, liczbą słów oraz liczbą elementów z opanowanym samodzielnym Recall |
 | Kid | POST /api/v1/kid/sessions | Start lub resume z przypiętą wersją |
 | Kid | POST /api/v1/kid/sessions/:id/next | Idempotentne wydanie aktywnego zadania |
 | Kid | POST /api/v1/kid/tasks/:id/events | Opcjonalne potwierdzenie obserwacji; nie tworzy jedynego dowodu ujawnienia |

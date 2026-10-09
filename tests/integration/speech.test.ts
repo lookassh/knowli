@@ -649,7 +649,11 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
       { taskId: task.taskId, clientAttemptId: randomUUID() },
       wavInput(1),
     );
-    expect(dto.feedback).toEqual({ kind: "great", fragments: [{ text: "thursday", verdict: "good" }] });
+    expect(dto.feedback).toEqual({
+      kind: "great",
+      heardText: "Thursday",
+      fragments: [{ text: "thursday", verdict: "good" }],
+    });
     expect(dto.taskState).toBe("answered");
   });
 
