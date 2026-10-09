@@ -142,6 +142,19 @@ export function LearnScreen({
           role="status"
         >
           <p className="kid-feedback-text">{feedbackText(screen.feedback.dto)}</p>
+          {screen.feedback.dto?.fragments && screen.feedback.dto.fragments.length > 0 && (
+            <p className="kid-fragments" data-testid="kid-fragments">
+              {screen.feedback.dto.fragments.map((fragment, index) => (
+                <span
+                  key={index}
+                  className={`kid-fragment kid-fragment--${fragment.verdict}`}
+                  data-testid="kid-fragment"
+                >
+                  {fragment.text}
+                </span>
+              ))}
+            </p>
+          )}
           <button type="button" className="kid-primary" data-testid="kid-next" onClick={() => void controller.continueLearning()}>
             {screen.feedback.retry ? messages.kid.feedbackRetry : messages.kid.feedbackNext}
           </button>

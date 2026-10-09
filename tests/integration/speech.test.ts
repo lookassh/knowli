@@ -17,6 +17,7 @@ import {
   type SttProvider,
 } from "@learning/server";
 import { AttemptDtoSchema, type TaskDto } from "@learning/contracts";
+import { letterGroups } from "../../packages/server/src/domain/pronunciation-fragments";
 import { buildTestServices, testDatabase, truncateCoreTables, ManualClock } from "./helpers";
 
 const { pool } = testDatabase();
@@ -69,6 +70,7 @@ interface Fakes {
   calls: { stt: number; pronunciation: number };
   transcription: { status: "ok" | "no_speech" | "failed"; text: string | null; confidence: number | null };
   pronunciation: { status: "ok" | "no_speech" | "failed"; overallScore: number | null; recognizedText: string | null };
+  pronunciationScore?: number;
   hangUntilAbort: boolean;
   advanceClockMs: number;
   analysisTimeoutMs?: number;
@@ -103,9 +105,24 @@ function makeFakes(clock: ManualClock, overrides: Partial<Fakes> = {}): MutableF
     },
     pronunciation: {
       name: "fake-pron",
-      assess: async () => {
+      assess: async (_audio, expectedText) => {
         fakes.calls.pronunciation += 1;
-        return fakes.pronunciation;
+        const score = fakes.pronunciationScore ?? fakes.pronunciation.overallScore;
+        const word = expectedText.trim().toLowerCase();
+        return {
+          ...fakes.pronunciation,
+          overallScore: score,
+          ...(fakes.pronunciation.status === "ok" && score !== null
+            ? {
+                words: [{
+                  text: word,
+                  accuracyScore: score,
+                  errorType: null,
+                  phonemes: letterGroups(word).map((group) => ({ phoneme: group, accuracyScore: 96 })),
+                }],
+              }
+            : {}),
+        };
       },
     },
   };
@@ -618,6 +635,22 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
     // wymowy (SPEC §15.4) — dziecko nie utyka na jednym zadaniu
     expect(dto.taskState).toBe("answered");
     expect(dto.feedback?.kind).toBe("content_matched");
+  });
+
+  it("próba wymowy z fake'ami zwraca feedback z fragmentami", async () => {
+    await ensureLearningPolicy(baseServices.db);
+    const { deckId, versionId } = await publishDeckWithAssignment(baseServices, childId, ITEMS);
+    const fakes = makeFakes(clock);
+    const services = speechServices(clock, fakes);
+    const { task } = await speechSession(services, childId, deckId, versionId, 0);
+
+    const dto = await submitSpeechAttempt(
+      services,
+      { taskId: task.taskId, clientAttemptId: randomUUID() },
+      wavInput(1),
+    );
+    expect(dto.feedback).toEqual({ kind: "great", fragments: [{ text: "thursday", verdict: "good" }] });
+    expect(dto.taskState).toBe("answered");
   });
 
   it("ćwiczenie wymowy: druga wiarygodna rozbieżność domyka zadanie bez ocen wiedzy", async () => {

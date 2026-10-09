@@ -11,6 +11,26 @@ function grade(skills: Partial<Record<Skill, SkillGrade>>): Grade {
 }
 
 describe("chooseFeedback — feedback zgodny z rzeczywistym wynikiem (SPEC §16, §12.8)", () => {
+  it("feedback great niesie fragmenty wymowy, content_matched nie", () => {
+    const fragments = [{ text: "ch", verdict: "good" as const }, { text: "e", verdict: "almost" as const }];
+    const base = {
+      attempt: { independent: true, confirmationEligible: true },
+      speechFragments: fragments,
+    };
+    const great = chooseFeedback(
+      { ...base, skills: { pronunciation: { outcome: "correct", independent: true, confirmationEligible: true } } } as never,
+      "cherry",
+    );
+    expect(great.kind).toBe("great");
+    expect(great.fragments).toEqual(fragments);
+    const matched = chooseFeedback(
+      { ...base, skills: {}, speechAttempt: { contentMatched: true } } as never,
+      "cherry",
+    );
+    expect(matched.kind).toBe("content_matched");
+    expect(matched.fragments).toBeUndefined();
+  });
+
   it("w pełni poprawna odpowiedź zasługuje na pochwałę", () => {
     expect(chooseFeedback(grade({ recall: sg("correct"), spelling: sg("correct") }), "Monday")).toEqual({
       kind: "great",

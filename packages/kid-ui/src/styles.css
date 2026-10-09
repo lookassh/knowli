@@ -332,6 +332,30 @@ button {
   text-align: center;
 }
 
+.kid-fragments {
+  display: flex;
+  gap: 0.25rem;
+  justify-content: center;
+  margin-top: 0.75rem;
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+
+.kid-fragment {
+  padding: 0.1em 0.25em;
+  border-radius: 0.4em;
+}
+
+.kid-fragment--good {
+  background: #e3f4e3;
+  color: #1c5c2e;
+}
+
+.kid-fragment--almost {
+  background: #fdf6ec;
+  color: #8a6116;
+}
+
 .kid-summary-counts {
   font-size: 1.15rem;
   text-align: center;

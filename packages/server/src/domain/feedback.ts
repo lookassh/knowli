@@ -18,6 +18,8 @@ export interface FeedbackChoice {
   kind: FeedbackKind;
   /** Rozwiązanie własnego zadania; feedback nie ujawnia obcych celów (arch §9.3). */
   correctText?: string;
+  /** Fragmenty wymowy (design 2026-10-09) — tylko tekst i werdykt, bez liczb. */
+  fragments?: Grade["speechFragments"];
 }
 
 export function chooseFeedback(grade: Grade, correctText: string): FeedbackChoice {
@@ -32,7 +34,7 @@ export function chooseFeedback(grade: Grade, correctText: string): FeedbackChoic
 
   const anyCorrect = assessed.some((skill) => skill.outcome === "correct");
   const allCorrect = assessed.every((skill) => skill.outcome === "correct");
-  if (allCorrect) return { kind: "great" };
+  if (allCorrect) return { kind: "great", ...(grade.speechFragments ? { fragments: grade.speechFragments } : {}) };
 
   if (anyCorrect) {
     // „To właściwe słowo! Monday piszemy wielką literą” — jedyny defekt
@@ -40,11 +42,13 @@ export function chooseFeedback(grade: Grade, correctText: string): FeedbackChoic
     const capitalization = assessed.some(
       (skill) => skill.outcome === "incorrect" && skill.details?.spelling?.capitalizationOnlyDefect,
     );
-    return capitalization ? { kind: "capitalization_hint", correctText } : { kind: "almost" };
+    return capitalization
+      ? { kind: "capitalization_hint", correctText }
+      : { kind: "almost", ...(grade.speechFragments ? { fragments: grade.speechFragments } : {}) };
   }
   // wymowa blisko progu — „Prawie! Posłuchaj jeszcze raz” (SPEC §16, §18)
   if (assessed.some((skill) => skill.details?.pronunciation?.band === "partial")) {
-    return { kind: "almost" };
+    return { kind: "almost", ...(grade.speechFragments ? { fragments: grade.speechFragments } : {}) };
   }
   return { kind: "incorrect", correctText };
 }

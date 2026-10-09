@@ -190,9 +190,15 @@ export type KidDeckDto = z.infer<typeof KidDeckDtoSchema>;
  * (SPEC §16). `correctText` to rozwiązanie własnego zadania, ujawniane
  * wyłącznie wraz z ekspozycją zapisaną przed odpowiedzią HTTP.
  */
+export const PronunciationFragmentDtoSchema = z.object({
+  text: z.string().min(1),
+  verdict: z.enum(["good", "almost"]),
+});
+
 export const FeedbackDtoSchema = z.object({
   kind: z.enum(["great", "capitalization_hint", "almost", "incorrect", "content_matched", "not_assessed"]),
   correctText: z.string().min(1).optional(),
+  fragments: z.array(PronunciationFragmentDtoSchema).max(6).optional(),
 });
 export type FeedbackDto = z.infer<typeof FeedbackDtoSchema>;
 

@@ -13,6 +13,7 @@ import {
 } from "../db/schema";
 import { AppError } from "../errors";
 import { matchWrittenAnswer } from "../domain/evaluate";
+import { buildPronunciationFragments } from "../domain/pronunciation-fragments";
 import { qualifyAttempt } from "../domain/independence";
 import type {
   AnswerKey,
@@ -169,7 +170,20 @@ export function assessSpeechEvidence(
       details: { pronunciation: { ...details, band } },
     };
   }
-  return { skills, attempt, ...(speechAttempt ? { speechAttempt } : {}) };
+  const word =
+    p.words?.length === 1 && p.words[0]!.text.toLowerCase() === match.matchedVariant.toLowerCase()
+      ? p.words[0]
+      : undefined;
+  const speechFragments =
+    band === "below"
+      ? undefined
+      : buildPronunciationFragments(match.matchedVariant, word, bands, band === "correct" ? "correct" : "partial");
+  return {
+    skills,
+    attempt,
+    ...(speechAttempt ? { speechAttempt } : {}),
+    ...(speechFragments ? { speechFragments } : {}),
+  };
 }
 
 /** Dowody „nagranie było, analizy nie było” — np. brak skonfigurowanych kluczy. */

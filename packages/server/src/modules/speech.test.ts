@@ -176,6 +176,44 @@ describe("assessSpeechEvidence — treść z transkrypcji, wymowa osobno (SPEC �
 });
 
 describe("pasma wymowy (design 2026-10-09)", () => {
+  it("band correct z fonemami daje speechFragments, a rozjazd słowa używa fallbacku", () => {
+    const aligned = evidence({
+      pronunciation: {
+        status: "ok",
+        overallScore: 90,
+        recognizedText: "Thursday",
+        provider: "fake-pron",
+        expectedText: "Thursday",
+        words: [{
+          text: "thursday",
+          accuracyScore: 90,
+          errorType: null,
+          phonemes: [
+            { phoneme: "θ", accuracyScore: 95 },
+            { phoneme: "ɜː", accuracyScore: 40 },
+            { phoneme: "r", accuracyScore: 92 },
+            { phoneme: "s", accuracyScore: 91 },
+            { phoneme: "d", accuracyScore: 93 },
+            { phoneme: "eɪ", accuracyScore: 92 },
+          ],
+        }],
+      },
+    });
+    const grade = assessSpeechEvidence(aligned, speechKey(), ctx({ policy: bandedPolicy() }));
+    expect(grade.speechFragments).toEqual([
+      { text: "th", verdict: "good" },
+      { text: "u", verdict: "almost" },
+      { text: "rsday", verdict: "good" },
+    ]);
+
+    const mismatched = assessSpeechEvidence(
+      evidence({ pronunciation: { ...aligned.pronunciation!, words: [{ ...aligned.pronunciation!.words![0]!, text: "Tuesday" }] } }),
+      speechKey(),
+      ctx({ policy: bandedPolicy() }),
+    );
+    expect(mismatched.speechFragments).toEqual([{ text: "Thursday", verdict: "good" }]);
+  });
+
   it("below pozostaje nieocenione — niepewna ocena, nie błąd wiedzy", () => {
     const grade = assessSpeechEvidence(
       evidence({
