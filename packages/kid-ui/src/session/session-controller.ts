@@ -33,8 +33,12 @@ export interface LearningScreen {
   kind: "learning";
   session: SessionDto;
   task: TaskDto | null;
-  /** Feedback po próbie; retry=true, gdy zadanie ma drugie podejście. */
-  feedback: { dto: FeedbackDto | null; retry: boolean } | null;
+  /**
+   * Feedback po próbie; retry=true, gdy zadanie ma drugie podejście.
+   * `chosenOptionId` różni próbę wyboru od pozostałych i zasila
+   * podświetlenie opcji w siatce odpowiedzi (design 2026-10-09).
+   */
+  feedback: { dto: FeedbackDto | null; retry: boolean; chosenOptionId?: string } | null;
   /** Ujawniona podpowiedź czekająca na potwierdzenie dziecka. */
   reveal: { target: string } | null;
   offline: boolean;
@@ -116,6 +120,8 @@ export class LearningSessionController {
   #recorder: SpeechRecorder | null = null;
   /** Ostatnia operacja do ponowienia po powrocie sieci/błędzie aplikacji. */
   #resume: (() => Promise<void>) | null = null;
+  /** Wybrana opcja próby w toku; do podświetlenia w feedbacku (design 2026-10-09). */
+  #pendingChoice: string | null = null;
   /** Wycofuje operacje zdążające po zmianie ekranu/teardown. */
   #epoch = 0;
 
@@ -331,6 +337,7 @@ export class LearningSessionController {
   }
 
   async answerChoice(optionId: string): Promise<void> {
+    this.#pendingChoice = optionId;
     await this.#submitAnswer({ modality: "choice", optionId });
   }
 
@@ -371,6 +378,9 @@ export class LearningSessionController {
   async #submitAnswer(input: AnswerPayload): Promise<void> {
     const screen = this.#learning();
     if (!screen?.task || screen.busy || screen.offline) return;
+    if (input.modality !== "choice") {
+      this.#pendingChoice = null;
+    }
     const epoch = this.#epoch;
     const taskId = screen.task.taskId;
     const clientAttemptId = randomUUID();
@@ -418,13 +428,19 @@ export class LearningSessionController {
   #showResult(attempt: AttemptDto, epoch: number): void {
     if (epoch !== this.#epoch || this.#screen.kind !== "learning") return;
     this.#resume = null;
+    const chosenOptionId = this.#pendingChoice;
+    this.#pendingChoice = null;
     this.#screen = {
       ...this.#screen,
       busy: false,
       processing: false,
       // feedback zastępuje panel ujawnienia podpowiedzi
       reveal: null,
-      feedback: { dto: attempt.feedback, retry: attempt.taskState === "issued" },
+      feedback: {
+        dto: attempt.feedback,
+        retry: attempt.taskState === "issued",
+        ...(chosenOptionId !== null ? { chosenOptionId } : {}),
+      },
     };
     this.#emit();
   }

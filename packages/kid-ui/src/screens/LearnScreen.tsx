@@ -1,9 +1,13 @@
 import { messages, type FeedbackDto } from "@learning/contracts";
 import { ExerciseView } from "../exercises/ExerciseView";
 import type { ExerciseHandlers } from "../exercises/types";
+import { optionOutcomes, type OptionOutcome } from "../exercises/option-outcome";
 import { format } from "../format";
 import { FeedbackDialog } from "./FeedbackDialog";
 import type { LearningSessionController, LearningScreen as LearningScreenState } from "../session/session-controller";
+
+/** Brak podświetleń poza feedbackem próby wyboru. */
+const EMPTY_OUTCOMES: ReadonlyMap<string, OptionOutcome> = new Map();
 
 function feedbackText(feedback: FeedbackDto | null): string {
   const dto = feedback ?? { kind: "not_assessed" as const };
@@ -59,6 +63,15 @@ export function LearnScreen({
   const { task, offline, busy } = screen;
   const remaining = controller.remainingFor(task);
   const micAvailable = screen.session.microphoneEnabled && !screen.micDenied;
+  // podświetlenia opcji żyją tylko przy feedbacku próby wyboru
+  const outcomes =
+    task !== null && screen.feedback?.chosenOptionId !== undefined
+      ? optionOutcomes(
+          screen.feedback.dto,
+          screen.feedback.chosenOptionId,
+          "options" in task.prompt ? task.prompt.options : [],
+        )
+      : EMPTY_OUTCOMES;
   const handlers: ExerciseHandlers = {
     onPlay: () => void controller.playTaskAudio(),
     onPlayExample: () => void controller.playExampleAudio(),
@@ -118,6 +131,7 @@ export function LearnScreen({
               recording={screen.recording}
               micAvailable={micAvailable}
               mediaUrl={(assetId) => controller.mediaUrl(assetId)}
+              optionOutcomes={outcomes}
               handlers={handlers}
             />
           </div>
@@ -134,7 +148,27 @@ export function LearnScreen({
         </section>
       )}
 
-      {screen.feedback !== null && !offline && screen.error === null && (
+      {screen.feedback !== null && !offline && screen.error === null && screen.feedback.chosenOptionId !== undefined && (
+        // próba wyboru: wynik podświetla przyciski, a pasek na dole nie zasłania
+        // siatki odpowiedzi (design 2026-10-09); te same komunikaty i tony co karteczka
+        <section
+          className={["kid-card", "kid-feedback-inline", feedbackTone(screen.feedback.dto)]
+            .filter(Boolean)
+            .join(" ")}
+          data-testid="kid-feedback"
+          role="status"
+          aria-labelledby="kid-feedback-title"
+        >
+          <div className="kid-feedback-content">
+            <p className="kid-feedback-text" id="kid-feedback-title">{feedbackText(screen.feedback.dto)}</p>
+          </div>
+          <button type="button" className="kid-primary" data-testid="kid-next" autoFocus disabled={busy} onClick={() => void controller.continueLearning()}>
+            {screen.feedback.retry ? messages.kid.feedbackRetry : messages.kid.feedbackNext}
+          </button>
+        </section>
+      )}
+
+      {screen.feedback !== null && !offline && screen.error === null && screen.feedback.chosenOptionId === undefined && (
         <FeedbackDialog
           className={["kid-card", "kid-feedback", feedbackTone(screen.feedback.dto)]
             .filter(Boolean)

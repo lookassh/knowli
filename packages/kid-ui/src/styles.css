@@ -243,6 +243,19 @@
   background: #eef0fb;
 }
 
+/* podświetlenie opcji po próbie wyboru (design 2026-10-09): kolor pochodzi
+   z feedbacku serwera — wybrana poprawna zielono, wybrana błędna czerwono,
+   poprawna przy pomyłce zielono; paleta jak karteczka feedbacku */
+.kid-options button.kid-option--correct {
+  border-color: #1d6a3f;
+  background: #f2fbf5;
+}
+
+.kid-options button.kid-option--wrong {
+  border-color: #c0392b;
+  background: #fdeeee;
+}
+
 button {
   font-family: inherit;
 }
@@ -369,6 +382,19 @@ button {
 
 .kid-feedback:not([open]) {
   display: none;
+}
+
+/* pasek wyniku zamiast karteczki dla zadań wyboru (design 2026-10-09):
+   przypięty do dołu ekranu, nie zasłania siatki podświetlanych opcji */
+.kid-feedback-inline {
+  position: fixed;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(528px, calc(100vw - 24px));
+  box-sizing: border-box;
+  z-index: 20;
+  box-shadow: 0 10px 28px rgb(29 29 43 / 30%);
 }
 
 .kid-feedback::backdrop {

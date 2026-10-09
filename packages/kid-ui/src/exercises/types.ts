@@ -1,4 +1,5 @@
 import type { TaskDto } from "@learning/contracts";
+import type { OptionOutcome } from "./option-outcome";
 
 export interface ExerciseHandlers {
   onPlay(): void;
@@ -22,5 +23,7 @@ export interface ExerciseProps {
   micAvailable: boolean;
   /** URL niezmiennej ilustracji karty (route media hosta). */
   mediaUrl: (assetId: string) => string;
+  /** Podświetlenia opcji po próbie wyboru; puste poza feedbackiem. */
+  optionOutcomes: ReadonlyMap<string, OptionOutcome>;
   handlers: ExerciseHandlers;
 }

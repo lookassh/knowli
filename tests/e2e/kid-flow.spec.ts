@@ -459,9 +459,36 @@ test("popup wyniku mieści się w ekranie telefonu bez przewijania", async ({ pa
   await driveUntil(page, async () => (await page.getByTestId("kid-option").count()) > 0);
   await page.setViewportSize({ width: 360, height: 640 });
   const choiceId = await currentTaskId(page);
-  await page.getByTestId("kid-option").filter({ hasText: new RegExp(`^\\s*${escapeRegex(await correctOptionText(choiceId))}\\s*$`) }).first().click();
+  const correct = page
+    .getByTestId("kid-option")
+    .filter({ hasText: new RegExp(`^\\s*${escapeRegex(await correctOptionText(choiceId))}\\s*$`) })
+    .first();
+  const wrong = page
+    .getByTestId("kid-option")
+    .filter({ hasNotText: new RegExp(`^\\s*${escapeRegex(await correctOptionText(choiceId))}\\s*$`) })
+    .first();
+
+  // próba wyboru nie otwiera popupu: pasek na dole nie zasłania siatki, a
+  // wybrana błędna opcja świeci czerwono, poprawna zielono (design 2026-10-09)
+  await wrong.click();
+  await expect(feedback).toBeVisible();
+  expect(await feedback.evaluate((element) => element.tagName)).toBe("SECTION");
+  await expect(feedback).toHaveClass(/kid-feedback--retry/);
+  await expect(wrong).toHaveClass(/kid-option--wrong/);
+  await expect(correct).toHaveClass(/kid-option--correct/);
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe("");
+  const barBox = await feedback.boundingBox();
+  expect(barBox!.y).toBeGreaterThanOrEqual(0);
+  expect(barBox!.y + barBox!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+
+  // druga próba zaczyna bez podświetleń — to nie przepisywanie zielonego
+  await next.click();
+  await expect(feedback).toHaveCount(0);
+  await expect(page.getByTestId("kid-option").first()).not.toHaveClass(/kid-option--/);
+
+  await correct.click();
   await expect(feedback).toContainText("Świetnie");
-  await assertVisibleWithoutScrolling();
+  await expect(correct).toHaveClass(/kid-option--correct/);
   await next.click();
   await expect(feedback).toHaveCount(0);
 });

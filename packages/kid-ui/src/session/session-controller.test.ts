@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type {
   AttemptDto,
   DisclosureDto,
+  FeedbackDto,
   KidDeckDto,
   KidProfileDto,
   PresentationCompletionDto,
@@ -411,6 +412,52 @@ describe("LearningSessionController", () => {
     await speechHarness.controller.playTaskAudio();
     expect(speechHarness.state.disclosures).toEqual([{ taskId: "t3", kind: "audio" }]);
     expect(speechHarness.media.playUrls).toEqual(["https://media.test/asset-2"]);
+  });
+
+  it("feedback wyboru pamięta wybraną opcję także przez awarię sieci i retry", async () => {
+    const chosen = "88888888-8888-8888-8888-888888888888";
+    const listening = taskDto("t1", {
+      kind: "listening",
+      options: [{ id: chosen, text: "czwartek" }],
+      audioAssetId: "99999999-9999-9999-9999-999999999999",
+    });
+    const state = baseState();
+    const harness = await startAtTask(state, listening);
+
+    state.networkDown = true;
+    await harness.controller.answerChoice(chosen);
+    expect(harness.controller.getScreen()).toMatchObject({ offline: true, feedback: null });
+
+    state.networkDown = false;
+    state.attempts = [attemptDto({
+      modality: "choice",
+      feedback: { kind: "incorrect", correctText: "czwartek" },
+      taskState: "issued",
+    })];
+    await harness.controller.retry();
+    expect(harness.controller.getScreen()).toMatchObject({
+      feedback: { dto: { kind: "incorrect" }, retry: true, chosenOptionId: chosen },
+    });
+
+    // druga próba zaczyna bez podświetlenia; poprawny wybór znów je zapamiętuje
+    await harness.controller.continueLearning();
+    expect(harness.controller.getScreen()).toMatchObject({ feedback: null });
+    state.attempts = [attemptDto({ modality: "choice", feedback: { kind: "great" }, taskState: "completed" })];
+    await harness.controller.answerChoice(chosen);
+    expect(harness.controller.getScreen()).toMatchObject({
+      feedback: { dto: { kind: "great" }, retry: false, chosenOptionId: chosen },
+    });
+  });
+
+  it("feedback próby innej niż wybór nie niesie wybranej opcji", async () => {
+    const recall = taskDto("t1", { kind: "recall", prompt: "czwartek" });
+    const harness = await startAtTask(baseState(), recall);
+    await harness.controller.answerText("Thursday");
+    const screen = harness.controller.getScreen() as {
+      feedback: { dto: FeedbackDto | null; retry: boolean; chosenOptionId?: string } | null;
+    };
+    expect(screen.feedback?.dto).toMatchObject({ kind: "great" });
+    expect(screen.feedback?.chosenOptionId).toBeUndefined();
   });
 
   it("druga próba po błędzie zostaje na zadaniu, a koniec nie dokładuje zadań", async () => {
