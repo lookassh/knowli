@@ -77,8 +77,8 @@ kandydata są pokryte poniżej; R01/R04/R05 testujemy wraz z istniejącymi regre
 
 **Interfaces:** `SessionContextShape.testDate?:string|null`; contextOf zachowuje pole, jeśli było, ale nie dopisuje go legacy sesji. Nowy start przypina assignment.testDate. W planNext historyczne exposure daje hasBeenPresented, task z reason preparation daje preparation-issued, ostatnie dwa oceniane taski (sortowane ordinal) dają recentAssessedReasons. Termin/strefa przekazywane tylko wewnętrznie, bez nowych Kid DTO.
 
-- [ ] Integracja: start przypina datę; zmiana przypisania nie zmienia resume, end+nowy start pobiera nową. Legacy bez pola nadal bez priorytetu po zapisach events/next. ManualClock i istniejące query/helpery.
-- [ ] Integracja: historyczne exposure i sukces rozpoznania → preparation przed unseen; równoległe next zwracają ten sam ID; retry nie zwiększa budżetu. Skip wyklucza dodatkowe preparation tego celu, „Nie pamiętam” daje wsparcie, unassessed nie zmienia reguł; odpowiedź pisemna ocenia osobno Recall/spelling, recent exposure nie daje niezależności.
+- [x] Integracja: start przypina datę; zmiana przypisania nie zmienia resume, end+nowy start pobiera nową. Legacy bez pola nadal bez priorytetu po zapisach events/next. ManualClock i istniejące query/helpery.
+- [x] Integracja: historyczne exposure i sukces rozpoznania → preparation przed unseen; równoległe next zwracają ten sam ID; retry nie zwiększa budżetu. Skip wyklucza dodatkowe preparation tego celu, „Nie pamiętam” daje wsparcie, unassessed nie zmienia reguł; odpowiedź pisemna ocenia osobno Recall/spelling, recent exposure nie daje niezależności.
   Asercje testu `pins_test_date_across_resume_and_new_start`:
   ```ts
   expect(resumed.sessionId).toBe(started.sessionId);
@@ -86,14 +86,14 @@ kandydata są pokryte poniżej; R01/R04/R05 testujemy wraz z istniejącymi regre
   expect(newContext.testDate).toBe("2026-10-12");
   expect(retriedTask.taskId).toBe(firstTask.taskId);
   ```
-- [ ] Przed wiring napisać E2E z seedingiem syntetycznej known/unseen i dzisiejszej daty: polskie pytanie i pole wpisywania przed nową kartą, także bez mikrofonu. RED `pnpm test:e2e tests/e2e/test-preparation.spec.ts`; expected pytanie pisemne zamiast prezentacji nowego słowa.
-- [ ] RED: `pnpm test:integration tests/integration/sessions.test.ts` z izolacją A0; potwierdzić porażkę przypięcia/kolejności przed kodem.
-- [ ] Implementować kontekst oraz odczyt historycznych tasków, zachowując wszystkie pola przy aktualizacji przez events. Nie pobierać późniejszego assignment.testDate dla legacy next. Issued prompt i zakończone oceny bez zmian.
-- [ ] GREEN: integracja, unit i wcześniej uruchomiony E2E; zapisać wyniki w checkliście.
-- [ ] `pnpm test:e2e tests/e2e/test-preparation.spec.ts tests/e2e/kid-flow.spec.ts tests/e2e/privacy.spec.ts`, typecheck, docs (SPEC A18 i architecture §9.3); commit `feat: pin test preparation context to learning sessions`.
+- [x] Przed wiring napisać E2E z seedingiem syntetycznej known/unseen i dzisiejszej daty: polskie pytanie i pole wpisywania przed nową kartą, także bez mikrofonu. RED `pnpm test:e2e tests/e2e/test-preparation.spec.ts`; expected pytanie pisemne zamiast prezentacji nowego słowa.
+- [x] RED: `pnpm test:integration tests/integration/sessions.test.ts` z izolacją A0; 2 oczekiwane porażki pokazały brak przypięcia daty i priorytetu.
+- [x] Implementować kontekst oraz odczyt historycznych tasków, zachowując wszystkie pola przy aktualizacji przez events. Nie pobierać późniejszego assignment.testDate dla legacy next. Issued prompt i zakończone oceny bez zmian.
+- [x] GREEN: integracja 37/37, domain 147/147, E2E nowego scenariusza 1/1; typecheck.
+- [x] `pnpm test:e2e tests/e2e/test-preparation.spec.ts tests/e2e/kid-flow.spec.ts tests/e2e/privacy.spec.ts` 9/9; typecheck, docs (SPEC A18 i architecture §9.3); commit `feat: pin test preparation context to learning sessions`.
 
 ## Checklista
 
 - [x] Self-review: §3, interfejsy, DST, współbieżność i Review Focus.
 - [x] Akceptacja planu i wykonania.
-- [ ] A0–A3 z RED/GREEN i commitami; pełny odbiór wspólnego pakietu.
+- [x] A0–A3 wykonane z RED/GREEN i commitami.\n- [ ] Pełny odbiór wspólnego pakietu.

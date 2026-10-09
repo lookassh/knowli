@@ -32,7 +32,7 @@
 
 Writing-plans zaleca osobne plany niezależnych podsystemów. Realizujemy kolejno:
 
-- [ ] A: `2026-10-09-test-preparation.md` — termin i scheduler.
+- [x] A: `2026-10-09-test-preparation.md` — termin i scheduler.
 - [ ] B: `2026-10-09-parent-edit-protection.md` — wersja bazowa, wyjścia i konflikty.
 - [ ] C: `2026-10-09-generation-request-retry.md` — retry przyjęcia zlecenia.
 
@@ -58,5 +58,5 @@ obsługi wygasłej autoryzacji w ParentApp; nie dzieli stanu generacji z edytore
 
 - [x] Spec zatwierdzona; trzy niezależne plany zapisane i samodzielnie przejrzane.
 - [x] Właściciel zaakceptował bezpośrednie wykonanie w tej rozmowie, bez delegacji.
-- [ ] Implementacja A (pozostały A1–A3), B, C z TDD i małymi commitami.
+- [ ] Implementacja B, C z TDD i małymi commitami.
 - [ ] Pełny odbiór, audyt checklisty i raport. Obecny etap zmienia tylko dokumentację.

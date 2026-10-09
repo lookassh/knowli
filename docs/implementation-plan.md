@@ -64,7 +64,7 @@ Implementacja contracts definiuje typy runtime przez Zod, a TypeScript wyprowadz
 | EvaluationContext | receivedAt, policy, lastExposureAt, firstTry, assistance, previousSessionContactAt, timezone; zamrożone przy przyjęciu próby; server/domain/types.ts |
 | Grade | wyniki per skill: outcome, reason, independent, confirmationEligible, details; server/domain/types.ts |
 | History / Progress | uporządkowane oceny z czasem/polityką / status, streak, nextReviewAt; server/domain/types.ts |
-| ScheduleInput / TaskPlan | przypięta treść, postęp, trudności, budżet, termin, rezerwacje celów samodzielnego sprawdzenia, now / element, exerciseType, wsparcie; server/domain/types.ts |
+| ScheduleInput / TaskPlan | przypięta treść, postęp, trudności, budżet, termin, rezerwacje celów samodzielnego sprawdzenia, now / element, exerciseType, wsparcie; server/domain/scheduler.ts |
 | AudioInput / SpeechEvidence | krótkotrwałe bytes, mime, locale / transkrypcja i osobny wynik wymowy; server/ports/ai.ts |
 | ProgressDto | osobne umiejętności, stan nieoceniony, trudne elementy, kierunkowe pomyłki; contracts/progress.ts |
 
@@ -325,3 +325,7 @@ poziomego overflow.
 ### Uzupełnienie: edycja profilu dziecka (2026-10-09)
 
 Kontrakt `updateChild(s: Services, childId: string, input: ChildPatch): Promise<ChildDto>` i PATCH profilu uzupełniają zadanie 1. Testy `auth-profiles.test.ts` obejmują częściową aktualizację, bezpieczeństwo, walidację i dwóch klientów. `history.test.ts` rozszerza R03: edycja zachowuje pełne rekordy historii, politykę, przypisania i dane drugiego dziecka, podczas gdy DELETE nadal usuwa historię przez CASCADE. Plan szczegółowy: `superpowers/plans/2026-10-09-child-profile-edit.md`.
+
+### Uzupełnienie: przygotowanie do sprawdzianu i izolacja runnerów (2026-10-09)
+
+Runner Vitest/Playwright przyjmuje walidowany `UMIEM_TEST_RUN_ID` oraz `UMIEM_E2E_PORT`, a kontener E2E, prefiks kontenerów integracyjnych i plik `.world` są rozdzielane dla danego przebiegu. Domena `test-preparation.ts` liczy lokalne okno od początku dnia sprawdzianu w IANA timezone, bez zakładania stałego offsetu ani 24-godzinnego dnia. Nowa sesja zapisuje datę z przypisania w prywatnym kontekście; scheduler korzysta z pieczętowanej historii ekspozycji, pozostawia należne sprawdzenia/wsparcie/poprawkę wyżej, wydaje pisemne Recall dla znanych słów i wstawia bezpieczne rozpoznawanie po dwóch kolejnych próbach przygotowawczych. Zadania generacji, POST Kid API, schemat bazy i DTO publiczne nie są zmieniane.
