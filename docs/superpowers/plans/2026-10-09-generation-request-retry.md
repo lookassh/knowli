@@ -21,7 +21,7 @@
 Utrata odpowiedzi, wadliwy JSON/UUID w 202, podwójne kliknięcie, wygaśnięcie
 sesji i refresh fail mają testy C1–C2.
 
-### C1: Polecenie i przyjęcie
+### Task 1: Polecenie i przyjęcie (C1)
 
 **Files:** Create `apps/web/src/parent/{generation-request.ts,generation-request.test.ts}`; Modify `DecksPanel.tsx`, `ParentApp.tsx`, `packages/contracts/src/messages.ts`; Create `tests/e2e/generation-request-retry.spec.ts`.
 
@@ -40,7 +40,7 @@ sesji i refresh fail mają testy C1–C2.
 - [ ] 401/403 czyści pending, 401 wywołuje onAuthExpired, 403 pokazuje odmowę; validation odblokowuje korektę. Niepewny wynik zachowuje dane. Sukces czyści pending i otwiera DeckEditor; refresh listy oddzielny i nie usuwa sukcesu. Nowe tworzenie ma nowe UUID. Late response po unmount nie otwiera obcego edytora.
 - [ ] GREEN unit/E2E lost/typecheck; commit `fix: retry uncertain deck generation with the same command`.
 
-### C2: Macierz błędów i regresje
+### Task 2: Macierz błędów i regresje (C2)
 
 **Files:** Modify `tests/e2e/{generation-request-retry.spec.ts,parent-flow.spec.ts}`, `docs/{SPEC,architecture,folder-structure,implementation-plan}.md`. Serwer generation bez zmian, chyba że test ujawni błąd — wtedy systematic-debugging i aktualizacja planu przed poprawką.
 

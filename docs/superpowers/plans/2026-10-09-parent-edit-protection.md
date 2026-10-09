@@ -21,7 +21,7 @@
 Polling w trakcie edycji, dwie nowe karty bez ID, publikacja w drugim oknie,
 spóźniony GET oraz refresh failed po udanym PATCH są pokryte w B1–B3.
 
-### B1: Bazowa migawka i zapis
+### Task 1: Bazowa migawka i zapis (B1)
 
 **Files:** Create `apps/web/src/parent/{deck-editor-state.ts,deck-editor-state.test.ts}`; Modify `DeckEditor.tsx`, `packages/contracts/src/messages.ts`; Create `tests/e2e/parent-edit-protection.spec.ts`.
 
@@ -40,7 +40,7 @@ spóźniony GET oraz refresh failed po udanym PATCH są pokryte w B1–B3.
 - [ ] E2E delayed PATCH blokuje wszystkie pola; PATCH sukces + GET fail daje dirty=false i brak powtórnego zapisu. Napisać i uruchomić te przypadki RED przed odpowiadającą obsługą; kontrola przejść jest w B2.
 - [ ] GREEN unit/E2E/typecheck; commit `fix: keep draft edits tied to their original revision`.
 
-### B2: Kontrola wyjścia
+### Task 2: Kontrola wyjścia (B2)
 
 **Files:** Create `apps/web/src/parent/{useParentLeaveGuard.ts,LeaveEditorDialog.tsx}`; Modify `ParentApp.tsx`, `DecksPanel.tsx`, `DeckEditor.tsx`, `apps/web/src/app/globals.css`, `messages.ts`, `tests/e2e/parent-edit-protection.spec.ts`.
 
@@ -57,7 +57,7 @@ spóźniony GET oraz refresh failed po udanym PATCH są pokryte w B1–B3.
 - [ ] Implementować wspólny guard i `<dialog>`: focus trap, Escape=Zostań, powrót fokusu. Beforeunload tylko dirty, cleanup przy unmount; brak storage. `DecksPanel.onAuthExpired:()=>void` przekazywany przez ParentApp dla późniejszego planu C; utrata autoryzacji nie zostawia w UI materiału po wylogowaniu.
 - [ ] GREEN E2E/typecheck; commit `feat: protect unsaved parent edits when leaving`.
 
-### B3: Konflikt i porównanie
+### Task 3: Konflikt i porównanie (B3)
 
 **Files:** Create `apps/web/src/parent/DeckConflictPanel.tsx`; Modify `deck-editor-state.ts`, `deck-editor-state.test.ts`, `DeckEditor.tsx`, `messages.ts`, `globals.css`, `tests/e2e/parent-edit-protection.spec.ts`, `docs/{SPEC,architecture,folder-structure,implementation-plan}.md`.
 

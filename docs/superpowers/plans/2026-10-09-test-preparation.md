@@ -21,7 +21,7 @@
 DST, historyczna prezentacja, skip, retry next i brak bezpiecznego łatwego
 kandydata są pokryte poniżej; R01/R04/R05 testujemy wraz z istniejącymi regresjami.
 
-### A0: Izolacja runnerów potrzebna integracji i E2E
+### Task 1: Izolacja runnerów potrzebna integracji i E2E (A0)
 
 **Files:** Create `tests/{test-run-config.ts,test-run-config.test.ts}`; Modify `vitest.unit.config.ts`, `playwright.config.ts`, `tests/integration/global-setup.ts`, `tests/e2e/{global-setup.ts,kid-flow.spec.ts}`.
 
@@ -40,7 +40,7 @@ kandydata są pokryte poniżej; R01/R04/R05 testujemy wraz z istniejącymi regre
 - [ ] RED: `pnpm test:unit tests/test-run-config.test.ts`. Następnie implementować helper i podłączyć wszystkie miejsca. Stale cleanup integration ograniczyć do własnego prefiksu. `kid-flow` odczytuje skonfigurowany world file.
 - [ ] GREEN: powtórzyć unit i typecheck; ustawić `$env:UMIEM_TEST_RUN_ID='b2d0-reliability'` oraz wolny port np. 24510 po jego sprawdzeniu. Commit `test: isolate database and browser test runs`.
 
-### A1: Okno terminu
+### Task 2: Okno terminu (A1)
 
 **Files:** Create `packages/server/src/domain/{test-preparation.ts,test-preparation.test.ts}`.
 
@@ -58,7 +58,7 @@ kandydata są pokryte poniżej; R01/R04/R05 testujemy wraz z istniejącymi regre
 - [ ] Implementować wyznaczanie lokalnego początku dnia przez Intl na absolutnych instantach; bez parsowania dnia jako UTC i bez sztywnego dodawania 24 h. Wadliwe dane wewnętrzne wyłączają priorytet zamiast blokować sesję.
 - [ ] GREEN: powtórzyć test i typecheck; commit `feat: define family test preparation window`.
 
-### A2: Scheduler
+### Task 3: Scheduler (A2)
 
 **Files:** Modify `packages/server/src/domain/{scheduler.ts,scheduler.test.ts}`; Create `packages/server/src/domain/test-preparation-scheduler.test.ts`.
 
@@ -71,7 +71,7 @@ kandydata są pokryte poniżej; R01/R04/R05 testujemy wraz z istniejącymi regre
 - [ ] Implementować priorytet po retry-after-support, przed stage-introduction. Deterministyczne sortowanie i istniejące recognitionPlan, bez osobnej oceny wiedzy lub luzowania kwalifikacji.
 - [ ] GREEN: `pnpm test:unit packages/server/src/domain`; commit `feat: prioritize written practice before family tests`.
 
-### A3: Sesje, historia i HTTP
+### Task 4: Sesje, historia i HTTP (A3)
 
 **Files:** Modify `packages/server/src/modules/{sessions,events}.ts`, `tests/integration/sessions.test.ts`; Create `tests/e2e/test-preparation.spec.ts`; Modify `docs/{SPEC,architecture,folder-structure,implementation-plan}.md`.
 
