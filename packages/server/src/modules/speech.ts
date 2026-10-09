@@ -34,11 +34,11 @@ import { finalizeAttempt, startAttempt } from "./attempts";
 /** Łączny deadline analizy nagrania (arch §11). */
 export const SPEECH_ANALYSIS_TIMEOUT_MS = 30_000;
 /**
- * Startowy próg wiarygodności transkrypcji — wartość do kalibracji próbą
- * techniczną (SPEC §23: nie wymyślamy pewności, której usługa nie zwraca;
- * niepewne rozpoznanie nie tworzy mylonej pary).
+ * Minimalna pewność dla niedopasowanej transkrypcji. Zgodne rozpoznanie
+ * przyjmujemy niezależnie od confidence (docs/speech-spike.md: Thursday 0.21,
+ * Red 0.31); niepewna rozbieżność nie tworzy mylonej pary.
  */
-export const MIN_STT_CONFIDENCE = 0.5;
+export const MIN_STT_CONFIDENCE = 0.4;
 
 /** Typy zadań przyjmujące odpowiedź ustną (SPEC §12.5–12.6). */
 const SPEECH_EXERCISES: ReadonlySet<string> = new Set(["recall", "speech"]);
@@ -72,11 +72,7 @@ export async function analyzeSpeech(
   );
 
   let pronunciation: SpeechEvidence["pronunciation"] = null;
-  if (
-    transcription.status === "ok" &&
-    transcription.text !== null &&
-    (transcription.confidence === null || transcription.confidence >= MIN_STT_CONFIDENCE)
-  ) {
+  if (transcription.status === "ok" && transcription.text !== null) {
     const match = matchSpokenAnswer(transcription.text, key);
     if (match.ci && match.matchedVariant === key.target) {
       const result = await deps.pronunciation.assess(audio, key.target, deadline).then(
@@ -117,10 +113,6 @@ export function assessSpeechEvidence(
   ctx: EvaluationContext,
 ): Grade {
   const t = evidence.transcription;
-  const credible =
-    t.status === "ok" &&
-    t.text !== null &&
-    (t.confidence === null || t.confidence >= MIN_STT_CONFIDENCE);
   // w ćwiczeniu wymowy wzorzec jest oczekiwaną częścią nauki (SPEC §13.2)
   const attempt = qualifyAttempt(
     key.exerciseType === "speech"
@@ -130,14 +122,19 @@ export function assessSpeechEvidence(
   const skills: Partial<Record<Skill, SkillGrade>> = {};
   const assessesContent = key.exerciseType !== "speech";
 
-  if (!credible) {
-    const reason: SkillGrade["reason"] = t.status === "ok" ? "ambiguous" : "technical";
+  if (t.status !== "ok" || t.text === null) {
+    const reason: SkillGrade["reason"] = "technical";
     if (assessesContent) skills.recall = unevaluated(reason);
     skills.pronunciation = unevaluated(reason);
     return { skills, attempt };
   }
 
   const match = matchSpokenAnswer(t.text!, key);
+  if (!match.ci && t.confidence !== null && t.confidence < MIN_STT_CONFIDENCE) {
+    if (assessesContent) skills.recall = unevaluated("ambiguous");
+    skills.pronunciation = unevaluated("ambiguous");
+    return { skills, attempt };
+  }
   // ćwiczenie wymowy: treść wypowiedzi decyduje o wykonaniu zadania —
   // ocena wymowy może pozostać nieoceniona (§12.6, §15.4)
   const speechAttempt = key.exerciseType === "speech" ? { contentMatched: match.ci } : undefined;
