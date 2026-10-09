@@ -91,7 +91,7 @@ Nie dodawaj mikroserwisów, Redis, osobnego backendu, ogólnego frameworka plugi
 
 ## Sposób implementacji i sprawdzania
 
-- Przed rozpoczęciem zadania sprawdź dostępne skillsy Superpowers i użyj tych, które pasują do pracy; stosuj ich workflow. Przykładowo: brainstorming przed projektowaniem funkcji, writing-plans przed wieloetapową implementacją, systematic-debugging przy błędach, test-driven-development przy poprawkach, verification-before-completion przed uznaniem pracy za zakończoną oraz finishing-a-development-branch przy scalaniu gałęzi roboczej. Polecenia właściciela i instrukcje tego pliku mają pierwszeństwo.
+- Przed rozpoczęciem zadania dobierz i uruchom skillsy Superpowers zgodnie z tabelą i bramkami poniżej. Dotyczy to każdego agenta pracującego w repozytorium, w tym Codex i Zcode. Polecenia właściciela i instrukcje tego pliku mają pierwszeństwo.
 - Realizuj uzgodniony plan małymi zadaniami z działającym, sprawdzalnym rezultatem. Nie traktuj odczytania tego pliku jako polecenia zbudowania całego MVP.
 - Próbę mowy i mediów wykonaj zgodnie z zadaniem 0. Bez kluczy lub docelowego urządzenia opisz brakujące dowody; tekstowy fundament może powstawać dalej. Nie deklaruj gotowej oceny wymowy bez tej próby.
 - Nie dodawaj funkcji poza aktualnym zadaniem. Deleguj pracę innym agentom tylko po wyraźnej zgodzie użytkownika.
@@ -103,12 +103,67 @@ Nie dodawaj mikroserwisów, Redis, osobnego backendu, ogólnego frameworka plugi
 
 ### Obowiązkowe wykonanie workflow Superpowers
 
-- Przeczytanie lub wymienienie skilla nie oznacza wykonania jego workflow. Przed implementacją utwórz i aktualizuj checklistę wymaganych kroków, artefaktów oraz zatwierdzeń.
-- Klasyfikuj zadanie według całego zakresu zmian. Zmiana publicznego DTO/API, modelu danych lub współpracy klient–serwer wymaga ścieżki architectural. Nie traktuj jej jako bounded tylko dlatego, że widoczny efekt dotyczy jednego ekranu.
-- Dla wieloetapowej implementacji użyj writing-plans, a następnie executing-plans. Zachowaj wymagane przez brainstorming etapy zatwierdzania. Delegacja nadal wymaga wyraźnej zgody właściciela.
-- Gdy pracujesz w worktree (lub na gałęzi roboczej), scalanie zmian do głównej gałęzi (`main`) wykonuj skillem finishing-a-development-branch, nie ręcznym merge'em — także wtedy, gdy właściciel prosi o „zmerguj do mastera" bez wskazania sposobu. Obejmuje to pełny workflow skilla: weryfikację przed scaleniem, integrację i sprzątnięcie gałęzi oraz worktree.
+Poniższe reguły opierają się na [workflow Superpowers](https://github.com/obra/superpowers#the-basic-workflow), a bramki wykonania i review są wymaganiami tego repozytorium. Czytaj aktualne, dostępne w danym środowisku `SKILL.md`; nie polegaj na pamięci nazwy ani starej wersji workflow.
+
+- Jeżeli środowisko ma narzędzie wywoływania skillsów, użyj go. Jeżeli udostępnia skillsy jako pliki, otwórz właściwy `SKILL.md` i wykonaj jego instrukcje. Nie zakładaj, że instalacja w jednym kliencie oznacza dostępność w drugim.
+- Przeczytanie lub wymienienie skilla nie oznacza wykonania jego workflow. Zapowiedz używany skill i jego cel, a przed implementacją utwórz i aktualizuj checklistę wymaganych kroków, artefaktów oraz zatwierdzeń.
+- Jeśli potrzebny skill jest niedostępny, zgłoś jego nazwę, brak i wpływ na zadanie. Nie deklaruj jego użycia ani nie zastępuj go po cichu własnym procesem. Wykonuj dalej niezależne, autoryzowane czynności; brak skilla nie jest zgodą na pominięcie wymaganej bramki.
+
+#### Kiedy uruchamiać poszczególne skillsy
+
+Nazwy w tabeli oznaczają skillsy `superpowers:<nazwa>`; prefiks wywołania może zależeć od klienta.
+
+| Sytuacja / moment | Wymagany skill i rezultat |
+| --- | --- |
+| Początek nowego zadania lub rozmowy | `using-superpowers`: sprawdzenie pasujących skillsów przed działaniem i wybór workflow. |
+| Nowa funkcja, projektowanie lub zmiana zachowania aplikacji | `brainstorming`: klasyfikacja zakresu, projekt i zatwierdzenia wymagane przez wybraną ścieżkę. |
+| Zatwierdzone wymagania wymagające wieloetapowej implementacji | `writing-plans`: zapisany plan z plikami, zadaniami, testami, kryteriami ukończenia i wskazanym sposobem wykonania. |
+| Rozpoczęcie lub wznowienie wykonania istniejącego planu przez bieżącego agenta | **`executing-plans`**: obowiązkowo przed pierwszą zmianą implementacyjną; dotyczy także planów z wcześniejszego czatu lub przygotowanych przez innego agenta. |
+| Implementacja planu przez delegowanych wykonawców | `subagent-driven-development`: tylko po wyraźnej zgodzie właściciela na ten tryb; review zgodności ze specyfikacją i jakości po każdym zadaniu. |
+| Co najmniej dwa niezależne zadania do delegacji równoległej | `dispatching-parallel-agents`: tylko po wyraźnej zgodzie właściciela i sprawdzeniu braku wspólnego stanu lub zależności. |
+| Błąd, nieoczekiwane zachowanie lub nieudany test | `systematic-debugging`: ustalenie i potwierdzenie przyczyny przed proponowaniem poprawki. |
+| Implementacja zachowania lub poprawka błędu | `test-driven-development`: znaczący test, potwierdzone RED, minimalna implementacja i GREEN. |
+| Początek implementacji wymagającej izolacji lub wykonania planu | `using-git-worktrees`: utworzenie albo sprawdzenie istniejącego worktree; nie twórz kolejnego bez potrzeby. |
+| Ukończenie uzgodnionego zakresu implementacji, duża funkcja/refaktoryzacja, złożona poprawka oraz przed scaleniem do `main` | **`requesting-code-review`**: osobny przegląd zmian z wymaganiami, zakresem diffu i wynikami sprawdzeń; szczegóły bramki poniżej. |
+| Otrzymanie uwag z review | `receiving-code-review`: weryfikacja techniczna uwag przed zmianami; uzasadnione przyjęcie lub odrzucenie. |
+| Przed stwierdzeniem „gotowe”, „naprawione”, „testy przechodzą”, commitem lub PR | `verification-before-completion`: aktualne polecenia, odczytane wyniki i sprawdzone kryteria akceptacji. |
+| Zakończenie gałęzi implementacyjnej, integracja lub sprzątanie po niej | `finishing-a-development-branch`: weryfikacja, wybrany przez właściciela sposób integracji i odpowiednie sprzątnięcie. |
+
+#### Bramka plan → wykonanie: `executing-plans`
+
+- Klasyfikuj zadanie według całego zakresu zmian. Zmiana publicznego DTO/API, modelu danych lub współpracy klient–serwer wymaga ścieżki architectural. Nie traktuj jej jako bounded tylko dlatego, że widoczny efekt dotyczy jednego ekranu. Zachowaj wymagane przez `brainstorming` etapy zatwierdzania projektu, zapisanej specyfikacji i planu; zatwierdzenie jednego etapu nie zatwierdza następnego.
+- Gdy zatwierdzony plan ma być wykonywany przez bieżącego agenta, **uruchom `executing-plans`, zanim zaczniesz implementację**. Samo przeczytanie planu, wypisanie TODO albo użycie `writing-plans` nie spełnia tej bramki. Polecenia „zrealizuj plan”, „kontynuuj plan” i „wdroż zadanie N z planu” są wyzwalaczami tego skilla; nie wymagają wymienienia go przez właściciela.
+- Domyślnym trybem w tym repo jest wykonanie przez bieżącego agenta. Istnienie narzędzi multi-agent nie uprawnia do delegacji. Jeśli właściciel zatwierdził plan i polecił jego wykonanie w tym czacie, zastosuj `executing-plans`; nie pytaj ponownie o już zaakceptowany tryb. `subagent-driven-development` jest alternatywą dopiero po wyraźnej zgodzie na delegację.
+- Nowy plan zapisz w `docs/superpowers/plans/` i dodaj instrukcję dla kolejnego agenta: „REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Use superpowers:subagent-driven-development only with explicit owner approval. Before completion, use superpowers:requesting-code-review.” Starszy plan bez takiego nagłówka nadal podlega tej bramce.
+- Wykonaj setup skilla: sprawdź izolację, przeczytaj plan i specyfikację, sprawdź zależności między zadaniami i załóż albo wznów dziennik postępu przypisany do tego planu. Korzystaj ze skryptów workspace/task-start/task-done/review-package wskazanych przez zainstalowaną wersję. Jeżeli wymagają dostosowania do platformy, zapisz powód i równoważne kroki z tymi samymi artefaktami oraz dowodami; nie pomijaj ich rezultatów.
+- Przy każdym zadaniu zapisz wymagane sprawdzenia, rzeczywiste wyniki i odstępstwa wraz z uzasadnieniem. Po wznowieniu lub kompakcji sprawdź dziennik oraz Git i wróć do pierwszego niezakończonego zadania. Nie wykonuj ponownie ukończonych zadań i nie oznaczaj kolejnych jako gotowych bez dowodów.
+- Kontynuuj autoryzowane zadania bez pytania „czy iść dalej?” po każdym kroku. Nowe ustalenia wpływające na dane, prywatność lub publiczny kontrakt wyjaśnij zgodnie z zasadami początku pracy.
+- Wykonanie planu kończy się review **całego uzgodnionego zakresu zmian** przez `requesting-code-review`, a potem workflow `finishing-a-development-branch`. Review pojedynczego ostatniego commita nie wystarcza dla planu obejmującego kilka commitów.
+
+#### Bramka implementacja → review: `requesting-code-review`
+
+- **Uruchom `requesting-code-review` przed raportem o ukończeniu implementacji i zawsze przed scaleniem do `main`.** W tym repo dotyczy to także zadań zmieniających testy, migracje, konfigurację wykonawczą lub zabezpieczenia. Nie odkładaj review do chwili, gdy właściciel sam o nie poprosi.
+- Przy `executing-plans` wykonaj jeden końcowy przegląd całego zakresu. Przy autoryzowanym `subagent-driven-development` wykonuj przeglądy wymagane po każdym zadaniu i końcowy przegląd całości. Nie dodawaj automatycznie recenzenta do każdego kroku wykonywanego inline.
+- Przygotuj kontekst zgodnie z `requesting-code-review/code-reviewer.md`: cel i wymagania, ścieżki specyfikacji oraz planu, `Review Focus`, zakres zmian `BASE_SHA..HEAD_SHA`, wyniki testów oraz decyzje/odstępstwa z dziennika. Bazę dobierz do całego zadania, nie automatycznie `HEAD~1`. Jeśli są niezacommitowane zmiany, dołącz ich diff, aby review obejmowało faktyczny stan dostarczanej pracy.
+- Niezależny recenzent wymaga wyraźnej zgody właściciela na delegację, także gdy jest tylko recenzentem. Bez tej zgody lub bez narzędzia wykonaj oddzielny self-review według szablonu i zapisz ograniczenie: „self-review — brak zgody na delegację” albo „self-review — brak narzędzia”. To jawne dostosowanie workflow do reguł repo; **nie nazywaj go niezależnym review ani pełnym wykonaniem workflow recenzenta**. Nie zatrzymuj autoryzowanej implementacji wyłącznie po to, aby uzyskać zgodę na dodatkowego agenta.
+- W osobnym przeglądzie sprawdź zgodność z wymaganiami, regresje, granice pakietów, prywatność, współbieżność i awarie odpowiednie dla zadania. Przejście testów ani wcześniejszy przegląd planu nie zastępują review implementacji.
+- Zweryfikuj uwagi przy użyciu `receiving-code-review`. Rozwiąż Critical i Important przed uznaniem zakresu za gotowy; odrzucone uwagi uzasadnij dowodami. Minor zapisz jako odłożone. Poprawki zachowania wymagają potwierdzonego RED→GREEN oraz odpowiednich sprawdzeń regresji.
+- Zachowaj wynik review i działania po uwagach w dzienniku/checkliście. Raport końcowy musi wskazywać, co objął przegląd, czy był niezależny czy własny, oraz jakie uwagi lub ograniczenia pozostały.
+
+#### Historia feature’ów na `main` — squash przy scalaniu
+
+- **Zmiany jednego feature’u wykonane w worktree lub na gałęzi roboczej scalaj do `main` jako jeden squash commit.** Drobne commity implementacyjne, TDD i poprawki po review pozostają historią gałęzi roboczej; na `main` ma być czytelna historia ukończonych feature’ów. Inny sposób integracji stosuj tylko na wyraźne polecenie właściciela.
+- Nadal używaj pełnego workflow `finishing-a-development-branch`, ale lokalne scalanie wykonuj przez `git merge --squash <feature-branch>` i jeden commit. Ta reguła zastępuje zwykły `git merge` z przykładu skilla. Przy scalaniu PR wybierz **Squash and merge**; nie przenoś wszystkich commitów feature’u przez merge commit, fast-forward ani rebase merge.
+- Wiadomość squash commita opisuje końcowy rezultat całego feature’u, a nie ostatni krok lub listę roboczych commitów. Użyj właściwego typu, np. `feat: <opis funkcji>` albo `fix: <opis poprawki>`, i w razie potrzeby dodaj istotne szczegóły oraz weryfikację w treści.
+- Zachowaj commity i dziennik wymagane podczas wykonywania planu; squash jest krokiem integracji, nie powodem do pomijania historii pracy. Wykonaj wymagane review oraz sprawdzenia przed scaleniem, a następnie sprawdź wynik na `main` przed sprzątnięciem gałęzi/worktree. Po squash potwierdź włączenie zmian na podstawie ich treści; same SHA commitów gałęzi roboczej nie będą przodkami `main`.
+- Reguła określa sposób przyszłych scaleń; nie uprawnia do samodzielnego scalania, push ani przepisywania istniejącej historii `main`.
+
+#### Weryfikacja i wyjątki
+
 - Przy TDD uruchom test nowego zachowania przed napisaniem odpowiadającego mu kodu i potwierdź oczekiwaną porażkę. Późniejsze przejście testów nie zastępuje dowodu RED.
-- Przed raportem końcowym sprawdź checklistę workflow. Każdy pominięty krok ujawnij z powodem; nie deklaruj pełnego zastosowania skilla, jeśli wykonano tylko część jego instrukcji.
+- Sama zmiana dokumentacji bez zmiany zachowania aplikacji nie wymaga tworzenia specyfikacji, planu implementacji ani sztucznego testu RED. Sprawdź treść, odnośniki, spójność instrukcji i `git diff --check`. Przegląd własny dokumentu opisz jako taki; jeśli zadanie obejmuje również kod lub kontrakty produktu, obowiązuje workflow całego zakresu.
+- Gdy pracujesz w worktree (lub na gałęzi roboczej), scalanie zmian do głównej gałęzi (`main`) wykonuj skillem `finishing-a-development-branch`, nie ręcznym merge'em — także wtedy, gdy właściciel prosi o „zmerguj do mastera” bez wskazania sposobu. Obejmuje to pełny workflow skilla: weryfikację przed scaleniem, integrację i sprzątnięcie gałęzi oraz worktree. Samo użycie skilla nie uprawnia do merge, push, PR ani usunięcia niezwiązanej pracy.
+- Przed raportem końcowym sprawdź checklistę workflow: zatwierdzenia → plan, jeśli wymagany → skill wykonania → dowody testów → review i obsługa uwag → końcowa weryfikacja → integracja, jeśli zlecona. Każdy pominięty lub dostosowany krok ujawnij z powodem; nie deklaruj pełnego zastosowania skilla, jeśli wykonano tylko część jego instrukcji.
 
 ## Poza zakresem MVP
 
