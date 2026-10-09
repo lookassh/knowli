@@ -272,7 +272,7 @@ export async function startSession(services: Services, input: SessionInput): Pro
   });
 }
 
-interface PlannedItem {
+export interface PlannedItem {
   itemId: string;
   source: string;
   target: string;
@@ -570,21 +570,35 @@ function letterFragment(target: string): string {
   return chars.map((char, index) => (index % 2 === 0 ? char : "_")).join("");
 }
 
-function materializeTask(
+/** Tasowanie Fishera–Yatesa; pętla nie wykonuje się dla 0/1 elementów. */
+function shuffled<T>(items: readonly T[]): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j]!, out[i]!];
+  }
+  return out;
+}
+
+export function materializeTask(
   plan: TaskPlan,
   item: PlannedItem,
   audioAssetId: string | null,
   imageAssetId: string | null,
   exampleAudioAssetId: string | null,
 ): { prompt: TaskPrompt; answerKey: Record<string, unknown> } {
+  // Plan trzyma kanoniczną kolejność (poprawna pierwsza); kolejność prezentacji
+  // losujemy raz przy wydaniu zadania, bo wydany prompt jest niezmienny, więc
+  // ponowne wyświetlenie tego samego zadania zachowuje układ opcji.
+  const plannedOptions = shuffled(plan.options ?? []);
   const optionIds = new Map(
-    (plan.options ?? []).map((o) => [o.text, randomUUID()] as const),
+    plannedOptions.map((o) => [o.text, randomUUID()] as const),
   );
-  const promptOptions = (plan.options ?? []).map((o) => ({
+  const promptOptions = plannedOptions.map((o) => ({
     id: optionIds.get(o.text)!,
     text: o.text,
   }));
-  const correctOption = plan.options?.find((o) => o.correct);
+  const correctOption = plannedOptions.find((o) => o.correct);
   const answerKey: Record<string, unknown> = {
     exerciseType: plan.exerciseType,
     target: item.target,
