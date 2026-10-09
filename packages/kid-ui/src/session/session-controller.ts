@@ -66,6 +66,8 @@ export interface LearningSessionDeps {
   api: KidApi;
   media: PlatformMedia;
   storage: LocalPreferences;
+  /** Profile requested by the host route; ignored if it is no longer available. */
+  initialChildId?: string;
   /** Odstęp odpytywania o wynik oceny mowy (testy skracają). */
   pollIntervalMs?: number;
 }
@@ -104,6 +106,7 @@ export class LearningSessionController {
   readonly #media: PlatformMedia;
   readonly #storage: LocalPreferences;
   readonly #pollIntervalMs: number;
+  readonly #initialChildId: string | undefined;
 
   #screen: KidScreen = { kind: "loading" };
   #listeners = new Set<() => void>();
@@ -121,6 +124,7 @@ export class LearningSessionController {
     this.#media = deps.media;
     this.#storage = deps.storage;
     this.#pollIntervalMs = deps.pollIntervalMs ?? POLL_INTERVAL_MS;
+    this.#initialChildId = deps.initialChildId;
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -149,11 +153,20 @@ export class LearningSessionController {
   async start(): Promise<void> {
     try {
       this.#profiles = await this.#api.listProfiles();
-      if (this.#profiles.length === 1) {
+      if (this.#initialChildId !== undefined) {
+        const requestedProfile = this.#profiles.find((profile) => profile.childId === this.#initialChildId);
+        if (requestedProfile) {
+          await this.#openDeckScreen(requestedProfile.childId);
+          return;
+        }
+        // A stale or mistyped profile URL falls back to the available profiles.
+        this.#screen = { kind: "profile", profiles: this.#profiles };
+      } else if (this.#profiles.length === 1) {
         await this.#openDeckScreen(this.#profiles[0]!.childId);
         return;
+      } else {
+        this.#screen = { kind: "profile", profiles: this.#profiles };
       }
-      this.#screen = { kind: "profile", profiles: this.#profiles };
     } catch (error) {
       this.#screen = { kind: "initError", message: messageForError(error) };
     }

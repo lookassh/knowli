@@ -36,6 +36,7 @@ export const messages = {
     displayName: "Imię",
     avatar: "Obrazek",
     birthYear: "Rok urodzenia",
+    startLearning: "Rozpocznij naukę",
     save: "Zapisz",
     remove: "Usuń",
     removeConfirm: "Usunąć profil dziecka wraz z całą jego historią nauki? Tego nie da się cofnąć.",
