@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { messages, type KidDeckDto } from "@learning/contracts";
 import { format } from "../format";
 
@@ -25,6 +26,7 @@ export function DeckScreen({
   micDenied,
   onToggleMicrophone,
   onStart,
+  headerActions,
 }: {
   decks: KidDeckDto[];
   childName: string;
@@ -32,11 +34,13 @@ export function DeckScreen({
   micDenied: boolean;
   onToggleMicrophone: (on: boolean) => void;
   onStart: (deckId: string) => void;
+  headerActions?: ReactNode;
 }) {
   const recommended = decks.filter((deck) => deck.recommended);
   const other = decks.filter((deck) => !deck.recommended);
   return (
     <main className="kid-screen">
+      {headerActions && <header className="kid-top-bar">{headerActions}</header>}
       <h1>{messages.kid.decksTitle}</h1>
       {childName && <p className="kid-greeting">{format(messages.kid.greeting, { name: childName })}</p>}
       {decks.length === 0 ? (

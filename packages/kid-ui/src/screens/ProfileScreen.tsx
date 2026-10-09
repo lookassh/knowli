@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { messages, type KidProfileDto } from "@learning/contracts";
 
 const AVATARS: Record<string, string> = {
@@ -17,12 +18,15 @@ function avatarOf(avatarKey: string): string {
 export function ProfileScreen({
   profiles,
   onSelect,
+  headerActions,
 }: {
   profiles: KidProfileDto[];
   onSelect: (childId: string) => void;
+  headerActions?: ReactNode;
 }) {
   return (
     <main className="kid-screen">
+      {headerActions && <header className="kid-top-bar">{headerActions}</header>}
       <h1>{messages.kid.profilesTitle}</h1>
       {profiles.length === 0 ? (
         <p className="kid-hint">{messages.kid.noProfiles}</p>
