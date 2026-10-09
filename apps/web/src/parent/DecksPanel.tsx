@@ -10,16 +10,23 @@ import {
 } from "@learning/contracts";
 import { apiFetch, errorMessage } from "./api";
 import DeckEditor from "./DeckEditor";
+import type { EditorLeaveState } from "./useParentLeaveGuard";
 
 /** Lista zestawów i uruchomienie generacji nowego materiału. */
 export default function DecksPanel({
   decks,
   childrenList,
   onChanged,
+  registerEditorState,
+  requestLeave,
+  onAuthExpired,
 }: {
   decks: DeckSummaryDto[];
   childrenList: ChildDto[];
   onChanged: () => Promise<void>;
+  registerEditorState: (state: EditorLeaveState) => void;
+  requestLeave: (action: () => void | Promise<void>) => void;
+  onAuthExpired: () => void;
 }) {
   const [prompt, setPrompt] = useState("");
   const [title, setTitle] = useState("");
@@ -90,9 +97,13 @@ export default function DecksPanel({
       <DeckEditor
         deckId={activeDeckId}
         childrenList={childrenList}
+        onEditorStateChange={registerEditorState}
+        onAuthExpired={onAuthExpired}
         onBack={() => {
-          setActiveDeckId(null);
-          void onChanged();
+          requestLeave(() => {
+            setActiveDeckId(null);
+            void onChanged();
+          });
         }}
       />
     );

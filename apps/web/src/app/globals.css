@@ -230,6 +230,19 @@ ul.plain {
   color: #51515f;
 }
 
+.leave-editor-dialog {
+  width: min(480px, calc(100vw - 40px));
+  box-sizing: border-box;
+  border: 1px solid #c9c9d6;
+  border-radius: 16px;
+  padding: 20px;
+  color: #1d1d2b;
+}
+
+.leave-editor-dialog::backdrop {
+  background: rgb(20 20 35 / 45%);
+}
+
 .progress-material-changed {
   display: block;
   margin-top: 8px;

@@ -32,7 +32,9 @@ test("polling conflict sends the form's base edit number and keeps local correct
   await page.getByTestId("item-source-0").fill("kot");
   await page.getByTestId("item-target-0").fill("cat");
   await page.getByTestId("item-visual-0").selectOption("none");
+  const saved = page.waitForResponse((response) => response.request().method() === "PATCH" && response.url().includes("/api/v1/parent/drafts/"));
   await page.getByTestId("save-items").click();
+  expect((await saved).status()).toBe(200);
   await expect(page.getByTestId("item-audio-state-0")).toContainText("generowanie");
   const title = await page.getByTestId("editor-title").inputValue();
   const localValue = "local correction";
@@ -142,4 +144,101 @@ test("delayed save locks the entire editor until the PATCH completes", async ({ 
 
   releasePatch?.();
   expect((await saveResponse).status()).toBe(200);
+});
+
+test("leaving a dirty editor asks first and Stay preserves the local text", async ({ page }) => {
+  await enterParent(page);
+  await page.getByTestId("create-empty-submit").click();
+  await page.getByTestId("add-item").click();
+  await page.getByTestId("item-source-0").fill("kot");
+  await page.getByTestId("item-target-0").fill("local correction");
+  await page.getByTestId("item-visual-0").selectOption("none");
+  let patchCount = 0;
+  page.on("request", (request) => {
+    if (request.method() === "PATCH" && request.url().includes("/api/v1/parent/drafts/")) patchCount += 1;
+  });
+
+  await page.getByTestId("editor-back").click();
+  await expect(page.getByTestId("leave-editor-dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("leave-editor-dialog")).not.toBeVisible();
+  await expect(page.getByTestId("editor-back")).toBeFocused();
+  await expect(page.getByTestId("item-target-0")).toHaveValue("local correction");
+
+  await page.getByTestId("editor-back").click();
+  await expect(page.getByTestId("leave-editor-dialog")).toBeVisible();
+  await page.getByTestId("leave-editor-stay").click();
+  await expect(page.getByTestId("leave-editor-dialog")).not.toBeVisible();
+  await expect(page.getByTestId("item-target-0")).toHaveValue("local correction");
+  expect(patchCount).toBe(0);
+
+  await page.getByTestId("editor-back").click();
+  await expect(page.getByTestId("leave-editor-dialog")).toBeVisible();
+  await page.getByTestId("leave-editor-leave").click();
+  await expect(page.getByTestId("editor-back")).toHaveCount(0);
+  expect(patchCount).toBe(0);
+});
+
+test("tab and logout are guarded; busy save drops the leave request", async ({ page }) => {
+  let releasePatch: (() => void) | undefined;
+  let notifyPatch: (() => void) | undefined;
+  const patchStarted = new Promise<void>((resolve) => { notifyPatch = resolve; });
+  const patchGate = new Promise<void>((resolve) => { releasePatch = resolve; });
+  await page.route("**/api/v1/parent/drafts/*", async (route: Route) => {
+    if (route.request().method() === "PATCH") {
+      notifyPatch?.();
+      await patchGate;
+    }
+    await route.continue();
+  });
+  await enterParent(page);
+  await page.getByTestId("create-empty-submit").click();
+  await page.getByTestId("add-item").click();
+  await page.getByTestId("item-source-0").fill("kot");
+  await page.getByTestId("item-target-0").fill("cat");
+  await page.getByTestId("item-visual-0").selectOption("none");
+  await page.getByTestId("tab-progress").click();
+  await expect(page.getByTestId("leave-editor-dialog")).toBeVisible();
+  await page.getByTestId("leave-editor-stay").click();
+  await expect(page.getByTestId("item-source-0")).toHaveValue("kot");
+  await page.getByTestId("parent-logout").click();
+  await expect(page.getByTestId("leave-editor-dialog")).toBeVisible();
+  await page.getByTestId("leave-editor-stay").click();
+
+  const saved = page.waitForResponse((response) => response.request().method() === "PATCH" && response.url().includes("/api/v1/parent/drafts/"));
+  await page.getByTestId("save-items").click();
+  await patchStarted;
+  await page.getByTestId("parent-logout").click();
+  await expect(page.getByTestId("leave-editor-dialog")).not.toBeVisible();
+  await expect(page.getByTestId("editor-title")).toBeVisible();
+  releasePatch?.();
+  expect((await saved).status()).toBe(200);
+  await page.getByTestId("parent-logout").click();
+  await expect(page.getByTestId("auth-secret")).toBeVisible();
+});
+
+test("beforeunload warns only while the editor has unsaved changes", async ({ page }) => {
+  await enterParent(page);
+  await page.getByTestId("create-empty-submit").click();
+  await page.getByTestId("editor-title").fill("Niezapisane");
+  const dirtyBeforeUnload = await page.evaluate(() => {
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  expect(dirtyBeforeUnload).toBe(true);
+  await expect(page.getByTestId("editor-title")).toHaveValue("Niezapisane");
+
+  const savedResponse = page.waitForResponse((response) => response.request().method() === "PATCH" && response.url().includes("/api/v1/parent/drafts/"));
+  await page.getByTestId("save-items").click();
+  expect((await savedResponse).status()).toBe(200);
+  await expect(page.getByTestId("api-error")).toHaveCount(0);
+  const cleanBeforeUnload = await page.evaluate(() => {
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  expect(cleanBeforeUnload).toBe(false);
+  await page.reload();
+  await expect(page.getByTestId("tab-decks")).toBeVisible();
 });

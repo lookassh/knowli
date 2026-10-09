@@ -5,7 +5,9 @@ import { messages, type ChildDto, type DeckSummaryDto } from "@learning/contract
 import { apiFetch, errorMessage } from "./api";
 import ChildEditor from "./ChildEditor";
 import DecksPanel from "./DecksPanel";
+import LeaveEditorDialog from "./LeaveEditorDialog";
 import ProgressPanel from "./ProgressPanel";
+import { useParentLeaveGuard } from "./useParentLeaveGuard";
 
 type Phase = "loading" | "setup" | "login" | "panel";
 type Tab = "decks" | "children" | "progress";
@@ -26,6 +28,7 @@ export default function ParentApp() {
   const [error, setError] = useState<string | null>(null);
   const [childrenList, setChildrenList] = useState<ChildDto[]>([]);
   const [decks, setDecks] = useState<DeckSummaryDto[]>([]);
+  const leaveGuard = useParentLeaveGuard();
 
   const refreshChildren = useCallback(async () => {
     setChildrenList(await apiFetch<ChildDto[]>("GET", "/api/v1/parent/children"));
@@ -123,7 +126,7 @@ export default function ParentApp() {
     <main className="container">
       <header className="row space">
         <span className="brand">{messages.app.name}</span>
-        <button type="button" onClick={logout}>
+        <button type="button" data-testid="parent-logout" onClick={() => leaveGuard.requestLeave(logout)}>
           {messages.auth.logoutButton}
         </button>
       </header>
@@ -132,7 +135,7 @@ export default function ParentApp() {
           type="button"
           data-testid="tab-decks"
           aria-current={tab === "decks"}
-          onClick={() => setTab("decks")}
+          onClick={() => tab !== "decks" && leaveGuard.requestLeave(() => setTab("decks"))}
         >
           {messages.decks.title}
         </button>
@@ -140,7 +143,7 @@ export default function ParentApp() {
           type="button"
           data-testid="tab-children"
           aria-current={tab === "children"}
-          onClick={() => setTab("children")}
+          onClick={() => tab !== "children" && leaveGuard.requestLeave(() => setTab("children"))}
         >
           {messages.children.title}
         </button>
@@ -148,18 +151,26 @@ export default function ParentApp() {
           type="button"
           data-testid="tab-progress"
           aria-current={tab === "progress"}
-          onClick={() => setTab("progress")}
+          onClick={() => tab !== "progress" && leaveGuard.requestLeave(() => setTab("progress"))}
         >
           {messages.progress.title}
         </button>
       </nav>
       {tab === "decks" ? (
-        <DecksPanel decks={decks} childrenList={childrenList} onChanged={refreshDecks} />
+        <DecksPanel
+          decks={decks}
+          childrenList={childrenList}
+          onChanged={refreshDecks}
+          registerEditorState={leaveGuard.register}
+          requestLeave={leaveGuard.requestLeave}
+          onAuthExpired={() => setPhase("login")}
+        />
       ) : tab === "children" ? (
         <ChildEditor childrenList={childrenList} onChanged={refreshChildren} />
       ) : (
         <ProgressPanel childrenList={childrenList} decks={decks} />
       )}
+      <LeaveEditorDialog open={leaveGuard.pending} onStay={leaveGuard.stay} onLeave={() => void leaveGuard.leave()} />
     </main>
   );
 }

@@ -47,16 +47,17 @@ spóźniony GET oraz refresh failed po udanym PATCH są pokryte w B1–B3.
 
 **Interfaces:** `EditorLeaveState = {dirty:boolean; busy:boolean}`. `useParentLeaveGuard(): {register:(state:EditorLeaveState)=>void; requestLeave:(action:()=>void|Promise<void>)=>void; pending:boolean; stay:()=>void; leave:()=>Promise<void>}`. ParentApp posiada guard, DecksPanel przekazuje callbacki do edytora; unmount resetuje rejestrację. Dialog przyjmuje open/onStay/onLeave.
 
-- [ ] E2E: dirty + powrót/każda zakładka/logout daje dialog; Zostań zachowuje wpisy, Opuść wykonuje akcję raz bez zapisu. Czysty edytor nie pyta. Busy blokuje akcję i nie odkłada niespodziewanego logout.
-- [ ] E2E reload po interakcji: beforeunload tylko dla dirty, dismiss zachowuje ekran; po zapisie nie pyta. Nie zakładać własnego tekstu natywnego dialogu. RED `pnpm test:e2e tests/e2e/parent-edit-protection.spec.ts --grep "leave|reload|logout"`.
+- [x] E2E: dirty + powrót/zakładka/logout daje dialog; Zostań i Escape zachowują wpisy i fokus; Opuść wykonuje akcję raz bez zapisu. Busy blokuje akcję bez kolejkowania logoutu. RED potwierdzony brakiem dialogu po powrocie.
+- [x] E2E sprawdza `beforeunload` tylko dla dirty przez dispatch zdarzenia, zachowanie wpisu i czysty reload po zapisie. Próba natywnego dirty reload w Playwright blokowała test na nierozstrzygniętej nawigacji po dismiss; nie użyto tekstu dialogu przeglądarki.
   Asercje `leave_stay_preserves_local_text` po kliknięciu powrotu i „Zostań”:
   ```ts
   await expect(page.getByTestId("leave-editor-dialog")).not.toBeVisible();
   await expect(page.getByTestId("item-target-0")).toHaveValue("local correction");
   expect(patchRequests).toHaveLength(0);
   ```
-- [ ] Implementować wspólny guard i `<dialog>`: focus trap, Escape=Zostań, powrót fokusu. Beforeunload tylko dirty, cleanup przy unmount; brak storage. `DecksPanel.onAuthExpired:()=>void` przekazywany przez ParentApp dla późniejszego planu C; utrata autoryzacji nie zostawia w UI materiału po wylogowaniu.
-- [ ] GREEN E2E/typecheck; commit `feat: protect unsaved parent edits when leaving`.
+- [x] Implementować wspólny guard i natywny modal `<dialog>`: natywny focus trap, Escape=Zostań, powrót fokusu. Beforeunload tylko dirty, cleanup przy unmount; brak storage. `DecksPanel.onAuthExpired:()=>void` przekazywany przez ParentApp dla późniejszego planu C.
+- [x] GREEN E2E 6/6, `pnpm typecheck`.
+- [ ] Commit `feat: protect unsaved parent edits when leaving`.
 
 ### Task 3: Konflikt i porównanie (B3)
 

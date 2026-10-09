@@ -17,6 +17,7 @@ import {
   type EditorSnapshot,
 } from "./deck-editor-state";
 import { apiFetch, errorMessage } from "./api";
+import type { EditorLeaveState } from "./useParentLeaveGuard";
 
 const VISUAL_TYPES: VisualType[] = ["image", "color", "number", "sequence", "none"];
 
@@ -35,10 +36,14 @@ export default function DeckEditor({
   deckId,
   childrenList,
   onBack,
+  onEditorStateChange,
+  onAuthExpired,
 }: {
   deckId: string;
   childrenList: ChildDto[];
   onBack: () => void;
+  onEditorStateChange: (state: EditorLeaveState) => void;
+  onAuthExpired: () => void;
 }) {
   const [deck, setDeck] = useState<DeckDto | null>(null);
   const [form, setForm] = useState<EditableDeckForm | null>(null);
@@ -54,10 +59,21 @@ export default function DeckEditor({
   const deckIdRef = useRef(deckId);
   deckIdRef.current = deckId;
   const newKey = useCallback(() => crypto.randomUUID(), []);
+  const setBusyState = (value: boolean) => {
+    busyRef.current = value;
+    setBusy(value);
+    onEditorStateChange({ dirty: dirty.current, busy: value });
+  };
   const markDirty = () => {
     dirty.current = true;
     setIsDirty(true);
+    onEditorStateChange({ dirty: true, busy: busyRef.current });
   };
+
+  useEffect(() => {
+    onEditorStateChange({ dirty: isDirty, busy });
+    return () => onEditorStateChange({ dirty: false, busy: false });
+  }, [onEditorStateChange, isDirty, busy]);
 
   const load = useCallback(async (): Promise<boolean> => {
     const requestVersion = ++loadVersion.current;
@@ -187,7 +203,7 @@ export default function DeckEditor({
     }
     const snapshot = { ...currentBase, form: structuredClone(form) };
     busyRef.current = true;
-    setBusy(true);
+    setBusyState(true);
     setError(null);
     try {
       const saved = await apiFetch<DraftDto>("PATCH", `/api/v1/parent/drafts/${snapshot.draftId}`, toDraftPatch(snapshot));
@@ -195,6 +211,7 @@ export default function DeckEditor({
       baseRevisionIds.current = new Map(saved.items.flatMap((item) => item.id ? [[item.id, item.revisionId] as const] : []));
       setForm(baseSnapshot.current.form);
       dirty.current = false;
+      onEditorStateChange({ dirty: false, busy: true });
       setIsDirty(false);
       setDeck((current) => current ? { ...current, draft: saved, title: saved.title } : current);
       if (!(await load())) {
@@ -203,8 +220,7 @@ export default function DeckEditor({
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
-      busyRef.current = false;
-      setBusy(false);
+      setBusyState(false);
     }
   };
 
@@ -212,7 +228,7 @@ export default function DeckEditor({
     if (!draft || busy || isDirty || draft.items.length === 0) {
       return;
     }
-    setBusy(true);
+    setBusyState(true);
     setError(null);
     try {
       await apiFetch("POST", `/api/v1/parent/drafts/${draft.id}/publish`, {
@@ -224,12 +240,12 @@ export default function DeckEditor({
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
-      setBusy(false);
+      setBusyState(false);
     }
   };
 
   const archive = async () => {
-    setBusy(true);
+    setBusyState(true);
     setError(null);
     try {
       await apiFetch("POST", `/api/v1/parent/decks/${deckId}/archive`);
@@ -237,14 +253,14 @@ export default function DeckEditor({
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
-      setBusy(false);
+      setBusyState(false);
     }
   };
 
   // edycja opublikowanego materiału zaczyna się od nowego szkicu (SPEC §84):
   // opublikowana wersja prowadzi sesje dziecka do czasu publikacji nowej
   const startNewVersion = async () => {
-    setBusy(true);
+    setBusyState(true);
     setError(null);
     try {
       await apiFetch("POST", `/api/v1/parent/decks/${deckId}/draft`);
@@ -253,7 +269,7 @@ export default function DeckEditor({
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
-      setBusy(false);
+      setBusyState(false);
     }
   };
 
