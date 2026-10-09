@@ -223,6 +223,7 @@ Wspólny format błędu: {code, message, retryable, requestId}. Walidacja na gra
 | Parent | POST /api/v1/parent/login; POST /logout | Cookie sesji lub błąd |
 | Parent | GET/POST /api/v1/parent/children; PATCH/DELETE /children/:id | Profile i usunięcie danych dziecka |
 | Parent | POST /api/v1/parent/decks/generate | 202 + generationRunId + deckId |
+| Parent | POST /api/v1/parent/decks | 201 pusty szkic; retry z tym samym deckId zwraca 200 bez zmiany zawartości |
 | Parent | GET /api/v1/parent/generation/:id | Stan i zwięzły błąd |
 | Parent | GET /api/v1/parent/decks/:id | Draft, wersja publikowana, zasoby |
 | Parent | POST /api/v1/parent/decks/:id/draft | 201 + nowy szkic z bieżącej opublikowanej wersji (elementy, klucze umiejętności i decyzje o mediach) |

@@ -1,6 +1,7 @@
 import {
   AppError,
   archiveDeck,
+  createEmptyDeck,
   createDraftFromPublished,
   editDraft,
   enqueueDeckGeneration,
@@ -18,6 +19,8 @@ import {
 } from "@learning/server";
 import {
   AssignmentPutSchema,
+  CreateEmptyDeckCommandSchema,
+  CreateEmptyDeckResultSchema,
   DraftPatchSchema,
   GenerationCommandSchema,
   OmitIllustrationSchema,
@@ -51,6 +54,12 @@ export async function handleParentApi(
       const cmd = GenerationCommandSchema.parse(await readJson(request));
       const result = await enqueueDeckGeneration(services, cmd);
       return Response.json({ generationRunId: result.runId, deckId: result.deckId }, { status: 202 });
+    }
+    if (request.method === "POST" && second === undefined) {
+      const command = CreateEmptyDeckCommandSchema.parse(await readJson(request));
+      const result = await createEmptyDeck(services, command);
+      const response = CreateEmptyDeckResultSchema.parse({ deckId: result.deckId });
+      return Response.json(response, { status: result.created ? 201 : 200 });
     }
     if (request.method === "GET" && second !== undefined && third === undefined) {
       return Response.json(await readDeck(services, second));

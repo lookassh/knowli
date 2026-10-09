@@ -103,7 +103,7 @@ expect(duplicates.filter((result) => result.created)).toHaveLength(1);
 - Consumes: createEmptyDeck i kontrakty zadania 1; `handleParentApi(request, services, segments): Promise<Response>`.
 - Produces: `POST /api/v1/parent/decks`, wejście CreateEmptyDeckCommand, JSON CreateEmptyDeckResult, status 201 lub 200.
 
-- [ ] Napisz testy routera na prawdziwej bazie: zbuduj sesję przez setupParent/loginParent i Request z cookie parent_session oraz Origin localhost. Wywołuj handleParentApi z segments `["decks"]`. Poprawny POST zwraca 201; powtórzenie 200; dwa współbieżne POST zwracają posortowane statusy `[200, 201]` i jeden deck. Niepoprawny UUID/tytuł oraz prompt/items odrzucone bez zapisu. Brak cookie rzuca unauthorized, obcy Origin forbidden, licznik deck pozostaje zero.
+- [x] Napisz testy routera na prawdziwej bazie: zbuduj sesję przez setupParent/loginParent i Request z cookie parent_session oraz Origin localhost. Wywołuj handleParentApi z segments `["decks"]`. Poprawny POST zwraca 201; powtórzenie 200; dwa współbieżne POST zwracają posortowane statusy `[200, 201]` i jeden deck. Niepoprawny UUID/tytuł oraz prompt/items odrzucone bez zapisu. Brak cookie rzuca unauthorized, obcy Origin forbidden, licznik deck pozostaje zero.
 
 ```ts
 const response = await handleParentApi(request, services, ["decks"]);
@@ -112,9 +112,9 @@ expect(await response.json()).toEqual({ deckId });
 // request to nowe Request dla każdego wywołania (body czytane raz).
 ```
 
-- [ ] Uruchom `pnpm test:integration tests/integration/manual-decks-api.test.ts`; oczekiwany RED: dotychczas router kończy nową operację not_found. Nie zmieniaj istniejących testów ochrony, które już przechodzą.
-- [ ] Dodaj gałąź POST z second===undefined po obecnej ochronie sesji i Origin. Parse wejścia, wywołaj createEmptyDeck, zweryfikuj/publicznie zmapuj odpowiedź do `{deckId}`, dobierz status z created. Nie zmieniaj /generate ani /:id/draft. Uaktualnij tabelę API i opis pustego ręcznego szkicu w architecture.md.
-- [ ] Powtórz testy API i `pnpm test:integration tests/integration/auth-profiles.test.ts tests/integration/generation.test.ts`; oczekiwane PASS. Uruchom typecheck.
+- [x] Uruchom `pnpm test:integration tests/integration/manual-decks-api.test.ts`; RED: poprawne żądanie kończyło się istniejącym `not_found`; kontrole sesji i Origin przechodziły.
+- [x] Dodaj gałąź POST z second===undefined po obecnej ochronie sesji i Origin. Parse wejścia, wywołaj createEmptyDeck, zweryfikuj/publicznie zmapuj odpowiedź do `{deckId}`, dobierz status z created. Nie zmieniaj /generate ani /:id/draft. Uaktualnij tabelę API i opis pustego ręcznego szkicu w architecture.md.
+- [x] Powtórz testy API i `pnpm test:integration tests/integration/auth-profiles.test.ts tests/integration/generation.test.ts`; PASS: 22 testy integracyjne. `pnpm typecheck` PASS.
 - [ ] Commit: `feat: expose authenticated manual deck creation API`.
 
 ### Task 3: Przycisk i bezpieczna edycja pustego szkicu
