@@ -595,6 +595,7 @@ Nie wolno przypisywać przypadkowo „Monday → słońce”, „Tuesday → ksi
 
 Panel jest prosty, filtrowany według dziecka i zestawu. Pokazuje:
 
+- pełną listę słów bieżącej opublikowanej wersji zestawu, z polskim znaczeniem i osobnym statusem każdej z pięciu umiejętności (tabela na desktopie, karty na telefonie); zmiana materiału wymagająca ponownego sprawdzenia jest oznaczona przy słowie;
 - rozpoznawanie ze słuchu i tekstu;
 - samodzielne przypominanie;
 - samodzielną pisownię;

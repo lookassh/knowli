@@ -9,6 +9,7 @@ import {
   type ReportSkill,
 } from "@learning/contracts";
 import { apiFetch, errorMessage } from "./api";
+import ProgressItems from "./ProgressItems";
 
 /**
  * Panel postępów (SPEC §25): filtrowanie dziecko × zestaw, liczby per
@@ -132,6 +133,8 @@ export default function ProgressPanel({
               );
             })}
           </ul>
+
+          <ProgressItems items={progress.items} />
 
           <div className="card" data-testid="progress-pronunciation">
             {progress.pronunciation.assessed ? (
