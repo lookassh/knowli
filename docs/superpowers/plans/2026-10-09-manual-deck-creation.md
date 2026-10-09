@@ -93,7 +93,7 @@ expect(duplicates.filter((result) => result.created)).toHaveLength(1);
 - [x] Implementuj createEmptyDeck: walidacja przed transakcją; INSERT deck z onConflictDoNothing na id i returning; jeśli brak wstawionego wiersza, zwróć created=false bez zmiany istniejącego deck. Jeśli wstawiono, INSERT deck_version v1 z losowym UUID, editNumber=1, state=draft, title i locale. Transakcja obejmuje oba INSERT-y; równoległy konflikt klucza oczekuje na zakończenie pierwszej transakcji. Nie zlecaj kolejki i nie wywołuj createDraft wymagającego kart.
 - [x] Dodaj test pełnej ścieżki domeny: pusta publikacja rzuca validation; zapis jednej kompletnej karty tworzy pięć skill_versions i zleca TTS; publikacja przed wykonaniem TTS odrzucona, po fake-workerze dozwolona. Z użyciem visualType=image sprawdź obecną możliwość pominięcia ilustracji. Liczba wywołań LLM pozostaje zero.
 - [x] Uruchom `pnpm test:integration tests/integration/manual-decks.test.ts tests/integration/revisions.test.ts tests/integration/decks-management.test.ts tests/integration/media.test.ts`; PASS: 32 integracyjne. `pnpm test:unit` PASS: 232 testy. `pnpm typecheck` PASS.
-- [ ] Zacommituj wyłącznie pliki zadania: `feat: create empty vocabulary decks without generation`.
+- [x] Commit `227b055`: `feat: create empty vocabulary decks without generation`.
 
 ### Task 2: Zabezpieczone Parent API
 
@@ -115,7 +115,7 @@ expect(await response.json()).toEqual({ deckId });
 - [x] Uruchom `pnpm test:integration tests/integration/manual-decks-api.test.ts`; RED: poprawne żądanie kończyło się istniejącym `not_found`; kontrole sesji i Origin przechodziły.
 - [x] Dodaj gałąź POST z second===undefined po obecnej ochronie sesji i Origin. Parse wejścia, wywołaj createEmptyDeck, zweryfikuj/publicznie zmapuj odpowiedź do `{deckId}`, dobierz status z created. Nie zmieniaj /generate ani /:id/draft. Uaktualnij tabelę API i opis pustego ręcznego szkicu w architecture.md.
 - [x] Powtórz testy API i `pnpm test:integration tests/integration/auth-profiles.test.ts tests/integration/generation.test.ts`; PASS: 22 testy integracyjne. `pnpm typecheck` PASS.
-- [ ] Commit: `feat: expose authenticated manual deck creation API`.
+- [x] Commit `d220484`: `feat: expose authenticated manual deck creation API`.
 
 ### Task 3: Przycisk i bezpieczna edycja pustego szkicu
 
@@ -125,7 +125,7 @@ expect(await response.json()).toEqual({ deckId });
 - Consumes: API zadania 2, messages zadania 1, istniejące apiFetch<T>, props DeckEditor i onChanged(): Promise<void>.
 - Produces: testid `create-empty-submit`, `empty-draft`, `publish-blocked-reason`; zachowuje `editor-title`, `editor-back`, `add-item`, `save-items`, `publish-deck` i selektory kart.
 
-- [ ] Napisz E2E logujące PIN-em 1234 jak parent-flow.spec.ts. Bez promptu kliknij create-empty-submit; oczekuj editor-title „Nowy zestaw”, empty-draft i zera item-card. Wróć i ponownie otwórz szkic. W osobnym przypadku podaj własny tytuł ze spacjami oraz niepusty prompt; title trimmed, zero żądań /generate. Używaj unikalnego tytułu/UUID, bo świat E2E jest współdzielony.
+- [x] E2E loguje PIN-em 1234. Bez promptu tworzy i ponownie otwiera „Nowy zestaw” z empty-draft i bez kart; osobny przypadek trimuje własny tytuł, ignoruje prompt i potwierdza zero żądań /generate.
 
 ```ts
 await page.getByTestId("create-empty-submit").click();
@@ -135,15 +135,15 @@ await expect(page.locator('[data-testid^="item-card-"]')).toHaveCount(0);
 await expect(page.getByTestId("publish-deck")).toBeDisabled();
 ```
 
-- [ ] Dodaj E2E awarii: route handler przepuszcza POST przez route.fetch(), następnie abortuje pierwszą odpowiedź po rzeczywistym zapisie. Kliknięcie ponowienia wysyła identyczny deckId i otwiera jeden zestaw. Osobny test przepuszcza POST, a następujący po nim GET listy zwraca 500 — editor-title nadal widoczny. Podczas wstrzymanego POST oba przyciski tworzenia są disabled.
-- [ ] Uruchom `pnpm test:e2e tests/e2e/manual-deck-flow.spec.ts`; potwierdź RED braku przycisku.
-- [ ] W DecksPanel dodaj createEmpty(): Promise<void> z useRef przechowującym niezmienne `{deckId,title?}` nieudanej próby i blokadę synchroniczną przeciw podwójnemu kliknięciu. Utwórz UUID raz na próbę; ponowienie używa tego samego polecenia. Po sukcesie usuń referencję, wyczyść formularz, ustaw activeDeckId i osobno spróbuj onChanged. Błąd odświeżenia listy nie wpada do obsługi błędu tworzenia. Nie uruchamiaj nowego create UUID po niepewnej awarii sieci.
-- [ ] Dodaj test edytora: zmiana tytułu pustego szkicu wysyła PATCH bez items i trwa po ponownym otwarciu. Dodanie niekompletnej karty pokazuje itemIncomplete i nie wysyła PATCH. Przy kompletnej karcie publikacja pozostaje disabled z saveBeforePublish aż do zapisu. Wstrzymaj odpowiedź PATCH: pola i mutacje kart zablokowane, publikacja disabled; po sukcesie stan dirty jest wyzerowany. Polling po GET nie kasuje wpisów podczas dirty.
-- [ ] Uruchom nowe przypadki E2E i zapisz RED dotychczasowego PATCH z items=[] oraz braku reaktywnej blokady publikacji.
-- [ ] W DeckEditor utrzymuj reaktywny isDirty z referencją potrzebną do ochrony formularza podczas odczytu. Wszystkie mutacje ustawiają oba, reset przy udanym zapisie/publikacji i obecnej obsłudze konfliktu. Pusty formularz wysyła tylko title/expectedEditNumber; formularz z kartami wysyła obecny pełny PATCH. Blokuj publikację i jej handler, gdy busy, brak zapisanych kart lub dirty; wyświetl odpowiedni komunikat. Zablokuj edycję pól/dodawanie/usuwanie podczas save, aby wynik zapisu nie zgubił późniejszych wpisów. Pokaż pusty stan tylko po załadowaniu rzeczywiście pustego draftu, poza aktywną generacją AI.
-- [ ] Powtórz E2E nowych przypadków i `pnpm test:e2e tests/e2e/parent-flow.spec.ts`; oczekiwane PASS. Zmiana nie może zablokować istniejącej publikacji po zapisanej edycji.
-- [ ] SPEC: dodaj ręczne tworzenie od zera i kryterium pustego szkicu. folder-structure: zaktualizuj rzeczywiste ścieżki panelu/routera objęte zadaniem, bez przebudowy pozostałej dokumentacji.
-- [ ] Commit: `feat: open empty decks in the parent editor`.
+- [x] E2E potwierdza idempotentne ponowienie po utraconej odpowiedzi, otwarcie edytora mimo błędu GET listy oraz blokadę obu przycisków podczas POST.
+- [x] Początkowy E2E RED: brak przycisku create-empty-submit.
+- [x] DecksPanel przechowuje niezmienny command UUID przy niepewnym błędzie; odświeżenie listy nie jest częścią wyniku tworzenia.
+- [x] E2E edytora potwierdza title-only PATCH bez items, walidację niekompletnej karty, blokadę publikacji i pól podczas zapisu oraz ochronę wpisów przy aktywnym pollingu.
+- [x] RED dla pustego PATCH: walidacja odrzucała `items: []`; test potwierdził problem przed zmianą edytora. Reaktywna blokada publikacji jest weryfikowana przez E2E przed i po zapisie.
+- [x] DeckEditor utrzymuje reaktywny isDirty, zapisuje sam tytuł pustego draftu, blokuje publikację do zapisu kompletnej karty oraz blokuje mutacje podczas zapisu.
+- [x] E2E manualne i `parent-flow.spec.ts` przechodzą; dotychczasowa ścieżka publikacji zachowana.
+- [x] SPEC opisuje ręczne tworzenie, a folder-structure rzeczywiste ścieżki panelu i routera.
+- [x] Commit `a72a193`: `feat: open empty decks in the parent editor`.
 
 ### Task 4: Pełny przepływ, regresje i odbiór
 
@@ -153,13 +153,13 @@ await expect(page.getByTestId("publish-deck")).toBeDisabled();
 - Consumes: interfejs zadania 3, istniejące przypisania i Kid API.
 - Produces: dowody ręcznego obiegu oraz raport sprawdzonych i brakujących kryteriów.
 
-- [ ] Przed ewentualną poprawką napisz/uruchom E2E pełnego obiegu: utwórz unikalny profil dziecka i pusty zestaw, wpisz „kot” → „cat”, visualType=none, zapisz, poczekaj na gotowe fake-audio, opublikuj i przypisz. Przed publikacją Kid API nie zawiera zestawu; po publikacji/przypisaniu zawiera go. Sprawdź ponowne otwarcie zapisanej karty. Zero żądań generowania treści przez całe E2E. Ten test może już przechodzić dzięki zadaniom 1–3; jeśli wykryje brak, zachowaj jego RED przed poprawką.
-- [ ] Sprawdź viewporty 390×844, 768×1024, 1440×900: widoczny i dostępny przycisk, pusty stan, kompletna karta i przyciski zapisu; brak poziomego overflow dokumentu. Użyj Playwright i obejrzyj zrzuty, bez nowego systemu wizualnego.
-- [ ] Uruchom `pnpm test:unit`, `pnpm test:integration`, `pnpm test:e2e`, `pnpm typecheck`, `pnpm build` oraz `git diff --check`. Wymagane PASS; runner integration i E2E wymaga działającego Docker/PostgreSQL i przeglądarki Playwright. Testów z global-setup nie uruchamiaj współbieżnie, ponieważ czyszczą kontenery o wspólnym prefiksie.
-- [ ] Jeśli środowisko uniemożliwia test, zapisz konkretny błąd i brakujący dowód. Nie przedstawiaj przejścia unit/typecheck jako weryfikacji PostgreSQL lub E2E.
-- [ ] Uaktualnij implementation-plan o zrealizowane kryteria ręcznej ścieżki i rzeczywiste wyniki. W spec i tym planie aktualizuj checklistę; nie zaznaczaj zatwierdzeń, testów ani review, których nie wykonano.
-- [ ] Wykonaj verification-before-completion i przegląd diff względem spec: publikacja, media, retry, brak LLM, granice pakietów, brak niezamierzonych plików. Niezależny review tylko po zgodzie na delegację; bez niej wykonaj własny przegląd i ujawnij ograniczenie.
-- [ ] Commit wyłącznie plików tego zadania: `test: verify manual deck creation workflow`. Nie pushuj ani nie integruj zmian bez osobnego polecenia.
+- [x] E2E całego ręcznego obiegu potwierdza brak zestawu w Kid API przed publikacją oraz widoczność po publikacji/przypisaniu, zero żądań generowania; karta „kot” → „cat” zapisuje się i otwiera ponownie.
+- [x] Widoki 390×844, 768×1024 i 1440×900 sprawdzone w Playwright; sześć zrzutów obejrzanych, przycisk/pusty stan/karta/zapis widoczne, brak poziomego overflow.
+- [x] Unit 232/232, integration PostgreSQL 131/131, typecheck sześciu projektów, build oraz `git diff --check` przechodzą. Pełne E2E w prywatnym runnerze: 23/23.
+- [x] Wyniki wszystkich testów odnotowano w ledgerze i implementation-plan; izolacja testu jednego profilu poprawiona, pełny przebieg 23/23.
+- [x] Implementation-plan zawiera zakres ręcznej ścieżki; checklisty specyfikacji i planu odzwierciedlają tylko wykonane prace.
+- [x] Verification-before-completion i self-review całego diffu względem spec: publikacja, media, retry, brak LLM, granice pakietów i zakres plików sprawdzone. Brak delegacji zgodnie z AGENTS.md; niezależny reviewer nie był dostępny bez delegacji.
+- [x] Commit wyłącznie plików tego zadania: `test: verify manual deck creation workflow`; bez pushowania i integracji.
 
 ## Przegląd planu i przekazanie
 
@@ -168,9 +168,9 @@ await expect(page.getByTestId("publish-deck")).toBeDisabled();
 - [x] Typy wejścia, publicznej odpowiedzi i wewnętrznego wyniku zgodne między zadaniami.
 - [x] Kryteria spec pokryte; pięć Review Focus przypisane do testów.
 - [x] RED przed nowym kodem, regresje, realny PostgreSQL i końcowe sprawdzenia zapisane.
-- [ ] Właściciel zatwierdził ten plan i wybrał sposób wykonania.
-- [ ] Executing-plans lub zatwierdzona delegacja uruchomione.
-- [ ] Zadania 1–4 zakończone i zweryfikowane.
+- [x] Właściciel zatwierdził ten plan i wybrał sposób wykonania.
+- [x] Executing-plans i TDD uruchomione.
+- [x] Zadania 1–4 zakończone i zweryfikowane.
 
 Rekomendacja: wykonanie samodzielne w tej rozmowie przez executing-plans,
 ponieważ cztery zadania składają się na jeden mały przepływ z zależnymi kontraktami.

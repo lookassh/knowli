@@ -166,8 +166,8 @@ Nie rozwija niezależnie początkowego schema.sql, ponieważ model bazy się nie
 - [x] Przegląd i zatwierdzenie tego dokumentu przez właściciela (2026-10-09).
 - [x] Pisemny plan implementacji i jego własny przegląd.
 - [x] Writing-plans: pisemny plan, przegląd właściciela i wybór wykonania (samodzielnie w tej rozmowie, 2026-10-09).
-- [ ] Executing-plans oraz TDD z dowodem RED.
-- [ ] Weryfikacja implementacji i końcowy przegląd checklisty.
+- [x] Executing-plans oraz TDD z dowodem RED: nowy kontrakt i UI miały oczekiwane awarie przed implementacją; szczegóły w ledgerze planu.
+- [x] Weryfikacja implementacji i końcowy przegląd checklisty: 232 unit, 131 PostgreSQL integration, typecheck/build, 23 E2E; pełny przegląd self-review.
 
 Nie stosowano delegacji. Companion wizualny nie był potrzebny do decyzji
 o tej ścieżce; nie pominięto wymaganego etapu zatwierdzenia.

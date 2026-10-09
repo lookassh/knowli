@@ -73,6 +73,11 @@ export default function DecksPanel({
       // jak błąd tworzenia i nie może uruchomić nowego UUID przy kolejnym kliknięciu.
       void onChanged().catch(() => undefined);
     } catch (cause) {
+      if ((cause as { code?: string }).code === "validation") {
+        // Błąd walidacji jest definitywny, więc rodzic może poprawić tytuł;
+        // tylko niepewny wynik sieciowy powinien zachować poprzednie polecenie.
+        pendingEmptyCommand.current = null;
+      }
       setError(errorMessage(cause));
     } finally {
       creatingEmptyRef.current = false;

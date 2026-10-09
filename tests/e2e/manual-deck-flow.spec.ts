@@ -141,6 +141,38 @@ test("locks draft controls while a save is pending and unlocks publishing after 
   await expect(page.getByTestId("publish-deck")).toBeEnabled();
 });
 
+test("preserves edits made while an asset-polling read is in flight", async ({ page }) => {
+  let holdNextRead = false;
+  let releaseRead: (() => void) | undefined;
+  let notifyRead: (() => void) | undefined;
+  const readReceived = new Promise<void>((resolve) => { notifyRead = resolve; });
+  const readRelease = new Promise<void>((resolve) => { releaseRead = resolve; });
+  await page.route("**/api/v1/parent/decks/*", async (route) => {
+    if (route.request().method() !== "GET" || !holdNextRead) {
+      await route.continue();
+      return;
+    }
+    holdNextRead = false;
+    const response = await route.fetch();
+    notifyRead?.();
+    await readRelease;
+    await route.fulfill({ response });
+  });
+  await enterParent(page);
+  await page.getByTestId("create-empty-submit").click();
+  await page.getByTestId("add-item").click();
+  await page.getByTestId("item-source-0").fill("kot");
+  await page.getByTestId("item-target-0").fill("cat");
+  await page.getByTestId("item-visual-0").selectOption("none");
+  await page.getByTestId("save-items").click();
+  await expect(page.getByTestId("item-audio-state-0")).toContainText("generowanie");
+  holdNextRead = true;
+  await readReceived;
+  await page.getByTestId("item-source-0").fill("kotek");
+  releaseRead?.();
+  await expect(page.getByTestId("item-source-0")).toHaveValue("kotek");
+});
+
 test("keeps the editor open when the list refresh fails after successful creation", async ({ page }) => {
   const title = `Lista niedostępna ${randomUUID().slice(0, 8)}`;
   let failNextList = false;
@@ -193,13 +225,14 @@ test("disables both creation actions while the manual create request is pending"
   await expect(page.getByTestId("editor-title")).toHaveValue(title);
 });
 
-test("keeps manual creation and editing usable at phone, tablet and desktop widths", async ({ page }) => {
+test("keeps manual creation and editing usable at phone, tablet and desktop widths", async ({ page }, testInfo) => {
   await enterParent(page);
   for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1440, height: 900 }]) {
     await page.setViewportSize(viewport);
     await expect(page.getByTestId("create-empty-submit")).toBeVisible();
     const listOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
     expect(listOverflow).toBe(false);
+    await page.screenshot({ path: testInfo.outputPath(`list-${viewport.width}.png`), fullPage: true });
   }
   await page.getByTestId("create-empty-submit").click();
   await expect(page.getByTestId("empty-draft")).toBeVisible();
@@ -211,7 +244,19 @@ test("keeps manual creation and editing usable at phone, tablet and desktop widt
     await expect(page.getByTestId("save-items")).toBeVisible();
     const editorOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
     expect(editorOverflow).toBe(false);
+    await page.screenshot({ path: testInfo.outputPath(`editor-${viewport.width}.png`), fullPage: true });
   }
+});
+
+test("allows correcting the title after a definitive validation error", async ({ page }) => {
+  const title = `Poprawiony tytuł ${randomUUID().slice(0, 8)}`;
+  await enterParent(page);
+  await page.getByTestId("deck-title").fill("x".repeat(201));
+  await page.getByTestId("create-empty-submit").click();
+  await expect(page.getByTestId("api-error")).toBeVisible();
+  await page.getByTestId("deck-title").fill(title);
+  await page.getByTestId("create-empty-submit").click();
+  await expect(page.getByTestId("editor-title")).toHaveValue(title);
 });
 
 test("creates and publishes a manually entered word without generating content", async ({ page, request }) => {
@@ -254,9 +299,13 @@ test("creates and publishes a manually entered word without generating content",
   await page.getByTestId("publish-deck").click();
   await expect(page.getByTestId("publish-status")).toBeVisible();
   await page.locator(`[data-testid^="assign-row-"]`).filter({ hasText: childName }).locator('[data-testid^="assign-submit-"]').click();
-  expect(generationRequests).toBe(0);
+  await expect(page.locator('[data-testid^="assignment-row-"]').filter({ hasText: childName })).toBeVisible();
+  expect(generationRequests, `Unexpected generation request count: ${generationRequests}`).toBe(0);
   const kidDecks = await request.get(`/api/v1/kid/decks?childId=${childId}`);
   expect(kidDecks.ok()).toBeTruthy();
   const payload = await kidDecks.json();
-  expect(payload.some((entry: { deckId: string }) => entry.deckId === createdDeck.deckId)).toBeTruthy();
+  expect(
+    payload.some((entry: { deckId: string }) => entry.deckId === createdDeck.deckId),
+    `Kid API did not return ${createdDeck.deckId}: ${JSON.stringify(payload)}`,
+  ).toBeTruthy();
 });

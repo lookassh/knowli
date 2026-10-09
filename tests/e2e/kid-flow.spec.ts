@@ -293,6 +293,13 @@ test("jeden profil pomija wybór i prowadzi sesję do obiecanego końca", async 
   // podmienia tylko getUserMedia/MediaRecorder, odpowiedź przechodzi prawdziwy kod
   await injectFakeMediaPlatform(page);
   const parent = await parentSession(page);
+  // Global setup runs once per E2E process. Earlier tests may leave profiles
+  // behind, so make the single-profile scenario independent of test order.
+  const existingChildren = (await (await parent.get("/api/v1/parent/children")).json()) as { id: string }[];
+  for (const existingChild of existingChildren) {
+    const deleted = await parent.delete(`/api/v1/parent/children/${existingChild.id}`);
+    expect(deleted.status()).toBe(204);
+  }
   const child = await createChild(parent, "Ola", "fox");
   await createAssignedDeck(parent, child.id, "Dni tygodnia", `kid-flow-1-${randomUUID()}`);
 
