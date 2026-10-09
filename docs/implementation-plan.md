@@ -303,3 +303,22 @@ Przygotowano dokumenty, a nie implementację aplikacji. Sprawdzono 73 instrukcje
 Zaimplementowano plan `docs/superpowers/plans/2026-10-09-per-child-pronunciation-policy.md`: wersjonowane progi wymowy profilu dziecka, pasma i wizualne fragmenty słowa, adapter fonemów Azure, endpointy i widok ustawień rodzica oraz listę ostatnich ocen. `learning-v2` ma progi początkowe 70/50; wynik poniżej pasma „prawie” pozostaje nieoceniony. Zmiana progów dotyczy nowych sesji.
 
 Weryfikacja tego zakresu: testy unit 200/200, integration 115/115, e2e 10/10, typecheck wszystkich sześciu projektów i produkcyjny build przeszły. Lokalny Compose deploy został zbudowany i uruchomiony; web i worker są healthy, a `/api/v1/health` zwraca `ok`. Read-only odczyt bazy po deployu zawierał `learning-v1`; `learning-v2` jest wstawiane idempotentnie przy pierwszym wejściu w ustawienia wymowy albo rozpoczęciu sesji i nie zostało jeszcze w tej instancji wywołane. Prawdziwe wyniki fonemów Azure z nagraniem dziecka i kalibracja progów na rodzinnych próbach pozostają niezweryfikowane.
+
+## Uzupełnienie: ręczne tworzenie zestawu — 2026-10-09
+
+Rodzic może utworzyć pusty szkic bez promptu i wywołania LLM, wpisać słówka
+w istniejącym edytorze, zapisać sam tytuł pustego szkicu oraz opublikować
+materiał dopiero po zapisaniu kompletnej karty i wymaganych mediów. Ponowienie
+niepewnego POST używa tego samego UUID; błąd odświeżenia listy nie zamyka
+edytora. Zmiana nie wymaga migracji ani zmiany Kid API.
+
+Weryfikacja 2026-10-09: testy jednostkowe 232/232, integracyjne PostgreSQL
+131/131, typecheck sześciu projektów i produkcyjny build przeszły. Nowe E2E
+manualne 12/12, `parent-flow.spec.ts` 3/3 i pełny przebieg E2E 23/23 przeszły.
+Pełne E2E uruchomiono w prywatnej konfiguracji Playwright z osobnym
+kontenerem i portami, ponieważ równoległy worktree korzystał ze stałych
+zasobów domyślnego runnera. W czasie pełnego przebiegu test „jeden profil”
+usuwa własne syntetyczne profile pozostałe po wcześniejszych testach; test
+pełnego przypisania czeka na potwierdzenie zapisu przed odczytem Kid API.
+Zrzuty listy i edytora na 390×844, 768×1024 i 1440×900 obejrzano; nie ma
+poziomego overflow.

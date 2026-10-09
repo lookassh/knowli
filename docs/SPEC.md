@@ -82,8 +82,10 @@ Rodzic może:
 - wybrać dzieci, którym zostanie przypisany zestaw;
 - opcjonalnie ustawić termin sprawdzianu dla każdego przypisania;
 - wygenerować zestaw za pomocą AI;
+- utworzyć pusty szkic bez wywołania AI i ręcznie wprowadzić pierwsze słówka;
 - przejrzeć i poprawić słowa, tłumaczenia, przykłady oraz pomoce wizualne;
 - ręcznie dodać lub usunąć element zestawu;
+- zapisać sam tytuł pustego szkicu; publikacja wymaga co najmniej jednego kompletnego, zapisanego elementu;
 - odsłuchać wygenerowaną wymowę;
 - zatwierdzić i udostępnić zestaw;
 - wycofać zestaw z nauki;

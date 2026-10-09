@@ -61,8 +61,13 @@ export default function DeckEditor({
   const [form, setForm] = useState<{ title: string; items: EditableItem[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const [assignDates, setAssignDates] = useState<Record<string, string>>({});
   const dirty = useRef(false);
+  const markDirty = () => {
+    dirty.current = true;
+    setIsDirty(true);
+  };
 
   const load = useCallback(async () => {
     try {
@@ -102,7 +107,7 @@ export default function DeckEditor({
   }, [active?.id, active?.editNumber, active]);
 
   const mutate = (field: "source" | "target" | "accepted" | "example" | "title", value: string, index?: number) => {
-    dirty.current = true;
+    markDirty();
     setForm((current) => {
       if (!current) {
         return current;
@@ -118,7 +123,7 @@ export default function DeckEditor({
   };
 
   const changeVisual = (index: number, visualType: VisualType) => {
-    dirty.current = true;
+    markDirty();
     setForm((current) =>
       current
         ? {
@@ -134,7 +139,7 @@ export default function DeckEditor({
   // nowy element ląduje na końcu listy; bez id serwer tworzy learning_item
   // z kluczami umiejętności v1 i zleca media w tej samej transakcji zapisu
   const addItem = () => {
-    dirty.current = true;
+    markDirty();
     setForm((current) => {
       if (!current) {
         return current;
@@ -153,7 +158,7 @@ export default function DeckEditor({
   // usunięcie jest częścią formularza: obowiązuje dopiero po „Zapisz",
   // cofnięcie = wyjście bez zapisu; ostatniej karty nie da się usunąć
   const removeItem = (index: number) => {
-    dirty.current = true;
+    markDirty();
     setForm((current) =>
       current ? { ...current, items: current.items.filter((_, position) => position !== index) } : current,
     );
@@ -169,7 +174,7 @@ export default function DeckEditor({
       setError(messages.decks.titleIncomplete);
       return;
     }
-    if (form.items.some((item) => item.source.trim().length === 0 || item.target.trim().length === 0)) {
+    if (form.items.length > 0 && form.items.some((item) => item.source.trim().length === 0 || item.target.trim().length === 0)) {
       setError(messages.decks.itemIncomplete);
       return;
     }
@@ -177,8 +182,8 @@ export default function DeckEditor({
     setError(null);
     try {
       await apiFetch("PATCH", `/api/v1/parent/drafts/${draft.id}`, {
-        title: form.title,
-        items: form.items.map((item) => ({
+        title: form.title.trim(),
+        ...(form.items.length > 0 ? { items: form.items.map((item) => ({
           ...(item.id ? { id: item.id } : {}),
           source: item.source,
           target: item.target,
@@ -189,15 +194,17 @@ export default function DeckEditor({
           locales: item.locales,
           ...(item.example ? { example: item.example } : {}),
           visualType: item.visualType,
-        })),
+        })) } : {}),
         expectedEditNumber: draft.editNumber,
       });
       dirty.current = false;
+      setIsDirty(false);
       await load();
     } catch (cause) {
       setError(errorMessage(cause));
       if ((cause as { code?: string }).code === "conflict") {
         dirty.current = false;
+        setIsDirty(false);
         await load();
       }
     } finally {
@@ -206,7 +213,7 @@ export default function DeckEditor({
   };
 
   const publish = async () => {
-    if (!draft) {
+    if (!draft || busy || isDirty || draft.items.length === 0) {
       return;
     }
     setBusy(true);
@@ -216,6 +223,7 @@ export default function DeckEditor({
         expectedEditNumber: draft.editNumber,
       });
       dirty.current = false;
+      setIsDirty(false);
       await load();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -354,7 +362,7 @@ export default function DeckEditor({
           <input
             data-testid="editor-title"
             value={form.title}
-            disabled={!editable}
+            disabled={!editable || busy}
             onChange={(event) => mutate("title", event.target.value)}
           />
         </label>
@@ -372,7 +380,7 @@ export default function DeckEditor({
                 <button
                   type="button"
                   data-testid={`item-remove-${index}`}
-                  disabled={(form?.items.length ?? 0) <= 1}
+                  disabled={busy || (form?.items.length ?? 0) <= 1}
                   onClick={() => removeItem(index)}
                 >
                   {messages.decks.removeItem}
@@ -385,7 +393,7 @@ export default function DeckEditor({
                 <input
                   data-testid={`item-source-${index}`}
                   value={item.source}
-                  disabled={!editable}
+                  disabled={!editable || busy}
                   onChange={(event) => mutate("source", event.target.value, index)}
                 />
               </label>
@@ -394,7 +402,7 @@ export default function DeckEditor({
                 <input
                   data-testid={`item-target-${index}`}
                   value={item.target}
-                  disabled={!editable}
+                  disabled={!editable || busy}
                   onChange={(event) => mutate("target", event.target.value, index)}
                 />
               </label>
@@ -404,7 +412,7 @@ export default function DeckEditor({
               <input
                 data-testid={`item-accepted-${index}`}
                 value={item.accepted}
-                disabled={!editable}
+                disabled={!editable || busy}
                 onChange={(event) => mutate("accepted", event.target.value, index)}
               />
             </label>
@@ -413,7 +421,7 @@ export default function DeckEditor({
               <input
                 data-testid={`item-example-${index}`}
                 value={item.example}
-                disabled={!editable}
+                disabled={!editable || busy}
                 onChange={(event) => mutate("example", event.target.value, index)}
               />
             </label>
@@ -422,7 +430,7 @@ export default function DeckEditor({
               <select
                 data-testid={`item-visual-${index}`}
                 value={item.visualType}
-                disabled={!editable}
+                disabled={!editable || busy}
                 onChange={(event) => changeVisual(index, event.target.value as VisualType)}
               >
                 {VISUAL_TYPES.map((type) => (
@@ -450,6 +458,7 @@ export default function DeckEditor({
                   <button
                     type="button"
                     data-testid={`item-regen-audio-${index}`}
+                    disabled={busy}
                     onClick={() => regenerate(revisionId, "target_audio")}
                   >
                     {messages.decks.regenerateAudio}
@@ -490,6 +499,7 @@ export default function DeckEditor({
                     <button
                       type="button"
                       data-testid={`item-omit-image-${index}`}
+                      disabled={busy}
                       onClick={() => omitIllustration(revisionId)}
                     >
                       {messages.decks.omitImage}
@@ -499,6 +509,7 @@ export default function DeckEditor({
                     <button
                       type="button"
                       data-testid={`item-regen-image-${index}`}
+                      disabled={busy}
                       onClick={() => regenerate(revisionId, "illustration")}
                     >
                       {messages.decks.regenerateImage}
@@ -512,8 +523,14 @@ export default function DeckEditor({
       })}
 
       {editable && (
+        form?.items.length === 0 && !generating ? (
+          <p className="info" data-testid="empty-draft">{messages.decks.emptyDraft}</p>
+        ) : null
+      )}
+
+      {editable && (
         <div className="row">
-          <button type="button" data-testid="add-item" onClick={addItem}>
+          <button type="button" data-testid="add-item" onClick={addItem} disabled={busy}>
             {messages.decks.addItem}
           </button>
         </div>
@@ -532,13 +549,19 @@ export default function DeckEditor({
           <button type="button" data-testid="save-items" onClick={save} disabled={busy}>
             {messages.decks.save}
           </button>
-          <button type="button" data-testid="publish-deck" onClick={publish} disabled={busy}>
+          <button type="button" data-testid="publish-deck" onClick={publish} disabled={busy || isDirty || (draft?.items.length ?? 0) === 0}>
             {messages.decks.publish}
           </button>
           <button type="button" data-testid="archive-deck" onClick={archive} disabled={busy}>
             {messages.decks.archive}
           </button>
         </div>
+      )}
+
+      {editable && (isDirty || (draft?.items.length ?? 0) === 0) && (
+        <p className="info" data-testid="publish-blocked-reason">
+          {isDirty && (form?.items.length ?? 0) > 0 ? messages.decks.saveBeforePublish : messages.decks.emptyPublish}
+        </p>
       )}
 
       {deck?.state === "published" && (

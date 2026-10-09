@@ -2,10 +2,13 @@ import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
+  CreateEmptyDeckCommandSchema,
   DraftInputSchema,
   DraftPatchSchema,
   isFamilyDate,
+  messages,
   type AssignmentDto,
+  type CreateEmptyDeckCommand,
   type DeckDto,
   type DeckState,
   type DeckSummaryDto,
@@ -210,6 +213,44 @@ export async function createDraft(services: Services, input: DraftInput): Promis
       });
     }
     return readDraftDto(tx, versionId);
+  });
+}
+
+/**
+ * Tworzy ręczny, jeszcze pusty szkic. UUID decku jest kluczem idempotencji:
+ * retry nie resetuje treści, niezależnie od tego, jak daleko zaszedł zestaw.
+ */
+export async function createEmptyDeck(
+  services: Services,
+  input: CreateEmptyDeckCommand,
+): Promise<{ deckId: string; created: boolean }> {
+  const command = CreateEmptyDeckCommandSchema.parse(input);
+  const title = command.title ?? messages.decks.defaultTitle;
+  const versionId = randomUUID();
+
+  return services.db.transaction(async (tx) => {
+    const inserted = await tx
+      .insert(decks)
+      .values({ id: command.deckId, title })
+      .onConflictDoNothing({ target: decks.id })
+      .returning({ id: decks.id });
+
+    if (inserted.length === 0) {
+      return { deckId: command.deckId, created: false };
+    }
+
+    await tx.insert(deckVersions).values({
+      id: versionId,
+      deckId: command.deckId,
+      versionNumber: 1,
+      editNumber: 1,
+      state: "draft",
+      title,
+      sourceLocale: "pl-PL",
+      targetLocale: "en-GB",
+    });
+
+    return { deckId: command.deckId, created: true };
   });
 }
 

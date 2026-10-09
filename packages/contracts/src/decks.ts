@@ -297,6 +297,17 @@ export const DeckDtoSchema = z.object({
 });
 export type DeckDto = z.infer<typeof DeckDtoSchema>;
 
+/** POST /parent/decks — tworzy nowy pusty szkic do ręcznej edycji. */
+export const CreateEmptyDeckCommandSchema = z.object({
+  deckId: UuidSchema,
+  title: z.string().trim().min(1).max(200).optional(),
+}).strict();
+export type CreateEmptyDeckCommand = z.infer<typeof CreateEmptyDeckCommandSchema>;
+
+/** Odpowiedź z utworzenia lub bezpiecznego ponowienia ręcznego szkicu. */
+export const CreateEmptyDeckResultSchema = z.object({ deckId: UuidSchema }).strict();
+export type CreateEmptyDeckResult = z.infer<typeof CreateEmptyDeckResultSchema>;
+
 /** PUT /parent/assignments/:childId/:deckId — przypisanie i termin sprawdzianu. */
 export const AssignmentPutSchema = z.object({
   testDate: z
