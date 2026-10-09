@@ -146,3 +146,13 @@ Decyzje i odstępstwa workflow:
 Dwa uruchomienia pełnego E2E zatrzymały się podczas startu na EADDRINUSE portu 24500. Zakończono wyłącznie procesy tego przebiegu, sprawdzono możliwość związania portu, a finalny przebieg zakończył się PASS. Nie zmieniano konfiguracji testów ani portów aplikacji.
 
 Worktree zachowany zgodnie z planem; brak push, merge i deploy. Weryfikacja lokalna nie stanowi potwierdzenia wdrożenia.
+
+## Poprawka po dodatkowym self-review — 2026-10-09
+
+P2: porównanie przyciętego imienia z nieprzyciętą wartością bazową dołączało niezmieniane imię do zapisu awatara i mogło nadpisać nowszą nazwę z innej przeglądarki. `nameChanged` porównuje teraz obie strony po trim i steruje zarówno aktywnością zapisu, jak i obecnością pola `displayName` w PATCH. Kontrakt API bez zmian.
+
+Regresję dwóch niezależnych kontekstów przeglądarki rozszerzono o imię ze spacjami. RED: niezmieniony formularz miał aktywny zapis; GREEN: oba warianty 2/2 i body zmiany awatara zawiera wyłącznie `avatarKey`. Pełny przegląd aktualizacji nie wykazał pozostałych problemów blokujących.
+
+Do gałęzi `feature/child-profile-edit` włączono `origin/main` = `015fb83`. Konflikt przeniesionego testu podsumowania rozwiązano zachowując kolejność z main i sprzątanie syntetycznego profilu. Weryfikacja po połączeniu: unit 243/243, PostgreSQL integration 128/128, E2E 23/23, typecheck i build exit 0. Pierwszy przebieg celowanego E2E miał błędnie escapowany grep i nie znalazł testów; poprawiony grep uruchomił właściwą regresję RED/GREEN.
+
+Właściciel wyraźnie zlecił scalanie z main i push po poprawnej weryfikacji. Wynik po scaleniu zostanie sprawdzony ponownie przed wypchnięciem; to zastępuje wcześniejsze ograniczenie tego zadania do lokalnego worktree. Nadal bez delegacji.
