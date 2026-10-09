@@ -109,6 +109,8 @@ Wymagania:
 - brak ustawień AI, modeli, promptów, CEFR i administracji zestawami;
 - brak procentowych ocen i technicznych wyników wymowy.
 
+Informacja zwrotna po ocenie wymowy może pokazać fragmenty słowa oznaczone jako „dobrze” lub „prawie”. Nie pokazuje dziecku punktów, IPA ani progów usługi.
+
 Przykład widoku tematu:
 
 > Cześć, Krzysiu! 👋  
@@ -346,6 +348,8 @@ Brak wiarygodnej oceny nie obniża poziomu umiejętności i nie jest rejestrowan
 
 Wynik częściowy jest dopuszczalny: jeśli wiarygodnie rozpoznano poprawne słowo, ale usługa wymowy zawiodła, zapisujemy poprawne przypomnienie i brak oceny wymowy.
 
+Wymowa poniżej progu częściowego pozostaje nieoceniona — nie jest błędem wiedzy. Domyślne progi startowe `learning-v2` wynoszą 70/100 dla pasma „dobrze” i 50/100 dla „prawie”; są to progi konkretnej konfiguracji usługi, a nie uniwersalna miara opanowania języka. Rodzic może zmienić progi w ustawieniach profilu dziecka. Każda zmiana tworzy nową, niezmienną wersję polityki, przypinaną do nowych sesji; istniejące sesje zachowują swoją wersję. Rodzic może też przejrzeć listę ostatnich ocen wymowy dziecka z oczekiwanym słowem, wynikiem usługi i pasmem.
+
 ### 15.1. „Nie pamiętam”, pominięcie i przerwanie
 
 W zadaniach sprawdzających wiedzę dziecko ma dostęp do przycisku **„Nie pamiętam — pokaż”**. Aplikacja ujawnia odpowiedź i proponuje wsparcie bez wymagania zgadywania lub dwóch błędnych prób.
@@ -424,9 +428,11 @@ Ta sama samodzielna odpowiedź pisemna może dostarczyć po jednym wyniku dla pr
 
 Jest to heurystyka produktu, nie gwarancja utrwalenia. Wartości 5 minut, 12 godzin i trzech sukcesów są ustawieniami startowymi do kalibracji, a nie potwierdzonymi naukowo progami pamięci. Parametry pozostają wewnętrzne; dziecko nie konfiguruje algorytmu.
 
-Wymowa wymaga osobnych progów zależnych od wybranego providera i walidacji na reprezentatywnych nagraniach. Nie ustalamy uniwersalnego progu, np. 80/100, dla wszystkich usług. Zmiana providera nie może bez wyjaśnienia zmienić znaczenia historycznych wyników.
+Wymowa wymaga osobnych progów zależnych od wybranego providera i walidacji na reprezentatywnych nagraniach. Domyślne progi wersji `learning-v2` to 70/100 dla „dobrze” i 50/100 dla „prawie”; wynik poniżej progu „prawie” jest nieoceniony. Rodzic może ustawić progi dla konkretnego dziecka, a zapis zmienia wersję polityki wyłącznie dla nowych sesji. Nie ustalamy uniwersalnego progu dla wszystkich usług. Zmiana providera nie może bez wyjaśnienia zmienić znaczenia historycznych wyników.
 
 Rodzic widzi osobne informacje, np. „rozpoznaje 7/7”, „przypomina samodzielnie 5/7”, „pisze samodzielnie 3/7”. Ocena wymowy jest wyraźnie opisana jako automatyczna ocena usługi.
+
+W ustawieniach profilu rodzic może zmienić progi „dobrze” i „prawie” oraz przejrzeć ostatnie próby wymowy z wynikiem i przypisanym pasmem. Brak skonfigurowanej usługi wymowy jest pokazany wprost; nie udostępniamy wtedy edycji progów.
 
 ## 19. Termin sprawdzianu
 
