@@ -18,6 +18,29 @@ export const ChildDtoSchema = ChildInputSchema.extend({
 });
 export type ChildDto = z.infer<typeof ChildDtoSchema>;
 
+export const PronunciationAttemptDtoSchema = z.object({
+  word: z.string().min(1),
+  score: z.number(),
+  band: z.enum(["correct", "partial", "below"]).nullable(),
+  attemptedAt: z.string().min(1),
+});
+
+export const PronunciationSettingsDtoSchema = z.object({
+  pronunciationAvailable: z.boolean(),
+  thresholds: z.object({ correctMinScore: z.number(), partialMinScore: z.number() }).nullable(),
+  attempts: z.array(PronunciationAttemptDtoSchema).max(20),
+});
+
+export const PronunciationBandsInputSchema = z.object({
+  correctMinScore: z.number().int().min(0).max(100),
+  partialMinScore: z.number().int().min(0).max(100),
+}).refine((input) => input.correctMinScore > input.partialMinScore, {
+  message: "correctMinScore must be greater than partialMinScore",
+});
+
+export type PronunciationSettingsDto = z.infer<typeof PronunciationSettingsDtoSchema>;
+export type PronunciationBandsInput = z.infer<typeof PronunciationBandsInputSchema>;
+
 export function toChildDto(row: {
   id: string;
   displayName: string;
