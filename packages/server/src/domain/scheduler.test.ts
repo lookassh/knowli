@@ -500,10 +500,14 @@ describe("selectTask — mikrofon i kierunki", () => {
       progress: { reading: { status: "needs_confirmation", nextReviewAt: PAST, streak: 3 } },
       readingDirections: { target_to_source: 2, source_to_target: 0 },
       usedThisSession: 2,
+      introducedSkills: { recall: true, pronunciation: true },
     });
     const wednesday = peer({ itemRevisionId: "rev-w", position: 1, target: "Wednesday", source: "środa" });
     const friday = peer({ itemRevisionId: "rev-f", position: 2, target: "Friday", source: "piątek" });
-    const plan = selectTask(input({ candidates: [reader], peers: [peer(reader), wednesday, friday] }));
+    const plan = selectTask(input({
+      candidates: [reader], peers: [peer(reader), wednesday, friday], nextOrdinal: 1,
+      confusions: [{ expectedItemRevisionId: "rev-1", answeredItemRevisionId: "rev-w", exerciseType: "reverse_recognition", direction: "source_to_target", count: 2 }],
+    }));
     expect(plan).toMatchObject({
       exerciseType: "reverse_recognition",
       direction: "source_to_target",
@@ -512,8 +516,10 @@ describe("selectTask — mikrofon i kierunki", () => {
     const texts = plan!.options!.map((o) => o.text);
     expect(texts).toContain("Thursday");
     expect(texts).toContain("Wednesday");
+    expect(plan!.options?.[1]?.itemRevisionId).toBe("rev-w");
     expect([...plan!.revealsTargetKeys].sort()).toEqual([KEY_THURSDAY, KEY_WEDNESDAY, KEY_FRIDAY].sort());
   });
+
 });
 
 describe("selectTask — rozliczone sprawdzenia nie wracają w tej sesji (arch §9.3)", () => {

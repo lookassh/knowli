@@ -4,6 +4,7 @@ import type { ExerciseType, Policy, ProgressStatus, ReadingDirection, Skill } fr
 import type { SupportState } from "./support-cycle";
 import type { SkillWork } from "./learning-work";
 import { buildRecognitionOptions } from "./recognition-options";
+import type { ConfusionPair } from "./confusion-priority";
 
 /**
  * Scheduler v1 — jawne priorytety zamiast losowego score (architecture.md §9.3).
@@ -93,6 +94,8 @@ export interface ScheduleInput {
   testPreparation?: { testDate: string | null; timezone: string };
   /** Ostatnie dwa oceniane powody w kolejności chronologicznej. */
   recentAssessedReasons?: readonly ScheduleReason[];
+  /** Powtarzające się, wiarygodne pomyłki tego dziecka w bieżącym zestawie. */
+  confusions?: readonly ConfusionPair[];
 }
 
 export interface PlannedOption {
@@ -277,6 +280,11 @@ function recognitionTaskPlan(
       direction: selectedDirection,
       reservedTargetKeys: [...reserved],
       rotateBy: input.nextOrdinal,
+      preferredRevisionIds: input.confusions
+        ?.filter((pair) => pair.expectedItemRevisionId === target.itemRevisionId &&
+          pair.exerciseType === (selectedDirection === "listening" ? "listening" : selectedDirection === "source_to_target" ? "reverse_recognition" : "reading") &&
+          pair.direction === (selectedDirection === "listening" ? undefined : selectedDirection))
+        .map((pair) => pair.answeredItemRevisionId),
     });
     if (!built) continue;
     return {

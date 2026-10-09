@@ -321,10 +321,29 @@ describe("panel postępów rodzica (integracja)", () => {
       modality: "choice",
       optionId: tuesday.id,
     });
+    await submitAttempt(services, {
+      taskId: confused!.taskId,
+      clientAttemptId: randomUUID(),
+      modality: "choice",
+      optionId: tuesday.id,
+    });
+    const storedChoiceEvidence = await query<{ expectedItemRevisionId: string; answeredItemRevisionId: string; taskRevisionId: string; selectedRevisionId: string }>(
+      `select a.details, a.details->>'expectedItemRevisionId' as "expectedItemRevisionId",
+             a.details->>'answeredItemRevisionId' as "answeredItemRevisionId", t.item_revision_id as "taskRevisionId",
+             t.answer_key->'optionItemRevisionIds'->>(attempt.answer->>'optionId') as "selectedRevisionId"
+         from learning_app.assessments a
+         join learning_app.attempts attempt on attempt.id = a.attempt_id
+         join learning_app.session_tasks t on t.id = attempt.task_id
+        where attempt.task_id = $1
+          and a.skill = 'reading'`,
+      [confused!.taskId],
+    );
+    expect(storedChoiceEvidence[0]?.expectedItemRevisionId).toBe(storedChoiceEvidence[0]?.taskRevisionId);
+    expect(storedChoiceEvidence[0]?.answeredItemRevisionId).toBe(storedChoiceEvidence[0]?.selectedRevisionId);
     await endSession(services, session.sessionId);
 
     const progress = await getProgress(services, childA, deckId);
-    expect(progress.confusions).toEqual([{ expected: "Thursday", answered: "Tuesday", count: 1 }]);
+    expect(progress.confusions).toEqual([{ expected: "Thursday", answered: "Tuesday", count: 2 }]);
     // kierunek ma znaczenie: pary w drugą stronę nie ma
     expect(progress.confusions).not.toContainEqual({ expected: "Tuesday", answered: "Thursday", count: 1 });
     // próba widoczna w historii z wynikiem i samodzielnością

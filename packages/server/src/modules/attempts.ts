@@ -253,6 +253,10 @@ async function finalizeAttemptRow(
       : modality === "audio"
         ? ((attempt.answer as { transcript?: string | null } | null)?.transcript ?? null)
         : null;
+  const choiceIds = key.optionItemRevisionIds ?? {};
+  const choiceOptionId = modality === "choice" ? (attempt.answer as { optionId?: string } | null)?.optionId : undefined;
+  const expectedRevisionId = choiceIds[key.correctOptionId ?? ""];
+  const answeredRevisionId = choiceOptionId === undefined ? undefined : choiceIds[choiceOptionId];
 
   if (modality !== "skip") {
     const skillRows = await tx
@@ -267,6 +271,10 @@ async function finalizeAttemptRow(
         throw new AppError("internal", { message: `missing skill version for ${skill}` });
       }
       const details: Record<string, unknown> = { ...(skillGrade.details ?? {}) };
+      if (modality === "choice" && expectedRevisionId && answeredRevisionId) {
+        details.expectedItemRevisionId = expectedRevisionId;
+        details.answeredItemRevisionId = answeredRevisionId;
+      }
       if (chosenText !== null && skillGrade.outcome === "incorrect") {
         // konkretna pomyłka z zachowaniem kierunku (SPEC §21); „Nie pamiętam”,
         // próby techniczne i niepewne rozpoznanie pary nie tworzą — dla mowy

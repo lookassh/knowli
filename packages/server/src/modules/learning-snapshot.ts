@@ -1,9 +1,10 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type { Executor } from "../db/client";
-import { childSkillProgress, eventExposures, itemRevisionSkills, itemRevisions, learningEvents, learningSessions, sessionTasks } from "../db/schema";
+import { assessments, attempts, childSkillProgress, eventExposures, itemRevisionSkills, itemRevisions, learningEvents, learningSessions, sessionTasks } from "../db/schema";
 import { projectProgress } from "../domain/progress";
+import { rankConfusions, type ConfusionPair, type ConfusionObservation } from "../domain/confusion-priority";
 import { deriveSkillWork, type SkillWork } from "../domain/learning-work";
-import { computeTargetKey } from "../domain/target-key";
+import { computeTargetKey, normalizeTargetText } from "../domain/target-key";
 import type { Policy, ProgressStatus, ReadingDirection, Skill } from "../domain/types";
 import { payloadToItem } from "./item-payload";
 import { readSkillHistories, skillHistoryKey } from "./skill-history";
@@ -25,6 +26,7 @@ export interface LearningSnapshotItem {
   ownPresentationCompleted: boolean;
   readingEvidenceDirections: Partial<Record<ReadingDirection, number>>;
   lastRelevantExposureAt: string | null;
+  confusions: readonly ConfusionPair[];
 }
 
 function mapProgressStatus(status: string): ProgressStatus {
@@ -123,6 +125,55 @@ export async function readLearningSnapshot(
 
   const revisionRows = await exec.select({ id: itemRevisions.id, payload: itemRevisions.payload })
     .from(itemRevisions).where(inArray(itemRevisions.id, [...scope.revisionIds]));
+  const itemByRevision = new Map(revisionRows.map((revision) => [revision.id, payloadToItem(revision.payload as Record<string, unknown>)]));
+  const recognitionRows = await exec.select({
+    attemptId: attempts.id,
+    receivedAt: attempts.receivedAt,
+    childId: attempts.childId,
+    expectedItemRevisionId: attempts.itemRevisionId,
+    modality: attempts.modality,
+    outcome: assessments.outcome,
+    reason: assessments.reason,
+    details: assessments.details,
+    exerciseType: sessionTasks.exerciseType,
+    direction: sessionTasks.direction,
+  }).from(assessments)
+    .innerJoin(attempts, eq(attempts.id, assessments.attemptId))
+    .innerJoin(sessionTasks, eq(sessionTasks.id, attempts.taskId))
+    .where(and(
+      eq(assessments.childId, scope.childId),
+      inArray(attempts.itemRevisionId, [...scope.revisionIds]),
+      inArray(sessionTasks.exerciseType, ["listening", "reading", "reverse_recognition"]),
+      inArray(assessments.skill, ["listening", "reading"]),
+    ));
+  const observations: ConfusionObservation[] = recognitionRows.map((row) => {
+    const details = row.details as Record<string, unknown>;
+    const expected = typeof details.expectedItemRevisionId === "string" ? details.expectedItemRevisionId : row.expectedItemRevisionId;
+    let answered = typeof details.answeredItemRevisionId === "string" ? details.answeredItemRevisionId : null;
+    if (answered === null) {
+      const confusion = details.confusion as { answered?: unknown } | undefined;
+      const answerText = typeof confusion?.answered === "string" ? normalizeTargetText(confusion.answered) : null;
+      if (answerText !== null) {
+        const useSource = row.exerciseType === "listening" || row.direction === "target_to_source";
+        const matches = [...itemByRevision].filter(([, item]) => {
+          const candidates = useSource ? [item.source] : [item.target, ...item.acceptedAnswers];
+          return candidates.some((candidate) => normalizeTargetText(candidate) === answerText);
+        }).map(([id]) => id);
+        if (matches.length === 1) answered = matches[0]!;
+      }
+    }
+    return {
+      attemptId: row.attemptId,
+      receivedAt: row.receivedAt.toISOString(),
+      childId: row.childId,
+      expectedItemRevisionId: expected,
+      answeredItemRevisionId: answered,
+      exerciseType: row.exerciseType as ConfusionObservation["exerciseType"],
+      ...(row.direction === null ? {} : { direction: row.direction as ReadingDirection }),
+      reliable: row.modality === "choice" && (row.outcome === "correct" || row.outcome === "incorrect") && row.reason !== "ambiguous" && row.reason !== "technical",
+    };
+  });
+  const confusionPairs = rankConfusions(observations);
   const keysByRevision = new Map<string, string[]>();
   const allTargetKeys = new Set<string>();
   for (const revision of revisionRows) {
@@ -193,6 +244,7 @@ export async function readLearningSnapshot(
       ownPresentationCompleted: ownPresentationCompleted.has(itemRevisionId),
       readingEvidenceDirections,
       lastRelevantExposureAt,
+      confusions: confusionPairs.filter((pair) => pair.expectedItemRevisionId === itemRevisionId),
     };
   });
 }

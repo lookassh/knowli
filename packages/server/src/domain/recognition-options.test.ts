@@ -30,6 +30,20 @@ describe("buildRecognitionOptions", () => {
     expect(result?.options.map((option) => option.itemRevisionId)).toContain("rev-b");
   });
 
+  it("places the preferred safe confusion in the first distractor slot", () => {
+    const result = buildRecognitionOptions({ target, peers, direction: "listening", reservedTargetKeys: [], rotateBy: 2, preferredRevisionIds: ["rev-b"] });
+    expect(result?.options[1]?.itemRevisionId).toBe("rev-b");
+  });
+
+  it("does not let a preferred confusion bypass reservations or duplicate-answer filtering", () => {
+    const reserved = buildRecognitionOptions({
+      target, peers: [...peers, { itemRevisionId: "rev-d", position: 3, target: "milk", source: "mleko", targetLocale: "en-GB", acceptedAnswers: [] }],
+      direction: "listening", reservedTargetKeys: [computeTargetKey("tea", "en-GB")], rotateBy: 0, preferredRevisionIds: ["rev-b"],
+    });
+    expect(reserved?.options.some((option) => option.itemRevisionId === "rev-b")).toBe(false);
+    expect(reserved?.options[1]?.itemRevisionId).toBe("rev-d");
+  });
+
   it("does not offer a distractor whose accepted variant matches the expected answer", () => {
     const result = buildRecognitionOptions({
       target,

@@ -630,6 +630,7 @@ async function planNextTask(
       ? {}
       : { testPreparation: { testDate: sessionContext.testDate, timezone: sessionContext.timezone } }),
     recentAssessedReasons,
+    confusions: learningSnapshots.flatMap((snapshot) => snapshot.confusions),
   });
   if (!plan) {
     return null;
@@ -678,6 +679,7 @@ export function materializeTask(
     acceptedAnswers: item.acceptedAnswers,
     ...(plan.direction ? { direction: plan.direction } : {}),
     ...(correctOption ? { correctOptionId: optionIds.get(correctOption.text)! } : {}),
+    ...(plannedOptions.length > 0 ? { optionItemRevisionIds: Object.fromEntries(plannedOptions.map((option) => [optionIds.get(option.text)!, option.itemRevisionId])) } : {}),
   };
 
   let prompt: TaskPrompt;

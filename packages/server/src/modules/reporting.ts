@@ -230,7 +230,7 @@ async function readChildEvidence(
   const confusions = (await services.db.execute<ConfusionDto>(sql`
     select n.details->'confusion'->>'expected' as expected,
            n.details->'confusion'->>'answered' as answered,
-           count(*)::int as count
+           count(distinct n.attempt_id)::int as count
       from learning_app.assessments n
       join learning_app.attempts a on a.id = n.attempt_id
      where n.child_id = ${childId}
