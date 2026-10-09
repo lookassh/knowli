@@ -100,6 +100,11 @@ Wczytanie wersji zdalnej wymaga potwierdzenia i pozostawia porównanie do
 ręcznego przeniesienia wybranych zmian. Jeśli szkic został już opublikowany,
 rodzic zaczyna nową wersję przed ponownym zapisem.
 
+Po niepewnym wyniku wysłania generacji rodzic może ponowić dokładnie to samo
+polecenie z tym samym kluczem idempotencji. Niepoprawne lub nieczytelne
+potwierdzenie 202 nie otwiera zestawu. Poprawne identyfikatory otwierają edytor
+niezależnie od odświeżenia listy; nowe świadome generowanie otrzymuje nowy klucz.
+
 Zasady wpływu edycji na postęp:
 
 - Zmiany kosmetyczne, np. ilustracji, formatowania lub opisu zestawu, zachowują postęp.

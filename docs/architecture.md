@@ -118,6 +118,15 @@ Zestaw może zostać wycofany bez fizycznego usuwania jego rewizji. Usunięcie e
 6. Publikacja jest transakcją: sprawdza wersję draftu, kompletność obowiązkowego audio, zatwierdzenie treści i stan obrazów. Obraz może być świadomie pominięty. Wymagany TTS nie może być pominięty dla pełnego zestawu językowego.
 7. Transakcja ustawia stan published i aktualny wskaźnik deck.published_version_id. Nie podmienia wersji aktywnych sesji.
 
+Panel klienta przechowuje polecenie generacji i jego klucz do rozstrzygnięcia
+niepewnej odpowiedzi transportowej. Retry ręczne wysyła identyczny payload;
+klient uznaje 202 dopiero po walidacji UUID runu i zestawu, a następnie otwiera
+edytor. Niepoprawna odpowiedź, 5xx lub utrata sieci pozostają niepewne.
+Walidacja 400 i odmowa 401/403 kończą bieżące polecenie. Po potwierdzonym
+sukcesie odświeżenie listy nie uruchamia ponownej generacji. Stan klienta nie
+jest utrwalany i znika po przeładowaniu strony; kontrakt HTTP i deduplikacja
+serwerowa pozostają bez zmian.
+
 Domyślne ograniczenia MVP: do 50 elementów na zestaw, do 120 znaków celu/źródła, 300 znaków przykładu i 4000 znaków promptu. To limity operacyjne do zmiany w konfiguracji, nie nowe wymagania dydaktyczne. Niepełny zestaw trafia do poprawy. Kompletność zamkniętych tematów, np. dni tygodnia, można sprawdzić prostą regułą; nie budujemy uniwersalnego katalogu wiedzy.
 
 ## 8. Zadania w tle i zasoby

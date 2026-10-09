@@ -223,15 +223,15 @@ do providerów na potrzeby testów. Żywej oceny mowy nie zmieniamy.
 - [x] Właściciel przejrzał i zatwierdził pisemną specyfikację (2026-10-09).
 - [x] Writing-plans: plan zbiorczy `../plans/2026-10-09-learning-and-parent-reliability.md`
       oraz trzy osobne plany podsystemów z plikami, RED i sprawdzeniami;
-      zapisane i samodzielnie przejrzane, oczekują na akceptację właściciela.
-- [ ] Właściciel przegląda plan i wybiera metodę wykonania; bez zgody
-      na delegację wykonanie bezpośrednie przez executing-plans.
-- [ ] Executing-plans: małe kroki i aktualizowana checklista wykonania.
-- [ ] TDD: zapisane dowody RED, następnie implementacja i GREEN.
-- [ ] Przegląd zmian i verification-before-completion: świeże wyniki sprawdzeń.
-- [ ] Raport zmian, dowodów oraz ograniczeń; audyt checklisty workflow.
+      zapisane i samodzielnie przejrzane; właściciel zaakceptował wykonanie bez delegacji.
+- [x] Właściciel zaakceptował plan i metodę bezpośredniego wykonania przez executing-plans.
+- [x] Executing-plans: małe kroki i aktualizowane checklisty wykonania.
+- [x] TDD: zapisane dowody RED, następnie implementacja i GREEN.
+- [x] Przegląd zmian i verification-before-completion: świeże wyniki sprawdzeń.
+- [x] Raport zmian, dowodów oraz ograniczeń; audyt checklisty workflow.
 - [ ] Przy zleconej integracji: finishing-a-development-branch,
       weryfikacja po integracji i sprzątnięcie worktree.
 
 Companion wizualny nie był potrzebny do rozstrzygnięcia kontraktów.
-Nie delegowano pracy. Kod produktu nie został zmieniony.
+Nie delegowano pracy. Zakres A–C wykonano i zweryfikowano; brak niezależnego
+review, merge/deploy i próby na docelowym urządzeniu.

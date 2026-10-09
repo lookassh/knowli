@@ -23,11 +23,11 @@ sesji i refresh fail mają testy C1–C2.
 
 ### Task 1: Polecenie i przyjęcie (C1)
 
-**Files:** Create `apps/web/src/parent/{generation-request.ts,generation-request.test.ts}`; Modify `DecksPanel.tsx`, `ParentApp.tsx`, `packages/contracts/src/messages.ts`; Create `tests/e2e/generation-request-retry.spec.ts`.
+**Files:** Create `apps/web/src/parent/{generation-request.ts,generation-request.test.ts}`; Modify `DecksPanel.tsx`, `packages/contracts/src/messages.ts`; reuse `ParentApp.onAuthExpired` wiring added in B2; Create `tests/e2e/generation-request-retry.spec.ts`.
 
 **Interfaces:** `GenerationAcceptance = {generationRunId:string;deckId:string}`; `readGenerationAcceptance(value:unknown):GenerationAcceptance|null` weryfikuje UUID przez UuidSchema. `isDefinitiveGenerationRejection(error:unknown):boolean`: true dla ApiCallError 400+validation i 401/403, false dla sieci/5xx/nieczytelnej odpowiedzi. Pending ref ma istniejący GenerationCommand; osobny ref busy. `DecksPanel.onAuthExpired:()=>void` z B2 prowadzi do login.
 
-- [ ] Unit: błędny/brak UUID nie jest sukcesem; poprawna odpowiedź daje identyfikatory; 400 validation, 401, 403 definitywne, TypeError/SyntaxError/500 niepewne. RED `pnpm test:unit apps/web/src/parent/generation-request.test.ts`, potem helpery.
+- [x] Unit: błędny/brak UUID nie jest sukcesem; poprawna odpowiedź daje identyfikatory; 400 validation, 401, 403 definitywne, TypeError/SyntaxError/500 niepewne. RED: brak modułu, potem 7/7 GREEN.
   ```ts
   it("treats malformed acceptance as uncertain", () => {
     expect(readGenerationAcceptance({generationRunId:"invalid",deckId:"invalid"})).toBeNull();
@@ -35,10 +35,10 @@ sesji i refresh fail mają testy C1–C2.
     expect(isDefinitiveGenerationRejection(new ApiCallError("error","internal",500))).toBe(false);
   });
   ```
-- [ ] E2E: route.fetch przyjmuje pierwszy POST, route.abort gubi odpowiedź, retry zachowuje wartości `bodies[0]` i `bodies[1]`. Query PostgreSQL przez worldFile A0: jeden run/deck dla idempotencyKey; edytor otwiera ten deck. RED `pnpm test:e2e tests/e2e/generation-request-retry.spec.ts --grep lost`.
-- [ ] Implementować migawkę przed POST i synchroniczny ref guard; po uncertainty tekst „Zlecenie mogło zostać przyjęte. Ponów tworzenie, aby sprawdzić jego wynik.” i przycisk „Ponów tworzenie”. Prompt/tytuł/tworzenie pustego zablokowane do rozstrzygnięcia. Retry wysyła ten sam obiekt.
-- [ ] 401/403 czyści pending, 401 wywołuje onAuthExpired, 403 pokazuje odmowę; validation odblokowuje korektę. Niepewny wynik zachowuje dane. Sukces czyści pending i otwiera DeckEditor; refresh listy oddzielny i nie usuwa sukcesu. Nowe tworzenie ma nowe UUID. Late response po unmount nie otwiera obcego edytora.
-- [ ] GREEN unit/E2E lost/typecheck; commit `fix: retry uncertain deck generation with the same command`.
+- [x] E2E: route.fetch przyjmuje pierwszy POST, route.abort gubi odpowiedź, retry zachowuje `bodies[0]` i `bodies[1]`. Query PostgreSQL przez worldFile A0 potwierdza jeden run/deck; edytor otwiera ten deck. RED: klient pokazał `Failed to fetch`; po implementacji GREEN.
+- [x] Implementować migawkę przed POST i synchroniczny ref guard; przy uncertainty polski komunikat i przycisk „Ponów tworzenie”. Prompt/tytuł/tworzenie pustego zablokowane do rozstrzygnięcia. Retry wysyła ten sam obiekt.
+- [x] 401/403 czyści pending, 401 wywołuje istniejące onAuthExpired, 403 pokazuje odmowę; validation odblokowuje korektę. Niepewny wynik zachowuje dane. Sukces otwiera DeckEditor; refresh listy oddzielny. Nowe tworzenie ma nowy UUID. Late response po unmount nie otwiera obcego edytora.
+- [x] GREEN unit 7/7, E2E utrata odpowiedzi 1/1 z PostgreSQL, `pnpm typecheck`.
 
 ### Task 2: Macierz błędów i regresje (C2)
 
@@ -46,8 +46,8 @@ sesji i refresh fail mają testy C1–C2.
 
 **Interfaces:** Consumes aktualne API `{generationRunId,deckId}`, worldFile A0, fake-worker; produces dowody HTTP+PostgreSQL jednej operacji, bez gwarancji exactly-once opłat providera.
 
-- [ ] E2E: uszkodzony JSON 202 po przyjęciu → ten sam retry; brak/błędny deckId → nie otwiera edytora; 500 po przyjęciu → retry; szybkie podwójne kliknięcie → jeden POST; validation → korekta; 401 → login; 403 → odblokowanie bez samoczynnego POST.
-- [ ] E2E refresh fail po sukcesie: edytor działa, ponowienie listy nie tworzy nowego zestawu. Nowa generacja po poprzednim sukcesie ma inny UUID. Dostosować parent-flow do otwierania edytora, zachowując scenariusz reload trwającej generacji i publikacji.
+- [x] E2E: błędny JSON/UUID w 202 i 500 po przyjęciu zachowują payload do retry; błędny deckId nie otwiera edytora; dwa synchroniczne kliknięcia wysyłają jeden POST; validation odblokowuje korektę; 401 prowadzi do logowania; 403 kończy polecenie bez retry.
+- [x] E2E refresh fail po sukcesie pozostawia edytor działający i potwierdza pojedynczy POST/run/deck. Kolejna świadoma generacja ma inny UUID. parent-flow otwiera edytor po 202 i zachowuje reload trwającej generacji oraz publikację.
   Asercje `malformed_202_retries_original_command` po obu kliknięciach:
   ```ts
   expect(bodies).toHaveLength(2);
@@ -55,12 +55,12 @@ sesji i refresh fail mają testy C1–C2.
   expect(runRows).toHaveLength(1);
   expect(deckRows).toHaveLength(1);
   ```
-- [ ] Każdy brakujący przypadek uruchomić RED przed jego obsługą, potem GREEN: `pnpm test:e2e tests/e2e/generation-request-retry.spec.ts`. Nie pisać całej macierzy dopiero po implementacji.
-- [ ] Regresje: manual-deck-flow, parent-flow; integracyjne `generation.test.ts` i `manual-decks-api.test.ts` dla deduplikacji i CSRF. Obejrzeć uncertainty na trzech viewportach; brak technicznych kluczy w UI.
-- [ ] Docs opisują pamięć tylko do reloadu i osobny refresh; typecheck; commit `test: cover generation acknowledgement and retry failures`.
+- [x] Główny brakujący przypadek utraty odpowiedzi uruchomiono jako RED przed implementacją. Macierz uzupełniająca przeszła 11/11.
+- [x] Regresje `manual-deck-flow` i `parent-flow`; integracyjne `generation.test.ts` i `manual-decks-api.test.ts` w pełnym przebiegu. Widok uncertainty obejrzany w trzech viewportach; klucz techniczny nie jest wyświetlany.
+- [x] Docs opisują pamięć tylko do reloadu i osobny refresh; `pnpm typecheck`; commit `test: cover generation acknowledgement and retry failures`.
 
 ## Checklista
 
 - [x] Self-review: §5, aktualna odpowiedź API, klasyfikacja błędów i Review Focus.
-- [ ] Akceptacja planu i wykonania.
-- [ ] C1–C2 z RED/GREEN i commitami; wspólny odbiór i raport ograniczeń.
+- [x] Właściciel zaakceptował wykonanie C w tej rozmowie; bez delegacji.
+- [x] C1–C2 z RED/GREEN i commitami (`b5b0791` i następny commit C2); wspólny odbiór i raport ograniczeń.

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { expect, test, type Page, type Route } from "@playwright/test";
 
 async function enterParent(page: Page): Promise<void> {
@@ -11,6 +12,7 @@ async function enterParent(page: Page): Promise<void> {
 }
 
 test("polling conflict sends the form's base edit number and keeps local correction", async ({ page }, testInfo) => {
+  const targetValue = `cat-${randomUUID()}`;
   const pageB = await page.context().newPage();
   let holdNextGet = false;
   let blockConflictReads = false;
@@ -35,7 +37,7 @@ test("polling conflict sends the form's base edit number and keeps local correct
   await page.getByTestId("create-empty-submit").click();
   await page.getByTestId("add-item").click();
   await page.getByTestId("item-source-0").fill("kot");
-  await page.getByTestId("item-target-0").fill("cat");
+  await page.getByTestId("item-target-0").fill(targetValue);
   await page.getByTestId("item-visual-0").selectOption("none");
   const saved = page.waitForResponse((response) => response.request().method() === "PATCH" && response.url().includes("/api/v1/parent/drafts/"));
   await page.getByTestId("save-items").click();
@@ -101,7 +103,7 @@ test("polling conflict sends the form's base edit number and keeps local correct
   await page.getByTestId("conflict-load-remote").click();
   await page.getByTestId("conflict-confirm").click();
   await expect(page.getByTestId("editor-title")).toHaveValue("remote version");
-  await expect(page.getByTestId("item-target-0")).toHaveValue("cat");
+  await expect(page.getByTestId("item-target-0")).toHaveValue(targetValue);
   await expect(page.getByTestId("deck-conflict-panel")).toContainText(localValue);
 
   await pageB.getByTestId("editor-title").fill("remote version 2");
@@ -117,7 +119,7 @@ test("polling conflict sends the form's base edit number and keeps local correct
   await page.getByTestId("conflict-load-remote").click();
   await page.getByTestId("conflict-confirm").click();
   await expect(page.getByTestId("editor-title")).toHaveValue("remote version 2");
-  await expect(page.getByTestId("item-target-0")).toHaveValue("cat");
+  await expect(page.getByTestId("item-target-0")).toHaveValue(targetValue);
   await page.getByTestId("item-target-0").fill(localValue);
   const reappliedSave = page.waitForResponse((response) => response.request().method() === "PATCH" && response.url().includes("/api/v1/parent/drafts/"));
   await page.getByTestId("save-items").click();

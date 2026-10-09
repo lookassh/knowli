@@ -34,7 +34,7 @@ Writing-plans zaleca osobne plany niezależnych podsystemów. Realizujemy kolejn
 
 - [x] A: `2026-10-09-test-preparation.md` — termin i scheduler.
 - [x] B: `2026-10-09-parent-edit-protection.md` — wersja bazowa, wyjścia i konflikty.
-- [ ] C: `2026-10-09-generation-request-retry.md` — retry przyjęcia zlecenia.
+- [x] C: `2026-10-09-generation-request-retry.md` — retry przyjęcia zlecenia.
 
 Każdy plan kończy się niezależnie sprawdzalnym rezultatem. C korzysta z przekazania
 obsługi wygasłej autoryzacji w ParentApp; nie dzieli stanu generacji z edytorem.
@@ -49,15 +49,15 @@ obsługi wygasłej autoryzacji w ParentApp; nie dzieli stanu generacji z edytore
 
 ## Odbiór pakietu
 
-- [ ] Własny test run ID oraz wolny port; kolejno `pnpm test:unit`, `pnpm test:integration`, `pnpm test:e2e`, `pnpm typecheck`, `pnpm build`.
-- [ ] Obejrzeć populated konflikt, dialog wyjścia i uncertainty w 390×844, 768×1024, 1440×900; brak overflow, poprawny focus i klawiatura.
-- [ ] Samodzielnie przejrzeć cały diff względem specyfikacji; nie delegować review bez zgody. Raport ujawnia brak niezależnego review.
-- [ ] verification-before-completion: świeże exit codes i liczby testów; zaktualizować checklisty i dokumentację wykonania.
-- [ ] Raport ograniczeń: beforeunload zależy od przeglądarki, retry nie przetrwa reloadu, brak próby na prawdziwym tablecie i brak nowej walidacji live speech.
+- [x] Własny test run ID `b2d0-reliability` i wolny port 24510; `pnpm test:unit` 288/288, `pnpm test:integration` 139/139, `pnpm test:e2e` 54/54, `pnpm typecheck`, `pnpm build`.
+- [x] Obejrzeć konflikt, dialog wyjścia i uncertainty w 390×844, 768×1024, 1440×900; bez overflow, focus/klawiatura obsłużone przez testy dialogu.
+- [x] Samodzielnie przejrzeć cały diff względem specyfikacji; brak niezależnego review.
+- [x] verification-before-completion: świeże exit codes i liczby testów; checklisty oraz dokumentacja wykonania uzupełnione.
+- [x] Raport ograniczeń: beforeunload zależy od przeglądarki, retry nie przetrwa reloadu, brak próby na prawdziwym tablecie i brak nowej walidacji live speech.
 
 ## Stan workflow
 
 - [x] Spec zatwierdzona; trzy niezależne plany zapisane i samodzielnie przejrzane.
 - [x] Właściciel zaakceptował bezpośrednie wykonanie w tej rozmowie, bez delegacji.
-- [ ] Implementacja C z TDD i małymi commitami. B zakończone.
-- [ ] Pełny odbiór, audyt checklisty i raport. Obecny etap zmienia tylko dokumentację.
+- [x] Implementacja B i C z TDD i małymi commitami.
+- [x] Pełny odbiór, audyt checklisty i raport.

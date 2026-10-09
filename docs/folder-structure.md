@@ -45,6 +45,7 @@ Nazwy pakietów: @learning/contracts, @learning/kid-ui i @learning/server. apps/
 | apps/web/src/parent/DecksPanel.tsx | Lista zestawów, generowanie AI i tworzenie pustych szkiców |
 | apps/web/src/parent/deck-editor-state.ts | Migawka formularza, serializacja PATCH i porównanie kart |
 | apps/web/src/parent/DeckConflictPanel.tsx | Porównanie lokalnej i aktualnej wersji szkicu |
+| apps/web/src/parent/generation-request.ts | Walidacja potwierdzenia 202 i klasyfikacja definitywnych odrzuceń generacji |
 | apps/web/src/parent/useParentLeaveGuard.ts | Kontrola wyjścia z niezapisanej edycji rodzica |
 | apps/web/src/parent/LeaveEditorDialog.tsx | Dostępny dialog „Zostań / Opuść bez zapisu” |
 | apps/web/src/parent/ChildEditor.tsx | Profile i przypisania |

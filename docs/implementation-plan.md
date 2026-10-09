@@ -333,3 +333,17 @@ Kontrakt `updateChild(s: Services, childId: string, input: ChildPatch): Promise<
 ### Uzupełnienie: przygotowanie do sprawdzianu i izolacja runnerów (2026-10-09)
 
 Runner Vitest/Playwright przyjmuje walidowany `UMIEM_TEST_RUN_ID` oraz `UMIEM_E2E_PORT`, a kontener E2E, prefiks kontenerów integracyjnych i plik `.world` są rozdzielane dla danego przebiegu. Domena `test-preparation.ts` liczy lokalne okno od początku dnia sprawdzianu w IANA timezone, bez zakładania stałego offsetu ani 24-godzinnego dnia. Nowa sesja zapisuje datę z przypisania w prywatnym kontekście; scheduler korzysta z pieczętowanej historii ekspozycji, pozostawia należne sprawdzenia/wsparcie/poprawkę wyżej, wydaje pisemne Recall dla znanych słów i wstawia bezpieczne rozpoznawanie po dwóch kolejnych próbach przygotowawczych. Zadania generacji, POST Kid API, schemat bazy i DTO publiczne nie są zmieniane.
+
+### Uzupełnienie: ochrona zmian rodzica i ponawianie generacji (2026-10-09)
+
+Plan wykonania: `docs/superpowers/plans/2026-10-09-learning-and-parent-reliability.md`.
+Edycja zachowuje bazową rewizję i lokalne poprawki przy konflikcie; wyjście
+w stanie dirty wymaga decyzji rodzica. Generowanie po utracie odpowiedzi
+ponawia ten sam payload i klucz, waliduje oba UUID odpowiedzi 202 oraz otwiera
+otrzymany edytor niezależnie od odświeżenia listy. Nie dodano endpointu ani
+trwałego stanu klienta. E2E sprawdzają utraconą odpowiedź i jedną operację
+w PostgreSQL, uszkodzone potwierdzenia, błędy transportu/autoryzacji,
+podwójne kliknięcie, refresh fail i nowy klucz dla kolejnej generacji.
+Pełny odbiór 2026-10-09: unit 288/288, integration 139/139, E2E 54/54,
+typecheck sześciu projektów i produkcyjny build przeszły. Testowa baza
+potwierdziła jeden generation_run i jeden deck dla ponowionego klucza.
