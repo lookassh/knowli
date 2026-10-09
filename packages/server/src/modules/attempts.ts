@@ -37,6 +37,7 @@ import { loadPolicy } from "../policies/registry";
 import { lockTaskWithSession, writeSealedEvent, contextOf } from "./events";
 import { readSkillHistory } from "./skill-history";
 import { persistSkillProjection } from "./skill-projections";
+import { resolveTaskAssistance } from "../domain/task-assistance";
 
 /** Leniwa finalizacja przeterminowanych prób processing (arch §9.2a). */
 export const ATTEMPT_PROCESSING_TIMEOUT_MS = 60_000;
@@ -83,23 +84,23 @@ function answerKeyOf(task: TaskRow): AnswerKey {
  * dyskwalifikuje oceny samej wymowy — wsparciem jest tylko tam, gdzie ujawnia
  * rozwiązanie (zadania przypominania i pisowni).
  */
-async function assistanceFor(tx: Tx, task: TaskRow): Promise<AssistanceKind[]> {
-  const kinds: AssistanceKind[] = [];
-  if (task.exerciseType === "letter_completion") {
-    kinds.push("visible_letters");
-  }
+async function assistanceFor(tx: Tx, task: TaskRow, receivedAt: Date): Promise<AssistanceKind[]> {
   const disclosures = await tx
-    .select({ kind: learningEvents.kind })
+    .select({ kind: learningEvents.kind, occurredAt: learningEvents.occurredAt })
     .from(learningEvents)
     .where(and(eq(learningEvents.taskId, task.id), inArray(learningEvents.kind, ["audio_issued", "hint_issued"])));
-  for (const row of disclosures) {
-    if (row.kind === "hint_issued") {
-      kinds.push("answer_reveal");
-    } else if (RECALL_LIKE.has(task.exerciseType)) {
-      kinds.push("model_audio");
-    }
-  }
-  return [...new Set(kinds)];
+  const prompt = task.publicPrompt as { options?: { text?: string }[] };
+  const distinctChoiceCount = Array.isArray(prompt.options)
+    ? new Set(prompt.options.map((option) => (option.text ?? "").normalize("NFC").trim().toLocaleLowerCase())).size
+    : null;
+  return resolveTaskAssistance({
+    exerciseType: task.exerciseType as ExerciseType,
+    visibleLetterFragment: task.exerciseType === "letter_completion",
+    distinctChoiceCount,
+    disclosureKinds: disclosures
+      .filter((row) => row.occurredAt <= receivedAt)
+      .map((row) => row.kind as "audio_issued" | "hint_issued"),
+  });
 }
 
 /** Ostatnie ujawnienie rozwiązania elementu — także w innym ćwiczeniu (SPEC §18.1). */
@@ -445,7 +446,7 @@ export async function startAttempt(
       ? await lastExposureAt(tx, task.childId, targetKey)
       : null,
     firstTry: attemptNumber === 1,
-    assistance: await assistanceFor(tx, task),
+    assistance: await assistanceFor(tx, task, now),
     previousSessionContactAt: sessionContext.previousContact[itemId] ?? null,
     timezone: sessionContext.timezone,
   };

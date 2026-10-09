@@ -4,6 +4,7 @@ import {
   completePresentation,
   createChild,
   createDraft,
+  authorizeDisclosure,
   deleteChild,
   updateChild,
   ensureLearningPolicy,
@@ -165,11 +166,19 @@ async function sharedDeckForChildren(childIds: readonly string[]): Promise<{ dec
 }
 
 async function nextLearningExercise(childId: string, deckId: string, type: TaskDto["exerciseType"]): Promise<TaskDto> {
+  return (await openLearningExercise(childId, deckId, type)).task;
+}
+
+async function openLearningExercise(childId: string, deckId: string, type: TaskDto["exerciseType"]): Promise<{
+  services: ReturnType<typeof buildTestServices>["services"];
+  sessionId: string;
+  task: TaskDto;
+}> {
   const services = buildTestServices().services;
   const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
   for (let step = 0; step < 40; step++) {
     const task = (await nextTask(services, session.sessionId))!;
-    if (task.exerciseType === type) return task;
+    if (task.exerciseType === type) return { services, sessionId: session.sessionId, task };
     if (task.exerciseType === "exposure") await completePresentation(services, { taskId: task.taskId });
     else await answerCorrectly(task);
   }
@@ -241,6 +250,21 @@ describe("niezmienność historii prób (integracja)", () => {
       `select child_id from learning_app.assessments where skill = 'listening'`,
     );
     expect([...new Set(assessmentChildren.map((row) => row.child_id))].sort()).toEqual([childId, childB].sort());
+  });
+
+  it("kwalifikuje reading z audio jako wspomagane przy przyjęciu odpowiedzi", async () => {
+    const { deckId } = await sharedDeckForChildren([childId]);
+    const { services: sessionServices, task } = await openLearningExercise(childId, deckId, "reading");
+    await authorizeDisclosure(sessionServices, { taskId: task.taskId, kind: "audio" });
+    await answerCorrectly(task);
+
+    const assessment = await query<{ outcome: string; independent: boolean; confirmation_eligible: boolean }>(
+      `select a.outcome, a.independent, a.confirmation_eligible
+         from learning_app.assessments a join learning_app.attempts t on t.id = a.attempt_id
+        where t.task_id = $1 and a.skill = 'reading'`,
+      [task.taskId],
+    );
+    expect(assessment[0]).toMatchObject({ outcome: "correct", independent: false, confirmation_eligible: false });
   });
 
   it("zakończona próba jest niezmieniona, a oceny nie podlegają edycji ani wymianie", async () => {
