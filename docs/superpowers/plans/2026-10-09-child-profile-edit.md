@@ -156,3 +156,9 @@ Regresję dwóch niezależnych kontekstów przeglądarki rozszerzono o imię ze 
 Do gałęzi `feature/child-profile-edit` włączono `origin/main` = `015fb83`. Konflikt przeniesionego testu podsumowania rozwiązano zachowując kolejność z main i sprzątanie syntetycznego profilu. Weryfikacja po połączeniu: unit 243/243, PostgreSQL integration 128/128, E2E 23/23, typecheck i build exit 0. Pierwszy przebieg celowanego E2E miał błędnie escapowany grep i nie znalazł testów; poprawiony grep uruchomił właściwą regresję RED/GREEN.
 
 Właściciel wyraźnie zlecił scalanie z main i push po poprawnej weryfikacji. Wynik po scaleniu zostanie sprawdzony ponownie przed wypchnięciem; to zastępuje wcześniejsze ograniczenie tego zadania do lokalnego worktree. Nadal bez delegacji.
+
+### Weryfikacja po scaleniu do main
+
+Scalanie do lokalnego `main` utworzyło `68bc5f5`. Podczas pracy lokalny main zawierał już commit `312808d` z ręcznym tworzeniem zestawów. Konflikt `docs/implementation-plan.md` rozwiązano zachowując oba uzupełnienia; kod scalił się automatycznie. Dokładny wynik scalania zweryfikowano w `C:/Users/looka/IdeaProjects/knowli`: unit 246/246, integration PostgreSQL 135/135, pełne E2E 35/35, typecheck i produkcyjny build exit 0. Zwiększone liczby obejmują ręczne tworzenie zestawów i regresję edycji profilu ze spacjami. Przegląd poprawki i rozwiązania konfliktów nie wykazał dalszych problemów blokujących; bez niezależnego reviewera zgodnie z ustaleniem.
+
+Po weryfikacji na main doszedł commit `e800a9e`, zmieniający wyłącznie AGENTS.md. Potwierdzono brak różnic w kodzie aplikacji względem przetestowanego stanu. Niniejszy commit aktualizuje wyłącznie raport. Użyto finishing-a-development-branch z wcześniej udzieloną zgodą na merge i push; worktree zarządzane przez Codex pozostaje zachowane zgodnie z regułą skilla dla workspace należącego do hosta.
