@@ -248,6 +248,29 @@ describe("selectTask — wsparcie po dwóch błędach (SPEC §16)", () => {
     });
     expect(selectTask(input({ candidates: [settled], peers: [peer(settled)], nextOrdinal: 8 }))?.reason).not.toBe("retry-after-support");
   });
+
+  it("uzupełnia historycznie brakujący kierunek reading przed rotacją sesji", () => {
+    const target = candidate({
+      progress: { reading: { status: "learning", nextReviewAt: PAST, streak: 3 } },
+      readingEvidenceDirections: { target_to_source: 3, source_to_target: 0 },
+    });
+    const plan = selectTask(input({ candidates: [target], peers: [peer(target)], nextOrdinal: 2 }));
+    expect(plan).toMatchObject({ exerciseType: "reverse_recognition", direction: "source_to_target" });
+  });
+
+  it("gdy oba kierunki są już potwierdzone, wybiera mniej ćwiczony w tej sesji", () => {
+    const target = candidate({
+      progress: { reading: { status: "mastered", nextReviewAt: "2026-11-07T16:00:00.000Z", streak: 3 } },
+      introducedSkills: { recall: true, pronunciation: true },
+      usedThisSession: 1,
+      readingEvidenceDirections: { target_to_source: 1, source_to_target: 2 },
+      readingDirections: { source_to_target: 1 },
+    });
+    const plan = selectTask(input({
+      candidates: [target], peers: [peer(target)], nextOrdinal: 2,
+    }));
+    expect(plan).toMatchObject({ exerciseType: "reading", direction: "target_to_source" });
+  });
 });
 
 describe("selectTask — wprowadzanie kolejnych etapów (SPEC §13)", () => {

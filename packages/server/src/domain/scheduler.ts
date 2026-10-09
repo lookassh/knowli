@@ -262,10 +262,17 @@ function listeningOptions(
   ];
 }
 
-/** Kierunek reading o mniejszej liczbie wystąpień; remis: target_to_source. */
-function weakerDirection(directions: Partial<Record<ReadingDirection, number>>): ReadingDirection {
-  const t2s = directions.target_to_source ?? 0;
-  const s2t = directions.source_to_target ?? 0;
+/** Wypełnia brakujący dowód; gdy historia nie rozstrzyga, rotuje sesję. */
+export function chooseReadingDirection(
+  evidence: Partial<Record<ReadingDirection, number>>,
+  sessionCounts: Partial<Record<ReadingDirection, number>>,
+): ReadingDirection {
+  const t2sEvidence = evidence.target_to_source ?? 0;
+  const s2tEvidence = evidence.source_to_target ?? 0;
+  if (t2sEvidence === 0 && s2tEvidence > 0) return "target_to_source";
+  if (s2tEvidence === 0 && t2sEvidence > 0) return "source_to_target";
+  const t2s = sessionCounts.target_to_source ?? 0;
+  const s2t = sessionCounts.source_to_target ?? 0;
   return s2t < t2s ? "source_to_target" : "target_to_source";
 }
 
@@ -597,7 +604,7 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
   if (dueSkill) {
     if (dueSkill.skill === "reading") {
       const target = dueSkill.candidate;
-      const direction = weakerDirection(target.readingDirections);
+      const direction = chooseReadingDirection(target.readingEvidenceDirections ?? {}, target.readingDirections);
       if (direction === "source_to_target") {
         const distractors = pickDistractors(target, input.peers, reserved, 2, input.nextOrdinal);
         return {
@@ -709,7 +716,7 @@ function recognitionPlan(
       keepsReservations,
     };
   }
-  const direction = weakerDirection(target.readingDirections);
+  const direction = chooseReadingDirection(target.readingEvidenceDirections ?? {}, target.readingDirections);
   if (direction === "source_to_target") {
     const distractors = pickDistractors(target, input.peers, reserved, 2, input.nextOrdinal);
     return {
