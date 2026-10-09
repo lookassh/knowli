@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import {
   createChild,
+  updateChild,
   deleteChild,
   isParentSetupRequired,
   listChildren,
@@ -34,6 +35,7 @@ import {
 } from "../../apps/web/src/app/api/v1/parent/children/route";
 import {
   DELETE as deleteChildRoute,
+  PATCH as updateChildRoute,
 } from "../../apps/web/src/app/api/v1/parent/children/[id]/route";
 import { POST as setup } from "../../apps/web/src/app/api/v1/parent/setup/route";
 import { POST as logout } from "../../apps/web/src/app/api/v1/parent/logout/route";
@@ -195,6 +197,67 @@ describe("auth i profile dzieci (integracja)", () => {
     await deleteChild(services, child.id);
     expect(await listChildren(services)).toEqual([]);
     await expectAppError(deleteChild(services, child.id), "not_found");
+  });
+
+  it("edycja profilu aktualizuje tylko dostarczone pola", async () => {
+    const { services } = buildTestServices();
+    const child = await createChild(services, { displayName: "Ola", avatarKey: "fox", birthYear: 2018 });
+    expect(await updateChild(services, child.id, { displayName: "  Ala  " })).toEqual({ ...child, displayName: "Ala" });
+    expect(await updateChild(services, child.id, { avatarKey: "cat" })).toEqual({ ...child, displayName: "Ala", avatarKey: "cat" });
+    expect(await updateChild(services, child.id, { displayName: "Ewa", avatarKey: "owl" }))
+      .toEqual({ ...child, displayName: "Ewa", avatarKey: "owl" });
+  });
+
+  it("dwaj klienci edytują różne pola, a edycja po usunięciu nie odtwarza profilu", async () => {
+    const { services } = buildTestServices();
+    const child = await createChild(services, { displayName: "Ola", avatarKey: "fox" });
+    const other = openRestartedServices();
+    try {
+      await Promise.all([
+        updateChild(services, child.id, { displayName: "Ala" }),
+        updateChild(other.services, child.id, { avatarKey: "panda" }),
+      ]);
+      expect(await listChildren(services)).toEqual([{ ...child, displayName: "Ala", avatarKey: "panda" }]);
+      await deleteChild(other.services, child.id);
+      await expectAppError(updateChild(services, child.id, { displayName: "Ewa" }), "not_found");
+      expect(await listChildren(services)).toEqual([]);
+    } finally {
+      await other.dispose();
+    }
+  });
+
+  it("PATCH profilu chroni sesję, Origin, walidację i pola prywatne", async () => {
+    const { services } = buildTestServices();
+    await setupParent(services, "pin-edit");
+    const child = await createChild(services, { displayName: "Ala", avatarKey: "fox", birthYear: 2018 });
+    const cookie = sessionCookieFrom(await login(jsonRequest("/api/v1/parent/login", "POST", { secret: "pin-edit" }, { origin: BASE })));
+    const path = `/api/v1/parent/children/${child.id}`;
+    const authHeaders = { cookie, origin: BASE };
+    for (const [headers, status] of [
+      [{ origin: BASE }, 401],
+      [{ cookie, origin: "https://evil.example" }, 403],
+      [{ ...authHeaders, "sec-fetch-site": "cross-site" }, 403],
+    ] as const) {
+      const response = await updateChildRoute(jsonRequest(path, "PATCH", { displayName: "Ewa" }, headers), childRouteContext(child.id));
+      expect(response.status).toBe(status);
+      expect(await listChildren(services)).toEqual([child]);
+    }
+    for (const body of [{}, null, { displayName: " " }, { avatarKey: "" }, { displayName: 1 },
+      { displayName: "a".repeat(81) }, { avatarKey: "a".repeat(41) },
+      { displayName: "Ewa", id: randomUUID() }, { displayName: "Ewa", birthYear: 2019 },
+      { displayName: "Ewa", policyId: "learning-v2" }]) {
+      const response = await updateChildRoute(jsonRequest(path, "PATCH", body, authHeaders), childRouteContext(child.id));
+      expect(response.status).toBe(400);
+      expect(await listChildren(services)).toEqual([child]);
+    }
+    const brokenJson = new Request(`${BASE}${path}`, { method: "PATCH", headers: { ...authHeaders, "content-type": "application/json" }, body: "{" });
+    expect((await updateChildRoute(brokenJson, childRouteContext(child.id))).status).toBe(400);
+    expect((await updateChildRoute(jsonRequest(path, "PATCH", { avatarKey: "cat" }, authHeaders), childRouteContext("invalid"))).status).toBe(400);
+    expect((await updateChildRoute(jsonRequest(path, "PATCH", { avatarKey: "cat" }, authHeaders), childRouteContext(randomUUID()))).status).toBe(404);
+    expect(await listChildren(services)).toEqual([child]);
+    const ok = await updateChildRoute(jsonRequest(path, "PATCH", { displayName: "  Ewa  ", avatarKey: "owl" }, authHeaders), childRouteContext(child.id));
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toEqual({ ...child, displayName: "Ewa", avatarKey: "owl" });
   });
 
   it("DELETE profilu przez API wymaga sesji i tego samego Origin; nieznany profil daje 404", async () => {

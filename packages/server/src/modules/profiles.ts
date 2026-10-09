@@ -2,12 +2,14 @@ import { randomUUID } from "node:crypto";
 import { asc, eq, like, sql } from "drizzle-orm";
 import {
   ChildInputSchema,
+  ChildPatchSchema,
   PronunciationBandsInputSchema,
   PronunciationSettingsDtoSchema,
   toChildDto,
   UuidSchema,
   type ChildDto,
   type ChildInput,
+  type ChildPatch,
   type PronunciationSettingsDto,
 } from "@learning/contracts";
 import { childProfiles, learningPolicies } from "../db/schema";
@@ -35,6 +37,18 @@ export async function createChild(services: Services, input: ChildInput): Promis
     })
     .returning();
   return toChildDto(row!);
+}
+
+/** Zmienia dane wyświetlane, zachowując tożsamość i historię dziecka. */
+export async function updateChild(services: Services, childId: string, input: ChildPatch): Promise<ChildDto> {
+  const id = UuidSchema.parse(childId);
+  const valid = ChildPatchSchema.parse(input);
+  const [row] = await services.db.update(childProfiles).set({
+    ...(valid.displayName !== undefined ? { displayName: valid.displayName } : {}),
+    ...(valid.avatarKey !== undefined ? { avatarKey: valid.avatarKey } : {}),
+  }).where(eq(childProfiles.id, id)).returning();
+  if (!row) throw new AppError("not_found");
+  return toChildDto(row);
 }
 
 /**

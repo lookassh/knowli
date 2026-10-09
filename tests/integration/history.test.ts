@@ -5,6 +5,9 @@ import {
   createChild,
   createDraft,
   deleteChild,
+  updateChild,
+  ensureLearningPolicy,
+  CURRENT_POLICY_ID,
   nextTask,
   publishDraft,
   startSession,
@@ -268,5 +271,31 @@ describe("niezmienność historii prób (integracja)", () => {
     expect((await query<{ count: number }>(`select count(*)::int as count from learning_app.learning_items`))[0]!.count).toBe(
       itemCount[0]!.count,
     );
+  });
+
+  it("edycja profilu zachowuje całą historię, materiał i politykę sesji", async () => {
+    const services = buildTestServices().services;
+    await ensureLearningPolicy(services.db);
+    await pool.query("update learning_app.child_profiles set birth_year = 2018, policy_id = $1 where id = $2", [CURRENT_POLICY_ID, childId]);
+    await sessionWithAttempt(childId);
+    const otherId = (await createChild(services, { displayName: "Jan", avatarKey: "cat" })).id;
+    await sessionWithAttempt(otherId);
+    const tables = ["learning_sessions", "session_tasks", "attempts", "assessments", "learning_events",
+      "event_exposures", "child_skill_progress", "assignments", "decks", "deck_versions", "learning_items",
+      "item_revisions", "skill_versions", "item_revision_skills", "learning_policies"];
+    const snapshot = async () => Promise.all(tables.map(async (table) => {
+      const rows = await query(`select * from learning_app.${table} order by to_jsonb(${table})::text`);
+      expect(rows.length, table).toBeGreaterThan(0);
+      return rows;
+    }));
+    const profileBefore = await query<Record<string, unknown>>("select * from learning_app.child_profiles where id = $1", [childId]);
+    const otherBefore = await query("select * from learning_app.child_profiles where id = $1", [otherId]);
+    const before = await snapshot();
+    expect(await updateChild(services, childId, { displayName: "Ala", avatarKey: "panda" }))
+      .toEqual({ id: childId, displayName: "Ala", avatarKey: "panda", birthYear: 2018 });
+    expect(await snapshot()).toEqual(before);
+    expect(await query("select * from learning_app.child_profiles where id = $1", [otherId])).toEqual(otherBefore);
+    expect(await query("select * from learning_app.child_profiles where id = $1", [childId]))
+      .toEqual([{ ...profileBefore[0], display_name: "Ala", avatar_key: "panda" }]);
   });
 });
