@@ -12,7 +12,7 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: "Umiem!",
     description: "Krótkie sesje nauki dla dziecka",
     lang: "pl-PL",
-    start_url: "/learn",
+    start_url: "/",
     scope: "/",
     display: "standalone",
     orientation: "portrait",
