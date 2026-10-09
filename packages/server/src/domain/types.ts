@@ -170,6 +170,12 @@ export interface SkillGrade {
   details?: SkillGradeDetails;
 }
 
+/** Fragmenty wymowy pokazywane dziecku (design 2026-10-09) — bez liczb. */
+export interface SpeechFragment {
+  text: string;
+  verdict: "good" | "almost";
+}
+
 /** Wynik próby: oceny per umiejętność + kwalifikacja samej próby. */
 export interface Grade {
   skills: Partial<Record<Skill, SkillGrade>>;
@@ -181,6 +187,7 @@ export interface Grade {
    * rozbieżność domyka zadanie bez ocen wiedzy (§15.3 kontynuowanie).
    */
   speechAttempt?: { contentMatched: boolean };
+  speechFragments?: SpeechFragment[];
 }
 
 /**
