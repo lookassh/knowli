@@ -37,11 +37,12 @@ Nazwy pakietów: @learning/contracts, @learning/kid-ui i @learning/server. apps/
 | apps/web/src/app/api/v1/media/[id]/route.ts | Odczyt autoryzowanego zasobu |
 | apps/web/src/app/api/health/route.ts | Liveness i readiness web (proces + baza) dla Compose |
 | apps/web/src/app/manifest.ts | Manifest PWA |
-| apps/web/src/http/parent-router.ts | Jawna tabela endpointów rodzica |
+| apps/web/src/parent/parent-router.ts | Jawna tabela endpointów rodzica |
 | apps/web/src/http/kid-router.ts | Jawna tabela endpointów dziecka |
 | apps/web/src/http/errors.ts | Jednolity format błędów i requestId |
 | apps/web/src/http/security.ts | Sesja, Origin/CSRF, limity żądań |
 | apps/web/src/parent/DeckEditor.tsx | Formularz szkicu, warianty i zasoby |
+| apps/web/src/parent/DecksPanel.tsx | Lista zestawów, generowanie AI i tworzenie pustych szkiców |
 | apps/web/src/parent/ChildEditor.tsx | Profile i przypisania |
 | apps/web/src/parent/ProgressPanel.tsx | Widok postępu i pomyłek |
 | apps/web/src/composition.ts | Złożenie zależności serwerowych dla web |
