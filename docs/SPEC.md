@@ -67,11 +67,11 @@ Wybór profilu jest wyborem ucznia, nie mechanizmem silnego uwierzytelnienia.
 
 ### Nawigacja rodzic ↔ dziecko
 
-- Adres `/` otwiera wyłącznie panel rodzica, a `/learn` aplikację dziecka.
+- Adres `/` otwiera aplikację dziecka (ekran wyboru profilu), a `/parent` panel rodzica.
 - Panel rodzica udostępnia przy każdym profilu link rozpoczynający naukę tego dziecka. Prowadzi on do `/kids/{childId}/learn`, gdzie `childId` jest trwałym identyfikatorem profilu, a nie jego zmienną nazwą wyświetlaną.
 - Wejście przez `/kids/{childId}/learn` wybiera wskazany istniejący profil bez dodatkowego ekranu wyboru. Nieistniejący lub usunięty profil prowadzi do wyboru dostępnego profilu.
-- `/learn` pozostaje wspólnym wejściem do nauki: przy wielu profilach pokazuje wybór dziecka, a przy jednym pomija go.
-- Interfejs dziecka nie udostępnia przejścia do panelu rodzica.
+- Adres `/` stanowi wspólne wejście do nauki: zawsze pokazuje wybór profilu dziecka, także przy jednym profilu.
+- Ekrany wyboru profilu oraz talii dziecka udostępniają link „Strefa rodzica” prowadzący do `/parent`. W trakcie trwania sesji ćwiczeń link ten jest ukryty, by nie rozpraszać dziecka. Panel rodzica udostępnia link powrotny „Do nauki” prowadzący do `/`.
 
 ## 5. Parent Mode — MVP
 
@@ -795,7 +795,7 @@ Rodzic widzi, że dziecko rozpoznaje większość słów, samodzielnie przypomin
 | A37 | Dziecko ćwiczy pisownię na docelowym telefonie/tablecie | Ustawienia pola ograniczają podpowiedzi klawiatury; pozostałe ograniczenia platformy są znane. |
 | A38 | Powstaje zestaw obiektów i czynności | Aplikacja generuje ilustracje przez skonfigurowany provider, a rodzic je przegląda. |
 | A39 | Generowanie ilustracji zawodzi | Rodzic może ponowić próbę lub zatwierdzić kartę bez obrazu; nauka pozostaje dostępna. |
-| A40 | Rodzic rozpoczyna naukę z profilu dziecka | Link przy profilu otwiera `/kids/{childId}/learn` i wybiera to dziecko; `/learn` nadal umożliwia wybór profilu, a interfejs dziecka nie prowadzi do panelu rodzica. |
+| A40 | Rodzic rozpoczyna naukę z profilu dziecka | Link przy profilu otwiera `/kids/{childId}/learn` i wybiera to dziecko; `/` umożliwia wybór profilu z linkiem do panelu rodzica `/parent`, ukrytym podczas ćwiczeń. |
 
 ## 33. Następny krok po zatwierdzeniu specyfikacji
 

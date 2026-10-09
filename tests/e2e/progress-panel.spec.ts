@@ -53,7 +53,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 768, height: 1024
       else throw new Error(`Nieoczekiwane API: ${url.pathname}`);
       await route.fulfill({ json: body });
     });
-    await page.goto("/");
+    await page.goto("/parent");
     await page.getByTestId("tab-progress").click();
     await page.getByTestId("progress-load").click();
     const list = page.getByRole("region", { name: "Wszystkie słowa" });

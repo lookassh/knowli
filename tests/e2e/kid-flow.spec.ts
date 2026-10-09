@@ -169,7 +169,7 @@ function escapeRegex(text: string): string {
  * Czekamy na hydratację — zaraz po goto widać jeszcze ekran ładowania.
  */
 async function openLearn(page: Page, childName: string): Promise<void> {
-  await page.goto("/learn");
+  await page.goto("/");
   await page.waitForSelector('[data-testid="kid-profile"], [data-testid="kid-deck"]', { timeout: 30_000 });
   if ((await page.getByTestId("kid-profile").count()) > 0) {
     await page.getByTestId("kid-profile").filter({ hasText: childName }).first().click();
@@ -271,11 +271,11 @@ test("jeden profil pomija wybór i prowadzi sesję do obiecanego końca", async 
   const manifest = await (await page.request.get("/manifest.webmanifest")).json();
   expect(manifest.name).toBe("Umiem!");
   expect(manifest.lang).toBe("pl-PL");
-  expect(manifest.start_url).toBe("/learn");
+  expect(manifest.start_url).toBe("/");
   const icon192 = manifest.icons.find((icon: { sizes: string }) => icon.sizes.includes("192"));
   expect(icon192).toBeDefined();
   expect((await page.request.get(icon192.src)).status()).toBe(200);
-  await page.goto("/learn");
+  await page.goto("/");
   expect(
     await page.evaluate(() =>
       (navigator as unknown as NavigatorWithServiceWorker).serviceWorker
@@ -284,9 +284,11 @@ test("jeden profil pomija wybór i prowadzi sesję do obiecanego końca", async 
     ),
   ).toBe(0);
 
-  // pojedynczy profil pomija ekran wyboru — od razu zestawy
+  // pojedynczy profil pokazuje ekran wyboru profilu z linkiem do rodzica
+  await expect(page.getByTestId("kid-profile").filter({ hasText: "Ola" })).toBeVisible();
+  await expect(page.getByTestId("kid-parent-link")).toBeVisible();
+  await page.getByTestId("kid-profile").filter({ hasText: "Ola" }).click();
   await expect(page.getByTestId("kid-deck").first()).toBeVisible();
-  await expect(page.getByTestId("kid-profile")).toHaveCount(0);
   await page.getByTestId("kid-deck").first().click();
 
   let sawRemaining = false;
@@ -502,7 +504,7 @@ test("dwa profile mają osobne sesje", async ({ page }) => {
   const assign = await parent.put(`/api/v1/parent/assignments/${ewa.id}/${deckId}`, { data: { testDate: null } });
   expect(assign.status()).toBe(204);
 
-  await page.goto("/learn");
+  await page.goto("/");
   await expect(page.getByRole("heading", { name: "Kto się dziś uczy?" })).toBeVisible();
   expect(await page.getByTestId("kid-profile").count()).toBeGreaterThanOrEqual(2);
   await expect(page.getByTestId("kid-profile").filter({ hasText: "Zosia" })).toHaveCount(1);
@@ -602,7 +604,7 @@ test("recall z należnego sprawdzenia: pisemna pisownia, Nie pamiętam i Pomiń"
   expect(task3[0]!.state).toBe("skipped");
 
   // A22: rodzic widzi osobno przypominanie, pisownię i brak oceny wymowy
-  await page.goto("/");
+  await page.goto("/parent");
   await page.getByTestId("tab-progress").click();
   await page.getByTestId("progress-child").selectOption({ label: "Cezary" });
   await page.getByTestId("progress-deck").selectOption({ label: "Dni tygodnia dla Cezarego" });

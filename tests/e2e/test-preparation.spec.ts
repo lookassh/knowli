@@ -122,7 +122,7 @@ test("termin sprawdzianu prowadzi do pisemnego Recall przed nowym materiałem be
 
   const testDate = localTestDate();
   expect((await parent.put(`/api/v1/parent/assignments/${child.id}/${deckId}`, { data: { testDate } })).status()).toBe(204);
-  await page.goto("/learn");
+  await page.goto("/");
   await page.waitForSelector('[data-testid="kid-profile"], [data-testid="kid-deck"]', { timeout: 30_000 });
   if (await page.getByTestId("kid-profile").count()) {
     await page.getByTestId("kid-profile").filter({ hasText: child.displayName }).click();

@@ -20,7 +20,7 @@ async function pool(): Promise<WorldPool> {
 }
 
 async function enterParent(page: Page): Promise<void> {
-  await page.goto("/");
+  await page.goto("/parent");
   await page.getByTestId("auth-secret").fill("1234");
   await page.getByTestId("auth-submit").click();
   await expect(page.getByTestId("tab-decks")).toBeVisible();
