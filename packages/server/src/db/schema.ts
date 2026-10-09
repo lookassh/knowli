@@ -69,6 +69,8 @@ export const childProfiles = app.table(
     displayName: text("display_name").notNull(),
     avatarKey: text("avatar_key").notNull(),
     birthYear: smallint("birth_year"),
+    // własna wersja polityki dziecka (design 2026-10-09); null = bieżąca globalna
+    policyId: text("policy_id").references((): AnyPgColumn => learningPolicies.id),
     createdAt: timestamps("created_at").notNull().defaultNow(),
   },
   (t) => [

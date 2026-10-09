@@ -5,6 +5,7 @@ import {
   createChild,
   createDraft,
   createServices,
+  ensureLearningPolicy,
   nextTask,
   publishDraft,
   readAttempt,
@@ -362,6 +363,9 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
   });
 
   it("poprawne słowo ustnie zalicza Recall; wynik wymowy zapisuje się bez oceny bez pasm", async () => {
+    // ścieżka polityki bez pasm — v2 ma domyślnie pasma 70/50 (design 2026-10-09)
+    await ensureLearningPolicy(baseServices.db);
+    await pool.query(`update learning_app.child_profiles set policy_id = 'learning-v1' where id = $1`, [childId]);
     const { deckId, versionId } = await publishDeckWithAssignment(baseServices, childId, ITEMS);
     const fakes = makeFakes(clock);
     const services = speechServices(clock, fakes);
@@ -596,6 +600,9 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
   });
 
   it("ćwiczenie wymowy ocenia samą wymowę i pokazuje słowo bez psucia samodzielności", async () => {
+    // ścieżka polityki bez pasm — v2 ma domyślnie pasma 70/50 (design 2026-10-09)
+    await ensureLearningPolicy(baseServices.db);
+    await pool.query(`update learning_app.child_profiles set policy_id = 'learning-v1' where id = $1`, [childId]);
     const { deckId, versionId } = await publishDeckWithAssignment(baseServices, childId, ITEMS);
     const fakes = makeFakes(clock);
     const services = speechServices(clock, fakes);

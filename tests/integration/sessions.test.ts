@@ -947,3 +947,60 @@ describe("wprowadzanie kolejnych etapów (SPEC §13)", () => {
     await endSession(services, session.sessionId);
   });
 });
+
+describe("polityka per dziecka (design 2026-10-09)", () => {
+  let services: ReturnType<typeof buildTestServices>["services"];
+  let childId: string;
+
+  beforeEach(async () => {
+    await truncateCoreTables();
+    await pool.query(
+      `truncate learning_app.revision_assets, learning_app.media_assets, learning_app.item_revision_skills,
+              learning_app.item_revisions, learning_app.skill_versions, learning_app.learning_items,
+              learning_app.deck_versions, learning_app.decks cascade`,
+    );
+    const built = buildTestServices();
+    services = built.services;
+    const child = await createChild(services, { displayName: "Ola", avatarKey: "fox" });
+    childId = child.id;
+  });
+
+  it("nowa sesja przypina learning-v2 z pasmami 70/50", async () => {
+    const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 2));
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: true });
+    const row = (
+      await query<{ policy_id: string }>(
+        `select policy_id from learning_app.learning_sessions where id = $1`,
+        [session.sessionId],
+      )
+    )[0]!;
+    expect(row.policy_id).toBe("learning-v2");
+    const config = (
+      await query<{ config: Record<string, unknown> }>(
+        `select config from learning_app.learning_policies where id = 'learning-v2'`,
+      )
+    )[0]!;
+    expect(config.config).toMatchObject({
+      pronunciationBands: {
+        "azure-pronunciation": { correctMinScore: 70, partialMinScore: 50 },
+        "fake-pron": { correctMinScore: 70, partialMinScore: 50 },
+      },
+    });
+  });
+
+  it("własna polityka profilu wygrywa z domyślną", async () => {
+    const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 2));
+    await query(
+      `update learning_app.child_profiles set policy_id = 'learning-v1' where id = $1`,
+      [childId],
+    );
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const row = (
+      await query<{ policy_id: string }>(
+        `select policy_id from learning_app.learning_sessions where id = $1`,
+        [session.sessionId],
+      )
+    )[0]!;
+    expect(row.policy_id).toBe("learning-v1");
+  });
+});

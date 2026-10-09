@@ -5,6 +5,7 @@ import { learningPolicies } from "../db/schema";
 import { AppError } from "../errors";
 import type { Policy } from "../domain/types";
 import { LEARNING_V1_POLICY } from "./learning-v1";
+import { LEARNING_V2_POLICY } from "./learning-v2";
 
 /** Kształt JSON polityki w learning_policies — walidowany przy każdym odczycie. */
 export const PolicyConfigSchema = z.object({
@@ -24,18 +25,21 @@ export const PolicyConfigSchema = z.object({
   ),
 });
 
-/** Identyfikator bieżącej polityki — przypinany do nowych sesji. */
-export const CURRENT_POLICY_ID = LEARNING_V1_POLICY.version;
+/** Identyfikator bieżącej polityki — przypinany do nowych sesji bez własnej polityki dziecka. */
+export const CURRENT_POLICY_ID = LEARNING_V2_POLICY.version;
 
 /**
- * Wstawia learning-v1, gdy jej jeszcze nie ma (idempotentnie). Registry jest
- * jedynym źródłem konfiguracji: stała TS, a nie ręczny SQL w migracji.
+ * Wstawia learning-v1 i learning-v2 idempotentnie, gdy ich jeszcze nie ma.
+ * Registry jest jedynym źródłem konfiguracji: stała TS, a nie ręczny SQL
+ * w migracji. v1 zostaje dla sesji przypiętych przed wprowadzeniem v2.
  */
 export async function ensureLearningPolicy(exec: Executor): Promise<void> {
-  await exec
-    .insert(learningPolicies)
-    .values({ id: CURRENT_POLICY_ID, config: PolicyConfigSchema.parse(LEARNING_V1_POLICY) as unknown as Record<string, unknown> })
-    .onConflictDoNothing({ target: learningPolicies.id });
+  for (const policy of [LEARNING_V1_POLICY, LEARNING_V2_POLICY]) {
+    await exec
+      .insert(learningPolicies)
+      .values({ id: policy.version, config: PolicyConfigSchema.parse(policy) as unknown as Record<string, unknown> })
+      .onConflictDoNothing({ target: learningPolicies.id });
+  }
 }
 
 /** Odczytuje i waliduje przypiętą politykę; sesja nigdy nie działa na nieznanej wersji. */

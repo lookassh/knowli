@@ -22,6 +22,13 @@
       "when": 1791365548000,
       "tag": "0002_progress_needs_reconfirmation",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791528293426,
+      "tag": "0003_child_policy",
+      "breakpoints": true
     }
   ]
 }

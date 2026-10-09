@@ -397,8 +397,9 @@ describe("panel postępów rodzica (integracja)", () => {
     expect(progress.pronunciation.assessed).toBe(true);
     const scores = [...progress.pronunciation.latestScores].sort((a, b) => a.target.localeCompare(b.target));
     expect(scores).toEqual([
-      { target: "Thursday", provider: "fake-pron", score: 95, assessedAt: expect.any(String) },
-      { target: "Tuesday", provider: "fake-pron", score: 40, assessedAt: expect.any(String) },
+      // pasma v2 (design 2026-10-09): 95 → correct, 40 → below
+      { target: "Thursday", provider: "fake-pron", score: 95, band: "correct", assessedAt: expect.any(String) },
+      { target: "Tuesday", provider: "fake-pron", score: 40, band: "below", assessedAt: expect.any(String) },
     ]);
     // żadnej uśrednionej wartości z nieporównywalnych skal
     expect(scores.some((s) => s.score === 67.5)).toBe(false);

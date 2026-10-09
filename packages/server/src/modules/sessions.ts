@@ -236,6 +236,10 @@ export async function startSession(services: Services, input: SessionInput): Pro
       await tx.select().from(deckVersions).where(eq(deckVersions.id, deck.publishedVersionId))
     )[0]!;
     await ensureLearningPolicy(tx);
+    // polityka per dziecko (design 2026-10-09): własna wersja profilu albo bieżąca globalna
+    const childProfile = (
+      await tx.select({ policyId: childProfiles.policyId }).from(childProfiles).where(eq(childProfiles.id, valid.childId))
+    )[0];
     const context: SessionContextShape = {
       timezone: await readTimezone(tx),
       previousContact: await previousContactSnapshot(tx, valid.childId, version.id, now),
@@ -251,7 +255,7 @@ export async function startSession(services: Services, input: SessionInput): Pro
         assignmentId: assignment.id,
         deckId: valid.deckId,
         deckVersionId: version.id,
-        policyId: CURRENT_POLICY_ID,
+        policyId: childProfile?.policyId ?? CURRENT_POLICY_ID,
         microphoneEnabled: valid.microphoneEnabled,
         state: "active",
         taskBudget: DEFAULT_TASK_BUDGET,
