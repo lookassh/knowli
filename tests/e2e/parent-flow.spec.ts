@@ -21,12 +21,12 @@ function isoDate(daysAhead: number): string {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
-async function profileForEditing(page: Page, avatarKey = "fox") {
+async function profileForEditing(page: Page, avatarKey = "fox", paddedName = false) {
   await page.goto("/");
   await page.getByTestId("auth-secret").fill("1234");
   await page.getByTestId("auth-submit").click();
   await expect(page.getByTestId("tab-children")).toBeVisible();
-  const name = `Edycja-${randomUUID()}`;
+  const name = `${paddedName ? "  " : ""}Edycja-${randomUUID()}${paddedName ? "  " : ""}`;
   const response = await page.request.post("/api/v1/parent/children", {
     data: { displayName: name, avatarKey, birthYear: 2018 },
   });
@@ -123,34 +123,37 @@ test("edycja profilu: błąd zapisu zachowuje wartości i pozwala ponowić", asy
   await expect(row.getByTestId("child-edit-name")).toHaveCount(0);
 });
 
-test("edycja profilu: dwie przeglądarki zachowują zmiany różnych pól", async ({ page, browser }) => {
-  const { child, row, path } = await profileForEditing(page);
-  const secondContext = await browser.newContext({ storageState: await page.context().storageState() });
-  try {
-    const secondPage = await secondContext.newPage();
-    await secondPage.goto("http://127.0.0.1:24500/");
-    await secondPage.getByTestId("tab-children").click();
-    const secondRow = secondPage.locator('li[data-testid^="child-row-"]')
-      .filter({ has: secondPage.locator(`a[href="/kids/${child.id}/learn"]`) });
-    await row.getByTestId("child-edit").click();
-    await secondRow.getByTestId("child-edit").click();
-    await row.getByTestId("child-edit-name").fill("Nowe imię");
-    await row.getByTestId("child-edit-save").click();
-    await expect(row).toContainText("Nowe imię");
-    // Drugi formularz nadal ma starą nazwę, ale zmienia wyłącznie awatar.
-    await expect(secondRow.getByTestId("child-edit-name")).toHaveValue(child.displayName);
-    await secondRow.getByTestId("child-edit-avatar").selectOption("panda");
-    const request = secondPage.waitForRequest((request) => request.method() === "PATCH" && new URL(request.url()).pathname === path);
-    await secondRow.getByTestId("child-edit-save").click();
-    expect((await request).postDataJSON()).toEqual({ avatarKey: "panda" });
-    await expect(secondRow).toContainText("Nowe imię");
-    const list = await (await secondPage.request.get("/api/v1/parent/children")).json();
-    expect(list.find((value: { id: string }) => value.id === child.id))
-      .toEqual({ ...child, displayName: "Nowe imię", avatarKey: "panda" });
-  } finally {
-    await secondContext.close();
-  }
-});
+for (const paddedName of [false, true]) {
+  test(`edycja profilu: dwie przeglądarki zachowują zmiany różnych pól (${paddedName ? "spacje" : "bez spacji"})`, async ({ page, browser }) => {
+    const { child, row, path } = await profileForEditing(page, "fox", paddedName);
+    const secondContext = await browser.newContext({ storageState: await page.context().storageState() });
+    try {
+      const secondPage = await secondContext.newPage();
+      await secondPage.goto("http://127.0.0.1:24500/");
+      await secondPage.getByTestId("tab-children").click();
+      const secondRow = secondPage.locator('li[data-testid^="child-row-"]')
+        .filter({ has: secondPage.locator(`a[href="/kids/${child.id}/learn"]`) });
+      await row.getByTestId("child-edit").click();
+      await secondRow.getByTestId("child-edit").click();
+      await expect(secondRow.getByTestId("child-edit-save")).toBeDisabled();
+      await row.getByTestId("child-edit-name").fill("Nowe imię");
+      await row.getByTestId("child-edit-save").click();
+      await expect(row).toContainText("Nowe imię");
+      // Drugi formularz nadal ma starą nazwę, ale zmienia wyłącznie awatar.
+      await expect(secondRow.getByTestId("child-edit-name")).toHaveValue(child.displayName);
+      await secondRow.getByTestId("child-edit-avatar").selectOption("panda");
+      const request = secondPage.waitForRequest((request) => request.method() === "PATCH" && new URL(request.url()).pathname === path);
+      await secondRow.getByTestId("child-edit-save").click();
+      expect((await request).postDataJSON()).toEqual({ avatarKey: "panda" });
+      await expect(secondRow).toContainText("Nowe imię");
+      const list = await (await secondPage.request.get("/api/v1/parent/children")).json();
+      expect(list.find((value: { id: string }) => value.id === child.id))
+        .toEqual({ ...child, displayName: "Nowe imię", avatarKey: "panda" });
+    } finally {
+      await secondContext.close();
+    }
+  });
+}
 
 test("edycja profilu: udany zapis i błąd odświeżenia mają osobny komunikat", async ({ page }) => {
   const { child, row } = await profileForEditing(page);

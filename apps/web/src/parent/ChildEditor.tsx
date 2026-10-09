@@ -166,13 +166,14 @@ export default function ChildEditor({
   };
 
   const trimmedName = editName.trim();
-  const editChanged = editing !== null && (trimmedName !== editing.displayName || editAvatar !== editing.avatarKey);
+  const nameChanged = editing !== null && trimmedName !== editing.displayName.trim();
+  const editChanged = editing !== null && (nameChanged || editAvatar !== editing.avatarKey);
 
   const saveEdit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!editing || editLock.current || !trimmedName || !editChanged) return;
     const patch: ChildPatch = {
-      ...(trimmedName !== editing.displayName ? { displayName: trimmedName } : {}),
+      ...(nameChanged ? { displayName: trimmedName } : {}),
       ...(editAvatar !== editing.avatarKey ? { avatarKey: editAvatar } : {}),
     };
     editLock.current = true;
