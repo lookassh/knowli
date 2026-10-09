@@ -1250,6 +1250,16 @@ describe("polityka per dziecka (design 2026-10-09)", () => {
     childId = child.id;
   });
 
+  async function answerCorrectly(task: TaskDto): Promise<void> {
+    const key = (await query<{ target: string; correct_option_id: string | null }>(
+      `select answer_key->>'target' as target, answer_key->>'correctOptionId' as correct_option_id
+         from learning_app.session_tasks where id = $1`, [task.taskId],
+    ))[0]!;
+    await submitAttempt(services, key.correct_option_id === null
+      ? { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: key.target }
+      : { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: key.correct_option_id });
+  }
+
   it("nowa sesja przypina learning-v2 z pasmami 70/50", async () => {
     const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 2));
     const session = await startSession(services, { childId, deckId, microphoneEnabled: true });
@@ -1271,6 +1281,74 @@ describe("polityka per dziecka (design 2026-10-09)", () => {
         "fake-pron": { correctMinScore: 70, partialMinScore: 50 },
       },
     });
+  });
+
+  it("po pominięciu due-review wybiera kolejną umiejętność zamiast powtarzać tę samą", async () => {
+    const { deckId, versionId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 3));
+    await pool.query(
+      `insert into learning_app.child_skill_progress
+         (child_id, skill_version_id, status, independent_success_streak, next_review_at, projection_version)
+       select $1, s.skill_version_id, 'practicing', 0,
+              case when r.position = 0 then '2026-10-06T00:00:00Z'::timestamptz else '2026-10-05T00:00:00Z'::timestamptz end,
+              'test'
+         from learning_app.item_revision_skills s
+         join learning_app.item_revisions r on r.id = s.item_revision_id
+        where r.deck_version_id = $2 and r.position < 2 and s.skill = 'listening'`,
+      [childId, versionId],
+    );
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const first = await nextTask(services, session.sessionId);
+    expect(first?.exerciseType).toBe("listening");
+    const firstRow = (await query<{ position: number; context: Record<string, unknown> }>(
+      `select r.position, t.context from learning_app.session_tasks t
+         join learning_app.item_revisions r on r.id = t.item_revision_id where t.id = $1`, [first!.taskId],
+    ))[0]!;
+    expect(firstRow.position).toBe(1);
+    expect(firstRow.context).toMatchObject({ reason: "due-review", skillAtIssue: "listening", statusAtIssue: "learning" });
+    await submitAttempt(services, { taskId: first!.taskId, clientAttemptId: randomUUID(), modality: "skip" });
+
+    const second = await nextTask(services, session.sessionId);
+    expect(second?.exerciseType).toBe("listening");
+    const secondRow = (await query<{ position: number }>(
+      `select r.position from learning_app.session_tasks t
+         join learning_app.item_revisions r on r.id = t.item_revision_id where t.id = $1`, [second!.taskId],
+    ))[0]!;
+    expect(secondRow.position).toBe(0);
+    await endSession(services, session.sessionId);
+  });
+
+  it("po dwóch trudnych due-review wstawia jedno bezpieczne ćwiczenie rozpoznawania", async () => {
+    const { deckId, versionId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 3));
+    await pool.query(
+      `insert into learning_app.child_skill_progress
+         (child_id, skill_version_id, status, independent_success_streak, next_review_at, projection_version)
+       select $1, s.skill_version_id, 'practicing', 0,
+              case when r.position = 0 then '2026-10-05T00:00:00Z'::timestamptz else '2026-10-06T00:00:00Z'::timestamptz end,
+              'test'
+         from learning_app.item_revision_skills s
+         join learning_app.item_revisions r on r.id = s.item_revision_id
+        where r.deck_version_id = $2 and r.position < 2 and s.skill = 'listening'`,
+      [childId, versionId],
+    );
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    for (const expectedPosition of [0, 1]) {
+      const task = await nextTask(services, session.sessionId);
+      expect(task?.exerciseType).toBe("listening");
+      const row = (await query<{ position: number; context: Record<string, unknown> }>(
+        `select r.position, t.context from learning_app.session_tasks t
+           join learning_app.item_revisions r on r.id = t.item_revision_id where t.id = $1`, [task!.taskId],
+      ))[0]!;
+      expect(row.position).toBe(expectedPosition);
+      expect(row.context).toMatchObject({ reason: "due-review", skillAtIssue: "listening", statusAtIssue: "learning" });
+      await answerCorrectly(task!);
+    }
+    const easy = await nextTask(services, session.sessionId);
+    expect(easy?.exerciseType === "listening" || easy?.exerciseType === "reading").toBe(true);
+    const easyContext = (await query<{ context: Record<string, unknown> }>(
+      `select context from learning_app.session_tasks where id = $1`, [easy!.taskId],
+    ))[0]!;
+    expect(easyContext.context).toMatchObject({ reason: "difficulty-break" });
+    await endSession(services, session.sessionId);
   });
 
   it("własna polityka profilu wygrywa z domyślną", async () => {

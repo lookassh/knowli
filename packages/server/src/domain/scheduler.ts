@@ -64,6 +64,7 @@ export interface ScheduleCandidate {
   hasBeenPresented?: boolean;
   /** Czy zadanie przygotowawcze dla tego celu wydano już w tej sesji. */
   testPreparationIssued?: boolean;
+  settledReviewSkills?: readonly Skill[];
 }
 
 /** Inne elementy wersji — pula dystraktorów. */
@@ -96,6 +97,7 @@ export interface ScheduleInput {
   recentAssessedReasons?: readonly ScheduleReason[];
   /** Powtarzające się, wiarygodne pomyłki tego dziecka w bieżącym zestawie. */
   confusions?: readonly ConfusionPair[];
+  recentAssessedTasks?: readonly { reason: ScheduleReason; skill: Skill | null; statusAtIssue: ProgressStatus | null }[];
 }
 
 export interface PlannedOption {
@@ -116,6 +118,7 @@ export type ScheduleReason =
   | "recognition-fallback"
   | "new-practice"
   | "due-review"
+  | "difficulty-break"
   | "filler-practice"
   | "extra-practice";
 
@@ -130,6 +133,8 @@ export interface TaskPlan {
   reason: ScheduleReason;
   /** Prywatny identyfikator źródłowego zadania trudności. */
   supportCycleId?: string;
+  skillAtIssue?: Skill;
+  statusAtIssue?: ProgressStatus | null;
   /** Rezerwacje utrzymywane po tej decyzji (zapis do kontekstu sesji). */
   keepsReservations: string[];
 }
@@ -153,38 +158,39 @@ function isDue(snapshot: SkillSnapshot | undefined, now: string): boolean {
 }
 
 /** Najbliższy termin należnego sprawdzenia Recall/pisowni elementu. */
-function dueCheckAt(candidate: ScheduleCandidate, now: string): string | null {
-  let earliest: string | null = null;
+interface DueCheckSelection { skill: "recall" | "spelling"; due: string; status: ProgressStatus | null; }
+
+function dueCheckSelection(candidate: ScheduleCandidate, now: string): DueCheckSelection | null {
+  const dueChecks: DueCheckSelection[] = [];
   for (const skill of CHECK_SKILLS) {
+    if (candidate.settledReviewSkills?.includes(skill)) continue;
     const work = candidate.work?.[skill];
     if (work?.eligibleAt !== null && work !== undefined) {
-      if (work.dueNow && (earliest === null || work.eligibleAt < earliest)) earliest = work.eligibleAt;
+      if (work.dueNow) dueChecks.push({ skill, due: work.eligibleAt, status: candidate.progress[skill]?.status ?? null });
       continue;
     }
     const snapshot = candidate.progress[skill];
     if (!isDue(snapshot, now)) continue;
-    if (earliest === null || snapshot!.nextReviewAt! < earliest) {
-      earliest = snapshot!.nextReviewAt!;
-    }
+    dueChecks.push({ skill, due: snapshot!.nextReviewAt!, status: snapshot!.status });
   }
-  return earliest;
+  return dueChecks.sort((a, b) => a.due.localeCompare(b.due) || (a.skill === "recall" ? -1 : 1))[0] ?? null;
 }
 
 function oldestDue(
   candidates: readonly ScheduleCandidate[],
   now: string,
   settled: ReadonlySet<string>,
-): ScheduleCandidate | null {
-  let best: { candidate: ScheduleCandidate; due: string } | null = null;
+): { candidate: ScheduleCandidate; check: DueCheckSelection } | null {
+  let best: { candidate: ScheduleCandidate; check: DueCheckSelection } | null = null;
   for (const candidate of candidates) {
-    const due = dueCheckAt(candidate, now);
-    if (due === null) continue;
+    const check = dueCheckSelection(candidate, now);
+    if (check === null) continue;
     if (settled.has(keyOf(candidate.target, candidate.targetLocale))) continue;
-    if (best === null || due < best.due || (due === best.due && candidate.position < best.candidate.position)) {
-      best = { candidate, due };
+    if (best === null || check.due < best.check.due || (check.due === best.check.due && candidate.position < best.candidate.position)) {
+      best = { candidate, check };
     }
   }
-  return best?.candidate ?? null;
+  return best;
 }
 
 function unseenFresh(candidates: readonly ScheduleCandidate[]): ScheduleCandidate[] {
@@ -496,7 +502,7 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
   const reserved = new Set(input.reservedTargetKeys);
   const settled = new Set(input.settledCheckTargetKeys ?? []);
   for (const candidate of input.candidates) {
-    if (dueCheckAt(candidate, input.now) !== null && !settled.has(keyOfCandidate(candidate))) {
+    if (dueCheckSelection(candidate, input.now) !== null && !settled.has(keyOfCandidate(candidate))) {
       reserved.add(keyOfCandidate(candidate));
     }
   }
@@ -509,11 +515,13 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
   const due = oldestDue(input.candidates, input.now, settled);
   if (due) {
     return {
-      itemRevisionId: due.itemRevisionId,
+      itemRevisionId: due.candidate.itemRevisionId,
       exerciseType: "recall",
       revealsTargetKeys: [],
       assessed: true,
       reason: "due-check",
+      skillAtIssue: due.check.skill,
+      statusAtIssue: due.check.status,
       keepsReservations,
     };
   }
@@ -597,28 +605,72 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
     }
   }
 
-  // 3.5 Wprowadzanie kolejnych etapów (SPEC §13): rozpoznany element przechodzi
-  //     do przypominania, a potem wymowy. Co drugi slot sesji, aby nowy materiał
-  //     i należne powtórki nie czekały na całą falę nowego etapu, a sesja
-  //     zachowywała miks typów zadań.
+  const recentAssessedTasks = input.recentAssessedTasks ?? [];
+  const needsDifficultyBreak = recentAssessedTasks.length >= 2 && recentAssessedTasks.slice(-2).every((task) =>
+    (task.reason === "due-check" || task.reason === "due-review") &&
+    (task.statusAtIssue === "learning" || task.statusAtIssue === "needs_reconfirmation"),
+  );
+  if (needsDifficultyBreak) {
+    const safeKnown = practicePool(input.candidates).find((candidate) => !reserved.has(keyOfCandidate(candidate)));
+    if (safeKnown) {
+      const plan = recognitionPlan(safeKnown, input, reserved, keepsReservations, "difficulty-break", true);
+      if (plan) return plan;
+    }
+  }
+
+  // Należne powtórki wyprzedzają świeżą porcję nowego materiału; pominięcie
+  // rozliczonej umiejętności nie powtarza jej w nieskończonej pętli sesji.
+  type DueSkill = { candidate: ScheduleCandidate; skill: Skill; due: string };
+  const dueSkills: DueSkill[] = [];
+  for (const candidate of input.candidates) {
+    if (reserved.has(keyOfCandidate(candidate))) continue;
+    for (const [skill, snapshot] of Object.entries(candidate.progress) as [Skill, SkillSnapshot][]) {
+      if (skill === "recall" || skill === "spelling") continue;
+      if (candidate.settledReviewSkills?.includes(skill)) continue;
+      if (skill === "pronunciation" && !input.microphoneEnabled) continue;
+      if (isDue(snapshot, input.now)) dueSkills.push({ candidate, skill, due: snapshot.nextReviewAt! });
+    }
+  }
+  dueSkills.sort((a, b) =>
+    a.due < b.due ? -1 : a.due > b.due ? 1 : a.candidate.position - b.candidate.position,
+  );
+  for (const dueSkill of dueSkills) {
+    if (dueSkill.skill === "reading") {
+      const direction = chooseReadingDirection(dueSkill.candidate.readingEvidenceDirections ?? {}, dueSkill.candidate.readingDirections);
+      const plan = recognitionTaskPlan(dueSkill.candidate, input, reserved, keepsReservations, "due-review", direction);
+      if (plan) return { ...plan, skillAtIssue: dueSkill.skill, statusAtIssue: dueSkill.candidate.progress[dueSkill.skill]?.status };
+      continue;
+    }
+    if (dueSkill.skill === "pronunciation") {
+      return {
+        itemRevisionId: dueSkill.candidate.itemRevisionId, exerciseType: "speech",
+        revealsTargetKeys: [keyOfCandidate(dueSkill.candidate)], assessed: true, reason: "due-review",
+        skillAtIssue: dueSkill.skill, statusAtIssue: dueSkill.candidate.progress[dueSkill.skill]?.status,
+        keepsReservations,
+      };
+    }
+    const plan = recognitionTaskPlan(dueSkill.candidate, input, reserved, keepsReservations, "due-review", "listening");
+    if (plan) return { ...plan, skillAtIssue: dueSkill.skill, statusAtIssue: dueSkill.candidate.progress[dueSkill.skill]?.status };
+  }
+
+  // Wprowadzanie etapów odbywa się po należnych powtórkach; co drugi slot
+  // przeplata je z porcjami nowego materiału.
   if (input.nextOrdinal % 2 === 1 || input.candidates.some((candidate) =>
     candidate.ownPresentationCompleted && !recognitionPossibleWithoutReservations(candidate, input.peers),
   )) {
     const introduction = introductionPlan(input.candidates, input, reserved, keepsReservations);
-    if (introduction) {
-      return introduction;
-    }
+    if (introduction) return introduction;
   }
 
   // 4. Nowy materiał porcjami 2–3: prezentacje przeplatane łatwym
   //    rozpoznawaniem ze słuchu świeżo pokazanych elementów (SPEC §13).
-  const fresh = presentedOnce(input.candidates);
+  const fresh = presentedOnce(input.candidates).filter((candidate) => !reserved.has(keyOfCandidate(candidate)));
   if (fresh.length >= 2 || (fresh.length === 1 && unseenFresh(input.candidates).length === 0)) {
     const target = fresh[0]!;
     const plan = recognitionTaskPlan(target, input, reserved, keepsReservations, "new-practice", "listening", true);
     if (plan) return plan;
   }
-  const nextUnseen = unseenFresh(input.candidates)[0];
+  const nextUnseen = unseenFresh(input.candidates).find((candidate) => !reserved.has(keyOfCandidate(candidate)));
   if (nextUnseen) {
     return {
       itemRevisionId: nextUnseen.itemRevisionId,
@@ -628,46 +680,6 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
       reason: "new-material",
       keepsReservations,
     };
-  }
-
-  // 5. Zaległe powtórki wg umiejętności; najstarsza należność pierwsza.
-  //    Cel objęty rezerwacją nie wraca do zadań rozpoznawania.
-  type DueSkill = { candidate: ScheduleCandidate; skill: Skill; due: string };
-  const dueSkills: DueSkill[] = [];
-  for (const candidate of input.candidates) {
-    if (reserved.has(keyOfCandidate(candidate))) continue;
-    for (const [skill, snapshot] of Object.entries(candidate.progress) as [Skill, SkillSnapshot][]) {
-      if (skill === "recall" || skill === "spelling") continue; // obsłużone jako due-check
-      if (skill === "pronunciation" && !input.microphoneEnabled) continue;
-      if (isDue(snapshot, input.now)) {
-        dueSkills.push({ candidate, skill, due: snapshot.nextReviewAt! });
-      }
-    }
-  }
-  dueSkills.sort(
-    (a, b) =>
-      a.due < b.due ? -1 : a.due > b.due ? 1 : a.candidate.position - b.candidate.position,
-  );
-  for (const dueSkill of dueSkills) {
-    if (dueSkill.skill === "reading") {
-      const target = dueSkill.candidate;
-      const direction = chooseReadingDirection(target.readingEvidenceDirections ?? {}, target.readingDirections);
-      const plan = recognitionTaskPlan(target, input, reserved, keepsReservations, "due-review", direction);
-      if (plan) return plan;
-      continue;
-    }
-    if (dueSkill.skill === "pronunciation") {
-      return {
-        itemRevisionId: dueSkill.candidate.itemRevisionId,
-        exerciseType: "speech",
-        revealsTargetKeys: [keyOfCandidate(dueSkill.candidate)],
-        assessed: true,
-        reason: "due-review",
-        keepsReservations,
-      };
-    }
-    const plan = recognitionTaskPlan(dueSkill.candidate, input, reserved, keepsReservations, "due-review", "listening");
-    if (plan) return plan;
   }
 
   // 6. Lekkie ćwiczenie rozpoznawania bez należnych zadań: jedna pula dla
@@ -709,7 +721,7 @@ function recognitionPlan(
   input: ScheduleInput,
   reserved: ReadonlySet<string>,
   keepsReservations: string[],
-  reason: "filler-practice" | "extra-practice" | "test-preparation-break",
+  reason: "filler-practice" | "extra-practice" | "test-preparation-break" | "difficulty-break",
   preferListening: boolean,
 ): TaskPlan | null {
   const direction = preferListening

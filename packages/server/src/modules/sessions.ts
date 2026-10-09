@@ -529,11 +529,36 @@ async function planNextTask(
     );
   const historicallyExposed = new Set(historicalExposureRows.map((row) => row.targetKey));
 
-  const recentAssessedReasons = taskRows
+  const terminalTasks = taskRows.filter((row) => row.state === "answered" || row.state === "skipped");
+  const assessedTasks = terminalTasks.filter((row) => row.state === "answered");
+  const recentAssessedReasons = assessedTasks
     .filter((row) => row.exerciseType !== "exposure")
     .map((row) => (row.context as { reason?: unknown } | null)?.reason)
     .filter((reason): reason is ScheduleReason => typeof reason === "string")
     .slice(-2);
+  const recentAssessedTasks = assessedTasks
+    .filter((row) => row.exerciseType !== "exposure")
+    .slice(-2)
+    .map((row) => {
+      const context = row.context as { reason?: unknown; skillAtIssue?: unknown; statusAtIssue?: unknown } | null;
+      return {
+        reason: typeof context?.reason === "string" ? context.reason as ScheduleReason : "new-practice" as ScheduleReason,
+        skill: typeof context?.skillAtIssue === "string" ? context.skillAtIssue as Skill : null,
+        statusAtIssue: typeof context?.statusAtIssue === "string" ? context.statusAtIssue as SkillSnapshot["status"] : null,
+      };
+    });
+  const settledReviewSkillsByRevision = new Map<string, Skill[]>();
+  for (const row of terminalTasks) {
+    const context = row.context as { reason?: unknown; skillAtIssue?: unknown } | null;
+    if (context?.reason !== "due-review") continue;
+    const inferred: Partial<Record<string, Skill>> = {
+      listening: "listening", reading: "reading", reverse_recognition: "reading", speech: "pronunciation",
+    };
+    const skill = typeof context.skillAtIssue === "string" ? context.skillAtIssue as Skill : inferred[row.exerciseType];
+    if (!skill) continue;
+    const values = settledReviewSkillsByRevision.get(row.itemRevisionId) ?? [];
+    if (!values.includes(skill)) settledReviewSkillsByRevision.set(row.itemRevisionId, [...values, skill]);
+  }
 
   // Etapy już wprowadzone zadaniem w dowolnej sesji dziecka (SPEC §13): pierwsze
   // recall/wymowa nie może czekać na postęp, którego bez tego zadania nie będzie;
@@ -605,6 +630,7 @@ async function planNextTask(
           row.itemRevisionId === r.id &&
           (row.context as { reason?: unknown } | null)?.reason === "test-preparation",
       ),
+      settledReviewSkills: settledReviewSkillsByRevision.get(r.id) ?? [],
     };
   });
   const peers = candidates.map((c) => ({
@@ -630,6 +656,7 @@ async function planNextTask(
       ? {}
       : { testPreparation: { testDate: sessionContext.testDate, timezone: sessionContext.timezone } }),
     recentAssessedReasons,
+    recentAssessedTasks,
     confusions: learningSnapshots.flatMap((snapshot) => snapshot.confusions),
   });
   if (!plan) {
@@ -800,7 +827,12 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
       state: "issued",
       publicPrompt: materialized.prompt as unknown as Record<string, unknown>,
       answerKey: materialized.answerKey,
-      context: { reason: plan.reason, ...(plan.supportCycleId ? { supportCycleId: plan.supportCycleId } : {}) },
+      context: {
+        reason: plan.reason,
+        ...(plan.supportCycleId ? { supportCycleId: plan.supportCycleId } : {}),
+        ...(plan.skillAtIssue ? { skillAtIssue: plan.skillAtIssue } : {}),
+        ...(plan.statusAtIssue ? { statusAtIssue: plan.statusAtIssue } : {}),
+      },
       issuedAt: now,
     });
     await writeSealedEvent(tx, {
