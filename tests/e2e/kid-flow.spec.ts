@@ -621,7 +621,7 @@ async function injectFakeMediaPlatform(page: Page): Promise<void> {
     });
     class FakeAudioContext {
       async decodeAudioData(): Promise<AudioBuffer> {
-        return decodedBuffer(96_000, 48_000) as AudioBuffer;
+        return decodedBuffer(96_000, 48_000) as unknown as AudioBuffer;
       }
       async close(): Promise<void> {}
     }
@@ -632,7 +632,7 @@ async function injectFakeMediaPlatform(page: Page): Promise<void> {
         return { buffer: null as AudioBuffer | null, connect: () => undefined, start: () => undefined };
       }
       async startRendering(): Promise<AudioBuffer> {
-        return decodedBuffer(this.length, this.sampleRate) as AudioBuffer;
+        return decodedBuffer(this.length, this.sampleRate) as unknown as AudioBuffer;
       }
     }
     Object.defineProperty(window, "AudioContext", { configurable: true, value: FakeAudioContext });
