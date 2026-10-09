@@ -62,6 +62,14 @@ const DAY_ITEMS: { source: string; target: string }[] = [
   { source: "czarny", target: "black" },
 ];
 
+const TEST_COLOR_HEXES: Record<string, string> = {
+  red: "#ff0000",
+  blue: "#0000ff",
+  green: "#008000",
+  yellow: "#ffff00",
+  black: "#000000",
+};
+
 function vocabItem(pair: { source: string; target: string }, example?: string) {
   return {
     source: pair.source,
@@ -69,7 +77,7 @@ function vocabItem(pair: { source: string; target: string }, example?: string) {
     acceptedAnswers: [],
     locales: { source: "pl-PL", target: "en-GB" },
     visualType: "color" as const,
-    visualData: { color: "#4169e1" },
+    visualData: { color: TEST_COLOR_HEXES[pair.target.toLowerCase()] ?? "#4169e1" },
     ...(example !== undefined ? { example } : {}),
   };
 }
@@ -389,7 +397,12 @@ describe("cykl życia sesji (integracja)", () => {
     const task = await nextTask(services, session.sessionId);
 
     expect(task!.exerciseType).toBe("exposure");
-    expect(task!.prompt).toMatchObject({ kind: "exposure", target: "Monday" });
+    expect(task!.prompt).toMatchObject({
+      kind: "exposure",
+      target: "Monday",
+      visualType: "color",
+      visualData: { color: "#4169e1" },
+    });
     expect(task!.remainingAssessed).toBe(session.taskBudget);
 
     // zapis ujawnienia poprzedza odpowiedź HTTP i działa bez ACK klienta
@@ -829,6 +842,34 @@ describe("ćwiczenie zestawu w dowolnym momencie (extra-practice + rekomendacja)
         : { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: key.correct_option_id },
     );
   }
+
+  it("lista tematów podaje liczbę słów i liczy tylko opanowany Recall", async () => {
+    const { deckId, versionId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 4));
+    await expect(listKidDecks(services, childId)).resolves.toMatchObject([
+      { deckId, itemCount: 4, independentlyRecalledCount: 0 },
+    ]);
+    const skillRows = await query<{ skill: string; skill_version_id: string }>(
+      `select irs.skill, irs.skill_version_id
+         from learning_app.item_revision_skills irs
+         join learning_app.item_revisions ir on ir.id = irs.item_revision_id
+        where ir.deck_version_id = $1 and ir.position = 0 and irs.skill in ('recall', 'reading')`,
+      [versionId],
+    );
+    expect(skillRows.map((row) => row.skill).sort()).toEqual(["reading", "recall"]);
+
+    for (const row of skillRows) {
+      await pool.query(
+        `insert into learning_app.child_skill_progress
+           (child_id, skill_version_id, status, projection_version)
+         values ($1, $2, 'mastered', 'learning-v1')`,
+        [childId, row.skill_version_id],
+      );
+    }
+
+    await expect(listKidDecks(services, childId)).resolves.toMatchObject([
+      { deckId, itemCount: 4, independentlyRecalledCount: 1 },
+    ]);
+  });
 
   it("po wyczerpaniu materiału zestaw nie jest rekomendowany, ale od razu wydaje extra-practice", async () => {
     const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 4));

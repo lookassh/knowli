@@ -51,6 +51,7 @@ export function KidApp({
       return (
         <DeckScreen
           decks={screen.decks}
+          childName={screen.profiles.find((profile) => profile.childId === screen.childId)?.displayName ?? ""}
           microphone={screen.microphone}
           micDenied={screen.micDenied}
           onToggleMicrophone={(on) => controller.setMicrophone(on)}

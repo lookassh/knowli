@@ -13,7 +13,7 @@ export function ExposureView({ task, busy, mediaUrl, handlers }: ExerciseProps) 
   }
   return (
     <section className="kid-card">
-      {task.prompt.imageAssetId !== null ? (
+      {task.prompt.visualType === "image" && task.prompt.imageAssetId !== null ? (
         <img
           className="kid-illustration"
           data-testid="kid-illustration"
@@ -21,7 +21,11 @@ export function ExposureView({ task, busy, mediaUrl, handlers }: ExerciseProps) 
           alt={task.prompt.target}
         />
       ) : (
-        <Visual text={task.prompt.target} />
+        <Visual
+          text={task.prompt.target}
+          visualType={task.prompt.visualType}
+          visualData={task.prompt.visualData}
+        />
       )}
       <p className="kid-word" data-testid="kid-target">
         {task.prompt.target}

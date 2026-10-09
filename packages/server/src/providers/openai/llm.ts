@@ -18,8 +18,10 @@ function systemPrompt(input: LlmGenerateDeckInput): string {
     "You create vocabulary learning sets for a young Polish child (about 8 years old).",
     `Source language: ${input.sourceLocale}. Target language: ${input.targetLocale}.`,
     "Return strict JSON: {\"items\": [{\"source\": string, \"target\": string,",
+    "Each item may include visualData; it is required for color, number, and sequence and uses the matching shape described below.",
     "\"acceptedAnswers\": string[], \"example\": string, \"visualType\": \"image\"|\"color\"|\"number\"|\"sequence\"|\"none\"}]}.",
-    "Use image only for concrete objects and actions; colors, numbers and sequences render deterministically.",
+    "Use image only for concrete objects and actions. For colors use these exact canonical values in visualData: red #ff0000, blue #0000ff, green #008000, yellow #ffff00, orange #ffa500, purple #800080, pink #ffc0cb, black #000000, white #ffffff, brown #a52a2a, gray/grey #808080. For number use {count: integer 1-50}; for sequence use {position: integer, total: integer, position <= total, sequenceStart: string}.",
+    "For English weekdays use position Monday=1 through Sunday=7 and total=7. Omit visualData when the word has no deterministic visual.",
     `At most ${input.maxItems} items. Keep target/source up to 120 characters and examples up to 300 characters.`,
     "One example sentence per item, in the target language. No extra commentary.",
   ].join(" ");

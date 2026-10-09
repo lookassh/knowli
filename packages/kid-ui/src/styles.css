@@ -36,6 +36,13 @@
   margin: 4px 0;
 }
 
+.kid-greeting {
+  text-align: center;
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin: 0;
+}
+
 .kid-notice {
   background: #fff4d6;
   border-radius: 12px;
@@ -158,6 +165,16 @@
 .kid-visual {
   width: 96px;
   height: 96px;
+}
+
+.kid-visual-number {
+  width: min(60vw, 240px);
+  height: auto;
+}
+
+.kid-visual-sequence {
+  width: min(80vw, 320px);
+  height: auto;
 }
 
 /* Ilustracja karty (SPEC §24): obraz wspiera znaczenie, duża i zaokrąglona,

@@ -187,6 +187,8 @@ function makeApi(state: ApiState): KidApi {
 const DECK: KidDeckDto = {
   deckId: "33333333-3333-3333-3333-333333333333",
   title: "Dni tygodnia",
+  itemCount: 7,
+  independentlyRecalledCount: 0,
   testDate: null,
   recommended: true,
 };
@@ -268,7 +270,7 @@ describe("LearningSessionController", () => {
   });
 
   it("exposure zamyka prezentację bez próby; koniec zadań kończy sesję", async () => {
-    const exposure = taskDto("t1", { kind: "exposure", source: "czwartek", target: "Thursday", example: null, audioAssetId: null, exampleAudioAssetId: null, imageAssetId: null });
+    const exposure = taskDto("t1", { kind: "exposure", source: "czwartek", target: "Thursday", example: null, audioAssetId: null, exampleAudioAssetId: null, imageAssetId: null, visualType: "none" });
     const state = baseState();
     const harness = await startAtTask(state, exposure);
     // brak audioAssetId → bez autoodtwarzania i bez próby
@@ -381,6 +383,7 @@ describe("LearningSessionController", () => {
       audioAssetId: "asset-word",
       exampleAudioAssetId: "asset-example",
       imageAssetId: null,
+      visualType: "none",
     });
     const harness = await startAtTask(baseState(), exposure);
     await harness.controller.playExampleAudio();
@@ -403,7 +406,7 @@ describe("LearningSessionController", () => {
     await listenHarness.controller.playTaskAudio();
     expect(listenHarness.state.disclosures).toHaveLength(0);
 
-    const speech = taskDto("t3", { kind: "speech", text: "Thursday", audioAssetId: "asset-2", imageAssetId: null });
+    const speech = taskDto("t3", { kind: "speech", text: "Thursday", audioAssetId: "asset-2", imageAssetId: null, visualType: "none" });
     const speechHarness = await startAtTask(baseState(), speech);
     await speechHarness.controller.playTaskAudio();
     expect(speechHarness.state.disclosures).toEqual([{ taskId: "t3", kind: "audio" }]);

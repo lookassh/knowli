@@ -17,6 +17,7 @@ export interface LlmGeneratedItem {
   acceptedAnswers: string[];
   example?: string;
   visualType: "image" | "color" | "number" | "sequence" | "none";
+  visualData?: Record<string, unknown>;
 }
 
 export interface LlmProvider {
