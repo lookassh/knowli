@@ -63,7 +63,7 @@ export function LearnScreen({
 }) {
   const { task, offline, busy } = screen;
   const remaining = controller.remainingFor(task);
-  const micAvailable = screen.session.microphoneEnabled && !screen.micDenied;
+  const micAvailable = screen.session.mode !== "mock_test" && screen.session.microphoneEnabled && !screen.micDenied;
   // feedback próby wyboru = pasek wyniku zamiast karteczki
   const feedback = screen.feedback;
   const choiceFeedback =
@@ -109,6 +109,8 @@ export function LearnScreen({
           {messages.kid.end}
         </button>
       </header>
+      {screen.session.mode === "mock_test" && <p className="kid-notice">{messages.kid.mockTestInfo}</p>}
+      {screen.answerSaved && <p className="kid-notice" role="status">{messages.kid.answerSaved}</p>}
 
       {screen.micDenied && (
         <p className="kid-notice" data-testid="kid-mic-denied">
@@ -139,6 +141,7 @@ export function LearnScreen({
         task !== null && (
           <div className="kid-task">
             <ExerciseView
+              mockTest={screen.session.mode === "mock_test"}
               task={task}
               busy={busy || screen.feedback !== null || screen.reveal !== null}
               recording={screen.recording}

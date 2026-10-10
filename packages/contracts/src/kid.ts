@@ -212,6 +212,8 @@ export type KidProfileDto = z.infer<typeof KidProfileDtoSchema>;
 
 /** Zestaw przypisany dziecku, dostępny do nauki (arch §12). */
 export const KidDeckDtoSchema = z.object({
+  mockTestAvailable: z.boolean().default(false),
+  activeSession: z.object({ sessionId: UuidSchema, mode: z.enum(["training", "mock_test"]) }).nullable().default(null),
   deckId: UuidSchema,
   title: z.string().min(1),
   /** Liczba słów w przypiętej, opublikowanej wersji zestawu. */

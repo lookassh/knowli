@@ -1,5 +1,6 @@
 import {
   messages,
+  type MockTestSummaryDto,
   type AttemptDto,
   type FeedbackDto,
   type KidDeckDto,
@@ -30,6 +31,7 @@ import { randomUUID } from "./uuid";
  */
 
 export interface LearningScreen {
+  answerSaved?: boolean;
   kind: "learning";
   session: SessionDto;
   task: TaskDto | null;
@@ -52,6 +54,9 @@ export interface LearningScreen {
 }
 
 export type KidScreen =
+  | { kind: "mockTestReady"; session: SessionDto }
+  | { kind: "mockTestSummary"; summary: MockTestSummaryDto }
+  | { kind: "sessionConflict"; active: KidDeckDto; childId: string }
   | { kind: "loading" }
   | { kind: "initError"; message: string }
   | { kind: "profile"; profiles: KidProfileDto[] }
@@ -163,6 +168,7 @@ export class LearningSessionController {
         const requestedProfile = this.#profiles.find((profile) => profile.childId === this.#initialChildId);
         if (requestedProfile) {
           await this.#openDeckScreen(requestedProfile.childId);
+          await this.#resumeMockFromDecks();
           return;
         }
         // A stale or mistyped profile URL falls back to the available profiles.
@@ -183,6 +189,7 @@ export class LearningSessionController {
     this.#screen = { kind: "loading" };
     this.#emit();
     await this.#openDeckScreen(childId);
+    await this.#resumeMockFromDecks();
   }
 
   async #openDeckScreen(childId: string): Promise<void> {
@@ -207,6 +214,12 @@ export class LearningSessionController {
     this.#emit();
   }
 
+  async #resumeMockFromDecks(): Promise<void> {
+    if (this.#screen.kind !== "deck") return;
+    const activeMock = this.#screen.decks.find(d => d.activeSession?.mode === "mock_test");
+    if (activeMock) await this.startMockTest(activeMock.deckId);
+  }
+
   setMicrophone(on: boolean): void {
     if (this.#screen.kind !== "deck") return;
     // jawny wybór rodzica/dziecka nadpisuje zapamiętaną odmowę w obie strony —
@@ -221,7 +234,11 @@ export class LearningSessionController {
     this.#emit();
   }
 
-  async startLearning(deckId: string): Promise<void> {
+  async startMockTest(deckId: string): Promise<void> {
+    await this.startLearning(deckId, "mock_test");
+  }
+
+  async startLearning(deckId: string, mode: SessionDto["mode"] = "training"): Promise<void> {
     if (this.#screen.kind !== "deck") return;
     const { childId, microphone } = this.#screen;
     this.#epoch += 1;
@@ -229,8 +246,11 @@ export class LearningSessionController {
     // nowa sesja nie dziedziczy wyboru z poprzedniej (np. przerwanego awarią)
     this.#pendingChoice = null;
     try {
-      const session = await this.#api.startSession({ childId, deckId, microphoneEnabled: microphone });
+      const session = await this.#api.startSession({ childId, deckId, microphoneEnabled: mode === "mock_test" ? false : microphone, mode });
       if (epoch !== this.#epoch) return;
+      if (session.mode === "mock_test" && (!session.resumed || session.tasksIssued === 0)) {
+        this.#screen = { kind: "mockTestReady", session }; this.#emit(); return;
+      }
       this.#screen = {
         kind: "learning",
         session,
@@ -248,9 +268,45 @@ export class LearningSessionController {
       await this.#loadNext(epoch, session.sessionId);
     } catch (error) {
       if (epoch !== this.#epoch) return;
+      if (error instanceof KidApiError && error.code === "conflict") {
+        const decks = await this.#api.listDecks(childId);
+        if (epoch !== this.#epoch) return;
+        const active = decks.find(d => d.activeSession);
+        if (active) { this.#screen = { kind: "sessionConflict", active, childId }; this.#emit(); return; }
+      }
       this.#screen = { kind: "initError", message: messageForError(error) };
       this.#emit();
     }
+  }
+
+  async beginMockTest(): Promise<void> {
+    if (this.#screen.kind !== "mockTestReady") return;
+    const session = this.#screen.session;
+    this.#screen = { kind: "learning", session, task: null, feedback: null, reveal: null, offline: false, busy: true,
+      micDenied: false, recording: false, processing: false, error: null };
+    this.#emit(); await this.#loadNext(this.#epoch, session.sessionId);
+  }
+
+  async cancelMockTest(): Promise<void> {
+    if (this.#screen.kind !== "mockTestReady") return;
+    const { sessionId, childId } = this.#screen.session;
+    await this.#api.endSession(sessionId);
+    await this.#openDeckScreen(childId);
+    await this.#resumeMockFromDecks();
+  }
+
+  async resumeConflictingSession(): Promise<void> {
+    if (this.#screen.kind !== "sessionConflict") return;
+    const { childId, active } = this.#screen;
+    this.#screen = { kind: "deck", childId, profiles: this.#profiles, decks: [active], microphone: false, micDenied: false };
+    await this.startLearning(active.deckId, active.activeSession!.mode);
+  }
+
+  async closeConflictingSession(): Promise<void> {
+    if (this.#screen.kind !== "sessionConflict") return;
+    const { childId, active } = this.#screen;
+    await this.#api.endSession(active.activeSession!.sessionId);
+    await this.#openDeckScreen(childId);
   }
 
   async #loadNext(epoch: number, sessionId: string): Promise<void> {
@@ -289,14 +345,16 @@ export class LearningSessionController {
 
   async #finishSession(epoch: number): Promise<void> {
     if (this.#screen.kind !== "learning") return;
-    const { sessionId, childId } = this.#screen.session;
+    const { sessionId, childId, mode } = this.#screen.session;
     this.#resume = () => this.#finishSession(epoch);
     try {
       const summary = await this.#api.endSession(sessionId);
       if (epoch !== this.#epoch) return;
+      const mockSummary = mode === "mock_test" ? await this.#api.readMockTestSummary(sessionId) : null;
+      if (epoch !== this.#epoch) return;
       this.#teardownRecording();
       this.#media.player.stop();
-      this.#screen = { kind: "summary", childId, profiles: this.#profiles, summary };
+      this.#screen = mockSummary ? { kind: "mockTestSummary", summary: mockSummary } : { kind: "summary", childId, profiles: this.#profiles, summary };
       this.#emit();
     } catch (error) {
       if (epoch !== this.#epoch || this.#screen.kind !== "learning") return;
@@ -355,6 +413,7 @@ export class LearningSessionController {
   async notRemember(): Promise<void> {
     const screen = this.#learning();
     if (!screen?.task || screen.busy || screen.offline) return;
+    if (screen.session.mode === "mock_test") { await this.#submitAnswer({ modality: "dont_remember" }); return; }
     const epoch = this.#epoch;
     const taskId = screen.task.taskId;
     this.#setLearning({ busy: true });
@@ -399,6 +458,9 @@ export class LearningSessionController {
       await send();
     } catch (error) {
       if (epoch !== this.#epoch || this.#screen.kind !== "learning") return;
+      if (screen.session.mode === "mock_test" && error instanceof KidApiError && error.code === "conflict") {
+        this.#resume = () => this.#loadNext(epoch, screen.session.sessionId);
+      }
       this.#handleFailure(error);
     }
   }
@@ -409,7 +471,7 @@ export class LearningSessionController {
       await this.#pollAttempt(attempt.attemptId, epoch, Date.now() + POLL_DEADLINE_MS);
       return;
     }
-    this.#showResult(attempt, epoch);
+    await this.#showResult(attempt, epoch);
   }
 
   async #pollAttempt(attemptId: string, epoch: number, deadline: number): Promise<void> {
@@ -423,18 +485,22 @@ export class LearningSessionController {
         await this.#pollAttempt(attemptId, epoch, deadline);
         return;
       }
-      this.#showResult(attempt, epoch);
+      await this.#showResult(attempt, epoch);
     } catch (error) {
       if (epoch !== this.#epoch || this.#screen.kind !== "learning") return;
       this.#handleFailure(error);
     }
   }
 
-  #showResult(attempt: AttemptDto, epoch: number): void {
+  async #showResult(attempt: AttemptDto, epoch: number): Promise<void> {
     if (epoch !== this.#epoch || this.#screen.kind !== "learning") return;
     this.#resume = null;
     const chosenOptionId = this.#pendingChoice;
     this.#pendingChoice = null;
+    if (this.#screen.session.mode === "mock_test") {
+      this.#setLearning({ feedback: null, reveal: null, processing: false, busy: true, answerSaved: true });
+      await this.#loadNext(epoch, this.#screen.session.sessionId); return;
+    }
     this.#screen = {
       ...this.#screen,
       busy: false,
@@ -463,7 +529,7 @@ export class LearningSessionController {
     const assetId = audioAssetOf(task);
     if (!assetId) return;
     const epoch = this.#epoch;
-    if (["recall", "spelling", "letter_completion", "speech"].includes(task.exerciseType)) {
+    if (screen.session.mode === "mock_test" || ["recall", "spelling", "letter_completion", "speech"].includes(task.exerciseType)) {
       await this.#api.authorizeDisclosure(task.taskId, "audio");
       if (epoch !== this.#epoch) return;
     }
@@ -585,8 +651,10 @@ export class LearningSessionController {
   }
 
   async learnAgain(): Promise<void> {
-    if (this.#screen.kind !== "summary" || this.#childId === null) return;
+    if ((this.#screen.kind !== "summary" && this.#screen.kind !== "mockTestSummary") || this.#childId === null) return;
+    const deckId = this.#screen.kind === "mockTestSummary" ? this.#screen.summary.deckId : null;
     await this.selectProfile(this.#childId);
+    if (deckId) await this.startLearning(deckId);
   }
 
   async switchProfile(): Promise<void> {
@@ -599,7 +667,24 @@ export class LearningSessionController {
 
   /** Czy banner „Jeszcze N i koniec!” jest widoczny dla bieżącego zadania. */
   remainingFor(task: TaskDto | null): number | null {
+    if (this.#screen.kind === "learning" && this.#screen.session.mode === "mock_test") return task?.remainingAssessed ?? null;
     return task !== null && task.remainingAssessed <= REMAINING_BANNER_FROM ? task.remainingAssessed : null;
+  }
+
+  async reviewMockTest(sessionId: string): Promise<void> {
+    const epoch = this.#epoch;
+    const summary = await this.#api.readMockTestSummary(sessionId);
+    if (epoch !== this.#epoch) return;
+    this.#screen = { kind: "mockTestSummary", summary }; this.#emit();
+  }
+
+  async playMockTestSolution(taskId: string): Promise<void> {
+    if (this.#screen.kind !== "mockTestSummary") return;
+    const epoch = this.#epoch;
+    const summary = await this.#api.readMockTestSummary(this.#screen.summary.sessionId);
+    if (epoch !== this.#epoch) return;
+    const solution = summary.solutions.find(s => s.taskId === taskId);
+    if (solution?.audioAssetId) await this.#media.player.play(this.#api.mediaUrl(solution.audioAssetId));
   }
 
   /** URL niezmiennej treści medialnej (audio, ilustracja) przez klienta API. */

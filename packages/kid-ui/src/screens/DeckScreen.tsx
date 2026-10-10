@@ -26,6 +26,7 @@ export function DeckScreen({
   micDenied,
   onToggleMicrophone,
   onStart,
+  onMockTest,
   headerActions,
 }: {
   decks: KidDeckDto[];
@@ -34,6 +35,7 @@ export function DeckScreen({
   micDenied: boolean;
   onToggleMicrophone: (on: boolean) => void;
   onStart: (deckId: string) => void;
+  onMockTest?: (deckId: string) => void;
   headerActions?: ReactNode;
 }) {
   const recommended = decks.filter((deck) => deck.recommended);
@@ -54,7 +56,7 @@ export function DeckScreen({
               </h2>
               <ul className="kid-list">
                 {recommended.map((deck) => (
-                  <DeckButton key={deck.deckId} deck={deck} onStart={onStart} />
+                  <DeckButton key={deck.deckId} deck={deck} onStart={onStart} onMockTest={onMockTest} />
                 ))}
               </ul>
             </section>
@@ -66,7 +68,7 @@ export function DeckScreen({
               )}
               <ul className="kid-list">
                 {other.map((deck) => (
-                  <DeckButton key={deck.deckId} deck={deck} onStart={onStart} />
+                  <DeckButton key={deck.deckId} deck={deck} onStart={onStart} onMockTest={onMockTest} />
                 ))}
               </ul>
             </section>
@@ -94,9 +96,11 @@ export function DeckScreen({
 function DeckButton({
   deck,
   onStart,
+  onMockTest,
 }: {
   deck: KidDeckDto;
   onStart: (deckId: string) => void;
+  onMockTest?: (deckId: string) => void;
 }) {
   return (
     <li>
@@ -118,6 +122,9 @@ function DeckButton({
           </span>
         )}
       </button>
+      {deck.mockTestAvailable && onMockTest && <button type="button" className="kid-primary" data-testid="kid-mock-start" onClick={() => onMockTest(deck.deckId)}>
+        {messages.kid.mockTest}
+      </button>}
     </li>
   );
 }

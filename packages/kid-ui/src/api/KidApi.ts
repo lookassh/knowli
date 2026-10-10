@@ -1,4 +1,5 @@
 import type {
+  MockTestSummaryDto,
   AttemptDto,
   AttemptInput,
   DisclosureDto,
@@ -20,6 +21,7 @@ import type { RecordedAudio } from "../media/platform";
  * kryteriów oceny i technicznych score'ów.
  */
 export interface KidApi {
+  readMockTestSummary(sessionId: string): Promise<MockTestSummaryDto>;
   listProfiles(): Promise<KidProfileDto[]>;
   listDecks(childId: string): Promise<KidDeckDto[]>;
   startSession(input: SessionInput): Promise<SessionDto>;

@@ -18,7 +18,7 @@ export function ExerciseView(props: ExerciseProps) {
       return <ReadingView {...props} />;
     case "recall":
     case "spelling":
-      return <WrittenView {...props} />;
+      return <WrittenView key={props.task.taskId} {...props} />;
     case "letter_completion":
       // Nowe zadanie ma puste luki; kolejna próba tego samego zachowuje wpis.
       return <LetterCompletionView key={props.task.taskId} {...props} />;
