@@ -1,6 +1,6 @@
 # #30 — Przygotowanie do sprawdzianu: projekt i proponowany plan etapów
 
-**Status:** projekt i szczegółowy plan zaakceptowane 2026-10-10. Etapy implementacyjne wykonano inline na feature/test-readiness; trwa pełna weryfikacja i niezależne review przed PR. Konfigurowalna liczba zadań zgodna z korektą właściciela.
+**Status:** zatwierdzono i wykonano projekt oraz etapy 1–7. Niezależny review i obsługa uwag udokumentowane; PR https://github.com/lookassh/knowli/pull/33 oczekuje na squash merge właściciela. Liczba zadań jest konfigurowalna zgodnie z korektą.
 
 **Źródło:** https://github.com/lookassh/knowli/issues/30
 
@@ -146,7 +146,7 @@ Uzupełnienie po niezależnym review: brak gotowej porcji ma osobny bezpieczny k
 - [x] Zatwierdzenie pisemnej specyfikacji jako podstawy `writing-plans`; korekta odwzorowana w tym dokumencie.
 - [x] `writing-plans`: szczegółowy plan w `docs/superpowers/plans/2026-10-10-test-readiness.md`.
 - [x] Review nowego szczegółowego planu przez właściciela przed implementacją.
-- [ ] Dopiero po poleceniu realizacji: `using-git-worktrees`, `executing-plans`, dziennik, RED/GREEN, niezależny `requesting-code-review`, obsługa uwag, `verification-before-completion`, `finishing-a-development-branch`, PR.
+- [x] Dopiero po poleceniu realizacji: `using-git-worktrees`, `executing-plans`, dziennik, RED/GREEN, niezależny `requesting-code-review`, obsługa uwag, `verification-before-completion`, `finishing-a-development-branch`, PR.
 
 W nagłówku przyszłego planu musi znaleźć się: „REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Use superpowers:subagent-driven-development only with explicit owner approval. Before completion, use superpowers:requesting-code-review.”
 

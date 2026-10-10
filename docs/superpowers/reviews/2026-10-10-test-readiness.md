@@ -27,3 +27,4 @@ Przyczyny źródłowe zweryfikowano w `receiving-code-review`; nie przyjęto uwa
 ## Dowody i ograniczenia
 
 Przed poprawkami: unit 374/374, PostgreSQL 168/168, E2E 64/64, typecheck i build PASS. Pełne wyniki po poprawkach oraz końcowa decyzja wykonawcy znajdują się w `../progress/2026-10-10-test-readiness.md`. Fizycznego telefonu/tabletu rodziny ani wdrożenia produkcyjnego nie sprawdzano; przegląd nie zastępuje tych dowodów.
+`nPo pięciu poprawkach: pełne unit376/376, PostgreSQL172/172 i E2E66/66, typecheck/build/diff-check PASS. PR: https://github.com/lookassh/knowli/pull/33. Wykonawca zakończył bramkę obsługi review; właściciel podejmuje decyzję o squash merge.

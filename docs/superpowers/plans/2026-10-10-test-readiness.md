@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-10-test-readiness-design.md`, zaakceptowana 2026-10-10 z korektą właściciela: liczba zadań jest konfigurowalna.
 
-**Status:** szczegółowy plan zaakceptowany przez właściciela 2026-10-10; wykonanie inline przez executing-plans. Stan bazowy e2db65104842e417e4d422dbc29a8044156a3f9b.
+**Status:** wykonano etapy 1–7 przez executing-plans, z niezależnym review i poprawkami RED→GREEN. Wyniki: unit376, PostgreSQL172, E2E66, typecheck/build PASS. Dostarczono PR https://github.com/lookassh/knowli/pull/33; scala właściciel przez squash.
 
 ## Global Constraints
 
@@ -142,12 +142,12 @@ Prywatne typy w `mock-test-types.ts`:
 
 **Files:** Modify `docs/SPEC.md`, `docs/architecture.md`, `docs/folder-structure.md`, ten plan i dziennik. Review artifact `docs/superpowers/reviews/2026-10-10-test-readiness.md`. Testy z zadań 1–6 oraz istniejące suites. Brak sztucznego RED dla samej dokumentacji.
 
-- [ ] Odwzorować finalne DTO, trasy, ustawienie 1–100/default 10, semantykę końca i zakresu. Zachować SPEC reguł opanowania oraz trening 48h. Sprawdzić każde kryterium #30 względem implementacji i dziennika; wyjątki R01–R07 opisane w specyfikacji.
-- [ ] `pnpm test:unit`, `pnpm test:integration`, `pnpm typecheck`, `pnpm build`, `pnpm test:e2e`, `git diff --check`. Wymagany brak nowych błędów; istniejące baseline failures nie usprawiedliwiają regresji. Zachować pełne wyniki i rozróżnić wykonane testy od urządzenia rodziny. Ręcznie potwierdzić klawiaturę i audio na telefonie/tablecie albo jawnie opisać brak tego dowodu.
-- [ ] `requesting-code-review`: dedykowany niezależny subagent-recenzent według aktualnego `code-reviewer.md`. Przekazać wymagania #30 z korektą właściciela, spec, plan, Review Focus, **cały BASE_SHA..HEAD_SHA** plus niezacommitowany diff, wyniki i odstępstwa. Zgoda na delegowanie implementacji nie jest potrzebna do recenzenta wymaganego w AGENTS.md; nie delegować wykonania zadań.
-- [ ] `receiving-code-review`: zweryfikować uwagi; rozwiązać Critical/Important, poprawki zachowania RED/GREEN. Wynik i decyzje zapisać w review artifact/dzienniku, Minor jawnie odłożyć. Wykonać adekwatne ponowne sprawdzenia po poprawkach, nie deklarować niezależnego review na podstawie self-review planu.
-- [ ] `verification-before-completion` i `finishing-a-development-branch`: świeży Git/diff i niezbędne wyniki; push gałęzi roboczej oraz PR do main z udokumentowanym niezależnym review i walidacją. W treści PR `Closes #30`. Po stworzeniu zawsze `attach_artifact` URL PR. Właściciel scala przez squash; agent nie scala bez osobnego polecenia. Nie usuwać worktree z niepołączonymi zmianami.
-- [ ] Raport końcowy: co zmieniono, rzeczywiste sprawdzenia, zakres/niezależność review, pozostałe ograniczenia i URL PR. Aktualizacja checklisty to dowód, nie zastępstwo wykonania.
+- [x] Odwzorować finalne DTO, trasy, ustawienie 1–100/default 10, semantykę końca i zakresu. Zachować SPEC reguł opanowania oraz trening 48h. Sprawdzić każde kryterium #30 względem implementacji i dziennika; wyjątki R01–R07 opisane w specyfikacji.
+- [x] `pnpm test:unit`, `pnpm test:integration`, `pnpm typecheck`, `pnpm build`, `pnpm test:e2e`, `git diff --check`. Wymagany brak nowych błędów; istniejące baseline failures nie usprawiedliwiają regresji. Zachować pełne wyniki i rozróżnić wykonane testy od urządzenia rodziny. Ręcznie potwierdzić klawiaturę i audio na telefonie/tablecie albo jawnie opisać brak tego dowodu.
+- [x] `requesting-code-review`: dedykowany niezależny subagent-recenzent według aktualnego `code-reviewer.md`. Przekazać wymagania #30 z korektą właściciela, spec, plan, Review Focus, **cały BASE_SHA..HEAD_SHA** plus niezacommitowany diff, wyniki i odstępstwa. Zgoda na delegowanie implementacji nie jest potrzebna do recenzenta wymaganego w AGENTS.md; nie delegować wykonania zadań.
+- [x] `receiving-code-review`: zweryfikować uwagi; rozwiązać Critical/Important, poprawki zachowania RED/GREEN. Wynik i decyzje zapisać w review artifact/dzienniku, Minor jawnie odłożyć. Wykonać adekwatne ponowne sprawdzenia po poprawkach, nie deklarować niezależnego review na podstawie self-review planu.
+- [x] `verification-before-completion` i `finishing-a-development-branch`: świeży Git/diff i niezbędne wyniki; push gałęzi roboczej oraz PR do main z udokumentowanym niezależnym review i walidacją. W treści PR `Closes #30`. Po stworzeniu zawsze `attach_artifact` URL PR. Właściciel scala przez squash; agent nie scala bez osobnego polecenia. Nie usuwać worktree z niepołączonymi zmianami.
+- [x] Raport końcowy: co zmieniono, rzeczywiste sprawdzenia, zakres/niezależność review, pozostałe ograniczenia i URL PR. Aktualizacja checklisty to dowód, nie zastępstwo wykonania.
 
 ## Self-review planu
 
