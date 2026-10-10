@@ -4,7 +4,7 @@ import { MockTestReportDtoSchema, MockTestSummaryDtoSchema, SkillStatusSchema, U
   type TestGoal, type TaskDto, type MockTestReportDto, type MockTestSummaryDto, type MockTestReportRow } from "@learning/contracts";
 import type { Services } from "../config";
 import type { Tx } from "../db/client";
-import { itemRevisions, learningSessions, sessionTasks } from "../db/schema";
+import { itemRevisions, learningSessions, sessionTasks, deckVersions } from "../db/schema";
 import { buildMockTestPlan } from "../domain/mock-test-plan";
 import type { MockTestCandidate, MockTestPlanSnapshot } from "../domain/mock-test-types";
 import { computeTargetKey } from "../domain/target-key";
@@ -17,6 +17,7 @@ export async function closeMockTest(tx: Tx, services: Services, session: typeof 
   const saved = MockTestReportDtoSchema.safeParse(session.context.mockTestReport);
   if (saved.success) return saved.data;
   const plan = session.mockTestPlan!;
+  const [version] = await tx.select().from(deckVersions).where(eq(deckVersions.id, session.deckVersionId));
   const tasks = await tx.select().from(sessionTasks).where(eq(sessionTasks.sessionId, session.id));
   const tasksById = new Map(tasks.map(t => [t.id, t]));
   const grades = await tx.execute<{ task_id: string; skill: TestGoal; outcome: string; independent: boolean; reason: string | null; details: Record<string, unknown>; context: { assistance?: string[]; firstTry?: boolean } }>(sql`
@@ -48,6 +49,7 @@ export async function closeMockTest(tx: Tx, services: Services, session: typeof 
   const endedAt = session.endedAt ?? services.clock.now();
   const state = complete ? "completed" : requestedState === "completed" ? "ended" : requestedState;
   const report = MockTestReportDtoSchema.parse({ sessionId: session.id, childId: session.childId, deckId: session.deckId,
+    deckTitle: version!.title, deckVersionNumber: version!.versionNumber,
     deckVersionId: session.deckVersionId, testDate: plan.testDate, testGoals: plan.testGoals, requestedTaskCount: plan.requestedTaskCount,
     taskBudget: session.taskBudget, state, complete, startedAt: session.startedAt.toISOString(), endedAt: endedAt.toISOString(),
     rows, skills: summarizeMockTestRows(rows, plan.testGoals) });

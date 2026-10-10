@@ -8,7 +8,8 @@ import { computeTargetKey } from "../../packages/server/src/domain/target-key";
 export async function mockTestDeck(services: Services, pool: ReturnType<typeof createDatabase>["pool"], count = 4, known = true) {
 
   const child = await createChild(services, { displayName: "Kartkówka", avatarKey: "fox" });
-  const draft = await createDraft(services, { title: "Próba", items: Array.from({ length: count }, (_, i) => ({
+  const title = `Próba ${randomUUID().slice(0, 8)}`;
+  const draft = await createDraft(services, { title, items: Array.from({ length: count }, (_, i) => ({
     source: `znaczenie ${i}`, target: i === 0 ? "Monday" : `word${i}`, acceptedAnswers: [],
     locales: { source: "pl-PL", target: "en-GB" }, visualType: "none" as const,
   })) });
@@ -39,5 +40,5 @@ export async function mockTestDeck(services: Services, pool: ReturnType<typeof c
     });
     await endSession(services, session.sessionId);
   }
-  return { childId: child.id, deckId: draft.deckId, versionId: draft.id, revisions };
+  return { childId: child.id, deckId: draft.deckId, versionId: draft.id, title, revisions };
 }

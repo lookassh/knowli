@@ -19,6 +19,7 @@ export const MockTestReportRowSchema = z.object({
 });
 export type MockTestReportRow = z.infer<typeof MockTestReportRowSchema>;
 export const MockTestReportDtoSchema = z.object({
+  deckTitle: z.string(), deckVersionNumber: z.number().int().positive(),
   sessionId: UuidSchema, childId: UuidSchema, deckId: UuidSchema, deckVersionId: UuidSchema,
   testDate: DaySchema.nullable(), testGoals: TestGoalsSchema, requestedTaskCount: MockTestTaskCountSchema,
   taskBudget: count, state: z.enum(["completed", "ended"]), complete: z.boolean(),

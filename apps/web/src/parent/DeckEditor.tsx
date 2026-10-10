@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   messages,
+  AssignmentPutSchema,
   type ChildDto,
   type DeckDto,
   type DraftDto,
@@ -17,6 +18,7 @@ import {
   type EditorSnapshot,
 } from "./deck-editor-state";
 import { apiFetch, errorMessage } from "./api";
+import AssignmentTestGoalFields, { type AssignmentTestSettings } from "./AssignmentTestGoalFields";
 import type { EditorLeaveState } from "./useParentLeaveGuard";
 import DeckConflictPanel, { type EditorConflict } from "./DeckConflictPanel";
 
@@ -54,6 +56,11 @@ export default function DeckEditor({
   const [conflict, setConflict] = useState<EditorConflict | null>(null);
   const [remoteApplied, setRemoteApplied] = useState(false);
   const [assignDates, setAssignDates] = useState<Record<string, string>>({});
+  const [assignSettings, setAssignSettings] = useState<Record<string, AssignmentTestSettings>>({});
+  const assignmentSettings = (childId: string): AssignmentTestSettings => {
+    const existing = deck?.assignments.find(a => a.childId === childId);
+    return assignSettings[childId] ?? { testGoals: existing?.testGoals ?? null, mockTestTaskCount: existing?.mockTestTaskCount ?? 10 };
+  };
   const dirty = useRef(false);
   const conflictActive = useRef(false);
   const busyRef = useRef(false);
@@ -402,7 +409,8 @@ export default function DeckEditor({
     setError(null);
     try {
       await apiFetch("PUT", `/api/v1/parent/assignments/${childId}/${deckId}`, {
-        testDate: assignDates[childId] || null,
+        testDate: (assignDates[childId] ?? deck?.assignments.find(a => a.childId === childId)?.testDate) || null,
+        ...assignmentSettings(childId),
       });
       await load();
     } catch (cause) {
@@ -671,19 +679,20 @@ export default function DeckEditor({
           <h3>{messages.decks.assignTitle}</h3>
           {childrenList.map((child, index) => (
             <div className="row space" key={child.id} data-testid={`assign-row-${index}`}>
-              <span>{child.displayName}</span>
+              <span data-child-id={child.id}>{child.displayName}</span>
               <input
                 type="date"
                 data-testid={`assign-date-${index}`}
                 aria-label={`${messages.decks.assignDate} ${child.displayName}`}
-                value={assignDates[child.id] ?? ""}
+                value={assignDates[child.id] ?? deck.assignments.find(a => a.childId === child.id)?.testDate ?? ""}
                 onChange={(event) =>
                   setAssignDates((current) => ({ ...current, [child.id]: event.target.value }))
                 }
               />
-              <button type="button" data-testid={`assign-submit-${index}`} onClick={() => assign(child.id)}>
+              <button type="button" data-testid={`assign-submit-${index}`} disabled={!AssignmentPutSchema.safeParse({ testDate: null, ...assignmentSettings(child.id) }).success} onClick={() => assign(child.id)}>
                 {messages.decks.assign}
               </button>
+              <AssignmentTestGoalFields {...assignmentSettings(child.id)} onChange={value => setAssignSettings(current => ({ ...current, [child.id]: value }))} />
             </div>
           ))}
           <ul className="plain">

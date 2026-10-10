@@ -10,6 +10,7 @@ import {
 } from "@learning/contracts";
 import { apiFetch, errorMessage } from "./api";
 import ProgressItems from "./ProgressItems";
+import MockTestReportPanel from "./MockTestReportPanel";
 
 /**
  * Panel postępów (SPEC §25): filtrowanie dziecko × zestaw, liczby per
@@ -34,6 +35,7 @@ export default function ProgressPanel({
   const [childId, setChildId] = useState(childrenList[0]?.id ?? "");
   const [deckId, setDeckId] = useState(published[0]?.deckId ?? "");
   const [progress, setProgress] = useState<ProgressDto | null>(null);
+  const [reportVersion, setReportVersion] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const load = async () => {
@@ -45,6 +47,7 @@ export default function ProgressPanel({
       setProgress(
         await apiFetch<ProgressDto>("GET", `/api/v1/parent/progress?childId=${childId}&deckId=${deckId}`),
       );
+      setReportVersion(value => value + 1);
     } catch (cause) {
       setError(errorMessage(cause));
     }
@@ -109,6 +112,9 @@ export default function ProgressPanel({
         </p>
       )}
 
+      {progress && (
+        <MockTestReportPanel key={reportVersion} childId={progress.childId} deckId={progress.deckId} currentDeckVersionId={published.find(d => d.deckId === progress.deckId)?.publishedVersionId} />
+      )}
       {progress && (
         <>
           <h3 data-testid="progress-heading">
