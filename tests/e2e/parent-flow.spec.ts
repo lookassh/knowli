@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
-import { messages } from "@learning/contracts";
+import { DeckDtoSchema, messages } from "@learning/contracts";
 
 /**
  * Pełny obieg rodzica z zadania 4: generuj → preview/edit → publikuj → przypisz.
@@ -12,6 +12,28 @@ const DECK_TITLE = "Dni tygodnia — obieg rodzica";
 
 function deckRow(page: Page) {
   return page.locator('[data-testid^="deck-row"]').filter({ hasText: DECK_TITLE });
+}
+
+async function playTargetAudio(page: Page, deckId: string, itemIndex: number): Promise<void> {
+  const response = await page.request.get(`/api/v1/parent/decks/${deckId}`);
+  expect(response.status()).toBe(200);
+  const deck = DeckDtoSchema.parse(await response.json());
+  expect(deck.draft).not.toBeNull();
+  const item = deck.draft!.items[itemIndex]!;
+  const audio = deck.draft!.assets.find((asset) =>
+    asset.itemRevisionId === item.revisionId && asset.role === "target_audio",
+  );
+  expect(audio?.state).toBe("approved");
+  expect(audio?.assetId).toBeTruthy();
+  // Obrazy korzystają z tego samego endpointu. Czekamy na właściwy zasób,
+  // zachowując asercję MIME, która wykryje błędne audio z serwera.
+  const played = page.waitForResponse((entry) =>
+    new URL(entry.url()).pathname === `/api/v1/media/${audio!.assetId}`,
+  );
+  await page.getByTestId(`item-play-${itemIndex}`).click();
+  const audioResponse = await played;
+  expect(audioResponse.status()).toBe(200);
+  expect(audioResponse.headers()["content-type"]).toContain("audio/mpeg");
 }
 
 function isoDate(daysAhead: number): string {
@@ -250,7 +272,13 @@ test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page,
   await page.getByTestId("tab-decks").click();
   await page.getByTestId("deck-prompt").fill("angielskie dni tygodnia dla początkującego dziecka");
   await page.getByTestId("deck-title").fill(DECK_TITLE);
+  const generated = page.waitForResponse((response) =>
+    response.request().method() === "POST" && response.url().endsWith("/api/v1/parent/decks/generate"),
+  );
   await page.getByTestId("generate-submit").click();
+  const generationResponse = await generated;
+  expect(generationResponse.status()).toBe(202);
+  const { deckId } = await generationResponse.json() as { deckId: string };
   // Po zweryfikowanym 202 panel otwiera utworzony edytor.
   await expect(page.getByTestId("editor-title")).toHaveValue(DECK_TITLE);
   await expect(page.getByTestId("generation-banner")).toBeVisible();
@@ -267,11 +295,7 @@ test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page,
 
   // Odtworzenie audio celu przed edycją.
   await expect(page.getByTestId("item-audio-state-0")).toContainText("gotowe", { timeout: 60_000 });
-  const firstAudio = page.waitForResponse((r) => r.url().includes("/api/v1/media/"));
-  await page.getByTestId("item-play-0").click();
-  const firstAudioResponse = await firstAudio;
-  expect(firstAudioResponse.status()).toBe(200);
-  expect(firstAudioResponse.headers()["content-type"]).toContain("audio/mpeg");
+  await playTargetAudio(page, deckId, 0);
 
   // Popraw słowo i wariant; kosztowna regeneracja dopiero po jawnym zapisie.
   await page.getByTestId("item-target-3").fill("thursday");
@@ -286,11 +310,7 @@ test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page,
 
   // Nowe audio gotowe → odtworzenie nowego zasobu.
   await expect(page.getByTestId("item-audio-state-3")).toContainText("gotowe", { timeout: 60_000 });
-  const fixedAudio = page.waitForResponse((r) => r.url().includes("/api/v1/media/"));
-  await page.getByTestId("item-play-3").click();
-  const fixedAudioResponse = await fixedAudio;
-  expect(fixedAudioResponse.status()).toBe(200);
-  expect(fixedAudioResponse.headers()["content-type"]).toContain("audio/mpeg");
+  await playTargetAudio(page, deckId, 3);
 
   // Zły obraz świadomie pominięty — publikacja bez niego jest dozwolona.
   await page.getByTestId("item-omit-image-3").click();
