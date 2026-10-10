@@ -40,6 +40,11 @@ export default function MockTestReportPanel({ childId, deckId, currentDeckVersio
       <ul className="plain">{report.rows.map(row => <li key={`${row.itemId}:${row.skill}`} className="card">
         <strong>{row.target}</strong> ({row.source}) — {messages.progress.skills[row.skill]}
         <p>{messages.progress.mockTestEvidence}: {messages.progress.mockTestOutcome[row.outcome]}{row.reason ? ` — ${messages.progress.mockTestReason[row.reason] ?? messages.progress.mockTestOutcome[row.outcome]}` : ""}</p>
+        <p>{messages.progress.mockTestEvidenceQuality}: {row.outcome === "correct" || row.outcome === "incorrect"
+          ? row.independent ? messages.progress.mockTestIndependent : messages.progress.mockTestNotIndependent
+          : messages.progress.mockTestNoEvidence}
+          {row.independenceReason && ` — ${messages.progress.mockTestReason[row.independenceReason]}`}
+        </p>
         <p>{messages.progress.mockTestMastery}: {messages.progress.itemStatus[row.masteryStatus]}</p>
       </li>)}</ul>
     </div>}

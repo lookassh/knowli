@@ -60,3 +60,12 @@ test("two browsers resume the same test and stale answers refresh without extra 
   await other.getByTestId("kid-end").click(); await expect(other.getByTestId("kid-mock-summary")).toBeVisible();
   await other.close();
 });
+
+test("unknown material explains unavailable mock test and allows returning to learning", async ({ page }) => {
+  const { childId } = await seedMockTest(3, false);
+  await page.goto(`/kids/${childId}/learn`); await page.getByTestId("kid-mock-start").first().click();
+  await expect(page.getByTestId("kid-init-error")).toContainText("Kartkówka nie jest jeszcze gotowa");
+  await page.getByTestId("kid-back-decks").click();
+  await page.getByTestId("kid-deck").first().click();
+  await expect(page.getByTestId("kid-target")).toBeVisible();
+});

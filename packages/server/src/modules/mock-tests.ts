@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ne, lt, or, sql } from "drizzle-orm";
 import { MockTestReportDtoSchema, MockTestSummaryDtoSchema, SkillStatusSchema, UuidSchema,
   type TestGoal, type TaskDto, type MockTestReportDto, type MockTestSummaryDto, type MockTestReportRow } from "@learning/contracts";
 import type { Services } from "../config";
@@ -34,16 +34,17 @@ export async function closeMockTest(tx: Tx, services: Services, session: typeof 
     const grade = slot ? byTaskSkill.get(`${slot.taskId}:${skill}`) : undefined;
     const status = SkillStatusSchema.safeParse(statuses.get(item.skills[skill] ?? ""));
     let outcome: MockTestReportRow["outcome"] = "not_tested";
+    let independenceReason: MockTestReportRow["independenceReason"] = null;
     let reason: string | null = slot ? "interrupted" : item.unavailable[skill] ?? "outside_portion";
     if (task?.state === "skipped") { outcome = "skipped"; reason = "skipped"; }
     else if (grade) {
       outcome = grade.outcome === "unassessed" ? "unassessed" : grade.outcome as "correct" | "incorrect";
       reason = grade.reason;
-      if (!grade.independent && outcome === "correct") reason = grade.context.assistance?.length ? "assisted" : grade.context.firstTry === false ? "not_first_try" : "recent_exposure";
+      if (!grade.independent && (outcome === "correct" || outcome === "incorrect")) independenceReason = grade.context.assistance?.length ? "assisted" : grade.context.firstTry === false ? "not_first_try" : "recent_exposure";
       if (skill === "spelling" && (grade.details.spelling as { capitalizationOnlyDefect?: boolean } | undefined)?.capitalizationOnlyDefect) reason = "capitalization";
     }
     rows.push({ itemId: item.itemId, source: item.source, target: item.target, skill, outcome, independent: grade?.independent ?? false,
-      reason, masteryStatus: status.success ? status.data : "not_assessed" });
+      reason, independenceReason, masteryStatus: status.success ? status.data : "not_assessed" });
   }
   const complete = plan.slots.every(s => { const t = tasksById.get(s.taskId); return t && t.state !== "issued"; });
   const endedAt = session.endedAt ?? services.clock.now();
@@ -92,7 +93,7 @@ export async function readMockTestSummary(services: Services, sessionId: string)
 export async function listMockTests(services: Services, childId: string, deckId: string): Promise<MockTestReportDto[]> {
   const rows = await services.db.select({ id: learningSessions.id }).from(learningSessions)
     .where(and(eq(learningSessions.childId, UuidSchema.parse(childId)), eq(learningSessions.deckId, UuidSchema.parse(deckId)),
-      eq(learningSessions.mode, "mock_test"), ne(learningSessions.state, "active")))
+      eq(learningSessions.mode, "mock_test"), or(ne(learningSessions.state, "active"), lt(learningSessions.startedAt, new Date(services.clock.now().getTime() - 600_000)))))
     .orderBy(desc(learningSessions.startedAt), desc(learningSessions.id)).limit(20);
   const result: MockTestReportDto[] = [];
   for (const row of rows) result.push(await getMockTestReport(services, row.id));

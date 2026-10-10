@@ -5,12 +5,12 @@ import { sessionTasks } from "../../packages/server/src/db/schema";
 import { computeTargetKey } from "../../packages/server/src/domain/target-key";
 
 
-export async function mockTestDeck(services: Services, pool: ReturnType<typeof createDatabase>["pool"], count = 4, known = true) {
+export async function mockTestDeck(services: Services, pool: ReturnType<typeof createDatabase>["pool"], count = 4, known = true, words?: { source: string; target: string; acceptedAnswers?: string[] }[]) {
 
   const child = await createChild(services, { displayName: "Kartkówka", avatarKey: "fox" });
   const title = `Próba ${randomUUID().slice(0, 8)}`;
   const draft = await createDraft(services, { title, items: Array.from({ length: count }, (_, i) => ({
-    source: `znaczenie ${i}`, target: i === 0 ? "Monday" : `word${i}`, acceptedAnswers: [],
+    source: words?.[i]?.source ?? `znaczenie ${i}`, target: words?.[i]?.target ?? (i === 0 ? "Monday" : `word${i}`), acceptedAnswers: words?.[i]?.acceptedAnswers ?? [],
     locales: { source: "pl-PL", target: "en-GB" }, visualType: "none" as const,
   })) });
   const revisions = (await pool.query<{ id: string; itemId: string; payload: { source: string; target: string } }>(

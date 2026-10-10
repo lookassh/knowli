@@ -33,6 +33,7 @@ test("parent configures count and sees partial pinned coverage", async ({ page }
   await expect(page.getByTestId("mock-parent-report")).toContainText("3");
   await expect(page.getByTestId("mock-report-recall")).toContainText("1 z 15");
   await expect(page.getByTestId("mock-report-spelling")).toContainText("1 do ćwiczeń");
+  await expect(page.getByTestId("mock-parent-report")).toContainText("Samodzielna odpowiedź");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByTestId("mock-parent-report").scrollIntoViewIfNeeded();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -40,4 +41,20 @@ test("parent configures count and sees partial pinned coverage", async ({ page }
   const withoutAuth = await page.context().browser()!.newContext();
   expect((await withoutAuth.request.get(new URL(`/api/v1/parent/mock-tests/${session.sessionId}`, page.url()).href)).status()).toBe(401);
   await withoutAuth.close();
+});
+
+test("parent sees evidence quality separately from a spelling mistake after a recent model", async ({ page }) => {
+  const { childId, deckId } = await seedMockTest(1, true, true);
+  await page.request.post("/api/v1/parent/setup", { data: { secret: "1234" } });
+  await page.request.post("/api/v1/parent/login", { data: { secret: "1234" } });
+  const session = await (await page.request.post("/api/v1/kid/sessions", { data: { childId, deckId, mode: "mock_test", microphoneEnabled: false } })).json();
+  const task = await (await page.request.post(`/api/v1/kid/sessions/${session.sessionId}/next`)).json();
+  await page.request.post(`/api/v1/kid/tasks/${task.taskId}/attempts`, { data: { modality: "text", text: "monday", clientAttemptId: crypto.randomUUID() } });
+  await page.request.post(`/api/v1/kid/sessions/${session.sessionId}/end`);
+  await page.goto("/parent"); await page.getByTestId("tab-progress").click();
+  await page.getByTestId("progress-child").selectOption(childId); await page.getByTestId("progress-deck").selectOption(deckId); await page.getByTestId("progress-load").click();
+  const report = page.getByTestId("mock-parent-report");
+  await expect(report).toContainText("Bez potwierdzonej samodzielności");
+  await expect(report).toContainText("Niedawno pokazano wzorzec");
+  await expect(report).toContainText("Wielka litera");
 });

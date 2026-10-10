@@ -33,7 +33,7 @@ it("pins configured count and material across resume and issues one fixed task",
 it("does not create an empty mock test for unknown material", async () => {
   const { services } = buildTestServices(); const a = await mockTestDeck(services, 1, false);
   await upsertAssignment(services, a.childId, a.deckId, null, { testGoals: ["recall"] });
-  await expect(startSession(services, { childId: a.childId, deckId: a.deckId, microphoneEnabled: false, mode: "mock_test" })).rejects.toMatchObject({ code: "validation" });
+  await expect(startSession(services, { childId: a.childId, deckId: a.deckId, microphoneEnabled: false, mode: "mock_test" })).rejects.toMatchObject({ code: "mock_test_unavailable" });
   expect((await pool.query(`select id from learning_app.learning_sessions where child_id=$1`, [a.childId])).rows).toEqual([]);
 });
 
@@ -118,4 +118,22 @@ it("accepts exactly one of two different concurrent answers", async () => {
   const race = await Promise.allSettled(["Monday", "wrong"].map(text => submitAttempt(services, { taskId: t.taskId, clientAttemptId: randomUUID(), modality: "text", text })));
   expect(race.filter(r => r.status === "fulfilled")).toHaveLength(1);
   expect((await pool.query(`select id from learning_app.attempts where task_id=$1`, [t.taskId])).rows).toHaveLength(1);
+});
+
+it.each([299, 300])("includes approved variant contact from another deck after %i seconds", async seconds => {
+  const { services, clock } = buildTestServices();
+  const a = await mockTestDeck(services, 1, true, [{ source: "kolor", target: "color", acceptedAnswers: ["colour"] }]);
+  clock.advanceHours(13);
+  const b = await mockTestDeck(services, 1, false, [{ source: "kolor", target: "colour" }]);
+  await upsertAssignment(services, a.childId, b.deckId, null);
+  const training = await startSession(services, { childId: a.childId, deckId: b.deckId, microphoneEnabled: false });
+  await nextTask(services, training.sessionId); await endSession(services, training.sessionId);
+  clock.advanceMs(seconds * 1000);
+  await upsertAssignment(services, a.childId, a.deckId, null, { testGoals: ["recall", "spelling"] });
+  const s = await startSession(services, { childId: a.childId, deckId: a.deckId, microphoneEnabled: false, mode: "mock_test" });
+  const t = (await nextTask(services, s.sessionId))!;
+  const answer = await submitAttempt(services, { taskId: t.taskId, clientAttemptId: randomUUID(), modality: "text", text: "colour" });
+  const grades = (await pool.query(`select outcome,independent,confirmation_eligible from learning_app.assessments where attempt_id=$1`, [answer.attemptId])).rows;
+  expect(grades).toHaveLength(2);
+  expect(grades.every(g => g.outcome === "correct" && g.independent === (seconds === 300) && !g.confirmation_eligible)).toBe(true);
 });

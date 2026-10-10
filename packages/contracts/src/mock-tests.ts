@@ -16,6 +16,7 @@ export type MockTestSkillReportDto = z.infer<typeof MockTestSkillReportDtoSchema
 export const MockTestReportRowSchema = z.object({
   itemId: UuidSchema, source: z.string(), target: z.string(), skill: TestGoalSchema,
   outcome: MockTestOutcomeSchema, independent: z.boolean(), reason: z.string().nullable(), masteryStatus: SkillStatusSchema,
+  independenceReason: z.enum(["assisted", "recent_exposure", "not_first_try"]).nullable(),
 });
 export type MockTestReportRow = z.infer<typeof MockTestReportRowSchema>;
 export const MockTestReportDtoSchema = z.object({

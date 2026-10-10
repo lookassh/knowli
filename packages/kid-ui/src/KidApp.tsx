@@ -59,7 +59,9 @@ export function KidApp({
     case "initError":
       return (
         <main className="kid-screen">
-          <p className="kid-hint">{screen.message}</p>
+          {actions && <header className="kid-top-bar">{actions}</header>}
+          <p className="kid-hint" data-testid="kid-init-error">{screen.message}</p>
+          <button type="button" className="kid-primary" data-testid="kid-back-decks" onClick={() => void controller.backToDecks()}>{messages.kid.backToLearning}</button>
         </main>
       );
     case "profile":

@@ -1,5 +1,6 @@
 import type { TestGoal } from "@learning/contracts";
 import type { MockTestCandidate, MockTestPlanSnapshot, MockTestSlot } from "./mock-test-types";
+import { normalizeTargetText } from "./target-key";
 
 export function buildMockTestPlan(input: { testGoals: TestGoal[]; testDate: string | null; requestedTaskCount: number; candidates: readonly MockTestCandidate[]; newId: () => string }): MockTestPlanSnapshot {
   const writtenGoals = input.testGoals.filter(g => g !== "listening");
@@ -23,7 +24,9 @@ export function buildMockTestPlan(input: { testGoals: TestGoal[]; testDate: stri
   }
   if (input.testGoals.includes("listening")) for (const c of input.candidates.filter(c => c.known).sort(sort(["listening"]))) {
     const seen = new Set([c.source.normalize("NFC").trim().toLowerCase()]);
+    const answers = new Set([c.target, ...c.acceptedAnswers].map(normalizeTargetText));
     const alternatives = input.candidates.filter(x => x.known && x.itemId !== c.itemId).filter(x => {
+      if ([x.target, ...x.acceptedAnswers].some(answer => answers.has(normalizeTargetText(answer)))) return false;
       const text = x.source.normalize("NFC").trim().toLowerCase();
       if (seen.has(text)) return false; seen.add(text); return true;
     }).slice(0, 3);

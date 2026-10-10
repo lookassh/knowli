@@ -238,6 +238,13 @@ export class LearningSessionController {
     await this.startLearning(deckId, "mock_test");
   }
 
+  async backToDecks(): Promise<void> {
+    this.#epoch += 1;
+    this.#teardownRecording(); this.#media.player.stop();
+    if (this.#childId !== null) await this.#openDeckScreen(this.#childId);
+    else await this.start();
+  }
+
   async startLearning(deckId: string, mode: SessionDto["mode"] = "training"): Promise<void> {
     if (this.#screen.kind !== "deck") return;
     const { childId, microphone } = this.#screen;

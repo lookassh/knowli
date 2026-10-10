@@ -42,4 +42,22 @@ describe("mock test plan", () => {
     expect(p.slots.map(s => s.itemId)).toEqual([pool[2]!.itemId, pool[1]!.itemId]);
     expect(buildMockTestPlan({ testGoals: ["spelling"], testDate: null, requestedTaskCount: 10, candidates: pool.slice(0, 1), newId: randomUUID }).slots).toHaveLength(1);
   });
+  it("does not use an overlapping English answer as a listening distractor", () => {
+    const pool = candidates(2);
+    Object.assign(pool[0]!, { source: "nietoperz", target: "bat" });
+    Object.assign(pool[1]!, { source: "kij", target: "BAT" });
+    const plan = buildMockTestPlan({ testGoals: ["listening"], testDate: null, requestedTaskCount: 2, candidates: pool, newId: randomUUID });
+    expect(plan.slots).toEqual([]);
+    expect(plan.scope.every(s => s.unavailable.listening === "insufficient_options")).toBe(true);
+  });
+  it("excludes approved variants overlapping the listening target", () => {
+    const pool = candidates(3);
+    Object.assign(pool[0]!, { source: "nietoperz", target: "bat" });
+    Object.assign(pool[1]!, { source: "kij", target: "stick", acceptedAnswers: ["bat"] });
+    Object.assign(pool[2]!, { source: "pies", target: "dog" });
+    const plan = buildMockTestPlan({ testGoals: ["listening"], testDate: null, requestedTaskCount: 3, candidates: pool, newId: randomUUID });
+    const bat = plan.slots.find(s => s.itemId === pool[0]!.itemId)!;
+    expect(bat.prompt.kind).toBe("listening");
+    if (bat.prompt.kind === "listening") expect(bat.prompt.options.map(o => o.text).sort()).toEqual(["nietoperz", "pies"]);
+  });
 });

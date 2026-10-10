@@ -23,6 +23,8 @@ import { AppError } from "../errors";
 import { assessedSkills, evaluateChoice, evaluateNonAnswer, evaluateWritten } from "../domain/evaluate";
 import { chooseFeedback } from "../domain/feedback";
 import { qualifyAttempt } from "../domain/independence";
+import { computeTargetKey } from "../domain/target-key";
+import { payloadToItem } from "./item-payload";
 import type {
   AnswerKey,
   AssistanceKind,
@@ -106,13 +108,20 @@ async function assistanceFor(tx: Tx, task: TaskRow, receivedAt: Date): Promise<A
 }
 
 /** Ostatnie ujawnienie rozwiązania elementu — także w innym ćwiczeniu (SPEC §18.1). */
-async function lastExposureAt(tx: Tx, childId: string, targetKey: string): Promise<string | null> {
+async function lastExposureAt(tx: Tx, childId: string, targetKeys: readonly string[]): Promise<string | null> {
   const [row] = await tx
     .select({ latest: max(learningEvents.occurredAt) })
     .from(eventExposures)
     .innerJoin(learningEvents, eq(learningEvents.id, eventExposures.eventId))
-    .where(and(eq(eventExposures.childId, childId), eq(eventExposures.targetKey, targetKey)));
+    .where(and(eq(eventExposures.childId, childId), inArray(eventExposures.targetKey, [...targetKeys])));
   return row?.latest?.toISOString() ?? null;
+}
+
+async function solutionTargetKeys(tx: Tx, task: TaskRow): Promise<string[]> {
+  const [revision] = await tx.select({ payload: itemRevisions.payload, targetKey: itemRevisions.targetKey }).from(itemRevisions).where(eq(itemRevisions.id, task.itemRevisionId));
+  const locale = payloadToItem(revision!.payload).locales.target;
+  const key = answerKeyOf(task);
+  return [...new Set([revision!.targetKey, ...[key.target, ...key.acceptedAnswers].map(answer => computeTargetKey(answer, locale))])];
 }
 
 async function targetKeyOf(tx: Tx, task: TaskRow): Promise<string> {
@@ -482,7 +491,7 @@ export async function startAttempt(
     receivedAt: now.toISOString(),
     policyVersion: policy.version,
     lastExposureAt: RECALL_LIKE.has(task.exerciseType)
-      ? await lastExposureAt(tx, task.childId, targetKey)
+      ? await lastExposureAt(tx, task.childId, await solutionTargetKeys(tx, task))
       : null,
     firstTry: attemptNumber === 1,
     assistance: await assistanceFor(tx, task, now),

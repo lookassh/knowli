@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, inArray, lt, max } from "drizzle-orm";
+import { and, asc, eq, inArray, lte, max } from "drizzle-orm";
 import {
   PresentationCompletionInputSchema,
   SessionInputSchema,
@@ -161,7 +161,7 @@ async function previousContactSnapshot(
   before: Date,
 ): Promise<Record<string, string>> {
   const revisions = await tx
-    .select({ itemId: itemRevisions.itemId })
+    .select({ itemId: itemRevisions.itemId, payload: itemRevisions.payload, targetKey: itemRevisions.targetKey })
     .from(itemRevisions)
     .where(eq(itemRevisions.deckVersionId, deckVersionId));
   if (revisions.length === 0) {
@@ -177,17 +177,32 @@ async function previousContactSnapshot(
           learningEvents.itemId,
           revisions.map((r) => r.itemId),
         ),
-        lt(learningEvents.occurredAt, before),
+        lte(learningEvents.occurredAt, before),
       ),
     )
     .groupBy(learningEvents.itemId);
-  return Object.fromEntries(rows.map((r) => [r.itemId, r.latest!.toISOString()]));
+  const latestByItem = new Map(rows.map(r => [r.itemId, r.latest!.toISOString()]));
+  const keysByItem = new Map(revisions.map(r => {
+    const item = payloadToItem(r.payload);
+    return [r.itemId, [...new Set([r.targetKey, ...[item.target, ...item.acceptedAnswers].map(answer => computeTargetKey(answer, item.locales.target))])]] as const;
+  }));
+  const keys = [...new Set([...keysByItem.values()].flat())];
+  const exposures = await tx.select({ targetKey: eventExposures.targetKey, latest: max(learningEvents.occurredAt) }).from(eventExposures)
+    .innerJoin(learningEvents, eq(learningEvents.id, eventExposures.eventId))
+    .where(and(eq(eventExposures.childId, childId), inArray(eventExposures.targetKey, keys), lte(learningEvents.occurredAt, before)))
+    .groupBy(eventExposures.targetKey);
+  const latestByKey = new Map(exposures.map(e => [e.targetKey, e.latest!.toISOString()]));
+  for (const [itemId, targetKeys] of keysByItem) for (const key of targetKeys) {
+    const value = latestByKey.get(key);
+    if (value && (!latestByItem.has(itemId) || value > latestByItem.get(itemId)!)) latestByItem.set(itemId, value);
+  }
+  return Object.fromEntries(latestByItem);
 }
 
 /**
  * Start lub wznowienie sesji dziecka (arch §9.1). Blokada wiersza profilu
- * serializuje równoległe starty; ta sama talia wznawia aktywną sesję, inna
- * lub przeterminowanie (>30 min bez zdarzeń) zamyka ją stanem ended.
+ * serializuje równoległe starty; ta sama talia i tryb wznawiają aktywną sesję.
+ * Inna talia/tryb wymagają jawnego końca; przeterminowanie zamyka starą sesję.
  */
 export async function startSession(services: Services, input: SessionInput): Promise<SessionDto> {
   const valid = SessionInputSchema.parse(input);
@@ -269,7 +284,7 @@ export async function startSession(services: Services, input: SessionInput): Pro
       childId: valid.childId, deckVersionId: version.id, testGoals: assignment.testGoals!, testDate: assignment.testDate,
       requestedTaskCount: assignment.mockTestTaskCount,
     }) : null;
-    if (mockTestPlan && !mockTestPlan.slots.length) throw new AppError("validation", { message: "Najpierw poznaj materiał. Brak dostępnych zadań kartkówki." });
+    if (mockTestPlan && !mockTestPlan.slots.length) throw new AppError("mock_test_unavailable");
     const [row] = await tx
       .insert(learningSessions)
       .values({

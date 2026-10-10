@@ -135,6 +135,8 @@ Największe ryzyka do review: wyciek feedbacku przez retry/stary endpoint, zgubi
 
 ## 10. Checklista workflow i dalsza bramka
 
+Uzupełnienie po niezależnym review: brak gotowej porcji ma osobny bezpieczny kod/komunikat i powrót do nauki; opcje listening odrzucają wspólne angielskie odpowiedzi/warianty. Przy received_at oraz dla przerwy 12 godzin uwzględniamy wszystkie zatwierdzone warianty także z innych zestawów. Lista rodzica zamyka wygasłe częściowe próby pod blokadą. Raport pokazuje `independenceReason` osobno od poprawności i kapitalizacji, także dla błędu. Dowody RED→GREEN i odłożona Minor: `../reviews/2026-10-10-test-readiness.md`.
+
 - [x] Odczyt `using-superpowers` i zasad dla Codex.
 - [x] Zajęcie zgłoszenia przez przypisanie do `lookassh`.
 - [x] Odczyt bieżącego Git, skryptów, dokumentacji i ścieżek funkcji.
