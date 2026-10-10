@@ -44,3 +44,12 @@ Ruling: brak konfliktów kontraktów na podstawie planu/specyfikacji; wyżej wym
 - Task 6: nie rozpoczęty.
 - Task 7: nie rozpoczęty.
 
+
+### Task 1 — jawny wynik mowy i zgodność historii: complete
+
+- RED potwierdzony: nowy kontrakt, normalizacja, statusy w domenie i ekspozycje zawiodły przed implementacją (brak modułu/schema/statusów/helpera).
+- Implementacja: statusy rozpoznania i wymowy, pusta transkrypcja jako no_speech, helper normalizacji i deduplikowanych ekspozycji z locale rewizji; wyeksportowany typ fragmentu z neutralnym verdict unknown.
+- Testy: pnpm test:unit packages/contracts/src/speech-feedback.test.ts packages/server/src/domain/spoken-answer.test.ts packages/server/src/modules/speech.test.ts packages/server/src/domain/feedback.test.ts → 4 files, 33 tests PASS; pnpm test:integration tests/integration/speech.test.ts tests/integration/attempts.test.ts → 2 files, 33 tests PASS; pnpm typecheck PASS; git diff --check PASS.
+- Pierwszy przebieg integracji ujawnił brak importu deckVersions, a potem nieaktualną asercję starego DTO; oba rozwiązano, ponownie potwierdzając zielony zestaw. Nie pozostawiono odstępstw.
+- Commit: 6c62c64ea011b839c9b3177c441584096a596457.
+- Task 1: complete (commits dd1e025..6c62c64ea011b839c9b3177c441584096a596457; tests: unit + integration + typecheck → PASS)
