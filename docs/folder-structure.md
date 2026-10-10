@@ -179,6 +179,8 @@ DocumentAnalysisProvider pojawi się dopiero podczas budowy source_material. Nie
 
 ## 7. Czego nie tworzymy teraz
 
+Uzupełnienie #30 (2026-10-10): `contracts/src/mock-tests.ts` definiuje cele, liczbę i publiczne raporty; prywatne typy planu są w `server/src/domain/mock-test-types.ts`. `mock-test-plan.ts` dobiera zamrożoną porcję, `mock-test-report.ts` liczy pełny zakres, a `server/src/modules/mock-tests.ts` wydaje sloty, zamyka próbę i czyta raport/omówienie. Migracja `server/drizzle/0004_mock_tests.sql` dodaje konfigurację przypisania, tryb i niezmienność planu/raportu. `kid-ui/src/screens/MockTestSummaryScreen.tsx` obsługuje potwierdzenie porcji i omówienie; rodzic korzysta z `web/src/parent/AssignmentTestGoalFields.tsx` oraz `MockTestReportPanel.tsx`. Synthetic fixtures pozostają w `tests/fixtures/mock-test-world.ts`; nowe testy obejmują `mock-test-settings`, `mock-tests`, `mock-test-reporting` (PostgreSQL) i `mock-test`, `mock-test-parent` (E2E).
+
 Brak apps/android, osobnego backendu Express/Nest, package OCR, repozytorium wektorowego i systemu pluginów. Przyszły host Capacitor będzie konsumował @learning/kid-ui i @learning/contracts oraz istniejące API. Nie trzeba dziś budować go tylko po to, aby wykazać możliwość rozbudowy.
 
 Edycja profilu: `contracts/src/decks.ts` definiuje `ChildPatchSchema`, `server/src/modules/profiles.ts` implementuje `updateChild`, a `web/src/app/api/v1/parent/children/[id]/route.ts` udostępnia PATCH. `ChildEditor.tsx` odpowiada także za formularz imienia i awatara; istniejąca historia nie jest modyfikowana.

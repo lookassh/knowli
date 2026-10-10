@@ -1,6 +1,6 @@
 # #30 — Przygotowanie do sprawdzianu: projekt i proponowany plan etapów
 
-**Status:** projekt i plan etapów zaakceptowane przez właściciela 2026-10-10 z korektą: liczba zadań jest konfigurowalna. Szczegółowy plan wykonawczy: `../plans/2026-10-10-test-readiness.md`; czeka na review przed implementacją. Bez zmian implementacyjnych.
+**Status:** projekt i szczegółowy plan zaakceptowane 2026-10-10. Etapy implementacyjne wykonano inline na feature/test-readiness; trwa pełna weryfikacja i niezależne review przed PR. Konfigurowalna liczba zadań zgodna z korektą właściciela.
 
 **Źródło:** https://github.com/lookassh/knowli/issues/30
 
@@ -143,9 +143,9 @@ Największe ryzyka do review: wyciek feedbacku przez retry/stary endpoint, zgubi
 - [x] Zatwierdzenie projektu i etapów przez właściciela, z korektą na konfigurowalną liczbę zadań.
 - [x] Zatwierdzenie pisemnej specyfikacji jako podstawy `writing-plans`; korekta odwzorowana w tym dokumencie.
 - [x] `writing-plans`: szczegółowy plan w `docs/superpowers/plans/2026-10-10-test-readiness.md`.
-- [ ] Review nowego szczegółowego planu przez właściciela przed implementacją.
+- [x] Review nowego szczegółowego planu przez właściciela przed implementacją.
 - [ ] Dopiero po poleceniu realizacji: `using-git-worktrees`, `executing-plans`, dziennik, RED/GREEN, niezależny `requesting-code-review`, obsługa uwag, `verification-before-completion`, `finishing-a-development-branch`, PR.
 
 W nagłówku przyszłego planu musi znaleźć się: „REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Use superpowers:subagent-driven-development only with explicit owner approval. Before completion, use superpowers:requesting-code-review.”
 
-Nie wykonano implementacji, niezależnego review implementacji, commita ani PR. Akceptacja projektu i etapów pozwala przygotować szczegółowy plan; jego zatwierdzenie i polecenie realizacji są kolejną bramką przed zmianą kodu.
+Wykonano implementację etapów 1–6 i commity task-by-task. Weryfikacja całości, niezależne review i PR są rejestrowane w dzienniku. Test na fizycznym telefonie/tablecie rodziny pozostaje osobnym, niewykonanym dowodem.

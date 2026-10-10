@@ -481,6 +481,18 @@ Materiał przećwiczony dzień przed sprawdzianem może nadal mieć status „po
 
 MVP nie wymaga powiadomień, kalendarza ani automatycznego harmonogramu przypomnień dla rodzica.
 
+### 19.1. Próbna kartkówka i raport braków (2026-10-10, #30)
+
+Rodzic może włączyć na przypisaniu dziecko × zestaw cele: tłumaczenie na angielski (Recall), pisownia i słuchanie. Ustawia liczbę zadań od 1 do 100, domyślnie 10; termin pozostaje opcjonalny. Wartości są osobne dla każdego dziecka. Kartkówka obejmuje zatwierdzony, wcześniej poznany materiał. Jeżeli dostępnych bezpiecznych zadań jest mniej, faktyczna porcja jest mniejsza i dziecko widzi ją przed startem.
+
+Tryb kartkówki jest odrębny od treningu przed terminem. Przy starcie serwer zamraża wersję materiału, politykę, cele, termin, ustawioną liczbę i całą kolejność zadań. Błąd, retry, wznowienie ani późniejsza edycja ustawień nie zmieniają tej porcji. Jedno zadanie pisemne może dać osobne oceny Recall i pisowni; zajmuje jedno miejsce. Przy obu rodzajach zadań początkowo połowa porcji przypada na pisemne (przy nieparzystej liczbie o jedno więcej), reszta na słuchanie; wolne miejsca uzupełnia dostępny rodzaj. Wszystkie pisemne zadania poprzedzają słuchowe.
+
+Każde zadanie przyjmuje jedną odpowiedź, „Nie pamiętam” albo „Pomiń”. Dziecko może poprawiać tekst przed zapisem. Po odpowiedzi widzi neutralne potwierdzenie, bez informacji o poprawności i rozwiązania. Nie ma podpowiedzi, dodatkowych prób merytorycznych, wsparcia ani rozszerzania porcji. W tym trybie „Nie pamiętam” zapisuje trudność i nie ujawnia wzorca. Pisemna kartkówka nie wymaga mikrofonu. Odtworzenie promptu słuchowego jest dozwolone i pozostawia ekspozycję, również z cache.
+
+Kartkówka ma limit czasu 10 minut i okno wznowienia 30 minut. Przerwanie lub timeout zachowują otrzymane odpowiedzi, a resztę oznaczają jako niesprawdzoną. Rozwiązania są dostępne dopiero po zamknięciu, w osobnym omówieniu. Każdy odczyt omówienia i replay jego audio zapisuje ujawnienia przed odpowiedzią HTTP; następny trening je uwzględnia. Raport rodzica nie jest ujawnieniem dziecku.
+
+Raport dotyczy konkretnej próby i jej wersji materiału. Pełny mianownik to wszystkie elementy tej wersji × wybrane umiejętności, także słowa poza krótką porcją lub jeszcze niepoznane. Osobno wskazuje poprawne samodzielne, błędne, poprawne niekwalifikujące, pominięte, nieocenione i niewykonane odpowiedzi. Pominięte oraz nieocenione są częścią braków pokrycia, a nie dowodem błędnej wiedzy. Pokazuje przyczyny braków i status opanowania na zakończenie próby. Zachowuje reguły §18: pojedynczy wynik nie zastępuje potwierdzenia po przerwie. Nie obiecuje oceny szkolnej. Rodzic może przeglądać 20 ostatnich prób w panelu postępów.
+
 ## 20. Historia prób — MVP
 
 Każde podejście do odpowiedzi jest zapisywane oddzielnie. Historia jest podstawowym zapisem przebiegu nauki; bieżące liczniki i podsumowania można z niej wyliczać lub aktualizować.
