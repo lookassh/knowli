@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { messages, type MockTestSummaryDto, type SessionDto } from "@learning/contracts";
 import { format } from "../format";
-import { computeMockTestScore, MOCK_TEST_SOLUTION_ICONS, mockTestResultBadgeClass, mockTestResultBadgeLabel, mockTestSolutionDetail, mockTestWordStatus } from "./mock-test-score";
+import { computeMockTestScore, MOCK_TEST_SOLUTION_ICONS, mockTestResultBadgeClass, mockTestResultBadgeLabel, mockTestScoreTone, mockTestSolutionDetail, mockTestWordStatus } from "./mock-test-score";
 
 export function MockTestReadyScreen({ session, onStart, onCancel }: { session: SessionDto; onStart: () => Promise<void>; onCancel: () => Promise<void> }) {
   const [error, setError] = useState(false);
@@ -21,7 +21,7 @@ export function MockTestSummaryScreen({ summary, onPlay, onPractice, onSwitchPro
   const [error, setError] = useState(false);
   const run = (promise: Promise<void>) => { setError(false); void promise.catch(() => setError(true)); };
   const score = computeMockTestScore(summary.solutions);
-  const tone = score.percent >= 80 ? "good" : score.percent >= 50 ? "mid" : "low";
+  const tone = mockTestScoreTone(score);
   return <main className="kid-screen" data-testid="kid-mock-summary">
     <h1>{messages.kid.mockTestFinished}</h1>
     {!summary.complete && <p>{messages.kid.mockTestPartial}</p>}

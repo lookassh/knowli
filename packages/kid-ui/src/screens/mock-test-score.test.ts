@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { MockTestSummaryDto } from "@learning/contracts";
-import { computeMockTestScore, mockTestSolutionDetail, mockTestWordStatus } from "./mock-test-score";
+import { computeMockTestScore, mockTestScoreTone, mockTestSolutionDetail, mockTestWordStatus } from "./mock-test-score";
 
 type Solution = MockTestSummaryDto["solutions"][number];
 type Results = Solution["results"];
@@ -96,5 +96,16 @@ describe("computeMockTestScore", () => {
 
   test("pusta próba nie dzieli przez zero", () => {
     expect(computeMockTestScore([])).toEqual({ correct: 0, total: 0, percent: 0, stars: 0 });
+  });
+});
+
+describe("mockTestScoreTone", () => {
+  test("ton nagłówka: od 80% zielony, od 50% bursztynowy, poniżej neutralny", () => {
+    expect(mockTestScoreTone({ percent: 100 })).toBe("good");
+    expect(mockTestScoreTone({ percent: 80 })).toBe("good");
+    expect(mockTestScoreTone({ percent: 79 })).toBe("mid");
+    expect(mockTestScoreTone({ percent: 50 })).toBe("mid");
+    expect(mockTestScoreTone({ percent: 49 })).toBe("low");
+    expect(mockTestScoreTone({ percent: 0 })).toBe("low");
   });
 });

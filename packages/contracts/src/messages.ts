@@ -164,6 +164,7 @@ export const messages = {
     mockTestCounts: "{correct} z {total} samodzielnie; {practice} do ćwiczeń; {missing} niesprawdzone",
     mockTestSupported: "Poprawnie po niedawnym ćwiczeniu lub ze wsparciem: {n}",
     mockTestSkipped: "Pominięte: {n}; nieocenione: {unassessed}",
+    mockTestGaps: "Nie sprawdzono w tej próbie: {reasons}.",
     mockTestNote: "Wynik tej próby nie jest szkolną oceną. Opanowanie wymaga osobnego potwierdzenia po przerwie.",
     mockTestNotIndependent: "Bez potwierdzonej samodzielności",
     mockTestMasteryLine: "Opanowanie: {status}",

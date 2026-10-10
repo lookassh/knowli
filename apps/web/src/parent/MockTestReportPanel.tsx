@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { messages, MockTestReportDtoSchema, type MockTestReportDto } from "@learning/contracts";
-import { MOCK_TEST_SOLUTION_ICONS, mockTestResultBadgeClass, mockTestResultBadgeLabel } from "@learning/kid-ui";
+import { MOCK_TEST_SOLUTION_ICONS, mockTestResultBadgeClass, mockTestResultBadgeLabel, mockTestScoreTone } from "@learning/kid-ui";
 import "@learning/kid-ui/styles.css";
 import { apiFetch, errorMessage } from "./api";
 import { groupMockReportWords, type MockReportWord } from "./mock-report-words";
@@ -11,10 +11,12 @@ function fill(template: string, values: Record<string, string | number>) {
 }
 
 /** Szara linia pod słowem: informacje, które rodzic powinien widzieć,
- * a dziecko nie — opanowanie, samodzielność poprawnej odpowiedzi, powód wyniku. */
+ * a dziecko nie — opanowanie, samodzielność ocenionych odpowiedzi, powód wyniku. */
 function parentLine(word: MockReportWord): string {
   const parts: string[] = [];
-  if (word.masteryUniform) {
+  // jednolite „Nie sprawdzono" dublowałoby etykietę wiersza — status
+  // opanowania ma sens tylko dla słów, które ta próba oceniła
+  if (word.masteryUniform && word.masteryUniform !== "not_assessed") {
     parts.push(fill(messages.progress.mockTestMasteryLine, { status: messages.progress.itemStatus[word.masteryUniform] }));
   } else if (word.masteryMixed) {
     const statuses = word.masteryMixed.map(m => `${messages.kid.mockTestSkill[m.skill]} — ${messages.progress.itemStatus[m.status]}`).join(", ");
@@ -45,7 +47,7 @@ export default function MockTestReportPanel({ childId, deckId, currentDeckVersio
   }, [childId, deckId]);
   const report = reports.find(r => r.sessionId === selected);
   const grouped = report ? groupMockReportWords(report.rows) : null;
-  const tone = !grouped || grouped.score.percent < 50 ? "low" : grouped.score.percent < 80 ? "mid" : "good";
+  const tone = grouped ? mockTestScoreTone(grouped.score) : "low";
   return <section className="card" aria-label={messages.progress.mockTestsTitle}>
     <h3>{messages.progress.mockTestsTitle}</h3>
     {error && <p role="alert" className="error">{error}</p>}
@@ -84,6 +86,9 @@ export default function MockTestReportPanel({ childId, deckId, currentDeckVersio
         {skill.correctNotIndependent > 0 && <p>{fill(messages.progress.mockTestSupported, { n: skill.correctNotIndependent })}</p>}
         <p className="muted">{fill(messages.progress.mockTestSkipped, { n: skill.skipped, unassessed: skill.unassessed })}</p>
       </li>)}</ul>
+      {grouped.gaps.length > 0 && <p className="muted" data-testid="mock-report-gaps">{fill(messages.progress.mockTestGaps, {
+        reasons: grouped.gaps.map(gap => `${messages.progress.mockTestReason[gap.reason] ?? gap.reason} ${gap.count}`).join(", "),
+      })}</p>}
       <p className="muted">{messages.progress.mockTestNote}</p>
     </div>}
   </section>;

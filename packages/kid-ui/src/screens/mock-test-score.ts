@@ -39,6 +39,14 @@ export function computeMockTestScore(solutions: ReadonlyArray<{ results: Results
   };
 }
 
+export type MockTestScoreTone = "good" | "mid" | "low";
+
+export function mockTestScoreTone(score: Pick<MockTestScore, "percent">): MockTestScoreTone {
+  if (score.percent >= 80) return "good";
+  if (score.percent >= 50) return "mid";
+  return "low";
+}
+
 /** Decyzja o drugiej linii wiersza słowa (pastylki): jednolity wynik oceniony
  * mówi o sobie kolorem i ikoną wiersza; szczegół pokazujemy tylko przy wynikach
  * mieszanych albo gdy słowa nie sprawdzono. */

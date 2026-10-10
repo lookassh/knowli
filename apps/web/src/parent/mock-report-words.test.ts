@@ -64,7 +64,7 @@ describe("groupMockReportWords", () => {
   });
 
   it("zwraca pusty wynik bez wierszy", () => {
-    expect(groupMockReportWords([])).toEqual({ words: [], score: { correct: 0, total: 0, percent: 0, stars: 0 } });
+    expect(groupMockReportWords([])).toEqual({ words: [], score: { correct: 0, total: 0, percent: 0, stars: 0 }, gaps: [] });
   });
 
   it("zgłasza jednolite i mieszane statusy opanowania", () => {
@@ -83,15 +83,49 @@ describe("groupMockReportWords", () => {
     ]);
   });
 
-  it("flaguje wyłącznie poprawne odpowiedzi bez potwierdzonej samodzielności", () => {
+  it("flaguje brak samodzielności przy poprawnych i błędnych odpowiedziach, z priorytetem poprawnej", () => {
     const { words } = groupMockReportWords([
       row("a", { outcome: "correct", independent: true }),
       row("b", { outcome: "correct", independent: false, independenceReason: "recent_exposure" }),
       row("c", { outcome: "incorrect", independent: false, independenceReason: "assisted" }),
+      row("d", { outcome: "incorrect", independent: true }),
+      row("e", { outcome: "correct", independent: false, independenceReason: "not_first_try" }),
+      row("e", { skill: "spelling", outcome: "incorrect", independent: false, independenceReason: "assisted" }),
     ]);
     expect(words[0]!.notIndependent).toBeNull();
     expect(words[1]!.notIndependent).toEqual({ reason: "recent_exposure" });
-    expect(words[2]!.notIndependent).toBeNull();
+    expect(words[2]!.notIndependent).toEqual({ reason: "assisted" });
+    expect(words[3]!.notIndependent).toBeNull();
+    expect(words[4]!.notIndependent).toEqual({ reason: "not_first_try" });
+  });
+
+  it("agreguje przyczyny braków słów poza porcją według priorytetu powodu", () => {
+    const { gaps } = groupMockReportWords([
+      row("a", { outcome: "correct", independent: true }),
+      row("b", { reason: "not_known" }),
+      row("b", { skill: "spelling", reason: "not_known" }),
+      row("c", { reason: "outside_portion" }),
+      row("c", { skill: "spelling", reason: "outside_portion" }),
+      row("d", { skill: "listening", reason: "missing_audio" }),
+      row("d", { reason: "outside_portion" }),
+      row("e", { skill: "listening", reason: "insufficient_options" }),
+      row("e", { reason: "outside_portion" }),
+    ]);
+    expect(gaps).toEqual([
+      { reason: "not_known", count: 1 },
+      { reason: "missing_audio", count: 1 },
+      { reason: "insufficient_options", count: 1 },
+      { reason: "outside_portion", count: 1 },
+    ]);
+  });
+
+  it("liczy słowa poza porcją per powód, nie per wiersz umiejętności", () => {
+    const { gaps } = groupMockReportWords([
+      row("c", { reason: "outside_portion" }),
+      row("c", { skill: "spelling", reason: "outside_portion" }),
+      row("d", { reason: "outside_portion" }),
+    ]);
+    expect(gaps).toEqual([{ reason: "outside_portion", count: 2 }]);
   });
 
   it("pomija powód skipped i skleja jednolity powód w jeden bez umiejętności", () => {

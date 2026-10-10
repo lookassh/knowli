@@ -22,10 +22,12 @@ export {
   MOCK_TEST_SOLUTION_ICONS,
   mockTestResultBadgeClass,
   mockTestResultBadgeLabel,
+  mockTestScoreTone,
   mockTestSolutionDetail,
   mockTestWordStatus,
   type MockTestResultView,
   type MockTestScore,
+  type MockTestScoreTone,
   type MockTestSolutionDetail,
   type MockTestWordStatus,
 } from "./screens/mock-test-score";
