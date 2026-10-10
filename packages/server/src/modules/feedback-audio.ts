@@ -43,7 +43,7 @@ export async function authorizeFeedbackAudio(services: Services, attemptId: stri
     const revision = (await tx.select({ locale: deckVersions.targetLocale })
       .from(itemRevisions).innerJoin(deckVersions, eq(deckVersions.id, itemRevisions.deckVersionId))
       .where(eq(itemRevisions.id, task.itemRevisionId)))[0];
-    if (!revision || typeof canonical !== "string" || speech?.recognition !== "matched" ||
+    if (!revision || typeof canonical !== "string" || !speech || !["matched", "different"].includes(speech.recognition) ||
         typeof speech.referenceText !== "string" ||
         computeTargetKey(speech.referenceText, revision.locale) !== computeTargetKey(canonical, revision.locale)) {
       throw new AppError("conflict");

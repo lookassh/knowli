@@ -12,8 +12,9 @@ Data: 2026-10-10. Worktree: `C:\Users\looka\.codex\worktrees\speech-recording-ux
 - [x] Worktree/gałąź izolowana
 - [x] Baseline testów i typecheck: `pnpm test:unit` 46 files / 394 tests PASS; `pnpm typecheck` PASS (zainstalowane zależności w izolowanym worktree).
 - [x] Konflikty interfejsów preflight — sprawdzone z planem/specyfikacją; tabelka poniżej.
-- [ ] Zadania 1–7 RED→GREEN i commity
-- [ ] Niezależny review całości
+- [ ] Zadanie 7 commit po review
+- [x] Zadania 1–6 RED→GREEN i commity
+- [x] Niezależny review całości
 - [ ] Końcowa weryfikacja, PR do main (właściciel scala przez squash)
 
 ## Dostosowanie narzędzi executing-plans
@@ -41,8 +42,8 @@ Ruling: brak konfliktów kontraktów na podstawie planu/specyfikacji; wyżej wym
 - Task 3: complete.
 - Task 4: complete.
 - Task 5: complete.
-- Task 6: nie rozpoczęty.
-- Task 7: nie rozpoczęty.
+- Task 6: complete.
+- Task 7: implementation/review complete; commit and PR pending.
 
 
 ### Task 1 — jawny wynik mowy i zgodność historii: complete
@@ -93,3 +94,24 @@ Ruling: brak konfliktów kontraktów na podstawie planu/specyfikacji; wyżej wym
 - Odstępstwa: brak testu rzeczywistego równoległego requestu replay kontra end/next; bezpieczeństwo kolejności korzysta ze wspólnej blokady wiersza sesji i będzie sprawdzone w końcowym review. Powtórny odsłuch nie uruchamia STT/oceny ponownie.
 - Commit: 9fe99f9b881f0dc375388e6f8c82d70f669d18dc.
 - Task 5: complete (commits 6bf9fc5..9fe99f9b881f0dc375388e6f8c82d70f669d18dc; integration 36 + unit 36 + typecheck → PASS)
+
+### Task 6 — czytelna karta wyniku i następny krok: complete
+
+- RED unit potwierdzony: `speech-feedback-view.test.ts` nie mógł zaimportować nieistniejącego modułu. E2E nowej karty i końcowy test regresji uruchomiono po implementacji; pierwszy przebieg ujawnił problem z widocznością działań przy długim tekście, a potem test starego kid-flow ujawnił, że scenariusz musiał zatwierdzić ekran wyniku po „Pomiń”. Poprawiono układ karty i sekwencję testową.
+- Implementacja: helper mapuje status STT/wymowy na wiarygodny komunikat/ton; nullable i legacy DTO zachowują neutralny fallback. Karta inline pokazuje „Usłyszałem” tylko dla tekstu z DTO, osobny wynik wymowy, fragmenty `good/almost/unknown` z tekstową legendą i lokalną wskazówkę tylko dla jawnego `almost`. Terminalny wynik pokazuje „Dalej”; wynik z retry oferuje ponowienie i „Pomiń”. Ponowienie wraca do `idle`, odsłuch wzorca wymaga dostępności i autoryzuje aktualną próbę.
+- Testy: `pnpm test:unit packages/kid-ui/src/screens/speech-feedback-view.test.ts packages/kid-ui/src/session/session-controller.test.ts` → 2 pliki, 45 testów PASS; `pnpm typecheck` PASS; nowy `pnpm test:e2e tests/e2e/speech-recording-ux.spec.ts` → 3/3 PASS; `pnpm test:e2e tests/e2e/kid-flow.spec.ts tests/e2e/mock-test.spec.ts` → 13/13 PASS; `git diff --check` PASS.
+- Odstępstwo: nie zapisano osobnego RED E2E przed implementacją komponentu; oczekiwany błąd przed kodem potwierdzono testem jednostkowym, a pierwsze E2E po implementacji zgłosiło błąd układu/akcji. Zapisujemy to jawnie, nie przypisując tego E2E jako RED testu braku funkcji. Bez testu na fizycznym telefonie/tablecie.
+- Commit: `2aa548af8e61c6d4e6021b0b0a716d06aae899fe`.
+- Task 6: complete (commits 9dbec06..2aa548a; unit 45 + E2E 16 + typecheck → PASS)
+
+### Task 7 — regresje, dokumentacja, urządzenie i review całości: active
+
+- Dodano testy RED→GREEN dla wyjątku `MediaRecorder.start()` po uzyskaniu strumienia i asynchronicznego `MediaRecorder.onerror`; oba przypadki zwalniają track, callbacki i stan aktywnego nagrania. Pozostałe przeglądane regresje: 15 s (`browser.test.ts`), przerwanie widoku (`kid-flow.spec.ts`), retry/read tej samej próby podczas `processing` (`speech.test.ts`), autoryzowany replay i zamknięta ekspozycja (`feedback-audio.test.ts`/`speech.test.ts`), kasowanie profilu (`auth-profiles.test.ts`), budżet („Jeszcze 3”) i idempotentny exposure (`sessions.test.ts`), zaakceptowany wariant/odrębna ocena wymowy (`speech.test.ts`), dwóch klientów (`mock-test.spec.ts`, konflikty attempt/sesji w testach unit/integration).
+- Dokumentacja zaktualizowana w SPEC, architecture, folder-structure i implementation-plan. Pokrycie: R01 przez zamknięcia ekspozycji, replay i retry/read tej samej próby; istniejące testy dwóch klientów pokrywają ogólny konflikt/stale-task, ale bez osobnej równoległej próby replay audio kontra next/end. R03 przez historię prób i cascade profilu; R05 przez ochronę należnych sprawdzeń po ekspozycji; R07 przez zatwierdzone warianty; R04 skontrolowane istniejącym przejściem exposure/complete-presentation. R02/R06 są niezmienione i weryfikowane przez pełne suite istniejących testów mediów.
+- Testy końcowe po poprawkach Task 7: `pnpm test:unit` → 50 plików, 437 testów PASS; `pnpm test:integration` → 19 plików, 176 testów PASS; `pnpm test:e2e` → 70/70 PASS (uruchomione przed ostatnią poprawką wyłącznie w adapterze na asynchroniczny błąd MediaRecorder; potem powtórzono cały unit 437/437 oraz browser adapter 16/16); `pnpm typecheck` PASS; `pnpm build` PASS; `git diff --check` PASS. Testy używały fake providerów i izolowanej bazy PostgreSQL.
+- Brak dostępnego telefonu/tabletu i brak zgody na użycie prawdziwego głosu dziecka: test urządzenia i ocena jakości rozpoznania/wymowy nie są zweryfikowane; syntetyczne fake media nie są dowodem jakości providerów.
+- Niezależny review (`gpt-6.1-sol`, xhigh) objął `dd1e025..2aa548a` i niezacommitowany diff. Nie znaleziono Critical; znaleziono 5 Important oraz 4 Minor. Po weryfikacji przyjęto wszystkie pięć pierwszych Important: przycisk hold zostaje aktywny dostępnościowo podczas `starting`, async błąd rejestratora wraca neutralnie do idle bez próby, retry/skip/next/end unieważnia odsłuch przed oczekiwaniem na serwer, autoryzacja audio zadania jest generacyjnie wycofywana przed await, a kanoniczny wzorzec jest dostępny również dla wiarygodnego `different`. Minor odłożone: legacy fragments w renderze, cleanup AudioContext po błędzie konfiguracji, rodzaj zdarzenia replay (`feedback_issued`/`audio_issued`) i komunikat po limicie/etykieta toggle.
+- Runda 2 znalazła szósty Important: `endNow()` nie zwalniał mikrofonu przed await na zamknięcie sesji. Dodano teardown przed pierwszym await oraz testy dla aktywnego recording i opóźnionego starting; oba sprawdzają anulowanie, spóźniony limit i brak wysłanej próby. Test starting potwierdził RED po usunięciu teardown (`cancelled` 0 zamiast 1), potem GREEN. Niezależny finalny review potwierdził na BrowserRecorder+kontrolerze zwolnienie tracka przed odpowiedzią serwera dla obu faz; Critical 0, otwarte Important 0, Minor 4, gotowość do PR. Review package SHA256 `0905544982CE3882595F25D6835CDBFB888B6520F99D6F2B3EE504EE49FE34C5` odpowiada aktualnemu diffowi HEAD; lockfile czysty.
+- Po poprawce kończącej sesję: `pnpm test:unit` 50 plików/443 testy PASS, `pnpm typecheck` PASS, `pnpm build` PASS, `git diff --check` PASS. Wcześniej po pięciu poprawkach review: `pnpm test:integration` 19 plików/177 testów PASS i `pnpm test:e2e` 70/70 PASS; nie powtarzano tych dwóch pełnych zestawów po lokalnej zmianie kontrolera `endNow()` (zmiana sprawdzona nowymi testami jednostkowymi). Pełny review końcowy był read-only i nie uruchamiał ponownie pełnych suite.
+- Brak fizycznego telefonu/tabletu i brak autoryzowanej próbki prawdziwego głosu dziecka pozostają ograniczeniami. Nie ma dedykowanego testu wyścigu replay audio kontra równoległy next/end; istnieje wspólna blokada sesji i pokrycie osobnych przejść. Zachować te zastrzeżenia oraz cztery Minor w PR.
+- Task 7: implementacja i review complete; commit, push i PR do `main` pozostają do wykonania.

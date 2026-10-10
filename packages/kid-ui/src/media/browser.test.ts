@@ -123,6 +123,34 @@ describe("BrowserRecorder — nagrywanie bez pozostawiania strumienia (arch §11
     recorder.cancel();
   });
 
+  it("zwalnia mikrofon i wraca do idle, jeśli MediaRecorder.start rzuci błąd", async () => {
+    const { stream, stop } = fakeStream();
+    const brokenRecorder = class extends FakeMediaRecorder {
+      override start(): void {
+        throw new Error("device start failed");
+      }
+    };
+    const recorder = new BrowserRecorder({
+      getUserMedia: async () => stream as unknown as MediaStream,
+      mediaRecorder: brokenRecorder as unknown as typeof MediaRecorder,
+    });
+
+    await expect(recorder.start()).rejects.toThrowError(/start/i);
+    expect(stop).toHaveBeenCalledOnce();
+    expect(recorder.active).toBe(false);
+  });
+
+  it("zwalnia mikrofon i wyłącza stan nagrywania po asynchronicznym błędzie MediaRecorder", async () => {
+    const { stream, stop } = fakeStream();
+    const recorder = new BrowserRecorder(deps(stream).deps);
+    await recorder.start();
+
+    FakeMediaRecorder.instances[0]!.onerror?.();
+
+    expect(stop).toHaveBeenCalledOnce();
+    expect(recorder.active).toBe(false);
+  });
+
   it("DOMException z getUserMedia wychodzi nieopakowany, z nienaruszonym name", async () => {
     // controller rozróżnia odmowę uprawnienia (NotAllowedError) od awarii
     // urządzenia po name — opakowanie z policymakerskim tekstem by ją ukryło

@@ -419,6 +419,7 @@ export class LearningSessionController {
   async continueLearning(): Promise<void> {
     const screen = this.#learning();
     if (!screen || screen.busy) return;
+    this.#stopPlayback();
     if (screen.feedback?.retry) {
       this.#setLearning({ feedback: null });
       return;
@@ -430,6 +431,8 @@ export class LearningSessionController {
   async endNow(): Promise<void> {
     const screen = this.#learning();
     if (!screen || screen.busy) return;
+    this.#teardownRecording();
+    this.#stopPlayback();
     this.#setLearning({ busy: true });
     await this.#finishSession(this.#epoch);
   }
@@ -496,6 +499,7 @@ export class LearningSessionController {
   async #submitAnswer(input: AnswerPayload): Promise<void> {
     const screen = this.#learning();
     if (!screen?.task || screen.busy || screen.offline) return;
+    this.#stopPlayback();
     // przypisujemy dopiero za strażnikiem — odrzucone kliknięcie nie śmieci
     this.#pendingChoice = input.modality === "choice" ? input.optionId : null;
     const epoch = this.#epoch;
@@ -595,7 +599,7 @@ export class LearningSessionController {
           afterPlay.task?.taskId !== taskId || afterPlay.feedback?.attemptId !== attemptId) return;
     } catch {
       const current = this.#learning();
-      if (epoch === this.#epoch && current?.task?.taskId === taskId && current.feedback?.attemptId === attemptId) {
+      if (playbackGeneration === this.#playbackGeneration && epoch === this.#epoch && current?.task?.taskId === taskId && current.feedback?.attemptId === attemptId) {
         this.#setLearning({ feedback: { ...current.feedback, audioError: true } });
       }
     }
@@ -613,13 +617,14 @@ export class LearningSessionController {
     const task = screen.task;
     const assetId = audioAssetOf(task);
     if (!assetId) return;
+    const playbackGeneration = this.#beginPlayback();
     const epoch = this.#epoch;
     if (screen.session.mode === "mock_test" || ["recall", "spelling", "letter_completion", "speech"].includes(task.exerciseType)) {
       try {
         await this.#api.authorizeDisclosure(task.taskId, "audio");
       } catch (error) {
         const current = this.#learning();
-        if (epoch === this.#epoch && current?.session.sessionId === screen.session.sessionId && current.task?.taskId === task.taskId) {
+        if (playbackGeneration === this.#playbackGeneration && epoch === this.#epoch && current?.session.sessionId === screen.session.sessionId && current.task?.taskId === task.taskId) {
           this.#resume = screen.session.mode === "mock_test" && error instanceof KidApiError && error.code === "conflict"
             ? () => this.#loadNext(epoch, screen.session.sessionId)
             : () => this.playTaskAudio();
@@ -628,9 +633,8 @@ export class LearningSessionController {
         return;
       }
       const current = this.#learning();
-      if (epoch !== this.#epoch || !current || current.offline || current.recordingPhase !== "idle" || current.processing || current.session.sessionId !== screen.session.sessionId || current.task?.taskId !== task.taskId) return;
+      if (playbackGeneration !== this.#playbackGeneration || epoch !== this.#epoch || !current || current.offline || current.recordingPhase !== "idle" || current.processing || current.session.sessionId !== screen.session.sessionId || current.task?.taskId !== task.taskId) return;
     }
-    const playbackGeneration = this.#beginPlayback();
     try {
       await this.#media.player.play(this.#api.mediaUrl(assetId));
       const current = this.#learning();
@@ -645,7 +649,8 @@ export class LearningSessionController {
       }
     } catch (error) {
       // zablokowany autoplay nie jest awarią; brak sieci jest
-      if (isNetworkError(error)) {
+      const current = this.#learning();
+      if (playbackGeneration === this.#playbackGeneration && epoch === this.#epoch && current?.task?.taskId === task.taskId && isNetworkError(error)) {
         this.#handleFailure(error);
       }
     }
@@ -719,6 +724,12 @@ export class LearningSessionController {
       },
       onLimitReached: () => {
         if (generation === this.#recordingGeneration) void this.stopRecording();
+      },
+      onError: () => {
+        if (generation !== this.#recordingGeneration) return;
+        this.#recordingGeneration += 1;
+        this.#recorder = null;
+        this.#setLearning({ recordingPhase: "idle", microphoneReady: false, inputLevel: null, recordingNotice: messages.kid.recordingUnavailable });
       },
     };
     const recorder = this.#media.createRecorder(options);

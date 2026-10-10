@@ -436,6 +436,19 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
     await expectAppError(authorizeFeedbackAudio(services, uncertain.attemptId), "conflict");
   });
 
+  it("autoryzuje kanoniczny odsłuch dla wiarygodnie rozpoznanej innej odpowiedzi", async () => {
+    const { deckId, versionId } = await publishDeckWithAssignment(baseServices, childId, [ITEMS[0]!]);
+    const fakes = makeFakes(clock);
+    const services = speechServices(clock, fakes);
+    const { task } = await speechSession(services, childId, deckId, versionId, 0);
+    fakes.transcription = { status: "ok", text: "Monday", confidence: 0.95 };
+    const attempt = await submitSpeechAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID() }, wavInput(1));
+    expect(attempt.feedback?.speech?.recognition).toBe("different");
+    expect(attempt.feedback?.referenceAudioAvailable).toBe(true);
+    const authorization = await authorizeFeedbackAudio(services, attempt.attemptId);
+    expect(authorization.audioAssetId).toBe((task.prompt as { audioAssetId?: string | null }).audioAssetId);
+  });
+
   it("poprawne słowo ustnie zalicza Recall; wynik wymowy zapisuje się bez oceny bez pasm", async () => {
     // ścieżka polityki bez pasm — v2 ma domyślnie pasma 70/50 (design 2026-10-09)
     await ensureLearningPolicy(baseServices.db);

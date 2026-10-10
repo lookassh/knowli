@@ -136,6 +136,33 @@ test("hold gesture handles keyboard, capture loss and release outside the button
   await button.click();
   await expect(button).toHaveAttribute("data-ready", "true");
 
+  let releaseMicrophoneStart!: () => void;
+  await page.evaluate(() => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    (window as unknown as { __releaseMicrophoneStart?: () => void }).__releaseMicrophoneStart = release;
+    const devices = navigator.mediaDevices;
+    const original = devices.getUserMedia.bind(devices);
+    let delayNext = true;
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { ...devices, getUserMedia: async (constraints: MediaStreamConstraints) => {
+        if (delayNext) { delayNext = false; await gate; }
+        return original(constraints);
+      } },
+    });
+  });
+  releaseMicrophoneStart = () => page.evaluate(() => (window as unknown as { __releaseMicrophoneStart?: () => void }).__releaseMicrophoneStart?.());
+  await button.focus();
+  await page.keyboard.down("Space");
+  await expect(button).toHaveAttribute("data-phase", "starting");
+  expect(await button.evaluate((element) => (element as HTMLButtonElement).disabled)).toBe(false);
+  expect(await page.evaluate(() => document.activeElement?.getAttribute("data-testid"))).toBe("kid-record");
+  await releaseMicrophoneStart();
+  await expect(button).toHaveAttribute("data-phase", "recording");
+  await page.keyboard.up("Space");
+  await expect(button).toHaveAttribute("data-phase", "idle");
+
   const mode = page.getByTestId("kid-record-mode");
   await mode.click();
   await expect(mode).toHaveAttribute("aria-pressed", "true");

@@ -12,7 +12,7 @@ import type {
   TaskDto,
 } from "@learning/contracts";
 import type { KidApi } from "../api/KidApi";
-import type { AudioPlayer, PlatformMedia, SpeechRecorder } from "../media/platform";
+import type { AudioPlayer, PlatformMedia, RecorderOptions, SpeechRecorder } from "../media/platform";
 import { createMemoryPreferences, MIC_DENIED_KEY, type LocalPreferences } from "../storage";
 import { LearningSessionController } from "./session-controller";
 
@@ -74,9 +74,19 @@ function makeRecorder(opts: { failStartWith?: unknown; startGate?: Promise<void>
   cancelled: number;
   stopped: number;
   started: number;
+  fail(): void;
+  setFailureHandler(callback?: () => void): void;
+  hitLimit(): void;
+  setLimitHandler(callback?: () => void): void;
 } {
   const state = { cancelled: 0, stopped: 0, started: 0 };
+  let onError: (() => void) | undefined;
+  let onLimit: (() => void) | undefined;
   return {
+    fail() { onError?.(); },
+    setFailureHandler(callback) { onError = callback; },
+    hitLimit() { onLimit?.(); },
+    setLimitHandler(callback) { onLimit = callback; },
     get cancelled() {
       return state.cancelled;
     },
@@ -111,7 +121,11 @@ function makeMedia(recorder: ReturnType<typeof makeRecorder>, playGate?: Promise
     playUrls: [] as string[],
     stops: 0,
     async prepareMicrophone() {},
-    createRecorder: () => recorder,
+    createRecorder: (options?: RecorderOptions) => {
+      recorder.setFailureHandler(options?.onError);
+      recorder.setLimitHandler(options?.onLimitReached);
+      return recorder;
+    },
     player: {
       async play(url: string) {
         media.playUrls.push(url);
@@ -142,6 +156,7 @@ interface ApiState {
   /** Gdy ustawione, submitAnswer rzuca TypeError (brak sieci). */
   networkDown: boolean;
   disclosureGate?: Promise<void>;
+  endSessionGate?: Promise<void>;
   disclosureError?: unknown;
   feedbackAudioGate?: Promise<void>;
   feedbackAudioError?: unknown;
@@ -199,6 +214,7 @@ function makeApi(state: ApiState): KidApi {
       return undefined;
     },
     async endSession(sessionId): Promise<SessionSummaryDto> {
+      await state.endSessionGate;
       state.endedSessions.push(sessionId);
       return { sessionId, state: "completed", tasksIssued: 3, assessedTasksIssued: 2, endedAt: "2026-10-07T16:05:00.000Z",
         independentSuccesses: { recall: 0, spelling: 0 }, practiceItems: [] };
@@ -280,6 +296,108 @@ describe("LearningSessionController", () => {
     await pending;
     expect(harness.controller.getScreen()).toMatchObject({ task: { taskId: second.taskId }, feedback: null });
     expect(harness.media.playUrls).toEqual([]);
+  });
+
+  it("zatrzymuje aktywne odtwarzanie natychmiast po przejściu z retry", async () => {
+    const state = baseState();
+    const task = taskDto("77777777-7777-7777-7777-777777777777", { kind: "recall", prompt: "czwartek" });
+    state.attempts = [attemptDto({ taskId: task.taskId, modality: "audio", taskState: "issued", feedback: { kind: "almost", referenceAudioAvailable: true } })];
+    let release!: () => void;
+    const playGate = new Promise<void>((resolve) => { release = resolve; });
+    const harness = await startAtTask(state, task, { playGate });
+    await harness.controller.answerText("Thursday");
+    const playing = harness.controller.playFeedbackAudio();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const stopsBeforeRetry = harness.media.stops;
+    const continuing = harness.controller.continueLearning();
+    expect(harness.media.stops).toBeGreaterThan(stopsBeforeRetry);
+    await continuing;
+    release();
+    await playing;
+  });
+
+  it("zatrzymuje odsłuch zanim serwer zakończy sesję", async () => {
+    const state = baseState();
+    const task = taskDto("77777777-7777-7777-7777-777777777777", { kind: "listening", options: [], audioAssetId: "question-audio" });
+    let releasePlay!: () => void;
+    const playGate = new Promise<void>((resolve) => { releasePlay = resolve; });
+    const harness = await startAtTask(state, task, { playGate });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    let releaseEnd!: () => void;
+    state.endSessionGate = new Promise<void>((resolve) => { releaseEnd = resolve; });
+    const stopsBeforeEnd = harness.media.stops;
+    const ending = harness.controller.endNow();
+    expect(harness.media.stops).toBeGreaterThan(stopsBeforeEnd);
+    releaseEnd();
+    releasePlay();
+    await ending;
+  });
+
+  it("anuluje mikrofon przed oczekiwaniem na zakończenie sesji i nie wysyła próby po limicie", async () => {
+    const state = baseState();
+    const task = taskDto("speech", { kind: "speech", text: "apple", visualType: "none", imageAssetId: null, audioAssetId: null });
+    const harness = await startAtTask(state, task);
+    await harness.controller.prepareMicrophone();
+    await harness.controller.startRecording();
+    let releaseEnd!: () => void;
+    state.endSessionGate = new Promise<void>((resolve) => { releaseEnd = resolve; });
+    const ending = harness.controller.endNow();
+    expect(harness.recorder.cancelled).toBe(1);
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "idle", busy: true });
+    harness.recorder.hitLimit();
+    releaseEnd();
+    await ending;
+    expect(state.speechSubmissions).toHaveLength(0);
+  });
+
+  it("unieważnia spóźniony start mikrofonu, gdy dziecko kończy sesję", async () => {
+    const state = baseState();
+    const task = taskDto("speech", { kind: "speech", text: "apple", visualType: "none", imageAssetId: null, audioAssetId: null });
+    let releaseStart!: () => void;
+    const startGate = new Promise<void>((resolve) => { releaseStart = resolve; });
+    const harness = await startAtTask(state, task, { startGate });
+    await harness.controller.prepareMicrophone();
+    const starting = harness.controller.startRecording();
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "starting" });
+
+    let releaseEnd!: () => void;
+    state.endSessionGate = new Promise<void>((resolve) => { releaseEnd = resolve; });
+    const ending = harness.controller.endNow();
+    expect(harness.recorder.cancelled).toBe(1);
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "idle", busy: true });
+    releaseStart();
+    await starting;
+    harness.recorder.hitLimit();
+    releaseEnd();
+    await ending;
+    expect(state.speechSubmissions).toHaveLength(0);
+  });
+
+  it("nie uruchamia opóźnionego audio zadania po anulowaniu nagrania", async () => {
+    const state = baseState();
+    let release!: () => void;
+    state.disclosureGate = new Promise<void>((resolve) => { release = resolve; });
+    const task = taskDto("77777777-7777-7777-7777-777777777777", { kind: "speech", text: "Thursday", visualType: "none", imageAssetId: null, audioAssetId: "task-audio" });
+    const harness = await startAtTask(state, task);
+    await harness.controller.prepareMicrophone();
+    const pendingAudio = harness.controller.playTaskAudio();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const starting = harness.controller.startRecording();
+    harness.controller.cancelRecording();
+    await starting;
+    release();
+    await pendingAudio;
+    expect(harness.media.playUrls).toEqual([]);
+  });
+
+  it("asynchroniczna awaria rejestratora wraca do idle bez wysyłania próby", async () => {
+    const task = taskDto("speech", { kind: "speech", text: "apple", visualType: "none", imageAssetId: null, audioAssetId: null });
+    const harness = await startAtTask(baseState(), task);
+    await harness.controller.prepareMicrophone();
+    await harness.controller.startRecording();
+    harness.recorder.fail();
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "idle", recording: false, recordingNotice: expect.any(String) });
+    expect(harness.state.speechSubmissions).toHaveLength(0);
   });
 
   it("starts mock test only after confirming server budget and advances without correctness feedback", async () => {

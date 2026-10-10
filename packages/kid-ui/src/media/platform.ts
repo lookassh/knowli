@@ -26,6 +26,8 @@ export interface RecorderOptions {
   /** Transient RMS level in the range 0–1; raw samples never leave the adapter. */
   onLevel?: (level: number) => void;
   onLimitReached?: () => void;
+  /** Awaria urządzenia podczas aktywnego nagrania; nie jest próbą dziecka. */
+  onError?: () => void;
 }
 
 /** Odtwarzacz wzorca z cache media; stop zwalnia zasoby audio. */

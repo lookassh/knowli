@@ -133,6 +133,8 @@ Wymagania:
 
 Informacja zwrotna po ocenie wymowy może pokazać fragmenty słowa oznaczone jako „dobrze” lub „prawie”. Nie pokazuje dziecku punktów, IPA ani progów usługi.
 
+Nagrywanie w zadaniach mowy domyślnie działa przez przytrzymanie przycisku: po uzyskaniu zgody przytrzymanie rozpoczyna nagranie, a puszczenie, anulowanie gestu, utrata fokusu albo limit kończy je i zwalnia mikrofon. Dziecko może wybrać tryb przełączany w ustawieniach urządzenia; odmowa mikrofonu pozostawia pełną ścieżkę pisemną. Po analizie ekran pokazuje nie-modalną kartę wyniku przy zadaniu. „Usłyszałem: …” pojawia się tylko dla wiarygodnej transkrypcji. Fragmenty wymowy mają także opis tekstowy, więc kolor nie jest jedynym nośnikiem wyniku. Ponowienie wraca do gotowości; nagranie zaczyna się dopiero po kolejnym geście.
+
 Przykład widoku tematu:
 
 > Cześć, Krzysiu! 👋  
@@ -281,11 +283,15 @@ Dziecko widzi polskie znaczenie, bez angielskiego wzorca i bez gotowych odpowied
 
 Treść odpowiedzi ustala się niezależnie od jakości wymowy. Odsłuchanie wzorca albo ujawnienie odpowiedzi zmienia próbę w ćwiczenie z podpowiedzią — nie jest to samodzielne przypomnienie.
 
+Przy odpowiedzi głosowej karta wyniku rozdziela rozpoznaną treść i ocenę wymowy. Wyświetla „Usłyszałem: …” tylko po przejściu bramki pewności STT; treść inna niż oczekiwana nie jest przedstawiana jako pochwała. Wzorcowe audio jest dostępne tylko wtedy, gdy serwer autoryzował odsłuch dla bieżącej próby.
+
 ### 12.6. Ćwiczenie wymowy — Speech
 
 Dziecko widzi angielskie słowo, może usłyszeć wzorzec, a następnie je wypowiada. Oceniamy wymowę, nie znajomość odpowiedzi.
 
 Jedno nagranie w zadaniu Recall może dostarczać dowodu przypomnienia i wyniku wymowy, ale są to dwa osobne wyniki. Nie wnioskujemy, że dziecko zna słowo, wyłącznie na podstawie oceny wymowy dla zadanego tekstu.
+
+Nagranie kończy się po puszczeniu przycisku w domyślnym trybie przytrzymania; klawiatura zapewnia równoważne rozpoczęcie i zakończenie, a tryb przełączany jest dostępny jako alternatywa. Karta wyniku pokazuje wiarygodnie usłyszane słowo, osobny komunikat o wymowie oraz — tylko przy wiarygodnych danych — fragmenty wzorca opisane jako dobre, wymagające ćwiczenia lub niepewne. Przy niepewnym STT, ciszy i awarii nie wymyśla treści ani lokalizacji błędu. „Nagraj jeszcze raz” wraca do gotowości bez samoczynnego włączenia mikrofonu; zadanie terminalne oferuje „Dalej”.
 
 ### 12.7. Uzupełnianie liter
 
@@ -372,6 +378,8 @@ Przykładowe przyczyny braku oceny:
 
 Brak wiarygodnej oceny nie obniża poziomu umiejętności i nie jest rejestrowany jako pomylenie dwóch słów. Dziecko otrzymuje komunikat typu „Nie udało mi się usłyszeć. Spróbuj jeszcze raz” albo możliwość kontynuowania bez mikrofonu.
 
+Karta wyniku odróżnia rozpoznaną wypowiedź od oceny wymowy. Niepewne rozpoznanie, cisza ani błąd usługi nie pokazują tekstu jako pewnej transkrypcji. Neutralny fragment oznacza brak wiarygodnej lokalizacji i nie jest czerwonym błędem. Częściowa ocena treści i wymowy pozostaje rozdzielona w treści, kolorze oraz dostępnej legendzie.
+
 Wynik częściowy jest dopuszczalny: jeśli wiarygodnie rozpoznano poprawne słowo, ale usługa wymowy zawiodła, zapisujemy poprawne przypomnienie i brak oceny wymowy.
 
 Wymowa poniżej progu częściowego pozostaje nieoceniona — nie jest błędem wiedzy. Domyślne progi startowe `learning-v2` wynoszą 70/100 dla pasma „dobrze” i 50/100 dla „prawie”; są to progi konkretnej konfiguracji usługi, a nie uniwersalna miara opanowania języka. Rodzic może zmienić progi w ustawieniach profilu dziecka. Każda zmiana tworzy nową, niezmienną wersję polityki, przypinaną do nowych sesji; istniejące sesje zachowują swoją wersję. Rodzic może też przejrzeć listę ostatnich ocen wymowy dziecka z oczekiwanym słowem, wynikiem usługi i pasmem.
@@ -405,6 +413,8 @@ Feedback ma być pozytywny i zgodny z wynikiem:
 - „Nie udało się ocenić nagrania” przy problemie technicznym.
 
 Nie pokazujemy „ŹLE”, kar, rankingów ani technicznego „37%”. Nie chwalimy niepoprawnej odpowiedzi jako poprawnej.
+
+Wynik mowy pokazuje w jednej karcie „Usłyszałem: {tekst}” tylko dla transkrypcji zaakceptowanej przez bramkę pewności. Ocena wymowy ma własny krótki komunikat. Fragment wzorca może być zaznaczony wyłącznie wtedy, gdy adapter dostarczył wiarygodne dopasowanie; brak takiej informacji pozostaje neutralny. Karta nie blokuje treści zadania modalem, zachowuje widoczne działania na małym ekranie i nie uruchamia mikrofonu po „Nagraj jeszcze raz”.
 
 ## 17. Sesje i adaptacyjne powtórki
 
@@ -594,6 +604,8 @@ Pierwszą planowaną implementacją oceny wymowy jest Azure Speech Pronunciation
 Adapter musi określić, czy uzyskany tekst rzeczywiście nadaje się do niezależnej oceny treści odpowiedzi. Ocena nagrania względem zadanego `expectedText` nie jest sama w sobie dowodem, że dziecko powiedziało właściwe słowo. W razie potrzeby stosujemy osobną transkrypcję.
 
 Przed uznaniem integracji za gotową należy sprawdzić jej zachowanie na dziecięcej mowie, błędnym słowie, ciszy i zakłóceniach. Wynik usługi służy nauce, a nie diagnozie logopedycznej.
+
+Publiczny feedback mowy może zawierać ograniczony, wiarygodnie rozpoznany tekst i maksymalnie sześć fragmentów `good | almost | unknown`; nie zawiera score'ów, confidence ani IPA. Audio dziecka jest krótkotrwale przetwarzane w pamięci i nie trafia do plików, kolejki, logów ani trace. Wzorzec z karty wyniku wymaga osobnej autoryzacji aktualnej próby i zapisu ekspozycji przed wydaniem zasobu.
 
 ## 24. Pomoce wizualne
 

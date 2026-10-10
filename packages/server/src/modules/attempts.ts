@@ -263,7 +263,7 @@ async function finalizeAttemptRow(
   const key = answerKeyOf(task);
   const correctText = correctTextOf(task, key);
   let feedback: FeedbackDto | null = session.mode === "mock_test" ? null : chooseFeedback(grade, correctText);
-  if (feedback?.speech?.recognition === "matched" && feedback.speech.referenceText !== undefined) {
+  if (feedback?.speech && ["matched", "different"].includes(feedback.speech.recognition) && feedback.speech.referenceText !== undefined) {
     const reference = (
       await tx.select({ target: itemRevisions.payload, targetLocale: deckVersions.targetLocale })
         .from(itemRevisions)

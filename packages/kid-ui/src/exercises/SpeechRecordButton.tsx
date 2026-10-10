@@ -77,6 +77,7 @@ export function SpeechRecordButton({ phase, ready, disabled, level, notice = nul
 
   const levelValue = level === null ? null : Math.round(Math.max(0, Math.min(1, level)) * 100);
   const active = phase === "starting" || phase === "recording" || phase === "stopping";
+  const nativeDisabled = disabled || (phase !== "idle" && phase !== "recording" && phase !== "starting");
   const status = phase === "preparing" ? messages.kid.recordingPrepare
     : phase === "starting" ? messages.kid.recordingStarting
           : phase === "recording" ? messages.kid.recordingListen
@@ -92,7 +93,8 @@ export function SpeechRecordButton({ phase, ready, disabled, level, notice = nul
         data-ready={ready}
         data-phase={phase}
         aria-pressed={phase === "recording"}
-        disabled={blocked}
+        disabled={nativeDisabled}
+        aria-disabled={blocked}
         onPointerDown={(event) => {
           if (mode !== "hold" || blocked || gesture.active || (event.pointerType === "mouse" && event.button !== 0)) return;
           event.preventDefault();

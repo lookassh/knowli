@@ -174,14 +174,35 @@ export class BrowserRecorder implements SpeechRecorder {
       if (event.data.size > 0) this.#chunks.push(event.data);
     };
     recorder.onerror = () => {
+      const reject = this.#pendingReject;
+      this.#pendingStop = null;
+      this.#pendingReject = null;
+      // Błąd urządzenia może przyjść przed stop(); pomijamy onstop/data z
+      // uszkodzonej sesji, ale zawsze zamykamy rejestrator i strumień.
+      recorder.ondataavailable = null;
+      recorder.onerror = null;
+      recorder.onstop = null;
       this.#teardown();
-      this.#pendingReject?.(new Error("recording failed"));
+      this.#state = "idle";
+      this.#options.onError?.();
+      reject?.(new Error("recording failed"));
     };
     recorder.onstop = () => {
       void this.#assemble();
     };
     this.#state = "recording";
-    recorder.start(250);
+    try {
+      recorder.start(250);
+    } catch (error) {
+      // start może rzucić już po uzyskaniu MediaStream; nie zostawiamy wtedy
+      // aktywnego tracka ani callbacku, który mógłby złożyć porzucone audio.
+      recorder.ondataavailable = null;
+      recorder.onerror = null;
+      recorder.onstop = null;
+      this.#teardown();
+      this.#state = "idle";
+      throw new Error("failed to start recording", { cause: error });
+    }
     this.#startLevelMonitor(stream);
     this.#timeoutHandle = this.#timers.set(() => {
       if (this.#state === "recording") {
