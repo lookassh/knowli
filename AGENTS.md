@@ -100,6 +100,7 @@ Nie dodawaj mikroserwisów, Redis, osobnego backendu, ogólnego frameworka plugi
 - Uruchamiaj istniejące skrypty adekwatne do zmiany. Planowane komendy: `pnpm test:unit`, `pnpm test:integration`, `pnpm test:e2e`, `pnpm typecheck`, `pnpm build`. Najpierw sprawdź `package.json`; nie twierdź, że skrypty już istnieją.
 - Początkowy SQL jest projektem do odwzorowania. Po wdrożeniu Drizzle utrzymuj autorytatywny schemat TypeScript i przeglądane migracje SQL, w tym wymagane triggery; nie rozwijaj niezależnie dwóch definicji.
 - Aktualizuj dokumentację, gdy zmienia się uzgodniony kontrakt lub decyzja. Raportuj co zmieniono, co rzeczywiście sprawdzono i co pozostaje niezweryfikowane. Sprawdzenia SQL w PGlite nie są testami gotowej aplikacji.
+- Lokalnie dostępne jest narzędzie GitHub CLI (`gh`, w razie braku w `PATH` bieżącej powłoki: `C:\Program Files\GitHub CLI\gh.exe`) z aktywnym uwierzytelnieniem. Agenci mogą z niego korzystać (np. do sprawdzania stanu repozytorium, statusu PR czy tworzenia PR w ramach autoryzowanego workflow). Pamiętaj, że samo istnienie narzędzia nie uprawnia do samodzielnego push, merge ani otwierania PR bez dyspozycji właściciela lub wybranej opcji workflow.
 
 ### Obowiązkowe wykonanie workflow Superpowers
 
