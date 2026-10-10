@@ -134,6 +134,7 @@ export {
   SPEECH_ANALYSIS_TIMEOUT_MS,
   type SpeechAttemptInput,
 } from "./modules/speech";
+export { authorizeFeedbackAudio } from "./modules/feedback-audio";
 export {
   deterministicBytes,
   fakeGenerationDeps,

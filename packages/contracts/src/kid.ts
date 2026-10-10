@@ -167,6 +167,14 @@ export const DisclosureDtoSchema = z.object({
 });
 export type DisclosureDto = z.infer<typeof DisclosureDtoSchema>;
 
+export const FeedbackAudioDtoSchema = z.object({
+  attemptId: UuidSchema,
+  taskId: UuidSchema,
+  stepId: z.string().min(1),
+  audioAssetId: UuidSchema,
+});
+export type FeedbackAudioDto = z.infer<typeof FeedbackAudioDtoSchema>;
+
 export const PresentationCompletionInputSchema = z.object({
   taskId: UuidSchema,
   clientCommandId: UuidSchema.optional(),
@@ -259,6 +267,8 @@ export const FeedbackDtoSchema = z.object({
   heardText: z.string().min(1).max(200).optional(),
   fragments: z.array(PronunciationFragmentDtoSchema).max(6).optional(),
   speech: SpeechFeedbackDtoSchema.optional(),
+  /** Wskazówka prezentacji; endpoint odsłuchu zawsze ponownie sprawdza uprawnienie. */
+  referenceAudioAvailable: z.boolean().optional(),
 }).strict().superRefine((feedback, ctx) => {
   if (feedback.speech && ["uncertain", "no_speech", "unavailable"].includes(feedback.speech.recognition)) {
     for (const field of ["heardText", "correctText", "fragments"] as const) {

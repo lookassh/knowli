@@ -143,6 +143,10 @@ interface ApiState {
   networkDown: boolean;
   disclosureGate?: Promise<void>;
   disclosureError?: unknown;
+  feedbackAudioGate?: Promise<void>;
+  feedbackAudioError?: unknown;
+  feedbackAudioAssetId?: string;
+  feedbackAudioCalls: string[];
 }
 
 function makeApi(state: ApiState): KidApi {
@@ -179,6 +183,12 @@ function makeApi(state: ApiState): KidApi {
       if (state.disclosureError !== undefined) throw state.disclosureError;
       await state.disclosureGate;
       return { taskId, stepId: "d1", kind, reveal: kind === "hint" ? { target: "Thursday" } : null };
+    },
+    async authorizeFeedbackAudio(attemptId) {
+      state.feedbackAudioCalls.push(attemptId);
+      await state.feedbackAudioGate;
+      if (state.feedbackAudioError !== undefined) throw state.feedbackAudioError;
+      return { attemptId, taskId: "77777777-7777-7777-7777-777777777777", stepId: "f-audio", audioAssetId: state.feedbackAudioAssetId ?? "reference-audio" };
     },
     async completePresentation(taskId): Promise<PresentationCompletionDto> {
       state.presentations.push(taskId);
@@ -241,6 +251,37 @@ async function startAtTask(state: ApiState, task: TaskDto, recorderOpts?: { fail
 }
 
 describe("LearningSessionController", () => {
+  it("autoryzuje wzorzec z bieżącego wyniku przed odtworzeniem", async () => {
+    const state = baseState();
+    const task = taskDto("77777777-7777-7777-7777-777777777777", { kind: "recall", prompt: "czwartek" });
+    state.attempts = [attemptDto({ taskId: task.taskId, attemptId: "66666666-6666-6666-6666-666666666666", modality: "audio", feedback: { kind: "almost", referenceAudioAvailable: true } })];
+    const harness = await startAtTask(state, task);
+    await harness.controller.answerText("Thursday");
+    await harness.controller.playFeedbackAudio();
+    expect(state.feedbackAudioCalls).toEqual(["66666666-6666-6666-6666-666666666666"]);
+    expect(harness.media.playUrls).toEqual(["https://media.test/reference-audio"]);
+  });
+
+  it("nie odtwarza autoryzacji, która wróciła już po zmianie karty", async () => {
+    const state = baseState();
+    const first = taskDto("77777777-7777-7777-7777-777777777777", { kind: "recall", prompt: "czwartek" });
+    const second = taskDto("88888888-8888-8888-8888-888888888888", { kind: "recall", prompt: "wtorek" });
+    state.tasks = [first, second];
+    state.attempts = [attemptDto({ taskId: first.taskId, attemptId: "66666666-6666-6666-6666-666666666666", modality: "audio", feedback: { kind: "almost", referenceAudioAvailable: true } })];
+    let release!: () => void;
+    state.feedbackAudioGate = new Promise<void>((resolve) => { release = resolve; });
+    const harness = await startAtTask(state, first);
+    await harness.controller.answerText("Thursday");
+    const pending = harness.controller.playFeedbackAudio();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    state.tasks = [second];
+    await harness.controller.continueLearning();
+    release();
+    await pending;
+    expect(harness.controller.getScreen()).toMatchObject({ task: { taskId: second.taskId }, feedback: null });
+    expect(harness.media.playUrls).toEqual([]);
+  });
+
   it("starts mock test only after confirming server budget and advances without correctness feedback", async () => {
     const state = baseState();
     const first = taskDto("mock-1", { kind: "recall", prompt: "poniedziałek" }), second = { ...taskDto("mock-2", { kind: "recall", prompt: "wtorek" }), ordinal: 1 };
@@ -828,6 +869,7 @@ function baseState(): ApiState {
     submissions: [],
     speechSubmissions: [],
     observations: [],
+    feedbackAudioCalls: [],
     networkDown: false,
   };
 }

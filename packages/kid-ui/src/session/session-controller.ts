@@ -40,7 +40,7 @@ export interface LearningScreen {
    * `chosenOptionId` różni próbę wyboru od pozostałych i zasila
    * podświetlenie opcji w siatce odpowiedzi (design 2026-10-09).
    */
-  feedback: { dto: FeedbackDto | null; retry: boolean; chosenOptionId?: string } | null;
+  feedback: { dto: FeedbackDto | null; retry: boolean; attemptId: string; chosenOptionId?: string; audioError?: boolean } | null;
   /** Ujawniona podpowiedź czekająca na potwierdzenie dziecka. */
   reveal: { target: string } | null;
   offline: boolean;
@@ -563,10 +563,41 @@ export class LearningSessionController {
       feedback: {
         dto: attempt.feedback,
         retry: attempt.taskState === "issued",
+        attemptId: attempt.attemptId,
         ...(chosenOptionId !== null ? { chosenOptionId } : {}),
       },
     };
     this.#emit();
+  }
+
+  /** Odtwarza wzorzec wskazany przez serwer dla nadal widocznej karty wyniku. */
+  async playFeedbackAudio(): Promise<void> {
+    const screen = this.#learning();
+    const feedback = screen?.feedback;
+    if (!screen || !screen.task || !feedback?.dto?.referenceAudioAvailable || screen.offline ||
+        screen.recordingPhase !== "idle" || screen.processing || screen.busy) return;
+    const epoch = this.#epoch;
+    const taskId = screen.task.taskId;
+    const attemptId = feedback.attemptId;
+    const playbackGeneration = this.#beginPlayback();
+    this.#setLearning({ feedback: { ...feedback, audioError: false } });
+    try {
+      const authorization = await this.#api.authorizeFeedbackAudio(attemptId);
+      const current = this.#learning();
+      if (playbackGeneration !== this.#playbackGeneration || epoch !== this.#epoch || !current ||
+          current.offline || current.recordingPhase !== "idle" || current.processing ||
+          current.task?.taskId !== taskId || current.feedback?.attemptId !== attemptId) return;
+      if (authorization.attemptId !== attemptId || authorization.taskId !== taskId) return;
+      await this.#media.player.play(this.#api.mediaUrl(authorization.audioAssetId));
+      const afterPlay = this.#learning();
+      if (playbackGeneration !== this.#playbackGeneration || epoch !== this.#epoch || !afterPlay ||
+          afterPlay.task?.taskId !== taskId || afterPlay.feedback?.attemptId !== attemptId) return;
+    } catch {
+      const current = this.#learning();
+      if (epoch === this.#epoch && current?.task?.taskId === taskId && current.feedback?.attemptId === attemptId) {
+        this.#setLearning({ feedback: { ...current.feedback, audioError: true } });
+      }
+    }
   }
 
   /**

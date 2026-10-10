@@ -18,6 +18,8 @@ import {
   itemRevisionSkills,
   learningEvents,
   learningSessions,
+  mediaAssets,
+  revisionAssets,
   sessionTasks,
 } from "../db/schema";
 import { AppError } from "../errors";
@@ -260,7 +262,31 @@ async function finalizeAttemptRow(
 ): Promise<AttemptDto> {
   const key = answerKeyOf(task);
   const correctText = correctTextOf(task, key);
-  const feedback: FeedbackDto | null = session.mode === "mock_test" ? null : chooseFeedback(grade, correctText);
+  let feedback: FeedbackDto | null = session.mode === "mock_test" ? null : chooseFeedback(grade, correctText);
+  if (feedback?.speech?.recognition === "matched" && feedback.speech.referenceText !== undefined) {
+    const reference = (
+      await tx.select({ target: itemRevisions.payload, targetLocale: deckVersions.targetLocale })
+        .from(itemRevisions)
+        .innerJoin(deckVersions, eq(deckVersions.id, itemRevisions.deckVersionId))
+        .where(eq(itemRevisions.id, task.itemRevisionId))
+    )[0];
+    const canonical = (reference?.target as { target?: string } | undefined)?.target;
+    const matchingCanonical = canonical !== undefined &&
+      computeTargetKey(feedback.speech.referenceText, reference!.targetLocale) === computeTargetKey(canonical, reference!.targetLocale);
+    const audio = matchingCanonical
+      ? (await tx.select({ id: mediaAssets.id })
+          .from(revisionAssets)
+          .innerJoin(mediaAssets, eq(mediaAssets.id, revisionAssets.assetId))
+          .where(and(
+            eq(revisionAssets.itemRevisionId, task.itemRevisionId),
+            eq(revisionAssets.role, "target_audio"),
+            eq(revisionAssets.state, "approved"),
+            eq(mediaAssets.kind, "tts"),
+            eq(mediaAssets.state, "ready"),
+          )))[0]
+      : undefined;
+    feedback = { ...feedback, referenceAudioAvailable: Boolean(audio) };
+  }
   const chosenText =
     modality === "choice"
       ? ((attempt.answer as { optionText?: string } | null)?.optionText ?? "")
