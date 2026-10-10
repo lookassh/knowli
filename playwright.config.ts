@@ -21,5 +21,5 @@ export default defineConfig({
     // ślad tylko z porażki — materiał diagnostyczny dla CI bez wpływu na zielone runy
     trace: "retain-on-failure",
   },
-  reporter: [["list"]],
+  reporter: [["list"], ["github"]],
 });
