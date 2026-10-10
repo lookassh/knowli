@@ -828,12 +828,15 @@ test("opuszczenie widoku w trakcie nagrywania zatrzymuje strumień", async ({ pa
   await expect(page.getByTestId("kid-summary")).toBeVisible();
   expect(await page.evaluate(() => Number(sessionStorage.getItem("test.trackStops") ?? "0"))).toBeGreaterThanOrEqual(1);
 
-  // nowa sesja startuje czysto: nagrywanie ponownie dostępne
+  // Nowa sesja może zacząć od prezentacji. Cleanup mikrofonu sprawdzamy
+  // przy kolejnym zadaniu z nagrywaniem, bez narzucania kolejności schedulera.
   await page.getByTestId("kid-again").click();
   await page.getByTestId("kid-deck").first().click();
   await expect(page.locator("[data-task-id]")).toBeVisible();
   await expect(page.getByTestId("kid-recording")).toHaveCount(0);
-  await page.getByTestId("kid-record").click();
+  await driveUntil(page, async () => await page.getByTestId("kid-record").isVisible());
+  await expect(page.getByTestId("kid-record")).toBeVisible();
+  await page.getByTestId("kid-record").click({ timeout: 10_000 });
   await expect(page.getByTestId("kid-recording")).toBeVisible();
 });
 

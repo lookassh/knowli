@@ -36,3 +36,7 @@ Własny `git diff --check` recenzenta: exit 0. Recenzent nie powtarzał pełnego
 2. Fizyczna klawiatura telefonu/tabletu nie była dostępna. Diagnostyka i E2E używają Chromium; responsywne zrzuty nie zastępują próby na urządzeniu.
 
 Nie pozostały uwagi Critical ani Important do rozwiązania w zakresie tej funkcji. Na etapie review nie było zgody na merge/push/PR. Później właściciel zlecił utworzenie PR do `main`; zapis wykonania znajduje się w dzienniku postępu. Worktree pozostaje zachowany.
+
+## Review synchronizacji PR z nowym main
+
+Po wejściu PR #4 do main (`65cc96a`) ten sam niezależny recenzent sprawdził read-only rozwiązanie konfliktu oraz cały wynik względem `origin/main`. Konflikt dotyczył wyłącznie trasy wejścia w teście `letter_completion`; zachowano `/kids/${child.id}/learn`, która otwiera dokładnie syntetyczny profil przez `initialChildId`. Wszystkie pozostałe zmiany main przyjęto bez modyfikacji, a kod produktu feature'u pozostaje identyczny jak przy pełnym review. Brak otwartych uwag, brak nierozwiązanych konfliktów w indeksie, kontrola diffu przechodzi. Wykonawca ponownie potwierdził unit 347/347 i siedem adekwatnych E2E 7/7.

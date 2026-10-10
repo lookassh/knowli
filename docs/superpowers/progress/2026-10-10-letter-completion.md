@@ -73,3 +73,22 @@ Aktualna weryfikacja przed commitem/PR: `pnpm test:unit` 347/347, wybrane E2E `l
 Wybrany workflow końcowy: jeden commit feature'u, zwykły push nowej gałęzi i PR do `main`. Worktree pozostaje do obsługi PR. Przyszłe scalenie wymaga osobnego polecenia i Squash and merge zgodnie z AGENTS.md.
 
 Sekwencyjne `pnpm build` i `pnpm typecheck` na aktualnej bazie zakończyły się exit 0. Końcowa kontrola obejmuje diff feature'u względem `origin/main`, cały zakres stage, spójność dokumentacji oraz `git diff --check`. Wprowadzone od zakończenia niezależnego review zmiany dotyczą wyłącznie zapisu decyzji publikacji i aktualnej weryfikacji w dokumentacji.
+
+## Aktualizacja PR po nowym main
+
+Utworzono PR #5, gałąź `feature/fill-missing-letters`, commit feature'u `05bb81e8db19477402fe44229f352b1850eafbcb`. Przy wcześniejszym końcowym odczycie GitHub zgłaszał `mergeable=true` względem main `c67a60e`.
+
+Po zgłoszeniu właściciela sprawdzono ponownie API i `git fetch`: main przesunął się do `65cc96a` (PR #4 stabilizujący E2E). `git merge-tree --write-tree HEAD origin/main` potwierdził jeden konflikt w `tests/e2e/learning-algorithm.spec.ts`: nowy main poprawia stare `/learn` na `/`, podczas gdy feature już używa istniejącej trasy `/kids/${child.id}/learn`. Przyczyną nie jest konflikt kodu aplikacji.
+
+Rozwiązanie przy aktualizacji gałęzi PR: zachowanie trasy konkretnego profilu z feature'u oraz wszystkich pozostałych zmian main. To ta sama trasa sprawdzona wcześniej w czterech scenariuszach. Zwykła aktualizacja historii gałęzi PR bez force-push; main pozostaje docelową gałęzią i nie jest scalany przez agenta.
+
+- [x] Reprodukcja i diagnoza konfliktu.
+- [x] Minimalne rozwiązanie jednego hunku.
+- [x] Unit i adekwatne E2E po uwzględnieniu main.
+- [x] Niezależne review rozwiązania konfliktu.
+
+Weryfikacja po aktualizacji: `pnpm test:unit` 347/347 i siedem wybranych E2E (cztery warianty uzupełniania liter oraz recall, odmowa mikrofonu, awaria sieci) 7/7, exit 0. Przebieg E2E używał własnego `UMIEM_TEST_RUN_ID=8efc-letters-conflict`, port 24861. Niezależny recenzent `letter_completion_review` sprawdził cały wynik względem nowego main i aktualizację względem poprzedniego HEAD: brak otwartych uwag, wszystkie pozostałe zmiany main zachowane, kod produktu niezmieniony, brak niezałatwionych wpisów konfliktu w indeksie, `git diff --cached --check` przechodzi.
+
+Publikacja aktualizacji odbywa się przez commit synchronizacji i zwykły push; końcowy stan PR i SHA weryfikowany jest bezpośrednio w GitHub oraz przez `git ls-remote`, zamiast opierać się na poprzednim statusie PR.
+
+Ponowny `pnpm typecheck` po zakończeniu E2E: exit 0. Build nie był powtarzany w tej synchronizacji: `git diff HEAD -- packages apps` potwierdził brak zmian w kodzie produktu względem już zweryfikowanego produkcyjnego buildu; nowe main zmieniło wyłącznie instrukcje, dokumentację i testy E2E.
