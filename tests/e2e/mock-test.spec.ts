@@ -37,6 +37,39 @@ test("written mock test keeps its three slots after errors, reload and transport
   await expect(page.locator('[data-testid="kid-mock-solution"][data-status="notAssessed"]')).toHaveCount(1);
 });
 
+test("fully correct attempt shows green rows, six stars and replays audio from review", async ({ page }) => {
+  const words = [
+    { source: "pies", target: "dog" },
+    { source: "kot", target: "cat" },
+    { source: "słońce", target: "sun" },
+  ];
+  const { childId } = await seedMockTest(3, true, false, words);
+  await page.goto(`/kids/${childId}/learn`);
+  await page.getByTestId("kid-mock-start").first().click();
+  await page.getByTestId("kid-mock-confirm").click();
+  const answers: Record<string, string> = Object.fromEntries(words.map(w => [w.source, w.target]));
+  let previous: string | null = null;
+  for (let i = 0; i < 3; i++) {
+    const sourceLocator = page.getByTestId("kid-source");
+    await expect(sourceLocator).toBeVisible();
+    if (previous !== null) await expect.poll(async () => ((await sourceLocator.textContent()) ?? "").trim()).not.toBe(previous);
+    const source = ((await sourceLocator.textContent()) ?? "").trim();
+    previous = source;
+    await page.getByTestId("kid-input").fill(answers[source]!);
+    await page.getByTestId("kid-submit").click();
+  }
+  await expect(page.getByTestId("kid-mock-summary")).toBeVisible();
+  await expect(page.getByTestId("kid-mock-score")).toContainText("3/3 · 100%");
+  await expect(page.getByTestId("kid-mock-score")).toContainText("★★★★★★");
+  await expect(page.getByTestId("kid-mock-score")).toHaveAttribute("data-tone", "good");
+  await expect(page.locator('[data-testid="kid-mock-solution"][data-status="correct"]')).toHaveCount(3);
+  // odsłuch w omówieniu jest wpięty w przepływ (re-read omówienia z zapisem ekspozycji);
+  // samego odtworzenia nie da się asertować w e2e — media mają fake'owe bajty
+  const replay = page.waitForResponse(/mock-test-summary/);
+  await page.locator(".kid-mock-row__audio").first().click();
+  await replay;
+});
+
 test("configured portion can exceed ten and ends after its thirteenth answer", async ({ page }) => {
   const { childId } = await seedMockTest(13);
   await page.goto(`/kids/${childId}/learn`);
