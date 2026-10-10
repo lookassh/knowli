@@ -209,7 +209,15 @@ export class LearningSessionController {
 
   setMicrophone(on: boolean): void {
     if (this.#screen.kind !== "deck") return;
-    this.#screen = { ...this.#screen, microphone: on };
+    // jawny wybór rodzica/dziecka nadpisuje zapamiętaną odmowę w obie strony —
+    // po odmowie przełącznik nadal pozwala wrócić do nagrywania (SPEC §14)
+    this.#micDenied = !on;
+    if (on) {
+      this.#storage.remove(MIC_DENIED_KEY);
+    } else {
+      this.#storage.write(MIC_DENIED_KEY, "1");
+    }
+    this.#screen = { ...this.#screen, microphone: on, micDenied: !on };
     this.#emit();
   }
 
@@ -505,10 +513,13 @@ export class LearningSessionController {
       await recorder.start();
       this.#recorder = recorder;
       this.#setLearning({ recording: true, micDenied: false });
-    } catch {
-      // odmowa uprawnienia, brak mikrofonu albo awaria — tryb bez nagrywania
-      this.#micDenied = true;
-      this.#storage.write(MIC_DENIED_KEY, "1");
+    } catch (error) {
+      // trwale pamiętamy tylko świadomą odmowę (też prompt zablokowany przez
+      // przeglądarkę); awaria urządzenia wyłącza nagrywanie do końca sesji
+      if ((error as { name?: unknown } | null)?.name === "NotAllowedError") {
+        this.#micDenied = true;
+        this.#storage.write(MIC_DENIED_KEY, "1");
+      }
       this.#setLearning({ recording: false, micDenied: true });
     }
   }

@@ -6,9 +6,11 @@
 export interface LocalPreferences {
   read(key: string): string | null;
   write(key: string, value: string): void;
+  /** Czyści klucz — powrót do wartości domyślnej (np. ponowne włączenie mikrofonu). */
+  remove(key: string): void;
 }
 
-/** Klucz odmowy mikrofonu: kolejne sesje startują bez nagrywania (A12). */
+/** Klucz wyłączonego mikrofonu: kolejne sesje startują bez nagrywania (A12). */
 export const MIC_DENIED_KEY = "umiem.micDenied";
 
 /** Preferencje w pamięci — deterministyczne testy jednostkowe. */
@@ -18,6 +20,9 @@ export function createMemoryPreferences(values: Record<string, string> = {}): Lo
     read: (key) => store.get(key) ?? null,
     write: (key, value) => {
       store.set(key, value);
+    },
+    remove: (key) => {
+      store.delete(key);
     },
   };
 }
@@ -36,6 +41,13 @@ export function createBrowserPreferences(): LocalPreferences {
     write(key, value) {
       try {
         globalThis.localStorage?.setItem(key, value);
+      } catch {
+        // ignorujemy — brak trwałego ustawienia nie blokuje nauki
+      }
+    },
+    remove(key) {
+      try {
+        globalThis.localStorage?.removeItem(key);
       } catch {
         // ignorujemy — brak trwałego ustawienia nie blokuje nauki
       }

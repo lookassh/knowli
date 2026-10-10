@@ -73,20 +73,19 @@ export function DeckScreen({
           )}
         </>
       )}
-      {micDenied ? (
+      <label className="kid-toggle">
+        <input
+          type="checkbox"
+          data-testid="kid-mic-toggle"
+          checked={microphone}
+          onChange={(event) => onToggleMicrophone(event.target.checked)}
+        />
+        <span>{messages.kid.microphone}</span>
+      </label>
+      {micDenied && (
         <p className="kid-hint" data-testid="kid-mic-denied-hint">
           {messages.kid.microphoneDeniedHint}
         </p>
-      ) : (
-        <label className="kid-toggle">
-          <input
-            type="checkbox"
-            data-testid="kid-mic-toggle"
-            checked={microphone}
-            onChange={(event) => onToggleMicrophone(event.target.checked)}
-          />
-          <span>{messages.kid.microphone}</span>
-        </label>
       )}
     </main>
   );

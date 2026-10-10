@@ -47,3 +47,29 @@ describe("DeckScreen — powitanie i postępy na kafelkach (SPEC §6)", () => {
     expect(markup).toContain(`Dni tygodnia — ${label}`);
   });
 });
+
+describe("DeckScreen — przełącznik mikrofonu (SPEC §14)", () => {
+  it("pokazuje przełącznik także po odmowie, z podpowiedzią pod nim", () => {
+    const markup = renderToStaticMarkup(
+      createElement(DeckScreen, {
+        decks: [DECK],
+        childName: "Krzysztof",
+        microphone: false,
+        micDenied: true,
+        onToggleMicrophone: () => undefined,
+        onStart: () => undefined,
+      }),
+    );
+
+    expect(markup).toContain('data-testid="kid-mic-toggle"');
+    expect(markup).toContain('data-testid="kid-mic-denied-hint"');
+    expect(markup).toContain("Mikrofon");
+  });
+
+  it("bez odmowy pokazuje przełącznik bez podpowiedzi", () => {
+    const markup = renderDeckScreen(DECK);
+
+    expect(markup).toContain('data-testid="kid-mic-toggle"');
+    expect(markup).not.toContain("kid-mic-denied-hint");
+  });
+});

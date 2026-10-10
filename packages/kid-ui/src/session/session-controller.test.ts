@@ -68,7 +68,7 @@ function attemptDto(overrides: Partial<AttemptDto> = {}): AttemptDto {
   };
 }
 
-function makeRecorder(opts: { failStart?: boolean } = {}): SpeechRecorder & {
+function makeRecorder(opts: { failStartWith?: unknown } = {}): SpeechRecorder & {
   cancelled: number;
   stopped: number;
   started: number;
@@ -89,8 +89,8 @@ function makeRecorder(opts: { failStart?: boolean } = {}): SpeechRecorder & {
     },
     async start() {
       state.started += 1;
-      if (opts.failStart) {
-        throw new Error("NotAllowedError");
+      if (opts.failStartWith !== undefined) {
+        throw opts.failStartWith;
       }
     },
     async stop() {
@@ -196,7 +196,7 @@ const DECK: KidDeckDto = {
 
 function makeHarness(
   state: ApiState,
-  options: { failStart?: boolean; initialChildId?: string } = {},
+  options: { failStartWith?: unknown; initialChildId?: string } = {},
 ) {
   const recorder = makeRecorder(options);
   const media = makeMedia(recorder);
@@ -211,7 +211,7 @@ function makeHarness(
   return { controller, recorder, media, storage, state };
 }
 
-async function startAtTask(state: ApiState, task: TaskDto, recorderOpts?: { failStart?: boolean }) {
+async function startAtTask(state: ApiState, task: TaskDto, recorderOpts?: { failStartWith?: unknown }) {
   state.tasks = [task];
   const harness = makeHarness(state, recorderOpts);
   await harness.controller.start();
@@ -305,7 +305,9 @@ describe("LearningSessionController", () => {
   it("odmowa mikrofonu przełącza na tryb bez nagrywania i jest zapamiętywana", async () => {
     const recall = taskDto("t1", { kind: "recall", prompt: "czwartek" });
     const state = baseState();
-    const harness = await startAtTask(state, recall, { failStart: true });
+    const harness = await startAtTask(state, recall, {
+      failStartWith: new DOMException("Permission dismissed", "NotAllowedError"),
+    });
     await harness.controller.startRecording();
     let screen = harness.controller.getScreen();
     expect(screen).toMatchObject({ kind: "learning", micDenied: true, recording: false });
@@ -323,6 +325,75 @@ describe("LearningSessionController", () => {
     expect(state.startedSessions.at(-1)).toMatchObject({ microphoneEnabled: false });
     screen = harness.controller.getScreen();
     expect(screen).toMatchObject({ kind: "learning" });
+  });
+
+  it("awaria mikrofonu inna niż odmowa wyłącza nagrywanie tylko do końca sesji", async () => {
+    const recall = taskDto("t1", { kind: "recall", prompt: "czwartek" });
+    const state = baseState();
+    const harness = await startAtTask(state, recall, {
+      failStartWith: new DOMException("Requested device not found", "NotFoundError"),
+    });
+    await harness.controller.startRecording();
+    expect(harness.controller.getScreen()).toMatchObject({
+      kind: "learning",
+      micDenied: true,
+      recording: false,
+    });
+    expect(harness.storage.read(MIC_DENIED_KEY)).toBeNull();
+
+    // sesja dalej działa pisemnie, a kolejna może ponownie poprosić o mikrofon
+    await harness.controller.answerText("Thursday");
+    await harness.controller.endNow();
+    state.tasks = [recall];
+    await harness.controller.learnAgain();
+    await harness.controller.startLearning(DECK.deckId);
+    expect(state.startedSessions.at(-1)).toMatchObject({ microphoneEnabled: true });
+  });
+
+  it("włączenie mikrofonu na ekranie zestawów czyści zapamiętaną odmowę", async () => {
+    const recall = taskDto("t1", { kind: "recall", prompt: "czwartek" });
+    const state = baseState();
+    const harness = await startAtTask(state, recall, {
+      failStartWith: new DOMException("Permission dismissed", "NotAllowedError"),
+    });
+    await harness.controller.startRecording();
+    expect(harness.storage.read(MIC_DENIED_KEY)).toBe("1");
+
+    await harness.controller.answerText("Thursday");
+    await harness.controller.endNow();
+    state.tasks = [recall];
+    await harness.controller.learnAgain();
+    let screen = harness.controller.getScreen();
+    expect(screen).toMatchObject({ kind: "deck", microphone: false, micDenied: true });
+
+    harness.controller.setMicrophone(true);
+    screen = harness.controller.getScreen();
+    expect(screen).toMatchObject({ kind: "deck", microphone: true, micDenied: false });
+    expect(harness.storage.read(MIC_DENIED_KEY)).toBeNull();
+
+    await harness.controller.startLearning(DECK.deckId);
+    expect(state.startedSessions.at(-1)).toMatchObject({ microphoneEnabled: true });
+  });
+
+  it("ręczne wyłączenie mikrofonu na ekranie zestawów jest zapamiętywane", async () => {
+    const recall = taskDto("t1", { kind: "recall", prompt: "czwartek" });
+    const state = baseState();
+    const harness = await startAtTask(state, recall);
+    await harness.controller.answerText("Thursday");
+    await harness.controller.endNow();
+
+    await harness.controller.learnAgain();
+    harness.controller.setMicrophone(false);
+    expect(harness.storage.read(MIC_DENIED_KEY)).toBe("1");
+    expect(harness.controller.getScreen()).toMatchObject({
+      kind: "deck",
+      microphone: false,
+      micDenied: true,
+    });
+
+    state.tasks = [recall];
+    await harness.controller.startLearning(DECK.deckId);
+    expect(state.startedSessions.at(-1)).toMatchObject({ microphoneEnabled: false });
   });
 
   it("opuszczenie widoku anuluje nagrywanie i zatrzymuje odtwarzanie", async () => {

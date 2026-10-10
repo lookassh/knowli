@@ -119,6 +119,22 @@ describe("BrowserRecorder — nagrywanie bez pozostawiania strumienia (arch §11
     recorder.cancel();
   });
 
+  it("DOMException z getUserMedia wychodzi nieopakowany, z nienaruszonym name", async () => {
+    // controller rozróżnia odmowę uprawnienia (NotAllowedError) od awarii
+    // urządzenia po name — opakowanie z policymakerskim tekstem by ją ukryło
+    const getUserMedia = vi.fn(async (): Promise<MediaStream> => {
+      throw new DOMException("Permission denied", "NotAllowedError");
+    });
+    const recorder = new BrowserRecorder({
+      getUserMedia,
+      mediaRecorder: FakeMediaRecorder as unknown as typeof MediaRecorder,
+      timers: fakeTimers().timers,
+    });
+    const failure = recorder.start();
+    await expect(failure).rejects.toMatchObject({ name: "NotAllowedError" });
+    expect(FakeMediaRecorder.instances).toHaveLength(0);
+  });
+
   it("limit 15 sekund kończy nagranie automatycznie i zwalnia mikrofon", async () => {
     const { stream, stop } = fakeStream();
     const timers = fakeTimers();

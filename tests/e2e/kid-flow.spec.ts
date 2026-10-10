@@ -639,6 +639,20 @@ test("odmowa mikrofonu przełącza na tryb bez nagrywania", async ({ page }) => 
   );
   await seedDue(child.id, publishedVersionId, 0, "recall");
 
+  // headless-shell odrzuca getUserMedia błędem NotSupportedError (brak
+  // wsparcia mediów), więc świadomą odmowę uprawnienia (A12) symulujemy
+  // jawnie — tylko NotAllowedError jest zapamiętywana między sesjami
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: async () => {
+          throw new DOMException("Permission denied", "NotAllowedError");
+        },
+      },
+    });
+  });
+
   await openLearn(page, "Darek");
   await page.getByTestId("kid-deck").first().click();
   await expect(page.getByTestId("kid-record")).toBeVisible();

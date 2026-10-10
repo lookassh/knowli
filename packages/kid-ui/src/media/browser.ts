@@ -131,6 +131,11 @@ export class BrowserRecorder implements SpeechRecorder {
     try {
       stream = await this.#getUserMedia({ audio: true });
     } catch (error) {
+      // DOMException przechodzi nieopakowana — controller rozpoznaje po name
+      // świadomą odmowę uprawnienia (NotAllowedError) i tylko ją zapamiętuje
+      if (error instanceof DOMException) {
+        throw error;
+      }
       throw new Error("microphone permission denied", { cause: error });
     }
     this.#stream = stream;
