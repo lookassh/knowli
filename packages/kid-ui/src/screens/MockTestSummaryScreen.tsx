@@ -1,24 +1,7 @@
 import { useState } from "react";
 import { messages, type MockTestSummaryDto, type SessionDto } from "@learning/contracts";
 import { format } from "../format";
-import { computeMockTestScore, mockTestSolutionDetail, mockTestWordStatus, type MockTestWordStatus } from "./mock-test-score";
-
-type Solution = MockTestSummaryDto["solutions"][number];
-
-const SOLUTION_ICONS: Record<MockTestWordStatus, string> = { correct: "✓", incorrect: "✗", notAssessed: "–" };
-
-function resultBadgeLabel(result: Solution["results"][number]): string {
-  const skill = messages.kid.mockTestSkill[result.skill];
-  if (result.outcome === "correct") return `${skill} ✓`;
-  if (result.outcome === "incorrect") return `${skill} ✗`;
-  return `${skill}: ${result.outcome === "skipped" ? messages.kid.mockTestSkipped : messages.kid.mockTestNotTested}`;
-}
-
-function resultBadgeClass(result: Solution["results"][number]): string {
-  if (result.outcome === "correct") return "kid-mock-badge kid-mock-badge--correct";
-  if (result.outcome === "incorrect") return "kid-mock-badge kid-mock-badge--incorrect";
-  return "kid-mock-badge";
-}
+import { computeMockTestScore, MOCK_TEST_SOLUTION_ICONS, mockTestResultBadgeClass, mockTestResultBadgeLabel, mockTestSolutionDetail, mockTestWordStatus } from "./mock-test-score";
 
 export function MockTestReadyScreen({ session, onStart, onCancel }: { session: SessionDto; onStart: () => Promise<void>; onCancel: () => Promise<void> }) {
   const [error, setError] = useState(false);
@@ -51,14 +34,14 @@ export function MockTestSummaryScreen({ summary, onPlay, onPractice, onSwitchPro
       const status = mockTestWordStatus(solution.results);
       const detail = mockTestSolutionDetail(solution.results);
       return <li className={`kid-mock-row kid-mock-row--${status}`} key={solution.taskId} data-testid="kid-mock-solution" data-status={status}>
-        <span className="kid-mock-row__icon" aria-hidden="true">{SOLUTION_ICONS[status]}</span>
+        <span className="kid-mock-row__icon" aria-hidden="true">{MOCK_TEST_SOLUTION_ICONS[status]}</span>
         <div className="kid-mock-row__body">
           <p className="kid-mock-row__words">{solution.source} → <strong>{solution.target}</strong></p>
           {detail.type === "label" && <p className="kid-mock-row__detail">
             <span className="kid-mock-badge">{detail.label === "skipped" ? messages.kid.mockTestSkipped : messages.kid.mockTestNotTested}</span>
           </p>}
           {detail.type === "perSkill" && <p className="kid-mock-row__detail">
-            {solution.results.map(result => <span className={resultBadgeClass(result)} key={result.skill}>{resultBadgeLabel(result)}</span>)}
+            {solution.results.map(result => <span className={mockTestResultBadgeClass(result)} key={result.skill}>{mockTestResultBadgeLabel(result)}</span>)}
           </p>}
         </div>
         {solution.audioAssetId && <button type="button" className="kid-mock-row__audio" aria-label={messages.kid.listen} onClick={() => run(onPlay(solution.taskId))}>🔊</button>}
