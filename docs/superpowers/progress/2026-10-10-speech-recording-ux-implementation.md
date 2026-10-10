@@ -53,3 +53,11 @@ Ruling: brak konfliktów kontraktów na podstawie planu/specyfikacji; wyżej wym
 - Pierwszy przebieg integracji ujawnił brak importu deckVersions, a potem nieaktualną asercję starego DTO; oba rozwiązano, ponownie potwierdzając zielony zestaw. Nie pozostawiono odstępstw.
 - Commit: 6c62c64ea011b839c9b3177c441584096a596457.
 - Task 1: complete (commits dd1e025..6c62c64ea011b839c9b3177c441584096a596457; tests: unit + integration + typecheck → PASS)
+### Task 2 — uczciwe oznaczanie fragmentów: complete
+
+- RED potwierdzony dla optymistycznego fallbacku, brakujących lub nieprawidłowych score'ów, ErrorType, zachowania liter i limitu fragmentów.
+- Implementacja: neutralny unknown przy braku pewnej lokalizacji lub score'u, bez dowolnego dopasowania samogłoski; tylko zgodne fonemy i obsługiwane ErrorType kolorują zakresy. Oryginalna kapitalizacja, apostrof i łącznik pozostają zachowane; ponad sześć fragmentów wraca do neutralnego słowa. Mispronunciation i None zachowują wiarygodne lokalne oznaczenia.
+- Test końcowy `pnpm test:unit packages/server/src/domain/pronunciation-fragments.test.ts packages/server/src/modules/speech.test.ts packages/server/src/domain/feedback.test.ts` → 3 files, 39 tests PASS; `pnpm typecheck` PASS; `git diff --check` PASS. Kontrola synthetic cherry/grape/apple/Thursday oraz zachowanych wariantów.
+- Odstępstwa: brak.
+- Commit: c87b499190f5d218163b8ed698879f58383e4df3.
+- Task 2: complete (commits 6c62c64..c87b499190f5d218163b8ed698879f58383e4df3; tests: unit + typecheck → PASS)
