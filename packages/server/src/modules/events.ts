@@ -163,6 +163,9 @@ export async function authorizeDisclosure(services: Services, input: DisclosureI
     if (task.state !== "issued") {
       throw new AppError("conflict", { message: "task is no longer issued" });
     }
+    if (session.mode === "mock_test" && (valid.kind === "hint" || task.exerciseType !== "listening")) {
+      throw new AppError("conflict", { message: "Odpowiedzi omówimy po zakończeniu kartkówki." });
+    }
 
     const revision = (
       await tx

@@ -246,7 +246,7 @@ async function finalizeAttemptRow(
 ): Promise<AttemptDto> {
   const key = answerKeyOf(task);
   const correctText = correctTextOf(task, key);
-  const feedback: FeedbackDto = chooseFeedback(grade, correctText);
+  const feedback: FeedbackDto | null = session.mode === "mock_test" ? null : chooseFeedback(grade, correctText);
   const chosenText =
     modality === "choice"
       ? ((attempt.answer as { optionText?: string } | null)?.optionText ?? "")
@@ -306,7 +306,7 @@ async function finalizeAttemptRow(
     .from(attempts)
     .innerJoin(assessments, eq(assessments.attemptId, attempts.id))
     .where(and(eq(attempts.taskId, task.id), eq(assessments.outcome, "incorrect")));
-  const taskState = nextTaskState(
+  const taskState = session.mode === "mock_test" ? (modality === "skip" ? "skipped" : "answered") : nextTaskState(
     modality,
     grade,
     attempt.attemptNumber,
@@ -325,7 +325,7 @@ async function finalizeAttemptRow(
     throw new AppError("conflict", { message: "attempt is already finalized" });
   }
 
-  const stepId = await discloseFeedback(tx, task, session.childId, itemId, feedback, targetKey, now);
+  const stepId = feedback === null ? null : await discloseFeedback(tx, task, session.childId, itemId, feedback, targetKey, now);
   const freshTask = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, task.id)))[0]!;
 
   // rezerwacja sprawdzenia zwalniana po rozliczeniu albo po ocenionej próbie,
@@ -420,7 +420,7 @@ export async function startAttempt(
     await lazyFinalizeProcessing(tx, task, session, itemId, now);
     const fresh = (await tx.select().from(attempts).where(eq(attempts.id, existing.id)))[0]!;
     const state = await rereadTaskState(tx, task.id);
-    if (fresh.state === "completed" && fresh.feedback) {
+    if (session.mode !== "mock_test" && fresh.state === "completed" && fresh.feedback) {
       const stepId = await discloseFeedback(
         tx,
         task,
@@ -446,6 +446,9 @@ export async function startAttempt(
   }
   if (task.state !== "issued") {
     throw new AppError("conflict", { message: "task is no longer issued" });
+  }
+  if (session.mode === "mock_test" && valid.modality === "audio") {
+    throw new AppError("validation", { message: "Kartkówka nie wymaga nagrywania odpowiedzi." });
   }
   if (
     (valid.modality === "choice" && !CHOICE_EXERCISES.has(task.exerciseType)) ||
@@ -575,7 +578,7 @@ export async function readAttempt(services: Services, attemptId: string): Promis
 
     const fresh = (await tx.select().from(attempts).where(eq(attempts.id, id)))[0]!;
     const freshTask = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, task.id)))[0]!;
-    if (fresh.state === "completed" && fresh.feedback) {
+    if (session.mode !== "mock_test" && fresh.state === "completed" && fresh.feedback) {
       const stepId = await discloseFeedback(
         tx,
         freshTask,
@@ -630,7 +633,7 @@ export async function finalizeAttempt(
 
     if (attempt.state === "completed") {
       const freshTask = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, task.id)))[0]!;
-      if (attempt.feedback) {
+      if (session.mode !== "mock_test" && attempt.feedback) {
         const stepId = await discloseFeedback(
           tx,
           freshTask,
