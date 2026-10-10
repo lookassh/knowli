@@ -335,6 +335,17 @@ async function finalizeAttemptRow(
   }
 
   const stepId = feedback === null ? null : await discloseFeedback(tx, task, session.childId, itemId, feedback, targetKey, now);
+  if (session.mode === "mock_test") {
+    await writeSealedEvent(tx, {
+      childId: session.childId,
+      taskId: task.id,
+      itemId,
+      kind: "contact",
+      stepId: `${task.id}:contact`,
+      occurredAt: attempt.receivedAt,
+      exposures: [],
+    });
+  }
   const freshTask = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, task.id)))[0]!;
 
   // rezerwacja sprawdzenia zwalniana po rozliczeniu albo po ocenionej próbie,

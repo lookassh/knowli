@@ -96,6 +96,24 @@ it.each([299, 300])("qualifies at received_at after %i seconds and preserves spl
   expect(grades).toEqual([{ skill: "recall", outcome: "correct", independent: seconds === 300 }, { skill: "spelling", outcome: "incorrect", independent: seconds === 300 }]);
 });
 
+it("uses the mock-test answer time as the last contact for 12-hour confirmation", async () => {
+  const { services, clock } = buildTestServices(); const a = await mockTestDeck(services, 1); clock.advanceHours(13);
+  await upsertAssignment(services, a.childId, a.deckId, null, { testGoals: ["recall"], mockTestTaskCount: 1 });
+  const input = { childId: a.childId, deckId: a.deckId, microphoneEnabled: false, mode: "mock_test" as const };
+  const first = await startSession(services, input); const firstTask = (await nextTask(services, first.sessionId))!;
+  clock.advanceMs(9 * 60_000);
+  const firstAnswer = await submitAttempt(services, { taskId: firstTask.taskId, clientAttemptId: randomUUID(), modality: "text", text: "Monday" });
+  clock.advanceMs(11 * 60 * 60_000 + 51 * 60_000);
+
+  const second = await startSession(services, input); const secondTask = (await nextTask(services, second.sessionId))!;
+  const secondAnswer = await submitAttempt(services, { taskId: secondTask.taskId, clientAttemptId: randomUUID(), modality: "text", text: "Monday" });
+  const grade = (await pool.query(`select confirmation_eligible from learning_app.assessments where attempt_id=$1 and skill='recall'`, [secondAnswer.attemptId])).rows[0];
+  const contact = (await pool.query(`select occurred_at from learning_app.learning_events where task_id=$1 and kind='contact'`, [firstTask.taskId])).rows[0];
+
+  expect(contact?.occurred_at).toEqual(new Date(firstAnswer.receivedAt));
+  expect(grade.confirmation_eligible).toBe(false);
+});
+
 it("counts exposure of the same target in a different deck", async () => {
   const { services, clock } = buildTestServices(); const a = await mockTestDeck(services, 1); clock.advanceHours(13);
   const b = await mockTestDeck(services, 1, false);

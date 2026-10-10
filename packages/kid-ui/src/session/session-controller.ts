@@ -537,8 +537,20 @@ export class LearningSessionController {
     if (!assetId) return;
     const epoch = this.#epoch;
     if (screen.session.mode === "mock_test" || ["recall", "spelling", "letter_completion", "speech"].includes(task.exerciseType)) {
-      await this.#api.authorizeDisclosure(task.taskId, "audio");
-      if (epoch !== this.#epoch) return;
+      try {
+        await this.#api.authorizeDisclosure(task.taskId, "audio");
+      } catch (error) {
+        const current = this.#learning();
+        if (epoch === this.#epoch && current?.session.sessionId === screen.session.sessionId && current.task?.taskId === task.taskId) {
+          this.#resume = screen.session.mode === "mock_test" && error instanceof KidApiError && error.code === "conflict"
+            ? () => this.#loadNext(epoch, screen.session.sessionId)
+            : () => this.playTaskAudio();
+          this.#handleFailure(error);
+        }
+        return;
+      }
+      const current = this.#learning();
+      if (epoch !== this.#epoch || !current || current.offline || current.session.sessionId !== screen.session.sessionId || current.task?.taskId !== task.taskId) return;
     }
     try {
       await this.#media.player.play(this.#api.mediaUrl(assetId));
@@ -648,10 +660,20 @@ export class LearningSessionController {
 
   /** Ponowienie po powrocie sieci albo po błędzie aplikacji. */
   async retry(): Promise<void> {
-    if (this.#learning() === null) return;
+    const screen = this.#learning();
+    if (screen === null) return;
     this.#setLearning({ offline: false, error: null });
     if (this.#resume) {
-      await this.#resume();
+      try {
+        await this.#resume();
+      } catch (error) {
+        const current = this.#learning();
+        if (current?.session.mode === "mock_test" && error instanceof KidApiError && error.code === "conflict") {
+          await this.#loadNext(this.#epoch, current.session.sessionId);
+          return;
+        }
+        this.#handleFailure(error);
+      }
       return;
     }
     await this.refreshStep();

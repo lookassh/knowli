@@ -28,3 +28,17 @@ Przyczyny źródłowe zweryfikowano w `receiving-code-review`; nie przyjęto uwa
 
 Przed poprawkami: unit 374/374, PostgreSQL 168/168, E2E 64/64, typecheck i build PASS. Pełne wyniki po poprawkach oraz końcowa decyzja wykonawcy znajdują się w `../progress/2026-10-10-test-readiness.md`. Fizycznego telefonu/tabletu rodziny ani wdrożenia produkcyjnego nie sprawdzano; przegląd nie zastępuje tych dowodów.
 `nPo pięciu poprawkach: pełne unit376/376, PostgreSQL172/172 i E2E66/66, typecheck/build/diff-check PASS. PR: https://github.com/lookassh/knowli/pull/33. Wykonawca zakończył bramkę obsługi review; właściciel podejmuje decyzję o squash merge.
+
+## Uzupełnienie niezależnego review po zmianach w PR #33
+
+Po przekazaniu gałęzi do review wykryto i naprawiono trzy dalsze problemy, każdy najpierw potwierdzony regresją RED:
+
+1. Odpowiedź z kartkówki nie aktualizowała czasu ostatniego kontaktu. Przy odpowiedzi tuż przed upływem 12 godzin system mógł uznać kolejną próbę za potwierdzenie po przerwie, mimo że od faktycznej odpowiedzi minęło mniej niż 12 godzin. Zapis kontaktu jest teraz wiązany z `receivedAt`, bez ujawnianej treści ani ekspozycji. PostgreSQL regression GREEN.
+2. Opóźniona autoryzacja odtwarzania poprzedniego zadania mogła zakończyć się po przejściu do kolejnego zadania. Przed odtworzeniem kontroler ponownie sprawdza epokę, ekran, sesję i bieżące zadanie. Controller regression GREEN.
+3. Retry odpowiedzi kartkówki po błędzie sieci mógł dostać konflikt, jeśli druga przeglądarka już zamknęła slot. Retry teraz odświeża następne zadanie; regression GREEN.
+
+Niezależny recenzent wykrył dodatkowo awarię autoryzacji audio: odrzucone żądanie było połykane, zadanie pozostawało aktywne bez odsłuchu, a odpowiedź nadal można było wysłać. Obsługa błędu ustawia offline/error, blokuje odpowiedź i pozwala ponowić odsłuch. Regresja była RED przed zmianą i GREEN po niej. Re-review wykrył konflikt dla zamkniętego slotu, który zapętlał retry na starej autoryzacji; retry konfliktu prowadzi teraz do następnego zadania. Ten test również wykazał RED przed poprawką i GREEN po niej.
+
+Recenzent wykonał świeży, niezależny, read-only przegląd całego zakresu `e2db651..81f3527` oraz zmian roboczych. W follow-upie zweryfikował obsługę błędu sieci i konfliktu autoryzacji. Werdykt końcowy: Critical 0, Important 0; Ready to merge. Pozostaje jawnie odłożona Minor `answerSaved`, która może pozostać widoczna przy następnym zadaniu, bez wpływu na zapis/ocenę serwera.
+
+Po końcowym kodzie: unit 380/380, typecheck PASS, build PASS. Full integration 173/173, PostgreSQL, zaliczone po zmianach serverowych; E2E 66/66 jest ponownie uruchamiane samodzielnie po przerwaniu przebiegu uruchomionego równolegle z buildem i kolidującego w `.next`. Fizycznego urządzenia i produkcji nadal nie sprawdzano.
