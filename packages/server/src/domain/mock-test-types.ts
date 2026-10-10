@@ -8,6 +8,7 @@ export interface MockTestCandidate {
 }
 export interface MockTestSlot {
   taskId: string; itemId: string; itemRevisionId: string; targetKey: string;
+  audioAssetId: string | null;
   exerciseType: "recall" | "listening"; goals: TestGoal[]; prompt: TaskPrompt; answerKey: AnswerKey;
 }
 export interface MockTestScopeItem {

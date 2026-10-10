@@ -115,7 +115,10 @@ export async function lockTaskWithSession(tx: Tx, taskId: string) {
   const revision = (
     await tx.select({ itemId: itemRevisions.itemId }).from(itemRevisions).where(eq(itemRevisions.id, task.itemRevisionId))
   )[0]!;
-  return { task, session, itemId: revision.itemId };
+  // Stan zadania mógł zmienić się podczas oczekiwania na wspólną blokadę.
+  // Snapshot treści jest niezmienny, ale drugi klient musi zobaczyć terminalny stan.
+  const freshTask = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, taskId)))[0]!;
+  return { task: freshTask, session, itemId: revision.itemId };
 }
 
 /** Obserwacja klienta (display_confirmed/audio_played) — opcjonalna, idempotentna. */

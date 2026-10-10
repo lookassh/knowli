@@ -1,5 +1,6 @@
 import {
   AppError,
+  readMockTestSummary,
   authorizeDisclosure,
   completePresentation,
   endSession,
@@ -54,6 +55,9 @@ export async function handleKidApi(
   }
 
   if (first === "sessions") {
+    if (request.method === "GET" && second !== undefined && third === "mock-test-summary") {
+      return Response.json(await readMockTestSummary(services, second), { headers: { "Cache-Control": "no-store" } });
+    }
     if (request.method === "POST" && second === undefined) {
       const input = SessionInputSchema.parse(await readJson(request));
       return Response.json(await startSession(services, input));

@@ -441,6 +441,9 @@ export async function startAttempt(
   if (session.state !== "active") {
     throw new AppError("conflict", { message: "session is closed" });
   }
+  if (session.mode === "mock_test" && now.getTime() - session.startedAt.getTime() > 600_000) {
+    throw new AppError("conflict", { message: "Czas kartkówki minął. Przejdź do omówienia." });
+  }
   if (task.exerciseType === "exposure") {
     throw new AppError("validation", { message: "presentation tasks take no attempts" });
   }

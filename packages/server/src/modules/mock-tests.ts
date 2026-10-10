@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, sql } from "drizzle-orm";
-import type { TestGoal, TaskDto } from "@learning/contracts";
+import { and, asc, desc, eq, ne, sql } from "drizzle-orm";
+import { MockTestReportDtoSchema, MockTestSummaryDtoSchema, SkillStatusSchema, UuidSchema,
+  type TestGoal, type TaskDto, type MockTestReportDto, type MockTestSummaryDto, type MockTestReportRow } from "@learning/contracts";
 import type { Services } from "../config";
 import type { Tx } from "../db/client";
 import { itemRevisions, learningSessions, sessionTasks } from "../db/schema";
@@ -9,6 +10,92 @@ import type { MockTestCandidate, MockTestPlanSnapshot } from "../domain/mock-tes
 import { computeTargetKey } from "../domain/target-key";
 import { payloadToItem } from "./item-payload";
 import { writeSealedEvent } from "./events";
+import { summarizeMockTestRows } from "../domain/mock-test-report";
+import { AppError } from "../errors";
+
+export async function closeMockTest(tx: Tx, services: Services, session: typeof learningSessions.$inferSelect, requestedState: "completed" | "ended"): Promise<MockTestReportDto> {
+  const saved = MockTestReportDtoSchema.safeParse(session.context.mockTestReport);
+  if (saved.success) return saved.data;
+  const plan = session.mockTestPlan!;
+  const tasks = await tx.select().from(sessionTasks).where(eq(sessionTasks.sessionId, session.id));
+  const tasksById = new Map(tasks.map(t => [t.id, t]));
+  const grades = await tx.execute<{ task_id: string; skill: TestGoal; outcome: string; independent: boolean; reason: string | null; details: Record<string, unknown>; context: { assistance?: string[]; firstTry?: boolean } }>(sql`
+    select t.id as task_id,a.skill,a.outcome,a.independent,a.reason,a.details,p.context
+      from learning_app.session_tasks t join learning_app.attempts p on p.task_id=t.id and p.state='completed'
+      join learning_app.assessments a on a.attempt_id=p.id where t.session_id=${session.id}`);
+  const byTaskSkill = new Map(grades.rows.map(g => [`${g.task_id}:${g.skill}`, g]));
+  const progress = await tx.execute<{ skill_version_id: string; status: string }>(sql`select skill_version_id,status from learning_app.child_skill_progress where child_id=${session.childId}`);
+  const statuses = new Map(progress.rows.map(p => [p.skill_version_id, p.status]));
+  const rows: MockTestReportRow[] = [];
+  for (const item of plan.scope) for (const skill of plan.testGoals) {
+    const slot = plan.slots.find(s => s.itemId === item.itemId && s.goals.includes(skill));
+    const task = slot ? tasksById.get(slot.taskId) : undefined;
+    const grade = slot ? byTaskSkill.get(`${slot.taskId}:${skill}`) : undefined;
+    const status = SkillStatusSchema.safeParse(statuses.get(item.skills[skill] ?? ""));
+    let outcome: MockTestReportRow["outcome"] = "not_tested";
+    let reason: string | null = slot ? "interrupted" : item.unavailable[skill] ?? "outside_portion";
+    if (task?.state === "skipped") { outcome = "skipped"; reason = "skipped"; }
+    else if (grade) {
+      outcome = grade.outcome === "unassessed" ? "unassessed" : grade.outcome as "correct" | "incorrect";
+      reason = grade.reason;
+      if (!grade.independent && outcome === "correct") reason = grade.context.assistance?.length ? "assisted" : grade.context.firstTry === false ? "not_first_try" : "recent_exposure";
+      if (skill === "spelling" && (grade.details.spelling as { capitalizationOnlyDefect?: boolean } | undefined)?.capitalizationOnlyDefect) reason = "capitalization";
+    }
+    rows.push({ itemId: item.itemId, source: item.source, target: item.target, skill, outcome, independent: grade?.independent ?? false,
+      reason, masteryStatus: status.success ? status.data : "not_assessed" });
+  }
+  const complete = plan.slots.every(s => { const t = tasksById.get(s.taskId); return t && t.state !== "issued"; });
+  const endedAt = session.endedAt ?? services.clock.now();
+  const state = complete ? "completed" : requestedState === "completed" ? "ended" : requestedState;
+  const report = MockTestReportDtoSchema.parse({ sessionId: session.id, childId: session.childId, deckId: session.deckId,
+    deckVersionId: session.deckVersionId, testDate: plan.testDate, testGoals: plan.testGoals, requestedTaskCount: plan.requestedTaskCount,
+    taskBudget: session.taskBudget, state, complete, startedAt: session.startedAt.toISOString(), endedAt: endedAt.toISOString(),
+    rows, skills: summarizeMockTestRows(rows, plan.testGoals) });
+  await tx.update(learningSessions).set({ state, endedAt, context: { ...session.context, mockTestReport: report } }).where(eq(learningSessions.id, session.id));
+  return report;
+}
+
+async function terminalSession(tx: Tx, services: Services, sessionId: string) {
+  const [session] = await tx.select().from(learningSessions).where(eq(learningSessions.id, UuidSchema.parse(sessionId))).for("update");
+  if (!session || session.mode !== "mock_test") throw new AppError("not_found");
+  if (session.state === "active" && services.clock.now().getTime() - session.startedAt.getTime() <= 600_000) {
+    throw new AppError("conflict", { message: "Omówienie jest dostępne po zakończeniu kartkówki." });
+  }
+  const report = await closeMockTest(tx, services, session, "ended");
+  return { session, report };
+}
+
+export async function getMockTestReport(services: Services, sessionId: string): Promise<MockTestReportDto> {
+  return services.db.transaction(async tx => (await terminalSession(tx, services, sessionId)).report);
+}
+
+export async function readMockTestSummary(services: Services, sessionId: string): Promise<MockTestSummaryDto> {
+  return services.db.transaction(async tx => {
+    const { session, report } = await terminalSession(tx, services, sessionId);
+    const tasks = await tx.select().from(sessionTasks).where(eq(sessionTasks.sessionId, session.id)).orderBy(asc(sessionTasks.ordinal));
+    const solutions: MockTestSummaryDto["solutions"] = [];
+    for (const task of tasks) {
+      const slot = session.mockTestPlan!.slots[task.ordinal]!;
+      const item = session.mockTestPlan!.scope.find(i => i.itemId === slot.itemId)!;
+      await writeSealedEvent(tx, { childId: session.childId, taskId: task.id, itemId: item.itemId, kind: "feedback_issued",
+        stepId: `${session.id}:review:${task.ordinal}`, occurredAt: services.clock.now(), exposures: [slot.targetKey] });
+      solutions.push({ taskId: task.id, source: item.source, target: item.target, audioAssetId: slot.audioAssetId,
+        results: slot.goals.map(skill => ({ skill, outcome: report.rows.find(r => r.itemId === slot.itemId && r.skill === skill)!.outcome })) });
+    }
+    return MockTestSummaryDtoSchema.parse({ sessionId: session.id, deckId: session.deckId, state: report.state, complete: report.complete,
+      taskBudget: session.taskBudget, answeredCount: tasks.filter(t => t.state !== "issued").length, solutions });
+  });
+}
+
+export async function listMockTests(services: Services, childId: string, deckId: string): Promise<MockTestReportDto[]> {
+  const rows = await services.db.select({ id: learningSessions.id }).from(learningSessions)
+    .where(and(eq(learningSessions.childId, UuidSchema.parse(childId)), eq(learningSessions.deckId, UuidSchema.parse(deckId)),
+      eq(learningSessions.mode, "mock_test"), ne(learningSessions.state, "active")))
+    .orderBy(desc(learningSessions.startedAt), desc(learningSessions.id)).limit(20);
+  const result: MockTestReportDto[] = [];
+  for (const row of rows) result.push(await getMockTestReport(services, row.id));
+  return result;
+}
 
 export async function createMockTestPlan(tx: Tx, services: Services, input: { childId: string; deckVersionId: string; testGoals: TestGoal[]; testDate: string | null; requestedTaskCount: number }): Promise<MockTestPlanSnapshot> {
   const revisions = await tx.select().from(itemRevisions).where(eq(itemRevisions.deckVersionId, input.deckVersionId)).orderBy(asc(itemRevisions.position));

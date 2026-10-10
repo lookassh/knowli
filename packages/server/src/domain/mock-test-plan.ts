@@ -17,6 +17,7 @@ export function buildMockTestPlan(input: { testGoals: TestGoal[]; testDate: stri
   }
   if (writtenGoals.length) for (const c of input.candidates.filter(c => c.known).sort(sort(writtenGoals))) {
     written.push({ taskId: input.newId(), itemId: c.itemId, itemRevisionId: c.itemRevisionId, targetKey: c.targetKey,
+      audioAssetId: c.audioAssetId,
       exerciseType: "recall", goals: writtenGoals, prompt: { kind: "recall", prompt: c.source },
       answerKey: { exerciseType: "recall", target: c.target, acceptedAnswers: c.acceptedAnswers } });
   }
@@ -34,6 +35,7 @@ export function buildMockTestPlan(input: { testGoals: TestGoal[]; testDate: stri
     const correctOptionId = opts[0]!.id;
     opts.sort((a, b) => a.id.localeCompare(b.id));
     listening.push({ taskId: input.newId(), itemId: c.itemId, itemRevisionId: c.itemRevisionId, targetKey: c.targetKey,
+      audioAssetId: c.audioAssetId,
       exerciseType: "listening", goals: ["listening"], prompt: { kind: "listening", options: opts.map(({ id, text }) => ({ id, text })), audioAssetId: c.audioAssetId },
       answerKey: { exerciseType: "listening", target: c.target, acceptedAnswers: c.acceptedAnswers,
         correctOptionId, optionItemRevisionIds: Object.fromEntries(opts.map(o => [o.id, o.revisionId])) } });

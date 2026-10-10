@@ -51,7 +51,7 @@ import { buildLetterFragment } from "../domain/letter-fragment";
 import { addLegacyTaskPromptDefaults } from "./task-prompt-compat";
 import { deriveSupportStates, type SupportAttempt, type SupportTask } from "../domain/support-cycle";
 import { readLearningSnapshot } from "./learning-snapshot";
-import { createMockTestPlan, issueMockTestTask } from "./mock-tests";
+import { createMockTestPlan, issueMockTestTask, closeMockTest } from "./mock-tests";
 
 /** Okno wznowienia aktywnej sesji od ostatniego zdarzenia (arch §9.1). */
 export const RESUME_WINDOW_MS = 30 * 60_000;
@@ -231,6 +231,7 @@ export async function startSession(services: Services, input: SessionInput): Pro
         .select()
         .from(learningSessions)
         .where(and(eq(learningSessions.childId, valid.childId), eq(learningSessions.state, "active")))
+      .for("update")
     )[0];
     if (active) {
       const stale =
@@ -240,7 +241,8 @@ export async function startSession(services: Services, input: SessionInput): Pro
         return sessionDto(tx, active, true);
       }
       if (!stale) throw new AppError("conflict", { message: "Wróć do rozpoczętej sesji albo zakończ ją przed nową." });
-      await tx
+      if (active.mode === "mock_test") await closeMockTest(tx, services, active, "ended");
+      else await tx
         .update(learningSessions)
         .set({ state: "ended", endedAt: now })
         .where(eq(learningSessions.id, active.id));
@@ -785,7 +787,14 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
       return null;
     }
     const now = services.clock.now();
-    if (session.mode === "mock_test") return issueMockTestTask(tx, services, session);
+    if (session.mode === "mock_test") {
+      if (now.getTime() - session.startedAt.getTime() > SESSION_TIME_LIMIT_MS) {
+        await closeMockTest(tx, services, session, "ended"); return null;
+      }
+      const task = await issueMockTestTask(tx, services, session);
+      if (!task) await closeMockTest(tx, services, session, "completed");
+      return task;
+    }
     const issued = (
       await tx
         .select()
@@ -948,6 +957,16 @@ export async function endSession(services: Services, sessionId: string): Promise
   return services.db.transaction(async (tx) => {
     const session = await lockSession(tx, id);
     let state = session.state as "active" | "completed" | "ended";
+    if (session.mode === "mock_test") {
+      const report = await closeMockTest(tx, services, session, "completed");
+      const counts = await taskCounts(tx, id);
+      const summaryRows = await tx.select({ itemRevisionId: assessments.itemRevisionId, skill: assessments.skill }).from(assessments)
+        .innerJoin(attempts, eq(attempts.id, assessments.attemptId)).innerJoin(sessionTasks, eq(sessionTasks.id, attempts.taskId))
+        .where(and(eq(sessionTasks.sessionId, id), eq(assessments.independent, true), eq(assessments.outcome, "correct")));
+      return { sessionId: id, state: report.state, tasksIssued: counts.total, assessedTasksIssued: counts.assessed, endedAt: report.endedAt,
+        independentSuccesses: { recall: new Set(summaryRows.filter(r => r.skill === "recall").map(r => r.itemRevisionId)).size,
+          spelling: new Set(summaryRows.filter(r => r.skill === "spelling").map(r => r.itemRevisionId)).size }, practiceItems: [] };
+    }
     let endedAt = session.endedAt;
     if (state === "active") {
       endedAt = services.clock.now();

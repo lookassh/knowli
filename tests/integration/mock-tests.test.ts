@@ -109,3 +109,13 @@ it("counts exposure of the same target in a different deck", async () => {
   const r = await submitAttempt(services, { taskId: t.taskId, clientAttemptId: randomUUID(), modality: "text", text: "Monday" });
   expect((await pool.query(`select independent from learning_app.assessments where attempt_id=$1 and skill='recall'`, [r.attemptId])).rows[0].independent).toBe(false);
 });
+
+it("accepts exactly one of two different concurrent answers", async () => {
+  const { services, clock } = buildTestServices(); const a = await mockTestDeck(services, 1); clock.advanceHours(13);
+  await upsertAssignment(services, a.childId, a.deckId, null, { testGoals: ["recall", "spelling"] });
+  const s = await startSession(services, { childId: a.childId, deckId: a.deckId, microphoneEnabled: false, mode: "mock_test" });
+  const t = (await nextTask(services, s.sessionId))!;
+  const race = await Promise.allSettled(["Monday", "wrong"].map(text => submitAttempt(services, { taskId: t.taskId, clientAttemptId: randomUUID(), modality: "text", text })));
+  expect(race.filter(r => r.status === "fulfilled")).toHaveLength(1);
+  expect((await pool.query(`select id from learning_app.attempts where task_id=$1`, [t.taskId])).rows).toHaveLength(1);
+});

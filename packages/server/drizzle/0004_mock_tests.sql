@@ -10,6 +10,9 @@ BEGIN
   IF NEW.mode IS DISTINCT FROM OLD.mode OR NEW.mock_test_plan IS DISTINCT FROM OLD.mock_test_plan THEN
     RAISE EXCEPTION 'Session mode and mock test plan are immutable';
   END IF;
+  IF OLD.context ? 'mockTestReport' AND (NEW.context->'mockTestReport') IS DISTINCT FROM (OLD.context->'mockTestReport') THEN
+    RAISE EXCEPTION 'Closed mock test report is immutable';
+  END IF;
   RETURN NEW;
 END;
 $$;
