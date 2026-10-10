@@ -18,7 +18,7 @@ Data: 2026-10-10. Worktree: `C:\Users\looka\.codex\worktrees\speech-recording-ux
 
 ## Dostosowanie narzędzi executing-plans
 
-Zainstalowana wersja skill `6.4.2` udostępnia `sdd-workspace`, `task-brief` i `review-package`, ale nie ma skryptów `task-start` ani `task-done` wymaganych przez repozytoryjne AGENTS.md. Próba użycia `/bin/bash` przez systemowy Windows shim nie powiodła się (brak WSL); skrypty działają przez `C:\Program Files\Git\bin\bash.exe`. Dostosowanie równoważne: `task-brief` generuje briefy, ręczny wpis task-start do tego dziennika, każde polecenie testu uruchamiane i zapisywane jawnie, a task-done zastąpione ponownym końcowym uruchomieniem testu taska, odczytanym wynikiem i wpisem complete. `review-package` pozostaje wymagane.
+Zainstalowana wersja skill `6.4.2` udostępnia `sdd-workspace`, skrypty `task-start`, `task-done` i `review-package`; oddzielnego skryptu `task-brief` nie ma. Briefy powstają przez `task-start`. Próba użycia `/bin/bash` przez systemowy Windows shim nie powiodła się (brak WSL); skrypty działają przez `C:\Program Files\Git\bin\bash.exe`. Przy `task-done` Git Bash nie miał `pnpm` w PATH, więc podano pełną ścieżkę do `pnpm.cmd` z runtime. `review-package` pozostaje wymagane.
 
 ## Preflight zależności interfejsów
 
@@ -36,10 +36,10 @@ Ruling: brak konfliktów kontraktów na podstawie planu/specyfikacji; wyżej wym
 
 ## Postęp zadań
 
-- Task 1: brief utworzony przez `task-brief`; rozpoczynam test RED.
-- Task 2: nie rozpoczęty.
+- Task 1: complete.
+- Task 2: complete.
 - Task 3: complete.
-- Task 4: nie rozpoczęty.
+- Task 4: complete.
 - Task 5: nie rozpoczęty.
 - Task 6: nie rozpoczęty.
 - Task 7: nie rozpoczęty.
@@ -71,3 +71,14 @@ Ruling: brak konfliktów kontraktów na podstawie planu/specyfikacji; wyżej wym
 - Odstępstwa: brak; rzeczywisty telefon/tablet i zachowanie uprawnień przeglądarki pozostają weryfikacją z Task 7.
 - Commit: `1339658c146246931734121ba54fc4b54f5abbea`.
 - Task 3: complete (commits c87b499..1339658c146246931734121ba54fc4b54f5abbea; tests: selected unit + typecheck → PASS)
+
+### Task 4 — wspólne sterowanie przez przytrzymanie: complete
+
+- RED potwierdzony dla brakującego reduceru gestów i ustawienia recordingMode w LearningScreen; kontroler nie zachowywał trybu toggle ani fallbacku hold. Po dodaniu reduceru jego 5 testów przechodziło niezależnie.
+- Implementacja: jeden `SpeechRecordButton` obsługuje pointer capture, primary mouse, touch/pen, Space/Enter, key repeat, Escape, focus loss i toggle click bez zdublowania syntetycznym clickiem. Domyślny przycisk `Włącz mikrofon` tylko pyta o zgodę; gotowy przycisk działa jako hold. Dodano wskaźnik dźwięku, instrukcje i komunikat fazy, przełącznik trybu oraz zapis `umiem.recordingMode` w `LocalPreferences`. Tryb nie zmienia się podczas aktywnego nagrania/analizy; zadania tekstowe, Skip i odsłuch są blokowane w aktywnych fazach. Trace wyłączony w nowych i istniejących testach nagrywania.
+- Test końcowy `pnpm test:unit packages/kid-ui/src/exercises/recording-gesture.test.ts packages/kid-ui/src/session/session-controller.test.ts` → 2 files, 39 tests PASS; wcześniejszy wybór obejmujący adapter: 3 files, 53 tests PASS; `pnpm typecheck` PASS; `git diff --check` PASS.
+- `pnpm test:e2e tests/e2e/speech-recording-ux.spec.ts` → 2 tests PASS, w tym Space/Enter/Escape, mouse release outside, touch release outside w widoku 768×1024 po sprawdzeniu 390×844, toggle myszą i klawiaturą, odmowa mikrofonu i droga pisemna. `pnpm test:e2e tests/e2e/kid-flow.spec.ts -g "jeden profil|opuszczenie widoku"` → 2 tests PASS, w tym pełna sesja z mową i sprzątanie nagrania po opuszczeniu.
+- Pierwszy przebieg E2E zgłosił asercję testową: przycisk Sprawdź pozostaje disabled dla pustego pola; test poprawiono, wypełniając odpowiedź przed sprawdzeniem dostępności. Końcowy przebieg E2E jest zielony.
+- Odstępstwa: brak; brak testu na fizycznym telefonie/tablecie pozostaje udokumentowany do Task 7.
+- Commit: `a7bd73a869c30e3c95486e1a668e2e0ed577742b`.
+- Task 4: complete (commits ae96fc7..a7bd73a, tests: focused unit + typecheck + new E2E + kid-flow recording regressions → PASS)
