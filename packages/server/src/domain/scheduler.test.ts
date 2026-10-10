@@ -24,6 +24,7 @@ function candidate(overrides: Partial<ScheduleCandidate> = {}): ScheduleCandidat
     progress: {},
     failuresThisSession: 0,
     supportedThisSession: false,
+    recognitionFallbackUsedThisSession: true,
     usedThisSession: 0,
     presentationsThisSession: 0,
     lastContactAt: null,
@@ -42,6 +43,7 @@ function peer(overrides: Partial<SchedulePeer> = {}): SchedulePeer {
     target: "Thursday",
     source: "czwartek",
     targetLocale: "en-GB",
+    acceptedAnswers: [],
     ...overrides,
   };
 }
@@ -112,7 +114,7 @@ describe("selectTask — rezerwacje należnych sprawdzeń (arch §9.3)", () => {
       },
     });
     const plan = selectTask(input({ candidates: [due], peers: [peer(due)] }));
-    expect(plan).toMatchObject({ exerciseType: "recall", assessed: true, reason: "due-check" });
+    expect(plan).toMatchObject({ exerciseType: "recall", assessed: true, reason: "due-check", skillAtIssue: "recall", statusAtIssue: "needs_confirmation" });
     // polski prompt bez gotowych odpowiedzi nie ujawnia celu
     expect(plan!.revealsTargetKeys).toEqual([]);
     expect(plan!.options).toBeUndefined();
@@ -131,6 +133,15 @@ describe("selectTask — rezerwacje należnych sprawdzeń (arch §9.3)", () => {
     });
     const plan = selectTask(input({ candidates: [newer, older], peers: [peer(older), peer(newer)] }));
     expect(plan!.itemRevisionId).toBe("rev-old");
+  });
+
+  it("oznacza wcześniejszy skill przy wspólnym sprawdzeniu Recall i pisowni", () => {
+    const due = candidate({ progress: {
+      recall: { status: "learning", nextReviewAt: "2026-10-06T16:00:00.000Z", streak: 1 },
+      spelling: { status: "needs_reconfirmation", nextReviewAt: "2026-10-05T16:00:00.000Z", streak: 0 },
+    } });
+    const plan = selectTask(input({ candidates: [due], peers: [peer(due)] }));
+    expect(plan).toMatchObject({ skillAtIssue: "spelling", statusAtIssue: "needs_reconfirmation" });
   });
 
   it("zarezerwowany cel nie pojawia się jako dystraktor", () => {
@@ -173,7 +184,7 @@ describe("selectTask — rezerwacje należnych sprawdzeń (arch §9.3)", () => {
     const plan = selectTask(
       input({
         candidates: [reserved, other],
-        peers: [peer(reserved), peer(other)],
+        peers: [peer(reserved), peer(other), peer({ itemRevisionId: "rev-w", position: 2, target: "Wednesday", source: "środa" })],
         reservedTargetKeys: [KEY_THURSDAY],
       }),
     );
@@ -228,6 +239,49 @@ describe("selectTask — wsparcie po dwóch błędach (SPEC §16)", () => {
     expect(afterGap!.options!.filter((o) => o.correct).map((o) => o.text)).toEqual(["czwartek"]);
     expect(afterGap!.options!.map((o) => o.text)).toContain("piątek");
   });
+
+  it("odtwarza terminalny cykl jako settled i kieruje trudną pisownię do letter completion", () => {
+    const source = candidate({
+      support: { phase: "waiting", cycleId: "task-source", sourceTaskId: "task-source", retryType: "letter_completion" },
+      supportedThisSession: true,
+      lastUsedOrdinal: 4,
+    });
+    const plan = selectTask(input({ candidates: [source], peers: [peer(source)], nextOrdinal: 6, microphoneEnabled: false }));
+    expect(plan).toMatchObject({
+      itemRevisionId: "rev-1", exerciseType: "letter_completion", reason: "retry-after-support", supportCycleId: "task-source",
+    });
+    expect(plan).not.toHaveProperty("options");
+
+    const settled = candidate({
+      support: { phase: "settled", cycleId: "task-source", sourceTaskId: "task-source", retryType: "letter_completion" },
+      supportedThisSession: true,
+      lastUsedOrdinal: 4,
+    });
+    expect(selectTask(input({ candidates: [settled], peers: [peer(settled)], nextOrdinal: 8 }))?.reason).not.toBe("retry-after-support");
+  });
+
+  it("uzupełnia historycznie brakujący kierunek reading przed rotacją sesji", () => {
+    const target = candidate({
+      progress: { reading: { status: "learning", nextReviewAt: PAST, streak: 3 } },
+      readingEvidenceDirections: { target_to_source: 3, source_to_target: 0 },
+    });
+    const plan = selectTask(input({ candidates: [target], peers: [peer(target), peer({ itemRevisionId: "rev-f", position: 1, target: "Friday", source: "piątek" })], nextOrdinal: 2 }));
+    expect(plan).toMatchObject({ exerciseType: "reverse_recognition", direction: "source_to_target" });
+  });
+
+  it("gdy oba kierunki są już potwierdzone, wybiera mniej ćwiczony w tej sesji", () => {
+    const target = candidate({
+      progress: { reading: { status: "mastered", nextReviewAt: "2026-11-07T16:00:00.000Z", streak: 3 } },
+      introducedSkills: { recall: true, pronunciation: true },
+      usedThisSession: 1,
+      readingEvidenceDirections: { target_to_source: 1, source_to_target: 2 },
+      readingDirections: { source_to_target: 1 },
+    });
+    const plan = selectTask(input({
+      candidates: [target], peers: [peer(target), peer({ itemRevisionId: "rev-f", position: 1, target: "Friday", source: "piątek" })], nextOrdinal: 2,
+    }));
+    expect(plan).toMatchObject({ exerciseType: "reading", direction: "target_to_source" });
+  });
 });
 
 describe("selectTask — wprowadzanie kolejnych etapów (SPEC §13)", () => {
@@ -258,7 +312,7 @@ describe("selectTask — wprowadzanie kolejnych etapów (SPEC §13)", () => {
 
   it("wprowadzenie bierze co drugi slot — parzysty zostaje bieżącej strategii", () => {
     const plan = selectTask(
-      input({ candidates: [recognized({ usedThisSession: 2 })], peers: [peer()], nextOrdinal: 0 }),
+      input({ candidates: [recognized({ usedThisSession: 2 })], peers: [peer(), peer({ itemRevisionId: "rev-f", position: 1, target: "Friday", source: "piątek" })], nextOrdinal: 0 }),
     );
     expect(plan).toMatchObject({ reason: "filler-practice" });
     expect(plan!.exerciseType).not.toBe("recall");
@@ -295,7 +349,7 @@ describe("selectTask — wprowadzanie kolejnych etapów (SPEC §13)", () => {
     const plan = selectTask(
       input({
         candidates: [recognized({ introducedSkills: { recall: true, pronunciation: false } })],
-        peers: [peer()],
+        peers: [peer(), peer({ itemRevisionId: "rev-f", position: 1, target: "Friday", source: "piątek" })],
         nextOrdinal: 1,
       }),
     );
@@ -313,7 +367,7 @@ describe("selectTask — wprowadzanie kolejnych etapów (SPEC §13)", () => {
             introducedSkills: { recall: true, pronunciation: false },
           }),
         ],
-        peers: [peer()],
+        peers: [peer(), peer({ itemRevisionId: "rev-f", position: 1, target: "Friday", source: "piątek" })],
         nextOrdinal: 1,
         microphoneEnabled: false,
       }),
@@ -331,11 +385,11 @@ describe("selectTask — wprowadzanie kolejnych etapów (SPEC §13)", () => {
             introducedSkills: { recall: true, pronunciation: true },
           }),
         ],
-        peers: [peer()],
+        peers: [peer(), peer({ itemRevisionId: "rev-f", position: 1, target: "Friday", source: "piątek" })],
         nextOrdinal: 1,
       }),
     );
-    expect(plan!.reason).not.toBe("stage-introduction");
+    expect(plan?.reason).not.toBe("stage-introduction");
     expect(plan).toMatchObject({ reason: "filler-practice" });
   });
 
@@ -349,7 +403,7 @@ describe("selectTask — wprowadzanie kolejnych etapów (SPEC §13)", () => {
         nextOrdinal: 1,
       }),
     );
-    expect(plan!.reason).not.toBe("stage-introduction");
+    expect(plan?.reason).not.toBe("stage-introduction");
   });
 
   it("cel objęty rezerwacją nie jest wprowadzany — wymowa ujawniłaby słowo", () => {
@@ -396,11 +450,41 @@ describe("selectTask — listening zawsze z opcjami (kontrakt kid.ts: min 1)", (
     expect(plan!.options!.filter((o) => o.correct)).toHaveLength(1);
   });
 
-  it("talia z jednym elementem: opcja poprawna istnieje mimo braku dystraktorów", () => {
-    const lonely = candidate({ usedThisSession: 3, practiceMix: { listening: 0, reading: 1 } });
+  it("talia z jednym elementem: po pierwszej prezentacji jednorazowo pokazuje bezpieczną ekspozycję", () => {
+    const lonely = candidate({ usedThisSession: 3, recognitionFallbackUsedThisSession: false, practiceMix: { listening: 0, reading: 1 } });
     const plan = selectTask(input({ candidates: [lonely], peers: [peer(lonely)] }));
-    expect(plan).toMatchObject({ exerciseType: "listening", reason: "filler-practice" });
-    expect(plan!.options!.filter((o) => o.correct).map((o) => o.text)).toEqual(["czwartek"]);
+    expect(plan).toMatchObject({ exerciseType: "exposure", reason: "recognition-fallback", assessed: false });
+    expect(plan!.revealsTargetKeys).toEqual([KEY_THURSDAY]);
+  });
+
+  it("po ukończonej ekspozycji singleton przechodzi do samodzielnego przypominania", () => {
+    const lonely = candidate({ ownPresentationCompleted: true, usedThisSession: 2 });
+    const plan = selectTask(input({ candidates: [lonely], peers: [peer(lonely)], microphoneEnabled: false }));
+    expect(plan).toMatchObject({ exerciseType: "recall", reason: "stage-introduction", assessed: true });
+  });
+
+  it("jednorazowa ekspozycja awaryjna nie zapętla się", () => {
+    const lonely = candidate({ usedThisSession: 3, recognitionFallbackUsedThisSession: true });
+    expect(selectTask(input({ candidates: [lonely], peers: [peer(lonely)] }))).toBeNull();
+  });
+
+  it("chwilowo zarezerwowany dystraktor nie uruchamia ekspozycji awaryjnej", () => {
+    const lonely = candidate({ usedThisSession: 3 });
+    const other = peer({ itemRevisionId: "rev-other", position: 1, target: "Friday", source: "piątek" });
+    expect(selectTask(input({
+      candidates: [lonely],
+      peers: [peer(lonely), other],
+      reservedTargetKeys: [computeTargetKey("Friday", "en-GB")],
+    }))).toBeNull();
+  });
+
+  it("brak dystraktora nie zastępuje należnej samodzielnej powtórki ekspozycją", () => {
+    const lonely = candidate({
+      usedThisSession: 3,
+      recognitionFallbackUsedThisSession: false,
+      progress: { listening: { status: "needs_confirmation", nextReviewAt: PAST, streak: 2 } },
+    });
+    expect(selectTask(input({ candidates: [lonely], peers: [peer(lonely)] }))).toBeNull();
   });
 });
 
@@ -410,7 +494,7 @@ describe("selectTask — mikrofon i kierunki", () => {
       progress: { pronunciation: { status: "needs_confirmation", nextReviewAt: PAST, streak: 3 } },
     });
     const withoutMic = selectTask(
-      input({ candidates: [speaker], peers: [peer(speaker)], microphoneEnabled: false }),
+      input({ candidates: [speaker], peers: [peer(speaker), peer({ itemRevisionId: "rev-f", position: 1, target: "Friday", source: "piątek" })], microphoneEnabled: false }),
     );
     expect(withoutMic).toMatchObject({ reason: "extra-practice", assessed: true });
     expect(withoutMic!.exerciseType).not.toBe("speech");
@@ -425,10 +509,14 @@ describe("selectTask — mikrofon i kierunki", () => {
       progress: { reading: { status: "needs_confirmation", nextReviewAt: PAST, streak: 3 } },
       readingDirections: { target_to_source: 2, source_to_target: 0 },
       usedThisSession: 2,
+      introducedSkills: { recall: true, pronunciation: true },
     });
     const wednesday = peer({ itemRevisionId: "rev-w", position: 1, target: "Wednesday", source: "środa" });
     const friday = peer({ itemRevisionId: "rev-f", position: 2, target: "Friday", source: "piątek" });
-    const plan = selectTask(input({ candidates: [reader], peers: [peer(reader), wednesday, friday] }));
+    const plan = selectTask(input({
+      candidates: [reader], peers: [peer(reader), wednesday, friday], nextOrdinal: 1,
+      confusions: [{ expectedItemRevisionId: "rev-1", answeredItemRevisionId: "rev-w", exerciseType: "reverse_recognition", direction: "source_to_target", count: 2 }],
+    }));
     expect(plan).toMatchObject({
       exerciseType: "reverse_recognition",
       direction: "source_to_target",
@@ -437,8 +525,10 @@ describe("selectTask — mikrofon i kierunki", () => {
     const texts = plan!.options!.map((o) => o.text);
     expect(texts).toContain("Thursday");
     expect(texts).toContain("Wednesday");
+    expect(plan!.options?.[1]?.itemRevisionId).toBe("rev-w");
     expect([...plan!.revealsTargetKeys].sort()).toEqual([KEY_THURSDAY, KEY_WEDNESDAY, KEY_FRIDAY].sort());
   });
+
 });
 
 describe("selectTask — rozliczone sprawdzenia nie wracają w tej sesji (arch §9.3)", () => {
@@ -473,7 +563,7 @@ describe("selectTask — rozliczone sprawdzenia nie wracają w tej sesji (arch �
     const plan = selectTask(
       input({
         candidates: [reader, dueThursday],
-        peers: [peer(reader), peer(dueThursday)],
+        peers: [peer(reader), peer(dueThursday), peer({ itemRevisionId: "rev-w", position: 2, target: "Wednesday", source: "środa" })],
         settledCheckTargetKeys: [KEY_THURSDAY],
         nextOrdinal: 3,
       }),
@@ -481,6 +571,116 @@ describe("selectTask — rozliczone sprawdzenia nie wracają w tej sesji (arch �
     expect(plan).toMatchObject({ exerciseType: "reading", reason: "due-review" });
     expect(plan!.options!.map((o) => o.text)).toContain("czwartek");
     expect(plan!.keepsReservations).not.toContain(KEY_THURSDAY);
+  });
+
+  it("należna powtórka rozpoznawania ma pierwszeństwo przed nowym materiałem", () => {
+    const due = candidate({
+      hasBeenPresented: true, usedThisSession: 2,
+      progress: { listening: { status: "learning", nextReviewAt: PAST, streak: 1 } },
+    });
+    const unseen = candidate({ itemRevisionId: "rev-new", itemId: "item-new", position: 0, target: "Friday", source: "piątek" });
+    const plan = selectTask(input({ candidates: [unseen, due], peers: [peer(unseen), peer(due), peer({ itemRevisionId: "rev-other", position: 2, target: "Monday", source: "poniedziałek" })] }));
+    expect(plan).toMatchObject({ itemRevisionId: due.itemRevisionId, reason: "due-review" });
+  });
+
+  it("nie powtarza terminalnego due-review tej samej umiejętności w jednej sesji", () => {
+    const settled = candidate({
+      itemRevisionId: "rev-settled", position: 0, target: "Monday", source: "poniedziałek", hasBeenPresented: true,
+      progress: { reading: { status: "learning", nextReviewAt: PAST, streak: 1 } }, settledReviewSkills: ["reading"],
+    });
+    const nextDue = candidate({
+      itemRevisionId: "rev-next", position: 1, target: "Tuesday", source: "wtorek", hasBeenPresented: true,
+      progress: { listening: { status: "learning", nextReviewAt: PAST, streak: 1 } },
+    });
+    const plan = selectTask(input({ candidates: [settled, nextDue], peers: [peer(settled), peer(nextDue), peer({ itemRevisionId: "rev-other", position: 2, target: "Friday", source: "piątek" })] }));
+    expect(plan).toMatchObject({ itemRevisionId: nextDue.itemRevisionId, reason: "due-review" });
+  });
+
+  it("ponawia należną pierwszą próbę wymowy bez projekcji postępu", () => {
+    const pendingSpeech = candidate({
+      introducedSkills: { recall: true, pronunciation: true },
+      ownPresentationCompleted: true,
+      hasBeenPresented: true,
+      work: { pronunciation: { reviewDueAt: PAST, eligibleAt: PAST, dueNow: true } },
+    });
+    const plan = selectTask(input({ candidates: [pendingSpeech], peers: [peer(pendingSpeech)] }));
+
+    expect(plan).toMatchObject({
+      itemRevisionId: pendingSpeech.itemRevisionId,
+      exerciseType: "speech",
+      reason: "due-review",
+      skillAtIssue: "pronunciation",
+    });
+  });
+
+  it("bez mikrofonu pomija należną wymowę i wybiera inne należne rozpoznawanie", () => {
+    const speech = candidate({
+      itemRevisionId: "rev-speech", position: 0, target: "Monday", source: "poniedziałek", usedThisSession: 2, hasBeenPresented: true,
+      progress: { pronunciation: { status: "learning", nextReviewAt: "2026-10-05T00:00:00.000Z", streak: 1 } },
+    });
+    const reading = candidate({
+      itemRevisionId: "rev-reading", position: 1, target: "Tuesday", source: "wtorek", usedThisSession: 2, hasBeenPresented: true,
+      progress: { listening: { status: "learning", nextReviewAt: PAST, streak: 1 } },
+    });
+    const plan = selectTask(input({
+      microphoneEnabled: false,
+      candidates: [speech, reading],
+      peers: [peer(speech), peer(reading), peer({ itemRevisionId: "rev-friday", position: 2, target: "Friday", source: "piątek" })],
+    }));
+    expect(plan).toMatchObject({ itemRevisionId: reading.itemRevisionId, exerciseType: "listening", reason: "due-review" });
+  });
+
+  it("po dwóch trudnych powtórkach planuje jedno bezpieczne łatwe zadanie", () => {
+    const known = candidate({ usedThisSession: 2, presentationsThisSession: 1, hasBeenPresented: true });
+    const plan = selectTask(input({
+      candidates: [known],
+      peers: [peer(known), peer({ itemRevisionId: "rev-f", position: 1, target: "Friday", source: "piątek" })],
+      recentAssessedTasks: [
+        { reason: "due-review", skill: "reading", statusAtIssue: "learning" },
+        { reason: "due-check", skill: "recall", statusAtIssue: "needs_reconfirmation" },
+      ],
+    }));
+    expect(plan).toMatchObject({ reason: "difficulty-break", assessed: true });
+  });
+
+  it("nie traktuje skipu bez oceny jako trudności przy planowaniu przerwy", () => {
+    const known = candidate({ usedThisSession: 2, presentationsThisSession: 1, hasBeenPresented: true });
+    const plan = selectTask(input({
+      candidates: [known], peers: [peer(known), peer({ itemRevisionId: "rev-f", position: 1, target: "Friday", source: "piątek" })],
+      recentAssessedTasks: [
+        { reason: "due-review", skill: "reading", statusAtIssue: "learning" },
+        { reason: "new-practice", skill: "listening", statusAtIssue: null },
+      ],
+    }));
+    expect(plan?.reason).not.toBe("difficulty-break");
+  });
+
+  it("nie ujawnia zarezerwowanego celu jako przerwy po trudnych zadaniach", () => {
+    const reserved = candidate({
+      progress: { recall: { status: "needs_confirmation", nextReviewAt: PAST, streak: 3 } },
+      usedThisSession: 2, presentationsThisSession: 1,
+    });
+    const plan = selectTask(input({
+      candidates: [reserved], peers: [peer(reserved), peer({ itemRevisionId: "rev-f", position: 1, target: "Friday", source: "piątek" })],
+      recentAssessedTasks: [
+        { reason: "due-review", skill: "listening", statusAtIssue: "learning" },
+        { reason: "due-check", skill: "recall", statusAtIssue: "learning" },
+      ],
+    }));
+    expect(plan).toMatchObject({ reason: "due-check", assessed: true });
+    expect(plan!.revealsTargetKeys).toEqual([]);
+  });
+
+  it("nie ujawnia zarezerwowanego celu jako nowego materiału, gdy brak bezpiecznego kandydata na przerwę", () => {
+    const unseen = candidate();
+    const plan = selectTask(input({
+      candidates: [unseen], peers: [peer(unseen)], reservedTargetKeys: [KEY_THURSDAY],
+      recentAssessedTasks: [
+        { reason: "due-review", skill: "listening", statusAtIssue: "learning" },
+        { reason: "due-review", skill: "reading", statusAtIssue: "needs_reconfirmation" },
+      ],
+    }));
+    expect(plan).toBeNull();
   });
 });
 
@@ -510,7 +710,7 @@ describe("selectTask — extra-practice: ćwiczenie bez blokady harmonogramu", (
 
   it("naprzemiennie słuch i tekst wg parzystości ordinalu", () => {
     const a = startedCandidate({ itemRevisionId: "rev-a", position: 0 });
-    const peers = [peer(a)];
+    const peers = [peer(a), peer({ itemRevisionId: "rev-f", position: 1, target: "Friday", source: "piątek" })];
     const listening = selectTask(input({ candidates: [a], peers, nextOrdinal: 0 }));
     expect(listening).toMatchObject({ exerciseType: "listening", reason: "extra-practice" });
     const reading = selectTask(input({ candidates: [a], peers, nextOrdinal: 1 }));
@@ -529,11 +729,12 @@ describe("selectTask — extra-practice: ćwiczenie bez blokady harmonogramu", (
       target: "Friday",
       source: "piątek",
     });
+    const third = peer({ itemRevisionId: "rev-w", position: 2, target: "Wednesday", source: "środa" });
     // rezerwacja utrzymywana w kontekście sesji chroni czwartek także w utrwalaniu
     const plan = selectTask(
       input({
         candidates: [reservedItem, other],
-        peers: [peer(reservedItem), peer(other)],
+        peers: [peer(reservedItem), peer(other), third],
         reservedTargetKeys: [KEY_THURSDAY],
         nextOrdinal: 2,
       }),
@@ -688,6 +889,16 @@ describe("hasScheduledWork — rekomendacja zestawu na liście dziecka", () => {
     expect(
       hasScheduledWork([{ progress: [{ skill: "listening", status: "learning", nextReviewAt: FUTURE, streak: 0 }] }], NOW),
     ).toBe(false);
+  });
+
+  it("rekomenduje zachowany sprawdzian dopiero po jego terminie", () => {
+    const item = { progress: [], pendingCheckAt: FUTURE };
+    expect(hasScheduledWork([item], NOW)).toBe(false);
+    expect(hasScheduledWork([item], FUTURE)).toBe(true);
+  });
+
+  it("nie odkłada wprowadzenia Recall po rozpoznaniu materiału", () => {
+    expect(hasScheduledWork([{ progress: [], recallIntroductionNeeded: true }], NOW)).toBe(true);
   });
 
   it("rozpoznany element bez wprowadzonego przypominania ma zaplanowane wprowadzenie etapu", () => {

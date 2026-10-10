@@ -5,6 +5,7 @@ import {
   createChild,
   createDraft,
   createServices,
+  endSession,
   ensureLearningPolicy,
   nextTask,
   publishDraft,
@@ -18,6 +19,9 @@ import {
 } from "@learning/server";
 import { AttemptDtoSchema, type TaskDto } from "@learning/contracts";
 import { letterGroups } from "../../packages/server/src/domain/pronunciation-fragments";
+import { readLearningSnapshot } from "../../packages/server/src/modules/learning-snapshot";
+import { loadPolicy } from "../../packages/server/src/policies/registry";
+import { selectTask } from "../../packages/server/src/domain/scheduler";
 import { buildTestServices, testDatabase, truncateCoreTables, ManualClock } from "./helpers";
 
 const { pool } = testDatabase();
@@ -707,6 +711,100 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
     expect(attempt.answer).toMatchObject({ transcript: null, stt: "none" });
     const assessments = await assessmentsOf(attempt.id);
     expect(assessments.every((a) => a.outcome === "unassessed")).toBe(true);
+  });
+
+  it("ponawia pierwsze nieocenione ćwiczenie wymowy po 24 godzinach w nowej sesji", async () => {
+    const { deckId, versionId } = await publishDeckWithAssignment(baseServices, childId, ITEMS.slice(0, 1));
+    const first = await speechSession(baseServices, childId, deckId, versionId, 0);
+    const technical = await submitSpeechAttempt(
+      baseServices,
+      { taskId: first.task.taskId, clientAttemptId: randomUUID() },
+      wavInput(1),
+    );
+    expect(technical.feedback?.kind).toBe("not_assessed");
+    expect(technical.taskState).toBe("issued");
+    await endSession(baseServices, first.sessionId);
+
+    clock.advanceHours(24);
+    const resumed = await startSession(baseServices, { childId, deckId, microphoneEnabled: true });
+    expect(resumed.sessionId).not.toBe(first.sessionId);
+    expect(resumed.microphoneEnabled).toBe(true);
+    const [revision] = await query<{ itemRevisionId: string }>(
+      `select item_revision_id as "itemRevisionId" from learning_app.session_tasks where id = $1`,
+      [first.task.taskId],
+    );
+    const [sessionPolicy] = await query<{ policyId: string }>(
+      `select policy_id as "policyId" from learning_app.learning_sessions where id = $1`,
+      [resumed.sessionId],
+    );
+    const policy = await loadPolicy(testDatabase().db, sessionPolicy!.policyId);
+    const [snapshot] = await readLearningSnapshot(testDatabase().db, {
+      childId,
+      revisionIds: [revision!.itemRevisionId],
+      policy,
+      now: clock.now().toISOString(),
+    });
+    expect(snapshot?.work.pronunciation).toMatchObject({ dueNow: true });
+    const selected = selectTask({
+      now: clock.now().toISOString(),
+      policy,
+      microphoneEnabled: resumed.microphoneEnabled,
+      assessedRemaining: 12,
+      nextOrdinal: 0,
+      candidates: [{ itemRevisionId: revision!.itemRevisionId, itemId: "item-thursday", position: 0,
+        target: "Thursday", source: "czwartek", acceptedAnswers: [], targetLocale: "en-GB",
+        progress: snapshot!.progress, work: snapshot!.work, failuresThisSession: 0,
+        supportedThisSession: false, usedThisSession: 0, presentationsThisSession: 0,
+        lastContactAt: null, lastUsedOrdinal: null, readingDirections: {}, practiceMix: { listening: 0, reading: 0 },
+        introducedSkills: snapshot!.introducedSkills, ownPresentationCompleted: snapshot!.ownPresentationCompleted }],
+      peers: [], reservedTargetKeys: [],
+    });
+    expect(selected).toMatchObject({
+      exerciseType: "speech",
+      itemRevisionId: revision!.itemRevisionId,
+      reason: "due-review",
+    });
+  });
+
+  it("nieoceniona próba techniczna nie przesuwa daty przeglądu istniejącej projekcji", async () => {
+    const { deckId, versionId } = await publishDeckWithAssignment(baseServices, childId, ITEMS.slice(0, 1));
+    const fakes = makeFakes(clock);
+    const services = speechServices(clock, fakes);
+    const first = await speechSession(services, childId, deckId, versionId, 0);
+    fakes.transcription.text = await answerKeyTarget(first.task.taskId);
+    await submitSpeechAttempt(services, { taskId: first.task.taskId, clientAttemptId: randomUUID() }, wavInput(1));
+    const skillVersionId = (await query<{ skillVersionId: string }>(
+      `select s.skill_version_id as "skillVersionId"
+         from learning_app.session_tasks t
+         join learning_app.item_revision_skills s on s.item_revision_id = t.item_revision_id
+        where t.id = $1 and s.skill = 'pronunciation'`,
+      [first.task.taskId],
+    ))[0]!.skillVersionId;
+    const original = (await query<{ lastReviewedAt: Date }>(
+      `select last_reviewed_at as "lastReviewedAt" from learning_app.child_skill_progress
+        where child_id = $1 and skill_version_id = $2`,
+      [childId, skillVersionId],
+    ))[0]!.lastReviewedAt.toISOString();
+
+    clock.advanceHours(24 * 8);
+    await endSession(services, first.sessionId);
+    const bare = createServices({ db: testDatabase().db, clock });
+    const retrySession = await startSession(bare, { childId, deckId, microphoneEnabled: true });
+    const retryTask = await nextTask(bare, retrySession.sessionId);
+    expect(retryTask).toMatchObject({ exerciseType: "speech" });
+    const technical = await submitSpeechAttempt(
+      bare,
+      { taskId: retryTask!.taskId, clientAttemptId: randomUUID() },
+      wavInput(1),
+    );
+    expect(technical.feedback?.kind).toBe("not_assessed");
+    const after = (await query<{ lastReviewedAt: Date }>(
+      `select last_reviewed_at as "lastReviewedAt" from learning_app.child_skill_progress
+        where child_id = $1 and skill_version_id = $2`,
+      [childId, skillVersionId],
+    ))[0]!.lastReviewedAt.toISOString();
+
+    expect(after).toBe(original);
   });
 
   it("nagranie nigdzie nie trafia: answer zawiera tylko potrzebny wynik", async () => {

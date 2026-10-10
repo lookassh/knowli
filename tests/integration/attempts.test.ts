@@ -467,6 +467,53 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
     }
   });
 
+  it("błędna pisownia prowadzi po wsparciu do pisemnego letter_completion bez przyrostu samodzielnej serii", async () => {
+    const { deckId, versionId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 4));
+    const revisionId = await setDueCheck(childId, versionId, 0, "needs_confirmation", 2);
+    const spellingVersion = (await skillVersionIds(revisionId, "spelling"))[0]!;
+    const recallVersion = (await skillVersionIds(revisionId, "recall"))[0]!;
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const source = (await nextTask(services, session.sessionId))!;
+    expect(source.exerciseType).toBe("recall");
+    await submitWrong(services, source);
+    await submitWrong(services, source);
+
+    const support = (await nextTask(services, session.sessionId))!;
+    expect(support).toMatchObject({ exerciseType: "exposure" });
+    await completePresentation(services, { taskId: support.taskId });
+
+    const other = (await nextTask(services, session.sessionId))!;
+    expect(other.taskId).not.toBe(source.taskId);
+    if (other.exerciseType === "exposure") await completePresentation(services, { taskId: other.taskId });
+    else await submitCorrect(services, other);
+
+    const retry = (await nextTask(services, session.sessionId))!;
+    expect(retry.exerciseType).toBe("letter_completion");
+    expect(retry.prompt.kind).toBe("letter_completion");
+    if (retry.prompt.kind !== "letter_completion") throw new Error("oczekiwano promptu letter_completion");
+    expect(retry.prompt.fragment).toBe("M_n_a_");
+    await expectAppError(submitAttempt(services, {
+      taskId: retry.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: randomUUID(),
+    }), "validation");
+
+    const beforeSpelling = await progressOf(childId, spellingVersion);
+    const beforeRecall = await progressOf(childId, recallVersion);
+    const answer = await submitAttempt(services, {
+      taskId: retry.taskId,
+      clientAttemptId: randomUUID(),
+      modality: "text",
+      text: "Monday",
+    });
+    expect(answer.feedback?.kind).toBe("great");
+    const [attempt] = await attemptRows(retry.taskId);
+    const grades = await assessmentsOf(attempt!.id);
+    expect(grades.filter((grade) => grade.skill === "spelling")).toMatchObject([
+      { outcome: "correct", independent: false, confirmation_eligible: false },
+    ]);
+    expect(await progressOf(childId, spellingVersion)).toMatchObject({ streak: beforeSpelling!.streak });
+    expect(await progressOf(childId, recallVersion)).toMatchObject({ streak: beforeRecall!.streak });
+  });
+
   it("„Nie pamiętam” to trudność bez mylonej pary; „Pomiń” nie udaje błędu", async () => {
     const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 4));
     const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
@@ -611,12 +658,7 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
     expect(fresh).toMatchObject({ attemptId: freshId, state: "processing", feedback: null });
 
     // nowa próba tego zadania przy świeżym processing nie uruchamia drugiej analizy
-    const same = await submitAttempt(services, {
-      taskId: task.taskId,
-      clientAttemptId: randomUUID(),
-      modality: "text",
-      text: "nope",
-    });
+    const same = await submitWrong(services, task);
     expect(same.attemptId).toBe(freshId);
     expect(same.state).toBe("processing");
 
@@ -630,12 +672,7 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
     }
 
     // droga do nowej próby jest otwarta
-    const retry = await submitAttempt(services, {
-      taskId: task.taskId,
-      clientAttemptId: randomUUID(),
-      modality: "text",
-      text: (await answerKeyOf(task.taskId)).target,
-    });
+    const retry = await submitCorrect(services, task);
     expect(retry).toMatchObject({ state: "completed", taskState: "answered" });
     expect((await attemptRows(task.taskId)).map((a) => a.attempt_number)).toEqual([1, 2]);
   });

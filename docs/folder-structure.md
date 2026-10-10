@@ -90,6 +90,13 @@ Nie importujemy tutaj next/navigation, next/image, Server Actions ani @learning/
 | packages/server/src/domain/evaluate.ts | Reguły treści i pisowni |
 | packages/server/src/domain/independence.ts | Kwalifikacja próby i ekspozycje |
 | packages/server/src/domain/progress.ts | Wyliczanie projekcji z historii |
+| packages/server/src/domain/learning-work.ts | Oddzielne terminy i gotowość Recall, pisowni i wymowy |
+| packages/server/src/domain/support-cycle.ts | Odtwarzanie pojedynczego cyklu wsparcia z historii sesji |
+| packages/server/src/domain/recognition-options.ts | Bezpieczne, unikalne opcje rozpoznawania i fragmentów |
+| packages/server/src/domain/confusion-priority.ts | Kierunkowe rankowanie wiarygodnych mylonych par |
+| packages/server/src/modules/skill-history.ts | Odczyt historii ocen ograniczony do dziecka, skill version i umiejętności |
+| packages/server/src/modules/skill-projections.ts | Wspólny zapis projekcji postępu |
+| packages/server/src/modules/learning-snapshot.ts | Zbiorcza migawka postępu, pracy, ekspozycji i pomyłek |
 | packages/server/src/domain/scheduler.ts | Wybór ćwiczenia z ochroną celów oczekujących na samodzielne sprawdzenie |
 | packages/server/src/domain/test-preparation.ts | Czyste wyznaczanie 48-godzinnego okna terminu w strefie rodziny, z obsługą DST |
 | packages/server/src/domain/feedback.ts | Komunikaty zgodne z wynikiem |
@@ -114,6 +121,7 @@ Komunikaty wynikowe generowane przez domenę (feedback.ts) trafiają do klienta 
 | packages/server/src/modules/attempts.ts | Rezerwacja i finalizacja prób |
 | packages/server/src/modules/speech.ts | Krótka analiza nagrania i wynik częściowy |
 | packages/server/src/modules/reporting.ts | Postęp i mylone pary |
+| packages/server/src/modules/progress-rebuild.ts | Dry-run oraz transakcyjna, scoped odbudowa projekcji z historii |
 | packages/server/src/db/client.ts | Połączenie, pula i transakcje |
 | packages/server/src/db/schema.ts | Autorytatywna definicja tabel Drizzle po implementacji |
 | packages/server/src/db/queries/ | Konkretne zapytania grupowane według modułu |
@@ -128,6 +136,7 @@ Komunikaty wynikowe generowane przez domenę (feedback.ts) trafiają do klienta 
 | packages/server/drizzle/ | Migracje SQL i snapshoty Drizzle |
 | packages/server/drizzle.config.ts | Ustawienia generatora migracji |
 | apps/worker/src/main.ts | Rejestracja zadań i graceful shutdown |
+| apps/worker/src/rebuild-progress.ts | Jednorazowe CLI odbudowy projekcji; nie uruchamia pętli workera |
 | apps/worker/src/tasks.ts | Powiązanie nazw Graphile z przypadkami użycia |
 | apps/worker/src/composition.ts | Składanie zależności workera |
 
@@ -145,6 +154,8 @@ DocumentAnalysisProvider pojawi się dopiero podczas budowy source_material. Nie
 | tests/integration/generation.test.ts | Idempotencja, retry, stary draft, reconcile i asset lease |
 | tests/integration/media.test.ts | Niezmienność gotowych zasobów i zapis no-clobber przy spóźnionym workerze |
 | tests/integration/history.test.ts | Niezmienne zadania/oceny/ujawnienia i usunięcie profilu |
+| tests/integration/learning-algorithm.test.ts | Wielodniowa regresja harmonogramu dla dwóch profili i dużego zestawu |
+| tests/integration/progress-rebuild.test.ts | Dry-run, izolacja dzieci, odtworzenie i idempotencja projekcji |
 | tests/integration/sessions.test.ts | Granice sesji, completePresentation, budżet, wersje i ujawnienia bez ACK |
 | tests/e2e/test-preparation.spec.ts | Wcześniejsza ekspozycja → sprawdzian → pisemne Recall bez mikrofonu |
 | tests/integration/attempts.test.ts | Atomowość i retry odpowiedzi |
@@ -153,9 +164,11 @@ DocumentAnalysisProvider pojawi się dopiero podczas budowy source_material. Nie
 | tests/e2e/parent-flow.spec.ts | Generacja → review → publikacja |
 | tests/e2e/kid-flow.spec.ts | Sesja z mikrofonem i bez, błędy sieci |
 | tests/e2e/privacy.spec.ts | Brak sekretów i odpowiedzi w DTO |
+| tests/e2e/learning-algorithm.spec.ts | Mały zestaw i cykl pomocy w interfejsie dziecka |
 | docs/speech-spike.md | Wynik weryfikacji mowy i kodeków, bez surowych nagrań |
 | docs/provider-config.md | Wybrane modele i parametry bez kluczy |
 | docs/backup-restore.md | Procedura i zapis testu odtworzenia |
+| docs/operations/progress-rebuild.md | Okno serwisowe, backup/restore i bezpieczne uruchomienie odbudowy |
 | deploy/Dockerfile | Wieloetapowy build web i worker |
 | deploy/compose.yaml | Web, worker, db i wolumeny |
 | deploy/migrate.ts | Jednorazowe migracje aplikacji i kolejki |

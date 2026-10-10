@@ -323,6 +323,8 @@ Domyślna reguła początkowa: nowe słowa wprowadzamy w małych porcjach, np. p
 
 Opcje odpowiedzi są jednoznaczne, bez duplikatów, a ich pozycja jest zmienna. Gdy zestaw ma za mało sensownych wariantów, stosujemy mniej opcji albo inne zadanie zamiast wymuszać przypadkowe odpowiedzi.
 
+Ćwiczenie wyboru wymaga co najmniej dwóch różnych opcji. Nie używamy celu należnego samodzielnej próbie jako opcji ani dystraktora. Jeśli materiał jest singletonem albo chwilowo brakuje bezpiecznych dystraktorów, dziecko może zakończyć własną prezentację i otrzymać pisemne Recall; nie tworzymy fikcyjnego sukcesu z rozpoznawania.
+
 Pomoce wizualne nie mogą nieświadomie zdradzać odpowiedzi w zadaniu, które ma potwierdzać samodzielną znajomość. Widoczna wskazówka jest częścią kontekstu próby.
 
 ### 13.1. Kontekst podpowiedzi między ćwiczeniami
@@ -419,6 +421,10 @@ Priorytet powtórek zależy od:
 - terminu sprawdzianu;
 - liczby niedawnych prób tego samego elementu, aby uniknąć monotonii.
 
+Planowane samodzielne sprawdzenia przypominania i pisowni mają pierwszeństwo przed nowym słowem i powtórką, która ujawniłaby ich cel. Po pierwszej prezentacji pierwszy sprawdzian tych umiejętności staje się należny po 24 godzinach; późniejsze terminy wynikają z historii kwalifikujących ocen. Sprawdzian jest wydawany dopiero, gdy od ostatniego ujawnienia wzorca lub fragmentu minęło 300 sekund. Jeśli nie jest jeszcze kwalifikujący, scheduler wybiera bezpieczne ćwiczenie i wraca później. Każda umiejętność rozpoznawania, Recall, wymowa i pisownia zachowuje własną historię i termin.
+
+Wsparcie po trudnościach tworzy jeden ograniczony cykl na element i sesję: po dwóch błędnych odpowiedziach w tym samym zadaniu albo po „Nie pamiętam” dziecko dostaje prezentację/wsparcie, a potem najwyżej jedną poprawkę. Jeśli trudność dotyczy pisowni, poprawka może używać uzupełniania liter. Pominięcie, cisza, błąd providera ani niepewne rozpoznanie nie uruchamiają cyklu błędnej wiedzy. Budżet ocenianych zadań nie rośnie.
+
 Trudne elementy pojawiają się częściej, ale nie wypierają wszystkich łatwiejszych zadań. Również dobrze znane słowa wymagają powrotu po przerwie.
 
 Powtórkę planujemy osobno dla danej umiejętności. Aplikacja może zbiorczo wybrać słowo do sesji, lecz musi wiedzieć, czy ćwiczy jego znaczenie, wymowę czy zapis.
@@ -441,6 +447,7 @@ Wymagane zasady:
 Domyślne reguły początkowe dla przypominania i pisowni:
 
 1. Niezależna próba to pierwsza odpowiedź w danym zadaniu, bez podpowiedzi i z upływem co najmniej 5 minut od ostatniego ujawnienia angielskiego rozwiązania lub jego fragmentu przez aplikację, także w innym typie ćwiczenia. Sam prompt po polsku nie ujawnia rozwiązania. Kolejne próby po feedbacku służą utrwalaniu.
+   Pierwszy zaplanowany termin Recall i pisowni po prezentacji wypada po 24 godzinach; odstęp ten określa dobór zadania, a 5 minut pozostaje warunkiem kwalifikacji odpowiedzi.
 2. Do potwierdzenia opanowania wymagane są trzy ostatnie kwalifikujące się próby danej umiejętności zakończone sukcesem. Błąd lub „Nie pamiętam” w niezależnym sprawdzaniu przerywa serię dla tej umiejętności. Nie sumujemy dowolnych trzech sukcesów z całej historii.
 3. Co najmniej jeden z tych sukcesów musi nastąpić w późniejszej sesji, innego dnia oraz po co najmniej 12 godzinach od ostatniego kontaktu z tym elementem w poprzednich sesjach. Samo przekroczenie północy nie wystarcza.
 4. Próby wspomagane i bez wiarygodnej oceny nie zwiększają ani nie przerywają serii kwalifikujących się prób. Powtarzające się błędy podczas ćwiczeń wspomaganych mogą zwiększać priorytet treningu, ale nie zastępują niezależnego sprawdzenia.

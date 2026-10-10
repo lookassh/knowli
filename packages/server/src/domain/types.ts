@@ -102,6 +102,8 @@ export interface AnswerKey {
   direction?: ReadingDirection;
   /** Serwerowy identyfikator poprawnej opcji (zadania zamknięte). */
   correctOptionId?: string;
+  /** Prywatne mapowanie ID wydanych opcji do rewizji (nie trafia do Kid DTO). */
+  optionItemRevisionIds?: Readonly<Record<string, string>>;
 }
 
 /**

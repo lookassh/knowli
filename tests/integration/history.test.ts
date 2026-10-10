@@ -4,21 +4,25 @@ import {
   completePresentation,
   createChild,
   createDraft,
+  authorizeDisclosure,
   deleteChild,
   updateChild,
   ensureLearningPolicy,
   CURRENT_POLICY_ID,
   nextTask,
+  loadPolicy,
   publishDraft,
   startSession,
   submitAttempt,
   upsertAssignment,
 } from "@learning/server";
+import type { TaskDto } from "@learning/contracts";
 import {
   buildTestServices,
   testDatabase,
   truncateCoreTables,
 } from "./helpers";
+import { readLearningSnapshot } from "../../packages/server/src/modules/learning-snapshot";
 
 /**
  * Historia prób (zadanie 7): klucz odpowiedzi wydanego zadania, ekspozycje
@@ -90,7 +94,7 @@ async function attachFakeReadyAudio(deckVersionId: string, itemIndex: number): P
   );
 }
 
-/** Sesja z jedną zakończoną próbą tekstową; zwraca id zadania i próby. */
+/** Sesja z jedną zakończoną próbą; używa modality zgodnego z wydanym zadaniem. */
 async function sessionWithAttempt(childId: string): Promise<{ taskId: string; attemptId: string }> {
   const services = buildTestServices().services;
   const draft = await createDraft(services, { title: "Historia", items: PAIRS.map(vocabItem) });
@@ -117,17 +121,75 @@ async function sessionWithAttempt(childId: string): Promise<{ taskId: string; at
   for (let step = 0; step < 10; step++) {
     const task = (await nextTask(services, session.sessionId))!;
     if (task.exerciseType !== "exposure") {
+      const answer = (await query<{ target: string; optionId: string | null }>(
+        `select answer_key->>'target' as target, answer_key->>'correctOptionId' as "optionId"
+           from learning_app.session_tasks where id=$1`, [task.taskId],
+      ))[0]!;
       const dto = await submitAttempt(services, {
         taskId: task.taskId,
         clientAttemptId: randomUUID(),
-        modality: "text",
-        text: "monday",
+        ...(answer.optionId === null
+          ? { modality: "text" as const, text: answer.target }
+          : { modality: "choice" as const, optionId: answer.optionId }),
       });
       return { taskId: task.taskId, attemptId: dto.attemptId };
     }
     await completePresentation(services, { taskId: task.taskId });
   }
   throw new Error("nie wydano zadania ocenianego");
+}
+
+async function answerCorrectly(task: TaskDto): Promise<void> {
+  const row = (await query<{ answer_key: { correctOptionId?: string; target?: string } }>(
+    `select answer_key from learning_app.session_tasks where id = $1`, [task.taskId],
+  ))[0]!;
+  await submitAttempt(buildTestServices().services, {
+    taskId: task.taskId,
+    clientAttemptId: randomUUID(),
+    ...(row.answer_key.correctOptionId
+      ? { modality: "choice" as const, optionId: row.answer_key.correctOptionId }
+      : { modality: "text" as const, text: row.answer_key.target! }),
+  });
+}
+
+async function sharedDeckForChildren(childIds: readonly string[]): Promise<{ deckId: string; versionId: string }> {
+  const services = buildTestServices().services;
+  const draft = await createDraft(services, { title: "Wspólna historia", items: PAIRS.map(vocabItem) });
+  for (const index of PAIRS.keys()) {
+    await attachFakeReadyAudio(draft.id, index);
+    const revision = (await query<{ id: string }>(
+      `select id from learning_app.item_revisions where deck_version_id = $1 order by position offset $2 limit 1`,
+      [draft.id, index],
+    ))[0]!;
+    await pool.query(
+      `insert into learning_app.revision_assets (item_revision_id, role, asset_id, expected_fingerprint, state)
+       values ($1,'illustration',null,$2,'omitted')`,
+      [revision.id, `fp-ill-${randomUUID()}`],
+    );
+  }
+  await publishDraft(services, draft.id, 1);
+  for (const childId of childIds) await upsertAssignment(services, childId, draft.deckId, null);
+  return { deckId: draft.deckId, versionId: draft.id };
+}
+
+async function nextLearningExercise(childId: string, deckId: string, type: TaskDto["exerciseType"]): Promise<TaskDto> {
+  return (await openLearningExercise(childId, deckId, type)).task;
+}
+
+async function openLearningExercise(childId: string, deckId: string, type: TaskDto["exerciseType"], suppliedServices?: ReturnType<typeof buildTestServices>["services"]): Promise<{
+  services: ReturnType<typeof buildTestServices>["services"];
+  sessionId: string;
+  task: TaskDto;
+}> {
+  const services = suppliedServices ?? buildTestServices().services;
+  const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+  for (let step = 0; step < 40; step++) {
+    const task = (await nextTask(services, session.sessionId))!;
+    if (task.exerciseType === type) return { services, sessionId: session.sessionId, task };
+    if (task.exerciseType === "exposure") await completePresentation(services, { taskId: task.taskId });
+    else await answerCorrectly(task);
+  }
+  throw new Error(`Nie wydano zadania ${type}`);
 }
 
 describe("niezmienność historii prób (integracja)", () => {
@@ -170,6 +232,72 @@ describe("niezmienność historii prób (integracja)", () => {
       [taskId],
       /Terminal task cannot be reopened/,
     );
+  });
+
+  it("nie wlicza historii rodzeństwa do projekcji tego samego skill version", async () => {
+    const services = buildTestServices().services;
+    const childB = (await createChild(services, { displayName: "Iga", avatarKey: "owl" })).id;
+    const { deckId, versionId } = await sharedDeckForChildren([childId, childB]);
+    const taskA = await nextLearningExercise(childId, deckId, "listening");
+    await answerCorrectly(taskA);
+    const taskB = await nextLearningExercise(childB, deckId, "listening");
+    await answerCorrectly(taskB);
+
+    const rows = await query<{ child_id: string; skill: string; independent_success_streak: number }>(
+      `select p.child_id, s.skill, p.independent_success_streak
+         from learning_app.child_skill_progress p
+         join learning_app.item_revision_skills s on s.skill_version_id = p.skill_version_id
+         join learning_app.item_revisions r on r.id = s.item_revision_id
+        where r.deck_version_id = $1 and p.child_id = $2 and s.skill = 'listening'`,
+      [versionId, childB],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.independent_success_streak).toBe(1);
+    const assessmentChildren = await query<{ child_id: string }>(
+      `select child_id from learning_app.assessments where skill = 'listening'`,
+    );
+    expect([...new Set(assessmentChildren.map((row) => row.child_id))].sort()).toEqual([childId, childB].sort());
+  });
+
+  it("kwalifikuje reading z audio jako wspomagane przy przyjęciu odpowiedzi", async () => {
+    const { deckId } = await sharedDeckForChildren([childId]);
+    const { services: sessionServices, task } = await openLearningExercise(childId, deckId, "reading");
+    await authorizeDisclosure(sessionServices, { taskId: task.taskId, kind: "audio" });
+    await answerCorrectly(task);
+
+    const assessment = await query<{ outcome: string; independent: boolean; confirmation_eligible: boolean }>(
+      `select a.outcome, a.independent, a.confirmation_eligible
+         from learning_app.assessments a join learning_app.attempts t on t.id = a.attempt_id
+        where t.task_id = $1 and a.skill = 'reading'`,
+      [task.taskId],
+    );
+    expect(assessment[0]).toMatchObject({ outcome: "correct", independent: false, confirmation_eligible: false });
+  });
+
+  it("zachowuje termin samodzielnego Recall 24 godziny po pierwszym wydaniu", async () => {
+    const { services, clock } = buildTestServices();
+    const { deckId, versionId } = await sharedDeckForChildren([childId]);
+    const { task } = await openLearningExercise(childId, deckId, "recall", services);
+    await answerCorrectly(task);
+    const policy = await loadPolicy(services.db, CURRENT_POLICY_ID);
+    const revision = (await query<{ id: string }>(
+      `select id from learning_app.item_revisions where deck_version_id = $1 order by position limit 1`, [versionId],
+    ))[0]!;
+    const before = await readLearningSnapshot(services.db, {
+      childId, revisionIds: [revision.id], policy, now: clock.now().toISOString(),
+    });
+    const dueAt = before[0]!.work.recall!.reviewDueAt;
+    expect(dueAt).toBe(new Date(clock.now().getTime() + 24 * 60 * 60 * 1000).toISOString());
+    expect(before[0]!.work.recall!.dueNow).toBe(false);
+
+    clock.advanceHours(24);
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const dueTask = await nextTask(services, session.sessionId);
+    expect(dueTask?.exerciseType).toBe("recall");
+    const after = await readLearningSnapshot(services.db, {
+      childId, revisionIds: [revision.id], policy, now: clock.now().toISOString(),
+    });
+    expect(after[0]!.work.recall!.dueNow).toBe(true);
   });
 
   it("zakończona próba jest niezmieniona, a oceny nie podlegają edycji ani wymianie", async () => {

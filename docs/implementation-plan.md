@@ -347,3 +347,27 @@ podwójne kliknięcie, refresh fail i nowy klucz dla kolejnej generacji.
 Pełny odbiór 2026-10-09: unit 288/288, integration 139/139, E2E 54/54,
 typecheck sześciu projektów i produkcyjny build przeszły. Testowa baza
 potwierdziła jeden generation_run i jeden deck dla ponowionego klucza.
+
+### Uzupełnienie: audyt i naprawa algorytmu nauki — 2026-10-09
+
+Plan wykonania: `docs/superpowers/plans/2026-10-09-learning-algorithm-repair.md`;
+wyjściowy audyt: `docs/audits/2026-10-09-learning-algorithm-audit.md`.
+Zakres I01–I10 obejmuje izolację historii per dziecko i umiejętność, kwalifikację
+audio, jedno ograniczone wsparcie z poprawką, zachowanie należnego późniejszego
+Recall/pisowni, kierunki reading, bezpieczne opcje, deterministyczne fragmenty,
+priorytet wiarygodnych mylonych par, pierwszeństwo należnych sprawdzeń przed
+nowym materiałem oraz odbudowę skażonych projekcji.
+
+Odbudowa `child_skill_progress` używa wspólnego czytnika historii i zapisu
+projekcji w wersji `proj-2`; dry-run jest domyślny. Apply działa osobno dla
+każdego profilu, odmawia przy sesji aktywnej lub próbie `processing` i nie
+zmienia surowej historii, ekspozycji ani podsumowań. Instrukcja obsługi:
+`docs/operations/progress-rebuild.md`.
+
+Regresja `tests/integration/learning-algorithm.test.ts` prowadzi dwa profile
+przez 12 miesięcy w maksymalnie 14 dniach symulowanych i sprawdza niezależne
+Recall oraz pisownię dla każdego słowa. `tests/integration/progress-rebuild.test.ts`
+sprawdza dry-run, izolację, brakujące i osierocone projekcje, idempotencję oraz
+blokady apply. Pełny wynik bramek dla tej naprawy zapisuje końcowy raport pracy;
+próby na danych rodzinnych, deploy i test wymowy z prawdziwym nagraniem nie są
+częścią tej regresji.

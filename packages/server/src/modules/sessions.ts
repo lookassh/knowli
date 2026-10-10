@@ -47,7 +47,10 @@ import { lockTaskWithSession, writeSealedEvent, contextOf, type SessionContextSh
 import { payloadToItem } from "./item-payload";
 import { summarizeSessionAssessments } from "../domain/session-summary";
 import { computeTargetKey } from "../domain/target-key";
+import { buildLetterFragment } from "../domain/letter-fragment";
 import { addLegacyTaskPromptDefaults } from "./task-prompt-compat";
+import { deriveSupportStates, type SupportAttempt, type SupportTask } from "../domain/support-cycle";
+import { readLearningSnapshot } from "./learning-snapshot";
 
 /** Okno wznowienia aktywnej sesji od ostatniego zdarzenia (arch §9.1). */
 export const RESUME_WINDOW_MS = 30 * 60_000;
@@ -300,6 +303,7 @@ interface ItemStats {
   presentationsThisSession: number;
   lastUsedOrdinal: number | null;
   supportedThisSession: boolean;
+  recognitionFallbackUsedThisSession: boolean;
   readingDirections: Partial<Record<ReadingDirection, number>>;
   practiceMix: { listening: number; reading: number };
 }
@@ -388,6 +392,7 @@ async function planNextTask(
         presentationsThisSession: 0,
         lastUsedOrdinal: null,
         supportedThisSession: false,
+        recognitionFallbackUsedThisSession: false,
         readingDirections: {},
         practiceMix: { listening: 0, reading: 0 },
       },
@@ -395,11 +400,13 @@ async function planNextTask(
   );
   const taskRows = await tx
     .select({
+      id: sessionTasks.id,
       itemRevisionId: sessionTasks.itemRevisionId,
       exerciseType: sessionTasks.exerciseType,
       direction: sessionTasks.direction,
       ordinal: sessionTasks.ordinal,
       context: sessionTasks.context,
+      state: sessionTasks.state,
     })
     .from(sessionTasks)
     .where(eq(sessionTasks.sessionId, session.id))
@@ -415,6 +422,9 @@ async function planNextTask(
     if ((row.context as { reason?: string } | null)?.reason === "support") {
       stats.supportedThisSession = true;
     }
+    if ((row.context as { reason?: string } | null)?.reason === "recognition-fallback") {
+      stats.recognitionFallbackUsedThisSession = true;
+    }
     if (row.exerciseType === "listening") {
       stats.practiceMix.listening += 1;
     } else if (row.exerciseType === "reading" || row.exerciseType === "reverse_recognition") {
@@ -428,32 +438,50 @@ async function planNextTask(
   // „Nie pamiętam” nasycie próg wsparcia — deklarowana trudność prowadzi do
   // wsparcia bez czekania na drugi błąd (SPEC §15.1, §16).
   const policy = await loadPolicy(tx, session.policyId);
+  const learningSnapshots = await readLearningSnapshot(tx, {
+    childId: session.childId,
+    revisionIds,
+    policy,
+    now: now.toISOString(),
+  });
+  const snapshotByRevision = new Map(learningSnapshots.map((snapshot) => [snapshot.itemRevisionId, snapshot]));
   const gradedRows = await tx
     .select({
       attemptId: attempts.id,
+      taskId: attempts.taskId,
       itemRevisionId: sessionTasks.itemRevisionId,
       modality: attempts.modality,
+      skill: assessments.skill,
       outcome: assessments.outcome,
     })
     .from(attempts)
     .innerJoin(sessionTasks, eq(sessionTasks.id, attempts.taskId))
     .leftJoin(assessments, eq(assessments.attemptId, attempts.id))
     .where(eq(sessionTasks.sessionId, session.id));
-  const failuresByRevision = new Map<string, number>();
-  const incorrectAttempts = new Set<string>();
+  const attemptsById = new Map<string, SupportAttempt>();
   for (const row of gradedRows) {
-    if (row.outcome === "incorrect") {
-      incorrectAttempts.add(row.attemptId);
+    const current = attemptsById.get(row.attemptId) ?? {
+      attemptId: row.attemptId, taskId: row.taskId, modality: row.modality,
+      outcomes: [] as { skill: Skill; outcome: "correct" | "incorrect" | "unevaluated" }[],
+    };
+    if (row.skill !== null && row.outcome !== null) {
+      current.outcomes = [...current.outcomes, { skill: row.skill as Skill, outcome: row.outcome === "unassessed" ? "unevaluated" : row.outcome as "correct" | "incorrect" }];
     }
+    attemptsById.set(row.attemptId, current);
   }
-  for (const row of gradedRows) {
-    const current = failuresByRevision.get(row.itemRevisionId) ?? 0;
-    if (incorrectAttempts.has(row.attemptId)) {
-      failuresByRevision.set(row.itemRevisionId, current + 1);
-    } else if (row.modality === "dont_remember" && !incorrectAttempts.has(row.attemptId)) {
-      failuresByRevision.set(row.itemRevisionId, current + policy.supportAfterFailures);
-    }
-  }
+  const supportTasks: SupportTask[] = taskRows.map((row) => {
+    const context = row.context as { reason?: string; supportCycleId?: string } | null;
+    return {
+      taskId: row.id,
+      itemRevisionId: row.itemRevisionId,
+      ordinal: row.ordinal,
+      exerciseType: row.exerciseType as SupportTask["exerciseType"],
+      state: row.state === "completed" || row.state === "answered" || row.state === "skipped" ? row.state : "issued",
+      reason: context?.reason ?? "",
+      ...(context?.supportCycleId ? { supportCycleId: context.supportCycleId } : {}),
+    };
+  });
+  const supportByRevision = deriveSupportStates(supportTasks, [...attemptsById.values()], policy.supportAfterFailures);
 
   const items = new Map<string, PlannedItem>(
     revisions.map((r) => {
@@ -501,11 +529,36 @@ async function planNextTask(
     );
   const historicallyExposed = new Set(historicalExposureRows.map((row) => row.targetKey));
 
-  const recentAssessedReasons = taskRows
+  const terminalTasks = taskRows.filter((row) => row.state === "answered" || row.state === "skipped");
+  const assessedTasks = terminalTasks.filter((row) => row.state === "answered");
+  const recentAssessedReasons = assessedTasks
     .filter((row) => row.exerciseType !== "exposure")
     .map((row) => (row.context as { reason?: unknown } | null)?.reason)
     .filter((reason): reason is ScheduleReason => typeof reason === "string")
     .slice(-2);
+  const recentAssessedTasks = assessedTasks
+    .filter((row) => row.exerciseType !== "exposure")
+    .slice(-2)
+    .map((row) => {
+      const context = row.context as { reason?: unknown; skillAtIssue?: unknown; statusAtIssue?: unknown } | null;
+      return {
+        reason: typeof context?.reason === "string" ? context.reason as ScheduleReason : "new-practice" as ScheduleReason,
+        skill: typeof context?.skillAtIssue === "string" ? context.skillAtIssue as Skill : null,
+        statusAtIssue: typeof context?.statusAtIssue === "string" ? context.statusAtIssue as SkillSnapshot["status"] : null,
+      };
+    });
+  const settledReviewSkillsByRevision = new Map<string, Skill[]>();
+  for (const row of terminalTasks) {
+    const context = row.context as { reason?: unknown; skillAtIssue?: unknown } | null;
+    if (context?.reason !== "due-review") continue;
+    const inferred: Partial<Record<string, Skill>> = {
+      listening: "listening", reading: "reading", reverse_recognition: "reading", speech: "pronunciation",
+    };
+    const skill = typeof context.skillAtIssue === "string" ? context.skillAtIssue as Skill : inferred[row.exerciseType];
+    if (!skill) continue;
+    const values = settledReviewSkillsByRevision.get(row.itemRevisionId) ?? [];
+    if (!values.includes(skill)) settledReviewSkillsByRevision.set(row.itemRevisionId, [...values, skill]);
+  }
 
   // Etapy już wprowadzone zadaniem w dowolnej sesji dziecka (SPEC §13): pierwsze
   // recall/wymowa nie może czekać na postęp, którego bez tego zadania nie będzie;
@@ -532,6 +585,7 @@ async function planNextTask(
   const candidates: ScheduleCandidate[] = revisions.map((r) => {
     const item = items.get(r.id)!;
     const stats = statsByRevision.get(r.id)!;
+    const learning = snapshotByRevision.get(r.id);
     const progress: Partial<Record<Skill, SkillSnapshot>> = {};
     for (const row of progressRows) {
       if (row.itemRevisionId !== r.id || row.status === null) continue;
@@ -540,6 +594,11 @@ async function planNextTask(
         nextReviewAt: row.nextReviewAt?.toISOString() ?? null,
         streak: row.streak ?? 0,
       };
+    }
+    if (learning) {
+      for (const [skill, snapshot] of Object.entries(learning.progress) as [Skill, SkillSnapshot][]) {
+        progress[skill] = snapshot;
+      }
     }
     return {
       itemRevisionId: r.id,
@@ -551,21 +610,27 @@ async function planNextTask(
       targetLocale: item.targetLocale,
       progress,
       // trudności z prawdziwych prób tej sesji (błędy i „Nie pamiętam”)
-      failuresThisSession: failuresByRevision.get(r.id) ?? 0,
+      failuresThisSession: 0,
       supportedThisSession: stats.supportedThisSession,
+      support: supportByRevision.get(r.id),
+      work: learning?.work,
+      ownPresentationCompleted: learning?.ownPresentationCompleted ?? false,
+      recognitionFallbackUsedThisSession: stats.recognitionFallbackUsedThisSession,
+      readingEvidenceDirections: learning?.readingEvidenceDirections ?? {},
       usedThisSession: stats.usedThisSession,
       presentationsThisSession: stats.presentationsThisSession,
       lastContactAt: sessionContext.previousContact[r.itemId] ?? null,
       lastUsedOrdinal: stats.lastUsedOrdinal,
       readingDirections: stats.readingDirections,
       practiceMix: stats.practiceMix,
-      introducedSkills: introducedByRevision.get(r.id) ?? { recall: false, pronunciation: false },
+      introducedSkills: learning?.introducedSkills ?? introducedByRevision.get(r.id) ?? { recall: false, pronunciation: false },
       hasBeenPresented: historicallyExposed.has(targetKeysByRevision.get(r.id)!),
       testPreparationIssued: taskRows.some(
         (row) =>
           row.itemRevisionId === r.id &&
           (row.context as { reason?: unknown } | null)?.reason === "test-preparation",
       ),
+      settledReviewSkills: settledReviewSkillsByRevision.get(r.id) ?? [],
     };
   });
   const peers = candidates.map((c) => ({
@@ -574,6 +639,7 @@ async function planNextTask(
     target: c.target,
     source: c.source,
     targetLocale: c.targetLocale,
+    acceptedAnswers: c.acceptedAnswers,
   }));
 
   const plan = selectTask({
@@ -590,6 +656,8 @@ async function planNextTask(
       ? {}
       : { testPreparation: { testDate: sessionContext.testDate, timezone: sessionContext.timezone } }),
     recentAssessedReasons,
+    recentAssessedTasks,
+    confusions: learningSnapshots.flatMap((snapshot) => snapshot.confusions),
   });
   if (!plan) {
     return null;
@@ -601,15 +669,6 @@ async function planNextTask(
     imageAssetId: imageByRevision.get(plan.itemRevisionId) ?? null,
     exampleAudioAssetId: exampleByRevision.get(plan.itemRevisionId) ?? null,
   };
-}
-
-/** Deterministyczny fragment uzupełniania liter: co druga litera widoczna. */
-function letterFragment(target: string): string {
-  const chars = [...target];
-  if (chars.length <= 2) {
-    return chars[0] ?? target;
-  }
-  return chars.map((char, index) => (index % 2 === 0 ? char : "_")).join("");
 }
 
 /** Tasowanie Fishera–Yatesa; pętla nie wykonuje się dla 0/1 elementów. */
@@ -647,6 +706,7 @@ export function materializeTask(
     acceptedAnswers: item.acceptedAnswers,
     ...(plan.direction ? { direction: plan.direction } : {}),
     ...(correctOption ? { correctOptionId: optionIds.get(correctOption.text)! } : {}),
+    ...(plannedOptions.length > 0 ? { optionItemRevisionIds: Object.fromEntries(plannedOptions.map((option) => [optionIds.get(option.text)!, option.itemRevisionId])) } : {}),
   };
 
   let prompt: TaskPrompt;
@@ -682,7 +742,7 @@ export function materializeTask(
       prompt = { kind: "spelling", prompt: item.source };
       break;
     case "letter_completion":
-      prompt = { kind: "letter_completion", prompt: item.source, fragment: letterFragment(item.target) };
+      prompt = { kind: "letter_completion", prompt: item.source, fragment: buildLetterFragment(item.target) };
       break;
     case "speech":
       prompt = {
@@ -767,7 +827,12 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
       state: "issued",
       publicPrompt: materialized.prompt as unknown as Record<string, unknown>,
       answerKey: materialized.answerKey,
-      context: { reason: plan.reason },
+      context: {
+        reason: plan.reason,
+        ...(plan.supportCycleId ? { supportCycleId: plan.supportCycleId } : {}),
+        ...(plan.skillAtIssue ? { skillAtIssue: plan.skillAtIssue } : {}),
+        ...(plan.statusAtIssue ? { statusAtIssue: plan.statusAtIssue } : {}),
+      },
       issuedAt: now,
     });
     await writeSealedEvent(tx, {

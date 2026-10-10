@@ -21,6 +21,7 @@ function candidate(overrides: Partial<ScheduleCandidate> = {}): ScheduleCandidat
     },
     failuresThisSession: 0,
     supportedThisSession: false,
+    recognitionFallbackUsedThisSession: true,
     usedThisSession: 0,
     presentationsThisSession: 0,
     lastContactAt: null,
@@ -39,6 +40,7 @@ function peer(overrides: Partial<SchedulePeer> = {}): SchedulePeer {
     target: "Thursday",
     source: "czwartek",
     targetLocale: "en-GB",
+    acceptedAnswers: [],
     ...overrides,
   };
 }
@@ -114,7 +116,7 @@ describe("selectTask — przygotowanie do sprawdzianu", () => {
     const supported = candidate({ hasBeenPresented: true, failuresThisSession: 2 });
     const supportPlan = selectTask(input({
       candidates: [supported],
-      peers: [peer(supported)],
+      peers: [peer(supported), peer({ itemRevisionId: "rev-w", position: 2, target: "Wednesday", source: "środa" })],
       testPreparation: { testDate: "2026-10-11", timezone: "Europe/Warsaw" },
     }));
     expect(supportPlan).toMatchObject({ reason: "support" });
@@ -139,7 +141,7 @@ describe("selectTask — przygotowanie do sprawdzianu", () => {
     });
     const plan = selectTask(input({
       candidates: [supported],
-      peers: [peer(supported)],
+      peers: [peer(supported), peer({ itemRevisionId: "rev-w", position: 2, target: "Wednesday", source: "środa" })],
       nextOrdinal: 2,
       testPreparation: { testDate: "2026-10-11", timezone: "Europe/Warsaw" },
     }));
