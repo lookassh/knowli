@@ -293,9 +293,11 @@ async function finalizeAttemptRow(
         confirmationEligible: skillGrade.confirmationEligible,
         details,
       });
-      const scope = { childId: session.childId, skillVersionId, skill };
-      const history = await readSkillHistory(tx, scope);
-      await persistSkillProjection(tx, scope, history, policy, now, attempt.receivedAt);
+      if (skillGrade.outcome !== "unevaluated") {
+        const scope = { childId: session.childId, skillVersionId, skill };
+        const history = await readSkillHistory(tx, scope);
+        await persistSkillProjection(tx, scope, history, policy, now, attempt.receivedAt);
+      }
     }
   }
 

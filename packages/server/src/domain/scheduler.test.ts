@@ -596,6 +596,23 @@ describe("selectTask — rozliczone sprawdzenia nie wracają w tej sesji (arch �
     expect(plan).toMatchObject({ itemRevisionId: nextDue.itemRevisionId, reason: "due-review" });
   });
 
+  it("ponawia należną pierwszą próbę wymowy bez projekcji postępu", () => {
+    const pendingSpeech = candidate({
+      introducedSkills: { recall: true, pronunciation: true },
+      ownPresentationCompleted: true,
+      hasBeenPresented: true,
+      work: { pronunciation: { reviewDueAt: PAST, eligibleAt: PAST, dueNow: true } },
+    });
+    const plan = selectTask(input({ candidates: [pendingSpeech], peers: [peer(pendingSpeech)] }));
+
+    expect(plan).toMatchObject({
+      itemRevisionId: pendingSpeech.itemRevisionId,
+      exerciseType: "speech",
+      reason: "due-review",
+      skillAtIssue: "pronunciation",
+    });
+  });
+
   it("bez mikrofonu pomija należną wymowę i wybiera inne należne rozpoznawanie", () => {
     const speech = candidate({
       itemRevisionId: "rev-speech", position: 0, target: "Monday", source: "poniedziałek", usedThisSession: 2, hasBeenPresented: true,

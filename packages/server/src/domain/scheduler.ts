@@ -628,7 +628,22 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
       if (skill === "recall" || skill === "spelling") continue;
       if (candidate.settledReviewSkills?.includes(skill)) continue;
       if (skill === "pronunciation" && !input.microphoneEnabled) continue;
+      const work = skill === "pronunciation" ? candidate.work?.pronunciation : undefined;
+      if (work?.eligibleAt !== null && work !== undefined) {
+        if (work.dueNow && work.eligibleAt !== null) dueSkills.push({ candidate, skill, due: work.eligibleAt });
+        continue;
+      }
       if (isDue(snapshot, input.now)) dueSkills.push({ candidate, skill, due: snapshot.nextReviewAt! });
+    }
+    const pronunciationWork = candidate.work?.pronunciation;
+    if (
+      candidate.progress.pronunciation === undefined &&
+      input.microphoneEnabled &&
+      !candidate.settledReviewSkills?.includes("pronunciation") &&
+      pronunciationWork?.dueNow &&
+      pronunciationWork.eligibleAt !== null
+    ) {
+      dueSkills.push({ candidate, skill: "pronunciation", due: pronunciationWork.eligibleAt });
     }
   }
   dueSkills.sort((a, b) =>
