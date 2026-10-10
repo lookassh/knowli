@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
+  computeTargetKey,
   completePresentation,
   createChild,
   createDraft,
@@ -400,6 +401,7 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
     expect(dto.state).toBe("completed");
     expect(dto.modality).toBe("audio");
     expect(dto.feedback?.kind).toBe("great");
+    expect(dto.feedback?.speech).toEqual({ recognition: "matched", pronunciation: "not_configured", referenceText: target });
     expect(dto.taskState).toBe("answered");
 
     const [attempt] = await attemptRows(task.taskId);
@@ -460,6 +462,7 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
     fakes.transcription = { status: "no_speech", text: null, confidence: null };
     const dto = await submitSpeechAttempt(services, { taskId: next.taskId, clientAttemptId: randomUUID() }, wavInput(1));
     expect(dto.feedback?.kind).toBe("not_assessed");
+    expect(dto.feedback?.speech).toEqual({ recognition: "no_speech", pronunciation: "not_applicable" });
     expect(dto.taskState).toBe("issued");
     expect(await progressOf(childId, recallVersion)).toMatchObject({ status: "practicing", streak: 1 });
 
@@ -469,9 +472,15 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
     const dto2 = await submitSpeechAttempt(timeoutServices, { taskId: next.taskId, clientAttemptId: randomUUID() }, wavInput(1));
     expect(dto2.state).toBe("completed");
     expect(dto2.feedback?.kind).toBe("not_assessed");
+    expect(dto2.feedback?.speech).toEqual({ recognition: "unavailable", pronunciation: "not_applicable" });
     expect(dto2.taskState).toBe("issued");
     const rows = await attemptRows(next.taskId);
     expect(rows.every((r) => r.state === "completed")).toBe(true);
+
+    fakes.transcription = { status: "ok", text: null, confidence: 0.99 };
+    const empty = await submitSpeechAttempt(services, { taskId: next.taskId, clientAttemptId: randomUUID() }, wavInput(1));
+    expect(empty.feedback?.speech).toEqual({ recognition: "no_speech", pronunciation: "not_applicable" });
+    expect(empty.feedback?.heardText).toBeUndefined();
   });
 
   it("niepewny STT nie tworzy mylonej pary ani błędu wiedzy", async () => {
@@ -483,6 +492,7 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
 
     const dto = await submitSpeechAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID() }, wavInput(1));
     expect(dto.feedback?.kind).toBe("not_assessed");
+    expect(dto.feedback?.speech).toEqual({ recognition: "uncertain", pronunciation: "not_applicable" });
     expect(dto.taskState).toBe("issued");
     const [attempt] = await attemptRows(task.taskId);
     const assessments = await assessmentsOf(attempt.id);
@@ -506,6 +516,7 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
 
     const dto = await submitSpeechAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID() }, wavInput(1));
     expect(dto.feedback?.kind).toBe("incorrect");
+    expect(dto.feedback?.speech).toEqual({ recognition: "different", pronunciation: "not_applicable", referenceText: "Thursday" });
     expect(dto.taskState).toBe("issued");
 
     const [attempt] = await attemptRows(task.taskId);
@@ -527,6 +538,17 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
 
     const dto = await submitSpeechAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID() }, wavInput(1));
     expect(dto.feedback?.kind).toBe("great");
+    expect(dto.feedback?.speech).toEqual({ recognition: "matched", pronunciation: "not_applicable", referenceText: "couch" });
+    const issued = await query<{ target_keys: string[] }>(
+      `select array_agg(x.target_key order by x.target_key) as target_keys
+         from learning_app.learning_events e join learning_app.event_exposures x on x.event_id = e.id
+        where e.task_id = $1 and e.kind = 'feedback_issued'`,
+      [task.taskId],
+    );
+    expect(issued[0]!.target_keys).toEqual([
+      computeTargetKey("couch", "en-GB"),
+      computeTargetKey("sofa", "en-GB"),
+    ].sort());
     const [attempt] = await attemptRows(task.taskId);
     const bySkill = Object.fromEntries((await assessmentsOf(attempt.id)).map((a) => [a.skill, a]));
     expect(bySkill.recall).toMatchObject({ outcome: "correct" });
@@ -570,6 +592,8 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
     const again = await submitSpeechAttempt(services, { taskId: task.taskId, clientAttemptId: firstKey }, wavInput(1));
     expect(again.attemptId).toBe(done.attemptId);
     expect(again.feedback?.kind).toBe("great");
+    expect(again.feedback).toEqual(done.feedback);
+    expect((await readAttempt(services, done.attemptId)).feedback).toEqual(done.feedback);
     expect(fakes.calls.stt).toBe(1);
   });
 
@@ -657,6 +681,7 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
       kind: "great",
       heardText: "Thursday",
       fragments: [{ text: "thursday", verdict: "good" }],
+      speech: { recognition: "matched", pronunciation: "good", referenceText: "Thursday" },
     });
     expect(dto.taskState).toBe("answered");
   });

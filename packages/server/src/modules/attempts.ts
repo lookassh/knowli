@@ -12,6 +12,7 @@ import type { Tx } from "../db/client";
 import {
   assessments,
   attempts,
+  deckVersions,
   eventExposures,
   itemRevisions,
   itemRevisionSkills,
@@ -21,7 +22,7 @@ import {
 } from "../db/schema";
 import { AppError } from "../errors";
 import { assessedSkills, evaluateChoice, evaluateNonAnswer, evaluateWritten } from "../domain/evaluate";
-import { chooseFeedback } from "../domain/feedback";
+import { chooseFeedback, feedbackExposureKeys } from "../domain/feedback";
 import { qualifyAttempt } from "../domain/independence";
 import { computeTargetKey } from "../domain/target-key";
 import { payloadToItem } from "./item-payload";
@@ -216,6 +217,10 @@ async function discloseFeedback(
   targetKey: string,
   now: Date,
 ): Promise<string> {
+  const locale = (await tx.select({ locale: deckVersions.targetLocale })
+    .from(itemRevisions)
+    .innerJoin(deckVersions, eq(deckVersions.id, itemRevisions.deckVersionId))
+    .where(eq(itemRevisions.id, task.itemRevisionId)))[0]?.locale;
   const prior = await tx
     .select({ id: learningEvents.id })
     .from(learningEvents)
@@ -230,7 +235,7 @@ async function discloseFeedback(
     occurredAt: now,
     // oceniona próba pokazuje rozwiązanie własnego zadania (własna poprawna
     // odpowiedź albo correctText); „Pomiń”/brak oceny niczego nie ujawnia
-    exposures: feedback.kind === "not_assessed" ? [] : [targetKey],
+    exposures: locale ? feedbackExposureKeys(feedback, targetKey, locale) : (feedback.kind === "not_assessed" ? [] : [targetKey]),
   });
   return stepId;
 }

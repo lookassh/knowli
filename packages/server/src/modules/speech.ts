@@ -23,6 +23,8 @@ import type {
   Skill,
   SkillGrade,
 } from "../domain/types";
+import type { SpeechFeedback } from "../domain/types";
+import { normalizeSpokenAnswerText } from "../domain/spoken-answer";
 import type {
   AudioInput,
   PronunciationResult,
@@ -72,7 +74,7 @@ export async function analyzeSpeech(
   );
 
   let pronunciation: SpeechEvidence["pronunciation"] = null;
-  if (transcription.status === "ok" && transcription.text !== null) {
+  if (transcription.status === "ok" && transcription.text !== null && normalizeSpokenAnswerText(transcription.text) !== "") {
     const match = matchSpokenAnswer(transcription.text, key);
     if (match.ci && match.matchedVariant === key.target) {
       const result = await deps.pronunciation.assess(audio, key.target, deadline).then(
@@ -92,12 +94,15 @@ export async function analyzeSpeech(
  * existing strict comparison.
  */
 function matchSpokenAnswer(answer: string, key: AnswerKey) {
-  const withoutBoundaryPunctuation = answer
-    .normalize("NFC")
-    .trim()
-    .replace(/^[\p{P}\p{S}]+|[\p{P}\p{S}]+$/gu, "")
-    .trim();
-  return matchWrittenAnswer(withoutBoundaryPunctuation, key);
+  return matchWrittenAnswer(normalizeSpokenAnswerText(answer), key);
+}
+
+function speechFeedbackFor(
+  recognition: SpeechFeedback["recognition"],
+  pronunciation: SpeechFeedback["pronunciation"],
+  referenceText?: string,
+): SpeechFeedback {
+  return { recognition, pronunciation, ...(referenceText ? { referenceText } : {}) };
 }
 
 /**
@@ -122,26 +127,43 @@ export function assessSpeechEvidence(
   const skills: Partial<Record<Skill, SkillGrade>> = {};
   const assessesContent = key.exerciseType !== "speech";
 
-  if (t.status !== "ok" || t.text === null) {
+  if (t.status !== "ok" || t.text === null || normalizeSpokenAnswerText(t.text) === "") {
     const reason: SkillGrade["reason"] = "technical";
     if (assessesContent) skills.recall = unevaluated(reason);
     skills.pronunciation = unevaluated(reason);
-    return { skills, attempt };
+    return {
+      skills,
+      attempt,
+      speechFeedback: speechFeedbackFor(t.status === "no_speech" || (t.status === "ok" && (t.text === null || normalizeSpokenAnswerText(t.text) === "")) ? "no_speech" : "unavailable", "not_applicable"),
+    };
   }
 
   const match = matchSpokenAnswer(t.text!, key);
   if (!match.ci && t.confidence !== null && t.confidence < MIN_STT_CONFIDENCE) {
     if (assessesContent) skills.recall = unevaluated("ambiguous");
     skills.pronunciation = unevaluated("ambiguous");
-    return { skills, attempt };
+    return { skills, attempt, speechFeedback: speechFeedbackFor("uncertain", "not_applicable") };
   }
   // Pokazujemy dziecku rozpoznany tekst wyłącznie wtedy, gdy nie został
   // odrzucony jako niepewny. To wynik STT, nie zapis dźwięku ani score.
-  const recognizedText = t.text.normalize("NFC").trim().slice(0, 200) || undefined;
+  const recognizedText = normalizeSpokenAnswerText(t.text).slice(0, 200) || undefined;
   const recognized = recognizedText ? { recognizedText } : {};
   // ćwiczenie wymowy: treść wypowiedzi decyduje o wykonaniu zadania —
   // ocena wymowy może pozostać nieoceniona (§12.6, §15.4)
   const speechAttempt = key.exerciseType === "speech" ? { contentMatched: match.ci } : undefined;
+  const recognition: SpeechFeedback["recognition"] = match.ci ? "matched" : "different";
+  const referenceText = match.matchedVariant ?? key.target;
+  const pronunciationStatus = (): SpeechFeedback["pronunciation"] => {
+    if (!match.ci || match.matchedVariant !== key.target) return "not_applicable";
+    const result = evidence.pronunciation;
+    if (!result || result.status !== "ok" || result.overallScore === null) return result?.status === "failed" ? "unavailable" : "unavailable";
+    const configured = ctx.policy.pronunciationBands[result.provider];
+    if (!configured) return "not_configured";
+    if (result.overallScore >= configured.correctMinScore) return "good";
+    if (result.overallScore >= configured.partialMinScore) return "practice";
+    return "unreliable";
+  };
+  const speechFeedback = speechFeedbackFor(recognition, pronunciationStatus(), referenceText);
   if (assessesContent) {
     skills.recall = {
       outcome: match.ci ? "correct" : "incorrect",
@@ -154,19 +176,19 @@ export function assessSpeechEvidence(
   if (!match.ci) {
     // wiarygodny tekst spoza zatwierdzonego zbioru: wynik wymowy oczekiwanego
     // słowa byłby nieadekwatny — w ogóle go nie oceniamy (Review Focus 3)
-    return { skills, attempt, ...recognized, ...(speechAttempt ? { speechAttempt } : {}) };
+    return { skills, attempt, ...recognized, speechFeedback, ...(speechAttempt ? { speechAttempt } : {}) };
   }
   if (!p || p.status !== "ok" || p.overallScore === null || p.expectedText !== match.matchedVariant) {
     // oceny nie ma albo dotyczy innego wariantu — pronunciation nieocenione
     skills.pronunciation = unevaluated(p?.status === "failed" ? "technical" : undefined);
-    return { skills, attempt, ...recognized, ...(speechAttempt ? { speechAttempt } : {}) };
+    return { skills, attempt, ...recognized, speechFeedback, ...(speechAttempt ? { speechAttempt } : {}) };
   }
 
   const details: PronunciationDetails = { provider: p.provider, score: p.overallScore };
   const bands = ctx.policy.pronunciationBands[p.provider];
   if (!bands) {
     skills.pronunciation = { ...unevaluated(undefined), details: { pronunciation: details } };
-    return { skills, attempt, ...recognized, ...(speechAttempt ? { speechAttempt } : {}) };
+    return { skills, attempt, ...recognized, speechFeedback, ...(speechAttempt ? { speechAttempt } : {}) };
   }
   const band: PronunciationDetails["band"] =
     p.overallScore >= bands.correctMinScore
@@ -198,6 +220,7 @@ export function assessSpeechEvidence(
     skills,
     attempt,
     ...recognized,
+    speechFeedback,
     ...(speechAttempt ? { speechAttempt } : {}),
     ...(speechFragments ? { speechFragments } : {}),
   };

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { chooseFeedback } from "./feedback";
+import { chooseFeedback, feedbackExposureKeys } from "./feedback";
+import { computeTargetKey } from "./target-key";
 import type { Grade, Skill, SkillGrade } from "./types";
 
 function sg(outcome: SkillGrade["outcome"], extra: Partial<SkillGrade> = {}): SkillGrade {
@@ -98,5 +99,30 @@ describe("chooseFeedback — feedback zgodny z rzeczywistym wynikiem (SPEC §16,
     const g = grade({});
     g.speechAttempt = { contentMatched: false };
     expect(chooseFeedback(g, "Thursday")).toEqual({ kind: "incorrect", correctText: "Thursday" });
+  });
+
+  it("shows public speech status separately from content outcome", () => {
+    const matched = chooseFeedback({
+      ...grade({ recall: sg("correct"), pronunciation: sg("unevaluated", { reason: "technical" }) }),
+      recognizedText: "couch",
+      speechFeedback: { recognition: "matched", pronunciation: "not_applicable", referenceText: "couch" },
+    }, "sofa");
+    expect(matched).toMatchObject({ heardText: "couch", speech: { recognition: "matched", pronunciation: "not_applicable", referenceText: "couch" } });
+  });
+
+  it("collects only disclosed canonical, reference and reliable heard text keys", () => {
+    expect(feedbackExposureKeys({
+      kind: "incorrect",
+      correctText: "sofa",
+      heardText: "couch!",
+      speech: { recognition: "different", pronunciation: "not_applicable", referenceText: "sofa" },
+    }, computeTargetKey("sofa", "en-GB"), "en-GB")).toEqual([
+      computeTargetKey("sofa", "en-GB"),
+      computeTargetKey("couch", "en-GB"),
+    ]);
+    expect(feedbackExposureKeys({
+      kind: "not_assessed",
+      speech: { recognition: "uncertain", pronunciation: "not_applicable" },
+    }, computeTargetKey("sofa", "en-GB"), "en-GB")).toEqual([]);
   });
 });

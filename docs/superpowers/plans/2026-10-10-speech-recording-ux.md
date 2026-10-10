@@ -10,7 +10,7 @@
 
 **Spec:** [2026-10-10-speech-recording-ux-design.md](../specs/2026-10-10-speech-recording-ux-design.md).
 
-**Status:** Plan do zatwierdzenia; nie rozpoczęto implementacji. Kierunek UX zaakceptowany w rozmowie. Projekt i plan zapisano razem na wyraźną prośbę właściciela o plan; nie oznacza to zatwierdzenia zapisanej specyfikacji, kontraktów ani rozpoczęcia wykonania. Domyślny wykonawca: bieżący agent inline, potem jeden dedykowany recenzent całości.
+**Status:** Właściciel zaakceptował specyfikację i plan; implementacja jest wykonywana inline na `feature/speech-recording-ux`. PR #36 z dokumentacją pozostaje otwarty. Po wykonaniu planu wymagany jest niezależny review całości.
 
 ## Global Constraints
 
@@ -33,10 +33,10 @@
 
 ## Setup i dziennik wykonania
 
-- [ ] Właściciel przegląda i zatwierdza zapisaną specyfikację oraz plan. Bez tego nie zaczynać zmian aplikacji. Zachować tryb inline, chyba że właściciel jawnie zgodzi się na delegację.
+- [x] Właściciel zaakceptował zapisaną specyfikację i plan („Akceptuje”). Tryb inline, bez delegowania.
 - [ ] Przeczytać aktualne `AGENTS.md`, dokumenty bazowe SPEC/architecture/schema/folder-structure/implementation-plan, specyfikację tego zadania i ten plan; sprawdzić Git oraz odpowiednie scripts. Baza przygotowania dokumentów `b7f5f09c2144b1a484e2b58cd713513d0a63da83` nie zastępuje bazy rzeczywistej implementacji.
 - [ ] Uruchomić `using-git-worktrees` i **`executing-plans` przed pierwszą zmianą implementacyjną**. Sprawdzić istniejącą izolację/artefakty; nie tworzyć kolejnego worktree bez potrzeby. Nie realizować planu na main.
-- [ ] Założyć `docs/superpowers/progress/2026-10-10-speech-recording-ux-implementation.md`; zapisać BASE_SHA całego feature'u, status, zatwierdzenia, kolejność zadań. Użyć scripts workspace/task-start/task-done/review-package wymaganych przez zainstalowany executing-plans; dostosowanie do Windows dokumentować z równoważnymi artefaktami.
+- [x] Założono `docs/superpowers/progress/2026-10-10-speech-recording-ux-implementation.md` z BASE_SHA i checklistą. Wersja skill nie zawiera task-start/task-done; dostosowanie przez `task-brief`, testy uruchamiane jawnie i dziennik opisano w progress.
 - [ ] Jeżeli brak zależności: `pnpm install --frozen-lockfile`. Baseline `pnpm test:unit` i `pnpm typecheck`; istniejące błędy odróżnić od nowych. Docker/PostgreSQL i `tests/test-run-config.ts` dla integracji/E2E; nie kierować testów na bazę rodzinną.
 
 ## Task 1: jawny wynik mowy i zgodność historii

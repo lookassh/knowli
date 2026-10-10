@@ -1,4 +1,6 @@
 import type { Grade } from "./types";
+import type { FeedbackDto } from "@learning/contracts";
+import { computeTargetKey } from "./target-key";
 
 /**
  * Wybór treści feedbacku dla dziecka na podstawie rzeczywistego wyniku
@@ -22,6 +24,7 @@ export interface FeedbackChoice {
   heardText?: string;
   /** Fragmenty wymowy (design 2026-10-09) — tylko tekst i werdykt, bez liczb. */
   fragments?: Grade["speechFragments"];
+  speech?: Grade["speechFeedback"];
 }
 
 function recognizedAnswer(grade: Grade): Pick<FeedbackChoice, "heardText"> | {} {
@@ -29,13 +32,14 @@ function recognizedAnswer(grade: Grade): Pick<FeedbackChoice, "heardText"> | {} 
 }
 
 export function chooseFeedback(grade: Grade, correctText: string): FeedbackChoice {
+  const speech = grade.speechFeedback ? { speech: grade.speechFeedback } : {};
   const assessed = Object.values(grade.skills).filter((skill) => skill.outcome !== "unevaluated");
   if (assessed.length === 0) {
     // ćwiczenie wymowy: usłyszane właściwe słowo bez oceny wymowy (SPEC §15.4)
     // albo rozbieżna treść — szczery komunikat zamiast udawanej oceny
-    if (grade.speechAttempt?.contentMatched) return { kind: "content_matched", ...recognizedAnswer(grade) };
-    if (grade.speechAttempt) return { kind: "incorrect", correctText, ...recognizedAnswer(grade) };
-    return { kind: "not_assessed" };
+    if (grade.speechAttempt?.contentMatched) return { kind: "content_matched", ...recognizedAnswer(grade), ...speech };
+    if (grade.speechAttempt) return { kind: "incorrect", correctText, ...recognizedAnswer(grade), ...speech };
+    return { kind: "not_assessed", ...speech };
   }
 
   const anyCorrect = assessed.some((skill) => skill.outcome === "correct");
@@ -44,6 +48,7 @@ export function chooseFeedback(grade: Grade, correctText: string): FeedbackChoic
     return {
       kind: "great",
       ...recognizedAnswer(grade),
+      ...speech,
       ...(grade.speechFragments ? { fragments: grade.speechFragments } : {}),
     };
 
@@ -54,10 +59,11 @@ export function chooseFeedback(grade: Grade, correctText: string): FeedbackChoic
       (skill) => skill.outcome === "incorrect" && skill.details?.spelling?.capitalizationOnlyDefect,
     );
     return capitalization
-      ? { kind: "capitalization_hint", correctText, ...recognizedAnswer(grade) }
+      ? { kind: "capitalization_hint", correctText, ...recognizedAnswer(grade), ...speech }
       : {
           kind: "almost",
           ...recognizedAnswer(grade),
+          ...speech,
           ...(grade.speechFragments ? { fragments: grade.speechFragments } : {}),
         };
   }
@@ -66,8 +72,21 @@ export function chooseFeedback(grade: Grade, correctText: string): FeedbackChoic
     return {
       kind: "almost",
       ...recognizedAnswer(grade),
+      ...speech,
       ...(grade.speechFragments ? { fragments: grade.speechFragments } : {}),
     };
   }
-  return { kind: "incorrect", correctText, ...recognizedAnswer(grade) };
+  return { kind: "incorrect", correctText, ...recognizedAnswer(grade), ...speech };
+}
+
+/** Klucze celów faktycznie pokazanych dziecku w odpowiedzi feedbacku. */
+export function feedbackExposureKeys(feedback: FeedbackDto, canonicalTargetKey: string, targetLocale: string): string[] {
+  const texts = [feedback.speech?.referenceText, feedback.heardText].filter((text): text is string => Boolean(text));
+  const keys = feedback.kind === "not_assessed" ? [] : [canonicalTargetKey];
+  for (const text of texts) keys.push(computeTargetKey(normalizeFeedbackText(text), targetLocale));
+  return [...new Set(keys)];
+}
+
+function normalizeFeedbackText(text: string): string {
+  return text.normalize("NFC").trim().replace(/^[\p{P}\p{S}]+|[\p{P}\p{S}]+$/gu, "").trim();
 }
