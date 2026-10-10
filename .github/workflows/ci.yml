@@ -1,0 +1,79 @@
+# CI — pełny cykl testów przed scaleniem do main.
+# Uruchamiany na każdy Pull Request oraz na push do main: produkcja deployuje
+# się automatycznie z main, więc scalony kod musi przejść ten sam cykl.
+# Testy są samowystarczalne: integration i e2e stawiają własne kontenery
+# postgres:17-alpine w global-setup, e2e działa na fake providerach (bez kluczy).
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+# Przestarzałe runy na zaktualizowanym PR anulujemy; runów dla main nie przerywamy.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+# Telemetria Next.js off wszędzie, także dla `next dev` stawianego przez e2e.
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  tests:
+    name: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Unit tests
+        run: pnpm test:unit
+      - name: Integration tests
+        run: pnpm test:integration
+      - name: Build web
+        env:
+          # Build nie łączy się z bazą (leniwa inicjalizacja), ale walidacja
+          # środowiska wymaga obecnej wartości.
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/knowli
+        run: pnpm build
+
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Playwright chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: E2E tests
+        run: pnpm test:e2e
+      - name: Upload test artifacts unless green
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-test-results
+          path: test-results/
+          retention-days: 7
+          if-no-files-found: ignore

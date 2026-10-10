@@ -268,6 +268,9 @@ test("tab and logout are guarded; busy save drops the leave request", async ({ p
   await expect(page.getByTestId("editor-title")).toBeVisible();
   releasePatch?.();
   expect((await saved).status()).toBe(200);
+  // busy schodzi dopiero po odświeżeniu po zapisie; logout w tym oknie jest
+  // porzucany bez dialogu, więc czekamy na odblokowanie kontrolek edytora
+  await expect(page.getByTestId("add-item")).toBeEnabled();
   await page.getByTestId("parent-logout").click();
   await expect(page.getByTestId("auth-secret")).toBeVisible();
 });
