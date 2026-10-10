@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DaySchema, InstantSchema, UuidSchema } from "./common";
+import { DaySchema, InstantSchema, UuidSchema, SkillStatusSchema } from "./common";
 import { AttemptModalitySchema } from "./kid";
 
 /**
@@ -19,13 +19,7 @@ export type ReportSkill = (typeof REPORT_SKILLS)[number];
  * sprawdzenia po zmianie znaczenia materiału (SPEC §90) — wtedy element
  * ma `meaningChanged`.
  */
-export const ItemSkillStatusSchema = z.enum([
-  "mastered",
-  "needs_confirmation",
-  "needs_reconfirmation",
-  "practicing",
-  "not_assessed",
-]);
+export const ItemSkillStatusSchema = SkillStatusSchema;
 export type ItemSkillStatus = z.infer<typeof ItemSkillStatusSchema>;
 
 /** Podsumowanie jednej umiejętności: liczba elementów w każdym statusie. */

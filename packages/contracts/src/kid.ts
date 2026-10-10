@@ -104,6 +104,7 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
 export type TaskPrompt = z.infer<typeof TaskPromptSchema>;
 
 export const SessionInputSchema = z.object({
+  mode: z.enum(["training", "mock_test"]).optional(),
   childId: UuidSchema,
   deckId: UuidSchema,
   microphoneEnabled: z.boolean(),
@@ -111,6 +112,7 @@ export const SessionInputSchema = z.object({
 export type SessionInput = z.infer<typeof SessionInputSchema>;
 
 export const SessionDtoSchema = z.object({
+  mode: z.enum(["training", "mock_test"]),
   sessionId: UuidSchema,
   childId: UuidSchema,
   deckId: UuidSchema,

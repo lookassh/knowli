@@ -110,7 +110,7 @@ export async function handleParentApi(
   if (first === "assignments" && second !== undefined && third !== undefined && fourth === undefined) {
     if (request.method === "PUT") {
       const cmd = AssignmentPutSchema.parse(await readJson(request));
-      await upsertAssignment(services, second, third, cmd.testDate);
+      await upsertAssignment(services, second, third, cmd.testDate, cmd);
       return new Response(null, { status: 204 });
     }
   }

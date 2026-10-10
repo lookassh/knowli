@@ -25,6 +25,7 @@ const PROFILE_B: KidProfileDto = { childId: "22222222-2222-2222-2222-22222222222
 
 function sessionDto(childId: string, sessionId: string, microphoneEnabled: boolean): SessionDto {
   return {
+    mode: "training",
     sessionId,
     childId,
     deckId: "33333333-3333-3333-3333-333333333333",

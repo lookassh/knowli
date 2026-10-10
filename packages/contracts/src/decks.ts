@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { UuidSchema } from "./common";
 import { GenerationDtoSchema } from "./generation";
+import { TestGoalsSchema, MockTestTaskCountSchema } from "./mock-tests";
 
 /**
  * Profil dziecka. Input pochodzi od rodzica; DTO dodaje identyfikator.
@@ -284,6 +285,8 @@ export const DeckSummaryDtoSchema = z.object({
 export type DeckSummaryDto = z.infer<typeof DeckSummaryDtoSchema>;
 
 export const AssignmentDtoSchema = z.object({
+  testGoals: TestGoalsSchema.nullable(),
+  mockTestTaskCount: MockTestTaskCountSchema,
   childId: UuidSchema,
   displayName: z.string(),
   testDate: z.string().nullable(),
@@ -319,6 +322,8 @@ export type CreateEmptyDeckResult = z.infer<typeof CreateEmptyDeckResultSchema>;
 
 /** PUT /parent/assignments/:childId/:deckId — przypisanie i termin sprawdzianu. */
 export const AssignmentPutSchema = z.object({
+  testGoals: TestGoalsSchema.nullable().optional(),
+  mockTestTaskCount: MockTestTaskCountSchema.optional(),
   testDate: z
     .string()
     .nullable()

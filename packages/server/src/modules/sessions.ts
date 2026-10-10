@@ -132,6 +132,7 @@ async function sessionDto(tx: Tx, row: typeof learningSessions.$inferSelect, res
   const counts = await taskCounts(tx, row.id);
   return {
     sessionId: row.id,
+    mode: row.mode,
     childId: row.childId,
     deckId: row.deckId,
     deckVersionId: row.deckVersionId,

@@ -1,4 +1,6 @@
 import { sql } from "drizzle-orm";
+import type { TestGoal } from "@learning/contracts";
+import type { MockTestPlanSnapshot } from "../domain/mock-test-types";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   bigint,
@@ -256,11 +258,15 @@ export const assignments = app.table(
       .notNull()
       .references((): AnyPgColumn => decks.id),
     testDate: date("test_date"),
+    testGoals: text("test_goals").array().$type<TestGoal[]>(),
+    mockTestTaskCount: integer("mock_test_task_count").notNull().default(10),
     active: boolean("active").notNull().default(true),
     createdAt: timestamps("created_at").notNull().defaultNow(),
   },
   (t) => [
     unique("assignments_child_deck_unique").on(t.childId, t.deckId),
+    check("assignments_mock_test_count", sql`${t.mockTestTaskCount} between 1 and 100`),
+    check("assignments_test_goals", sql`${t.testGoals} is null or (cardinality(${t.testGoals}) between 1 and 3 and ${t.testGoals} <@ array['recall','spelling','listening']::text[] and cardinality(array_positions(${t.testGoals}, 'recall')) <= 1 and cardinality(array_positions(${t.testGoals}, 'spelling')) <= 1 and cardinality(array_positions(${t.testGoals}, 'listening')) <= 1 and array_position(${t.testGoals}, null) is null)`),
     unique("assignments_id_child_deck_unique").on(t.id, t.childId, t.deckId),
   ],
 );
@@ -375,6 +381,8 @@ export const learningSessions = app.table(
       .notNull()
       .references((): AnyPgColumn => learningPolicies.id),
     microphoneEnabled: boolean("microphone_enabled").notNull(),
+    mode: text("mode").$type<"training" | "mock_test">().notNull().default("training"),
+    mockTestPlan: jsonb("mock_test_plan").$type<MockTestPlanSnapshot>(),
     // completed: jawny koniec z podsumowaniem; ended: zamknięcie systemowe
     state: text("state").notNull(),
     taskBudget: integer("task_budget").notNull().default(12),
@@ -385,6 +393,7 @@ export const learningSessions = app.table(
   },
   (t) => [
     check("learning_sessions_state_allowed", sql`${t.state} in ('active', 'completed', 'ended')`),
+    check("learning_sessions_mode_plan", sql`(${t.mode} = 'training' and ${t.mockTestPlan} is null) or (${t.mode} = 'mock_test' and ${t.mockTestPlan} is not null)`),
     check("learning_sessions_budget_positive", sql`${t.taskBudget} > 0`),
     check("learning_sessions_active_iff_not_ended", sql`(${t.state} = 'active') = (${t.endedAt} is null)`),
     foreignKey({
