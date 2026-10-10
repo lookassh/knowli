@@ -185,6 +185,10 @@ async function currentTaskId(page: Page): Promise<string> {
   return id!;
 }
 
+function currentFeedback(page: Page) {
+  return page.getByTestId("kid-feedback").or(page.getByTestId("kid-speech-feedback"));
+}
+
 async function startFakeRecording(page: Page): Promise<void> {
   const mode = page.getByTestId("kid-record-mode");
   if (await mode.getAttribute("aria-pressed") !== "true") await mode.click();
@@ -244,7 +248,7 @@ async function driveUntil(page: Page, stop: () => Promise<boolean>): Promise<voi
         .filter({ hasText: new RegExp(`^\\s*${escapeRegex(correct)}\\s*$`) })
         .first()
         .click();
-      await expect(page.getByTestId("kid-feedback")).toBeVisible();
+      await expect(currentFeedback(page)).toBeVisible();
       await page.getByTestId("kid-next").click();
       continue;
     }
@@ -254,14 +258,19 @@ async function driveUntil(page: Page, stop: () => Promise<boolean>): Promise<voi
       await expect(page.getByTestId("kid-recording")).toBeVisible();
       await stopFakeRecording(page);
       await expect(page.getByTestId("kid-fragment").first()).toHaveClass(/kid-fragment--good/);
-      await expect(page.getByTestId("kid-feedback")).toBeVisible();
-      await page.getByTestId("kid-next").click();
+      await expect(currentFeedback(page)).toBeVisible();
+      if (await page.getByTestId("kid-feedback-skip").count()) {
+        await page.getByTestId("kid-feedback-skip").click();
+        await page.getByTestId("kid-next").click();
+      } else {
+        await page.getByTestId("kid-next").click();
+      }
       continue;
     }
     if ((await page.getByTestId("kid-input").count()) === 0 && (await page.getByTestId("kid-skip").count()) > 0) {
       // wymowa bez mikrofonu — pominięcie bez oceny
       await page.getByTestId("kid-skip").click();
-      await expect(page.getByTestId("kid-feedback")).toBeVisible();
+      await expect(currentFeedback(page)).toBeVisible();
       await page.getByTestId("kid-next").click();
       continue;
     }
@@ -375,8 +384,13 @@ test("jeden profil pomija wybór i prowadzi sesję do obiecanego końca", async 
       // wymowa bez działającego mikrofonu — świadome pominięcie bez oceny
       await page.getByTestId("kid-skip").click();
     }
-    await expect(page.getByTestId("kid-feedback")).toBeVisible();
-    await page.getByTestId("kid-next").click();
+    await expect(currentFeedback(page)).toBeVisible();
+    if (await page.getByTestId("kid-feedback-skip").count()) {
+      await page.getByTestId("kid-feedback-skip").click();
+      await page.getByTestId("kid-next").click();
+    } else {
+      await page.getByTestId("kid-next").click();
+    }
   }
   await expect(page.getByTestId("kid-summary")).toBeVisible();
   expect(sawRemaining).toBe(true);

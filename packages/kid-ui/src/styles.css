@@ -561,6 +561,148 @@ button {
   background: #fdf6ec;
 }
 
+.kid-speech-feedback {
+  box-sizing: border-box;
+  width: 100%;
+  max-height: min(62dvh, 560px);
+  min-height: 0;
+  margin: 0;
+  align-items: stretch;
+  overflow: hidden;
+  gap: 12px;
+}
+
+.kid-speech-feedback--correct {
+  border-color: #bfe3cd;
+  background: #f2fbf5;
+}
+
+.kid-speech-feedback--practice {
+  border-color: #f0dcbc;
+  background: #fdf6ec;
+}
+
+.kid-speech-feedback--neutral {
+  border-color: #e4e6f4;
+  background: #fff;
+}
+
+.kid-speech-feedback__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  width: 100%;
+  text-align: center;
+}
+
+.kid-speech-feedback__heard {
+  margin: 0;
+  font-size: clamp(1.35rem, 6vw, 2rem);
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.kid-speech-feedback__heard:focus {
+  outline: 3px solid #5157a5;
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.kid-speech-feedback__message,
+.kid-speech-feedback__pronunciation,
+.kid-speech-feedback__local {
+  margin: 8px 0 0;
+  font-size: 1.05rem;
+}
+
+.kid-speech-feedback__reference {
+  margin-top: 14px;
+  border-top: 1px solid #e4e6f4;
+  padding-top: 10px;
+}
+
+.kid-speech-feedback__reference h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #4a4a66;
+}
+
+.kid-speech-feedback__word {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 8px 0 0;
+  font-size: clamp(1.7rem, 9vw, 2.3rem);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.kid-speech-feedback__word .kid-fragment {
+  font-size: inherit;
+  letter-spacing: normal;
+  font-family: inherit;
+  padding: 0.05em 0.12em;
+  border-radius: 0.25em;
+  text-decoration-thickness: 3px;
+  text-underline-offset: 0.12em;
+}
+
+.kid-speech-feedback__word .kid-fragment--almost {
+  text-decoration-line: underline;
+  text-decoration-color: #8a6116;
+}
+
+.kid-speech-feedback__word .kid-fragment--unknown {
+  background: #f0f1f5;
+  color: #505267;
+}
+
+.kid-speech-feedback__legend {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 12px;
+  color: #4a4a66;
+  font-size: 0.9rem;
+}
+
+.kid-speech-feedback__legend--good {
+  color: #1c5c2e;
+}
+
+.kid-speech-feedback__legend--almost {
+  color: #8a6116;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+}
+
+.kid-speech-feedback__legend--unknown {
+  color: #505267;
+}
+
+.kid-speech-feedback__actions {
+  flex: none;
+  display: grid;
+  gap: 8px;
+  width: 100%;
+}
+
+.kid-speech-feedback__actions button {
+  width: 100%;
+  min-height: 52px;
+}
+
+.kid-speech-feedback__error {
+  margin: 8px 0 0;
+  color: #8b2b22;
+  font-weight: 700;
+}
+
 .kid-feedback-text {
   font-size: 1.3rem;
   font-weight: 700;

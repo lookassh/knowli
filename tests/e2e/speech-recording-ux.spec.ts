@@ -194,3 +194,83 @@ test("microphone denial leaves the written learning path available", async ({ pa
   await page.getByTestId("kid-input").fill("Monday");
   await expect(page.getByTestId("kid-submit")).toBeEnabled();
 });
+
+test("speech feedback stays inline, explains fragments and exposes only the available actions", async ({ page }) => {
+  await createLearningTask(page, `Wynik ${randomUUID().slice(0, 6)}`);
+  const taskId = await page.locator("[data-task-id]").getAttribute("data-task-id");
+  expect(taskId).toBeTruthy();
+  const attemptId = randomUUID();
+  let submitCount = 0;
+  await page.evaluate(() => {
+    class FakeAudio {
+      onended: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      constructor(readonly src: string) {}
+      play(): Promise<void> { setTimeout(() => this.onended?.(), 0); return Promise.resolve(); }
+      pause(): void {}
+    }
+    (window as unknown as { Audio: typeof FakeAudio }).Audio = FakeAudio;
+  });
+  await page.route("**/api/v1/kid/tasks/*/attempts", async (route) => {
+    submitCount += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        attemptId,
+        taskId,
+        state: "completed",
+        modality: "audio",
+        feedback: {
+          kind: "almost",
+          heardText: "Thursday ".repeat(10).trim(),
+          fragments: [{ text: "Thurs", verdict: "almost" }, { text: "day", verdict: "unknown" }],
+          speech: { recognition: "matched", pronunciation: "practice", referenceText: "Thursday" },
+          referenceAudioAvailable: true,
+        },
+        taskState: submitCount === 1 ? "issued" : "answered",
+        stepId: "speech-feedback-e2e",
+        receivedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+      }),
+    });
+  });
+  let authorizationCount = 0;
+  await page.route("**/api/v1/kid/attempts/*/feedback-audio", async (route) => {
+    authorizationCount += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ attemptId, taskId, stepId: "feedback-audio-e2e", audioAssetId: randomUUID() }),
+    });
+  });
+  await page.route("**/api/v1/media/*", (route) => route.fulfill({ status: 200, contentType: "audio/mpeg", body: Buffer.from([1, 2, 3]) }));
+
+  const input = page.getByTestId("kid-input");
+  await input.fill("Thursday");
+  await page.getByTestId("kid-submit").click();
+  const card = page.getByTestId("kid-speech-feedback");
+  await expect(card).toBeVisible();
+  await expect(card).toContainText("Usłyszałem:");
+  await expect(page.getByTestId("kid-reference-text")).toContainText("Thursday");
+  await expect(page.getByRole("list", { name: "Legenda wymowy" })).toContainText("poćwicz go");
+  await expect(page.locator("dialog")).toHaveCount(0);
+  expect(await page.evaluate(() => document.activeElement?.id)).toBe("kid-speech-feedback-title");
+
+  await page.getByTestId("kid-play-reference").click();
+  await expect.poll(() => authorizationCount).toBe(1);
+  await page.getByTestId("kid-feedback-retry").click();
+  await expect(card).toHaveCount(0);
+  await expect(page.getByTestId("kid-record")).toHaveAttribute("data-phase", "idle");
+  await input.fill("Thursday");
+  await page.getByTestId("kid-submit").click();
+  await expect(card).toBeVisible();
+  await expect(page.getByTestId("kid-feedback-retry")).toHaveCount(0);
+  await expect(page.getByTestId("kid-feedback-skip")).toHaveCount(0);
+  await expect(page.getByTestId("kid-next")).toBeVisible();
+  for (const width of [390, 768]) {
+    await page.setViewportSize({ width, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expect(page.getByTestId("kid-next")).toBeInViewport();
+  }
+});

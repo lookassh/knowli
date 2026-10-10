@@ -40,7 +40,7 @@ export interface LearningScreen {
    * `chosenOptionId` różni próbę wyboru od pozostałych i zasila
    * podświetlenie opcji w siatce odpowiedzi (design 2026-10-09).
    */
-  feedback: { dto: FeedbackDto | null; retry: boolean; attemptId: string; chosenOptionId?: string; audioError?: boolean } | null;
+  feedback: { dto: FeedbackDto | null; retry: boolean; attemptId: string; modality: AttemptDto["modality"]; chosenOptionId?: string; audioError?: boolean } | null;
   /** Ujawniona podpowiedź czekająca na potwierdzenie dziecka. */
   reveal: { target: string } | null;
   offline: boolean;
@@ -564,6 +564,7 @@ export class LearningSessionController {
         dto: attempt.feedback,
         retry: attempt.taskState === "issued",
         attemptId: attempt.attemptId,
+        modality: attempt.modality,
         ...(chosenOptionId !== null ? { chosenOptionId } : {}),
       },
     };

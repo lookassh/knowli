@@ -5,6 +5,7 @@ import type { ExerciseHandlers } from "../exercises/types";
 import { optionOutcomes, type OptionOutcome } from "../exercises/option-outcome";
 import { format } from "../format";
 import { FeedbackDialog } from "./FeedbackDialog";
+import { SpeechFeedbackCard } from "./SpeechFeedbackCard";
 import type { LearningSessionController, LearningScreen as LearningScreenState } from "../session/session-controller";
 
 /** Brak podświetleń poza feedbackem próby wyboru. */
@@ -194,7 +195,22 @@ export function LearnScreen({
         </section>
       )}
 
-      {feedback !== null && !offline && screen.error === null && feedback.chosenOptionId === undefined && (
+      {feedback !== null && feedback.modality === "audio" && !offline && screen.error === null && task !== null && (
+        <SpeechFeedbackCard
+          dto={feedback.dto}
+          retry={feedback.retry}
+          busy={busy || screen.processing}
+          audioAvailable={feedback.dto?.referenceAudioAvailable === true}
+          audioError={feedback.audioError === true}
+          exerciseType={task.exerciseType}
+          onPlay={() => void controller.playFeedbackAudio()}
+          onRetry={() => void controller.continueLearning()}
+          onSkip={() => void controller.skip()}
+          onNext={() => void controller.continueLearning()}
+        />
+      )}
+
+      {feedback !== null && feedback.modality !== "audio" && !offline && screen.error === null && feedback.chosenOptionId === undefined && (
         <FeedbackDialog
           className={["kid-card", "kid-feedback", feedbackTone(feedback.dto)]
             .filter(Boolean)
