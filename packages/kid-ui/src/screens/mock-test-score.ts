@@ -32,3 +32,19 @@ export function computeMockTestScore(solutions: MockTestSummaryDto["solutions"])
     stars: total === 0 ? 0 : Math.min(6, Math.floor((correct * 6) / total)),
   };
 }
+
+/** Decyzja o drugiej linii wiersza słowa (pastylki): jednolity wynik oceniony
+ * mówi o sobie kolorem i ikoną wiersza; szczegół pokazujemy tylko przy wynikach
+ * mieszanych albo gdy słowa nie sprawdzono. */
+export type MockTestSolutionDetail =
+  | { type: "none" }
+  | { type: "label"; label: "skipped" | "notTested" }
+  | { type: "perSkill" };
+
+export function mockTestSolutionDetail(results: Results): MockTestSolutionDetail {
+  if (results.length === 0) return { type: "none" };
+  const first = results[0]!.outcome;
+  if (!results.every(r => r.outcome === first)) return { type: "perSkill" };
+  if (first === "correct" || first === "incorrect") return { type: "none" };
+  return { type: "label", label: first === "skipped" ? "skipped" : "notTested" };
+}

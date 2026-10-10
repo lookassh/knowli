@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { MockTestSummaryDto } from "@learning/contracts";
-import { computeMockTestScore, mockTestWordStatus } from "./mock-test-score";
+import { computeMockTestScore, mockTestSolutionDetail, mockTestWordStatus } from "./mock-test-score";
 
 type Solution = MockTestSummaryDto["solutions"][number];
 type Results = Solution["results"];
@@ -34,6 +34,29 @@ describe("mockTestWordStatus", () => {
 
   test("pusta lista wyników to notAssessed", () => {
     expect(mockTestWordStatus([])).toBe("notAssessed");
+  });
+});
+
+describe("mockTestSolutionDetail", () => {
+  test("pusta lista wyników nie pokazuje żadnej linii szczegółów", () => {
+    expect(mockTestSolutionDetail([])).toEqual({ type: "none" });
+  });
+
+  test("jednolite trafienia i pomyłki mówią o sobie kolorem i ikoną — bez pastylek", () => {
+    expect(mockTestSolutionDetail(results({ skill: "recall", outcome: "correct" }, { skill: "spelling", outcome: "correct" }))).toEqual({ type: "none" });
+    expect(mockTestSolutionDetail(results({ skill: "recall", outcome: "incorrect" }))).toEqual({ type: "none" });
+  });
+
+  test("wyniki mieszane pokazują pastylki per umiejętność", () => {
+    expect(mockTestSolutionDetail(results({ skill: "recall", outcome: "correct" }, { skill: "spelling", outcome: "incorrect" }))).toEqual({ type: "perSkill" });
+    expect(mockTestSolutionDetail(results({ skill: "recall", outcome: "correct" }, { skill: "spelling", outcome: "skipped" }))).toEqual({ type: "perSkill" });
+    expect(mockTestSolutionDetail(results({ skill: "recall", outcome: "skipped" }, { skill: "spelling", outcome: "not_tested" }))).toEqual({ type: "perSkill" });
+  });
+
+  test("jednolicie niesprawdzone słowo dostaje jedną etykietę: Pominięte albo Nie sprawdzono", () => {
+    expect(mockTestSolutionDetail(results({ skill: "recall", outcome: "skipped" }, { skill: "spelling", outcome: "skipped" }))).toEqual({ type: "label", label: "skipped" });
+    expect(mockTestSolutionDetail(results({ skill: "recall", outcome: "not_tested" }))).toEqual({ type: "label", label: "notTested" });
+    expect(mockTestSolutionDetail(results({ skill: "recall", outcome: "unassessed" }, { skill: "spelling", outcome: "unassessed" }))).toEqual({ type: "label", label: "notTested" });
   });
 });
 

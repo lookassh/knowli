@@ -1,7 +1,7 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { messages, type MockTestSummaryDto, type SessionDto } from "@learning/contracts";
 import { format } from "../format";
-import { computeMockTestScore, mockTestWordStatus, type MockTestWordStatus } from "./mock-test-score";
+import { computeMockTestScore, mockTestSolutionDetail, mockTestWordStatus, type MockTestWordStatus } from "./mock-test-score";
 
 type Solution = MockTestSummaryDto["solutions"][number];
 
@@ -18,18 +18,6 @@ function resultBadgeClass(result: Solution["results"][number]): string {
   if (result.outcome === "correct") return "kid-mock-badge kid-mock-badge--correct";
   if (result.outcome === "incorrect") return "kid-mock-badge kid-mock-badge--incorrect";
   return "kid-mock-badge";
-}
-
-/** Szczegóły pod parą słów: tylko gdy wynik nie jest jednolity albo słowo
- * nie było sprawdzane — jednolite trafienie/pomyłka mówi o sobie kolorem i ikoną. */
-function solutionDetail(solution: Solution): ReactNode {
-  const outcomes = solution.results.map(r => r.outcome);
-  const uniform = outcomes.length > 0 && outcomes.every(o => o === outcomes[0]);
-  if (uniform) {
-    if (mockTestWordStatus(solution.results) !== "notAssessed") return null;
-    return <span className="kid-mock-badge">{outcomes[0] === "skipped" ? messages.kid.mockTestSkipped : messages.kid.mockTestNotTested}</span>;
-  }
-  return solution.results.map(result => <span className={resultBadgeClass(result)} key={result.skill}>{resultBadgeLabel(result)}</span>);
 }
 
 export function MockTestReadyScreen({ session, onStart, onCancel }: { session: SessionDto; onStart: () => Promise<void>; onCancel: () => Promise<void> }) {
@@ -61,11 +49,17 @@ export function MockTestSummaryScreen({ summary, onPlay, onPractice, onSwitchPro
     <h2>{messages.kid.mockTestReview}</h2>
     <ul className="kid-mock-list">{summary.solutions.map(solution => {
       const status = mockTestWordStatus(solution.results);
+      const detail = mockTestSolutionDetail(solution.results);
       return <li className={`kid-mock-row kid-mock-row--${status}`} key={solution.taskId} data-testid="kid-mock-solution" data-status={status}>
         <span className="kid-mock-row__icon" aria-hidden="true">{SOLUTION_ICONS[status]}</span>
         <div className="kid-mock-row__body">
           <p className="kid-mock-row__words">{solution.source} → <strong>{solution.target}</strong></p>
-          {solutionDetail(solution) && <p className="kid-mock-row__detail">{solutionDetail(solution)}</p>}
+          {detail.type === "label" && <p className="kid-mock-row__detail">
+            <span className="kid-mock-badge">{detail.label === "skipped" ? messages.kid.mockTestSkipped : messages.kid.mockTestNotTested}</span>
+          </p>}
+          {detail.type === "perSkill" && <p className="kid-mock-row__detail">
+            {solution.results.map(result => <span className={resultBadgeClass(result)} key={result.skill}>{resultBadgeLabel(result)}</span>)}
+          </p>}
         </div>
         {solution.audioAssetId && <button type="button" className="kid-mock-row__audio" aria-label={messages.kid.listen} onClick={() => run(onPlay(solution.taskId))}>🔊</button>}
       </li>;
