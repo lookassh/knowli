@@ -293,6 +293,8 @@ Przykład: „poniedziałek” → `M _ n d _ y`.
 
 To ćwiczenie wspomagające pisownię. Widoczne litery są podpowiedzią, dlatego sukces nie jest równoważny samodzielnemu zapisaniu całego słowa.
 
+Uzupełnienie 2026-10-10: ćwiczenie jest łatwiejszą poprawką po trudnościach z pisownią, w istniejącym cyklu wsparcia. Dziecko wpisuje po jednej brakującej literze bezpośrednio w luki, zamiast przepisywać całe słowo. Widoczne litery, spacje i interpunkcja pozostają stałe. Wpisanie litery przenosi fokus do następnej luki; każdą lukę można poprawić. „Sprawdź” jest dostępne po uzupełnieniu wszystkich luk. Błędna próba i ponowne podejście korzystają ze zwykłego feedbacku; „Nie pamiętam” i „Pomiń” pozostają dostępne.
+
 ### 12.8. Samodzielna pisownia
 
 Dziecko widzi polskie znaczenie i wpisuje całe angielskie słowo. Angielski wzorzec pozostaje ukryty do odpowiedzi lub świadomego użycia podpowiedzi.

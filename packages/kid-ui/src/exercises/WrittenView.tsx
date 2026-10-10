@@ -3,8 +3,8 @@ import { messages } from "@learning/contracts";
 import type { ExerciseProps } from "./types";
 
 /**
- * Samodzielne przypomnienie, uzupełnianie liter i samodzielna pisownia
- * (SPEC §12.5, §12.7, §12.8). Pola pisowni wyłączają autokorektę, sprawdzanie
+ * Samodzielne przypomnienie i samodzielna pisownia
+ * (SPEC §12.5, §12.8). Pola pisowni wyłączają autokorektę, sprawdzanie
  * pisowni, autouzupełnianie i automatyczną kapitalizację w zakresie dostępnym
  * na urządzeniu. Odpowiedź ustna jest dostępna wyłącznie dla samodzielnego
  * Recall; wsparcie pisowni pozostaje zadaniem tekstowym. Dostępne są też
@@ -13,7 +13,7 @@ import type { ExerciseProps } from "./types";
 export function WrittenView({ task, busy, recording, micAvailable, handlers }: ExerciseProps) {
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
-  if (task.prompt.kind !== "recall" && task.prompt.kind !== "spelling" && task.prompt.kind !== "letter_completion") {
+  if (task.prompt.kind !== "recall" && task.prompt.kind !== "spelling") {
     return null;
   }
   const disabled = busy || recording;
@@ -22,12 +22,6 @@ export function WrittenView({ task, busy, recording, micAvailable, handlers }: E
       <p className="kid-source" data-testid="kid-source">
         {task.prompt.prompt}
       </p>
-      {task.prompt.kind === "letter_completion" && (
-        <>
-          <p className="kid-fragment" data-testid="kid-fragment">{task.prompt.fragment}</p>
-          <p data-testid="kid-letter-instruction">{messages.kid.typeWholeWordWithLetters}</p>
-        </>
-      )}
       <form
         className="kid-written"
         onSubmit={(event) => {
@@ -42,7 +36,7 @@ export function WrittenView({ task, busy, recording, micAvailable, handlers }: E
           data-testid="kid-input"
           value={text}
           onChange={(event) => setText(event.target.value)}
-          placeholder={task.prompt.kind === "letter_completion" ? messages.kid.fillLetters : messages.kid.typeWord}
+          placeholder={messages.kid.typeWord}
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
