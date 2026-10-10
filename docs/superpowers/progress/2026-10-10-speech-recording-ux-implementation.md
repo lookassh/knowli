@@ -12,10 +12,10 @@ Data: 2026-10-10. Worktree: `C:\Users\looka\.codex\worktrees\speech-recording-ux
 - [x] Worktree/gałąź izolowana
 - [x] Baseline testów i typecheck: `pnpm test:unit` 46 files / 394 tests PASS; `pnpm typecheck` PASS (zainstalowane zależności w izolowanym worktree).
 - [x] Konflikty interfejsów preflight — sprawdzone z planem/specyfikacją; tabelka poniżej.
-- [ ] Zadanie 7 commit po review
+- [x] Zadanie 7 commit po review (`b679cdb`)
 - [x] Zadania 1–6 RED→GREEN i commity
 - [x] Niezależny review całości
-- [ ] Końcowa weryfikacja, PR do main (właściciel scala przez squash)
+- [x] Końcowa weryfikacja i PR do main: [#37](https://github.com/lookassh/knowli/pull/37), właściciel scala przez squash.
 
 ## Dostosowanie narzędzi executing-plans
 
@@ -43,7 +43,7 @@ Ruling: brak konfliktów kontraktów na podstawie planu/specyfikacji; wyżej wym
 - Task 4: complete.
 - Task 5: complete.
 - Task 6: complete.
-- Task 7: implementation/review complete; commit and PR pending.
+- Task 7: complete; PR #37 open for owner review/merge.
 
 
 ### Task 1 — jawny wynik mowy i zgodność historii: complete
@@ -114,4 +114,4 @@ Ruling: brak konfliktów kontraktów na podstawie planu/specyfikacji; wyżej wym
 - Runda 2 znalazła szósty Important: `endNow()` nie zwalniał mikrofonu przed await na zamknięcie sesji. Dodano teardown przed pierwszym await oraz testy dla aktywnego recording i opóźnionego starting; oba sprawdzają anulowanie, spóźniony limit i brak wysłanej próby. Test starting potwierdził RED po usunięciu teardown (`cancelled` 0 zamiast 1), potem GREEN. Niezależny finalny review potwierdził na BrowserRecorder+kontrolerze zwolnienie tracka przed odpowiedzią serwera dla obu faz; Critical 0, otwarte Important 0, Minor 4, gotowość do PR. Review package SHA256 `0905544982CE3882595F25D6835CDBFB888B6520F99D6F2B3EE504EE49FE34C5` odpowiada aktualnemu diffowi HEAD; lockfile czysty.
 - Po poprawce kończącej sesję: `pnpm test:unit` 50 plików/443 testy PASS, `pnpm typecheck` PASS, `pnpm build` PASS, `git diff --check` PASS. Wcześniej po pięciu poprawkach review: `pnpm test:integration` 19 plików/177 testów PASS i `pnpm test:e2e` 70/70 PASS; nie powtarzano tych dwóch pełnych zestawów po lokalnej zmianie kontrolera `endNow()` (zmiana sprawdzona nowymi testami jednostkowymi). Pełny review końcowy był read-only i nie uruchamiał ponownie pełnych suite.
 - Brak fizycznego telefonu/tabletu i brak autoryzowanej próbki prawdziwego głosu dziecka pozostają ograniczeniami. Nie ma dedykowanego testu wyścigu replay audio kontra równoległy next/end; istnieje wspólna blokada sesji i pokrycie osobnych przejść. Zachować te zastrzeżenia oraz cztery Minor w PR.
-- Task 7: implementacja i review complete; commit, push i PR do `main` pozostają do wykonania.
+- Task 7: implementacja i niezależny review complete; commit `b679cdb` oraz push `feature/speech-recording-ux` wykonane; PR #37 do `main` otwarty. Oczekuje na review/scalenie właściciela przez squash. Worktree pozostaje zachowany.
