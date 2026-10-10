@@ -129,7 +129,7 @@ Wymagania:
 - możliwość zakończenia sesji bez utraty już zapisanych prób;
 - lista zestawów z sekcją „Rekomendowane” (zestawy z zaplanowaną pracą) i możliwością wyboru dowolnego przypisanego zestawu w każdym momencie;
 - brak ustawień AI, modeli, promptów, CEFR i administracji zestawami;
-- brak procentowych ocen i technicznych wyników wymowy.
+- brak procentowych ocen i technicznych wyników wymowy; jedynym wyjątkiem jest wynik ukończonej próby kartkówki w jej omówieniu (§19.1, 2026-10-10).
 
 Informacja zwrotna po ocenie wymowy może pokazać fragmenty słowa oznaczone jako „dobrze” lub „prawie”. Nie pokazuje dziecku punktów, IPA ani progów usługi.
 
@@ -490,6 +490,8 @@ Tryb kartkówki jest odrębny od treningu przed terminem. Przy starcie serwer za
 Każde zadanie przyjmuje jedną odpowiedź, „Nie pamiętam” albo „Pomiń”. Dziecko może poprawiać tekst przed zapisem. Po odpowiedzi widzi neutralne potwierdzenie, bez informacji o poprawności i rozwiązania. Nie ma podpowiedzi, dodatkowych prób merytorycznych, wsparcia ani rozszerzania porcji. W tym trybie „Nie pamiętam” zapisuje trudność i nie ujawnia wzorca. Pisemna kartkówka nie wymaga mikrofonu. Odtworzenie promptu słuchowego jest dozwolone i pozostawia ekspozycję, również z cache.
 
 Kartkówka ma limit czasu 10 minut i okno wznowienia 30 minut. Przerwanie lub timeout zachowują otrzymane odpowiedzi, a resztę oznaczają jako niesprawdzoną. Rozwiązania są dostępne dopiero po zamknięciu, w osobnym omówieniu. Każdy odczyt omówienia i replay jego audio zapisuje ujawnienia przed odpowiedzią HTTP; następny trening je uwzględnia. Raport rodzica nie jest ujawnieniem dziecku.
+
+Omówienie dla dziecka (2026-10-10) pokazuje na górze wynik próby: liczbę zaliczonych słów w formacie X/Y, procent oraz gwiazdki — maksymalnie 6, po jednej za każdą szóstą drogi do kompletu. Słowo zalicza się, gdy wszystkie sprawdzone umiejętności tej porcji są poprawne; pominięte i niesprawdzone nie zwiększają licznika, tylko obniżają wynik. Poniżej lista słów jako kompaktowe wiersze: całość poprawna w zieleni, jakakolwiek pomyłka w czerwieni, słowo niesprawdzone neutralnie; symbol ✓/✗/– powtarza informację koloru, a przy wynikach mieszanych wiersz wskazuje poszczególne umiejętności. Jest to podsumowanie ukończonej próby, a nie procentowa ocena postępu umiejętności — stanowi jedyny wyjątek od reguły §6 o braku procentowych ocen w interfejsie dziecka.
 
 Raport dotyczy konkretnej próby i jej wersji materiału. Pełny mianownik to wszystkie elementy tej wersji × wybrane umiejętności, także słowa poza krótką porcją lub jeszcze niepoznane. Osobno wskazuje poprawne samodzielne, błędne, poprawne niekwalifikujące, pominięte, nieocenione i niewykonane odpowiedzi. Pominięte oraz nieocenione są częścią braków pokrycia, a nie dowodem błędnej wiedzy. Przy ocenach poprawnych i błędnych pokazuje samodzielność i jej przyczynę oddzielnie od poprawności/kapitalizacji. Pokazuje też przyczyny braków i status opanowania na zakończenie próby. Zachowuje reguły §18, również po ujawnieniu zatwierdzonego wariantu w innym zestawie: pojedynczy wynik nie zastępuje potwierdzenia po przerwie. Nie obiecuje oceny szkolnej. Rodzic może przeglądać 20 ostatnich prób w panelu postępów; wygasła częściowa próba pojawia się także po samym zamknięciu karty dziecka. Brak dostępnych zadań ma czytelny komunikat i pozwala wrócić do zwykłej nauki. Słuchanie nie oferuje alternatywy, która jest również zatwierdzonym znaczeniem odtwarzanego słowa.
 

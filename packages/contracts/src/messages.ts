@@ -3,6 +3,8 @@
  * i kid-ui. Bez logiki i bez sekretów. Komunikaty wynikowe generowane przez
  * domenę (feedback) trafiają do klienta w DTO — tutaj tylko stałe etykiety.
  */
+import type { TestGoal } from "./mock-tests";
+
 export const messages = {
   app: {
     name: "Umiem!",
@@ -233,9 +235,11 @@ export const messages = {
     mockTestPartial: "Zakończyliśmy wcześniej. Pozostałe zadania są niesprawdzone.",
     mockTestReview: "Sprawdźmy odpowiedzi",
     mockTestPractice: "Poćwicz ten zestaw",
-    mockTestCorrect: "Dobrze!",
-    mockTestPracticeWord: "To jeszcze poćwiczymy",
     mockTestNotTested: "Nie sprawdzono",
+    mockTestSkipped: "Pominięte",
+    mockTestScore: "{correct}/{total} · {percent}%",
+    mockTestStarsLabel: "{n} z 6 gwiazdek",
+    mockTestSkill: { recall: "Tłumaczenie", spelling: "Pisownia", listening: "Słuchanie" } as Record<TestGoal, string>,
     sessionConflict: "Masz rozpoczętą sesję. Wróć do niej lub zakończ ją przed nową.",
     sessionResume: "Wróć do sesji",
     sessionClose: "Zakończ rozpoczętą sesję",
