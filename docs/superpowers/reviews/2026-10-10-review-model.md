@@ -8,7 +8,7 @@ Polecenie właściciela: review ma używać `gpt-6.1-sol` zamiast Astry. Zakres:
 - [x] Zapis jawnego wyboru modelu i pierwszeństwa przed instrukcjami skillsów; zachowanie wymogu zgody na delegację implementacji.
 - [x] Weryfikacja treści, spójności i `git diff --check`: exit 0.
 - [x] Niezależny review całego diffu na `gpt-6.1-sol` i obsługa uwag: brak Critical, Important i Minor.
-- [ ] Końcowa weryfikacja, commit, push gałęzi roboczej i PR do `main`.
+- [x] Końcowa weryfikacja: `git diff --check` i `git diff --cached --check`, exit 0; commit `586b8d4`, push `feature/review-model-sol` i [PR #34 do `main`](https://github.com/lookassh/knowli/pull/34). Scalanie przez właściciela.
 
 ## Dostosowanie workflow
 
