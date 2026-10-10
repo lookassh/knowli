@@ -143,6 +143,9 @@ test("locks draft controls while a save is pending and unlocks publishing after 
 });
 
 test("preserves edits made while an asset-polling read is in flight", async ({ page }) => {
+  // unikalny cel: powtórzone słowo dostanie gotowy zasób o znanym fingerprintcie
+  // i etykieta od razu pokaże "gotowe" zamiast okna "generowanie"
+  const targetValue = `cat-${randomUUID()}`;
   let holdNextRead = false;
   let releaseRead: (() => void) | undefined;
   let notifyRead: (() => void) | undefined;
@@ -163,7 +166,7 @@ test("preserves edits made while an asset-polling read is in flight", async ({ p
   await page.getByTestId("create-empty-submit").click();
   await page.getByTestId("add-item").click();
   await page.getByTestId("item-source-0").fill("kot");
-  await page.getByTestId("item-target-0").fill("cat");
+  await page.getByTestId("item-target-0").fill(targetValue);
   await page.getByTestId("item-visual-0").selectOption("none");
   await page.getByTestId("save-items").click();
   await expect(page.getByTestId("item-audio-state-0")).toContainText("generowanie");
