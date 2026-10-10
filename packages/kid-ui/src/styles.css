@@ -389,6 +389,67 @@ button {
   gap: 12px;
 }
 
+.kid-record-controls {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  width: min(100%, 420px);
+}
+
+.kid-record-button {
+  min-width: 220px;
+  min-height: 64px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.kid-record-button:focus-visible,
+.kid-record-mode:focus-visible {
+  outline: 3px solid #24318a;
+  outline-offset: 3px;
+}
+
+.kid-record-mode {
+  min-width: 48px;
+  min-height: 48px;
+  border: 0;
+  border-radius: 12px;
+  padding: 8px 12px;
+  background: transparent;
+  color: #303a80;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.kid-record-mode:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.kid-record-status {
+  margin: 0;
+  text-align: center;
+}
+
+.kid-input-level {
+  width: min(100%, 260px);
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e2e5f2;
+}
+
+.kid-input-level span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #2a7b4f;
+  transition: width 100ms linear;
+}
+
 .kid-recording {
   font-size: 1.15rem;
   color: #b02a37;
@@ -398,6 +459,16 @@ button {
 @keyframes kid-pulse {
   50% {
     opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kid-recording {
+    animation: none;
+  }
+
+  .kid-input-level span {
+    transition: none;
   }
 }
 

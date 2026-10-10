@@ -5,6 +5,9 @@ import { readTestRunConfig } from "../test-run-config";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { createDatabase } from "@learning/server";
 
+// Kid-flow obejmuje krótkotrwałe testowe audio; nie zapisujemy trace, HAR ani video.
+test.use({ trace: "off" });
+
 /**
  * Pełny przepływ dziecka (zadanie 9): ekran profilu/zestawu/nauki/końca,
  * ćwiczenia exposure → rozpoznawanie → Recall z pisownią, przyciski
@@ -182,6 +185,23 @@ async function currentTaskId(page: Page): Promise<string> {
   return id!;
 }
 
+async function startFakeRecording(page: Page): Promise<void> {
+  const mode = page.getByTestId("kid-record-mode");
+  if (await mode.getAttribute("aria-pressed") !== "true") await mode.click();
+  const record = page.getByTestId("kid-record");
+  if (await record.getAttribute("data-ready") !== "true") {
+    await record.click();
+    await expect(record).toHaveAttribute("data-ready", "true");
+  }
+  await record.click();
+  await expect(record).toHaveAttribute("aria-pressed", "true");
+  await page.waitForTimeout(350);
+}
+
+async function stopFakeRecording(page: Page): Promise<void> {
+  await page.getByTestId("kid-record").click();
+}
+
 /**
  * Czeka, aż przejście między zadaniami się zakończy: podczas zmiany kroku
  * stara karta zostaje z nieaktywnymi przyciskami, więc czytanie stanu w tym
@@ -230,9 +250,9 @@ async function driveUntil(page: Page, stop: () => Promise<boolean>): Promise<voi
     }
     if ((await page.getByTestId("kid-record").count()) > 0) {
       // ćwiczenie wymowy: nagranie i zatrzymanie domyka zadanie
-      await page.getByTestId("kid-record").click();
+      await startFakeRecording(page);
       await expect(page.getByTestId("kid-recording")).toBeVisible();
-      await page.getByTestId("kid-stop-record").click();
+      await stopFakeRecording(page);
       await expect(page.getByTestId("kid-fragment").first()).toHaveClass(/kid-fragment--good/);
       await expect(page.getByTestId("kid-feedback")).toBeVisible();
       await page.getByTestId("kid-next").click();
@@ -348,9 +368,9 @@ test("jeden profil pomija wybór i prowadzi sesję do obiecanego końca", async 
       // ćwiczenie wymowy po sukcesie rozpoznawania (SPEC §12.6, §13): fake
       // mikrofon nagrywa 2 s webm, odpowiedź ustna domyka zadanie
       sawSpeech = true;
-      await page.getByTestId("kid-record").click();
+      await startFakeRecording(page);
       await expect(page.getByTestId("kid-recording")).toBeVisible();
-      await page.getByTestId("kid-stop-record").click();
+      await stopFakeRecording(page);
     } else {
       // wymowa bez działającego mikrofonu — świadome pominięcie bez oceny
       await page.getByTestId("kid-skip").click();
@@ -819,7 +839,7 @@ test("opuszczenie widoku w trakcie nagrywania zatrzymuje strumień", async ({ pa
 
   await openLearn(page, "Filip");
   await page.getByTestId("kid-deck").first().click();
-  await page.getByTestId("kid-record").click();
+  await startFakeRecording(page);
   await expect(page.getByTestId("kid-recording")).toBeVisible();
 
   // zakończenie sesji w trakcie nagrywania zatrzymuje strumień mikrofonu
@@ -836,7 +856,7 @@ test("opuszczenie widoku w trakcie nagrywania zatrzymuje strumień", async ({ pa
   await expect(page.getByTestId("kid-recording")).toHaveCount(0);
   await driveUntil(page, async () => await page.getByTestId("kid-record").isVisible());
   await expect(page.getByTestId("kid-record")).toBeVisible();
-  await page.getByTestId("kid-record").click({ timeout: 10_000 });
+  await startFakeRecording(page);
   await expect(page.getByTestId("kid-recording")).toBeVisible();
 });
 

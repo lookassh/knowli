@@ -95,6 +95,9 @@ export function LearnScreen({
     onComplete: () => void controller.completePresentation(),
     onRecord: () => void controller.startRecording(),
     onStopRecording: () => void controller.stopRecording(),
+    onCancelRecording: () => controller.cancelRecording(),
+    onPrepareRecording: () => void controller.prepareMicrophone(),
+    onRecordingModeChange: (mode) => controller.setRecordingMode(mode),
   };
 
   return (
@@ -145,6 +148,11 @@ export function LearnScreen({
               task={task}
               busy={busy || screen.feedback !== null || screen.reveal !== null}
               recording={screen.recording}
+              recordingPhase={screen.recordingPhase}
+              microphoneReady={screen.microphoneReady}
+              inputLevel={screen.inputLevel}
+              recordingNotice={screen.recordingNotice}
+              recordingMode={screen.recordingMode}
               micAvailable={micAvailable}
               mediaUrl={(assetId) => controller.mediaUrl(assetId)}
               optionOutcomes={outcomes}

@@ -13,6 +13,13 @@ export interface LocalPreferences {
 /** Klucz wyłączonego mikrofonu: kolejne sesje startują bez nagrywania (A12). */
 export const MIC_DENIED_KEY = "umiem.micDenied";
 
+export type RecordingMode = "hold" | "toggle";
+export const RECORDING_MODE_KEY = "umiem.recordingMode";
+
+export function readRecordingMode(storage: LocalPreferences): RecordingMode {
+  return storage.read(RECORDING_MODE_KEY) === "toggle" ? "toggle" : "hold";
+}
+
 /** Preferencje w pamięci — deterministyczne testy jednostkowe. */
 export function createMemoryPreferences(values: Record<string, string> = {}): LocalPreferences {
   const store = new Map(Object.entries(values));

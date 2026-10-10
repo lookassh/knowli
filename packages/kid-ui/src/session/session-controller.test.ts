@@ -13,7 +13,7 @@ import type {
 } from "@learning/contracts";
 import type { KidApi } from "../api/KidApi";
 import type { AudioPlayer, PlatformMedia, SpeechRecorder } from "../media/platform";
-import { createMemoryPreferences, MIC_DENIED_KEY } from "../storage";
+import { createMemoryPreferences, MIC_DENIED_KEY, type LocalPreferences } from "../storage";
 import { LearningSessionController } from "./session-controller";
 
 /**
@@ -216,11 +216,11 @@ const DECK: KidDeckDto = {
 
 function makeHarness(
   state: ApiState,
-  options: { failStartWith?: unknown; startGate?: Promise<void>; initialChildId?: string; playGate?: Promise<void>; onStopPlayback?: () => void } = {},
+  options: { failStartWith?: unknown; startGate?: Promise<void>; initialChildId?: string; playGate?: Promise<void>; onStopPlayback?: () => void; storage?: LocalPreferences } = {},
 ) {
   const recorder = makeRecorder(options);
   const media = makeMedia(recorder, options.playGate, options.onStopPlayback);
-  const storage = createMemoryPreferences();
+  const storage = options.storage ?? createMemoryPreferences();
   const controller = new LearningSessionController({
     api: makeApi(state),
     media,
@@ -231,7 +231,7 @@ function makeHarness(
   return { controller, recorder, media, storage, state };
 }
 
-async function startAtTask(state: ApiState, task: TaskDto, recorderOpts?: { failStartWith?: unknown; startGate?: Promise<void>; playGate?: Promise<void>; onStopPlayback?: () => void }) {
+async function startAtTask(state: ApiState, task: TaskDto, recorderOpts?: { failStartWith?: unknown; startGate?: Promise<void>; playGate?: Promise<void>; onStopPlayback?: () => void; storage?: LocalPreferences }) {
   state.tasks = [task];
   const harness = makeHarness(state, recorderOpts);
   await harness.controller.start();
@@ -311,7 +311,9 @@ describe("LearningSessionController", () => {
     const playGate = new Promise<void>(resolve => { releasePlayback = resolve; });
     const harness = await startAtTask(state, listening, { playGate, onStopPlayback: releasePlayback });
 
+    const stopsBeforePreparation = harness.media.stops;
     await harness.controller.prepareMicrophone();
+    expect(harness.media.stops).toBe(stopsBeforePreparation + 1);
     await harness.controller.startRecording();
     await Promise.resolve();
 
@@ -626,6 +628,27 @@ describe("LearningSessionController", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("zachowuje tryb toggle, traktuje nieznaną wartość jak hold i blokuje zmianę podczas nagrania", async () => {
+    const toggleStorage = createMemoryPreferences({ "umiem.recordingMode": "toggle" });
+    const toggle = await startAtTask(baseState(), taskDto("toggle", { kind: "speech", text: "apple", visualType: "none", imageAssetId: null, audioAssetId: null }), { storage: toggleStorage });
+    expect(toggle.controller.getScreen()).toMatchObject({ recordingMode: "toggle" });
+    expect(toggleStorage.read("umiem.recordingMode")).toBe("toggle");
+
+    const invalidStorage = createMemoryPreferences({ "umiem.recordingMode": "surprise" });
+    const hold = await startAtTask(baseState(), taskDto("hold", { kind: "speech", text: "apple", visualType: "none", imageAssetId: null, audioAssetId: null }), { storage: invalidStorage });
+    expect(hold.controller.getScreen()).toMatchObject({ recordingMode: "hold" });
+    hold.controller.setRecordingMode("toggle");
+    expect(hold.controller.getScreen()).toMatchObject({ recordingMode: "toggle" });
+    expect(invalidStorage.read("umiem.recordingMode")).toBe("toggle");
+
+    await hold.controller.prepareMicrophone();
+    await hold.controller.startRecording();
+    hold.controller.setRecordingMode("hold");
+    expect(hold.controller.getScreen()).toMatchObject({ recordingMode: "toggle", recordingPhase: "recording" });
+    expect(invalidStorage.read("umiem.recordingMode")).toBe("toggle");
+    hold.controller.cancelRecording();
   });
 
   it("„Nie pamiętam” ujawnia słowo po zgody serwera i wysyła trudność", async () => {

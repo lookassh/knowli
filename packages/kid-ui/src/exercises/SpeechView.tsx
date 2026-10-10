@@ -1,5 +1,6 @@
 import { messages } from "@learning/contracts";
 import { Visual } from "../visuals/Visual";
+import { SpeechRecordButton } from "./SpeechRecordButton";
 import type { ExerciseProps } from "./types";
 
 /**
@@ -7,7 +8,7 @@ import type { ExerciseProps } from "./types";
  * usłyszeć wzorzec (oczekiwana część nauki — §13.2), potem je wypowiada.
  * Bez działającego mikrofonu pozostaje komunikat i „Pomiń” — bez oceny.
  */
-export function SpeechView({ task, busy, recording, micAvailable, mediaUrl, handlers }: ExerciseProps) {
+export function SpeechView({ task, busy, recordingPhase, microphoneReady, inputLevel, recordingNotice, recordingMode, micAvailable, mediaUrl, handlers }: ExerciseProps) {
   if (task.prompt.kind !== "speech") {
     return null;
   }
@@ -33,30 +34,30 @@ export function SpeechView({ task, busy, recording, micAvailable, mediaUrl, hand
       <p className="kid-hint">{messages.kid.sayIt}</p>
       <div className="kid-actions">
         {task.prompt.audioAssetId !== null && (
-          <button type="button" data-testid="kid-play" disabled={busy} onClick={handlers.onPlay}>
+          <button type="button" data-testid="kid-play" disabled={busy || recordingPhase !== "idle"} onClick={handlers.onPlay}>
             🔊 {messages.kid.listen}
           </button>
         )}
-        {micAvailable &&
-          (recording ? (
-            <>
-              <span className="kid-recording" data-testid="kid-recording" role="status">
-                ⏺ {messages.kid.recording}
-              </span>
-              <button type="button" className="kid-primary" data-testid="kid-stop-record" onClick={handlers.onStopRecording}>
-                {messages.kid.stopRecording}
-              </button>
-            </>
-          ) : (
-            <button type="button" className="kid-primary" data-testid="kid-record" disabled={busy} onClick={handlers.onRecord}>
-              🎤 {messages.kid.record}
-            </button>
-          ))}
+        {micAvailable && (
+          <SpeechRecordButton
+            phase={recordingPhase}
+            ready={microphoneReady}
+            disabled={busy}
+            level={inputLevel}
+            notice={recordingNotice}
+            mode={recordingMode}
+            onModeChange={handlers.onRecordingModeChange}
+            onPrepare={handlers.onPrepareRecording}
+            onStart={handlers.onRecord}
+            onStop={handlers.onStopRecording}
+            onCancel={handlers.onCancelRecording}
+          />
+        )}
       </div>
       <div className="kid-secondary-actions">
         {/* świadome pominięcie bez oceny — także po awarii technicznej próby,
             żeby dziecko nie utknęło na jednym słowie (SPEC §15.3) */}
-        <button type="button" data-testid="kid-skip" disabled={busy} onClick={handlers.onSkip}>
+        <button type="button" data-testid="kid-skip" disabled={busy || recordingPhase !== "idle"} onClick={handlers.onSkip}>
           {messages.kid.skip}
         </button>
       </div>
