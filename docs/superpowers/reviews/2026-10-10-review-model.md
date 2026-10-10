@@ -31,7 +31,7 @@ Pierwsza reguła wymuszająca `gpt-6.1-sol` została zastąpiona na polecenie w�
 - [x] Sprawdzenie czystego worktree na `feature/review-model-sol`, HEAD `3b9a1a5146b9da7507d28855ddb3b5abde0bfcf2`; PR #34 pozostaje otwarty.
 - [x] Zapis reguły niezależnej od klienta: najbardziej zaawansowany dostępny model z wykluczeniem GPT Astra, jawny wybór właściwym mechanizmem klienta, ten sam zakres review i poprawek oraz wymóg zgody na delegację.
 - [x] Kontrola treści i diffu oraz niezależny review całego zakresu PR, z uwzględnieniem aktualizacji roboczej: brak Critical, Important i Minor; `git diff --check` względem bazy — exit 0.
-- [ ] Końcowa weryfikacja, commit, push i aktualizacja tytułu/opisu PR #34.
+- [x] Końcowa weryfikacja: `git diff --check origin/main` i `git diff --cached --check` — exit 0; commit `d252a30`, push gałęzi roboczej oraz aktualizacja tytułu/opisu [PR #34](https://github.com/lookassh/knowli/pull/34). PR otwarty, scala właściciel.
 
 Recenzent `review_portable_model_policy` (`gpt-6.1-sol`, `high`, `fork_turns: "none"`) przejrzał niezależnie cały zakres od `96ddc07` do `3b9a1a5` wraz z diffem roboczym obu plików. Wynik: gotowe do dalszego workflow PR, brak uwag; tryb read-only, bez delegacji. Wybór Sol w tej sesji jest konkretnym wyborem dla dostępnego środowiska, a nie wymogiem dla innych klientów.
 
