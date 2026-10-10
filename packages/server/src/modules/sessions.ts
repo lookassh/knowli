@@ -51,6 +51,7 @@ import { buildLetterFragment } from "../domain/letter-fragment";
 import { addLegacyTaskPromptDefaults } from "./task-prompt-compat";
 import { deriveSupportStates, type SupportAttempt, type SupportTask } from "../domain/support-cycle";
 import { readLearningSnapshot } from "./learning-snapshot";
+import { createMockTestPlan, issueMockTestTask } from "./mock-tests";
 
 /** Okno wznowienia aktywnej sesji od ostatniego zdarzenia (arch §9.1). */
 export const RESUME_WINDOW_MS = 30 * 60_000;
@@ -190,6 +191,7 @@ async function previousContactSnapshot(
  */
 export async function startSession(services: Services, input: SessionInput): Promise<SessionDto> {
   const valid = SessionInputSchema.parse(input);
+  const mode = valid.mode ?? "training";
   return services.db.transaction(async (tx) => {
     const child = (
       await tx.select({ id: childProfiles.id }).from(childProfiles).where(eq(childProfiles.id, valid.childId)).for("update")
@@ -234,9 +236,10 @@ export async function startSession(services: Services, input: SessionInput): Pro
       const stale =
         now.getTime() - (await lastActivityAt(tx, active.id, active.startedAt)).getTime() >
         RESUME_WINDOW_MS;
-      if (active.deckId === valid.deckId && !stale) {
+      if (active.deckId === valid.deckId && active.mode === mode && !stale) {
         return sessionDto(tx, active, true);
       }
+      if (!stale) throw new AppError("conflict", { message: "Wróć do rozpoczętej sesji albo zakończ ją przed nową." });
       await tx
         .update(learningSessions)
         .set({ state: "ended", endedAt: now })
@@ -259,6 +262,12 @@ export async function startSession(services: Services, input: SessionInput): Pro
       settledChecks: [],
     };
     const id = randomUUID();
+    if (mode === "mock_test" && !assignment.testGoals?.length) throw new AppError("validation", { message: "Rodzic musi najpierw ustawić cel kartkówki." });
+    const mockTestPlan = mode === "mock_test" ? await createMockTestPlan(tx, services, {
+      childId: valid.childId, deckVersionId: version.id, testGoals: assignment.testGoals!, testDate: assignment.testDate,
+      requestedTaskCount: assignment.mockTestTaskCount,
+    }) : null;
+    if (mockTestPlan && !mockTestPlan.slots.length) throw new AppError("validation", { message: "Najpierw poznaj materiał. Brak dostępnych zadań kartkówki." });
     const [row] = await tx
       .insert(learningSessions)
       .values({
@@ -270,7 +279,9 @@ export async function startSession(services: Services, input: SessionInput): Pro
         policyId: childProfile?.policyId ?? CURRENT_POLICY_ID,
         microphoneEnabled: valid.microphoneEnabled,
         state: "active",
-        taskBudget: DEFAULT_TASK_BUDGET,
+        taskBudget: mockTestPlan?.slots.length ?? DEFAULT_TASK_BUDGET,
+        mode,
+        mockTestPlan,
         startedAt: now,
         context: context as unknown as Record<string, unknown>,
       })
@@ -774,7 +785,7 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
       return null;
     }
     const now = services.clock.now();
-
+    if (session.mode === "mock_test") return issueMockTestTask(tx, services, session);
     const issued = (
       await tx
         .select()

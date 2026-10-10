@@ -479,21 +479,22 @@ describe("cykl życia sesji (integracja)", () => {
     expect(row.context.reason).not.toBe("test-preparation");
   });
 
-  it("start dla innej talii zamyka aktywną sesję jako ended", async () => {
+  it("start dla innej talii wymaga jawnego zakończenia aktywnej sesji", async () => {
     const deckA = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 2));
     const deckB = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(2, 4));
     const first = await startSession(services, { childId, deckId: deckA.deckId, microphoneEnabled: true });
-    const second = await startSession(services, { childId, deckId: deckB.deckId, microphoneEnabled: true });
-
-    expect(second.sessionId).not.toBe(first.sessionId);
+    await expectAppError(startSession(services, { childId, deckId: deckB.deckId, microphoneEnabled: true }), "conflict");
     const oldRow = (
       await query<{ state: string; ended_at: string }>(
         "select state, ended_at from learning_app.learning_sessions where id = $1",
         [first.sessionId],
       )
     )[0]!;
-    expect(oldRow.state).toBe("ended");
-    expect(oldRow.ended_at).not.toBeNull();
+    expect(oldRow.state).toBe("active");
+    expect(oldRow.ended_at).toBeNull();
+    await endSession(services, first.sessionId);
+    const second = await startSession(services, { childId, deckId: deckB.deckId, microphoneEnabled: true });
+    expect(second.sessionId).not.toBe(first.sessionId);
     expect(second.deckVersionId).toBe(deckB.versionId);
     expect(second.state).toBe("active");
   });

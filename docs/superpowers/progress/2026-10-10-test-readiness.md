@@ -11,3 +11,5 @@ Pre-flight: Task 3 AttemptDto completed/null → Task 5 branches on session mode
 Pre-flight: Task 4 scope+report → Task 6 renders pinned version and full denominator, no live recalculation.
 Tasks: 1 in progress; 2–7 pending. Baseline pending.
 Task 1: RED contracts 13 failures, PostgreSQL 2 failures (missing fields); GREEN 13 unit + 2 PostgreSQL. Baseline 347 unit/typecheck pass. Ruling: shared skill status schema moved to common to avoid contracts import cycle; public values unchanged.
+Task 1: complete (commits e2db651..a5cb03c, tests: npx --yes pnpm@10.34.6 test:integration tests/integration/mock-test-settings.test.ts →    Duration  4.12s (transform 281ms, setup 0ms, import 707ms, tests 274ms, environment 0ms))
+Task 2: RED missing planner + 2 integration behavior failures; GREEN 8 planner tests and frozen plan/start/next on PostgreSQL. Ruling: training deck switches now require explicit close, as approved spec states; updated old regression to preserve active session on conflict.
