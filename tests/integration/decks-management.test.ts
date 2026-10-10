@@ -277,7 +277,7 @@ describe("zarządzanie zestawami i przypisaniami (integracja)", () => {
 
     const deck = await readDeck(services, deckId);
     expect(deck.assignments).toEqual([
-      { childId: ala, displayName: "Ala", testDate: "2026-10-14", active: true },
+      { childId: ala, displayName: "Ala", testDate: "2026-10-14", active: true, testGoals: null, mockTestTaskCount: 10 },
     ]);
   });
 

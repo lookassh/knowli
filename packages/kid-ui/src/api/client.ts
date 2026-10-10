@@ -1,4 +1,5 @@
 import {
+  MockTestSummaryDtoSchema,
   AttemptDtoSchema,
   DisclosureDtoSchema,
   KidDeckDtoSchema,
@@ -95,6 +96,9 @@ export function createKidApiClient(options: KidClientOptions = {}): KidApi {
   const parseDecks = parseWith(KidDeckDtoSchema.array());
 
   return {
+    readMockTestSummary(sessionId) {
+      return request(`/api/v1/kid/sessions/${sessionId}/mock-test-summary`, { method: "GET" }, parseWith(MockTestSummaryDtoSchema));
+    },
     listProfiles(): Promise<KidProfileDto[]> {
       return request("/api/v1/kid/profiles", { method: "GET" }, parseProfiles);
     },

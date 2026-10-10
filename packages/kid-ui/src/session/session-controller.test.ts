@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { KidApiError } from "../api/client";
 import type {
   AttemptDto,
   DisclosureDto,
@@ -25,6 +26,7 @@ const PROFILE_B: KidProfileDto = { childId: "22222222-2222-2222-2222-22222222222
 
 function sessionDto(childId: string, sessionId: string, microphoneEnabled: boolean): SessionDto {
   return {
+    mode: "training",
     sessionId,
     childId,
     deckId: "33333333-3333-3333-3333-333333333333",
@@ -121,6 +123,7 @@ function makeMedia(recorder: ReturnType<typeof makeRecorder>): PlatformMedia & {
 }
 
 interface ApiState {
+  submitError?: unknown;
   profiles: KidProfileDto[];
   decks: KidDeckDto[];
   tasks: TaskDto[];
@@ -133,6 +136,8 @@ interface ApiState {
   speechSubmissions: { taskId: string; clientAttemptId: string }[];
   /** Gdy ustawione, submitAnswer rzuca TypeError (brak sieci). */
   networkDown: boolean;
+  disclosureGate?: Promise<void>;
+  disclosureError?: unknown;
 }
 
 function makeApi(state: ApiState): KidApi {
@@ -146,12 +151,13 @@ function makeApi(state: ApiState): KidApi {
     },
     async startSession(input) {
       state.startedSessions.push({ childId: input.childId, microphoneEnabled: input.microphoneEnabled });
-      return sessionDto(input.childId, "55555555-5555-5555-5555-555555555555", input.microphoneEnabled);
+      return { ...sessionDto(input.childId, "55555555-5555-5555-5555-555555555555", input.microphoneEnabled), mode: input.mode ?? "training" };
     },
     async nextTask() {
       return state.tasks.shift() ?? null;
     },
     async submitAnswer(input) {
+      if (state.submitError) throw state.submitError;
       if (state.networkDown) throw new TypeError("fetch failed");
       state.submissions.push({ taskId: input.taskId, clientAttemptId: input.clientAttemptId, modality: input.modality });
       return state.attempts.length > 0 ? (state.attempts.shift()!) : attemptDto({ taskId: input.taskId, modality: input.modality });
@@ -165,6 +171,8 @@ function makeApi(state: ApiState): KidApi {
     },
     async authorizeDisclosure(taskId, kind): Promise<DisclosureDto> {
       state.disclosures.push({ taskId, kind });
+      if (state.disclosureError !== undefined) throw state.disclosureError;
+      await state.disclosureGate;
       return { taskId, stepId: "d1", kind, reveal: kind === "hint" ? { target: "Thursday" } : null };
     },
     async completePresentation(taskId): Promise<PresentationCompletionDto> {
@@ -179,6 +187,10 @@ function makeApi(state: ApiState): KidApi {
       return { sessionId, state: "completed", tasksIssued: 3, assessedTasksIssued: 2, endedAt: "2026-10-07T16:05:00.000Z",
         independentSuccesses: { recall: 0, spelling: 0 }, practiceItems: [] };
     },
+    async readMockTestSummary(sessionId) {
+      if (state.networkDown) throw new TypeError("fetch failed");
+      return { sessionId, deckId: DECK.deckId, state: "completed", complete: true, taskBudget: 2, answeredCount: 2, solutions: [] };
+    },
     mediaUrl(assetId) {
       return `https://media.test/${assetId}`;
     },
@@ -186,6 +198,8 @@ function makeApi(state: ApiState): KidApi {
 }
 
 const DECK: KidDeckDto = {
+  mockTestAvailable: true,
+  activeSession: null,
   deckId: "33333333-3333-3333-3333-333333333333",
   title: "Dni tygodnia",
   itemCount: 7,
@@ -221,6 +235,120 @@ async function startAtTask(state: ApiState, task: TaskDto, recorderOpts?: { fail
 }
 
 describe("LearningSessionController", () => {
+  it("starts mock test only after confirming server budget and advances without correctness feedback", async () => {
+    const state = baseState();
+    const first = taskDto("mock-1", { kind: "recall", prompt: "poniedziałek" }), second = { ...taskDto("mock-2", { kind: "recall", prompt: "wtorek" }), ordinal: 1 };
+    state.tasks = [first, second];
+    state.attempts = [attemptDto({ taskId: first.taskId, feedback: null, taskState: "answered" })];
+    const { controller } = makeHarness(state);
+    await controller.start(); await controller.selectProfile(PROFILE_A.childId); controller.setMicrophone(false);
+    await controller.startMockTest(DECK.deckId);
+    expect(controller.getScreen()).toMatchObject({ kind: "mockTestReady", session: { mode: "mock_test", taskBudget: 12 } });
+    await controller.beginMockTest();
+    expect(controller.getScreen()).toMatchObject({ kind: "learning", task: { taskId: first.taskId } });
+    await controller.answerText("wrong");
+    expect(controller.getScreen()).toMatchObject({ kind: "learning", task: { taskId: second.taskId }, feedback: null, processing: false });
+    await controller.endNow();
+    expect(controller.getScreen()).toMatchObject({ kind: "mockTestSummary", summary: { answeredCount: 2 } });
+  });
+
+  it("mock offline retry keeps identity and does not pretend to complete an answer", async () => {
+    const state = baseState(); state.tasks = [taskDto("mock-1", { kind: "recall", prompt: "poniedziałek" })];
+    const { controller } = makeHarness(state);
+    await controller.start(); await controller.selectProfile(PROFILE_A.childId); await controller.startMockTest(DECK.deckId); await controller.beginMockTest();
+    state.networkDown = true;
+    await controller.answerText("Monday");
+    expect(controller.getScreen()).toMatchObject({ kind: "learning", offline: true, feedback: null });
+    state.networkDown = false; state.attempts = [attemptDto({ feedback: null, taskState: "answered" })];
+    await controller.retry();
+    expect(controller.getScreen()).toMatchObject({ kind: "mockTestSummary" });
+  });
+  it("mock notRemember submits difficulty without opening a hint", async () => {
+    const state = baseState(); state.tasks = [taskDto("mock-1", { kind: "recall", prompt: "poniedziałek" }), taskDto("mock-2", { kind: "recall", prompt: "wtorek" })];
+    state.attempts = [attemptDto({ feedback: null, taskState: "answered" })];
+    const { controller } = makeHarness(state); await controller.start(); await controller.selectProfile(PROFILE_A.childId);
+    await controller.startMockTest(DECK.deckId); await controller.beginMockTest(); await controller.notRemember();
+    expect(controller.getScreen()).toMatchObject({ kind: "learning", task: { taskId: "mock-2" }, reveal: null });
+  });
+  it("conflicting answer from another browser refreshes the task instead of resending stale knowledge", async () => {
+    const state = baseState(); state.tasks = [taskDto("mock-1", { kind: "recall", prompt: "poniedziałek" }), taskDto("mock-2", { kind: "recall", prompt: "wtorek" })];
+    const { controller } = makeHarness(state); await controller.start(); await controller.selectProfile(PROFILE_A.childId);
+    await controller.startMockTest(DECK.deckId); await controller.beginMockTest();
+    state.submitError = new KidApiError("conflict", false);
+    await controller.answerText("Monday"); await controller.retry();
+    expect(controller.getScreen()).toMatchObject({ kind: "learning", task: { taskId: "mock-2" }, error: null, feedback: null });
+  });
+  it("does not play audio after authorization resolves for a task that has already advanced", async () => {
+    const optionId = "88888888-8888-8888-8888-888888888888";
+    const first = taskDto("mock-1", { kind: "listening", options: [{ id: optionId, text: "poniedziałek" }], audioAssetId: "old-audio" });
+    const second = taskDto("mock-2", { kind: "recall", prompt: "wtorek" });
+    const state = baseState(); state.tasks = [first, second];
+    state.attempts = [attemptDto({ taskId: first.taskId, modality: "choice", feedback: null, taskState: "answered" })];
+    let release!: () => void;
+    state.disclosureGate = new Promise<void>(resolve => { release = resolve; });
+    const { controller, media } = makeHarness(state);
+    await controller.start(); await controller.selectProfile(PROFILE_A.childId);
+    await controller.startMockTest(DECK.deckId); await controller.beginMockTest();
+    expect(state.disclosures).toContainEqual({ taskId: first.taskId, kind: "audio" });
+
+    await controller.answerChoice(optionId);
+    expect(controller.getScreen()).toMatchObject({ kind: "learning", task: { taskId: second.taskId } });
+    release();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(media.playUrls).not.toContain("https://media.test/old-audio");
+  });
+  it("shows offline state when mock audio disclosure authorization fails and retries playback", async () => {
+    const state = baseState();
+    state.tasks = [taskDto("mock-1", { kind: "listening", options: [{ id: "option-1", text: "poniedziałek" }], audioAssetId: "audio-1" })];
+    state.disclosureError = new TypeError("fetch failed");
+    const { controller, media } = makeHarness(state);
+    await controller.start(); await controller.selectProfile(PROFILE_A.childId);
+    await controller.startMockTest(DECK.deckId); await controller.beginMockTest();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(controller.getScreen()).toMatchObject({ kind: "learning", offline: true, error: null, busy: false });
+    expect(media.playUrls).toEqual([]);
+    await controller.answerChoice("option-1");
+    expect(state.submissions).toEqual([]);
+
+    state.disclosureError = undefined;
+    await controller.retry();
+    expect(media.playUrls).toEqual(["https://media.test/audio-1"]);
+    expect(controller.getScreen()).toMatchObject({ kind: "learning", offline: false });
+  });
+  it("refreshes a closed mock listening slot after disclosure authorization conflicts", async () => {
+    const state = baseState();
+    state.tasks = [
+      taskDto("mock-1", { kind: "listening", options: [], audioAssetId: "audio-1" }),
+      taskDto("mock-2", { kind: "recall", prompt: "wtorek" }),
+    ];
+    state.disclosureError = new KidApiError("conflict", false);
+    const { controller } = makeHarness(state);
+    await controller.start(); await controller.selectProfile(PROFILE_A.childId);
+    await controller.startMockTest(DECK.deckId); await controller.beginMockTest();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const failedScreen = controller.getScreen();
+    expect(failedScreen).toMatchObject({ kind: "learning", task: { taskId: "mock-1" } });
+    expect(failedScreen.kind === "learning" && failedScreen.error).toBeTruthy();
+
+    state.disclosureError = undefined;
+    await controller.retry();
+    expect(controller.getScreen()).toMatchObject({ kind: "learning", task: { taskId: "mock-2" }, error: null });
+  });
+  it("refreshes the task when a transport retry discovers that the mock slot already closed", async () => {
+    const state = baseState(); state.tasks = [taskDto("mock-1", { kind: "recall", prompt: "poniedziałek" }), taskDto("mock-2", { kind: "recall", prompt: "wtorek" })];
+    const { controller } = makeHarness(state); await controller.start(); await controller.selectProfile(PROFILE_A.childId);
+    await controller.startMockTest(DECK.deckId); await controller.beginMockTest();
+    state.networkDown = true;
+    await controller.answerText("Monday");
+    expect(controller.getScreen()).toMatchObject({ kind: "learning", offline: true, task: { taskId: "mock-1" } });
+
+    state.networkDown = false; state.submitError = new KidApiError("conflict", false);
+    await expect(controller.retry()).resolves.toBeUndefined();
+
+    expect(controller.getScreen()).toMatchObject({ kind: "learning", task: { taskId: "mock-2" }, offline: false, error: null });
+  });
   it("mediaUrl deleguje do klienta API — wspólne źródło URL obrazka i audio", () => {
     const harness = makeHarness(baseState());
     expect(harness.controller.mediaUrl("asset-1")).toBe("https://media.test/asset-1");

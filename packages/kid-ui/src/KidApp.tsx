@@ -6,6 +6,7 @@ import { DeckScreen } from "./screens/DeckScreen";
 import { LearnScreen } from "./screens/LearnScreen";
 import { ProfileScreen } from "./screens/ProfileScreen";
 import { SummaryScreen } from "./screens/SummaryScreen";
+import { MockTestReadyScreen, MockTestSummaryScreen, SessionConflictScreen } from "./screens/MockTestSummaryScreen";
 import { useLearningSession } from "./session/useLearningSession";
 import type { LocalPreferences } from "./storage";
 
@@ -58,7 +59,9 @@ export function KidApp({
     case "initError":
       return (
         <main className="kid-screen">
-          <p className="kid-hint">{screen.message}</p>
+          {actions && <header className="kid-top-bar">{actions}</header>}
+          <p className="kid-hint" data-testid="kid-init-error">{screen.message}</p>
+          <button type="button" className="kid-primary" data-testid="kid-back-decks" onClick={() => void controller.backToDecks()}>{messages.kid.backToLearning}</button>
         </main>
       );
     case "profile":
@@ -78,11 +81,18 @@ export function KidApp({
           micDenied={screen.micDenied}
           onToggleMicrophone={(on) => controller.setMicrophone(on)}
           onStart={(deckId) => void controller.startLearning(deckId)}
+          onMockTest={(deckId) => void controller.startMockTest(deckId)}
           headerActions={actions}
         />
       );
     case "learning":
       return <LearnScreen screen={screen} controller={controller} />;
+    case "mockTestReady":
+      return <MockTestReadyScreen session={screen.session} onStart={() => controller.beginMockTest()} onCancel={() => controller.cancelMockTest()} />;
+    case "mockTestSummary":
+      return <MockTestSummaryScreen summary={screen.summary} onPlay={taskId => controller.playMockTestSolution(taskId)} onPractice={() => controller.learnAgain()} onSwitchProfile={() => controller.switchProfile()} />;
+    case "sessionConflict":
+      return <SessionConflictScreen onResume={() => controller.resumeConflictingSession()} onClose={() => controller.closeConflictingSession()} />;
     case "summary":
       return (
         <SummaryScreen

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, inArray, lt, max } from "drizzle-orm";
+import { and, asc, eq, inArray, lte, max } from "drizzle-orm";
 import {
   PresentationCompletionInputSchema,
   SessionInputSchema,
@@ -51,6 +51,7 @@ import { buildLetterFragment } from "../domain/letter-fragment";
 import { addLegacyTaskPromptDefaults } from "./task-prompt-compat";
 import { deriveSupportStates, type SupportAttempt, type SupportTask } from "../domain/support-cycle";
 import { readLearningSnapshot } from "./learning-snapshot";
+import { createMockTestPlan, issueMockTestTask, closeMockTest } from "./mock-tests";
 
 /** Okno wznowienia aktywnej sesji od ostatniego zdarzenia (arch §9.1). */
 export const RESUME_WINDOW_MS = 30 * 60_000;
@@ -132,6 +133,7 @@ async function sessionDto(tx: Tx, row: typeof learningSessions.$inferSelect, res
   const counts = await taskCounts(tx, row.id);
   return {
     sessionId: row.id,
+    mode: row.mode,
     childId: row.childId,
     deckId: row.deckId,
     deckVersionId: row.deckVersionId,
@@ -159,7 +161,7 @@ async function previousContactSnapshot(
   before: Date,
 ): Promise<Record<string, string>> {
   const revisions = await tx
-    .select({ itemId: itemRevisions.itemId })
+    .select({ itemId: itemRevisions.itemId, payload: itemRevisions.payload, targetKey: itemRevisions.targetKey })
     .from(itemRevisions)
     .where(eq(itemRevisions.deckVersionId, deckVersionId));
   if (revisions.length === 0) {
@@ -175,20 +177,36 @@ async function previousContactSnapshot(
           learningEvents.itemId,
           revisions.map((r) => r.itemId),
         ),
-        lt(learningEvents.occurredAt, before),
+        lte(learningEvents.occurredAt, before),
       ),
     )
     .groupBy(learningEvents.itemId);
-  return Object.fromEntries(rows.map((r) => [r.itemId, r.latest!.toISOString()]));
+  const latestByItem = new Map(rows.map(r => [r.itemId, r.latest!.toISOString()]));
+  const keysByItem = new Map(revisions.map(r => {
+    const item = payloadToItem(r.payload);
+    return [r.itemId, [...new Set([r.targetKey, ...[item.target, ...item.acceptedAnswers].map(answer => computeTargetKey(answer, item.locales.target))])]] as const;
+  }));
+  const keys = [...new Set([...keysByItem.values()].flat())];
+  const exposures = await tx.select({ targetKey: eventExposures.targetKey, latest: max(learningEvents.occurredAt) }).from(eventExposures)
+    .innerJoin(learningEvents, eq(learningEvents.id, eventExposures.eventId))
+    .where(and(eq(eventExposures.childId, childId), inArray(eventExposures.targetKey, keys), lte(learningEvents.occurredAt, before)))
+    .groupBy(eventExposures.targetKey);
+  const latestByKey = new Map(exposures.map(e => [e.targetKey, e.latest!.toISOString()]));
+  for (const [itemId, targetKeys] of keysByItem) for (const key of targetKeys) {
+    const value = latestByKey.get(key);
+    if (value && (!latestByItem.has(itemId) || value > latestByItem.get(itemId)!)) latestByItem.set(itemId, value);
+  }
+  return Object.fromEntries(latestByItem);
 }
 
 /**
  * Start lub wznowienie sesji dziecka (arch §9.1). Blokada wiersza profilu
- * serializuje równoległe starty; ta sama talia wznawia aktywną sesję, inna
- * lub przeterminowanie (>30 min bez zdarzeń) zamyka ją stanem ended.
+ * serializuje równoległe starty; ta sama talia i tryb wznawiają aktywną sesję.
+ * Inna talia/tryb wymagają jawnego końca; przeterminowanie zamyka starą sesję.
  */
 export async function startSession(services: Services, input: SessionInput): Promise<SessionDto> {
   const valid = SessionInputSchema.parse(input);
+  const mode = valid.mode ?? "training";
   return services.db.transaction(async (tx) => {
     const child = (
       await tx.select({ id: childProfiles.id }).from(childProfiles).where(eq(childProfiles.id, valid.childId)).for("update")
@@ -228,15 +246,18 @@ export async function startSession(services: Services, input: SessionInput): Pro
         .select()
         .from(learningSessions)
         .where(and(eq(learningSessions.childId, valid.childId), eq(learningSessions.state, "active")))
+      .for("update")
     )[0];
     if (active) {
       const stale =
         now.getTime() - (await lastActivityAt(tx, active.id, active.startedAt)).getTime() >
         RESUME_WINDOW_MS;
-      if (active.deckId === valid.deckId && !stale) {
+      if (active.deckId === valid.deckId && active.mode === mode && !stale) {
         return sessionDto(tx, active, true);
       }
-      await tx
+      if (!stale) throw new AppError("conflict", { message: "Wróć do rozpoczętej sesji albo zakończ ją przed nową." });
+      if (active.mode === "mock_test") await closeMockTest(tx, services, active, "ended");
+      else await tx
         .update(learningSessions)
         .set({ state: "ended", endedAt: now })
         .where(eq(learningSessions.id, active.id));
@@ -258,6 +279,12 @@ export async function startSession(services: Services, input: SessionInput): Pro
       settledChecks: [],
     };
     const id = randomUUID();
+    if (mode === "mock_test" && !assignment.testGoals?.length) throw new AppError("validation", { message: "Rodzic musi najpierw ustawić cel kartkówki." });
+    const mockTestPlan = mode === "mock_test" ? await createMockTestPlan(tx, services, {
+      childId: valid.childId, deckVersionId: version.id, testGoals: assignment.testGoals!, testDate: assignment.testDate,
+      requestedTaskCount: assignment.mockTestTaskCount,
+    }) : null;
+    if (mockTestPlan && !mockTestPlan.slots.length) throw new AppError("mock_test_unavailable");
     const [row] = await tx
       .insert(learningSessions)
       .values({
@@ -269,7 +296,9 @@ export async function startSession(services: Services, input: SessionInput): Pro
         policyId: childProfile?.policyId ?? CURRENT_POLICY_ID,
         microphoneEnabled: valid.microphoneEnabled,
         state: "active",
-        taskBudget: DEFAULT_TASK_BUDGET,
+        taskBudget: mockTestPlan?.slots.length ?? DEFAULT_TASK_BUDGET,
+        mode,
+        mockTestPlan,
         startedAt: now,
         context: context as unknown as Record<string, unknown>,
       })
@@ -773,7 +802,14 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
       return null;
     }
     const now = services.clock.now();
-
+    if (session.mode === "mock_test") {
+      if (now.getTime() - session.startedAt.getTime() > SESSION_TIME_LIMIT_MS) {
+        await closeMockTest(tx, services, session, "ended"); return null;
+      }
+      const task = await issueMockTestTask(tx, services, session);
+      if (!task) await closeMockTest(tx, services, session, "completed");
+      return task;
+    }
     const issued = (
       await tx
         .select()
@@ -936,6 +972,16 @@ export async function endSession(services: Services, sessionId: string): Promise
   return services.db.transaction(async (tx) => {
     const session = await lockSession(tx, id);
     let state = session.state as "active" | "completed" | "ended";
+    if (session.mode === "mock_test") {
+      const report = await closeMockTest(tx, services, session, "completed");
+      const counts = await taskCounts(tx, id);
+      const summaryRows = await tx.select({ itemRevisionId: assessments.itemRevisionId, skill: assessments.skill }).from(assessments)
+        .innerJoin(attempts, eq(attempts.id, assessments.attemptId)).innerJoin(sessionTasks, eq(sessionTasks.id, attempts.taskId))
+        .where(and(eq(sessionTasks.sessionId, id), eq(assessments.independent, true), eq(assessments.outcome, "correct")));
+      return { sessionId: id, state: report.state, tasksIssued: counts.total, assessedTasksIssued: counts.assessed, endedAt: report.endedAt,
+        independentSuccesses: { recall: new Set(summaryRows.filter(r => r.skill === "recall").map(r => r.itemRevisionId)).size,
+          spelling: new Set(summaryRows.filter(r => r.skill === "spelling").map(r => r.itemRevisionId)).size }, practiceItems: [] };
+    }
     let endedAt = session.endedAt;
     if (state === "active") {
       endedAt = services.clock.now();

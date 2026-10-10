@@ -3,7 +3,7 @@ import type { KidDeckDto, KidProfileDto } from "@learning/contracts";
 import type { Services } from "../config";
 import { hasScheduledWork, type DeckWorkloadItem, type SkillSnapshot } from "../domain/scheduler";
 import type { Skill } from "../domain/types";
-import { assignments, childProfiles, childSkillProgress, decks, itemRevisionSkills, itemRevisions } from "../db/schema";
+import { assignments, childProfiles, childSkillProgress, decks, itemRevisionSkills, itemRevisions, learningSessions } from "../db/schema";
 import { AppError } from "../errors";
 import { mapStatus } from "./sessions";
 import { CURRENT_POLICY_ID, ensureLearningPolicy, loadPolicy } from "../policies/registry";
@@ -30,7 +30,7 @@ export async function listKidDecks(services: Services, childId: string): Promise
     throw new AppError("not_found");
   }
   const rows = await services.db
-    .select({ deckId: decks.id, title: decks.title, testDate: assignments.testDate, versionId: decks.publishedVersionId })
+    .select({ deckId: decks.id, title: decks.title, testDate: assignments.testDate, testGoals: assignments.testGoals, versionId: decks.publishedVersionId })
     .from(assignments)
     .innerJoin(decks, eq(decks.id, assignments.deckId))
     .where(
@@ -144,7 +144,10 @@ export async function listKidDecks(services: Services, childId: string): Promise
       );
     }
   }
+  const [active] = await services.db.select().from(learningSessions).where(and(eq(learningSessions.childId, childId), eq(learningSessions.state, "active")));
   return rows.map((row) => ({
+    mockTestAvailable: !!row.testGoals?.length,
+    activeSession: active?.deckId === row.deckId ? { sessionId: active.id, mode: active.mode } : null,
     deckId: row.deckId,
     title: row.title,
     itemCount: itemCountByVersion.get(row.versionId!) ?? 0,

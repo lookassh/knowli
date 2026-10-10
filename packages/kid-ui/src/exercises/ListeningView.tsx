@@ -6,7 +6,7 @@ import type { ExerciseProps } from "./types";
  * zapis nie jest widoczny przed odpowiedzią; ponowny odsłuch nie zdradza
  * polskiej odpowiedzi (§13.2).
  */
-export function ListeningView({ task, busy, optionOutcomes, handlers }: ExerciseProps) {
+export function ListeningView({ task, busy, optionOutcomes, handlers, mockTest }: ExerciseProps) {
   if (task.prompt.kind !== "listening") {
     return null;
   }
@@ -41,6 +41,10 @@ export function ListeningView({ task, busy, optionOutcomes, handlers }: Exercise
           );
         })}
       </ul>
+      {mockTest && <div className="kid-secondary-actions">
+        <button type="button" data-testid="kid-not-remember" disabled={busy} onClick={handlers.onNotRemember}>{messages.kid.mockTestNotRemember}</button>
+        <button type="button" data-testid="kid-skip" disabled={busy} onClick={handlers.onSkip}>{messages.kid.skip}</button>
+      </div>}
     </section>
   );
 }

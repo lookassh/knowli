@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { AssignmentPutSchema, type TestGoal } from "@learning/contracts";
 import { and, asc, desc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -691,6 +692,8 @@ async function deckAssignments(services: Services, deckId: string): Promise<Assi
       childId: assignments.childId,
       displayName: childProfiles.displayName,
       testDate: assignments.testDate,
+      testGoals: assignments.testGoals,
+      mockTestTaskCount: assignments.mockTestTaskCount,
       active: assignments.active,
     })
     .from(assignments)
@@ -787,8 +790,14 @@ export async function upsertAssignment(
   childId: string,
   deckId: string,
   testDate: string | null,
+  options: { testGoals?: TestGoal[] | null; mockTestTaskCount?: number } = {},
 ): Promise<void> {
   const valid = UpsertAssignmentSchema.parse({ childId, deckId, testDate });
+  const settings = AssignmentPutSchema.parse({ testDate, ...options });
+  const configuration = {
+    ...(settings.testGoals === undefined ? {} : { testGoals: settings.testGoals }),
+    ...(settings.mockTestTaskCount === undefined ? {} : { mockTestTaskCount: settings.mockTestTaskCount }),
+  };
   const deck = (
     await services.db.select().from(decks).where(eq(decks.id, valid.deckId))
   )[0];
@@ -809,11 +818,12 @@ export async function upsertAssignment(
         childId: valid.childId,
         deckId: valid.deckId,
         testDate: valid.testDate,
+        ...configuration,
         active: true,
       })
       .onConflictDoUpdate({
         target: [assignments.childId, assignments.deckId],
-        set: { testDate: valid.testDate, active: true },
+        set: { testDate: valid.testDate, active: true, ...configuration },
       });
   } catch (error) {
     // nieznany profil dziecka: FK zamiast mglistego błędu sterownika (drizzle

@@ -23,6 +23,8 @@ import { AppError } from "../errors";
 import { assessedSkills, evaluateChoice, evaluateNonAnswer, evaluateWritten } from "../domain/evaluate";
 import { chooseFeedback } from "../domain/feedback";
 import { qualifyAttempt } from "../domain/independence";
+import { computeTargetKey } from "../domain/target-key";
+import { payloadToItem } from "./item-payload";
 import type {
   AnswerKey,
   AssistanceKind,
@@ -106,13 +108,20 @@ async function assistanceFor(tx: Tx, task: TaskRow, receivedAt: Date): Promise<A
 }
 
 /** Ostatnie ujawnienie rozwiązania elementu — także w innym ćwiczeniu (SPEC §18.1). */
-async function lastExposureAt(tx: Tx, childId: string, targetKey: string): Promise<string | null> {
+async function lastExposureAt(tx: Tx, childId: string, targetKeys: readonly string[]): Promise<string | null> {
   const [row] = await tx
     .select({ latest: max(learningEvents.occurredAt) })
     .from(eventExposures)
     .innerJoin(learningEvents, eq(learningEvents.id, eventExposures.eventId))
-    .where(and(eq(eventExposures.childId, childId), eq(eventExposures.targetKey, targetKey)));
+    .where(and(eq(eventExposures.childId, childId), inArray(eventExposures.targetKey, [...targetKeys])));
   return row?.latest?.toISOString() ?? null;
+}
+
+async function solutionTargetKeys(tx: Tx, task: TaskRow): Promise<string[]> {
+  const [revision] = await tx.select({ payload: itemRevisions.payload, targetKey: itemRevisions.targetKey }).from(itemRevisions).where(eq(itemRevisions.id, task.itemRevisionId));
+  const locale = payloadToItem(revision!.payload).locales.target;
+  const key = answerKeyOf(task);
+  return [...new Set([revision!.targetKey, ...[key.target, ...key.acceptedAnswers].map(answer => computeTargetKey(answer, locale))])];
 }
 
 async function targetKeyOf(tx: Tx, task: TaskRow): Promise<string> {
@@ -246,7 +255,7 @@ async function finalizeAttemptRow(
 ): Promise<AttemptDto> {
   const key = answerKeyOf(task);
   const correctText = correctTextOf(task, key);
-  const feedback: FeedbackDto = chooseFeedback(grade, correctText);
+  const feedback: FeedbackDto | null = session.mode === "mock_test" ? null : chooseFeedback(grade, correctText);
   const chosenText =
     modality === "choice"
       ? ((attempt.answer as { optionText?: string } | null)?.optionText ?? "")
@@ -306,7 +315,7 @@ async function finalizeAttemptRow(
     .from(attempts)
     .innerJoin(assessments, eq(assessments.attemptId, attempts.id))
     .where(and(eq(attempts.taskId, task.id), eq(assessments.outcome, "incorrect")));
-  const taskState = nextTaskState(
+  const taskState = session.mode === "mock_test" ? (modality === "skip" ? "skipped" : "answered") : nextTaskState(
     modality,
     grade,
     attempt.attemptNumber,
@@ -325,7 +334,18 @@ async function finalizeAttemptRow(
     throw new AppError("conflict", { message: "attempt is already finalized" });
   }
 
-  const stepId = await discloseFeedback(tx, task, session.childId, itemId, feedback, targetKey, now);
+  const stepId = feedback === null ? null : await discloseFeedback(tx, task, session.childId, itemId, feedback, targetKey, now);
+  if (session.mode === "mock_test") {
+    await writeSealedEvent(tx, {
+      childId: session.childId,
+      taskId: task.id,
+      itemId,
+      kind: "contact",
+      stepId: `${task.id}:contact`,
+      occurredAt: attempt.receivedAt,
+      exposures: [],
+    });
+  }
   const freshTask = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, task.id)))[0]!;
 
   // rezerwacja sprawdzenia zwalniana po rozliczeniu albo po ocenionej próbie,
@@ -420,7 +440,7 @@ export async function startAttempt(
     await lazyFinalizeProcessing(tx, task, session, itemId, now);
     const fresh = (await tx.select().from(attempts).where(eq(attempts.id, existing.id)))[0]!;
     const state = await rereadTaskState(tx, task.id);
-    if (fresh.state === "completed" && fresh.feedback) {
+    if (session.mode !== "mock_test" && fresh.state === "completed" && fresh.feedback) {
       const stepId = await discloseFeedback(
         tx,
         task,
@@ -441,11 +461,17 @@ export async function startAttempt(
   if (session.state !== "active") {
     throw new AppError("conflict", { message: "session is closed" });
   }
+  if (session.mode === "mock_test" && now.getTime() - session.startedAt.getTime() > 600_000) {
+    throw new AppError("conflict", { message: "Czas kartkówki minął. Przejdź do omówienia." });
+  }
   if (task.exerciseType === "exposure") {
     throw new AppError("validation", { message: "presentation tasks take no attempts" });
   }
   if (task.state !== "issued") {
     throw new AppError("conflict", { message: "task is no longer issued" });
+  }
+  if (session.mode === "mock_test" && valid.modality === "audio") {
+    throw new AppError("validation", { message: "Kartkówka nie wymaga nagrywania odpowiedzi." });
   }
   if (
     (valid.modality === "choice" && !CHOICE_EXERCISES.has(task.exerciseType)) ||
@@ -476,7 +502,7 @@ export async function startAttempt(
     receivedAt: now.toISOString(),
     policyVersion: policy.version,
     lastExposureAt: RECALL_LIKE.has(task.exerciseType)
-      ? await lastExposureAt(tx, task.childId, targetKey)
+      ? await lastExposureAt(tx, task.childId, await solutionTargetKeys(tx, task))
       : null,
     firstTry: attemptNumber === 1,
     assistance: await assistanceFor(tx, task, now),
@@ -575,7 +601,7 @@ export async function readAttempt(services: Services, attemptId: string): Promis
 
     const fresh = (await tx.select().from(attempts).where(eq(attempts.id, id)))[0]!;
     const freshTask = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, task.id)))[0]!;
-    if (fresh.state === "completed" && fresh.feedback) {
+    if (session.mode !== "mock_test" && fresh.state === "completed" && fresh.feedback) {
       const stepId = await discloseFeedback(
         tx,
         freshTask,
@@ -630,7 +656,7 @@ export async function finalizeAttempt(
 
     if (attempt.state === "completed") {
       const freshTask = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, task.id)))[0]!;
-      if (attempt.feedback) {
+      if (session.mode !== "mock_test" && attempt.feedback) {
         const stepId = await discloseFeedback(
           tx,
           freshTask,

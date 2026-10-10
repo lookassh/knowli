@@ -1,5 +1,7 @@
 import {
   AppError,
+  getMockTestReport,
+  listMockTests,
   archiveDeck,
   createEmptyDeck,
   createDraftFromPublished,
@@ -45,6 +47,13 @@ export async function handleParentApi(
     assertSameOrigin(request);
   }
   const [first, second, third, fourth] = segments;
+  if (first === "mock-tests" && request.method === "GET") {
+    if (second) return Response.json(await getMockTestReport(services, second), { headers: { "Cache-Control": "no-store" } });
+    const params = new URL(request.url).searchParams;
+    const childId = params.get("childId"), deckId = params.get("deckId");
+    if (!childId || !deckId) throw new AppError("validation");
+    return Response.json(await listMockTests(services, childId, deckId), { headers: { "Cache-Control": "no-store" } });
+  }
 
   if (first === "decks") {
     if (request.method === "GET" && second === undefined) {
@@ -110,7 +119,7 @@ export async function handleParentApi(
   if (first === "assignments" && second !== undefined && third !== undefined && fourth === undefined) {
     if (request.method === "PUT") {
       const cmd = AssignmentPutSchema.parse(await readJson(request));
-      await upsertAssignment(services, second, third, cmd.testDate);
+      await upsertAssignment(services, second, third, cmd.testDate, cmd);
       return new Response(null, { status: 204 });
     }
   }

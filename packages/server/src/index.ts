@@ -83,6 +83,7 @@ export {
 } from "./modules/sessions";
 export { recordEvent, authorizeDisclosure, contextOf } from "./modules/events";
 export type { SessionContextShape } from "./modules/events";
+export { getMockTestReport, listMockTests, readMockTestSummary } from "./modules/mock-tests";
 export {
   submitAttempt,
   readAttempt,

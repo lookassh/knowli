@@ -16,6 +16,7 @@ export interface ExerciseHandlers {
 }
 
 export interface ExerciseProps {
+  mockTest?: boolean;
   task: TaskDto;
   busy: boolean;
   recording: boolean;

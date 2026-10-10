@@ -10,7 +10,7 @@ import type { ExerciseProps } from "./types";
  * Recall; wsparcie pisowni pozostaje zadaniem tekstowym. Dostępne są też
  * „Nie pamiętam — pokaż” i „Pomiń”.
  */
-export function WrittenView({ task, busy, recording, micAvailable, handlers }: ExerciseProps) {
+export function WrittenView({ task, busy, recording, micAvailable, handlers, mockTest }: ExerciseProps) {
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   if (task.prompt.kind !== "recall" && task.prompt.kind !== "spelling") {
@@ -45,7 +45,7 @@ export function WrittenView({ task, busy, recording, micAvailable, handlers }: E
           aria-label={messages.kid.typeWord}
         />
         <button type="submit" className="kid-primary" data-testid="kid-submit" disabled={disabled || text.trim() === ""}>
-          {messages.kid.check}
+          {mockTest ? messages.kid.mockTestSubmit : messages.kid.check}
         </button>
       </form>
       {micAvailable && task.prompt.kind === "recall" &&
@@ -65,7 +65,7 @@ export function WrittenView({ task, busy, recording, micAvailable, handlers }: E
         ))}
       <div className="kid-secondary-actions">
         <button type="button" data-testid="kid-not-remember" disabled={disabled} onClick={handlers.onNotRemember}>
-          {messages.kid.notRemember}
+          {mockTest ? messages.kid.mockTestNotRemember : messages.kid.notRemember}
         </button>
         <button type="button" data-testid="kid-skip" disabled={disabled} onClick={handlers.onSkip}>
           {messages.kid.skip}

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const SkillStatusSchema = z.enum(["mastered", "needs_confirmation", "needs_reconfirmation", "practicing", "not_assessed"]);
+
 /** Identyfikatory nadawane przez aplikację (UUID v4). */
 export const UuidSchema = z.uuid();
 export type Uuid = z.infer<typeof UuidSchema>;

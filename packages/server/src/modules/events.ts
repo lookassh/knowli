@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import {
+  MockTestReportDtoSchema,
+  type MockTestReportDto,
   DisclosureInputSchema,
   EventInputSchema,
   SessionSummaryDtoSchema,
@@ -23,6 +25,7 @@ import { AppError } from "../errors";
 import { computeTargetKey } from "../domain/target-key";
 
 export interface SessionContextShape {
+  mockTestReport?: MockTestReportDto;
   timezone: string;
   /** Data sprawdzianu przypięta przy rozpoczęciu nowej sesji; brak w legacy. */
   testDate?: string | null;
@@ -38,6 +41,7 @@ export interface SessionContextShape {
 export function contextOf(session: { context: Record<string, unknown> }): SessionContextShape {
   const raw = session.context as Partial<SessionContextShape>;
   const summary = SessionSummaryDtoSchema.safeParse(raw.summary);
+  const report = MockTestReportDtoSchema.safeParse(raw.mockTestReport);
   return {
     timezone: typeof raw.timezone === "string" ? raw.timezone : "Europe/Warsaw",
     ...(typeof raw.testDate === "string" || raw.testDate === null ? { testDate: raw.testDate } : {}),
@@ -45,6 +49,7 @@ export function contextOf(session: { context: Record<string, unknown> }): Sessio
     reservations: raw.reservations ?? [],
     settledChecks: raw.settledChecks ?? [],
     ...(summary.success ? { summary: summary.data } : {}),
+    ...(report.success ? { mockTestReport: report.data } : {}),
   };
 }
 
@@ -110,7 +115,10 @@ export async function lockTaskWithSession(tx: Tx, taskId: string) {
   const revision = (
     await tx.select({ itemId: itemRevisions.itemId }).from(itemRevisions).where(eq(itemRevisions.id, task.itemRevisionId))
   )[0]!;
-  return { task, session, itemId: revision.itemId };
+  // Stan zadania mógł zmienić się podczas oczekiwania na wspólną blokadę.
+  // Snapshot treści jest niezmienny, ale drugi klient musi zobaczyć terminalny stan.
+  const freshTask = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, taskId)))[0]!;
+  return { task: freshTask, session, itemId: revision.itemId };
 }
 
 /** Obserwacja klienta (display_confirmed/audio_played) — opcjonalna, idempotentna. */
@@ -157,6 +165,9 @@ export async function authorizeDisclosure(services: Services, input: DisclosureI
     }
     if (task.state !== "issued") {
       throw new AppError("conflict", { message: "task is no longer issued" });
+    }
+    if (session.mode === "mock_test" && (valid.kind === "hint" || task.exerciseType !== "listening")) {
+      throw new AppError("conflict", { message: "Odpowiedzi omówimy po zakończeniu kartkówki." });
     }
 
     const revision = (

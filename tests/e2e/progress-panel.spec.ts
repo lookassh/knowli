@@ -50,6 +50,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 768, height: 1024
             skills: { listening: "not_assessed", reading: "not_assessed", recall: "not_assessed",
               pronunciation: "not_assessed", spelling: "not_assessed" } }],
         };
+      else if (url.pathname.endsWith("/mock-tests")) body = [];
       else throw new Error(`Nieoczekiwane API: ${url.pathname}`);
       await route.fulfill({ json: body });
     });

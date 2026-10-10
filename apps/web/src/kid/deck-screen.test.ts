@@ -5,6 +5,8 @@ import type { KidDeckDto } from "@learning/contracts";
 import { DeckScreen } from "../../../../packages/kid-ui/src/screens/DeckScreen";
 
 const DECK: KidDeckDto = {
+  mockTestAvailable: false,
+  activeSession: null,
   deckId: "33333333-3333-3333-3333-333333333333",
   title: "Dni tygodnia",
   itemCount: 7,
