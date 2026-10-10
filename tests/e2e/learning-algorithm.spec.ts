@@ -108,7 +108,7 @@ test("letter_completion remains text-only when microphone is enabled", async ({ 
   const retry = await (await parent.post(`/api/v1/kid/sessions/${sessionId}/next`)).json() as { taskId: string; exerciseType: string };
   expect(retry.exerciseType).toBe("letter_completion");
 
-  await page.goto("/learn");
+  await page.goto("/");
   await page.waitForSelector('[data-testid="kid-profile"], [data-testid="kid-deck"]', { timeout: 30_000 });
   if (await page.getByTestId("kid-profile").count()) await page.getByTestId("kid-profile").filter({ hasText: child.displayName }).click();
   await page.getByTestId("kid-mic-toggle").check();

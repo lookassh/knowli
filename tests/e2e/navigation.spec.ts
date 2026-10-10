@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
+import { DeckDtoSchema, DraftDtoSchema } from "@learning/contracts";
 
 test("domyślna nawigacja: strona główna otwiera wybór profilu dziecka, link do rodzica i powrót do nauki", async ({ page }) => {
   // 1. Wejście na stronę główną /
@@ -19,27 +20,51 @@ test("domyślna nawigacja: strona główna otwiera wybór profilu dziecka, link 
 
   // 4. Logowanie rodzica i utworzenie profilu z zestawem
   const request = page.request;
-  await request.post("/api/v1/parent/setup", { data: { secret: "1234" } });
-  await request.post("/api/v1/parent/login", { data: { secret: "1234" } });
+  const setup = await request.post("/api/v1/parent/setup", { data: { secret: "1234" } });
+  expect([201, 409]).toContain(setup.status());
+  expect((await request.post("/api/v1/parent/login", { data: { secret: "1234" } })).status()).toBe(200);
 
   const childName = `Nav-${randomUUID().slice(0, 6)}`;
   const childRes = await request.post("/api/v1/parent/children", {
     data: { displayName: childName, avatarKey: "cat", birthYear: 2018 },
   });
+  expect(childRes.status()).toBe(201);
   const child = (await childRes.json()) as { id: string };
 
+  const deckId = randomUUID();
   const deckRes = await request.post("/api/v1/parent/decks", {
-    data: { title: `Talia-${childName}` },
+    data: { deckId, title: `Talia-${childName}` },
   });
-  const { deckId, draftId } = (await deckRes.json()) as { deckId: string; draftId: string };
-  await request.patch(`/api/v1/parent/drafts/${draftId}`, {
+  expect(deckRes.status()).toBe(201);
+  const deckRead = await request.get(`/api/v1/parent/decks/${deckId}`);
+  expect(deckRead.status()).toBe(200);
+  const deck = DeckDtoSchema.parse(await deckRead.json());
+  expect(deck.draft).not.toBeNull();
+  const draftId = deck.draft!.id;
+  const saved = await request.patch(`/api/v1/parent/drafts/${draftId}`, {
     data: {
-      expectedEditNumber: 1,
-      items: [{ source: "kot", target: "cat", pronunciationTarget: "cat", options: [] }],
+      expectedEditNumber: deck.draft!.editNumber,
+      items: [{
+        source: "kot", target: "cat", acceptedAnswers: [],
+        locales: { source: "pl-PL", target: "en-GB" }, visualType: "none",
+      }],
     },
   });
-  await request.post(`/api/v1/parent/drafts/${draftId}/publish`);
-  await request.put(`/api/v1/parent/assignments/${child.id}/${deckId}`, { data: { testDate: null } });
+  expect(saved.status()).toBe(200);
+  await expect.poll(async () => {
+    const response = await request.get(`/api/v1/parent/drafts/${draftId}`);
+    expect(response.status()).toBe(200);
+    const draft = DraftDtoSchema.parse(await response.json());
+    const audio = draft.assets.filter((asset) => asset.role === "target_audio");
+    return audio.length === 1 && audio[0]!.state === "approved";
+  }, { timeout: 60_000 }).toBe(true);
+  const draft = DraftDtoSchema.parse(await (await request.get(`/api/v1/parent/drafts/${draftId}`)).json());
+  expect((await request.post(`/api/v1/parent/drafts/${draftId}/publish`, {
+    data: { expectedEditNumber: draft.editNumber },
+  })).status()).toBe(200);
+  expect((await request.put(`/api/v1/parent/assignments/${child.id}/${deckId}`, {
+    data: { testDate: null },
+  })).status()).toBe(204);
 
   // 5. Zalogowany panel rodzica zawiera link do nauki
   await page.goto("/parent");
