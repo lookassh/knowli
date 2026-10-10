@@ -30,6 +30,11 @@ test("written mock test keeps its three slots after errors, reload and transport
   await page.getByTestId("kid-not-remember").click();
   await expect(page.getByTestId("kid-mock-summary")).toBeVisible();
   await expect(page.getByTestId("kid-mock-solution")).toHaveCount(3);
+  await expect(page.getByTestId("kid-mock-score")).toContainText("0/3 · 0%");
+  await expect(page.getByTestId("kid-mock-score")).toContainText("☆☆☆☆☆☆");
+  await expect(page.getByTestId("kid-mock-score")).toHaveAttribute("data-tone", "low");
+  await expect(page.locator('[data-testid="kid-mock-solution"][data-status="incorrect"]')).toHaveCount(2);
+  await expect(page.locator('[data-testid="kid-mock-solution"][data-status="notAssessed"]')).toHaveCount(1);
 });
 
 test("configured portion can exceed ten and ends after its thirteenth answer", async ({ page }) => {
@@ -44,6 +49,7 @@ test("configured portion can exceed ten and ends after its thirteenth answer", a
   }
   await expect(page.getByTestId("kid-mock-summary")).toBeVisible();
   await expect(page.getByTestId("kid-mock-solution")).toHaveCount(13);
+  await expect(page.getByTestId("kid-mock-score")).toContainText("0/13 · 0%");
 });
 
 test("two browsers resume the same test and stale answers refresh without extra slots", async ({ page, context }) => {

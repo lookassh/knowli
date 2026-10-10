@@ -563,3 +563,157 @@ button {
   width: 100%;
   max-width: 320px;
 }
+
+/* Podsumowanie kartkówki (design 2026-10-10): wynik u góry, słowa jako kompaktowe
+   wiersze zamiast dużych kart. Osobna lista, bo .kid-list wymusza przyciski 72px.
+   Kolor wiersza odpowiada wynikowi słowa: wszystko poprawnie zielono, jakakolwiek
+   pomyłka czerwono, nic nie sprawdzono neutralnie; ikona ✓/✗/– dubluje kolor,
+   żeby kolor nie był jedyną informacją. */
+.kid-mock-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kid-mock-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 2px solid #e4e6f4;
+  border-radius: 16px;
+  background: #fff;
+  padding: 6px 10px;
+}
+
+.kid-mock-row--correct {
+  border-color: #1d6a3f;
+  background: #f2fbf5;
+}
+
+.kid-mock-row--incorrect {
+  border-color: #c0392b;
+  background: #fdeeee;
+}
+
+.kid-mock-row__icon {
+  flex: none;
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: #6a6a85;
+}
+
+.kid-mock-row--correct .kid-mock-row__icon {
+  color: #1d6a3f;
+}
+
+.kid-mock-row--incorrect .kid-mock-row__icon {
+  color: #c0392b;
+}
+
+.kid-mock-row__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.kid-mock-row__words {
+  margin: 0;
+  font-size: 1.05rem;
+  overflow-wrap: anywhere;
+}
+
+.kid-mock-row__words strong {
+  font-size: 1.15rem;
+}
+
+.kid-mock-row__detail {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #6a6a85;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+}
+
+.kid-mock-badge {
+  white-space: nowrap;
+}
+
+.kid-mock-badge--correct {
+  color: #1d6a3f;
+  font-weight: 700;
+}
+
+.kid-mock-badge--incorrect {
+  color: #c0392b;
+  font-weight: 700;
+}
+
+.kid-mock-row__audio {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 2px solid #c8cdf0;
+  border-radius: 50%;
+  font-size: 1.1rem;
+  background: #eef0fb;
+  cursor: pointer;
+}
+
+/* Wynik próby: próg koloru 80%/50%, paleta jak feedback — zielony, bursztyn, czerwony. */
+.kid-mock-score {
+  text-align: center;
+  border: 2px solid #e4e6f4;
+  border-radius: 16px;
+  background: #fff;
+  padding: 12px;
+}
+
+.kid-mock-score__value {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+}
+
+.kid-mock-score__stars {
+  margin: 4px 0 0;
+  font-size: 1.4rem;
+  letter-spacing: 2px;
+}
+
+.kid-mock-score[data-tone="good"] {
+  border-color: #bfe3cd;
+  background: #f2fbf5;
+}
+
+.kid-mock-score[data-tone="good"] .kid-mock-score__value,
+.kid-mock-score[data-tone="good"] .kid-mock-score__stars {
+  color: #1d6a3f;
+}
+
+.kid-mock-score[data-tone="mid"] {
+  border-color: #f0dcbc;
+  background: #fdf6ec;
+}
+
+.kid-mock-score[data-tone="mid"] .kid-mock-score__value,
+.kid-mock-score[data-tone="mid"] .kid-mock-score__stars {
+  color: #8a6116;
+}
+
+.kid-mock-score[data-tone="low"] {
+  border-color: #f0c8c8;
+  background: #fdeeee;
+}
+
+.kid-mock-score[data-tone="low"] .kid-mock-score__value,
+.kid-mock-score[data-tone="low"] .kid-mock-score__stars {
+  color: #c0392b;
+}
