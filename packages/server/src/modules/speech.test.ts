@@ -237,7 +237,7 @@ describe("pasma wymowy (design 2026-10-09)", () => {
     });
     const grade = assessSpeechEvidence(aligned, speechKey(), ctx({ policy: bandedPolicy() }));
     expect(grade.speechFragments).toEqual([
-      { text: "th", verdict: "good" },
+      { text: "Th", verdict: "good" },
       { text: "u", verdict: "almost" },
       { text: "rsday", verdict: "good" },
     ]);
@@ -247,7 +247,7 @@ describe("pasma wymowy (design 2026-10-09)", () => {
       speechKey(),
       ctx({ policy: bandedPolicy() }),
     );
-    expect(mismatched.speechFragments).toEqual([{ text: "Thursday", verdict: "good" }]);
+    expect(mismatched.speechFragments).toEqual([{ text: "Thursday", verdict: "unknown" }]);
   });
 
   it("below pozostaje nieocenione — niepewna ocena, nie błąd wiedzy", () => {
