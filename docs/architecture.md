@@ -48,6 +48,8 @@ To jawne doprecyzowanie SPEC §27: „jeden deploy aplikacji” oznacza wspólne
 
 Przy implementacji pinujemy konkretne wspierane stabilne wersje, obraz Node LTS i obraz PostgreSQL; żadnych zależności produkcyjnych na tagu latest ani wersji RC. Nie wpisujemy tu niezweryfikowanych numerów jako zobowiązania. Wybrane wersje trafią do lockfile i obrazów w pierwszym zadaniu implementacyjnym.
 
+W `pnpm.overrides` (root `package.json`) znajdują się ograniczone nadpisania wersji zależności pośrednich zamknięte na konkretne, podatne resolucje: `postcss@8.4.31 → 8.5.29` (pin Next.js) i `esbuild@0.18.20 → 0.25.12` (`@esbuild-kit` przez drizzle-kit). Są celowo wąskie: gdy upstream przypinie wersje z łatkami, nadpisania przestaną pasować i należy je wtedy usunąć. Dependabot wywoła alert, jeśli po przyszłym bumpie wróci podatna wersja pod innym specem.
+
 SQL w schema.sql jest przeglądowym modelem początkowym. Podczas implementacji należy odwzorować go w Drizzle i odtąd utrzymywać jeden autorytatywny schemat TS z migracjami SQL; nie rozwijać dwóch niezależnych definicji.
 
 ## 4. Granice kodu
