@@ -38,7 +38,7 @@ Ruling: brak konfliktów kontraktów na podstawie planu/specyfikacji; wyżej wym
 
 - Task 1: brief utworzony przez `task-brief`; rozpoczynam test RED.
 - Task 2: nie rozpoczęty.
-- Task 3: nie rozpoczęty.
+- Task 3: complete.
 - Task 4: nie rozpoczęty.
 - Task 5: nie rozpoczęty.
 - Task 6: nie rozpoczęty.
@@ -61,3 +61,13 @@ Ruling: brak konfliktów kontraktów na podstawie planu/specyfikacji; wyżej wym
 - Odstępstwa: brak.
 - Commit: c87b499190f5d218163b8ed698879f58383e4df3.
 - Task 2: complete (commits 6c62c64..c87b499190f5d218163b8ed698879f58383e4df3; tests: unit + typecheck → PASS)
+
+### Task 3 — bezpieczny cykl mikrofonu i wskaźnik dźwięku: complete
+
+- RED potwierdzony dla spóźnionego getUserMedia, przygotowania mikrofonu, poziomu RMS, końca limitu, anulowanego fetch/blob i potwierdzenia odsłuchu po przerwaniu. Dodatkowy test kontrolera ujawnił, że ACK dla przerwanego odsłuchu listening musi być tłumiony.
+- Implementacja: nowy port `prepareMicrophone` i callbacki rejestratora; tor RMS Web Audio z limitem 10 Hz; limit 15 s; zamykanie strumieni i analizatora; kontrola generacji po spóźnionym getUserMedia; odtwarzacz z abortem i neutralnym domknięciem Promise; kontroler z fazami nagrania, progiem 300 ms, serializacją stopu, blokowaniem przestarzałych callbacków i bez ACK po przerwaniu; blur/hidden/offline anuluje nagranie.
+- Test końcowy `pnpm test:unit packages/kid-ui/src/media/browser.test.ts packages/kid-ui/src/session/session-controller.test.ts` → 2 files, 47 tests PASS; `pnpm typecheck` PASS; `git diff --check` PASS. Po testach przywrócono wyłącznie niezamierzoną zmianę lockfile wygenerowaną przez pnpm.
+- W trakcie weryfikacji nowy test najpierw zawiódł, bo fake player rozwiązywał gate przy początkowym stopie sprzątającym przed rozpoczęciem odtwarzania; po poprawie fake'a aktywny przypadek przerwania odtwarzania przechodzi i nie wysyła `audio_played`.
+- Odstępstwa: brak; rzeczywisty telefon/tablet i zachowanie uprawnień przeglądarki pozostają weryfikacją z Task 7.
+- Commit: `1339658c146246931734121ba54fc4b54f5abbea`.
+- Task 3: complete (commits c87b499..1339658c146246931734121ba54fc4b54f5abbea; tests: selected unit + typecheck → PASS)
