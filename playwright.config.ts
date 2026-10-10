@@ -18,6 +18,8 @@ export default defineConfig({
     // sztuczne urządzenie medialne: przyznany mikrofon produkuje strumień,
     // a brak zgody nadal kończy się odmową (deterministyczne RF5)
     launchOptions: { args: ["--use-fake-device-for-media-stream"] },
+    // ślad tylko z porażki — materiał diagnostyczny dla CI bez wpływu na zielone runy
+    trace: "retain-on-failure",
   },
   reporter: [["list"]],
 });
