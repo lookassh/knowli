@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { KidApiError } from "../api/client";
 import type {
   AttemptDto,
@@ -70,7 +70,7 @@ function attemptDto(overrides: Partial<AttemptDto> = {}): AttemptDto {
   };
 }
 
-function makeRecorder(opts: { failStartWith?: unknown } = {}): SpeechRecorder & {
+function makeRecorder(opts: { failStartWith?: unknown; startGate?: Promise<void> } = {}): SpeechRecorder & {
   cancelled: number;
   stopped: number;
   started: number;
@@ -91,6 +91,7 @@ function makeRecorder(opts: { failStartWith?: unknown } = {}): SpeechRecorder & 
     },
     async start() {
       state.started += 1;
+      await opts.startGate;
       if (opts.failStartWith !== undefined) {
         throw opts.failStartWith;
       }
@@ -105,17 +106,20 @@ function makeRecorder(opts: { failStartWith?: unknown } = {}): SpeechRecorder & 
   };
 }
 
-function makeMedia(recorder: ReturnType<typeof makeRecorder>): PlatformMedia & { playUrls: string[]; stops: number } {
+function makeMedia(recorder: ReturnType<typeof makeRecorder>, playGate?: Promise<void>, onStopPlayback?: () => void): PlatformMedia & { playUrls: string[]; stops: number } {
   const media = {
     playUrls: [] as string[],
     stops: 0,
+    async prepareMicrophone() {},
     createRecorder: () => recorder,
     player: {
       async play(url: string) {
         media.playUrls.push(url);
+        await playGate;
       },
       stop() {
         media.stops += 1;
+        if (media.playUrls.length > 0) onStopPlayback?.();
       },
     } satisfies AudioPlayer,
   };
@@ -134,6 +138,7 @@ interface ApiState {
   startedSessions: { childId: string; microphoneEnabled: boolean }[];
   submissions: { taskId: string; clientAttemptId: string; modality: string }[];
   speechSubmissions: { taskId: string; clientAttemptId: string }[];
+  observations: string[];
   /** Gdy ustawione, submitAnswer rzuca TypeError (brak sieci). */
   networkDown: boolean;
   disclosureGate?: Promise<void>;
@@ -179,7 +184,8 @@ function makeApi(state: ApiState): KidApi {
       state.presentations.push(taskId);
       return { taskId, state: "completed", completedAt: "2026-10-07T16:00:02.000Z" };
     },
-    async recordObservation() {
+    async recordObservation(input) {
+      state.observations.push(input.kind);
       return undefined;
     },
     async endSession(sessionId): Promise<SessionSummaryDto> {
@@ -210,10 +216,10 @@ const DECK: KidDeckDto = {
 
 function makeHarness(
   state: ApiState,
-  options: { failStartWith?: unknown; initialChildId?: string } = {},
+  options: { failStartWith?: unknown; startGate?: Promise<void>; initialChildId?: string; playGate?: Promise<void>; onStopPlayback?: () => void } = {},
 ) {
   const recorder = makeRecorder(options);
-  const media = makeMedia(recorder);
+  const media = makeMedia(recorder, options.playGate, options.onStopPlayback);
   const storage = createMemoryPreferences();
   const controller = new LearningSessionController({
     api: makeApi(state),
@@ -225,7 +231,7 @@ function makeHarness(
   return { controller, recorder, media, storage, state };
 }
 
-async function startAtTask(state: ApiState, task: TaskDto, recorderOpts?: { failStartWith?: unknown }) {
+async function startAtTask(state: ApiState, task: TaskDto, recorderOpts?: { failStartWith?: unknown; startGate?: Promise<void>; playGate?: Promise<void>; onStopPlayback?: () => void }) {
   state.tasks = [task];
   const harness = makeHarness(state, recorderOpts);
   await harness.controller.start();
@@ -297,6 +303,21 @@ describe("LearningSessionController", () => {
     await new Promise(resolve => setTimeout(resolve, 0));
 
     expect(media.playUrls).not.toContain("https://media.test/old-audio");
+  });
+  it("does not acknowledge listening audio when playback is stopped for microphone recording", async () => {
+    const listening = taskDto("t1", { kind: "listening", options: [], audioAssetId: "asset-1" });
+    const state = baseState();
+    let releasePlayback!: () => void;
+    const playGate = new Promise<void>(resolve => { releasePlayback = resolve; });
+    const harness = await startAtTask(state, listening, { playGate, onStopPlayback: releasePlayback });
+
+    await harness.controller.prepareMicrophone();
+    await harness.controller.startRecording();
+    await Promise.resolve();
+
+    expect(state.observations).not.toContain("audio_played");
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "recording" });
+    harness.controller.cancelRecording();
   });
   it("shows offline state when mock audio disclosure authorization fails and retries playback", async () => {
     const state = baseState();
@@ -436,6 +457,8 @@ describe("LearningSessionController", () => {
     const harness = await startAtTask(state, recall, {
       failStartWith: new DOMException("Permission dismissed", "NotAllowedError"),
     });
+    await harness.controller.prepareMicrophone();
+
     await harness.controller.startRecording();
     let screen = harness.controller.getScreen();
     expect(screen).toMatchObject({ kind: "learning", micDenied: true, recording: false });
@@ -461,10 +484,12 @@ describe("LearningSessionController", () => {
     const harness = await startAtTask(state, recall, {
       failStartWith: new DOMException("Requested device not found", "NotFoundError"),
     });
+    await harness.controller.prepareMicrophone();
+
     await harness.controller.startRecording();
     expect(harness.controller.getScreen()).toMatchObject({
       kind: "learning",
-      micDenied: true,
+      micDenied: false,
       recording: false,
     });
     expect(harness.storage.read(MIC_DENIED_KEY)).toBeNull();
@@ -484,6 +509,8 @@ describe("LearningSessionController", () => {
     const harness = await startAtTask(state, recall, {
       failStartWith: new DOMException("Permission dismissed", "NotAllowedError"),
     });
+    await harness.controller.prepareMicrophone();
+
     await harness.controller.startRecording();
     expect(harness.storage.read(MIC_DENIED_KEY)).toBe("1");
 
@@ -527,6 +554,8 @@ describe("LearningSessionController", () => {
   it("opuszczenie widoku anuluje nagrywanie i zatrzymuje odtwarzanie", async () => {
     const recall = taskDto("t1", { kind: "recall", prompt: "czwartek" });
     const harness = await startAtTask(baseState(), recall);
+    await harness.controller.prepareMicrophone();
+
     await harness.controller.startRecording();
     expect(harness.controller.getScreen()).toMatchObject({ recording: true });
     harness.controller.teardown();
@@ -543,12 +572,60 @@ describe("LearningSessionController", () => {
       attemptDto({ modality: "audio", feedback: { kind: "not_assessed" }, taskState: "issued" }),
     ];
     const harness = await startAtTask(state, recall);
+    await harness.controller.prepareMicrophone();
+
     await harness.controller.startRecording();
+    await new Promise((resolve) => setTimeout(resolve, 300));
     await harness.controller.stopRecording();
     expect(state.speechSubmissions).toHaveLength(1);
     const screen = harness.controller.getScreen() as { kind: string; feedback?: unknown };
     expect(screen.kind).toBe("learning");
     expect(screen).toMatchObject({ feedback: { dto: { kind: "not_assessed" } } });
+  });
+
+  it("release przed 300 ms nie wysyła odpowiedzi i pokazuje neutralną wskazówkę", async () => {
+    const recall = taskDto("t1", { kind: "recall", prompt: "czwartek" });
+    const harness = await startAtTask(baseState(), recall);
+    await harness.controller.prepareMicrophone();
+    expect(harness.controller.getScreen()).toMatchObject({ microphoneReady: true, recordingPhase: "idle" });
+    await harness.controller.startRecording();
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "recording", recording: true });
+    await harness.controller.stopRecording();
+    expect(harness.state.speechSubmissions).toHaveLength(0);
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "idle", recordingNotice: expect.any(String) });
+    expect(harness.recorder.cancelled).toBe(1);
+  });
+
+  it("anuluje intent startu, gdy rejestrator odpowie po puszczeniu", async () => {
+    let releaseStart!: () => void;
+    const startGate = new Promise<void>((resolve) => { releaseStart = resolve; });
+    const recall = taskDto("t1", { kind: "recall", prompt: "czwartek" });
+    const harness = await startAtTask(baseState(), recall, { startGate });
+    await harness.controller.prepareMicrophone();
+    const starting = harness.controller.startRecording();
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "starting" });
+    harness.controller.cancelRecording();
+    releaseStart();
+    await starting;
+    expect(harness.recorder.cancelled).toBe(1);
+    expect(harness.state.speechSubmissions).toHaveLength(0);
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "idle", recording: false });
+  });
+
+  it("po 300 ms stop wysyła dokładnie jedną odpowiedź ustną", async () => {
+    vi.useFakeTimers();
+    try {
+      const recall = taskDto("t1", { kind: "recall", prompt: "czwartek" });
+      const harness = await startAtTask(baseState(), recall);
+      await harness.controller.prepareMicrophone();
+
+    await harness.controller.startRecording();
+      await vi.advanceTimersByTimeAsync(300);
+      await harness.controller.stopRecording();
+      expect(harness.state.speechSubmissions).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("„Nie pamiętam” ujawnia słowo po zgody serwera i wysyła trudność", async () => {
@@ -683,7 +760,9 @@ describe("LearningSessionController", () => {
     state.attempts = [attemptDto({ modality: "audio", feedback: { kind: "not_assessed" }, taskState: "issued" })];
     await harness.controller.learnAgain();
     await harness.controller.startLearning(DECK.deckId);
+    await harness.controller.prepareMicrophone();
     await harness.controller.startRecording();
+    await new Promise((resolve) => setTimeout(resolve, 300));
     await harness.controller.stopRecording();
     const screen = harness.controller.getScreen() as {
       feedback: { dto: FeedbackDto | null; chosenOptionId?: string } | null;
@@ -725,6 +804,7 @@ function baseState(): ApiState {
     startedSessions: [],
     submissions: [],
     speechSubmissions: [],
+    observations: [],
     networkDown: false,
   };
 }

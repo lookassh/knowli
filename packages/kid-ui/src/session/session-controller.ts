@@ -11,7 +11,7 @@ import {
 } from "@learning/contracts";
 import type { KidApi } from "../api/KidApi";
 import { isNetworkError, KidApiError } from "../api/client";
-import type { PlatformMedia, SpeechRecorder } from "../media/platform";
+import type { PlatformMedia, RecorderOptions, SpeechRecorder } from "../media/platform";
 import { MIC_DENIED_KEY, type LocalPreferences } from "../storage";
 import { randomUUID } from "./uuid";
 
@@ -46,6 +46,10 @@ export interface LearningScreen {
   offline: boolean;
   busy: boolean;
   micDenied: boolean;
+  microphoneReady: boolean;
+  recordingPhase: "idle" | "preparing" | "starting" | "recording" | "stopping";
+  inputLevel: number | null;
+  recordingNotice: string | null;
   recording: boolean;
   /** Odpowiedź ustna w drodze/oceniana przez serwer. */
   processing: boolean;
@@ -129,6 +133,9 @@ export class LearningSessionController {
   #pendingChoice: string | null = null;
   /** Wycofuje operacje zdążające po zmianie ekranu/teardown. */
   #epoch = 0;
+  #recordingGeneration = 0;
+  #recordingStartedAt = 0;
+  #playbackGeneration = 0;
 
   constructor(deps: LearningSessionDeps) {
     this.#api = deps.api;
@@ -157,8 +164,26 @@ export class LearningSessionController {
 
   #setLearning(patch: Partial<LearningScreen>): void {
     if (this.#screen.kind !== "learning") return;
-    this.#screen = { ...this.#screen, ...patch };
+    const recordingPhase = patch.recordingPhase ?? (patch.recording === undefined
+      ? this.#screen.recordingPhase
+      : patch.recording ? "recording" : "idle");
+    this.#screen = {
+      ...this.#screen,
+      ...patch,
+      recordingPhase,
+      recording: recordingPhase === "recording",
+    };
     this.#emit();
+  }
+
+  #stopPlayback(): void {
+    this.#playbackGeneration += 1;
+    this.#media.player.stop();
+  }
+
+  #beginPlayback(): number {
+    this.#stopPlayback();
+    return this.#playbackGeneration;
   }
 
   async start(): Promise<void> {
@@ -185,7 +210,7 @@ export class LearningSessionController {
   async selectProfile(childId: string): Promise<void> {
     this.#epoch += 1;
     this.#teardownRecording();
-    this.#media.player.stop();
+    this.#stopPlayback();
     this.#screen = { kind: "loading" };
     this.#emit();
     await this.#openDeckScreen(childId);
@@ -240,7 +265,7 @@ export class LearningSessionController {
 
   async backToDecks(): Promise<void> {
     this.#epoch += 1;
-    this.#teardownRecording(); this.#media.player.stop();
+    this.#teardownRecording(); this.#stopPlayback();
     if (this.#childId !== null) await this.#openDeckScreen(this.#childId);
     else await this.start();
   }
@@ -267,6 +292,10 @@ export class LearningSessionController {
         offline: false,
         busy: true,
         micDenied: this.#micDenied,
+        microphoneReady: false,
+        recordingPhase: "idle",
+        inputLevel: null,
+        recordingNotice: null,
         recording: false,
         processing: false,
         error: null,
@@ -290,7 +319,8 @@ export class LearningSessionController {
     if (this.#screen.kind !== "mockTestReady") return;
     const session = this.#screen.session;
     this.#screen = { kind: "learning", session, task: null, feedback: null, reveal: null, offline: false, busy: true,
-      micDenied: false, recording: false, processing: false, error: null };
+      micDenied: false, microphoneReady: false, recordingPhase: "idle", inputLevel: null, recordingNotice: null,
+      recording: false, processing: false, error: null };
     this.#emit(); await this.#loadNext(this.#epoch, session.sessionId);
   }
 
@@ -326,7 +356,7 @@ export class LearningSessionController {
         return;
       }
       // odsłuch poprzedniego zadania nie przenosi się do następnego
-      this.#media.player.stop();
+      this.#stopPlayback();
       this.#screen = {
         ...this.#screen,
         task,
@@ -360,7 +390,7 @@ export class LearningSessionController {
       const mockSummary = mode === "mock_test" ? await this.#api.readMockTestSummary(sessionId) : null;
       if (epoch !== this.#epoch) return;
       this.#teardownRecording();
-      this.#media.player.stop();
+      this.#stopPlayback();
       this.#screen = mockSummary ? { kind: "mockTestSummary", summary: mockSummary } : { kind: "summary", childId, profiles: this.#profiles, summary };
       this.#emit();
     } catch (error) {
@@ -531,7 +561,7 @@ export class LearningSessionController {
    */
   async playTaskAudio(): Promise<void> {
     const screen = this.#learning();
-    if (!screen?.task || screen.offline) return;
+    if (!screen?.task || screen.offline || screen.recordingPhase !== "idle" || screen.processing) return;
     const task = screen.task;
     const assetId = audioAssetOf(task);
     if (!assetId) return;
@@ -550,10 +580,13 @@ export class LearningSessionController {
         return;
       }
       const current = this.#learning();
-      if (epoch !== this.#epoch || !current || current.offline || current.session.sessionId !== screen.session.sessionId || current.task?.taskId !== task.taskId) return;
+      if (epoch !== this.#epoch || !current || current.offline || current.recordingPhase !== "idle" || current.processing || current.session.sessionId !== screen.session.sessionId || current.task?.taskId !== task.taskId) return;
     }
+    const playbackGeneration = this.#beginPlayback();
     try {
       await this.#media.player.play(this.#api.mediaUrl(assetId));
+      const current = this.#learning();
+      if (playbackGeneration !== this.#playbackGeneration || epoch !== this.#epoch || !current || current.offline || current.recordingPhase !== "idle" || current.task?.taskId !== task.taskId) return;
       if (task.exerciseType === "listening") {
         // liczba odsłuchów pytania jest zapisywana jako obserwacja (§13.2);
         // tylko faktycznie rozpoczęte odtwarzanie — zablokowany autoplay
@@ -577,12 +610,17 @@ export class LearningSessionController {
    */
   async playExampleAudio(): Promise<void> {
     const screen = this.#learning();
-    if (!screen?.task || screen.offline) return;
+    if (!screen?.task || screen.offline || screen.recordingPhase !== "idle" || screen.processing) return;
     if (screen.task.prompt.kind !== "exposure") return;
     const assetId = screen.task.prompt.exampleAudioAssetId;
     if (assetId === null) return;
+    const epoch = this.#epoch;
+    const taskId = screen.task.taskId;
+    const playbackGeneration = this.#beginPlayback();
     try {
       await this.#media.player.play(this.#api.mediaUrl(assetId));
+      const current = this.#learning();
+      if (playbackGeneration !== this.#playbackGeneration || epoch !== this.#epoch || !current || current.offline || current.recordingPhase !== "idle" || current.task?.taskId !== taskId) return;
     } catch (error) {
       if (isNetworkError(error)) {
         this.#handleFailure(error);
@@ -590,41 +628,104 @@ export class LearningSessionController {
     }
   }
 
-  async startRecording(): Promise<void> {
+  async prepareMicrophone(): Promise<void> {
     const screen = this.#learning();
-    if (!screen?.task || screen.offline || this.#recorder !== null) return;
+    if (!screen?.task || screen.offline || screen.busy || screen.recordingPhase !== "idle" || screen.microphoneReady) return;
+    const epoch = this.#epoch;
+    this.#setLearning({ recordingPhase: "preparing", recordingNotice: null, inputLevel: null });
     try {
-      const recorder = this.#media.createRecorder();
-      await recorder.start();
-      this.#recorder = recorder;
-      this.#setLearning({ recording: true, micDenied: false });
+      await this.#media.prepareMicrophone();
+      const current = this.#learning();
+      if (epoch !== this.#epoch || !current || current.task?.taskId !== screen.task.taskId) return;
+      this.#micDenied = false;
+      this.#storage.remove(MIC_DENIED_KEY);
+      this.#setLearning({ microphoneReady: true, recordingPhase: "idle", micDenied: false, recordingNotice: null });
     } catch (error) {
-      // trwale pamiętamy tylko świadomą odmowę (też prompt zablokowany przez
-      // przeglądarkę); awaria urządzenia wyłącza nagrywanie do końca sesji
-      if ((error as { name?: unknown } | null)?.name === "NotAllowedError") {
+      if (epoch !== this.#epoch || this.#learning()?.task?.taskId !== screen.task.taskId) return;
+      const denied = (error as { name?: unknown } | null)?.name === "NotAllowedError" ||
+        (error as { name?: unknown } | null)?.name === "PermissionDeniedError";
+      if (denied) {
         this.#micDenied = true;
         this.#storage.write(MIC_DENIED_KEY, "1");
       }
-      this.#setLearning({ recording: false, micDenied: true });
+      this.#setLearning({ recordingPhase: "idle", microphoneReady: false, micDenied: denied, recordingNotice: denied ? messages.kid.micDenied : messages.kid.recordingUnavailable });
+    }
+  }
+
+  async startRecording(): Promise<void> {
+    const screen = this.#learning();
+    if (!screen?.task || screen.offline || screen.busy || screen.processing || this.#recorder !== null || screen.recordingPhase !== "idle") return;
+    if (!screen.microphoneReady) {
+      await this.prepareMicrophone();
+      return;
+    }
+    this.#stopPlayback();
+    const epoch = this.#epoch;
+    const taskId = screen.task.taskId;
+    const generation = ++this.#recordingGeneration;
+    const options: RecorderOptions = {
+      onLevel: (level) => {
+        if (generation !== this.#recordingGeneration || !Number.isFinite(level)) return;
+        this.#setLearning({ inputLevel: Math.max(0, Math.min(1, level)) });
+      },
+      onLimitReached: () => {
+        if (generation === this.#recordingGeneration) void this.stopRecording();
+      },
+    };
+    const recorder = this.#media.createRecorder(options);
+    this.#recorder = recorder;
+    this.#setLearning({ recordingPhase: "starting", recordingNotice: null, inputLevel: null });
+    try {
+      await recorder.start();
+      const current = this.#learning();
+      if (generation !== this.#recordingGeneration || epoch !== this.#epoch || !current || current.task?.taskId !== taskId) {
+        return;
+      }
+      this.#recordingStartedAt = Date.now();
+      this.#setLearning({ recordingPhase: "recording", micDenied: false });
+    } catch (error) {
+      if (generation !== this.#recordingGeneration || epoch !== this.#epoch) return;
+      this.#recorder = null;
+      const denied = (error as { name?: unknown } | null)?.name === "NotAllowedError" ||
+        (error as { name?: unknown } | null)?.name === "PermissionDeniedError";
+      if (denied) {
+        this.#micDenied = true;
+        this.#storage.write(MIC_DENIED_KEY, "1");
+      }
+      this.#setLearning({ recordingPhase: "idle", microphoneReady: false, inputLevel: null, micDenied: denied, recordingNotice: denied ? messages.kid.micDenied : messages.kid.recordingUnavailable });
     }
   }
 
   async stopRecording(): Promise<void> {
-    const recorder = this.#recorder;
-    this.#recorder = null;
-    this.#setLearning({ recording: false });
-    if (!recorder) return;
     const screen = this.#learning();
-    if (!screen?.task) return;
+    const recorder = this.#recorder;
+    if (!screen?.task || !recorder) return;
+    if (screen.recordingPhase === "starting") {
+      this.cancelRecording(messages.kid.recordingStartCancelled);
+      return;
+    }
+    if (screen.recordingPhase !== "recording") return;
     const epoch = this.#epoch;
     const taskId = screen.task.taskId;
+    const generation = ++this.#recordingGeneration;
+    this.#setLearning({ recordingPhase: "stopping", inputLevel: null });
+    if (Date.now() - this.#recordingStartedAt < 300) {
+      this.#recorder = null;
+      recorder.cancel();
+      this.#setLearning({ recordingPhase: "idle", recordingNotice: messages.kid.recordingTooShort });
+      return;
+    }
     try {
       const audio = await recorder.stop();
-      this.#setLearning({ processing: true, busy: true });
+      const current = this.#learning();
+      if (generation !== this.#recordingGeneration || epoch !== this.#epoch || !current || current.task?.taskId !== taskId) {
+        audio.bytes.fill(0);
+        return;
+      }
+      this.#recorder = null;
+      this.#setLearning({ recordingPhase: "idle", recordingNotice: null, processing: true, busy: true });
       const clientAttemptId = randomUUID();
       const send = async (): Promise<void> => {
-        // odpowiedź ustna nie jest wyborem — czyścimy, by feedback wymowy
-        // nie dziedziczył podświetlenia opcji (pełny modal z heardText)
         this.#pendingChoice = null;
         const attempt = await this.#api.submitSpeech(taskId, clientAttemptId, audio);
         await this.#applyAttempt(attempt, epoch);
@@ -632,16 +733,19 @@ export class LearningSessionController {
       this.#resume = send;
       await send();
     } catch (error) {
-      if (epoch !== this.#epoch || this.#screen.kind !== "learning") return;
+      if (generation !== this.#recordingGeneration || epoch !== this.#epoch || this.#screen.kind !== "learning") return;
+      this.#recorder = null;
+      this.#setLearning({ recordingPhase: "idle", inputLevel: null });
       this.#handleFailure(error);
     }
   }
 
-  cancelRecording(): void {
+  cancelRecording(notice: string | null = null): void {
+    this.#recordingGeneration += 1;
     const recorder = this.#recorder;
     this.#recorder = null;
     recorder?.cancel();
-    this.#setLearning({ recording: false });
+    this.#setLearning({ recordingPhase: "idle", inputLevel: null, recordingNotice: notice });
   }
 
   /** Powrót z tła: idempotentne odświeżenie bieżącego kroku (plan zadania 9). */
@@ -654,7 +758,7 @@ export class LearningSessionController {
 
   markOffline(): void {
     if (this.#learning() === null) return;
-    this.#media.player.stop();
+    this.#stopPlayback();
     this.#setLearning({ offline: true });
   }
 
@@ -689,7 +793,7 @@ export class LearningSessionController {
   async switchProfile(): Promise<void> {
     this.#epoch += 1;
     this.#teardownRecording();
-    this.#media.player.stop();
+    this.#stopPlayback();
     this.#screen = { kind: "profile", profiles: this.#profiles };
     this.#emit();
   }
@@ -724,7 +828,7 @@ export class LearningSessionController {
   #handleFailure(error: unknown): void {
     if (this.#screen.kind !== "learning") return;
     if (isNetworkError(error)) {
-      this.#media.player.stop();
+      this.#stopPlayback();
       this.#screen = { ...this.#screen, offline: true, busy: false };
     } else {
       this.#screen = { ...this.#screen, error: messageForError(error), busy: false };
@@ -736,15 +840,16 @@ export class LearningSessionController {
   teardown(): void {
     this.#epoch += 1;
     this.#teardownRecording();
-    this.#media.player.stop();
+    this.#stopPlayback();
   }
 
   #teardownRecording(): void {
+    this.#recordingGeneration += 1;
     const recorder = this.#recorder;
     this.#recorder = null;
     recorder?.cancel();
     if (this.#screen.kind === "learning") {
-      this.#screen = { ...this.#screen, recording: false };
+      this.#screen = { ...this.#screen, recording: false, recordingPhase: "idle", inputLevel: null };
     }
   }
 }

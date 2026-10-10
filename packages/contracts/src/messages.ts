@@ -312,6 +312,9 @@ export const messages = {
     offlineMessage: "Nie ma internetu. Zaczekaj chwilę.",
     offlineRetry: "Spróbuj ponownie",
     micDenied: "Nie udało się włączyć mikrofonu. Możesz uczyć się bez nagrywania.",
+    recordingUnavailable: "Nie udało się uruchomić mikrofonu. Spróbuj ponownie albo ucz się bez nagrywania.",
+    recordingStartCancelled: "Przytrzymaj, aż zobaczysz „Słucham”.",
+    recordingTooShort: "Przytrzymaj przycisk i powiedz całe słowo.",
     loading: "Chwilka…",
   },
 } as const;

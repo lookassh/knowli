@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BrowserRecorder, MAX_RECORDING_MS } from "./browser";
+import { BrowserAudioPlayer, BrowserRecorder, createBrowserMedia, MAX_RECORDING_MS } from "./browser";
 
 /** Fałszywy MediaRecorder — sterowany z testu, bez prawdziwego DOM. */
 class FakeMediaRecorder {
@@ -48,6 +48,7 @@ function fakeStream() {
 
 function fakeTimers() {
   let fired: (() => void) | null = null;
+  const intervals: (() => void)[] = [];
   return {
     timers: {
       set: (fn: () => void) => {
@@ -57,8 +58,11 @@ function fakeTimers() {
       clear: () => {
         fired = null;
       },
+      setInterval: (fn: () => void) => { intervals.push(fn); return intervals.length; },
+      clearInterval: () => undefined,
     },
     fire: () => fired?.(),
+    fireInterval: () => intervals.forEach((fn) => fn()),
   };
 }
 
@@ -158,5 +162,136 @@ describe("BrowserRecorder — nagrywanie bez pozostawiania strumienia (arch §11
 
   it("przyjmowany limit nagrywania odpowiada limitowi serwera", () => {
     expect(MAX_RECORDING_MS).toBe(15_000);
+  });
+
+  it("zamyka spóźniony strumień, jeśli recorder anulowano podczas getUserMedia", async () => {
+    let resolveStream!: (stream: MediaStream) => void;
+    const getUserMedia = vi.fn(() => new Promise<MediaStream>((resolve) => { resolveStream = resolve; }));
+    const recorder = new BrowserRecorder({ getUserMedia, mediaRecorder: FakeMediaRecorder as unknown as typeof MediaRecorder });
+    const starting = recorder.start();
+    recorder.cancel();
+    const { stream, stop } = fakeStream();
+    resolveStream(stream as unknown as MediaStream);
+    await expect(starting).rejects.toThrowError(/cancel/i);
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(FakeMediaRecorder.instances).toHaveLength(0);
+  });
+
+  it("prepareMicrophone prosi o zgodę i od razu zwalnia próbny strumień", async () => {
+    const { stream, stop } = fakeStream();
+    const getUserMedia = vi.fn(async () => stream as unknown as MediaStream);
+    const media = createBrowserMedia({ getUserMedia });
+    await media.prepareMicrophone();
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(FakeMediaRecorder.instances).toHaveLength(0);
+  });
+
+  it("publikuje wyłącznie skończony poziom 0–1 najwyżej raz na 100 ms i zamyka analizator", async () => {
+    const { stream } = fakeStream();
+    const timer = fakeTimers();
+    let now = 0;
+    const close = vi.fn(async () => undefined);
+    const disconnect = vi.fn();
+    const audioContext = class {
+      createAnalyser() {
+        return { fftSize: 4, getFloatTimeDomainData: (samples: Float32Array) => samples.fill(0.5), disconnect };
+      }
+      createMediaStreamSource() { return { connect: vi.fn() }; }
+      close = close;
+    } as unknown as typeof AudioContext;
+    const onLevel = vi.fn();
+    const recorder = new BrowserRecorder({
+      ...deps(stream, timer).deps,
+      audioContext,
+      now: () => now,
+    }, { onLevel });
+    await recorder.start();
+    timer.fireInterval();
+    timer.fireInterval();
+    expect(onLevel).toHaveBeenCalledWith(1);
+    expect(onLevel).toHaveBeenCalledOnce();
+    now = 100;
+    timer.fireInterval();
+    expect(onLevel).toHaveBeenCalledTimes(2);
+    expect(onLevel.mock.calls.every(([level]) => Number.isFinite(level) && level >= 0 && level <= 1)).toBe(true);
+    await recorder.stop();
+    expect(disconnect).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("limit wywołuje callback raz i pozwala pobrać już zamknięte nagranie", async () => {
+    const { stream } = fakeStream();
+    const timer = fakeTimers();
+    const onLimitReached = vi.fn();
+    const recorder = new BrowserRecorder(deps(stream, timer).deps, { onLimitReached });
+    await recorder.start();
+    timer.fire();
+    expect(onLimitReached).toHaveBeenCalledOnce();
+    await expect(recorder.stop()).resolves.toMatchObject({ mimeType: "audio/webm;codecs=opus" });
+    expect(onLimitReached).toHaveBeenCalledOnce();
+  });
+});
+
+describe("BrowserAudioPlayer — anulowanie także oczekującego pobrania", () => {
+  it.each(["fetch", "blob"] as const)("stop przed zakończeniem %s nie uruchamia audio.play", async (stage) => {
+    let resolveFetch!: (response: Response) => void;
+    let resolveBlob!: (blob: Blob) => void;
+    const blobGate = new Promise<Blob>((resolve) => { resolveBlob = resolve; });
+    const fetchGate = new Promise<Response>((resolve) => { resolveFetch = resolve; });
+    const fetchMock = vi.fn(async () => fetchGate);
+    vi.stubGlobal("fetch", fetchMock);
+    const play = vi.fn(async () => undefined);
+    class FakeAudio {
+      onended: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      constructor(_url: string) {}
+      play = play;
+      pause() {}
+    }
+    vi.stubGlobal("Audio", FakeAudio);
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:test");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    const player = new BrowserAudioPlayer();
+    const pending = player.play("/media");
+    if (stage === "fetch") {
+      player.stop();
+      resolveFetch({ ok: true, blob: () => blobGate } as unknown as Response);
+    } else {
+      resolveFetch({ ok: true, blob: () => blobGate } as unknown as Response);
+      await Promise.resolve();
+      player.stop();
+      resolveBlob(new Blob(["audio"]));
+    }
+    await pending;
+    expect(play).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("stop kończy neutralnie Promise rozpoczętego odtwarzania i zwalnia URL", async () => {
+    let finishPlay!: () => void;
+    const play = vi.fn(() => new Promise<void>((resolve) => { finishPlay = resolve; }));
+    class FakeAudio {
+      onended: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      constructor(_url: string) {}
+      play = play;
+      pause() {}
+    }
+    vi.stubGlobal("Audio", FakeAudio);
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, blob: async () => new Blob(["audio"]) })));
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:playing");
+    const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    const player = new BrowserAudioPlayer();
+    const pending = player.play("/media");
+    await Promise.resolve();
+    await Promise.resolve();
+    player.stop();
+    await expect(pending).resolves.toBeUndefined();
+    expect(revoke).toHaveBeenCalledWith("blob:playing");
+    finishPlay();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 });

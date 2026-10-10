@@ -45,15 +45,18 @@ export function useLearningSession(deps: {
     const onVisibility = () => {
       if (document.visibilityState === "visible") {
         void controller.refreshStep();
-      }
+      } else controller.cancelRecording();
     };
-    const onOffline = () => controller.markOffline();
+    const onBlur = () => controller.cancelRecording();
+    const onOffline = () => { controller.cancelRecording(); controller.markOffline(); };
     const onOnline = () => void controller.retry();
     document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("blur", onBlur);
     window.addEventListener("offline", onOffline);
     window.addEventListener("online", onOnline);
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("blur", onBlur);
       window.removeEventListener("offline", onOffline);
       window.removeEventListener("online", onOnline);
     };

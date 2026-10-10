@@ -1,4 +1,4 @@
-import type { AudioPlayer, PlatformMedia, RecordedAudio, SpeechRecorder } from "./platform";
+import type { AudioPlayer, PlatformMedia, RecordedAudio, RecorderOptions, SpeechRecorder } from "./platform";
 
 /** Limit nagrania po stronie klienta — odpowiada limitowi serwera (arch §11). */
 export const MAX_RECORDING_MS = 15_000;
@@ -13,7 +13,11 @@ export interface BrowserRecorderDeps {
   timers?: {
     set: (handler: () => void, ms: number) => unknown;
     clear: (handle: unknown) => void;
+    setInterval?: (handler: () => void, ms: number) => unknown;
+    clearInterval?: (handle: unknown) => void;
   };
+  audioContext?: typeof AudioContext;
+  now?: () => number;
 }
 
 const defaultTimers = {
@@ -90,6 +94,9 @@ export class BrowserRecorder implements SpeechRecorder {
   readonly #MediaRecorder: NonNullable<BrowserRecorderDeps["mediaRecorder"]>;
   readonly #isTypeSupported: NonNullable<BrowserRecorderDeps["isTypeSupported"]>;
   readonly #timers: NonNullable<BrowserRecorderDeps["timers"]>;
+  readonly #options: RecorderOptions;
+  readonly #AudioContext: typeof AudioContext | undefined;
+  readonly #now: () => number;
 
   #stream: MediaStream | null = null;
   #recorder: MediaRecorder | null = null;
@@ -101,8 +108,14 @@ export class BrowserRecorder implements SpeechRecorder {
   #pendingReject: ((error: Error) => void) | null = null;
   #captured: RecordedAudio | null = null;
   #cancelled = false;
+  #generation = 0;
+  #lastLevelAt = Number.NEGATIVE_INFINITY;
+  #levelHandle: unknown = null;
+  #levelContext: AudioContext | null = null;
+  #analyser: AnalyserNode | null = null;
+  #samples: Float32Array<ArrayBuffer> | null = null;
 
-  constructor(deps: BrowserRecorderDeps = {}) {
+  constructor(deps: BrowserRecorderDeps = {}, options: RecorderOptions = {}) {
     // globalne API czytamy przez globalThis — konstruktor działa też poza przeglądarką
     const globalRecorder = (globalThis as { MediaRecorder?: typeof MediaRecorder }).MediaRecorder;
     this.#getUserMedia =
@@ -110,6 +123,9 @@ export class BrowserRecorder implements SpeechRecorder {
     this.#MediaRecorder = deps.mediaRecorder ?? globalRecorder!;
     this.#isTypeSupported = deps.isTypeSupported ?? ((mime) => this.#MediaRecorder.isTypeSupported(mime));
     this.#timers = deps.timers ?? defaultTimers;
+    this.#options = options;
+    this.#AudioContext = deps.audioContext ?? globalThis.AudioContext;
+    this.#now = deps.now ?? (() => performance.now());
   }
 
   get active(): boolean {
@@ -127,6 +143,7 @@ export class BrowserRecorder implements SpeechRecorder {
     if (!mimeType) {
       throw new Error("audio recording is not supported in this browser");
     }
+    const generation = ++this.#generation;
     let stream: MediaStream;
     try {
       stream = await this.#getUserMedia({ audio: true });
@@ -137,6 +154,10 @@ export class BrowserRecorder implements SpeechRecorder {
         throw error;
       }
       throw new Error("microphone permission denied", { cause: error });
+    }
+    if (this.#cancelled || generation !== this.#generation) {
+      stream.getTracks().forEach((track) => track.stop());
+      throw new Error("recording cancelled");
     }
     this.#stream = stream;
     let recorder: MediaRecorder;
@@ -161,10 +182,13 @@ export class BrowserRecorder implements SpeechRecorder {
     };
     this.#state = "recording";
     recorder.start(250);
+    this.#startLevelMonitor(stream);
     this.#timeoutHandle = this.#timers.set(() => {
       if (this.#state === "recording") {
         this.#state = "finalizing";
+        this.#stopLevelMonitor();
         this.#recorder?.stop();
+        this.#options.onLimitReached?.();
       }
     }, MAX_RECORDING_MS);
   }
@@ -187,6 +211,7 @@ export class BrowserRecorder implements SpeechRecorder {
     }
     this.#state = "finalizing";
     this.#clearTimeout();
+    this.#stopLevelMonitor();
     this.#recorder!.stop();
     return this.#waitForCapture();
   }
@@ -197,6 +222,7 @@ export class BrowserRecorder implements SpeechRecorder {
     this.#pendingStop = null;
     this.#pendingReject = null;
     this.#state = "idle";
+    this.#generation += 1;
     this.#cancelled = true;
     this.#captured = null;
     // odrzucenie po teardown, żeby bufory były już porzucone
@@ -267,12 +293,59 @@ export class BrowserRecorder implements SpeechRecorder {
 
   #teardown(): void {
     this.#clearTimeout();
+    this.#stopLevelMonitor();
     if (this.#recorder && this.#recorder.state !== "inactive") {
       this.#recorder.stop();
     }
     this.#recorder = null;
     this.#releaseStream();
     this.#chunks = [];
+  }
+
+  #startLevelMonitor(stream: MediaStream): void {
+    if (!this.#AudioContext || !this.#options.onLevel) return;
+    try {
+      const context = new this.#AudioContext();
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 256;
+      context.createMediaStreamSource(stream).connect(analyser);
+      this.#levelContext = context;
+      this.#analyser = analyser;
+      this.#samples = new Float32Array(analyser.fftSize);
+      const setInterval = this.#timers.setInterval ?? ((handler: () => void, ms: number) => globalThis.setInterval(handler, ms));
+      this.#levelHandle = setInterval(() => {
+        if (!this.#analyser || !this.#samples) return;
+        const now = this.#now();
+        if (now - this.#lastLevelAt < 100) return;
+        this.#lastLevelAt = now;
+        this.#analyser.getFloatTimeDomainData(this.#samples);
+        let sum = 0;
+        for (const sample of this.#samples) sum += sample * sample;
+        const rms = Math.sqrt(sum / this.#samples.length);
+        const level = Math.max(0, Math.min(1, rms * 4));
+        if (Number.isFinite(level) && this.#state === "recording") this.#options.onLevel?.(level);
+      }, 100);
+    } catch {
+      void this.#levelContext?.close().catch(() => undefined);
+      this.#levelContext = null;
+      this.#analyser = null;
+      this.#samples = null;
+      this.#levelHandle = null;
+    }
+  }
+
+  #stopLevelMonitor(): void {
+    if (this.#levelHandle !== null) {
+      const clearInterval = this.#timers.clearInterval ?? ((handle: unknown) => globalThis.clearInterval(handle as ReturnType<typeof setInterval>));
+      clearInterval(this.#levelHandle);
+      this.#levelHandle = null;
+    }
+    this.#analyser?.disconnect();
+    this.#analyser = null;
+    this.#samples = null;
+    const context = this.#levelContext;
+    this.#levelContext = null;
+    void context?.close().catch(() => undefined);
   }
 }
 
@@ -285,29 +358,67 @@ export class BrowserRecorder implements SpeechRecorder {
  */
 export class BrowserAudioPlayer implements AudioPlayer {
   #audio: { element: HTMLAudioElement; objectUrl: string } | null = null;
+  #generation = 0;
+  #abort: AbortController | null = null;
+  #settle: (() => void) | null = null;
 
   async play(url: string): Promise<void> {
     this.stop();
+    const generation = ++this.#generation;
+    const abort = new AbortController();
+    this.#abort = abort;
     const AudioCtor = (globalThis as { Audio?: typeof Audio }).Audio;
     if (!AudioCtor) {
+      this.#abort = null;
       throw new Error("audio playback is unavailable");
     }
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`media request failed: ${response.status}`);
+    try {
+      const response = await fetch(url, { signal: abort.signal });
+      if (generation !== this.#generation) return;
+      if (!response.ok) throw new Error(`media request failed: ${response.status}`);
+      const blob = await response.blob();
+      if (generation !== this.#generation) return;
+      const objectUrl = URL.createObjectURL(blob);
+      if (generation !== this.#generation) {
+        URL.revokeObjectURL(objectUrl);
+        return;
+      }
+      const audio = new AudioCtor(objectUrl);
+      this.#audio = { element: audio, objectUrl };
+      await new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const finish = (error?: Error) => {
+          if (settled) return;
+          settled = true;
+          this.#settle = null;
+          if (error) reject(error);
+          else resolve();
+        };
+        this.#settle = () => finish();
+        audio.onended = () => finish();
+        audio.onerror = () => finish(new Error("audio decode failed"));
+        audio.play().catch((error: unknown) => finish(error instanceof Error ? error : new Error("playback blocked")));
+      });
+      if (generation === this.#generation) this.#releaseAudio();
+    } catch (error) {
+      if (generation !== this.#generation) return;
+      this.#releaseAudio();
+      throw error;
+    } finally {
+      if (generation === this.#generation) this.#abort = null;
     }
-    const blob = await response.blob();
-    const objectUrl = URL.createObjectURL(blob);
-    const audio = new AudioCtor(objectUrl);
-    this.#audio = { element: audio, objectUrl };
-    return new Promise<void>((resolve, reject) => {
-      audio.onended = () => resolve();
-      audio.onerror = () => reject(new Error("audio decode failed"));
-      audio.play().catch((error: unknown) => reject(error instanceof Error ? error : new Error("playback blocked")));
-    });
   }
 
   stop(): void {
+    this.#generation += 1;
+    this.#abort?.abort();
+    this.#abort = null;
+    this.#settle?.();
+    this.#settle = null;
+    this.#releaseAudio();
+  }
+
+  #releaseAudio(): void {
     if (this.#audio !== null) {
       this.#audio.element.pause();
       URL.revokeObjectURL(this.#audio.objectUrl);
@@ -316,10 +427,17 @@ export class BrowserAudioPlayer implements AudioPlayer {
   }
 }
 
-/** Adaptery przeglądarkowe za portami PlatformMedia (plan zadania 9). */
-export function createBrowserMedia(): PlatformMedia {
+export interface BrowserMediaDeps extends BrowserRecorderDeps {}
+
+/** Adaptery przeglądarkowe za portami PlatformMedia. */
+export function createBrowserMedia(deps: BrowserMediaDeps = {}): PlatformMedia {
+  const getUserMedia = deps.getUserMedia ?? ((constraints: MediaStreamConstraints) => navigator.mediaDevices.getUserMedia(constraints));
   return {
-    createRecorder: () => new BrowserRecorder(),
+    prepareMicrophone: async () => {
+      const stream = await getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+    },
+    createRecorder: (options) => new BrowserRecorder({ ...deps, getUserMedia }, options),
     player: new BrowserAudioPlayer(),
   };
 }
