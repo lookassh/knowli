@@ -218,7 +218,7 @@ export const messages = {
     chooseAnswer: "Wybierz odpowiedź",
     typeWord: "Wpisz angielskie słowo",
     fillLetters: "Uzupełnij brakujące litery",
-    typeWholeWordWithLetters: "Wpisz całe słowo. Pokazane litery Ci pomogą.",
+    missingLetterPosition: "Brakująca litera, miejsce {n}",
     check: "Sprawdź",
     notRemember: "Nie pamiętam — pokaż",
     skip: "Pomiń",

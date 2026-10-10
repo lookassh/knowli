@@ -353,6 +353,29 @@ button {
   padding: 8px 12px;
 }
 
+.kid-letter-fragment {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-family: ui-monospace, monospace;
+  font-size: 2rem;
+}
+
+.kid-letter-fixed {
+  white-space: pre;
+}
+
+.kid-written .kid-letter-input {
+  width: 48px;
+  min-height: 60px;
+  flex-shrink: 0;
+  padding: 4px;
+  font: inherit;
+  border-radius: 12px;
+}
+
 .kid-secondary-actions {
   display: flex;
   gap: 10px;

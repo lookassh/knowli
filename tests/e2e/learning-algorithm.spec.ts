@@ -16,7 +16,7 @@ async function query<T>(sql: string, params: unknown[] = []): Promise<T[]> {
 
 test.afterAll(async () => { await db?.pool.end(); });
 
-async function createAssignedDeck(parent: APIRequestContext, childId: string): Promise<{ deckId: string; versionId: string }> {
+async function createAssignedDeck(parent: APIRequestContext, childId: string, target: string): Promise<{ deckId: string; versionId: string }> {
   const title = `Pisownia ${randomUUID()}`;
   const deckId = randomUUID();
   expect((await parent.post("/api/v1/parent/decks", { data: { deckId, title } })).status()).toBe(201);
@@ -26,7 +26,7 @@ async function createAssignedDeck(parent: APIRequestContext, childId: string): P
     data: {
       title,
       expectedEditNumber: 1,
-      items: ["Monday", "Tuesday"].map((target, index) => ({
+      items: [target, "Tuesday"].map((target, index) => ({
         source: ["poniedziałek", "wtorek"][index]!, target, acceptedAnswers: [],
         locales: { source: "pl-PL", target: "en-GB" }, visualType: "none",
       })),
@@ -75,7 +75,13 @@ async function taskInfo(taskId: string): Promise<{ exercise_type: string; state:
   ))[0]!;
 }
 
-test("letter_completion remains text-only when microphone is enabled", async ({ page }) => {
+for (const sample of [
+  { target: "Monday", visible: "Mna", letters: ["o", "d", "y"], wrongAnswer: "Mxnday" },
+  { target: "New York!", visible: "Nw Yr!", letters: ["e", "o", "k"], wrongAnswer: "Nxw York!" },
+  { target: "A", visible: "", letters: ["A"], wrongAnswer: "x" },
+  { target: "42", visible: "2", letters: ["4"], wrongAnswer: "x2" },
+]) {
+test(`letter_completion accepts only missing letters after spelling difficulty: ${sample.target}`, async ({ page }, testInfo) => {
   test.slow();
   const parent = page.request;
   await parent.post("/api/v1/parent/setup", { data: { secret: "1234" } });
@@ -83,7 +89,7 @@ test("letter_completion remains text-only when microphone is enabled", async ({ 
   const child = await (await parent.post("/api/v1/parent/children", {
     data: { displayName: `Litery-${randomUUID()}`, avatarKey: "fox", birthYear: 2018 },
   })).json() as { id: string; displayName: string };
-  const { deckId, versionId } = await createAssignedDeck(parent, child.id);
+  const { deckId, versionId } = await createAssignedDeck(parent, child.id, sample.target);
   await seedDue(child.id, versionId);
   const firstDeckList = await parent.get(`/api/v1/kid/decks?childId=${child.id}`);
   expect(firstDeckList.ok()).toBeTruthy();
@@ -108,25 +114,61 @@ test("letter_completion remains text-only when microphone is enabled", async ({ 
   const retry = await (await parent.post(`/api/v1/kid/sessions/${sessionId}/next`)).json() as { taskId: string; exerciseType: string };
   expect(retry.exerciseType).toBe("letter_completion");
 
-  await page.goto("/");
+  await page.goto(`/kids/${child.id}/learn`);
   await page.waitForSelector('[data-testid="kid-profile"], [data-testid="kid-deck"]', { timeout: 30_000 });
   if (await page.getByTestId("kid-profile").count()) await page.getByTestId("kid-profile").filter({ hasText: child.displayName }).click();
   await page.getByTestId("kid-mic-toggle").check();
   await page.getByTestId("kid-deck").filter({ hasText: `Pisownia` }).first().click();
 
-  await expect(page.getByTestId("kid-input")).toBeVisible();
   const letterTaskId = retry.taskId;
   expect((await taskInfo(letterTaskId)).exercise_type).toBe("letter_completion");
-  await expect(page.getByTestId("kid-fragment")).toHaveText(/_/);
-  await expect(page.getByTestId("kid-letter-instruction")).toHaveText("Wpisz całe słowo. Pokazane litery Ci pomogą.");
-  await expect(page.getByTestId("kid-input")).toHaveAttribute("autocorrect", "off");
-  await expect(page.getByTestId("kid-input")).toHaveAttribute("autocapitalize", "off");
-  await expect(page.getByTestId("kid-input")).toHaveAttribute("spellcheck", "false");
+  const gaps = page.getByTestId("kid-letter-input");
+  await expect(gaps).toHaveCount(sample.letters.length, { timeout: 5_000 });
+  await expect(page.getByTestId("kid-input")).toHaveCount(0);
+  await expect(page.getByTestId("kid-fragment")).toHaveText(sample.visible);
+  await expect(page.getByTestId("kid-letter-instruction")).toContainText("brakujące litery");
+  await expect(gaps.first()).toHaveAttribute("autocorrect", "off");
+  await expect(gaps.first()).toHaveAttribute("autocapitalize", "off");
+  await expect(gaps.first()).toHaveAttribute("spellcheck", "false");
   await expect(page.getByTestId("kid-record")).toHaveCount(0);
+  await expect(page.getByTestId("kid-submit")).toBeDisabled();
 
-  await page.getByTestId("kid-input").fill((await taskInfo(letterTaskId!)).answer_key.target);
+  for (const width of [390, 768]) {
+    await page.setViewportSize({ width, height: 1024 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`letters-${width}.png`), fullPage: true });
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await gaps.nth(0).fill("x");
+  for (let index = 1; index < sample.letters.length; index += 1) {
+    await expect(gaps.nth(index)).toBeFocused();
+    await expect(page.getByTestId("kid-submit")).toBeDisabled();
+    await gaps.nth(index).fill(sample.letters[index]!);
+  }
+  // Usunięcie wcześniej wpisanej litery ponownie blokuje sprawdzenie.
+  await gaps.nth(0).fill("");
+  await expect(page.getByTestId("kid-submit")).toBeDisabled();
+  await gaps.nth(0).fill("x");
+  await page.getByTestId("kid-submit").click();
+  await expect(page.getByTestId("kid-feedback")).toContainText(/Posłuchaj|Prawie/);
+  await page.getByTestId("kid-next").click();
+  await gaps.nth(0).fill(sample.letters[0]!);
+  for (let index = 1; index < sample.letters.length; index += 1) {
+    await expect(gaps.nth(index)).toHaveValue(sample.letters[index]!);
+  }
   await page.getByTestId("kid-submit").click();
   await expect(page.getByTestId("kid-feedback")).toContainText("Świetnie");
   await page.getByTestId("kid-next").click();
   expect(await taskInfo(letterTaskId)).toMatchObject({ exercise_type: "letter_completion", state: "answered" });
+  const writtenAttempts = await query<{ answer: { text: string } }>(
+    `select answer from learning_app.attempts where task_id = $1 order by received_at`, [letterTaskId],
+  );
+  expect(writtenAttempts.map((attempt) => attempt.answer.text)).toEqual([sample.wrongAnswer, sample.target]);
+  const assessments = await query<{ independent: boolean }>(
+    `select independent from learning_app.assessments where attempt_id in
+      (select id from learning_app.attempts where task_id = $1)`, [letterTaskId],
+  );
+  expect(assessments.length).toBeGreaterThan(0);
+  expect(assessments.every((assessment) => assessment.independent === false)).toBe(true);
 });
+}
