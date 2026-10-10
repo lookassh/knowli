@@ -40,7 +40,7 @@ Ruling: brak konfliktów kontraktów na podstawie planu/specyfikacji; wyżej wym
 - Task 2: complete.
 - Task 3: complete.
 - Task 4: complete.
-- Task 5: nie rozpoczęty.
+- Task 5: complete.
 - Task 6: nie rozpoczęty.
 - Task 7: nie rozpoczęty.
 
@@ -82,3 +82,14 @@ Ruling: brak konfliktów kontraktów na podstawie planu/specyfikacji; wyżej wym
 - Odstępstwa: brak; brak testu na fizycznym telefonie/tablecie pozostaje udokumentowany do Task 7.
 - Commit: `a7bd73a869c30e3c95486e1a668e2e0ed577742b`.
 - Task 4: complete (commits ae96fc7..a7bd73a, tests: focused unit + typecheck + new E2E + kid-flow recording regressions → PASS)
+
+### Task 5 — odsłuch wzorca z aktualnej karty wyniku: complete
+
+- RED potwierdzony: test kontrolera nie znalazł metody playFeedbackAudio; integracja PostgreSQL nie znalazła eksportu authorizeFeedbackAudio.
+- Implementacja: opcjonalna flaga dostępności w feedbacku tylko dla wiarygodnie rozpoznanego kanonicznego tekstu z gotowym, zatwierdzonym TTS; endpoint POST /api/v1/kid/attempts/:attemptId/feedback-audio blokuje sesję, sprawdza aktywną kartę i najnowszą ukończoną próbę, ponownie waliduje rozpoznany tekst i zasób, po czym pieczętuje ekspozycję przed wydaniem ID. Odtwarzacz klienta autoryzuje przed audio i unieważnia opóźnioną zgodę po zmianie karty; attemptId pozostaje w feedbackzie z submit/poll/read.
+- Testy PostgreSQL: kanoniczny wzorzec/replay, pieczęć i ekspozycja; odmowa po przejściu do kolejnej karty; brak audio dla zatwierdzonego niekanonicznego wariantu i niepewnego STT; brakujący attempt zwraca not_found. pnpm test:integration tests/integration/feedback-audio.test.ts tests/integration/speech.test.ts tests/integration/attempts.test.ts → 3 files, 36 tests PASS.
+- Test kontrolera pnpm test:unit packages/kid-ui/src/session/session-controller.test.ts → 1 file, 36 tests PASS; obejmuje autoryzację przed odtworzeniem oraz tłumienie spóźnionej zgody po zmianie karty. pnpm typecheck PASS; git diff --check PASS.
+- W pierwszym przebiegu integracji stara ścisła asercja nie uwzględniała nowego pola, a fragment zakładał małe litery mimo zachowania kapitalizacji. Zaktualizowano oczekiwanie; powtórny zestaw przeszedł. Jeden test asynchroniczny kontrolera wymagał przekazania następnego zadania po startAtTask; po poprawieniu fixture'a przeszedł.
+- Odstępstwa: brak testu rzeczywistego równoległego requestu replay kontra end/next; bezpieczeństwo kolejności korzysta ze wspólnej blokady wiersza sesji i będzie sprawdzone w końcowym review. Powtórny odsłuch nie uruchamia STT/oceny ponownie.
+- Commit: 9fe99f9b881f0dc375388e6f8c82d70f669d18dc.
+- Task 5: complete (commits 6bf9fc5..9fe99f9b881f0dc375388e6f8c82d70f669d18dc; integration 36 + unit 36 + typecheck → PASS)
