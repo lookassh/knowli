@@ -38,6 +38,9 @@ describe("teardown bazy per-testowej", () => {
     url.pathname = `/${databaseName}`;
     const { pool } = openQuietDatabase(url.toString());
     try {
+      // kontrakt guarda: pula ma własny listener 'error', zanim test doda swój —
+      // bez niego późny 57P01 staje się nieobsłużonym wyjątkiem całego runu
+      expect(pool.listenerCount("error")).toBeGreaterThan(0);
       const { rows } = await pool.query("select pg_backend_pid() as pid");
       const pid = rows[0]!.pid as number;
       const lateError = new Promise<Error>((resolve) => pool.once("error", resolve));
