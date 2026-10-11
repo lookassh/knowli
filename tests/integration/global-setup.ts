@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { migrateDatabase } from "@learning/server";
+import { migrateDatabase, waitUntilDatabaseReady } from "@learning/server";
 import { readTestRunConfig } from "../test-run-config";
 
 const exec = promisify(execFile);
@@ -23,19 +23,6 @@ async function removeStaleContainers(): Promise<void> {
   for (const id of ids.split(/\r?\n/)) {
     if (id) await docker("rm", "-f", id).catch(() => undefined);
   }
-}
-
-async function waitForPostgres(name: string): Promise<void> {
-  for (let attempt = 0; attempt < 60; attempt++) {
-    try {
-      const out = await docker("exec", name, "pg_isready", "-U", "postgres", "-d", "postgres");
-      if (out.includes("accepting connections")) return;
-    } catch {
-      // kontener jeszcze startuje
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
-  throw new Error(`PostgreSQL w kontenerze ${name} nie odpowiedział w 60 s`);
 }
 
 function hostPort(portOutput: string): string {
@@ -62,9 +49,8 @@ export default async function globalSetup({
 }: GlobalSetupContext): Promise<(() => Promise<void>) | void> {
   await removeStaleContainers();
   const name = containerName();
-  // pg_isready wewnątrz kontenera nie gwarantuje stabilnego socketu na hoście:
-  // pierwszy socket bywa zrywany (runner CI i Docker Desktop). Kontener jest
-  // wtedy martwy dla migracji, więc zamiast kończyć run startujemy od nowa.
+  // Nawet po poprawnym handshake'u kontener potrafi być martwy (zedrsany stan
+  // demona dockera); zamiast kończyć run startujemy kontener od nowa.
   const attempts = 3;
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -86,9 +72,13 @@ export default async function globalSetup({
         name,
         POSTGRES_IMAGE,
       );
-      await waitForPostgres(name);
       const port = hostPort(await docker("port", name, "5432/tcp"));
       const url = `postgres://postgres:test@127.0.0.1:${port}/postgres`;
+      // pg_isready wewnątrz kontenera pyta po unix sockecie i zgłasza gotowość już
+      // podczas tymczasowego serwera entrypointa (listen_addresses=''), zanim port
+      // TCP hosta zacznie słuchać — wtedy migracja dostaje ECONNRESET. Czekamy na
+      // realny handshake po dokładnie tym URL-u, którego używa migracja.
+      await waitUntilDatabaseReady(url);
       await migrateDatabase(url, "packages/server/drizzle");
       provide("DATABASE_URL", url);
       provide("TEST_CONTAINER", name);

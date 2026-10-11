@@ -1,11 +1,37 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import { createDatabase } from "@learning/server";
 import { readTestRunConfig } from "../test-run-config";
 
 test.use({ trace: "off", viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+
+interface StableBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** boundingBox, który przestał się zmieniać między kolejnymi odczytami (layout po resize ustabilizowany). */
+async function stableBoundingBox(page: Page, locator: Locator, timeoutMs = 5_000): Promise<StableBox> {
+  const deadline = Date.now() + timeoutMs;
+  let previous = await locator.boundingBox();
+  while (Date.now() < deadline) {
+    await page.waitForTimeout(50);
+    const current = await locator.boundingBox();
+    if (
+      previous !== null && current !== null &&
+      previous.x === current.x && previous.y === current.y &&
+      previous.width === current.width && previous.height === current.height
+    ) {
+      return current;
+    }
+    previous = current;
+  }
+  throw new Error(`boundingBox nie ustabilizował się w ${timeoutMs} ms`);
+}
 
 type Pool = ReturnType<typeof createDatabase>["pool"];
 let databasePool: Pool | null = null;
@@ -184,10 +210,13 @@ test("hold gesture handles keyboard, capture loss and release outside the button
   await expect(button).toHaveAttribute("data-phase", "idle");
 
   await page.setViewportSize({ width: 768, height: 1024 });
-  const box = await button.boundingBox();
-  expect(box!.width).toBeGreaterThanOrEqual(48);
-  expect(box!.height).toBeGreaterThanOrEqual(48);
-  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  // Surowe eventy myszy nie auto-czekają jak kliknięcia locatora: trafiają w
+  // punkt, a nie w element. Po resize layout dosiada się asynchronicznie, więc
+  // czekamy, aż boundingBox przestanie się ruszać, zanim oddamy gest.
+  const box = await stableBoundingBox(page, button);
+  expect(box.width).toBeGreaterThanOrEqual(48);
+  expect(box.height).toBeGreaterThanOrEqual(48);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await expect(button).toHaveAttribute("aria-pressed", "true");
   await page.waitForTimeout(150);
@@ -195,8 +224,8 @@ test("hold gesture handles keyboard, capture loss and release outside the button
   await page.mouse.up();
   await expect(button).toHaveAttribute("data-phase", "idle");
 
-  const touchX = box!.x + box!.width / 2;
-  const touchY = box!.y + box!.height / 2;
+  const touchX = box.x + box.width / 2;
+  const touchY = box.y + box.height / 2;
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: touchX, y: touchY, id: 2 }] });
   await expect(button).toHaveAttribute("aria-pressed", "true");

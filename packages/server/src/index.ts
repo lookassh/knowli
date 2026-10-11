@@ -1,6 +1,7 @@
 export * from "./config";
 export * from "./errors";
 export { createDatabase, migrateDatabase, type Database } from "./db/client";
+export { waitUntilDatabaseReady, type DatabaseReadinessOptions } from "./db/ready";
 export * as schema from "./db/schema";
 export {
   isParentSetupRequired,
