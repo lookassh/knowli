@@ -78,7 +78,7 @@ Run: `npx --yes pnpm@10.34.6 exec vitest run --config vitest.integration.config.
 
 Expected: FAIL because migration `0005_child_recording_mode.sql` does not exist.
 
-- [ ] **Step 6: Add `recordingMode` to the Drizzle child profile schema** as `text().notNull().default("hold")` with a named CHECK allowing only `hold`/`toggle`; generate and inspect migration `0005_child_recording_mode.sql` and its snapshot/journal updates.
+- [ ] **Step 6: Add `recordingMode` to the Drizzle child profile schema** as `text().$type<RecordingModeDto>().notNull().default("hold")` with a named CHECK allowing only `hold`/`toggle`; generate and inspect migration `0005_child_recording_mode.sql` and its snapshot/journal updates.
 
 Run: `npx --yes pnpm@10.34.6 --filter @learning/server db:generate --name child_recording_mode`
 
@@ -87,7 +87,7 @@ Expected: migration adds a NOT NULL column defaulting to `hold` and a CHECK cons
 - [ ] **Step 7: Implement the contracts and profile modules** using the shared enum, mapping the required field from rows, and including it in only supplied PATCH fields. Do not accept it in `ChildInput`.
 - [ ] **Step 8: Run contract and PostgreSQL integration tests to confirm GREEN.**
 
-Run: `npx --yes pnpm@10.34.6 exec vitest run packages/contracts/src/child-profile.test.ts` and `npx --yes pnpm@10.34.6 exec vitest run --config vitest.integration.config.ts tests/integration/auth-profiles.test.ts`
+Run: `npx --yes pnpm@10.34.6 exec vitest run packages/contracts/src/child-profile.test.ts` and `npx --yes pnpm@10.34.6 exec vitest run --config vitest.integration.config.ts tests/integration/auth-profiles.test.ts tests/integration/recording-mode-migration.test.ts`
 
 Expected: both commands PASS; the separate migration case confirms an existing pre-0005 profile receives `hold` without losing its fields.
 
@@ -168,7 +168,7 @@ Expected: PASS; both modes follow the selected profile, stale local preference h
 
 ## Execution Setup
 
-- [ ] Create `docs/superpowers/progress/2026-10-11-parent-recording-mode-setting.md` before Task 1. Record approval of this spec/plan, clean worktree state, `BASE_SHA=b6d4f679a6d1f543e51c3ef5e8546f255528f226`, scripts, baseline `pnpm test:unit` and `pnpm typecheck`, and a checkbox per task. During work, record each RED result, GREEN result, command output summary, commit, review, and deviation before marking that step complete.
+- [ ] Create `docs/superpowers/progress/2026-10-11-parent-recording-mode-setting.md` before Task 1. Record approval of this spec/plan, clean worktree state, `BASE_SHA=df49e4e273d53a85b1c1f45c5ffe156e0b9be766`, scripts, baseline `pnpm test:unit` and `pnpm typecheck`, and a checkbox per task. During work, record each RED result, GREEN result, command output summary, commit, review, and deviation before marking that step complete.
 - [ ] Confirm `HEAD` is the approved plan commit on `feature/parent-recording-mode-setting`, and that the worktree has no unrelated changes before creating the progress log.
 
 ## Review Corrections
@@ -177,7 +177,8 @@ Expected: PASS; both modes follow the selected profile, stale local preference h
 - [x] Added a separate migration-history test against a temporary database that stops at migration 0004 before applying 0005; added explicit `NOT NULL` coverage for direct SQL writes.
 - [x] Added `exercises/types.ts`, `SpeechView.tsx`, and `WrittenView.tsx` to the Task 3 wiring scope, including removal of both stale child-toggle message keys.
 - [x] Moved progress-log creation into execution setup and added initial-route `initialChildId` coverage.
+- [x] Added the migration-history test to Task 1 GREEN command, typed the Drizzle column as `RecordingModeDto`, and updated the recorded base to the fetched `origin/main` commit `df49e4e`.
 
 ## Handoff
 
-Implement inline in this worktree after owner approval, using `superpowers:executing-plans` before the first code change. Delegated implementation requires explicit owner approval. Before reporting completion, request an independent whole-scope review with the strongest available non-Astra reviewer, resolve Critical/Important findings with evidence, then run `verification-before-completion` and `finishing-a-development-branch`. The existing `origin/main` base is `b6d4f679a6d1f543e51c3ef5e8546f255528f226`; do not use the historical speech recording branch as the base.
+Implement inline in this worktree after owner approval, using `superpowers:executing-plans` before the first code change. Delegated implementation requires explicit owner approval. Before reporting completion, request an independent whole-scope review with the strongest available non-Astra reviewer, resolve Critical/Important findings with evidence, then run `verification-before-completion` and `finishing-a-development-branch`. The current `origin/main` base is `df49e4e273d53a85b1c1f45c5ffe156e0b9be766`; do not use the historical speech recording branch as the base.
