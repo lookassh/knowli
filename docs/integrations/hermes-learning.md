@@ -40,3 +40,5 @@ Przed użyciem zdalnym wymagane jest HTTPS i uzgodniona prywatna brama (np. VPN 
 ## Aktualizacja kontraktu
 
 Eksport schematu: `npx --yes pnpm@10.34.6 contracts:export-learning-overview`; kontrola bez zapisu: `npx --yes pnpm@10.34.6 contracts:export-learning-overview --check`. Zmiana API wymaga aktualizacji adaptera, kopii schema/manifestu i `SKILL.md` w `integrations/umiem-mcp`, a także testów konsumenta w tym samym review. Dokumenty planów A/B/C opisują granice instalacji i wdrożenia.
+
+Po ukończeniu implementacji utwórz źródłowe archiwum z zatwierdzonego commita poleceniem `uv run --locked python package_release.py --output-dir <private-output-directory>` w `integrations/umiem-mcp`. `RELEASE-MANIFEST.json` zapisuje pełny commit kodu oraz commit kontraktu; sumy skilla i schematu są sprawdzane przy starcie adaptera. Archiwum nie zawiera `.venv`, cache, `.env`, plików tokenów ani sekretów. Hermes rozpakowuje wyłącznie zatwierdzone wydanie; aktualizacja API/MCP/skilla w produkcji jest osobnym wdrożeniem.
