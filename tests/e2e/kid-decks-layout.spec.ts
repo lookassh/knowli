@@ -40,7 +40,6 @@ async function openDeckScreen(page: Page, decks: KidDeckDto[]) {
 test("deck card actions address the same deck", async ({ page }) => {
   const decks = [makeDeck(0), makeDeck(1)];
   await openDeckScreen(page, decks);
-  await page.getByTestId("kid-decks-next").click();
   await page.route("**/api/v1/kid/sessions", async (route) => route.abort());
   const card = page.getByTestId("kid-deck-card").filter({ hasText: decks[1]!.title });
   const learningRequest = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/v1/kid/sessions" && request.method() === "POST");
@@ -49,53 +48,51 @@ test("deck card actions address the same deck", async ({ page }) => {
 
   await page.goto("/");
   await page.getByTestId("kid-profile").click();
-  await page.getByTestId("kid-decks-next").click();
   const sameCard = page.getByTestId("kid-deck-card").filter({ hasText: decks[1]!.title });
   const mockRequest = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/v1/kid/sessions" && request.method() === "POST");
   await sameCard.getByRole("button", { name: "Próbna kartkówka" }).click();
   expect((await mockRequest).postDataJSON()).toMatchObject({ deckId: decks[1]!.deckId, mode: "mock_test" });
 });
 
-test("all assigned decks remain reachable and the page clamps after responsive pagination shrinks", async ({ page }) => {
+test("all assigned decks render in one scrollable list in group order", async ({ page }) => {
   const decks = Array.from({ length: 4 }, (_, index) => makeDeck(index));
   const expectedOrder = [decks[0]!, decks[2]!, decks[1]!, decks[3]!];
   await openDeckScreen(page, decks);
-  for (let index = 0; index < expectedOrder.length; index += 1) {
-    await expect(page.getByTestId("kid-deck-card")).toHaveCount(1);
-    await expect(page.getByTestId("kid-deck-card")).toContainText(expectedOrder[index]!.title);
-    if (index < expectedOrder.length - 1) await page.getByTestId("kid-decks-next").click();
-  }
 
-  await page.setViewportSize({ width: 768, height: 1024 });
-  await expect(page.getByTestId("kid-decks-page")).toHaveText("2 z 2");
-  await expect(page.getByTestId("kid-deck-card").filter({ hasText: decks[3]!.title })).toBeVisible();
+  await expect(page.getByTestId("kid-deck-card")).toHaveCount(4);
+  await expect(page.getByTestId("kid-deck-title")).toHaveText(expectedOrder.map((deck) => `${deck.title} — 12 słów`));
+  await expect(page.getByTestId("kid-section-recommended")).toBeVisible();
+  await expect(page.getByTestId("kid-section-other")).toBeVisible();
+  await expect(page.getByTestId("kid-decks-next")).toHaveCount(0);
+  await expect(page.getByTestId("kid-decks-previous")).toHaveCount(0);
+  await expect(page.getByTestId("kid-decks-page")).toHaveCount(0);
 });
 
-test("short phone viewport paginates two deck cards to avoid document scrolling", async ({ page }) => {
+test("short phone viewport reaches lower decks and the microphone bar by scrolling", async ({ page }) => {
   const decks = [
     makeDeck(0, { recommended: true, title: "Dni tygodnia i pory roku" }),
     makeDeck(1, { recommended: true }),
+    makeDeck(2, { recommended: false }),
+    makeDeck(3, { recommended: false }),
   ];
   await page.setViewportSize({ width: 360, height: 640 });
   await openDeckScreen(page, decks);
-  await expect(page.getByTestId("kid-deck-card")).toHaveCount(1);
-  await expect(page.getByTestId("kid-decks-page")).toHaveText("1 z 2");
+  await expect(page.getByTestId("kid-deck-card")).toHaveCount(4);
+  const layout = await page.evaluate(() => ({
+    viewportHeight: window.innerHeight,
+    documentHeight: document.documentElement.scrollHeight,
+  }));
+  expect(layout.documentHeight, JSON.stringify(layout)).toBeGreaterThan(layout.viewportHeight);
   await expect(page.getByTestId("kid-mic-toggle")).toBeChecked();
   await expect(page.getByTestId("kid-microphone-hint")).toBeVisible();
-  const layout = await page.evaluate(() => {
-    const screen = document.querySelector(".kid-deck-screen");
-    const footer = document.querySelector(".kid-deck-microphone");
-    return {
-      viewportHeight: window.innerHeight,
-      documentHeight: document.documentElement.scrollHeight,
-      screenHeight: screen?.getBoundingClientRect().height,
-      microphoneFooterHeight: footer?.getBoundingClientRect().height,
-      microphoneFooterPaddingBottom: footer ? getComputedStyle(footer).paddingBottom : null,
-    };
-  });
-  expect(layout.documentHeight, JSON.stringify(layout)).toBeLessThanOrEqual(641);
-  await expect(page.getByTestId("kid-deck")).toBeInViewport();
-  await expect(page.getByTestId("kid-decks-next")).toBeInViewport();
+
+  const lastCard = page.getByTestId("kid-deck-card").filter({ hasText: decks[3]!.title });
+  await lastCard.getByRole("button", { name: "Ucz się" }).scrollIntoViewIfNeeded();
+  await expect(page.getByTestId("kid-mic-toggle")).toBeInViewport();
+
+  const learningRequest = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/v1/kid/sessions" && request.method() === "POST");
+  await lastCard.getByRole("button", { name: "Ucz się" }).click();
+  expect((await learningRequest).postDataJSON()).toMatchObject({ deckId: decks[3]!.deckId, mode: "training" });
 });
 
 test("unavailable mock test is omitted", async ({ page }) => {
