@@ -17,7 +17,7 @@
 - [x] Zadanie 3 — SPEC §6: przykład widoku + zdanie o „3/7 umiem" (commit `aba0ec7`).
 - [x] Zadanie 4a — pełna weryfikacja (unit/typecheck/build) — wyniki poniżej.
 - [x] Zadanie 4b — niezależny review wykonany; 0 Critical, 0 Important, 2 Minor odłożone.
-- [ ] Zadanie 4c — push gałęzi i PR do `main`; scala właściciel przez squash.
+- [x] Zadanie 4c — gałąź wypchnięta, PR **#45**: https://github.com/lookassh/knowli/pull/45 (scala właściciel przez Squash and merge; worktree zachowany na wypadek uwag z PR).
 
 ## Niezależny review (requesting-code-review)
 
