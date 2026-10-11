@@ -69,8 +69,9 @@ function activityKey(childId: string, date: string): string {
   return `${childId}:${date}`;
 }
 
-function ensureDeck(day: ActivityDay, row: ActivityRow): ActivityDeck {
-  const existing = day.decks.get(row.deckId);
+export function ensureActivityDeck(day: ActivityDay, row: ActivityRow): ActivityDeck {
+  const key = `${row.deckId}:${row.deckVersionId}`;
+  const existing = day.decks.get(key);
   if (existing) return existing;
   const created: ActivityDeck = {
     deckId: row.deckId,
@@ -79,7 +80,7 @@ function ensureDeck(day: ActivityDay, row: ActivityRow): ActivityDeck {
     deckVersionNumber: row.deckVersionNumber,
     assessmentCounts: new Map(),
   };
-  day.decks.set(row.deckId, created);
+  day.decks.set(key, created);
   return created;
 }
 
@@ -204,10 +205,10 @@ export async function getLearningOverview(
       if (!day) continue;
       day.hasRecordedActivity = true;
       day.sessions.add(row.sessionId);
-      ensureDeck(day, row);
-      if (row.attemptId) {
+      ensureActivityDeck(day, row);
+      if (row.attemptId && row.modality !== "skip") {
+        day.submittedAttempts += 1;
         if (row.state === "processing") day.pendingAttempts += 1;
-        else if (row.state === "completed" && row.modality !== "skip") day.submittedAttempts += 1;
       }
     }
 
@@ -229,7 +230,7 @@ export async function getLearningOverview(
     for (const row of assessmentRows) {
       const day = daily.get(activityKey(row.childId, dateAt(row.at, timezone)));
       if (!day) continue;
-      const deck = ensureDeck(day, row);
+      const deck = ensureActivityDeck(day, row);
       const count = deck.assessmentCounts.get(row.skill) ?? { independentCorrect: 0, correctNotIndependent: 0, incorrect: 0, unassessed: 0 };
       if (row.outcome === "correct") {
         if (row.independent) count.independentCorrect += 1;
@@ -359,7 +360,7 @@ export async function getLearningOverview(
               sessionsWithActivity: day.sessions.size,
               submittedAttempts: day.submittedAttempts,
               pendingAttempts: day.pendingAttempts,
-              decks: [...day.decks.values()].sort((a, b) => a.deckId.localeCompare(b.deckId)).map((deck) => ({
+              decks: [...day.decks.values()].sort((a, b) => a.deckId.localeCompare(b.deckId) || a.deckVersionId.localeCompare(b.deckVersionId)).map((deck) => ({
                 deckId: deck.deckId,
                 deckVersionId: deck.deckVersionId,
                 deckTitle: deck.deckTitle,

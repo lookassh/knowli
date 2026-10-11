@@ -79,9 +79,10 @@ class OverviewClient:
             if remaining <= 0:
                 break
             try:
-                timeout = httpx.Timeout(min(self.attempt_timeout, remaining))
+                attempt_budget = min(self.attempt_timeout, remaining)
+                timeout = httpx.Timeout(attempt_budget)
                 async with httpx.AsyncClient(transport=self.transport, timeout=timeout, follow_redirects=False) as client:
-                    async with asyncio.timeout(remaining):
+                    async with asyncio.timeout(attempt_budget):
                         async with client.stream(
                             "GET", endpoint, params=params,
                             headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},

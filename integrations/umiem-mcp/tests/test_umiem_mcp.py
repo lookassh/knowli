@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock
 
 import httpx
 
-from umiem_mcp.client import OverviewClient
+from umiem_mcp.client import AdapterError, OverviewClient
 from umiem_mcp.config import load_config
 from umiem_mcp.validation import ContractError, validate_overview, verify_contract_bundle
 
@@ -52,6 +52,27 @@ class ContractTests(unittest.TestCase):
         result = validate_overview(self.payload)
         self.assertEqual(result["children"][0]["learningTime"], {"seconds": 1980, "estimated": True})
         self.assertEqual(result["children"][0]["dailyActivity"][2]["learningTime"]["seconds"], 1380)
+
+    def test_mock_test_skips_and_unassessed_are_subsets_of_not_tested(self):
+        candidate = json.loads(json.dumps(self.payload))
+        candidate["children"][0]["dailyActivity"][0]["mockTests"].append({
+            "sessionId": "55555555-5555-4555-8555-555555555555",
+            "deckId": "22222222-2222-4222-8222-222222222222",
+            "deckVersionId": "33333333-3333-4333-8333-333333333333",
+            "deckTitle": "Dni tygodnia", "deckVersionNumber": 2,
+            "endedAt": "2026-10-09T17:00:00.000Z", "complete": True, "taskBudget": 4,
+            "skills": [{"skill": "recall", "totalItems": 7, "independentCorrect": 2,
+                        "practiceNeeded": 1, "correctNotIndependent": 0, "notTested": 4,
+                        "skipped": 1, "unassessed": 1}],
+        })
+        skill = candidate["children"][0]["dailyActivity"][0]["mockTests"][0]["skills"][0]
+        skill.update(totalItems=7, independentCorrect=2, practiceNeeded=1,
+                     correctNotIndependent=0, notTested=4, skipped=1, unassessed=1)
+        self.assertEqual(validate_overview(candidate), candidate)
+        skill["skipped"] = 3
+        skill["unassessed"] = 2
+        with self.assertRaises(ContractError):
+            validate_overview(candidate)
 
     def test_rejects_incompatible_or_semantically_inconsistent_data(self):
         mutations = []
@@ -167,6 +188,33 @@ class ClientTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(Exception) as caught:
             await limited.get_overview(days=3)
         self.assertEqual(caught.exception.code, "learning_summary_too_large")
+
+    async def test_attempt_deadline_stops_a_slow_drip_before_total_deadline(self):
+        payload = json.dumps(json.loads((ROOT / "fixtures/learning-overview.example.json").read_text(encoding="utf-8"))).encode()
+        calls = []
+
+        class SlowDrip(httpx.AsyncByteStream):
+            async def __aiter__(self):
+                for offset in range(0, len(payload), 32):
+                    await asyncio.sleep(0.01)
+                    yield payload[offset:offset + 32]
+
+            async def aclose(self):
+                return None
+
+        async def handler(_request):
+            calls.append(1)
+            return httpx.Response(200, stream=SlowDrip())
+
+        client = OverviewClient(base_url="https://umiem.example", token_reader=lambda: "secret",
+                                 transport=httpx.MockTransport(handler), total_timeout=0.5, attempt_timeout=0.04)
+        started = asyncio.get_running_loop().time()
+        with self.assertRaises(AdapterError) as caught:
+            await client.get_overview()
+        elapsed = asyncio.get_running_loop().time() - started
+        self.assertEqual(caught.exception.code, "learning_summary_unavailable")
+        self.assertEqual(len(calls), 2)
+        self.assertLess(elapsed, 0.2)
 
     async def test_retries_short_retry_after_and_http_date_inside_total_budget(self):
         payload = json.loads((ROOT / "fixtures/learning-overview.example.json").read_text(encoding="utf-8"))

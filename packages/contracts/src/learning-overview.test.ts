@@ -43,6 +43,28 @@ describe("LearningOverviewDtoSchema", () => {
     expect(LearningOverviewDtoSchema.safeParse(testWithoutGoals).success).toBe(true);
   });
 
+  it("treats skipped and unassessed test outcomes as subsets of notTested", () => {
+    const accepted = cloneSample();
+    const skill = accepted.children[0].dailyActivity[2].mockTests[0].skills[0];
+    Object.assign(skill, { totalItems: 7, independentCorrect: 2, practiceNeeded: 1,
+      correctNotIndependent: 0, notTested: 4, skipped: 1, unassessed: 1 });
+    expect(LearningOverviewDtoSchema.safeParse(accepted).success).toBe(true);
+
+    const invalidSubset = cloneSample();
+    const invalid = invalidSubset.children[0].dailyActivity[2].mockTests[0].skills[0];
+    Object.assign(invalid, { totalItems: 7, independentCorrect: 2, practiceNeeded: 1,
+      correctNotIndependent: 0, notTested: 4, skipped: 3, unassessed: 2 });
+    expect(LearningOverviewDtoSchema.safeParse(invalidSubset).success).toBe(false);
+  });
+
+  it("keeps separate published versions of one deck in the same day", () => {
+    const overview = cloneSample();
+    const decks = overview.children[0].dailyActivity[2].decks;
+    decks.push({ ...decks[0], deckVersionId: "55555555-5555-4555-8555-555555555555",
+      deckTitle: "Dni v2", deckVersionNumber: 2 });
+    expect(LearningOverviewDtoSchema.safeParse(overview).success).toBe(true);
+  });
+
   it("requires day coverage, unique skills, and complete progress denominators", () => {
     const missingDay = cloneSample();
     missingDay.children[0].dailyActivity.pop();

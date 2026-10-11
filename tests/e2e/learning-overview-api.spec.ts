@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
+import { LearningOverviewDtoSchema } from "@learning/contracts";
 import { createDatabase, createServices, issueIntegrationToken, revokeIntegrationToken } from "@learning/server";
 import { readTestRunConfig } from "../test-run-config";
 
@@ -17,11 +18,12 @@ test("integration token reads overview only, has no-store and cannot enter Paren
     });
     expect(response.status()).toBe(200);
     expect(response.headers()["cache-control"]).toContain("no-store");
-    expect(await response.json()).toMatchObject({
+    const overview = LearningOverviewDtoSchema.parse(await response.json());
+    expect(overview).toMatchObject({
       schemaVersion: 1,
       period: { from: "2026-10-10", to: "2026-10-11", days: 2 },
-      children: [],
     });
+    expect(Array.isArray(overview.children)).toBe(true);
 
     const parentOnly = await request.get("/api/v1/parent/children", {
       headers: { authorization: `Bearer ${token}` },

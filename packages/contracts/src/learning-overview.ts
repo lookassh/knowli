@@ -188,8 +188,8 @@ export const LearningOverviewDtoSchema = z
         if (!day.hasRecordedActivity && day.learningTime.seconds !== 0) {
           ctx.addIssue({ code: "custom", path: ["children", childIndex, "dailyActivity", dayIndex, "learningTime"], message: "A day without recorded activity must have zero seconds" });
         }
-        if (!uniqueBy(day.decks, ({ deckId }) => deckId)) {
-          ctx.addIssue({ code: "custom", path: ["children", childIndex, "dailyActivity", dayIndex, "decks"], message: "Decks must be unique within a day" });
+        if (!uniqueBy(day.decks, ({ deckVersionId }) => deckVersionId)) {
+          ctx.addIssue({ code: "custom", path: ["children", childIndex, "dailyActivity", dayIndex, "decks"], message: "Deck versions must be unique within a day" });
         }
         for (const [deckIndex, deck] of day.decks.entries()) {
           if (!uniqueBy(deck.assessmentCounts, ({ skill }) => skill)) {
@@ -198,7 +198,8 @@ export const LearningOverviewDtoSchema = z
         }
         for (const [testIndex, test] of day.mockTests.entries()) {
           if (!uniqueBy(test.skills, ({ skill }) => skill) || test.skills.some((skill) =>
-            skill.independentCorrect + skill.practiceNeeded + skill.correctNotIndependent + skill.notTested + skill.skipped + skill.unassessed !== skill.totalItems)) {
+            skill.independentCorrect + skill.practiceNeeded + skill.correctNotIndependent + skill.notTested !== skill.totalItems
+            || skill.skipped + skill.unassessed > skill.notTested)) {
             ctx.addIssue({ code: "custom", path: ["children", childIndex, "dailyActivity", dayIndex, "mockTests", testIndex, "skills"], message: "Mock test counts must cover each skill denominator exactly" });
           }
         }

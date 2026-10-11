@@ -49,10 +49,10 @@ async function secureTokenFile(path: string): Promise<void> {
 async function writePrivateSecret(path: string, secret: string, secureFile: (path: string) => Promise<void>): Promise<void> {
   const handle = await open(path, "wx", 0o600);
   try {
+    await secureFile(path);
     await handle.writeFile(secret, "utf8");
     await handle.sync();
     await handle.close();
-    await secureFile(path);
   } catch (error) {
     await handle.close().catch(() => undefined);
     await unlink(path).catch(() => undefined);

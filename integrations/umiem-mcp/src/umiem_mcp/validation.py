@@ -96,8 +96,8 @@ def validate_overview(data: object, *, raw_size: int | None = None) -> dict:
                     if len({entry["skill"] for entry in skills}) != len(skills):
                         raise ValueError("Mock test skills are duplicated")
                     for skill in skills:
-                        count = sum(skill[key] for key in ("independentCorrect", "practiceNeeded", "correctNotIndependent", "notTested", "skipped", "unassessed"))
-                        if count != skill["totalItems"]:
+                        count = sum(skill[key] for key in ("independentCorrect", "practiceNeeded", "correctNotIndependent", "notTested"))
+                        if count != skill["totalItems"] or skill["skipped"] + skill["unassessed"] > skill["notTested"]:
                             raise ValueError("Mock test totals do not match the skill denominator")
             values = [item["learningTime"]["seconds"] for item in days]
             total = None if any(value is None for value in values) else sum(values)

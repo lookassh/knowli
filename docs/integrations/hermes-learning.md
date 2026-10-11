@@ -19,6 +19,8 @@ Sukces zawiera `schemaVersion: 1`, `generatedAt`, `timezone`, `period`, `planned
 
 `learningTime.seconds` to szacowana liczba całkowitych sekund albo `null`, zawsze z `estimated: true`. Metoda `activity_intervals_v1` sumuje przerwy do 120 sekund między zapisanymi działaniami i nie dopisuje czasu po ostatnim działaniu. 1380 sekund można przedstawić jako „Czas nauki: 23 min”. `null` oznacza za mało danych, a zero w dniu bez zdarzeń oznacza brak zapisu w Umiem!, nie brak nauki gdzie indziej.
 
+W aktywności dziennej zachowuj osobne wpisy dla różnych wersji tego samego zestawu, jeśli przypisanie zmieniło się w wybranym okresie. `submittedAttempts` obejmuje odpowiedzi wciąż przetwarzane, a `pendingAttempts` jest jego podzbiorem. W podsumowaniu sprawdzianu próbnego `skipped` i `unassessed` zawierają się w `notTested`; nie dodawaj ich ponownie do sumy.
+
 `plannedTests` pochodzą wyłącznie z terminów zapisanych w Umiem!. Brak wpisu nie oznacza, że dziecko nie ma sprawdzianu w szkole. Liczba poprawnych odpowiedzi nie jest liczbą nowych ani opanowanych słów; stan opanowania opisują osobne statusy w `currentProgress`.
 
 Błędy używają formatu `{code, message, retryable, requestId}`. Brak tokenu i token odwołany zwracają 401, brak zakresu 403, błędne parametry 400, nieznane dziecko 404, limit 60 żądań na token w minutę 429, a przejściowy błąd bazy 503. Wszystkie odpowiedzi mają `Cache-Control: no-store`. Błąd nigdy nie jest pustym sukcesem.

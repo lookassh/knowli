@@ -57,6 +57,31 @@ describe("integration token CLI", () => {
     expect(stdout.join("\n") + stderr.join("\n")).not.toContain("test-secret-value");
   });
 
+  it("restricts the empty secret file before writing token bytes", async () => {
+    const dir = await tempDir();
+    const out = join(dir, "token.txt");
+    const secret = "umiem_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa_test-secret-value";
+    const secureFile = vi.fn(async (path: string) => {
+      expect(path).toBe(out);
+      expect(await readFile(path, "utf8")).toBe("");
+    });
+    const issue = vi.fn(async (_name: string, issuedSecret: string) => {
+      expect(issuedSecret).toBe(secret);
+      return { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" };
+    });
+
+    await runIntegrationTokenCommand(["create", "--name", "Hermes", "--out", out], {
+      issue,
+      randomToken: () => secret,
+      secureFile,
+      stdout: () => undefined,
+      stderr: () => undefined,
+    });
+
+    expect(secureFile).toHaveBeenCalledOnce();
+    expect(await readFile(out, "utf8")).toBe(secret);
+  });
+
   it("creates a restricted file and reports only the public id after success", async () => {
     const dir = await tempDir();
     const out = join(dir, "token.txt");
