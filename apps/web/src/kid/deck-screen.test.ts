@@ -33,9 +33,10 @@ describe("DeckScreen — powitanie i postępy na kafelkach (SPEC §6)", () => {
     const markup = renderDeckScreen(DECK);
 
     expect(markup).toContain("Cześć, Krzysztof! 👋");
-    expect(markup).toContain("📅 Dni tygodnia — 7 słów");
+    expect(markup).toContain("Dni tygodnia");
+    expect(markup).toContain("— 7 słów");
     expect(markup).toContain("⭐ 3 słowa przypominasz samodzielnie");
-    expect(markup).toContain("Sprawdzian: 2026-10-10");
+    expect(markup).toContain("Sprawdzian: 10 paź");
   });
 
   it.each([
@@ -46,7 +47,8 @@ describe("DeckScreen — powitanie i postępy na kafelkach (SPEC §6)", () => {
   ])("odmienia polskie słowo dla liczby %i", (itemCount, label) => {
     const markup = renderDeckScreen({ ...DECK, itemCount });
 
-    expect(markup).toContain(`Dni tygodnia — ${label}`);
+    expect(markup).toContain("Dni tygodnia");
+    expect(markup).toContain(`— ${label}`);
   });
 });
 
@@ -68,10 +70,11 @@ describe("DeckScreen — przełącznik mikrofonu (SPEC §14)", () => {
     expect(markup).toContain("Mikrofon");
   });
 
-  it("bez odmowy pokazuje przełącznik bez podpowiedzi", () => {
+  it("bez odmowy pokazuje przełącznik i informację o nauce bez nagrywania", () => {
     const markup = renderDeckScreen(DECK);
 
     expect(markup).toContain('data-testid="kid-mic-toggle"');
     expect(markup).not.toContain("kid-mic-denied-hint");
+    expect(markup).toContain("Możesz uczyć się również bez nagrywania.");
   });
 });

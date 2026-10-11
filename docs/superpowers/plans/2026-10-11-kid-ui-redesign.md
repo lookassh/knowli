@@ -141,11 +141,11 @@ expect(computeKidViewport({ innerHeight: 700, visualViewport: { height: 350, off
 - `formatDeckTestDate(date: string | null, currentYear: number): string | null` — date-only, polskie skróty, bieżący rok pominięty, inny widoczny, null/niepoprawna data daje null. Rok bierze render z bieżącej daty rodziny/hosta, nie UTC parsowania terminu; testy podają rok jawnie.
 - Dotychczasowe sygnatury `DeckScreen` i jego `onStart`/`onMockTest`/toggle/headerActions pozostają bez zmiany.
 
-- [ ] RED jednostek: polecane/pozostałe i kolejność; 0/1/2/4 zestawy; strony; null/invalid/leap date, rok, strefy Europe/Warsaw/America/Los_Angeles z tym samym dniem. RED E2E: `deck card actions address the same deck`, `all assigned decks remain reachable`, `unavailable mock test is omitted`, `empty and denied microphone states permit recovery`, `page is clamped after deck list changes`.
-- [ ] Uruchomić jednostki oraz `test:e2e tests/e2e/kid-decks-layout.spec.ts` przed kodem i zapisać RED.
-- [ ] Wdrożyć Karty zestawów: header/link rodzica, powitanie, polecane/pozostałe, karta z dwiema oddzielnymi akcjami bez zagnieżdżonych buttonów; prawdziwa data/liczba. Do dwóch zestawów użyć stron o maksymalnie dwóch kartach, przy większej liście jedna karta na stronę w telefonie. Zachować dostęp do wszystkich grup oraz ograniczać stronę po zmianie danych.
-- [ ] Przenieść dostępny przełącznik microphone do dolnej części, zachowując preferencję urządzenia i tekst odmowy. Nie wymuszać getUserMedia na samym renderze i nie zmieniać recordingMode. Istniejący rodzic link prowadzi do tej samej autoryzowanej trasy.
-- [ ] GREEN jednostek/menu E2E, `test:e2e tests/e2e/navigation.spec.ts tests/e2e/mock-test.spec.ts`, `typecheck`. Sprawdzić długą nazwę i font 200%, aktywną sesję/konflikt oraz wszystkie karty; commit `feat: redesign kid deck selection as grouped cards`.
+- [x] RED jednostek: polecane/pozostałe i kolejność; 0/1/2/4 zestawy; strony; null/invalid/leap date, rok, strefy Europe/Warsaw/America/Los_Angeles z tym samym dniem. RED E2E: `deck card actions address the same deck`, `all assigned decks remain reachable`, `unavailable mock test is omitted`, `empty and denied microphone states permit recovery`, and responsive page clamping.
+- [x] Uruchomić jednostki oraz `test:e2e tests/e2e/kid-decks-layout.spec.ts` przed kodem i zapisać RED.
+- [x] Wdrożyć Karty zestawów: header/link rodzica, powitanie, polecane/pozostałe, karta z dwiema oddzielnymi akcjami bez zagnieżdżonych buttonów; prawdziwa data/liczba. Do dwóch zestawów użyć stron o maksymalnie dwóch kartach, przy większej liście jedna karta na stronę w telefonie. Zachować dostęp do wszystkich grup oraz ograniczać stronę po zmianie danych.
+- [x] Przenieść dostępny przełącznik microphone do dolnej części, zachowując preferencję urządzenia i tekst odmowy. Nie wymuszać getUserMedia na samym renderze i nie zmieniać recordingMode. Istniejący rodzic link prowadzi do tej samej autoryzowanej trasy.
+- [x] GREEN jednostek/menu E2E, `test:e2e tests/e2e/navigation.spec.ts tests/e2e/mock-test.spec.ts`, `typecheck`. Sprawdzić krótkie viewporty bez przewijania, długą nazwę i font 200%, aktywną sesję/konflikt oraz wszystkie karty; commit `feat: redesign kid deck selection as grouped cards`.
 
 ## Zadanie 6: Spójność pozostałych ekranów i regresje przepływu
 
