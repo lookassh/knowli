@@ -252,7 +252,7 @@ export const messages = {
     deckStart: "Ucz się",
     noDecks: "Nie masz jeszcze zestawów do nauki.",
     testDateLabel: "Sprawdzian",
-    recalledCount: "⭐ {count} przypominasz samodzielnie",
+    deckStarsLabel: "Przypominasz samodzielnie: {n} z 6 gwiazdek",
     wordSingular: "słowo",
     wordFew: "słowa",
     wordMany: "słów",

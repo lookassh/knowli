@@ -424,6 +424,12 @@
   line-height: 1.35;
 }
 
+.kid-deck-stars {
+  margin: 0;
+  font-size: 1.35rem;
+  letter-spacing: 2px;
+}
+
 .kid-deck-card__actions {
   display: grid;
   grid-template-columns: 1fr;

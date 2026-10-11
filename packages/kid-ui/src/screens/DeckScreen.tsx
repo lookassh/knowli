@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { messages, type KidDeckDto } from "@learning/contracts";
 import { format } from "../format";
 import { formatDeckTestDate, groupDecks } from "./deck-presentation";
+import { MASTERY_STAR_MAX, starsForFraction } from "./stars";
 
 function wordCount(count: number): string {
   const lastTwoDigits = count % 100;
@@ -83,12 +84,16 @@ function DeckCard({ deck, onStart, onMockTest }: {
   onMockTest?: (deckId: string) => void;
 }) {
   const date = formatDeckTestDate(deck.testDate, new Date().getFullYear());
+  const stars = starsForFraction(deck.independentlyRecalledCount, deck.itemCount);
   return (
     <li>
       <article className="kid-deck-card" data-testid="kid-deck-card" data-deck-id={deck.deckId}>
         <div className="kid-deck-card__details">
           <h3 data-testid="kid-deck-title">{deck.title} <span>— {wordCount(deck.itemCount)}</span></h3>
-          <p className="kid-badge">{format(messages.kid.recalledCount, { count: wordCount(deck.independentlyRecalledCount) })}</p>
+          <p className="kid-deck-stars" data-testid="kid-deck-stars" role="img"
+            aria-label={format(messages.kid.deckStarsLabel, { n: stars })}>
+            {"★".repeat(stars)}{"☆".repeat(MASTERY_STAR_MAX - stars)}
+          </p>
           {date !== null && <p className="kid-badge">{messages.kid.testDateLabel}: {date}</p>}
         </div>
         <div className="kid-deck-card__actions">
