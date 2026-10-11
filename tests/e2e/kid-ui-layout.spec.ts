@@ -260,6 +260,17 @@ test("reading prompt retains space beside a short option list", async ({ page })
   expect(promptBox!.height).toBeGreaterThan(0);
 });
 
+test("large listening action keeps its speaker icon at presentation size", async ({ page }) => {
+  const task = taskFor("listening");
+  await openTask(page, task);
+  const icon = page.locator(".kid-play-big svg");
+  await expect(icon).toBeVisible();
+  const bounds = await icon.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.width).toBeGreaterThanOrEqual(44);
+  expect(bounds!.height).toBeGreaterThanOrEqual(44);
+});
+
 test("dark theme keeps text controls and notices readable", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "dark" });
   const fixture: KidUiFixture = recallFixture();

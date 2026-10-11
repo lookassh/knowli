@@ -750,6 +750,11 @@
   color: var(--kid-accent);
 }
 
+.kid-ui .kid-play-big .kid-icon {
+  width: 48px;
+  height: 48px;
+}
+
 .kid-written {
   width: 100%;
   display: flex;
@@ -1149,6 +1154,12 @@
   min-height: 52px;
 }
 
+.kid-ui .kid-speech-feedback__actions .kid-secondary {
+  border: 1px solid var(--kid-line);
+  color: var(--kid-text);
+  background: var(--kid-soft);
+}
+
 .kid-speech-feedback__error {
   margin: 8px 0 0;
   color: var(--kid-warm-text);
@@ -1233,6 +1244,12 @@
 .kid-actions button {
   width: 100%;
   max-width: 320px;
+}
+
+.kid-ui .kid-screen--summary .kid-actions button:not(.kid-primary) {
+  border: 1px solid var(--kid-line);
+  color: var(--kid-text);
+  background: var(--kid-surface);
 }
 
 /* Podsumowanie kartkówki (design 2026-10-10): wynik u góry, słowa jako kompaktowe

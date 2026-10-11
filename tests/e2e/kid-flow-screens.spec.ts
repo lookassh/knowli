@@ -151,6 +151,28 @@ test("long session summary remains readable and its actions stay reachable at 20
   await expectThemeToken(page, page.getByTestId("kid-summary-practice"));
 });
 
+test("dark session summary keeps switch-profile text readable", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await setup(page, { profiles: [profile(), profile(otherChildId, "Maja")], tasks: [null], summary: summary() });
+  await page.getByTestId("kid-profile").first().click();
+  await page.getByTestId("kid-deck").click();
+  const button = page.getByTestId("kid-switch-profile");
+  await expect(button).toBeVisible();
+  const ratio = await button.evaluate((element) => {
+    const luminance = (value: string) => {
+      const [red, green, blue] = value.match(/[\d.]+/g)!.slice(0, 3).map(Number).map((channel) => {
+        const normalized = channel / 255;
+        return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * red! + 0.7152 * green! + 0.0722 * blue!;
+    };
+    const style = getComputedStyle(element);
+    const [foreground, background] = [luminance(style.color), luminance(style.backgroundColor)];
+    return (Math.max(foreground!, background!) + 0.05) / (Math.min(foreground!, background!) + 0.05);
+  });
+  expect(ratio).toBeGreaterThanOrEqual(4.5);
+});
+
 test("mock-test summary retains word outcomes and reachable follow-up actions", async ({ page }) => {
   const mockSummary: MockTestSummaryDto = {
     sessionId, deckId, state: "completed", complete: true, taskBudget: 1, answeredCount: 1,
