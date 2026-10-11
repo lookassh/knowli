@@ -167,9 +167,9 @@ expect(computeKidViewport({ innerHeight: 700, visualViewport: { height: 350, off
 
 - [ ] Przeprowadzić próbę Galaxy S25 według §6 spec z realnymi wartościami viewportu. Zapisać browser/PWA/paski/klawiaturę/hold/toggle i wszystkie rodzaje; jeżeli sprzęt niedostępny, oznaczyć odbiór jako niewykonany i uzgodnić sposób jego uzupełnienia, bez deklaracji gotowości na S25.
 - [x] Zaktualizować dokumentację architektury pod nową ramę, zapisany wyjątek dostępności i granice flow/session. Nie zmieniać historycznych kontraktów modelu danych. `git diff --check` oraz kontrola odnośników.
-- [ ] Wykonać self-review pokrycia spec i checklisty; przygotować paczkę `requesting-code-review` całej gałęzi. Dedykowany recenzent używa jawnie najbardziej zaawansowanego dostępnego modelu z wykluczeniem GPT Astra. Review nie deleguje implementacji ani nie uruchamia następnych recenzentów.
-- [ ] `receiving-code-review`: zweryfikować każdą uwagę, naprawić Critical/Important z dowodem RED→GREEN dla zachowania, uzasadnić odrzucenia, zapisać Minor. Ponownie review tylko poprawek i ich wpływu, gdy potrzebne.
-- [ ] `verification-before-completion`: świeże adekwatne komendy po ostatnich zmianach, spójny zakres diffu, brak materiałów/sekretów testowych w commicie. Nie uruchamiać kolejnych pełnych suite bez nowych zmian/uwag.
+- [x] Wykonać self-review pokrycia spec i checklisty; przygotować paczkę `requesting-code-review` całej gałęzi. Dedykowany recenzent używa jawnie najbardziej zaawansowanego dostępnego modelu z wykluczeniem GPT Astra. Review nie deleguje implementacji ani nie uruchamia następnych recenzentów. Wynik: `docs/superpowers/reviews/2026-10-11-kid-ui-redesign.md`.
+- [x] `receiving-code-review`: zweryfikować każdą uwagę, naprawić Critical/Important z dowodem RED→GREEN dla zachowania, uzasadnić odrzucenia, zapisać Minor. Ponownie review tylko poprawek i ich wpływu, gdy potrzebne. Ostatecznie Critical/Important 0; Minor o niepełnej macierzy viewportów/motywów zapisany jako odłożony.
+- [x] `verification-before-completion`: świeże adekwatne komendy po ostatnich zmianach, spójny zakres diffu, brak materiałów/sekretów testowych w commicie. Nie uruchamiać kolejnych pełnych suite bez nowych zmian/uwag.
 - [ ] `finishing-a-development-branch`: push gałęzi i PR do main z opisem finalnej funkcji, niezależnym review i rzeczywistymi wynikami/lukami urządzenia. PR załączyć do zadania. Nie scalać; właściciel używa squash. Worktree pozostaje do iteracji PR.
 
 ## Kryterium zamknięcia
