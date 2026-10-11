@@ -24,11 +24,14 @@ async function query<T>(sql: string, values: unknown[] = []): Promise<T[]> {
   return (await (await pool()).query(sql, values)).rows as T[];
 }
 
-async function createLearningTask(page: Page, name: string): Promise<void> {
+async function createLearningTask(page: Page, name: string, recordingMode: "hold" | "toggle" = "hold"): Promise<void> {
   const parent: APIRequestContext = page.request;
   await parent.post("/api/v1/parent/setup", { data: { secret: "1234" } });
   expect((await parent.post("/api/v1/parent/login", { data: { secret: "1234" } })).status()).toBe(200);
   const child = await (await parent.post("/api/v1/parent/children", { data: { displayName: name, avatarKey: "fox" } })).json() as { id: string };
+  if (recordingMode === "toggle") {
+    expect((await parent.patch(`/api/v1/parent/children/${child.id}`, { data: { recordingMode } })).status()).toBe(200);
+  }
   const idempotencyKey = `speech-ux-${randomUUID()}`;
   const generated = await parent.post("/api/v1/parent/decks/generate", {
     data: { prompt: "angielskie dni tygodnia dla początkującego dziecka", idempotencyKey, title: `Dni dla ${name}` },
@@ -163,16 +166,8 @@ test("hold gesture handles keyboard, capture loss and release outside the button
   await page.keyboard.up("Space");
   await expect(button).toHaveAttribute("data-phase", "idle");
 
-  const mode = page.getByTestId("kid-record-mode");
-  await mode.click();
-  await expect(mode).toHaveAttribute("aria-pressed", "true");
-  await mode.click();
-  await expect(mode).toHaveAttribute("aria-pressed", "false");
-  await mode.focus();
-  await page.keyboard.press("Space");
-  await expect(mode).toHaveAttribute("aria-pressed", "true");
-  await page.keyboard.press("Enter");
-  await expect(mode).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByTestId("kid-record-mode")).toHaveCount(0);
+  await expect(page.getByText("Wolisz nacisnąć raz? Zmień tryb")).toHaveCount(0);
 
   await button.focus();
   await page.keyboard.down("Space");
@@ -210,6 +205,28 @@ test("hold gesture handles keyboard, capture loss and release outside the button
   await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
   await expect(button).toHaveAttribute("aria-pressed", "false");
   await cdp.detach();
+});
+
+test("tryb toggle z profilu rodzica działa po odświeżeniu i nie pokazuje przełącznika dziecku", async ({ page }) => {
+  await installFakeMicrophone(page);
+  const name = `Toggle ${randomUUID().slice(0, 6)}`;
+  await createLearningTask(page, name, "toggle");
+  await expect(page.getByTestId("kid-record-mode")).toHaveCount(0);
+  await expect(page.getByText("Wolisz nacisnąć raz? Zmień tryb")).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.getByTestId("kid-deck")).toBeVisible();
+  await page.getByTestId("kid-deck").filter({ hasText: `Dni dla ${name}` }).click();
+  await expect(page.getByTestId("kid-record")).toBeVisible();
+  await expect(page.getByTestId("kid-record-mode")).toHaveCount(0);
+  const button = page.getByTestId("kid-record");
+  await button.click();
+  await expect(button).toHaveAttribute("data-ready", "true");
+  await button.click();
+  await expect(button).toHaveAttribute("aria-pressed", "true");
+  await expect(button).toHaveAttribute("data-phase", "recording");
+  await button.click();
+  await expect(button).toHaveAttribute("data-phase", "idle");
 });
 
 test("microphone denial leaves the written learning path available", async ({ page }) => {

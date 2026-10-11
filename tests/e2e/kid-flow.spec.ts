@@ -62,6 +62,13 @@ async function createChild(
   return child;
 }
 
+async function configureToggleRecording(parent: APIRequestContext, childId: string): Promise<void> {
+  const response = await parent.patch(`/api/v1/parent/children/${childId}`, {
+    data: { recordingMode: "toggle" },
+  });
+  expect(response.status()).toBe(200);
+}
+
 async function createAssignedDeck(
   parent: APIRequestContext,
   childId: string,
@@ -190,8 +197,7 @@ function currentFeedback(page: Page) {
 }
 
 async function startFakeRecording(page: Page): Promise<void> {
-  const mode = page.getByTestId("kid-record-mode");
-  if (await mode.getAttribute("aria-pressed") !== "true") await mode.click();
+  await expect(page.getByTestId("kid-record-mode")).toHaveCount(0);
   const record = page.getByTestId("kid-record");
   if (await record.getAttribute("data-ready") !== "true") {
     await record.click();
@@ -293,6 +299,7 @@ test("jeden profil pomija wybór i prowadzi sesję do obiecanego końca", async 
     expect(deleted.status()).toBe(204);
   }
   const child = await createChild(parent, "Ola", "fox");
+  await configureToggleRecording(parent, child.id);
   await createAssignedDeck(parent, child.id, "Dni tygodnia", `kid-flow-1-${randomUUID()}`);
 
   // manifest PWA: polska nazwa, start z ekranu nauki, ikony; brak service
@@ -843,6 +850,7 @@ test("opuszczenie widoku w trakcie nagrywania zatrzymuje strumień", async ({ pa
   await injectFakeMediaPlatform(page);
   const parent = await parentSession(page);
   const child = await createChild(parent, "Filip", "fox");
+  await configureToggleRecording(parent, child.id);
   const { publishedVersionId } = await createAssignedDeck(
     parent,
     child.id,

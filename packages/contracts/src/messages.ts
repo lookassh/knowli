@@ -280,8 +280,6 @@ export const messages = {
     recordingStarting: "Włączam mikrofon…",
     recordingFinishing: "Kończę nagrywanie…",
     recordingPermission: "Przytrzymaj przycisk, aby włączyć mikrofon i zacząć.",
-    recordModeToggle: "Wolisz nacisnąć raz? Zmień tryb",
-    recordModeHold: "Zmień na przytrzymanie",
     recordingLevel: "Poziom głosu",
     sayIt: "Powiedz na głos",
     processing: "Sprawdzam nagranie…",

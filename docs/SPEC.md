@@ -359,6 +359,8 @@ Ponowne odsłuchanie pytania w zadaniu słuchowym nie jest automatycznie błęde
 
 Dziecko może rozpocząć sesję bez nagrywania. Odmowa uprawnienia, brak mikrofonu lub jego awaria nie blokują aplikacji.
 
+Preferencja gestu nagrywania (`hold` albo `toggle`) należy do profilu dziecka. Rodzic zmienia ją w panelu rodzica; nowy i istniejący profil po migracji używa domyślnie `hold`. Kid API przekazuje wartość razem z profilem, a ekran ćwiczenia nie udostępnia dziecku przełącznika. Ustawienie nie jest zapisywane w preferencjach urządzenia.
+
 W tym trybie dostępne są prezentacja, odsłuch, rozpoznawanie, uzupełnianie liter i pisownia. Samodzielna odpowiedź pisemna może dostarczyć dowodu przypomnienia słowa, z zachowaniem osobnej oceny pisowni.
 
 Nie oceniamy wymowy i nie uznajemy jej za opanowaną. Jeśli dziecko powie odpowiedź bez nagrania, aplikacja nie traktuje jej jako obiektywnie sprawdzonej. Nieobserwowana umiejętność ma status „nie sprawdzono”, a nie wynik zero.

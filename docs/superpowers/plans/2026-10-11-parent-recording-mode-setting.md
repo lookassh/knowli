@@ -58,40 +58,40 @@
 - `KidProfileDto` contains required `recordingMode` and `listKidProfiles()` returns the database value.
 - `updateChild(services, childId, input)` updates only supplied fields and returns the current preference.
 
-- [ ] **Step 1: Add failing contract tests** for valid `hold`/`toggle`, rejection of unknown mode, `ChildPatch` mode-only updates, and required mode in parent/kid DTOs.
-- [ ] **Step 2: Run the focused contract tests and confirm RED.**
+- [x] **Step 1: Add failing contract tests** for valid `hold`/`toggle`, rejection of unknown mode, `ChildPatch` mode-only updates, and required mode in parent/kid DTOs.
+- [x] **Step 2: Run the focused contract tests and confirm RED.**
 
 Run: `npx --yes pnpm@10.34.6 exec vitest run packages/contracts/src/child-profile.test.ts`
 
 Expected: FAIL because recording mode is not part of the schemas yet.
 
-- [ ] **Step 3: Add failing PostgreSQL integration coverage** for default `hold`, parent PATCH to `toggle`, Kid Profile DTO readback, mode-only PATCH preserving name/avatar/policy/history, and direct SQL writes of unknown values/`NULL` rejected by the mode constraint and `NOT NULL` constraint.
-- [ ] **Step 4: Run the focused integration test and confirm RED.**
+- [x] **Step 3: Add failing PostgreSQL integration coverage** for default `hold`, parent PATCH to `toggle`, Kid Profile DTO readback, mode-only PATCH preserving name/avatar/policy/history, and direct SQL writes of unknown values/`NULL` rejected by the mode constraint and `NOT NULL` constraint.
+- [x] **Step 4: Run the focused integration test and confirm RED.**
 
 Run: `npx --yes pnpm@10.34.6 exec vitest run --config vitest.integration.config.ts tests/integration/auth-profiles.test.ts`
 
 Expected: FAIL because the column and DTO fields do not exist.
 
-- [ ] **Step 5: Add a separate migration-history integration case** that creates a temporary database in the integration PostgreSQL container, applies migrations `0000`–`0004` from a temporary migration folder, inserts a profile with existing name/avatar data, applies migration `0005`, and verifies `recording_mode='hold'` plus preservation of the existing profile fields. Clean up the temporary database and migration folder in `finally`.
+- [x] **Step 5: Add a separate migration-history integration case** that creates a temporary database in the integration PostgreSQL container, applies migrations `0000`–`0004` from a temporary migration folder, inserts a profile with existing name/avatar data, applies migration `0005`, and verifies `recording_mode='hold'` plus preservation of the existing profile fields. Clean up the temporary database and migration folder in `finally`.
 
 Run: `npx --yes pnpm@10.34.6 exec vitest run --config vitest.integration.config.ts tests/integration/recording-mode-migration.test.ts`
 
 Expected: FAIL because migration `0005_child_recording_mode.sql` does not exist.
 
-- [ ] **Step 6: Add `recordingMode` to the Drizzle child profile schema** as `text().$type<RecordingModeDto>().notNull().default("hold")` with a named CHECK allowing only `hold`/`toggle`; generate and inspect migration `0005_child_recording_mode.sql` and its snapshot/journal updates.
+- [x] **Step 6: Add `recordingMode` to the Drizzle child profile schema** as `text().$type<RecordingModeDto>().notNull().default("hold")` with a named CHECK allowing only `hold`/`toggle`; generate and inspect migration `0005_child_recording_mode.sql` and its snapshot/journal updates.
 
 Run: `npx --yes pnpm@10.34.6 --filter @learning/server db:generate --name child_recording_mode`
 
 Expected: migration adds a NOT NULL column defaulting to `hold` and a CHECK constraint; review generated SQL before keeping it.
 
-- [ ] **Step 7: Implement the contracts and profile modules** using the shared enum, mapping the required field from rows, and including it in only supplied PATCH fields. Do not accept it in `ChildInput`.
-- [ ] **Step 8: Run contract and PostgreSQL integration tests to confirm GREEN.**
+- [x] **Step 7: Implement the contracts and profile modules** using the shared enum, mapping the required field from rows, and including it in only supplied PATCH fields. Do not accept it in `ChildInput`.
+- [x] **Step 8: Run contract and PostgreSQL integration tests to confirm GREEN.**
 
 Run: `npx --yes pnpm@10.34.6 exec vitest run packages/contracts/src/child-profile.test.ts` and `npx --yes pnpm@10.34.6 exec vitest run --config vitest.integration.config.ts tests/integration/auth-profiles.test.ts tests/integration/recording-mode-migration.test.ts`
 
 Expected: both commands PASS; the separate migration case confirms an existing pre-0005 profile receives `hold` without losing its fields.
 
-- [ ] **Step 9: Commit** `feat: persist recording mode on child profile`.
+- [x] **Step 9: Commit** `feat: persist recording mode on child profile`.
 
 ### Task 2: Ustawienie w panelu rodzica
 
@@ -104,22 +104,22 @@ Expected: both commands PASS; the separate migration case confirms an existing p
 - Parent profile editor exposes a labeled control with `hold` (“Przytrzymaj, aby mówić”) and `toggle` (“Naciśnij, aby rozpocząć i zatrzymać”).
 - Save uses the existing `PATCH /api/v1/parent/children/:id` and includes `recordingMode` only when changed.
 
-- [ ] **Step 1: Add failing E2E assertions** that the editor shows the saved default `hold`, allows selecting `toggle`, saves it, reopens with `toggle`, and preserves other child fields.
-- [ ] **Step 2: Run the focused E2E test and confirm RED.**
+- [x] **Step 1: Add failing E2E assertions** that the editor shows the saved default `hold`, allows selecting `toggle`, saves it, reopens with `toggle`, and preserves other child fields.
+- [x] **Step 2: Run the focused E2E test and confirm RED.**
 
 Run: `npx --yes pnpm@10.34.6 exec playwright test tests/e2e/parent-flow.spec.ts`
 
 Expected: FAIL because the setting control is absent.
 
-- [ ] **Step 3: Add concise Polish labels** to the shared messages catalog and add the mode control to the existing child profile edit form.
-- [ ] **Step 4: Extend `editChanged` and the PATCH payload** to track/save `recordingMode`, while preserving current validation, busy state, error handling, and focus restoration.
-- [ ] **Step 5: Run the focused parent E2E test to confirm GREEN.**
+- [x] **Step 3: Add concise Polish labels** to the shared messages catalog and add the mode control to the existing child profile edit form.
+- [x] **Step 4: Extend `editChanged` and the PATCH payload** to track/save `recordingMode`, while preserving current validation, busy state, error handling, and focus restoration.
+- [x] **Step 5: Run the focused parent E2E test to confirm GREEN.**
 
 Run: `npx --yes pnpm@10.34.6 exec playwright test tests/e2e/parent-flow.spec.ts`
 
 Expected: PASS, including saving and reopening the persisted per-child value.
 
-- [ ] **Step 6: Commit** `feat: add parent recording mode setting`.
+- [x] **Step 6: Commit** `feat: add parent recording mode setting`.
 
 ### Task 3: Tryb profilu w Kid UI i usunięcie przełącznika dziecka
 
@@ -140,36 +140,36 @@ Expected: PASS, including saving and reopening the persisted per-child value.
 - `LocalPreferences` retains unrelated profile/session/microphone storage; it no longer reads or writes `umiem.recordingMode`.
 - Existing `SpeechRecordButton` keeps both interaction behaviors and receives only the selected profile's mode.
 
-- [ ] **Step 1: Replace old local-mode assertions and add failing controller tests** for direct `initialChildId` selection, selecting profiles with distinct modes, using each mode in learning, and ignoring a stale `umiem.recordingMode=toggle` local value when the selected profile says `hold`. Preserve existing tests for hold/toggle gestures, cancellation, and microphone cleanup.
-- [ ] **Step 2: Run the focused controller tests and confirm RED.**
+- [x] **Step 1: Replace old local-mode assertions and add failing controller tests** for direct `initialChildId` selection, selecting profiles with distinct modes, using each mode in learning, and ignoring a stale `umiem.recordingMode=toggle` local value when the selected profile says `hold`. Preserve existing tests for hold/toggle gestures, cancellation, and microphone cleanup.
+- [x] **Step 2: Run the focused controller tests and confirm RED.**
 
 Run: `npx --yes pnpm@10.34.6 exec vitest run packages/kid-ui/src/session/session-controller.test.ts`
 
 Expected: FAIL because the controller reads and writes the local recording preference.
 
-- [ ] **Step 3: Replace the old child-facing mode-toggle E2E case** with failing assertions for parent-selected `hold` and `toggle`, profile-specific behavior after switching children, and absence of “Wolisz nacisnąć raz? Zmień tryb” after starting/refreshing an exercise. Use fake media only; keep traces off for recording-flow tests. Keep existing gesture and cancellation assertions.
-- [ ] **Step 4: Run the focused controller and speech UX tests and confirm RED** before changing implementation.
+- [x] **Step 3: Replace the old child-facing mode-toggle E2E case** with failing assertions for parent-selected `hold` and `toggle`, profile-specific behavior after switching children, and absence of “Wolisz nacisnąć raz? Zmień tryb” after starting/refreshing an exercise. Use fake media only; keep traces off for recording-flow tests. Keep existing gesture and cancellation assertions.
+- [x] **Step 4: Run the focused controller and speech UX tests and confirm RED** before changing implementation.
 
 Run: `npx --yes pnpm@10.34.6 exec vitest run packages/kid-ui/src/session/session-controller.test.ts` and `npx --yes pnpm@10.34.6 exec playwright test tests/e2e/speech-recording-ux.spec.ts`
 
 Expected: new profile-driven controller and E2E assertions fail; old local-mode tests have been replaced, and speech feedback behavior remains unchanged.
 
-- [ ] **Step 5: Remove the local recording preference key, reader, and writer** while retaining all other local preferences. Type `LearningScreen`, `ExerciseProps`, and `SpeechRecordButton` with the shared `RecordingModeDto` contract instead of `storage.ts`; remove `onRecordingModeChange`/`onModeChange` from `ExerciseHandlers`, `SpeechRecordButtonProps`, and component wiring; keep the selected `recordingMode` prop used to render the existing gesture behavior. Remove the obsolete child-facing `recordModeToggle` and `recordModeHold` messages.
-- [ ] **Step 6: Initialize/update the controller's recording mode from the selected profile** on initial route selection, profile selection, and return to profile selection; remove the user-driven `setRecordingMode` path and the inline change link.
-- [ ] **Step 7: Run focused controller, speech UX, and kid-flow tests to confirm GREEN.**
+- [x] **Step 5: Remove the local recording preference key, reader, and writer** while retaining all other local preferences. Type `LearningScreen`, `ExerciseProps`, and `SpeechRecordButton` with the shared `RecordingModeDto` contract instead of `storage.ts`; remove `onRecordingModeChange`/`onModeChange` from `ExerciseHandlers`, `SpeechRecordButtonProps`, and component wiring; keep the selected `recordingMode` prop used to render the existing gesture behavior. Remove the obsolete child-facing `recordModeToggle` and `recordModeHold` messages.
+- [x] **Step 6: Initialize/update the controller's recording mode from the selected profile** on initial route selection, profile selection, and return to profile selection; remove the user-driven `setRecordingMode` path and the inline change link.
+- [x] **Step 7: Run focused controller, speech UX, and kid-flow tests to confirm GREEN.**
 
 Run: `npx --yes pnpm@10.34.6 exec vitest run packages/kid-ui/src/session/session-controller.test.ts` and `npx --yes pnpm@10.34.6 exec playwright test tests/e2e/speech-recording-ux.spec.ts tests/e2e/kid-flow.spec.ts`
 
 Expected: PASS; both modes follow the selected profile, stale local preference has no effect, the link is absent, and gesture/cancellation regressions remain green.
 
-- [ ] **Step 8: Update product and architecture docs** (`docs/SPEC.md`, `docs/architecture.md`, `docs/folder-structure.md`, `docs/implementation-plan.md`, and the earlier speech UX design) to describe profile persistence, Kid DTO delivery, migration default, and removal of device-local mode storage. Do not edit `docs/schema.sql` as a second authoritative schema.
-- [ ] **Step 9: Run final checks**: `npx --yes pnpm@10.34.6 test:unit`, `npx --yes pnpm@10.34.6 test:integration`, `npx --yes pnpm@10.34.6 test:e2e`, `npx --yes pnpm@10.34.6 typecheck`, `npx --yes pnpm@10.34.6 build`, and `git diff --check`. Update the execution progress log created in setup with exact results; do not claim checks that were not run.
-- [ ] **Step 10: Commit** `docs: align recording mode contracts with parent setting` and record any verification gaps.
+- [x] **Step 8: Update product and architecture docs** (`docs/SPEC.md`, `docs/architecture.md`, `docs/folder-structure.md`, `docs/implementation-plan.md`, and the earlier speech UX design) to describe profile persistence, Kid DTO delivery, migration default, and removal of device-local mode storage. Do not edit `docs/schema.sql` as a second authoritative schema.
+- [x] **Step 9: Run final checks**: `npx --yes pnpm@10.34.6 test:unit`, `npx --yes pnpm@10.34.6 test:integration`, `npx --yes pnpm@10.34.6 test:e2e`, `npx --yes pnpm@10.34.6 typecheck`, `npx --yes pnpm@10.34.6 build`, and `git diff --check`. Update the execution progress log created in setup with exact results; do not claim checks that were not run.
+- [x] **Step 10: Commit** `docs: align recording mode contracts with parent setting` and record any verification gaps.
 
 ## Execution Setup
 
-- [ ] Create `docs/superpowers/progress/2026-10-11-parent-recording-mode-setting.md` before Task 1. Record approval of this spec/plan, clean worktree state, `BASE_SHA=df49e4e273d53a85b1c1f45c5ffe156e0b9be766`, scripts, baseline `pnpm test:unit` and `pnpm typecheck`, and a checkbox per task. During work, record each RED result, GREEN result, command output summary, commit, review, and deviation before marking that step complete.
-- [ ] Confirm `HEAD` is the approved plan commit on `feature/parent-recording-mode-setting`, and that the worktree has no unrelated changes before creating the progress log.
+- [x] Create `docs/superpowers/progress/2026-10-11-parent-recording-mode-setting.md` (created during Task 3 rather than before Task 1; see the logged deviation). Record approval of this spec/plan, clean worktree state, `BASE_SHA=df49e4e273d53a85b1c1f45c5ffe156e0b9be766`, scripts, baseline `pnpm test:unit` and `pnpm typecheck`, and a checkbox per task. During work, record each RED result, GREEN result, command output summary, commit, review, and deviation before marking that step complete.
+- [x] Confirm `HEAD` is the approved plan commit on `feature/parent-recording-mode-setting`, and that the worktree has no unrelated changes before creating the progress log.
 
 ## Review Corrections
 

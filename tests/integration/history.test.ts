@@ -420,7 +420,7 @@ describe("niezmienność historii prób (integracja)", () => {
     const otherBefore = await query("select * from learning_app.child_profiles where id = $1", [otherId]);
     const before = await snapshot();
     expect(await updateChild(services, childId, { displayName: "Ala", avatarKey: "panda" }))
-      .toEqual({ id: childId, displayName: "Ala", avatarKey: "panda", birthYear: 2018 });
+      .toEqual({ id: childId, displayName: "Ala", avatarKey: "panda", birthYear: 2018, recordingMode: "hold" });
     expect(await snapshot()).toEqual(before);
     expect(await query("select * from learning_app.child_profiles where id = $1", [otherId])).toEqual(otherBefore);
     expect(await query("select * from learning_app.child_profiles where id = $1", [childId]))

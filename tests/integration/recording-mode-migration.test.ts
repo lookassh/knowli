@@ -2,15 +2,13 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, copyFile, writeFile, rm, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createDatabase, migrateDatabase } from "@learning/server";
 import { testDatabaseUrl } from "./helpers";
 
 const migrationsFolder = path.resolve("packages/server/drizzle");
 
 describe("migracja trybu nagrywania", () => {
-  afterAll(() => undefined);
-
   it("ustawia hold na istniejącym profilu i zachowuje jego dane", async () => {
     const temporaryFolder = await mkdtemp(path.join(tmpdir(), "knowli-recording-mode-"));
     const adminUrl = new URL(testDatabaseUrl());

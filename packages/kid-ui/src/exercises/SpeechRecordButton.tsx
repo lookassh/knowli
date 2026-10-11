@@ -1,6 +1,6 @@
 import { useEffect, useReducer, useRef } from "react";
 import { messages } from "@learning/contracts";
-import type { RecordingMode } from "../storage";
+import type { RecordingModeDto } from "@learning/contracts";
 import { reduceRecordingGesture, type GestureOwner, type GestureState } from "./recording-gesture";
 
 type RecordingPhase = "idle" | "preparing" | "starting" | "recording" | "stopping";
@@ -11,8 +11,7 @@ export interface SpeechRecordButtonProps {
   disabled: boolean;
   level: number | null;
   notice?: string | null;
-  mode: RecordingMode;
-  onModeChange(mode: RecordingMode): void;
+  mode: RecordingModeDto;
   onPrepare(): void;
   onStart(): void;
   onStop(): void;
@@ -28,7 +27,7 @@ function keyOwner(key: string): GestureOwner | null {
 }
 
 /** Shared hold-to-speak control with an accessible click/toggle alternative. */
-export function SpeechRecordButton({ phase, ready, disabled, level, notice = null, mode, onModeChange, onPrepare, onStart, onStop, onCancel }: SpeechRecordButtonProps) {
+export function SpeechRecordButton({ phase, ready, disabled, level, notice = null, mode, onPrepare, onStart, onStop, onCancel }: SpeechRecordButtonProps) {
   const [gesture, dispatch] = useReducer(
     (state: GestureState, event: Parameters<typeof reduceRecordingGesture>[1]) => reduceRecordingGesture(state, event).state,
     initialGesture,
@@ -152,16 +151,6 @@ export function SpeechRecordButton({ phase, ready, disabled, level, notice = nul
           : !ready && phase === "idle" ? `🎤 ${messages.kid.recordingEnableMic}`
             : mode === "hold" ? `🎤 ${messages.kid.recordHold}`
             : phase === "starting" ? messages.kid.recordingStarting : `🎤 ${messages.kid.record}`}
-      </button>
-      <button
-        type="button"
-        className="kid-record-mode"
-        data-testid="kid-record-mode"
-        aria-pressed={mode === "toggle"}
-        disabled={disabled || phase !== "idle"}
-        onClick={() => onModeChange(mode === "hold" ? "toggle" : "hold")}
-      >
-        {mode === "hold" ? messages.kid.recordModeToggle : messages.kid.recordModeHold}
       </button>
       {(notice ?? status) !== null && <p className="kid-record-status" role="status" data-testid="kid-record-status">{notice ?? status}</p>}
       {active && (

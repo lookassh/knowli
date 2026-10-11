@@ -21,8 +21,8 @@ import { LearningSessionController } from "./session-controller";
  * logika bez Reacta, na pełnych fake-ach API i mediów.
  */
 
-const PROFILE_A: KidProfileDto = { childId: "11111111-1111-1111-1111-111111111111", displayName: "Ola", avatarKey: "fox" };
-const PROFILE_B: KidProfileDto = { childId: "22222222-2222-2222-2222-222222222222", displayName: "Ewa", avatarKey: "bear" };
+const PROFILE_A: KidProfileDto = { childId: "11111111-1111-1111-1111-111111111111", displayName: "Ola", avatarKey: "fox", recordingMode: "hold" };
+const PROFILE_B: KidProfileDto = { childId: "22222222-2222-2222-2222-222222222222", displayName: "Ewa", avatarKey: "bear", recordingMode: "toggle" };
 
 function sessionDto(childId: string, sessionId: string, microphoneEnabled: boolean): SessionDto {
   return {
@@ -789,25 +789,22 @@ describe("LearningSessionController", () => {
     }
   });
 
-  it("zachowuje tryb toggle, traktuje nieznaną wartość jak hold i blokuje zmianę podczas nagrania", async () => {
-    const toggleStorage = createMemoryPreferences({ "umiem.recordingMode": "toggle" });
-    const toggle = await startAtTask(baseState(), taskDto("toggle", { kind: "speech", text: "apple", visualType: "none", imageAssetId: null, audioAssetId: null }), { storage: toggleStorage });
-    expect(toggle.controller.getScreen()).toMatchObject({ recordingMode: "toggle" });
-    expect(toggleStorage.read("umiem.recordingMode")).toBe("toggle");
+  it("uses each selected profile mode and ignores the legacy local preference", async () => {
+    const staleStorage = createMemoryPreferences({ "umiem.recordingMode": "toggle" });
+    const state = baseState();
+    state.tasks = [taskDto("hold", { kind: "speech", text: "apple", visualType: "none", imageAssetId: null, audioAssetId: null })];
+    const harness = makeHarness(state, { initialChildId: PROFILE_A.childId, storage: staleStorage });
 
-    const invalidStorage = createMemoryPreferences({ "umiem.recordingMode": "surprise" });
-    const hold = await startAtTask(baseState(), taskDto("hold", { kind: "speech", text: "apple", visualType: "none", imageAssetId: null, audioAssetId: null }), { storage: invalidStorage });
-    expect(hold.controller.getScreen()).toMatchObject({ recordingMode: "hold" });
-    hold.controller.setRecordingMode("toggle");
-    expect(hold.controller.getScreen()).toMatchObject({ recordingMode: "toggle" });
-    expect(invalidStorage.read("umiem.recordingMode")).toBe("toggle");
+    await harness.controller.start();
+    await harness.controller.startLearning(DECK.deckId);
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", session: { childId: PROFILE_A.childId }, recordingMode: "hold" });
 
-    await hold.controller.prepareMicrophone();
-    await hold.controller.startRecording();
-    hold.controller.setRecordingMode("hold");
-    expect(hold.controller.getScreen()).toMatchObject({ recordingMode: "toggle", recordingPhase: "recording" });
-    expect(invalidStorage.read("umiem.recordingMode")).toBe("toggle");
-    hold.controller.cancelRecording();
+    await harness.controller.backToDecks();
+    await harness.controller.selectProfile(PROFILE_B.childId);
+    state.tasks = [taskDto("toggle", { kind: "speech", text: "apple", visualType: "none", imageAssetId: null, audioAssetId: null })];
+    await harness.controller.startLearning(DECK.deckId);
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", session: { childId: PROFILE_B.childId }, recordingMode: "toggle" });
+    expect(staleStorage.read("umiem.recordingMode")).toBe("toggle");
   });
 
   it("„Nie pamiętam” ujawnia słowo po zgody serwera i wysyła trudność", async () => {
