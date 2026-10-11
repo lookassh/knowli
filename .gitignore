@@ -22,3 +22,4 @@ tests/e2e/.world*.json
 
 # kopie zapasowe (deploy/backup.sh) — dane rodzinne nigdy w repo
 backups/
+/.codex-remote-attachments/
