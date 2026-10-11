@@ -39,4 +39,6 @@ Wyniki po poprawkach: `test:unit` 516/516, `test:integration` 192/192, `test:e2e
 
 Minor celowo odłożone zgodnie z workflow: deterministyczny tie-break listy trudności przy kilku zdarzeniach tego samego dnia; sformułowanie w promptach dla sub-sekundowego dodatniego czasu („poniżej 1 min”); instalacja AGENTS.md z właściwym dokumentem `UMIEM-INTEGRATION.md`. Odrzucone jako poza tym zakresem: live instalacja i naturalny raport, modelowa próba prompt injection/jakości języka, osobna dystrybucja wheel oraz limity tokenów globalne między rodzinami/workerami.
 
-Przed aktualizacją PR #48 pozostaje wymagany drugi, niezależny review całości po poprawkach. Package release i review aktualizującego PR wykonać dopiero po ostatnim commicie Knowli.
+Drugi niezależny przegląd po tych poprawkach wykrył jeszcze dwie uwagi MCP: walidator źle blokował różne `deckVersionId` tego samego zestawu w tym samym dniu, a per-attempt timeout obejmował oczekiwanie `Retry-After`. Oba błędy odtworzono testami RED (walidacja rzucała `ContractError`; oczekiwanie 50 ms zostało ucięte do ok. 32 ms przy 20 ms limicie próby), poprawiono i potwierdzono GREEN. `test:mcp` po poprawce: 18/18.
+
+Pozostaje niezależny review końcowego diffu obejmującego także te dwie poprawki. Package release i review aktualizującego PR #48 wykonać dopiero po ostatnim commicie Knowli.

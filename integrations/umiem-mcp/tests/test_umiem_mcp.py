@@ -53,6 +53,19 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(result["children"][0]["learningTime"], {"seconds": 1980, "estimated": True})
         self.assertEqual(result["children"][0]["dailyActivity"][2]["learningTime"]["seconds"], 1380)
 
+    def test_accepts_distinct_versions_of_one_deck_in_the_same_day(self):
+        candidate = json.loads(json.dumps(self.payload))
+        decks = candidate["children"][0]["dailyActivity"][0]["decks"]
+        deck = {"deckId": "22222222-2222-4222-8222-222222222222",
+                "deckVersionId": "33333333-3333-4333-8333-333333333333",
+                "deckTitle": "Dni tygodnia v2", "deckVersionNumber": 2,
+                "assessmentCounts": [{"skill": "recall", "independentCorrect": 1,
+                                      "correctNotIndependent": 0, "incorrect": 0, "unassessed": 0}]}
+        prior = {**deck, "deckVersionId": "44444444-4444-4444-8444-444444444444",
+                 "deckTitle": "Dni tygodnia v1", "deckVersionNumber": 1}
+        decks.extend((prior, deck))
+        self.assertEqual(validate_overview(candidate), candidate)
+
     def test_mock_test_skips_and_unassessed_are_subsets_of_not_tested(self):
         candidate = json.loads(json.dumps(self.payload))
         candidate["children"][0]["dailyActivity"][0]["mockTests"].append({
@@ -231,6 +244,34 @@ class ClientTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result["schemaVersion"], 1)
             self.assertEqual(len(calls), 2)
             self.assertEqual(len(delays), 1)
+
+    async def test_retry_after_wait_uses_total_deadline_not_attempt_deadline(self):
+        payload = json.loads((ROOT / "fixtures/learning-overview.example.json").read_text(encoding="utf-8"))
+        second_request_at = []
+        started = asyncio.get_running_loop().time()
+
+        async def handler(_request):
+            if second_request_at:
+                return httpx.Response(200, json=payload)
+            return httpx.Response(429, headers={"retry-after": "0.05"})
+
+        async def sleep(delay):
+            await asyncio.sleep(delay)
+
+        calls = 0
+        async def ordered_handler(request):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                second_request_at.append(asyncio.get_running_loop().time())
+            return await handler(request)
+
+        client = OverviewClient(base_url="https://umiem.example", token_reader=lambda: "token",
+                                transport=httpx.MockTransport(ordered_handler), total_timeout=0.2,
+                                attempt_timeout=0.02, sleep=sleep)
+        result = await client.get_overview(days=3)
+        self.assertEqual(result["schemaVersion"], 1)
+        self.assertGreaterEqual(second_request_at[0] - started, 0.045)
 
     async def test_retries_a_transport_timeout_only_once(self):
         calls = []

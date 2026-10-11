@@ -81,6 +81,7 @@ class OverviewClient:
             try:
                 attempt_budget = min(self.attempt_timeout, remaining)
                 timeout = httpx.Timeout(attempt_budget)
+                retry_delay = None
                 async with httpx.AsyncClient(transport=self.transport, timeout=timeout, follow_redirects=False) as client:
                     async with asyncio.timeout(attempt_budget):
                         async with client.stream(
@@ -88,34 +89,42 @@ class OverviewClient:
                             headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
                         ) as response:
                             if response.status_code == 429 and attempt == 0:
-                                delay = _retry_after(response.headers.get("retry-after"))
-                                if delay is None:
-                                    delay = 1.0
-                                if delay < deadline - self.monotonic():
-                                    await self.sleep(delay)
-                                    continue
-                                raise AdapterError("learning_summary_unavailable", "Learning summary is temporarily unavailable", True)
+                                retry_delay = _retry_after(response.headers.get("retry-after"))
+                                if retry_delay is None:
+                                    retry_delay = 1.0
                             if response.status_code >= 500 and attempt == 0:
-                                await self.sleep(min(0.5, max(0.0, deadline - self.monotonic())))
-                                continue
-                            if response.status_code in (401, 403, 404, 429):
+                                retry_delay = 0.5
+                            if retry_delay is not None:
+                                pass
+                            elif response.status_code in (401, 403, 404, 429):
                                 code = {401: "unauthorized", 403: "forbidden", 404: "not_found", 429: "rate_limited"}[response.status_code]
                                 raise AdapterError(code, "Learning summary is unavailable", response.status_code == 429)
-                            if response.status_code != 200:
+                            elif response.status_code != 200:
                                 raise AdapterError("learning_summary_unavailable", "Learning summary is unavailable", response.status_code >= 500)
-                            body = bytearray()
-                            async for chunk in response.aiter_bytes():
-                                body.extend(chunk)
-                                if len(body) > MAX_RESPONSE_BYTES:
-                                    raise AdapterError("learning_summary_too_large", "The learning summary exceeds the response size limit")
-                            try:
-                                data = json.loads(body)
-                            except (json.JSONDecodeError, UnicodeDecodeError):
-                                raise AdapterError("learning_summary_unavailable", "The learning summary is not valid JSON") from None
-                            try:
-                                return validate_overview(data, raw_size=len(body))
-                            except ContractError as error:
-                                raise AdapterError(error.code, str(error)) from None
+                            else:
+                                body = bytearray()
+                                async for chunk in response.aiter_bytes():
+                                    body.extend(chunk)
+                                    if len(body) > MAX_RESPONSE_BYTES:
+                                        raise AdapterError("learning_summary_too_large", "The learning summary exceeds the response size limit")
+                                try:
+                                    data = json.loads(body)
+                                except (json.JSONDecodeError, UnicodeDecodeError):
+                                    raise AdapterError("learning_summary_unavailable", "The learning summary is not valid JSON") from None
+                                try:
+                                    return validate_overview(data, raw_size=len(body))
+                                except ContractError as error:
+                                    raise AdapterError(error.code, str(error)) from None
+                if retry_delay is not None:
+                    remaining = deadline - self.monotonic()
+                    if retry_delay >= remaining:
+                        raise AdapterError("learning_summary_unavailable", "Learning summary is temporarily unavailable", True)
+                    try:
+                        async with asyncio.timeout(remaining):
+                            await self.sleep(retry_delay)
+                    except (TimeoutError, asyncio.TimeoutError):
+                        break
+                    continue
             except AdapterError:
                 raise
             except (httpx.TransportError, TimeoutError, asyncio.TimeoutError):

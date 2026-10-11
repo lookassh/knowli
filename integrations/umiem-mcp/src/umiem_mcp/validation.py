@@ -85,7 +85,7 @@ def validate_overview(data: object, *, raw_size: int | None = None) -> dict:
                 if not item["hasRecordedActivity"] and seconds != 0:
                     raise ValueError("No activity must be represented with zero seconds")
                 decks = item["decks"]
-                if len({deck["deckId"] for deck in decks}) != len(decks):
+                if len({deck["deckVersionId"] for deck in decks}) != len(decks):
                     raise ValueError("Activity decks are duplicated")
                 for deck in decks:
                     skills = deck["assessmentCounts"]
