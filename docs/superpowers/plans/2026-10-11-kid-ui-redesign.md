@@ -166,7 +166,7 @@ expect(computeKidViewport({ innerHeight: 700, visualViewport: { height: 350, off
 **Interfejsy:** paczka review obejmuje spec, plan, pełny `BASE_SHA..HEAD_SHA`, niezacommitowany diff i dowody; device checklist zawiera tylko parametry środowiska/obserwacje, nie prywatne treści dzieci.
 
 - [ ] Przeprowadzić próbę Galaxy S25 według §6 spec z realnymi wartościami viewportu. Zapisać browser/PWA/paski/klawiaturę/hold/toggle i wszystkie rodzaje; jeżeli sprzęt niedostępny, oznaczyć odbiór jako niewykonany i uzgodnić sposób jego uzupełnienia, bez deklaracji gotowości na S25.
-- [ ] Zaktualizować dokumentację architektury pod nową ramę, zapisany wyjątek dostępności i granice flow/session. Nie zmieniać historycznych kontraktów modelu danych. `git diff --check` oraz kontrola odnośników.
+- [x] Zaktualizować dokumentację architektury pod nową ramę, zapisany wyjątek dostępności i granice flow/session. Nie zmieniać historycznych kontraktów modelu danych. `git diff --check` oraz kontrola odnośników.
 - [ ] Wykonać self-review pokrycia spec i checklisty; przygotować paczkę `requesting-code-review` całej gałęzi. Dedykowany recenzent używa jawnie najbardziej zaawansowanego dostępnego modelu z wykluczeniem GPT Astra. Review nie deleguje implementacji ani nie uruchamia następnych recenzentów.
 - [ ] `receiving-code-review`: zweryfikować każdą uwagę, naprawić Critical/Important z dowodem RED→GREEN dla zachowania, uzasadnić odrzucenia, zapisać Minor. Ponownie review tylko poprawek i ich wpływu, gdy potrzebne.
 - [ ] `verification-before-completion`: świeże adekwatne komendy po ostatnich zmianach, spójny zakres diffu, brak materiałów/sekretów testowych w commicie. Nie uruchamiać kolejnych pełnych suite bez nowych zmian/uwag.
