@@ -87,7 +87,7 @@ export default function MockTestReportPanel({ childId, deckId, currentDeckVersio
         <p className="muted">{fill(messages.progress.mockTestSkipped, { n: skill.skipped, unassessed: skill.unassessed })}</p>
       </li>)}</ul>
       {grouped.gaps.length > 0 && <p className="muted" data-testid="mock-report-gaps">{fill(messages.progress.mockTestGaps, {
-        reasons: grouped.gaps.map(gap => `${messages.progress.mockTestReason[gap.reason] ?? gap.reason} ${gap.count}`).join(", "),
+        reasons: grouped.gaps.map(gap => `${messages.progress.mockTestReason[gap.reason] ?? gap.reason}: ${gap.count}`).join(", "),
       })}</p>}
       <p className="muted">{messages.progress.mockTestNote}</p>
     </div>}

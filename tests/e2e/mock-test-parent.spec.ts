@@ -45,7 +45,7 @@ test("parent configures count and sees partial pinned coverage", async ({ page }
   await expect(interrupted).toHaveCount(2);
   await expect(interrupted.first()).toContainText("Nie sprawdzono");
   await expect(interrupted.first()).not.toContainText("Opanowanie:");
-  await expect(page.getByTestId("mock-report-gaps")).toContainText("Poza tą porcją 12");
+  await expect(page.getByTestId("mock-report-gaps")).toContainText("Poza tą porcją: 12");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByTestId("mock-parent-report").scrollIntoViewIfNeeded();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

@@ -41,7 +41,7 @@ const GAP_REASON_PRIORITY = ["not_known", "missing_audio", "insufficient_options
 export interface MockReportGap { reason: string; count: number }
 
 /** Grupuje wiersze raportu (cały scope × umiejętności) w słowa z porcji —
- * zaplanowanej przez serwer, więc po próbie przerwanej obejmuje też słowy,
+ * zaplanowanej przez serwer, więc po próbie przerwanej obejmuje też słowa,
  * których omówienie dziecka nie pokazało (zadania powstają na żądanie).
  * Zdanie słowa i wynik liczone tym samym przepisem co u dziecka, więc dla
  * ukończonej próby nagłówki obu widoków są równe; `gaps` agreguje przyczyny
