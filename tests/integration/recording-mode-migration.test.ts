@@ -3,8 +3,8 @@ import { mkdtemp, readFile, copyFile, writeFile, rm, mkdir } from "node:fs/promi
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { createDatabase, migrateDatabase } from "@learning/server";
-import { testDatabaseUrl } from "./helpers";
+import { migrateDatabase } from "@learning/server";
+import { openQuietDatabase, testDatabaseUrl, waitForDatabaseIdle } from "./helpers";
 
 const migrationsFolder = path.resolve("packages/server/drizzle");
 
@@ -15,7 +15,7 @@ describe("migracja trybu nagrywania", () => {
     const databaseName = `recording_mode_${randomUUID().replaceAll("-", "")}`;
     const databaseUrl = new URL(adminUrl);
     databaseUrl.pathname = `/${databaseName}`;
-    const adminPool = createDatabase(testDatabaseUrl()).pool;
+    const adminPool = openQuietDatabase(testDatabaseUrl()).pool;
 
     try {
       const journal = JSON.parse(await readFile(path.join(migrationsFolder, "meta/_journal.json"), "utf8")) as {
@@ -37,7 +37,7 @@ describe("migracja trybu nagrywania", () => {
 
       await adminPool.query(`CREATE DATABASE "${databaseName}"`);
       await migrateDatabase(databaseUrl.toString(), temporaryFolder);
-      const oldPool = createDatabase(databaseUrl.toString()).pool;
+      const oldPool = openQuietDatabase(databaseUrl.toString()).pool;
       const childId = randomUUID();
       try {
         await oldPool.query(
@@ -51,7 +51,7 @@ describe("migracja trybu nagrywania", () => {
       await expect(readFile(path.join(migrationsFolder, "0005_child_recording_mode.sql"), "utf8"))
         .resolves.toContain("recording_mode");
       await migrateDatabase(databaseUrl.toString(), migrationsFolder);
-      const upgradedPool = createDatabase(databaseUrl.toString()).pool;
+      const upgradedPool = openQuietDatabase(databaseUrl.toString()).pool;
       try {
         const { rows } = await upgradedPool.query(
           "select display_name, avatar_key, recording_mode from learning_app.child_profiles where id = $1",
@@ -62,6 +62,11 @@ describe("migracja trybu nagrywania", () => {
         await upgradedPool.end();
       }
     } finally {
+      // Pool.end() rozwiązuje się, zanim sockety klientów się zamkną; DROP ...
+      // WITH (FORCE) ubijając półotwarte backendy wysyłałby FATAL 57P01 na żywe
+      // sockety (nieobsłużony event 'error' puli — tryb B flaków CI). Czekamy
+      // na realne zamknięcie wszystkich backendów bazy przed DROP.
+      await waitForDatabaseIdle(adminPool, databaseName).catch(() => undefined);
       await adminPool.query(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`).catch(() => undefined);
       await adminPool.end();
       await rm(temporaryFolder, { recursive: true, force: true });

@@ -6,6 +6,8 @@ import {
   type Services,
 } from "@learning/server";
 
+type Pool = ReturnType<typeof createDatabase>["pool"];
+
 export function testDatabaseUrl(): string {
   // klucze provide() z global-setup nie są statycznie typowane w Vitest 3
   const url = (inject as (key: string) => unknown)("DATABASE_URL");
@@ -13,6 +15,45 @@ export function testDatabaseUrl(): string {
     throw new Error("Brak DATABASE_URL z global-setup");
   }
   return url;
+}
+
+/**
+ * Pool.end() w pg rozwiązuje się, zanim sockety klientów realnie się zamkną.
+ * Serwerowe ubicie półotwartego backendu (DROP DATABASE ... WITH (FORCE),
+ * restart Postgresa) wraca wtedy jako asynchroniczny event 'error' puli — bez
+ * listenera robi się z niego nieobsłużony wyjątek, który wywala cały run mimo
+ * zielonych testów. Pule testowe mają ten szum zamieniać w ostrzeżenie.
+ */
+function tolerateLatePoolErrors(pool: Pool): Pool {
+  pool.on("error", (error) => {
+    console.warn(`[test] późny błąd połączenia puli (oczekiwany przy teardownie): ${String((error as Error).message ?? error)}`);
+  });
+  return pool;
+}
+
+/** Pula testowa odporna na późne, serwerowe przerwania połączeń. */
+export function openQuietDatabase(connectionString: string): ReturnType<typeof createDatabase> {
+  const database = createDatabase(connectionString);
+  return { db: database.db, pool: tolerateLatePoolErrors(database.pool) };
+}
+
+/**
+ * Czeka, aż baza per-testowa nie ma już żadnych backendów — dopiero wtedy DROP
+ * ... WITH (FORCE) nie ściga się z zamykającymi się socketami klientów puli.
+ */
+export async function waitForDatabaseIdle(pool: Pool, databaseName: string, timeoutMs = 10_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const { rows } = await pool.query(
+      "select count(*)::int as count from pg_stat_activity where datname = $1 and pid <> pg_backend_pid()",
+      [databaseName],
+    );
+    if ((rows[0]?.count ?? 0) === 0) return;
+    if (Date.now() >= deadline) {
+      throw new Error(`Baza ${databaseName} ma wciąż aktywne backendy po ${timeoutMs} ms`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
 }
 
 /** Zegar sterowany ręcznie — testy domeny i limity czasu nie śpią. */
@@ -38,9 +79,9 @@ export class ManualClock implements Clock {
 
 let shared: ReturnType<typeof createDatabase> | undefined;
 
-/** Jedna współdzielona pula dla pliku testowego. */
+/** Jedna współdzielona pula dla pliku testowego (z tolerancją późnych błędów). */
 export function testDatabase(): ReturnType<typeof createDatabase> {
-  shared ??= createDatabase(testDatabaseUrl());
+  shared ??= openQuietDatabase(testDatabaseUrl());
   return shared;
 }
 
