@@ -2,7 +2,7 @@
 
 Data: 2026-10-10. Baza analizy: `b7f5f09c2144b1a484e2b58cd713513d0a63da83`.
 
-Status: **do przeglądu właściciela, bez zgody na implementację**. Właściciel zaakceptował kierunek UX i poprosił o przygotowanie planu całego zakresu. Zapisany projekt i plan są dostarczane razem na jego wyraźną prośbę; szczegóły kontraktów wymagają jeszcze zatwierdzenia. Dokument nie zmienia obecnego zachowania aplikacji.
+Status: kierunek UX i plan zostały zaakceptowane i wdrożone. Późniejsza, zaakceptowana decyzja z 2026-10-11 przeniosła preferencję `hold | toggle` z urządzenia do profilu dziecka; obowiązujący kontrakt i migracja są opisane w `docs/superpowers/specs/2026-10-11-parent-recording-mode-setting-design.md`.
 
 ## Cel i zakres
 
@@ -35,7 +35,7 @@ Zakres obejmuje: gest nagrywania, przygotowanie mikrofonu, poziom dźwięku, anu
 
 - Mysz: tylko główny przycisk; dotyk i rysik przez Pointer Events. Jeden `pointerId`, pointer capture; puszczenie poza przyciskiem także kończy. `pointercancel`, nieoczekiwana utrata capture, Escape, ukrycie strony, utrata fokusu okna, koniec sesji, zmiana zadania i unmount anulują, bez wysłania częściowego nagrania. Normalne zwolnienie capture po obsłużonym puszczeniu jest no-op.
 - Klawiatura: trzymanie Space/Enter rozpoczyna, keyup kończy; key-repeat nie uruchamia nowych nagrań. Utrata fokusu przycisku anuluje gest klawiaturowy. Nie dublować obsługi przez syntetyczny `click`.
-- Jawny przełącznik „Nagrywaj kliknięciem”: pierwsze kliknięcie start, drugie „Zakończ nagranie”. Preferencja urządzenia w `LocalPreferences`, klucz `umiem.recordingMode`, wartości `hold | toggle`, domyślnie `hold`. Zmiana trybu w trakcie nagrywania niedostępna.
+- Tryb `hold | toggle` zapisuje rodzic przy profilu dziecka. Kid Profile DTO przekazuje go do kontrolera, a dziecko nie ma przełącznika trybu. `hold` jest wartością domyślną także dla istniejących profili po migracji. Tryb nie trafia do `LocalPreferences`; dotychczasowy klucz `umiem.recordingMode` jest ignorowany.
 - Minimum 48 × 48 px, widoczny fokus, instrukcja dostępna dla czytnika ekranu. Reduced motion wyłącza pulsowanie. Poziom dźwięku nie jest ogłaszany na każdej próbce; ogłaszane są zmiany etapów.
 - Odtwarzanie wzorca jest zatrzymywane przed startem; wszystkie odsłuchy są zablokowane podczas przygotowania, startu, nagrywania, kończenia i analizy. Kontroler pilnuje tego niezależnie od disabled w React. Spóźniona autoryzacja odsłuchu nie uruchamia audio po rozpoczęciu nagrywania.
 - `BrowserAudioPlayer.stop()` unieważnia również oczekujące `fetch` i `blob`, nie tylko istniejący element Audio: generacja odtwarzania i AbortController. Po każdym await player sprawdza ważność generacji. Stop, start nowego play, start mikrofonu, next/end i unmount nie pozwalają spóźnionemu pobraniu utworzyć odtwarzacza. Anulowany play kończy się neutralnie, bez błędu UI; object URL i oczekująca Promise są domykane także po anulowaniu odtwarzania już rozpoczętego.

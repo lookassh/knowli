@@ -377,7 +377,7 @@ częścią tej regresji.
 Plan szczegółowy: `docs/superpowers/plans/2026-10-10-speech-recording-ux.md`;
 specyfikacja projektu: `docs/superpowers/specs/2026-10-10-speech-recording-ux-design.md`.
 Domyślny gest `hold` kończy nagranie po puszczeniu, z klawiaturą, anulowaniem,
-limitem i lokalną alternatywą `toggle`. Mikrofon i nagranie są zwalniane po
+limitem i profilem `toggle` konfigurowanym przez rodzica. Mikrofon i nagranie są zwalniane po
 zatrzymaniu, anulowaniu, zmianie widoku i błędzie. UI pokazuje wiarygodne
 „Usłyszałem: …”, osobną ocenę wymowy i maksymalnie sześć fragmentów, gdzie
 `unknown` pozostaje neutralne. Odsłuch wzorca jest autoryzowany ponownie dla
@@ -391,4 +391,8 @@ R03, R05 i R07 oraz kontrolę R04 odnotowuje dziennik
 `docs/superpowers/progress/2026-10-10-speech-recording-ux-implementation.md`.
 Testy automatyczne nie zastępują próby na rzeczywistym telefonie/tablecie ani
 walidacji jakości na prawdziwej mowie dziecka; te dowody pozostają wymagane
-przed deklaracją gotowego MVP.
+ przed deklaracją gotowego MVP.
+
+### Uzupełnienie: preferencja gestu nagrywania dla profilu dziecka — 2026-10-11
+
+Rodzic wybiera `hold` („Przytrzymaj, aby mówić”) lub `toggle` („Naciśnij, aby rozpocząć i zatrzymać”) podczas edycji profilu. Wartość jest kolumną `child_profiles.recording_mode`, ograniczoną do tych dwóch trybów i domyślną jako `hold`; migracja 0005 uzupełnia nią istniejące profile. Parent PATCH aktualizuje tylko dostarczone pola, a Kid Profile DTO dostarcza preferencję do kontrolera. Kid UI nie pokazuje dziecku przełącznika i nie zapisuje trybu lokalnie; pozostałe preferencje urządzenia, np. odmowa mikrofonu, zachowują dotychczasową obsługę. Stary klucz `umiem.recordingMode` jest ignorowany. Specyfikacja i plan: `docs/superpowers/specs/2026-10-11-parent-recording-mode-setting-design.md` i `docs/superpowers/plans/2026-10-11-parent-recording-mode-setting.md`.

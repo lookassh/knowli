@@ -1,0 +1,2 @@
+ALTER TABLE "learning_app"."child_profiles" ADD COLUMN "recording_mode" text DEFAULT 'hold' NOT NULL;--> statement-breakpoint
+ALTER TABLE "learning_app"."child_profiles" ADD CONSTRAINT "child_profiles_recording_mode" CHECK ("learning_app"."child_profiles"."recording_mode" in ('hold', 'toggle'));

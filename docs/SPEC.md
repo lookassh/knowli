@@ -133,7 +133,7 @@ Wymagania:
 
 Informacja zwrotna po ocenie wymowy może pokazać fragmenty słowa oznaczone jako „dobrze” lub „prawie”. Nie pokazuje dziecku punktów, IPA ani progów usługi.
 
-Nagrywanie w zadaniach mowy domyślnie działa przez przytrzymanie przycisku: po uzyskaniu zgody przytrzymanie rozpoczyna nagranie, a puszczenie, anulowanie gestu, utrata fokusu albo limit kończy je i zwalnia mikrofon. Dziecko może wybrać tryb przełączany w ustawieniach urządzenia; odmowa mikrofonu pozostawia pełną ścieżkę pisemną. Po analizie ekran pokazuje nie-modalną kartę wyniku przy zadaniu. „Usłyszałem: …” pojawia się tylko dla wiarygodnej transkrypcji. Fragmenty wymowy mają także opis tekstowy, więc kolor nie jest jedynym nośnikiem wyniku. Ponowienie wraca do gotowości; nagranie zaczyna się dopiero po kolejnym geście.
+Nagrywanie w zadaniach mowy domyślnie działa przez przytrzymanie przycisku: po uzyskaniu zgody przytrzymanie rozpoczyna nagranie, a puszczenie, anulowanie gestu, utrata fokusu albo limit kończy je i zwalnia mikrofon. Rodzic wybiera tryb nagrywania w ustawieniach profilu dziecka; ustawienie działa na urządzeniach korzystających z tego profilu. Odmowa mikrofonu pozostawia pełną ścieżkę pisemną. Po analizie ekran pokazuje nie-modalną kartę wyniku przy zadaniu. „Usłyszałem: …” pojawia się tylko dla wiarygodnej transkrypcji. Fragmenty wymowy mają także opis tekstowy, więc kolor nie jest jedynym nośnikiem wyniku. Ponowienie wraca do gotowości; nagranie zaczyna się dopiero po kolejnym geście.
 
 Przykład widoku tematu:
 
@@ -358,6 +358,8 @@ Ponowne odsłuchanie pytania w zadaniu słuchowym nie jest automatycznie błęde
 ## 14. Nauka bez mikrofonu
 
 Dziecko może rozpocząć sesję bez nagrywania. Odmowa uprawnienia, brak mikrofonu lub jego awaria nie blokują aplikacji.
+
+Preferencja gestu nagrywania (`hold` albo `toggle`) należy do profilu dziecka. Rodzic zmienia ją w panelu rodzica; nowy i istniejący profil po migracji używa domyślnie `hold`. Kid API przekazuje wartość razem z profilem, a ekran ćwiczenia nie udostępnia dziecku przełącznika. Ustawienie nie jest zapisywane w preferencjach urządzenia.
 
 W tym trybie dostępne są prezentacja, odsłuch, rozpoznawanie, uzupełnianie liter i pisownia. Samodzielna odpowiedź pisemna może dostarczyć dowodu przypomnienia słowa, z zachowaniem osobnej oceny pisowni.
 

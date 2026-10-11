@@ -98,7 +98,6 @@ export function LearnScreen({
     onStopRecording: () => void controller.stopRecording(),
     onCancelRecording: () => controller.cancelRecording(),
     onPrepareRecording: () => void controller.prepareMicrophone(),
-    onRecordingModeChange: (mode) => controller.setRecordingMode(mode),
   };
 
   return (

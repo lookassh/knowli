@@ -16,7 +16,7 @@ import { readLearningSnapshot } from "./learning-snapshot";
  */
 export async function listKidProfiles(services: Services): Promise<KidProfileDto[]> {
   const rows = await services.db
-    .select({ childId: childProfiles.id, displayName: childProfiles.displayName, avatarKey: childProfiles.avatarKey })
+    .select({ childId: childProfiles.id, displayName: childProfiles.displayName, avatarKey: childProfiles.avatarKey, recordingMode: childProfiles.recordingMode })
     .from(childProfiles)
     .orderBy(asc(childProfiles.createdAt));
   return rows;

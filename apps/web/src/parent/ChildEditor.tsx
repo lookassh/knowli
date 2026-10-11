@@ -123,6 +123,7 @@ export default function ChildEditor({
   const [editing, setEditing] = useState<ChildDto | null>(null);
   const [editName, setEditName] = useState("");
   const [editAvatar, setEditAvatar] = useState("");
+  const [editRecordingMode, setEditRecordingMode] = useState<ChildDto["recordingMode"]>("hold");
   const [editError, setEditError] = useState<string | null>(null);
   const [editBusy, setEditBusy] = useState(false);
   const [editStatus, setEditStatus] = useState<string | null>(null);
@@ -154,6 +155,7 @@ export default function ChildEditor({
     setEditing(child);
     setEditName(child.displayName);
     setEditAvatar(child.avatarKey);
+    setEditRecordingMode(child.recordingMode);
     setEditError(null);
     setEditStatus(null);
   };
@@ -167,7 +169,7 @@ export default function ChildEditor({
 
   const trimmedName = editName.trim();
   const nameChanged = editing !== null && trimmedName !== editing.displayName.trim();
-  const editChanged = editing !== null && (nameChanged || editAvatar !== editing.avatarKey);
+  const editChanged = editing !== null && (nameChanged || editAvatar !== editing.avatarKey || editRecordingMode !== editing.recordingMode);
 
   const saveEdit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -175,6 +177,7 @@ export default function ChildEditor({
     const patch: ChildPatch = {
       ...(nameChanged ? { displayName: trimmedName } : {}),
       ...(editAvatar !== editing.avatarKey ? { avatarKey: editAvatar } : {}),
+      ...(editRecordingMode !== editing.recordingMode ? { recordingMode: editRecordingMode } : {}),
     };
     editLock.current = true;
     setEditBusy(true);
@@ -286,6 +289,14 @@ export default function ChildEditor({
                       {AVATARS.map((option) => <option key={option.key} value={option.key}>{option.emoji}</option>)}
                     </select>
                   </div>
+                </div>
+                <div className="row">
+                  <label htmlFor={`child-edit-recording-mode-${child.id}`}>{messages.children.recordingMode}</label>
+                  <select id={`child-edit-recording-mode-${child.id}`} data-testid="child-edit-recording-mode" value={editRecordingMode} disabled={editBusy}
+                    onChange={(event) => setEditRecordingMode(event.target.value as ChildDto["recordingMode"])}>
+                    <option value="hold">{messages.children.recordingModeHold}</option>
+                    <option value="toggle">{messages.children.recordingModeToggle}</option>
+                  </select>
                 </div>
                 <div className="row">
                   <button type="submit" data-testid="child-edit-save" disabled={editBusy || !trimmedName || !editChanged}>

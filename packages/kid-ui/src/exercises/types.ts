@@ -1,6 +1,5 @@
-import type { TaskDto } from "@learning/contracts";
+import type { RecordingModeDto, TaskDto } from "@learning/contracts";
 import type { OptionOutcome } from "./option-outcome";
-import type { RecordingMode } from "../storage";
 
 export interface ExerciseHandlers {
   onPlay(): void;
@@ -16,7 +15,6 @@ export interface ExerciseHandlers {
   onStopRecording(): void;
   onCancelRecording(): void;
   onPrepareRecording(): void;
-  onRecordingModeChange(mode: RecordingMode): void;
 }
 
 export interface ExerciseProps {
@@ -28,7 +26,7 @@ export interface ExerciseProps {
   microphoneReady: boolean;
   inputLevel: number | null;
   recordingNotice: string | null;
-  recordingMode: RecordingMode;
+  recordingMode: RecordingModeDto;
   /** Mikrofon dostępny: sesja włączona i brak odmowy. */
   micAvailable: boolean;
   /** URL niezmiennej ilustracji karty (route media hosta). */

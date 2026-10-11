@@ -46,7 +46,6 @@ export function SpeechView({ task, busy, recordingPhase, microphoneReady, inputL
             level={inputLevel}
             notice={recordingNotice}
             mode={recordingMode}
-            onModeChange={handlers.onRecordingModeChange}
             onPrepare={handlers.onPrepareRecording}
             onStart={handlers.onRecord}
             onStop={handlers.onStopRecording}

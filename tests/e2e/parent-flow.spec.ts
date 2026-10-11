@@ -53,7 +53,7 @@ async function profileForEditing(page: Page, avatarKey = "fox", paddedName = fal
     data: { displayName: name, avatarKey, birthYear: 2018 },
   });
   expect(response.status()).toBe(201);
-  const child = await response.json() as { id: string; displayName: string; avatarKey: string; birthYear: number };
+  const child = await response.json() as { id: string; displayName: string; avatarKey: string; birthYear: number; recordingMode: "hold" | "toggle" };
   await page.reload();
   await page.getByTestId("tab-children").click();
   const href = `/kids/${child.id}/learn`;
@@ -76,6 +76,7 @@ test("edycja profilu: anulowanie, zapis Enter i trwałość danych", async ({ pa
   await row.getByTestId("child-edit").click();
   await expect(row.getByTestId("child-edit-name")).toHaveValue(child.displayName);
   await expect(row.getByTestId("child-edit-avatar")).toHaveValue("fox");
+  await expect(row.getByTestId("child-edit-recording-mode")).toHaveValue("hold");
   await expect(row.getByTestId("child-edit-name")).toBeFocused();
   await expect(row.getByTestId("child-edit-save")).toBeDisabled();
   await row.getByTestId("child-edit-name").fill("  ");
@@ -88,19 +89,21 @@ test("edycja profilu: anulowanie, zapis Enter i trwałość danych", async ({ pa
   const newName = `Nowe-${randomUUID()}`;
   await row.getByTestId("child-edit-name").fill(` ${newName} `);
   await row.getByTestId("child-edit-avatar").selectOption("cat");
+  await row.getByTestId("child-edit-recording-mode").selectOption("toggle");
   await row.getByTestId("child-edit-name").press("Enter");
   await expect(row).toContainText(newName);
   await expect(row.getByTestId("child-edit")).toBeFocused();
   expect(patches).toBe(1);
-  expect(patchBody).toEqual({ displayName: newName, avatarKey: "cat" });
+  expect(patchBody).toEqual({ displayName: newName, avatarKey: "cat", recordingMode: "toggle" });
   await expect(row.getByTestId("child-learn-link")).toHaveAttribute("href", href);
   await page.reload();
   await page.getByTestId("tab-children").click();
   await row.getByTestId("child-edit").click();
   await expect(row.getByTestId("child-edit-name")).toHaveValue(newName);
   await expect(row.getByTestId("child-edit-avatar")).toHaveValue("cat");
+  await expect(row.getByTestId("child-edit-recording-mode")).toHaveValue("toggle");
   const saved = await (await page.request.get("/api/v1/parent/children")).json();
-  expect(saved.find((value: { id: string }) => value.id === child.id)).toEqual({ ...child, displayName: newName, avatarKey: "cat" });
+  expect(saved.find((value: { id: string }) => value.id === child.id)).toEqual({ ...child, displayName: newName, avatarKey: "cat", recordingMode: "toggle" });
 });
 
 test("edycja profilu: nieznany awatar i przełączanie formularzy", async ({ page }) => {

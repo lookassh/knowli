@@ -69,12 +69,12 @@ Catch-all jest wyłącznie mapą jawnie dozwolonych operacji, nie dynamicznym do
 | packages/kid-ui/src/exercises/Choice.tsx | Rozpoznawanie słuchowe, tekstowe i odwrotne |
 | packages/kid-ui/src/exercises/Recall.tsx | Odpowiedź ustna lub pisemna |
 | packages/kid-ui/src/exercises/Pronunciation.tsx | Powtarzanie widocznego wzorca |
-| packages/kid-ui/src/exercises/SpeechRecordButton.tsx | Przytrzymanie, tryb przełączany, stan mikrofonu i klawiatura |
+| packages/kid-ui/src/exercises/SpeechRecordButton.tsx | Gest z trybu profilu, stan mikrofonu i klawiatura |
 | packages/kid-ui/src/exercises/recording-gesture.ts | Czysta redukcja gestu nagrywania |
 | packages/kid-ui/src/screens/SpeechFeedbackCard.tsx | Nie-modalny, dostępny wynik mowy i następne działanie |
 | packages/kid-ui/src/screens/speech-feedback-view.ts | Uczciwe mapowanie statusu STT/wymowy na tekst i ton |
 | packages/kid-ui/src/exercises/Spelling.tsx | Luki i pełny zapis |
-| packages/kid-ui/src/media/platform.ts | Interfejsy nagrywania/odtwarzania/storage |
+| packages/kid-ui/src/media/platform.ts | Interfejsy nagrywania/odtwarzania i lokalnych preferencji urządzenia (bez trybu profilu) |
 | packages/kid-ui/src/media/browser.ts | Implementacja przeglądarkowa |
 | packages/kid-ui/src/visuals/Visual.tsx | Kolor, liczba, sekwencja, obraz albo brak |
 | packages/kid-ui/src/styles.css | Motyw dziecka i style Tailwind |

@@ -46,6 +46,7 @@ export async function updateChild(services: Services, childId: string, input: Ch
   const [row] = await services.db.update(childProfiles).set({
     ...(valid.displayName !== undefined ? { displayName: valid.displayName } : {}),
     ...(valid.avatarKey !== undefined ? { avatarKey: valid.avatarKey } : {}),
+    ...(valid.recordingMode !== undefined ? { recordingMode: valid.recordingMode } : {}),
   }).where(eq(childProfiles.id, id)).returning();
   if (!row) throw new AppError("not_found");
   return toChildDto(row);

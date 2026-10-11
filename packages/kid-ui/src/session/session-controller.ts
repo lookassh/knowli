@@ -5,6 +5,7 @@ import {
   type FeedbackDto,
   type KidDeckDto,
   type KidProfileDto,
+  type RecordingModeDto,
   type SessionDto,
   type SessionSummaryDto,
   type TaskDto,
@@ -12,7 +13,7 @@ import {
 import type { KidApi } from "../api/KidApi";
 import { isNetworkError, KidApiError } from "../api/client";
 import type { PlatformMedia, RecorderOptions, SpeechRecorder } from "../media/platform";
-import { MIC_DENIED_KEY, readRecordingMode, RECORDING_MODE_KEY, type LocalPreferences, type RecordingMode } from "../storage";
+import { MIC_DENIED_KEY, type LocalPreferences } from "../storage";
 import { randomUUID } from "./uuid";
 
 /**
@@ -50,7 +51,7 @@ export interface LearningScreen {
   recordingPhase: "idle" | "preparing" | "starting" | "recording" | "stopping";
   inputLevel: number | null;
   recordingNotice: string | null;
-  recordingMode: RecordingMode;
+  recordingMode: RecordingModeDto;
   recording: boolean;
   /** Odpowiedź ustna w drodze/oceniana przez serwer. */
   processing: boolean;
@@ -127,7 +128,7 @@ export class LearningSessionController {
   #profiles: KidProfileDto[] = [];
   #childId: string | null = null;
   #micDenied = false;
-  #recordingMode: RecordingMode;
+  #recordingMode: RecordingModeDto = "hold";
   #recorder: SpeechRecorder | null = null;
   /** Ostatnia operacja do ponowienia po powrocie sieci/błędzie aplikacji. */
   #resume: (() => Promise<void>) | null = null;
@@ -143,7 +144,6 @@ export class LearningSessionController {
     this.#api = deps.api;
     this.#media = deps.media;
     this.#storage = deps.storage;
-    this.#recordingMode = readRecordingMode(deps.storage);
     this.#pollIntervalMs = deps.pollIntervalMs ?? POLL_INTERVAL_MS;
     this.#initialChildId = deps.initialChildId;
   }
@@ -226,6 +226,7 @@ export class LearningSessionController {
       const decks = await this.#api.listDecks(childId);
       if (epoch !== this.#epoch) return;
       this.#childId = childId;
+      this.#recordingMode = this.#profiles.find((profile) => profile.childId === childId)?.recordingMode ?? "hold";
       this.#micDenied = this.#storage.read(MIC_DENIED_KEY) === "1";
       this.#screen = {
         kind: "deck",
@@ -260,14 +261,6 @@ export class LearningSessionController {
     }
     this.#screen = { ...this.#screen, microphone: on, micDenied: !on };
     this.#emit();
-  }
-
-  setRecordingMode(mode: RecordingMode): void {
-    const screen = this.#learning();
-    if (!screen || screen.recordingPhase !== "idle" || screen.processing || (mode !== "hold" && mode !== "toggle")) return;
-    this.#recordingMode = mode;
-    this.#storage.write(RECORDING_MODE_KEY, mode);
-    this.#setLearning({ recordingMode: mode });
   }
 
   async startMockTest(deckId: string): Promise<void> {
