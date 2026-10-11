@@ -601,6 +601,38 @@ describe("karta aktywności dziecka w postępach (integracja)", () => {
     expect(progress.activity.activeSeconds).toBeLessThanOrEqual(11 * 60);
   });
 
+  it("wznowienie w oknie 30 minut to jedno podejście, a czas sesji jest obcięty do limitu", async () => {
+    const pairs = [DAYS[0]!, DAYS[1]!];
+    const { deckId } = await publishDeckWithAssignment(services, [childA], pairs);
+
+    // zadanie z odpowiedzią zostaje wydane i otwarte; dziecko wraca po 25 minutach
+    const session = await startSession(services, { childId: childA, deckId, microphoneEnabled: false });
+    let open: TaskDto | null = null;
+    for (let step = 0; step < 40 && open === null; step++) {
+      clock.advanceMs(30_000);
+      const task = (await nextTask(services, session.sessionId))!;
+      expect(task).not.toBeNull();
+      if (task.exerciseType === "exposure") {
+        await completePresentation(services, { taskId: task.taskId });
+      } else {
+        open = task;
+      }
+    }
+    expect(open).not.toBeNull();
+    clock.advanceMs(25 * 60_000);
+    await answerCorrectly(services, open!);
+
+    // wznowienie tej samej sesji nie tworzy nowego wiersza podejścia
+    const resumed = await startSession(services, { childId: childA, deckId, microphoneEnabled: false });
+    expect(resumed.sessionId).toBe(session.sessionId);
+
+    const progress = await getProgress(services, childA, deckId);
+    expect(progress.activity.sessions).toBe(1);
+    expect(progress.activity.answers).toBe(1);
+    // realna aktywność sesji to ~26 minut od startu; widoczny czas jest obcięty
+    expect(progress.activity.activeSeconds).toBe(11 * 60);
+  });
+
   it("okno 7 dni pomija sesje i próby sprzed okna", async () => {
     const pairs = [DAYS[0]!, DAYS[1]!];
     const { deckId } = await publishDeckWithAssignment(services, [childA], pairs);

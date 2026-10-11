@@ -76,7 +76,7 @@ export default function ProgressPanel({
         (item.skills[skill] === "needs_confirmation" && !item.meaningChanged),
     ).length;
 
-  /** Minuty zaokrąglone w górę do pełnej, ale zero zostaje zerem (brak nauki). */
+  /** Minuty do najbliższej pełnej, nie mniej niż 1, gdy był jakikolwiek czas. */
   const activityMinutes = progress
     ? progress.activity.activeSeconds > 0
       ? Math.max(1, Math.round(progress.activity.activeSeconds / 60))

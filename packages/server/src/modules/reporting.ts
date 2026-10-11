@@ -235,6 +235,8 @@ const ACTIVITY_DAY_FORMAT = new Intl.DateTimeFormat("en-CA", {
   month: "2-digit",
   day: "2-digit",
 });
+// MVP: jedna polska rodzina. Docelowo strefa z family_settings.timezone
+// (helper readTimezone w sessions.ts) przy pierwszej rodzinie spoza Polski.
 
 type ActivitySessionRow = {
   deckId: string;
@@ -329,7 +331,7 @@ async function readActivitySummary(services: Services, childId: string): Promise
     interactions,
     decks: [...deckTotals.entries()]
       .map(([deckId, stat]) => ({ deckId, deckTitle: stat.deckTitle, sessions: stat.sessions }))
-      .sort((a, b) => b.sessions - a.sessions || a.deckTitle.localeCompare(b.deckTitle)),
+      .sort((a, b) => b.sessions - a.sessions || a.deckTitle.localeCompare(b.deckTitle, "pl")),
   };
 }
 
