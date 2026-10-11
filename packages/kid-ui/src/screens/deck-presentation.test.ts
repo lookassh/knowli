@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { KidDeckDto } from "@learning/contracts";
-import { buildDeckPages, clampDeckPageIndex, formatDeckTestDate } from "./deck-presentation";
+import { formatDeckTestDate, groupDecks } from "./deck-presentation";
 
 function deck(id: string, recommended: boolean, testDate: string | null = null): KidDeckDto {
   return {
@@ -15,34 +15,23 @@ function deck(id: string, recommended: boolean, testDate: string | null = null):
   };
 }
 
-describe("buildDeckPages", () => {
+describe("groupDecks", () => {
   it("groups recommended decks before others and preserves API order", () => {
     const input = [deck("01", false), deck("02", true), deck("03", false), deck("04", true)];
 
-    expect(buildDeckPages(input, 2)).toEqual([
-      { kind: "recommended", decks: [input[1], input[3]] },
-      { kind: "other", decks: [input[0], input[2]] },
-    ]);
+    expect(groupDecks(input)).toEqual({
+      recommended: [input[1], input[3]],
+      other: [input[0], input[2]],
+    });
   });
 
-  it.each([
-    { count: 0, expected: [] },
-    { count: 1, expected: [{ kind: "recommended", decks: [0] }] },
-    { count: 2, expected: [{ kind: "recommended", decks: [0] }, { kind: "recommended", decks: [1] }] },
-    { count: 4, expected: [{ kind: "recommended", decks: [0] }, { kind: "recommended", decks: [1] }, { kind: "recommended", decks: [2] }, { kind: "recommended", decks: [3] }] },
-  ])("keeps $count decks reachable with one card per mobile page", ({ count, expected }) => {
-    const input = Array.from({ length: count }, (_, index) => deck(String(index), true));
-    const pages = buildDeckPages(input, 1);
-    expect(pages).toHaveLength(expected.length);
-    expect(pages.flatMap((page) => page.decks)).toHaveLength(input.length);
-    expect(pages.map((page) => page.decks.map((item) => input.indexOf(item)))).toEqual(expected.map((page) => page.decks));
+  it("returns empty groups for an empty deck list", () => {
+    expect(groupDecks([])).toEqual({ recommended: [], other: [] });
   });
 
-  it("does not combine two groups on the same page", () => {
-    expect(buildDeckPages([deck("01", true), deck("02", false)], 2)).toEqual([
-      { kind: "recommended", decks: [expect.objectContaining({ recommended: true })] },
-      { kind: "other", decks: [expect.objectContaining({ recommended: false })] },
-    ]);
+  it("keeps a pure split when every deck is recommended", () => {
+    const input = [deck("01", true), deck("02", true)];
+    expect(groupDecks(input)).toEqual({ recommended: input, other: [] });
   });
 });
 
@@ -74,13 +63,5 @@ describe("formatDeckTestDate", () => {
     expect(formatDeckTestDate("2025-02-29", 2025)).toBeNull();
     expect(formatDeckTestDate("2026-13-01", 2026)).toBeNull();
     expect(formatDeckTestDate("2026-1-01", 2026)).toBeNull();
-  });
-});
-
-describe("clampDeckPageIndex", () => {
-  it("keeps the current page in range after the page list shrinks", () => {
-    expect(clampDeckPageIndex(3, 2)).toBe(1);
-    expect(clampDeckPageIndex(1, 0)).toBe(0);
-    expect(clampDeckPageIndex(-2, 4)).toBe(0);
   });
 });
