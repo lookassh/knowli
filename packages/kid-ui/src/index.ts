@@ -17,3 +17,17 @@ export {
 } from "./session/session-controller";
 export { useLearningSession } from "./session/useLearningSession";
 export { Visual } from "./visuals/Visual";
+export {
+  computeMockTestScore,
+  MOCK_TEST_SOLUTION_ICONS,
+  mockTestResultBadgeClass,
+  mockTestResultBadgeLabel,
+  mockTestScoreTone,
+  mockTestSolutionDetail,
+  mockTestWordStatus,
+  type MockTestResultView,
+  type MockTestScore,
+  type MockTestScoreTone,
+  type MockTestSolutionDetail,
+  type MockTestWordStatus,
+} from "./screens/mock-test-score";
