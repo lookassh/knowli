@@ -1,17 +1,18 @@
 import { useState } from "react";
 import { messages, type MockTestSummaryDto, type SessionDto } from "@learning/contracts";
+import { KidIcon } from "../components/KidIcon";
 import { format } from "../format";
 import { computeMockTestScore, MOCK_TEST_SOLUTION_ICONS, mockTestResultBadgeClass, mockTestResultBadgeLabel, mockTestScoreTone, mockTestSolutionDetail, mockTestWordStatus } from "./mock-test-score";
 
 export function MockTestReadyScreen({ session, onStart, onCancel }: { session: SessionDto; onStart: () => Promise<void>; onCancel: () => Promise<void> }) {
   const [error, setError] = useState(false);
-  return <main className="kid-screen">
+  return <main className="kid-screen kid-screen--mock-ready">
     <h1>{messages.kid.mockTest}</h1>
-    <p data-testid="kid-mock-budget">{format(messages.kid.mockTestBudget, { n: session.taskBudget })}</p>
-    <p>{messages.kid.mockTestInfo}</p>
+    <p className="kid-mock-budget" data-testid="kid-mock-budget">{format(messages.kid.mockTestBudget, { n: session.taskBudget })}</p>
+    <p className="kid-mock-info" data-testid="kid-mock-info">{messages.kid.mockTestInfo}</p>
     {error && <p role="alert">{messages.kid.offlineMessage}</p>}
     <button type="button" className="kid-primary" data-testid="kid-mock-confirm" onClick={() => void onStart().catch(() => setError(true))}>{messages.kid.mockTestStart}</button>
-    <button type="button" className="kid-end" onClick={() => void onCancel().catch(() => setError(true))}>{messages.kid.end}</button>
+    <button type="button" className="kid-end kid-flow-secondary" onClick={() => void onCancel().catch(() => setError(true))}>{messages.kid.end}</button>
   </main>;
 }
 
@@ -22,7 +23,7 @@ export function MockTestSummaryScreen({ summary, onPlay, onPractice, onSwitchPro
   const run = (promise: Promise<void>) => { setError(false); void promise.catch(() => setError(true)); };
   const score = computeMockTestScore(summary.solutions);
   const tone = mockTestScoreTone(score);
-  return <main className="kid-screen" data-testid="kid-mock-summary">
+  return <main className="kid-screen kid-screen--mock-summary" data-testid="kid-mock-summary">
     <h1>{messages.kid.mockTestFinished}</h1>
     {!summary.complete && <p>{messages.kid.mockTestPartial}</p>}
     {score.total > 0 && <div className="kid-mock-score" data-testid="kid-mock-score" data-tone={tone}>
@@ -44,21 +45,21 @@ export function MockTestSummaryScreen({ summary, onPlay, onPractice, onSwitchPro
             {solution.results.map(result => <span className={mockTestResultBadgeClass(result)} key={result.skill}>{mockTestResultBadgeLabel(result)}</span>)}
           </p>}
         </div>
-        {solution.audioAssetId && <button type="button" className="kid-mock-row__audio" aria-label={messages.kid.listen} onClick={() => run(onPlay(solution.taskId))}>🔊</button>}
+        {solution.audioAssetId && <button type="button" className="kid-mock-row__audio" aria-label={messages.kid.listen} onClick={() => run(onPlay(solution.taskId))}><KidIcon name="volume" /></button>}
       </li>;
     })}</ul>
     {error && <p role="alert">{messages.kid.offlineMessage}</p>}
     <button type="button" className="kid-primary" data-testid="kid-mock-practice" onClick={() => run(onPractice())}>{messages.kid.mockTestPractice}</button>
-    <button type="button" onClick={() => run(onSwitchProfile())}>{messages.kid.profilesTitle}</button>
+    <button type="button" className="kid-flow-secondary" onClick={() => run(onSwitchProfile())}>{messages.kid.profilesTitle}</button>
   </main>;
 }
 
 export function SessionConflictScreen({ onResume, onClose }: { onResume: () => Promise<void>; onClose: () => Promise<void> }) {
   const [error, setError] = useState(false);
-  return <main className="kid-screen">
-    <p>{messages.kid.sessionConflict}</p>
+  return <main className="kid-screen kid-screen--conflict">
+    <p className="kid-conflict-info" data-testid="kid-conflict-info">{messages.kid.sessionConflict}</p>
     {error && <p role="alert">{messages.kid.offlineMessage}</p>}
     <button type="button" className="kid-primary" onClick={() => void onResume().catch(() => setError(true))}>{messages.kid.sessionResume}</button>
-    <button type="button" onClick={() => void onClose().catch(() => setError(true))}>{messages.kid.sessionClose}</button>
+    <button type="button" className="kid-flow-secondary" onClick={() => void onClose().catch(() => setError(true))}>{messages.kid.sessionClose}</button>
   </main>;
 }

@@ -5,8 +5,10 @@ import { ExerciseFrame } from "./ExerciseFrame";
 import type { ExerciseProps } from "./types";
 
 /** Luki są jedynymi polami edycji; pełną odpowiedź ocenia istniejące Kid API. */
-export function LetterCompletionView({ task, busy, recording, handlers }: ExerciseProps) {
-  const [letters, setLetters] = useState<Record<number, string>>({});
+export function LetterCompletionView({ task, busy, recording, handlers, letterDraft, onLetterDraftChange }: ExerciseProps) {
+  const [localLetters, setLocalLetters] = useState<Record<number, string>>({});
+  const letters = letterDraft ?? localLetters;
+  const updateLetters = onLetterDraftChange ?? setLocalLetters;
   const inputRefs = useRef<Record<number, HTMLInputElement | null>>({});
   if (task.prompt.kind !== "letter_completion") return null;
 
@@ -44,7 +46,7 @@ export function LetterCompletionView({ task, busy, recording, handlers }: Exerci
                   onChange={(event) => {
                     const value = event.target.value.normalize("NFC");
                     if (Array.from(value).length > 1) return;
-                    setLetters((previous) => ({ ...previous, [index]: value }));
+                    updateLetters({ ...letters, [index]: value });
                     if (value !== "") {
                       const nextPosition = gapPositions.find((position) => position > index);
                       if (nextPosition !== undefined) inputRefs.current[nextPosition]?.focus();

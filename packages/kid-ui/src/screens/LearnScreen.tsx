@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { messages } from "@learning/contracts";
 import { ExerciseView } from "../exercises/ExerciseView";
 import type { ExerciseHandlers } from "../exercises/types";
@@ -24,6 +25,10 @@ export function LearnScreen({
   controller: LearningSessionController;
 }) {
   const { task, offline, busy } = screen;
+  const [letterDraft, setLetterDraft] = useState<{ taskId: string; letters: Record<number, string> } | null>(null);
+  const activeLetterDraft = task?.prompt.kind === "letter_completion" && letterDraft?.taskId === task.taskId
+    ? letterDraft.letters
+    : {};
   const remaining = controller.remainingFor(task);
   const micAvailable = screen.session.mode !== "mock_test" && screen.session.microphoneEnabled && !screen.micDenied;
   // feedback próby wyboru = pasek wyniku zamiast karteczki
@@ -132,6 +137,8 @@ export function LearnScreen({
               <ExerciseView
                 mockTest={screen.session.mode === "mock_test"}
                 task={task}
+                letterDraft={activeLetterDraft}
+                onLetterDraftChange={(letters) => setLetterDraft({ taskId: task.taskId, letters })}
                 busy={busy || screen.feedback !== null || screen.reveal !== null}
                 recording={screen.recording}
                 recordingPhase={screen.recordingPhase}

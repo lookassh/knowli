@@ -153,11 +153,11 @@ expect(computeKidViewport({ innerHeight: 700, visualViewport: { height: 350, off
 
 **Interfejsy:** `KidPage(mode='flow')` dla list i długich podsumowań; istniejące props/handlery ekranów pozostają. Ekrany krótkiej decyzji mogą użyć ograniczonej ramy tylko jeśli wszystkie działania mieszczą się również w fallbacku dostępności.
 
-- [ ] Dodać RED smoke `profile, ready, conflict and summary retain reachable navigation under new theme`, z długim podsumowaniem i 200% fontem. Asercje obecnych informacji, przeglądania całego raportu, powrotu, start/cancel/resume; nie wymuszać zero scrolla na raporcie.
-- [ ] Potwierdzić RED, następnie dostosować wyłącznie powierzchnie, ikony i przyciski do tokenów. Nie przepisywać `computeMockTestScore` ani tekstów o samodzielnym postępie. Sprawdzić rodzica po powrocie: tło, formularze, scroll, viewport i focus niezależne od Kid UI.
-- [ ] Uruchomić pełną macierz nowych UI E2E oraz istniejące `kid-flow`, `navigation`, `mock-test`, `speech-recording-ux`, `learning-algorithm`, `privacy`, `parent-flow`; przejrzeć trace off dla przypadków audio. Bez zapisywania prywatnego nagrania ani dodawania testowej syntezy wyniku po stronie klienta.
-- [ ] Uruchomić `test:unit`, `test:integration`, `typecheck`, `build` zgodnie z istniejącymi skryptami. R01/R04/R05/R07: wskazać konkretne istniejące przypadki i dowody ujawnień/reload/budżetu/wariantu. R02/R03/R06 nie są implementowane ponownie; istniejący pełny integration chroni media, niezmienność i usuwanie profilu.
-- [ ] Zapisać wyniki i ograniczenia osobno dla jednostek, PostgreSQL, E2E, kompilacji. Commit `refactor: align kid navigation screens and verify regressions`.
+- [x] Dodać RED smoke `profile, ready, conflict and summary retain reachable navigation under new theme`, z długim podsumowaniem i 200% fontem. Asercje obecnych informacji, przeglądania całego raportu, powrotu, start/cancel/resume; nie wymuszać zero scrolla na raporcie.
+- [x] Potwierdzić RED, następnie dostosować wyłącznie powierzchnie, ikony i przyciski do tokenów. Nie przepisywać `computeMockTestScore` ani tekstów o samodzielnym postępie. Sprawdzić rodzica po powrocie: tło, formularze, scroll, viewport i focus niezależne od Kid UI.
+- [x] Uruchomić pełną macierz nowych UI E2E oraz istniejące `kid-flow`, `navigation`, `mock-test`, `speech-recording-ux`, `learning-algorithm`, `privacy`, `parent-flow`; przejrzeć trace off dla przypadków audio. Bez zapisywania prywatnego nagrania ani dodawania testowej syntezy wyniku po stronie klienta.
+- [x] Uruchomić `test:unit`, `test:integration`, `typecheck`, `build` zgodnie z istniejącymi skryptami. R01/R04/R05/R07: wskazać konkretne istniejące przypadki i dowody ujawnień/reload/budżetu/wariantu. R02/R03/R06 nie są implementowane ponownie; istniejący pełny integration chroni media, niezmienność i usuwanie profilu.
+- [x] Zapisać wyniki i ograniczenia osobno dla jednostek, PostgreSQL, E2E, kompilacji. Commit `refactor: align kid navigation screens and verify regressions`.
 
 ## Zadanie 7: Odbiór urządzenia, dokumentacja i niezależne review
 

@@ -21,6 +21,9 @@ export interface ExerciseHandlers {
 export interface ExerciseProps {
   mockTest?: boolean;
   task: TaskDto;
+  /** Krótkotrwały szkic luk; zachowuje pola gdy widok zadania ustępuje feedbackowi. */
+  letterDraft?: Readonly<Record<number, string>>;
+  onLetterDraftChange?: (letters: Record<number, string>) => void;
   busy: boolean;
   recording: boolean;
   recordingPhase: "idle" | "preparing" | "starting" | "recording" | "stopping";
