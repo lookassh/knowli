@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
+  computeTargetKey,
   completePresentation,
   createChild,
   createDraft,
@@ -13,6 +14,7 @@ import {
   startSession,
   submitAttempt,
   submitSpeechAttempt,
+  authorizeFeedbackAudio,
   upsertAssignment,
   type PronunciationProvider,
   type SttProvider,
@@ -383,6 +385,70 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
     childId = child.id;
   });
 
+  it("odsłuchuje wzorzec tylko z bieżącego, wiarygodnego feedbacku i pieczętuje replay", async () => {
+    const { deckId, versionId } = await publishDeckWithAssignment(baseServices, childId, ITEMS);
+    const fakes = makeFakes(clock);
+    const services = speechServices(clock, fakes);
+    const { task } = await speechSession(services, childId, deckId, versionId, 0);
+    fakes.transcription = { status: "ok", text: "Thursday", confidence: 0.95 };
+    const attempt = await submitSpeechAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID() }, wavInput(1));
+    expect(attempt.feedback?.referenceAudioAvailable).toBe(true);
+
+    const first = await authorizeFeedbackAudio(services, attempt.attemptId);
+    const replay = await authorizeFeedbackAudio(services, attempt.attemptId);
+    expect(first.audioAssetId).toBe((task.prompt as { audioAssetId?: string | null }).audioAssetId);
+    expect(replay.stepId).not.toBe(first.stepId);
+    const events = await query<{ id: string; sealed: boolean }>(
+      `select id,sealed from learning_app.learning_events where task_id=$1 and kind='feedback_issued' order by occurred_at`,
+      [task.taskId],
+    );
+    expect(events.length).toBeGreaterThanOrEqual(3);
+    expect(events.every((event) => event.sealed)).toBe(true);
+    const exposed = await query<{ target_key: string }>(
+      `select x.target_key from learning_app.event_exposures x where x.event_id=$1`,
+      [events.at(-1)!.id],
+    );
+    expect(exposed).toContainEqual({ target_key: computeTargetKey("Thursday", "en-GB") });
+
+    // Po przejściu do późniejszej karty poprzedni wynik nie może już autoryzować wzorca.
+    await nextTask(services, task.sessionId);
+    await expectAppError(authorizeFeedbackAudio(services, attempt.attemptId), "conflict");
+    expect(fakes.calls.stt).toBe(1);
+  });
+
+  it("nie włącza wzorca dla akceptowanego, lecz niekanonicznego wariantu ani dla niepewnego STT", async () => {
+    const { deckId, versionId } = await publishDeckWithAssignment(baseServices, childId, [ITEMS[2]!]);
+    const fakes = makeFakes(clock);
+    const services = speechServices(clock, fakes);
+    const { task } = await speechSession(services, childId, deckId, versionId, 0);
+    fakes.transcription = { status: "ok", text: "couch", confidence: 0.95 };
+    const alternate = await submitSpeechAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID() }, wavInput(1));
+    expect(alternate.feedback?.speech?.recognition).toBe("matched");
+    expect(alternate.feedback?.referenceAudioAvailable).toBe(false);
+    await expectAppError(authorizeFeedbackAudio(services, alternate.attemptId), "conflict");
+    await endSession(services, await activeSessionId(childId));
+
+    const { deckId: secondDeck, versionId: secondVersion } = await publishDeckWithAssignment(baseServices, childId, [ITEMS[0]!]);
+    const otherTask = await speechSession(services, childId, secondDeck, secondVersion, 0);
+    fakes.transcription = { status: "ok", text: "Tuesday", confidence: 0.2 };
+    const uncertain = await submitSpeechAttempt(services, { taskId: otherTask.task.taskId, clientAttemptId: randomUUID() }, wavInput(1));
+    expect(uncertain.feedback?.referenceAudioAvailable).toBeUndefined();
+    await expectAppError(authorizeFeedbackAudio(services, uncertain.attemptId), "conflict");
+  });
+
+  it("autoryzuje kanoniczny odsłuch dla wiarygodnie rozpoznanej innej odpowiedzi", async () => {
+    const { deckId, versionId } = await publishDeckWithAssignment(baseServices, childId, [ITEMS[0]!]);
+    const fakes = makeFakes(clock);
+    const services = speechServices(clock, fakes);
+    const { task } = await speechSession(services, childId, deckId, versionId, 0);
+    fakes.transcription = { status: "ok", text: "Monday", confidence: 0.95 };
+    const attempt = await submitSpeechAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID() }, wavInput(1));
+    expect(attempt.feedback?.speech?.recognition).toBe("different");
+    expect(attempt.feedback?.referenceAudioAvailable).toBe(true);
+    const authorization = await authorizeFeedbackAudio(services, attempt.attemptId);
+    expect(authorization.audioAssetId).toBe((task.prompt as { audioAssetId?: string | null }).audioAssetId);
+  });
+
   it("poprawne słowo ustnie zalicza Recall; wynik wymowy zapisuje się bez oceny bez pasm", async () => {
     // ścieżka polityki bez pasm — v2 ma domyślnie pasma 70/50 (design 2026-10-09)
     await ensureLearningPolicy(baseServices.db);
@@ -400,6 +466,7 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
     expect(dto.state).toBe("completed");
     expect(dto.modality).toBe("audio");
     expect(dto.feedback?.kind).toBe("great");
+    expect(dto.feedback?.speech).toEqual({ recognition: "matched", pronunciation: "not_configured", referenceText: target });
     expect(dto.taskState).toBe("answered");
 
     const [attempt] = await attemptRows(task.taskId);
@@ -460,6 +527,7 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
     fakes.transcription = { status: "no_speech", text: null, confidence: null };
     const dto = await submitSpeechAttempt(services, { taskId: next.taskId, clientAttemptId: randomUUID() }, wavInput(1));
     expect(dto.feedback?.kind).toBe("not_assessed");
+    expect(dto.feedback?.speech).toEqual({ recognition: "no_speech", pronunciation: "not_applicable" });
     expect(dto.taskState).toBe("issued");
     expect(await progressOf(childId, recallVersion)).toMatchObject({ status: "practicing", streak: 1 });
 
@@ -469,9 +537,15 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
     const dto2 = await submitSpeechAttempt(timeoutServices, { taskId: next.taskId, clientAttemptId: randomUUID() }, wavInput(1));
     expect(dto2.state).toBe("completed");
     expect(dto2.feedback?.kind).toBe("not_assessed");
+    expect(dto2.feedback?.speech).toEqual({ recognition: "unavailable", pronunciation: "not_applicable" });
     expect(dto2.taskState).toBe("issued");
     const rows = await attemptRows(next.taskId);
     expect(rows.every((r) => r.state === "completed")).toBe(true);
+
+    fakes.transcription = { status: "ok", text: null, confidence: 0.99 };
+    const empty = await submitSpeechAttempt(services, { taskId: next.taskId, clientAttemptId: randomUUID() }, wavInput(1));
+    expect(empty.feedback?.speech).toEqual({ recognition: "no_speech", pronunciation: "not_applicable" });
+    expect(empty.feedback?.heardText).toBeUndefined();
   });
 
   it("niepewny STT nie tworzy mylonej pary ani błędu wiedzy", async () => {
@@ -483,6 +557,7 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
 
     const dto = await submitSpeechAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID() }, wavInput(1));
     expect(dto.feedback?.kind).toBe("not_assessed");
+    expect(dto.feedback?.speech).toEqual({ recognition: "uncertain", pronunciation: "not_applicable" });
     expect(dto.taskState).toBe("issued");
     const [attempt] = await attemptRows(task.taskId);
     const assessments = await assessmentsOf(attempt.id);
@@ -506,6 +581,7 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
 
     const dto = await submitSpeechAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID() }, wavInput(1));
     expect(dto.feedback?.kind).toBe("incorrect");
+    expect(dto.feedback?.speech).toEqual({ recognition: "different", pronunciation: "not_applicable", referenceText: "Thursday" });
     expect(dto.taskState).toBe("issued");
 
     const [attempt] = await attemptRows(task.taskId);
@@ -527,6 +603,17 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
 
     const dto = await submitSpeechAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID() }, wavInput(1));
     expect(dto.feedback?.kind).toBe("great");
+    expect(dto.feedback?.speech).toEqual({ recognition: "matched", pronunciation: "not_applicable", referenceText: "couch" });
+    const issued = await query<{ target_keys: string[] }>(
+      `select array_agg(x.target_key order by x.target_key) as target_keys
+         from learning_app.learning_events e join learning_app.event_exposures x on x.event_id = e.id
+        where e.task_id = $1 and e.kind = 'feedback_issued'`,
+      [task.taskId],
+    );
+    expect(issued[0]!.target_keys).toEqual([
+      computeTargetKey("couch", "en-GB"),
+      computeTargetKey("sofa", "en-GB"),
+    ].sort());
     const [attempt] = await attemptRows(task.taskId);
     const bySkill = Object.fromEntries((await assessmentsOf(attempt.id)).map((a) => [a.skill, a]));
     expect(bySkill.recall).toMatchObject({ outcome: "correct" });
@@ -570,6 +657,8 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
     const again = await submitSpeechAttempt(services, { taskId: task.taskId, clientAttemptId: firstKey }, wavInput(1));
     expect(again.attemptId).toBe(done.attemptId);
     expect(again.feedback?.kind).toBe("great");
+    expect(again.feedback).toEqual(done.feedback);
+    expect((await readAttempt(services, done.attemptId)).feedback).toEqual(done.feedback);
     expect(fakes.calls.stt).toBe(1);
   });
 
@@ -656,7 +745,9 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
     expect(dto.feedback).toEqual({
       kind: "great",
       heardText: "Thursday",
-      fragments: [{ text: "thursday", verdict: "good" }],
+      fragments: [{ text: "Thursday", verdict: "good" }],
+      speech: { recognition: "matched", pronunciation: "good", referenceText: "Thursday" },
+      referenceAudioAvailable: true,
     });
     expect(dto.taskState).toBe("answered");
   });

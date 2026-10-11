@@ -245,6 +245,8 @@ Web przyjmuje nagranie przez ograniczony strumień: początkowo do 15 sekund i 2
 
 Łączny deadline analizy: 30 sekund; timeout daje nieocenione albo wiarygodny wynik częściowy. Przeglądarka zwalnia strumień mikrofonu po nagraniu, końcu zadania i zmianie widoku. Aplikacja, proxy, error tracker i logi nie zapisują body ani nagrań. Analiza kończy się zwolnieniem buforów także przy błędzie; awaria procesu nie pozostawia pliku audio.
 
+Kid UI domyślnie nagrywa gestem przytrzymania. Puszczenie, anulowanie, utrata fokusu i limit zatrzymują rejestrator; tryb przełączany jest lokalną preferencją urządzenia. Po wyniku karta inline rozdziela `heardText`, status rozpoznania i status wymowy. Tekst pokazuje się tylko po confidence gate, a fragment `unknown` nie oznacza błędu. Ponowienie wraca do `idle` i nie rozpoczyna kolejnego nagrania.
+
 SttProvider i PronunciationProvider mają niezależne wyniki. Nie oceniamy poprawności treści na podstawie score dla oczekiwanego tekstu. Wiarygodną transkrypcję najpierw dopasowujemy do odpowiedzi kanonicznej i całego zatwierdzonego zbioru wariantów. Inny zatwierdzony wariant jest poprawną treścią i może zaliczyć Recall. Jeśli wariant różni się od tekstu użytego do pronunciation assessment, jego wyniku nie przenosimy na wypowiedziany wariant: wykonujemy ocenę względem dopasowanego wariantu w ramach tego samego deadline albo zapisujemy pronunciation jako nieocenione. Dopiero wiarygodny tekst spoza zatwierdzonego zbioru jest błędną treścią; ocena wymowy oczekiwanego słowa jest wtedy nieadekwatna i nie obniża tej umiejętności. Niepewne rozpoznanie nie tworzy confusion. Poprawna treść plus nieudana ocena wymowy daje wynik częściowy.
 
 Domknięcie zadania ćwiczenia wymowy (uzupełnienie wersji 1.2): w ćwiczeniu wymowy (§12.6) oceniamy samą wymowę, ale o zamknięciu zadania decyduje treść wypowiedzi. Wiarygodna transkrypcja zgodna z kluczem wykonuje ćwiczenie także wtedy, gdy wymowy nie udało się ocenić (brak pasm w polityce, awaria providera — SPEC §15.4): zadanie przechodzi w answered, wymowa zostaje nieoceniona z zachowanym wynikiem providera w details, a dziecko dostaje neutralny komunikat „Usłyszałem! Nie udało się ocenić wymowy”. Druga wiarygodna rozbieżność domyka zadanie bez żadnych ocen wiedzy (§15.3 kontynuowanie); próba techniczna zostawia drugie podejście, a „Pomiń” jest na ekranie wymowy dostępny zawsze.
@@ -280,6 +282,7 @@ Wspólny format błędu: {code, message, retryable, requestId}. Walidacja na gra
 | Kid | POST /api/v1/kid/tasks/:id/complete-presentation | Idempotentne zakończenie Exposure bez próby i oceny |
 | Kid | POST /api/v1/kid/tasks/:id/attempts | Wynik tekstowy/wybór/nie pamiętam; multipart dla audio |
 | Kid | GET /api/v1/kid/attempts/:id | Wynik trwającej lub zakończonej oceny |
+| Kid | POST /api/v1/kid/attempts/:id/feedback-audio | Ponowna autoryzacja wzorca dla aktualnego wyniku; zapis ekspozycji przed wydaniem ID zasobu |
 | Kid | POST /api/v1/kid/sessions/:id/end | Koniec i podsumowanie |
 | Media | GET /api/v1/media/:id | Zasób state=ready po opaque ID; same-origin, bez CORS; nie wyznacza ekspozycji |
 
@@ -303,6 +306,8 @@ Pierwsze uruchomienie: dopóki w parent_credentials nie ma wiersza, ekran logowa
 Kid Mode nie ma kont dzieci. Wybór profilu nie jest zabezpieczeniem przed rodzeństwem. Dostęp do całej instancji jest zaufanym dostępem rodzinnym. Do czasu osobnego ustalenia zdalnego dostępu instancja nie jest publicznie wystawiana. Zalecany pierwszy wariant zdalny to prywatny VPN/brama dostępu przed aplikacją; wybór produktu jest poza tym etapem. Sam PIN rodzica nie zabezpiecza publicznego Kid API.
 
 Dane logów: requestId, typ operacji, czasy, kody błędów; bez haseł, promptów zawierających dane dziecka, transkrypcji i audio. JSON historii zawiera wyłącznie potrzebny wynik. Usunięcie dziecka usuwa jego transkrypcje i próby. Retencja po stronie dostawców jest sprawdzana podczas konfiguracji usług; aplikacja nie może obiecać ich polityki w swoim imieniu.
+
+Surowe nagranie jest przetwarzane tylko w pamięci i nie trafia do bazy, kolejki, plików tymczasowych, logów, trace ani fixture. Kid DTO może zawierać wyłącznie wiarygodny, ograniczony `heardText` oraz jawne statusy i fragmenty; odtwarzanie referencyjne wymaga nowej autoryzacji dla bieżącej próby.
 
 ## 14. Wdrożenie i eksploatacja
 

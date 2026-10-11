@@ -3,6 +3,7 @@ import type {
   AttemptDto,
   AttemptInput,
   DisclosureDto,
+  FeedbackAudioDto,
   EventInput,
   KidDeckDto,
   KidProfileDto,
@@ -34,6 +35,8 @@ export interface KidApi {
   readAttempt(attemptId: string): Promise<AttemptDto>;
   /** Zapis ekspozycji i zgoda na podpowiedź/odtworzenie wzorca (arch §9.2). */
   authorizeDisclosure(taskId: string, kind: "audio" | "hint"): Promise<DisclosureDto>;
+  /** Autoryzacja wzorca z aktualnego feedbacku; serwer ponownie sprawdza próbę i kartę. */
+  authorizeFeedbackAudio(attemptId: string): Promise<FeedbackAudioDto>;
   completePresentation(taskId: string, clientCommandId?: string): Promise<PresentationCompletionDto>;
   /** Opcjonalne potwierdzenie obserwacji; nie jest jedynym dowodem ujawnienia. */
   recordObservation(input: EventInput): Promise<void>;

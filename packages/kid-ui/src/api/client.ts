@@ -2,6 +2,7 @@ import {
   MockTestSummaryDtoSchema,
   AttemptDtoSchema,
   DisclosureDtoSchema,
+  FeedbackAudioDtoSchema,
   KidDeckDtoSchema,
   KidProfileDtoSchema,
   PresentationCompletionDtoSchema,
@@ -11,6 +12,7 @@ import {
   type AttemptDto,
   type AttemptInput,
   type DisclosureDto,
+  type FeedbackAudioDto,
   type EventInput,
   type KidDeckDto,
   type KidProfileDto,
@@ -91,6 +93,7 @@ export function createKidApiClient(options: KidClientOptions = {}): KidApi {
   const parseSession = parseWith(SessionDtoSchema);
   const parseSummary = parseWith(SessionSummaryDtoSchema);
   const parseDisclosure = parseWith(DisclosureDtoSchema);
+  const parseFeedbackAudio = parseWith(FeedbackAudioDtoSchema);
   const parsePresentation = parseWith(PresentationCompletionDtoSchema);
   const parseProfiles = parseWith(KidProfileDtoSchema.array());
   const parseDecks = parseWith(KidDeckDtoSchema.array());
@@ -144,6 +147,9 @@ export function createKidApiClient(options: KidClientOptions = {}): KidApi {
     },
     authorizeDisclosure(taskId: string, kind: "audio" | "hint"): Promise<DisclosureDto> {
       return post(`/api/v1/kid/tasks/${taskId}/disclosures`, { kind }, parseDisclosure);
+    },
+    authorizeFeedbackAudio(attemptId: string): Promise<FeedbackAudioDto> {
+      return post(`/api/v1/kid/attempts/${attemptId}/feedback-audio`, {}, parseFeedbackAudio);
     },
     async completePresentation(taskId: string, clientCommandId?: string): Promise<PresentationCompletionDto> {
       return post(

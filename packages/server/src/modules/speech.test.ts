@@ -113,6 +113,42 @@ describe("assessSpeechEvidence — treść z transkrypcji, wymowa osobno (SPEC �
       ctx(),
     );
     expect(failure.skills.recall).toMatchObject({ outcome: "unevaluated", reason: "technical" });
+    expect(silence.speechFeedback).toEqual({ recognition: "no_speech", pronunciation: "not_applicable" });
+    expect(failure.speechFeedback).toEqual({ recognition: "unavailable", pronunciation: "not_applicable" });
+  });
+
+  it("ok z null lub pustym tekstem jest ciszą, nie błędną odpowiedzią", () => {
+    for (const text of [null, "  "] as const) {
+      const grade = assessSpeechEvidence(
+        evidence({ transcription: { status: "ok", text, confidence: 0.99 }, pronunciation: null }),
+        recallKey(),
+        ctx(),
+      );
+      expect(grade.skills.recall).toMatchObject({ outcome: "unevaluated" });
+      expect(grade.recognizedText).toBeUndefined();
+      expect(grade.speechFeedback).toEqual({ recognition: "no_speech", pronunciation: "not_applicable" });
+    }
+  });
+
+  it("distinguishes uncertain, matched alternate, and mismatched text without transferring pronunciation", () => {
+    const uncertain = assessSpeechEvidence(
+      evidence({ transcription: { status: "ok", text: "Tuesday", confidence: MIN_STT_CONFIDENCE - 0.01 }, pronunciation: null }),
+      recallKey(), ctx(),
+    );
+    expect(uncertain.speechFeedback).toEqual({ recognition: "uncertain", pronunciation: "not_applicable" });
+    expect(uncertain.recognizedText).toBeUndefined();
+
+    const alternate = assessSpeechEvidence(
+      evidence({ transcription: { status: "ok", text: "couch", confidence: 0.9 }, pronunciation: null }),
+      recallKey({ target: "sofa", acceptedAnswers: ["couch"] }), ctx(),
+    );
+    expect(alternate.speechFeedback).toEqual({ recognition: "matched", pronunciation: "not_applicable", referenceText: "couch" });
+
+    const different = assessSpeechEvidence(
+      evidence({ transcription: { status: "ok", text: "chair", confidence: 0.9 }, pronunciation: null }),
+      recallKey({ target: "sofa", acceptedAnswers: ["couch"] }), ctx(),
+    );
+    expect(different.speechFeedback).toEqual({ recognition: "different", pronunciation: "not_applicable", referenceText: "sofa" });
   });
 
   it("poprawne słowo i awaria oceny wymowy dają wynik częściowy (SPEC §13.5)", () => {
@@ -201,7 +237,7 @@ describe("pasma wymowy (design 2026-10-09)", () => {
     });
     const grade = assessSpeechEvidence(aligned, speechKey(), ctx({ policy: bandedPolicy() }));
     expect(grade.speechFragments).toEqual([
-      { text: "th", verdict: "good" },
+      { text: "Th", verdict: "good" },
       { text: "u", verdict: "almost" },
       { text: "rsday", verdict: "good" },
     ]);
@@ -211,7 +247,7 @@ describe("pasma wymowy (design 2026-10-09)", () => {
       speechKey(),
       ctx({ policy: bandedPolicy() }),
     );
-    expect(mismatched.speechFragments).toEqual([{ text: "Thursday", verdict: "good" }]);
+    expect(mismatched.speechFragments).toEqual([{ text: "Thursday", verdict: "unknown" }]);
   });
 
   it("below pozostaje nieocenione — niepewna ocena, nie błąd wiedzy", () => {

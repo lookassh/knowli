@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { messages } from "@learning/contracts";
+import { SpeechRecordButton } from "./SpeechRecordButton";
 import type { ExerciseProps } from "./types";
 
 /**
@@ -10,13 +11,13 @@ import type { ExerciseProps } from "./types";
  * Recall; wsparcie pisowni pozostaje zadaniem tekstowym. Dostępne są też
  * „Nie pamiętam — pokaż” i „Pomiń”.
  */
-export function WrittenView({ task, busy, recording, micAvailable, handlers, mockTest }: ExerciseProps) {
+export function WrittenView({ task, busy, recording, recordingPhase, microphoneReady, inputLevel, recordingNotice, recordingMode, micAvailable, handlers, mockTest }: ExerciseProps) {
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   if (task.prompt.kind !== "recall" && task.prompt.kind !== "spelling") {
     return null;
   }
-  const disabled = busy || recording;
+  const disabled = busy || recording || recordingPhase !== "idle";
   return (
     <section className="kid-card">
       <p className="kid-source" data-testid="kid-source">
@@ -48,21 +49,21 @@ export function WrittenView({ task, busy, recording, micAvailable, handlers, moc
           {mockTest ? messages.kid.mockTestSubmit : messages.kid.check}
         </button>
       </form>
-      {micAvailable && task.prompt.kind === "recall" &&
-        (recording ? (
-          <div className="kid-recording-row">
-            <span className="kid-recording" data-testid="kid-recording" role="status">
-              ⏺ {messages.kid.recording}
-            </span>
-            <button type="button" className="kid-primary" data-testid="kid-stop-record" onClick={handlers.onStopRecording}>
-              {messages.kid.stopRecording}
-            </button>
-          </div>
-        ) : (
-          <button type="button" data-testid="kid-record" disabled={busy} onClick={handlers.onRecord}>
-            🎤 {messages.kid.record}
-          </button>
-        ))}
+      {micAvailable && task.prompt.kind === "recall" && (
+        <SpeechRecordButton
+          phase={recordingPhase}
+          ready={microphoneReady}
+          disabled={busy}
+          level={inputLevel}
+          notice={recordingNotice}
+          mode={recordingMode}
+          onModeChange={handlers.onRecordingModeChange}
+          onPrepare={handlers.onPrepareRecording}
+          onStart={handlers.onRecord}
+          onStop={handlers.onStopRecording}
+          onCancel={handlers.onCancelRecording}
+        />
+      )}
       <div className="kid-secondary-actions">
         <button type="button" data-testid="kid-not-remember" disabled={disabled} onClick={handlers.onNotRemember}>
           {mockTest ? messages.kid.mockTestNotRemember : messages.kid.notRemember}

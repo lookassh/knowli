@@ -2,6 +2,7 @@ import {
   AppError,
   readMockTestSummary,
   authorizeDisclosure,
+  authorizeFeedbackAudio,
   completePresentation,
   endSession,
   listKidDecks,
@@ -129,6 +130,9 @@ export async function handleKidApi(
 
   if (request.method === "GET" && first === "attempts" && second !== undefined && third === undefined) {
     return Response.json(await readAttempt(services, second));
+  }
+  if (request.method === "POST" && first === "attempts" && second !== undefined && third === "feedback-audio") {
+    return Response.json(await authorizeFeedbackAudio(services, second), { headers: { "Cache-Control": "no-store" } });
   }
 
   throw new AppError("not_found");

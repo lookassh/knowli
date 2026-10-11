@@ -175,7 +175,13 @@ export interface SkillGrade {
 /** Fragmenty wymowy pokazywane dziecku (design 2026-10-09) — bez liczb. */
 export interface SpeechFragment {
   text: string;
-  verdict: "good" | "almost";
+  verdict: "good" | "almost" | "unknown";
+}
+
+export interface SpeechFeedback {
+  recognition: "matched" | "different" | "uncertain" | "no_speech" | "unavailable";
+  pronunciation: "good" | "practice" | "unreliable" | "unavailable" | "not_configured" | "not_applicable";
+  referenceText?: string;
 }
 
 /** Wynik próby: oceny per umiejętność + kwalifikacja samej próby. */
@@ -184,6 +190,7 @@ export interface Grade {
   attempt: AttemptQualification;
   /** Wiarygodny tekst rozpoznany z mowy; przekazywany dziecku bez score. */
   recognizedText?: string;
+  speechFeedback?: SpeechFeedback;
   /**
    * Wynik ćwiczenia wymowy (SPEC §12.6): zgodna z kluczem treść wypowiedzi
    * oznacza ćwiczenie wykonane — zadanie zamyka się także wtedy, gdy samej

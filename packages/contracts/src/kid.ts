@@ -167,6 +167,14 @@ export const DisclosureDtoSchema = z.object({
 });
 export type DisclosureDto = z.infer<typeof DisclosureDtoSchema>;
 
+export const FeedbackAudioDtoSchema = z.object({
+  attemptId: UuidSchema,
+  taskId: UuidSchema,
+  stepId: z.string().min(1),
+  audioAssetId: UuidSchema,
+});
+export type FeedbackAudioDto = z.infer<typeof FeedbackAudioDtoSchema>;
+
 export const PresentationCompletionInputSchema = z.object({
   taskId: UuidSchema,
   clientCommandId: UuidSchema.optional(),
@@ -238,14 +246,37 @@ export type KidDeckDto = z.infer<typeof KidDeckDtoSchema>;
  */
 export const PronunciationFragmentDtoSchema = z.object({
   text: z.string().min(1),
-  verdict: z.enum(["good", "almost"]),
+  verdict: z.enum(["good", "almost", "unknown"]),
 });
+export type PronunciationFragmentDto = z.infer<typeof PronunciationFragmentDtoSchema>;
+
+export const SpeechFeedbackDtoSchema = z.object({
+  recognition: z.enum(["matched", "different", "uncertain", "no_speech", "unavailable"]),
+  pronunciation: z.enum(["good", "practice", "unreliable", "unavailable", "not_configured", "not_applicable"]),
+  referenceText: z.string().min(1).max(200).optional(),
+}).strict().superRefine((speech, ctx) => {
+  if (["uncertain", "no_speech", "unavailable"].includes(speech.recognition) && speech.referenceText !== undefined) {
+    ctx.addIssue({ code: "custom", path: ["referenceText"], message: "uncertain recognition cannot disclose a reference text" });
+  }
+});
+export type SpeechFeedbackDto = z.infer<typeof SpeechFeedbackDtoSchema>;
 
 export const FeedbackDtoSchema = z.object({
   kind: z.enum(["great", "capitalization_hint", "almost", "incorrect", "content_matched", "not_assessed"]),
   correctText: z.string().min(1).optional(),
   heardText: z.string().min(1).max(200).optional(),
   fragments: z.array(PronunciationFragmentDtoSchema).max(6).optional(),
+  speech: SpeechFeedbackDtoSchema.optional(),
+  /** Wskazówka prezentacji; endpoint odsłuchu zawsze ponownie sprawdza uprawnienie. */
+  referenceAudioAvailable: z.boolean().optional(),
+}).strict().superRefine((feedback, ctx) => {
+  if (feedback.speech && ["uncertain", "no_speech", "unavailable"].includes(feedback.speech.recognition)) {
+    for (const field of ["heardText", "correctText", "fragments"] as const) {
+      if (feedback[field] !== undefined) {
+        ctx.addIssue({ code: "custom", path: [field], message: "uncertain recognition cannot disclose speech content" });
+      }
+    }
+  }
 });
 export type FeedbackDto = z.infer<typeof FeedbackDtoSchema>;
 

@@ -371,3 +371,24 @@ sprawdza dry-run, izolację, brakujące i osierocone projekcje, idempotencję or
 blokady apply. Pełny wynik bramek dla tej naprawy zapisuje końcowy raport pracy;
 próby na danych rodzinnych, deploy i test wymowy z prawdziwym nagraniem nie są
 częścią tej regresji.
+
+### Uzupełnienie: UX nagrywania i wyniku mowy — 2026-10-10
+
+Plan szczegółowy: `docs/superpowers/plans/2026-10-10-speech-recording-ux.md`;
+specyfikacja projektu: `docs/superpowers/specs/2026-10-10-speech-recording-ux-design.md`.
+Domyślny gest `hold` kończy nagranie po puszczeniu, z klawiaturą, anulowaniem,
+limitem i lokalną alternatywą `toggle`. Mikrofon i nagranie są zwalniane po
+zatrzymaniu, anulowaniu, zmianie widoku i błędzie. UI pokazuje wiarygodne
+„Usłyszałem: …”, osobną ocenę wymowy i maksymalnie sześć fragmentów, gdzie
+`unknown` pozostaje neutralne. Odsłuch wzorca jest autoryzowany ponownie dla
+bieżącej próby i zapisuje ekspozycję przed wydaniem zasobu.
+
+Implementację podzielono na siedem commitowanych zadań w izolowanym worktree.
+Istniejące regresje obejmują próbę idempotentną podczas `processing`,
+konflikt dwóch klientów, usuwanie profilu, 15-sekundowy limit rejestratora,
+zwalnianie śladów mediów oraz niezmienny budżet sesji. Końcowe pokrycie R01,
+R03, R05 i R07 oraz kontrolę R04 odnotowuje dziennik
+`docs/superpowers/progress/2026-10-10-speech-recording-ux-implementation.md`.
+Testy automatyczne nie zastępują próby na rzeczywistym telefonie/tablecie ani
+walidacji jakości na prawdziwej mowie dziecka; te dowody pozostają wymagane
+przed deklaracją gotowego MVP.

@@ -22,6 +22,14 @@ export interface SpeechRecorder {
   readonly active: boolean;
 }
 
+export interface RecorderOptions {
+  /** Transient RMS level in the range 0–1; raw samples never leave the adapter. */
+  onLevel?: (level: number) => void;
+  onLimitReached?: () => void;
+  /** Awaria urządzenia podczas aktywnego nagrania; nie jest próbą dziecka. */
+  onError?: () => void;
+}
+
 /** Odtwarzacz wzorca z cache media; stop zwalnia zasoby audio. */
 export interface AudioPlayer {
   /** Odtwarza do końca; rzuca przy błędzie odtwarzania/sieci. */
@@ -31,6 +39,8 @@ export interface AudioPlayer {
 
 /** Adaptery platformowe za portami — domena UI ich nie zna (plan zadania 9). */
 export interface PlatformMedia {
-  createRecorder(): SpeechRecorder;
+  /** Request permission without recording; every acquired track is released. */
+  prepareMicrophone(): Promise<void>;
+  createRecorder(options?: RecorderOptions): SpeechRecorder;
   player: AudioPlayer;
 }
