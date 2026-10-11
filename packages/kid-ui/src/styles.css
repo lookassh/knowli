@@ -269,9 +269,9 @@
 }
 
 .kid-notice {
-  color: var(--kid-warm-text);
-  background: var(--kid-warm);
-  border: 1px solid var(--kid-warm-line);
+  color: var(--kid-text);
+  background: var(--kid-soft);
+  border: 1px solid var(--kid-line);
   border-radius: 12px;
   padding: 10px 12px;
 }
@@ -914,6 +914,63 @@
   align-items: center;
   justify-content: space-between;
   min-height: 48px;
+  gap: 12px;
+}
+
+.kid-microphone-status {
+  position: relative;
+  flex: none;
+  margin-inline-start: auto;
+  color: var(--kid-muted);
+}
+
+.kid-microphone-status[data-microphone-state="ready"] {
+  color: var(--kid-accent);
+}
+
+.kid-microphone-status[data-microphone-state="unavailable"] {
+  color: var(--kid-wrong);
+}
+
+.kid-microphone-status > summary {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--kid-line);
+  border-radius: 14px;
+  background: var(--kid-surface);
+  list-style: none;
+  cursor: pointer;
+}
+
+.kid-microphone-status > summary::-webkit-details-marker {
+  display: none;
+}
+
+.kid-microphone-status > summary:focus-visible {
+  outline: 3px solid var(--kid-accent);
+  outline-offset: 3px;
+}
+
+.kid-microphone-status > .kid-microphone-hint {
+  position: absolute;
+  z-index: 10;
+  inset-inline-end: 0;
+  top: calc(100% + 8px);
+  box-sizing: border-box;
+  width: min(280px, calc(100vw - 48px));
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--kid-accent);
+  border-radius: 14px;
+  background: var(--kid-soft);
+  color: var(--kid-text);
+  font-size: 0.95rem;
+  line-height: 1.45;
+  text-align: start;
 }
 
 .kid-remaining {
@@ -975,8 +1032,8 @@
   flex-shrink: 0;
 }
 
-/* tło feedbacku odpowiada wynikowi (SPEC §16): sukces zielony,
-   pomyłka ciepły bursztyn, próba nieoceniona neutralna */
+/* Sukces jest zielony; wsparcie po pomyłce korzysta z niebieskiej palety.
+   Wynik nadal wynika z tekstu oraz zielonych/czerwonych oznaczeń opcji. */
 .kid-feedback--correct {
   border-color: var(--kid-good);
   background: var(--kid-good-bg);
@@ -984,8 +1041,8 @@
 }
 
 .kid-feedback--retry {
-  border-color: var(--kid-warm-text);
-  background: var(--kid-warm);
+  border-color: var(--kid-accent);
+  background: var(--kid-soft);
   color: var(--kid-text);
 }
 

@@ -290,7 +290,8 @@ test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page,
   await page.reload();
   await expect(deckRow(page)).toContainText(DECK_TITLE);
   await deckRow(page).click();
-  await expect(page.getByTestId("generation-banner")).toContainText(messages.decks.generating);
+  // Worker may finish while the list is reloading; the banner is asserted
+  // immediately after creation above, and either state should open the editor.
   await expect(page.getByTestId("item-card-0")).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId("item-card-6")).toBeVisible();
   await expect(page.getByTestId("item-target-0")).toHaveValue("monday");
@@ -478,12 +479,15 @@ test("rodzic edytuje progi wymowy i otwiera listę kalibracyjną", async ({ page
   const row = page.locator('[data-testid^="child-row"]').filter({ hasText: childName });
   await expect(row).toBeVisible();
   await page.getByTestId(`child-settings-${childIndex}`).click();
+  await page.waitForLoadState("networkidle");
   await expect(page.getByTestId("child-threshold-good")).toHaveValue("70");
   await expect(page.getByTestId("child-threshold-almost")).toHaveValue("50");
   await expect(page.getByTestId("child-attempts")).toBeVisible();
 
   await page.getByTestId("child-threshold-good").fill("75");
   await page.getByTestId("child-threshold-almost").fill("55");
+  await expect(page.getByTestId("child-threshold-good")).toHaveValue("75");
+  await expect(page.getByTestId("child-threshold-almost")).toHaveValue("55");
   const saved = page.waitForResponse(
     (response) => response.url().includes("/pronunciation") && response.request().method() === "PUT" && response.status() === 204,
   );
