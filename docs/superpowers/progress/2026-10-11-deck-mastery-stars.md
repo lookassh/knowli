@@ -12,11 +12,20 @@
 
 ## Checklist zadań
 
-- [ ] Zadanie 1 — wspólny helper `starsForFraction` + refactor `mock-test-score.ts`.
-- [ ] Zadanie 2 — gwiazdki w `DeckCard` (test RED → messages → komponent → CSS → GREEN).
-- [ ] Zadanie 3 — SPEC §6: przykład widoku + zdanie o „3/7 umiem".
+- [x] Zadanie 1 — wspólny helper `starsForFraction` + refactor `mock-test-score.ts` (commit `7accba1`).
+- [x] Zadanie 2 — gwiazdki w `DeckCard` (commit `aff8389`).
+- [x] Zadanie 3 — SPEC §6: przykład widoku + zdanie o „3/7 umiem" (commit `aba0ec7`).
 - [ ] Zadanie 4 — pełna weryfikacja (unit/typecheck/build), niezależny review, PR do `main` (squash wykonuje właściciel).
 
 ## Wyniki kroków
 
-(będzie uzupełniane na bieżąco)
+- Baseline worktree (`da20f3f`, po `pnpm install`): `test:unit` — PASS, 55 plików / **477 testów**.
+- Zadanie 1: RED potwierdzony (`stars.test.ts` — 1 plik failed, brak modułu `./stars`); po implementacji GREEN; po refactorze `mock-test-score.ts` cały suite PASS 481 (zachowanie kartkówki bez zmian).
+- Zadanie 2: RED potwierdzony (`deck-screen.test.ts` — 8 testów | 2 failed: brak `kid-deck-stars`, obecna pigułka); po implementacji (messages + DeckCard + CSS) cały suite PASS — commit przepuszczony przez `&&` tylko przy exit 0; końcowo 482.
+- Zadanie 3: `git diff --check` zgłosił trailing whitespace na liniach 144–145 przykładu — **świadomie zaakceptowane**: podwójna spacja na końcu linii blockquote to istniejąca konwencja tego pliku (twarde łamanie linii w markdownie; oryginalne linie przykładu mają tak samo). Oczekiwanie „puste wyjście" z planu było źle skalibrowane.
+- Zadanie 4 — weryfikacja końcowa (odczytane wyniki):
+  - `pnpm test:unit` — **55 plików / 482 testy PASS** (477 bazowych + 4 w `stars.test.ts` + 1 nowy przypadek `deck-screen.test.ts`).
+  - `pnpm typecheck` — **exit 0** (brak odwołań do usuniętego `messages.kid.recalledCount`).
+  - `pnpm build` — **sukces** (tabela tras Next.js, `/kids/[childId]/learn` obecny).
+  - e2e: nie uruchamiano — czerwone na CI z przyczyn istniejących w main po #42, poza zakresem; odnotowane do PR.
+
