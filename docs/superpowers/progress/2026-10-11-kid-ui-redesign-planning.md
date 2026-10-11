@@ -23,7 +23,7 @@ Wyłącznie specyfikacja zaakceptowanego wyglądu i plan wdrożenia. Brak implem
 - [x] Self-review: pokrycie spec, wykonalność kroków, sygnatury, Review Focus, proporcja. Doprecyzowano typ fixture, route responses, wiążące asercje viewportu i pełne polecenia pnpm.
 - [x] Niezależne review dokumentów przed PR i obsługa uwag; szczegóły w `../reviews/2026-10-11-kid-ui-redesign-plan.md`.
 - [x] Weryfikacja treści/odnośników i `git diff --check`; ponowna kontrola przed commitem.
-- [ ] Commit tylko dokumentacji, push gałęzi `docs/kid-ui-redesign-plan`, PR do main i załączenie do zadania.
+- [x] Commit tylko dokumentacji (`641eec2`), push gałęzi `docs/kid-ui-redesign-plan`, [PR #41 do main](https://github.com/lookassh/knowli/pull/41) i załączenie do zadania. PR nie został scalony; plan czeka na ocenę właściciela, implementacja nie została rozpoczęta.
 
 ## Izolacja i dostosowania
 
