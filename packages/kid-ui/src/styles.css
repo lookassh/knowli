@@ -537,6 +537,13 @@
   }
 }
 
+@media (max-height: 700px) {
+  .kid-deck-screen {
+    gap: 6px;
+    padding-block: 12px;
+  }
+}
+
 .kid-card {
   background: var(--kid-surface);
   border: 2px solid var(--kid-line);

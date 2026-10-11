@@ -72,12 +72,28 @@ test("all assigned decks remain reachable and the page clamps after responsive p
 });
 
 test("short phone viewport paginates two deck cards to avoid document scrolling", async ({ page }) => {
-  const decks = [makeDeck(0, { recommended: true }), makeDeck(1, { recommended: true })];
+  const decks = [
+    makeDeck(0, { recommended: true, title: "Dni tygodnia i pory roku" }),
+    makeDeck(1, { recommended: true }),
+  ];
   await page.setViewportSize({ width: 360, height: 640 });
   await openDeckScreen(page, decks);
   await expect(page.getByTestId("kid-deck-card")).toHaveCount(1);
   await expect(page.getByTestId("kid-decks-page")).toHaveText("1 z 2");
-  expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(641);
+  await expect(page.getByTestId("kid-mic-toggle")).toBeChecked();
+  await expect(page.getByTestId("kid-microphone-hint")).toBeVisible();
+  const layout = await page.evaluate(() => {
+    const screen = document.querySelector(".kid-deck-screen");
+    const footer = document.querySelector(".kid-deck-microphone");
+    return {
+      viewportHeight: window.innerHeight,
+      documentHeight: document.documentElement.scrollHeight,
+      screenHeight: screen?.getBoundingClientRect().height,
+      microphoneFooterHeight: footer?.getBoundingClientRect().height,
+      microphoneFooterPaddingBottom: footer ? getComputedStyle(footer).paddingBottom : null,
+    };
+  });
+  expect(layout.documentHeight, JSON.stringify(layout)).toBeLessThanOrEqual(641);
   await expect(page.getByTestId("kid-deck")).toBeInViewport();
   await expect(page.getByTestId("kid-decks-next")).toBeInViewport();
 });
