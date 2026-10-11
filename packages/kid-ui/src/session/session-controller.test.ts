@@ -726,22 +726,27 @@ describe("LearningSessionController", () => {
   });
 
   it("odpowiedź ustna przechodzi przez polling aż do wyniku", async () => {
-    const recall = taskDto("t1", { kind: "recall", prompt: "czwartek" });
-    const state = baseState();
-    state.attempts = [
-      attemptDto({ state: "processing", feedback: null, taskState: "issued", modality: "audio", attemptId: "proc-1" }),
-      attemptDto({ modality: "audio", feedback: { kind: "not_assessed" }, taskState: "issued" }),
-    ];
-    const harness = await startAtTask(state, recall);
-    await harness.controller.prepareMicrophone();
+    vi.useFakeTimers();
+    try {
+      const recall = taskDto("t1", { kind: "recall", prompt: "czwartek" });
+      const state = baseState();
+      state.attempts = [
+        attemptDto({ state: "processing", feedback: null, taskState: "issued", modality: "audio", attemptId: "proc-1" }),
+        attemptDto({ modality: "audio", feedback: { kind: "not_assessed" }, taskState: "issued" }),
+      ];
+      const harness = await startAtTask(state, recall);
+      await harness.controller.prepareMicrophone();
 
-    await harness.controller.startRecording();
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    await harness.controller.stopRecording();
-    expect(state.speechSubmissions).toHaveLength(1);
-    const screen = harness.controller.getScreen() as { kind: string; feedback?: unknown };
-    expect(screen.kind).toBe("learning");
-    expect(screen).toMatchObject({ feedback: { dto: { kind: "not_assessed" } } });
+      await harness.controller.startRecording();
+      await vi.advanceTimersByTimeAsync(301);
+      await harness.controller.stopRecording();
+      expect(state.speechSubmissions).toHaveLength(1);
+      const screen = harness.controller.getScreen() as { kind: string; feedback?: unknown };
+      expect(screen.kind).toBe("learning");
+      expect(screen).toMatchObject({ feedback: { dto: { kind: "not_assessed" } } });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("release przed 300 ms nie wysyła odpowiedzi i pokazuje neutralną wskazówkę", async () => {
@@ -940,14 +945,19 @@ describe("LearningSessionController", () => {
     await harness.controller.learnAgain();
     await harness.controller.startLearning(DECK.deckId);
     await harness.controller.prepareMicrophone();
-    await harness.controller.startRecording();
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    await harness.controller.stopRecording();
-    const screen = harness.controller.getScreen() as {
-      feedback: { dto: FeedbackDto | null; chosenOptionId?: string } | null;
-    };
-    expect(screen.feedback?.dto).toMatchObject({ kind: "not_assessed" });
-    expect(screen.feedback?.chosenOptionId).toBeUndefined();
+    vi.useFakeTimers();
+    try {
+      await harness.controller.startRecording();
+      await vi.advanceTimersByTimeAsync(301);
+      await harness.controller.stopRecording();
+      const screen = harness.controller.getScreen() as {
+        feedback: { dto: FeedbackDto | null; chosenOptionId?: string } | null;
+      };
+      expect(screen.feedback?.dto).toMatchObject({ kind: "not_assessed" });
+      expect(screen.feedback?.chosenOptionId).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("druga próba po błędzie zostaje na zadaniu, a koniec nie dokładuje zadań", async () => {

@@ -69,3 +69,11 @@
 - PR do `main`: oczekuje. Właściciel scala przez squash.
 - Odstępstwo: ten śledzony dziennik utworzono podczas Zadania 3 zamiast przed Zadaniem 1. Wyniki RED/GREEN i commitów z Zadań 1–2 zostały odtworzone z zachowanych raportów/wyjść i ukrytego ledgera; nie zmieniono ich treści.
 - Ograniczenie: nie wykonano próby z fizycznym mikrofonem/urządzeniem; E2E używa sztucznego mikrofonu i fake providerów, jak przewiduje plan.
+
+## CI follow-up — PR #40
+
+- Run `38120079736`: E2E PASS; testy jednostkowe wykazały, że nagranie w teście „próba wymowy w nowej sesji…” nie przekroczyło deterministycznie progu 300 ms. Typecheck w CI przeszedł; integracja i build zostały pominięte po błędzie unit.
+- Przyczyna: testy czekały zegarem rzeczywistym dokładnie 300 ms, a kontroler przyjmuje dopiero nagranie o długości co najmniej 300 ms. Zastąpiono oba takie oczekiwania w testach kontrolera zegarem Vitest i przesunięciem o 301 ms. Test granicy dokładnie 300 ms pozostaje bez zmian.
+- Weryfikacja po zmianie: `npx --yes pnpm@10.34.6 test:unit` — 51 plików / 457 testów PASS; `npx --yes pnpm@10.34.6 typecheck` — PASS; `git diff --check` — PASS.
+- Niezależny review `da950075..5eb9707` wraz z niezacommitowaną poprawką: brak Critical/Important/Minor. Opcjonalna sugestia live profile-switch E2E odłożona; obecny test kontrolera sprawdza zmianę profilu.
+- Follow-up zostanie wypchnięty do istniejącego PR #40; squash merge pozostaje po stronie właściciela.
