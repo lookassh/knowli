@@ -1,4 +1,5 @@
 import { messages, type MockTestOutcome, type MockTestSummaryDto, type TestGoal } from "@learning/contracts";
+import { starsForFraction } from "./stars";
 
 export type MockTestWordStatus = "correct" | "incorrect" | "notAssessed";
 
@@ -33,9 +34,7 @@ export function computeMockTestScore(solutions: ReadonlyArray<{ results: Results
     correct,
     total,
     percent: total === 0 ? 0 : Math.round((correct * 100) / total),
-    // liczymy z całkowitego ułamka, nie z zaokrąglonego procentu: 5/6 słów
-    // osiąga próg piątej gwiazdki dokładnie, a float po zaokrągleniu gubiłby tę granicę
-    stars: total === 0 ? 0 : Math.min(6, Math.floor((correct * 6) / total)),
+    stars: starsForFraction(correct, total),
   };
 }
 

@@ -29,14 +29,24 @@ function renderDeckScreen(deck: KidDeckDto): string {
 }
 
 describe("DeckScreen — powitanie i postępy na kafelkach (SPEC §6)", () => {
-  it("wita dziecko i pokazuje liczbę słów oraz samodzielnie przypominane słowa", () => {
+  it("wita dziecko i pokazuje liczbę słów oraz gwiazdki opanowania (samodzielny Recall)", () => {
     const markup = renderDeckScreen(DECK);
 
     expect(markup).toContain("Cześć, Krzysztof! 👋");
     expect(markup).toContain("Dni tygodnia");
     expect(markup).toContain("— 7 słów");
-    expect(markup).toContain("⭐ 3 słowa przypominasz samodzielnie");
+    expect(markup).toContain('data-testid="kid-deck-stars"');
+    expect(markup).toContain("★★☆☆☆☆"); // 3 z 7 słów → floor(3*6/7) = 2
+    expect(markup).toContain("Przypominasz samodzielnie: 2 z 6 gwiazdek");
+    expect(markup).not.toContain("⭐ 3 słowa przypominasz samodzielnie"); // pigułka zniknęła
     expect(markup).toContain("Sprawdzian: 10 paź");
+  });
+
+  it("pokazuje komplet 6 gwiazdek przy pełnym opanowaniu zestawu", () => {
+    const markup = renderDeckScreen({ ...DECK, independentlyRecalledCount: 7 });
+
+    expect(markup).toContain("★★★★★★");
+    expect(markup).toContain("Przypominasz samodzielnie: 6 z 6 gwiazdek");
   });
 
   it.each([

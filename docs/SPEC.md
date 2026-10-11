@@ -141,11 +141,11 @@ Nagrywanie w zadaniach mowy domyślnie działa przez przytrzymanie przycisku: po
 Przykład widoku tematu:
 
 > Cześć, Krzysiu! 👋  
-> 📅 Dni tygodnia — 7 słów  
-> ⭐ 3 słowa przypominasz samodzielnie  
-> **Uczę się**
+> Dni tygodnia — 7 słów  
+> ★★☆☆☆☆  
+> **Ucz się**
 
-Nie pokazujemy ogólnego „3/7 umiem”, jeżeli nie wiadomo, jakiej umiejętności dotyczy ta informacja.
+Gwiazdki na liście zestawów to symboliczny wskaźnik postępu (2026-10-11): maksymalnie 6, po jednej za każdą szóstą drogi do kompletu. Oznaczają wyłącznie słowa przypominane samodzielnie; nie towarzyszy im procent ani liczba ułamkowa, a umiejętność nazywa etykieta dostępności. Nie pokazujemy ogólnego „3/7 umiem” ani rozbicia na umiejętności w interfejsie dziecka — szczegóły per umiejętność widzi rodzic w panelu postępów, a dziecko w omówieniu próbnej kartkówki przy wynikach mieszanych (§19.1).
 
 Gamifikacja nie jest warunkiem MVP. Punkty, serie dni, rankingi i nagrody nie mogą zastąpić czytelnej nauki.
 
