@@ -43,6 +43,13 @@
       "when": 1791698759237,
       "tag": "0005_child_recording_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791749782853,
+      "tag": "0006_integration_tokens",
+      "breakpoints": true
     }
   ]
 }

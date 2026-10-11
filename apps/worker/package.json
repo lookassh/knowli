@@ -6,7 +6,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "start": "tsx src/main.ts",
-    "progress:rebuild": "tsx src/rebuild-progress.ts"
+    "progress:rebuild": "tsx src/rebuild-progress.ts",
+    "integration-tokens": "tsx src/integration-tokens.ts"
   },
   "dependencies": {
     "@learning/server": "workspace:*",
