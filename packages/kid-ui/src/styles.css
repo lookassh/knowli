@@ -48,6 +48,7 @@
   inset-inline: 0;
   top: 0;
   height: 100dvh;
+  max-height: 100dvh;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -161,6 +162,20 @@
 .kid-exercise-secondary {
   display: flex;
   justify-content: center;
+}
+
+.kid-exercise-result {
+  flex: none;
+  width: 100%;
+}
+
+.kid-material > .kid-answer-feedback {
+  flex: 1;
+  height: 100%;
+}
+
+.kid-exercise-result .kid-answer-feedback {
+  height: auto;
 }
 
 .kid-exposure-content {
@@ -453,8 +468,9 @@
    ✓/✗ w pseudoelemencie: sygnał także dla ślepoty barwnej, bez ruszania
    tekstu przycisku (filtry e2e dopasowują po treści) */
 .kid-options button.kid-option--correct {
-  border-color: #1d6a3f;
-  background: #f2fbf5;
+  border-color: var(--kid-good);
+  background: var(--kid-good-bg);
+  color: var(--kid-text);
 }
 
 .kid-options button.kid-option--correct::before {
@@ -464,6 +480,7 @@
 .kid-options button.kid-option--wrong {
   border-color: #c0392b;
   background: #fdeeee;
+  color: #38211f;
 }
 
 .kid-options button.kid-option--wrong::before {
@@ -732,33 +749,19 @@
   color: #1d6a3f;
 }
 
-.kid-feedback {
+.kid-answer-feedback {
   box-sizing: border-box;
-  width: min(528px, calc(100vw - 32px));
-  max-width: calc(100vw - 32px);
-  max-height: calc(100dvh - 32px);
-  margin: auto;
-  overflow: hidden;
-  border-color: #e4e6f4;
-  background: #fff;
-}
-
-.kid-feedback:not([open]) {
-  display: none;
-}
-
-/* pasek wyniku zamiast karteczki dla zadań wyboru (design 2026-10-09):
-   w przepływie za zadaniem (margin-top:auto przypina do dołu przy krótkiej
-   treści), więc nie może nakrywać podświetlanych opcji */
-.kid-feedback-inline {
-  margin-top: auto;
-  margin-bottom: 0;
-  max-height: 40dvh;
-  box-shadow: 0 -8px 24px rgb(29 29 43 / 12%);
-}
-
-.kid-feedback::backdrop {
-  background: rgb(29 29 43 / 45%);
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--kid-line);
+  border-radius: 16px;
+  background: var(--kid-surface);
 }
 
 .kid-feedback-content {
@@ -768,46 +771,56 @@
   width: 100%;
 }
 
-.kid-feedback > button {
+.kid-answer-feedback > button {
+  width: 100%;
+  min-height: 52px;
   flex-shrink: 0;
 }
 
 /* tło feedbacku odpowiada wynikowi (SPEC §16): sukces zielony,
    pomyłka ciepły bursztyn, próba nieoceniona neutralna */
 .kid-feedback--correct {
-  border-color: #bfe3cd;
-  background: #f2fbf5;
+  border-color: var(--kid-good);
+  background: var(--kid-good-bg);
+  color: var(--kid-text);
 }
 
 .kid-feedback--retry {
-  border-color: #f0dcbc;
-  background: #fdf6ec;
+  border-color: var(--kid-warm-text);
+  background: var(--kid-warm);
+  color: var(--kid-text);
 }
 
 .kid-speech-feedback {
   box-sizing: border-box;
   width: 100%;
-  max-height: min(62dvh, 560px);
+  height: 100%;
   min-height: 0;
+  flex: 1;
   margin: 0;
+  padding: 0;
   align-items: stretch;
+  justify-content: center;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   gap: 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--kid-text);
 }
 
-.kid-speech-feedback--correct {
-  border-color: #bfe3cd;
-  background: #f2fbf5;
+.kid-speech-feedback--correct .kid-speech-feedback__heard {
+  color: var(--kid-good);
 }
 
-.kid-speech-feedback--practice {
-  border-color: #f0dcbc;
-  background: #fdf6ec;
+.kid-speech-feedback--practice .kid-speech-feedback__heard {
+  color: var(--kid-warm-text);
 }
 
-.kid-speech-feedback--neutral {
-  border-color: #e4e6f4;
-  background: #fff;
+.kid-speech-feedback--neutral .kid-speech-feedback__heard {
+  color: var(--kid-text);
 }
 
 .kid-speech-feedback__body {
@@ -848,7 +861,7 @@
 .kid-speech-feedback__reference h3 {
   margin: 0;
   font-size: 0.95rem;
-  color: #4a4a66;
+  color: var(--kid-muted);
 }
 
 .kid-speech-feedback__word {
@@ -878,8 +891,8 @@
 }
 
 .kid-speech-feedback__word .kid-fragment--unknown {
-  background: #f0f1f5;
-  color: #505267;
+  background: var(--kid-soft);
+  color: var(--kid-text);
 }
 
 .kid-speech-feedback__legend {
@@ -890,22 +903,22 @@
   flex-wrap: wrap;
   justify-content: center;
   gap: 6px 12px;
-  color: #4a4a66;
+  color: var(--kid-muted);
   font-size: 0.9rem;
 }
 
 .kid-speech-feedback__legend--good {
-  color: #1c5c2e;
+  color: var(--kid-good);
 }
 
 .kid-speech-feedback__legend--almost {
-  color: #8a6116;
+  color: var(--kid-warm-text);
   text-decoration: underline;
   text-decoration-thickness: 2px;
 }
 
 .kid-speech-feedback__legend--unknown {
-  color: #505267;
+  color: var(--kid-muted);
 }
 
 .kid-speech-feedback__actions {
@@ -922,7 +935,7 @@
 
 .kid-speech-feedback__error {
   margin: 8px 0 0;
-  color: #8b2b22;
+  color: var(--kid-warm-text);
   font-weight: 700;
 }
 

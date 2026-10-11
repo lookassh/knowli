@@ -295,6 +295,7 @@ test("speech feedback stays inline, explains fragments and exposes only the avai
   await page.getByTestId("kid-submit").click();
   const card = page.getByTestId("kid-speech-feedback");
   await expect(card).toBeVisible();
+  await expect(page.getByTestId("kid-target")).toHaveCount(0);
   await expect(card).toContainText("Usłyszałem:");
   await expect(page.getByTestId("kid-reference-text")).toContainText("Thursday");
   await expect(page.getByRole("list", { name: "Legenda wymowy" })).toContainText("poćwicz go");

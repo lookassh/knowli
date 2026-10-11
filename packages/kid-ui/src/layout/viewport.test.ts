@@ -9,6 +9,17 @@ describe("computeKidViewport", () => {
     })).toEqual({ height: 350, offsetTop: 24, zoomed: false });
   });
 
+  it("never lets visual viewport measurements extend below the window viewport", () => {
+    expect(computeKidViewport({
+      innerHeight: 800,
+      visualViewport: { height: 1024, offsetTop: 0 },
+    })).toEqual({ height: 800, offsetTop: 0, zoomed: false });
+    expect(computeKidViewport({
+      innerHeight: 800,
+      visualViewport: { height: 900, offsetTop: 50 },
+    })).toEqual({ height: 750, offsetTop: 50, zoomed: false });
+  });
+
   it("falls back to the window height when visualViewport is unavailable or invalid", () => {
     expect(computeKidViewport({ innerHeight: 700, visualViewport: null }))
       .toEqual({ height: 700, offsetTop: 0, zoomed: false });

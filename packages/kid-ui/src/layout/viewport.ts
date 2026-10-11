@@ -25,8 +25,9 @@ export function computeKidViewport({
   ) {
     return { height: safeInnerHeight, offsetTop: 0, zoomed: false };
   }
+  const availableHeight = Math.max(0, safeInnerHeight - visualViewport.offsetTop);
   return {
-    height: visualViewport.height,
+    height: Math.min(visualViewport.height, availableHeight),
     offsetTop: visualViewport.offsetTop,
     zoomed: false,
   };

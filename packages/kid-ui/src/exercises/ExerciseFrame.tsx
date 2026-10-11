@@ -8,11 +8,13 @@ export function ExerciseFrame({
   content,
   actions,
   secondaryActions,
+  result,
 }: {
   task: TaskDto;
   content: ReactNode;
   actions?: ReactNode;
   secondaryActions?: ReactNode;
+  result?: ReactNode;
 }): ReactElement {
   const presentation = getExercisePresentation(task);
   return (
@@ -24,6 +26,7 @@ export function ExerciseFrame({
       <div className="kid-material" data-testid="kid-material">{content}</div>
       {actions !== undefined && <div className="kid-exercise-actions" data-testid="kid-exercise-actions">{actions}</div>}
       {secondaryActions !== undefined && <div className="kid-exercise-secondary">{secondaryActions}</div>}
+      {result !== undefined && <div className="kid-exercise-result" data-testid="kid-exercise-result">{result}</div>}
     </section>
   );
 }

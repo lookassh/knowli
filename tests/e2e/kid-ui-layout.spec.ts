@@ -323,3 +323,48 @@ test("record control uses the shared microphone icon instead of an emoji", async
   await expect(record.locator("svg")).toBeVisible();
   await expect(record).not.toContainText("🎤");
 });
+
+for (const kind of ["reading", "listening"] as const) {
+test(`${kind} choice keeps the highlighted option and readable success action in the frame`, async ({ page }) => {
+  const task = taskFor(kind);
+  const attempt = {
+    attemptId: "10000000-0000-4000-8000-000000000010", taskId, state: "completed" as const,
+    modality: "choice" as const, feedback: { kind: "great" as const }, taskState: "completed" as const,
+    stepId: null, receivedAt: "2026-10-11T10:00:00.000Z", completedAt: "2026-10-11T10:00:01.000Z",
+  };
+  await installKidUiFixture(page, { ...recallFixture(), tasks: [task], attempts: [attempt] });
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+  const correct = page.getByTestId("kid-option").first();
+  await correct.click();
+  await expect(correct).toHaveClass(/kid-option--correct/);
+  await expect(correct).toBeDisabled();
+  await expect.poll(() => correct.evaluate((element) => getComputedStyle(element, "::before").content)).toBe('"✓ "');
+  await expect(page.getByTestId("kid-exercise-result")).toContainText("Świetnie");
+  await expect(page.getByTestId("kid-next")).toBeInViewport();
+});
+}
+
+test("written feedback moves focus out of the answer field without opening a modal", async ({ page }) => {
+  const task = taskFor("spelling");
+  const attempt = {
+    attemptId: "10000000-0000-4000-8000-000000000010", taskId, state: "completed" as const,
+    modality: "text" as const, feedback: { kind: "incorrect" as const, correctText: "cat" },
+    taskState: "issued" as const, stepId: "feedback-step", receivedAt: "2026-10-11T10:00:00.000Z", completedAt: "2026-10-11T10:00:01.000Z",
+  };
+  await installKidUiFixture(page, { ...recallFixture(), tasks: [task], attempts: [attempt] });
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+  const input = page.getByTestId("kid-input");
+  await input.fill("wrong");
+  await input.focus();
+  await page.getByTestId("kid-submit").click();
+  const feedback = page.getByTestId("kid-feedback");
+  await expect(feedback).toContainText("Spróbuj jeszcze raz");
+  await expect(feedback).not.toHaveJSProperty("open", true);
+  await expect(page.getByTestId("kid-next")).toBeInViewport();
+  expect(await page.evaluate(() => document.activeElement?.id)).toBe("kid-feedback-title");
+  expect(await page.evaluate(() => document.body.style.overflow)).not.toBe("hidden");
+});

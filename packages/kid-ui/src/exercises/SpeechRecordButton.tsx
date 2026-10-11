@@ -42,7 +42,10 @@ export function SpeechRecordButton({ phase, ready, disabled, level, notice = nul
   }, [phase]);
 
   function act(event: Parameters<typeof reduceRecordingGesture>[1]): void {
-    const result = reduceRecordingGesture(gesture, event);
+    const staleAfterIdle = event.type === "start" && phaseRef.current === "idle" && gesture.active;
+    const currentGesture = staleAfterIdle ? initialGesture : gesture;
+    const result = reduceRecordingGesture(currentGesture, event);
+    if (staleAfterIdle) dispatch({ type: "settled" });
     dispatch(event);
     if (result.action === "start") onStart();
     else if (result.action === "stop") onStop();

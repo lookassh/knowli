@@ -6,7 +6,7 @@ import { ExerciseFrame } from "./ExerciseFrame";
  * Rozpoznawanie tekstu i odwrotne (SPEC §12.3–12.4): widoczne słowo/prompt
  * i wybór odpowiedzi; wynik nie awansuje samodzielnego przypominania.
  */
-export function ReadingView({ task, busy, optionOutcomes, handlers }: ExerciseProps) {
+export function ReadingView({ task, busy, optionOutcomes, result, handlers }: ExerciseProps) {
   if (task.prompt.kind !== "reading" && task.prompt.kind !== "reverse_recognition") {
     return null;
   }
@@ -37,6 +37,7 @@ export function ReadingView({ task, busy, optionOutcomes, handlers }: ExercisePr
           );
         })}
       </ul>}
+      result={result}
     />
   );
 }

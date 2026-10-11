@@ -33,6 +33,20 @@ describe("describeSpeechFeedback", () => {
     });
   });
 
+  it("keeps matched speech content positive without turning it into pronunciation praise", () => {
+    const view = describeSpeechFeedback({
+      kind: "content_matched",
+      heardText: "Thursday",
+      speech: { ...speech, pronunciation: "good" },
+    });
+    expect(view).toMatchObject({
+      message: messages.kid.feedbackSpeechMatched,
+      tone: "correct",
+    });
+    expect(view.message).not.toContain("Świetnie");
+    expect(view.pronunciationMessage).toBeUndefined();
+  });
+
   it("does not invent recognition details for legacy or null feedback", () => {
     expect(describeSpeechFeedback(null)).toEqual({
       message: messages.kid.feedbackNotAssessed,
