@@ -663,7 +663,8 @@ Panel jest prosty, filtrowany według dziecka i zestawu. Pokazuje:
 - słowa i umiejętności wymagające powtórki;
 - najczęściej mylone elementy;
 - informację, czy wynik został potwierdzony po przerwie;
-- termin sprawdzianu, jeśli go ustawiono.
+- termin sprawdzianu, jeśli go ustawiono;
+- zbiorczą aktywność dziecka z ostatnich 7 dni, niezależnie od wybranego zestawu: przybliżony czas nauki (liczony do ostatniej aktywności sesji, z obcięciem do limitu sesji), liczbę dni z nauką, liczbę podejść (sesji) łącznie i per zestaw, liczbę odpowiedzi oraz liczbę interakcji (kliknięć); wznowienie sesji w oknie wznowienia to jedno podejście.
 
 Przykład:
 

@@ -9,6 +9,13 @@ const report: ProgressDto = {
   childId, childName: "Ala", deckId, deckTitle: "Dni tygodnia", testDate: null,
   totalItems: 2, skills: [], confusions: [], history: [],
   pronunciation: { assessed: false, latestScores: [] },
+  activity: {
+    days: 7, activeSeconds: 38 * 60, activeDays: 3, sessions: 5, answers: 84, interactions: 210,
+    decks: [
+      { deckId, deckTitle: "Dni tygodnia", sessions: 3 },
+      { deckId: otherDeckId, deckTitle: "Owoce", sessions: 2 },
+    ],
+  },
   items: [
     {
       itemId: "00000000-0000-4000-8000-000000000005", position: 0,
@@ -46,6 +53,9 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 768, height: 1024
           ...report, deckId: otherDeckId, deckTitle: "Owoce", totalItems: 0, items: [],
         } : {
           ...report, childId: otherChildId, childName: "Bartek", deckId: otherDeckId, deckTitle: "Owoce",
+          activity: {
+            days: 7, activeSeconds: 0, activeDays: 0, sessions: 0, answers: 0, interactions: 0, decks: [],
+          },
           totalItems: 1, items: [{ ...report.items[0]!, source: "jabłko", target: "apple", meaningChanged: false,
             skills: { listening: "not_assessed", reading: "not_assessed", recall: "not_assessed",
               pronunciation: "not_assessed", spelling: "not_assessed" } }],
@@ -57,6 +67,17 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 768, height: 1024
     await page.goto("/parent");
     await page.getByTestId("tab-progress").click();
     await page.getByTestId("progress-load").click();
+    // karta aktywności dziecka: czas, dni, podejścia per zestaw, odpowiedzi, kliknięcia
+    const activity = page.getByTestId("progress-activity");
+    await expect(activity).toBeVisible();
+    await expect(activity).toContainText("Aktywność (ostatnie 7 dni)");
+    await expect(activity).toContainText("Czas nauki: 38 min");
+    await expect(activity).toContainText("Dni z nauką: 3");
+    await expect(activity).toContainText("Podejścia: 5");
+    await expect(activity).toContainText("Dni tygodnia — 3");
+    await expect(activity).toContainText("Owoce — 2");
+    await expect(activity).toContainText("Odpowiedzi: 84");
+    await expect(activity).toContainText("Kliknięcia: 210");
     const list = page.getByRole("region", { name: "Wszystkie słowa" });
     await expect(list).toBeVisible();
     const words = viewport.width > 900 ? list.getByRole("row").filter({ has: page.getByRole("rowheader") })
@@ -91,6 +112,8 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 768, height: 1024
     await page.getByTestId("progress-deck").selectOption(otherDeckId);
     await page.getByTestId("progress-load").click();
     await expect(page.getByTestId("progress-heading")).toContainText("Owoce — Bartek");
+    // dziecko bez aktywności: jasny komunikat zamiast zer
+    await expect(page.getByTestId("progress-activity")).toContainText("Brak rozpoczętej nauki w tym okresie.");
     await expect(words).toHaveCount(1);
     await expect(words.first()).toContainText("apple");
     await expect(list).not.toContainText("Monday");
