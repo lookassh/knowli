@@ -479,12 +479,15 @@ test("rodzic edytuje progi wymowy i otwiera listę kalibracyjną", async ({ page
   const row = page.locator('[data-testid^="child-row"]').filter({ hasText: childName });
   await expect(row).toBeVisible();
   await page.getByTestId(`child-settings-${childIndex}`).click();
+  await page.waitForLoadState("networkidle");
   await expect(page.getByTestId("child-threshold-good")).toHaveValue("70");
   await expect(page.getByTestId("child-threshold-almost")).toHaveValue("50");
   await expect(page.getByTestId("child-attempts")).toBeVisible();
 
   await page.getByTestId("child-threshold-good").fill("75");
   await page.getByTestId("child-threshold-almost").fill("55");
+  await expect(page.getByTestId("child-threshold-good")).toHaveValue("75");
+  await expect(page.getByTestId("child-threshold-almost")).toHaveValue("55");
   const saved = page.waitForResponse(
     (response) => response.url().includes("/pronunciation") && response.request().method() === "PUT" && response.status() === 204,
   );

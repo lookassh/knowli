@@ -22,7 +22,8 @@ Baza: `dfe905b` (origin/main, redesign #42). Worktree: `kid-microphone-status`, 
 - [x] Obsługa uwag: Important potwierdzony RED->GREEN i zweryfikowany przez reviewera. Po aktualizacji starego E2E target 1/1, osobny niezależny review całego zakresu; Critical/Important/Minor otwarte: 0.
 - [x] finishing-a-development-branch: commit 568cb66, push gałęzi, PR #43 do main i przypięcie PR do zadania. https://github.com/lookassh/knowli/pull/43 . Scala właściciel przez squash; worktree zachowany.
 - [x] Druga poprawka E2E sprawdzona lokalnie (target parent-flow 1/1) i niezależnie zreviewowana; Critical/Important/Minor: 0.
-- [ ] Commit/push poprawki i świeży CI dla obu checków; job integracyjny poprzedniego SHA jest ponawiany osobno.
+- [x] CI po pierwszej korekcie: tests green; E2E 127/128, nowy wyścig początkowego GET z edycją progów zdiagnozowany na podstawie trace.
+- [ ] Commit/push synchronizacji i oczekiwanie na świeży CI dla obu checków.
 
 ## Decyzje
 
@@ -47,6 +48,8 @@ Drugi run PR #43 zakończył oba checki błędem. `tests` przeszedł typecheck i
 E2E wykonał 127/128 testów. Artifact `error-context.md` potwierdza, że `parent-flow` otworzył kompletny edytor z gotowymi mediami; worker zdążył zakończyć generowanie w czasie przeładowania listy. Asercja bannera po reloadzie była niedeterministyczna. Banner jest już sprawdzany zaraz po utworzeniu zestawu; po reloadzie test powinien dopuścić oba poprawne stany i zweryfikować edytor oraz dalszą publikację. Po usunięciu wyłącznie tej asercji lokalny test `parent-flow.spec.ts --grep "pełny obieg rodzica"` przeszedł 1/1 (1,3 min). Świeży CI wymaga jeszcze pushu poprawki i wyniku obu checków.
 
 Niezależny reviewer `gpt-6.1-sol` potwierdził, że korekta zachowuje pokrycie pełnego obiegu i odpowiada zaobserwowanemu stanowi zakończonego generowania. Critical/Important/Minor: 0. Otworzył jedynie ograniczenie: wymuszenie obserwacji „generowanie” po reloadzie wymagałoby kontrolowanego zatrzymania workera, co jest poza celem tego testu.
+
+Na nowym runie po aktualizacji gałęzi do main tests (typecheck, unit 487/487, integration, build) przeszły. E2E 127/128; trace drugiego błędu pokazał body PUT `{"correctMinScore":70,"partialMinScore":50}` zamiast edytowanych `75/55`, bo początkowy GET nadal trwał. Test czeka teraz na idle przed zmianą i potwierdza wartości pól przed wysłaniem; lokalny target kalibracji przeszedł 1/1. Niezależny reviewer ocenił tę synchronizację jako akceptowalną (Critical/Important/Minor: 0). Świeży CI po pushu tej korekty pozostaje wymagany.
 
 ## Końcowe sprawdzenia i ograniczenia
 
