@@ -1,4 +1,6 @@
 import { messages } from "@learning/contracts";
+import { KidIcon } from "../components/KidIcon";
+import { ExerciseFrame } from "./ExerciseFrame";
 import type { ExerciseProps } from "./types";
 
 /**
@@ -11,8 +13,9 @@ export function ListeningView({ task, busy, optionOutcomes, handlers, mockTest }
     return null;
   }
   return (
-    <section className="kid-card">
-      <h2>{messages.kid.listenQuestion}</h2>
+    <ExerciseFrame
+      task={task}
+      content={(
       <button
         type="button"
         className="kid-play-big"
@@ -21,9 +24,10 @@ export function ListeningView({ task, busy, optionOutcomes, handlers, mockTest }
         onClick={handlers.onPlay}
         aria-label={messages.kid.listen}
       >
-        🔊
+        <KidIcon name="volume" />
       </button>
-      <ul className="kid-options">
+      )}
+      actions={<ul className="kid-options">
         {task.prompt.options.map((option) => {
           const outcome = optionOutcomes.get(option.id);
           return (
@@ -40,11 +44,11 @@ export function ListeningView({ task, busy, optionOutcomes, handlers, mockTest }
             </li>
           );
         })}
-      </ul>
-      {mockTest && <div className="kid-secondary-actions">
+      </ul>}
+      secondaryActions={mockTest && <div className="kid-secondary-actions">
         <button type="button" data-testid="kid-not-remember" disabled={busy} onClick={handlers.onNotRemember}>{messages.kid.mockTestNotRemember}</button>
         <button type="button" data-testid="kid-skip" disabled={busy} onClick={handlers.onSkip}>{messages.kid.skip}</button>
       </div>}
-    </section>
+    />
   );
 }

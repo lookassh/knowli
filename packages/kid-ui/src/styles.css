@@ -62,11 +62,116 @@
   overflow-y: auto;
 }
 
+.kid-learning > .kid-task {
+  box-sizing: border-box;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.kid-learning > .kid-task > * {
+  min-height: 0;
+  flex: 1;
+}
+
+.kid-page[data-zoomed="true"] .kid-learning > .kid-task {
+  min-height: auto;
+  flex: initial;
+  display: block;
+}
+
+.kid-page[data-zoomed="true"] .kid-exercise-frame {
+  flex: initial;
+}
+
 .kid-ui .kid-screen,
 .kid-ui .kid-card,
 .kid-ui .kid-list button,
 .kid-ui .kid-options button {
   color: var(--kid-text);
+}
+
+.kid-ui svg {
+  width: 24px;
+  height: 24px;
+  flex: none;
+}
+
+.kid-exercise-frame {
+  box-sizing: border-box;
+  width: min(100%, 560px);
+  min-height: 0;
+  flex: 1;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.kid-exercise-instruction {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 4px;
+  color: var(--kid-text);
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.3;
+  text-align: center;
+}
+
+.kid-exercise-instruction-icon {
+  width: 22px !important;
+  height: 22px !important;
+  color: var(--kid-accent);
+}
+
+.kid-material {
+  box-sizing: border-box;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.kid-exercise-actions,
+.kid-exercise-secondary {
+  flex: none;
+  width: min(100%, 560px);
+  margin: 0 auto;
+}
+
+.kid-exercise-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.kid-exercise-actions > .kid-options {
+  margin: 0;
+}
+
+.kid-exercise-secondary {
+  display: flex;
+  justify-content: center;
+}
+
+.kid-exposure-content {
+  box-sizing: border-box;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 4px 0;
 }
 
 .kid-screen {
@@ -266,18 +371,19 @@
 
 /* Okrągły odsłuch zamiast pastylki w rzędzie akcji (SPEC §12.1): widoczny
    przycisk dla zablokowanego autoodtwarzania, ale nie konkuruje z „Rozumiem”. */
-.kid-card .kid-audio-round {
+.kid-ui .kid-audio-round {
   width: 64px;
   height: 64px;
   min-height: 64px;
   padding: 0;
   border-radius: 50%;
   font-size: 1.7rem;
-  background: #eef0fb;
+  background: var(--kid-soft);
+  border: 2px solid var(--kid-line);
   flex: none;
 }
 
-.kid-card .kid-audio-round.kid-audio-round-sm {
+.kid-ui .kid-audio-round.kid-audio-round-sm {
   width: 48px;
   height: 48px;
   min-height: 48px;
@@ -310,11 +416,11 @@
    żeby czytać się dobrze na telefonie; brak obrazu wraca do .kid-visual. */
 .kid-illustration {
   width: min(60vw, 260px);
-  height: min(60vw, 260px);
-  object-fit: cover;
+  height: min(36svh, 260px);
+  object-fit: contain;
   border-radius: 16px;
-  border: 4px solid #e4e6f4;
-  background: #fff;
+  border: 3px solid var(--kid-line);
+  background: var(--kid-surface);
 }
 
 .kid-options {
@@ -388,19 +494,35 @@
   opacity: 0.55;
 }
 
-.kid-card .kid-primary {
+.kid-ui .kid-primary {
   background: var(--kid-accent);
   border-color: var(--kid-accent);
   color: var(--kid-on-accent);
   font-weight: 700;
 }
 
+.kid-exercise-actions > .kid-primary {
+  width: 100%;
+  min-height: 52px;
+}
+
 .kid-play-big {
-  width: 120px !important;
-  height: 120px !important;
+  width: 96px !important;
+  min-height: 96px !important;
+  height: 96px !important;
+  display: grid;
+  place-items: center;
   border-radius: 50% !important;
-  font-size: 3rem !important;
-  background: #eef0fb !important;
+  font-size: 1rem !important;
+  border: 2px solid var(--kid-line) !important;
+  color: var(--kid-text) !important;
+  background: var(--kid-soft) !important;
+}
+
+.kid-play-big svg {
+  width: 48px;
+  height: 48px;
+  color: var(--kid-accent);
 }
 
 .kid-written {

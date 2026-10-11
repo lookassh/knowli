@@ -108,6 +108,13 @@ export async function installKidUiFixture(page: Page, fixture: KidUiFixture): Pr
     }
     return missing("no matching fixture route");
   });
+  await page.route("**/api/v1/media/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2 2"><rect width="2" height="2" fill="#96a8ef"/></svg>',
+    });
+  });
 }
 
 export async function assertKidLayout(
