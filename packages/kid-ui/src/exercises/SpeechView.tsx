@@ -1,5 +1,7 @@
 import { messages } from "@learning/contracts";
+import { KidIcon } from "../components/KidIcon";
 import { Visual } from "../visuals/Visual";
+import { ExerciseFrame } from "./ExerciseFrame";
 import { SpeechRecordButton } from "./SpeechRecordButton";
 import type { ExerciseProps } from "./types";
 
@@ -13,29 +15,39 @@ export function SpeechView({ task, busy, recordingPhase, microphoneReady, inputL
     return null;
   }
   return (
-    <section className="kid-card">
-      {task.prompt.visualType === "image" && task.prompt.imageAssetId !== null ? (
-        <img
-          className="kid-illustration"
-          data-testid="kid-illustration"
-          src={mediaUrl(task.prompt.imageAssetId)}
-          alt={task.prompt.text}
-        />
-      ) : (
-        <Visual
-          text={task.prompt.text}
-          visualType={task.prompt.visualType}
-          visualData={task.prompt.visualData}
-        />
+    <ExerciseFrame
+      task={task}
+      content={(
+        <>
+          {task.prompt.visualType === "image" && task.prompt.imageAssetId !== null ? (
+            <img
+              className="kid-illustration"
+              data-testid="kid-illustration"
+              src={mediaUrl(task.prompt.imageAssetId)}
+              alt={task.prompt.text}
+            />
+          ) : (
+            <Visual
+              text={task.prompt.text}
+              visualType={task.prompt.visualType}
+              visualData={task.prompt.visualData}
+            />
+          )}
+          <p className="kid-word" data-testid="kid-target">{task.prompt.text}</p>
+          <p className="kid-hint">{messages.kid.sayIt}</p>
+        </>
       )}
-      <p className="kid-word" data-testid="kid-target">
-        {task.prompt.text}
-      </p>
-      <p className="kid-hint">{messages.kid.sayIt}</p>
-      <div className="kid-actions">
+      actions={<div className="kid-speech-actions">
         {task.prompt.audioAssetId !== null && (
-          <button type="button" data-testid="kid-play" disabled={busy || recordingPhase !== "idle"} onClick={handlers.onPlay}>
-            🔊 {messages.kid.listen}
+          <button
+            type="button"
+            className="kid-audio-round kid-audio-round-sm"
+            data-testid="kid-play"
+            aria-label={messages.kid.listen}
+            disabled={busy || recordingPhase !== "idle"}
+            onClick={handlers.onPlay}
+          >
+            <KidIcon name="volume" />
           </button>
         )}
         {micAvailable && (
@@ -52,14 +64,14 @@ export function SpeechView({ task, busy, recordingPhase, microphoneReady, inputL
             onCancel={handlers.onCancelRecording}
           />
         )}
-      </div>
-      <div className="kid-secondary-actions">
+      </div>}
+      secondaryActions={<div className="kid-secondary-actions">
         {/* świadome pominięcie bez oceny — także po awarii technicznej próby,
             żeby dziecko nie utknęło na jednym słowie (SPEC §15.3) */}
         <button type="button" data-testid="kid-skip" disabled={busy || recordingPhase !== "idle"} onClick={handlers.onSkip}>
           {messages.kid.skip}
         </button>
-      </div>
-    </section>
+      </div>}
+    />
   );
 }

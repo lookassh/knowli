@@ -25,11 +25,9 @@ const fragmentDescriptions = {
 /** Nie-modalna karta wyniku mowy, osadzona bezpośrednio pod bieżącym zadaniem. */
 export function SpeechFeedbackCard(props: SpeechFeedbackCardProps) {
   const view = describeSpeechFeedback(props.dto, props.exerciseType);
-  const cardRef = useRef<HTMLElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     headingRef.current?.focus({ preventScroll: true });
-    cardRef.current?.scrollIntoView({ block: "end" });
   }, [props.dto, props.retry]);
 
   const toneClass = view.tone === "correct"
@@ -41,8 +39,7 @@ export function SpeechFeedbackCard(props: SpeechFeedbackCardProps) {
 
   return (
     <section
-      ref={cardRef}
-      className={["kid-card", "kid-speech-feedback", toneClass].join(" ")}
+      className={["kid-speech-feedback", toneClass].join(" ")}
       data-testid="kid-speech-feedback"
       aria-labelledby="kid-speech-feedback-title"
       aria-busy={props.busy}

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { messages } from "@learning/contracts";
 import { createDatabase } from "@learning/server";
 import { readTestRunConfig } from "../test-run-config";
 
@@ -126,7 +127,7 @@ test(`letter_completion accepts only missing letters after spelling difficulty: 
   await expect(gaps).toHaveCount(sample.letters.length, { timeout: 5_000 });
   await expect(page.getByTestId("kid-input")).toHaveCount(0);
   await expect(page.getByTestId("kid-fragment")).toHaveText(sample.visible);
-  await expect(page.getByTestId("kid-letter-instruction")).toContainText("brakujące litery");
+  await expect(page.getByTestId("kid-instruction")).toContainText(messages.kid.instructionLetterCompletion);
   await expect(gaps.first()).toHaveAttribute("autocorrect", "off");
   await expect(gaps.first()).toHaveAttribute("autocapitalize", "off");
   await expect(gaps.first()).toHaveAttribute("spellcheck", "false");

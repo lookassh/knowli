@@ -79,6 +79,8 @@ Catch-all jest wyłącznie mapą jawnie dozwolonych operacji, nie dynamicznym do
 | packages/kid-ui/src/visuals/Visual.tsx | Kolor, liczba, sekwencja, obraz albo brak |
 | packages/kid-ui/src/styles.css | Motyw dziecka i style Tailwind |
 
+Uzupełnienie UX (2026-10-11): `kid-ui/src/layout/viewport.ts` mierzy widoczny viewport bez zależności od Next.js; `layout/KidPage.tsx` rozdziela ograniczoną ramę sesji od naturalnego widoku `flow`, a `exercises/ExerciseFrame.tsx` współdzieli instrukcję, materiał, wynik i akcje. `components/KidIcon.tsx`, `exercises/exercise-presentation.ts` oraz `screens/deck-presentation.ts` dostarczają zamknięte ikony i prezentację bez zmiany DTO. Host web ustawia viewport wyłącznie dla tras dziecka. Testy Playwright w `tests/e2e/kid-ui-layout.spec.ts`, `kid-decks-layout.spec.ts` i `kid-flow-screens.spec.ts` są macierzą przeglądarkową; odbiór rzeczywistego Galaxy S25/PWA pozostaje osobnym wymaganiem i nie wynika z symulacji viewportu.
+
 Nie importujemy tutaj next/navigation, next/image, Server Actions ani @learning/server. Zwykły img i serwerowy media URL wystarczą do ilustracji. Transport API nie jest wbudowany w komponent ćwiczenia; dostarcza go KidApp przez zależność.
 
 ## 4. Kontrakty i domena

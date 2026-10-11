@@ -20,7 +20,7 @@ export function SummaryScreen({
       : plural === "few" ? messages.kid.summaryWordFew : messages.kid.summaryWordMany, { n });
   };
   return (
-    <main className="kid-screen">
+    <main className="kid-screen kid-screen--summary">
       <h1 data-testid="kid-summary">{messages.kid.summaryTitle}</h1>
       {recall > 0 && (
         <p className="kid-summary-counts" data-testid="kid-summary-recall">

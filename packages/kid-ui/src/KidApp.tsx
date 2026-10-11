@@ -9,6 +9,7 @@ import { SummaryScreen } from "./screens/SummaryScreen";
 import { MockTestReadyScreen, MockTestSummaryScreen, SessionConflictScreen } from "./screens/MockTestSummaryScreen";
 import { useLearningSession } from "./session/useLearningSession";
 import type { LocalPreferences } from "./storage";
+import { KidPage } from "./layout/KidPage";
 
 export interface ParentLinkConfig {
   label: string;
@@ -52,28 +53,31 @@ export function KidApp({
   switch (screen.kind) {
     case "loading":
       return (
-        <main className="kid-screen">
+        <KidPage mode="flow"><main className="kid-screen">
           <p className="kid-hint">{messages.kid.loading}</p>
-        </main>
+        </main></KidPage>
       );
     case "initError":
       return (
-        <main className="kid-screen">
+        <KidPage mode="flow"><main className="kid-screen">
           {actions && <header className="kid-top-bar">{actions}</header>}
           <p className="kid-hint" data-testid="kid-init-error">{screen.message}</p>
           <button type="button" className="kid-primary" data-testid="kid-back-decks" onClick={() => void controller.backToDecks()}>{messages.kid.backToLearning}</button>
-        </main>
+        </main></KidPage>
       );
     case "profile":
       return (
+        <KidPage mode="flow">
         <ProfileScreen
           profiles={screen.profiles}
           onSelect={(childId) => void controller.selectProfile(childId)}
           headerActions={actions}
         />
+        </KidPage>
       );
     case "deck":
       return (
+        <KidPage mode="flow">
         <DeckScreen
           decks={screen.decks}
           childName={screen.profiles.find((profile) => profile.childId === screen.childId)?.displayName ?? ""}
@@ -84,23 +88,26 @@ export function KidApp({
           onMockTest={(deckId) => void controller.startMockTest(deckId)}
           headerActions={actions}
         />
+        </KidPage>
       );
     case "learning":
-      return <LearnScreen screen={screen} controller={controller} />;
+      return <KidPage mode="session"><LearnScreen screen={screen} controller={controller} /></KidPage>;
     case "mockTestReady":
-      return <MockTestReadyScreen session={screen.session} onStart={() => controller.beginMockTest()} onCancel={() => controller.cancelMockTest()} />;
+      return <KidPage mode="flow"><MockTestReadyScreen session={screen.session} onStart={() => controller.beginMockTest()} onCancel={() => controller.cancelMockTest()} /></KidPage>;
     case "mockTestSummary":
-      return <MockTestSummaryScreen summary={screen.summary} onPlay={taskId => controller.playMockTestSolution(taskId)} onPractice={() => controller.learnAgain()} onSwitchProfile={() => controller.switchProfile()} />;
+      return <KidPage mode="flow"><MockTestSummaryScreen summary={screen.summary} onPlay={taskId => controller.playMockTestSolution(taskId)} onPractice={() => controller.learnAgain()} onSwitchProfile={() => controller.switchProfile()} /></KidPage>;
     case "sessionConflict":
-      return <SessionConflictScreen onResume={() => controller.resumeConflictingSession()} onClose={() => controller.closeConflictingSession()} />;
+      return <KidPage mode="flow"><SessionConflictScreen onResume={() => controller.resumeConflictingSession()} onClose={() => controller.closeConflictingSession()} /></KidPage>;
     case "summary":
       return (
+        <KidPage mode="flow">
         <SummaryScreen
           summary={screen.summary}
           profiles={screen.profiles}
           onAgain={() => void controller.learnAgain()}
           onSwitchProfile={() => void controller.switchProfile()}
         />
+        </KidPage>
       );
   }
 }

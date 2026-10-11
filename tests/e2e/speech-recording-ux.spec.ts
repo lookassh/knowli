@@ -240,6 +240,7 @@ test("microphone denial leaves the written learning path available", async ({ pa
 });
 
 test("speech feedback stays inline, explains fragments and exposes only the available actions", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark" });
   await createLearningTask(page, `Wynik ${randomUUID().slice(0, 6)}`);
   const taskId = await page.locator("[data-task-id]").getAttribute("data-task-id");
   expect(taskId).toBeTruthy();
@@ -295,11 +296,29 @@ test("speech feedback stays inline, explains fragments and exposes only the avai
   await page.getByTestId("kid-submit").click();
   const card = page.getByTestId("kid-speech-feedback");
   await expect(card).toBeVisible();
+  await expect(page.getByTestId("kid-target")).toHaveCount(0);
   await expect(card).toContainText("Usłyszałem:");
   await expect(page.getByTestId("kid-reference-text")).toContainText("Thursday");
   await expect(page.getByRole("list", { name: "Legenda wymowy" })).toContainText("poćwicz go");
   await expect(page.locator("dialog")).toHaveCount(0);
   expect(await page.evaluate(() => document.activeElement?.id)).toBe("kid-speech-feedback-title");
+
+  for (const selector of ["[data-testid='kid-play-reference']", "[data-testid='kid-feedback-skip']"]) {
+    const button = page.locator(selector);
+    const ratio = await button.evaluate((element) => {
+      const luminance = (value: string) => {
+        const [red, green, blue] = value.match(/[\d.]+/g)!.slice(0, 3).map(Number).map((channel) => {
+          const normalized = channel / 255;
+          return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * red! + 0.7152 * green! + 0.0722 * blue!;
+      };
+      const style = getComputedStyle(element);
+      const [foreground, background] = [luminance(style.color), luminance(style.backgroundColor)];
+      return (Math.max(foreground!, background!) + 0.05) / (Math.min(foreground!, background!) + 0.05);
+    });
+    expect(ratio, selector).toBeGreaterThanOrEqual(4.5);
+  }
 
   await page.getByTestId("kid-play-reference").click();
   await expect.poll(() => authorizationCount).toBe(1);

@@ -1,5 +1,7 @@
 import { messages } from "@learning/contracts";
+import { KidIcon } from "../components/KidIcon";
 import { Visual } from "../visuals/Visual";
+import { ExerciseFrame } from "./ExerciseFrame";
 import type { ExerciseProps } from "./types";
 
 /**
@@ -12,61 +14,66 @@ export function ExposureView({ task, busy, mediaUrl, handlers }: ExerciseProps) 
     return null;
   }
   return (
-    <section className="kid-card">
-      {task.prompt.visualType === "image" && task.prompt.imageAssetId !== null ? (
-        <img
-          className="kid-illustration"
-          data-testid="kid-illustration"
-          src={mediaUrl(task.prompt.imageAssetId)}
-          alt={task.prompt.target}
-        />
-      ) : (
-        <Visual
-          text={task.prompt.target}
-          visualType={task.prompt.visualType}
-          visualData={task.prompt.visualData}
-        />
-      )}
-      <div className="kid-word-row">
-        <p className="kid-word" data-testid="kid-target">
-          {task.prompt.target}
-        </p>
-        {task.prompt.audioAssetId !== null && (
-          <button
-            type="button"
-            className="kid-audio-round"
-            data-testid="kid-play"
-            disabled={busy}
-            onClick={handlers.onPlay}
-            aria-label={messages.kid.listen}
-          >
-            🔊
-          </button>
-        )}
-      </div>
-      <p className="kid-source" data-testid="kid-source">
-        {task.prompt.source}
-      </p>
-      {task.prompt.example !== null && (
-        <div className="kid-example-block">
-          <p className="kid-example" data-testid="kid-example">
-            {task.prompt.example}
+    <ExerciseFrame
+      task={task}
+      content={(
+        <div className="kid-exposure-content">
+          {task.prompt.visualType === "image" && task.prompt.imageAssetId !== null ? (
+            <img
+              className="kid-illustration"
+              data-testid="kid-illustration"
+              src={mediaUrl(task.prompt.imageAssetId)}
+              alt={task.prompt.target}
+            />
+          ) : (
+            <Visual
+              text={task.prompt.target}
+              visualType={task.prompt.visualType}
+              visualData={task.prompt.visualData}
+            />
+          )}
+          <div className="kid-word-row">
+            <p className="kid-word" data-testid="kid-target">
+              {task.prompt.target}
+            </p>
+            {task.prompt.audioAssetId !== null && (
+              <button
+                type="button"
+                className="kid-audio-round"
+                data-testid="kid-play"
+                disabled={busy}
+                onClick={handlers.onPlay}
+                aria-label={messages.kid.listen}
+              >
+                <KidIcon name="volume" />
+              </button>
+            )}
+          </div>
+          <p className="kid-source" data-testid="kid-source">
+            {task.prompt.source}
           </p>
-          {task.prompt.exampleAudioAssetId !== null && (
-            <button
-              type="button"
-              className="kid-audio-round kid-audio-round-sm"
-              data-testid="kid-play-example"
-              disabled={busy}
-              onClick={handlers.onPlayExample}
-              aria-label={messages.kid.listenExample}
-            >
-              🔊
-            </button>
+          {task.prompt.example !== null && (
+            <div className="kid-example-block">
+              <p className="kid-example" data-testid="kid-example">
+                {task.prompt.example}
+              </p>
+              {task.prompt.exampleAudioAssetId !== null && (
+                <button
+                  type="button"
+                  className="kid-audio-round kid-audio-round-sm"
+                  data-testid="kid-play-example"
+                  disabled={busy}
+                  onClick={handlers.onPlayExample}
+                  aria-label={messages.kid.listenExample}
+                >
+                  <KidIcon name="volume" />
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}
-      <div className="kid-actions">
+      actions={(
         <button
           type="button"
           className="kid-primary"
@@ -76,7 +83,7 @@ export function ExposureView({ task, busy, mediaUrl, handlers }: ExerciseProps) 
         >
           {messages.kid.understand}
         </button>
-      </div>
-    </section>
+      )}
+    />
   );
 }

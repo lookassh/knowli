@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { messages } from "@learning/contracts";
 import { SpeechRecordButton } from "./SpeechRecordButton";
+import { ExerciseFrame } from "./ExerciseFrame";
 import type { ExerciseProps } from "./types";
 
 /**
@@ -14,63 +15,76 @@ import type { ExerciseProps } from "./types";
 export function WrittenView({ task, busy, recording, recordingPhase, microphoneReady, inputLevel, recordingNotice, recordingMode, micAvailable, handlers, mockTest }: ExerciseProps) {
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const formId = `kid-written-${task.taskId}`;
   if (task.prompt.kind !== "recall" && task.prompt.kind !== "spelling") {
     return null;
   }
   const disabled = busy || recording || recordingPhase !== "idle";
   return (
-    <section className="kid-card">
-      <p className="kid-source" data-testid="kid-source">
-        {task.prompt.prompt}
-      </p>
-      <form
-        className="kid-written"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (text.trim() !== "" && !disabled) {
-            handlers.onSubmitText(text);
-          }
-        }}
-      >
-        <input
-          ref={inputRef}
-          data-testid="kid-input"
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          placeholder={messages.kid.typeWord}
-          autoComplete="off"
-          autoCorrect="off"
-          autoCapitalize="off"
-          spellCheck={false}
-          disabled={disabled}
-          aria-label={messages.kid.typeWord}
-        />
-        <button type="submit" className="kid-primary" data-testid="kid-submit" disabled={disabled || text.trim() === ""}>
+    <ExerciseFrame
+      task={task}
+      content={(
+        <>
+          <p className="kid-source" data-testid="kid-source">{task.prompt.prompt}</p>
+          <form
+            id={formId}
+            className="kid-written"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (text.trim() !== "" && !disabled) {
+                handlers.onSubmitText(text);
+              }
+            }}
+          >
+            <input
+              ref={inputRef}
+              data-testid="kid-input"
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              placeholder={messages.kid.typeWord}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              disabled={disabled}
+              aria-label={messages.kid.typeWord}
+            />
+          </form>
+        </>
+      )}
+      actions={<div className="kid-written-actions">
+        <button
+          form={formId}
+          type="submit"
+          className="kid-primary"
+          data-testid="kid-submit"
+          disabled={disabled || text.trim() === ""}
+        >
           {mockTest ? messages.kid.mockTestSubmit : messages.kid.check}
         </button>
-      </form>
-      {micAvailable && task.prompt.kind === "recall" && (
-        <SpeechRecordButton
-          phase={recordingPhase}
-          ready={microphoneReady}
-          disabled={busy}
-          level={inputLevel}
-          notice={recordingNotice}
-          mode={recordingMode}
-          onPrepare={handlers.onPrepareRecording}
-          onStart={handlers.onRecord}
-          onStop={handlers.onStopRecording}
-          onCancel={handlers.onCancelRecording}
-        />
-      )}
-      <div className="kid-secondary-actions">
+        {micAvailable && task.prompt.kind === "recall" && (
+          <SpeechRecordButton
+            phase={recordingPhase}
+            ready={microphoneReady}
+            disabled={busy}
+            level={inputLevel}
+            notice={recordingNotice}
+            mode={recordingMode}
+            onPrepare={handlers.onPrepareRecording}
+            onStart={handlers.onRecord}
+            onStop={handlers.onStopRecording}
+            onCancel={handlers.onCancelRecording}
+          />
+        )}
+      </div>}
+      secondaryActions={<div className="kid-secondary-actions">
         <button type="button" data-testid="kid-not-remember" disabled={disabled} onClick={handlers.onNotRemember}>
           {mockTest ? messages.kid.mockTestNotRemember : messages.kid.notRemember}
         </button>
         <button type="button" data-testid="kid-skip" disabled={disabled} onClick={handlers.onSkip}>
           {messages.kid.skip}
         </button>
-      </div>
-    </section>
+      </div>}
+    />
   );
 }

@@ -436,10 +436,12 @@ test("popup wyniku mieści się w ekranie telefonu bez przewijania", async ({ pa
       const box = await locator.boundingBox();
       expect(box).not.toBeNull();
       expect(box!.y).toBeGreaterThanOrEqual(0);
-      expect(box!.y + box!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+      const visibleHeight = await page.evaluate(() => window.visualViewport?.height ?? window.innerHeight);
+      expect(box!.y + box!.height).toBeLessThanOrEqual(visibleHeight);
     }
-    await expect(next).toBeFocused();
-    expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
+    await expect(feedback).not.toHaveJSProperty("open", true);
+    await expect(page.locator("#kid-feedback-title")).toBeFocused();
+    expect(await page.evaluate(() => document.body.style.overflow)).not.toBe("hidden");
   }
 
   await assertVisibleWithoutScrolling();
@@ -450,7 +452,7 @@ test("popup wyniku mieści się w ekranie telefonu bez przewijania", async ({ pa
   await expect(feedback).toHaveCount(0);
   await expect(page.getByTestId("kid-input")).toBeEnabled();
   expect(await currentTaskId(page)).toBe(taskId);
-  expect(await page.evaluate(() => document.body.style.overflow)).toBe("");
+  expect(await page.evaluate(() => document.body.style.overflow)).not.toBe("hidden");
 
   await page.getByTestId("kid-input").fill(await answerTarget(taskId));
   await page.getByTestId("kid-input").press("Enter");
@@ -478,11 +480,11 @@ test("popup wyniku mieści się w ekranie telefonu bez przewijania", async ({ pa
   expect(await page.evaluate(() => window.scrollY)).toBe(scrollBefore);
   await page.keyboard.press("Tab");
   // Chromium may move Tab to browser chrome after the sole modal control.
-  // The contract is that focus cannot reach the inert exercise/header.
-  expect(await page.evaluate(() =>
-    [document.querySelector(".kid-task"), document.querySelector(".kid-header")]
-      .some((element) => element?.contains(document.activeElement)),
-  )).toBe(false);
+  // Feedback is not modal: the child can still reach the session header.
+  await page.getByTestId("kid-end").focus();
+  await expect(page.getByTestId("kid-end")).toBeFocused();
+  await next.focus();
+  await expect(next).toBeFocused();
 
   // An unavailable next step must expose the existing recovery action,
   // rather than leave an inert error panel behind the modal.
@@ -519,7 +521,7 @@ test("popup wyniku mieści się w ekranie telefonu bez przewijania", async ({ pa
   await expect(feedback).toHaveClass(/kid-feedback--retry/);
   await expect(wrong).toHaveClass(/kid-option--wrong/);
   await expect(correct).toHaveClass(/kid-option--correct/);
-  expect(await page.evaluate(() => document.body.style.overflow)).toBe("");
+  expect(await page.evaluate(() => document.body.style.overflow)).not.toBe("hidden");
   const barBox = await feedback.boundingBox();
   expect(barBox!.y).toBeGreaterThanOrEqual(0);
   // +1 px: wyrównanie scrollIntoView zostawia ułamkowy piksel krawędzi

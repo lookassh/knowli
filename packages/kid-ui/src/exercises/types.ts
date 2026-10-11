@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { RecordingModeDto, TaskDto } from "@learning/contracts";
 import type { OptionOutcome } from "./option-outcome";
 
@@ -20,6 +21,9 @@ export interface ExerciseHandlers {
 export interface ExerciseProps {
   mockTest?: boolean;
   task: TaskDto;
+  /** Krótkotrwały szkic luk; zachowuje pola gdy widok zadania ustępuje feedbackowi. */
+  letterDraft?: Readonly<Record<number, string>>;
+  onLetterDraftChange?: (letters: Record<number, string>) => void;
   busy: boolean;
   recording: boolean;
   recordingPhase: "idle" | "preparing" | "starting" | "recording" | "stopping";
@@ -33,5 +37,7 @@ export interface ExerciseProps {
   mediaUrl: (assetId: string) => string;
   /** Podświetlenia opcji po próbie wyboru; puste poza feedbackiem. */
   optionOutcomes: ReadonlyMap<string, OptionOutcome>;
+  /** Wynik próby wyboru pozostaje w tej samej ramie co podświetlone odpowiedzi. */
+  result?: ReactNode;
   handlers: ExerciseHandlers;
 }

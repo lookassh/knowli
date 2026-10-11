@@ -25,7 +25,7 @@ export function ProfileScreen({
   headerActions?: ReactNode;
 }) {
   return (
-    <main className="kid-screen">
+    <main className="kid-screen kid-screen--profile">
       {headerActions && <header className="kid-top-bar">{headerActions}</header>}
       <h1>{messages.kid.profilesTitle}</h1>
       {profiles.length === 0 ? (

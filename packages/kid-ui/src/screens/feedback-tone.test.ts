@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FeedbackDto } from "@learning/contracts";
-import { feedbackTone } from "./LearnScreen";
+import { feedbackTone } from "./AnswerFeedback";
 
 /** Regresja SPEC §16: tło feedbacku odpowiada wynikowi — błąd nigdy na zielono. */
 describe("feedbackTone — tło feedbacku odpowiada wynikowi (SPEC §16)", () => {

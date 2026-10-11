@@ -23,6 +23,6 @@ export function ExerciseView(props: ExerciseProps) {
       // Nowe zadanie ma puste luki; kolejna próba tego samego zachowuje wpis.
       return <LetterCompletionView key={props.task.taskId} {...props} />;
     case "speech":
-      return <SpeechView {...props} />;
+      return <SpeechView key={props.task.taskId} {...props} />;
   }
 }

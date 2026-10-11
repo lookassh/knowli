@@ -57,6 +57,8 @@ test("fully correct attempt shows green rows, six stars and replays audio from r
     previous = source;
     await page.getByTestId("kid-input").fill(answers[source]!);
     await page.getByTestId("kid-submit").click();
+    await expect(page.getByTestId("kid-feedback")).toHaveCount(0);
+    await expect(page.getByTestId("kid-mock-solution")).toHaveCount(0);
   }
   await expect(page.getByTestId("kid-mock-summary")).toBeVisible();
   await expect(page.getByTestId("kid-mock-score")).toContainText("3/3 · 100%");
