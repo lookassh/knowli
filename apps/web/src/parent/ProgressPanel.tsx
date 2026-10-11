@@ -76,6 +76,13 @@ export default function ProgressPanel({
         (item.skills[skill] === "needs_confirmation" && !item.meaningChanged),
     ).length;
 
+  /** Minuty zaokrąglone w górę do pełnej, ale zero zostaje zerem (brak nauki). */
+  const activityMinutes = progress
+    ? progress.activity.activeSeconds > 0
+      ? Math.max(1, Math.round(progress.activity.activeSeconds / 60))
+      : 0
+    : 0;
+
   return (
     <section>
       <h2>{messages.progress.title}</h2>
@@ -114,6 +121,29 @@ export default function ProgressPanel({
 
       {progress && (
         <MockTestReportPanel key={reportVersion} childId={progress.childId} deckId={progress.deckId} currentDeckVersionId={published.find(d => d.deckId === progress.deckId)?.publishedVersionId} />
+      )}
+      {progress && (
+        <section className="card" data-testid="progress-activity">
+          <h3>{fill(messages.progress.activityTitle, { days: progress.activity.days })}</h3>
+          {progress.activity.sessions > 0 ? (
+            <ul className="plain">
+              <li data-testid="progress-activity-time">
+                {fill(messages.progress.activityTime, { minutes: activityMinutes })}
+              </li>
+              <li>{fill(messages.progress.activityDays, { days: progress.activity.activeDays })}</li>
+              <li>{fill(messages.progress.activitySessions, { n: progress.activity.sessions })}</li>
+              {progress.activity.decks.map((deck) => (
+                <li key={deck.deckId}>
+                  {fill(messages.progress.activityDeckRow, { title: deck.deckTitle, n: deck.sessions })}
+                </li>
+              ))}
+              <li>{fill(messages.progress.activityAnswers, { n: progress.activity.answers })}</li>
+              <li>{fill(messages.progress.activityInteractions, { n: progress.activity.interactions })}</li>
+            </ul>
+          ) : (
+            <p>{messages.progress.activityEmpty}</p>
+          )}
+        </section>
       )}
       {progress && (
         <>

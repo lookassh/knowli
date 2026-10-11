@@ -2,6 +2,7 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
   REPORT_SKILLS,
   UuidSchema,
+  type ActivitySummaryDto,
   type ConfusionDto,
   type HistoryEntryDto,
   type ItemSkillStatus,
@@ -23,6 +24,7 @@ import {
   skillVersions,
 } from "../db/schema";
 import { AppError } from "../errors";
+import { SESSION_TIME_LIMIT_MS } from "./sessions";
 
 /**
  * Panel postępów rodzica (SPEC §25). Zwięzłe zapytania odczytują projekcję
@@ -218,6 +220,116 @@ export async function getProgress(services: Services, childId: string, deckId: s
       latestScores: pronunciationScores,
     },
     history,
+    activity: await readActivitySummary(services, child),
+  };
+}
+
+/** Okno karty aktywności (SPEC §25) i bufor nad obcięciem czasu sesji. */
+const ACTIVITY_WINDOW_DAYS = 7;
+const ACTIVITY_SESSION_CAP_MS = SESSION_TIME_LIMIT_MS + 60_000;
+
+/** Dni kalendarzowe aktywności liczymy w strefie czasowej rodziny. */
+const ACTIVITY_DAY_FORMAT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Europe/Warsaw",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+type ActivitySessionRow = {
+  deckId: string;
+  deckTitle: string;
+  startedAt: Date;
+  lastActivity: Date;
+};
+
+/**
+ * Karta aktywności: okno 7 dni od teraz wg zegara usług. Czas nauki sesji
+ * to started_at → ostatnia aktywność (zadania, zdarzenia, próby) obcięty
+ * do limitu sesji, więc późne zamknięcie porzuconej sesji nie zawyża czasu.
+ * Interakcje liczą zdarzenia serwera i obserwacje klienta; rejestr kontaktu
+ * (`contact`) nie jest działaniem dziecka.
+ */
+async function readActivitySummary(services: Services, childId: string): Promise<ActivitySummaryDto> {
+  const since = new Date(services.clock.now().getTime() - ACTIVITY_WINDOW_DAYS * 24 * 3_600_000);
+
+  const sessions = (
+    await services.db.execute<ActivitySessionRow>(sql`
+      with window_sessions as (
+        select s.id, s.deck_id, coalesce(v.title, d.title) as title, s.started_at
+          from learning_app.learning_sessions s
+          join learning_app.decks d on d.id = s.deck_id
+          left join learning_app.deck_versions v on v.id = d.published_version_id
+         where s.child_id = ${childId}
+           and s.started_at >= ${since}
+      ), last_touch as (
+        select session_id, max(at) as last_at from (
+          select t.session_id, t.issued_at as at
+            from learning_app.session_tasks t
+           where t.session_id in (select id from window_sessions)
+          union all
+          select st.session_id, e.occurred_at as at
+            from learning_app.learning_events e
+            join learning_app.session_tasks st on st.id = e.task_id
+           where st.session_id in (select id from window_sessions)
+          union all
+          select st.session_id, a.received_at as at
+            from learning_app.attempts a
+            join learning_app.session_tasks st on st.id = a.task_id
+           where st.session_id in (select id from window_sessions)
+        ) marks
+        group by session_id
+      )
+      select ws.deck_id as "deckId",
+             ws.title as "deckTitle",
+             ws.started_at as "startedAt",
+             coalesce(lt.last_at, ws.started_at) as "lastActivity"
+        from window_sessions ws
+        left join last_touch lt on lt.session_id = ws.id
+    `)
+  ).rows;
+
+  const activeMs = sessions.reduce((total, row) => {
+    const duration = Math.min(
+      new Date(row.lastActivity).getTime() - new Date(row.startedAt).getTime(),
+      ACTIVITY_SESSION_CAP_MS,
+    );
+    return total + Math.max(0, duration);
+  }, 0);
+
+  const deckTotals = new Map<string, { deckTitle: string; sessions: number }>();
+  for (const row of sessions) {
+    const current = deckTotals.get(row.deckId) ?? { deckTitle: row.deckTitle, sessions: 0 };
+    current.sessions += 1;
+    deckTotals.set(row.deckId, current);
+  }
+
+  const answers = (
+    await services.db.execute<{ count: number }>(sql`
+      select count(*)::int as count
+        from learning_app.attempts
+       where child_id = ${childId} and received_at >= ${since}
+    `)
+  ).rows[0]!.count;
+
+  const interactions = (
+    await services.db.execute<{ count: number }>(sql`
+      select count(*)::int as count
+        from learning_app.learning_events
+       where child_id = ${childId} and occurred_at >= ${since} and kind <> 'contact'
+    `)
+  ).rows[0]!.count;
+
+  return {
+    days: ACTIVITY_WINDOW_DAYS,
+    activeSeconds: Math.round(activeMs / 1000),
+    activeDays: new Set(sessions.map((row) => ACTIVITY_DAY_FORMAT.format(new Date(row.startedAt)))).size,
+    sessions: sessions.length,
+    answers,
+    interactions,
+    decks: [...deckTotals.entries()]
+      .map(([deckId, stat]) => ({ deckId, deckTitle: stat.deckTitle, sessions: stat.sessions }))
+      .sort((a, b) => b.sessions - a.sessions || a.deckTitle.localeCompare(b.deckTitle)),
   };
 }
 

@@ -85,6 +85,38 @@ export const HistoryEntryDtoSchema = z.object({
 });
 export type HistoryEntryDto = z.infer<typeof HistoryEntryDtoSchema>;
 
+/** Podejścia do nauki jednego zestawu w oknie podsumowania aktywności. */
+export const ActivityDeckStatDtoSchema = z.object({
+  deckId: UuidSchema,
+  deckTitle: z.string(),
+  sessions: z.number().int().positive(),
+});
+export type ActivityDeckStatDto = z.infer<typeof ActivityDeckStatDtoSchema>;
+
+/**
+ * Zbiorcza aktywność dziecka z ostatnich dni (SPEC §25): czas nauki liczony
+ * do ostatniej aktywności sesji (z obcięciem do limitu sesji), podejścia
+ * łącznie i per zestaw, odpowiedzi oraz interakcje. Wznowienie sesji w oknie
+ * wznowienia to wciąż jedno podejście.
+ */
+export const ActivitySummaryDtoSchema = z.object({
+  /** Długość okna podsumowania w dniach. */
+  days: z.number().int().positive(),
+  /** Czas nauki w sekundach: suma aktywności sesji rozpoczętych w oknie. */
+  activeSeconds: z.number().int().nonnegative(),
+  /** Liczba dni kalendarzowych (czas warszawski) z rozpoczętą sesją. */
+  activeDays: z.number().int().nonnegative(),
+  /** Liczba sesji rozpoczętych w oknie, wszystkie zestawy razem. */
+  sessions: z.number().int().nonnegative(),
+  /** Liczba odpowiedzi dziecka (prób) w oknie. */
+  answers: z.number().int().nonnegative(),
+  /** Liczba interakcji: zdarzenia serwera i obserwacje klienta bez odpowiedzi. */
+  interactions: z.number().int().nonnegative(),
+  /** Podejścia per zestaw, malejąco po liczbie sesji. */
+  decks: z.array(ActivityDeckStatDtoSchema),
+});
+export type ActivitySummaryDto = z.infer<typeof ActivitySummaryDtoSchema>;
+
 export const ProgressDtoSchema = z.object({
   childId: UuidSchema,
   childName: z.string(),
@@ -103,5 +135,7 @@ export const ProgressDtoSchema = z.object({
   }),
   /** Najnowsze próby najpierw; słowa mogą pochodzić ze starszych rewizji. */
   history: z.array(HistoryEntryDtoSchema),
+  /** Aktywność dziecka w oknie 7 dni — dotyczy dziecka, nie wybranego zestawu. */
+  activity: ActivitySummaryDtoSchema,
 });
 export type ProgressDto = z.infer<typeof ProgressDtoSchema>;

@@ -228,6 +228,7 @@ async function publishSecondVersionWithMeaningChange(
 
 describe("panel postępów rodzica (integracja)", () => {
   let services: ReturnType<typeof buildTestServices>["services"];
+  let clock: ManualClock;
   let childA: string;
   let childB: string;
 
@@ -240,6 +241,7 @@ describe("panel postępów rodzica (integracja)", () => {
     );
     const built = buildTestServices();
     services = built.services;
+    clock = built.clock;
     childA = (await createChild(services, { displayName: "Krzysiek", avatarKey: "fox" })).id;
     childB = (await createChild(services, { displayName: "Ola", avatarKey: "owl" })).id;
   });
@@ -484,5 +486,155 @@ describe("panel postępów rodzica (integracja)", () => {
     expect((await query<{ count: number }>(`select count(*)::int as count from learning_app.learning_items`))[0]!.count).toBe(itemCount);
     const remaining = await getProgress(services, childB, deckId);
     expect(remaining.history).toEqual([]);
+  });
+});
+
+/** Karta aktywności dziecka (SPEC §25): sesje, czas nauki i interakcje z okna 7 dni. */
+async function answerOnce(
+  services: ReturnType<typeof buildTestServices>["services"],
+  task: TaskDto,
+): Promise<void> {
+  if (task.exerciseType === "exposure") {
+    await completePresentation(services, { taskId: task.taskId });
+    return;
+  }
+  await answerCorrectly(services, task);
+}
+
+describe("karta aktywności dziecka w postępach (integracja)", () => {
+  let services: ReturnType<typeof buildTestServices>["services"];
+  let clock: ManualClock;
+  let childA: string;
+  let childB: string;
+
+  beforeEach(async () => {
+    await truncateCoreTables();
+    await pool.query(
+      `truncate learning_app.revision_assets, learning_app.media_assets, learning_app.item_revision_skills,
+              learning_app.item_revisions, learning_app.skill_versions, learning_app.learning_items,
+              learning_app.deck_versions, learning_app.decks cascade`,
+    );
+    const built = buildTestServices();
+    services = built.services;
+    clock = built.clock;
+    childA = (await createChild(services, { displayName: "Krzysiek", avatarKey: "fox" })).id;
+    childB = (await createChild(services, { displayName: "Ola", avatarKey: "owl" })).id;
+  });
+
+  it("zbiera sesje, dni, czas, odpowiedzi i interakcje z ostatnich 7 dni tylko wybranego dziecka", async () => {
+    const pairs = [DAYS[0]!, DAYS[1]!, DAYS[2]!];
+    const { deckId } = await publishDeckWithAssignment(services, [childA, childB], pairs);
+
+    // sesja 1: dwie odpowiedzi, kilka ekspozycji po drodze
+    const session1 = await startSession(services, { childId: childA, deckId, microphoneEnabled: false });
+    let answered = 0;
+    for (let step = 0; step < 40 && answered < 2; step++) {
+      clock.advanceMs(30_000);
+      const task = (await nextTask(services, session1.sessionId))!;
+      expect(task).not.toBeNull();
+      await answerOnce(services, task);
+      if (task.exerciseType !== "exposure") {
+        answered += 1;
+      }
+    }
+    expect(answered).toBe(2);
+    await endSession(services, session1.sessionId);
+
+    // sesja 2 następnego dnia kalendażowego: jedna odpowiedź
+    clock.advanceHours(20);
+    const session2 = await startSession(services, { childId: childA, deckId, microphoneEnabled: false });
+    for (let step = 0; step < 40; step++) {
+      clock.advanceMs(30_000);
+      const task = (await nextTask(services, session2.sessionId))!;
+      if (!task) {
+        break;
+      }
+      await answerOnce(services, task);
+      if (task.exerciseType !== "exposure") {
+        break;
+      }
+    }
+    await endSession(services, session2.sessionId);
+
+    const progress = await getProgress(services, childA, deckId);
+    expect(ProgressDtoSchema.safeParse(progress).success).toBe(true);
+    expect(progress.activity).toMatchObject({
+      days: 7,
+      sessions: 2,
+      activeDays: 2,
+      answers: 3,
+    });
+    // interakcje to zdarzenia serwerowe (prompt, feedback, ekspozycje) — więcej niż odpowiedzi
+    expect(progress.activity.interactions).toBeGreaterThanOrEqual(progress.activity.answers * 2);
+    expect(progress.activity.activeSeconds).toBeGreaterThan(0);
+    expect(progress.activity.decks).toEqual([{ deckId, deckTitle: "Zestaw Monday", sessions: 2 }]);
+
+    // drugie dziecko bez własnej aktywności nie dziedziczy liczb
+    const other = await getProgress(services, childB, deckId);
+    expect(other.activity).toMatchObject({
+      days: 7,
+      sessions: 0,
+      activeDays: 0,
+      activeSeconds: 0,
+      answers: 0,
+      interactions: 0,
+      decks: [],
+    });
+  });
+
+  it("czas nauki liczy się do ostatniej aktywności i nie rośnie od późnego zamknięcia sesji", async () => {
+    const pairs = [DAYS[0]!, DAYS[1]!];
+    const { deckId } = await publishDeckWithAssignment(services, [childA], pairs);
+
+    const session = await startSession(services, { childId: childA, deckId, microphoneEnabled: false });
+    clock.advanceMs(60_000);
+    const task = (await nextTask(services, session.sessionId))!;
+    expect(task).not.toBeNull();
+    await answerOnce(services, task);
+    // dziecko odchodzi; sesja zostaje zamknięta dopiero po sześciu godzinach
+    clock.advanceHours(6);
+    await endSession(services, session.sessionId);
+
+    const progress = await getProgress(services, childA, deckId);
+    expect(progress.activity.activeSeconds).toBeGreaterThan(0);
+    // limit sesji (10 min) z buforem, nie sześć godzin od startu
+    expect(progress.activity.activeSeconds).toBeLessThanOrEqual(11 * 60);
+  });
+
+  it("okno 7 dni pomija sesje i próby sprzed okna", async () => {
+    const pairs = [DAYS[0]!, DAYS[1]!];
+    const { deckId } = await publishDeckWithAssignment(services, [childA], pairs);
+
+    /** Jedna realna odpowiedź w sesji: ekspozycje zamykamy, aż pojawi się zadanie. */
+    const answerOneTask = async (sessionId: string): Promise<void> => {
+      for (let step = 0; step < 40; step++) {
+        clock.advanceMs(60_000);
+        const task = await nextTask(services, sessionId);
+        if (!task) {
+          break;
+        }
+        await answerOnce(services, task);
+        if (task.exerciseType !== "exposure") {
+          return;
+        }
+      }
+      throw new Error("W sesji nie pojawiło się zadanie z odpowiedzią");
+    };
+
+    const old = await startSession(services, { childId: childA, deckId, microphoneEnabled: false });
+    await answerOneTask(old.sessionId);
+    await endSession(services, old.sessionId);
+
+    clock.advanceHours(24 * 8 + 1);
+    const fresh = await startSession(services, { childId: childA, deckId, microphoneEnabled: false });
+    await answerOneTask(fresh.sessionId);
+    await endSession(services, fresh.sessionId);
+
+    const progress = await getProgress(services, childA, deckId);
+    expect(progress.activity.sessions).toBe(1);
+    expect(progress.activity.answers).toBe(1);
+    expect(progress.activity.activeDays).toBe(1);
+    expect(progress.activity.interactions).toBeGreaterThanOrEqual(2);
+    expect(progress.activity.decks).toEqual([{ deckId, deckTitle: "Zestaw Monday", sessions: 1 }]);
   });
 });
