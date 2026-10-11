@@ -33,6 +33,16 @@ describe("LearningOverviewDtoSchema", () => {
     expect(LearningOverviewDtoSchema.parse(sample)).toEqual(sample);
   });
 
+  it("allows a family with no child profiles and a scheduled test without selected goals", () => {
+    const emptyFamily = cloneSample();
+    emptyFamily.children = [];
+    expect(LearningOverviewDtoSchema.safeParse(emptyFamily).success).toBe(true);
+
+    const testWithoutGoals = cloneSample();
+    testWithoutGoals.children[0].plannedTests[0].goals = [];
+    expect(LearningOverviewDtoSchema.safeParse(testWithoutGoals).success).toBe(true);
+  });
+
   it("requires day coverage, unique skills, and complete progress denominators", () => {
     const missingDay = cloneSample();
     missingDay.children[0].dailyActivity.pop();

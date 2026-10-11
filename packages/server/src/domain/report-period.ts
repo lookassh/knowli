@@ -60,6 +60,23 @@ function localMidnight(day: string, format: Intl.DateTimeFormat): number {
   throw new RangeError(`Local midnight does not exist for ${day}`);
 }
 
+export function localDateBounds(day: string, timezone: string): { startUtc: string; endExclusiveUtc: string } {
+  if (!DATE_PATTERN.test(day) || new Date(`${day}T00:00:00.000Z`).toISOString().slice(0, 10) !== day) {
+    throw new RangeError("Invalid local date");
+  }
+  let timeFormatter: Intl.DateTimeFormat;
+  try {
+    timeFormatter = formatter(timezone);
+    timeFormatter.format(new Date());
+  } catch {
+    throw new RangeError("Invalid IANA timezone");
+  }
+  return {
+    startUtc: new Date(localMidnight(day, timeFormatter)).toISOString(),
+    endExclusiveUtc: new Date(localMidnight(addDays(day, 1), timeFormatter)).toISOString(),
+  };
+}
+
 export function buildReportPeriod(now: string, timezone: string, days: number): ReportPeriod {
   const instant = Date.parse(now);
   if (!Number.isFinite(instant)) throw new RangeError("Invalid report instant");

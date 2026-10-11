@@ -18,6 +18,7 @@ export const LearningTimeDtoSchema = z.strictObject({
   seconds: z.number().int().nonnegative().nullable(),
   estimated: z.literal(true),
 });
+export type LearningTimeDto = z.infer<typeof LearningTimeDtoSchema>;
 
 const DatePeriodSchema = z.strictObject({
   from: DaySchema,
@@ -110,7 +111,7 @@ const PlannedTestSchema = z.strictObject({
   deckTitle: z.string(),
   date: DaySchema,
   daysUntil: z.number().int().nonnegative(),
-  goals: z.array(z.enum(["recall", "spelling", "listening"])).min(1),
+  goals: z.array(z.enum(["recall", "spelling", "listening"])),
   source: z.literal("umiem_assignment"),
 });
 
@@ -166,8 +167,8 @@ export const LearningOverviewDtoSchema = z
     }
 
     const dates = overview.children[0]?.dailyActivity.map(({ date }) => date) ?? [];
-    if (dates.length !== overview.period.days || dates[0] !== overview.period.from ||
-      dates.at(-1) !== overview.period.to || !isSequentialDateList(dates)) {
+    if (overview.children.length > 0 && (dates.length !== overview.period.days || dates[0] !== overview.period.from ||
+      dates.at(-1) !== overview.period.to || !isSequentialDateList(dates))) {
       ctx.addIssue({ code: "custom", path: ["children"], message: "Daily activity must cover every period date" });
     }
     if (!uniqueBy(overview.children, ({ childId }) => childId)) {

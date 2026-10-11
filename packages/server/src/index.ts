@@ -4,6 +4,7 @@ export { createDatabase, migrateDatabase, type Database } from "./db/client";
 export * as schema from "./db/schema";
 export { issueIntegrationToken, listIntegrationTokens, requireLearningReadToken, revokeIntegrationToken } from "./modules/integration-tokens";
 export type { IntegrationPrincipal, IntegrationTokenMetadata } from "./modules/integration-tokens";
+export { getLearningOverview } from "./modules/learning-overview";
 export {
   isParentSetupRequired,
   setupParent,

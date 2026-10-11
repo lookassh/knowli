@@ -569,7 +569,6 @@
                   "maximum": 9007199254740991
                 },
                 "goals": {
-                  "minItems": 1,
                   "type": "array",
                   "items": {
                     "type": "string",
