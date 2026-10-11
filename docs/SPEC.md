@@ -133,7 +133,7 @@ Wymagania:
 
 Informacja zwrotna po ocenie wymowy może pokazać fragmenty słowa oznaczone jako „dobrze” lub „prawie”. Nie pokazuje dziecku punktów, IPA ani progów usługi.
 
-Nagrywanie w zadaniach mowy domyślnie działa przez przytrzymanie przycisku: po uzyskaniu zgody przytrzymanie rozpoczyna nagranie, a puszczenie, anulowanie gestu, utrata fokusu albo limit kończy je i zwalnia mikrofon. Dziecko może wybrać tryb przełączany w ustawieniach urządzenia; odmowa mikrofonu pozostawia pełną ścieżkę pisemną. Po analizie ekran pokazuje nie-modalną kartę wyniku przy zadaniu. „Usłyszałem: …” pojawia się tylko dla wiarygodnej transkrypcji. Fragmenty wymowy mają także opis tekstowy, więc kolor nie jest jedynym nośnikiem wyniku. Ponowienie wraca do gotowości; nagranie zaczyna się dopiero po kolejnym geście.
+Nagrywanie w zadaniach mowy domyślnie działa przez przytrzymanie przycisku: po uzyskaniu zgody przytrzymanie rozpoczyna nagranie, a puszczenie, anulowanie gestu, utrata fokusu albo limit kończy je i zwalnia mikrofon. Rodzic wybiera tryb nagrywania w ustawieniach profilu dziecka; ustawienie działa na urządzeniach korzystających z tego profilu. Odmowa mikrofonu pozostawia pełną ścieżkę pisemną. Po analizie ekran pokazuje nie-modalną kartę wyniku przy zadaniu. „Usłyszałem: …” pojawia się tylko dla wiarygodnej transkrypcji. Fragmenty wymowy mają także opis tekstowy, więc kolor nie jest jedynym nośnikiem wyniku. Ponowienie wraca do gotowości; nagranie zaczyna się dopiero po kolejnym geście.
 
 Przykład widoku tematu:
 

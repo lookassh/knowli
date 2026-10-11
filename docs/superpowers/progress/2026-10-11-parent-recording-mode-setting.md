@@ -16,7 +16,7 @@
 - [x] Zadanie 1 — migracja profilu, kontrakty i API.
 - [x] Zadanie 2 — ustawienie w edytorze profilu rodzica.
 - [x] Zadanie 3 — tryb z profilu w Kid UI, usunięcie przełącznika i lokalnego zapisu, dokumentacja oraz końcowe sprawdzenia.
-- [ ] Niezależne review całej gałęzi i obsługa uwag.
+- [x] Niezależne review całej gałęzi i scoped re-review poprawki dokumentacyjnej; brak otwartych Critical/Important.
 - [ ] Wypchnięcie gałęzi i utworzenie PR do `main`; scala właściciel przez squash.
 
 ## Zadanie 1 — zapis ustawienia i kontrakty
@@ -61,7 +61,10 @@
 
 - Pełne E2E po poprawce i rebase: 71 testów PASS.
 - `test:unit` 51 plików / 457 testów, `test:integration` 20 plików / 179 testów, `typecheck`, `build` i `git diff --check`: PASS na aktualnej bazie `da95007`.
-- Niezależne review całego aktualnego zakresu `da950075ae266a8deae7b0cd9e0d46b5493b8888..HEAD` plus ewentualne zmiany niezacommitowane: oczekuje.
+- Niezależne review całego zakresu `da950075ae266a8deae7b0cd9e0d46b5493b8888..f9ef91a` przez `gpt-6.1-sol` (xhigh): brak Critical/Important; zgłoszono jeden Minor, który poprawiono. Recenzent potwierdził też prawidłowy migration snapshot, granice kontraktów, częściowy PATCH i zachowanie pozostałych preferencji lokalnych.
+- Minor: sprzeczność o miejscu wyboru trybu w `docs/SPEC.md:136` oraz nieaktualny status zatwierdzonej specyfikacji. Poprawiono w commicie `52a29a5`; scoped re-review zakresu `f9ef91a..52a29a5` potwierdził obie poprawki i brak nowych uwag.
+- Odroczona rekomendacja recenzenta (opcjonalna): E2E zmieniające dwa profile w jednej otwartej aplikacji oraz test historii przy PATCH tylko z `recordingMode`. Istniejący test kontrolera sprawdza przełączanie profili i starą wartość localStorage; E2E sprawdza hold/toggle osobno po odświeżeniu, a integracja sprawdza mode-only PATCH i zachowanie historii przy aktualizacji innych pól. Nie blokuje zgodności ani merge.
+- Ocenione poza zakresem (wg recenzenta): natychmiastowa synchronizacja już otwartych klientów oraz fizyczny mikrofon/provider; plan zakłada świeży odczyt profilu i fake media.
 - Obsługa uwag Critical/Important według `receiving-code-review`: oczekuje.
 - PR do `main`: oczekuje. Właściciel scala przez squash.
 - Odstępstwo: ten śledzony dziennik utworzono podczas Zadania 3 zamiast przed Zadaniem 1. Wyniki RED/GREEN i commitów z Zadań 1–2 zostały odtworzone z zachowanych raportów/wyjść i ukrytego ledgera; nie zmieniono ich treści.

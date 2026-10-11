@@ -1,6 +1,6 @@
 # Ustawienie sposobu nagrywania w profilu dziecka
 
-**Status:** Projekt do przeglądu właściciela.
+**Status:** Zatwierdzona do realizacji przez właściciela.
 
 ## Cel
 
