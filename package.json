@@ -6,6 +6,7 @@
   "packageManager": "pnpm@10.34.6",
   "scripts": {
     "test:unit": "vitest run --config vitest.unit.config.ts",
+    "contracts:export-learning-overview": "node apps/worker/node_modules/tsx/dist/cli.mjs scripts/export-learning-overview-schema.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:e2e": "playwright test",
     "build": "node apps/web/node_modules/next/dist/bin/next build apps/web",
