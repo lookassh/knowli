@@ -80,21 +80,6 @@ function hostPort(portOutput: string): string {
  * na tyle długo, by przetestować odświeżenie strony i blokadę publikacji).
  */
 export default async function globalSetup(): Promise<(() => Promise<void>) | void> {
-  await docker("rm", "-f", CONTAINER).catch(() => undefined);
-  await docker(
-    "run",
-    "-d",
-    "--rm",
-    "-P",
-    "-e",
-    "POSTGRES_USER=postgres",
-    "-e",
-    "POSTGRES_PASSWORD=test",
-    "--name",
-    CONTAINER,
-    "postgres:17-alpine",
-  );
-
   const cleanup: Array<() => Promise<void>> = [
     () => docker("rm", "-f", CONTAINER).then(() => undefined, () => undefined),
   ];
@@ -103,12 +88,46 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
     throw error;
   };
 
-  try {
-    await waitForPostgres(CONTAINER);
-    const port = hostPort(await docker("port", CONTAINER, "5432/tcp"));
-    const databaseUrl = `postgres://postgres:test@127.0.0.1:${port}/postgres`;
-    await migrateDatabase(databaseUrl, join(repoRoot, "packages/server/drizzle"));
+  // pg_isready wewnątrz kontenera nie gwarantuje stabilnego socketu na hoście:
+  // pierwszy socket bywa zrywany (runner CI i Docker Desktop). Kontener jest
+  // wtedy martwy dla migracji, więc zamiast kończyć run startujemy od nowa.
+  const attempts = 3;
+  let databaseUrl: string | null = null;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts && databaseUrl === null; attempt += 1) {
+    await docker("rm", "-f", CONTAINER).catch(() => undefined);
+    if (attempt > 1) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+    try {
+      await docker(
+        "run",
+        "-d",
+        "--rm",
+        "-P",
+        "-e",
+        "POSTGRES_USER=postgres",
+        "-e",
+        "POSTGRES_PASSWORD=test",
+        "--name",
+        CONTAINER,
+        "postgres:17-alpine",
+      );
+      await waitForPostgres(CONTAINER);
+      const port = hostPort(await docker("port", CONTAINER, "5432/tcp"));
+      const url = `postgres://postgres:test@127.0.0.1:${port}/postgres`;
+      await migrateDatabase(url, join(repoRoot, "packages/server/drizzle"));
+      databaseUrl = url;
+    } catch (error) {
+      lastError = error;
+      console.warn(`Kontener Postgres e2e nie wystartował (próba ${attempt}/${attempts}): ${String(error)}`);
+    }
+  }
+  if (databaseUrl === null) {
+    return fail(lastError);
+  }
 
+  try {
     // świat przekazuje połączenie do bazowym testom (seedowanie należnych
     // sprawdzeń bez czekania na realny upływ dni)
     const worldFile = join(repoRoot, TEST_RUN_CONFIG.worldFile);

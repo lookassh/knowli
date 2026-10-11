@@ -62,31 +62,44 @@ export default async function globalSetup({
 }: GlobalSetupContext): Promise<(() => Promise<void>) | void> {
   await removeStaleContainers();
   const name = containerName();
-  await docker(
-    "run",
-    "-d",
-    "--rm",
-    "-P",
-    "-e",
-    "POSTGRES_USER=postgres",
-    "-e",
-    "POSTGRES_PASSWORD=test",
-    "--name",
-    name,
-    POSTGRES_IMAGE,
-  );
-  try {
-    await waitForPostgres(name);
-    const port = hostPort(await docker("port", name, "5432/tcp"));
-    const url = `postgres://postgres:test@127.0.0.1:${port}/postgres`;
-    await migrateDatabase(url, "packages/server/drizzle");
-    provide("DATABASE_URL", url);
-    provide("TEST_CONTAINER", name);
-    return async () => {
+  // pg_isready wewnątrz kontenera nie gwarantuje stabilnego socketu na hoście:
+  // pierwszy socket bywa zrywany (runner CI i Docker Desktop). Kontener jest
+  // wtedy martwy dla migracji, więc zamiast kończyć run startujemy od nowa.
+  const attempts = 3;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    if (attempt > 1) {
       await docker("rm", "-f", name).catch(() => undefined);
-    };
-  } catch (error) {
-    await docker("rm", "-f", name).catch(() => undefined);
-    throw error;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+    try {
+      await docker(
+        "run",
+        "-d",
+        "--rm",
+        "-P",
+        "-e",
+        "POSTGRES_USER=postgres",
+        "-e",
+        "POSTGRES_PASSWORD=test",
+        "--name",
+        name,
+        POSTGRES_IMAGE,
+      );
+      await waitForPostgres(name);
+      const port = hostPort(await docker("port", name, "5432/tcp"));
+      const url = `postgres://postgres:test@127.0.0.1:${port}/postgres`;
+      await migrateDatabase(url, "packages/server/drizzle");
+      provide("DATABASE_URL", url);
+      provide("TEST_CONTAINER", name);
+      return async () => {
+        await docker("rm", "-f", name).catch(() => undefined);
+      };
+    } catch (error) {
+      lastError = error;
+      console.warn(`Kontener Postgres testów integracyjnych nie wystartował (próba ${attempt}/${attempts}): ${String(error)}`);
+    }
   }
+  await docker("rm", "-f", name).catch(() => undefined);
+  throw lastError;
 }
