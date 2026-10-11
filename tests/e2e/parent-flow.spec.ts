@@ -290,7 +290,8 @@ test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page,
   await page.reload();
   await expect(deckRow(page)).toContainText(DECK_TITLE);
   await deckRow(page).click();
-  await expect(page.getByTestId("generation-banner")).toContainText(messages.decks.generating);
+  // Worker may finish while the list is reloading; the banner is asserted
+  // immediately after creation above, and either state should open the editor.
   await expect(page.getByTestId("item-card-0")).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId("item-card-6")).toBeVisible();
   await expect(page.getByTestId("item-target-0")).toHaveValue("monday");

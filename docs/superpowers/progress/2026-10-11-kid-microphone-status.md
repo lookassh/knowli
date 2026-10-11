@@ -21,7 +21,8 @@ Baza: `dfe905b` (origin/main, redesign #42). Worktree: `kid-microphone-status`, 
 - [x] requesting-code-review: cały diff od dfe905b, dedykowany reviewer gpt-6.1-sol high; raport w docs/superpowers/reviews/2026-10-11-kid-microphone-status.md.
 - [x] Obsługa uwag: Important potwierdzony RED->GREEN i zweryfikowany przez reviewera. Po aktualizacji starego E2E target 1/1, osobny niezależny review całego zakresu; Critical/Important/Minor otwarte: 0.
 - [x] finishing-a-development-branch: commit 568cb66, push gałęzi, PR #43 do main i przypięcie PR do zadania. https://github.com/lookassh/knowli/pull/43 . Scala właściciel przez squash; worktree zachowany.
-- [ ] CI po korekcie starego E2E: oczekuje na commit/push zmiany `speech-recording-ux.spec.ts`; lokalny target 1/1.
+- [x] Druga poprawka E2E sprawdzona lokalnie (target parent-flow 1/1) i niezależnie zreviewowana; Critical/Important/Minor: 0.
+- [ ] Commit/push poprawki i świeży CI dla obu checków; job integracyjny poprzedniego SHA jest ponawiany osobno.
 
 ## Decyzje
 
@@ -38,6 +39,14 @@ Niezależny reviewer gpt-6.1-sol (high, najnowszy dostępny model bez rodziny As
 ## Weryfikacja po pierwszym PR check
 
 PR #43 check `tests` przeszedł. Pełny E2E: 127/128, jedyny błąd był w starej asercji widoczności banera, nie w aplikacji. Główny kod UI nie zmienił się w tej korekcie. `tests/e2e/speech-recording-ux.spec.ts` sprawdza teraz hidden -> kliknięcie statusu -> visible -> zamknięcie i pozostawienie aktywnej ścieżki pisemnej. Lokalnie: target Playwright 1/1, cała suite unit 487/487, `git diff --check` exit 0. Osobny niezależny read-only review poprawki i całego zakresu bez otwartych uwag znajduje się w addendum raportu review.
+
+## Obsługa obu czerwonych checków
+
+Drugi run PR #43 zakończył oba checki błędem. `tests` przeszedł typecheck i unit (487/487), a integracja wyczerpała trzy próby startu kontenera na `ECONNRESET` przy `CREATE SCHEMA "drizzle"`, przed uruchomieniem testów. Ponowiono wyłącznie job integracyjny; wynik ponowienia jest w toku.
+
+E2E wykonał 127/128 testów. Artifact `error-context.md` potwierdza, że `parent-flow` otworzył kompletny edytor z gotowymi mediami; worker zdążył zakończyć generowanie w czasie przeładowania listy. Asercja bannera po reloadzie była niedeterministyczna. Banner jest już sprawdzany zaraz po utworzeniu zestawu; po reloadzie test powinien dopuścić oba poprawne stany i zweryfikować edytor oraz dalszą publikację. Po usunięciu wyłącznie tej asercji lokalny test `parent-flow.spec.ts --grep "pełny obieg rodzica"` przeszedł 1/1 (1,3 min). Świeży CI wymaga jeszcze pushu poprawki i wyniku obu checków.
+
+Niezależny reviewer `gpt-6.1-sol` potwierdził, że korekta zachowuje pokrycie pełnego obiegu i odpowiada zaobserwowanemu stanowi zakończonego generowania. Critical/Important/Minor: 0. Otworzył jedynie ograniczenie: wymuszenie obserwacji „generowanie” po reloadzie wymagałoby kontrolowanego zatrzymania workera, co jest poza celem tego testu.
 
 ## Końcowe sprawdzenia i ograniczenia
 
