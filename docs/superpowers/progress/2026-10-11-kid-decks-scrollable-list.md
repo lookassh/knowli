@@ -34,5 +34,11 @@ Dostosowanie środowiska: zainstalowany superpowers 6.3.0 nie zawiera skryptów 
 - [x] Pełny suit e2e (Docker, 5.2 min): **122 passed / 1 failed** — `speech-recording-ux.spec.ts:133 › hold gesture handles keyboard, capture loss and release outside the button`.
   - Diagnoza (controlled experiment): ten sam test pada 2/2 w worktree i 1/1 na czystym checkoucie `main`; CI main po PR #42 (run 38145792718) też czerwony: `speech-recording-ux.spec.ts:133` (toHaveAttribute `kid-record` aria-pressed) ORAZ `parent-flow.spec.ts:246` (toContainText). Oba istnieją w main niezależnie od tej gałęzi; ta gałąź nie zmienia przepływu nagrywania ani panelu rodzica. Awaria wymaga osobnego cyklu systematic-debugging (poza zakresem tego planu) — zgłoszone właścicielowi w raporcie i opisie PR.
 - [x] git diff --check dfe905b..HEAD → czysty; git diff --check (drzewo) → czysty.
-- [ ] Niezależny review (requesting-code-review) + obsługa uwag (receiving-code-review)
+- [x] Niezależny review (requesting-code-review): subagent general-purpose, zakres dfe905b..9301ce2 (cała gałąź), szablon code-reviewer.md. Ograniczenie środowiska: klient ZCode nie udostępnia nadpisania modelu dla Agent — recenzent na modelu sesji (najmocniejszy dostępny, poza GPT Astra). **Werdykt: Ready to merge: Yes. 0 Critical, 0 Important, 5 Minor.**
+- [x] Obsługa uwag (receiving-code-review) — weryfikacja techniczna przed przyjęciem:
+  - M1 `sections` inferuje `kind: string` (DeckScreen.tsx:39-42) — potwierdzone, kosmetyka; ODŁOŻONE.
+  - M2 brak asercji „nagłówek drugiej grupy nieobecny" przy jednym niepustym grupowaniu — potwierdzone, niskie ryzyko (pokryte pośrednio w groupDecks unit + e2e single-deck); ODŁOŻONE.
+  - M3 `scroll-margin-bottom` dla focus klawiaturowego vs sticky stopka (styles.css) — polerunek, ścieżka kliknięć dowiedzona e2e; ODŁOŻONE.
+  - M4 martwe CSS `.kid-recommended-title` (styles.css:253) — potwierdzone grepem, ISTNIEJĄCE w main (nie ta gałąź); ODŁOŻONE poza zakres.
+  - M5 treść planu: komendy „z roota repo" vs faktyczny worktree — uwaga procesowa na przyszłe plany; PRZYJĘTE jako nota.
 - [ ] finishing-a-development-branch → push + PR (scala właściciel, Squash and merge)
