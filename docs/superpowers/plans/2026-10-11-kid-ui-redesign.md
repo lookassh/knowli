@@ -170,7 +170,7 @@ expect(computeKidViewport({ innerHeight: 700, visualViewport: { height: 350, off
 - [x] Wykonać self-review pokrycia spec i checklisty; przygotować paczkę `requesting-code-review` całej gałęzi. Dedykowany recenzent używa jawnie najbardziej zaawansowanego dostępnego modelu z wykluczeniem GPT Astra. Review nie deleguje implementacji ani nie uruchamia następnych recenzentów. Wynik: `docs/superpowers/reviews/2026-10-11-kid-ui-redesign.md`.
 - [x] `receiving-code-review`: zweryfikować każdą uwagę, naprawić Critical/Important z dowodem RED→GREEN dla zachowania, uzasadnić odrzucenia, zapisać Minor. Ponownie review tylko poprawek i ich wpływu, gdy potrzebne. Ostatecznie Critical/Important 0; Minor o niepełnej macierzy viewportów/motywów zapisany jako odłożony.
 - [x] `verification-before-completion`: świeże adekwatne komendy po ostatnich zmianach, spójny zakres diffu, brak materiałów/sekretów testowych w commicie. Nie uruchamiać kolejnych pełnych suite bez nowych zmian/uwag.
-- [ ] `finishing-a-development-branch`: push gałęzi i PR do main z opisem finalnej funkcji, niezależnym review i rzeczywistymi wynikami/lukami urządzenia. PR załączyć do zadania. Nie scalać; właściciel używa squash. Worktree pozostaje do iteracji PR.
+- [x] `finishing-a-development-branch`: push gałęzi i PR do main z opisem finalnej funkcji, niezależnym review i rzeczywistymi wynikami/lukami urządzenia. PR #42: https://github.com/lookassh/knowli/pull/42 (OPEN; CI w toku). PR załączony do zadania. Nie scalać; właściciel używa squash. Worktree pozostaje do iteracji PR.
 
 ## Kryterium zamknięcia
 
