@@ -5,7 +5,6 @@ import { ReadingView } from "./ReadingView";
 import { SpeechView } from "./SpeechView";
 import { WrittenView } from "./WrittenView";
 import { LetterCompletionView } from "./LetterCompletionView";
-import { ExerciseFrame } from "./ExerciseFrame";
 
 /** Dyspozytor widoku ćwiczenia po rodzaju promptu (= typie zadania). */
 export function ExerciseView(props: ExerciseProps) {
@@ -19,11 +18,11 @@ export function ExerciseView(props: ExerciseProps) {
       return <ReadingView {...props} />;
     case "recall":
     case "spelling":
-      return <ExerciseFrame task={props.task} content={<WrittenView key={props.task.taskId} {...props} />} />;
+      return <WrittenView key={props.task.taskId} {...props} />;
     case "letter_completion":
       // Nowe zadanie ma puste luki; kolejna próba tego samego zachowuje wpis.
-      return <ExerciseFrame task={props.task} content={<LetterCompletionView key={props.task.taskId} {...props} />} />;
+      return <LetterCompletionView key={props.task.taskId} {...props} />;
     case "speech":
-      return <ExerciseFrame task={props.task} content={<SpeechView {...props} />} />;
+      return <SpeechView key={props.task.taskId} {...props} />;
   }
 }

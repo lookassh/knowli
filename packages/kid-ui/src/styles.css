@@ -501,7 +501,7 @@
   font-weight: 700;
 }
 
-.kid-exercise-actions > .kid-primary {
+.kid-exercise-actions .kid-primary {
   width: 100%;
   min-height: 52px;
 }
@@ -530,6 +530,15 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.kid-written-actions,
+.kid-speech-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
 }
 
 .kid-written input {
@@ -573,6 +582,23 @@
   justify-content: center;
 }
 
+.kid-secondary-actions button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--kid-line);
+  border-radius: 12px;
+  background: var(--kid-soft);
+  color: var(--kid-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.kid-secondary-actions button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .kid-recording-row {
   display: flex;
   align-items: center;
@@ -589,6 +615,10 @@
 .kid-record-button {
   min-width: 220px;
   min-height: 64px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
@@ -641,6 +671,9 @@
 }
 
 .kid-recording {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 1.15rem;
   color: #b02a37;
   animation: kid-pulse 1.2s ease-in-out infinite;

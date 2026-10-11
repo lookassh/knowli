@@ -11,9 +11,9 @@ const taskId = "10000000-0000-4000-8000-000000000004";
 const assetId = "10000000-0000-4000-8000-000000000006";
 const optionIds = ["10000000-0000-4000-8000-000000000007", "10000000-0000-4000-8000-000000000008", "10000000-0000-4000-8000-000000000009"];
 
-function recallFixture() {
+function recallFixture(recordingMode: "hold" | "toggle" = "hold") {
   return {
-    profiles: [{ childId, displayName: "Szymon", avatarKey: "cat", recordingMode: "hold" as const }],
+    profiles: [{ childId, displayName: "Szymon", avatarKey: "cat", recordingMode }],
     decks: [{ deckId, title: "Dni tygodnia", itemCount: 7, independentlyRecalledCount: 0, testDate: null,
       recommended: true, mockTestAvailable: false, activeSession: null }],
     session: { mode: "training" as const, sessionId, childId, deckId, deckVersionId: "10000000-0000-4000-8000-000000000005",
@@ -211,4 +211,115 @@ test("long options remain readable and selectable", async ({ page }) => {
   await expect(longOption).toContainText(task.prompt.options[2]!.text);
   await longOption.click();
   await expect(page.getByTestId("kid-feedback")).toBeVisible();
+});
+
+test("written input preserves its value and focus when the viewport shrinks", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 700 });
+  await openTask(page, taskFor("spelling"));
+  const input = page.getByTestId("kid-input");
+  await input.fill("Monday");
+  await input.focus();
+  await page.setViewportSize({ width: 390, height: 520 });
+  await expect(input).toHaveValue("Monday");
+  expect(await input.evaluate((element) => element === document.activeElement)).toBe(true);
+});
+
+test("letter input preserves its value and focus when the viewport shrinks", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 700 });
+  await openTask(page, taskFor("letter_completion"));
+  const gap = page.getByTestId("kid-letter-input");
+  await gap.fill("a");
+  await gap.focus();
+  await page.setViewportSize({ width: 390, height: 470 });
+  await expect(gap).toHaveValue("a");
+  expect(await gap.evaluate((element) => element === document.activeElement)).toBe(true);
+});
+
+test("written actions remain reachable at a 350px viewport height", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 350 });
+  await openTask(page, taskFor("recall"));
+  for (const action of ["kid-submit", "kid-record", "kid-not-remember", "kid-skip"]) {
+    if (action === "kid-record") continue; // This fixture disables the microphone.
+    const button = page.getByTestId(action);
+    await button.scrollIntoViewIfNeeded();
+    await expect(button).toBeVisible();
+    const box = await button.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+  }
+  await expect(page.getByTestId("kid-input")).toBeVisible();
+});
+
+for (const recordingMode of ["hold", "toggle"] as const) {
+  test(`speech recording honors the ${recordingMode} profile without a child mode picker`, async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "mediaDevices", {
+        configurable: true,
+        value: { getUserMedia: () => new Promise<MediaStream>(() => undefined) },
+      });
+    });
+    const fixture = recallFixture(recordingMode);
+    fixture.session.microphoneEnabled = true;
+    await installKidUiFixture(page, { ...fixture, tasks: [taskFor("speech")] });
+    await page.goto("/");
+    await page.getByTestId("kid-profile").click();
+    await page.getByTestId("kid-deck").click();
+    await expect(page.getByTestId("kid-record")).toBeVisible();
+    await expect(page.getByTestId("kid-record-mode")).toHaveCount(0);
+    await expect(page.getByText("Wolisz nacisnąć raz? Zmień tryb")).toHaveCount(0);
+    const recordButton = page.getByTestId("kid-record");
+    await recordButton.click();
+    await expect(recordButton).toHaveAttribute("data-phase", "preparing");
+    if (recordingMode === "hold") {
+      await expect(recordButton).toContainText("Przytrzymaj");
+    } else {
+      await expect(recordButton).toContainText("Nagraj");
+    }
+  });
+}
+
+test("a long written answer remains fully available after viewport shrink", async ({ page }) => {
+  const task = taskFor("spelling");
+  if (task.prompt.kind !== "spelling") throw new Error("invalid spelling fixture");
+  task.prompt.prompt = "bardzo długi opis polecenia, który powinien pozostać czytelny przy zmianie wysokości";
+  await page.setViewportSize({ width: 360, height: 520 });
+  await openTask(page, task);
+  const input = page.getByTestId("kid-input");
+  const answer = "long-answer-with-every-letter-preserved";
+  await input.fill(answer);
+  await page.setViewportSize({ width: 360, height: 350 });
+  await expect(input).toHaveValue(answer);
+  await expect(page.getByTestId("kid-source")).toHaveText(task.prompt.prompt);
+  await page.getByTestId("kid-submit").scrollIntoViewIfNeeded();
+  await expect(page.getByTestId("kid-submit")).toBeEnabled();
+});
+
+for (const kind of ["recall", "spelling", "letter_completion", "speech"] as const) {
+  test(`${kind} uses the shared material surface without a nested task card`, async ({ page }) => {
+    await openTask(page, taskFor(kind));
+    await expect(page.getByTestId("kid-material").locator(".kid-card")).toHaveCount(0);
+    if (kind === "recall" || kind === "spelling" || kind === "letter_completion") {
+      await expect(page.getByTestId("kid-submit").locator("xpath=ancestor::*[@data-testid='kid-exercise-actions']")).toHaveCount(1);
+    }
+  });
+}
+
+test("speech play action uses the shared speaker icon instead of an emoji", async ({ page }) => {
+  await openTask(page, taskFor("speech"));
+  const play = page.getByTestId("kid-play");
+  await expect(play).toHaveAccessibleName("Posłuchaj");
+  await expect(play.locator("svg")).toBeVisible();
+  await expect(play).not.toContainText("🔊");
+});
+
+test("record control uses the shared microphone icon instead of an emoji", async ({ page }) => {
+  const fixture = recallFixture();
+  fixture.session.microphoneEnabled = true;
+  await installKidUiFixture(page, { ...fixture, tasks: [taskFor("speech")] });
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+  const record = page.getByTestId("kid-record");
+  await expect(record.locator("svg")).toBeVisible();
+  await expect(record).not.toContainText("🎤");
 });

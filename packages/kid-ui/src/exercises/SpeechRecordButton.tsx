@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useRef } from "react";
 import { messages } from "@learning/contracts";
 import type { RecordingModeDto } from "@learning/contracts";
+import { KidIcon } from "../components/KidIcon";
 import { reduceRecordingGesture, type GestureOwner, type GestureState } from "./recording-gesture";
 
 type RecordingPhase = "idle" | "preparing" | "starting" | "recording" | "stopping";
@@ -82,6 +83,10 @@ export function SpeechRecordButton({ phase, ready, disabled, level, notice = nul
           : phase === "recording" ? messages.kid.recordingListen
         : phase === "stopping" ? messages.kid.recordingFinishing
           : ready ? null : messages.kid.recordingPermission;
+  const label = phase === "recording" ? messages.kid.recordingListen
+    : !ready && phase === "idle" ? messages.kid.recordingEnableMic
+      : mode === "hold" ? messages.kid.recordHold
+        : phase === "starting" ? messages.kid.recordingStarting : messages.kid.record;
 
   return (
     <div className="kid-record-controls" data-testid="kid-record-controls">
@@ -147,14 +152,12 @@ export function SpeechRecordButton({ phase, ready, disabled, level, notice = nul
         }}
         onContextMenu={(event) => event.preventDefault()}
       >
-        {phase === "recording" ? `⏺ ${messages.kid.recordingListen}`
-          : !ready && phase === "idle" ? `🎤 ${messages.kid.recordingEnableMic}`
-            : mode === "hold" ? `🎤 ${messages.kid.recordHold}`
-            : phase === "starting" ? messages.kid.recordingStarting : `🎤 ${messages.kid.record}`}
+        <KidIcon name="microphone" />
+        <span>{label}</span>
       </button>
       {(notice ?? status) !== null && <p className="kid-record-status" role="status" data-testid="kid-record-status">{notice ?? status}</p>}
       {active && (
-        <div className="kid-recording" data-testid="kid-recording" role="status">⏺ {messages.kid.recording}</div>
+        <div className="kid-recording" data-testid="kid-recording" role="status"><KidIcon name="microphone" /> {messages.kid.recording}</div>
       )}
       {levelValue !== null && phase === "recording" && (
         <div className="kid-input-level" data-testid="kid-input-level" role="meter" aria-label={messages.kid.recordingLevel} aria-valuemin={0} aria-valuemax={100} aria-valuenow={levelValue}>
