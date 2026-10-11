@@ -38,3 +38,11 @@ Gotowe do scalenia: tak, po końcowych sprawdzeniach wykonawcy dla aktualnego st
 ## Obsługa review przez wykonawcę
 
 Uwaga Important przyjęta po sprawdzeniu setMicrophone(false) i startLearning. Test rzeczywistego stanu wykazał RED (1 fail/5 pass). Zmieniono kolejność: mock_test lub session.microphoneEnabled=false -> off; dopiero dalej micDenied/awaria -> unavailable. GREEN 6/6 i osobny E2E przełączenia na ekranie zestawów. Reviewer zweryfikował poprawkę. Nic nie odrzucono i nie odłożono; wyjątki odbioru sprzętowego pozostają jawne. Pozostałe wyniki końcowe są w dzienniku postępu.
+
+## Ponowny przegląd po failed CI
+
+Dedicated reviewer wykonał drugi read-only review całego zakresu od dfe905b, w tym zmiany w `tests/e2e/speech-recording-ux.spec.ts` oraz aktualizacji dziennika. Stwierdzono, że test sprawdza nazwę dostępną, początkowo ukryte wyjaśnienie, pokazanie po kliknięciu oraz zachowaną ścieżkę pisemną. Poprawiono jedną przedwczesną informację o push/CI w dzienniku przed zakończeniem review.
+
+Critical: 0. Important: 0. Minor otwarte: 0. Reviewer potwierdził `git diff --check` bez błędów. Lokalny target 1/1 przyjęty z outputu wykonawcy. Rerun pełnego CI jeszcze nie istnieje. Reviewer nie ocenia fizycznego S25/PWA ani rzeczywistych providerów mowy z powodu braku nowego dowodu sprzętowego.
+
+Verdict: poprawka gotowa do commit/push w istniejącej gałęzi i ponowienia CI. Scalenie PR dopiero po świeżym zielonym CI.

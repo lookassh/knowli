@@ -229,11 +229,16 @@ test("tryb toggle z profilu rodzica działa po odświeżeniu i nie pokazuje prze
   await expect(button).toHaveAttribute("data-phase", "idle");
 });
 
-test("microphone denial leaves the written learning path available", async ({ page }) => {
+test("microphone denial is available on request and leaves the written learning path available", async ({ page }) => {
   await installFakeMicrophone(page, true);
   await createLearningTask(page, `Bez mikrofonu ${randomUUID().slice(0, 6)}`);
   await page.getByTestId("kid-record").click();
+  const microphoneStatus = page.getByTestId("kid-microphone-status");
+  await expect(microphoneStatus).toHaveAccessibleName("Mikrofon niedostępny");
+  await expect(page.getByTestId("kid-mic-denied")).toBeHidden();
+  await microphoneStatus.click();
   await expect(page.getByTestId("kid-mic-denied")).toBeVisible();
+  await microphoneStatus.click();
   await expect(page.getByTestId("kid-input")).toBeEnabled();
   await page.getByTestId("kid-input").fill("Monday");
   await expect(page.getByTestId("kid-submit")).toBeEnabled();
