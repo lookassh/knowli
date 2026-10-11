@@ -1,6 +1,74 @@
 /* Kid UI „Umiem!” — mobile first, duże pola dotykowe, jeden jasny krok.
    Klasy prefiksowane kid-, aby nie kolidowały z panelem rodzica. */
 
+.kid-ui {
+  --kid-bg: #f6f8fd;
+  --kid-surface: #ffffff;
+  --kid-text: #202c45;
+  --kid-muted: #596982;
+  --kid-accent: #3855ca;
+  --kid-on-accent: #ffffff;
+  --kid-line: #dae2f0;
+  --kid-soft: #e9eefb;
+  --kid-good: #196044;
+  --kid-good-bg: #e6f3e9;
+  --kid-warm: #fbefd8;
+  --kid-warm-text: #78521d;
+  color-scheme: light dark;
+  color: var(--kid-text);
+  background: var(--kid-bg);
+  min-height: 100dvh;
+  font-family: inherit;
+}
+
+@media (prefers-color-scheme: dark) {
+  .kid-ui {
+    --kid-bg: #182134;
+    --kid-surface: #253049;
+    --kid-text: #f1f5ff;
+    --kid-muted: #bdc9df;
+    --kid-accent: #aec0ff;
+    --kid-on-accent: #18244a;
+    --kid-line: #455370;
+    --kid-soft: #303f64;
+    --kid-good: #a1e0ba;
+    --kid-good-bg: #214b36;
+    --kid-warm: #493f2b;
+    --kid-warm-text: #f3d8a4;
+  }
+}
+
+.kid-page--flow {
+  min-height: 100dvh;
+}
+
+.kid-page--session {
+  position: fixed;
+  z-index: 1;
+  inset-inline: 0;
+  top: 0;
+  height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.kid-page--session > .kid-screen {
+  height: 100%;
+  min-height: 0;
+}
+
+.kid-page--session > .kid-learning {
+  overflow-y: auto;
+}
+
+.kid-ui .kid-screen,
+.kid-ui .kid-card,
+.kid-ui .kid-list button,
+.kid-ui .kid-options button {
+  color: var(--kid-text);
+}
+
 .kid-screen {
   max-width: 560px;
   margin: 0 auto;
@@ -26,19 +94,19 @@
   gap: 6px;
   font-size: 0.95rem;
   font-weight: 600;
-  color: #4a5568;
+  color: var(--kid-text);
   text-decoration: none;
   padding: 6px 14px;
   border-radius: 9999px;
-  background: #edf2f7;
-  border: 1px solid #cbd5e0;
+  background: var(--kid-surface);
+  border: 1px solid var(--kid-line);
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .kid-parent-link:hover,
 .kid-parent-link:focus-visible {
-  background: #e2e8f0;
-  color: #1a202c;
+  background: var(--kid-soft);
+  color: var(--kid-text);
   outline: none;
 }
 
@@ -142,8 +210,8 @@
 }
 
 .kid-card {
-  background: #fff;
-  border: 2px solid #e4e6f4;
+  background: var(--kid-surface);
+  border: 2px solid var(--kid-line);
   border-radius: 24px;
   padding: 20px 16px;
   display: flex;
@@ -263,9 +331,9 @@
   width: 100%;
   min-height: 64px;
   font-size: 1.3rem;
-  border: 2px solid #d9dcf0;
+  border: 2px solid var(--kid-line);
   border-radius: 18px;
-  background: #fff;
+  background: var(--kid-surface);
   cursor: pointer;
 }
 
@@ -321,9 +389,9 @@
 }
 
 .kid-card .kid-primary {
-  background: #3b5bdb;
-  border-color: #3b5bdb;
-  color: #fff;
+  background: var(--kid-accent);
+  border-color: var(--kid-accent);
+  color: var(--kid-on-accent);
   font-weight: 700;
 }
 

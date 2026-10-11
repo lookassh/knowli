@@ -1,0 +1,130 @@
+import {
+  AttemptDtoSchema,
+  DisclosureDtoSchema,
+  FeedbackAudioDtoSchema,
+  KidDeckDtoSchema,
+  KidProfileDtoSchema,
+  MockTestSummaryDtoSchema,
+  PresentationCompletionDtoSchema,
+  SessionDtoSchema,
+  SessionSummaryDtoSchema,
+  TaskDtoSchema,
+  type AttemptDto,
+  type DisclosureDto,
+  type FeedbackAudioDto,
+  type KidDeckDto,
+  type KidProfileDto,
+  type MockTestSummaryDto,
+  type PresentationCompletionDto,
+  type SessionDto,
+  type SessionSummaryDto,
+  type TaskDto,
+} from "@learning/contracts";
+import { expect, type Page } from "@playwright/test";
+
+export interface KidUiFixture {
+  profiles: KidProfileDto[];
+  decks: KidDeckDto[];
+  session: SessionDto;
+  tasks: readonly (TaskDto | null)[];
+  attempts?: readonly AttemptDto[];
+  disclosure?: DisclosureDto;
+  presentation?: PresentationCompletionDto;
+  summary?: SessionSummaryDto;
+  mockSummary?: MockTestSummaryDto;
+  feedbackAudio?: FeedbackAudioDto;
+}
+
+export async function installKidUiFixture(page: Page, fixture: KidUiFixture): Promise<void> {
+  KidProfileDtoSchema.array().parse(fixture.profiles);
+  KidDeckDtoSchema.array().parse(fixture.decks);
+  SessionDtoSchema.parse(fixture.session);
+  fixture.tasks.forEach((task) => { if (task !== null) TaskDtoSchema.parse(task); });
+  fixture.attempts?.forEach((attempt) => AttemptDtoSchema.parse(attempt));
+  if (fixture.disclosure) DisclosureDtoSchema.parse(fixture.disclosure);
+  if (fixture.presentation) PresentationCompletionDtoSchema.parse(fixture.presentation);
+  if (fixture.summary) SessionSummaryDtoSchema.parse(fixture.summary);
+  if (fixture.mockSummary) MockTestSummaryDtoSchema.parse(fixture.mockSummary);
+  if (fixture.feedbackAudio) FeedbackAudioDtoSchema.parse(fixture.feedbackAudio);
+
+  let taskIndex = 0;
+  let attemptPostIndex = 0;
+  const attemptReadIndex = new Map<string, number>();
+  await page.route("**/api/v1/kid/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const method = request.method();
+    const path = url.pathname;
+    const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    const missing = async (description: string) => {
+      await route.abort("failed");
+      throw new Error(`Kid UI fixture is missing a response for ${method} ${path}: ${description}`);
+    };
+
+    if (method === "GET" && path === "/api/v1/kid/profiles") return json(fixture.profiles);
+    if (method === "GET" && path === "/api/v1/kid/decks") return json(fixture.decks);
+    if (method === "POST" && path === "/api/v1/kid/sessions") return json(fixture.session);
+    if (method === "POST" && path === `/api/v1/kid/sessions/${fixture.session.sessionId}/next`) {
+      if (taskIndex >= fixture.tasks.length) return missing("task queue exhausted");
+      const task = fixture.tasks[taskIndex++];
+      if (task === null) return route.fulfill({ status: 204 });
+      return json(task);
+    }
+    if (method === "POST" && /\/tasks\/[^/]+\/events$/.test(path)) return route.fulfill({ status: 204 });
+    if (method === "POST" && /\/tasks\/[^/]+\/disclosures$/.test(path)) {
+      if (!fixture.disclosure) return missing("disclosure is not configured");
+      return json(fixture.disclosure);
+    }
+    if (method === "POST" && /\/complete-presentation$/.test(path)) {
+      if (!fixture.presentation) return missing("presentation completion is not configured");
+      return json(fixture.presentation);
+    }
+    if (method === "POST" && /\/tasks\/[^/]+\/attempts$/.test(path)) {
+      const attempt = fixture.attempts?.[attemptPostIndex];
+      if (!attempt) return missing("attempt queue exhausted");
+      attemptPostIndex += 1;
+      attemptReadIndex.set(attempt.attemptId, attemptPostIndex);
+      return json(attempt);
+    }
+    if (method === "GET" && /\/attempts\/[^/]+$/.test(path)) {
+      const attemptId = path.split("/").at(-1)!;
+      const start = attemptReadIndex.get(attemptId);
+      if (start === undefined || !fixture.attempts?.[start]) return missing("attempt read is not configured");
+      const attempt = fixture.attempts[start]!;
+      attemptReadIndex.set(attemptId, start + 1);
+      return json(attempt);
+    }
+    if (method === "POST" && /\/feedback-audio$/.test(path)) {
+      if (!fixture.feedbackAudio) return missing("feedback audio is not configured");
+      return json(fixture.feedbackAudio);
+    }
+    if (method === "POST" && path === `/api/v1/kid/sessions/${fixture.session.sessionId}/end`) {
+      if (!fixture.summary) return missing("session summary is not configured");
+      return json(fixture.summary);
+    }
+    if (method === "GET" && path === `/api/v1/kid/sessions/${fixture.session.sessionId}/mock-test-summary`) {
+      if (!fixture.mockSummary) return missing("mock-test summary is not configured");
+      return json(fixture.mockSummary);
+    }
+    return missing("no matching fixture route");
+  });
+}
+
+export async function assertKidLayout(
+  page: Page,
+  options: { allowDetailsScroll?: boolean } = {},
+): Promise<void> {
+  const frame = page.getByTestId("kid-session-frame");
+  await expect(frame).toBeVisible();
+  const bounds = await frame.boundingBox();
+  const viewport = page.viewportSize();
+  expect(bounds).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport!.width + 1);
+  if (!options.allowDetailsScroll) {
+    expect(bounds!.y).toBeGreaterThanOrEqual(0);
+    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(viewport!.height + 1);
+  }
+  await expect(page.getByTestId("kid-end")).toBeInViewport();
+}
