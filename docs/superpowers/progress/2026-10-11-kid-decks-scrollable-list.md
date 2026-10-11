@@ -41,4 +41,4 @@ Dostosowanie środowiska: zainstalowany superpowers 6.3.0 nie zawiera skryptów 
   - M3 `scroll-margin-bottom` dla focus klawiaturowego vs sticky stopka (styles.css) — polerunek, ścieżka kliknięć dowiedzona e2e; ODŁOŻONE.
   - M4 martwe CSS `.kid-recommended-title` (styles.css:253) — potwierdzone grepem, ISTNIEJĄCE w main (nie ta gałąź); ODŁOŻONE poza zakres.
   - M5 treść planu: komendy „z roota repo" vs faktyczny worktree — uwaga procesowa na przyszłe plany; PRZYJĘTE jako nota.
-- [ ] finishing-a-development-branch → push + PR (scala właściciel, Squash and merge)
+- [x] finishing-a-development-branch → push + PR: gałąź wypchnięta do origin, **PR #44** (https://github.com/lookassh/knowli/pull/44) z pełnym opisem weryfikacji, review i znanej awarii z main. Scala właściciel przez Squash and merge. Worktree zachowany do ewentualnych poprawek z review PR.
