@@ -47,4 +47,9 @@ Potwierdzenie na CI: zielony run PR (3 shardy e2e + tests). Charakter zmian: A/B
 ## Odstępstwa
 
 - C3 nie naprawione (brak dowodu przyczyny; 1 wystąpienie pre-sharding).
+- **C1/C2 bez klasycznego RED→GREEN** — to zmiany infrastruktury asercji w istniejących specach e2e (timeout, stabilizacja boundingBox), nie nowe zachowanie produktu; deterministyczny RED nie jest osiągalny dla flaka zależnego od obciążenia. Dowodem jest analiza artefaktów CI + zielone przebiegi po zmianie (2×).
 - Tryb B nie odtworzył się lokalnie eksperymentalnie (0/300 na Windows) — mechanizm potwierdzono źródłowo + deterministycznym testem regresji z `pg_terminate_backend`.
+
+## Review
+
+Niezależny review (subagent recenzent, model sesji GLM-5.3 — najmocniejszy dostępny w środowisku, rodzina GPT Astra wykluczona): **With fixes**. Important #1 — na ścieżce porażki test regresyjny sam otwierał wyścig 57P01 (`held` bez guarda, bez `end()` w `finally`) → naprawione (`openQuietDatabase` + `end()` w `finally`). Minory przyjęte: filtr `backend_type = 'client backend'` w `waitForDatabaseIdle`, redakcja credentials w komunikacie `waitUntilDatabaseReady`, `test.setTimeout(20_000)` dla testu nawigacji, rozszerzone noty w dzienniku. Minory odłożone: filtr kodów błędów w guardzie, `docker inspect` fail-fast w setupach, guard na pozostałych pulach (poza ekspozycją na DROP per-test).

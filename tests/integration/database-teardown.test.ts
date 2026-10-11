@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { createDatabase } from "@learning/server";
 import { describe, expect, it } from "vitest";
 import { openQuietDatabase, testDatabase, testDatabaseUrl, waitForDatabaseIdle } from "./helpers";
 
@@ -17,7 +16,9 @@ describe("teardown bazy per-testowej", () => {
     await admin.pool.query(`CREATE DATABASE "${databaseName}"`);
     const url = new URL(testDatabaseUrl());
     url.pathname = `/${databaseName}`;
-    const held = createDatabase(url.toString());
+    // held też z guardem: na ścieżce porażki finally robi DROP FORCE bez end()
+    // — surowa pula odtworzyłaby tu dokładnie leczony wyścig 57P01.
+    const held = openQuietDatabase(url.toString());
     try {
       await held.pool.query("select 1");
 
@@ -26,6 +27,7 @@ describe("teardown bazy per-testowej", () => {
       await held.pool.end();
       await expect(waitForDatabaseIdle(admin.pool, databaseName, 5_000)).resolves.toBeUndefined();
     } finally {
+      await held.pool.end().catch(() => undefined);
       await admin.pool.query(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`).catch(() => undefined);
     }
   });
@@ -39,7 +41,9 @@ describe("teardown bazy per-testowej", () => {
     const { pool } = openQuietDatabase(url.toString());
     try {
       // kontrakt guarda: pula ma własny listener 'error', zanim test doda swój —
-      // bez niego późny 57P01 staje się nieobsłużonym wyjątkiem całego runu
+      // bez niego późny 57P01 staje się nieobsłużonym wyjątkiem całego runu.
+      // Pilnuje wyłącznie listenera z openQuietDatabase (gdyby pg/ktoś inny
+      // dodał własny, canary przestaje być dowodem naszego guarda).
       expect(pool.listenerCount("error")).toBeGreaterThan(0);
       const { rows } = await pool.query("select pg_backend_pid() as pid");
       const pid = rows[0]!.pid as number;

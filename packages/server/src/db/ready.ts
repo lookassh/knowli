@@ -25,6 +25,10 @@ async function probePostgres(connectionString: string): Promise<void> {
   }
 }
 
+function redactCredentials(connectionString: string): string {
+  return connectionString.replace(/\/\/([^:@/\s]+):([^@/\s]+)@/, "//$1:***@");
+}
+
 export async function waitUntilDatabaseReady(
   connectionString: string,
   options: DatabaseReadinessOptions = {},
@@ -44,7 +48,7 @@ export async function waitUntilDatabaseReady(
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
   throw new Error(
-    `PostgreSQL nie odpowiedział handshake'em na ${connectionString} w ${timeoutMs} ms` +
+    `PostgreSQL nie odpowiedział handshake'em na ${redactCredentials(connectionString)} w ${timeoutMs} ms` +
       (lastError === undefined ? "" : ` (ostatnia przyczyna: ${String(lastError)})`),
   );
 }

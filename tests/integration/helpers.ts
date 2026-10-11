@@ -45,7 +45,7 @@ export async function waitForDatabaseIdle(pool: Pool, databaseName: string, time
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const { rows } = await pool.query(
-      "select count(*)::int as count from pg_stat_activity where datname = $1 and pid <> pg_backend_pid()",
+      "select count(*)::int as count from pg_stat_activity where datname = $1 and backend_type = 'client backend' and pid <> pg_backend_pid()",
       [databaseName],
     );
     if ((rows[0]?.count ?? 0) === 0) return;

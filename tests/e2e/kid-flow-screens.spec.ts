@@ -79,6 +79,10 @@ async function expectThemeToken(page: Page, locator: Locator, token: "surface" |
 }
 
 test("profile keeps child and parent navigation within the blue theme", async ({ page }) => {
+  // Dwie asercje po 10 s (kompilacja /parent on-demand) nie mieszczą się w
+  // file-wide 15 s — budżet testu podnosimy, żeby porażkę zgłaszała asercja
+  // z czytelnym komunikatem, nie test-timeout.
+  test.setTimeout(20_000);
   await page.emulateMedia({ colorScheme: "dark" });
   await setup(page, { profiles: [profile(), profile(otherChildId, "Maja")] });
   const firstProfile = page.getByTestId("kid-profile").first();
