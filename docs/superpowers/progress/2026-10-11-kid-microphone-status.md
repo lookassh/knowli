@@ -20,7 +20,7 @@ Baza: `dfe905b` (origin/main, redesign #42). Worktree: `kid-microphone-status`, 
 - [x] verification-before-completion: końcowe test:unit 487/487, typecheck, build i git diff --check exit 0. Cały kid-ui-layout: 45/45 po poprawce review, plus wcześniej realna regresja odmowy mikrofonu z PostgreSQL.
 - [x] requesting-code-review: cały diff od dfe905b, dedykowany reviewer gpt-6.1-sol high; raport w docs/superpowers/reviews/2026-10-11-kid-microphone-status.md.
 - [x] Obsługa uwag: Important potwierdzony RED->GREEN i zweryfikowany przez reviewera. Critical/Important/Minor otwarte: 0.
-- [ ] finishing-a-development-branch: commit, push gałęzi, PR do main, przypięcie PR. Scala właściciel przez squash.
+- [x] finishing-a-development-branch: commit 568cb66, push gałęzi, PR #43 do main i przypięcie PR do zadania. https://github.com/lookassh/knowli/pull/43 . Scala właściciel przez squash; worktree zachowany.
 
 ## Decyzje
 
