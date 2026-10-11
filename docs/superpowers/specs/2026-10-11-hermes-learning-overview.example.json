@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "learningTimeDefinition": { "method": "activity_intervals_v1", "maxGapSeconds": 120 },
+  "generatedAt": "2026-10-11T17:00:00.000Z",
+  "timezone": "Europe/Warsaw",
+  "period": { "from": "2026-10-09", "to": "2026-10-11", "days": 3 },
+  "plannedTestsPeriod": { "from": "2026-10-11", "to": "2026-10-24", "days": 14 },
+  "children": [
+    {
+      "childId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "childName": "Ola",
+      "learningTime": { "seconds": 1980, "estimated": true },
+      "dailyActivity": [
+        {
+          "date": "2026-10-09",
+          "learningTime": { "seconds": 600, "estimated": true },
+          "isPartialDay": false,
+          "hasRecordedActivity": true,
+          "sessionsWithActivity": 1,
+          "submittedAttempts": 8,
+          "pendingAttempts": 0,
+          "decks": [
+            {
+              "deckId": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+              "deckVersionId": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+              "deckTitle": "Dni tygodnia",
+              "deckVersionNumber": 2,
+              "assessmentCounts": [
+                { "skill": "recall", "independentCorrect": 5, "correctNotIndependent": 1, "incorrect": 2, "unassessed": 0 },
+                { "skill": "spelling", "independentCorrect": 4, "correctNotIndependent": 1, "incorrect": 3, "unassessed": 0 }
+              ]
+            }
+          ],
+          "mockTests": []
+        },
+        {
+          "date": "2026-10-10",
+          "learningTime": { "seconds": 0, "estimated": true },
+          "isPartialDay": false,
+          "hasRecordedActivity": false,
+          "sessionsWithActivity": 0,
+          "submittedAttempts": 0,
+          "pendingAttempts": 0,
+          "decks": [],
+          "mockTests": []
+        },
+        {
+          "date": "2026-10-11",
+          "learningTime": { "seconds": 1380, "estimated": true },
+          "isPartialDay": true,
+          "hasRecordedActivity": true,
+          "sessionsWithActivity": 3,
+          "submittedAttempts": 7,
+          "pendingAttempts": 0,
+          "decks": [
+            {
+              "deckId": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+              "deckVersionId": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+              "deckTitle": "Dni tygodnia",
+              "deckVersionNumber": 2,
+              "assessmentCounts": [
+                { "skill": "recall", "independentCorrect": 6, "correctNotIndependent": 0, "incorrect": 1, "unassessed": 0 },
+                { "skill": "spelling", "independentCorrect": 5, "correctNotIndependent": 0, "incorrect": 2, "unassessed": 0 }
+              ]
+            }
+          ],
+          "mockTests": [
+            {
+              "sessionId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+              "deckId": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+              "deckVersionId": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+              "deckTitle": "Dni tygodnia",
+              "deckVersionNumber": 2,
+              "endedAt": "2026-10-11T15:40:00.000Z",
+              "complete": true,
+              "taskBudget": 4,
+              "skills": [
+                { "skill": "recall", "totalItems": 7, "independentCorrect": 3, "practiceNeeded": 1, "correctNotIndependent": 0, "notTested": 3, "skipped": 0, "unassessed": 0 },
+                { "skill": "spelling", "totalItems": 7, "independentCorrect": 2, "practiceNeeded": 2, "correctNotIndependent": 0, "notTested": 3, "skipped": 0, "unassessed": 0 }
+              ]
+            }
+          ]
+        }
+      ],
+      "currentProgress": [
+        {
+          "deckId": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+          "deckVersionId": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+          "deckTitle": "Dni tygodnia",
+          "deckVersionNumber": 2,
+          "totalItems": 7,
+          "skills": [
+            { "skill": "listening", "mastered": 5, "needsConfirmation": 1, "needsReconfirmation": 0, "practicing": 1, "notAssessed": 0 },
+            { "skill": "reading", "mastered": 4, "needsConfirmation": 1, "needsReconfirmation": 0, "practicing": 2, "notAssessed": 0 },
+            { "skill": "recall", "mastered": 4, "needsConfirmation": 2, "needsReconfirmation": 0, "practicing": 1, "notAssessed": 0 },
+            { "skill": "pronunciation", "mastered": 0, "needsConfirmation": 0, "needsReconfirmation": 0, "practicing": 0, "notAssessed": 7 },
+            { "skill": "spelling", "mastered": 3, "needsConfirmation": 1, "needsReconfirmation": 1, "practicing": 2, "notAssessed": 0 }
+          ],
+          "practiceItems": [
+            { "itemId": "ffffffff-ffff-4fff-8fff-ffffffffffff", "source": "środa", "target": "Wednesday", "skills": ["spelling"], "lastDifficultyDate": "2026-10-11" }
+          ],
+          "practiceItemsTruncated": false
+        }
+      ],
+      "plannedTests": [
+        {
+          "assignmentId": "11111111-1111-4111-8111-111111111111",
+          "deckId": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+          "deckTitle": "Dni tygodnia",
+          "date": "2026-10-15",
+          "daysUntil": 4,
+          "goals": ["recall", "spelling"],
+          "source": "umiem_assignment"
+        }
+      ]
+    },
+    {
+      "childId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "childName": "Kuba",
+      "learningTime": { "seconds": 0, "estimated": true },
+      "dailyActivity": [
+        { "date": "2026-10-09", "learningTime": { "seconds": 0, "estimated": true }, "isPartialDay": false, "hasRecordedActivity": false, "sessionsWithActivity": 0, "submittedAttempts": 0, "pendingAttempts": 0, "decks": [], "mockTests": [] },
+        { "date": "2026-10-10", "learningTime": { "seconds": 0, "estimated": true }, "isPartialDay": false, "hasRecordedActivity": false, "sessionsWithActivity": 0, "submittedAttempts": 0, "pendingAttempts": 0, "decks": [], "mockTests": [] },
+        { "date": "2026-10-11", "learningTime": { "seconds": 0, "estimated": true }, "isPartialDay": true, "hasRecordedActivity": false, "sessionsWithActivity": 0, "submittedAttempts": 0, "pendingAttempts": 0, "decks": [], "mockTests": [] }
+      ],
+      "currentProgress": [],
+      "plannedTests": []
+    }
+  ]
+}

@@ -56,6 +56,16 @@ SDK dostawców występują tylko w adapterach za portami LLM, TTS, STT, pronunci
 
 Nie dodawaj mikroserwisów, Redis, osobnego backendu, ogólnego frameworka pluginów ani abstrakcji repozytorium dla każdej tabeli.
 
+## Integracja MCP i skill Umiem! — wspólny kontrakt z API
+
+- Kod adaptera MCP utrzymuj **w tym repozytorium**, w `integrations/umiem-mcp/`. Instrukcje korzystania z integracji utrzymuj w `integrations/umiem-mcp/skills/umiem-learning/SKILL.md` (zachowuj tę pisownię nazwy pliku). Są to docelowe ścieżki planowanej integracji; samo dodanie tych zasad nie oznacza, że MCP lub skill są już zaimplementowane.
+- MCP jest klientem jawnego API Umiem!, uruchamianym u konsumenta przez stdio; nie importuje bazy, domeny ani sekretów procesu web. Hermes przechowuje konfigurację i instaluje wersję MCP/skilla pochodzącą z określonego commita tego repo. Kod integracji z raportem rodzinnym pozostaje w repozytorium Hermesa. Nie utrzymuj tam niezależnego forka adaptera ani skilla.
+- **Przy każdej zmianie API sprawdź wpływ na MCP i `SKILL.md`.** Gdy zmiana dotyczy udostępnionych endpointów, DTO, parametrów, wartości domyślnych, autoryzacji, kodów błędów albo znaczenia danych (np. samodzielności, czasu nauki i terminów sprawdzianów), zaktualizuj w tym samym PR adapter, jego walidację oraz skill w wymaganym zakresie. Samo przejście testów serwera nie potwierdza zgodności integracji.
+- Źródłem kontraktu są schematy w `packages/contracts`. Regeneruj przenośny JSON Schema i aktualizuj jego kopię w pakiecie MCP, przykłady oraz testy zgodności; nie rozwijaj ręcznie rozbieżnych definicji. Sprawdź zgodność `schemaVersion` i zachowanie względem już wdrożonych wersji API/MCP; zmianę niezgodną zaplanuj wraz z kolejnością aktualizacji obu stron.
+- W `SKILL.md` utrzymuj prawdziwe nazwy narzędzi i parametrów, ograniczenia odczytu, interpretację wyniku, obsługę błędów oraz zasady prywatności. Nie umieszczaj w nim tokenów, prywatnych danych dzieci ani twierdzeń, że poprawne odpowiedzi oznaczają trwałe opanowanie lub brak zapisu oznacza brak nauki. Czas szacowany pozostaje jawnie oznaczony.
+- Uruchom adekwatne testy adaptera, walidacji kontraktu i stdio, korzystając z fikcyjnych danych; sprawdź, że instrukcje skilla odpowiadają rzeczywistemu narzędziu. Jeśli zmiana API nie wymaga zmiany MCP albo skilla, uzasadnij to w dzienniku/PR. Gdy integracja jest jeszcze planowana, zamiast deklarować sprawdzenia nieistniejącego kodu aktualizuj specyfikację, przykładowy kontrakt i plany.
+- W opisie PR podaj wpływ na API → MCP → skill, wykonane sprawdzenia oraz wymagane wdrożenia po stronie konsumentów. Aktualizacja kodu w repo nie oznacza aktualizacji zainstalowanego MCP ani skilla u Hermesa.
+
 ## Zasady danych i uczenia
 
 - Opublikowana treść jest niezmienna. Edycja tworzy nowy szkic; sesja przypina wersję zestawu i polityki.

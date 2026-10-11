@@ -20,6 +20,8 @@ Jeden workspace pnpm. Dwie aplikacje wykonawcze, trzy współdzielone pakiety. T
 | docs/ | Specyfikacja, architektura, próba techniczna i procedury |
 | deploy/ | Compose, obrazy, skrypty migracji i backupu |
 
+Planowana integracja Umiem! dla agentów (2026-10-11): kod MCP, jego osobny pakiet Python i testy będą w `integrations/umiem-mcp/`, a skill konsumenta w `integrations/umiem-mcp/skills/umiem-learning/SKILL.md`. Pakiet nie jest częścią workspace pnpm ani procesu web/worker; komunikuje się wyłącznie przez API i jest instalowany u konsumenta z wersji tego repo. Powiązane zasady aktualizacji API/MCP/skilla są w `AGENTS.md`. Te ścieżki są projektem, nie opisem wdrożonego kodu.
+
 Nazwy pakietów: @learning/contracts, @learning/kid-ui i @learning/server. apps/web jest @learning/web, apps/worker jest @learning/worker.
 
 ## 2. Host web
