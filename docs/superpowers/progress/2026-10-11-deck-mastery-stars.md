@@ -15,7 +15,20 @@
 - [x] Zadanie 1 — wspólny helper `starsForFraction` + refactor `mock-test-score.ts` (commit `7accba1`).
 - [x] Zadanie 2 — gwiazdki w `DeckCard` (commit `aff8389`).
 - [x] Zadanie 3 — SPEC §6: przykład widoku + zdanie o „3/7 umiem" (commit `aba0ec7`).
-- [ ] Zadanie 4 — pełna weryfikacja (unit/typecheck/build), niezależny review, PR do `main` (squash wykonuje właściciel).
+- [x] Zadanie 4a — pełna weryfikacja (unit/typecheck/build) — wyniki poniżej.
+- [x] Zadanie 4b — niezależny review wykonany; 0 Critical, 0 Important, 2 Minor odłożone.
+- [ ] Zadanie 4c — push gałęzi i PR do `main`; scala właściciel przez squash.
+
+## Niezależny review (requesting-code-review)
+
+- Recenzent: dedykowany subagent general-purpose, zakres `da20f3f..9fd5318` (cała gałąź, 5 commitów). Model: GLM-5.3 — najmocniejszy dostępny w środowisku (ListModels; rodziny GPT Astra brak w środowisku, więc wykluczenie spełnione vacuo); ZCode Agent nie exposures parametru modelu per-subagent, więc subagent działa na modelu sesji — odnotowane jako mechanizm klienta.
+- Recenzent **niezależnie powtórzył** weryfikacje: `test:unit` 55/482 PASS, `typecheck` exit 0, `build` sukces — wyniki identyczne z zadeklarowanymi.
+- Werdykt: **Gotowe do scalenia: Tak**. 0 Critical, 0 Important.
+- Minor (odłożone, potwierdzone technicznie po weryfikacji receiving-code-review):
+  1. `MockTestSummaryScreen.tsx:31` — render pustych gwiazdek używa literału `6` (wzór liczony jest już w `stars.ts`, ale `repeat(6 - score.stars)` zachowuje własną stałą); follow-up jednolinijkowy `MASTERY_STAR_MAX - score.stars` przy następnym dotknięciu pliku.
+  2. `docs/superpowers/progress/2026-10-11-deck-mastery-stars.md` — pusta linia na EOF; kosmetyka.
+- Odchylenia potwierdzone przez recenzenta jako uzasadnione: whitespace przykładu SPEC (konwencja blockquote zweryfikowana w base), szacunek liczby testów w planie (486 vs 482 — błędny baseline w planie, zieleń całości liczy się), origin/main przesunął się do `ec716bf` (wyłącznie `.gitignore`, merge-tree czysty — PR scali się bez konfliktów).
+
 
 ## Wyniki kroków
 
