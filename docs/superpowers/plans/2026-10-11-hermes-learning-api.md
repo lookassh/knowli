@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-11-hermes-learning-integration-design.md`, przykład `docs/superpowers/specs/2026-10-11-hermes-learning-overview.example.json`; reguły produktu: `docs/SPEC.md` §18–26, `docs/architecture.md` §9–13, `docs/folder-structure.md`, `docs/implementation-plan.md`. `docs/schema.sql` jest projektem historycznym; migracja poniżej aktualizuje autorytatywny Drizzle.
 
-**Status:** Plan do przeglądu. Użytkownik zaakceptował przedstawiony przykład API i poprosił o writing-plans; nie polecił jeszcze wykonania planu ani wdrożenia. Szczegóły wykonawcze specyfikacji §7 są częścią tego przeglądu.
+**Status:** Użytkownik zaakceptował plany A/B/C i polecił implementację. Kod wykonywany lokalnie w izolowanym worktree; wdrożenie produkcyjne pozostaje oddzielnym etapem wymagającym autoryzacji. Szczegóły wykonawcze specyfikacji §7 są wiążące.
 
 ## Global Constraints
 

@@ -179,6 +179,8 @@ W MVP wymagane są:
 - podstawowy panel postępów rodzica;
 - PWA oraz uruchomienie przez Docker / Coolify.
 
+Uzupełnienie integracyjne (2026-10-11): aplikacja może udostępniać prywatnemu agentowi rodzinnemu wyłącznie do odczytu API podsumowania Umiem!. Raport obejmuje lokalne dni, sprawdziany zapisane w Umiem!, bieżący postęp i jawnie szacowany czas nauki; nie zastępuje Parent API ani nie stwierdza braku nauki poza aplikacją. Kontrakt i prywatność opisuje `docs/integrations/hermes-learning.md`.
+
 ## 8. Zestaw i element słownictwa
 
 Pierwszy typ zestawu to `vocabulary`. Docelowo możliwy będzie także `source_material`.

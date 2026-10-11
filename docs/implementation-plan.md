@@ -1,5 +1,9 @@
 # Rodzinny asystent nauki — plan implementacji MVP
 
+## Integracja raportu nauki z Hermesem (2026-10-11)
+
+Raportowe API, token `learning:read`, adapter MCP/stdio i skill konsumenta są utrzymywane razem w tym repo. Hermes zużywa wydany artefakt przez istniejący runtime raportów. Kontrakt i procedura: `docs/integrations/hermes-learning.md`; szczegółowe plany: `docs/superpowers/plans/2026-10-11-hermes-learning-*.md`.
+
 ## Uzupełnienie — niezawodność panelu rodzica (2026-10-09)
 
 Panel zachowuje bazowy numer edycji podczas pollingu, ostrzega przed utratą niezapisanych zmian i po konflikcie pokazuje lokalną oraz zdalną wersję. Rodzic jawnie wybiera zdalną wersję, ręcznie przenosi potrzebne poprawki i zatwierdza zakończenie porównania. Nowa wersja po publikacji używa istniejącego przepływu szkicu. Szczegóły i dowody: `superpowers/plans/2026-10-09-parent-edit-protection.md`; testy `parent-edit-protection.spec.ts` (7/7), `manual-deck-flow.spec.ts` i `parent-flow.spec.ts` (24/24), `pnpm typecheck`. Natywne zachowanie `beforeunload` zależy od przeglądarki; automatyzacja sprawdza samo zdarzenie i czysty reload po zapisie.
