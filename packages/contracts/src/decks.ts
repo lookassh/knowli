@@ -3,6 +3,9 @@ import { UuidSchema } from "./common";
 import { GenerationDtoSchema } from "./generation";
 import { TestGoalsSchema, MockTestTaskCountSchema } from "./mock-tests";
 
+export const RecordingModeSchema = z.enum(["hold", "toggle"]);
+export type RecordingModeDto = z.infer<typeof RecordingModeSchema>;
+
 /**
  * Profil dziecka. Input pochodzi od rodzica; DTO dodaje identyfikator.
  * Ograniczenia odzwierciedlają CHECK-i w learning_app.child_profiles.
@@ -18,13 +21,15 @@ export type ChildInput = z.infer<typeof ChildInputSchema>;
 export const ChildPatchSchema = z.object({
   displayName: z.string().trim().min(1).max(80).optional(),
   avatarKey: z.string().min(1).max(40).optional(),
-}).strict().refine((input) => input.displayName !== undefined || input.avatarKey !== undefined, {
+  recordingMode: RecordingModeSchema.optional(),
+}).strict().refine((input) => input.recordingMode !== undefined || input.displayName !== undefined || input.avatarKey !== undefined, {
   message: "At least one profile field is required",
 });
 export type ChildPatch = z.infer<typeof ChildPatchSchema>;
 
 export const ChildDtoSchema = ChildInputSchema.extend({
   id: UuidSchema,
+  recordingMode: RecordingModeSchema,
 });
 export type ChildDto = z.infer<typeof ChildDtoSchema>;
 
@@ -56,11 +61,13 @@ export function toChildDto(row: {
   displayName: string;
   avatarKey: string;
   birthYear: number | null;
+  recordingMode: RecordingModeDto;
 }): ChildDto {
   return {
     id: row.id,
     displayName: row.displayName,
     avatarKey: row.avatarKey,
+    recordingMode: row.recordingMode,
     ...(row.birthYear === null ? {} : { birthYear: row.birthYear }),
   };
 }

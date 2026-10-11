@@ -8,6 +8,7 @@ import {
   listChildren,
   loginParent,
   logoutParent,
+  listKidProfiles,
   requireParent,
   setupParent,
   type AppError,
@@ -202,10 +203,30 @@ describe("auth i profile dzieci (integracja)", () => {
   it("edycja profilu aktualizuje tylko dostarczone pola", async () => {
     const { services } = buildTestServices();
     const child = await createChild(services, { displayName: "Ola", avatarKey: "fox", birthYear: 2018 });
+    expect(child.recordingMode).toBe("hold");
     expect(await updateChild(services, child.id, { displayName: "  Ala  " })).toEqual({ ...child, displayName: "Ala" });
     expect(await updateChild(services, child.id, { avatarKey: "cat" })).toEqual({ ...child, displayName: "Ala", avatarKey: "cat" });
     expect(await updateChild(services, child.id, { displayName: "Ewa", avatarKey: "owl" }))
       .toEqual({ ...child, displayName: "Ewa", avatarKey: "owl" });
+    expect(await updateChild(services, child.id, { recordingMode: "toggle" }))
+      .toEqual({ ...child, displayName: "Ewa", avatarKey: "owl", recordingMode: "toggle" });
+    expect(await listKidProfiles(services)).toEqual([{
+      childId: child.id,
+      displayName: "Ewa",
+      avatarKey: "owl",
+      recordingMode: "toggle",
+    }]);
+  });
+
+  it("profil odrzuca nieobsługiwany tryb i NULL bez zmiany ustawienia", async () => {
+    const { services } = buildTestServices();
+    const child = await createChild(services, { displayName: "Ola", avatarKey: "fox" });
+    const { pool } = testDatabase();
+    await expect(pool.query("update learning_app.child_profiles set recording_mode = 'tap' where id = $1", [child.id]))
+      .rejects.toMatchObject({ code: "23514" });
+    await expect(pool.query("update learning_app.child_profiles set recording_mode = null where id = $1", [child.id]))
+      .rejects.toMatchObject({ code: "23502" });
+    expect((await listChildren(services))[0]).toEqual(child);
   });
 
   it("dwaj klienci edytują różne pola, a edycja po usunięciu nie odtwarza profilu", async () => {
@@ -258,6 +279,11 @@ describe("auth i profile dzieci (integracja)", () => {
     const ok = await updateChildRoute(jsonRequest(path, "PATCH", { displayName: "  Ewa  ", avatarKey: "owl" }, authHeaders), childRouteContext(child.id));
     expect(ok.status).toBe(200);
     expect(await ok.json()).toEqual({ ...child, displayName: "Ewa", avatarKey: "owl" });
+    const modeOnly = await updateChildRoute(jsonRequest(path, "PATCH", { recordingMode: "toggle" }, authHeaders), childRouteContext(child.id));
+    expect(modeOnly.status).toBe(200);
+    expect(await modeOnly.json()).toEqual({ ...child, displayName: "Ewa", avatarKey: "owl", recordingMode: "toggle" });
+    const invalidMode = await updateChildRoute(jsonRequest(path, "PATCH", { recordingMode: "tap" }, authHeaders), childRouteContext(child.id));
+    expect(invalidMode.status).toBe(400);
   });
 
   it("DELETE profilu przez API wymaga sesji i tego samego Origin; nieznany profil daje 404", async () => {

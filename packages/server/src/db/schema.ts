@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import type { TestGoal } from "@learning/contracts";
+import type { RecordingModeDto, TestGoal } from "@learning/contracts";
 import type { MockTestPlanSnapshot } from "../domain/mock-test-types";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
@@ -71,6 +71,7 @@ export const childProfiles = app.table(
     displayName: text("display_name").notNull(),
     avatarKey: text("avatar_key").notNull(),
     birthYear: smallint("birth_year"),
+    recordingMode: text("recording_mode").$type<RecordingModeDto>().notNull().default("hold"),
     // własna wersja polityki dziecka (design 2026-10-09); null = bieżąca globalna
     policyId: text("policy_id").references((): AnyPgColumn => learningPolicies.id),
     createdAt: timestamps("created_at").notNull().defaultNow(),
@@ -78,6 +79,7 @@ export const childProfiles = app.table(
   (t) => [
     check("child_profiles_display_name_length", sql`length(${t.displayName}) between 1 and 80`),
     check("child_profiles_birth_year_range", sql`${t.birthYear} is null or ${t.birthYear} between 1900 and 2200`),
+    check("child_profiles_recording_mode", sql`${t.recordingMode} in ('hold', 'toggle')`),
   ],
 );
 

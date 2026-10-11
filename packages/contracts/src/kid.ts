@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { InstantSchema, UuidSchema } from "./common";
-import { isVisualDataValid, VisualTypeSchema } from "./decks";
+import { isVisualDataValid, RecordingModeSchema, VisualTypeSchema } from "./decks";
 
 const visualPromptFields = {
   visualType: VisualTypeSchema.default("none"),
@@ -215,6 +215,7 @@ export const KidProfileDtoSchema = z.object({
   childId: UuidSchema,
   displayName: z.string().min(1),
   avatarKey: z.string().min(1),
+  recordingMode: RecordingModeSchema,
 });
 export type KidProfileDto = z.infer<typeof KidProfileDtoSchema>;
 
