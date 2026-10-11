@@ -17,6 +17,7 @@ export const messages = {
     already_configured: "Konto rodzica już istnieje.",
     validation: "Sprawdź poprawność wpisanych danych.",
     mock_test_unavailable: "Kartkówka nie jest jeszcze gotowa. Możesz poćwiczyć zestaw.",
+    learning_summary_unavailable: "Podsumowanie nauki jest chwilowo niedostępne. Spróbuj ponownie później.",
     forbidden: "Brak dostępu.",
     not_found: "Nie znaleziono.",
     conflict: "Ta operacja nie jest już możliwa. Odśwież i spróbuj ponownie.",
