@@ -19,6 +19,13 @@
 - [x] Zadanie 4b — niezależny review wykonany; 0 Critical, 0 Important, 2 Minor odłożone.
 - [x] Zadanie 4c — gałąź wypchnięta, PR **#45**: https://github.com/lookassh/knowli/pull/45 (scala właściciel przez Squash and merge; worktree zachowany na wypadek uwag z PR).
 
+## Epizod CI po otwarciu PR (systematic-debugging)
+
+- Pierwszy check e2e na PR czerwony: jedyny padły test `speech-recording-ux.spec.ts:133` — znana awaria pre-existing z main po #42; re-run tego samego commitu padł w **innym** teście (`parent-flow.spec.ts:246`, błąd `socket hang up` na GET do serwera dev — flak infrastrukturalny, nie asercja). Te same dwa testy padały na runach main bez tej gałęzi; job `tests` zielony przez cały czas → czerwony check nie był spowodowany tą zmianą.
+- Właściciel scalił w międzyczasie #47 (e2e w 3 shardach) i #46 → nowy run PR z nową bazą: **tests ✓, e2e 1/3 ✓, 2/3 ✓, 3/3 ✓ — całość zielona** (run 38166124950). PR gotowy do scalenia.
+- Zaległość poza zakresem: stabilizacja `speech-recording-ux:133` i `parent-flow:246` (socket hang up) — osobne zadanie debugowe; sporadyczny pad setupu e2e (`CREATE SCHEMA` — gotowość Postgresa) również wymaga uwagi.
+
+
 ## Niezależny review (requesting-code-review)
 
 - Recenzent: dedykowany subagent general-purpose, zakres `da20f3f..9fd5318` (cała gałąź, 5 commitów). Model: GLM-5.3 — najmocniejszy dostępny w środowisku (ListModels; rodziny GPT Astra brak w środowisku, więc wykluczenie spełnione vacuo); ZCode Agent nie exposures parametru modelu per-subagent, więc subagent działa na modelu sesji — odnotowane jako mechanizm klienta.
