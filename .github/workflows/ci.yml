@@ -3,6 +3,8 @@
 # się automatycznie z main, więc scalony kod musi przejść ten sam cykl.
 # Testy są samowystarczalne: integration i e2e stawiają własne kontenery
 # postgres:17-alpine w global-setup, e2e działa na fake providerach (bez kluczy).
+# E2e biegnie w 3 równoległych shardach (osobne runnery, każdy z własnym światem),
+# bo szeregowe 128 testów na jednym workerze trwało ~10 minut.
 name: CI
 
 on:
@@ -53,9 +55,19 @@ jobs:
         run: pnpm build
 
   e2e:
-    name: e2e
+    name: e2e (shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
+    strategy:
+      # Pierwszy failure nie zabiera pozostałych shardów — pełny obraz runu.
+      fail-fast: false
+      # Każdy shard to osobny świat (własny postgres, `next dev`, worker),
+      # bo global-setup działa per shard. Playwright dzieli speci na shardy
+      # w całości (po plikach), więc testy jednego pliku nie rozpadają się.
+      # Zmiana liczby shardów: sprawdź rozkład przez `playwright test
+      # --shard=k/n --list` — pusty shard wychodzi zielony i marnuje runnera.
+      matrix:
+        shard: ["1/3", "2/3", "3/3"]
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -68,12 +80,12 @@ jobs:
       - name: Install Playwright chromium
         run: pnpm exec playwright install --with-deps chromium
       - name: E2E tests
-        run: pnpm test:e2e
+        run: pnpm exec playwright test --shard=${{ matrix.shard }}
       - name: Upload test artifacts unless green
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: e2e-test-results
+          name: e2e-test-results-shard${{ strategy.job-index }}
           path: test-results/
           retention-days: 7
           if-no-files-found: ignore
