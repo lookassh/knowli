@@ -8,7 +8,7 @@
 
 **Spec:** docs/superpowers/specs/2026-10-11-hermes-learning-integration-design.md w Knowli; zależności A: 2026-10-11-hermes-learning-api.md, B: 2026-10-11-hermes-learning-mcp-and-reports.md. Wszystkie plany źródłowe są w docs/superpowers/plans Knowli; kopiować do wykonania z pochodzeniem wersji, nie rozwijać alternatywnego API.
 
-**Repo wykonania:** C:/Users/looka/OneDrive/Dokumenty/ChatGPT/Hermes-szkola. Ścieżki zadań tego planu są względem tego repo. Status: plan do przeglądu, brak implementacji i wdrożenia.
+**Repo wykonania:** C:/Users/looka/OneDrive/Dokumenty/ChatGPT/Hermes-szkola. Ścieżki zadań tego planu są względem tego repo. Status: lokalna implementacja klienta i instalatora ukończona w odizolowanej gałęzi Hermesa; oczekuje na niezależny wspólny przegląd. Nie ma skonfigurowanego remote dla Hermesa. Zadanie 3, wdrożenie i dowody rzeczywistego połączenia, wymaga osobnej autoryzacji.
 
 **Tech Stack:** Istniejący Python runtime Hermesa, mcp ClientSession/stdio_client, unittest; osobny pinned venv instaluje release adaptera z B. Nie migrować globalnego SDK/OAuth/WhatsApp.
 

@@ -10,7 +10,7 @@
 
 **Spec:** docs/superpowers/specs/2026-10-11-hermes-learning-integration-design.md; plan A: 2026-10-11-hermes-learning-api.md; plan C: 2026-10-11-hermes-learning-report-deployment.md (te plany są w docs/superpowers/plans).
 
-**Repo wykonania:** Knowli. Wszystkie ścieżki tego planu są względem jego katalogu głównego. Status: właściciel zaakceptował plan i polecił implementację. Wykonanie lokalne w izolowanym worktree; instalacja live pozostaje osobnym etapem.
+**Repo wykonania:** Knowli. Wszystkie ścieżki tego planu są względem jego katalogu głównego. Status: lokalna implementacja B ukończona; oczekuje na niezależny przegląd całego zakresu i PR. Instalacja live pozostaje osobnym etapem.
 
 ## Global Constraints
 

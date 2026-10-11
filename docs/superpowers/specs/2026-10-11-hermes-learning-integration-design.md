@@ -1,6 +1,6 @@
 # Umiem! → Hermes: przykładowe API i MCP
 
-**Status: specyfikacja i plany A/B/C zaakceptowane przez właściciela 2026-10-11, implementacja jest w toku w izolowanych repozytoriach Knowli i Hermes-szkola. Produkcyjne wdrożenie Coolify, token i wysyłka prawdziwego raportu nie są częścią tej zgody. Wszystkie dane testowe są fikcyjne.**
+**Status: specyfikacja i plany A/B/C zaakceptowane przez właściciela 2026-10-11; implementacja lokalna w Knowli i Hermes-szkola jest ukończona i oczekuje na niezależny przegląd oraz PR. Produkcyjne wdrożenie Coolify, token i wysyłka prawdziwego raportu pozostają osobnym etapem. Wszystkie dane testowe są fikcyjne.**
 
 Cel: Hermes może pobrać ostatnie dni nauki osobno dla każdego dziecka, aktualny postęp i nadchodzące sprawdziany, a następnie wykorzystać te fakty w rodzinnym podsumowaniu albo odpowiedzieć na pytanie rodzica. Umiem! wylicza dane; Hermes formułuje tekst. W tej propozycji nie zmieniamy reguł oceniania ani uczenia.
 
