@@ -1,7 +1,7 @@
-import { useEffect, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { messages, type KidDeckDto } from "@learning/contracts";
 import { format } from "../format";
-import { buildDeckPages, clampDeckPageIndex, formatDeckTestDate } from "./deck-presentation";
+import { formatDeckTestDate, groupDecks } from "./deck-presentation";
 
 function wordCount(count: number): string {
   const lastTwoDigits = count % 100;
@@ -15,7 +15,7 @@ function wordCount(count: number): string {
   return `${count} ${noun}`;
 }
 
-/** Ekran wyboru zestawu: nauka i próbna kartkówka są osobnymi działaniami. */
+/** Ekran wyboru zestawu: wszystkie przypisane zestawy w jednej przewijanej liście. */
 export function DeckScreen({
   decks,
   childName,
@@ -35,26 +35,11 @@ export function DeckScreen({
   onMockTest?: (deckId: string) => void;
   headerActions?: ReactNode;
 }) {
-  const [viewportWidth, setViewportWidth] = useState(390);
-  const [viewportHeight, setViewportHeight] = useState(0);
-  const [pageIndex, setPageIndex] = useState(0);
-  useEffect(() => {
-    const updateViewport = () => {
-      setViewportWidth(window.innerWidth);
-      setViewportHeight(window.innerHeight);
-    };
-    updateViewport();
-    window.addEventListener("resize", updateViewport);
-    return () => window.removeEventListener("resize", updateViewport);
-  }, []);
-
-  const cardsPerPage: 1 | 2 = viewportWidth >= 768 || (decks.length <= 2 && viewportHeight >= 760) ? 2 : 1;
-  const pages = buildDeckPages(decks, cardsPerPage);
-  const safePageIndex = clampDeckPageIndex(pageIndex, pages.length);
-  const page = pages[safePageIndex];
-  useEffect(() => {
-    setPageIndex((current) => clampDeckPageIndex(current, pages.length));
-  }, [pages.length]);
+  const groups = groupDecks(decks);
+  const sections = [
+    { kind: "recommended", title: messages.kid.recommendedTitle, items: groups.recommended },
+    { kind: "other", title: messages.kid.otherDecksTitle, items: groups.other },
+  ].filter((section) => section.items.length > 0);
 
   return (
     <main className="kid-screen kid-deck-screen">
@@ -64,36 +49,20 @@ export function DeckScreen({
 
       {decks.length === 0 ? (
         <p className="kid-hint" data-testid="kid-no-decks">{messages.kid.noDecks}</p>
-      ) : page ? (
-        <>
-          <section aria-label={page.kind === "recommended" ? messages.kid.recommendedTitle : messages.kid.otherDecksTitle}
-            className="kid-deck-page" data-kind={page.kind}>
-            <h2 className="kid-deck-group-title" data-testid={page.kind === "recommended" ? "kid-section-recommended" : "kid-section-other"}>
-              {page.kind === "recommended" ? messages.kid.recommendedTitle : messages.kid.otherDecksTitle}
+      ) : (
+        sections.map((section) => (
+          <section key={section.kind} aria-label={section.title} data-kind={section.kind}>
+            <h2 className="kid-deck-group-title" data-testid={section.kind === "recommended" ? "kid-section-recommended" : "kid-section-other"}>
+              {section.title}
             </h2>
             <ul className="kid-deck-list">
-              {page.decks.map((deck) => (
+              {section.items.map((deck) => (
                 <DeckCard key={deck.deckId} deck={deck} onStart={onStart} onMockTest={onMockTest} />
               ))}
             </ul>
           </section>
-          {pages.length > 1 && (
-            <nav className="kid-deck-pagination" aria-label={messages.kid.deckPagination}>
-              <button type="button" data-testid="kid-decks-previous" aria-label={messages.kid.previousDecksPage}
-                disabled={safePageIndex === 0} onClick={() => setPageIndex((index) => clampDeckPageIndex(index - 1, pages.length))}>
-                ‹
-              </button>
-              <span data-testid="kid-decks-page">
-                {format(messages.kid.deckPage, { current: safePageIndex + 1, total: pages.length })}
-              </span>
-              <button type="button" data-testid="kid-decks-next" aria-label={messages.kid.nextDecksPage}
-                disabled={safePageIndex >= pages.length - 1} onClick={() => setPageIndex((index) => clampDeckPageIndex(index + 1, pages.length))}>
-                ›
-              </button>
-            </nav>
-          )}
-        </>
-      ) : null}
+        ))
+      )}
 
       <aside className="kid-deck-microphone">
         <label className="kid-toggle">
