@@ -6,6 +6,7 @@ import { optionOutcomes, type OptionOutcome } from "../exercises/option-outcome"
 import { format } from "../format";
 import { AnswerFeedback } from "./AnswerFeedback";
 import { ExerciseFrame } from "../exercises/ExerciseFrame";
+import { KidIcon } from "../components/KidIcon";
 import { SpeechFeedbackCard } from "./SpeechFeedbackCard";
 import type { LearningSessionController, LearningScreen as LearningScreenState } from "../session/session-controller";
 
@@ -31,6 +32,16 @@ export function LearnScreen({
     : {};
   const remaining = controller.remainingFor(task);
   const micAvailable = screen.session.mode !== "mock_test" && screen.session.microphoneEnabled && !screen.micDenied;
+  const micState = screen.session.mode === "mock_test" || !screen.session.microphoneEnabled ? "off"
+    : screen.micDenied ? "unavailable"
+      : screen.recordingNotice === messages.kid.recordingUnavailable ? "unavailable"
+        : screen.microphoneReady ? "ready" : "pending";
+  const micLabel = micState === "unavailable" ? messages.kid.microphoneUnavailable
+    : micState === "off" ? messages.kid.microphoneOff
+      : micState === "ready" ? messages.kid.microphoneReady : messages.kid.microphonePending;
+  const micHint = micState === "unavailable" ? messages.kid.microphoneUnavailableHint
+    : micState === "off" ? messages.kid.microphoneOffHint
+      : micState === "ready" ? messages.kid.microphoneReadyHint : messages.kid.microphonePendingHint;
   // feedback próby wyboru = pasek wyniku zamiast karteczki
   const feedback = screen.feedback;
   const choiceFeedback =
@@ -71,15 +82,18 @@ export function LearnScreen({
         <button type="button" className="kid-end" data-testid="kid-end" disabled={busy} onClick={() => void controller.endNow()}>
           {messages.kid.end}
         </button>
+        <details className="kid-microphone-status" data-microphone-state={micState}>
+          <summary aria-label={micLabel} data-testid="kid-microphone-status">
+            <KidIcon name={micState === "off" || micState === "unavailable" ? "microphone-off" : "microphone"} />
+          </summary>
+          <p className="kid-microphone-hint" data-testid={micState === "unavailable" ? "kid-mic-denied" : "kid-microphone-hint"}>
+            {micHint}
+          </p>
+        </details>
       </header>
       {screen.session.mode === "mock_test" && <p className="kid-notice">{messages.kid.mockTestInfo}</p>}
       {screen.answerSaved && <p className="kid-notice" role="status">{messages.kid.answerSaved}</p>}
 
-      {screen.micDenied && (
-        <p className="kid-notice" data-testid="kid-mic-denied">
-          {messages.kid.micDenied}
-        </p>
-      )}
       {screen.processing && (
         <p className="kid-notice" data-testid="kid-processing" role="status">
           {messages.kid.processing}

@@ -61,6 +61,96 @@ async function openTask(page: Parameters<typeof installKidUiFixture>[0], task: R
   await page.getByTestId("kid-deck").click();
 }
 
+for (const colorScheme of ["light", "dark"] as const) {
+  test(`microphone help is compact and does not request access in ${colorScheme} theme`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 390, height: 700 });
+    await page.emulateMedia({ colorScheme });
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "mediaDevices", {
+        configurable: true,
+        value: { getUserMedia: async () => { throw new DOMException("Permission denied", "NotAllowedError"); } },
+      });
+    });
+    const fixture = recallFixture();
+    fixture.session.microphoneEnabled = true;
+    await installKidUiFixture(page, fixture);
+    await page.goto("/");
+    await page.getByTestId("kid-profile").click();
+    await page.getByTestId("kid-deck").click();
+    const status = page.getByTestId("kid-microphone-status");
+    await expect(status).toHaveAccessibleName("Mikrofon wymaga włączenia");
+    await page.getByTestId("kid-input").fill("cat");
+    await status.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("kid-microphone-hint")).toBeVisible();
+    await expect(status).toHaveAccessibleName("Mikrofon wymaga włączenia");
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("kid-microphone-hint")).toBeHidden();
+    await page.getByTestId("kid-record").click();
+    await expect(status).toHaveAccessibleName("Mikrofon niedostępny");
+    await expect(page.getByTestId("kid-mic-denied")).toBeHidden();
+    await expect(page.getByTestId("kid-record")).toHaveCount(0);
+    await expect(page.getByTestId("kid-input")).toHaveValue("cat");
+    await assertKidLayout(page);
+    await page.screenshot({ path: testInfo.outputPath(`microphone-${colorScheme}.png`) });
+    await status.click();
+    await expect(page.getByTestId("kid-mic-denied")).toHaveText("Mikrofon niedostępny. Możesz ćwiczyć bez nagrywania.");
+    await expect(page.getByTestId("kid-mic-denied")).toBeInViewport();
+    await expect(status.locator("svg")).toBeVisible();
+    const bounds = await status.boundingBox();
+    expect(bounds!.width).toBeGreaterThanOrEqual(44);
+    expect(bounds!.height).toBeGreaterThanOrEqual(44);
+  });
+
+  test(`retry feedback uses readable blue support in ${colorScheme} theme`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 390, height: 700 });
+    await page.emulateMedia({ colorScheme });
+    const task = taskFor("reading");
+    const attempt = {
+      attemptId: "10000000-0000-4000-8000-000000000010", taskId, state: "completed" as const,
+      modality: "choice" as const, feedback: { kind: "incorrect" as const, correctText: "kot" },
+      taskState: "issued" as const, stepId: "retry-feedback",
+      receivedAt: "2026-10-11T10:00:01.000Z", completedAt: "2026-10-11T10:00:01.000Z",
+    };
+    await installKidUiFixture(page, { ...recallFixture(), tasks: [task], attempts: [attempt] });
+    await page.goto("/");
+    await page.getByTestId("kid-profile").click();
+    await page.getByTestId("kid-deck").click();
+    await page.getByTestId("kid-option").nth(1).click();
+    const feedback = page.getByTestId("kid-feedback");
+    await expect(feedback).toContainText("Poćwiczymy razem");
+    await expect(page.getByTestId("kid-next")).toBeInViewport();
+    const colors = await feedback.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const channels = (color: string) => color.match(/[\d.]+/g)!.slice(0, 3).map(Number);
+      const background = channels(style.backgroundColor);
+      const luminance = (rgb: number[]) => rgb.map((c) => c / 255).map((c) => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+        .reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i]!, 0);
+      const fg = luminance(channels(style.color));
+      const bg = luminance(background);
+      return { blue: background[2]!, red: background[0]!, contrast: (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05) };
+    });
+    expect(colors.blue).toBeGreaterThan(colors.red);
+    expect(colors.contrast).toBeGreaterThanOrEqual(4.5);
+    await expect(page.getByTestId("kid-option").nth(0)).toHaveClass(/kid-option--correct/);
+    await expect(page.getByTestId("kid-option").nth(1)).toHaveClass(/kid-option--wrong/);
+    await page.screenshot({ path: testInfo.outputPath(`feedback-${colorScheme}.png`) });
+  });
+}
+
+test("turning recording off on the deck screen gives a neutral session status", async ({ page }) => {
+  await installKidUiFixture(page, recallFixture());
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-mic-toggle").uncheck();
+  await page.getByTestId("kid-deck").click();
+  const status = page.getByTestId("kid-microphone-status");
+  await expect(status).toHaveAccessibleName("Nagrywanie wyłączone");
+  await expect(status.locator("..")).toHaveAttribute("data-microphone-state", "off");
+  await expect(page.getByTestId("kid-record")).toHaveCount(0);
+  await expect(page.getByTestId("kid-input")).toBeVisible();
+});
+
 test("session frame remains inside visible viewport after resize", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 700 });
   await openRecall(page);
