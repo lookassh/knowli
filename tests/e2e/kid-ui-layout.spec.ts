@@ -1,6 +1,6 @@
 import { expect as baseExpect, test } from "@playwright/test";
 import type { TaskDto } from "@learning/contracts";
-import { assertKidLayout, installKidUiFixture } from "./helpers/kid-ui-fixture";
+import { assertKidLayout, installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
 
 const expect = baseExpect.configure({ timeout: 1_500 });
 
@@ -69,6 +69,26 @@ test("session frame remains inside visible viewport after resize", async ({ page
   await page.setViewportSize({ width: 390, height: 520 });
   await expect(page.getByTestId("kid-input")).toHaveValue("");
   await assertKidLayout(page, { allowDetailsScroll: true });
+});
+
+test("session frame honors visual viewport height and offset", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 700 });
+  await openRecall(page);
+  await page.evaluate(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) throw new Error("visualViewport is required for this browser test");
+    Object.defineProperties(viewport, {
+      height: { configurable: true, value: 350 },
+      offsetTop: { configurable: true, value: 24 },
+      scale: { configurable: true, value: 1 },
+    });
+    viewport.dispatchEvent(new Event("resize"));
+  });
+  const bounds = await page.getByTestId("kid-session-frame").boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.y).toBeGreaterThanOrEqual(24);
+  expect(bounds!.height).toBeLessThanOrEqual(350);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(374);
 });
 
 test("pinch zoom fallback preserves input and reachable actions", async ({ page }) => {
@@ -174,6 +194,9 @@ for (const [visualType, visualData, label] of [
     task.prompt.visualData = visualData;
     await openTask(page, task);
     await expect(page.locator(`svg.kid-visual[aria-label="${label}"]`)).toBeVisible();
+    const visualBounds = await page.locator(`svg.kid-visual[aria-label="${label}"]`).boundingBox();
+    expect(visualBounds).not.toBeNull();
+    expect(visualBounds!.width).toBeGreaterThan(48);
   });
 }
 
@@ -192,6 +215,136 @@ test("long exposure word and example remain complete with the main action reacha
   await expect(page.getByTestId("kid-target")).toHaveText(longWord);
   await expect(page.getByTestId("kid-example")).toHaveText(longExample);
   await expect(page.getByTestId("kid-done")).toBeInViewport();
+});
+
+test("long exposure remains readable from the start of its scrollable material", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 640 });
+  const task = taskFor("exposure");
+  if (task.prompt.kind !== "exposure") throw new Error("invalid exposure fixture");
+  task.prompt.target = "a".repeat(120);
+  task.prompt.source = "długi przykład";
+  task.prompt.example = "A long example sentence for careful reading. ".repeat(7).slice(0, 300);
+  task.prompt.visualType = "none";
+  task.prompt.imageAssetId = null;
+  await openTask(page, task);
+
+  const material = page.getByTestId("kid-material");
+  await material.evaluate((element) => { element.scrollTop = 0; });
+  const [materialBox, targetBox] = await Promise.all([
+    material.boundingBox(),
+    page.getByTestId("kid-target").boundingBox(),
+  ]);
+  expect(materialBox).not.toBeNull();
+  expect(targetBox).not.toBeNull();
+  expect(targetBox!.y).toBeGreaterThanOrEqual(materialBox!.y);
+  await material.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  const sourceBox = await page.getByTestId("kid-source").boundingBox();
+  expect(sourceBox).not.toBeNull();
+  expect(sourceBox!.y + sourceBox!.height).toBeLessThanOrEqual(materialBox!.y + materialBox!.height);
+});
+
+test("reading prompt retains space beside a short option list", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 350 });
+  const task = taskFor("reading");
+  if (task.prompt.kind !== "reading") throw new Error("invalid reading fixture");
+  await openTask(page, task);
+
+  const material = page.getByTestId("kid-material");
+  const [materialBox, promptBox] = await Promise.all([
+    material.boundingBox(),
+    page.getByTestId("kid-word").boundingBox(),
+  ]);
+  expect(materialBox).not.toBeNull();
+  expect(promptBox).not.toBeNull();
+  expect(materialBox!.height).toBeGreaterThan(40);
+  expect(promptBox!.height).toBeGreaterThan(0);
+});
+
+test("dark theme keeps text controls and notices readable", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  const fixture: KidUiFixture = recallFixture();
+  fixture.decks[0]!.mockTestAvailable = true;
+  fixture.session = { ...fixture.session, mode: "mock_test" };
+  fixture.tasks = [taskFor("spelling")];
+  await installKidUiFixture(page, fixture);
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-mock-start").click();
+  await page.getByTestId("kid-mock-confirm").click();
+  await expect(page.getByTestId("kid-input")).toBeVisible();
+
+  const ratios = await page.evaluate(() => {
+    const readRgb = (value: string) => {
+      const channels = value.match(/[\d.]+/g)?.slice(0, 3).map(Number);
+      if (!channels || channels.length !== 3) throw new Error(`Unsupported computed color: ${value}`);
+      return channels.map((channel) => {
+        const normalized = channel / 255;
+        return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+      });
+    };
+    const contrast = (foreground: string, background: string) => {
+      const luminance = (color: string) => {
+        const [red, green, blue] = readRgb(color);
+        return 0.2126 * red! + 0.7152 * green! + 0.0722 * blue!;
+      };
+      const first = luminance(foreground);
+      const second = luminance(background);
+      return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+    };
+    const styles = (selector: string) => {
+      const element = document.querySelector<HTMLElement>(selector);
+      if (!element) throw new Error(`Missing ${selector}`);
+      const computed = getComputedStyle(element);
+      return { color: computed.color, background: computed.backgroundColor };
+    };
+    const app = getComputedStyle(document.querySelector<HTMLElement>(".kid-ui")!).backgroundColor;
+    const input = styles('[data-testid="kid-input"]');
+    const end = styles('[data-testid="kid-end"]');
+    const source = styles('[data-testid="kid-source"]');
+    const notice = styles(".kid-notice");
+    return {
+      input: contrast(input.color, input.background),
+      end: contrast(end.color, end.background),
+      source: contrast(source.color, source.background === "rgba(0, 0, 0, 0)" ? app : source.background),
+      notice: contrast(notice.color, notice.background),
+    };
+  });
+
+  for (const [control, ratio] of Object.entries(ratios)) {
+    expect.soft(ratio, `${control} contrast`).toBeGreaterThanOrEqual(4.5);
+  }
+});
+
+test("dark theme keeps exposure details and remaining count readable", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  const task = taskFor("exposure");
+  if (task.prompt.kind !== "exposure") throw new Error("invalid exposure fixture");
+  task.prompt.example = "The cat sleeps on the sofa.";
+  await openTask(page, task);
+  await expect(page.getByTestId("kid-remaining")).toBeVisible();
+
+  const ratios = await page.evaluate(() => {
+    const rgb = (value: string) => value.match(/[\d.]+/g)!.slice(0, 3).map(Number).map((channel) => {
+      const normalized = channel / 255;
+      return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+    });
+    const contrast = (foreground: string, background: string) => {
+      const lum = (color: string) => {
+        const [red, green, blue] = rgb(color);
+        return 0.2126 * red! + 0.7152 * green! + 0.0722 * blue!;
+      };
+      const [first, second] = [lum(foreground), lum(background)];
+      return (Math.max(first!, second!) + 0.05) / (Math.min(first!, second!) + 0.05);
+    };
+    const background = getComputedStyle(document.querySelector<HTMLElement>(".kid-ui")!).backgroundColor;
+    return ["kid-source", "kid-example", "kid-remaining"].map((className) => {
+      const element = document.querySelector<HTMLElement>(`.${className}`)!;
+      return contrast(getComputedStyle(element).color, background);
+    });
+  });
+  for (const [index, ratio] of ratios.entries()) {
+    expect.soft(ratio, ["source", "example", "remaining"][index]).toBeGreaterThanOrEqual(4.5);
+  }
 });
 
 test("long options remain readable and selectable", async ({ page }) => {

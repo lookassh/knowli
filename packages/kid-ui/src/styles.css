@@ -54,6 +54,7 @@
   inset-inline: 0;
   top: 0;
   height: 100dvh;
+  min-height: 0;
   max-height: 100dvh;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -99,7 +100,7 @@
   color: var(--kid-text);
 }
 
-.kid-ui svg {
+.kid-ui .kid-icon {
   width: 24px;
   height: 24px;
   flex: none;
@@ -138,12 +139,12 @@
 
 .kid-material {
   box-sizing: border-box;
-  min-height: 0;
+  min-height: 48px;
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: safe center;
   gap: 12px;
   overflow-y: auto;
 }
@@ -268,7 +269,9 @@
 }
 
 .kid-notice {
-  background: #fff4d6;
+  color: var(--kid-warm-text);
+  background: var(--kid-warm);
+  border: 1px solid var(--kid-warm-line);
   border-radius: 12px;
   padding: 10px 12px;
 }
@@ -557,14 +560,14 @@
 
 .kid-source {
   font-size: 1.4rem;
-  color: #4a4a66;
+  color: var(--kid-muted);
   margin: 0;
   text-align: center;
 }
 
 .kid-example {
   font-size: 1.05rem;
-  color: #6a6a85;
+  color: var(--kid-muted);
   margin: 0;
   text-align: center;
   font-style: italic;
@@ -769,9 +772,16 @@
   min-height: 60px;
   font-size: 1.5rem;
   text-align: center;
-  border: 2px solid #c8cdf0;
+  border: 2px solid var(--kid-line);
   border-radius: 16px;
   padding: 8px 12px;
+  color: var(--kid-text);
+  background: var(--kid-surface);
+}
+
+.kid-written input::placeholder {
+  color: var(--kid-muted);
+  opacity: 1;
 }
 
 .kid-letter-fragment {
@@ -927,7 +937,7 @@
 .kid-remaining {
   margin: 0;
   font-weight: 700;
-  color: #1d6a3f;
+  color: var(--kid-good);
 }
 
 .kid-end {
@@ -935,8 +945,9 @@
   padding: 6px 16px;
   font-size: 1rem;
   border-radius: 14px;
-  border: 2px solid #d9dcf0;
-  background: #fff;
+  border: 2px solid var(--kid-line);
+  color: var(--kid-text);
+  background: var(--kid-surface);
   cursor: pointer;
 }
 

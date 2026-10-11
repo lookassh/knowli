@@ -28,7 +28,7 @@ export function KidIcon({ name, className }: { name: KidIconName; className?: st
   return (
     <svg
       aria-hidden="true"
-      className={className}
+      className={["kid-icon", className].filter(Boolean).join(" ")}
       focusable="false"
       viewBox="0 0 24 24"
       fill="none"
