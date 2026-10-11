@@ -702,7 +702,11 @@ test("odmowa mikrofonu przełącza na tryb bez nagrywania", async ({ page }) => 
 
   // brak zgody na mikrofon: komunikat i kontynuacja bez nagrywania (A12)
   await page.getByTestId("kid-record").click();
+  await expect(page.getByTestId("kid-microphone-status")).toHaveAccessibleName("Mikrofon niedostępny");
+  await expect(page.getByTestId("kid-mic-denied")).toBeHidden();
+  await page.getByTestId("kid-microphone-status").click();
   await expect(page.getByTestId("kid-mic-denied")).toBeVisible();
+  await page.getByTestId("kid-microphone-status").click();
   const taskId = await currentTaskId(page);
   await page.getByTestId("kid-input").fill(await answerTarget(taskId));
   await page.getByTestId("kid-submit").click();
