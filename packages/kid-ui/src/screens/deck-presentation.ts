@@ -1,29 +1,15 @@
 import type { KidDeckDto } from "@learning/contracts";
 
-export type DeckPage = {
-  kind: "recommended" | "other";
-  decks: readonly KidDeckDto[];
+export type DeckGroups = {
+  recommended: readonly KidDeckDto[];
+  other: readonly KidDeckDto[];
 };
 
-export function buildDeckPages(
-  decks: readonly KidDeckDto[],
-  cardsPerPage: 1 | 2,
-): readonly DeckPage[] {
-  const pages: DeckPage[] = [];
-  for (const [kind, group] of [
-    ["recommended", decks.filter((deck) => deck.recommended)],
-    ["other", decks.filter((deck) => !deck.recommended)],
-  ] as const) {
-    for (let start = 0; start < group.length; start += cardsPerPage) {
-      pages.push({ kind, decks: group.slice(start, start + cardsPerPage) });
-    }
-  }
-  return pages;
-}
-
-export function clampDeckPageIndex(pageIndex: number, pageCount: number): number {
-  if (!Number.isFinite(pageIndex) || pageCount <= 0) return 0;
-  return Math.max(0, Math.min(Math.trunc(pageIndex), pageCount - 1));
+export function groupDecks(decks: readonly KidDeckDto[]): DeckGroups {
+  return {
+    recommended: decks.filter((deck) => deck.recommended),
+    other: decks.filter((deck) => !deck.recommended),
+  };
 }
 
 const POLISH_MONTHS = ["sty", "lut", "mar", "kwi", "maj", "cze", "lip", "sie", "wrz", "paź", "lis", "gru"];

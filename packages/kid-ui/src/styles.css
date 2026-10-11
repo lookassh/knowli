@@ -370,12 +370,6 @@
   margin-bottom: 10px !important;
 }
 
-.kid-deck-page {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
 .kid-deck-list {
   display: flex;
   flex-direction: column;
@@ -457,30 +451,6 @@
   border: 1px solid var(--kid-line);
   background: var(--kid-soft);
   color: var(--kid-text);
-}
-
-.kid-deck-pagination {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 18px;
-  min-height: 44px;
-  color: var(--kid-muted);
-  font-weight: 700;
-}
-
-.kid-deck-pagination button {
-  width: 44px;
-  height: 44px;
-  border: 1px solid var(--kid-line);
-  border-radius: 50%;
-  background: var(--kid-surface);
-  color: var(--kid-text);
-  font-size: 1.5rem;
-}
-
-.kid-deck-pagination button:disabled {
-  opacity: 0.45;
 }
 
 .kid-deck-microphone {
