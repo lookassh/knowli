@@ -907,4 +907,42 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
     await answerDueCheck("zupelnie-inne-slowo");
     expect(await progressOf(childId, recallVersion)).toMatchObject({ status: "needs_reconfirmation", streak: 0 });
   });
+
+  it("literówka w progu daje spelling_hint z segmentami; oceny i próby bez zmian (issue #9)", async () => {
+    const { deckId, versionId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 3));
+    await setDueCheck(childId, versionId, 0, "needs_confirmation", 3);
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const task = (await nextTask(services, session.sessionId))!;
+    expect(task.exerciseType).toBe("recall");
+
+    const dto = await submitAttempt(services, {
+      taskId: task.taskId,
+      clientAttemptId: randomUUID(),
+      modality: "text",
+      text: "Monda", // Monday bez „y”
+    });
+    expect(AttemptDtoSchema.safeParse(dto).success).toBe(true);
+    expect(dto.feedback?.kind).toBe("spelling_hint");
+    expect(dto.feedback?.correctText).toBe("Monday");
+    expect(dto.feedback?.spellingDiff).toMatchObject({
+      given: expect.anything(),
+      expected: expect.anything(),
+    });
+    expect(
+      dto.feedback!.spellingDiff!.expected.map((segment) => segment.text).join(""),
+    ).toBe("Monday");
+    // pierwszy błąd zostawia drugą próbę: budżet i liczba prób bez zmian
+    expect(dto.taskState).toBe("issued");
+
+    const [attempt] = await attemptRows(task.taskId);
+    const grades = await assessmentsOf(attempt!.id);
+    expect(grades).toHaveLength(2);
+    for (const grade of grades) {
+      expect(grade.outcome).toBe("incorrect"); // podobieństwo nie zalicza znaczenia (A16)
+    }
+    // ujawnienie właściwego zapisu zapieczętowane przed odpowiedzią HTTP
+    const events = await feedbackEvents(task.taskId);
+    expect(events).toHaveLength(1);
+    expect(events[0]!.sealed).toBe(true);
+  });
 });

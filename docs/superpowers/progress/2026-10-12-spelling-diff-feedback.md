@@ -47,7 +47,12 @@ izolator `UMIEM_TEST_RUN_ID`/`UMIEM_E2E_PORT`.
 
 
 ### Task 4: Serwer — attempts.ts liczy diff
-- Status: DO WYKONANIA
+- Status: UKOŃCZONE
+- RED: 1 failed (kind=incorrect), 16 starych PASS (brak regresji).
+- Implementacja: diff liczony tylko dla modality=text + spelling incorrect + typ ćwiczenia
+  (recall/spelling/letter_completion); przekazywany do chooseFeedback; mock_test nadal bez feedbacku.
+- GREEN: 17/17 PASS (Docker 29.7.2).
+
 
 ### Task 5: Kid UI — pigułki
 - Status: DO WYKONANIA
