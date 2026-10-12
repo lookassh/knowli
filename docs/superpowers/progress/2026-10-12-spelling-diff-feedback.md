@@ -76,4 +76,15 @@ izolator `UMIEM_TEST_RUN_ID`/`UMIEM_E2E_PORT`.
 
 
 ### Task 7: Dokumentacja + pełna weryfikacja
-- Status: DO WYKONANIA
+- Status: UKOŃCZONE
+- SPEC §12.8: akapit o diagnozie liter (próg, obwódka jako drugi kanał, oceny bez zmian, ujawnienie,
+  przypadki bez diagnozy); §16: nowa pozycja na liście komunikatów.
+- architecture.md: akapit o FeedbackDto.spellingHint dopisany w §12 (kontrakt API — tam gdzie opisano
+  SessionSummaryDto); plan wskazywał §9, ale kontrakt DTO mieszka w §12 — dostosowano do struktury dokumentu.
+- Pełna weryfikacja (dowody): unit 513/513 (60 plików); typecheck PASS; integration 186/186 (21 plików,
+  Docker 29.7.2); e2e 9/9 (spelling-diff-feedback.spec.ts + kid-flow.spec.ts, izolator spelling-diff-1:24600);
+  build PASS.
+
+## Bramka review
+- Status: DO WYKONANIA (requesting-code-review na zakresie main..HEAD po Task 7)
+
