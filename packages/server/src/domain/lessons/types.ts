@@ -88,7 +88,14 @@ export interface LessonExerciseDraft {
   readonly prompt?: string;
   readonly hint?: string;
   readonly transformId?: string;
-  readonly noticeSegments?: readonly (readonly { readonly id: string; readonly text: string }[])[];
+  /**
+   * `lesson_notice` (design „Typy ćwiczeń i etapy”): 2–3 zdania, każde jako lista
+   * segmentów-słów (`string`), każdy segment niepusty i ≤ limitu długości tekstu.
+   * Dziecko wskazuje jedno słowo — `correctOption` jest równe (po normalizatorze
+   * przedmiotu, w dowolnym wariancie) któremuś segmentowi. `options` nie dotyczy
+   * tego typu (wybór wskazaniem, nie z listy opcji).
+   */
+  readonly noticeSegments?: readonly (readonly string[])[];
   readonly answer: string;
   readonly acceptedAnswers: readonly string[];
   readonly focus: readonly string[];

@@ -38,6 +38,12 @@ export const MAX_ORDER_ITEMS = 10;
 export const MIN_OPTIONS = 2;
 export const MAX_OPTIONS = 4;
 
+/** `lesson_notice`: zakres liczby zdań i segmentów-słów na zdanie. */
+export const MIN_NOTICE_SENTENCES = 2;
+export const MAX_NOTICE_SENTENCES = 3;
+export const MIN_NOTICE_SEGMENTS = 1;
+export const MAX_NOTICE_SEGMENTS = 15;
+
 /** Maksymalna liczba tokenów odpowiedzi dla `lesson_gap`. */
 export const MAX_GAP_ANSWER_TOKENS = 3;
 
@@ -47,13 +53,6 @@ const TEXT_TYPES: ReadonlySet<LessonExerciseType> = new Set<LessonExerciseType>(
   "lesson_error_fix",
   "lesson_transform",
   "lesson_open_answer",
-]);
-
-/** Typy z zamkniętym zbiorem opcji. */
-const OPTION_TYPES: ReadonlySet<LessonExerciseType> = new Set<LessonExerciseType>([
-  "lesson_choice",
-  "lesson_short_answer",
-  "lesson_notice",
 ]);
 
 /** Pola tekstowe podlegające limitowi długości (payload „Data Models”). */
@@ -220,8 +219,10 @@ function validateByType(
       break;
     case "lesson_choice":
     case "lesson_short_answer":
-    case "lesson_notice":
       validateOptions(ex, normalizer, errors);
+      break;
+    case "lesson_notice":
+      validateNotice(ex, normalizer, errors);
       break;
     case "lesson_gap":
       validateGap(ex, normalizer, errors);
@@ -274,6 +275,59 @@ function validateOptions(
   }
   if (ex.correctOption === undefined || !options.some((option) => option.id === ex.correctOption)) {
     errors.push("correctOption: poprawna opcja nie jest jedną z opcji");
+  }
+}
+
+/**
+ * `lesson_notice` (design „Typy ćwiczeń i etapy”): payload `noticeSegments`
+ * (2–3 zdania, każde 1–15 niepustych segmentów-słów ≤ limitu długości) oraz
+ * `correctOption` = słowo do wskazania, równe (po normalizatorze, dowolny
+ * wariant) któremuś segmentowi w którymś zdaniu. `options` jest zabronione —
+ * wskazanie, nie wybór z listy opcji.
+ */
+function validateNotice(
+  ex: LessonExerciseDraft,
+  normalizer: AnswerNormalizer,
+  errors: string[],
+): void {
+  if (ex.options !== undefined) {
+    errors.push("options: „lesson_notice” nie używa opcji (wskazanie, nie wybór z listy)");
+  }
+
+  const sentences = ex.noticeSegments;
+  if (sentences === undefined) {
+    errors.push("noticeSegments: wymagane dla „lesson_notice”");
+    return;
+  }
+  if (sentences.length < MIN_NOTICE_SENTENCES || sentences.length > MAX_NOTICE_SENTENCES) {
+    errors.push(
+      `noticeSegments: liczba zdań (${sentences.length}) poza zakresem ${MIN_NOTICE_SENTENCES}–${MAX_NOTICE_SENTENCES}`,
+    );
+  }
+  for (const sentence of sentences) {
+    if (sentence.length < MIN_NOTICE_SEGMENTS || sentence.length > MAX_NOTICE_SEGMENTS) {
+      errors.push(
+        `noticeSegments: liczba segmentów w zdaniu (${sentence.length}) poza zakresem ${MIN_NOTICE_SEGMENTS}–${MAX_NOTICE_SEGMENTS}`,
+      );
+    }
+    for (const segment of sentence) {
+      if (segment.trim() === "") {
+        errors.push("noticeSegments: pusty segment");
+      } else if ([...segment].length > MAX_TEXT_LENGTH) {
+        errors.push(`noticeSegments: segment przekracza ${MAX_TEXT_LENGTH} znaków`);
+      }
+    }
+  }
+
+  if (ex.correctOption === undefined || ex.correctOption.trim() === "") {
+    errors.push("correctOption: wymagane dla „lesson_notice” (słowo do wskazania)");
+    return;
+  }
+  const matchesSegment = sentences.some((sentence) =>
+    sentence.some((segment) => answersEquivalent(segment, ex.correctOption!, normalizer)),
+  );
+  if (!matchesSegment) {
+    errors.push("correctOption: nie jest równe (po normalizacji) żadnemu segmentowi zdań");
   }
 }
 
@@ -364,32 +418,32 @@ function validateAcceptedAnswers(
 }
 
 /**
- * Grupy ćwiczeń o wspólnym wariancie znormalizowanej odpowiedzi kanonicznej.
- * Każda grupa to lista odpowiedzi (surowych) uznanych za duplikaty; grupa ma
- * ≥ 2 elementy. Relacja „wspólny wariant” nie jest przechodnia, więc grupujemy
+ * Grupuje INDEKSY odpowiedzi mających wspólny wariant znormalizowanej odpowiedzi
+ * kanonicznej. Pierwszy element każdej grupy to pierwsze wystąpienie, kolejne —
+ * duplikaty. Relacja „wspólny wariant” nie jest przechodnia, więc grupujemy
  * zachłannie: pierwszy niezgrupowany element zakłada grupę, kolejne równoważne
- * mu dołączają. Deterministyczne (kolejność wejścia).
+ * mu dołączają. Deterministyczne (kolejność wejścia). Jedna implementacja
+ * wykrywania duplikatów — używana przez `findDuplicateAnswers` i `validatePool`.
  */
-export function findDuplicateAnswers(
-  exercises: readonly LessonExerciseDraft[],
-  subject: SubjectModule,
-): string[][] {
-  const normalizer = subject.normalizer;
-  const grouped = new Array<boolean>(exercises.length).fill(false);
-  const groups: string[][] = [];
+function groupEquivalentAnswers(
+  answers: readonly string[],
+  normalizer: AnswerNormalizer,
+): number[][] {
+  const grouped = new Array<boolean>(answers.length).fill(false);
+  const groups: number[][] = [];
 
-  for (let i = 0; i < exercises.length; i++) {
+  for (let i = 0; i < answers.length; i++) {
     if (grouped[i]) {
       continue;
     }
-    const group: string[] = [exercises[i]!.answer];
-    for (let j = i + 1; j < exercises.length; j++) {
+    const group: number[] = [i];
+    for (let j = i + 1; j < answers.length; j++) {
       if (grouped[j]) {
         continue;
       }
-      if (answersEquivalent(exercises[i]!.answer, exercises[j]!.answer, normalizer)) {
+      if (answersEquivalent(answers[i]!, answers[j]!, normalizer)) {
         grouped[j] = true;
-        group.push(exercises[j]!.answer);
+        group.push(j);
       }
     }
     if (group.length > 1) {
@@ -400,6 +454,21 @@ export function findDuplicateAnswers(
   return groups;
 }
 
+/**
+ * Grupy ćwiczeń o wspólnym wariancie znormalizowanej odpowiedzi kanonicznej.
+ * Każda grupa to lista odpowiedzi (surowych) uznanych za duplikaty; grupa ma
+ * ≥ 2 elementy. Deterministyczne (kolejność wejścia).
+ */
+export function findDuplicateAnswers(
+  exercises: readonly LessonExerciseDraft[],
+  subject: SubjectModule,
+): string[][] {
+  const answers = exercises.map((ex) => ex.answer);
+  return groupEquivalentAnswers(answers, subject.normalizer).map((group) =>
+    group.map((index) => answers[index]!),
+  );
+}
+
 /** Wynik walidacji puli: ćwiczenia poprawne i odrzucone z powodami. */
 export interface PoolValidationResult {
   readonly valid: LessonExerciseDraft[];
@@ -408,38 +477,68 @@ export interface PoolValidationResult {
 
 /**
  * Waliduje całą pulę. Najpierw reguły pojedynczego ćwiczenia; następnie
- * duplikaty znormalizowanych odpowiedzi — przy duplikacie zachowuje PIERWSZE
- * poprawne wystąpienie, kolejne odrzuca. Deterministyczne (kolejność wejścia).
+ * duplikaty znormalizowanych odpowiedzi (ta sama implementacja co
+ * `findDuplicateAnswers`, przez `groupEquivalentAnswers`) — przy duplikacie
+ * zachowuje PIERWSZE poprawne wystąpienie, kolejne odrzuca. Deterministyczne
+ * (kolejność wejścia).
  */
 export function validatePool(
   exercises: readonly LessonExerciseDraft[],
   subject: SubjectModule,
   topic: LessonTopic,
 ): PoolValidationResult {
-  const valid: LessonExerciseDraft[] = [];
   const rejected: { exercise: LessonExerciseDraft; errors: string[] }[] = [];
-  const normalizer = subject.normalizer;
 
-  for (const exercise of exercises) {
+  // Faza 1: reguły pojedynczego ćwiczenia. Zachowujemy pozycje w `exercises`,
+  // by faza 2 mogła wskazać PIERWSZE poprawne wystąpienie każdej odpowiedzi.
+  const singleValid: { exercise: LessonExerciseDraft; index: number }[] = [];
+  exercises.forEach((exercise, index) => {
     const errors = validateLessonExercise(exercise, subject, topic);
     if (errors.length > 0) {
       rejected.push({ exercise, errors });
-      continue;
+    } else {
+      singleValid.push({ exercise, index });
     }
-    const duplicateOf = valid.find((kept) =>
-      answersEquivalent(kept.answer, exercise.answer, normalizer),
-    );
-    if (duplicateOf !== undefined) {
-      rejected.push({
-        exercise,
-        errors: [`answer: duplikat odpowiedzi „${duplicateOf.answer}” już obecnej w puli`],
-      });
-      continue;
+  });
+
+  // Faza 2: duplikaty wśród ćwiczeń, które przeszły fazę 1 (jedna implementacja).
+  const answers = singleValid.map((entry) => entry.exercise.answer);
+  const duplicateLaterPositions = new Set<number>();
+  for (const group of groupEquivalentAnswers(answers, subject.normalizer)) {
+    for (let k = 1; k < group.length; k++) {
+      duplicateLaterPositions.add(group[k]!);
     }
-    valid.push(exercise);
   }
 
+  const valid: LessonExerciseDraft[] = [];
+  singleValid.forEach((entry, position) => {
+    if (duplicateLaterPositions.has(position)) {
+      const firstPosition = findFirstGroupPosition(answers, position, subject.normalizer);
+      const keptAnswer = firstPosition === -1 ? entry.exercise.answer : answers[firstPosition]!;
+      rejected.push({
+        exercise: entry.exercise,
+        errors: [`answer: duplikat odpowiedzi „${keptAnswer}” już obecnej w puli`],
+      });
+    } else {
+      valid.push(entry.exercise);
+    }
+  });
+
   return { valid, rejected };
+}
+
+/** Pozycja pierwszego wystąpienia równoważnego `answers[position]` przed nią. */
+function findFirstGroupPosition(
+  answers: readonly string[],
+  position: number,
+  normalizer: AnswerNormalizer,
+): number {
+  for (let i = 0; i < position; i++) {
+    if (answersEquivalent(answers[i]!, answers[position]!, normalizer)) {
+      return i;
+    }
+  }
+  return -1;
 }
 
 /** Brak pokrycia: ile ćwiczeń ocenianego etapu brakuje dla danego celu. */
@@ -466,9 +565,7 @@ export function poolCoverage(
     const forObjective = exercises.filter((ex) => ex.objectiveId === objectiveId);
     for (const stage of ASSESSED_STAGES) {
       const required = minimums[stage as keyof PoolMinimums];
-      const actual = forObjective.filter(
-        (ex) => ex.exerciseType !== "lesson_card" && stageOf(ex.exerciseType) === stage,
-      ).length;
+      const actual = forObjective.filter((ex) => stageOf(ex.exerciseType) === stage).length;
       if (actual < required) {
         gaps.push({ objectiveId, stage, required, actual });
       }

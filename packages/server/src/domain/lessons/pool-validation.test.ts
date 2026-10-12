@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   GAP_MARKER,
   MAX_ACCEPTED_ANSWERS,
+  MAX_NOTICE_SEGMENTS,
+  MAX_NOTICE_SENTENCES,
   MAX_OPTIONS,
   MAX_ORDER_ITEMS,
   MAX_TEXT_LENGTH,
+  MIN_NOTICE_SENTENCES,
   MIN_OPTIONS,
   MIN_ORDER_ITEMS,
   findDuplicateAnswers,
@@ -177,7 +180,7 @@ describe("validateLessonExercise — lesson_order", () => {
   });
 });
 
-describe("validateLessonExercise — opcje (choice/short_answer/notice)", () => {
+describe("validateLessonExercise — opcje (choice/short_answer)", () => {
   function choiceDraft(opts: readonly string[], correct: string): LessonExerciseDraft {
     return {
       exerciseType: "lesson_choice",
@@ -233,6 +236,128 @@ describe("validateLessonExercise — opcje (choice/short_answer/notice)", () => 
     expect(errors.some((e) => e.toLowerCase().includes("correctoption") || e.includes("poprawn"))).toBe(
       true,
     );
+  });
+});
+
+describe("validateLessonExercise — lesson_notice (segmenty)", () => {
+  function noticeDraft(
+    noticeSegments: readonly (readonly string[])[],
+    correctOption: string | undefined,
+    extra: Partial<LessonExerciseDraft> = {},
+  ): LessonExerciseDraft {
+    return {
+      exerciseType: "lesson_notice",
+      objectiveId: OBJ.thirdPerson,
+      answer: "plays",
+      acceptedAnswers: [],
+      focus: [],
+      noticeSegments,
+      correctOption,
+      ...extra,
+    };
+  }
+
+  const twoSentences: readonly (readonly string[])[] = [
+    ["She", "plays", "tennis"],
+    ["He", "runs", "fast"],
+  ];
+
+  it("przyjmuje 2–3 zdania z poprawnym correctOption będącym segmentem", () => {
+    expect(
+      validateLessonExercise(noticeDraft(twoSentences, "plays"), englishGrammarSubject, englishTopic),
+    ).toEqual([]);
+  });
+
+  it("odrzuca brak noticeSegments", () => {
+    const errors = validateLessonExercise(
+      noticeDraft(undefined as unknown as readonly (readonly string[])[], "plays"),
+      englishGrammarSubject,
+      englishTopic,
+    );
+    expect(errors.some((e) => e.includes("noticeSegments"))).toBe(true);
+  });
+
+  it("odrzuca mniej niż 2 zdania", () => {
+    const errors = validateLessonExercise(
+      noticeDraft([["She", "plays"]], "plays"),
+      englishGrammarSubject,
+      englishTopic,
+    );
+    expect(errors.some((e) => e.includes(String(MIN_NOTICE_SENTENCES)))).toBe(true);
+  });
+
+  it("odrzuca więcej niż 3 zdania", () => {
+    const four: readonly (readonly string[])[] = [
+      ["a", "plays"],
+      ["b", "c"],
+      ["d", "e"],
+      ["f", "g"],
+    ];
+    const errors = validateLessonExercise(noticeDraft(four, "plays"), englishGrammarSubject, englishTopic);
+    expect(errors.some((e) => e.includes(String(MAX_NOTICE_SENTENCES)))).toBe(true);
+  });
+
+  it("odrzuca zdanie z pustym segmentem", () => {
+    const errors = validateLessonExercise(
+      noticeDraft([["She", "", "plays"], ["He", "runs"]], "plays"),
+      englishGrammarSubject,
+      englishTopic,
+    );
+    expect(errors.some((e) => e.toLowerCase().includes("segment"))).toBe(true);
+  });
+
+  it("odrzuca zdanie z liczbą segmentów poza 1–15", () => {
+    const tooMany = Array.from({ length: MAX_NOTICE_SEGMENTS + 1 }, (_, i) => `w${i}`);
+    const errors = validateLessonExercise(
+      noticeDraft([tooMany, ["plays", "here"]], "plays"),
+      englishGrammarSubject,
+      englishTopic,
+    );
+    expect(errors.some((e) => e.includes(String(MAX_NOTICE_SEGMENTS)))).toBe(true);
+  });
+
+  it("odrzuca segment dłuższy niż limit długości tekstu", () => {
+    const long = "a".repeat(MAX_TEXT_LENGTH + 1);
+    const errors = validateLessonExercise(
+      noticeDraft([["She", long], ["He", "runs"]], "plays"),
+      englishGrammarSubject,
+      englishTopic,
+    );
+    expect(errors.some((e) => e.includes(String(MAX_TEXT_LENGTH)))).toBe(true);
+  });
+
+  it("odrzuca brak correctOption", () => {
+    const errors = validateLessonExercise(
+      noticeDraft(twoSentences, undefined),
+      englishGrammarSubject,
+      englishTopic,
+    );
+    expect(errors.some((e) => e.toLowerCase().includes("correctoption"))).toBe(true);
+  });
+
+  it("odrzuca correctOption niebędący żadnym segmentem", () => {
+    const errors = validateLessonExercise(
+      noticeDraft(twoSentences, "swims"),
+      englishGrammarSubject,
+      englishTopic,
+    );
+    expect(errors.some((e) => e.toLowerCase().includes("correctoption"))).toBe(true);
+  });
+
+  it("dopuszcza correctOption równy segmentowi po wariancie normalizacji", () => {
+    // „Plays” ≡ „plays” po normalizacji
+    expect(
+      validateLessonExercise(noticeDraft(twoSentences, "Plays"), englishGrammarSubject, englishTopic),
+    ).toEqual([]);
+  });
+
+  it("odrzuca obecność options dla notice", () => {
+    const errors = validateLessonExercise(
+      noticeDraft(twoSentences, "plays", { options: [{ id: "o0", text: "plays" }] }),
+      englishGrammarSubject,
+      englishTopic,
+    );
+    expect(errors.some((e) => e.includes("options"))).toBe(true);
   });
 });
 
