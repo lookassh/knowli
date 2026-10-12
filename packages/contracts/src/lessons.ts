@@ -268,6 +268,8 @@ export type LessonVerdictDto = z.infer<typeof LessonVerdictDtoSchema>;
 
 /** Raport próbnej kartkówki lekcji per cel (design „Testing”, requirements 9.4). */
 export const LessonMockTestReportDtoSchema = z.object({
+  /** Identyfikator sesji kartkówki — klucz do otwarcia szczegółów na liście rodzica. */
+  sessionId: UuidSchema,
   objectives: z.array(z.object({
     objectiveId: z.string().min(1),
     titlePl: z.string().min(1),
@@ -285,6 +287,9 @@ export const LessonMockTestReportDtoSchema = z.object({
   })),
   complete: z.boolean(),
   taskBudget: z.number().int().nonnegative(),
+  /** Początek i koniec kartkówki (jak w `MockTestReportDto` słówek) — data na liście rodzica. */
+  startedAt: InstantSchema,
+  endedAt: InstantSchema,
 });
 export type LessonMockTestReportDto = z.infer<typeof LessonMockTestReportDtoSchema>;
 

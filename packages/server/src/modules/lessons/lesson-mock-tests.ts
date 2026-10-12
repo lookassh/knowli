@@ -265,7 +265,6 @@ export async function closeLessonMockTest(tx: Tx, services: Services, session: t
   const titleOf = (objectiveId: string): string => topic.objectives.find((o) => o.id === objectiveId)?.titlePl ?? objectiveId;
 
   const byTask = await loadMockAssessments(tx, session.id);
-  const bySlotTask = new Map(plan.slots.map((s) => [s.taskId, s] as const));
 
   interface Acc {
     total: number; correct: number; incorrect: number; unassessed: number; skipped: number; modelGraded: number;
@@ -307,16 +306,22 @@ export async function closeLessonMockTest(tx: Tx, services: Services, session: t
     errorCategories: [...acc.errorCategories].map(([category, count]) => ({ category, labelPl: labels.get(category) ?? category, count })),
   }));
 
-  void version;
-  void bySlotTask;
-  const report = LessonMockTestReportDtoSchema.parse({ objectives, complete, taskBudget: session.taskBudget });
   const endedAt = session.endedAt ?? services.clock.now();
-  const state = session.state === "active" ? "ended" : session.state;
+  // Stan utrwalany jak w słówkach (`closeMockTest`): komplet → `completed`,
+  // niepełna (timeout/abort) → `ended`. Sesja już zakończona zachowuje swój stan.
+  const state: "completed" | "ended" = session.state === "active" ? (complete ? "completed" : "ended") : (session.state as "completed" | "ended");
+  const report = LessonMockTestReportDtoSchema.parse({
+    sessionId: session.id,
+    objectives,
+    complete,
+    taskBudget: session.taskBudget,
+    startedAt: session.startedAt.toISOString(),
+    endedAt: endedAt.toISOString(),
+  });
   await tx
     .update(learningSessions)
-    .set({ ...(session.state === "active" ? { state: "ended", endedAt } : {}), context: { ...session.context, lessonMockTestReport: report } })
+    .set({ ...(session.state === "active" ? { state, endedAt } : {}), context: { ...session.context, lessonMockTestReport: report } })
     .where(eq(learningSessions.id, session.id));
-  void state;
   return report;
 }
 
@@ -376,37 +381,71 @@ export async function readLessonMockTestSummary(services: Services, sessionId: s
             : row?.outcome === "incorrect" ? "incorrect"
               : "unassessed";
       if (task.state !== "issued" && task.state !== "skipped") answeredCount += 1;
-      const prompt = task.publicPrompt as Record<string, unknown>;
-      const promptText = String(
-        (prompt.stem as string | undefined) ??
-          (prompt.stemWithGap as string | undefined) ??
-          (prompt.statement as string | undefined) ??
-          (prompt.prompt as string | undefined) ??
-          (prompt.question as string | undefined) ??
-          (prompt.instructionPl as string | undefined) ??
-          "",
-      );
       solutions.push({
         taskId: task.id,
         objectiveId: slot.objectiveId,
         titlePl: titleOf(slot.objectiveId),
         exerciseType: slot.exerciseType as LessonExerciseTypeDto,
-        prompt: promptText,
+        prompt: promptText(task.publicPrompt as TaskPrompt),
         childAnswer: await childAnswerText(tx, task.id, key),
         correctAnswer: correctAnswerText(key),
         outcome,
       });
     }
+    // Stan jak utrwalony przez `closeLessonMockTest`: komplet → `completed`,
+    // niepełna → `ended`; sesja już zamknięta zachowuje swój stan.
+    const state: "completed" | "ended" = session.state === "active" ? (report.complete ? "completed" : "ended") : (session.state as "completed" | "ended");
     return LessonMockTestSummaryDtoSchema.parse({
       sessionId: session.id,
       deckId: session.deckId,
-      state: report.complete ? (session.state === "ended" ? "ended" : "completed") : session.state === "active" ? "ended" : (session.state as "completed" | "ended"),
+      state,
       complete: report.complete,
       taskBudget: session.taskBudget,
       answeredCount,
       solutions,
     });
   });
+}
+
+/**
+ * Treść promptu pokazywana w omówieniu — pełne pokrycie typów lekcji przez
+ * `switch` z gwardią `never`: dodanie nowego kind lekcji wymusi tu obsługę.
+ * Karta (`lesson_card`) nie jest slotem kartkówki, więc nie występuje.
+ */
+function promptText(prompt: TaskPrompt): string {
+  switch (prompt.kind) {
+    case "lesson_choice":
+      return prompt.stem;
+    case "lesson_gap":
+      return prompt.stemWithGap;
+    case "lesson_error_fix":
+    case "lesson_transform":
+      return prompt.statement;
+    case "lesson_open_answer":
+      return prompt.prompt;
+    case "lesson_short_answer":
+      return prompt.question;
+    case "lesson_notice":
+      return prompt.instructionPl;
+    case "lesson_order":
+      return prompt.instructionPl;
+    case "lesson_card":
+    case "exposure":
+    case "listening":
+    case "reading":
+    case "reverse_recognition":
+    case "recall":
+    case "spelling":
+    case "letter_completion":
+    case "speech":
+      // Typy nielekcyjne i karta nie są slotami kartkówki lekcji.
+      return "";
+    default: {
+      const _exhaustive: never = prompt;
+      void _exhaustive;
+      return "";
+    }
+  }
 }
 
 /** Odpowiedź kanoniczna slotu pokazywana dziecku (jak `correctTextFor` lekcji). */

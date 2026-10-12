@@ -273,14 +273,22 @@ describe("LessonVerdictDtoSchema", () => {
 });
 
 describe("LessonMockTestReportDtoSchema", () => {
-  it("accepts a per-objective mock-test report", () => {
-    expect(LessonMockTestReportDtoSchema.safeParse({
-      objectives: [{
-        objectiveId: "o1", titlePl: "t", total: 5, correct: 3, incorrect: 1, unassessed: 1, skipped: 0, modelGraded: 2,
-        errorCategories: [{ category: "missing_s", labelPl: "Brak -s", count: 1 }],
-      }],
-      complete: true, taskBudget: 10,
-    }).success).toBe(true);
+  const base = {
+    sessionId: UUID,
+    objectives: [{
+      objectiveId: "o1", titlePl: "t", total: 5, correct: 3, incorrect: 1, unassessed: 1, skipped: 0, modelGraded: 2,
+      errorCategories: [{ category: "missing_s", labelPl: "Brak -s", count: 1 }],
+    }],
+    complete: true, taskBudget: 10, startedAt: INSTANT, endedAt: INSTANT,
+  };
+  it("accepts a per-objective mock-test report with sessionId and dates", () => {
+    expect(LessonMockTestReportDtoSchema.safeParse(base).success).toBe(true);
+  });
+  it("requires sessionId, startedAt and endedAt", () => {
+    for (const field of ["sessionId", "startedAt", "endedAt"] as const) {
+      const { [field]: _omit, ...rest } = base;
+      expect(LessonMockTestReportDtoSchema.safeParse(rest).success).toBe(false);
+    }
   });
 });
 

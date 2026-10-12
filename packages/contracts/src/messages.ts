@@ -431,6 +431,7 @@ export const messages = {
     mockTestsTitle: "Próbne kartkówki",
     mockTestsEmpty: "Brak zakończonych próbnych kartkówek tej lekcji.",
     mockTestsRecent: "Ostatnie 20 prób",
+    mockTestDate: "Kartkówka z {date}",
     mockTestComplete: "Ukończono zaplanowaną porcję",
     mockTestPartial: "Próba niepełna",
     mockTestBudget: "Porcja: {n} zadań",

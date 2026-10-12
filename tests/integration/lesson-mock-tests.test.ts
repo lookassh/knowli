@@ -242,6 +242,54 @@ describe("kartkówka lekcji — raport, ekspozycje, omówienie", () => {
     expect(exposed).toBeGreaterThan(0);
   });
 
+  it("komplet utrwala state=completed i raport niesie sessionId/startedAt/endedAt", async () => {
+    const { services } = buildTestServices();
+    const child = await createChild(services, { displayName: "L", avatarKey: "owl" });
+    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, testDate: "2026-10-20" });
+    const session = await startMock(services, child.id, lesson.deckId);
+    for (let i = 0; i < 30; i++) { const t = await nextTask(services, session.sessionId); if (!t) break; await answerCorrectly(services, t); }
+    const report = await getLessonMockTestReport(services, session.sessionId);
+    expect(report.complete).toBe(true);
+    expect(report.sessionId).toBe(session.sessionId);
+    expect(typeof report.startedAt).toBe("string");
+    expect(typeof report.endedAt).toBe("string");
+    // Komplet → utrwalony state = completed (jak słówki), nie ended.
+    const persisted = (await pool.query<{ state: string }>("select state from learning_app.learning_sessions where id = $1", [session.sessionId])).rows[0]!.state;
+    expect(persisted).toBe("completed");
+    const summary = await readLessonMockTestSummary(services, session.sessionId);
+    expect(summary.state).toBe("completed");
+  });
+
+  it("timeout (niepełna) utrwala state=ended i summary=ended", async () => {
+    const { services, clock } = buildTestServices();
+    const child = await createChild(services, { displayName: "L", avatarKey: "owl" });
+    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, testDate: "2026-10-20" });
+    const session = await startMock(services, child.id, lesson.deckId);
+    await nextTask(services, session.sessionId); // wydaj pierwszy slot, nie odpowiadaj
+    clock.advanceMs(11 * 60_000);
+    await nextTask(services, session.sessionId); // limit → closeLessonMockTest(ended)
+    const report = await getLessonMockTestReport(services, session.sessionId);
+    expect(report.complete).toBe(false);
+    const persisted = (await pool.query<{ state: string }>("select state from learning_app.learning_sessions where id = $1", [session.sessionId])).rows[0]!.state;
+    expect(persisted).toBe("ended");
+    const summary = await readLessonMockTestSummary(services, session.sessionId);
+    expect(summary.state).toBe("ended");
+  });
+
+  it("jawne przerwanie niepełnej (endSession) utrwala state=ended", async () => {
+    const { services, clock } = buildTestServices();
+    const child = await createChild(services, { displayName: "L", avatarKey: "owl" });
+    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, testDate: "2026-10-20" });
+    const session = await startMock(services, child.id, lesson.deckId);
+    await nextTask(services, session.sessionId);
+    await endSession(services, session.sessionId); // przerwanie przed kompletem
+    const persisted = (await pool.query<{ state: string }>("select state from learning_app.learning_sessions where id = $1", [session.sessionId])).rows[0]!.state;
+    expect(persisted).toBe("ended");
+    clock.advanceMs(11 * 60_000);
+    const summary = await readLessonMockTestSummary(services, session.sessionId);
+    expect(summary.state).toBe("ended");
+  });
+
   it("raport jest niezmienny po utrwaleniu (trigger)", async () => {
     const { services } = buildTestServices();
     const child = await createChild(services, { displayName: "L", avatarKey: "owl" });

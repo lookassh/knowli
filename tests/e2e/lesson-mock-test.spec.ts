@@ -14,8 +14,8 @@ import { installKidUiFixture } from "./helpers/kid-ui-fixture";
  * lekcji; endpoint raportu `/parent/mock-tests` jest zaślepiony deterministycznie,
  * jak nadzór w `lesson-parent-supervision.spec.ts`.
  *
- * Kompletność bierzemy z flagi `complete`, nie ze stanu sesji (znana wada 17A:
- * zamknięta lekcja utrwala `ended` zamiast `completed`).
+ * Kompletność bierzemy z flagi `complete`; po Fix round 1 zamknięta kompletna
+ * kartkówka utrwala `completed` (zgodnie ze słówkami), więc fikstury też.
  */
 
 const expect = baseExpect.configure({ timeout: 2_000 });
@@ -70,7 +70,7 @@ const terminal = (attemptId: string, taskId: string, modality: AttemptDto["modal
 });
 
 const lessonSummary: LessonMockTestSummaryDto = {
-  sessionId, deckId, state: "ended", complete: true, taskBudget: 2, answeredCount: 2,
+  sessionId, deckId, state: "completed", complete: true, taskBudget: 2, answeredCount: 2,
   solutions: [
     { taskId: t(1), objectiveId: "obj-s", titlePl: "-s w 3. osobie", exerciseType: "lesson_choice",
       prompt: "He ___ football every day.", childAnswer: "plays", correctAnswer: "plays", outcome: "correct" },
@@ -153,7 +153,7 @@ async function enterParent(page: Page): Promise<void> {
 }
 
 const report: LessonMockTestReportDto = {
-  complete: true, taskBudget: 2,
+  sessionId, complete: true, taskBudget: 2, startedAt: "2026-10-12T10:00:00.000Z", endedAt: "2026-10-12T10:05:00.000Z",
   objectives: [{
     objectiveId: "obj-s", titlePl: "-s w 3. osobie", total: 2, correct: 1, incorrect: 1, unassessed: 0, skipped: 0, modelGraded: 1,
     errorCategories: [{ category: "missing_ending", labelPl: "Brak końcówki -s", count: 1 }],

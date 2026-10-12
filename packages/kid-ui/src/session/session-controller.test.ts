@@ -563,7 +563,7 @@ describe("LearningSessionController", () => {
     state.lessonMockSummary = {
       sessionId: "55555555-5555-5555-5555-555555555555",
       deckId: LESSON_DECK.deckId,
-      state: "ended",
+      state: "completed",
       complete: true,
       taskBudget: 1,
       answeredCount: 1,
@@ -574,7 +574,7 @@ describe("LearningSessionController", () => {
     await controller.startMockTest(LESSON_DECK.deckId);
     await controller.beginMockTest();
     await controller.answerText("go");
-    // mimo state="ended" (znana wada 17A) kompletność bierzemy z complete=true
+    // kompletność bierzemy z complete=true (stan completed po Fix round 1)
     expect(controller.getScreen()).toMatchObject({ kind: "lessonMockTestSummary", summary: { complete: true, deckId: LESSON_DECK.deckId, solutions: [{ objectiveId: "obj-present-simple", outcome: "correct" }] } });
   });
 

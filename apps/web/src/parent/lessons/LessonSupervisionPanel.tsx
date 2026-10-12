@@ -214,13 +214,14 @@ export default function LessonSupervisionPanel({
               <p className="muted">{messages.lessons.mockTestsRecent}</p>
               <ul className="plain" data-testid="lesson-mock-list">
                 {mockTests.map((report, index) => (
-                  <li className="card" key={index} data-testid="lesson-mock-report">
+                  <li className="card" key={report.sessionId} data-testid="lesson-mock-report" data-session-id={report.sessionId}>
                     <div className="row space">
-                      <strong>{messages.lessons.mockTestBudget.replace("{n}", String(report.taskBudget))}</strong>
+                      <strong>{messages.lessons.mockTestDate.replace("{date}", formatDate(report.startedAt))}</strong>
                       <span className="badge" data-testid={`lesson-mock-complete-${index}`}>
                         {report.complete ? messages.lessons.mockTestComplete : messages.lessons.mockTestPartial}
                       </span>
                     </div>
+                    <p className="muted">{messages.lessons.mockTestBudget.replace("{n}", String(report.taskBudget))}</p>
                     {report.objectives.map((objective) => (
                       <div key={objective.objectiveId} data-testid={`lesson-mock-objective-${objective.objectiveId}`}>
                         <p><strong>{objective.titlePl}</strong></p>
