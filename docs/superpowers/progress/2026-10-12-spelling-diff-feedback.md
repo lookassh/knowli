@@ -66,7 +66,14 @@ izolator `UMIEM_TEST_RUN_ID`/`UMIEM_E2E_PORT`.
 - GREEN: screens 41/41; typecheck całego repo PASS.
 
 ### Task 6: E2E — scenka literówki
-- Status: DO WYKONANIA
+- Status: UKOŃCZONE
+- Test akceptacyjny (RED dla zachowania potwierdzone w Taskach 1–4 unit/integration): PASS 1/1 (56,6 s),
+  izolator UMIEM_TEST_RUN_ID=spelling-diff-1, port 24600. Asercje: diff niewidoczny przed odpowiedzią,
+  widoczny po; given/expected zawierają wpis i target; pigułka widoczna; przycisk „Spróbuj jeszcze raz"
+  (brak dodatkowych prób).
+- Odstępstwo od planu: seedDue używa skill "recall" (wzorzec repo; Recall ocenia też pisownię), plan
+  sugerował "spelling"; po openLearn wymagane kliknięcie kid-deck (jak w kid-flow.spec.ts).
+
 
 ### Task 7: Dokumentacja + pełna weryfikacja
 - Status: DO WYKONANIA
