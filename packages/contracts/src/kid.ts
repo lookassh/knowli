@@ -262,15 +262,41 @@ export const SpeechFeedbackDtoSchema = z.object({
 });
 export type SpeechFeedbackDto = z.infer<typeof SpeechFeedbackDtoSchema>;
 
+/** Fragment zapisu w porównaniu pisowni; `pill` = fragment do wyróżnienia (issue #9). */
+export const SpellingDiffSegmentSchema = z.object({
+  text: z.string().min(1),
+  state: z.enum(["plain", "pill"]),
+});
+export type SpellingDiffSegmentDto = z.infer<typeof SpellingDiffSegmentSchema>;
+
+/**
+ * Porównanie zapisu dziecka z właściwym wariantem: dwa zsegmentowane wiersze.
+ * Segmenty `expected` składają się dokładnie na `correctText`; bez odległości
+ * i technicznych score'ów (dziecko nie widzi liczb).
+ */
+export const SpellingDiffSchema = z.object({
+  given: z.array(SpellingDiffSegmentSchema).min(1).max(32),
+  expected: z.array(SpellingDiffSegmentSchema).min(1).max(32),
+  capitalizationHint: z.boolean().optional(),
+});
+export type SpellingDiff = z.infer<typeof SpellingDiffSchema>;
+
 export const FeedbackDtoSchema = z.object({
-  kind: z.enum(["great", "capitalization_hint", "almost", "incorrect", "content_matched", "not_assessed"]),
+  kind: z.enum(["great", "capitalization_hint", "almost", "incorrect", "content_matched", "not_assessed", "spelling_hint"]),
   correctText: z.string().min(1).optional(),
   heardText: z.string().min(1).max(200).optional(),
   fragments: z.array(PronunciationFragmentDtoSchema).max(6).optional(),
   speech: SpeechFeedbackDtoSchema.optional(),
+  spellingDiff: SpellingDiffSchema.optional(),
   /** Wskazówka prezentacji; endpoint odsłuchu zawsze ponownie sprawdza uprawnienie. */
   referenceAudioAvailable: z.boolean().optional(),
 }).strict().superRefine((feedback, ctx) => {
+  if (feedback.kind === "spelling_hint" && feedback.spellingDiff === undefined) {
+    ctx.addIssue({ code: "custom", path: ["spellingDiff"], message: "spelling_hint requires spellingDiff" });
+  }
+  if (feedback.kind !== "spelling_hint" && feedback.spellingDiff !== undefined) {
+    ctx.addIssue({ code: "custom", path: ["spellingDiff"], message: "spellingDiff is only allowed with spelling_hint" });
+  }
   if (feedback.speech && ["uncertain", "no_speech", "unavailable"].includes(feedback.speech.recognition)) {
     for (const field of ["heardText", "correctText", "fragments"] as const) {
       if (feedback[field] !== undefined) {
