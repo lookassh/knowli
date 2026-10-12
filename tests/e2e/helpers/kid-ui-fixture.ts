@@ -5,6 +5,7 @@ import {
   KidDeckDtoSchema,
   KidProfileDtoSchema,
   MockTestSummaryDtoSchema,
+  LessonMockTestSummaryDtoSchema,
   PresentationCompletionDtoSchema,
   SessionDtoSchema,
   SessionSummaryDtoSchema,
@@ -15,6 +16,7 @@ import {
   type KidDeckDto,
   type KidProfileDto,
   type MockTestSummaryDto,
+  type LessonMockTestSummaryDto,
   type PresentationCompletionDto,
   type SessionDto,
   type SessionSummaryDto,
@@ -32,6 +34,7 @@ export interface KidUiFixture {
   presentation?: PresentationCompletionDto;
   summary?: SessionSummaryDto;
   mockSummary?: MockTestSummaryDto;
+  lessonMockSummary?: LessonMockTestSummaryDto;
   feedbackAudio?: FeedbackAudioDto;
 }
 
@@ -45,6 +48,7 @@ export async function installKidUiFixture(page: Page, fixture: KidUiFixture): Pr
   if (fixture.presentation) PresentationCompletionDtoSchema.parse(fixture.presentation);
   if (fixture.summary) SessionSummaryDtoSchema.parse(fixture.summary);
   if (fixture.mockSummary) MockTestSummaryDtoSchema.parse(fixture.mockSummary);
+  if (fixture.lessonMockSummary) LessonMockTestSummaryDtoSchema.parse(fixture.lessonMockSummary);
   if (fixture.feedbackAudio) FeedbackAudioDtoSchema.parse(fixture.feedbackAudio);
 
   let taskIndex = 0;
@@ -103,6 +107,7 @@ export async function installKidUiFixture(page: Page, fixture: KidUiFixture): Pr
       return json(fixture.summary);
     }
     if (method === "GET" && path === `/api/v1/kid/sessions/${fixture.session.sessionId}/mock-test-summary`) {
+      if (fixture.lessonMockSummary) return json(fixture.lessonMockSummary);
       if (!fixture.mockSummary) return missing("mock-test summary is not configured");
       return json(fixture.mockSummary);
     }

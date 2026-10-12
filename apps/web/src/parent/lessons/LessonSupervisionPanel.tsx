@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   messages,
   type ChildDto,
+  type LessonMockTestReportDto,
   type LessonVerdictDecision,
   type LessonVerdictDto,
   type ObjectiveProgressDto,
@@ -35,6 +36,7 @@ export default function LessonSupervisionPanel({
   const [childId, setChildId] = useState<string | null>(childrenList[0]?.id ?? null);
   const [progress, setProgress] = useState<ObjectiveProgressDto[]>([]);
   const [verdicts, setVerdicts] = useState<LessonVerdictDto[]>([]);
+  const [mockTests, setMockTests] = useState<LessonMockTestReportDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busyVerdict, setBusyVerdict] = useState<string | null>(null);
@@ -64,12 +66,27 @@ export default function LessonSupervisionPanel({
     }
   }, [deckId]);
 
+  const loadMockTests = useCallback(async () => {
+    if (!childId) {
+      setMockTests([]);
+      return;
+    }
+    try {
+      setMockTests(await apiFetch<LessonMockTestReportDto[]>("GET", `/api/v1/parent/mock-tests?childId=${childId}&deckId=${deckId}`));
+    } catch (cause) {
+      setError(errorMessage(cause));
+    }
+  }, [deckId, childId]);
+
   useEffect(() => {
     void loadProgress();
   }, [loadProgress]);
   useEffect(() => {
     void loadVerdicts();
   }, [loadVerdicts]);
+  useEffect(() => {
+    void loadMockTests();
+  }, [loadMockTests]);
 
   const decide = async (verdictId: string, decision: LessonVerdictDecision) => {
     setBusyVerdict(verdictId);
@@ -185,6 +202,58 @@ export default function LessonSupervisionPanel({
             </article>
           ))}
         </div>
+      )}
+
+      {childId && (
+        <section data-testid="lesson-mock-reports" aria-label={messages.lessons.mockTestsTitle}>
+          <h3>{messages.lessons.mockTestsTitle}</h3>
+          {mockTests.length === 0 ? (
+            <p className="muted" data-testid="lesson-mock-empty">{messages.lessons.mockTestsEmpty}</p>
+          ) : (
+            <>
+              <p className="muted">{messages.lessons.mockTestsRecent}</p>
+              <ul className="plain" data-testid="lesson-mock-list">
+                {mockTests.map((report, index) => (
+                  <li className="card" key={index} data-testid="lesson-mock-report">
+                    <div className="row space">
+                      <strong>{messages.lessons.mockTestBudget.replace("{n}", String(report.taskBudget))}</strong>
+                      <span className="badge" data-testid={`lesson-mock-complete-${index}`}>
+                        {report.complete ? messages.lessons.mockTestComplete : messages.lessons.mockTestPartial}
+                      </span>
+                    </div>
+                    {report.objectives.map((objective) => (
+                      <div key={objective.objectiveId} data-testid={`lesson-mock-objective-${objective.objectiveId}`}>
+                        <p><strong>{objective.titlePl}</strong></p>
+                        <p className="muted">{messages.lessons.mockTestObjectiveCounts
+                          .replace("{correct}", String(objective.correct))
+                          .replace("{total}", String(objective.total))
+                          .replace("{incorrect}", String(objective.incorrect))
+                          .replace("{unassessed}", String(objective.unassessed))
+                          .replace("{skipped}", String(objective.skipped))}</p>
+                        {objective.modelGraded > 0 && (
+                          <p className="muted">{messages.lessons.mockTestModelGraded.replace("{n}", String(objective.modelGraded))}</p>
+                        )}
+                        {objective.errorCategories.length > 0 && (
+                          <div>
+                            <h5>{messages.lessons.mockTestErrorsTitle}</h5>
+                            <ul className="plain">
+                              {objective.errorCategories.map((cat) => (
+                                <li key={cat.category} className="muted">
+                                  {messages.lessons.mockTestErrorCount.replace("{label}", cat.labelPl).replace("{n}", String(cat.count))}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </li>
+                ))}
+              </ul>
+              <p className="muted">{messages.lessons.mockTestNote}</p>
+            </>
+          )}
+        </section>
       )}
 
       <h3>{messages.lessons.verdictsTitle}</h3>

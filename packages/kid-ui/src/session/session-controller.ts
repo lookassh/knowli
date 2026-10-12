@@ -1,6 +1,7 @@
 import {
   messages,
   type MockTestSummaryDto,
+  type LessonMockTestSummaryDto,
   type AttemptDto,
   type FeedbackDto,
   type KidDeckDto,
@@ -62,6 +63,7 @@ export interface LearningScreen {
 export type KidScreen =
   | { kind: "mockTestReady"; session: SessionDto }
   | { kind: "mockTestSummary"; summary: MockTestSummaryDto }
+  | { kind: "lessonMockTestSummary"; summary: LessonMockTestSummaryDto }
   | { kind: "sessionConflict"; active: KidDeckDto; childId: string }
   | { kind: "loading" }
   | { kind: "initError"; message: string }
@@ -133,6 +135,10 @@ export class LearningSessionController {
   #profiles: KidProfileDto[] = [];
   #childId: string | null = null;
   #micDenied = false;
+  /** Rodzaj zestawu aktywnej kartkówki — decyduje o kształcie omówienia
+   * (lekcja = per cel, słówka = per umiejętność). SessionDto nie niesie
+   * rodzaju, więc zapamiętujemy go z karty zestawu, z której wystartowano. */
+  #mockDeckKind: "vocabulary" | "lesson" = "vocabulary";
   #recordingMode: RecordingModeDto = "hold";
   #recorder: SpeechRecorder | null = null;
   /** Ostatnia operacja do ponowienia po powrocie sieci/błędzie aplikacji. */
@@ -282,6 +288,9 @@ export class LearningSessionController {
   async startLearning(deckId: string, mode: SessionDto["mode"] = "training"): Promise<void> {
     if (this.#screen.kind !== "deck") return;
     const { childId, microphone } = this.#screen;
+    if (mode === "mock_test") {
+      this.#mockDeckKind = this.#screen.decks.find(d => d.deckId === deckId)?.kind === "lesson" ? "lesson" : "vocabulary";
+    }
     this.#epoch += 1;
     const epoch = this.#epoch;
     // nowa sesja nie dziedziczy wyboru z poprzedniej (np. przerwanego awarią)
@@ -401,6 +410,15 @@ export class LearningSessionController {
     try {
       const summary = await this.#api.endSession(sessionId);
       if (epoch !== this.#epoch) return;
+      if (mode === "mock_test" && this.#mockDeckKind === "lesson") {
+        const lessonSummary = await this.#api.readLessonMockTestSummary(sessionId);
+        if (epoch !== this.#epoch) return;
+        this.#teardownRecording();
+        this.#stopPlayback();
+        this.#screen = { kind: "lessonMockTestSummary", summary: lessonSummary };
+        this.#emit();
+        return;
+      }
       const mockSummary = mode === "mock_test" ? await this.#api.readMockTestSummary(sessionId) : null;
       if (epoch !== this.#epoch) return;
       this.#teardownRecording();
@@ -847,8 +865,10 @@ export class LearningSessionController {
   }
 
   async learnAgain(): Promise<void> {
-    if ((this.#screen.kind !== "summary" && this.#screen.kind !== "mockTestSummary") || this.#childId === null) return;
-    const deckId = this.#screen.kind === "mockTestSummary" ? this.#screen.summary.deckId : null;
+    if ((this.#screen.kind !== "summary" && this.#screen.kind !== "mockTestSummary" && this.#screen.kind !== "lessonMockTestSummary") || this.#childId === null) return;
+    const deckId = this.#screen.kind === "mockTestSummary" ? this.#screen.summary.deckId
+      : this.#screen.kind === "lessonMockTestSummary" ? this.#screen.summary.deckId
+      : null;
     await this.selectProfile(this.#childId);
     if (deckId) await this.startLearning(deckId);
   }

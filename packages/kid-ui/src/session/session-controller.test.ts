@@ -6,6 +6,7 @@ import type {
   FeedbackDto,
   KidDeckDto,
   KidProfileDto,
+  LessonMockTestSummaryDto,
   PresentationCompletionDto,
   SessionDto,
   SessionSummaryDto,
@@ -162,6 +163,7 @@ interface ApiState {
   feedbackAudioError?: unknown;
   feedbackAudioAssetId?: string;
   feedbackAudioCalls: string[];
+  lessonMockSummary?: LessonMockTestSummaryDto;
 }
 
 function makeApi(state: ApiState): KidApi {
@@ -223,6 +225,10 @@ function makeApi(state: ApiState): KidApi {
       if (state.networkDown) throw new TypeError("fetch failed");
       return { sessionId, deckId: DECK.deckId, state: "completed", complete: true, taskBudget: 2, answeredCount: 2, solutions: [] };
     },
+    async readLessonMockTestSummary(sessionId) {
+      if (state.networkDown) throw new TypeError("fetch failed");
+      return state.lessonMockSummary ?? { sessionId, deckId: LESSON_DECK.deckId, state: "completed", complete: true, taskBudget: 2, answeredCount: 2, solutions: [] };
+    },
     mediaUrl(assetId) {
       return `https://media.test/${assetId}`;
     },
@@ -238,6 +244,19 @@ const DECK: KidDeckDto = {
   independentlyRecalledCount: 0,
   testDate: null,
   recommended: true,
+};
+
+const LESSON_DECK: KidDeckDto = {
+  mockTestAvailable: true,
+  activeSession: null,
+  deckId: "66666666-6666-6666-6666-666666666666",
+  title: "Czas Present Simple",
+  itemCount: 0,
+  independentlyRecalledCount: 0,
+  testDate: null,
+  recommended: true,
+  kind: "lesson",
+  subjectTitle: "Angielski",
 };
 
 function makeHarness(
@@ -534,6 +553,41 @@ describe("LearningSessionController", () => {
   it("mediaUrl deleguje do klienta API — wspólne źródło URL obrazka i audio", () => {
     const harness = makeHarness(baseState());
     expect(harness.controller.mediaUrl("asset-1")).toBe("https://media.test/asset-1");
+  });
+
+  it("kartkówka lekcji kończy się omówieniem per cel (lessonMockTestSummary), nie słówkowym", async () => {
+    const state = baseState();
+    state.decks = [DECK, LESSON_DECK];
+    state.tasks = [taskDto("mock-1", { kind: "recall", prompt: "I ___ (go) to school." })];
+    state.attempts = [attemptDto({ taskId: "mock-1", feedback: null, taskState: "answered" })];
+    state.lessonMockSummary = {
+      sessionId: "55555555-5555-5555-5555-555555555555",
+      deckId: LESSON_DECK.deckId,
+      state: "ended",
+      complete: true,
+      taskBudget: 1,
+      answeredCount: 1,
+      solutions: [{ taskId: "mock-1", objectiveId: "obj-present-simple", titlePl: "Present Simple", exerciseType: "lesson_short_answer", prompt: "I ___ (go) to school.", childAnswer: "go", correctAnswer: "go", outcome: "correct" }],
+    };
+    const { controller } = makeHarness(state);
+    await controller.start(); await controller.selectProfile(PROFILE_A.childId); controller.setMicrophone(false);
+    await controller.startMockTest(LESSON_DECK.deckId);
+    await controller.beginMockTest();
+    await controller.answerText("go");
+    // mimo state="ended" (znana wada 17A) kompletność bierzemy z complete=true
+    expect(controller.getScreen()).toMatchObject({ kind: "lessonMockTestSummary", summary: { complete: true, deckId: LESSON_DECK.deckId, solutions: [{ objectiveId: "obj-present-simple", outcome: "correct" }] } });
+  });
+
+  it("kartkówka słówek nadal kończy się słówkowym omówieniem (bez regresji)", async () => {
+    const state = baseState();
+    state.tasks = [taskDto("mock-1", { kind: "recall", prompt: "poniedziałek" })];
+    state.attempts = [attemptDto({ taskId: "mock-1", feedback: null, taskState: "answered" })];
+    const { controller } = makeHarness(state);
+    await controller.start(); await controller.selectProfile(PROFILE_A.childId); controller.setMicrophone(false);
+    await controller.startMockTest(DECK.deckId);
+    await controller.beginMockTest();
+    await controller.answerText("Monday");
+    expect(controller.getScreen()).toMatchObject({ kind: "mockTestSummary" });
   });
 
   it("pojedynczy profil bez initialChildId zatrzymuje się na ekranie wyboru profilu", async () => {

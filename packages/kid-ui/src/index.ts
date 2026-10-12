@@ -31,3 +31,9 @@ export {
   type MockTestSolutionDetail,
   type MockTestWordStatus,
 } from "./screens/mock-test-score";
+export {
+  computeLessonMockScore,
+  LESSON_MOCK_STATUS_ICONS,
+  lessonMockOutcomeStatus,
+  type LessonMockStatus,
+} from "./screens/lesson-mock-score";
