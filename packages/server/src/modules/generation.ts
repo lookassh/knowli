@@ -9,12 +9,13 @@ import {
   isVisualDataValid,
 } from "@learning/contracts";
 import type { Clock, GenerationDeps, Services } from "../config";
-import type { Executor } from "../db/client";
+import type { Database, Executor, Tx } from "../db/client";
 import { deckVersions, decks, generationRuns, mediaAssets } from "../db/schema";
 import { AppError } from "../errors";
 import { applyItems } from "./decks";
 import { validateItems } from "./item-payload";
 import { reconcileDraftAssetsTx } from "./media-reconciliation";
+import { executeLessonGeneration } from "./lessons/lesson-drafts";
 
 /** Maksymalnie trzy automatyczne próby; dalsze tylko po ręcznym ponowieniu. */
 export const MAX_AUTOMATIC_ATTEMPTS = 3;
@@ -37,15 +38,68 @@ const GeneratedDeckSchema = z.object({
   items: z.array(GeneratedItemSchema).min(1).max(50),
 });
 
-function requireGeneration(services: Services): GenerationDeps {
+export function requireGeneration(services: Services): GenerationDeps {
   if (!services.generation) {
     throw new AppError("internal", { message: "generation dependencies not configured" });
   }
   return services.generation;
 }
 
+/**
+ * Idempotentne zlecenie runu generacji szkicu pod kluczem `dedupeKey`
+ * (`deck:<id>` / `lesson:<id>`). Wspólny szkielet dla słówek i lekcji: jeśli run
+ * o tym kluczu istnieje i zna swój `deckId`, zwraca go; inaczej otwiera własną
+ * transakcję i woła `create(tx)` (wstawia deck/wersję/run). Przy równoległym
+ * duplikacie klucza (`23505`) transakcja przegranego wycofuje się, a zwycięzcę
+ * odczytujemy świeżym zapytaniem POZA wycofaną transakcją (w aborted tx nie da
+ * się już nic odczytać). Jedna obsługa wyścigu idempotencji — moduł lekcji jej
+ * używa zamiast kopiować. `create` zwraca `{ runId, deckId }`.
+ */
+export async function enqueueGenerationRun(
+  db: Database,
+  dedupeKey: string,
+  create: (tx: Tx) => Promise<{ runId: string; deckId: string }>,
+): Promise<{ runId: string; deckId: string }> {
+  const found = await findEnqueuedRun(db, dedupeKey);
+  if (found) {
+    return found;
+  }
+  try {
+    return await db.transaction(async (tx) => create(tx));
+  } catch (error) {
+    // równoległy duplikat klucza idempotencji: transakcja już wycofana, więc
+    // zwycięzcę czytamy świeżym zapytaniem na połączeniu bazowym. Drizzle
+    // opakowuje błąd pg, więc kod bywa na error.cause (jak w upsertAssignment).
+    const pgCode =
+      (error as { code?: string }).code ??
+      (error as { cause?: { code?: string } }).cause?.code;
+    if (pgCode === "23505") {
+      const winner = await findEnqueuedRun(db, dedupeKey);
+      if (winner) {
+        return winner;
+      }
+    }
+    throw error;
+  }
+}
+
+/** Odczyt istniejącego runu po kluczu idempotencji, jeśli zna swój `deckId`. */
+async function findEnqueuedRun(
+  db: Executor,
+  dedupeKey: string,
+): Promise<{ runId: string; deckId: string } | null> {
+  const existing = (
+    await db.select().from(generationRuns).where(eq(generationRuns.dedupeKey, dedupeKey))
+  )[0];
+  const deckId = (existing?.input as { deckId?: string } | undefined)?.deckId;
+  if (existing && deckId) {
+    return { runId: existing.id, deckId };
+  }
+  return null;
+}
+
 /** Walidacja wyniku AI to porażka terminalna; pozostałe błędy są powtarzalne. */
-function errorCodeOf(error: unknown): string {
+export function errorCodeOf(error: unknown): string {
   if (error instanceof z.ZodError) {
     return "validation";
   }
@@ -55,7 +109,7 @@ function errorCodeOf(error: unknown): string {
   return "provider";
 }
 
-async function markRun(
+export async function markRun(
   db: Executor,
   clock: Clock,
   runId: string,
@@ -72,6 +126,21 @@ async function markRun(
     .where(eq(generationRuns.id, runId));
 }
 
+/**
+ * Claim CAS runu generacji szkicu (deck/lesson): `queued → running` + inkrement
+ * prób. Zwraca liczbę prób po claimie, albo `null`, gdy run nie był `queued`
+ * (inny worker już go zabrał). Współdzielone przez ścieżkę słówek i lekcji —
+ * jedna implementacja atomowego przejęcia zamiast kopii w module lekcji.
+ */
+export async function claimQueuedRun(db: Executor, runId: string): Promise<number | null> {
+  const claimed = await db
+    .update(generationRuns)
+    .set({ state: "running", attempts: sql`${generationRuns.attempts} + 1` })
+    .where(and(eq(generationRuns.id, runId), eq(generationRuns.state, "queued")))
+    .returning({ attempts: generationRuns.attempts });
+  return claimed[0]?.attempts ?? null;
+}
+
 export async function enqueueDeckGeneration(
   services: Services,
   input: GenerationCommand,
@@ -79,65 +148,38 @@ export async function enqueueDeckGeneration(
   const cmd = GenerationCommandSchema.parse(input);
   const locales = cmd.locales ?? { source: "pl-PL", target: "en-GB" };
 
-  return services.db.transaction(async (tx) => {
-    const existing = (
-      await tx.select().from(generationRuns).where(eq(generationRuns.dedupeKey, `deck:${cmd.idempotencyKey}`))
-    )[0];
-    if (existing) {
-      const existingInput = existing.input as { deckId?: string };
-      if (existingInput.deckId) {
-        return { runId: existing.id, deckId: existingInput.deckId };
-      }
-    }
-
+  return enqueueGenerationRun(services.db, `deck:${cmd.idempotencyKey}`, async (tx) => {
     const deckId = randomUUID();
     const versionId = randomUUID();
     const title = cmd.title ?? cmd.prompt.slice(0, 60);
     const runId = randomUUID();
-    try {
-      await tx.insert(decks).values({ id: deckId, title });
-      await tx.insert(deckVersions).values({
-        id: versionId,
+    await tx.insert(decks).values({ id: deckId, title });
+    await tx.insert(deckVersions).values({
+      id: versionId,
+      deckId,
+      versionNumber: 1,
+      editNumber: 1,
+      state: "draft",
+      title,
+      sourceLocale: locales.source,
+      targetLocale: locales.target,
+      generationPrompt: cmd.prompt,
+    });
+    await tx.insert(generationRuns).values({
+      id: runId,
+      deckVersionId: versionId,
+      expectedEditNumber: 1,
+      kind: "deck",
+      dedupeKey: `deck:${cmd.idempotencyKey}`,
+      state: "queued",
+      input: {
+        prompt: cmd.prompt,
         deckId,
-        versionNumber: 1,
-        editNumber: 1,
-        state: "draft",
-        title,
-        sourceLocale: locales.source,
-        targetLocale: locales.target,
-        generationPrompt: cmd.prompt,
-      });
-      await tx.insert(generationRuns).values({
-        id: runId,
         deckVersionId: versionId,
-        expectedEditNumber: 1,
-        kind: "deck",
-        dedupeKey: `deck:${cmd.idempotencyKey}`,
-        state: "queued",
-        input: {
-          prompt: cmd.prompt,
-          deckId,
-          deckVersionId: versionId,
-          locales,
-          maxItems: cmd.maxItems ?? 50,
-        },
-      });
-    } catch (error) {
-      // równoległy duplikat klucza idempotencji: dołączamy do istniejącego runu
-      if ((error as { code?: string }).code === "23505") {
-        const winner = (
-          await tx
-            .select()
-            .from(generationRuns)
-            .where(eq(generationRuns.dedupeKey, `deck:${cmd.idempotencyKey}`))
-        )[0];
-        const winnerInput = winner?.input as { deckId?: string } | undefined;
-        if (winner && winnerInput?.deckId) {
-          return { runId: winner.id, deckId: winnerInput.deckId };
-        }
-      }
-      throw error;
-    }
+        locales,
+        maxItems: cmd.maxItems ?? 50,
+      },
+    });
     return { runId, deckId };
   });
 }
@@ -207,6 +249,11 @@ export async function executeGeneration(services: Services, runId: string): Prom
     throw new AppError("not_found");
   }
   if (run.kind !== "deck") {
+    if (run.kind === "lesson") {
+      // Runy lekcji wykonuje dedykowany moduł (modules/lessons/lesson-drafts.ts);
+      // worker rozdziela je w runDueGenerationWork, więc tu nie powinny trafić.
+      throw new AppError("internal", { message: "lesson run must be executed by lesson module" });
+    }
     await executeMediaAsset(services, run.assetId!);
     return;
   }
@@ -214,15 +261,10 @@ export async function executeGeneration(services: Services, runId: string): Prom
     return;
   }
 
-  const claimed = await services.db
-    .update(generationRuns)
-    .set({ state: "running", attempts: sql`${generationRuns.attempts} + 1` })
-    .where(and(eq(generationRuns.id, runId), eq(generationRuns.state, "queued")))
-    .returning({ attempts: generationRuns.attempts });
-  if (claimed.length === 0) {
+  const attempts = await claimQueuedRun(services.db, runId);
+  if (attempts === null) {
     return;
   }
-  const attempts = claimed[0]!.attempts;
   if (attempts > MAX_AUTOMATIC_ATTEMPTS) {
     await markRun(services.db, services.clock, runId, "failed", "attempts_exhausted");
     return;
@@ -472,14 +514,15 @@ async function assetReady(db: Executor, assetId: string): Promise<boolean> {
 
 export interface WorkerLimits {
   deck?: number;
+  lesson?: number;
   tts?: number;
   images?: number;
 }
 
 /**
  * Jedno przelotne przetworzenie zleconej pracy (poller workera; testy wołają
- * bezpośrednio). Kolejność: decki, TTS, ilustracje — obrazów naraz najwyżej
- * jeden, łącznie nie więcej niż dwie równoległe zadania.
+ * bezpośrednio). Kolejność: decki, lekcje, TTS, ilustracje — obrazów naraz
+ * najwyżej jeden, łącznie nie więcej niż dwie równoległe zadania.
  */
 export async function runDueGenerationWork(
   services: Services,
@@ -487,6 +530,7 @@ export async function runDueGenerationWork(
 ): Promise<{ processed: number }> {
   requireGeneration(services);
   const maxDeck = limits.deck ?? 2;
+  const maxLesson = limits.lesson ?? 2;
   const maxTts = limits.tts ?? 2;
   const maxImages = limits.images ?? 1;
   const now = services.clock.now();
@@ -500,6 +544,17 @@ export async function runDueGenerationWork(
     .limit(maxDeck);
   for (const run of deckRuns) {
     await executeGeneration(services, run.id);
+    processed += 1;
+  }
+
+  const lessonRuns = await services.db
+    .select({ id: generationRuns.id })
+    .from(generationRuns)
+    .where(and(eq(generationRuns.kind, "lesson"), eq(generationRuns.state, "queued")))
+    .orderBy(asc(generationRuns.createdAt))
+    .limit(maxLesson);
+  for (const run of lessonRuns) {
+    await executeLessonGeneration(services, run.id);
     processed += 1;
   }
 

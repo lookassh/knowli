@@ -1,6 +1,18 @@
 export * from "./config";
 export { createProductionSubjectRegistry } from "./domain/lessons/subjects";
 export { createSubjectRegistry, type SubjectRegistry } from "./domain/lessons/registry";
+export { englishGrammarSubject } from "./domain/lessons/subjects/english-grammar/module";
+export { historyLikeSubject } from "./domain/lessons/testing/history-like-subject";
+export { validatePool, findDuplicateAnswers, poolCoverage } from "./domain/lessons/pool-validation";
+export { DEFAULT_LESSON_POLICY, defaultPoolSize } from "./domain/lessons/lesson-policy";
+export type {
+  SubjectModule,
+  LessonTopic,
+  LearningObjective,
+  LessonExerciseDraft,
+  LessonExerciseType,
+  LessonStage,
+} from "./domain/lessons/types";
 export * from "./errors";
 export { createDatabase, migrateDatabase, type Database } from "./db/client";
 export { waitUntilDatabaseReady, type DatabaseReadinessOptions } from "./db/ready";
@@ -37,9 +49,21 @@ export {
   retryGeneration,
   readGeneration,
   runDueGenerationWork,
+  enqueueGenerationRun,
+  claimQueuedRun,
+  markRun,
+  errorCodeOf,
+  requireGeneration,
   MAX_AUTOMATIC_ATTEMPTS,
   type WorkerLimits,
 } from "./modules/generation";
+export {
+  createLesson,
+  executeLessonGeneration,
+  regenerateObjective,
+  applyLessonExercises,
+  splitStages,
+} from "./modules/lessons/lesson-drafts";
 export {
   reconcileDraftAssets,
   regenerateRevisionAsset,
@@ -111,6 +135,11 @@ export type {
   LlmProvider,
   LlmGenerateDeckInput,
   LlmGeneratedItem,
+  LessonPoolInput,
+  LlmLessonObjectiveInput,
+  LlmLessonTransformInput,
+  LlmPromptProfileInput,
+  LlmLessonStageCounts,
   TtsProvider,
   TtsSynthesizeInput,
   ImageProvider,
@@ -156,5 +185,6 @@ export {
   FakeSttProvider,
   FakeTtsProvider,
   type LlmBehavior,
+  type LlmLessonBehavior,
 } from "./providers/fake";
 export { createGenerationDepsFromEnv } from "./providers/generation-env";
