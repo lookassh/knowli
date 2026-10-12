@@ -172,7 +172,7 @@ export async function buildLessonSessionContext(
 }
 
 /** Odczyt kontekstu lekcji z sesji (bez utraty pól bazowych). */
-function lessonSessionContextOf(session: { context: Record<string, unknown> }): LessonSessionContext {
+export function lessonSessionContextOf(session: { context: Record<string, unknown> }): LessonSessionContext {
   const base = contextOf(session);
   const raw = session.context as Partial<LessonSessionContext>;
   return {

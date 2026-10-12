@@ -59,6 +59,7 @@ import {
   issueNextLessonTask,
   lessonTaskCounts,
 } from "./lessons/lesson-sessions";
+import { buildLessonSummaryObjectives } from "./lessons/lesson-attempts";
 
 /** Okno wznowienia aktywnej sesji od ostatniego zdarzenia (arch §9.1). */
 export const RESUME_WINDOW_MS = 30 * 60_000;
@@ -1046,6 +1047,7 @@ export async function endSession(services: Services, sessionId: string): Promise
     }
     const counts = await taskCounts(tx, id);
     const saved = SessionSummaryDtoSchema.safeParse(session.context.summary);
+    const isLesson = await sessionIsLesson(tx, session.deckVersionId);
     const rows = saved.success ? [] : await tx
       .select({
         itemId: itemRevisions.itemId, payload: itemRevisions.payload,
@@ -1057,6 +1059,10 @@ export async function endSession(services: Services, sessionId: string): Promise
       .innerJoin(itemRevisions, eq(itemRevisions.id, assessments.itemRevisionId))
       .where(and(eq(sessionTasks.sessionId, id), eq(attempts.state, "completed")))
       .orderBy(asc(attempts.receivedAt), asc(sessionTasks.ordinal), asc(attempts.attemptNumber));
+    // Lekcja (req 7.7): podsumowanie per cel. Wartości słówkowe (recall/spelling)
+    // są puste — `summarizeSessionAssessments` ignoruje skill `objective` — więc
+    // bezpiecznie dołączamy `objectives` do tego samego kształtu DTO.
+    const lessonObjectives = saved.success || !isLesson ? undefined : await buildLessonSummaryObjectives(services, tx, id);
     const summary: SessionSummaryDto = saved.success ? saved.data : {
       sessionId: id,
       state,
@@ -1064,6 +1070,7 @@ export async function endSession(services: Services, sessionId: string): Promise
       assessedTasksIssued: counts.assessed,
       endedAt: endedAt!.toISOString(),
       ...summarizeSessionAssessments(rows.map(row => ({ ...row, target: payloadToItem(row.payload).target }))),
+      ...(lessonObjectives ? { objectives: lessonObjectives } : {}),
     };
     if (!saved.success) {
       await tx.update(learningSessions)

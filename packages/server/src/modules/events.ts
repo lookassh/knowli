@@ -172,13 +172,20 @@ export async function authorizeDisclosure(services: Services, input: DisclosureI
 
     const revision = (
       await tx
-        .select({ payload: itemRevisions.payload, targetLocale: deckVersions.targetLocale })
+        .select({ payload: itemRevisions.payload, targetLocale: deckVersions.targetLocale, dbTargetKey: itemRevisions.targetKey })
         .from(itemRevisions)
         .innerJoin(deckVersions, eq(deckVersions.id, itemRevisions.deckVersionId))
         .where(eq(itemRevisions.id, task.itemRevisionId))
     )[0]!;
-    const target = (revision.payload as { target: string }).target;
-    const targetKey = computeTargetKey(target, revision.targetLocale);
+    // Słówka: payload ma `target`. Lekcja: ćwiczenie ma `answer` (payload) i
+    // `targetKey` (answer_key/rewizja); rozwiązaniem pokazywanym dziecku jest
+    // odpowiedź kanoniczna, a klucz ekspozycji to `target_key` ćwiczenia.
+    const payload = revision.payload as { target?: string; answer?: string };
+    const isLesson = (task.exerciseType as string).startsWith("lesson_");
+    const target = isLesson ? (payload.answer ?? "") : (payload.target ?? "");
+    const targetKey = isLesson
+      ? ((task.answerKey as { targetKey?: string }).targetKey ?? revision.dbTargetKey)
+      : computeTargetKey(target, revision.targetLocale);
 
     const prior = await tx
       .select({ id: learningEvents.id })

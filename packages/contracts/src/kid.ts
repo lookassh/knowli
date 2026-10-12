@@ -289,6 +289,18 @@ export const SessionSummaryDtoSchema = SessionSummaryResultsSchema.extend({
   tasksIssued: z.number().int().nonnegative(),
   assessedTasksIssued: z.number().int().nonnegative(),
   endedAt: InstantSchema,
+  /**
+   * Wariant lekcji (design „Kwalifikacja i projekcja celów”, req 7.7): podsumowanie
+   * per cel — ile ćwiczeń celu wykonano i ile poprawnie. BEZ procentów, bez statusów
+   * technicznych i bez kategorii błędów (prywatność: `.strict()` broni przed wyciekiem
+   * takiego pola). Opcjonalne — podsumowanie słówek go nie niesie (zgodność wsteczna).
+   */
+  objectives: z.array(z.object({
+    objectiveId: z.string().min(1),
+    titlePl: z.string().min(1),
+    practiced: z.number().int().nonnegative(),
+    correct: z.number().int().nonnegative(),
+  }).strict()).optional(),
 });
 export type SessionSummaryDto = z.infer<typeof SessionSummaryDtoSchema>;
 

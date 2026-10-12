@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { and, eq, inArray, max } from "drizzle-orm";
 import {
   AttemptInputSchema,
@@ -41,6 +41,8 @@ import type {
 } from "../domain/types";
 import { loadPolicy } from "../policies/registry";
 import { lockTaskWithSession, writeSealedEvent, contextOf } from "./events";
+import { requestHashOf, discloseFeedbackEvent } from "./attempt-shared";
+import { submitLessonAttempt, readLessonAttempt } from "./lessons/lesson-attempts";
 import { readSkillHistory } from "./skill-history";
 import { persistSkillProjection } from "./skill-projections";
 import { resolveTaskAssistance } from "../domain/task-assistance";
@@ -68,18 +70,6 @@ interface FrozenContext {
   assistance: AssistanceKind[];
   previousSessionContactAt: string | null;
   timezone: string;
-}
-
-function requestHashOf(input: AttemptInput): string {
-  const payload =
-    input.modality === "choice"
-      ? { optionId: input.optionId }
-      : input.modality === "text"
-        ? { text: input.text }
-        : {};
-  return createHash("sha256")
-    .update(JSON.stringify({ taskId: input.taskId, modality: input.modality, ...payload }))
-    .digest("hex");
 }
 
 function answerKeyOf(task: TaskRow): AnswerKey {
@@ -229,23 +219,14 @@ async function discloseFeedback(
     .from(itemRevisions)
     .innerJoin(deckVersions, eq(deckVersions.id, itemRevisions.deckVersionId))
     .where(eq(itemRevisions.id, task.itemRevisionId)))[0]?.locale;
-  const prior = await tx
-    .select({ id: learningEvents.id })
-    .from(learningEvents)
-    .where(and(eq(learningEvents.taskId, task.id), eq(learningEvents.kind, "feedback_issued")));
-  const stepId = `${task.id}:f${prior.length + 1}`;
-  await writeSealedEvent(tx, {
-    childId,
-    taskId: task.id,
-    itemId,
-    kind: "feedback_issued",
-    stepId,
-    occurredAt: now,
-    // oceniona próba pokazuje rozwiązanie własnego zadania (własna poprawna
-    // odpowiedź albo correctText); „Pomiń”/brak oceny niczego nie ujawnia
-    exposures: locale ? feedbackExposureKeys(feedback, targetKey, locale) : (feedback.kind === "not_assessed" ? [] : [targetKey]),
-  });
-  return stepId;
+  // oceniona próba pokazuje rozwiązanie własnego zadania (własna poprawna
+  // odpowiedź albo correctText); „Pomiń”/brak oceny niczego nie ujawnia
+  const exposures = locale
+    ? feedbackExposureKeys(feedback, targetKey, locale)
+    : feedback.kind === "not_assessed"
+      ? []
+      : [targetKey];
+  return discloseFeedbackEvent(tx, { task, childId, itemId, exposures, now });
 }
 
 /**
@@ -589,6 +570,21 @@ export async function submitAttempt(services: Services, input: AttemptInput): Pr
     // bajty nagrania nie podróżują w JSON — ścieżka mowy jest osobna (arch §11)
     throw new AppError("validation", { message: "speech attempts require the audio path" });
   }
+  // Rozgałęzienie po rodzaju zestawu (zadanie 13B, review minor zadania 9): zadania
+  // lekcji (`lesson_*`) idą do silnika lekcji, który sam ocenia, projektuje cel i
+  // składa feedback. Rozstrzygamy to po stanie zadania, nie modalności: `sequence`
+  // jest lekcyjne, ale zwykły `text`/`choice`/`skip`/`dont_remember` też musi trafić
+  // do lekcji, gdy dotyczy zadania lekcji. Nieznane zadanie → `not_found` (jak słówka).
+  const routed = await services.db.transaction(async (tx) => {
+    const task = (await tx.select({ exerciseType: sessionTasks.exerciseType }).from(sessionTasks).where(eq(sessionTasks.id, valid.taskId)))[0];
+    return task ? (task.exerciseType as string).startsWith("lesson_") : null;
+  });
+  if (routed === null) {
+    throw new AppError("not_found");
+  }
+  if (routed) {
+    return submitLessonAttempt(services, valid);
+  }
   return services.db.transaction(async (tx) => {
     const started = await startAttempt(tx, services, valid);
     if (started.kind !== "fresh") {
@@ -641,6 +637,19 @@ export async function submitAttempt(services: Services, input: AttemptInput): Pr
  */
 export async function readAttempt(services: Services, attemptId: string): Promise<AttemptDto> {
   const id = UuidSchema.parse(attemptId);
+  const routed = await services.db.transaction(async (tx) => {
+    const row = (
+      await tx
+        .select({ attempt: attempts, exerciseType: sessionTasks.exerciseType })
+        .from(attempts)
+        .innerJoin(sessionTasks, eq(sessionTasks.id, attempts.taskId))
+        .where(eq(attempts.id, id))
+    )[0];
+    return row ?? null;
+  });
+  if (routed && (routed.exerciseType as string).startsWith("lesson_")) {
+    return readLessonAttempt(services, routed.attempt as unknown as typeof attempts.$inferSelect);
+  }
   return services.db.transaction(async (tx) => {
     const attempt = (await tx.select().from(attempts).where(eq(attempts.id, id)))[0];
     if (!attempt) {

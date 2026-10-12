@@ -193,6 +193,7 @@ const RICH_ANSWERS = {
   choice: "plays",
   gap: "goes",
   order: "she plays football",
+  transform: "she plays",
 } as const;
 /** `target_key` każdego ćwiczenia bogatej puli (computeTargetKey w en-GB). */
 export const RICH_KEYS = {
@@ -200,6 +201,7 @@ export const RICH_KEYS = {
   choice: computeTargetKey(RICH_ANSWERS.choice, RICH_ANSWER_LOCALE),
   gap: computeTargetKey(RICH_ANSWERS.gap, RICH_ANSWER_LOCALE),
   order: computeTargetKey(RICH_ANSWERS.order, RICH_ANSWER_LOCALE),
+  transform: computeTargetKey(RICH_ANSWERS.transform, RICH_ANSWER_LOCALE),
 } as const;
 
 /**
@@ -271,6 +273,21 @@ async function seedRichPool(pool: Pool, version: { deckId: string; versionId: st
         ],
         answer: RICH_ANSWERS.order,
         acceptedAnswers: [RICH_ANSWERS.order],
+        focus: ["plays"],
+      },
+    },
+    {
+      position: 5,
+      answer: RICH_ANSWERS.transform,
+      payload: {
+        exerciseType: "lesson_transform",
+        objectiveId,
+        instructionPl: "Zamień na twierdzenie.",
+        statement: "Does she play?",
+        answer: RICH_ANSWERS.transform,
+        acceptedAnswers: [RICH_ANSWERS.transform],
+        // odpowiedź dwuwyrazowa, element sprawdzany to tylko „plays” — literówka
+        // w „she” jest POZA focus, więc dopasowanie daje minor_typo (lesson_almost).
         focus: ["plays"],
       },
     },

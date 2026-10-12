@@ -6,6 +6,7 @@ import {
   AttemptModalitySchema,
   FeedbackDtoSchema,
   KidDeckDtoSchema,
+  SessionSummaryDtoSchema,
 } from "./kid";
 
 const UUID = "11111111-1111-4111-8111-111111111111";
@@ -127,6 +128,41 @@ describe("FeedbackDto lesson kinds", () => {
       expected: [{ text: "We", state: "plain" }, { text: "dn", state: "pill" }, { text: "esday", state: "plain" }],
     };
     expect(FeedbackDtoSchema.safeParse({ kind: "spelling_hint", correctText: "Wednesday", spellingDiff: diff }).success).toBe(true);
+  });
+});
+
+describe("SessionSummaryDto lesson objectives variant", () => {
+  const base = {
+    sessionId: UUID,
+    state: "completed" as const,
+    tasksIssued: 5,
+    assessedTasksIssued: 4,
+    endedAt: "2026-10-12T18:00:00.000Z",
+    independentSuccesses: { recall: 0, spelling: 0 },
+    practiceItems: [],
+  };
+  it("accepts a vocab summary WITHOUT objectives (backward compatible)", () => {
+    expect(SessionSummaryDtoSchema.safeParse(base).success).toBe(true);
+    expect(SessionSummaryDtoSchema.parse(base).objectives).toBeUndefined();
+  });
+  it("accepts a lesson summary with objectives (no percentages, no technical status)", () => {
+    const parsed = SessionSummaryDtoSchema.safeParse({
+      ...base,
+      objectives: [
+        { objectiveId: "english_grammar.present_simple.third_person_s", titlePl: "-s w 3. osobie", practiced: 3, correct: 2 },
+      ],
+    });
+    expect(parsed.success).toBe(true);
+  });
+  it("rejects an objective carrying a technical status or percentage field", () => {
+    expect(SessionSummaryDtoSchema.safeParse({
+      ...base,
+      objectives: [{ objectiveId: "o1", titlePl: "t", practiced: 1, correct: 1, status: "mastered" }],
+    }).success).toBe(false);
+    expect(SessionSummaryDtoSchema.safeParse({
+      ...base,
+      objectives: [{ objectiveId: "o1", titlePl: "t", practiced: 1, correct: 1, percent: 100 }],
+    }).success).toBe(false);
   });
 });
 
