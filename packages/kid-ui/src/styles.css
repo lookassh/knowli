@@ -1243,6 +1243,51 @@
   color: #8a6116;
 }
 
+.kid-spelling-diff {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: center;
+  margin-top: 0.75rem;
+}
+
+.kid-spelling-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.25rem 0.5rem;
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.kid-spelling-row-label {
+  width: 100%;
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.7;
+}
+
+/* Pigułka: obwódka jest drugim kanałem informacji poza kolorem (issue #9) */
+.kid-spelling-pill {
+  border: 2px solid currentColor;
+  border-radius: 0.6em;
+  padding: 0 0.2em;
+}
+
+.kid-spelling-pill--given {
+  color: #1d4ed8;
+  background: #eaf1ff;
+}
+
+.kid-spelling-pill--expected {
+  color: #1c5c2e;
+  background: #e3f4e3;
+}
+
 .kid-summary-counts {
   font-size: 1.15rem;
   text-align: center;

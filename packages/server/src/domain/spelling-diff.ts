@@ -100,10 +100,10 @@ export function compareSpelling(answer: string, key: AnswerKey): SpellingCompari
     return null;
   }
   const threshold = Math.min(...candidates.map((candidate) => [...candidate].length)) <= 4 ? 1 : 2;
-  let best: { variant: string; distance: number; steps: Step[] } | null = null;
-  for (const variant of candidates) {
+  let best: { variant: string; distance: number; steps: Step[] } = { variant: candidates[0], ...align(given, candidates[0]) };
+  for (const variant of candidates.slice(1)) {
     const result = align(given, variant);
-    if (best === null || result.distance < best.distance) {
+    if (result.distance < best.distance) {
       best = { variant, ...result };
     }
   }

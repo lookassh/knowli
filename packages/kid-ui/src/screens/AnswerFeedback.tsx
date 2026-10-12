@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactElement } from "react";
 import { messages, type FeedbackDto } from "@learning/contracts";
 import { format } from "../format";
+import { joinedText } from "./spelling-diff-view";
 
 export interface AnswerFeedbackProps {
   dto: FeedbackDto | null;
@@ -16,6 +17,10 @@ function feedbackText(feedback: FeedbackDto | null): string {
     case "almost": return messages.kid.feedbackAlmost;
     case "capitalization_hint": return format(messages.kid.feedbackCapitalization, { word: dto.correctText ?? "" });
     case "incorrect": return format(messages.kid.feedbackIncorrect, { word: dto.correctText ?? "" });
+    case "spelling_hint":
+      return dto.spellingDiff?.capitalizationHint
+        ? format(messages.kid.feedbackSpellingCapitalization, { word: dto.correctText ?? "" })
+        : messages.kid.feedbackSpelling;
     case "content_matched": return messages.kid.feedbackContentMatched;
     case "not_assessed": return messages.kid.feedbackNotAssessed;
   }
@@ -28,7 +33,8 @@ export function feedbackTone(feedback: FeedbackDto | null): string {
     case "great":
     case "capitalization_hint": return "kid-feedback--correct";
     case "almost":
-    case "incorrect": return "kid-feedback--retry";
+    case "incorrect":
+    case "spelling_hint": return "kid-feedback--retry";
     case "content_matched":
     case "not_assessed": return "";
   }
@@ -72,6 +78,40 @@ export function AnswerFeedback({ dto, retry, busy, onNext }: AnswerFeedbackProps
               </span>
             ))}
           </p>
+        )}
+        {feedback.spellingDiff && (
+          <div className="kid-spelling-diff" data-testid="kid-spelling-diff">
+            <p className="kid-visually-hidden">
+              {format(messages.kid.spellingDiffAria, {
+                given: joinedText(feedback.spellingDiff.given),
+                expected: joinedText(feedback.spellingDiff.expected),
+              })}
+            </p>
+            <div className="kid-spelling-row" data-testid="kid-spelling-given">
+              <span className="kid-spelling-row-label">{messages.kid.spellingYourAnswer}</span>
+              {feedback.spellingDiff.given.map((segment, index) => (
+                <span
+                  key={index}
+                  className={segment.state === "pill" ? "kid-spelling-pill kid-spelling-pill--given" : "kid-spelling-plain"}
+                  data-testid={segment.state === "pill" ? "kid-spelling-pill" : undefined}
+                >
+                  {segment.text}
+                </span>
+              ))}
+            </div>
+            <div className="kid-spelling-row" data-testid="kid-spelling-expected">
+              <span className="kid-spelling-row-label">{messages.kid.spellingCorrect}</span>
+              {feedback.spellingDiff.expected.map((segment, index) => (
+                <span
+                  key={index}
+                  className={segment.state === "pill" ? "kid-spelling-pill kid-spelling-pill--expected" : "kid-spelling-plain"}
+                  data-testid={segment.state === "pill" ? "kid-spelling-pill" : undefined}
+                >
+                  {segment.text}
+                </span>
+              ))}
+            </div>
+          </div>
         )}
       </div>
       <button type="button" className="kid-primary" data-testid="kid-next" disabled={busy} onClick={onNext}>

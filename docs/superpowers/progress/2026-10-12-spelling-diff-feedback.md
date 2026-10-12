@@ -55,7 +55,15 @@ izolator `UMIEM_TEST_RUN_ID`/`UMIEM_E2E_PORT`.
 
 
 ### Task 5: Kid UI — pigułki
-- Status: DO WYKONANIA
+- Status: UKOŃCZONE
+- RED: brak modułu spelling-diff-view.
+- Render: AnswerFeedback (spelling_hint w feedbackText/feedbackTone + blok kid-spelling-diff z wierszami
+  kid-spelling-given/expected i pigułkami kid-spelling-pill); aria przez istniejącą klasę .kid-visually-hidden
+  (plan zakładał kid-sr-only — repo ma własną klasę, użyto jej). Kolory pigułek: given #1d4ed8/#eaf1ff (niebieski
+  język retry), expected #1c5c2e/#e3f4e3 (identyczne z .kid-fragment--good) — konwencja literalnych kolorów pliku.
+- Odstępstwo (typecheck): best w compareSpelling przepisany z unii null na inicjalizację pierwszym kandydatem
+  (TS18047); zachowanie bez zmian.
+- GREEN: screens 41/41; typecheck całego repo PASS.
 
 ### Task 6: E2E — scenka literówki
 - Status: DO WYKONANIA
