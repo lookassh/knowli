@@ -39,7 +39,12 @@ izolator `UMIEM_TEST_RUN_ID`/`UMIEM_E2E_PORT`.
 
 
 ### Task 3: Domena — chooseFeedback + ekspozycje
-- Status: DO WYKONANIA
+- Status: UKOŃCZONE
+- RED: 3 failed (2× spelling_hint, 1× exposure keys wariantu).
+- Odstępstwo (błąd w planie, poprawka w teście): exposure test przekazywał surowy tekst jako
+  canonicalTargetKey; wzorzec repo wymaga computeTargetKey(...). Implementacja bez zmian.
+- GREEN: feedback.test.ts 17/17; cała domena 220/220 PASS.
+
 
 ### Task 4: Serwer — attempts.ts liczy diff
 - Status: DO WYKONANIA

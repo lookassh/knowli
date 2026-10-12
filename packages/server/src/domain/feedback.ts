@@ -1,6 +1,7 @@
 import type { Grade } from "./types";
 import type { FeedbackDto } from "@learning/contracts";
 import { computeTargetKey } from "./target-key";
+import type { SpellingComparison, SpellingDiffSegment } from "./spelling-diff";
 
 /**
  * Wybór treści feedbacku dla dziecka na podstawie rzeczywistego wyniku
@@ -14,7 +15,8 @@ export type FeedbackKind =
   | "almost"
   | "incorrect"
   | "content_matched"
-  | "not_assessed";
+  | "not_assessed"
+  | "spelling_hint";
 
 export interface FeedbackChoice {
   kind: FeedbackKind;
@@ -25,13 +27,15 @@ export interface FeedbackChoice {
   /** Fragmenty wymowy (design 2026-10-09) — tylko tekst i werdykt, bez liczb. */
   fragments?: Grade["speechFragments"];
   speech?: Grade["speechFeedback"];
+  /** Porównanie pisowni przy literówce w progu diagnozy (issue #9). */
+  spellingDiff?: { given: SpellingDiffSegment[]; expected: SpellingDiffSegment[]; capitalizationHint?: boolean };
 }
 
 function recognizedAnswer(grade: Grade): Pick<FeedbackChoice, "heardText"> | {} {
   return grade.recognizedText ? { heardText: grade.recognizedText } : {};
 }
 
-export function chooseFeedback(grade: Grade, correctText: string): FeedbackChoice {
+export function chooseFeedback(grade: Grade, correctText: string, diff?: SpellingComparison | null): FeedbackChoice {
   const speech = grade.speechFeedback ? { speech: grade.speechFeedback } : {};
   const assessed = Object.values(grade.skills).filter((skill) => skill.outcome !== "unevaluated");
   if (assessed.length === 0) {
@@ -76,12 +80,32 @@ export function chooseFeedback(grade: Grade, correctText: string): FeedbackChoic
       ...(grade.speechFragments ? { fragments: grade.speechFragments } : {}),
     };
   }
+  // literówka w progu: wpis i właściwy zapis z zaznaczoną różnicą (issue #9);
+  // „prawie” odnosi się wyłącznie do zapisu — znaczenie pozostaje niezaliczone
+  if (
+    diff?.withinThreshold === true &&
+    Object.entries(grade.skills).some(([skill, skillGrade]) => skill === "spelling" && skillGrade.outcome === "incorrect")
+  ) {
+    return {
+      kind: "spelling_hint",
+      correctText: diff.variant,
+      spellingDiff: {
+        given: diff.given,
+        expected: diff.expected,
+        ...(diff.capitalizationHint ? { capitalizationHint: true } : {}),
+      },
+      ...recognizedAnswer(grade),
+      ...speech,
+    };
+  }
   return { kind: "incorrect", correctText, ...recognizedAnswer(grade), ...speech };
 }
 
 /** Klucze celów faktycznie pokazanych dziecku w odpowiedzi feedbacku. */
 export function feedbackExposureKeys(feedback: FeedbackDto, canonicalTargetKey: string, targetLocale: string): string[] {
-  const texts = [feedback.speech?.referenceText, feedback.heardText].filter((text): text is string => Boolean(text));
+  const texts = [feedback.speech?.referenceText, feedback.heardText, feedback.correctText].filter(
+    (text): text is string => Boolean(text),
+  );
   const keys = feedback.kind === "not_assessed" ? [] : [canonicalTargetKey];
   for (const text of texts) keys.push(computeTargetKey(normalizeFeedbackText(text), targetLocale));
   return [...new Set(keys)];
