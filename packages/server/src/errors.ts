@@ -6,6 +6,7 @@ export type AppErrorCode =
   | "already_configured"
   | "validation"
   | "mock_test_unavailable"
+  | "learning_summary_unavailable"
   | "forbidden"
   | "not_found"
   | "conflict"
@@ -25,6 +26,7 @@ const CODE_PROFILES: Record<AppErrorCode, CodeProfile> = {
   already_configured: { status: 409, retryable: false },
   validation: { status: 400, retryable: false },
   mock_test_unavailable: { status: 400, retryable: false },
+  learning_summary_unavailable: { status: 503, retryable: true },
   forbidden: { status: 403, retryable: false },
   not_found: { status: 404, retryable: false },
   conflict: { status: 409, retryable: false },

@@ -64,6 +64,24 @@ export const parentSessions = app.table(
   ],
 );
 
+export const integrationTokens = app.table(
+  "integration_tokens",
+  {
+    id: uuid("id").primaryKey(),
+    name: text("name").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    scopes: text("scopes").array().notNull().default(sql`ARRAY[]::text[]`),
+    createdAt: timestamps("created_at").notNull().defaultNow(),
+    revokedAt: timestamps("revoked_at"),
+  },
+  (t) => [
+    check("integration_tokens_name_length", sql`length(${t.name}) between 1 and 120`),
+    check("integration_tokens_scopes_allowed", sql`${t.scopes} <@ ARRAY['learning:read']::text[]`),
+    uniqueIndex("integration_tokens_hash_idx").on(t.tokenHash),
+    index("integration_tokens_revoked_idx").on(t.revokedAt),
+  ],
+);
+
 export const childProfiles = app.table(
   "child_profiles",
   {

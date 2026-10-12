@@ -1,29 +1,20 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
-  REPORT_SKILLS,
   UuidSchema,
   type ActivitySummaryDto,
   type ConfusionDto,
   type HistoryEntryDto,
-  type ItemSkillStatus,
   type ProgressDto,
-  type ProgressItemDto,
   type PronunciationScoreDto,
   type ReportSkill,
-  type SkillReportDto,
 } from "@learning/contracts";
 import type { Services } from "../config";
 import {
   assignments,
   childProfiles,
-  childSkillProgress,
-  decks,
-  deckVersions,
-  itemRevisions,
-  itemRevisionSkills,
-  skillVersions,
 } from "../db/schema";
 import { AppError } from "../errors";
+import { readDeckRevisionIds, readPublishedProgress } from "./published-progress";
 import { SESSION_TIME_LIMIT_MS } from "./sessions";
 
 /**
@@ -32,188 +23,34 @@ import { SESSION_TIME_LIMIT_MS } from "./sessions";
  * w obrębie jednego zestawu. Nie przepisujemy historii: raport jest widokiem.
  */
 
-/** Mapowanie statusów bazy na wartości raportu (zgodne z projekcją zadań 5–8). */
-function reportStatus(dbStatus: string): ItemSkillStatus {
-  switch (dbStatus) {
-    case "mastered":
-    case "needs_confirmation":
-    case "needs_reconfirmation":
-    case "practicing":
-      return dbStatus;
-    default:
-      return "not_assessed";
-  }
-}
-
-interface RevisionRow {
-  id: string;
-  itemId: string;
-  position: number;
-  payload: Record<string, unknown>;
-}
-
-function wordsOf(payload: Record<string, unknown>): { source: string; target: string } {
-  return {
-    source: typeof payload.source === "string" ? payload.source : "",
-    target: typeof payload.target === "string" ? payload.target : "",
-  };
-}
-
-/** Statusy wszystkich rewizji zestawu (także starszych wersji). */
-async function deckRevisionIds(services: Services, deckId: string): Promise<string[]> {
-  const rows = await services.db
-    .select({ id: itemRevisions.id })
-    .from(itemRevisions)
-    .innerJoin(deckVersions, eq(deckVersions.id, itemRevisions.deckVersionId))
-    .where(eq(deckVersions.deckId, deckId));
-  return rows.map((row) => row.id);
-}
-
 export async function getProgress(services: Services, childId: string, deckId: string): Promise<ProgressDto> {
   const child = UuidSchema.parse(childId);
   const deck = UuidSchema.parse(deckId);
+  const profile = (await services.db
+    .select({ id: childProfiles.id, displayName: childProfiles.displayName })
+    .from(childProfiles)
+    .where(eq(childProfiles.id, child)))[0];
+  if (!profile) throw new AppError("not_found");
 
-  const profile = (
-    await services.db
-      .select({ id: childProfiles.id, displayName: childProfiles.displayName })
-      .from(childProfiles)
-      .where(eq(childProfiles.id, child))
-  )[0];
-  const deckRow = (await services.db.select().from(decks).where(eq(decks.id, deck)))[0];
-  if (!profile || !deckRow || !deckRow.publishedVersionId) {
-    throw new AppError("not_found");
-  }
-  const version = (
-    await services.db.select({ title: deckVersions.title }).from(deckVersions).where(eq(deckVersions.id, deckRow.publishedVersionId))
-  )[0];
-
-  // elementy opublikowanej wersji w kolejności zestawu
-  const revisions = (await services.db
-    .select({
-      id: itemRevisions.id,
-      itemId: itemRevisions.itemId,
-      position: itemRevisions.position,
-      payload: itemRevisions.payload,
-    })
-    .from(itemRevisions)
-    .where(eq(itemRevisions.deckVersionId, deckRow.publishedVersionId))
-    .orderBy(asc(itemRevisions.position))) as RevisionRow[];
-
-  // klucze umiejętności bieżącej wersji + wszystkie wersje kluczy elementów
-  const revisionIds = revisions.map((r) => r.id);
-  const skillLinks = revisionIds.length
-    ? await services.db
-        .select({
-          itemRevisionId: itemRevisionSkills.itemRevisionId,
-          skill: itemRevisionSkills.skill,
-          skillVersionId: itemRevisionSkills.skillVersionId,
-        })
-        .from(itemRevisionSkills)
-        .where(inArray(itemRevisionSkills.itemRevisionId, revisionIds))
-    : [];
-  const versionByRevision = new Map(skillLinks.map((l) => [`${l.itemRevisionId}:${l.skill}`, l.skillVersionId]));
-
-  const itemIds = [...new Set(revisions.map((r) => r.itemId))];
-  const versions = itemIds.length
-    ? await services.db
-        .select({ id: skillVersions.id, predecessorId: skillVersions.predecessorId })
-        .from(skillVersions)
-        .where(inArray(skillVersions.itemId, itemIds))
-    : [];
-  const predecessorOf = new Map(versions.map((v) => [v.id, v.predecessorId]));
-
-  const progressRows = await services.db
-    .select({ skillVersionId: childSkillProgress.skillVersionId, status: childSkillProgress.status })
-    .from(childSkillProgress)
-    .where(eq(childSkillProgress.childId, child));
-  const statusOfVersion = new Map(progressRows.map((p) => [p.skillVersionId, reportStatus(p.status)]));
-
-  /**
-   * Status umiejętności elementu: projekcja bieżącego klucza; bez własnych ocen
-   * — jeżeli poprzednia wersja klucza (łańcuch predecessorów) miała wynik,
-   * zmiana materiału wymaga ponownego sprawdzenia (SPEC §90–91), bez kasowania
-   * historii i bez zaliczania nowego klucza jako opanowanego.
-   */
-  const statusFor = (skillVersionId: string): { status: ItemSkillStatus; changed: boolean } => {
-    const own = statusOfVersion.get(skillVersionId);
-    if (own && own !== "not_assessed") {
-      return { status: own, changed: false };
-    }
-    let ancestor = predecessorOf.get(skillVersionId) ?? null;
-    while (ancestor !== null) {
-      const ancestorStatus = statusOfVersion.get(ancestor);
-      if (ancestorStatus && ancestorStatus !== "not_assessed") {
-        return { status: "needs_confirmation", changed: true };
-      }
-      ancestor = predecessorOf.get(ancestor) ?? null;
-    }
-    return { status: "not_assessed", changed: false };
-  };
-
-  const items: ProgressItemDto[] = revisions.map((revision) => {
-    const skills = {} as Record<ReportSkill, ItemSkillStatus>;
-    let meaningChanged = false;
-    for (const skill of REPORT_SKILLS) {
-      const skillVersionId = versionByRevision.get(`${revision.id}:${skill}`);
-      const resolved = skillVersionId ? statusFor(skillVersionId) : { status: "not_assessed" as const, changed: false };
-      skills[skill] = resolved.status;
-      meaningChanged ||= resolved.changed;
-    }
-    return {
-      itemId: revision.itemId,
-      position: revision.position,
-      ...wordsOf(revision.payload),
-      skills,
-      meaningChanged,
-    };
-  });
-
-  const counters: Record<ItemSkillStatus, number> = {
-    mastered: 0,
-    needs_confirmation: 0,
-    needs_reconfirmation: 0,
-    practicing: 0,
-    not_assessed: 0,
-  };
-  const summary: SkillReportDto[] = REPORT_SKILLS.map((skill) => {
-    for (const status of Object.keys(counters) as ItemSkillStatus[]) {
-      counters[status] = 0;
-    }
-    for (const item of items) {
-      counters[item.skills[skill]] += 1;
-    }
-    return {
-      skill,
-      totalItems: items.length,
-      mastered: counters.mastered,
-      needsConfirmation: counters.needs_confirmation,
-      needsReconfirmation: counters.needs_reconfirmation,
-      practicing: counters.practicing,
-      notAssessed: counters.not_assessed,
-    };
-  });
-
-  const assignment = (
-    await services.db
-      .select({ testDate: assignments.testDate })
-      .from(assignments)
-      .where(and(eq(assignments.childId, child), eq(assignments.deckId, deck)))
-  )[0];
-
-  const allRevisionIds = await deckRevisionIds(services, deck);
-  const { confusions, pronunciationScores, history } = allRevisionIds.length
-    ? await readChildEvidence(services, child, allRevisionIds)
+  const published = await readPublishedProgress(services.db, child, deck);
+  const assignment = (await services.db
+    .select({ testDate: assignments.testDate })
+    .from(assignments)
+    .where(and(eq(assignments.childId, child), eq(assignments.deckId, deck))))[0];
+  const revisionIds = await readDeckRevisionIds(services.db, deck);
+  const { confusions, pronunciationScores, history } = revisionIds.length
+    ? await readChildEvidence(services, child, revisionIds)
     : { confusions: [] as ConfusionDto[], pronunciationScores: [] as PronunciationScoreDto[], history: [] as HistoryEntryDto[] };
 
   return {
     childId: child,
     childName: profile.displayName,
     deckId: deck,
-    deckTitle: version?.title ?? deckRow.title,
+    deckTitle: published.deckTitle,
     testDate: assignment?.testDate ?? null,
-    totalItems: items.length,
-    skills: summary,
-    items,
+    totalItems: published.totalItems,
+    skills: published.skills,
+    items: published.items,
     confusions,
     pronunciation: {
       assessed: pronunciationScores.length > 0,
@@ -223,7 +60,6 @@ export async function getProgress(services: Services, childId: string, deckId: s
     activity: await readActivitySummary(services, child),
   };
 }
-
 /** Okno karty aktywności (SPEC §25) i bufor nad obcięciem czasu sesji. */
 const ACTIVITY_WINDOW_DAYS = 7;
 const ACTIVITY_SESSION_CAP_MS = SESSION_TIME_LIMIT_MS + 60_000;

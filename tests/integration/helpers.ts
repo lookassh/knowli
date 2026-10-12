@@ -104,7 +104,7 @@ export async function truncateCoreTables(): Promise<void> {
   // CASCADE czyści również tabele historyczne referencjonujące profile; TRUNCATE nie
   // uruchamia triggerów BEFORE DELETE, więc omija guards (właściwe w teardown).
   await pool.query(
-    "TRUNCATE learning_app.child_profiles, learning_app.parent_sessions, learning_app.parent_credentials CASCADE",
+    "TRUNCATE learning_app.child_profiles, learning_app.parent_sessions, learning_app.parent_credentials, learning_app.integration_tokens CASCADE",
   );
 }
 
