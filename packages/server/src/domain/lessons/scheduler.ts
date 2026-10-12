@@ -17,6 +17,20 @@ import type { LessonPolicy } from "./lesson-policy";
  *   4. kontynuacja celu w toku na jego etapie,
  *   5. wprowadzenie nowego celu (karty + notice),
  *   6. utrwalanie.
+ *
+ * Kontrakt budżetu ocenianego (`assessedRemaining`; księgowanie zużycia należy
+ * do warstwy sesji, selektor tylko czyta):
+ *   - `assessedRemaining <= 0` → `null` (koniec sesji; również karty nie wychodzą);
+ *   - karta (`kind: "card"`) może wyjść przy `assessedRemaining >= 1` i NIE liczy
+ *     się do budżetu;
+ *   - `lesson_notice` oraz wszystkie ćwiczenia (`kind: "exercise"`) liczą się jako
+ *     oceniane.
+ *
+ * Brak modelu-oceniającego (req 6.8): selektor PREFERUJE typy nieoceniane
+ * modelowo (zamknięte, `lesson_gap`), ale ich nie wyklucza — gdy dla
+ * wybranego celu/etapu brak alternatywy, typ otwarty jest wydawany mimo to
+ * (ocena wyjdzie `unevaluated` bez kary). Selektor nigdy nie zwraca `null`,
+ * dopóki jest budżet i jakiekolwiek wydawalne ćwiczenie.
  */
 
 /** Ćwiczenie z przypiętej puli (stabilna kolejność w `exercises`). */
@@ -113,20 +127,57 @@ function usableWithoutGrader(type: LessonExerciseType): boolean {
   return !GRADER_DEPENDENT_TYPES.has(type);
 }
 
-/** Czy ćwiczenie było już wydane w tej sesji (po `itemId`). */
-function issuedThisSession(itemId: string, history: readonly LessonSessionTask[]): boolean {
+/** Czy ćwiczenie (po `itemId`) było już wydane w tej sesji. */
+function itemIssuedThisSession(itemId: string, history: readonly LessonSessionTask[]): boolean {
   return history.some((t) => t.kind === "exercise" && t.itemId === itemId);
 }
 
-/** Czy `targetKey` był ujawniony dziecku przed sesją albo w jej trakcie. */
+/** `target_key` ujawniony dziecku PRZED tą sesją (ze wszystkich kontekstów). */
+function exposedBeforeSession(
+  candidate: LessonExerciseCandidate,
+  input: LessonScheduleInput,
+): boolean {
+  return input.exposedTargetKeys.has(candidate.targetKey);
+}
+
+/**
+ * `target_key` ujawniony w TEJ sesji: dowolne ćwiczenie o tym samym
+ * `itemId` ALBO o tym samym `targetKey` zostało już wydane. Klucz jest po
+ * `targetKey`, nie tylko `itemId`, bo różne ćwiczenia mogą dzielić cel —
+ * wydanie jednego ujawnia wzorzec dla pozostałych (fragile-collision fix).
+ */
+function targetIssuedThisSession(
+  candidate: LessonExerciseCandidate,
+  input: LessonScheduleInput,
+): boolean {
+  const itemIdsSharingTarget = new Set(
+    input.exercises.filter((c) => c.targetKey === candidate.targetKey).map((c) => c.itemId),
+  );
+  return input.sessionHistory.some(
+    (t) => t.kind === "exercise" && t.itemId !== null && itemIdsSharingTarget.has(t.itemId),
+  );
+}
+
+/**
+ * Czy ćwiczenie jest „niewidziane” dla niezależnego sprawdzenia: ani ujawnione
+ * przed sesją (po `targetKey`), ani wydane w tej sesji (po `targetKey`/`itemId`).
+ */
+function isUnseenForCheck(
+  candidate: LessonExerciseCandidate,
+  input: LessonScheduleInput,
+): boolean {
+  return !exposedBeforeSession(candidate, input) && !targetIssuedThisSession(candidate, input);
+}
+
+/**
+ * Czy ćwiczenie było już ujawnione dziecku (przed sesją lub w jej trakcie) —
+ * do porządkowania „niewidziane przed widzianymi” w zwykłym wyborze.
+ */
 function isExposed(
   candidate: LessonExerciseCandidate,
   input: LessonScheduleInput,
 ): boolean {
-  if (input.exposedTargetKeys.has(candidate.targetKey)) return true;
-  return input.sessionHistory.some(
-    (t) => t.kind === "exercise" && t.itemId === candidate.itemId,
-  );
+  return exposedBeforeSession(candidate, input) || targetIssuedThisSession(candidate, input);
 }
 
 /**
@@ -231,8 +282,12 @@ function isNewThisSession(objectiveId: string, input: LessonScheduleInput): bool
  * Wybór ćwiczenia dla celu na danym etapie: niewidziane przed widzianymi,
  * potem najdawniej widziane (`lastSeenAt`), deterministyczny tie-break po
  * kolejności w `exercises`. Pomija ćwiczenia wydane już w tej sesji, jeśli
- * istnieje inne. `requireIndependent` wymusza ćwiczenie niewidziane
- * (dla sprawdzenia). `respectGrader` pomija typy zależne od modelu.
+ * istnieje inne. `requireUnseen` wymusza ćwiczenie niewidziane dla sprawdzenia
+ * (po `targetKey`). `respectGrader` PREFERUJE typy nieoceniane modelowo
+ * (zamknięte, `lesson_gap`), ale ich nie wyklucza: gdy brak alternatywy, typ
+ * zależny od modelu jest wydawany mimo wszystko (req 6.8 — ocena wyjdzie
+ * `unevaluated` bez kary; selektor nigdy nie kończy sesji przy dostępnym
+ * ćwiczeniu i budżecie).
  */
 function pickExercise(
   objectiveId: string,
@@ -241,26 +296,37 @@ function pickExercise(
   options: { requireUnseen?: boolean; respectGrader?: boolean } = {},
 ): LessonExerciseCandidate | null {
   const indexed = input.exercises.map((candidate, index) => ({ candidate, index }));
-  const noGrader = options.respectGrader === true && noGraderAvailable(input);
 
   const matching = indexed.filter(
     ({ candidate }) =>
-      candidate.objectiveId === objectiveId &&
-      stageOf(candidate.exerciseType) === stage &&
-      (!noGrader || usableWithoutGrader(candidate.exerciseType)),
+      candidate.objectiveId === objectiveId && stageOf(candidate.exerciseType) === stage,
   );
   if (matching.length === 0) return null;
 
   const notRepeated = matching.filter(
-    ({ candidate }) => !issuedThisSession(candidate.itemId, input.sessionHistory),
+    ({ candidate }) => !itemIssuedThisSession(candidate.itemId, input.sessionHistory),
   );
   const pool = notRepeated.length > 0 ? notRepeated : matching;
 
-  const unseen = pool.filter(({ candidate }) => !isExposed(candidate, input));
+  const seenFilter = options.requireUnseen === true
+    ? ({ candidate }: { candidate: LessonExerciseCandidate }) => isUnseenForCheck(candidate, input)
+    : null;
+  const seenPool = seenFilter ? pool.filter(seenFilter) : pool;
+  if (options.requireUnseen === true && seenPool.length === 0) return null;
+
+  // Preferuj typy nieoceniane modelowo, gdy grader niedostępny; ale jeśli to
+  // odfiltrowuje wszystko, wróć do pełnej puli (preferencja, nie wykluczenie).
+  const noGrader = options.respectGrader === true && noGraderAvailable(input);
+  const closedFirst = noGrader
+    ? seenPool.filter(({ candidate }) => usableWithoutGrader(candidate.exerciseType))
+    : seenPool;
+  const effective = closedFirst.length > 0 ? closedFirst : seenPool;
+
   if (options.requireUnseen === true) {
-    return orderBySeen(unseen, input)[0]?.candidate ?? null;
+    return orderBySeen(effective, input)[0]?.candidate ?? null;
   }
-  const chosen = unseen.length > 0 ? unseen : pool;
+  const unseen = effective.filter(({ candidate }) => !isExposed(candidate, input));
+  const chosen = unseen.length > 0 ? unseen : effective;
   return orderBySeen(chosen, input)[0]?.candidate ?? null;
 }
 
@@ -344,11 +410,7 @@ export function selectLessonTask(input: LessonScheduleInput): LessonTaskPlan | n
   // Priorytet 3: okno sprawdzianu — etap samodzielny dla nieopanowanych celów.
   if (input.testWindowOpen) {
     for (const id of input.objectiveOrder) {
-      const status = input.progress[id]?.status;
-      const unmastered = status !== undefined && status !== "not_assessed" && status !== "mastered";
-      const started = states.get(id)!.introduced || unmastered;
-      if (!unmastered && !isNewThisSession(id, input)) continue;
-      if (!started && !unmastered) continue;
+      if (!eligibleForTestWindow(id, input, states.get(id)!)) continue;
       const candidate =
         pickExercise(id, "independent", input, { respectGrader: true }) ??
         pickExercise(id, "productive", input, { respectGrader: true });
@@ -394,7 +456,7 @@ export function selectLessonTask(input: LessonScheduleInput): LessonTaskPlan | n
     const noticeCandidate = input.exercises.find(
       (c) => c.objectiveId === id && c.exerciseType === "lesson_notice",
     );
-    if (noticeCandidate && !state.noticeSeen && !issuedThisSession(noticeCandidate.itemId, input.sessionHistory)) {
+    if (noticeCandidate && !state.noticeSeen && !itemIssuedThisSession(noticeCandidate.itemId, input.sessionHistory)) {
       return exercisePlan(noticeCandidate, "introduce", false);
     }
     // Karty i notice wyczerpane → pierwsze ćwiczenie guided.
@@ -444,6 +506,21 @@ function hasAssessedThisSession(objectiveId: string, input: LessonScheduleInput)
       t.kind === "exercise" &&
       stageOf(t.exerciseType) !== "intro",
   );
+}
+
+/**
+ * Priorytet 3 (okno sprawdzianu): cel kwalifikuje się, gdy jest „w grze" i
+ * jeszcze nieopanowany — czyli nie `mastered` ORAZ (wprowadzony w tej sesji
+ * LUB kontynuowany z wcześniejszej sesji). Jeden predykat zamiast splotu flag.
+ */
+function eligibleForTestWindow(
+  objectiveId: string,
+  input: LessonScheduleInput,
+  state: ObjectiveSessionState,
+): boolean {
+  if (input.progress[objectiveId]?.status === "mastered") return false;
+  const inPlay = state.introduced || isContinuedFromPriorSession(objectiveId, input);
+  return inPlay;
 }
 
 /**

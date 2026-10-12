@@ -180,23 +180,21 @@ describe("selectLessonTask — kontynuacja celu w toku (priorytet 4)", () => {
     expect(plan).toMatchObject({ kind: "exercise", objectiveId: O1, exerciseType: "lesson_gap", reason: "continue" });
   });
 
-  it("błąd zeruje licznik etapu — 1 correct, incorrect, 1 correct → wciąż guided", () => {
-    const sessionHistory = [
+  it("błąd zeruje licznik etapu — 1 correct, incorrect, (wsparcie), 1 correct → wciąż guided (brak awansu)", () => {
+    // 1 correct → błąd (zeruje licznik, otwiera cykl wsparcia) → pełny cykl
+    // wsparcia (support_card + ćwiczenie guided nieocenione = neutralne) →
+    // 1 correct. Licznik etapu po błędzie = 0, więc jedno correct nie wystarcza
+    // do awansu (advanceAfterCorrect = 2): cel wciąż na guided.
+    const withSupport = [
       task({ objectiveId: O1, exerciseType: "lesson_choice", outcome: "correct", itemId: "g1" }),
       task({ objectiveId: O1, exerciseType: "lesson_choice", outcome: "incorrect", itemId: "g2" }),
-      task({ objectiveId: O1, exerciseType: "lesson_choice", outcome: "correct", itemId: "g1" }),
-    ];
-    // Po błędzie uruchamia się najpierw cykl wsparcia; sprawdzamy brak awansu,
-    // dając cel z już wyczerpanym cyklem wsparcia (support_card wydany).
-    const withSupport = [
-      sessionHistory[0]!,
-      sessionHistory[1]!,
       task({ objectiveId: O1, kind: "support_card" }),
-      task({ objectiveId: O1, exerciseType: "lesson_choice", outcome: "support" as never, itemId: "g1" }),
+      task({ objectiveId: O1, exerciseType: "lesson_choice", outcome: "unevaluated", itemId: "g1" }),
       task({ objectiveId: O1, exerciseType: "lesson_choice", outcome: "correct", itemId: "g2" }),
     ];
     const plan = selectLessonTask(input({ cardCountByObjective: { [O1]: 0 }, sessionHistory: withSupport }));
-    expect(plan).toMatchObject({ objectiveId: O1, exerciseType: "lesson_choice" });
+    expect(plan).toMatchObject({ kind: "exercise", objectiveId: O1, exerciseType: "lesson_choice", reason: "continue" });
+    expect((plan as { exerciseType: string }).exerciseType).not.toBe("lesson_gap");
   });
 
   it("unevaluated/skipped są neutralne dla licznika etapu", () => {
@@ -305,17 +303,14 @@ describe("selectLessonTask — okno sprawdzianu (priorytet 3)", () => {
 describe("selectLessonTask — wybór ćwiczenia", () => {
   it("preferuje niewidziane przed widzianymi", () => {
     const exposed = new Set<string>([`${O1}:guided:a`]);
-    const sessionHistory = [
-      task({ objectiveId: O1, exerciseType: "lesson_choice", outcome: "correct", itemId: `item:${O1}:guided:a` }),
-      task({ objectiveId: O1, exerciseType: "lesson_choice", outcome: "incorrect", itemId: "zzz" }),
-    ];
-    // Niech etap wraca guided (po incorrect wsparcie wyczerpane): wybór guided b (niewidziany).
+    // Po incorrect pełny cykl wsparcia (support_card + ćwiczenie guided
+    // nieocenione) wyczerpuje wsparcie; selektor wraca do guided i wybiera
+    // niewidziany `guided:b` zamiast wcześniej ujawnionego `guided:a`.
     const withSupportDone = [
       task({ objectiveId: O1, exerciseType: "lesson_choice", outcome: "incorrect", itemId: `item:${O1}:guided:a` }),
       task({ objectiveId: O1, kind: "support_card" }),
-      task({ objectiveId: O1, exerciseType: "lesson_choice", outcome: "support" as never, itemId: `item:${O1}:guided:a` }),
+      task({ objectiveId: O1, exerciseType: "lesson_choice", outcome: "unevaluated", itemId: `item:${O1}:guided:a` }),
     ];
-    void sessionHistory;
     const plan = selectLessonTask(
       input({ exposedTargetKeys: exposed, cardCountByObjective: { [O1]: 0 }, sessionHistory: withSupportDone }),
     );
@@ -344,24 +339,151 @@ describe("selectLessonTask — wybór ćwiczenia", () => {
 });
 
 describe("selectLessonTask — brak modelu / zerowy limit (req 6.8)", () => {
-  it("pomija typy otwarte, gdy istnieje alternatywa zamknięta/gap", () => {
-    const sessionHistory = [
-      task({ objectiveId: O1, exerciseType: "lesson_gap", outcome: "correct", itemId: "p1" }),
-      task({ objectiveId: O1, exerciseType: "lesson_gap", outcome: "correct", itemId: "p2" }),
-    ];
-    // Etap productive→independent; bez gradera independent (open_answer) odpada,
-    // selektor spada do innego priorytetu zamiast wydać otwarte.
+  it("preferuje typ nieoceniany modelowo, gdy na tym etapie jest alternatywa (gap vs error_fix)", () => {
+    // Cel kontynuowany na etapie productive. Pula productive ma zarówno
+    // lesson_gap (nieoceniany modelowo) jak i lesson_error_fix (zależny od
+    // modelu). Bez gradera selektor PREFERUJE gap, nie wydaje error_fix.
+    const gap: LessonExerciseCandidate = {
+      itemId: "pg", itemRevisionId: "rpg", objectiveId: O1,
+      exerciseType: "lesson_gap", targetKey: "pg",
+    };
+    const errorFix: LessonExerciseCandidate = {
+      itemId: "pe", itemRevisionId: "rpe", objectiveId: O1,
+      exerciseType: "lesson_error_fix", targetKey: "pe",
+    };
     const plan = selectLessonTask(
       input({
         graderAvailable: false,
         graderCallsLeft: 0,
+        progress: { [O1]: prog("learning") }, // start productive, bez awansu
+        cardCountByObjective: { [O1]: 0 },
+        exercises: [errorFix, gap], // error_fix pierwszy w kolejności puli
+      }),
+    );
+    expect(plan).toMatchObject({ kind: "exercise", objectiveId: O1, exerciseType: "lesson_gap" });
+  });
+
+  it("grader niedostępny, w puli dla celu/etapu tylko open-answer → open-answer MIMO to (req 6.8)", () => {
+    // Cel kontynuowany (start productive); 2 correct na productive → awans na
+    // independent. Pula dla O1 ma tylko open-answer (independent). „prefer
+    // closed” to preferencja, nie wykluczenie: brak alternatywy → selektor i
+    // tak wydaje open-answer zamiast kończyć sesję.
+    const sessionHistory = [
+      task({ objectiveId: O1, exerciseType: "lesson_gap", outcome: "correct", itemId: "p1" }),
+      task({ objectiveId: O1, exerciseType: "lesson_gap", outcome: "correct", itemId: "p2" }),
+    ];
+    const plan = selectLessonTask(
+      input({
+        graderAvailable: false,
         progress: { [O1]: prog("learning") },
         cardCountByObjective: { [O1]: 0 },
         sessionHistory,
-        exercises: [...poolFor(O1), ...poolFor(O2)],
+        exercises: [ex(O1, "independent", "a"), ex(O1, "independent", "b")],
       }),
     );
-    expect((plan as { exerciseType?: string })?.exerciseType).not.toBe("lesson_open_answer");
+    expect(plan).toMatchObject({ kind: "exercise", objectiveId: O1, exerciseType: "lesson_open_answer" });
+  });
+
+  it("graderCallsLeft = 0, tylko open-answer → open-answer MIMO to, nie null", () => {
+    const sessionHistory = [
+      task({ objectiveId: O1, exerciseType: "lesson_gap", outcome: "correct", itemId: "p1" }),
+      task({ objectiveId: O1, exerciseType: "lesson_gap", outcome: "correct", itemId: "p2" }),
+    ];
+    const plan = selectLessonTask(
+      input({
+        graderAvailable: true,
+        graderCallsLeft: 0,
+        progress: { [O1]: prog("learning") },
+        cardCountByObjective: { [O1]: 0 },
+        sessionHistory,
+        exercises: [ex(O1, "independent", "a")],
+      }),
+    );
+    expect(plan).not.toBeNull();
+    expect(plan).toMatchObject({ kind: "exercise", objectiveId: O1, exerciseType: "lesson_open_answer" });
+  });
+});
+
+describe("selectLessonTask — kontrakt budżetu ocenianego", () => {
+  it("assessedRemaining = 1, następny krok to karta intro → karta (karta nie liczy się do budżetu)", () => {
+    const plan = selectLessonTask(input({ assessedRemaining: 1, cardCountByObjective: { [O1]: 2 } }));
+    expect(plan).toEqual({ kind: "card", objectiveId: O1, cardPurpose: "intro" });
+  });
+
+  it("assessedRemaining = 1, następny krok to notice → notice (oceniany, mieści się w budżecie 1)", () => {
+    const sessionHistory = [
+      task({ objectiveId: O1, kind: "card" }),
+      task({ objectiveId: O1, kind: "card" }),
+    ];
+    const plan = selectLessonTask(
+      input({
+        assessedRemaining: 1,
+        exercises: [...poolFor(O1), notice(O1)],
+        cardCountByObjective: { [O1]: 2 },
+        sessionHistory,
+      }),
+    );
+    expect(plan).toMatchObject({ kind: "exercise", exerciseType: "lesson_notice" });
+  });
+
+  it("assessedRemaining = 0 → null, nawet gdy następnym krokiem byłaby karta", () => {
+    expect(selectLessonTask(input({ assessedRemaining: 0, cardCountByObjective: { [O1]: 2 } }))).toBeNull();
+  });
+});
+
+describe("selectLessonTask — ekspozycja vs wydanie w sesji (collision targetKey)", () => {
+  it("sprawdzenie nie wybiera ćwiczenia współdzielącego targetKey z wydanym w sesji", () => {
+    // Dwa ćwiczenia independent dzielą ten sam targetKey; jedno wydano w sesji.
+    const shared = "shared-key";
+    const a: LessonExerciseCandidate = {
+      itemId: "ind-a", itemRevisionId: "rev-a", objectiveId: O1,
+      exerciseType: "lesson_open_answer", targetKey: shared,
+    };
+    const b: LessonExerciseCandidate = {
+      itemId: "ind-b", itemRevisionId: "rev-b", objectiveId: O1,
+      exerciseType: "lesson_open_answer", targetKey: shared,
+    };
+    const sessionHistory = [
+      task({ objectiveId: O1, exerciseType: "lesson_open_answer", outcome: "correct", itemId: "ind-a" }),
+    ];
+    const plan = selectLessonTask(
+      input({
+        progress: { [O1]: prog("mastered", "2026-10-01T00:00:00.000Z") },
+        cardCountByObjective: { [O1]: 0 },
+        exercises: [a, b],
+        sessionHistory,
+      }),
+    );
+    // targetKey `shared` został ujawniony (ind-a wydane w sesji), więc ind-b
+    // NIE jest „niewidziane” — niezależne sprawdzenie (due_check,
+    // independentCheck) nie może na nie trafić, bo wzorzec już ujawniony.
+    const isIndependentCheckOnB =
+      plan !== null &&
+      plan.kind === "exercise" &&
+      plan.reason === "due_check" &&
+      plan.itemId === "ind-b";
+    expect(isIndependentCheckOnB).toBe(false);
+    // I szerzej: żadne due_check nie powinno wyjść, skoro brak niewidzianego
+    // ćwiczenia dla tego celu.
+    if (plan && plan.kind === "exercise" && plan.reason === "due_check") {
+      throw new Error("due_check nie powinno wybrać ćwiczenia o ujawnionym targetKey");
+    }
+  });
+});
+
+describe("selectLessonTask — okno sprawdzianu: cel wprowadzony w tej sesji i nieopanowany", () => {
+  it("nowy cel wprowadzony w sesji (not_assessed), nieopanowany → etap samodzielny", () => {
+    const sessionHistory = [
+      task({ objectiveId: O1, exerciseType: "lesson_choice", outcome: "correct", itemId: "g1" }),
+    ];
+    const plan = selectLessonTask(
+      input({
+        testWindowOpen: true,
+        cardCountByObjective: { [O1]: 0 },
+        sessionHistory,
+      }),
+    );
+    expect(plan).toMatchObject({ kind: "exercise", objectiveId: O1, reason: "test_preparation" });
   });
 });
 
