@@ -7,7 +7,7 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from umiem_mcp.package_consumer import make_consumer_release
+from umiem_mcp.package_consumer import FILES, make_consumer_release
 
 ROOT = Path(__file__).parents[1]
 EXPECTED = {
@@ -44,8 +44,21 @@ class ConsumerReleaseTests(unittest.TestCase):
 
     def test_refuses_contract_drift_and_dirty_release_inputs(self):
         with tempfile.TemporaryDirectory() as temp:
+            dirty_repo = Path(temp) / "dirty-repo"
+            for relative in FILES:
+                source = ROOT / relative
+                target = dirty_repo / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(source.read_bytes())
+            subprocess.run(["git", "init", str(dirty_repo)], check=True, capture_output=True)
+            subprocess.run(["git", "-C", str(dirty_repo), "config", "user.email", "test@example.invalid"], check=True)
+            subprocess.run(["git", "-C", str(dirty_repo), "config", "user.name", "Test"], check=True)
+            subprocess.run(["git", "-C", str(dirty_repo), "add", "."], check=True)
+            subprocess.run(["git", "-C", str(dirty_repo), "commit", "-m", "test source"], check=True, capture_output=True)
+            with (dirty_repo / "src/umiem_mcp/validation.py").open("ab") as handle:
+                handle.write(b"\n# dirty input\n")
             with self.assertRaisesRegex(ValueError, "committed and clean"):
-                make_consumer_release(Path(temp) / "dirty", source_root=ROOT)
+                make_consumer_release(Path(temp) / "dirty", source_root=dirty_repo)
             root = Path(temp) / "copy"
             for source, relative in ((ROOT / "src/umiem_mcp/learning-overview.schema.json", "src/umiem_mcp/learning-overview.schema.json"),
                                      (ROOT / "src/umiem_mcp/contract-manifest.json", "src/umiem_mcp/contract-manifest.json"),

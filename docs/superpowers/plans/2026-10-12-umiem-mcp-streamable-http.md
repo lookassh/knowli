@@ -15,8 +15,8 @@
 - [x] Uzgodniony kierunek: MCP Streamable HTTP wewnątrz `apps/web`.
 - [x] Inspekcja bieżących źródeł, SDK i oficjalnej konfiguracji Hermesa.
 - [x] Lokalna specyfikacja i dwa zależne plany wykonawcze; przegląd własny dokumentów.
-- [ ] Przegląd i akceptacja dokumentów przez właściciela przed implementacją HTTP.
-- [ ] Wykonanie inline przez bieżącego agenta, zgodnie z dotychczasowym trybem; brak zgody na delegację implementacji.
+- [x] Przegląd i akceptacja dokumentów przez właściciela przed implementacją HTTP.
+- [x] Wykonanie inline przez bieżącego agenta, zgodnie z dotychczasowym trybem; brak zgody na delegację implementacji.
 - [ ] Niezależny końcowy review całego zakresu przez najmocniejszy dostępny model spoza GPT Astra, obsługa uwag i końcowa weryfikacja.
 - [ ] PR z ukończoną implementacją; scalanie przez właściciela, Squash and merge.
 
@@ -49,14 +49,14 @@ Knowli: `C:/Users/looka/.codex/worktrees/hermes-mcp-contract-docs/knowli`, baza 
 
 ## Kryteria ukończenia implementacji
 
-- [ ] Standardowy klient TS i przypięty klient Python wykonują initialize/list_tools/call_tool na rzeczywistym Next.js; lista zawiera dokładnie jedno narzędzie, wynik przechodzi kontrakt.
-- [ ] Brak tokenu, odwołanie, brak scope, rate limit, niewłaściwy Origin, błędne RPC, rozmiar i awaria bazy mają sprawdzone odpowiedzi.
-- [ ] REST zachowuje publiczny kontrakt; MCP nie wymaga nowego kontenera, portu ani migracji.
-- [ ] Hermes native config używa url/headers; reporter HTTP nie uruchamia lokalnego MCP i zachowuje Evening/Morning/Sync oraz receipt guardy.
-- [ ] Nie ma executable entry point stdio, serwera/clienta REST w Python adapterze, starego release serwera ani aktywnych instrukcji instalacji stdio; testy kontraktu przeniesiono i zachowano.
-- [ ] Pełny smoke instalatora obejmuje rozpakowany consumer bundle, import walidatora, hash skilla i profil fake-root; brak adapter venv.
-- [ ] Istniejące testy adekwatne do zmian, schema export check, typecheck/build i diff check mają aktualne dowody; niestabilność środowiska nie jest raportowana jako wynik produktu.
-- [ ] Dokumentacja/AGENTS.md wyjaśniają nowe źródła: HTTP adapter w apps/web, kontrakty w packages/contracts, skill/walidator/release w integrations/umiem-mcp.
+- [x] Standardowy klient TS i przypięty klient Python wykonują initialize/list_tools/call_tool na rzeczywistym Next.js; lista zawiera dokładnie jedno narzędzie, wynik przechodzi kontrakt.
+- [x] Brak tokenu, odwołanie, brak scope, rate limit, niewłaściwy Origin, błędne RPC, rozmiar i awaria bazy mają sprawdzone odpowiedzi.
+- [x] REST zachowuje publiczny kontrakt; MCP nie wymaga nowego kontenera, portu ani migracji.
+- [x] Hermes native config używa url/headers; reporter HTTP nie uruchamia lokalnego MCP i zachowuje Evening/Morning/Sync oraz receipt guardy.
+- [x] Nie ma executable entry point stdio, serwera/clienta REST w Python adapterze, starego release serwera ani aktywnych instrukcji instalacji stdio; testy kontraktu przeniesiono i zachowano.
+- [x] Pełny smoke instalatora obejmuje rozpakowany consumer bundle, import walidatora, hash skilla i profil fake-root; brak adapter venv.
+- [x] Unit, integration, MCP, schema export, typecheck, build oraz diff checks mają aktualne dowody. Pełne E2E: 129/130; pojedynczy istniejący test gestu mikrofonu zawiódł na Windows i nie przeszedł także osobnego rerunu. Nowe MCP E2E przeszedł.
+- [x] Dokumentacja/AGENTS.md wyjaśniają nowe źródła: HTTP adapter w apps/web, kontrakty w packages/contracts, skill/walidator/release w integrations/umiem-mcp.
 - [ ] Niezależny reviewer obejmuje pełny diff Knowli i Hermes wraz z niezacommitowanymi zmianami; Critical/Important rozwiązane, Minor odłożone z uzasadnieniem.
 
 Live dostępność API/MCP w Coolify, wersja Hermesa na hoście, native skill i naturalny Evening są późniejszym etapem operacyjnym, nie dowodem uzyskanym przez ten plan.

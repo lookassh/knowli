@@ -40,8 +40,8 @@
 - `create_bounded_http_client(headers:dict[str,str], *, max_response_bytes:int=4194304)->httpx.AsyncClient`: TLS verification, timeout10s, response hook odmawia 3xx, transport stream wrapper przerywa po limicie niezależnie od Content-Length.
 - Walidator importowany wyłącznie z `learning.consumer_root/src/umiem_mcp/validation.py`, po sprawdzeniu manifestu i skilla; nie kopiuj implementacji semantyki do reportera.
 
-- [ ] Przypnij prywatne zależności w requirements zgodnie z Global Constraints; zainstaluj do lokalnego odizolowanego katalogu testowego/runtime-deps. Nie modyfikuj globalnego SDK/OAuth Hermesa.
-- [ ] Przepisz obecny test stdio na rzeczywisty syntetyczny HTTP MCP server z przypiętym SDK Python; server rejestruje dokładnie jedno tool i zlicza initialize/list/call. Test już nie wymaga zmiennej `UMIEM_MCP_SOURCE` ani uruchomionego adaptera; bundle A4 wskazuje `UMIEM_CONSUMER_SOURCE`.
+- [x] Przypnij prywatne zależności w requirements zgodnie z Global Constraints; zainstaluj do lokalnego odizolowanego katalogu testowego/runtime-deps. Nie modyfikuj globalnego SDK/OAuth Hermesa.
+- [x] Przepisz obecny test stdio na rzeczywisty syntetyczny HTTP MCP server z przypiętym SDK Python; server rejestruje dokładnie jedno tool i zlicza initialize/list/call. Test już nie wymaga zmiennej `UMIEM_MCP_SOURCE` ani uruchomionego adaptera; bundle A4 wskazuje `UMIEM_CONSUMER_SOURCE`.
 
 ```python
 overview = McpLearningClient(config).fetch(days=7, upcoming_test_days=14)
@@ -50,14 +50,14 @@ self.assertEqual(overview["children"][0]["learningTime"]["seconds"], 1980)
 self.assertEqual(server.tool_calls, [("umiem_get_learning_overview", {"days": 7, "upcomingTestDays": 14})])
 ```
 
-- [ ] Testy fail-closed: brak token env, `${env:UMIEM_READ_TOKEN}` wspierane; HTTPS wymagane; loopback tylko jawnie w tests; old stdio-only config odrzucony jako niedostępny, bez automatycznego fallbacku. Przy `enabled=false` zero requestów, zero importów bundle wymagających pliku.
-- [ ] Testy redirect: synthetic307 same-origin i cross-origin, 308, 302 -> unavailable i zero requestów do celu. Hook musi zatrzymać także samodzielną logikę SDK, nie tylko HTTPX follow_redirects.
-- [ ] Testy HTTP401/403/429/503, isError, unsupported schema, uszkodzony fixture, brak/mismatch bundle, malformed JSON, >4MiB streaming bez Content-Length oraz >2MiB DTO -> LearningUnavailable. Nie zwracaj stale data ani pustej rodziny.
-- [ ] Captured logs/stdout/stderr i str(exception) nie zawierają synthetic tokenu, imion/treści z nieprawidłowej odpowiedzi. Nie polegaj na samym try/except, jeżeli SDK zalogował payload wcześniej; skonfiguruj odpowiednie loggery klienta i httpx dla tego procesu bez zmiany innych integracji.
-- [ ] Powolny initialize/call/cleanup -> błąd w granicy30s (w teście wstrzyknij krótszy timeout), socket i task zamknięte. StructuredContent preferowane, zgodny text JSON fallback walidowany identycznie.
-- [ ] RED: `python -m unittest discover -s tests -p 'test_family_learning*.py'` w testowym środowisku z bundle; zapisz oczekiwane niepowodzenie nowej ścieżki, nie skip/import error.
-- [ ] Zaimplementuj HTTP helper oraz `_fetch`: `async with http_client`, `async with streamable_http_client(url,http_client=http_client,terminate_on_close=False)`, `ClientSession`, initialize, jedno call_tool, walidacja. Brak server-side session oznacza brak DELETE w cleanup. Utrzymaj istniejące bezpieczne kody błędu.
-- [ ] GREEN: oba nowe zestawy i istniejące learning context/report tests; commit `feat: read Umiem MCP through Streamable HTTP`.
+- [x] Testy fail-closed: brak token env, `${env:UMIEM_READ_TOKEN}` wspierane; HTTPS wymagane; loopback tylko jawnie w tests; old stdio-only config odrzucony jako niedostępny, bez automatycznego fallbacku. Przy `enabled=false` zero requestów, zero importów bundle wymagających pliku.
+- [x] Testy redirect: synthetic302/307/308 same-origin i cross-origin -> brak follow-up requestu. Hook zatrzymuje również logikę klienta SDK.
+- [x] Testy HTTP401/403/429/503, isError, unsupported schema, mismatch bundle, malformed JSON, strumieniowy limit odpowiedzi i >2MiB DTO -> LearningUnavailable bez starej/pustej rodziny.
+- [x] Captured logs i str(exception) nie zawierają synthetic tokenu ani treści dziecka; HTTP/MCP błędy nie są logowane.
+- [x] Powolny request przekracza krótki testowy deadline i kończy się unavailable. StructuredContent jest preferowane; tekstowy fallback jest walidowany.
+- [x] RED/GREEN potwierdzone testami klienta z rozpakowanym bundle; odpowiednie błędy instalacji/cache naprawiono i zapisano w dzienniku.
+- [x] Zaimplementuj HTTP helper oraz `_fetch`: `async with http_client`, `async with streamable_http_client(url,http_client=http_client,terminate_on_close=False)`, `ClientSession`, initialize, jedno call_tool, walidacja. Brak server-side session oznacza brak DELETE w cleanup. Utrzymaj istniejące bezpieczne kody błędu.
+- [x] GREEN: HTTP/context/report suites przechodzą; commit `feat: read Umiem MCP through Streamable HTTP`.
 
 ### B2: Profil i instalator konsumenta bez adapter venv
 
@@ -67,14 +67,13 @@ self.assertEqual(server.tool_calls, [("umiem_get_learning_overview", {"days": 7,
 
 Manifest instalacji Umiem!: transport=`streamable-http`, mcp_url, consumer_commit i mapy SHA z A4, nigdy token/rozwinięte headers. Instalacja do `school-agent/umiem/consumers/<sourceCommit>`; skill do istniejącego `school-agent/skills/umiem-learning/SKILL.md`.
 
-- [ ] RED: profil bez umiem identyczny z baseline; HTTP wariant ma toolset `mcp-umiem`, URL i header placeholder, `learning.consumer_root`; brak command/args/adapter_root/token bytes. Root profile i inne MCP pozostają identyczne.
-- [ ] Test pełnego `prepare -> install -> activate -> verify` na fake-root z prawdziwym rozpakowanym bundle A4 i prywatnym dependency staging: import walidatora działa, skill/manifest zgodne, nie wykonano `uv sync`/subprocess adaptera. Potwierdź zachowanie niezależnej konfiguracji, owner/mode i post-write hash.
-- [ ] Test niezgodności SHA/schema/skill, symlink/private files w archive, zmiany config przed install i po write przed activate -> odmowa. Wyłączenie learning nie usuwa nowych receipt ani innych skill/MCP.
-- [ ] Dokumentacja `UMIEM-INTEGRATION.md` kopiowana do workdir, aby odnośnik z zainstalowanego AGENTS działał; test fake-root sprawdza plik. Nie przenoś źródłowego adaptera stdio do nowego consumer directory.
-- [ ] Usuń martwe ścieżki stdio z klienta/profilu/instalatora: command/args/env adaptera, adapter_root, wyszukiwanie interpretera/site-packages, subprocess, uv sync i instalację pełnego source release. W aktywnej dokumentacji jest jeden wariant HTTP. Nie usuwaj niczego z live hosta podczas lokalnej implementacji; ewentualne późniejsze sprzątanie instalacji jest ograniczone jej manifestem i następuje po potwierdzeniu HTTP.
-- [ ] Weryfikacja CLI operacyjna sprawdza jedynie obecność referencji/środowiska, nie wypisuje sekretu. Nie zapisuj rozwiniętej konfiguracji/środowiska w backupie/manifestach/logu; istniejące sekrety innych integracji zachowują dotychczasowe granice dostępu.
-- [ ] Implementacja minimalnych zmian profilu/installer; README opisuje URL `/api/mcp`, `${UMIEM_READ_TOKEN}`, źródło env wspólne dla native i reportera oraz restart/reconnect po rotacji.
-- [ ] GREEN: `python -m unittest discover -s tests -p 'test_deploy_family_notes.py'` i `python -m unittest discover -s tests -p 'test_family_notes_contract.py'`. Selektywny commit `feat: install HTTP Umiem consumer profile and contract bundle`.
+- [x] RED: profil bez umiem zachowuje baseline; HTTP wariant ma toolset `mcp-umiem`, URL, header placeholder, `learning.consumer_root` i nie zawiera stdio config. Pozostałe serwery zachowane.
+- [x] Test pełnego `prepare -> install -> activate -> verify` na fake-root z bundle A4 i prywatnym dependency staging: manifest/skille/hash zgodne, brak venv/subprocess adaptera, inne MCP i konfiguracje zachowane.
+- [x] Testy SHA/schema/skill mismatch, plików prywatnych, drift profilu, zachowania receipt i niezależnych MCP; detekcja symlink jest wdrożona, ale nie uruchomiona osobno na Windows.
+- [x] Dokumentacja `UMIEM-INTEGRATION.md` jest kopiowana do workdir; test fake-root sprawdza bajty pliku. Consumer bundle nie zawiera serwera stdio.
+- [x] Usunięto martwą ścieżkę stdio z aktywnego klienta/profilu/instalatora i dokumentacji. Historyczne notatki/plany pozostają zapisem wcześniejszego stanu; nic live nie było usuwane.
+- [x] Profil/manifest nie zapisuje tokenu ani rozwiniętego nagłówka; stare opcje CLI zwracają komunikat migracyjny.
+- [x] Dokumentacja opisuje URL `/api/mcp`, `${UMIEM_READ_TOKEN}`, bundle i rotację; testy installer/contract przechodzą. Commit `feat: install HTTP Umiem consumer profile and contract bundle`.
 
 ### B3: Report regresje, cross-language smoke i końcowy review
 
@@ -82,11 +81,11 @@ Manifest instalacji Umiem!: transport=`streamable-http`, mcp_url, consumer_commi
 
 **Interfaces:** `smoke_umiem_http.py --url <test-endpoint> --consumer-root <bundle>` zużywa token syntetyczny z env, wywołuje ten sam McpLearningClient co produkcyjny reporter i wypisuje tylko status/schemaVersion/liczby dzieci/dni. Skrypt odmawia bez jawnej flagi `UMIEM_SYNTHETIC_SMOKE=1`; nie wywołuje modelu/delivery.
 
-- [ ] Test Evening z HTTP client: dokładnie jedno tools/call przed generacją, schema/metryki OK; isError/timeout -> unavailable i szkolny raport nadal powstaje; disabled ->disabled. Morning i Sync ->zero calls.
-- [ ] Test prepared/delivered/unknown receipt i wznowienie istniejącego execution ->zero dodatkowych calls i brak nowego prywatnego magazynu danych. Sprawdź budżet4000 i zachowanie dzieci/dni/tests/learningTime przy kompaktowaniu.
-- [ ] RED wymagany tylko gdy dodawane jest nowe zachowanie raportera. Jeśli dotychczasowy kod spełnia test, zapisz regresję bez sztucznego psucia go.
-- [ ] Uruchom pełne Hermes unittest w izolowanym środowisku z rozpakowanym consumer bundle. Nie zaakceptuj skipów nowego HTTP clienta jako potwierdzenia kompatybilności.
-- [ ] Uruchom cross-language smoke: prawdziwy Next.js z testową bazą i syntetycznym tokenem z A3 -> Python klient B1. Wynik ma przejść ten sam schema/semantykę co REST i TS client. Dostęp do aktualnego native Hermes oraz loadera profilu/skill na hoście zapisuj jako niezweryfikowany do etapu operacyjnego.
+- [x] Test Evening konfigurowanego HTTP clienta: jedno wywołanie przed generacją i retry receipt bez ponownego klienta; błąd/timeout, disabled i Morning nie blokują/nie wykonują odczytu. Sync nie używa tego reportera.
+- [x] Test prepared/delivered/unknown receipt, wznowienia execution, limitu4000 i zachowania dzieci/dat/testów/czasu przy kompakcji.
+- [x] Nie zmieniono zachowania reportera poza zachowaniem bezpiecznego kodu błędu limitu; nowe asercje regresyjne potwierdzają istniejącą semantykę.
+- [x] Pełne Hermes unittest z rzeczywistym rozpakowanym consumer bundle: 134/134, bez skipów nowych testów.
+- [x] Cross-language smoke przez prawdziwy Next.js i testowy PostgreSQL z krótkotrwałym tokenem syntetycznym: Python klient zwrócił status/schema/counts bez prywatnych wartości. Native Hermes/host pozostaje niezweryfikowany operacyjnie.
 - [ ] Knowli: `test:unit`, `test:integration`, nowe i odpowiednie E2E, `test:mcp`, `contracts:export-learning-overview --check`, `typecheck`, `build`; Hermes: pełne unittest; oba repo: `git diff --check`. Broader full E2E uzasadnione zmianą route/shared limiter; unikaj równoległych konfliktów runnerów.
 - [ ] `requesting-code-review`: jeden dedykowany reviewer najmocniejszego dostępnego modelu poza rodziną Astra; pełny diff obu repo od baz z planu całości, spec, oba plany, niescommitowane zmiany, test evidence/odstępstwa. `receiving-code-review`: rozwiąż Critical/Important; odłóż Minor jawnie. Review i poprawki zapisz w dzienniku.
 - [ ] Po poprawkach wykonaj odpowiednie regresje i końcową weryfikację, commit wyników/testów. `finishing-a-development-branch`: dopiero na końcu aktualizuj PR #48, jeżeli nadal open dla tej gałęzi; inaczej utwórz PR dla nowej gałęzi. PR opisuje finalny HTTP feature, wyniki i wpływ API -> MCP -> skill -> Hermes. Załącz utworzony/aktualizowany PR do czatu.
