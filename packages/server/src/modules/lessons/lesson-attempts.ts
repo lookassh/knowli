@@ -41,6 +41,7 @@ import type { LearningObjective, LessonTopic, SubjectModule } from "../../domain
 import { BASE_ERROR_CATEGORIES } from "../../domain/lessons/base-error-categories";
 import {
   projectObjectiveProgress,
+  lastIndependentObjectiveAt,
   qualifyLessonAttempt,
   type LessonQualificationContext,
   type ObjectiveHistoryEntry,
@@ -734,11 +735,7 @@ async function projectAndUpsertObjective(
   const projection = projectObjectiveProgress(history, policy, now.toISOString())[key.objectiveId];
   if (!projection) return;
   const topicId = await objectiveTopicId(tx, task, key, services);
-  const lastIndependentAt = history
-    .filter((h) => h.independent && h.outcome === "correct")
-    .map((h) => h.receivedAt)
-    .sort()
-    .at(-1);
+  const lastIndependentAt = lastIndependentObjectiveAt(history, policy.version);
   await tx
     .insert(childObjectiveProgress)
     .values({

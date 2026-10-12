@@ -129,6 +129,27 @@ export function projectObjectiveProgress(
 }
 
 /**
+ * Czas ostatniego NIEZALEŻNEGO, poprawnego i ocenionego zastosowania reguły w
+ * historii — JEDNO źródło prawdy dla `child_objective_progress.lastIndependentAt`
+ * współdzielone przez ścieżkę przyrostową (lesson-attempts) i odbudowę
+ * (progress-rebuild). Filtruje po `policyVersion` tak samo jak
+ * `projectObjectiveProgress`, więc przełączenie wersji polityki nie rozjeżdża
+ * obu ścieżek: liczy się tylko dowód bieżącej wersji. Zwraca ISO albo null.
+ */
+export function lastIndependentObjectiveAt(
+  history: readonly ObjectiveHistoryEntry[],
+  policyVersion: string,
+): string | null {
+  return (
+    history
+      .filter((h) => h.policyVersion === policyVersion && h.independent && h.outcome === "correct")
+      .map((h) => h.receivedAt)
+      .sort()
+      .at(-1) ?? null
+  );
+}
+
+/**
  * Reguła opanowania celu: sukces liczy do okna tylko na nowym ćwiczeniu
  * (różne `itemId`); opanowanie to pełne okno różnych ćwiczeń z co najmniej
  * jednym potwierdzeniem po przerwie.

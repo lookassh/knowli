@@ -301,9 +301,7 @@ export async function decideLessonVerdict(
     .returning();
   if (updated.length === 0) throw new AppError("not_found");
   const row = updated[0]!;
-  const deckId = await deckOfVerdict(services, row.itemRevisionId);
   const objectiveId = await objectiveOfRevision(services, row.itemRevisionId);
-  void deckId;
   return {
     id: row.id,
     exerciseRevisionId: row.itemRevisionId,
@@ -434,11 +432,5 @@ export async function acceptVerdictAsVariant(services: Services, verdictId: stri
     await reconcileDraftAssetsTx(tx, services, { id: version.id, state: version.state });
     return { deckVersionId: draftVersionId!, added: true };
   });
-}
-/** Informacja o providerze oceny dla rodzica (wymaganie 10.1), bez sekretów. */
-export function gradingInfo(services: Services): { available: boolean; model?: string } {
-  const grader = services.grader;
-  if (!grader) return { available: false };
-  return { available: true, model: grader.provider.model };
 }
 

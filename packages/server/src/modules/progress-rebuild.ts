@@ -18,7 +18,7 @@ import { VOCABULARY_SKILLS } from "../domain/types";
 import { AppError } from "../errors";
 import { loadPolicy } from "../policies/registry";
 import { projectProgress } from "../domain/progress";
-import { projectObjectiveProgress, type ObjectiveHistoryEntry } from "../domain/lessons/progress";
+import { projectObjectiveProgress, lastIndependentObjectiveAt, type ObjectiveHistoryEntry } from "../domain/lessons/progress";
 import { readSkillHistories, skillHistoryKey, type HistoryScope } from "./skill-history";
 import { writeSkillProjection } from "./skill-projections";
 
@@ -299,11 +299,7 @@ async function rebuildChildObjectives(
     }
     const projected = projectObjectiveProgress(entries, policy, now.toISOString())[meta.objectiveId];
     if (!projected) { report.unchanged += 1; continue; }
-    const lastIndependentAt = entries
-      .filter((e) => e.independent && e.outcome === "correct" && e.policyVersion === policy!.version)
-      .map((e) => e.receivedAt)
-      .sort()
-      .at(-1);
+    const lastIndependentAt = lastIndependentObjectiveAt(entries, policy.version);
     const expected = {
       status: dbStatus(projected.status),
       streak: projected.streak,

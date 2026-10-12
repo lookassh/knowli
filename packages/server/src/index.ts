@@ -78,7 +78,6 @@ export {
   listLessonVerdicts,
   decideLessonVerdict,
   acceptVerdictAsVariant,
-  gradingInfo,
 } from "./modules/lessons/lesson-supervision";
 export {
   reconcileDraftAssets,

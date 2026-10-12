@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   projectObjectiveProgress,
+  lastIndependentObjectiveAt,
   qualifyLessonAttempt,
   type LessonQualificationContext,
   type ObjectiveHistoryEntry,
@@ -273,5 +274,32 @@ describe("projectObjectiveProgress — projekcja postępu celu (req 7.3–7.5)",
     expect(projectObjectiveProgress([ok(D1, "e1")], POLICY, NOW)[OBJ]?.nextReviewAt).toBe(
       "2026-10-07T16:00:00.000Z",
     );
+  });
+});
+
+describe("lastIndependentObjectiveAt — jedno źródło prawdy (przyrost == odbudowa)", () => {
+  it("zwraca ostatni niezależny poprawny bieżącej wersji polityki", () => {
+    const history = [ok(D1, "e1"), ok(D1B, "e2")];
+    expect(lastIndependentObjectiveAt(history, POLICY.version)).toBe(D1B);
+  });
+
+  it("IGNORUJE niezależny poprawny z INNEJ wersji polityki (zgodnie z projectObjectiveProgress)", () => {
+    // Niezależny sukces w starszej wersji (po D2), a w bieżącej tylko wcześniejszy
+    // sukces — bez filtra wersji ścieżka przyrostowa wzięłaby ten starszej wersji
+    // (po dacie najnowszy), rozjeżdżając się z odbudową.
+    const history = [
+      ok(D1, "e1"),
+      ok(D2, "e2", { policyVersion: "learning-v0" }),
+    ];
+    expect(lastIndependentObjectiveAt(history, POLICY.version)).toBe(D1);
+  });
+
+  it("pomija próby niesamodzielne, błędne i nieocenione", () => {
+    const history = [
+      ok(D1, "e1", { independent: false }),
+      bad(D1B, "e2"),
+      entry("unevaluated", D1C, "e3", { reason: "technical" }),
+    ];
+    expect(lastIndependentObjectiveAt(history, POLICY.version)).toBeNull();
   });
 });
