@@ -320,6 +320,8 @@ Zapisujemy oddzielnie:
 
 Dla dni tygodnia wielka litera jest częścią poprawnej pisowni. Odpowiedź „monday” na „poniedziałek” potwierdza właściwe słowo i kolejność liter, ale nie zalicza pełnej poprawności pisowni. Dziecko otrzymuje komunikat „To właściwe słowo! Monday piszemy wielką literą”. Ta próba może potwierdzić przypomnienie, jeśli spełnia warunki samodzielności z sekcji 18.
 
+Po błędnej próbie pisemnej, której zapis jest bliski zatwierdzonemu wariantowi (co najwyżej dwie operacje liter: brakująca, nadmiarowa, zamieniona lub przestawiona para; jedna dla słów do czterech znaków), karta wyniku pokazuje obok siebie zapis dziecka i właściwy zapis z wyróżnionym miejscem różnicy. Wyróżnienie ma formę obwódki, więc jest czytelne także bez rozróżniania kolorów, a wielkość liter pozostaje objęta osobnym komunikatem. Diagnoza liter jest komunikatem, nie podstawą oceny: podobieństwo tekstu nie zalicza przypomnienia ani pisowni, nie zwiększa liczby prób i nie wpływa na budżet sesji. Pokazanie właściwego zapisu pozostaje ujawnieniem zapisanym przed doręczeniem feedbacku. Pusta odpowiedź, pominięcie, „Nie pamiętam” i problemy techniczne nie otrzymują diagnozy liter.
+
 Pełny sukces w samodzielnej pisowni wymaga poprawnego zapisu jednego z zatwierdzonych wariantów, włącznie z wymaganą kapitalizacją. Błąd szczegółowy jest zapisywany, aby można było udzielić odpowiedniego wsparcia.
 
 W polach pisowni aplikacja wyłącza autokorektę, sprawdzanie pisowni, autouzupełnianie i automatyczną kapitalizację w zakresie dostępnym na urządzeniu. Zachowanie klawiatury trzeba sprawdzić na docelowym telefonie/tablecie. Aplikacja nie gwarantuje wykrycia wszystkich podpowiedzi zewnętrznej klawiatury ani nie traktuje tego jako problemu wymagającego mechanizmu antyoszustw.
@@ -416,6 +418,7 @@ Feedback ma być pozytywny i zgodny z wynikiem:
 
 - „Świetnie!” i „Dobrze!” po poprawnej odpowiedzi;
 - „Prawie! Posłuchaj jeszcze raz” przy rzeczywiście częściowo poprawnej próbie;
+- „Prawie! Popraw zapis:” z zaznaczoną różnicą między wpisem dziecka a właściwym zapisem przy błędzie bliskim poprawnemu wariantowi;
 - „Posłuchaj: Thursday. Poćwiczymy razem” przy niepoprawnej odpowiedzi;
 - „Nie udało się ocenić nagrania” przy problemie technicznym.
 

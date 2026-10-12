@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { FeedbackDtoSchema } from "@learning/contracts";
 import { chooseFeedback, feedbackExposureKeys } from "./feedback";
 import { computeTargetKey } from "./target-key";
+import type { SpellingComparison } from "./spelling-diff";
 import type { Grade, Skill, SkillGrade } from "./types";
 
 function sg(outcome: SkillGrade["outcome"], extra: Partial<SkillGrade> = {}): SkillGrade {
@@ -124,5 +126,92 @@ describe("chooseFeedback — feedback zgodny z rzeczywistym wynikiem (SPEC §16,
       kind: "not_assessed",
       speech: { recognition: "uncertain", pronunciation: "not_applicable" },
     }, computeTargetKey("sofa", "en-GB"), "en-GB")).toEqual([]);
+  });
+});
+
+describe("chooseFeedback — diagnoza liter po błędzie pisowni (issue #9)", () => {
+  const typoDiff: SpellingComparison = {
+    variant: "Wednesday",
+    distance: 1,
+    withinThreshold: true,
+    capitalizationHint: false,
+    given: [{ text: "Wenesday", state: "plain" }],
+    expected: [
+      { text: "We", state: "plain" },
+      { text: "d", state: "pill" },
+      { text: "nesday", state: "plain" },
+    ],
+  };
+
+  it("literówka w progu daje spelling_hint z segmentami i wariantem jako correctText", () => {
+    const result = chooseFeedback(grade({ recall: sg("incorrect"), spelling: sg("incorrect") }), "Wednesday", typoDiff);
+    expect(result.kind).toBe("spelling_hint");
+    expect(result.correctText).toBe("Wednesday");
+    expect(result.spellingDiff).toEqual({
+      given: typoDiff.given,
+      expected: typoDiff.expected,
+    });
+  });
+
+  it("correctText przy spelling_hint to najbliższy wariant, nie kanoniczny target", () => {
+    const colourDiff: SpellingComparison = {
+      variant: "colour",
+      distance: 1,
+      withinThreshold: true,
+      capitalizationHint: false,
+      given: [{ text: "colur", state: "plain" }],
+      expected: [
+        { text: "colou", state: "plain" },
+        { text: "r", state: "pill" },
+      ],
+    };
+    const result = chooseFeedback(grade({ recall: sg("incorrect"), spelling: sg("incorrect") }), "color", colourDiff);
+    expect(result.correctText).toBe("colour");
+  });
+
+  it("spelling_hint dokleja wskazówkę kapitalizacyjną, gdy jedyna pozostała różnica to wielkość liter", () => {
+    const result = chooseFeedback(
+      grade({ recall: sg("incorrect"), spelling: sg("incorrect") }),
+      "Wednesday",
+      { ...typoDiff, capitalizationHint: true },
+    );
+    expect(result.spellingDiff).toEqual({ given: typoDiff.given, expected: typoDiff.expected, capitalizationHint: true });
+  });
+
+  it("odległość poza progiem pozostaje przy incorrect z pełnym rozwiązaniem", () => {
+    const result = chooseFeedback(
+      grade({ recall: sg("incorrect"), spelling: sg("incorrect") }),
+      "Wednesday",
+      { ...typoDiff, withinThreshold: false, distance: 4 },
+    );
+    expect(result.kind).toBe("incorrect");
+    expect(result.spellingDiff).toBeUndefined();
+  });
+
+  it("kapitalizacja bez literówek pozostaje przy capitalization_hint (diff nie nadpisuje)", () => {
+    const result = chooseFeedback(
+      grade({
+        recall: sg("correct"),
+        spelling: sg("incorrect", { details: { spelling: { matchedVariant: "Wednesday", wordMatched: true, letterOrderMatched: true, capitalizationCorrect: false, capitalizationOnlyDefect: true } } }),
+      }),
+      "Wednesday",
+      typoDiff,
+    );
+    expect(result.kind).toBe("capitalization_hint");
+  });
+
+  it("diff nie zmienia pochwały ani „Prawie” przy zaliczonych umiejętnościach", () => {
+    expect(chooseFeedback(grade({ recall: sg("correct"), spelling: sg("correct") }), "Wednesday", typoDiff).kind).toBe("great");
+  });
+
+  it("feedbackExposureKeys uwzględnia ujawniony correctText (wariant, nie tylko canonical)", () => {
+    const feedback = FeedbackDtoSchema.parse({
+      kind: "spelling_hint",
+      correctText: "colour",
+      spellingDiff: { given: [{ text: "colur", state: "pill" }], expected: [{ text: "colou", state: "plain" }, { text: "r", state: "pill" }] },
+    });
+    const keys = feedbackExposureKeys(feedback, computeTargetKey("color", "en-GB"), "en-GB");
+    expect(keys).toContain(computeTargetKey("color", "en-GB"));
+    expect(keys).toContain(computeTargetKey("colour", "en-GB"));
   });
 });

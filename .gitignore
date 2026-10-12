@@ -27,3 +27,5 @@ tests/e2e/.world*.json
 backups/
 /.codex-remote-attachments/
 .codex-remote-attachments/
+
+.superpowers/

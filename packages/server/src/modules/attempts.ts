@@ -25,6 +25,7 @@ import {
 import { AppError } from "../errors";
 import { assessedSkills, evaluateChoice, evaluateNonAnswer, evaluateWritten } from "../domain/evaluate";
 import { chooseFeedback, feedbackExposureKeys } from "../domain/feedback";
+import { compareSpelling } from "../domain/spelling-diff";
 import { qualifyAttempt } from "../domain/independence";
 import { computeTargetKey } from "../domain/target-key";
 import { payloadToItem } from "./item-payload";
@@ -262,7 +263,18 @@ async function finalizeAttemptRow(
 ): Promise<AttemptDto> {
   const key = answerKeyOf(task);
   const correctText = correctTextOf(task, key);
-  let feedback: FeedbackDto | null = session.mode === "mock_test" ? null : chooseFeedback(grade, correctText);
+  // diagnoza liter wyłącznie dla odpowiedzi pisemnej z ocenianą pisownią (issue #9);
+  // to komunikat, nie podstawa oceny — odległość nie zalicza znaczenia (A16)
+  const answerText =
+    modality === "text" ? ((attempt.answer as { text?: string } | null)?.text ?? null) : null;
+  const spellingIncorrect = grade.skills.spelling?.outcome === "incorrect";
+  const diff =
+    answerText !== null &&
+    spellingIncorrect &&
+    ["recall", "spelling", "letter_completion"].includes(key.exerciseType)
+      ? compareSpelling(answerText, key)
+      : null;
+  let feedback: FeedbackDto | null = session.mode === "mock_test" ? null : chooseFeedback(grade, correctText, diff);
   if (feedback?.speech && ["matched", "different"].includes(feedback.speech.recognition) && feedback.speech.referenceText !== undefined) {
     const reference = (
       await tx.select({ target: itemRevisions.payload, targetLocale: deckVersions.targetLocale })
