@@ -153,6 +153,22 @@ describe("chooseFeedback — diagnoza liter po błędzie pisowni (issue #9)", ()
     });
   });
 
+  it("correctText przy spelling_hint to najbliższy wariant, nie kanoniczny target", () => {
+    const colourDiff: SpellingComparison = {
+      variant: "colour",
+      distance: 1,
+      withinThreshold: true,
+      capitalizationHint: false,
+      given: [{ text: "colur", state: "plain" }],
+      expected: [
+        { text: "colou", state: "plain" },
+        { text: "r", state: "pill" },
+      ],
+    };
+    const result = chooseFeedback(grade({ recall: sg("incorrect"), spelling: sg("incorrect") }), "color", colourDiff);
+    expect(result.correctText).toBe("colour");
+  });
+
   it("spelling_hint dokleja wskazówkę kapitalizacyjną, gdy jedyna pozostała różnica to wielkość liter", () => {
     const result = chooseFeedback(
       grade({ recall: sg("incorrect"), spelling: sg("incorrect") }),

@@ -297,6 +297,12 @@ export const FeedbackDtoSchema = z.object({
   if (feedback.kind !== "spelling_hint" && feedback.spellingDiff !== undefined) {
     ctx.addIssue({ code: "custom", path: ["spellingDiff"], message: "spellingDiff is only allowed with spelling_hint" });
   }
+  if (feedback.kind === "spelling_hint" && feedback.spellingDiff !== undefined) {
+    const expected = feedback.spellingDiff.expected.map((segment) => segment.text).join("");
+    if (expected !== feedback.correctText) {
+      ctx.addIssue({ code: "custom", path: ["spellingDiff"], message: "expected segments must compose into correctText" });
+    }
+  }
   if (feedback.speech && ["uncertain", "no_speech", "unavailable"].includes(feedback.speech.recognition)) {
     for (const field of ["heardText", "correctText", "fragments"] as const) {
       if (feedback[field] !== undefined) {

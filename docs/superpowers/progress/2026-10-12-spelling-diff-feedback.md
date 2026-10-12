@@ -86,5 +86,24 @@ izolator `UMIEM_TEST_RUN_ID`/`UMIEM_E2E_PORT`.
   build PASS.
 
 ## Bramka review
-- Status: DO WYKONANIA (requesting-code-review na zakresie main..HEAD po Task 7)
+- Status: WYKONANE + poprawki wdrożone
+- Niezależny recenzent (subagent general-purpose; ZCode nie udostępnia mechanizmu wyboru modelu subagenta —
+  odnotowane dostosowanie), zakres 4475e4a..5119c4e (7 commitów), wg szablonu requesting-code-review/code-reviewer.md.
+  Recenzent zweryfikował algorytm testem własności (15 182 losowe pary vs referencyjna OSA: 0 niezgodności)
+  i niezależnie uruchomił unit + typecheck. Werdykt: „With fixes" — 0 Critical, 1 Important, 6 Minor.
+- Wdrożone (TDD, testy RED→GREEN):
+  1. Important: superRefine sprawdza, że segmenty `expected` składają się na `correctText` (wymóg specu
+     pominięty w planie Task 1; plan → implementacja poszły za planem — luka planu).
+  2. Minor: aria komunikat bez rodzaju męskiego: „Twój zapis: {given}. Poprawnie: {expected}."
+  3. Minor: guard casefold — litera zmieniająca długość przy toLowerCase (İ) wyłącza diagnozę (null).
+  4. Minor: test jednostkowy pinujący correctText = najbliższy wariant („colour"), nie kanoniczny target.
+- Odrzucone z uzasadnieniem:
+  5. Minor (testy „brak diffu dla pustej/skip/dont_remember/mowy" w feedback.test.ts): ścieżki bramkowane
+     w attempts.ts (modality text + spelling incorrect + typ ćwiczenia) i pokryte pośrednio istniejącymi
+     testami integracyjnymi (attempts.test.ts: „Nie pamiętam"/„Pomiń", mock-tests.test.ts: feedback null).
+     Wpis o odstępstwie spec→plan dopiero tutaj — uzupełnione.
+  6. Minor (higiena commitów 910f901): rozwiązywana przez Squash and merge przy integracji (reguła repo).
+- Rekomendacja recenzenta (commit spec+plan przed PR) odłożona do decyzji właściciela — polecenie
+  „nie commituj planu" pozostaje w mocy.
+- Weryfikacja po poprawkach: unit 516/516; typecheck PASS; integration attempts 17/17.
 

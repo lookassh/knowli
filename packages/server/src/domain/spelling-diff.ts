@@ -99,6 +99,12 @@ export function compareSpelling(answer: string, key: AnswerKey): SpellingCompari
   if (candidates.length === 0) {
     return null;
   }
+  // toLowerCase potrafi zmienić liczbę punktów kodowych (np. „İ” → „i̇”), co rozjechałoby
+  // indeksy alignmentu z oryginalnymi znakami — taka odpowiedź/wariant nie dostaje diagnozy
+  const casefoldStable = (text: string): boolean => [...text.toLowerCase()].length === [...text].length;
+  if (!casefoldStable(given) || candidates.some((candidate) => !casefoldStable(candidate))) {
+    return null;
+  }
   const threshold = Math.min(...candidates.map((candidate) => [...candidate].length)) <= 4 ? 1 : 2;
   let best: { variant: string; distance: number; steps: Step[] } = { variant: candidates[0], ...align(given, candidates[0]) };
   for (const variant of candidates.slice(1)) {

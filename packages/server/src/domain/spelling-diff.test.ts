@@ -88,4 +88,10 @@ describe("compareSpelling — porównanie zapisu z zatwierdzonym wariantem (issu
     expect(compareSpelling("", key("Wednesday"))).toBeNull();
     expect(compareSpelling("   ", key("Wednesday"))).toBeNull();
   });
+
+  it("litera zmieniająca długość przy toLowerCase (İ) wyłącza diagnozę zamiast produkować śmieciowe segmenty", () => {
+    // „İ”.toLowerCase() ma dwa punkty kodowe — indeksy alignmentu rozeszłyby się z oryginałem
+    expect(compareSpelling("İaturday", key("Saturday"))).toBeNull();
+    expect(compareSpelling("Saturday", key("İaturday"))).toBeNull();
+  });
 });

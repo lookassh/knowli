@@ -45,4 +45,13 @@ describe("FeedbackDto — spelling_hint i spellingDiff (issue #9)", () => {
       spellingDiff: { ...diff, expected: [{ text: "x", state: "bold" }] },
     }).success).toBe(false);
   });
+
+  it("odrzuca spelling_hint, gdy segmenty expected nie składają się na correctText", () => {
+    const parsed = FeedbackDtoSchema.safeParse({
+      kind: "spelling_hint",
+      correctText: "Wednesday",
+      spellingDiff: { ...diff, expected: [{ text: "Thursday", state: "plain" }] },
+    });
+    expect(parsed.success).toBe(false);
+  });
 });

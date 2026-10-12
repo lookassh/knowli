@@ -326,7 +326,7 @@ export const messages = {
     feedbackSpellingCapitalization: "Prawie! {word} piszemy wielką literą",
     spellingYourAnswer: "Twój zapis",
     spellingCorrect: "Poprawnie",
-    spellingDiffAria: "Wpisałeś: {given}. Poprawnie: {expected}.",
+    spellingDiffAria: "Twój zapis: {given}. Poprawnie: {expected}.",
     feedbackContentMatched: "Usłyszałem! Nie udało się ocenić wymowy",
     feedbackNotAssessed: "Nie udało się ocenić. Spróbuj jeszcze raz",
     feedbackHeard: "Usłyszałem: {word}",
