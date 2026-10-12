@@ -12,6 +12,7 @@ import {
 import { apiFetch, ApiCallError, errorMessage } from "../api";
 import AssignmentTestGoalFields, { type AssignmentTestSettings } from "../AssignmentTestGoalFields";
 import type { EditorLeaveState } from "../useParentLeaveGuard";
+import LessonSupervisionPanel from "./LessonSupervisionPanel";
 import {
   createLessonSnapshot,
   groupExercisesByObjectiveAndStage,
@@ -27,10 +28,9 @@ const STEM_LABEL_TYPES = new Set(["lesson_choice", "lesson_short_answer", "lesso
 
 /** Czy zapisany werdykt dowolnych odpowiedzi jest wyłączony (brak modelu oceniającego). */
 function gradingDisabled(deck: LessonDeckDto | null): boolean {
-  // API nie zwraca jeszcze konfiguracji providera oceny per lekcja (zadanie 16);
-  // pokazujemy informację tylko gdy pole istnieje i jest false.
-  const flag = (deck as unknown as { gradingAvailable?: boolean } | null)?.gradingAvailable;
-  return flag === false;
+  // Typowane pole `grading` (zadanie 16) zastąpiło rzutowanie
+  // `deck as unknown as {gradingAvailable?: boolean}`.
+  return deck?.grading.available === false;
 }
 
 /**
@@ -539,6 +539,15 @@ export default function LessonEditor({
             {messages.decks.newVersion}
           </button>
         </div>
+      )}
+
+      {deck && deck.published && (
+        <LessonSupervisionPanel
+          deckId={deckId}
+          childrenList={childrenList}
+          gradingModel={deck.grading.available ? (deck.grading.model ?? null) : null}
+          onRegenerate={draft ? (objectiveId) => void regenerate(objectiveId) : undefined}
+        />
       )}
 
       {editable && (

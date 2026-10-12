@@ -6,6 +6,7 @@ import {
   LessonCommandSchema,
   LessonExerciseInputSchema,
   LessonDraftDtoSchema,
+  LessonDeckDtoSchema,
   ObjectiveProgressDtoSchema,
   LessonVerdictDtoSchema,
   LessonVerdictDecisionSchema,
@@ -200,20 +201,50 @@ describe("LessonDraftDtoSchema", () => {
   });
 });
 
+describe("LessonDeckDtoSchema", () => {
+  const draft = {
+    id: UUID, deckId: UUID2, editNumber: 1, status: "draft", title: "Present Simple",
+    subjectId: "english_grammar", topicId: "present_simple", topicVersion: 1,
+    objectiveIds: ["o1"], examples: {}, exercises: [], assets: [], rejectedCount: 0, coverage: [],
+  };
+  const base = {
+    id: UUID, title: "Present Simple", state: "draft",
+    draft, published: null, generation: null, assignments: [],
+  };
+  it("carries the typed grading provider info", () => {
+    const parsed = LessonDeckDtoSchema.parse({ ...base, grading: { available: true, model: "gpt-x" } });
+    expect(parsed.grading).toEqual({ available: true, model: "gpt-x" });
+  });
+  it("accepts grading unavailable with no model", () => {
+    const parsed = LessonDeckDtoSchema.parse({ ...base, grading: { available: false } });
+    expect(parsed.grading.available).toBe(false);
+  });
+  it("requires the grading field", () => {
+    expect(LessonDeckDtoSchema.safeParse(base).success).toBe(false);
+  });
+});
+
 describe("ObjectiveProgressDtoSchema", () => {
   it("accepts a parent-facing objective progress row", () => {
     expect(ObjectiveProgressDtoSchema.safeParse({
       objectiveId: "o1", titlePl: "-s w 3. osobie", status: "mastered",
-      lastIndependentAt: INSTANT, nextReviewAt: INSTANT,
+      lastIndependentAt: INSTANT, nextReviewAt: INSTANT, poolExhausted: false,
       topErrors: [{ category: "missing_s", labelPl: "Brak -s", count: 3, examples: ["he play"] }],
     }).success).toBe(true);
   });
   it("caps topError examples at 3", () => {
     expect(ObjectiveProgressDtoSchema.safeParse({
       objectiveId: "o1", titlePl: "t", status: "learning",
-      lastIndependentAt: null, nextReviewAt: null,
+      lastIndependentAt: null, nextReviewAt: null, poolExhausted: false,
       topErrors: [{ category: "c", labelPl: "l", count: 4, examples: ["a", "b", "c", "d"] }],
     }).success).toBe(false);
+  });
+  it("carries the exhausted-pool hint", () => {
+    const parsed = ObjectiveProgressDtoSchema.parse({
+      objectiveId: "o1", titlePl: "t", status: "mastered",
+      lastIndependentAt: null, nextReviewAt: null, poolExhausted: true, topErrors: [],
+    });
+    expect(parsed.poolExhausted).toBe(true);
   });
 });
 

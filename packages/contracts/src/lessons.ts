@@ -181,6 +181,14 @@ export const LessonDeckDtoSchema = z.object({
   published: LessonDraftDtoSchema.nullable(),
   generation: GenerationDtoSchema.nullable(),
   assignments: z.array(AssignmentDtoSchema),
+  /**
+   * Informacja o providerze oceny dowolnych odpowiedzi (wymaganie 10.1). Bez
+   * sekretów — tylko czy model jest dostępny i jego nazwa z konfiguracji.
+   */
+  grading: z.object({
+    available: z.boolean(),
+    model: z.string().min(1).optional(),
+  }),
 });
 export type LessonDeckDto = z.infer<typeof LessonDeckDtoSchema>;
 
@@ -221,6 +229,8 @@ export const ObjectiveProgressDtoSchema = z.object({
   status: ObjectiveStatusSchema,
   lastIndependentAt: InstantSchema.nullable(),
   nextReviewAt: InstantSchema.nullable(),
+  /** Pula ćwiczeń celu wyczerpana dla dziecka (podpowiedź „Dogeneruj”). */
+  poolExhausted: z.boolean(),
   topErrors: z.array(z.object({
     category: z.string().min(1),
     labelPl: z.string().min(1),

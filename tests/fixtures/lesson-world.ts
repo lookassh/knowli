@@ -157,9 +157,9 @@ export async function lessonWorld(pool: Pool, options: LessonWorldOptions = {}):
     );
     await pool.query(
       `insert into learning_app.assessments
-         (child_id, attempt_id, item_revision_id, skill, skill_version_id, outcome, independent, confirmation_eligible)
-       values ($1, $2, $3, 'objective', $4, 'correct', true, true)`,
-      [options.childId, attemptId, revisionId, skillVersionId],
+         (child_id, attempt_id, item_revision_id, skill, skill_version_id, outcome, independent, confirmation_eligible, details)
+       values ($1, $2, $3, 'objective', $4, 'correct', true, true, $5::jsonb)`,
+      [options.childId, attemptId, revisionId, skillVersionId, JSON.stringify({ objectiveId, verdict: "exact" })],
     );
     await pool.query(
       "update learning_app.attempts set state = 'completed', completed_at = $2 where id = $1",
@@ -225,7 +225,7 @@ async function seedRichPool(pool: Pool, version: { deckId: string; versionId: st
         exerciseType: "lesson_notice",
         objectiveId,
         instructionPl: "Dotknij słowa z końcówką -s.",
-        noticeSegments: [["She", "plays", "football."]],
+        noticeSegments: [["She", "plays", "football."], ["They", "play", "too."]],
         answer: RICH_ANSWERS.notice,
         acceptedAnswers: [RICH_ANSWERS.notice],
         focus: [RICH_ANSWERS.notice],

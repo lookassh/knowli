@@ -21,6 +21,10 @@ import {
   readDraft,
   readGeneration,
   readLessonDeck,
+  lessonObjectiveProgress,
+  listLessonVerdicts,
+  decideLessonVerdict,
+  acceptVerdictAsVariant,
   regenerateObjective,
   regenerateRevisionAsset,
   retryGeneration,
@@ -34,6 +38,7 @@ import {
   DraftPatchSchema,
   GenerationCommandSchema,
   LessonCommandSchema,
+  LessonVerdictDecisionSchema,
   OmitIllustrationSchema,
   PublishCommandSchema,
   RevisionAssetCommandSchema,
@@ -79,8 +84,30 @@ export async function handleParentApi(
     if (request.method === "GET" && second !== undefined && third === undefined) {
       return Response.json(await readLessonDeck(services, second));
     }
+    if (request.method === "GET" && second !== undefined && third === "progress" && fourth === undefined) {
+      // GET /parent/lessons/:deckId/progress?childId= → postęp celów lekcji (zadanie 16)
+      const childId = new URL(request.url).searchParams.get("childId");
+      if (!childId) throw new AppError("validation", { message: "childId is required" });
+      return Response.json(await lessonObjectiveProgress(services, second, childId), { headers: { "Cache-Control": "no-store" } });
+    }
+    if (request.method === "GET" && second !== undefined && third === "verdicts" && fourth === undefined) {
+      // GET /parent/lessons/:deckId/verdicts → werdykty modelu dla ćwiczeń lekcji (zadanie 16)
+      return Response.json(await listLessonVerdicts(services, second), { headers: { "Cache-Control": "no-store" } });
+    }
     if (request.method === "POST" && second !== undefined && third === "draft" && fourth === undefined) {
       return Response.json(await createLessonDraftFromPublished(services, second), { status: 201 });
+    }
+  }
+
+  if (first === "lesson-verdicts" && second !== undefined) {
+    if (request.method === "POST" && third === "decision" && fourth === undefined) {
+      // POST /parent/lesson-verdicts/:id/decision → decyzja rodzica (zadanie 16)
+      const cmd = z.object({ decision: LessonVerdictDecisionSchema }).parse(await readJson(request));
+      return Response.json(await decideLessonVerdict(services, second, cmd.decision));
+    }
+    if (request.method === "POST" && third === "accept-as-variant" && fourth === undefined) {
+      // POST /parent/lesson-verdicts/:id/accept-as-variant → dodaj wariant (zadanie 16)
+      return Response.json(await acceptVerdictAsVariant(services, second));
     }
   }
 

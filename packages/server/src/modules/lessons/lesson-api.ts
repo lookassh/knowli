@@ -301,6 +301,9 @@ export async function readLessonDeck(services: Services, deckId: string): Promis
     published: publishedVersionId ? await readLessonDraftDto(services.db, services, publishedVersionId) : null,
     generation: editable ? await latestLessonRun(services.db, editable.id) : null,
     assignments: await lessonAssignments(services.db, id),
+    // Wymaganie 10.1: provider oceny dowolnych odpowiedzi (nazwa modelu z
+    // konfiguracji, bez sekretów). `available=false` steruje komunikatem rodzica.
+    grading: services.grader ? { available: true, model: services.grader.provider.model } : { available: false },
   };
 }
 

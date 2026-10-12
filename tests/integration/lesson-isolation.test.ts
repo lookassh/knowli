@@ -115,17 +115,16 @@ describe("izolacja lekcji od ścieżek słówek", () => {
     );
   });
 
-  it("odbudowa postępu słówek nie zmienia nic przy ocenach celów (objective)", async () => {
+  it("odbudowa słówek nie wpuszcza celu do child_skill_progress ani nie rusza ocen celu", async () => {
     const { services } = buildTestServices();
     const vocab = await mockTestDeck(services, 2, true);
     await lessonWorld(pool, { childId: vocab.childId, withObjectiveAssessment: true, now: new Date() });
 
-    const report = await rebuildProgress(services, { childId: vocab.childId, apply: true });
-    // Umiejętność celu nie jest umiejętnością słówek: nie wstawia/aktualizuje/usuwa
-    // projekcji child_skill_progress.
-    expect(report.inserted).toBe(0);
-    expect(report.updated).toBe(0);
-    expect(report.deleted).toBe(0);
+    // Zadanie 16: odbudowa projektuje też child_objective_progress (jedno przejście),
+    // więc licznik może odnotować pracę nad CELEM. Izolacja, której pilnuje ten test,
+    // to: (1) umiejętność celu nie trafia do child_skill_progress; (2) ocena celu
+    // nie zostaje ruszona.
+    await rebuildProgress(services, { childId: vocab.childId, apply: true });
     // child_skill_progress nie zyskuje wiersza objective
     const vocabProjections = await pool.query<{ count: number }>(
       `select count(*)::int as count from learning_app.child_skill_progress csp
@@ -140,5 +139,11 @@ describe("izolacja lekcji od ścieżek słówek", () => {
       [vocab.childId],
     );
     expect(objective.rows[0]!.count).toBe(1);
+    // child_objective_progress istnieje i jest spójne po odbudowie
+    const objectiveProgress = await pool.query<{ status: string }>(
+      "select status from learning_app.child_objective_progress where child_id = $1",
+      [vocab.childId],
+    );
+    expect(objectiveProgress.rows[0]!.status).toBe("practicing");
   });
 });

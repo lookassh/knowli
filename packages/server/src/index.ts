@@ -74,6 +74,13 @@ export {
   deckIdOfLessonVersion,
 } from "./modules/lessons/lesson-api";
 export {
+  lessonObjectiveProgress,
+  listLessonVerdicts,
+  decideLessonVerdict,
+  acceptVerdictAsVariant,
+  gradingInfo,
+} from "./modules/lessons/lesson-supervision";
+export {
   reconcileDraftAssets,
   regenerateRevisionAsset,
   omitRevisionAsset,
