@@ -1,4 +1,6 @@
 export * from "./config";
+export { createProductionSubjectRegistry } from "./domain/lessons/subjects";
+export { createSubjectRegistry, type SubjectRegistry } from "./domain/lessons/registry";
 export * from "./errors";
 export { createDatabase, migrateDatabase, type Database } from "./db/client";
 export { waitUntilDatabaseReady, type DatabaseReadinessOptions } from "./db/ready";

@@ -44,6 +44,7 @@ import { lockTaskWithSession, writeSealedEvent, contextOf } from "./events";
 import { readSkillHistory } from "./skill-history";
 import { persistSkillProjection } from "./skill-projections";
 import { resolveTaskAssistance } from "../domain/task-assistance";
+import { assertVocabularyDeck, readDeckKind } from "./deck-kind";
 
 /** Leniwa finalizacja przeterminowanych prób processing (arch §9.2a). */
 export const ATTEMPT_PROCESSING_TIMEOUT_MS = 60_000;
@@ -473,6 +474,10 @@ export async function startAttempt(
 ): Promise<AttemptStart> {
   const { task, session, itemId } = await lockTaskWithSession(tx, valid.taskId);
   const now = services.clock.now();
+  // Izolacja lekcji (zadanie 9): próby słówek nie dotyczą lekcji. W praktyce
+  // nieosiągalne (sesja lekcji nie powstaje), ale strzeżemy w jednym miejscu;
+  // delegację oceny lekcji doda zadanie 13/17.
+  assertVocabularyDeck(await readDeckKind(tx, session.deckId));
 
   const existing = (
     await tx

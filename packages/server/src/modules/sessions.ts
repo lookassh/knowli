@@ -53,6 +53,7 @@ import { addLegacyTaskPromptDefaults } from "./task-prompt-compat";
 import { deriveSupportStates, type SupportAttempt, type SupportTask } from "../domain/support-cycle";
 import { readLearningSnapshot } from "./learning-snapshot";
 import { createMockTestPlan, issueMockTestTask, closeMockTest } from "./mock-tests";
+import { assertVocabularyDeck, type DeckKind } from "./deck-kind";
 
 /** Okno wznowienia aktywnej sesji od ostatniego zdarzenia (arch §9.1). */
 export const RESUME_WINDOW_MS = 30 * 60_000;
@@ -240,6 +241,9 @@ export async function startSession(services: Services, input: SessionInput): Pro
     if (!deck.publishedVersionId) {
       throw new AppError("validation", { message: "deck is not published" });
     }
+    // Izolacja lekcji (zadanie 9): ścieżka sesji słówek nie obsługuje lekcji;
+    // delegację do silnika lekcji dodaje zadanie 13/17.
+    assertVocabularyDeck(deck.kind as DeckKind);
 
     const now = services.clock.now();
     const active = (

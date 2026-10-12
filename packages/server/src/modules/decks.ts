@@ -746,6 +746,7 @@ export async function listDecks(services: Services): Promise<DeckSummaryDto[]> {
     .select({
       id: decks.id,
       title: decks.title,
+      kind: decks.kind,
       archivedAt: decks.archivedAt,
       publishedVersionId: decks.publishedVersionId,
     })
@@ -761,6 +762,7 @@ export async function listDecks(services: Services): Promise<DeckSummaryDto[]> {
     return {
       deckId: row.id,
       title: row.title,
+      kind: row.kind as "vocabulary" | "lesson",
       state: deckStateOf(row, edit ? (edit.state as "draft" | "review") : null),
       editableVersionId: edit?.id ?? null,
       publishedVersionId: row.publishedVersionId ?? null,

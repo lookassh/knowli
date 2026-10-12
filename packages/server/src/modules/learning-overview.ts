@@ -13,6 +13,7 @@ import { AppError } from "../errors";
 import {
   assignments,
   childProfiles,
+  decks,
   familySettings,
   itemRevisionSkills,
   itemRevisions,
@@ -166,9 +167,14 @@ export async function getLearningOverview(
       });
     }
 
+    // Izolacja lekcji (zadanie 9): raport nauki obejmuje tylko zestawy słówek.
+    // Jedna gałąź po rodzaju zestawu w tym module — przypisania lekcji nie
+    // dają postępu, planowanych sprawdzianów, aktywności ani liczników.
     const assignmentsRows = childIds.length
       ? await tx.select({ id: assignments.id, childId: assignments.childId, deckId: assignments.deckId, testDate: assignments.testDate, testGoals: assignments.testGoals })
-        .from(assignments).where(and(inArray(assignments.childId, childIds), eq(assignments.active, true)))
+        .from(assignments)
+        .innerJoin(decks, eq(decks.id, assignments.deckId))
+        .where(and(inArray(assignments.childId, childIds), eq(assignments.active, true), eq(decks.kind, "vocabulary")))
       : [];
     const attemptRows = childIds.length
       ? (await tx.execute<ActivityRow>(sql`
@@ -180,6 +186,7 @@ export async function getLearningOverview(
             join learning_app.session_tasks t on t.id=a.task_id and t.child_id=a.child_id
             join learning_app.learning_sessions s on s.id=t.session_id and s.child_id=a.child_id
             join learning_app.deck_versions v on v.id=s.deck_version_id
+            join learning_app.decks d on d.id=v.deck_id and d.kind='vocabulary'
            where a.child_id = any(${sql.param(childIds)}::uuid[])
              and a.received_at >= ${new Date(period.startUtc)} and a.received_at <= ${new Date(generatedAt)}
         `)).rows
@@ -193,6 +200,7 @@ export async function getLearningOverview(
             join learning_app.session_tasks t on t.id=e.task_id and t.child_id=e.child_id
             join learning_app.learning_sessions s on s.id=t.session_id and s.child_id=e.child_id
             join learning_app.deck_versions v on v.id=s.deck_version_id
+            join learning_app.decks d on d.id=v.deck_id and d.kind='vocabulary'
            where e.child_id = any(${sql.param(childIds)}::uuid[])
              and e.sealed = true and e.kind = any(${sql.param([...ACTIVITY_EVENT_KINDS])}::text[])
              and e.occurred_at >= ${new Date(period.startUtc)} and e.occurred_at <= ${new Date(generatedAt)}
@@ -223,6 +231,7 @@ export async function getLearningOverview(
             join learning_app.session_tasks t on t.id=p.task_id and t.child_id=a.child_id
             join learning_app.learning_sessions s on s.id=t.session_id and s.child_id=a.child_id
             join learning_app.deck_versions v on v.id=s.deck_version_id
+            join learning_app.decks d on d.id=v.deck_id and d.kind='vocabulary'
            where a.child_id = any(${sql.param(childIds)}::uuid[])
              and p.received_at >= ${new Date(period.startUtc)} and p.received_at <= ${new Date(generatedAt)}
         `)).rows
@@ -246,6 +255,7 @@ export async function getLearningOverview(
             from learning_app.attempts a
             join learning_app.session_tasks t on t.id=a.task_id and t.child_id=a.child_id
             join learning_app.learning_sessions s on s.id=t.session_id and s.child_id=a.child_id
+            join learning_app.decks d on d.id=s.deck_id and d.kind='vocabulary'
            where a.child_id = any(${sql.param(childIds)}::uuid[])
              and a.received_at >= ${new Date(Date.parse(period.startUtc) - 120_000)} and a.received_at <= ${new Date(generatedAt)}
           union all
@@ -253,6 +263,7 @@ export async function getLearningOverview(
             from learning_app.learning_events e
             join learning_app.session_tasks t on t.id=e.task_id and t.child_id=e.child_id
             join learning_app.learning_sessions s on s.id=t.session_id and s.child_id=e.child_id
+            join learning_app.decks d on d.id=s.deck_id and d.kind='vocabulary'
            where e.child_id = any(${sql.param(childIds)}::uuid[])
              and e.sealed = true and e.kind = any(${sql.param([...ACTIVITY_EVENT_KINDS])}::text[])
              and e.occurred_at >= ${new Date(Date.parse(period.startUtc) - 120_000)} and e.occurred_at <= ${new Date(generatedAt)}
@@ -268,7 +279,8 @@ export async function getLearningOverview(
     const mockRows = childIds.length
       ? await tx.select({ childId: learningSessions.childId, context: learningSessions.context })
         .from(learningSessions)
-        .where(and(inArray(learningSessions.childId, childIds), eq(learningSessions.mode, "mock_test"), isNotNull(learningSessions.endedAt)))
+        .innerJoin(decks, eq(decks.id, learningSessions.deckId))
+        .where(and(inArray(learningSessions.childId, childIds), eq(learningSessions.mode, "mock_test"), isNotNull(learningSessions.endedAt), eq(decks.kind, "vocabulary")))
       : [];
     for (const row of mockRows) {
       const parsed = MockTestReportDtoSchema.safeParse(row.context.mockTestReport);

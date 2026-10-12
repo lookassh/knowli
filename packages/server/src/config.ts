@@ -9,6 +9,8 @@ import type {
 import type { MediaStore } from "./ports/media";
 import { createAzurePronunciationProvider } from "./providers/azure/pronunciation";
 import { createAzureSttProvider } from "./providers/azure/stt";
+import { createProductionSubjectRegistry } from "./domain/lessons/subjects";
+import type { SubjectRegistry } from "./domain/lessons/registry";
 
 /** Zegar jako zależność — domena i moduły nie wołają Date.now() bezpośrednio. */
 export interface Clock {
@@ -84,6 +86,14 @@ export interface Services {
   generation?: GenerationDeps;
   mediaStore?: MediaStore;
   speech?: SpeechDeps;
+  /**
+   * Rejestr przedmiotów lekcji (zadanie 9). Wstrzykiwany jako wartość, nie
+   * importowany globalnie w modułach — `createServices` nadaje mu produkcyjną
+   * domyślkę `createProductionSubjectRegistry()`, więc żaden wywołujący nie
+   * musi go dostarczać, a testy mogą podmienić rejestr. Czysta, deterministyczna
+   * zależność bez env/sekretów, więc zawsze obecna (inaczej niż media/speech).
+   */
+  subjects: SubjectRegistry;
 }
 
 export function createServices(
@@ -94,11 +104,13 @@ export function createServices(
     generation?: GenerationDeps;
     mediaStore?: MediaStore;
     speech?: SpeechDeps;
+    subjects?: SubjectRegistry;
   },
 ): Services {
   return {
     db: input.db,
     clock: input.clock ?? systemClock,
+    subjects: input.subjects ?? createProductionSubjectRegistry(),
     ...(input.media ? { media: input.media } : {}),
     ...(input.generation ? { generation: input.generation } : {}),
     ...(input.mediaStore ? { mediaStore: input.mediaStore } : {}),

@@ -1,5 +1,5 @@
 import { UuidSchema } from "@learning/contracts";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { Services } from "../config";
 import type { Tx } from "../db/client";
 import {
@@ -11,6 +11,7 @@ import {
   skillVersions,
 } from "../db/schema";
 import type { ProgressStatus, Skill } from "../domain/types";
+import { VOCABULARY_SKILLS } from "../domain/types";
 import { AppError } from "../errors";
 import { loadPolicy } from "../policies/registry";
 import { projectProgress } from "../domain/progress";
@@ -99,8 +100,11 @@ async function rebuildChild(
   }
 
   const existingRows = await tx.select().from(childSkillProgress).where(eq(childSkillProgress.childId, childId));
+  // Izolacja lekcji (zadanie 9): odbudowa postępu słówek projektuje WYŁĄCZNIE
+  // umiejętności słówek. Oceny celów lekcji ('objective') żyją w assessments,
+  // ale nie trafiają do child_skill_progress — pomijamy je tu w jednym miejscu.
   const assessmentRows = await tx.selectDistinct({ skillVersionId: assessments.skillVersionId, skill: assessments.skill })
-    .from(assessments).where(eq(assessments.childId, childId));
+    .from(assessments).where(and(eq(assessments.childId, childId), inArray(assessments.skill, [...VOCABULARY_SKILLS])));
   const existingScopes = await tx.select({ skillVersionId: childSkillProgress.skillVersionId, skill: skillVersions.skill })
     .from(childSkillProgress)
     .innerJoin(skillVersions, eq(skillVersions.id, childSkillProgress.skillVersionId))
