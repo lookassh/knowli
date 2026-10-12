@@ -817,31 +817,33 @@ wheels = [
 ]
 
 [[package]]
-name = "umiem-mcp"
-version = "0.1.0"
+name = "umiem-consumer"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
-    { name = "httpx" },
     { name = "jsonschema" },
-    { name = "mcp" },
     { name = "tzdata" },
 ]
 
 [package.dev-dependencies]
 hermes-test = [
+    { name = "httpx" },
+    { name = "mcp" },
     { name = "pyyaml" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "httpx", specifier = ">=0.27.1,<1" },
-    { name = "jsonschema", specifier = ">=4.20,<5" },
-    { name = "mcp", specifier = ">=1.28,<2" },
-    { name = "tzdata", specifier = ">=2024.1,<2027" },
+    { name = "jsonschema", specifier = "==4.26.0" },
+    { name = "tzdata", specifier = "==2026.5" },
 ]
 
 [package.metadata.requires-dev]
-hermes-test = [{ name = "pyyaml", specifier = "==6.0.3" }]
+hermes-test = [
+    { name = "httpx", specifier = "==0.28.1" },
+    { name = "mcp", specifier = "==1.30.0" },
+    { name = "pyyaml", specifier = "==6.0.3" },
+]
 
 [[package]]
 name = "uvicorn"

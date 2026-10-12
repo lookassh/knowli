@@ -2,7 +2,7 @@
 
 ## Integracja raportu nauki z Hermesem (2026-10-11)
 
-Raportowe API, token `learning:read`, adapter MCP/stdio i skill konsumenta są utrzymywane razem w tym repo. Hermes zużywa wydany artefakt przez istniejący runtime raportów. Kontrakt i procedura: `docs/integrations/hermes-learning.md`; szczegółowe plany: `docs/superpowers/plans/2026-10-11-hermes-learning-*.md`.
+Raportowe API, token `learning:read` i endpoint MCP Streamable HTTP `/api/mcp` są utrzymywane w `apps/web`. Pakiet konsumenta w `integrations/umiem-mcp/` zawiera walidator i skill dla istniejącego runtime raportów Hermesa. Kontrakt i procedura: `docs/integrations/hermes-learning.md`; plan migracji: `docs/superpowers/plans/2026-10-12-umiem-mcp-streamable-http.md`.
 
 ## Uzupełnienie — niezawodność panelu rodzica (2026-10-09)
 

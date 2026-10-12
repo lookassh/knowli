@@ -1,7 +1,7 @@
 {
-  "contractCommit": "81040da",
-  "skillSha256": "20c482be914260d460c5ff263a1dc52b8763c922cf1c7898ba0049aa2e5c0c03",
+  "contractCommit": "481cd3fb49f128752359eea73a3b78e29c0d3d05",
+  "skillSha256": "b34df161b59e30ac6ce6e82ae847a8d5998a6602546f134e19dbcfb9f950e57c",
   "schemaVersion": 1,
-  "packageVersion": "0.1.0",
+  "packageVersion": "0.2.0",
   "schemaSha256": "04302fdbffe4bc17467113d962446f17b3b60e645e11d4920b8ea6f61a53f900"
 }

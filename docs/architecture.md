@@ -293,7 +293,7 @@ Wspólny format błędu: {code, message, retryable, requestId}. Walidacja na gra
 | Media | GET /api/v1/media/:id | Zasób state=ready po opaque ID; same-origin, bez CORS; nie wyznacza ekspozycji |
 | Integration | GET /api/v1/integrations/learning-overview | Migawka raportowa z tokenem `learning:read`; osobny kontrakt JSON Schema, read-only i `Cache-Control: no-store` |
 
-Integracja Umiem! → Hermes działa przez istniejące web API, a nie bezpośrednio przez bazę. Token integracji ma osobny hash i możliwość odwołania; nie autoryzuje Parent/Kid API. Odczyt używa transakcji `REPEATABLE READ READ ONLY`, limitu per token i ograniczonego DTO. MCP/stdio oraz skill konsumenta są utrzymywane w `integrations/umiem-mcp/`; raport Hermesa pobiera dane tylko w Evening. Kontrakt i eksploatację opisuje `docs/integrations/hermes-learning.md`.
+Integracja Umiem! → Hermes działa przez endpoint Streamable HTTP `/api/mcp` w istniejącym procesie web, a nie bezpośrednio przez bazę. Token integracji ma osobny hash i możliwość odwołania; nie autoryzuje Parent/Kid API. Odczyt używa transakcji `REPEATABLE READ READ ONLY`, limitu per token współdzielonego z REST i ograniczonego DTO. Serwer MCP znajduje się w `apps/web/src/integrations/`; `integrations/umiem-mcp/` zawiera walidator kontraktu i skill konsumenta. Raport Hermesa pobiera dane tylko w Evening. Kontrakt i eksploatację opisuje `docs/integrations/hermes-learning.md`.
 
 Klient rodzica zachowuje migawkę formularza wraz z jego bazowym
 `expectedEditNumber`. Polling nie zastępuje formularza rozpoczętego lokalnie;

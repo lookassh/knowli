@@ -35,7 +35,7 @@ test("standard MCP client reads the same overview from the real Next.js route", 
       const { generatedAt: _expectedGeneratedAt, ...expectedData } = expected;
       const { generatedAt: _actualGeneratedAt, ...actualData } = actual;
       expect(actualData).toEqual(expectedData);
-      expect(JSON.parse((result.content[0] as { text: string }).text)).toEqual(actual);
+      expect(JSON.parse((result.content as { type: "text"; text: string }[])[0]!.text)).toEqual(actual);
       expect(rest.headers()["cache-control"]).toContain("no-store");
     } finally {
       await client.close().catch(() => undefined);

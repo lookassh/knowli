@@ -1,33 +1,40 @@
 # Odczyt raportu nauki przez Hermesa
 
-API Umiem! udostępnia rodzinie Hermesa ograniczone, tylko do odczytu podsumowanie postępów. Interfejs HTTP jest częścią aplikacji web; nie otwiera osobnego portu ani połączenia do bazy.
+Umiem! udostępnia rodzinie ograniczone, tylko do odczytu podsumowanie przez endpoint MCP w istniejącym procesie web. Hermes łączy się przez Streamable HTTP; nie uruchamia lokalnego serwera ani nie łączy się bezpośrednio z bazą.
 
-## Endpoint
+## Endpoint i konfiguracja Hermesa
 
-`GET /api/v1/integrations/learning-overview?days=7&upcomingTestDays=14`
+Endpoint to `POST /api/mcp` na prywatnym adresie HTTPS aplikacji Umiem!. Przykładowa konfiguracja:
 
-Autoryzacja: `Authorization: Bearer <token>` z zakresem `learning:read`. Opcjonalny `childId` zawęża wynik do jednego dziecka. `days` przyjmuje 1–31, a `upcomingTestDays` 1–90. Nieznane i powtórzone parametry są błędem. Odpowiedź jest migawką w strefie `FAMILY_TIMEZONE`, obejmuje lokalne dni od najstarszego do dzisiejszego, aktualny postęp przypisanych zestawów i terminy sprawdzianów zapisane w przypisaniach Umiem!.
-
-Przykład:
-
-```http
-GET /api/v1/integrations/learning-overview?days=3&upcomingTestDays=14
-Authorization: Bearer umiem_<uuid>_<sekret>
+```yaml
+mcp_servers:
+  umiem:
+    url: "https://umiem.example/api/mcp"
+    headers:
+      Authorization: "Bearer ${UMIEM_READ_TOKEN}"
+    timeout: 30
+    connect_timeout: 10
 ```
 
-Sukces zawiera `schemaVersion: 1`, `generatedAt`, `timezone`, `period`, `plannedTestsPeriod` i listę dzieci. Każde dziecko ma osobne dni, liczniki ocen według umiejętności, `learningTime`, `currentProgress`, `practiceItems` i `plannedTests`. Pełny JSON Schema to [`learning-overview.schema.json`](learning-overview.schema.json); jego źródłem są `packages/contracts`, nie kopia MCP.
+Ustaw `UMIEM_READ_TOKEN` w chronionym środowisku procesu Hermesa oraz osobno procesu raportera rodzinnego. YAML zawiera jedynie referencję, nigdy wartość sekretu. Token korzysta z zakresu `learning:read`; system sprawdza go przy każdym żądaniu i ponownie przed odczytem danych. Token nie zastępuje sesji rodzica ani dziecka.
 
-`learningTime.seconds` to szacowana liczba całkowitych sekund albo `null`, zawsze z `estimated: true`. Metoda `activity_intervals_v1` sumuje przerwy do 120 sekund między zapisanymi działaniami i nie dopisuje czasu po ostatnim działaniu. 1380 sekund można przedstawić jako „Czas nauki: 23 min”. `null` oznacza za mało danych, a zero w dniu bez zdarzeń oznacza brak zapisu w Umiem!, nie brak nauki gdzie indziej.
+Wymagane jest HTTPS za prywatną bramą rodzinną (np. VPN/access proxy). Endpoint nie włącza CORS. Opcjonalna zmienna `UMIEM_MCP_ALLOWED_ORIGINS` zawiera rozdzielone przecinkami, dokładne originy HTTPS; domyślna pusta wartość dopuszcza klientów serwerowych bez nagłówka `Origin`, a odrzuca każde żądanie z nieznanym Origin. Limit wynosi 60 uwierzytelnionych żądań na token w ciągu minuty na proces i jest współdzielony z REST odczytem.
 
-W aktywności dziennej zachowuj osobne wpisy dla różnych wersji tego samego zestawu, jeśli przypisanie zmieniło się w wybranym okresie. `submittedAttempts` obejmuje odpowiedzi wciąż przetwarzane, a `pendingAttempts` jest jego podzbiorem. W podsumowaniu sprawdzianu próbnego `skipped` i `unassessed` zawierają się w `notTested`; nie dodawaj ich ponownie do sumy.
+Skonfiguruj narzędzie w Hermes jako zwykły zdalny MCP `url` + `headers`. Dla raportu rodzinnego zainstaluj wersjonowany pakiet konsumenta zawierający walidator, schemat, manifest i skill; klient raportu korzysta z tego samego HTTP MCP. Token nie trafia do konfiguracji repozytorium, promptów, argumentów narzędzia ani logów.
 
-`plannedTests` pochodzą wyłącznie z terminów zapisanych w Umiem!. Brak wpisu nie oznacza, że dziecko nie ma sprawdzianu w szkole. Liczba poprawnych odpowiedzi nie jest liczbą nowych ani opanowanych słów; stan opanowania opisują osobne statusy w `currentProgress`.
+## Narzędzie i znaczenie danych
 
-Błędy używają formatu `{code, message, retryable, requestId}`. Brak tokenu i token odwołany zwracają 401, brak zakresu 403, błędne parametry 400, nieznane dziecko 404, limit 60 żądań na token w minutę 429, a przejściowy błąd bazy 503. Wszystkie odpowiedzi mają `Cache-Control: no-store`. Błąd nigdy nie jest pustym sukcesem.
+Jedynym narzędziem jest `umiem_get_learning_overview`. Argumenty: `days` 1–31 (domyślnie 7), `upcomingTestDays` 1–90 (domyślnie 14) oraz opcjonalny UUID `childId`. Wynik zawiera dzieci osobno, aktywność każdego dnia, bieżący postęp per umiejętność, terminy sprawdzianów zapisane w Umiem! i estymowany czas nauki.
 
-## Wydanie i token
+Dni są lokalnymi dniami rodziny, a dzisiejszy dzień może być częściowy. Czas zwracany jest z `estimated: true`; 1380 sekund można podać jako „Szacowany czas nauki: 23 min”. `null` oznacza za mało danych do oszacowania, a zero bez zarejestrowanej aktywności nie dowodzi, że dziecko nie uczyło się poza Umiem!.
 
-Stwórz token w chronionym środowisku workera. Nie podawaj sekretu jako argumentu polecenia — CLI zapisuje go tylko do nowego pliku o prywatnych uprawnieniach:
+Zachowuj osobne wpisy dla różnych wersji zestawu. `pendingAttempts` zawiera się w `submittedAttempts`. W sprawdzianie próbnym `skipped` i `unassessed` zawierają się w `notTested`. Liczba poprawnych odpowiedzi nie oznacza liczby nowych ani opanowanych słów; stan opanowania opisują pola `currentProgress`. `plannedTests` pochodzą tylko z terminów zapisanych w Umiem!, a nie z niezależnie sprawdzonego kalendarza szkolnego.
+
+Błąd nigdy nie jest pustym sukcesem. Przy niedostępności danych reporter powinien powiedzieć, że nie mógł sprawdzić Umiem!, zamiast zastępować wynik pustą rodziną, zerową aktywnością lub nieaktualną migawką.
+
+## Token i wydanie
+
+Wydaj token w chronionym środowisku workera. CLI zapisuje sekret tylko do nowego pliku o prywatnych uprawnieniach:
 
 ```text
 node apps/worker/node_modules/tsx/dist/cli.mjs apps/worker/src/integration-tokens.ts create --name hermes-family --out /absolute/private/path/umiem-token
@@ -35,12 +42,10 @@ node apps/worker/node_modules/tsx/dist/cli.mjs apps/worker/src/integration-token
 node apps/worker/node_modules/tsx/dist/cli.mjs apps/worker/src/integration-tokens.ts revoke --id <uuid>
 ```
 
-Przenieś token-file wyłącznie do konta usługi Hermesa przez chroniony kanał. CLI nie wypisuje sekretu. Rotacja polega na utworzeniu nowego pliku i konfiguracji, sprawdzeniu go w profilu usługi, a potem odwołaniu poprzedniego tokenu.
-
-Przed użyciem zdalnym wymagane jest HTTPS i uzgodniona prywatna brama (np. VPN albo access proxy). Nie wystawiaj publicznie portu PostgreSQL i nie umieszczaj tokenu w plikach repo, promptach ani argumentach modelu. Ustawienia URL i ścieżki do token-file należą do konfiguracji operatora MCP. Nie wykonuj live testu rodzinnego jako root: dostępność sprawdza się później jako konto usługi Hermesa.
+Do procesu Hermesa przekaż wartość tokenu przez chronione środowisko, a nie przez argument polecenia lub plik repozytorium. Rotacja: utwórz nowy token, skonfiguruj zmienną i odśwież połączenia klienta, potwierdź działanie, następnie odwołaj stary token.
 
 ## Aktualizacja kontraktu
 
-Eksport schematu: `npx --yes pnpm@10.34.6 contracts:export-learning-overview`; kontrola bez zapisu: `npx --yes pnpm@10.34.6 contracts:export-learning-overview --check`. Zmiana API wymaga aktualizacji adaptera, kopii schema/manifestu i `SKILL.md` w `integrations/umiem-mcp`, a także testów konsumenta w tym samym review. Dokumenty planów A/B/C opisują granice instalacji i wdrożenia.
+Źródłem DTO i parametrów jest `packages/contracts`. Regeneruj schemat przez `npx --yes pnpm@10.34.6 contracts:export-learning-overview`; sprawdzaj bez zapisu przez dodanie `--check`. Zmiana API wymaga oceny MCP, aktualizacji kopii schematu/manifestu oraz skilla i testów konsumenta w tym samym przeglądzie zmian.
 
-Po ukończeniu implementacji utwórz źródłowe archiwum z zatwierdzonego commita poleceniem `uv run --locked python package_release.py --output-dir <private-output-directory>` w `integrations/umiem-mcp`. `RELEASE-MANIFEST.json` zapisuje pełny commit kodu oraz commit kontraktu; sumy skilla i schematu są sprawdzane przy starcie adaptera. Archiwum nie zawiera `.venv`, cache, `.env`, plików tokenów ani sekretów. Hermes rozpakowuje wyłącznie zatwierdzone wydanie; aktualizacja API/MCP/skilla w produkcji jest osobnym wdrożeniem.
+Po commitach z gotowymi i czystymi plikami źródłowymi buduj pakiet konsumenta poleceniem `uv run --locked python -m umiem_mcp.package_consumer --output-dir <private-output-directory>` w `integrations/umiem-mcp`. Archiwum zawiera wyłącznie walidator, schemat, manifest kontraktu, skill i manifest wydania z pełnym commitem oraz hashami. Nie ma w nim serwera, klienta REST/stdio, sekretów, danych dzieci ani środowiska wirtualnego. Aktualizacja zainstalowanego pakietu, konfiguracji Hermesa lub wdrożenia Coolify jest osobnym krokiem operacyjnym.

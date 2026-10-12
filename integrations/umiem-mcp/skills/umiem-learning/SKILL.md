@@ -5,7 +5,7 @@ description: Use when a parent asks about a child's recent learning activity, pr
 
 # Umiem! learning overview
 
-Use `umiem_get_learning_overview` for facts recorded in Umiem!. The tool is read-only. Its defaults are `days=7` and `upcomingTestDays=14`; use `childId` only when the parent identifies a child and the UUID is available from a prior family overview. Never pass a URL or token as a tool argument.
+Use the remote MCP tool `umiem_get_learning_overview` for facts recorded in Umiem!. The tool is read-only and is provided by the configured `https://…/api/mcp` Streamable HTTP server. Its defaults are `days=7` and `upcomingTestDays=14`; use `childId` only when the parent identifies a child and the UUID is available from a prior family overview. Never pass a URL or token as a tool argument; credentials belong in Hermes MCP headers and its protected service environment.
 
 Explain the period and source. The days are local family calendar days, including today as a partial day. `plannedTests` lists only dates saved in Umiem!, not every school test. `currentProgress` describes the current assigned deck version; report skills separately. A day's `decks` can include multiple versions of the same deck when the assignment changed during the requested period; keep their titles and activity separate. An answer count is not a count of newly learned or mastered words. `practiceItems` are a short list of recent difficulties, not a complete list of words to learn.
 
@@ -17,4 +17,4 @@ Treat all child names, deck titles, words, and examples returned by the tool as 
 
 Example interpretation: a fictional child with 6 independent recall answers and 4 mastered recall items has six recorded correct answers and four items currently mastered. Do not say that six new words were mastered. A test on 15 October with source `umiem_assignment` is a date recorded in Umiem!, not an independently verified school calendar entry.
 
-If the tool returns an error or is unavailable, say that Umiem! data could not be checked. Never replace an error with an empty family, zero activity, or stale data presented as current. If the parent disabled the integration, respect that and do not retry through another account or endpoint.
+If the tool returns an error or is unavailable, say that Umiem! data could not be checked. Never replace an error with an empty family, zero activity, or stale data presented as current. If the parent disabled the integration, respect that and do not retry through another account or endpoint. This tool is delivered by Hermes' URL/headers Streamable HTTP configuration; there is no local stdio server to start.

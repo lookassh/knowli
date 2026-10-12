@@ -19,10 +19,11 @@ Jeden workspace pnpm. Dwie aplikacje wykonawcze, trzy współdzielone pakiety. T
 | tests/fixtures/ | Małe zatwierdzone zestawy i syntetyczne dane, bez nagrań dziecka |
 | docs/ | Specyfikacja, architektura, próba techniczna i procedury |
 | docs/integrations/ | Kontrakty JSON Schema i procedury integracji |
-| integrations/umiem-mcp/ | Wersjonowany adapter MCP/stdio, lockfile Python i skill Hermesa; bez dostępu do bazy |
+| apps/web/src/integrations/ | MCP Streamable HTTP adapter w istniejącym procesie web; współdzieli DTO, auth i use case |
+| integrations/umiem-mcp/ | Wersjonowany walidator kontraktu, JSON Schema, manifest, lockfile Python i skill Hermesa; bez serwera MCP i dostępu do bazy |
 | deploy/ | Compose, obrazy, skrypty migracji i backupu |
 
-Integracja agentów Umiem! utrzymuje kod MCP, Python lockfile, kontrakt i skill w `integrations/umiem-mcp/`. Pakiet nie jest częścią workspace pnpm ani procesu web/worker; komunikuje się wyłącznie przez API i jest instalowany u konsumenta z wersji tego repo. Powiązane zasady aktualizacji API/MCP/skilla są w `AGENTS.md`.
+Serwer MCP Umiem! jest częścią `apps/web` pod `/api/mcp`. Pakiet `integrations/umiem-mcp/` nie uruchamia serwera; udostępnia przenośny walidator/schema/skill dla raportera Hermesa i jest instalowany jako wersjonowany pakiet konsumenta. Powiązane zasady aktualizacji API/MCP/skilla są w `AGENTS.md`.
 
 Nazwy pakietów: @learning/contracts, @learning/kid-ui i @learning/server. apps/web jest @learning/web, apps/worker jest @learning/worker.
 

@@ -1,20 +1,15 @@
 [project]
-name = "umiem-mcp"
-version = "0.1.0"
-description = "Read-only Umiem learning overview MCP server"
+name = "umiem-consumer"
+version = "0.2.0"
+description = "Read-only Umiem learning overview contract validator and Hermes skill"
 requires-python = ">=3.11"
 dependencies = [
-  "httpx>=0.27.1,<1",
-  "jsonschema>=4.20,<5",
-  "mcp>=1.28,<2",
-  "tzdata>=2024.1,<2027",
+  "jsonschema==4.26.0",
+  "tzdata==2026.5",
 ]
 
-[project.scripts]
-umiem-mcp = "umiem_mcp.__main__:main"
-
 [dependency-groups]
-hermes-test = ["PyYAML==6.0.3"]
+hermes-test = ["PyYAML==6.0.3", "httpx==0.28.1", "mcp==1.30.0"]
 
 [build-system]
 requires = ["hatchling>=1.27,<2"]
