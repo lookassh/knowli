@@ -12,6 +12,7 @@ import {
   type SessionSummaryDto,
   type TaskDto,
   type TaskPrompt,
+  type TestGoal,
   type VisualType,
 } from "@learning/contracts";
 import type { Services } from "../config";
@@ -281,7 +282,10 @@ export async function startSession(services: Services, input: SessionInput): Pro
     const id = randomUUID();
     if (mode === "mock_test" && !assignment.testGoals?.length) throw new AppError("validation", { message: "Rodzic musi najpierw ustawić cel kartkówki." });
     const mockTestPlan = mode === "mock_test" ? await createMockTestPlan(tx, services, {
-      childId: valid.childId, deckVersionId: version.id, testGoals: assignment.testGoals!, testDate: assignment.testDate,
+      // Kartkówka słówek obsługuje tylko cele słówkowe; cel `lesson` dotyczy
+      // lekcji (osobna ścieżka) i nie trafia tu w czasie wykonania.
+      childId: valid.childId, deckVersionId: version.id,
+      testGoals: assignment.testGoals!.filter((g): g is TestGoal => g !== "lesson"), testDate: assignment.testDate,
       requestedTaskCount: assignment.mockTestTaskCount,
     }) : null;
     if (mockTestPlan && !mockTestPlan.slots.length) throw new AppError("mock_test_unavailable");

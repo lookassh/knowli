@@ -3,7 +3,15 @@ import { DaySchema, InstantSchema, UuidSchema, SkillStatusSchema } from "./commo
 
 export const TestGoalSchema = z.enum(["recall", "spelling", "listening"]);
 export type TestGoal = z.infer<typeof TestGoalSchema>;
-export const TestGoalsSchema = z.array(TestGoalSchema).min(1).max(3).refine(goals => new Set(goals).size === goals.length);
+/**
+ * Cel przypisania/kartkówki. Dla słówek: umiejętności recall/spelling/listening;
+ * dla lekcji: pojedynczy cel `lesson` (zgodnie z CHECK `assignments_test_goals`
+ * z zadania 7). Osobny od `TestGoalSchema`, bo per-skill raporty kartkówki
+ * słówek nigdy nie zawierają `lesson`.
+ */
+export const AssignmentGoalSchema = z.enum(["recall", "spelling", "listening", "lesson"]);
+export type AssignmentGoal = z.infer<typeof AssignmentGoalSchema>;
+export const TestGoalsSchema = z.array(AssignmentGoalSchema).min(1).max(3).refine(goals => new Set(goals).size === goals.length);
 export const MockTestTaskCountSchema = z.number().int().min(1).max(100);
 export const MockTestOutcomeSchema = z.enum(["correct", "incorrect", "skipped", "unassessed", "not_tested"]);
 export type MockTestOutcome = z.infer<typeof MockTestOutcomeSchema>;

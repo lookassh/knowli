@@ -31,6 +31,17 @@ export const EXERCISE_TYPES = [
   "speech",
   "letter_completion",
   "spelling",
+  // Typy lekcji (design „Typy ćwiczeń i etapy”). Dodane jako nowe warianty,
+  // zgodność wsteczna istniejących słówek zachowana.
+  "lesson_card",
+  "lesson_notice",
+  "lesson_choice",
+  "lesson_order",
+  "lesson_short_answer",
+  "lesson_gap",
+  "lesson_error_fix",
+  "lesson_transform",
+  "lesson_open_answer",
 ] as const;
 export type ExerciseTypeDto = (typeof EXERCISE_TYPES)[number];
 
@@ -39,6 +50,20 @@ export const ChoiceOptionSchema = z.object({
   text: z.string().min(1),
 });
 export type ChoiceOption = z.infer<typeof ChoiceOptionSchema>;
+
+/** Publiczny element do ułożenia (`lesson_order`) — identyfikator i widoczny tekst. */
+export const LessonItemSchema = z.object({
+  id: UuidSchema,
+  text: z.string().min(1),
+});
+export type LessonItem = z.infer<typeof LessonItemSchema>;
+
+/** Segment zdania `lesson_notice` do wskazania — bez informacji, który jest poprawny. */
+export const LessonSegmentSchema = z.object({
+  id: UuidSchema,
+  text: z.string().min(1),
+});
+export type LessonSegment = z.infer<typeof LessonSegmentSchema>;
 
 /** Publiczna treść zadania — discriminated union po polu kind = typ ćwiczenia. */
 export const TaskPromptSchema = z.discriminatedUnion("kind", [
@@ -92,6 +117,63 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     imageAssetId: UuidSchema.nullable(),
     ...visualPromptFields,
   }),
+  // Gałęzie lekcji (design „Typy ćwiczeń i etapy” — kolumna Kid prompt).
+  // KAŻDA jest `.strict()`: Kid DTO nigdy nie zawiera odpowiedzi, wariantów,
+  // elementu sprawdzanego (`focus`), celu ani kategorii błędu. `audioAssetId`
+  // opcjonalne tam, gdzie przedmiot ma TTS.
+  z.object({
+    kind: z.literal("lesson_card"),
+    card: z.object({
+      title: z.string().min(1),
+      body: z.string().min(1),
+      examples: z.array(z.string().min(1)),
+    }).strict(),
+  }).strict(),
+  z.object({
+    kind: z.literal("lesson_notice"),
+    instructionPl: z.string().min(1),
+    segments: z.array(z.array(LessonSegmentSchema).min(1)).min(1),
+    audioAssetId: UuidSchema.optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal("lesson_choice"),
+    instructionPl: z.string().min(1),
+    stem: z.string().min(1),
+    options: z.array(ChoiceOptionSchema).min(1),
+    audioAssetId: UuidSchema.optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal("lesson_order"),
+    instructionPl: z.string().min(1),
+    items: z.array(LessonItemSchema).min(1),
+  }).strict(),
+  z.object({
+    kind: z.literal("lesson_short_answer"),
+    question: z.string().min(1),
+    options: z.array(ChoiceOptionSchema).min(1),
+    audioAssetId: UuidSchema.optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal("lesson_gap"),
+    instructionPl: z.string().min(1),
+    stemWithGap: z.string().min(1),
+    hint: z.string().min(1).optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal("lesson_error_fix"),
+    instructionPl: z.string().min(1),
+    statement: z.string().min(1),
+  }).strict(),
+  z.object({
+    kind: z.literal("lesson_transform"),
+    instructionPl: z.string().min(1),
+    statement: z.string().min(1),
+  }).strict(),
+  z.object({
+    kind: z.literal("lesson_open_answer"),
+    instructionPl: z.string().min(1),
+    prompt: z.string().min(1),
+  }).strict(),
 ]).superRefine((prompt, ctx) => {
   if (prompt.kind === "exposure" || prompt.kind === "speech") {
     validateVisualPrompt({
@@ -223,6 +305,15 @@ export type KidProfileDto = z.infer<typeof KidProfileDtoSchema>;
 export const KidDeckDtoSchema = z.object({
   mockTestAvailable: z.boolean().default(false),
   activeSession: z.object({ sessionId: UuidSchema, mode: z.enum(["training", "mock_test"]) }).nullable().default(null),
+  /**
+   * Rodzaj zestawu. OPCJONALNE dla zgodności wstecznej — brak pola oznacza
+   * „vocabulary” (konsumenci traktują `undefined` jak słówka). Nie `.default()`,
+   * by nie poszerzać typu wyjściowego o nowe pole WYMAGANE w każdym miejscu
+   * konstrukcji DTO (server/kid-ui/e2e) — to byłaby niezgodność wsteczna typu.
+   */
+  kind: z.enum(["vocabulary", "lesson"]).optional(),
+  /** Tytuł przedmiotu dla lekcji; brak/undefined dla słówek (zgodność wsteczna). */
+  subjectTitle: z.string().min(1).nullable().optional(),
   deckId: UuidSchema,
   title: z.string().min(1),
   /** Liczba słów w przypiętej, opublikowanej wersji zestawu. */
@@ -282,12 +373,20 @@ export const SpellingDiffSchema = z.object({
 export type SpellingDiff = z.infer<typeof SpellingDiffSchema>;
 
 export const FeedbackDtoSchema = z.object({
-  kind: z.enum(["great", "capitalization_hint", "almost", "incorrect", "content_matched", "not_assessed", "spelling_hint"]),
+  kind: z.enum(["great", "capitalization_hint", "almost", "incorrect", "content_matched", "not_assessed", "spelling_hint", "lesson_hint", "lesson_almost"]),
   correctText: z.string().min(1).optional(),
   heardText: z.string().min(1).max(200).optional(),
   fragments: z.array(PronunciationFragmentDtoSchema).max(6).optional(),
   speech: SpeechFeedbackDtoSchema.optional(),
   spellingDiff: SpellingDiffSchema.optional(),
+  /**
+   * Zsegmentowana odpowiedź dziecka z zaznaczonymi fragmentami (reuse
+   * `SpellingDiffSegmentSchema`) — tylko dla rodzajów lekcji `lesson_almost`
+   * i `lesson_hint`.
+   */
+  answerSegments: z.array(SpellingDiffSegmentSchema).min(1).max(32).optional(),
+  /** Szablon podpowiedzi kategorii celu (po polsku) — wymagany dla `lesson_hint`. */
+  hintPl: z.string().min(1).optional(),
   /** Wskazówka prezentacji; endpoint odsłuchu zawsze ponownie sprawdza uprawnienie. */
   referenceAudioAvailable: z.boolean().optional(),
 }).strict().superRefine((feedback, ctx) => {
@@ -303,6 +402,18 @@ export const FeedbackDtoSchema = z.object({
       ctx.addIssue({ code: "custom", path: ["spellingDiff"], message: "expected segments must compose into correctText" });
     }
   }
+  // Reguły lekcji: answerSegments tylko dla rodzajów lekcji; lesson_hint
+  // wymaga hintPl. correctText jest dozwolone (najbliższy zatwierdzony wariant).
+  const LESSON_SEGMENT_KINDS = ["lesson_almost", "lesson_hint"];
+  if (feedback.answerSegments !== undefined && !LESSON_SEGMENT_KINDS.includes(feedback.kind)) {
+    ctx.addIssue({ code: "custom", path: ["answerSegments"], message: "answerSegments is only allowed with lesson_almost or lesson_hint" });
+  }
+  if (feedback.kind === "lesson_hint" && feedback.hintPl === undefined) {
+    ctx.addIssue({ code: "custom", path: ["hintPl"], message: "lesson_hint requires hintPl" });
+  }
+  if (feedback.hintPl !== undefined && feedback.kind !== "lesson_hint") {
+    ctx.addIssue({ code: "custom", path: ["hintPl"], message: "hintPl is only allowed with lesson_hint" });
+  }
   if (feedback.speech && ["uncertain", "no_speech", "unavailable"].includes(feedback.speech.recognition)) {
     for (const field of ["heardText", "correctText", "fragments"] as const) {
       if (feedback[field] !== undefined) {
@@ -313,7 +424,7 @@ export const FeedbackDtoSchema = z.object({
 });
 export type FeedbackDto = z.infer<typeof FeedbackDtoSchema>;
 
-export const AttemptModalitySchema = z.enum(["choice", "text", "audio", "dont_remember", "skip"]);
+export const AttemptModalitySchema = z.enum(["choice", "text", "audio", "dont_remember", "skip", "sequence"]);
 export type AttemptModality = z.infer<typeof AttemptModalitySchema>;
 
 /**
@@ -349,6 +460,16 @@ export const AttemptInputSchema = z.discriminatedUnion("modality", [
     taskId: UuidSchema,
     clientAttemptId: UuidSchema,
     modality: z.literal("skip"),
+  }),
+  z.object({
+    taskId: UuidSchema,
+    clientAttemptId: UuidSchema,
+    modality: z.literal("sequence"),
+    /** Kolejność wskazana przez dziecko (`lesson_order`): 1–10 unikalnych id. */
+    itemIds: z.array(UuidSchema).min(1).max(10).refine(
+      (ids) => new Set(ids).size === ids.length,
+      { message: "itemIds must be unique" },
+    ),
   }),
 ]);
 export type AttemptInput = z.infer<typeof AttemptInputSchema>;

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import type { RecordingModeDto, TestGoal } from "@learning/contracts";
+import type { AssignmentGoal, RecordingModeDto, TestGoal } from "@learning/contracts";
 import type { MockTestPlanSnapshot } from "../domain/mock-test-types";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
@@ -286,7 +286,7 @@ export const assignments = app.table(
       .notNull()
       .references((): AnyPgColumn => decks.id),
     testDate: date("test_date"),
-    testGoals: text("test_goals").array().$type<TestGoal[]>(),
+    testGoals: text("test_goals").array().$type<AssignmentGoal[]>(),
     mockTestTaskCount: integer("mock_test_task_count").notNull().default(10),
     active: boolean("active").notNull().default(true),
     createdAt: timestamps("created_at").notNull().defaultNow(),

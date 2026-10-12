@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { AssignmentPutSchema, type TestGoal } from "@learning/contracts";
+import { AssignmentPutSchema, type AssignmentGoal, type TestGoal } from "@learning/contracts";
 import { and, asc, desc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -790,7 +790,7 @@ export async function upsertAssignment(
   childId: string,
   deckId: string,
   testDate: string | null,
-  options: { testGoals?: TestGoal[] | null; mockTestTaskCount?: number } = {},
+  options: { testGoals?: AssignmentGoal[] | null; mockTestTaskCount?: number } = {},
 ): Promise<void> {
   const valid = UpsertAssignmentSchema.parse({ childId, deckId, testDate });
   const settings = AssignmentPutSchema.parse({ testDate, ...options });

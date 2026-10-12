@@ -1,0 +1,253 @@
+import { describe, expect, it } from "vitest";
+import {
+  LESSON_EXERCISE_TYPES,
+  LessonExerciseTypeSchema,
+  SubjectCatalogDtoSchema,
+  LessonCommandSchema,
+  LessonExerciseInputSchema,
+  LessonDraftDtoSchema,
+  ObjectiveProgressDtoSchema,
+  LessonVerdictDtoSchema,
+  LessonVerdictDecisionSchema,
+  LessonMockTestReportDtoSchema,
+} from "./lessons";
+
+const UUID = "11111111-1111-4111-8111-111111111111";
+const UUID2 = "22222222-2222-4222-8222-222222222222";
+const UUID3 = "33333333-3333-4333-8333-333333333333";
+const INSTANT = "2026-10-12T15:00:00.000Z";
+
+describe("LESSON_EXERCISE_TYPES", () => {
+  it("has exactly the 9 lesson_* types", () => {
+    expect([...LESSON_EXERCISE_TYPES].sort()).toEqual([
+      "lesson_card",
+      "lesson_choice",
+      "lesson_error_fix",
+      "lesson_gap",
+      "lesson_notice",
+      "lesson_open_answer",
+      "lesson_order",
+      "lesson_short_answer",
+      "lesson_transform",
+    ]);
+  });
+  it("schema accepts a lesson type and rejects a vocabulary type", () => {
+    expect(LessonExerciseTypeSchema.safeParse("lesson_gap").success).toBe(true);
+    expect(LessonExerciseTypeSchema.safeParse("exposure").success).toBe(false);
+  });
+});
+
+describe("SubjectCatalogDtoSchema", () => {
+  const catalog = {
+    subjects: [{
+      id: "english_grammar",
+      titlePl: "Angielski — gramatyka",
+      topics: [{
+        id: "present_simple",
+        version: 1,
+        titlePl: "Present Simple",
+        objectives: [{ id: "english_grammar.present_simple.third_person_s", titlePl: "-s w 3. osobie" }],
+      }],
+    }],
+  };
+  it("accepts a well-formed catalog", () => {
+    expect(SubjectCatalogDtoSchema.safeParse(catalog).success).toBe(true);
+  });
+  it("is strict (no model-facing descriptions or cards)", () => {
+    const parsed = SubjectCatalogDtoSchema.safeParse({
+      subjects: [{ ...catalog.subjects[0], descriptionEn: "leak" }],
+    });
+    expect(parsed.success).toBe(false);
+  });
+});
+
+describe("LessonCommandSchema", () => {
+  const base = {
+    subjectId: "english_grammar",
+    topicId: "present_simple",
+    objectiveIds: ["english_grammar.present_simple.third_person_s"],
+    material: "He plays football every day.",
+    clientRequestId: UUID,
+  };
+  it("accepts a minimal command and trims material", () => {
+    const parsed = LessonCommandSchema.parse({ ...base, material: "  He plays.  " });
+    expect(parsed.material).toBe("He plays.");
+  });
+  it("accepts optional deckId, instruction, poolSize", () => {
+    expect(LessonCommandSchema.safeParse({ ...base, deckId: UUID2, instruction: "Zrób 30", poolSize: 30 }).success).toBe(true);
+  });
+  it("requires at least one objective and unique objectives", () => {
+    expect(LessonCommandSchema.safeParse({ ...base, objectiveIds: [] }).success).toBe(false);
+    expect(LessonCommandSchema.safeParse({ ...base, objectiveIds: ["a", "a"] }).success).toBe(false);
+  });
+  it("enforces material length 1-8000", () => {
+    expect(LessonCommandSchema.safeParse({ ...base, material: "" }).success).toBe(false);
+    expect(LessonCommandSchema.safeParse({ ...base, material: "x".repeat(8001) }).success).toBe(false);
+  });
+  it("enforces instruction <= 500", () => {
+    expect(LessonCommandSchema.safeParse({ ...base, instruction: "x".repeat(501) }).success).toBe(false);
+  });
+  it("enforces poolSize integer 20-120", () => {
+    expect(LessonCommandSchema.safeParse({ ...base, poolSize: 19 }).success).toBe(false);
+    expect(LessonCommandSchema.safeParse({ ...base, poolSize: 121 }).success).toBe(false);
+    expect(LessonCommandSchema.safeParse({ ...base, poolSize: 20.5 }).success).toBe(false);
+    expect(LessonCommandSchema.safeParse({ ...base, poolSize: 20 }).success).toBe(true);
+  });
+  it("is strict", () => {
+    expect(LessonCommandSchema.safeParse({ ...base, extra: 1 }).success).toBe(false);
+  });
+});
+
+describe("LessonExerciseInputSchema", () => {
+  it("accepts a lesson_gap edit payload", () => {
+    const parsed = LessonExerciseInputSchema.safeParse({
+      exerciseType: "lesson_gap",
+      objectiveId: "o1",
+      instructionPl: "Uzupełnij",
+      stem: "He ___ football.",
+      answer: "plays",
+      acceptedAnswers: [],
+      focus: ["plays"],
+    });
+    expect(parsed.success).toBe(true);
+  });
+  it("accepts an optional id of an existing item", () => {
+    expect(LessonExerciseInputSchema.safeParse({
+      id: UUID, exerciseType: "lesson_open_answer", objectiveId: "o1",
+      prompt: "Przetłumacz", answer: "He plays.", acceptedAnswers: [], focus: ["plays"],
+    }).success).toBe(true);
+  });
+  it("enforces text field length <= 120", () => {
+    expect(LessonExerciseInputSchema.safeParse({
+      exerciseType: "lesson_gap", objectiveId: "o1", stem: "x".repeat(121),
+      answer: "plays", acceptedAnswers: [], focus: ["plays"],
+    }).success).toBe(false);
+  });
+  it("enforces acceptedAnswers <= 40 variants", () => {
+    expect(LessonExerciseInputSchema.safeParse({
+      exerciseType: "lesson_open_answer", objectiveId: "o1", prompt: "p",
+      answer: "a", acceptedAnswers: Array.from({ length: 41 }, (_, i) => `v${i}`), focus: ["a"],
+    }).success).toBe(false);
+  });
+  it("enforces 2-4 options", () => {
+    const opt = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `${i}`, text: `t${i}` }));
+    expect(LessonExerciseInputSchema.safeParse({
+      exerciseType: "lesson_choice", objectiveId: "o1", stem: "s",
+      answer: "a", acceptedAnswers: [], focus: [], options: opt(1), correctOption: "0",
+    }).success).toBe(false);
+    expect(LessonExerciseInputSchema.safeParse({
+      exerciseType: "lesson_choice", objectiveId: "o1", stem: "s",
+      answer: "a", acceptedAnswers: [], focus: [], options: opt(5), correctOption: "0",
+    }).success).toBe(false);
+    expect(LessonExerciseInputSchema.safeParse({
+      exerciseType: "lesson_choice", objectiveId: "o1", stem: "s",
+      answer: "a", acceptedAnswers: [], focus: [], options: opt(3), correctOption: "0",
+    }).success).toBe(true);
+  });
+  it("enforces 3-10 order items", () => {
+    const items = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `${i}`, text: `t${i}` }));
+    expect(LessonExerciseInputSchema.safeParse({
+      exerciseType: "lesson_order", objectiveId: "o1", answer: "a", acceptedAnswers: [], focus: [], items: items(2),
+    }).success).toBe(false);
+    expect(LessonExerciseInputSchema.safeParse({
+      exerciseType: "lesson_order", objectiveId: "o1", answer: "a", acceptedAnswers: [], focus: [], items: items(11),
+    }).success).toBe(false);
+    expect(LessonExerciseInputSchema.safeParse({
+      exerciseType: "lesson_order", objectiveId: "o1", answer: "a", acceptedAnswers: [], focus: [], items: items(3),
+    }).success).toBe(true);
+  });
+  it("accepts lesson_notice with noticeSegments and correctOption (no options)", () => {
+    expect(LessonExerciseInputSchema.safeParse({
+      exerciseType: "lesson_notice", objectiveId: "o1", instructionPl: "Dotknij",
+      noticeSegments: [["He", "plays"], ["She", "runs"]],
+      correctOption: "plays", answer: "plays", acceptedAnswers: [], focus: [],
+    }).success).toBe(true);
+  });
+  it("enforces notice 2-3 sentences of 1-15 segments", () => {
+    expect(LessonExerciseInputSchema.safeParse({
+      exerciseType: "lesson_notice", objectiveId: "o1",
+      noticeSegments: [["He"]], correctOption: "He", answer: "He", acceptedAnswers: [], focus: [],
+    }).success).toBe(false);
+    expect(LessonExerciseInputSchema.safeParse({
+      exerciseType: "lesson_notice", objectiveId: "o1",
+      noticeSegments: [Array.from({ length: 16 }, (_, i) => `w${i}`), ["ok"]],
+      correctOption: "ok", answer: "ok", acceptedAnswers: [], focus: [],
+    }).success).toBe(false);
+  });
+  it("is strict", () => {
+    expect(LessonExerciseInputSchema.safeParse({
+      exerciseType: "lesson_open_answer", objectiveId: "o1", prompt: "p",
+      answer: "a", acceptedAnswers: [], focus: ["a"], extra: 1,
+    }).success).toBe(false);
+  });
+});
+
+describe("LessonDraftDtoSchema", () => {
+  it("accepts a draft with exercises, coverage, examples", () => {
+    const parsed = LessonDraftDtoSchema.safeParse({
+      id: UUID, deckId: UUID2, editNumber: 1, status: "draft", title: "Present Simple",
+      subjectId: "english_grammar", topicId: "present_simple", topicVersion: 1,
+      objectiveIds: ["o1"], examples: { o1: ["He plays."] },
+      exercises: [{
+        id: UUID3, revisionId: UUID, exerciseType: "lesson_gap", objectiveId: "o1",
+        stem: "He ___.", answer: "plays", acceptedAnswers: [], focus: ["plays"],
+      }],
+      assets: [{ itemRevisionId: UUID, role: "target_audio", state: "pending", assetId: null }],
+      rejectedCount: 2,
+      coverage: [{ objectiveId: "o1", stage: "guided", required: 1, actual: 0 }],
+    });
+    expect(parsed.success).toBe(true);
+  });
+});
+
+describe("ObjectiveProgressDtoSchema", () => {
+  it("accepts a parent-facing objective progress row", () => {
+    expect(ObjectiveProgressDtoSchema.safeParse({
+      objectiveId: "o1", titlePl: "-s w 3. osobie", status: "mastered",
+      lastIndependentAt: INSTANT, nextReviewAt: INSTANT,
+      topErrors: [{ category: "missing_s", labelPl: "Brak -s", count: 3, examples: ["he play"] }],
+    }).success).toBe(true);
+  });
+  it("caps topError examples at 3", () => {
+    expect(ObjectiveProgressDtoSchema.safeParse({
+      objectiveId: "o1", titlePl: "t", status: "learning",
+      lastIndependentAt: null, nextReviewAt: null,
+      topErrors: [{ category: "c", labelPl: "l", count: 4, examples: ["a", "b", "c", "d"] }],
+    }).success).toBe(false);
+  });
+});
+
+describe("LessonVerdictDtoSchema", () => {
+  it("accepts a verdict with a parent decision", () => {
+    expect(LessonVerdictDtoSchema.safeParse({
+      id: UUID, exerciseRevisionId: UUID2, objectiveId: "o1", childAnswer: "he play",
+      verdict: "incorrect", errorCategory: "missing_s", note: "brak -s", graderModel: "gpt-x",
+      parentDecision: "overridden_correct", createdAt: INSTANT,
+    }).success).toBe(true);
+  });
+  it("accepts null errorCategory/parentDecision", () => {
+    expect(LessonVerdictDtoSchema.safeParse({
+      id: UUID, exerciseRevisionId: UUID2, objectiveId: "o1", childAnswer: "he plays",
+      verdict: "correct", errorCategory: null, note: "", graderModel: "gpt-x",
+      parentDecision: null, createdAt: INSTANT,
+    }).success).toBe(true);
+  });
+  it("decision schema has the three literals", () => {
+    for (const d of ["confirmed", "overridden_correct", "overridden_incorrect"]) {
+      expect(LessonVerdictDecisionSchema.safeParse(d).success).toBe(true);
+    }
+    expect(LessonVerdictDecisionSchema.safeParse("confirmed_x").success).toBe(false);
+  });
+});
+
+describe("LessonMockTestReportDtoSchema", () => {
+  it("accepts a per-objective mock-test report", () => {
+    expect(LessonMockTestReportDtoSchema.safeParse({
+      objectives: [{
+        objectiveId: "o1", titlePl: "t", total: 5, correct: 3, incorrect: 1, unassessed: 1, skipped: 0, modelGraded: 2,
+        errorCategories: [{ category: "missing_s", labelPl: "Brak -s", count: 1 }],
+      }],
+      complete: true, taskBudget: 10,
+    }).success).toBe(true);
+  });
+});

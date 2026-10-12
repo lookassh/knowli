@@ -23,6 +23,8 @@ function feedbackText(feedback: FeedbackDto | null): string {
         : messages.kid.feedbackSpelling;
     case "content_matched": return messages.kid.feedbackContentMatched;
     case "not_assessed": return messages.kid.feedbackNotAssessed;
+    case "lesson_almost": return messages.kid.feedbackAlmost;
+    case "lesson_hint": return dto.hintPl ?? messages.kid.feedbackSpelling;
   }
 }
 
@@ -37,6 +39,8 @@ export function feedbackTone(feedback: FeedbackDto | null): string {
     case "spelling_hint": return "kid-feedback--retry";
     case "content_matched":
     case "not_assessed": return "";
+    case "lesson_almost": return "kid-feedback--retry";
+    case "lesson_hint": return "kid-feedback--retry";
   }
 }
 

@@ -22,7 +22,7 @@ const task = (kind: TaskDto["prompt"]["kind"]): TaskDto => ({
             ? { kind, prompt: "kot" }
             : kind === "letter_completion"
               ? { kind, prompt: "kot", fragment: "c_t" }
-              : { kind, text: "cat", audioAssetId: null, imageAssetId: null, visualType: "none" },
+              : { kind: "speech" as const, text: "cat", audioAssetId: null, imageAssetId: null, visualType: "none" as const },
 });
 
 describe("getExercisePresentation", () => {
