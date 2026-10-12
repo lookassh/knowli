@@ -192,6 +192,8 @@ const RICH_ANSWERS = {
   notice: "plays",
   choice: "plays",
   gap: "goes",
+  gap2: "watches",
+  gap3: "reads",
   order: "she plays football",
   transform: "she plays",
 } as const;
@@ -200,6 +202,8 @@ export const RICH_KEYS = {
   notice: computeTargetKey(RICH_ANSWERS.notice, RICH_ANSWER_LOCALE),
   choice: computeTargetKey(RICH_ANSWERS.choice, RICH_ANSWER_LOCALE),
   gap: computeTargetKey(RICH_ANSWERS.gap, RICH_ANSWER_LOCALE),
+  gap2: computeTargetKey(RICH_ANSWERS.gap2, RICH_ANSWER_LOCALE),
+  gap3: computeTargetKey(RICH_ANSWERS.gap3, RICH_ANSWER_LOCALE),
   order: computeTargetKey(RICH_ANSWERS.order, RICH_ANSWER_LOCALE),
   transform: computeTargetKey(RICH_ANSWERS.transform, RICH_ANSWER_LOCALE),
 } as const;
@@ -289,6 +293,38 @@ async function seedRichPool(pool: Pool, version: { deckId: string; versionId: st
         // odpowiedź dwuwyrazowa, element sprawdzany to tylko „plays” — literówka
         // w „she” jest POZA focus, więc dopasowanie daje minor_typo (lesson_almost).
         focus: ["plays"],
+      },
+    },
+    {
+      // Drugie ćwiczenie produktywne (lesson_gap) z OSOBNYM itemId i target_key —
+      // daje trzeci deterministycznie oceniany niezależny element celu, potrzebny
+      // do opanowania (`successStreakRequired=3` na RÓŻNYCH ćwiczeniach).
+      position: 6,
+      answer: RICH_ANSWERS.gap2,
+      payload: {
+        exerciseType: "lesson_gap",
+        objectiveId,
+        instructionPl: "Uzupełnij lukę.",
+        stem: "She ___ (watch) TV.",
+        answer: RICH_ANSWERS.gap2,
+        acceptedAnswers: [RICH_ANSWERS.gap2],
+        focus: [RICH_ANSWERS.gap2],
+      },
+    },
+    {
+      // Czwarte ćwiczenie produktywne (osobny itemId/target_key): pozwala w DRUGIEJ
+      // sesji wykonać potwierdzający niezależny sukces na NOWYM, różnym ćwiczeniu,
+      // które wchodzi do okna opanowania — bez tego potwierdzenie padłoby na powtórkę.
+      position: 7,
+      answer: RICH_ANSWERS.gap3,
+      payload: {
+        exerciseType: "lesson_gap",
+        objectiveId,
+        instructionPl: "Uzupełnij lukę.",
+        stem: "He ___ (read) books.",
+        answer: RICH_ANSWERS.gap3,
+        acceptedAnswers: [RICH_ANSWERS.gap3],
+        focus: [RICH_ANSWERS.gap3],
       },
     },
   ];

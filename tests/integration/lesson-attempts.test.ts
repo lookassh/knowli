@@ -3,8 +3,10 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   completePresentation,
   createChild,
+  createServices,
   deleteChild,
   endSession,
+  listKidDecks,
   nextTask,
   readAttempt,
   startSession,
@@ -47,6 +49,23 @@ async function expectAppError(promise: Promise<unknown>, code: string): Promise<
 }
 
 type Services = ReturnType<typeof buildTestServices>["services"];
+
+/**
+ * Services z „dostępnym” modelem oceniającym (`generation` obecne) — selektor
+ * może wtedy wydawać typy zależne od modelu (np. `lesson_transform`). W zadaniu
+ * 13B ocena i tak biegnie deterministycznie (`matchLessonAnswer`), bo port
+ * grader'a istnieje dopiero w zadaniu 15; `generation` wpływa tylko na WYBÓR
+ * zadań, nie na ocenę. Stub wystarcza, bo ścieżka próby nie woła `generation.*`.
+ */
+function graderServices(startIso?: string): { services: Services; clock: ReturnType<typeof buildTestServices>["clock"] } {
+  const { services, clock } = buildTestServices(startIso);
+  const withGrader = createServices({
+    db: (services as unknown as { db: Parameters<typeof createServices>[0]["db"] }).db,
+    clock,
+    generation: {} as Parameters<typeof createServices>[0]["generation"],
+  });
+  return { services: withGrader, clock };
+}
 
 /** Produktywne typy (etap productive) wymagają awansu z guided → odpowiadamy poprawnie. */
 const PRODUCTIVE_TYPES = new Set(["lesson_gap", "lesson_error_fix", "lesson_transform", "lesson_open_answer"]);
@@ -212,7 +231,10 @@ describe("ocena odpowiedzi w lekcji — typy tekstowe (luka)", () => {
   });
 
   it("literówka poza focus na ćwiczeniu tekstowym → lesson_almost z answerSegments", async () => {
-    const { services, clock } = buildTestServices();
+    // `lesson_transform` jest typem zależnym od modelu w SELEKCJI — bez „dostępnego”
+    // modelu selektor go deprioryzuje; grader'em włączamy jego wydanie, ale OCENA i
+    // tak biegnie deterministycznie (matchLessonAnswer), bo port grader'a to zadanie 15.
+    const { services, clock } = graderServices();
     const { session } = await newLesson(services, clock);
     const task = await issueUntil(services, session.sessionId, "lesson_transform");
     // transform answer "she plays", focus ["plays"]; literówka w "she" (poza focus)
@@ -256,6 +278,48 @@ describe("ocena odpowiedzi w lekcji — typy tekstowe (luka)", () => {
   });
 });
 
+/** Czy ćwiczenie jest produktywne (etap productive) — niezależnie oceniane. */
+const PRODUCTIVE_TASK_TYPES = new Set(["lesson_gap", "lesson_error_fix", "lesson_transform", "lesson_open_answer"]);
+
+/**
+ * Prowadzi sesję, odpowiadając POPRAWNIE na każde ćwiczenie, aż `nextTask`
+ * zwróci null albo cel osiągnie `stopStatus`. Zwraca zbiór RÓŻNYCH itemId
+ * ćwiczeń produktywnych rozwiązanych NIEZALEŻNIE (independent=true) poprawnie.
+ */
+async function driveSessionCorrectly(
+  services: Services,
+  sessionId: string,
+  childId: string,
+  stopStatus?: string,
+  max = 40,
+): Promise<Set<string>> {
+  const independentProductiveItems = new Set<string>();
+  for (let i = 0; i < max; i++) {
+    const task = await nextTask(services, sessionId);
+    if (task === null) break;
+    if (task.exerciseType === "lesson_card") {
+      await completePresentation(services, { taskId: task.taskId });
+      continue;
+    }
+    await answerCorrectly(services, task);
+    if (PRODUCTIVE_TASK_TYPES.has(task.exerciseType)) {
+      const row = await pool.query<{ independent: boolean; item_id: string }>(
+        `select a.independent, st.item_revision_id as item_id from learning_app.assessments a
+           join learning_app.attempts at on at.id = a.attempt_id
+           join learning_app.session_tasks st on st.id = at.task_id
+          where st.id = $1 and a.outcome = 'correct'`,
+        [task.taskId],
+      );
+      if (row.rows[0]?.independent) independentProductiveItems.add(row.rows[0].item_id);
+    }
+    if (stopStatus) {
+      const p = await progressRow(childId);
+      if (p?.status === stopStatus) break;
+    }
+  }
+  return independentProductiveItems;
+}
+
 describe("kwalifikacja i projekcja celu", () => {
   it("guided (choice) nigdy niezależne; produktywne (gap) na niewidzianym → niezależne", async () => {
     const { services, clock } = buildTestServices();
@@ -296,6 +360,69 @@ describe("kwalifikacja i projekcja celu", () => {
     const rows = await assessmentsFor(child.id);
     const correct = rows.find((r) => r.outcome === "correct");
     expect(correct?.independent).toBe(false);
+  });
+});
+
+describe("opanowanie celu end-to-end (projekcja HTTP, kontrolowany zegar)", () => {
+  it("niezależne sukcesy na różnych ćwiczeniach w kolejnych sesjach + potwierdzenie ≥12h → mastered", async () => {
+    const { services, clock } = buildTestServices("2026-10-10T08:00:00.000Z");
+    const child = await createChild(services, { displayName: "Opanowanie", avatarKey: "owl" });
+    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, now: clock.now() });
+
+    // Sesja 1: cel awansuje guided → productive → independent; w etapie productive
+    // wychodzą 2 różne ćwiczenia (gap/transform) rozwiązane NIEZALEŻNIE poprawnie.
+    // Bez potwierdzenia po przerwie → db status practicing (domenowe learning, seria < 3).
+    const s1 = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
+    const distinct1 = await driveSessionCorrectly(services, s1.sessionId, child.id);
+    expect(distinct1.size).toBeGreaterThanOrEqual(2);
+    expect((await progressRow(child.id))!.status).toBe("practicing");
+    await endSession(services, s1.sessionId);
+
+    // Przerwa ≥12 h i inny dzień lokalny → sukces w sesji 2 jest confirmationEligible.
+    clock.advanceHours(26);
+
+    // Sesja 2: startuje od productive (status ≠ not_assessed). Pierwszy niezależny
+    // sukces na NOWYM, różnym ćwiczeniu domyka okno 3 różnych ćwiczeń z
+    // potwierdzeniem → mastered.
+    const s2 = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
+    await driveSessionCorrectly(services, s2.sessionId, child.id, "mastered");
+    expect((await progressRow(child.id))!.status).toBe("mastered");
+
+    // Gwiazdki listy zestawów dziecka odzwierciedlają opanowanie (zadanie 13 wired:
+    // independentlyRecalledCount = liczba opanowanych celów).
+    const decks = await listKidDecks(services, child.id);
+    const lessonDeck = decks.find((d) => d.deckId === lesson.deckId)!;
+    expect(lessonDeck.independentlyRecalledCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it("powtórny sukces na TYM SAMYM ćwiczeniu nie potwierdza opanowania (wymagane różne ćwiczenia)", async () => {
+    const { services, clock } = buildTestServices("2026-10-10T08:00:00.000Z");
+    const child = await createChild(services, { displayName: "Powtórka", avatarKey: "owl" });
+    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, now: clock.now() });
+
+    const s1 = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
+    const distinct1 = await driveSessionCorrectly(services, s1.sessionId, child.id);
+    const seenItem = [...distinct1][0]!; // ćwiczenie produktywne już rozwiązane w sesji 1
+    expect((await progressRow(child.id))!.status).toBe("practicing");
+    await endSession(services, s1.sessionId);
+    clock.advanceHours(26);
+
+    // Sesja 2: potwierdzaj WYŁĄCZNIE na ćwiczeniu już widzianym (ten sam itemId),
+    // resztę pomijaj. Powtórka nie wchodzi do okna RÓŻNYCH ćwiczeń → NIE mastered.
+    const s2 = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
+    for (let i = 0; i < 16; i++) {
+      const task = await nextTask(services, s2.sessionId);
+      if (task === null) break;
+      if (task.exerciseType === "lesson_card") { await completePresentation(services, { taskId: task.taskId }); continue; }
+      const revisionId = (await pool.query<{ item_revision_id: string }>(
+        "select item_revision_id from learning_app.session_tasks where id = $1", [task.taskId])).rows[0]!.item_revision_id;
+      if (revisionId === seenItem && PRODUCTIVE_TASK_TYPES.has(task.exerciseType)) {
+        await answerCorrectly(services, task);
+      } else {
+        await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "skip" });
+      }
+    }
+    expect((await progressRow(child.id))!.status).not.toBe("mastered");
   });
 });
 

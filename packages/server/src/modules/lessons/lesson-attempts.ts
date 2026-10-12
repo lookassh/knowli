@@ -112,14 +112,16 @@ function normalizerFor(services: Services, subjectId: string) {
   return subject.normalizer;
 }
 
-/** Tytuł celu z rejestru przedmiotu (dla podsumowania). */
+/** Tytuł celu z rejestru przedmiotu (dla podsumowania). Brak = malformed version. */
 function objectiveTitle(services: Services, subjectId: string, objectiveId: string): string {
   const subject = services.subjects.getSubject(subjectId);
   for (const topic of subject?.topics ?? []) {
     const objective = topic.objectives.find((o) => o.id === objectiveId);
     if (objective) return objective.titlePl;
   }
-  return objectiveId;
+  // Nigdy nie wpuszczamy surowego id celu do Kid DTO — brak tytułu to znak
+  // uszkodzonej/niespójnej wersji lekcji, nie dane do pokazania dziecku.
+  throw new AppError("internal", { message: `lesson objective title missing: ${subjectId}/${objectiveId}` });
 }
 
 /** Ujawnienie `target_key` ćwiczenia dziecku PRZED wydaniem tego zadania (req 7.2). */
@@ -281,20 +283,37 @@ async function objectiveHistory(tx: Tx, childId: string, objectiveId: string): P
     .innerJoin(attempts, eq(attempts.id, assessments.attemptId))
     .innerJoin(itemRevisions, eq(itemRevisions.id, assessments.itemRevisionId))
     .where(and(eq(assessments.childId, childId), eq(assessments.skill, "objective")));
-  return rows
-    .filter((row) => (row.objectiveId as { objectiveId?: string } | null)?.objectiveId === objectiveId)
-    .map((row) => ({
+
+  // Wersja polityki wyprowadzona WPROST z zapisanego rekordu polityki (join przez
+  // loadPolicy), a nie z założenia `policyId === version`. Gdyby id i version
+  // kiedykolwiek się rozjechały, projektor nadal filtruje po PRAWDZIWEJ wersji
+  // zamiast po cichu odrzucić całą historię. Cache per policyId w tej pętli.
+  const versionByPolicyId = new Map<string, string>();
+  const resolveVersion = async (policyId: string): Promise<string> => {
+    const cached = versionByPolicyId.get(policyId);
+    if (cached !== undefined) return cached;
+    const version = (await loadPolicy(tx, policyId)).version;
+    versionByPolicyId.set(policyId, version);
+    return version;
+  };
+
+  const relevant = rows.filter(
+    (row) => (row.objectiveId as { objectiveId?: string } | null)?.objectiveId === objectiveId,
+  );
+  const entries: ObjectiveHistoryEntry[] = [];
+  for (const row of relevant) {
+    entries.push({
       receivedAt: row.receivedAt.toISOString(),
-      // policyId zapisany w próbie JEST wersją polityki (CURRENT_POLICY_ID =
-      // POLICY.version), więc projektor filtruje `policyVersion === policy.version`.
-      policyVersion: row.policyId,
+      policyVersion: await resolveVersion(row.policyId),
       objectiveId,
       itemId: row.itemId,
       outcome: row.outcome === "unassessed" ? "unevaluated" : (row.outcome as SkillOutcome),
       ...(row.reason ? { reason: row.reason } : {}),
       independent: row.independent,
       confirmationEligible: row.confirmationEligible,
-    }));
+    });
+  }
+  return entries;
 }
 
 /** Interfejs wyniku wstępu przyjęcia odpowiedzi lekcji. */
@@ -583,7 +602,9 @@ async function objectiveTopicId(tx: Tx, task: TaskRow, key: LessonTaskAnswerKey,
   for (const topic of subject?.topics ?? []) {
     if (topic.objectives.some((o) => o.id === key.objectiveId)) return topic.id;
   }
-  return "";
+  // Brak topic_id to niespójna wersja lekcji — nie zapisujemy pustego klucza
+  // do child_objective_progress, tylko sygnalizujemy błąd.
+  throw new AppError("internal", { message: `lesson topic missing for objective: ${key.subjectId}/${key.objectiveId}` });
 }
 
 /** Leniwa finalizacja przeterminowanej próby processing lekcji (arch §9.2a). */
@@ -664,7 +685,10 @@ export async function buildLessonSummaryObjectives(
   const version = (await tx.select({ lessonContext: deckVersions.lessonContext }).from(deckVersions)
     .innerJoin(learningSessions, eq(learningSessions.deckVersionId, deckVersions.id))
     .where(eq(learningSessions.id, sessionId)))[0];
-  const subjectId = (version?.lessonContext as { subjectId?: string } | null)?.subjectId ?? "";
+  const subjectId = (version?.lessonContext as { subjectId?: string } | null)?.subjectId;
+  if (!subjectId) {
+    throw new AppError("internal", { message: `lesson session without subjectId: ${sessionId}` });
+  }
 
   const byObjective = new Map<string, { practiced: number; correct: number }>();
   for (const row of rows) {
