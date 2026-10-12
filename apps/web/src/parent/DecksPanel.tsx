@@ -12,6 +12,8 @@ import {
 import { apiFetch, errorMessage } from "./api";
 import { isDefinitiveGenerationRejection, readGenerationAcceptance } from "./generation-request";
 import DeckEditor from "./DeckEditor";
+import LessonEditor from "./lessons/LessonEditor";
+import NewLessonForm from "./lessons/NewLessonForm";
 import type { EditorLeaveState } from "./useParentLeaveGuard";
 
 /** Lista zestawów i uruchomienie generacji nowego materiału. */
@@ -36,6 +38,8 @@ export default function DecksPanel({
   const [creatingEmpty, setCreatingEmpty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeDeckId, setActiveDeckId] = useState<string | null>(null);
+  const [activeDeckKind, setActiveDeckKind] = useState<"vocabulary" | "lesson">("vocabulary");
+  const [creatingLesson, setCreatingLesson] = useState(false);
   const pendingEmptyCommand = useRef<CreateEmptyDeckCommand | null>(null);
   const creatingEmptyRef = useRef(false);
   const pendingGenerationCommand = useRef<GenerationCommand | null>(null);
@@ -73,6 +77,7 @@ export default function DecksPanel({
       if (mounted.current) {
         setPrompt("");
         setTitle("");
+        setActiveDeckKind("vocabulary");
         setActiveDeckId(acceptance.deckId);
         void onChanged().catch(() => undefined);
       }
@@ -111,6 +116,7 @@ export default function DecksPanel({
       pendingEmptyCommand.current = null;
       setPrompt("");
       setTitle("");
+      setActiveDeckKind("vocabulary");
       setActiveDeckId(created.deckId);
       // Utworzenie już się powiodło; problem odświeżenia listy nie może wyglądać
       // jak błąd tworzenia i nie może uruchomić nowego UUID przy kolejnym kliknięciu.
@@ -129,17 +135,40 @@ export default function DecksPanel({
   };
 
   if (activeDeckId) {
-    return (
+    const back = () =>
+      requestLeave(() => {
+        setActiveDeckId(null);
+        void onChanged();
+      });
+    return activeDeckKind === "lesson" ? (
+      <LessonEditor
+        deckId={activeDeckId}
+        childrenList={childrenList}
+        onEditorStateChange={registerEditorState}
+        onAuthExpired={onAuthExpired}
+        onBack={back}
+      />
+    ) : (
       <DeckEditor
         deckId={activeDeckId}
         childrenList={childrenList}
         onEditorStateChange={registerEditorState}
         onAuthExpired={onAuthExpired}
-        onBack={() => {
-          requestLeave(() => {
-            setActiveDeckId(null);
-            void onChanged();
-          });
+        onBack={back}
+      />
+    );
+  }
+
+  if (creatingLesson) {
+    return (
+      <NewLessonForm
+        onAuthExpired={onAuthExpired}
+        onCancel={() => setCreatingLesson(false)}
+        onCreated={(createdDeckId) => {
+          setCreatingLesson(false);
+          setActiveDeckKind("lesson");
+          setActiveDeckId(createdDeckId);
+          void onChanged().catch(() => undefined);
         }}
       />
     );
@@ -180,6 +209,14 @@ export default function DecksPanel({
         >
           {messages.decks.createEmpty}
         </button>
+        <button
+          type="button"
+          data-testid="new-lesson-submit"
+          onClick={() => setCreatingLesson(true)}
+          disabled={generating || creatingEmpty || pendingGenerationCommand.current !== null}
+        >
+          {messages.lessons.newLesson}
+        </button>
         {error && (
           <p className="error" data-testid="api-error" role="alert">
             {error}
@@ -195,9 +232,17 @@ export default function DecksPanel({
               type="button"
               className="card deck-row row space"
               data-testid={`deck-row-${index}`}
-              onClick={() => setActiveDeckId(deck.deckId)}
+              onClick={() => {
+                setActiveDeckKind(deck.kind === "lesson" ? "lesson" : "vocabulary");
+                setActiveDeckId(deck.deckId);
+              }}
             >
-              <span>{deck.title}</span>
+              <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>
+                <span className="badge" data-testid={`deck-kind-${index}`}>
+                  {messages.lessons.kindLabel[deck.kind ?? "vocabulary"]}
+                </span>{" "}
+                {deck.title}
+              </span>
               <span className="badge" data-testid={`deck-state-${index}`}>
                 {messages.decks.states[deck.state]}
               </span>

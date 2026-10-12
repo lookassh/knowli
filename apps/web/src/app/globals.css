@@ -295,3 +295,34 @@ ul.plain {
   .progress-items-table { display: none; }
   .progress-items-cards { display: block; }
 }
+
+/* Edytor lekcji: długie identyfikatory celów łamią się, a opcje/elementy
+   nie rozpychają layoutu (globalny input{width:100%} wymaga wyjątku dla radio). */
+[data-testid="lesson-editor"] h3,
+[data-testid="lesson-editor"] h4,
+[data-testid="lesson-editor"] strong,
+[data-testid="lesson-editor"] li,
+[data-testid="lesson-editor"] .badge {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+[data-testid="lesson-editor"] fieldset label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+[data-testid="lesson-editor"] fieldset input[type="radio"] {
+  width: auto;
+  min-height: 0;
+  margin-top: 0;
+  flex: 0 0 auto;
+}
+
+[data-testid="lesson-editor"] fieldset input[type="text"],
+[data-testid="lesson-editor"] fieldset > input {
+  flex: 1 1 180px;
+  min-width: 0;
+}
