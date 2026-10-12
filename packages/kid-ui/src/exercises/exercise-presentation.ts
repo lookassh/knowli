@@ -28,7 +28,7 @@ export function getExercisePresentation(task: TaskDto): ExercisePresentation {
     // Polecenie zdania bierze się z `instructionPl` promptu; tu dajemy sensowny
     // domyślny tekst i ikonę per typ.
     case "lesson_card":
-      return { instruction: task.prompt.card.title, icon: "sparkles" };
+      return { instruction: messages.kid.lessonCardInstruction, icon: "sparkles" };
     case "lesson_notice":
       return { instruction: task.prompt.instructionPl, icon: "ear" };
     case "lesson_choice":

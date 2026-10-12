@@ -91,6 +91,7 @@ export interface LearningSessionDeps {
 type AnswerPayload =
   | { modality: "choice"; optionId: string }
   | { modality: "text"; text: string }
+  | { modality: "sequence"; itemIds: string[] }
   | { modality: "dont_remember" }
   | { modality: "skip" };
 
@@ -112,6 +113,10 @@ function sleep(ms: number): Promise<void> {
 function audioAssetOf(task: TaskDto): string | null {
   if (task.prompt.kind === "exposure" || task.prompt.kind === "listening" || task.prompt.kind === "speech") {
     return task.prompt.audioAssetId;
+  }
+  // Audio lekcji jest opcjonalne (przedmiot z TTS); brak pola = brak odsłuchu.
+  if (task.prompt.kind === "lesson_notice" || task.prompt.kind === "lesson_choice" || task.prompt.kind === "lesson_short_answer") {
+    return task.prompt.audioAssetId ?? null;
   }
   return null;
 }
@@ -432,7 +437,7 @@ export class LearningSessionController {
 
   async completePresentation(): Promise<void> {
     const screen = this.#learning();
-    if (!screen?.task || screen.busy || screen.task.exerciseType !== "exposure") return;
+    if (!screen?.task || screen.busy || (screen.task.exerciseType !== "exposure" && screen.task.exerciseType !== "lesson_card")) return;
     const epoch = this.#epoch;
     const sessionId = screen.session.sessionId;
     const taskId = screen.task.taskId;
@@ -456,6 +461,11 @@ export class LearningSessionController {
 
   async answerText(text: string): Promise<void> {
     await this.#submitAnswer({ modality: "text", text: text.trim() });
+  }
+
+  /** Odpowiedź `sequence` (ułożone klocki `lesson_order`). */
+  async answerSequence(itemIds: string[]): Promise<void> {
+    await this.#submitAnswer({ modality: "sequence", itemIds });
   }
 
   /** „Nie pamiętam — pokaż”: ujawnienie z zapisem ekspozycji przed treścią (SPEC §15.1). */

@@ -37,6 +37,18 @@ export function SummaryScreen({
           {summary.tasksIssued === 0 ? messages.kid.summaryEmpty : messages.kid.summaryNeutral}
         </p>
       )}
+      {summary.objectives !== undefined && summary.objectives.length > 0 && (
+        <section className="kid-summary-practice" aria-labelledby="kid-summary-objectives-title" data-testid="kid-summary-objectives">
+          <h2 id="kid-summary-objectives-title">{messages.kid.lessonSummaryTitle}</h2>
+          <ul className="kid-list">
+            {summary.objectives.map(objective => (
+              <li key={objective.objectiveId} data-testid="kid-summary-objective">
+                {format(messages.kid.lessonSummaryObjective, { title: objective.titlePl })}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {summary.practiceItems.length > 0 && (
         <section className="kid-summary-practice" aria-labelledby="kid-summary-practice-title" data-testid="kid-summary-practice">
           <h2 id="kid-summary-practice-title">{messages.kid.summaryPractice}</h2>

@@ -372,6 +372,28 @@ export const messages = {
     lessonUndo: "Cofnij",
     lessonNoticeInstruction: "Dotknij słowa",
     lessonGraderUnavailable: "Nie udało się sprawdzić. Spróbuj jeszcze raz albo przejdź dalej.",
+    // Feedback lekcji — tytuły bez odwołania do odsłuchu (lekcje są tekstowe).
+    lessonAlmostTitle: "Prawie!",
+    lessonHintTitle: "Mała wskazówka",
+    lessonYourAnswer: "Twoja odpowiedź",
+    lessonCorrectAnswer: "Poprawnie",
+    // Układanie klocków (lesson_order): dostępność i zdanie.
+    lessonOrderPool: "Klocki do ułożenia",
+    lessonOrderSentence: "Twoje zdanie",
+    lessonOrderAddBlock: "Dodaj klocek: {word}",
+    lessonOrderRemoveBlock: "Cofnij klocek: {word}",
+    lessonOrderEmpty: "Dotknij klocka, aby ułożyć zdanie.",
+    // Luka (lesson_gap): pole w miejscu luki i podpowiedź bezokolicznika.
+    lessonGapInput: "Wpisz brakujące słowo",
+    lessonGapHint: "Podpowiedź: {hint}",
+    // Zdanie wyjściowe (error_fix/transform/open_answer).
+    lessonSourceSentence: "Zdanie",
+    // Podsumowanie lekcji (per cel), bez procentów.
+    lessonSummaryTitle: "Ćwiczyłeś reguły",
+    lessonSummaryObjective: "Ćwiczyłeś: {title}",
+    // Lista zestawów: etykieta przedmiotu lekcji.
+    lessonSubjectLabel: "Lekcja: {subject}",
+    lessonCardInstruction: "Poznaj regułę",
   },
   lessons: {
     title: "Lekcje",

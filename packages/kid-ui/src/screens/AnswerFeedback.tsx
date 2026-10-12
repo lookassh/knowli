@@ -2,12 +2,15 @@ import { useEffect, useRef, type ReactElement } from "react";
 import { messages, type FeedbackDto } from "@learning/contracts";
 import { format } from "../format";
 import { joinedText } from "./spelling-diff-view";
+import { lessonFeedbackView } from "./lesson-feedback-view";
 
 export interface AnswerFeedbackProps {
   dto: FeedbackDto | null;
   retry: boolean;
   busy: boolean;
   onNext: () => void;
+  /** „Pomiń” przy komunikacie technicznym lekcji (`not_assessed`). */
+  onSkip?: () => void;
 }
 
 function feedbackText(feedback: FeedbackDto | null): string {
@@ -23,8 +26,9 @@ function feedbackText(feedback: FeedbackDto | null): string {
         : messages.kid.feedbackSpelling;
     case "content_matched": return messages.kid.feedbackContentMatched;
     case "not_assessed": return messages.kid.feedbackNotAssessed;
-    case "lesson_almost": return messages.kid.feedbackAlmost;
-    case "lesson_hint": return dto.hintPl ?? messages.kid.feedbackSpelling;
+    // Lekcje: tytuł bez odwołania do odsłuchu (lekcje są tekstowe).
+    case "lesson_almost": return messages.kid.lessonAlmostTitle;
+    case "lesson_hint": return messages.kid.lessonHintTitle;
   }
 }
 
@@ -44,7 +48,30 @@ export function feedbackTone(feedback: FeedbackDto | null): string {
   }
 }
 
-export function AnswerFeedback({ dto, retry, busy, onNext }: AnswerFeedbackProps): ReactElement {
+/** Segmenty z zaznaczonymi pigułkami (reuse pisowni) — jedna etykietowana linia. */
+function AnswerSegments({ segments, label, testid }: {
+  segments: FeedbackDto["answerSegments"];
+  label: string;
+  testid: string;
+}): ReactElement | null {
+  if (segments === undefined || segments.length === 0) return null;
+  return (
+    <div className="kid-spelling-row" data-testid={testid}>
+      <span className="kid-spelling-row-label">{label}</span>
+      {segments.map((segment, index) => (
+        <span
+          key={index}
+          className={segment.state === "pill" ? "kid-spelling-pill kid-spelling-pill--given" : "kid-spelling-plain"}
+          data-testid={segment.state === "pill" ? "kid-spelling-pill" : undefined}
+        >
+          {segment.text}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+export function AnswerFeedback({ dto, retry, busy, onNext, onSkip }: AnswerFeedbackProps): ReactElement {
   const titleRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     // Moving focus off a written field dismisses the mobile keyboard without scrolling the page.
@@ -52,6 +79,7 @@ export function AnswerFeedback({ dto, retry, busy, onNext }: AnswerFeedbackProps
   }, [dto, retry]);
 
   const feedback = dto ?? { kind: "not_assessed" as const };
+  const lesson = lessonFeedbackView(dto);
   return (
     <section
       className={["kid-answer-feedback", feedbackTone(dto)].filter(Boolean).join(" ")}
@@ -117,10 +145,41 @@ export function AnswerFeedback({ dto, retry, busy, onNext }: AnswerFeedbackProps
             </div>
           </div>
         )}
+        {/* Feedback lekcji: odpowiedź dziecka z zaznaczonymi segmentami, podpowiedź
+            kategorii i poprawna odpowiedź. Kolor nie jest jedynym nośnikiem —
+            każdy wiersz ma etykietę tekstową. */}
+        {lesson !== null && (lesson.answerSegments !== null || lesson.correctText !== null || lesson.hint !== null) && (
+          <div className="kid-lesson-feedback" data-testid="kid-lesson-feedback">
+            {lesson.hint !== null && (
+              <p className="kid-lesson-feedback__hint" data-testid="kid-lesson-feedback-hint">{lesson.hint}</p>
+            )}
+            {lesson.answerSegments !== null && (
+              <AnswerSegments
+                segments={lesson.answerSegments}
+                label={messages.kid.lessonYourAnswer}
+                testid="kid-lesson-answer-segments"
+              />
+            )}
+            {lesson.correctText !== null && (
+              <div className="kid-spelling-row" data-testid="kid-lesson-correct">
+                <span className="kid-spelling-row-label">{messages.kid.lessonCorrectAnswer}</span>
+                <span className="kid-spelling-pill kid-spelling-pill--expected" lang="en-GB">{lesson.correctText}</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
-      <button type="button" className="kid-primary" data-testid="kid-next" disabled={busy} onClick={onNext}>
-        {retry ? messages.kid.feedbackRetry : messages.kid.feedbackNext}
-      </button>
+      <div className="kid-feedback-actions">
+        <button type="button" className="kid-primary" data-testid="kid-next" disabled={busy} onClick={onNext}>
+          {retry ? messages.kid.feedbackRetry : messages.kid.feedbackNext}
+        </button>
+        {/* `not_assessed` lekcji: brak winy dziecka — oferujemy też „Pomiń”. */}
+        {lesson?.technical === true && retry && onSkip !== undefined && (
+          <button type="button" className="kid-flow-secondary" data-testid="kid-lesson-skip" disabled={busy} onClick={onSkip}>
+            {messages.kid.skip}
+          </button>
+        )}
+      </div>
     </section>
   );
 }
