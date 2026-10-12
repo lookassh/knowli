@@ -6,6 +6,7 @@ import {
   createServices,
   deleteChild,
   endSession,
+  fakeGraderDeps,
   listKidDecks,
   nextTask,
   readAttempt,
@@ -51,11 +52,12 @@ async function expectAppError(promise: Promise<unknown>, code: string): Promise<
 type Services = ReturnType<typeof buildTestServices>["services"];
 
 /**
- * Services z „dostępnym” modelem oceniającym (`generation` obecne) — selektor
- * może wtedy wydawać typy zależne od modelu (np. `lesson_transform`). W zadaniu
- * 13B ocena i tak biegnie deterministycznie (`matchLessonAnswer`), bo port
- * grader'a istnieje dopiero w zadaniu 15; `generation` wpływa tylko na WYBÓR
- * zadań, nie na ocenę. Stub wystarcza, bo ścieżka próby nie woła `generation.*`.
+ * Services z „dostępnym” modelem oceniającym — selektor może wtedy wydawać typy
+ * zależne od modelu (np. `lesson_transform`). Po zadaniu 15 `graderAvailable`
+ * wynika z `services.grader` (nie z `generation`), więc wstrzykujemy FAKE grader.
+ * `generation` zostaje, bo pierwotny helper 13B go dawał; ocena w tych testach i
+ * tak biegnie deterministycznie (matchLessonAnswer) — grader nie jest wołany,
+ * bo odpowiedzi są dopasowane albo literówkowe (nie `no_match`).
  */
 function graderServices(startIso?: string): { services: Services; clock: ReturnType<typeof buildTestServices>["clock"] } {
   const { services, clock } = buildTestServices(startIso);
@@ -63,6 +65,7 @@ function graderServices(startIso?: string): { services: Services; clock: ReturnT
     db: (services as unknown as { db: Parameters<typeof createServices>[0]["db"] }).db,
     clock,
     generation: {} as Parameters<typeof createServices>[0]["generation"],
+    grader: fakeGraderDeps(),
   });
   return { services: withGrader, clock };
 }

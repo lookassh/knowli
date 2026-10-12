@@ -408,7 +408,12 @@ export async function executeLessonGeneration(services: Services, runId: string)
     await markRun(services.db, services.clock, runId, "failed", "validation");
     return;
   }
-  const graderAvailable = services.speech !== undefined || services.generation !== undefined;
+  // Czy model oceniający będzie dostępny przy odpowiedzi (proces web)? Worker nie
+  // ma klucza gradera i nie potrzebuje go — wnioskuje o konfiguracji po obecności
+  // `UMIEM_GRADER_BASE_URL` we WSPÓLNYM .env (web i worker czytają ten sam plik:
+  // Compose przekazuje te zmienne obu procesom). To steruje tylko PREFERENCJĄ
+  // typów przy generacji (closed/gap, gdy brak modelu), nie oceną.
+  const graderAvailable = Boolean(process.env.UMIEM_GRADER_BASE_URL);
 
   // Partie per cel: albo dogenerowanie jednego celu, albo pełna pula.
   const batches: { objectiveId: string; count: number; existingAnswers: string[] }[] = input.regenerate

@@ -179,6 +179,45 @@ export interface SttProvider {
   transcribe(audio: AudioInput, signal?: AbortSignal): Promise<TranscriptionResult>;
 }
 
+/**
+ * Wejście modelu oceniającego (design „Model oceniający”, `GraderInput`). Port
+ * nie zna gramatyki ani przedmiotu — adapter dostaje gotowe fragmenty profilu
+ * przedmiotu, polecenie, bodziec, opis celu z kategoriami oraz odpowiedź
+ * dziecka JAKO DANE. Odpowiedź dziecka trafia wyłącznie do wiadomości `user`;
+ * nigdy do promptu systemowego ani do logów.
+ */
+export interface GraderInput {
+  readonly subjectTitle: string;
+  readonly topicTitle: string;
+  readonly roleProfile: {
+    readonly gradingRole: string;
+    readonly almostDefinition: string;
+  };
+  readonly instruction: string;
+  readonly stimulus: string | null;
+  readonly objective: {
+    readonly description: string;
+    readonly errorCategories: readonly { readonly code: string; readonly label: string }[];
+  };
+  /** Zatwierdzone warianty poprawnej odpowiedzi (dane referencyjne). */
+  readonly acceptedAnswers: readonly string[];
+  /** Odpowiedź dziecka ≤ 200 znaków, przekazywana jako dane. */
+  readonly childAnswer: string;
+}
+
+/**
+ * Model oceniający zgodny z OpenAI (design „Model oceniający”). Zwraca SUROWY
+ * obiekt JSON — walidację robi domena (`validateVerdict`), żeby adapter nie
+ * interpretował treści. `promptVersion` jest stałą adaptera i wchodzi do klucza
+ * cache werdyktów (zmiana promptu unieważnia zapisane werdykty).
+ */
+export interface AnswerGraderProvider {
+  readonly name: string;
+  readonly model: string;
+  readonly promptVersion: string;
+  grade(input: GraderInput, signal: AbortSignal): Promise<unknown>;
+}
+
 export interface PronunciationProvider {
   readonly name: string;
   assess(

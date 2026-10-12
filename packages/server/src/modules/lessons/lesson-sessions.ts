@@ -45,8 +45,8 @@ import { mapObjectiveStatus as mapStatus } from "../../domain/lessons/progress-s
  * słówkach. Vocabulary pozostaje nietknięte.
  */
 
-/** Limit wywołań modelu na sesję (design „Model oceniający”); 13B/15 egzekwuje. */
-const GRADER_CALLS_PER_SESSION = 20;
+/** Domyślny limit wywołań modelu na sesję, gdy grader niekonfigurowany (zadanie 15). */
+const GRADER_CALLS_PER_SESSION_FALLBACK = 20;
 
 /** Kontekst sesji lekcji: pola wspólne + lekcyjne (bezpieczne rozszerzenie). */
 export interface LessonSessionContext extends SessionContextShape {
@@ -120,9 +120,9 @@ export function requireTopic(services: Services, ctx: LessonContextShape): { sub
   return { subject, topic };
 }
 
-/** Czy model oceniający jest w zasięgu (zadanie 15 podłączy właściwy port). */
+/** Czy model oceniający jest skonfigurowany (zadanie 15 — rzeczywisty port). */
 function graderAvailable(services: Services): boolean {
-  return services.generation !== undefined || services.speech !== undefined;
+  return services.grader !== undefined;
 }
 
 /**
@@ -334,7 +334,7 @@ async function planLessonTask(
     assessedRemaining,
     testWindowOpen,
     graderAvailable: graderAvailable(services),
-    graderCallsLeft: Math.max(0, GRADER_CALLS_PER_SESSION - sessionContext.graderCalls),
+    graderCallsLeft: Math.max(0, (services.grader?.maxCallsPerSession ?? GRADER_CALLS_PER_SESSION_FALLBACK) - sessionContext.graderCalls),
     policy: DEFAULT_LESSON_POLICY,
     now: now.toISOString(),
   };

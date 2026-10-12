@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import type { GenerationDeps, SpeechDeps } from "../config";
 import type {
+  AnswerGraderProvider,
   AudioInput,
+  GraderInput,
   ImageProvider,
   LessonPoolInput,
   LlmGeneratedItem,
@@ -426,5 +428,104 @@ export function fakeGenerationDeps(
     tts: new FakeTtsProvider(options),
     image: new FakeImageProvider(options),
     mediaStore,
+  };
+}
+
+/**
+ * Zachowanie fake gradera dla jednej odpowiedzi (po znormalizowanej treści albo
+ * domyślne). `raw` to surowy obiekt zwracany przez provider (jak prawdziwy
+ * adapter — walidacja w domenie), więc test może podać też kształt niepoprawny
+ * (invalid JSON / kategoria spoza listy). `delayMs` symuluje opóźnienie modelu;
+ * `error` symuluje awarię HTTP/sieci (moduł zamieni na `unevaluated`).
+ */
+export type FakeGraderBehavior =
+  | { raw: unknown; delayMs?: number }
+  | { error: string; delayMs?: number };
+
+/**
+ * Deterministyczny fake modelu oceniającego dla integracji/E2E: liczy wywołania
+ * i mapuje znormalizowaną (naiwnie: lowercase + trim) odpowiedź dziecka na
+ * zaprogramowany surowy werdykt. Bez zachowania → werdykt `correct`. Tryb
+ * E2E może włączyć prosty routing po słowach kluczowych w odpowiedzi.
+ */
+export class FakeAnswerGrader implements AnswerGraderProvider {
+  readonly name = "fake-grader";
+  readonly model = "fake-grader-1";
+  readonly promptVersion: string;
+  readonly requests: GraderInput[] = [];
+  #byAnswer = new Map<string, FakeGraderBehavior>();
+  #default: FakeGraderBehavior | null = null;
+  #keywordRouting = false;
+
+  constructor(options: { promptVersion?: string; keywordRouting?: boolean } = {}) {
+    this.promptVersion = options.promptVersion ?? "fake-grader-v1";
+    this.#keywordRouting = options.keywordRouting ?? false;
+  }
+
+  /** Programuje werdykt dla konkretnej (surowej) odpowiedzi dziecka. */
+  onAnswer(childAnswer: string, behavior: FakeGraderBehavior): this {
+    this.#byAnswer.set(childAnswer.trim().toLowerCase(), behavior);
+    return this;
+  }
+
+  /** Werdykt domyślny, gdy brak dopasowania po odpowiedzi. */
+  onDefault(behavior: FakeGraderBehavior): this {
+    this.#default = behavior;
+    return this;
+  }
+
+  get callCount(): number {
+    return this.requests.length;
+  }
+
+  async grade(input: GraderInput, signal: AbortSignal): Promise<unknown> {
+    this.requests.push(input);
+    const key = input.childAnswer.trim().toLowerCase();
+    const behavior = this.#byAnswer.get(key) ?? this.#default ?? this.#keywordVerdict(input);
+    if (behavior.delayMs && behavior.delayMs > 0) {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, behavior.delayMs);
+        signal.addEventListener("abort", () => {
+          clearTimeout(timer);
+          reject(new DOMException("aborted", "AbortError"));
+        });
+      });
+    }
+    if ("error" in behavior) {
+      throw new Error(behavior.error);
+    }
+    return behavior.raw;
+  }
+
+  /**
+   * Routing po słowach kluczowych (E2E bez konfiguracji per odpowiedź): odpowiedź
+   * zawierająca „almost” → almost z pierwszym tokenem jako fragment; „wrong” →
+   * incorrect z pierwszą kategorią celu; inaczej correct.
+   */
+  #keywordVerdict(input: GraderInput): FakeGraderBehavior {
+    if (!this.#keywordRouting) {
+      return { raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok" } };
+    }
+    const answer = input.childAnswer;
+    const firstToken = answer.trim().split(/\s+/)[0] ?? answer;
+    if (/almost/i.test(answer)) {
+      return { raw: { verdict: "almost", errorCategory: null, fragments: [firstToken], note: "almost" } };
+    }
+    if (/wrong/i.test(answer)) {
+      const category = input.objective.errorCategories[0]?.code ?? "other";
+      return { raw: { verdict: "incorrect", errorCategory: category, fragments: [firstToken], note: "wrong" } };
+    }
+    return { raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok" } };
+  }
+}
+
+/** Zależności gradera na fake'u — do integracji i trybu UMIEM_FAKE_PROVIDERS. */
+export function fakeGraderDeps(
+  options: { provider?: FakeAnswerGrader; maxCallsPerSession?: number; timeoutMs?: number } = {},
+): { provider: FakeAnswerGrader; maxCallsPerSession: number; timeoutMs: number } {
+  return {
+    provider: options.provider ?? new FakeAnswerGrader(),
+    maxCallsPerSession: options.maxCallsPerSession ?? 20,
+    timeoutMs: options.timeoutMs ?? 8000,
   };
 }

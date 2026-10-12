@@ -45,7 +45,7 @@ function session(): SessionDto {
 }
 
 const base = (taskId: string, exerciseType: TaskDto["exerciseType"]) => ({
-  taskId, sessionId, ordinal: 0, exerciseType, direction: null as const, state: "issued" as const, remainingAssessed: 1,
+  taskId, sessionId, ordinal: 0, exerciseType, direction: null, state: "issued" as const, remainingAssessed: 1,
 });
 
 const cardTask: TaskDto = {
@@ -270,6 +270,67 @@ test("task API responses never disclose answer keys, focus, objective or error c
   await expect(page.getByTestId("kid-feedback")).toBeVisible();
   await page.waitForTimeout(200);
   expect(leaks, leaks.join("; ")).toHaveLength(0);
+});
+
+test("open answer graded by the model (almost) then an unassessed answer (not_assessed)", async ({ page }) => {
+  // Zadanie 15: `lesson_open_answer` jest oceniane WYŁĄCZNIE przez model (grader).
+  // Fixture symuluje odpowiedzi serwera: pierwszy werdykt modelu → `lesson_almost`
+  // (fake-model-graded open answer), drugi → `not_assessed` (model niedostępny /
+  // timeout / odrzucony wynik). Dowodzi, że kid-UI renderuje obie ścieżki bez
+  // ujawniania źródła oceny ani komentarza modelu.
+  const openTask: TaskDto = {
+    ...base(t(20), "lesson_open_answer"),
+    prompt: { kind: "lesson_open_answer", instructionPl: "Napisz zdanie o sobie w Present Simple", prompt: "Write about your day." },
+  };
+  const openTask2: TaskDto = {
+    ...base(t(21), "lesson_open_answer"),
+    prompt: { kind: "lesson_open_answer", instructionPl: "Napisz jeszcze jedno zdanie", prompt: "Write one more sentence." },
+  };
+  const modelAlmost: AttemptDto = {
+    attemptId: a(20), taskId: t(20), state: "completed", modality: "text", taskState: "answered", stepId: "s20",
+    receivedAt: "2026-10-11T10:00:20.000Z", completedAt: "2026-10-11T10:00:20.000Z",
+    feedback: {
+      kind: "lesson_almost",
+      answerSegments: [{ text: "i ", state: "plain" }, { text: "wake", state: "pill" }, { text: " up early", state: "plain" }],
+      correctText: "I wake up early",
+    },
+  };
+  const notAssessed: AttemptDto = {
+    attemptId: a(21), taskId: t(21), state: "completed", modality: "text", taskState: "issued", stepId: null,
+    receivedAt: "2026-10-11T10:00:21.000Z", completedAt: "2026-10-11T10:00:21.000Z",
+    feedback: { kind: "not_assessed" },
+  };
+
+  await installKidUiFixture(page, {
+    profiles: [profile()],
+    decks: [lessonDeck()],
+    session: session(),
+    tasks: [openTask, openTask2, null],
+    attempts: [modelAlmost, notAssessed],
+    summary,
+  });
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+
+  // Pierwsza odpowiedź otwarta → model ocenił „prawie": segmenty + poprawna odpowiedź.
+  await expect(page.getByTestId("kid-lesson-source")).toHaveText("Write about your day.");
+  await page.getByTestId("kid-lesson-input").fill("i wake up early");
+  await page.getByTestId("kid-lesson-check").click();
+  await expect(page.getByTestId("kid-feedback")).toContainText("Prawie!");
+  await expect(page.getByTestId("kid-lesson-answer-segments")).toContainText("wake");
+  await expect(page.getByTestId("kid-lesson-correct")).toContainText("I wake up early");
+  // Źródło oceny (model) nigdy nie przecieka do UI.
+  await expect(page.getByTestId("kid-feedback")).not.toContainText("model");
+  await page.getByTestId("kid-next").click();
+
+  // Druga odpowiedź otwarta → nieocenione: komunikat techniczny, bez winy dziecka,
+  // bez poprawnej odpowiedzi, zadanie zostaje do ponowienia / pominięcia.
+  await expect(page.getByTestId("kid-lesson-source")).toHaveText("Write one more sentence.");
+  await page.getByTestId("kid-lesson-input").fill("something");
+  await page.getByTestId("kid-lesson-check").click();
+  await expect(page.getByTestId("kid-feedback")).toContainText("Nie udało się ocenić");
+  await expect(page.getByTestId("kid-lesson-correct")).toHaveCount(0);
 });
 
 test("blocks, gap and feedback hold at 390×844 and 768×1024 without horizontal overflow", async ({ page }) => {

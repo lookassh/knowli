@@ -159,6 +159,8 @@ export type {
   SpeechEvidence,
   SttProvider,
   PronunciationProvider,
+  AnswerGraderProvider,
+  GraderInput,
 } from "./ports/ai";
 export type { MediaStore, StoredBlob } from "./ports/media";
 export { createLocalMediaStore } from "./providers/media/local";
@@ -167,6 +169,7 @@ export { createOpenAiTtsProvider } from "./providers/openai/tts";
 export { createOpenAiImageProvider } from "./providers/images/openai";
 export { createAzureSttProvider } from "./providers/azure/stt";
 export { createAzurePronunciationProvider } from "./providers/azure/pronunciation";
+export { createOpenAiCompatibleGrader } from "./providers/openai-compatible/grader";
 export {
   MAX_AUDIO_BYTES,
   MAX_AUDIO_SECONDS,
@@ -187,6 +190,8 @@ export {
   fakeGenerationDeps,
   fakeMediaSettings,
   fakeSpeechDeps,
+  fakeGraderDeps,
+  FakeAnswerGrader,
   DEFAULT_FAKE_DECK_ITEMS,
   FakeImageProvider,
   FakeLlmProvider,
@@ -195,5 +200,6 @@ export {
   FakeTtsProvider,
   type LlmBehavior,
   type LlmLessonBehavior,
+  type FakeGraderBehavior,
 } from "./providers/fake";
 export { createGenerationDepsFromEnv } from "./providers/generation-env";

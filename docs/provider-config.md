@@ -32,6 +32,38 @@ w zadaniu 11); konwersja do WAV jest kodekowo-agnostyczna.
 | Ilustracje | OpenAI `gpt-image-1`, `1024x1024`, quality `low`, WebP | ~30 s na obraz — praca tła workera; prompt bez tekstu w obrazie. Domyślnie low+webp: high/png kosztowało ~0,17 USD/szt. (~5 USD za 31-elementowy zestaw 2026-10-08), low+webp to ~0,01–0,02 USD/szt. Budżetowa alternatywa przez env: `gpt-image-1-mini` (~0,005 USD/szt. w low) |
 | Env | `OPENAI_API_KEY` (jeden klucz do trzech usług) | tylko worker; web nie zna tego klucza |
 
+## Ocena odpowiedzi lekcji (web)
+
+Model oceniający otwarte odpowiedzi lekcji (gramatyka itp.) jest zgodny z
+OpenAI (`POST {baseUrl}/chat/completions`). Działa WYŁĄCZNIE w procesie web i
+tylko dla odpowiedzi tekstowych, których nie rozstrzygnęło dopasowanie
+deterministyczne (`no_match`). Worker gradera nie potrzebuje.
+
+| Element | Wartość | Uwagi |
+| --- | --- | --- |
+| Endpoint | `POST {UMIEM_GRADER_BASE_URL}/chat/completions`, `temperature: 0`, `response_format: { type: "json_object" }` | kształt zgodny z OpenAI; adapter wyciąga JSON także z bloku markdown |
+| Autoryzacja | `Authorization: Bearer {UMIEM_GRADER_API_KEY}` | sekret tylko w adapterze; nigdy w logach, DTO ani promptach |
+| Model | `UMIEM_GRADER_MODEL` | tani model wystarcza (ocena jednej reguły, nie generacja) |
+| Timeout | `UMIEM_GRADER_TIMEOUT_MS` (domyślnie 8000) | `AbortSignal.timeout`; przerwanie = „nieocenione", nie zawieszenie |
+| Budżet | `UMIEM_GRADER_MAX_CALLS_PER_SESSION` (domyślnie 20) | księgowany w `learning_sessions.context.graderCalls`; po wyczerpaniu selektor przechodzi na typy zamknięte |
+| Env | `UMIEM_GRADER_BASE_URL`, `UMIEM_GRADER_API_KEY`, `UMIEM_GRADER_MODEL` | wszystkie trzy albo żadna; `https://` wymagane poza `NODE_ENV` test/development; brak = ocena dowolnych odpowiedzi wyłączona |
+
+Werdykt modelu (`{verdict, errorCategory, fragments, note}`) jest surowym JSON —
+walidację robi domena (`validateVerdict`): kategoria musi należeć do celu lub być
+`other`, każdy `fragment` jest dokładnym podciągiem odpowiedzi dziecka. Zwalidowany
+werdykt zapisuje się do wspólnego cache `lesson_verdicts` z kluczem
+`(item_revision_id, normalized_answer, prompt_version)`; ta sama (znormalizowana)
+odpowiedź innego dziecka nie woła modelu ponownie. `parent_decision` (nadpisanie
+rodzica) jest nadrzędny nad zapisanym werdyktem bez przeliczania historii.
+Komentarz `note` modelu jest wyłącznie dla rodzica — nigdy nie trafia do Kid DTO.
+Odpowiedź dziecka i warianty referencyjne są przekazywane modelowi jako DANE
+(wiadomość `user`), nigdy jako polecenia; `prompt_version` to stała adaptera, a
+jej zmiana unieważnia zapisane werdykty bez migracji.
+
+Tryb E2E/smoke bez klucza: `UMIEM_FAKE_PROVIDERS=1` wstawia deterministyczny fake
+grader (routing po słowach kluczowych w odpowiedzi: „almost" → almost, „wrong" →
+incorrect, inaczej correct), tak jak fake providerzy mowy i generacji.
+
 ## Ustawienia medialne i fingerprinty
 
 `UMIEM_TTS_PROVIDER/MODEL/VOICE` oraz `UMIEM_IMAGE_PROVIDER/MODEL/SIZE/QUALITY/FORMAT`

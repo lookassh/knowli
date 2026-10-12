@@ -1,0 +1,149 @@
+import { describe, expect, it } from "vitest";
+import { createOpenAiCompatibleGrader } from "./grader";
+import type { GraderInput } from "../../ports/ai";
+
+/**
+ * Adapter modelu oceniającego (design „Model oceniający”). Testy z wstrzykniętym
+ * `fetch`: poprawny JSON; JSON w bloku markdown; brak `choices`; HTTP 429/500;
+ * timeout (AbortSignal); kształt żądania (temperature 0, response_format, nagłówek
+ * autoryzacji, odpowiedź dziecka tylko w wiadomości `user`); brak tokenu i treści
+ * odpowiedzi dziecka w komunikatach błędów.
+ */
+
+const input: GraderInput = {
+  subjectTitle: "Angielski — gramatyka",
+  topicTitle: "Present Simple",
+  roleProfile: {
+    gradingRole: "You grade ONLY whether the child applied the rule.",
+    almostDefinition: "Return 'almost' when the rule is applied with a minor typo elsewhere.",
+  },
+  instruction: "Uzupełnij zdanie.",
+  stimulus: "He ___ (play) football.",
+  objective: {
+    description: "Third person singular -s in Present Simple.",
+    errorCategories: [{ code: "missing_s", label: "Brak -s" }],
+  },
+  acceptedAnswers: ["he plays", "plays"],
+  childAnswer: "he play",
+};
+
+interface CapturedRequest {
+  url: string;
+  init: { method: string; headers: Record<string, string>; body: string; signal?: AbortSignal };
+}
+
+function capturingFetch(response: () => Response): {
+  fetchImpl: (url: string, init: CapturedRequest["init"]) => Promise<Response>;
+  calls: CapturedRequest[];
+} {
+  const calls: CapturedRequest[] = [];
+  return {
+    calls,
+    fetchImpl: async (url, init) => {
+      calls.push({ url, init });
+      return response();
+    },
+  };
+}
+
+function chatResponse(content: string, status = 200): Response {
+  return new Response(JSON.stringify({ choices: [{ message: { content } }] }), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+const VALID_JSON = JSON.stringify({
+  verdict: "incorrect",
+  errorCategory: "missing_s",
+  fragments: ["play"],
+  note: "Brakuje końcówki -s.",
+});
+
+describe("createOpenAiCompatibleGrader", () => {
+  it("zwraca surowy obiekt dla poprawnego JSON", async () => {
+    const { fetchImpl } = capturingFetch(() => chatResponse(VALID_JSON));
+    const grader = createOpenAiCompatibleGrader({ baseUrl: "https://g.example/v1", apiKey: "secret-token", model: "cheap-1", fetchImpl });
+    const raw = await grader.grade(input, AbortSignal.timeout(1000));
+    expect(raw).toEqual({ verdict: "incorrect", errorCategory: "missing_s", fragments: ["play"], note: "Brakuje końcówki -s." });
+  });
+
+  it("wyciąga JSON z bloku markdown", async () => {
+    const fenced = "```json\n" + VALID_JSON + "\n```";
+    const { fetchImpl } = capturingFetch(() => chatResponse(fenced));
+    const grader = createOpenAiCompatibleGrader({ baseUrl: "https://g.example/v1", apiKey: "t", model: "m", fetchImpl });
+    const raw = (await grader.grade(input, AbortSignal.timeout(1000))) as { verdict: string };
+    expect(raw.verdict).toBe("incorrect");
+  });
+
+  it("żądanie niesie temperature 0, response_format json_object i Bearer; odpowiedź dziecka tylko w user", async () => {
+    const { fetchImpl, calls } = capturingFetch(() => chatResponse(VALID_JSON));
+    const grader = createOpenAiCompatibleGrader({ baseUrl: "https://g.example/v1", apiKey: "secret-token", model: "cheap-1", fetchImpl });
+    await grader.grade(input, AbortSignal.timeout(1000));
+    expect(calls).toHaveLength(1);
+    const call = calls[0]!;
+    expect(call.url).toBe("https://g.example/v1/chat/completions");
+    expect(call.init.method).toBe("POST");
+    expect(call.init.headers.authorization ?? call.init.headers.Authorization).toBe("Bearer secret-token");
+    const body = JSON.parse(call.init.body) as {
+      model: string;
+      temperature: number;
+      response_format: { type: string };
+      messages: { role: string; content: string }[];
+    };
+    expect(body.model).toBe("cheap-1");
+    expect(body.temperature).toBe(0);
+    expect(body.response_format).toEqual({ type: "json_object" });
+    const system = body.messages.find((m) => m.role === "system")!;
+    const user = body.messages.find((m) => m.role === "user")!;
+    expect(system.content).not.toContain("he play");
+    expect(user.content).toContain("he play");
+    // token nigdy w treści promptu
+    expect(system.content).not.toContain("secret-token");
+    expect(user.content).not.toContain("secret-token");
+  });
+
+  it("brak choices → wyjątek bez tokenu i bez odpowiedzi dziecka", async () => {
+    const fetchImpl = async () => new Response(JSON.stringify({ choices: [] }), { status: 200, headers: { "content-type": "application/json" } });
+    const grader = createOpenAiCompatibleGrader({ baseUrl: "https://g.example/v1", apiKey: "secret-token", model: "m", fetchImpl });
+    await grader.grade(input, AbortSignal.timeout(1000)).then(
+      () => {
+        throw new Error("oczekiwano wyjątku");
+      },
+      (error: unknown) => {
+        const message = String((error as Error).message);
+        expect(message).not.toContain("secret-token");
+        expect(message).not.toContain("he play");
+      },
+    );
+  });
+
+  it("HTTP 429 → wyjątek bez tokenu", async () => {
+    const fetchImpl = async () => chatResponse("", 429);
+    const grader = createOpenAiCompatibleGrader({ baseUrl: "https://g.example/v1", apiKey: "secret-token", model: "m", fetchImpl });
+    await expect(grader.grade(input, AbortSignal.timeout(1000))).rejects.toSatisfy(
+      (error: unknown) => !String((error as Error).message).includes("secret-token"),
+    );
+  });
+
+  it("HTTP 500 → wyjątek", async () => {
+    const fetchImpl = async () => chatResponse("", 500);
+    const grader = createOpenAiCompatibleGrader({ baseUrl: "https://g.example/v1", apiKey: "t", model: "m", fetchImpl });
+    await expect(grader.grade(input, AbortSignal.timeout(1000))).rejects.toThrow();
+  });
+
+  it("przekazuje AbortSignal do fetch (timeout kończy się wyjątkiem)", async () => {
+    const fetchImpl = async (_url: string, init: CapturedRequest["init"]) =>
+      new Promise<Response>((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+      });
+    const grader = createOpenAiCompatibleGrader({ baseUrl: "https://g.example/v1", apiKey: "t", model: "m", fetchImpl });
+    await expect(grader.grade(input, AbortSignal.timeout(10))).rejects.toThrow();
+  });
+
+  it("promptVersion jest stałą adaptera", () => {
+    const grader = createOpenAiCompatibleGrader({ baseUrl: "https://g.example/v1", apiKey: "t", model: "m" });
+    expect(typeof grader.promptVersion).toBe("string");
+    expect(grader.promptVersion.length).toBeGreaterThan(0);
+  });
+});
