@@ -25,7 +25,7 @@ function headers(requestId: string, extra?: HeadersInit): Headers {
   return result;
 }
 
-function rpcFailure(requestId: string, code: string, status: number, message: string, extra?: HeadersInit): Response {
+function rpcFailure(requestId: string, code: number, status: number, message: string, extra?: HeadersInit): Response {
   return new Response(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code, message } }), {
     status, headers: headers(requestId, { "content-type": "application/json; charset=utf-8", ...Object.fromEntries(new Headers(extra)) }),
   });
@@ -33,20 +33,20 @@ function rpcFailure(requestId: string, code: string, status: number, message: st
 
 function appErrorResponse(error: unknown, requestId: string, deps: LearningMcpDependencies, principal?: IntegrationPrincipal): Response {
   if (error instanceof AppError && error.code === "rate_limited" && principal) {
-    return rpcFailure(requestId, "-32029", 429, "Rate limit exceeded.", { "retry-after": String(deps.limiter.retryAfterSeconds(principal, deps.now())) });
+    return rpcFailure(requestId, -32029, 429, "Rate limit exceeded.", { "retry-after": String(deps.limiter.retryAfterSeconds(principal, deps.now())) });
   }
   if (error instanceof AppError && error.code === "unauthorized") {
-    return rpcFailure(requestId, "-32001", 401, "Bearer authentication required.", { "www-authenticate": "Bearer" });
+    return rpcFailure(requestId, -32001, 401, "Bearer authentication required.", { "www-authenticate": "Bearer" });
   }
-  if (error instanceof AppError && error.code === "forbidden") return rpcFailure(requestId, "-32003", 403, "Forbidden.");
+  if (error instanceof AppError && error.code === "forbidden") return rpcFailure(requestId, -32003, 403, "Forbidden.");
   const pgCode = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
   if (pgCode.startsWith("08") || pgCode.startsWith("53") || pgCode.startsWith("57") || pgCode === "ECONNRESET" || pgCode === "ECONNREFUSED") {
-    return rpcFailure(requestId, "-32003", 503, "Learning overview is temporarily unavailable.");
+    return rpcFailure(requestId, -32003, 503, "Learning overview is temporarily unavailable.");
   }
   const catalogue = messages.errors as Record<string, string | undefined>;
   const status = error instanceof AppError ? error.status : 500;
   const code = error instanceof AppError ? error.code : "internal";
-  return rpcFailure(requestId, "-32603", status, catalogue[code] ?? catalogue.internal!);
+  return rpcFailure(requestId, -32603, status, catalogue[code] ?? catalogue.internal!);
 }
 
 function validOrigin(value: string): boolean {
@@ -83,11 +83,11 @@ async function readBoundedBody(request: Request): Promise<{ bytes: Uint8Array } 
 export async function handleLearningMcpRequest(request: Request, deps: LearningMcpDependencies): Promise<Response> {
   const requestId = deps.requestId();
   const origin = request.headers.get("origin");
-  if (origin !== null && (!validOrigin(origin) || !deps.allowedOrigins.has(origin))) return rpcFailure(requestId, "-32003", 403, "Origin is not allowed.");
+  if (origin !== null && (!validOrigin(origin) || !deps.allowedOrigins.has(origin))) return rpcFailure(requestId, -32003, 403, "Origin is not allowed.");
 
   const authorization = request.headers.get("authorization") ?? "";
   const match = /^Bearer ([^\s]+)$/.exec(authorization);
-  if (!match) return rpcFailure(requestId, "-32001", 401, "Bearer authentication required.", { "www-authenticate": "Bearer" });
+  if (!match) return rpcFailure(requestId, -32001, 401, "Bearer authentication required.", { "www-authenticate": "Bearer" });
 
   let principal: IntegrationPrincipal;
   try {
@@ -99,21 +99,21 @@ export async function handleLearningMcpRequest(request: Request, deps: LearningM
   const contentType = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
   const accept = request.headers.get("accept") ?? "";
   if (contentType !== "application/json" || !accept.split(",").some((value) => value.trim().startsWith("application/json")) || !accept.split(",").some((value) => value.trim().startsWith("text/event-stream"))) {
-    return rpcFailure(requestId, "-32600", 400, "Invalid MCP HTTP headers.");
+    return rpcFailure(requestId, -32600, 400, "Invalid MCP HTTP headers.");
   }
 
   let body: unknown;
   const bounded = await readBoundedBody(request);
-  if ("tooLarge" in bounded) return rpcFailure(requestId, "-32600", 413, "Request body is too large.");
+  if ("tooLarge" in bounded) return rpcFailure(requestId, -32600, 413, "Request body is too large.");
   try { body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bounded.bytes)); }
-  catch { return rpcFailure(requestId, "-32700", 400, "Parse error."); }
-  if (Array.isArray(body)) return rpcFailure(requestId, "-32600", 400, "JSON-RPC batches are not supported.");
+  catch { return rpcFailure(requestId, -32700, 400, "Parse error."); }
+  if (Array.isArray(body)) return rpcFailure(requestId, -32600, 400, "JSON-RPC batches are not supported.");
 
   const rpcMethod = typeof body === "object" && body !== null && "method" in body ? (body as { method?: unknown }).method : undefined;
   if (rpcMethod !== "initialize") {
     const protocolVersion = request.headers.get("mcp-protocol-version");
     if (protocolVersion && !["2025-11-25", "2025-06-18", "2025-03-26"].includes(protocolVersion)) {
-      return rpcFailure(requestId, "-32600", 400, "Unsupported MCP protocol version.");
+      return rpcFailure(requestId, -32600, 400, "Unsupported MCP protocol version.");
     }
   }
 
@@ -134,7 +134,7 @@ export async function handleLearningMcpRequest(request: Request, deps: LearningM
     outHeaders.delete("mcp-session-id");
     return new Response(output, { status: response.status, headers: outHeaders });
   } catch {
-    return rpcFailure(requestId, "-32603", 500, "MCP request failed.");
+    return rpcFailure(requestId, -32603, 500, "MCP request failed.");
   } finally {
     await Promise.allSettled([server.close(), transport.close()]);
   }

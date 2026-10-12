@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Services } from "@learning/server";
 import { getLearningOverview } from "@learning/server";
 import { IntegrationReadLimiter, handleLearningOverviewRequest } from "./learning-overview-route";
+import { handleLearningMcpRequest, type LearningMcpDependencies } from "./learning-mcp-route";
 
 vi.mock("@learning/server", async (load) => {
   const actual = await load<typeof import("@learning/server")>();
@@ -48,5 +49,39 @@ describe("learning overview HTTP boundary", () => {
     expect(() => limiter.consume(principal, now)).toThrow();
     expect(limiter.retryAfterSeconds(principal, now)).toBe(60);
     limiter.consume(principal, now + 60_000);
+  });
+
+  it("shares one per-token limit across the REST and MCP read endpoints", async () => {
+    const now = Date.parse("2026-10-11T12:00:00Z");
+    const limiter = new IntegrationReadLimiter(1);
+    vi.mocked(getLearningOverview).mockImplementation(async (_services, _query, _token, onAuthenticated) => {
+      onAuthenticated?.(principal as never);
+      return payload as never;
+    });
+    const rest = await handleLearningOverviewRequest(new Request("https://local/api/v1/integrations/learning-overview", {
+      headers: { authorization: "Bearer shared-token" },
+    }), services, limiter);
+    expect(rest.status).toBe(200);
+
+    const mcpDependencies: LearningMcpDependencies = {
+      authenticate: vi.fn(async () => principal as never),
+      readOverview: vi.fn(async () => payload),
+      limiter,
+      allowedOrigins: new Set(),
+      now: () => now,
+      requestId: () => "request-id",
+    };
+    const mcp = await handleLearningMcpRequest(new Request("https://local/api/mcp", {
+      method: "POST",
+      headers: { authorization: "Bearer shared-token", "content-type": "application/json",
+        accept: "application/json, text/event-stream", "mcp-protocol-version": "2025-11-25" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {
+        protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "test", version: "1" },
+      } }),
+    }), mcpDependencies);
+
+    expect(mcp.status).toBe(429);
+    expect((await mcp.json()).error.code).toBe(-32029);
+    expect(mcpDependencies.readOverview).not.toHaveBeenCalled();
   });
 });
