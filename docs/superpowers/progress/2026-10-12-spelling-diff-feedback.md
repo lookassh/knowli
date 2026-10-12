@@ -22,10 +22,21 @@ izolator `UMIEM_TEST_RUN_ID`/`UMIEM_E2E_PORT`.
 ## Zadania
 
 ### Task 1: Kontrakt — spellingDiff w FeedbackDto + komunikaty
-- Status: DO WYKONANIA
+- Status: UKOŃCZONE (commit d6abcc5)
+- RED: 2 failed (brak spelling_hint w enum / pola spellingDiff), 3 negatywne przechodziły przez .strict() — poprawnie.
+- GREEN: 5/5 nowy plik; całość unit 497/497 PASS.
+- Do commita dołączono: .gitignore (.superpowers/) + ten dziennik.
 
 ### Task 2: Domena — compareSpelling
-- Status: DO WYKONANIA
+- Status: UKOŃCZONE
+- RED: moduł nie istniał (no tests / import error).
+- Odstępstwo od planu (klauzula planu o lokalizacji pigułek): poprawiono oczekiwania 4 testów —
+  plan błędnie zliczał zgodne litery do pigułki („Wenesday"→given cały plain; „Widnesday"→pill tylko
+  „i"/„e"; nie „Wi"/„We") oraz dystans „wendsday"=2 (nie 1: brak „e" + przestawienie „nd") i przykład
+  progu „caat"→„cat"=1 (nie 2; zastąpiono „abt"→„cat"=2). Implementacja bez zmian; dystanse i liczba
+  operacji zgodne z designem.
+- GREEN: 8/8 PASS.
+
 
 ### Task 3: Domena — chooseFeedback + ekspozycje
 - Status: DO WYKONANIA
