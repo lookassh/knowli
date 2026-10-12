@@ -230,7 +230,7 @@ function buildPoolInput(
 }
 
 /** Surowy obiekt z portu → `LessonExerciseDraft` (walidacja kształtu w domenie). */
-function toExerciseDraft(raw: unknown): LessonExerciseDraft {
+export function toExerciseDraft(raw: unknown): LessonExerciseDraft {
   const r = (raw ?? {}) as Record<string, unknown>;
   return {
     exerciseType: r.exerciseType as LessonExerciseType,
@@ -258,7 +258,7 @@ function toExerciseDraft(raw: unknown): LessonExerciseDraft {
 }
 
 /** Payload `lesson_exercise` (payload_version 2) z locale przedmiotu. */
-function buildLessonPayload(
+export function buildLessonPayload(
   ex: LessonExerciseDraft,
   subject: SubjectModule,
 ): Record<string, unknown> {
@@ -284,7 +284,7 @@ function buildLessonPayload(
 }
 
 /** criteria dla umiejętności `objective` (design „Data Models”). */
-function buildObjectiveCriteria(
+export function buildObjectiveCriteria(
   ex: LessonExerciseDraft,
   subject: SubjectModule,
   topicVersion: number,

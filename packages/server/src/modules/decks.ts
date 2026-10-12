@@ -40,20 +40,14 @@ import { buildSkillCriteria, classifyRevisionImpact } from "../domain/revision-i
 import { computeTargetKey } from "../domain/target-key";
 import { VOCABULARY_SKILLS, type VocabularySkill } from "../domain/types";
 import { buildPayload, payloadToItem, validateItems } from "./item-payload";
+import { assertVocabularyDeck, readDeckKind, readVersionDeckKind } from "./deck-kind";
 import { assertAssetPublishable, reconcileDraftAssetsTx, requiredAssetsFor } from "./media-reconciliation";
-
-async function lockVersion(tx: Tx, draftId: string) {
-  const rows = await tx
-    .select()
-    .from(deckVersions)
-    .where(eq(deckVersions.id, draftId))
-    .for("update");
-  const version = rows[0];
-  if (!version) {
-    throw new AppError("not_found");
-  }
-  return version;
-}
+import {
+  assertEditable,
+  bumpEditNumber,
+  createVersionFromPublished,
+  lockVersion,
+} from "./version-ops";
 
 /**
  * Tworzy wersje kryteriów dla wskazanych umiejętności itemu. Numery rewizji
@@ -263,11 +257,77 @@ interface CurrentRevision {
 }
 
 /**
- * Nowy edytowalny szkic z aktualnie opublikowanej wersji zestawu
- * (architecture.md §12: POST /decks/:id/draft, SPEC §84). Kopiuje rewizje
- * z tymi samymi kluczami umiejętności i decyzjami o mediach — dopiero edycja
- * szkicu tworzy nowe skill_versions z predecessorami. Opublikowana wersja
- * pozostaje nietknięta i prowadzi sesje dziecka do publikacji nowej.
+ * Kopiuje treść wersji źródłowej do nowej wersji: rewizje elementów, klucze
+ * umiejętności (`item_revision_skills`) i decyzje rodzica o mediach
+ * (`revision_assets`) — WERBATIM. Kształt tych tabel jest niezależny od rodzaju
+ * zestawu (słówka i lekcje różnią się payloadem i zestawem umiejętności, ale nie
+ * strukturą rewizji), więc jeden copy działa dla obu rodzajów. Nowe
+ * skill_versions z predecessorami powstają dopiero przy edycji szkicu, nie tu.
+ */
+export async function copyRevisionsSkillsAssets(
+  tx: Tx,
+  args: { sourceVersionId: string; newVersionId: string; deckId: string },
+): Promise<void> {
+  const revisions = await tx
+    .select()
+    .from(itemRevisions)
+    .where(eq(itemRevisions.deckVersionId, args.sourceVersionId))
+    .orderBy(asc(itemRevisions.position));
+  const revisionIds = revisions.map((r) => r.id);
+  const skills = revisionIds.length
+    ? await tx
+        .select({
+          itemRevisionId: itemRevisionSkills.itemRevisionId,
+          skill: itemRevisionSkills.skill,
+          skillVersionId: itemRevisionSkills.skillVersionId,
+        })
+        .from(itemRevisionSkills)
+        .where(inArray(itemRevisionSkills.itemRevisionId, revisionIds))
+    : [];
+  const assets = revisionIds.length
+    ? await tx.select().from(revisionAssets).where(inArray(revisionAssets.itemRevisionId, revisionIds))
+    : [];
+
+  for (const revision of revisions) {
+    const copyId = randomUUID();
+    await tx.insert(itemRevisions).values({
+      id: copyId,
+      itemId: revision.itemId,
+      deckId: args.deckId,
+      deckVersionId: args.newVersionId,
+      position: revision.position,
+      payloadVersion: revision.payloadVersion,
+      payload: revision.payload,
+      targetKey: revision.targetKey,
+    });
+    for (const skill of skills.filter((row) => row.itemRevisionId === revision.id)) {
+      await tx.insert(itemRevisionSkills).values({
+        itemRevisionId: copyId,
+        itemId: revision.itemId,
+        skill: skill.skill,
+        skillVersionId: skill.skillVersionId,
+      });
+    }
+    // decyzje rodzica o mediach (approved/omitted, fingerprinty) przechodzą
+    // do szkicu; uzgodnienie przy każdej edycji zadba o zmiany treści
+    for (const asset of assets.filter((row) => row.itemRevisionId === revision.id)) {
+      await tx.insert(revisionAssets).values({
+        itemRevisionId: copyId,
+        role: asset.role,
+        assetId: asset.assetId,
+        expectedFingerprint: asset.expectedFingerprint,
+        state: asset.state,
+      });
+    }
+  }
+}
+
+/**
+ * Nowy edytowalny szkic z aktualnie opublikowanej wersji zestawu słówek
+ * (architecture.md §12: POST /decks/:id/draft, SPEC §84). Szkielet wersjonowania
+ * (blokada, strażniki, numer wersji) jest wspólny (`createVersionFromPublished`);
+ * kopię treści robi `copyRevisionsSkillsAssets`. Opublikowana wersja pozostaje
+ * nietknięta i prowadzi sesje dziecka do publikacji nowej.
  */
 export async function createDraftFromPublished(
   services: Services,
@@ -275,101 +335,15 @@ export async function createDraftFromPublished(
 ): Promise<DraftDto> {
   const id = z.uuid().parse(deckId);
   return services.db.transaction(async (tx) => {
-    // blokada wiersza zestawu serializuje równoległe forki (indeks częściowy
-    // one_editable_version_per_deck to ostateczny strażnik) i wyścig z archiwum
-    const deck = (await tx.select().from(decks).where(eq(decks.id, id)).for("update"))[0];
-    if (!deck) {
-      throw new AppError("not_found");
-    }
-    if (deck.archivedAt) {
-      throw new AppError("conflict");
-    }
-    if (!deck.publishedVersionId) {
-      throw new AppError("validation", { message: "deck is not published" });
-    }
-    const editable = (
-      await tx
-        .select({ id: deckVersions.id })
-        .from(deckVersions)
-        .where(and(eq(deckVersions.deckId, id), inArray(deckVersions.state, ["draft", "review"])))
-    )[0];
-    if (editable) {
-      throw new AppError("conflict");
-    }
-    const source = (
-      await tx.select().from(deckVersions).where(eq(deckVersions.id, deck.publishedVersionId))
-    )[0]!;
-    const maxVersion = (
-      await tx
-        .select({ max: sql<number>`max(${deckVersions.versionNumber})::int` })
-        .from(deckVersions)
-        .where(eq(deckVersions.deckId, id))
-    )[0]!;
-
-    const versionId = randomUUID();
-    await tx.insert(deckVersions).values({
-      id: versionId,
-      deckId: id,
-      versionNumber: maxVersion.max + 1,
-      editNumber: 1,
-      state: "draft",
-      title: source.title,
-      sourceLocale: source.sourceLocale,
-      targetLocale: source.targetLocale,
-    });
-
-    const revisions = await tx
-      .select()
-      .from(itemRevisions)
-      .where(eq(itemRevisions.deckVersionId, source.id))
-      .orderBy(asc(itemRevisions.position));
-    const revisionIds = revisions.map((r) => r.id);
-    const skills = revisionIds.length
-      ? await tx
-          .select({
-            itemRevisionId: itemRevisionSkills.itemRevisionId,
-            skill: itemRevisionSkills.skill,
-            skillVersionId: itemRevisionSkills.skillVersionId,
-          })
-          .from(itemRevisionSkills)
-          .where(inArray(itemRevisionSkills.itemRevisionId, revisionIds))
-      : [];
-    const assets = revisionIds.length
-      ? await tx.select().from(revisionAssets).where(inArray(revisionAssets.itemRevisionId, revisionIds))
-      : [];
-
-    for (const revision of revisions) {
-      const copyId = randomUUID();
-      await tx.insert(itemRevisions).values({
-        id: copyId,
-        itemId: revision.itemId,
+    assertVocabularyDeck(await readDeckKind(tx, id));
+    const newVersionId = await createVersionFromPublished(tx, id, (innerTx, { source, newVersionId }) =>
+      copyRevisionsSkillsAssets(innerTx, {
+        sourceVersionId: source.id,
+        newVersionId,
         deckId: id,
-        deckVersionId: versionId,
-        position: revision.position,
-        payload: revision.payload,
-        targetKey: revision.targetKey,
-      });
-      for (const skill of skills.filter((row) => row.itemRevisionId === revision.id)) {
-        await tx.insert(itemRevisionSkills).values({
-          itemRevisionId: copyId,
-          itemId: revision.itemId,
-          skill: skill.skill,
-          skillVersionId: skill.skillVersionId,
-        });
-      }
-      // decyzje rodzica o mediach (approved/omitted, fingerprinty) przechodzą
-      // do szkicu; uzgodnienie przy każdej edycji zadba o zmiany treści
-      for (const asset of assets.filter((row) => row.itemRevisionId === revision.id)) {
-        await tx.insert(revisionAssets).values({
-          itemRevisionId: copyId,
-          role: asset.role,
-          assetId: asset.assetId,
-          expectedFingerprint: asset.expectedFingerprint,
-          state: asset.state,
-        });
-      }
-    }
-    return readDraftDto(tx, versionId);
+      }),
+    );
+    return readDraftDto(tx, newVersionId);
   });
 }
 
@@ -511,22 +485,15 @@ export async function editDraft(
 
   return services.db.transaction(async (tx) => {
     const version = await lockVersion(tx, draftId);
-    if (version.state === "published") {
-      throw new AppError("immutable");
-    }
-    if (version.editNumber !== valid.expectedEditNumber) {
-      throw new AppError("conflict");
-    }
+    assertVocabularyDeck(await readVersionDeckKind(tx, draftId));
+    assertEditable(version, valid.expectedEditNumber);
     if (valid.title !== undefined) {
       await tx.update(deckVersions).set({ title: valid.title }).where(eq(deckVersions.id, draftId));
     }
     if (valid.items !== undefined) {
       await applyItems(tx, draftId, version.deckId, valid.items);
     }
-    await tx
-      .update(deckVersions)
-      .set({ editNumber: sql`${deckVersions.editNumber} + 1` })
-      .where(eq(deckVersions.id, draftId));
+    await bumpEditNumber(tx, draftId);
     // każda edycja uzgadnia powiązania zasobów w tej samej transakcji
     await reconcileDraftAssetsTx(tx, services, version);
     return readDraftDto(tx, draftId);
@@ -540,6 +507,7 @@ export async function publishDraft(
 ): Promise<{ deckVersionId: string }> {
   return services.db.transaction(async (tx) => {
     const version = await lockVersion(tx, draftId);
+    assertVocabularyDeck(await readVersionDeckKind(tx, draftId));
     if (version.state === "published") {
       throw new AppError("conflict");
     }
@@ -722,6 +690,7 @@ export async function readDeck(services: Services, deckId: string): Promise<Deck
   if (!deck) {
     throw new AppError("not_found");
   }
+  assertVocabularyDeck(deck.kind as "vocabulary" | "lesson");
   const editable = (
     await services.db
       .select()
@@ -811,6 +780,18 @@ export async function upsertAssignment(
   }
   if (!deck.publishedVersionId) {
     throw new AppError("validation", { message: "deck is not published" });
+  }
+  // Cel kartkówki musi pasować do rodzaju zestawu (zadanie 11): lekcja przyjmuje
+  // tylko cel `lesson`, słówka tylko cele słówkowe. Mieszanie już wyklucza CHECK
+  // `assignments_test_goals`, ale dopasowanie do rodzaju jest regułą aplikacji.
+  if (settings.testGoals != null && settings.testGoals.length > 0) {
+    const wantsLesson = settings.testGoals.includes("lesson");
+    if (deck.kind === "lesson" && !wantsLesson) {
+      throw new AppError("validation", { message: "lesson deck requires the 'lesson' test goal" });
+    }
+    if (deck.kind !== "lesson" && wantsLesson) {
+      throw new AppError("validation", { message: "vocabulary deck cannot use the 'lesson' test goal" });
+    }
   }
   try {
     await services.db

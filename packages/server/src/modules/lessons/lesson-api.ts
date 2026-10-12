@@ -1,0 +1,663 @@
+import { randomUUID } from "node:crypto";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { z } from "zod";
+import {
+  LessonExerciseInputSchema,
+  type AssignmentDto,
+  type CoverageGapDto,
+  type GenerationDto,
+  type LessonDeckDto,
+  type LessonDraftDto,
+  type LessonExerciseInput,
+  type SubjectCatalogDto,
+} from "@learning/contracts";
+import type { Services } from "../../config";
+import type { Executor, Tx } from "../../db/client";
+import {
+  assignments,
+  childProfiles,
+  deckVersions,
+  decks,
+  generationRuns,
+  itemRevisionSkills,
+  itemRevisions,
+  learningItems,
+  mediaAssets,
+  revisionAssets,
+  skillVersions,
+} from "../../db/schema";
+import { AppError } from "../../errors";
+import { computeTargetKey } from "../../domain/target-key";
+import { DEFAULT_LESSON_POLICY } from "../../domain/lessons/lesson-policy";
+import { poolCoverage, validateLessonExercise } from "../../domain/lessons/pool-validation";
+import type { LessonExerciseDraft, LessonTopic, SubjectModule } from "../../domain/lessons/types";
+import { assertAssetPublishable, reconcileDraftAssetsTx } from "../media-reconciliation";
+import { copyRevisionsSkillsAssets } from "../decks";
+import {
+  assertEditable,
+  bumpEditNumber,
+  createVersionFromPublished,
+  lockVersion,
+} from "../version-ops";
+import { buildLessonPayload, buildObjectiveCriteria, toExerciseDraft } from "./lesson-drafts";
+
+/**
+ * API rodzica dla lekcji (zadanie 11). Cienka logika serwerowa za routerem:
+ * katalog przedmiotów, odczyt zestawu-lekcji, edycja ćwiczeń szkicu z walidacją
+ * per ćwiczenie i zachowaniem/odnowieniem kluczy `objective`, publikacja z
+ * wymogiem pokrycia etapów, oraz nowa wersja z opublikowanej. Mechaniki wspólne
+ * z zestawami słówek (blokada wersji, optimistic locking, nowy szkic z
+ * opublikowanej, kopia rewizji/umiejętności/mediów) pochodzą z `version-ops.ts`
+ * i `decks.ts` — ten moduł dokłada tylko to, co specyficzne dla lekcji (zapis
+ * ćwiczeń, walidacja puli, pokrycie).
+ */
+
+/** Pola `lesson_context` czytane przez API rodzica. */
+interface LessonContextView {
+  subjectId: string;
+  topicId: string;
+  topicVersion: number;
+  objectiveIds: string[];
+  examples: Record<string, string[]>;
+  rejectedCount: number;
+}
+
+function readLessonContext(raw: Record<string, unknown> | null): LessonContextView {
+  const ctx = (raw ?? {}) as Partial<LessonContextView>;
+  return {
+    subjectId: ctx.subjectId ?? "",
+    topicId: ctx.topicId ?? "",
+    topicVersion: ctx.topicVersion ?? 1,
+    objectiveIds: ctx.objectiveIds ?? [],
+    examples: ctx.examples ?? {},
+    rejectedCount: ctx.rejectedCount ?? 0,
+  };
+}
+
+/** Przedmiot z rejestru lub `validation` — wersja opublikowana przypina rejestr. */
+function requireSubject(services: Services, subjectId: string): SubjectModule {
+  const subject = services.subjects.getSubject(subjectId);
+  if (!subject) {
+    throw new AppError("validation", { message: `unknown subject: ${subjectId}` });
+  }
+  return subject;
+}
+
+/** Temat przypięty w `lesson_context` wersji (version z rejestru), lub `validation`. */
+function requireTopic(services: Services, subjectId: string, topicId: string, version: number): LessonTopic {
+  const topic = services.subjects.getTopic(subjectId, topicId, version);
+  if (!topic) {
+    throw new AppError("validation", { message: `unknown topic: ${subjectId}/${topicId}@${version}` });
+  }
+  return topic;
+}
+
+/**
+ * Katalog przedmiotów do formularza rodzica: najnowsze wersje tematów, tylko
+ * identyfikatory i polskie tytuły (bez pól modelowych). Źródło: wstrzyknięty
+ * rejestr przedmiotów (`services.subjects`).
+ */
+export function lessonCatalog(services: Services): SubjectCatalogDto {
+  return {
+    subjects: services.subjects.listSubjects().map((subject) => {
+      const latestByTopic = new Map<string, LessonTopic>();
+      for (const topic of subject.topics) {
+        const current = latestByTopic.get(topic.id);
+        if (!current || topic.version > current.version) {
+          latestByTopic.set(topic.id, topic);
+        }
+      }
+      return {
+        id: subject.id,
+        titlePl: subject.titlePl,
+        topics: [...latestByTopic.values()].map((topic) => ({
+          id: topic.id,
+          version: topic.version,
+          titlePl: topic.titlePl,
+          objectives: topic.objectives.map((objective) => ({
+            id: objective.id,
+            titlePl: objective.titlePl,
+          })),
+        })),
+      };
+    }),
+  };
+}
+
+/** DTO ćwiczenia z payloadu rewizji (payload lekcji → `LessonExerciseInput` + revisionId). */
+function exerciseDtoFromPayload(
+  itemId: string,
+  revisionId: string,
+  payload: Record<string, unknown>,
+): LessonDraftDto["exercises"][number] {
+  const draft = toExerciseDraft(payload);
+  return {
+    id: itemId,
+    revisionId,
+    exerciseType: draft.exerciseType,
+    objectiveId: draft.objectiveId,
+    ...(draft.instructionPl === undefined ? {} : { instructionPl: draft.instructionPl }),
+    ...(draft.stem === undefined ? {} : { stem: draft.stem }),
+    ...(draft.statement === undefined ? {} : { statement: draft.statement }),
+    ...(draft.prompt === undefined ? {} : { prompt: draft.prompt }),
+    ...(draft.hint === undefined ? {} : { hint: draft.hint }),
+    ...(draft.transformId === undefined ? {} : { transformId: draft.transformId }),
+    ...(draft.noticeSegments === undefined
+      ? {}
+      : { noticeSegments: draft.noticeSegments.map((s) => [...s]) }),
+    answer: draft.answer,
+    acceptedAnswers: [...draft.acceptedAnswers],
+    focus: [...draft.focus],
+    ...(draft.options === undefined ? {} : { options: draft.options.map((o) => ({ ...o })) }),
+    ...(draft.correctOption === undefined ? {} : { correctOption: draft.correctOption }),
+    ...(draft.items === undefined ? {} : { items: draft.items.map((o) => ({ ...o })) }),
+  };
+}
+
+/** Buduje `LessonDraftDto` wersji (szkic lub opublikowana): ćwiczenia, pokrycie, media. */
+async function readLessonDraftDto(
+  db: Executor,
+  services: Services,
+  versionId: string,
+): Promise<LessonDraftDto> {
+  const version = (await db.select().from(deckVersions).where(eq(deckVersions.id, versionId)))[0];
+  if (!version) {
+    throw new AppError("not_found");
+  }
+  const context = readLessonContext(version.lessonContext);
+  const revisions = await db
+    .select()
+    .from(itemRevisions)
+    .where(eq(itemRevisions.deckVersionId, versionId))
+    .orderBy(asc(itemRevisions.position));
+  const revisionIds = revisions.map((r) => r.id);
+  const assetRows = revisionIds.length
+    ? await db
+        .select({
+          itemRevisionId: revisionAssets.itemRevisionId,
+          role: revisionAssets.role,
+          decisionState: revisionAssets.state,
+          assetId: revisionAssets.assetId,
+          assetState: mediaAssets.state,
+        })
+        .from(revisionAssets)
+        .leftJoin(mediaAssets, eq(mediaAssets.id, revisionAssets.assetId))
+        .where(inArray(revisionAssets.itemRevisionId, revisionIds))
+    : [];
+
+  const exercises = revisions.map((r) => exerciseDtoFromPayload(r.itemId, r.id, r.payload));
+  const drafts: LessonExerciseDraft[] = revisions.map((r) => toExerciseDraft(r.payload));
+  const coverage: CoverageGapDto[] = poolCoverage(
+    drafts,
+    context.objectiveIds,
+    DEFAULT_LESSON_POLICY.poolMinimums,
+  );
+
+  return {
+    id: version.id,
+    deckId: version.deckId,
+    editNumber: version.editNumber,
+    status: version.state as LessonDraftDto["status"],
+    title: version.title,
+    subjectId: context.subjectId,
+    topicId: context.topicId,
+    topicVersion: context.topicVersion,
+    objectiveIds: [...context.objectiveIds],
+    examples: context.examples,
+    exercises,
+    assets: assetRows.map((a) => ({
+      itemRevisionId: a.itemRevisionId,
+      role: a.role,
+      state:
+        a.decisionState === "omitted"
+          ? "omitted"
+          : a.assetState === "ready"
+            ? "approved"
+            : a.assetState === "failed"
+              ? "failed"
+              : "pending",
+      assetId: a.assetId,
+    })),
+    rejectedCount: context.rejectedCount,
+    coverage,
+  };
+}
+
+/** Najnowszy run `lesson` wskazanej wersji (polling panelu rodzica). */
+async function latestLessonRun(db: Executor, deckVersionId: string): Promise<GenerationDto | null> {
+  const run = (
+    await db
+      .select()
+      .from(generationRuns)
+      .where(and(eq(generationRuns.deckVersionId, deckVersionId), eq(generationRuns.kind, "lesson")))
+      .orderBy(desc(generationRuns.createdAt))
+      .limit(1)
+  )[0];
+  if (!run) {
+    return null;
+  }
+  const deckId = (
+    await db.select({ deckId: deckVersions.deckId }).from(deckVersions).where(eq(deckVersions.id, deckVersionId))
+  )[0]?.deckId ?? null;
+  return {
+    id: run.id,
+    deckId,
+    deckVersionId: run.deckVersionId ?? null,
+    state: run.state as GenerationDto["state"],
+    attempts: run.attempts,
+    errorCode: run.errorCode ?? null,
+  };
+}
+
+async function lessonAssignments(db: Executor, deckId: string): Promise<AssignmentDto[]> {
+  return db
+    .select({
+      childId: assignments.childId,
+      displayName: childProfiles.displayName,
+      testDate: assignments.testDate,
+      testGoals: assignments.testGoals,
+      mockTestTaskCount: assignments.mockTestTaskCount,
+      active: assignments.active,
+    })
+    .from(assignments)
+    .innerJoin(childProfiles, eq(childProfiles.id, assignments.childId))
+    .where(eq(assignments.deckId, deckId))
+    .orderBy(asc(childProfiles.createdAt), asc(childProfiles.id));
+}
+
+/**
+ * Pełny widok zestawu-lekcji (`GET /parent/lessons/:deckId`): szkic edytowalny,
+ * opublikowana wersja, najnowszy run i przypisania. Nieznany zestaw → not_found;
+ * zestaw słówek na tej ścieżce → `deck_kind_mismatch`.
+ */
+export async function readLessonDeck(services: Services, deckId: string): Promise<LessonDeckDto> {
+  const id = z.uuid().parse(deckId);
+  const deck = (await services.db.select().from(decks).where(eq(decks.id, id)))[0];
+  if (!deck) {
+    throw new AppError("not_found");
+  }
+  if (deck.kind !== "lesson") {
+    throw new AppError("deck_kind_mismatch", { message: "nie jest zestawem lekcji" });
+  }
+  const editable = (
+    await services.db
+      .select({ id: deckVersions.id })
+      .from(deckVersions)
+      .where(and(eq(deckVersions.deckId, id), inArray(deckVersions.state, ["draft", "review"])))
+  )[0];
+  const publishedVersionId = deck.publishedVersionId ?? null;
+  const state: LessonDeckDto["state"] = deck.archivedAt
+    ? "archived"
+    : editable
+      ? ((await services.db.select({ state: deckVersions.state }).from(deckVersions).where(eq(deckVersions.id, editable.id)))[0]!.state as "draft" | "review")
+      : publishedVersionId
+        ? "published"
+        : "draft";
+  return {
+    id: deck.id,
+    title: deck.title,
+    state,
+    draft: editable ? await readLessonDraftDto(services.db, services, editable.id) : null,
+    published: publishedVersionId ? await readLessonDraftDto(services.db, services, publishedVersionId) : null,
+    generation: editable ? await latestLessonRun(services.db, editable.id) : null,
+    assignments: await lessonAssignments(services.db, id),
+  };
+}
+
+/**
+ * Deck id wersji lekcji (dla ścieżek operujących na `versionId`, a wołających
+ * logikę po `deckId`, jak dogenerowanie celu). Nieznana wersja → not_found;
+ * wersja słówek → `deck_kind_mismatch`.
+ */
+export async function deckIdOfLessonVersion(services: Services, versionId: string): Promise<string> {
+  const id = z.uuid().parse(versionId);
+  const row = (
+    await services.db
+      .select({ deckId: deckVersions.deckId, kind: decks.kind })
+      .from(deckVersions)
+      .innerJoin(decks, eq(decks.id, deckVersions.deckId))
+      .where(eq(deckVersions.id, id))
+  )[0];
+  if (!row) {
+    throw new AppError("not_found");
+  }
+  if (row.kind !== "lesson") {
+    throw new AppError("deck_kind_mismatch", { message: "nie jest zestawem lekcji" });
+  }
+  return row.deckId;
+}
+
+/** Patch edycji ćwiczeń lekcji (jak `DraftPatch` słówek, ale pełna lista ćwiczeń). */
+const LessonDraftPatchSchema = z.object({
+  expectedEditNumber: z.number().int().positive(),
+  title: z.string().min(1).max(200).optional(),
+  exercises: z.array(LessonExerciseInputSchema).optional(),
+  examples: z.record(z.string(), z.array(z.string())).optional(),
+}).refine(
+  (p) => p.title !== undefined || p.exercises !== undefined || p.examples !== undefined,
+  { message: "patch must change title, exercises or examples" },
+);
+export type LessonDraftPatch = z.infer<typeof LessonDraftPatchSchema>;
+
+/** Czy zmiana treści ćwiczenia tworzy nowy `objective` (odpowiedź/warianty/focus). */
+function objectiveImpacted(oldDraft: LessonExerciseDraft, next: LessonExerciseInput): boolean {
+  const sameAnswer = oldDraft.answer === next.answer;
+  const sameAccepted =
+    JSON.stringify([...oldDraft.acceptedAnswers].sort()) === JSON.stringify([...next.acceptedAnswers].sort());
+  const sameFocus = JSON.stringify([...oldDraft.focus]) === JSON.stringify([...next.focus]);
+  const sameObjective = oldDraft.objectiveId === next.objectiveId;
+  return !(sameAnswer && sameAccepted && sameFocus && sameObjective);
+}
+
+const TEMP_POSITION_OFFSET = 1000;
+
+interface CurrentLessonRevision {
+  revisionId: string;
+  itemId: string;
+  payload: Record<string, unknown>;
+  objectiveSkillVersionId: string;
+  objectiveRevisionNumber: number;
+}
+
+async function loadCurrentLessonRevisions(tx: Tx, versionId: string): Promise<CurrentLessonRevision[]> {
+  const revisions = await tx
+    .select()
+    .from(itemRevisions)
+    .where(eq(itemRevisions.deckVersionId, versionId))
+    .orderBy(asc(itemRevisions.position));
+  const result: CurrentLessonRevision[] = [];
+  for (const r of revisions) {
+    const skill = (
+      await tx
+        .select({
+          skillVersionId: itemRevisionSkills.skillVersionId,
+          revisionNumber: skillVersions.revisionNumber,
+        })
+        .from(itemRevisionSkills)
+        .innerJoin(skillVersions, eq(skillVersions.id, itemRevisionSkills.skillVersionId))
+        .where(and(eq(itemRevisionSkills.itemRevisionId, r.id), eq(itemRevisionSkills.skill, "objective")))
+    )[0];
+    result.push({
+      revisionId: r.id,
+      itemId: r.itemId,
+      payload: r.payload,
+      objectiveSkillVersionId: skill?.skillVersionId ?? "",
+      objectiveRevisionNumber: skill?.revisionNumber ?? 1,
+    });
+  }
+  return result;
+}
+
+/**
+ * Nadpisuje ćwiczenia szkicu lekcji pełną listą (jak `applyItems` słówek, ale
+ * dla jednej umiejętności `objective`). Dla istniejących (po `id`) zmiana
+ * odpowiedzi/wariantów/`focus`/celu tworzy nową `skill_version` (predecessor +
+ * revision_number+1); zmiana wyłącznie polecenia zachowuje klucz. Nowe ćwiczenia
+ * (bez `id`) dostają nowy learning_item i skill_version. Usunięte znikają wraz
+ * z powiązaniami. `target_key` z `computeTargetKey(answer, answerLocale)`.
+ */
+async function applyLessonExercisesEdit(
+  tx: Tx,
+  version: { id: string; deckId: string },
+  subject: SubjectModule,
+  topicVersion: number,
+  exercises: readonly LessonExerciseInput[],
+): Promise<void> {
+  const current = await loadCurrentLessonRevisions(tx, version.id);
+  const byItemId = new Map(current.map((c) => [c.itemId, c]));
+
+  const referencedIds = new Set(exercises.map((e) => e.id).filter((id): id is string => id !== undefined));
+  for (const id of referencedIds) {
+    if (!byItemId.has(id)) {
+      throw new AppError("validation", { message: `unknown exercise id: ${id}` });
+    }
+  }
+
+  // Usuń ćwiczenia nieobecne na nowej liście (wraz z powiązaniami).
+  for (const c of current) {
+    if (!referencedIds.has(c.itemId)) {
+      await tx.delete(revisionAssets).where(eq(revisionAssets.itemRevisionId, c.revisionId));
+      await tx.delete(itemRevisionSkills).where(eq(itemRevisionSkills.itemRevisionId, c.revisionId));
+      await tx.delete(itemRevisions).where(eq(itemRevisions.id, c.revisionId));
+    }
+  }
+
+  for (const [position, ex] of exercises.entries()) {
+    const tempPosition = TEMP_POSITION_OFFSET + position;
+    const draft = toExerciseDraft(ex as unknown);
+    const payload = buildLessonPayload(draft, subject);
+    const targetKey = computeTargetKey(draft.answer, subject.answerLocale);
+
+    if (ex.id) {
+      const existing = byItemId.get(ex.id)!;
+      const oldDraft = toExerciseDraft(existing.payload);
+      let skillVersionId = existing.objectiveSkillVersionId;
+      if (objectiveImpacted(oldDraft, ex) || skillVersionId === "") {
+        const { criteria, criteriaHash } = buildObjectiveCriteria(draft, subject, topicVersion);
+        skillVersionId = randomUUID();
+        await tx.insert(skillVersions).values({
+          id: skillVersionId,
+          itemId: existing.itemId,
+          skill: "objective",
+          revisionNumber: existing.objectiveRevisionNumber + 1,
+          criteria,
+          criteriaHash,
+          ...(existing.objectiveSkillVersionId ? { predecessorId: existing.objectiveSkillVersionId } : {}),
+        });
+      }
+      await tx
+        .update(itemRevisions)
+        .set({ payload, targetKey, position: tempPosition, payloadVersion: 2 })
+        .where(eq(itemRevisions.id, existing.revisionId));
+      await tx.delete(itemRevisionSkills).where(eq(itemRevisionSkills.itemRevisionId, existing.revisionId));
+      await tx.insert(itemRevisionSkills).values({
+        itemRevisionId: existing.revisionId,
+        itemId: existing.itemId,
+        skill: "objective",
+        skillVersionId,
+      });
+    } else {
+      const itemId = randomUUID();
+      await tx.insert(learningItems).values({ id: itemId, deckId: version.deckId, kind: "lesson_exercise" });
+      const { criteria, criteriaHash } = buildObjectiveCriteria(draft, subject, topicVersion);
+      const skillVersionId = randomUUID();
+      await tx.insert(skillVersions).values({
+        id: skillVersionId,
+        itemId,
+        skill: "objective",
+        revisionNumber: 1,
+        criteria,
+        criteriaHash,
+      });
+      const revisionId = randomUUID();
+      await tx.insert(itemRevisions).values({
+        id: revisionId,
+        itemId,
+        deckId: version.deckId,
+        deckVersionId: version.id,
+        position: tempPosition,
+        payloadVersion: 2,
+        payload,
+        targetKey,
+      });
+      await tx.insert(itemRevisionSkills).values({
+        itemRevisionId: revisionId,
+        itemId,
+        skill: "objective",
+        skillVersionId,
+      });
+    }
+  }
+
+  // Przesunięcie pozycji z powrotem do 0-based (omija UNIQUE podczas przepisania).
+  const rewritten = await tx
+    .select({ id: itemRevisions.id, position: itemRevisions.position })
+    .from(itemRevisions)
+    .where(eq(itemRevisions.deckVersionId, version.id))
+    .orderBy(asc(itemRevisions.position));
+  for (const [index, row] of rewritten.entries()) {
+    if (row.position !== index) {
+      await tx.update(itemRevisions).set({ position: index }).where(eq(itemRevisions.id, row.id));
+    }
+  }
+}
+
+/**
+ * Edycja ćwiczeń szkicu lekcji. Waliduje każde ćwiczenie
+ * (`validateLessonExercise`); jeśli którekolwiek niepoprawne → 400 z listą
+ * błędów per ćwiczenie (`details.exercises`). Optimistic locking jak słówka:
+ * published → immutable, zły editNumber → conflict. Po zapisie bump editNumber,
+ * uzgodnienie mediów (TTS odpowiedzi) i zwrot `LessonDraftDto`.
+ */
+export async function editLessonDraft(
+  services: Services,
+  versionId: string,
+  input: unknown,
+): Promise<LessonDraftDto> {
+  const patch = LessonDraftPatchSchema.parse(input);
+
+  return services.db.transaction(async (tx) => {
+    const version = await lockVersion(tx, versionId);
+    assertEditable(version, patch.expectedEditNumber);
+    const context = readLessonContext(version.lessonContext);
+    const subject = requireSubject(services, context.subjectId);
+    const topic = requireTopic(services, context.subjectId, context.topicId, context.topicVersion);
+
+    if (patch.exercises !== undefined) {
+      // Walidacja per ćwiczenie — zbieramy wszystkie błędy, nie przerywamy na pierwszym.
+      const errors: { index: number; errors: string[] }[] = [];
+      patch.exercises.forEach((ex, index) => {
+        const draft = toExerciseDraft(ex as unknown);
+        const exErrors = validateLessonExercise(draft, subject, topic);
+        if (exErrors.length > 0) {
+          errors.push({ index, errors: exErrors });
+        }
+      });
+      if (errors.length > 0) {
+        throw new AppError("validation", { details: { exercises: errors } });
+      }
+      await applyLessonExercisesEdit(tx, { id: version.id, deckId: version.deckId }, subject, context.topicVersion, patch.exercises);
+    }
+
+    if (patch.title !== undefined) {
+      await tx.update(deckVersions).set({ title: patch.title }).where(eq(deckVersions.id, versionId));
+    }
+    if (patch.examples !== undefined) {
+      const nextContext = { ...(version.lessonContext ?? {}), examples: patch.examples };
+      await tx
+        .update(deckVersions)
+        .set({ lessonContext: nextContext as Record<string, unknown> })
+        .where(eq(deckVersions.id, versionId));
+    }
+
+    await bumpEditNumber(tx, versionId);
+    await reconcileDraftAssetsTx(tx, services, { id: version.id, state: version.state });
+    return readLessonDraftDto(tx, services, versionId);
+  });
+}
+
+/**
+ * Publikacja szkicu lekcji. Wymaga pokrycia etapów ocenianych per cel
+ * (`poolCoverage` z `DEFAULT_LESSON_POLICY.poolMinimums`); braki → 409 z listą
+ * `{objectiveId, stage, required, actual}` w `details.coverage`. Jak dla słówek
+ * uzgadnia media i wymaga gotowego `target_audio`, gdy przedmiot go wymaga.
+ * Stan review/draft → published; ustawia `decks.published_version_id`.
+ */
+export async function publishLessonDraft(
+  services: Services,
+  versionId: string,
+  expectedEditNumber: number,
+): Promise<{ deckVersionId: string }> {
+  return services.db.transaction(async (tx) => {
+    const version = await lockVersion(tx, versionId);
+    if (version.state === "published") {
+      throw new AppError("conflict");
+    }
+    if (version.editNumber !== expectedEditNumber) {
+      throw new AppError("conflict");
+    }
+    const context = readLessonContext(version.lessonContext);
+    const subject = requireSubject(services, context.subjectId);
+
+    const revisions = await tx
+      .select({ id: itemRevisions.id, payload: itemRevisions.payload })
+      .from(itemRevisions)
+      .where(eq(itemRevisions.deckVersionId, versionId))
+      .orderBy(asc(itemRevisions.position));
+    if (revisions.length === 0) {
+      throw new AppError("validation", { message: "lesson has no exercises" });
+    }
+
+    // Pokrycie etapów ocenianych per cel.
+    const drafts: LessonExerciseDraft[] = revisions.map((r) => toExerciseDraft(r.payload));
+    const gaps = poolCoverage(drafts, context.objectiveIds, DEFAULT_LESSON_POLICY.poolMinimums);
+    if (gaps.length > 0) {
+      throw new AppError("conflict", {
+        message: "lesson coverage incomplete",
+        details: { coverage: gaps },
+      });
+    }
+
+    // Uzgodnij media (TTS odpowiedzi) i zweryfikuj gotowość wymaganego audio.
+    await reconcileDraftAssetsTx(tx, services, { id: version.id, state: version.state });
+
+    if (subject.ttsForAnswers && services.media) {
+      const revisionIds = revisions.map((r) => r.id);
+      const assets = await tx
+        .select()
+        .from(revisionAssets)
+        .where(inArray(revisionAssets.itemRevisionId, revisionIds));
+      for (const revision of revisions) {
+        const audio = assets.find((a) => a.itemRevisionId === revision.id && a.role === "target_audio");
+        if (!audio || audio.assetId === null) {
+          throw new AppError("validation", {
+            message: `missing ready target_audio for revision ${revision.id}`,
+          });
+        }
+        await assertAssetPublishable(tx, {
+          itemRevisionId: revision.id,
+          role: "target_audio",
+          assetId: audio.assetId,
+          expectedFingerprint: audio.expectedFingerprint,
+        });
+      }
+    }
+
+    const now = services.clock.now();
+    await tx
+      .update(deckVersions)
+      .set({ state: "published", publishedAt: now })
+      .where(eq(deckVersions.id, versionId));
+    await tx
+      .update(decks)
+      .set({ publishedVersionId: versionId, title: version.title })
+      .where(eq(decks.id, version.deckId));
+    return { deckVersionId: versionId };
+  });
+}
+
+/**
+ * Nowy edytowalny szkic z opublikowanej wersji lekcji (reużywa szkieletu
+ * słówek: blokada, strażniki, numer wersji + kopia rewizji/umiejętności/mediów).
+ * `lesson_context` wersji źródłowej jest kopiowany do nowej (przykłady,
+ * objectiveIds, decyzje o mediach). Zwraca `LessonDraftDto`.
+ */
+export async function createLessonDraftFromPublished(
+  services: Services,
+  deckId: string,
+): Promise<LessonDraftDto> {
+  const id = z.uuid().parse(deckId);
+  const deck = (await services.db.select().from(decks).where(eq(decks.id, id)))[0];
+  if (!deck) {
+    throw new AppError("not_found");
+  }
+  if (deck.kind !== "lesson") {
+    throw new AppError("deck_kind_mismatch", { message: "nie jest zestawem lekcji" });
+  }
+  return services.db.transaction(async (tx) => {
+    const newVersionId = await createVersionFromPublished(tx, id, (innerTx, { source, newVersionId }) =>
+      copyRevisionsSkillsAssets(innerTx, { sourceVersionId: source.id, newVersionId, deckId: id }),
+    );
+    return readLessonDraftDto(tx, services, newVersionId);
+  });
+}

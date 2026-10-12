@@ -5,15 +5,23 @@ import {
   archiveDeck,
   createEmptyDeck,
   createDraftFromPublished,
+  createLesson,
+  createLessonDraftFromPublished,
+  deckIdOfLessonVersion,
   editDraft,
+  editLessonDraft,
   enqueueDeckGeneration,
   getProgress,
+  lessonCatalog,
   listDecks,
   omitRevisionAsset,
   publishDraft,
+  publishLessonDraft,
   readDeck,
   readDraft,
   readGeneration,
+  readLessonDeck,
+  regenerateObjective,
   regenerateRevisionAsset,
   retryGeneration,
   upsertAssignment,
@@ -25,10 +33,12 @@ import {
   CreateEmptyDeckResultSchema,
   DraftPatchSchema,
   GenerationCommandSchema,
+  LessonCommandSchema,
   OmitIllustrationSchema,
   PublishCommandSchema,
   RevisionAssetCommandSchema,
 } from "@learning/contracts";
+import { z } from "zod";
 import { readJson } from "@/http/errors";
 import { assertSameOrigin, requireParentSession } from "@/http/security";
 
@@ -53,6 +63,54 @@ export async function handleParentApi(
     const childId = params.get("childId"), deckId = params.get("deckId");
     if (!childId || !deckId) throw new AppError("validation");
     return Response.json(await listMockTests(services, childId, deckId), { headers: { "Cache-Control": "no-store" } });
+  }
+
+  // --- Lekcje (zadanie 11): ścieżki rozłączne z `decks`/`drafts` słówek ---
+  if (first === "lesson-catalog" && request.method === "GET" && second === undefined) {
+    return Response.json(lessonCatalog(services));
+  }
+
+  if (first === "lessons") {
+    if (request.method === "POST" && second === undefined) {
+      const cmd = LessonCommandSchema.parse(await readJson(request));
+      const result = await createLesson(services, cmd);
+      return Response.json({ runId: result.runId, deckId: result.deckId }, { status: 202 });
+    }
+    if (request.method === "GET" && second !== undefined && third === undefined) {
+      return Response.json(await readLessonDeck(services, second));
+    }
+    if (request.method === "POST" && second !== undefined && third === "draft" && fourth === undefined) {
+      return Response.json(await createLessonDraftFromPublished(services, second), { status: 201 });
+    }
+  }
+
+  if (first === "lesson-drafts" && second !== undefined) {
+    if (request.method === "PATCH" && third === undefined) {
+      return Response.json(await editLessonDraft(services, second, await readJson(request)));
+    }
+    if (request.method === "POST" && third === "publish" && fourth === undefined) {
+      const cmd = PublishCommandSchema.parse(await readJson(request));
+      return Response.json(await publishLessonDraft(services, second, cmd.expectedEditNumber));
+    }
+    if (request.method === "POST" && third === "regenerate" && fourth === undefined) {
+      const schema = z.object({
+        objectiveId: z.string().min(1),
+        count: z.number().int().positive(),
+        expectedEditNumber: z.number().int().positive(),
+        clientRequestId: z.uuid(),
+      });
+      const cmd = schema.parse(await readJson(request));
+      // regenerateObjective bierze deckId, nie versionId: wyznaczamy go z wersji.
+      const deckId = await deckIdOfLessonVersion(services, second);
+      const result = await regenerateObjective(services, {
+        deckId,
+        objectiveId: cmd.objectiveId,
+        count: cmd.count,
+        expectedEditNumber: cmd.expectedEditNumber,
+        clientRequestId: cmd.clientRequestId,
+      });
+      return Response.json({ generationRunId: result.runId, deckId: result.deckId }, { status: 202 });
+    }
   }
 
   if (first === "decks") {

@@ -33,6 +33,7 @@ export {
   createEmptyDeck,
   createDraft,
   createDraftFromPublished,
+  copyRevisionsSkillsAssets,
   editDraft,
   publishDraft,
   readDraft,
@@ -64,6 +65,14 @@ export {
   applyLessonExercises,
   splitStages,
 } from "./modules/lessons/lesson-drafts";
+export {
+  lessonCatalog,
+  readLessonDeck,
+  editLessonDraft,
+  publishLessonDraft,
+  createLessonDraftFromPublished,
+  deckIdOfLessonVersion,
+} from "./modules/lessons/lesson-api";
 export {
   reconcileDraftAssets,
   regenerateRevisionAsset,

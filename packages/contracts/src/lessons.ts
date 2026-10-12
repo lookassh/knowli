@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { InstantSchema, UuidSchema } from "./common";
-import { RevisionAssetDtoSchema } from "./decks";
+import { AssignmentDtoSchema, DeckStateSchema, RevisionAssetDtoSchema } from "./decks";
+import { GenerationDtoSchema } from "./generation";
 
 /**
  * Kontrakty lekcji (`@learning/contracts`) — publiczne DTO silnika lekcji
@@ -135,12 +136,13 @@ const LessonExerciseDraftDtoSchema = LessonExerciseInputSchema.extend({
 });
 
 /** Brak pokrycia publikacyjnego per cel i etap (design „Generowanie puli”). */
-const CoverageGapDtoSchema = z.object({
+export const CoverageGapDtoSchema = z.object({
   objectiveId: z.string().min(1),
   stage: LessonStageSchema,
   required: z.number().int().nonnegative(),
   actual: z.number().int().nonnegative(),
 });
+export type CoverageGapDto = z.infer<typeof CoverageGapDtoSchema>;
 
 /**
  * Widok szkicu lekcji dla panelu rodzica (design „Data Models → Kontrakty”).
@@ -164,6 +166,45 @@ export const LessonDraftDtoSchema = z.object({
   coverage: z.array(CoverageGapDtoSchema),
 });
 export type LessonDraftDto = z.infer<typeof LessonDraftDtoSchema>;
+
+/**
+ * Pełny widok zestawu-lekcji dla panelu rodzica (`GET /parent/lessons/:deckId`):
+ * edytowalny szkic (lub null), opublikowana wersja (lub null), najnowszy run
+ * generacji szkicu i przypisania dzieci — odpowiednik `DeckDto` dla lekcji,
+ * z `LessonDraftDto` zamiast `DraftDto`.
+ */
+export const LessonDeckDtoSchema = z.object({
+  id: UuidSchema,
+  title: z.string(),
+  state: DeckStateSchema,
+  draft: LessonDraftDtoSchema.nullable(),
+  published: LessonDraftDtoSchema.nullable(),
+  generation: GenerationDtoSchema.nullable(),
+  assignments: z.array(AssignmentDtoSchema),
+});
+export type LessonDeckDto = z.infer<typeof LessonDeckDtoSchema>;
+
+/**
+ * Szczegóły błędu publikacji przy brakującym pokryciu (409): lista braków per
+ * cel i etap. Trafia do `ApiError.details.coverage` (wspólny format błędu §12).
+ */
+export const LessonCoverageErrorSchema = z.object({
+  coverage: z.array(CoverageGapDtoSchema),
+});
+export type LessonCoverageError = z.infer<typeof LessonCoverageErrorSchema>;
+
+/**
+ * Szczegóły błędu edycji ćwiczeń (400): dla każdego niepoprawnego ćwiczenia
+ * jego indeks na liście i lista komunikatów walidacji. Trafia do
+ * `ApiError.details.exercises`.
+ */
+export const LessonExerciseErrorsSchema = z.object({
+  exercises: z.array(z.object({
+    index: z.number().int().nonnegative(),
+    errors: z.array(z.string().min(1)),
+  })),
+});
+export type LessonExerciseErrors = z.infer<typeof LessonExerciseErrorsSchema>;
 
 const ObjectiveStatusSchema = z.enum([
   "not_assessed",

@@ -44,10 +44,17 @@ export class AppError extends Error {
   readonly code: AppErrorCode;
   readonly status: number;
   readonly retryable: boolean;
+  /**
+   * Opcjonalne, ustrukturyzowane szczegóły błędu serializowane do
+   * `ApiError.details` przez warstwę HTTP. Używane przez przypadki, które muszą
+   * zwrócić listę (publikacja lekcji bez pokrycia, edycja ćwiczeń z błędami per
+   * ćwiczenie). Nie trafia do logów ani nie zawiera treści dziecka/rodzica.
+   */
+  readonly details?: unknown;
 
   constructor(
     code: AppErrorCode,
-    options?: { message?: string; cause?: unknown },
+    options?: { message?: string; cause?: unknown; details?: unknown },
   ) {
     const profile = CODE_PROFILES[code];
     super(options?.message ?? code, { cause: options?.cause });
@@ -55,5 +62,8 @@ export class AppError extends Error {
     this.code = code;
     this.status = profile.status;
     this.retryable = profile.retryable;
+    if (options?.details !== undefined) {
+      this.details = options.details;
+    }
   }
 }

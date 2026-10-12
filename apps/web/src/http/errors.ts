@@ -40,13 +40,14 @@ function mapTriggerError(error: unknown): AppError | undefined {
   return undefined;
 }
 
-function toApiError(code: AppErrorCode, requestId: string): ApiError {
+function toApiError(code: AppErrorCode, requestId: string, details?: unknown): ApiError {
   const catalogue = messages.errors as Record<string, string | undefined>;
   return {
     code,
     message: catalogue[code] ?? catalogue.internal!,
     retryable: code === "rate_limited" || code === "internal",
     requestId,
+    ...(details === undefined ? {} : { details }),
   };
 }
 
@@ -63,7 +64,9 @@ export function errorResponse(error: unknown, requestId = randomUUID()): Respons
   // Log bez treści żądania: kod, requestId, komunikat przypadku użycia
   // (własne teksty angielskie, nie SQL) i przyczyna dla korelacji.
   console.error("[api]", appError.code, requestId, appError.message, appError.cause ?? "");
-  return Response.json(toApiError(appError.code, requestId), { status: appError.status });
+  return Response.json(toApiError(appError.code, requestId, appError.details), {
+    status: appError.status,
+  });
 }
 
 /** Opakowanie handlera: wspólny requestId i jednolity format błędu. */
