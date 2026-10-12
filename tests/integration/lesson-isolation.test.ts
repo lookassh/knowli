@@ -91,7 +91,7 @@ describe("izolacja lekcji od ścieżek słówek", () => {
     expect(vocabDeck.subjectTitle ?? null).toBeNull();
   });
 
-  it("start sesji treningowej lekcji działa (zadanie 13); kartkówka lekcji → deck_kind_mismatch", async () => {
+  it("start sesji treningowej lekcji działa (zadanie 13); kartkówka lekcji startuje (zadanie 17)", async () => {
     const { services } = buildTestServices();
     const vocab = await mockTestDeck(services, 2, true);
     const lesson = await lessonWorld(pool, { childId: vocab.childId });
@@ -101,14 +101,12 @@ describe("izolacja lekcji od ścieżek słówek", () => {
     expect(session.deckId).toBe(lesson.deckId);
     expect(session.mode).toBe("training");
 
-    // Kartkówka lekcji wciąż niewspierana (zadanie 17): druga sesja i tak w konflikcie,
-    // więc test izolacji trybu robimy na świeżym dziecku.
+    // Kartkówka lekcji podłączona (zadanie 17): start deleguje do planera lekcji.
+    // Robimy na świeżym dziecku, by uniknąć konfliktu aktywnej sesji.
     const soloChild = await createChild(services, { displayName: "Lekcja solo", avatarKey: "owl" });
     const soloLesson = await lessonWorld(pool, { childId: soloChild.id, testDate: "2026-10-20" });
-    await expectAppError(
-      startSession(services, { childId: soloChild.id, deckId: soloLesson.deckId, microphoneEnabled: false, mode: "mock_test" }),
-      "deck_kind_mismatch",
-    );
+    const mock = await startSession(services, { childId: soloChild.id, deckId: soloLesson.deckId, microphoneEnabled: false, mode: "mock_test" });
+    expect(mock.mode).toBe("mock_test");
     await expectAppError(
       submitAttempt(services, { taskId: randomUUID(), clientAttemptId: randomUUID(), modality: "text", text: "plays" }),
       "not_found",

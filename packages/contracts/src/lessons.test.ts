@@ -11,6 +11,7 @@ import {
   LessonVerdictDtoSchema,
   LessonVerdictDecisionSchema,
   LessonMockTestReportDtoSchema,
+  LessonMockTestSummaryDtoSchema,
 } from "./lessons";
 
 const UUID = "11111111-1111-4111-8111-111111111111";
@@ -280,5 +281,37 @@ describe("LessonMockTestReportDtoSchema", () => {
       }],
       complete: true, taskBudget: 10,
     }).success).toBe(true);
+  });
+});
+
+describe("LessonMockTestSummaryDtoSchema", () => {
+  const base = {
+    sessionId: UUID, deckId: UUID2, state: "completed", complete: true,
+    taskBudget: 3, answeredCount: 2,
+    solutions: [{
+      taskId: UUID3, objectiveId: "o1", titlePl: "-s w 3. osobie", exerciseType: "lesson_gap",
+      prompt: "He ___ (play).", childAnswer: "play", correctAnswer: "plays", outcome: "incorrect",
+    }],
+  };
+  it("accepts a child-review summary", () => {
+    expect(LessonMockTestSummaryDtoSchema.safeParse(base).success).toBe(true);
+  });
+  it("accepts skipped and unassessed outcomes with empty child answer", () => {
+    expect(LessonMockTestSummaryDtoSchema.safeParse({
+      ...base,
+      solutions: [{ ...base.solutions[0], childAnswer: "", outcome: "skipped" }],
+    }).success).toBe(true);
+    expect(LessonMockTestSummaryDtoSchema.safeParse({
+      ...base,
+      solutions: [{ ...base.solutions[0], outcome: "unassessed" }],
+    }).success).toBe(true);
+  });
+  it("rejects a non-lesson exercise type and a not_tested outcome", () => {
+    expect(LessonMockTestSummaryDtoSchema.safeParse({
+      ...base, solutions: [{ ...base.solutions[0], exerciseType: "recall" }],
+    }).success).toBe(false);
+    expect(LessonMockTestSummaryDtoSchema.safeParse({
+      ...base, solutions: [{ ...base.solutions[0], outcome: "not_tested" }],
+    }).success).toBe(false);
   });
 });

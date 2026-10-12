@@ -2,6 +2,10 @@ import {
   AppError,
   getMockTestReport,
   listMockTests,
+  getLessonMockTestReport,
+  listLessonMockTests,
+  readDeckKind,
+  mockTestKindOfSession,
   archiveDeck,
   createEmptyDeck,
   createDraftFromPublished,
@@ -63,11 +67,18 @@ export async function handleParentApi(
   }
   const [first, second, third, fourth] = segments;
   if (first === "mock-tests" && request.method === "GET") {
-    if (second) return Response.json(await getMockTestReport(services, second), { headers: { "Cache-Control": "no-store" } });
+    if (second) {
+      // GET /parent/mock-tests/:sessionId — lekcja → raport per cel; słówka → per skill.
+      const kind = await mockTestKindOfSession(services.db, second);
+      const report = kind === "lesson" ? await getLessonMockTestReport(services, second) : await getMockTestReport(services, second);
+      return Response.json(report, { headers: { "Cache-Control": "no-store" } });
+    }
     const params = new URL(request.url).searchParams;
     const childId = params.get("childId"), deckId = params.get("deckId");
     if (!childId || !deckId) throw new AppError("validation");
-    return Response.json(await listMockTests(services, childId, deckId), { headers: { "Cache-Control": "no-store" } });
+    const kind = await readDeckKind(services.db, deckId);
+    const list = kind === "lesson" ? await listLessonMockTests(services, childId, deckId) : await listMockTests(services, childId, deckId);
+    return Response.json(list, { headers: { "Cache-Control": "no-store" } });
   }
 
   // --- Lekcje (zadanie 11): ścieżki rozłączne z `decks`/`drafts` słówek ---

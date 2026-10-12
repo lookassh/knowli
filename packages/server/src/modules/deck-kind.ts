@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import type { Executor } from "../db/client";
-import { deckVersions, decks } from "../db/schema";
+import { deckVersions, decks, learningSessions } from "../db/schema";
 import { AppError } from "../errors";
 
 export type DeckKind = "vocabulary" | "lesson";
@@ -46,4 +46,22 @@ export function assertVocabularyDeck(kind: DeckKind): void {
   if (kind !== "vocabulary") {
     throw new AppError("deck_kind_mismatch", { message: `operacja słówek na zestawie rodzaju ${kind}` });
   }
+}
+
+/**
+ * Rodzaj zestawu sesji kartkówki (po `session_id`), dla rozgałęzienia routerów
+ * raportu/omówienia. Nieznana sesja → `not_found`.
+ */
+export async function mockTestKindOfSession(exec: Executor, sessionId: string): Promise<DeckKind> {
+  const row = (
+    await exec
+      .select({ kind: decks.kind })
+      .from(learningSessions)
+      .innerJoin(decks, eq(decks.id, learningSessions.deckId))
+      .where(eq(learningSessions.id, sessionId))
+  )[0];
+  if (!row) {
+    throw new AppError("not_found");
+  }
+  return row.kind as DeckKind;
 }

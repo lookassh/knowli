@@ -1,6 +1,8 @@
 import {
   AppError,
   readMockTestSummary,
+  readLessonMockTestSummary,
+  mockTestKindOfSession,
   authorizeDisclosure,
   authorizeFeedbackAudio,
   completePresentation,
@@ -57,7 +59,10 @@ export async function handleKidApi(
 
   if (first === "sessions") {
     if (request.method === "GET" && second !== undefined && third === "mock-test-summary") {
-      return Response.json(await readMockTestSummary(services, second), { headers: { "Cache-Control": "no-store" } });
+      // Lekcja → omówienie per cel; słówka → omówienie słówkowe.
+      const kind = await mockTestKindOfSession(services.db, second);
+      const summary = kind === "lesson" ? await readLessonMockTestSummary(services, second) : await readMockTestSummary(services, second);
+      return Response.json(summary, { headers: { "Cache-Control": "no-store" } });
     }
     if (request.method === "POST" && second === undefined) {
       const input = SessionInputSchema.parse(await readJson(request));

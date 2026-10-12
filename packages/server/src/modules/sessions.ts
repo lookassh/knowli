@@ -59,6 +59,12 @@ import {
   issueNextLessonTask,
   lessonTaskCounts,
 } from "./lessons/lesson-sessions";
+import {
+  createLessonMockTestPlan,
+  issueLessonMockTestTask,
+  closeLessonMockTest,
+  isLessonMockPlan,
+} from "./lessons/lesson-mock-tests";
 import { buildLessonSummaryObjectives } from "./lessons/lesson-attempts";
 
 /** Okno wznowienia aktywnej sesji od ostatniego zdarzenia (arch §9.1). */
@@ -252,14 +258,10 @@ export async function startSession(services: Services, input: SessionInput): Pro
     if (!deck.publishedVersionId) {
       throw new AppError("validation", { message: "deck is not published" });
     }
-    // Rodzaj zestawu (zadanie 9/13): słówka idą dotychczasową ścieżką; lekcja w
-    // trybie treningu deleguje do silnika lekcji (kontekst + wydawanie zadań).
-    // Kartkówkę lekcji podłączy zadanie 17 — do tego czasu `mock_test` na lekcji
-    // pozostaje odrzucona (`deck_kind_mismatch`), nie udawana ścieżką słówek.
+    // Rodzaj zestawu (zadanie 9/13/17): słówka idą dotychczasową ścieżką; lekcja
+    // w trybie treningu deleguje do silnika lekcji, a w trybie kartkówki do
+    // planera kartkówki lekcji (zadanie 17). Żaden rodzaj nie jest już odrzucany.
     const deckKind = deck.kind as DeckKind;
-    if (deckKind === "lesson" && mode === "mock_test") {
-      assertVocabularyDeck(deckKind);
-    }
 
     const now = services.clock.now();
     const active = (
@@ -277,8 +279,10 @@ export async function startSession(services: Services, input: SessionInput): Pro
         return sessionDto(tx, active, true);
       }
       if (!stale) throw new AppError("conflict", { message: "Wróć do rozpoczętej sesji albo zakończ ją przed nową." });
-      if (active.mode === "mock_test") await closeMockTest(tx, services, active, "ended");
-      else await tx
+      if (active.mode === "mock_test") {
+        if (isLessonMockPlan(active.mockTestPlan)) await closeLessonMockTest(tx, services, active);
+        else await closeMockTest(tx, services, active, "ended");
+      } else await tx
         .update(learningSessions)
         .set({ state: "ended", endedAt: now })
         .where(eq(learningSessions.id, active.id));
@@ -309,13 +313,28 @@ export async function startSession(services: Services, input: SessionInput): Pro
         };
     const id = randomUUID();
     if (mode === "mock_test" && !assignment.testGoals?.length) throw new AppError("validation", { message: "Rodzic musi najpierw ustawić cel kartkówki." });
-    const mockTestPlan = mode === "mock_test" ? await createMockTestPlan(tx, services, {
-      // Kartkówka słówek obsługuje tylko cele słówkowe; cel `lesson` dotyczy
-      // lekcji (osobna ścieżka) i nie trafia tu w czasie wykonania.
-      childId: valid.childId, deckVersionId: version.id,
-      testGoals: assignment.testGoals!.filter((g): g is TestGoal => g !== "lesson"), testDate: assignment.testDate,
-      requestedTaskCount: assignment.mockTestTaskCount,
-    }) : null;
+    // Kartkówka lekcji (zadanie 17): wymaga celu `lesson` w przypisaniu; plan z
+    // planera kartkówki lekcji (bezpieczna porcja przypiętej wersji). Kartkówka
+    // słówek: cele słówkowe i planer słówek. Oba zapisują snapshot w tej samej
+    // kolumnie `mock_test_plan` (dyskryminator `kind` dla lekcji).
+    const mockTestPlan =
+      mode !== "mock_test"
+        ? null
+        : deckKind === "lesson"
+          ? (assignment.testGoals!.includes("lesson")
+              ? await createLessonMockTestPlan(tx, services, {
+                  childId: valid.childId,
+                  deckVersionId: version.id,
+                  requestedTaskCount: assignment.mockTestTaskCount,
+                })
+              : (() => { throw new AppError("validation", { message: "Rodzic musi najpierw ustawić cel kartkówki lekcji." }); })())
+          : await createMockTestPlan(tx, services, {
+              // Kartkówka słówek obsługuje tylko cele słówkowe; cel `lesson`
+              // dotyczy lekcji (osobna ścieżka) i nie trafia tu w czasie wykonania.
+              childId: valid.childId, deckVersionId: version.id,
+              testGoals: assignment.testGoals!.filter((g): g is TestGoal => g !== "lesson"), testDate: assignment.testDate,
+              requestedTaskCount: assignment.mockTestTaskCount,
+            });
     if (mockTestPlan && !mockTestPlan.slots.length) throw new AppError("mock_test_unavailable");
     const [row] = await tx
       .insert(learningSessions)
@@ -835,11 +854,17 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
     }
     const now = services.clock.now();
     if (session.mode === "mock_test") {
+      const lessonMock = isLessonMockPlan(session.mockTestPlan);
       if (now.getTime() - session.startedAt.getTime() > SESSION_TIME_LIMIT_MS) {
-        await closeMockTest(tx, services, session, "ended"); return null;
+        if (lessonMock) await closeLessonMockTest(tx, services, session);
+        else await closeMockTest(tx, services, session, "ended");
+        return null;
       }
-      const task = await issueMockTestTask(tx, services, session);
-      if (!task) await closeMockTest(tx, services, session, "completed");
+      const task = lessonMock ? await issueLessonMockTestTask(tx, services, session) : await issueMockTestTask(tx, services, session);
+      if (!task) {
+        if (lessonMock) await closeLessonMockTest(tx, services, session);
+        else await closeMockTest(tx, services, session, "completed");
+      }
       return task;
     }
 
@@ -1027,6 +1052,23 @@ export async function endSession(services: Services, sessionId: string): Promise
     const session = await lockSession(tx, id);
     let state = session.state as "active" | "completed" | "ended";
     if (session.mode === "mock_test") {
+      if (isLessonMockPlan(session.mockTestPlan)) {
+        // Kartkówka lekcji: zamknięcie wspólną ścieżką lekcji (raport per cel do
+        // kontekstu); podsumowanie sesji ma kształt słówkowy z zerowymi licznikami
+        // (omówienie i wynik idą przez endpoint mock-test-summary, nie endSession).
+        const report = await closeLessonMockTest(tx, services, session);
+        const counts = await taskCounts(tx, id);
+        const fresh = (await tx.select().from(learningSessions).where(eq(learningSessions.id, id)))[0]!;
+        return {
+          sessionId: id,
+          state: report.complete ? "completed" : "ended",
+          tasksIssued: counts.total,
+          assessedTasksIssued: counts.assessed,
+          endedAt: (fresh.endedAt ?? services.clock.now()).toISOString(),
+          independentSuccesses: { recall: 0, spelling: 0 },
+          practiceItems: [],
+        };
+      }
       const report = await closeMockTest(tx, services, session, "completed");
       const counts = await taskCounts(tx, id);
       const summaryRows = await tx.select({ itemRevisionId: assessments.itemRevisionId, skill: assessments.skill }).from(assessments)

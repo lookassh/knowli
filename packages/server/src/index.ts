@@ -133,6 +133,13 @@ export { recordEvent, authorizeDisclosure, contextOf } from "./modules/events";
 export type { SessionContextShape } from "./modules/events";
 export { getMockTestReport, listMockTests, readMockTestSummary } from "./modules/mock-tests";
 export {
+  getLessonMockTestReport,
+  listLessonMockTests,
+  readLessonMockTestSummary,
+  isLessonMockPlan,
+} from "./modules/lessons/lesson-mock-tests";
+export { readDeckKind, mockTestKindOfSession } from "./modules/deck-kind";
+export {
   submitAttempt,
   readAttempt,
   finalizeAttempt,

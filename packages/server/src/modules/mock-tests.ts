@@ -16,7 +16,7 @@ import { AppError } from "../errors";
 export async function closeMockTest(tx: Tx, services: Services, session: typeof learningSessions.$inferSelect, requestedState: "completed" | "ended"): Promise<MockTestReportDto> {
   const saved = MockTestReportDtoSchema.safeParse(session.context.mockTestReport);
   if (saved.success) return saved.data;
-  const plan = session.mockTestPlan!;
+  const plan = session.mockTestPlan as MockTestPlanSnapshot;
   const [version] = await tx.select().from(deckVersions).where(eq(deckVersions.id, session.deckVersionId));
   const tasks = await tx.select().from(sessionTasks).where(eq(sessionTasks.sessionId, session.id));
   const tasksById = new Map(tasks.map(t => [t.id, t]));
@@ -75,11 +75,12 @@ export async function getMockTestReport(services: Services, sessionId: string): 
 export async function readMockTestSummary(services: Services, sessionId: string): Promise<MockTestSummaryDto> {
   return services.db.transaction(async tx => {
     const { session, report } = await terminalSession(tx, services, sessionId);
+    const vocabPlan = session.mockTestPlan as MockTestPlanSnapshot;
     const tasks = await tx.select().from(sessionTasks).where(eq(sessionTasks.sessionId, session.id)).orderBy(asc(sessionTasks.ordinal));
     const solutions: MockTestSummaryDto["solutions"] = [];
     for (const task of tasks) {
-      const slot = session.mockTestPlan!.slots[task.ordinal]!;
-      const item = session.mockTestPlan!.scope.find(i => i.itemId === slot.itemId)!;
+      const slot = vocabPlan.slots[task.ordinal]!;
+      const item = vocabPlan.scope.find(i => i.itemId === slot.itemId)!;
       await writeSealedEvent(tx, { childId: session.childId, taskId: task.id, itemId: item.itemId, kind: "feedback_issued",
         stepId: `${session.id}:review:${task.ordinal}`, occurredAt: services.clock.now(), exposures: [slot.targetKey] });
       solutions.push({ taskId: task.id, source: item.source, target: item.target, audioAssetId: slot.audioAssetId,
@@ -131,7 +132,7 @@ export async function issueMockTestTask(tx: Tx, services: Services, session: typ
   const active = tasks.find(t => t.state === "issued");
   if (active) return { taskId: active.id, sessionId: session.id, ordinal: active.ordinal, exerciseType: active.exerciseType as TaskDto["exerciseType"],
     direction: null, state: "issued", prompt: active.publicPrompt as TaskDto["prompt"], remainingAssessed: session.taskBudget - active.ordinal };
-  const slot = session.mockTestPlan!.slots[tasks.length];
+  const slot = (session.mockTestPlan as MockTestPlanSnapshot).slots[tasks.length];
   if (!slot) return null;
   await tx.insert(sessionTasks).values({ id: slot.taskId, sessionId: session.id, childId: session.childId, deckVersionId: session.deckVersionId,
     itemRevisionId: slot.itemRevisionId, ordinal: tasks.length, exerciseType: slot.exerciseType, direction: null, state: "issued",

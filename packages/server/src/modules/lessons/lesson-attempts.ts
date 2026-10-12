@@ -433,9 +433,12 @@ function dbOutcome(outcome: SkillOutcome): "correct" | "incorrect" | "unassessed
  * Przejście stanu zadania lekcji po ocenie (ruling 113): jedna oceniona
  * odpowiedź (poprawna albo błędna) kończy zadanie (`answered`); `skip` →
  * `skipped`; brak oceny (`unevaluated`) zostawia `issued` (retry / „Pomiń”).
+ * W KARTKÓWCE jedna odpowiedź na slot jest zawsze terminalna: `skip` → `skipped`,
+ * każda inna (w tym `unevaluated` bez kary) → `answered` (nigdy retry).
  */
-function nextLessonTaskState(modality: LessonModality, outcome: SkillOutcome): "issued" | "answered" | "skipped" {
+function nextLessonTaskState(modality: LessonModality, outcome: SkillOutcome, mockTest = false): "issued" | "answered" | "skipped" {
   if (modality === "skip") return "skipped";
+  if (mockTest) return "answered";
   if (outcome === "unevaluated") return "issued";
   return "answered";
 }
@@ -527,7 +530,8 @@ async function startLessonAttempt(
     await lazyFinalizeStale(tx, services, task, session, itemId, now);
     const fresh = (await tx.select().from(attempts).where(eq(attempts.id, existing.id)))[0]!;
     const state = await rereadTaskState(tx, task.id);
-    if (fresh.state === "completed" && fresh.feedback) {
+    // Kartkówka: idempotentny odczyt NIE ujawnia feedbacku (omówienie po końcu).
+    if (session.mode !== "mock_test" && fresh.state === "completed" && fresh.feedback) {
       const stepId = await discloseLessonFeedback(tx, task, itemId, fresh.feedback as FeedbackDto, now);
       return { kind: "dto", dto: dtoOf(fresh, state, stepId) };
     }
@@ -538,6 +542,10 @@ async function startLessonAttempt(
 
   if (session.state !== "active") {
     throw new AppError("conflict", { message: "session is closed" });
+  }
+  // Kartkówka: twardy limit 10 min — po nim żadnej nowej odpowiedzi (jak słówka).
+  if (session.mode === "mock_test" && now.getTime() - session.startedAt.getTime() > 600_000) {
+    throw new AppError("conflict", { message: "Czas kartkówki minął. Przejdź do omówienia." });
   }
   if (task.state !== "issued") {
     throw new AppError("conflict", { message: "task is no longer issued" });
@@ -624,6 +632,7 @@ async function finalizeLessonAttempt(
   precomputed?: LessonGradeResult,
 ): Promise<AttemptDto> {
   const { task, session, itemId, policy, key, frozen, attemptNumber, requestHash, receivedAt } = start;
+  const mockTest = session.mode === "mock_test";
   const result = precomputed ?? gradeLessonAnswer(valid, task, key, services);
   const qualification = qualifyLessonAttempt({
     receivedAt: frozen.receivedAt,
@@ -692,12 +701,14 @@ async function finalizeLessonAttempt(
     }
   }
 
-  const taskState = nextLessonTaskState(valid.modality, result.grade.outcome);
+  const taskState = nextLessonTaskState(valid.modality, result.grade.outcome, mockTest);
   if (taskState !== "issued") {
     await tx.update(sessionTasks).set({ state: taskState }).where(eq(sessionTasks.id, task.id));
   }
 
-  const feedback = valid.modality === "skip" ? null : result.feedback;
+  // Kartkówka: wynik niewidoczny dla dziecka — żadnego feedbacku ani ekspozycji
+  // feedbacku w trakcie (omówienie dopiero po zamknięciu).
+  const feedback = mockTest || valid.modality === "skip" ? null : result.feedback;
   const completed = await tx
     .update(attempts)
     .set({ state: "completed", completedAt: receivedAt, feedback: feedback as unknown as Record<string, unknown> })
@@ -971,6 +982,7 @@ async function finalizeGradedAttempt(
   args: GradedFinalizeArgs,
 ): Promise<AttemptDto> {
   const { task, itemId, policy, key, frozen, receivedAt } = start;
+  const mockTest = start.session.mode === "mock_test";
 
   // Zapis werdyktu do cache i odczyt wiersza (zbieżność równoległych odpowiedzi).
   let effectiveVerdict: GraderVerdict | null = args.verdict;
@@ -1036,14 +1048,16 @@ async function finalizeGradedAttempt(
     await projectAndUpsertObjective(tx, services, task, key, policy, receivedAt);
   }
 
-  const taskState = nextLessonTaskState("text", result.grade.outcome);
+  const taskState = nextLessonTaskState("text", result.grade.outcome, mockTest);
   if (taskState !== "issued") {
     await tx.update(sessionTasks).set({ state: taskState }).where(eq(sessionTasks.id, task.id));
   }
 
+  // Kartkówka: wynik niewidoczny — brak feedbacku/ekspozycji w trakcie.
+  const feedback = mockTest ? null : result.feedback;
   const completed = await tx
     .update(attempts)
-    .set({ state: "completed", completedAt: receivedAt, feedback: result.feedback as unknown as Record<string, unknown> })
+    .set({ state: "completed", completedAt: receivedAt, feedback: feedback as unknown as Record<string, unknown> })
     .where(and(eq(attempts.id, attemptId), eq(attempts.state, "processing")))
     .returning();
   if (completed.length === 0) {
@@ -1053,14 +1067,14 @@ async function finalizeGradedAttempt(
     return dtoOf(fresh, freshTask.state);
   }
 
-  const stepId = await discloseLessonFeedback(tx, task, itemId, result.feedback, receivedAt);
+  const stepId = feedback === null ? null : await discloseLessonFeedback(tx, task, itemId, feedback, receivedAt);
   const freshTask = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, task.id)))[0]!;
   return {
     attemptId,
     taskId: task.id,
     state: "completed",
     modality: "text",
-    feedback: result.feedback,
+    feedback,
     taskState: freshTask.state as AttemptDto["taskState"],
     stepId,
     receivedAt: receivedAt.toISOString(),
@@ -1079,7 +1093,7 @@ export async function readLessonAttempt(services: Services, attempt: AttemptRow)
     await lazyFinalizeStale(tx, services, task, session, itemId, now);
     const fresh = (await tx.select().from(attempts).where(eq(attempts.id, attempt.id)))[0]!;
     const freshTask = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, task.id)))[0]!;
-    if (fresh.state === "completed" && fresh.feedback) {
+    if (session.mode !== "mock_test" && fresh.state === "completed" && fresh.feedback) {
       const stepId = await discloseLessonFeedback(tx, freshTask, itemId, fresh.feedback as FeedbackDto, now);
       return dtoOf(fresh, freshTask.state, stepId);
     }

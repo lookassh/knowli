@@ -114,14 +114,13 @@ describe("sesja lekcji — start i wydawanie zadań", () => {
     );
   });
 
-  it("kartkówka lekcji nadal odrzucona (zadanie 17)", async () => {
+  it("kartkówka lekcji startuje w trybie mock_test (zadanie 17)", async () => {
     const { services } = buildTestServices();
     const child = await createChild(services, { displayName: "Lekcja", avatarKey: "owl" });
     const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, testDate: "2026-10-20" });
-    await expectAppError(
-      startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false, mode: "mock_test" }),
-      "deck_kind_mismatch",
-    );
+    const session = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false, mode: "mock_test" });
+    expect(session.mode).toBe("mock_test");
+    expect(session.taskBudget).toBeGreaterThan(0);
   });
 
   it("pierwsze zadania to karty celu, potem notice, potem ćwiczenie guided", async () => {

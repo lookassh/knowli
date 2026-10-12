@@ -7,6 +7,7 @@ import { assignments, childProfiles, childSkillProgress, deckVersions, decks, fa
 import { AppError } from "../errors";
 import { mapStatus } from "./sessions";
 import { lessonDeckListValues } from "./lessons/lesson-sessions";
+import { hasSafeLessonMockPortion } from "./lessons/lesson-mock-tests";
 import { CURRENT_POLICY_ID, ensureLearningPolicy, loadPolicy } from "../policies/registry";
 import { readLearningSnapshot } from "./learning-snapshot";
 
@@ -31,7 +32,7 @@ export async function listKidDecks(services: Services, childId: string): Promise
     throw new AppError("not_found");
   }
   const rows = await services.db
-    .select({ deckId: decks.id, title: decks.title, kind: decks.kind, testDate: assignments.testDate, testGoals: assignments.testGoals, versionId: decks.publishedVersionId, lessonContext: deckVersions.lessonContext })
+    .select({ deckId: decks.id, title: decks.title, kind: decks.kind, testDate: assignments.testDate, testGoals: assignments.testGoals, mockTestTaskCount: assignments.mockTestTaskCount, versionId: decks.publishedVersionId, lessonContext: deckVersions.lessonContext })
     .from(assignments)
     .innerJoin(decks, eq(decks.id, assignments.deckId))
     .innerJoin(deckVersions, eq(deckVersions.id, decks.publishedVersionId))
@@ -164,6 +165,7 @@ export async function listKidDecks(services: Services, childId: string): Promise
     ? ((await services.db.select({ timezone: familySettings.timezone }).from(familySettings).limit(1))[0]?.timezone ?? "Europe/Warsaw")
     : "Europe/Warsaw";
   const lessonValues = new Map<string, { itemCount: number; independentlyRecalledCount: number; recommended: boolean }>();
+  const lessonMockAvailable = new Map<string, boolean>();
   for (const row of lessonRows) {
     lessonValues.set(
       row.deckId,
@@ -175,6 +177,19 @@ export async function listKidDecks(services: Services, childId: string): Promise
         now: services.clock.now(),
       }),
     );
+    // Kartkówka lekcji (scope 6): cel `lesson` ustawiony ORAZ istnieje bezpieczna
+    // porcja (dry-run planera bez utrwalania). Przy mockTestTaskCount z przypisania.
+    let available = false;
+    if (row.testGoals?.includes("lesson")) {
+      available = await services.db.transaction((tx) =>
+        hasSafeLessonMockPortion(tx, services, {
+          childId,
+          deckVersionId: row.versionId!,
+          requestedTaskCount: row.mockTestTaskCount ?? 10,
+        }),
+      );
+    }
+    lessonMockAvailable.set(row.deckId, available);
   }
   // Zachowujemy kolejność po createdAt (rows), rozgałęziając per rodzaj zestawu.
   return rows.map((row): KidDeckDto => {
@@ -188,7 +203,7 @@ export async function listKidDecks(services: Services, childId: string): Promise
       return {
         kind: "lesson",
         subjectTitle,
-        mockTestAvailable: false,
+        mockTestAvailable: lessonMockAvailable.get(row.deckId) ?? false,
         activeSession,
         deckId: row.deckId,
         title: row.title,

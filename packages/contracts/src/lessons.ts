@@ -287,3 +287,33 @@ export const LessonMockTestReportDtoSchema = z.object({
   taskBudget: z.number().int().nonnegative(),
 });
 export type LessonMockTestReportDto = z.infer<typeof LessonMockTestReportDtoSchema>;
+
+/**
+ * Omówienie kartkówki lekcji dla dziecka po zamknięciu (requirements 9.4,
+ * SPEC §19.1). Lista rozwiązanych slotów z odpowiedzią dziecka i poprawną
+ * odpowiedzią oraz prostym wynikiem per zadanie (bez procentów, bez kategorii
+ * błędów, bez werdyktu modelu). `score`/`answeredCount` dają wynik X/Y
+ * (wyjątek procentowy omówienia liczy UI). Odpowiada roli `MockTestSummaryDto`
+ * słówek, ale per cel lekcji zamiast per umiejętność słówkową.
+ */
+export const LessonMockTestSummaryDtoSchema = z.object({
+  sessionId: UuidSchema,
+  deckId: UuidSchema,
+  state: z.enum(["completed", "ended"]),
+  complete: z.boolean(),
+  taskBudget: z.number().int().nonnegative(),
+  answeredCount: z.number().int().nonnegative(),
+  solutions: z.array(z.object({
+    taskId: UuidSchema,
+    objectiveId: z.string().min(1),
+    titlePl: z.string().min(1),
+    exerciseType: LessonExerciseTypeSchema,
+    /** Treść promptu pokazywana dziecku (bez klucza odpowiedzi). */
+    prompt: z.string(),
+    /** Odpowiedź dziecka jako tekst (puste dla pominiętego slotu). */
+    childAnswer: z.string(),
+    correctAnswer: z.string(),
+    outcome: z.enum(["correct", "incorrect", "skipped", "unassessed"]),
+  })),
+});
+export type LessonMockTestSummaryDto = z.infer<typeof LessonMockTestSummaryDtoSchema>;
