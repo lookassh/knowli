@@ -6,6 +6,7 @@ import {
   issueIntegrationToken,
   listKidDecks,
   rebuildProgress,
+  createChild,
   startSession,
   submitAttempt,
   type AppError,
@@ -84,22 +85,28 @@ describe("izolacja lekcji od ścieżek słówek", () => {
 
     expect(lessonDeck.kind).toBe("lesson");
     expect(lessonDeck.subjectTitle).toBe("Angielski — gramatyka");
-    expect(lessonDeck).toMatchObject({ independentlyRecalledCount: 0, recommended: false, mockTestAvailable: false });
+    // Zadanie 13: lekcja z nowym (nieopanowanym) celem jest rekomendowana.
+    expect(lessonDeck).toMatchObject({ independentlyRecalledCount: 0, recommended: true, mockTestAvailable: false });
     expect(vocabDeck.kind).toBe("vocabulary");
     expect(vocabDeck.subjectTitle ?? null).toBeNull();
   });
 
-  it("start sesji / próba / kartkówka dla lekcji → deck_kind_mismatch", async () => {
+  it("start sesji treningowej lekcji działa (zadanie 13); kartkówka lekcji → deck_kind_mismatch", async () => {
     const { services } = buildTestServices();
     const vocab = await mockTestDeck(services, 2, true);
     const lesson = await lessonWorld(pool, { childId: vocab.childId });
 
+    // Trening lekcji: zadanie 13 zastąpiło tymczasowe deck_kind_mismatch delegacją.
+    const session = await startSession(services, { childId: vocab.childId, deckId: lesson.deckId, microphoneEnabled: false });
+    expect(session.deckId).toBe(lesson.deckId);
+    expect(session.mode).toBe("training");
+
+    // Kartkówka lekcji wciąż niewspierana (zadanie 17): druga sesja i tak w konflikcie,
+    // więc test izolacji trybu robimy na świeżym dziecku.
+    const soloChild = await createChild(services, { displayName: "Lekcja solo", avatarKey: "owl" });
+    const soloLesson = await lessonWorld(pool, { childId: soloChild.id, testDate: "2026-10-20" });
     await expectAppError(
-      startSession(services, { childId: vocab.childId, deckId: lesson.deckId, microphoneEnabled: false }),
-      "deck_kind_mismatch",
-    );
-    await expectAppError(
-      startSession(services, { childId: vocab.childId, deckId: lesson.deckId, microphoneEnabled: false, mode: "mock_test" }),
+      startSession(services, { childId: soloChild.id, deckId: soloLesson.deckId, microphoneEnabled: false, mode: "mock_test" }),
       "deck_kind_mismatch",
     );
     await expectAppError(

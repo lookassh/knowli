@@ -3,9 +3,10 @@ import type { KidDeckDto, KidProfileDto } from "@learning/contracts";
 import type { Services } from "../config";
 import { hasScheduledWork, type DeckWorkloadItem, type SkillSnapshot } from "../domain/scheduler";
 import type { Skill } from "../domain/types";
-import { assignments, childProfiles, childSkillProgress, deckVersions, decks, itemRevisionSkills, itemRevisions, learningSessions } from "../db/schema";
+import { assignments, childProfiles, childSkillProgress, deckVersions, decks, familySettings, itemRevisionSkills, itemRevisions, learningSessions } from "../db/schema";
 import { AppError } from "../errors";
 import { mapStatus } from "./sessions";
+import { lessonDeckListValues } from "./lessons/lesson-sessions";
 import { CURRENT_POLICY_ID, ensureLearningPolicy, loadPolicy } from "../policies/registry";
 import { readLearningSnapshot } from "./learning-snapshot";
 
@@ -156,14 +157,34 @@ export async function listKidDecks(services: Services, childId: string): Promise
     }
   }
   const [active] = await services.db.select().from(learningSessions).where(and(eq(learningSessions.childId, childId), eq(learningSessions.state, "active")));
+  // Lekcje (zadanie 13): prawdziwe liczniki i rekomendacja z silnika lekcji
+  // (cele, opanowane cele, czy selektor ma pracę). Jedno wywołanie per lekcja.
+  const lessonRows = rows.filter((row) => row.kind === "lesson");
+  const familyTimezone = lessonRows.length
+    ? ((await services.db.select({ timezone: familySettings.timezone }).from(familySettings).limit(1))[0]?.timezone ?? "Europe/Warsaw")
+    : "Europe/Warsaw";
+  const lessonValues = new Map<string, { itemCount: number; independentlyRecalledCount: number; recommended: boolean }>();
+  for (const row of lessonRows) {
+    lessonValues.set(
+      row.deckId,
+      await lessonDeckListValues(services, services.db, {
+        childId,
+        deckVersionId: row.versionId!,
+        testDate: row.testDate,
+        timezone: familyTimezone,
+        now: services.clock.now(),
+      }),
+    );
+  }
   // Zachowujemy kolejność po createdAt (rows), rozgałęziając per rodzaj zestawu.
   return rows.map((row): KidDeckDto => {
     const activeSession = active?.deckId === row.deckId ? { sessionId: active.id, mode: active.mode } : null;
     if (row.kind === "lesson") {
       // Tytuł przedmiotu z wstrzykniętego rejestru (NIE import globalny); liczniki
-      // słówek nie mają sensu dla lekcji → wartości bezpieczne do czasu zadań 13/17.
+      // lekcji z silnika lekcji (zadanie 13).
       const subjectId = (row.lessonContext as { subjectId?: string } | null)?.subjectId;
       const subjectTitle = (subjectId ? services.subjects.getSubject(subjectId)?.titlePl : undefined) ?? null;
+      const values = lessonValues.get(row.deckId) ?? { itemCount: 0, independentlyRecalledCount: 0, recommended: false };
       return {
         kind: "lesson",
         subjectTitle,
@@ -171,10 +192,10 @@ export async function listKidDecks(services: Services, childId: string): Promise
         activeSession,
         deckId: row.deckId,
         title: row.title,
-        itemCount: 0,
-        independentlyRecalledCount: 0,
+        itemCount: values.itemCount,
+        independentlyRecalledCount: values.independentlyRecalledCount,
         testDate: row.testDate,
-        recommended: false,
+        recommended: values.recommended,
       };
     }
     return {

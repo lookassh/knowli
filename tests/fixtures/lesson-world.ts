@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { computeTargetKey } from "@learning/server";
 import type { testDatabase } from "../integration/helpers";
 
 type Pool = ReturnType<typeof testDatabase>["pool"];
@@ -12,6 +13,8 @@ export interface LessonWorld {
   subjectId: string;
   topicId: string;
   objectiveId: string;
+  /** `target_key` ćwiczeń bogatej puli (tylko gdy `richPool`). */
+  richKeys?: { notice: string; choice: string; gap: string; order: string };
 }
 
 export interface LessonWorldOptions {
@@ -27,6 +30,12 @@ export interface LessonWorldOptions {
   withObjectiveAssessment?: boolean;
   /** Zegar — timestamp zdarzeń oceny; domyślnie now(). */
   now?: Date;
+  /**
+   * Zasiej bogatszą pulę ćwiczeń celu (notice + choice + gap + order) obok
+   * domyślnego short_answer, z PRAWDZIWYMI `target_key` (computeTargetKey w
+   * en-GB). Służy testom wydawania zadań, ekspozycji i selektora. Domyślnie false.
+   */
+  richPool?: boolean;
 }
 
 /**
@@ -92,6 +101,9 @@ export async function lessonWorld(pool: Pool, options: LessonWorldOptions = {}):
     [revisionId, itemId, skillVersionId],
   );
   // Publikacja: state=published wymaga published_at; lesson_context niezmienny po publikacji.
+  if (options.richPool) {
+    await seedRichPool(pool, { deckId, versionId });
+  }
   await pool.query(
     "update learning_app.deck_versions set state = 'published', published_at = $2 where id = $1",
     [versionId, now],
@@ -161,5 +173,136 @@ export async function lessonWorld(pool: Pool, options: LessonWorldOptions = {}):
     );
   }
 
-  return { deckId, versionId, itemId, revisionId, objectiveSkillVersionId: skillVersionId, subjectId, topicId, objectiveId };
+  return {
+    deckId,
+    versionId,
+    itemId,
+    revisionId,
+    objectiveSkillVersionId: skillVersionId,
+    subjectId,
+    topicId,
+    objectiveId,
+    ...(options.richPool ? { richKeys: RICH_KEYS } : {}),
+  };
+}
+
+const RICH_ANSWER_LOCALE = "en-GB";
+/** Odpowiedzi kanoniczne bogatej puli — stałe, by test znał ich `target_key`. */
+const RICH_ANSWERS = {
+  notice: "plays",
+  choice: "plays",
+  gap: "goes",
+  order: "she plays football",
+} as const;
+/** `target_key` każdego ćwiczenia bogatej puli (computeTargetKey w en-GB). */
+export const RICH_KEYS = {
+  notice: computeTargetKey(RICH_ANSWERS.notice, RICH_ANSWER_LOCALE),
+  choice: computeTargetKey(RICH_ANSWERS.choice, RICH_ANSWER_LOCALE),
+  gap: computeTargetKey(RICH_ANSWERS.gap, RICH_ANSWER_LOCALE),
+  order: computeTargetKey(RICH_ANSWERS.order, RICH_ANSWER_LOCALE),
+} as const;
+
+/**
+ * Dodaje do szkicu (przed publikacją) cztery ćwiczenia celu obok short_answer:
+ * notice (intro), choice (guided), gap (productive), order (guided). Każde ma
+ * własny `learning_item`, `skill_version` (objective), rewizję z payloadem
+ * payload_version 2 i PRAWDZIWY `target_key`. Pozwala testom wydawania zadań
+ * zobaczyć kartę → notice → ćwiczenie oraz ekspozycje per typ.
+ */
+async function seedRichPool(pool: Pool, version: { deckId: string; versionId: string }): Promise<void> {
+  const objectiveId = "english_grammar.present_simple.third_person_s";
+  const exercises: { position: number; payload: Record<string, unknown>; answer: string }[] = [
+    {
+      position: 1,
+      answer: RICH_ANSWERS.notice,
+      payload: {
+        exerciseType: "lesson_notice",
+        objectiveId,
+        instructionPl: "Dotknij słowa z końcówką -s.",
+        noticeSegments: [["She", "plays", "football."]],
+        answer: RICH_ANSWERS.notice,
+        acceptedAnswers: [RICH_ANSWERS.notice],
+        focus: [RICH_ANSWERS.notice],
+        correctOption: "plays",
+      },
+    },
+    {
+      position: 2,
+      answer: RICH_ANSWERS.choice,
+      payload: {
+        exerciseType: "lesson_choice",
+        objectiveId,
+        instructionPl: "Wybierz poprawną formę.",
+        stem: "She ___ football.",
+        options: [
+          { id: "o-play", text: "play" },
+          { id: "o-plays", text: "plays" },
+        ],
+        answer: RICH_ANSWERS.choice,
+        acceptedAnswers: [RICH_ANSWERS.choice],
+        focus: [RICH_ANSWERS.choice],
+        correctOption: "plays",
+      },
+    },
+    {
+      position: 3,
+      answer: RICH_ANSWERS.gap,
+      payload: {
+        exerciseType: "lesson_gap",
+        objectiveId,
+        instructionPl: "Uzupełnij lukę.",
+        stem: "He ___ (go) to school.",
+        answer: RICH_ANSWERS.gap,
+        acceptedAnswers: [RICH_ANSWERS.gap],
+        focus: [RICH_ANSWERS.gap],
+      },
+    },
+    {
+      position: 4,
+      answer: RICH_ANSWERS.order,
+      payload: {
+        exerciseType: "lesson_order",
+        objectiveId,
+        instructionPl: "Ułóż zdanie.",
+        items: [
+          { id: "i-she", text: "She" },
+          { id: "i-plays", text: "plays" },
+          { id: "i-football", text: "football" },
+        ],
+        answer: RICH_ANSWERS.order,
+        acceptedAnswers: [RICH_ANSWERS.order],
+        focus: ["plays"],
+      },
+    },
+  ];
+
+  for (const ex of exercises) {
+    const exItemId = randomUUID();
+    const exRevisionId = randomUUID();
+    const exSkillVersionId = randomUUID();
+    await pool.query("insert into learning_app.learning_items (id, deck_id, kind) values ($1, $2, 'lesson_exercise')", [exItemId, version.deckId]);
+    await pool.query(
+      `insert into learning_app.item_revisions (id, item_id, deck_id, deck_version_id, position, payload_version, payload, target_key)
+       values ($1, $2, $3, $4, $5, 2, $6::jsonb, $7)`,
+      [
+        exRevisionId,
+        exItemId,
+        version.deckId,
+        version.versionId,
+        ex.position,
+        JSON.stringify({ ...ex.payload, answerLocale: RICH_ANSWER_LOCALE, promptLocale: "pl-PL" }),
+        computeTargetKey(ex.answer, RICH_ANSWER_LOCALE),
+      ],
+    );
+    await pool.query(
+      `insert into learning_app.skill_versions (id, item_id, skill, revision_number, criteria, criteria_hash)
+       values ($1, $2, 'objective', 1, $3::jsonb, $4)`,
+      [exSkillVersionId, exItemId, JSON.stringify({ objectiveId }), `oc-${exSkillVersionId}`],
+    );
+    await pool.query(
+      `insert into learning_app.item_revision_skills (item_revision_id, item_id, skill, skill_version_id)
+       values ($1, $2, 'objective', $3)`,
+      [exRevisionId, exItemId, exSkillVersionId],
+    );
+  }
 }

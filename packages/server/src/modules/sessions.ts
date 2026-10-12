@@ -53,7 +53,12 @@ import { addLegacyTaskPromptDefaults } from "./task-prompt-compat";
 import { deriveSupportStates, type SupportAttempt, type SupportTask } from "../domain/support-cycle";
 import { readLearningSnapshot } from "./learning-snapshot";
 import { createMockTestPlan, issueMockTestTask, closeMockTest } from "./mock-tests";
-import { assertVocabularyDeck, type DeckKind } from "./deck-kind";
+import { assertVocabularyDeck, readVersionDeckKind, type DeckKind } from "./deck-kind";
+import {
+  buildLessonSessionContext,
+  issueNextLessonTask,
+  lessonTaskCounts,
+} from "./lessons/lesson-sessions";
 
 /** Okno wznowienia aktywnej sesji od ostatniego zdarzenia (arch §9.1). */
 export const RESUME_WINDOW_MS = 30 * 60_000;
@@ -90,6 +95,11 @@ async function lockSession(tx: Tx, sessionId: string) {
     throw new AppError("not_found");
   }
   return session;
+}
+
+/** Czy sesja dotyczy lekcji (rozstrzyga delegację `nextTask` do silnika lekcji). */
+async function sessionIsLesson(tx: Tx, deckVersionId: string): Promise<boolean> {
+  return (await readVersionDeckKind(tx, deckVersionId)) === "lesson";
 }
 
 async function taskCounts(tx: Tx, sessionId: string): Promise<{ total: number; assessed: number }> {
@@ -241,9 +251,14 @@ export async function startSession(services: Services, input: SessionInput): Pro
     if (!deck.publishedVersionId) {
       throw new AppError("validation", { message: "deck is not published" });
     }
-    // Izolacja lekcji (zadanie 9): ścieżka sesji słówek nie obsługuje lekcji;
-    // delegację do silnika lekcji dodaje zadanie 13/17.
-    assertVocabularyDeck(deck.kind as DeckKind);
+    // Rodzaj zestawu (zadanie 9/13): słówka idą dotychczasową ścieżką; lekcja w
+    // trybie treningu deleguje do silnika lekcji (kontekst + wydawanie zadań).
+    // Kartkówkę lekcji podłączy zadanie 17 — do tego czasu `mock_test` na lekcji
+    // pozostaje odrzucona (`deck_kind_mismatch`), nie udawana ścieżką słówek.
+    const deckKind = deck.kind as DeckKind;
+    if (deckKind === "lesson" && mode === "mock_test") {
+      assertVocabularyDeck(deckKind);
+    }
 
     const now = services.clock.now();
     const active = (
@@ -276,13 +291,21 @@ export async function startSession(services: Services, input: SessionInput): Pro
     const childProfile = (
       await tx.select({ policyId: childProfiles.policyId }).from(childProfiles).where(eq(childProfiles.id, valid.childId))
     )[0];
-    const context: SessionContextShape = {
-      timezone: await readTimezone(tx),
-      testDate: assignment.testDate,
-      previousContact: await previousContactSnapshot(tx, valid.childId, version.id, now),
-      reservations: [],
-      settledChecks: [],
-    };
+    const context: SessionContextShape = deckKind === "lesson"
+      ? await buildLessonSessionContext(tx, {
+          childId: valid.childId,
+          deckVersionId: version.id,
+          timezone: await readTimezone(tx),
+          testDate: assignment.testDate,
+          now,
+        })
+      : {
+          timezone: await readTimezone(tx),
+          testDate: assignment.testDate,
+          previousContact: await previousContactSnapshot(tx, valid.childId, version.id, now),
+          reservations: [],
+          settledChecks: [],
+        };
     const id = randomUUID();
     if (mode === "mock_test" && !assignment.testGoals?.length) throw new AppError("validation", { message: "Rodzic musi najpierw ustawić cel kartkówki." });
     const mockTestPlan = mode === "mock_test" ? await createMockTestPlan(tx, services, {
@@ -818,13 +841,35 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
       if (!task) await closeMockTest(tx, services, session, "completed");
       return task;
     }
-    const issued = (
-      await tx
-        .select()
-        .from(sessionTasks)
-        .where(and(eq(sessionTasks.sessionId, id), eq(sessionTasks.state, "issued")))
-        .limit(1)
+
+    // Lekcja (zadanie 13): wspólne kroki (blokada, idempotencja wydanego zadania,
+    // przeterminowanie, budżet, limit czasu, obietnica „Jeszcze N”) są te same co
+    // słówka; różni się tylko plan i materializacja — delegacja do silnika lekcji.
+    const isLesson = await sessionIsLesson(tx, session.deckVersionId);
+    const issuedTask = (
+      await tx.select().from(sessionTasks).where(and(eq(sessionTasks.sessionId, id), eq(sessionTasks.state, "issued"))).limit(1)
     )[0];
+    if (isLesson) {
+      if (issuedTask) {
+        const counts = await lessonTaskCounts(tx, id);
+        const assessedBefore = counts.assessed - (issuedTask.exerciseType !== "lesson_card" ? 1 : 0);
+        return issuedTaskDto(session, issuedTask, assessedBefore);
+      }
+      const lastActivity = await lastActivityAt(tx, id, session.startedAt);
+      if (now.getTime() - lastActivity.getTime() > RESUME_WINDOW_MS) {
+        await tx.update(learningSessions).set({ state: "ended", endedAt: now }).where(eq(learningSessions.id, id));
+        return null;
+      }
+      const counts = await lessonTaskCounts(tx, id);
+      const remaining = session.taskBudget - counts.assessed;
+      if (remaining <= 0) return null;
+      if (now.getTime() - session.startedAt.getTime() > SESSION_TIME_LIMIT_MS && remaining > PROMISE_REMAINING) {
+        return null;
+      }
+      return issueNextLessonTask(services, tx, session, now, remaining, counts.total);
+    }
+
+    const issued = issuedTask;
     if (issued) {
       const counts = await taskCounts(tx, id);
       const assessedBefore =
@@ -938,7 +983,7 @@ export async function completePresentation(
   const valid = PresentationCompletionInputSchema.parse(input);
   return services.db.transaction(async (tx) => {
     const { task, itemId } = await lockTaskWithSession(tx, valid.taskId);
-    if (task.exerciseType !== "exposure") {
+    if (task.exerciseType !== "exposure" && task.exerciseType !== "lesson_card") {
       throw new AppError("validation", { message: "task is not a presentation" });
     }
     if (task.state === "completed") {
