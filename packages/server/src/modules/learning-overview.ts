@@ -19,7 +19,7 @@ import {
   learningSessions,
 } from "../db/schema";
 import { estimateLearningTime } from "../domain/learning-time";
-import { selectPracticeItems } from "../domain/practice-items";
+import { selectPracticeItems, type PracticeHistoryRecord } from "../domain/practice-items";
 import { buildReportPeriod } from "../domain/report-period";
 import { CURRENT_POLICY_ID, loadPolicy } from "../policies/registry";
 import { readSkillHistories, skillHistoryKey, type HistoryScope } from "./skill-history";
@@ -109,7 +109,7 @@ async function currentPracticeItems(
     const scope = { childId: child.id, skillVersionId: link.skillVersionId, skill: link.skill as HistoryScope["skill"] };
     return {
       itemId: link.itemId,
-      skill: link.skill as HistoryScope["skill"],
+      skill: link.skill as PracticeHistoryRecord["skill"],
       skillVersionId: link.skillVersionId,
       source: typeof payload.source === "string" ? payload.source : "",
       target: typeof payload.target === "string" ? payload.target : "",

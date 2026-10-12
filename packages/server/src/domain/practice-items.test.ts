@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { HistoryEntry, Skill } from "./types";
+import type { HistoryEntry, VocabularySkill } from "./types";
 import { selectPracticeItems } from "./practice-items";
 
 const entry = (input: Partial<HistoryEntry> & Pick<HistoryEntry, "receivedAt" | "skill" | "outcome">): HistoryEntry => ({
@@ -12,7 +12,7 @@ const entry = (input: Partial<HistoryEntry> & Pick<HistoryEntry, "receivedAt" | 
   ...(input.reason ? { reason: input.reason } : {}),
 });
 
-const record = (input: { itemId: string; skill: Skill; skillVersionId?: string; history: HistoryEntry[] }) => ({
+const record = (input: { itemId: string; skill: VocabularySkill; skillVersionId?: string; history: HistoryEntry[] }) => ({
   itemId: input.itemId,
   skill: input.skill,
   skillVersionId: input.skillVersionId ?? `${input.itemId}:${input.skill}`,

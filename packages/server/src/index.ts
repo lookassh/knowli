@@ -69,8 +69,11 @@ export {
 } from "./domain/media-fingerprint";
 export {
   SKILLS,
+  VOCABULARY_SKILLS,
   isSkill,
+  isVocabularySkill,
   type Skill,
+  type VocabularySkill,
   type ExerciseType,
   type PronunciationDetails,
 } from "./domain/types";

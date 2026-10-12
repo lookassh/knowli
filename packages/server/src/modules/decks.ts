@@ -38,7 +38,7 @@ import {
 import { AppError } from "../errors";
 import { buildSkillCriteria, classifyRevisionImpact } from "../domain/revision-impact";
 import { computeTargetKey } from "../domain/target-key";
-import { SKILLS, type Skill } from "../domain/types";
+import { VOCABULARY_SKILLS, type VocabularySkill } from "../domain/types";
 import { buildPayload, payloadToItem, validateItems } from "./item-payload";
 import { assertAssetPublishable, reconcileDraftAssetsTx, requiredAssetsFor } from "./media-reconciliation";
 
@@ -64,9 +64,9 @@ async function createSkillVersionsForItem(
   tx: Tx,
   itemId: string,
   item: VocabularyItemInput,
-  skillsToCreate: Map<Skill, { revisionNumber: number; predecessorId?: string }>,
-): Promise<Map<Skill, string>> {
-  const skillIds = new Map<Skill, string>();
+  skillsToCreate: Map<VocabularySkill, { revisionNumber: number; predecessorId?: string }>,
+): Promise<Map<VocabularySkill, string>> {
+  const skillIds = new Map<VocabularySkill, string>();
   for (const [skill, meta] of skillsToCreate) {
     const { criteria, criteriaHash } = buildSkillCriteria(item, skill);
     const id = randomUUID();
@@ -93,7 +93,7 @@ async function insertRevision(
     deckVersionId: string;
     position: number;
     item: VocabularyItemInput;
-    skillIds: Map<Skill, string>;
+    skillIds: Map<VocabularySkill, string>;
   },
 ): Promise<string> {
   const revisionId = randomUUID();
@@ -106,7 +106,7 @@ async function insertRevision(
     payload: buildPayload(input.item),
     targetKey: computeTargetKey(input.item.target, input.item.locales.target),
   });
-  for (const skill of SKILLS) {
+  for (const skill of VOCABULARY_SKILLS) {
     await tx.insert(itemRevisionSkills).values({
       itemRevisionId: revisionId,
       itemId: input.itemId,
@@ -202,7 +202,7 @@ export async function createDraft(services: Services, input: DraftInput): Promis
         tx,
         itemId,
         item,
-        new Map(SKILLS.map((skill) => [skill, { revisionNumber: 1 }])),
+        new Map(VOCABULARY_SKILLS.map((skill) => [skill, { revisionNumber: 1 }])),
       );
       await insertRevision(tx, {
         itemId,
@@ -259,7 +259,7 @@ interface CurrentRevision {
   revisionId: string;
   itemId: string;
   payload: Record<string, unknown>;
-  skills: Map<Skill, { skillVersionId: string; revisionNumber: number }>;
+  skills: Map<VocabularySkill, { skillVersionId: string; revisionNumber: number }>;
 }
 
 /**
@@ -396,7 +396,7 @@ async function loadCurrentRevisions(tx: Tx, versionId: string): Promise<CurrentR
       payload: r.payload,
       skills: new Map(
         skills.map((s) => [
-          s.skill as Skill,
+          s.skill as VocabularySkill,
           { skillVersionId: s.skillVersionId, revisionNumber: s.revisionNumber },
         ]),
       ),
@@ -443,7 +443,7 @@ export async function applyItems(
       const existing = currentByItemId.get(item.id)!;
       const oldItem = payloadToItem(existing.payload);
       const impact = classifyRevisionImpact(oldItem, item);
-      const toCreate = new Map<Skill, { revisionNumber: number; predecessorId: string }>();
+      const toCreate = new Map<VocabularySkill, { revisionNumber: number; predecessorId: string }>();
       for (const skill of impact) {
         const prev = existing.skills.get(skill)!;
         toCreate.set(skill, {
@@ -453,7 +453,7 @@ export async function applyItems(
       }
       const created = toCreate.size
         ? await createSkillVersionsForItem(tx, existing.itemId, item, toCreate)
-        : new Map<Skill, string>();
+        : new Map<VocabularySkill, string>();
       await tx
         .update(itemRevisions)
         .set({
@@ -465,7 +465,7 @@ export async function applyItems(
       await tx
         .delete(itemRevisionSkills)
         .where(eq(itemRevisionSkills.itemRevisionId, existing.revisionId));
-      for (const skill of SKILLS) {
+      for (const skill of VOCABULARY_SKILLS) {
         await tx.insert(itemRevisionSkills).values({
           itemRevisionId: existing.revisionId,
           itemId: existing.itemId,
@@ -480,7 +480,7 @@ export async function applyItems(
         tx,
         itemId,
         item,
-        new Map(SKILLS.map((skill) => [skill, { revisionNumber: 1 }])),
+        new Map(VOCABULARY_SKILLS.map((skill) => [skill, { revisionNumber: 1 }])),
       );
       await insertRevision(tx, {
         itemId,

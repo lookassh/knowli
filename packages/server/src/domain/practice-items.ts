@@ -1,8 +1,8 @@
-import type { HistoryEntry, Skill } from "./types";
+import type { HistoryEntry, VocabularySkill } from "./types";
 
 export type PracticeHistoryRecord = {
   itemId: string;
-  skill: Skill;
+  skill: VocabularySkill;
   skillVersionId: string;
   source: string;
   target: string;
@@ -13,7 +13,7 @@ export type PracticeItem = {
   itemId: string;
   source: string;
   target: string;
-  skills: Skill[];
+  skills: VocabularySkill[];
   lastDifficultyDate: string;
 };
 
@@ -30,7 +30,7 @@ export function selectPracticeItems(input: {
   const dateFormatter = new Intl.DateTimeFormat("en-CA", {
     timeZone: input.timezone, year: "numeric", month: "2-digit", day: "2-digit",
   });
-  const byItem = new Map<string, { source: string; target: string; skills: Map<Skill, string> }>();
+  const byItem = new Map<string, { source: string; target: string; skills: Map<VocabularySkill, string> }>();
 
   for (const record of input.records) {
     const eligible = record.history.filter((entry) => entry.policyVersion === input.currentPolicyVersion);
@@ -47,7 +47,7 @@ export function selectPracticeItems(input: {
     if (cleared) continue;
 
     const date = dateFormatter.format(new Date(difficulty.receivedAt));
-    const item = byItem.get(record.itemId) ?? { source: record.source, target: record.target, skills: new Map<Skill, string>() };
+    const item = byItem.get(record.itemId) ?? { source: record.source, target: record.target, skills: new Map<VocabularySkill, string>() };
     item.skills.set(record.skill, date);
     byItem.set(record.itemId, item);
   }
