@@ -40,6 +40,14 @@ export interface SeriesProjection<E extends SeriesEntry> {
 export interface SeriesRules<E extends SeriesEntry> {
   windowSatisfiesMastery(window: readonly E[], policy: Policy): boolean;
   countsTowardWindow?(entry: E, window: readonly E[], policy: Policy): boolean;
+  /**
+   * Czy seria jest gotowa do potwierdzenia po przerwie (status
+   * `needs_confirmation`) — pozwala uzależnić ten status od SKŁADU okna, nie od
+   * surowej serii. Domyślnie (słówka) decyduje `streak >= successStreakRequired`.
+   * Cele używają go, by wymagać różnych ćwiczeń: trzy sukcesy na tym samym
+   * `itemId` nie przechodzą do potwierdzenia (req 7.3).
+   */
+  confirmationReady?(window: readonly E[], policy: Policy): boolean;
 }
 
 /**
@@ -90,13 +98,18 @@ export function projectSeries<E extends SeriesEntry>(
   }
 
   const currentlyMastered = rules.windowSatisfiesMastery(window, policy);
+  // Gotowość do potwierdzenia: domyślnie surowa seria (słówka), ale strategia
+  // może zażądać warunku na składzie okna (cele: różne ćwiczenia, req 7.3).
+  const confirmationReady = rules.confirmationReady
+    ? rules.confirmationReady(window, policy)
+    : streak >= policy.successStreakRequired;
   const status: ProgressStatus = currentlyMastered
     ? "mastered"
     : masteredEver
       ? "needs_reconfirmation"
       : !assessed
         ? "not_assessed"
-        : streak >= policy.successStreakRequired
+        : confirmationReady
           ? "needs_confirmation"
           : "learning";
 

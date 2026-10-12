@@ -197,6 +197,13 @@ describe("projectObjectiveProgress — projekcja postępu celu (req 7.3–7.5)",
     expect(projectObjectiveProgress(history, POLICY, NOW)[OBJ]?.status).toBe("mastered");
   });
 
+  it("3 sukcesy na TYM SAMYM ćwiczeniu → learning, nie needs_confirmation (req 7.3)", () => {
+    // Trzy sukcesy, ale wszystkie na e1: okno różnych ćwiczeń = {e1}, więc do
+    // potwierdzenia brakuje dwóch różnych ćwiczeń — dziecko wciąż „ćwiczy”.
+    const history = [ok(D1, "e1"), ok(D1B, "e1"), ok(D1C, "e1")];
+    expect(projectObjectiveProgress(history, POLICY, NOW)[OBJ]?.status).toBe("learning");
+  });
+
   it("sukces–błąd–sukces–sukces → seria 2", () => {
     const history = [
       ok(D1, "e1"),

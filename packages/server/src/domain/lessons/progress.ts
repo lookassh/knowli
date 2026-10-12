@@ -137,6 +137,12 @@ const OBJECTIVE_RULES: SeriesRules<ObjectiveSeriesEntry> = {
   countsTowardWindow(entry, window) {
     return !window.some((w) => w.itemId === entry.itemId);
   },
+  // Do potwierdzenia potrzeba `successStreakRequired` RÓŻNYCH ćwiczeń (req 7.3).
+  // Okno z definicji zawiera tylko różne `itemId` (patrz `countsTowardWindow`),
+  // więc jego długość to liczba różnych ćwiczeń w serii.
+  confirmationReady(window, policy) {
+    return window.length >= policy.successStreakRequired;
+  },
   windowSatisfiesMastery(window, policy) {
     return windowHasConfirmedStreak(window, policy);
   },
