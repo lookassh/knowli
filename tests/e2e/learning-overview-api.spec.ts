@@ -19,9 +19,13 @@ test("integration token reads overview only, has no-store and cannot enter Paren
     expect(response.status()).toBe(200);
     expect(response.headers()["cache-control"]).toContain("no-store");
     const overview = LearningOverviewDtoSchema.parse(await response.json());
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Warsaw" }).format(new Date());
+    const yesterday = new Date(`${today}T00:00:00Z`);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    const from = yesterday.toISOString().slice(0, 10);
     expect(overview).toMatchObject({
       schemaVersion: 1,
-      period: { from: "2026-10-10", to: "2026-10-11", days: 2 },
+      period: { from, to: today, days: 2 },
     });
     expect(Array.isArray(overview.children)).toBe(true);
 
