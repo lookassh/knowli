@@ -280,6 +280,29 @@
   }
 }
 
+.kid-page--session[data-viewport-short="true"] .kid-screen {
+  gap: 4px;
+  padding-block: 12px;
+}
+
+.kid-page--session[data-viewport-short="true"] .kid-exercise-frame {
+  gap: 2px;
+}
+
+.kid-page--session[data-viewport-short="true"] .kid-options button {
+  min-height: 48px;
+}
+
+.kid-page--session[data-viewport-very-short="true"] .kid-learning > .kid-task {
+  min-height: max-content;
+  flex: none;
+}
+
+.kid-page--session[data-viewport-very-short="true"] .kid-learning > .kid-task > .kid-exercise-frame {
+  min-height: 360px;
+  flex: none;
+}
+
 .kid-top-bar {
   display: flex;
   justify-content: flex-end;
@@ -713,8 +736,11 @@
 }
 
 .kid-options button {
+  box-sizing: border-box;
+  position: relative;
   width: 100%;
   min-height: 64px;
+  padding-inline: 44px;
   font-size: 1.3rem;
   border: 2px solid var(--kid-line);
   border-radius: 18px;
@@ -739,6 +765,10 @@
 
 .kid-options button.kid-option--correct::before {
   content: "✓ ";
+  position: absolute;
+  inset-inline-start: 14px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .kid-options button.kid-option--wrong {
@@ -749,6 +779,10 @@
 
 .kid-options button.kid-option--wrong::before {
   content: "✗ ";
+  position: absolute;
+  inset-inline-start: 14px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 /* podświetlone opcje są wyłączone (feedback na ekranie), ale nie przygaszone */
@@ -898,14 +932,30 @@
 }
 
 .kid-record-controls {
+  box-sizing: border-box;
   display: grid;
   justify-items: center;
+  align-content: start;
   gap: 8px;
   width: min(100%, 420px);
+  height: 164px;
+  min-height: 164px;
+  grid-template-rows: 64px 40px 24px 12px;
+}
+
+.kid-speech-recording-slot {
+  box-sizing: border-box;
+  width: min(100%, 420px);
+  height: 164px;
+  flex: none;
+  display: flex;
+  justify-content: center;
 }
 
 .kid-record-button {
-  min-width: 220px;
+  box-sizing: border-box;
+  width: min(100%, 360px);
+  min-width: 0;
   min-height: 64px;
   display: inline-flex;
   align-items: center;
@@ -1741,8 +1791,9 @@
 }
 
 .kid-lesson-notice__word {
+  position: relative;
   min-height: 48px;
-  padding: 6px 12px;
+  padding: 6px calc(12px + 0.8em);
   font: inherit;
   font-size: 1.3rem;
   border: 2px solid var(--kid-line);
@@ -1764,6 +1815,10 @@
 
 .kid-lesson-notice__word.kid-option--correct::before {
   content: "✓ ";
+  position: absolute;
+  inset-inline-start: 8px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .kid-lesson-notice__word.kid-option--wrong {
@@ -1773,6 +1828,10 @@
 
 .kid-lesson-notice__word.kid-option--wrong::before {
   content: "✗ ";
+  position: absolute;
+  inset-inline-start: 8px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .kid-lesson-stem {

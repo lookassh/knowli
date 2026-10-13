@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { installKidUiFixture } from "./helpers/kid-ui-fixture";
+import { installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
 
 const childId = "10000000-0000-4000-8000-000000000001";
 const deckId = "10000000-0000-4000-8000-000000000002";
@@ -161,6 +161,10 @@ test("choice feedback keeps each option in place", async ({ page }) => {
   }));
   await options.first().click();
   await expect(page.getByTestId("kid-feedback")).toContainText("Świetnie");
+  const feedbackFits = await page.getByTestId("kid-exercise-result").evaluate((element) =>
+    element.scrollHeight <= element.clientHeight,
+  );
+  expect(feedbackFits, "one-line feedback should not be internally clipped").toBe(true);
   const after = await options.evaluateAll((elements) => elements.map((element) => {
     const { x, y, width, height } = element.getBoundingClientRect();
     return { x, y, width, height };
@@ -172,3 +176,135 @@ test("choice feedback keeps each option in place", async ({ page }) => {
   });
   await expect(page.getByTestId("kid-next")).toBeInViewport();
 });
+
+test("long choice labels keep their geometry when feedback markers appear", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 640 });
+  const fixture = completedReadingFixture();
+  const task = fixture.tasks[0]!;
+  if (task.prompt.kind !== "reading") throw new Error("reading fixture expected");
+  task.prompt.options = [
+    { id: optionIds[0]!, text: "mała zielona żaba na kamieniu" },
+    { id: optionIds[1]!, text: "zielona papuga siedzi na gałęzi" },
+    { id: optionIds[2]!, text: "niebieski motyl" },
+  ];
+  await installKidUiFixture(page, fixture);
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+  await expect(page.getByTestId("kid-exercise")).toBeVisible();
+
+  const options = page.getByTestId("kid-option");
+  await expect(options).toHaveCount(3);
+  const before = await options.evaluateAll((elements) => elements.map((element) => {
+    const { x, y, width, height } = element.getBoundingClientRect();
+    return { x, y, width, height };
+  }));
+  await options.first().click();
+  await expect(options.first()).toHaveClass(/kid-option--correct/);
+  const after = await options.evaluateAll((elements) => elements.map((element) => {
+    const { x, y, width, height } = element.getBoundingClientRect();
+    return { x, y, width, height };
+  }));
+
+  after.forEach((box, index) => {
+    expect(Math.abs(box.x - before[index]!.x), `option ${index} moved horizontally`).toBeLessThanOrEqual(2);
+    expect(Math.abs(box.y - before[index]!.y), `option ${index} moved vertically`).toBeLessThanOrEqual(2);
+    expect(Math.abs(box.height - before[index]!.height), `option ${index} changed height`).toBeLessThanOrEqual(2);
+  });
+});
+
+for (const kind of ["recall", "speech"] as const) {
+test(`${kind} microphone phases keep exercise controls in place`, async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    let microphoneCalls = 0;
+    const track = { kind: "audio", stop: () => undefined, addEventListener: () => undefined };
+    const stream = { getTracks: () => [track], getAudioTracks: () => [track] };
+    const browserWindow = window as typeof window & { resolveMicrophonePreparation?: () => void };
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia: async () => {
+        microphoneCalls += 1;
+        if (microphoneCalls === 1) {
+          await new Promise<void>((resolve) => { browserWindow.resolveMicrophonePreparation = resolve; });
+        }
+        return stream;
+      } },
+    });
+    class FakeMediaRecorder {
+      static isTypeSupported(): boolean { return true; }
+      state = "inactive";
+      ondataavailable: ((event: { data: Blob }) => void) | null = null;
+      onstop: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      start(): void { this.state = "recording"; }
+      stop(): void { this.state = "inactive"; this.onstop?.(); }
+    }
+    (window as unknown as { MediaRecorder: typeof FakeMediaRecorder }).MediaRecorder = FakeMediaRecorder;
+  });
+  const base = recallFixture();
+  const fixture: KidUiFixture = {
+    ...base,
+    profiles: [{ ...base.profiles[0]!, recordingMode: "toggle" }],
+    session: { ...base.session, microphoneEnabled: true },
+    tasks: [{
+      ...base.tasks[0]!,
+      ...(kind === "speech" ? {
+        exerciseType: "speech" as const,
+        prompt: { kind: "speech" as const, text: "cat", audioAssetId: null, imageAssetId: null, visualType: "none" as const },
+      } : {}),
+    }],
+  };
+  await installKidUiFixture(page, fixture);
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+  await expect(page.getByTestId("kid-exercise")).toBeVisible();
+
+  const measure = async () => page.evaluate(() => {
+    const rect = (selector: string) => {
+      const element = document.querySelector(selector);
+      if (!element) throw new Error(`Missing layout element: ${selector}`);
+      const bounds = element.getBoundingClientRect();
+      return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
+    };
+    return {
+      frame: rect("[data-testid='kid-exercise']"),
+      instruction: rect("[data-testid='kid-instruction']"),
+      material: rect("[data-testid='kid-material']"),
+      primary: rect("[data-testid='kid-primary-slot']"),
+      record: rect("[data-testid='kid-record']"),
+      input: document.querySelector("[data-testid='kid-input']")
+        ? rect("[data-testid='kid-input']")
+        : null,
+    };
+  });
+  const before = await measure();
+  const record = page.getByTestId("kid-record");
+  await record.click();
+  await expect(record).toHaveAttribute("data-phase", "preparing");
+  const preparing = await measure();
+  await page.evaluate(() => {
+    const browserWindow = window as typeof window & { resolveMicrophonePreparation?: () => void };
+    browserWindow.resolveMicrophonePreparation?.();
+  });
+  await expect(record).toHaveAttribute("data-ready", "true");
+  await record.click();
+  await expect(record).toHaveAttribute("data-phase", "recording");
+  const recording = await measure();
+
+  for (const phase of [preparing, recording]) {
+    for (const key of ["frame", "instruction", "material", "primary", "record"] as const) {
+      expect(Math.abs(phase[key].x - before[key].x), `${key} moved horizontally`).toBeLessThanOrEqual(2);
+      expect(Math.abs(phase[key].y - before[key].y), `${key} moved vertically while microphone was ${key === "record" ? "used" : "active"}`).toBeLessThanOrEqual(2);
+      expect(Math.abs(phase[key].height - before[key].height), `${key} changed height`).toBeLessThanOrEqual(2);
+    }
+    if (before.input !== null && phase.input !== null) {
+      expect(Math.abs(phase.input.x - before.input.x), "written input moved horizontally").toBeLessThanOrEqual(2);
+      expect(Math.abs(phase.input.y - before.input.y), "written input moved vertically while recording").toBeLessThanOrEqual(2);
+      expect(Math.abs(phase.input.height - before.input.height), "written input changed height").toBeLessThanOrEqual(2);
+    }
+  }
+  await page.keyboard.press("Escape");
+});
+}

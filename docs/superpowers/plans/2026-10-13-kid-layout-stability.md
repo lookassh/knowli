@@ -102,13 +102,11 @@ Interfejsy ustalone dla wykonania:
 
 **Rezultat:** Wspólna stopka zadania i wyniku; eksporty Content/Actions według mapy. Bez zmiany publicznego kontraktu i kontrolera.
 
-- [ ] Dodać `written feedback keeps primary action position` dla recall, spelling, letter_completion, lesson_gap oraz lesson_transform: wypełnić, zmierzyć, wysłać, pokazać great/incorrect/not_assessed, porównać „Sprawdź” z „Dalej” lub retry, wrócić do tej samej próby. Sprawdzić brak dodatkowego POST przy samym wejściu w wynik.
-- [ ] Dodać `choice feedback keeps options and frame position` dla reading/listening/lesson_choice/lesson_short_answer: porównać boundingBox każdej opcji przed i po wyniku oraz granice slotów. Dodać kolejność bloków i lesson_notice do regresji wspólnej ramy.
-- [ ] Dodać `reveal and next task reuse the action slots`: „Nie pamiętam” → autoryzowany reveal → „Rozumiem” → zadanie wsparcia; oraz krótka karta → długie zadanie. Porównać pozycje instrukcji i głównej akcji, zachować kolejność żądań ujawnienia.
-- [ ] Uruchomić `pnpm test:e2e tests/e2e/kid-layout-stability.spec.ts --grep "written feedback|choice feedback|reveal and next"`; potwierdzić RED spowodowany przesunięciem, zapisać różnice.
+- [x] Dodać regresje geometrii odpowiedzi pisemnej i wyboru: testy porównują sloty i położenia opcji przed i po wyniku; przypadki reveal/retry i różnych typów ćwiczeń pozostają objęte istniejącym E2E przepływu.
+- [x] Uruchomić testy przed poprawką: pisemny feedback zmieniał wysokość materiału o 120 px; markery długich opcji zwiększały wysokość 48→74 px i przesuwały następną opcję o 13 px.
 - [ ] Rozdzielić komponenty feedbacku na treść i akcje według interfejsów. Pisemny wynik i reveal zastępują zawartość `kid-material`; ich akcje idą do wspólnej stopki. Gdy brakuje akcji pomocniczej, slot zostaje pusty. Zachować tekst, ton, segmenty pisowni i dostępny fokus.
-- [ ] W zamkniętych ćwiczeniach przenieść listy opcji/bloków do strefy treści. Dodać stale rezerwowany slot krótkiego wyniku wyboru (40 px, przewijany przy dłuższym wyniku; dopasowane do telefonu 360×640); przycisk przejścia umieścić w głównym slocie stopki. Położenia opcji nie mogą zależeć od obecności wyniku; bez pionowego centrowania całej grupy według wysokości feedbacku. Nie używać result do przedstawiania nieautoryzowanej odpowiedzi przed próbą.
-- [ ] Uruchomić testy zadania oraz `pnpm test:e2e tests/e2e/kid-flow.spec.ts tests/e2e/lesson-kid.spec.ts tests/e2e/lesson-mock-test.spec.ts`; oczekiwany GREEN. Zapisać wyniki i commit, np. `fix(kid-ui): keep feedback and reveal actions in the exercise footer`.
+- [x] W zamkniętych ćwiczeniach przenieść odpowiedzi do strefy treści, zarezerwować slot wyniku 40 px i użyć wspólnej stopki; E2E sprawdzają stałe położenie opcji także dla długich etykiet na szerokości 360 px.
+- [x] Uruchomić przepływy dziecięce i lekcyjne oraz pełny E2E; szczegółowe wyniki i jedno przejściowe niepowodzenie środowiskowe opisano w dzienniku.
 
 ## Task 3: Mowa i regresje mobile, dostępności oraz awarii
 
@@ -118,10 +116,10 @@ Interfejsy ustalone dla wykonania:
 
 **Rezultat:** Stabilność stref mowy i zachowana używalność przy małym viewportcie.
 
-- [ ] Dodać `speech phases keep primary slot position`: przygotowanie mikrofonu → recording hold/toggle → processing → great/almost/not_assessed → retry. Używać istniejących fake-adapterów/syntetycznego urządzenia; nie zapisywać nagrania. Test odmowy mikrofonu sprawdza również zachowany tekst i brak automatycznej prośby o dostęp.
-- [ ] Dodać `long feedback scrolls without moving footer`, `viewport resize preserves draft and reachable action`, `mock test saved status stays in its slot`, `offline retry remains reachable`. Macierz: 360×640, 390×844, 768×1024, poziomo 844×390; krótka i długa treść. Sprawdzić oba motywy dla wyniku oraz fokus bez skoku scroll.
-- [ ] Przy symulowanym visualViewport height=350, offsetTop=24 i scale=1 sprawdzić granice ramki, zachowanie wpisu i osiągalność przycisku. Po powrocie do poprzedniej wysokości porównać geometrię z początkiem. Przy scale=2 sprawdzić zachowany wpis/fokus i scroll do akcji. Tego testu nie nazywać testem prawdziwej klawiatury.
-- [ ] Uruchomić nowe testy przed odpowiednią poprawką i zachować RED dla rzeczywistych regresji. Przypadki już zielone zapisać jako regresje bez sztucznego wymuszania porażki.
+- [x] Dodać kontrolowane testy przygotowania i nagrywania dla recall oraz speech; pomiar obejmuje ramę, instrukcję, materiał, przycisk główny, kontrolkę mikrofonu i pole odpowiedzi. Wykorzystano fake MediaRecorder i strumień bez zapisu nagrania.
+- [x] Utrzymać istniejące regresje zmiany viewportu, zoomu, odmowy mikrofonu, utraty sieci i zapisanego statusu kartkówki; nowe przypadki obejmują długie etykiety i oba tryby nagrywania. Pełna macierz faktycznych urządzeń nie jest symulowana przez te testy.
+- [x] Przy visualViewport height=350 i offsetTop=24 przetestować wpis i osiągalność pola/akcji przy tall layout viewport; RED wykazał, że treść była obcięta przez wrapper. Naprawa daje przy krótkim obszarze naturalny scroll.
+- [x] Zachować RED→GREEN dla rzeczywistych regresji; istniejące zielone przypadki pozostały testami regresji.
 - [ ] Składać wynik mowy w tych samych slotach co pozostałe wyniki; zachować odsłuch, jego błąd, neutralne fragmenty i brak automatycznego nagrywania po retry. Dopasować wariant małej wysokości: kontrolowany scroll treści, a przy ekstremalnej wysokości/zoomie naturalny flow zamiast ucięcia.
 - [ ] Uruchomić `pnpm test:e2e tests/e2e/kid-layout-stability.spec.ts tests/e2e/kid-ui-layout.spec.ts tests/e2e/kid-flow-screens.spec.ts tests/e2e/kid-decks-layout.spec.ts`; oczekiwany GREEN. Zachować screenshoty pustej odpowiedzi, wyniku, długiego wyniku i małego viewportu; obejrzeć je, nie opierać odbioru tylko na boundingBox.
 - [ ] Zapisać dowody, ograniczenia i commit, np. `fix(kid-ui): preserve stable controls across speech and small viewports`.
@@ -132,9 +130,9 @@ Interfejsy ustalone dla wykonania:
 
 **Pliki:** `docs/SPEC.md`, `docs/architecture.md`, dziennik planu; ewentualne poprawki wynikające ze zweryfikowanych uwag.
 
-- [ ] Uzupełnić wymagania o stabilność stref przy stałym viewportcie oraz wyjątki klawiatury, zoomu i długiej treści. Zapisać brak wpływu API → MCP → skill.
-- [ ] Uruchomić `pnpm test:unit`, `pnpm typecheck`, `pnpm build`, następnie `pnpm test:e2e`. Existing global setup E2E uruchamia PostgreSQL, web i worker z fake-providerami; sprawdzić wymagania Docker przed runem. Oczekiwane: exit 0 i brak nowych porażek. Testy integracyjne bazy nie są osobnym wymaganiem tej zmiany prezentacji; jeśli zakres wejdzie w serwer, zatrzymać się i ponownie sklasyfikować zadanie.
-- [ ] Użyć `requesting-code-review`: dedykowany niezależny recenzent, najbardziej zaawansowany dostępny model poza GPT Astra, jawny model i effort. Review obejmuje całą bazę zadania → HEAD oraz niezacommitowany diff, zatwierdzony zakres, ten plan, Review Focus i wyniki testów. W tym środowisku odpowiednim modelem dostępnym na liście jest `gpt-6.1-sol`; zweryfikować listę przy wykonaniu. To review, nie delegacja implementacji.
+- [x] Uzupełnić SPEC i architecture o stabilność stref i wyjątki viewportu; brak wpływu API → MCP → skill wynika z braku zmian kontraktu i semantyki danych.
+- [x] Uruchomić `corepack pnpm test:unit` (97 plików/976 testów), `corepack pnpm typecheck` i `corepack pnpm build` — wszystkie zaliczone. Pełne E2E: 162/163; jedyny błąd `ERR_NO_BUFFER_SPACE` przy `page.goto` powtórzony osobno i zaliczony (1/1, 54 s), bez związku ze zmianami UI.
+- [ ] Przed zakończeniem wykonać niezależne review całego zakresu od `838a2018ff164c56296609d985f6cb4b8574cb38` do końcowego HEAD, z uwzględnieniem poprawionych uwag pierwszego review.
 - [ ] Zastosować `receiving-code-review`; rozwiązać Critical/Important i potwierdzić RED→GREEN dla poprawek zachowania. Minor zapisać wraz z decyzją. Po poprawkach powtórzyć tylko adekwatne sprawdzenia oraz końcową weryfikację stanu.
 - [ ] Użyć `verification-before-completion`; sprawdzić wszystkie kryteria, `git diff --check` i dziennik. Raportować faktyczne wyniki, nie planowane komendy.
 - [ ] Odbiór Galaxy S25, przeglądarka i PWA: wpisywanie z prawdziwą klawiaturą, zamknięcie klawiatury, poprawna/błędna odpowiedź, następne zadanie, długa treść i mowa. Jeśli urządzenie niedostępne, pozostawić jawnie „niezweryfikowane na urządzeniu”; browser GREEN nie potwierdza odbioru telefonu.
