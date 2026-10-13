@@ -402,6 +402,12 @@ Testy regresji słówek chronią każdy punkt rozszerzenia; obecność lekcji ni
 
 ### 19.3. Generowanie puli (worker)
 
+Naprawy review PR #51 (2026-10-13): każdy surowy rekord przechodzi walidację kształtu pól tekstowych i wszystkich tablic przed konwersją do domeny. Zły rekord jest liczony jako odrzucony bez utraty poprawnej reszty puli. `lesson_transform` wymaga niepustego `statement`. Rodzic dostaje w autoryzowanym `lesson-catalog` wyłącznie identyfikatory, tytuły oraz `cards: [{title, body}]` do podglądu; pola modelowe pozostają na serwerze. Edytor pokazuje te same teksty kart i aktualne lokalne przykłady co interfejs dziecka, a PATCH.examples zapisuje zatwierdzane poprawki.
+
+Sesja lekcji zapisuje `initialObjectiveProgress` przy starcie w prywatnym kontekście. Początkowy etap i limit nowych celów używają tej migawki, awans wynika z historii zadań sesji; bieżąca projekcja służy nadal należnym sprawdzeniom. Starsze aktywne sesje bez migawki rozpoznają wprowadzenie celu po pierwszym kroku historii. Finalizacja modelu ponawia wspólną blokadę i odczyt stanu sesji/próby; zamknięta sesja nie dostaje późnej oceny ani zmiany projekcji. Nieocenione oceny mają confirmationEligible=false w obu ścieżkach.
+
+API → MCP → skill: rozszerzenie katalogu dotyczy wyłącznie panelu rodzica, nie narzędzi raportowych. `learning-overview` v1, przenośny schemat oraz skill Hermesa zachowują kontrakt i filtr wyłączający lekcje. Nie wymaga wdrożenia zmiany u konsumenta MCP; aktualizacja repo nie oznacza wdrożenia aplikacji.
+
 Worker (`LlmProvider.generateLessonPool`) generuje pulę partiami per cel z docelowym rozkładem etapów (≈35% prowadzone, 45% produktywne, 20% samodzielne). `pool-validation.ts` (ogólne) sprawdza istnienie celu/typu, niepusty `focus` będący podsekwencją odpowiedzi, poprawność `lesson_order`/`lesson_gap`/opcji, długości i brak duplikatów znormalizowanych odpowiedzi; `subject.validateExercise` dokłada reguły przedmiotu. Pula jest zatwierdzana przez rodzica; nic nie jest generowane w trakcie sesji. TTS odpowiedzi kanonicznej przechodzi istniejącym potokiem mediów (`target_audio`), gdy `subject.ttsForAnswers` — patrz ograniczenie 19.7.
 
 ### 19.4. Ocena hybrydowa z cache i `processing`

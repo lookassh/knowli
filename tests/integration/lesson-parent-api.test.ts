@@ -6,12 +6,17 @@ import {
   runDueGenerationWork,
   setupParent,
   createChild,
+  startSession,
+  nextTask,
+  completePresentation,
+  submitAttempt,
   type Services,
 } from "@learning/server";
 import {
   LessonDeckDtoSchema,
   LessonDraftDtoSchema,
   SubjectCatalogDtoSchema,
+  TaskPromptSchema,
   type LessonExerciseInput,
 } from "@learning/contracts";
 import { testDatabase, truncateCoreTables } from "./helpers";
@@ -19,6 +24,7 @@ import { ManualClock } from "./helpers";
 import { fakeGeneration, type FakeGeneration } from "./fakes";
 import { handleParentApi } from "../../apps/web/src/parent/parent-router";
 import { errorResponse } from "../../apps/web/src/http/errors";
+import { createLessonSnapshot, toLessonDraftPatch } from "../../apps/web/src/parent/lessons/lesson-editor-state";
 
 const { pool } = testDatabase();
 const BASE = "http://localhost:3000";
@@ -154,6 +160,67 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
     expect(subject.titlePl).toBe("Angielski — gramatyka");
     const topic = subject.topics.find((t) => t.id === TOPIC)!;
     expect(topic.objectives.some((o) => o.id === OBJECTIVE)).toBe(true);
+    const objective = topic.objectives.find((o) => o.id === OBJECTIVE)!;
+    expect(objective).toHaveProperty("cards");
+    const cards = (objective as unknown as { cards: Array<{ title: string; body: string }> }).cards;
+    expect(cards[0]).toEqual({ title: "Dodaj -s", body: expect.any(String) });
+    expect(Object.keys(cards[0]!).sort()).toEqual(["body", "title"]);
+    for (const forbidden of ["descriptionEn", "errorCategories", "hints"]) expect(objective).not.toHaveProperty(forbidden);
+  });
+
+  it("generacja → edycja samego tytułu → publikacja → rzeczywista sesja dziecka", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const generate = fakes.llm.generateLessonPool.bind(fakes.llm);
+    fakes.llm.generateLessonPool = async (...args) => {
+      const result = await generate(...args);
+      let replaced = false;
+      return { ...result, exercises: result.exercises.map((raw) => {
+        const ex = raw as Record<string, unknown>;
+        if (replaced || ex.exerciseType !== "lesson_gap") return raw;
+        replaced = true;
+        const { stem: _stem, hint: _hint, ...base } = ex;
+        return { ...base, exerciseType: "lesson_transform", statement: "She dances.", transformId: "to_negative",
+          answer: "She does not dance", focus: ["does", "not"], acceptedAnswers: [] };
+      }) };
+    };
+    const { services, cookie } = await freshParent(fakes);
+    const created = await call(services, "POST", "lessons", { cookie, body: lessonBody({ objectiveIds: ["english_grammar.present_simple.negative"] }) });
+    const { deckId } = await created.json() as { deckId: string };
+    await drainWork(services);
+    const deck = LessonDeckDtoSchema.parse(await (await call(services, "GET", `lessons/${deckId}`, { cookie })).json());
+    const draft = deck.draft!;
+    expect(draft.exercises.some((ex) => ex.exerciseType === "lesson_transform")).toBe(true);
+    const snapshot = createLessonSnapshot(draft, randomUUID);
+    snapshot.form.title = "Zmieniony tytuł";
+    const changed = await call(services, "PATCH", `lesson-drafts/${draft.id}`, { cookie, body: toLessonDraftPatch(snapshot) });
+    expect(changed.status).toBe(200);
+    const updated = LessonDraftDtoSchema.parse(await changed.json());
+    for (const ex of draft.exercises.filter((ex) => ex.exerciseType === "lesson_transform")) {
+      expect(updated.exercises.find((row) => row.id === ex.id)?.statement).toBe(ex.statement);
+    }
+    await drainWork(services);
+    expect((await call(services, "POST", `lesson-drafts/${draft.id}/publish`, { cookie, body: { expectedEditNumber: updated.editNumber } })).status).toBe(200);
+    const child = await createChild(services, { displayName: "Test przepływu", avatarKey: "owl" });
+    expect((await call(services, "PUT", `assignments/${child.id}/${deckId}`, { cookie, body: { testDate: null } })).status).toBe(204);
+    const session = await startSession(services, { childId: child.id, deckId, microphoneEnabled: false });
+    const seen = new Set<string>();
+    for (let i = 0; i < 18; i++) {
+      const task = await nextTask(services, session.sessionId);
+      if (!task) break;
+      TaskPromptSchema.parse(task.prompt);
+      if (task.exerciseType === "lesson_card") { await completePresentation(services, { taskId: task.taskId }); continue; }
+      const key = (await pool.query("select answer_key from learning_app.session_tasks where id=$1", [task.taskId])).rows[0].answer_key;
+      const attempt = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(),
+        ...(["lesson_choice", "lesson_short_answer", "lesson_notice"].includes(task.exerciseType) ? { modality: "choice" as const, optionId: key.correctOptionId }
+          : task.exerciseType === "lesson_order" ? { modality: "sequence" as const, itemIds: key.itemIds }
+          : { modality: "text" as const, text: key.answer }),
+      });
+      expect(attempt.feedback?.kind).toBe("great");
+      seen.add(task.exerciseType);
+    }
+    expect(seen.has("lesson_choice")).toBe(true);
+    expect(seen.has("lesson_transform")).toBe(true);
   });
 
   it("utworzenie lekcji → 202 {runId, deckId}, idempotentny retry", async () => {

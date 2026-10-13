@@ -49,8 +49,8 @@ const text = z.string().min(1).max(MAX_TEXT_LENGTH);
 
 /**
  * Katalog przedmiotów do formularza rodzica (design „Przedmiot i katalog”).
- * Tylko tytuły i identyfikatory — bez opisów dla modelu (`descriptionEn`),
- * kart ani puli ćwiczeń. `.strict()` broni przed wyciekiem pól modelowych.
+ * Tytuły, identyfikatory i karty rodzica — bez opisów dla modelu (`descriptionEn`),
+ * bez puli ćwiczeń. `.strict()` broni przed wyciekiem pól modelowych.
  */
 export const SubjectCatalogDtoSchema = z.object({
   subjects: z.array(z.object({
@@ -63,6 +63,7 @@ export const SubjectCatalogDtoSchema = z.object({
       objectives: z.array(z.object({
         id: z.string().min(1),
         titlePl: z.string().min(1),
+        cards: z.array(z.object({ title: z.string().min(1), body: z.string().min(1) }).strict()),
       }).strict()),
     }).strict()),
   }).strict()),

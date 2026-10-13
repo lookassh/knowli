@@ -8,6 +8,7 @@ import {
   type LessonDeckDto,
   type LessonDraftDto,
   type LessonExerciseErrors,
+  type SubjectCatalogDto,
 } from "@learning/contracts";
 import { apiFetch, ApiCallError, errorMessage } from "../api";
 import AssignmentTestGoalFields, { type AssignmentTestSettings } from "../AssignmentTestGoalFields";
@@ -65,6 +66,11 @@ export default function LessonEditor({
   const [regenCounts, setRegenCounts] = useState<Record<string, number>>({});
   const [assignDates, setAssignDates] = useState<Record<string, string>>({});
   const [assignSettings, setAssignSettings] = useState<Record<string, AssignmentTestSettings>>({});
+  // Edytowalne przykłady AI per cel (wym. 3.3). Trzymane lokalnie, bo serializacja
+  // PATCH-a ćwiczeń żyje w `lesson-editor-state.ts` (poza zakresem tej edycji);
+  // przykłady dokładamy do ciała PATCH w `save()`. `null` = jeszcze nie zasiane.
+  const [examplesForm, setExamplesForm] = useState<Record<string, string[]> | null>(null);
+  const [catalog, setCatalog] = useState<SubjectCatalogDto | null>(null);
 
   const dirty = useRef(false);
   const busyRef = useRef(false);
@@ -108,6 +114,14 @@ export default function LessonEditor({
     void load();
   }, [load]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void apiFetch<SubjectCatalogDto>("GET", "/api/v1/parent/lesson-catalog")
+      .then((result) => { if (!cancelled) setCatalog(result); })
+      .catch((cause) => { if (!cancelled) setError(errorMessage(cause)); });
+    return () => { cancelled = true; };
+  }, [deckId]);
+
   const draft = deck?.draft ?? null;
   const active: LessonDraftDto | null = draft ?? deck?.published ?? null;
   const editable = draft !== null;
@@ -126,6 +140,7 @@ export default function LessonEditor({
     const snapshot = createLessonSnapshot(active, newKey);
     if (draft) baseSnapshot.current = snapshot;
     setForm(snapshot.form);
+    setExamplesForm(structuredClone(active.examples ?? {}));
   }, [active, draft, newKey]);
 
   useEffect(() => () => {
@@ -148,6 +163,18 @@ export default function LessonEditor({
     );
   };
 
+  // Edycja jednej linii przykładu danego celu (wym. 3.3): rodzic poprawia błędny
+  // przykład AI przed publikacją. Zmiana brudzi formularz jak każda inna edycja.
+  const mutateExampleLine = (objectiveId: string, lineIndex: number, value: string) => {
+    markDirty();
+    setExamplesForm((current) => {
+      const base = current ?? {};
+      const lines = [...(base[objectiveId] ?? [])];
+      lines[lineIndex] = value;
+      return { ...base, [objectiveId]: lines };
+    });
+  };
+
   const save = async () => {
     const base = baseSnapshot.current;
     if (!draft || !form || !base || busyRef.current || !dirty.current || base.versionId !== draft.id) return;
@@ -160,9 +187,14 @@ export default function LessonEditor({
     setError(null);
     setExerciseErrors({});
     try {
-      const saved = await apiFetch<LessonDraftDto>("PATCH", `/api/v1/parent/lesson-drafts/${snapshot.versionId}`, toLessonDraftPatch(snapshot));
+      const patch = toLessonDraftPatch(snapshot);
+      // Przykłady serwer nadpisuje całością per cel; dokładamy aktualny stan,
+      // bo serializacja ćwiczeń (lesson-editor-state) ich nie obejmuje.
+      if (examplesForm) patch.examples = examplesForm;
+      const saved = await apiFetch<LessonDraftDto>("PATCH", `/api/v1/parent/lesson-drafts/${snapshot.versionId}`, patch);
       baseSnapshot.current = createLessonSnapshot(saved, newKey);
       setForm(baseSnapshot.current.form);
+      setExamplesForm(structuredClone(saved.examples ?? {}));
       dirty.current = false;
       setIsDirty(false);
       onEditorStateChange({ dirty: false, busy: true });
@@ -201,6 +233,7 @@ export default function LessonEditor({
         const snapshot = createLessonSnapshot(next, newKey);
         if (result.draft) baseSnapshot.current = snapshot;
         setForm(snapshot.form);
+        setExamplesForm(structuredClone(next.examples ?? {}));
       }
       setError(null);
     } catch (cause) {
@@ -296,7 +329,11 @@ export default function LessonEditor({
     void audio.play().catch(() => undefined);
   };
 
-  const examples = draft?.examples ?? deck?.published?.examples ?? {};
+  // Źródło przykładów do wyświetlenia: edytowalny stan lokalny gdy jest szkic,
+  // inaczej wartości z DTO (opublikowana wersja — podgląd tylko do odczytu).
+  const examples = editable ? (examplesForm ?? draft?.examples ?? {}) : (deck?.published?.examples ?? {});
+  const topic = catalog?.subjects.find((subject) => subject.id === active?.subjectId)?.topics
+    .find((candidate) => candidate.id === active?.topicId && candidate.version === active?.topicVersion);
   const indexByClientKey = new Map((form?.exercises ?? []).map((ex, index) => [ex.clientKey, index]));
   const groups = form ? groupExercisesByObjectiveAndStage(form.exercises, active?.objectiveIds ?? []) : [];
 
@@ -346,19 +383,43 @@ export default function LessonEditor({
         </label>
       )}
 
-      {/* Karty wyjaśnienia: tekst z katalogu (przykłady; tylko do odczytu w tym zadaniu). */}
+      {/* Karty wyjaśnienia: tekst reguły z katalogu (read-only); przykłady AI
+          rodzic może poprawić przed publikacją (wym. 3.3). */}
       {active && Object.keys(examples).length > 0 && (
         <section className="card" data-testid="lesson-examples">
           <h3>{messages.lessons.examplesTitle}</h3>
           <p className="muted">{messages.lessons.exampleHint}</p>
           {active.objectiveIds.map((objectiveId) => (
             <div key={objectiveId} data-testid={`examples-${objectiveId}`}>
-              <strong>{objectiveId}</strong>
-              <ul className="plain">
-                {(examples[objectiveId] ?? []).map((line, i) => (
-                  <li key={i}>{line}</li>
-                ))}
-              </ul>
+              <strong>{topic?.objectives.find((objective) => objective.id === objectiveId)?.titlePl ?? objectiveId}</strong>
+              {topic?.objectives.find((objective) => objective.id === objectiveId)?.cards.map((card, index) => (
+                <article key={index} className="card" data-testid={`lesson-card-preview-${objectiveId}`}>
+                  <h4>{card.title}</h4>
+                  <p>{card.body.split("{{examples}}").join(" ").replace(/\s+/g, " ").trim()}</p>
+                  <ul>{(examples[objectiveId] ?? []).map((line, i) => line.trim() && <li key={i}>{line.trim()}</li>)}</ul>
+                </article>
+              ))}
+              {editable ? (
+                <ul className="plain">
+                  {(examples[objectiveId] ?? []).map((line, i) => (
+                    <li key={i}>
+                      <input
+                        data-testid={`example-line-${objectiveId}-${i}`}
+                        value={line}
+                        disabled={busy}
+                        aria-label={messages.lessons.exampleLineLabel.replace("{n}", String(i + 1))}
+                        onChange={(e) => mutateExampleLine(objectiveId, i, e.target.value)}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <ul className="plain">
+                  {(examples[objectiveId] ?? []).map((line, i) => (
+                    <li key={i}>{line}</li>
+                  ))}
+                </ul>
+              )}
             </div>
           ))}
         </section>

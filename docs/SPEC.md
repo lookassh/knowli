@@ -660,6 +660,8 @@ Nie wolno przypisywać przypadkowo „Monday → słońce”, „Tuesday → ksi
 
 ## 25. Panel postępów rodzica
 
+Uzupełnienie review lekcji (2026-10-13, wymaganie 3.3): przed publikacją rodzic widzi rzeczywiste karty wyjaśnienia z katalogu oraz edytuje przykłady lekcji. Podgląd odzwierciedla niezapisane przykłady, a zapis i ponowne otwarcie zachowują poprawioną treść. Reguły katalogu pozostają tylko do odczytu.
+
 Panel jest prosty, filtrowany według dziecka i zestawu. Pokazuje:
 
 - pełną listę słów bieżącej opublikowanej wersji zestawu, z polskim znaczeniem i osobnym statusem każdej z pięciu umiejętności (tabela na desktopie, karty na telefonie); zmiana materiału wymagająca ponownego sprawdzenia jest oznaczona przy słowie;

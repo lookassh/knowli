@@ -48,14 +48,14 @@ describe("SubjectCatalogDtoSchema", () => {
         id: "present_simple",
         version: 1,
         titlePl: "Present Simple",
-        objectives: [{ id: "english_grammar.present_simple.third_person_s", titlePl: "-s w 3. osobie" }],
+        objectives: [{ id: "english_grammar.present_simple.third_person_s", titlePl: "-s w 3. osobie", cards: [{ title: "Dodaj -s", body: "He plays." }] }],
       }],
     }],
   };
   it("accepts a well-formed catalog", () => {
     expect(SubjectCatalogDtoSchema.safeParse(catalog).success).toBe(true);
   });
-  it("is strict (no model-facing descriptions or cards)", () => {
+  it("is strict (no model-facing descriptions)", () => {
     const parsed = SubjectCatalogDtoSchema.safeParse({
       subjects: [{ ...catalog.subjects[0], descriptionEn: "leak" }],
     });

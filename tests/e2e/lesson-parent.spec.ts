@@ -202,3 +202,44 @@ test("keeps the lesson editor usable at phone and desktop widths", async ({ page
     await page.screenshot({ path: testInfo.outputPath(`lesson-editor-${viewport.width}.png`), fullPage: true });
   }
 });
+
+
+test("parent edits an AI example before publishing: change is sent in PATCH.examples and persists (P2-10)", async ({ page }) => {
+  const lessonTitle = `Przyklady ${randomUUID().slice(0, 8)}`;
+  await enterParent(page);
+  await createLesson(page, lessonTitle);
+
+  // Sekcja przykładów AI jest obecna; przykłady są EDYTOWALNE (wym. 3.3), nie read-only.
+  const examplesSection = page.getByTestId("lesson-examples");
+  await expect(examplesSection).toBeVisible();
+  const firstObjectiveBlock = examplesSection.locator('[data-testid^="examples-"]').first();
+  await expect(firstObjectiveBlock).toBeVisible();
+  const objectiveId = (await firstObjectiveBlock.getAttribute("data-testid"))!.replace("examples-", "");
+  const exampleInput = page.getByTestId(`example-line-${objectiveId}-0`);
+  await expect(exampleInput).toBeVisible();
+  const previews = page.getByTestId(`lesson-card-preview-${objectiveId}`);
+  await expect(previews.first()).toBeVisible();
+  await expect(previews.first()).toContainText("Forma podstawowa");
+
+  const corrected = `He plays football every day. ${randomUUID().slice(0, 6)}`;
+  await exampleInput.fill(corrected);
+  await expect(previews.last()).toContainText(corrected);
+
+  // Zapis wysyła poprawione przykłady w PATCH.examples.
+  const patchPromise = page.waitForRequest(
+    (r) => r.method() === "PATCH" && /\/api\/v1\/parent\/lesson-drafts\//.test(r.url()),
+  );
+  await page.getByTestId("save-lesson").click();
+  const patch = await patchPromise;
+  const body = JSON.parse(patch.postData() ?? "{}") as { examples?: Record<string, string[]> };
+  expect(body.examples).toBeTruthy();
+  expect(body.examples![objectiveId]).toContain(corrected);
+
+  // Przeładowanie edytora pokazuje poprawioną treść przykładu (trwałość).
+  // Wejście od nowa (jak w teście konfliktu): najnowsza lekcja jest pierwsza.
+  await page.goto("/parent");
+  await page.getByTestId("tab-decks").click();
+  await page.getByTestId("deck-row-0").click();
+  await expect(page.getByTestId("lesson-editor")).toBeVisible();
+  await expect(page.getByTestId(`example-line-${objectiveId}-0`)).toHaveValue(corrected);
+});

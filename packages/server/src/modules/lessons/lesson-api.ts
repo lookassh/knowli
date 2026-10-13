@@ -94,7 +94,7 @@ function requireTopic(services: Services, subjectId: string, topicId: string, ve
 
 /**
  * Katalog przedmiotów do formularza rodzica: najnowsze wersje tematów, tylko
- * identyfikatory i polskie tytuły (bez pól modelowych). Źródło: wstrzyknięty
+ * identyfikatory, polskie tytuły i karty wyjaśnienia (bez pól modelowych). Źródło: wstrzyknięty
  * rejestr przedmiotów (`services.subjects`).
  */
 export function lessonCatalog(services: Services): SubjectCatalogDto {
@@ -117,6 +117,7 @@ export function lessonCatalog(services: Services): SubjectCatalogDto {
           objectives: topic.objectives.map((objective) => ({
             id: objective.id,
             titlePl: objective.titlePl,
+            cards: objective.cards.map((card) => ({ title: card.title, body: card.body })),
           })),
         })),
       };
