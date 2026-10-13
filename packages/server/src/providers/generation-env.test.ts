@@ -74,9 +74,22 @@ describe("createGenerationDepsFromEnv — konfiguracja LLM przez UMIEM_LLM_*", (
     expect((init.headers as Record<string, string>).authorization).toBe("Bearer sk-llm");
   });
 
-  it("puste wartości UMIEM_LLM_* traktowane jak nieustawione", () => {
-    const deps = createGenerationDepsFromEnv({ OPENAI_API_KEY: "sk-main", UMIEM_LLM_MODEL: "", UMIEM_LLM_BASE_URL: "" });
+  it("puste wartości UMIEM_LLM_* traktowane jak nieustawione", async () => {
+    const fetchMock = vi.fn(async () => okDeckResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const deps = createGenerationDepsFromEnv({
+      OPENAI_API_KEY: "sk-main",
+      UMIEM_LLM_MODEL: "",
+      UMIEM_LLM_BASE_URL: "",
+      UMIEM_LLM_API_KEY: "",
+    });
+
     expect(deps!.llm.model).toBe("gpt-4o-mini");
+    await deps!.llm.generateDeck(DECK_INPUT);
+    const [url, init] = lastCall(fetchMock);
+    expect(url).toBe("https://api.openai.com/v1/chat/completions");
+    expect((init.headers as Record<string, string>).authorization).toBe("Bearer sk-main");
   });
 
   it("http:// UMIEM_LLM_BASE_URL odrzucone poza test/development", () => {
@@ -102,6 +115,15 @@ describe("createGenerationDepsFromEnv — konfiguracja LLM przez UMIEM_LLM_*", (
     await deps!.llm.generateDeck(DECK_INPUT);
     const [url] = lastCall(fetchMock);
     expect(url).toBe("http://localhost:9999/v1/chat/completions");
+  });
+
+  it("http:// UMIEM_LLM_BASE_URL dozwolone też w NODE_ENV=test", () => {
+    const deps = createGenerationDepsFromEnv({
+      OPENAI_API_KEY: "sk-main",
+      UMIEM_LLM_BASE_URL: "http://localhost:9999/v1",
+      NODE_ENV: "test",
+    });
+    expect(deps).toBeDefined();
   });
 
   it("UMIEM_FAKE_PROVIDERS=1 ignoruje UMIEM_LLM_* (deterministyczny fake)", () => {
