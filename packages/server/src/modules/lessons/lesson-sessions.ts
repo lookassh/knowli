@@ -25,6 +25,7 @@ import {
   type LessonSessionOutcome,
   type LessonSessionTask,
   type LessonTaskPlan,
+  type ObjectiveProgressSnapshot,
 } from "../../domain/lessons/scheduler";
 import { DEFAULT_LESSON_POLICY } from "../../domain/lessons/lesson-policy";
 import { renderCard } from "../../domain/lessons/card";
@@ -63,6 +64,7 @@ export interface LessonSessionContext extends SessionContextShape {
   graderCalls: number;
   /** Ostatni kontakt dziecka z ćwiczeniem danego celu przed startem sesji. */
   previousObjectiveContact: Record<string, string>;
+  initialObjectiveProgress?: Record<string, ObjectiveProgressSnapshot>;
 }
 
 /** `lesson_context` zapisany w `deck_versions.lesson_context`. */
@@ -139,6 +141,15 @@ export async function buildLessonSessionContext(
   tx: Tx,
   args: { childId: string; deckVersionId: string; timezone: string; testDate: string | null | undefined; now: Date },
 ): Promise<LessonSessionContext> {
+  const version = (await tx.select().from(deckVersions).where(eq(deckVersions.id, args.deckVersionId)))[0]!;
+  const context = lessonContextOf(version);
+  const rows = await tx.select().from(childObjectiveProgress).where(and(
+    eq(childObjectiveProgress.childId, args.childId), eq(childObjectiveProgress.subjectId, context.subjectId),
+  ));
+  const initialObjectiveProgress: Record<string, ObjectiveProgressSnapshot> = {};
+  for (const row of rows) {
+    initialObjectiveProgress[row.objectiveId] = { status: mapStatus(row.status), nextReviewAt: row.nextReviewAt?.toISOString() ?? null };
+  }
   return {
     timezone: args.timezone,
     ...(args.testDate === undefined ? {} : { testDate: args.testDate }),
@@ -147,6 +158,7 @@ export async function buildLessonSessionContext(
     settledChecks: [],
     graderCalls: 0,
     previousObjectiveContact: await previousObjectiveContactSnapshot(tx, args.childId, args.deckVersionId, args.now),
+    initialObjectiveProgress,
   };
 }
 
@@ -158,6 +170,7 @@ export function lessonSessionContextOf(session: { context: Record<string, unknow
     ...base,
     graderCalls: typeof raw.graderCalls === "number" ? raw.graderCalls : 0,
     previousObjectiveContact: raw.previousObjectiveContact ?? {},
+    ...(raw.initialObjectiveProgress === undefined ? {} : { initialObjectiveProgress: raw.initialObjectiveProgress }),
   };
 }
 
@@ -329,6 +342,7 @@ async function planLessonTask(
     ),
     objectiveOrder,
     progress,
+    ...(sessionContext.initialObjectiveProgress === undefined ? {} : { initialProgress: sessionContext.initialObjectiveProgress }),
     exposedTargetKeys,
     sessionHistory,
     lastSeenAt,

@@ -74,6 +74,8 @@ export interface LessonScheduleInput {
   readonly exercises: readonly LessonExerciseCandidate[];
   readonly objectiveOrder: readonly string[];
   readonly progress: Readonly<Record<string, ObjectiveProgressSnapshot>>;
+  /** Stan sprzed sesji; brak pola oznacza sesję starej wersji. */
+  readonly initialProgress?: Readonly<Record<string, ObjectiveProgressSnapshot>>;
   readonly exposedTargetKeys: ReadonlySet<string>;
   readonly sessionHistory: readonly LessonSessionTask[];
   readonly lastSeenAt: Readonly<Record<string, string>>;
@@ -199,10 +201,18 @@ interface ObjectiveSessionState {
 }
 
 function initialStage(objectiveId: string, input: LessonScheduleInput): LessonStage {
-  // Cel znany z wcześniejszych sesji (status ≠ not_assessed) startuje od
-  // productive bez kart; nowy cel zaczyna wprowadzanie na guided.
-  const status = input.progress[objectiveId]?.status;
+  const status = initialStatus(objectiveId, input);
   return status !== undefined && status !== "not_assessed" ? "productive" : "guided";
+}
+
+function initialStatus(objectiveId: string, input: LessonScheduleInput): ProgressStatus | undefined {
+  if (input.initialProgress !== undefined) return input.initialProgress[objectiveId]?.status;
+  // Kompatybilność aktywnych sesji sprzed snapshotu: pierwszy krok wprowadzenia
+  // dowodzi, że cel był nowy. Produkt aktywny od początku nie wraca do guided.
+  const first = input.sessionHistory.filter((t) => t.objectiveId === objectiveId && t.kind !== "support_card")
+    .slice().sort((a, b) => a.ordinal - b.ordinal)[0];
+  if (first && (first.kind === "card" || stageOf(first.exerciseType) === "intro" || stageOf(first.exerciseType) === "guided")) return "not_assessed";
+  return input.progress[objectiveId]?.status;
 }
 
 function buildSessionState(
@@ -273,7 +283,7 @@ function nextStage(stage: LessonStage): LessonStage {
 
 /** Czy cel został wprowadzony w bieżącej sesji (liczy się do limitu nowych). */
 function isNewThisSession(objectiveId: string, input: LessonScheduleInput): boolean {
-  const status = input.progress[objectiveId]?.status;
+  const status = initialStatus(objectiveId, input);
   if (status !== undefined && status !== "not_assessed") return false;
   return input.sessionHistory.some((t) => t.objectiveId === objectiveId);
 }
@@ -443,7 +453,7 @@ export function selectLessonTask(input: LessonScheduleInput): LessonTaskPlan | n
   const newCount = input.objectiveOrder.filter((id) => isNewThisSession(id, input)).length;
   for (const id of input.objectiveOrder) {
     if (!hasExercises(id, input)) continue;
-    const status = input.progress[id]?.status;
+    const status = initialStatus(id, input);
     if (status !== undefined && status !== "not_assessed") continue; // nie „nowy”
     const state = states.get(id)!;
     const already = isNewThisSession(id, input);
@@ -494,7 +504,7 @@ function objectiveLastSeen(objectiveId: string, input: LessonScheduleInput): str
 
 /** Cel kontynuowany z wcześniejszej sesji (status ≠ not_assessed). */
 function isContinuedFromPriorSession(objectiveId: string, input: LessonScheduleInput): boolean {
-  const status = input.progress[objectiveId]?.status;
+  const status = initialStatus(objectiveId, input);
   return status !== undefined && status !== "not_assessed";
 }
 
@@ -533,7 +543,7 @@ function needsIntroductionSteps(
   input: LessonScheduleInput,
   state: ObjectiveSessionState,
 ): boolean {
-  const status = input.progress[objectiveId]?.status;
+  const status = initialStatus(objectiveId, input);
   if (status !== undefined && status !== "not_assessed") return false;
   const cardsTotal = input.cardCountByObjective[objectiveId] ?? 0;
   if (state.cardsSeen < cardsTotal) return true;

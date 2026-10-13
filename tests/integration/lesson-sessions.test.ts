@@ -7,6 +7,7 @@ import {
   listKidDecks,
   nextTask,
   startSession,
+  submitAttempt,
   type AppError,
 } from "@learning/server";
 import type { TaskDto } from "@learning/contracts";
@@ -137,6 +138,14 @@ describe("sesja lekcji — start i wydawanie zadań", () => {
     await completePresentation(services, { taskId: second!.taskId });
     const third = await nextTask(services, session.sessionId);
     expect(third?.exerciseType).toBe("lesson_notice");
+    const key = await pool.query<{ answer_key: { correctOptionId: string } }>(
+      "select answer_key from learning_app.session_tasks where id=$1", [third!.taskId]);
+    await submitAttempt(services, { taskId: third!.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: key.rows[0]!.answer_key.correctOptionId });
+    const guided = await nextTask(services, session.sessionId);
+    expect(["lesson_choice", "lesson_order", "lesson_short_answer"]).toContain(guided?.exerciseType);
+    const stored = await pool.query<{ context: { initialObjectiveProgress?: Record<string, unknown> } }>(
+      "select context from learning_app.learning_sessions where id=$1", [session.sessionId]);
+    expect(stored.rows[0]!.context.initialObjectiveProgress).toEqual({});
   });
 
   it("next przy wydanym zadaniu zwraca to samo zadanie (idempotentnie)", async () => {

@@ -72,6 +72,11 @@ async function answerKeyOf(taskId: string): Promise<Record<string, unknown>> {
 }
 
 describe("kształt payloadu lekcji — correctOption po ID (P1-1)", () => {
+  it("podstawowy fixture short_answer ma walidowalny payload wyboru", async () => {
+    const lesson = await lessonWorld(pool);
+    const row = await pool.query<{ payload: LessonExerciseDraft }>("select payload from learning_app.item_revisions where deck_version_id=$1 order by position limit 1", [lesson.versionId]);
+    expect(validatePool([row.rows[0]!.payload], SUBJECT, TOPIC).rejected).toEqual([]);
+  });
   it("choice z correctOption=ID przechodzi schemat kontraktu i walidację semantyczną", () => {
     const input: LessonExerciseInput = {
       exerciseType: "lesson_choice",

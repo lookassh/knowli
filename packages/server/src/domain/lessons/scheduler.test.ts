@@ -487,6 +487,84 @@ describe("selectLessonTask — okno sprawdzianu: cel wprowadzony w tej sesji i n
   });
 });
 
+describe("selectLessonTask — etap zamrożony przy starcie sesji (P2-6)", () => {
+  it("nowy cel w sesji NIE przeskakuje do productive, gdy bieżąca projekcja (odczytana po ocenie) ma już status learning", () => {
+    // Scenariusz luki: cel wprowadzony w TEJ sesji; po poprawnym lesson_notice
+    // projekcja postępu jest aktualizowana (status learning) i ponownie
+    // odczytana przy nextTask. Etap musi wynikać z HISTORII sesji (start
+    // guided), nie z re-odczytu bieżącej projekcji — inaczej guided jest
+    // pomijany mimo wymaganych dwóch sukcesów.
+    const sessionHistory = [
+      task({ objectiveId: O1, exerciseType: "lesson_notice", outcome: "correct" }),
+    ];
+    const plan = selectLessonTask(
+      input({
+        exercises: [...poolFor(O1), notice(O1)],
+        progress: { [O1]: prog("learning") }, // projekcja po ocenie notice
+        cardCountByObjective: { [O1]: 0 },
+        sessionHistory,
+      }),
+    );
+    // Kolejne zadanie to guided (lesson_choice), NIE productive (lesson_gap).
+    expect(plan).toMatchObject({ kind: "exercise", objectiveId: O1, exerciseType: "lesson_choice" });
+    expect((plan as { exerciseType: string }).exerciseType).not.toBe("lesson_gap");
+  });
+
+  it("wymagane dwa sukcesy guided są egzekwowane dla celu wprowadzonego w sesji mimo statusu learning", () => {
+    // Po jednym poprawnym guided (i statusie learning z projekcji) wciąż
+    // guided — jeden sukces nie wystarcza (advanceAfterCorrect = 2).
+    const sessionHistory = [
+      task({ objectiveId: O1, exerciseType: "lesson_notice", outcome: "correct" }),
+      task({ objectiveId: O1, exerciseType: "lesson_choice", outcome: "correct", itemId: `item:${O1}:guided:a` }),
+    ];
+    const plan = selectLessonTask(
+      input({
+        exercises: [...poolFor(O1), notice(O1)],
+        progress: { [O1]: prog("learning") },
+        cardCountByObjective: { [O1]: 0 },
+        sessionHistory,
+      }),
+    );
+    expect(plan).toMatchObject({ kind: "exercise", objectiveId: O1, exerciseType: "lesson_choice" });
+    expect((plan as { exerciseType: string }).exerciseType).not.toBe("lesson_gap");
+  });
+
+  it("po DWÓCH sukcesach guided cel wprowadzony w sesji awansuje na productive", () => {
+    const sessionHistory = [
+      task({ objectiveId: O1, exerciseType: "lesson_notice", outcome: "correct" }),
+      task({ objectiveId: O1, exerciseType: "lesson_choice", outcome: "correct", itemId: `item:${O1}:guided:a` }),
+      task({ objectiveId: O1, exerciseType: "lesson_choice", outcome: "correct", itemId: `item:${O1}:guided:b` }),
+    ];
+    const plan = selectLessonTask(
+      input({
+        exercises: [...poolFor(O1), notice(O1)],
+        progress: { [O1]: prog("learning") },
+        cardCountByObjective: { [O1]: 0 },
+        sessionHistory,
+      }),
+    );
+    expect(plan).toMatchObject({ kind: "exercise", objectiveId: O1, exerciseType: "lesson_gap", reason: "continue" });
+  });
+});
+
+describe("snapshot początkowy celu", () => {
+  it("znany cel pozostaje productive po jednym sukcesie, mimo historii sesji", () => {
+    const plan = selectLessonTask({ ...input({ progress: { [O1]: prog("learning") },
+      sessionHistory: [task({ objectiveId: O1, exerciseType: "lesson_gap", outcome: "correct", itemId: "previous-gap" })],
+    }), initialProgress: { [O1]: prog("learning") } });
+    expect(plan).toMatchObject({ exerciseType: "lesson_gap" });
+  });
+
+  it("dwa nowe cele nadal zużywają limit, gdy bieżąca projekcja już ma learning", () => {
+    const plan = selectLessonTask({ ...input({
+      exercises: poolFor(O3),
+      progress: { [O1]: prog("learning"), [O2]: prog("learning") },
+      sessionHistory: [O1, O2].map((objectiveId) => task({ objectiveId, exerciseType: "lesson_notice", outcome: "correct" })),
+    }), initialProgress: {} });
+    expect(plan).toBeNull();
+  });
+});
+
 describe("selectLessonTask — determinizm", () => {
   it("to samo wejście → ten sam wynik", () => {
     const build = () =>

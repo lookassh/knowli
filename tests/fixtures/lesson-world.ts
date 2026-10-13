@@ -93,7 +93,7 @@ export async function lessonWorld(pool: Pool, options: LessonWorldOptions = {}):
       itemId,
       deckId,
       versionId,
-      JSON.stringify({ exerciseType: "lesson_short_answer", objectiveId, stem: "He ___ (play) football.", answer: "plays", acceptedAnswers: ["plays"], focus: ["plays"] }),
+      JSON.stringify({ exerciseType: "lesson_choice", objectiveId, stem: "He ___ (play) football.", answer: "plays", acceptedAnswers: [], focus: ["plays"], options: [{ id: "a", text: "plays" }, { id: "b", text: "play" }], correctOption: "a" }),
       `lesson-tk-${revisionId}`,
     ],
   );
@@ -410,3 +410,4 @@ export async function attachLessonTargetAudio(
   }
   return byRevision;
 }
+
