@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { englishGrammarSubject } from "./module";
 import { englishGrammarPrompts } from "./prompts";
+import { validateEnglishGrammarExercise } from "./validators";
+import { presentSimpleV1 } from "./topics/present-simple";
+import { answersEquivalent } from "../../pool-validation";
 import { createProductionSubjectRegistry, PRODUCTION_SUBJECTS } from "../index";
 import { validateSubject } from "../../catalog-validation";
+import type { LessonExerciseDraft } from "../../types";
 
 describe("englishGrammarSubject — spójność katalogu", () => {
   it("validateSubject zwraca pustą listę (katalog poprawny)", () => {
@@ -43,6 +47,34 @@ describe("englishGrammarSubject — spójność katalogu", () => {
     expect(rules).toContain("plays");
     expect(rules).toMatch(/never put polish/i);
     expect(rules).toMatch(/hint/i);
+  });
+
+  it("przykłady fieldRules są legalne wobec walidatora i normalizatora przedmiotu (kontrakt prompt↔walidacja)", () => {
+    // Review C2: odpowiedzi wielosłowowe z podmiotem („does she play”) NIE
+    // przechodzą walidatora przy ustawionym hint — fieldRules nie może ich
+    // obiecywać jako dopuszczalnej odpowiedzi luki.
+    expect(englishGrammarPrompts.fieldRules).not.toContain("does she play");
+
+    // Formy wymieniane w fieldRules (forma 3. osoby, operator + not + bezokolicznik)
+    // przechodzą walidację przy hint = bezokolicznik.
+    const gap = (hint: string, answer: string): LessonExerciseDraft => ({
+      exerciseType: "lesson_gap",
+      objectiveId: "english_grammar.present_simple.third_person_s",
+      stem: "He ___ every day.",
+      hint,
+      answer,
+      acceptedAnswers: [],
+      focus: answer.split(" "),
+    });
+    expect(validateEnglishGrammarExercise(gap("play", "plays"), presentSimpleV1)).toEqual([]);
+    expect(validateEnglishGrammarExercise(gap("play", "doesn't play"), presentSimpleV1)).toEqual([]);
+    expect(validateEnglishGrammarExercise(gap("play", "does she play"), presentSimpleV1).length).toBeGreaterThan(0);
+
+    // Review C1: rozwinięcie skrótu jest równoważne kanonicznej po normalizatorze
+    // (zakazany wariant acceptedAnswers); krótsza forma bez podmiotu jest legalna.
+    const normalizer = englishGrammarSubject.normalizer;
+    expect(answersEquivalent("doesn't play", "does not play", normalizer)).toBe(true);
+    expect(answersEquivalent("she doesn't play", "doesn't play", normalizer)).toBe(false);
   });
 });
 

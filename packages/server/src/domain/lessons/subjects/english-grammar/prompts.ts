@@ -28,6 +28,9 @@ export const englishGrammarPrompts: SubjectPromptProfile = {
   fieldRules:
     "For lesson_gap set hint to the English BASE FORM (infinitive) of the verb that fills the gap " +
     "(hint \"play\" for answer \"plays\", hint \"study\" for answer \"studies\"), or leave hint null. " +
-    "The gap answer must be a present simple form of that base verb (plays, doesn't play, does she play). " +
-    "Never put Polish words, translations, pronouns or rule explanations in hint — the child sees hint as support.",
+    "The gap answer must be a present simple form of that base verb (plays, doesn't play) — keep it short, " +
+    "at most the verb with an auxiliary (never a full sentence with a subject). " +
+    "Never put Polish words, translations, pronouns or rule explanations in hint — the child sees hint as support. " +
+    "Expanded contractions are NOT new acceptedAnswers variants: after normalization \"does not play\" equals \"doesn't play\", " +
+    "so never list the expanded form of the canonical answer in acceptedAnswers.",
 };

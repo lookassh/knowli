@@ -127,8 +127,12 @@ describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", ()
     expect(system).toContain("3-10 items whose texts joined with spaces form the canonical answer");
     expect(system).toContain("one word copied exactly from the segments");
     expect(system).toContain("1-15 word segments");
-    expect(system).toContain("does not play");
     expect(system).toContain("must NOT already equal the answer");
+    // Adapter nie zaszywa wiedzy przedmiotowej o równoważności skrótów
+    // (review C1: „doesn't play” ≡ „does not play” to własność normalizatora
+    // english_grammar — przykład z rozwinięciem skrótu w adapterze obiecywał
+    // wariant, który walidator odrzuca jako duplikat).
+    expect(system).not.toContain("does not play");
 
     // Materiał rodzica w wiadomości user, oznaczony jako materiał (nie instrukcje).
     expect(user).toContain("He plays football every day.");

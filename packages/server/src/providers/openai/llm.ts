@@ -101,7 +101,7 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
       "optional stem (lesson_gap: the sentence with EXACTLY ONE gap marker ___), " +
       "optional statement (lesson_error_fix: the sentence with the checked mistake — it must NOT already equal the answer; " +
       "lesson_transform: the sentence to transform), " +
-      "optional prompt, optional hint (a short child-facing support clue in the answer language — follow the field rules), " +
+      "optional prompt, optional hint (a short child-facing support clue in the answer language), " +
       "optional transformId (for lesson_transform), optional noticeSegments (lesson_notice: 2-3 sentences, each an array of 1-15 word segments), " +
       "answer (canonical answer in the answer language), acceptedAnswers (array of accepted variants), " +
       "focus (the checked answer tokens: copy the whitespace-separated tokens of the canonical answer, or one contiguous run of them — " +
@@ -115,7 +115,7 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
       "never copy prompt-language words from the parent material into answer-language fields. " +
       "acceptedAnswers must NOT contain the canonical answer itself, nor trivial variants that differ only by case or punctuation — " +
       "the canonical answer is accepted automatically, so every listed variant must be a DIFFERENT acceptable formulation " +
-      "(when the answer is \"doesn't play\", \"does not play\" is a valid variant, while \"Doesn't play\" or \"doesn't play!\" are forbidden). " +
+      "(a shortened wording without optional words is different; an expanded or re-capitalized copy of the answer is not). " +
       "lesson_choice and lesson_short_answer must have exactly 2 to 4 options with distinct texts, and correctOption must be the id " +
       "of exactly one of the options. Use only the exerciseType values allowed for the exercise's objective (see the list above). " +
       "Required non-empty stimulus fields by type: lesson_choice requires stem; lesson_gap requires stem with exactly one ___ " +
