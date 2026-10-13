@@ -6,6 +6,10 @@ import type { SubjectPromptProfile } from "../../types";
  * odbiorcę (polskie dziecko ~8 lat, poziom początkujący); rola oceniającego
  * ogranicza ocenę do zastosowania podanej reguły; `almost` definiuje werdykt
  * „prawie” jako poprawne zastosowanie reguły z drobnym błędem poza nią.
+ * `fieldRules` precyzuje semantykę `hint` — walidator przedmiotu traktuje
+ * każdy niepusty hint `lesson_gap` jako bezokolicznik i od tego sprawdza
+ * formę odpowiedzi (incydent 2026-10-13: modele wypełniały hint polskimi
+ * słowami z materiału rodzica).
  */
 export const englishGrammarPrompts: SubjectPromptProfile = {
   generationRole:
@@ -21,4 +25,9 @@ export const englishGrammarPrompts: SubjectPromptProfile = {
     "Return 'almost' when the grammar rule itself is applied correctly but there is a small, " +
     "incidental mistake outside the checked element (for example a minor typo in another word). " +
     "A mistake in the checked element is never 'almost' — it is 'incorrect'.",
+  fieldRules:
+    "For lesson_gap set hint to the English BASE FORM (infinitive) of the verb that fills the gap " +
+    "(hint \"play\" for answer \"plays\", hint \"study\" for answer \"studies\"), or leave hint null. " +
+    "The gap answer must be a present simple form of that base verb (plays, doesn't play, does she play). " +
+    "Never put Polish words, translations, pronouns or rule explanations in hint — the child sees hint as support.",
 };

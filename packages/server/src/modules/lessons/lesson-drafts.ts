@@ -214,6 +214,7 @@ function buildPoolInput(
       generationRole: subject.prompts.generationRole,
       gradingRole: subject.prompts.gradingRole,
       almostDefinition: subject.prompts.almostDefinition,
+      ...(subject.prompts.fieldRules === undefined ? {} : { fieldRules: subject.prompts.fieldRules }),
     },
     exerciseTypes: [...subject.exerciseTypes],
     transforms: topic.transforms.map((t) => ({ id: t.id, instructionPl: t.instructionPl })),

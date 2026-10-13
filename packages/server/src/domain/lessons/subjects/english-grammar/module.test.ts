@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { englishGrammarSubject } from "./module";
+import { englishGrammarPrompts } from "./prompts";
 import { createProductionSubjectRegistry, PRODUCTION_SUBJECTS } from "../index";
 import { validateSubject } from "../../catalog-validation";
 
@@ -30,6 +31,18 @@ describe("englishGrammarSubject — spójność katalogu", () => {
         "lesson_transform",
       ].sort(),
     );
+  });
+
+  it("fieldRules profilu promptów definiują semantykę hint dla lesson_gap (walidator traktuje hint jako bezokolicznik)", () => {
+    // Incydent 2026-10-13 (deepseek): polskie słowa z materiału w hint →
+    // odrzucenie przez validateEnglishGrammarExercise. Reguła musi precyzować:
+    // angielska forma podstawowa, kontrprzykłady, widoczność dla dziecka.
+    const rules = englishGrammarPrompts.fieldRules ?? "";
+    expect(rules).not.toBe("");
+    expect(rules).toMatch(/base form|infinitive/i);
+    expect(rules).toContain("plays");
+    expect(rules).toMatch(/never put polish/i);
+    expect(rules).toMatch(/hint/i);
   });
 });
 

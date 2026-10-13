@@ -69,6 +69,12 @@ export interface SubjectPromptProfile {
   readonly generationRole: string; // opis roli autora ćwiczeń dla tego przedmiotu
   readonly gradingRole: string; // co ocenia model (zastosowanie celu, nie styl)
   readonly almostDefinition: string; // kiedy werdykt „almost”
+  /**
+   * Reguły semantyki pól ćwiczeń doklejane do promptu generacji po ogólnym
+   * opisie pól przez adapter (dziedzinowe, np. „hint = bezokolicznik”).
+   * Opcjonalne: przedmiot bez reguł pól pomija pole.
+   */
+  readonly fieldRules?: string;
 }
 
 /**
