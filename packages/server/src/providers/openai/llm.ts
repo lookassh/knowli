@@ -92,20 +92,34 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
         ".",
     );
   }
+  if (input.promptProfile.fieldRules !== undefined) {
+    parts.push(`Field rules for this subject: ${input.promptProfile.fieldRules}`);
+  }
   parts.push(
     'Return strict JSON of the shape {"exercises": [ ... ], "examples": [{"objectiveId": "<id>", "examples": ["<short example sentence>"]}]}. ' +
       "Each exercise object has fields: exerciseType, objectiveId, instructionPl (child-facing instruction in the prompt language), " +
-      "optional stem (with the gap marker ___ for lesson_gap), optional statement (source sentence for lesson_error_fix or lesson_transform), " +
-      "optional prompt, optional hint, optional transformId (for lesson_transform), optional noticeSegments (lesson_notice: 2-3 sentences, " +
-      "each an array of word segments), answer (canonical answer in the answer language), acceptedAnswers (array of accepted variants), " +
-      "focus (array of answer tokens that are checked), optional options (lesson_choice/lesson_short_answer: array of {id, text}), " +
-      "optional correctOption (option id, or the pointed word for lesson_notice), optional items (lesson_order: array of {id, text}). " +
+      "optional stem (lesson_gap: the sentence with EXACTLY ONE gap marker ___), " +
+      "optional statement (lesson_error_fix: the sentence with the checked mistake — it must NOT already equal the answer; " +
+      "lesson_transform: the sentence to transform), " +
+      "optional prompt, optional hint (a short child-facing support clue in the answer language), " +
+      "optional transformId (for lesson_transform), optional noticeSegments (lesson_notice: 2-3 sentences, each an array of 1-15 word segments), " +
+      "answer (canonical answer in the answer language), acceptedAnswers (array of accepted variants), " +
+      "focus (the checked answer tokens: copy the whitespace-separated tokens of the canonical answer, or one contiguous run of them — " +
+      "never words that are not in the answer), " +
+      "optional options (lesson_choice/lesson_short_answer: array of {id, text}), " +
+      "optional correctOption (option id; lesson_notice: one word copied exactly from the segments — the word the child points at), " +
+      "optional items (lesson_order: 3-10 items whose texts joined with spaces form the canonical answer). " +
       "Use null for optional fields that do not apply to the exercise type — never invent extra fields. " +
+      "Language discipline: instructionPl is in the prompt language; every other exercise field (stem, statement, prompt, hint, " +
+      "noticeSegments, options, items, answer, acceptedAnswers, focus) is in the answer language — " +
+      "never copy prompt-language words from the parent material into answer-language fields. " +
       "acceptedAnswers must NOT contain the canonical answer itself, nor trivial variants that differ only by case or punctuation — " +
-      "the canonical answer is accepted automatically, so every listed variant must be a DIFFERENT acceptable formulation. " +
+      "the canonical answer is accepted automatically, so every listed variant must be a DIFFERENT acceptable formulation " +
+      "(a shortened wording without optional words is different; an expanded or re-capitalized copy of the answer is not). " +
       "lesson_choice and lesson_short_answer must have exactly 2 to 4 options with distinct texts, and correctOption must be the id " +
       "of exactly one of the options. Use only the exerciseType values allowed for the exercise's objective (see the list above). " +
-      "Required non-empty stimulus fields by type: lesson_choice requires stem; lesson_gap requires stem with ___; " +
+      "Required non-empty stimulus fields by type: lesson_choice requires stem; lesson_gap requires stem with exactly one ___ " +
+      "and its answer is at most 3 words; " +
       "lesson_error_fix requires statement with the sentence to correct; lesson_transform requires statement with the sentence to transform; " +
       "lesson_short_answer requires prompt with the actual question (stem is accepted as a legacy alternative); lesson_open_answer requires prompt. " +
       "All exercise text values, answers, accepted variants and option/item text are at most 120 characters. " +

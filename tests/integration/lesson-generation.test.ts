@@ -148,6 +148,10 @@ describe("generowanie puli lekcji (integracja)", () => {
     const run = await readGeneration(services, runId);
     expect(run.state).toBe("succeeded");
 
+    // Profil promptu przedmiotu niesie reguły pól (semantyka hint) do adaptera LLM.
+    const llmInput = fakes.llm.lessonRequests[0]!;
+    expect(llmInput.promptProfile.fieldRules).toContain("BASE FORM");
+
     const versionId = run.deckVersionId!;
     const [version] = await query<{ state: string; lesson_context: { examples: Record<string, string[]> } }>(
       "select state, lesson_context from learning_app.deck_versions where id = $1",

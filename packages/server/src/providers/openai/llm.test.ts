@@ -25,6 +25,7 @@ const INPUT: LessonPoolInput = {
     generationRole: "You are an author of English grammar exercises.",
     gradingRole: "You grade only the rule.",
     almostDefinition: "almost definition",
+    fieldRules: "For lesson_gap, hint must be the base form of the verb.",
   },
   exerciseTypes: ["lesson_card", "lesson_choice", "lesson_gap", "lesson_open_answer"],
   transforms: [{ id: "to_question", instructionPl: "Zamień na pytanie" }],
@@ -112,6 +113,26 @@ describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", ()
     expect(system).toContain("acceptedAnswers must NOT contain the canonical answer");
     expect(system).toContain("2 to 4 options");
     expect(system).toContain("correctOption must be the id of exactly one of the options");
+
+    // Doprecyzowana semantyka pól (incydent deepseek 2026-10-13: polskie słowa
+    // z materiału w hint; warianty acceptedAnswers różniące się tylko wielkością
+    // liter). Każde zdanie odpowiada konkretnej regule pool-validation.
+    expect(system).toContain("Field rules for this subject:");
+    expect(system).toContain("For lesson_gap, hint must be the base form of the verb.");
+    expect(system).toContain("Language discipline:");
+    expect(system).toContain("never copy prompt-language words from the parent material into answer-language fields");
+    expect(system).toContain("copy the whitespace-separated tokens of the canonical answer");
+    expect(system).toContain("EXACTLY ONE gap marker");
+    expect(system).toContain("its answer is at most 3 words");
+    expect(system).toContain("3-10 items whose texts joined with spaces form the canonical answer");
+    expect(system).toContain("one word copied exactly from the segments");
+    expect(system).toContain("1-15 word segments");
+    expect(system).toContain("must NOT already equal the answer");
+    // Adapter nie zaszywa wiedzy przedmiotowej o równoważności skrótów
+    // (review C1: „doesn't play” ≡ „does not play” to własność normalizatora
+    // english_grammar — przykład z rozwinięciem skrótu w adapterze obiecywał
+    // wariant, który walidator odrzuca jako duplikat).
+    expect(system).not.toContain("does not play");
 
     // Materiał rodzica w wiadomości user, oznaczony jako materiał (nie instrukcje).
     expect(user).toContain("He plays football every day.");

@@ -44,6 +44,8 @@ export interface LlmPromptProfileInput {
   readonly generationRole: string;
   readonly gradingRole: string;
   readonly almostDefinition: string;
+  /** Dziedzinowe reguły semantyki pól ćwiczeń (opcjonalne, od przedmiotu). */
+  readonly fieldRules?: string;
 }
 
 /** Ile ćwiczeń danego etapu wygenerować dla jednego celu (partia per cel). */
