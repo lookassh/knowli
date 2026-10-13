@@ -26,13 +26,13 @@ const INPUT: LessonPoolInput = {
     gradingRole: "You grade only the rule.",
     almostDefinition: "almost definition",
   },
-  exerciseTypes: ["lesson_choice", "lesson_gap", "lesson_open_answer"],
+  exerciseTypes: ["lesson_card", "lesson_choice", "lesson_gap", "lesson_open_answer"],
   transforms: [{ id: "to_question", instructionPl: "Zamień na pytanie" }],
   objectives: [
     {
       id: "english_grammar.present_simple.third_person_s",
       descriptionEn: "Third person singular adds -s.",
-      exerciseTypes: ["lesson_choice", "lesson_gap"],
+      exerciseTypes: ["lesson_card", "lesson_choice", "lesson_gap"],
       errorCategories: ["missing_ending"],
     },
   ],
@@ -81,17 +81,21 @@ describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", ()
     expect(schema.additionalProperties).toBe(false);
     const exercise = schema.properties.exercises.items;
     expect(exercise.additionalProperties).toBe(false);
-    // Enum typów wyłącznie z danych wejścia (adapter nie zna przedmiotu).
-    expect(exercise.properties.exerciseType.enum).toEqual(INPUT.exerciseTypes);
-    // Wszystkie pola ćwiczenia muszą być w required (strict mode, opcjonalne jako nullable).
-    expect(exercise.required).toEqual(
-      expect.arrayContaining(["exerciseType", "objectiveId", "answer", "acceptedAnswers", "options", "correctOption", "items", "noticeSegments"]),
+    // Enum typów wyłącznie z danych wejścia, BEZ typów niepulowych (lesson_card
+    // wydaje silnik deterministycznie, walidacja puli zawsze by go odrzuciła).
+    expect(exercise.properties.exerciseType.enum).toEqual(["lesson_choice", "lesson_gap", "lesson_open_answer"]);
+    // Wszystkie pola ćwiczenia dokładnie w required (strict mode, opcjonalne jako nullable).
+    expect([...exercise.required].sort()).toEqual(
+      [...Object.keys(exercise.properties)].sort(),
     );
     // examples jako tablica par (strict mode nie wspiera dowolnych kluczy mapy).
     expect(schema.properties.examples.type).toBe("array");
 
     const system = body.messages.find((m) => m.role === "system")!.content;
     const user = body.messages.find((m) => m.role === "user")!.content;
+
+    // lesson_card nie może pojawić się nigdzie w prompcie generacji puli.
+    expect(system).not.toContain("lesson_card");
 
     // Opis przedmiotu i celu z danych wejścia (nie zaszyty w kodzie).
     expect(system).toContain("Angielski — gramatyka");

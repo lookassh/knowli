@@ -450,6 +450,44 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect(lessonLogs).toMatch(/zakończony: state=failed kod=attempts_exhausted/);
   });
 
+  it("odpowiedź strict-schema (komplet pól z nullami) przechodzi przez strażnik kształtu do zapisu", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = lessonServices(fakes);
+    // Strict mode zwraca WSZYSTKIE pola schematu; nie dotyczące typu mają null.
+    fakes.llm.queueLesson({
+      exercises: [
+        {
+          exerciseType: "lesson_gap",
+          objectiveId: "english_grammar.present_simple.third_person_s",
+          answer: "plays",
+          acceptedAnswers: ["play"],
+          focus: ["plays"],
+          instructionPl: "Uzupełnij lukę.",
+          stem: "She ___ tennis.",
+          statement: null,
+          prompt: null,
+          hint: null,
+          transformId: null,
+          noticeSegments: null,
+          options: null,
+          correctOption: null,
+          items: null,
+        },
+      ],
+      examples: {},
+    });
+
+    const { runId } = await createLesson(services, command());
+    await executeLessonGeneration(services, runId);
+
+    const run = await readGeneration(services, runId);
+    expect(run.state).toBe("succeeded");
+    expect(run.errorCode).toBeNull();
+    const items = await query<{ count: number }>("select count(*)::int as count from learning_app.item_revisions where deck_version_id = $1", [run.deckVersionId!]);
+    expect(items[0]!.count).toBeGreaterThanOrEqual(1);
+  });
+
   it("błąd providera → ponowienie do wyczerpania prób (attempts_exhausted)", async () => {
     const fakes = await fakeGeneration();
     disposers.push(fakes.dispose);

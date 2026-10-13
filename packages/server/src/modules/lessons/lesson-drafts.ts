@@ -81,7 +81,8 @@ function truncateForLog(text: string, max = 200): string {
   return text.length <= max ? text : `${text.slice(0, max)}…`;
 }
 
-function requireSubject(services: Services, subjectId: string): SubjectModule {  const subject = services.subjects.getSubject(subjectId);
+function requireSubject(services: Services, subjectId: string): SubjectModule {
+  const subject = services.subjects.getSubject(subjectId);
   if (!subject) {
     throw new AppError("validation", { message: `unknown subject: ${subjectId}` });
   }
@@ -242,6 +243,10 @@ function buildPoolInput(
  * dereferencuje: elementy `options`/`items` muszą być `{id,text}`, a
  * `noticeSegments` musi być tablicą tablic napisów. Pozostałe pola pozostają
  * domeną `validateLessonExercise`. `passthrough` — nie odrzucamy pól dodatkowych.
+ *
+ * Pola opcjonalne są `nullish`, bo structured outputs (json_schema strict)
+ * zwraca KAŻDE pole schematu, z `null` dla nie dotyczących typu — brak pola
+ * i jawny `null` muszą przejść tak samo (`toExerciseDraft` nulla pomija).
  */
 const optionShapeSchema = z.object({ id: z.string(), text: z.string() }).passthrough();
 const rawExerciseShapeSchema = z
@@ -249,18 +254,18 @@ const rawExerciseShapeSchema = z
     exerciseType: z.string(),
     objectiveId: z.string(),
     answer: z.string(),
-    acceptedAnswers: z.array(z.string()).optional(),
-    focus: z.array(z.string()).optional(),
-    instructionPl: z.string().optional(),
-    stem: z.string().optional(),
-    statement: z.string().optional(),
-    prompt: z.string().optional(),
-    hint: z.string().optional(),
-    transformId: z.string().optional(),
-    correctOption: z.string().optional(),
-    options: z.array(optionShapeSchema).optional(),
-    items: z.array(optionShapeSchema).optional(),
-    noticeSegments: z.array(z.array(z.string())).optional(),
+    acceptedAnswers: z.array(z.string()).nullish(),
+    focus: z.array(z.string()).nullish(),
+    instructionPl: z.string().nullish(),
+    stem: z.string().nullish(),
+    statement: z.string().nullish(),
+    prompt: z.string().nullish(),
+    hint: z.string().nullish(),
+    transformId: z.string().nullish(),
+    correctOption: z.string().nullish(),
+    options: z.array(optionShapeSchema).nullish(),
+    items: z.array(optionShapeSchema).nullish(),
+    noticeSegments: z.array(z.array(z.string())).nullish(),
   })
   .passthrough();
 
@@ -445,11 +450,15 @@ export async function executeLessonGeneration(services: Services, runId: string)
     return;
   }
   const markCurrentRun = async (db: Executor, state: "failed" | "succeeded" | "superseded" | "queued", errorCode: string | null) => {
-    await db.update(generationRuns).set({ state, errorCode, finishedAt: state === "queued" ? null : services.clock.now() })
+    const result = await db.update(generationRuns).set({ state, errorCode, finishedAt: state === "queued" ? null : services.clock.now() })
       .where(and(eq(generationRuns.id, runId), eq(generationRuns.state, "running"), eq(generationRuns.attempts, attempts), eq(generationRuns.expectedEditNumber, run.expectedEditNumber!)));
-    console.log(
-      `[lesson] run=${runId} ${state === "queued" ? "ponowienie" : "zakończony"}: state=${state} kod=${errorCode ?? "-"} próba=${attempts}`,
-    );
+    // Logujemy tylko realne przejście (WHERE może dopasować 0 wierszy, np. gdy
+    // równoległy retry rodzica podbił expectedEditNumber).
+    if ((result as { rowCount?: number }).rowCount !== 0) {
+      console.log(
+        `[lesson] run=${runId} ${state === "queued" ? "ponowienie" : "zakończony"}: state=${state} kod=${errorCode ?? "-"} próba=${attempts}`,
+      );
+    }
   };
   if (attempts > MAX_AUTOMATIC_ATTEMPTS) {
     await markCurrentRun(services.db, "failed", "attempts_exhausted");
@@ -616,10 +625,13 @@ export async function executeLessonGeneration(services: Services, runId: string)
       }
       await markCurrentRun(tx, "succeeded", null);
     });
-  } catch {
+  } catch (error) {
     // Nieprzewidziany wyjątek walidacji/zapisu NIE może zostawić runu „running”.
     // Rozliczamy terminalnie: wyczerpane próby → attempts_exhausted, inaczej
     // validation (błąd kształtu/treści puli, nie błąd przejściowy providera).
+    console.error(
+      `[lesson] run=${runId} nieprzewidziany błąd walidacji/zapisu: ${truncateForLog(String((error as { message?: string })?.message ?? error))}`,
+    );
     if (attempts >= MAX_AUTOMATIC_ATTEMPTS) {
       await markCurrentRun(services.db, "failed", "attempts_exhausted");
     } else {

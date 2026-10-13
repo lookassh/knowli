@@ -34,6 +34,16 @@ function systemPrompt(input: LlmGenerateDeckInput): string {
  * liczby etapów). Adapter nie zna gramatyki — każdy fakt o przedmiocie pochodzi
  * z `input`. Opis JSON wyjścia odpowiada payloadowi `lesson_exercise`.
  */
+/**
+ * Typy, których silnik lekcji NIE oczekuje od generacji puli: `lesson_card`
+ * wydaje deterministycznie scheduler (karta wprowadzająca celu), a walidacja
+ * puli zawsze by taki typ odrzuciła — model nie może go nawet zaproponować.
+ */
+const NON_POOL_EXERCISE_TYPES: ReadonlySet<string> = new Set(["lesson_card"]);
+
+const poolExerciseTypes = (types: readonly string[]): string[] =>
+  types.filter((t) => !NON_POOL_EXERCISE_TYPES.has(t));
+
 function lessonSystemPrompt(input: LessonPoolInput): string {
   const parts: string[] = [];
   parts.push(input.promptProfile.generationRole);
@@ -49,7 +59,7 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
   for (const objective of input.objectives) {
     parts.push(
       `- objectiveId "${objective.id}": ${objective.descriptionEn} ` +
-        `Allowed exerciseType values: ${objective.exerciseTypes.join(", ")}. ` +
+        `Allowed exerciseType values: ${poolExerciseTypes(objective.exerciseTypes).join(", ")}. ` +
         `Error categories: ${objective.errorCategories.join(", ") || "none"}.`,
     );
   }
@@ -61,7 +71,7 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
     );
   }
   parts.push(
-    `Supported exercise types for this subject: ${input.exerciseTypes.join(", ")}.`,
+    `Supported exercise types for this subject: ${poolExerciseTypes(input.exerciseTypes).join(", ")}.`,
   );
   parts.push(
     `Produce about ${input.countPerObjective} exercises per objective, split across stages: ` +
@@ -175,7 +185,7 @@ function lessonPoolJsonSchema(input: LessonPoolInput): Record<string, unknown> {
             "items",
           ],
           properties: {
-            exerciseType: { type: "string", enum: [...input.exerciseTypes] },
+            exerciseType: { type: "string", enum: poolExerciseTypes(input.exerciseTypes) },
             objectiveId: { type: "string" },
             answer: { type: "string" },
             acceptedAnswers: { type: "array", items: { type: "string" } },
