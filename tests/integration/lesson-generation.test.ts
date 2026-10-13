@@ -220,7 +220,7 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect(fakes.llm.lessonRequests).toHaveLength(2);
     const [first, second] = fakes.llm.lessonRequests;
     expect(first!.existingAnswers ?? []).toEqual([]);
-    expect(second!.existingAnswers ?? []).not.toEqual([]);
+    expect(second!.existingAnswers ?? []).toHaveLength(10);
 
     const run = await readGeneration(services, runId);
     const revisions = await query<{ payload: { objectiveId: string; answer: string } }>(
