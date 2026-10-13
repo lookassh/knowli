@@ -34,6 +34,16 @@ function systemPrompt(input: LlmGenerateDeckInput): string {
  * liczby etapów). Adapter nie zna gramatyki — każdy fakt o przedmiocie pochodzi
  * z `input`. Opis JSON wyjścia odpowiada payloadowi `lesson_exercise`.
  */
+/**
+ * Typy, których silnik lekcji NIE oczekuje od generacji puli: `lesson_card`
+ * wydaje deterministycznie scheduler (karta wprowadzająca celu), a walidacja
+ * puli zawsze by taki typ odrzuciła — model nie może go nawet zaproponować.
+ */
+const NON_POOL_EXERCISE_TYPES: ReadonlySet<string> = new Set(["lesson_card"]);
+
+const poolExerciseTypes = (types: readonly string[]): string[] =>
+  types.filter((t) => !NON_POOL_EXERCISE_TYPES.has(t));
+
 function lessonSystemPrompt(input: LessonPoolInput): string {
   const parts: string[] = [];
   parts.push(input.promptProfile.generationRole);
@@ -49,7 +59,7 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
   for (const objective of input.objectives) {
     parts.push(
       `- objectiveId "${objective.id}": ${objective.descriptionEn} ` +
-        `Allowed exerciseType values: ${objective.exerciseTypes.join(", ")}. ` +
+        `Allowed exerciseType values: ${poolExerciseTypes(objective.exerciseTypes).join(", ")}. ` +
         `Error categories: ${objective.errorCategories.join(", ") || "none"}.`,
     );
   }
@@ -61,7 +71,7 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
     );
   }
   parts.push(
-    `Supported exercise types for this subject: ${input.exerciseTypes.join(", ")}.`,
+    `Supported exercise types for this subject: ${poolExerciseTypes(input.exerciseTypes).join(", ")}.`,
   );
   parts.push(
     `Produce about ${input.countPerObjective} exercises per objective, split across stages: ` +
@@ -83,13 +93,18 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
     );
   }
   parts.push(
-    'Return strict JSON of the shape {"exercises": [ ... ], "examples": {"<objectiveId>": ["<short example sentence>"]}}. ' +
+    'Return strict JSON of the shape {"exercises": [ ... ], "examples": [{"objectiveId": "<id>", "examples": ["<short example sentence>"]}]}. ' +
       "Each exercise object has fields: exerciseType, objectiveId, instructionPl (child-facing instruction in the prompt language), " +
       "optional stem (with the gap marker ___ for lesson_gap), optional statement (source sentence for lesson_error_fix or lesson_transform), " +
       "optional prompt, optional hint, optional transformId (for lesson_transform), optional noticeSegments (lesson_notice: 2-3 sentences, " +
       "each an array of word segments), answer (canonical answer in the answer language), acceptedAnswers (array of accepted variants), " +
       "focus (array of answer tokens that are checked), optional options (lesson_choice/lesson_short_answer: array of {id, text}), " +
       "optional correctOption (option id, or the pointed word for lesson_notice), optional items (lesson_order: array of {id, text}). " +
+      "Use null for optional fields that do not apply to the exercise type — never invent extra fields. " +
+      "acceptedAnswers must NOT contain the canonical answer itself, nor trivial variants that differ only by case or punctuation — " +
+      "the canonical answer is accepted automatically, so every listed variant must be a DIFFERENT acceptable formulation. " +
+      "lesson_choice and lesson_short_answer must have exactly 2 to 4 options with distinct texts, and correctOption must be the id " +
+      "of exactly one of the options. Use only the exerciseType values allowed for the exercise's objective (see the list above). " +
       "Required non-empty stimulus fields by type: lesson_choice requires stem; lesson_gap requires stem with ___; " +
       "lesson_error_fix requires statement with the sentence to correct; lesson_transform requires statement with the sentence to transform; " +
       "lesson_short_answer requires prompt with the actual question (stem is accepted as a legacy alternative); lesson_open_answer requires prompt. " +
@@ -123,8 +138,126 @@ function lessonUserMaterial(input: LessonPoolInput): string {
 }
 
 /**
- * Adapter LLM (structured output w trybie json_object; walidacja schematu
- * odbywa się w module generacji po stronie serwera). Wybór modelu czeka na
+ * Schemat strict json_schema dla generacji puli lekcji (structured outputs).
+ * Pola opcjonalne ćwiczenia są nullable (wymóg strict mode: wszystkie pola
+ * w `required`), `examples` idą tablicą par — strict mode nie wspiera map
+ * o dowolnych kluczach; adapter składa z nich record. Enum typów pochodzi
+ * z danych wejścia (`exerciseTypes` przedmiotu), więc adapter pozostaje
+ * niezależny od przedmiotu. Reguły semantyczne (warianty ≠ kanoniczna
+ * odpowiedź, dopuszczalne typy per cel) pilnuje walidacja domenowa.
+ */
+function lessonPoolJsonSchema(input: LessonPoolInput): Record<string, unknown> {
+  const idTextItem = {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "text"],
+    properties: { id: { type: "string" }, text: { type: "string" } },
+  };
+  const nullable = (schema: Record<string, unknown>) => ({
+    type: ["null", schema.type],
+    ...(schema.items ? { items: schema.items } : {}),
+  });
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["exercises", "examples"],
+    properties: {
+      exercises: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: [
+            "exerciseType",
+            "objectiveId",
+            "answer",
+            "acceptedAnswers",
+            "focus",
+            "instructionPl",
+            "stem",
+            "statement",
+            "prompt",
+            "hint",
+            "transformId",
+            "noticeSegments",
+            "options",
+            "correctOption",
+            "items",
+          ],
+          properties: {
+            exerciseType: { type: "string", enum: poolExerciseTypes(input.exerciseTypes) },
+            objectiveId: { type: "string" },
+            answer: { type: "string" },
+            acceptedAnswers: { type: "array", items: { type: "string" } },
+            focus: { type: "array", items: { type: "string" } },
+            instructionPl: { type: ["null", "string"] },
+            stem: { type: ["null", "string"] },
+            statement: { type: ["null", "string"] },
+            prompt: { type: ["null", "string"] },
+            hint: { type: ["null", "string"] },
+            transformId: { type: ["null", "string"] },
+            noticeSegments: {
+              type: ["null", "array"],
+              items: { type: "array", items: { type: "string" } },
+            },
+            options: nullable({ type: "array", items: idTextItem }),
+            correctOption: { type: ["null", "string"] },
+            items: nullable({ type: "array", items: idTextItem }),
+          },
+        },
+      },
+      examples: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["objectiveId", "examples"],
+          properties: {
+            objectiveId: { type: "string" },
+            examples: { type: "array", items: { type: "string" } },
+          },
+        },
+      },
+    },
+  };
+}
+
+/**
+ * `examples` z modelu: strict schema zwraca tablicę par {objectiveId,
+ * examples}; dla odporności na providery ignorujące schema akceptujemy też
+ * record. Scalanie: pierwsza para per objectiveId wygrywa.
+ */
+function lessonExamplesToRecord(raw: unknown): Record<string, string[]> {
+  const result: Record<string, string[]> = {};
+  if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      if (entry === null || typeof entry !== "object") {
+        continue;
+      }
+      const { objectiveId, examples } = entry as { objectiveId?: unknown; examples?: unknown };
+      if (typeof objectiveId !== "string" || !Array.isArray(examples)) {
+        continue;
+      }
+      if (!(objectiveId in result)) {
+        result[objectiveId] = examples.filter((e): e is string => typeof e === "string");
+      }
+    }
+    return result;
+  }
+  if (raw !== null && typeof raw === "object") {
+    for (const [objectiveId, examples] of Object.entries(raw as Record<string, unknown>)) {
+      if (Array.isArray(examples)) {
+        result[objectiveId] = examples.filter((e): e is string => typeof e === "string");
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * Adapter LLM: zestawy słówek w trybie `json_object`, pula lekcji w trybie
+ * `json_schema` strict (structured outputs) — walidacja semantyczna wyniku
+ * AI pozostaje w domenie (`pool-validation.ts`). Wybór modelu czeka na
  * próbę techniczną z zadania 0 — bez kluczy adapter pozostaje niezweryfikowany.
  */
 export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider {
@@ -172,7 +305,14 @@ export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider 
         },
         body: JSON.stringify({
           model,
-          response_format: { type: "json_object" },
+          response_format: {
+            type: "json_schema",
+            json_schema: {
+              name: "lesson_pool",
+              strict: true,
+              schema: lessonPoolJsonSchema(input),
+            },
+          },
           messages: [
             { role: "system", content: lessonSystemPrompt(input) },
             { role: "user", content: lessonUserMaterial(input) },
@@ -192,9 +332,12 @@ export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider 
       }
       const parsed = JSON.parse(content) as {
         exercises?: unknown[];
-        examples?: Record<string, string[]>;
+        examples?: unknown;
       };
-      return { exercises: parsed.exercises ?? [], examples: parsed.examples ?? {} };
+      return {
+        exercises: parsed.exercises ?? [],
+        examples: lessonExamplesToRecord(parsed.examples),
+      };
     },
   };
 }

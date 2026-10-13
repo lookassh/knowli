@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createDatabase,
   createLesson,
@@ -379,6 +379,113 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect(version!.state).toBe("draft");
     const items = await query<{ count: number }>("select count(*)::int as count from learning_app.item_revisions where deck_version_id = $1", [run.deckVersionId!]);
     expect(items[0]!.count).toBe(0);
+  });
+
+  it("loguje [lesson] podsumowanie walidacji z powodami odrzuceń i wynik terminalny", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = lessonServices(fakes);
+    fakes.llm.queueLesson({
+      exercises: [
+        { exerciseType: "lesson_gap", objectiveId: "english_grammar.present_simple.third_person_s", answer: "plays", acceptedAnswers: ["plays"], focus: ["plays"], stem: "She ___ tennis." },
+        { exerciseType: "lesson_choice", objectiveId: "english_grammar.present_simple.third_person_s", answer: "runs", acceptedAnswers: [], focus: ["runs"], stem: "He ___ fast.", options: [{ id: "a", text: "runs" }, { id: "b", text: "run" }, { id: "c", text: "running" }, { id: "d", text: "ran" }, { id: "e", text: "to run" }], correctOption: "a" },
+      ],
+    });
+
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(" "));
+    });
+    try {
+      const { runId } = await createLesson(services, command());
+      await executeLessonGeneration(services, runId);
+      const run = await readGeneration(services, runId);
+      expect(run.state).toBe("failed");
+      expect(run.errorCode).toBe("validation");
+    } finally {
+      spy.mockRestore();
+    }
+
+    const lessonLogs = logs.filter((line) => line.includes("[lesson]")).join("\n");
+    // Start runu z kontekstem (identyfikowalność w logach workera).
+    expect(lessonLogs).toMatch(/generacja run=\S+ .*cel[ie]=/);
+    // Podsumowanie walidacji: liczby + powody odrzuceń (przynajmniej reguła
+    // duplikatu kanonicznej odpowiedzi i reguła liczby opcji).
+    expect(lessonLogs).toMatch(/walidacja puli: surowe=\d+ zły_kształt=\d+ odrzucone=\d+ ważne=\d+/);
+    expect(lessonLogs).toContain("duplikuje odpowiedź kanoniczną");
+    expect(lessonLogs).toMatch(/options: (liczba opcji \(\d+\) poza zakresem|przekracza limit \d+|wymagane minimum \d+)/);
+    // Wynik terminalny runu.
+    expect(lessonLogs).toMatch(/zakończony: state=failed kod=validation/);
+  });
+
+  it("loguje [lesson] błąd partii LLM i wynik attempts_exhausted", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = lessonServices(fakes);
+    fakes.llm.queueLesson({ error: "llm timeout", retryable: true });
+
+    const logs: string[] = [];
+    const logSpy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(" "));
+    });
+    const errSpy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(" "));
+    });
+    try {
+      const { runId } = await createLesson(services, command());
+      for (let i = 0; i < 3; i += 1) {
+        await executeLessonGeneration(services, runId);
+      }
+      const run = await readGeneration(services, runId);
+      expect(run.state).toBe("failed");
+      expect(run.errorCode).toBe("attempts_exhausted");
+    } finally {
+      logSpy.mockRestore();
+      errSpy.mockRestore();
+    }
+
+    const lessonLogs = logs.filter((line) => line.includes("[lesson]")).join("\n");
+    expect(lessonLogs).toMatch(/błąd partii LLM: kod=provider/);
+    expect(lessonLogs).toContain("llm timeout");
+    expect(lessonLogs).toMatch(/zakończony: state=failed kod=attempts_exhausted/);
+  });
+
+  it("odpowiedź strict-schema (komplet pól z nullami) przechodzi przez strażnik kształtu do zapisu", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = lessonServices(fakes);
+    // Strict mode zwraca WSZYSTKIE pola schematu; nie dotyczące typu mają null.
+    fakes.llm.queueLesson({
+      exercises: [
+        {
+          exerciseType: "lesson_gap",
+          objectiveId: "english_grammar.present_simple.third_person_s",
+          answer: "plays",
+          acceptedAnswers: ["play"],
+          focus: ["plays"],
+          instructionPl: "Uzupełnij lukę.",
+          stem: "She ___ tennis.",
+          statement: null,
+          prompt: null,
+          hint: null,
+          transformId: null,
+          noticeSegments: null,
+          options: null,
+          correctOption: null,
+          items: null,
+        },
+      ],
+      examples: {},
+    });
+
+    const { runId } = await createLesson(services, command());
+    await executeLessonGeneration(services, runId);
+
+    const run = await readGeneration(services, runId);
+    expect(run.state).toBe("succeeded");
+    expect(run.errorCode).toBeNull();
+    const items = await query<{ count: number }>("select count(*)::int as count from learning_app.item_revisions where deck_version_id = $1", [run.deckVersionId!]);
+    expect(items[0]!.count).toBeGreaterThanOrEqual(1);
   });
 
   it("błąd providera → ponowienie do wyczerpania prób (attempts_exhausted)", async () => {
