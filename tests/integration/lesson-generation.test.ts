@@ -333,6 +333,36 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect((await readGeneration(services, runId)).state).toBe("succeeded");
   });
 
+  it("stary SELECT przed claimem nie przejmuje nowego wykonania po retry", async () => {
+    const fakes = await fakeGeneration(); disposers.push(fakes.dispose);
+    const services = lessonServices(fakes);
+    const isolated = createDatabase(testDatabaseUrl());
+    let enter!: () => void, release!: () => void;
+    const entered = new Promise<void>((resolve) => { enter = resolve; });
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    const original = isolated.pool.query.bind(isolated.pool);
+    let paused = false;
+    isolated.pool.query = (async (...args: unknown[]) => {
+      const result = await (original as (...values: unknown[]) => Promise<unknown>)(...args);
+      const sql = typeof args[0] === "string" ? args[0] : (args[0] as { text?: string })?.text ?? "";
+      if (!paused && /^select/i.test(sql) && sql.includes("generation_runs")) { paused = true; enter(); await released; }
+      return result;
+    }) as typeof isolated.pool.query;
+    const staleServices = createServices({ db: isolated.db, clock: services.clock, media: fakes.settings, generation: fakes.deps });
+    const { runId } = await createLesson(services, command());
+    const stale = executeLessonGeneration(staleServices, runId);
+    await entered;
+    try {
+      await claimQueuedRun(services.db, runId);
+      await retryGeneration(services, runId);
+      release();
+      await stale;
+      expect((await readGeneration(services, runId)).state).toBe("queued");
+      await executeLessonGeneration(services, runId);
+      expect((await readGeneration(services, runId)).state).toBe("succeeded");
+    } finally { release(); await stale; await isolated.pool.end(); }
+  });
+
   it("0 poprawnych → failed/validation; wersja nadal draft; brak elementów", async () => {
     const fakes = await fakeGeneration();
     disposers.push(fakes.dispose);

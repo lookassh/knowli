@@ -74,6 +74,8 @@ test("parent can safely restart a running lesson generation", async ({ page }) =
   await retry.click();
   await expect(page.getByTestId("generation-banner")).toBeHidden({ timeout: 120_000 });
   await expect(page.locator('[data-testid^="objective-group-"]').first()).toBeVisible();
+  // Ten test nie zostawia kolejki TTS dla następnego przepływu rodzica.
+  await expect(page.locator('[data-testid^="exercise-audio-state-"]', { hasText: "generowanie" })).toHaveCount(0, { timeout: 120_000 });
 });
 
 test("creates a lesson, reviews it grouped by objective and stage, fixes a validation error, saves, closes coverage and publishes", async ({ page, request }) => {

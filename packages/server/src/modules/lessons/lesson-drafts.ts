@@ -436,7 +436,7 @@ export async function executeLessonGeneration(services: Services, runId: string)
     return;
   }
 
-  const attempts = await claimQueuedRun(services.db, runId);
+  const attempts = await claimQueuedRun(services.db, runId, run.expectedEditNumber!);
   if (attempts === null) {
     return;
   }

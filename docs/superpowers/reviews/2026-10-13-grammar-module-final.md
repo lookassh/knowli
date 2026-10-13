@@ -143,4 +143,3 @@ Recenzent wykonał czyste reprodukcje rzeczywistych funkcji domeny/serializacji/
 ## Ocena
 
 Dziesięć pierwotnych usterek naprawiono, a architektura, izolacja i nowe testy są wyraźnie lepsze. Nadal nie należy scalać: dziewięć wskazanych luk pozwala publikować wadliwy materiał, bezstratnie go nie zachowuje albo łamie konkretne reguły sesji i odzyskiwania. Naprawy wymagają nowych testów RED→GREEN oraz niezależnego sprawdzenia diffu poprawek i aktualnych końcowych wyników.
-

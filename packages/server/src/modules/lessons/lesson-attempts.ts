@@ -537,7 +537,7 @@ async function startLessonAttempt(
   tx: Tx,
   services: Services,
   valid: Extract<AttemptInput, { modality: LessonModality }>,
-): Promise<{ kind: "dto"; dto: AttemptDto } | ({ kind: "fresh" } & LessonAttemptStart)> {
+): Promise<{ kind: "dto"; dto: AttemptDto } | { kind: "conflict"; error: AppError } | ({ kind: "fresh" } & LessonAttemptStart)> {
   const { task, session, itemId } = await lockTaskWithSession(tx, valid.taskId);
   const now = services.clock.now();
   const requestHash = requestHashOf(valid);
@@ -563,14 +563,15 @@ async function startLessonAttempt(
   await lazyFinalizeStale(tx, services, task, session, itemId, now);
 
   if (session.state !== "active") {
-    throw new AppError("conflict", { message: "session is closed" });
+    return { kind: "conflict", error: new AppError("conflict", { message: "session is closed" }) };
   }
   // Kartkówka: twardy limit 10 min — po nim żadnej nowej odpowiedzi (jak słówka).
   if (session.mode === "mock_test" && now.getTime() - session.startedAt.getTime() > 600_000) {
-    throw new AppError("conflict", { message: "Czas kartkówki minął. Przejdź do omówienia." });
+    return { kind: "conflict", error: new AppError("conflict", { message: "Czas kartkówki minął. Przejdź do omówienia." }) };
   }
   if (await rereadTaskState(tx, task.id) !== "issued") {
-    throw new AppError("conflict", { message: "task is no longer issued" });
+    // Recovery musi zostać utrwalone nawet wtedy, gdy nowa próba jest odrzucona.
+    return { kind: "conflict", error: new AppError("conflict", { message: "task is no longer issued" }) };
   }
   const key = keyOf(task);
   // Walidacja modalności vs typ ćwiczenia.
@@ -847,6 +848,7 @@ export async function submitLessonAttempt(services: Services, input: AttemptInpu
   // Faza 1 (pod blokadą sesji): wstęp, ocena deterministyczna i decyzja o ścieżce.
   const phase1 = await services.db.transaction(async (tx) => {
     const started = await startLessonAttempt(tx, services, typed);
+    if (started.kind === "conflict") return started;
     if (started.kind === "dto") {
       return { kind: "done" as const, dto: started.dto };
     }
@@ -899,6 +901,7 @@ export async function submitLessonAttempt(services: Services, input: AttemptInpu
     };
   });
 
+  if (phase1.kind === "conflict") throw phase1.error;
   if (phase1.kind === "done") {
     return phase1.dto;
   }

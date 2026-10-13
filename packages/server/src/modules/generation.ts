@@ -132,11 +132,11 @@ export async function markRun(
  * (inny worker już go zabrał). Współdzielone przez ścieżkę słówek i lekcji —
  * jedna implementacja atomowego przejęcia zamiast kopii w module lekcji.
  */
-export async function claimQueuedRun(db: Executor, runId: string): Promise<number | null> {
+export async function claimQueuedRun(db: Executor, runId: string, expectedEditNumber?: number): Promise<number | null> {
   const claimed = await db
     .update(generationRuns)
     .set({ state: "running", attempts: sql`${generationRuns.attempts} + 1` })
-    .where(and(eq(generationRuns.id, runId), eq(generationRuns.state, "queued")))
+    .where(and(eq(generationRuns.id, runId), eq(generationRuns.state, "queued"), expectedEditNumber === undefined ? undefined : eq(generationRuns.expectedEditNumber, expectedEditNumber)))
     .returning({ attempts: generationRuns.attempts });
   return claimed[0]?.attempts ?? null;
 }

@@ -642,7 +642,7 @@ describe("review P1-4: lesson_order prowadzony (klocki ujawnione) → zależne",
 });
 
 describe("review P1-5: późna finalizacja modelu nie nadpisuje zamkniętej kartkówki", () => {
-  it.each([false, true])("stale processing nie ujawnia feedbacku ani nie otwiera drugiej próby (closed=%s)", async (closed) => {
+  it.each([{ closed: false, readFirst: true }, { closed: true, readFirst: true }, { closed: false, readFirst: false }])("stale processing chroni slot i raport (closed=$closed, readFirst=$readFirst)", async ({ closed, readFirst }) => {
     const grader = new FakeAnswerGrader();
     let enter!: () => void, release!: () => void;
     const entered = new Promise<void>((resolve) => { enter = resolve; });
@@ -662,6 +662,12 @@ describe("review P1-5: późna finalizacja modelu nie nadpisuje zamkniętej kart
       const id = (await pool.query("select id from learning_app.attempts where task_id=$1", [task!.taskId])).rows[0].id as string;
       if (closed) await endSession(services, session.sessionId);
       clock.advanceMs(61_000);
+      if (!readFirst) {
+        await expectAppError(submitAttempt(services, { taskId: task!.taskId, clientAttemptId: randomUUID(), modality: "text", text: "goes" }), "conflict");
+        const persisted = (await pool.query("select a.state as attempt_state, st.state as task_state from learning_app.attempts a join learning_app.session_tasks st on st.id=a.task_id where a.id=$1", [id])).rows[0];
+        expect(persisted.attempt_state).toBe("completed");
+        expect(persisted.task_state).toBe("answered");
+      }
       const recovered = await readAttempt(services, id);
       expect(recovered.state).toBe("completed");
       expect(recovered.feedback).toBeNull();
