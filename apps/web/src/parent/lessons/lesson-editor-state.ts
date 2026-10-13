@@ -138,8 +138,12 @@ export function createLessonSnapshot(
  * `.strict()` kontraktu `LessonExerciseInputSchema`.
  */
 const STEM_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_choice", "lesson_short_answer", "lesson_gap"]);
-const STATEMENT_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_error_fix"]);
-const PROMPT_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_transform", "lesson_open_answer"]);
+// `lesson_transform` niesie zdanie do przekształcenia w `statement` (kanoniczne
+// pole: kontrakt `kid.ts` lesson_transform ma `statement`, materialize czyta
+// `payload.statement`). Serializacja musi wysyłać `statement`, nie `prompt`,
+// inaczej PATCH gubi zdanie i materializacja daje pusty `statement`.
+const STATEMENT_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_error_fix", "lesson_transform"]);
+const PROMPT_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_open_answer"]);
 const OPTION_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_choice", "lesson_short_answer"]);
 const ITEM_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_order"]);
 const NOTICE_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_notice"]);

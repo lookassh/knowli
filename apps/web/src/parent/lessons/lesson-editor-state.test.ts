@@ -161,6 +161,34 @@ describe("toLessonDraftPatch", () => {
     expect(patch.title).toBe("Present Simple");
     expect(patch.exercises).toEqual([]);
   });
+
+  it("keeps the statement of a lesson_transform exercise when only the title changes (P1-2)", () => {
+    const transformDraft = draft({
+      exercises: [
+        {
+          id: "00000000-0000-4000-8000-000000000031",
+          revisionId: "00000000-0000-4000-8000-000000000041",
+          exerciseType: "lesson_transform",
+          objectiveId: "english_grammar.present_simple.negative",
+          instructionPl: "Zamień na przeczenie",
+          statement: "He plays.",
+          transformId: "to_negative",
+          answer: "He doesn't play.",
+          acceptedAnswers: [],
+          focus: ["doesn't"],
+        },
+      ] as unknown as LessonDraftDto["exercises"],
+    });
+    const snapshot = createLessonSnapshot(transformDraft, () => "unused");
+    snapshot.form.title = "Present Simple — poprawiony tytuł";
+
+    const patch = toLessonDraftPatch(snapshot);
+    const transform = patch.exercises![0]!;
+
+    expect(transform.exerciseType).toBe("lesson_transform");
+    expect(transform.statement).toBe("He plays.");
+    expect(transform).not.toHaveProperty("prompt");
+  });
 });
 
 describe("lessonExerciseChanged", () => {

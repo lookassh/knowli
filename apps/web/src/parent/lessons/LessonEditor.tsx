@@ -406,14 +406,14 @@ export default function LessonEditor({
                             onChange={(e) => mutateExercise(ex.clientKey, { stem: e.target.value })} />
                         </label>
                       )}
-                      {ex.exerciseType === "lesson_error_fix" && (
+                      {(ex.exerciseType === "lesson_error_fix" || ex.exerciseType === "lesson_transform") && (
                         <label>
                           {messages.lessons.exerciseStatementLabel}
                           <input data-testid={`exercise-statement-${index}`} value={ex.statement} disabled={!editable || busy}
                             onChange={(e) => mutateExercise(ex.clientKey, { statement: e.target.value })} />
                         </label>
                       )}
-                      {(ex.exerciseType === "lesson_transform" || ex.exerciseType === "lesson_open_answer") && (
+                      {ex.exerciseType === "lesson_open_answer" && (
                         <label>
                           {messages.lessons.exercisePromptLabel}
                           <input data-testid={`exercise-prompt-${index}`} value={ex.prompt} disabled={!editable || busy}
