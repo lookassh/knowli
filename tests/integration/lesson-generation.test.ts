@@ -194,6 +194,53 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect(roles.every((r) => r.role === "target_audio")).toBe(true);
   });
 
+  it("pełna generacja wielocelowa przekazuje odpowiedzi wcześniejszych partii do kolejnych (bez duplikatów między celami)", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = lessonServices(fakes);
+
+    // Dwa cele, pula 20 → 2 partie po 10 ćwiczeń. Fake unika odpowiedzi
+    // z existingAnswers, więc brak przekazania historii byłby widoczny
+    // jako duplikaty w puli (faza 2 validatePool by je odrzuciła).
+    const { runId } = await createLesson(
+      services,
+      command({
+        objectiveIds: [
+          "english_grammar.present_simple.affirmative_base",
+          "english_grammar.present_simple.third_person_s",
+        ],
+        poolSize: 20,
+        clientRequestId: randomUUID(),
+      }),
+    );
+    await executeLessonGeneration(services, runId);
+    expect((await readGeneration(services, runId)).state).toBe("succeeded");
+
+    // Jedna partia na cel; pierwsza bez historii, druga z odpowiedziami pierwszej.
+    expect(fakes.llm.lessonRequests).toHaveLength(2);
+    const [first, second] = fakes.llm.lessonRequests;
+    expect(first!.existingAnswers ?? []).toEqual([]);
+    expect(second!.existingAnswers ?? []).not.toEqual([]);
+
+    const run = await readGeneration(services, runId);
+    const revisions = await query<{ payload: { objectiveId: string; answer: string } }>(
+      "select payload from learning_app.item_revisions where deck_version_id = $1",
+      [run.deckVersionId!],
+    );
+    expect(revisions.length).toBe(20);
+    // Odpowiedzi pierwszego celu (= pierwsza partia) trafiły do existingAnswers drugiej.
+    const firstObjectiveAnswers = revisions
+      .filter((r) => r.payload.objectiveId === "english_grammar.present_simple.affirmative_base")
+      .map((r) => r.payload.answer);
+    expect(firstObjectiveAnswers.length).toBe(10);
+    for (const answer of firstObjectiveAnswers) {
+      expect(second!.existingAnswers).toContain(answer);
+    }
+    // Cała pula bez duplikatów odpowiedzi kanonicznych (fake uszanował listę).
+    const answers = revisions.map((r) => r.payload.answer);
+    expect(new Set(answers).size).toBe(answers.length);
+  });
+
   it("częściowe odrzucenia: niepoprawne ćwiczenia odrzucone pojedynczo, licznik dostępny", async () => {
     const fakes = await fakeGeneration();
     disposers.push(fakes.dispose);
