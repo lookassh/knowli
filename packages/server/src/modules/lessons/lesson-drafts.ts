@@ -76,8 +76,12 @@ interface LessonRunInput {
   regenerate?: { objectiveId: string; count: number; existingAnswers: string[] };
 }
 
-function requireSubject(services: Services, subjectId: string): SubjectModule {
-  const subject = services.subjects.getSubject(subjectId);
+/** Skraca tekst do bezpiecznej długości linii logu (diagnostyka workera). */
+function truncateForLog(text: string, max = 200): string {
+  return text.length <= max ? text : `${text.slice(0, max)}…`;
+}
+
+function requireSubject(services: Services, subjectId: string): SubjectModule {  const subject = services.subjects.getSubject(subjectId);
   if (!subject) {
     throw new AppError("validation", { message: `unknown subject: ${subjectId}` });
   }
@@ -443,6 +447,9 @@ export async function executeLessonGeneration(services: Services, runId: string)
   const markCurrentRun = async (db: Executor, state: "failed" | "succeeded" | "superseded" | "queued", errorCode: string | null) => {
     await db.update(generationRuns).set({ state, errorCode, finishedAt: state === "queued" ? null : services.clock.now() })
       .where(and(eq(generationRuns.id, runId), eq(generationRuns.state, "running"), eq(generationRuns.attempts, attempts), eq(generationRuns.expectedEditNumber, run.expectedEditNumber!)));
+    console.log(
+      `[lesson] run=${runId} ${state === "queued" ? "ponowienie" : "zakończony"}: state=${state} kod=${errorCode ?? "-"} próba=${attempts}`,
+    );
   };
   if (attempts > MAX_AUTOMATIC_ATTEMPTS) {
     await markCurrentRun(services.db, "failed", "attempts_exhausted");
@@ -480,6 +487,9 @@ export async function executeLessonGeneration(services: Services, runId: string)
 
   const rawExercises: unknown[] = [];
   const examples: Record<string, string[]> = {};
+  console.log(
+    `[lesson] generacja run=${runId} deck=${input.deckId} cele=${batches.length} próba=${attempts} pula=${input.poolSize}`,
+  );
   try {
     for (const batch of batches) {
       const poolInput = buildPoolInput(
@@ -506,6 +516,9 @@ export async function executeLessonGeneration(services: Services, runId: string)
     }
   } catch (error) {
     const code = errorCodeOf(error);
+    console.error(
+      `[lesson] run=${runId} błąd partii LLM: kod=${code} próba=${attempts}: ${truncateForLog(String((error as { message?: string })?.message ?? error))}`,
+    );
     if (code === "validation") {
       await markCurrentRun(services.db, "failed", "validation");
     } else if (attempts >= MAX_AUTOMATIC_ATTEMPTS) {
@@ -542,6 +555,22 @@ export async function executeLessonGeneration(services: Services, runId: string)
       }
     }
     const rejectedCount = shapeRejected + rejected.length + dupAgainstExisting;
+
+    // Podsumowanie walidacji dla diagnostyki w logach workera: liczby plus
+    // powody odrzuceń (reguła = prefiks przed „:”), ograniczone do sample,
+    // by nie zalewać logu odpowiedziami modelu.
+    const ruleCounts = new Map<string, number>();
+    for (const rejection of rejected) {
+      for (const error of rejection.errors) {
+        const rule = error.split(":")[0] ?? error;
+        ruleCounts.set(rule, (ruleCounts.get(rule) ?? 0) + 1);
+      }
+    }
+    const reasons = [...ruleCounts.entries()].map(([rule, count]) => `${rule}×${count}`).join(", ");
+    const samples = [...new Set(rejected.flatMap((r) => r.errors))].slice(0, 3).map((e) => truncateForLog(e));
+    console.log(
+      `[lesson] run=${runId} walidacja puli: surowe=${rawExercises.length} zły_kształt=${shapeRejected} odrzucone=${rejected.length + dupAgainstExisting} ważne=${uniqueValid.length}; reguły: ${reasons || "-"}; przykłady: ${samples.join(" | ") || "-"}`,
+    );
 
     if (uniqueValid.length === 0) {
       await markCurrentRun(services.db, "failed", "validation");

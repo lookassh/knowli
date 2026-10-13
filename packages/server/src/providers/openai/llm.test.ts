@@ -49,7 +49,7 @@ afterEach(() => {
 
 describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", () => {
   it("buduje prompt systemowy z opisu przedmiotu i celów oraz materiał w wiadomości user", async () => {
-    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => okResponse({ exercises: [], examples: {} }));
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => okResponse({ exercises: [], examples: [] }));
     vi.stubGlobal("fetch", fetchMock);
 
     const provider = createOpenAiLlmProvider({ apiKey: "k" });
@@ -59,10 +59,36 @@ describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", ()
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toContain("/chat/completions");
     const body = JSON.parse(init!.body as string) as {
-      response_format: { type: string };
+      response_format: {
+        type: string;
+        json_schema: { name: string; strict: boolean; schema: Record<string, unknown> };
+      };
       messages: Array<{ role: string; content: string }>;
     };
-    expect(body.response_format).toEqual({ type: "json_object" });
+
+    // Structured outputs: strict json_schema (walidacja kształtu po stronie API).
+    expect(body.response_format.type).toBe("json_schema");
+    expect(body.response_format.json_schema).toEqual(
+      expect.objectContaining({ name: "lesson_pool", strict: true }),
+    );
+    const schema = body.response_format.json_schema.schema as {
+      additionalProperties: boolean;
+      properties: {
+        exercises: { items: { additionalProperties: boolean; required: string[]; properties: { exerciseType: { enum: string[] } } } };
+        examples: { type: string };
+      };
+    };
+    expect(schema.additionalProperties).toBe(false);
+    const exercise = schema.properties.exercises.items;
+    expect(exercise.additionalProperties).toBe(false);
+    // Enum typów wyłącznie z danych wejścia (adapter nie zna przedmiotu).
+    expect(exercise.properties.exerciseType.enum).toEqual(INPUT.exerciseTypes);
+    // Wszystkie pola ćwiczenia muszą być w required (strict mode, opcjonalne jako nullable).
+    expect(exercise.required).toEqual(
+      expect.arrayContaining(["exerciseType", "objectiveId", "answer", "acceptedAnswers", "options", "correctOption", "items", "noticeSegments"]),
+    );
+    // examples jako tablica par (strict mode nie wspiera dowolnych kluczy mapy).
+    expect(schema.properties.examples.type).toBe("array");
 
     const system = body.messages.find((m) => m.role === "system")!.content;
     const user = body.messages.find((m) => m.role === "user")!.content;
@@ -77,6 +103,11 @@ describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", ()
     expect(system).toContain("lesson_transform requires statement");
     expect(system).toContain("lesson_short_answer requires prompt");
     expect(system).toContain("lesson_choice requires stem");
+
+    // Reguły semantyczne, których złamanie odrzuca ćwiczenie w validatePool.
+    expect(system).toContain("acceptedAnswers must NOT contain the canonical answer");
+    expect(system).toContain("2 to 4 options");
+    expect(system).toContain("correctOption must be the id of exactly one of the options");
 
     // Materiał rodzica w wiadomości user, oznaczony jako materiał (nie instrukcje).
     expect(user).toContain("He plays football every day.");
@@ -99,5 +130,26 @@ describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", ()
     const result = await provider.generateLessonPool(INPUT);
     expect(result.exercises).toHaveLength(1);
     expect(result.examples["english_grammar.present_simple.third_person_s"]).toEqual(["He plays."]);
+  });
+
+  it("tłumaczy examples z tablicy par {objectiveId, examples} z strict schema na record", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        okResponse({
+          exercises: [],
+          examples: [
+            { objectiveId: "english_grammar.present_simple.third_person_s", examples: ["He plays.", "She runs."] },
+            { objectiveId: "other.objective", examples: ["X."] },
+          ],
+        }),
+      ),
+    );
+    const provider = createOpenAiLlmProvider({ apiKey: "k" });
+    const result = await provider.generateLessonPool(INPUT);
+    expect(result.examples).toEqual({
+      "english_grammar.present_simple.third_person_s": ["He plays.", "She runs."],
+      "other.objective": ["X."],
+    });
   });
 });
