@@ -212,6 +212,61 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect(items[0]!.count).toBeGreaterThan(0);
   });
 
+  it("zły KSZTAŁT jednego ćwiczenia (options=[null,…]) nie wywraca runu: poprawne zapisane, błędny odrzucony, run terminalny (P2-7)", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = lessonServices(fakes);
+    const objectiveId = "english_grammar.present_simple.third_person_s";
+    // Jedno poprawne ćwiczenie + jedno o złym kształcie tablicy opcji (null w
+    // środku). Walidacja kształtu musi odrzucić błędne, nie rzucać TypeError.
+    fakes.llm.queueLesson({
+      exercises: [
+        {
+          exerciseType: "lesson_choice",
+          objectiveId,
+          instructionPl: "Wybierz.",
+          answer: "plays",
+          acceptedAnswers: [],
+          focus: [],
+          options: [
+            { id: "a", text: "plays" },
+            { id: "b", text: "play" },
+          ],
+          correctOption: "a",
+        },
+        {
+          exerciseType: "lesson_choice",
+          objectiveId,
+          instructionPl: "Wybierz.",
+          answer: "watches",
+          acceptedAnswers: [],
+          focus: [],
+          // zły kształt: null w tablicy opcji
+          options: [null, { id: "b", text: "watch" }],
+          correctOption: "b",
+        },
+      ],
+    });
+
+    const { runId } = await createLesson(services, command());
+    await executeLessonGeneration(services, runId);
+
+    const run = await readGeneration(services, runId);
+    expect(run.state).toBe("succeeded"); // run terminalny, nie „running”
+    const versionId = run.deckVersionId!;
+    const [version] = await query<{ state: string; lesson_context: { rejectedCount: number } }>(
+      "select state, lesson_context from learning_app.deck_versions where id = $1",
+      [versionId],
+    );
+    expect(version!.state).toBe("review");
+    expect(version!.lesson_context.rejectedCount).toBeGreaterThanOrEqual(1); // błędny kształt policzony
+    const rows = await query<{ answer: string }>(
+      "select payload->>'answer' as answer from learning_app.item_revisions where deck_version_id = $1",
+      [versionId],
+    );
+    expect(rows.map((r) => r.answer)).toEqual(["plays"]); // tylko poprawne zapisane
+  });
+
   it("0 poprawnych → failed/validation; wersja nadal draft; brak elementów", async () => {
     const fakes = await fakeGeneration();
     disposers.push(fakes.dispose);

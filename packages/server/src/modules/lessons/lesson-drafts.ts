@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { and, asc, desc, eq } from "drizzle-orm";
+import { z } from "zod";
 import { LessonCommandSchema, type LessonCommand } from "@learning/contracts";
 import type { Clock, Services } from "../../config";
 import type { Tx } from "../../db/client";
@@ -227,6 +228,38 @@ function buildPoolInput(
     graderAvailable,
     ...(existingAnswers.length > 0 ? { existingAnswers: [...existingAnswers] } : {}),
   };
+}
+
+/**
+ * Schemat KSZTAŁTU surowego ćwiczenia z portu (nie semantyki). Chroni dalszą
+ * walidację semantyczną (`validatePool`) przed rekordami, których tablice mają
+ * zły typ elementów (np. `options=[null,{…}]`) — bez tego `validateOptions`
+ * dereferencuje `null.text` i rzuca `TypeError`, wywracając cały run zamiast
+ * odrzucić jeden rekord (wymóg 2.5). Sprawdzamy tylko to, co faza semantyczna
+ * dereferencuje: elementy `options`/`items` muszą być `{id,text}`, a
+ * `noticeSegments` musi być tablicą tablic napisów. Pozostałe pola pozostają
+ * domeną `validateLessonExercise`. `passthrough` — nie odrzucamy pól dodatkowych.
+ */
+const optionShapeSchema = z.object({ id: z.string(), text: z.string() }).passthrough();
+const rawExerciseShapeSchema = z
+  .object({
+    options: z.array(optionShapeSchema).optional(),
+    items: z.array(optionShapeSchema).optional(),
+    noticeSegments: z.array(z.array(z.string())).optional(),
+  })
+  .passthrough();
+
+/**
+ * Czy surowy obiekt ma bezpieczny KSZTAŁT do walidacji semantycznej. Rekord o
+ * złym kształcie jest odrzucany (liczony do `rejectedCount`), nie rzuca. Nie
+ * maskuje realnych błędów treści — sprawdza wyłącznie kształt pól tablicowych,
+ * które faza semantyczna dereferencuje.
+ */
+export function isWellShapedRawExercise(raw: unknown): boolean {
+  if (raw === null || typeof raw !== "object") {
+    return false;
+  }
+  return rawExerciseShapeSchema.safeParse(raw).success;
 }
 
 /** Surowy obiekt z portu → `LessonExerciseDraft` (walidacja kształtu w domenie). */
@@ -465,66 +498,85 @@ export async function executeLessonGeneration(services: Services, runId: string)
   }
 
   // Walidacja puli w domenie: pojedyncze reguły + duplikaty, także wobec
-  // odpowiedzi już w szkicu (existingAnswers z partii dogenerowania).
-  const drafts = rawExercises.map(toExerciseDraft);
-  const { valid, rejected } = validatePool(drafts, subject, topic);
-  // Duplikaty wobec odpowiedzi już w puli: odrzucamy valid, których odpowiedź
-  // równa się istniejącej (dogenerowanie nie powiela odpowiedzi szkicu).
-  const existingSet = new Set(batches.flatMap((b) => b.existingAnswers));
-  const uniqueValid: LessonExerciseDraft[] = [];
-  let dupAgainstExisting = 0;
-  for (const ex of valid) {
-    const clash = [...existingSet].some((a) => sameAnswer(a, ex.answer, subject));
-    if (clash) {
-      dupAgainstExisting += 1;
-    } else {
-      uniqueValid.push(ex);
+  // odpowiedzi już w szkicu (existingAnswers z partii dogenerowania). Najpierw
+  // strażnik KSZTAŁTU: rekord o złym kształcie tablic (np. options=[null,…])
+  // jest odrzucany pojedynczo (liczony do rejectedCount), zamiast rzucać
+  // TypeError w walidacji semantycznej i wywracać cały run (wymóg 2.5).
+  // Całość walidacji + zapisu w terminalnym try/catch: nawet nieprzewidziany
+  // wyjątek rozlicza run (failed/validation), nie zostawia go w stanie running.
+  try {
+    const wellShaped = rawExercises.filter(isWellShapedRawExercise);
+    const shapeRejected = rawExercises.length - wellShaped.length;
+    const drafts = wellShaped.map(toExerciseDraft);
+    const { valid, rejected } = validatePool(drafts, subject, topic);
+    // Duplikaty wobec odpowiedzi już w puli: odrzucamy valid, których odpowiedź
+    // równa się istniejącej (dogenerowanie nie powiela odpowiedzi szkicu).
+    const existingSet = new Set(batches.flatMap((b) => b.existingAnswers));
+    const uniqueValid: LessonExerciseDraft[] = [];
+    let dupAgainstExisting = 0;
+    for (const ex of valid) {
+      const clash = [...existingSet].some((a) => sameAnswer(a, ex.answer, subject));
+      if (clash) {
+        dupAgainstExisting += 1;
+      } else {
+        uniqueValid.push(ex);
+      }
     }
-  }
-  const rejectedCount = rejected.length + dupAgainstExisting;
+    const rejectedCount = shapeRejected + rejected.length + dupAgainstExisting;
 
-  if (uniqueValid.length === 0) {
-    await markRun(services.db, services.clock, runId, "failed", "validation");
+    if (uniqueValid.length === 0) {
+      await markRun(services.db, services.clock, runId, "failed", "validation");
+      return;
+    }
+
+    await services.db.transaction(async (tx) => {
+      const version = (
+        await tx.select().from(deckVersions).where(eq(deckVersions.id, run.deckVersionId!)).for("update")
+      )[0];
+      if (!version) {
+        await markRun(tx, services.clock, runId, "failed", "deck_version_gone");
+        return;
+      }
+      if (version.state === "published" || version.editNumber !== run.expectedEditNumber) {
+        await markRun(tx, services.clock, runId, "superseded", null);
+        return;
+      }
+      await applyLessonExercises(
+        tx,
+        { id: version.id, deckId: version.deckId },
+        subject,
+        input.topicVersion,
+        uniqueValid,
+      );
+      // Uzupełnienie lesson_context: przykłady i licznik odrzuconych (sumujemy przy
+      // dogenerowaniu). lesson_context jest niezmienny dopiero po publikacji.
+      const prevContext = (version.lessonContext ?? {}) as unknown as LessonContext;
+      const nextContext: LessonContext = {
+        ...prevContext,
+        examples: { ...prevContext.examples, ...examples },
+        rejectedCount: (prevContext.rejectedCount ?? 0) + rejectedCount,
+      };
+      await tx
+        .update(deckVersions)
+        .set({ lessonContext: nextContext as unknown as Record<string, unknown> })
+        .where(eq(deckVersions.id, version.id));
+      await reconcileDraftAssetsTx(tx, services, version);
+      if (version.state !== "review") {
+        await tx.update(deckVersions).set({ state: "review" }).where(eq(deckVersions.id, version.id));
+      }
+      await markRun(tx, services.clock, runId, "succeeded", null);
+    });
+  } catch {
+    // Nieprzewidziany wyjątek walidacji/zapisu NIE może zostawić runu „running”.
+    // Rozliczamy terminalnie: wyczerpane próby → attempts_exhausted, inaczej
+    // validation (błąd kształtu/treści puli, nie błąd przejściowy providera).
+    if (attempts >= MAX_AUTOMATIC_ATTEMPTS) {
+      await markRun(services.db, services.clock, runId, "failed", "attempts_exhausted");
+    } else {
+      await markRun(services.db, services.clock, runId, "failed", "validation");
+    }
     return;
   }
-
-  await services.db.transaction(async (tx) => {
-    const version = (
-      await tx.select().from(deckVersions).where(eq(deckVersions.id, run.deckVersionId!)).for("update")
-    )[0];
-    if (!version) {
-      await markRun(tx, services.clock, runId, "failed", "deck_version_gone");
-      return;
-    }
-    if (version.state === "published" || version.editNumber !== run.expectedEditNumber) {
-      await markRun(tx, services.clock, runId, "superseded", null);
-      return;
-    }
-    await applyLessonExercises(
-      tx,
-      { id: version.id, deckId: version.deckId },
-      subject,
-      input.topicVersion,
-      uniqueValid,
-    );
-    // Uzupełnienie lesson_context: przykłady i licznik odrzuconych (sumujemy przy
-    // dogenerowaniu). lesson_context jest niezmienny dopiero po publikacji.
-    const prevContext = (version.lessonContext ?? {}) as unknown as LessonContext;
-    const nextContext: LessonContext = {
-      ...prevContext,
-      examples: { ...prevContext.examples, ...examples },
-      rejectedCount: (prevContext.rejectedCount ?? 0) + rejectedCount,
-    };
-    await tx
-      .update(deckVersions)
-      .set({ lessonContext: nextContext as unknown as Record<string, unknown> })
-      .where(eq(deckVersions.id, version.id));
-    await reconcileDraftAssetsTx(tx, services, version);
-    if (version.state !== "review") {
-      await tx.update(deckVersions).set({ state: "review" }).where(eq(deckVersions.id, version.id));
-    }
-    await markRun(tx, services.clock, runId, "succeeded", null);
-  });
 }
 
 /** Czy dwie odpowiedzi są równoważne po normalizatorze przedmiotu. */
