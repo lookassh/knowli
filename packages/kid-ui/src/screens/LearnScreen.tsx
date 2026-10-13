@@ -92,14 +92,15 @@ export function LearnScreen({
           </p>
         </details>
       </header>
-      {screen.session.mode === "mock_test" && <p className="kid-notice">{messages.kid.mockTestInfo}</p>}
-      {screen.answerSaved && <p className="kid-notice" role="status">{messages.kid.answerSaved}</p>}
-
-      {screen.processing && (
-        <p className="kid-notice" data-testid="kid-processing" role="status">
-          {messages.kid.processing}
-        </p>
-      )}
+      <div className="kid-session-status" data-testid="kid-session-status" role="status" aria-live="polite">
+        {screen.session.mode === "mock_test" && <p className="kid-notice">{messages.kid.mockTestInfo}</p>}
+        {screen.answerSaved && <p className="kid-notice">{messages.kid.answerSaved}</p>}
+        {screen.processing && (
+          <p className="kid-notice" data-testid="kid-processing">
+            {messages.kid.processing}
+          </p>
+        )}
+      </div>
 
       {offline ? (
         <section className="kid-card kid-offline" data-testid="kid-offline">

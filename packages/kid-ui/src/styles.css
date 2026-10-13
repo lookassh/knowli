@@ -923,6 +923,29 @@
   gap: 12px;
 }
 
+.kid-session-status {
+  box-sizing: border-box;
+  height: 52px;
+  min-height: 52px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+}
+
+.kid-session-status:empty {
+  visibility: hidden;
+}
+
+.kid-session-status > .kid-notice {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 0.95rem;
+}
+
 .kid-microphone-status {
   position: relative;
   flex: none;
