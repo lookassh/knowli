@@ -430,6 +430,17 @@ function dbOutcome(outcome: SkillOutcome): "correct" | "incorrect" | "unassessed
 }
 
 /**
+ * `confirmation_eligible` zapisywane do oceny. „Nieocenione" (`unevaluated` →
+ * `unassessed`) jest NEUTRALNE: nie potwierdza niczego, więc flaga musi być
+ * false — inaczej CHECK `assessments_unassessed_no_score` (outcome='unassessed'
+ * ⇒ score null AND NOT confirmation_eligible) rzuca 23514. Dla ocenionych
+ * zachowujemy wynik kwalifikacji (ta sama reguła przerwy co słówka).
+ */
+function confirmationEligibleFor(outcome: SkillOutcome, qualified: boolean): boolean {
+  return outcome === "unevaluated" ? false : qualified;
+}
+
+/**
  * Przejście stanu zadania lekcji po ocenie (ruling 113): jedna oceniona
  * odpowiedź (poprawna albo błędna) kończy zadanie (`answered`); `skip` →
  * `skipped`; brak oceny (`unevaluated`) zostawia `issued` (retry / „Pomiń”).
@@ -691,7 +702,7 @@ async function finalizeLessonAttempt(
       outcome: dbOutcome(result.grade.outcome),
       ...(result.grade.reason ? { reason: result.grade.reason } : {}),
       independent: qualification.independent,
-      confirmationEligible: qualification.confirmationEligible,
+      confirmationEligible: confirmationEligibleFor(result.grade.outcome, qualification.confirmationEligible),
       details: result.details,
     });
 
@@ -1041,7 +1052,7 @@ async function finalizeGradedAttempt(
     outcome: dbOutcome(result.grade.outcome),
     ...(result.grade.reason ? { reason: result.grade.reason } : {}),
     independent: qualification.independent,
-    confirmationEligible: qualification.confirmationEligible,
+    confirmationEligible: confirmationEligibleFor(result.grade.outcome, qualification.confirmationEligible),
     details: result.details,
   });
   if (result.grade.outcome !== "unevaluated") {
