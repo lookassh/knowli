@@ -147,8 +147,16 @@ async function answerPreviouslyExposed(tx: Tx, childId: string, targetKey: strin
 /** Wsparcie użyte w zadaniu przed odpowiedzią (guided options / odsłuch / podpowiedź). */
 async function assistanceFor(tx: Tx, task: TaskRow, key: LessonTaskAnswerKey, receivedAt: Date): Promise<AssistanceKind[]> {
   const assistance = new Set<AssistanceKind>();
-  // Typy prowadzone (wybór z opcji / segmentów) ujawniają rozwiązanie w prompt'cie.
-  if (key.exerciseType === "lesson_choice" || key.exerciseType === "lesson_short_answer" || key.exerciseType === "lesson_notice") {
+  // Typy prowadzone ujawniają rozwiązanie w prompt'cie: wybór z opcji
+  // (choice/short_answer), zaznaczenie w segmencie (notice) oraz ułożenie
+  // podanych klocków (order) — dziecko dostaje gotowe elementy, więc pierwsze
+  // poprawne ułożenie jest wspomagane, nie niezależne (req 7.2, design etapów).
+  if (
+    key.exerciseType === "lesson_choice" ||
+    key.exerciseType === "lesson_short_answer" ||
+    key.exerciseType === "lesson_notice" ||
+    key.exerciseType === "lesson_order"
+  ) {
     assistance.add("options");
   }
   const disclosures = await tx
