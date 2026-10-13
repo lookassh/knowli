@@ -407,8 +407,9 @@ describe("generowanie puli lekcji (integracja)", () => {
     }
 
     const lessonLogs = logs.filter((line) => line.includes("[lesson]")).join("\n");
-    // Start runu z kontekstem (identyfikowalność w logach workera).
-    expect(lessonLogs).toMatch(/generacja run=\S+ .*cel[ie]=/);
+    // Start runu z kontekstem (identyfikowalność w logach workera), łącznie
+    // z modelem LLM (A/B generacji po logach, UMIEM_LLM_MODEL).
+    expect(lessonLogs).toMatch(/generacja run=\S+ .*cel[ie]=.*model=\S+/);
     // Podsumowanie walidacji: liczby + powody odrzuceń (przynajmniej reguła
     // duplikatu kanonicznej odpowiedzi i reguła liczby opcji).
     expect(lessonLogs).toMatch(/walidacja puli: surowe=\d+ zły_kształt=\d+ odrzucone=\d+ ważne=\d+/);

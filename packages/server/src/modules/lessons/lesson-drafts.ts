@@ -497,7 +497,7 @@ export async function executeLessonGeneration(services: Services, runId: string)
   const rawExercises: unknown[] = [];
   const examples: Record<string, string[]> = {};
   console.log(
-    `[lesson] generacja run=${runId} deck=${input.deckId} cele=${batches.length} próba=${attempts} pula=${input.poolSize}`,
+    `[lesson] generacja run=${runId} deck=${input.deckId} cele=${batches.length} próba=${attempts} pula=${input.poolSize} model=${deps.llm.model}`,
   );
   try {
     for (const batch of batches) {

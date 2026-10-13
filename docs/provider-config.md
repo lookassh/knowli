@@ -27,10 +27,10 @@ w zadaniu 11); konwersja do WAV jest kodekowo-agnostyczna.
 
 | Element | Wartość | Uwagi |
 | --- | --- | --- |
-| LLM | OpenAI `gpt-4o-mini` | domyślny adapter `createOpenAiLlmProvider` |
+| LLM | OpenAI `gpt-4o-mini` | domyślny adapter `createOpenAiLlmProvider`; zmiana modelu/endpointu przez `UMIEM_LLM_MODEL`/`UMIEM_LLM_BASE_URL` bez zmiany kodu (model trafia do logu `[lesson] generacja`, co umożliwia A/B po logach) |
 | TTS | OpenAI `gpt-4o-mini-tts`, format mp3 | głos `alloy` (decyzja po próbie: domyślny na start); zmiana np. na `fable` przez `UMIEM_TTS_VOICE` bez zmiany kodu |
 | Ilustracje | OpenAI `gpt-image-1`, `1024x1024`, quality `low`, WebP | ~30 s na obraz — praca tła workera; prompt bez tekstu w obrazie. Domyślnie low+webp: high/png kosztowało ~0,17 USD/szt. (~5 USD za 31-elementowy zestaw 2026-10-08), low+webp to ~0,01–0,02 USD/szt. Budżetowa alternatywa przez env: `gpt-image-1-mini` (~0,005 USD/szt. w low) |
-| Env | `OPENAI_API_KEY` (jeden klucz do trzech usług) | tylko worker; web nie zna tego klucza |
+| Env | `OPENAI_API_KEY` (jeden klucz do trzech usług) | tylko worker; web nie zna tego klucza. Opcjonalnie `UMIEM_LLM_MODEL`, `UMIEM_LLM_BASE_URL`, `UMIEM_LLM_API_KEY` nadpisują model, endpoint i klucz **samego LLM** (niezależne, z fallbackami: `gpt-4o-mini`, `https://api.openai.com/v1`, `OPENAI_API_KEY`); BASE_URL wymaga `https://` poza NODE_ENV test/development. Sam `UMIEM_LLM_BASE_URL` bez własnego klucza kieruje `OPENAI_API_KEY` na wskazany endpoint — tylko zaufane URL-e. Model LLM nie wchodzi do fingerprintów mediów — zmiana dotyczy tylko nowych generacji |
 
 ## Ocena odpowiedzi lekcji (web)
 
