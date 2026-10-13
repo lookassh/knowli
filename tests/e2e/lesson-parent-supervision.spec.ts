@@ -23,17 +23,52 @@ const VERDICT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const OBJECTIVE_ID = "english_grammar.present_simple.third_person_s";
 
 /** Zaślepia endpointy nadzoru (postęp, werdykty, decyzja, wariant) deterministycznie. */
-async function stubSupervision(page: Page): Promise<{ decisions: string[]; variantCalls: number }> {
-  const state = { decisions: [] as string[], variantCalls: 0, decided: null as string | null };
+async function stubSupervision(page: Page): Promise<{
+  decisions: string[];
+  variantCalls: number;
+  firstProgressStarted: Promise<void>;
+  firstProgressFinished: Promise<void>;
+  releaseFirstProgress: () => void;
+  delayedChildId: string | null;
+  failProgressChildId: string | null;
+}> {
+  let resolveFirstProgressStarted!: () => void;
+  let resolveFirstProgressFinished!: () => void;
+  let releaseFirstProgress!: () => void;
+  const firstProgressStarted = new Promise<void>((resolve) => { resolveFirstProgressStarted = resolve; });
+  const firstProgressFinished = new Promise<void>((resolve) => { resolveFirstProgressFinished = resolve; });
+  const firstProgressGate = new Promise<void>((resolve) => { releaseFirstProgress = resolve; });
+  const state = {
+    decisions: [] as string[],
+    variantCalls: 0,
+    decided: null as string | null,
+    delayedChildId: null as string | null,
+    failProgressChildId: null as string | null,
+    firstProgressStarted,
+    firstProgressFinished,
+    releaseFirstProgress,
+  };
   await page.route(/\/api\/v1\/parent\/lessons\/[0-9a-f-]+\/progress/, async (route) => {
-    await route.fulfill({
-      status: 200, contentType: "application/json",
-      body: JSON.stringify([{
-        objectiveId: OBJECTIVE_ID, titlePl: "-s w 3. osobie", status: "learning",
+    const childId = new URL(route.request().url()).searchParams.get("childId");
+    const delayFirstRequest = state.delayedChildId === null;
+    if (delayFirstRequest) {
+      state.delayedChildId = childId;
+      resolveFirstProgressStarted();
+      await firstProgressGate;
+    }
+    if (childId === state.failProgressChildId) {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ code: "internal", message: "Postęp chwilowo niedostępny" }) });
+    } else {
+      await route.fulfill({
+        status: 200, contentType: "application/json",
+        body: JSON.stringify([{
+        objectiveId: OBJECTIVE_ID, titlePl: "-s w 3. osobie", status: childId === state.delayedChildId ? "not_assessed" : "learning",
         lastIndependentAt: null, nextReviewAt: null, poolExhausted: true,
         topErrors: [{ category: "missing_ending", labelPl: "Brak końcówki -s", count: 2, examples: ["he play", "she go"] }],
-      }]),
-    });
+        }]),
+      });
+    }
+    if (delayFirstRequest) resolveFirstProgressFinished();
   });
   await page.route(/\/api\/v1\/parent\/lessons\/[0-9a-f-]+\/verdicts/, async (route) => {
     await route.fulfill({
@@ -99,19 +134,38 @@ test("parent supervises objective progress and model verdicts: changes a decisio
   const lessonTitle = `Nadzór Present Simple ${suffix}`;
 
   await enterParent(page);
-  const supervision = await stubSupervision(page);
-
   // Dziecko (panel nadzoru wymaga wybranego dziecka do postępu celów).
   await page.getByTestId("tab-children").click();
   await page.getByTestId("child-name").fill(`Nadzór dziecko ${suffix}`);
   await page.getByTestId("child-add").click();
   await expect(page.locator('[data-testid^="child-row-"]').filter({ hasText: `Nadzór dziecko ${suffix}` })).toHaveCount(1);
+  await page.getByTestId("child-name").fill(`Drugie dziecko ${suffix}`);
+  await page.getByTestId("child-add").click();
+  await expect(page.locator('[data-testid^="child-row-"]').filter({ hasText: `Drugie dziecko ${suffix}` })).toHaveCount(1);
+
+  const supervision = await stubSupervision(page);
 
   await createAndPublishLesson(page, lessonTitle);
 
   // Panel nadzoru widoczny po publikacji; provider oceny i postęp celu.
   await expect(page.getByTestId("supervision-panel")).toBeVisible();
   await expect(page.getByTestId("grading-provider")).toBeVisible();
+  // Opóźnij odpowiedź domyślnego dziecka, wybierz drugie i upewnij się,
+  // że starszy request nie nadpisze aktualnie wybranego postępu.
+  await supervision.firstProgressStarted;
+  const childSelect = page.getByTestId("supervision-child");
+  const selectedChildId = await childSelect.locator("option").nth(1).getAttribute("value");
+  expect(selectedChildId).toBeTruthy();
+  const selectedProgressResponse = page.waitForResponse((response) =>
+    response.request().method() === "GET" && new URL(response.url()).pathname.endsWith("/progress") && new URL(response.url()).searchParams.get("childId") === selectedChildId,
+  );
+  await childSelect.selectOption(selectedChildId!);
+  expect((await selectedProgressResponse).ok()).toBe(true);
+  const delayedChildId = supervision.delayedChildId;
+  expect(delayedChildId).toBeTruthy();
+  await expect(page.getByTestId(`progress-status-${OBJECTIVE_ID}`)).toHaveText("W nauce");
+  supervision.releaseFirstProgress();
+  await supervision.firstProgressFinished;
   await expect(page.getByTestId(`progress-${OBJECTIVE_ID}`)).toBeVisible();
   await expect(page.getByTestId(`progress-status-${OBJECTIVE_ID}`)).toHaveText("W nauce");
   // Kategoria błędu z przykładami i podpowiedź o wyczerpanej puli.
@@ -132,4 +186,20 @@ test("parent supervises objective progress and model verdicts: changes a decisio
   await page.getByTestId(`verdict-variant-${VERDICT_ID}`).click();
   await expect(page.getByTestId("supervision-notice")).toBeVisible();
   expect(supervision.variantCalls).toBeGreaterThan(0);
+
+  await childSelect.selectOption(delayedChildId!);
+  const delayedChildResponse = page.waitForResponse((response) =>
+    response.request().method() === "GET" && new URL(response.url()).pathname.endsWith("/progress") && new URL(response.url()).searchParams.get("childId") === delayedChildId,
+  );
+  expect((await delayedChildResponse).ok()).toBe(true);
+  await expect(page.getByTestId(`progress-status-${OBJECTIVE_ID}`)).toHaveText("Nieoceniony");
+
+  supervision.failProgressChildId = selectedChildId!;
+  const unavailableProgressResponse = page.waitForResponse((response) =>
+    response.request().method() === "GET" && new URL(response.url()).pathname.endsWith("/progress") && new URL(response.url()).searchParams.get("childId") === selectedChildId,
+  );
+  await childSelect.selectOption(selectedChildId!);
+  expect((await unavailableProgressResponse).status()).toBe(503);
+  await expect(page.getByTestId(`progress-status-${OBJECTIVE_ID}`)).toHaveCount(0);
+  await expect(page.getByTestId("supervision-progress-error")).toBeVisible();
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   messages,
   type ChildDto,
@@ -35,11 +35,13 @@ export default function LessonSupervisionPanel({
 }) {
   const [childId, setChildId] = useState<string | null>(childrenList[0]?.id ?? null);
   const [progress, setProgress] = useState<ObjectiveProgressDto[]>([]);
+  const [progressError, setProgressError] = useState<string | null>(null);
   const [verdicts, setVerdicts] = useState<LessonVerdictDto[]>([]);
   const [mockTests, setMockTests] = useState<LessonMockTestReportDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busyVerdict, setBusyVerdict] = useState<string | null>(null);
+  const progressRequestSequence = useRef(0);
 
   // Gdy lista dzieci dociera po zamontowaniu, wybierz pierwsze (jeśli żadne nie wybrane).
   useEffect(() => {
@@ -47,14 +49,17 @@ export default function LessonSupervisionPanel({
   }, [childrenList, childId]);
 
   const loadProgress = useCallback(async () => {
+    const requestId = ++progressRequestSequence.current;
+    setProgress([]);
+    setProgressError(null);
     if (!childId) {
-      setProgress([]);
       return;
     }
     try {
-      setProgress(await apiFetch<ObjectiveProgressDto[]>("GET", `/api/v1/parent/lessons/${deckId}/progress?childId=${childId}`));
+      const nextProgress = await apiFetch<ObjectiveProgressDto[]>("GET", `/api/v1/parent/lessons/${deckId}/progress?childId=${childId}`);
+      if (requestId === progressRequestSequence.current) setProgress(nextProgress);
     } catch (cause) {
-      setError(errorMessage(cause));
+      if (requestId === progressRequestSequence.current) setProgressError(errorMessage(cause));
     }
   }, [deckId, childId]);
 
@@ -145,6 +150,7 @@ export default function LessonSupervisionPanel({
       )}
 
       {error && <p className="error" data-testid="supervision-error" role="alert">{error}</p>}
+      {progressError && <p className="error" data-testid="supervision-progress-error" role="alert">{progressError}</p>}
       {notice && <p className="info" data-testid="supervision-notice" role="status" aria-live="polite">{notice}</p>}
 
       {!childId ? (
