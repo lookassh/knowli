@@ -231,6 +231,11 @@
   padding: 6px 10px;
 }
 
+.kid-exercise-result .kid-feedback-text {
+  font-size: 1rem;
+  line-height: 1.1;
+}
+
 .kid-exposure-content {
   box-sizing: border-box;
   width: 100%;

@@ -131,7 +131,7 @@ Interfejsy ustalone dla wykonania:
 **Pliki:** `docs/SPEC.md`, `docs/architecture.md`, dziennik planu; ewentualne poprawki wynikające ze zweryfikowanych uwag.
 
 - [x] Uzupełnić SPEC i architecture o stabilność stref i wyjątki viewportu; brak wpływu API → MCP → skill wynika z braku zmian kontraktu i semantyki danych.
-- [x] Uruchomić `corepack pnpm test:unit` (97 plików/976 testów), `corepack pnpm typecheck` i `corepack pnpm build` — wszystkie zaliczone. Pełne E2E: 162/163; jedyny błąd `ERR_NO_BUFFER_SPACE` przy `page.goto` powtórzony osobno i zaliczony (1/1, 54 s), bez związku ze zmianami UI.
+- [x] Uruchomić `corepack pnpm test:unit` (97 plików/976 testów), `corepack pnpm typecheck` i `corepack pnpm build` — wszystkie zaliczone. Dwa pełne przebiegi E2E zakończyły się 162/163: pierwszy miał `ERR_NO_BUFFER_SPACE` przy `page.goto`, a drugi błędny odczyt statusu postępu w teście lekcji (`Nieoceniony` zamiast `W nauce`). Oba dokładne testy powtórzone osobno i zaliczone (54 s oraz 1,3 min). Nowa asercja wewnętrznego overflow feedbacku najpierw RED (27 px vs 26 px), po korekcie GREEN.
 - [ ] Przed zakończeniem wykonać niezależne review całego zakresu od `838a2018ff164c56296609d985f6cb4b8574cb38` do końcowego HEAD, z uwzględnieniem poprawionych uwag pierwszego review.
 - [ ] Zastosować `receiving-code-review`; rozwiązać Critical/Important i potwierdzić RED→GREEN dla poprawek zachowania. Minor zapisać wraz z decyzją. Po poprawkach powtórzyć tylko adekwatne sprawdzenia oraz końcową weryfikację stanu.
 - [ ] Użyć `verification-before-completion`; sprawdzić wszystkie kryteria, `git diff --check` i dziennik. Raportować faktyczne wyniki, nie planowane komendy.

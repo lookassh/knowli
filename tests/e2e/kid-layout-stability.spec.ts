@@ -161,10 +161,17 @@ test("choice feedback keeps each option in place", async ({ page }) => {
   }));
   await options.first().click();
   await expect(page.getByTestId("kid-feedback")).toContainText("Świetnie");
-  const feedbackFits = await page.getByTestId("kid-exercise-result").evaluate((element) =>
-    element.scrollHeight <= element.clientHeight,
-  );
-  expect(feedbackFits, "one-line feedback should not be internally clipped").toBe(true);
+  const feedbackMetrics = await page.getByTestId("kid-feedback").locator(".kid-feedback-content").evaluate((element) => {
+    const title = element.querySelector<HTMLElement>(".kid-feedback-text");
+    return {
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+      titleHeight: title?.getBoundingClientRect().height,
+      titleFontSize: title ? getComputedStyle(title).fontSize : null,
+      titleLineHeight: title ? getComputedStyle(title).lineHeight : null,
+    };
+  });
+  expect(feedbackMetrics.scrollHeight, JSON.stringify(feedbackMetrics)).toBeLessThanOrEqual(feedbackMetrics.clientHeight);
   const after = await options.evaluateAll((elements) => elements.map((element) => {
     const { x, y, width, height } = element.getBoundingClientRect();
     return { x, y, width, height };
