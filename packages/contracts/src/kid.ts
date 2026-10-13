@@ -120,7 +120,14 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
   // Gałęzie lekcji (design „Typy ćwiczeń i etapy” — kolumna Kid prompt).
   // KAŻDA jest `.strict()`: Kid DTO nigdy nie zawiera odpowiedzi, wariantów,
   // elementu sprawdzanego (`focus`), celu ani kategorii błędu. `audioAssetId`
-  // opcjonalne tam, gdzie przedmiot ma TTS.
+  // (TTS odpowiedzi kanonicznej) jest OPCJONALNE WYŁĄCZNIE przy typach
+  // tekstowych (`lesson_gap`/`error_fix`/`transform`/`open_answer`), gdzie —
+  // zgodnie z wym. 4.6 i design.md „Odsłuch w zadaniach tekstowych lekcji =
+  // wsparcie” — odsłuch zdania wzorcowego PRZED odpowiedzią jest dozwolonym
+  // wsparciem (ekspozycja pieczętowana, próba niesamodzielna). Typy zamknięte
+  // (`notice`/`choice`/`short_answer`/`order`) NIE niosą audio: odtworzenie
+  // kanonicznej odpowiedzi zdradziłoby właściwą opcję/kolejność i obeszłoby
+  // deterministyczną ocenę po identyfikatorach (wym. 4.3).
   z.object({
     kind: z.literal("lesson_card"),
     card: z.object({
@@ -133,14 +140,12 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     kind: z.literal("lesson_notice"),
     instructionPl: z.string().min(1),
     segments: z.array(z.array(LessonSegmentSchema).min(1)).min(1),
-    audioAssetId: UuidSchema.optional(),
   }).strict(),
   z.object({
     kind: z.literal("lesson_choice"),
     instructionPl: z.string().min(1),
     stem: z.string().min(1),
     options: z.array(ChoiceOptionSchema).min(1),
-    audioAssetId: UuidSchema.optional(),
   }).strict(),
   z.object({
     kind: z.literal("lesson_order"),
@@ -151,28 +156,31 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     kind: z.literal("lesson_short_answer"),
     question: z.string().min(1),
     options: z.array(ChoiceOptionSchema).min(1),
-    audioAssetId: UuidSchema.optional(),
   }).strict(),
   z.object({
     kind: z.literal("lesson_gap"),
     instructionPl: z.string().min(1),
     stemWithGap: z.string().min(1),
     hint: z.string().min(1).optional(),
+    audioAssetId: UuidSchema.optional(),
   }).strict(),
   z.object({
     kind: z.literal("lesson_error_fix"),
     instructionPl: z.string().min(1),
     statement: z.string().min(1),
+    audioAssetId: UuidSchema.optional(),
   }).strict(),
   z.object({
     kind: z.literal("lesson_transform"),
     instructionPl: z.string().min(1),
     statement: z.string().min(1),
+    audioAssetId: UuidSchema.optional(),
   }).strict(),
   z.object({
     kind: z.literal("lesson_open_answer"),
     instructionPl: z.string().min(1),
     prompt: z.string().min(1),
+    audioAssetId: UuidSchema.optional(),
   }).strict(),
 ]).superRefine((prompt, ctx) => {
   if (prompt.kind === "exposure" || prompt.kind === "speech") {

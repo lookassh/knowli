@@ -169,6 +169,19 @@ export async function authorizeDisclosure(services: Services, input: DisclosureI
     if (session.mode === "mock_test" && (valid.kind === "hint" || task.exerciseType !== "listening")) {
       throw new AppError("conflict", { message: "Odpowiedzi omówimy po zakończeniu kartkówki." });
     }
+    // Odsłuch lekcji jest dozwolony WYŁĄCZNIE dla typów tekstowych (wym. 4.6,
+    // design.md „Odsłuch w zadaniach tekstowych lekcji = wsparcie”). Dla typów
+    // zamkniętych kanoniczne audio zdradziłoby właściwą opcję/kolejność i obeszło
+    // deterministyczną ocenę po identyfikatorach — odmawiamy, nawet gdyby klient
+    // zażądał odsłuchu dla takiego zadania.
+    const LESSON_AUDIO_TEXT_TYPES = new Set(["lesson_gap", "lesson_error_fix", "lesson_transform", "lesson_open_answer"]);
+    if (
+      valid.kind === "audio" &&
+      (task.exerciseType as string).startsWith("lesson_") &&
+      !LESSON_AUDIO_TEXT_TYPES.has(task.exerciseType)
+    ) {
+      throw new AppError("conflict", { message: "to zadanie lekcji nie oferuje odsłuchu" });
+    }
 
     const revision = (
       await tx

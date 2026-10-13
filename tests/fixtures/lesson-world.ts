@@ -36,6 +36,13 @@ export interface LessonWorldOptions {
    * en-GB). Służy testom wydawania zadań, ekspozycji i selektora. Domyślnie false.
    */
   richPool?: boolean;
+  /**
+   * Dosiewa GOTOWY `target_audio` (TTS odpowiedzi) do rewizji wskazanych typów
+   * PRZED publikacją (trigger niezmienności opublikowanej wersji blokuje dosiew
+   * po publikacji). Służy testom A58 (serwowanie audio lekcji). Pusta/undefined
+   * = brak audio. Wymaga `richPool`, by istniały ćwiczenia wszystkich typów.
+   */
+  withTargetAudioFor?: readonly string[];
 }
 
 /**
@@ -103,6 +110,10 @@ export async function lessonWorld(pool: Pool, options: LessonWorldOptions = {}):
   // Publikacja: state=published wymaga published_at; lesson_context niezmienny po publikacji.
   if (options.richPool) {
     await seedRichPool(pool, { deckId, versionId });
+  }
+  // Dosiew gotowego target_audio PRZED publikacją (po publikacji trigger blokuje).
+  if (options.withTargetAudioFor && options.withTargetAudioFor.length > 0) {
+    await attachLessonTargetAudio(pool, versionId, options.withTargetAudioFor);
   }
   await pool.query(
     "update learning_app.deck_versions set state = 'published', published_at = $2 where id = $1",
@@ -188,8 +199,7 @@ export async function lessonWorld(pool: Pool, options: LessonWorldOptions = {}):
 
 const RICH_ANSWER_LOCALE = "en-GB";
 /** Odpowiedzi kanoniczne bogatej puli — stałe, by test znał ich `target_key`. */
-const RICH_ANSWERS = {
-  notice: "plays",
+const RICH_ANSWERS = {  notice: "plays",
   choice: "plays",
   gap: "goes",
   gap2: "watches",
@@ -358,4 +368,41 @@ async function seedRichPool(pool: Pool, version: { deckId: string; versionId: st
       [exRevisionId, exItemId, exSkillVersionId],
     );
   }
+}
+
+/**
+ * Dołącza GOTOWY zasób `target_audio` (TTS odpowiedzi kanonicznej) do wszystkich
+ * rewizji ćwiczeń wskazanego typu w opublikowanej wersji lekcji — tak jak zrobiłby
+ * to potok mediów przy publikacji, gdy `subject.ttsForAnswers`. Zwraca mapę
+ * `revisionId -> assetId`. Pozwala testom udowodnić, że audio jest serwowane
+ * tylko dla typów tekstowych, po zapieczętowaniu ekspozycji. `media_assets` musi
+ * być „ready” z kompletem pól (storage_key/mime_type/byte_count/content_sha256).
+ */
+export async function attachLessonTargetAudio(
+  pool: Pool,
+  versionId: string,
+  exerciseTypes: readonly string[] = ["lesson_gap", "lesson_error_fix", "lesson_transform", "lesson_open_answer"],
+): Promise<Map<string, string>> {
+  const rows = await pool.query<{ id: string; payload: { exerciseType?: string } }>(
+    "select id, payload from learning_app.item_revisions where deck_version_id = $1 order by position",
+    [versionId],
+  );
+  const byRevision = new Map<string, string>();
+  for (const row of rows.rows) {
+    if (!exerciseTypes.includes(row.payload.exerciseType ?? "")) continue;
+    const assetId = randomUUID();
+    await pool.query(
+      `insert into learning_app.media_assets
+         (id, kind, fingerprint, generation_number, state, storage_key, content_sha256, mime_type, byte_count, provider, model, metadata)
+       values ($1, 'tts', $2, 1, 'ready', $3, $4, 'audio/mpeg', 1024, 'fake', 'fake-tts', '{}'::jsonb)`,
+      [assetId, `fp-${assetId}`, `blob/${assetId}`, `sha-${assetId}`],
+    );
+    await pool.query(
+      `insert into learning_app.revision_assets (item_revision_id, role, asset_id, expected_fingerprint, state)
+       values ($1, 'target_audio', $2, $3, 'approved')`,
+      [row.id, assetId, `fp-${assetId}`],
+    );
+    byRevision.set(row.id, assetId);
+  }
+  return byRevision;
 }

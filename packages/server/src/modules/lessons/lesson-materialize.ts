@@ -128,6 +128,12 @@ export function materializeExercise(
   const instructionPl = payload.instructionPl ?? transformInstruction(topic, payload) ?? objective?.titlePl ?? "";
   const mockTest = options.mockTest ?? false;
 
+  // Audio odpowiedzi kanonicznej dołączane WYŁĄCZNIE do typów tekstowych i tylko
+  // w treningu: odsłuch zdania wzorcowego przed odpowiedzią jest dozwolonym
+  // wsparciem (wym. 4.6), ale w kartkówce zdradzałby odpowiedź. `audioAssetId`
+  // jest już wykluczone z promptów typów zamkniętych przez schemat kontraktu.
+  const audio = !mockTest && exercise.audioAssetId ? { audioAssetId: exercise.audioAssetId } : {};
+
   const baseKey: Record<string, unknown> = {
     exerciseType: payload.exerciseType,
     objectiveId: payload.objectiveId,
@@ -151,7 +157,6 @@ export function materializeExercise(
         kind: "lesson_notice",
         instructionPl,
         segments,
-        ...(exercise.audioAssetId ? { audioAssetId: exercise.audioAssetId } : {}),
       };
       return {
         ...common,
@@ -168,7 +173,6 @@ export function materializeExercise(
         instructionPl,
         stem: payload.stem ?? "",
         options: options.map((o) => ({ id: o.id, text: o.text })),
-        ...(exercise.audioAssetId ? { audioAssetId: exercise.audioAssetId } : {}),
       };
       return {
         ...common,
@@ -184,7 +188,6 @@ export function materializeExercise(
         kind: "lesson_short_answer",
         question: payload.prompt ?? payload.stem ?? instructionPl,
         options: options.map((o) => ({ id: o.id, text: o.text })),
-        ...(exercise.audioAssetId ? { audioAssetId: exercise.audioAssetId } : {}),
       };
       return {
         ...common,
@@ -206,19 +209,19 @@ export function materializeExercise(
     }
     case "lesson_gap": {
       // Kartkówka: żadnej podpowiedzi (ujawniałaby odpowiedź); trening zachowuje hint.
-      const prompt: TaskPrompt = { kind: "lesson_gap", instructionPl, stemWithGap: payload.stem ?? "", ...(!mockTest && payload.hint ? { hint: payload.hint } : {}) };
+      const prompt: TaskPrompt = { kind: "lesson_gap", instructionPl, stemWithGap: payload.stem ?? "", ...(!mockTest && payload.hint ? { hint: payload.hint } : {}), ...audio };
       return { ...common, prompt, answerKey: baseKey, exposures: [] };
     }
     case "lesson_error_fix": {
-      const prompt: TaskPrompt = { kind: "lesson_error_fix", instructionPl, statement: payload.statement ?? "" };
+      const prompt: TaskPrompt = { kind: "lesson_error_fix", instructionPl, statement: payload.statement ?? "", ...audio };
       return { ...common, prompt, answerKey: baseKey, exposures: [] };
     }
     case "lesson_transform": {
-      const prompt: TaskPrompt = { kind: "lesson_transform", instructionPl, statement: payload.statement ?? "" };
+      const prompt: TaskPrompt = { kind: "lesson_transform", instructionPl, statement: payload.statement ?? "", ...audio };
       return { ...common, prompt, answerKey: baseKey, exposures: [] };
     }
     case "lesson_open_answer": {
-      const prompt: TaskPrompt = { kind: "lesson_open_answer", instructionPl, prompt: payload.prompt ?? "" };
+      const prompt: TaskPrompt = { kind: "lesson_open_answer", instructionPl, prompt: payload.prompt ?? "", ...audio };
       return { ...common, prompt, answerKey: baseKey, exposures: [] };
     }
     default:

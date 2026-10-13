@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { messages } from "@learning/contracts";
+import { KidIcon } from "../../components/KidIcon";
 import { ExerciseFrame } from "../ExerciseFrame";
 import type { ExerciseProps } from "../types";
 
@@ -8,7 +9,9 @@ import type { ExerciseProps } from "../types";
  * polecenie (z ramki), zdanie wyjściowe i pole tekstowe bez autokorekty.
  * „Sprawdź” wysyła odpowiedź `text`. `lesson_open_answer` nie ma deterministycznej
  * oceny do czasu zadania 15 — serwer odpowie wtedy `not_assessed`, a widok
- * feedbacku pokaże komunikat techniczny bez sugerowania błędu.
+ * feedbacku pokaże komunikat techniczny bez sugerowania błędu. Gdy przedmiot ma
+ * TTS odpowiedzi, pojawia się „Posłuchaj” — odsłuch zdania wzorcowego jest
+ * dozwolonym wsparciem (wym. 4.6; serwer pieczętuje ekspozycję przed bajtami).
  */
 export function LessonSentenceView({ task, busy, handlers }: ExerciseProps) {
   const [text, setText] = useState("");
@@ -20,6 +23,7 @@ export function LessonSentenceView({ task, busy, handlers }: ExerciseProps) {
     return null;
   }
   const source = task.prompt.kind === "lesson_open_answer" ? task.prompt.prompt : task.prompt.statement;
+  const hasAudio = task.prompt.audioAssetId !== undefined;
   const disabled = busy;
   const formId = `kid-lesson-sentence-${task.taskId}`;
 
@@ -50,6 +54,18 @@ export function LessonSentenceView({ task, busy, handlers }: ExerciseProps) {
               disabled={disabled}
             />
           </form>
+          {hasAudio && (
+            <button
+              type="button"
+              className="kid-play"
+              data-testid="kid-lesson-listen"
+              disabled={disabled}
+              onClick={handlers.onPlay}
+              aria-label={messages.kid.listen}
+            >
+              <KidIcon name="volume" />
+            </button>
+          )}
         </>
       )}
       actions={(

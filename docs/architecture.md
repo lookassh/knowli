@@ -435,7 +435,7 @@ Trzy pierwsze zmienne razem albo żadna (częściowa konfiguracja = błąd start
 
 ### 19.7. Ograniczenia (zgodne z SPEC §29a.7)
 
-- **Audio odpowiedzi kanonicznej — odłożone.** Serwer generuje i wymaga `target_audio` przy publikacji (`ttsForAnswers`), ale `lesson-sessions.ts` podaje `audioAssetId: null`, a widok lekcji nie ma kontrolki odsłuchu — audio nie dociera do dziecka end-to-end.
+- **Audio odpowiedzi kanonicznej — zaimplementowane (A58).** Serwer generuje i wymaga `target_audio` przy publikacji (`ttsForAnswers`); `lesson-sessions.ts#loadExercises` rozwiązuje gotowy zasób (`revision_assets.state='approved'` ∧ `media_assets.state='ready'`), a `lesson-materialize.ts` dołącza `audioAssetId` TYLKO do promptów tekstowych (`lesson_gap`/`error_fix`/`transform`/`open_answer`) i nigdy w kartkówce. Kid UI (`LessonGapView`/`LessonSentenceView`) pokazuje „Posłuchaj”; `playTaskAudio` woła `authorizeDisclosure(audio)`, który pieczętuje `audio_issued` z `target_key` PRZED wydaniem bajtów → `assistanceFor` dodaje `model_audio` → próba niesamodzielna (wym. 4.6). Typy zamknięte nie niosą `audioAssetId`, a `authorizeDisclosure` odrzuca dla nich `kind='audio'` (`conflict`).
 - **Opanowanie bez modelu.** Niezależne sprawdzenie reguły może używać produktywnych typów deterministycznych (zwł. `lesson_gap`), więc opanowanie jest osiągalne bez modelu oceniającego, o ile pula zawiera dość różnych takich ćwiczeń; model jest wymagany tylko dla odpowiedzi niedopasowanych (głównie tłumaczenie). Hybrydowa ocena jest opcjonalna.
 
 ## 18. Dokumentacja wykorzystana przy projektowaniu

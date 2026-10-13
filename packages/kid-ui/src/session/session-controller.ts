@@ -116,12 +116,33 @@ function audioAssetOf(task: TaskDto): string | null {
   if (task.prompt.kind === "exposure" || task.prompt.kind === "listening" || task.prompt.kind === "speech") {
     return task.prompt.audioAssetId;
   }
-  // Audio lekcji jest opcjonalne (przedmiot z TTS); brak pola = brak odsłuchu.
-  if (task.prompt.kind === "lesson_notice" || task.prompt.kind === "lesson_choice" || task.prompt.kind === "lesson_short_answer") {
+  // Audio lekcji jest opcjonalne (przedmiot z TTS) i oferowane WYŁĄCZNIE w
+  // ćwiczeniach tekstowych — odsłuch zdania wzorcowego przed odpowiedzią jest
+  // dozwolonym wsparciem (wym. 4.6). Typy zamknięte nie niosą pola audioAssetId.
+  if (
+    task.prompt.kind === "lesson_gap" ||
+    task.prompt.kind === "lesson_error_fix" ||
+    task.prompt.kind === "lesson_transform" ||
+    task.prompt.kind === "lesson_open_answer"
+  ) {
     return task.prompt.audioAssetId ?? null;
   }
   return null;
 }
+
+/** Typy zadań, dla których odsłuch wymaga zgody serwera PRZED odtworzeniem (seal). */
+const AUDIO_DISCLOSURE_EXERCISES = new Set([
+  "recall",
+  "spelling",
+  "letter_completion",
+  "speech",
+  // Lekcje tekstowe: audio to kanoniczna odpowiedź → ekspozycja pieczętowana i
+  // próba kwalifikowana jako wspomagana (wym. 4.6).
+  "lesson_gap",
+  "lesson_error_fix",
+  "lesson_transform",
+  "lesson_open_answer",
+]);
 
 export class LearningSessionController {
   readonly #api: KidApi;
@@ -640,7 +661,7 @@ export class LearningSessionController {
     if (!assetId) return;
     const playbackGeneration = this.#beginPlayback();
     const epoch = this.#epoch;
-    if (screen.session.mode === "mock_test" || ["recall", "spelling", "letter_completion", "speech"].includes(task.exerciseType)) {
+    if (screen.session.mode === "mock_test" || AUDIO_DISCLOSURE_EXERCISES.has(task.exerciseType)) {
       try {
         await this.#api.authorizeDisclosure(task.taskId, "audio");
       } catch (error) {

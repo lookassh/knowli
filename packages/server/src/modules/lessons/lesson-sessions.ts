@@ -12,6 +12,8 @@ import {
   itemRevisions,
   learningEvents,
   learningSessions,
+  mediaAssets,
+  revisionAssets,
   sessionTasks,
 } from "../../db/schema";
 import { AppError } from "../../errors";
@@ -166,13 +168,36 @@ export async function loadExercises(tx: Executor, deckVersionId: string): Promis
     .from(itemRevisions)
     .where(eq(itemRevisions.deckVersionId, deckVersionId))
     .orderBy(asc(itemRevisions.position));
+
+  // Audio odpowiedzi kanonicznej (`target_audio`) przygotowane przy publikacji,
+  // gdy przedmiot ma `ttsForAnswers`. Odtwarzane jako wsparcie w ćwiczeniach
+  // tekstowych (wym. 4.6); `materializeExercise` dołącza je tylko do tych typów.
+  // Liczy się wyłącznie gotowy zasób (`revision_assets.state='approved'` i
+  // `media_assets.state='ready'`), identycznie jak słówka rozwiązują audio.
+  const revisionIds = revisions.map((r) => r.id);
+  const audioRows = revisionIds.length
+    ? await tx
+        .select({ itemRevisionId: revisionAssets.itemRevisionId, assetId: revisionAssets.assetId })
+        .from(revisionAssets)
+        .innerJoin(mediaAssets, eq(mediaAssets.id, revisionAssets.assetId))
+        .where(
+          and(
+            inArray(revisionAssets.itemRevisionId, revisionIds),
+            eq(revisionAssets.role, "target_audio"),
+            eq(revisionAssets.state, "approved"),
+            eq(mediaAssets.state, "ready"),
+          ),
+        )
+    : [];
+  const audioByRevision = new Map(audioRows.map((a) => [a.itemRevisionId, a.assetId] as const));
+
   return revisions.map((r) => ({
     revisionId: r.id,
     itemId: r.itemId,
     position: r.position,
     payload: r.payload as unknown as LessonExercisePayload,
     targetKey: r.targetKey,
-    audioAssetId: null,
+    audioAssetId: audioByRevision.get(r.id) ?? null,
   }));
 }
 
@@ -409,13 +434,9 @@ export async function lessonDeckListValues(
 ): Promise<{ itemCount: number; independentlyRecalledCount: number; recommended: boolean }> {
   const version = (await exec.select().from(deckVersions).where(eq(deckVersions.id, args.deckVersionId)))[0]!;
   const context = lessonContextOf(version);
-  const { subject, topic } = requireTopic(services, context);
+  const { topic } = requireTopic(services, context);
   const exercises = await loadExercises(exec, args.deckVersionId);
   const objectiveOrder = topic.objectives.map((o) => o.id).filter((id) => context.objectiveIds.includes(id));
-  const cardCountByObjective: Record<string, number> = {};
-  for (const o of topic.objectives) {
-    if (objectiveOrder.includes(o.id)) cardCountByObjective[o.id] = o.cards.length;
-  }
 
   // Postęp celów: tylko cele z ćwiczeniami w puli liczą się do rekomendacji
   // (cel bez ćwiczeń selektor i tak pomija).
@@ -434,8 +455,6 @@ export async function lessonDeckListValues(
     if (status === "mastered" && objectiveOrder.includes(row.objectiveId)) masteredCount += 1;
   }
 
-  void cardCountByObjective;
-  void subject;
   // Rekomendacja (odpowiednik `hasScheduledWork` słówek): istnieje cel lekcji
   // nie `mastered` (nowy materiał lub w toku) ALBO należne sprawdzenie celu
   // opanowanego. Dodatkowe utrwalanie nie czyni zestawu rekomendowanym.

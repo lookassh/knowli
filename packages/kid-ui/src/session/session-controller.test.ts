@@ -928,6 +928,23 @@ describe("LearningSessionController", () => {
     expect(speechHarness.media.playUrls).toEqual(["https://media.test/asset-2"]);
   });
 
+  it("odsłuch lekcji tekstowej wymaga zgody serwera PRZED odtworzeniem (wsparcie wym. 4.6)", async () => {
+    const gap = taskDto("tg", { kind: "lesson_gap", instructionPl: "Uzupełnij", stemWithGap: "He ___ (go).", audioAssetId: "asset-gap" });
+    const gapHarness = await startAtTask(baseState(), gap);
+    // lekcja tekstowa NIE odtwarza się sama — dopiero „Posłuchaj”
+    expect(gapHarness.media.playUrls).toEqual([]);
+    await gapHarness.controller.playTaskAudio();
+    expect(gapHarness.state.disclosures).toEqual([{ taskId: "tg", kind: "audio" }]);
+    expect(gapHarness.media.playUrls).toEqual(["https://media.test/asset-gap"]);
+
+    // Typ zamknięty bez audioAssetId: żadnego odtworzenia ani zgody.
+    const choice = taskDto("tc", { kind: "lesson_choice", instructionPl: "Wybierz", stem: "He ___.", options: [{ id: "o1", text: "goes" }] });
+    const choiceHarness = await startAtTask(baseState(), choice);
+    await choiceHarness.controller.playTaskAudio();
+    expect(choiceHarness.state.disclosures).toHaveLength(0);
+    expect(choiceHarness.media.playUrls).toEqual([]);
+  });
+
   it("feedback wyboru pamięta wybraną opcję także przez awarię sieci i retry", async () => {
     const chosen = "88888888-8888-8888-8888-888888888888";
     const listening = taskDto("t1", {

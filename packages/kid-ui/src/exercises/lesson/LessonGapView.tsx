@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { messages } from "@learning/contracts";
 import { format } from "../../format";
+import { KidIcon } from "../../components/KidIcon";
 import { ExerciseFrame } from "../ExerciseFrame";
 import type { ExerciseProps } from "../types";
 import { splitGap } from "./gap";
@@ -9,13 +10,17 @@ import { splitGap } from "./gap";
  * Luka (`lesson_gap`): zdanie z polem edycji dokładnie w miejscu luki i
  * podpowiedzią bezokolicznika pod spodem. Pole wyłącza autokorektę i
  * autouzupełnianie (jak pisownia słówek). „Sprawdź” wysyła całe wpisane słowo
- * jako odpowiedź `text`; serwer ocenia tylko element sprawdzany.
+ * jako odpowiedź `text`; serwer ocenia tylko element sprawdzany. Gdy przedmiot
+ * ma TTS odpowiedzi, pod zdaniem pojawia się „Posłuchaj” — odsłuch zdania
+ * wzorcowego jest dozwolonym wsparciem (wym. 4.6; serwer pieczętuje ekspozycję
+ * i kwalifikuje próbę jako wspomaganą).
  */
 export function LessonGapView({ task, busy, handlers }: ExerciseProps) {
   const [text, setText] = useState("");
   if (task.prompt.kind !== "lesson_gap") return null;
   const { before, after } = splitGap(task.prompt.stemWithGap);
   const hint = task.prompt.hint;
+  const hasAudio = task.prompt.audioAssetId !== undefined;
   const disabled = busy;
   const formId = `kid-lesson-gap-${task.taskId}`;
   const submit = () => { if (text.trim() !== "" && !disabled) handlers.onSubmitText(text); };
@@ -51,6 +56,18 @@ export function LessonGapView({ task, busy, handlers }: ExerciseProps) {
             <p className="kid-lesson-gap__hint" data-testid="kid-lesson-gap-hint">
               {format(messages.kid.lessonGapHint, { hint })}
             </p>
+          )}
+          {hasAudio && (
+            <button
+              type="button"
+              className="kid-play"
+              data-testid="kid-lesson-listen"
+              disabled={disabled}
+              onClick={handlers.onPlay}
+              aria-label={messages.kid.listen}
+            >
+              <KidIcon name="volume" />
+            </button>
           )}
         </form>
       )}
