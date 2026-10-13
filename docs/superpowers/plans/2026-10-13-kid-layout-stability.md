@@ -107,7 +107,7 @@ Interfejsy ustalone dla wykonania:
 - [ ] Dodać `reveal and next task reuse the action slots`: „Nie pamiętam” → autoryzowany reveal → „Rozumiem” → zadanie wsparcia; oraz krótka karta → długie zadanie. Porównać pozycje instrukcji i głównej akcji, zachować kolejność żądań ujawnienia.
 - [ ] Uruchomić `pnpm test:e2e tests/e2e/kid-layout-stability.spec.ts --grep "written feedback|choice feedback|reveal and next"`; potwierdzić RED spowodowany przesunięciem, zapisać różnice.
 - [ ] Rozdzielić komponenty feedbacku na treść i akcje według interfejsów. Pisemny wynik i reveal zastępują zawartość `kid-material`; ich akcje idą do wspólnej stopki. Gdy brakuje akcji pomocniczej, slot zostaje pusty. Zachować tekst, ton, segmenty pisowni i dostępny fokus.
-- [ ] W zamkniętych ćwiczeniach przenieść listy opcji/bloków do strefy treści. Dodać stale rezerwowany slot krótkiego wyniku wyboru (bazowo 96 px, przewijany przy dłuższym wyniku); przycisk przejścia umieścić w głównym slocie stopki. Położenia opcji nie mogą zależeć od obecności wyniku; bez pionowego centrowania całej grupy według wysokości feedbacku. Nie używać result do przedstawiania nieautoryzowanej odpowiedzi przed próbą.
+- [ ] W zamkniętych ćwiczeniach przenieść listy opcji/bloków do strefy treści. Dodać stale rezerwowany slot krótkiego wyniku wyboru (40 px, przewijany przy dłuższym wyniku; dopasowane do telefonu 360×640); przycisk przejścia umieścić w głównym slocie stopki. Położenia opcji nie mogą zależeć od obecności wyniku; bez pionowego centrowania całej grupy według wysokości feedbacku. Nie używać result do przedstawiania nieautoryzowanej odpowiedzi przed próbą.
 - [ ] Uruchomić testy zadania oraz `pnpm test:e2e tests/e2e/kid-flow.spec.ts tests/e2e/lesson-kid.spec.ts tests/e2e/lesson-mock-test.spec.ts`; oczekiwany GREEN. Zapisać wyniki i commit, np. `fix(kid-ui): keep feedback and reveal actions in the exercise footer`.
 
 ## Task 3: Mowa i regresje mobile, dostępności oraz awarii
@@ -147,5 +147,17 @@ Interfejsy ustalone dla wykonania:
 - [x] Uwzględniono wszystkie elementy zatwierdzonego projektu, mową i lekcjami włącznie.
 - [x] Rozdzielono pomiary przy stałym viewportcie od dozwolonej zmiany geometrii po otwarciu klawiatury.
 - [x] Self-review: mapowanie wymagań do zadań, spójność interfejsów, Review Focus, ograniczenia fizycznego urządzenia i końcowy workflow repo.
-- [ ] Przegląd i zatwierdzenie tego zapisanego planu przez właściciela przed implementacją.
+- [x] Przegląd i zatwierdzenie tego zapisanego planu przez właściciela przed implementacją (2026-10-13).
 
+
+## Wykonanie — 2026-10-13
+
+- Gałąź robocza: `impl/kid-layout-stability`, worktree `C:\Users\looka\.codex\worktrees\kid-layout-stability\knowli`; baza review `838a2018ff164c56296609d985f6cb4b8574cb38`.
+- Task 1 ukończony i zapisany jako `9046fed`; test przetwarzania najpierw wykazał przesunięcie 66,34375 px.
+- Task 2/3: `kid-layout-stability.spec.ts` mierzy stabilność ramki przy wpisywaniu i przetwarzaniu, przejście od odpowiedzi pisemnej do feedbacku oraz pozycje opcji po odpowiedzi. `speech-recording-ux.spec.ts` mierzy stopkę i pozycje stref po wyniku mowy. Pełny E2E potwierdził dotychczasowe przepływy lekcji, reveal, retry, mock testu oraz obsługę mikrofonu.
+- Dostosowanie projektu po pomiarach: krótki wynik wyboru ma rezerwę 40 px zamiast początkowych 96 px, bo 96 px nie mieści typowych opcji wraz z główną akcją w 360×640. Przy wysokości do 700 px zmniejszono tylko odstępy i przyciski opcji (min. 48 px); przy 420 px układ przechodzi w naturalne przewijanie.
+- GREEN: `corepack pnpm test:unit` (97 plików, 976 testów), `corepack pnpm typecheck`, `corepack pnpm build`, pełny `corepack pnpm test:e2e` (159/159) i `git diff --check`.
+- Jedna poprawka testu przepływu: długi materiał przewija `.kid-material-content`, nie wrapper `.kid-material`; po zmianie selektora targeted test przeszedł. Test sprawdza właściwy scroll container po refaktorze.
+- Zakres API → MCP → skill: brak zmiany DTO/API, bazy, autoryzacji ani semantyki danych; zmiana dotyczy wyłącznie renderowania tych samych danych. SPEC i architecture aktualizują reguły geometrii i wyjątków viewportu.
+- Ograniczenie odbioru: testy przeglądarkowe/emulowane, bez fizycznego Galaxy S25 ani rzeczywistej klawiatury Androida. Odbiór urządzenia pozostaje niezweryfikowany.
+- Pozostało: niezależne review pełnego zakresu, obsługa uwag, końcowa weryfikacja i PR do `main`.

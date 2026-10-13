@@ -6,6 +6,7 @@ const deckId = "10000000-0000-4000-8000-000000000002";
 const sessionId = "10000000-0000-4000-8000-000000000003";
 const taskId = "10000000-0000-4000-8000-000000000004";
 const attemptId = "10000000-0000-4000-8000-000000000010";
+const optionIds = ["10000000-0000-4000-8000-000000000007", "10000000-0000-4000-8000-000000000008", "10000000-0000-4000-8000-000000000009"];
 
 function recallFixture() {
   const processing = {
@@ -36,6 +37,35 @@ function recallFixture() {
       stepId: null,
       completedAt: "2026-10-11T10:00:01.000Z",
     }],
+  };
+}
+
+function completedRecallFixture() {
+  const fixture = recallFixture();
+  fixture.attempts = [{
+    attemptId,
+    taskId,
+    state: "completed",
+    modality: "text",
+    feedback: { kind: "great" },
+    taskState: "completed",
+    stepId: null,
+    receivedAt: "2026-10-11T10:00:00.000Z",
+    completedAt: "2026-10-11T10:00:01.000Z",
+  }];
+  return fixture;
+}
+
+function completedReadingFixture() {
+  const base = recallFixture();
+  return {
+    ...base,
+    tasks: [{ taskId, sessionId, ordinal: 0, exerciseType: "reading" as const, direction: "target_to_source" as const,
+      state: "issued" as const, prompt: { kind: "reading" as const, text: "cat",
+        options: ["kot", "pies", "ptak"].map((text, index) => ({ id: optionIds[index]!, text })) }, remainingAssessed: 1 }],
+    attempts: [{ attemptId, taskId, state: "completed" as const, modality: "choice" as const,
+      feedback: { kind: "great" as const }, taskState: "completed" as const, stepId: null,
+      receivedAt: "2026-10-11T10:00:00.000Z", completedAt: "2026-10-11T10:00:01.000Z" }],
   };
 }
 
@@ -87,4 +117,58 @@ test("typing preserves the exercise frame", async ({ page }) => {
     expect(Math.abs(after.y - before!.y)).toBeLessThanOrEqual(2);
     expect(Math.abs(after.height - before!.height)).toBeLessThanOrEqual(2);
   }
+});
+
+test("written feedback keeps the material and primary action position", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installKidUiFixture(page, completedRecallFixture());
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+
+  const material = page.getByTestId("kid-material");
+  const materialBefore = await material.boundingBox();
+  const actionBefore = await page.getByTestId("kid-submit").boundingBox();
+  await page.getByTestId("kid-input").fill("cat");
+  await page.getByTestId("kid-submit").click();
+  await expect(page.getByTestId("kid-feedback")).toBeVisible();
+  const materialAfter = await material.boundingBox();
+  const actionAfter = await page.getByTestId("kid-next").boundingBox();
+
+  expect(materialBefore).not.toBeNull();
+  expect(materialAfter).not.toBeNull();
+  expect(actionBefore).not.toBeNull();
+  expect(actionAfter).not.toBeNull();
+  expect(Math.abs(materialAfter!.y - materialBefore!.y), "material top moved").toBeLessThanOrEqual(2);
+  expect(Math.abs(materialAfter!.height - materialBefore!.height),
+    `material height changed from ${materialBefore!.height} to ${materialAfter!.height}`).toBeLessThanOrEqual(2);
+  expect(Math.abs(actionAfter!.y - actionBefore!.y),
+    `primary action moved from ${actionBefore!.y} to ${actionAfter!.y}`).toBeLessThanOrEqual(2);
+});
+
+test("choice feedback keeps each option in place", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installKidUiFixture(page, completedReadingFixture());
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+
+  const options = page.getByTestId("kid-option");
+  await expect(options).toHaveCount(3);
+  const before = await options.evaluateAll((elements) => elements.map((element) => {
+    const { x, y, width, height } = element.getBoundingClientRect();
+    return { x, y, width, height };
+  }));
+  await options.first().click();
+  await expect(page.getByTestId("kid-feedback")).toContainText("Świetnie");
+  const after = await options.evaluateAll((elements) => elements.map((element) => {
+    const { x, y, width, height } = element.getBoundingClientRect();
+    return { x, y, width, height };
+  }));
+  expect(after).toHaveLength(before.length);
+  after.forEach((box, index) => {
+    expect(Math.abs(box.y - before[index]!.y), `option ${index} moved vertically`).toBeLessThanOrEqual(2);
+    expect(Math.abs(box.x - before[index]!.x), `option ${index} moved horizontally`).toBeLessThanOrEqual(2);
+  });
+  await expect(page.getByTestId("kid-next")).toBeInViewport();
 });

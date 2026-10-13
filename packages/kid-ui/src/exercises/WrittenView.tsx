@@ -50,9 +50,23 @@ export function WrittenView({ task, busy, recording, recordingPhase, microphoneR
               aria-label={messages.kid.typeWord}
             />
           </form>
+          {micAvailable && task.prompt.kind === "recall" && (
+            <SpeechRecordButton
+              phase={recordingPhase}
+              ready={microphoneReady}
+              disabled={busy}
+              level={inputLevel}
+              notice={recordingNotice}
+              mode={recordingMode}
+              onPrepare={handlers.onPrepareRecording}
+              onStart={handlers.onRecord}
+              onStop={handlers.onStopRecording}
+              onCancel={handlers.onCancelRecording}
+            />
+          )}
         </>
       )}
-      actions={<div className="kid-written-actions">
+      actions={(
         <button
           form={formId}
           type="submit"
@@ -62,21 +76,7 @@ export function WrittenView({ task, busy, recording, recordingPhase, microphoneR
         >
           {mockTest ? messages.kid.mockTestSubmit : messages.kid.check}
         </button>
-        {micAvailable && task.prompt.kind === "recall" && (
-          <SpeechRecordButton
-            phase={recordingPhase}
-            ready={microphoneReady}
-            disabled={busy}
-            level={inputLevel}
-            notice={recordingNotice}
-            mode={recordingMode}
-            onPrepare={handlers.onPrepareRecording}
-            onStart={handlers.onRecord}
-            onStop={handlers.onStopRecording}
-            onCancel={handlers.onCancelRecording}
-          />
-        )}
-      </div>}
+      )}
       secondaryActions={<div className="kid-secondary-actions">
         <button type="button" data-testid="kid-not-remember" disabled={disabled} onClick={handlers.onNotRemember}>
           {mockTest ? messages.kid.mockTestNotRemember : messages.kid.notRemember}

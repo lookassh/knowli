@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactElement } from "react";
 import { messages, type FeedbackDto } from "@learning/contracts";
 import { format } from "../format";
 import { describeSpeechFeedback } from "./speech-feedback-view";
@@ -23,7 +23,7 @@ const fragmentDescriptions = {
 } as const;
 
 /** Nie-modalna karta wyniku mowy, osadzona bezpośrednio pod bieżącym zadaniem. */
-export function SpeechFeedbackCard(props: SpeechFeedbackCardProps) {
+export function SpeechFeedbackContent(props: SpeechFeedbackCardProps): ReactElement {
   const view = describeSpeechFeedback(props.dto, props.exerciseType);
   const headingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
@@ -98,21 +98,41 @@ export function SpeechFeedbackCard(props: SpeechFeedbackCardProps) {
             {messages.kid.feedbackPlayReference}
           </button>
         )}
-        {props.retry ? (
-          <>
-            <button type="button" className="kid-primary" data-testid="kid-feedback-retry" disabled={props.busy} onClick={props.onRetry}>
-              {messages.kid.feedbackRecordAgain}
-            </button>
-            <button type="button" className="kid-secondary" data-testid="kid-feedback-skip" disabled={props.busy} onClick={props.onSkip}>
-              {messages.kid.skip}
-            </button>
-          </>
-        ) : (
-          <button type="button" className="kid-primary" data-testid="kid-next" disabled={props.busy} onClick={props.onNext}>
-            {messages.kid.feedbackNext}
-          </button>
-        )}
       </div>
     </section>
+  );
+}
+
+export function SpeechFeedbackActions(props: SpeechFeedbackCardProps): ReactElement {
+  return props.retry ? (
+    <button type="button" className="kid-primary" data-testid="kid-feedback-retry" disabled={props.busy} onClick={props.onRetry}>
+      {messages.kid.feedbackRecordAgain}
+    </button>
+  ) : (
+    <button type="button" className="kid-primary" data-testid="kid-next" disabled={props.busy} onClick={props.onNext}>
+      {messages.kid.feedbackNext}
+    </button>
+  );
+}
+
+export function SpeechFeedbackSecondaryActions(props: SpeechFeedbackCardProps): ReactElement | null {
+  if (!props.retry) return null;
+  return (
+    <button type="button" className="kid-flow-secondary" data-testid="kid-feedback-skip" disabled={props.busy} onClick={props.onSkip}>
+      {messages.kid.skip}
+    </button>
+  );
+}
+
+/** Zachowuje samodzielną kartę dla klientów spoza ekranu sesji. */
+export function SpeechFeedbackCard(props: SpeechFeedbackCardProps): ReactElement {
+  return (
+    <div className="kid-speech-feedback-layout">
+      <SpeechFeedbackContent {...props} />
+      <div className="kid-feedback-actions">
+        <SpeechFeedbackActions {...props} />
+        <SpeechFeedbackSecondaryActions {...props} />
+      </div>
+    </div>
   );
 }

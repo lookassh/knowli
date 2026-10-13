@@ -319,7 +319,8 @@ test("long exposure remains readable from the start of its scrollable material",
   await openTask(page, task);
 
   const material = page.getByTestId("kid-material");
-  await material.evaluate((element) => { element.scrollTop = 0; });
+  const materialContent = page.locator(".kid-material-content");
+  await materialContent.evaluate((element) => { element.scrollTop = 0; });
   const [materialBox, targetBox] = await Promise.all([
     material.boundingBox(),
     page.getByTestId("kid-target").boundingBox(),
@@ -327,7 +328,7 @@ test("long exposure remains readable from the start of its scrollable material",
   expect(materialBox).not.toBeNull();
   expect(targetBox).not.toBeNull();
   expect(targetBox!.y).toBeGreaterThanOrEqual(materialBox!.y);
-  await material.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  await materialContent.evaluate((element) => { element.scrollTop = element.scrollHeight; });
   const sourceBox = await page.getByTestId("kid-source").boundingBox();
   expect(sourceBox).not.toBeNull();
   expect(sourceBox!.y + sourceBox!.height).toBeLessThanOrEqual(materialBox!.y + materialBox!.height);
@@ -616,7 +617,7 @@ test("written feedback moves focus out of the answer field without opening a mod
   await input.focus();
   await page.getByTestId("kid-submit").click();
   const feedback = page.getByTestId("kid-feedback");
-  await expect(feedback).toContainText("Spróbuj jeszcze raz");
+  await expect(feedback).toContainText("Posłuchaj: cat. Poćwiczymy razem");
   await expect(feedback).not.toHaveJSProperty("open", true);
   await expect(page.getByTestId("kid-next")).toBeInViewport();
   expect(await page.evaluate(() => document.activeElement?.id)).toBe("kid-feedback-title");

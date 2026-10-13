@@ -41,5 +41,9 @@ export interface ExerciseProps {
   optionOutcomes: ReadonlyMap<string, OptionOutcome>;
   /** Wynik próby wyboru pozostaje w tej samej ramie co podświetlone odpowiedzi. */
   result?: ReactNode;
+  /** Główna akcja dostępna po wyniku próby; wynik sam pozostaje w material/result slot. */
+  resultActions?: ReactNode;
+  /** Rezerwuje stałą wysokość na krótki wynik także przed próbą. */
+  reserveResult?: boolean;
   handlers: ExerciseHandlers;
 }

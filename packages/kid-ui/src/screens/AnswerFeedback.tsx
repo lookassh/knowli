@@ -71,12 +71,12 @@ function AnswerSegments({ segments, label, testid }: {
   );
 }
 
-export function AnswerFeedback({ dto, retry, busy, onNext, onSkip }: AnswerFeedbackProps): ReactElement {
+export function AnswerFeedbackContent({ dto, busy }: Pick<AnswerFeedbackProps, "dto" | "busy">): ReactElement {
   const titleRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     // Moving focus off a written field dismisses the mobile keyboard without scrolling the page.
     titleRef.current?.focus({ preventScroll: true });
-  }, [dto, retry]);
+  }, [dto]);
 
   const feedback = dto ?? { kind: "not_assessed" as const };
   const lesson = lessonFeedbackView(dto);
@@ -169,17 +169,37 @@ export function AnswerFeedback({ dto, retry, busy, onNext, onSkip }: AnswerFeedb
           </div>
         )}
       </div>
-      <div className="kid-feedback-actions">
-        <button type="button" className="kid-primary" data-testid="kid-next" disabled={busy} onClick={onNext}>
-          {retry ? messages.kid.feedbackRetry : messages.kid.feedbackNext}
-        </button>
-        {/* `not_assessed` lekcji: brak winy dziecka — oferujemy też „Pomiń”. */}
-        {lesson?.technical === true && retry && onSkip !== undefined && (
-          <button type="button" className="kid-flow-secondary" data-testid="kid-lesson-skip" disabled={busy} onClick={onSkip}>
-            {messages.kid.skip}
-          </button>
-        )}
-      </div>
     </section>
+  );
+}
+
+export function AnswerFeedbackActions({ retry, busy, onNext }: Pick<AnswerFeedbackProps, "retry" | "busy" | "onNext">): ReactElement {
+  return (
+    <button type="button" className="kid-primary" data-testid="kid-next" disabled={busy} onClick={onNext}>
+      {retry ? messages.kid.feedbackRetry : messages.kid.feedbackNext}
+    </button>
+  );
+}
+
+export function AnswerFeedbackSecondaryActions({ dto, retry, busy, onSkip }: AnswerFeedbackProps): ReactElement | null {
+  const lesson = lessonFeedbackView(dto);
+  if (lesson?.technical !== true || !retry || onSkip === undefined) return null;
+  return (
+    <button type="button" className="kid-flow-secondary" data-testid="kid-lesson-skip" disabled={busy} onClick={onSkip}>
+      {messages.kid.skip}
+    </button>
+  );
+}
+
+/** Zachowuje samodzielny wariant karty dla klientów spoza ekranu sesji. */
+export function AnswerFeedback(props: AnswerFeedbackProps): ReactElement {
+  return (
+    <div className="kid-answer-feedback-layout">
+      <AnswerFeedbackContent dto={props.dto} busy={props.busy} />
+      <div className="kid-feedback-actions">
+        <AnswerFeedbackActions retry={props.retry} busy={props.busy} onNext={props.onNext} />
+        <AnswerFeedbackSecondaryActions {...props} />
+      </div>
+    </div>
   );
 }

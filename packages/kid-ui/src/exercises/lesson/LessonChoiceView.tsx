@@ -5,13 +5,14 @@ import type { ExerciseProps } from "../types";
  * Wybór (`lesson_choice`): zdanie z luką/pytaniem (`stem`) i opcje do wyboru;
  * dotknięcie opcji wysyła `choice`. Podświetlenie wyniku z feedbacku serwera.
  */
-export function LessonChoiceView({ task, busy, optionOutcomes, result, handlers }: ExerciseProps) {
+export function LessonChoiceView({ task, busy, optionOutcomes, result, resultActions, handlers }: ExerciseProps) {
   if (task.prompt.kind !== "lesson_choice") return null;
   return (
     <ExerciseFrame
       task={task}
-      content={<p className="kid-lesson-stem" data-testid="kid-lesson-stem">{task.prompt.stem}</p>}
-      actions={<ul className="kid-options">
+      content={<>
+      <p className="kid-lesson-stem" data-testid="kid-lesson-stem">{task.prompt.stem}</p>
+      <ul className="kid-options">
         {task.prompt.options.map((option) => {
           const outcome = optionOutcomes.get(option.id);
           return (
@@ -28,8 +29,11 @@ export function LessonChoiceView({ task, busy, optionOutcomes, result, handlers 
             </li>
           );
         })}
-      </ul>}
+      </ul>
+      </>}
+      actions={resultActions}
       result={result}
+      reserveResult
     />
   );
 }

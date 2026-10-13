@@ -4,10 +4,10 @@ import { ExerciseView } from "../exercises/ExerciseView";
 import type { ExerciseHandlers } from "../exercises/types";
 import { optionOutcomes, type OptionOutcome } from "../exercises/option-outcome";
 import { format } from "../format";
-import { AnswerFeedback } from "./AnswerFeedback";
+import { AnswerFeedbackActions, AnswerFeedbackContent, AnswerFeedbackSecondaryActions } from "./AnswerFeedback";
 import { ExerciseFrame } from "../exercises/ExerciseFrame";
 import { KidIcon } from "../components/KidIcon";
-import { SpeechFeedbackCard } from "./SpeechFeedbackCard";
+import { SpeechFeedbackActions, SpeechFeedbackContent, SpeechFeedbackSecondaryActions } from "./SpeechFeedbackCard";
 import type { LearningSessionController, LearningScreen as LearningScreenState } from "../session/session-controller";
 
 /** Brak podświetleń poza feedbackem próby wyboru. */
@@ -119,11 +119,19 @@ export function LearnScreen({
       ) : (
         task !== null && (
           <div className="kid-task">
-            {speechFeedback && feedback !== null ? (
+            {screen.reveal !== null ? (
+              <ExerciseFrame task={task} content={(
+                <section className="kid-card kid-reveal" data-testid="kid-reveal">
+                  <p>{messages.kid.revealTitle}</p>
+                  <p className="kid-word">{screen.reveal.target}</p>
+                </section>
+              )} actions={(<button type="button" className="kid-primary" data-testid="kid-next"
+                onClick={() => void controller.confirmReveal()}>{messages.kid.understand}</button>)} />
+            ) : speechFeedback && feedback !== null ? (
               <ExerciseFrame
                 task={task}
                 content={(
-                  <SpeechFeedbackCard
+                  <SpeechFeedbackContent
                     dto={feedback.dto}
                     retry={feedback.retry}
                     busy={busy || screen.processing}
@@ -136,19 +144,39 @@ export function LearnScreen({
                     onNext={() => void controller.continueLearning()}
                   />
                 )}
+                actions={<SpeechFeedbackActions
+                  dto={feedback.dto}
+                  retry={feedback.retry}
+                  busy={busy || screen.processing}
+                  audioAvailable={feedback.dto?.referenceAudioAvailable === true}
+                  audioError={feedback.audioError === true}
+                  exerciseType={task.exerciseType}
+                  onPlay={() => void controller.playFeedbackAudio()}
+                  onRetry={() => void controller.continueLearning()}
+                  onSkip={() => void controller.skip()}
+                  onNext={() => void controller.continueLearning()}
+                />}
+                secondaryActions={<SpeechFeedbackSecondaryActions
+                  dto={feedback.dto}
+                  retry={feedback.retry}
+                  busy={busy || screen.processing}
+                  audioAvailable={feedback.dto?.referenceAudioAvailable === true}
+                  audioError={feedback.audioError === true}
+                  exerciseType={task.exerciseType}
+                  onPlay={() => void controller.playFeedbackAudio()}
+                  onRetry={() => void controller.continueLearning()}
+                  onSkip={() => void controller.skip()}
+                  onNext={() => void controller.continueLearning()}
+                />}
               />
             ) : writtenFeedback && feedback !== null ? (
               <ExerciseFrame
                 task={task}
-                content={(
-                  <AnswerFeedback
-                    dto={feedback.dto}
-                    retry={feedback.retry}
-                    busy={busy}
-                    onNext={() => void controller.continueLearning()}
-                    onSkip={() => void controller.skip()}
-                  />
-                )}
+                content={<AnswerFeedbackContent dto={feedback.dto} busy={busy} />}
+                actions={<AnswerFeedbackActions retry={feedback.retry} busy={busy}
+                  onNext={() => void controller.continueLearning()} />}
+                secondaryActions={<AnswerFeedbackSecondaryActions dto={feedback.dto} retry={feedback.retry} busy={busy}
+                  onNext={() => void controller.continueLearning()} onSkip={() => void controller.skip()} />}
               />
             ) : (
               <ExerciseView
@@ -166,30 +194,17 @@ export function LearnScreen({
                 micAvailable={micAvailable}
                 mediaUrl={(assetId) => controller.mediaUrl(assetId)}
                 optionOutcomes={outcomes}
-                result={choiceFeedback && feedback !== null ? (
-                  <AnswerFeedback
-                    dto={feedback.dto}
-                    retry={feedback.retry}
-                    busy={busy}
-                    onNext={() => void controller.continueLearning()}
-                    onSkip={() => void controller.skip()}
-                  />
+                result={choiceFeedback && feedback !== null ? <AnswerFeedbackContent dto={feedback.dto} busy={busy} /> : undefined}
+                resultActions={choiceFeedback && feedback !== null ? (
+                  <AnswerFeedbackActions retry={feedback.retry} busy={busy}
+                    onNext={() => void controller.continueLearning()} />
                 ) : undefined}
+                reserveResult={choiceFeedback}
                 handlers={handlers}
               />
             )}
           </div>
         )
-      )}
-
-      {screen.reveal !== null && (
-        <section className="kid-card kid-reveal" data-testid="kid-reveal">
-          <p>{messages.kid.revealTitle}</p>
-          <p className="kid-word">{screen.reveal.target}</p>
-          <button type="button" className="kid-primary" data-testid="kid-next" onClick={() => void controller.confirmReveal()}>
-            {messages.kid.understand}
-          </button>
-        </section>
       )}
 
       {task === null && !offline && screen.error === null && (

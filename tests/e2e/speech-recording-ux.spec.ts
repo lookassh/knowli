@@ -327,6 +327,12 @@ test("speech feedback stays inline, explains fragments and exposes only the avai
 
   const input = page.getByTestId("kid-input");
   await input.fill("Thursday");
+  const submitFrameBounds = await page.getByTestId("kid-exercise").boundingBox();
+  const submitInstructionBounds = await page.getByTestId("kid-instruction").boundingBox();
+  const submitMaterialBounds = await page.getByTestId("kid-material").boundingBox();
+  const submitScrollY = await page.evaluate(() => window.scrollY);
+  const submitSlotBounds = await page.getByTestId("kid-primary-slot").boundingBox();
+  const submitBounds = await page.getByTestId("kid-submit").boundingBox();
   await page.getByTestId("kid-submit").click();
   const card = page.getByTestId("kid-speech-feedback");
   await expect(card).toBeVisible();
@@ -336,6 +342,34 @@ test("speech feedback stays inline, explains fragments and exposes only the avai
   await expect(page.getByRole("list", { name: "Legenda wymowy" })).toContainText("poćwicz go");
   await expect(page.locator("dialog")).toHaveCount(0);
   expect(await page.evaluate(() => document.activeElement?.id)).toBe("kid-speech-feedback-title");
+  const retryBounds = await page.getByTestId("kid-feedback-retry").boundingBox();
+  const retryFrameBounds = await page.getByTestId("kid-exercise").boundingBox();
+  const retryInstructionBounds = await page.getByTestId("kid-instruction").boundingBox();
+  const retryMaterialBounds = await page.getByTestId("kid-material").boundingBox();
+  const retryScrollY = await page.evaluate(() => window.scrollY);
+  const retrySlotBounds = await page.getByTestId("kid-primary-slot").boundingBox();
+  expect(submitSlotBounds).not.toBeNull();
+  expect(retrySlotBounds).not.toBeNull();
+  expect(submitFrameBounds).not.toBeNull();
+  expect(retryFrameBounds).not.toBeNull();
+  expect(submitInstructionBounds).not.toBeNull();
+  expect(retryInstructionBounds).not.toBeNull();
+  expect(submitMaterialBounds).not.toBeNull();
+  expect(retryMaterialBounds).not.toBeNull();
+  expect(Math.abs(retrySlotBounds!.y - submitSlotBounds!.y), "speech moved the primary action slot").toBeLessThanOrEqual(2);
+  for (const [name, before, after] of [
+    ["frame", submitFrameBounds!, retryFrameBounds!],
+    ["instruction", submitInstructionBounds!, retryInstructionBounds!],
+    ["material", submitMaterialBounds!, retryMaterialBounds!],
+  ] as const) {
+    expect(Math.abs(after.y - before.y), `speech moved ${name}`).toBeLessThanOrEqual(2);
+    expect(Math.abs(after.height - before.height), `speech changed ${name} height`).toBeLessThanOrEqual(2);
+  }
+  expect(retryScrollY).toBe(submitScrollY);
+  expect(submitBounds).not.toBeNull();
+  expect(retryBounds).not.toBeNull();
+  expect(Math.abs(retryBounds!.y - submitBounds!.y), "speech retry moved out of the primary action slot").toBeLessThanOrEqual(2);
+  expect(Math.abs(retryBounds!.width - submitBounds!.width), "speech retry changed the primary action width").toBeLessThanOrEqual(2);
 
   for (const selector of ["[data-testid='kid-play-reference']", "[data-testid='kid-feedback-skip']"]) {
     const button = page.locator(selector);

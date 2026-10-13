@@ -6,7 +6,7 @@ import type { ExerciseProps } from "../types";
  * bierze je z prezentacji), a dziecko wybiera jedną z krótkich opcji —
  * odpowiedź `choice`. Wynik podświetlany z feedbacku serwera.
  */
-export function LessonShortAnswerView({ task, busy, optionOutcomes, result, handlers }: ExerciseProps) {
+export function LessonShortAnswerView({ task, busy, optionOutcomes, result, resultActions, handlers }: ExerciseProps) {
   if (task.prompt.kind !== "lesson_short_answer") return null;
   return (
     <ExerciseFrame
@@ -29,7 +29,9 @@ export function LessonShortAnswerView({ task, busy, optionOutcomes, result, hand
           );
         })}
       </ul>}
+      actions={resultActions}
       result={result}
+      reserveResult
     />
   );
 }

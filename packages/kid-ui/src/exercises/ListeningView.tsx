@@ -8,7 +8,7 @@ import type { ExerciseProps } from "./types";
  * zapis nie jest widoczny przed odpowiedzią; ponowny odsłuch nie zdradza
  * polskiej odpowiedzi (§13.2).
  */
-export function ListeningView({ task, busy, optionOutcomes, result, handlers, mockTest }: ExerciseProps) {
+export function ListeningView({ task, busy, optionOutcomes, result, resultActions, handlers, mockTest }: ExerciseProps) {
   if (task.prompt.kind !== "listening") {
     return null;
   }
@@ -16,6 +16,7 @@ export function ListeningView({ task, busy, optionOutcomes, result, handlers, mo
     <ExerciseFrame
       task={task}
       content={(
+        <>
       <button
         type="button"
         className="kid-play-big"
@@ -26,30 +27,29 @@ export function ListeningView({ task, busy, optionOutcomes, result, handlers, mo
       >
         <KidIcon name="volume" />
       </button>
-      )}
-      actions={<ul className="kid-options">
+      <ul className="kid-options">
         {task.prompt.options.map((option) => {
           const outcome = optionOutcomes.get(option.id);
           return (
             <li key={option.id}>
-              <button
-                type="button"
-                data-testid="kid-option"
+              <button type="button" data-testid="kid-option"
                 className={outcome === undefined ? undefined : `kid-option--${outcome}`}
-                disabled={busy}
-                onClick={() => handlers.onAnswerChoice(option.id)}
-              >
+                disabled={busy} onClick={() => handlers.onAnswerChoice(option.id)}>
                 {option.text}
               </button>
             </li>
           );
         })}
-      </ul>}
+      </ul>
+      </>
+      )}
+      actions={resultActions}
       secondaryActions={mockTest && <div className="kid-secondary-actions">
         <button type="button" data-testid="kid-not-remember" disabled={busy} onClick={handlers.onNotRemember}>{messages.kid.mockTestNotRemember}</button>
         <button type="button" data-testid="kid-skip" disabled={busy} onClick={handlers.onSkip}>{messages.kid.skip}</button>
       </div>}
       result={result}
+      reserveResult
     />
   );
 }
