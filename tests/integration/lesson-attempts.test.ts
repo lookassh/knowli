@@ -6,10 +6,13 @@ import {
   createServices,
   deleteChild,
   endSession,
+  FakeAnswerGrader,
   fakeGraderDeps,
+  getLessonMockTestReport,
   listKidDecks,
   nextTask,
   readAttempt,
+  readLessonMockTestSummary,
   startSession,
   submitAttempt,
   authorizeDisclosure,
@@ -536,5 +539,122 @@ describe("delegacja ścieżki prób po rodzaju zestawu (zadanie 9 review minor)"
     const { services } = buildTestServices();
     const input: AttemptInput = { taskId: randomUUID(), clientAttemptId: randomUUID(), modality: "sequence", itemIds: [randomUUID()] };
     await expectAppError(submitAttempt(services, input), "not_found");
+  });
+});
+
+/**
+ * Review PR #51 — Grupa B (poprawki w lesson-attempts.ts): P1-3 CHECK przy
+ * nieocenionej odpowiedzi, P1-4 lesson_order liczony jako samodzielny, P1-5
+ * późna finalizacja modelu nadpisująca zamkniętą kartkówkę.
+ */
+describe("review P1-3: nieoceniona odpowiedź nie łamie CHECK (confirmationEligible=false)", () => {
+  it("odpowiedź niedopasowana bez gradera po przerwie ≥12h → zapis przechodzi, outcome unassessed", async () => {
+    // previousSessionContactAt > 12h wcześniej sprawiłby, że confirmationEligible
+    // policzyłby się na true. Bez gradera niedopasowany tekst → unevaluated
+    // (dbOutcome 'unassessed'). CHECK assessments_unassessed_no_score wymaga
+    // confirmation_eligible=false dla 'unassessed'; przed poprawką zapis rzucał 23514.
+    const { services, clock } = buildTestServices("2026-10-10T08:00:00.000Z");
+    const child = await createChild(services, { displayName: "Check", avatarKey: "owl" });
+    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, now: clock.now() });
+
+    // Sesja 1: dotknij celu (kontakt z celem), zakończ.
+    const s1 = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
+    const g1 = await issueUntil(services, s1.sessionId, "lesson_gap");
+    await submitAttempt(services, { taskId: g1.taskId, clientAttemptId: randomUUID(), modality: "text", text: "goes" });
+    await endSession(services, s1.sessionId);
+
+    // Przerwa ≥12h i inny dzień lokalny → confirmationEligible policzy się na true.
+    clock.advanceHours(26);
+
+    // Sesja 2: niedopasowany tekst bez gradera → unevaluated. Zapis MUSI przejść.
+    const s2 = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
+    const g2 = await issueUntil(services, s2.sessionId, "lesson_gap");
+    const attempt = await submitAttempt(services, { taskId: g2.taskId, clientAttemptId: randomUUID(), modality: "text", text: "completely wrong" });
+    expect(attempt.feedback?.kind).toBe("not_assessed");
+    expect(attempt.taskState).toBe("issued");
+
+    const rows = await assessmentsFor(child.id);
+    const unassessed = rows.find((r) => r.outcome === "unassessed");
+    expect(unassessed).toBeTruthy();
+    // Nieocenione jest neutralne: confirmation_eligible musi być false (inaczej CHECK).
+    const raw = await pool.query<{ confirmation_eligible: boolean }>(
+      `select a.confirmation_eligible from learning_app.assessments a where a.child_id = $1 and a.outcome = 'unassessed'`,
+      [child.id],
+    );
+    expect(raw.rows[0]!.confirmation_eligible).toBe(false);
+  });
+});
+
+describe("review P1-4: lesson_order prowadzony (klocki ujawnione) → zależne", () => {
+  it("pierwsze poprawne ułożenie sekwencji → assessment independent=false, seria nie rośnie", async () => {
+    const { services, clock } = buildTestServices();
+    const { child, session } = await newLesson(services, clock);
+    const order = await issueUntil(services, session.sessionId, "lesson_order");
+    const key = await answerKeyOf(order.taskId);
+    const attempt = await submitAttempt(services, {
+      taskId: order.taskId,
+      clientAttemptId: randomUUID(),
+      modality: "sequence",
+      itemIds: key.itemIds as string[],
+    });
+    expect(attempt.feedback?.kind).toBe("great");
+
+    const rows = await pool.query<{ independent: boolean; exercise_type: string }>(
+      `select a.independent, st.exercise_type from learning_app.assessments a
+         join learning_app.attempts at on at.id = a.attempt_id
+         join learning_app.session_tasks st on st.id = at.task_id
+        where a.child_id = $1 and a.outcome = 'correct' and st.exercise_type = 'lesson_order'`,
+      [child.id],
+    );
+    expect(rows.rows[0]).toBeTruthy();
+    // Klocki (segmenty) podane dziecku = prowadzenie → nie liczy się jako niezależne.
+    expect(rows.rows[0]!.independent).toBe(false);
+  });
+});
+
+describe("review P1-5: późna finalizacja modelu nie nadpisuje zamkniętej kartkówki", () => {
+  it("endSession przed powrotem gradera → raport niezmieniony, omówienie zgodne (brak późnego correct)", async () => {
+    // Fake grader z opóźnieniem: faza 1 rezerwuje próbę `processing`, grader śpi;
+    // w tym czasie endSession utrwala NIEZMIENNY raport (slot unassessed); powrót
+    // gradera (faza 2) NIE może dopisać correct ani zmienić zadania/projekcji.
+    const grader = new FakeAnswerGrader();
+    grader.onDefault({ raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok" }, delayMs: 400 });
+    const { services, clock } = buildTestServices();
+    const withGrader = createServices({
+      db: (services as unknown as { db: Parameters<typeof createServices>[0]["db"] }).db,
+      clock,
+      grader: { provider: grader, maxCallsPerSession: 20, timeoutMs: 8000 },
+    });
+    const child = await createChild(withGrader, { displayName: "Race", avatarKey: "owl" });
+    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, testDate: "2026-10-20" });
+    const session = await startSession(withGrader, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false, mode: "mock_test" });
+
+    // Doprowadź do slotu tekstowego (gap/transform), odpowiedz niedopasowanym
+    // tekstem → eskalacja do modelu (verdict unavailable deterministycznie).
+    let task: TaskDto | null = null;
+    for (let i = 0; i < 20; i++) {
+      const t = await nextTask(withGrader, session.sessionId);
+      if (!t) break;
+      if (t.exerciseType === "lesson_gap" || t.exerciseType === "lesson_transform") { task = t; break; }
+      await submitAttempt(withGrader, { taskId: t.taskId, clientAttemptId: randomUUID(), modality: "skip" });
+    }
+    expect(task).not.toBeNull();
+
+    // Uruchom próbę (model odpowie po 400 ms); NIE czekaj — w międzyczasie zamknij.
+    const pending = submitAttempt(withGrader, { taskId: task!.taskId, clientAttemptId: randomUUID(), modality: "text", text: "almost correct answer" });
+    // Daj fazie 1 utrwalić `processing` zanim zamkniemy sesję.
+    await new Promise((r) => setTimeout(r, 80));
+    await endSession(withGrader, session.sessionId); // utrwala raport (slot unassessed)
+    await pending; // faza 2 wraca po zamknięciu
+
+    // Raport rodzica NIEZMIENIONY: żaden correct nie wszedł.
+    clock.advanceMs(11 * 60_000);
+    const report = await getLessonMockTestReport(withGrader, session.sessionId);
+    expect(report.objectives.reduce((s, o) => s + o.correct, 0)).toBe(0);
+
+    // Omówienie dziecka zgodne z utrwalonym raportem (brak późnego correct).
+    const summary = await readLessonMockTestSummary(withGrader, session.sessionId);
+    const answered = summary.solutions.find((sl) => sl.taskId === task!.taskId);
+    expect(answered?.outcome).not.toBe("correct");
   });
 });

@@ -1001,7 +1001,31 @@ async function finalizeGradedAttempt(
   args: GradedFinalizeArgs,
 ): Promise<AttemptDto> {
   const { task, itemId, policy, key, frozen, receivedAt } = start;
-  const mockTest = start.session.mode === "mock_test";
+
+  // Faza 2 MUSI działać pod TĄ SAMĄ wspólną blokadą sesji co faza 1 / endSession:
+  // bez niej drugi klient mógł w międzyczasie zamknąć sesję (np. kartkówkę) i
+  // utrwalić NIEZMIENNY raport, a spóźniony werdykt rozjechałby omówienie dziecka
+  // z raportem rodzica. Blokada ustawia wspólną kolejność; po niej odczytujemy
+  // aktualny stan próby i sesji.
+  const { session: freshSession } = await lockTaskWithSession(tx, task.id);
+  const reserved = (await tx.select().from(attempts).where(eq(attempts.id, attemptId)))[0];
+  const mockTest = freshSession.mode === "mock_test";
+
+  // Sesja już zamknięta (raport utrwalony) albo próba już sfinalizowana (leniwa
+  // finalizacja / inny klient): NIE zapisujemy oceny, nie zmieniamy projekcji ani
+  // zadania. Domykamy zarezerwowaną próbę jako nieocenioną (bez wpisu assessment,
+  // bez feedbacku) i zwracamy bieżący stan zgodny z utrwalonym raportem.
+  if (freshSession.state !== "active" || !reserved || reserved.state !== "processing") {
+    if (reserved && reserved.state === "processing") {
+      await tx
+        .update(attempts)
+        .set({ state: "completed", completedAt: receivedAt, feedback: { kind: "not_assessed" } as unknown as Record<string, unknown> })
+        .where(and(eq(attempts.id, attemptId), eq(attempts.state, "processing")));
+    }
+    const current = (await tx.select().from(attempts).where(eq(attempts.id, attemptId)))[0]!;
+    const freshTask = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, task.id)))[0]!;
+    return dtoOf(current, freshTask.state);
+  }
 
   // Zapis werdyktu do cache i odczyt wiersza (zbieżność równoległych odpowiedzi).
   let effectiveVerdict: GraderVerdict | null = args.verdict;
