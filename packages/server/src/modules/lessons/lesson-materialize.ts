@@ -3,6 +3,7 @@ import type { TaskPrompt } from "@learning/contracts";
 import { AppError } from "../../errors";
 import { computeTargetKey } from "../../domain/target-key";
 import { renderCard } from "../../domain/lessons/card";
+import { answersEquivalent } from "../../domain/lessons/pool-validation";
 import type { LearningObjective, LessonExerciseType, LessonTopic, SubjectModule } from "../../domain/lessons/types";
 import type { LessonTaskPlan } from "../../domain/lessons/scheduler";
 
@@ -152,7 +153,14 @@ export function materializeExercise(
     case "lesson_notice": {
       const segments = (payload.noticeSegments ?? []).map((sentence) => sentence.map((text) => ({ id: randomUUID(), text })));
       const flat = segments.flat();
-      const correct = flat.find((s) => s.text === payload.correctOption);
+      // `correctOption` to TEKST słowa; zrównany z segmentem normalizatorem
+      // przedmiotu — spójnie z `validateNotice` (dowolny wariant, np. inna
+      // wielkość liter). Materializacja nie zna angielskiego: normalizator
+      // pochodzi z `SubjectModule`.
+      const correct =
+        payload.correctOption === undefined
+          ? undefined
+          : flat.find((s) => answersEquivalent(s.text, payload.correctOption!, subject.normalizer));
       const prompt: TaskPrompt = {
         kind: "lesson_notice",
         instructionPl,
@@ -166,7 +174,10 @@ export function materializeExercise(
       };
     }
     case "lesson_choice": {
-      const options = seededShuffle((payload.options ?? []).map((o) => ({ id: randomUUID(), text: o.text, correct: o.text === payload.correctOption })), taskId);
+      // `correctOption` to ID opcji ŹRÓDŁOWEJ (kontrakt pool-validation:
+      // `options.some(o => o.id === correctOption)`). Nadajemy nowe UUID, więc
+      // poprawność wyznaczamy po ID źródłowym PRZED podmianą, nie po tekście.
+      const options = seededShuffle((payload.options ?? []).map((o) => ({ id: randomUUID(), text: o.text, correct: o.id === payload.correctOption })), taskId);
       const correct = options.find((o) => o.correct);
       const prompt: TaskPrompt = {
         kind: "lesson_choice",
@@ -182,7 +193,8 @@ export function materializeExercise(
       };
     }
     case "lesson_short_answer": {
-      const options = seededShuffle((payload.options ?? []).map((o) => ({ id: randomUUID(), text: o.text, correct: o.text === payload.correctOption })), taskId);
+      // Jak w lesson_choice: `correctOption` = ID opcji źródłowej, nie tekst.
+      const options = seededShuffle((payload.options ?? []).map((o) => ({ id: randomUUID(), text: o.text, correct: o.id === payload.correctOption })), taskId);
       const correct = options.find((o) => o.correct);
       const prompt: TaskPrompt = {
         kind: "lesson_short_answer",

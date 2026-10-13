@@ -72,8 +72,13 @@ function variantKeys(text: string, normalizer: AnswerNormalizer): Set<string> {
   return keys;
 }
 
-/** Czy dwa teksty mają wspólny wariant normalizacji (równoważne odpowiedzi). */
-function answersEquivalent(a: string, b: string, normalizer: AnswerNormalizer): boolean {
+/**
+ * Czy dwa teksty mają wspólny wariant normalizacji (równoważne odpowiedzi).
+ * Eksportowane, by materializacja (`modules/lessons/lesson-materialize.ts`)
+ * dopasowywała `correctOption` segmentu `lesson_notice` DOKŁADNIE tak samo jak
+ * walidator (`validateNotice`) — jedna semantyka równoważności, bez duplikatu.
+ */
+export function answersEquivalent(a: string, b: string, normalizer: AnswerNormalizer): boolean {
   const keysB = variantKeys(b, normalizer);
   for (const key of variantKeys(a, normalizer)) {
     if (keysB.has(key)) {
