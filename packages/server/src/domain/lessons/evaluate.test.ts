@@ -195,9 +195,10 @@ describe("validateVerdict — walidacja werdyktu modelu (Zod)", () => {
     expect(validateVerdict({ verdict: "incorrect", errorCategory: "other", fragments: [""], note: "" }, ctx)).toBeNull();
   });
 
-  it("almost z kategorią celu dozwolone (almost zalicza, może mieć fragmenty)", () => {
+  it("almost z kategorią celu jest WERDYKTEM POPRAWNYM pod względem kształtu (walidacja go nie odrzuca; ocenę rozstrzyga gradeFromVerdict)", () => {
     const v = validateVerdict({ verdict: "almost", errorCategory: "missing_ending", fragments: ["play"], note: "" }, ctx);
     expect(v).not.toBeNull();
+    expect(v?.errorCategory).toBe("missing_ending");
   });
 });
 
@@ -224,11 +225,27 @@ describe("gradeFromMatch / gradeFromVerdict — mapowanie na ocenę celu (tabela
     });
   });
 
-  it("werdykt almost → correct/model_almost", () => {
+  it("werdykt almost bez kategorii (błąd poza celem / drobna nieścisłość) → correct/model_almost", () => {
     expect(gradeFromVerdict({ verdict: "almost", errorCategory: null, fragments: [], note: "" })).toEqual({
       outcome: "correct",
       verdict: "model_almost",
     });
+  });
+
+  it("werdykt almost z kategorią other (błąd poza sprawdzanym elementem) → nadal correct/model_almost", () => {
+    expect(gradeFromVerdict({ verdict: "almost", errorCategory: "other", fragments: ["play"], note: "" })).toEqual({
+      outcome: "correct",
+      verdict: "model_almost",
+    });
+  });
+
+  it("werdykt almost z kategorią celu (błąd DOTYCZY sprawdzanej reguły) → NIE zalicza (incorrect/model_incorrect + errorCategory)", () => {
+    // 'he play' almost+missing_ending: model stwierdza brak sprawdzanej końcówki.
+    // Spójne z tolerancją literówki (literówka nie może dotyczyć focusa) — tu też
+    // błąd na sprawdzanym elemencie nie może dać sukcesu reguły (wymóg 6.4/6.9).
+    expect(
+      gradeFromVerdict({ verdict: "almost", errorCategory: "missing_ending", fragments: ["play"], note: "" }),
+    ).toEqual({ outcome: "incorrect", verdict: "model_incorrect", errorCategory: "missing_ending" });
   });
 
   it("werdykt incorrect z kategorią celu → incorrect/model_incorrect + errorCategory", () => {

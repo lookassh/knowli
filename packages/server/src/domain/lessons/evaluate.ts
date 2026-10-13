@@ -291,6 +291,15 @@ export function gradeFromVerdict(verdict: GraderVerdict | null): ObjectiveGrade 
     case "correct":
       return { outcome: "correct", verdict: "model_correct" };
     case "almost":
+      // `almost` zalicza regułę TYLKO gdy błąd NIE dotyczy sprawdzanego
+      // elementu — spójnie z tolerancją literówki (literówka nie może dotyczyć
+      // focusa). Niepusta kategoria celu (≠ other) znaczy, że model stwierdził
+      // błąd na sprawdzanej regule (np. 'he play' + missing_ending): to NIE jest
+      // sukces reguły, lecz błąd celu (wymóg 6.4/6.9). `null`/`other` → błąd
+      // poza celem lub drobna nieścisłość: dalej liczy się jako sukces.
+      if (verdict.errorCategory !== null && verdict.errorCategory !== "other") {
+        return { outcome: "incorrect", verdict: "model_incorrect", errorCategory: verdict.errorCategory };
+      }
       return { outcome: "correct", verdict: "model_almost" };
     case "incorrect":
       if (verdict.errorCategory !== null && verdict.errorCategory !== "other") {
