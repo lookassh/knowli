@@ -11,6 +11,9 @@ import {
   completePresentation,
   submitAttempt,
   FakeAnswerGrader,
+  createDatabase,
+  executeLessonGeneration,
+  readLessonDeck,
   type Services,
 } from "@learning/server";
 import {
@@ -20,7 +23,7 @@ import {
   TaskPromptSchema,
   type LessonExerciseInput,
 } from "@learning/contracts";
-import { testDatabase, truncateCoreTables } from "./helpers";
+import { testDatabase, testDatabaseUrl, truncateCoreTables } from "./helpers";
 import { ManualClock } from "./helpers";
 import { fakeGeneration, type FakeGeneration } from "./fakes";
 import { handleParentApi } from "../../apps/web/src/parent/parent-router";
@@ -243,6 +246,50 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
     expect(a).toEqual(b);
     const count = await pool.query("select count(*)::int as c from learning_app.decks");
     expect(count.rows[0]!.c).toBe(1);
+  });
+
+  it("odczyt w trakcie commita generacji nie zwraca succeeded z pustym szkicem", async () => {
+    const fakes = await fakeGeneration(); disposers.push(fakes.dispose);
+    const { services, cookie } = await freshParent(fakes);
+    const created = await call(services, "POST", "lessons", { body: lessonBody(), cookie });
+    const { runId, deckId } = await created.json() as { runId: string; deckId: string };
+    const isolated = createDatabase(testDatabaseUrl());
+    let enter!: () => void, release!: () => void;
+    const entered = new Promise<void>((resolve) => { enter = resolve; });
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    let paused = false;
+    isolated.pool.on("connect", (client) => {
+      const original = client.query.bind(client) as (...values: unknown[]) => unknown;
+      client.query = ((...args: unknown[]) => {
+        const sql = typeof args[0] === "string" ? args[0] : (args[0] as { text?: string })?.text ?? "";
+        const stop = !paused && /^select/i.test(sql) && sql.includes('from "learning_app"."item_revisions"');
+        if (stop) paused = true;
+        const callback = args[args.length - 1];
+        if (typeof callback === "function") {
+          return original(...args.slice(0, -1), (error: unknown, result: unknown) => {
+            if (stop) { enter(); void released.then(() => callback(error, result)); }
+            else callback(error, result);
+          });
+        }
+        return Promise.resolve(original(...args)).then(async (result) => {
+          if (stop) { enter(); await released; }
+          return result;
+        });
+      }) as typeof client.query;
+    });
+    const reader = createServices({ db: isolated.db, clock: services.clock, media: fakes.settings, generation: fakes.deps });
+    const reading = readLessonDeck(reader, deckId);
+    await entered;
+    try {
+      await executeLessonGeneration(services, runId);
+      release();
+      const snapshot = await reading;
+      expect(snapshot.generation?.state).toBe("queued");
+      expect(snapshot.draft?.exercises).toEqual([]);
+      const fresh = await readLessonDeck(services, deckId);
+      expect(fresh.generation?.state).toBe("succeeded");
+      expect(fresh.draft?.exercises.length).toBeGreaterThan(0);
+    } finally { release(); await reading; await isolated.pool.end(); }
   });
 
   it("odczyt szkicu po wygenerowaniu: pokrycie, odrzucone, run i przypisania", async () => {

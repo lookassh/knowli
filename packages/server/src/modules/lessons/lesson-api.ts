@@ -273,7 +273,13 @@ async function lessonAssignments(db: Executor, deckId: string): Promise<Assignme
  */
 export async function readLessonDeck(services: Services, deckId: string): Promise<LessonDeckDto> {
   const id = z.uuid().parse(deckId);
-  const deck = (await services.db.select().from(decks).where(eq(decks.id, id)))[0];
+  // Stan runu i zawartość szkicu muszą pochodzić z jednej migawki. Inaczej
+  // polling może zobaczyć succeeded z pustą pulą i przestać odświeżać edytor.
+  return services.db.transaction((tx) => readLessonDeckSnapshot(tx, services, id), { isolationLevel: "repeatable read", accessMode: "read only" });
+}
+
+async function readLessonDeckSnapshot(db: Executor, services: Services, id: string): Promise<LessonDeckDto> {
+  const deck = (await db.select().from(decks).where(eq(decks.id, id)))[0];
   if (!deck) {
     throw new AppError("not_found");
   }
@@ -281,7 +287,7 @@ export async function readLessonDeck(services: Services, deckId: string): Promis
     throw new AppError("deck_kind_mismatch", { message: "nie jest zestawem lekcji" });
   }
   const editable = (
-    await services.db
+    await db
       .select({ id: deckVersions.id })
       .from(deckVersions)
       .where(and(eq(deckVersions.deckId, id), inArray(deckVersions.state, ["draft", "review"])))
@@ -290,7 +296,7 @@ export async function readLessonDeck(services: Services, deckId: string): Promis
   const state: LessonDeckDto["state"] = deck.archivedAt
     ? "archived"
     : editable
-      ? ((await services.db.select({ state: deckVersions.state }).from(deckVersions).where(eq(deckVersions.id, editable.id)))[0]!.state as "draft" | "review")
+      ? ((await db.select({ state: deckVersions.state }).from(deckVersions).where(eq(deckVersions.id, editable.id)))[0]!.state as "draft" | "review")
       : publishedVersionId
         ? "published"
         : "draft";
@@ -298,10 +304,10 @@ export async function readLessonDeck(services: Services, deckId: string): Promis
     id: deck.id,
     title: deck.title,
     state,
-    draft: editable ? await readLessonDraftDto(services.db, services, editable.id) : null,
-    published: publishedVersionId ? await readLessonDraftDto(services.db, services, publishedVersionId) : null,
-    generation: editable ? await latestLessonRun(services.db, editable.id) : null,
-    assignments: await lessonAssignments(services.db, id),
+    draft: editable ? await readLessonDraftDto(db, services, editable.id) : null,
+    published: publishedVersionId ? await readLessonDraftDto(db, services, publishedVersionId) : null,
+    generation: editable ? await latestLessonRun(db, editable.id) : null,
+    assignments: await lessonAssignments(db, id),
     // Wymaganie 10.1: provider oceny dowolnych odpowiedzi (nazwa modelu z
     // konfiguracji, bez sekretów). `available=false` steruje komunikatem rodzica.
     grading: services.grader ? { available: true, model: services.grader.provider.model } : { available: false },
