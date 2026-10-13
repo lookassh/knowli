@@ -136,7 +136,7 @@ Interfejsy ustalone dla wykonania:
 - [x] Zastosować `receiving-code-review`; rozwiązać Critical/Important i potwierdzić RED→GREEN dla poprawek zachowania. Uporządkowano checklistę i skorygowano Minor o screenshotach; final re-review potwierdziło brak otwartych uwag.
 - [x] Użyć `verification-before-completion`; sprawdzić wszystkie kryteria, `git diff --check` i dziennik. Unit/typecheck/build, test regresji, pełny E2E oraz diff check przeszły.
 - [x] Odbiór fizycznego Galaxy S25 niezweryfikowany: w tym środowisku brak urządzenia i rzeczywistej klawiatury Androida; przeglądarka emulowana nie potwierdza odbioru telefonu.
-- [ ] Po czystym niezależnym review użyć `finishing-a-development-branch`, wypchnąć gałąź roboczą i utworzyć PR do `main`; dołączyć PR do zadania. Pełne testy i review są zielone. Scala właściciel przez Squash and merge. Nie scalać i nie pushować do `main`.
+- [x] Po czystym niezależnym review użyć `finishing-a-development-branch`, wypchnąć gałąź roboczą i utworzyć PR do `main`; PR #57: https://github.com/lookassh/knowli/pull/57. PR dołączono do zadania. Pełne testy i review są zielone. Scala właściciel przez Squash and merge. Nie scalać i nie pushować do `main`.
 
 ## Checklista planowania — wykonana
 
