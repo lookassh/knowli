@@ -25,7 +25,7 @@ import {
 } from "./lesson-editor-state";
 
 /** Pola payloadu edytowalne per typ ćwiczenia (reszta jest tylko do odczytu dla danego typu). */
-const STEM_LABEL_TYPES = new Set(["lesson_choice", "lesson_short_answer", "lesson_gap"]);
+const STEM_LABEL_TYPES = new Set(["lesson_choice", "lesson_gap"]);
 
 /** Czy zapisany werdykt dowolnych odpowiedzi jest wyłączony (brak modelu oceniającego). */
 function gradingDisabled(deck: LessonDeckDto | null): boolean {
@@ -276,13 +276,16 @@ export default function LessonEditor({
   };
 
   const retry = async () => {
-    if (!deck?.generation) return;
+    if (!deck?.generation || busyRef.current || dirty.current || conflict) return;
+    setBusyState(true);
     setError(null);
     try {
       await apiFetch("POST", `/api/v1/parent/generation/${deck.generation.id}/retry`);
       await load();
     } catch (cause) {
       setError(errorMessage(cause));
+    } finally {
+      setBusyState(false);
     }
   };
 
@@ -348,7 +351,12 @@ export default function LessonEditor({
         {deck?.state === "published" && <span className="badge ok" data-testid="publish-status">{messages.decks.published}</span>}
       </div>
 
-      {generating && <p className="info" data-testid="generation-banner">{messages.lessons.generating}</p>}
+      {generating && <div className="info" data-testid="generation-banner">
+        <p>{messages.lessons.generating}</p>
+        {deck?.generation?.state === "running" && <p>{messages.lessons.stalledGenerationHint}{" "}
+          <button type="button" data-testid="retry-stalled-generation" disabled={busy || isDirty || conflict} onClick={retry}>{messages.lessons.retryGeneration}</button>
+        </p>}
+      </div>}
       {deck?.generation?.state === "failed" && (
         <p className="error" data-testid="generation-failed">
           {messages.lessons.generationFailed}{" "}
@@ -385,7 +393,7 @@ export default function LessonEditor({
 
       {/* Karty wyjaśnienia: tekst reguły z katalogu (read-only); przykłady AI
           rodzic może poprawić przed publikacją (wym. 3.3). */}
-      {active && Object.keys(examples).length > 0 && (
+      {active && active.objectiveIds.length > 0 && (
         <section className="card" data-testid="lesson-examples">
           <h3>{messages.lessons.examplesTitle}</h3>
           <p className="muted">{messages.lessons.exampleHint}</p>
@@ -420,6 +428,8 @@ export default function LessonEditor({
                   ))}
                 </ul>
               )}
+              {editable && <button type="button" data-testid={`example-add-${objectiveId}`} disabled={busy || (examples[objectiveId]?.length ?? 0) >= 3}
+                onClick={() => mutateExampleLine(objectiveId, examples[objectiveId]?.length ?? 0, "")}>{messages.lessons.addExample}</button>}
             </div>
           ))}
         </section>
@@ -474,10 +484,10 @@ export default function LessonEditor({
                             onChange={(e) => mutateExercise(ex.clientKey, { statement: e.target.value })} />
                         </label>
                       )}
-                      {ex.exerciseType === "lesson_open_answer" && (
+                      {(ex.exerciseType === "lesson_open_answer" || ex.exerciseType === "lesson_short_answer") && (
                         <label>
                           {messages.lessons.exercisePromptLabel}
-                          <input data-testid={`exercise-prompt-${index}`} value={ex.prompt} disabled={!editable || busy}
+                          <input data-testid={`exercise-prompt-${index}`} value={ex.prompt || (ex.exerciseType === "lesson_short_answer" ? ex.stem : "")} disabled={!editable || busy}
                             onChange={(e) => mutateExercise(ex.clientKey, { prompt: e.target.value })} />
                         </label>
                       )}
@@ -524,7 +534,7 @@ export default function LessonEditor({
 
                       <label>
                         {messages.lessons.exerciseAcceptedLabel}
-                        <input data-testid={`exercise-accepted-${index}`} value={ex.acceptedText} disabled={!editable || busy}
+                        <textarea data-testid={`exercise-accepted-${index}`} value={ex.acceptedText} disabled={!editable || busy}
                           onChange={(e) => mutateExercise(ex.clientKey, { acceptedText: e.target.value })} />
                       </label>
                       <label>

@@ -19,7 +19,7 @@ async function enterParent(page: Page): Promise<void> {
   await page.getByTestId("tab-decks").click();
 }
 
-async function createLesson(page: Page, title: string): Promise<string> {
+async function createLesson(page: Page, title: string, waitForGeneration = true): Promise<string> {
   await page.getByTestId("new-lesson-submit").click();
   await expect(page.getByTestId("new-lesson-form")).toBeVisible();
   // Katalog ma english_grammar → present_simple z regułami zaznaczonymi domyślnie.
@@ -49,6 +49,7 @@ async function createLesson(page: Page, title: string): Promise<string> {
   const deck = (await (await created).json()) as { deckId: string };
   // Po utworzeniu wchodzimy do edytora i czekamy na koniec generowania (polling).
   await expect(page.getByTestId("lesson-editor")).toBeVisible();
+  if (!waitForGeneration) return deck.deckId;
   await expect(page.getByTestId("generation-banner")).toBeHidden({ timeout: 120_000 });
   await expect(page.locator('[data-testid^="objective-group-"]').first()).toBeVisible({ timeout: 120_000 });
   await expect(page.locator('[data-testid^="exercise-"]').first()).toBeVisible({ timeout: 120_000 });
@@ -63,6 +64,16 @@ test("defaults the pool size to max(60, 12 × selected objectives)", async ({ pa
   await enterParent(page);
   await page.getByTestId("new-lesson-submit").click();
   await expect(page.getByTestId("lesson-pool-size")).toHaveValue("60");
+});
+
+test("parent can safely restart a running lesson generation", async ({ page }) => {
+  await enterParent(page);
+  await createLesson(page, `Restart ${randomUUID().slice(0, 8)}`, false);
+  const retry = page.getByTestId("retry-stalled-generation");
+  await expect(retry).toBeVisible();
+  await retry.click();
+  await expect(page.getByTestId("generation-banner")).toBeHidden({ timeout: 120_000 });
+  await expect(page.locator('[data-testid^="objective-group-"]').first()).toBeVisible();
 });
 
 test("creates a lesson, reviews it grouped by objective and stage, fixes a validation error, saves, closes coverage and publishes", async ({ page, request }) => {
@@ -224,6 +235,11 @@ test("parent edits an AI example before publishing: change is sent in PATCH.exam
   const corrected = `He plays football every day. ${randomUUID().slice(0, 6)}`;
   await exampleInput.fill(corrected);
   await expect(previews.last()).toContainText(corrected);
+  await expect(page.getByTestId(`example-add-${objectiveId}`)).toBeVisible();
+  await page.getByTestId(`example-add-${objectiveId}`).click();
+  const added = "We work, and we learn.";
+  await page.getByTestId(`example-line-${objectiveId}-1`).fill(added);
+  await expect(previews.last()).toContainText(added);
 
   // Zapis wysyła poprawione przykłady w PATCH.examples.
   const patchPromise = page.waitForRequest(
@@ -234,6 +250,7 @@ test("parent edits an AI example before publishing: change is sent in PATCH.exam
   const body = JSON.parse(patch.postData() ?? "{}") as { examples?: Record<string, string[]> };
   expect(body.examples).toBeTruthy();
   expect(body.examples![objectiveId]).toContain(corrected);
+  expect(body.examples![objectiveId]).toContain(added);
 
   // Przeładowanie edytora pokazuje poprawioną treść przykładu (trwałość).
   // Wejście od nowa (jak w teście konfliktu): najnowsza lekcja jest pierwsza.

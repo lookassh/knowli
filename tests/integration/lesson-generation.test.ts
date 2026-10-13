@@ -11,12 +11,14 @@ import {
   readGeneration,
   regenerateObjective,
   runDueGenerationWork,
+  retryGeneration,
   type Services,
 } from "@learning/server";
 import type { LessonCommand } from "@learning/contracts";
 import { countRows, testDatabase, testDatabaseUrl } from "./helpers";
 import { ManualClock } from "./helpers";
 import { fakeGeneration, FakeLlmProvider, type FakeGeneration } from "./fakes";
+import { claimQueuedRun } from "../../packages/server/src/modules/generation";
 
 const { pool } = testDatabase();
 
@@ -225,6 +227,7 @@ describe("generowanie puli lekcji (integracja)", () => {
           exerciseType: "lesson_choice",
           objectiveId,
           instructionPl: "Wybierz.",
+          stem: "She ___ football.",
           answer: "plays",
           acceptedAnswers: [],
           focus: [],
@@ -238,6 +241,7 @@ describe("generowanie puli lekcji (integracja)", () => {
           exerciseType: "lesson_choice",
           objectiveId,
           instructionPl: "Wybierz.",
+          stem: "She ___ TV.",
           answer: "watches",
           acceptedAnswers: [],
           focus: [],
@@ -266,6 +270,67 @@ describe("generowanie puli lekcji (integracja)", () => {
       [versionId],
     );
     expect(rows.map((r) => r.answer)).toEqual(["plays"]); // tylko poprawne zapisane
+  });
+
+  it("odrzuca wadliwe przykłady, zachowując prawidłowe przykłady i ćwiczenia", async () => {
+    const fakes = await fakeGeneration(); disposers.push(fakes.dispose);
+    const services = lessonServices(fakes);
+    const generate = fakes.llm.generateLessonPool.bind(fakes.llm);
+    const objective = "english_grammar.present_simple.third_person_s";
+    fakes.llm.generateLessonPool = async (...args) => ({ ...await generate(...args), examples: {
+      [objective]: ["He plays.", null, " ", "x".repeat(121)], unknown: ["Wrong objective."],
+    } as unknown as Record<string, string[]> });
+    const { runId } = await createLesson(services, command());
+    await executeLessonGeneration(services, runId);
+    const run = await readGeneration(services, runId);
+    expect(run.state).toBe("succeeded");
+    const [row] = await query<{ lesson_context: { examples: Record<string, string[]> } }>("select lesson_context from learning_app.deck_versions where id=$1", [run.deckVersionId]);
+    expect(row!.lesson_context.examples).toEqual({ [objective]: ["He plays."] });
+  });
+
+  it("wznawia run po przerwaniu workera już po claimie", async () => {
+    const fakes = await fakeGeneration(); disposers.push(fakes.dispose);
+    const services = lessonServices(fakes);
+    const { runId } = await createLesson(services, command());
+    await claimQueuedRun(services.db, runId);
+    expect((await readGeneration(services, runId)).state).toBe("running");
+    const reopened = createDatabase(testDatabaseUrl());
+    try {
+      const restarted = createServices({ db: reopened.db, clock: services.clock, media: fakes.settings, generation: fakes.deps });
+      const oldEdit = (await query<{ expected_edit_number: number }>("select expected_edit_number from learning_app.generation_runs where id=$1", [runId]))[0]!.expected_edit_number;
+      await retryGeneration(restarted, runId);
+      const edit = (await query<{ expected_edit_number: number }>("select expected_edit_number from learning_app.generation_runs where id=$1", [runId]))[0]!.expected_edit_number;
+      expect(edit).toBe(oldEdit + 1);
+      await runDueGenerationWork(restarted);
+      expect((await readGeneration(restarted, runId)).state).toBe("succeeded");
+    } finally { await reopened.pool.end(); }
+  });
+
+  it("ponowienie żywego runu odcina spóźniony zapis starego workera", async () => {
+    const fakes = await fakeGeneration(); disposers.push(fakes.dispose);
+    const services = lessonServices(fakes);
+    let enter!: () => void, release!: () => void;
+    const entered = new Promise<void>((resolve) => { enter = resolve; });
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    const generate = fakes.llm.generateLessonPool.bind(fakes.llm);
+    let first = true;
+    fakes.llm.generateLessonPool = async (...args) => {
+      const result = await generate(...args);
+      if (first) { first = false; enter(); await released; }
+      return result;
+    };
+    const { runId } = await createLesson(services, command());
+    const pending = executeLessonGeneration(services, runId);
+    await entered;
+    let before: unknown[] = [];
+    try {
+      await retryGeneration(services, runId);
+      await executeLessonGeneration(services, runId);
+      before = await query("select id, payload from learning_app.item_revisions order by id");
+      expect((await readGeneration(services, runId)).state).toBe("succeeded");
+    } finally { release(); await pending; }
+    expect(await query("select id, payload from learning_app.item_revisions order by id")).toEqual(before);
+    expect((await readGeneration(services, runId)).state).toBe("succeeded");
   });
 
   it("0 poprawnych → failed/validation; wersja nadal draft; brak elementów", async () => {

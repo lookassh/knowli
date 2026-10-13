@@ -433,4 +433,3 @@ export async function acceptVerdictAsVariant(services: Services, verdictId: stri
     return { deckVersionId: draftVersionId!, added: true };
   });
 }
-

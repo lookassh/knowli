@@ -553,6 +553,27 @@ describe("delegacja ścieżki prób po rodzaju zestawu (zadanie 9 review minor)"
  * późna finalizacja modelu nadpisująca zamkniętą kartkówkę.
  */
 describe("review P1-3: nieoceniona odpowiedź nie łamie CHECK (confirmationEligible=false)", () => {
+  it("wybiera ćwiczenie niewidziane zamiast początku puli z poprzedniej sesji", async () => {
+    const { services, clock } = buildTestServices();
+    const child = await createChild(services, { displayName: "Historia", avatarKey: "owl" });
+    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true });
+    const firstSession = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
+    const first = await issueUntil(services, firstSession.sessionId, "lesson_gap");
+    await submitAttempt(services, { taskId: first.taskId, clientAttemptId: randomUUID(), modality: "skip" });
+    await endSession(services, firstSession.sessionId);
+    clock.advanceMs(1000);
+    const other = await createChild(services, { displayName: "Inne dziecko", avatarKey: "cat" });
+    await pool.query("insert into learning_app.assignments(id,child_id,deck_id) values(gen_random_uuid(),$1,$2)", [other.id, lesson.deckId]);
+    const otherSession = await startSession(services, { childId: other.id, deckId: lesson.deckId, microphoneEnabled: false });
+    const row = (await pool.query("select id,payload from learning_app.item_revisions where deck_version_id=$1 and payload->>'exerciseType'='lesson_gap' order by position offset 1 limit 1", [lesson.versionId])).rows[0];
+    await pool.query("insert into learning_app.session_tasks(id,session_id,child_id,deck_version_id,item_revision_id,ordinal,exercise_type,state,public_prompt,answer_key,issued_at) values(gen_random_uuid(),$1,$2,$3,$4,0,'lesson_gap','skipped',$5::jsonb,'{}'::jsonb,$6)",
+      [otherSession.sessionId, other.id, lesson.versionId, row.id, JSON.stringify({ kind: "lesson_gap", instructionPl: "Uzupełnij", stemWithGap: row.payload.stem }), clock.now()]);
+    const secondSession = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
+    const next = await nextTask(services, secondSession.sessionId);
+    expect(next?.exerciseType).toBe("lesson_gap");
+    expect(next?.prompt).not.toEqual(first.prompt);
+    expect(next?.prompt).toMatchObject({ stemWithGap: row.payload.stem }); // historia innego dziecka nie wpływa na kolejność
+  });
   it.each([false, true])("odpowiedź nieoceniona po przerwie ≥12h (grader=%s) → zapis przechodzi, outcome unassessed", async (withModel) => {
     // previousSessionContactAt > 12h wcześniej sprawiłby, że confirmationEligible
     // policzyłby się na true. Bez gradera niedopasowany tekst → unevaluated
@@ -621,6 +642,35 @@ describe("review P1-4: lesson_order prowadzony (klocki ujawnione) → zależne",
 });
 
 describe("review P1-5: późna finalizacja modelu nie nadpisuje zamkniętej kartkówki", () => {
+  it.each([false, true])("stale processing nie ujawnia feedbacku ani nie otwiera drugiej próby (closed=%s)", async (closed) => {
+    const grader = new FakeAnswerGrader();
+    let enter!: () => void, release!: () => void;
+    const entered = new Promise<void>((resolve) => { enter = resolve; });
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    const original = grader.grade.bind(grader);
+    grader.grade = async (input, signal) => { enter(); await released; return original(input, signal); };
+    const { services: base, clock } = buildTestServices();
+    const services = createServices({ db: base.db, clock, grader: { provider: grader, maxCallsPerSession: 20, timeoutMs: 8000 } });
+    const child = await createChild(services, { displayName: "Recovery", avatarKey: "owl" });
+    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, testDate: "2026-10-20" });
+    const session = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false, mode: "mock_test" });
+    const task = await nextTask(services, session.sessionId);
+    expect(task?.exerciseType).toBe("lesson_gap");
+    const pending = submitAttempt(services, { taskId: task!.taskId, clientAttemptId: randomUUID(), modality: "text", text: "unmatched response" });
+    await entered;
+    try {
+      const id = (await pool.query("select id from learning_app.attempts where task_id=$1", [task!.taskId])).rows[0].id as string;
+      if (closed) await endSession(services, session.sessionId);
+      clock.advanceMs(61_000);
+      const recovered = await readAttempt(services, id);
+      expect(recovered.state).toBe("completed");
+      expect(recovered.feedback).toBeNull();
+      expect(recovered.taskState).toBe(closed ? "issued" : "answered");
+      await expectAppError(submitAttempt(services, { taskId: task!.taskId, clientAttemptId: randomUUID(), modality: "text", text: "goes" }), "conflict");
+      if (!closed) expect((await nextTask(services, session.sessionId))?.taskId).not.toBe(task!.taskId);
+      else expect((await readLessonMockTestSummary(services, session.sessionId)).answeredCount).toBe(0);
+    } finally { release(); await pending; }
+  });
   it("endSession przed powrotem gradera → raport niezmieniony, omówienie zgodne (brak późnego correct)", async () => {
     // Fake grader z opóźnieniem: faza 1 rezerwuje próbę `processing`, grader śpi;
     // w tym czasie endSession utrwala NIEZMIENNY raport (slot unassessed); powrót

@@ -45,6 +45,20 @@ function draft(overrides: Partial<LessonExerciseDraft>): LessonExerciseDraft {
 }
 
 describe("validateLessonExercise — cel i typ", () => {
+  it.each(["lesson_choice", "lesson_open_answer", "lesson_error_fix"] as const)("odrzuca %s bez treści bodźca", (exerciseType) => {
+    const errors = validateLessonExercise(draft({ exerciseType, stem: undefined, prompt: undefined, statement: "",
+      options: [{ id: "a", text: "plays" }, { id: "b", text: "play" }], correctOption: "a" }), englishGrammarSubject, englishTopic);
+    expect(errors.some((error) => /stem|prompt|statement/.test(error))).toBe(true);
+  });
+  it.each(["answer", "acceptedAnswers", "options"])("odrzuca przekroczenie limitu tekstu w %s", (field) => {
+    const long = "x".repeat(121);
+    const overrides = field === "answer" ? { answer: long, focus: [long] }
+      : field === "acceptedAnswers" ? { acceptedAnswers: [long] }
+      : { options: [{ id: "a", text: "plays" }, { id: "b", text: long }] };
+    const errors = validateLessonExercise(draft({ exerciseType: "lesson_choice", correctOption: "a",
+      options: [{ id: "a", text: "plays" }, { id: "b", text: "play" }], ...overrides }), englishGrammarSubject, englishTopic);
+    expect(errors.some((error) => error.includes("120"))).toBe(true);
+  });
   it("odrzuca cel spoza tematu", () => {
     const errors = validateLessonExercise(
       draft({ objectiveId: "english_grammar.present_simple.nieistniejacy" }),
@@ -188,7 +202,7 @@ describe("validateLessonExercise — opcje (choice/short_answer)", () => {
       answer: "plays",
       acceptedAnswers: [],
       focus: ["plays"],
-      prompt: "Wybierz formę.",
+      stem: "Wybierz formę.",
       options: opts.map((text, i) => ({ id: `o${i}`, text })),
       correctOption: correct,
     };

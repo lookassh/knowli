@@ -357,9 +357,12 @@ function resultFromVerdict(
   childAnswer: string,
   verdict: GraderVerdict | null,
   verdictId: string | null,
+  authoritativeIncorrect = false,
 ): LessonGradeResult {
   const objectiveId = key.objectiveId;
-  const grade = gradeFromVerdict(verdict);
+  const grade: ObjectiveGrade = authoritativeIncorrect
+    ? { outcome: "incorrect", verdict: "model_incorrect", ...(verdict?.errorCategory && verdict.errorCategory !== "other" ? { errorCategory: verdict.errorCategory } : {}) }
+    : gradeFromVerdict(verdict);
   const normalizer = normalizerFor(services, key.subjectId);
   const correctText = closestApprovedVariant(childAnswer, key, normalizer);
 
@@ -566,7 +569,7 @@ async function startLessonAttempt(
   if (session.mode === "mock_test" && now.getTime() - session.startedAt.getTime() > 600_000) {
     throw new AppError("conflict", { message: "Czas kartkówki minął. Przejdź do omówienia." });
   }
-  if (task.state !== "issued") {
+  if (await rereadTaskState(tx, task.id) !== "issued") {
     throw new AppError("conflict", { message: "task is no longer issued" });
   }
   const key = keyOf(task);
@@ -811,18 +814,21 @@ async function objectiveTopicId(tx: Tx, task: TaskRow, key: LessonTaskAnswerKey,
 /** Leniwa finalizacja przeterminowanej próby processing lekcji (arch §9.2a). */
 async function lazyFinalizeStale(tx: Tx, services: Services, task: TaskRow, session: SessionRow, itemId: string, now: Date): Promise<void> {
   void services;
-  void session;
   const stale = await tx.select().from(attempts).where(and(eq(attempts.taskId, task.id), eq(attempts.state, "processing")));
   for (const attempt of stale) {
     if (now.getTime() - attempt.receivedAt.getTime() <= LESSON_ATTEMPT_PROCESSING_TIMEOUT_MS) continue;
     // technical: żadnej oceny wiedzy; zadanie zostaje issued; feedback not_assessed bez ekspozycji
     const completed = await tx
       .update(attempts)
-      .set({ state: "completed", completedAt: now, feedback: { kind: "not_assessed" } as unknown as Record<string, unknown> })
+      .set({ state: "completed", completedAt: now, feedback: session.mode === "mock_test" ? null : { kind: "not_assessed" } as unknown as Record<string, unknown> })
       .where(and(eq(attempts.id, attempt.id), eq(attempts.state, "processing")))
       .returning();
     if (completed.length === 0) continue;
-    await discloseLessonFeedback(tx, task, itemId, { kind: "not_assessed" }, now);
+    if (session.mode === "mock_test") {
+      if (session.state === "active") await tx.update(sessionTasks).set({ state: "answered" }).where(eq(sessionTasks.id, task.id));
+    } else {
+      await discloseLessonFeedback(tx, task, itemId, { kind: "not_assessed" }, now);
+    }
   }
 }
 
@@ -862,7 +868,7 @@ export async function submitLessonAttempt(services: Services, input: AttemptInpu
       const cached = await readCachedVerdict(tx, started.task.itemRevisionId, normalizedAnswer, promptVersion);
       if (cached) {
         const verdict = verdictFromCacheRow(cached);
-        const cachedResult = resultFromVerdict(services, started.task, started.key, childAnswer, verdict, cached.id);
+        const cachedResult = resultFromVerdict(services, started.task, started.key, childAnswer, verdict, cached.id, cached.parentDecision === "overridden_incorrect");
         const dto = await finalizeLessonAttempt(tx, services, started, typed, cachedResult);
         return { kind: "done" as const, dto };
       }
@@ -1029,6 +1035,7 @@ async function finalizeGradedAttempt(
 
   // Zapis werdyktu do cache i odczyt wiersza (zbieżność równoległych odpowiedzi).
   let effectiveVerdict: GraderVerdict | null = args.verdict;
+  let authoritativeIncorrect = false;
   let verdictId: string | null = null;
   if (args.verdict !== null) {
     await tx
@@ -1052,10 +1059,11 @@ async function finalizeGradedAttempt(
     if (row) {
       effectiveVerdict = verdictFromCacheRow(row);
       verdictId = row.id;
+      authoritativeIncorrect = row.parentDecision === "overridden_incorrect";
     }
   }
 
-  const result = resultFromVerdict(services, task, key, args.childAnswer, effectiveVerdict, verdictId);
+  const result = resultFromVerdict(services, task, key, args.childAnswer, effectiveVerdict, verdictId, authoritativeIncorrect);
   const qualification = qualifyLessonAttempt({
     receivedAt: frozen.receivedAt,
     policy,

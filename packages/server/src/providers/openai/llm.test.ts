@@ -74,6 +74,9 @@ describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", ()
     expect(system).toContain("Third person singular adds -s.");
     expect(system).toContain("lesson_choice");
     expect(system).toContain("to_question");
+    expect(system).toContain("lesson_transform requires statement");
+    expect(system).toContain("lesson_short_answer requires prompt");
+    expect(system).toContain("lesson_choice requires stem");
 
     // Materiał rodzica w wiadomości user, oznaczony jako materiał (nie instrukcje).
     expect(user).toContain("He plays football every day.");

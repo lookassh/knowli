@@ -326,7 +326,7 @@ async function planLessonTask(
     .select({ itemId: itemRevisions.itemId, latest: max(sessionTasks.issuedAt) })
     .from(sessionTasks)
     .innerJoin(itemRevisions, eq(itemRevisions.id, sessionTasks.itemRevisionId))
-    .where(eq(sessionTasks.sessionId, session.id))
+    .where(and(eq(sessionTasks.childId, session.childId), inArray(itemRevisions.itemId, exercises.map((exercise) => exercise.itemId))))
     .groupBy(itemRevisions.itemId);
   for (const row of issuedRows) {
     if (row.latest) lastSeenAt[row.itemId] = row.latest.toISOString();

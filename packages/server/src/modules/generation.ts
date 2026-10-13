@@ -222,6 +222,18 @@ export async function retryGeneration(services: Services, runId: string): Promis
     throw new AppError("conflict");
   }
   await services.db.transaction(async (tx) => {
+    if (run.kind === "lesson") {
+      // Taka sama kolejność blokad jak finalizacja lekcji: wersja, potem run.
+      const version = (await tx.select().from(deckVersions).where(eq(deckVersions.id, run.deckVersionId!)).for("update"))[0];
+      const current = (await tx.select().from(generationRuns).where(eq(generationRuns.id, runId)).for("update"))[0];
+      if (!version || !current || version.state === "published" || current.state === "succeeded" || current.state === "superseded") throw new AppError("conflict");
+      if (current.state === "queued") return;
+      if (version.editNumber !== current.expectedEditNumber) throw new AppError("conflict");
+      const editNumber = version.editNumber + 1;
+      await tx.update(deckVersions).set({ editNumber }).where(eq(deckVersions.id, version.id));
+      await tx.update(generationRuns).set({ state: "queued", attempts: 0, errorCode: null, finishedAt: null, expectedEditNumber: editNumber }).where(eq(generationRuns.id, runId));
+      return;
+    }
     if (run.assetId) {
       const asset = (await tx.select().from(mediaAssets).where(eq(mediaAssets.id, run.assetId)))[0];
       if (asset?.state === "ready") {

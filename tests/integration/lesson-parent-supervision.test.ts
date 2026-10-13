@@ -211,8 +211,11 @@ describe("Parent supervision API (integracja HTTP)", () => {
     expect(decisionRow.parent_decided_at).not.toBeNull();
   });
 
-  it("decyzja działa dla przyszłej identycznej odpowiedzi (grader nie wołany ponownie)", async () => {
-    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "x" } });
+  it.each([
+    { initial: "incorrect", decision: "overridden_correct", feedback: "great", outcome: "correct" },
+    { initial: "correct", decision: "overridden_incorrect", feedback: "lesson_hint", outcome: "incorrect" },
+  ])("decyzja $decision działa dla przyszłej identycznej odpowiedzi bez ponownego modelu", async ({ initial, decision, feedback, outcome }) => {
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: initial, errorCategory: initial === "correct" ? null : "missing_ending", fragments: initial === "correct" ? [] : ["play"], note: "x" } });
     const services = graderServices(grader);
     const cookie = await parentCookie(services);
     const childA = await createChild(services, { displayName: "A", avatarKey: "owl" });
@@ -225,14 +228,16 @@ describe("Parent supervision API (integracja HTTP)", () => {
     expect(grader.callCount).toBe(1);
 
     const verdictId = (await (await call(services, "GET", `lessons/${lesson.deckId}/verdicts`, { cookie })).json() as { id: string }[])[0]!.id;
-    await call(services, "POST", `lesson-verdicts/${verdictId}/decision`, { body: { decision: "overridden_correct" }, cookie });
+    await call(services, "POST", `lesson-verdicts/${verdictId}/decision`, { body: { decision }, cookie });
 
     // Następna identyczna odpowiedź (inne dziecko) → werdykt z cache, decyzja nadrzędna, bez wołania modelu.
     const sB = await startSession(services, { childId: childB.id, deckId: lesson.deckId, microphoneEnabled: false });
     const tB = await issueUntil(services, sB.sessionId, "lesson_transform");
     const second = await submitAttempt(services, { taskId: tB.taskId, clientAttemptId: randomUUID(), modality: "text", text: "she play" });
     expect(grader.callCount).toBe(1);
-    expect(second.feedback?.kind).toBe("great");
+    expect(second.feedback?.kind).toBe(feedback);
+    const outcomes = await pool.query("select outcome from learning_app.assessments where attempt_id=$1", [second.attemptId]);
+    expect(outcomes.rows[0].outcome).toBe(outcome);
   });
 
   it("accept-as-variant dodaje wariant w szkicu; identyczna odpowiedź dopasowana deterministycznie po publikacji; idempotentne", async () => {

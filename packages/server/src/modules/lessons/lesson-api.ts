@@ -29,7 +29,7 @@ import {
 import { AppError } from "../../errors";
 import { computeTargetKey } from "../../domain/target-key";
 import { DEFAULT_LESSON_POLICY } from "../../domain/lessons/lesson-policy";
-import { poolCoverage, validateLessonExercise } from "../../domain/lessons/pool-validation";
+import { poolCoverage, validatePool } from "../../domain/lessons/pool-validation";
 import type { LessonExerciseDraft, LessonTopic, SubjectModule } from "../../domain/lessons/types";
 import { assertAssetPublishable, reconcileDraftAssetsTx } from "../media-reconciliation";
 import { copyRevisionsSkillsAssets } from "../decks";
@@ -529,14 +529,8 @@ export async function editLessonDraft(
 
     if (patch.exercises !== undefined) {
       // Walidacja per ćwiczenie — zbieramy wszystkie błędy, nie przerywamy na pierwszym.
-      const errors: { index: number; errors: string[] }[] = [];
-      patch.exercises.forEach((ex, index) => {
-        const draft = toExerciseDraft(ex as unknown);
-        const exErrors = validateLessonExercise(draft, subject, topic);
-        if (exErrors.length > 0) {
-          errors.push({ index, errors: exErrors });
-        }
-      });
+      const drafts = patch.exercises.map(toExerciseDraft);
+      const errors = validatePool(drafts, subject, topic).rejected.map((rejection) => ({ index: drafts.indexOf(rejection.exercise), errors: rejection.errors }));
       if (errors.length > 0) {
         throw new AppError("validation", { details: { exercises: errors } });
       }
@@ -594,6 +588,9 @@ export async function publishLessonDraft(
 
     // Pokrycie etapów ocenianych per cel.
     const drafts: LessonExerciseDraft[] = revisions.map((r) => toExerciseDraft(r.payload));
+    const topic = requireTopic(services, context.subjectId, context.topicId, context.topicVersion);
+    const invalid = validatePool(drafts, subject, topic).rejected;
+    if (invalid.length > 0) throw new AppError("validation", { details: { exercises: invalid.map((rejection) => ({ index: drafts.indexOf(rejection.exercise), errors: rejection.errors })) } });
     const gaps = poolCoverage(drafts, context.objectiveIds, DEFAULT_LESSON_POLICY.poolMinimums);
     if (gaps.length > 0) {
       throw new AppError("conflict", {

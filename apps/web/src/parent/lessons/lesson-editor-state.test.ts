@@ -100,6 +100,20 @@ describe("createLessonSnapshot", () => {
 });
 
 describe("toLessonDraftPatch", () => {
+  it("zmiana tytułu zachowuje całe warianty zawierające przecinki", () => {
+    const source = draft();
+    source.exercises[1]!.acceptedAnswers = ["Yes, he does.", "Yes, she does."];
+    const snapshot = createLessonSnapshot(source, () => "unused");
+    snapshot.form.title = "Nowy tytuł";
+    expect(toLessonDraftPatch(snapshot).exercises![1]!.acceptedAnswers).toEqual(source.exercises[1]!.acceptedAnswers);
+  });
+
+  it("zachowuje pytanie short_answer zapisane w prompt", () => {
+    const source = draft();
+    source.exercises[0] = { ...source.exercises[0]!, exerciseType: "lesson_short_answer", prompt: "Does he play?" };
+    const snapshot = createLessonSnapshot(source, () => "unused");
+    expect(toLessonDraftPatch(snapshot).exercises![0]!.prompt).toBe("Does he play?");
+  });
   it("sends expectedEditNumber from the snapshot, not the latest remote", () => {
     const snapshot = createLessonSnapshot(draft({ editNumber: 3 }), () => "unused");
     expect(toLessonDraftPatch(snapshot).expectedEditNumber).toBe(3);
@@ -129,9 +143,9 @@ describe("toLessonDraftPatch", () => {
     expect(patch.exercises?.map((ex) => ex.id)).toEqual(["00000000-0000-4000-8000-000000000011", "00000000-0000-4000-8000-000000000012", undefined]);
   });
 
-  it("splits acceptedAnswers and focus comma strings and drops empty variants", () => {
+  it("splits acceptedAnswers into lines and focus into words, dropping empty entries", () => {
     const snapshot = createLessonSnapshot(draft(), () => "unused");
-    snapshot.form.exercises[1]!.acceptedText = " watch , , watchez ";
+    snapshot.form.exercises[1]!.acceptedText = " watch \n \n watchez ";
     snapshot.form.exercises[1]!.focusText = "watches";
     const patch = toLessonDraftPatch(snapshot);
     expect(patch.exercises?.[1]!.acceptedAnswers).toEqual(["watch", "watchez"]);

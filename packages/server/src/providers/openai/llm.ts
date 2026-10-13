@@ -85,11 +85,16 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
   parts.push(
     'Return strict JSON of the shape {"exercises": [ ... ], "examples": {"<objectiveId>": ["<short example sentence>"]}}. ' +
       "Each exercise object has fields: exerciseType, objectiveId, instructionPl (child-facing instruction in the prompt language), " +
-      "optional stem (with the gap marker ___ for lesson_gap), optional statement (sentence with a mistake for lesson_error_fix), " +
+      "optional stem (with the gap marker ___ for lesson_gap), optional statement (source sentence for lesson_error_fix or lesson_transform), " +
       "optional prompt, optional hint, optional transformId (for lesson_transform), optional noticeSegments (lesson_notice: 2-3 sentences, " +
       "each an array of word segments), answer (canonical answer in the answer language), acceptedAnswers (array of accepted variants), " +
       "focus (array of answer tokens that are checked), optional options (lesson_choice/lesson_short_answer: array of {id, text}), " +
       "optional correctOption (option id, or the pointed word for lesson_notice), optional items (lesson_order: array of {id, text}). " +
+      "Required non-empty stimulus fields by type: lesson_choice requires stem; lesson_gap requires stem with ___; " +
+      "lesson_error_fix requires statement with the sentence to correct; lesson_transform requires statement with the sentence to transform; " +
+      "lesson_short_answer requires prompt with the actual question (stem is accepted as a legacy alternative); lesson_open_answer requires prompt. " +
+      "All exercise text values, answers, accepted variants and option/item text are at most 120 characters. " +
+      "Return at most three non-empty examples of at most 120 characters for the requested objective. " +
       "No commentary, no markdown — JSON only.",
   );
   return parts.join("\n");

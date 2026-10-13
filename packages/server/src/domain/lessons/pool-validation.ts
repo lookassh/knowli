@@ -9,6 +9,7 @@
  * eksportowanymi stałymi — żadnych rozsianych literałów.
  */
 
+import { LessonExerciseInputSchema } from "@learning/contracts";
 import { ASSESSED_STAGES, stageOf } from "./stages";
 import type {
   AnswerNormalizer,
@@ -152,6 +153,10 @@ export function validateLessonExercise(
 ): string[] {
   const errors: string[] = [];
   const normalizer = subject.normalizer;
+  const shape = LessonExerciseInputSchema.safeParse(ex);
+  if (!shape.success) {
+    return shape.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.code === "too_big" ? `przekracza limit ${issue.maximum}` : issue.code === "too_small" ? `wymagane minimum ${issue.minimum}` : "nieprawidłowy typ lub wartość"}`);
+  }
 
   // Karta pochodzi z katalogu, nie z puli ćwiczeń.
   if (ex.exerciseType === "lesson_card") {
@@ -223,7 +228,11 @@ function validateByType(
       validateOrder(ex, normalizer, errors);
       break;
     case "lesson_choice":
+      if (!ex.stem?.trim()) errors.push("stem: wymagane zdanie dla „lesson_choice”");
+      validateOptions(ex, normalizer, errors);
+      break;
     case "lesson_short_answer":
+      if (!(ex.prompt ?? ex.stem)?.trim()) errors.push("prompt: wymagane pytanie dla „lesson_short_answer”");
       validateOptions(ex, normalizer, errors);
       break;
     case "lesson_notice":
@@ -237,6 +246,9 @@ function validateByType(
       break;
     case "lesson_transform":
       validateTransform(ex, topic, errors);
+      break;
+    case "lesson_open_answer":
+      if (!ex.prompt?.trim()) errors.push("prompt: wymagane pytanie dla „lesson_open_answer”");
       break;
     default:
       break;
@@ -388,7 +400,7 @@ function validateErrorFix(
   normalizer: AnswerNormalizer,
   errors: string[],
 ): void {
-  if (ex.statement === undefined) {
+  if (!ex.statement?.trim()) {
     errors.push("statement: wymagany dla „lesson_error_fix”");
     return;
   }

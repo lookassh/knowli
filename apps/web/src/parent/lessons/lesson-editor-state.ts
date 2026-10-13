@@ -108,7 +108,7 @@ function editableFromExercise(
     hint: exercise.hint ?? "",
     transformId: exercise.transformId ?? "",
     answer: exercise.answer,
-    acceptedText: exercise.acceptedAnswers.join(", "),
+    acceptedText: exercise.acceptedAnswers.join("\n"),
     focusText: exercise.focus.join(", "),
     options: exercise.options ? exercise.options.map((o) => ({ ...o })) : null,
     correctOption: exercise.correctOption ?? "",
@@ -143,7 +143,7 @@ const STEM_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_choice",
 // `payload.statement`). Serializacja musi wysyłać `statement`, nie `prompt`,
 // inaczej PATCH gubi zdanie i materializacja daje pusty `statement`.
 const STATEMENT_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_error_fix", "lesson_transform"]);
-const PROMPT_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_open_answer"]);
+const PROMPT_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_open_answer", "lesson_short_answer"]);
 const OPTION_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_choice", "lesson_short_answer"]);
 const ITEM_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_order"]);
 const NOTICE_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_notice"]);
@@ -156,7 +156,7 @@ function exerciseToInput(exercise: EditableLessonExercise): LessonExerciseInput 
     exerciseType: type,
     objectiveId: exercise.objectiveId,
     answer: exercise.answer,
-    acceptedAnswers: commaSplit(exercise.acceptedText),
+    acceptedAnswers: exercise.acceptedText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
     focus: commaSplit(exercise.focusText),
   };
   if (trimmedInstruction.length > 0) {

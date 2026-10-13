@@ -3,7 +3,7 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { LessonCommandSchema, type LessonCommand } from "@learning/contracts";
 import type { Clock, Services } from "../../config";
-import type { Tx } from "../../db/client";
+import type { Executor, Tx } from "../../db/client";
 import {
   deckVersions,
   decks,
@@ -20,7 +20,7 @@ import {
   defaultPoolSize,
   type StageMix,
 } from "../../domain/lessons/lesson-policy";
-import { validatePool } from "../../domain/lessons/pool-validation";
+import { MAX_TEXT_LENGTH, validatePool } from "../../domain/lessons/pool-validation";
 import type {
   LessonExerciseDraft,
   LessonExerciseType,
@@ -33,7 +33,6 @@ import {
   claimQueuedRun,
   enqueueGenerationRun,
   errorCodeOf,
-  markRun,
   requireGeneration,
 } from "../generation";
 import { reconcileDraftAssetsTx } from "../media-reconciliation";
@@ -441,8 +440,12 @@ export async function executeLessonGeneration(services: Services, runId: string)
   if (attempts === null) {
     return;
   }
+  const markCurrentRun = async (db: Executor, state: "failed" | "succeeded" | "superseded" | "queued", errorCode: string | null) => {
+    await db.update(generationRuns).set({ state, errorCode, finishedAt: state === "queued" ? null : services.clock.now() })
+      .where(and(eq(generationRuns.id, runId), eq(generationRuns.state, "running"), eq(generationRuns.attempts, attempts), eq(generationRuns.expectedEditNumber, run.expectedEditNumber!)));
+  };
   if (attempts > MAX_AUTOMATIC_ATTEMPTS) {
-    await markRun(services.db, services.clock, runId, "failed", "attempts_exhausted");
+    await markCurrentRun(services.db, "failed", "attempts_exhausted");
     return;
   }
 
@@ -450,7 +453,7 @@ export async function executeLessonGeneration(services: Services, runId: string)
   const subject = services.subjects.getSubject(input.subjectId);
   const topic = services.subjects.getTopic(input.subjectId, input.topicId, input.topicVersion);
   if (!subject || !topic) {
-    await markRun(services.db, services.clock, runId, "failed", "validation");
+    await markCurrentRun(services.db, "failed", "validation");
     return;
   }
   // Czy model oceniający będzie dostępny przy odpowiedzi (proces web)? Worker nie
@@ -493,18 +496,22 @@ export async function executeLessonGeneration(services: Services, runId: string)
       for (const ex of result.exercises) {
         rawExercises.push(ex);
       }
-      for (const [objectiveId, list] of Object.entries(result.examples)) {
-        examples[objectiveId] = list;
+      const rawExamples = result.examples;
+      for (const objectiveId of [batch.objectiveId]) {
+        const list = rawExamples && typeof rawExamples === "object" ? rawExamples[objectiveId] : undefined;
+        if (!Array.isArray(list)) continue;
+        examples[objectiveId] = list.filter((line): line is string => typeof line === "string" && line.trim().length > 0 && line.trim().length <= MAX_TEXT_LENGTH)
+          .map((line) => line.trim()).slice(0, 3);
       }
     }
   } catch (error) {
     const code = errorCodeOf(error);
     if (code === "validation") {
-      await markRun(services.db, services.clock, runId, "failed", "validation");
+      await markCurrentRun(services.db, "failed", "validation");
     } else if (attempts >= MAX_AUTOMATIC_ATTEMPTS) {
-      await markRun(services.db, services.clock, runId, "failed", "attempts_exhausted");
+      await markCurrentRun(services.db, "failed", "attempts_exhausted");
     } else {
-      await markRun(services.db, services.clock, runId, "queued", null);
+      await markCurrentRun(services.db, "queued", null);
     }
     return;
   }
@@ -537,7 +544,7 @@ export async function executeLessonGeneration(services: Services, runId: string)
     const rejectedCount = shapeRejected + rejected.length + dupAgainstExisting;
 
     if (uniqueValid.length === 0) {
-      await markRun(services.db, services.clock, runId, "failed", "validation");
+      await markCurrentRun(services.db, "failed", "validation");
       return;
     }
 
@@ -545,12 +552,14 @@ export async function executeLessonGeneration(services: Services, runId: string)
       const version = (
         await tx.select().from(deckVersions).where(eq(deckVersions.id, run.deckVersionId!)).for("update")
       )[0];
+      const current = (await tx.select().from(generationRuns).where(eq(generationRuns.id, runId)).for("update"))[0];
+      if (!current || current.state !== "running" || current.attempts !== attempts || current.expectedEditNumber !== run.expectedEditNumber) return;
       if (!version) {
-        await markRun(tx, services.clock, runId, "failed", "deck_version_gone");
+        await markCurrentRun(tx, "failed", "deck_version_gone");
         return;
       }
       if (version.state === "published" || version.editNumber !== run.expectedEditNumber) {
-        await markRun(tx, services.clock, runId, "superseded", null);
+        await markCurrentRun(tx, "superseded", null);
         return;
       }
       await applyLessonExercises(
@@ -576,16 +585,16 @@ export async function executeLessonGeneration(services: Services, runId: string)
       if (version.state !== "review") {
         await tx.update(deckVersions).set({ state: "review" }).where(eq(deckVersions.id, version.id));
       }
-      await markRun(tx, services.clock, runId, "succeeded", null);
+      await markCurrentRun(tx, "succeeded", null);
     });
   } catch {
     // Nieprzewidziany wyjątek walidacji/zapisu NIE może zostawić runu „running”.
     // Rozliczamy terminalnie: wyczerpane próby → attempts_exhausted, inaczej
     // validation (błąd kształtu/treści puli, nie błąd przejściowy providera).
     if (attempts >= MAX_AUTOMATIC_ATTEMPTS) {
-      await markRun(services.db, services.clock, runId, "failed", "attempts_exhausted");
+      await markCurrentRun(services.db, "failed", "attempts_exhausted");
     } else {
-      await markRun(services.db, services.clock, runId, "failed", "validation");
+      await markCurrentRun(services.db, "failed", "validation");
     }
     return;
   }

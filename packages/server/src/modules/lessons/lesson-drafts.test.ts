@@ -19,6 +19,7 @@ function validChoiceRaw(answer: string) {
     exerciseType: "lesson_choice",
     objectiveId: OBJECTIVE_ID,
     instructionPl: "Wybierz.",
+    stem: "She ___ football.",
     answer,
     acceptedAnswers: [],
     focus: [],
@@ -51,11 +52,12 @@ describe("P2-7: strażnik kształtu surowego ćwiczenia (isWellShapedRawExercise
     const rows = [validChoiceRaw("plays"), raw].filter(isWellShapedRawExercise).map(toExerciseDraft);
     expect(validatePool(rows, englishGrammarSubject, presentSimpleTopic()).valid.map((r) => r.answer)).toEqual(["plays"]);
   });
-  it("RED-dowód: bez strażnika validatePool rzuca TypeError na options=[null,…]", () => {
+  it("validatePool odrzuca zły kształt bez wyjątku i zachowuje poprawne rekordy", () => {
     const topic = presentSimpleTopic();
     const drafts = [validChoiceRaw("plays"), malformedOptionsRaw()].map(toExerciseDraft);
-    // Dowód luki: semantyczna walidacja dereferencuje options[i].text → TypeError.
-    expect(() => validatePool(drafts, englishGrammarSubject, topic)).toThrow(TypeError);
+    const result = validatePool(drafts, englishGrammarSubject, topic);
+    expect(result.valid.map((ex) => ex.answer)).toEqual(["plays"]);
+    expect(result.rejected).toHaveLength(1);
   });
 
   it("strażnik odrzuca ćwiczenie z null w options", () => {
