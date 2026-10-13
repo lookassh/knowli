@@ -257,7 +257,11 @@ async function seedRichPool(pool: Pool, version: { deckId: string; versionId: st
         answer: RICH_ANSWERS.choice,
         acceptedAnswers: [RICH_ANSWERS.choice],
         focus: [RICH_ANSWERS.choice],
-        correctOption: "plays",
+        // `correctOption` dla choice/short_answer = ID OPCJI (kontrakt pool-validation:
+        // `options.some(o => o.id === correctOption)`), nie tekst. Wcześniejszy
+        // `"plays"` (tekst) maskował P1-1: stara materializacja dopasowywała po
+        // tekście, więc błędny kształt „działał” tylko w teście.
+        correctOption: "o-plays",
       },
     },
     {
