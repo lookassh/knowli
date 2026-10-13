@@ -212,7 +212,7 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect(items[0]!.count).toBeGreaterThan(0);
   });
 
-  it("zły KSZTAŁT jednego ćwiczenia (options=[null,…]) nie wywraca runu: poprawne zapisane, błędny odrzucony, run terminalny (P2-7)", async () => {
+  it.each(["options", "acceptedAnswers", "focus"])("zły KSZTAŁT %s nie wywraca runu: poprawne zapisane, błędny odrzucony, run terminalny (P2-7)", async (malformedField) => {
     const fakes = await fakeGeneration();
     disposers.push(fakes.dispose);
     const services = lessonServices(fakes);
@@ -242,8 +242,9 @@ describe("generowanie puli lekcji (integracja)", () => {
           acceptedAnswers: [],
           focus: [],
           // zły kształt: null w tablicy opcji
-          options: [null, { id: "b", text: "watch" }],
+          options: [{ id: "a", text: "watches" }, { id: "b", text: "watch" }],
           correctOption: "b",
+          [malformedField]: [null],
         },
       ],
     });

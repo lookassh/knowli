@@ -398,6 +398,7 @@ function validateErrorFix(
 }
 
 function validateTransform(ex: LessonExerciseDraft, topic: LessonTopic, errors: string[]): void {
+  if (!ex.statement?.trim()) errors.push("statement: wymagany dla „lesson_transform”");
   if (ex.transformId === undefined || !topic.transforms.some((t) => t.id === ex.transformId)) {
     errors.push(`transformId: przekształcenie „${ex.transformId ?? ""}” nie istnieje w temacie „${topic.id}”`);
   }

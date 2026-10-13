@@ -243,6 +243,18 @@ function buildPoolInput(
 const optionShapeSchema = z.object({ id: z.string(), text: z.string() }).passthrough();
 const rawExerciseShapeSchema = z
   .object({
+    exerciseType: z.string(),
+    objectiveId: z.string(),
+    answer: z.string(),
+    acceptedAnswers: z.array(z.string()).optional(),
+    focus: z.array(z.string()).optional(),
+    instructionPl: z.string().optional(),
+    stem: z.string().optional(),
+    statement: z.string().optional(),
+    prompt: z.string().optional(),
+    hint: z.string().optional(),
+    transformId: z.string().optional(),
+    correctOption: z.string().optional(),
     options: z.array(optionShapeSchema).optional(),
     items: z.array(optionShapeSchema).optional(),
     noticeSegments: z.array(z.array(z.string())).optional(),

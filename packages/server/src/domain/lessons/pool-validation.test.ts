@@ -404,6 +404,12 @@ describe("validateLessonExercise — lesson_gap", () => {
 });
 
 describe("validateLessonExercise — error_fix i transform", () => {
+  it.each([undefined, "", "   "])("odrzuca transform bez zdania (%s)", (statement) => {
+    const errors = validateLessonExercise(draft({ exerciseType: "lesson_transform", objectiveId: OBJ.negative,
+      answer: "she doesn't play", focus: ["does", "not"], transformId: "to_negative", statement,
+      stem: undefined, hint: undefined }), englishGrammarSubject, englishTopic);
+    expect(errors.some((e) => e.includes("statement"))).toBe(true);
+  });
   it("odrzuca lesson_error_fix gdy statement == odpowiedź po normalizacji", () => {
     const errors = validateLessonExercise(
       {

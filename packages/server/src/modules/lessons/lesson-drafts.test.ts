@@ -45,6 +45,12 @@ function malformedOptionsRaw() {
 }
 
 describe("P2-7: strażnik kształtu surowego ćwiczenia (isWellShapedRawExercise)", () => {
+  it.each(["acceptedAnswers", "focus"])("odrzuca null w %s zamiast wywracać walidację puli", (field) => {
+    const raw = { ...validChoiceRaw("watches"), [field]: [null] };
+    expect(isWellShapedRawExercise(raw)).toBe(false);
+    const rows = [validChoiceRaw("plays"), raw].filter(isWellShapedRawExercise).map(toExerciseDraft);
+    expect(validatePool(rows, englishGrammarSubject, presentSimpleTopic()).valid.map((r) => r.answer)).toEqual(["plays"]);
+  });
   it("RED-dowód: bez strażnika validatePool rzuca TypeError na options=[null,…]", () => {
     const topic = presentSimpleTopic();
     const drafts = [validChoiceRaw("plays"), malformedOptionsRaw()].map(toExerciseDraft);
