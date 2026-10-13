@@ -9,11 +9,12 @@ import {
   type DeckSummaryDto,
   type GenerationCommand,
 } from "@learning/contracts";
-import { apiFetch, errorMessage } from "./api";
+import { apiFetch, ApiCallError, errorMessage } from "./api";
 import { isDefinitiveGenerationRejection, readGenerationAcceptance } from "./generation-request";
 import DeckEditor from "./DeckEditor";
 import LessonEditor from "./lessons/LessonEditor";
 import NewLessonForm from "./lessons/NewLessonForm";
+import ArchiveLessonDialog from "./lessons/ArchiveLessonDialog";
 import type { EditorLeaveState } from "./useParentLeaveGuard";
 
 /** Lista zestawów i uruchomienie generacji nowego materiału. */
@@ -40,6 +41,15 @@ export default function DecksPanel({
   const [activeDeckId, setActiveDeckId] = useState<string | null>(null);
   const [activeDeckKind, setActiveDeckKind] = useState<"vocabulary" | "lesson">("vocabulary");
   const [creatingLesson, setCreatingLesson] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [archiveLesson, setArchiveLesson] = useState<DeckSummaryDto | null>(null);
+  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+  const [archiveNotice, setArchiveNotice] = useState<string | null>(null);
+  // Potwierdzony zapis pozostaje widoczny także po nieudanym odświeżeniu listy.
+  const [archivedIds, setArchivedIds] = useState<ReadonlySet<string>>(new Set());
+  const archiveBusyRef = useRef(false);
+  const archiveFilter = useRef<HTMLInputElement>(null);
   const pendingEmptyCommand = useRef<CreateEmptyDeckCommand | null>(null);
   const creatingEmptyRef = useRef(false);
   const pendingGenerationCommand = useRef<GenerationCommand | null>(null);
@@ -52,6 +62,37 @@ export default function DecksPanel({
       mounted.current = false;
     };
   }, []);
+
+  const archive = async () => {
+    if (!archiveLesson || archiveBusyRef.current) return;
+    archiveBusyRef.current = true;
+    setArchiveBusy(true);
+    setArchiveError(null);
+    try {
+      await apiFetch("POST", `/api/v1/parent/decks/${archiveLesson.deckId}/archive`);
+      if (!mounted.current) return;
+      setArchivedIds((current) => new Set([...current, archiveLesson.deckId]));
+      setArchiveLesson(null);
+      try {
+        await onChanged();
+      } catch (cause) {
+        if (!mounted.current) return;
+        if ((cause as { status?: number }).status === 401) onAuthExpired();
+        else setArchiveNotice(messages.lessons.archiveRefreshFailed);
+      }
+    } catch (cause) {
+      if (!mounted.current) return;
+      if ((cause as { status?: number }).status === 401) onAuthExpired();
+      else setArchiveError(cause instanceof ApiCallError ? errorMessage(cause) : messages.lessons.archiveFailed);
+    } finally {
+      archiveBusyRef.current = false;
+      if (mounted.current) setArchiveBusy(false);
+    }
+  };
+
+  const visibleDecks = decks
+    .map((deck) => archivedIds.has(deck.deckId) ? { ...deck, state: "archived" as const } : deck)
+    .filter((deck) => showArchived || deck.kind !== "lesson" || deck.state !== "archived");
 
   const generate = async () => {
     if (generatingRef.current || creatingEmptyRef.current) {
@@ -224,9 +265,17 @@ export default function DecksPanel({
         )}
       </section>
 
-      {decks.length === 0 && <p>{messages.decks.empty}</p>}
+      {decks.some((deck) => deck.kind === "lesson") && (
+        <label className="row" style={{ minHeight: 44 }}>
+          <input ref={archiveFilter} type="checkbox" style={{ width: 20, minHeight: 20, margin: 0 }} checked={showArchived}
+            onChange={(event) => setShowArchived(event.target.checked)} />
+          {messages.lessons.showArchived}
+        </label>
+      )}
+      {archiveNotice && <p role="status">{archiveNotice}</p>}
+      {visibleDecks.length === 0 && <p>{messages.decks.empty}</p>}
       <ul className="plain">
-        {decks.map((deck, index) => (
+        {visibleDecks.map((deck, index) => (
           <li key={deck.deckId}>
             <button
               type="button"
@@ -247,9 +296,24 @@ export default function DecksPanel({
                 {messages.decks.states[deck.state]}
               </span>
             </button>
+            {deck.kind === "lesson" && deck.state !== "archived" && (
+              <button type="button" disabled={archiveBusy}
+                aria-label={messages.lessons.archiveLabel.replace("{title}", deck.title)}
+                onClick={() => {
+                  setArchiveError(null);
+                  setArchiveNotice(null);
+                  setArchiveLesson(deck);
+                }}>
+                {messages.lessons.archive}
+              </button>
+            )}
           </li>
         ))}
       </ul>
+      <ArchiveLessonDialog lesson={archiveLesson} busy={archiveBusy} error={archiveError}
+        onConfirm={() => { void archive(); }}
+        onFocusFallback={() => archiveFilter.current?.focus()}
+        onCancel={() => { if (!archiveBusyRef.current) setArchiveLesson(null); }} />
     </section>
   );
 }

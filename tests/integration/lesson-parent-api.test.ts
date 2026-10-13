@@ -14,6 +14,7 @@ import {
   createDatabase,
   executeLessonGeneration,
   readLessonDeck,
+  ensureLearningPolicy,
   type Services,
 } from "@learning/server";
 import {
@@ -24,6 +25,7 @@ import {
   type LessonExerciseInput,
 } from "@learning/contracts";
 import { testDatabase, testDatabaseUrl, truncateCoreTables } from "./helpers";
+import { lessonWorld } from "../fixtures/lesson-world";
 import { ManualClock } from "./helpers";
 import { fakeGeneration, type FakeGeneration } from "./fakes";
 import { handleParentApi } from "../../apps/web/src/parent/parent-router";
@@ -136,6 +138,56 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
     const { token } = await loginParent(services, "lesson-api-pin");
     return { services, cookie: token };
   }
+
+  it("archiwizuje szkic lekcji przez wspólny endpoint, idempotentnie i tylko z autoryzacją rodzica", async () => {
+    const fakes = await fakeGeneration(); disposers.push(fakes.dispose);
+    const { services, cookie } = await freshParent(fakes);
+    const { deckId } = await createAndGenerate(services, cookie);
+    const before = LessonDeckDtoSchema.parse(await (await call(services, "GET", `lessons/${deckId}`, { cookie })).json());
+    const path = `decks/${deckId}/archive`;
+    expect((await call(services, "POST", path)).status).toBe(401);
+    expect((await call(services, "POST", path, { cookie, origin: "https://attacker.example" })).status).toBe(403);
+    expect((await call(services, "POST", path, { cookie })).status).toBe(204);
+    const archivedAt = (await pool.query("select archived_at from learning_app.decks where id=$1", [deckId])).rows[0];
+    expect(archivedAt.archived_at).not.toBeNull();
+    expect((await call(services, "POST", path, { cookie })).status).toBe(204);
+    expect((await pool.query("select archived_at from learning_app.decks where id=$1", [deckId])).rows[0]).toEqual(archivedAt);
+    const after = LessonDeckDtoSchema.parse(await (await call(services, "GET", `lessons/${deckId}`, { cookie })).json());
+    expect(after.state).toBe("archived");
+    expect(after.draft).toEqual(before.draft);
+    const list = await (await call(services, "GET", "decks", { cookie })).json();
+    expect(list).toEqual(expect.arrayContaining([expect.objectContaining({ deckId, kind: "lesson", state: "archived" })]));
+  });
+
+  it("archiwizacja opublikowanej lekcji zachowuje historię i ćwiczenia oraz blokuje nowe sesje", async () => {
+    const fakes = await fakeGeneration(); disposers.push(fakes.dispose);
+    const { services, cookie } = await freshParent(fakes);
+    const child = await createChild(services, { displayName: "Ala", avatarKey: "cat" });
+    await ensureLearningPolicy(services.db);
+    const world = await lessonWorld(pool, { childId: child.id, withObjectiveAssessment: true });
+    const before = LessonDeckDtoSchema.parse(await (await call(services, "GET", `lessons/${world.deckId}`, { cookie })).json());
+    async function history() {
+      return {
+        attempts: (await pool.query("select * from learning_app.attempts where child_id=$1 order by id", [child.id])).rows,
+        assessments: (await pool.query("select * from learning_app.assessments where child_id=$1 order by attempt_id, skill", [child.id])).rows,
+        sessions: (await pool.query("select * from learning_app.learning_sessions where child_id=$1 order by id", [child.id])).rows,
+        progress: (await pool.query("select * from learning_app.child_objective_progress where child_id=$1 order by objective_id", [child.id])).rows,
+      };
+    }
+    const originalHistory = await history();
+    expect(originalHistory.attempts).toHaveLength(1);
+    expect(originalHistory.assessments).toHaveLength(1);
+    expect((await call(services, "POST", `decks/${world.deckId}/archive`, { cookie })).status).toBe(204);
+    const after = LessonDeckDtoSchema.parse(await (await call(services, "GET", `lessons/${world.deckId}`, { cookie })).json());
+    expect(after.state).toBe("archived");
+    expect(after.published).toEqual(before.published);
+    expect(after.assignments).toEqual(before.assignments);
+    expect(await history()).toEqual(originalHistory);
+    for (const mode of ["training", "mock_test"] as const) {
+      await expect(startSession(services, { childId: child.id, deckId: world.deckId, microphoneEnabled: false, mode })).rejects.toMatchObject({ code: "conflict" });
+    }
+    expect(await history()).toEqual(originalHistory);
+  });
 
   it("wymaga sesji rodzica (401) i Origin dla mutacji (403)", async () => {
     const fakes = await fakeGeneration();

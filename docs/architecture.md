@@ -452,6 +452,12 @@ Trzy pierwsze zmienne razem albo żadna (częściowa konfiguracja = błąd start
 - **Audio odpowiedzi kanonicznej — zaimplementowane (A58).** Serwer generuje i wymaga `target_audio` przy publikacji (`ttsForAnswers`); `lesson-sessions.ts#loadExercises` rozwiązuje gotowy zasób (`revision_assets.state='approved'` ∧ `media_assets.state='ready'`), a `lesson-materialize.ts` dołącza `audioAssetId` TYLKO do promptów tekstowych (`lesson_gap`/`error_fix`/`transform`/`open_answer`) i nigdy w kartkówce. Kid UI (`LessonGapView`/`LessonSentenceView`) pokazuje „Posłuchaj”; `playTaskAudio` woła `authorizeDisclosure(audio)`, który pieczętuje `audio_issued` z `target_key` PRZED wydaniem bajtów → `assistanceFor` dodaje `model_audio` → próba niesamodzielna (wym. 4.6). Typy zamknięte nie niosą `audioAssetId`, a `authorizeDisclosure` odrzuca dla nich `kind='audio'` (`conflict`).
 - **Opanowanie bez modelu.** Niezależne sprawdzenie reguły może używać produktywnych typów deterministycznych (zwł. `lesson_gap`), więc opanowanie jest osiągalne bez modelu oceniającego, o ile pula zawiera dość różnych takich ćwiczeń; model jest wymagany tylko dla odpowiedzi niedopasowanych (głównie tłumaczenie). Hybrydowa ocena jest opcjonalna.
 
+### 19.8. Usuwanie lekcji z listy rodzica (2026-10-13)
+
+„Usuń z listy” oznacza archiwizację konkretnego zestawu-lekcji istniejącym `POST /api/v1/parent/decks/:deckId/archive` (204), po potwierdzeniu tytułu i informacji o zachowaniu historii. Lista rodzica domyślnie ukrywa archiwalne lekcje; „Pokaż archiwalne” odsłania je do podglądu. Lista słówek zachowuje dotychczasowe zachowanie. Ćwiczenia, opublikowane wersje, przypisania i historia dziecka zostają w bazie; serwer blokuje start nowej sesji zarchiwizowanego zestawu. Katalog tematów (np. Present Simple) pozostaje dostępny do tworzenia kolejnych lekcji. Przywracanie i zmiana obsługi już trwających sesji są poza zakresem.
+
+Nie zmienia się publiczny kontrakt API ani schemat bazy. API → MCP → skill bez zmian: raport `learning-overview` i skill Hermesa nadal wykluczają lekcje.
+
 ## 18. Dokumentacja wykorzystana przy projektowaniu
 
 - Next.js, backend dla frontendu: https://nextjs.org/docs/app/guides/backend-for-frontend
