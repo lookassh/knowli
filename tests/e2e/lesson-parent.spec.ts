@@ -55,7 +55,12 @@ async function createLesson(page: Page, title: string, waitForGeneration = true)
   await expect(page.locator('[data-testid^="exercise-"]').first()).toBeVisible({ timeout: 120_000 });
   // Nadaj tytuł i zapisz, aby lista pokazywała lekcję po tytule.
   await page.getByTestId("editor-title").fill(title);
+  const saved = page.waitForResponse((response) =>
+    response.request().method() === "PATCH" && response.url().includes("/api/v1/parent/lesson-drafts/"),
+  );
   await page.getByTestId("save-lesson").click();
+  expect((await saved).status()).toBe(200);
+  await expect(page.getByTestId("save-lesson")).toBeEnabled();
   await expect(page.getByTestId("editor-title")).toHaveValue(title);
   return deck.deckId;
 }
@@ -182,6 +187,9 @@ test("shows a version conflict when the draft changed in another window", async 
   await enterParent(page);
   await createLesson(page, lessonTitle);
 
+  // Lokalna zmiana zamraża bazę formularza przed zapisem drugiego okna.
+  await page.getByTestId("editor-title").fill(`${lessonTitle} lokalnie`);
+
   // Drugie okno tej samej sesji (ta sama przeglądarka/cookies) edytuje i zapisuje
   // szkic → podbija editNumber. Najnowsza lekcja jest pierwsza na liście.
   const other = await context.newPage();
@@ -190,13 +198,20 @@ test("shows a version conflict when the draft changed in another window", async 
   await other.getByTestId("deck-row-0").click();
   await expect(other.getByTestId("lesson-editor")).toBeVisible();
   await other.getByTestId("editor-title").fill(`${lessonTitle} zdalnie`);
+  const remoteSaved = other.waitForResponse((response) =>
+    response.request().method() === "PATCH" && response.url().includes("/api/v1/parent/lesson-drafts/"),
+  );
   await other.getByTestId("save-lesson").click();
+  expect((await remoteSaved).status()).toBe(200);
   await expect(other.getByTestId("editor-title")).toHaveValue(`${lessonTitle} zdalnie`);
   await other.close();
 
   // Pierwsze okno zapisuje na nieaktualnym editNumber → konflikt.
-  await page.getByTestId("editor-title").fill(`${lessonTitle} lokalnie`);
+  const staleSave = page.waitForResponse((response) =>
+    response.request().method() === "PATCH" && response.url().includes("/api/v1/parent/lesson-drafts/"),
+  );
   await page.getByTestId("save-lesson").click();
+  expect((await staleSave).status()).toBe(409);
   await expect(page.getByTestId("lesson-conflict-panel")).toBeVisible();
   await page.getByTestId("conflict-load-remote").click();
   await expect(page.getByTestId("lesson-conflict-panel")).toHaveCount(0);
