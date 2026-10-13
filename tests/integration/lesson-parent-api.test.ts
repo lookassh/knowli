@@ -10,6 +10,7 @@ import {
   nextTask,
   completePresentation,
   submitAttempt,
+  FakeAnswerGrader,
   type Services,
 } from "@learning/server";
 import {
@@ -185,6 +186,10 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
       }) };
     };
     const { services, cookie } = await freshParent(fakes);
+    // Transform jest preferowany dopiero przy dostępnym graderze; dokładna
+    // odpowiedź w tym teście nadal jest oceniana deterministycznie.
+    const sessionServices = createServices({ db: services.db, clock: services.clock,
+      grader: { provider: new FakeAnswerGrader(), maxCallsPerSession: 20, timeoutMs: 8000 } });
     const created = await call(services, "POST", "lessons", { cookie, body: lessonBody({ objectiveIds: ["english_grammar.present_simple.negative"] }) });
     const { deckId } = await created.json() as { deckId: string };
     await drainWork(services);
@@ -203,15 +208,15 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
     expect((await call(services, "POST", `lesson-drafts/${draft.id}/publish`, { cookie, body: { expectedEditNumber: updated.editNumber } })).status).toBe(200);
     const child = await createChild(services, { displayName: "Test przepływu", avatarKey: "owl" });
     expect((await call(services, "PUT", `assignments/${child.id}/${deckId}`, { cookie, body: { testDate: null } })).status).toBe(204);
-    const session = await startSession(services, { childId: child.id, deckId, microphoneEnabled: false });
+    const session = await startSession(sessionServices, { childId: child.id, deckId, microphoneEnabled: false });
     const seen = new Set<string>();
     for (let i = 0; i < 18; i++) {
-      const task = await nextTask(services, session.sessionId);
+      const task = await nextTask(sessionServices, session.sessionId);
       if (!task) break;
       TaskPromptSchema.parse(task.prompt);
-      if (task.exerciseType === "lesson_card") { await completePresentation(services, { taskId: task.taskId }); continue; }
+      if (task.exerciseType === "lesson_card") { await completePresentation(sessionServices, { taskId: task.taskId }); continue; }
       const key = (await pool.query("select answer_key from learning_app.session_tasks where id=$1", [task.taskId])).rows[0].answer_key;
-      const attempt = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(),
+      const attempt = await submitAttempt(sessionServices, { taskId: task.taskId, clientAttemptId: randomUUID(),
         ...(["lesson_choice", "lesson_short_answer", "lesson_notice"].includes(task.exerciseType) ? { modality: "choice" as const, optionId: key.correctOptionId }
           : task.exerciseType === "lesson_order" ? { modality: "sequence" as const, itemIds: key.itemIds }
           : { modality: "text" as const, text: key.answer }),
