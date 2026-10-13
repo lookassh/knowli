@@ -3,7 +3,10 @@ import {
   createDatabase,
   createLocalMediaStore,
   createServices,
+  fakeGraderDeps,
+  FakeAnswerGrader,
   fakeSpeechDeps,
+  graderFromEnv,
   mediaSettingsFromEnv,
   speechFromEnv,
   systemClock,
@@ -27,6 +30,13 @@ function initialize(): { services: Services; pool: Pool } {
   // tryb fake (E2E/smoke bez kluczy): odpowiedzi ustne przechodzą pełny cykl
   // na deterministycznych providerach zamiast kończyć się wynikiem technicznym
   const speech = speechFromEnv(process.env) ?? (process.env.UMIEM_FAKE_PROVIDERS === "1" ? fakeSpeechDeps() : undefined);
+  // model oceniający: z env (produkcja) albo fake w trybie E2E (routing po słowach
+  // kluczowych w odpowiedzi: „almost” → almost, „wrong” → incorrect, inaczej correct)
+  const grader =
+    graderFromEnv(process.env) ??
+    (process.env.UMIEM_FAKE_PROVIDERS === "1"
+      ? fakeGraderDeps({ provider: new FakeAnswerGrader({ keywordRouting: true }) })
+      : undefined);
   return {
     services: createServices({
       db,
@@ -36,6 +46,7 @@ function initialize(): { services: Services; pool: Pool } {
       mediaStore: createLocalMediaStore(process.env.MEDIA_ROOT ?? "./data/media"),
       // ścieżka mowy to krótkie żądanie web → provider, bez kolejki (arch §11)
       ...(speech ? { speech } : {}),
+      ...(grader ? { grader } : {}),
     }),
     pool,
   };

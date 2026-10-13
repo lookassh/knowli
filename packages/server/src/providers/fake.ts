@@ -1,8 +1,11 @@
 import { createHash } from "node:crypto";
 import type { GenerationDeps, SpeechDeps } from "../config";
 import type {
+  AnswerGraderProvider,
   AudioInput,
+  GraderInput,
   ImageProvider,
+  LessonPoolInput,
   LlmGeneratedItem,
   LlmGenerateDeckInput,
   LlmProvider,
@@ -60,11 +63,178 @@ export type LlmBehavior =
   | { items: Array<Record<string, unknown>> }
   | { error: string; retryable: boolean };
 
+/**
+ * Zachowanie fake'a dla generacji puli lekcji: albo surowe ćwiczenia + przykłady
+ * do zwrócenia, albo błąd (retryable jak dla decków), albo deterministyczna pula
+ * domyślna generowana z wejścia. `invalid: true` zmusza fake do wygenerowania
+ * ćwiczeń odrzucanych przez walidację (dowód odrzuceń pojedynczych).
+ */
+export type LlmLessonBehavior =
+  | { exercises: unknown[]; examples?: Record<string, string[]> }
+  | { error: string; retryable: boolean }
+  | { invalid: true };
+
+/** Deterministyczne słowo z materiału (pierwszy token) dla danego indeksu. */
+function materialWord(material: string, index: number): string {
+  const words = material
+    .normalize("NFC")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length > 0);
+  const base = words.length > 0 ? words[index % words.length]! : "word";
+  // Unikalność odpowiedzi w puli: dołączamy sufiks indeksu (po normalizacji
+  // nadal jeden token, bo cyfry są częścią tokenu).
+  return index === 0 ? base.toLowerCase() : `${base.toLowerCase()}${index}`;
+}
+
+/**
+ * Deterministyczna pula ćwiczeń dla jednego wejścia `generateLessonPool`.
+ * Działa dla DOWOLNEGO przedmiotu: wybiera typy ćwiczeń z celu i etapu, buduje
+ * poprawne ćwiczenia (focus = odpowiedź, luka z jednym znacznikiem, opcje
+ * unikalne) z unikalnymi odpowiedziami także wobec `existingAnswers`.
+ */
+function fakeLessonExercises(input: LessonPoolInput): {
+  exercises: Record<string, unknown>[];
+  examples: Record<string, string[]>;
+} {
+  const exercises: Record<string, unknown>[] = [];
+  const examples: Record<string, string[]> = {};
+  // Odpowiedzi już w puli, znormalizowane naiwnie (lowercase) — fake trzyma je,
+  // by nie wygenerować duplikatu przy dogenerowaniu.
+  const used = new Set<string>((input.existingAnswers ?? []).map((a) => a.toLowerCase()));
+  let seq = 0;
+
+  const nextAnswer = (material: string): string => {
+    let answer = materialWord(material, seq++);
+    while (used.has(answer.toLowerCase())) {
+      answer = materialWord(material, seq++);
+    }
+    used.add(answer.toLowerCase());
+    return answer;
+  };
+
+  const stageTypes: Record<"guided" | "productive" | "independent", readonly string[]> = {
+    guided: ["lesson_choice", "lesson_short_answer", "lesson_order"],
+    productive: ["lesson_gap", "lesson_error_fix", "lesson_transform"],
+    independent: ["lesson_open_answer"],
+  };
+
+  for (const objective of input.objectives) {
+    examples[objective.id] = [`Example for ${objective.id}.`];
+    const allowed = new Set(objective.exerciseTypes);
+    for (const stage of ["guided", "productive", "independent"] as const) {
+      const count = input.stageCounts[stage];
+      // Preferuj najprostszy do poprawnego zbudowania typ danego etapu:
+      // choice (guided), gap bez hintu (productive), open_answer (independent).
+      const type = stageTypes[stage].find((t) => allowed.has(t));
+      if (type === undefined) {
+        continue;
+      }
+      for (let i = 0; i < count; i++) {
+        const answer = nextAnswer(input.material);
+        exercises.push(fakeExercise(type, objective.id, answer, input));
+      }
+    }
+  }
+
+  // Gwarancja ≥ 1 ćwiczenia: jeśli etapy nic nie dały (nietypowy cel), dołóż
+  // jedno open_answer, jeśli dozwolone, inaczej pierwszy dozwolony typ.
+  if (exercises.length === 0 && input.objectives.length > 0) {
+    const objective = input.objectives[0]!;
+    const type = objective.exerciseTypes[0] ?? "lesson_open_answer";
+    exercises.push(fakeExercise(type, objective.id, nextAnswer(input.material), input));
+  }
+
+  return { exercises, examples };
+}
+
+/** Jedno poprawne ćwiczenie danego typu (lub najbliższe poprawnemu). */
+function fakeExercise(
+  type: string,
+  objectiveId: string,
+  answer: string,
+  input: LessonPoolInput,
+): Record<string, unknown> {
+  const base: Record<string, unknown> = {
+    exerciseType: type,
+    objectiveId,
+    instructionPl: "Uzupełnij.",
+    answer,
+    acceptedAnswers: [],
+    focus: [answer],
+  };
+  switch (type) {
+    case "lesson_choice":
+    case "lesson_short_answer":
+      return {
+        ...base,
+        focus: [],
+        stem: "Wybierz poprawną odpowiedź.",
+        options: [
+          { id: "a", text: answer },
+          { id: "b", text: `${answer}x` },
+        ],
+        correctOption: "a",
+      };
+    case "lesson_order":
+      return {
+        ...base,
+        focus: [],
+        answer: `${answer} one two`,
+        items: [
+          { id: "i1", text: answer },
+          { id: "i2", text: "one" },
+          { id: "i3", text: "two" },
+        ],
+      };
+    case "lesson_gap":
+      // bez `hint`: unikamy reguły przedmiotu wiążącej odpowiedź z czasownikiem.
+      return { ...base, stem: `___ here (${answer}).` };
+    case "lesson_error_fix":
+      return { ...base, statement: `${answer}x wrong.` };
+    case "lesson_transform":
+      return {
+        ...base,
+        transformId: input.transforms[0]?.id ?? "unknown_transform",
+        statement: "Przekształć to zdanie.",
+      };
+    case "lesson_notice":
+      return {
+        exerciseType: type,
+        objectiveId,
+        instructionPl: "Wskaż słowo.",
+        answer,
+        acceptedAnswers: [],
+        focus: [],
+        noticeSegments: [[answer, "one"], ["two", "three"]],
+        correctOption: answer,
+      };
+    case "lesson_open_answer":
+    default:
+      return { ...base, prompt: "Odpowiedz." };
+  }
+}
+
+/** Celowo niepoprawne ćwiczenie (puste pola) — do dowodu odrzuceń walidacji. */
+function fakeInvalidExercise(objectiveId: string): Record<string, unknown> {
+  return {
+    exerciseType: "lesson_gap",
+    objectiveId,
+    answer: "a b c d e", // > 3 tokeny → odrzucone
+    acceptedAnswers: [],
+    focus: [],
+    stem: "no gap marker here",
+  };
+}
+
 export class FakeLlmProvider implements LlmProvider {
   readonly name = "fake-llm";
   readonly model = "fake-llm-1";
   readonly requests: LlmGenerateDeckInput[] = [];
+  readonly lessonRequests: LessonPoolInput[] = [];
   #behaviors: LlmBehavior[] = [];
+  #lessonBehaviors: LlmLessonBehavior[] = [];
   readonly #delayMs: number;
 
   constructor(options: { delayMs?: number } = {}) {
@@ -74,6 +244,11 @@ export class FakeLlmProvider implements LlmProvider {
   /** Zastępuje plan zachowań: kolejne wywołania zjadają elementy z kolejki, ostatni się powtarza. */
   queue(...behaviors: LlmBehavior[]): void {
     this.#behaviors = behaviors;
+  }
+
+  /** Plan zachowań generacji puli lekcji (jedna partia per cel = jedno wywołanie). */
+  queueLesson(...behaviors: LlmLessonBehavior[]): void {
+    this.#lessonBehaviors = behaviors;
   }
 
   async generateDeck(input: LlmGenerateDeckInput): Promise<{ items: LlmGeneratedItem[] }> {
@@ -92,6 +267,34 @@ export class FakeLlmProvider implements LlmProvider {
       throw error;
     }
     return { items: behavior.items as unknown as LlmGeneratedItem[] };
+  }
+
+  async generateLessonPool(
+    input: LessonPoolInput,
+  ): Promise<{ exercises: unknown[]; examples: Record<string, string[]> }> {
+    this.lessonRequests.push(input);
+    if (this.#delayMs > 0) {
+      await sleep(this.#delayMs);
+    }
+    const behavior =
+      this.#lessonBehaviors.length > 1
+        ? this.#lessonBehaviors.shift()!
+        : this.#lessonBehaviors[0] ?? null;
+    if (!behavior) {
+      return fakeLessonExercises(input);
+    }
+    if ("error" in behavior) {
+      const error = new Error(behavior.error) as Error & { retryable?: boolean };
+      error.retryable = behavior.retryable;
+      throw error;
+    }
+    if ("invalid" in behavior) {
+      // Mieszanka: połowa poprawnych, połowa odrzucanych — dowód odrzuceń pojedynczych.
+      const good = fakeLessonExercises(input);
+      const bad = input.objectives.map((o) => fakeInvalidExercise(o.id));
+      return { exercises: [...good.exercises, ...bad], examples: good.examples };
+    }
+    return { exercises: behavior.exercises, examples: behavior.examples ?? {} };
   }
 }
 
@@ -226,5 +429,104 @@ export function fakeGenerationDeps(
     tts: new FakeTtsProvider(options),
     image: new FakeImageProvider(options),
     mediaStore,
+  };
+}
+
+/**
+ * Zachowanie fake gradera dla jednej odpowiedzi (po znormalizowanej treści albo
+ * domyślne). `raw` to surowy obiekt zwracany przez provider (jak prawdziwy
+ * adapter — walidacja w domenie), więc test może podać też kształt niepoprawny
+ * (invalid JSON / kategoria spoza listy). `delayMs` symuluje opóźnienie modelu;
+ * `error` symuluje awarię HTTP/sieci (moduł zamieni na `unevaluated`).
+ */
+export type FakeGraderBehavior =
+  | { raw: unknown; delayMs?: number }
+  | { error: string; delayMs?: number };
+
+/**
+ * Deterministyczny fake modelu oceniającego dla integracji/E2E: liczy wywołania
+ * i mapuje znormalizowaną (naiwnie: lowercase + trim) odpowiedź dziecka na
+ * zaprogramowany surowy werdykt. Bez zachowania → werdykt `correct`. Tryb
+ * E2E może włączyć prosty routing po słowach kluczowych w odpowiedzi.
+ */
+export class FakeAnswerGrader implements AnswerGraderProvider {
+  readonly name = "fake-grader";
+  readonly model = "fake-grader-1";
+  readonly promptVersion: string;
+  readonly requests: GraderInput[] = [];
+  #byAnswer = new Map<string, FakeGraderBehavior>();
+  #default: FakeGraderBehavior | null = null;
+  #keywordRouting = false;
+
+  constructor(options: { promptVersion?: string; keywordRouting?: boolean } = {}) {
+    this.promptVersion = options.promptVersion ?? "fake-grader-v1";
+    this.#keywordRouting = options.keywordRouting ?? false;
+  }
+
+  /** Programuje werdykt dla konkretnej (surowej) odpowiedzi dziecka. */
+  onAnswer(childAnswer: string, behavior: FakeGraderBehavior): this {
+    this.#byAnswer.set(childAnswer.trim().toLowerCase(), behavior);
+    return this;
+  }
+
+  /** Werdykt domyślny, gdy brak dopasowania po odpowiedzi. */
+  onDefault(behavior: FakeGraderBehavior): this {
+    this.#default = behavior;
+    return this;
+  }
+
+  get callCount(): number {
+    return this.requests.length;
+  }
+
+  async grade(input: GraderInput, signal: AbortSignal): Promise<unknown> {
+    this.requests.push(input);
+    const key = input.childAnswer.trim().toLowerCase();
+    const behavior = this.#byAnswer.get(key) ?? this.#default ?? this.#keywordVerdict(input);
+    if (behavior.delayMs && behavior.delayMs > 0) {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, behavior.delayMs);
+        signal.addEventListener("abort", () => {
+          clearTimeout(timer);
+          reject(new DOMException("aborted", "AbortError"));
+        });
+      });
+    }
+    if ("error" in behavior) {
+      throw new Error(behavior.error);
+    }
+    return behavior.raw;
+  }
+
+  /**
+   * Routing po słowach kluczowych (E2E bez konfiguracji per odpowiedź): odpowiedź
+   * zawierająca „almost” → almost z pierwszym tokenem jako fragment; „wrong” →
+   * incorrect z pierwszą kategorią celu; inaczej correct.
+   */
+  #keywordVerdict(input: GraderInput): FakeGraderBehavior {
+    if (!this.#keywordRouting) {
+      return { raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok" } };
+    }
+    const answer = input.childAnswer;
+    const firstToken = answer.trim().split(/\s+/)[0] ?? answer;
+    if (/almost/i.test(answer)) {
+      return { raw: { verdict: "almost", errorCategory: null, fragments: [firstToken], note: "almost" } };
+    }
+    if (/wrong/i.test(answer)) {
+      const category = input.objective.errorCategories[0]?.code ?? "other";
+      return { raw: { verdict: "incorrect", errorCategory: category, fragments: [firstToken], note: "wrong" } };
+    }
+    return { raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok" } };
+  }
+}
+
+/** Zależności gradera na fake'u — do integracji i trybu UMIEM_FAKE_PROVIDERS. */
+export function fakeGraderDeps(
+  options: { provider?: FakeAnswerGrader; maxCallsPerSession?: number; timeoutMs?: number } = {},
+): { provider: FakeAnswerGrader; maxCallsPerSession: number; timeoutMs: number } {
+  return {
+    provider: options.provider ?? new FakeAnswerGrader(),
+    maxCallsPerSession: options.maxCallsPerSession ?? 20,
+    timeoutMs: options.timeoutMs ?? 8000,
   };
 }

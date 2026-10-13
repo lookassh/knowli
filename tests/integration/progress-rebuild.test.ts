@@ -4,7 +4,9 @@ import {
   completePresentation,
   createChild,
   createDraft,
+  createServices,
   endSession,
+  FakeAnswerGrader,
   nextTask,
   publishDraft,
   rebuildProgress,
@@ -12,6 +14,7 @@ import {
   submitAttempt,
   upsertAssignment,
 } from "@learning/server";
+import { lessonWorld } from "../fixtures/lesson-world";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
 
 const { pool } = testDatabase();
@@ -26,7 +29,8 @@ afterAll(async () => { await pool.end(); });
 describe("rebuildProgress (integracja PostgreSQL)", () => {
   beforeEach(async () => {
     await truncateCoreTables();
-    await pool.query(`truncate learning_app.revision_assets, learning_app.media_assets, learning_app.item_revision_skills,
+    await pool.query(`truncate learning_app.child_objective_progress, learning_app.lesson_verdicts,
+      learning_app.revision_assets, learning_app.media_assets, learning_app.item_revision_skills,
       learning_app.item_revisions, learning_app.skill_versions, learning_app.learning_items,
       learning_app.deck_versions, learning_app.decks cascade`);
   });
@@ -165,5 +169,91 @@ describe("rebuildProgress (integracja PostgreSQL)", () => {
         from learning_app.session_tasks t join learning_app.learning_sessions s on s.id=t.session_id
        where s.child_id=$1 and t.exercise_type <> 'exposure' limit 1`, [children[0]!.id]);
     await expect(rebuildProgress(services, { childId: children[0]!.id, apply: true })).rejects.toMatchObject({ code: "conflict" });
+  });
+});
+
+describe("rebuildProgress — cele lekcji (child_objective_progress)", () => {
+  beforeEach(async () => {
+    await truncateCoreTables();
+    await pool.query(`truncate learning_app.child_objective_progress, learning_app.lesson_verdicts,
+      learning_app.revision_assets, learning_app.media_assets, learning_app.item_revision_skills,
+      learning_app.item_revisions, learning_app.skill_versions, learning_app.learning_items,
+      learning_app.deck_versions, learning_app.decks cascade`);
+  });
+
+  it("odbudowuje child_objective_progress z ocen objective; dry-run bez zapisu, apply idempotentny, słówka nietknięte", async () => {
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok" } });
+    const { services: base, clock } = buildTestServices();
+    const services = createServices({
+      db: (base as unknown as { db: Parameters<typeof createServices>[0]["db"] }).db,
+      clock,
+      generation: {} as Parameters<typeof createServices>[0]["generation"],
+      grader: { provider: grader, maxCallsPerSession: 20, timeoutMs: 8000 },
+    });
+    const child = await createChild(services, { displayName: "Lekcja", avatarKey: "owl" });
+    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, now: clock.now() });
+
+    // Zagraj kilka ćwiczeń celu → oceny skill='objective' + projekcja child_objective_progress.
+    const session = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
+    let answered = 0;
+    for (let step = 0; step < 30 && answered < 3; step++) {
+      const task = await nextTask(services, session.sessionId);
+      if (!task) break;
+      if (task.exerciseType === "lesson_card") { await completePresentation(services, { taskId: task.taskId }); continue; }
+      const key = (await query<{ answerKey: Record<string, unknown> }>(
+        `select answer_key as "answerKey" from learning_app.session_tasks where id = $1`, [task.taskId]))[0]!.answerKey;
+      if (task.exerciseType === "lesson_choice" || task.exerciseType === "lesson_short_answer" || task.exerciseType === "lesson_notice") {
+        await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: key.correctOptionId as string });
+      } else if (task.exerciseType === "lesson_order") {
+        await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "sequence", itemIds: key.itemIds as string[] });
+      } else {
+        await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: key.answer as string });
+      }
+      answered += 1;
+    }
+    expect(answered).toBeGreaterThan(0);
+    await endSession(services, session.sessionId);
+
+    const objBefore = (await query<{ status: string; streak: number }>(
+      `select status, streak from learning_app.child_objective_progress where child_id = $1`, [child.id]))[0]!;
+    expect(objBefore).toBeTruthy();
+
+    // Zatruj projekcję celu.
+    await pool.query(
+      `update learning_app.child_objective_progress set status='mastered', streak=99, projection_version='poisoned' where child_id=$1`,
+      [child.id]);
+    // Osierocona projekcja celu (nieistniejący cel) → kasowana przez odbudowę.
+    await pool.query(
+      `insert into learning_app.child_objective_progress (child_id, subject_id, objective_id, topic_id, status, streak, projection_version)
+       values ($1, $2, 'ghost_objective', $3, 'mastered', 7, 'poisoned')`,
+      [child.id, lesson.subjectId, lesson.topicId]);
+
+    const dryRun = await rebuildProgress(services, { apply: false });
+    expect(dryRun.updated + dryRun.downgraded).toBeGreaterThan(0);
+    expect(dryRun.deleted).toBeGreaterThan(0);
+    // Dry-run niczego nie zapisał.
+    expect((await query<{ status: string; streak: number }>(
+      `select status, streak from learning_app.child_objective_progress where child_id=$1 and objective_id=$2`,
+      [child.id, lesson.objectiveId]))[0]).toEqual({ status: "mastered", streak: 99 });
+
+    const applied = await rebuildProgress(services, { apply: true });
+    expect(applied.updated).toBeGreaterThan(0);
+    // Zatruta projekcja wróciła do prawdziwej; duch skasowany.
+    const objAfter = (await query<{ status: string; streak: number; version: string }>(
+      `select status, streak, projection_version as version from learning_app.child_objective_progress where child_id=$1 and objective_id=$2`,
+      [child.id, lesson.objectiveId]))[0]!;
+    expect(objAfter.status).toBe(objBefore.status);
+    expect(objAfter.streak).toBe(objBefore.streak);
+    expect(objAfter.version).not.toBe("poisoned");
+    expect(await query(`select 1 from learning_app.child_objective_progress where child_id=$1 and objective_id='ghost_objective'`, [child.id])).toEqual([]);
+
+    // Idempotencja: drugi apply nic nie zmienia.
+    const second = await rebuildProgress(services, { apply: true });
+    expect(second.inserted + second.updated + second.deleted).toBe(0);
+
+    // Odmowa przy aktywnej sesji dziecka.
+    const active = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
+    await expect(rebuildProgress(services, { childId: child.id, apply: true })).rejects.toMatchObject({ code: "conflict" });
+    await endSession(services, active.sessionId);
   });
 });

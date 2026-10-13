@@ -1,6 +1,7 @@
 import {
   messages,
   type MockTestSummaryDto,
+  type LessonMockTestSummaryDto,
   type AttemptDto,
   type FeedbackDto,
   type KidDeckDto,
@@ -62,6 +63,7 @@ export interface LearningScreen {
 export type KidScreen =
   | { kind: "mockTestReady"; session: SessionDto }
   | { kind: "mockTestSummary"; summary: MockTestSummaryDto }
+  | { kind: "lessonMockTestSummary"; summary: LessonMockTestSummaryDto }
   | { kind: "sessionConflict"; active: KidDeckDto; childId: string }
   | { kind: "loading" }
   | { kind: "initError"; message: string }
@@ -91,6 +93,7 @@ export interface LearningSessionDeps {
 type AnswerPayload =
   | { modality: "choice"; optionId: string }
   | { modality: "text"; text: string }
+  | { modality: "sequence"; itemIds: string[] }
   | { modality: "dont_remember" }
   | { modality: "skip" };
 
@@ -113,8 +116,33 @@ function audioAssetOf(task: TaskDto): string | null {
   if (task.prompt.kind === "exposure" || task.prompt.kind === "listening" || task.prompt.kind === "speech") {
     return task.prompt.audioAssetId;
   }
+  // Audio lekcji jest opcjonalne (przedmiot z TTS) i oferowane WYŁĄCZNIE w
+  // ćwiczeniach tekstowych — odsłuch zdania wzorcowego przed odpowiedzią jest
+  // dozwolonym wsparciem (wym. 4.6). Typy zamknięte nie niosą pola audioAssetId.
+  if (
+    task.prompt.kind === "lesson_gap" ||
+    task.prompt.kind === "lesson_error_fix" ||
+    task.prompt.kind === "lesson_transform" ||
+    task.prompt.kind === "lesson_open_answer"
+  ) {
+    return task.prompt.audioAssetId ?? null;
+  }
   return null;
 }
+
+/** Typy zadań, dla których odsłuch wymaga zgody serwera PRZED odtworzeniem (seal). */
+const AUDIO_DISCLOSURE_EXERCISES = new Set([
+  "recall",
+  "spelling",
+  "letter_completion",
+  "speech",
+  // Lekcje tekstowe: audio to kanoniczna odpowiedź → ekspozycja pieczętowana i
+  // próba kwalifikowana jako wspomagana (wym. 4.6).
+  "lesson_gap",
+  "lesson_error_fix",
+  "lesson_transform",
+  "lesson_open_answer",
+]);
 
 export class LearningSessionController {
   readonly #api: KidApi;
@@ -128,6 +156,10 @@ export class LearningSessionController {
   #profiles: KidProfileDto[] = [];
   #childId: string | null = null;
   #micDenied = false;
+  /** Rodzaj zestawu aktywnej kartkówki — decyduje o kształcie omówienia
+   * (lekcja = per cel, słówka = per umiejętność). SessionDto nie niesie
+   * rodzaju, więc zapamiętujemy go z karty zestawu, z której wystartowano. */
+  #mockDeckKind: "vocabulary" | "lesson" = "vocabulary";
   #recordingMode: RecordingModeDto = "hold";
   #recorder: SpeechRecorder | null = null;
   /** Ostatnia operacja do ponowienia po powrocie sieci/błędzie aplikacji. */
@@ -277,6 +309,9 @@ export class LearningSessionController {
   async startLearning(deckId: string, mode: SessionDto["mode"] = "training"): Promise<void> {
     if (this.#screen.kind !== "deck") return;
     const { childId, microphone } = this.#screen;
+    if (mode === "mock_test") {
+      this.#mockDeckKind = this.#screen.decks.find(d => d.deckId === deckId)?.kind === "lesson" ? "lesson" : "vocabulary";
+    }
     this.#epoch += 1;
     const epoch = this.#epoch;
     // nowa sesja nie dziedziczy wyboru z poprzedniej (np. przerwanego awarią)
@@ -396,6 +431,15 @@ export class LearningSessionController {
     try {
       const summary = await this.#api.endSession(sessionId);
       if (epoch !== this.#epoch) return;
+      if (mode === "mock_test" && this.#mockDeckKind === "lesson") {
+        const lessonSummary = await this.#api.readLessonMockTestSummary(sessionId);
+        if (epoch !== this.#epoch) return;
+        this.#teardownRecording();
+        this.#stopPlayback();
+        this.#screen = { kind: "lessonMockTestSummary", summary: lessonSummary };
+        this.#emit();
+        return;
+      }
       const mockSummary = mode === "mock_test" ? await this.#api.readMockTestSummary(sessionId) : null;
       if (epoch !== this.#epoch) return;
       this.#teardownRecording();
@@ -432,7 +476,7 @@ export class LearningSessionController {
 
   async completePresentation(): Promise<void> {
     const screen = this.#learning();
-    if (!screen?.task || screen.busy || screen.task.exerciseType !== "exposure") return;
+    if (!screen?.task || screen.busy || (screen.task.exerciseType !== "exposure" && screen.task.exerciseType !== "lesson_card")) return;
     const epoch = this.#epoch;
     const sessionId = screen.session.sessionId;
     const taskId = screen.task.taskId;
@@ -456,6 +500,11 @@ export class LearningSessionController {
 
   async answerText(text: string): Promise<void> {
     await this.#submitAnswer({ modality: "text", text: text.trim() });
+  }
+
+  /** Odpowiedź `sequence` (ułożone klocki `lesson_order`). */
+  async answerSequence(itemIds: string[]): Promise<void> {
+    await this.#submitAnswer({ modality: "sequence", itemIds });
   }
 
   /** „Nie pamiętam — pokaż”: ujawnienie z zapisem ekspozycji przed treścią (SPEC §15.1). */
@@ -612,7 +661,7 @@ export class LearningSessionController {
     if (!assetId) return;
     const playbackGeneration = this.#beginPlayback();
     const epoch = this.#epoch;
-    if (screen.session.mode === "mock_test" || ["recall", "spelling", "letter_completion", "speech"].includes(task.exerciseType)) {
+    if (screen.session.mode === "mock_test" || AUDIO_DISCLOSURE_EXERCISES.has(task.exerciseType)) {
       try {
         await this.#api.authorizeDisclosure(task.taskId, "audio");
       } catch (error) {
@@ -837,8 +886,10 @@ export class LearningSessionController {
   }
 
   async learnAgain(): Promise<void> {
-    if ((this.#screen.kind !== "summary" && this.#screen.kind !== "mockTestSummary") || this.#childId === null) return;
-    const deckId = this.#screen.kind === "mockTestSummary" ? this.#screen.summary.deckId : null;
+    if ((this.#screen.kind !== "summary" && this.#screen.kind !== "mockTestSummary" && this.#screen.kind !== "lessonMockTestSummary") || this.#childId === null) return;
+    const deckId = this.#screen.kind === "mockTestSummary" ? this.#screen.summary.deckId
+      : this.#screen.kind === "lessonMockTestSummary" ? this.#screen.summary.deckId
+      : null;
     await this.selectProfile(this.#childId);
     if (deckId) await this.startLearning(deckId);
   }

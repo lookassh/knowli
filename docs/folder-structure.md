@@ -194,4 +194,32 @@ Uzupełnienie #30 (2026-10-10): `contracts/src/mock-tests.ts` definiuje cele, li
 
 Brak apps/android, osobnego backendu Express/Nest, package OCR, repozytorium wektorowego i systemu pluginów. Przyszły host Capacitor będzie konsumował @learning/kid-ui i @learning/contracts oraz istniejące API. Nie trzeba dziś budować go tylko po to, aby wykazać możliwość rozbudowy.
 
+Lekcje i moduły przedmiotów (moduł gramatyki, 2026-10-12): silnik i przedmioty żyją w `packages/server/src/domain/lessons/**`, a przypadki użycia w `packages/server/src/modules/lessons/**`. Dodane ścieżki:
+
+| Ścieżka | Rola |
+| --- | --- |
+| packages/server/src/domain/lessons/types.ts | `SubjectModule`, `LessonTopic`, `LearningObjective`, `ErrorCategory`, `LessonExerciseType`, `LessonStage`, `AnswerNormalizer` |
+| packages/server/src/domain/lessons/registry.ts | Rejestr przedmiotów (`getSubject`, `listSubjects`, `getTopic`) |
+| packages/server/src/domain/lessons/catalog-validation.ts | `validateSubject` — spójność katalogu |
+| packages/server/src/domain/lessons/base-error-categories.ts | Kategorie błędów wspólne dla przedmiotów |
+| packages/server/src/domain/lessons/normalize.ts | Bazowy normalizator tekstu (NFC, apostrofy, interpunkcja, tokenizacja) |
+| packages/server/src/domain/lessons/stages.ts | Mapa typ → etap i etapy oceniane |
+| packages/server/src/domain/lessons/evaluate.ts | Dopasowanie, tolerancja literówki, walidacja i interpretacja werdyktu |
+| packages/server/src/domain/lessons/progress.ts | Kwalifikacja niezależności i projekcja per cel |
+| packages/server/src/domain/lessons/scheduler.ts | Selektor zadań lekcji |
+| packages/server/src/domain/lessons/lesson-policy.ts | Parametry selektora/polityki lekcji |
+| packages/server/src/domain/lessons/pool-validation.ts | Walidacja ćwiczeń (ogólna + walidatory przedmiotu) |
+| packages/server/src/domain/lessons/mock-test-plan.ts | Plan kartkówki lekcji |
+| packages/server/src/domain/lessons/subjects/english-grammar/ | `module.ts`, `normalizer.ts`, `error-categories.ts`, `validators.ts`, `prompts.ts`, `topics/present-simple.ts` |
+| packages/server/src/domain/lessons/testing/history-like-subject.ts | Fixture przedmiotu nie-językowego (dowód niezależności silnika) |
+| packages/server/src/modules/lessons/ | `lesson-api.ts`, `lesson-drafts.ts`, `lesson-sessions.ts`, `lesson-attempts.ts`, `lesson-materialize.ts`, `lesson-mock-tests.ts`, `lesson-supervision.ts` |
+| packages/server/src/ports/ai.ts | + `AnswerGraderProvider`, `LlmProvider.generateLessonPool` |
+| packages/server/src/providers/openai-compatible/grader.ts | Adapter modelu oceniającego (zgodny z OpenAI) |
+| packages/contracts/src/lessons.ts | DTO lekcji, ćwiczeń, postępu celów, werdyktów, raportu kartkówki, katalogu przedmiotów |
+| packages/kid-ui/src/exercises/lesson/ | Widoki ćwiczeń lekcji |
+| apps/web/src/parent/lessons/ | Formularz lekcji, przegląd puli, werdykty, postęp |
+| packages/server/drizzle/0007_lessons.sql | Migracja: `decks.kind`, `lesson_context`, `lesson_verdicts`, `child_objective_progress`, triggery i CHECK-i |
+
+Testy lekcji: `packages/server/src/domain/lessons/*.test.ts` (jednostkowe, kontrolowany zegar), `tests/integration/lesson-*.test.ts` (PostgreSQL + fake grader), `tests/e2e/lesson-*.spec.ts` (Playwright, fake providerzy). Fixtures lekcji w `tests/fixtures/`.
+
 Edycja profilu: `contracts/src/decks.ts` definiuje `ChildPatchSchema`, `server/src/modules/profiles.ts` implementuje `updateChild`, a `web/src/app/api/v1/parent/children/[id]/route.ts` udostępnia PATCH. `ChildEditor.tsx` odpowiada także za formularz imienia i awatara; istniejąca historia nie jest modyfikowana.

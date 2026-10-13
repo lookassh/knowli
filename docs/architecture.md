@@ -1,6 +1,6 @@
 # Architektura — Rodzinny asystent nauki AI
 
-Wersja: 1.2, po review pakietu przed implementacją • 7 października 2026  
+Wersja: 1.3, uzupełnienie o silnik lekcji i moduły przedmiotów • 12 października 2026 (bazowo 1.2 po review pakietu przed implementacją • 7 października 2026).
 Podstawa: SPEC.md 1.1 oraz późniejsze ustalenia: Next.js + TypeScript, PWA z możliwością późniejszego użycia Kid Mode w Capacitor.  
 Dokumenty towarzyszące: schema.sql, folder-structure.md, implementation-plan.md — wersja 1.2; SPEC pozostaje w wersji 1.1.
 
@@ -209,7 +209,7 @@ Cykl wsparcia jest rekonstruowany z wydanych zadań i odpowiedzi, bez osobnej ko
 
 Widok `letter_completion` (uzupełnienie 2026-10-10) zamienia znaki `_` z istniejącego publicznego `fragment` na osobne jednoliterowe pola. Kid UI składa widoczne znaki i wpisane litery, następnie wysyła pełne słowo przez istniejącą odpowiedź tekstową. Klucz odpowiedzi pozostaje na serwerze; klient nie ocenia poprawności. Widoczne litery zachowują ekspozycję i kwalifikację jako wsparcie. Zmiana zadania czyści pola, ponowne podejście w tym samym zadaniu pozwala poprawić poprzedni wpis. Nowy ekran nie wymaga zmian DTO, schedulera, polityki ani bazy.
 
-`skill-history.ts` kwalifikuje materiał dowodowy bez przepisywania ocen. Odbudowa `child_skill_progress` korzysta z tych samych czytników ograniczonych do profilu i wspólnego zapisu projekcji. `progress:rebuild` najpierw raportuje dry-run; tryb apply działa w osobnej transakcji na dziecko, blokuje profil i odmawia pracy przy aktywnej sesji lub próbie `processing`. Projekcja wybiera ostatnią wiarygodną ocenę właściwej wersji polityki. Odbudowa nie zmienia prób, ocen, ekspozycji ani podsumowań, a runbook wymaga przerwy serwisowej i zweryfikowanego backupu.
+`skill-history.ts` kwalifikuje materiał dowodowy bez przepisywania ocen. Odbudowa `child_skill_progress` (słówka) oraz `child_objective_progress` (cele lekcji) korzysta z tych samych czytników ograniczonych do profilu i wspólnego zapisu projekcji; obie projekcje odbudowują się w JEDNYM przejściu, w jednej transakcji na dziecko (bez przełącznika zakresu). `progress:rebuild` najpierw raportuje dry-run; tryb apply działa w osobnej transakcji na dziecko, blokuje profil i odmawia pracy przy aktywnej sesji lub próbie `processing` — te blokady i odmowy obejmują także cele. Projekcja wybiera ostatnią wiarygodną ocenę właściwej wersji polityki. Odbudowa nie zmienia prób, ocen, ekspozycji, werdyktów modelu (w tym decyzji rodzica) ani podsumowań, a runbook wymaga przerwy serwisowej i zweryfikowanego backupu.
 
 Początkowe odstępy po sukcesach: 1 dzień, 3 dni, 7 dni; po trudności — powrót po innych elementach w sesji oraz następnego dnia. Błędy techniczne nie przesuwają harmonogramu jak błędy wiedzy.
 
@@ -293,6 +293,22 @@ Wspólny format błędu: {code, message, retryable, requestId}. Walidacja na gra
 | Media | GET /api/v1/media/:id | Zasób state=ready po opaque ID; same-origin, bez CORS; nie wyznacza ekspozycji |
 | Integration | GET /api/v1/integrations/learning-overview | Migawka raportowa z tokenem `learning:read`; osobny kontrakt JSON Schema, read-only i `Cache-Control: no-store` |
 
+Endpointy lekcji (moduł gramatyki, 2026-10-12; szczegóły w sekcji 19 i `.kiro/specs/grammar-module/`):
+
+| Grupa | Endpoint | Wynik |
+| --- | --- | --- |
+| Parent | POST /api/v1/parent/lessons/generate | 202 + generationRunId + deckId (szkic lekcji + zadanie generowania w jednej transakcji) |
+| Parent | GET /api/v1/parent/subjects | Katalog przedmiotów i tematów do formularza lekcji |
+| Parent | GET /api/v1/parent/lessons/:id | Szkic lekcji: ćwiczenia per reguła, karty, stan puli |
+| Parent | POST /api/v1/parent/lessons/:id/regenerate | Dogenerowanie ćwiczeń wybranej reguły |
+| Parent | POST /api/v1/parent/drafts/:id/publish | Publikacja lekcji z wymogiem pokrycia etapów (409 z listą brakujących) — wspólna ścieżka ze słówkami, rozgałęziona po `decks.kind` |
+| Parent | GET /api/v1/parent/lessons/:id/verdicts | Lista ocen modelu (odpowiedź, werdykt, kategoria, komentarz) |
+| Parent | POST /api/v1/parent/lessons/verdicts/:id/decision | Nadpisanie werdyktu rodzica (przyszłe odpowiedzi, bez wstecznego przeliczenia) |
+| Parent | GET /api/v1/parent/lessons/:id/progress | Postęp per reguła i kategorie błędów |
+| Kid | (wspólne) POST /api/v1/kid/sessions, /next, /attempts, /disclosures, /complete-presentation | Te same endpointy co słówka; serwer rozgałęzia po `decks.kind = 'lesson'` do modułu lekcji (selektor, prompty, ocena, podsumowanie). `AttemptInput` dodaje modality `sequence` (`itemIds`); prompty lekcji mają dyskryminator `lesson_*`. |
+
+Dokładne nazwy tras parametryzuje pierwsza implementacja routera; kontrakt DTO lekcji jest w `packages/contracts/src/lessons.ts`.
+
 Integracja Umiem! → Hermes działa przez endpoint Streamable HTTP `/api/mcp` w istniejącym procesie web, a nie bezpośrednio przez bazę. Token integracji ma osobny hash i możliwość odwołania; nie autoryzuje Parent/Kid API. Odczyt używa transakcji `REPEATABLE READ READ ONLY`, limitu per token współdzielonego z REST i ograniczonego DTO. Serwer MCP znajduje się w `apps/web/src/integrations/`; `integrations/umiem-mcp/` zawiera walidator kontraktu i skill konsumenta. Raport Hermesa pobiera dane tylko w Evening. Kontrakt i eksploatację opisuje `docs/integrations/hermes-learning.md`.
 
 Klient rodzica zachowuje migawkę formularza wraz z jego bazowym
@@ -357,6 +373,82 @@ Nie zakładamy, że historia będzie używała pięciu umiejętności angielskie
 Plan implementacji zawiera mapę A01–A39 oraz próby błędów/restartów. Przed implementacją produktu należy zaakceptować dokumenty. Poprawki review R01–R07 są przypisane do etapów i scenariuszy regresji w planie. Schemat jest początkowym projektem do sprawdzenia w prawdziwym PostgreSQL; stan sprawdzenia tego pakietu opisuje sekcja „Weryfikacja pakietu” na końcu planu. Nie deklarujemy wykonanych testów aplikacji, której jeszcze nie zbudowano.
 
 Parametry schedulera, progi wiarygodności wymowy i zachowanie klawiatury wymagają praktycznej próby. Wybranie TypeScript nie rozstrzyga skuteczności automatycznej oceny dziecięcej wymowy.
+
+## 19. Silnik lekcji i moduły przedmiotów (2026-10-12)
+
+Uzupełnienie dodaje drugi rodzaj zestawu — **lekcję** — obok słówek, bez przepisywania istniejących ścieżek. Wymagania i projekt szczegółowy: `.kiro/specs/grammar-module/{requirements,design}.md` (wiążące). Poniżej decyzje architektoniczne odzwierciedlające kod `packages/server/src/domain/lessons/**` i `packages/server/src/modules/lessons/**`.
+
+### 19.1. Silnik niezależny od przedmiotu i `SubjectModule`
+
+Silnik lekcji (typy ćwiczeń, ocena, postęp per cel, selektor, pula, kartkówka, kontrakty i widoki dziecka) nie zna angielskiego ani gramatyki. Przedmiot jest wtyczką za interfejsem (`SubjectModule`, wzorzec Strategy + Registry, Open/Closed): dostarcza katalog tematów i celów, dozwolone typy ćwiczeń, normalizator odpowiedzi, kategorie błędów, profil promptów generacji/oceny, walidatory i flagę `ttsForAnswers`. Dodanie przedmiotu = nowy katalog `domain/lessons/subjects/<id>/` i jeden wpis w rejestrze. **Test architektoniczny** pilnuje, że moduły silnika (`domain/lessons/*.ts` poza `subjects/`) nie importują niczego z `subjects/` — zależność biegnie wyłącznie przez rejestr i interfejs. Przykładowy przedmiot nie-językowy (fixture „history-like") przechodzi walidację, generowanie (fake) i ocenę bez zmian w silniku (`testing/history-like-subject.ts`).
+
+Słownik: lekcja = `decks.kind = 'lesson'`; ćwiczenie = `learning_items.kind = 'lesson_exercise'`; cel nauki = reguła gramatyki; umiejętność oceny = kod `objective` w rejestrze `SKILLS` (świadomie poza `REPORT_SKILLS` kontraktów). Normalizacja `focus` (element sprawdzany) używa normalizatora PRZEDMIOTU, nie bazowego — ten sam normalizator, co dla odpowiedzi, by porównanie było spójne.
+
+### 19.2. Rozgałęzienie po `decks.kind`
+
+Dziś moduły `sessions.ts`, `attempts.ts`, `mock-tests.ts`, `published-progress.ts`, `learning-overview.ts` nie czytały rodzaju zestawu. Moduł wprowadza rozgałęzienia jako nową pracę, z reużyciem (nie duplikacją) wspólnych fragmentów wydzielonych z obecnych modułów (blokada sesji, rezerwacja `processing`, idempotencja `clientAttemptId`/`request_hash`, zapis ekspozycji, leniwa finalizacja):
+
+- `sessions.ts` (start/next/end) → dla `lesson` delegacja do `modules/lessons/lesson-sessions.ts` (selektor, prompty, podsumowanie);
+- `attempts.ts` → delegacja zadań `lesson_*` do `lesson-attempts.ts`;
+- `events.ts` → odsłuch w zadaniach tekstowych lekcji = wsparcie; podpowiedź niedostępna w kartkówce;
+- `mock-tests.ts` → plan i raport lekcji per cel;
+- `published-progress.ts`/`reporting.ts` → odrzucenie (`deck_kind_mismatch`) lub pominięcie lekcji;
+- `learning-overview.ts` → **filtr `decks.kind = 'vocabulary'` we wszystkich odczytach**, więc kontrakt raportu Hermesa (v1, JSON Schema) jest nienaruszony i nie obejmuje lekcji;
+- `kid.ts` → `KidDeckDto.kind`, `subjectTitle`, gwiazdki lekcji z opanowanych celów;
+- `progress-rebuild.ts` → odbudowa także `child_objective_progress` w tym samym przejściu i transakcji co słówka;
+- `profiles.ts` (`deleteChild`) → kaskada obejmuje nowe tabele per dziecko.
+
+Testy regresji słówek chronią każdy punkt rozszerzenia; obecność lekcji nie zmienia `ProgressDto` słówek, listy zestawów (poza nowymi polami) ani `learning-overview`.
+
+### 19.3. Generowanie puli (worker)
+
+Naprawy review PR #51 (2026-10-13): każdy surowy rekord przechodzi walidację kształtu pól tekstowych i wszystkich tablic przed konwersją do domeny. Zły rekord jest liczony jako odrzucony bez utraty poprawnej reszty puli. `lesson_transform` wymaga niepustego `statement`. Rodzic dostaje w autoryzowanym `lesson-catalog` wyłącznie identyfikatory, tytuły oraz `cards: [{title, body}]` do podglądu; pola modelowe pozostają na serwerze. Edytor pokazuje te same teksty kart i aktualne lokalne przykłady co interfejs dziecka, a PATCH.examples zapisuje zatwierdzane poprawki.
+
+Sesja lekcji zapisuje `initialObjectiveProgress` przy starcie w prywatnym kontekście. Początkowy etap i limit nowych celów używają tej migawki, awans wynika z historii zadań sesji; bieżąca projekcja służy nadal należnym sprawdzeniom. Starsze aktywne sesje bez migawki rozpoznają wprowadzenie celu po pierwszym kroku historii. Finalizacja modelu ponawia wspólną blokadę i odczyt stanu sesji/próby; zamknięta sesja nie dostaje późnej oceny ani zmiany projekcji. Nieocenione oceny mają confirmationEligible=false w obu ścieżkach.
+
+API → MCP → skill: rozszerzenie katalogu dotyczy wyłącznie panelu rodzica, nie narzędzi raportowych. `learning-overview` v1, przenośny schemat oraz skill Hermesa zachowują kontrakt i filtr wyłączający lekcje. Nie wymaga wdrożenia zmiany u konsumenta MCP; aktualizacja repo nie oznacza wdrożenia aplikacji.
+
+Dodatkowe naprawy końcowego review: walidator domenowy używa schematu `LessonExerciseInputSchema` jako źródła kształtu i limitów, a następnie wymaga bodźca właściwego typowi. Edycja i publikacja walidują całą pulę, w tym duplikaty, bez usuwania ćwiczeń rodzica. Krótkie odpowiedzi zachowują `prompt` z kompatybilnością `stem`; warianty w edytorze są osobnymi wierszami, więc przecinek pozostaje częścią zdania. Kolejność ćwiczeń korzysta z historii danego dziecka we wszystkich sesjach, po `itemId`.
+
+Leniwa finalizacja próby w kartkówce kończy aktywny slot jako `answered`, z `feedback=null`, bez wyniku wiedzy i bez drugiej odpowiedzi; po zamknięciu sesji nie zmienia stanu slotu ani raportu. Decyzja rodzica `overridden_incorrect` jest autorytatywna także bez kategorii błędu — brak kategorii oznacza brak szczegółowej podpowiedzi, a nie „nieocenione”; stare oceny są niezmienne.
+
+Przykłady generacji są przyjmowane tylko dla celu bieżącej partii: niepuste teksty do 120 znaków, maksymalnie trzy; wadliwe przykłady nie usuwają poprawnych ćwiczeń. Rodzic może dopisać przykład. Zatrzymaną generację lekcji rodzic ponawia istniejącym endpointem retry: pod blokadą wersji i runu podbijany jest numer edycji szkicu oraz `expected_edit_number` runu. Finalizacja i terminalne zapisy sprawdzają bieżący numer edycji, licznik claimu i stan `running`, więc spóźniony worker nie dopisze ćwiczeń ani nie zmieni wyniku nowego wykonania. To jawne ponowienie, nie automatyczne wykrywanie martwego procesu; publikacja i niepowiązane zmiany rodzica są chronione.
+
+Worker (`LlmProvider.generateLessonPool`) generuje pulę partiami per cel z docelowym rozkładem etapów (≈35% prowadzone, 45% produktywne, 20% samodzielne). `pool-validation.ts` (ogólne) sprawdza istnienie celu/typu, niepusty `focus` będący podsekwencją odpowiedzi, poprawność `lesson_order`/`lesson_gap`/opcji, długości i brak duplikatów znormalizowanych odpowiedzi; `subject.validateExercise` dokłada reguły przedmiotu. Pula jest zatwierdzana przez rodzica; nic nie jest generowane w trakcie sesji. TTS odpowiedzi kanonicznej przechodzi istniejącym potokiem mediów (`target_audio`), gdy `subject.ttsForAnswers` — patrz ograniczenie 19.7.
+
+### 19.4. Ocena hybrydowa z cache i `processing`
+
+`lesson-attempts.ts` reużywa ścieżki prób słówek. Dla typów zamkniętych i dopasowania deterministycznego: ocena, zapis ekspozycji, projekcja celu i finalizacja w jednej transakcji. Dla odpowiedzi niedopasowanej: odczyt `lesson_verdicts` w tej samej transakcji (`parent_decision` nadrzędny); trafienie → finalizacja. Brak werdyktu i dostępny model: inkrement `learning_sessions.context.graderCalls`, wstawienie próby `processing`, commit; wywołanie modelu POZA transakcją; finalizacja CAS `processing → completed` przez `INSERT … ON CONFLICT (item_revision_id, normalized_answer, prompt_version) DO NOTHING`. Retry tej samej odpowiedzi podczas `processing` zwraca 202 bez wywołania modelu i bez inkrementu; licznik nie jest cofany przy błędzie/timeoucie/odrzuconym wyniku. Awaria procesu → leniwa finalizacja po 60 s jako „nieocenione". Walidacja werdyktu (`validateVerdict`): kategoria z listy reguły lub `other`, `correct` bez kategorii i fragmentów, każdy fragment dokładnym podciągiem odpowiedzi (po NFC); naruszenie → odrzucenie.
+
+### 19.5. Konfiguracja modelu oceniającego (`UMIEM_GRADER_*`, proces web)
+
+Model działa WYŁĄCZNIE w procesie web (worker go nie potrzebuje) i tylko dla odpowiedzi tekstowych nierozstrzygniętych deterministycznie. Adapter `providers/openai-compatible/grader.ts`: `POST {baseUrl}/chat/completions`, `temperature: 0`, `response_format: json_object`, `AbortSignal.timeout`.
+
+| Zmienna | Domyślnie | Znaczenie |
+| --- | --- | --- |
+| `UMIEM_GRADER_BASE_URL` | brak = model wyłączony | `https://` wymagane poza NODE_ENV test/development |
+| `UMIEM_GRADER_API_KEY` | — | tylko w adapterze; nigdy w logach, DTO, promptach |
+| `UMIEM_GRADER_MODEL` | — | tani model wystarcza (ocena jednej reguły) |
+| `UMIEM_GRADER_TIMEOUT_MS` | 8000 | przerwanie = „nieocenione" |
+| `UMIEM_GRADER_MAX_CALLS_PER_SESSION` | 20 | księgowane w `learning_sessions.context.graderCalls` |
+
+Trzy pierwsze zmienne razem albo żadna (częściowa konfiguracja = błąd startu). Brak konfiguracji to stan poprawny: niedopasowana odpowiedź → „nieocenione", a generowanie puli preferuje typy zamknięte i luki. Pełny katalog i uzasadnienia: `docs/provider-config.md` i `.env.example`.
+
+### 19.6. Nowe tabele, kolumny i triggery (migracja 0007)
+
+- `decks.kind` CHECK `in ('vocabulary','lesson')`; `learning_items.kind` CHECK `in ('vocabulary','lesson_exercise')` + trigger zgodności z `decks.kind`.
+- `deck_versions.lesson_context jsonb` (subjectId, topicId, topicVersion, objectiveIds, poolSize, examples, material, instruction); trigger: wymagane dla `lesson`, zabronione dla słówek, niezmienne po publikacji.
+- `attempts_modality_allowed` + `'sequence'`; `session_tasks_completed_only_exposure` → `exercise_type in ('exposure','lesson_card')`; `assignments_test_goals` + `'lesson'` z triggerem wzajemnego wykluczenia celów słówek/lekcji.
+- `generation_runs.kind` rozszerzone do `('deck','lesson')` — osobny kształt przebiegu dla puli lekcji, bez przeciążania ścieżki słówek.
+- `lesson_verdicts` — wspólny cache werdyktów modelu: `(item_revision_id, normalized_answer, prompt_version)` unikalny, `parent_decision` nadrzędny, bez kolumn dziecka (przeżywa usunięcie profilu jako wspólny materiał).
+- `child_objective_progress` — projekcja per (child, subject, objective): status (słownik `child_skill_progress`: unseen/practicing/needs_confirmation/needs_reconfirmation/mastered), streak, next_review_at, last_independent_at, projection_version; aktualizowana w transakcji finalizacji, odbudowywana z `assessments` (`skill = 'objective'`).
+
+`item_revisions.payload` dla `lesson_exercise` to `payload_version = 2`; `item_revision_skills` ma jeden wiersz `skill = 'objective'`; `assessments.details` nosi `{ objectiveId, verdict, errorCategory?, verdictId?, typoToken?, fragments? }` i mapuje się na istniejące `dbOutcome` (`unevaluated → unassessed`), bez zmiany CHECK `assessments_outcome_allowed`.
+
+### 19.7. Ograniczenia (zgodne z SPEC §29a.7)
+
+- **Audio odpowiedzi kanonicznej — zaimplementowane (A58).** Serwer generuje i wymaga `target_audio` przy publikacji (`ttsForAnswers`); `lesson-sessions.ts#loadExercises` rozwiązuje gotowy zasób (`revision_assets.state='approved'` ∧ `media_assets.state='ready'`), a `lesson-materialize.ts` dołącza `audioAssetId` TYLKO do promptów tekstowych (`lesson_gap`/`error_fix`/`transform`/`open_answer`) i nigdy w kartkówce. Kid UI (`LessonGapView`/`LessonSentenceView`) pokazuje „Posłuchaj”; `playTaskAudio` woła `authorizeDisclosure(audio)`, który pieczętuje `audio_issued` z `target_key` PRZED wydaniem bajtów → `assistanceFor` dodaje `model_audio` → próba niesamodzielna (wym. 4.6). Typy zamknięte nie niosą `audioAssetId`, a `authorizeDisclosure` odrzuca dla nich `kind='audio'` (`conflict`).
+- **Opanowanie bez modelu.** Niezależne sprawdzenie reguły może używać produktywnych typów deterministycznych (zwł. `lesson_gap`), więc opanowanie jest osiągalne bez modelu oceniającego, o ile pula zawiera dość różnych takich ćwiczeń; model jest wymagany tylko dla odpowiedzi niedopasowanych (głównie tłumaczenie). Hybrydowa ocena jest opcjonalna.
 
 ## 18. Dokumentacja wykorzystana przy projektowaniu
 

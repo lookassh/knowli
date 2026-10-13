@@ -103,11 +103,74 @@ export function requiredAssetsFor(
 }
 
 /**
- * Zwykłe żądanie używa zgodnego gotowego zasobu albo dołącza do trwającej
- * generacji; dopiero brak obu tworzy nowy zasób i run. Rezerwacja odbywa się
- * pod advisory lock na fingerprintcie, więc (fingerprint, generation_number)
- * jest jednoznaczne.
+ * Czy payload rewizji to ćwiczenie lekcji (`lesson_exercise`), rozpoznane po
+ * polu `exerciseType`. Payload słówek go nie ma. Pozwala `reconcileDraftAssetsTx`
+ * wybrać strategię zasobów per rodzaj elementu bez czytania `learning_items.kind`.
  */
+function isLessonExercisePayload(payload: Record<string, unknown>): boolean {
+  return typeof payload.exerciseType === "string";
+}
+
+/**
+ * Wymagane zasoby ćwiczenia lekcji (design „Generowanie puli”): tylko
+ * `target_audio` odpowiedzi kanonicznej w `answerLocale`, i tylko gdy przedmiot
+ * ma `ttsForAnswers`. Bez ilustracji i bez audio przykładu. Zwraca pustą listę,
+ * gdy przedmiot nie generuje audio odpowiedzi.
+ */
+export function requiredAssetsForLessonExercise(
+  payload: Record<string, unknown>,
+  settings: MediaSettings,
+  ttsForAnswers: boolean,
+): RequiredAsset[] {
+  if (!ttsForAnswers) {
+    return [];
+  }
+  const answer = typeof payload.answer === "string" ? payload.answer : "";
+  const answerLocale = typeof payload.answerLocale === "string" ? payload.answerLocale : "";
+  if (answer === "" || answerLocale === "") {
+    return [];
+  }
+  return [
+    {
+      role: "target_audio",
+      kind: "tts",
+      fingerprint: ttsFingerprint({
+        text: answer,
+        locale: answerLocale,
+        provider: settings.tts.provider,
+        model: settings.tts.model,
+        voice: settings.tts.voice,
+        format: settings.tts.format,
+      }),
+      metadata: {
+        kind: "tts",
+        text: answer,
+        locale: answerLocale,
+        voice: settings.tts.voice,
+        format: settings.tts.format,
+      },
+    },
+  ];
+}
+
+/**
+ * Zwraca wymagane zasoby rewizji wg rodzaju elementu: ćwiczenie lekcji ma własną
+ * strategię (audio odpowiedzi wg `ttsForAnswers`), słówko — dotychczasową.
+ * `ttsForAnswers` ustala wywołujący z rejestru przedmiotów (dla słówek bez
+ * znaczenia). Jedno miejsce rozgałęzienia strategii mediów.
+ */
+function requiredAssetsForRevision(
+  payload: Record<string, unknown>,
+  settings: MediaSettings,
+  ttsForAnswers: boolean,
+): RequiredAsset[] {
+  if (isLessonExercisePayload(payload)) {
+    return requiredAssetsForLessonExercise(payload, settings, ttsForAnswers);
+  }
+  return requiredAssetsFor(payloadToItem(payload), settings);
+}
+
+
 async function findOrCreateAsset(
   tx: Tx,
   settings: MediaSettings,
@@ -192,6 +255,23 @@ export async function reconcileDraftAssetsTx(
   if (revisions.length === 0) {
     return;
   }
+
+  // Dla ćwiczeń lekcji strategia zasobów zależy od `ttsForAnswers` przedmiotu;
+  // czytamy go raz z lesson_context tej wersji (słówka go nie potrzebują).
+  let ttsForAnswers = false;
+  if (revisions.some((r) => isLessonExercisePayload(r.payload))) {
+    const row = (
+      await tx
+        .select({ lessonContext: deckVersions.lessonContext })
+        .from(deckVersions)
+        .where(eq(deckVersions.id, version.id))
+    )[0];
+    const subjectId = (row?.lessonContext as { subjectId?: string } | null)?.subjectId;
+    if (subjectId) {
+      ttsForAnswers = services.subjects.getSubject(subjectId)?.ttsForAnswers ?? false;
+    }
+  }
+
   const rows = await tx
     .select()
     .from(revisionAssets)
@@ -204,8 +284,7 @@ export async function reconcileDraftAssetsTx(
   }
 
   for (const revision of revisions) {
-    const item = payloadToItem(revision.payload);
-    const required = requiredAssetsFor(item, settings);
+    const required = requiredAssetsForRevision(revision.payload, settings, ttsForAnswers);
     const mine = rowsByRevision.get(revision.id) ?? new Map();
 
     // role, których karta już nie wymaga, znikają ze szkicu

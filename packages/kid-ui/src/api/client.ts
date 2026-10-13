@@ -1,5 +1,6 @@
 import {
   MockTestSummaryDtoSchema,
+  LessonMockTestSummaryDtoSchema,
   AttemptDtoSchema,
   DisclosureDtoSchema,
   FeedbackAudioDtoSchema,
@@ -101,6 +102,9 @@ export function createKidApiClient(options: KidClientOptions = {}): KidApi {
   return {
     readMockTestSummary(sessionId) {
       return request(`/api/v1/kid/sessions/${sessionId}/mock-test-summary`, { method: "GET" }, parseWith(MockTestSummaryDtoSchema));
+    },
+    readLessonMockTestSummary(sessionId) {
+      return request(`/api/v1/kid/sessions/${sessionId}/mock-test-summary`, { method: "GET" }, parseWith(LessonMockTestSummaryDtoSchema));
     },
     listProfiles(): Promise<KidProfileDto[]> {
       return request("/api/v1/kid/profiles", { method: "GET" }, parseProfiles);

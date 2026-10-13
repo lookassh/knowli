@@ -1,8 +1,11 @@
 /**
- * Kody umiejętności MVP. Rejestr jest otwarty na przyszłe rozszerzenia
- * (architecture.md §15), ale historia nie zakłada niczego poza tą piątką.
+ * Umiejętności oceny zestawów słówek. To jedyne umiejętności, dla których
+ * istniejący kod słówek (decks.ts, revision-impact.ts) tworzy klucze per
+ * element — wszystkie pętle produkujące wiersze słówek iterują TĘ stałą,
+ * nigdy pełnego rejestru SKILLS, żeby dodanie umiejętności lekcji ('objective')
+ * nie zmieniło zachowania słówek.
  */
-export const SKILLS = [
+export const VOCABULARY_SKILLS = [
   "listening",
   "reading",
   "recall",
@@ -10,10 +13,28 @@ export const SKILLS = [
   "spelling",
 ] as const;
 
+export type VocabularySkill = (typeof VOCABULARY_SKILLS)[number];
+
+/**
+ * Kody umiejętności MVP + 'objective' (umiejętność celu lekcji; design
+ * grammar-module „Data Models”). 'objective' żyje w domenie i w assessments,
+ * ale NIE trafia do REPORT_SKILLS w kontraktach ani do pętli słówek — te
+ * iterują VOCABULARY_SKILLS. Rejestr jest otwarty na przyszłe rozszerzenia
+ * (architecture.md §15).
+ */
+export const SKILLS = [
+  ...VOCABULARY_SKILLS,
+  "objective",
+] as const;
+
 export type Skill = (typeof SKILLS)[number];
 
 export function isSkill(value: string): value is Skill {
   return (SKILLS as readonly string[]).includes(value);
+}
+
+export function isVocabularySkill(value: string): value is VocabularySkill {
+  return (VOCABULARY_SKILLS as readonly string[]).includes(value);
 }
 
 /**

@@ -30,4 +30,5 @@ backups/
 
 .superpowers/
 .zcodeignore
-.kiro/
+.kiro/*
+!.kiro/specs/

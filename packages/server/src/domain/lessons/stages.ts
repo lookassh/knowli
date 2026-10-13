@@ -1,0 +1,34 @@
+import type { LessonExerciseType, LessonStage } from "./types";
+
+/**
+ * Mapa typu ćwiczenia na etap nauki (design: tabela „Typy ćwiczeń i etapy”).
+ * Karta i wskazanie = intro; wybór, klocki, krótka odpowiedź = guided;
+ * luka, error_fix, transform = productive; open_answer = independent.
+ */
+export const STAGE_BY_TYPE: Readonly<Record<LessonExerciseType, LessonStage>> = {
+  lesson_card: "intro",
+  lesson_notice: "intro",
+  lesson_choice: "guided",
+  lesson_order: "guided",
+  lesson_short_answer: "guided",
+  lesson_gap: "productive",
+  lesson_error_fix: "productive",
+  lesson_transform: "productive",
+  lesson_open_answer: "independent",
+};
+
+/** Etapy oceniane (poza intro-kartą): guided, productive, independent. */
+export const ASSESSED_STAGES: readonly LessonStage[] = ["guided", "productive", "independent"];
+
+/** Etap ćwiczenia danego typu. */
+export function stageOf(type: LessonExerciseType): LessonStage {
+  return STAGE_BY_TYPE[type];
+}
+
+/**
+ * Czy typ ćwiczenia jest oceniany. Karta (`lesson_card`) jest prezentacją bez
+ * oceny; każdy inny typ (w tym wskazanie) ma werdykt.
+ */
+export function isAssessed(type: LessonExerciseType): boolean {
+  return type !== "lesson_card";
+}

@@ -24,5 +24,26 @@ export function getExercisePresentation(task: TaskDto): ExercisePresentation {
       return { instruction: messages.kid.instructionLetterCompletion, icon: "letters" };
     case "speech":
       return { instruction: messages.kid.instructionSpeech, icon: "microphone" };
+    // Lekcje (design „Typy ćwiczeń i etapy” — polecenie z payloadu/katalogu).
+    // Polecenie zdania bierze się z `instructionPl` promptu; tu dajemy sensowny
+    // domyślny tekst i ikonę per typ.
+    case "lesson_card":
+      return { instruction: messages.kid.lessonCardInstruction, icon: "sparkles" };
+    case "lesson_notice":
+      return { instruction: task.prompt.instructionPl, icon: "ear" };
+    case "lesson_choice":
+      return { instruction: task.prompt.instructionPl, icon: "book" };
+    case "lesson_order":
+      return { instruction: task.prompt.instructionPl, icon: "letters" };
+    case "lesson_short_answer":
+      return { instruction: task.prompt.question, icon: "book" };
+    case "lesson_gap":
+      return { instruction: task.prompt.instructionPl, icon: "pencil" };
+    case "lesson_error_fix":
+      return { instruction: task.prompt.instructionPl, icon: "pencil" };
+    case "lesson_transform":
+      return { instruction: task.prompt.instructionPl, icon: "pencil" };
+    case "lesson_open_answer":
+      return { instruction: task.prompt.instructionPl, icon: "pencil" };
   }
 }

@@ -1,4 +1,18 @@
 export * from "./config";
+export { createProductionSubjectRegistry } from "./domain/lessons/subjects";
+export { createSubjectRegistry, type SubjectRegistry } from "./domain/lessons/registry";
+export { englishGrammarSubject } from "./domain/lessons/subjects/english-grammar/module";
+export { historyLikeSubject } from "./domain/lessons/testing/history-like-subject";
+export { validatePool, findDuplicateAnswers, poolCoverage } from "./domain/lessons/pool-validation";
+export { DEFAULT_LESSON_POLICY, defaultPoolSize } from "./domain/lessons/lesson-policy";
+export type {
+  SubjectModule,
+  LessonTopic,
+  LearningObjective,
+  LessonExerciseDraft,
+  LessonExerciseType,
+  LessonStage,
+} from "./domain/lessons/types";
 export * from "./errors";
 export { createDatabase, migrateDatabase, type Database } from "./db/client";
 export { waitUntilDatabaseReady, type DatabaseReadinessOptions } from "./db/ready";
@@ -19,6 +33,7 @@ export {
   createEmptyDeck,
   createDraft,
   createDraftFromPublished,
+  copyRevisionsSkillsAssets,
   editDraft,
   publishDraft,
   readDraft,
@@ -35,9 +50,35 @@ export {
   retryGeneration,
   readGeneration,
   runDueGenerationWork,
+  enqueueGenerationRun,
+  claimQueuedRun,
+  markRun,
+  errorCodeOf,
+  requireGeneration,
   MAX_AUTOMATIC_ATTEMPTS,
   type WorkerLimits,
 } from "./modules/generation";
+export {
+  createLesson,
+  executeLessonGeneration,
+  regenerateObjective,
+  applyLessonExercises,
+  splitStages,
+} from "./modules/lessons/lesson-drafts";
+export {
+  lessonCatalog,
+  readLessonDeck,
+  editLessonDraft,
+  publishLessonDraft,
+  createLessonDraftFromPublished,
+  deckIdOfLessonVersion,
+} from "./modules/lessons/lesson-api";
+export {
+  lessonObjectiveProgress,
+  listLessonVerdicts,
+  decideLessonVerdict,
+  acceptVerdictAsVariant,
+} from "./modules/lessons/lesson-supervision";
 export {
   reconcileDraftAssets,
   regenerateRevisionAsset,
@@ -69,8 +110,11 @@ export {
 } from "./domain/media-fingerprint";
 export {
   SKILLS,
+  VOCABULARY_SKILLS,
   isSkill,
+  isVocabularySkill,
   type Skill,
+  type VocabularySkill,
   type ExerciseType,
   type PronunciationDetails,
 } from "./domain/types";
@@ -89,6 +133,13 @@ export { recordEvent, authorizeDisclosure, contextOf } from "./modules/events";
 export type { SessionContextShape } from "./modules/events";
 export { getMockTestReport, listMockTests, readMockTestSummary } from "./modules/mock-tests";
 export {
+  getLessonMockTestReport,
+  listLessonMockTests,
+  readLessonMockTestSummary,
+  isLessonMockPlan,
+} from "./modules/lessons/lesson-mock-tests";
+export { readDeckKind, mockTestKindOfSession } from "./modules/deck-kind";
+export {
   submitAttempt,
   readAttempt,
   finalizeAttempt,
@@ -106,6 +157,11 @@ export type {
   LlmProvider,
   LlmGenerateDeckInput,
   LlmGeneratedItem,
+  LessonPoolInput,
+  LlmLessonObjectiveInput,
+  LlmLessonTransformInput,
+  LlmPromptProfileInput,
+  LlmLessonStageCounts,
   TtsProvider,
   TtsSynthesizeInput,
   ImageProvider,
@@ -116,6 +172,8 @@ export type {
   SpeechEvidence,
   SttProvider,
   PronunciationProvider,
+  AnswerGraderProvider,
+  GraderInput,
 } from "./ports/ai";
 export type { MediaStore, StoredBlob } from "./ports/media";
 export { createLocalMediaStore } from "./providers/media/local";
@@ -124,6 +182,7 @@ export { createOpenAiTtsProvider } from "./providers/openai/tts";
 export { createOpenAiImageProvider } from "./providers/images/openai";
 export { createAzureSttProvider } from "./providers/azure/stt";
 export { createAzurePronunciationProvider } from "./providers/azure/pronunciation";
+export { createOpenAiCompatibleGrader } from "./providers/openai-compatible/grader";
 export {
   MAX_AUDIO_BYTES,
   MAX_AUDIO_SECONDS,
@@ -144,6 +203,8 @@ export {
   fakeGenerationDeps,
   fakeMediaSettings,
   fakeSpeechDeps,
+  fakeGraderDeps,
+  FakeAnswerGrader,
   DEFAULT_FAKE_DECK_ITEMS,
   FakeImageProvider,
   FakeLlmProvider,
@@ -151,5 +212,7 @@ export {
   FakeSttProvider,
   FakeTtsProvider,
   type LlmBehavior,
+  type LlmLessonBehavior,
+  type FakeGraderBehavior,
 } from "./providers/fake";
 export { createGenerationDepsFromEnv } from "./providers/generation-env";

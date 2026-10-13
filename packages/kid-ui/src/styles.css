@@ -1577,3 +1577,229 @@
     padding: 12px;
   }
 }
+
+/* ── Lekcje (zadanie 14): karta, wskazanie, wybór, klocki, luka, zdanie ── */
+
+.kid-lesson-card {
+  box-sizing: border-box;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: start;
+}
+
+.kid-lesson-card__title {
+  margin: 0;
+  font-size: 1.3rem;
+  text-align: center;
+}
+
+.kid-lesson-card__body {
+  margin: 0;
+  font-size: 1.15rem;
+  line-height: 1.5;
+}
+
+.kid-lesson-card__examples {
+  margin: 0;
+  padding-inline-start: 1.1em;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+/* Wskazanie: zdania ze słowami jako dużymi, dotykowymi przyciskami. */
+.kid-lesson-notice {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.kid-lesson-notice__sentence {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  line-height: 1.4;
+}
+
+.kid-lesson-notice__word {
+  min-height: 48px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 1.3rem;
+  border: 2px solid var(--kid-line);
+  border-radius: 14px;
+  background: var(--kid-surface);
+  color: var(--kid-text);
+  cursor: pointer;
+}
+
+.kid-lesson-notice__word:active {
+  background: var(--kid-soft);
+}
+
+/* Dziedziczymy znaczniki ✓/✗ i paletę z .kid-option--* na przyciskach wskazania. */
+.kid-lesson-notice__word.kid-option--correct {
+  border-color: var(--kid-good);
+  background: var(--kid-good-bg);
+}
+
+.kid-lesson-notice__word.kid-option--correct::before {
+  content: "✓ ";
+}
+
+.kid-lesson-notice__word.kid-option--wrong {
+  border-color: var(--kid-wrong);
+  background: var(--kid-wrong-bg);
+}
+
+.kid-lesson-notice__word.kid-option--wrong::before {
+  content: "✗ ";
+}
+
+.kid-lesson-stem {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+/* Klocki: pula i zdanie to osobne, opisane obszary (role=list). */
+.kid-lesson-order {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.kid-lesson-order__sentence {
+  min-height: 64px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  border: 2px dashed var(--kid-line);
+  border-radius: 16px;
+  background: var(--kid-soft);
+}
+
+.kid-lesson-order__pool {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+}
+
+.kid-lesson-block {
+  min-height: 52px;
+  padding: 8px 16px;
+  font: inherit;
+  font-size: 1.25rem;
+  font-weight: 600;
+  border: 2px solid var(--kid-line);
+  border-radius: 14px;
+  background: var(--kid-surface);
+  color: var(--kid-text);
+  cursor: pointer;
+}
+
+.kid-lesson-block:active {
+  background: var(--kid-soft);
+}
+
+.kid-lesson-block--placed {
+  border-color: var(--kid-accent);
+  background: var(--kid-surface);
+}
+
+.kid-lesson-block:focus-visible {
+  outline: 3px solid var(--kid-accent);
+  outline-offset: 3px;
+}
+
+/* Luka: zdanie z polem edycji dokładnie w miejscu luki. */
+.kid-lesson-gap {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.kid-lesson-gap__stem {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  font-size: 1.5rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.kid-lesson-gap__input {
+  min-width: 120px;
+  max-width: 100%;
+  min-height: 52px;
+  box-sizing: border-box;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 1.4rem;
+  text-align: center;
+  border: 2px solid var(--kid-accent);
+  border-radius: 12px;
+  color: var(--kid-text);
+  background: var(--kid-surface);
+}
+
+.kid-lesson-gap__hint {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--kid-muted);
+  font-style: italic;
+}
+
+.kid-lesson-source {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 700;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+/* Feedback lekcji: podpowiedź, odpowiedź dziecka z pigułkami, poprawna odpowiedź. */
+.kid-lesson-feedback {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  margin-top: 0.75rem;
+  width: 100%;
+}
+
+.kid-lesson-feedback__hint {
+  margin: 0;
+  font-size: 1.1rem;
+  text-align: center;
+  color: var(--kid-text);
+}
+
+.kid-feedback-actions {
+  flex-shrink: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}

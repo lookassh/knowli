@@ -21,5 +21,12 @@ export const ApiErrorSchema = z.object({
   message: z.string().min(1),
   retryable: z.boolean(),
   requestId: UuidSchema,
+  /**
+   * Opcjonalne, ustrukturyzowane szczegóły błędu dla przypadków, które muszą
+   * zwrócić LISTĘ (np. publikacja lekcji bez pokrycia → `{coverage:[...]}`,
+   * edycja ćwiczeń z błędami per ćwiczenie → `{exercises:[...]}`). Pozostaje
+   * poza bazowym kształtem, więc istniejący klienci słówek się nie zmieniają.
+   */
+  details: z.unknown().optional(),
 });
 export type ApiError = z.infer<typeof ApiErrorSchema>;

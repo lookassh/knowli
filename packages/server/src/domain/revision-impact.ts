@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { VocabularyItemInput } from "@learning/contracts";
-import { SKILLS, type Skill } from "./types";
+import { VOCABULARY_SKILLS, type VocabularySkill } from "./types";
 
 /**
  * Jawna mapa wpływu zmiany treści na klucze umiejętności (architecture.md §6.1).
@@ -11,9 +11,12 @@ import { SKILLS, type Skill } from "./types";
  *  - target, acceptedAnswers, locale → wszystkie pięć (kryteria rozpoznawania,
  *    przypominania, wymowy i pisowni obejmują te pola — zmiana wariantu zmienia
  *    to, co uznajemy za poprawną odpowiedź, więc klucze powstają nowe).
+ *
+ * Umiejętność 'objective' lekcji nie jest tu obecna: zmiany treści słówek nigdy
+ * nie dotyczą celów lekcji (iterujemy VOCABULARY_SKILLS, nie SKILLS).
  */
-const MEANING_SKILLS: readonly Skill[] = ["listening", "reading", "recall"];
-const ALL_SKILLS: readonly Skill[] = SKILLS;
+const MEANING_SKILLS: readonly VocabularySkill[] = ["listening", "reading", "recall"];
+const ALL_SKILLS: readonly VocabularySkill[] = VOCABULARY_SKILLS;
 
 function sameJson(a: unknown, b: unknown): boolean {
   return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -22,8 +25,8 @@ function sameJson(a: unknown, b: unknown): boolean {
 export function classifyRevisionImpact(
   oldItem: VocabularyItemInput,
   newItem: VocabularyItemInput,
-): Set<Skill> {
-  const impacted = new Set<Skill>();
+): Set<VocabularySkill> {
+  const impacted = new Set<VocabularySkill>();
   if (!sameJson(oldItem.source, newItem.source)) {
     for (const skill of MEANING_SKILLS) impacted.add(skill);
   }
@@ -44,7 +47,7 @@ export function classifyRevisionImpact(
  */
 export function buildSkillCriteria(
   item: VocabularyItemInput,
-  skill: Skill,
+  skill: VocabularySkill,
 ): { criteria: Record<string, unknown>; criteriaHash: string } {
   const base = {
     target: item.target,

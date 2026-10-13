@@ -7,6 +7,7 @@ import { LearnScreen } from "./screens/LearnScreen";
 import { ProfileScreen } from "./screens/ProfileScreen";
 import { SummaryScreen } from "./screens/SummaryScreen";
 import { MockTestReadyScreen, MockTestSummaryScreen, SessionConflictScreen } from "./screens/MockTestSummaryScreen";
+import { LessonMockTestSummaryScreen } from "./screens/LessonMockTestSummaryScreen";
 import { useLearningSession } from "./session/useLearningSession";
 import type { LocalPreferences } from "./storage";
 import { KidPage } from "./layout/KidPage";
@@ -96,6 +97,8 @@ export function KidApp({
       return <KidPage mode="flow"><MockTestReadyScreen session={screen.session} onStart={() => controller.beginMockTest()} onCancel={() => controller.cancelMockTest()} /></KidPage>;
     case "mockTestSummary":
       return <KidPage mode="flow"><MockTestSummaryScreen summary={screen.summary} onPlay={taskId => controller.playMockTestSolution(taskId)} onPractice={() => controller.learnAgain()} onSwitchProfile={() => controller.switchProfile()} /></KidPage>;
+    case "lessonMockTestSummary":
+      return <KidPage mode="flow"><LessonMockTestSummaryScreen summary={screen.summary} onPractice={() => controller.learnAgain()} onSwitchProfile={() => controller.switchProfile()} /></KidPage>;
     case "sessionConflict":
       return <KidPage mode="flow"><SessionConflictScreen onResume={() => controller.resumeConflictingSession()} onClose={() => controller.closeConflictingSession()} /></KidPage>;
     case "summary":

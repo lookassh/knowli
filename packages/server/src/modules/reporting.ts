@@ -15,6 +15,7 @@ import {
 } from "../db/schema";
 import { AppError } from "../errors";
 import { readDeckRevisionIds, readPublishedProgress } from "./published-progress";
+import { assertVocabularyDeck, readDeckKind } from "./deck-kind";
 import { SESSION_TIME_LIMIT_MS } from "./sessions";
 
 /**
@@ -31,6 +32,9 @@ export async function getProgress(services: Services, childId: string, deckId: s
     .from(childProfiles)
     .where(eq(childProfiles.id, child)))[0];
   if (!profile) throw new AppError("not_found");
+
+  // Izolacja lekcji (zadanie 9): raport postępu słówek nie obejmuje lekcji.
+  assertVocabularyDeck(await readDeckKind(services.db, deck));
 
   const published = await readPublishedProgress(services.db, child, deck);
   const assignment = (await services.db

@@ -1,5 +1,6 @@
 import type {
   MockTestSummaryDto,
+  LessonMockTestSummaryDto,
   AttemptDto,
   AttemptInput,
   DisclosureDto,
@@ -23,6 +24,8 @@ import type { RecordedAudio } from "../media/platform";
  */
 export interface KidApi {
   readMockTestSummary(sessionId: string): Promise<MockTestSummaryDto>;
+  /** Omówienie kartkówki lekcji (sesja lekcji) — per cel zamiast per umiejętność. */
+  readLessonMockTestSummary(sessionId: string): Promise<LessonMockTestSummaryDto>;
   listProfiles(): Promise<KidProfileDto[]>;
   listDecks(childId: string): Promise<KidDeckDto[]>;
   startSession(input: SessionInput): Promise<SessionDto>;

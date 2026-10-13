@@ -8,6 +8,8 @@ export interface ExerciseHandlers {
   onPlayExample(): void;
   onAnswerChoice(optionId: string): void;
   onSubmitText(text: string): void;
+  /** Ułożona kolejność klocków (`lesson_order`) — odpowiedź `sequence`. */
+  onAnswerSequence(itemIds: string[]): void;
   onNotRemember(): void;
   onSkip(): void;
   /** „Rozumiem” — zamknięcie prezentacji przez complete-presentation. */

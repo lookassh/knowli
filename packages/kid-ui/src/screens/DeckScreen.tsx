@@ -85,11 +85,17 @@ function DeckCard({ deck, onStart, onMockTest }: {
 }) {
   const date = formatDeckTestDate(deck.testDate, new Date().getFullYear());
   const stars = starsForFraction(deck.independentlyRecalledCount, deck.itemCount);
+  const isLesson = deck.kind === "lesson";
   return (
     <li>
-      <article className="kid-deck-card" data-testid="kid-deck-card" data-deck-id={deck.deckId}>
+      <article className="kid-deck-card" data-testid="kid-deck-card" data-deck-id={deck.deckId} data-kind={deck.kind ?? "vocabulary"}>
         <div className="kid-deck-card__details">
-          <h3 data-testid="kid-deck-title">{deck.title} <span>— {wordCount(deck.itemCount)}</span></h3>
+          <h3 data-testid="kid-deck-title">
+            {deck.title}{" "}
+            <span>{isLesson && deck.subjectTitle
+              ? `— ${format(messages.kid.lessonSubjectLabel, { subject: deck.subjectTitle })}`
+              : `— ${wordCount(deck.itemCount)}`}</span>
+          </h3>
           <p className="kid-deck-stars" data-testid="kid-deck-stars" role="img"
             aria-label={format(messages.kid.deckStarsLabel, { n: stars })}>
             {"★".repeat(stars)}{"☆".repeat(MASTERY_STAR_MAX - stars)}

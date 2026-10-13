@@ -18,6 +18,27 @@ export function readGenerationAcceptance(value: unknown): GenerationAcceptance |
   return parsed.success ? parsed.data : null;
 }
 
+const LessonAcceptanceSchema = z.object({
+  runId: UuidSchema,
+  deckId: UuidSchema,
+}).strict();
+
+export interface LessonAcceptance {
+  runId: string;
+  deckId: string;
+}
+
+/**
+ * Akceptacja tworzenia lekcji (`POST /parent/lessons` → 202 `{runId, deckId}`).
+ * Osobny kształt niż generacja słówek (`{generationRunId, deckId}`), więc nie
+ * rozluźniamy `GenerationAcceptanceSchema` — ta sama semantyka pewności (oba
+ * identyfikatory obecne = przyjęte).
+ */
+export function readLessonAcceptance(value: unknown): LessonAcceptance | null {
+  const parsed = LessonAcceptanceSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
 /** Whether the server definitively says this command was not accepted. */
 export function isDefinitiveGenerationRejection(error: unknown): boolean {
   if (!(error instanceof ApiCallError)) {

@@ -1,5 +1,6 @@
 import type { Database } from "./db/client";
 import type {
+  AnswerGraderProvider,
   ImageProvider,
   LlmProvider,
   PronunciationProvider,
@@ -9,6 +10,9 @@ import type {
 import type { MediaStore } from "./ports/media";
 import { createAzurePronunciationProvider } from "./providers/azure/pronunciation";
 import { createAzureSttProvider } from "./providers/azure/stt";
+import { createOpenAiCompatibleGrader } from "./providers/openai-compatible/grader";
+import { createProductionSubjectRegistry } from "./domain/lessons/subjects";
+import type { SubjectRegistry } from "./domain/lessons/registry";
 
 /** Zegar jako zależność — domena i moduły nie wołają Date.now() bezpośrednio. */
 export interface Clock {
@@ -72,6 +76,19 @@ export interface SpeechDeps {
 }
 
 /**
+ * Zależności modelu oceniającego odpowiedzi lekcji (design „Model oceniający”),
+ * proces web. `maxCallsPerSession` ogranicza liczbę płatnych wywołań na sesję
+ * (księgowane w `learning_sessions.context.graderCalls`); `timeoutMs` to łączny
+ * deadline jednego wywołania. Nieobecność = model wyłączony (stan poprawny:
+ * niedopasowana odpowiedź → nieocenione). Worker gradera nie potrzebuje.
+ */
+export interface GraderDeps {
+  provider: AnswerGraderProvider;
+  maxCallsPerSession: number;
+  timeoutMs: number;
+}
+
+/**
  * Zależności serwowe przekazywane do przypadków użycia. `media` pozwala webowi
  * uzgadniać zasoby w transakcji edycji; `generation` wykonuje pracę w tle;
  * `mediaStore` służy webowi do wydawania gotowych zasobów (podgląd rodzica);
@@ -84,6 +101,20 @@ export interface Services {
   generation?: GenerationDeps;
   mediaStore?: MediaStore;
   speech?: SpeechDeps;
+  /**
+   * Model oceniający otwarte odpowiedzi lekcji (zadanie 15). Nieobecny =
+   * ocena dowolnych odpowiedzi wyłączona (niedopasowanie → nieocenione);
+   * `graderAvailable` selektora i modułu prób wynika WYŁĄCZNIE z jego obecności.
+   */
+  grader?: GraderDeps;
+  /**
+   * Rejestr przedmiotów lekcji (zadanie 9). Wstrzykiwany jako wartość, nie
+   * importowany globalnie w modułach — `createServices` nadaje mu produkcyjną
+   * domyślkę `createProductionSubjectRegistry()`, więc żaden wywołujący nie
+   * musi go dostarczać, a testy mogą podmienić rejestr. Czysta, deterministyczna
+   * zależność bez env/sekretów, więc zawsze obecna (inaczej niż media/speech).
+   */
+  subjects: SubjectRegistry;
 }
 
 export function createServices(
@@ -94,15 +125,19 @@ export function createServices(
     generation?: GenerationDeps;
     mediaStore?: MediaStore;
     speech?: SpeechDeps;
+    grader?: GraderDeps;
+    subjects?: SubjectRegistry;
   },
 ): Services {
   return {
     db: input.db,
     clock: input.clock ?? systemClock,
+    subjects: input.subjects ?? createProductionSubjectRegistry(),
     ...(input.media ? { media: input.media } : {}),
     ...(input.generation ? { generation: input.generation } : {}),
     ...(input.mediaStore ? { mediaStore: input.mediaStore } : {}),
     ...(input.speech ? { speech: input.speech } : {}),
+    ...(input.grader ? { grader: input.grader } : {}),
   };
 }
 
@@ -120,5 +155,58 @@ export function speechFromEnv(env: Record<string, string | undefined>): SpeechDe
   return {
     stt: createAzureSttProvider({ subscriptionKey, region }),
     pronunciation: createAzurePronunciationProvider({ subscriptionKey, region }),
+  };
+}
+
+/** Domyślne limity gradera (design „Model oceniający”). */
+export const DEFAULT_GRADER_TIMEOUT_MS = 8000;
+export const DEFAULT_GRADER_MAX_CALLS_PER_SESSION = 20;
+
+/** Dodatnia liczba całkowita z env albo błąd (nazwa zmiennej w komunikacie). */
+function positiveIntEnv(name: string, raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw === "") {
+    return fallback;
+  }
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return value;
+}
+
+/**
+ * Model oceniający ze zmiennych środowiskowych (proces web, design „Model
+ * oceniający”). Walidacja: wszystkie trzy pierwsze (`BASE_URL`, `API_KEY`,
+ * `MODEL`) albo żadna — częściowa konfiguracja to błąd konfiguracji, nie cichy
+ * brak. `https://` wymagane poza `NODE_ENV` test/development. Liczby dodatnie.
+ * Brak konfiguracji → undefined (model wyłączony to stan poprawny). Sekret
+ * żyje tylko w adapterze; tu wyłącznie go przekazujemy.
+ */
+export function graderFromEnv(env: Record<string, string | undefined>): GraderDeps | undefined {
+  const baseUrl = env.UMIEM_GRADER_BASE_URL;
+  const apiKey = env.UMIEM_GRADER_API_KEY;
+  const model = env.UMIEM_GRADER_MODEL;
+  const present = [baseUrl, apiKey, model].filter((v) => v !== undefined && v !== "").length;
+  if (present === 0) {
+    return undefined;
+  }
+  if (present < 3) {
+    throw new Error("UMIEM_GRADER_* requires all of BASE_URL, API_KEY and MODEL, or none");
+  }
+  const nodeEnv = env.NODE_ENV ?? "production";
+  const insecureAllowed = nodeEnv === "test" || nodeEnv === "development";
+  if (!baseUrl!.startsWith("https://") && !(insecureAllowed && baseUrl!.startsWith("http://"))) {
+    throw new Error("UMIEM_GRADER_BASE_URL must use https:// outside test/development");
+  }
+  const timeoutMs = positiveIntEnv("UMIEM_GRADER_TIMEOUT_MS", env.UMIEM_GRADER_TIMEOUT_MS, DEFAULT_GRADER_TIMEOUT_MS);
+  const maxCallsPerSession = positiveIntEnv(
+    "UMIEM_GRADER_MAX_CALLS_PER_SESSION",
+    env.UMIEM_GRADER_MAX_CALLS_PER_SESSION,
+    DEFAULT_GRADER_MAX_CALLS_PER_SESSION,
+  );
+  return {
+    provider: createOpenAiCompatibleGrader({ baseUrl: baseUrl!, apiKey: apiKey!, model: model! }),
+    maxCallsPerSession,
+    timeoutMs,
   };
 }

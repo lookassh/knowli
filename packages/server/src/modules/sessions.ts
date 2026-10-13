@@ -12,6 +12,7 @@ import {
   type SessionSummaryDto,
   type TaskDto,
   type TaskPrompt,
+  type TestGoal,
   type VisualType,
 } from "@learning/contracts";
 import type { Services } from "../config";
@@ -52,6 +53,19 @@ import { addLegacyTaskPromptDefaults } from "./task-prompt-compat";
 import { deriveSupportStates, type SupportAttempt, type SupportTask } from "../domain/support-cycle";
 import { readLearningSnapshot } from "./learning-snapshot";
 import { createMockTestPlan, issueMockTestTask, closeMockTest } from "./mock-tests";
+import { assertVocabularyDeck, readVersionDeckKind, type DeckKind } from "./deck-kind";
+import {
+  buildLessonSessionContext,
+  issueNextLessonTask,
+  lessonTaskCounts,
+} from "./lessons/lesson-sessions";
+import {
+  createLessonMockTestPlan,
+  issueLessonMockTestTask,
+  closeLessonMockTest,
+  isLessonMockPlan,
+} from "./lessons/lesson-mock-tests";
+import { buildLessonSummaryObjectives } from "./lessons/lesson-attempts";
 
 /** Okno wznowienia aktywnej sesji od ostatniego zdarzenia (arch §9.1). */
 export const RESUME_WINDOW_MS = 30 * 60_000;
@@ -88,6 +102,11 @@ async function lockSession(tx: Tx, sessionId: string) {
     throw new AppError("not_found");
   }
   return session;
+}
+
+/** Czy sesja dotyczy lekcji (rozstrzyga delegację `nextTask` do silnika lekcji). */
+async function sessionIsLesson(tx: Tx, deckVersionId: string): Promise<boolean> {
+  return (await readVersionDeckKind(tx, deckVersionId)) === "lesson";
 }
 
 async function taskCounts(tx: Tx, sessionId: string): Promise<{ total: number; assessed: number }> {
@@ -239,6 +258,10 @@ export async function startSession(services: Services, input: SessionInput): Pro
     if (!deck.publishedVersionId) {
       throw new AppError("validation", { message: "deck is not published" });
     }
+    // Rodzaj zestawu (zadanie 9/13/17): słówka idą dotychczasową ścieżką; lekcja
+    // w trybie treningu deleguje do silnika lekcji, a w trybie kartkówki do
+    // planera kartkówki lekcji (zadanie 17). Żaden rodzaj nie jest już odrzucany.
+    const deckKind = deck.kind as DeckKind;
 
     const now = services.clock.now();
     const active = (
@@ -256,8 +279,10 @@ export async function startSession(services: Services, input: SessionInput): Pro
         return sessionDto(tx, active, true);
       }
       if (!stale) throw new AppError("conflict", { message: "Wróć do rozpoczętej sesji albo zakończ ją przed nową." });
-      if (active.mode === "mock_test") await closeMockTest(tx, services, active, "ended");
-      else await tx
+      if (active.mode === "mock_test") {
+        if (isLessonMockPlan(active.mockTestPlan)) await closeLessonMockTest(tx, services, active);
+        else await closeMockTest(tx, services, active, "ended");
+      } else await tx
         .update(learningSessions)
         .set({ state: "ended", endedAt: now })
         .where(eq(learningSessions.id, active.id));
@@ -271,19 +296,45 @@ export async function startSession(services: Services, input: SessionInput): Pro
     const childProfile = (
       await tx.select({ policyId: childProfiles.policyId }).from(childProfiles).where(eq(childProfiles.id, valid.childId))
     )[0];
-    const context: SessionContextShape = {
-      timezone: await readTimezone(tx),
-      testDate: assignment.testDate,
-      previousContact: await previousContactSnapshot(tx, valid.childId, version.id, now),
-      reservations: [],
-      settledChecks: [],
-    };
+    const context: SessionContextShape = deckKind === "lesson"
+      ? await buildLessonSessionContext(tx, {
+          childId: valid.childId,
+          deckVersionId: version.id,
+          timezone: await readTimezone(tx),
+          testDate: assignment.testDate,
+          now,
+        })
+      : {
+          timezone: await readTimezone(tx),
+          testDate: assignment.testDate,
+          previousContact: await previousContactSnapshot(tx, valid.childId, version.id, now),
+          reservations: [],
+          settledChecks: [],
+        };
     const id = randomUUID();
     if (mode === "mock_test" && !assignment.testGoals?.length) throw new AppError("validation", { message: "Rodzic musi najpierw ustawić cel kartkówki." });
-    const mockTestPlan = mode === "mock_test" ? await createMockTestPlan(tx, services, {
-      childId: valid.childId, deckVersionId: version.id, testGoals: assignment.testGoals!, testDate: assignment.testDate,
-      requestedTaskCount: assignment.mockTestTaskCount,
-    }) : null;
+    // Kartkówka lekcji (zadanie 17): wymaga celu `lesson` w przypisaniu; plan z
+    // planera kartkówki lekcji (bezpieczna porcja przypiętej wersji). Kartkówka
+    // słówek: cele słówkowe i planer słówek. Oba zapisują snapshot w tej samej
+    // kolumnie `mock_test_plan` (dyskryminator `kind` dla lekcji).
+    const mockTestPlan =
+      mode !== "mock_test"
+        ? null
+        : deckKind === "lesson"
+          ? (assignment.testGoals!.includes("lesson")
+              ? await createLessonMockTestPlan(tx, services, {
+                  childId: valid.childId,
+                  deckVersionId: version.id,
+                  requestedTaskCount: assignment.mockTestTaskCount,
+                })
+              : (() => { throw new AppError("validation", { message: "Rodzic musi najpierw ustawić cel kartkówki lekcji." }); })())
+          : await createMockTestPlan(tx, services, {
+              // Kartkówka słówek obsługuje tylko cele słówkowe; cel `lesson`
+              // dotyczy lekcji (osobna ścieżka) i nie trafia tu w czasie wykonania.
+              childId: valid.childId, deckVersionId: version.id,
+              testGoals: assignment.testGoals!.filter((g): g is TestGoal => g !== "lesson"), testDate: assignment.testDate,
+              requestedTaskCount: assignment.mockTestTaskCount,
+            });
     if (mockTestPlan && !mockTestPlan.slots.length) throw new AppError("mock_test_unavailable");
     const [row] = await tx
       .insert(learningSessions)
@@ -803,20 +854,48 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
     }
     const now = services.clock.now();
     if (session.mode === "mock_test") {
+      const lessonMock = isLessonMockPlan(session.mockTestPlan);
       if (now.getTime() - session.startedAt.getTime() > SESSION_TIME_LIMIT_MS) {
-        await closeMockTest(tx, services, session, "ended"); return null;
+        if (lessonMock) await closeLessonMockTest(tx, services, session);
+        else await closeMockTest(tx, services, session, "ended");
+        return null;
       }
-      const task = await issueMockTestTask(tx, services, session);
-      if (!task) await closeMockTest(tx, services, session, "completed");
+      const task = lessonMock ? await issueLessonMockTestTask(tx, services, session) : await issueMockTestTask(tx, services, session);
+      if (!task) {
+        if (lessonMock) await closeLessonMockTest(tx, services, session);
+        else await closeMockTest(tx, services, session, "completed");
+      }
       return task;
     }
-    const issued = (
-      await tx
-        .select()
-        .from(sessionTasks)
-        .where(and(eq(sessionTasks.sessionId, id), eq(sessionTasks.state, "issued")))
-        .limit(1)
+
+    // Lekcja (zadanie 13): wspólne kroki (blokada, idempotencja wydanego zadania,
+    // przeterminowanie, budżet, limit czasu, obietnica „Jeszcze N”) są te same co
+    // słówka; różni się tylko plan i materializacja — delegacja do silnika lekcji.
+    const isLesson = await sessionIsLesson(tx, session.deckVersionId);
+    const issuedTask = (
+      await tx.select().from(sessionTasks).where(and(eq(sessionTasks.sessionId, id), eq(sessionTasks.state, "issued"))).limit(1)
     )[0];
+    if (isLesson) {
+      if (issuedTask) {
+        const counts = await lessonTaskCounts(tx, id);
+        const assessedBefore = counts.assessed - (issuedTask.exerciseType !== "lesson_card" ? 1 : 0);
+        return issuedTaskDto(session, issuedTask, assessedBefore);
+      }
+      const lastActivity = await lastActivityAt(tx, id, session.startedAt);
+      if (now.getTime() - lastActivity.getTime() > RESUME_WINDOW_MS) {
+        await tx.update(learningSessions).set({ state: "ended", endedAt: now }).where(eq(learningSessions.id, id));
+        return null;
+      }
+      const counts = await lessonTaskCounts(tx, id);
+      const remaining = session.taskBudget - counts.assessed;
+      if (remaining <= 0) return null;
+      if (now.getTime() - session.startedAt.getTime() > SESSION_TIME_LIMIT_MS && remaining > PROMISE_REMAINING) {
+        return null;
+      }
+      return issueNextLessonTask(services, tx, session, now, remaining, counts.total);
+    }
+
+    const issued = issuedTask;
     if (issued) {
       const counts = await taskCounts(tx, id);
       const assessedBefore =
@@ -930,7 +1009,7 @@ export async function completePresentation(
   const valid = PresentationCompletionInputSchema.parse(input);
   return services.db.transaction(async (tx) => {
     const { task, itemId } = await lockTaskWithSession(tx, valid.taskId);
-    if (task.exerciseType !== "exposure") {
+    if (task.exerciseType !== "exposure" && task.exerciseType !== "lesson_card") {
       throw new AppError("validation", { message: "task is not a presentation" });
     }
     if (task.state === "completed") {
@@ -973,6 +1052,23 @@ export async function endSession(services: Services, sessionId: string): Promise
     const session = await lockSession(tx, id);
     let state = session.state as "active" | "completed" | "ended";
     if (session.mode === "mock_test") {
+      if (isLessonMockPlan(session.mockTestPlan)) {
+        // Kartkówka lekcji: zamknięcie wspólną ścieżką lekcji (raport per cel do
+        // kontekstu); podsumowanie sesji ma kształt słówkowy z zerowymi licznikami
+        // (omówienie i wynik idą przez endpoint mock-test-summary, nie endSession).
+        const report = await closeLessonMockTest(tx, services, session);
+        const counts = await taskCounts(tx, id);
+        const fresh = (await tx.select().from(learningSessions).where(eq(learningSessions.id, id)))[0]!;
+        return {
+          sessionId: id,
+          state: report.complete ? "completed" : "ended",
+          tasksIssued: counts.total,
+          assessedTasksIssued: counts.assessed,
+          endedAt: (fresh.endedAt ?? services.clock.now()).toISOString(),
+          independentSuccesses: { recall: 0, spelling: 0 },
+          practiceItems: [],
+        };
+      }
       const report = await closeMockTest(tx, services, session, "completed");
       const counts = await taskCounts(tx, id);
       const summaryRows = await tx.select({ itemRevisionId: assessments.itemRevisionId, skill: assessments.skill }).from(assessments)
@@ -993,6 +1089,7 @@ export async function endSession(services: Services, sessionId: string): Promise
     }
     const counts = await taskCounts(tx, id);
     const saved = SessionSummaryDtoSchema.safeParse(session.context.summary);
+    const isLesson = await sessionIsLesson(tx, session.deckVersionId);
     const rows = saved.success ? [] : await tx
       .select({
         itemId: itemRevisions.itemId, payload: itemRevisions.payload,
@@ -1004,6 +1101,10 @@ export async function endSession(services: Services, sessionId: string): Promise
       .innerJoin(itemRevisions, eq(itemRevisions.id, assessments.itemRevisionId))
       .where(and(eq(sessionTasks.sessionId, id), eq(attempts.state, "completed")))
       .orderBy(asc(attempts.receivedAt), asc(sessionTasks.ordinal), asc(attempts.attemptNumber));
+    // Lekcja (req 7.7): podsumowanie per cel. Wartości słówkowe (recall/spelling)
+    // są puste — `summarizeSessionAssessments` ignoruje skill `objective` — więc
+    // bezpiecznie dołączamy `objectives` do tego samego kształtu DTO.
+    const lessonObjectives = saved.success || !isLesson ? undefined : await buildLessonSummaryObjectives(services, tx, id);
     const summary: SessionSummaryDto = saved.success ? saved.data : {
       sessionId: id,
       state,
@@ -1011,6 +1112,7 @@ export async function endSession(services: Services, sessionId: string): Promise
       assessedTasksIssued: counts.assessed,
       endedAt: endedAt!.toISOString(),
       ...summarizeSessionAssessments(rows.map(row => ({ ...row, target: payloadToItem(row.payload).target }))),
+      ...(lessonObjectives ? { objectives: lessonObjectives } : {}),
     };
     if (!saved.success) {
       await tx.update(learningSessions)

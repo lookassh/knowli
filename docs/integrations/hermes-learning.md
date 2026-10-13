@@ -32,6 +32,8 @@ Zachowuj osobne wpisy dla różnych wersji zestawu. `pendingAttempts` zawiera si
 
 Błąd nigdy nie jest pustym sukcesem. Przy niedostępności danych reporter powinien powiedzieć, że nie mógł sprawdzić Umiem!, zamiast zastępować wynik pustą rodziną, zerową aktywnością lub nieaktualną migawką.
 
+Zakres — raport nie obejmuje jeszcze lekcji (2026-10-12). Kontrakt `learning-overview` w wersji 1 dotyczy wyłącznie zestawów słówek. Moduł lekcji gramatyki (oraz przyszłe przedmioty) jest świadomie pominięty: postęp per reguła, próbne kartkówki z gramatyki i terminy sprawdzianów lekcji NIE pojawiają się w żadnym polu raportu. Brak danych lekcji w raporcie nie oznacza, że dziecko nie uczyło się gramatyki — reporter nie powinien wnioskować „braku nauki" na tej podstawie, a `SKILL.md` zawiera analogiczną notę dla konsumenta.
+
 ## Token i wydanie
 
 Wydaj token w chronionym środowisku workera. CLI zapisuje sekret tylko do nowego pliku o prywatnych uprawnieniach:

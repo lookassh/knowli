@@ -1,6 +1,6 @@
 # Odbudowa projekcji postępu dziecka
 
-`progress:rebuild` odtwarza wyłącznie `child_skill_progress` z własnej, wiarygodnej historii ocen dziecka. Domyślnie działa jako dry-run. Nie zmienia prób, ocen, ekspozycji, transkrypcji, materiału ani zapisanych podsumowań.
+`progress:rebuild` odtwarza projekcje postępu dziecka z jego własnej, wiarygodnej historii ocen: zarówno `child_skill_progress` (słówka), jak i `child_objective_progress` (cele lekcji) — w jednym przejściu, w jednej transakcji na dziecko. Domyślnie działa jako dry-run. Nie zmienia prób, ocen, ekspozycji, transkrypcji, werdyktów modelu (`lesson_verdicts`, w tym decyzji rodzica), materiału ani zapisanych podsumowań.
 
 ## Procedura utrzymaniowa
 
@@ -12,7 +12,7 @@
    pnpm --filter @learning/worker progress:rebuild
    ```
 
-   Dry-run raportuje liczbę profili i projekcji bez słów, nazw, odpowiedzi ani sekretów. Dla jednego profilu można dodać `--child <UUID>`.
+   Dry-run raportuje liczbę profili i projekcji (słówka i cele łącznie) bez słów, nazw, odpowiedzi ani sekretów. Dla jednego profilu można dodać `--child <UUID>`. Odbudowa odmawia pracy przy aktywnej sesji lub próbie `processing` dziecka — te same blokady i odmowy obejmują cele lekcji, bo słówka i cele odbudowują się w jednej transakcji na dziecko (jedno przejście, bez przełącznika zakresu).
 4. Sprawdź raport oraz stan profilu. Jawnie zakończ aktywną sesję w aplikacji, jeśli jeszcze istnieje, i ponownie sprawdź, że usługi są zatrzymane.
 5. Uruchom apply dla jednego profilu lub wszystkich:
 

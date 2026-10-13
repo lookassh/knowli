@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultMediaSettings, mediaSettingsFromEnv } from "./config";
+import { defaultMediaSettings, graderFromEnv, mediaSettingsFromEnv } from "./config";
 
 describe("mediaSettingsFromEnv", () => {
   it("bez env zwraca domyślne ustawienia (low + webp)", () => {
@@ -22,5 +22,50 @@ describe("mediaSettingsFromEnv", () => {
       format: "png",
     });
     expect(settings.tts).toEqual(defaultMediaSettings.tts);
+  });
+});
+
+
+describe("graderFromEnv", () => {
+  const base = {
+    UMIEM_GRADER_BASE_URL: "https://grader.example/v1",
+    UMIEM_GRADER_API_KEY: "secret",
+    UMIEM_GRADER_MODEL: "cheap-1",
+  };
+
+  it("bez konfiguracji → undefined (model wyłączony to stan poprawny)", () => {
+    expect(graderFromEnv({})).toBeUndefined();
+  });
+
+  it("komplet trzech wartości → skonfigurowany grader z domyślnymi limitami", () => {
+    const grader = graderFromEnv({ ...base });
+    expect(grader).toBeDefined();
+    expect(grader!.provider.model).toBe("cheap-1");
+    expect(grader!.maxCallsPerSession).toBe(20);
+    expect(grader!.timeoutMs).toBe(8000);
+  });
+
+  it("UMIEM_GRADER_TIMEOUT_MS i MAX_CALLS_PER_SESSION nadpisują domyślne", () => {
+    const grader = graderFromEnv({ ...base, UMIEM_GRADER_TIMEOUT_MS: "3000", UMIEM_GRADER_MAX_CALLS_PER_SESSION: "5" });
+    expect(grader!.timeoutMs).toBe(3000);
+    expect(grader!.maxCallsPerSession).toBe(5);
+  });
+
+  it("częściowa konfiguracja (brak klucza) → błąd", () => {
+    expect(() => graderFromEnv({ UMIEM_GRADER_BASE_URL: base.UMIEM_GRADER_BASE_URL, UMIEM_GRADER_MODEL: base.UMIEM_GRADER_MODEL })).toThrow();
+  });
+
+  it("http:// odrzucone w produkcji", () => {
+    expect(() => graderFromEnv({ ...base, UMIEM_GRADER_BASE_URL: "http://grader.example/v1", NODE_ENV: "production" })).toThrow();
+  });
+
+  it("http:// dozwolone poza produkcją (test/development)", () => {
+    const grader = graderFromEnv({ ...base, UMIEM_GRADER_BASE_URL: "http://grader.example/v1", NODE_ENV: "development" });
+    expect(grader).toBeDefined();
+  });
+
+  it("nieliczbowy albo niedodatni limit/timeout → błąd", () => {
+    expect(() => graderFromEnv({ ...base, UMIEM_GRADER_TIMEOUT_MS: "nope" })).toThrow();
+    expect(() => graderFromEnv({ ...base, UMIEM_GRADER_MAX_CALLS_PER_SESSION: "0" })).toThrow();
   });
 });

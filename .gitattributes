@@ -1,0 +1,4 @@
+# Bajty weryfikowane przez manifest konsumenta MCP muszą być przenośne.
+integrations/umiem-mcp/src/umiem_mcp/learning-overview.schema.json text eol=lf
+integrations/umiem-mcp/skills/umiem-learning/SKILL.md text eol=lf
+docs/integrations/learning-overview.schema.json text eol=lf

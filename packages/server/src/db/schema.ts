@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
-import type { RecordingModeDto, TestGoal } from "@learning/contracts";
-import type { MockTestPlanSnapshot } from "../domain/mock-test-types";
+import type { AssignmentGoal, RecordingModeDto, TestGoal } from "@learning/contracts";
+import type { LessonMockTestPlanSnapshot, MockTestPlanSnapshot } from "../domain/mock-test-types";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   bigint,
@@ -126,6 +126,10 @@ export const deckVersions = app.table(
     sourceLocale: text("source_locale").notNull().default("pl-PL"),
     targetLocale: text("target_locale").notNull().default("en-GB"),
     generationPrompt: text("generation_prompt"),
+    // Kontekst lekcji (design grammar-module „Data Models”): wymagany dla
+    // zestawów lesson, zabroniony dla vocabulary, niezmienny po publikacji —
+    // egzekwuje trigger w 0007_lessons.sql.
+    lessonContext: jsonb("lesson_context").$type<Record<string, unknown>>(),
     createdAt: timestamps("created_at").notNull().defaultNow(),
     publishedAt: timestamps("published_at"),
   },
@@ -156,6 +160,7 @@ export const decks = app.table(
     createdAt: timestamps("created_at").notNull().defaultNow(),
   },
   (t) => [
+    check("decks_kind_allowed", sql`${t.kind} in ('vocabulary', 'lesson')`),
     // Aplikacja ustawia published_version_id wyłącznie na state=published.
     foreignKey({
       name: "published_version_belongs_to_deck",
@@ -175,7 +180,10 @@ export const learningItems = app.table(
     kind: text("kind").notNull().default("vocabulary"),
     retiredAt: timestamps("retired_at"),
   },
-  (t) => [unique("learning_items_id_deck_unique").on(t.id, t.deckId)],
+  (t) => [
+    check("learning_items_kind_allowed", sql`${t.kind} in ('vocabulary', 'lesson_exercise')`),
+    unique("learning_items_id_deck_unique").on(t.id, t.deckId),
+  ],
 );
 
 export const skillVersions = app.table(
@@ -278,7 +286,7 @@ export const assignments = app.table(
       .notNull()
       .references((): AnyPgColumn => decks.id),
     testDate: date("test_date"),
-    testGoals: text("test_goals").array().$type<TestGoal[]>(),
+    testGoals: text("test_goals").array().$type<AssignmentGoal[]>(),
     mockTestTaskCount: integer("mock_test_task_count").notNull().default(10),
     active: boolean("active").notNull().default(true),
     createdAt: timestamps("created_at").notNull().defaultNow(),
@@ -286,7 +294,7 @@ export const assignments = app.table(
   (t) => [
     unique("assignments_child_deck_unique").on(t.childId, t.deckId),
     check("assignments_mock_test_count", sql`${t.mockTestTaskCount} between 1 and 100`),
-    check("assignments_test_goals", sql`${t.testGoals} is null or (cardinality(${t.testGoals}) between 1 and 3 and ${t.testGoals} <@ array['recall','spelling','listening']::text[] and cardinality(array_positions(${t.testGoals}, 'recall')) <= 1 and cardinality(array_positions(${t.testGoals}, 'spelling')) <= 1 and cardinality(array_positions(${t.testGoals}, 'listening')) <= 1 and array_position(${t.testGoals}, null) is null)`),
+    check("assignments_test_goals", sql`${t.testGoals} is null or (cardinality(${t.testGoals}) between 1 and 3 and ${t.testGoals} <@ array['recall','spelling','listening','lesson']::text[] and cardinality(array_positions(${t.testGoals}, 'recall')) <= 1 and cardinality(array_positions(${t.testGoals}, 'spelling')) <= 1 and cardinality(array_positions(${t.testGoals}, 'listening')) <= 1 and cardinality(array_positions(${t.testGoals}, 'lesson')) <= 1 and array_position(${t.testGoals}, null) is null and (array_position(${t.testGoals}, 'lesson') is null or ${t.testGoals} = array['lesson']::text[]))`),
     unique("assignments_id_child_deck_unique").on(t.id, t.childId, t.deckId),
   ],
 );
@@ -367,7 +375,7 @@ export const generationRuns = app.table(
     finishedAt: timestamps("finished_at"),
   },
   (t) => [
-    check("generation_runs_kind_allowed", sql`${t.kind} in ('deck', 'tts', 'illustration')`),
+    check("generation_runs_kind_allowed", sql`${t.kind} in ('deck', 'lesson', 'tts', 'illustration')`),
     check(
       "generation_runs_state_allowed",
       sql`${t.state} in ('queued', 'running', 'succeeded', 'failed', 'superseded')`,
@@ -377,10 +385,10 @@ export const generationRuns = app.table(
     check("generation_runs_lease_pairing", sql`(${t.leaseToken} is null) = (${t.leaseUntil} is null)`),
     check(
       "generation_runs_kind_shape",
-      sql`(${t.kind} = 'deck' and ${t.deckVersionId} is not null and ${t.expectedEditNumber} is not null and ${t.assetId} is null) or (${t.kind} in ('tts', 'illustration') and ${t.assetId} is not null and ${t.deckVersionId} is null and ${t.expectedEditNumber} is null)`,
+      sql`(${t.kind} in ('deck', 'lesson') and ${t.deckVersionId} is not null and ${t.expectedEditNumber} is not null and ${t.assetId} is null) or (${t.kind} in ('tts', 'illustration') and ${t.assetId} is not null and ${t.deckVersionId} is null and ${t.expectedEditNumber} is null)`,
     ),
     // media używają lease z media_assets
-    check("generation_runs_deck_without_lease", sql`${t.kind} <> 'deck' or ${t.leaseToken} is null`),
+    check("generation_runs_deck_without_lease", sql`${t.kind} not in ('deck', 'lesson') or ${t.leaseToken} is null`),
     unique("generation_runs_dedupe_key_unique").on(t.dedupeKey),
     uniqueIndex("one_run_per_asset").on(t.assetId).where(sql`${t.assetId} is not null`),
     index("generation_runs_state_idx").on(t.state, t.createdAt),
@@ -402,7 +410,7 @@ export const learningSessions = app.table(
       .references((): AnyPgColumn => learningPolicies.id),
     microphoneEnabled: boolean("microphone_enabled").notNull(),
     mode: text("mode").$type<"training" | "mock_test">().notNull().default("training"),
-    mockTestPlan: jsonb("mock_test_plan").$type<MockTestPlanSnapshot>(),
+    mockTestPlan: jsonb("mock_test_plan").$type<MockTestPlanSnapshot | LessonMockTestPlanSnapshot>(),
     // completed: jawny koniec z podsumowaniem; ended: zamknięcie systemowe
     state: text("state").notNull(),
     taskBudget: integer("task_budget").notNull().default(12),
@@ -453,7 +461,7 @@ export const sessionTasks = app.table(
   (t) => [
     check("session_tasks_ordinal_nonnegative", sql`${t.ordinal} >= 0`),
     check("session_tasks_state_allowed", sql`${t.state} in ('issued', 'answered', 'completed', 'skipped')`),
-    check("session_tasks_completed_only_exposure", sql`${t.state} <> 'completed' or ${t.exerciseType} = 'exposure'`),
+    check("session_tasks_completed_only_exposure", sql`${t.state} <> 'completed' or ${t.exerciseType} in ('exposure', 'lesson_card')`),
     check("session_tasks_answered_never_exposure", sql`${t.state} <> 'answered' or ${t.exerciseType} <> 'exposure'`),
     foreignKey({
       name: "session_tasks_session_child_fk",
@@ -502,7 +510,7 @@ export const attempts = app.table(
     completedAt: timestamps("completed_at"),
   },
   (t) => [
-    check("attempts_modality_allowed", sql`${t.modality} in ('choice', 'text', 'audio', 'dont_remember', 'skip')`),
+    check("attempts_modality_allowed", sql`${t.modality} in ('choice', 'text', 'audio', 'dont_remember', 'skip', 'sequence')`),
     check("attempts_state_allowed", sql`${t.state} in ('processing', 'completed')`),
     check("attempts_number_positive", sql`${t.attemptNumber} > 0`),
     check("attempts_completed_iff_completed_at", sql`(${t.state} = 'completed') = (${t.completedAt} is not null)`),
@@ -656,5 +664,81 @@ export const childSkillProgress = app.table(
     check("child_skill_progress_streak_nonnegative", sql`${t.independentSuccessStreak} >= 0`),
     primaryKey({ name: "child_skill_progress_pk", columns: [t.childId, t.skillVersionId] }),
     index("child_skill_due_idx").on(t.childId, t.nextReviewAt),
+  ],
+);
+
+/**
+ * Cache werdyktów modelu oceniającego dla ćwiczeń lekcji (design grammar-module
+ * „Data Models”). Celowo bez kolumn dziecka — werdykt należy do wspólnego
+ * materiału (item_revision + znormalizowana odpowiedź + wersja promptu) i
+ * przeżywa usunięcie profilu. parent_decision pozwala rodzicowi nadpisać werdykt
+ * bez przeliczania historii.
+ */
+export const lessonVerdicts = app.table(
+  "lesson_verdicts",
+  {
+    id: uuid("id").primaryKey(),
+    itemRevisionId: uuid("item_revision_id")
+      .notNull()
+      .references((): AnyPgColumn => itemRevisions.id),
+    normalizedAnswer: text("normalized_answer").notNull(),
+    promptVersion: text("prompt_version").notNull(),
+    graderModel: text("grader_model").notNull(),
+    verdict: text("verdict").notNull(),
+    errorCategory: text("error_category"),
+    fragments: jsonb("fragments").$type<string[]>().notNull().default([]),
+    note: text("note"),
+    parentDecision: text("parent_decision"),
+    parentDecidedAt: timestamps("parent_decided_at"),
+    createdAt: timestamps("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    check("lesson_verdicts_verdict_allowed", sql`${t.verdict} in ('correct', 'almost', 'incorrect')`),
+    check(
+      "lesson_verdicts_parent_decision_allowed",
+      sql`${t.parentDecision} is null or ${t.parentDecision} in ('confirmed', 'overridden_correct', 'overridden_incorrect')`,
+    ),
+    check(
+      "lesson_verdicts_parent_decision_pairing",
+      sql`(${t.parentDecision} is null) = (${t.parentDecidedAt} is null)`,
+    ),
+    unique("lesson_verdicts_cache_key_unique").on(t.itemRevisionId, t.normalizedAnswer, t.promptVersion),
+    index("lesson_verdicts_revision_idx").on(t.itemRevisionId),
+  ],
+);
+
+/**
+ * Projekcja postępu per cel nauki (design grammar-module „Data Models”).
+ * Klucz (child_id, subject_id, objective_id); kasowana kaskadą po usunięciu
+ * profilu. Odbudowywana przez progress-rebuild z assessments (skill='objective')
+ * — to zadanie 10, poza zakresem 0007.
+ */
+export const childObjectiveProgress = app.table(
+  "child_objective_progress",
+  {
+    childId: uuid("child_id")
+      .notNull()
+      .references((): AnyPgColumn => childProfiles.id, { onDelete: "cascade" }),
+    subjectId: text("subject_id").notNull(),
+    objectiveId: text("objective_id").notNull(),
+    topicId: text("topic_id").notNull(),
+    status: text("status").notNull(),
+    streak: integer("streak").notNull().default(0),
+    nextReviewAt: timestamps("next_review_at"),
+    lastIndependentAt: timestamps("last_independent_at"),
+    projectionVersion: text("projection_version").notNull(),
+    updatedAt: timestamps("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    check(
+      "child_objective_progress_status_allowed",
+      sql`${t.status} in ('unseen', 'practicing', 'needs_confirmation', 'needs_reconfirmation', 'mastered')`,
+    ),
+    check("child_objective_progress_streak_nonnegative", sql`${t.streak} >= 0`),
+    primaryKey({
+      name: "child_objective_progress_pk",
+      columns: [t.childId, t.subjectId, t.objectiveId],
+    }),
+    index("child_objective_progress_due_idx").on(t.childId, t.nextReviewAt),
   ],
 );

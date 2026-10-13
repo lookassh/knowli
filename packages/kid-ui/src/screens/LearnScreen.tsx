@@ -62,6 +62,7 @@ export function LearnScreen({
     onPlayExample: () => void controller.playExampleAudio(),
     onAnswerChoice: (optionId) => void controller.answerChoice(optionId),
     onSubmitText: (text) => void controller.answerText(text),
+    onAnswerSequence: (itemIds) => void controller.answerSequence(itemIds),
     onNotRemember: () => void controller.notRemember(),
     onSkip: () => void controller.skip(),
     onComplete: () => void controller.completePresentation(),
@@ -144,6 +145,7 @@ export function LearnScreen({
                     retry={feedback.retry}
                     busy={busy}
                     onNext={() => void controller.continueLearning()}
+                    onSkip={() => void controller.skip()}
                   />
                 )}
               />
@@ -169,6 +171,7 @@ export function LearnScreen({
                     retry={feedback.retry}
                     busy={busy}
                     onNext={() => void controller.continueLearning()}
+                    onSkip={() => void controller.skip()}
                   />
                 ) : undefined}
                 handlers={handlers}

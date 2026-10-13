@@ -286,6 +286,8 @@ export const DeckSummaryDtoSchema = z.object({
   deckId: UuidSchema,
   title: z.string(),
   state: DeckStateSchema,
+  /** Rodzaj zestawu; OPCJONALNE — brak pola oznacza „vocabulary” (zgodność wsteczna typu). */
+  kind: z.enum(["vocabulary", "lesson"]).optional(),
   editableVersionId: UuidSchema.nullable(),
   publishedVersionId: UuidSchema.nullable(),
 });

@@ -4,11 +4,13 @@ import { messages } from "@learning/contracts";
 export class ApiCallError extends Error {
   readonly code: string | undefined;
   readonly status: number;
+  readonly details: unknown;
 
-  constructor(message: string, code: string | undefined, status: number) {
+  constructor(message: string, code: string | undefined, status: number, details?: unknown) {
     super(message);
     this.code = code;
     this.status = status;
+    this.details = details;
   }
 }
 
@@ -20,11 +22,12 @@ export async function apiFetch<T>(method: string, path: string, body?: unknown):
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+    const payload = (await response.json().catch(() => null)) as { code?: string; message?: string; details?: unknown } | null;
     throw new ApiCallError(
       payload?.message ?? messages.errors.internal,
       payload?.code,
       response.status,
+      payload?.details,
     );
   }
   if (response.status === 204) {

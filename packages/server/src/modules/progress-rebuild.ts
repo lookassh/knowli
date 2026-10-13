@@ -1,19 +1,24 @@
 import { UuidSchema } from "@learning/contracts";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { Services } from "../config";
 import type { Tx } from "../db/client";
 import {
   assessments,
   attempts,
+  childObjectiveProgress,
   childProfiles,
   childSkillProgress,
+  deckVersions,
+  itemRevisions,
   learningSessions,
   skillVersions,
 } from "../db/schema";
 import type { ProgressStatus, Skill } from "../domain/types";
+import { VOCABULARY_SKILLS } from "../domain/types";
 import { AppError } from "../errors";
 import { loadPolicy } from "../policies/registry";
 import { projectProgress } from "../domain/progress";
+import { projectObjectiveProgress, lastIndependentObjectiveAt, type ObjectiveHistoryEntry } from "../domain/lessons/progress";
 import { readSkillHistories, skillHistoryKey, type HistoryScope } from "./skill-history";
 import { writeSkillProjection } from "./skill-projections";
 
@@ -99,8 +104,11 @@ async function rebuildChild(
   }
 
   const existingRows = await tx.select().from(childSkillProgress).where(eq(childSkillProgress.childId, childId));
+  // Izolacja lekcji (zadanie 9): odbudowa postępu słówek projektuje WYŁĄCZNIE
+  // umiejętności słówek. Oceny celów lekcji ('objective') żyją w assessments,
+  // ale nie trafiają do child_skill_progress — pomijamy je tu w jednym miejscu.
   const assessmentRows = await tx.selectDistinct({ skillVersionId: assessments.skillVersionId, skill: assessments.skill })
-    .from(assessments).where(eq(assessments.childId, childId));
+    .from(assessments).where(and(eq(assessments.childId, childId), inArray(assessments.skill, [...VOCABULARY_SKILLS])));
   const existingScopes = await tx.select({ skillVersionId: childSkillProgress.skillVersionId, skill: skillVersions.skill })
     .from(childSkillProgress)
     .innerJoin(skillVersions, eq(skillVersions.id, childSkillProgress.skillVersionId))
@@ -168,7 +176,216 @@ async function rebuildChild(
       if (apply) await writeSkillProjection(tx, scope, projected, expected.lastReviewedAt, now);
     }
   }
+
+  // Cele lekcji w tej samej transakcji (jedno przejście): projekcja
+  // child_objective_progress z ocen skill='objective'. Słówka wyżej i cele tu
+  // dzielą transakcję/blokadę per dziecko i te same odmowy (aktywna sesja /
+  // processing sprawdzone na początku rebuildChild).
+  await rebuildChildObjectives(tx, childId, apply, now, report);
   return report;
+}
+
+/** Historia ocen celu dziecka do odbudowy (bieżąca wersja polityki filtruje projektor). */
+interface ObjectiveRebuildEntry extends ObjectiveHistoryEntry {
+  subjectId: string;
+  topicId: string;
+}
+
+type ObjectiveProgressRow = typeof childObjectiveProgress.$inferSelect;
+
+/**
+ * Odbudowa `child_objective_progress` dziecka z ocen celów. Analogiczna do
+ * słówek, ale projekcja per cel (`projectObjectiveProgress`) i klucz
+ * (child, subject, objective). `lastIndependentAt` z historii (ostatni
+ * niezależny sukces). Osierocone projekcje (brak dowodu) kasowane. Statusy w
+ * słowniku bazy; wersja projekcji = wersja polityki ostatniego wiarygodnego
+ * dowodu, jak ścieżka przyrostowa (lesson-attempts.projectAndUpsertObjective).
+ */
+async function rebuildChildObjectives(
+  tx: Tx,
+  childId: string,
+  apply: boolean,
+  now: Date,
+  report: ChildReport,
+): Promise<void> {
+  const rows = await tx
+    .select({
+      receivedAt: attempts.receivedAt,
+      policyId: attempts.policyId,
+      itemId: itemRevisions.itemId,
+      outcome: assessments.outcome,
+      reason: assessments.reason,
+      independent: assessments.independent,
+      confirmationEligible: assessments.confirmationEligible,
+      details: assessments.details,
+      lessonContext: deckVersions.lessonContext,
+    })
+    .from(assessments)
+    .innerJoin(attempts, eq(attempts.id, assessments.attemptId))
+    .innerJoin(itemRevisions, eq(itemRevisions.id, assessments.itemRevisionId))
+    .innerJoin(deckVersions, eq(deckVersions.id, itemRevisions.deckVersionId))
+    .where(and(eq(assessments.childId, childId), eq(assessments.skill, "objective")));
+
+  // Wersja polityki WPROST z rekordu polityki (jak objectiveHistory), cache per id.
+  const versionByPolicyId = new Map<string, string>();
+  const resolveVersion = async (policyId: string): Promise<string> => {
+    const cached = versionByPolicyId.get(policyId);
+    if (cached !== undefined) return cached;
+    const version = (await loadPolicy(tx, policyId)).version;
+    versionByPolicyId.set(policyId, version);
+    return version;
+  };
+
+  // Grupy per (subject, objective) z zachowaniem topicId.
+  const byKey = new Map<string, ObjectiveRebuildEntry[]>();
+  const keyMeta = new Map<string, { subjectId: string; objectiveId: string; topicId: string }>();
+  for (const row of rows) {
+    const context = (row.lessonContext ?? {}) as { subjectId?: string; topicId?: string };
+    const details = (row.details ?? {}) as { objectiveId?: string };
+    const subjectId = context.subjectId ?? "";
+    const topicId = context.topicId ?? "";
+    const objectiveId = details.objectiveId ?? "";
+    if (!subjectId || !objectiveId) continue; // niespójny dowód — pomiń, nie zgaduj
+    const key = `${subjectId}\u0000${objectiveId}`;
+    const list = byKey.get(key) ?? [];
+    list.push({
+      receivedAt: row.receivedAt.toISOString(),
+      policyVersion: await resolveVersion(row.policyId),
+      objectiveId,
+      itemId: row.itemId,
+      outcome: row.outcome === "unassessed" ? "unevaluated" : (row.outcome as ObjectiveHistoryEntry["outcome"]),
+      ...(row.reason ? { reason: row.reason } : {}),
+      independent: row.independent,
+      confirmationEligible: row.confirmationEligible,
+      subjectId,
+      topicId,
+    });
+    byKey.set(key, list);
+    keyMeta.set(key, { subjectId, objectiveId, topicId });
+  }
+
+  const existingRows = await tx.select().from(childObjectiveProgress).where(eq(childObjectiveProgress.childId, childId));
+  const existingByKey = new Map<string, ObjectiveProgressRow>();
+  for (const row of existingRows) existingByKey.set(`${row.subjectId}\u0000${row.objectiveId}`, row);
+
+  const policies = new Map<string, Awaited<ReturnType<typeof loadPolicy>>>();
+  const seenKeys = new Set<string>();
+
+  for (const [key, entries] of byKey) {
+    seenKeys.add(key);
+    const meta = keyMeta.get(key)!;
+    const existing = existingByKey.get(key);
+    const latestCredible = entries
+      .filter((e) => e.outcome !== "unevaluated")
+      .sort((a, b) => Date.parse(a.receivedAt) - Date.parse(b.receivedAt))
+      .at(-1);
+    if (!latestCredible) {
+      if (existing) {
+        report.deleted += 1;
+        if (apply) await tx.delete(childObjectiveProgress).where(and(
+          eq(childObjectiveProgress.childId, childId),
+          eq(childObjectiveProgress.subjectId, meta.subjectId),
+          eq(childObjectiveProgress.objectiveId, meta.objectiveId),
+        ));
+      } else {
+        report.unchanged += 1;
+      }
+      continue;
+    }
+    let policy = policies.get(latestCredible.policyVersion);
+    if (!policy) {
+      policy = await loadPolicy(tx, latestCredible.policyVersion);
+      policies.set(latestCredible.policyVersion, policy);
+    }
+    const projected = projectObjectiveProgress(entries, policy, now.toISOString())[meta.objectiveId];
+    if (!projected) { report.unchanged += 1; continue; }
+    const lastIndependentAt = lastIndependentObjectiveAt(entries, policy.version);
+    const expected = {
+      status: dbStatus(projected.status),
+      streak: projected.streak,
+      nextReviewAt: projected.nextReviewAt === null ? null : new Date(projected.nextReviewAt),
+      lastIndependentAt: lastIndependentAt ? new Date(lastIndependentAt) : null,
+      projectionVersion: policy.version,
+    };
+    if (!existing) {
+      report.inserted += 1;
+      if (apply) await writeObjectiveProjection(tx, childId, meta, expected, now);
+    } else if (objectiveMatches(existing, expected)) {
+      report.unchanged += 1;
+    } else {
+      report.updated += 1;
+      if (objectiveMasteryRank(expected.status) < objectiveMasteryRank(existing.status) || expected.streak < existing.streak) {
+        report.downgraded += 1;
+      }
+      if (apply) await writeObjectiveProjection(tx, childId, meta, expected, now);
+    }
+  }
+
+  // Osierocone projekcje: cel bez żadnego dowodu w ocenach → skasuj.
+  for (const [key, existing] of existingByKey) {
+    if (seenKeys.has(key)) continue;
+    report.deleted += 1;
+    if (apply) await tx.delete(childObjectiveProgress).where(and(
+      eq(childObjectiveProgress.childId, childId),
+      eq(childObjectiveProgress.subjectId, existing.subjectId),
+      eq(childObjectiveProgress.objectiveId, existing.objectiveId),
+    ));
+  }
+}
+
+interface ExpectedObjective {
+  status: string;
+  streak: number;
+  nextReviewAt: Date | null;
+  lastIndependentAt: Date | null;
+  projectionVersion: string;
+}
+
+function objectiveMatches(existing: ObjectiveProgressRow, expected: ExpectedObjective): boolean {
+  return existing.status === expected.status &&
+    existing.streak === expected.streak &&
+    asIso(existing.nextReviewAt) === asIso(expected.nextReviewAt) &&
+    asIso(existing.lastIndependentAt) === asIso(expected.lastIndependentAt) &&
+    existing.projectionVersion === expected.projectionVersion;
+}
+
+function objectiveMasteryRank(status: string): number {
+  return masteryRank(status);
+}
+
+async function writeObjectiveProjection(
+  tx: Tx,
+  childId: string,
+  meta: { subjectId: string; objectiveId: string; topicId: string },
+  expected: ExpectedObjective,
+  now: Date,
+): Promise<void> {
+  await tx
+    .insert(childObjectiveProgress)
+    .values({
+      childId,
+      subjectId: meta.subjectId,
+      objectiveId: meta.objectiveId,
+      topicId: meta.topicId,
+      status: expected.status,
+      streak: expected.streak,
+      nextReviewAt: expected.nextReviewAt,
+      lastIndependentAt: expected.lastIndependentAt,
+      projectionVersion: expected.projectionVersion,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [childObjectiveProgress.childId, childObjectiveProgress.subjectId, childObjectiveProgress.objectiveId],
+      set: {
+        topicId: meta.topicId,
+        status: expected.status,
+        streak: expected.streak,
+        nextReviewAt: expected.nextReviewAt,
+        lastIndependentAt: expected.lastIndependentAt,
+        projectionVersion: expected.projectionVersion,
+        updatedAt: now,
+      },
+    });
 }
 
 /** Dry-run domyślnie; apply atomowo dla każdego dziecka i wyłącznie dla projekcji. */

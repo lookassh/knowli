@@ -52,7 +52,7 @@ Granice kodu:
 
 Kid UI używa jawnego `/api/v1/kid` i konfigurowalnego `baseUrl`. Nie importuje Next.js, Server Actions, bazy ani kodu serwerowego. Mikrofon, odtwarzanie i lokalne ustawienia mają adaptery platformowe. Dzięki temu przyszły host Capacitor może ponownie wykorzystać interfejs; nie buduj teraz aplikacji Android.
 
-SDK dostawców występują tylko w adapterach za portami LLM, TTS, STT, pronunciation, images i mediów. Domena nie zna Azure/OpenAI. Nie wywołuj LLM przy każdym kliknięciu; generuje materiał, a sesję prowadzą jawne reguły serwera.
+SDK dostawców występują tylko w adapterach za portami LLM, TTS, STT, pronunciation, images i mediów. Domena nie zna Azure/OpenAI. Nie wywołuj LLM przy każdym kliknięciu; generuje materiał, a sesję prowadzą jawne reguły serwera. Wyjątek (moduł lekcji, 2026-10-12): w lekcjach odpowiedź tekstowa niedopasowana deterministycznie do zatwierdzonych wariantów może zostać oceniona przez konfigurowalny model oceniający zgodny z OpenAI (proces web, port `AnswerGraderProvider`), z cache werdyktów `lesson_verdicts` i limitem wywołań na sesję; zamknięte ćwiczenia, trafienia cache i brak konfiguracji modelu nie wołają modelu, a awaria daje „nieocenione" bez kary. Nowy przedmiot nauki (np. historia) dodawaj jako moduł za interfejsem `SubjectModule` (katalog, typy ćwiczeń, normalizator, kategorie błędów, prompty, walidatory) + wpis w rejestrze — bez logiki przedmiotu w silniku lekcji; test architektoniczny pilnuje tej granicy. Szczegóły: `docs/architecture.md` sekcja 19 i `.kiro/specs/grammar-module/`.
 
 Nie dodawaj mikroserwisów, Redis, osobnego backendu, ogólnego frameworka pluginów ani abstrakcji repozytorium dla każdej tabeli.
 
@@ -87,6 +87,7 @@ Nie dodawaj mikroserwisów, Redis, osobnego backendu, ogólnego frameworka plugi
 - `MediaStore.putImmutable` zapisuje bez nadpisywania istniejącego blobu. Spóźniony worker nie może zmienić gotowych mediów ani powiązań szkicu.
 - Nagranie dziecka przetwarzaj krótkotrwale w pamięci. Nie zapisuj go w bazie, kolejce, plikach tymczasowych, logach, fixture ani backupie. Zwolnij mikrofon i bufory także po błędzie/anulowaniu.
 - Sekrety pozostają na serwerze. Kid DTO nie zawiera klucza odpowiedzi, kryteriów oceny ani technicznych score'ów. Nie serializuj bezpośrednio rekordów bazy.
+- Model oceniający lekcji (gdy skonfigurowany, `UMIEM_GRADER_*`, proces web): wysyłaj do usługi wyłącznie treść ćwiczenia, regułę i odpowiedź dziecka (≤200 znaków) jako dane, nigdy imienia/wieku/identyfikatorów; token tylko w adapterze (nie w logach, DTO, promptach). Komentarz modelu jest wyłącznie dla rodzica; werdykt w cache `lesson_verdicts` nie ma kolumn dziecka. Panel rodzica informuje, do której usługi trafiają odpowiedzi dziecka. Raport Hermesa (`learning-overview`) świadomie NIE obejmuje lekcji — przy zmianach API/MCP utrzymaj ten filtr i notę w `SKILL.md`.
 - Parent Mode wymaga PIN-u/hasła, sesji i serwerowej autoryzacji każdej operacji. Wybór profilu dziecka nie jest mechanizmem zabezpieczenia publicznej instancji.
 - Sposób dostępu spoza domu wymaga osobnego ustalenia przed publicznym wystawieniem. Nie twórz teraz platformy wielorodzinnej.
 

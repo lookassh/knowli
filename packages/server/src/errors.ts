@@ -6,6 +6,7 @@ export type AppErrorCode =
   | "already_configured"
   | "validation"
   | "mock_test_unavailable"
+  | "deck_kind_mismatch"
   | "learning_summary_unavailable"
   | "forbidden"
   | "not_found"
@@ -26,6 +27,7 @@ const CODE_PROFILES: Record<AppErrorCode, CodeProfile> = {
   already_configured: { status: 409, retryable: false },
   validation: { status: 400, retryable: false },
   mock_test_unavailable: { status: 400, retryable: false },
+  deck_kind_mismatch: { status: 400, retryable: false },
   learning_summary_unavailable: { status: 503, retryable: true },
   forbidden: { status: 403, retryable: false },
   not_found: { status: 404, retryable: false },
@@ -42,10 +44,17 @@ export class AppError extends Error {
   readonly code: AppErrorCode;
   readonly status: number;
   readonly retryable: boolean;
+  /**
+   * Opcjonalne, ustrukturyzowane szczegóły błędu serializowane do
+   * `ApiError.details` przez warstwę HTTP. Używane przez przypadki, które muszą
+   * zwrócić listę (publikacja lekcji bez pokrycia, edycja ćwiczeń z błędami per
+   * ćwiczenie). Nie trafia do logów ani nie zawiera treści dziecka/rodzica.
+   */
+  readonly details?: unknown;
 
   constructor(
     code: AppErrorCode,
-    options?: { message?: string; cause?: unknown },
+    options?: { message?: string; cause?: unknown; details?: unknown },
   ) {
     const profile = CODE_PROFILES[code];
     super(options?.message ?? code, { cause: options?.cause });
@@ -53,5 +62,8 @@ export class AppError extends Error {
     this.code = code;
     this.status = profile.status;
     this.retryable = profile.retryable;
+    if (options?.details !== undefined) {
+      this.details = options.details;
+    }
   }
 }
