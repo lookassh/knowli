@@ -170,6 +170,7 @@ function fakeExercise(
       return {
         ...base,
         focus: [],
+        stem: "Wybierz poprawną odpowiedź.",
         options: [
           { id: "a", text: answer },
           { id: "b", text: `${answer}x` },
@@ -196,7 +197,7 @@ function fakeExercise(
       return {
         ...base,
         transformId: input.transforms[0]?.id ?? "unknown_transform",
-        prompt: "Przekształć.",
+        statement: "Przekształć to zdanie.",
       };
     case "lesson_notice":
       return {

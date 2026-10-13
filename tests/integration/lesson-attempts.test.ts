@@ -280,6 +280,11 @@ describe("ocena odpowiedzi w lekcji — typy tekstowe (luka)", () => {
     expect(dr.taskState).toBe("answered");
     const rows = await assessmentsFor(second.child.id);
     expect(rows.some((r) => r.outcome === "incorrect" && r.reason === "dont_remember")).toBe(true);
+    const support = await nextTask(services, second.session.sessionId);
+    expect(support?.exerciseType).toBe("lesson_card");
+    await completePresentation(services, { taskId: support!.taskId });
+    const guided = await nextTask(services, second.session.sessionId);
+    expect(["lesson_choice", "lesson_order", "lesson_short_answer"]).toContain(guided?.exerciseType);
     void child;
   });
 });
@@ -548,12 +553,15 @@ describe("delegacja ścieżki prób po rodzaju zestawu (zadanie 9 review minor)"
  * późna finalizacja modelu nadpisująca zamkniętą kartkówkę.
  */
 describe("review P1-3: nieoceniona odpowiedź nie łamie CHECK (confirmationEligible=false)", () => {
-  it("odpowiedź niedopasowana bez gradera po przerwie ≥12h → zapis przechodzi, outcome unassessed", async () => {
+  it.each([false, true])("odpowiedź nieoceniona po przerwie ≥12h (grader=%s) → zapis przechodzi, outcome unassessed", async (withModel) => {
     // previousSessionContactAt > 12h wcześniej sprawiłby, że confirmationEligible
     // policzyłby się na true. Bez gradera niedopasowany tekst → unevaluated
     // (dbOutcome 'unassessed'). CHECK assessments_unassessed_no_score wymaga
     // confirmation_eligible=false dla 'unassessed'; przed poprawką zapis rzucał 23514.
-    const { services, clock } = buildTestServices("2026-10-10T08:00:00.000Z");
+    const { services: baseServices, clock } = buildTestServices("2026-10-10T08:00:00.000Z");
+    const services = withModel ? createServices({ db: baseServices.db, clock,
+      grader: { provider: new FakeAnswerGrader().onDefault({ error: "offline" }), maxCallsPerSession: 20, timeoutMs: 8000 },
+    }) : baseServices;
     const child = await createChild(services, { displayName: "Check", avatarKey: "owl" });
     const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, now: clock.now() });
 
@@ -618,7 +626,13 @@ describe("review P1-5: późna finalizacja modelu nie nadpisuje zamkniętej kart
     // w tym czasie endSession utrwala NIEZMIENNY raport (slot unassessed); powrót
     // gradera (faza 2) NIE może dopisać correct ani zmienić zadania/projekcji.
     const grader = new FakeAnswerGrader();
-    grader.onDefault({ raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok" }, delayMs: 400 });
+    grader.onDefault({ raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok" } });
+    let enter!: () => void;
+    let release!: () => void;
+    const entered = new Promise<void>((resolve) => { enter = resolve; });
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    const originalGrade = grader.grade.bind(grader);
+    grader.grade = async (input, signal) => { enter(); await released; return originalGrade(input, signal); };
     const { services, clock } = buildTestServices();
     const withGrader = createServices({
       db: (services as unknown as { db: Parameters<typeof createServices>[0]["db"] }).db,
@@ -642,9 +656,12 @@ describe("review P1-5: późna finalizacja modelu nie nadpisuje zamkniętej kart
 
     // Uruchom próbę (model odpowie po 400 ms); NIE czekaj — w międzyczasie zamknij.
     const pending = submitAttempt(withGrader, { taskId: task!.taskId, clientAttemptId: randomUUID(), modality: "text", text: "almost correct answer" });
-    // Daj fazie 1 utrwalić `processing` zanim zamkniemy sesję.
-    await new Promise((r) => setTimeout(r, 80));
-    await endSession(withGrader, session.sessionId); // utrwala raport (slot unassessed)
+    await entered; // faza 1 jest utrwalona, grader czeka na jawną barierę
+    try {
+      const reserved = await pool.query("select state from learning_app.attempts where task_id=$1", [task!.taskId]);
+      expect(reserved.rows[0].state).toBe("processing");
+      await endSession(withGrader, session.sessionId);
+    } finally { release(); }
     await pending; // faza 2 wraca po zamknięciu
 
     // Raport rodzica NIEZMIENIONY: żaden correct nie wszedł.
@@ -656,5 +673,7 @@ describe("review P1-5: późna finalizacja modelu nie nadpisuje zamkniętej kart
     const summary = await readLessonMockTestSummary(withGrader, session.sessionId);
     const answered = summary.solutions.find((sl) => sl.taskId === task!.taskId);
     expect(answered?.outcome).not.toBe("correct");
+    const late = await pool.query("select count(*)::int as n from learning_app.assessments where child_id=$1 and outcome='correct'", [child.id]);
+    expect(late.rows[0].n).toBe(0);
   });
 });

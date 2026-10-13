@@ -80,6 +80,9 @@ export function LessonSentenceView({ task, busy, handlers }: ExerciseProps) {
         </button>
       )}
       secondaryActions={<div className="kid-secondary-actions">
+        <button type="button" data-testid="kid-not-remember" disabled={disabled} onClick={handlers.onNotRemember}>
+          {messages.kid.notRemember}
+        </button>
         <button type="button" data-testid="kid-skip" disabled={disabled} onClick={handlers.onSkip}>
           {messages.kid.skip}
         </button>

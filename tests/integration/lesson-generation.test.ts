@@ -391,7 +391,7 @@ describe("generowanie puli lekcji (integracja)", () => {
 
 // Dowód, że fake LLM implementuje nowy port (bez sieci).
 describe("FakeLlmProvider.generateLessonPool", () => {
-  it("generuje poprawne ćwiczenia dla dowolnego celu i respektuje existingAnswers", async () => {
+  it.each(["lesson_gap", "lesson_transform"])("generuje %s i zachowuje kształt promptów oraz existingAnswers", async (productiveType) => {
     const llm = new FakeLlmProvider();
     const result = await llm.generateLessonPool({
       subjectId: "english_grammar",
@@ -399,13 +399,13 @@ describe("FakeLlmProvider.generateLessonPool", () => {
       answerLocale: "en-GB",
       promptLocale: "pl-PL",
       promptProfile: { generationRole: "", gradingRole: "", almostDefinition: "" },
-      exerciseTypes: ["lesson_choice", "lesson_gap", "lesson_open_answer"],
-      transforms: [],
+      exerciseTypes: ["lesson_choice", productiveType, "lesson_open_answer"] as ("lesson_choice" | "lesson_gap" | "lesson_transform" | "lesson_open_answer")[],
+      transforms: [{ id: "to_negative", instructionPl: "Zamień na przeczenie" }],
       objectives: [
         {
           id: "english_grammar.present_simple.third_person_s",
           descriptionEn: "x",
-          exerciseTypes: ["lesson_choice", "lesson_gap", "lesson_open_answer"],
+          exerciseTypes: ["lesson_choice", productiveType, "lesson_open_answer"] as ("lesson_choice" | "lesson_gap" | "lesson_transform" | "lesson_open_answer")[],
           errorCategories: [],
         },
       ],
@@ -418,5 +418,10 @@ describe("FakeLlmProvider.generateLessonPool", () => {
     expect(result.exercises.length).toBeGreaterThan(0);
     const answers = result.exercises.map((e) => (e as { answer: string }).answer.toLowerCase());
     expect(answers).not.toContain("he");
+    for (const raw of result.exercises) {
+      const ex = raw as Record<string, unknown>;
+      if (ex.exerciseType === "lesson_choice") expect(ex.stem).toEqual(expect.any(String));
+      if (ex.exerciseType === "lesson_transform") expect(ex.statement).toEqual(expect.any(String));
+    }
   });
 });

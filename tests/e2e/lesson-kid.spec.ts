@@ -429,3 +429,54 @@ test("child taps Posłuchaj in a lesson text exercise: disclosure sealed before 
   await page.getByTestId("kid-lesson-check").click();
   await expect(page.getByTestId("kid-feedback")).toContainText("Świetnie!");
 });
+
+test("child can declare not-remembered in a lesson gap: difficulty then reveal then support (P2-9)", async ({ page }) => {
+  // Wym. 5.6 / A58: w ćwiczeniach z wpisywaniem dziecko może zadeklarować
+  // trudność „Nie pamiętam" zamiast zgadywać. To prowadzi do ujawnienia
+  // (disclosure) i cyklu wsparcia, NIE do pomyłki wiedzy. Przed poprawką widoki
+  // lekcji (lesson_gap) nie udostępniały tej akcji → RED (brak przycisku).
+  const gapTask: TaskDto = {
+    ...base(t(40), "lesson_gap"),
+    prompt: { kind: "lesson_gap", instructionPl: "Uzupełnij lukę", stemWithGap: "He ___ football.", hint: "(play)" },
+  };
+  const dontRememberAttempt: AttemptDto = {
+    attemptId: a(40), taskId: t(40), state: "completed", modality: "dont_remember", taskState: "answered", stepId: "s40",
+    receivedAt: "2026-10-11T10:00:40.000Z", completedAt: "2026-10-11T10:00:40.000Z",
+    feedback: { kind: "great" },
+  };
+
+  const attemptBodies: string[] = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (request.method() === "POST" && /\/tasks\/[^/]+\/attempts$/.test(path)) attemptBodies.push(request.postData() ?? "");
+  });
+
+  await installKidUiFixture(page, {
+    profiles: [profile()],
+    decks: [lessonDeck()],
+    session: session(),
+    tasks: [gapTask, null],
+    attempts: [dontRememberAttempt],
+    disclosure: { taskId: t(40), stepId: "d1", kind: "hint", reveal: { target: "plays" } },
+    summary,
+  });
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+
+  // „Nie pamiętam — pokaż" jest widoczny i ma duże pole dotykowe (spójny wzorzec).
+  await expect(page.getByTestId("kid-lesson-gap")).toBeVisible();
+  const notRemember = page.getByTestId("kid-not-remember");
+  await expect(notRemember).toBeVisible();
+  await expect(notRemember).toHaveText("Nie pamiętam — pokaż");
+
+  // Dotknięcie → ujawnienie poprawnego słowa (cykl wsparcia), bez zgadywania.
+  await notRemember.click();
+  await expect(page.getByTestId("kid-reveal")).toContainText("plays");
+  await page.getByTestId("kid-next").click();
+
+  // Potwierdzenie ujawnienia zapisuje zadeklarowaną trudność (dont_remember),
+  // nie pomyłkę wiedzy — i prowadzi do feedbacku wsparcia.
+  await expect(page.getByTestId("kid-feedback")).toBeVisible();
+  expect(attemptBodies.some((body) => /"modality"\s*:\s*"dont_remember"/.test(body))).toBe(true);
+});
