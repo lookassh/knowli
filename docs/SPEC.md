@@ -244,6 +244,8 @@ Podczas sesji algorytm aplikacji:
 
 Nie wywołujemy LLM po każdym kliknięciu. W MVP nie ma swobodnego czatu dziecka z AI ani generowania nowych, niezatwierdzonych faktów w trakcie sesji.
 
+Wyjątek dla lekcji (moduł gramatyki, 2026-10-12): w lekcjach interaktywnych odpowiedź tekstowa, której nie rozstrzyga dopasowanie deterministyczne do zatwierdzonych wariantów (po normalizacji i tolerancji drobnej literówki), może zostać oceniona przez konfigurowalny **model oceniający** zgodny z OpenAI. Wywołanie następuje tylko dla niedopasowanej odpowiedzi i tylko gdy nie ma zapisanego werdyktu dla tej pary (ćwiczenie, znormalizowana odpowiedź, wersja promptu); werdykt trafia do wspólnego cache, więc ta sama odpowiedź nie woła modelu ponownie. Brak skonfigurowanego modelu, limit wywołań sesji, timeout lub błąd dają wynik „nieocenione” bez kary. Zamknięte ćwiczenia i trafienia cache nie wołają modelu. Szczegóły: sekcja „Lekcje i przedmioty” oraz `.kiro/specs/grammar-module/`.
+
 ## 11. Umiejętności śledzone niezależnie
 
 Dla każdej pary dziecko–element śledzimy:
@@ -695,6 +697,8 @@ Nagranie dziecka:
 
 Przechowujemy potrzebny wynik, np. transkrypcję, status i ocenę. Nie zapisujemy pełnych odpowiedzi dostawcy bez potrzeby. Klucze usług pozostają po stronie serwera.
 
+Model oceniający lekcji (2026-10-12): gdy jest skonfigurowany, serwer wysyła do zgodnej z OpenAI usługi oceny wyłącznie treść ćwiczenia, regułę i odpowiedź tekstową dziecka (do 200 znaków), jako dane, nie polecenia. Nie wysyła imienia, wieku ani identyfikatorów dziecka. Token usługi nie trafia do przeglądarki, logów ani DTO; komentarz modelu widzi tylko rodzic. Panel rodzica informuje, do której usługi trafiają odpowiedzi dziecka, gdy model jest włączony. Zapisany werdykt (bez danych dziecka) jest wspólnym materiałem ćwiczenia i przeżywa usunięcie profilu.
+
 Usunięcie nagrania przez aplikację nie oznacza automatycznie braku retencji po stronie zewnętrznego dostawcy. Wybór i konfiguracja usługi muszą uwzględnić jej zasady przetwarzania głosu dziecka; rodzic powinien wiedzieć, do jakiej usługi trafia audio.
 
 Opcjonalna trwała archiwizacja nagrań jest poza MVP i wymagałaby osobnego ustawienia rodzica. Usunięcie profilu powinno umożliwiać usunięcie powiązanych z nim wyników i historii, bez kasowania wspólnych zestawów innych dzieci.
@@ -756,6 +760,41 @@ W przyszłej odpowiedzi ustnej STT ustala tekst, a ocena merytoryczna odnosi go 
 
 MVP nie zawiera uploadu dokumentów, OCR, analizy rozdziałów ani źródłowego interfejsu przeglądu.
 
+## 29a. Lekcje i przedmioty (2026-10-12)
+
+Uzupełnienie wprowadza drugi rodzaj materiału obok zestawu słówek: **lekcję**. Lekcja uczy czasu/konstrukcji gramatycznej (pierwszy temat: Present Simple) na materiale, który dziecko przerabia w szkole. Szczegółowe wymagania i kryteria: `.kiro/specs/grammar-module/{requirements,design}.md`; poniżej opis produktu.
+
+### 29a.1. Pojęcia
+
+- **Przedmiot** — dziedzina nauki (pierwszy: angielska gramatyka). Silnik lekcji jest niezależny od przedmiotu; przedmiot jest wtyczką dostarczającą katalog, typy ćwiczeń, normalizator odpowiedzi, kategorie błędów, profil promptów i walidatory. Docelowo ten sam silnik obsłuży historię, biologię czy geografię.
+- **Temat** — czas lub konstrukcja (Present Simple). **Reguła** (w kodzie: cel nauki) — najmniejsza sprawdzana jednostka („-s w 3. osobie l.p."). Tematy, reguły, karty wyjaśnienia i kategorie błędów są wersjonowanymi danymi katalogu, więc kolejny temat nie wymaga zmian w kodzie.
+- **Lekcja** — zestaw dla jednego tematu z pulą ćwiczeń zatwierdzoną przez rodzica.
+
+### 29a.2. Tworzenie i publikacja
+
+Rodzic wybiera temat z katalogu, wkleja materiał z rozdziału (do 8000 znaków), wybiera reguły (domyślnie wszystkie) i wielkość puli. System generuje szkic lekcji i trwałe zadanie generowania w jednej transakcji (klucz idempotencji jak przy słówkach). Generowanie tworzy ćwiczenia jednoregułowe tylko dla wybranych reguł i typów katalogu oraz przykłady zdań do kart wyjaśnienia (teksty reguł pochodzą z katalogu, nie z modelu). Niepoprawne ćwiczenie jest odrzucane pojedynczo; całkowity błąd nie publikuje częściowej lekcji. Rodzic przegląda ćwiczenia pogrupowane po regułach, edytuje odpowiedzi/warianty/opcje/klocki/element sprawdzany, dogenerowuje i publikuje. Publikacja wymaga pokrycia etapów każdej reguły (≥3 prowadzone, 4 produktywne, 2 tłumaczenia). Cykl szkicu i niezmienność jak przy słówkach; lekcja z materiału nie tworzy zestawu słówek.
+
+### 29a.3. Interaktywny przebieg
+
+Dziecko dostaje najpierw karty wyjaśnienia reguły, potem ćwiczenie wskazania zmieniającego się słowa, a następnie ćwiczenia w etapach: prowadzony (wybór formy, układanie z klocków, krótka odpowiedź), produktywny (uzupełnienie luki, poprawienie błędu, przekształcenie zdania) i samodzielny (tłumaczenie z polskiego oraz typy produktywne na ćwiczeniach niewidzianych). Dwie kolejne poprawne odpowiedzi awansują etap. Po błędzie lub „Nie pamiętam" dziecko widzi zaznaczony błędny fragment, podpowiedź z szablonu kategorii i poprawną odpowiedź, a potem jeden cykl wsparcia (karta przypomnienia + łatwiejsze ćwiczenie) — najwyżej raz na regułę i sesję. Sesja wprowadza najwyżej dwie nowe reguły i zachowuje budżet 12 ocenianych/10 min; cała ścieżka działa bez mikrofonu. W oknie przygotowania do sprawdzianu (48 h) selektor preferuje etap samodzielny nieopanowanych reguł.
+
+### 29a.4. Ocena odpowiedzi tekstowych
+
+Odpowiedź jest najpierw porównywana z zatwierdzonymi wariantami po normalizacji (NFC, apostrofy, wielkość liter, interpunkcja, spacje, rozwinięcie angielskich skrótów). Zgodność → poprawna bez modelu. Drobna literówka poza elementem sprawdzanym → „Prawie!" bez modelu; błąd w elemencie sprawdzanym nie zalicza reguły. Odpowiedź niedopasowana używa zapisanego werdyktu, a przy jego braku — modelu oceniającego (gdy skonfigurowany i limit sesji niewyczerpany). Model zwraca werdykt `correct | almost | incorrect`, kategorię błędu z listy reguły i fragmenty jako dokładne podciągi odpowiedzi; wynik niezgodny ze schematem lub regułą jest odrzucany. Werdykt jest zapisywany dla pary (ćwiczenie, znormalizowana odpowiedź, wersja promptu) i współdzielony między dziećmi. Dziecko widzi tylko zatwierdzoną poprawną odpowiedź i podpowiedź z katalogu; komentarz modelu widzi tylko rodzic, który może poprawić werdykt na przyszłość bez wstecznego przeliczania.
+
+### 29a.5. Postęp per reguła i kartkówka
+
+Postęp jest śledzony osobno dla dziecka i reguły, jako projekcja z historii ocen. Opanowanie reguły wymaga trzech ostatnich kwalifikujących sukcesów na różnych ćwiczeniach, z co najmniej jednym w późniejszej sesji innego dnia po ≥12 h. Nieocenione i pominięcia są neutralne; błąd lub „Nie pamiętam" w niezależnym zastosowaniu przerywa serię. Panel rodzica pokazuje status reguły i najczęstsze kategorie błędów; interfejs dziecka nie pokazuje procentów ani tego, czy ocenił model. Istniejące widoki postępu słówek nie obejmują lekcji. Próbna kartkówka działa dla lekcji na dotychczasowych zasadach, z celem „gramatyka" i raportem per reguła.
+
+### 29a.6. Rozszerzalność
+
+Dodanie przedmiotu to nowy katalog modułu i jeden wpis w rejestrze; silnik (typy ćwiczeń, ocena, postęp, selektor, pula, kartkówka, kontrakty Kid API, widoki) nie zawiera logiki specyficznej dla angielskiego ani gramatyki. Reguły specyficzne (np. rozwijanie skrótów) należą do modułu. Test architektoniczny pilnuje, że silnik nie importuje modułów przedmiotów inaczej niż przez rejestr, a przykładowy przedmiot nie-językowy (fixture) przechodzi walidację, generowanie i ocenę bez zmian w silniku.
+
+### 29a.7. Ograniczenia i pozycje odłożone
+
+- **Audio odpowiedzi kanonicznej (TTS) — odłożone.** Przedmiot gramatyki ma `ttsForAnswers = true`, serwer generuje audio odpowiedzi i wymaga gotowego `target_audio` przy publikacji. Jednak ścieżka sesji lekcji nie przekazuje tego zasobu do zadania (`audioAssetId` jest `null`), a Kid UI lekcji nie udostępnia kontrolki odsłuchu odpowiedzi. W efekcie audio odpowiedzi nie jest obecnie podane dziecku end-to-end. Pozostaje to świadomie odłożone; dodanie wymaga przekazania `audioAssetId` w materializacji sesji i kontrolki odsłuchu w widoku lekcji (z zapisem ekspozycji jak dla słówek).
+- **Opanowanie bez skonfigurowanego modelu.** Niezależne sprawdzenie reguły może używać produktywnych typów deterministycznych (zwłaszcza `lesson_gap`) na ćwiczeniach niewidzianych — oceniane bez modelu. Dlatego opanowanie reguły jest osiągalne również bez modelu oceniającego, o ile pula zawiera wystarczająco dużo różnych takich ćwiczeń. Model jest wymagany tylko dla odpowiedzi niedopasowanych do wariantów (głównie tłumaczenie zdania i korekty produktywne z nietrafionym wariantem); bez modelu taka odpowiedź jest „nieocenione" bez kary i bez przerwania serii. Hybrydowa ocena jest zatem opcjonalna, zgodnie z projektem.
+
 ## 30. Poza zakresem MVP
 
 Nie implementujemy:
@@ -773,6 +812,8 @@ Nie implementujemy:
 - trwałego przechowywania nagrań dziecka;
 - wszystkich potencjalnych providerów jednocześnie;
 - automatycznej oceny długich odpowiedzi otwartych.
+
+Zakres oceny modelem (2026-10-12): poza zakresem pozostaje automatyczna ocena DŁUGICH, swobodnych wypowiedzi (esejów, wieloaspektowych odpowiedzi). Ocena KRÓTKICH odpowiedzi w lekcjach (jedno zdanie w zakresie jednej reguły, np. tłumaczenie zdania, poprawienie błędu, przekształcenie) przez model oceniający jest w zakresie modułu lekcji — opisuje ją sekcja „Lekcje i przedmioty" i wyjątek §10.
 
 Profile dzieci, historia prób, pisownia i działanie bez mikrofonu są częścią MVP i nie mogą zostać odłożone na podstawie poprzedniej wersji specyfikacji.
 
@@ -837,11 +878,37 @@ Rodzic widzi, że dziecko rozpoznaje większość słów, samodzielnie przypomin
 | A33 | Dziecko ponownie odtwarza pytanie ze słuchu | Odsłuch jest zapisany, lecz nie unieważnia odpowiedzi jako ujawnienie polskiego rozwiązania. |
 | A34 | Dziecko odsłuchuje angielskie słowo przed Recall | Wynik jest wspomagany i nie potwierdza samodzielnego przypomnienia. |
 | A35 | Dziecko wpisuje „monday” | Znajomość słowa i litery mogą być poprawne; kapitalizacja i pełna pisownia wymagają poprawy. |
-| A36 | Dziecko wpisuje zatwierdzony wariant odpowiedzi | Jest oceniany zgodnie z zapisanym kontraktem, bez wywołania LLM. |
+| A36 | Dziecko wpisuje zatwierdzony wariant odpowiedzi | Jest oceniany zgodnie z zapisanym kontraktem, bez wywołania LLM. W lekcjach odpowiedź niedopasowaną do wariantów ocenia model oceniający dopiero po deterministycznym dopasowaniu i po sprawdzeniu cache werdyktów (wyjątek §10); zatwierdzony wariant nadal nie woła modelu. |
 | A37 | Dziecko ćwiczy pisownię na docelowym telefonie/tablecie | Ustawienia pola ograniczają podpowiedzi klawiatury; pozostałe ograniczenia platformy są znane. |
 | A38 | Powstaje zestaw obiektów i czynności | Aplikacja generuje ilustracje przez skonfigurowany provider, a rodzic je przegląda. |
 | A39 | Generowanie ilustracji zawodzi | Rodzic może ponowić próbę lub zatwierdzić kartę bez obrazu; nauka pozostaje dostępna. |
 | A40 | Rodzic rozpoczyna naukę z profilu dziecka | Link przy profilu otwiera `/kids/{childId}/learn` i wybiera to dziecko; `/` umożliwia wybór profilu z linkiem do panelu rodzica `/parent`, ukrytym podczas ćwiczeń. |
+
+### 32.1. Kryteria akceptacji lekcji i przedmiotów (A41+, 2026-10-12)
+
+Mapują wymagania 1–11 z `.kiro/specs/grammar-module/requirements.md`.
+
+| ID | Scenariusz | Oczekiwany rezultat | Wym. |
+| --- | --- | --- | --- |
+| A41 | Do katalogu dodano nowy temat gramatyczny | Lekcja z tego tematu powstaje bez zmian w silniku oceny, selektorze, kontraktach Kid API i widokach dziecka. | 1 |
+| A42 | Zmiana treści karty wyjaśnienia / szablonu podpowiedzi; zmiana znaczenia reguły | Postęp zachowany przy zmianie treści; zmiana znaczenia reguły nadaje nowy identyfikator; stare wersje tematu zostają dla opublikowanych lekcji. | 1 |
+| A43 | Rodzic wkleja materiał podręcznika i wybiera temat + reguły | Powstaje szkic lekcji i trwałe zadanie generowania (jedna transakcja, klucz idempotencji); pula tylko dla wybranych reguł i typów katalogu. | 2 |
+| A44 | Część wygenerowanych ćwiczeń nie przechodzi walidacji | Odrzucone pojedynczo, reszta zapisana, rodzic widzi liczbę odrzuconych; błąd całości nie publikuje częściowej lekcji. | 2 |
+| A45 | Rodzic publikuje lekcję bez wymaganego pokrycia etapów reguły | Publikacja odrzucona z listą reguł i brakujących etapów (≥3 prowadzone, 4 produktywne, 2 tłumaczenia na regułę). | 3 |
+| A46 | Lekcja przechodzi cykl szkicu | draft → review (po generacji) → published; niezatwierdzony szkic niewidoczny dziecku; opublikowana treść niezmienna; edycja tworzy nowy szkic; aktywna sesja zachowuje swoją wersję. | 3 |
+| A47 | Dziecko rozpoczyna regułę | Najpierw karty wyjaśnienia, potem wskazanie zmieniającego się słowa; przejście przez etapy prowadzony → produktywny → samodzielny po dwóch kolejnych poprawnych. | 4, 5 |
+| A48 | Dziecko popełnia błąd w zakresie reguły albo wybiera „Nie pamiętam" | Zaznaczony błędny fragment, podpowiedź z szablonu kategorii i poprawna odpowiedź, karta przypomnienia i jedno łatwiejsze ćwiczenie — najwyżej jeden cykl na regułę i sesję; „Nie pamiętam" bez kategorii błędu. | 5 |
+| A49 | Cała ścieżka lekcji bez mikrofonu; budżet sesji | Lekcja działa bez mikrofonu; najwyżej dwie nowe reguły na sesję; budżet 12 ocenianych/10 min bez dokładania po „Jeszcze 3". | 4, 5 |
+| A50 | Odpowiedź tekstowa zgodna z zatwierdzonym wariantem po normalizacji | Oceniona jako poprawna bez wywołania modelu; drobna literówka poza elementem sprawdzanym → „Prawie!" bez modelu; błąd w elemencie sprawdzanym nie zalicza reguły. | 6 |
+| A51 | Odpowiedź niedopasowana, model skonfigurowany i limit niewyczerpany | Model zwraca werdykt + kategorię z listy reguły + fragmenty (dokładne podciągi); wynik niezgodny ze schematem/regułą jest odrzucony; werdykt zapisany dla pary (ćwiczenie, znormalizowana odpowiedź, wersja promptu). | 6 |
+| A52 | Model niedostępny / timeout / limit / wynik odrzucony | Odpowiedź „nieocenione" bez kary i bez przerwania serii; ponowienie tej samej odpowiedzi nie woła modelu drugi raz, nie tworzy drugiej próby i nie zużywa limitu. | 6 |
+| A53 | Postęp per reguła | Niezależna próba tylko gdy pierwsza, bez wsparcia, `target_key` nieujawniony; opanowanie po trzech ostatnich kwalifikujących sukcesach na różnych ćwiczeniach z co najmniej jednym po przerwie; błąd/„Nie pamiętam" przerywa serię; projekcje słówek bez zmian. | 7 |
+| A54 | Rodzic przegląda i poprawia werdykty modelu | Lista ocen modelu (odpowiedź, werdykt, kategoria, komentarz); zmiana werdyktu obowiązuje przyszłe identyczne odpowiedzi, nie przelicza wstecznie; akceptację można dodać jako wariant w następnym szkicu. | 8 |
+| A55 | Próbna kartkówka z lekcji gramatyki | Działa na istniejących zasadach z celem „gramatyka" (niedostępnym dla słówek); plan obejmuje reguły proporcjonalnie, preferuje niewidziane i produktywne; raport per reguła z kategoriami i oznaczeniem ocen modelu. | 9 |
+| A56 | Odczyt raportu Hermesa (learning-overview) | Pomija lekcje gramatyki (postęp, kartkówki, planowane sprawdziany); kontrakt v1 i JSON Schema bez zmian; `SKILL.md` informuje, że raport nie obejmuje jeszcze lekcji. | 10 |
+| A57 | Przykładowy przedmiot nie-językowy (fixture) | Przechodzi walidację, generowanie (fake provider) i ocenę bez zmian w silniku; test architektoniczny potwierdza, że silnik nie importuje modułów przedmiotów inaczej niż przez rejestr. | 11 |
+| A58 (odłożone) | Audio odpowiedzi kanonicznej w lekcji (TTS) | ODŁOŻONE: serwer generuje i wymaga `target_audio` przy publikacji (gdy `subject.ttsForAnswers`), ale ścieżka sesji podaje `audioAssetId: null`, a Kid UI lekcji nie ma kontrolki odsłuchu odpowiedzi — audio nie jest podane dziecku end-to-end. Patrz sekcja „Lekcje i przedmioty — ograniczenia". | 4 |
+| A59 | Opanowanie z modelem i bez modelu | Opanowanie jest osiągalne bez modelu przez produktywne typy deterministyczne (zwł. `lesson_gap`) na ćwiczeniach niewidzianych, jeśli pula je zawiera; model jest wymagany tylko dla odpowiedzi niedopasowanych (głównie tłumaczenie), gdzie bez modelu wynik to „nieocenione" bez kary. Patrz sekcja „Lekcje i przedmioty — ograniczenia". | 6, 7 |
 
 ## 33. Następny krok po zatwierdzeniu specyfikacji
 

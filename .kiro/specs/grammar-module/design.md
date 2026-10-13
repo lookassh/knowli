@@ -197,7 +197,7 @@ interface LessonAnswerKey {
   objectiveId: string;
   answer: string;
   acceptedAnswers: string[];
-  focus: string[];               // tokeny elementu sprawdzanego w odpowiedzi kanonicznej (po normalizacji bazowej)
+  focus: string[];               // tokeny elementu sprawdzanego w odpowiedzi kanonicznej (normalizowane normalizatorem przedmiotu, jak w kroku 3 algorytmu)
   correctOptionId?: string;
   itemIds?: string[];            // kanoniczny porządek elementów (lesson_order)
 }
