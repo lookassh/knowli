@@ -148,4 +148,30 @@ describe("compareSpelling — porównanie zapisu z zatwierdzonym wariantem (issu
     // samo "We" dla "Wednesday" (2 litery na 9-literowe słowo, < 3 i < 50%)
     expect(compareSpelling("We", key("Wednesday"))!.withinThreshold).toBe(false);
   });
+
+  it("brakujące litery w środku: dziura w środku i wpisany środek słowa też kwalifikują się do diagnozy", () => {
+    // dnes dla Wednesday: dziecko wpisało środek słowa, brakuje obu końców
+    // (4 z 9 liter ≥ 3, brak błędnych liter)
+    const dnes = compareSpelling("dnes", key("Wednesday"))!;
+    expect(dnes.withinThreshold).toBe(true);
+    expect(dnes.given).toEqual([{ text: "dnes", state: "plain" }]);
+    expect(dnes.expected).toEqual([
+      { text: "We", state: "pill" },
+      { text: "dnes", state: "plain" },
+      { text: "day", state: "pill" },
+    ]);
+
+    // Wenesday dla Wednesday: brakująca litera w środku bez błędnych liter
+    const wenesday = compareSpelling("Wenesday", key("Wednesday"))!;
+    expect(wenesday.withinThreshold).toBe(true);
+    expect(wenesday.expected).toEqual([
+      { text: "We", state: "plain" },
+      { text: "d", state: "pill" },
+      { text: "nesday", state: "plain" },
+    ]);
+
+    // Dwie dziury w środku (Weay) i braki rozproszone (Wdnsdy) pozostają poza diagnozą
+    expect(compareSpelling("Weay", key("Wednesday"))!.withinThreshold).toBe(false);
+    expect(compareSpelling("Wdnsdy", key("Wednesday"))!.withinThreshold).toBe(false);
+  });
 });
