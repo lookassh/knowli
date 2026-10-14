@@ -94,4 +94,58 @@ describe("compareSpelling — porównanie zapisu z zatwierdzonym wariantem (issu
     expect(compareSpelling("İaturday", key("Saturday"))).toBeNull();
     expect(compareSpelling("Saturday", key("İaturday"))).toBeNull();
   });
+
+  it("brakujące litery (niedokończone lub urwane słowo): akceptuje sensowny fragment bez błędnych liter", () => {
+    // Mon dla Monday (brak końcówki "day", 3 litery brakujące, ale wpisano 50% poprawnego słowa)
+    const mon = compareSpelling("Mon", key("Monday"))!;
+    expect(mon.withinThreshold).toBe(true);
+    expect(mon.given).toEqual([{ text: "Mon", state: "plain" }]);
+    expect(mon.expected).toEqual([
+      { text: "Mon", state: "plain" },
+      { text: "day", state: "pill" },
+    ]);
+
+    // day dla Monday (brak początku "Mon", wpisano 50% poprawnego słowa)
+    const day = compareSpelling("day", key("Monday"))!;
+    expect(day.withinThreshold).toBe(true);
+    expect(day.given).toEqual([{ text: "day", state: "plain" }]);
+    expect(day.expected).toEqual([
+      { text: "Mon", state: "pill" },
+      { text: "day", state: "plain" },
+    ]);
+
+    // Wednes dla Wednesday (brak "day", wpisano 6 z 9 liter)
+    const wednes = compareSpelling("Wednes", key("Wednesday"))!;
+    expect(wednes.withinThreshold).toBe(true);
+    expect(wednes.given).toEqual([{ text: "Wednes", state: "plain" }]);
+    expect(wednes.expected).toEqual([
+      { text: "Wednes", state: "plain" },
+      { text: "day", state: "pill" },
+    ]);
+
+    // ca dla cat (2 z 3 liter)
+    const ca = compareSpelling("ca", key("cat"))!;
+    expect(ca.withinThreshold).toBe(true);
+
+    // mon dla Monday pisane małą literą: wielkość liter nie blokuje brakujących liter
+    const monLower = compareSpelling("mon", key("Monday"))!;
+    expect(monLower.withinThreshold).toBe(true);
+    expect(monLower.capitalizationHint).toBe(true);
+    expect(monLower.expected).toEqual([
+      { text: "Mon", state: "plain" },
+      { text: "day", state: "pill" },
+    ]);
+
+    // Fragment z literówką nie jest czystym urwanym słowem:
+    // "Mun" dla "Monday" (zamiana o->u i brak day = 4 operacje)
+    expect(compareSpelling("Mun", key("Monday"))!.withinThreshold).toBe(false);
+
+    // Zbyt krótki fragment nie kwalifikuje się:
+    // samo "M" dla "Monday" (1 litera)
+    expect(compareSpelling("M", key("Monday"))!.withinThreshold).toBe(false);
+    // samo "c" dla "cat" (1 litera)
+    expect(compareSpelling("c", key("cat"))!.withinThreshold).toBe(false);
+    // samo "We" dla "Wednesday" (2 litery na 9-literowe słowo, < 3 i < 50%)
+    expect(compareSpelling("We", key("Wednesday"))!.withinThreshold).toBe(false);
+  });
 });
