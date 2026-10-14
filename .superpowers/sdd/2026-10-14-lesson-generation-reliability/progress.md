@@ -57,4 +57,12 @@ Plan: docs/superpowers/plans/2026-10-14-lesson-generation-reliability.md
 - Regresje PostgreSQL dodane dla błędu trwałego, braku kolejnego claimu przed terminem, manual retry i istniejący exhaustion; nie mogły się uruchomić (brak pipe Docker). Migracja 0009 i snapshot wygenerowane przez drizzle-kit z aktualnego schematu; kontrola SQL pokazuje addytywne nullable timestamp.
 - GREEN: pełny unit 101 plików / 1019 testów PASS; typecheck PASS; targeted `llm.test.ts` i `lesson-generation-errors.test.ts` 21 testów PASS; diffcheck PASS.
 - Dokumentacja: `.kiro/specs/grammar-module/requirements.md`, `docs/architecture.md` i `docs/provider-config.md`; komunikaty polskie w `packages/contracts/src/messages.ts`. DTO bez `nextAttemptAt`; MCP `learning-overview` bez zmian.
-- Commit do zapisania `fix(lessons): classify provider failures and persist retry delays`; zakres od `2a19b29`.
+- Commit: `8333fe1` (`fix(lessons): classify provider failures and persist retry delays`), zakres od `2a19b29`.
+
+## Task 6 — logika deadline i anulowania zakończona; DB testy zablokowane
+- RED: przed implementacją nowy test `lesson-generation-control.test.ts` nie mógł zaimportować brakującego modułu. Unit kontrolera sprawdza timeout requestu, wspólny deadline wielu partii, ignorowanie późnego wyniku i abort po zmianie aktualności. Adapter testuje deadline także przy bezpośrednim wywołaniu bez caller signal.
+- Zmiana: policy 90 s request / 10 min run / 1 s poll, walidacja env (dodatnia liczba całkowita; request ≤ run), AbortSignal.any i race z abortem, aktualność runu sprawdzana okresowo i przed/po requestcie. Provider ignorujący sygnał nie blokuje wykonania. Timeout kończy run jako provider_timeout bez auto-retry; shutdown (API options) oddaje aktualny run do queued, zachowując attempts; stale run pozostaje superseded.
+- Integracyjne bariery edycji rodzica i shutdown dodane do `lesson-generation.test.ts`; testy nie mogą się uruchomić bez Docker. `runDueGenerationWork` nie przekazuje jeszcze sygnału shutdown — to część Task 7.
+- GREEN: targeted 5 plików / 43 testy PASS; typecheck PASS; diffcheck PASS. Do testów nie użyto prawdziwego providera; wszystkie fake/sygnały lokalne.
+- Dokumentacja/env: `.env.example`, `docs/provider-config.md`, `docs/architecture.md`. TTS wcześniej zatwierdzony pozostaje osobnym wymaganiem; należy zintegrować na tej gałęzi przed końcowym review.
+- Commit do zapisania `fix(lessons): bound generation and cancel stale executions`; zakres od `8333fe1`.

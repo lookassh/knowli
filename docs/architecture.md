@@ -426,6 +426,8 @@ Diagnostyka generacji (2026-10-13, po incydencie prod): błędy i wyniki runów 
 
 Adapter LLM lekcji klasyfikuje błędy HTTP/providerów bez zapisywania surowego body. Błędy konfiguracji, wyczerpany budżet, odmowa, niepełna lub błędna odpowiedź są terminalne; 408/5xx, błąd sieciowy i zwykłe 429 są ponawialne. 429 quota/spend jest terminalne. `Retry-After` zapisuje się w `generation_runs.next_attempt_at`; backoff 1/2 s z jitterem nie skraca poprawnego terminu. Worker nie claimuje runu przed terminem, a ręczne retry go czyści. Ta polityka dotyczy wyłącznie generowania lekcji; adaptery decków i mediów zachowują dotychczasową obsługę.
 
+Pojedynczy request ma domyślny deadline 90 s, a cały run 10 min, konfigurowalne przez `UMIEM_LESSON_GENERATION_REQUEST_TIMEOUT_MS` i `UMIEM_LESSON_GENERATION_RUN_TIMEOUT_MS`. `UMIEM_LESSON_GENERATION_CANCEL_POLL_MS` (1 s) sprawdza, czy run nadal jest aktywny i przypięty do bieżącego `edit_number`. Timeout kończy run terminalnym `provider_timeout`; edycja rodzica lub retry abortuje request, a shutdown oddaje nadal aktualny run do kolejki bez cofnięcia `attempts`. Provider ignorujący abort nie może zatrzymać workera ani później zapisać wyniku.
+
 Reguły języka bodźców i odpowiedzi dostarcza profil przedmiotu: dla Present Simple `lesson_open_answer.prompt` to zdanie źródłowe po polsku, a `answer` i `acceptedAnswers` są po angielsku. Walidator odrzuca prompt równy odpowiedzi lub zatwierdzonemu wariantowi (po normalizacji); nie próbuje ogólnie wykrywać języka. Walidacja luki bierze pod uwagę operator i czasownik po podstawieniu: `She ___ play tennis.` + `does not` + `hint=do` jest poprawne, lecz `She ___ plays tennis.` z tym samym operatorem — nie.
 
 ### 19.4. Ocena hybrydowa z cache i `processing`

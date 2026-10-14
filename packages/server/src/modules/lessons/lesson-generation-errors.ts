@@ -22,7 +22,7 @@ export function classifyLessonGenerationFailure(error: unknown): LessonGeneratio
       incomplete: "provider_incomplete",
       output: "provider_output",
     };
-    const retryable = error.kind === "rate_limit" || error.kind === "transient" || error.kind === "timeout";
+    const retryable = error.kind === "rate_limit" || error.kind === "transient";
     return {
       errorCode: errorCode[error.kind],
       retryable,

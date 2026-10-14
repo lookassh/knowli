@@ -13,6 +13,7 @@ import { createAzureSttProvider } from "./providers/azure/stt";
 import { createOpenAiCompatibleGrader } from "./providers/openai-compatible/grader";
 import { createProductionSubjectRegistry } from "./domain/lessons/subjects";
 import type { SubjectRegistry } from "./domain/lessons/registry";
+import type { LessonGenerationPolicy } from "./modules/lessons/lesson-generation-policy";
 
 /** Zegar jako zależność — domena i moduły nie wołają Date.now() bezpośrednio. */
 export interface Clock {
@@ -62,6 +63,7 @@ export interface GenerationDeps {
   tts: TtsProvider;
   image: ImageProvider;
   mediaStore: MediaStore;
+  lessonExecution?: LessonGenerationPolicy;
 }
 
 /**

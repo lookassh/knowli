@@ -8,7 +8,7 @@ describe("classifyLessonGenerationFailure", () => {
     ["configuration", "provider_configuration", false],
     ["rate_limit", "provider_rate_limit", true],
     ["transient", "provider", true],
-    ["timeout", "provider_timeout", true],
+    ["timeout", "provider_timeout", false],
     ["refusal", "provider_refusal", false],
     ["incomplete", "provider_incomplete", false],
     ["output", "provider_output", false],

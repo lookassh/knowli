@@ -11,6 +11,7 @@ export interface OpenAiLlmOptions {
   apiKey: string;
   model?: string;
   baseUrl?: string;
+  lessonRequestTimeoutMs?: number;
 }
 
 const DEFAULT_MODEL = "gpt-4o-mini";
@@ -48,7 +49,7 @@ async function lessonHttpError(response: Response): Promise<GenerationProviderEr
 function asLessonTransportError(error: unknown): GenerationProviderError {
   if (error instanceof GenerationProviderError) return error;
   return new GenerationProviderError(
-    error instanceof Error && error.name === "AbortError" ? "timeout" : "transient",
+    error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError") ? "timeout" : "transient",
   );
 }
 
@@ -239,6 +240,7 @@ function lessonExamplesToRecord(raw: unknown): Record<string, string[]> {
 export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider {
   const model = options.model ?? DEFAULT_MODEL;
   const baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
+  const lessonRequestTimeoutMs = options.lessonRequestTimeoutMs ?? 90_000;
   return {
     name: "openai",
     model,
@@ -279,6 +281,8 @@ export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider 
       const system = lessonSystemPrompt(input);
       const user = lessonUserMaterial(input);
       try {
+        const timeoutSignal = AbortSignal.timeout(lessonRequestTimeoutMs);
+        const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
         const response = await fetch(`${baseUrl}/chat/completions`, {
           method: "POST",
           headers: {
@@ -300,7 +304,7 @@ export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider 
               { role: "user", content: user },
             ],
           }),
-          signal,
+          signal: requestSignal,
         });
         if (!response.ok) throw await lessonHttpError(response);
         let payload: unknown;

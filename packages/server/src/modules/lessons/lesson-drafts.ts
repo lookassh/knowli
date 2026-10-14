@@ -41,6 +41,8 @@ import {
   supersedeLessonRuns,
 } from "../generation";
 import { classifyLessonGenerationFailure, lessonRetryDelayMs } from "./lesson-generation-errors";
+import { LessonGenerationCancelledError, withLessonGenerationControl } from "./lesson-generation-control";
+import { DEFAULT_LESSON_GENERATION_POLICY } from "./lesson-generation-policy";
 import { reconcileDraftAssetsTx } from "../media-reconciliation";
 
 /**
@@ -457,7 +459,7 @@ async function existingExercisesOf(tx: Executor, versionId: string): Promise<Les
   });
 }
 
-export async function executeLessonGeneration(services: Services, runId: string): Promise<void> {
+export async function executeLessonGeneration(services: Services, runId: string, options: { signal?: AbortSignal } = {}): Promise<void> {
   const deps = requireGeneration(services);
   const run = (await services.db.select().from(generationRuns).where(eq(generationRuns.id, runId)))[0];
   if (!run) {
@@ -544,11 +546,26 @@ export async function executeLessonGeneration(services: Services, runId: string)
   const earlierAnswers: string[] = [];
   const earlierExercises: LessonExerciseStimulus[] = [];
   const examples: Record<string, string[]> = {};
+  const executionPolicy = deps.lessonExecution ?? DEFAULT_LESSON_GENERATION_POLICY;
   console.log(
     `[lesson] generacja run=${runId} deck=${input.deckId} cele=${batches.length} próba=${attempts} pula=${input.poolSize} model=${deps.llm.model}`,
   );
   try {
+    await withLessonGenerationControl({
+      ...executionPolicy,
+      signal: options.signal,
+      assertCurrent: async () => {
+        const [current] = await services.db.select({ state: generationRuns.state, attempts: generationRuns.attempts, expectedEditNumber: generationRuns.expectedEditNumber })
+          .from(generationRuns).where(eq(generationRuns.id, runId));
+        const [version] = await services.db.select({ editNumber: deckVersions.editNumber, state: deckVersions.state })
+          .from(deckVersions).where(eq(deckVersions.id, run.deckVersionId!));
+        return current?.state === "running" && current.attempts === attempts &&
+          current.expectedEditNumber === run.expectedEditNumber && version?.state !== "published" &&
+          version?.editNumber === run.expectedEditNumber;
+      },
+    }, async (control) => {
     for (const batch of batches) {
+      await control.assertCurrent();
       const poolInput = buildPoolInput(
         subject,
         topic,
@@ -564,7 +581,8 @@ export async function executeLessonGeneration(services: Services, runId: string)
           ? [...batch.existingExercises, ...earlierExercises]
           : [],
       );
-      const result = await deps.llm.generateLessonPool(poolInput);
+      const result = await control.call((signal) => deps.llm.generateLessonPool(poolInput, signal));
+      await control.assertCurrent();
       for (const ex of result.exercises) {
         rawExercises.push(ex);
         const answer = (ex as { answer?: unknown }).answer;
@@ -583,7 +601,12 @@ export async function executeLessonGeneration(services: Services, runId: string)
           .map((line) => line.trim()).slice(0, 3);
       }
     }
+    });
   } catch (error) {
+    if (error instanceof LessonGenerationCancelledError) {
+      if (error.reason === "shutdown") await markCurrentRun(services.db, "queued", null, null);
+      return;
+    }
     const failure = classifyLessonGenerationFailure(error);
     console.error(`[lesson] run=${runId} błąd partii LLM: kod=${failure.errorCode} retryable=${failure.retryable} próba=${attempts}`);
     if (!failure.retryable) {

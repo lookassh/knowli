@@ -736,6 +736,54 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect(version).toMatchObject({ edit_number: 2, title: "Zmiana rodzica" });
   });
 
+  it("edycja rodzica przerywa request w toku i nie zapisuje spóźnionego wyniku", async () => {
+    const fakes = await fakeGeneration(); disposers.push(fakes.dispose);
+    fakes.deps.lessonExecution = { requestTimeoutMs: 2_000, runTimeoutMs: 5_000, cancelPollMs: 10 };
+    const services = lessonServices(fakes);
+    let enter!: () => void;
+    const entered = new Promise<void>((resolve) => { enter = resolve; });
+    let requestSignal!: AbortSignal;
+    fakes.deps.llm.generateLessonPool = async (_input, signal) => {
+      requestSignal = signal!;
+      enter();
+      return new Promise((_resolve, reject) => signal!.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true }));
+    };
+    const { runId } = await createLesson(services, command());
+    const run = await readGeneration(services, runId);
+    const pending = executeLessonGeneration(services, runId);
+    await entered;
+    await editLessonDraft(services, run.deckVersionId!, { expectedEditNumber: 1, title: "Nowa treść rodzica" });
+    await pending;
+    expect(requestSignal.aborted).toBe(true);
+    expect((await readGeneration(services, runId)).state).toBe("superseded");
+    expect(await query("select id from learning_app.item_revisions where deck_version_id=$1", [run.deckVersionId])).toHaveLength(0);
+  });
+
+  it("shutdown oddaje aktualny run do kolejki bez cofania wykorzystanej próby", async () => {
+    const fakes = await fakeGeneration(); disposers.push(fakes.dispose);
+    fakes.deps.lessonExecution = { requestTimeoutMs: 2_000, runTimeoutMs: 5_000, cancelPollMs: 10 };
+    const services = lessonServices(fakes);
+    let enter!: () => void;
+    const entered = new Promise<void>((resolve) => { enter = resolve; });
+    let requestSignal!: AbortSignal;
+    fakes.deps.llm.generateLessonPool = async (_input, signal) => {
+      requestSignal = signal!;
+      enter();
+      return new Promise((_resolve, reject) => signal!.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true }));
+    };
+    const { runId } = await createLesson(services, command());
+    const controller = new AbortController();
+    const pending = executeLessonGeneration(services, runId, { signal: controller.signal });
+    await entered;
+    controller.abort();
+    await pending;
+    const result = await readGeneration(services, runId);
+    expect(requestSignal.aborted).toBe(true);
+    expect(result.state).toBe("queued");
+    expect(result.attempts).toBe(1);
+    expect(await query("select id from learning_app.item_revisions where deck_version_id=$1", [result.deckVersionId])).toHaveLength(0);
+  });
+
   it("przedmiot fixture historii (ttsForAnswers=false) przechodzi cały przepływ bez audio", async () => {
     const fakes = await fakeGeneration();
     disposers.push(fakes.dispose);

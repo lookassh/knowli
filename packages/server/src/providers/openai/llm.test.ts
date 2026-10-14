@@ -48,6 +48,7 @@ const INPUT: LessonPoolInput = {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", () => {
@@ -91,6 +92,18 @@ describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", ()
   it("klasyfikuje nieparsowalny wynik jako output", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: "not json" } }] }), { status: 200 })));
     await expect(createOpenAiLlmProvider({ apiKey: "k" }).generateLessonPool(INPUT)).rejects.toMatchObject({ kind: "output" });
+  });
+
+  it("ma timeout także przy bezpośrednim wywołaniu adaptera bez zewnętrznego sygnału", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = createOpenAiLlmProvider({ apiKey: "k", lessonRequestTimeoutMs: 25 }).generateLessonPool(INPUT);
+    const assertion = expect(result).rejects.toMatchObject({ kind: "timeout" });
+    await vi.advanceTimersByTimeAsync(26);
+    await assertion;
   });
 
   it("nie przyjmuje parsowalnego JSON po odmowie albo ucięciu modelu", async () => {
