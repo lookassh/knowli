@@ -126,6 +126,8 @@ export interface SubjectModule {
   readonly normalizer: AnswerNormalizer;
   readonly topics: readonly LessonTopic[]; // wszystkie wersje tematów
   readonly prompts: SubjectPromptProfile;
+  /** Jak rozpoznawać duplikaty w puli; odpowiedzi pozostają osobną osią ekspozycji. */
+  readonly poolDeduplication?: "answer" | "exercise";
   /** Błędy specyficzne dla przedmiotu (pusta lista = poprawne). */
   validateExercise(ex: LessonExerciseDraft, topic: LessonTopic): string[];
   readonly ttsForAnswers: boolean; // czy generować audio odpowiedzi kanonicznej

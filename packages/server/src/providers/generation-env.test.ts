@@ -39,6 +39,7 @@ describe("createGenerationDepsFromEnv — konfiguracja LLM przez UMIEM_LLM_*", (
 
     expect(deps).toBeDefined();
     expect(deps!.llm.model).toBe("gpt-4o-mini");
+    expect(deps!.lessonExecution).toEqual({ requestTimeoutMs: 90_000, runTimeoutMs: 600_000, cancelPollMs: 1_000 });
     await deps!.llm.generateDeck(DECK_INPUT);
     const [url, init] = lastCall(fetchMock);
     expect(url).toBe("https://api.openai.com/v1/chat/completions");

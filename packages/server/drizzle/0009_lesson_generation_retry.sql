@@ -1,0 +1,1 @@
+ALTER TABLE "learning_app"."generation_runs" ADD COLUMN "next_attempt_at" timestamp with time zone;

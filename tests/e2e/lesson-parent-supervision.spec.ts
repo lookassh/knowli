@@ -122,7 +122,7 @@ async function createAndPublishLesson(page: Page, title: string): Promise<string
   await page.getByTestId("editor-title").fill(title);
   await page.getByTestId("save-lesson").click();
   await expect(page.getByTestId("editor-title")).toHaveValue(title);
-  await expect(page.locator('[data-testid^="exercise-audio-state-"]', { hasText: "generowanie" })).toHaveCount(0, { timeout: 120_000 });
+  await expect(page.locator('[data-testid^="exercise-audio-state-"]')).toHaveCount(0);
   await expect(page.getByTestId("publish-lesson")).toBeEnabled({ timeout: 120_000 });
   await page.getByTestId("publish-lesson").click();
   await expect(page.getByTestId("publish-status")).toBeVisible({ timeout: 120_000 });
@@ -187,10 +187,10 @@ test("parent supervises objective progress and model verdicts: changes a decisio
   await expect(page.getByTestId("supervision-notice")).toBeVisible();
   expect(supervision.variantCalls).toBeGreaterThan(0);
 
-  await childSelect.selectOption(delayedChildId!);
   const delayedChildResponse = page.waitForResponse((response) =>
     response.request().method() === "GET" && new URL(response.url()).pathname.endsWith("/progress") && new URL(response.url()).searchParams.get("childId") === delayedChildId,
   );
+  await childSelect.selectOption(delayedChildId!);
   expect((await delayedChildResponse).ok()).toBe(true);
   await expect(page.getByTestId(`progress-status-${OBJECTIVE_ID}`)).toHaveText("Nieoceniony");
 

@@ -4,15 +4,60 @@ import type {
   LlmGeneratedItem,
   LlmProvider,
 } from "../../ports/ai";
+import { GenerationProviderError } from "../../ports/generation-error";
+import { lessonPoolJsonSchema, poolExerciseTypes } from "./lesson-pool-schema";
 
 export interface OpenAiLlmOptions {
   apiKey: string;
   model?: string;
   baseUrl?: string;
+  lessonRequestTimeoutMs?: number;
 }
 
 const DEFAULT_MODEL = "gpt-4o-mini";
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
+
+function retryAfterMs(response: Response): number | undefined {
+  const raw = response.headers.get("retry-after");
+  if (raw === null) return undefined;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1_000;
+  const at = Date.parse(raw);
+  return Number.isFinite(at) ? Math.max(0, at - Date.now()) : undefined;
+}
+
+async function lessonHttpError(response: Response): Promise<GenerationProviderError> {
+  let kind: "configuration" | "rate_limit" | "transient" =
+    response.status === 429 ? "rate_limit" : response.status === 408 || response.status >= 500 ? "transient" : "configuration";
+  if (response.status === 429) {
+    try {
+      const body: unknown = await response.clone().json();
+      const error = body && typeof body === "object" ? (body as { error?: unknown }).error : undefined;
+      const fields = error && typeof error === "object" ? error as { code?: unknown; type?: unknown } : {};
+      const signals = [fields.code, fields.type].filter((value): value is string => typeof value === "string").map((value) => value.toLowerCase());
+      const rateLimitCodes = new Set(["rate_limit_exceeded", "requests_rate_limit_exceeded", "tokens_rate_limit_exceeded"]);
+      const quotaCodes = new Set(["insufficient_quota", "billing_hard_limit_reached", "billing_not_active", "spend_limit_reached", "quota_exceeded"]);
+      if (signals.some((signal) => rateLimitCodes.has(signal))) {
+        kind = "rate_limit";
+      } else if (signals.some((signal) => quotaCodes.has(signal))) {
+        kind = "configuration";
+      }
+    } catch {
+      // A provider's diagnostic body is untrusted and never enters logs or errors.
+    }
+  }
+  return new GenerationProviderError(kind, {
+    status: response.status,
+    ...(kind === "rate_limit" ? { retryAfterMs: retryAfterMs(response) } : {}),
+  });
+}
+
+function asLessonTransportError(error: unknown): GenerationProviderError {
+  if (error instanceof GenerationProviderError) return error;
+  return new GenerationProviderError(
+    error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError") ? "timeout" : "transient",
+  );
+}
 
 function systemPrompt(input: LlmGenerateDeckInput): string {
   return [
@@ -34,16 +79,6 @@ function systemPrompt(input: LlmGenerateDeckInput): string {
  * liczby etapów). Adapter nie zna gramatyki — każdy fakt o przedmiocie pochodzi
  * z `input`. Opis JSON wyjścia odpowiada payloadowi `lesson_exercise`.
  */
-/**
- * Typy, których silnik lekcji NIE oczekuje od generacji puli: `lesson_card`
- * wydaje deterministycznie scheduler (karta wprowadzająca celu), a walidacja
- * puli zawsze by taki typ odrzuciła — model nie może go nawet zaproponować.
- */
-const NON_POOL_EXERCISE_TYPES: ReadonlySet<string> = new Set(["lesson_card"]);
-
-const poolExerciseTypes = (types: readonly string[]): string[] =>
-  types.filter((t) => !NON_POOL_EXERCISE_TYPES.has(t));
-
 function lessonSystemPrompt(input: LessonPoolInput): string {
   const parts: string[] = [];
   parts.push(input.promptProfile.generationRole);
@@ -88,18 +123,34 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
         "lesson_short_answer) and lesson_gap over free-text types.",
     );
   }
-  parts.push(
-    "Canonical answers must be UNIQUE within this response: never submit two exercises whose canonical answer is " +
-      "the same wording or an equivalent of it (capitalization, punctuation, or an expanded/contracted spelling of " +
-      "the same words counts as the same). When distinct short answers run out, vary full-sentence answers " +
-      "(different subjects, verbs or objects) so every canonical answer differs.",
-  );
-  if (input.existingAnswers && input.existingAnswers.length > 0) {
+  if (input.deduplication !== "exercise") {
+    parts.push(
+      "Canonical answers must be UNIQUE within this response: never submit two exercises whose canonical answer is " +
+        "the same wording or an equivalent of it (capitalization, punctuation, or an expanded/contracted spelling of " +
+        "the same words counts as the same). When distinct short answers run out, vary full-sentence answers " +
+        "(different subjects, verbs or objects) so every canonical answer differs.",
+    );
+  }
+  if (input.deduplication !== "exercise" && input.existingAnswers && input.existingAnswers.length > 0) {
     parts.push(
       "Do NOT repeat these canonical answers already in the pool: " +
         input.existingAnswers.map((a) => `"${a}"`).join(", ") +
         ".",
     );
+  }
+  if (input.deduplication === "exercise") {
+    parts.push(
+      "Within this response, never repeat an exercise with the same objective, type, and functional stimulus. " +
+        "Do not repeat any existing exercise with the same objective, type, and functional stimulus, even if its answer differs. " +
+        "Reusing a short canonical answer such as do, does, don't, or doesn't with a different valid exercise is allowed.",
+    );
+    if (input.existingExercises?.length) {
+      parts.push(
+        "Existing exercise stimuli: " +
+          input.existingExercises.map((exercise) => `${exercise.objectiveId} / ${exercise.exerciseType} / ${exercise.stimulus}`).join("; ") +
+          ".",
+      );
+    }
   }
   if (input.promptProfile.fieldRules !== undefined) {
     parts.push(`Field rules for this subject: ${input.promptProfile.fieldRules}`);
@@ -119,9 +170,10 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
       "optional correctOption (option id; lesson_notice: one word copied exactly from the segments — the word the child points at), " +
       "optional items (lesson_order: 3-10 items whose texts joined with spaces form the canonical answer). " +
       "Use null for optional fields that do not apply to the exercise type — never invent extra fields. " +
-      "Language discipline: instructionPl is in the prompt language; every other exercise field (stem, statement, prompt, hint, " +
-      "noticeSegments, options, items, answer, acceptedAnswers, focus) is in the answer language — " +
-      "never copy prompt-language words from the parent material into answer-language fields. " +
+      "Language discipline: instructionPl is in the prompt language; exercise stimuli normally use the answer language, except where field rules for this subject " +
+      "define a source stimulus in the prompt language (for example lesson_open_answer translations). lesson_open_answer.prompt may be a translation source " +
+      "in the prompt language when subject rules say so; answer and acceptedAnswers always use the answer language. " +
+      "Never copy prompt-language words from the parent material into answer-language fields. " +
       "acceptedAnswers must NOT contain the canonical answer itself, nor trivial variants that differ only by case or punctuation — " +
       "the canonical answer is accepted automatically, so every listed variant must be a DIFFERENT acceptable formulation " +
       "(a shortened wording without optional words is different; an expanded or re-capitalized copy of the answer is not). " +
@@ -158,91 +210,6 @@ function lessonUserMaterial(input: LessonPoolInput): string {
     );
   }
   return lines.join("\n");
-}
-
-/**
- * Schemat strict json_schema dla generacji puli lekcji (structured outputs).
- * Pola opcjonalne ćwiczenia są nullable (wymóg strict mode: wszystkie pola
- * w `required`), `examples` idą tablicą par — strict mode nie wspiera map
- * o dowolnych kluczach; adapter składa z nich record. Enum typów pochodzi
- * z danych wejścia (`exerciseTypes` przedmiotu), więc adapter pozostaje
- * niezależny od przedmiotu. Reguły semantyczne (warianty ≠ kanoniczna
- * odpowiedź, dopuszczalne typy per cel) pilnuje walidacja domenowa.
- */
-function lessonPoolJsonSchema(input: LessonPoolInput): Record<string, unknown> {
-  const idTextItem = {
-    type: "object",
-    additionalProperties: false,
-    required: ["id", "text"],
-    properties: { id: { type: "string" }, text: { type: "string" } },
-  };
-  const nullable = (schema: Record<string, unknown>) => ({
-    type: ["null", schema.type],
-    ...(schema.items ? { items: schema.items } : {}),
-  });
-  return {
-    type: "object",
-    additionalProperties: false,
-    required: ["exercises", "examples"],
-    properties: {
-      exercises: {
-        type: "array",
-        items: {
-          type: "object",
-          additionalProperties: false,
-          required: [
-            "exerciseType",
-            "objectiveId",
-            "answer",
-            "acceptedAnswers",
-            "focus",
-            "instructionPl",
-            "stem",
-            "statement",
-            "prompt",
-            "hint",
-            "transformId",
-            "noticeSegments",
-            "options",
-            "correctOption",
-            "items",
-          ],
-          properties: {
-            exerciseType: { type: "string", enum: poolExerciseTypes(input.exerciseTypes) },
-            objectiveId: { type: "string" },
-            answer: { type: "string" },
-            acceptedAnswers: { type: "array", items: { type: "string" } },
-            focus: { type: "array", items: { type: "string" } },
-            instructionPl: { type: ["null", "string"] },
-            stem: { type: ["null", "string"] },
-            statement: { type: ["null", "string"] },
-            prompt: { type: ["null", "string"] },
-            hint: { type: ["null", "string"] },
-            transformId: { type: ["null", "string"] },
-            noticeSegments: {
-              type: ["null", "array"],
-              items: { type: "array", items: { type: "string" } },
-            },
-            options: nullable({ type: "array", items: idTextItem }),
-            correctOption: { type: ["null", "string"] },
-            items: nullable({ type: "array", items: idTextItem }),
-          },
-        },
-      },
-      examples: {
-        type: "array",
-        items: {
-          type: "object",
-          additionalProperties: false,
-          required: ["objectiveId", "examples"],
-          properties: {
-            objectiveId: { type: "string" },
-            examples: { type: "array", items: { type: "string" } },
-          },
-        },
-      },
-    },
-  };
 }
 
 /**
@@ -286,6 +253,7 @@ function lessonExamplesToRecord(raw: unknown): Record<string, string[]> {
 export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider {
   const model = options.model ?? DEFAULT_MODEL;
   const baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
+  const lessonRequestTimeoutMs = options.lessonRequestTimeoutMs ?? 90_000;
   return {
     name: "openai",
     model,
@@ -307,7 +275,7 @@ export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider 
         signal,
       });
       if (!response.ok) {
-        throw new Error(`openai llm failed: ${response.status} ${await response.text()}`);
+        throw new Error(`provider_http_${response.status}`);
       }
       const payload = (await response.json()) as {
         choices?: Array<{ message?: { content?: string } }>;
@@ -320,47 +288,74 @@ export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider 
       return { items: parsed.items ?? [] };
     },
     async generateLessonPool(input: LessonPoolInput, signal?: AbortSignal) {
-      const response = await fetch(`${baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${options.apiKey}`,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          response_format: {
-            type: "json_schema",
-            json_schema: {
-              name: "lesson_pool",
-              strict: true,
-              schema: lessonPoolJsonSchema(input),
-            },
+      // Local schema/prompt errors are programming/input errors, not network
+      // failures. Keep them outside the transport catch so they are not retried.
+      const schema = lessonPoolJsonSchema(input);
+      const system = lessonSystemPrompt(input);
+      const user = lessonUserMaterial(input);
+      try {
+        const timeoutSignal = AbortSignal.timeout(lessonRequestTimeoutMs);
+        const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+        const response = await fetch(`${baseUrl}/chat/completions`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${options.apiKey}`,
+            "content-type": "application/json",
           },
-          messages: [
-            { role: "system", content: lessonSystemPrompt(input) },
-            { role: "user", content: lessonUserMaterial(input) },
-          ],
-        }),
-        signal,
-      });
-      if (!response.ok) {
-        throw new Error(`openai llm failed: ${response.status} ${await response.text()}`);
+          body: JSON.stringify({
+            model,
+            response_format: {
+              type: "json_schema",
+              json_schema: {
+                name: "lesson_pool",
+                strict: true,
+                schema,
+              },
+            },
+            messages: [
+              { role: "system", content: system },
+              { role: "user", content: user },
+            ],
+          }),
+          signal: requestSignal,
+        });
+        if (!response.ok) throw await lessonHttpError(response);
+        let payload: unknown;
+        try {
+          payload = await response.json();
+        } catch {
+          throw new GenerationProviderError("output", { status: response.status });
+        }
+        if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+          throw new GenerationProviderError("output", { status: response.status });
+        }
+        const choices = (payload as { choices?: unknown }).choices;
+        if (!Array.isArray(choices) || choices.length === 0 || choices[0] === null || typeof choices[0] !== "object") {
+          throw new GenerationProviderError("output", { status: response.status });
+        }
+        const choice = choices[0] as { finish_reason?: string | null; message?: { content?: string | null; refusal?: string | null } };
+        if (choice?.message?.refusal) throw new GenerationProviderError("refusal", { status: response.status });
+        if (choice?.finish_reason === "content_filter") throw new GenerationProviderError("refusal", { status: response.status });
+        if (choice?.finish_reason === "length") throw new GenerationProviderError("incomplete", { status: response.status });
+        const content = choice?.message?.content;
+        if (typeof content !== "string" || content.trim() === "") throw new GenerationProviderError("output", { status: response.status });
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(content);
+        } catch {
+          throw new GenerationProviderError("output", { status: response.status });
+        }
+        if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed) || !Array.isArray((parsed as { exercises?: unknown }).exercises)) {
+          throw new GenerationProviderError("output", { status: response.status });
+        }
+        const result = parsed as { exercises: unknown[]; examples?: unknown };
+        return {
+          exercises: result.exercises,
+          examples: lessonExamplesToRecord(result.examples),
+        };
+      } catch (error) {
+        throw asLessonTransportError(error);
       }
-      const payload = (await response.json()) as {
-        choices?: Array<{ message?: { content?: string } }>;
-      };
-      const content = payload.choices?.[0]?.message?.content;
-      if (!content) {
-        throw new Error("openai llm returned no content");
-      }
-      const parsed = JSON.parse(content) as {
-        exercises?: unknown[];
-        examples?: unknown;
-      };
-      return {
-        exercises: parsed.exercises ?? [],
-        examples: lessonExamplesToRecord(parsed.examples),
-      };
     },
   };
 }

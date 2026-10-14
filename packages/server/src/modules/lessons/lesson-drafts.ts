@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { LessonCommandSchema, type LessonCommand } from "@learning/contracts";
 import type { Clock, Services } from "../../config";
@@ -21,6 +21,11 @@ import {
   type StageMix,
 } from "../../domain/lessons/lesson-policy";
 import { MAX_TEXT_LENGTH, validatePool } from "../../domain/lessons/pool-validation";
+import {
+  lessonExerciseIdentity,
+  lessonExerciseStimulusRecord,
+  type LessonExerciseStimulus,
+} from "../../domain/lessons/exercise-identity";
 import type {
   LessonExerciseDraft,
   LessonExerciseType,
@@ -32,9 +37,12 @@ import {
   MAX_AUTOMATIC_ATTEMPTS,
   claimQueuedRun,
   enqueueGenerationRun,
-  errorCodeOf,
   requireGeneration,
+  supersedeLessonRuns,
 } from "../generation";
+import { classifyLessonGenerationFailure, lessonRetryDelayMs } from "./lesson-generation-errors";
+import { assertLessonGenerationFinalizationAllowed, LessonGenerationCancelledError, withLessonGenerationControl } from "./lesson-generation-control";
+import { DEFAULT_LESSON_GENERATION_POLICY } from "./lesson-generation-policy";
 import { reconcileDraftAssetsTx } from "../media-reconciliation";
 
 /**
@@ -73,12 +81,7 @@ interface LessonRunInput {
   material: string;
   instruction?: string;
   /** Dogenerowanie jednego celu: nowe ćwiczenia dopisujemy, nie czyścimy. */
-  regenerate?: { objectiveId: string; count: number; existingAnswers: string[] };
-}
-
-/** Skraca tekst do bezpiecznej długości linii logu (diagnostyka workera). */
-function truncateForLog(text: string, max = 200): string {
-  return text.length <= max ? text : `${text.slice(0, max)}…`;
+  regenerate?: { objectiveId: string; count: number; existingAnswers: string[]; existingExercises?: LessonExerciseStimulus[] };
 }
 
 function requireSubject(services: Services, subjectId: string): SubjectModule {
@@ -203,6 +206,7 @@ function buildPoolInput(
   instruction: string | undefined,
   graderAvailable: boolean,
   existingAnswers: readonly string[],
+  existingExercises: readonly LessonExerciseStimulus[] = [],
 ): LessonPoolInput {
   const objective = topic.objectives.find((o) => o.id === objectiveId)!;
   return {
@@ -231,7 +235,9 @@ function buildPoolInput(
     countPerObjective: count,
     stageCounts: splitStages(count),
     graderAvailable,
+    deduplication: subject.poolDeduplication ?? "answer",
     ...(existingAnswers.length > 0 ? { existingAnswers: [...existingAnswers] } : {}),
+    ...(existingExercises.length > 0 ? { existingExercises: [...existingExercises] } : {}),
   };
 }
 
@@ -281,6 +287,58 @@ export function isWellShapedRawExercise(raw: unknown): boolean {
     return false;
   }
   return rawExerciseShapeSchema.safeParse(raw).success;
+}
+
+export function collectBatchExerciseMetadata(exercises: unknown[], deduplicateByExercise: boolean): {
+  answers: string[];
+  exerciseRecords: LessonExerciseStimulus[];
+} {
+  const answers: string[] = [];
+  const exerciseRecords: LessonExerciseStimulus[] = [];
+  for (const exercise of exercises) {
+    if (!isWellShapedRawExercise(exercise)) continue;
+    const answer = (exercise as { answer?: unknown }).answer;
+    if (typeof answer === "string" && answer.trim() !== "") answers.push(answer);
+    if (deduplicateByExercise) {
+      exerciseRecords.push(lessonExerciseStimulusRecord(toExerciseDraft(exercise)));
+    }
+  }
+  return { answers, exerciseRecords };
+}
+
+export function filterExercisesToRequestedObjective(exercises: unknown[], objectiveId: string): {
+  exercises: unknown[];
+  outOfScopeCount: number;
+} {
+  const accepted: unknown[] = [];
+  let outOfScopeCount = 0;
+  for (const exercise of exercises) {
+    const returnedObjective = exercise && typeof exercise === "object"
+      ? (exercise as { objectiveId?: unknown }).objectiveId
+      : undefined;
+    if (typeof returnedObjective === "string" && returnedObjective !== objectiveId) outOfScopeCount += 1;
+    else accepted.push(exercise);
+  }
+  return { exercises: accepted, outOfScopeCount };
+}
+
+export function summarizeLessonPoolValidation(input: {
+  rawCount: number;
+  shapeRejected: number;
+  outOfScopeCount: number;
+  rejectedExerciseCount: number;
+  rejectedErrors: readonly string[];
+  duplicateCount: number;
+  validCount: number;
+}): string {
+  const ruleCounts = new Map<string, number>();
+  for (const error of input.rejectedErrors) {
+    const rule = /^([a-z][a-z0-9_]*):/i.exec(error)?.[1] ?? "other";
+    ruleCounts.set(rule, (ruleCounts.get(rule) ?? 0) + 1);
+  }
+  const reasons = [...ruleCounts.entries()].map(([rule, count]) => `${rule}×${count}`).join(", ") || "-";
+  const rejected = input.shapeRejected + input.outOfScopeCount + input.rejectedExerciseCount + input.duplicateCount;
+  return `surowe=${input.rawCount} zły_kształt=${input.shapeRejected} obcy_cel=${input.outOfScopeCount} odrzucone=${rejected} ważne=${input.validCount}; reguły: ${reasons}`;
 }
 
 /** Surowy obiekt z portu → `LessonExerciseDraft` (walidacja kształtu w domenie). */
@@ -433,7 +491,22 @@ async function existingAnswersOf(tx: Tx, versionId: string): Promise<string[]> {
     .filter((a): a is string => typeof a === "string");
 }
 
-export async function executeLessonGeneration(services: Services, runId: string): Promise<void> {
+/** Funkcjonalne bodźce ćwiczeń już zapisanych w wersji szkicu. */
+async function existingExercisesOf(tx: Executor, versionId: string): Promise<LessonExerciseStimulus[]> {
+  const rows = await tx
+    .select({ payload: itemRevisions.payload })
+    .from(itemRevisions)
+    .where(eq(itemRevisions.deckVersionId, versionId));
+  return rows.flatMap(({ payload }) => {
+    if (!payload || typeof payload !== "object") return [];
+    const value = payload as Record<string, unknown>;
+    if (typeof value.objectiveId !== "string" || typeof value.exerciseType !== "string" || typeof value.answer !== "string") return [];
+    const exercise = toExerciseDraft(value);
+    return [lessonExerciseStimulusRecord(exercise)];
+  });
+}
+
+export async function executeLessonGeneration(services: Services, runId: string, options: { signal?: AbortSignal } = {}): Promise<void> {
   const deps = requireGeneration(services);
   const run = (await services.db.select().from(generationRuns).where(eq(generationRuns.id, runId)))[0];
   if (!run) {
@@ -446,12 +519,13 @@ export async function executeLessonGeneration(services: Services, runId: string)
     return;
   }
 
-  const attempts = await claimQueuedRun(services.db, runId, run.expectedEditNumber!);
+  const attempts = await claimQueuedRun(services.db, runId, run.expectedEditNumber!, services.clock.now());
   if (attempts === null) {
     return;
   }
-  const markCurrentRun = async (db: Executor, state: "failed" | "succeeded" | "superseded" | "queued", errorCode: string | null) => {
-    const result = await db.update(generationRuns).set({ state, errorCode, finishedAt: state === "queued" ? null : services.clock.now() })
+  const runStartedAtMs = Date.now();
+  const markCurrentRun = async (db: Executor, state: "failed" | "succeeded" | "superseded" | "queued", errorCode: string | null, nextAttemptAt: Date | null = null) => {
+    const result = await db.update(generationRuns).set({ state, errorCode, nextAttemptAt, finishedAt: state === "queued" ? null : services.clock.now() })
       .where(and(eq(generationRuns.id, runId), eq(generationRuns.state, "running"), eq(generationRuns.attempts, attempts), eq(generationRuns.expectedEditNumber, run.expectedEditNumber!)));
     // Logujemy tylko realne przejście (WHERE może dopasować 0 wierszy, np. gdy
     // równoległy retry rodzica podbił expectedEditNumber).
@@ -463,6 +537,15 @@ export async function executeLessonGeneration(services: Services, runId: string)
   };
   if (attempts > MAX_AUTOMATIC_ATTEMPTS) {
     await markCurrentRun(services.db, "failed", "attempts_exhausted");
+    return;
+  }
+
+  // Do not spend an LLM request on a run invalidated by a parent edit/retry.
+  // The final write still rechecks the edit number under a row lock.
+  const currentVersion = (await services.db.select({ editNumber: deckVersions.editNumber, state: deckVersions.state })
+    .from(deckVersions).where(eq(deckVersions.id, run.deckVersionId!)))[0];
+  if (!currentVersion || currentVersion.state === "published" || currentVersion.editNumber !== run.expectedEditNumber) {
+    await markCurrentRun(services.db, "superseded", null);
     return;
   }
 
@@ -480,33 +563,61 @@ export async function executeLessonGeneration(services: Services, runId: string)
   // typów przy generacji (closed/gap, gdy brak modelu), nie oceną.
   const graderAvailable = Boolean(process.env.UMIEM_GRADER_BASE_URL);
 
+  // Runy dogenerowania utworzone przed wprowadzeniem polityki exercise mają
+  // tylko existingAnswers. Dla gramatyki odbudowujemy bodźce z bieżącego szkicu.
+  const legacyExistingExercises = subject.poolDeduplication === "exercise" && input.regenerate && input.regenerate.existingExercises === undefined
+    ? await existingExercisesOf(services.db, input.deckVersionId)
+    : [];
+
   // Partie per cel: albo dogenerowanie jednego celu, albo pełna pula.
-  const batches: { objectiveId: string; count: number; existingAnswers: string[] }[] = input.regenerate
+  const batches: { objectiveId: string; count: number; existingAnswers: string[]; existingExercises: LessonExerciseStimulus[] }[] = input.regenerate
     ? [
         {
           objectiveId: input.regenerate.objectiveId,
           count: input.regenerate.count,
           existingAnswers: input.regenerate.existingAnswers,
+          existingExercises: input.regenerate.existingExercises ?? legacyExistingExercises,
         },
       ]
     : input.objectiveIds.map((objectiveId) => ({
         objectiveId,
         count: countPerObjective(input.poolSize, input.objectiveIds.length),
         existingAnswers: [],
+        existingExercises: [],
       }));
 
   const rawExercises: unknown[] = [];
+  let rawExerciseCount = 0;
+  let outOfScopeCount = 0;
   // Odpowiedzi kanoniczne z wcześniejszych partii tej samej generacji: późniejsze
   // cele dostają je jako `existingAnswers` ("Do NOT repeat…"), więc pełna
   // generacja wielocelowa też omija duplikaty między partiami — walidacja fazy 2
   // pozostaje egzekwatorem (advisory list z surowych odpowiedzi, deduplikowana).
   const earlierAnswers: string[] = [];
+  const earlierExercises: LessonExerciseStimulus[] = [];
   const examples: Record<string, string[]> = {};
+  const executionPolicy = deps.lessonExecution ?? DEFAULT_LESSON_GENERATION_POLICY;
+  const runDeadlineAtMs = runStartedAtMs + executionPolicy.runTimeoutMs;
   console.log(
     `[lesson] generacja run=${runId} deck=${input.deckId} cele=${batches.length} próba=${attempts} pula=${input.poolSize} model=${deps.llm.model}`,
   );
   try {
+    await withLessonGenerationControl({
+      ...executionPolicy,
+      signal: options.signal,
+      assertCurrent: async () => {
+        const [current] = await services.db.select({ state: generationRuns.state, attempts: generationRuns.attempts, expectedEditNumber: generationRuns.expectedEditNumber })
+          .from(generationRuns).where(eq(generationRuns.id, runId));
+        const [version] = await services.db.select({ editNumber: deckVersions.editNumber, state: deckVersions.state })
+          .from(deckVersions).where(eq(deckVersions.id, run.deckVersionId!));
+        return current?.state === "running" && current.attempts === attempts &&
+          current.expectedEditNumber === run.expectedEditNumber && version?.state !== "published" &&
+          version?.editNumber === run.expectedEditNumber;
+      },
+    }, async (control) => {
     for (const batch of batches) {
+      await control.assertCurrent();
+      const batchStartedAtMs = Date.now();
       const poolInput = buildPoolInput(
         subject,
         topic,
@@ -515,16 +626,23 @@ export async function executeLessonGeneration(services: Services, runId: string)
         input.material,
         input.instruction,
         graderAvailable,
-        [...new Set([...batch.existingAnswers, ...earlierAnswers])],
+        subject.poolDeduplication === "exercise"
+          ? []
+          : [...new Set([...batch.existingAnswers, ...earlierAnswers])],
+        subject.poolDeduplication === "exercise"
+          ? [...batch.existingExercises, ...earlierExercises]
+          : [],
       );
-      const result = await deps.llm.generateLessonPool(poolInput);
-      for (const ex of result.exercises) {
-        rawExercises.push(ex);
-        const answer = (ex as { answer?: unknown }).answer;
-        if (typeof answer === "string" && answer.trim() !== "") {
-          earlierAnswers.push(answer);
-        }
-      }
+      const result = await control.call((signal) => deps.llm.generateLessonPool(poolInput, signal));
+      await control.assertCurrent();
+      console.log(`[lesson] run=${runId} partia=${batch.objectiveId} durationMs=${Date.now() - batchStartedAtMs}`);
+      rawExerciseCount += result.exercises.length;
+      const scoped = filterExercisesToRequestedObjective(result.exercises, batch.objectiveId);
+      outOfScopeCount += scoped.outOfScopeCount;
+      rawExercises.push(...scoped.exercises);
+      const metadata = collectBatchExerciseMetadata(scoped.exercises, subject.poolDeduplication === "exercise");
+      earlierAnswers.push(...metadata.answers);
+      earlierExercises.push(...metadata.exerciseRecords);
       const rawExamples = result.examples;
       for (const objectiveId of [batch.objectiveId]) {
         const list = rawExamples && typeof rawExamples === "object" ? rawExamples[objectiveId] : undefined;
@@ -533,17 +651,23 @@ export async function executeLessonGeneration(services: Services, runId: string)
           .map((line) => line.trim()).slice(0, 3);
       }
     }
+    });
   } catch (error) {
-    const code = errorCodeOf(error);
-    console.error(
-      `[lesson] run=${runId} błąd partii LLM: kod=${code} próba=${attempts}: ${truncateForLog(String((error as { message?: string })?.message ?? error))}`,
-    );
-    if (code === "validation") {
-      await markCurrentRun(services.db, "failed", "validation");
+    if (error instanceof LessonGenerationCancelledError) {
+      if (error.reason === "shutdown") await markCurrentRun(services.db, "queued", null, null);
+      return;
+    }
+    const failure = classifyLessonGenerationFailure(error);
+    console.error(`[lesson] run=${runId} błąd partii LLM: kod=${failure.errorCode} retryable=${failure.retryable} próba=${attempts}`);
+    if (!failure.retryable) {
+      await markCurrentRun(services.db, "failed", failure.errorCode);
     } else if (attempts >= MAX_AUTOMATIC_ATTEMPTS) {
       await markCurrentRun(services.db, "failed", "attempts_exhausted");
     } else {
-      await markCurrentRun(services.db, "queued", null);
+      const delay = lessonRetryDelayMs(attempts, failure.retryAfterMs, Math.random);
+      const nextAttemptAt = new Date(services.clock.now().getTime() + delay);
+      console.log(`[lesson] run=${runId} retryDelayMs=${delay} nextAttemptAt=${nextAttemptAt.toISOString()}`);
+      await markCurrentRun(services.db, "queued", failure.errorCode, nextAttemptAt);
     }
     return;
   }
@@ -556,6 +680,7 @@ export async function executeLessonGeneration(services: Services, runId: string)
   // Całość walidacji + zapisu w terminalnym try/catch: nawet nieprzewidziany
   // wyjątek rozlicza run (failed/validation), nie zostawia go w stanie running.
   try {
+    assertLessonGenerationFinalizationAllowed(runDeadlineAtMs, options.signal);
     const wellShaped = rawExercises.filter(isWellShapedRawExercise);
     const shapeRejected = rawExercises.length - wellShaped.length;
     const drafts = wellShaped.map(toExerciseDraft);
@@ -563,32 +688,33 @@ export async function executeLessonGeneration(services: Services, runId: string)
     // Duplikaty wobec odpowiedzi już w puli: odrzucamy valid, których odpowiedź
     // równa się istniejącej (dogenerowanie nie powiela odpowiedzi szkicu).
     const existingSet = new Set(batches.flatMap((b) => b.existingAnswers));
+    const existingExerciseSet = new Set(batches.flatMap((b) => b.existingExercises).map((exercise) =>
+      JSON.stringify([exercise.objectiveId, exercise.exerciseType, exercise.stimulus]),
+    ));
     const uniqueValid: LessonExerciseDraft[] = [];
     let dupAgainstExisting = 0;
     for (const ex of valid) {
-      const clash = [...existingSet].some((a) => sameAnswer(a, ex.answer, subject));
+      const clash = subject.poolDeduplication === "exercise"
+        ? existingExerciseSet.has(lessonExerciseIdentity(ex))
+        : [...existingSet].some((a) => sameAnswer(a, ex.answer, subject));
       if (clash) {
         dupAgainstExisting += 1;
       } else {
         uniqueValid.push(ex);
       }
     }
-    const rejectedCount = shapeRejected + rejected.length + dupAgainstExisting;
+    const rejectedCount = shapeRejected + outOfScopeCount + rejected.length + dupAgainstExisting;
 
-    // Podsumowanie walidacji dla diagnostyki w logach workera: liczby plus
-    // powody odrzuceń (reguła = prefiks przed „:”), ograniczone do sample,
-    // by nie zalewać logu odpowiedziami modelu.
-    const ruleCounts = new Map<string, number>();
-    for (const rejection of rejected) {
-      for (const error of rejection.errors) {
-        const rule = error.split(":")[0] ?? error;
-        ruleCounts.set(rule, (ruleCounts.get(rule) ?? 0) + 1);
-      }
-    }
-    const reasons = [...ruleCounts.entries()].map(([rule, count]) => `${rule}×${count}`).join(", ");
-    const samples = [...new Set(rejected.flatMap((r) => r.errors))].slice(0, 3).map((e) => truncateForLog(e));
     console.log(
-      `[lesson] run=${runId} walidacja puli: surowe=${rawExercises.length} zły_kształt=${shapeRejected} odrzucone=${rejected.length + dupAgainstExisting} ważne=${uniqueValid.length}; reguły: ${reasons || "-"}; przykłady: ${samples.join(" | ") || "-"}`,
+      `[lesson] run=${runId} walidacja puli: ${summarizeLessonPoolValidation({
+        rawCount: rawExerciseCount,
+        shapeRejected,
+        outOfScopeCount,
+        rejectedExerciseCount: rejected.length,
+        rejectedErrors: rejected.flatMap((item) => item.errors),
+        duplicateCount: dupAgainstExisting,
+        validCount: uniqueValid.length,
+      })}`,
     );
 
     if (uniqueValid.length === 0) {
@@ -602,6 +728,7 @@ export async function executeLessonGeneration(services: Services, runId: string)
       )[0];
       const current = (await tx.select().from(generationRuns).where(eq(generationRuns.id, runId)).for("update"))[0];
       if (!current || current.state !== "running" || current.attempts !== attempts || current.expectedEditNumber !== run.expectedEditNumber) return;
+      assertLessonGenerationFinalizationAllowed(runDeadlineAtMs, options.signal);
       if (!version) {
         await markCurrentRun(tx, "failed", "deck_version_gone");
         return;
@@ -630,19 +757,25 @@ export async function executeLessonGeneration(services: Services, runId: string)
         .set({ lessonContext: nextContext as unknown as Record<string, unknown> })
         .where(eq(deckVersions.id, version.id));
       await reconcileDraftAssetsTx(tx, services, version);
+      const nextEditNumber = version.editNumber + 1;
+      await tx.update(deckVersions).set({ editNumber: nextEditNumber }).where(eq(deckVersions.id, version.id));
+      await supersedeLessonRuns(tx, version.id, services.clock.now(), runId);
       if (version.state !== "review") {
         await tx.update(deckVersions).set({ state: "review" }).where(eq(deckVersions.id, version.id));
       }
       await markCurrentRun(tx, "succeeded", null);
     });
+    console.log(`[lesson] run=${runId} zakończony durationMs=${Date.now() - runStartedAtMs}`);
   } catch (error) {
     // Nieprzewidziany wyjątek walidacji/zapisu NIE może zostawić runu „running”.
     // Rozliczamy terminalnie: wyczerpane próby → attempts_exhausted, inaczej
     // validation (błąd kształtu/treści puli, nie błąd przejściowy providera).
-    console.error(
-      `[lesson] run=${runId} nieprzewidziany błąd walidacji/zapisu: ${truncateForLog(String((error as { message?: string })?.message ?? error))}`,
-    );
-    if (attempts >= MAX_AUTOMATIC_ATTEMPTS) {
+    console.error(`[lesson] run=${runId} nieprzewidziany błąd walidacji/zapisu: kod=validation_or_write`);
+    if (error instanceof LessonGenerationCancelledError) {
+      if (error.reason === "shutdown") await markCurrentRun(services.db, "queued", null, null);
+    } else if (classifyLessonGenerationFailure(error).errorCode === "provider_timeout") {
+      await markCurrentRun(services.db, "failed", "provider_timeout");
+    } else if (attempts >= MAX_AUTOMATIC_ATTEMPTS) {
       await markCurrentRun(services.db, "failed", "attempts_exhausted");
     } else {
       await markCurrentRun(services.db, "failed", "validation");
@@ -680,21 +813,33 @@ export async function regenerateObjective(
           .where(and(eq(deckVersions.deckId, args.deckId)))
           .orderBy(desc(deckVersions.versionNumber))
           .limit(1)
+          .for("update")
       )[0];
       if (!version) {
         throw new AppError("not_found");
       }
+      const priorRequest = (await tx.select().from(generationRuns).where(eq(generationRuns.dedupeKey, `lesson:${args.clientRequestId}`)))[0];
+      if (priorRequest) return { runId: priorRequest.id, deckId: args.deckId };
       if (version.state === "published") {
         throw new AppError("immutable");
       }
       if (version.editNumber !== args.expectedEditNumber) {
         throw new AppError("conflict");
       }
+      const activeRun = (await tx.select({ id: generationRuns.id }).from(generationRuns).where(and(
+        eq(generationRuns.kind, "lesson"),
+        eq(generationRuns.deckVersionId, version.id),
+        inArray(generationRuns.state, ["queued", "running"]),
+      )).limit(1))[0];
+      if (activeRun) throw new AppError("conflict");
       const context = (version.lessonContext ?? {}) as unknown as LessonContext;
       if (!context.subjectId || !context.objectiveIds?.includes(args.objectiveId)) {
         throw new AppError("validation", { message: "objective not in lesson" });
       }
-      const existingAnswers = await existingAnswersOf(tx, version.id);
+      const subject = services.subjects.getSubject(context.subjectId);
+      if (!subject) throw new AppError("validation", { message: "unknown subject" });
+      const existingAnswers = subject.poolDeduplication === "exercise" ? [] : await existingAnswersOf(tx, version.id);
+      const existingExercises = subject.poolDeduplication === "exercise" ? await existingExercisesOf(tx, version.id) : [];
       const runId = randomUUID();
       const runInput: LessonRunInput = {
         deckId: args.deckId,
@@ -706,7 +851,7 @@ export async function regenerateObjective(
         poolSize: context.poolSize,
         material: context.material,
         ...(context.instruction === undefined ? {} : { instruction: context.instruction }),
-        regenerate: { objectiveId: args.objectiveId, count: args.count, existingAnswers },
+        regenerate: { objectiveId: args.objectiveId, count: args.count, existingAnswers, existingExercises },
       };
       await tx.insert(generationRuns).values({
         id: runId,

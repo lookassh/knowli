@@ -373,16 +373,12 @@ test("blocks, gap and feedback hold at 390×844 and 768×1024 without horizontal
 });
 
 
-test("child taps Posłuchaj in a lesson text exercise: disclosure sealed before audio plays", async ({ page }) => {
-  // Wym. 4.6 / A58: ćwiczenie tekstowe z gotowym `target_audio` pokazuje „Posłuchaj”.
-  // Dotknięcie najpierw autoryzuje odsłuch (POST /disclosures — serwer pieczętuje
-  // ekspozycję), potem odtwarza bajty (GET /media). Fake TTS jak w słówkowym E2E.
-  const audioGap: TaskDto = {
+test("grammar lesson text exercise has no answer speaker and remains answerable", async ({ page }) => {
+  const gap: TaskDto = {
     ...base(t(30), "lesson_gap"),
     prompt: {
       kind: "lesson_gap", instructionPl: "Uzupełnij lukę",
       stemWithGap: "He ___ to school.", hint: "(go)",
-      audioAssetId: "10000000-0000-4000-8000-0000000009a0",
     },
   };
   const gapGreat: AttemptDto = {
@@ -391,21 +387,17 @@ test("child taps Posłuchaj in a lesson text exercise: disclosure sealed before 
     feedback: { kind: "great" },
   };
 
-  const disclosureCalls: string[] = [];
   const mediaCalls: string[] = [];
   page.on("request", (request) => {
-    const path = new URL(request.url()).pathname;
-    if (request.method() === "POST" && /\/tasks\/[^/]+\/disclosures$/.test(path)) disclosureCalls.push(path);
-    if (/\/api\/v1\/media\//.test(path)) mediaCalls.push(path);
+    if (/\/api\/v1\/media\//.test(new URL(request.url()).pathname)) mediaCalls.push(request.url());
   });
 
   await installKidUiFixture(page, {
     profiles: [profile()],
     decks: [lessonDeck()],
     session: session(),
-    tasks: [audioGap, null],
+    tasks: [gap, null],
     attempts: [gapGreat],
-    disclosure: { taskId: t(30), stepId: "d1", kind: "audio", reveal: null },
     summary,
   });
   await page.goto("/");
@@ -413,18 +405,10 @@ test("child taps Posłuchaj in a lesson text exercise: disclosure sealed before 
   await page.getByTestId("kid-deck").click();
 
   await expect(page.getByTestId("kid-lesson-gap")).toBeVisible();
-  const listen = page.getByTestId("kid-lesson-listen");
-  await expect(listen).toBeVisible();
-  await expect(listen).toHaveAttribute("aria-label", "Posłuchaj");
-  // Lekcja tekstowa nie odtwarza audio samoczynnie — dopiero po dotknięciu.
+  await expect(page.getByTestId("kid-lesson-listen")).toHaveCount(0);
   expect(mediaCalls).toHaveLength(0);
 
-  await listen.click();
-  // Zgoda serwera MUSI poprzedzić pobranie bajtów (ekspozycja zapieczętowana).
-  await expect.poll(() => disclosureCalls.length).toBeGreaterThan(0);
-  await expect.poll(() => mediaCalls.length).toBeGreaterThan(0);
-
-  // Odpowiedź nadal działa po odsłuchu.
+  // Odpowiedź działa bez odsłuchu.
   await page.getByTestId("kid-lesson-gap-input").fill("goes");
   await page.getByTestId("kid-lesson-check").click();
   await expect(page.getByTestId("kid-feedback")).toContainText("Świetnie!");

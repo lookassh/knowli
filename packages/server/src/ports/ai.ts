@@ -73,8 +73,12 @@ export interface LessonPoolInput {
   readonly countPerObjective: number;
   readonly stageCounts: LlmLessonStageCounts;
   readonly graderAvailable: boolean;
+  /** Tożsamość duplikatu w obrębie puli; domyślnie zgodność odpowiedzi. */
+  readonly deduplication?: "answer" | "exercise";
   /** Odpowiedzi już w puli (dla dogenerowania bez duplikatów). */
   readonly existingAnswers?: readonly string[];
+  /** Bodźce już w puli, używane gdy przedmiot deduplikuje całe ćwiczenia. */
+  readonly existingExercises?: readonly { objectiveId: string; exerciseType: string; stimulus: string }[];
 }
 
 export interface LlmProvider {

@@ -64,6 +64,13 @@
       "when": 1791890092856,
       "tag": "0008_lesson_mock_tests",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791973554232,
+      "tag": "0009_lesson_generation_retry",
+      "breakpoints": true
     }
   ]
 }

@@ -469,6 +469,28 @@ describe("selectLessonTask — ekspozycja vs wydanie w sesji (collision targetKe
       throw new Error("due_check nie powinno wybrać ćwiczenia o ujawnionym targetKey");
     }
   });
+
+  it("sameDoesExposureIsStillAssistedInAnotherObjective", () => {
+    const shared = "answer:does";
+    const prior: LessonExerciseCandidate = {
+      itemId: "question-does", itemRevisionId: "rev-question-does", objectiveId: O1,
+      exerciseType: "lesson_gap", targetKey: shared,
+    };
+    const nextObjective: LessonExerciseCandidate = {
+      itemId: "short-answer-does", itemRevisionId: "rev-short-answer-does", objectiveId: O2,
+      exerciseType: "lesson_gap", targetKey: shared,
+    };
+    const sessionHistory = [
+      task({ objectiveId: O1, exerciseType: "lesson_gap", outcome: "correct", itemId: prior.itemId }),
+    ];
+    const plan = selectLessonTask(input({
+      objectiveOrder: [O2],
+      progress: { [O1]: prog("mastered"), [O2]: prog("mastered", "2026-10-12T11:00:00.000Z") },
+      exercises: [prior, nextObjective],
+      sessionHistory,
+    }));
+    expect(plan?.kind === "exercise" && plan.reason === "due_check" && plan.itemId === nextObjective.itemId).toBe(false);
+  });
 });
 
 describe("selectLessonTask — okno sprawdzianu: cel wprowadzony w tej sesji i nieopanowany", () => {

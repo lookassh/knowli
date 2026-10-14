@@ -879,7 +879,11 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
       if (issuedTask) {
         const counts = await lessonTaskCounts(tx, id);
         const assessedBefore = counts.assessed - (issuedTask.exerciseType !== "lesson_card" ? 1 : 0);
-        return issuedTaskDto(session, issuedTask, assessedBefore);
+        const version = (await tx.select({ lessonContext: deckVersions.lessonContext }).from(deckVersions)
+          .where(eq(deckVersions.id, session.deckVersionId)))[0];
+        const subjectId = (version?.lessonContext as { subjectId?: string } | null)?.subjectId;
+        const audioAllowed = subjectId ? services.subjects.getSubject(subjectId)?.ttsForAnswers === true : false;
+        return issuedTaskDto(session, issuedTask, assessedBefore, audioAllowed);
       }
       const lastActivity = await lastActivityAt(tx, id, session.startedAt);
       if (now.getTime() - lastActivity.getTime() > RESUME_WINDOW_MS) {
@@ -982,9 +986,14 @@ function issuedTaskDto(
   session: typeof learningSessions.$inferSelect,
   task: IssuedShape,
   assessedBefore: number,
+  audioAllowed = true,
 ): TaskDto {
   // Zachowaj znaczenie snapshotów i dopełnij jedynie brakujące pola kontraktu.
-  const prompt = addLegacyTaskPromptDefaults(task.publicPrompt as Record<string, unknown>);
+  const storedPrompt = addLegacyTaskPromptDefaults(task.publicPrompt as Record<string, unknown>);
+  // Dostępność audio jest bieżącą możliwością przedmiotu. Nie przepisujemy
+  // niezmiennego snapshotu zadania ani wcześniejszych ekspozycji.
+  const { audioAssetId: _audioAssetId, ...withoutAudio } = storedPrompt;
+  const prompt = audioAllowed ? storedPrompt : withoutAudio;
   return {
     taskId: task.id,
     sessionId: session.id,

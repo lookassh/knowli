@@ -6,6 +6,7 @@ import {
   createServices,
   createSubjectRegistry,
   englishGrammarSubject,
+  editLessonDraft,
   executeLessonGeneration,
   historyLikeSubject,
   readGeneration,
@@ -19,6 +20,9 @@ import { countRows, testDatabase, testDatabaseUrl } from "./helpers";
 import { ManualClock } from "./helpers";
 import { fakeGeneration, FakeLlmProvider, type FakeGeneration } from "./fakes";
 import { claimQueuedRun } from "../../packages/server/src/modules/generation";
+import { GenerationProviderError } from "../../packages/server/src/ports/generation-error";
+import { lessonExerciseIdentity, lessonExerciseStimulusRecord } from "../../packages/server/src/domain/lessons/exercise-identity";
+import type { LessonExerciseDraft } from "../../packages/server/src/domain/lessons/types";
 
 const { pool } = testDatabase();
 
@@ -186,22 +190,21 @@ describe("generowanie puli lekcji (integracja)", () => {
     );
     expect(skills[0]!.count).toBe(revisions.length);
 
-    // TTS odpowiedzi dla english_grammar (ttsForAnswers): po jednym target_audio na rewizję
+    // Gramatyka nie zleca TTS odpowiedzi ani nie przypina zasobów audio.
     const assets = await query<{ kind: string }>("select kind from learning_app.media_assets");
-    expect(assets.length).toBe(revisions.length);
-    expect(assets.every((a) => a.kind === "tts")).toBe(true);
+    expect(assets).toEqual([]);
     const roles = await query<{ role: string }>("select role from learning_app.revision_assets");
-    expect(roles.every((r) => r.role === "target_audio")).toBe(true);
+    expect(roles).toEqual([]);
   });
 
-  it("pełna generacja wielocelowa przekazuje odpowiedzi wcześniejszych partii do kolejnych (bez duplikatów między celami)", async () => {
+  it("pełna generacja wielocelowa przekazuje bodźce wcześniejszych partii do deduplikacji ćwiczeń", async () => {
     const fakes = await fakeGeneration();
     disposers.push(fakes.dispose);
     const services = lessonServices(fakes);
 
-    // Dwa cele, pula 20 → 2 partie po 10 ćwiczeń. Fake unika odpowiedzi
-    // z existingAnswers, więc brak przekazania historii byłby widoczny
-    // jako duplikaty w puli (faza 2 validatePool by je odrzuciła).
+    // Dwa cele, pula 20 → 2 partie po 10 ćwiczeń. Gramatyka deduplikuje
+    // ćwiczenia po bodźcu, więc wcześniejszy kontekst zawiera ich tożsamości,
+    // a nie zakaz odpowiedzi takich jak do/does.
     const { runId } = await createLesson(
       services,
       command({
@@ -216,29 +219,25 @@ describe("generowanie puli lekcji (integracja)", () => {
     await executeLessonGeneration(services, runId);
     expect((await readGeneration(services, runId)).state).toBe("succeeded");
 
-    // Jedna partia na cel; pierwsza bez historii, druga z odpowiedziami pierwszej.
+    // Jedna partia na cel; druga zna bodźce z pierwszej partii.
     expect(fakes.llm.lessonRequests).toHaveLength(2);
     const [first, second] = fakes.llm.lessonRequests;
     expect(first!.existingAnswers ?? []).toEqual([]);
-    expect(second!.existingAnswers ?? []).toHaveLength(10);
+    expect(second!.existingAnswers ?? []).toEqual([]);
+    expect(second!.existingExercises ?? []).toHaveLength(10);
 
     const run = await readGeneration(services, runId);
-    const revisions = await query<{ payload: { objectiveId: string; answer: string } }>(
+    const revisions = await query<{ payload: LessonExerciseDraft }>(
       "select payload from learning_app.item_revisions where deck_version_id = $1",
       [run.deckVersionId!],
     );
     expect(revisions.length).toBe(20);
-    // Odpowiedzi pierwszego celu (= pierwsza partia) trafiły do existingAnswers drugiej.
-    const firstObjectiveAnswers = revisions
-      .filter((r) => r.payload.objectiveId === "english_grammar.present_simple.affirmative_base")
-      .map((r) => r.payload.answer);
-    expect(firstObjectiveAnswers.length).toBe(10);
-    for (const answer of firstObjectiveAnswers) {
-      expect(second!.existingAnswers).toContain(answer);
-    }
-    // Cała pula bez duplikatów odpowiedzi kanonicznych (fake uszanował listę).
-    const answers = revisions.map((r) => r.payload.answer);
-    expect(new Set(answers).size).toBe(answers.length);
+    const firstObjectiveExercises = revisions
+      .map((row) => row.payload)
+      .filter((exercise) => exercise.objectiveId === "english_grammar.present_simple.affirmative_base");
+    expect(firstObjectiveExercises).toHaveLength(10);
+    expect(second!.existingExercises).toEqual(firstObjectiveExercises.map(lessonExerciseStimulusRecord));
+    expect(new Set(revisions.map(({ payload }) => lessonExerciseIdentity(payload))).size).toBe(20);
   });
 
   it("częściowe odrzucenia: niepoprawne ćwiczenia odrzucone pojedynczo, licznik dostępny", async () => {
@@ -321,6 +320,44 @@ describe("generowanie puli lekcji (integracja)", () => {
       [versionId],
     );
     expect(rows.map((r) => r.answer)).toEqual(["plays"]); // tylko poprawne zapisane
+  });
+
+  it("nullExerciseDoesNotRetryWholeRun", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = lessonServices(fakes);
+    const objectiveId = "english_grammar.present_simple.third_person_s";
+    fakes.llm.queueLesson({ exercises: [
+      {
+        exerciseType: "lesson_choice",
+        objectiveId,
+        instructionPl: "Wybierz.",
+        stem: "She ___ football.",
+        answer: "plays",
+        acceptedAnswers: [],
+        focus: [],
+        options: [{ id: "a", text: "plays" }, { id: "b", text: "play" }],
+        correctOption: "a",
+      },
+      null,
+    ] });
+
+    const { runId } = await createLesson(services, command());
+    await executeLessonGeneration(services, runId);
+
+    const run = await readGeneration(services, runId);
+    expect(run.state).toBe("succeeded");
+    expect(run.attempts).toBe(1);
+    const [version] = await query<{ lesson_context: { rejectedCount: number } }>(
+      "select lesson_context from learning_app.deck_versions where id = $1",
+      [run.deckVersionId!],
+    );
+    expect(version!.lesson_context.rejectedCount).toBe(1);
+    const rows = await query<{ count: number }>(
+      "select count(*)::int as count from learning_app.item_revisions where deck_version_id = $1",
+      [run.deckVersionId!],
+    );
+    expect(rows[0]!.count).toBe(1);
   });
 
   it("odrzuca wadliwe przykłady, zachowując prawidłowe przykłady i ćwiczenia", async () => {
@@ -461,11 +498,10 @@ describe("generowanie puli lekcji (integracja)", () => {
     // Start runu z kontekstem (identyfikowalność w logach workera), łącznie
     // z modelem LLM (A/B generacji po logach, UMIEM_LLM_MODEL).
     expect(lessonLogs).toMatch(/generacja run=\S+ .*cel[ie]=.*model=\S+/);
-    // Podsumowanie walidacji: liczby + powody odrzuceń (przynajmniej reguła
-    // duplikatu kanonicznej odpowiedzi i reguła liczby opcji).
-    expect(lessonLogs).toMatch(/walidacja puli: surowe=\d+ zły_kształt=\d+ odrzucone=\d+ ważne=\d+/);
-    expect(lessonLogs).toContain("duplikuje odpowiedź kanoniczną");
-    expect(lessonLogs).toMatch(/options: (liczba opcji \(\d+\) poza zakresem|przekracza limit \d+|wymagane minimum \d+)/);
+    // Podsumowanie walidacji: tylko liczniki i kody reguł, bez treści ćwiczeń.
+    expect(lessonLogs).toMatch(/walidacja puli: surowe=\d+ zły_kształt=\d+ obcy_cel=\d+ odrzucone=\d+ ważne=\d+/);
+    expect(lessonLogs).toContain("acceptedAnswers×1");
+    expect(lessonLogs).toContain("options×1");
     // Wynik terminalny runu.
     expect(lessonLogs).toMatch(/zakończony: state=failed kod=validation/);
   });
@@ -473,7 +509,8 @@ describe("generowanie puli lekcji (integracja)", () => {
   it("loguje [lesson] błąd partii LLM i wynik attempts_exhausted", async () => {
     const fakes = await fakeGeneration();
     disposers.push(fakes.dispose);
-    const services = lessonServices(fakes);
+    const clock = new ManualClock();
+    const services = lessonServices(fakes, clock);
     fakes.llm.queueLesson({ error: "llm timeout", retryable: true });
 
     const logs: string[] = [];
@@ -487,6 +524,10 @@ describe("generowanie puli lekcji (integracja)", () => {
       const { runId } = await createLesson(services, command());
       for (let i = 0; i < 3; i += 1) {
         await executeLessonGeneration(services, runId);
+        if (i < 2) {
+          const [scheduled] = await query<{ next_attempt_at: Date }>("select next_attempt_at from learning_app.generation_runs where id=$1", [runId]);
+          clock.advanceMs(Math.max(0, scheduled!.next_attempt_at.getTime() - clock.now().getTime()));
+        }
       }
       const run = await readGeneration(services, runId);
       expect(run.state).toBe("failed");
@@ -498,7 +539,7 @@ describe("generowanie puli lekcji (integracja)", () => {
 
     const lessonLogs = logs.filter((line) => line.includes("[lesson]")).join("\n");
     expect(lessonLogs).toMatch(/błąd partii LLM: kod=provider/);
-    expect(lessonLogs).toContain("llm timeout");
+    expect(lessonLogs).not.toContain("llm timeout");
     expect(lessonLogs).toMatch(/zakończony: state=failed kod=attempts_exhausted/);
   });
 
@@ -543,7 +584,8 @@ describe("generowanie puli lekcji (integracja)", () => {
   it("błąd providera → ponowienie do wyczerpania prób (attempts_exhausted)", async () => {
     const fakes = await fakeGeneration();
     disposers.push(fakes.dispose);
-    const services = lessonServices(fakes);
+    const clock = new ManualClock();
+    const services = lessonServices(fakes, clock);
     fakes.llm.queueLesson({ error: "llm timeout", retryable: true });
 
     const { runId } = await createLesson(services, command());
@@ -552,11 +594,50 @@ describe("generowanie puli lekcji (integracja)", () => {
       const dto = await readGeneration(services, runId);
       expect(dto.state).toBe("queued");
       expect(dto.attempts).toBe(attempt);
+      const [scheduled] = await query<{ next_attempt_at: Date }>("select next_attempt_at from learning_app.generation_runs where id=$1", [runId]);
+      clock.advanceMs(Math.max(0, scheduled!.next_attempt_at.getTime() - clock.now().getTime()));
     }
     await executeLessonGeneration(services, runId);
     const exhausted = await readGeneration(services, runId);
     expect(exhausted.state).toBe("failed");
     expect(exhausted.errorCode).toBe("attempts_exhausted");
+  });
+
+  it("błąd trwały kończy się po jednym żądaniu, a retry ręczny czyści odroczenie", async () => {
+    const fakes = await fakeGeneration(); disposers.push(fakes.dispose);
+    const clock = new ManualClock();
+    const services = lessonServices(fakes, clock);
+    const originalGenerate = fakes.llm.generateLessonPool.bind(fakes.llm);
+    let providerCalls = 0;
+    fakes.llm.generateLessonPool = async () => {
+      providerCalls += 1;
+      throw new GenerationProviderError("configuration", { status: 400 });
+    };
+    const { runId } = await createLesson(services, command());
+    await executeLessonGeneration(services, runId);
+    expect((await readGeneration(services, runId)).errorCode).toBe("provider_configuration");
+    expect(providerCalls).toBe(1);
+    await retryGeneration(services, runId);
+    expect((await readGeneration(services, runId)).state).toBe("queued");
+    expect((await readGeneration(services, runId)).attempts).toBe(0);
+    fakes.llm.generateLessonPool = originalGenerate;
+  });
+
+  it("odracza transient retry do nextAttemptAt; ręczne retry skraca odroczenie", async () => {
+    const fakes = await fakeGeneration(); disposers.push(fakes.dispose);
+    const clock = new ManualClock();
+    const services = lessonServices(fakes, clock);
+    fakes.llm.queueLesson({ error: "temporary", retryable: true });
+    const { runId } = await createLesson(services, command());
+    await executeLessonGeneration(services, runId);
+    const [scheduled] = await query<{ next_attempt_at: Date; attempts: number }>("select next_attempt_at, attempts from learning_app.generation_runs where id=$1", [runId]);
+    expect(scheduled!.next_attempt_at.getTime()).toBeGreaterThan(clock.now().getTime());
+    expect(scheduled!.attempts).toBe(1);
+    await executeLessonGeneration(services, runId);
+    expect(fakes.llm.lessonRequests).toHaveLength(1);
+    await retryGeneration(services, runId);
+    const [cleared] = await query<{ next_attempt_at: Date | null; attempts: number }>("select next_attempt_at, attempts from learning_app.generation_runs where id=$1", [runId]);
+    expect(cleared).toEqual({ next_attempt_at: null, attempts: 0 });
   });
 
   it("restart procesu workera wykonuje zlecony run lekcji", async () => {
@@ -587,7 +668,7 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect(version!.state).toBe("review");
   });
 
-  it("regenerateObjective dopisuje ćwiczenia bez duplikatów odpowiedzi", async () => {
+  it("regenerateObjective dopisuje nowe ćwiczenia bez powtórzenia bodźca", async () => {
     const fakes = await fakeGeneration();
     disposers.push(fakes.dispose);
     const services = lessonServices(fakes);
@@ -595,23 +676,113 @@ describe("generowanie puli lekcji (integracja)", () => {
     const { runId, deckId } = await createLesson(services, command());
     await executeLessonGeneration(services, runId);
     const versionId = (await readGeneration(services, runId)).deckVersionId!;
-    const before = await query<{ answer: string }>("select payload->>'answer' as answer from learning_app.item_revisions where deck_version_id = $1", [versionId]);
+    const before = await query<{ payload: LessonExerciseDraft }>("select payload from learning_app.item_revisions where deck_version_id = $1", [versionId]);
     const beforeCount = before.length;
 
     const regen = await regenerateObjective(services, {
       deckId,
       objectiveId: "english_grammar.present_simple.third_person_s",
       count: 4,
-      expectedEditNumber: 1,
+      expectedEditNumber: 2,
       clientRequestId: randomUUID(),
     });
     await executeLessonGeneration(services, regen.runId);
 
-    const after = await query<{ answer: string }>("select payload->>'answer' as answer from learning_app.item_revisions where deck_version_id = $1", [versionId]);
+    const after = await query<{ payload: LessonExerciseDraft }>("select payload from learning_app.item_revisions where deck_version_id = $1", [versionId]);
     expect(after.length).toBeGreaterThan(beforeCount);
-    // brak duplikatów odpowiedzi (po lowercase)
-    const answers = after.map((r) => r.answer.toLowerCase());
-    expect(new Set(answers).size).toBe(answers.length);
+    const [version] = await query<{ edit_number: number }>("select edit_number from learning_app.deck_versions where id = $1", [versionId]);
+    expect(version!.edit_number).toBe(3);
+    await expect(editLessonDraft(services, versionId, { expectedEditNumber: 2, title: "stary formularz" })).rejects.toMatchObject({ code: "conflict" });
+    // Każde ćwiczenie ma unikalny bodziec w swoim celu; odpowiedź sama w sobie
+    // nie jest kluczem deduplikacji dla gramatyki.
+    const identities = after.map(({ payload }) => lessonExerciseIdentity(payload));
+    expect(new Set(identities).size).toBe(identities.length);
+  });
+
+  it("rezerwuje tylko jeden aktywny top-up na szkic i zachowuje idempotencję tego samego żądania", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = lessonServices(fakes);
+    const { runId, deckId } = await createLesson(services, command());
+    await executeLessonGeneration(services, runId);
+    const expectedEditNumber = 2;
+    const objectiveId = "english_grammar.present_simple.third_person_s";
+    const firstKey = randomUUID();
+    const secondKey = randomUUID();
+    const [first, competing] = await Promise.allSettled([
+      regenerateObjective(services, { deckId, objectiveId, count: 4, expectedEditNumber, clientRequestId: firstKey }),
+      regenerateObjective(services, { deckId, objectiveId, count: 4, expectedEditNumber, clientRequestId: secondKey }),
+    ]);
+    const accepted = first.status === "fulfilled" ? first.value : competing.status === "fulfilled" ? competing.value : null;
+    const rejected = first.status === "rejected" ? first.reason : competing.status === "rejected" ? competing.reason : null;
+    expect(accepted).not.toBeNull();
+    expect(rejected).toMatchObject({ code: "conflict" });
+    const repeated = await regenerateObjective(services, {
+      deckId, objectiveId, count: 4, expectedEditNumber, clientRequestId: first.status === "fulfilled" ? firstKey : secondKey,
+    });
+    expect(repeated.runId).toBe(accepted!.runId);
+  });
+
+  it("edycja rodzica unieważnia queued run przed wywołaniem providera", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = lessonServices(fakes);
+    const { runId } = await createLesson(services, command());
+    const queued = await readGeneration(services, runId);
+    await editLessonDraft(services, queued.deckVersionId!, { expectedEditNumber: 1, title: "Zmiana rodzica" });
+    expect((await readGeneration(services, runId)).state).toBe("superseded");
+    await executeLessonGeneration(services, runId);
+    expect(fakes.llm.lessonRequests).toHaveLength(0);
+    const [version] = await query<{ edit_number: number; title: string }>("select edit_number, title from learning_app.deck_versions where id = $1", [queued.deckVersionId]);
+    expect(version).toMatchObject({ edit_number: 2, title: "Zmiana rodzica" });
+  });
+
+  it("edycja rodzica przerywa request w toku i nie zapisuje spóźnionego wyniku", async () => {
+    const fakes = await fakeGeneration(); disposers.push(fakes.dispose);
+    fakes.deps.lessonExecution = { requestTimeoutMs: 2_000, runTimeoutMs: 5_000, cancelPollMs: 10 };
+    const services = lessonServices(fakes);
+    let enter!: () => void;
+    const entered = new Promise<void>((resolve) => { enter = resolve; });
+    let requestSignal!: AbortSignal;
+    fakes.deps.llm.generateLessonPool = async (_input, signal) => {
+      requestSignal = signal!;
+      enter();
+      return new Promise((_resolve, reject) => signal!.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true }));
+    };
+    const { runId } = await createLesson(services, command());
+    const run = await readGeneration(services, runId);
+    const pending = executeLessonGeneration(services, runId);
+    await entered;
+    await editLessonDraft(services, run.deckVersionId!, { expectedEditNumber: 1, title: "Nowa treść rodzica" });
+    await pending;
+    expect(requestSignal.aborted).toBe(true);
+    expect((await readGeneration(services, runId)).state).toBe("superseded");
+    expect(await query("select id from learning_app.item_revisions where deck_version_id=$1", [run.deckVersionId])).toHaveLength(0);
+  });
+
+  it("shutdown oddaje aktualny run do kolejki bez cofania wykorzystanej próby", async () => {
+    const fakes = await fakeGeneration(); disposers.push(fakes.dispose);
+    fakes.deps.lessonExecution = { requestTimeoutMs: 2_000, runTimeoutMs: 5_000, cancelPollMs: 10 };
+    const services = lessonServices(fakes);
+    let enter!: () => void;
+    const entered = new Promise<void>((resolve) => { enter = resolve; });
+    let requestSignal!: AbortSignal;
+    fakes.deps.llm.generateLessonPool = async (_input, signal) => {
+      requestSignal = signal!;
+      enter();
+      return new Promise((_resolve, reject) => signal!.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true }));
+    };
+    const { runId } = await createLesson(services, command());
+    const controller = new AbortController();
+    const pending = executeLessonGeneration(services, runId, { signal: controller.signal });
+    await entered;
+    controller.abort();
+    await pending;
+    const result = await readGeneration(services, runId);
+    expect(requestSignal.aborted).toBe(true);
+    expect(result.state).toBe("queued");
+    expect(result.attempts).toBe(1);
+    expect(await query("select id from learning_app.item_revisions where deck_version_id=$1", [result.deckVersionId])).toHaveLength(0);
   });
 
   it("przedmiot fixture historii (ttsForAnswers=false) przechodzi cały przepływ bez audio", async () => {

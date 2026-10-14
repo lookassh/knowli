@@ -74,6 +74,7 @@ export default function LessonEditor({
 
   const dirty = useRef(false);
   const busyRef = useRef(false);
+  const regenLock = useRef(false);
   const baseSnapshot = useRef<LessonEditorSnapshot | null>(null);
   const loadVersion = useRef(0);
   const newKey = useCallback(() => crypto.randomUUID(), []);
@@ -127,6 +128,9 @@ export default function LessonEditor({
   const editable = draft !== null;
 
   const generating = deck?.generation?.state === "queued" || deck?.generation?.state === "running";
+  const generationFailure = deck?.generation?.errorCode
+    ? messages.lessons.generationErrors[deck.generation.errorCode] ?? messages.lessons.generationFailed
+    : messages.lessons.generationFailed;
   const assetsPending = active?.assets.some((a) => a.state === "pending") ?? false;
   useEffect(() => {
     if (!generating && !assetsPending) return;
@@ -290,7 +294,8 @@ export default function LessonEditor({
   };
 
   const regenerate = async (objectiveId: string) => {
-    if (!draft || busy || isDirty) return;
+    if (!draft || busyRef.current || regenLock.current || generating || isDirty) return;
+    regenLock.current = true;
     const count = regenCounts[objectiveId] ?? 4;
     setBusyState(true);
     setError(null);
@@ -305,6 +310,7 @@ export default function LessonEditor({
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
+      regenLock.current = false;
       setBusyState(false);
     }
   };
@@ -359,7 +365,7 @@ export default function LessonEditor({
       </div>}
       {deck?.generation?.state === "failed" && (
         <p className="error" data-testid="generation-failed">
-          {messages.lessons.generationFailed}{" "}
+          {generationFailure}{" "}
           <button type="button" onClick={retry}>{messages.lessons.retryGeneration}</button>
         </p>
       )}
@@ -572,9 +578,9 @@ export default function LessonEditor({
               <label htmlFor={`regen-count-${group.objectiveId}`}>{messages.lessons.regenerateCount}</label>
               <input id={`regen-count-${group.objectiveId}`} type="number" min={1} max={60} step={1}
                 data-testid={`regen-count-${group.objectiveId}`}
-                value={regenCounts[group.objectiveId] ?? 4} disabled={busy || isDirty}
+                value={regenCounts[group.objectiveId] ?? 4} disabled={busy || generating || isDirty}
                 onChange={(e) => setRegenCounts((c) => ({ ...c, [group.objectiveId]: Number(e.target.value) }))} />
-              <button type="button" data-testid={`regen-submit-${group.objectiveId}`} disabled={busy || isDirty}
+              <button type="button" data-testid={`regen-submit-${group.objectiveId}`} disabled={busy || generating || isDirty}
                 onClick={() => regenerate(group.objectiveId)}>
                 {messages.lessons.regenerateSubmit}
               </button>

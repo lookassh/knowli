@@ -33,6 +33,7 @@ import { poolCoverage, validatePool } from "../../domain/lessons/pool-validation
 import type { LessonExerciseDraft, LessonTopic, SubjectModule } from "../../domain/lessons/types";
 import { assertAssetPublishable, reconcileDraftAssetsTx } from "../media-reconciliation";
 import { copyRevisionsSkillsAssets } from "../decks";
+import { supersedeLessonRuns } from "../generation";
 import {
   assertEditable,
   bumpEditNumber,
@@ -172,7 +173,7 @@ async function readLessonDraftDto(
     .where(eq(itemRevisions.deckVersionId, versionId))
     .orderBy(asc(itemRevisions.position));
   const revisionIds = revisions.map((r) => r.id);
-  const assetRows = revisionIds.length
+  const assetRows = revisionIds.length && requireSubject(services, context.subjectId).ttsForAnswers
     ? await db
         .select({
           itemRevisionId: revisionAssets.itemRevisionId,
@@ -555,6 +556,7 @@ export async function editLessonDraft(
     }
 
     await bumpEditNumber(tx, versionId);
+    await supersedeLessonRuns(tx, versionId, services.clock.now());
     await reconcileDraftAssetsTx(tx, services, { id: version.id, state: version.state });
     return readLessonDraftDto(tx, services, versionId);
   });

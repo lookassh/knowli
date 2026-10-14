@@ -4,6 +4,7 @@ import { createLocalMediaStore } from "./media/local";
 import { createOpenAiImageProvider } from "./images/openai";
 import { createOpenAiLlmProvider } from "./openai/llm";
 import { createOpenAiTtsProvider } from "./openai/tts";
+import { lessonGenerationPolicyFromEnv } from "../modules/lessons/lesson-generation-policy";
 
 /**
  * Składanie zależności generacji ze zmiennych środowiskowych (worker, E2E):
@@ -23,9 +24,10 @@ import { createOpenAiTtsProvider } from "./openai/tts";
 export function createGenerationDepsFromEnv(env: Record<string, string | undefined>): GenerationDeps | undefined {
   const mediaRoot = env.MEDIA_ROOT ?? "./data/media";
   const mediaStore = createLocalMediaStore(mediaRoot);
+  const lessonExecution = lessonGenerationPolicyFromEnv(env);
   if (env.UMIEM_FAKE_PROVIDERS === "1") {
     const delayMs = Number(env.UMIEM_FAKE_DELAY_MS ?? 0);
-    return fakeGenerationDeps(mediaStore, { delayMs: Number.isFinite(delayMs) ? delayMs : 0 });
+    return { ...fakeGenerationDeps(mediaStore, { delayMs: Number.isFinite(delayMs) ? delayMs : 0 }), lessonExecution };
   }
   const apiKey = env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -44,9 +46,11 @@ export function createGenerationDepsFromEnv(env: Record<string, string | undefin
       apiKey: (env.UMIEM_LLM_API_KEY === "" ? undefined : env.UMIEM_LLM_API_KEY) ?? apiKey,
       model: env.UMIEM_LLM_MODEL === "" ? undefined : env.UMIEM_LLM_MODEL,
       baseUrl: llmBaseUrl,
+      lessonRequestTimeoutMs: lessonExecution.requestTimeoutMs,
     }),
     tts: createOpenAiTtsProvider({ apiKey }),
     image: createOpenAiImageProvider({ apiKey }),
     mediaStore,
+    lessonExecution,
   };
 }

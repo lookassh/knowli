@@ -49,12 +49,14 @@ describe("createOpenAiImageProvider", () => {
     expect(result.mimeType).toBe("image/png");
   });
 
-  it("rzuca błąd HTTP z treścią odpowiedzi", async () => {
+  it("nie przekazuje body dostawcy w błędzie HTTP", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response("credit_balance_exhausted", { status: 400 })),
     );
     const provider = createOpenAiImageProvider({ apiKey: "k" });
-    await expect(provider.generate(REQUEST)).rejects.toThrow(/400 credit_balance_exhausted/);
+    const failure = provider.generate(REQUEST);
+    await expect(failure).rejects.toThrow(/400/);
+    await expect(failure).rejects.not.toThrow(/credit_balance_exhausted/);
   });
 });

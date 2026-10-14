@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
+import { LessonDeckDtoSchema } from "@learning/contracts";
 
 /**
  * E2E panelu rodzica dla lekcji (fake providerzy, zadanie 12). Pełny przepływ:
@@ -19,29 +20,34 @@ async function enterParent(page: Page): Promise<void> {
   await page.getByTestId("tab-decks").click();
 }
 
-async function createLesson(page: Page, title: string, waitForGeneration = true): Promise<string> {
+async function createLesson(
+  page: Page,
+  title: string,
+  waitForGeneration = true,
+  selectedObjectiveIds?: readonly string[],
+): Promise<string> {
   await page.getByTestId("new-lesson-submit").click();
   await expect(page.getByTestId("new-lesson-form")).toBeVisible();
   // Katalog ma english_grammar → present_simple z regułami zaznaczonymi domyślnie.
   await expect(page.getByTestId("lesson-subject")).toBeVisible();
-  // Jedna reguła: cała pula trafia na nią, więc etapy spełniają minima
+  // Domyślnie jedna reguła: cała pula trafia na nią, więc etapy spełniają minima
   // (guided≥3, productive≥4, independent≥2) i pokrycie startowo jest pełne.
   const objectiveCheckboxes = page.locator('[data-testid^="lesson-objective-"]');
   await expect(objectiveCheckboxes.first()).toBeVisible();
   const objectiveCount = await objectiveCheckboxes.count();
   for (let i = 0; i < objectiveCount; i++) {
-    await objectiveCheckboxes.nth(i).setChecked(i === 0);
-  }
-  await expect(objectiveCheckboxes.first()).toBeChecked();
-  for (let i = 1; i < objectiveCount; i++) {
-    await expect(objectiveCheckboxes.nth(i)).not.toBeChecked();
+    const id = (await objectiveCheckboxes.nth(i).getAttribute("data-testid"))!.replace("lesson-objective-", "");
+    const objective = page.getByTestId(`lesson-objective-${id}`);
+    const shouldBeChecked = selectedObjectiveIds ? selectedObjectiveIds.includes(id) : i === 0;
+    await objective.setChecked(shouldBeChecked);
+    await expect(objective).toBeChecked({ checked: shouldBeChecked });
   }
   await page.getByTestId("lesson-material").fill(
     `Materiał ${title}. He plays football every day. She watches television in the evening. They study English on Monday and Tuesday.`,
   );
   // Pula 20 na jedną regułę → guided 7 / productive 9 / independent 4 (spełnia minima),
   // a przegląd/usuwanie są lekkie.
-  await page.getByTestId("lesson-pool-size").fill("20");
+  await page.getByTestId("lesson-pool-size").fill(selectedObjectiveIds && selectedObjectiveIds.length > 1 ? "60" : "20");
   const created = page.waitForResponse(
     (r) => r.request().method() === "POST" && r.url().endsWith("/api/v1/parent/lessons"),
   );
@@ -68,7 +74,9 @@ async function createLesson(page: Page, title: string, waitForGeneration = true)
 test("defaults the pool size to max(60, 12 × selected objectives)", async ({ page }) => {
   await enterParent(page);
   await page.getByTestId("new-lesson-submit").click();
-  await expect(page.getByTestId("lesson-pool-size")).toHaveValue("60");
+  await expect(page.locator('[data-testid^="lesson-objective-"]').first()).toBeVisible();
+  const objectiveCount = await page.locator('[data-testid^="lesson-objective-"]').count();
+  await expect(page.getByTestId("lesson-pool-size")).toHaveValue(String(Math.max(60, 12 * objectiveCount)));
 });
 
 test("parent can safely restart a running lesson generation", async ({ page }) => {
@@ -79,8 +87,37 @@ test("parent can safely restart a running lesson generation", async ({ page }) =
   await retry.click();
   await expect(page.getByTestId("generation-banner")).toBeHidden({ timeout: 120_000 });
   await expect(page.locator('[data-testid^="objective-group-"]').first()).toBeVisible();
-  // Ten test nie zostawia kolejki TTS dla następnego przepływu rodzica.
-  await expect(page.locator('[data-testid^="exercise-audio-state-"]', { hasText: "generowanie" })).toHaveCount(0, { timeout: 120_000 });
+  await expect(page.locator('[data-testid^="exercise-audio-state-"]')).toHaveCount(0);
+});
+
+test("generates a multi-objective Present Simple pool with Polish prompts and no audio assets", async ({ page }) => {
+  const title = `Cele Present Simple ${randomUUID().slice(0, 8)}`;
+  const objectiveIds = [
+    "english_grammar.present_simple.question",
+    "english_grammar.present_simple.negative",
+    "english_grammar.present_simple.short_answers",
+  ];
+  await enterParent(page);
+  const deckId = await createLesson(page, title, true, objectiveIds);
+
+  for (const objectiveId of objectiveIds) {
+    await expect(page.getByTestId(`objective-group-${objectiveId}`)).toBeVisible();
+    await expect(page.getByTestId(`examples-${objectiveId}`)).toBeVisible();
+  }
+  await expect(page.locator('[data-testid^="exercise-audio-state-"]')).toHaveCount(0);
+
+  const response = await page.request.get(`/api/v1/parent/lessons/${deckId}`);
+  expect(response.ok()).toBeTruthy();
+  const deck = LessonDeckDtoSchema.parse(await response.json());
+  expect(deck.draft?.objectiveIds).toEqual(expect.arrayContaining(objectiveIds));
+  expect(deck.draft?.assets).toEqual([]);
+  for (const objectiveId of objectiveIds) {
+    expect(deck.draft?.examples[objectiveId]?.length).toBeGreaterThan(0);
+    const exercises = deck.draft!.exercises.filter((exercise) => exercise.objectiveId === objectiveId);
+    expect(exercises.length).toBeGreaterThanOrEqual(9);
+    expect(exercises.every((exercise) => exercise.instructionPl?.length)).toBe(true);
+  }
+  expect(deck.draft?.exercises.some((exercise) => exercise.exerciseType === "lesson_open_answer" && exercise.prompt?.startsWith("Przetłumacz"))).toBe(true);
 });
 
 test("creates a lesson, reviews it grouped by objective and stage, fixes a validation error, saves, closes coverage and publishes", async ({ page, request }) => {
@@ -144,11 +181,10 @@ test("creates a lesson, reviews it grouped by objective and stage, fixes a valid
   await expect(page.getByTestId("publish-lesson")).toBeEnabled({ timeout: 120_000 });
   await expect(page.getByTestId("coverage-ok")).toBeVisible();
 
-  // Publikacja wymaga gotowego audio odpowiedzi (ttsForAnswers) — poczekaj, aż
-  // zniknie stan „generowanie" na kartach ćwiczeń (editor dopolluje zasoby).
-  await expect(page.locator('[data-testid^="exercise-audio-state-"]', { hasText: "generowanie" })).toHaveCount(0, { timeout: 120_000 });
+  // Lekcje gramatyki nie tworzą audio odpowiedzi; publikacja zależy od treści i pokrycia.
+  await expect(page.locator('[data-testid^="exercise-audio-state-"]')).toHaveCount(0);
 
-  // Publikacja (odblokowana po domknięciu pokrycia i gotowości audio).
+  // Publikacja (odblokowana po domknięciu pokrycia).
   await page.getByTestId("publish-lesson").click();
   await expect(page.getByTestId("publish-status")).toBeVisible({ timeout: 120_000 });
 

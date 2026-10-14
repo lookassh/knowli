@@ -20,6 +20,7 @@ import type {
   LessonTopic,
   SubjectModule,
 } from "./types";
+import { lessonExerciseIdentity } from "./exercise-identity";
 import type { PoolMinimums } from "./lesson-policy";
 
 /** Znacznik luki w `stem` ćwiczenia `lesson_gap`. */
@@ -519,7 +520,24 @@ export function validatePool(
     }
   });
 
-  // Faza 2: duplikaty wśród ćwiczeń, które przeszły fazę 1 (jedna implementacja).
+  // Różne przedmioty mogą potrzebować tożsamości zadania zamiast odpowiedzi.
+  // To nie zmienia target_key ani kwalifikacji ujawnienia odpowiedzi.
+  if (subject.poolDeduplication === "exercise") {
+    const seen = new Set<string>();
+    const valid: LessonExerciseDraft[] = [];
+    for (const { exercise } of singleValid) {
+      const identity = lessonExerciseIdentity(exercise);
+      if (seen.has(identity)) {
+        rejected.push({ exercise, errors: ["stimulus: zduplikowany bodziec ćwiczenia w tej samej regule"] });
+      } else {
+        seen.add(identity);
+        valid.push(exercise);
+      }
+    }
+    return { valid, rejected };
+  }
+
+  // Domyślna polityka: niejęzykowe przedmioty zachowują unikalność odpowiedzi.
   const answers = singleValid.map((entry) => entry.exercise.answer);
   const duplicateLaterPositions = new Set<number>();
   for (const group of groupEquivalentAnswers(answers, subject.normalizer)) {
