@@ -173,5 +173,11 @@ describe("compareSpelling — porównanie zapisu z zatwierdzonym wariantem (issu
     // Dwie dziury w środku (Weay) i braki rozproszone (Wdnsdy) pozostają poza diagnozą
     expect(compareSpelling("Weay", key("Wednesday"))!.withinThreshold).toBe(false);
     expect(compareSpelling("Wdnsdy", key("Wednesday"))!.withinThreshold).toBe(false);
+
+    // Floor długości obowiązuje także przy braku obu końców:
+    // "dn" dla "Wednesday" (2 litery, < 3 i < 50%)
+    expect(compareSpelling("dn", key("Wednesday"))!.withinThreshold).toBe(false);
+    // "ay" dla "Monday" (2 litery, < 3 i < 50%)
+    expect(compareSpelling("ay", key("Monday"))!.withinThreshold).toBe(false);
   });
 });

@@ -90,12 +90,14 @@ const SpellingDiffSchema = z.object({
 
 Gdy zapis dziecka **nie zawiera żadnej błędnej litery**, a odpowiedź różni się od wariantu wyłącznie brakującymi literami, zamiast dwóch wierszy pokazujemy jedno pełne słowo wzorca z zielonymi pigułkami na brakujących fragmentach (bez wiersza „Twój zapis” — nie ma czego poprawiać, tylko uzupełnić). Komunikat: „Prawie! Uzupełnij brakujące litery:”; opis dla czytników: „Poprawnie: {expected}.”. `isIncompleteWord` ma pierwszeństwo przed wskazówką kapitalizacyjną (prefiks małą literą nie wyświetla mylącego komunikatu o wielkiej literze).
 
-Kwalifikacja (serwer: `isLetterOmissionOnly` w `spelling-diff.ts`, UI: `isIncompleteWord`):
+Kwalifikacja dzieli się na warunki strukturalne (serwer `isLetterOmissionOnly` w `spelling-diff.ts` **i** UI `isIncompleteWord` w `spelling-diff-view.ts`) i próg długości (tylko serwer):
 
 - zapis dziecka składa się wyłącznie z segmentów `plain` (żadnej błędnej, nadmiarowej ani przestawionej litery),
 - brakuje **co najwyżej jednej dziury gdziekolwiek** (urwany początek `day`→`[Mon]day`, urwany koniec `Mon`→`Mon[day]`, litera w środku `Wenesday`→`We[d]nesday`) **albo obu końców naraz** (wpisany środek słowa `dnes`→`[We]dnes[day]`),
-- wpisany fragment ma ≥ 2 znaki i (≥ 3 znaki albo ≥ 50% długości wariantu) — pojedyncza litera (`M`) i zbyt krótkie fragmenty (`We` na 9 liter) nie dostają podpowiedzi,
-- braki rozproszone — dwie i więcej dziur w środku (`Weay`, `Wdnsdy`) — pozostają poza diagnozą.
+- braki rozproszone — dwie i więcej dziur w środku (`Weay`, `Wdnsdy`) — pozostają poza diagnozą,
+- próg długości (tylko serwer, ścieżka brakujących liter): wpisany fragment ma ≥ 2 znaki i (≥ 3 znaki albo ≥ 50% długości wariantu) — pojedyncza litera (`M`) i zbyt krótkie fragmenty (`We` na 9 liter) nie dostają podpowiedzi z tej ścieżki.
+
+Konsekwencja podziału: diff może też przyjść zwykłą ścieżką literówkową (dystans ≤ progu) i wtedy UI klasyfikuje wyłącznie po kształcie segmentów, bez progu długości — np. `a` dla `at` (dystans 1 ≤ progu 1) pokaże widok jednoliniowy `a[t]`, mimo że ścieżka brakujących liter wymaga ≥ 2 znaków.
 
 Reguła dotyczy wyłącznie komunikatu: oceny Recall i pisownii pozostają `incorrect` (A16), więc jednoliniowy widok nigdy nie zalicza odpowiedzi.
 

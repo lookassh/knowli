@@ -178,7 +178,9 @@ test("literówka w pisowni pokazuje diff z pigułkami dopiero po ocenie (issue #
 
   const taskId = await currentTaskId(page);
   const target = await answerTarget(taskId);
-  const typo = target.slice(0, -2) + target.slice(-1); // usunięcie przedostatniej litery: odległość 1
+  // zamiana litery przed końcówką „-day”: odległość 1 i błędna litera w zapisie
+  // (usunięcie litery to już przypadek „brakujących liter” — widok jednoliniowy)
+  const typo = target.slice(0, -3) + "x" + target.slice(-2);
   await page.getByTestId("kid-input").fill(typo);
   await page.getByTestId("kid-submit").click();
 
@@ -191,4 +193,48 @@ test("literówka w pisowni pokazuje diff z pigułkami dopiero po ocenie (issue #
   await expect(page.getByTestId("kid-spelling-pill").first()).toBeVisible();
   // pomoc po odpowiedzi nie zwiększa liczby prób: przycisk wraca do tego zadania
   await expect(page.getByTestId("kid-next")).toHaveText(/Spróbuj jeszcze raz/);
+});
+
+test("brakujące litery bez błędnych liter pokazują jedno słowo wzorca (prefiks i środek)", async ({ page }) => {
+  test.setTimeout(240_000);
+  const parent = await parentSession(page);
+  const child = await createChild(parent, "Ola Środek", "fox");
+  const { deckId, publishedVersionId } = await createAssignedDeck(
+    parent,
+    child.id,
+    "Dni tygodnia — brakujące litery",
+    `spelling-middle-${randomUUID()}`,
+  );
+  void deckId;
+  await seedDue(child.id, publishedVersionId, 0, "recall");
+  await openLearn(page, "Ola Środek");
+  await page.getByTestId("kid-deck").first().click();
+  await page.waitForSelector('[data-testid="kid-input"]', { timeout: 30_000 });
+
+  const taskId = await currentTaskId(page);
+  const target = await answerTarget(taskId);
+  // wariant „Fri.” przy „friday” kolizjonuje z krótkim prefiksem — wydłużamy
+  const prefix = target.startsWith("fri") ? target.slice(0, 5) : target.slice(0, 3);
+  await page.getByTestId("kid-input").fill(prefix);
+  await page.getByTestId("kid-submit").click();
+
+  // jeden wiersz: bez „Twojego zapisu”, pełne słowo wzorca z pigułką braku
+  await expect(page.getByTestId("kid-feedback")).toBeVisible();
+  await expect(page.getByTestId("kid-feedback")).toContainText("Uzupełnij brakujące litery");
+  await expect(page.getByTestId("kid-spelling-diff")).toBeVisible();
+  await expect(page.getByTestId("kid-spelling-given")).toHaveCount(0);
+  await expect(page.getByTestId("kid-spelling-expected")).toBeVisible();
+  await expect(page.getByTestId("kid-spelling-pill").first()).toBeVisible();
+
+  // druga próba tego zadania: wpisany środek słowa (brak obu końców)
+  await page.getByTestId("kid-next").click();
+  await page.waitForSelector('[data-testid="kid-input"]', { timeout: 30_000 });
+  await page.getByTestId("kid-input").fill(target.slice(1, -1));
+  await page.getByTestId("kid-submit").click();
+
+  await expect(page.getByTestId("kid-feedback")).toContainText("Uzupełnij brakujące litery");
+  await expect(page.getByTestId("kid-spelling-given")).toHaveCount(0);
+  await expect(page.getByTestId("kid-spelling-expected")).toBeVisible();
+  // pigułki na obu końcach słowa wzorca
+  await expect(page.getByTestId("kid-spelling-pill")).toHaveCount(2);
 });
