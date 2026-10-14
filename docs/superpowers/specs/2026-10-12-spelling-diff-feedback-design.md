@@ -86,6 +86,19 @@ const SpellingDiffSchema = z.object({
 - Komunikaty w `packages/contracts/src/messages.ts` (polskie, krótkie, czytelne na małym ekranie): tekst główny `spelling_hint`, wariant z wskazówką kapitalizacyjną, etykiety wierszy.
 - Mobile first, duże litery, brak modalu.
 
+### Widok jednoliniowy „Prawie! Uzupełnij brakujące litery” (PR #61, wyrównane 2026-10-14)
+
+Gdy zapis dziecka **nie zawiera żadnej błędnej litery**, a odpowiedź różni się od wariantu wyłącznie brakującymi literami, zamiast dwóch wierszy pokazujemy jedno pełne słowo wzorca z zielonymi pigułkami na brakujących fragmentach (bez wiersza „Twój zapis” — nie ma czego poprawiać, tylko uzupełnić). Komunikat: „Prawie! Uzupełnij brakujące litery:”; opis dla czytników: „Poprawnie: {expected}.”. `isIncompleteWord` ma pierwszeństwo przed wskazówką kapitalizacyjną (prefiks małą literą nie wyświetla mylącego komunikatu o wielkiej literze).
+
+Kwalifikacja (serwer: `isLetterOmissionOnly` w `spelling-diff.ts`, UI: `isIncompleteWord`):
+
+- zapis dziecka składa się wyłącznie z segmentów `plain` (żadnej błędnej, nadmiarowej ani przestawionej litery),
+- brakuje **co najwyżej jednej dziury gdziekolwiek** (urwany początek `day`→`[Mon]day`, urwany koniec `Mon`→`Mon[day]`, litera w środku `Wenesday`→`We[d]nesday`) **albo obu końców naraz** (wpisany środek słowa `dnes`→`[We]dnes[day]`),
+- wpisany fragment ma ≥ 2 znaki i (≥ 3 znaki albo ≥ 50% długości wariantu) — pojedyncza litera (`M`) i zbyt krótkie fragmenty (`We` na 9 liter) nie dostają podpowiedzi,
+- braki rozproszone — dwie i więcej dziur w środku (`Weay`, `Wdnsdy`) — pozostają poza diagnozą.
+
+Reguła dotyczy wyłącznie komunikatu: oceny Recall i pisownii pozostają `incorrect` (A16), więc jednoliniowy widok nigdy nie zalicza odpowiedzi.
+
 ## Testy
 
 - **Unit — `spelling-diff.test.ts`:** przypadki operacji (brakująca, nadmiarowa, zamieniona, przestawiona); próg (≤2; ≤1 dla krótkich); wybór wariantu z remisem → canonical; dopasowanie dokładne wariantu → brak diffu; liczenie bez rozróżnienia wielkości liter; flaga `capitalizationHint`; segmentacja (sklejanie sąsiednich).
