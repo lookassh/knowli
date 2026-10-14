@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { englishGrammarSubject } from "../../domain/lessons/subjects/english-grammar/module";
 import { validatePool } from "../../domain/lessons/pool-validation";
 import type { LessonTopic } from "../../domain/lessons/types";
-import { isWellShapedRawExercise, toExerciseDraft } from "./lesson-drafts";
+import { collectBatchExerciseMetadata, filterExercisesToRequestedObjective, isWellShapedRawExercise, summarizeLessonPoolValidation, toExerciseDraft } from "./lesson-drafts";
 
 const OBJECTIVE_ID = "english_grammar.present_simple.third_person_s";
 
@@ -119,6 +119,34 @@ describe("P2-7: strażnik kształtu surowego ćwiczenia (isWellShapedRawExercise
     const wellShaped = raws.filter(isWellShapedRawExercise).map(toExerciseDraft);
     expect(wellShaped).toHaveLength(1);
     expect(validatePool(wellShaped, englishGrammarSubject, presentSimpleTopic()).valid.map((ex) => ex.answer)).toEqual(["plays"]);
+  });
+
+  it("collects metadata from a batch containing top-level null without throwing", () => {
+    expect(() => collectBatchExerciseMetadata([validChoiceRaw("plays"), null], true)).not.toThrow();
+    expect(collectBatchExerciseMetadata([validChoiceRaw("plays"), null], true).answers).toEqual(["plays"]);
+  });
+
+  it("summarizes rejection rules and counts without logging answer text", () => {
+    const summary = summarizeLessonPoolValidation({
+      rawCount: 2,
+      shapeRejected: 0,
+      outOfScopeCount: 0,
+      rejectedExerciseCount: 1,
+      rejectedErrors: ["lesson_gap: answer secret-child-text does not match", "lesson_gap: answer other-secret does not match"],
+      duplicateCount: 0,
+      validCount: 0,
+    });
+    expect(summary).toContain("lesson_gap×2");
+    expect(summary).toContain("odrzucone=1");
+    expect(summary).not.toContain("secret-child-text");
+    expect(summary).not.toContain("other-secret");
+  });
+
+  it("rejects a well-shaped exercise returned for a different objective in this batch", () => {
+    const foreign = { ...validChoiceRaw("plays"), objectiveId: "english_grammar.present_simple.negative" };
+    const result = filterExercisesToRequestedObjective([validChoiceRaw("watches"), foreign, null], OBJECTIVE_ID);
+    expect(result.outOfScopeCount).toBe(1);
+    expect(result.exercises).toEqual([validChoiceRaw("watches"), null]);
   });
 
   it("GREEN: po odfiltrowaniu strażnikiem validatePool nie rzuca i zwraca poprawne", () => {

@@ -41,7 +41,7 @@ import {
   supersedeLessonRuns,
 } from "../generation";
 import { classifyLessonGenerationFailure, lessonRetryDelayMs } from "./lesson-generation-errors";
-import { LessonGenerationCancelledError, withLessonGenerationControl } from "./lesson-generation-control";
+import { assertLessonGenerationFinalizationAllowed, LessonGenerationCancelledError, withLessonGenerationControl } from "./lesson-generation-control";
 import { DEFAULT_LESSON_GENERATION_POLICY } from "./lesson-generation-policy";
 import { reconcileDraftAssetsTx } from "../media-reconciliation";
 
@@ -82,11 +82,6 @@ interface LessonRunInput {
   instruction?: string;
   /** Dogenerowanie jednego celu: nowe ćwiczenia dopisujemy, nie czyścimy. */
   regenerate?: { objectiveId: string; count: number; existingAnswers: string[]; existingExercises?: LessonExerciseStimulus[] };
-}
-
-/** Skraca tekst do bezpiecznej długości linii logu (diagnostyka workera). */
-function truncateForLog(text: string, max = 200): string {
-  return text.length <= max ? text : `${text.slice(0, max)}…`;
 }
 
 function requireSubject(services: Services, subjectId: string): SubjectModule {
@@ -294,6 +289,58 @@ export function isWellShapedRawExercise(raw: unknown): boolean {
   return rawExerciseShapeSchema.safeParse(raw).success;
 }
 
+export function collectBatchExerciseMetadata(exercises: unknown[], deduplicateByExercise: boolean): {
+  answers: string[];
+  exerciseRecords: LessonExerciseStimulus[];
+} {
+  const answers: string[] = [];
+  const exerciseRecords: LessonExerciseStimulus[] = [];
+  for (const exercise of exercises) {
+    if (!isWellShapedRawExercise(exercise)) continue;
+    const answer = (exercise as { answer?: unknown }).answer;
+    if (typeof answer === "string" && answer.trim() !== "") answers.push(answer);
+    if (deduplicateByExercise) {
+      exerciseRecords.push(lessonExerciseStimulusRecord(toExerciseDraft(exercise)));
+    }
+  }
+  return { answers, exerciseRecords };
+}
+
+export function filterExercisesToRequestedObjective(exercises: unknown[], objectiveId: string): {
+  exercises: unknown[];
+  outOfScopeCount: number;
+} {
+  const accepted: unknown[] = [];
+  let outOfScopeCount = 0;
+  for (const exercise of exercises) {
+    const returnedObjective = exercise && typeof exercise === "object"
+      ? (exercise as { objectiveId?: unknown }).objectiveId
+      : undefined;
+    if (typeof returnedObjective === "string" && returnedObjective !== objectiveId) outOfScopeCount += 1;
+    else accepted.push(exercise);
+  }
+  return { exercises: accepted, outOfScopeCount };
+}
+
+export function summarizeLessonPoolValidation(input: {
+  rawCount: number;
+  shapeRejected: number;
+  outOfScopeCount: number;
+  rejectedExerciseCount: number;
+  rejectedErrors: readonly string[];
+  duplicateCount: number;
+  validCount: number;
+}): string {
+  const ruleCounts = new Map<string, number>();
+  for (const error of input.rejectedErrors) {
+    const rule = /^([a-z][a-z0-9_]*):/i.exec(error)?.[1] ?? "other";
+    ruleCounts.set(rule, (ruleCounts.get(rule) ?? 0) + 1);
+  }
+  const reasons = [...ruleCounts.entries()].map(([rule, count]) => `${rule}×${count}`).join(", ") || "-";
+  const rejected = input.shapeRejected + input.outOfScopeCount + input.rejectedExerciseCount + input.duplicateCount;
+  return `surowe=${input.rawCount} zły_kształt=${input.shapeRejected} obcy_cel=${input.outOfScopeCount} odrzucone=${rejected} ważne=${input.validCount}; reguły: ${reasons}`;
+}
+
 /** Surowy obiekt z portu → `LessonExerciseDraft` (walidacja kształtu w domenie). */
 export function toExerciseDraft(raw: unknown): LessonExerciseDraft {
   const r = (raw ?? {}) as Record<string, unknown>;
@@ -476,6 +523,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
   if (attempts === null) {
     return;
   }
+  const runStartedAtMs = Date.now();
   const markCurrentRun = async (db: Executor, state: "failed" | "succeeded" | "superseded" | "queued", errorCode: string | null, nextAttemptAt: Date | null = null) => {
     const result = await db.update(generationRuns).set({ state, errorCode, nextAttemptAt, finishedAt: state === "queued" ? null : services.clock.now() })
       .where(and(eq(generationRuns.id, runId), eq(generationRuns.state, "running"), eq(generationRuns.attempts, attempts), eq(generationRuns.expectedEditNumber, run.expectedEditNumber!)));
@@ -539,6 +587,8 @@ export async function executeLessonGeneration(services: Services, runId: string,
       }));
 
   const rawExercises: unknown[] = [];
+  let rawExerciseCount = 0;
+  let outOfScopeCount = 0;
   // Odpowiedzi kanoniczne z wcześniejszych partii tej samej generacji: późniejsze
   // cele dostają je jako `existingAnswers` ("Do NOT repeat…"), więc pełna
   // generacja wielocelowa też omija duplikaty między partiami — walidacja fazy 2
@@ -547,6 +597,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
   const earlierExercises: LessonExerciseStimulus[] = [];
   const examples: Record<string, string[]> = {};
   const executionPolicy = deps.lessonExecution ?? DEFAULT_LESSON_GENERATION_POLICY;
+  const runDeadlineAtMs = runStartedAtMs + executionPolicy.runTimeoutMs;
   console.log(
     `[lesson] generacja run=${runId} deck=${input.deckId} cele=${batches.length} próba=${attempts} pula=${input.poolSize} model=${deps.llm.model}`,
   );
@@ -566,6 +617,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
     }, async (control) => {
     for (const batch of batches) {
       await control.assertCurrent();
+      const batchStartedAtMs = Date.now();
       const poolInput = buildPoolInput(
         subject,
         topic,
@@ -583,16 +635,14 @@ export async function executeLessonGeneration(services: Services, runId: string,
       );
       const result = await control.call((signal) => deps.llm.generateLessonPool(poolInput, signal));
       await control.assertCurrent();
-      for (const ex of result.exercises) {
-        rawExercises.push(ex);
-        const answer = (ex as { answer?: unknown }).answer;
-        if (typeof answer === "string" && answer.trim() !== "") {
-          earlierAnswers.push(answer);
-        }
-        if (subject.poolDeduplication === "exercise" && isWellShapedRawExercise(ex)) {
-          earlierExercises.push(lessonExerciseStimulusRecord(toExerciseDraft(ex)));
-        }
-      }
+      console.log(`[lesson] run=${runId} partia=${batch.objectiveId} durationMs=${Date.now() - batchStartedAtMs}`);
+      rawExerciseCount += result.exercises.length;
+      const scoped = filterExercisesToRequestedObjective(result.exercises, batch.objectiveId);
+      outOfScopeCount += scoped.outOfScopeCount;
+      rawExercises.push(...scoped.exercises);
+      const metadata = collectBatchExerciseMetadata(scoped.exercises, subject.poolDeduplication === "exercise");
+      earlierAnswers.push(...metadata.answers);
+      earlierExercises.push(...metadata.exerciseRecords);
       const rawExamples = result.examples;
       for (const objectiveId of [batch.objectiveId]) {
         const list = rawExamples && typeof rawExamples === "object" ? rawExamples[objectiveId] : undefined;
@@ -616,6 +666,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
     } else {
       const delay = lessonRetryDelayMs(attempts, failure.retryAfterMs, Math.random);
       const nextAttemptAt = new Date(services.clock.now().getTime() + delay);
+      console.log(`[lesson] run=${runId} retryDelayMs=${delay} nextAttemptAt=${nextAttemptAt.toISOString()}`);
       await markCurrentRun(services.db, "queued", failure.errorCode, nextAttemptAt);
     }
     return;
@@ -629,6 +680,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
   // Całość walidacji + zapisu w terminalnym try/catch: nawet nieprzewidziany
   // wyjątek rozlicza run (failed/validation), nie zostawia go w stanie running.
   try {
+    assertLessonGenerationFinalizationAllowed(runDeadlineAtMs, options.signal);
     const wellShaped = rawExercises.filter(isWellShapedRawExercise);
     const shapeRejected = rawExercises.length - wellShaped.length;
     const drafts = wellShaped.map(toExerciseDraft);
@@ -651,22 +703,18 @@ export async function executeLessonGeneration(services: Services, runId: string,
         uniqueValid.push(ex);
       }
     }
-    const rejectedCount = shapeRejected + rejected.length + dupAgainstExisting;
+    const rejectedCount = shapeRejected + outOfScopeCount + rejected.length + dupAgainstExisting;
 
-    // Podsumowanie walidacji dla diagnostyki w logach workera: liczby plus
-    // powody odrzuceń (reguła = prefiks przed „:”), ograniczone do sample,
-    // by nie zalewać logu odpowiedziami modelu.
-    const ruleCounts = new Map<string, number>();
-    for (const rejection of rejected) {
-      for (const error of rejection.errors) {
-        const rule = error.split(":")[0] ?? error;
-        ruleCounts.set(rule, (ruleCounts.get(rule) ?? 0) + 1);
-      }
-    }
-    const reasons = [...ruleCounts.entries()].map(([rule, count]) => `${rule}×${count}`).join(", ");
-    const samples = [...new Set(rejected.flatMap((r) => r.errors))].slice(0, 3).map((e) => truncateForLog(e));
     console.log(
-      `[lesson] run=${runId} walidacja puli: surowe=${rawExercises.length} zły_kształt=${shapeRejected} odrzucone=${rejected.length + dupAgainstExisting} ważne=${uniqueValid.length}; reguły: ${reasons || "-"}; przykłady: ${samples.join(" | ") || "-"}`,
+      `[lesson] run=${runId} walidacja puli: ${summarizeLessonPoolValidation({
+        rawCount: rawExerciseCount,
+        shapeRejected,
+        outOfScopeCount,
+        rejectedExerciseCount: rejected.length,
+        rejectedErrors: rejected.flatMap((item) => item.errors),
+        duplicateCount: dupAgainstExisting,
+        validCount: uniqueValid.length,
+      })}`,
     );
 
     if (uniqueValid.length === 0) {
@@ -680,6 +728,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
       )[0];
       const current = (await tx.select().from(generationRuns).where(eq(generationRuns.id, runId)).for("update"))[0];
       if (!current || current.state !== "running" || current.attempts !== attempts || current.expectedEditNumber !== run.expectedEditNumber) return;
+      assertLessonGenerationFinalizationAllowed(runDeadlineAtMs, options.signal);
       if (!version) {
         await markCurrentRun(tx, "failed", "deck_version_gone");
         return;
@@ -716,14 +765,17 @@ export async function executeLessonGeneration(services: Services, runId: string,
       }
       await markCurrentRun(tx, "succeeded", null);
     });
+    console.log(`[lesson] run=${runId} zakończony durationMs=${Date.now() - runStartedAtMs}`);
   } catch (error) {
     // Nieprzewidziany wyjątek walidacji/zapisu NIE może zostawić runu „running”.
     // Rozliczamy terminalnie: wyczerpane próby → attempts_exhausted, inaczej
     // validation (błąd kształtu/treści puli, nie błąd przejściowy providera).
-    console.error(
-      `[lesson] run=${runId} nieprzewidziany błąd walidacji/zapisu: ${truncateForLog(String((error as { message?: string })?.message ?? error))}`,
-    );
-    if (attempts >= MAX_AUTOMATIC_ATTEMPTS) {
+    console.error(`[lesson] run=${runId} nieprzewidziany błąd walidacji/zapisu: kod=validation_or_write`);
+    if (error instanceof LessonGenerationCancelledError) {
+      if (error.reason === "shutdown") await markCurrentRun(services.db, "queued", null, null);
+    } else if (classifyLessonGenerationFailure(error).errorCode === "provider_timeout") {
+      await markCurrentRun(services.db, "failed", "provider_timeout");
+    } else if (attempts >= MAX_AUTOMATIC_ATTEMPTS) {
       await markCurrentRun(services.db, "failed", "attempts_exhausted");
     } else {
       await markCurrentRun(services.db, "failed", "validation");

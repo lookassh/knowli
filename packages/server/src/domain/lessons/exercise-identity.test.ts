@@ -35,4 +35,14 @@ describe("lessonExerciseIdentity", () => {
       { id: "x", text: "Yes" }, { id: "y", text: "No" },
     ] }));
   });
+
+  it("uses the displayed question as the short-answer stimulus before a legacy stem", () => {
+    const first = exercise({
+      exerciseType: "lesson_short_answer",
+      prompt: "Does she play tennis?",
+      stem: "Legacy stem A",
+    });
+    const second = { ...first, stem: "Legacy stem B" };
+    expect(lessonExerciseIdentity(first)).toBe(lessonExerciseIdentity(second));
+  });
 });

@@ -19,6 +19,8 @@ export function lessonExerciseStimulus(exercise: LessonExerciseDraft): string {
       return normalizeStimulus(exercise.statement ?? "");
     case "lesson_open_answer":
       return normalizeStimulus(exercise.prompt ?? "");
+    case "lesson_short_answer":
+      return normalizeStimulus(exercise.prompt ?? exercise.stem ?? "");
     case "lesson_order":
       return JSON.stringify([...(exercise.items ?? []).map((item) => normalizeStimulus(item.text))].sort());
     case "lesson_notice":

@@ -42,7 +42,7 @@ export function createOpenAiImageProvider(options: OpenAiImageOptions): ImagePro
         signal,
       });
       if (!response.ok) {
-        throw new Error(`openai images failed: ${response.status} ${await response.text()}`);
+        throw new Error(`provider_http_${response.status}`);
       }
       const payload = (await response.json()) as {
         data?: Array<{ b64_json?: string }>;

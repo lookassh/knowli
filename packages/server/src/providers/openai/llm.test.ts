@@ -80,6 +80,19 @@ describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", ()
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
+  it("respects explicit rate-limit code when message mentions token quota", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ error: {
+      code: "rate_limit_exceeded",
+      message: "Token quota per minute exceeded",
+    } }), { status: 429, headers: { "retry-after": "60" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(createOpenAiLlmProvider({ apiKey: "k" }).generateLessonPool(INPUT)).rejects.toMatchObject({
+      kind: "rate_limit",
+      status: 429,
+      retryAfterMs: 60_000,
+    });
+  });
+
   it.each([
     [401, "configuration"],
     [408, "transient"],
@@ -284,10 +297,25 @@ describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", ()
     });
     const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string) as { messages: Array<{ role: string; content: string }> };
     const system = body.messages.find((message) => message.role === "system")!.content;
-    expect(system).toContain("Do not repeat an existing exercise with the same objective, type, and functional stimulus");
+    expect(system).toContain("Do not repeat any existing exercise with the same objective, type, and functional stimulus");
     expect(system).toContain("___ she play tennis?");
     expect(system).toContain("Reusing a short canonical answer such as do, does, don't, or doesn't");
     expect(system).not.toContain("Canonical answers must be UNIQUE within this response");
+  });
+
+  it("requires distinct exercise stimuli inside the first batch too", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => okResponse({ exercises: [], examples: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAiLlmProvider({ apiKey: "k" });
+    await provider.generateLessonPool({
+      ...INPUT,
+      deduplication: "exercise",
+      existingExercises: [],
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string) as { messages: Array<{ role: string; content: string }> };
+    const system = body.messages.find((message) => message.role === "system")!.content;
+    expect(system).toContain("Within this response, never repeat an exercise with the same objective, type, and functional stimulus");
+    expect(system).toContain("Reusing a short canonical answer such as do, does, don't, or doesn't with a different valid exercise is allowed");
   });
 
   it("translationUsesPolishStimulusInProviderRequest", async () => {

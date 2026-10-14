@@ -44,11 +44,18 @@ async function enterParent(page: Page): Promise<void> {
   await expect(page.getByTestId("tab-decks")).toBeVisible();
 }
 
-async function createAssignedLesson(page: Page): Promise<{ childId: string; deckId: string; versionId: string }> {
+async function createAssignedLesson(
+  page: Page,
+  options: { objectiveIds?: readonly string[]; suffix?: string } = {},
+): Promise<{ childId: string; deckId: string; versionId: string; childName: string; lessonTitle: string }> {
+  const objectiveIds = options.objectiveIds ?? [OBJECTIVE_ID];
+  const exampleObjectiveId = objectiveIds.includes(OBJECTIVE_ID) ? OBJECTIVE_ID : objectiveIds[0]!;
+  const childName = options.suffix ? `Obieg wielocelowy ${options.suffix}` : CHILD_NAME;
+  const lessonTitle = options.suffix ? `Present Simple wielocelowy ${options.suffix}` : LESSON_TITLE;
   await page.getByTestId("tab-children").click();
-  await page.getByTestId("child-name").fill(CHILD_NAME);
+  await page.getByTestId("child-name").fill(childName);
   await page.getByTestId("child-add").click();
-  const childRow = page.locator('[data-testid^="child-row-"]').filter({ hasText: CHILD_NAME });
+  const childRow = page.locator('[data-testid^="child-row-"]').filter({ hasText: childName });
   await expect(childRow).toHaveCount(1);
   const childHref = await childRow.getByTestId("child-learn-link").getAttribute("href");
   const childId = childHref?.match(/\/kids\/([0-9a-f-]{36})\//)?.[1];
@@ -56,17 +63,18 @@ async function createAssignedLesson(page: Page): Promise<{ childId: string; deck
 
   await page.getByTestId("tab-decks").click();
   await page.getByTestId("new-lesson-submit").click();
-  const objective = page.getByTestId(`lesson-objective-${OBJECTIVE_ID}`);
+  const objective = page.getByTestId(`lesson-objective-${objectiveIds[0]}`);
   await expect(objective).toBeVisible();
   const objectives = page.locator('[data-testid^="lesson-objective-"]');
   for (let index = 0; index < await objectives.count(); index += 1) {
     const checkbox = objectives.nth(index);
-    await checkbox.setChecked(await checkbox.getAttribute("data-testid") === `lesson-objective-${OBJECTIVE_ID}`);
+    const id = (await checkbox.getAttribute("data-testid"))!.replace("lesson-objective-", "");
+    await checkbox.setChecked(objectiveIds.includes(id));
   }
   await page.getByTestId("lesson-material").fill(
     "He plays football every day. She watches television in the evening. They study English on Monday and Tuesday.",
   );
-  await page.getByTestId("lesson-pool-size").fill("20");
+  await page.getByTestId("lesson-pool-size").fill(objectiveIds.length > 1 ? "60" : "20");
   const createResponse = page.waitForResponse((response) =>
     response.request().method() === "POST" && new URL(response.url()).pathname === "/api/v1/parent/lessons",
   );
@@ -76,23 +84,23 @@ async function createAssignedLesson(page: Page): Promise<{ childId: string; deck
   await expect(page.getByTestId("lesson-editor")).toBeVisible();
   await expect(page.locator('[data-testid^="exercise-"]').first()).toBeVisible({ timeout: 120_000 });
   await expect(page.getByTestId("generation-banner")).toBeHidden({ timeout: 120_000 });
-  await expect(page.locator(`[data-testid="examples-${OBJECTIVE_ID}"]`)).toBeVisible();
+  await expect(page.locator(`[data-testid="examples-${exampleObjectiveId}"]`)).toBeVisible();
   await expect(page.locator(`[data-testid^="exercise-audio-state-"]`, { hasText: "generowanie" })).toHaveCount(0, { timeout: 120_000 });
-  await page.getByTestId("editor-title").fill(LESSON_TITLE);
+  await page.getByTestId("editor-title").fill(lessonTitle);
 
-  const example = page.getByTestId(`example-line-${OBJECTIVE_ID}-0`);
+  const example = page.getByTestId(`example-line-${exampleObjectiveId}-0`);
   await expect(example).toBeVisible();
   await example.fill(APPROVED_EXAMPLE);
-  await expect(page.getByTestId(`lesson-card-preview-${OBJECTIVE_ID}`).last()).toContainText(APPROVED_EXAMPLE);
+  await expect(page.getByTestId(`lesson-card-preview-${exampleObjectiveId}`).last()).toContainText(APPROVED_EXAMPLE);
   const saveDraft = page.waitForResponse((response) =>
     response.request().method() === "PATCH" && /\/api\/v1\/parent\/lesson-drafts\//.test(new URL(response.url()).pathname),
   );
   await page.getByTestId("save-lesson").click();
   expect((await saveDraft).ok()).toBe(true);
-  await expect(page.getByTestId("editor-title")).toHaveValue(LESSON_TITLE);
+  await expect(page.getByTestId("editor-title")).toHaveValue(lessonTitle);
 
   const savedDeck = LessonDeckDtoSchema.parse(await (await page.request.get(`/api/v1/parent/lessons/${deckId}`)).json());
-  expect(savedDeck.draft?.examples[OBJECTIVE_ID]).toEqual([APPROVED_EXAMPLE]);
+  expect(savedDeck.draft?.examples[exampleObjectiveId]).toEqual([APPROVED_EXAMPLE]);
   expect(savedDeck.draft?.assets).toEqual([]);
   await expect(page.locator('[data-testid^="exercise-audio-state-"]')).toHaveCount(0);
   const deckList = (await (await page.request.get("/api/v1/parent/decks")).json() as unknown[]).map((row) => DeckSummaryDtoSchema.parse(row));
@@ -102,7 +110,7 @@ async function createAssignedLesson(page: Page): Promise<{ childId: string; deck
   await expect(page.getByTestId("lesson-editor")).toBeHidden();
   await page.getByTestId(`deck-row-${deckRowIndex}`).click();
   await expect(page.getByTestId("lesson-editor")).toBeVisible();
-  await expect(page.getByTestId(`example-line-${OBJECTIVE_ID}-0`)).toHaveValue(APPROVED_EXAMPLE);
+  await expect(page.getByTestId(`example-line-${exampleObjectiveId}-0`)).toHaveValue(APPROVED_EXAMPLE);
   await expect(page.getByTestId("publish-lesson")).toBeEnabled({ timeout: 120_000 });
   await expect(page.locator(`[data-testid^="exercise-audio-state-"]`, { hasText: "generowanie" })).toHaveCount(0, { timeout: 120_000 });
 
@@ -118,7 +126,7 @@ async function createAssignedLesson(page: Page): Promise<{ childId: string; deck
   const versionId = publishedDeck.published?.id;
   expect(versionId).toBeTruthy();
 
-  const childAssignment = page.locator('[data-testid^="assign-row-"]').filter({ hasText: CHILD_NAME });
+  const childAssignment = page.locator('[data-testid^="assign-row-"]').filter({ hasText: childName });
   await expect(childAssignment).toBeVisible();
   const assignment = page.waitForResponse((response) =>
     response.request().method() === "PUT" && new URL(response.url()).pathname === `/api/v1/parent/assignments/${childId}/${deckId}`,
@@ -126,7 +134,7 @@ async function createAssignedLesson(page: Page): Promise<{ childId: string; deck
   await childAssignment.locator('[data-testid^="assign-submit-"]').click();
   expect((await assignment).status()).toBe(204);
 
-  return { childId: childId!, deckId, versionId: versionId! };
+  return { childId: childId!, deckId, versionId: versionId!, childName, lessonTitle };
 }
 
 async function openKidLesson(page: Page, childId: string, deckId: string): Promise<ReturnType<typeof SessionDtoSchema.parse>> {
@@ -425,6 +433,96 @@ test("approved lesson survives reload and support without duplicate or independe
     await expect(page.getByTestId(`progress-status-${OBJECTIVE_ID}`)).toHaveText("W nauce");
     const persisted = await (await page.request.get(`/api/v1/parent/lessons/${deckId}/progress?childId=${childId}`)).json() as unknown[];
     expect(persisted.map((row) => ObjectiveProgressDtoSchema.parse(row).objectiveId)).toContain(OBJECTIVE_ID);
+  } finally {
+    await kidContext.close();
+  }
+});
+
+test("question, negative and short-answer objectives complete a no-audio child and parent flow", async ({ page, browser }) => {
+  test.setTimeout(240_000);
+  const suffix = randomUUID().slice(0, 8);
+  const objectiveIds = [
+    "english_grammar.present_simple.question",
+    "english_grammar.present_simple.negative",
+    "english_grammar.present_simple.short_answers",
+  ];
+  await enterParent(page);
+  const { childId, deckId, versionId, lessonTitle } = await createAssignedLesson(page, { objectiveIds, suffix });
+  const published = LessonDeckDtoSchema.parse(await (await page.request.get(`/api/v1/parent/lessons/${deckId}`)).json()).published!;
+  expect(published.objectiveIds).toEqual(expect.arrayContaining(objectiveIds));
+  expect(published.assets).toEqual([]);
+  for (const objectiveId of objectiveIds) {
+    expect(published.examples[objectiveId]?.length).toBeGreaterThan(0);
+    expect(published.exercises.filter((exercise) => exercise.objectiveId === objectiveId).length).toBeGreaterThanOrEqual(9);
+  }
+  expect(published.exercises.some((exercise) => exercise.exerciseType === "lesson_open_answer" && exercise.prompt?.startsWith("Przetłumacz"))).toBe(true);
+
+  const kidContext = await browser.newContext({ locale: "pl-PL", viewport: { width: 390, height: 844 } });
+  try {
+    const kid = await kidContext.newPage();
+    taskResponses = captureTaskResponses(kid);
+    const started = await openKidLesson(kid, childId, deckId);
+    expect(started.deckVersionId).toBe(versionId);
+    let task = await currentTask(kid);
+    let answered = false;
+    let assessedObjectiveId: string | null = null;
+    for (let step = 0; step < 15 && !answered; step += 1) {
+      if (task.prompt.kind === "lesson_card") {
+        task = await advanceLessonCard(kid, task);
+      } else if (task.prompt.kind === "lesson_choice" || task.prompt.kind === "lesson_notice") {
+        const objectiveRows = await query<{ objective_id: string }>(
+          `select ir.payload->>'objectiveId' as objective_id
+             from learning_app.session_tasks st
+             join learning_app.item_revisions ir on ir.id = st.item_revision_id
+            where st.id = $1`,
+          [task.taskId],
+        );
+        expect(objectiveRows).toHaveLength(1);
+        assessedObjectiveId = objectiveRows[0]!.objective_id;
+        const { attempt } = await answerGuided(kid, task);
+        expect(attempt.taskState).toBe("answered");
+        const assessment = await query<{ outcome: string }>(
+          "select outcome from learning_app.assessments where attempt_id = $1 and skill = 'objective'",
+          [attempt.attemptId],
+        );
+        expect(assessment).toEqual([{ outcome: "correct" }]);
+        answered = true;
+      } else {
+        throw new Error(`Nieoczekiwany typ pierwszego ćwiczenia prowadzonego: ${task.prompt.kind}`);
+      }
+      if (!answered) task = await currentTask(kid);
+    }
+    expect(answered).toBe(true);
+    expect(objectiveIds).toContain(assessedObjectiveId);
+    await expect(kid.getByTestId("kid-lesson-listen")).toHaveCount(0);
+
+    const afterAnswer = await query<{ attempts: string }>(
+      "select count(*)::text as attempts from learning_app.attempts where task_id in (select id from learning_app.session_tasks where session_id = $1)",
+      [started.sessionId],
+    );
+    expect(Number(afterAnswer[0]!.attempts)).toBe(1);
+    await kid.reload();
+    const resume = kid.waitForResponse((response) =>
+      response.request().method() === "POST" && /\/api\/v1\/kid\/sessions$/.test(new URL(response.url()).pathname),
+    );
+    await kid.locator(`[data-testid="kid-deck-card"][data-deck-id="${deckId}"]`).getByTestId("kid-deck").click();
+    expect(SessionDtoSchema.parse(await (await resume).json())).toMatchObject({ sessionId: started.sessionId, resumed: true });
+    expect(Number((await query<{ attempts: string }>(
+      "select count(*)::text as attempts from learning_app.attempts where task_id in (select id from learning_app.session_tasks where session_id = $1)",
+      [started.sessionId],
+    ))[0]!.attempts)).toBe(1);
+
+    await page.getByTestId("editor-back").click();
+    await page.getByTestId("tab-decks").click();
+    const lessonRow = page.locator('[data-testid^="deck-row-"]').filter({ hasText: lessonTitle });
+    await expect(lessonRow).toBeVisible();
+    await lessonRow.click();
+    await expect(page.getByTestId("supervision-panel")).toBeVisible();
+    const selectedChild = page.getByTestId("supervision-child");
+    if (await selectedChild.inputValue() !== childId) await selectedChild.selectOption(childId);
+    const progress = (await (await page.request.get(`/api/v1/parent/lessons/${deckId}/progress?childId=${childId}`)).json() as unknown[])
+      .map((row) => ObjectiveProgressDtoSchema.parse(row));
+    expect(progress.find((row) => row.objectiveId === assessedObjectiveId)).toMatchObject({ status: "learning" });
   } finally {
     await kidContext.close();
   }

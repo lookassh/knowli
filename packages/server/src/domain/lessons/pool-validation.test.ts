@@ -627,6 +627,26 @@ describe("validatePool", () => {
     expect(result.valid.filter((exercise) => exercise.objectiveId === "english_grammar.present_simple.short_answers")).toHaveLength(4);
   });
 
+  it("keepsTheSameCorrectAuxiliaryForDifferentGrammarObjectives", () => {
+    const question = draft({
+      objectiveId: "english_grammar.present_simple.question",
+      answer: "does",
+      focus: ["does"],
+      stem: "___ she play tennis?",
+      hint: undefined,
+    });
+    const shortAnswer = draft({
+      objectiveId: "english_grammar.present_simple.short_answers",
+      answer: "does",
+      focus: ["does"],
+      stem: "Yes, he ___.",
+      hint: undefined,
+    });
+    const result = validatePool([question, shortAnswer], englishGrammarSubject, englishTopic);
+    expect(result.valid).toEqual([question, shortAnswer]);
+    expect(result.rejected).toEqual([]);
+  });
+
   it("rejectsRepeatedStimulusDespiteOptionIdsOrChangedAnswer", () => {
     const first = draft({ stem: "___ she play tennis?", answer: "does", focus: ["does"], hint: undefined,
       objectiveId: "english_grammar.present_simple.question" });

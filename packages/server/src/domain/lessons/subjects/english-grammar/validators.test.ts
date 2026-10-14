@@ -91,6 +91,8 @@ describe("validateEnglishGrammarExercise — inne typy", () => {
     ["operator does not with base verb after gap", "english_grammar.present_simple.negative", "She ___ play tennis.", "does not", "do", true],
     ["contracted operator with base verb after gap", "english_grammar.present_simple.negative", "She ___ play tennis.", "doesn't", "do", true],
     ["operator before inflected verb", "english_grammar.present_simple.negative", "She ___ plays tennis.", "does not", "do", false],
+    ["base-form objective accepts does + base verb", "english_grammar.present_simple.base_form_after_does", "___ she play tennis?", "does", "do", true],
+    ["base-form objective rejects does + inflected verb", "english_grammar.present_simple.base_form_after_does", "___ she plays tennis?", "does", "do", false],
     ["main verb supplied in gap", "english_grammar.present_simple.third_person_s", "She ___ tennis.", "plays", "play", true],
     ["operator and main verb supplied in gap", "english_grammar.present_simple.negative", "She ___ tennis.", "doesn't play", "play", true],
     ["Polish verb hint", "english_grammar.present_simple.third_person_s", "She ___ tennis.", "plays", "grać", false],
@@ -109,6 +111,18 @@ describe("validateEnglishGrammarExercise — inne typy", () => {
       focus: ["does"],
     };
     expect(validateEnglishGrammarExercise(shortAnswer, presentSimpleV1)).toEqual([]);
+  });
+
+  it.each([
+    ["operator agrees with a different subject", "___ she play tennis?", "do", "do"],
+    ["question operator must be followed by the base verb", "___ she plays tennis?", "does", "do"],
+  ])("rejects an invalid question operator despite a lexical fallback: %s", (_name, stem, answer, hint) => {
+    expect(validateEnglishGrammarExercise(contextualGap("english_grammar.present_simple.question", stem, answer, hint), presentSimpleV1)).not.toEqual([]);
+  });
+
+  it("checks question subject agreement when the optional hint is absent", () => {
+    const invalid = contextualGap("english_grammar.present_simple.question", "___ she play tennis?", "do");
+    expect(validateEnglishGrammarExercise(invalid, presentSimpleV1)).not.toEqual([]);
   });
 
   it("translationCannotUseCanonicalOrAcceptedAnswerAsStimulus", () => {

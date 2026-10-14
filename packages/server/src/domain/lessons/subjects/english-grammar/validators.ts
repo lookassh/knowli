@@ -118,18 +118,22 @@ function operatorMatchesSubject(stem: string, operator: "do" | "does"): boolean 
   return ["he", "she", "it"].includes(pronoun) ? operator === "does" : operator === "do";
 }
 
-function hasBaseVerbAfterGap(stem: string, hint: string): boolean {
+function hasBaseVerbAfterGap(stem: string, hint?: string): boolean {
   const after = normalizeTokens(stem.split("___", 2)[1] ?? "");
   if (["i", "you", "we", "they", "he", "she", "it"].includes(after[0] ?? "")) after.shift();
   const verb = after[0];
   if (!verb) return false;
-  if (hint.toLowerCase() === "do") {
+  if (hint?.toLowerCase() === "do") {
     const candidates = verb.endsWith("ies") ? [`${verb.slice(0, -3)}y`]
       : verb.endsWith("es") ? [verb.slice(0, -2)]
         : verb.endsWith("s") ? [verb.slice(0, -1)] : [];
     return !candidates.some((candidate) => candidate !== verb && presentSimpleForms(candidate).has(verb));
   }
-  return verb === hint.toLowerCase();
+  if (hint) return verb === hint.toLowerCase();
+  const candidates = verb.endsWith("ies") ? [`${verb.slice(0, -3)}y`]
+    : verb.endsWith("es") ? [verb.slice(0, -2)]
+      : verb.endsWith("s") ? [verb.slice(0, -1)] : [];
+  return !candidates.some((candidate) => candidate !== verb && presentSimpleForms(candidate).has(verb));
 }
 
 /**
@@ -147,14 +151,19 @@ export function validateEnglishGrammarExercise(
     }
   }
 
-  if (ex.exerciseType === "lesson_gap" && ex.hint !== undefined && ex.hint.trim() !== "") {
-    const infinitive = normalizeTokens(ex.hint)[0];
+  if (ex.exerciseType === "lesson_gap") {
+    const hint = ex.hint?.trim() ?? "";
+    const infinitive = hint ? normalizeTokens(hint)[0] : undefined;
     const operator = operatorAnswer(ex.answer);
+    const objective = ex.objectiveId.split(".").at(-1);
+    const hasAuxiliaryRules = objective === "question" || objective === "negative" || objective === "short_answers" || objective === "base_form_after_does";
     const operatorOnlyIsValid = operator !== null && ex.stem !== undefined &&
       objectiveAllowsOperator(ex.objectiveId, operator.negative) &&
       operatorMatchesSubject(ex.stem, operator.operator) &&
-      hasBaseVerbAfterGap(ex.stem, infinitive ?? "");
-    if (infinitive !== undefined && !operatorOnlyIsValid && !isAcceptablePresentSimpleAnswer(infinitive, ex.answer)) {
+      (objective === "short_answers" || hasBaseVerbAfterGap(ex.stem, infinitive));
+    if (operator !== null && hasAuxiliaryRules && !operatorOnlyIsValid) {
+      errors.push("lesson_gap: operator nie pasuje do celu, podmiotu lub formy czasownika");
+    } else if (infinitive !== undefined && !operatorOnlyIsValid && !isAcceptablePresentSimpleAnswer(infinitive, ex.answer)) {
       errors.push(
         `lesson_gap: odpowiedź „${ex.answer}” nie jest formą czasownika „${infinitive}” w Present Simple`,
       );

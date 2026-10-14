@@ -64,5 +64,25 @@ Plan: docs/superpowers/plans/2026-10-14-lesson-generation-reliability.md
 - Zmiana: policy 90 s request / 10 min run / 1 s poll, walidacja env (dodatnia liczba całkowita; request ≤ run), AbortSignal.any i race z abortem, aktualność runu sprawdzana okresowo i przed/po requestcie. Provider ignorujący sygnał nie blokuje wykonania. Timeout kończy run jako provider_timeout bez auto-retry; shutdown (API options) oddaje aktualny run do queued, zachowując attempts; stale run pozostaje superseded.
 - Integracyjne bariery edycji rodzica i shutdown dodane do `lesson-generation.test.ts`; testy nie mogą się uruchomić bez Docker. `runDueGenerationWork` nie przekazuje jeszcze sygnału shutdown — to część Task 7.
 - GREEN: targeted 5 plików / 43 testy PASS; typecheck PASS; diffcheck PASS. Do testów nie użyto prawdziwego providera; wszystkie fake/sygnały lokalne.
-- Dokumentacja/env: `.env.example`, `docs/provider-config.md`, `docs/architecture.md`. TTS wcześniej zatwierdzony pozostaje osobnym wymaganiem; należy zintegrować na tej gałęzi przed końcowym review.
-- Commit do zapisania `fix(lessons): bound generation and cancel stale executions`; zakres od `8333fe1`.
+- Dokumentacja/env: `.env.example`, `docs/provider-config.md`, `docs/architecture.md`. Po akceptacji planu właściciel potwierdził włączenie do tej gałęzi wyłączenia TTS dla lekcji gramatycznych.
+- Commit: `a417297` (`fix(lessons): bound generation and cancel stale executions`), zakres od `8333fe1`.
+
+## Task 7 — implementacja i lokalne testy zakończone
+- Implementacja: worker przekazuje sygnał shutdown, ma dwa aktywne sloty, uzupełnia wolny slot także gdy poprzednia praca nadal trwa, filtruje seen/active przed LIMIT i ogranicza concurrency mediów. Długi postęp odświeża health. Test fake jest teraz unikalny, więc wspólne cele nie są sztucznie odrzucane przez identyczne bodźce.
+- RED/GREEN: testy regresyjne kolejki, aktywnego zadania, nowej pracy w czasie oczekiwania, progresu health i fake→walidator przechodzą. Drugi review zgłosił też scope batcha, bezpieczne logi, identity krótkich odpowiedzi i błąd odmowy 429; poprawiono te punkty wraz z testami RED/GREEN zapisanymi w testach jednostkowych.
+- Logowanie mediów wypisuje teraz kod klasyfikacji zamiast surowego komunikatu providera. Lesson validation loguje wyłącznie liczniki/kody reguł, bez przykładowej treści.
+- Pomiar po poprawie fake+walidatora (Node 22.19.0, materiał i 3/4/2): 1 cel 1 call, 6 przyjętych/3 odrzucone; 3 cele 3 calle, 18/9; 7 celów 7 calli, 42/21; czas 0.96–4.31 ms. Pomiar sztucznego providera, nie prognoza czasu LLM.
+- Ograniczenie: `tests/integration/generation.test.ts` nie wystartował bez Docker. Pełne testy E2E ponownie zatrzymały się przed Playwright na braku `dockerDesktopLinuxEngine`.
+
+## Task 8 — lokalna akceptacja, niezależne review w toku
+- Dodano E2E generacji trzech celów Present Simple (`question`, `negative`, `short_answers`), polskich poleceń, kompletności przykładów oraz braku zasobów audio. Istniejący real-flow pokrywa naukę bez mikrofonu/głośnika, reload i nadzór rodzica; istniejący parent E2E obejmuje konflikt wersji dwóch okien.
+- Poprawiono integracyjne oczekiwania: kolejne partie gramatyczne przekazują bodźce do deduplikacji ćwiczeń, a test top-upu sprawdza tożsamości ćwiczeń, nie unikalność odpowiedzi. Fake kontynuuje indeks bodźców w top-upie. Jednostkowa regresja potwierdza wspólną poprawną odpowiedź `does` dla różnych celów.
+- Drugi review znalazł ryzyko zagłodzenia retry po zakończeniu pierwszej próby w zajętym pass. Klucz `seen` obejmuje identyfikator i numer próby, a wolny slot po polling interval ponownie czyta stan DB i czyści lokalne seen keys. Dodano regresje dla retry po błędzie oraz ręcznego retry resetującego licznik podczas długiego zadania.
+- Końcowa lokalna walidacja po tych zmianach: `test:unit` PASS 107 plików/1054 testy; `typecheck` PASS; `build` PASS; `test:mcp` PASS 8/8; `contracts:export-learning-overview --check` PASS; `git diff --check` PASS; lista Playwright wykrywa 10 scenariuszy w obu zmienionych plikach.
+- `test:integration` oraz `test:e2e` próbowały uruchomić się 2026-10-14; oba zatrzymały się przed testami przy próbie połączenia z Docker Linux Engine (`//./pipe/dockerDesktopLinuxEngine` nie istnieje). Nie twierdzę, że testy PostgreSQL/Playwright przeszły.
+- API → MCP → skill bez zmian kontraktu; MCP 8/8 i schemat `learning-overview` aktualny. Zmiana nadal wyłącza TTS dla lekcji gramatycznych; słownictwo zachowuje generowanie audio.
+- Drugi niezależny przegląd całego zakresu `0bb7ca4..HEAD` wraz z bieżącym diffem roboczym wykonał reviewer `gpt-6.1-sol xhigh`. PR #58 niezmieniony; dla tej gałęzi PR tworzony jest dopiero po końcowej weryfikacji.
+- Review znalazł jeszcze dwie uwagi Minor: walidacja `base_form_after_does` oraz wymóg unikalnego bodźca wewnątrz pierwszej odpowiedzi. Obie odtworzono jako RED, poprawiono i sprawdzono GREEN (testy walidatora/LLM 36/36).
+- Końcowy werdykt niezależnego review `gpt-6.1-sol xhigh`: 0 Critical, 0 Important, 0 otwartych Minor. Reviewer uwzględnił pełny zakres i zmodyfikowane E2E; nie zmieniał repozytorium.
+- Końcowa weryfikacja po review: `test:unit` PASS 107/1057, `typecheck` PASS, `build` PASS, `test:mcp` 8/8 PASS, schemat export `--check` PASS, `git diff --check` PASS. `test:integration` i `test:e2e` ponownie przerwane przed uruchomieniem testów przez brak pipe Docker Linux Engine.
+- PR i push gałęzi są nadal kolejnym krokiem końcowym planu; PR #58 pozostaje nietknięty, merge nieautoryzowany.

@@ -35,7 +35,7 @@ export function createOpenAiTtsProvider(options: OpenAiTtsOptions): TtsProvider 
         signal,
       });
       if (!response.ok) {
-        throw new Error(`openai tts failed: ${response.status} ${await response.text()}`);
+        throw new Error(`provider_http_${response.status}`);
       }
       const bytes = new Uint8Array(await response.arrayBuffer());
       return { bytes, mimeType: "audio/mpeg" };

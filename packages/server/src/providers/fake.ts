@@ -103,7 +103,9 @@ function fakeLessonExercises(input: LessonPoolInput): {
   // Odpowiedzi już w puli, znormalizowane naiwnie (lowercase) — fake trzyma je,
   // by nie wygenerować duplikatu przy dogenerowaniu.
   const used = new Set<string>((input.existingAnswers ?? []).map((a) => a.toLowerCase()));
-  let seq = 0;
+  // Przy dogenerowaniu kontynuuj indeks bodźców wcześniejszych partii, aby
+  // testowy provider nie wysyłał tej samej luki tylko z nowym ID.
+  let seq = input.existingExercises?.length ?? 0;
 
   const nextAnswer = (material: string): string => {
     let answer = materialWord(material, seq++);
@@ -133,7 +135,7 @@ function fakeLessonExercises(input: LessonPoolInput): {
       }
       for (let i = 0; i < count; i++) {
         const answer = nextAnswer(input.material);
-        exercises.push(fakeExercise(type, objective.id, answer, input));
+        exercises.push(fakeExercise(type, objective.id, answer, input, (input.existingExercises?.length ?? 0) + exercises.length));
       }
     }
   }
@@ -143,7 +145,7 @@ function fakeLessonExercises(input: LessonPoolInput): {
   if (exercises.length === 0 && input.objectives.length > 0) {
     const objective = input.objectives[0]!;
     const type = objective.exerciseTypes[0] ?? "lesson_open_answer";
-    exercises.push(fakeExercise(type, objective.id, nextAnswer(input.material), input));
+    exercises.push(fakeExercise(type, objective.id, nextAnswer(input.material), input, input.existingExercises?.length ?? 0));
   }
 
   return { exercises, examples };
@@ -155,6 +157,7 @@ function fakeExercise(
   objectiveId: string,
   answer: string,
   input: LessonPoolInput,
+  sequence: number,
 ): Record<string, unknown> {
   const base: Record<string, unknown> = {
     exerciseType: type,
@@ -170,7 +173,7 @@ function fakeExercise(
       return {
         ...base,
         focus: [],
-        stem: "Wybierz poprawną odpowiedź.",
+        stem: `Wybierz poprawną odpowiedź (${sequence + 1}).`,
         options: [
           { id: "a", text: answer },
           { id: "b", text: `${answer}x` },
@@ -197,7 +200,7 @@ function fakeExercise(
       return {
         ...base,
         transformId: input.transforms[0]?.id ?? "unknown_transform",
-        statement: "Przekształć to zdanie.",
+        statement: `Przekształć zdanie (${sequence + 1}).`,
       };
     case "lesson_notice":
       return {
@@ -212,7 +215,7 @@ function fakeExercise(
       };
     case "lesson_open_answer":
     default:
-      return { ...base, prompt: "Odpowiedz." };
+      return { ...base, prompt: `Przetłumacz zdanie (${sequence + 1}).` };
   }
 }
 

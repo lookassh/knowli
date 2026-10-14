@@ -20,6 +20,15 @@ export interface LessonGenerationControl {
   call<T>(request: (signal: AbortSignal) => Promise<T>): Promise<T>;
 }
 
+export function assertLessonGenerationFinalizationAllowed(
+  runDeadlineAtMs: number,
+  signal?: AbortSignal,
+  now: () => number = Date.now,
+): void {
+  if (signal?.aborted) throw new LessonGenerationCancelledError("shutdown");
+  if (now() >= runDeadlineAtMs) throw new GenerationProviderError("timeout");
+}
+
 function abortError(): Error {
   const error = new Error("aborted");
   error.name = "AbortError";

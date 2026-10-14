@@ -11,7 +11,7 @@ async function main(): Promise<void> {
   const loop = createWorkerLoop({
     ...settings,
     now: Date.now,
-    processPass: (signal) => processDueWork(services, signal).then(() => undefined),
+    processPass: (signal, reportProgress) => processDueWork(services, signal, reportProgress).then(() => undefined),
     onError: (error) => console.error("[worker] przelot zakończony błędem:", error),
   });
 

@@ -32,8 +32,14 @@ async function lessonHttpError(response: Response): Promise<GenerationProviderEr
   if (response.status === 429) {
     try {
       const body: unknown = await response.clone().json();
-      const serialized = JSON.stringify(body).toLowerCase();
-      if (["insufficient_quota", "billing", "quota", "spend_limit"].some((term) => serialized.includes(term))) {
+      const error = body && typeof body === "object" ? (body as { error?: unknown }).error : undefined;
+      const fields = error && typeof error === "object" ? error as { code?: unknown; type?: unknown } : {};
+      const signals = [fields.code, fields.type].filter((value): value is string => typeof value === "string").map((value) => value.toLowerCase());
+      const rateLimitCodes = new Set(["rate_limit_exceeded", "requests_rate_limit_exceeded", "tokens_rate_limit_exceeded"]);
+      const quotaCodes = new Set(["insufficient_quota", "billing_hard_limit_reached", "billing_not_active", "spend_limit_reached", "quota_exceeded"]);
+      if (signals.some((signal) => rateLimitCodes.has(signal))) {
+        kind = "rate_limit";
+      } else if (signals.some((signal) => quotaCodes.has(signal))) {
         kind = "configuration";
       }
     } catch {
@@ -132,12 +138,19 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
         ".",
     );
   }
-  if (input.deduplication === "exercise" && input.existingExercises?.length) {
+  if (input.deduplication === "exercise") {
     parts.push(
-      "Do not repeat an existing exercise with the same objective, type, and functional stimulus. Existing exercise stimuli: " +
-        input.existingExercises.map((exercise) => `${exercise.objectiveId} / ${exercise.exerciseType} / ${exercise.stimulus}`).join("; ") +
-        ". Reusing a short canonical answer such as do, does, don't, or doesn't with a different valid exercise is allowed.",
+      "Within this response, never repeat an exercise with the same objective, type, and functional stimulus. " +
+        "Do not repeat any existing exercise with the same objective, type, and functional stimulus, even if its answer differs. " +
+        "Reusing a short canonical answer such as do, does, don't, or doesn't with a different valid exercise is allowed.",
     );
+    if (input.existingExercises?.length) {
+      parts.push(
+        "Existing exercise stimuli: " +
+          input.existingExercises.map((exercise) => `${exercise.objectiveId} / ${exercise.exerciseType} / ${exercise.stimulus}`).join("; ") +
+          ".",
+      );
+    }
   }
   if (input.promptProfile.fieldRules !== undefined) {
     parts.push(`Field rules for this subject: ${input.promptProfile.fieldRules}`);
@@ -262,7 +275,7 @@ export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider 
         signal,
       });
       if (!response.ok) {
-        throw new Error(`openai llm failed: ${response.status} ${await response.text()}`);
+        throw new Error(`provider_http_${response.status}`);
       }
       const payload = (await response.json()) as {
         choices?: Array<{ message?: { content?: string } }>;

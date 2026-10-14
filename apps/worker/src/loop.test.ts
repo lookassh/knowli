@@ -51,4 +51,26 @@ describe("createWorkerLoop", () => {
     expect(loop.health().healthy).toBe(false);
     await loop.stop();
   });
+
+  it("utrzymuje health podczas produktywnego długiego przelotu, ale wygasa bez postępu", async () => {
+    vi.useFakeTimers();
+    let reportProgress!: () => void;
+    const loop = createWorkerLoop({
+      pollMs: 100,
+      staleMs: 50,
+      now: Date.now,
+      processPass: (signal, progress) => {
+        reportProgress = progress;
+        return new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+      },
+    });
+    loop.start();
+    await vi.advanceTimersByTimeAsync(49);
+    reportProgress();
+    await vi.advanceTimersByTimeAsync(49);
+    expect(loop.health().healthy).toBe(true);
+    await vi.advanceTimersByTimeAsync(51);
+    expect(loop.health().healthy).toBe(false);
+    await loop.stop();
+  });
 });

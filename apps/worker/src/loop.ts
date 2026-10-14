@@ -1,7 +1,7 @@
 export interface WorkerLoopOptions {
   pollMs: number;
   staleMs: number;
-  processPass: (signal: AbortSignal) => Promise<void>;
+  processPass: (signal: AbortSignal, reportProgress: () => void) => Promise<void>;
   now: () => number;
   onError?: (error: unknown) => void;
 }
@@ -44,6 +44,7 @@ export function createWorkerLoop(options: WorkerLoopOptions): WorkerLoop {
   let stopPromise: Promise<void> | undefined;
   let lastPassAt: number | null = null;
   let passStartedAt: number | null = null;
+  let lastProgressAt: number | null = null;
 
   const schedule = () => {
     if (stopping) return;
@@ -53,11 +54,12 @@ export function createWorkerLoop(options: WorkerLoopOptions): WorkerLoop {
   const runPass = (): Promise<void> => {
     if (stopping) return Promise.resolve();
     passStartedAt = options.now();
+    lastProgressAt = passStartedAt;
     controller = new AbortController();
     const passController = controller;
     let work: Promise<void>;
     try {
-      work = Promise.resolve(options.processPass(passController.signal));
+      work = Promise.resolve(options.processPass(passController.signal, () => { lastProgressAt = options.now(); }));
     } catch (error) {
       work = Promise.reject(error);
     }
@@ -88,7 +90,7 @@ export function createWorkerLoop(options: WorkerLoopOptions): WorkerLoop {
       await stopPromise;
     },
     health() {
-      const reference = passStartedAt ?? lastPassAt ?? startedAt;
+      const reference = passStartedAt === null ? lastPassAt ?? startedAt : lastProgressAt ?? passStartedAt;
       return {
         healthy: options.now() - reference <= options.staleMs,
         lastPassAt,

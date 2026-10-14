@@ -1,10 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GenerationProviderError } from "../../ports/generation-error";
-import { withLessonGenerationControl } from "./lesson-generation-control";
+import { assertLessonGenerationFinalizationAllowed, LessonGenerationCancelledError, withLessonGenerationControl } from "./lesson-generation-control";
 
 afterEach(() => vi.useRealTimers());
 
 describe("withLessonGenerationControl", () => {
+  it("rejects finalization after shutdown or the whole-run deadline", () => {
+    const controller = new AbortController();
+    controller.abort();
+    expect(() => assertLessonGenerationFinalizationAllowed(100, controller.signal, () => 50)).toThrow(LessonGenerationCancelledError);
+    expect(() => assertLessonGenerationFinalizationAllowed(100, undefined, () => 100)).toThrow(GenerationProviderError);
+  });
+
   it("przerywa zawieszony request po deadline i nie czeka na provider ignorujący abort", async () => {
     vi.useFakeTimers();
     let resolveLate!: (value: string) => void;
