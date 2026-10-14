@@ -86,3 +86,8 @@ Plan: docs/superpowers/plans/2026-10-14-lesson-generation-reliability.md
 - Końcowy werdykt niezależnego review `gpt-6.1-sol xhigh`: 0 Critical, 0 Important, 0 otwartych Minor. Reviewer uwzględnił pełny zakres i zmodyfikowane E2E; nie zmieniał repozytorium.
 - Końcowa weryfikacja po review: `test:unit` PASS 107/1057, `typecheck` PASS, `build` PASS, `test:mcp` 8/8 PASS, schemat export `--check` PASS, `git diff --check` PASS. `test:integration` i `test:e2e` ponownie przerwane przed uruchomieniem testów przez brak pipe Docker Linux Engine.
 - PR i push gałęzi są nadal kolejnym krokiem końcowym planu; PR #58 pozostaje nietknięty, merge nieautoryzowany.
+
+## Dostarczenie
+- Końcowy commit po poprawkach review: `4987623` (`fix(lessons): stabilize generation and worker retries`).
+- Gałąź `feature/lesson-generation-reliability` wypchnięta do origin; PR #60 utworzony i dołączony do czatu: https://github.com/lookassh/knowli/pull/60.
+- PR #60 jest otwarty do przeglądu/właścicielskiego Squash and merge. Nie wykonano merge ani wdrożenia. Poprzednie PR #58 pozostaje nietknięte.
