@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createOpenAiLlmProvider } from "./llm";
 import type { LessonPoolInput } from "../../ports/ai";
+import { englishGrammarSubject } from "../../domain/lessons/subjects/english-grammar/module";
 
 /**
  * Kontrakt składania promptu generacji puli lekcji: adapter buduje prompt
@@ -120,7 +121,7 @@ describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", ()
     expect(system).toContain("Field rules for this subject:");
     expect(system).toContain("For lesson_gap, hint must be the base form of the verb.");
     expect(system).toContain("Language discipline:");
-    expect(system).toContain("never copy prompt-language words from the parent material into answer-language fields");
+    expect(system).toContain("Never copy prompt-language words from the parent material into answer-language fields");
     expect(system).toContain("copy the whitespace-separated tokens of the canonical answer");
     expect(system).toContain("EXACTLY ONE gap marker");
     expect(system).toContain("its answer is at most 3 words");
@@ -184,6 +185,22 @@ describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", ()
     expect(system).toContain("___ she play tennis?");
     expect(system).toContain("Reusing a short canonical answer such as do, does, don't, or doesn't");
     expect(system).not.toContain("Canonical answers must be UNIQUE within this response");
+  });
+
+  it("translationUsesPolishStimulusInProviderRequest", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => okResponse({ exercises: [], examples: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAiLlmProvider({ apiKey: "k" });
+    await provider.generateLessonPool({
+      ...INPUT,
+      promptProfile: englishGrammarSubject.prompts,
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string) as { messages: Array<{ role: string; content: string }> };
+    const system = body.messages.find((message) => message.role === "system")!.content;
+    expect(system).toContain("lesson_open_answer.prompt may be a translation source in the prompt language");
+    expect(system).toContain("For lesson_open_answer, prompt is the source sentence in the prompt language to translate");
+    expect(system).toContain("answer and acceptedAnswers always use the answer language");
+    expect(system).not.toContain("prompt (in the answer language)");
   });
 
   it("tłumaczy examples z tablicy par {objectiveId, examples} z strict schema na record", async () => {

@@ -45,6 +45,8 @@ Słowniczek:
 5. WHEN wygenerowane ćwiczenie nie przejdzie walidacji, THE system SHALL odrzucić tylko to ćwiczenie, zapisać pozostałe i pokazać rodzicowi liczbę odrzuconych.
 6. IF generowanie zakończy się błędem, THEN THE system SHALL nie publikować częściowej lekcji i pozwolić rodzicowi ponowić generowanie lub dogenerować brakujące ćwiczenia.
 7. THE moduł SHALL NOT tworzyć zestawu słówek z materiału lekcji; słówka pozostają osobnym zestawem tworzonym przez rodzica.
+8. THE prompt `lesson_open_answer` SHALL zawierać polski tekst źródłowy do przetłumaczenia, a odpowiedź i warianty SHALL być po angielsku; walidator SHALL odrzucić prompt równy odpowiedzi lub jej wariantowi po normalizacji.
+9. WHEN luka uzupełnia operator, THE walidator SHALL sprawdzić operator, podmiot i czasownik w ukończonym zdaniu, dopuszczając krótkie odpowiedzi bez wymaganego czasownika głównego.
 
 ### Wymaganie 3 — Przegląd i publikacja lekcji
 

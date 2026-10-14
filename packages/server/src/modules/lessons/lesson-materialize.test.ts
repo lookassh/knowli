@@ -64,6 +64,29 @@ describe("materializeExercise — correctOption po ID (P1-1)", () => {
     expect(evaluateChoice(key.correctOptionId!, key)).toBe(true);
   });
 
+  it("translation prompt is the Polish source and keeps answers private", () => {
+    const task = materializeExercise(
+      { independentCheck: false, reason: "practice" },
+      "seed-translation",
+      loaded({
+        exerciseType: "lesson_open_answer",
+        objectiveId: "english_grammar.present_simple.third_person_s",
+        instructionPl: "Przetłumacz na angielski.",
+        prompt: "Ona codziennie gra w piłkę.",
+        answer: "She plays football every day.",
+        acceptedAnswers: ["She plays football daily."],
+        focus: ["plays"],
+        answerLocale: "en-GB",
+        promptLocale: "pl-PL",
+      }),
+      topic,
+      subject,
+    );
+    expect(task.prompt).toMatchObject({ kind: "lesson_open_answer", prompt: "Ona codziennie gra w piłkę." });
+    expect(JSON.stringify(task.prompt)).not.toContain("She plays football");
+    expect(task.answerKey).toMatchObject({ answer: "She plays football every day." });
+  });
+
   it("lesson_short_answer: correctOptionId wskazuje opcję o tekście poprawnej odpowiedzi", () => {
     const task = materializeExercise(
       { independentCheck: false, reason: "practice" },

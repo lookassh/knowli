@@ -128,9 +128,10 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
       "optional correctOption (option id; lesson_notice: one word copied exactly from the segments — the word the child points at), " +
       "optional items (lesson_order: 3-10 items whose texts joined with spaces form the canonical answer). " +
       "Use null for optional fields that do not apply to the exercise type — never invent extra fields. " +
-      "Language discipline: instructionPl is in the prompt language; every other exercise field (stem, statement, prompt, hint, " +
-      "noticeSegments, options, items, answer, acceptedAnswers, focus) is in the answer language — " +
-      "never copy prompt-language words from the parent material into answer-language fields. " +
+      "Language discipline: instructionPl is in the prompt language; exercise stimuli normally use the answer language, except where field rules for this subject " +
+      "define a source stimulus in the prompt language (for example lesson_open_answer translations). lesson_open_answer.prompt may be a translation source " +
+      "in the prompt language when subject rules say so; answer and acceptedAnswers always use the answer language. " +
+      "Never copy prompt-language words from the parent material into answer-language fields. " +
       "acceptedAnswers must NOT contain the canonical answer itself, nor trivial variants that differ only by case or punctuation — " +
       "the canonical answer is accepted automatically, so every listed variant must be a DIFFERENT acceptable formulation " +
       "(a shortened wording without optional words is different; an expanded or re-capitalized copy of the answer is not). " +
