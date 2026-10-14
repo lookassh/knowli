@@ -1063,6 +1063,7 @@ export async function disableSessionMicrophone(services: Services, sessionId: st
     if (session.mode !== "training" || context.canRead || context.vocabularyFormat !== "picture") {
       throw new AppError("validation");
     }
+    if (session.state !== "active") throw new AppError("conflict", { message: "session is not active" });
     if (!session.microphoneEnabled) return sessionDto(tx, session, true);
     const voiceTasks = await tx.select({ id: sessionTasks.id }).from(sessionTasks).where(and(
       eq(sessionTasks.sessionId, id), eq(sessionTasks.state, "issued"),
@@ -1071,7 +1072,7 @@ export async function disableSessionMicrophone(services: Services, sessionId: st
     const microphoneDisabledTaskIds = [...new Set([...context.microphoneDisabledTaskIds, ...voiceTasks.map((task) => task.id)])];
     await tx.update(learningSessions).set({
       microphoneEnabled: false,
-      context: { ...context, microphoneDisabledTaskIds } as unknown as Record<string, unknown>,
+      context: { ...context, microphoneDisabledTaskIds, reservations: [] } as unknown as Record<string, unknown>,
     }).where(eq(learningSessions.id, id));
     for (const task of voiceTasks) await completeDisabledVoiceTask(tx, id, task.id);
     const fresh = (await tx.select().from(learningSessions).where(eq(learningSessions.id, id)))[0]!;

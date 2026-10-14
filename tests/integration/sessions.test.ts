@@ -6,6 +6,7 @@ import {
   contextOf,
   createChild,
   createDraft,
+  createDraftFromPublished,
   endSession,
   finalizeAttempt,
   listKidDecks,
@@ -1101,6 +1102,38 @@ describe("ćwiczenie zestawu w dowolnym momencie (extra-practice + rekomendacja)
 
     await expect(listKidDecks(services, childId)).resolves.toMatchObject([
       { deckId, itemCount: 4, independentlyRecalledCount: 1 },
+    ]);
+  });
+
+  it("zachowuje postęp przypiętej wersji po publikacji i w trybie wznowienia", async () => {
+    const { deckId, versionId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 4));
+    const [recall] = await query<{ skill_version_id: string }>(
+      `select irs.skill_version_id
+         from learning_app.item_revision_skills irs
+         join learning_app.item_revisions ir on ir.id = irs.item_revision_id
+        where ir.deck_version_id = $1 and ir.position = 0 and irs.skill = 'recall'`,
+      [versionId],
+    );
+    expect(recall).toBeDefined();
+    await pool.query(
+      `insert into learning_app.child_skill_progress
+         (child_id, skill_version_id, status, projection_version)
+       values ($1, $2, 'mastered', 'learning-v1')`,
+      [childId, recall!.skill_version_id],
+    );
+
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const nextVersion = await createDraftFromPublished(services, deckId);
+    await publishDraft(services, nextVersion.id, nextVersion.editNumber);
+
+    await expect(listKidDecks(services, childId)).resolves.toMatchObject([
+      { deckId, activeSession: { sessionId: session.sessionId }, independentlyRecalledCount: 1 },
+    ]);
+
+    await pool.query("update learning_app.assignments set active=false where child_id=$1 and deck_id=$2", [childId, deckId]);
+    await pool.query("update learning_app.decks set archived_at=now() where id=$1", [deckId]);
+    await expect(listKidDecks(services, childId)).resolves.toMatchObject([
+      { deckId, resumeOnly: true, activeSession: { sessionId: session.sessionId }, independentlyRecalledCount: 1 },
     ]);
   });
 

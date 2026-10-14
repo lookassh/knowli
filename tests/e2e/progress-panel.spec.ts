@@ -50,7 +50,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 768, height: 1024
       let body: unknown;
       if (url.pathname.endsWith("/login")) body = { authenticated: true, setupRequired: false };
       else if (url.pathname.endsWith("/children")) body = [
-        { id: childId, displayName: "Ala", avatarKey: "star" },
+        { id: childId, displayName: "Ala", avatarKey: "star", canRead: false },
         { id: otherChildId, displayName: "Bartek", avatarKey: "star" },
       ];
       else if (url.pathname.endsWith("/decks")) body = [deckId, otherDeckId].map((id, index) => ({
@@ -85,6 +85,10 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 768, height: 1024
     await page.goto("/parent");
     await page.getByTestId("tab-progress").click();
     await page.getByTestId("progress-load").click();
+    if (viewport.width === 390) {
+      await expect(page.getByTestId("progress-picture-note")).toContainText("Wcześniejsze wyniki zostają zachowane");
+      await expect(page.getByTestId("progress-picture-note")).toContainText("pełna liczba słów pozostaje w raporcie");
+    }
     // karta aktywności dziecka: czas, dni, podejścia per zestaw, odpowiedzi, kliknięcia
     const activity = page.getByTestId("progress-activity");
     await expect(activity).toBeVisible();

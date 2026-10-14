@@ -167,12 +167,25 @@ interface ApiState {
   feedbackAudioError?: unknown;
   feedbackAudioAssetId?: string;
   feedbackAudioCalls: string[];
+  uiAudioReady?: boolean;
+  uiAudioReadFailureCount?: number;
+  uiAudioReadCalls?: number;
   lessonMockSummary?: LessonMockTestSummaryDto;
+  disableError?: unknown;
+  disableGate?: Promise<void>;
+  startSessionIds?: string[];
 }
 
 function makeApi(state: ApiState): KidApi {
   return {
-    async readUiAudio() { return { ready: false, assets: {} }; },
+    async readUiAudio() {
+      state.uiAudioReadCalls = (state.uiAudioReadCalls ?? 0) + 1;
+      if ((state.uiAudioReadFailureCount ?? 0) > 0) {
+        state.uiAudioReadFailureCount = state.uiAudioReadFailureCount! - 1;
+        throw new TypeError("fetch failed");
+      }
+      return state.uiAudioReady ? { ready: true, assets: { recall: "asset-guidance" } } : { ready: false, assets: {} };
+    },
     async listProfiles() {
       if (state.networkDown) throw new TypeError("fetch failed");
       return state.profiles;
@@ -184,7 +197,8 @@ function makeApi(state: ApiState): KidApi {
       state.startedSessions.push({ childId: input.childId, microphoneEnabled: input.microphoneEnabled, supportsPictureVocabulary: input.supportsPictureVocabulary === true });
       const profile = state.profiles.find((item) => item.childId === input.childId);
       const deck = state.decks.find((item) => item.deckId === input.deckId);
-      return { ...sessionDto(input.childId, "55555555-5555-5555-5555-555555555555", input.microphoneEnabled), canRead: profile?.canRead ?? true, vocabularyFormat: deck?.vocabularyFormat ?? "standard", mode: input.mode ?? "training" };
+      const sessionId = state.startSessionIds?.shift() ?? "55555555-5555-5555-5555-555555555555";
+      return { ...sessionDto(input.childId, sessionId, input.microphoneEnabled), canRead: profile?.canRead ?? true, vocabularyFormat: deck?.vocabularyFormat ?? "standard", mode: input.mode ?? "training" };
     },
     async nextTask() {
       return state.tasks.shift() ?? null;
@@ -230,6 +244,8 @@ function makeApi(state: ApiState): KidApi {
     },
     async disableMicrophone(sessionId) {
       state.disabledSessions.push(sessionId);
+      await state.disableGate;
+      if (state.disableError !== undefined) throw state.disableError;
       return { ...sessionDto(PROFILE_A.childId, sessionId, false), canRead: false, vocabularyFormat: "picture" };
     },
     async readMockTestSummary(sessionId) {
@@ -327,6 +343,69 @@ describe("LearningSessionController", () => {
     expect(harness.media.playUrls).toEqual([]);
     await harness.controller.playTaskAudio();
     expect(harness.media.playUrls).toEqual(["https://media.test/asset-listening"]);
+  });
+
+  it("nie odtwarza instrukcji podczas uruchamiania ani nagrywania mikrofonu", async () => {
+    const state = baseState();
+    state.uiAudioReady = true;
+    const speech = taskDto("picture-speech-guidance", {
+      kind: "picture_speech", audioAssetId: "asset-pattern", visual: { kind: "color", color: "#ff0000" },
+    });
+    let release!: () => void;
+    const startGate = new Promise<void>((resolve) => { release = resolve; });
+    const harness = await startAtTask(state, speech, { startGate });
+    harness.media.playUrls.length = 0;
+    await harness.controller.prepareMicrophone();
+    const recording = harness.controller.startRecording();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "starting" });
+    await harness.controller.playGuidance("recall");
+    expect(harness.media.playUrls).toEqual([]);
+    release();
+    await recording;
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "recording" });
+    await harness.controller.playGuidance("recall");
+    expect(harness.media.playUrls).toEqual([]);
+    harness.controller.teardown();
+  });
+
+  it("ponawia pobranie katalogu instrukcji po błędzie i pustym katalogu", async () => {
+    const state = baseState();
+    state.uiAudioReadFailureCount = 1;
+    const recall = taskDto("guidance-retry", { kind: "recall", prompt: "czwartek" });
+    const harness = await startAtTask(state, recall);
+    expect(state.uiAudioReadCalls).toBe(1);
+
+    await expect(harness.controller.playGuidance("recall")).rejects.toThrow("UI audio unavailable");
+    expect(state.uiAudioReadCalls).toBe(2);
+    state.uiAudioReady = true;
+    await harness.controller.playGuidance("recall");
+
+    expect(state.uiAudioReadCalls).toBe(3);
+    expect(harness.media.playUrls).toEqual(["https://media.test/asset-guidance"]);
+  });
+
+  it("odświeża niegotowy katalog instrukcji przy ponownej próbie", async () => {
+    const state = baseState();
+    const recall = taskDto("guidance-catalog-not-ready", { kind: "recall", prompt: "czwartek" });
+    const harness = await startAtTask(state, recall);
+    expect(state.uiAudioReadCalls).toBe(1);
+
+    state.uiAudioReady = true;
+    await harness.controller.playGuidance("recall");
+
+    expect(state.uiAudioReadCalls).toBe(2);
+    expect(harness.media.playUrls).toEqual(["https://media.test/asset-guidance"]);
+  });
+
+  it("udostępnia ponowienie i zakończenie, gdy odtwarzacz nie dekoduje audio zadania", async () => {
+    const speech = taskDto("picture-speech-audio-error", {
+      kind: "picture_speech", audioAssetId: "asset-pattern", visual: { kind: "color", color: "#ff0000" },
+    });
+    const harness = await startAtTask(baseState(), speech);
+    harness.media.player.play = async () => { throw new Error("decode failed"); };
+    await harness.controller.playTaskAudio();
+    expect(harness.controller.getScreen()).toMatchObject({ taskAudioError: "failed" });
   });
 
   it("nie odtwarza autoryzacji, która wróciła już po zmianie karty", async () => {
@@ -736,6 +815,77 @@ describe("LearningSessionController", () => {
     expect(screen).toMatchObject({ kind: "learning" });
   });
 
+  it("ignoruje spóźnioną odmowę z poprzedniej sesji po przygotowaniu mikrofonu w nowej", async () => {
+    const oldVoiceTask = taskDto("old-picture-voice", { kind: "picture_recall", visual: { kind: "number", count: 2 } });
+    const newVoiceTask = taskDto("new-picture-voice", { kind: "picture_recall", visual: { kind: "number", count: 2 } });
+    const state = baseState();
+    state.profiles = [{ ...PROFILE_A, canRead: false }];
+    state.decks = [{ ...DECK, vocabularyFormat: "picture" }];
+    state.tasks = [oldVoiceTask, newVoiceTask];
+    state.startSessionIds = ["55555555-5555-5555-5555-555555555555", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"];
+    let releaseDisable!: () => void;
+    state.disableGate = new Promise<void>((resolve) => { releaseDisable = resolve; });
+    const harness = await startAtTask(state, oldVoiceTask);
+    harness.media.prepareMicrophone = async () => { throw new DOMException("Permission dismissed", "NotAllowedError"); };
+
+    const oldPreparation = harness.controller.prepareMicrophone();
+    await expect.poll(() => state.disabledSessions).toEqual(["55555555-5555-5555-5555-555555555555"]);
+    await harness.controller.endNow();
+    state.tasks = [newVoiceTask];
+    await harness.controller.learnAgain();
+    await harness.controller.setMicrophone(true);
+    await harness.controller.startLearning(DECK.deckId);
+    harness.media.prepareMicrophone = async () => undefined;
+    await harness.controller.prepareMicrophone();
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", microphoneReady: true, micDenied: false });
+
+    releaseDisable();
+    await oldPreparation;
+    expect(harness.controller.getScreen()).toMatchObject({
+      kind: "learning",
+      session: { sessionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", microphoneEnabled: true },
+      task: { taskId: newVoiceTask.taskId },
+      microphoneReady: true,
+      micDenied: false,
+    });
+  });
+
+  it("ignoruje spóźnioną odmowę recorder.start po przygotowaniu mikrofonu w nowej sesji", async () => {
+    const oldVoiceTask = taskDto("old-recorder-voice", { kind: "picture_recall", visual: { kind: "number", count: 2 } });
+    const newVoiceTask = taskDto("new-recorder-voice", { kind: "picture_recall", visual: { kind: "number", count: 2 } });
+    const state = baseState();
+    state.profiles = [{ ...PROFILE_A, canRead: false }];
+    state.decks = [{ ...DECK, vocabularyFormat: "picture" }];
+    state.tasks = [oldVoiceTask, newVoiceTask];
+    state.startSessionIds = ["55555555-5555-5555-5555-555555555555", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"];
+    let releaseDisable!: () => void;
+    state.disableGate = new Promise<void>((resolve) => { releaseDisable = resolve; });
+    const harness = await startAtTask(state, oldVoiceTask, {
+      failStartWith: new DOMException("Permission dismissed", "NotAllowedError"),
+    });
+    await harness.controller.prepareMicrophone();
+
+    const oldStart = harness.controller.startRecording();
+    await expect.poll(() => state.disabledSessions).toEqual(["55555555-5555-5555-5555-555555555555"]);
+    await harness.controller.endNow();
+    state.tasks = [newVoiceTask];
+    await harness.controller.learnAgain();
+    await harness.controller.setMicrophone(true);
+    await harness.controller.startLearning(DECK.deckId);
+    await harness.controller.prepareMicrophone();
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", microphoneReady: true, micDenied: false });
+
+    releaseDisable();
+    await oldStart;
+    expect(harness.controller.getScreen()).toMatchObject({
+      kind: "learning",
+      session: { sessionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", microphoneEnabled: true },
+      task: { taskId: newVoiceTask.taskId },
+      microphoneReady: true,
+      micDenied: false,
+    });
+  });
+
   it("awaria mikrofonu inna niż odmowa wyłącza nagrywanie tylko do końca sesji", async () => {
     const recall = taskDto("t1", { kind: "recall", prompt: "czwartek" });
     const state = baseState();
@@ -789,23 +939,80 @@ describe("LearningSessionController", () => {
     expect(state.startedSessions.at(-1)).toMatchObject({ microphoneEnabled: true });
   });
 
-  it("odmowa mikrofonu wyłącza go dla sesji obrazkowej i pozwala kontynuować tę samą kartę", async () => {
+  it("odmowa mikrofonu wyłącza go dla sesji obrazkowej i pomija zamkniętą kartę", async () => {
     const state = baseState();
     state.profiles = [{ ...PROFILE_A, canRead: false }];
     state.decks = [{ ...DECK, vocabularyFormat: "picture" }];
     const task = taskDto("picture-voice", { kind: "picture_recall", visual: { kind: "number", count: 2 } });
-    state.tasks = [task];
+    const next = taskDto("picture-listening", { kind: "picture_listening", audioAssetId: "audio-listening", options: [
+      { id: "one", labelPl: "jeden", visual: { kind: "number", count: 1 } },
+      { id: "two", labelPl: "dwa", visual: { kind: "number", count: 2 } },
+    ] });
+    state.tasks = [task, next];
     const harness = makeHarness(state, { failStartWith: new DOMException("Permission denied", "NotAllowedError") });
     await harness.controller.start();
     await harness.controller.selectProfile(PROFILE_A.childId);
     await harness.controller.startLearning(DECK.deckId);
     await harness.controller.startRecording();
     await harness.controller.startRecording();
-    await Promise.resolve();
-    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", session: { sessionId: "55555555-5555-5555-5555-555555555555", microphoneEnabled: false }, task: { taskId: task.taskId }, micDenied: true });
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", session: { sessionId: "55555555-5555-5555-5555-555555555555", microphoneEnabled: false }, task: { taskId: next.taskId }, micDenied: true });
     expect(state.disabledSessions).toEqual(["55555555-5555-5555-5555-555555555555"]);
     expect(state.endedSessions).toHaveLength(0);
     expect(state.speechSubmissions).toHaveLength(0);
+  });
+
+  it("brak urządzenia wyłącza mikrofon w profilu bez czytania i wraca do zadań obrazkowych", async () => {
+    const state = baseState();
+    state.profiles = [{ ...PROFILE_A, canRead: false }];
+    state.decks = [{ ...DECK, vocabularyFormat: "picture" }];
+    const task = taskDto("picture-recall-no-device", { kind: "picture_recall", visual: { kind: "number", count: 2 } });
+    const next = taskDto("picture-listening-no-device", { kind: "picture_listening", audioAssetId: "audio-listening", options: [
+      { id: "one", labelPl: "jeden", visual: { kind: "number", count: 1 } },
+      { id: "two", labelPl: "dwa", visual: { kind: "number", count: 2 } },
+    ] });
+    state.tasks = [task, next];
+    const harness = makeHarness(state, { failStartWith: new DOMException("Requested device not found", "NotFoundError") });
+    await harness.controller.start();
+    await harness.controller.selectProfile(PROFILE_A.childId);
+    await harness.controller.startLearning(DECK.deckId);
+    await harness.controller.prepareMicrophone();
+    await harness.controller.startRecording();
+
+    expect(state.disabledSessions).toEqual(["55555555-5555-5555-5555-555555555555"]);
+    expect(harness.controller.getScreen()).toMatchObject({
+      kind: "learning", session: { microphoneEnabled: false }, task: { taskId: next.taskId }, micDenied: false,
+    });
+    expect(harness.storage.read(MIC_DENIED_KEY)).toBeNull();
+    expect(state.speechSubmissions).toHaveLength(0);
+  });
+
+  it("po awarii disable-microphone pozwala ponowić zmianę i dopiero wtedy przechodzi dalej", async () => {
+    const state = baseState();
+    state.profiles = [{ ...PROFILE_A, canRead: false }];
+    state.decks = [{ ...DECK, vocabularyFormat: "picture" }];
+    const task = taskDto("picture-voice", { kind: "picture_recall", visual: { kind: "number", count: 2 } });
+    const next = taskDto("picture-listening", { kind: "picture_listening", audioAssetId: "audio-listening", options: [
+      { id: "one", labelPl: "jeden", visual: { kind: "number", count: 1 } },
+      { id: "two", labelPl: "dwa", visual: { kind: "number", count: 2 } },
+    ] });
+    state.tasks = [task, next];
+    state.disableError = new TypeError("fetch failed");
+    const harness = makeHarness(state, { failStartWith: new DOMException("Permission denied", "NotAllowedError") });
+    await harness.controller.start();
+    await harness.controller.selectProfile(PROFILE_A.childId);
+    await harness.controller.startLearning(DECK.deckId);
+    await harness.controller.startRecording();
+    await harness.controller.startRecording();
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", task: { taskId: task.taskId }, error: messages.errors.picture_microphone_disable_failed });
+
+    state.disableError = undefined;
+    await harness.controller.retry();
+    expect(harness.controller.getScreen()).toMatchObject({
+      kind: "learning",
+      session: { microphoneEnabled: false },
+      task: { taskId: next.taskId },
+      error: null,
+    });
   });
 
   it("ręczne wyłączenie mikrofonu na ekranie zestawów jest zapamiętywane", async () => {
@@ -1013,6 +1220,23 @@ describe("LearningSessionController", () => {
     await speechHarness.controller.playTaskAudio();
     expect(speechHarness.state.disclosures).toEqual([{ taskId: "t3", kind: "audio" }]);
     expect(speechHarness.media.playUrls).toEqual(["https://media.test/asset-2"]);
+  });
+
+  it("pokazuje błąd sieci przy autoryzacji wzorca picture Recall i ponawia playback", async () => {
+    const state = baseState();
+    const recall = taskDto("picture-audio-offline", { kind: "picture_recall", visual: { kind: "color", color: "#ff0000" } });
+    state.disclosureError = new TypeError("fetch failed");
+    const harness = await startAtTask(state, recall);
+
+    await harness.controller.playTaskAudio();
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", offline: true, error: null });
+    expect(harness.media.playUrls).toEqual([]);
+
+    state.disclosureError = undefined;
+    await harness.controller.retry();
+    expect(state.disclosures).toHaveLength(2);
+    expect(harness.media.playUrls).toHaveLength(1);
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", offline: false });
   });
 
   it("odsłuch lekcji tekstowej wymaga zgody serwera PRZED odtworzeniem (wsparcie wym. 4.6)", async () => {

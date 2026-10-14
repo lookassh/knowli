@@ -67,6 +67,7 @@ export default function ProgressPanel({
       .filter(([, status]) => DUE_STATUSES.has(status))
       .map(([skill]) => `${messages.progress.skills[skill].toLowerCase()} ${item.target}`),
   );
+  const selectedChild = childrenList.find((child) => child.id === childId);
 
   /** Znane = opanowane lub z kompletną serią; element po zmianie znaczenia nie liczy się. */
   const knownCount = (skill: ReportSkill): number =>
@@ -187,6 +188,7 @@ export default function ProgressPanel({
       )}
       {progress && (
         <>
+          {selectedChild?.canRead === false && <p className="info" data-testid="progress-picture-note">{messages.progress.pictureProfileNote}</p>}
           <h3 data-testid="progress-heading">
             {progress.deckTitle} — {progress.childName}
           </h3>

@@ -120,11 +120,19 @@ export async function installKidUiFixture(page: Page, fixture: KidUiFixture): Pr
     return missing("no matching fixture route");
   });
   await page.route("**/api/v1/media/**", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "image/svg+xml",
-      body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2 2"><rect width="2" height="2" fill="#96a8ef"/></svg>',
-    });
+    if (fixture.uiAudio?.ready) {
+      // Krótki, prawidłowy WAV ciszy używany wyłącznie do sprawdzenia pobrania,
+      // dekodowania i zdarzenia ended. Nie jest dowodem jakości TTS.
+      const samples = 80;
+      const bytes = Buffer.alloc(44 + samples * 2);
+      bytes.write("RIFF", 0); bytes.writeUInt32LE(bytes.length - 8, 4); bytes.write("WAVEfmt ", 8);
+      bytes.writeUInt32LE(16, 16); bytes.writeUInt16LE(1, 20); bytes.writeUInt16LE(1, 22);
+      bytes.writeUInt32LE(8000, 24); bytes.writeUInt32LE(16000, 28); bytes.writeUInt16LE(2, 32);
+      bytes.writeUInt16LE(16, 34); bytes.write("data", 36); bytes.writeUInt32LE(samples * 2, 40);
+      await route.fulfill({ status: 200, contentType: "audio/wav", body: bytes });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2 2"><rect width="2" height="2" fill="#96a8ef"/></svg>' });
   });
 }
 

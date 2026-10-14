@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  completePresentation, createChild, createDraft, createServices,
-  executeMediaAsset, nextTask, prepareUiAudio, publishDraft, reconcileDraftAssets, runDueGenerationWork, startSession, upsertAssignment,
+  completePresentation, computeTargetKey, createChild, createDraft, createDraftFromPublished, createServices, editDraft, endSession,
+  executeMediaAsset, listKidDecks, nextTask, prepareUiAudio, publishDraft, readAttempt, reconcileDraftAssets, runDueGenerationWork, startSession, submitAttempt, upsertAssignment,
   type Services,
 } from "@learning/server";
 import { fakeGeneration, type FakeGeneration } from "./fakes";
-import { testDatabase, truncateCoreTables } from "./helpers";
+import { ManualClock, testDatabase, truncateCoreTables } from "./helpers";
 import { DisclosureDtoSchema, SessionDtoSchema } from "@learning/contracts";
 import { handleKidApi } from "../../apps/web/src/kid/kid-router";
 import { withApi } from "../../apps/web/src/http/errors";
@@ -60,16 +60,46 @@ describe("migracja formatu zestawu obrazkowego", () => {
 describe("bezpieczna sesja obrazkowa bez czytania", () => {
   let services: Services;
   let fakes: FakeGeneration;
+  let clock: ManualClock;
   beforeEach(async () => {
     await truncateCoreTables();
     await pool.query("truncate learning_app.generation_runs, learning_app.revision_assets, learning_app.media_assets, learning_app.item_revision_skills, learning_app.item_revisions, learning_app.skill_versions, learning_app.learning_items, learning_app.deck_versions, learning_app.decks cascade");
     fakes = await fakeGeneration();
-    services = createServices({ db: testDatabase().db, media: fakes.settings, generation: fakes.deps, mediaStore: fakes.store });
+    clock = new ManualClock(new Date(Date.now() - 60_000).toISOString());
+    services = createServices({ db: testDatabase().db, clock, media: fakes.settings, generation: fakes.deps, mediaStore: fakes.store });
     await prepareUiAudio(services);
     const pending = (await pool.query("select id from learning_app.media_assets where state='pending'")).rows as { id: string }[];
     for (const asset of pending) await executeMediaAsset(services, asset.id);
   });
   afterEach(async () => { await fakes.dispose(); });
+
+  it("aktywny resume-only używa okładki przypiętej wersji nawet po nowej publikacji", async () => {
+    const child = await createChild(services, { displayName: "Ola", avatarKey: "fox", canRead: false });
+    const original = await createDraft(services, {
+      title: "Kolory", vocabularyFormat: "picture",
+      items: [{ source: "czerwony", target: "red", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "color", visualData: { color: "#ff0000" } }],
+    });
+    await reconcileDraftAssets(services, original.id);
+    for (let pass = 0; pass < 6; pass += 1) if ((await runDueGenerationWork(services)).processed === 0) break;
+    await publishDraft(services, original.id, 1);
+    await upsertAssignment(services, child.id, original.deckId, null);
+    const session = await startSession(services, { childId: child.id, deckId: original.deckId, microphoneEnabled: true, supportsPictureVocabulary: true });
+
+    const revised = await createDraftFromPublished(services, original.deckId);
+    const changed = await editDraft(services, revised.id, {
+      expectedEditNumber: revised.editNumber,
+      items: [{ source: "niebieski", target: "blue", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "color", visualData: { color: "#0000ff" } }],
+    });
+    for (let pass = 0; pass < 6; pass += 1) if ((await runDueGenerationWork(services)).processed === 0) break;
+    await publishDraft(services, revised.id, changed.editNumber);
+
+    const [deck] = await listKidDecks(services, child.id, { microphoneEnabled: false });
+    expect(deck).toMatchObject({
+      deckId: original.deckId, resumeOnly: true,
+      coverVisual: { kind: "color", color: "#ff0000" },
+      activeSession: { sessionId: session.sessionId, mode: "training" },
+    });
+  });
 
   it("po wyłączeniu mikrofonu pomija wydane przypominanie bez oceny i kończy jednowyrazową sesję", async () => {
     const child = await createChild(services, { displayName: "Ola", avatarKey: "fox", canRead: false });
@@ -111,6 +141,17 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
     expect(disclosures.rows).toHaveLength(2);
     expect(disclosures.rows.every((event) => event.sealed && event.exposures === 1)).toBe(true);
 
+    await pool.query("update learning_app.learning_sessions set context=jsonb_set(context,'{reservations}',$2::jsonb) where id=$1", [
+      session.sessionId,
+      JSON.stringify([computeTargetKey("red", "en-GB"), computeTargetKey("blue", "en-GB")]),
+    ]);
+    const attemptId = randomUUID();
+    await pool.query(`insert into learning_app.attempts
+      (id, child_id, task_id, item_revision_id, client_attempt_id, request_hash, attempt_number,
+       modality, state, answer, context, policy_id, received_at)
+      select $1, child_id, id, item_revision_id, $2, 'picture-disable-processing', 1, 'audio', 'processing', '{}', '{}', $3, now()
+      from learning_app.session_tasks where id = $4`, [attemptId, randomUUID(), session.policyId, recall!.taskId]);
+
     const disableApi = withApi((request) => handleKidApi(request, services, ["sessions", session.sessionId, "disable-microphone"]));
     const disabledResponse = await disableApi(new Request("http://localhost/api/v1/kid/sessions/disable-microphone", {
       method: "POST", headers: { "content-type": "application/json" }, body: "{}",
@@ -118,16 +159,31 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
     expect(disabledResponse.status).toBe(200);
     const disabled = SessionDtoSchema.parse(await disabledResponse.json());
     expect(disabled.microphoneEnabled).toBe(false);
+    expect((await pool.query<{ reservations: string[] }>("select context->'reservations' as reservations from learning_app.learning_sessions where id=$1", [session.sessionId])).rows[0]?.reservations).toEqual([]);
     const repeated = await disableApi(new Request("http://localhost/api/v1/kid/sessions/disable-microphone", {
       method: "POST", headers: { "content-type": "application/json" }, body: "{}",
     }));
     expect(SessionDtoSchema.parse(await repeated.json())).toMatchObject({ microphoneEnabled: false });
+    clock.advanceMs(180_000);
+    await expect(submitAttempt(services, {
+      taskId: recall!.taskId, clientAttemptId: randomUUID(), modality: "dont_remember",
+    })).rejects.toMatchObject({ code: "conflict" });
+    expect((await pool.query("select state from learning_app.session_tasks where id=$1", [recall!.taskId])).rows[0])
+      .toEqual({ state: "issued" });
+    expect((await pool.query("select count(*)::int as count from learning_app.attempts where task_id=$1", [recall!.taskId])).rows[0])
+      .toEqual({ count: 1 });
+    const finalized = await readAttempt(services, attemptId);
+    expect(finalized.taskState).toBe("skipped");
     const state = await pool.query("select state from learning_app.session_tasks where id=$1", [recall!.taskId]);
     expect(state.rows[0]).toEqual({ state: "skipped" });
-    expect((await pool.query("select count(*)::int as count from learning_app.assessments where item_revision_id=$1", [revision!.id])).rows[0]).toEqual({ count: 0 });
+    expect((await pool.query("select count(*)::int as count, bool_and(outcome='unassessed') as only_technical from learning_app.assessments where attempt_id=$1", [attemptId])).rows[0]).toEqual({ count: 1, only_technical: true });
     const fallback = await nextTask(services, session.sessionId);
     expect(fallback?.prompt.kind).toBe("picture_exposure");
     await completePresentation(services, { taskId: fallback!.taskId });
     expect(await nextTask(services, session.sessionId)).toBeNull();
+    await endSession(services, session.sessionId);
+    expect((await disableApi(new Request("http://localhost/api/v1/kid/sessions/disable-microphone", {
+      method: "POST", headers: { "content-type": "application/json" }, body: "{}",
+    }))).status).toBe(409);
   });
 });

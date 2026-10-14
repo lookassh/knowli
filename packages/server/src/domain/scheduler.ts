@@ -302,30 +302,35 @@ function recognitionTaskPlan(
   direction: ReadingDirection | "listening",
   allowAlternative = false,
 ): TaskPlan | null {
-  if (input.vocabularyFormat === "picture" && direction === "listening") {
-    if (!target.visual) return null;
-    const built = buildPictureRecognitionOptions({
-      target: { ...target, visual: target.visual } as PictureRecognitionItem,
-      peers: input.peers.filter((peer) => peer.visual !== undefined) as PictureRecognitionItem[],
-      reservedTargetKeys: [...reserved],
-      rotateBy: input.nextOrdinal,
-    });
-    if (!built) return null;
-    return {
-      itemRevisionId: target.itemRevisionId,
-      exerciseType: "listening",
-      options: built.options,
-      revealsTargetKeys: built.revealsTargetKeys,
-      assessed: true,
-      reason,
-      keepsReservations,
-      assessmentSkills: ["listening"],
-    };
-  }
-  const directions = allowAlternative
+  const capabilities = getVocabularyCapabilities({ canRead: input.canRead ?? true, microphoneEnabled: input.microphoneEnabled });
+  const directions = (allowAlternative
     ? [direction, ...RECOGNITION_DIRECTIONS.filter((item) => item !== direction)]
-    : [direction];
+    : [direction]).filter((candidateDirection) =>
+      candidateDirection === "listening"
+        ? capabilities.exerciseTypes.includes("listening")
+        : capabilities.exerciseTypes.includes("reading"),
+    );
   for (const selectedDirection of directions) {
+    if (input.vocabularyFormat === "picture" && selectedDirection === "listening") {
+      if (!target.visual) continue;
+      const pictureOptions = buildPictureRecognitionOptions({
+        target: { ...target, visual: target.visual } as PictureRecognitionItem,
+        peers: input.peers.filter((peer) => peer.visual !== undefined) as PictureRecognitionItem[],
+        reservedTargetKeys: [...reserved],
+        rotateBy: input.nextOrdinal,
+      });
+      if (!pictureOptions) continue;
+      return {
+        itemRevisionId: target.itemRevisionId,
+        exerciseType: "listening",
+        options: pictureOptions.options,
+        revealsTargetKeys: pictureOptions.revealsTargetKeys,
+        assessed: true,
+        reason,
+        keepsReservations,
+        assessmentSkills: ["listening"],
+      };
+    }
     const built = buildRecognitionOptions({
       target,
       peers: input.peers,
@@ -561,13 +566,15 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
   }
 
   const reserved = new Set(input.reservedTargetKeys);
+  if (input.vocabularyFormat === "picture" && !input.microphoneEnabled) reserved.clear();
   const settled = new Set(input.settledCheckTargetKeys ?? []);
   const capabilities = getVocabularyCapabilities({ canRead: input.canRead ?? true, microphoneEnabled: input.microphoneEnabled });
   const eligible = new Set(capabilities.skills);
   const dueCheckSkills = new Set(capabilities.skills.filter((skill) => skill === "recall" || skill === "spelling"));
   for (const candidate of input.candidates) {
-    if (dueCheckSelection(candidate, input.now, dueCheckSkills) !== null && !settled.has(keyOfCandidate(candidate))) {
-      reserved.add(keyOfCandidate(candidate));
+    const key = keyOfCandidate(candidate);
+    if (dueCheckSelection(candidate, input.now, dueCheckSkills) !== null && !settled.has(key)) {
+      reserved.add(key);
     }
   }
   const keepsReservations = [...reserved];

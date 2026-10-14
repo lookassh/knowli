@@ -690,6 +690,7 @@ export default function DeckEditor({
           {childrenList.map((child, index) => (
             <div className="row space" key={child.id} data-testid={`assign-row-${index}`}>
               <span data-child-id={child.id}>{child.displayName}</span>
+              {child.canRead === false && deck.published?.vocabularyFormat !== "picture" && <p className="info" data-testid={`non-reader-assignment-warning-${index}`}>{messages.decks.nonReaderStandardAssignment}</p>}
               <input
                 type="date"
                 data-testid={`assign-date-${index}`}

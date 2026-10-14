@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { randomBytes, randomUUID } from "node:crypto";
-import { endSession, getLearningOverview, issueIntegrationToken, nextTask, startSession } from "@learning/server";
+import { endSession, getLearningOverview, issueIntegrationToken, nextTask, startSession, updateChild, upsertAssignment } from "@learning/server";
 import { LearningOverviewDtoSchema } from "@learning/contracts";
 import { learningOverviewWorld } from "../fixtures/learning-overview-world";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
@@ -16,6 +16,28 @@ beforeEach(async () => {
 afterAll(() => pool.end());
 
 describe("GET learning overview read model", () => {
+  it("keeps all five skill denominators for profiles with different reading settings and exposes no capability flag", async () => {
+    const { services, clock } = buildTestServices("2026-10-11T17:00:00.000Z");
+    const world = await learningOverviewWorld(services, pool, (ms) => clock.advanceMs(ms));
+    await updateChild(services, world.childId, { canRead: false });
+    await upsertAssignment(services, world.siblingId, world.deckId, null);
+
+    const result = await getLearningOverview(services, { days: 1, upcomingTestDays: 14 }, world.token);
+    expect(result.schemaVersion).toBe(1);
+    const first = result.children.find(({ childId }) => childId === world.childId)!;
+    const sibling = result.children.find(({ childId }) => childId === world.siblingId)!;
+    for (const child of [first, sibling]) {
+      const progress = child.currentProgress.find(({ deckId }) => deckId === world.deckId)!;
+      expect(progress.totalItems).toBe(1);
+      expect(progress.skills).toHaveLength(5);
+      expect(progress.skills.map(({ skill }) => skill).sort()).toEqual(["listening", "pronunciation", "reading", "recall", "spelling"].sort());
+      expect(progress.skills.every((skill) => skill.mastered + skill.needsConfirmation + skill.needsReconfirmation + skill.practicing + skill.notAssessed === progress.totalItems)).toBe(true);
+      expect(progress).not.toHaveProperty("canRead");
+      expect(child).not.toHaveProperty("canRead");
+    }
+    expect(first.currentProgress[0]!.skills).toEqual(sibling.currentProgress[0]!.skills);
+  });
+
   it("returns every local day, activity, current progress and Umiem test dates without mutating learning state", async () => {
     const { services, clock } = buildTestServices("2026-10-11T17:00:00.000Z");
     const world = await learningOverviewWorld(services, pool, (ms) => clock.advanceMs(ms));

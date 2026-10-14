@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { messages } from "@learning/contracts";
+import { messages, type UiAudioKey } from "@learning/contracts";
 import type { KidApi } from "./api/KidApi";
 import type { PlatformMedia } from "./media/platform";
 import { DeckScreen } from "./screens/DeckScreen";
@@ -11,6 +11,7 @@ import { LessonMockTestSummaryScreen } from "./screens/LessonMockTestSummaryScre
 import { useLearningSession } from "./session/useLearningSession";
 import type { LocalPreferences } from "./storage";
 import { KidPage } from "./layout/KidPage";
+import { GuidanceButton } from "./components/GuidanceButton";
 
 export interface ParentLinkConfig {
   label: string;
@@ -73,6 +74,7 @@ export function KidApp({
           profiles={screen.profiles}
           onSelect={(childId) => void controller.selectProfile(childId)}
           headerActions={actions}
+          onGuidance={(key: UiAudioKey) => controller.playGuidance(key)}
         />
         </KidPage>
       );
@@ -90,6 +92,7 @@ export function KidApp({
           onMockTest={(deckId) => void controller.startMockTest(deckId)}
           onEndActive={(deckId) => void controller.endActiveSession(deckId)}
           headerActions={actions}
+          onGuidance={(key: UiAudioKey) => controller.playGuidance(key)}
         />
         </KidPage>
       );
@@ -111,6 +114,7 @@ export function KidApp({
           profiles={screen.profiles}
           onAgain={() => void controller.learnAgain()}
           onSwitchProfile={() => void controller.switchProfile()}
+          guidance={<GuidanceButton audioKey="summary" onPlay={(key) => controller.playGuidance(key)} testId="kid-summary-guidance" />}
         />
         </KidPage>
       );

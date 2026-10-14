@@ -63,6 +63,7 @@ export interface LearningScreen {
   /** Błąd aplikacji (nie sieci) z przyciskiem ponowienia. */
   error: string | null;
   guidanceError?: boolean;
+  taskAudioError?: "blocked" | "failed" | null;
 }
 
 export type KidScreen =
@@ -229,12 +230,28 @@ export class LearningSessionController {
   }
 
   async playGuidance(key: UiAudioKey): Promise<void> {
+    const screen = this.#learning();
+    if (screen && (screen.offline || screen.busy || screen.processing || screen.recordingPhase !== "idle")) return;
     this.#stopPlayback();
+    const playbackGeneration = this.#playbackGeneration;
+    const epoch = this.#epoch;
     try {
-      if (!this.#guidance) throw new Error("UI audio unavailable");
+      if (!this.#guidance || !this.#uiAudio?.ready || !this.#uiAudio.assets[key]) {
+        try {
+          this.#uiAudio = await this.#api.readUiAudio();
+          this.#guidance = createGuidanceAudio(this.#uiAudio, this.#media.player, (id) => this.#api.mediaUrl(id));
+        } catch {
+          this.#uiAudio = { ready: false, assets: {} };
+          this.#guidance = null;
+        }
+      }
+      if (playbackGeneration !== this.#playbackGeneration || epoch !== this.#epoch) return;
+      if (!this.#guidance || !this.#uiAudio?.ready || !this.#uiAudio.assets[key]) throw new Error("UI audio unavailable");
       await this.#guidance.play(key);
+      if (playbackGeneration !== this.#playbackGeneration || epoch !== this.#epoch) return;
       this.#setLearning({ guidanceError: false });
     } catch (error) {
+      if (playbackGeneration !== this.#playbackGeneration || epoch !== this.#epoch) return;
       this.#setLearning({ guidanceError: true });
       throw error;
     }
@@ -466,6 +483,7 @@ export class LearningSessionController {
         inputLevel: null,
         recordingNotice: null,
         error: null,
+        taskAudioError: null,
       };
       this.#emit();
       if (task.pendingAttemptId) {
@@ -576,6 +594,7 @@ export class LearningSessionController {
     const epoch = this.#epoch;
     const taskId = screen.task.taskId;
     const task = screen.task;
+    this.#setLearning({ taskAudioError: null });
     this.#setLearning({ busy: true });
     const disclose = async (): Promise<void> => {
       const disclosure = await this.#api.authorizeDisclosure(taskId, "hint");
@@ -736,6 +755,7 @@ export class LearningSessionController {
     const screen = this.#learning();
     if (!screen?.task || screen.offline || screen.recordingPhase !== "idle" || screen.processing) return;
     const task = screen.task;
+    this.#setLearning({ taskAudioError: null });
     const playbackGeneration = this.#beginPlayback();
     const epoch = this.#epoch;
     let assetId = audioAssetOf(task);
@@ -746,7 +766,12 @@ export class LearningSessionController {
         if (playbackGeneration !== this.#playbackGeneration || epoch !== this.#epoch || !current || current.offline || current.recordingPhase !== "idle" || current.processing || current.task?.taskId !== task.taskId) return;
         assetId = authorization.audioAssetId ?? null;
       } catch (error) {
-        if (error instanceof KidApiError && playbackGeneration === this.#playbackGeneration && epoch === this.#epoch) this.#handleFailure(error);
+        const current = this.#learning();
+        if (playbackGeneration === this.#playbackGeneration && epoch === this.#epoch &&
+            current?.session.sessionId === screen.session.sessionId && current.task?.taskId === task.taskId) {
+          this.#resume = () => this.playTaskAudio();
+          this.#handleFailure(error);
+        }
         return;
       }
     }
@@ -780,10 +805,13 @@ export class LearningSessionController {
           .catch(() => undefined);
       }
     } catch (error) {
-      // zablokowany autoplay nie jest awarią; brak sieci jest
+      // Rozróżniamy blokadę autoplay od uszkodzonego/niedostępnego pliku.
       const current = this.#learning();
-      if (playbackGeneration === this.#playbackGeneration && epoch === this.#epoch && current?.task?.taskId === task.taskId && isNetworkError(error)) {
+      if (playbackGeneration !== this.#playbackGeneration || epoch !== this.#epoch || current?.task?.taskId !== task.taskId) return;
+      if (isNetworkError(error)) {
         this.#handleFailure(error);
+      } else {
+        this.#setLearning({ taskAudioError: (error as { name?: unknown } | null)?.name === "NotAllowedError" ? "blocked" : "failed" });
       }
     }
   }
@@ -830,12 +858,21 @@ export class LearningSessionController {
       if (epoch !== this.#epoch || this.#learning()?.task?.taskId !== screen.task.taskId) return;
       const denied = (error as { name?: unknown } | null)?.name === "NotAllowedError" ||
         (error as { name?: unknown } | null)?.name === "PermissionDeniedError";
+      const disableForPicture = !screen.session.canRead && screen.session.vocabularyFormat === "picture";
       if (denied) {
         this.#micDenied = true;
         this.#storage.write(MIC_DENIED_KEY, "1");
-        void this.#disableSessionMicrophone(screen.session);
       }
-      this.#setLearning({ recordingPhase: "idle", microphoneReady: false, micDenied: denied, recordingNotice: denied ? messages.kid.micDenied : messages.kid.recordingUnavailable });
+      if (denied || disableForPicture) await this.#disableSessionMicrophone(screen.session);
+      const current = this.#learning();
+      if (epoch !== this.#epoch || !current || current.session.sessionId !== screen.session.sessionId) return;
+      const taskUnchanged = current.task?.taskId === screen.task.taskId;
+      this.#setLearning({
+        recordingPhase: "idle",
+        microphoneReady: false,
+        micDenied: denied,
+        recordingNotice: taskUnchanged ? denied ? messages.kid.micDenied : messages.kid.recordingUnavailable : null,
+      });
     }
   }
 
@@ -881,12 +918,23 @@ export class LearningSessionController {
       this.#recorder = null;
       const denied = (error as { name?: unknown } | null)?.name === "NotAllowedError" ||
         (error as { name?: unknown } | null)?.name === "PermissionDeniedError";
+      const disableForPicture = !screen.session.canRead && screen.session.vocabularyFormat === "picture";
       if (denied) {
         this.#micDenied = true;
         this.#storage.write(MIC_DENIED_KEY, "1");
-        void this.#disableSessionMicrophone(screen.session);
       }
-      this.#setLearning({ recordingPhase: "idle", microphoneReady: false, inputLevel: null, micDenied: denied, recordingNotice: denied ? messages.kid.micDenied : messages.kid.recordingUnavailable });
+      if (denied || disableForPicture) await this.#disableSessionMicrophone(screen.session);
+      const current = this.#learning();
+      if (epoch !== this.#epoch || !current || current.session.sessionId !== screen.session.sessionId) return;
+      const taskUnchanged = current.task?.taskId === taskId;
+      if (generation !== this.#recordingGeneration && taskUnchanged) return;
+      this.#setLearning({
+        recordingPhase: "idle",
+        microphoneReady: false,
+        inputLevel: null,
+        micDenied: denied,
+        recordingNotice: taskUnchanged ? denied ? messages.kid.micDenied : messages.kid.recordingUnavailable : null,
+      });
     }
   }
 
@@ -947,9 +995,15 @@ export class LearningSessionController {
     try {
       const updated = await this.#api.disableMicrophone(session.sessionId);
       const current = this.#learning();
-      if (current?.session.sessionId === session.sessionId) this.#setLearning({ session: updated });
+      if (current?.session.sessionId !== session.sessionId) return;
+      const closedVoiceTask = current.task?.prompt.kind === "picture_recall" || current.task?.prompt.kind === "picture_speech";
+      this.#setLearning({ session: updated, error: null });
+      if (closedVoiceTask) await this.#loadNext(this.#epoch, session.sessionId);
     } catch {
-      // The denial is already local and recording stays disabled for this view.
+      const current = this.#learning();
+      if (current?.session.sessionId !== session.sessionId) return;
+      this.#resume = () => this.#disableSessionMicrophone(session);
+      this.#setLearning({ error: messages.errors.picture_microphone_disable_failed, busy: false });
     }
   }
 

@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
-import { messages, type KidDeckDto } from "@learning/contracts";
+import { messages, type KidDeckDto, type UiAudioKey } from "@learning/contracts";
+import { GuidanceButton } from "../components/GuidanceButton";
+import { KidIcon } from "../components/KidIcon";
 import { format } from "../format";
 import { formatDeckTestDate, groupDecks } from "./deck-presentation";
 import { MASTERY_STAR_MAX, starsForFraction } from "./stars";
@@ -29,6 +31,7 @@ export function DeckScreen({
   onMockTest,
   onEndActive,
   headerActions,
+  onGuidance,
 }: {
   decks: KidDeckDto[];
   childName: string;
@@ -40,6 +43,7 @@ export function DeckScreen({
   onMockTest?: (deckId: string) => void;
   onEndActive?: (deckId: string) => void;
   headerActions?: ReactNode;
+  onGuidance?: (key: UiAudioKey) => Promise<void>;
 }) {
   const groups = groupDecks(decks);
   const sections = [
@@ -49,7 +53,7 @@ export function DeckScreen({
 
   return (
     <main className="kid-screen kid-deck-screen">
-      {headerActions && <header className="kid-top-bar">{headerActions}</header>}
+      <header className="kid-top-bar">{headerActions}{onGuidance && <GuidanceButton audioKey="deck_select" onPlay={onGuidance} testId="kid-deck-guidance" />}</header>
       <h1>{messages.kid.decksTitle}</h1>
       {childName && <p className="kid-greeting">{format(messages.kid.greeting, { name: childName })}</p>}
 
@@ -113,6 +117,7 @@ function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive }: {
         <div className="kid-deck-card__actions">
           <button type="button" className="kid-primary" data-testid={deck.resumeOnly ? "kid-resume-session" : "kid-deck"} onClick={() => onStart(deck.deckId)}>
             <span className="kid-visually-hidden">{deck.title}: </span>{deck.resumeOnly ? messages.kid.resumeSession : messages.kid.deckStart}
+            <KidIcon name="arrow-right" />
           </button>
           {deck.resumeOnly && deck.activeSession && onEndActive && <button type="button" className="kid-secondary" data-testid="kid-end-active-session" onClick={() => onEndActive(deck.deckId)}>{messages.kid.endSession}</button>}
           {!deck.resumeOnly && deck.mockTestAvailable && onMockTest && (

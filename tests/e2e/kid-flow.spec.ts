@@ -54,9 +54,10 @@ async function createChild(
   parent: APIRequestContext,
   displayName: string,
   avatarKey: string,
+  canRead = true,
 ): Promise<{ id: string }> {
   const child = await (
-    await parent.post("/api/v1/parent/children", { data: { displayName, avatarKey } })
+    await parent.post("/api/v1/parent/children", { data: { displayName, avatarKey, canRead } })
   ).json();
   expect(child.id).toBeDefined();
   return child;
@@ -74,9 +75,10 @@ async function createAssignedDeck(
   childId: string,
   title: string,
   idempotencyKey: string,
+  vocabularyFormat: "standard" | "picture" = "standard",
 ): Promise<{ deckId: string; publishedVersionId: string }> {
   const generate = await parent.post("/api/v1/parent/decks/generate", {
-    data: { prompt: "angielskie dni tygodnia dla początkującego dziecka", idempotencyKey, title },
+    data: { prompt: "angielskie dni tygodnia dla początkującego dziecka", idempotencyKey, title, vocabularyFormat },
   });
   expect(generate.status()).toBe(202);
   const { deckId } = await generate.json();
@@ -98,7 +100,9 @@ async function createAssignedDeck(
     const draft = await (await parent.get(`/api/v1/parent/drafts/${draftId}`)).json();
     editNumber = draft.editNumber;
     const audioPending = draft.assets.some(
-      (asset: { role: string; state: string }) => asset.role === "target_audio" && asset.state !== "approved",
+      (asset: { role: string; state: string }) =>
+        (asset.role === "target_audio" || (vocabularyFormat === "picture" && asset.role === "illustration")) &&
+        asset.state !== "approved",
     );
     if (!audioPending) {
       const result = await parent.post(`/api/v1/parent/drafts/${draftId}/publish`, {
@@ -122,7 +126,7 @@ async function createAssignedDeck(
 
 interface TaskRow {
   answer_key: { target: string; correctOptionId?: string };
-  public_prompt: { options?: { id: string; text: string }[] };
+  public_prompt: { options?: { id: string; text?: string; labelPl?: string }[] };
 }
 
 async function taskRow(taskId: string): Promise<TaskRow> {
@@ -138,7 +142,7 @@ async function answerTarget(taskId: string): Promise<string> {
 async function correctOptionText(taskId: string): Promise<string> {
   const row = await taskRow(taskId);
   const correct = row.public_prompt.options!.find((o) => o.id === row.answer_key.correctOptionId);
-  return correct!.text;
+  return correct!.text ?? correct!.labelPl!;
 }
 
 /** Fixture: należne sprawdzenie danej umiejętności dla elementu o indeksie. */
@@ -852,6 +856,64 @@ async function injectFakeMediaPlatform(page: Page): Promise<void> {
     Object.defineProperty(window, "OfflineAudioContext", { configurable: true, value: FakeOfflineAudioContext });
   });
 }
+
+test("profil bez czytania przechodzi obrazkowe ćwiczenie mówione przez rzeczywisty tor nagrania", async ({ page }) => {
+  test.slow();
+  await injectFakeMediaPlatform(page);
+  const parent = await parentSession(page);
+  const child = await createChild(parent, "Ola bez czytania", "fox", false);
+  try {
+    await configureToggleRecording(parent, child.id);
+    const { publishedVersionId } = await createAssignedDeck(
+      parent, child.id, "Kolory obrazkowe", `picture-voice-${randomUUID()}`, "picture",
+    );
+    await seedDue(child.id, publishedVersionId, 0, "recall");
+    await openLearn(page, "Ola bez czytania");
+    expect(await (await page.request.get("/api/v1/kid/profiles")).json()).toContainEqual(
+      expect.objectContaining({ childId: child.id, canRead: false }),
+    );
+    const microphone = page.getByTestId("kid-mic-toggle");
+    if (!(await microphone.isChecked())) await microphone.check();
+    await page.getByTestId("kid-deck").filter({ hasText: "Kolory obrazkowe" }).click();
+
+    let spokenTaskId: string | null = null;
+    for (let step = 0; step < 18; step += 1) {
+      await page.waitForSelector('[data-task-id], [data-testid="kid-summary"]', { timeout: 30_000 });
+      await settled(page);
+      if (await page.getByTestId("kid-summary").isVisible()) break;
+      await expect(page.getByTestId("kid-input")).toHaveCount(0);
+      const kind = await page.getByTestId("kid-exercise").getAttribute("data-prompt-kind");
+      if (kind === "picture_recall" || kind === "picture_speech") {
+        spokenTaskId = await currentTaskId(page);
+        await expect(page.getByTestId("kid-record")).toBeVisible();
+        break;
+      }
+      if (await page.getByTestId("kid-done").isVisible()) {
+        await page.getByTestId("kid-done").click();
+      } else if (await page.getByTestId("kid-option").count() > 0) {
+        const correct = await correctOptionText(await currentTaskId(page));
+        await page.getByTestId("kid-option").filter({ hasText: new RegExp("^\\s*" + escapeRegex(correct) + "\\s*$") }).first().click();
+        await expect(currentFeedback(page)).toBeVisible();
+        await page.getByTestId("kid-next").click();
+      } else {
+        throw new Error("Nieoczekiwane ćwiczenie w zestawie obrazkowym: " + kind);
+      }
+    }
+    expect(spokenTaskId).not.toBeNull();
+    await expect(page.getByTestId("kid-exercise")).not.toContainText("red");
+    await startFakeRecording(page);
+    await expect(page.getByTestId("kid-recording")).toBeVisible();
+    await stopFakeRecording(page);
+    await expect(currentFeedback(page)).toBeVisible();
+    const audioAttempts = await query<{ modality: string }>(
+      `select modality from learning_app.attempts where task_id = $1`,
+      [spokenTaskId],
+    );
+    expect(audioAttempts).toContainEqual({ modality: "audio" });
+  } finally {
+    expect((await parent.delete(`/api/v1/parent/children/${child.id}`)).status()).toBe(204);
+  }
+});
 
 test("opuszczenie widoku w trakcie nagrywania zatrzymuje strumień", async ({ page }) => {
   test.slow();

@@ -86,6 +86,9 @@ describe("sesja lekcji — start i wydawanie zadań", () => {
     const session = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
     expect(session.mode).toBe("training");
     expect(session.resumed).toBe(false);
+    await expect(listKidDecks(services, child.id)).resolves.toMatchObject([
+      { deckId: lesson.deckId, activeSession: { sessionId: session.sessionId }, kind: "lesson" },
+    ]);
 
     const context = await sessionContext(session.sessionId);
     expect(context.graderCalls).toBe(0);
@@ -275,6 +278,8 @@ describe("sesja lekcji — start i wydawanie zadań", () => {
     expect(lessonDeck.itemCount).toBe(1); // jeden cel (third_person_s)
     expect(lessonDeck.independentlyRecalledCount).toBe(0);
     expect(lessonDeck.recommended).toBe(true); // nowy materiał
+    const decksWithoutMicrophone = await listKidDecks(services, child.id, { microphoneEnabled: false });
+    expect(decksWithoutMicrophone.find((deck) => deck.deckId === lesson.deckId)?.recommended).toBe(true);
     expect(lessonDeck.mockTestAvailable).toBe(false);
     expect(lessonDeck.subjectTitle).toBe("Angielski — gramatyka");
   });

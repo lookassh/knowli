@@ -103,6 +103,42 @@ describe("selectTask — nowy materiał (SPEC §13)", () => {
     const plan = selectTask(input({ candidates: [a, b, c], peers }));
     expect(plan).toMatchObject({ itemRevisionId: "rev-a", exerciseType: "listening", reason: "new-practice", assessed: true });
   });
+
+  it("nie emituje tekstowych zadań z rozpoznawania dla profilu picture bez czytania", () => {
+    const red = candidate({
+      itemRevisionId: "rev-red", target: "red", source: "czerwony", visual: { kind: "color", color: "#ff0000" },
+      ownPresentationCompleted: true, usedThisSession: 2, presentationsThisSession: 2,
+      practiceMix: { listening: 2, reading: 1 },
+    });
+    const blue = candidate({
+      itemRevisionId: "rev-blue", position: 1, target: "blue", source: "niebieski", visual: { kind: "color", color: "#0000ff" },
+      ownPresentationCompleted: true, usedThisSession: 2, presentationsThisSession: 2,
+    });
+    const plan = selectTask(input({
+      canRead: false, microphoneEnabled: true, vocabularyFormat: "picture", nextOrdinal: 2,
+      candidates: [red, blue], peers: [peer(red), peer(blue)],
+    }));
+    expect(plan).toMatchObject({ exerciseType: "listening" });
+    expect(plan?.options?.every((option) => option.visual !== undefined)).toBe(true);
+  });
+
+  it("zwalnia nieaktywne rezerwacje Recall po wyłączeniu mikrofonu, aby słuchanie mogło trwać", () => {
+    const red = candidate({
+      itemRevisionId: "rev-red", target: "red", source: "czerwony", visual: { kind: "color", color: "#ff0000" },
+      ownPresentationCompleted: true, usedThisSession: 2, presentationsThisSession: 2,
+    });
+    const blue = candidate({
+      itemRevisionId: "rev-blue", position: 1, target: "blue", source: "niebieski", visual: { kind: "color", color: "#0000ff" },
+      ownPresentationCompleted: true, usedThisSession: 2, presentationsThisSession: 2,
+    });
+    const plan = selectTask(input({
+      canRead: false, microphoneEnabled: false, vocabularyFormat: "picture", nextOrdinal: 2,
+      candidates: [red, blue], peers: [peer(red), peer(blue)],
+      reservedTargetKeys: [computeTargetKey("red", "en-GB"), computeTargetKey("blue", "en-GB")],
+    }));
+    expect(plan).toMatchObject({ exerciseType: "listening" });
+    expect(plan?.keepsReservations).toEqual([]);
+  });
 });
 
 describe("selectTask — rezerwacje należnych sprawdzeń (arch §9.3)", () => {

@@ -34,6 +34,10 @@ export async function listKidDecks(services: Services, childId: string, options:
   }
   const microphoneEnabled = options.microphoneEnabled ?? true;
   const [active] = await services.db.select().from(learningSessions).where(and(eq(learningSessions.childId, childId), eq(learningSessions.state, "active")));
+  const [activeVersion] = active
+    ? await services.db.select({ vocabularyFormat: deckVersions.vocabularyFormat, deckKind: decks.kind })
+        .from(deckVersions).innerJoin(decks, eq(deckVersions.deckId, decks.id)).where(eq(deckVersions.id, active.deckVersionId))
+    : [];
   const rows = await services.db
     .select({ deckId: decks.id, title: decks.title, kind: decks.kind, vocabularyFormat: deckVersions.vocabularyFormat, testDate: assignments.testDate, testGoals: assignments.testGoals, mockTestTaskCount: assignments.mockTestTaskCount, versionId: decks.publishedVersionId, lessonContext: deckVersions.lessonContext })
     .from(assignments)
@@ -54,7 +58,9 @@ export async function listKidDecks(services: Services, childId: string, options:
     .from(revisionAssets).where(and(inArray(revisionAssets.itemRevisionId, coverRevisions.map((revision) => revision.id)), eq(revisionAssets.role, "illustration"), eq(revisionAssets.state, "approved"))) : [];
   const illustrationByRevision = new Map(illustrationRows.map((row) => [row.itemRevisionId, row.assetId]));
   const coverVisualByVersion = new Map<string, KidDeckDto["coverVisual"]>();
+  const coverRevisionCountByVersion = new Map<string, number>();
   for (const revision of coverRevisions) {
+    coverRevisionCountByVersion.set(revision.deckVersionId, (coverRevisionCountByVersion.get(revision.deckVersionId) ?? 0) + 1);
     if (coverVisualByVersion.has(revision.deckVersionId)) continue;
     const item = payloadToItem(revision.payload as Record<string, unknown>);
     const visual = item.visualType === "image"
@@ -81,7 +87,10 @@ export async function listKidDecks(services: Services, childId: string, options:
   // dla tego dziecka? Elementy bez postępu to nowy materiał; rozpoczęte
   // sprawdzamy pod kątem należnych terminów. Utrwalanie dodatkowe jest
   // dostępne zawsze i nie czyni zestawu rekomendowanym.
-  const versionIds = vocabRows.map((row) => row.versionId!);
+  const versionIds = [...new Set([
+    ...vocabRows.map((row) => row.versionId!),
+    ...(active && activeVersion?.deckKind === "vocabulary" ? [active.deckVersionId] : []),
+  ])];
   const revisions = versionIds.length
     ? await services.db
         .select({ revisionId: itemRevisions.id, versionId: itemRevisions.deckVersionId })
@@ -218,7 +227,10 @@ export async function listKidDecks(services: Services, childId: string, options:
   }
   // Zachowujemy kolejność po createdAt (rows), rozgałęziając per rodzaj zestawu.
   const result = visibleRows.map((row): KidDeckDto => {
-    const activeSession = active?.deckId === row.deckId ? { sessionId: active.id, mode: active.mode } : null;
+    const isActive = active?.deckId === row.deckId;
+    const versionId = isActive ? active.deckVersionId : row.versionId!;
+    const vocabularyFormat = isActive ? activeVersion?.vocabularyFormat ?? row.vocabularyFormat : row.vocabularyFormat;
+    const activeSession = isActive ? { sessionId: active.id, mode: active.mode } : null;
     if (row.kind === "lesson") {
       // Tytuł przedmiotu z wstrzykniętego rejestru (NIE import globalny); liczniki
       // lekcji z silnika lekcji (zadanie 13).
@@ -227,9 +239,9 @@ export async function listKidDecks(services: Services, childId: string, options:
       const values = lessonValues.get(row.deckId) ?? { itemCount: 0, independentlyRecalledCount: 0, recommended: false };
       return {
         kind: "lesson",
-        vocabularyFormat: "standard",
-        coverVisual: null,
-        resumeOnly: !child.canRead && row.vocabularyFormat !== "picture" && active?.deckId === row.deckId,
+        vocabularyFormat,
+        coverVisual: coverVisualByVersion.get(versionId) ?? null,
+        resumeOnly: !child.canRead && isActive,
         subjectTitle,
         mockTestAvailable: child.canRead && (lessonMockAvailable.get(row.deckId) ?? false),
         activeSession,
@@ -238,24 +250,25 @@ export async function listKidDecks(services: Services, childId: string, options:
         itemCount: values.itemCount,
         independentlyRecalledCount: values.independentlyRecalledCount,
         testDate: row.testDate,
-        recommended: microphoneEnabled ? values.recommended : false,
+        // Lekcje mają własne tekstowe ćwiczenia i nie wymagają mikrofonu.
+        recommended: isActive ? false : values.recommended,
       };
     }
     return {
       kind: "vocabulary",
-      vocabularyFormat: row.vocabularyFormat,
-      coverVisual: coverVisualByVersion.get(row.versionId!) ?? null,
-      resumeOnly: !child.canRead && row.vocabularyFormat !== "picture" && active?.deckId === row.deckId,
+      vocabularyFormat,
+      coverVisual: coverVisualByVersion.get(versionId) ?? null,
+      resumeOnly: !child.canRead && isActive,
       subjectTitle: null,
       mockTestAvailable: child.canRead && !!row.testGoals?.length,
       activeSession,
       deckId: row.deckId,
       title: row.title,
-      itemCount: itemCountByVersion.get(row.versionId!) ?? 0,
-      independentlyRecalledCount: recalledCountByVersion.get(row.versionId!) ?? 0,
+      itemCount: isActive ? coverRevisionCountByVersion.get(versionId) ?? 0 : itemCountByVersion.get(versionId) ?? 0,
+      independentlyRecalledCount: recalledCountByVersion.get(versionId) ?? 0,
       testDate: row.testDate,
-      recommended: hasScheduledWork(itemsByVersion.get(row.versionId!) ?? [], now, {
-        canRead: child.canRead, microphoneEnabled, vocabularyFormat: row.vocabularyFormat,
+      recommended: !isActive && hasScheduledWork(itemsByVersion.get(row.versionId!) ?? [], now, {
+        canRead: child.canRead, microphoneEnabled, vocabularyFormat,
       }),
     };
   });
@@ -268,7 +281,7 @@ export async function listKidDecks(services: Services, childId: string, options:
         deckId: active.deckId, title: resumable.title, kind: resumable.kind as "vocabulary" | "lesson",
         vocabularyFormat: pinnedVersion.vocabularyFormat, coverVisual: coverVisualByVersion.get(active.deckVersionId) ?? null,
         resumeOnly: true, activeSession: { sessionId: active.id, mode: active.mode }, mockTestAvailable: false,
-        itemCount: count.length, independentlyRecalledCount: 0, testDate: null, recommended: false,
+        itemCount: count.length, independentlyRecalledCount: recalledCountByVersion.get(active.deckVersionId) ?? 0, testDate: null, recommended: false,
         ...(resumable.kind === "lesson" ? { subjectTitle: null } : {}),
       });
     }

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { messages, type KidProfileDto } from "@learning/contracts";
+import { messages, type KidProfileDto, type UiAudioKey } from "@learning/contracts";
+import { GuidanceButton } from "../components/GuidanceButton";
 
 const AVATARS: Record<string, string> = {
   fox: "🦊",
@@ -19,14 +20,16 @@ export function ProfileScreen({
   profiles,
   onSelect,
   headerActions,
+  onGuidance,
 }: {
   profiles: KidProfileDto[];
   onSelect: (childId: string) => void;
   headerActions?: ReactNode;
+  onGuidance?: (key: UiAudioKey) => Promise<void>;
 }) {
   return (
     <main className="kid-screen kid-screen--profile">
-      {headerActions && <header className="kid-top-bar">{headerActions}</header>}
+      <header className="kid-top-bar">{headerActions}{onGuidance && <GuidanceButton audioKey="profile_select" onPlay={onGuidance} testId="kid-profile-guidance" />}</header>
       <h1>{messages.kid.profilesTitle}</h1>
       {profiles.length === 0 ? (
         <p className="kid-hint">{messages.kid.noProfiles}</p>

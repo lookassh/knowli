@@ -237,6 +237,9 @@ export default function ChildEditor({
     }
   };
 
+  const avatarCounts = new Map<string, number>();
+  for (const child of childrenList) avatarCounts.set(child.avatarKey, (avatarCounts.get(child.avatarKey) ?? 0) + 1);
+
   return (
     <section>
       <h2>{messages.children.title}</h2>
@@ -249,6 +252,7 @@ export default function ChildEditor({
               {avatarEmoji(child.avatarKey)} {child.displayName}
               {child.birthYear ? ` (${child.birthYear})` : ""}
             </span>
+            {avatarCounts.get(child.avatarKey)! > 1 && <p className="info" data-testid={`duplicate-avatar-warning-${index}`}>{messages.children.duplicateAvatarWarning}</p>}
             <div className="row" style={{ minWidth: 0, maxWidth: "100%" }}>
               <a className="button-link" style={{ maxWidth: "100%", overflowWrap: "anywhere" }} data-testid="child-learn-link" href={`/kids/${child.id}/learn`}>
                 {messages.children.startLearning} · {child.displayName}

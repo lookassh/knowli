@@ -389,8 +389,6 @@ async function finalizeAttemptRow(
       exposures: [],
     });
   }
-  const freshTask = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, task.id)))[0]!;
-
   // rezerwacja sprawdzenia zwalniana po rozliczeniu albo po ocenionej próbie,
   // której feedback ujawnił rozwiązanie (arch §9.3; próba techniczna zostawia)
   const assessedAny = Object.values(grade.skills).some((s) => s.outcome !== "unevaluated");
@@ -404,13 +402,18 @@ async function finalizeAttemptRow(
       .where(eq(learningSessions.id, session.id));
   }
 
+  if (contextOf(session).microphoneDisabledTaskIds.includes(task.id)) {
+    await completeDisabledVoiceTask(tx, session.id, task.id);
+  }
+
+  const finalTaskState = await rereadTaskState(tx, task.id);
   return {
     attemptId: attempt.id,
     taskId: task.id,
     state: "completed",
     modality: modality as AttemptDto["modality"],
     feedback,
-    taskState: freshTask.state as AttemptDto["taskState"],
+    taskState: finalTaskState as AttemptDto["taskState"],
     stepId,
     receivedAt: attempt.receivedAt.toISOString(),
     completedAt: now.toISOString(),
@@ -517,7 +520,9 @@ export async function startAttempt(
   if (task.exerciseType === "exposure") {
     throw new AppError("validation", { message: "presentation tasks take no attempts" });
   }
-  if (task.state !== "issued") {
+  // `lazyFinalizeProcessing` and `completeDisabledVoiceTask` may terminalize
+  // this row. `task` is the pre-finalization snapshot from lockTaskWithSession.
+  if (await rereadTaskState(tx, task.id) !== "issued") {
     throw new AppError("conflict", { message: "task is no longer issued" });
   }
   const sessionContext = contextOf(session);
