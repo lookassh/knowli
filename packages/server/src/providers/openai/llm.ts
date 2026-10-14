@@ -77,7 +77,10 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
     `Produce about ${input.countPerObjective} exercises per objective, split across stages: ` +
       `${input.stageCounts.guided} guided (lesson_choice, lesson_order, lesson_short_answer), ` +
       `${input.stageCounts.productive} productive (lesson_gap, lesson_error_fix, lesson_transform), ` +
-      `${input.stageCounts.independent} independent (lesson_open_answer).`,
+      `${input.stageCounts.independent} independent (lesson_open_answer). ` +
+      "The stage type lists are a menu, not a per-exercise requirement: every exercise must use ONLY an exerciseType " +
+      "from its objective's allowed list above — if none of a stage's listed types is allowed for the objective, " +
+      "cover that stage with an allowed type (typically lesson_choice).",
   );
   if (!input.graderAvailable) {
     parts.push(
@@ -85,6 +88,12 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
         "lesson_short_answer) and lesson_gap over free-text types.",
     );
   }
+  parts.push(
+    "Canonical answers must be UNIQUE within this response: never submit two exercises whose canonical answer is " +
+      "the same wording or an equivalent of it (capitalization, punctuation, or an expanded/contracted spelling of " +
+      "the same words counts as the same). When distinct short answers run out, vary full-sentence answers " +
+      "(different subjects, verbs or objects) so every canonical answer differs.",
+  );
   if (input.existingAnswers && input.existingAnswers.length > 0) {
     parts.push(
       "Do NOT repeat these canonical answers already in the pool: " +

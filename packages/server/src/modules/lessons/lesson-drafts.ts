@@ -496,6 +496,11 @@ export async function executeLessonGeneration(services: Services, runId: string)
       }));
 
   const rawExercises: unknown[] = [];
+  // Odpowiedzi kanoniczne z wcześniejszych partii tej samej generacji: późniejsze
+  // cele dostają je jako `existingAnswers` ("Do NOT repeat…"), więc pełna
+  // generacja wielocelowa też omija duplikaty między partiami — walidacja fazy 2
+  // pozostaje egzekwatorem (advisory list z surowych odpowiedzi, deduplikowana).
+  const earlierAnswers: string[] = [];
   const examples: Record<string, string[]> = {};
   console.log(
     `[lesson] generacja run=${runId} deck=${input.deckId} cele=${batches.length} próba=${attempts} pula=${input.poolSize} model=${deps.llm.model}`,
@@ -510,11 +515,15 @@ export async function executeLessonGeneration(services: Services, runId: string)
         input.material,
         input.instruction,
         graderAvailable,
-        batch.existingAnswers,
+        [...new Set([...batch.existingAnswers, ...earlierAnswers])],
       );
       const result = await deps.llm.generateLessonPool(poolInput);
       for (const ex of result.exercises) {
         rawExercises.push(ex);
+        const answer = (ex as { answer?: unknown }).answer;
+        if (typeof answer === "string" && answer.trim() !== "") {
+          earlierAnswers.push(answer);
+        }
       }
       const rawExamples = result.examples;
       for (const objectiveId of [batch.objectiveId]) {

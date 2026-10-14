@@ -134,6 +134,18 @@ describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", ()
     // wariant, który walidator odrzuca jako duplikat).
     expect(system).not.toContain("does not play");
 
+    // Unikalność odpowiedzi kanonicznych (incydent prod 2026-10-13 wieczór:
+    // answer×34 — walidator fazy 2 odrzuca duplikaty w całej puli, a prompt
+    // nie wymagał unikalności w obrębie odpowiedzi modelu).
+    expect(system).toContain("Canonical answers must be UNIQUE within this response");
+    expect(system).toContain("expanded/contracted spelling of the same words counts as the same");
+    expect(system).toContain("vary full-sentence answers");
+
+    // Typy etapów jako „menu” ograniczone listą dozwolonych typów celu
+    // (prod: exerciseType×17 — model brał typy etapu niedozwolone dla celu).
+    expect(system).toContain("The stage type lists are a menu, not a per-exercise requirement");
+    expect(system).toContain("from its objective's allowed list above");
+
     // Materiał rodzica w wiadomości user, oznaczony jako materiał (nie instrukcje).
     expect(user).toContain("He plays football every day.");
     expect(user).toContain("Skup się na 3. osobie.");
