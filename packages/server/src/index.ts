@@ -93,6 +93,7 @@ export {
 export { classifyRevisionImpact, buildSkillCriteria } from "./domain/revision-impact";
 export { computeTargetKey, normalizeTargetText } from "./domain/target-key";
 export { chooseReadingDirection, hasScheduledWork, selectTask } from "./domain/scheduler";
+export { isPictureVocabularyItem, validateVocabularyFormatItems } from "./domain/picture-vocabulary";
 export type {
   DeckWorkloadItem,
   ScheduleCandidate,

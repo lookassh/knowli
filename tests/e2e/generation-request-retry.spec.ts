@@ -56,7 +56,7 @@ test.afterAll(async () => {
 
 test("lost 202 response retries the same command and opens its single deck", async ({ page }, testInfo) => {
   const title = `Ponowienie ${randomUUID().slice(0, 8)}`;
-  const prompt = "angielskie dni tygodnia dla początkującego dziecka";
+  const prompt = "angielskie kolory i liczby dla początkującego dziecka";
   const bodies: Record<string, unknown>[] = [];
   let loseFirstResponse = true;
   let acceptance: { generationRunId: string; deckId: string } | null = null;
@@ -75,6 +75,7 @@ test("lost 202 response retries the same command and opens its single deck", asy
   await enterParent(page);
   await page.getByTestId("deck-prompt").fill(prompt);
   await page.getByTestId("deck-title").fill(title);
+  await page.getByTestId("deck-vocabulary-format").selectOption("picture");
   await page.getByTestId("generate-submit").click();
   await expect(page.getByTestId("api-error")).toHaveText(messages.decks.generationUncertain);
   await expect(page.getByTestId("deck-title")).toBeDisabled();
@@ -92,6 +93,7 @@ test("lost 202 response retries the same command and opens its single deck", asy
   await expect(page.getByTestId("generation-banner")).toContainText(messages.decks.generating);
   expect(bodies).toHaveLength(2);
   expect(bodies[1]).toEqual(bodies[0]);
+  expect(bodies[0]).toMatchObject({ vocabularyFormat: "picture" });
 
   const command = bodies[0]!;
   const idempotencyKey = command.idempotencyKey as string;

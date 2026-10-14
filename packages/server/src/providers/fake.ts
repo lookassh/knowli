@@ -57,6 +57,13 @@ export const DEFAULT_FAKE_DECK_ITEMS: Array<Record<string, unknown>> = [
   { source: "niedziela", target: "sunday", acceptedAnswers: ["Sunday"], visualType: "none" },
 ];
 
+export const DEFAULT_FAKE_PICTURE_DECK_ITEMS: Array<Record<string, unknown>> = [
+  { source: "czerwony", target: "red", acceptedAnswers: [], visualType: "color", visualData: { color: "#ff0000" } },
+  { source: "niebieski", target: "blue", acceptedAnswers: [], visualType: "color", visualData: { color: "#0000ff" } },
+  { source: "jeden", target: "one", acceptedAnswers: [], visualType: "number", visualData: { count: 1 } },
+  { source: "dwa", target: "two", acceptedAnswers: [], visualType: "number", visualData: { count: 2 } },
+];
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export type LlmBehavior =
@@ -262,7 +269,8 @@ export class FakeLlmProvider implements LlmProvider {
     const behavior =
       this.#behaviors.length > 1 ? this.#behaviors.shift()! : this.#behaviors[0] ?? null;
     if (!behavior) {
-      return { items: DEFAULT_FAKE_DECK_ITEMS as unknown as LlmGeneratedItem[] };
+      const defaults = input.vocabularyFormat === "picture" ? DEFAULT_FAKE_PICTURE_DECK_ITEMS : DEFAULT_FAKE_DECK_ITEMS;
+      return { items: defaults as unknown as LlmGeneratedItem[] };
     }
     if ("error" in behavior) {
       const error = new Error(behavior.error) as Error & { retryable?: boolean };

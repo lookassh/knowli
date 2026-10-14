@@ -442,7 +442,7 @@ export default function DeckEditor({
       )}
       {deck?.generation?.state === "failed" && (
         <p className="error" data-testid="generation-failed">
-          {messages.decks.generationFailed}{" "}
+          {deck.generation.errorCode === "no_picture_material" ? messages.decks.noPictureMaterial : messages.decks.generationFailed}{" "}
           <button type="button" onClick={retry}>
             {messages.decks.retryGeneration}
           </button>
