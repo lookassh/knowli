@@ -709,6 +709,21 @@
   height: 96px;
 }
 
+.kid-icon-button {
+  min-width: 48px;
+  min-height: 48px;
+  border: 2px solid var(--kid-line);
+  border-radius: 14px;
+  color: var(--kid-accent);
+  background: var(--kid-surface);
+}
+
+.kid-profile-tag {
+  display: block;
+  color: var(--kid-muted);
+  font-size: .85rem;
+}
+
 .kid-visual-number {
   width: min(60vw, 240px);
   height: auto;

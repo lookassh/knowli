@@ -7,6 +7,8 @@ import { format } from "../format";
 import { AnswerFeedbackActions, AnswerFeedbackContent, AnswerFeedbackSecondaryActions } from "./AnswerFeedback";
 import { ExerciseFrame } from "../exercises/ExerciseFrame";
 import { KidIcon } from "../components/KidIcon";
+import { MeaningVisualView } from "../visuals/MeaningVisualView";
+import type { UiAudioKey } from "@learning/contracts";
 import { SpeechFeedbackActions, SpeechFeedbackContent, SpeechFeedbackSecondaryActions } from "./SpeechFeedbackCard";
 import type { LearningSessionController, LearningScreen as LearningScreenState } from "../session/session-controller";
 
@@ -31,9 +33,14 @@ export function LearnScreen({
     ? letterDraft.letters
     : {};
   const remaining = controller.remainingFor(task);
+  const instructionAudioKey: UiAudioKey | null = task?.prompt.kind === "picture_exposure" ? "exposure"
+    : task?.prompt.kind === "picture_listening" ? "listening"
+      : task?.prompt.kind === "picture_speech" ? "speech"
+        : task?.prompt.kind === "picture_recall" ? "recall" : null;
   const micAvailable = screen.session.mode !== "mock_test" && screen.session.microphoneEnabled && !screen.micDenied;
-  const micState = screen.session.mode === "mock_test" || !screen.session.microphoneEnabled ? "off"
+  const micState = screen.session.mode === "mock_test" ? "off"
     : screen.micDenied ? "unavailable"
+      : !screen.session.microphoneEnabled ? "off"
       : screen.recordingNotice === messages.kid.recordingUnavailable ? "unavailable"
         : screen.microphoneReady ? "ready" : "pending";
   const micLabel = micState === "unavailable" ? messages.kid.microphoneUnavailable
@@ -75,6 +82,7 @@ export function LearnScreen({
   return (
     <main className="kid-screen kid-learning" data-task-id={task?.taskId ?? undefined}>
       <header className="kid-header">
+        {instructionAudioKey && <button type="button" className="kid-icon-button" data-testid="kid-guidance-play" aria-label={messages.errors.picture_audio_retry} onClick={() => void controller.playGuidance(instructionAudioKey).catch(() => undefined)}><KidIcon name="volume" /></button>}
         {remaining !== null && (
           <p className="kid-remaining" data-testid="kid-remaining">
             {format(messages.kid.remaining, { n: remaining })}
@@ -100,6 +108,7 @@ export function LearnScreen({
             {messages.kid.processing}
           </p>
         )}
+        {screen.guidanceError && instructionAudioKey && <div className="kid-notice" data-testid="kid-guidance-error"><p>{messages.errors.picture_guidance_unavailable}</p><button type="button" onClick={() => void controller.playGuidance(instructionAudioKey).catch(() => undefined)}>{messages.errors.picture_audio_retry}</button><button type="button" onClick={() => void controller.endNow()}>{messages.kid.end}</button></div>}
       </div>
 
       {offline ? (
@@ -123,7 +132,9 @@ export function LearnScreen({
               <ExerciseFrame task={task} content={(
                 <section className="kid-card kid-reveal" data-testid="kid-reveal">
                   <p>{messages.kid.revealTitle}</p>
+                  {screen.reveal.visual && <MeaningVisualView visual={screen.reveal.visual} mediaUrl={(assetId) => controller.mediaUrl(assetId)} />}
                   <p className="kid-word">{screen.reveal.target}</p>
+                  {screen.reveal.audioAssetId && <button type="button" className="kid-audio-round" data-testid="kid-reveal-audio" onClick={() => void controller.playRevealAudio()} aria-label={messages.kid.listen}><KidIcon name="volume" /></button>}
                 </section>
               )} actions={(<button type="button" className="kid-primary" data-testid="kid-next"
                 onClick={() => void controller.confirmReveal()}>{messages.kid.understand}</button>)} />

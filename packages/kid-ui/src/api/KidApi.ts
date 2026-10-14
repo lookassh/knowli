@@ -1,5 +1,6 @@
 import type {
   MockTestSummaryDto,
+  UiAudioCatalogDto,
   LessonMockTestSummaryDto,
   AttemptDto,
   AttemptInput,
@@ -23,6 +24,7 @@ import type { RecordedAudio } from "../media/platform";
  * kryteriów oceny i technicznych score'ów.
  */
 export interface KidApi {
+  readUiAudio(): Promise<UiAudioCatalogDto>;
   readMockTestSummary(sessionId: string): Promise<MockTestSummaryDto>;
   /** Omówienie kartkówki lekcji (sesja lekcji) — per cel zamiast per umiejętność. */
   readLessonMockTestSummary(sessionId: string): Promise<LessonMockTestSummaryDto>;

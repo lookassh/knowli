@@ -1,5 +1,7 @@
 import {
   MockTestSummaryDtoSchema,
+  UiAudioCatalogDtoSchema,
+  KidValidationReasonSchema,
   LessonMockTestSummaryDtoSchema,
   AttemptDtoSchema,
   DisclosureDtoSchema,
@@ -11,6 +13,7 @@ import {
   SessionSummaryDtoSchema,
   TaskDtoSchema,
   type AttemptDto,
+  type KidValidationReason,
   type AttemptInput,
   type DisclosureDto,
   type FeedbackAudioDto,
@@ -31,6 +34,7 @@ export class KidApiError extends Error {
   constructor(
     readonly code: string,
     readonly retryable: boolean,
+    readonly reason?: KidValidationReason,
   ) {
     super(`kid api error: ${code}`);
     this.name = "KidApiError";
@@ -66,10 +70,16 @@ export function createKidApiClient(options: KidClientOptions = {}): KidApi {
     }
     const body = await response.json().catch(() => null);
     if (!response.ok) {
-      const apiError = body as { code?: string; retryable?: boolean } | null;
-      throw new KidApiError(apiError?.code ?? "internal", apiError?.retryable ?? false);
+      throw toKidApiError(body);
     }
     return parse(body);
+  }
+
+  function toKidApiError(body: unknown): KidApiError {
+    const apiError = body as { code?: string; retryable?: boolean; details?: unknown } | null;
+    const details = apiError?.details as { reason?: unknown } | undefined;
+    const parsed = KidValidationReasonSchema.safeParse(details?.reason);
+    return new KidApiError(apiError?.code ?? "internal", apiError?.retryable ?? false, parsed.success ? parsed.data : undefined);
   }
 
   function post<T>(path: string, payload: unknown, parse: (body: unknown) => T): Promise<T> {
@@ -100,6 +110,9 @@ export function createKidApiClient(options: KidClientOptions = {}): KidApi {
   const parseDecks = parseWith(KidDeckDtoSchema.array());
 
   return {
+    readUiAudio() {
+      return request("/api/v1/kid/ui-audio", { method: "GET" }, parseWith(UiAudioCatalogDtoSchema));
+    },
     readMockTestSummary(sessionId) {
       return request(`/api/v1/kid/sessions/${sessionId}/mock-test-summary`, { method: "GET" }, parseWith(MockTestSummaryDtoSchema));
     },
@@ -126,8 +139,7 @@ export function createKidApiClient(options: KidClientOptions = {}): KidApi {
         return null;
       }
       if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { code?: string; retryable?: boolean } | null;
-        throw new KidApiError(body?.code ?? "internal", body?.retryable ?? false);
+        throw toKidApiError(await response.json().catch(() => null));
       }
       return parseTask(await response.json());
     },
@@ -142,8 +154,7 @@ export function createKidApiClient(options: KidClientOptions = {}): KidApi {
       form.append("clientAttemptId", clientAttemptId);
       const response = await doFetch(`${base}/api/v1/kid/tasks/${taskId}/attempts`, { method: "POST", body: form });
       if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { code?: string; retryable?: boolean } | null;
-        throw new KidApiError(body?.code ?? "internal", body?.retryable ?? false);
+        throw toKidApiError(await response.json().catch(() => null));
       }
       return parseAttempt(await response.json());
     },

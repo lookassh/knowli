@@ -82,11 +82,13 @@ export function KidApp({
         <DeckScreen
           decks={screen.decks}
           childName={screen.profiles.find((profile) => profile.childId === screen.childId)?.displayName ?? ""}
+          mediaUrl={(assetId) => controller.mediaUrl(assetId)}
           microphone={screen.microphone}
           micDenied={screen.micDenied}
           onToggleMicrophone={(on) => controller.setMicrophone(on)}
           onStart={(deckId) => void controller.startLearning(deckId)}
           onMockTest={(deckId) => void controller.startMockTest(deckId)}
+          onEndActive={(deckId) => void controller.endActiveSession(deckId)}
           headerActions={actions}
         />
         </KidPage>

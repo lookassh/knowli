@@ -10,6 +10,7 @@ import {
   SessionDtoSchema,
   SessionSummaryDtoSchema,
   TaskDtoSchema,
+  UiAudioCatalogDtoSchema,
   type AttemptDto,
   type DisclosureDto,
   type FeedbackAudioDto,
@@ -21,6 +22,7 @@ import {
   type SessionDto,
   type SessionSummaryDto,
   type TaskDto,
+  type UiAudioCatalogDto,
 } from "@learning/contracts";
 import { expect, type Page } from "@playwright/test";
 
@@ -36,6 +38,7 @@ export interface KidUiFixture {
   mockSummary?: MockTestSummaryDto;
   lessonMockSummary?: LessonMockTestSummaryDto;
   feedbackAudio?: FeedbackAudioDto;
+  uiAudio?: UiAudioCatalogDto;
 }
 
 export async function installKidUiFixture(page: Page, fixture: KidUiFixture): Promise<void> {
@@ -50,6 +53,7 @@ export async function installKidUiFixture(page: Page, fixture: KidUiFixture): Pr
   if (fixture.mockSummary) MockTestSummaryDtoSchema.parse(fixture.mockSummary);
   if (fixture.lessonMockSummary) LessonMockTestSummaryDtoSchema.parse(fixture.lessonMockSummary);
   if (fixture.feedbackAudio) FeedbackAudioDtoSchema.parse(fixture.feedbackAudio);
+  if (fixture.uiAudio) UiAudioCatalogDtoSchema.parse(fixture.uiAudio);
 
   let taskIndex = 0;
   let attemptPostIndex = 0;
@@ -66,8 +70,10 @@ export async function installKidUiFixture(page: Page, fixture: KidUiFixture): Pr
     };
 
     if (method === "GET" && path === "/api/v1/kid/profiles") return json(fixture.profiles);
+    if (method === "GET" && path === "/api/v1/kid/ui-audio") return json(fixture.uiAudio ?? { ready: false, assets: {} });
     if (method === "GET" && path === "/api/v1/kid/decks") return json(fixture.decks);
     if (method === "POST" && path === "/api/v1/kid/sessions") return json(fixture.session);
+    if (method === "POST" && path === `/api/v1/kid/sessions/${fixture.session.sessionId}/disable-microphone`) return json({ ...fixture.session, microphoneEnabled: false });
     if (method === "POST" && path === `/api/v1/kid/sessions/${fixture.session.sessionId}/next`) {
       if (taskIndex >= fixture.tasks.length) return missing("task queue exhausted");
       const task = fixture.tasks[taskIndex++];

@@ -44,6 +44,7 @@ export function ProfileScreen({
                   {avatarOf(profile.avatarKey)}
                 </span>
                 <span>{profile.displayName}</span>
+                {!profile.canRead && <span className="kid-profile-tag">{messages.kid.nonReaderProfileTag}</span>}
               </button>
             </li>
           ))}

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { messages } from "@learning/contracts";
 import { KidApiError } from "../api/client";
 import type {
   AttemptDto,
@@ -15,7 +16,7 @@ import type {
 import type { KidApi } from "../api/KidApi";
 import type { AudioPlayer, PlatformMedia, RecorderOptions, SpeechRecorder } from "../media/platform";
 import { createMemoryPreferences, MIC_DENIED_KEY, type LocalPreferences } from "../storage";
-import { LearningSessionController } from "./session-controller";
+import { LearningSessionController, messageForError } from "./session-controller";
 
 /**
  * Testy jednostkowe sterownika przepływu (RF5 i kontrakt e2e zadania 9):
@@ -34,6 +35,8 @@ function sessionDto(childId: string, sessionId: string, microphoneEnabled: boole
     deckVersionId: "44444444-4444-4444-4444-444444444444",
     policyId: "learning-v1",
     microphoneEnabled,
+    canRead: true,
+    vocabularyFormat: "standard",
     state: "active",
     taskBudget: 12,
     tasksIssued: 0,
@@ -150,7 +153,8 @@ interface ApiState {
   disclosures: { taskId: string; kind: string }[];
   presentations: string[];
   endedSessions: string[];
-  startedSessions: { childId: string; microphoneEnabled: boolean }[];
+  disabledSessions: string[];
+  startedSessions: { childId: string; microphoneEnabled: boolean; supportsPictureVocabulary: boolean }[];
   submissions: { taskId: string; clientAttemptId: string; modality: string }[];
   speechSubmissions: { taskId: string; clientAttemptId: string }[];
   observations: string[];
@@ -168,6 +172,7 @@ interface ApiState {
 
 function makeApi(state: ApiState): KidApi {
   return {
+    async readUiAudio() { return { ready: false, assets: {} }; },
     async listProfiles() {
       if (state.networkDown) throw new TypeError("fetch failed");
       return state.profiles;
@@ -176,8 +181,10 @@ function makeApi(state: ApiState): KidApi {
       return state.decks;
     },
     async startSession(input) {
-      state.startedSessions.push({ childId: input.childId, microphoneEnabled: input.microphoneEnabled });
-      return { ...sessionDto(input.childId, "55555555-5555-5555-5555-555555555555", input.microphoneEnabled), mode: input.mode ?? "training" };
+      state.startedSessions.push({ childId: input.childId, microphoneEnabled: input.microphoneEnabled, supportsPictureVocabulary: input.supportsPictureVocabulary === true });
+      const profile = state.profiles.find((item) => item.childId === input.childId);
+      const deck = state.decks.find((item) => item.deckId === input.deckId);
+      return { ...sessionDto(input.childId, "55555555-5555-5555-5555-555555555555", input.microphoneEnabled), canRead: profile?.canRead ?? true, vocabularyFormat: deck?.vocabularyFormat ?? "standard", mode: input.mode ?? "training" };
     },
     async nextTask() {
       return state.tasks.shift() ?? null;
@@ -199,7 +206,7 @@ function makeApi(state: ApiState): KidApi {
       state.disclosures.push({ taskId, kind });
       if (state.disclosureError !== undefined) throw state.disclosureError;
       await state.disclosureGate;
-      return { taskId, stepId: "d1", kind, reveal: kind === "hint" ? { target: "Thursday" } : null };
+      return { taskId, stepId: "d1", kind, reveal: kind === "hint" ? { target: "Thursday" } : null, audioAssetId: "88888888-8888-4888-8888-888888888888" };
     },
     async authorizeFeedbackAudio(attemptId) {
       state.feedbackAudioCalls.push(attemptId);
@@ -222,6 +229,7 @@ function makeApi(state: ApiState): KidApi {
         independentSuccesses: { recall: 0, spelling: 0 }, practiceItems: [] };
     },
     async disableMicrophone(sessionId) {
+      state.disabledSessions.push(sessionId);
       return { ...sessionDto(PROFILE_A.childId, sessionId, false), canRead: false, vocabularyFormat: "picture" };
     },
     async readMockTestSummary(sessionId) {
@@ -290,6 +298,14 @@ async function startAtTask(state: ApiState, task: TaskDto, recorderOpts?: { fail
 }
 
 describe("LearningSessionController", () => {
+  it("wybiera polskie komunikaty dla znanych przyczyn walidacji obrazkowej", () => {
+    expect(messageForError(new KidApiError("validation", false, "picture_client_update_required"))).toContain("Zaktualizuj aplikację");
+    expect(messageForError(new KidApiError("validation", false, "vocabulary_requires_reading"))).toContain("wymaga umiejętności czytania");
+    expect(messageForError(new KidApiError("validation", false, "non_reader_mock_test_unavailable"))).toContain("Kartkówka nie jest dostępna");
+    expect(messageForError(new KidApiError("validation", false, "picture_guidance_unavailable"))).toContain("Instrukcje głosowe");
+    expect(messageForError(new KidApiError("validation", false, "picture_audio_unavailable"))).toContain("Nagranie jest chwilowo niedostępne");
+    expect(messageForError(new KidApiError("validation", false))).toBe(messages.errors.validation);
+  });
   it("autoryzuje wzorzec z bieżącego wyniku przed odtworzeniem", async () => {
     const state = baseState();
     const task = taskDto("77777777-7777-7777-7777-777777777777", { kind: "recall", prompt: "czwartek" });
@@ -299,6 +315,18 @@ describe("LearningSessionController", () => {
     await harness.controller.playFeedbackAudio();
     expect(state.feedbackAudioCalls).toEqual(["66666666-6666-6666-6666-666666666666"]);
     expect(harness.media.playUrls).toEqual(["https://media.test/reference-audio"]);
+  });
+
+  it("deklaruje wsparcie zestawów obrazkowych i odtwarza słuchanie po jawnej akcji", async () => {
+    const listening = taskDto("picture-listening", { kind: "picture_listening", audioAssetId: "asset-listening", options: [
+      { id: "option-1", labelPl: "czerwony", visual: { kind: "color", color: "#ff0000" } },
+      { id: "option-2", labelPl: "niebieski", visual: { kind: "color", color: "#0000ff" } },
+    ] });
+    const harness = await startAtTask(baseState(), listening);
+    expect(harness.state.startedSessions[0]).toMatchObject({ supportsPictureVocabulary: true });
+    expect(harness.media.playUrls).toEqual([]);
+    await harness.controller.playTaskAudio();
+    expect(harness.media.playUrls).toEqual(["https://media.test/asset-listening"]);
   });
 
   it("nie odtwarza autoryzacji, która wróciła już po zmianie karty", async () => {
@@ -752,13 +780,32 @@ describe("LearningSessionController", () => {
     let screen = harness.controller.getScreen();
     expect(screen).toMatchObject({ kind: "deck", microphone: false, micDenied: true });
 
-    harness.controller.setMicrophone(true);
+    await harness.controller.setMicrophone(true);
     screen = harness.controller.getScreen();
     expect(screen).toMatchObject({ kind: "deck", microphone: true, micDenied: false });
     expect(harness.storage.read(MIC_DENIED_KEY)).toBeNull();
 
     await harness.controller.startLearning(DECK.deckId);
     expect(state.startedSessions.at(-1)).toMatchObject({ microphoneEnabled: true });
+  });
+
+  it("odmowa mikrofonu wyłącza go dla sesji obrazkowej i pozwala kontynuować tę samą kartę", async () => {
+    const state = baseState();
+    state.profiles = [{ ...PROFILE_A, canRead: false }];
+    state.decks = [{ ...DECK, vocabularyFormat: "picture" }];
+    const task = taskDto("picture-voice", { kind: "picture_recall", visual: { kind: "number", count: 2 } });
+    state.tasks = [task];
+    const harness = makeHarness(state, { failStartWith: new DOMException("Permission denied", "NotAllowedError") });
+    await harness.controller.start();
+    await harness.controller.selectProfile(PROFILE_A.childId);
+    await harness.controller.startLearning(DECK.deckId);
+    await harness.controller.startRecording();
+    await harness.controller.startRecording();
+    await Promise.resolve();
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", session: { sessionId: "55555555-5555-5555-5555-555555555555", microphoneEnabled: false }, task: { taskId: task.taskId }, micDenied: true });
+    expect(state.disabledSessions).toEqual(["55555555-5555-5555-5555-555555555555"]);
+    expect(state.endedSessions).toHaveLength(0);
+    expect(state.speechSubmissions).toHaveLength(0);
   });
 
   it("ręczne wyłączenie mikrofonu na ekranie zestawów jest zapamiętywane", async () => {
@@ -769,7 +816,7 @@ describe("LearningSessionController", () => {
     await harness.controller.endNow();
 
     await harness.controller.learnAgain();
-    harness.controller.setMicrophone(false);
+    await harness.controller.setMicrophone(false);
     expect(harness.storage.read(MIC_DENIED_KEY)).toBe("1");
     expect(harness.controller.getScreen()).toMatchObject({
       kind: "deck",
@@ -892,6 +939,30 @@ describe("LearningSessionController", () => {
     await harness.controller.confirmReveal();
     expect(state.submissions[0]).toMatchObject({ modality: "dont_remember" });
     expect(harness.controller.getScreen()).toMatchObject({ feedback: { dto: { kind: "great" } } });
+  });
+
+  it("ujawnia wizualizację dla obrazkowego przypomnienia i przed dźwiękiem ponownie autoryzuje ekspozycję", async () => {
+    const recall = taskDto("picture-recall", { kind: "picture_recall", visual: { kind: "color", color: "#ff0000" } });
+    const harness = await startAtTask(baseState(), recall);
+    await harness.controller.notRemember();
+    expect(harness.controller.getScreen()).toMatchObject({ reveal: { visual: { kind: "color", color: "#ff0000" }, audioAssetId: expect.any(String) } });
+    await harness.controller.playRevealAudio();
+    expect(harness.state.disclosures.map((d) => d.kind)).toEqual(["hint", "audio"]);
+    expect(harness.media.playUrls).toEqual(["https://media.test/88888888-8888-4888-8888-888888888888"]);
+  });
+
+  it("po przeładowaniu poluje na oczekującą próbę zamiast pozwolić nagrać drugi raz", async () => {
+    const pendingTask = { ...taskDto("pending-task", { kind: "picture_recall", visual: { kind: "number", count: 3 } }), pendingAttemptId: "66666666-6666-4666-8666-666666666666" };
+    const state = baseState();
+    state.tasks = [pendingTask];
+    state.attempts = [attemptDto({ taskId: pendingTask.taskId, attemptId: pendingTask.pendingAttemptId, modality: "audio" })];
+    const harness = makeHarness(state);
+    await harness.controller.start();
+    await harness.controller.selectProfile(PROFILE_A.childId);
+    await harness.controller.startLearning(DECK.deckId);
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", feedback: { attemptId: pendingTask.pendingAttemptId }, busy: false, processing: false });
+    expect(state.speechSubmissions).toHaveLength(0);
+    expect(state.submissions).toHaveLength(0);
   });
 
   it("pytanie słuchowe odtwarza się samo po wyświetleniu (SPEC §12.2)", async () => {
@@ -1077,6 +1148,7 @@ function baseState(): ApiState {
     disclosures: [],
     presentations: [],
     endedSessions: [],
+    disabledSessions: [],
     startedSessions: [],
     submissions: [],
     speechSubmissions: [],
