@@ -4,6 +4,7 @@ import type {
   LlmGeneratedItem,
   LlmProvider,
 } from "../../ports/ai";
+import { lessonPoolJsonSchema, poolExerciseTypes } from "./lesson-pool-schema";
 
 export interface OpenAiLlmOptions {
   apiKey: string;
@@ -34,16 +35,6 @@ function systemPrompt(input: LlmGenerateDeckInput): string {
  * liczby etapów). Adapter nie zna gramatyki — każdy fakt o przedmiocie pochodzi
  * z `input`. Opis JSON wyjścia odpowiada payloadowi `lesson_exercise`.
  */
-/**
- * Typy, których silnik lekcji NIE oczekuje od generacji puli: `lesson_card`
- * wydaje deterministycznie scheduler (karta wprowadzająca celu), a walidacja
- * puli zawsze by taki typ odrzuciła — model nie może go nawet zaproponować.
- */
-const NON_POOL_EXERCISE_TYPES: ReadonlySet<string> = new Set(["lesson_card"]);
-
-const poolExerciseTypes = (types: readonly string[]): string[] =>
-  types.filter((t) => !NON_POOL_EXERCISE_TYPES.has(t));
-
 function lessonSystemPrompt(input: LessonPoolInput): string {
   const parts: string[] = [];
   parts.push(input.promptProfile.generationRole);
@@ -168,91 +159,6 @@ function lessonUserMaterial(input: LessonPoolInput): string {
     );
   }
   return lines.join("\n");
-}
-
-/**
- * Schemat strict json_schema dla generacji puli lekcji (structured outputs).
- * Pola opcjonalne ćwiczenia są nullable (wymóg strict mode: wszystkie pola
- * w `required`), `examples` idą tablicą par — strict mode nie wspiera map
- * o dowolnych kluczach; adapter składa z nich record. Enum typów pochodzi
- * z danych wejścia (`exerciseTypes` przedmiotu), więc adapter pozostaje
- * niezależny od przedmiotu. Reguły semantyczne (warianty ≠ kanoniczna
- * odpowiedź, dopuszczalne typy per cel) pilnuje walidacja domenowa.
- */
-function lessonPoolJsonSchema(input: LessonPoolInput): Record<string, unknown> {
-  const idTextItem = {
-    type: "object",
-    additionalProperties: false,
-    required: ["id", "text"],
-    properties: { id: { type: "string" }, text: { type: "string" } },
-  };
-  const nullable = (schema: Record<string, unknown>) => ({
-    type: ["null", schema.type],
-    ...(schema.items ? { items: schema.items } : {}),
-  });
-  return {
-    type: "object",
-    additionalProperties: false,
-    required: ["exercises", "examples"],
-    properties: {
-      exercises: {
-        type: "array",
-        items: {
-          type: "object",
-          additionalProperties: false,
-          required: [
-            "exerciseType",
-            "objectiveId",
-            "answer",
-            "acceptedAnswers",
-            "focus",
-            "instructionPl",
-            "stem",
-            "statement",
-            "prompt",
-            "hint",
-            "transformId",
-            "noticeSegments",
-            "options",
-            "correctOption",
-            "items",
-          ],
-          properties: {
-            exerciseType: { type: "string", enum: poolExerciseTypes(input.exerciseTypes) },
-            objectiveId: { type: "string" },
-            answer: { type: "string" },
-            acceptedAnswers: { type: "array", items: { type: "string" } },
-            focus: { type: "array", items: { type: "string" } },
-            instructionPl: { type: ["null", "string"] },
-            stem: { type: ["null", "string"] },
-            statement: { type: ["null", "string"] },
-            prompt: { type: ["null", "string"] },
-            hint: { type: ["null", "string"] },
-            transformId: { type: ["null", "string"] },
-            noticeSegments: {
-              type: ["null", "array"],
-              items: { type: "array", items: { type: "string" } },
-            },
-            options: nullable({ type: "array", items: idTextItem }),
-            correctOption: { type: ["null", "string"] },
-            items: nullable({ type: "array", items: idTextItem }),
-          },
-        },
-      },
-      examples: {
-        type: "array",
-        items: {
-          type: "object",
-          additionalProperties: false,
-          required: ["objectiveId", "examples"],
-          properties: {
-            objectiveId: { type: "string" },
-            examples: { type: "array", items: { type: "string" } },
-          },
-        },
-      },
-    },
-  };
 }
 
 /**

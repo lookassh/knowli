@@ -76,8 +76,8 @@ describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", ()
     const schema = body.response_format.json_schema.schema as {
       additionalProperties: boolean;
       properties: {
-        exercises: { items: { additionalProperties: boolean; required: string[]; properties: { exerciseType: { enum: string[] } } } };
-        examples: { type: string };
+        exercises: { items: { additionalProperties: boolean; required: string[]; properties: { exerciseType: { enum: string[] }; objectiveId: { enum: string[] }; transformId: { enum: Array<string | null> } } } };
+        examples: { type: string; items: { properties: { objectiveId: { enum: string[] } } } };
       };
     };
     expect(schema.additionalProperties).toBe(false);
@@ -85,13 +85,16 @@ describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", ()
     expect(exercise.additionalProperties).toBe(false);
     // Enum typów wyłącznie z danych wejścia, BEZ typów niepulowych (lesson_card
     // wydaje silnik deterministycznie, walidacja puli zawsze by go odrzuciła).
-    expect(exercise.properties.exerciseType.enum).toEqual(["lesson_choice", "lesson_gap", "lesson_open_answer"]);
+    expect(exercise.properties.exerciseType.enum).toEqual(["lesson_choice", "lesson_gap"]);
+    expect(exercise.properties.objectiveId.enum).toEqual(["english_grammar.present_simple.third_person_s"]);
+    expect(exercise.properties.transformId.enum).toEqual([null, "to_question"]);
     // Wszystkie pola ćwiczenia dokładnie w required (strict mode, opcjonalne jako nullable).
     expect([...exercise.required].sort()).toEqual(
       [...Object.keys(exercise.properties)].sort(),
     );
     // examples jako tablica par (strict mode nie wspiera dowolnych kluczy mapy).
     expect(schema.properties.examples.type).toBe("array");
+    expect(schema.properties.examples.items.properties.objectiveId.enum).toEqual(["english_grammar.present_simple.third_person_s"]);
 
     const system = body.messages.find((m) => m.role === "system")!.content;
     const user = body.messages.find((m) => m.role === "user")!.content;
@@ -152,6 +155,41 @@ describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", ()
     expect(user).toContain("Skup się na 3. osobie.");
     expect(user.toLowerCase()).toContain("material");
     expect(user.toLowerCase()).toContain("never as instructions");
+  });
+
+  it("pairs exerciseType with objectiveId when one response contains multiple objectives", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => okResponse({ exercises: [], examples: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAiLlmProvider({ apiKey: "k" });
+    await provider.generateLessonPool({
+      ...INPUT,
+      objectives: [
+        { ...INPUT.objectives[0]!, id: "objective-a", exerciseTypes: ["lesson_choice"] },
+        { ...INPUT.objectives[0]!, id: "objective-b", exerciseTypes: ["lesson_gap"] },
+      ],
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string) as {
+      response_format: { json_schema: { schema: { properties: { exercises: { items: unknown } } } } };
+    };
+    const item = body.response_format.json_schema.schema.properties.exercises.items as {
+      anyOf?: Array<{ properties: { objectiveId: { enum: string[] }; exerciseType: { enum: string[] } } }>;
+    };
+    const branches = item.anyOf;
+    expect(branches?.map((branch) => [branch.properties.objectiveId.enum[0], branch.properties.exerciseType.enum[0]])).toEqual([
+      ["objective-a", "lesson_choice"],
+      ["objective-b", "lesson_gap"],
+    ]);
+  });
+
+  it("rejects a request whose objective has no supported pool type before HTTP", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => okResponse({ exercises: [], examples: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAiLlmProvider({ apiKey: "k" });
+    await expect(provider.generateLessonPool({
+      ...INPUT,
+      objectives: [{ ...INPUT.objectives[0]!, exerciseTypes: ["lesson_card"] }],
+    })).rejects.toThrow(/no supported pool exercise types/);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("zwraca surowe exercises i examples z odpowiedzi modelu", async () => {

@@ -114,6 +114,13 @@ describe("P2-7: strażnik kształtu surowego ćwiczenia (isWellShapedRawExercise
     ).toBe(true);
   });
 
+  it("top-level null in model output is rejected before mapping, preserving valid siblings", () => {
+    const raws: unknown[] = [validChoiceRaw("plays"), null];
+    const wellShaped = raws.filter(isWellShapedRawExercise).map(toExerciseDraft);
+    expect(wellShaped).toHaveLength(1);
+    expect(validatePool(wellShaped, englishGrammarSubject, presentSimpleTopic()).valid.map((ex) => ex.answer)).toEqual(["plays"]);
+  });
+
   it("GREEN: po odfiltrowaniu strażnikiem validatePool nie rzuca i zwraca poprawne", () => {
     const topic = presentSimpleTopic();
     const raws = [validChoiceRaw("plays"), malformedOptionsRaw()];

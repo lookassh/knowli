@@ -323,6 +323,44 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect(rows.map((r) => r.answer)).toEqual(["plays"]); // tylko poprawne zapisane
   });
 
+  it("nullExerciseDoesNotRetryWholeRun", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = lessonServices(fakes);
+    const objectiveId = "english_grammar.present_simple.third_person_s";
+    fakes.llm.queueLesson({ exercises: [
+      {
+        exerciseType: "lesson_choice",
+        objectiveId,
+        instructionPl: "Wybierz.",
+        stem: "She ___ football.",
+        answer: "plays",
+        acceptedAnswers: [],
+        focus: [],
+        options: [{ id: "a", text: "plays" }, { id: "b", text: "play" }],
+        correctOption: "a",
+      },
+      null,
+    ] });
+
+    const { runId } = await createLesson(services, command());
+    await executeLessonGeneration(services, runId);
+
+    const run = await readGeneration(services, runId);
+    expect(run.state).toBe("succeeded");
+    expect(run.attempts).toBe(1);
+    const [version] = await query<{ lesson_context: { rejectedCount: number } }>(
+      "select lesson_context from learning_app.deck_versions where id = $1",
+      [run.deckVersionId!],
+    );
+    expect(version!.lesson_context.rejectedCount).toBe(1);
+    const rows = await query<{ count: number }>(
+      "select count(*)::int as count from learning_app.item_revisions where deck_version_id = $1",
+      [run.deckVersionId!],
+    );
+    expect(rows[0]!.count).toBe(1);
+  });
+
   it("odrzuca wadliwe przykłady, zachowując prawidłowe przykłady i ćwiczenia", async () => {
     const fakes = await fakeGeneration(); disposers.push(fakes.dispose);
     const services = lessonServices(fakes);
