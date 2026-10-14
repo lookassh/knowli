@@ -185,7 +185,8 @@ export async function authorizeDisclosure(services: Services, input: DisclosureI
 
     const revision = (
       await tx
-        .select({ payload: itemRevisions.payload, targetLocale: deckVersions.targetLocale, dbTargetKey: itemRevisions.targetKey })
+        .select({ payload: itemRevisions.payload, targetLocale: deckVersions.targetLocale, dbTargetKey: itemRevisions.targetKey,
+          lessonContext: deckVersions.lessonContext })
         .from(itemRevisions)
         .innerJoin(deckVersions, eq(deckVersions.id, itemRevisions.deckVersionId))
         .where(eq(itemRevisions.id, task.itemRevisionId))
@@ -195,6 +196,12 @@ export async function authorizeDisclosure(services: Services, input: DisclosureI
     // odpowiedź kanoniczna, a klucz ekspozycji to `target_key` ćwiczenia.
     const payload = revision.payload as { target?: string; answer?: string };
     const isLesson = (task.exerciseType as string).startsWith("lesson_");
+    if (isLesson && valid.kind === "audio") {
+      const subjectId = (revision.lessonContext as { subjectId?: string } | null)?.subjectId;
+      if (!subjectId || services.subjects.getSubject(subjectId)?.ttsForAnswers !== true) {
+        throw new AppError("conflict", { message: "ten przedmiot nie oferuje odsłuchu" });
+      }
+    }
     const target = isLesson ? (payload.answer ?? "") : (payload.target ?? "");
     const targetKey = isLesson
       ? ((task.answerKey as { targetKey?: string }).targetKey ?? revision.dbTargetKey)

@@ -34,6 +34,8 @@ w zadaniu 11); konwersja do WAV jest kodekowo-agnostyczna.
 
 ## Ocena odpowiedzi lekcji (web)
 
+Lekcje gramatyki od 2026-10-14 nie generują TTS odpowiedzi (`english_grammar.ttsForAnswers=false`), nie pokazują głośnika i nie wymagają gotowego audio przy publikacji. TTS słówek zachowuje dotychczasową konfigurację.
+
 Model oceniający otwarte odpowiedzi lekcji (gramatyka itp.) jest zgodny z
 OpenAI (`POST {baseUrl}/chat/completions`). Działa WYŁĄCZNIE w procesie web i
 tylko dla odpowiedzi tekstowych, których nie rozstrzygnęło dopasowanie

@@ -10,7 +10,7 @@ import {
 } from "@learning/contracts";
 import type { Clock, GenerationDeps, Services } from "../config";
 import type { Database, Executor, Tx } from "../db/client";
-import { deckVersions, decks, generationRuns, mediaAssets } from "../db/schema";
+import { deckVersions, decks, generationRuns, itemRevisions, mediaAssets, revisionAssets } from "../db/schema";
 import { AppError } from "../errors";
 import { applyItems } from "./decks";
 import { validateItems } from "./item-payload";
@@ -384,6 +384,38 @@ async function failMediaAsset(
 }
 
 /**
+ * Zlecenia sprzed wyłączenia TTS przedmiotu nie powinny już wołać providera.
+ * Wspólny fingerprint blokujemy tak samo jak uzgadnianie mediów: zasób
+ * potrzebny słówkom lub innemu przedmiotowi zachowuje swoją generację.
+ */
+async function supersedeDisabledLessonTts(services: Services, asset: typeof mediaAssets.$inferSelect): Promise<boolean> {
+  if (asset.kind !== "tts") return false;
+  return services.db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${asset.fingerprint}))`);
+    const current = (await tx.select().from(mediaAssets).where(eq(mediaAssets.id, asset.id)).for("update"))[0];
+    if (current?.state !== "pending") return false;
+    const references = await tx.select({ kind: decks.kind, lessonContext: deckVersions.lessonContext })
+      .from(revisionAssets)
+      .innerJoin(itemRevisions, eq(itemRevisions.id, revisionAssets.itemRevisionId))
+      .innerJoin(deckVersions, eq(deckVersions.id, itemRevisions.deckVersionId))
+      .innerJoin(decks, eq(decks.id, itemRevisions.deckId))
+      .where(eq(revisionAssets.assetId, asset.id));
+    if (references.length === 0 || !references.every(reference => {
+      const subjectId = (reference.lessonContext as { subjectId?: string } | null)?.subjectId;
+      return reference.kind === "lesson" && typeof subjectId === "string"
+        && services.subjects.getSubject(subjectId)?.ttsForAnswers === false;
+    })) return false;
+    // Failed zasób nie zostanie użyty jako pending cache, jeżeli TTS kiedyś
+    // wróci lub tego tekstu będą potrzebować słówka. Gotowych bajtów nie ruszamy.
+    await tx.update(mediaAssets).set({ state: "failed", leaseToken: null, leaseUntil: null })
+      .where(eq(mediaAssets.id, asset.id));
+    await tx.update(generationRuns).set({ state: "superseded", errorCode: null, finishedAt: services.clock.now() })
+      .where(and(eq(generationRuns.assetId, asset.id), inArray(generationRuns.state, ["queued", "running"])));
+    return true;
+  });
+}
+
+/**
  * Wykonanie zadania zasobu: claim lease CAS, wywołanie providera, zapis
  * content-addressed i finalizeacja CAS w jednej transakcji. Finalizacja
  * aktualizuje wyłącznie globalny asset/run — powiązań szkicu nie rusza.
@@ -406,6 +438,7 @@ export async function executeMediaAsset(services: Services, assetId: string): Pr
   if (asset.state === "failed") {
     return;
   }
+  if (await supersedeDisabledLessonTts(services, asset)) return;
 
   const leaseToken = randomUUID();
   const now = services.clock.now();
@@ -415,7 +448,7 @@ export async function executeMediaAsset(services: Services, assetId: string): Pr
     .where(
       and(
         eq(mediaAssets.id, assetId),
-        ne(mediaAssets.state, "ready"),
+        eq(mediaAssets.state, "pending"),
         or(isNull(mediaAssets.leaseToken), sql`${mediaAssets.leaseUntil} < ${now}`),
       ),
     )

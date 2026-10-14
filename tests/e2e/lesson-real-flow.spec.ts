@@ -93,6 +93,8 @@ async function createAssignedLesson(page: Page): Promise<{ childId: string; deck
 
   const savedDeck = LessonDeckDtoSchema.parse(await (await page.request.get(`/api/v1/parent/lessons/${deckId}`)).json());
   expect(savedDeck.draft?.examples[OBJECTIVE_ID]).toEqual([APPROVED_EXAMPLE]);
+  expect(savedDeck.draft?.assets).toEqual([]);
+  await expect(page.locator('[data-testid^="exercise-audio-state-"]')).toHaveCount(0);
   const deckList = (await (await page.request.get("/api/v1/parent/decks")).json() as unknown[]).map((row) => DeckSummaryDtoSchema.parse(row));
   const deckRowIndex = deckList.findIndex((deck) => deck.deckId === deckId);
   expect(deckRowIndex).toBeGreaterThanOrEqual(0);
@@ -166,6 +168,8 @@ async function currentTask(page: Page): Promise<TaskDto> {
   await expect.poll(() => taskResponses.get(taskId!)).toBeTruthy();
   const task = taskResponses.get(taskId!);
   expect(task, `Brak prawdziwej odpowiedzi API dla zadania ${taskId}`).toBeTruthy();
+  expect(task!.prompt).not.toHaveProperty("audioAssetId");
+  await expect(page.getByTestId("kid-lesson-listen")).toHaveCount(0);
   return task!;
 }
 
@@ -303,6 +307,7 @@ test("approved lesson survives reload and support without duplicate or independe
     const resumed = SessionDtoSchema.parse(await (await nextSessionResponse).json());
     expect(resumed).toMatchObject({ sessionId, deckVersionId: versionId, resumed: true });
     await expect(kid.locator(`main[data-task-id="${gapTaskId}"]`)).toBeVisible();
+    await expect(kid.getByTestId("kid-lesson-listen")).toHaveCount(0);
     expect(await tableCounts(sessionId)).toEqual(beforeReload);
     const completedAttemptsAfterReload = await query<{ task_id: string; attempt_count: string; assessment_count: string }>(
       `select st.id as task_id, count(distinct a.id)::text as attempt_count,

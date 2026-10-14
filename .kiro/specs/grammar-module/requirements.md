@@ -70,7 +70,7 @@ Słowniczek:
 3. THE typy zamknięte (wskazanie, wybór, klocki, krótka odpowiedź z opcjami) SHALL być oceniane deterministycznie po identyfikatorach odpowiedzi; układanie z klocków ma jeden kanoniczny porządek.
 4. THE cała ścieżka lekcji SHALL działać bez mikrofonu.
 5. THE pola tekstowe SHALL mieć wyłączoną autokorektę, sprawdzanie pisowni, autouzupełnianie i automatyczną kapitalizację w zakresie dostępnym na urządzeniu.
-6. WHEN dziecko odtworzy audio zdania przed odpowiedzią w ćwiczeniu tekstowym, THE system SHALL zapisać ekspozycję przed wydaniem audio i zakwalifikować próbę jako wspomaganą.
+6. THE lekcje gramatyki SHALL działać bez TTS odpowiedzi: bez głośnika, generowania audio i wymogu gotowego audio przy publikacji (decyzja właściciela 2026-10-14), także dla istniejących lekcji i wznowionych zadań. WHEN inny przedmiot z `ttsForAnswers=true` udostępni audio zdania przed odpowiedzią, THE system SHALL zapisać ekspozycję przed wydaniem audio i zakwalifikować próbę jako wspomaganą. Gotowe pliki i historia wcześniejszych odsłuchów gramatyki pozostają zachowane.
 
 ### Wymaganie 5 — Interaktywny przebieg nauki
 

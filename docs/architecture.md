@@ -392,7 +392,7 @@ Dziś moduły `sessions.ts`, `attempts.ts`, `mock-tests.ts`, `published-progress
 
 - `sessions.ts` (start/next/end) → dla `lesson` delegacja do `modules/lessons/lesson-sessions.ts` (selektor, prompty, podsumowanie);
 - `attempts.ts` → delegacja zadań `lesson_*` do `lesson-attempts.ts`;
-- `events.ts` → odsłuch w zadaniach tekstowych lekcji = wsparcie; podpowiedź niedostępna w kartkówce;
+- `events.ts` → odsłuch w zadaniach tekstowych lekcji = wsparcie tylko dla przedmiotu z `ttsForAnswers=true`; gramatyka ma audio wyłączone, podpowiedź niedostępna w kartkówce;
 - `mock-tests.ts` → plan i raport lekcji per cel;
 - `published-progress.ts`/`reporting.ts` → odrzucenie (`deck_kind_mismatch`) lub pominięcie lekcji;
 - `learning-overview.ts` → **filtr `decks.kind = 'vocabulary'` we wszystkich odczytach**, więc kontrakt raportu Hermesa (v1, JSON Schema) jest nienaruszony i nie obejmuje lekcji;
@@ -451,7 +451,7 @@ Trzy pierwsze zmienne razem albo żadna (częściowa konfiguracja = błąd start
 
 ### 19.7. Ograniczenia (zgodne z SPEC §29a.7)
 
-- **Audio odpowiedzi kanonicznej — zaimplementowane (A58).** Serwer generuje i wymaga `target_audio` przy publikacji (`ttsForAnswers`); `lesson-sessions.ts#loadExercises` rozwiązuje gotowy zasób (`revision_assets.state='approved'` ∧ `media_assets.state='ready'`), a `lesson-materialize.ts` dołącza `audioAssetId` TYLKO do promptów tekstowych (`lesson_gap`/`error_fix`/`transform`/`open_answer`) i nigdy w kartkówce. Kid UI (`LessonGapView`/`LessonSentenceView`) pokazuje „Posłuchaj”; `playTaskAudio` woła `authorizeDisclosure(audio)`, który pieczętuje `audio_issued` z `target_key` PRZED wydaniem bajtów → `assistanceFor` dodaje `model_audio` → próba niesamodzielna (wym. 4.6). Typy zamknięte nie niosą `audioAssetId`, a `authorizeDisclosure` odrzuca dla nich `kind='audio'` (`conflict`).
+- **TTS w gramatyce wyłączone (2026-10-14).** `english_grammar.ttsForAnswers=false`: generacja/edycja nie tworzy audio odpowiedzi, publikacja go nie wymaga, DTO panelu rodzica nie pokazuje starych zasobów tego przedmiotu, a materializacja oraz wznowienie zadania nie wydają `audioAssetId`. `authorizeDisclosure(audio)` sprawdza bieżącą możliwość przedmiotu i odrzuca odsłuch gramatyki przed zapisem ekspozycji. Snapshoty zadań, opublikowane rewizje, gotowe pliki i historia pozostają niezmienne. Worker pod wspólną blokadą fingerprintu rozpoznaje oczekujący TTS powiązany wyłącznie z przedmiotami z wyłączonym audio: zasób przechodzi w failed, run w superseded, bez wywołania providera. Pozwala to później stworzyć nową generację, jeżeli audio będzie wymagane; zasoby współdzielone ze słówkami/przedmiotem z TTS nadal są wykonywane. Praca już wysłana do zewnętrznego providera nie może zostać cofnięta. Opcjonalna ścieżka audio innych przedmiotów nadal zapisuje ekspozycję przed wydaniem bajtów i traktuje odsłuch jako wsparcie; kartkówki i typy zamknięte nie oferują odsłuchu.
 - **Opanowanie bez modelu.** Niezależne sprawdzenie reguły może używać produktywnych typów deterministycznych (zwł. `lesson_gap`), więc opanowanie jest osiągalne bez modelu oceniającego, o ile pula zawiera dość różnych takich ćwiczeń; model jest wymagany tylko dla odpowiedzi niedopasowanych (głównie tłumaczenie). Hybrydowa ocena jest opcjonalna.
 
 ### 19.8. Usuwanie lekcji z listy rodzica (2026-10-13)

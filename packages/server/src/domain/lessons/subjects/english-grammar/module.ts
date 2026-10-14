@@ -36,5 +36,6 @@ export const englishGrammarSubject: SubjectModule = {
   topics: [presentSimpleV1],
   prompts: englishGrammarPrompts,
   validateExercise: validateEnglishGrammarExercise,
-  ttsForAnswers: true,
+  // Gramatyka ćwiczy zastosowanie reguły; audio odpowiedzi ujawniałoby rozwiązanie.
+  ttsForAnswers: false,
 };

@@ -172,7 +172,7 @@ async function readLessonDraftDto(
     .where(eq(itemRevisions.deckVersionId, versionId))
     .orderBy(asc(itemRevisions.position));
   const revisionIds = revisions.map((r) => r.id);
-  const assetRows = revisionIds.length
+  const assetRows = revisionIds.length && requireSubject(services, context.subjectId).ttsForAnswers
     ? await db
         .select({
           itemRevisionId: revisionAssets.itemRevisionId,

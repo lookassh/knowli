@@ -186,12 +186,11 @@ describe("generowanie puli lekcji (integracja)", () => {
     );
     expect(skills[0]!.count).toBe(revisions.length);
 
-    // TTS odpowiedzi dla english_grammar (ttsForAnswers): po jednym target_audio na rewizję
+    // Gramatyka nie zleca TTS odpowiedzi ani nie przypina zasobów audio.
     const assets = await query<{ kind: string }>("select kind from learning_app.media_assets");
-    expect(assets.length).toBe(revisions.length);
-    expect(assets.every((a) => a.kind === "tts")).toBe(true);
+    expect(assets).toEqual([]);
     const roles = await query<{ role: string }>("select role from learning_app.revision_assets");
-    expect(roles.every((r) => r.role === "target_audio")).toBe(true);
+    expect(roles).toEqual([]);
   });
 
   it("pełna generacja wielocelowa przekazuje odpowiedzi wcześniejszych partii do kolejnych (bez duplikatów między celami)", async () => {

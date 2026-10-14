@@ -133,7 +133,7 @@ export function materializeExercise(
   // w treningu: odsłuch zdania wzorcowego przed odpowiedzią jest dozwolonym
   // wsparciem (wym. 4.6), ale w kartkówce zdradzałby odpowiedź. `audioAssetId`
   // jest już wykluczone z promptów typów zamkniętych przez schemat kontraktu.
-  const audio = !mockTest && exercise.audioAssetId ? { audioAssetId: exercise.audioAssetId } : {};
+  const audio = subject.ttsForAnswers && !mockTest && exercise.audioAssetId ? { audioAssetId: exercise.audioAssetId } : {};
 
   const baseKey: Record<string, unknown> = {
     exerciseType: payload.exerciseType,
