@@ -80,6 +80,7 @@ export const messages = {
     vocabularyFormatLabel: "Rodzaj zestawu",
     standardVocabulary: "Standardowy",
     pictureVocabulary: "Obrazkowy — bez czytania",
+    pictureEditorHint: "Każda karta musi mieć obraz, kolor albo liczbę; ilustracji nie można pominąć.",
     titleLabel: "Nazwa zestawu",
     generate: "Generuj",
     generating: "Generuję zestaw…",

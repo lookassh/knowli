@@ -388,7 +388,7 @@ export default function DeckEditor({
   };
 
   const omitIllustration = async (itemRevisionId: string) => {
-    if (!draft) {
+    if (!draft || draft.vocabularyFormat === "picture") {
       return;
     }
     setError(null);
@@ -465,15 +465,23 @@ export default function DeckEditor({
       )}
 
       {form && (
-        <label>
-          {messages.decks.titleLabel}
-          <input
-            data-testid="editor-title"
-            value={form.title}
-            disabled={!editable || busy}
-            onChange={(event) => mutate("title", event.target.value)}
-          />
-        </label>
+        <>
+          <p data-testid="vocabulary-format">
+            {messages.decks.vocabularyFormatLabel}: {form.vocabularyFormat === "picture"
+              ? messages.decks.pictureVocabulary
+              : messages.decks.standardVocabulary}
+            {form.vocabularyFormat === "picture" && ` — ${messages.decks.pictureEditorHint}`}
+          </p>
+          <label>
+            {messages.decks.titleLabel}
+            <input
+              data-testid="editor-title"
+              value={form.title}
+              disabled={!editable || busy}
+              onChange={(event) => mutate("title", event.target.value)}
+            />
+          </label>
+        </>
       )}
 
       {form?.items.map((item, index) => {
@@ -543,7 +551,9 @@ export default function DeckEditor({
                 disabled={!editable || busy}
                 onChange={(event) => changeVisual(index, event.target.value as VisualType)}
               >
-                {VISUAL_TYPES.map((type) => (
+                {VISUAL_TYPES.filter((type) =>
+                  form.vocabularyFormat !== "picture" || ["image", "color", "number"].includes(type),
+                ).map((type) => (
                   <option key={type} value={type}>
                     {messages.decks.visualTypes[type]}
                   </option>
@@ -605,7 +615,7 @@ export default function DeckEditor({
                   <span data-testid={`item-image-state-${index}`}>
                     {mediaStateText(messages.decks.imageState, illustration.state)}
                   </span>
-                  {editable && illustration.state !== "omitted" && (
+                  {editable && form.vocabularyFormat !== "picture" && illustration.state !== "omitted" && (
                     <button
                       type="button"
                       data-testid={`item-omit-image-${index}`}

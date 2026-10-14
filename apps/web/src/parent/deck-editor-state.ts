@@ -1,4 +1,4 @@
-import type { DraftDto, DraftPatch, VisualType } from "@learning/contracts";
+import type { DraftDto, DraftPatch, VisualType, VocabularyFormat } from "@learning/contracts";
 
 export interface EditableDeckItem {
   clientKey: string;
@@ -14,6 +14,7 @@ export interface EditableDeckItem {
 
 export interface EditableDeckForm {
   title: string;
+  vocabularyFormat: VocabularyFormat;
   items: EditableDeckItem[];
 }
 
@@ -37,6 +38,7 @@ export function createEditorSnapshot(
     editNumber: draft.editNumber,
     form: {
       title: draft.title,
+      vocabularyFormat: draft.vocabularyFormat,
       items: draft.items.map((item) => ({
         clientKey: item.id || `local:${newKey()}`,
         id: item.id,

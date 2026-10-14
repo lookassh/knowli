@@ -87,6 +87,12 @@ describe("editor snapshot and draft patch", () => {
     const snapshot = createEditorSnapshot({ ...draft(), items: [] }, () => "unused");
     expect(toDraftPatch(snapshot).items).toBeUndefined();
   });
+
+  it("retains the immutable vocabulary format in the editor snapshot without patching it", () => {
+    const snapshot = createEditorSnapshot({ ...draft(), vocabularyFormat: "picture" }, () => "unused");
+    expect(snapshot.form.vocabularyFormat).toBe("picture");
+    expect(toDraftPatch(snapshot)).not.toHaveProperty("vocabularyFormat");
+  });
 });
 
 describe("editor form comparison", () => {

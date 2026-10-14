@@ -100,6 +100,10 @@ test("lost 202 response retries the same command and opens its single deck", asy
   expect(idempotencyKey).toBeTruthy();
   await expectSingleGeneration(command, acceptance!);
   await expect(page.getByTestId("editor-title")).toHaveValue(title);
+  await expect(page.getByTestId("vocabulary-format")).toContainText(messages.decks.pictureVocabulary);
+  await expect(page.getByTestId("item-visual-0").locator("option")).toHaveCount(3);
+  await expect(page.getByTestId("item-visual-0").locator("option").evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value)))
+    .resolves.toEqual(["image", "color", "number"]);
 });
 
 test("malformed 202 response stays uncertain and retries the original command", async ({ page }) => {

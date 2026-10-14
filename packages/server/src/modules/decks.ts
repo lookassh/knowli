@@ -41,6 +41,7 @@ import { computeTargetKey } from "../domain/target-key";
 import { VOCABULARY_SKILLS, type VocabularySkill } from "../domain/types";
 import { buildPayload, payloadToItem, validateItems } from "./item-payload";
 import { assertVocabularyDeck, readDeckKind, readVersionDeckKind } from "./deck-kind";
+import { validateVocabularyFormatItems } from "../domain/picture-vocabulary";
 import { assertAssetPublishable, reconcileDraftAssetsTx, requiredAssetsFor } from "./media-reconciliation";
 import {
   assertEditable,
@@ -174,6 +175,7 @@ async function readDraftDto(db: Executor, versionId: string): Promise<DraftDto> 
 export async function createDraft(services: Services, input: DraftInput): Promise<DraftDto> {
   const valid = DraftInputSchema.parse(input);
   validateItems(valid.items);
+  validateVocabularyFormatItems(valid.vocabularyFormat, valid.items);
 
   const deckId = randomUUID();
   const versionId = randomUUID();
@@ -494,6 +496,7 @@ export async function editDraft(
       await tx.update(deckVersions).set({ title: valid.title }).where(eq(deckVersions.id, draftId));
     }
     if (valid.items !== undefined) {
+      validateVocabularyFormatItems(version.vocabularyFormat, valid.items);
       await applyItems(tx, draftId, version.deckId, valid.items);
     }
     await bumpEditNumber(tx, draftId);
@@ -534,6 +537,9 @@ export async function publishDraft(
       .orderBy(asc(itemRevisions.position));
     if (revisions.length === 0) {
       throw new AppError("validation", { message: "deck has no items" });
+    }
+    if (version.vocabularyFormat === "picture") {
+      validateVocabularyFormatItems("picture", revisions.map((revision) => payloadToItem(revision.payload)));
     }
     const revisionIds = revisions.map((r) => r.id);
     const assets = await tx
@@ -585,6 +591,11 @@ export async function publishDraft(
         if (!illustration) {
           throw new AppError("validation", {
             message: `illustration not decided for revision ${revision.id}`,
+          });
+        }
+        if (illustration.state === "omitted" && version.vocabularyFormat === "picture") {
+          throw new AppError("validation", {
+            message: `picture vocabulary requires illustration for revision ${revision.id}`,
           });
         }
         if (illustration.state !== "omitted") {
