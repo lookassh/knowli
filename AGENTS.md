@@ -32,6 +32,20 @@ W początkowym repo umieść powyższe dokumenty w `docs/`. Ten plik uzupełnia 
 
 Na początku sprawdź stan repozytorium, istniejące skrypty i zakres zmian użytkownika. Nie nadpisuj jego niezwiązanych zmian. W razie sprzeczności wpływającej na model danych, prywatność lub publiczny kontrakt wyjaśnij ją przed implementacją zależnego fragmentu. Rutynowe wybory rozstrzygaj samodzielnie.
 
+### Szybki start w worktree — zasady unikania redundancji i kosztów
+
+W celu przyspieszenia pracy agentów i wyeliminowania powtarzalnych, kosztownych operacji przy każdym nowym zadaniu w worktree:
+
+1. **Zależności (`node_modules`)**:
+   - Przed wywołaniem instalatora **zawsze sprawdź, czy katalog `node_modules` już istnieje** (`Test-Path node_modules` lub `[ -d node_modules ]`). Jeśli istnieje, a Twoje zadanie nie modyfikuje `package.json` ani `pnpm-lock.yaml`, **bezwzględnie pomiń krok instalacji** (zignoruj generyczne zalecenie `npm install` ze skilli typu `using-git-worktrees`).
+   - Jeśli instalacja jest konieczna: używaj wyłącznie `corepack pnpm install --prefer-offline --frozen-lockfile` (lub `pnpm install --prefer-offline --frozen-lockfile`). **Nigdy nie uruchamiaj `npm install`** (niszczy dowiązania pnpm i generuje niepożądany `package-lock.json`).
+2. **Kopiowanie pliku `.env`**:
+   - Nowe worktree nie zawiera plików ignorowanych przez git. Przed uruchomieniem testów lub narzędzi upewnij się, że plik `.env` istnieje. W razie braku skopiuj go jednym poleceniem z głównego repozytorium: `node scripts/setup-worktree.cjs` (lub skopiuj z `$(git rev-parse --git-common-dir)/../.env`).
+3. **Celowane czytanie dokumentacji**:
+   - Nie czytaj wszystkich 5 plików dokumentacji (`SPEC.md`, `architecture.md`, `schema.sql`, `folder-structure.md`, `implementation-plan.md`) od deski do deski na początku każdego małego zadania. Przeczytaj **wyłącznie sekcje bezpośrednio powiązane z Twoim zakresem zmian** (np. `schema.sql` przy modelowaniu bazy, `architecture.md` sekcja 19 przy lekcjach, `SPEC.md` sekcje dotyczące danego ekranu).
+4. **Oszczędny baseline test**:
+   - Podczas sprawdzania stanu początkowego (bramka baseline w `using-git-worktrees`) **nie uruchamiaj pełnego monorepo ani testów e2e / Playwright**. Uruchom wyłącznie szybki test jednostkowy związany ze zmienianym modułem (np. `corepack pnpm vitest run <ścieżka-do-testu>` lub `pnpm vitest run <ścieżka-do-testu>`).
+
 ## Architektura i stack
 
 - Next.js App Router, React i TypeScript w trybie strict; runtime serwera Node.js.
@@ -135,7 +149,7 @@ Nazwy w tabeli oznaczają skillsy `superpowers:<nazwa>`; prefiks wywołania moż
 | Co najmniej dwa niezależne zadania do delegacji równoległej | `dispatching-parallel-agents`: tylko po wyraźnej zgodzie właściciela i sprawdzeniu braku wspólnego stanu lub zależności. |
 | Błąd, nieoczekiwane zachowanie lub nieudany test | `systematic-debugging`: ustalenie i potwierdzenie przyczyny przed proponowaniem poprawki. |
 | Implementacja zachowania lub poprawka błędu | `test-driven-development`: znaczący test, potwierdzone RED, minimalna implementacja i GREEN. |
-| Początek implementacji wymagającej izolacji lub wykonania planu | `using-git-worktrees`: utworzenie albo sprawdzenie istniejącego worktree; nie twórz kolejnego bez potrzeby. |
+| Początek implementacji wymagającej izolacji lub wykonania planu | `using-git-worktrees`: utworzenie albo sprawdzenie istniejącego worktree; nie twórz kolejnego bez potrzeby; stosuj zasady szybkiego startu (nie reinstaluj `node_modules` jeśli istnieją, skopiuj `.env`, selektywny baseline). |
 | Ukończenie uzgodnionego zakresu implementacji, duża funkcja/refaktoryzacja, złożona poprawka oraz przed scaleniem do `main` | **`requesting-code-review`**: osobny przegląd zmian z wymaganiami, zakresem diffu i wynikami sprawdzeń; szczegóły bramki poniżej. |
 | Otrzymanie uwag z review | `receiving-code-review`: weryfikacja techniczna uwag przed zmianami; uzasadnione przyjęcie lub odrzucenie. |
 | Przed stwierdzeniem „gotowe”, „naprawione”, „testy przechodzą”, commitem lub PR | `verification-before-completion`: aktualne polecenia, odczytane wyniki i sprawdzone kryteria akceptacji. |
