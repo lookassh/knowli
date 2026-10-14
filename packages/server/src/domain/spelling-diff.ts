@@ -95,10 +95,20 @@ export function compareSpelling(answer: string, key: AnswerKey): SpellingCompari
       }
     }
   }
+
+  const isContiguousFragmentOmission =
+    givenSegments.length > 0 &&
+    givenSegments.every((segment) => segment.state === "plain") &&
+    expectedSegments.filter((segment) => segment.state === "pill").length <= 1 &&
+    givenChars.length >= 2 &&
+    (givenChars.length >= 3 || givenChars.length >= Math.ceil(variantChars.length * 0.5));
+
+  const withinThreshold = best.distance <= threshold || isContiguousFragmentOmission;
+
   return {
     variant: best.variant,
     distance: best.distance,
-    withinThreshold: best.distance <= threshold,
+    withinThreshold,
     capitalizationHint,
     given: givenSegments,
     expected: expectedSegments,

@@ -1,7 +1,7 @@
 import { useEffect, useRef, type ReactElement } from "react";
 import { messages, type FeedbackDto } from "@learning/contracts";
 import { format } from "../format";
-import { joinedText } from "./spelling-diff-view";
+import { isIncompleteWord, joinedText } from "./spelling-diff-view";
 import { lessonFeedbackView } from "./lesson-feedback-view";
 
 export interface AnswerFeedbackProps {
@@ -21,9 +21,13 @@ function feedbackText(feedback: FeedbackDto | null): string {
     case "capitalization_hint": return format(messages.kid.feedbackCapitalization, { word: dto.correctText ?? "" });
     case "incorrect": return format(messages.kid.feedbackIncorrect, { word: dto.correctText ?? "" });
     case "spelling_hint":
-      return dto.spellingDiff?.capitalizationHint
-        ? format(messages.kid.feedbackSpellingCapitalization, { word: dto.correctText ?? "" })
-        : messages.kid.feedbackSpelling;
+      if (dto.spellingDiff && isIncompleteWord(dto.spellingDiff.given, dto.spellingDiff.expected)) {
+        return messages.kid.feedbackSpellingMissingLetters;
+      }
+      if (dto.spellingDiff?.capitalizationHint) {
+        return format(messages.kid.feedbackSpellingCapitalization, { word: dto.correctText ?? "" });
+      }
+      return messages.kid.feedbackSpelling;
     case "content_matched": return messages.kid.feedbackContentMatched;
     case "not_assessed": return messages.kid.feedbackNotAssessed;
     // Lekcje: tytuł bez odwołania do odsłuchu (lekcje są tekstowe).
@@ -111,40 +115,49 @@ export function AnswerFeedbackContent({ dto, busy }: Pick<AnswerFeedbackProps, "
             ))}
           </p>
         )}
-        {feedback.spellingDiff && (
-          <div className="kid-spelling-diff" data-testid="kid-spelling-diff">
-            <p className="kid-visually-hidden">
-              {format(messages.kid.spellingDiffAria, {
-                given: joinedText(feedback.spellingDiff.given),
-                expected: joinedText(feedback.spellingDiff.expected),
-              })}
-            </p>
-            <div className="kid-spelling-row" data-testid="kid-spelling-given">
-              <span className="kid-spelling-row-label">{messages.kid.spellingYourAnswer}</span>
-              {feedback.spellingDiff.given.map((segment, index) => (
-                <span
-                  key={index}
-                  className={segment.state === "pill" ? "kid-spelling-pill kid-spelling-pill--given" : "kid-spelling-plain"}
-                  data-testid={segment.state === "pill" ? "kid-spelling-pill" : undefined}
-                >
-                  {segment.text}
-                </span>
-              ))}
+        {feedback.spellingDiff && (() => {
+          const incomplete = isIncompleteWord(feedback.spellingDiff.given, feedback.spellingDiff.expected);
+          return (
+            <div className="kid-spelling-diff" data-testid="kid-spelling-diff">
+              <p className="kid-visually-hidden">
+                {incomplete
+                  ? format(messages.kid.spellingMissingAria, {
+                      expected: joinedText(feedback.spellingDiff.expected),
+                    })
+                  : format(messages.kid.spellingDiffAria, {
+                      given: joinedText(feedback.spellingDiff.given),
+                      expected: joinedText(feedback.spellingDiff.expected),
+                    })}
+              </p>
+              {!incomplete && (
+                <div className="kid-spelling-row" data-testid="kid-spelling-given">
+                  <span className="kid-spelling-row-label">{messages.kid.spellingYourAnswer}</span>
+                  {feedback.spellingDiff.given.map((segment, index) => (
+                    <span
+                      key={index}
+                      className={segment.state === "pill" ? "kid-spelling-pill kid-spelling-pill--given" : "kid-spelling-plain"}
+                      data-testid={segment.state === "pill" ? "kid-spelling-pill" : undefined}
+                    >
+                      {segment.text}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="kid-spelling-row" data-testid="kid-spelling-expected">
+                {!incomplete && <span className="kid-spelling-row-label">{messages.kid.spellingCorrect}</span>}
+                {feedback.spellingDiff.expected.map((segment, index) => (
+                  <span
+                    key={index}
+                    className={segment.state === "pill" ? "kid-spelling-pill kid-spelling-pill--expected" : "kid-spelling-plain"}
+                    data-testid={segment.state === "pill" ? "kid-spelling-pill" : undefined}
+                  >
+                    {segment.text}
+                  </span>
+                ))}
+              </div>
             </div>
-            <div className="kid-spelling-row" data-testid="kid-spelling-expected">
-              <span className="kid-spelling-row-label">{messages.kid.spellingCorrect}</span>
-              {feedback.spellingDiff.expected.map((segment, index) => (
-                <span
-                  key={index}
-                  className={segment.state === "pill" ? "kid-spelling-pill kid-spelling-pill--expected" : "kid-spelling-plain"}
-                  data-testid={segment.state === "pill" ? "kid-spelling-pill" : undefined}
-                >
-                  {segment.text}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
+          );
+        })()}
         {/* Feedback lekcji: odpowiedź dziecka z zaznaczonymi segmentami, podpowiedź
             kategorii i poprawna odpowiedź. Kolor nie jest jedynym nośnikiem —
             każdy wiersz ma etykietę tekstową. */}
