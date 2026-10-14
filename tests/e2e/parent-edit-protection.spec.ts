@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { openNewMaterial } from "./helpers/parent-new-material";
 
 async function enterParent(page: Page): Promise<void> {
   const request = page.request;
@@ -34,7 +35,12 @@ test("polling conflict sends the form's base edit number and keeps local correct
   });
 
   await enterParent(page);
+  const createdResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST" && response.url().endsWith("/api/v1/parent/decks"),
+  );
+  await openNewMaterial(page, "empty");
   await page.getByTestId("create-empty-submit").click();
+  const createdDeck = await (await createdResponse).json() as { deckId: string };
   await page.getByTestId("add-item").click();
   await page.getByTestId("item-source-0").fill("kot");
   await page.getByTestId("item-target-0").fill(targetValue);
@@ -48,7 +54,7 @@ test("polling conflict sends the form's base edit number and keeps local correct
   await page.getByTestId("item-source-0").fill(localValue);
 
   await enterParent(pageB);
-  await pageB.getByTestId("deck-row-0").filter({ hasText: title }).click();
+  await pageB.locator(`[data-deck-id="${createdDeck.deckId}"]`).click();
   await expect(pageB.getByTestId("item-source-0")).toHaveValue("kot");
 
   holdNextGet = true;
@@ -142,6 +148,7 @@ test("successful save with a failed refresh stays clean and is not sent again", 
     await route.continue();
   });
   await enterParent(page);
+  await openNewMaterial(page, "empty");
   await page.getByTestId("create-empty-submit").click();
   await page.getByTestId("editor-title").fill("Zapisany szkic");
 
@@ -176,6 +183,7 @@ test("delayed save locks the entire editor until the PATCH completes", async ({ 
     await route.continue();
   });
   await enterParent(page);
+  await openNewMaterial(page, "empty");
   await page.getByTestId("create-empty-submit").click();
   await page.getByTestId("add-item").click();
   await page.getByTestId("item-source-0").fill("kot");
@@ -203,6 +211,7 @@ test("delayed save locks the entire editor until the PATCH completes", async ({ 
 
 test("leaving a dirty editor asks first and Stay preserves the local text", async ({ page }) => {
   await enterParent(page);
+  await openNewMaterial(page, "empty");
   await page.getByTestId("create-empty-submit").click();
   await page.getByTestId("add-item").click();
   await page.getByTestId("item-source-0").fill("kot");
@@ -247,6 +256,7 @@ test("tab and logout are guarded; busy save drops the leave request", async ({ p
     await route.continue();
   });
   await enterParent(page);
+  await openNewMaterial(page, "empty");
   await page.getByTestId("create-empty-submit").click();
   await page.getByTestId("add-item").click();
   await page.getByTestId("item-source-0").fill("kot");
@@ -277,6 +287,7 @@ test("tab and logout are guarded; busy save drops the leave request", async ({ p
 
 test("beforeunload warns only while the editor has unsaved changes", async ({ page }) => {
   await enterParent(page);
+  await openNewMaterial(page, "empty");
   await page.getByTestId("create-empty-submit").click();
   await page.getByTestId("editor-title").fill("Niezapisane");
   const dirtyBeforeUnload = await page.evaluate(() => {
@@ -305,6 +316,7 @@ test("a published remote draft requires creating a new version before local edit
   const title = `Konflikt publikacji ${Date.now()}`;
   const pageB = await page.context().newPage();
   await enterParent(page);
+  await openNewMaterial(page, "empty");
   await page.getByTestId("deck-title").fill(title);
   await page.getByTestId("create-empty-submit").click();
   await page.getByTestId("add-item").click();

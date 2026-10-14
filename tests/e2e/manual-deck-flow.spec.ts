@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openNewMaterial } from "./helpers/parent-new-material";
 import { randomUUID } from "node:crypto";
 
 async function enterParent(page: Page): Promise<void> {
@@ -11,7 +12,13 @@ async function enterParent(page: Page): Promise<void> {
 
 test("creates, reopens and reloads an empty manual deck", async ({ page }) => {
   await enterParent(page);
+  const createdResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST" && response.url().endsWith("/api/v1/parent/decks"),
+  );
+  await openNewMaterial(page, "empty");
   await page.getByTestId("create-empty-submit").click();
+  const createdDeck = await (await createdResponse).json() as { deckId: string };
+  const createdRow = page.locator(`[data-deck-id="${createdDeck.deckId}"]`);
 
   await expect(page.getByTestId("editor-title")).toHaveValue("Nowy zestaw");
   await expect(page.getByTestId("empty-draft")).toHaveText("Dodaj pierwsze słówko");
@@ -19,10 +26,10 @@ test("creates, reopens and reloads an empty manual deck", async ({ page }) => {
   await expect(page.getByTestId("publish-deck")).toBeDisabled();
 
   await page.getByTestId("editor-back").click();
-  await expect(page.getByTestId("deck-row-0")).toBeVisible();
+  await expect(createdRow).toBeVisible();
   await page.reload();
   await page.getByTestId("tab-decks").click();
-  await page.getByTestId("deck-row-0").click();
+  await createdRow.click();
   await expect(page.getByTestId("editor-title")).toHaveValue("Nowy zestaw");
   await expect(page.getByTestId("empty-draft")).toBeVisible();
 });
@@ -34,8 +41,8 @@ test("trims the custom title, ignores the prompt and never requests deck generat
     if (request.url().includes("/decks/generate")) generationRequests += 1;
   });
   await enterParent(page);
+  await openNewMaterial(page, "empty");
   await page.getByTestId("deck-title").fill(`  ${title}  `);
-  await page.getByTestId("deck-prompt").fill("Ten prompt nie powinien wywołać AI");
   await page.getByTestId("create-empty-submit").click();
 
   await expect(page.getByTestId("editor-title")).toHaveValue(title);
@@ -61,6 +68,7 @@ test("retries an uncertain create with the same ID", async ({ page }) => {
     await route.fulfill({ response });
   });
   await enterParent(page);
+  await openNewMaterial(page, "empty");
   await page.getByTestId("deck-title").fill(title);
   await page.getByTestId("create-empty-submit").click();
   await expect(page.getByTestId("api-error")).toBeVisible();
@@ -79,7 +87,12 @@ test("saves an empty draft title without sending an items array", async ({ page 
     await route.continue();
   });
   await enterParent(page);
+  const createdResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST" && response.url().endsWith("/api/v1/parent/decks"),
+  );
+  await openNewMaterial(page, "empty");
   await page.getByTestId("create-empty-submit").click();
+  const createdDeck = await (await createdResponse).json() as { deckId: string };
   await page.getByTestId("editor-title").fill(title);
   await page.getByTestId("save-items").click();
   await expect(page.getByTestId("editor-title")).toHaveValue(title);
@@ -87,7 +100,7 @@ test("saves an empty draft title without sending an items array", async ({ page 
   expect(patchBody).not.toHaveProperty("items");
   await expect(page.getByTestId("save-items")).toBeEnabled();
   await page.getByTestId("editor-back").click();
-  await page.getByTestId("deck-row-0").click();
+  await page.locator(`[data-deck-id="${createdDeck.deckId}"]`).click();
   await expect(page.getByTestId("editor-title")).toHaveValue(title);
 });
 
@@ -98,6 +111,7 @@ test("keeps incomplete cards unsaved and blocks publishing until a completed car
     await route.continue();
   });
   await enterParent(page);
+  await openNewMaterial(page, "empty");
   await page.getByTestId("create-empty-submit").click();
   await page.getByTestId("add-item").click();
   await expect(page.getByTestId("publish-deck")).toBeDisabled();
@@ -128,6 +142,7 @@ test("locks draft controls while a save is pending and unlocks publishing after 
     await route.fulfill({ response });
   });
   await enterParent(page);
+  await openNewMaterial(page, "empty");
   await page.getByTestId("create-empty-submit").click();
   await page.getByTestId("add-item").click();
   await page.getByTestId("item-source-0").fill("kot");
@@ -163,6 +178,7 @@ test("preserves edits made while an asset-polling read is in flight", async ({ p
     await route.fulfill({ response });
   });
   await enterParent(page);
+  await openNewMaterial(page, "empty");
   await page.getByTestId("create-empty-submit").click();
   await page.getByTestId("add-item").click();
   await page.getByTestId("item-source-0").fill("kot");
@@ -195,6 +211,7 @@ test("keeps the editor open when the list refresh fails after successful creatio
     await route.continue();
   });
   await enterParent(page);
+  await openNewMaterial(page, "empty");
   await page.getByTestId("deck-title").fill(title);
   await page.getByTestId("create-empty-submit").click();
 
@@ -219,12 +236,13 @@ test("disables both creation actions while the manual create request is pending"
     await route.fulfill({ response });
   });
   await enterParent(page);
+  await openNewMaterial(page, "empty");
   await page.getByTestId("deck-title").fill(title);
   await page.getByTestId("create-empty-submit").click();
   await postReceived;
 
   await expect(page.getByTestId("create-empty-submit")).toBeDisabled();
-  await expect(page.getByTestId("generate-submit")).toBeDisabled();
+  await expect(page.getByTestId("new-material-back")).toBeDisabled();
   releasePost?.();
   await expect(page.getByTestId("editor-title")).toHaveValue(title);
 });
@@ -233,11 +251,12 @@ test("keeps manual creation and editing usable at phone, tablet and desktop widt
   await enterParent(page);
   for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1440, height: 900 }]) {
     await page.setViewportSize(viewport);
-    await expect(page.getByTestId("create-empty-submit")).toBeVisible();
+    await expect(page.getByTestId("new-material-open")).toBeVisible();
     const listOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
     expect(listOverflow).toBe(false);
     await page.screenshot({ path: testInfo.outputPath(`list-${viewport.width}.png`), fullPage: true });
   }
+  await openNewMaterial(page, "empty");
   await page.getByTestId("create-empty-submit").click();
   await expect(page.getByTestId("empty-draft")).toBeVisible();
   await page.getByTestId("add-item").click();
@@ -252,9 +271,37 @@ test("keeps manual creation and editing usable at phone, tablet and desktop widt
   }
 });
 
+test("grupuje listę zestawów po stanie i filtruje po rodzaju", async ({ page }) => {
+  await enterParent(page);
+  // dwa szkice przez API: najnowszy drugi
+  const created: string[] = [];
+  for (let i = 0; i < 2; i += 1) {
+    const response = await page.request.post("/api/v1/parent/decks", { data: { deckId: randomUUID(), title: `Grupa ${randomUUID().slice(0, 8)}` } });
+    expect(response.status()).toBe(201);
+    created.push(((await response.json()) as { deckId: string }).deckId);
+  }
+  await page.reload();
+  await page.getByTestId("tab-decks").click();
+
+  // szkice w sekcji własnej grupy; numeracja deck-row-N biegnie przez grupy
+  const draftSection = page.getByTestId("deck-group-draft");
+  await expect(draftSection).toBeVisible();
+  await expect(draftSection.locator(`[data-deck-id="${created[0]}"]`)).toBeVisible();
+  await expect(draftSection.locator(`[data-deck-id="${created[1]}"]`)).toBeVisible();
+
+  // filtr rodzaju zawęża listę
+  const filter = page.getByTestId("deck-kind-filter");
+  await filter.getByRole("button", { name: "Lekcje" }).click();
+  await expect(page.locator('[data-testid^="deck-row-"]')).toHaveCount(0);
+  await filter.getByRole("button", { name: "Słówka" }).click();
+  await expect(page.locator(`[data-deck-id="${created[0]}"]`)).toBeVisible();
+  await expect(page.getByTestId("deck-group-draft")).toBeVisible();
+});
+
 test("allows correcting the title after a definitive validation error", async ({ page }) => {
   const title = `Poprawiony tytuł ${randomUUID().slice(0, 8)}`;
   await enterParent(page);
+  await openNewMaterial(page, "empty");
   await page.getByTestId("deck-title").fill("x".repeat(201));
   await page.getByTestId("create-empty-submit").click();
   await expect(page.getByTestId("api-error")).toBeVisible();
@@ -282,6 +329,7 @@ test("creates and publishes a manually entered word without generating content",
   const childId = childHref?.match(/\/kids\/([0-9a-f-]{36})\//)?.[1];
   expect(childId).toBeTruthy();
   await page.getByTestId("tab-decks").click();
+  await openNewMaterial(page, "empty");
   await page.getByTestId("deck-title").fill(deckTitle);
   const createdResponse = page.waitForResponse((response) =>
     response.request().method() === "POST" && response.url().endsWith("/api/v1/parent/decks"),

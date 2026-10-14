@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openNewMaterial } from "./helpers/parent-new-material";
 import { randomUUID } from "node:crypto";
 import { DeckDtoSchema, messages } from "@learning/contracts";
 
@@ -273,6 +274,7 @@ test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page,
 
   // Nowy zestaw o znanym terminie sprawdzianu (za siedem dni).
   await page.getByTestId("tab-decks").click();
+  await openNewMaterial(page, "generate");
   await page.getByTestId("deck-prompt").fill("angielskie dni tygodnia dla początkującego dziecka");
   await page.getByTestId("deck-title").fill(DECK_TITLE);
   const generated = page.waitForResponse((response) =>
@@ -401,6 +403,7 @@ test("ręczna edycja zestawu: dodaj element, usuń element, zmień tytuł", asyn
   await page.getByTestId("auth-submit").click();
   await expect(page.getByTestId("tab-decks")).toBeVisible();
 
+  await openNewMaterial(page, "generate");
   await page.getByTestId("deck-prompt").fill("angielskie dni tygodnia dla początkującego dziecka");
   await page.getByTestId("deck-title").fill(MANUAL_DECK_TITLE);
   await page.getByTestId("generate-submit").click();

@@ -1,4 +1,5 @@
 import { expect as baseExpect, test, type Page } from "@playwright/test";
+import { openNewMaterial } from "./helpers/parent-new-material";
 import type {
   AttemptDto, KidDeckDto, KidProfileDto, LessonMockTestReportDto, LessonMockTestSummaryDto, SessionDto, SessionSummaryDto, TaskDto,
 } from "@learning/contracts";
@@ -195,7 +196,7 @@ test("parent sees the per-objective lesson mock-test report in the supervision p
 /** Tworzy, przegląda i PUBLIKUJE lekcję; zwraca deckId (jak w lesson-parent-supervision). */
 async function createAndPublishLesson(page: Page, title: string): Promise<string> {
   await page.getByTestId("tab-decks").click();
-  await page.getByTestId("new-lesson-submit").click();
+  await openNewMaterial(page, "lesson");
   await expect(page.getByTestId("new-lesson-form")).toBeVisible();
   const objectiveCheckboxes = page.locator('[data-testid^="lesson-objective-"]');
   await expect(objectiveCheckboxes.first()).toBeVisible();

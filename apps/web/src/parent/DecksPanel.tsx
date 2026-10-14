@@ -15,9 +15,12 @@ import DeckEditor from "./DeckEditor";
 import LessonEditor from "./lessons/LessonEditor";
 import NewLessonForm from "./lessons/NewLessonForm";
 import ArchiveLessonDialog from "./lessons/ArchiveLessonDialog";
+import NewMaterialDialog, { type NewMaterialStep } from "./NewMaterialDialog";
+import { filterByKind, groupDecksByState, type DeckKindFilter } from "./deck-list-grouping";
+import { ParentIcon } from "./ParentIcon";
 import type { EditorLeaveState } from "./useParentLeaveGuard";
 
-/** Lista zestawów i uruchomienie generacji nowego materiału. */
+/** Lista zestawów pogrupowana po stanie i uruchomienie generacji nowego materiału. */
 export default function DecksPanel({
   decks,
   childrenList,
@@ -42,6 +45,9 @@ export default function DecksPanel({
   const [activeDeckKind, setActiveDeckKind] = useState<"vocabulary" | "lesson">("vocabulary");
   const [creatingLesson, setCreatingLesson] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [newMaterialOpen, setNewMaterialOpen] = useState(false);
+  const [newMaterialStep, setNewMaterialStep] = useState<NewMaterialStep>("menu");
+  const [kindFilter, setKindFilter] = useState<DeckKindFilter>("all");
   const [archiveLesson, setArchiveLesson] = useState<DeckSummaryDto | null>(null);
   const [archiveBusy, setArchiveBusy] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
@@ -94,6 +100,19 @@ export default function DecksPanel({
     .map((deck) => archivedIds.has(deck.deckId) ? { ...deck, state: "archived" as const } : deck)
     .filter((deck) => showArchived || deck.kind !== "lesson" || deck.state !== "archived");
 
+  // Stan niepewnego polecenia żyje poza modalem: ponowne otwarcie wraca do
+  // formularza z przyciskiem ponowienia, zanim polecenie zostanie rozstrzygnięte.
+  const openNewMaterial = () => {
+    setNewMaterialStep(
+      pendingGenerationCommand.current !== null
+        ? "generate"
+        : pendingEmptyCommand.current !== null
+          ? "empty"
+          : "menu",
+    );
+    setNewMaterialOpen(true);
+  };
+
   const generate = async () => {
     if (generatingRef.current || creatingEmptyRef.current) {
       return;
@@ -120,6 +139,7 @@ export default function DecksPanel({
         setTitle("");
         setActiveDeckKind("vocabulary");
         setActiveDeckId(acceptance.deckId);
+        setNewMaterialOpen(false);
         void onChanged().catch(() => undefined);
       }
     } catch (cause) {
@@ -159,6 +179,7 @@ export default function DecksPanel({
       setTitle("");
       setActiveDeckKind("vocabulary");
       setActiveDeckId(created.deckId);
+      setNewMaterialOpen(false);
       // Utworzenie już się powiodło; problem odświeżenia listy nie może wyglądać
       // jak błąd tworzenia i nie może uruchomić nowego UUID przy kolejnym kliknięciu.
       void onChanged().catch(() => undefined);
@@ -215,101 +236,148 @@ export default function DecksPanel({
     );
   }
 
+  const pendingGeneration = pendingGenerationCommand.current !== null;
+  const groups = groupDecksByState(filterByKind(visibleDecks, kindFilter));
+  let rowIndex = 0;
+
   return (
     <section>
-      <section className="card">
-        <h2>{messages.decks.newTitle}</h2>
-        <label>
-          {messages.decks.titleLabel}
-          <input data-testid="deck-title" value={title} disabled={generating || pendingGenerationCommand.current !== null || creatingEmpty} onChange={(event) => setTitle(event.target.value)} />
-        </label>
-        <label>
-          {messages.decks.promptLabel}
-          <textarea
-            data-testid="deck-prompt"
-            rows={3}
-            placeholder={messages.decks.promptPlaceholder}
-            value={prompt}
-            disabled={generating || pendingGenerationCommand.current !== null || creatingEmpty}
-            onChange={(event) => setPrompt(event.target.value)}
-          />
-        </label>
+      <div className="pp-pagehead">
+        <h2 className="pp-pagehead-title">{messages.decks.title}</h2>
         <button
           type="button"
-          data-testid="generate-submit"
-          onClick={generate}
-          disabled={generating || creatingEmpty || creatingEmptyRef.current || (!pendingGenerationCommand.current && prompt.trim().length === 0)}
+          className="pp-btn pp-btn-primary"
+          data-testid="new-material-open"
+          onClick={openNewMaterial}
         >
-          {generating ? messages.decks.generating : pendingGenerationCommand.current ? messages.decks.retryGenerationRequest : messages.decks.generate}
+          <ParentIcon name="plus" />
+          {messages.decks.newMaterial}
         </button>
-        <button
-          type="button"
-          data-testid="create-empty-submit"
-          onClick={createEmpty}
-          disabled={generating || creatingEmpty || pendingGenerationCommand.current !== null}
-        >
-          {messages.decks.createEmpty}
-        </button>
-        <button
-          type="button"
-          data-testid="new-lesson-submit"
-          onClick={() => setCreatingLesson(true)}
-          disabled={generating || creatingEmpty || pendingGenerationCommand.current !== null}
-        >
-          {messages.lessons.newLesson}
-        </button>
-        {error && (
-          <p className="error" data-testid="api-error" role="alert">
-            {error}
-          </p>
-        )}
-      </section>
+      </div>
 
-      {decks.some((deck) => deck.kind === "lesson") && (
-        <label className="row" style={{ minHeight: 44 }}>
-          <input ref={archiveFilter} type="checkbox" style={{ width: 20, minHeight: 20, margin: 0 }} checked={showArchived}
-            onChange={(event) => setShowArchived(event.target.checked)} />
-          {messages.lessons.showArchived}
-        </label>
-      )}
-      {archiveNotice && <p role="status">{archiveNotice}</p>}
-      {visibleDecks.length === 0 && <p>{messages.decks.empty}</p>}
-      <ul className="plain">
-        {visibleDecks.map((deck, index) => (
-          <li key={deck.deckId}>
+      <div className="pp-filterbar">
+        <div className="pp-seg" data-testid="deck-kind-filter" role="group" aria-label={messages.decks.kindFilterLabel}>
+          {(["all", "vocabulary", "lesson"] as const).map((kind) => (
             <button
+              key={kind}
               type="button"
-              className="card deck-row row space"
-              data-testid={`deck-row-${index}`}
-              onClick={() => {
-                setActiveDeckKind(deck.kind === "lesson" ? "lesson" : "vocabulary");
-                setActiveDeckId(deck.deckId);
-              }}
+              className={kindFilter === kind ? "is-on" : undefined}
+              aria-pressed={kindFilter === kind}
+              onClick={() => setKindFilter(kind)}
             >
-              <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>
-                <span className="badge" data-testid={`deck-kind-${index}`}>
-                  {messages.lessons.kindLabel[deck.kind ?? "vocabulary"]}
-                </span>{" "}
-                {deck.title}
-              </span>
-              <span className="badge" data-testid={`deck-state-${index}`}>
-                {messages.decks.states[deck.state]}
-              </span>
+              {messages.decks.kindFilter[kind]}
             </button>
-            {deck.kind === "lesson" && deck.state !== "archived" && (
-              <button type="button" disabled={archiveBusy}
-                aria-label={messages.lessons.archiveLabel.replace("{title}", deck.title)}
-                onClick={() => {
-                  setArchiveError(null);
-                  setArchiveNotice(null);
-                  setArchiveLesson(deck);
-                }}>
-                {messages.lessons.archive}
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
+          ))}
+        </div>
+        {decks.some((deck) => deck.kind === "lesson") && (
+          <label className="pp-check">
+            <input
+              ref={archiveFilter}
+              type="checkbox"
+              checked={showArchived}
+              onChange={(event) => setShowArchived(event.target.checked)}
+            />
+            {messages.lessons.showArchived}
+          </label>
+        )}
+      </div>
+
+      {archiveNotice && <p role="status">{archiveNotice}</p>}
+      {visibleDecks.length === 0 && <p className="pp-empty">{messages.decks.empty}</p>}
+
+      {groups.map((group) => (
+        <section key={group.id} data-testid={`deck-group-${group.id}`}>
+          <h3 className="pp-group-label">
+            {messages.decks.groups[group.id]}
+            <span className="pp-group-count">{group.decks.length}</span>
+          </h3>
+          <ul className="pp-plain">
+            {group.decks.map((deck) => {
+              const index = rowIndex++;
+              const kind = deck.kind === "lesson" ? "lesson" : "vocabulary";
+              const chipTone =
+                deck.state === "published"
+                  ? "pp-chip-green"
+                  : deck.state === "review"
+                    ? "pp-chip-amber"
+                    : "pp-chip-gray";
+              return (
+                <li key={deck.deckId} className="pp-deck-li">
+                  <button
+                    type="button"
+                    className="pp-deck"
+                    data-testid={`deck-row-${index}`}
+                    data-deck-id={deck.deckId}
+                    onClick={() => {
+                      setActiveDeckKind(kind);
+                      setActiveDeckId(deck.deckId);
+                    }}
+                  >
+                    <span className={`pp-deck-icon ${kind === "lesson" ? "pp-deck-icon-purple" : "pp-deck-icon-blue"}`}>
+                      <ParentIcon name={kind === "lesson" ? "graduation-cap" : "book-open"} />
+                    </span>
+                    <span className="pp-deck-body">
+                      <span className="pp-deck-title">{deck.title}</span>
+                      <span className="pp-deck-meta">
+                        <span className="pp-sr-only" data-testid={`deck-kind-${index}`}>
+                          {messages.lessons.kindLabel[kind]}
+                        </span>
+                      </span>
+                    </span>
+                    <span className="pp-deck-side">
+                      <span className={`pp-chip ${chipTone}`}>{messages.decks.states[deck.state]}</span>
+                      <ParentIcon name="chevron-right" className="pp-deck-chevron" />
+                    </span>
+                  </button>
+                  {deck.kind === "lesson" && deck.state !== "archived" && (
+                    <button
+                      type="button"
+                      className="pp-btn pp-btn-quiet pp-btn-icon pp-deck-remove"
+                      disabled={archiveBusy}
+                      aria-label={messages.lessons.archiveLabel.replace("{title}", deck.title)}
+                      onClick={() => {
+                        setArchiveError(null);
+                        setArchiveNotice(null);
+                        setArchiveLesson(deck);
+                      }}
+                    >
+                      <ParentIcon name="trash-2" />
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
+
+      <NewMaterialDialog
+        open={newMaterialOpen}
+        step={newMaterialStep}
+        onStepChange={setNewMaterialStep}
+        onRequestClose={() => setNewMaterialOpen(false)}
+        title={title}
+        onTitleChange={setTitle}
+        prompt={prompt}
+        onPromptChange={setPrompt}
+        generating={generating}
+        pendingGeneration={pendingGeneration}
+        createDisabled={
+          newMaterialStep === "generate"
+            ? generating || creatingEmpty || creatingEmptyRef.current || (!pendingGeneration && prompt.trim().length === 0)
+            : generating || creatingEmpty || pendingGeneration
+        }
+        onGenerate={generate}
+        creatingEmpty={creatingEmpty}
+        pendingEmpty={pendingEmptyCommand.current !== null}
+        onCreateEmpty={createEmpty}
+        onLesson={() => {
+          setNewMaterialOpen(false);
+          setCreatingLesson(true);
+        }}
+        error={error}
+      />
+
       <ArchiveLessonDialog lesson={archiveLesson} busy={archiveBusy} error={archiveError}
         onConfirm={() => { void archive(); }}
         onFocusFallback={() => archiveFilter.current?.focus()}
