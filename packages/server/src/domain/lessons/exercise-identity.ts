@@ -1,0 +1,46 @@
+import type { LessonExerciseDraft } from "./types";
+
+export interface LessonExerciseStimulus {
+  readonly objectiveId: string;
+  readonly exerciseType: string;
+  readonly stimulus: string;
+}
+
+function normalizeStimulus(value: string): string {
+  return value.normalize("NFC").trim().replace(/\s+/gu, " ").toLocaleLowerCase("en-GB");
+}
+
+/** Wyciąga funkcjonalny bodziec, pomijając kosmetyczne pola prezentacji. */
+export function lessonExerciseStimulus(exercise: LessonExerciseDraft): string {
+  switch (exercise.exerciseType) {
+    case "lesson_transform":
+      return JSON.stringify([normalizeStimulus(exercise.statement ?? ""), exercise.transformId ?? ""]);
+    case "lesson_error_fix":
+      return normalizeStimulus(exercise.statement ?? "");
+    case "lesson_open_answer":
+      return normalizeStimulus(exercise.prompt ?? "");
+    case "lesson_order":
+      return JSON.stringify([...(exercise.items ?? []).map((item) => normalizeStimulus(item.text))].sort());
+    case "lesson_notice":
+      return JSON.stringify((exercise.noticeSegments ?? []).map((sentence) => sentence.map(normalizeStimulus)));
+    default:
+      return normalizeStimulus(exercise.stem ?? exercise.prompt ?? exercise.statement ?? "");
+  }
+}
+
+/** Stabilna tożsamość ćwiczenia, niezależna od odpowiedzi i wariantów UI. */
+export function lessonExerciseIdentity(exercise: LessonExerciseDraft): string {
+  return JSON.stringify([
+    exercise.objectiveId,
+    exercise.exerciseType,
+    lessonExerciseStimulus(exercise),
+  ]);
+}
+
+export function lessonExerciseStimulusRecord(exercise: LessonExerciseDraft): LessonExerciseStimulus {
+  return {
+    objectiveId: exercise.objectiveId,
+    exerciseType: exercise.exerciseType,
+    stimulus: lessonExerciseStimulus(exercise),
+  };
+}

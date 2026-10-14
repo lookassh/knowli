@@ -294,7 +294,7 @@ Reużywa ścieżki prób (`attempts`, `assessments`, idempotencja `clientAttempt
 
 Każde ćwiczenie ma jeden cel, więc ocena jest jednym wierszem `assessments` (`skill = 'objective'`) z `details.objectiveId`.
 
-`qualifyLessonAttempt(ctx)`: niezależna, gdy pierwsza odpowiedź w zadaniu, brak wsparcia (`options`, `model_audio`, `hint`, `visible_letters`) i `answerPreviouslyExposed = false`. Walidacja puli wymusza unikalne znormalizowane odpowiedzi w lekcji, więc „niewidziane ćwiczenie” i „nieujawniony `target_key`” są tożsame w obrębie lekcji; ekspozycje z innych lekcji i kartkówek też się liczą.
+`qualifyLessonAttempt(ctx)`: niezależna, gdy pierwsza odpowiedź w zadaniu, brak wsparcia (`options`, `model_audio`, `hint`, `visible_letters`) i `answerPreviouslyExposed = false`. Tożsamość ćwiczenia jest odrębna od odpowiedzi; różne bodźce mogą dzielić `target_key`. Ujawnienie odpowiedzi w innym ćwiczeniu, celu, lekcji lub kartkówce nadal wyklucza samodzielność.
 
 `projectObjectiveProgress(history, policy, now)`: czysta funkcja, odpowiednik `projectProgress` dla jednego celu: status `not_assessed | learning | needs_confirmation | needs_reconfirmation | mastered`, seria trzech ostatnich kwalifikujących sukcesów na różnych `item_id`, potwierdzenie w późniejszej sesji po ≥ 12 h, nieocenione i pominięcia neutralne, błąd lub „Nie pamiętam” przerywa serię. `nextReviewAt` według odstępów polityki (1, 3, 7 dni). Parametry z istniejącej `Policy` (bez nowych stałych w kodzie).
 
@@ -325,7 +325,9 @@ interface LessonPoolInput {
   instruction?: string;
   countPerObjective: number;     // ceil(poolSize / liczba celów)
   graderAvailable: boolean;
-  existingAnswers?: string[];    // dogenerowanie
+  deduplication?: "answer" | "exercise"; // SubjectModule.poolDeduplication; domyślnie answer
+  existingAnswers?: string[];    // dogenerowanie dla polityki answer
+  existingExercises?: Array<{ objectiveId: string; exerciseType: string; stimulus: string }>;
 }
 interface LlmProvider {
   generateLessonPool(input: LessonPoolInput, signal?: AbortSignal):
@@ -333,7 +335,7 @@ interface LlmProvider {
 }
 ```
 
-Worker generuje partiami per cel, z docelowym rozkładem etapów z konfiguracji (domyślnie ≈ 35% prowadzonych, 45% produktywnych, 20% samodzielnych). `pool-validation.ts` (ogólne): cel i typ istnieją w temacie i typ jest dozwolony dla celu; `focus` niepusty dla typów tekstowych i jest podsekwencją tokenów odpowiedzi; `items` w `lesson_order` po złączeniu dają odpowiedź, 3–10 elementów; opcje unikalne, poprawna opcja wśród opcji, 2–4 opcje; `lesson_gap`: dokładnie jedna luka, odpowiedź ≤ 3 tokenów i pokrywa się z `focus`; `lesson_error_fix`: zdanie różne od odpowiedzi; `lesson_transform`: `transformId` istnieje w temacie; długości ≤ 120 znaków; brak duplikatów znormalizowanych odpowiedzi. Następnie `subject.validateExercise` dokłada reguły przedmiotu (np. gramatyka: odpowiedź luki jest formą podanego czasownika).
+Worker generuje partiami per cel, z docelowym rozkładem etapów z konfiguracji (domyślnie ≈ 35% prowadzonych, 45% produktywnych, 20% samodzielnych). `pool-validation.ts` (ogólne): cel i typ istnieją w temacie i typ jest dozwolony dla celu; `focus` niepusty dla typów tekstowych i jest podsekwencją tokenów odpowiedzi; `items` w `lesson_order` po złączeniu dają odpowiedź, 3–10 elementów; opcje unikalne, poprawna opcja wśród opcji, 2–4 opcje; `lesson_gap`: dokładnie jedna luka, odpowiedź ≤ 3 tokenów i pokrywa się z `focus`; `lesson_error_fix`: zdanie różne od odpowiedzi; `lesson_transform`: `transformId` istnieje w temacie; długości ≤ 120 znaków. Deduplikacja wynika z `SubjectModule.poolDeduplication`: domyślnie odpowiedź, dla gramatyki cel + typ + funkcjonalny bodziec. Dlatego różne zdania mogą używać wspólnego operatora `do`/`does`, a wcześniejsze ujawnienie nadal blokuje jego niezależną ocenę po `target_key`. Następnie `subject.validateExercise` dokłada reguły przedmiotu (np. gramatyka: odpowiedź luki jest formą podanego czasownika).
 
 Ta sama walidacja działa przy edycji ćwiczenia przez rodzica. TTS odpowiedzi kanonicznej przez istniejący potok mediów (`target_audio`), gdy `subject.ttsForAnswers`.
 

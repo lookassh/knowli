@@ -21,6 +21,11 @@ import {
   type StageMix,
 } from "../../domain/lessons/lesson-policy";
 import { MAX_TEXT_LENGTH, validatePool } from "../../domain/lessons/pool-validation";
+import {
+  lessonExerciseIdentity,
+  lessonExerciseStimulusRecord,
+  type LessonExerciseStimulus,
+} from "../../domain/lessons/exercise-identity";
 import type {
   LessonExerciseDraft,
   LessonExerciseType,
@@ -73,7 +78,7 @@ interface LessonRunInput {
   material: string;
   instruction?: string;
   /** Dogenerowanie jednego celu: nowe ćwiczenia dopisujemy, nie czyścimy. */
-  regenerate?: { objectiveId: string; count: number; existingAnswers: string[] };
+  regenerate?: { objectiveId: string; count: number; existingAnswers: string[]; existingExercises?: LessonExerciseStimulus[] };
 }
 
 /** Skraca tekst do bezpiecznej długości linii logu (diagnostyka workera). */
@@ -203,6 +208,7 @@ function buildPoolInput(
   instruction: string | undefined,
   graderAvailable: boolean,
   existingAnswers: readonly string[],
+  existingExercises: readonly LessonExerciseStimulus[] = [],
 ): LessonPoolInput {
   const objective = topic.objectives.find((o) => o.id === objectiveId)!;
   return {
@@ -231,7 +237,9 @@ function buildPoolInput(
     countPerObjective: count,
     stageCounts: splitStages(count),
     graderAvailable,
+    deduplication: subject.poolDeduplication ?? "answer",
     ...(existingAnswers.length > 0 ? { existingAnswers: [...existingAnswers] } : {}),
+    ...(existingExercises.length > 0 ? { existingExercises: [...existingExercises] } : {}),
   };
 }
 
@@ -433,6 +441,21 @@ async function existingAnswersOf(tx: Tx, versionId: string): Promise<string[]> {
     .filter((a): a is string => typeof a === "string");
 }
 
+/** Funkcjonalne bodźce ćwiczeń już zapisanych w wersji szkicu. */
+async function existingExercisesOf(tx: Executor, versionId: string): Promise<LessonExerciseStimulus[]> {
+  const rows = await tx
+    .select({ payload: itemRevisions.payload })
+    .from(itemRevisions)
+    .where(eq(itemRevisions.deckVersionId, versionId));
+  return rows.flatMap(({ payload }) => {
+    if (!payload || typeof payload !== "object") return [];
+    const value = payload as Record<string, unknown>;
+    if (typeof value.objectiveId !== "string" || typeof value.exerciseType !== "string" || typeof value.answer !== "string") return [];
+    const exercise = toExerciseDraft(value);
+    return [lessonExerciseStimulusRecord(exercise)];
+  });
+}
+
 export async function executeLessonGeneration(services: Services, runId: string): Promise<void> {
   const deps = requireGeneration(services);
   const run = (await services.db.select().from(generationRuns).where(eq(generationRuns.id, runId)))[0];
@@ -480,19 +503,27 @@ export async function executeLessonGeneration(services: Services, runId: string)
   // typów przy generacji (closed/gap, gdy brak modelu), nie oceną.
   const graderAvailable = Boolean(process.env.UMIEM_GRADER_BASE_URL);
 
+  // Runy dogenerowania utworzone przed wprowadzeniem polityki exercise mają
+  // tylko existingAnswers. Dla gramatyki odbudowujemy bodźce z bieżącego szkicu.
+  const legacyExistingExercises = subject.poolDeduplication === "exercise" && input.regenerate && input.regenerate.existingExercises === undefined
+    ? await existingExercisesOf(services.db, input.deckVersionId)
+    : [];
+
   // Partie per cel: albo dogenerowanie jednego celu, albo pełna pula.
-  const batches: { objectiveId: string; count: number; existingAnswers: string[] }[] = input.regenerate
+  const batches: { objectiveId: string; count: number; existingAnswers: string[]; existingExercises: LessonExerciseStimulus[] }[] = input.regenerate
     ? [
         {
           objectiveId: input.regenerate.objectiveId,
           count: input.regenerate.count,
           existingAnswers: input.regenerate.existingAnswers,
+          existingExercises: input.regenerate.existingExercises ?? legacyExistingExercises,
         },
       ]
     : input.objectiveIds.map((objectiveId) => ({
         objectiveId,
         count: countPerObjective(input.poolSize, input.objectiveIds.length),
         existingAnswers: [],
+        existingExercises: [],
       }));
 
   const rawExercises: unknown[] = [];
@@ -501,6 +532,7 @@ export async function executeLessonGeneration(services: Services, runId: string)
   // generacja wielocelowa też omija duplikaty między partiami — walidacja fazy 2
   // pozostaje egzekwatorem (advisory list z surowych odpowiedzi, deduplikowana).
   const earlierAnswers: string[] = [];
+  const earlierExercises: LessonExerciseStimulus[] = [];
   const examples: Record<string, string[]> = {};
   console.log(
     `[lesson] generacja run=${runId} deck=${input.deckId} cele=${batches.length} próba=${attempts} pula=${input.poolSize} model=${deps.llm.model}`,
@@ -515,7 +547,12 @@ export async function executeLessonGeneration(services: Services, runId: string)
         input.material,
         input.instruction,
         graderAvailable,
-        [...new Set([...batch.existingAnswers, ...earlierAnswers])],
+        subject.poolDeduplication === "exercise"
+          ? []
+          : [...new Set([...batch.existingAnswers, ...earlierAnswers])],
+        subject.poolDeduplication === "exercise"
+          ? [...batch.existingExercises, ...earlierExercises]
+          : [],
       );
       const result = await deps.llm.generateLessonPool(poolInput);
       for (const ex of result.exercises) {
@@ -523,6 +560,9 @@ export async function executeLessonGeneration(services: Services, runId: string)
         const answer = (ex as { answer?: unknown }).answer;
         if (typeof answer === "string" && answer.trim() !== "") {
           earlierAnswers.push(answer);
+        }
+        if (subject.poolDeduplication === "exercise" && isWellShapedRawExercise(ex)) {
+          earlierExercises.push(lessonExerciseStimulusRecord(toExerciseDraft(ex)));
         }
       }
       const rawExamples = result.examples;
@@ -563,10 +603,15 @@ export async function executeLessonGeneration(services: Services, runId: string)
     // Duplikaty wobec odpowiedzi już w puli: odrzucamy valid, których odpowiedź
     // równa się istniejącej (dogenerowanie nie powiela odpowiedzi szkicu).
     const existingSet = new Set(batches.flatMap((b) => b.existingAnswers));
+    const existingExerciseSet = new Set(batches.flatMap((b) => b.existingExercises).map((exercise) =>
+      JSON.stringify([exercise.objectiveId, exercise.exerciseType, exercise.stimulus]),
+    ));
     const uniqueValid: LessonExerciseDraft[] = [];
     let dupAgainstExisting = 0;
     for (const ex of valid) {
-      const clash = [...existingSet].some((a) => sameAnswer(a, ex.answer, subject));
+      const clash = subject.poolDeduplication === "exercise"
+        ? existingExerciseSet.has(lessonExerciseIdentity(ex))
+        : [...existingSet].some((a) => sameAnswer(a, ex.answer, subject));
       if (clash) {
         dupAgainstExisting += 1;
       } else {
@@ -694,7 +739,10 @@ export async function regenerateObjective(
       if (!context.subjectId || !context.objectiveIds?.includes(args.objectiveId)) {
         throw new AppError("validation", { message: "objective not in lesson" });
       }
-      const existingAnswers = await existingAnswersOf(tx, version.id);
+      const subject = services.subjects.getSubject(context.subjectId);
+      if (!subject) throw new AppError("validation", { message: "unknown subject" });
+      const existingAnswers = subject.poolDeduplication === "exercise" ? [] : await existingAnswersOf(tx, version.id);
+      const existingExercises = subject.poolDeduplication === "exercise" ? await existingExercisesOf(tx, version.id) : [];
       const runId = randomUUID();
       const runInput: LessonRunInput = {
         deckId: args.deckId,
@@ -706,7 +754,7 @@ export async function regenerateObjective(
         poolSize: context.poolSize,
         material: context.material,
         ...(context.instruction === undefined ? {} : { instruction: context.instruction }),
-        regenerate: { objectiveId: args.objectiveId, count: args.count, existingAnswers },
+        regenerate: { objectiveId: args.objectiveId, count: args.count, existingAnswers, existingExercises },
       };
       await tx.insert(generationRuns).values({
         id: runId,

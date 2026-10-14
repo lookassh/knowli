@@ -169,6 +169,23 @@ describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", ()
     expect(result.examples["english_grammar.present_simple.third_person_s"]).toEqual(["He plays."]);
   });
 
+  it("dla deduplikacji exercise opisuje istniejące bodźce i dopuszcza wspólny operator", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => okResponse({ exercises: [], examples: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAiLlmProvider({ apiKey: "k" });
+    await provider.generateLessonPool({
+      ...INPUT,
+      deduplication: "exercise",
+      existingExercises: [{ objectiveId: "q", exerciseType: "lesson_gap", stimulus: "___ she play tennis?" }],
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string) as { messages: Array<{ role: string; content: string }> };
+    const system = body.messages.find((message) => message.role === "system")!.content;
+    expect(system).toContain("Do not repeat an existing exercise with the same objective, type, and functional stimulus");
+    expect(system).toContain("___ she play tennis?");
+    expect(system).toContain("Reusing a short canonical answer such as do, does, don't, or doesn't");
+    expect(system).not.toContain("Canonical answers must be UNIQUE within this response");
+  });
+
   it("tłumaczy examples z tablicy par {objectiveId, examples} z strict schema na record", async () => {
     vi.stubGlobal(
       "fetch",

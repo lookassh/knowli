@@ -603,6 +603,49 @@ describe("validatePool", () => {
     expect(result.valid).not.toContain(dup);
     expect(result.rejected.some((r) => r.exercise === dup)).toBe(true);
   });
+
+  it("keepsEightDifferentAuxiliaryGaps", () => {
+    const cases: Array<{ objectiveId: string; answer: string; stem: string }> = [
+      { objectiveId: OBJ.negative, answer: "don't", stem: "I ___ play tennis." },
+      { objectiveId: OBJ.negative, answer: "doesn't", stem: "She ___ play tennis." },
+      { objectiveId: "english_grammar.present_simple.question", answer: "do", stem: "___ you play tennis?" },
+      { objectiveId: "english_grammar.present_simple.question", answer: "does", stem: "___ she play tennis?" },
+      { objectiveId: "english_grammar.present_simple.short_answers", answer: "do", stem: "Yes, I ___." },
+      { objectiveId: "english_grammar.present_simple.short_answers", answer: "doesn't", stem: "No, she ___." },
+      { objectiveId: "english_grammar.present_simple.short_answers", answer: "do", stem: "Yes, they ___." },
+      { objectiveId: "english_grammar.present_simple.short_answers", answer: "does", stem: "Yes, he ___." },
+    ];
+    const exercises = cases.map(({ objectiveId, answer, stem }) => draft({
+      objectiveId,
+      answer,
+      focus: [answer],
+      stem,
+      hint: undefined,
+    }));
+    const result = validatePool(exercises, englishGrammarSubject, englishTopic);
+    expect(result.valid).toHaveLength(8);
+    expect(result.valid.filter((exercise) => exercise.objectiveId === "english_grammar.present_simple.short_answers")).toHaveLength(4);
+  });
+
+  it("rejectsRepeatedStimulusDespiteOptionIdsOrChangedAnswer", () => {
+    const first = draft({ stem: "___ she play tennis?", answer: "does", focus: ["does"], hint: undefined,
+      objectiveId: "english_grammar.present_simple.question" });
+    const duplicate = draft({ stem: " ___ SHE   play tennis? ", answer: "do", focus: ["do"], hint: undefined,
+      objectiveId: "english_grammar.present_simple.question" });
+    const result = validatePool([first, duplicate], englishGrammarSubject, englishTopic);
+    expect(result.valid).toEqual([first]);
+    expect(result.rejected.some(({ exercise }) => exercise === duplicate)).toBe(true);
+  });
+
+  it("keepsAnswerPolicyForHistorySubject", () => {
+    const first = draft({ objectiveId: historyTopic.objectives[0]!.id, exerciseType: "lesson_open_answer",
+      prompt: "Kiedy był chrzest Polski?", answer: "966", focus: ["966"], stem: undefined, hint: undefined });
+    const duplicate = { ...first, prompt: "Podaj rok chrztu Polski." };
+    const historyWithAnswerDedup = { ...historyLikeSubject, poolDeduplication: "answer" as const };
+    const result = validatePool([first, duplicate], historyWithAnswerDedup, historyTopic);
+    expect(result.valid).toEqual([first]);
+    expect(result.rejected.some(({ exercise }) => exercise === duplicate)).toBe(true);
+  });
 });
 
 describe("poolCoverage", () => {

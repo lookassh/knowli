@@ -88,17 +88,26 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
         "lesson_short_answer) and lesson_gap over free-text types.",
     );
   }
-  parts.push(
-    "Canonical answers must be UNIQUE within this response: never submit two exercises whose canonical answer is " +
-      "the same wording or an equivalent of it (capitalization, punctuation, or an expanded/contracted spelling of " +
-      "the same words counts as the same). When distinct short answers run out, vary full-sentence answers " +
-      "(different subjects, verbs or objects) so every canonical answer differs.",
-  );
-  if (input.existingAnswers && input.existingAnswers.length > 0) {
+  if (input.deduplication !== "exercise") {
+    parts.push(
+      "Canonical answers must be UNIQUE within this response: never submit two exercises whose canonical answer is " +
+        "the same wording or an equivalent of it (capitalization, punctuation, or an expanded/contracted spelling of " +
+        "the same words counts as the same). When distinct short answers run out, vary full-sentence answers " +
+        "(different subjects, verbs or objects) so every canonical answer differs.",
+    );
+  }
+  if (input.deduplication !== "exercise" && input.existingAnswers && input.existingAnswers.length > 0) {
     parts.push(
       "Do NOT repeat these canonical answers already in the pool: " +
         input.existingAnswers.map((a) => `"${a}"`).join(", ") +
         ".",
+    );
+  }
+  if (input.deduplication === "exercise" && input.existingExercises?.length) {
+    parts.push(
+      "Do not repeat an existing exercise with the same objective, type, and functional stimulus. Existing exercise stimuli: " +
+        input.existingExercises.map((exercise) => `${exercise.objectiveId} / ${exercise.exerciseType} / ${exercise.stimulus}`).join("; ") +
+        ". Reusing a short canonical answer such as do, does, don't, or doesn't with a different valid exercise is allowed.",
     );
   }
   if (input.promptProfile.fieldRules !== undefined) {
