@@ -326,3 +326,67 @@ ul.plain {
   flex: 1 1 180px;
   min-width: 0;
 }
+
+/* Kafelki dziennej aktywności w karcie aktywności panelu rodzica */
+.progress-activity-daily {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  margin: 10px 0 16px 0;
+}
+
+.progress-activity-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 4px;
+  background: #f1f2f8;
+  border: 1px solid #e0e2ee;
+  border-radius: 10px;
+  text-align: center;
+  min-width: 0;
+  transition: all 0.15s ease;
+}
+
+.progress-activity-day-active {
+  background: #eef8f1;
+  border-color: #b7e4c7;
+}
+
+.progress-activity-day-today {
+  border-color: #3b5bdb;
+  box-shadow: 0 0 0 1px #3b5bdb;
+}
+
+.progress-activity-day-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #626477;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.progress-activity-day-today .progress-activity-day-label {
+  color: #3b5bdb;
+  font-weight: 700;
+}
+
+.progress-activity-day-time {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #1d1d2b;
+  margin-top: 4px;
+  white-space: nowrap;
+}
+
+.progress-activity-day-active .progress-activity-day-time {
+  color: #1b6a38;
+}
+
+.progress-activity-day-empty .progress-activity-day-time {
+  color: #8c8ea0;
+  font-weight: 500;
+}
+

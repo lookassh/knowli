@@ -93,6 +93,17 @@ export const ActivityDeckStatDtoSchema = z.object({
 });
 export type ActivityDeckStatDto = z.infer<typeof ActivityDeckStatDtoSchema>;
 
+/** Dzienna statystyka aktywności dziecka w oknie podsumowania. */
+export const ActivityDailyStatDtoSchema = z.object({
+  /** Dzień kalendarzowy (czas warszawski) w formacie YYYY-MM-DD. */
+  date: DaySchema,
+  /** Czas nauki w sekundach w tym dniu. */
+  activeSeconds: z.number().int().nonnegative(),
+  /** Liczba sesji rozpoczętych w tym dniu. */
+  sessions: z.number().int().nonnegative(),
+});
+export type ActivityDailyStatDto = z.infer<typeof ActivityDailyStatDtoSchema>;
+
 /**
  * Zbiorcza aktywność dziecka z ostatnich dni (SPEC §25): czas nauki liczony
  * do ostatniej aktywności sesji (z obcięciem do limitu sesji), podejścia
@@ -114,6 +125,8 @@ export const ActivitySummaryDtoSchema = z.object({
   interactions: z.number().int().nonnegative(),
   /** Podejścia per zestaw, malejąco po liczbie sesji. */
   decks: z.array(ActivityDeckStatDtoSchema),
+  /** Aktywność w poszczególnych dniach okna w porządku chronologicznym (od najstarszego do dzisiaj). */
+  daily: z.array(ActivityDailyStatDtoSchema),
 });
 export type ActivitySummaryDto = z.infer<typeof ActivitySummaryDtoSchema>;
 

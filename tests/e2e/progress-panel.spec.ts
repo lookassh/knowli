@@ -15,6 +15,15 @@ const report: ProgressDto = {
       { deckId, deckTitle: "Dni tygodnia", sessions: 3 },
       { deckId: otherDeckId, deckTitle: "Owoce", sessions: 2 },
     ],
+    daily: [
+      { date: "2026-10-08", activeSeconds: 0, sessions: 0 },
+      { date: "2026-10-09", activeSeconds: 15 * 60, sessions: 2 },
+      { date: "2026-10-10", activeSeconds: 0, sessions: 0 },
+      { date: "2026-10-11", activeSeconds: 5 * 60, sessions: 1 },
+      { date: "2026-10-12", activeSeconds: 0, sessions: 0 },
+      { date: "2026-10-13", activeSeconds: 0, sessions: 0 },
+      { date: "2026-10-14", activeSeconds: 18 * 60, sessions: 2 },
+    ],
   },
   items: [
     {
@@ -55,6 +64,15 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 768, height: 1024
           ...report, childId: otherChildId, childName: "Bartek", deckId: otherDeckId, deckTitle: "Owoce",
           activity: {
             days: 7, activeSeconds: 0, activeDays: 0, sessions: 0, answers: 0, interactions: 0, decks: [],
+            daily: [
+              { date: "2026-10-08", activeSeconds: 0, sessions: 0 },
+              { date: "2026-10-09", activeSeconds: 0, sessions: 0 },
+              { date: "2026-10-10", activeSeconds: 0, sessions: 0 },
+              { date: "2026-10-11", activeSeconds: 0, sessions: 0 },
+              { date: "2026-10-12", activeSeconds: 0, sessions: 0 },
+              { date: "2026-10-13", activeSeconds: 0, sessions: 0 },
+              { date: "2026-10-14", activeSeconds: 0, sessions: 0 },
+            ],
           },
           totalItems: 1, items: [{ ...report.items[0]!, source: "jabłko", target: "apple", meaningChanged: false,
             skills: { listening: "not_assessed", reading: "not_assessed", recall: "not_assessed",
@@ -72,6 +90,14 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 768, height: 1024
     await expect(activity).toBeVisible();
     await expect(activity).toContainText("Aktywność (ostatnie 7 dni)");
     await expect(activity).toContainText("Czas nauki: 38 min");
+    // kafelki dzienne
+    const daily = activity.getByTestId("progress-activity-daily");
+    await expect(daily).toBeVisible();
+    const tiles = daily.locator('[data-testid^="progress-activity-day-"]');
+    await expect(tiles).toHaveCount(7);
+    await expect(tiles.last()).toContainText("Dziś");
+    await expect(tiles.last()).toContainText("18 min");
+    await expect(tiles.first()).toContainText("—");
     await expect(activity).toContainText("Dni z nauką: 3");
     await expect(activity).toContainText("Podejścia: 5");
     await expect(activity).toContainText("Dni tygodnia — 3");

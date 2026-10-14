@@ -569,6 +569,11 @@ describe("karta aktywności dziecka w postępach (integracja)", () => {
     expect(progress.activity.activeSeconds).toBeGreaterThan(0);
     expect(progress.activity.decks).toEqual([{ deckId, deckTitle: "Zestaw Monday", sessions: 2 }]);
 
+    // dzienne kafelki aktywności w oknie 7 dni
+    expect(progress.activity.daily).toHaveLength(7);
+    expect(progress.activity.daily.reduce((sum, d) => sum + d.activeSeconds, 0)).toBe(progress.activity.activeSeconds);
+    expect(progress.activity.daily.filter((d) => d.sessions > 0)).toHaveLength(2);
+
     // drugie dziecko bez własnej aktywności nie dziedziczy liczb
     const other = await getProgress(services, childB, deckId);
     expect(other.activity).toMatchObject({
@@ -580,6 +585,8 @@ describe("karta aktywności dziecka w postępach (integracja)", () => {
       interactions: 0,
       decks: [],
     });
+    expect(other.activity.daily).toHaveLength(7);
+    expect(other.activity.daily.every((d) => d.activeSeconds === 0 && d.sessions === 0)).toBe(true);
   });
 
   it("czas nauki liczy się do ostatniej aktywności i nie rośnie od późnego zamknięcia sesji", async () => {
