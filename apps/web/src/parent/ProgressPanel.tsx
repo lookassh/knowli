@@ -126,20 +126,59 @@ export default function ProgressPanel({
         <section className="card" data-testid="progress-activity">
           <h3>{fill(messages.progress.activityTitle, { days: progress.activity.days })}</h3>
           {progress.activity.sessions > 0 ? (
-            <ul className="plain">
-              <li data-testid="progress-activity-time">
-                {fill(messages.progress.activityTime, { minutes: activityMinutes })}
-              </li>
-              <li>{fill(messages.progress.activityDays, { days: progress.activity.activeDays })}</li>
-              <li>{fill(messages.progress.activitySessions, { n: progress.activity.sessions })}</li>
-              {progress.activity.decks.map((deck) => (
-                <li key={deck.deckId}>
-                  {fill(messages.progress.activityDeckRow, { title: deck.deckTitle, n: deck.sessions })}
+            <>
+              <ul className="plain">
+                <li data-testid="progress-activity-time">
+                  {fill(messages.progress.activityTime, { minutes: activityMinutes })}
                 </li>
-              ))}
-              <li>{fill(messages.progress.activityAnswers, { n: progress.activity.answers })}</li>
-              <li>{fill(messages.progress.activityInteractions, { n: progress.activity.interactions })}</li>
-            </ul>
+              </ul>
+              {progress.activity.daily && progress.activity.daily.length > 0 && (
+                <div className="progress-activity-daily" data-testid="progress-activity-daily">
+                  {progress.activity.daily.map((d, index) => {
+                    const isToday = index === progress.activity.daily.length - 1;
+                    const dateObj = new Date(d.date + "T12:00:00Z");
+                    const weekday = messages.progress.weekdaysShort[dateObj.getDay()] ?? "";
+                    const label = isToday ? messages.progress.activityToday : weekday;
+                    const timeText = d.activeSeconds > 0
+                      ? fill(messages.progress.activityMinutesShort, { minutes: Math.max(1, Math.round(d.activeSeconds / 60)) })
+                      : messages.progress.activityNoTime;
+                    const ariaText = d.activeSeconds > 0
+                      ? fill(messages.progress.activityDailyAria, {
+                          day: weekday,
+                          date: d.date,
+                          time: timeText,
+                        })
+                      : fill(messages.progress.activityDailyAriaEmpty, {
+                          day: weekday,
+                          date: d.date,
+                        });
+                    return (
+                      <div
+                        key={d.date}
+                        data-testid={`progress-activity-day-${d.date}`}
+                        className={`progress-activity-day ${d.activeSeconds > 0 ? "progress-activity-day-active" : "progress-activity-day-empty"} ${isToday ? "progress-activity-day-today" : ""}`}
+                        title={ariaText}
+                        aria-label={ariaText}
+                      >
+                        <span className="progress-activity-day-label">{label}</span>
+                        <span className="progress-activity-day-time">{timeText}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <ul className="plain">
+                <li>{fill(messages.progress.activityDays, { days: progress.activity.activeDays })}</li>
+                <li>{fill(messages.progress.activitySessions, { n: progress.activity.sessions })}</li>
+                {progress.activity.decks.map((deck) => (
+                  <li key={deck.deckId}>
+                    {fill(messages.progress.activityDeckRow, { title: deck.deckTitle, n: deck.sessions })}
+                  </li>
+                ))}
+                <li>{fill(messages.progress.activityAnswers, { n: progress.activity.answers })}</li>
+                <li>{fill(messages.progress.activityInteractions, { n: progress.activity.interactions })}</li>
+              </ul>
+            </>
           ) : (
             <p>{messages.progress.activityEmpty}</p>
           )}
