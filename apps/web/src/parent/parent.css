@@ -708,3 +708,7 @@
   white-space: nowrap;
   border: 0;
 }
+
+.pp-meta-dot {
+  opacity: 0.5;
+}

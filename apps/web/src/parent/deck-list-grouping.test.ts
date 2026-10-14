@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DeckSummaryDto } from "@learning/contracts";
-import { filterByKind, groupDecksByState } from "./deck-list-grouping";
+import { filterByKind, groupDecksByState, polishPlural } from "./deck-list-grouping";
 
 function deck(id: string, title: string, state: DeckSummaryDto["state"], kind?: "vocabulary" | "lesson"): DeckSummaryDto {
   return {
@@ -57,5 +57,18 @@ describe("filterByKind", () => {
   it("lesson zwraca wyłącznie lekcje", () => {
     const rows = [deck("a", "A", "published"), deck("l", "L", "published", "lesson")];
     expect(filterByKind(rows, "lesson").map((deck) => deck.title)).toEqual(["L"]);
+  });
+});
+
+describe("polishPlural", () => {
+  it("wybiera formę zgodną z polską liczbą", () => {
+    expect(polishPlural(1)).toBe("one");
+    expect(polishPlural(2)).toBe("few");
+    expect(polishPlural(4)).toBe("few");
+    expect(polishPlural(5)).toBe("many");
+    expect(polishPlural(12)).toBe("many");
+    expect(polishPlural(22)).toBe("few");
+    expect(polishPlural(42)).toBe("few");
+    expect(polishPlural(0)).toBe("many");
   });
 });

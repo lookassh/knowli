@@ -84,6 +84,12 @@ export const messages = {
       draft: "Szkice",
       archived: "Archiwum",
     } as Record<string, string>,
+    itemCount: {
+      vocabulary: { one: "{n} słówko", few: "{n} słówka", many: "{n} słówek" },
+      lesson: { one: "{n} ćwiczenie", few: "{n} ćwiczenia", many: "{n} ćwiczeń" },
+    } as Record<string, Record<string, string>>,
+    assignedMore: "+{n}",
+    testDateShort: "sprawdzian {date}",
     kindFilterLabel: "Rodzaj materiału",
     kindFilter: {
       all: "Wszystkie",

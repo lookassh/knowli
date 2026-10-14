@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { AssignmentPutSchema, type AssignmentGoal, type TestGoal } from "@learning/contracts";
+import { AssignmentPutSchema, type AssignmentGoal, type DeckAssignedChildDto, type TestGoal } from "@learning/contracts";
 import { and, asc, desc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -726,8 +726,45 @@ export async function listDecks(services: Services): Promise<DeckSummaryDto[]> {
     .from(deckVersions)
     .where(inArray(deckVersions.state, ["draft", "review"]));
   const editableByDeck = new Map(editable.map((v) => [v.deckId, v]));
+
+  // Meta listy zbiorczo (bez N+1): licznik pozycji wersji reprezentatywnych
+  // oraz aktywne przypisania z imionami dzieci, w kolejności deckAssignments.
+  const representativeVersionIds = [
+    ...new Set(
+      rows.map((row) => row.publishedVersionId ?? editableByDeck.get(row.id)?.id ?? null).filter((id): id is string => id !== null),
+    ),
+  ];
+  const countByVersion = new Map<string, number>(
+    representativeVersionIds.length
+      ? await services.db
+          .select({ versionId: itemRevisions.deckVersionId, count: sql<number>`count(*)::int` })
+          .from(itemRevisions)
+          .where(inArray(itemRevisions.deckVersionId, representativeVersionIds))
+          .groupBy(itemRevisions.deckVersionId)
+          .then((counts) => counts.map((row): [string, number] => [row.versionId, row.count]))
+      : [],
+  );
+  const assignmentRows = await services.db
+    .select({
+      deckId: assignments.deckId,
+      childId: assignments.childId,
+      displayName: childProfiles.displayName,
+      testDate: assignments.testDate,
+    })
+    .from(assignments)
+    .innerJoin(childProfiles, eq(childProfiles.id, assignments.childId))
+    .where(eq(assignments.active, true))
+    .orderBy(asc(childProfiles.createdAt), asc(childProfiles.id));
+  const assignedByDeck = new Map<string, DeckAssignedChildDto[]>();
+  for (const row of assignmentRows) {
+    const list = assignedByDeck.get(row.deckId) ?? [];
+    list.push({ childId: row.childId, displayName: row.displayName, testDate: row.testDate });
+    assignedByDeck.set(row.deckId, list);
+  }
+
   return rows.map((row) => {
     const edit = editableByDeck.get(row.id);
+    const representativeVersionId = row.publishedVersionId ?? edit?.id ?? null;
     return {
       deckId: row.id,
       title: row.title,
@@ -735,6 +772,8 @@ export async function listDecks(services: Services): Promise<DeckSummaryDto[]> {
       state: deckStateOf(row, edit ? (edit.state as "draft" | "review") : null),
       editableVersionId: edit?.id ?? null,
       publishedVersionId: row.publishedVersionId ?? null,
+      itemCount: representativeVersionId ? (countByVersion.get(representativeVersionId) ?? 0) : 0,
+      assignedChildren: assignedByDeck.get(row.id) ?? [],
     };
   });
 }

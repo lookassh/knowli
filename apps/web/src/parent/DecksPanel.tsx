@@ -16,9 +16,42 @@ import LessonEditor from "./lessons/LessonEditor";
 import NewLessonForm from "./lessons/NewLessonForm";
 import ArchiveLessonDialog from "./lessons/ArchiveLessonDialog";
 import NewMaterialDialog, { type NewMaterialStep } from "./NewMaterialDialog";
-import { filterByKind, groupDecksByState, type DeckKindFilter } from "./deck-list-grouping";
+import { filterByKind, groupDecksByState, polishPlural, type DeckKindFilter } from "./deck-list-grouping";
 import { ParentIcon } from "./ParentIcon";
 import type { EditorLeaveState } from "./useParentLeaveGuard";
+
+function fill(template: string, values: Record<string, string | number>): string {
+  return template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ""));
+}
+
+/** Czytelny zapis ISO daty rodzinnej (YYYY-MM-DD) bez stref czasowych. */
+function formatFamilyDate(iso: string): string {
+  return `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`;
+}
+
+/** Części meta wiersza zestawu: liczba pozycji, przypisane dzieci, najbliższy sprawdzian. */
+function deckMetaParts(deck: DeckSummaryDto): string[] {
+  const kind = deck.kind === "lesson" ? "lesson" : "vocabulary";
+  const parts: string[] = [];
+  if (deck.itemCount !== undefined) {
+    const templates = messages.decks.itemCount[kind];
+    parts.push(fill(templates[polishPlural(deck.itemCount)], { n: deck.itemCount }));
+  }
+  const assigned = deck.assignedChildren ?? [];
+  if (assigned.length > 0) {
+    const names = assigned.slice(0, 2).map((child) => child.displayName).join(", ");
+    parts.push(assigned.length > 2 ? `${names}, ${fill(messages.decks.assignedMore, { n: assigned.length - 2 })}` : names);
+    const nearest = assigned
+      .map((child) => child.testDate)
+      .filter((date): date is string => date !== null)
+      .sort()
+      .at(0);
+    if (nearest) {
+      parts.push(fill(messages.decks.testDateShort, { date: formatFamilyDate(nearest) }));
+    }
+  }
+  return parts;
+}
 
 /** Lista zestawów pogrupowana po stanie i uruchomienie generacji nowego materiału. */
 export default function DecksPanel({
@@ -295,6 +328,7 @@ export default function DecksPanel({
             {group.decks.map((deck) => {
               const index = rowIndex++;
               const kind = deck.kind === "lesson" ? "lesson" : "vocabulary";
+              const metaParts = deckMetaParts(deck);
               const chipTone =
                 deck.state === "published"
                   ? "pp-chip-green"
@@ -322,6 +356,12 @@ export default function DecksPanel({
                         <span className="pp-sr-only" data-testid={`deck-kind-${index}`}>
                           {messages.lessons.kindLabel[kind]}
                         </span>
+                        {metaParts.map((part, partIndex) => (
+                          <span key={partIndex}>
+                            {partIndex > 0 && <span className="pp-meta-dot" aria-hidden="true">·</span>}
+                            {part}
+                          </span>
+                        ))}
                       </span>
                     </span>
                     <span className="pp-deck-side">
