@@ -498,11 +498,10 @@ describe("generowanie puli lekcji (integracja)", () => {
     // Start runu z kontekstem (identyfikowalność w logach workera), łącznie
     // z modelem LLM (A/B generacji po logach, UMIEM_LLM_MODEL).
     expect(lessonLogs).toMatch(/generacja run=\S+ .*cel[ie]=.*model=\S+/);
-    // Podsumowanie walidacji: liczby + powody odrzuceń (przynajmniej reguła
-    // duplikatu kanonicznej odpowiedzi i reguła liczby opcji).
-    expect(lessonLogs).toMatch(/walidacja puli: surowe=\d+ zły_kształt=\d+ odrzucone=\d+ ważne=\d+/);
-    expect(lessonLogs).toContain("duplikuje odpowiedź kanoniczną");
-    expect(lessonLogs).toMatch(/options: (liczba opcji \(\d+\) poza zakresem|przekracza limit \d+|wymagane minimum \d+)/);
+    // Podsumowanie walidacji: tylko liczniki i kody reguł, bez treści ćwiczeń.
+    expect(lessonLogs).toMatch(/walidacja puli: surowe=\d+ zły_kształt=\d+ obcy_cel=\d+ odrzucone=\d+ ważne=\d+/);
+    expect(lessonLogs).toContain("acceptedAnswers×1");
+    expect(lessonLogs).toContain("options×1");
     // Wynik terminalny runu.
     expect(lessonLogs).toMatch(/zakończony: state=failed kod=validation/);
   });

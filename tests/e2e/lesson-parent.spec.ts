@@ -37,11 +37,10 @@ async function createLesson(
   const objectiveCount = await objectiveCheckboxes.count();
   for (let i = 0; i < objectiveCount; i++) {
     const id = (await objectiveCheckboxes.nth(i).getAttribute("data-testid"))!.replace("lesson-objective-", "");
-    await objectiveCheckboxes.nth(i).setChecked(selectedObjectiveIds ? selectedObjectiveIds.includes(id) : i === 0);
-  }
-  for (let i = 0; i < objectiveCount; i++) {
-    const id = (await objectiveCheckboxes.nth(i).getAttribute("data-testid"))!.replace("lesson-objective-", "");
-    await expect(objectiveCheckboxes.nth(i)).toBeChecked({ checked: selectedObjectiveIds ? selectedObjectiveIds.includes(id) : i === 0 });
+    const objective = page.getByTestId(`lesson-objective-${id}`);
+    const shouldBeChecked = selectedObjectiveIds ? selectedObjectiveIds.includes(id) : i === 0;
+    await objective.setChecked(shouldBeChecked);
+    await expect(objective).toBeChecked({ checked: shouldBeChecked });
   }
   await page.getByTestId("lesson-material").fill(
     `Materiał ${title}. He plays football every day. She watches television in the evening. They study English on Monday and Tuesday.`,

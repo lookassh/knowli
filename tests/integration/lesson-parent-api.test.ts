@@ -448,14 +448,14 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
     expect(stale.status).toBe(409);
   });
 
-  it("duplikaty odpowiedzi są odrzucane przy edycji i przy publikacji całej puli", async () => {
+  it("powtórzony bodziec jest odrzucany przy edycji i przy publikacji całej puli", async () => {
     const fakes = await fakeGeneration(); disposers.push(fakes.dispose);
     const { services, cookie } = await freshParent(fakes);
     const { deckId } = await createAndGenerate(services, cookie);
     const deck = LessonDeckDtoSchema.parse(await (await call(services, "GET", `lessons/${deckId}`, { cookie })).json());
     const draft = deck.draft!;
     const exercises = draft.exercises.map(stripToInput);
-    exercises[1] = { ...exercises[1]!, answer: exercises[0]!.answer, options: exercises[0]!.options, correctOption: exercises[0]!.correctOption };
+    exercises[1] = { ...exercises[0]!, id: exercises[1]!.id };
     const edited = await call(services, "PATCH", `lesson-drafts/${draft.id}`, { cookie, body: { expectedEditNumber: draft.editNumber, exercises } });
     expect(edited.status).toBe(400);
     const { id: _id, ...payload } = exercises[1]!;

@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
 import {
   createDatabase,
   createLesson,
@@ -347,7 +348,7 @@ describe("trwałe generowanie zestawu (integracja)", () => {
       topicId: "present_simple",
       objectiveIds: ["english_grammar.present_simple.third_person_s"],
       material: "He plays football. She watches television. They study English.",
-      clientRequestId: "fair-worker-lesson",
+      clientRequestId: randomUUID(),
     });
     const originalDeck = fakes.deps.llm.generateDeck.bind(fakes.deps.llm);
     let enterDeck!: () => void;
