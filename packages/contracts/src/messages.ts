@@ -8,6 +8,7 @@ import type { TestGoal } from "./mock-tests";
 export const messages = {
   app: {
     name: "Umiem!",
+    parentPanel: "Panel rodzica",
   },
   errors: {
     unauthorized: "Sesja wygasła. Zaloguj się ponownie.",
