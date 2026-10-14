@@ -1,6 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import {
   UuidSchema,
+  type ActivityDailyStatDto,
   type ActivitySummaryDto,
   type ConfusionDto,
   type HistoryEntryDto,
@@ -17,6 +18,7 @@ import { AppError } from "../errors";
 import { readDeckRevisionIds, readPublishedProgress } from "./published-progress";
 import { assertVocabularyDeck, readDeckKind } from "./deck-kind";
 import { SESSION_TIME_LIMIT_MS } from "./sessions";
+import { buildReportPeriod } from "../domain/report-period";
 
 /**
  * Panel postępów rodzica (SPEC §25). Zwięzłe zapytania odczytują projekcję
@@ -93,7 +95,9 @@ type ActivitySessionRow = {
  * (`contact`) nie jest działaniem dziecka.
  */
 async function readActivitySummary(services: Services, childId: string): Promise<ActivitySummaryDto> {
-  const since = new Date(services.clock.now().getTime() - ACTIVITY_WINDOW_DAYS * 24 * 3_600_000);
+  const now = services.clock.now();
+  const period = buildReportPeriod(now.toISOString(), "Europe/Warsaw", ACTIVITY_WINDOW_DAYS);
+  const since = new Date(period.startUtc);
 
   const sessions = (
     await services.db.execute<ActivitySessionRow>(sql`
@@ -131,20 +135,37 @@ async function readActivitySummary(services: Services, childId: string): Promise
     `)
   ).rows;
 
-  const activeMs = sessions.reduce((total, row) => {
+  const dailyMap = new Map<string, { activeMs: number; sessions: number }>();
+  for (const date of period.dates) {
+    dailyMap.set(date, { activeMs: 0, sessions: 0 });
+  }
+
+  const deckTotals = new Map<string, { deckTitle: string; sessions: number }>();
+  for (const row of sessions) {
+    const sessionDay = ACTIVITY_DAY_FORMAT.format(new Date(row.startedAt));
     const duration = Math.min(
       new Date(row.lastActivity).getTime() - new Date(row.startedAt).getTime(),
       ACTIVITY_SESSION_CAP_MS,
     );
-    return total + Math.max(0, duration);
-  }, 0);
+    const dayStat = dailyMap.get(sessionDay);
+    if (dayStat) {
+      dayStat.activeMs += Math.max(0, duration);
+      dayStat.sessions += 1;
+    }
 
-  const deckTotals = new Map<string, { deckTitle: string; sessions: number }>();
-  for (const row of sessions) {
     const current = deckTotals.get(row.deckId) ?? { deckTitle: row.deckTitle, sessions: 0 };
     current.sessions += 1;
     deckTotals.set(row.deckId, current);
   }
+
+  const daily: ActivityDailyStatDto[] = period.dates.map((date) => {
+    const stat = dailyMap.get(date)!;
+    return {
+      date,
+      activeSeconds: Math.round(stat.activeMs / 1000),
+      sessions: stat.sessions,
+    };
+  });
 
   const answers = (
     await services.db.execute<{ count: number }>(sql`
@@ -164,14 +185,15 @@ async function readActivitySummary(services: Services, childId: string): Promise
 
   return {
     days: ACTIVITY_WINDOW_DAYS,
-    activeSeconds: Math.round(activeMs / 1000),
-    activeDays: new Set(sessions.map((row) => ACTIVITY_DAY_FORMAT.format(new Date(row.startedAt)))).size,
+    activeSeconds: daily.reduce((sum, d) => sum + d.activeSeconds, 0),
+    activeDays: daily.filter((d) => d.sessions > 0).length,
     sessions: sessions.length,
     answers,
     interactions,
     decks: [...deckTotals.entries()]
       .map(([deckId, stat]) => ({ deckId, deckTitle: stat.deckTitle, sessions: stat.sessions }))
       .sort((a, b) => b.sessions - a.sessions || a.deckTitle.localeCompare(b.deckTitle, "pl")),
+    daily,
   };
 }
 
