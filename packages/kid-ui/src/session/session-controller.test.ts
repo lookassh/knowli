@@ -276,11 +276,12 @@ function makeHarness(
   return { controller, recorder, media, storage, state };
 }
 
-async function startAtTask(state: ApiState, task: TaskDto, recorderOpts?: { failStartWith?: unknown; startGate?: Promise<void>; playGate?: Promise<void>; onStopPlayback?: () => void; storage?: LocalPreferences }) {
+async function startAtTask(state: ApiState, task: TaskDto, recorderOpts?: { failStartWith?: unknown; startGate?: Promise<void>; playGate?: Promise<void>; onStopPlayback?: () => void; storage?: LocalPreferences; microphone?: boolean }) {
   state.tasks = [task];
   const harness = makeHarness(state, recorderOpts);
   await harness.controller.start();
   await harness.controller.selectProfile(state.profiles[0]!.childId);
+  if (recorderOpts?.microphone !== false) harness.controller.setMicrophone(true);
   await harness.controller.startLearning(DECK.deckId);
   return harness;
 }
@@ -624,14 +625,25 @@ describe("LearningSessionController", () => {
     await harness.controller.selectProfile(PROFILE_A.childId);
     state.tasks = [taskDto("t1", { kind: "listening", options: [], audioAssetId: "a1" })];
     await harness.controller.startLearning(DECK.deckId);
-    expect(harness.state.startedSessions[0]).toMatchObject({ childId: PROFILE_A.childId });
+    expect(harness.state.startedSessions[0]).toMatchObject({ childId: PROFILE_A.childId, microphoneEnabled: false });
 
     await harness.controller.switchProfile();
     expect(harness.controller.getScreen()).toMatchObject({ kind: "profile" });
     await harness.controller.selectProfile(PROFILE_B.childId);
     state.tasks = [taskDto("t2", { kind: "recall", prompt: "czwartek" })];
     await harness.controller.startLearning(DECK.deckId);
-    expect(harness.state.startedSessions[1]).toMatchObject({ childId: PROFILE_B.childId, microphoneEnabled: true });
+    expect(harness.state.startedSessions[1]).toMatchObject({ childId: PROFILE_B.childId, microphoneEnabled: false });
+  });
+
+  it("domyślnie wyłącza mikrofon przed startem zestawu", async () => {
+    const state = baseState();
+    const harness = makeHarness(state);
+    await harness.controller.start();
+    await harness.controller.selectProfile(PROFILE_A.childId);
+
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "deck", microphone: false });
+    await harness.controller.startLearning(DECK.deckId);
+    expect(harness.state.startedSessions[0]).toMatchObject({ microphoneEnabled: false });
   });
 
   it("exposure zamyka prezentację bez próby; koniec zadań kończy sesję", async () => {
@@ -714,6 +726,7 @@ describe("LearningSessionController", () => {
     await harness.controller.endNow();
     state.tasks = [recall];
     await harness.controller.learnAgain();
+    harness.controller.setMicrophone(true);
     await harness.controller.startLearning(DECK.deckId);
     expect(state.startedSessions.at(-1)).toMatchObject({ microphoneEnabled: true });
   });

@@ -325,6 +325,7 @@ test("jeden profil pomija wybór i prowadzi sesję do obiecanego końca", async 
   await expect(page.getByTestId("kid-parent-link")).toBeVisible();
   await page.getByTestId("kid-profile").filter({ hasText: "Ola" }).click();
   await expect(page.getByTestId("kid-deck").first()).toBeVisible();
+  await page.getByTestId("kid-mic-toggle").check();
   await page.getByTestId("kid-deck").first().click();
 
   let sawRemaining = false;
@@ -697,6 +698,7 @@ test("odmowa mikrofonu przełącza na tryb bez nagrywania", async ({ page }) => 
   });
 
   await openLearn(page, "Darek");
+  await page.getByTestId("kid-mic-toggle").check();
   await page.getByTestId("kid-deck").first().click();
   await expect(page.getByTestId("kid-record")).toBeVisible();
 
@@ -866,6 +868,7 @@ test("opuszczenie widoku w trakcie nagrywania zatrzymuje strumień", async ({ pa
   await seedDue(child.id, publishedVersionId, 0, "recall");
 
   await openLearn(page, "Filip");
+  await page.getByTestId("kid-mic-toggle").check();
   await page.getByTestId("kid-deck").first().click();
   await startFakeRecording(page);
   await expect(page.getByTestId("kid-recording")).toBeVisible();
@@ -879,6 +882,7 @@ test("opuszczenie widoku w trakcie nagrywania zatrzymuje strumień", async ({ pa
   // Nowa sesja może zacząć od prezentacji. Cleanup mikrofonu sprawdzamy
   // przy kolejnym zadaniu z nagrywaniem, bez narzucania kolejności schedulera.
   await page.getByTestId("kid-again").click();
+  await page.getByTestId("kid-mic-toggle").check();
   await page.getByTestId("kid-deck").first().click();
   await expect(page.locator("[data-task-id]")).toBeVisible();
   await expect(page.getByTestId("kid-recording")).toHaveCount(0);

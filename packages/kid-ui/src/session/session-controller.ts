@@ -265,7 +265,7 @@ export class LearningSessionController {
         profiles: this.#profiles,
         childId,
         decks,
-        microphone: !this.#micDenied,
+        microphone: false,
         micDenied: this.#micDenied,
       };
     } catch (error) {

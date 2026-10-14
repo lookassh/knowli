@@ -83,7 +83,7 @@ test("short phone viewport reaches lower decks and the microphone bar by scrolli
     documentHeight: document.documentElement.scrollHeight,
   }));
   expect(layout.documentHeight, JSON.stringify(layout)).toBeGreaterThan(layout.viewportHeight);
-  await expect(page.getByTestId("kid-mic-toggle")).toBeChecked();
+  await expect(page.getByTestId("kid-mic-toggle")).not.toBeChecked();
   await expect(page.getByTestId("kid-microphone-hint")).toBeVisible();
 
   const lastCard = page.getByTestId("kid-deck-card").filter({ hasText: decks[3]!.title });
@@ -92,7 +92,7 @@ test("short phone viewport reaches lower decks and the microphone bar by scrolli
 
   const learningRequest = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/v1/kid/sessions" && request.method() === "POST");
   await lastCard.getByRole("button", { name: "Ucz się" }).click();
-  expect((await learningRequest).postDataJSON()).toMatchObject({ deckId: decks[3]!.deckId, mode: "training" });
+  expect((await learningRequest).postDataJSON()).toMatchObject({ deckId: decks[3]!.deckId, mode: "training", microphoneEnabled: false });
 });
 
 test("unavailable mock test is omitted", async ({ page }) => {
