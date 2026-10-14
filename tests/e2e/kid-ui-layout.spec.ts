@@ -181,6 +181,39 @@ test("session frame honors visual viewport height and offset", async ({ page }) 
   expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(374);
 });
 
+test("short visual viewport keeps the written input and actions reachable on a tall layout viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openRecall(page);
+  await page.getByTestId("kid-input").fill("kot");
+  await page.evaluate(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) throw new Error("visualViewport is required for this browser test");
+    Object.defineProperties(viewport, {
+      height: { configurable: true, value: 350 },
+      offsetTop: { configurable: true, value: 24 },
+      scale: { configurable: true, value: 1 },
+    });
+    viewport.dispatchEvent(new Event("resize"));
+  });
+  await expect(page.getByTestId("kid-session-frame")).toHaveAttribute("data-viewport-very-short", "true");
+  const material = page.getByTestId("kid-material");
+  const input = page.getByTestId("kid-input");
+  await input.scrollIntoViewIfNeeded();
+  const [materialBounds, inputBounds] = await Promise.all([material.boundingBox(), input.boundingBox()]);
+  expect(materialBounds).not.toBeNull();
+  expect(inputBounds).not.toBeNull();
+  expect(inputBounds!.y).toBeGreaterThanOrEqual(materialBounds!.y - 1);
+  expect(inputBounds!.y + inputBounds!.height).toBeLessThanOrEqual(materialBounds!.y + materialBounds!.height + 1);
+
+  const action = page.getByTestId("kid-submit");
+  await action.scrollIntoViewIfNeeded();
+  const actionBounds = await action.boundingBox();
+  expect(actionBounds).not.toBeNull();
+  expect(actionBounds!.y).toBeGreaterThanOrEqual(24);
+  expect(actionBounds!.y + actionBounds!.height).toBeLessThanOrEqual(374);
+  await expect(input).toHaveValue("kot");
+});
+
 test("pinch zoom fallback preserves input and reachable actions", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 700 });
   await openRecall(page);
@@ -319,7 +352,8 @@ test("long exposure remains readable from the start of its scrollable material",
   await openTask(page, task);
 
   const material = page.getByTestId("kid-material");
-  await material.evaluate((element) => { element.scrollTop = 0; });
+  const materialContent = page.locator(".kid-material-content");
+  await materialContent.evaluate((element) => { element.scrollTop = 0; });
   const [materialBox, targetBox] = await Promise.all([
     material.boundingBox(),
     page.getByTestId("kid-target").boundingBox(),
@@ -327,7 +361,7 @@ test("long exposure remains readable from the start of its scrollable material",
   expect(materialBox).not.toBeNull();
   expect(targetBox).not.toBeNull();
   expect(targetBox!.y).toBeGreaterThanOrEqual(materialBox!.y);
-  await material.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  await materialContent.evaluate((element) => { element.scrollTop = element.scrollHeight; });
   const sourceBox = await page.getByTestId("kid-source").boundingBox();
   expect(sourceBox).not.toBeNull();
   expect(sourceBox!.y + sourceBox!.height).toBeLessThanOrEqual(materialBox!.y + materialBox!.height);
@@ -616,7 +650,7 @@ test("written feedback moves focus out of the answer field without opening a mod
   await input.focus();
   await page.getByTestId("kid-submit").click();
   const feedback = page.getByTestId("kid-feedback");
-  await expect(feedback).toContainText("Spróbuj jeszcze raz");
+  await expect(feedback).toContainText("Posłuchaj: cat. Poćwiczymy razem");
   await expect(feedback).not.toHaveJSProperty("open", true);
   await expect(page.getByTestId("kid-next")).toBeInViewport();
   expect(await page.evaluate(() => document.activeElement?.id)).toBe("kid-feedback-title");

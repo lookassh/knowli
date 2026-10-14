@@ -88,6 +88,8 @@ Przenośny `@learning/kid-ui` używa wspólnej ramy `KidPage` oraz prezentacji z
 
 Przy powiększeniu gestem rama sesji wraca do naturalnego flow, aby zachować zoom i przewijanie. Dla długich treści lub małej dostępnej wysokości przewija się wyznaczona część szczegółów, a główna akcja pozostaje osiągalna; listy i raporty nie mają wymogu zerowego przewijania. To zasada prezentacji klienta. Nie zmienia endpointów ani kolejności operacji sesji: kontroler nadal autoryzuje próby, ekspozycje, odsłuch i zakończenie prezentacji. Rzeczywista zgodność z konkretnym telefonem/PWA wymaga osobnego odbioru urządzenia; test Playwright nie jest jego substytutem.
 
+W trakcie zadania `ExerciseFrame` rezerwuje stałe sloty dla instrukcji, materiału oraz głównej i pomocniczej akcji. Wynik pisemny zastępuje treść materiału, a jego przyciski zajmują te same sloty co formularz; wybór odpowiedzi zachowuje opcje w treści i rezerwuje kompaktowy, przewijalny slot na krótki feedback. Nagrywanie odpowiedzi pisemnej pozostaje przy polu odpowiedzi, poza głównym slotem, aby jego dostępność i status nie zmieniały położenia przycisku „Sprawdź”. Przy niezmienionej geometrii zewnętrzne granice stref pozostają stałe; długie treści i wyniki przewijają się wewnątrz, zaś bardzo niski viewport może przewijać całą ramę. Są to wewnętrzne elementy prezentacji Kid UI bez wpływu na API, DTO, MCP ani skill klienta.
+
 ## 6. Dane i wersjonowanie
 
 ### 6.1. Trzy różne tożsamości

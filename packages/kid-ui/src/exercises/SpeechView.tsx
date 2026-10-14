@@ -35,6 +35,22 @@ export function SpeechView({ task, busy, recordingPhase, microphoneReady, inputL
           )}
           <p className="kid-word" data-testid="kid-target">{task.prompt.text}</p>
           <p className="kid-hint">{messages.kid.sayIt}</p>
+          {micAvailable && (
+            <div className="kid-speech-recording-slot">
+              <SpeechRecordButton
+                phase={recordingPhase}
+                ready={microphoneReady}
+                disabled={busy}
+                level={inputLevel}
+                notice={recordingNotice}
+                mode={recordingMode}
+                onPrepare={handlers.onPrepareRecording}
+                onStart={handlers.onRecord}
+                onStop={handlers.onStopRecording}
+                onCancel={handlers.onCancelRecording}
+              />
+            </div>
+          )}
         </>
       )}
       actions={<div className="kid-speech-actions">
@@ -49,20 +65,6 @@ export function SpeechView({ task, busy, recordingPhase, microphoneReady, inputL
           >
             <KidIcon name="volume" />
           </button>
-        )}
-        {micAvailable && (
-          <SpeechRecordButton
-            phase={recordingPhase}
-            ready={microphoneReady}
-            disabled={busy}
-            level={inputLevel}
-            notice={recordingNotice}
-            mode={recordingMode}
-            onPrepare={handlers.onPrepareRecording}
-            onStart={handlers.onRecord}
-            onStop={handlers.onStopRecording}
-            onCancel={handlers.onCancelRecording}
-          />
         )}
       </div>}
       secondaryActions={<div className="kid-secondary-actions">

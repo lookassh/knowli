@@ -114,7 +114,7 @@
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .kid-exercise-instruction {
@@ -122,7 +122,7 @@
   align-items: center;
   justify-content: center;
   gap: 10px;
-  min-height: 40px;
+  min-height: 48px;
   padding: 0 4px;
   color: var(--kid-text);
   font-size: 1.05rem;
@@ -139,7 +139,20 @@
 
 .kid-material {
   box-sizing: border-box;
-  min-height: 48px;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0;
+  overflow: hidden;
+}
+
+.kid-material-content {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 0;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -159,7 +172,31 @@
 .kid-exercise-actions {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
+}
+
+.kid-primary-slot {
+  box-sizing: border-box;
+  min-height: 52px;
+  display: flex;
+  align-items: stretch;
+}
+
+.kid-primary-slot > * {
+  width: 100%;
+}
+
+.kid-exercise-result {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 40px;
+  height: 40px;
+  flex: none;
+  overflow-y: auto;
+}
+
+.kid-exercise-result:empty {
+  visibility: hidden;
 }
 
 .kid-exercise-actions > .kid-options {
@@ -171,18 +208,32 @@
   justify-content: center;
 }
 
-.kid-exercise-result {
-  flex: none;
+.kid-secondary-slot {
+  box-sizing: border-box;
+  min-height: 52px;
+  height: 52px;
   width: 100%;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
 }
 
-.kid-material > .kid-answer-feedback {
-  flex: 1;
+.kid-secondary-slot:empty {
+  visibility: hidden;
+}
+
+.kid-exercise-result .kid-answer-feedback {
   height: 100%;
 }
 
 .kid-exercise-result .kid-answer-feedback {
-  height: auto;
+  gap: 0;
+  padding: 6px 10px;
+}
+
+.kid-exercise-result .kid-feedback-text {
+  font-size: 1rem;
+  line-height: 1.1;
 }
 
 .kid-exposure-content {
@@ -205,6 +256,56 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+@media (max-height: 700px) {
+  .kid-screen {
+    gap: 4px;
+    padding-block: 12px;
+  }
+
+  .kid-exercise-frame {
+    gap: 2px;
+  }
+
+  .kid-ui .kid-options button {
+    min-height: 48px;
+  }
+}
+
+@media (max-height: 420px) {
+  .kid-learning > .kid-task {
+    min-height: max-content;
+    flex: none;
+  }
+
+  .kid-learning > .kid-task > .kid-exercise-frame {
+    min-height: 360px;
+    flex: none;
+  }
+}
+
+.kid-page--session[data-viewport-short="true"] .kid-screen {
+  gap: 4px;
+  padding-block: 12px;
+}
+
+.kid-page--session[data-viewport-short="true"] .kid-exercise-frame {
+  gap: 2px;
+}
+
+.kid-page--session[data-viewport-short="true"] .kid-options button {
+  min-height: 48px;
+}
+
+.kid-page--session[data-viewport-very-short="true"] .kid-learning > .kid-task {
+  min-height: max-content;
+  flex: none;
+}
+
+.kid-page--session[data-viewport-very-short="true"] .kid-learning > .kid-task > .kid-exercise-frame {
+  min-height: 360px;
+  flex: none;
 }
 
 .kid-top-bar {
@@ -640,8 +741,11 @@
 }
 
 .kid-options button {
+  box-sizing: border-box;
+  position: relative;
   width: 100%;
   min-height: 64px;
+  padding-inline: 44px;
   font-size: 1.3rem;
   border: 2px solid var(--kid-line);
   border-radius: 18px;
@@ -666,6 +770,10 @@
 
 .kid-options button.kid-option--correct::before {
   content: "✓ ";
+  position: absolute;
+  inset-inline-start: 14px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .kid-options button.kid-option--wrong {
@@ -676,6 +784,10 @@
 
 .kid-options button.kid-option--wrong::before {
   content: "✗ ";
+  position: absolute;
+  inset-inline-start: 14px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 /* podświetlone opcje są wyłączone (feedback na ekranie), ale nie przygaszone */
@@ -745,7 +857,6 @@
   gap: 10px;
 }
 
-.kid-written-actions,
 .kid-speech-actions {
   display: flex;
   flex-direction: column;
@@ -826,14 +937,30 @@
 }
 
 .kid-record-controls {
+  box-sizing: border-box;
   display: grid;
   justify-items: center;
+  align-content: start;
   gap: 8px;
   width: min(100%, 420px);
+  height: 164px;
+  min-height: 164px;
+  grid-template-rows: 64px 40px 24px 12px;
+}
+
+.kid-speech-recording-slot {
+  box-sizing: border-box;
+  width: min(100%, 420px);
+  height: 164px;
+  flex: none;
+  display: flex;
+  justify-content: center;
 }
 
 .kid-record-button {
-  min-width: 220px;
+  box-sizing: border-box;
+  width: min(100%, 360px);
+  min-width: 0;
   min-height: 64px;
   display: inline-flex;
   align-items: center;
@@ -921,6 +1048,29 @@
   justify-content: space-between;
   min-height: 48px;
   gap: 12px;
+}
+
+.kid-session-status {
+  box-sizing: border-box;
+  height: 52px;
+  min-height: 52px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+}
+
+.kid-session-status:empty {
+  visibility: hidden;
+}
+
+.kid-session-status > .kid-notice {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 0.95rem;
 }
 
 .kid-microphone-status {
@@ -1023,6 +1173,21 @@
   border: 1px solid var(--kid-line);
   border-radius: 16px;
   background: var(--kid-surface);
+}
+
+.kid-material > .kid-answer-feedback {
+  flex: 1;
+  min-height: 0;
+}
+
+.kid-answer-feedback-layout {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .kid-feedback-content {
@@ -1631,8 +1796,9 @@
 }
 
 .kid-lesson-notice__word {
+  position: relative;
   min-height: 48px;
-  padding: 6px 12px;
+  padding: 6px calc(12px + 0.8em);
   font: inherit;
   font-size: 1.3rem;
   border: 2px solid var(--kid-line);
@@ -1654,6 +1820,10 @@
 
 .kid-lesson-notice__word.kid-option--correct::before {
   content: "✓ ";
+  position: absolute;
+  inset-inline-start: 8px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .kid-lesson-notice__word.kid-option--wrong {
@@ -1663,6 +1833,10 @@
 
 .kid-lesson-notice__word.kid-option--wrong::before {
   content: "✗ ";
+  position: absolute;
+  inset-inline-start: 8px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .kid-lesson-stem {

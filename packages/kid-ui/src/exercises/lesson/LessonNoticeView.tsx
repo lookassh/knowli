@@ -8,7 +8,7 @@ import type { ExerciseProps } from "../types";
  * pochodzi wyłącznie z feedbacku serwera (`optionOutcomes`), nigdy lokalnie —
  * wynik nie zapala się przy braku sieci.
  */
-export function LessonNoticeView({ task, busy, optionOutcomes, result, handlers }: ExerciseProps) {
+export function LessonNoticeView({ task, busy, optionOutcomes, result, resultActions, handlers }: ExerciseProps) {
   if (task.prompt.kind !== "lesson_notice") return null;
   return (
     <ExerciseFrame
@@ -37,7 +37,9 @@ export function LessonNoticeView({ task, busy, optionOutcomes, result, handlers 
         </div>
       )}
       secondaryActions={<p className="kid-hint">{messages.kid.lessonNoticeInstruction}</p>}
+      actions={resultActions}
       result={result}
+      reserveResult
     />
   );
 }

@@ -125,6 +125,7 @@ Wymagania:
 - duże przyciski i pola dotykowe;
 - mało tekstu i jednoznaczna główna czynność;
 - typowy ekran zadania na telefonie pokazuje instrukcję, materiał lub wynik oraz główną akcję bez przewijania całego dokumentu; długie treści, powiększenie, klawiatura i bardzo mała wysokość zachowują pełną treść oraz osiągalne działania przez kontrolowane przewijanie;
+- przy niezmienionym widocznym viewporcie nagłówek zadania, instrukcja, obszar materiału i sloty głównej oraz pomocniczej akcji nie zmieniają położenia ani rozmiaru podczas wpisywania, przetwarzania, wyniku i ponowienia; treść może przewijać się we własnym obszarze, a zmiana geometrii po pokazaniu klawiatury lub zoomie jest dozwolona;
 - zmiana dostępnego viewportu przy paskach przeglądarki, orientacji lub klawiaturze nie może zgubić wpisu ani stanu bieżącego zadania; wyjątki dostępności nie mogą blokować zwykłego powiększania i przewijania;
 - responsywne testy przeglądarkowe nie zastępują odbioru na docelowym telefonie i w PWA; nie deklarujemy zgodności z konkretnym urządzeniem bez zapisu rzeczywistej próby;
 - widoczny przycisk ponownego odsłuchania;
