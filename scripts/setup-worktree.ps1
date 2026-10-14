@@ -9,7 +9,8 @@ param (
     [switch]$SkipInstall
 )
 
-$argsList = @("scripts/setup-worktree.cjs")
+$scriptPath = Join-Path $PSScriptRoot "setup-worktree.cjs"
+$argsList = @($scriptPath)
 if ($ForceInstall) { $argsList += "--force-install" }
 if ($SkipInstall) { $argsList += "--skip-install" }
 

@@ -44,7 +44,7 @@ W celu przyspieszenia pracy agentów i wyeliminowania powtarzalnych, kosztownych
 3. **Celowane czytanie dokumentacji**:
    - Nie czytaj wszystkich 5 plików dokumentacji (`SPEC.md`, `architecture.md`, `schema.sql`, `folder-structure.md`, `implementation-plan.md`) od deski do deski na początku każdego małego zadania. Przeczytaj **wyłącznie sekcje bezpośrednio powiązane z Twoim zakresem zmian** (np. `schema.sql` przy modelowaniu bazy, `architecture.md` sekcja 19 przy lekcjach, `SPEC.md` sekcje dotyczące danego ekranu).
 4. **Oszczędny baseline test**:
-   - Podczas sprawdzania stanu początkowego (bramka baseline w `using-git-worktrees`) **nie uruchamiaj pełnego monorepo ani testów e2e / Playwright**. Uruchom wyłącznie szybki test jednostkowy związany ze zmienianym modułem (np. `pnpm vitest run <ścieżka-do-testu>`).
+   - Podczas sprawdzania stanu początkowego (bramka baseline w `using-git-worktrees`) **nie uruchamiaj pełnego monorepo ani testów e2e / Playwright**. Uruchom wyłącznie szybki test jednostkowy związany ze zmienianym modułem (np. `corepack pnpm vitest run <ścieżka-do-testu>` lub `pnpm vitest run <ścieżka-do-testu>`).
 
 ## Architektura i stack
 

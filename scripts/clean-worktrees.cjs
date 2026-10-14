@@ -80,26 +80,32 @@ Usage:
   let missingCount = 0;
 
   worktrees.forEach((wt, idx) => {
-    const isCurrent = path.resolve(wt.path) === currentDir;
+    const isCurrent = path.resolve(wt.path).toLowerCase() === currentDir.toLowerCase();
     const exists = fs.existsSync(wt.path);
     if (!exists) missingCount++;
 
-    const statusBadge = isCurrent
+    let statusBadge = isCurrent
       ? '[CURRENT]'
       : exists
       ? '[ACTIVE]'
       : '[MISSING DIRECTORY]';
 
+    if (wt.locked) {
+      statusBadge += ' [LOCKED]';
+    }
+
     const branchName = wt.branch ? `branch: ${wt.branch}` : (wt.detached ? 'detached HEAD' : 'unknown');
     console.log(`${idx + 1}. ${statusBadge} ${wt.path} (${branchName})`);
   });
 
-  if (isPrune || missingCount > 0) {
+  if (isPrune) {
     console.log('\n[clean-worktrees] Running git worktree prune...');
     const result = run('git worktree prune -v');
     console.log(result || 'Prune completed.');
+  } else if (missingCount > 0) {
+    console.log(`\nFound ${missingCount} missing worktree directory/directories. Run with --prune to clean up stale registrations.`);
   } else {
-    console.log('\nRun with --prune to clean up any dead worktree references.');
+    console.log('\nAll registered worktrees are active. Nothing to prune.');
   }
 }
 

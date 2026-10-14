@@ -45,20 +45,26 @@ function getGitPaths() {
 }
 
 function setupWorktree(options = {}) {
-  const cwd = process.cwd();
-  console.log(`[setup-worktree] Initializing workspace in: ${cwd}`);
-
   const gitPaths = getGitPaths();
   if (!gitPaths) {
     console.warn('[setup-worktree] Warning: Not inside a git repository. Skipping git-based discovery.');
     return;
   }
 
+  const rootDir = gitPaths.currentRoot || process.cwd();
+  try {
+    process.chdir(rootDir);
+  } catch (_) {
+    // Ignore chdir failure if any
+  }
+
+  console.log(`[setup-worktree] Initializing workspace in: ${rootDir}`);
+
   // 1. Copy .env if missing
-  const localEnvPath = path.join(cwd, '.env');
+  const localEnvPath = path.join(rootDir, '.env');
   if (!fs.existsSync(localEnvPath)) {
     const mainEnvPath = path.join(gitPaths.mainRepoRoot, '.env');
-    const exampleEnvPath = path.join(cwd, '.env.example');
+    const exampleEnvPath = path.join(rootDir, '.env.example');
 
     if (fs.existsSync(mainEnvPath)) {
       fs.copyFileSync(mainEnvPath, localEnvPath);
@@ -74,7 +80,7 @@ function setupWorktree(options = {}) {
   }
 
   // 2. Check node_modules
-  const localNodeModules = path.join(cwd, 'node_modules');
+  const localNodeModules = path.join(rootDir, 'node_modules');
   const forceInstall = process.argv.includes('--force-install');
   const skipInstall = process.argv.includes('--skip-install');
 

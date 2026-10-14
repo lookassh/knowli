@@ -27,6 +27,8 @@ try {
   const hookFiles = fs.readdirSync(hooksSourceDir);
   for (const hookName of hookFiles) {
     const srcPath = path.join(hooksSourceDir, hookName);
+    if (!fs.statSync(srcPath).isFile()) continue;
+
     const destPath = path.join(hooksTargetDir, hookName);
 
     fs.copyFileSync(srcPath, destPath);

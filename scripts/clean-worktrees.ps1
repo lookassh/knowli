@@ -9,7 +9,8 @@ param (
     [switch]$Help
 )
 
-$argsList = @("scripts/clean-worktrees.cjs")
+$scriptPath = Join-Path $PSScriptRoot "clean-worktrees.cjs"
+$argsList = @($scriptPath)
 if ($Prune) { $argsList += "--prune" }
 if ($Help) { $argsList += "--help" }
 
