@@ -16,6 +16,7 @@ import { AppError } from "../errors";
 import { applyItems } from "./decks";
 import { validateItems } from "./item-payload";
 import { validateVocabularyFormatItems } from "../domain/picture-vocabulary";
+import { isUiAudioAssetMetadata } from "../domain/ui-audio-catalog";
 import { reconcileDraftAssetsTx } from "./media-reconciliation";
 import { executeLessonGeneration } from "./lessons/lesson-drafts";
 import { runWorkerSlots, selectFairWorkerWork, workerAttemptFromKey, workerAttemptKey, workerIdFromAttemptKey, type WorkKind } from "./worker-schedule";
@@ -462,6 +463,7 @@ async function requeueAbortedMediaAsset(services: Services, assetId: string, lea
  */
 async function supersedeDisabledLessonTts(services: Services, asset: typeof mediaAssets.$inferSelect): Promise<boolean> {
   if (asset.kind !== "tts") return false;
+  if (isUiAudioAssetMetadata(asset.metadata)) return false;
   return services.db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${asset.fingerprint}))`);
     const current = (await tx.select().from(mediaAssets).where(eq(mediaAssets.id, asset.id)).for("update"))[0];

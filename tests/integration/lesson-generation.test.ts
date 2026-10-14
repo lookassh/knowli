@@ -4,6 +4,7 @@ import {
   createDatabase,
   createLesson,
   createServices,
+  executeMediaAsset,
   createSubjectRegistry,
   englishGrammarSubject,
   editLessonDraft,
@@ -811,6 +812,49 @@ describe("generowanie puli lekcji (integracja)", () => {
     // ttsForAnswers=false → brak zasobów audio
     expect(await countRows("media_assets")).toBe(0);
     expect(await countRows("revision_assets")).toBe(0);
+  });
+
+  it("TTS przypadkowo podpięte do lekcji z wyłączonym audio nadal kończy jako superseded", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = lessonServices(fakes);
+    const { runId } = await createLesson(services, command({
+      subjectId: "test_history",
+      topicId: "piast_origins",
+      objectiveIds: ["test_history.piast_origins.chrzest_966"],
+      material: "Mieszko I przyjął chrzest w 966 roku. Chrzest Polski.",
+      clientRequestId: randomUUID(),
+    }));
+    await executeLessonGeneration(services, runId);
+    const [revision] = await query<{ id: string }>(
+      "select id from learning_app.item_revisions where deck_version_id = (select deck_version_id from learning_app.generation_runs where id = $1) limit 1",
+      [runId],
+    );
+    const assetId = randomUUID();
+    const fingerprint = `disabled-lesson-${randomUUID()}`;
+    await pool.query(
+      `insert into learning_app.media_assets(id, kind, fingerprint, generation_number, state, provider, model, metadata)
+       values ($1, 'tts', $2, 1, 'pending', $3, $4, $5)`,
+      [assetId, fingerprint, fakes.settings.tts.provider, fakes.settings.tts.model,
+        { text: "test answer", locale: "en-GB", voice: fakes.settings.tts.voice, format: "mp3" }],
+    );
+    await pool.query(
+      `insert into learning_app.revision_assets(item_revision_id, role, asset_id, expected_fingerprint, state)
+       values ($1, 'target_audio', $2, $3, 'pending')`,
+      [revision!.id, assetId, fingerprint],
+    );
+    await pool.query(
+      `insert into learning_app.generation_runs(id, asset_id, kind, dedupe_key, state, input)
+       values ($1, $2, 'tts', $3, 'queued', $4)`,
+      [randomUUID(), assetId, `asset:${assetId}`, { text: "test answer" }],
+    );
+
+    await executeMediaAsset(services, assetId);
+    const [asset] = await query<{ state: string }>("select state from learning_app.media_assets where id = $1", [assetId]);
+    const [mediaRun] = await query<{ state: string }>("select state from learning_app.generation_runs where asset_id = $1", [assetId]);
+    expect(asset?.state).toBe("failed");
+    expect(mediaRun?.state).toBe("superseded");
+    expect(fakes.tts.requests).toHaveLength(0);
   });
 });
 

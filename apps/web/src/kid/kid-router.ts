@@ -2,6 +2,7 @@ import {
   AppError,
   readMockTestSummary,
   readLessonMockTestSummary,
+  readUiAudio,
   mockTestKindOfSession,
   authorizeDisclosure,
   authorizeFeedbackAudio,
@@ -44,6 +45,10 @@ export async function handleKidApi(
     assertSameOrigin(request);
   }
   const [first, second, third] = segments;
+
+  if (request.method === "GET" && first === "ui-audio" && second === undefined) {
+    return Response.json(await readUiAudio(services), { headers: { "Cache-Control": "no-store" } });
+  }
 
   if (request.method === "GET" && first === "profiles" && second === undefined) {
     return Response.json(await listKidProfiles(services));

@@ -85,6 +85,7 @@ export {
   omitRevisionAsset,
   readReadyMedia,
 } from "./modules/media-reconciliation";
+export { prepareUiAudio, readUiAudio } from "./modules/ui-audio";
 export {
   buildPayload,
   payloadToItem,
