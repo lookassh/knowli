@@ -187,10 +187,10 @@ test("parent supervises objective progress and model verdicts: changes a decisio
   await expect(page.getByTestId("supervision-notice")).toBeVisible();
   expect(supervision.variantCalls).toBeGreaterThan(0);
 
-  await childSelect.selectOption(delayedChildId!);
   const delayedChildResponse = page.waitForResponse((response) =>
     response.request().method() === "GET" && new URL(response.url()).pathname.endsWith("/progress") && new URL(response.url()).searchParams.get("childId") === delayedChildId,
   );
+  await childSelect.selectOption(delayedChildId!);
   expect((await delayedChildResponse).ok()).toBe(true);
   await expect(page.getByTestId(`progress-status-${OBJECTIVE_ID}`)).toHaveText("Nieoceniony");
 
