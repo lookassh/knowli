@@ -90,6 +90,17 @@ describe("auth i profile dzieci (integracja)", () => {
     await pool.end();
   });
 
+  it("domyślnie tworzy profil czytający i zapisuje zmianę canRead bez utraty przy pominiętym PATCH", async () => {
+    const { services } = buildTestServices();
+    const child = await createChild(services, { displayName: "Ala", avatarKey: "fox" });
+    expect(child).toMatchObject({ canRead: true });
+
+    const nonReader = await updateChild(services, child.id, { canRead: false });
+    expect(nonReader).toMatchObject({ canRead: false });
+    await updateChild(services, child.id, { avatarKey: "owl" });
+    await expect(listChildren(services)).resolves.toContainEqual(expect.objectContaining({ id: child.id, canRead: false }));
+  });
+
   it("poprawny login działa, błędny nie tworzy sesji", async () => {
     const { services, clock } = buildTestServices();
     await setupParent(services, "rodzinny-pin-1");
@@ -215,6 +226,7 @@ describe("auth i profile dzieci (integracja)", () => {
       displayName: "Ewa",
       avatarKey: "owl",
       recordingMode: "toggle",
+      canRead: true,
     }]);
   });
 

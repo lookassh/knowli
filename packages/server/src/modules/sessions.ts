@@ -150,6 +150,7 @@ async function lastActivityAt(tx: Tx, sessionId: string, startedAt: Date): Promi
 
 async function sessionDto(tx: Tx, row: typeof learningSessions.$inferSelect, resumed: boolean): Promise<SessionDto> {
   const counts = await taskCounts(tx, row.id);
+  const snapshot = contextOf(row);
   return {
     sessionId: row.id,
     mode: row.mode,
@@ -158,6 +159,8 @@ async function sessionDto(tx: Tx, row: typeof learningSessions.$inferSelect, res
     deckVersionId: row.deckVersionId,
     policyId: row.policyId,
     microphoneEnabled: row.microphoneEnabled,
+    canRead: snapshot.canRead,
+    vocabularyFormat: snapshot.vocabularyFormat,
     state: row.state as SessionDto["state"],
     taskBudget: row.taskBudget,
     tasksIssued: counts.total,
@@ -228,7 +231,7 @@ export async function startSession(services: Services, input: SessionInput): Pro
   const mode = valid.mode ?? "training";
   return services.db.transaction(async (tx) => {
     const child = (
-      await tx.select({ id: childProfiles.id }).from(childProfiles).where(eq(childProfiles.id, valid.childId)).for("update")
+      await tx.select({ id: childProfiles.id, canRead: childProfiles.canRead }).from(childProfiles).where(eq(childProfiles.id, valid.childId)).for("update")
     )[0];
     if (!child) {
       throw new AppError("not_found");
@@ -296,7 +299,7 @@ export async function startSession(services: Services, input: SessionInput): Pro
     const childProfile = (
       await tx.select({ policyId: childProfiles.policyId }).from(childProfiles).where(eq(childProfiles.id, valid.childId))
     )[0];
-    const context: SessionContextShape = deckKind === "lesson"
+    const contextBase = deckKind === "lesson"
       ? await buildLessonSessionContext(tx, {
           childId: valid.childId,
           deckVersionId: version.id,
@@ -311,6 +314,12 @@ export async function startSession(services: Services, input: SessionInput): Pro
           reservations: [],
           settledChecks: [],
         };
+    const context: SessionContextShape = {
+      ...contextBase,
+      canRead: child.canRead,
+      vocabularyFormat: version.vocabularyFormat,
+      microphoneDisabledTaskIds: [],
+    };
     const id = randomUUID();
     if (mode === "mock_test" && !assignment.testGoals?.length) throw new AppError("validation", { message: "Rodzic musi najpierw ustawić cel kartkówki." });
     // Kartkówka lekcji (zadanie 17): wymaga celu `lesson` w przypisaniu; plan z

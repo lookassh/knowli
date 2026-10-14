@@ -89,6 +89,7 @@ export const childProfiles = app.table(
     displayName: text("display_name").notNull(),
     avatarKey: text("avatar_key").notNull(),
     birthYear: smallint("birth_year"),
+    canRead: boolean("can_read").notNull().default(true),
     recordingMode: text("recording_mode").$type<RecordingModeDto>().notNull().default("hold"),
     // własna wersja polityki dziecka (design 2026-10-09); null = bieżąca globalna
     policyId: text("policy_id").references((): AnyPgColumn => learningPolicies.id),
@@ -125,6 +126,7 @@ export const deckVersions = app.table(
     title: text("title").notNull(),
     sourceLocale: text("source_locale").notNull().default("pl-PL"),
     targetLocale: text("target_locale").notNull().default("en-GB"),
+    vocabularyFormat: text("vocabulary_format").$type<"standard" | "picture">().notNull().default("standard"),
     generationPrompt: text("generation_prompt"),
     // Kontekst lekcji (design grammar-module „Data Models”): wymagany dla
     // zestawów lesson, zabroniony dla vocabulary, niezmienny po publikacji —
@@ -136,6 +138,7 @@ export const deckVersions = app.table(
   (t) => [
     check("deck_versions_version_positive", sql`${t.versionNumber} > 0`),
     check("deck_versions_edit_number_positive", sql`${t.editNumber} > 0`),
+    check("deck_versions_vocabulary_format_allowed", sql`${t.vocabularyFormat} in ('standard', 'picture')`),
     check("deck_versions_state_allowed", sql`${t.state} in ('draft', 'review', 'published')`),
     check(
       "deck_versions_published_iff_published_at",

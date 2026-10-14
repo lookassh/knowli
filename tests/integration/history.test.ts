@@ -205,6 +205,19 @@ describe("niezmienność historii prób (integracja)", () => {
     childId = (await createChild(buildTestServices().services, { displayName: "Ola", avatarKey: "fox" })).id;
   });
 
+  it("utrzymuje zdolność czytania przypiętą do aktywnej sesji po zmianie profilu", async () => {
+    const { deckId } = await sharedDeckForChildren([childId]);
+    const services = buildTestServices().services;
+    const started = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    expect(started.canRead).toBe(true);
+    await updateChild(services, childId, { canRead: false });
+    const resumed = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    expect(resumed).toMatchObject({ resumed: true, canRead: true, vocabularyFormat: "standard" });
+    expect((await query<{ context: Record<string, unknown> }>(
+      "select context from learning_app.learning_sessions where id = $1", [started.sessionId],
+    ))[0]!.context).toMatchObject({ canRead: true, vocabularyFormat: "standard" });
+  });
+
   it("klucz odpowiedzi i kontekst wydanego zadania są niezmienne; zmienia się wyłącznie stan", async () => {
     const { taskId } = await sessionWithAttempt(childId);
 
@@ -420,7 +433,7 @@ describe("niezmienność historii prób (integracja)", () => {
     const otherBefore = await query("select * from learning_app.child_profiles where id = $1", [otherId]);
     const before = await snapshot();
     expect(await updateChild(services, childId, { displayName: "Ala", avatarKey: "panda" }))
-      .toEqual({ id: childId, displayName: "Ala", avatarKey: "panda", birthYear: 2018, recordingMode: "hold" });
+      .toEqual({ id: childId, displayName: "Ala", avatarKey: "panda", birthYear: 2018, recordingMode: "hold", canRead: true });
     expect(await snapshot()).toEqual(before);
     expect(await query("select * from learning_app.child_profiles where id = $1", [otherId])).toEqual(otherBefore);
     expect(await query("select * from learning_app.child_profiles where id = $1", [childId]))

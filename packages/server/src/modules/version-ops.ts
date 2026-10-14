@@ -57,6 +57,7 @@ export interface SourceVersion {
   title: string;
   sourceLocale: string;
   targetLocale: string;
+  vocabularyFormat: "standard" | "picture";
   lessonContext: Record<string, unknown> | null;
 }
 
@@ -115,6 +116,7 @@ export async function createVersionFromPublished(
     title: source.title,
     sourceLocale: source.sourceLocale,
     targetLocale: source.targetLocale,
+    vocabularyFormat: source.vocabularyFormat,
     ...(source.lessonContext ? { lessonContext: source.lessonContext } : {}),
   });
 
@@ -125,6 +127,7 @@ export async function createVersionFromPublished(
       title: source.title,
       sourceLocale: source.sourceLocale,
       targetLocale: source.targetLocale,
+      vocabularyFormat: source.vocabularyFormat,
       lessonContext: source.lessonContext ?? null,
     },
     newVersionId,

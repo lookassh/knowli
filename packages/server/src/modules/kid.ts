@@ -18,7 +18,7 @@ import { readLearningSnapshot } from "./learning-snapshot";
  */
 export async function listKidProfiles(services: Services): Promise<KidProfileDto[]> {
   const rows = await services.db
-    .select({ childId: childProfiles.id, displayName: childProfiles.displayName, avatarKey: childProfiles.avatarKey, recordingMode: childProfiles.recordingMode })
+    .select({ childId: childProfiles.id, displayName: childProfiles.displayName, avatarKey: childProfiles.avatarKey, recordingMode: childProfiles.recordingMode, canRead: childProfiles.canRead })
     .from(childProfiles)
     .orderBy(asc(childProfiles.createdAt));
   return rows;
@@ -32,7 +32,7 @@ export async function listKidDecks(services: Services, childId: string): Promise
     throw new AppError("not_found");
   }
   const rows = await services.db
-    .select({ deckId: decks.id, title: decks.title, kind: decks.kind, testDate: assignments.testDate, testGoals: assignments.testGoals, mockTestTaskCount: assignments.mockTestTaskCount, versionId: decks.publishedVersionId, lessonContext: deckVersions.lessonContext })
+    .select({ deckId: decks.id, title: decks.title, kind: decks.kind, vocabularyFormat: deckVersions.vocabularyFormat, testDate: assignments.testDate, testGoals: assignments.testGoals, mockTestTaskCount: assignments.mockTestTaskCount, versionId: decks.publishedVersionId, lessonContext: deckVersions.lessonContext })
     .from(assignments)
     .innerJoin(decks, eq(decks.id, assignments.deckId))
     .innerJoin(deckVersions, eq(deckVersions.id, decks.publishedVersionId))
@@ -202,6 +202,9 @@ export async function listKidDecks(services: Services, childId: string): Promise
       const values = lessonValues.get(row.deckId) ?? { itemCount: 0, independentlyRecalledCount: 0, recommended: false };
       return {
         kind: "lesson",
+        vocabularyFormat: "standard",
+        coverVisual: null,
+        resumeOnly: false,
         subjectTitle,
         mockTestAvailable: lessonMockAvailable.get(row.deckId) ?? false,
         activeSession,
@@ -215,6 +218,9 @@ export async function listKidDecks(services: Services, childId: string): Promise
     }
     return {
       kind: "vocabulary",
+      vocabularyFormat: row.vocabularyFormat,
+      coverVisual: null,
+      resumeOnly: false,
       subjectTitle: null,
       mockTestAvailable: !!row.testGoals?.length,
       activeSession,

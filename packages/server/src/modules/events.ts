@@ -25,6 +25,9 @@ import { AppError } from "../errors";
 import { computeTargetKey } from "../domain/target-key";
 
 export interface SessionContextShape {
+  canRead: boolean;
+  vocabularyFormat: "standard" | "picture";
+  microphoneDisabledTaskIds: string[];
   mockTestReport?: MockTestReportDto;
   timezone: string;
   /** Data sprawdzianu przypięta przy rozpoczęciu nowej sesji; brak w legacy. */
@@ -43,6 +46,11 @@ export function contextOf(session: { context: Record<string, unknown> }): Sessio
   const summary = SessionSummaryDtoSchema.safeParse(raw.summary);
   const report = MockTestReportDtoSchema.safeParse(raw.mockTestReport);
   return {
+    canRead: raw.canRead ?? true,
+    vocabularyFormat: raw.vocabularyFormat === "picture" ? "picture" : "standard",
+    microphoneDisabledTaskIds: Array.isArray(raw.microphoneDisabledTaskIds)
+      ? raw.microphoneDisabledTaskIds.filter((id): id is string => typeof id === "string")
+      : [],
     timezone: typeof raw.timezone === "string" ? raw.timezone : "Europe/Warsaw",
     ...(typeof raw.testDate === "string" || raw.testDate === null ? { testDate: raw.testDate } : {}),
     previousContact: raw.previousContact ?? {},

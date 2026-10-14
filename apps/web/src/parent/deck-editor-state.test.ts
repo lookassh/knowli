@@ -8,6 +8,7 @@ function draft(editNumber = 3): DraftDto {
     deckId: "00000000-0000-4000-8000-000000000002",
     editNumber,
     status: "draft",
+    vocabularyFormat: "standard",
     title: "Dni tygodnia",
     items: [
       {

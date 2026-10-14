@@ -46,6 +46,7 @@ export const messages = {
     recordingMode: "Mówienie",
     recordingModeHold: "Przytrzymaj, aby mówić",
     recordingModeToggle: "Naciśnij, aby rozpocząć i zatrzymać",
+    canRead: "Dziecko jeszcze nie czyta",
     startLearning: "Rozpocznij naukę",
     save: "Zapisz",
     edit: "Edytuj",

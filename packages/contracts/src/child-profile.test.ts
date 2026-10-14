@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ChildDtoSchema, ChildPatchSchema, RecordingModeSchema } from "./decks";
+import { ChildDtoSchema, ChildInputSchema, ChildPatchSchema, RecordingModeSchema, toChildDto } from "./decks";
 import { KidProfileDtoSchema } from "./kid";
 
 const child = {
@@ -40,9 +40,18 @@ describe("child profile patch", () => {
     expect(RecordingModeSchema.parse("hold")).toBe("hold");
     expect(RecordingModeSchema.parse("toggle")).toBe("toggle");
     expect(RecordingModeSchema.safeParse("tap").success).toBe(false);
-    expect(ChildDtoSchema.parse({ ...child, recordingMode: "hold" }).recordingMode).toBe("hold");
+    expect(ChildDtoSchema.parse({ ...child, recordingMode: "hold", canRead: true }).recordingMode).toBe("hold");
     expect(ChildDtoSchema.safeParse(child).success).toBe(false);
-    expect(KidProfileDtoSchema.parse({ childId: child.id, displayName: child.displayName, avatarKey: child.avatarKey, recordingMode: "toggle" }).recordingMode).toBe("toggle");
+    expect(KidProfileDtoSchema.parse({ childId: child.id, displayName: child.displayName, avatarKey: child.avatarKey, recordingMode: "toggle", canRead: true }).recordingMode).toBe("toggle");
     expect(KidProfileDtoSchema.safeParse({ childId: child.id, displayName: child.displayName, avatarKey: child.avatarKey }).success).toBe(false);
+  });
+
+  it("defaults canRead to true and preserves an explicit false profile setting", () => {
+    expect(ChildInputSchema.parse({ displayName: "Ala", avatarKey: "fox" })).toMatchObject({ canRead: true });
+    expect(ChildInputSchema.parse({ displayName: "Ala", avatarKey: "fox", canRead: false })).toMatchObject({ canRead: false });
+    expect(ChildPatchSchema.safeParse({ canRead: "false" }).success).toBe(false);
+    expect(ChildPatchSchema.parse({ canRead: false })).toEqual({ canRead: false });
+    expect(toChildDto({ ...child, birthYear: null, recordingMode: "hold", canRead: false } as Parameters<typeof toChildDto>[0]))
+      .toMatchObject({ canRead: false });
   });
 });
