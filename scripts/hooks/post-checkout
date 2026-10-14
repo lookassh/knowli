@@ -1,0 +1,12 @@
+#!/bin/sh
+# Knowli / Umiem! - Git post-checkout hook for worktree initialization
+# Arguments passed by git:
+# $1 = previous HEAD ref
+# $2 = new HEAD ref
+# $3 = 1 for branch checkout (including worktree creation), 0 for file checkout
+
+if [ "$3" = "1" ] && [ -f "scripts/setup-worktree.cjs" ]; then
+  if command -v node >/dev/null 2>&1; then
+    node scripts/setup-worktree.cjs
+  fi
+fi
