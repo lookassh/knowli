@@ -6,6 +6,7 @@ import {
   createServices,
   createSubjectRegistry,
   englishGrammarSubject,
+  editLessonDraft,
   executeLessonGeneration,
   historyLikeSubject,
   readGeneration,
@@ -647,9 +648,50 @@ describe("generowanie puli lekcji (integracja)", () => {
 
     const after = await query<{ answer: string }>("select payload->>'answer' as answer from learning_app.item_revisions where deck_version_id = $1", [versionId]);
     expect(after.length).toBeGreaterThan(beforeCount);
+    const [version] = await query<{ edit_number: number }>("select edit_number from learning_app.deck_versions where id = $1", [versionId]);
+    expect(version!.edit_number).toBe(2);
+    await expect(editLessonDraft(services, versionId, { expectedEditNumber: 1, title: "stary formularz" })).rejects.toMatchObject({ code: "conflict" });
     // brak duplikatów odpowiedzi (po lowercase)
     const answers = after.map((r) => r.answer.toLowerCase());
     expect(new Set(answers).size).toBe(answers.length);
+  });
+
+  it("rezerwuje tylko jeden aktywny top-up na szkic i zachowuje idempotencję tego samego żądania", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = lessonServices(fakes);
+    const { runId, deckId } = await createLesson(services, command());
+    await executeLessonGeneration(services, runId);
+    const expectedEditNumber = 1;
+    const objectiveId = "english_grammar.present_simple.third_person_s";
+    const firstKey = randomUUID();
+    const secondKey = randomUUID();
+    const [first, competing] = await Promise.allSettled([
+      regenerateObjective(services, { deckId, objectiveId, count: 4, expectedEditNumber, clientRequestId: firstKey }),
+      regenerateObjective(services, { deckId, objectiveId, count: 4, expectedEditNumber, clientRequestId: secondKey }),
+    ]);
+    const accepted = first.status === "fulfilled" ? first.value : competing.status === "fulfilled" ? competing.value : null;
+    const rejected = first.status === "rejected" ? first.reason : competing.status === "rejected" ? competing.reason : null;
+    expect(accepted).not.toBeNull();
+    expect(rejected).toMatchObject({ code: "conflict" });
+    const repeated = await regenerateObjective(services, {
+      deckId, objectiveId, count: 4, expectedEditNumber, clientRequestId: first.status === "fulfilled" ? firstKey : secondKey,
+    });
+    expect(repeated.runId).toBe(accepted!.runId);
+  });
+
+  it("edycja rodzica unieważnia queued run przed wywołaniem providera", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = lessonServices(fakes);
+    const { runId } = await createLesson(services, command());
+    const queued = await readGeneration(services, runId);
+    await editLessonDraft(services, queued.deckVersionId!, { expectedEditNumber: 1, title: "Zmiana rodzica" });
+    expect((await readGeneration(services, runId)).state).toBe("superseded");
+    await executeLessonGeneration(services, runId);
+    expect(fakes.llm.lessonRequests).toHaveLength(0);
+    const [version] = await query<{ edit_number: number; title: string }>("select edit_number, title from learning_app.deck_versions where id = $1", [queued.deckVersionId]);
+    expect(version).toMatchObject({ edit_number: 2, title: "Zmiana rodzica" });
   });
 
   it("przedmiot fixture historii (ttsForAnswers=false) przechodzi cały przepływ bez audio", async () => {

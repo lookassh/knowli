@@ -127,6 +127,27 @@ export async function markRun(
 }
 
 /**
+ * Called only while the owning deck version is locked. A parent edit or a
+ * successful generation makes outstanding runs for that edit stale before
+ * they can publish their result.
+ */
+export async function supersedeLessonRuns(
+  db: Executor,
+  deckVersionId: string,
+  finishedAt: Date,
+  exceptRunId?: string,
+): Promise<void> {
+  await db.update(generationRuns)
+    .set({ state: "superseded", errorCode: null, finishedAt })
+    .where(and(
+      eq(generationRuns.kind, "lesson"),
+      eq(generationRuns.deckVersionId, deckVersionId),
+      inArray(generationRuns.state, ["queued", "running"]),
+      exceptRunId ? ne(generationRuns.id, exceptRunId) : undefined,
+    ));
+}
+
+/**
  * Claim CAS runu generacji szkicu (deck/lesson): `queued → running` + inkrement
  * prób. Zwraca liczbę prób po claimie, albo `null`, gdy run nie był `queued`
  * (inny worker już go zabrał). Współdzielone przez ścieżkę słówek i lekcji —
@@ -231,6 +252,7 @@ export async function retryGeneration(services: Services, runId: string): Promis
       if (version.editNumber !== current.expectedEditNumber) throw new AppError("conflict");
       const editNumber = version.editNumber + 1;
       await tx.update(deckVersions).set({ editNumber }).where(eq(deckVersions.id, version.id));
+      await supersedeLessonRuns(tx, version.id, services.clock.now(), runId);
       await tx.update(generationRuns).set({ state: "queued", attempts: 0, errorCode: null, finishedAt: null, expectedEditNumber: editNumber }).where(eq(generationRuns.id, runId));
       return;
     }

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { LessonCommandSchema, type LessonCommand } from "@learning/contracts";
 import type { Clock, Services } from "../../config";
@@ -39,6 +39,7 @@ import {
   enqueueGenerationRun,
   errorCodeOf,
   requireGeneration,
+  supersedeLessonRuns,
 } from "../generation";
 import { reconcileDraftAssetsTx } from "../media-reconciliation";
 
@@ -489,6 +490,15 @@ export async function executeLessonGeneration(services: Services, runId: string)
     return;
   }
 
+  // Do not spend an LLM request on a run invalidated by a parent edit/retry.
+  // The final write still rechecks the edit number under a row lock.
+  const currentVersion = (await services.db.select({ editNumber: deckVersions.editNumber, state: deckVersions.state })
+    .from(deckVersions).where(eq(deckVersions.id, run.deckVersionId!)))[0];
+  if (!currentVersion || currentVersion.state === "published" || currentVersion.editNumber !== run.expectedEditNumber) {
+    await markCurrentRun(services.db, "superseded", null);
+    return;
+  }
+
   const input = run.input as unknown as LessonRunInput;
   const subject = services.subjects.getSubject(input.subjectId);
   const topic = services.subjects.getTopic(input.subjectId, input.topicId, input.topicVersion);
@@ -675,6 +685,9 @@ export async function executeLessonGeneration(services: Services, runId: string)
         .set({ lessonContext: nextContext as unknown as Record<string, unknown> })
         .where(eq(deckVersions.id, version.id));
       await reconcileDraftAssetsTx(tx, services, version);
+      const nextEditNumber = version.editNumber + 1;
+      await tx.update(deckVersions).set({ editNumber: nextEditNumber }).where(eq(deckVersions.id, version.id));
+      await supersedeLessonRuns(tx, version.id, services.clock.now(), runId);
       if (version.state !== "review") {
         await tx.update(deckVersions).set({ state: "review" }).where(eq(deckVersions.id, version.id));
       }
@@ -725,16 +738,25 @@ export async function regenerateObjective(
           .where(and(eq(deckVersions.deckId, args.deckId)))
           .orderBy(desc(deckVersions.versionNumber))
           .limit(1)
+          .for("update")
       )[0];
       if (!version) {
         throw new AppError("not_found");
       }
+      const priorRequest = (await tx.select().from(generationRuns).where(eq(generationRuns.dedupeKey, `lesson:${args.clientRequestId}`)))[0];
+      if (priorRequest) return { runId: priorRequest.id, deckId: args.deckId };
       if (version.state === "published") {
         throw new AppError("immutable");
       }
       if (version.editNumber !== args.expectedEditNumber) {
         throw new AppError("conflict");
       }
+      const activeRun = (await tx.select({ id: generationRuns.id }).from(generationRuns).where(and(
+        eq(generationRuns.kind, "lesson"),
+        eq(generationRuns.deckVersionId, version.id),
+        inArray(generationRuns.state, ["queued", "running"]),
+      )).limit(1))[0];
+      if (activeRun) throw new AppError("conflict");
       const context = (version.lessonContext ?? {}) as unknown as LessonContext;
       if (!context.subjectId || !context.objectiveIds?.includes(args.objectiveId)) {
         throw new AppError("validation", { message: "objective not in lesson" });
