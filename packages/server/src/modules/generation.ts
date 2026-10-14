@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   GenerationCommandSchema,
@@ -121,6 +121,7 @@ export async function markRun(
     .set({
       state,
       errorCode,
+      nextAttemptAt: null,
       finishedAt: state === "queued" ? null : clock.now(),
     })
     .where(eq(generationRuns.id, runId));
@@ -153,11 +154,16 @@ export async function supersedeLessonRuns(
  * (inny worker już go zabrał). Współdzielone przez ścieżkę słówek i lekcji —
  * jedna implementacja atomowego przejęcia zamiast kopii w module lekcji.
  */
-export async function claimQueuedRun(db: Executor, runId: string, expectedEditNumber?: number): Promise<number | null> {
+export async function claimQueuedRun(db: Executor, runId: string, expectedEditNumber?: number, now?: Date): Promise<number | null> {
   const claimed = await db
     .update(generationRuns)
     .set({ state: "running", attempts: sql`${generationRuns.attempts} + 1` })
-    .where(and(eq(generationRuns.id, runId), eq(generationRuns.state, "queued"), expectedEditNumber === undefined ? undefined : eq(generationRuns.expectedEditNumber, expectedEditNumber)))
+    .where(and(
+      eq(generationRuns.id, runId),
+      eq(generationRuns.state, "queued"),
+      expectedEditNumber === undefined ? undefined : eq(generationRuns.expectedEditNumber, expectedEditNumber),
+      now === undefined ? undefined : or(isNull(generationRuns.nextAttemptAt), lte(generationRuns.nextAttemptAt, now)),
+    ))
     .returning({ attempts: generationRuns.attempts });
   return claimed[0]?.attempts ?? null;
 }
@@ -248,12 +254,18 @@ export async function retryGeneration(services: Services, runId: string): Promis
       const version = (await tx.select().from(deckVersions).where(eq(deckVersions.id, run.deckVersionId!)).for("update"))[0];
       const current = (await tx.select().from(generationRuns).where(eq(generationRuns.id, runId)).for("update"))[0];
       if (!version || !current || version.state === "published" || current.state === "succeeded" || current.state === "superseded") throw new AppError("conflict");
-      if (current.state === "queued") return;
+      if (current.state === "queued") {
+        if (current.nextAttemptAt && current.nextAttemptAt > services.clock.now()) {
+          await tx.update(generationRuns).set({ attempts: 0, errorCode: null, nextAttemptAt: null })
+            .where(eq(generationRuns.id, runId));
+        }
+        return;
+      }
       if (version.editNumber !== current.expectedEditNumber) throw new AppError("conflict");
       const editNumber = version.editNumber + 1;
       await tx.update(deckVersions).set({ editNumber }).where(eq(deckVersions.id, version.id));
       await supersedeLessonRuns(tx, version.id, services.clock.now(), runId);
-      await tx.update(generationRuns).set({ state: "queued", attempts: 0, errorCode: null, finishedAt: null, expectedEditNumber: editNumber }).where(eq(generationRuns.id, runId));
+      await tx.update(generationRuns).set({ state: "queued", attempts: 0, errorCode: null, finishedAt: null, nextAttemptAt: null, expectedEditNumber: editNumber }).where(eq(generationRuns.id, runId));
       return;
     }
     if (run.assetId) {
@@ -584,7 +596,11 @@ export async function runDueGenerationWork(
   const lessonRuns = await services.db
     .select({ id: generationRuns.id })
     .from(generationRuns)
-    .where(and(eq(generationRuns.kind, "lesson"), eq(generationRuns.state, "queued")))
+      .where(and(
+        eq(generationRuns.kind, "lesson"),
+        eq(generationRuns.state, "queued"),
+        or(isNull(generationRuns.nextAttemptAt), lte(generationRuns.nextAttemptAt, services.clock.now())),
+      ))
     .orderBy(asc(generationRuns.createdAt))
     .limit(maxLesson);
   for (const run of lessonRuns) {

@@ -20,6 +20,7 @@ import { countRows, testDatabase, testDatabaseUrl } from "./helpers";
 import { ManualClock } from "./helpers";
 import { fakeGeneration, FakeLlmProvider, type FakeGeneration } from "./fakes";
 import { claimQueuedRun } from "../../packages/server/src/modules/generation";
+import { GenerationProviderError } from "../../packages/server/src/ports/generation-error";
 
 const { pool } = testDatabase();
 
@@ -512,7 +513,8 @@ describe("generowanie puli lekcji (integracja)", () => {
   it("loguje [lesson] błąd partii LLM i wynik attempts_exhausted", async () => {
     const fakes = await fakeGeneration();
     disposers.push(fakes.dispose);
-    const services = lessonServices(fakes);
+    const clock = new ManualClock();
+    const services = lessonServices(fakes, clock);
     fakes.llm.queueLesson({ error: "llm timeout", retryable: true });
 
     const logs: string[] = [];
@@ -526,6 +528,10 @@ describe("generowanie puli lekcji (integracja)", () => {
       const { runId } = await createLesson(services, command());
       for (let i = 0; i < 3; i += 1) {
         await executeLessonGeneration(services, runId);
+        if (i < 2) {
+          const [scheduled] = await query<{ next_attempt_at: Date }>("select next_attempt_at from learning_app.generation_runs where id=$1", [runId]);
+          clock.advanceMs(Math.max(0, scheduled!.next_attempt_at.getTime() - clock.now().getTime()));
+        }
       }
       const run = await readGeneration(services, runId);
       expect(run.state).toBe("failed");
@@ -537,7 +543,7 @@ describe("generowanie puli lekcji (integracja)", () => {
 
     const lessonLogs = logs.filter((line) => line.includes("[lesson]")).join("\n");
     expect(lessonLogs).toMatch(/błąd partii LLM: kod=provider/);
-    expect(lessonLogs).toContain("llm timeout");
+    expect(lessonLogs).not.toContain("llm timeout");
     expect(lessonLogs).toMatch(/zakończony: state=failed kod=attempts_exhausted/);
   });
 
@@ -582,7 +588,8 @@ describe("generowanie puli lekcji (integracja)", () => {
   it("błąd providera → ponowienie do wyczerpania prób (attempts_exhausted)", async () => {
     const fakes = await fakeGeneration();
     disposers.push(fakes.dispose);
-    const services = lessonServices(fakes);
+    const clock = new ManualClock();
+    const services = lessonServices(fakes, clock);
     fakes.llm.queueLesson({ error: "llm timeout", retryable: true });
 
     const { runId } = await createLesson(services, command());
@@ -591,11 +598,46 @@ describe("generowanie puli lekcji (integracja)", () => {
       const dto = await readGeneration(services, runId);
       expect(dto.state).toBe("queued");
       expect(dto.attempts).toBe(attempt);
+      const [scheduled] = await query<{ next_attempt_at: Date }>("select next_attempt_at from learning_app.generation_runs where id=$1", [runId]);
+      clock.advanceMs(Math.max(0, scheduled!.next_attempt_at.getTime() - clock.now().getTime()));
     }
     await executeLessonGeneration(services, runId);
     const exhausted = await readGeneration(services, runId);
     expect(exhausted.state).toBe("failed");
     expect(exhausted.errorCode).toBe("attempts_exhausted");
+  });
+
+  it("błąd trwały kończy się po jednym żądaniu, a retry ręczny czyści odroczenie", async () => {
+    const fakes = await fakeGeneration(); disposers.push(fakes.dispose);
+    const clock = new ManualClock();
+    const services = lessonServices(fakes, clock);
+    const generate = fakes.llm.generateLessonPool.bind(fakes.llm);
+    fakes.llm.generateLessonPool = async () => { throw new GenerationProviderError("configuration", { status: 400 }); };
+    const { runId } = await createLesson(services, command());
+    await executeLessonGeneration(services, runId);
+    expect((await readGeneration(services, runId)).errorCode).toBe("provider_configuration");
+    expect(fakes.llm.lessonRequests).toHaveLength(1);
+    await retryGeneration(services, runId);
+    expect((await readGeneration(services, runId)).state).toBe("queued");
+    expect((await readGeneration(services, runId)).attempts).toBe(0);
+    fakes.llm.generateLessonPool = generate;
+  });
+
+  it("odracza transient retry do nextAttemptAt; ręczne retry skraca odroczenie", async () => {
+    const fakes = await fakeGeneration(); disposers.push(fakes.dispose);
+    const clock = new ManualClock();
+    const services = lessonServices(fakes, clock);
+    fakes.llm.queueLesson({ error: "temporary", retryable: true });
+    const { runId } = await createLesson(services, command());
+    await executeLessonGeneration(services, runId);
+    const [scheduled] = await query<{ next_attempt_at: Date; attempts: number }>("select next_attempt_at, attempts from learning_app.generation_runs where id=$1", [runId]);
+    expect(scheduled!.next_attempt_at.getTime()).toBeGreaterThan(clock.now().getTime());
+    expect(scheduled!.attempts).toBe(1);
+    await executeLessonGeneration(services, runId);
+    expect(fakes.llm.lessonRequests).toHaveLength(1);
+    await retryGeneration(services, runId);
+    const [cleared] = await query<{ next_attempt_at: Date | null; attempts: number }>("select next_attempt_at, attempts from learning_app.generation_runs where id=$1", [runId]);
+    expect(cleared).toEqual({ next_attempt_at: null, attempts: 0 });
   });
 
   it("restart procesu workera wykonuje zlecony run lekcji", async () => {

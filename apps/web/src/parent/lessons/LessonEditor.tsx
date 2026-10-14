@@ -128,6 +128,9 @@ export default function LessonEditor({
   const editable = draft !== null;
 
   const generating = deck?.generation?.state === "queued" || deck?.generation?.state === "running";
+  const generationFailure = deck?.generation?.errorCode
+    ? messages.lessons.generationErrors[deck.generation.errorCode] ?? messages.lessons.generationFailed
+    : messages.lessons.generationFailed;
   const assetsPending = active?.assets.some((a) => a.state === "pending") ?? false;
   useEffect(() => {
     if (!generating && !assetsPending) return;
@@ -362,7 +365,7 @@ export default function LessonEditor({
       </div>}
       {deck?.generation?.state === "failed" && (
         <p className="error" data-testid="generation-failed">
-          {messages.lessons.generationFailed}{" "}
+          {generationFailure}{" "}
           <button type="button" onClick={retry}>{messages.lessons.retryGeneration}</button>
         </p>
       )}

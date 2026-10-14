@@ -47,6 +47,9 @@ Słowniczek:
 7. THE moduł SHALL NOT tworzyć zestawu słówek z materiału lekcji; słówka pozostają osobnym zestawem tworzonym przez rodzica.
 8. THE prompt `lesson_open_answer` SHALL zawierać polski tekst źródłowy do przetłumaczenia, a odpowiedź i warianty SHALL być po angielsku; walidator SHALL odrzucić prompt równy odpowiedzi lub jej wariantowi po normalizacji.
 9. WHEN luka uzupełnia operator, THE walidator SHALL sprawdzić operator, podmiot i czasownik w ukończonym zdaniu, dopuszczając krótkie odpowiedzi bez wymaganego czasownika głównego.
+10. WHEN provider odrzuci żądanie przez błąd konfiguracji, wyczerpany limit, odmowę lub błędny format, THE system SHALL zakończyć run bez automatycznego ponawiania i bez zapisywania częściowej treści.
+11. WHEN provider zgłosi przejściowy błąd lub limit szybkości, THE system SHALL zaplanować ograniczone retry z wykładniczym opóźnieniem i jitterem; poprawne `Retry-After` nie może zostać skrócone, a restart workera zachowuje termin ponowienia.
+12. WHEN rodzic ręcznie ponowi oczekujący run, THE system SHALL wyczyścić termin odroczenia i pozwolić na natychmiastowy claim.
 
 ### Wymaganie 3 — Przegląd i publikacja lekcji
 

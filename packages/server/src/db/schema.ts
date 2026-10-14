@@ -371,6 +371,7 @@ export const generationRuns = app.table(
     leaseUntil: timestamps("lease_until"),
     attempts: integer("attempts").notNull().default(0),
     errorCode: text("error_code"),
+    nextAttemptAt: timestamps("next_attempt_at"),
     createdAt: timestamps("created_at").notNull().defaultNow(),
     finishedAt: timestamps("finished_at"),
   },

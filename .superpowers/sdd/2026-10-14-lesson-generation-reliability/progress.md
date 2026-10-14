@@ -48,4 +48,13 @@ Plan: docs/superpowers/plans/2026-10-14-lesson-generation-reliability.md
 - GREEN dostępne: pełny unit 100 plików / 1002 testy PASS; `typecheck` PASS; `git diff --check` PASS. Testy integracyjne przed i po zmianie nie wystartowały: usługa `com.docker.service` jest Stopped, pipe `dockerDesktopLinuxEngine` nie istnieje. E2E dwóch kontekstów nie zostało jeszcze dodane/uruchomione.
 - Odstępstwo: zgodnie z bramką TDD próba RED była przygotowana, ale nie mogła dojść do testów przez brak PostgreSQL. Implementacja opiera się na obecnej transakcji/bloce wersji oraz regresjach oczekujących na wykonanie.
 - Dokumentacja `docs/architecture.md` opisuje rezerwację, monotoniczny editNumber i odrzucenie późnego wyniku; plan jawnie zostawia DB/E2E jako niedomknięte weryfikacje.
-- Commit do zapisania `fix(lessons): version worker writes and serialize draft generation`; zakres od `36423ba`.
+- Commit: `2a19b29` (`fix(lessons): version worker writes and serialize draft generation`), zakres od `36423ba`.
+
+## Task 5 — kod zakończony; weryfikacja PostgreSQL wymaga Dockera
+- RED adaptera: przed implementacją testy wykazały brak klasyfikacji HTTP 400/429, brak Retry-After i akceptowanie treści po odmowie/ucięciu. Pełny targeted RED zapisany; 3 testy plus missing-module suite nie przechodziły.
+- Zmiana adaptera: `GenerationProviderError` bez body; 400/401/403/404/422 terminalne configuration, zwykłe 429 rate_limit (Retry-After), 429 quota/billing terminalne; 408/5xx/network transient; refusal/content_filter, length i niepoprawna koperta mają kody terminalne. Provider body nie trafia do logów ani wyjątku.
+- Retry: `classifyLessonGenerationFailure`, 1/2 s + 0–20% jitter, poprawny Retry-After jako minimum; `next_attempt_at` nullable, migracja Drizzle 0009, filtr pollera oraz warunkowy claim przez zegar; ręczny retry czyści odroczenie. Deck/media zachowują dotychczasową klasyfikację.
+- Regresje PostgreSQL dodane dla błędu trwałego, braku kolejnego claimu przed terminem, manual retry i istniejący exhaustion; nie mogły się uruchomić (brak pipe Docker). Migracja 0009 i snapshot wygenerowane przez drizzle-kit z aktualnego schematu; kontrola SQL pokazuje addytywne nullable timestamp.
+- GREEN: pełny unit 101 plików / 1019 testów PASS; typecheck PASS; targeted `llm.test.ts` i `lesson-generation-errors.test.ts` 21 testów PASS; diffcheck PASS.
+- Dokumentacja: `.kiro/specs/grammar-module/requirements.md`, `docs/architecture.md` i `docs/provider-config.md`; komunikaty polskie w `packages/contracts/src/messages.ts`. DTO bez `nextAttemptAt`; MCP `learning-overview` bez zmian.
+- Commit do zapisania `fix(lessons): classify provider failures and persist retry delays`; zakres od `2a19b29`.

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createOpenAiLlmProvider } from "./llm";
 import type { LessonPoolInput } from "../../ports/ai";
 import { englishGrammarSubject } from "../../domain/lessons/subjects/english-grammar/module";
+import { GenerationProviderError } from "../../ports/generation-error";
 
 /**
  * Kontrakt składania promptu generacji puli lekcji: adapter buduje prompt
@@ -50,6 +51,57 @@ afterEach(() => {
 });
 
 describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", () => {
+  it("nie ponawia HTTP 400, nie ujawnia body i klasyfikuje konfigurację", async () => {
+    const fetchMock = vi.fn(async () => new Response("secret provider body", { status: 400 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAiLlmProvider({ apiKey: "k" });
+    await expect(provider.generateLessonPool(INPUT)).rejects.toMatchObject({
+      kind: "configuration",
+      status: 400,
+    } satisfies Partial<GenerationProviderError>);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("odczytuje Retry-After odpowiedzi 429", async () => {
+    const fetchMock = vi.fn(async () => new Response("rate limited", { status: 429, headers: { "retry-after": "60" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(createOpenAiLlmProvider({ apiKey: "k" }).generateLessonPool(INPUT)).rejects.toMatchObject({
+      kind: "rate_limit",
+      status: 429,
+      retryAfterMs: 60_000,
+    });
+  });
+
+  it("traktuje wyczerpany budżet 429 jako błąd konfiguracji bez treści body", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ error: { code: "insufficient_quota", message: "private billing detail" } }), { status: 429 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(createOpenAiLlmProvider({ apiKey: "k" }).generateLessonPool(INPUT)).rejects.toMatchObject({ kind: "configuration", status: 429 });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    [401, "configuration"],
+    [408, "transient"],
+    [500, "transient"],
+  ] as const)("klasyfikuje HTTP %i jako %s", async (status, kind) => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("provider details", { status })));
+    await expect(createOpenAiLlmProvider({ apiKey: "k" }).generateLessonPool(INPUT)).rejects.toMatchObject({ kind, status });
+  });
+
+  it("klasyfikuje nieparsowalny wynik jako output", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: "not json" } }] }), { status: 200 })));
+    await expect(createOpenAiLlmProvider({ apiKey: "k" }).generateLessonPool(INPUT)).rejects.toMatchObject({ kind: "output" });
+  });
+
+  it("nie przyjmuje parsowalnego JSON po odmowie albo ucięciu modelu", async () => {
+    const refusalFetch = vi.fn(async () => new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { refusal: "no", content: '{"exercises":[]}' } }] }), { status: 200 }));
+    vi.stubGlobal("fetch", refusalFetch);
+    await expect(createOpenAiLlmProvider({ apiKey: "k" }).generateLessonPool(INPUT)).rejects.toMatchObject({ kind: "refusal" });
+    const incompleteFetch = vi.fn(async () => new Response(JSON.stringify({ choices: [{ finish_reason: "length", message: { content: '{"exercises":[]}' } }] }), { status: 200 }));
+    vi.stubGlobal("fetch", incompleteFetch);
+    await expect(createOpenAiLlmProvider({ apiKey: "k" }).generateLessonPool(INPUT)).rejects.toMatchObject({ kind: "incomplete" });
+  });
+
   it("buduje prompt systemowy z opisu przedmiotu i celów oraz materiał w wiadomości user", async () => {
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => okResponse({ exercises: [], examples: [] }));
     vi.stubGlobal("fetch", fetchMock);

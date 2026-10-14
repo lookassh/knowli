@@ -37,10 +37,10 @@ import {
   MAX_AUTOMATIC_ATTEMPTS,
   claimQueuedRun,
   enqueueGenerationRun,
-  errorCodeOf,
   requireGeneration,
   supersedeLessonRuns,
 } from "../generation";
+import { classifyLessonGenerationFailure, lessonRetryDelayMs } from "./lesson-generation-errors";
 import { reconcileDraftAssetsTx } from "../media-reconciliation";
 
 /**
@@ -470,12 +470,12 @@ export async function executeLessonGeneration(services: Services, runId: string)
     return;
   }
 
-  const attempts = await claimQueuedRun(services.db, runId, run.expectedEditNumber!);
+  const attempts = await claimQueuedRun(services.db, runId, run.expectedEditNumber!, services.clock.now());
   if (attempts === null) {
     return;
   }
-  const markCurrentRun = async (db: Executor, state: "failed" | "succeeded" | "superseded" | "queued", errorCode: string | null) => {
-    const result = await db.update(generationRuns).set({ state, errorCode, finishedAt: state === "queued" ? null : services.clock.now() })
+  const markCurrentRun = async (db: Executor, state: "failed" | "succeeded" | "superseded" | "queued", errorCode: string | null, nextAttemptAt: Date | null = null) => {
+    const result = await db.update(generationRuns).set({ state, errorCode, nextAttemptAt, finishedAt: state === "queued" ? null : services.clock.now() })
       .where(and(eq(generationRuns.id, runId), eq(generationRuns.state, "running"), eq(generationRuns.attempts, attempts), eq(generationRuns.expectedEditNumber, run.expectedEditNumber!)));
     // Logujemy tylko realne przejście (WHERE może dopasować 0 wierszy, np. gdy
     // równoległy retry rodzica podbił expectedEditNumber).
@@ -584,16 +584,16 @@ export async function executeLessonGeneration(services: Services, runId: string)
       }
     }
   } catch (error) {
-    const code = errorCodeOf(error);
-    console.error(
-      `[lesson] run=${runId} błąd partii LLM: kod=${code} próba=${attempts}: ${truncateForLog(String((error as { message?: string })?.message ?? error))}`,
-    );
-    if (code === "validation") {
-      await markCurrentRun(services.db, "failed", "validation");
+    const failure = classifyLessonGenerationFailure(error);
+    console.error(`[lesson] run=${runId} błąd partii LLM: kod=${failure.errorCode} retryable=${failure.retryable} próba=${attempts}`);
+    if (!failure.retryable) {
+      await markCurrentRun(services.db, "failed", failure.errorCode);
     } else if (attempts >= MAX_AUTOMATIC_ATTEMPTS) {
       await markCurrentRun(services.db, "failed", "attempts_exhausted");
     } else {
-      await markCurrentRun(services.db, "queued", null);
+      const delay = lessonRetryDelayMs(attempts, failure.retryAfterMs, Math.random);
+      const nextAttemptAt = new Date(services.clock.now().getTime() + delay);
+      await markCurrentRun(services.db, "queued", failure.errorCode, nextAttemptAt);
     }
     return;
   }

@@ -4,6 +4,7 @@ import type {
   LlmGeneratedItem,
   LlmProvider,
 } from "../../ports/ai";
+import { GenerationProviderError } from "../../ports/generation-error";
 import { lessonPoolJsonSchema, poolExerciseTypes } from "./lesson-pool-schema";
 
 export interface OpenAiLlmOptions {
@@ -14,6 +15,42 @@ export interface OpenAiLlmOptions {
 
 const DEFAULT_MODEL = "gpt-4o-mini";
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
+
+function retryAfterMs(response: Response): number | undefined {
+  const raw = response.headers.get("retry-after");
+  if (raw === null) return undefined;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1_000;
+  const at = Date.parse(raw);
+  return Number.isFinite(at) ? Math.max(0, at - Date.now()) : undefined;
+}
+
+async function lessonHttpError(response: Response): Promise<GenerationProviderError> {
+  let kind: "configuration" | "rate_limit" | "transient" =
+    response.status === 429 ? "rate_limit" : response.status === 408 || response.status >= 500 ? "transient" : "configuration";
+  if (response.status === 429) {
+    try {
+      const body: unknown = await response.clone().json();
+      const serialized = JSON.stringify(body).toLowerCase();
+      if (["insufficient_quota", "billing", "quota", "spend_limit"].some((term) => serialized.includes(term))) {
+        kind = "configuration";
+      }
+    } catch {
+      // A provider's diagnostic body is untrusted and never enters logs or errors.
+    }
+  }
+  return new GenerationProviderError(kind, {
+    status: response.status,
+    ...(kind === "rate_limit" ? { retryAfterMs: retryAfterMs(response) } : {}),
+  });
+}
+
+function asLessonTransportError(error: unknown): GenerationProviderError {
+  if (error instanceof GenerationProviderError) return error;
+  return new GenerationProviderError(
+    error instanceof Error && error.name === "AbortError" ? "timeout" : "transient",
+  );
+}
 
 function systemPrompt(input: LlmGenerateDeckInput): string {
   return [
@@ -236,47 +273,72 @@ export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider 
       return { items: parsed.items ?? [] };
     },
     async generateLessonPool(input: LessonPoolInput, signal?: AbortSignal) {
-      const response = await fetch(`${baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${options.apiKey}`,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          response_format: {
-            type: "json_schema",
-            json_schema: {
-              name: "lesson_pool",
-              strict: true,
-              schema: lessonPoolJsonSchema(input),
-            },
+      // Local schema/prompt errors are programming/input errors, not network
+      // failures. Keep them outside the transport catch so they are not retried.
+      const schema = lessonPoolJsonSchema(input);
+      const system = lessonSystemPrompt(input);
+      const user = lessonUserMaterial(input);
+      try {
+        const response = await fetch(`${baseUrl}/chat/completions`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${options.apiKey}`,
+            "content-type": "application/json",
           },
-          messages: [
-            { role: "system", content: lessonSystemPrompt(input) },
-            { role: "user", content: lessonUserMaterial(input) },
-          ],
-        }),
-        signal,
-      });
-      if (!response.ok) {
-        throw new Error(`openai llm failed: ${response.status} ${await response.text()}`);
+          body: JSON.stringify({
+            model,
+            response_format: {
+              type: "json_schema",
+              json_schema: {
+                name: "lesson_pool",
+                strict: true,
+                schema,
+              },
+            },
+            messages: [
+              { role: "system", content: system },
+              { role: "user", content: user },
+            ],
+          }),
+          signal,
+        });
+        if (!response.ok) throw await lessonHttpError(response);
+        let payload: unknown;
+        try {
+          payload = await response.json();
+        } catch {
+          throw new GenerationProviderError("output", { status: response.status });
+        }
+        if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+          throw new GenerationProviderError("output", { status: response.status });
+        }
+        const choices = (payload as { choices?: unknown }).choices;
+        if (!Array.isArray(choices) || choices.length === 0 || choices[0] === null || typeof choices[0] !== "object") {
+          throw new GenerationProviderError("output", { status: response.status });
+        }
+        const choice = choices[0] as { finish_reason?: string | null; message?: { content?: string | null; refusal?: string | null } };
+        if (choice?.message?.refusal) throw new GenerationProviderError("refusal", { status: response.status });
+        if (choice?.finish_reason === "content_filter") throw new GenerationProviderError("refusal", { status: response.status });
+        if (choice?.finish_reason === "length") throw new GenerationProviderError("incomplete", { status: response.status });
+        const content = choice?.message?.content;
+        if (typeof content !== "string" || content.trim() === "") throw new GenerationProviderError("output", { status: response.status });
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(content);
+        } catch {
+          throw new GenerationProviderError("output", { status: response.status });
+        }
+        if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed) || !Array.isArray((parsed as { exercises?: unknown }).exercises)) {
+          throw new GenerationProviderError("output", { status: response.status });
+        }
+        const result = parsed as { exercises: unknown[]; examples?: unknown };
+        return {
+          exercises: result.exercises,
+          examples: lessonExamplesToRecord(result.examples),
+        };
+      } catch (error) {
+        throw asLessonTransportError(error);
       }
-      const payload = (await response.json()) as {
-        choices?: Array<{ message?: { content?: string } }>;
-      };
-      const content = payload.choices?.[0]?.message?.content;
-      if (!content) {
-        throw new Error("openai llm returned no content");
-      }
-      const parsed = JSON.parse(content) as {
-        exercises?: unknown[];
-        examples?: unknown;
-      };
-      return {
-        exercises: parsed.exercises ?? [],
-        examples: lessonExamplesToRecord(parsed.examples),
-      };
     },
   };
 }
