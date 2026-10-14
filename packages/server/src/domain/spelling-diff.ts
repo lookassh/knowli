@@ -96,14 +96,24 @@ export function compareSpelling(answer: string, key: AnswerKey): SpellingCompari
     }
   }
 
-  const isContiguousFragmentOmission =
+  // „Prawie! Uzupełnij brakujące litery” — wpisany zapis nie zawiera żadnej
+  // błędnej litery, a brakuje co najwyżej jednej dziury (urwany początek/koniec
+  // albo litera w środku) bądź obu końców naraz (wpisany środek słowa).
+  // Braki rozproszone (dwie i więcej dziur w środku) pozostają poza diagnozą.
+  const missingChunks = expectedSegments.filter((segment) => segment.state === "pill").length;
+  const missingBothEnds =
+    missingChunks === 2 &&
+    expectedSegments[0].state === "pill" &&
+    expectedSegments[expectedSegments.length - 1].state === "pill";
+
+  const isLetterOmissionOnly =
     givenSegments.length > 0 &&
     givenSegments.every((segment) => segment.state === "plain") &&
-    expectedSegments.filter((segment) => segment.state === "pill").length <= 1 &&
+    (missingChunks === 1 || missingBothEnds) &&
     givenChars.length >= 2 &&
     (givenChars.length >= 3 || givenChars.length >= Math.ceil(variantChars.length * 0.5));
 
-  const withinThreshold = best.distance <= threshold || isContiguousFragmentOmission;
+  const withinThreshold = best.distance <= threshold || isLetterOmissionOnly;
 
   return {
     variant: best.variant,
