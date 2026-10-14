@@ -568,7 +568,7 @@ Nie zapisujemy mylonej pary na podstawie niewiarygodnego rozpoznania mowy. Błę
 
 ## 22. TTS i pliki audio
 
-Naturalna wzorcowa wymowa jest obowiązkową częścią modułu angielskiego. Początkowa preferencja to TTS OpenAI; konkretny model i głos zostaną dobrane podczas projektowania integracji.
+Naturalna wzorcowa wymowa jest obowiązkową częścią modułu słownictwa angielskiego. Początkowa preferencja to TTS OpenAI; konkretny model i głos zostaną dobrane podczas projektowania integracji. Lekcje gramatyki (np. Present Simple) nie generują audio odpowiedzi ani nie pokazują głośnika dziecku.
 
 TTS musi być oddzielony interfejsem od domeny:
 
@@ -795,7 +795,7 @@ Dodanie przedmiotu to nowy katalog modułu i jeden wpis w rejestrze; silnik (typ
 
 ### 29a.7. Ograniczenia i pozycje odłożone
 
-- **Audio odpowiedzi kanonicznej (TTS) — zaimplementowane (A58).** Przedmiot gramatyki ma `ttsForAnswers = true`; serwer generuje audio odpowiedzi i wymaga gotowego `target_audio` przy publikacji. Zasób jest podawany dziecku end-to-end WYŁĄCZNIE w ćwiczeniach tekstowych (`lesson_gap`, `lesson_error_fix`, `lesson_transform`, `lesson_open_answer`): materializacja sesji dołącza `audioAssetId` tylko do tych typów (i nigdy w kartkówce), Kid UI pokazuje kontrolkę „Posłuchaj”, a odsłuch idzie przez `authorizeDisclosure(audio)`, który pieczętuje ekspozycję `target_key` PRZED wydaniem bajtów i kwalifikuje próbę jako wspomaganą (wym. 4.6). Typy zamknięte (`lesson_choice`, `lesson_short_answer`, `lesson_notice`, `lesson_order`) NIE oferują odsłuchu — kanoniczne audio zdradziłoby właściwą opcję/kolejność i obeszło ocenę deterministyczną po identyfikatorach (wym. 4.3); serwer odrzuca taki odsłuch (`conflict`). Nie wprowadzamy osobnego audio „zdania-polecenia” ani odsłuchu w cyklu wsparcia — projekt (design.md „Odsłuch w zadaniach tekstowych lekcji = wsparcie”) ich nie przewiduje.
+- **Audio odpowiedzi kanonicznej w gramatyce (A58) — wyłączone 2026-10-14.** Lekcja Present Simple nie generuje ani nie wymaga `target_audio`; dziecko nie widzi głośnika. Serwer ukrywa audio ze starych snapshotów zadań i odrzuca próbę odsłuchu. Inne przedmioty mogą włączyć audio odpowiedzi przez `ttsForAnswers`.
 - **Opanowanie bez skonfigurowanego modelu.** Niezależne sprawdzenie reguły może używać produktywnych typów deterministycznych (zwłaszcza `lesson_gap`) na ćwiczeniach niewidzianych — oceniane bez modelu. Dlatego opanowanie reguły jest osiągalne również bez modelu oceniającego, o ile pula zawiera wystarczająco dużo różnych takich ćwiczeń. Model jest wymagany tylko dla odpowiedzi niedopasowanych do wariantów (głównie tłumaczenie zdania i korekty produktywne z nietrafionym wariantem); bez modelu taka odpowiedź jest „nieocenione" bez kary i bez przerwania serii. Hybrydowa ocena jest zatem opcjonalna, zgodnie z projektem.
 
 ## 30. Poza zakresem MVP
@@ -910,7 +910,7 @@ Mapują wymagania 1–11 z `.kiro/specs/grammar-module/requirements.md`.
 | A55 | Próbna kartkówka z lekcji gramatyki | Działa na istniejących zasadach z celem „gramatyka" (niedostępnym dla słówek); plan obejmuje reguły proporcjonalnie, preferuje niewidziane i produktywne; raport per reguła z kategoriami i oznaczeniem ocen modelu. | 9 |
 | A56 | Odczyt raportu Hermesa (learning-overview) | Pomija lekcje gramatyki (postęp, kartkówki, planowane sprawdziany); kontrakt v1 i JSON Schema bez zmian; `SKILL.md` informuje, że raport nie obejmuje jeszcze lekcji. | 10 |
 | A57 | Przykładowy przedmiot nie-językowy (fixture) | Przechodzi walidację, generowanie (fake provider) i ocenę bez zmian w silniku; test architektoniczny potwierdza, że silnik nie importuje modułów przedmiotów inaczej niż przez rejestr. | 11 |
-| A58 | Audio odpowiedzi kanonicznej w lekcji (TTS) | ZAIMPLEMENTOWANE: `target_audio` generowany i wymagany przy publikacji jest podawany dziecku w ćwiczeniach tekstowych (`lesson_gap`/`error_fix`/`transform`/`open_answer`) przez `audioAssetId` w prompcie + kontrolkę „Posłuchaj”; odsłuch pieczętuje ekspozycję przed bajtami i kwalifikuje próbę jako wspomaganą (wym. 4.6). Typy zamknięte nie oferują odsłuchu (zdradzałby odpowiedź; serwer odrzuca). Patrz sekcja „Lekcje i przedmioty — ograniczenia". | 4 |
+| A58 | Audio odpowiedzi kanonicznej w lekcji gramatyki (TTS) | WYŁĄCZONE 2026-10-14: brak generowania/obowiązku `target_audio`, brak głośnika w zadaniu; stare audio jest ukrywane i nie można go odsłuchać. TTS innych przedmiotów pozostaje konfigurowalne. | 4 |
 | A59 | Opanowanie z modelem i bez modelu | Opanowanie jest osiągalne bez modelu przez produktywne typy deterministyczne (zwł. `lesson_gap`) na ćwiczeniach niewidzianych, jeśli pula je zawiera; model jest wymagany tylko dla odpowiedzi niedopasowanych (głównie tłumaczenie), gdzie bez modelu wynik to „nieocenione" bez kary. Patrz sekcja „Lekcje i przedmioty — ograniczenia". | 6, 7 |
 
 ## 33. Następny krok po zatwierdzeniu specyfikacji

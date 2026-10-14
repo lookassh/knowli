@@ -1,9 +1,11 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   createDatabase,
+  createLesson,
   createServices,
   editDraft,
   enqueueDeckGeneration,
+  executeMediaAsset,
   executeGeneration,
   readGeneration,
   retryGeneration,
@@ -12,7 +14,7 @@ import {
 } from "@learning/server";
 import { countRows, testDatabase, testDatabaseUrl, truncateCoreTables } from "./helpers";
 import { ManualClock } from "./helpers";
-import { fakeGeneration, type FakeGeneration } from "./fakes";
+import { fakeGeneration, staleLeaseToken, type FakeGeneration } from "./fakes";
 
 const { pool } = testDatabase();
 
@@ -307,6 +309,7 @@ describe("trwałe generowanie zestawu (integracja)", () => {
     });
     try {
       await runDueGenerationWork(restartedServices);
+      await runDueGenerationWork(restartedServices);
     } finally {
       await restarted.pool.end();
     }
@@ -332,5 +335,83 @@ describe("trwałe generowanie zestawu (integracja)", () => {
       expect(blob).not.toBeNull();
       expect(blob!.bytes.byteLength).toBeGreaterThan(0);
     }
+  });
+
+  it("powolny zestaw nie blokuje równoległego runu lekcji", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = generationServices(fakes);
+    const deck = await enqueueDeckGeneration(services, { ...COMMAND, idempotencyKey: "fair-worker-deck" });
+    const lesson = await createLesson(services, {
+      subjectId: "english_grammar",
+      topicId: "present_simple",
+      objectiveIds: ["english_grammar.present_simple.third_person_s"],
+      material: "He plays football. She watches television. They study English.",
+      clientRequestId: "fair-worker-lesson",
+    });
+    const originalDeck = fakes.deps.llm.generateDeck.bind(fakes.deps.llm);
+    let enterDeck!: () => void;
+    let releaseDeck!: () => void;
+    const deckEntered = new Promise<void>((resolve) => { enterDeck = resolve; });
+    const deckHeld = new Promise<void>((resolve) => { releaseDeck = resolve; });
+    fakes.deps.llm.generateDeck = async (input, signal) => {
+      enterDeck();
+      await deckHeld;
+      return originalDeck(input, signal);
+    };
+
+    let passFinished = false;
+    const pass = runDueGenerationWork(services).then((result) => { passFinished = true; return result; });
+    await deckEntered;
+    await expect.poll(async () => (await readGeneration(services, lesson.runId)).state, { timeout: 1_000 }).toBe("succeeded");
+    expect(passFinished).toBe(false);
+    releaseDeck();
+    await pass;
+    expect((await readGeneration(services, deck.runId)).state).toBe("succeeded");
+  });
+
+  it("anulowany stary worker nie odkłada runu po utracie lease", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = generationServices(fakes);
+    const deck = await enqueueDeckGeneration(services, { ...COMMAND, idempotencyKey: "stale-media-lease" });
+    await executeGeneration(services, deck.runId);
+    const [asset] = await query<{ asset_id: string }>(
+      "select asset_id from learning_app.generation_runs where kind='tts' order by created_at limit 1",
+    );
+    expect(asset).toBeDefined();
+
+    let enterProvider!: () => void;
+    let releaseProvider!: () => void;
+    const entered = new Promise<void>((resolve) => { enterProvider = resolve; });
+    const held = new Promise<void>((resolve) => { releaseProvider = resolve; });
+    const originalSynthesize = fakes.deps.tts.synthesize.bind(fakes.deps.tts);
+    fakes.deps.tts.synthesize = async (input) => {
+      enterProvider();
+      await held;
+      return originalSynthesize(input);
+    };
+    const controller = new AbortController();
+    const oldWorker = executeMediaAsset(services, asset!.asset_id, controller.signal);
+    await entered;
+    const token = staleLeaseToken();
+    await pool.query(
+      "update learning_app.media_assets set lease_token=$2, lease_until=now() + interval '5 minutes' where id=$1",
+      [asset!.asset_id, token],
+    );
+    controller.abort();
+    releaseProvider();
+    await oldWorker;
+
+    const [currentAsset] = await query<{ lease_token: string }>(
+      "select lease_token from learning_app.media_assets where id=$1",
+      [asset!.asset_id],
+    );
+    const [currentRun] = await query<{ state: string }>(
+      "select state from learning_app.generation_runs where asset_id=$1",
+      [asset!.asset_id],
+    );
+    expect(currentAsset?.lease_token).toBe(token);
+    expect(currentRun?.state).toBe("running");
   });
 });

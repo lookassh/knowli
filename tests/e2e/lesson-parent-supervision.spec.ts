@@ -122,7 +122,7 @@ async function createAndPublishLesson(page: Page, title: string): Promise<string
   await page.getByTestId("editor-title").fill(title);
   await page.getByTestId("save-lesson").click();
   await expect(page.getByTestId("editor-title")).toHaveValue(title);
-  await expect(page.locator('[data-testid^="exercise-audio-state-"]', { hasText: "generowanie" })).toHaveCount(0, { timeout: 120_000 });
+  await expect(page.locator('[data-testid^="exercise-audio-state-"]')).toHaveCount(0);
   await expect(page.getByTestId("publish-lesson")).toBeEnabled({ timeout: 120_000 });
   await page.getByTestId("publish-lesson").click();
   await expect(page.getByTestId("publish-status")).toBeVisible({ timeout: 120_000 });

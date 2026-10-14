@@ -50,6 +50,7 @@ Słowniczek:
 10. WHEN provider odrzuci żądanie przez błąd konfiguracji, wyczerpany limit, odmowę lub błędny format, THE system SHALL zakończyć run bez automatycznego ponawiania i bez zapisywania częściowej treści.
 11. WHEN provider zgłosi przejściowy błąd lub limit szybkości, THE system SHALL zaplanować ograniczone retry z wykładniczym opóźnieniem i jitterem; poprawne `Retry-After` nie może zostać skrócone, a restart workera zachowuje termin ponowienia.
 12. WHEN rodzic ręcznie ponowi oczekujący run, THE system SHALL wyczyścić termin odroczenia i pozwolić na natychmiastowy claim.
+13. THE lesson-generation flow SHALL NOT generate or require TTS assets for grammar exercises; child lesson tasks SHALL NOT expose an answer-audio speaker.
 
 ### Wymaganie 3 — Przegląd i publikacja lekcji
 

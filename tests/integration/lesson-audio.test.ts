@@ -7,6 +7,9 @@ import {
   startSession,
   submitAttempt,
   authorizeDisclosure,
+  createServices,
+  createSubjectRegistry,
+  englishGrammarSubject,
   type AppError,
 } from "@learning/server";
 import type { TaskDto } from "@learning/contracts";
@@ -116,9 +119,17 @@ async function newAudioLesson(services: Services) {
   return { child, lesson, session };
 }
 
+/** Jawnie włączony przedmiot testowy zachowuje pokrycie opcjonalnej ścieżki audio. */
+function audioServices(): Services {
+  const { services } = buildTestServices();
+  return createServices({ db: services.db, clock: services.clock,
+    subjects: createSubjectRegistry([{ ...englishGrammarSubject, ttsForAnswers: true }]),
+  });
+}
+
 describe("A58 — audio lekcji w ćwiczeniach tekstowych", () => {
   it("ćwiczenie tekstowe niesie audioAssetId; prompt pozostaje prywatny", async () => {
-    const { services } = buildTestServices();
+    const services = audioServices();
     const { session } = await newAudioLesson(services);
     const task = await issueUntil(services, session.sessionId, "lesson_gap");
     expect(task.prompt.kind).toBe("lesson_gap");
@@ -132,7 +143,7 @@ describe("A58 — audio lekcji w ćwiczeniach tekstowych", () => {
   });
 
   it("odsłuch pieczętuje ekspozycję target_key PRZED zwróceniem zgody", async () => {
-    const { services } = buildTestServices();
+    const services = audioServices();
     const { child, session } = await newAudioLesson(services);
     const task = await issueUntil(services, session.sessionId, "lesson_gap");
     const key = await answerKeyOf(task.taskId);
@@ -152,7 +163,7 @@ describe("A58 — audio lekcji w ćwiczeniach tekstowych", () => {
   });
 
   it("próba po odsłuchu jest wspomagana (NIE samodzielna)", async () => {
-    const { services } = buildTestServices();
+    const services = audioServices();
     const { child, session } = await newAudioLesson(services);
     const task = await issueUntil(services, session.sessionId, "lesson_gap");
     const key = await answerKeyOf(task.taskId);
@@ -172,7 +183,7 @@ describe("A58 — audio lekcji w ćwiczeniach tekstowych", () => {
   });
 
   it("typ zamknięty nie oferuje audio i odrzuca odsłuch", async () => {
-    const { services } = buildTestServices();
+    const services = audioServices();
     const { session } = await newAudioLesson(services);
     const choice = await issueUntil(services, session.sessionId, "lesson_choice");
     expect(choice.prompt.kind).toBe("lesson_choice");

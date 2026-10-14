@@ -18,7 +18,7 @@ describe("englishGrammarSubject — spójność katalogu", () => {
     expect(englishGrammarSubject.titlePl).toBe("Angielski — gramatyka");
     expect(englishGrammarSubject.answerLocale).toBe("en-GB");
     expect(englishGrammarSubject.promptLocale).toBe("pl-PL");
-    expect(englishGrammarSubject.ttsForAnswers).toBe(true);
+    expect(englishGrammarSubject.ttsForAnswers).toBe(false);
   });
 
   it("obsługuje wszystkie 9 typów ćwiczeń", () => {

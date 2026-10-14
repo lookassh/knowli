@@ -10,12 +10,13 @@ import {
 } from "@learning/contracts";
 import type { Clock, GenerationDeps, Services } from "../config";
 import type { Database, Executor, Tx } from "../db/client";
-import { deckVersions, decks, generationRuns, mediaAssets } from "../db/schema";
+import { deckVersions, decks, generationRuns, itemRevisions, mediaAssets, revisionAssets } from "../db/schema";
 import { AppError } from "../errors";
 import { applyItems } from "./decks";
 import { validateItems } from "./item-payload";
 import { reconcileDraftAssetsTx } from "./media-reconciliation";
 import { executeLessonGeneration } from "./lessons/lesson-drafts";
+import { selectFairWorkerWork, type WorkKind } from "./worker-schedule";
 
 /** Maksymalnie trzy automatyczne próby; dalsze tylko po ręcznym ponowieniu. */
 export const MAX_AUTOMATIC_ATTEMPTS = 3;
@@ -288,7 +289,7 @@ export async function retryGeneration(services: Services, runId: string): Promis
   return { runId };
 }
 
-export async function executeGeneration(services: Services, runId: string): Promise<void> {
+export async function executeGeneration(services: Services, runId: string, signal?: AbortSignal): Promise<void> {
   const deps = requireGeneration(services);
   const run = (await services.db.select().from(generationRuns).where(eq(generationRuns.id, runId)))[0];
   if (!run) {
@@ -300,12 +301,13 @@ export async function executeGeneration(services: Services, runId: string): Prom
       // worker rozdziela je w runDueGenerationWork, więc tu nie powinny trafić.
       throw new AppError("internal", { message: "lesson run must be executed by lesson module" });
     }
-    await executeMediaAsset(services, run.assetId!);
+    await executeMediaAsset(services, run.assetId!, signal);
     return;
   }
   if (run.state !== "queued") {
     return;
   }
+  if (signal?.aborted) return;
 
   const attempts = await claimQueuedRun(services.db, runId);
   if (attempts === null) {
@@ -328,9 +330,13 @@ export async function executeGeneration(services: Services, runId: string): Prom
       sourceLocale: runInput.locales.source,
       targetLocale: runInput.locales.target,
       maxItems: runInput.maxItems,
-    });
+    }, signal);
     generated = GeneratedDeckSchema.parse(result);
   } catch (error) {
+    if (signal?.aborted) {
+      await markRun(services.db, services.clock, runId, "queued", null);
+      return;
+    }
     const code = errorCodeOf(error);
     if (code === "validation") {
       await markRun(services.db, services.clock, runId, "failed", "validation");
@@ -339,6 +345,11 @@ export async function executeGeneration(services: Services, runId: string): Prom
     } else {
       await markRun(services.db, services.clock, runId, "queued", null);
     }
+    return;
+  }
+
+  if (signal?.aborted) {
+    await markRun(services.db, services.clock, runId, "queued", null);
     return;
   }
 
@@ -417,13 +428,58 @@ async function failMediaAsset(
   });
 }
 
+/** Requeue cancellation only while this worker still owns the shared asset lease. */
+async function requeueAbortedMediaAsset(services: Services, assetId: string, leaseToken: string): Promise<void> {
+  await services.db.transaction(async (tx) => {
+    const released = await tx.update(mediaAssets)
+      .set({ leaseToken: null, leaseUntil: null })
+      .where(and(eq(mediaAssets.id, assetId), eq(mediaAssets.leaseToken, leaseToken)))
+      .returning({ id: mediaAssets.id });
+    if (released.length === 0) return;
+    await tx.update(generationRuns)
+      .set({ state: "queued", errorCode: null, finishedAt: null })
+      .where(and(eq(generationRuns.assetId, assetId), eq(generationRuns.state, "running")));
+  });
+}
+
+/**
+ * Pending TTS używany wyłącznie przez lekcje z wyłączonym audio nie powinien
+ * już wywoływać providera. Wspólny fingerprint zostaje aktywny, jeśli odwołują
+ * się do niego słówka lub przedmiot z włączonym TTS.
+ */
+async function supersedeDisabledLessonTts(services: Services, asset: typeof mediaAssets.$inferSelect): Promise<boolean> {
+  if (asset.kind !== "tts") return false;
+  return services.db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${asset.fingerprint}))`);
+    const current = (await tx.select().from(mediaAssets).where(eq(mediaAssets.id, asset.id)).for("update"))[0];
+    if (current?.state !== "pending") return false;
+    const references = await tx.select({ kind: decks.kind, lessonContext: deckVersions.lessonContext })
+      .from(revisionAssets)
+      .innerJoin(itemRevisions, eq(itemRevisions.id, revisionAssets.itemRevisionId))
+      .innerJoin(deckVersions, eq(deckVersions.id, itemRevisions.deckVersionId))
+      .innerJoin(decks, eq(decks.id, itemRevisions.deckId))
+      .where(eq(revisionAssets.assetId, asset.id));
+    if (references.length > 0 && !references.every(reference => {
+      const subjectId = (reference.lessonContext as { subjectId?: string } | null)?.subjectId;
+      return reference.kind === "lesson" && typeof subjectId === "string"
+        && services.subjects.getSubject(subjectId)?.ttsForAnswers === false;
+    })) return false;
+    await tx.update(mediaAssets).set({ state: "failed", leaseToken: null, leaseUntil: null })
+      .where(eq(mediaAssets.id, asset.id));
+    await tx.update(generationRuns).set({ state: "superseded", errorCode: null, finishedAt: services.clock.now() })
+      .where(and(eq(generationRuns.assetId, asset.id), inArray(generationRuns.state, ["queued", "running"])));
+    return true;
+  });
+}
+
 /**
  * Wykonanie zadania zasobu: claim lease CAS, wywołanie providera, zapis
  * content-addressed i finalizeacja CAS w jednej transakcji. Finalizacja
  * aktualizuje wyłącznie globalny asset/run — powiązań szkicu nie rusza.
  */
-export async function executeMediaAsset(services: Services, assetId: string): Promise<void> {
+export async function executeMediaAsset(services: Services, assetId: string, signal?: AbortSignal): Promise<void> {
   const deps = requireGeneration(services);
+  if (signal?.aborted) return;
   const asset = (await services.db.select().from(mediaAssets).where(eq(mediaAssets.id, assetId)))[0];
   if (!asset) {
     throw new AppError("not_found");
@@ -440,6 +496,7 @@ export async function executeMediaAsset(services: Services, assetId: string): Pr
   if (asset.state === "failed") {
     return;
   }
+  if (await supersedeDisabledLessonTts(services, asset)) return;
 
   const leaseToken = randomUUID();
   const now = services.clock.now();
@@ -449,7 +506,7 @@ export async function executeMediaAsset(services: Services, assetId: string): Pr
     .where(
       and(
         eq(mediaAssets.id, assetId),
-        ne(mediaAssets.state, "ready"),
+        eq(mediaAssets.state, "pending"),
         or(isNull(mediaAssets.leaseToken), sql`${mediaAssets.leaseUntil} < ${now}`),
       ),
     )
@@ -482,7 +539,7 @@ export async function executeMediaAsset(services: Services, assetId: string): Pr
             locale: metadata.locale!,
             voice: metadata.voice!,
             format: "mp3",
-          })
+          }, signal)
         : await deps.image.generate({
             prompt: metadata.prompt!,
             // Starsze zasoby sprzed parametryzacji quality/format: odtwarzamy
@@ -491,7 +548,11 @@ export async function executeMediaAsset(services: Services, assetId: string): Pr
             size: metadata.size!,
             quality: metadata.quality ?? "high",
             format: metadata.format ?? "png",
-          });
+          }, signal);
+    if (signal?.aborted) {
+      await requeueAbortedMediaAsset(services, assetId, leaseToken);
+      return;
+    }
     const stored = await deps.mediaStore.putImmutable(result.bytes, result.mimeType);
 
     await services.db.transaction(async (tx) => {
@@ -536,6 +597,10 @@ export async function executeMediaAsset(services: Services, assetId: string): Pr
     console.warn(
       `[generation] ${asset.kind} nie udało się (próba ${attempts ?? "?"}/${MAX_AUTOMATIC_ATTEMPTS}, asset ${assetId}): ${error instanceof Error ? error.message : String(error)}`,
     );
+    if (signal?.aborted) {
+      await requeueAbortedMediaAsset(services, assetId, leaseToken);
+      return;
+    }
     if (attempts !== null && attempts >= MAX_AUTOMATIC_ATTEMPTS) {
       await failMediaAsset(services, assetId, leaseToken, "attempts_exhausted");
       return;
@@ -559,6 +624,7 @@ async function assetReady(db: Executor, assetId: string): Promise<boolean> {
 }
 
 export interface WorkerLimits {
+  total?: number;
   deck?: number;
   lesson?: number;
   tts?: number;
@@ -573,14 +639,16 @@ export interface WorkerLimits {
 export async function runDueGenerationWork(
   services: Services,
   limits: WorkerLimits = {},
+  options: { signal?: AbortSignal } = {},
 ): Promise<{ processed: number }> {
   requireGeneration(services);
   const maxDeck = limits.deck ?? 2;
   const maxLesson = limits.lesson ?? 2;
   const maxTts = limits.tts ?? 2;
   const maxImages = limits.images ?? 1;
+  const maxTotal = limits.total ?? 2;
   const now = services.clock.now();
-  let processed = 0;
+  if (options.signal?.aborted) return { processed: 0 };
 
   const deckRuns = await services.db
     .select({ id: generationRuns.id })
@@ -588,11 +656,6 @@ export async function runDueGenerationWork(
     .where(and(eq(generationRuns.kind, "deck"), eq(generationRuns.state, "queued")))
     .orderBy(asc(generationRuns.createdAt))
     .limit(maxDeck);
-  for (const run of deckRuns) {
-    await executeGeneration(services, run.id);
-    processed += 1;
-  }
-
   const lessonRuns = await services.db
     .select({ id: generationRuns.id })
     .from(generationRuns)
@@ -603,11 +666,6 @@ export async function runDueGenerationWork(
       ))
     .orderBy(asc(generationRuns.createdAt))
     .limit(maxLesson);
-  for (const run of lessonRuns) {
-    await executeLessonGeneration(services, run.id);
-    processed += 1;
-  }
-
   const dueMedia = await services.db
     .select({ assetId: generationRuns.assetId, kind: generationRuns.kind })
     .from(generationRuns)
@@ -621,13 +679,29 @@ export async function runDueGenerationWork(
       ),
     )
     .orderBy(asc(generationRuns.createdAt));
-  for (const run of dueMedia.filter((r) => r.kind === "tts").slice(0, maxTts)) {
-    await executeMediaAsset(services, run.assetId!);
-    processed += 1;
+  const queues: Record<WorkKind, { id: string; assetId?: string }[]> = {
+    deck: deckRuns.map((run) => ({ id: run.id })),
+    lesson: lessonRuns.map((run) => ({ id: run.id })),
+    tts: dueMedia.filter((run) => run.kind === "tts").slice(0, maxTts).map((run) => ({ id: run.assetId!, assetId: run.assetId! })),
+    illustration: dueMedia.filter((run) => run.kind === "illustration").slice(0, maxImages).map((run) => ({ id: run.assetId!, assetId: run.assetId! })),
+  };
+  const scheduled = selectFairWorkerWork(
+    queues,
+    { deck: maxDeck, lesson: maxLesson, tts: maxTts, illustration: maxImages },
+    maxTotal,
+    workerScheduleCursor,
+  );
+  workerScheduleCursor = scheduled.nextCursor;
+  const results = await Promise.allSettled(scheduled.work.map(async ({ kind, value }) => {
+    if (options.signal?.aborted) return;
+    if (kind === "deck") await executeGeneration(services, value.id, options.signal);
+    else if (kind === "lesson") await executeLessonGeneration(services, value.id, { signal: options.signal });
+    else await executeMediaAsset(services, value.assetId!, options.signal);
+  }));
+  for (const result of results) {
+    if (result.status === "rejected") console.error(`[worker] zadanie workera zakończone wyjątkiem: kod=${errorCodeOf(result.reason)}`);
   }
-  for (const run of dueMedia.filter((r) => r.kind === "illustration").slice(0, maxImages)) {
-    await executeMediaAsset(services, run.assetId!);
-    processed += 1;
-  }
-  return { processed };
+  return { processed: scheduled.work.length };
 }
+
+let workerScheduleCursor = 0;

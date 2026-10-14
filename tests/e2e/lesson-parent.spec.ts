@@ -79,8 +79,7 @@ test("parent can safely restart a running lesson generation", async ({ page }) =
   await retry.click();
   await expect(page.getByTestId("generation-banner")).toBeHidden({ timeout: 120_000 });
   await expect(page.locator('[data-testid^="objective-group-"]').first()).toBeVisible();
-  // Ten test nie zostawia kolejki TTS dla następnego przepływu rodzica.
-  await expect(page.locator('[data-testid^="exercise-audio-state-"]', { hasText: "generowanie" })).toHaveCount(0, { timeout: 120_000 });
+  await expect(page.locator('[data-testid^="exercise-audio-state-"]')).toHaveCount(0);
 });
 
 test("creates a lesson, reviews it grouped by objective and stage, fixes a validation error, saves, closes coverage and publishes", async ({ page, request }) => {
@@ -144,11 +143,10 @@ test("creates a lesson, reviews it grouped by objective and stage, fixes a valid
   await expect(page.getByTestId("publish-lesson")).toBeEnabled({ timeout: 120_000 });
   await expect(page.getByTestId("coverage-ok")).toBeVisible();
 
-  // Publikacja wymaga gotowego audio odpowiedzi (ttsForAnswers) — poczekaj, aż
-  // zniknie stan „generowanie" na kartach ćwiczeń (editor dopolluje zasoby).
-  await expect(page.locator('[data-testid^="exercise-audio-state-"]', { hasText: "generowanie" })).toHaveCount(0, { timeout: 120_000 });
+  // Lekcje gramatyki nie tworzą audio odpowiedzi; publikacja zależy od treści i pokrycia.
+  await expect(page.locator('[data-testid^="exercise-audio-state-"]')).toHaveCount(0);
 
-  // Publikacja (odblokowana po domknięciu pokrycia i gotowości audio).
+  // Publikacja (odblokowana po domknięciu pokrycia).
   await page.getByTestId("publish-lesson").click();
   await expect(page.getByTestId("publish-status")).toBeVisible({ timeout: 120_000 });
 
