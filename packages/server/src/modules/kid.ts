@@ -1,15 +1,16 @@
 import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
-import type { KidDeckDto, KidProfileDto } from "@learning/contracts";
+import { MeaningVisualSchema, type KidDeckDto, type KidProfileDto } from "@learning/contracts";
 import type { Services } from "../config";
 import { hasScheduledWork, type DeckWorkloadItem, type SkillSnapshot } from "../domain/scheduler";
 import type { Skill } from "../domain/types";
-import { assignments, childProfiles, childSkillProgress, deckVersions, decks, familySettings, itemRevisionSkills, itemRevisions, learningSessions } from "../db/schema";
+import { assignments, childProfiles, childSkillProgress, deckVersions, decks, familySettings, itemRevisionSkills, itemRevisions, learningSessions, revisionAssets } from "../db/schema";
 import { AppError } from "../errors";
 import { mapStatus } from "./sessions";
 import { lessonDeckListValues } from "./lessons/lesson-sessions";
 import { hasSafeLessonMockPortion } from "./lessons/lesson-mock-tests";
 import { CURRENT_POLICY_ID, ensureLearningPolicy, loadPolicy } from "../policies/registry";
 import { readLearningSnapshot } from "./learning-snapshot";
+import { payloadToItem } from "./item-payload";
 
 /**
  * Widoki startowe Kid Mode (arch §12): profile dzieci (tylko nazwa i awatar)
@@ -24,13 +25,15 @@ export async function listKidProfiles(services: Services): Promise<KidProfileDto
   return rows;
 }
 
-export async function listKidDecks(services: Services, childId: string): Promise<KidDeckDto[]> {
+export async function listKidDecks(services: Services, childId: string, options: { microphoneEnabled?: boolean } = {}): Promise<KidDeckDto[]> {
   const child = (
-    await services.db.select({ id: childProfiles.id, policyId: childProfiles.policyId }).from(childProfiles).where(eq(childProfiles.id, childId))
+    await services.db.select({ id: childProfiles.id, policyId: childProfiles.policyId, canRead: childProfiles.canRead }).from(childProfiles).where(eq(childProfiles.id, childId))
   )[0];
   if (!child) {
     throw new AppError("not_found");
   }
+  const microphoneEnabled = options.microphoneEnabled ?? true;
+  const [active] = await services.db.select().from(learningSessions).where(and(eq(learningSessions.childId, childId), eq(learningSessions.state, "active")));
   const rows = await services.db
     .select({ deckId: decks.id, title: decks.title, kind: decks.kind, vocabularyFormat: deckVersions.vocabularyFormat, testDate: assignments.testDate, testGoals: assignments.testGoals, mockTestTaskCount: assignments.mockTestTaskCount, versionId: decks.publishedVersionId, lessonContext: deckVersions.lessonContext })
     .from(assignments)
@@ -44,15 +47,35 @@ export async function listKidDecks(services: Services, childId: string): Promise
       ),
     )
     .orderBy(asc(decks.createdAt));
-  if (rows.length === 0) {
-    return [];
+  const coverVersionIds = [...new Set([...rows.map((row) => row.versionId).filter((id): id is string => id !== null), ...(active ? [active.deckVersionId] : [])])];
+  const coverRevisions = coverVersionIds.length ? await services.db.select({ id: itemRevisions.id, deckVersionId: itemRevisions.deckVersionId, position: itemRevisions.position, payload: itemRevisions.payload })
+    .from(itemRevisions).where(inArray(itemRevisions.deckVersionId, coverVersionIds)).orderBy(asc(itemRevisions.position)) : [];
+  const illustrationRows = coverRevisions.length ? await services.db.select({ itemRevisionId: revisionAssets.itemRevisionId, assetId: revisionAssets.assetId })
+    .from(revisionAssets).where(and(inArray(revisionAssets.itemRevisionId, coverRevisions.map((revision) => revision.id)), eq(revisionAssets.role, "illustration"), eq(revisionAssets.state, "approved"))) : [];
+  const illustrationByRevision = new Map(illustrationRows.map((row) => [row.itemRevisionId, row.assetId]));
+  const coverVisualByVersion = new Map<string, KidDeckDto["coverVisual"]>();
+  for (const revision of coverRevisions) {
+    if (coverVisualByVersion.has(revision.deckVersionId)) continue;
+    const item = payloadToItem(revision.payload as Record<string, unknown>);
+    const visual = item.visualType === "image"
+      ? (illustrationByRevision.get(revision.id) ? { kind: "image" as const, imageAssetId: illustrationByRevision.get(revision.id)! } : null)
+      : item.visualType === "color"
+        ? { kind: "color" as const, color: item.visualData?.color }
+        : item.visualType === "number"
+          ? { kind: "number" as const, count: item.visualData?.count }
+          : null;
+    const parsed = MeaningVisualSchema.safeParse(visual);
+    coverVisualByVersion.set(revision.deckVersionId, parsed.success ? parsed.data : null);
   }
+  const visibleRows = child.canRead
+    ? rows
+    : rows.filter((row) => row.kind === "vocabulary" && row.vocabularyFormat === "picture" || active?.deckId === row.deckId);
 
   // Izolacja lekcji (zadanie 9): rekomendacja i liczniki słówek liczą się TYLKO
   // dla zestawów słówek. Lekcje dostają wartości bezpieczne i tytuł przedmiotu
   // z wstrzykniętego rejestru; prawdziwe liczniki/rekomendację lekcji doda
   // zadanie 13/17. Jedna gałąź po rodzaju zestawu w tym module.
-  const vocabRows = rows.filter((row) => row.kind === "vocabulary");
+  const vocabRows = visibleRows.filter((row) => row.kind === "vocabulary");
 
   // Rekomendacja (arch §9.3, §12): czy w wersji jest teraz zaplanowana praca
   // dla tego dziecka? Elementy bez postępu to nowy materiał; rozpoczęte
@@ -137,11 +160,14 @@ export async function listKidDecks(services: Services, childId: string): Promise
       .filter((value): value is string => value !== null && value !== undefined)
       .sort();
     const recognitionStreak = (progressByRevision.get(revision.revisionId) ?? [])
-      .filter((snapshot) => snapshot.skill === "listening" || snapshot.skill === "reading")
+      .filter((snapshot) => snapshot.skill === "listening" || (child.canRead && snapshot.skill === "reading"))
       .reduce((best, snapshot) => Math.max(best, snapshot.streak), 0);
     list.push({
       progress: progressByRevision.get(revision.revisionId) ?? [],
       pendingCheckAt: scheduledChecks[0] ?? null,
+      pendingChecks: (["recall", "spelling"] as const).flatMap((skill) => learning?.work[skill]?.eligibleAt
+        ? [{ skill, dueAt: learning.work[skill]!.eligibleAt }]
+        : []),
       recallIntroductionNeeded: recognitionStreak >= 1 && !learning?.introducedSkills.recall,
     });
     itemsByVersion.set(revision.versionId, list);
@@ -157,10 +183,9 @@ export async function listKidDecks(services: Services, childId: string): Promise
       );
     }
   }
-  const [active] = await services.db.select().from(learningSessions).where(and(eq(learningSessions.childId, childId), eq(learningSessions.state, "active")));
   // Lekcje (zadanie 13): prawdziwe liczniki i rekomendacja z silnika lekcji
   // (cele, opanowane cele, czy selektor ma pracę). Jedno wywołanie per lekcja.
-  const lessonRows = rows.filter((row) => row.kind === "lesson");
+  const lessonRows = visibleRows.filter((row) => row.kind === "lesson");
   const familyTimezone = lessonRows.length
     ? ((await services.db.select({ timezone: familySettings.timezone }).from(familySettings).limit(1))[0]?.timezone ?? "Europe/Warsaw")
     : "Europe/Warsaw";
@@ -192,7 +217,7 @@ export async function listKidDecks(services: Services, childId: string): Promise
     lessonMockAvailable.set(row.deckId, available);
   }
   // Zachowujemy kolejność po createdAt (rows), rozgałęziając per rodzaj zestawu.
-  return rows.map((row): KidDeckDto => {
+  const result = visibleRows.map((row): KidDeckDto => {
     const activeSession = active?.deckId === row.deckId ? { sessionId: active.id, mode: active.mode } : null;
     if (row.kind === "lesson") {
       // Tytuł przedmiotu z wstrzykniętego rejestru (NIE import globalny); liczniki
@@ -204,32 +229,49 @@ export async function listKidDecks(services: Services, childId: string): Promise
         kind: "lesson",
         vocabularyFormat: "standard",
         coverVisual: null,
-        resumeOnly: false,
+        resumeOnly: !child.canRead && row.vocabularyFormat !== "picture" && active?.deckId === row.deckId,
         subjectTitle,
-        mockTestAvailable: lessonMockAvailable.get(row.deckId) ?? false,
+        mockTestAvailable: child.canRead && (lessonMockAvailable.get(row.deckId) ?? false),
         activeSession,
         deckId: row.deckId,
         title: row.title,
         itemCount: values.itemCount,
         independentlyRecalledCount: values.independentlyRecalledCount,
         testDate: row.testDate,
-        recommended: values.recommended,
+        recommended: microphoneEnabled ? values.recommended : false,
       };
     }
     return {
       kind: "vocabulary",
       vocabularyFormat: row.vocabularyFormat,
-      coverVisual: null,
-      resumeOnly: false,
+      coverVisual: coverVisualByVersion.get(row.versionId!) ?? null,
+      resumeOnly: !child.canRead && row.vocabularyFormat !== "picture" && active?.deckId === row.deckId,
       subjectTitle: null,
-      mockTestAvailable: !!row.testGoals?.length,
+      mockTestAvailable: child.canRead && !!row.testGoals?.length,
       activeSession,
       deckId: row.deckId,
       title: row.title,
       itemCount: itemCountByVersion.get(row.versionId!) ?? 0,
       independentlyRecalledCount: recalledCountByVersion.get(row.versionId!) ?? 0,
       testDate: row.testDate,
-      recommended: hasScheduledWork(itemsByVersion.get(row.versionId!) ?? [], now),
+      recommended: hasScheduledWork(itemsByVersion.get(row.versionId!) ?? [], now, {
+        canRead: child.canRead, microphoneEnabled, vocabularyFormat: row.vocabularyFormat,
+      }),
     };
   });
+  if (active && !result.some((deck) => deck.deckId === active.deckId)) {
+    const [resumable] = await services.db.select({ title: decks.title, kind: decks.kind }).from(decks).where(eq(decks.id, active.deckId));
+    const [pinnedVersion] = await services.db.select({ vocabularyFormat: deckVersions.vocabularyFormat }).from(deckVersions).where(eq(deckVersions.id, active.deckVersionId));
+    if (resumable && pinnedVersion) {
+      const count = await services.db.select({ id: itemRevisions.id }).from(itemRevisions).where(eq(itemRevisions.deckVersionId, active.deckVersionId));
+      result.unshift({
+        deckId: active.deckId, title: resumable.title, kind: resumable.kind as "vocabulary" | "lesson",
+        vocabularyFormat: pinnedVersion.vocabularyFormat, coverVisual: coverVisualByVersion.get(active.deckVersionId) ?? null,
+        resumeOnly: true, activeSession: { sessionId: active.id, mode: active.mode }, mockTestAvailable: false,
+        itemCount: count.length, independentlyRecalledCount: 0, testDate: null, recommended: false,
+        ...(resumable.kind === "lesson" ? { subjectTitle: null } : {}),
+      });
+    }
+  }
+  return result;
 }

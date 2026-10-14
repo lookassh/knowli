@@ -431,13 +431,17 @@ function promptText(prompt: TaskPrompt): string {
       return prompt.instructionPl;
     case "lesson_card":
     case "exposure":
+    case "picture_exposure":
     case "listening":
+    case "picture_listening":
     case "reading":
     case "reverse_recognition":
     case "recall":
     case "spelling":
     case "letter_completion":
     case "speech":
+    case "picture_speech":
+    case "picture_recall":
       // Typy nielekcyjne i karta nie są slotami kartkówki lekcji.
       return "";
     default: {

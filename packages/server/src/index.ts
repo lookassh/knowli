@@ -95,6 +95,8 @@ export { classifyRevisionImpact, buildSkillCriteria } from "./domain/revision-im
 export { computeTargetKey, normalizeTargetText } from "./domain/target-key";
 export { chooseReadingDirection, hasScheduledWork, selectTask } from "./domain/scheduler";
 export { isPictureVocabularyItem, validateVocabularyFormatItems } from "./domain/picture-vocabulary";
+export { getVocabularyCapabilities } from "./domain/vocabulary-capabilities";
+export { buildPictureRecognitionOptions, type PictureChoiceOption, type PictureRecognitionItem } from "./domain/picture-recognition-options";
 export type {
   DeckWorkloadItem,
   ScheduleCandidate,
@@ -124,6 +126,7 @@ export { LEARNING_V1_POLICY } from "./policies/learning-v1";
 export { ensureLearningPolicy, loadPolicy, CURRENT_POLICY_ID, PolicyConfigSchema } from "./policies/registry";
 export {
   startSession,
+  disableSessionMicrophone,
   nextTask,
   endSession,
   completePresentation,

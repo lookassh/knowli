@@ -106,6 +106,25 @@ describe("selectTask — nowy materiał (SPEC §13)", () => {
 });
 
 describe("selectTask — rezerwacje należnych sprawdzeń (arch §9.3)", () => {
+  it("nie blokuje nieczytającego dziecka należna pisownia", () => {
+    const dueSpelling = candidate({
+      progress: { spelling: { status: "needs_confirmation", nextReviewAt: PAST, streak: 2 } },
+      usedThisSession: 1,
+      presentationsThisSession: 0,
+      ownPresentationCompleted: true,
+    });
+    const plan = selectTask(input({ canRead: false, microphoneEnabled: true, candidates: [dueSpelling], peers: [peer(dueSpelling)] }));
+    expect(plan?.skillAtIssue).not.toBe("spelling");
+  });
+
+  it("pisownia jako jedyna należność nie rekomenduje nauki bez czytania", () => {
+    expect(hasScheduledWork([{
+      progress: [],
+      pendingCheckAt: PAST,
+      pendingChecks: [{ skill: "spelling", dueAt: PAST }],
+    }], NOW, { canRead: false, microphoneEnabled: true })).toBe(false);
+  });
+
   it("należne sprawdzenie Recall i pisowni ma pierwszeństwo i zbiera oba wyniki z jednej odpowiedzi", () => {
     const due = candidate({
       progress: {

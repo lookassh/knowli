@@ -65,6 +65,16 @@ describe("optionOutcomes — podświetlenie opcji po próbie wyboru", () => {
     expect(outcomes.size).toBe(1);
   });
 
+  it("dopasowuje poprawną odpowiedź po polskiej etykiecie opcji obrazkowej", () => {
+    const pictureOptions = [
+      { id: "red", labelPl: "czerwony", visual: { kind: "color" as const, color: "#ff0000" } },
+      { id: "blue", labelPl: "niebieski", visual: { kind: "color" as const, color: "#0000ff" } },
+    ];
+    const outcomes = optionOutcomes({ kind: "incorrect", correctText: "czerwony" }, "blue", pictureOptions);
+    expect(outcomes.get("blue")).toBe("wrong");
+    expect(outcomes.get("red")).toBe("correct");
+  });
+
   it("próba nieoceniona nie podświetla nic — bez udawanego wyniku", () => {
     expect(optionOutcomes({ kind: "not_assessed" }, OPTIONS[0]!.id, OPTIONS).size).toBe(0);
     expect(optionOutcomes({ kind: "content_matched" }, OPTIONS[0]!.id, OPTIONS).size).toBe(0);

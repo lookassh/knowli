@@ -14,6 +14,7 @@ import {
   readAttempt,
   recordEvent,
   startSession,
+  disableSessionMicrophone,
   submitAttempt,
   submitSpeechAttempt,
   MULTIPART_OVERHEAD_BYTES,
@@ -55,11 +56,14 @@ export async function handleKidApi(
   }
 
   if (request.method === "GET" && first === "decks" && second === undefined) {
-    const childId = new URL(request.url).searchParams.get("childId");
+    const params = new URL(request.url).searchParams;
+    const childId = params.get("childId");
     if (!childId) {
       throw new AppError("validation");
     }
-    return Response.json(await listKidDecks(services, UuidSchema.parse(childId)));
+    const microphoneEnabled = params.get("microphoneEnabled");
+    if (microphoneEnabled !== null && microphoneEnabled !== "true" && microphoneEnabled !== "false") throw new AppError("validation");
+    return Response.json(await listKidDecks(services, UuidSchema.parse(childId), microphoneEnabled === null ? {} : { microphoneEnabled: microphoneEnabled === "true" }));
   }
 
   if (first === "sessions") {
@@ -79,6 +83,9 @@ export async function handleKidApi(
     }
     if (request.method === "POST" && second !== undefined && third === "end") {
       return Response.json(await endSession(services, second));
+    }
+    if (request.method === "POST" && second !== undefined && third === "disable-microphone") {
+      return Response.json(await disableSessionMicrophone(services, second));
     }
   }
 

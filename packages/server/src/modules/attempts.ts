@@ -47,6 +47,7 @@ import { readSkillHistory } from "./skill-history";
 import { persistSkillProjection } from "./skill-projections";
 import { resolveTaskAssistance } from "../domain/task-assistance";
 import { assertVocabularyDeck, readDeckKind } from "./deck-kind";
+import { completeDisabledVoiceTask } from "./voice-task-lifecycle";
 
 /** Leniwa finalizacja przeterminowanych prób processing (arch §9.2a). */
 export const ATTEMPT_PROCESSING_TIMEOUT_MS = 60_000;
@@ -70,6 +71,7 @@ interface FrozenContext {
   assistance: AssistanceKind[];
   previousSessionContactAt: string | null;
   timezone: string;
+  assessmentSkills?: Skill[];
 }
 
 function answerKeyOf(task: TaskRow): AnswerKey {
@@ -88,9 +90,9 @@ async function assistanceFor(tx: Tx, task: TaskRow, receivedAt: Date): Promise<A
     .select({ kind: learningEvents.kind, occurredAt: learningEvents.occurredAt })
     .from(learningEvents)
     .where(and(eq(learningEvents.taskId, task.id), inArray(learningEvents.kind, ["audio_issued", "hint_issued"])));
-  const prompt = task.publicPrompt as { options?: { text?: string }[] };
+  const prompt = task.publicPrompt as { options?: { text?: string; labelPl?: string }[] };
   const distinctChoiceCount = Array.isArray(prompt.options)
-    ? new Set(prompt.options.map((option) => (option.text ?? "").normalize("NFC").trim().toLocaleLowerCase())).size
+    ? new Set(prompt.options.map((option) => (option.text ?? option.labelPl ?? "").normalize("NFC").trim().toLocaleLowerCase())).size
     : null;
   return resolveTaskAssistance({
     exerciseType: task.exerciseType as ExerciseType,
@@ -132,15 +134,26 @@ async function targetKeyOf(tx: Tx, task: TaskRow): Promise<string> {
 /** Rozwiązanie własnego zadania pokazywane dziecku w feedbacku (SPEC §16). */
 function correctTextOf(task: TaskRow, key: AnswerKey): string {
   if (key.correctOptionId !== undefined) {
-    const options = (task.publicPrompt.options as { id: string; text: string }[] | undefined) ?? [];
-    return options.find((o) => o.id === key.correctOptionId)?.text ?? key.target;
+    const options = (task.publicPrompt.options as { id: string; text?: string; labelPl?: string }[] | undefined) ?? [];
+    const option = options.find((o) => o.id === key.correctOptionId);
+    return option?.text ?? option?.labelPl ?? key.target;
   }
   return key.target;
 }
 
 function optionTextOf(task: TaskRow, optionId: string): string {
-  const options = (task.publicPrompt.options as { id: string; text: string }[] | undefined) ?? [];
-  return options.find((o) => o.id === optionId)?.text ?? "";
+  const options = (task.publicPrompt.options as { id: string; text?: string; labelPl?: string }[] | undefined) ?? [];
+  const option = options.find((o) => o.id === optionId);
+  return option?.text ?? option?.labelPl ?? "";
+}
+
+function limitGradeToTaskSkills(task: TaskRow, grade: Grade): Grade {
+  const allowed = (task.context as { assessmentSkills?: unknown } | null)?.assessmentSkills;
+  if (!Array.isArray(allowed)) return grade;
+  const permitted = new Set(allowed.filter((skill): skill is Skill =>
+    ["listening", "reading", "recall", "pronunciation", "spelling"].includes(String(skill)),
+  ));
+  return { ...grade, skills: Object.fromEntries(Object.entries(grade.skills).filter(([skill]) => permitted.has(skill as Skill))) };
 }
 
 function gradeOf(input: AttemptInput, key: AnswerKey, ctx: EvaluationContext): Grade {
@@ -247,6 +260,7 @@ async function finalizeAttemptRow(
   targetKey: string,
   now: Date,
 ): Promise<AttemptDto> {
+  grade = limitGradeToTaskSkills(task, grade);
   const key = answerKeyOf(task);
   const correctText = correctTextOf(task, key);
   // diagnoza liter wyłącznie dla odpowiedzi pisemnej z ocenianą pisownią (issue #9);
@@ -490,6 +504,9 @@ export async function startAttempt(
 
   // leniwa finalizacja najpierw: zwalnia jedyną próbę processing zadania
   await lazyFinalizeProcessing(tx, task, session, itemId, now);
+  if (contextOf(session).microphoneDisabledTaskIds.includes(task.id)) {
+    await completeDisabledVoiceTask(tx, session.id, task.id);
+  }
 
   if (session.state !== "active") {
     throw new AppError("conflict", { message: "session is closed" });
@@ -502,6 +519,13 @@ export async function startAttempt(
   }
   if (task.state !== "issued") {
     throw new AppError("conflict", { message: "task is no longer issued" });
+  }
+  const sessionContext = contextOf(session);
+  if (!sessionContext.canRead && valid.modality === "text") {
+    throw new AppError("validation", { details: { reason: "vocabulary_requires_reading" } });
+  }
+  if (!session.microphoneEnabled && valid.modality === "audio") {
+    throw new AppError("validation", { message: "microphone is disabled for this session" });
   }
   if (session.mode === "mock_test" && valid.modality === "audio") {
     throw new AppError("validation", { message: "Kartkówka nie wymaga nagrywania odpowiedzi." });
@@ -530,7 +554,6 @@ export async function startAttempt(
 
   const policy = await loadPolicy(tx, session.policyId);
   const targetKey = await targetKeyOf(tx, task);
-  const sessionContext = contextOf(session);
   const frozen: FrozenContext = {
     receivedAt: now.toISOString(),
     policyVersion: policy.version,
@@ -541,6 +564,9 @@ export async function startAttempt(
     assistance: await assistanceFor(tx, task, now),
     previousSessionContactAt: sessionContext.previousContact[itemId] ?? null,
     timezone: sessionContext.timezone,
+    ...((task.context as { assessmentSkills?: Skill[] } | null)?.assessmentSkills
+      ? { assessmentSkills: (task.context as { assessmentSkills: Skill[] }).assessmentSkills }
+      : {}),
   };
 
   return {
@@ -817,5 +843,8 @@ async function lazyFinalizeProcessing(
       targetKey,
       now,
     );
+  }
+  if (contextOf(session).microphoneDisabledTaskIds.includes(task.id)) {
+    await completeDisabledVoiceTask(tx, session.id, task.id);
   }
 }

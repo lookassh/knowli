@@ -12,6 +12,10 @@ import { LessonShortAnswerView } from "./lesson/LessonShortAnswerView";
 import { LessonOrderView } from "./lesson/LessonOrderView";
 import { LessonGapView } from "./lesson/LessonGapView";
 import { LessonSentenceView } from "./lesson/LessonSentenceView";
+import { PictureExposureView } from "./PictureExposureView";
+import { PictureListeningView } from "./PictureListeningView";
+import { PictureRecallView } from "./PictureRecallView";
+import { PictureSpeechView } from "./PictureSpeechView";
 
 /**
  * Dyspozytor widoku ćwiczenia po rodzaju promptu (= typie zadania).
@@ -23,8 +27,14 @@ export function ExerciseView(props: ExerciseProps) {
   switch (kind) {
     case "exposure":
       return <ExposureView {...props} />;
+    case "picture_exposure":
+      return <PictureExposureView {...props} />;
     case "listening":
       return <ListeningView {...props} />;
+    case "picture_listening":
+      return <PictureListeningView {...props} />;
+    case "picture_recall":
+      return <PictureRecallView key={props.task.taskId} {...props} />;
     case "reading":
     case "reverse_recognition":
       return <ReadingView {...props} />;
@@ -36,6 +46,8 @@ export function ExerciseView(props: ExerciseProps) {
       return <LetterCompletionView key={props.task.taskId} {...props} />;
     case "speech":
       return <SpeechView key={props.task.taskId} {...props} />;
+    case "picture_speech":
+      return <PictureSpeechView key={props.task.taskId} {...props} />;
     // Lekcje (design „Typy ćwiczeń i etapy”). Pola edycji resetują się przy
     // zmianie zadania, dlatego `key` po `taskId`.
     case "lesson_card":

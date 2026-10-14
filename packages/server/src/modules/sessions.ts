@@ -14,6 +14,7 @@ import {
   type TaskPrompt,
   type TestGoal,
   type VisualType,
+  type MeaningVisual,
 } from "@learning/contracts";
 import type { Services } from "../config";
 import type { Tx } from "../db/client";
@@ -49,6 +50,9 @@ import { payloadToItem } from "./item-payload";
 import { summarizeSessionAssessments } from "../domain/session-summary";
 import { computeTargetKey } from "../domain/target-key";
 import { buildLetterFragment } from "../domain/letter-fragment";
+import { MeaningVisualSchema } from "@learning/contracts";
+import { readUiAudio } from "./ui-audio";
+import { getVocabularyCapabilities } from "../domain/vocabulary-capabilities";
 import { addLegacyTaskPromptDefaults } from "./task-prompt-compat";
 import { deriveSupportStates, type SupportAttempt, type SupportTask } from "../domain/support-cycle";
 import { readLearningSnapshot } from "./learning-snapshot";
@@ -66,6 +70,7 @@ import {
   isLessonMockPlan,
 } from "./lessons/lesson-mock-tests";
 import { buildLessonSummaryObjectives } from "./lessons/lesson-attempts";
+import { completeDisabledVoiceTask } from "./voice-task-lifecycle";
 
 /** Okno wznowienia aktywnej sesji od ostatniego zdarzenia (arch §9.1). */
 export const RESUME_WINDOW_MS = 30 * 60_000;
@@ -236,36 +241,6 @@ export async function startSession(services: Services, input: SessionInput): Pro
     if (!child) {
       throw new AppError("not_found");
     }
-    const assignment = (
-      await tx
-        .select()
-        .from(assignments)
-        .where(
-          and(
-            eq(assignments.childId, valid.childId),
-            eq(assignments.deckId, valid.deckId),
-            eq(assignments.active, true),
-          ),
-        )
-    )[0];
-    if (!assignment) {
-      throw new AppError("not_found");
-    }
-    const deck = (await tx.select().from(decks).where(eq(decks.id, valid.deckId)))[0];
-    if (!deck) {
-      throw new AppError("not_found");
-    }
-    if (deck.archivedAt) {
-      throw new AppError("conflict");
-    }
-    if (!deck.publishedVersionId) {
-      throw new AppError("validation", { message: "deck is not published" });
-    }
-    // Rodzaj zestawu (zadanie 9/13/17): słówka idą dotychczasową ścieżką; lekcja
-    // w trybie treningu deleguje do silnika lekcji, a w trybie kartkówki do
-    // planera kartkówki lekcji (zadanie 17). Żaden rodzaj nie jest już odrzucany.
-    const deckKind = deck.kind as DeckKind;
-
     const now = services.clock.now();
     const active = (
       await tx
@@ -279,6 +254,9 @@ export async function startSession(services: Services, input: SessionInput): Pro
         now.getTime() - (await lastActivityAt(tx, active.id, active.startedAt)).getTime() >
         RESUME_WINDOW_MS;
       if (active.deckId === valid.deckId && active.mode === mode && !stale) {
+        if (contextOf(active).vocabularyFormat === "picture" && !valid.supportsPictureVocabulary) {
+          throw new AppError("validation", { details: { reason: "picture_client_update_required" } });
+        }
         return sessionDto(tx, active, true);
       }
       if (!stale) throw new AppError("conflict", { message: "Wróć do rozpoczętej sesji albo zakończ ją przed nową." });
@@ -291,9 +269,35 @@ export async function startSession(services: Services, input: SessionInput): Pro
         .where(eq(learningSessions.id, active.id));
     }
 
+    const assignment = (
+      await tx.select().from(assignments).where(and(
+        eq(assignments.childId, valid.childId),
+        eq(assignments.deckId, valid.deckId),
+        eq(assignments.active, true),
+      ))
+    )[0];
+    if (!assignment) throw new AppError("not_found");
+    const deck = (await tx.select().from(decks).where(eq(decks.id, valid.deckId)))[0];
+    if (!deck) throw new AppError("not_found");
+    if (deck.archivedAt) throw new AppError("conflict");
+    if (!deck.publishedVersionId) throw new AppError("validation", { message: "deck is not published" });
+    const deckKind = deck.kind as DeckKind;
+
     const version = (
       await tx.select().from(deckVersions).where(eq(deckVersions.id, deck.publishedVersionId))
     )[0]!;
+    if (version.vocabularyFormat === "picture" && !valid.supportsPictureVocabulary) {
+      throw new AppError("validation", { details: { reason: "picture_client_update_required" } });
+    }
+    if (!child.canRead) {
+      if (mode === "mock_test") throw new AppError("validation", { details: { reason: "non_reader_mock_test_unavailable" } });
+      if (deckKind !== "vocabulary" || version.vocabularyFormat !== "picture") {
+        throw new AppError("validation", { details: { reason: "vocabulary_requires_reading" } });
+      }
+      if (!(await readUiAudio(services)).ready) {
+        throw new AppError("validation", { details: { reason: "picture_guidance_unavailable" } });
+      }
+    }
     await ensureLearningPolicy(tx);
     // polityka per dziecko (design 2026-10-09): własna wersja profilu albo bieżąca globalna
     const childProfile = (
@@ -377,6 +381,7 @@ export interface PlannedItem {
   example?: string;
   sourceLocale: string;
   targetLocale: string;
+  meaningVisual?: MeaningVisual;
 }
 
 interface PlannedTask {
@@ -572,6 +577,7 @@ async function planNextTask(
   });
   const supportByRevision = deriveSupportStates(supportTasks, [...attemptsById.values()], policy.supportAfterFailures);
 
+  const sessionContext = contextOf(session);
   const items = new Map<string, PlannedItem>(
     revisions.map((r) => {
       const item = payloadToItem(r.payload as Record<string, unknown>);
@@ -587,6 +593,15 @@ async function planNextTask(
           ...(item.example === undefined ? {} : { example: item.example }),
           sourceLocale: item.locales.source,
           targetLocale: item.locales.target,
+          ...(sessionContext.vocabularyFormat === "picture"
+            ? {
+                meaningVisual: item.visualType === "image"
+                  ? MeaningVisualSchema.parse({ kind: "image", imageAssetId: imageByRevision.get(r.id) })
+                  : item.visualType === "color"
+                    ? MeaningVisualSchema.parse({ kind: "color", color: item.visualData?.color })
+                    : MeaningVisualSchema.parse({ kind: "number", count: item.visualData?.count }),
+              }
+            : {}),
         },
       ];
     }),
@@ -594,8 +609,6 @@ async function planNextTask(
 
   // kontakt z poprzednich sesji zamrożony przy starcie (arch §9.3) —
   // porządek rotacji utrwalania na rozpoczętym zestawie
-  const sessionContext = contextOf(session);
-
   // Każda ujawniona treść (cel lub dystraktor) ma wcześniej zapieczętowany
   // event_exposures. Używamy klucza odpowiedzi, nie samej historii zadań,
   // żeby nie uznać nieujawnionego/legacy tasku za znane słowo.
@@ -720,6 +733,7 @@ async function planNextTask(
           (row.context as { reason?: unknown } | null)?.reason === "test-preparation",
       ),
       settledReviewSkills: settledReviewSkillsByRevision.get(r.id) ?? [],
+      ...(item.meaningVisual ? { visual: item.meaningVisual } : {}),
     };
   });
   const peers = candidates.map((c) => ({
@@ -729,12 +743,15 @@ async function planNextTask(
     source: c.source,
     targetLocale: c.targetLocale,
     acceptedAnswers: c.acceptedAnswers,
+    ...(c.visual ? { visual: c.visual } : {}),
   }));
 
   const plan = selectTask({
     now: now.toISOString(),
     policy,
     microphoneEnabled: session.microphoneEnabled,
+    canRead: sessionContext.canRead,
+    vocabularyFormat: sessionContext.vocabularyFormat,
     assessedRemaining,
     nextOrdinal,
     candidates,
@@ -788,6 +805,11 @@ export function materializeTask(
     id: optionIds.get(o.text)!,
     text: o.text,
   }));
+  const picturePromptOptions = plannedOptions.map((o) => ({
+    id: optionIds.get(o.text)!,
+    labelPl: o.text,
+    visual: o.visual!,
+  }));
   const correctOption = plannedOptions.find((o) => o.correct);
   const answerKey: Record<string, unknown> = {
     exerciseType: plan.exerciseType,
@@ -801,7 +823,9 @@ export function materializeTask(
   let prompt: TaskPrompt;
   switch (plan.exerciseType) {
     case "exposure":
-      prompt = {
+      prompt = item.meaningVisual
+        ? { kind: "picture_exposure", visual: item.meaningVisual, audioAssetId }
+        : {
         kind: "exposure",
         source: item.source,
         target: item.target,
@@ -813,10 +837,12 @@ export function materializeTask(
         ...(item.visualType !== "image" && item.visualType !== "none" && item.visualData !== undefined
           ? { visualData: item.visualData }
           : {}),
-      };
+        };
       break;
     case "listening":
-      prompt = { kind: "listening", options: promptOptions, audioAssetId: audioAssetId! };
+      prompt = plannedOptions.length > 0 && plannedOptions.every((option) => option.visual !== undefined)
+        ? { kind: "picture_listening", options: picturePromptOptions, audioAssetId: audioAssetId! }
+        : { kind: "listening", options: promptOptions, audioAssetId: audioAssetId! };
       break;
     case "reading":
       prompt = { kind: "reading", text: item.target, options: promptOptions };
@@ -825,7 +851,9 @@ export function materializeTask(
       prompt = { kind: "reverse_recognition", prompt: item.source, options: promptOptions };
       break;
     case "recall":
-      prompt = { kind: "recall", prompt: item.source };
+      prompt = plan.pictureRecall
+        ? { kind: "picture_recall", visual: item.meaningVisual! }
+        : { kind: "recall", prompt: item.source };
       break;
     case "spelling":
       prompt = { kind: "spelling", prompt: item.source };
@@ -834,7 +862,9 @@ export function materializeTask(
       prompt = { kind: "letter_completion", prompt: item.source, fragment: buildLetterFragment(item.target) };
       break;
     case "speech":
-      prompt = {
+      prompt = item.meaningVisual
+        ? { kind: "picture_speech", visual: item.meaningVisual, audioAssetId }
+        : {
         kind: "speech",
         text: item.target,
         audioAssetId,
@@ -843,7 +873,7 @@ export function materializeTask(
         ...(item.visualType !== "image" && item.visualType !== "none" && item.visualData !== undefined
           ? { visualData: item.visualData }
           : {}),
-      };
+        };
       break;
   }
   return { prompt, answerKey };
@@ -881,9 +911,12 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
     // przeterminowanie, budżet, limit czasu, obietnica „Jeszcze N”) są te same co
     // słówka; różni się tylko plan i materializacja — delegacja do silnika lekcji.
     const isLesson = await sessionIsLesson(tx, session.deckVersionId);
-    const issuedTask = (
+    let issuedTask: typeof sessionTasks.$inferSelect | undefined = (
       await tx.select().from(sessionTasks).where(and(eq(sessionTasks.sessionId, id), eq(sessionTasks.state, "issued"))).limit(1)
     )[0];
+    if (issuedTask && contextOf(session).microphoneDisabledTaskIds.includes(issuedTask.id)) {
+      if (await completeDisabledVoiceTask(tx, id, issuedTask.id) === "skipped") issuedTask = undefined;
+    }
     if (isLesson) {
       if (issuedTask) {
         const counts = await lessonTaskCounts(tx, id);
@@ -913,7 +946,10 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
       const counts = await taskCounts(tx, id);
       const assessedBefore =
         counts.assessed - (issued.exerciseType !== "exposure" ? 1 : 0);
-      return issuedTaskDto(session, issued, assessedBefore);
+      const pending = contextOf(session).microphoneDisabledTaskIds.includes(issued.id)
+        ? (await tx.select({ id: attempts.id }).from(attempts).where(and(eq(attempts.taskId, issued.id), eq(attempts.state, "processing"))))[0]
+        : undefined;
+      return issuedTaskDto(session, issued, assessedBefore, true, pending?.id);
     }
 
     const lastActivity = await lastActivityAt(tx, id, session.startedAt);
@@ -960,6 +996,7 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
         ...(plan.supportCycleId ? { supportCycleId: plan.supportCycleId } : {}),
         ...(plan.skillAtIssue ? { skillAtIssue: plan.skillAtIssue } : {}),
         ...(plan.statusAtIssue ? { statusAtIssue: plan.statusAtIssue } : {}),
+        ...(plan.assessmentSkills ? { assessmentSkills: plan.assessmentSkills } : {}),
       },
       issuedAt: now,
     });
@@ -996,6 +1033,7 @@ function issuedTaskDto(
   task: IssuedShape,
   assessedBefore: number,
   audioAllowed = true,
+  pendingAttemptId?: string,
 ): TaskDto {
   // Zachowaj znaczenie snapshotów i dopełnij jedynie brakujące pola kontraktu.
   const storedPrompt = addLegacyTaskPromptDefaults(task.publicPrompt as Record<string, unknown>);
@@ -1012,7 +1050,33 @@ function issuedTaskDto(
     state: "issued",
     prompt: prompt as TaskPrompt,
     remainingAssessed: session.taskBudget - assessedBefore,
+    ...(pendingAttemptId ? { pendingAttemptId } : {}),
   };
+}
+
+/** Parent disables recording for a non-reader session; issued voice work is skipped safely. */
+export async function disableSessionMicrophone(services: Services, sessionId: string): Promise<SessionDto> {
+  const id = UuidSchema.parse(sessionId);
+  return services.db.transaction(async (tx) => {
+    const session = await lockSession(tx, id);
+    const context = contextOf(session);
+    if (session.mode !== "training" || context.canRead || context.vocabularyFormat !== "picture") {
+      throw new AppError("validation");
+    }
+    if (!session.microphoneEnabled) return sessionDto(tx, session, true);
+    const voiceTasks = await tx.select({ id: sessionTasks.id }).from(sessionTasks).where(and(
+      eq(sessionTasks.sessionId, id), eq(sessionTasks.state, "issued"),
+      inArray(sessionTasks.exerciseType, ["recall", "speech"]),
+    ));
+    const microphoneDisabledTaskIds = [...new Set([...context.microphoneDisabledTaskIds, ...voiceTasks.map((task) => task.id)])];
+    await tx.update(learningSessions).set({
+      microphoneEnabled: false,
+      context: { ...context, microphoneDisabledTaskIds } as unknown as Record<string, unknown>,
+    }).where(eq(learningSessions.id, id));
+    for (const task of voiceTasks) await completeDisabledVoiceTask(tx, id, task.id);
+    const fresh = (await tx.select().from(learningSessions).where(eq(learningSessions.id, id)))[0]!;
+    return sessionDto(tx, fresh, true);
+  });
 }
 
 /**

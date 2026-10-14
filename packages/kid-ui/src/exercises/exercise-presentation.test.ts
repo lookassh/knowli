@@ -6,7 +6,7 @@ const task = (kind: TaskDto["prompt"]["kind"]): TaskDto => ({
   taskId: "10000000-0000-4000-8000-000000000004",
   sessionId: "10000000-0000-4000-8000-000000000003",
   ordinal: 0,
-  exerciseType: kind,
+  exerciseType: kind as TaskDto["exerciseType"],
   direction: null,
   state: "issued",
   remainingAssessed: 1,

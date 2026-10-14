@@ -15,6 +15,7 @@ import {
   startSession,
   submitAttempt,
   upsertAssignment,
+  updateChild,
   type AppError,
 } from "@learning/server";
 import { SessionSummaryDtoSchema, TaskDtoSchema, type TaskDto } from "@learning/contracts";
@@ -339,6 +340,84 @@ describe("cykl życia sesji (integracja)", () => {
     clock = built.clock;
     const child = await createChild(services, { displayName: "Ola", avatarKey: "fox" });
     childId = child.id;
+  });
+
+  it("blokuje nową sesję standardową dla nieczytającego, ale pozwala wznowić przypiętą starą sesję", async () => {
+    const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 2));
+    const started = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    await updateChild(services, childId, { canRead: false });
+    await pool.query("update learning_app.assignments set active=false where child_id=$1 and deck_id=$2", [childId, deckId]);
+    await pool.query("update learning_app.decks set archived_at=now() where id=$1", [deckId]);
+    const resumed = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    expect(resumed).toMatchObject({ sessionId: started.sessionId, resumed: true, canRead: true, vocabularyFormat: "standard" });
+    expect(await listKidDecks(services, childId)).toMatchObject([
+      { deckId, resumeOnly: true, activeSession: { sessionId: started.sessionId, mode: "training" }, mockTestAvailable: false },
+    ]);
+    await endSession(services, started.sessionId);
+    const newDeck = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(2, 4));
+    await expect(startSession(services, { childId, deckId: newDeck.deckId, microphoneEnabled: false }))
+      .rejects.toMatchObject({ code: "validation", details: { reason: "vocabulary_requires_reading" } });
+  });
+
+  it("odrzuca klienta bez obsługi picture i wyłącza kartkówkę dla nieczytającego", async () => {
+    const other = await createChild(services, { displayName: "Maja", avatarKey: "fox", canRead: false });
+    const standard = await publishDeckWithAssignment(services, other.id, DAY_ITEMS.slice(0, 2));
+    await expect(startSession(services, { childId: other.id, deckId: standard.deckId, microphoneEnabled: false, mode: "mock_test" }))
+      .rejects.toMatchObject({ code: "validation", details: { reason: "non_reader_mock_test_unavailable" } });
+    const draft = await createDraft(services, {
+      title: "Kolory obrazkowe", vocabularyFormat: "picture",
+      items: ["#ff0000", "#0000ff"].map((color, index) => ({
+        source: ["czerwony", "niebieski"][index]!, target: ["red", "blue"][index]!, acceptedAnswers: [],
+        locales: { source: "pl-PL", target: "en-GB" }, visualType: "color" as const, visualData: { color },
+      })),
+    });
+    await attachFakeReadyAudio(draft.id, 0);
+    await attachFakeReadyAudio(draft.id, 1);
+    await attachApprovedIllustration(draft.id, 0);
+    await attachApprovedIllustration(draft.id, 1);
+    await publishDraft(services, draft.id, 1);
+    await upsertAssignment(services, other.id, draft.deckId, null);
+    await expect(startSession(services, { childId: other.id, deckId: draft.deckId, microphoneEnabled: false }))
+      .rejects.toMatchObject({ code: "validation", details: { reason: "picture_client_update_required" } });
+  });
+
+  it("wydaje obrazkowe rozpoznawanie z polskimi etykietami i zapisuje zrozumiałą pomyłkę", async () => {
+    const draft = await createDraft(services, {
+      title: "Kolory", vocabularyFormat: "picture",
+      items: [
+        { source: "czerwony", target: "red", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "color", visualData: { color: "#ff0000" } },
+        { source: "niebieski", target: "blue", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "color", visualData: { color: "#0000ff" } },
+      ],
+    });
+    for (const index of [0, 1]) {
+      await attachFakeReadyAudio(draft.id, index);
+      await attachApprovedIllustration(draft.id, index);
+    }
+    await publishDraft(services, draft.id, 1);
+    await upsertAssignment(services, childId, draft.deckId, null);
+    const session = await startSession(services, { childId, deckId: draft.deckId, microphoneEnabled: false, supportsPictureVocabulary: true });
+    const first = await nextTask(services, session.sessionId);
+    expect(first?.prompt.kind).toBe("picture_exposure");
+    await completePresentation(services, { taskId: first!.taskId });
+    const second = await nextTask(services, session.sessionId);
+    expect(second?.prompt.kind).toBe("picture_exposure");
+    await completePresentation(services, { taskId: second!.taskId });
+    const listening = await nextTask(services, session.sessionId);
+    expect(listening?.prompt.kind).toBe("picture_listening");
+    if (listening?.prompt.kind !== "picture_listening") throw new Error("expected picture listening task");
+    const [{ id: correctId }] = await query<{ id: string }>(
+      "select answer_key->>'correctOptionId' as id from learning_app.session_tasks where id=$1", [listening.taskId],
+    );
+    const correct = listening.prompt.options.find((option) => option.id === correctId)!;
+    const wrong = listening.prompt.options.find((option) => option.id !== correct.id)!;
+    const attempt = await submitAttempt(services, {
+      taskId: listening.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: wrong.id,
+    });
+    expect(attempt.feedback).toMatchObject({ kind: "incorrect", correctText: correct.labelPl });
+    const stored = await query<{ details: { confusion: { expected: string; answered: string } } }>(
+      "select details from learning_app.assessments where attempt_id=$1 and outcome='incorrect' limit 1", [attempt.attemptId],
+    );
+    expect(stored[0]?.details.confusion).toEqual({ expected: correct.labelPl, answered: wrong.labelPl });
   });
 
   it("dwa równoległe starty dają jedną sesję", async () => {

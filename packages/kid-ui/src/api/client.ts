@@ -109,9 +109,10 @@ export function createKidApiClient(options: KidClientOptions = {}): KidApi {
     listProfiles(): Promise<KidProfileDto[]> {
       return request("/api/v1/kid/profiles", { method: "GET" }, parseProfiles);
     },
-    listDecks(childId: string): Promise<KidDeckDto[]> {
+    listDecks(childId: string, options: { microphoneEnabled?: boolean } = {}): Promise<KidDeckDto[]> {
+      const query = options.microphoneEnabled === undefined ? "" : `&microphoneEnabled=${options.microphoneEnabled}`;
       return request(
-        `/api/v1/kid/decks?childId=${encodeURIComponent(childId)}`,
+        `/api/v1/kid/decks?childId=${encodeURIComponent(childId)}${query}`,
         { method: "GET" },
         parseDecks,
       );
@@ -167,6 +168,9 @@ export function createKidApiClient(options: KidClientOptions = {}): KidApi {
     },
     endSession(sessionId: string): Promise<SessionSummaryDto> {
       return post(`/api/v1/kid/sessions/${sessionId}/end`, {}, parseSummary);
+    },
+    disableMicrophone(sessionId: string): Promise<SessionDto> {
+      return post(`/api/v1/kid/sessions/${sessionId}/disable-microphone`, {}, parseSession);
     },
     mediaUrl(assetId: string): string {
       return `${base}/api/v1/media/${assetId}`;

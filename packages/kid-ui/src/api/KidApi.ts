@@ -27,7 +27,7 @@ export interface KidApi {
   /** Omówienie kartkówki lekcji (sesja lekcji) — per cel zamiast per umiejętność. */
   readLessonMockTestSummary(sessionId: string): Promise<LessonMockTestSummaryDto>;
   listProfiles(): Promise<KidProfileDto[]>;
-  listDecks(childId: string): Promise<KidDeckDto[]>;
+  listDecks(childId: string, options?: { microphoneEnabled?: boolean }): Promise<KidDeckDto[]>;
   startSession(input: SessionInput): Promise<SessionDto>;
   /** Idempotentne wydanie aktywnego zadania; null oznacza koniec sesji. */
   nextTask(sessionId: string): Promise<TaskDto | null>;
@@ -44,6 +44,7 @@ export interface KidApi {
   /** Opcjonalne potwierdzenie obserwacji; nie jest jedynym dowodem ujawnienia. */
   recordObservation(input: EventInput): Promise<void>;
   endSession(sessionId: string): Promise<SessionSummaryDto>;
+  disableMicrophone(sessionId: string): Promise<SessionDto>;
   /** Adres nieprzejrzystego zasobu media (same-origin, immutable cache). */
   mediaUrl(assetId: string): string;
 }

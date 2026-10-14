@@ -51,6 +51,20 @@ export const ChoiceOptionSchema = z.object({
 });
 export type ChoiceOption = z.infer<typeof ChoiceOptionSchema>;
 
+export const MeaningVisualSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("image"), imageAssetId: UuidSchema }).strict(),
+  z.object({ kind: z.literal("color"), color: z.string().regex(/^#[0-9a-f]{6}$/) }).strict(),
+  z.object({ kind: z.literal("number"), count: z.number().int().min(1).max(50) }).strict(),
+]);
+export type MeaningVisual = z.infer<typeof MeaningVisualSchema>;
+
+export const PictureChoiceOptionSchema = z.object({
+  id: UuidSchema,
+  labelPl: z.string().min(1),
+  visual: MeaningVisualSchema,
+}).strict();
+export type PictureChoiceOption = z.infer<typeof PictureChoiceOptionSchema>;
+
 /** Publiczny element do ułożenia (`lesson_order`) — identyfikator i widoczny tekst. */
 export const LessonItemSchema = z.object({
   id: UuidSchema,
@@ -87,11 +101,18 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     imageAssetId: UuidSchema.nullable(),
     ...visualPromptFields,
   }),
+  z.object({ kind: z.literal("picture_exposure"), visual: MeaningVisualSchema, audioAssetId: UuidSchema.nullable() }).strict(),
   z.object({
     kind: z.literal("listening"),
     options: z.array(ChoiceOptionSchema).min(1),
     audioAssetId: UuidSchema,
   }),
+  z.object({
+    kind: z.literal("picture_listening"),
+    options: z.array(PictureChoiceOptionSchema).min(2).max(3),
+    audioAssetId: UuidSchema,
+  }).strict(),
+  z.object({ kind: z.literal("picture_recall"), visual: MeaningVisualSchema }).strict(),
   z.object({
     kind: z.literal("reading"),
     text: z.string().min(1),
@@ -117,6 +138,7 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     imageAssetId: UuidSchema.nullable(),
     ...visualPromptFields,
   }),
+  z.object({ kind: z.literal("picture_speech"), visual: MeaningVisualSchema, audioAssetId: UuidSchema.nullable() }).strict(),
   // Gałęzie lekcji (design „Typy ćwiczeń i etapy” — kolumna Kid prompt).
   // KAŻDA jest `.strict()`: Kid DTO nigdy nie zawiera odpowiedzi, wariantów,
   // elementu sprawdzanego (`focus`), celu ani kategorii błędu. `audioAssetId`
@@ -326,13 +348,6 @@ export const KidProfileDtoSchema = z.object({
   canRead: z.boolean().default(true),
 });
 export type KidProfileDto = z.input<typeof KidProfileDtoSchema>;
-
-export const MeaningVisualSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("image"), imageAssetId: UuidSchema }).strict(),
-  z.object({ kind: z.literal("color"), color: z.string().regex(/^#[0-9a-f]{6}$/) }).strict(),
-  z.object({ kind: z.literal("number"), count: z.number().int().min(1).max(50) }).strict(),
-]);
-export type MeaningVisual = z.infer<typeof MeaningVisualSchema>;
 
 /** Zestaw przypisany dziecku, dostępny do nauki (arch §12). */
 export const KidDeckDtoSchema = z.object({

@@ -19,6 +19,8 @@ import {
   itemRevisions,
   learningEvents,
   learningSessions,
+  mediaAssets,
+  revisionAssets,
   sessionTasks,
 } from "../db/schema";
 import { AppError } from "../errors";
@@ -214,6 +216,22 @@ export async function authorizeDisclosure(services: Services, input: DisclosureI
     const targetKey = isLesson
       ? ((task.answerKey as { targetKey?: string }).targetKey ?? revision.dbTargetKey)
       : computeTargetKey(target, revision.targetLocale);
+    const pictureRecall = (task.publicPrompt as { kind?: string }).kind === "picture_recall";
+    const pictureAudio = pictureRecall
+      ? (await tx.select({ id: revisionAssets.assetId })
+          .from(revisionAssets)
+          .innerJoin(mediaAssets, eq(mediaAssets.id, revisionAssets.assetId))
+          .where(and(
+            eq(revisionAssets.itemRevisionId, task.itemRevisionId),
+            eq(revisionAssets.role, "target_audio"),
+            eq(revisionAssets.state, "approved"),
+            eq(mediaAssets.kind, "tts"),
+            eq(mediaAssets.state, "ready"),
+          )))[0]?.id
+      : undefined;
+    if (pictureRecall && !pictureAudio) {
+      throw new AppError("validation", { details: { reason: "picture_audio_unavailable" } });
+    }
 
     const prior = await tx
       .select({ id: learningEvents.id })
@@ -259,7 +277,8 @@ export async function authorizeDisclosure(services: Services, input: DisclosureI
       taskId: task.id,
       stepId,
       kind: valid.kind,
-      reveal: valid.kind === "hint" ? { target } : null,
+      reveal: valid.kind === "hint" && !pictureRecall ? { target } : null,
+      ...(pictureAudio ? { audioAssetId: pictureAudio } : {}),
     };
   });
 }

@@ -48,7 +48,7 @@ function taskDto(taskId: string, prompt: TaskDto["prompt"], remaining = 5): Task
     taskId,
     sessionId: "55555555-5555-5555-5555-555555555555",
     ordinal: 0,
-    exerciseType: prompt.kind,
+    exerciseType: prompt.kind as TaskDto["exerciseType"],
     direction: null,
     state: "issued",
     prompt,
@@ -220,6 +220,9 @@ function makeApi(state: ApiState): KidApi {
       state.endedSessions.push(sessionId);
       return { sessionId, state: "completed", tasksIssued: 3, assessedTasksIssued: 2, endedAt: "2026-10-07T16:05:00.000Z",
         independentSuccesses: { recall: 0, spelling: 0 }, practiceItems: [] };
+    },
+    async disableMicrophone(sessionId) {
+      return { ...sessionDto(PROFILE_A.childId, sessionId, false), canRead: false, vocabularyFormat: "picture" };
     },
     async readMockTestSummary(sessionId) {
       if (state.networkDown) throw new TypeError("fetch failed");
