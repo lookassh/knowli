@@ -64,6 +64,29 @@ async function profileForEditing(page: Page, avatarKey = "fox", paddedName = fal
   return { child, row, href, path: `/api/v1/parent/children/${child.id}` };
 }
 
+test("zakładka Dzieci: karty profili z avatarem, nauką jako główną akcją i kartą dodawania", async ({ page }) => {
+  const name = `Karta-${randomUUID().slice(0, 8)}`;
+  await page.goto("/parent");
+  await page.getByTestId("auth-secret").fill("1234");
+  await page.getByTestId("auth-submit").click();
+  await expect(page.getByTestId("tab-children")).toBeVisible();
+  const response = await page.request.post("/api/v1/parent/children", {
+    data: { displayName: name, avatarKey: "fox", birthYear: 2018 },
+  });
+  expect(response.status()).toBe(201);
+  const child = await response.json() as { id: string };
+  await page.reload();
+  await page.getByTestId("tab-children").click();
+
+  const row = page.locator('li[data-testid^="child-row-"]').filter({ hasText: name });
+  await expect(row).toBeVisible();
+  await expect(row.locator(".pp-child-avatar")).toBeVisible();
+  await expect(row.getByTestId("child-learn-link").locator("svg")).toBeVisible();
+  await expect(page.getByTestId("child-add")).toBeVisible();
+  const link = row.getByTestId("child-learn-link");
+  await expect(link).toHaveAttribute("href", `/kids/${child.id}/learn`);
+});
+
 test("edycja profilu: anulowanie, zapis Enter i trwałość danych", async ({ page }) => {
   const { child, row, href, path } = await profileForEditing(page);
   let patches = 0;
