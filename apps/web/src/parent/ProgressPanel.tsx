@@ -137,7 +137,7 @@ export default function ProgressPanel({
                   {progress.activity.daily.map((d, index) => {
                     const isToday = index === progress.activity.daily.length - 1;
                     const dateObj = new Date(d.date + "T12:00:00Z");
-                    const weekday = messages.progress.weekdaysShort[dateObj.getDay()] ?? "";
+                    const weekday = messages.progress.weekdaysShort[dateObj.getUTCDay()] ?? "";
                     const label = isToday ? messages.progress.activityToday : weekday;
                     const timeText = d.activeSeconds > 0
                       ? fill(messages.progress.activityMinutesShort, { minutes: Math.max(1, Math.round(d.activeSeconds / 60)) })
@@ -159,6 +159,7 @@ export default function ProgressPanel({
                         className={`progress-activity-day ${d.activeSeconds > 0 ? "progress-activity-day-active" : "progress-activity-day-empty"} ${isToday ? "progress-activity-day-today" : ""}`}
                         title={ariaText}
                         aria-label={ariaText}
+                        role="group"
                       >
                         <span className="progress-activity-day-label">{label}</span>
                         <span className="progress-activity-day-time">{timeText}</span>
