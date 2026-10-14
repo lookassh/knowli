@@ -74,7 +74,9 @@ async function createLesson(
 test("defaults the pool size to max(60, 12 × selected objectives)", async ({ page }) => {
   await enterParent(page);
   await page.getByTestId("new-lesson-submit").click();
-  await expect(page.getByTestId("lesson-pool-size")).toHaveValue("60");
+  await expect(page.locator('[data-testid^="lesson-objective-"]').first()).toBeVisible();
+  const objectiveCount = await page.locator('[data-testid^="lesson-objective-"]').count();
+  await expect(page.getByTestId("lesson-pool-size")).toHaveValue(String(Math.max(60, 12 * objectiveCount)));
 });
 
 test("parent can safely restart a running lesson generation", async ({ page }) => {
