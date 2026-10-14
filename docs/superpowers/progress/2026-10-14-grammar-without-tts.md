@@ -14,7 +14,7 @@ Workflow: bounded według `brainstorming` — istniejąca opcja `SubjectModule.t
 - [x] Regresja słówek i wspieranego przez inny przedmiot audio; E2E parent/kid/real-flow 15/15 PASS, w tym brak głośnika po wznowieniu.
 - [x] Dokumentacja SPEC, architektury, providerów i specyfikacji gramatyki oraz wpływ API → MCP → skill.
 - [x] Niezależne review całego zakresu oraz obsługa Important: 0 pozostałych Critical/Important/Minor; zapis w `docs/superpowers/reviews/2026-10-14-grammar-without-tts.md`.
-- [ ] Końcowe sprawdzenia i PR do main; scala właściciel przez squash.
+- [x] Końcowe sprawdzenia i [PR #58](https://github.com/lookassh/knowli/pull/58) do main; scala właściciel przez squash.
 
 Logi sprawdzeń: `C:/Users/looka/AppData/Local/Temp/knowli-grammar-without-tts/`.
 
@@ -27,3 +27,5 @@ Weryfikacja przed review: pełne unit 976/976; pełna integracja PostgreSQL 351/
 Review `gpt-6.1-sol`, xhigh: Important — dwa workery z początkową migawką pending mogą po anulowaniu ponownie przejąć failed, bo CAS lease dopuszczał każdy stan poza ready. Przyjęte po technicznej weryfikacji. Deterministyczny RED na prawdziwym PostgreSQL: dwie zakończone początkowe selekcje pending, potem równoległa praca → 1 niepożądana synteza. Minimalna poprawka: lease wymaga state=pending. GREEN: 0 syntez, asset=failed, run=superseded; grammar+generation 16/16 PASS, aktualny typecheck PASS. Końcowy werdykt recenzenta po poprawce: bez pozostałych uwag.
 
 Końcowa weryfikacja po poprawce review: pełne unit 976/976; pełna integracja PostgreSQL 352/352 (37 plików); typecheck PASS; build PASS; powtórzony rzeczywisty E2E parent→publish→kid→reload→support→parent PASS (1/1). Szerszy zestaw E2E lekcji przed poprawką przejęcia lease: 15/15 PASS. Brak zmian kodu po tych sprawdzeniach. Testy HTTP/MCP/learning-overview zawarte w pełnej integracji pozostają zielone; schemaVersion i skill niezmienione, lekcje nadal wykluczone.
+
+Integracja: implementacja w commicie `1078d1b`, gałąź wypchnięta do origin, PR #58 otwarty i dołączony do czatu. Nie scalono ani nie wdrożono. Po scaleniu wymagane wdrożenie web i worker, bez migracji bazy.
