@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { setDeckCover } from "./deck-cover";
+import { setDeckCover, generateDeckCover } from "./deck-cover";
 import type { Services } from "../config";
 import sharp from "sharp";
 
@@ -18,5 +18,12 @@ describe("deck cover upload validation", () => {
     await expect(setDeckCover(deps, "10000000-0000-4000-8000-000000000001", { bytes: new Uint8Array(5 * 1024 * 1024 + 1), declaredMimeType: "image/png" })).rejects.toMatchObject({ code: "validation" });
     await expect(setDeckCover(deps, "10000000-0000-4000-8000-000000000001", { bytes: new Uint8Array([0xff, 0xd8, 0xff]), declaredMimeType: "image/svg+xml" })).rejects.toMatchObject({ code: "validation" });
     expect(store.putImmutable).not.toHaveBeenCalled();
+  });
+});
+
+describe("deck cover generation preview", () => {
+  it("fails clearly when the image provider is not configured", async () => {
+    await expect(generateDeckCover(services({ putImmutable: vi.fn() }), "10000000-0000-4000-8000-000000000001"))
+      .rejects.toMatchObject({ code: "conflict" });
   });
 });

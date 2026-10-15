@@ -182,7 +182,7 @@ export type {
 } from "./ports/ai";
 export type { MediaStore, StoredBlob } from "./ports/media";
 export { createLocalMediaStore } from "./providers/media/local";
-export { setDeckCover, clearDeckCover, MAX_DECK_COVER_BYTES } from "./modules/deck-cover";
+export { setDeckCover, clearDeckCover, generateDeckCover, MAX_DECK_COVER_BYTES, MAX_DECK_COVER_SAMPLE_ITEMS } from "./modules/deck-cover";
 export { createOpenAiLlmProvider } from "./providers/openai/llm";
 export { createOpenAiTtsProvider } from "./providers/openai/tts";
 export { createOpenAiImageProvider } from "./providers/images/openai";
@@ -221,4 +221,4 @@ export {
   type LlmLessonBehavior,
   type FakeGraderBehavior,
 } from "./providers/fake";
-export { createGenerationDepsFromEnv } from "./providers/generation-env";
+export { createGenerationDepsFromEnv, imageProviderFromEnv } from "./providers/generation-env";

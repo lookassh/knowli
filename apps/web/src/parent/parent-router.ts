@@ -12,6 +12,7 @@ import {
   createLesson,
   createLessonDraftFromPublished,
   setDeckCover,
+  generateDeckCover,
   clearDeckCover,
   deckIdOfLessonVersion,
   editDraft,
@@ -204,6 +205,15 @@ export async function handleParentApi(
         for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
         const assetId = await setDeckCover(services, second, { bytes, declaredMimeType: mimeType });
         return Response.json({ coverAssetId: assetId });
+      }
+    }
+    if (second !== undefined && third === "cover" && fourth === "generate" && request.method === "POST") {
+      try {
+        const result = await generateDeckCover(services, second);
+        return new Response(Buffer.from(result.bytes), { headers: { "Content-Type": result.mimeType, "Cache-Control": "no-store" } });
+      } catch (error) {
+        if (error instanceof AppError && ["not_found", "conflict"].includes(error.code)) throw error;
+        throw new AppError("internal", { message: "Nie udało się wygenerować okładki. Spróbuj ponownie lub wgraj własny obraz." });
       }
     }
     if (request.method === "POST" && second !== undefined && third === "draft" && fourth === undefined) {

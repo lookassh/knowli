@@ -7,6 +7,7 @@ import {
   FakeAnswerGrader,
   fakeSpeechDeps,
   graderFromEnv,
+  imageProviderFromEnv,
   mediaSettingsFromEnv,
   speechFromEnv,
   systemClock,
@@ -37,12 +38,14 @@ function initialize(): { services: Services; pool: Pool } {
     (process.env.UMIEM_FAKE_PROVIDERS === "1"
       ? fakeGraderDeps({ provider: new FakeAnswerGrader({ keywordRouting: true }) })
       : undefined);
+  const imageProvider = imageProviderFromEnv(process.env);
   return {
     services: createServices({
       db,
       clock: systemClock,
       media: mediaSettingsFromEnv(process.env),
-      // web tylko wydaje gotowe zasoby (podgląd rodzica); generację wykonuje worker
+      ...(imageProvider ? { imageProvider } : {}),
+      // web generuje wyłącznie jawne propozycje okładek rodzica; generację mediów kart wykonuje worker
       mediaStore: createLocalMediaStore(process.env.MEDIA_ROOT ?? "./data/media"),
       // ścieżka mowy to krótkie żądanie web → provider, bez kolejki (arch §11)
       ...(speech ? { speech } : {}),

@@ -503,3 +503,5 @@ Kolejność udostępnienia: migracja `can_read` i `vocabulary_format`, worker ob
 ### Okładka zestawu słownictwa (2026-10-15)
 
 `decks.cover_asset_id` wskazuje opcjonalny, gotowy zasób `media_assets.kind = deck_cover`. Jest to wspólne metadane zestawu, niezależne od `deck_versions`, przypisań, aktywnej sesji i postępu. Parent API wymaga sesji rodzica i kontroli Origin/CSRF; przyjmuje PNG/JPEG/WebP do 5 MB, sprawdza sygnaturę bajtów i zapisuje do prywatnego `MediaStore` niezmiennie. Kid DTO udostępnia jedynie nieprzejrzyste ID. Karta preferuje okładkę, zachowując `coverVisual` jako fallback; usunięcie okładki jest idempotentne.
+
+Generowanie propozycji okładki jest osobną akcją rodzica (`POST /decks/:id/cover/generate`) z tymi samymi zabezpieczeniami. Web udostępnia opcjonalny skonfigurowany `ImageProvider`, bez składania LLM/TTS workera. Serwer wybiera edytowalną wersję, w przeciwnym razie opublikowaną, buduje prompt z tytułu i najwyżej ośmiu par słówek oraz zwraca zwalidowane bajty bez utrwalenia assetu. UI przechowuje podgląd tymczasowo; akceptacja ponownie przesyła go przez istniejący endpoint uploadu.

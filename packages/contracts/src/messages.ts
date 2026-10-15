@@ -171,6 +171,11 @@ export const messages = {
     coverRemove: "Usuń obraz okładkowy",
     coverBusy: "Zapisuję obraz okładkowy…",
     coverEmpty: "Brak własnego obrazu. Na karcie dziecka pokażemy wizualizację pierwszego słówka.",
+    coverGenerate: "Wygeneruj propozycję",
+    coverAccept: "Ustaw jako okładkę",
+    coverReject: "Odrzuć",
+    coverGenerating: "Przygotowuję propozycję okładki…",
+    coverGenerateFailed: "Nie udało się wygenerować okładki. Spróbuj ponownie lub wgraj własny obraz.",
     visualTypes: {
       image: "Obraz",
       color: "Kolor",

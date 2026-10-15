@@ -353,9 +353,11 @@ export class FakeImageProvider implements ImageProvider {
     format: string;
   }> = [];
   readonly #delayMs: number;
+  readonly #output?: { bytes: Uint8Array; mimeType: string };
 
-  constructor(options: { delayMs?: number } = {}) {
+  constructor(options: { delayMs?: number; output?: { bytes: Uint8Array; mimeType: string } } = {}) {
     this.#delayMs = options.delayMs ?? 0;
+    this.#output = options.output;
   }
 
   async generate(input: {
@@ -373,10 +375,10 @@ export class FakeImageProvider implements ImageProvider {
       this.failuresLeft -= 1;
       throw new Error("image unavailable");
     }
-    const mimeType =
-      input.format === "webp" ? "image/webp" : input.format === "jpeg" ? "image/jpeg" : "image/png";
+    if (this.#output) return this.#output;
+    const mimeType = "image/png";
     return {
-      bytes: deterministicBytes(`img|${input.prompt}|${input.size}`),
+      bytes: Uint8Array.from(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQImWP4////fwAJ+wP9CNHoHgAAAABJRU5ErkJggg==", "base64")),
       mimeType,
     };
   }

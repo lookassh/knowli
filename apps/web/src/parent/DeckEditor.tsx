@@ -59,6 +59,10 @@ export default function DeckEditor({
   const [assignDates, setAssignDates] = useState<Record<string, string>>({});
   const [assignSettings, setAssignSettings] = useState<Record<string, AssignmentTestSettings>>({});
   const [coverBusy, setCoverBusy] = useState(false);
+  const [generatedCover, setGeneratedCover] = useState<{ objectUrl: string; file: File } | null>(null);
+  const generatedCoverRef = useRef<{ objectUrl: string; file: File } | null>(null);
+  const coverGenerationToken = useRef(0);
+  const [coverGenerating, setCoverGenerating] = useState(false);
   const assignmentSettings = (childId: string): AssignmentTestSettings => {
     const existing = deck?.assignments.find(a => a.childId === childId);
     return assignSettings[childId] ?? { testGoals: existing?.testGoals ?? null, mockTestTaskCount: existing?.mockTestTaskCount ?? 10 };
@@ -73,11 +77,31 @@ export default function DeckEditor({
   deckIdRef.current = deckId;
   const newKey = useCallback(() => crypto.randomUUID(), []);
 
-  const uploadCover = async (file: File | undefined) => {
-    if (!file || !deck) return;
+  const clearGeneratedCover = () => {
+    coverGenerationToken.current += 1;
+    const current = generatedCoverRef.current;
+    if (current) URL.revokeObjectURL(current.objectUrl);
+    generatedCoverRef.current = null;
+    setGeneratedCover(null);
+  };
+
+  useEffect(() => {
+    clearGeneratedCover();
+    setCoverBusy(false);
+    setCoverGenerating(false);
+  }, [deckId]);
+
+  useEffect(() => () => {
+    const current = generatedCoverRef.current;
+    if (current) URL.revokeObjectURL(current.objectUrl);
+  }, []);
+
+  const uploadCover = async (file: File | undefined, acceptingProposal = false): Promise<boolean> => {
+    if (!file || !deck) return false;
+    if (!acceptingProposal) clearGeneratedCover();
     if (file.size > 5 * 1024 * 1024) {
       setError(messages.decks.coverTooLarge);
-      return;
+      return false;
     }
     const requestDeckId = deck.id;
     const contentType = file.type || ({ png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp" }[file.name.split(".").at(-1)?.toLowerCase() ?? ""] ?? "application/octet-stream");
@@ -95,8 +119,11 @@ export default function DeckEditor({
       if (deckIdRef.current === requestDeckId) {
         setDeck((current) => current?.id === requestDeckId ? { ...current, coverAssetId: result.coverAssetId } : current);
       }
+      if (acceptingProposal) clearGeneratedCover();
+      return true;
     } catch (cause) {
       setError(errorMessage(cause));
+      return false;
     } finally {
       setCoverBusy(false);
     }
@@ -104,6 +131,7 @@ export default function DeckEditor({
 
   const removeCover = async () => {
     if (!deck) return;
+    clearGeneratedCover();
     const requestDeckId = deck.id;
     setCoverBusy(true);
     setError(null);
@@ -117,6 +145,31 @@ export default function DeckEditor({
     } finally {
       setCoverBusy(false);
     }
+  };
+  const generateCover = async () => {
+    if (!deck) return;
+    const requestDeckId = deck.id;
+    clearGeneratedCover();
+    const requestToken = coverGenerationToken.current;
+    setCoverBusy(true); setCoverGenerating(true); setError(null);
+    try {
+      const response = await fetch(`/api/v1/parent/decks/${requestDeckId}/cover/generate`, { method: "POST" });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { message?: string } | null;
+        throw new Error(payload?.message ?? messages.decks.coverGenerateFailed);
+      }
+      const blob = await response.blob();
+      if (deckIdRef.current !== requestDeckId || coverGenerationToken.current !== requestToken) return;
+      const objectUrl = URL.createObjectURL(blob);
+      const file = new File([blob], `generated-cover.${blob.type === "image/jpeg" ? "jpg" : blob.type.split("/")[1]}`, { type: blob.type });
+      generatedCoverRef.current = { objectUrl, file };
+      setGeneratedCover(generatedCoverRef.current);
+    } catch (cause) { if (deckIdRef.current === requestDeckId && coverGenerationToken.current === requestToken) setError(errorMessage(cause)); }
+    finally { if (deckIdRef.current === requestDeckId && coverGenerationToken.current === requestToken) { setCoverBusy(false); setCoverGenerating(false); } }
+  };
+  const acceptGeneratedCover = async () => {
+    if (!generatedCover) return;
+    await uploadCover(generatedCover.file, true);
   };
   const setBusyState = (value: boolean) => {
     busyRef.current = value;
@@ -503,8 +556,9 @@ export default function DeckEditor({
       )}
 
       {deck && (
-        <DeckCoverSettings coverAssetId={deck.coverAssetId} busy={coverBusy}
-          onUpload={(file) => { void uploadCover(file); }} onRemove={() => { void removeCover(); }} />
+        <DeckCoverSettings coverAssetId={deck.coverAssetId} busy={coverBusy} generating={coverGenerating} generatedPreview={generatedCover?.objectUrl ?? null}
+          onUpload={(file) => { void uploadCover(file); }} onRemove={() => { void removeCover(); }} onGenerate={() => { void generateCover(); }}
+          onAcceptGenerated={() => { void acceptGeneratedCover(); }} onRejectGenerated={() => setGeneratedCover(null)} />
       )}
 
       {conflict && (
