@@ -153,6 +153,30 @@ describe("zasoby medialne i uzgodnienia szkicu (integracja)", () => {
     expect(await countRows("media_assets")).toBe(1);
   });
 
+  it("ponawia historyczną ilustrację modelem zapisanym w zasobie, gdy metadata nie ma modelu", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = mediaServices(fakes);
+    const dto = await createDraft(services, {
+      title: "Zwierzęta",
+      items: [item({ visualType: "image", visualData: { imagePrompt: "A small cat" } })],
+    });
+    await reconcileDraftAssets(services, dto.id);
+    const illustration = await assetLink(dto.id, 0, "illustration");
+    const assetId = illustration.asset_id!;
+
+    await pool.query(
+      `update learning_app.media_assets
+          set model = 'gpt-image-1', metadata = metadata - 'model'
+        where id = $1`,
+      [assetId],
+    );
+
+    await executeMediaAsset(services, assetId);
+
+    expect(fakes.image.requests.at(-1)?.model).toBe("gpt-image-1");
+  });
+
   it("media job wiąże się z asset_id: zmiana ilustracji jednej karty nie unieważnia TTS innej", async () => {
     const fakes = await fakeGeneration();
     disposers.push(fakes.dispose);

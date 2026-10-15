@@ -5,6 +5,7 @@ describe("mediaSettingsFromEnv", () => {
   it("bez env zwraca domyślne ustawienia (low + webp)", () => {
     expect(mediaSettingsFromEnv({})).toEqual(defaultMediaSettings);
     expect(defaultMediaSettings.image).toMatchObject({ quality: "low", format: "webp" });
+    expect(defaultMediaSettings.image.model).toBe("gpt-image-2.5-sunburst");
   });
 
   it("zmienne UMIEM_IMAGE_* nadpisują model, rozmiar, jakość i format", () => {
