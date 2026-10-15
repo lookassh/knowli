@@ -81,6 +81,7 @@ export function ExposureView({ task, busy, mediaUrl, handlers }: ExerciseProps) 
           disabled={busy}
           onClick={handlers.onComplete}
         >
+          <KidIcon name="check" />
           {messages.kid.understand}
         </button>
       )}

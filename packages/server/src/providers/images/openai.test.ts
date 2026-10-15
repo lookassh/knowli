@@ -18,6 +18,11 @@ afterEach(() => {
 });
 
 describe("createOpenAiImageProvider", () => {
+  it("używa Sunbursta jako modelu awaryjnego adaptera", () => {
+    const provider = createOpenAiImageProvider({ apiKey: "test-key" });
+    expect(provider.model).toBe("gpt-image-2.5-sunburst");
+  });
+
   it("wysyła model, jakość i output_format z żądania i zwraca webp", async () => {
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
       okResponse(Buffer.from("webp-bytes").toString("base64")),

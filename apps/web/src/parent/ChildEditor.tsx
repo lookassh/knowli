@@ -115,6 +115,7 @@ export default function ChildEditor({
   const [editName, setEditName] = useState("");
   const [editAvatar, setEditAvatar] = useState("");
   const [editRecordingMode, setEditRecordingMode] = useState<ChildDto["recordingMode"]>("hold");
+  const [editCanRead, setEditCanRead] = useState(true);
   const [editError, setEditError] = useState<string | null>(null);
   const [editBusy, setEditBusy] = useState(false);
   const [editStatus, setEditStatus] = useState<string | null>(null);
@@ -147,6 +148,7 @@ export default function ChildEditor({
     setEditName(child.displayName);
     setEditAvatar(child.avatarKey);
     setEditRecordingMode(child.recordingMode);
+    setEditCanRead(child.canRead);
     setEditError(null);
     setEditStatus(null);
   };
@@ -160,7 +162,7 @@ export default function ChildEditor({
 
   const trimmedName = editName.trim();
   const nameChanged = editing !== null && trimmedName !== editing.displayName.trim();
-  const editChanged = editing !== null && (nameChanged || editAvatar !== editing.avatarKey || editRecordingMode !== editing.recordingMode);
+  const editChanged = editing !== null && (nameChanged || editAvatar !== editing.avatarKey || editRecordingMode !== editing.recordingMode || editCanRead !== editing.canRead);
 
   const saveEdit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -169,6 +171,7 @@ export default function ChildEditor({
       ...(nameChanged ? { displayName: trimmedName } : {}),
       ...(editAvatar !== editing.avatarKey ? { avatarKey: editAvatar } : {}),
       ...(editRecordingMode !== editing.recordingMode ? { recordingMode: editRecordingMode } : {}),
+      ...(editCanRead !== editing.canRead ? { canRead: editCanRead } : {}),
     };
     editLock.current = true;
     setEditBusy(true);
@@ -225,6 +228,9 @@ export default function ChildEditor({
     }
   };
 
+  const avatarCounts = new Map<string, number>();
+  for (const child of childrenList) avatarCounts.set(child.avatarKey, (avatarCounts.get(child.avatarKey) ?? 0) + 1);
+
   return (
     <section>
       <div className="pp-pagehead">
@@ -243,6 +249,7 @@ export default function ChildEditor({
               {messages.children.recordingMode}:{" "}
               {child.recordingMode === "hold" ? messages.children.recordingModeHold : messages.children.recordingModeToggle}
             </div>
+            {avatarCounts.get(child.avatarKey)! > 1 && <p className="info" data-testid={`duplicate-avatar-warning-${index}`}>{messages.children.duplicateAvatarWarning}</p>}
             <div className="pp-child-actions">
               <a
                 className="pp-btn pp-btn-primary pp-child-learn"
@@ -311,6 +318,11 @@ export default function ChildEditor({
                     <option value="toggle">{messages.children.recordingModeToggle}</option>
                   </select>
                 </div>
+                <label className="row">
+                  <input data-testid="child-edit-can-read" type="checkbox" checked={!editCanRead} disabled={editBusy}
+                    onChange={(event) => setEditCanRead(!event.target.checked)} />
+                  {messages.children.canRead}
+                </label>
                 <div className="row">
                   <button type="submit" data-testid="child-edit-save" disabled={editBusy || !trimmedName || !editChanged}>
                     {messages.children.save}

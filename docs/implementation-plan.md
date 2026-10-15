@@ -400,3 +400,9 @@ walidacji jakości na prawdziwej mowie dziecka; te dowody pozostają wymagane
 ### Uzupełnienie: preferencja gestu nagrywania dla profilu dziecka — 2026-10-11
 
 Rodzic wybiera `hold` („Przytrzymaj, aby mówić”) lub `toggle` („Naciśnij, aby rozpocząć i zatrzymać”) podczas edycji profilu. Wartość jest kolumną `child_profiles.recording_mode`, ograniczoną do tych dwóch trybów i domyślną jako `hold`; migracja 0005 uzupełnia nią istniejące profile. Parent PATCH aktualizuje tylko dostarczone pola, a Kid Profile DTO dostarcza preferencję do kontrolera. Kid UI nie pokazuje dziecku przełącznika i nie zapisuje trybu lokalnie; pozostałe preferencje urządzenia, np. odmowa mikrofonu, zachowują dotychczasową obsługę. Stary klucz `umiem.recordingMode` jest ignorowany. Specyfikacja i plan: `docs/superpowers/specs/2026-10-11-parent-recording-mode-setting-design.md` i `docs/superpowers/plans/2026-10-11-parent-recording-mode-setting.md`.
+
+### Uzupełnienie: obrazkowe zestawy słownictwa — 2026-10-14
+
+Implementację podzielono na siedem zadań Superpowers: profil/kontrakty, generowanie, wizualizacje i publikację, stałe polskie audio, bezpieczny scheduler i Kid API, przenośny Kid UI oraz rodzic/MCP/dokumentacja. Zestaw `picture` jest wariantem vocabulary, nie nowym przedmiotem; zachowuje te same przypisania, wersjonowanie i pięć skillów.
+
+Regresje obejmują brak tekstowych promptów dla profilu nieczytającego, walidację MeaningVisual, niezmienność historii przy aktualizacji `canRead`, ekspozycję przed wydaniem wzorca, wznawianie po zmianie przypisania, próbę bez mikrofonu oraz pełny mianownik raportu. `learning-overview` i `schemaVersion` są bez zmian; skill Hermesa wyjaśnia, że raport nie ujawnia `canRead`. Migracja → worker/media/UI audio → web/Kid UI; nie uruchamiać nowego formatu na starszym workerze. E2E nie zastępuje próby na telefonie ani odbioru z dzieckiem.

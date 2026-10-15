@@ -85,3 +85,13 @@ Plan: `docs/superpowers/plans/2026-10-14-parent-panel-redesign.md`. Baza wykonan
 - API: `DeckSummaryDto` rozszerzone o pola **opcjonalne** (addytywne, bez bumpu schemaVersion). Endpointy bez zmian kształtu poza tym.
 - MCP: `learning-overview` nie konsumuje `DeckSummaryDto` (parsuje `LearningOverviewDtoSchema` z osobnego endpointu) — brak wpływu; regeneracja JSON Schema konsumenta niepotrzebna.
 - SKILL.md: bez zmian (narzędzia i ograniczenia odczytu nietknięte). Uzasadnienie do PR.
+
+## Synchronizacja z main i rozwiązanie konfliktów (2026-10-15)
+
+- Zaktualizowany base `origin/main` do `167579d` (#68; zawiera m.in. słownictwo obrazkowe z #65). Rozwiązałem konflikty w `ChildEditor.tsx`, `DecksPanel.tsx`, `ProgressPanel.tsx`, `packages/contracts/src/messages.ts` i `tests/e2e/progress-panel.spec.ts`.
+- Zachowano nowe pola/ustawienia `canRead`, ostrzeżenia o wspólnym awatarze, informację dla profilu nieczytającego i nowe komunikaty audio. Wyboru `vocabularyFormat` nie dało się zostawić w usuniętym formularzu inline, więc został przeniesiony do formularza generowania w dialogu.
+- RED: istniejący scenariusz `generation-request-retry` kończył się brakiem `deck-vocabulary-format` w dialogu (locator timed out). GREEN: po dodaniu pola do dialogu wybrany test przeszedł; żądanie ponowienia zachowało `vocabularyFormat: picture`.
+- Weryfikacja: unit 119 plików / 1131 testów; integration 39 plików / 389 testów; typecheck; build; 13 speków panelu 81/81.
+- Review subagenta całego kandydata względem `origin/main`: **REQUEST_CHANGES**. Trzy uwagi Important: style segmentów paska kolidowały z filtrem, historia wyświetlała czas UTC, a E2E utracił asercje 3 dni / 5 podejść / 84 odpowiedzi. Minor: brak tokenów ekranu auth, selektor kartkówki 38px i pozostawanie starego raportu po błędzie filtra.
+- Naprawione uwagi Important: rozdzielone klasy filtra i pasków (segmenty nie kurczą się i nie mają paddingu), historia używa lokalnej strefy i testy konstruują lokalne daty; E2E przywraca asercje wartości kafelków. RED historii potwierdzony przed zmianą (oczekiwane „dziś, 00:10”, otrzymane „wczoraj, 22:10”).
+- Weryfikacja poprawek: unit parent 11/11; typecheck; `progress-panel.spec.ts` 4/4; `manual-deck-flow.spec.ts --grep filtr` 1/1; `git diff --cached --check origin/main` czysty. Subagent w drugim review potwierdził geometrię 0/0, 100% i mieszaną (400px: [0,0,0,0], [400,0,0,0], [200,100,100,0]), północ i zmianę czasu DST w Europe/Warsaw oraz brak uwag Important. PR oceniony jako gotowy do merge. Trzy Minor pozostawiono jako odłożone: tokeny auth, wysokość selecta kartkówki 38px, stary raport po błędzie filtra.

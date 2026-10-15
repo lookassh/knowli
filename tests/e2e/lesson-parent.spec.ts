@@ -136,6 +136,10 @@ test("creates a lesson, reviews it grouped by objective and stage, fixes a valid
   const childHref = await childRow.getByTestId("child-learn-link").getAttribute("href");
   const childId = childHref?.match(/\/kids\/([0-9a-f-]{36})\//)?.[1];
   expect(childId).toBeTruthy();
+  await childRow.getByTestId("child-edit").click();
+  await childRow.getByTestId("child-edit-can-read").check();
+  await childRow.getByTestId("child-edit-save").click();
+  await expect(childRow.getByTestId("child-edit")).toHaveAttribute("aria-expanded", "false");
 
   await page.getByTestId("tab-decks").click();
   await createLesson(page, lessonTitle);
@@ -191,6 +195,7 @@ test("creates a lesson, reviews it grouped by objective and stage, fixes a valid
 
   // Przypisanie z celem kartkówki „Gramatyka".
   const assignRow = page.locator('[data-testid^="assign-row-"]').filter({ hasText: childName });
+  await expect(assignRow.locator('[data-testid^="non-reader-lesson-warning-"]')).toContainText("może wymagać czytania");
   await assignRow.getByTestId("mock-enable").check();
   await expect(assignRow.getByTestId("mock-goal-lesson")).toContainText("Gramatyka");
   await assignRow.locator('[data-testid^="assign-submit-"]').click();

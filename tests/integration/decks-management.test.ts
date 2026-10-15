@@ -292,6 +292,80 @@ describe("zarządzanie zestawami i przypisaniami (integracja)", () => {
     );
   });
 
+  it("odrzuca element bez wizualizacji w zestawie obrazkowym przy tworzeniu i edycji", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = mediaServices(fakes);
+    await expectAppError(
+      createDraft(services, { title: "Bez czytania", vocabularyFormat: "picture", items: [item()] }),
+      "validation",
+    );
+    const dto = await createDraft(services, {
+      title: "Bez czytania",
+      vocabularyFormat: "picture",
+      items: [item({ target: "red", visualType: "color", visualData: { color: "#ff0000" } })],
+    });
+    await expectAppError(editDraft(services, dto.id, {
+      title: "Bez czytania",
+      items: [item()],
+      expectedEditNumber: dto.editNumber,
+    }), "validation");
+  });
+
+  it("nie pozwala pominąć wymaganej ilustracji ani opublikować zestawu obrazkowego bez gotowego obrazu", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = mediaServices(fakes);
+    const dto = await createDraft(services, {
+      title: "Zwierzęta",
+      vocabularyFormat: "picture",
+      items: [item({ source: "kot", target: "cat", visualType: "image" })],
+    });
+    await editDraft(services, dto.id, { title: dto.title, expectedEditNumber: dto.editNumber });
+    await expectAppError(omitRevisionAsset(services, {
+      draftId: dto.id,
+      itemRevisionId: dto.items[0]!.revisionId,
+    }), "validation");
+    await expectAppError(publishDraft(services, dto.id, dto.editNumber + 1), "validation");
+  });
+
+  it("pozwala publikować kolory i liczby bez ilustracji po wygenerowaniu audio", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = mediaServices(fakes);
+    const dto = await createDraft(services, {
+      title: "Kolory i liczby",
+      vocabularyFormat: "picture",
+      items: [
+        item({ source: "czerwony", target: "red", visualType: "color", visualData: { color: "#ff0000" } }),
+        item({ source: "dwa", target: "two", visualType: "number", visualData: { count: 2 } }),
+      ],
+    });
+    await editDraft(services, dto.id, { title: dto.title, expectedEditNumber: dto.editNumber });
+    for (let pass = 0; pass < 6; pass++) await runDueGenerationWork(services);
+    await expect(publishDraft(services, dto.id, dto.editNumber + 1)).resolves.toMatchObject({ deckVersionId: dto.id });
+  });
+
+  it("publikuje element obrazkowy dopiero z gotową, zatwierdzoną ilustracją i audio", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = mediaServices(fakes);
+    const dto = await createDraft(services, {
+      title: "Zwierzęta obrazkowe",
+      vocabularyFormat: "picture",
+      items: [item({ source: "kot", target: "cat", visualType: "image" })],
+    });
+    await editDraft(services, dto.id, { title: dto.title, expectedEditNumber: dto.editNumber });
+    for (let pass = 0; pass < 6; pass++) await runDueGenerationWork(services);
+    const ready = await readDeck(services, dto.deckId);
+    expect(ready.draft?.assets.filter((asset) => ["target_audio", "illustration"].includes(asset.role)))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ role: "target_audio", state: "approved", assetId: expect.any(String) }),
+        expect.objectContaining({ role: "illustration", state: "approved", assetId: expect.any(String) }),
+      ]));
+    await expect(publishDraft(services, dto.id, dto.editNumber + 1)).resolves.toMatchObject({ deckVersionId: dto.id });
+  });
+
   it("readDeck zwraca przypisania z nazwami dzieci", async () => {
     const fakes = await fakeGeneration();
     disposers.push(fakes.dispose);

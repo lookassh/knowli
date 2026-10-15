@@ -709,6 +709,23 @@
   height: 96px;
 }
 
+.kid-icon-button {
+  box-sizing: border-box;
+  width: 48px;
+  height: 48px;
+  flex: none;
+  border: 2px solid var(--kid-line);
+  border-radius: 14px;
+  color: var(--kid-accent);
+  background: var(--kid-surface);
+}
+
+.kid-profile-tag {
+  display: block;
+  color: var(--kid-muted);
+  font-size: .85rem;
+}
+
 .kid-visual-number {
   width: min(60vw, 240px);
   height: auto;
@@ -815,6 +832,10 @@
 }
 
 .kid-ui .kid-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   background: var(--kid-accent);
   border-color: var(--kid-accent);
   color: var(--kid-on-accent);
@@ -914,6 +935,10 @@
 }
 
 .kid-secondary-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   min-width: 44px;
   min-height: 44px;
   padding: 8px 14px;

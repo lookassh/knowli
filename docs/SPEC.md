@@ -926,3 +926,11 @@ Dopiero po przeglądzie tego dokumentu należy przygotować:
 Wówczas należy wybrać ORM, sposób przechowywania zasobów, konkretne usługi i modele, obsługę dłuższych zadań generowania oraz reguły interpretacji wyników mowy. Przed udostępnieniem poza domem należy ustalić zabezpieczenie dostępu.
 
 Te wybory nie blokują przeglądu wymagań produktu. Zatwierdzenie specyfikacji nie oznacza zgody na automatyczne rozpoczęcie implementacji całej aplikacji.
+
+## 34. Obrazkowe zestawy słownictwa dla dzieci nieczytających (2026-10-14)
+
+Profil dziecka ma rodzicielską flagę „Dziecko jeszcze nie czyta” (`canRead`, domyślnie `true`), a generowanie słówek oferuje wariant `picture`. W tym wariancie generator pomija pojęcia trudne do jednoznacznego przedstawienia, a rodzic zatwierdza cały materiał przed publikacją. To nadal zestaw słownictwa i używa tego samego przypisania, historii oraz pięciu umiejętności.
+
+Kid UI pokazuje reprezentacje obrazu, koloru lub liczby. Ćwiczenia to prezentacja i słuchanie z wyborem wizualnym, odpowiedź ustna do obrazka oraz przypominanie do obrazka bez pola tekstowego. Stałe instrukcje mają gotowe nagrania przygotowane przez serwer; audio wzorca słowa i ujawnienie są wydawane dopiero po autoryzacji ekspozycji. Dziecko może pominąć zadanie, a odmowa mikrofonu nie resetuje sesji.
+
+Zmiana `canRead` nie usuwa ani nie przepisuje wcześniejszych prób, ocen lub wyników reading/spelling. Raport rodzica zachowuje pełną liczbę słów i wszystkie pięć umiejętności; informuje, że część ćwiczeń mogła nie wystąpić. `learning-overview` v1 i jego JSON Schema pozostają bez zmian, nie zawierają flagi `canRead`, nadal filtrują lekcje, a skill Hermesa wyjaśnia ograniczenie interpretacji. Zmiana danych profilu obowiązuje nowe sesje; aktywna sesja używa zamrożonego ustawienia.

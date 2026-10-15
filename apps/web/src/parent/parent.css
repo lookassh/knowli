@@ -349,7 +349,7 @@
   margin-bottom: 6px;
 }
 
-.pp-seg {
+.pp-filter-segmented {
   display: inline-flex;
   background: var(--pp-surface-2);
   border: 1px solid var(--pp-line);
@@ -358,7 +358,7 @@
   gap: 2px;
 }
 
-.pp-seg button {
+.pp-filter-segmented button {
   border: none;
   background: none;
   font-family: inherit;
@@ -371,7 +371,7 @@
   min-height: 44px;
 }
 
-.pp-seg button.is-on {
+.pp-filter-segmented button.is-on {
   background: var(--pp-surface);
   color: var(--pp-text);
   font-weight: 600;
@@ -1019,8 +1019,9 @@
   display: flex;
 }
 
-.pp-seg {
+.pp-bar-segment {
   height: 100%;
+  flex: 0 0 auto;
 }
 
 .pp-seg-m { background: var(--pp-green-bar); }

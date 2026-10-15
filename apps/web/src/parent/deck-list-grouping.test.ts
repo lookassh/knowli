@@ -7,6 +7,7 @@ function deck(id: string, title: string, state: DeckSummaryDto["state"], kind?: 
     deckId: id,
     title,
     state,
+    vocabularyFormat: "standard",
     ...(kind ? { kind } : {}),
     editableVersionId: null,
     publishedVersionId: null,

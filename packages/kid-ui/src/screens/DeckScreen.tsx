@@ -1,8 +1,11 @@
 import type { ReactNode } from "react";
-import { messages, type KidDeckDto } from "@learning/contracts";
+import { messages, type KidDeckDto, type UiAudioKey } from "@learning/contracts";
+import { GuidanceButton } from "../components/GuidanceButton";
+import { KidIcon } from "../components/KidIcon";
 import { format } from "../format";
 import { formatDeckTestDate, groupDecks } from "./deck-presentation";
 import { MASTERY_STAR_MAX, starsForFraction } from "./stars";
+import { MeaningVisualView } from "../visuals/MeaningVisualView";
 
 function wordCount(count: number): string {
   const lastTwoDigits = count % 100;
@@ -20,21 +23,27 @@ function wordCount(count: number): string {
 export function DeckScreen({
   decks,
   childName,
+  mediaUrl,
   microphone,
   micDenied,
   onToggleMicrophone,
   onStart,
   onMockTest,
+  onEndActive,
   headerActions,
+  onGuidance,
 }: {
   decks: KidDeckDto[];
   childName: string;
+  mediaUrl?: (assetId: string) => string;
   microphone: boolean;
   micDenied: boolean;
   onToggleMicrophone: (on: boolean) => void;
   onStart: (deckId: string) => void;
   onMockTest?: (deckId: string) => void;
+  onEndActive?: (deckId: string) => void;
   headerActions?: ReactNode;
+  onGuidance?: (key: UiAudioKey) => Promise<void>;
 }) {
   const groups = groupDecks(decks);
   const sections = [
@@ -44,7 +53,7 @@ export function DeckScreen({
 
   return (
     <main className="kid-screen kid-deck-screen">
-      {headerActions && <header className="kid-top-bar">{headerActions}</header>}
+      <header className="kid-top-bar">{headerActions}{onGuidance && <GuidanceButton audioKey="deck_select" onPlay={onGuidance} testId="kid-deck-guidance" />}</header>
       <h1>{messages.kid.decksTitle}</h1>
       {childName && <p className="kid-greeting">{format(messages.kid.greeting, { name: childName })}</p>}
 
@@ -58,7 +67,7 @@ export function DeckScreen({
             </h2>
             <ul className="kid-deck-list">
               {section.items.map((deck) => (
-                <DeckCard key={deck.deckId} deck={deck} onStart={onStart} onMockTest={onMockTest} />
+                <DeckCard key={deck.deckId} deck={deck} mediaUrl={mediaUrl ?? ((id) => `/api/v1/media/${id}`)} onStart={onStart} onMockTest={onMockTest} onEndActive={onEndActive} />
               ))}
             </ul>
           </section>
@@ -78,10 +87,12 @@ export function DeckScreen({
   );
 }
 
-function DeckCard({ deck, onStart, onMockTest }: {
+function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive }: {
   deck: KidDeckDto;
+  mediaUrl: (assetId: string) => string;
   onStart: (deckId: string) => void;
   onMockTest?: (deckId: string) => void;
+  onEndActive?: (deckId: string) => void;
 }) {
   const date = formatDeckTestDate(deck.testDate, new Date().getFullYear());
   const stars = starsForFraction(deck.independentlyRecalledCount, deck.itemCount);
@@ -90,6 +101,7 @@ function DeckCard({ deck, onStart, onMockTest }: {
     <li>
       <article className="kid-deck-card" data-testid="kid-deck-card" data-deck-id={deck.deckId} data-kind={deck.kind ?? "vocabulary"}>
         <div className="kid-deck-card__details">
+          {deck.coverVisual && <MeaningVisualView visual={deck.coverVisual} mediaUrl={mediaUrl} />}
           <h3 data-testid="kid-deck-title">
             {deck.title}{" "}
             <span>{isLesson && deck.subjectTitle
@@ -103,10 +115,12 @@ function DeckCard({ deck, onStart, onMockTest }: {
           {date !== null && <p className="kid-badge">{messages.kid.testDateLabel}: {date}</p>}
         </div>
         <div className="kid-deck-card__actions">
-          <button type="button" className="kid-primary" data-testid="kid-deck" onClick={() => onStart(deck.deckId)}>
-            <span className="kid-visually-hidden">{deck.title}: </span>{messages.kid.deckStart}
+          <button type="button" className="kid-primary" data-testid={deck.resumeOnly ? "kid-resume-session" : "kid-deck"} onClick={() => onStart(deck.deckId)}>
+            <span className="kid-visually-hidden">{deck.title}: </span>{deck.resumeOnly ? messages.kid.resumeSession : messages.kid.deckStart}
+            <KidIcon name="arrow-right" />
           </button>
-          {deck.mockTestAvailable && onMockTest && (
+          {deck.resumeOnly && deck.activeSession && onEndActive && <button type="button" className="kid-secondary" data-testid="kid-end-active-session" onClick={() => onEndActive(deck.deckId)}>{messages.kid.endSession}</button>}
+          {!deck.resumeOnly && deck.mockTestAvailable && onMockTest && (
             <button type="button" className="kid-secondary" data-testid="kid-mock-start" onClick={() => onMockTest(deck.deckId)}>
               {messages.kid.mockTest}
             </button>

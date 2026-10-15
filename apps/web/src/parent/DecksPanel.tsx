@@ -71,6 +71,7 @@ export default function DecksPanel({
 }) {
   const [prompt, setPrompt] = useState("");
   const [title, setTitle] = useState("");
+  const [vocabularyFormat, setVocabularyFormat] = useState<"standard" | "picture">("standard");
   const [generating, setGenerating] = useState(false);
   const [creatingEmpty, setCreatingEmpty] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -156,6 +157,7 @@ export default function DecksPanel({
     const command = pendingGenerationCommand.current ?? {
       prompt: prompt.trim(),
       idempotencyKey: crypto.randomUUID(),
+      vocabularyFormat,
       ...(title.trim() ? { title: title.trim() } : {}),
     };
     pendingGenerationCommand.current = command;
@@ -170,6 +172,7 @@ export default function DecksPanel({
       if (mounted.current) {
         setPrompt("");
         setTitle("");
+        setVocabularyFormat("standard");
         setActiveDeckKind("vocabulary");
         setActiveDeckId(acceptance.deckId);
         setNewMaterialOpen(false);
@@ -289,7 +292,7 @@ export default function DecksPanel({
       </div>
 
       <div className="pp-filterbar">
-        <div className="pp-seg" data-testid="deck-kind-filter" role="group" aria-label={messages.decks.kindFilterLabel}>
+        <div className="pp-filter-segmented" data-testid="deck-kind-filter" role="group" aria-label={messages.decks.kindFilterLabel}>
           {(["all", "vocabulary", "lesson"] as const).map((kind) => (
             <button
               key={kind}
@@ -398,6 +401,8 @@ export default function DecksPanel({
         onRequestClose={() => setNewMaterialOpen(false)}
         title={title}
         onTitleChange={setTitle}
+        vocabularyFormat={vocabularyFormat}
+        onVocabularyFormatChange={setVocabularyFormat}
         prompt={prompt}
         onPromptChange={setPrompt}
         generating={generating}

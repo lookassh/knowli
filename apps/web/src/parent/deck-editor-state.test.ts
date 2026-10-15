@@ -8,6 +8,7 @@ function draft(editNumber = 3): DraftDto {
     deckId: "00000000-0000-4000-8000-000000000002",
     editNumber,
     status: "draft",
+    vocabularyFormat: "standard",
     title: "Dni tygodnia",
     items: [
       {
@@ -85,6 +86,12 @@ describe("editor snapshot and draft patch", () => {
   it("does not send an invalid empty items array for an empty draft", () => {
     const snapshot = createEditorSnapshot({ ...draft(), items: [] }, () => "unused");
     expect(toDraftPatch(snapshot).items).toBeUndefined();
+  });
+
+  it("retains the immutable vocabulary format in the editor snapshot without patching it", () => {
+    const snapshot = createEditorSnapshot({ ...draft(), vocabularyFormat: "picture" }, () => "unused");
+    expect(snapshot.form.vocabularyFormat).toBe("picture");
+    expect(toDraftPatch(snapshot)).not.toHaveProperty("vocabularyFormat");
   });
 });
 

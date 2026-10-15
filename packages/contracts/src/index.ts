@@ -5,5 +5,6 @@ export * from "./kid";
 export * from "./lessons";
 export * from "./learning-overview";
 export * from "./messages";
+export * from "./ui-audio";
 export * from "./progress";
 export * from "./mock-tests";

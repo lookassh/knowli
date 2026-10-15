@@ -50,7 +50,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 768, height: 1024
       let body: unknown;
       if (url.pathname.endsWith("/login")) body = { authenticated: true, setupRequired: false };
       else if (url.pathname.endsWith("/children")) body = [
-        { id: childId, displayName: "Ala", avatarKey: "star" },
+        { id: childId, displayName: "Ala", avatarKey: "star", canRead: false },
         { id: otherChildId, displayName: "Bartek", avatarKey: "star" },
       ];
       else if (url.pathname.endsWith("/decks")) body = [deckId, otherDeckId].map((id, index) => ({
@@ -88,8 +88,21 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 768, height: 1024
     // paski opanowania czytają segmenty z etykiety aria
     const listeningBar = page.getByTestId("progress-skill-listening");
     await expect(listeningBar).toHaveAttribute("aria-label", "1 z 2: opanowane 1, do potwierdzenia 1, w trakcie nauki 0, nie sprawdzono 0");
+    const listeningSegments = listeningBar.locator(":scope > span");
+    await expect.poll(async () => (await listeningSegments.nth(2).boundingBox())?.width).toBe(0);
+    await expect.poll(async () => (await listeningSegments.nth(3).boundingBox())?.width).toBe(0);
+    await expect.poll(async () => {
+      const bar = await listeningBar.boundingBox();
+      const first = await listeningSegments.nth(0).boundingBox();
+      const second = await listeningSegments.nth(1).boundingBox();
+      return Math.round((first?.width ?? 0) + (second?.width ?? 0) - (bar?.width ?? 0));
+    }).toBe(0);
     await expect(page.getByTestId("progress-skill-recall")).toHaveAttribute("aria-label", "0 z 2: opanowane 0, do potwierdzenia 1, w trakcie nauki 0, nie sprawdzono 1");
     await expect(page.getByTestId("progress-skills")).toContainText("Opanowane (potwierdzone po przerwie)");
+    if (viewport.width === 390) {
+      await expect(page.getByTestId("progress-picture-note")).toContainText("Wcześniejsze wyniki zostają zachowane");
+      await expect(page.getByTestId("progress-picture-note")).toContainText("pełna liczba słów pozostaje w raporcie");
+    }
     // karta aktywności dziecka: czas, dni, podejścia per zestaw, odpowiedzi, kliknięcia
     const activity = page.getByTestId("progress-activity");
     await expect(activity).toBeVisible();
@@ -105,6 +118,13 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 768, height: 1024
     await expect(tiles.first()).toContainText("—");
     // 4 liczby kluczowe zamiast listy; kliknięcia (interactions) celowo poza widokiem
     await expect(activity).toContainText("38 min");
+    const stats = activity.locator(".pp-stat");
+    await expect(stats.nth(1)).toContainText("3");
+    await expect(stats.nth(1)).toContainText("dni z nauką");
+    await expect(stats.nth(2)).toContainText("5");
+    await expect(stats.nth(2)).toContainText("podejścia");
+    await expect(stats.nth(3)).toContainText("84");
+    await expect(stats.nth(3)).toContainText("odpowiedzi");
     await expect(activity).toContainText("czas nauki");
     await expect(activity).toContainText("dni z nauką");
     await expect(activity).toContainText("podejścia");

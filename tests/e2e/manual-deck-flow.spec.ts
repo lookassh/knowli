@@ -327,6 +327,9 @@ test("creates and publishes a manually entered word without generating content",
   await page.getByTestId("child-add").click();
   const childRow = page.locator('[data-testid^="child-row-"]').filter({ hasText: childName });
   await expect(childRow).toHaveCount(1);
+  await childRow.getByTestId("child-edit").click();
+  await childRow.getByTestId("child-edit-can-read").check();
+  await childRow.getByTestId("child-edit-save").click();
   const childHref = await childRow.getByTestId("child-learn-link").getAttribute("href");
   const childId = childHref?.match(/\/kids\/([0-9a-f-]{36})\//)?.[1];
   expect(childId).toBeTruthy();
@@ -354,12 +357,14 @@ test("creates and publishes a manually entered word without generating content",
   await expect(page.getByTestId("publish-status")).toBeVisible();
   await page.locator(`[data-testid^="assign-row-"]`).filter({ hasText: childName }).locator('[data-testid^="assign-submit-"]').click();
   await expect(page.locator('[data-testid^="assignment-row-"]').filter({ hasText: childName })).toBeVisible();
+  const nonReaderWarnings = page.locator('[data-testid^="non-reader-assignment-warning-"]');
+  await expect(nonReaderWarnings.first()).toContainText("nie czyta");
   expect(generationRequests, `Unexpected generation request count: ${generationRequests}`).toBe(0);
   const kidDecks = await request.get(`/api/v1/kid/decks?childId=${childId}`);
   expect(kidDecks.ok()).toBeTruthy();
   const payload = await kidDecks.json();
   expect(
     payload.some((entry: { deckId: string }) => entry.deckId === createdDeck.deckId),
-    `Kid API did not return ${createdDeck.deckId}: ${JSON.stringify(payload)}`,
-  ).toBeTruthy();
+    `A standard deck must stay hidden from a child configured as not yet able to read: ${JSON.stringify(payload)}`,
+  ).toBe(false);
 });

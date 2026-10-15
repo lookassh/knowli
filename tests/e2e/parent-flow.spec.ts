@@ -525,3 +525,23 @@ test("rodzic edytuje progi wymowy i otwiera listę kalibracyjną", async ({ page
   await expect(page.getByTestId("child-threshold-good")).toHaveValue("75");
   await expect(page.getByTestId("child-threshold-almost")).toHaveValue("55");
 });
+
+test("ostrzega rodzica, gdy profile współdzielą obrazek awatara", async ({ page }) => {
+  const suffix = randomUUID().slice(0, 8);
+  await page.goto("/parent");
+  await page.getByTestId("auth-secret").fill("1234");
+  await page.getByTestId("auth-submit").click();
+  await page.getByTestId("tab-children").click();
+  const firstName = `Awatar A ${suffix}`;
+  const secondName = `Awatar B ${suffix}`;
+  expect((await page.request.post("/api/v1/parent/children", { data: { displayName: firstName, avatarKey: "fox" } })).status()).toBe(201);
+  expect((await page.request.post("/api/v1/parent/children", { data: { displayName: secondName, avatarKey: "fox" } })).status()).toBe(201);
+  await page.reload();
+  await page.getByTestId("tab-children").click();
+  const first = page.locator('[data-testid^="child-row-"]').filter({ hasText: firstName });
+  const second = page.locator('[data-testid^="child-row-"]').filter({ hasText: secondName });
+  await expect(first.locator('[data-testid^="duplicate-avatar-warning-"]')).toContainText("ten sam obrazek");
+  await expect(second.locator('[data-testid^="duplicate-avatar-warning-"]')).toContainText("link przy imieniu");
+  await expect(first.getByTestId("child-learn-link")).toHaveAttribute("href", /^\/kids\/[0-9a-f-]{36}\/learn$/);
+  await expect(second.getByTestId("child-learn-link")).toHaveAttribute("href", /^\/kids\/[0-9a-f-]{36}\/learn$/);
+});

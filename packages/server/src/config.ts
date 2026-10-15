@@ -31,11 +31,11 @@ export interface MediaSettings {
   image: { provider: string; model: string; size: string; quality: string; format: string };
 }
 
-/** Domyślnie low+webp: karty dziecka wyświetlają obraz ~300 px, high/png
- *  kosztowało ~0,17 USD/szt. (pełny zestaw ~5 USD) przy znikomej korzyści. */
+/** Domyślnie low+webp: karty dziecka wyświetlają obraz ~300 px, więc wyższa
+ *  jakość i bezstratny format zwykle nie dają proporcjonalnej korzyści. */
 export const defaultMediaSettings: MediaSettings = {
   tts: { provider: "openai", model: "gpt-4o-mini-tts", voice: "alloy", format: "mp3" },
-  image: { provider: "openai", model: "gpt-image-1", size: "1024x1024", quality: "low", format: "webp" },
+  image: { provider: "openai", model: "gpt-image-2.5-sunburst", size: "1024x1024", quality: "low", format: "webp" },
 };
 
 /** Nadpisywalne zmiennymi środowiskowymi (nazwy, nie sekrety). */

@@ -37,15 +37,17 @@ describe("dueEntries", () => {
 
 describe("formatHistoryWhen", () => {
   it("dziś i wczoraj z godziną, wcześniej samą datą", () => {
-    const now = new Date("2026-10-14T18:00:00Z");
-    expect(formatHistoryWhen("2026-10-14T17:09:00Z", now)).toBe("dziś, 17:09");
-    expect(formatHistoryWhen("2026-10-13T18:44:00Z", now)).toBe("wczoraj, 18:44");
-    expect(formatHistoryWhen("2026-10-12T17:03:00Z", now)).toBe("12.10.2026");
+    const now = new Date(2026, 9, 14, 18, 0);
+    expect(formatHistoryWhen(new Date(2026, 9, 14, 17, 9).toISOString(), now)).toBe("dziś, 17:09");
+    expect(formatHistoryWhen(new Date(2026, 9, 13, 18, 44).toISOString(), now)).toBe("wczoraj, 18:44");
+    expect(formatHistoryWhen(new Date(2026, 9, 12, 17, 3).toISOString(), now)).toBe("12.10.2026");
   });
 
   it("przełom północy: wcześniejszy dzień to wczoraj", () => {
-    const now = new Date("2026-10-14T00:30:00Z");
-    expect(formatHistoryWhen("2026-10-13T22:10:00Z", now)).toBe("wczoraj, 22:10");
-    expect(formatHistoryWhen("2026-10-14T00:10:00Z", now)).toBe("dziś, 00:10");
+    const now = new Date(2026, 9, 15, 2, 30);
+    const sameLocalDay = new Date(2026, 9, 15, 0, 10);
+    const previousLocalDay = new Date(2026, 9, 14, 23, 50);
+    expect(formatHistoryWhen(sameLocalDay.toISOString(), now)).toBe("dziś, 00:10");
+    expect(formatHistoryWhen(previousLocalDay.toISOString(), now)).toBe("wczoraj, 23:50");
   });
 });

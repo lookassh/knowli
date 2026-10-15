@@ -10,8 +10,14 @@ export function getExercisePresentation(task: TaskDto): ExercisePresentation {
   switch (task.prompt.kind) {
     case "exposure":
       return { instruction: messages.kid.instructionExposure, icon: "sparkles" };
+    case "picture_exposure":
+      return { instruction: messages.kid.instructionExposure, icon: "sparkles" };
     case "listening":
       return { instruction: messages.kid.instructionListening, icon: "volume" };
+    case "picture_listening":
+      return { instruction: messages.kid.instructionListening, icon: "volume" };
+    case "picture_recall":
+      return { instruction: messages.kid.instructionRecall, icon: "book" };
     case "reading":
       return { instruction: messages.kid.instructionReading, icon: "book" };
     case "reverse_recognition":
@@ -23,6 +29,8 @@ export function getExercisePresentation(task: TaskDto): ExercisePresentation {
     case "letter_completion":
       return { instruction: messages.kid.instructionLetterCompletion, icon: "letters" };
     case "speech":
+      return { instruction: messages.kid.instructionSpeech, icon: "microphone" };
+    case "picture_speech":
       return { instruction: messages.kid.instructionSpeech, icon: "microphone" };
     // Lekcje (design „Typy ćwiczeń i etapy” — polecenie z payloadu/katalogu).
     // Polecenie zdania bierze się z `instructionPl` promptu; tu dajemy sensowny

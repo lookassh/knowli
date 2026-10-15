@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { UuidSchema } from "./common";
+import { UuidSchema, VocabularyFormatSchema } from "./common";
 
 /**
  * Polecenie wygenerowania zestawu. `idempotencyKey` pochodzi od klienta:
@@ -10,6 +10,7 @@ export const GenerationCommandSchema = z.object({
   prompt: z.string().min(1).max(4000),
   idempotencyKey: z.string().min(8).max(200),
   title: z.string().min(1).max(200).optional(),
+  vocabularyFormat: VocabularyFormatSchema.default("standard"),
   maxItems: z.number().int().min(1).max(50).optional(),
   locales: z
     .object({
@@ -18,7 +19,7 @@ export const GenerationCommandSchema = z.object({
     })
     .optional(),
 });
-export type GenerationCommand = z.infer<typeof GenerationCommandSchema>;
+export type GenerationCommand = z.input<typeof GenerationCommandSchema>;
 
 export const GenerationStateSchema = z.enum([
   "queued",

@@ -6,6 +6,7 @@ import {
   type GenerationCommand,
   type GenerationDto,
   type VocabularyItemInput,
+  type VocabularyFormat,
   isVisualDataValid,
 } from "@learning/contracts";
 import type { Clock, GenerationDeps, Services } from "../config";
@@ -14,6 +15,8 @@ import { deckVersions, decks, generationRuns, itemRevisions, mediaAssets, revisi
 import { AppError } from "../errors";
 import { applyItems } from "./decks";
 import { validateItems } from "./item-payload";
+import { validateVocabularyFormatItems } from "../domain/picture-vocabulary";
+import { isUiAudioAssetMetadata } from "../domain/ui-audio-catalog";
 import { reconcileDraftAssetsTx } from "./media-reconciliation";
 import { executeLessonGeneration } from "./lessons/lesson-drafts";
 import { runWorkerSlots, selectFairWorkerWork, workerAttemptFromKey, workerAttemptKey, workerIdFromAttemptKey, type WorkKind } from "./worker-schedule";
@@ -36,7 +39,7 @@ const GeneratedItemSchema = z.object({
   message: "visualData does not match visualType",
 });
 const GeneratedDeckSchema = z.object({
-  items: z.array(GeneratedItemSchema).min(1).max(50),
+  items: z.array(GeneratedItemSchema).max(50),
 });
 
 export function requireGeneration(services: Services): GenerationDeps {
@@ -191,6 +194,7 @@ export async function enqueueDeckGeneration(
       title,
       sourceLocale: locales.source,
       targetLocale: locales.target,
+      vocabularyFormat: cmd.vocabularyFormat,
       generationPrompt: cmd.prompt,
     });
     await tx.insert(generationRuns).values({
@@ -206,6 +210,7 @@ export async function enqueueDeckGeneration(
         deckVersionId: versionId,
         locales,
         maxItems: cmd.maxItems ?? 50,
+        vocabularyFormat: cmd.vocabularyFormat,
       },
     });
     return { runId, deckId };
@@ -322,6 +327,7 @@ export async function executeGeneration(services: Services, runId: string, signa
     prompt: string;
     locales: { source: string; target: string };
     maxItems: number;
+    vocabularyFormat?: VocabularyFormat;
   };
   let generated: z.infer<typeof GeneratedDeckSchema>;
   try {
@@ -330,6 +336,7 @@ export async function executeGeneration(services: Services, runId: string, signa
       sourceLocale: runInput.locales.source,
       targetLocale: runInput.locales.target,
       maxItems: runInput.maxItems,
+      vocabularyFormat: runInput.vocabularyFormat ?? "standard",
     }, signal);
     generated = GeneratedDeckSchema.parse(result);
   } catch (error) {
@@ -353,6 +360,12 @@ export async function executeGeneration(services: Services, runId: string, signa
     return;
   }
 
+  const vocabularyFormat = runInput.vocabularyFormat ?? "standard";
+  if (generated.items.length === 0) {
+    await markRun(services.db, services.clock, runId, "failed", vocabularyFormat === "picture" ? "no_picture_material" : "validation");
+    return;
+  }
+
   const items: VocabularyItemInput[] = generated.items.map((item) => ({
     source: item.source,
     target: item.target,
@@ -364,6 +377,7 @@ export async function executeGeneration(services: Services, runId: string, signa
   }));
   try {
     validateItems(items);
+    validateVocabularyFormatItems(vocabularyFormat, items);
   } catch (error) {
     if (error instanceof AppError && error.code === "validation") {
       await markRun(services.db, services.clock, runId, "failed", "validation");
@@ -449,6 +463,7 @@ async function requeueAbortedMediaAsset(services: Services, assetId: string, lea
  */
 async function supersedeDisabledLessonTts(services: Services, asset: typeof mediaAssets.$inferSelect): Promise<boolean> {
   if (asset.kind !== "tts") return false;
+  if (isUiAudioAssetMetadata(asset.metadata)) return false;
   return services.db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${asset.fingerprint}))`);
     const current = (await tx.select().from(mediaAssets).where(eq(mediaAssets.id, asset.id)).for("update"))[0];
@@ -544,7 +559,7 @@ export async function executeMediaAsset(services: Services, assetId: string, sig
             prompt: metadata.prompt!,
             // Starsze zasoby sprzed parametryzacji quality/format: odtwarzamy
             // żądanie zgodne z ich fingerprintem (gpt-image-1, high, png).
-            model: metadata.model ?? deps.image.model,
+            model: metadata.model ?? asset.model,
             size: metadata.size!,
             quality: metadata.quality ?? "high",
             format: metadata.format ?? "png",

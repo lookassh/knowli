@@ -101,6 +101,7 @@ export default function ProgressPanel({
     );
   }
 
+  const selectedChild = childrenList.find((child) => child.id === childId);
   /** Minuty do najbliższej pełnej, nie mniej niż 1, gdy był jakikolwiek czas. */
   const activityMinutes = progress
     ? progress.activity.activeSeconds > 0
@@ -238,6 +239,7 @@ export default function ProgressPanel({
       )}
       {progress && (
         <>
+          {selectedChild?.canRead === false && <p className="info" data-testid="progress-picture-note">{messages.progress.pictureProfileNote}</p>}
           <h3 data-testid="progress-heading">
             {progress.deckTitle} — {progress.childName}
           </h3>
@@ -269,10 +271,10 @@ export default function ProgressPanel({
                       notAssessed: row.segments.notAssessed,
                     })}
                   >
-                    <span className="pp-seg pp-seg-m" style={{ width: `${pct(row.segments.mastered)}%` }} />
-                    <span className="pp-seg pp-seg-n" style={{ width: `${pct(row.segments.needsConfirmation)}%` }} />
-                    <span className="pp-seg pp-seg-p" style={{ width: `${pct(row.segments.practicing)}%` }} />
-                    <span className="pp-seg pp-seg-x" style={{ width: `${pct(row.segments.notAssessed)}%` }} />
+                    <span className="pp-bar-segment pp-seg-m" style={{ width: `${pct(row.segments.mastered)}%` }} />
+                    <span className="pp-bar-segment pp-seg-n" style={{ width: `${pct(row.segments.needsConfirmation)}%` }} />
+                    <span className="pp-bar-segment pp-seg-p" style={{ width: `${pct(row.segments.practicing)}%` }} />
+                    <span className="pp-bar-segment pp-seg-x" style={{ width: `${pct(row.segments.notAssessed)}%` }} />
                   </span>
                   <span className="pp-skill-val">
                     <strong>{row.known}</strong>/{row.total}

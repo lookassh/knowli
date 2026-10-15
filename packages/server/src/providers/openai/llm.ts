@@ -70,6 +70,10 @@ function systemPrompt(input: LlmGenerateDeckInput): string {
     "For English weekdays use position Monday=1 through Sunday=7 and total=7. Omit visualData when the word has no deterministic visual.",
     `At most ${input.maxItems} items. Keep target/source up to 120 characters and examples up to 300 characters.`,
     "One example sentence per item, in the target language. No extra commentary.",
+    ...(input.vocabularyFormat === "picture" ? [
+      "Picture vocabulary mode: override any broader guidance above. Choose only concrete meanings that can be clearly shown without written labels; Do not include abstract concepts, weekdays, months, or meanings needing a text explanation.",
+      "Allowed visualType values are image, color, or number; omit none and sequence. Return fewer items instead of filling the requested count with meanings that are difficult to show.",
+    ] : []),
   ].join(" ");
 }
 

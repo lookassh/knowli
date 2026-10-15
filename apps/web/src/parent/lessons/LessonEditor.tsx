@@ -655,6 +655,7 @@ export default function LessonEditor({
           {childrenList.map((child, index) => (
             <div className="row space" key={child.id} data-testid={`assign-row-${index}`}>
               <span data-child-id={child.id}>{child.displayName}</span>
+              {child.canRead === false && <p className="info" data-testid={`non-reader-lesson-warning-${index}`}>{messages.decks.nonReaderLessonAssignment}</p>}
               <input type="date" data-testid={`assign-date-${index}`}
                 aria-label={`${messages.decks.assignDate} ${child.displayName}`}
                 value={assignDates[child.id] ?? deck.assignments.find((a) => a.childId === child.id)?.testDate ?? ""}

@@ -4,6 +4,9 @@ import type { ExerciseType, Policy, ProgressStatus, ReadingDirection, Skill } fr
 import type { SupportState } from "./support-cycle";
 import type { SkillWork } from "./learning-work";
 import { buildRecognitionOptions } from "./recognition-options";
+import { buildPictureRecognitionOptions, type PictureRecognitionItem } from "./picture-recognition-options";
+import { getVocabularyCapabilities } from "./vocabulary-capabilities";
+import type { MeaningVisual } from "@learning/contracts";
 import type { ConfusionPair } from "./confusion-priority";
 
 /**
@@ -65,6 +68,7 @@ export interface ScheduleCandidate {
   /** Czy zadanie przygotowawcze dla tego celu wydano już w tej sesji. */
   testPreparationIssued?: boolean;
   settledReviewSkills?: readonly Skill[];
+  visual?: MeaningVisual;
 }
 
 /** Inne elementy wersji — pula dystraktorów. */
@@ -75,12 +79,15 @@ export interface SchedulePeer {
   source: string;
   targetLocale: string;
   acceptedAnswers: readonly string[];
+  visual?: MeaningVisual;
 }
 
 export interface ScheduleInput {
   now: string;
   policy: Policy;
   microphoneEnabled: boolean;
+  canRead?: boolean;
+  vocabularyFormat?: "standard" | "picture";
   /** Pozostały budżet zadań ocenianych. */
   assessedRemaining: number;
   /** Ordinal, jaki otrzyma nowo wydane zadanie. */
@@ -104,6 +111,7 @@ export interface PlannedOption {
   itemRevisionId: string;
   text: string;
   correct: boolean;
+  visual?: MeaningVisual;
 }
 
 /** Jawna przyczyna decyzji — trafia do kontekstu zadania i sesji. */
@@ -137,6 +145,8 @@ export interface TaskPlan {
   statusAtIssue?: ProgressStatus | null;
   /** Rezerwacje utrzymywane po tej decyzji (zapis do kontekstu sesji). */
   keepsReservations: string[];
+  pictureRecall?: boolean;
+  assessmentSkills?: readonly Skill[];
 }
 
 /** Umiejętności z należnym niezależnym sprawdzeniem (rezerwowane). */
@@ -160,9 +170,14 @@ function isDue(snapshot: SkillSnapshot | undefined, now: string): boolean {
 /** Najbliższy termin należnego sprawdzenia Recall/pisowni elementu. */
 interface DueCheckSelection { skill: "recall" | "spelling"; due: string; status: ProgressStatus | null; }
 
-function dueCheckSelection(candidate: ScheduleCandidate, now: string): DueCheckSelection | null {
+function dueCheckSelection(
+  candidate: ScheduleCandidate,
+  now: string,
+  eligible: ReadonlySet<Skill> = new Set(["recall", "spelling"]),
+): DueCheckSelection | null {
   const dueChecks: DueCheckSelection[] = [];
   for (const skill of CHECK_SKILLS) {
+    if (!eligible.has(skill)) continue;
     if (candidate.settledReviewSkills?.includes(skill)) continue;
     const work = candidate.work?.[skill];
     if (work?.eligibleAt !== null && work !== undefined) {
@@ -180,10 +195,11 @@ function oldestDue(
   candidates: readonly ScheduleCandidate[],
   now: string,
   settled: ReadonlySet<string>,
+  eligible: ReadonlySet<Skill>,
 ): { candidate: ScheduleCandidate; check: DueCheckSelection } | null {
   let best: { candidate: ScheduleCandidate; check: DueCheckSelection } | null = null;
   for (const candidate of candidates) {
-    const check = dueCheckSelection(candidate, now);
+    const check = dueCheckSelection(candidate, now, eligible);
     if (check === null) continue;
     if (settled.has(keyOf(candidate.target, candidate.targetLocale))) continue;
     if (best === null || check.due < best.check.due || (check.due === best.check.due && candidate.position < best.candidate.position)) {
@@ -240,7 +256,16 @@ const RECOGNITION_DIRECTIONS: readonly (ReadingDirection | "listening")[] = [
   "listening", "target_to_source", "source_to_target",
 ];
 
-function recognitionPossibleWithoutReservations(target: ScheduleCandidate, peers: readonly SchedulePeer[]): boolean {
+function recognitionPossibleWithoutReservations(target: ScheduleCandidate, peers: readonly SchedulePeer[], input?: ScheduleInput): boolean {
+  if (input?.vocabularyFormat === "picture") {
+    if (!target.visual) return false;
+    return buildPictureRecognitionOptions({
+      target: { ...target, visual: target.visual } as PictureRecognitionItem,
+      peers: peers.filter((peer) => peer.visual !== undefined) as PictureRecognitionItem[],
+      reservedTargetKeys: [],
+      rotateBy: 0,
+    }) !== null;
+  }
   return RECOGNITION_DIRECTIONS.some((direction) => buildRecognitionOptions({
     target, peers, direction, reservedTargetKeys: [], rotateBy: 0,
   }) !== null);
@@ -250,12 +275,13 @@ function recognitionFallback(
   target: ScheduleCandidate,
   reserved: ReadonlySet<string>,
   peers: readonly SchedulePeer[],
+  input: ScheduleInput,
   keepsReservations: string[],
 ): TaskPlan | null {
   if (
     target.recognitionFallbackUsedThisSession ||
     reserved.has(keyOfCandidate(target)) ||
-    recognitionPossibleWithoutReservations(target, peers)
+    recognitionPossibleWithoutReservations(target, peers, input)
   ) return null;
   return {
     itemRevisionId: target.itemRevisionId,
@@ -276,10 +302,35 @@ function recognitionTaskPlan(
   direction: ReadingDirection | "listening",
   allowAlternative = false,
 ): TaskPlan | null {
-  const directions = allowAlternative
+  const capabilities = getVocabularyCapabilities({ canRead: input.canRead ?? true, microphoneEnabled: input.microphoneEnabled });
+  const directions = (allowAlternative
     ? [direction, ...RECOGNITION_DIRECTIONS.filter((item) => item !== direction)]
-    : [direction];
+    : [direction]).filter((candidateDirection) =>
+      candidateDirection === "listening"
+        ? capabilities.exerciseTypes.includes("listening")
+        : capabilities.exerciseTypes.includes("reading"),
+    );
   for (const selectedDirection of directions) {
+    if (input.vocabularyFormat === "picture" && selectedDirection === "listening") {
+      if (!target.visual) continue;
+      const pictureOptions = buildPictureRecognitionOptions({
+        target: { ...target, visual: target.visual } as PictureRecognitionItem,
+        peers: input.peers.filter((peer) => peer.visual !== undefined) as PictureRecognitionItem[],
+        reservedTargetKeys: [...reserved],
+        rotateBy: input.nextOrdinal,
+      });
+      if (!pictureOptions) continue;
+      return {
+        itemRevisionId: target.itemRevisionId,
+        exerciseType: "listening",
+        options: pictureOptions.options,
+        revealsTargetKeys: pictureOptions.revealsTargetKeys,
+        assessed: true,
+        reason,
+        keepsReservations,
+        assessmentSkills: ["listening"],
+      };
+    }
     const built = buildRecognitionOptions({
       target,
       peers: input.peers,
@@ -310,7 +361,7 @@ function recognitionTaskPlan(
     reason === "extra-practice" || reason === "test-preparation-break";
   const hasDueRecognition = isDue(target.progress.listening, input.now) || isDue(target.progress.reading, input.now);
   return fallbackEligible && !hasDueRecognition
-    ? recognitionFallback(target, reserved, input.peers, keepsReservations)
+    ? recognitionFallback(target, reserved, input.peers, input, keepsReservations)
     : null;
 }
 
@@ -334,10 +385,10 @@ function isStarted(candidate: ScheduleCandidate): boolean {
 }
 
 /** Czy element ma samodzielny sukces rozpoznawania (słuch albo tekst). */
-function recognitionSucceeded(candidate: ScheduleCandidate): boolean {
+function recognitionSucceeded(candidate: ScheduleCandidate, canRead = true): boolean {
   const listening = candidate.progress.listening;
   const reading = candidate.progress.reading;
-  return (listening?.streak ?? 0) >= 1 || (reading?.streak ?? 0) >= 1;
+  return (listening?.streak ?? 0) >= 1 || (canRead && (reading?.streak ?? 0) >= 1);
 }
 
 /**
@@ -360,12 +411,13 @@ function introductionPlan(
   const pool = practicePool(candidates).slice().sort(
     (a, b) => Number(b.introducedSkills.recall) - Number(a.introducedSkills.recall),
   );
+  const capabilities = getVocabularyCapabilities({ canRead: input.canRead ?? true, microphoneEnabled: input.microphoneEnabled });
   for (const target of pool) {
     if (reserved.has(keyOfCandidate(target))) continue;
     const noRecognitionEvidenceAvailable =
-      target.ownPresentationCompleted === true && !recognitionPossibleWithoutReservations(target, input.peers);
-    if (!recognitionSucceeded(target) && !noRecognitionEvidenceAvailable) continue;
-    if (!target.introducedSkills.recall) {
+      target.ownPresentationCompleted === true && !recognitionPossibleWithoutReservations(target, input.peers, input);
+    if (!recognitionSucceeded(target, input.canRead ?? true) && !noRecognitionEvidenceAvailable) continue;
+    if (!target.introducedSkills.recall && capabilities.exerciseTypes.includes("recall")) {
       return {
         itemRevisionId: target.itemRevisionId,
         exerciseType: "recall",
@@ -373,6 +425,9 @@ function introductionPlan(
         assessed: true,
         reason: "stage-introduction",
         keepsReservations,
+        ...(input.vocabularyFormat === "picture" && input.canRead === false
+          ? { pictureRecall: true, assessmentSkills: ["recall", "pronunciation"] as const }
+          : {}),
       };
     }
     if (!target.introducedSkills.pronunciation && input.microphoneEnabled) {
@@ -405,6 +460,7 @@ export interface DeckWorkloadItem {
   progress: ReadonlyArray<SkillSnapshot & { skill: Skill }>;
   /** Najwcześniejszy termin zachowanego sprawdzenia bez projekcji. */
   pendingCheckAt?: string | null;
+  pendingChecks?: readonly { skill: "recall" | "spelling"; dueAt: string }[];
   /** Wprowadzony etap Recall nadal nie został wydany. */
   recallIntroductionNeeded?: boolean;
 }
@@ -416,10 +472,18 @@ export interface DeckWorkloadItem {
  * dziecka; dodatkowe utrwalanie (extra-practice) jest dostępne zawsze i nie
  * czyni zestawu rekomendowanym — rekomendacja wskazuje wartość zaplanowaną.
  */
-export function hasScheduledWork(items: readonly DeckWorkloadItem[], now: string): boolean {
+export function hasScheduledWork(
+  items: readonly DeckWorkloadItem[],
+  now: string,
+  options: { canRead?: boolean; microphoneEnabled?: boolean; vocabularyFormat?: "standard" | "picture" } = {},
+): boolean {
+  const canRead = options.canRead ?? true;
+  const capabilities = getVocabularyCapabilities({ canRead, microphoneEnabled: options.microphoneEnabled ?? true });
+  const eligible = new Set(capabilities.skills);
   for (const item of items) {
-    if (item.pendingCheckAt !== undefined && item.pendingCheckAt !== null && item.pendingCheckAt <= now) return true;
-    if (item.recallIntroductionNeeded) return true;
+    if (item.pendingChecks?.some((check) => eligible.has(check.skill) && check.dueAt <= now)) return true;
+    if (!item.pendingChecks?.length && item.pendingCheckAt !== undefined && item.pendingCheckAt !== null && item.pendingCheckAt <= now && (canRead || (options.microphoneEnabled ?? true))) return true;
+    if (item.recallIntroductionNeeded && eligible.has("recall")) return true;
     let started = item.pendingCheckAt !== undefined && item.pendingCheckAt !== null;
     let recognitionStreak = 0;
     let recallAssessed = false;
@@ -427,10 +491,11 @@ export function hasScheduledWork(items: readonly DeckWorkloadItem[], now: string
       if (snapshot.status !== "not_assessed") {
         started = true;
       }
+      if (!eligible.has(snapshot.skill as (typeof capabilities.skills)[number])) continue;
       if (isDue(snapshot, now)) {
         return true;
       }
-      if (snapshot.skill === "listening" || snapshot.skill === "reading") {
+      if (snapshot.skill === "listening" || (canRead && snapshot.skill === "reading")) {
         recognitionStreak = Math.max(recognitionStreak, snapshot.streak);
       }
       if (snapshot.skill === "recall") {
@@ -442,7 +507,7 @@ export function hasScheduledWork(items: readonly DeckWorkloadItem[], now: string
     }
     // wprowadzenie przypominania czeka (SPEC §13); samej wymowy nie sprawdzamy,
     // bo rekomendacja nie może zależeć od mikrofonu — wymowa wchodzi w sesji
-    if (recognitionStreak >= 1 && !recallAssessed) {
+    if (eligible.has("recall") && recognitionStreak >= 1 && !recallAssessed) {
       return true;
     }
   }
@@ -480,11 +545,12 @@ function testPreparationCandidate(
   candidates: readonly ScheduleCandidate[],
   reserved: ReadonlySet<string>,
   settled: ReadonlySet<string>,
+  canRead = true,
 ): ScheduleCandidate | null {
   return candidates
     .filter((candidate) =>
       candidate.hasBeenPresented === true &&
-      recognitionSucceeded(candidate) &&
+      recognitionSucceeded(candidate, canRead) &&
       !(candidate.progress.recall?.status === "mastered" && candidate.progress.spelling?.status === "mastered") &&
       candidate.testPreparationIssued !== true &&
       !reserved.has(keyOfCandidate(candidate)) &&
@@ -500,10 +566,15 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
   }
 
   const reserved = new Set(input.reservedTargetKeys);
+  if (input.vocabularyFormat === "picture" && !input.microphoneEnabled) reserved.clear();
   const settled = new Set(input.settledCheckTargetKeys ?? []);
+  const capabilities = getVocabularyCapabilities({ canRead: input.canRead ?? true, microphoneEnabled: input.microphoneEnabled });
+  const eligible = new Set(capabilities.skills);
+  const dueCheckSkills = new Set(capabilities.skills.filter((skill) => skill === "recall" || skill === "spelling"));
   for (const candidate of input.candidates) {
-    if (dueCheckSelection(candidate, input.now) !== null && !settled.has(keyOfCandidate(candidate))) {
-      reserved.add(keyOfCandidate(candidate));
+    const key = keyOfCandidate(candidate);
+    if (dueCheckSelection(candidate, input.now, dueCheckSkills) !== null && !settled.has(key)) {
+      reserved.add(key);
     }
   }
   const keepsReservations = [...reserved];
@@ -512,7 +583,7 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
   //    pisemna odpowiedź dostarcza obu wyników, zanim feedback ujawni słowo.
   //    Sprawdzenie rozliczone w tej sesji (odpowiedź, „Nie pamiętam”, pominięcie
   //    albo zdradzająca podpowiedź) nie jest wydawane ponownie.
-  const due = oldestDue(input.candidates, input.now, settled);
+  const due = oldestDue(input.candidates, input.now, settled, dueCheckSkills);
   if (due) {
     return {
       itemRevisionId: due.candidate.itemRevisionId,
@@ -523,6 +594,9 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
       skillAtIssue: due.check.skill,
       statusAtIssue: due.check.status,
       keepsReservations,
+      ...(input.vocabularyFormat === "picture" && input.canRead === false
+        ? { pictureRecall: true, assessmentSkills: ["recall", "pronunciation"] as const }
+        : {}),
     };
   }
 
@@ -584,7 +658,7 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
   }
 
   if (
-    !needsPreparationBreak &&
+    !needsPreparationBreak && input.canRead !== false &&
     input.testPreparation &&
     isTestPreparationWindow({
       now: input.now,
@@ -592,7 +666,7 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
       timezone: input.testPreparation.timezone,
     })
   ) {
-    const target = testPreparationCandidate(input.candidates, reserved, settled);
+    const target = testPreparationCandidate(input.candidates, reserved, settled, input.canRead ?? true);
     if (target) {
       return {
         itemRevisionId: target.itemRevisionId,
@@ -625,6 +699,7 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
   for (const candidate of input.candidates) {
     if (reserved.has(keyOfCandidate(candidate))) continue;
     for (const [skill, snapshot] of Object.entries(candidate.progress) as [Skill, SkillSnapshot][]) {
+      if (!eligible.has(skill as Exclude<Skill, "objective">)) continue;
       if (skill === "recall" || skill === "spelling") continue;
       if (candidate.settledReviewSkills?.includes(skill)) continue;
       if (skill === "pronunciation" && !input.microphoneEnabled) continue;
@@ -671,7 +746,7 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
   // Wprowadzanie etapów odbywa się po należnych powtórkach; co drugi slot
   // przeplata je z porcjami nowego materiału.
   if (input.nextOrdinal % 2 === 1 || input.candidates.some((candidate) =>
-    candidate.ownPresentationCompleted && !recognitionPossibleWithoutReservations(candidate, input.peers),
+    candidate.ownPresentationCompleted && !recognitionPossibleWithoutReservations(candidate, input.peers, input),
   )) {
     const introduction = introductionPlan(input.candidates, input, reserved, keepsReservations);
     if (introduction) return introduction;

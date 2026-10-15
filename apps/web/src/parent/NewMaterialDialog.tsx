@@ -18,6 +18,8 @@ export default function NewMaterialDialog({
   onRequestClose,
   title,
   onTitleChange,
+  vocabularyFormat,
+  onVocabularyFormatChange,
   prompt,
   onPromptChange,
   generating,
@@ -36,6 +38,8 @@ export default function NewMaterialDialog({
   onRequestClose: () => void;
   title: string;
   onTitleChange: (value: string) => void;
+  vocabularyFormat: "standard" | "picture";
+  onVocabularyFormatChange: (value: "standard" | "picture") => void;
   prompt: string;
   onPromptChange: (value: string) => void;
   generating: boolean;
@@ -173,6 +177,19 @@ export default function NewMaterialDialog({
               disabled={fieldDisabled}
               onChange={(event) => onTitleChange(event.target.value)}
             />
+          </label>
+          <label className="pp-dialog-label" htmlFor="new-material-vocabulary-format">
+            {messages.decks.vocabularyFormatLabel}
+            <select
+              id="new-material-vocabulary-format"
+              data-testid="deck-vocabulary-format"
+              value={vocabularyFormat}
+              disabled={fieldDisabled}
+              onChange={(event) => onVocabularyFormatChange(event.target.value as "standard" | "picture")}
+            >
+              <option value="standard">{messages.decks.standardVocabulary}</option>
+              <option value="picture">{messages.decks.pictureVocabulary}</option>
+            </select>
           </label>
           <label className="pp-dialog-label" htmlFor="new-material-deck-prompt">
             {messages.decks.promptLabel}

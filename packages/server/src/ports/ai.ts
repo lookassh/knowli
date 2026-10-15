@@ -8,6 +8,7 @@ export interface LlmGenerateDeckInput {
   sourceLocale: string;
   targetLocale: string;
   maxItems: number;
+  vocabularyFormat?: "standard" | "picture";
 }
 
 /** Surowy element od LLM; moduł generacji waliduje go Zodem przed zapisem. */

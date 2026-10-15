@@ -17,21 +17,21 @@ function two(value: number): string {
 
 /**
  * Znacznik czasu historii: „dziś, 17:09" / „wczoraj, 18:44" / „12.10.2026".
- * `now` wstrzykiwany dla testów; dni i godziny liczone w UTC, bo DTO niosą
- * instanty, a etykieta ma być stabilna niezależnie od strefy przeglądarki.
+ * `now` wstrzykiwany dla testów; daty i godziny są pokazywane w lokalnej
+ * strefie rodzica, tak jak pozostałe daty w interfejsie.
  */
 export function formatHistoryWhen(receivedAt: string, now: Date): string {
   const received = new Date(receivedAt);
-  const utcDay = (date: Date) => Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
-  const dayDiff = Math.round((utcDay(now) - utcDay(received)) / 86_400_000);
-  const time = `${two(received.getUTCHours())}:${two(received.getUTCMinutes())}`;
+  const localDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const dayDiff = Math.round((localDay(now) - localDay(received)) / 86_400_000);
+  const time = `${two(received.getHours())}:${two(received.getMinutes())}`;
   if (dayDiff === 0) {
     return `dziś, ${time}`;
   }
   if (dayDiff === 1) {
     return `wczoraj, ${time}`;
   }
-  return `${two(received.getUTCDate())}.${two(received.getUTCMonth() + 1)}.${received.getUTCFullYear()}`;
+  return `${two(received.getDate())}.${two(received.getMonth() + 1)}.${received.getFullYear()}`;
 }
 
 export function historyRows(entries: HistoryEntryDto[], now: Date): Array<{
