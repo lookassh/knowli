@@ -289,10 +289,12 @@ test("grupuje listę zestawów po stanie i filtruje po rodzaju", async ({ page }
   await expect(draftSection.locator(`[data-deck-id="${created[0]}"]`)).toBeVisible();
   await expect(draftSection.locator(`[data-deck-id="${created[1]}"]`)).toBeVisible();
 
-  // filtr rodzaju zawęża listę
+  // filtr rodzaju zawęża listę; świat współdzielony może zawierać lekcje
+  // innych speków — sprawdzamy, że nasze słówka znikają przy filtrze Lekcje
   const filter = page.getByTestId("deck-kind-filter");
   await filter.getByRole("button", { name: "Lekcje" }).click();
-  await expect(page.locator('[data-testid^="deck-row-"]')).toHaveCount(0);
+  await expect(page.locator(`[data-deck-id="${created[0]}"]`)).toHaveCount(0);
+  await expect(page.locator(`[data-deck-id="${created[1]}"]`)).toHaveCount(0);
   await filter.getByRole("button", { name: "Słówka" }).click();
   await expect(page.locator(`[data-deck-id="${created[0]}"]`)).toBeVisible();
   await expect(page.getByTestId("deck-group-draft")).toBeVisible();
