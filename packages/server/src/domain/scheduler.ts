@@ -244,8 +244,8 @@ function presentedOnce(candidates: readonly ScheduleCandidate[]): ScheduleCandid
  * jeden element (regresja „zawsze styczeń”).
  */
 function practicePool(candidates: readonly ScheduleCandidate[], input: ScheduleInput): ScheduleCandidate[] {
-  const masterySkills = input.canRead === false
-    ? getVocabularyCapabilities({ canRead: false, microphoneEnabled: input.microphoneEnabled }).skills
+  const masterySkills = input.canRead === false || input.vocabularyFormat === "picture"
+    ? getVocabularyCapabilities({ canRead: input.canRead ?? true, microphoneEnabled: input.microphoneEnabled }).skills
     : undefined;
   return candidates
     .filter((c) => c.usedThisSession > 0 || isStarted(c) || c.ownPresentationCompleted === true)
@@ -259,7 +259,7 @@ function practicePool(candidates: readonly ScheduleCandidate[], input: ScheduleI
 }
 
 /** Stałe priorytety, losowany wyłącznie wykonalny plan wewnątrz ich granic. */
-function nonReaderPicturePlan(
+function picturePracticePlan(
   input: ScheduleInput,
   reserved: ReadonlySet<string>,
   keepsReservations: string[],
@@ -286,10 +286,15 @@ function nonReaderPicturePlan(
     .flatMap(candidate => {
       const reason = pending.includes(candidate) && candidate.presentationsThisSession > 0 ? "new-practice"
         : candidate.usedThisSession > 0 ? "filler-practice" : "extra-practice";
-      const plan = recognitionTaskPlan(candidate, input, reserved, keepsReservations, reason, "listening", true);
+      const plan = reason === "new-practice"
+        ? recognitionTaskPlan(candidate, input, reserved, keepsReservations, reason, "listening", true)
+        : recognitionPlan(candidate, input, reserved, keepsReservations, reason,
+          candidate.usedThisSession > 0
+            ? candidate.practiceMix.listening < candidate.practiceMix.reading
+            : input.nextOrdinal % 2 === 0);
       return plan ? [{ candidate, plan }] : [];
     });
-  const skills = getVocabularyCapabilities({ canRead: false, microphoneEnabled: input.microphoneEnabled }).skills;
+  const skills = getVocabularyCapabilities({ canRead: input.canRead ?? true, microphoneEnabled: input.microphoneEnabled }).skills;
   const firstPriority = feasible[0] && isFullyMastered(feasible[0].candidate, skills);
   const priorityPool = feasible.filter(({ candidate }) => isFullyMastered(candidate, skills) === firstPriority);
   const questionCount = (candidate: ScheduleCandidate) => candidate.usedThisSession - candidate.presentationsThisSession;
@@ -801,8 +806,8 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
     if (introduction) return introduction;
   }
 
-  if (input.vocabularyFormat === "picture" && input.canRead === false) {
-    return nonReaderPicturePlan(input, reserved, keepsReservations);
+  if (input.vocabularyFormat === "picture") {
+    return picturePracticePlan(input, reserved, keepsReservations);
   }
 
   // 4. Nowy materiał porcjami 2–3: prezentacje przeplatane łatwym

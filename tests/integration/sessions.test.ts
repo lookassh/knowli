@@ -404,7 +404,12 @@ describe("cykl życia sesji (integracja)", () => {
       expect(exposure?.prompt.kind).toBe("picture_exposure");
       await completePresentation(services, { taskId: exposure!.taskId });
     }
-    const listening = await nextTask(services, session.sessionId);
+    let listening = await nextTask(services, session.sessionId);
+    // Po bootstrapie losowanie może wybrać trzecią prezentację przed pytaniem.
+    if (listening?.prompt.kind === "picture_exposure") {
+      await completePresentation(services, { taskId: listening.taskId });
+      listening = await nextTask(services, session.sessionId);
+    }
     expect(listening?.prompt.kind).toBe("picture_listening");
     if (listening?.prompt.kind !== "picture_listening") throw new Error("expected picture listening task");
     expect(listening.prompt.options).toHaveLength(4);

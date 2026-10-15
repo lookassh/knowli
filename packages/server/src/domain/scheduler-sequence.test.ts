@@ -245,7 +245,7 @@ describe("nieprzewidywalna kolejność nieczytającego", () => {
       expect(selectTask(snapshot(candidates, { selectionSeed }))?.reason).toBe("support");
     }
     candidates[1]!.failuresThisSession = 0;
-    expect(selectTask(snapshot(candidates, { canRead: true, selectionSeed: 0 })))
-      .toEqual(selectTask(snapshot(candidates, { canRead: true, selectionSeed: 999 })));
+    expect(selectTask(snapshot(candidates, { vocabularyFormat: "standard", canRead: true, selectionSeed: 0 })))
+      .toEqual(selectTask(snapshot(candidates, { vocabularyFormat: "standard", canRead: true, selectionSeed: 999 })));
   });
 });
