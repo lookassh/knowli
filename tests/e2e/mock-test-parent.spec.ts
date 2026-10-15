@@ -27,8 +27,8 @@ test("parent configures count and sees partial pinned coverage", async ({ page }
   expect(saved.assignments.find((a: { childId: string }) => a.childId === childId).mockTestTaskCount).toBe(25);
   expect(saved.assignments.find((a: { childId: string }) => a.childId === child.id)).toMatchObject({ mockTestTaskCount: 13, testDate: "2026-10-17", testGoals: ["listening"] });
   await page.getByTestId("tab-progress").click();
-  await page.getByTestId("progress-child").selectOption(childId); await page.getByTestId("progress-deck").selectOption(deckId);
-  await page.getByTestId("progress-load").click();
+  await page.getByTestId("progress-child").getByRole("button", { name: "Kartkówka" }).click();
+  await page.getByTestId("progress-deck").selectOption(String(deckId));
   await expect(page.getByTestId("mock-parent-report")).toBeVisible();
   await expect(page.getByTestId("mock-parent-report")).toContainText("3");
   await expect(page.getByTestId("mock-report-recall")).toContainText("1 z 15");
@@ -64,7 +64,8 @@ test("parent sees evidence quality separately from a spelling mistake after a re
   await page.request.post(`/api/v1/kid/tasks/${task.taskId}/attempts`, { data: { modality: "text", text: "monday", clientAttemptId: crypto.randomUUID() } });
   await page.request.post(`/api/v1/kid/sessions/${session.sessionId}/end`);
   await page.goto("/parent"); await page.getByTestId("tab-progress").click();
-  await page.getByTestId("progress-child").selectOption(childId); await page.getByTestId("progress-deck").selectOption(deckId); await page.getByTestId("progress-load").click();
+  await page.getByTestId("progress-child").getByRole("button", { name: "Kartkówka" }).click();
+  await page.getByTestId("progress-deck").selectOption(String(deckId));
   const report = page.getByTestId("mock-parent-report");
   await expect(report).toContainText("Bez potwierdzonej samodzielności");
   await expect(report).toContainText("Niedawno pokazano wzorzec");

@@ -4,17 +4,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { messages, type ChildDto, type ChildPatch, type PronunciationSettingsDto } from "@learning/contracts";
 import { apiFetch, errorMessage } from "./api";
 import { ParentIcon } from "./ParentIcon";
-
-const AVATARS: Array<{ key: string; emoji: string }> = [
-  { key: "fox", emoji: "🦊" },
-  { key: "cat", emoji: "🐱" },
-  { key: "owl", emoji: "🦉" },
-  { key: "panda", emoji: "🐼" },
-];
-
-function avatarEmoji(key: string): string {
-  return AVATARS.find((avatar) => avatar.key === key)?.emoji ?? "🙂";
-}
+import { AVATARS, avatarEmoji } from "./avatars";
 
 function PronunciationSettings({ childId }: { childId: string }) {
   const [settings, setSettings] = useState<PronunciationSettingsDto | null>(null);

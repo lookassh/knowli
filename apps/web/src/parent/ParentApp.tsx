@@ -224,7 +224,7 @@ export default function ParentApp() {
         ) : tab === "children" ? (
           <ChildEditor childrenList={childrenList} onChanged={refreshChildren} />
         ) : (
-          <ProgressPanel childrenList={childrenList} decks={decks} />
+          <ProgressPanel childrenList={childrenList} decks={decks} onAuthExpired={() => setPhase("login")} />
         )}
       </main>
       <LeaveEditorDialog open={leaveGuard.pending} onStay={leaveGuard.stay} onLeave={() => void leaveGuard.leave()} />

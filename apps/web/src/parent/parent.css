@@ -856,3 +856,217 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* --- Postępy: filtry, paski opanowania --- */
+
+.pp-prog-filters {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.pp-childpick {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pp-childpick button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 5px 16px 5px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--pp-line);
+  background: var(--pp-surface);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--pp-text-2);
+}
+
+.pp-childpick button:hover {
+  border-color: var(--pp-line-strong);
+}
+
+.pp-childpick button.is-on {
+  border-color: var(--pp-brand);
+  color: var(--pp-brand);
+  background: var(--pp-brand-soft);
+}
+
+.pp-childpick-emoji {
+  width: 33px;
+  height: 33px;
+  border-radius: 50%;
+  background: var(--pp-brand-soft);
+  display: grid;
+  place-items: center;
+  font-size: 17px;
+}
+
+.pp-childpick button.is-on .pp-childpick-emoji {
+  background: var(--pp-surface);
+}
+
+.pp-testdate {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--pp-text-2);
+  background: var(--pp-surface);
+  border: 1px solid var(--pp-line);
+  border-radius: 999px;
+  padding: 6px 12px;
+}
+
+.pp-testdate .pp-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--pp-amber);
+}
+
+.pp-selectwrap {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--pp-text-2);
+}
+
+.pp-selectwrap label {
+  font-weight: 600;
+}
+
+.pp-selectwrap select {
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--pp-line-strong);
+  background: var(--pp-surface);
+  font-family: inherit;
+  font-size: 14.5px;
+  color: var(--pp-text);
+}
+
+.pp-loading {
+  color: var(--pp-text-3);
+  font-size: 14px;
+  margin: 4px 0;
+}
+
+/* --- karty i paski --- */
+
+.pp-card {
+  background: var(--pp-surface);
+  border-radius: var(--pp-radius);
+  padding: 16px;
+  box-shadow: var(--pp-shadow);
+  margin-bottom: 14px;
+}
+
+.pp-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+
+.pp-card-title .pp-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--pp-brand);
+}
+
+.pp-skill-row {
+  display: grid;
+  grid-template-columns: 168px 1fr 64px;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--pp-line);
+}
+
+.pp-skill-row:last-of-type {
+  border-bottom: none;
+}
+
+.pp-skill-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.pp-skill-bar {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--pp-gray-soft);
+  overflow: hidden;
+  display: flex;
+}
+
+.pp-seg {
+  height: 100%;
+}
+
+.pp-seg-m { background: var(--pp-green-bar); }
+.pp-seg-n { background: var(--pp-amber-bar); }
+.pp-seg-p { background: var(--pp-blue-bar); }
+.pp-seg-x { background: var(--pp-gray-bar); }
+
+.pp-skill-val {
+  font-size: 14.5px;
+  text-align: right;
+  color: var(--pp-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.pp-skill-val strong {
+  color: var(--pp-text);
+  font-size: 16px;
+}
+
+.pp-legend {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  color: var(--pp-text-2);
+  font-size: 12.5px;
+}
+
+.pp-legend span {
+  display: inline-flex;
+  align-items: center;
+}
+
+.pp-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 5px;
+}
+
+.pp-dot-m { background: var(--pp-green-bar); }
+.pp-dot-n { background: var(--pp-amber-bar); }
+.pp-dot-p { background: var(--pp-blue-bar); }
+.pp-dot-x { background: var(--pp-gray-bar); }
+
+@media (max-width: 760px) {
+  .pp-skill-row {
+    grid-template-columns: 118px 1fr 56px;
+    gap: 8px;
+  }
+  .pp-selectwrap {
+    margin-left: 0;
+  }
+}

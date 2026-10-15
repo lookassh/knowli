@@ -84,7 +84,12 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 768, height: 1024
     });
     await page.goto("/parent");
     await page.getByTestId("tab-progress").click();
-    await page.getByTestId("progress-load").click();
+    // auto-load po wejściu: karty pojawiają się bez przycisku
+    // paski opanowania czytają segmenty z etykiety aria
+    const listeningBar = page.getByTestId("progress-skill-listening");
+    await expect(listeningBar).toHaveAttribute("aria-label", "1 z 2: opanowane 1, do potwierdzenia 1, w trakcie nauki 0, nie sprawdzono 0");
+    await expect(page.getByTestId("progress-skill-recall")).toHaveAttribute("aria-label", "0 z 2: opanowane 0, do potwierdzenia 1, w trakcie nauki 0, nie sprawdzono 1");
+    await expect(page.getByTestId("progress-skills")).toContainText("Opanowane (potwierdzone po przerwie)");
     // karta aktywności dziecka: czas, dni, podejścia per zestaw, odpowiedzi, kliknięcia
     const activity = page.getByTestId("progress-activity");
     await expect(activity).toBeVisible();
@@ -134,9 +139,9 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 768, height: 1024
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     }
     await list.screenshot({ path: test.info().outputPath(`words-${viewport.width}.png`) });
-    await page.getByTestId("progress-child").selectOption(otherChildId);
+    await page.getByTestId("progress-child").getByRole("button", { name: "Bartek" }).click();
+    await expect(page.getByTestId("progress-child").getByRole("button", { name: "Bartek" })).toHaveAttribute("aria-pressed", "true");
     await page.getByTestId("progress-deck").selectOption(otherDeckId);
-    await page.getByTestId("progress-load").click();
     await expect(page.getByTestId("progress-heading")).toContainText("Owoce — Bartek");
     // dziecko bez aktywności: jasny komunikat zamiast zer
     await expect(page.getByTestId("progress-activity")).toContainText("Brak rozpoczętej nauki w tym okresie.");
@@ -144,10 +149,27 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 768, height: 1024
     await expect(words.first()).toContainText("apple");
     await expect(list).not.toContainText("Monday");
     await expect(list).not.toContainText("Zmieniono materiał");
-    await page.getByTestId("progress-child").selectOption(childId);
-    await page.getByTestId("progress-load").click();
+    await page.getByTestId("progress-child").getByRole("button", { name: "Ala" }).click();
     await expect(list).toContainText("Brak słów w tym zestawie.");
     await expect(words).toHaveCount(0);
     await expect(list.getByRole("table", { includeHidden: true })).toHaveCount(0);
   });
 }
+
+test("wygaśnięcie sesji podczas ładowania Postępów wraca do ekranu logowania", async ({ page }) => {
+  await page.route("**/api/v1/parent/login", async (route) => {
+    await route.fulfill({ json: { authenticated: true, setupRequired: false } });
+  });
+  await page.route("**/api/v1/parent/children", async (route) => {
+    await route.fulfill({ json: [{ id: childId, displayName: "Ala", avatarKey: "star" }] });
+  });
+  await page.route("**/api/v1/parent/decks", async (route) => {
+    await route.fulfill({ json: [{ deckId, title: "Dni tygodnia", state: "published", editableVersionId: null, publishedVersionId: deckId }] });
+  });
+  await page.route("**/api/v1/parent/progress", async (route) => {
+    await route.fulfill({ status: 401, json: { code: "unauthorized", message: "sesja wygasła" } });
+  });
+  await page.goto("/parent");
+  await page.getByTestId("tab-progress").click();
+  await expect(page.getByTestId("auth-secret")).toBeVisible({ timeout: 10_000 });
+});
