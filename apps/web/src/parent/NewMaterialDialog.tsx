@@ -53,6 +53,7 @@ export default function NewMaterialDialog({
   const generateSubmit = useRef<HTMLButtonElement>(null);
   const emptySubmit = useRef<HTMLButtonElement>(null);
   const firstOption = useRef<HTMLButtonElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
 
   // Powrót z formularza do menu jest blokowany, gdy wisi niepotwierdzone
   // polecenie — przycisk ponowienia nie może zostać ukryty.
@@ -73,13 +74,14 @@ export default function NewMaterialDialog({
     } else if (!open) {
       return;
     }
-    // fokus prowadzi za zmieniającym się krokiem (menu ↔ formularz)
-    (step === "generate"
-      ? generateSubmit.current
-      : step === "empty"
-        ? emptySubmit.current
-        : firstOption.current
-    )?.focus();
+    // fokus prowadzi za zmieniającym się krokiem (menu ↔ formularz);
+    // zablokowany przycisk jest no-op, więc wtedy łapie go nagłówek
+    const target = step === "generate" ? generateSubmit.current : step === "empty" ? emptySubmit.current : firstOption.current;
+    if (target && !target.disabled) {
+      target.focus();
+    } else {
+      titleRef.current?.focus();
+    }
   }, [open, step]);
 
   const fieldDisabled = generating || pendingGeneration || creatingEmpty;
@@ -96,7 +98,7 @@ export default function NewMaterialDialog({
       }}
     >
       <div className="pp-dialog-head">
-        <h2 id="new-material-title">{messages.decks.newMaterial}</h2>
+        <h2 id="new-material-title" ref={titleRef} tabIndex={-1} style={{ outline: "none" }}>{messages.decks.newMaterial}</h2>
         <button
           type="button"
           className="pp-btn pp-btn-ghost pp-btn-icon"

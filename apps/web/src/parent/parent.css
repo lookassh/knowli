@@ -206,8 +206,8 @@
 }
 
 .pp-btn-icon {
-  width: 38px;
-  min-height: 38px;
+  width: 44px;
+  min-height: 44px;
   padding: 0;
 }
 
@@ -1435,59 +1435,6 @@ table.pp-words {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
-/* Panel rodzica — redesign 2026-10. Tokeny i komponenty prefiksu pp-*.
-   globals.css pozostaje dla ekranów jeszcze niezmigrowanych (edytory). */
-
-.pp-app {
-  --pp-bg: #f3f4fa;
-  --pp-surface: #ffffff;
-  --pp-surface-2: #f8f9fd;
-  --pp-text: #1b1d2b;
-  --pp-text-2: #565a70;
-  --pp-text-3: #6b7086;
-  --pp-line: #e8eaf2;
-  --pp-line-strong: #c9cee0;
-  --pp-brand: #4356e0;
-  --pp-brand-deep: #3646c4;
-  --pp-brand-soft: #edeffe;
-  --pp-green: #157a47;
-  --pp-green-soft: #dff2e8;
-  --pp-green-bar: #2ea06b;
-  --pp-amber: #8a6212;
-  --pp-amber-soft: #fbf0cf;
-  --pp-amber-bar: #d9a92f;
-  --pp-blue: #2d5fc9;
-  --pp-blue-soft: #e5eefc;
-  --pp-blue-bar: #6b8bdf;
-  --pp-gray: #5c5f74;
-  --pp-gray-soft: #eef0f6;
-  --pp-gray-bar: #cdd2e2;
-  --pp-red: #bf3a4a;
-  --pp-red-soft: #fdebee;
-  --pp-purple: #6b3fbf;
-  --pp-purple-soft: #f0eafc;
-  --pp-shadow: 0 1px 2px rgba(23, 25, 48, 0.05), 0 6px 18px rgba(23, 25, 48, 0.05);
-  --pp-shadow-pop: 0 24px 60px rgba(23, 25, 48, 0.3);
-  --pp-radius: 16px;
-
-  background: var(--pp-bg);
-  color: var(--pp-text);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  line-height: 1.45;
-  min-height: 100vh;
-}
-
-.pp-app *,
-.pp-auth * {
-  box-sizing: border-box;
-}
-
-.pp-icon {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 auto;
-}
-
 
 /* Przełączanie układów tabeli słów: desktop tabela, mobile karty. */
 .pp-words { display: none; }
@@ -1499,7 +1446,7 @@ table.pp-words {
 }
 
 /* Raport kartkówki: odznaki per umiejętność i ton wyniku (dawniej kid-mock-*). */
-.pp-mock-score[data-tone="high"] .pp-mock-big { color: var(--pp-green); }
+.pp-mock-score[data-tone="good"] .pp-mock-big { color: var(--pp-green); }
 .pp-mock-score[data-tone="mid"] .pp-mock-big { color: var(--pp-amber); }
 .pp-mock-score[data-tone="low"] .pp-mock-big { color: var(--pp-red); }
 
