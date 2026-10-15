@@ -6,12 +6,12 @@ import {
   type ChildDto,
   type DeckSummaryDto,
   type ProgressDto,
-  type ReportSkill,
 } from "@learning/contracts";
 import { apiFetch, errorMessage } from "./api";
 import ProgressItems from "./ProgressItems";
 import MockTestReportPanel from "./MockTestReportPanel";
 import { buildSkillRows } from "./build-skill-rows";
+import { dueEntries, historyRows } from "./progress-lists";
 import { avatarEmoji } from "./avatars";
 import { ParentIcon } from "./ParentIcon";
 
@@ -30,7 +30,7 @@ function formatFamilyDate(iso: string): string {
   return `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`;
 }
 
-const DUE_STATUSES: ReadonlySet<string> = new Set(["practicing", "needs_reconfirmation"]);
+const now = () => new Date();
 
 export default function ProgressPanel({
   childrenList,
@@ -100,12 +100,6 @@ export default function ProgressPanel({
       </section>
     );
   }
-
-  const dueForPractice = (progress?.items ?? []).flatMap((item) =>
-    (Object.entries(item.skills) as [ReportSkill, string][])
-      .filter(([, status]) => DUE_STATUSES.has(status))
-      .map(([skill]) => `${messages.progress.skills[skill].toLowerCase()} ${item.target}`),
-  );
 
   /** Minuty do najbliższej pełnej, nie mniej niż 1, gdy był jakikolwiek czas. */
   const activityMinutes = progress
@@ -209,17 +203,33 @@ export default function ProgressPanel({
                   })}
                 </div>
               )}
-              <ul className="plain">
-                <li>{fill(messages.progress.activityDays, { days: progress.activity.activeDays })}</li>
-                <li>{fill(messages.progress.activitySessions, { n: progress.activity.sessions })}</li>
-                {progress.activity.decks.map((deck) => (
-                  <li key={deck.deckId}>
-                    {fill(messages.progress.activityDeckRow, { title: deck.deckTitle, n: deck.sessions })}
-                  </li>
-                ))}
-                <li>{fill(messages.progress.activityAnswers, { n: progress.activity.answers })}</li>
-                <li>{fill(messages.progress.activityInteractions, { n: progress.activity.interactions })}</li>
-              </ul>
+              <div className="pp-stats">
+                <div className="pp-stat">
+                  <div className="pp-stat-v">{activityMinutes}<small> min</small></div>
+                  <div className="pp-stat-l">{messages.progress.activityStatTime}</div>
+                </div>
+                <div className="pp-stat">
+                  <div className="pp-stat-v">{progress.activity.activeDays}</div>
+                  <div className="pp-stat-l">{messages.progress.activityStatDays}</div>
+                </div>
+                <div className="pp-stat">
+                  <div className="pp-stat-v">{progress.activity.sessions}</div>
+                  <div className="pp-stat-l">{messages.progress.activityStatSessions}</div>
+                </div>
+                <div className="pp-stat">
+                  <div className="pp-stat-v">{progress.activity.answers}</div>
+                  <div className="pp-stat-l">{messages.progress.activityStatAnswers}</div>
+                </div>
+              </div>
+              {progress.activity.decks.length > 0 && (
+                <ul className="plain pp-deck-rows">
+                  {progress.activity.decks.map((deck) => (
+                    <li key={deck.deckId}>
+                      {fill(messages.progress.activityDeckRow, { title: deck.deckTitle, n: deck.sessions })}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </>
           ) : (
             <p>{messages.progress.activityEmpty}</p>
@@ -296,49 +306,65 @@ export default function ProgressPanel({
             )}
           </div>
 
-          <section className="card" data-testid="progress-due">
-            <h3>{messages.progress.dueForPractice}</h3>
-            {dueForPractice.length > 0 ? (
-              <ul className="plain">
-                {dueForPractice.map((entry) => (
-                  <li key={entry}>{entry}</li>
+          <section className="pp-card" data-testid="progress-due">
+            <h3 className="pp-card-title">
+              <ParentIcon name="flame" />
+              {messages.progress.dueForPractice}
+            </h3>
+            {dueEntries(progress.items).length > 0 ? (
+              <div className="pp-duelist">
+                {dueEntries(progress.items).map((entry) => (
+                  <span className="pp-due" key={`${entry.skill}-${entry.target}`}>
+                    <ParentIcon name="arrow-right" />
+                    {entry.target} <em>{messages.progress.skills[entry.skill].toLowerCase()}</em>
+                  </span>
                 ))}
-              </ul>
+              </div>
             ) : (
               <p>{messages.progress.dueEmpty}</p>
             )}
           </section>
 
-          <section className="card" data-testid="progress-confusions">
-            <h3>{messages.progress.confusions}</h3>
+          <section className="pp-card" data-testid="progress-confusions">
+            <h3 className="pp-card-title">
+              <ParentIcon name="shuffle" />
+              {messages.progress.confusions}
+            </h3>
             {progress.confusions.length > 0 ? (
-              <ul className="plain">
+              <div>
                 {progress.confusions.map((confusion) => (
-                  <li key={`${confusion.expected}-${confusion.answered}`}>
-                    {fill(messages.progress.confusionPair, confusion)}
-                  </li>
+                  <div className="pp-conf-row" key={`${confusion.expected}-${confusion.answered}`}>
+                    <ParentIcon name="arrow-right" />
+                    <span>{confusion.expected} → {confusion.answered}</span>
+                    <span className="pp-conf-count">{confusion.count}×</span>
+                  </div>
                 ))}
-              </ul>
+              </div>
             ) : (
               <p>{messages.progress.confusionsEmpty}</p>
             )}
           </section>
 
-          <section className="card" data-testid="progress-history">
-            <h3>{messages.progress.history}</h3>
+          <section className="pp-card" data-testid="progress-history">
+            <h3 className="pp-card-title">
+              <ParentIcon name="history" />
+              {messages.progress.history}
+            </h3>
             {progress.history.length > 0 ? (
-              <ul className="plain">
-                {progress.history.slice(0, 10).map((entry, index) => (
-                  <li key={`${entry.receivedAt}-${index}`}>
-                    {fill(messages.progress.historyEntry, {
-                      source: entry.source,
-                      target: entry.target,
-                      outcome: messages.progress.historyOutcome[entry.outcome] ?? entry.outcome,
-                    })}{" "}
-                    {entry.independent ? "" : messages.progress.historyUnsupported}
-                  </li>
+              <div>
+                {historyRows(progress.history.slice(0, 10), now()).map((row) => (
+                  <div className="pp-hist-row" key={row.key}>
+                    <span className={`pp-hist-ico ${row.outcome === "correct" ? "pp-hist-ok" : row.outcome === "incorrect" ? "pp-hist-bad" : "pp-hist-neutral"}`}>
+                      <ParentIcon name={row.outcome === "correct" ? "check" : row.outcome === "incorrect" ? "x" : "minus"} />
+                    </span>
+                    <span>
+                      {row.source} → <strong>{row.target}</strong>
+                      {row.supported && <span className="pp-hist-meta"> · {messages.progress.historyUnsupported}</span>}
+                    </span>
+                    <span className="pp-hist-meta">{row.when}</span>
+                  </div>
                 ))}
-              </ul>
+              </div>
             ) : (
               <p>{messages.progress.historyEmpty}</p>
             )}

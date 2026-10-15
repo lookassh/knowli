@@ -103,12 +103,15 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 768, height: 1024
     await expect(tiles.last()).toContainText("Dziś");
     await expect(tiles.last()).toContainText("18 min");
     await expect(tiles.first()).toContainText("—");
-    await expect(activity).toContainText("Dni z nauką: 3");
-    await expect(activity).toContainText("Podejścia: 5");
+    // 4 liczby kluczowe zamiast listy; kliknięcia (interactions) celowo poza widokiem
+    await expect(activity).toContainText("38 min");
+    await expect(activity).toContainText("czas nauki");
+    await expect(activity).toContainText("dni z nauką");
+    await expect(activity).toContainText("podejścia");
+    await expect(activity).toContainText("odpowiedzi");
     await expect(activity).toContainText("Dni tygodnia — 3");
     await expect(activity).toContainText("Owoce — 2");
-    await expect(activity).toContainText("Odpowiedzi: 84");
-    await expect(activity).toContainText("Kliknięcia: 210");
+    await expect(activity).not.toContainText("Kliknięcia");
     const list = page.getByRole("region", { name: "Wszystkie słowa" });
     await expect(list).toBeVisible();
     const words = viewport.width > 900 ? list.getByRole("row").filter({ has: page.getByRole("rowheader") })

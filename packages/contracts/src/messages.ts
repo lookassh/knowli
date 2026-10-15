@@ -215,6 +215,10 @@ export const messages = {
     legendPracticing: "W trakcie nauki",
     legendNotAssessed: "Nie sprawdzono",
     testDateBadge: "Sprawdzian: {date}",
+    activityStatTime: "czas nauki",
+    activityStatDays: "dni z nauką",
+    activityStatSessions: "podejścia",
+    activityStatAnswers: "odpowiedzi",
     testDate: "Termin sprawdzianu",
     noTestDate: "bez terminu",
     skills: {
