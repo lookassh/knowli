@@ -10,6 +10,21 @@ const viewports = [
   { width: 727, height: 953 },
 ];
 
+function relativeLuminance(color: string): number {
+  const values = color.match(/\d+(?:\.\d+)?/g)?.slice(0, 3).map(Number);
+  if (!values || values.length !== 3) throw new Error(`Unexpected CSS color: ${color}`);
+  const [red, green, blue] = values.map((value) => {
+    const channel = value / 255;
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * red! + 0.7152 * green! + 0.0722 * blue!;
+}
+
+function contrastRatio(foreground: string, background: string): number {
+  const luminances = [relativeLuminance(foreground), relativeLuminance(background)].sort((a, b) => b - a);
+  return (luminances[0]! + 0.05) / (luminances[1]! + 0.05);
+}
+
 async function openPictureChoices(page: Page, fixture: KidUiFixture, viewport = viewports[0]!) {
   await page.setViewportSize(viewport);
   await installKidUiFixture(page, fixture);
@@ -40,9 +55,15 @@ test("trzy odpowiedzi obrazkowe mieszczą się bez przewijania", async ({ page }
 
   const options = page.getByTestId("kid-option");
   await expect(options).toHaveCount(3);
-  await expect(options.nth(0)).toContainText("żółty");
-  await expect(options.nth(1)).toContainText("jeden");
-  await expect(options.nth(2)).toContainText("kot");
+  await expect(options.nth(0)).toHaveAccessibleName("żółty");
+  await expect(options.nth(1)).toHaveAccessibleName("jeden");
+  await expect(options.nth(2)).toHaveAccessibleName("kot");
+  const labels = page.locator(".kid-picture-choice-label");
+  await expect(labels).toHaveCount(3);
+  expect(await labels.evaluateAll((elements) => elements.every((element) => {
+    const style = getComputedStyle(element);
+    return style.position === "absolute" && style.clip === "rect(0px, 0px, 0px, 0px)";
+  }))).toBe(true);
 
   for (const [index, viewport] of viewports.entries()) {
     await test.step(`${viewport.width}x${viewport.height}`, async () => {
@@ -70,7 +91,6 @@ test("trzy odpowiedzi obrazkowe mieszczą się bez przewijania", async ({ page }
           options: options.map((option) => {
             const bounds = option.getBoundingClientRect();
             const visual = option.querySelector<HTMLElement>(".kid-picture-choice-visual")!.getBoundingClientRect();
-            const label = option.querySelector<HTMLElement>(".kid-picture-choice-label")!.getBoundingClientRect();
             return {
               top: bounds.top,
               bottom: bounds.bottom,
@@ -80,7 +100,9 @@ test("trzy odpowiedzi obrazkowe mieszczą się bez przewijania", async ({ page }
               fullyInsideContent: bounds.top >= contentBounds.top && bounds.bottom <= contentBounds.bottom,
               fullyInsideViewport: bounds.top >= viewportBounds.top && bounds.bottom <= viewportBounds.bottom &&
                 bounds.left >= viewportBounds.left && bounds.right <= viewportBounds.right,
-              labelFollowsVisual: label.left >= visual.right,
+              visualInsideOption: visual.top >= bounds.top && visual.bottom <= bounds.bottom &&
+                visual.left >= bounds.left && visual.right <= bounds.right,
+              visual: { top: visual.top, left: visual.left },
             };
           }),
         };
@@ -90,7 +112,9 @@ test("trzy odpowiedzi obrazkowe mieszczą się bez przewijania", async ({ page }
       expect(geometry.options.every((option) => option.fullyInsideContent), JSON.stringify(geometry)).toBe(true);
       expect(geometry.options.every((option) => option.fullyInsideViewport), JSON.stringify(geometry)).toBe(true);
       expect(geometry.options.every((option) => option.height >= 48), JSON.stringify(geometry)).toBe(true);
-      expect(geometry.options.every((option) => option.labelFollowsVisual), JSON.stringify(geometry)).toBe(true);
+      expect(geometry.options.every((option) => option.visualInsideOption), JSON.stringify(geometry)).toBe(true);
+      expect(geometry.options[2]!.visual.left, JSON.stringify(geometry)).toBe(geometry.options[0]!.visual.left);
+      expect(geometry.options[2]!.top - geometry.options[0]!.bottom, JSON.stringify(geometry)).toBeLessThanOrEqual(16);
       expect(geometry.play.width, JSON.stringify(geometry)).toBeGreaterThanOrEqual(48);
       expect(geometry.play.height, JSON.stringify(geometry)).toBeGreaterThanOrEqual(48);
       expect(geometry.play.top, JSON.stringify(geometry)).toBeGreaterThanOrEqual(0);
@@ -106,7 +130,7 @@ test("trzy odpowiedzi obrazkowe mieszczą się bez przewijania", async ({ page }
   }
 });
 
-test("trzeci kafelek działa z klawiatury, pokazuje błąd i pozwala spróbować ponownie", async ({ page }, testInfo) => {
+test("cyfra działa z klawiatury w ciemnym motywie, pokazuje błąd i pozwala spróbować ponownie", async ({ page }, testInfo) => {
   const fixture = pictureChoiceLayoutFixture();
   const task = fixture.tasks[1];
   const originalAttempt = fixture.attempts?.[0];
@@ -124,6 +148,7 @@ test("trzeci kafelek działa z klawiatury, pokazuje błąd i pozwala spróbować
   const firstAnswerStarted = new Promise<void>((resolve) => { signalFirstAnswer = resolve; });
   const submitted: unknown[] = [];
   let responseIndex = 0;
+  await page.emulateMedia({ colorScheme: "dark" });
   await openPictureChoices(page, fixture);
   await page.route(`**/api/v1/kid/tasks/${task.taskId}/attempts`, async (route) => {
     submitted.push(route.request().postDataJSON());
@@ -139,20 +164,27 @@ test("trzeci kafelek działa z klawiatury, pokazuje błąd i pozwala spróbować
 
   const options = page.getByTestId("kid-option");
   const material = page.locator(".kid-material-content");
-  const initialScrollTop = await material.evaluate((element) => element.scrollTop);
-  await options.nth(2).focus();
-  await expect(options.nth(2)).toBeFocused();
+  await options.nth(1).focus();
+  await expect(options.nth(1)).toBeFocused();
+  const scrollBeforeAnswer = await material.evaluate((element) => element.scrollTop);
   await page.keyboard.press("Enter");
   await firstAnswerStarted;
-  expect(submitted[0]).toMatchObject({ modality: "choice", optionId: "10000000-0000-4000-8000-000000000014" });
+  expect(submitted[0]).toMatchObject({ modality: "choice", optionId: "10000000-0000-4000-8000-000000000009" });
   await expect.poll(() => options.evaluateAll((elements) => elements.map((element) => (element as HTMLButtonElement).disabled)))
     .toEqual([true, true, true]);
-  expect(await material.evaluate((element) => element.scrollTop)).toBe(initialScrollTop);
+  expect(await material.evaluate((element) => element.scrollTop)).toBe(scrollBeforeAnswer);
 
   releaseFirstAnswer();
   await expect(page.getByTestId("kid-feedback")).toBeVisible();
-  await expect(options.nth(2)).toHaveClass(/kid-option--wrong/);
+  await expect(options.nth(1)).toHaveClass(/kid-option--wrong/);
   await expect(options.nth(0)).toHaveClass(/kid-option--correct/);
+  const digitColors = await options.nth(1).evaluate((button) => ({
+    foreground: getComputedStyle(button).color,
+    background: getComputedStyle(button).backgroundColor,
+    digit: getComputedStyle(button.querySelector(".kid-visual-number--digit text")!).fill,
+  }));
+  expect(digitColors.digit).toBe(digitColors.foreground);
+  expect(contrastRatio(digitColors.digit, digitColors.background)).toBeGreaterThanOrEqual(4.5);
   await expect(options).toHaveCount(3);
   const markersAvoidLabels = await options.evaluateAll((elements) => elements.flatMap((element) => {
     const marker = getComputedStyle(element, "::before");
@@ -179,36 +211,55 @@ test("trzeci kafelek działa z klawiatury, pokazuje błąd i pozwala spróbować
   await page.screenshot({ path: testInfo.outputPath("picture-choice-feedback-success.png") });
 });
 
-test("długi podpis pozostaje dostępny przez przewijanie materiału", async ({ page }) => {
+test("cztery opcje mieszczą się na typowym telefonie, a w niskim widoku pozostają osiągalne przez scroll", async ({ page }, testInfo) => {
   const fixture = pictureChoiceLayoutFixture();
   const exposure = fixture.tasks[0];
   const listening = fixture.tasks[1];
   if (!exposure || !listening || listening.prompt.kind !== "picture_listening") {
     throw new Error("picture listening fixture missing");
   }
+  const fourth = { ...listening.prompt.options[2]!, id: "10000000-0000-4000-8000-000000000018", labelPl: "pies", visual: { kind: "image" as const, imageAssetId: "10000000-0000-4000-8000-000000000019" } };
   fixture.tasks = [
     exposure,
-    { ...listening, prompt: { ...listening.prompt, options: listening.prompt.options.map((option, index) =>
-      index === 2 ? { ...option, labelPl: "bardzo długi podpis ".repeat(12).trim() } : option) } },
+    { ...listening, prompt: { ...listening.prompt, options: [...listening.prompt.options, fourth] } },
     fixture.tasks[2]!,
   ];
-  await openPictureChoices(page, fixture);
+  await openPictureChoices(page, fixture, { width: 390, height: 844 });
 
-  const content = page.locator(".kid-material-content");
-  await expect.poll(() => content.evaluate((element) => getComputedStyle(element).overflowY)).toBe("auto");
-  const metrics = await content.evaluate((element) => ({ scrollHeight: element.scrollHeight, clientHeight: element.clientHeight }));
-  expect(metrics.scrollHeight).toBeGreaterThan(metrics.clientHeight);
-  await content.hover();
-  await page.mouse.wheel(0, 500);
-  await expect.poll(() => content.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
-  const lastOption = page.getByTestId("kid-option").last();
-  await expect(lastOption).toBeInViewport();
-  const labelFits = await lastOption.evaluate((option) => {
-    const labelBounds = option.querySelector(".kid-picture-choice-label")!.getBoundingClientRect();
-    const optionBounds = option.getBoundingClientRect();
-    return labelBounds.bottom <= optionBounds.bottom + 1;
-  });
-  expect(labelFits).toBe(true);
+  const options = page.getByTestId("kid-option");
+  await expect(options).toHaveCount(4);
+  const positions = await options.evaluateAll((elements) => elements.map((element) => {
+    const bounds = element.getBoundingClientRect();
+    const visual = element.querySelector<HTMLElement>(".kid-picture-choice-visual")!.getBoundingClientRect();
+    return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height,
+      insideViewport: bounds.top >= 0 && bounds.bottom <= window.innerHeight && bounds.left >= 0 && bounds.right <= window.innerWidth,
+      visualInsideOption: visual.top >= bounds.top && visual.bottom <= bounds.bottom && visual.left >= bounds.left && visual.right <= bounds.right };
+  }));
+  expect(positions[0]!.x).toBeLessThan(positions[1]!.x);
+  expect(positions[2]!.x).toBe(positions[0]!.x);
+  expect(positions[3]!.x).toBe(positions[1]!.x);
+  expect(positions[2]!.y).toBeGreaterThan(positions[0]!.y);
+  expect(positions[2]!.y - (positions[0]!.y + positions[0]!.height)).toBeLessThanOrEqual(16);
+  expect(positions.every((position) => position.insideViewport)).toBe(true);
+  expect(positions.every((position) => position.visualInsideOption)).toBe(true);
+  await expect(page.getByTestId("kid-end")).toBeInViewport();
+  const contentGeometry = await page.locator(".kid-material-content").evaluate((element) => ({
+    scrollHeight: element.scrollHeight,
+    clientHeight: element.clientHeight,
+  }));
+  expect(contentGeometry.scrollHeight).toBeLessThanOrEqual(contentGeometry.clientHeight + 1);
+  const documentGeometry = await page.evaluate(() => ({
+    scrollHeight: document.scrollingElement!.scrollHeight,
+    clientHeight: document.scrollingElement!.clientHeight,
+  }));
+  expect(documentGeometry.scrollHeight).toBeLessThanOrEqual(documentGeometry.clientHeight + 1);
+  await page.screenshot({ path: testInfo.outputPath("picture-options-four-390x844.png") });
+
+  await page.setViewportSize({ width: 360, height: 560 });
+  await options.last()!.scrollIntoViewIfNeeded();
+  await expect(options.last()!).toBeInViewport();
+  await page.getByTestId("kid-end").scrollIntoViewIfNeeded();
+  await expect(page.getByTestId("kid-end")).toBeInViewport();
 });
 
 test("powiększenie pozwala dosięgnąć ostatniej odpowiedzi i przycisku końca", async ({ page }) => {
@@ -244,13 +295,14 @@ test("układ poziomy zachowuje dostęp do wszystkich odpowiedzi i końca sesji",
   await expect(end).toBeInViewport();
 });
 
-test("trzy odpowiedzi i jabłko pozostają czytelne w ciemnym motywie", async ({ page }, testInfo) => {
+test("trzy odpowiedzi i cyfra pozostają czytelne w ciemnym motywie", async ({ page }, testInfo) => {
   await page.emulateMedia({ colorScheme: "dark" });
   await openPictureChoices(page, pictureChoiceLayoutFixture());
   await assertKidLayout(page);
 
   const options = page.getByTestId("kid-option");
   await expect(options).toHaveCount(3);
+  await expect(page.locator(".kid-visual-number--digit text")).toHaveText("1");
   for (const option of await options.all()) await expect(option).toBeInViewport();
   const background = await page.locator(".kid-ui").evaluate((element) => getComputedStyle(element).backgroundColor);
   expect(background).toBe("rgb(24, 33, 52)");

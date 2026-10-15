@@ -109,7 +109,7 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal("picture_listening"),
-    options: z.array(PictureChoiceOptionSchema).min(2).max(3),
+    options: z.array(PictureChoiceOptionSchema).min(2).max(4),
     audioAssetId: UuidSchema,
   }).strict(),
   z.object({ kind: z.literal("picture_recall"), visual: MeaningVisualSchema }).strict(),

@@ -382,43 +382,49 @@ describe("cykl życia sesji (integracja)", () => {
       .rejects.toMatchObject({ code: "validation", details: { reason: "picture_client_update_required" } });
   });
 
-  it("wydaje obrazkowe rozpoznawanie z polskimi etykietami i zapisuje zrozumiałą pomyłkę", async () => {
+  it("wydaje cztery obrazkowe odpowiedzi i przyjmuje czwarty wybór", async () => {
     const draft = await createDraft(services, {
       title: "Kolory", vocabularyFormat: "picture",
       items: [
         { source: "czerwony", target: "red", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "color", visualData: { color: "#ff0000" } },
         { source: "niebieski", target: "blue", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "color", visualData: { color: "#0000ff" } },
+        { source: "zielony", target: "green", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "color", visualData: { color: "#008000" } },
+        { source: "żółty", target: "yellow", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "color", visualData: { color: "#ffff00" } },
       ],
     });
-    for (const index of [0, 1]) {
+    for (const index of [0, 1, 2, 3]) {
       await attachFakeReadyAudio(draft.id, index);
       await attachApprovedIllustration(draft.id, index);
     }
     await publishDraft(services, draft.id, 1);
     await upsertAssignment(services, childId, draft.deckId, null);
     const session = await startSession(services, { childId, deckId: draft.deckId, microphoneEnabled: false, supportsPictureVocabulary: true });
-    const first = await nextTask(services, session.sessionId);
-    expect(first?.prompt.kind).toBe("picture_exposure");
-    await completePresentation(services, { taskId: first!.taskId });
-    const second = await nextTask(services, session.sessionId);
-    expect(second?.prompt.kind).toBe("picture_exposure");
-    await completePresentation(services, { taskId: second!.taskId });
+    for (let index = 0; index < 2; index += 1) {
+      const exposure = await nextTask(services, session.sessionId);
+      expect(exposure?.prompt.kind).toBe("picture_exposure");
+      await completePresentation(services, { taskId: exposure!.taskId });
+    }
     const listening = await nextTask(services, session.sessionId);
     expect(listening?.prompt.kind).toBe("picture_listening");
     if (listening?.prompt.kind !== "picture_listening") throw new Error("expected picture listening task");
+    expect(listening.prompt.options).toHaveLength(4);
     const [{ id: correctId }] = await query<{ id: string }>(
       "select answer_key->>'correctOptionId' as id from learning_app.session_tasks where id=$1", [listening.taskId],
     );
     const correct = listening.prompt.options.find((option) => option.id === correctId)!;
-    const wrong = listening.prompt.options.find((option) => option.id !== correct.id)!;
+    const fourth = listening.prompt.options[3]!;
     const attempt = await submitAttempt(services, {
-      taskId: listening.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: wrong.id,
+      taskId: listening.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: fourth.id,
     });
-    expect(attempt.feedback).toMatchObject({ kind: "incorrect", correctText: correct.labelPl });
-    const stored = await query<{ details: { confusion: { expected: string; answered: string } } }>(
-      "select details from learning_app.assessments where attempt_id=$1 and outcome='incorrect' limit 1", [attempt.attemptId],
-    );
-    expect(stored[0]?.details.confusion).toEqual({ expected: correct.labelPl, answered: wrong.labelPl });
+    if (fourth.id === correct.id) {
+      expect(attempt.feedback).toMatchObject({ kind: "great" });
+    } else {
+      expect(attempt.feedback).toMatchObject({ kind: "incorrect", correctText: correct.labelPl });
+      const stored = await query<{ details: { confusion: { expected: string; answered: string } } }>(
+        "select details from learning_app.assessments where attempt_id=$1 and outcome='incorrect' limit 1", [attempt.attemptId],
+      );
+      expect(stored[0]?.details.confusion).toEqual({ expected: correct.labelPl, answered: fourth.labelPl });
+    }
   });
 
   it("dwa równoległe starty dają jedną sesję", async () => {

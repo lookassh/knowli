@@ -3,6 +3,7 @@ import * as kid from "./kid";
 import { ChildInputSchema, ChildPatchSchema, DraftDtoSchema } from "./decks";
 import { GenerationCommandSchema } from "./generation";
 import { SessionInputSchema, SessionDtoSchema, KidProfileDtoSchema, KidDeckDtoSchema, TaskDtoSchema, DisclosureDtoSchema } from "./kid";
+import { TaskPromptSchema } from "./kid";
 
 const id = "00000000-0000-4000-8000-000000000001";
 
@@ -31,5 +32,18 @@ describe("kontrakty zestawu obrazkowego", () => {
     expect(SessionDtoSchema.shape).toHaveProperty("canRead");
     expect(DraftDtoSchema.shape).toHaveProperty("vocabularyFormat");
     expect("KidValidationReasonSchema" in kid).toBe(true);
+  });
+
+  it("akceptuje od dwóch do czterech opcji obrazkowych i odrzuca większą liczbę", () => {
+    const options = [
+      { id, labelPl: "jeden", visual: { kind: "number", count: 1 } },
+      { id: "00000000-0000-4000-8000-000000000002", labelPl: "dwa", visual: { kind: "number", count: 2 } },
+      { id: "00000000-0000-4000-8000-000000000003", labelPl: "czerwony", visual: { kind: "color", color: "#ff0000" } },
+      { id: "00000000-0000-4000-8000-000000000004", labelPl: "kot", visual: { kind: "image", imageAssetId: "00000000-0000-4000-8000-000000000005" } },
+      { id: "00000000-0000-4000-8000-000000000006", labelPl: "pies", visual: { kind: "image", imageAssetId: "00000000-0000-4000-8000-000000000007" } },
+    ];
+    const prompt = (count: number) => ({ kind: "picture_listening", audioAssetId: id, options: options.slice(0, count) });
+    for (const count of [2, 3, 4]) expect(TaskPromptSchema.safeParse(prompt(count)).success).toBe(true);
+    expect(TaskPromptSchema.safeParse(prompt(5)).success).toBe(false);
   });
 });

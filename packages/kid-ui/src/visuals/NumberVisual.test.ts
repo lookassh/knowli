@@ -5,7 +5,7 @@ import { NumberVisual } from "./NumberVisual";
 import { Visual } from "./Visual";
 
 type Renderer = "Visual" | "MeaningVisualView";
-type SvgElement = ReactElement<{ children?: ReactNode; viewBox?: string; role?: string; "aria-label"?: string }>;
+type SvgElement = ReactElement<{ children?: ReactNode; viewBox?: string; role?: string; "aria-label"?: string; className?: string }>;
 type AppleElement = ReactElement<{ transform?: string; "data-testid"?: string; children?: ReactNode }>;
 
 function renderNumber(renderer: Renderer, count: number): SvgElement {
@@ -47,6 +47,19 @@ describe("NumberVisual", () => {
         isValidElement(shape) && shape.type === "path"))).toBe(true);
     });
   }
+
+  it("renders a numeral in choice tiles without changing the default apple visualization", () => {
+    const defaultVisual = MeaningVisualView({ visual: { kind: "number", count: 4 }, mediaUrl: () => "" });
+    const tile = MeaningVisualView({ visual: { kind: "number", count: 4 }, mediaUrl: () => "", numberDisplay: "digit" });
+    expect(defaultVisual.type).toBe(NumberVisual);
+    expect((defaultVisual.props as { display?: string }).display).toBe("apples");
+    expect(tile.type).toBe(NumberVisual);
+    const svg = NumberVisual(tile.props as { count: number; label: string; display?: "apples" | "digit" }) as SvgElement;
+    expect(svg.props.className).toContain("--digit");
+    expect(Children.toArray(svg.props.children)).toHaveLength(1);
+    const numeral = Children.toArray(svg.props.children)[0] as ReactElement<{ children: number }>;
+    expect(numeral.props.children).toBe(4);
+  });
 
   it("centers one large apple in the SVG viewBox", () => {
     const svg = renderNumber("MeaningVisualView", 1);
