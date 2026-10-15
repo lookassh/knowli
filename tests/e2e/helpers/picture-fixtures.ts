@@ -40,3 +40,30 @@ export function pictureVocabularyFixture(): KidUiFixture {
     presentation: { taskId: taskIds[0]!, state: "completed", completedAt: "2026-10-14T10:00:01.000Z" },
   };
 }
+
+export function pictureChoiceLayoutFixture(): KidUiFixture {
+  const fixture = pictureVocabularyFixture();
+  const listening = fixture.tasks[1];
+  if (!listening || listening.prompt.kind !== "picture_listening") {
+    throw new Error("picture listening fixture missing");
+  }
+
+  return {
+    ...fixture,
+    tasks: [
+      fixture.tasks[0]!,
+      {
+        ...listening,
+        prompt: {
+          ...listening.prompt,
+          options: [
+            { id: "10000000-0000-4000-8000-000000000008", labelPl: "żółty", visual: { kind: "color", color: "#ffff00" } },
+            { id: "10000000-0000-4000-8000-000000000009", labelPl: "jeden", visual: { kind: "number", count: 1 } },
+            { id: "10000000-0000-4000-8000-000000000014", labelPl: "kot", visual: { kind: "image", imageAssetId: "10000000-0000-4000-8000-000000000015" } },
+          ],
+        },
+      },
+      fixture.tasks[2]!,
+    ],
+  };
+}

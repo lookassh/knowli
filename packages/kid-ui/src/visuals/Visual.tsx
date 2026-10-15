@@ -1,4 +1,5 @@
 import { isVisualDataValid, type VisualType } from "@learning/contracts";
+import { NumberVisual } from "./NumberVisual";
 
 interface VisualProps {
   text: string;
@@ -50,19 +51,7 @@ export function Visual({ text, visualType, visualData }: VisualProps) {
     if (!isVisualDataValid(visualType, visualData, text)) return null;
     const count = countValue(visualData);
     if (count === null) return null;
-    return (
-      <svg className="kid-visual kid-visual-number" viewBox="0 0 160 100" role="img" aria-label={text}>
-        {Array.from({ length: count }, (_, index) => (
-          <circle
-            key={index}
-            cx={12 + (index % 10) * 15}
-            cy={12 + Math.floor(index / 10) * 18}
-            r="5.5"
-            fill="#5367b8"
-          />
-        ))}
-      </svg>
-    );
+    return <NumberVisual count={count} label={text} />;
   }
 
   if (visualType === "sequence") {
