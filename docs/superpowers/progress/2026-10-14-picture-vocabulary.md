@@ -140,4 +140,4 @@ Jedno uruchomienie E2E zostało celowo przerwane w trakcie, gdy dodatkowy review
 ## Końcowe czynności
 
 - [x] Pełna weryfikacja i niezależny review całego zakresu po rebase; brak otwartych findings.
-- [ ] `git diff --check`, commit zmian po review, push gałęzi roboczej i PR do `main` (bez scalania przez agenta).
+- [x] `git diff --check`, commit zmian po review oraz push gałęzi `feat/picture-vocabulary` wykonane; PR #65 otwarty do `main`: https://github.com/lookassh/knowli/pull/65. PR pozostaje do Squash and merge przez właściciela.
