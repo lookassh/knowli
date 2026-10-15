@@ -80,13 +80,15 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
   });
   afterEach(async () => { await fakes.dispose(); });
 
-  it("losuje rzeczywisty nextTask, utrwala issued i kończy skończony przebieg", async () => {
-    const colors = ["#ff0000", "#0000ff", "#00ff00", "#ffff00", "#ff00ff", "#00ffff"];
+  it.each([false, true])("liczby 0–20: losuje nextTask, utrwala issued i kończy przebieg, canRead=%s", async canRead => {
+    const numbers = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+      "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"];
     const draft = await createDraft(services, {
-      title: "Sześć kolorów", vocabularyFormat: "picture",
-      items: colors.map((color, index) => ({ source: `kolor ${index}`, target: `color ${index}`,
+      title: "Liczby 0–20", vocabularyFormat: "picture",
+      items: numbers.map((target, index) => ({ source: `liczba ${index}`, target,
         acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" },
-        visualType: "color", visualData: { color } })),
+        ...(index === 0 ? { visualType: "image" as const, visualData: { imagePrompt: "An empty basket for zero" } }
+          : { visualType: "number" as const, visualData: { count: index } }) })),
     });
     await reconcileDraftAssets(services, draft.id);
     for (let pass = 0; pass < 10; pass++) if ((await runDueGenerationWork(services)).processed === 0) break;
@@ -95,10 +97,12 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
       "select id from learning_app.item_revisions where deck_version_id=$1 order by position", [draft.id],
     )).rows;
     for (const seed of [0, 1, 2]) {
-      const child = await createChild(services, { displayName: "Ola", avatarKey: "fox", canRead: false });
+      const child = await createChild(services, { displayName: "Ola", avatarKey: "fox", canRead });
       await upsertAssignment(services, child.id, draft.deckId, null);
       const session = await startSession(services, { childId: child.id, deckId: draft.deckId,
         microphoneEnabled: false, supportsPictureVocabulary: true });
+      expect((await pool.query("select can_read from learning_app.child_profiles where id=$1", [child.id])).rows[0])
+        .toEqual({ can_read: canRead });
       for (let index = 0; index < 2; index++) {
         const task = await nextTask(services, session.sessionId);
         expect(task?.prompt.kind).toBe("picture_exposure");
@@ -128,6 +132,7 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
       let assessed = 0;
       const presented = new Set(revisions.slice(0, 2).map(revision => revision.id));
       const questioned = new Set<string>();
+      const exerciseKinds = new Set<string>();
       const pending = new Set(presented);
       for (let step = 0; current && step < 40; step++) {
         const row = (await pool.query("select item_revision_id, answer_key from learning_app.session_tasks where id=$1", [current.taskId])).rows[0];
@@ -136,12 +141,14 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
           if (!questioned.has(row.item_revision_id)) pending.add(row.item_revision_id);
           await completePresentation(services, { taskId: current.taskId });
         } else {
+          exerciseKinds.add(current.prompt.kind);
           expect(presented.has(row.item_revision_id)).toBe(true);
           questioned.add(row.item_revision_id);
           pending.delete(row.item_revision_id);
           assessed++;
-          await submitAttempt(services, { taskId: current.taskId, clientAttemptId: randomUUID(),
-            modality: "choice", optionId: row.answer_key.correctOptionId });
+          await submitAttempt(services, row.answer_key.correctOptionId
+            ? { taskId: current.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: row.answer_key.correctOptionId }
+            : { taskId: current.taskId, clientAttemptId: randomUUID(), modality: "text", text: row.answer_key.target });
         }
         expect(pending.size).toBeLessThanOrEqual(3);
         selectionEntropy.seed = step * 7 + 2;
@@ -150,8 +157,64 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
       expect(current).toBeNull();
       expect(assessed).toBe(12);
       expect(questioned.size).toBeGreaterThanOrEqual(3);
+      expect(exerciseKinds).toContain("picture_listening");
+      if (canRead) expect(exerciseKinds).toContain("recall");
+      else expect(exerciseKinds).toEqual(new Set(["picture_listening"]));
+      expect((await pool.query("select can_read from learning_app.child_profiles where id=$1", [child.id])).rows[0])
+        .toEqual({ can_read: canRead });
       expect(await nextTask(services, session.sessionId)).toBeNull();
     }
+  });
+
+  it("czytający: rozpoczęty materiał picture materializuje i ocenia oba kierunki reading", async () => {
+    const child = await createChild(services, { displayName: "Ola", avatarKey: "fox", canRead: true });
+    const draft = await createDraft(services, {
+      title: "Dwa kolory", vocabularyFormat: "picture",
+      items: [
+        { source: "czerwony", target: "red", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "color", visualData: { color: "#ff0000" } },
+        { source: "niebieski", target: "blue", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "color", visualData: { color: "#0000ff" } },
+      ],
+    });
+    await reconcileDraftAssets(services, draft.id);
+    for (let pass = 0; pass < 6; pass++) if ((await runDueGenerationWork(services)).processed === 0) break;
+    await publishDraft(services, draft.id, 1);
+    await upsertAssignment(services, child.id, draft.deckId, null);
+
+    // Pierwsza sesja tworzy rzeczywistą historię poznania i wprowadzenia Recall.
+    const seenDirections = new Set<string>();
+    for (const phase of ["introduction", "started-material"]) {
+      const session = await startSession(services, { childId: child.id, deckId: draft.deckId,
+        microphoneEnabled: false, supportsPictureVocabulary: true });
+      expect((await pool.query("select context->'canRead' as can_read, context->>'vocabularyFormat' as format from learning_app.learning_sessions where id=$1", [session.sessionId])).rows[0])
+        .toEqual({ can_read: true, format: "picture" });
+      for (let step = 0; step < 20; step++) {
+        selectionEntropy.seed = 0;
+        const task = await nextTask(services, session.sessionId);
+        if (!task) break;
+        const stored = (await pool.query("select public_prompt, answer_key from learning_app.session_tasks where id=$1", [task.taskId])).rows[0];
+        if (task.prompt.kind === "picture_exposure") {
+          await completePresentation(services, { taskId: task.taskId });
+          continue;
+        }
+        const attempt = await submitAttempt(services, stored.answer_key.correctOptionId
+          ? { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: stored.answer_key.correctOptionId }
+          : { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: stored.answer_key.target });
+        if (phase !== "started-material" || (task.prompt.kind !== "reading" && task.prompt.kind !== "reverse_recognition")) continue;
+        const direction = task.prompt.kind === "reading" ? "target_to_source" : "source_to_target";
+        seenDirections.add(direction);
+        expect(stored.public_prompt).toEqual(task.prompt);
+        expect(stored.answer_key.direction).toBe(direction);
+        if (task.prompt.kind === "reading") expect(task.prompt.text).toBe(stored.answer_key.target);
+        else expect(task.prompt.prompt).toBe(stored.answer_key.target === "red" ? "czerwony" : "niebieski");
+        expect((await pool.query("select skill, outcome, details->>'direction' as direction from learning_app.assessments where attempt_id=$1", [attempt.attemptId])).rows)
+          .toEqual([{ skill: "reading", outcome: "correct", direction }]);
+      }
+      expect(await nextTask(services, session.sessionId)).toBeNull();
+      await endSession(services, session.sessionId);
+    }
+    expect(seenDirections).toEqual(new Set(["target_to_source", "source_to_target"]));
+    expect((await pool.query("select can_read from learning_app.child_profiles where id=$1", [child.id])).rows[0])
+      .toEqual({ can_read: true });
   });
 
   it("aktywny resume-only używa okładki przypiętej wersji nawet po nowej publikacji", async () => {
