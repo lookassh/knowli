@@ -1,5 +1,6 @@
 import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
 import { describe, expect, it } from "vitest";
+import { NumberVisual } from "./NumberVisual";
 import { Visual } from "./Visual";
 
 describe("Visual", () => {
@@ -12,12 +13,11 @@ describe("Visual", () => {
     expect(rect.props.fill).toBe("#ff0000");
   });
 
-  it("renders one countable object per number", () => {
-    const svg = Visual({ text: "Eleven", visualType: "number", visualData: { count: 11 } }) as ReactElement<{ children: ReactNode }>;
-    const circles = Children.toArray(svg.props.children);
+  it("delegates number art while preserving its label and validated count", () => {
+    const visual = Visual({ text: "Eleven", visualType: "number", visualData: { count: 11 } }) as ReactElement<{ count: number; label: string }>;
 
-    expect(circles).toHaveLength(11);
-    expect(circles.every((element) => isValidElement(element) && element.type === "circle")).toBe(true);
+    expect(visual.type).toBe(NumberVisual);
+    expect(visual.props).toEqual({ count: 11, label: "Eleven" });
   });
 
   it("highlights Monday as the first of seven sequence positions", () => {
