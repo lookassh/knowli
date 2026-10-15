@@ -10,6 +10,21 @@ const viewports = [
   { width: 727, height: 953 },
 ];
 
+function relativeLuminance(color: string): number {
+  const values = color.match(/\d+(?:\.\d+)?/g)?.slice(0, 3).map(Number);
+  if (!values || values.length !== 3) throw new Error(`Unexpected CSS color: ${color}`);
+  const [red, green, blue] = values.map((value) => {
+    const channel = value / 255;
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * red! + 0.7152 * green! + 0.0722 * blue!;
+}
+
+function contrastRatio(foreground: string, background: string): number {
+  const luminances = [relativeLuminance(foreground), relativeLuminance(background)].sort((a, b) => b - a);
+  return (luminances[0]! + 0.05) / (luminances[1]! + 0.05);
+}
+
 async function openPictureChoices(page: Page, fixture: KidUiFixture, viewport = viewports[0]!) {
   await page.setViewportSize(viewport);
   await installKidUiFixture(page, fixture);
@@ -115,7 +130,7 @@ test("trzy odpowiedzi obrazkowe mieszczą się bez przewijania", async ({ page }
   }
 });
 
-test("trzeci kafelek działa z klawiatury, pokazuje błąd i pozwala spróbować ponownie", async ({ page }, testInfo) => {
+test("cyfra działa z klawiatury w ciemnym motywie, pokazuje błąd i pozwala spróbować ponownie", async ({ page }, testInfo) => {
   const fixture = pictureChoiceLayoutFixture();
   const task = fixture.tasks[1];
   const originalAttempt = fixture.attempts?.[0];
@@ -133,6 +148,7 @@ test("trzeci kafelek działa z klawiatury, pokazuje błąd i pozwala spróbować
   const firstAnswerStarted = new Promise<void>((resolve) => { signalFirstAnswer = resolve; });
   const submitted: unknown[] = [];
   let responseIndex = 0;
+  await page.emulateMedia({ colorScheme: "dark" });
   await openPictureChoices(page, fixture);
   await page.route(`**/api/v1/kid/tasks/${task.taskId}/attempts`, async (route) => {
     submitted.push(route.request().postDataJSON());
@@ -148,20 +164,27 @@ test("trzeci kafelek działa z klawiatury, pokazuje błąd i pozwala spróbować
 
   const options = page.getByTestId("kid-option");
   const material = page.locator(".kid-material-content");
-  await options.nth(2).focus();
-  await expect(options.nth(2)).toBeFocused();
+  await options.nth(1).focus();
+  await expect(options.nth(1)).toBeFocused();
+  const scrollBeforeAnswer = await material.evaluate((element) => element.scrollTop);
   await page.keyboard.press("Enter");
   await firstAnswerStarted;
-  const pendingScrollTop = await material.evaluate((element) => element.scrollTop);
-  expect(submitted[0]).toMatchObject({ modality: "choice", optionId: "10000000-0000-4000-8000-000000000014" });
+  expect(submitted[0]).toMatchObject({ modality: "choice", optionId: "10000000-0000-4000-8000-000000000009" });
   await expect.poll(() => options.evaluateAll((elements) => elements.map((element) => (element as HTMLButtonElement).disabled)))
     .toEqual([true, true, true]);
-  expect(await material.evaluate((element) => element.scrollTop)).toBe(pendingScrollTop);
+  expect(await material.evaluate((element) => element.scrollTop)).toBe(scrollBeforeAnswer);
 
   releaseFirstAnswer();
   await expect(page.getByTestId("kid-feedback")).toBeVisible();
-  await expect(options.nth(2)).toHaveClass(/kid-option--wrong/);
+  await expect(options.nth(1)).toHaveClass(/kid-option--wrong/);
   await expect(options.nth(0)).toHaveClass(/kid-option--correct/);
+  const digitColors = await options.nth(1).evaluate((button) => ({
+    foreground: getComputedStyle(button).color,
+    background: getComputedStyle(button).backgroundColor,
+    digit: getComputedStyle(button.querySelector(".kid-visual-number--digit text")!).fill,
+  }));
+  expect(digitColors.digit).toBe(digitColors.foreground);
+  expect(contrastRatio(digitColors.digit, digitColors.background)).toBeGreaterThanOrEqual(4.5);
   await expect(options).toHaveCount(3);
   const markersAvoidLabels = await options.evaluateAll((elements) => elements.flatMap((element) => {
     const marker = getComputedStyle(element, "::before");

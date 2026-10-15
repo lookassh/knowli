@@ -951,10 +951,6 @@
   transform: none;
 }
 
-.kid-picture-choice-visual .kid-visual-number--digit text {
-  fill: var(--kid-text);
-}
-
 .kid-page[data-zoomed="true"] .kid-picture-options,
 .kid-page[data-viewport-very-short="true"] .kid-picture-options {
   flex: none;

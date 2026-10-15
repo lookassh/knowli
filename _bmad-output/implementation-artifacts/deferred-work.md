@@ -1,3 +1,4 @@
+## Accepted risk for private use (2026-10-15)
 - source_spec: _bmad-output/implementation-artifacts/spec-picture-choice-grid.md
-  summary: Verify whether deployed Kid clients that support picture vocabulary but cap prompts at three options can resume sessions after rollout of four choices.
-  evidence: The server checks only supportsPictureVocabulary; no deployment inventory established whether a client with the old three-option schema remains active. Confirm deployed browser or mobile client versions and their session-resume behavior before rollout.
+  summary: Older picture clients may not support four-choice prompts when resuming an active session after rollout.
+  rationale: The owner confirmed the app is for private home use and accepts updating the household PWA before continuing study after rollout.

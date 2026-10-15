@@ -66,7 +66,7 @@ context:
 
 ## Review Triage Log
 - `false` — Żądanie aktualizacji JSON Schema/skilla MCP: pliki MCP walidują `learning-overview`, który nie zawiera `TaskPrompt`; spec jawnie potwierdza brak wpływu tego promptu Kid.
-- `maybe-false` / `defer` — Zgodność starszego klienta picture obsługującego najwyżej trzy opcje: serwer wymaga `supportsPictureVocabulary`, lecz nie rozróżnia limitu opcji. Nie wiadomo, czy taka wersja jest wdrożona i może wznowić sesję po aktualizacji; rozstrzygnie to audyt wdrożonych klientów.
+- `accepted risk` — Zgodność starszego klienta picture obsługującego najwyżej trzy opcje: właściciel potwierdził prywatne, domowe użycie i akceptuje aktualizację własnej PWA przed dalszą nauką po rollout.
 - `patch` — Pokrycie geometrii czterech kafelków: istniejący E2E sprawdza 2×2 w niskim widoku z przewijaniem, więc nie dowodzi braku przewijania w typowym telefonie ani minimalnych wymiarów kafelków. Dodano test typowego viewportu.
 - `low` / `patch` — Test geometrii trzech opcji dopuszcza 12 px nadmiarowej wysokości mimo asercji braku przewijania; zaostrzono asercję do braku nadmiaru.
 - `false` — Test generatora nie sprawdza odrębności czterech odpowiedzi: istniejące asercje weryfikują komplet czterech różnych etykiet i wizualizacji, a osobny przypadek odrzuca kolizje semantyczne i wizualne.
@@ -86,3 +86,26 @@ Trzy kafelki tworzą `A B / C`, cztery `A B / C D`; trzeciego nie centruj, by ni
 - TypeScript: wszystkie sześć konfiguracji workspace przeszło (`tsconfig.json`, contracts, server, web, worker, kid-ui). `git diff --check` bez uwag.
 - `pnpm` próbował odtworzyć zależności, po czym przerwał z `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`; użyto istniejących lokalnych binariów. Nie instalowano ani nie usuwano zależności.
 - Obejrzano zrzuty 390×844, 360×640 i dark mode; wizualizacje mieszczą się w kafelkach. Odbiór na fizycznym Galaxy S25/PWA nie został wykonany.
+- Po poprawkach z follow-up review: `tests/e2e/picture-choice-layout.spec.ts` — 6/6.
+### Review Findings
+
+- [x] [Review][Patch] Cyfra traci kontrast w ciemnym motywie po błędnej odpowiedzi [packages/kid-ui/src/styles.css:954] — usunięto nadpisanie `currentColor`; dodano asercję E2E w stanie błędnej odpowiedzi w ciemnym motywie.
+- [x] [Review][Patch] Test klawiatury nie wykrywa przewinięcia spowodowanego wysłaniem odpowiedzi [tests/e2e/picture-choice-layout.spec.ts:153] — `scrollTop` jest teraz zapisywany po focusie i przed Enter, a potem porównywany w trakcie oczekiwania na odpowiedź.
+- [x] [Review][Accepted risk] Zgodność starszych klientów picture z limitem trzech odpowiedzi [packages/server/src/modules/sessions.ts:257] — właściciel zaakceptował ryzyko dla prywatnego użycia; przed wznowieniem nauki po rollout aktualizuje własną PWA.
+
+Rejected:
+- `false` — Test 390×844 pokrywa typowy widok opisany w kryterium; 360×560 osobno sprawdza ścieżkę przewijania dla niskiego viewportu.
+- `false` — Kafelki mają co najmniej 72 px wysokości, więc zgłoszona obawa o zbyt mały cel dotykowy nie zachodzi w tym układzie.
+- `false` — Test integracyjny sprawdza obie możliwe pozycje poprawnej odpowiedzi: gdy czwarta jest poprawna oczekuje sukcesu, a w przeciwnym razie poprawnej pomyłki i etykiety.
+- `false` — Opcje powstają z różnych rekordów rewizji; duplikaty rewizji są filtrowane, a identyfikatory rewizji są unikalne w bazie, więc wskazany duplikat klucza nie wynika z tej zmiany.
+- `false` — Renderer cyfr jest przekazywany wyłącznie z `PictureListeningView`, a `MeaningVisualView` zachowuje domyślny wariant jabłek.
+
+#### Follow-up code review (2026-10-15)
+
+- [x] [Review][Patch] Usuń podwójny wpis o zgodności starszych klientów [deferred-work.md:5] — scalono oba opisy w jeden rekord pod nagłówkiem przeglądu.
+- [x] [Review][Patch] Test kontrastu sprawdza tylko zgodność kolorów, nie ich czytelność [tests/e2e/picture-choice-layout.spec.ts:166] — test oblicza teraz kontrast cyfry względem tła i wymaga minimum 4,5:1.
+
+Rejected:
+- `false` — W chwili review status `in-progress` odpowiadał otwartemu ryzyku. Właściciel później zaakceptował je dla prywatnego wdrożenia; status zmieniono na `done`.
+
+- Follow-up review: dwa wpisy patch zastosowano; Edge Case Hunter zwrócił pusty wynik, więc ta warstwa nie dostarczyła ustaleń.
