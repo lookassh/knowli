@@ -95,9 +95,9 @@ Nie zmieniać wspólnego `ExerciseFrame` ani `LearnScreen`, jeśli wystarczą se
 
 ## Końcowe review i integracja
 
-- [ ] Uruchomić `requesting-code-review`: przygotować pakiet według `code-reviewer.md`, wskazać ten plan, zaakceptowany projekt, Review Focus, rzeczywistą bazę całego zakresu, HEAD, ewentualny niezacommitowany diff oraz wyniki i screenshoty. To jeden końcowy niezależny przegląd całości, bez delegowania implementacji.
-- [ ] Dedykowany recenzent: jawnie wybrać najmocniejszy dostępny model poza rodziną GPT Astra (w obecnym środowisku `gpt-6.1-sol`; ponownie sprawdzić dostępność podczas wykonania). Uwagi obsłużyć przez `receiving-code-review`; Critical/Important rozwiązać przed PR, Minor jawnie zapisać. Poprawki zachowania wymagają RED→GREEN.
-- [ ] Użyć `verification-before-completion`, zapisać aktualne wyniki po ostatnich zmianach i końcowy stan Git. Zweryfikować checklistę kryteriów odbioru; brak odbioru na telefonie fizycznym wskazać osobno.
+- [x] Uruchomić `requesting-code-review`: dedykowany reviewer sprawdził cały zakres `167579d..1af436f`, zaakceptowany projekt, Review Focus, testy i stan Git. Brak uwag implementacyjnych.
+- [x] Dedykowany recenzent `gpt-6.1-sol` (poza rodziną GPT Astra) sprawdził poprawkę review `39beb81`. Jedna Minor dotycząca ścieżki dziennika została rozwiązana; nie pozostały uwagi blokujące.
+- [x] Użyć `verification-before-completion`: ponownie sprawdzono czysty stan Git i `git diff --check`; unit, E2E, typecheck i build przeszły po ostatnich zmianach kodu. Fizyczny Galaxy S25 pozostaje niezweryfikowany.
 - [ ] Użyć `finishing-a-development-branch`; po ukończeniu całego zakresu i review wypchnąć gałąź roboczą i utworzyć PR do `main`, zgodnie z autoryzacją `AGENTS.md`. W opisie: efekt, dowody RED/GREEN, wyniki, niezależne review, ograniczenie fizycznego urządzenia i brak wpływu API → MCP → skill. Dołączyć PR do czatu. Nie scalać; właściciel wykonuje Squash and merge.
 
 ## Samokontrola planu i przekazanie
