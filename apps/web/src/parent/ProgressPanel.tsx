@@ -366,6 +366,7 @@ export default function ProgressPanel({
                   <div className="pp-hist-row" key={row.key}>
                     <span className={`pp-hist-ico ${row.outcome === "correct" ? "pp-hist-ok" : row.outcome === "incorrect" ? "pp-hist-bad" : "pp-hist-neutral"}`}>
                       <ParentIcon name={row.outcome === "correct" ? "check" : row.outcome === "incorrect" ? "x" : "minus"} />
+                      <span className="pp-sr-only">{messages.progress.historyOutcome[row.outcome] ?? row.outcome}</span>
                     </span>
                     <span>
                       {row.source} → <strong>{row.target}</strong>

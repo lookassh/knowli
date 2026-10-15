@@ -31,6 +31,7 @@ export default function ParentApp() {
   const [childrenList, setChildrenList] = useState<ChildDto[]>([]);
   const [decks, setDecks] = useState<DeckSummaryDto[]>([]);
   const leaveGuard = useParentLeaveGuard();
+  const toLogin = useCallback(() => setPhase("login"), []);
 
   const refreshChildren = useCallback(async () => {
     setChildrenList(await apiFetch<ChildDto[]>("GET", "/api/v1/parent/children"));
@@ -219,12 +220,12 @@ export default function ParentApp() {
             onChanged={refreshDecks}
             registerEditorState={leaveGuard.register}
             requestLeave={leaveGuard.requestLeave}
-            onAuthExpired={() => setPhase("login")}
+            onAuthExpired={toLogin}
           />
         ) : tab === "children" ? (
           <ChildEditor childrenList={childrenList} onChanged={refreshChildren} />
         ) : (
-          <ProgressPanel childrenList={childrenList} decks={decks} onAuthExpired={() => setPhase("login")} />
+          <ProgressPanel childrenList={childrenList} decks={decks} onAuthExpired={toLogin} />
         )}
       </main>
       <LeaveEditorDialog open={leaveGuard.pending} onStay={leaveGuard.stay} onLeave={() => void leaveGuard.leave()} />

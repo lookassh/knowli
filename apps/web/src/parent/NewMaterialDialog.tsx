@@ -66,16 +66,20 @@ export default function NewMaterialDialog({
     if (open && !element.open) {
       returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       element.showModal();
-      (step === "generate"
-        ? generateSubmit.current
-        : step === "empty"
-          ? emptySubmit.current
-          : firstOption.current
-      )?.focus();
     } else if (!open && element.open) {
       element.close();
       returnFocus.current?.focus();
+      return;
+    } else if (!open) {
+      return;
     }
+    // fokus prowadzi za zmieniającym się krokiem (menu ↔ formularz)
+    (step === "generate"
+      ? generateSubmit.current
+      : step === "empty"
+        ? emptySubmit.current
+        : firstOption.current
+    )?.focus();
   }, [open, step]);
 
   const fieldDisabled = generating || pendingGeneration || creatingEmpty;
