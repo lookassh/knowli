@@ -182,6 +182,7 @@ export type {
 } from "./ports/ai";
 export type { MediaStore, StoredBlob } from "./ports/media";
 export { createLocalMediaStore } from "./providers/media/local";
+export { setDeckCover, clearDeckCover, MAX_DECK_COVER_BYTES } from "./modules/deck-cover";
 export { createOpenAiLlmProvider } from "./providers/openai/llm";
 export { createOpenAiTtsProvider } from "./providers/openai/tts";
 export { createOpenAiImageProvider } from "./providers/images/openai";

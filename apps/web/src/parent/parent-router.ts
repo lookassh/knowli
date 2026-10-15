@@ -11,6 +11,8 @@ import {
   createDraftFromPublished,
   createLesson,
   createLessonDraftFromPublished,
+  setDeckCover,
+  clearDeckCover,
   deckIdOfLessonVersion,
   editDraft,
   editLessonDraft,
@@ -40,6 +42,7 @@ import {
   CreateEmptyDeckCommandSchema,
   CreateEmptyDeckResultSchema,
   DraftPatchSchema,
+  DeckCoverCommandSchema,
   GenerationCommandSchema,
   LessonCommandSchema,
   LessonVerdictDecisionSchema,
@@ -168,6 +171,40 @@ export async function handleParentApi(
     }
     if (request.method === "GET" && second !== undefined && third === undefined) {
       return Response.json(await readDeck(services, second));
+    }
+    if (second !== undefined && third === "cover" && fourth === undefined) {
+      if (request.method === "DELETE") {
+        DeckCoverCommandSchema.parse({ action: "clear" });
+        await clearDeckCover(services, second);
+        return new Response(null, { status: 204 });
+      }
+      if (request.method === "POST") {
+        const mimeType = request.headers.get("content-type")?.split(";")[0]?.trim() ?? "";
+        if (!["image/png", "image/jpeg", "image/webp"].includes(mimeType)) {
+          throw new AppError("validation", { message: "Wybierz obraz PNG, JPEG lub WebP." });
+        }
+        const declaredLength = Number(request.headers.get("content-length") ?? 0);
+        if (declaredLength > 5 * 1024 * 1024) throw new AppError("validation", { message: "Obraz musi mieć maksymalnie 5 MB." });
+        const reader = request.body?.getReader();
+        if (!reader) throw new AppError("validation", { message: "Brak pliku obrazu." });
+        const chunks: Uint8Array[] = [];
+        let length = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          length += value.byteLength;
+          if (length > 5 * 1024 * 1024) {
+            await reader.cancel();
+            throw new AppError("validation", { message: "Obraz musi mieć maksymalnie 5 MB." });
+          }
+          chunks.push(value);
+        }
+        const bytes = new Uint8Array(length);
+        let offset = 0;
+        for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+        const assetId = await setDeckCover(services, second, { bytes, declaredMimeType: mimeType });
+        return Response.json({ coverAssetId: assetId });
+      }
     }
     if (request.method === "POST" && second !== undefined && third === "draft" && fourth === undefined) {
       // nowy edytowalny szkic z bieżącej opublikowanej wersji (architecture.md §12)

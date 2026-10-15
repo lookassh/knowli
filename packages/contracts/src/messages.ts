@@ -164,6 +164,13 @@ export const messages = {
     acceptedLabel: "Poprawne warianty (po przecinku)",
     exampleLabel: "Przykład",
     visualLabel: "Wizualizacja",
+    coverLabel: "Obraz okładkowy zestawu",
+    coverHelp: "PNG, JPEG lub WebP do 5 MB. Obraz dotyczy całego zestawu.",
+    coverTooLarge: "Obraz okładkowy może mieć maksymalnie 5 MB.",
+    coverChoose: "Wybierz obraz okładkowy",
+    coverRemove: "Usuń obraz okładkowy",
+    coverBusy: "Zapisuję obraz okładkowy…",
+    coverEmpty: "Brak własnego obrazu. Na karcie dziecka pokażemy wizualizację pierwszego słówka.",
     visualTypes: {
       image: "Obraz",
       color: "Kolor",

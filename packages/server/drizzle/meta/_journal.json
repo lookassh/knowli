@@ -78,6 +78,13 @@
       "when": 1792003649526,
       "tag": "0010_picture_vocabulary",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792072800000,
+      "tag": "0011_deck_cover_image",
+      "breakpoints": true
     }
   ]
 }

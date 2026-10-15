@@ -303,6 +303,7 @@ export const DeckSummaryDtoSchema = z.object({
   state: DeckStateSchema,
   /** Rodzaj zestawu; OPCJONALNE — brak pola oznacza „vocabulary” (zgodność wsteczna typu). */
   kind: z.enum(["vocabulary", "lesson"]).optional(),
+  coverAssetId: UuidSchema.nullable().optional(),
   vocabularyFormat: VocabularyFormatSchema.default("standard"),
   editableVersionId: UuidSchema.nullable(),
   publishedVersionId: UuidSchema.nullable(),
@@ -332,12 +333,17 @@ export const DeckDtoSchema = z.object({
   id: UuidSchema,
   title: z.string(),
   state: DeckStateSchema,
+  coverAssetId: UuidSchema.nullable().default(null),
   draft: DraftDtoSchema.nullable(),
   published: DraftDtoSchema.nullable(),
   generation: GenerationDtoSchema.nullable(),
   assignments: z.array(AssignmentDtoSchema),
 });
 export type DeckDto = z.infer<typeof DeckDtoSchema>;
+
+/** Polecenie usunięcia współdzielonej okładki zestawu. */
+export const DeckCoverCommandSchema = z.object({ action: z.literal("clear") }).strict();
+export type DeckCoverCommand = z.infer<typeof DeckCoverCommandSchema>;
 
 /** POST /parent/decks — tworzy nowy pusty szkic do ręcznej edycji. */
 export const CreateEmptyDeckCommandSchema = z.object({
