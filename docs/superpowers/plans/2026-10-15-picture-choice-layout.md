@@ -22,6 +22,7 @@
 - Stan przed odpowiedzią, oczekiwanie, feedback i ponowienie zachowują czytelne opcje, zaznaczenia wyniku oraz dostępne akcje. Zwykłe ćwiczenia tekstowe zachowują swój układ.
 - Brak zmian API, kontraktów, zapisu prób, ekspozycji, schedulerów, mediów serwera i mikrofonu. API → MCP → skill bez wpływu: to wyłącznie prezentacja istniejących danych; zapisać uzasadnienie w dzienniku i PR.
 - Testy przeglądarkowe nie stanowią odbioru na fizycznym Galaxy S25. Ten brak dowodu należy wskazać w raporcie.
+- Test powiększenia emuluje `visualViewport.scale` i sprawdza ścieżkę fallback `KidPage`; nie stanowi pomiaru prawdziwego zmniejszenia widocznego viewportu przy powiększeniu przeglądarki.
 
 ## Mapa plików
 
@@ -36,7 +37,7 @@
 | `packages/kid-ui/src/visuals/Visual.test.ts` | Aktualizacja testu liczby do nowej reprezentacji, zachowanie testów błędnych danych |
 | `tests/e2e/helpers/picture-fixtures.ts` | Osobny fixture trzech mieszanych opcji; nie zmieniać bazowego fixture dwóch opcji |
 | `tests/e2e/picture-choice-layout.spec.ts` (nowy) | Regresje geometrii, trzeciej odpowiedzi, stanów i dostępności |
-| `docs/superpowers/plans/2026-10-15-picture-choice-layout-progress.md` (nowy podczas wykonania) | Checklista, RED/GREEN, wyniki, review i odstępstwa |
+| `.superpowers/sdd/2026-10-15-picture-choice-layout/progress.md` (ignorowany dziennik workflow) | Checklista, RED/GREEN, wyniki, review i odstępstwa |
 
 Nie zmieniać wspólnego `ExerciseFrame` ani `LearnScreen`, jeśli wystarczą selektory konkretnego promptu. Ewentualną konieczność zmiany uzasadnić w dzienniku i objąć regresjami pozostałych ćwiczeń.
 
