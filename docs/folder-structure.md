@@ -223,3 +223,7 @@ Lekcje i moduły przedmiotów (moduł gramatyki, 2026-10-12): silnik i przedmiot
 Testy lekcji: `packages/server/src/domain/lessons/*.test.ts` (jednostkowe, kontrolowany zegar), `tests/integration/lesson-*.test.ts` (PostgreSQL + fake grader), `tests/e2e/lesson-*.spec.ts` (Playwright, fake providerzy). Fixtures lekcji w `tests/fixtures/`.
 
 Edycja profilu: `contracts/src/decks.ts` definiuje `ChildPatchSchema`, `server/src/modules/profiles.ts` implementuje `updateChild`, a `web/src/app/api/v1/parent/children/[id]/route.ts` udostępnia PATCH. `ChildEditor.tsx` odpowiada także za formularz imienia i awatara; istniejąca historia nie jest modyfikowana.
+
+### Wariant obrazkowy słownictwa (2026-10-14)
+
+Zgodność profilu, wersji zestawu i Kid UI: `packages/contracts/src/kid.ts`, `decks.ts`, `ui-audio.ts`; domena/publikacja/generowanie: `packages/server/src/domain/vocabulary-capabilities.ts`, `picture-recognition-options.ts`, `modules/decks.ts` i `modules/sessions.ts`; migracja schematu: `packages/server/drizzle/0010_picture_vocabulary.sql`. Kid UI korzysta z `src/visuals/MeaningVisualView.tsx`, `src/session/guidance-audio.ts`, `src/exercises/Picture*.tsx` oraz istniejącego `KidApi` — bez importu serwera. Testy regresji: `tests/integration/picture-vocabulary.test.ts`, `packages/kid-ui/src/session/session-controller.test.ts` i `tests/e2e/picture-vocabulary.spec.ts`. Raport MCP pozostaje `learning-overview` v1; nie ma nowego endpointu ani schematu konsumenta.

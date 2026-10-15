@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createOpenAiLlmProvider } from "./llm";
 import type { LessonPoolInput } from "../../ports/ai";
+import type { LlmGenerateDeckInput } from "../../ports/ai";
 import { englishGrammarSubject } from "../../domain/lessons/subjects/english-grammar/module";
 import { GenerationProviderError } from "../../ports/generation-error";
 
@@ -353,5 +354,27 @@ describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", ()
       "english_grammar.present_simple.third_person_s": ["He plays.", "She runs."],
       "other.objective": ["X."],
     });
+  });
+});
+
+describe("createOpenAiLlmProvider.generateDeck — tryb zestawu", () => {
+  it("w trybie obrazkowym wymaga konkretnych znaczeń bez zależności od tekstu", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => okResponse({ items: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    await createOpenAiLlmProvider({ apiKey: "k" }).generateDeck({
+      prompt: "kolory i liczby",
+      sourceLocale: "pl-PL",
+      targetLocale: "en-GB",
+      maxItems: 10,
+      vocabularyFormat: "picture",
+    } as LlmGenerateDeckInput);
+
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string) as { messages: Array<{ role: string; content: string }> };
+    const system = body.messages.find((message) => message.role === "system")!.content;
+    expect(system).toContain("Picture vocabulary");
+    expect(system).toContain("concrete");
+    expect(system).toContain("Do not include abstract concepts");
+    expect(system).toContain("image, color, or number");
+    expect(system).toContain("omit none and sequence");
   });
 });

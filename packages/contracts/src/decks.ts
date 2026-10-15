@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { UuidSchema } from "./common";
+import { UuidSchema, VocabularyFormatSchema } from "./common";
 import { GenerationDtoSchema } from "./generation";
 import { TestGoalsSchema, MockTestTaskCountSchema } from "./mock-tests";
 
@@ -14,15 +14,17 @@ export const ChildInputSchema = z.object({
   displayName: z.string().min(1).max(80),
   avatarKey: z.string().min(1).max(40),
   birthYear: z.number().int().min(1900).max(2200).optional(),
+  canRead: z.boolean().default(true),
 });
-export type ChildInput = z.infer<typeof ChildInputSchema>;
+export type ChildInput = z.input<typeof ChildInputSchema>;
 
 /** Częściowa edycja danych profilu, bez zmiany tożsamości i historii. */
 export const ChildPatchSchema = z.object({
   displayName: z.string().trim().min(1).max(80).optional(),
   avatarKey: z.string().min(1).max(40).optional(),
   recordingMode: RecordingModeSchema.optional(),
-}).strict().refine((input) => input.recordingMode !== undefined || input.displayName !== undefined || input.avatarKey !== undefined, {
+  canRead: z.boolean().optional(),
+}).strict().refine((input) => input.recordingMode !== undefined || input.displayName !== undefined || input.avatarKey !== undefined || input.canRead !== undefined, {
   message: "At least one profile field is required",
 });
 export type ChildPatch = z.infer<typeof ChildPatchSchema>;
@@ -30,6 +32,7 @@ export type ChildPatch = z.infer<typeof ChildPatchSchema>;
 export const ChildDtoSchema = ChildInputSchema.extend({
   id: UuidSchema,
   recordingMode: RecordingModeSchema,
+  canRead: z.boolean(),
 });
 export type ChildDto = z.infer<typeof ChildDtoSchema>;
 
@@ -62,12 +65,14 @@ export function toChildDto(row: {
   avatarKey: string;
   birthYear: number | null;
   recordingMode: RecordingModeDto;
+  canRead: boolean;
 }): ChildDto {
   return {
     id: row.id,
     displayName: row.displayName,
     avatarKey: row.avatarKey,
     recordingMode: row.recordingMode,
+    canRead: row.canRead,
     ...(row.birthYear === null ? {} : { birthYear: row.birthYear }),
   };
 }
@@ -234,8 +239,9 @@ export type VocabularyItemInput = z.infer<typeof VocabularyItemInputSchema>;
 export const DraftInputSchema = z.object({
   title: z.string().min(1).max(200),
   items: z.array(VocabularyItemInputSchema).min(1).max(50),
+  vocabularyFormat: VocabularyFormatSchema.default("standard"),
 });
-export type DraftInput = z.infer<typeof DraftInputSchema>;
+export type DraftInput = z.input<typeof DraftInputSchema>;
 
 /** Edycja szkicu z optimistic locking: wymagany expectedEditNumber. */
 export const DraftPatchSchema = z.object({
@@ -264,6 +270,7 @@ export const DraftDtoSchema = z.object({
   deckId: UuidSchema,
   editNumber: z.number().int().positive(),
   status: z.enum(["draft", "review", "published"]),
+  vocabularyFormat: VocabularyFormatSchema.default("standard"),
   title: z.string(),
   items: z.array(DraftItemDtoSchema),
   assets: z.array(RevisionAssetDtoSchema),
@@ -288,6 +295,7 @@ export const DeckSummaryDtoSchema = z.object({
   state: DeckStateSchema,
   /** Rodzaj zestawu; OPCJONALNE — brak pola oznacza „vocabulary” (zgodność wsteczna typu). */
   kind: z.enum(["vocabulary", "lesson"]).optional(),
+  vocabularyFormat: VocabularyFormatSchema.default("standard"),
   editableVersionId: UuidSchema.nullable(),
   publishedVersionId: UuidSchema.nullable(),
 });

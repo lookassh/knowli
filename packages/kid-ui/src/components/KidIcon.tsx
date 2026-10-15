@@ -3,7 +3,7 @@ import type { ReactElement } from "react";
 export type KidIconName =
   | "volume" | "microphone" | "microphone-off" | "book" | "ear" | "pencil"
   | "letters" | "check" | "close" | "calendar" | "chevron-left" | "chevron-right"
-  | "arrow-right" | "lock" | "sparkles" | "retry";
+  | "arrow-right" | "lock" | "sparkles" | "retry" | "question";
 
 const paths: Record<KidIconName, ReactElement> = {
   volume: <><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></>,
@@ -22,6 +22,7 @@ const paths: Record<KidIconName, ReactElement> = {
   lock: <><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 1 1 8 0v3m-4 4v3"/></>,
   sparkles: <><path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l1 2.5 2.5 1-2.5 1L19 23l-1-2.5-2.5-1 2.5-1z"/></>,
   retry: <><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.5 9A7 7 0 0 1 18 6l2 6M4 12l2 6a7 7 0 0 0 12.5-3"/></>,
+  question: <><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.6 2.6 0 1 1 4.4 1.9c-1.1 1-1.9 1.3-1.9 3.1m0 3h.01"/></>,
 };
 
 export function KidIcon({ name, className }: { name: KidIconName; className?: string }): ReactElement {

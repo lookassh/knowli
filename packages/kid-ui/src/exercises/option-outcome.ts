@@ -1,4 +1,4 @@
-import type { ChoiceOption, FeedbackDto } from "@learning/contracts";
+import type { FeedbackDto } from "@learning/contracts";
 
 export type OptionOutcome = "correct" | "wrong";
 
@@ -13,7 +13,7 @@ export type OptionOutcome = "correct" | "wrong";
 export function optionOutcomes(
   feedback: FeedbackDto | null,
   chosenOptionId: string | undefined,
-  options: readonly ChoiceOption[],
+  options: readonly { id: string; text?: string; labelPl?: string }[],
 ): ReadonlyMap<string, OptionOutcome> {
   const outcomes = new Map<string, OptionOutcome>();
   if (feedback === null || chosenOptionId === undefined) {
@@ -27,7 +27,7 @@ export function optionOutcomes(
     case "almost":
     case "incorrect": {
       outcomes.set(chosenOptionId, "wrong");
-      const correct = options.find((option) => option.text === feedback.correctText);
+      const correct = options.find((option) => (option.text ?? option.labelPl) === feedback.correctText);
       if (correct !== undefined) {
         outcomes.set(correct.id, "correct");
       }

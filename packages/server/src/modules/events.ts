@@ -19,12 +19,17 @@ import {
   itemRevisions,
   learningEvents,
   learningSessions,
+  mediaAssets,
+  revisionAssets,
   sessionTasks,
 } from "../db/schema";
 import { AppError } from "../errors";
 import { computeTargetKey } from "../domain/target-key";
 
 export interface SessionContextShape {
+  canRead: boolean;
+  vocabularyFormat: "standard" | "picture";
+  microphoneDisabledTaskIds: string[];
   mockTestReport?: MockTestReportDto;
   timezone: string;
   /** Data sprawdzianu przypięta przy rozpoczęciu nowej sesji; brak w legacy. */
@@ -43,6 +48,11 @@ export function contextOf(session: { context: Record<string, unknown> }): Sessio
   const summary = SessionSummaryDtoSchema.safeParse(raw.summary);
   const report = MockTestReportDtoSchema.safeParse(raw.mockTestReport);
   return {
+    canRead: raw.canRead ?? true,
+    vocabularyFormat: raw.vocabularyFormat === "picture" ? "picture" : "standard",
+    microphoneDisabledTaskIds: Array.isArray(raw.microphoneDisabledTaskIds)
+      ? raw.microphoneDisabledTaskIds.filter((id): id is string => typeof id === "string")
+      : [],
     timezone: typeof raw.timezone === "string" ? raw.timezone : "Europe/Warsaw",
     ...(typeof raw.testDate === "string" || raw.testDate === null ? { testDate: raw.testDate } : {}),
     previousContact: raw.previousContact ?? {},
@@ -206,6 +216,22 @@ export async function authorizeDisclosure(services: Services, input: DisclosureI
     const targetKey = isLesson
       ? ((task.answerKey as { targetKey?: string }).targetKey ?? revision.dbTargetKey)
       : computeTargetKey(target, revision.targetLocale);
+    const pictureRecall = (task.publicPrompt as { kind?: string }).kind === "picture_recall";
+    const pictureAudio = pictureRecall
+      ? (await tx.select({ id: revisionAssets.assetId })
+          .from(revisionAssets)
+          .innerJoin(mediaAssets, eq(mediaAssets.id, revisionAssets.assetId))
+          .where(and(
+            eq(revisionAssets.itemRevisionId, task.itemRevisionId),
+            eq(revisionAssets.role, "target_audio"),
+            eq(revisionAssets.state, "approved"),
+            eq(mediaAssets.kind, "tts"),
+            eq(mediaAssets.state, "ready"),
+          )))[0]?.id
+      : undefined;
+    if (pictureRecall && !pictureAudio) {
+      throw new AppError("validation", { details: { reason: "picture_audio_unavailable" } });
+    }
 
     const prior = await tx
       .select({ id: learningEvents.id })
@@ -251,7 +277,8 @@ export async function authorizeDisclosure(services: Services, input: DisclosureI
       taskId: task.id,
       stepId,
       kind: valid.kind,
-      reveal: valid.kind === "hint" ? { target } : null,
+      reveal: valid.kind === "hint" && !pictureRecall ? { target } : null,
+      ...(pictureAudio ? { audioAssetId: pictureAudio } : {}),
     };
   });
 }

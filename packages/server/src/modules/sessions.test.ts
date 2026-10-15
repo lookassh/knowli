@@ -57,3 +57,28 @@ describe("materializeTask option order", () => {
     expect(positionsOfCorrect.size).toBeGreaterThanOrEqual(2);
   });
 });
+
+describe("materializeTask picture prompts", () => {
+  const meaningVisual = { kind: "color" as const, color: "#ff0000" };
+
+  it("nie ujawnia angielskiego tekstu przed odpowiedzią w prezentacji obrazkowej", () => {
+    const { prompt } = materializeTask(
+      { itemRevisionId: "rev-1", exerciseType: "exposure", revealsTargetKeys: [], assessed: false, reason: "new-material", keepsReservations: [] },
+      plannedItem({ meaningVisual }), "asset-audio-1", null, null,
+    );
+    expect(prompt).toEqual({ kind: "picture_exposure", visual: meaningVisual, audioAssetId: "asset-audio-1" });
+    expect(JSON.stringify(prompt)).not.toContain("Thursday");
+  });
+
+  it("opcje rozpoznawania przenoszą polskie etykiety i wizualizacje zamiast odpowiedzi", () => {
+    const { prompt, answerKey } = materializeTask(listeningPlan({ options: [
+      { itemRevisionId: "rev-1", text: "czwartek", correct: true, visual: meaningVisual },
+      { itemRevisionId: "rev-2", text: "piątek", correct: false, visual: { kind: "number", count: 5 } },
+    ] }), plannedItem({ meaningVisual }), "asset-audio-1", null, null);
+    expect(prompt.kind).toBe("picture_listening");
+    if (prompt.kind !== "picture_listening") throw new Error("expected picture listening prompt");
+    expect(prompt.options.map((option) => option.labelPl).sort()).toEqual(["czwartek", "piątek"]);
+    expect(JSON.stringify(prompt)).not.toContain("Thursday");
+    expect(answerKey.target).toBe("Thursday");
+  });
+});

@@ -76,6 +76,48 @@ describe("trwałe generowanie zestawu (integracja)", () => {
     expect(dto.deckVersionId).toBeTruthy();
   });
 
+  it("picture generation pins its format in both the version and immutable run input", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = generationServices(fakes);
+    const picture = { ...COMMAND, idempotencyKey: "picture-generation-format", prompt: "kolory i liczby", maxItems: 10, vocabularyFormat: "picture" as const };
+    const first = await enqueueDeckGeneration(services, picture);
+    const retry = await enqueueDeckGeneration(services, { ...picture, vocabularyFormat: "standard" });
+    expect(retry).toEqual(first);
+    const [version] = await query<{ vocabulary_format: string }>("select vocabulary_format from learning_app.deck_versions where id = (select deck_version_id from learning_app.generation_runs where id = $1)", [first.runId]);
+    const [run] = await query<{ input: Record<string, unknown> }>("select input from learning_app.generation_runs where id = $1", [first.runId]);
+    expect(version!.vocabulary_format).toBe("picture");
+    expect(run!.input).toMatchObject({ vocabularyFormat: "picture", maxItems: 10 });
+  });
+
+  it("picture generation rejects missing output with a safe no_picture_material code", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = generationServices(fakes);
+    fakes.llm.queue({ items: [] });
+    const { runId } = await enqueueDeckGeneration(services, { ...COMMAND, idempotencyKey: "picture-empty-output", vocabularyFormat: "picture" });
+    await executeGeneration(services, runId);
+    expect(await readGeneration(services, runId)).toMatchObject({ state: "failed", errorCode: "no_picture_material" });
+    expect(await countRows("item_revisions")).toBe(0);
+  });
+
+  it("uses a valid default fake pool for picture but keeps explicit queued output authoritative", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = generationServices(fakes);
+    const defaults = await enqueueDeckGeneration(services, { ...COMMAND, idempotencyKey: "picture-fake-default", vocabularyFormat: "picture" });
+    await executeGeneration(services, defaults.runId);
+    expect(await readGeneration(services, defaults.runId)).toMatchObject({ state: "succeeded" });
+    expect(fakes.llm.requests.at(-1)).toMatchObject({ vocabularyFormat: "picture" });
+    expect((await query<{ count: number }>("select count(*)::int as count from learning_app.item_revisions where deck_version_id = (select deck_version_id from learning_app.generation_runs where id = $1)", [defaults.runId]))[0]!.count).toBe(4);
+
+    fakes.llm.queue({ items: [{ source: "poniedziałek", target: "Monday", acceptedAnswers: [], visualType: "none" }] });
+    const queued = await enqueueDeckGeneration(services, { ...COMMAND, idempotencyKey: "picture-fake-queued", vocabularyFormat: "picture" });
+    await executeGeneration(services, queued.runId);
+    expect(await readGeneration(services, queued.runId)).toMatchObject({ state: "failed", errorCode: "validation" });
+    expect((await query<{ count: number }>("select count(*)::int as count from learning_app.item_revisions where deck_version_id = (select deck_version_id from learning_app.generation_runs where id = $1)", [queued.runId]))[0]!.count).toBe(0);
+  });
+
   it("zapisuje dane liczby z wyniku LLM po walidacji kontraktu", async () => {
     const fakes = await fakeGeneration();
     disposers.push(fakes.dispose);

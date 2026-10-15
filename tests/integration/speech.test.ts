@@ -14,6 +14,7 @@ import {
   startSession,
   submitAttempt,
   submitSpeechAttempt,
+  authorizeDisclosure,
   authorizeFeedbackAudio,
   upsertAssignment,
   type PronunciationProvider,
@@ -25,6 +26,8 @@ import { readLearningSnapshot } from "../../packages/server/src/modules/learning
 import { loadPolicy } from "../../packages/server/src/policies/registry";
 import { selectTask } from "../../packages/server/src/domain/scheduler";
 import { buildTestServices, testDatabase, truncateCoreTables, ManualClock } from "./helpers";
+import { UI_AUDIO_TEXTS } from "../../packages/server/src/domain/ui-audio-catalog";
+import { ttsFingerprint } from "../../packages/server/src/domain/media-fingerprint";
 
 const { pool } = testDatabase();
 
@@ -142,6 +145,10 @@ function speechServices(clock: ManualClock, fakes: ReturnType<typeof makeFakes>)
   return createServices({
     db,
     clock,
+    media: {
+      tts: { provider: "fake", model: "fake-tts", voice: "test", format: "mp3" },
+      image: { provider: "fake", model: "fake-image", size: "small", quality: "low", format: "svg" },
+    },
     speech: {
       stt: fakes.providers.stt,
       pronunciation: fakes.providers.pronunciation,
@@ -196,8 +203,9 @@ async function publishDeckWithAssignment(
   services: Services,
   childId: string,
   pairs: { source: string; target: string; acceptedAnswers?: string[] }[],
+  vocabularyFormat: "standard" | "picture" = "standard",
 ): Promise<{ deckId: string; versionId: string }> {
-  const draft = await createDraft(services, { title: `Zestaw ${pairs[0]!.target}`, items: pairs.map(vocabItem) });
+  const draft = await createDraft(services, { title: `Zestaw ${pairs[0]!.target}`, vocabularyFormat, items: pairs.map(vocabItem) });
   for (const index of pairs.keys()) {
     await attachFakeReadyAudio(draft.id, index);
     const revision = (
@@ -207,12 +215,25 @@ async function publishDeckWithAssignment(
         [draft.id, index],
       )
     )[0]!;
-    await pool.query(
-      `insert into learning_app.revision_assets
-         (item_revision_id, role, asset_id, expected_fingerprint, state)
-       values ($1,'illustration',null,$2,'omitted')`,
-      [revision.id, `fp-ill-${randomUUID()}`],
-    );
+    if (vocabularyFormat === "picture") {
+      const illustrationId = randomUUID();
+      const fingerprint = `fp-ill-${randomUUID()}`;
+      await pool.query(`insert into learning_app.media_assets
+        (id, kind, fingerprint, generation_number, state, storage_key, content_sha256, mime_type, byte_count, provider, model)
+        values ($1,'illustration',$2,1,'ready',$3,$4,'image/svg+xml',128,'fake','fake-image')`,
+      [illustrationId, fingerprint, `blob/${illustrationId}`, `sha-${illustrationId}`]);
+      await pool.query(`insert into learning_app.revision_assets
+        (item_revision_id, role, asset_id, expected_fingerprint, state) values ($1,'illustration',$2,$3,'approved')`,
+      [revision.id, illustrationId, fingerprint]);
+    }
+    if (vocabularyFormat === "standard") {
+      await pool.query(
+        `insert into learning_app.revision_assets
+           (item_revision_id, role, asset_id, expected_fingerprint, state)
+         values ($1,'illustration',null,$2,'omitted')`,
+        [revision.id, `fp-ill-${randomUUID()}`],
+      );
+    }
   }
   await publishDraft(services, draft.id, 1);
   await upsertAssignment(services, childId, draft.deckId, null);
@@ -257,6 +278,37 @@ async function recallSession(
   const task = (await nextTask(services, session.sessionId))!;
   expect(task.exerciseType).toBe("recall");
   return { sessionId: session.sessionId, task };
+}
+
+async function pictureRecallSession(services: Services, childId: string, deckId: string, versionId: string, itemIndex: number) {
+  await ensureUiAudioCatalog(services);
+  await setDueProgress(childId, versionId, itemIndex, "recall");
+  const session = await startSession(services, { childId, deckId, microphoneEnabled: true, supportsPictureVocabulary: true });
+  const task = (await nextTask(services, session.sessionId))!;
+  expect(task.exerciseType).toBe("recall");
+  expect(task.prompt.kind).toBe("picture_recall");
+  return { sessionId: session.sessionId, task };
+}
+
+async function ensureUiAudioCatalog(services: Services): Promise<void> {
+  const { provider, model, voice, format } = services.media!.tts;
+  for (const [key, text] of Object.entries(UI_AUDIO_TEXTS)) {
+    const fingerprint = ttsFingerprint({ text, locale: "pl-PL", provider, model, voice, format });
+    const existing = (await query<{ generation_number: number }>(
+      "select generation_number from learning_app.media_assets where fingerprint = $1 order by generation_number desc limit 1",
+      [fingerprint],
+    ))[0];
+    if (existing) continue;
+    const id = randomUUID();
+    await pool.query(
+      `insert into learning_app.media_assets
+         (id, kind, fingerprint, generation_number, state, storage_key, content_sha256,
+          mime_type, byte_count, provider, model, metadata)
+       values ($1,'tts',$2,1,'ready',$3,$4,'audio/mpeg',1,$5,$6,$7)`,
+      [id, fingerprint, `blob/${id}`, `sha-${id}`, provider, model,
+        { purpose: "kid_ui_guidance", uiAudioKey: key, text, locale: "pl-PL", voice, format }],
+    );
+  }
 }
 
 /**
@@ -688,6 +740,48 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
     clock.advanceMs(30_000);
     const reread = await readAttempt(services, attempt.id);
     expect(reread.attemptId).toBe(attempt.id);
+  });
+
+  it("wspomagane obrazkowe Recall zachowuje poprawny wynik, lecz pozostaje niezależne=false", async () => {
+    const nonReader = await createChild(baseServices, { displayName: "Ola bez czytania", avatarKey: "fox", canRead: false });
+    const { deckId, versionId } = await publishDeckWithAssignment(baseServices, nonReader.id, [ITEMS[0]!], "picture");
+    const fakes = makeFakes(clock);
+    const services = speechServices(clock, fakes);
+    const { task } = await pictureRecallSession(services, nonReader.id, deckId, versionId, 0);
+    await authorizeDisclosure(services, { taskId: task.taskId, kind: "audio" });
+    clock.advanceMs(299_000);
+    fakes.transcription = { status: "ok", text: await answerKeyTarget(task.taskId), confidence: 0.95 };
+
+    const attempt = await submitSpeechAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID() }, wavInput(1));
+    expect(attempt.feedback?.kind).toBe("great");
+    expect(attempt.taskState).toBe("answered");
+    const [row] = await attemptRows(task.taskId);
+    const assessments = await assessmentsOf(row.id);
+    expect(assessments.map((assessment) => assessment.skill).sort()).toEqual(["pronunciation", "recall"]);
+    expect(assessments.find((assessment) => assessment.skill === "recall")).toMatchObject({ outcome: "correct", independent: false, confirmation_eligible: false });
+  });
+
+  it("cisza, timeout i Nie pamiętam w picture Recall nie dodają oceny pisowni", async () => {
+    const nonReader = await createChild(baseServices, { displayName: "Ola bez czytania", avatarKey: "fox", canRead: false });
+    const { deckId, versionId } = await publishDeckWithAssignment(baseServices, nonReader.id, [ITEMS[0]!], "picture");
+    const fakes = makeFakes(clock, { transcription: { status: "no_speech", text: null, confidence: null } });
+    const services = speechServices(clock, fakes);
+    const { sessionId, task } = await pictureRecallSession(services, nonReader.id, deckId, versionId, 0);
+
+    const silence = await submitSpeechAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID() }, wavInput(1));
+    expect(silence.feedback?.speech?.recognition).toBe("no_speech");
+    expect(silence.taskState).toBe("issued");
+    const timeoutFakes = makeFakes(clock, { hangUntilAbort: true, analysisTimeoutMs: 60 });
+    const timeoutServices = speechServices(clock, timeoutFakes);
+    const timeout = await submitSpeechAttempt(timeoutServices, { taskId: task.taskId, clientAttemptId: randomUUID() }, wavInput(1));
+    expect(timeout.feedback?.speech?.recognition).toBe("unavailable");
+    expect(timeout.taskState).toBe("issued");
+
+    const nonAnswer = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "dont_remember" });
+    expect(nonAnswer.taskState).toBe("answered");
+    const rows = await attemptRows(task.taskId);
+    for (const row of rows) expect((await assessmentsOf(row.id)).every((assessment) => assessment.skill !== "spelling")).toBe(true);
+    expect((await nextTask(services, sessionId))?.exerciseType).not.toBe("letter_completion");
   });
 
   it("za duży i za długi payload odrzuca walidacja przed zapisem próby", async () => {

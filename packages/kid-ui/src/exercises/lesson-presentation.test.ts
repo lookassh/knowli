@@ -8,7 +8,7 @@ const opt = (text: string, n: number) => ({ id: `10000000-0000-4000-8000-0000000
 function lessonTask(prompt: TaskDto["prompt"]): TaskDto {
   return {
     taskId: id, sessionId: "10000000-0000-4000-8000-000000000003", ordinal: 0,
-    exerciseType: prompt.kind, direction: null, state: "issued", remainingAssessed: 1, prompt,
+    exerciseType: prompt.kind as TaskDto["exerciseType"], direction: null, state: "issued", remainingAssessed: 1, prompt,
   };
 }
 

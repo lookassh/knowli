@@ -152,6 +152,9 @@ export async function buildLessonSessionContext(
   }
   return {
     timezone: args.timezone,
+    canRead: true,
+    vocabularyFormat: "standard",
+    microphoneDisabledTaskIds: [],
     ...(args.testDate === undefined ? {} : { testDate: args.testDate }),
     previousContact: {},
     reservations: [],

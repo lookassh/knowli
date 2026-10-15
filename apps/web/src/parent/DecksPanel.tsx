@@ -35,6 +35,7 @@ export default function DecksPanel({
 }) {
   const [prompt, setPrompt] = useState("");
   const [title, setTitle] = useState("");
+  const [vocabularyFormat, setVocabularyFormat] = useState<"standard" | "picture">("standard");
   const [generating, setGenerating] = useState(false);
   const [creatingEmpty, setCreatingEmpty] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -104,6 +105,7 @@ export default function DecksPanel({
     const command = pendingGenerationCommand.current ?? {
       prompt: prompt.trim(),
       idempotencyKey: crypto.randomUUID(),
+      vocabularyFormat,
       ...(title.trim() ? { title: title.trim() } : {}),
     };
     pendingGenerationCommand.current = command;
@@ -118,6 +120,7 @@ export default function DecksPanel({
       if (mounted.current) {
         setPrompt("");
         setTitle("");
+        setVocabularyFormat("standard");
         setActiveDeckKind("vocabulary");
         setActiveDeckId(acceptance.deckId);
         void onChanged().catch(() => undefined);
@@ -233,6 +236,15 @@ export default function DecksPanel({
             disabled={generating || pendingGenerationCommand.current !== null || creatingEmpty}
             onChange={(event) => setPrompt(event.target.value)}
           />
+        </label>
+        <label>
+          {messages.decks.vocabularyFormatLabel}
+          <select data-testid="deck-vocabulary-format" value={vocabularyFormat}
+            disabled={generating || pendingGenerationCommand.current !== null || creatingEmpty}
+            onChange={(event) => setVocabularyFormat(event.target.value as "standard" | "picture")}>
+            <option value="standard">{messages.decks.standardVocabulary}</option>
+            <option value="picture">{messages.decks.pictureVocabulary}</option>
+          </select>
         </label>
         <button
           type="button"

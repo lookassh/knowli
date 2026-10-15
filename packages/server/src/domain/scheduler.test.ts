@@ -103,9 +103,64 @@ describe("selectTask — nowy materiał (SPEC §13)", () => {
     const plan = selectTask(input({ candidates: [a, b, c], peers }));
     expect(plan).toMatchObject({ itemRevisionId: "rev-a", exerciseType: "listening", reason: "new-practice", assessed: true });
   });
+
+  it("nie emituje tekstowych zadań z rozpoznawania dla profilu picture bez czytania", () => {
+    const red = candidate({
+      itemRevisionId: "rev-red", target: "red", source: "czerwony", visual: { kind: "color", color: "#ff0000" },
+      ownPresentationCompleted: true, usedThisSession: 2, presentationsThisSession: 2,
+      practiceMix: { listening: 2, reading: 1 },
+    });
+    const blue = candidate({
+      itemRevisionId: "rev-blue", position: 1, target: "blue", source: "niebieski", visual: { kind: "color", color: "#0000ff" },
+      ownPresentationCompleted: true, usedThisSession: 2, presentationsThisSession: 2,
+    });
+    const plan = selectTask(input({
+      canRead: false, microphoneEnabled: true, vocabularyFormat: "picture", nextOrdinal: 2,
+      candidates: [red, blue], peers: [peer(red), peer(blue)],
+    }));
+    expect(plan).toMatchObject({ exerciseType: "listening" });
+    expect(plan?.options?.every((option) => option.visual !== undefined)).toBe(true);
+  });
+
+  it("zwalnia nieaktywne rezerwacje Recall po wyłączeniu mikrofonu, aby słuchanie mogło trwać", () => {
+    const red = candidate({
+      itemRevisionId: "rev-red", target: "red", source: "czerwony", visual: { kind: "color", color: "#ff0000" },
+      ownPresentationCompleted: true, usedThisSession: 2, presentationsThisSession: 2,
+    });
+    const blue = candidate({
+      itemRevisionId: "rev-blue", position: 1, target: "blue", source: "niebieski", visual: { kind: "color", color: "#0000ff" },
+      ownPresentationCompleted: true, usedThisSession: 2, presentationsThisSession: 2,
+    });
+    const plan = selectTask(input({
+      canRead: false, microphoneEnabled: false, vocabularyFormat: "picture", nextOrdinal: 2,
+      candidates: [red, blue], peers: [peer(red), peer(blue)],
+      reservedTargetKeys: [computeTargetKey("red", "en-GB"), computeTargetKey("blue", "en-GB")],
+    }));
+    expect(plan).toMatchObject({ exerciseType: "listening" });
+    expect(plan?.keepsReservations).toEqual([]);
+  });
 });
 
 describe("selectTask — rezerwacje należnych sprawdzeń (arch §9.3)", () => {
+  it("nie blokuje nieczytającego dziecka należna pisownia", () => {
+    const dueSpelling = candidate({
+      progress: { spelling: { status: "needs_confirmation", nextReviewAt: PAST, streak: 2 } },
+      usedThisSession: 1,
+      presentationsThisSession: 0,
+      ownPresentationCompleted: true,
+    });
+    const plan = selectTask(input({ canRead: false, microphoneEnabled: true, candidates: [dueSpelling], peers: [peer(dueSpelling)] }));
+    expect(plan?.skillAtIssue).not.toBe("spelling");
+  });
+
+  it("pisownia jako jedyna należność nie rekomenduje nauki bez czytania", () => {
+    expect(hasScheduledWork([{
+      progress: [],
+      pendingCheckAt: PAST,
+      pendingChecks: [{ skill: "spelling", dueAt: PAST }],
+    }], NOW, { canRead: false, microphoneEnabled: true })).toBe(false);
+  });
+
   it("należne sprawdzenie Recall i pisowni ma pierwszeństwo i zbiera oba wyniki z jednej odpowiedzi", () => {
     const due = candidate({
       progress: {
@@ -919,6 +974,16 @@ describe("hasScheduledWork — rekomendacja zestawu na liście dziecka", () => {
           },
         ],
         NOW,
+      ),
+    ).toBe(false);
+  });
+
+  it("zachowuje rozpoczęcie materiału ocenionego wcześniej w umiejętności niedostępnej dziecku", () => {
+    expect(
+      hasScheduledWork(
+        [{ progress: [{ skill: "reading", status: "learning", nextReviewAt: FUTURE, streak: 1 }] }],
+        NOW,
+        { canRead: false, microphoneEnabled: false, vocabularyFormat: "picture" },
       ),
     ).toBe(false);
   });

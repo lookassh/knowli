@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { buildWorkerServices } from "./composition";
+import { prepareUiAudio } from "@learning/server";
 import { createWorkerLoop, workerLoopSettingsFromEnv } from "./loop";
 import { processDueWork } from "./tasks";
 
@@ -7,6 +8,7 @@ const HEALTH_PORT = Number(process.env.WORKER_HEALTH_PORT ?? 9301);
 
 async function main(): Promise<void> {
   const { services, pool } = buildWorkerServices();
+  await prepareUiAudio(services);
   const settings = workerLoopSettingsFromEnv(process.env);
   const loop = createWorkerLoop({
     ...settings,

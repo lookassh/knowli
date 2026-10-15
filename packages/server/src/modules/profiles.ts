@@ -34,6 +34,7 @@ export async function createChild(services: Services, input: ChildInput): Promis
       displayName: valid.displayName,
       avatarKey: valid.avatarKey,
       birthYear: valid.birthYear ?? null,
+      canRead: valid.canRead,
     })
     .returning();
   return toChildDto(row!);
@@ -47,6 +48,7 @@ export async function updateChild(services: Services, childId: string, input: Ch
     ...(valid.displayName !== undefined ? { displayName: valid.displayName } : {}),
     ...(valid.avatarKey !== undefined ? { avatarKey: valid.avatarKey } : {}),
     ...(valid.recordingMode !== undefined ? { recordingMode: valid.recordingMode } : {}),
+    ...(valid.canRead !== undefined ? { canRead: valid.canRead } : {}),
   }).where(eq(childProfiles.id, id)).returning();
   if (!row) throw new AppError("not_found");
   return toChildDto(row);

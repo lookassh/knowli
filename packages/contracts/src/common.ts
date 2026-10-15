@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+export const VocabularyFormatSchema = z.enum(["standard", "picture"]);
+export type VocabularyFormat = z.infer<typeof VocabularyFormatSchema>;
+
 export const SkillStatusSchema = z.enum(["mastered", "needs_confirmation", "needs_reconfirmation", "practicing", "not_assessed"]);
 export type SkillStatus = z.infer<typeof SkillStatusSchema>;
 

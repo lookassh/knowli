@@ -3,6 +3,7 @@ import { messages, type FeedbackDto } from "@learning/contracts";
 import { format } from "../format";
 import { isIncompleteWord, joinedText } from "./spelling-diff-view";
 import { lessonFeedbackView } from "./lesson-feedback-view";
+import { KidIcon } from "../components/KidIcon";
 
 export interface AnswerFeedbackProps {
   dto: FeedbackDto | null;
@@ -189,6 +190,7 @@ export function AnswerFeedbackContent({ dto, busy }: Pick<AnswerFeedbackProps, "
 export function AnswerFeedbackActions({ retry, busy, onNext }: Pick<AnswerFeedbackProps, "retry" | "busy" | "onNext">): ReactElement {
   return (
     <button type="button" className="kid-primary" data-testid="kid-next" disabled={busy} onClick={onNext}>
+      <KidIcon name={retry ? "retry" : "arrow-right"} />
       {retry ? messages.kid.feedbackRetry : messages.kid.feedbackNext}
     </button>
   );
@@ -199,6 +201,7 @@ export function AnswerFeedbackSecondaryActions({ dto, retry, busy, onSkip }: Ans
   if (lesson?.technical !== true || !retry || onSkip === undefined) return null;
   return (
     <button type="button" className="kid-flow-secondary" data-testid="kid-lesson-skip" disabled={busy} onClick={onSkip}>
+      <KidIcon name="arrow-right" />
       {messages.kid.skip}
     </button>
   );

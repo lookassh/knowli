@@ -408,6 +408,9 @@ export async function omitRevisionAsset(
     if (version.state === "published") {
       throw new AppError("immutable");
     }
+    if (version.vocabularyFormat === "picture") {
+      throw new AppError("validation", { message: "Picture vocabulary illustrations cannot be omitted." });
+    }
     const revision = (
       await tx
         .select({ payload: itemRevisions.payload })

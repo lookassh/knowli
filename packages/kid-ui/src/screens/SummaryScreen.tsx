@@ -1,5 +1,7 @@
+import type { ReactNode } from "react";
 import { messages, type KidProfileDto, type SessionSummaryDto } from "@learning/contracts";
 import { format } from "../format";
+import { KidIcon } from "../components/KidIcon";
 
 /** Ekran końca: odnosi się do faktycznych wyników, nie obiecuje opanowania. */
 export function SummaryScreen({
@@ -7,11 +9,13 @@ export function SummaryScreen({
   profiles,
   onAgain,
   onSwitchProfile,
+  guidance,
 }: {
   summary: SessionSummaryDto;
   profiles: KidProfileDto[];
   onAgain: () => void;
   onSwitchProfile: () => void;
+  guidance?: ReactNode;
 }) {
   const { recall, spelling } = summary.independentSuccesses;
   const wordCount = (n: number) => {
@@ -22,6 +26,7 @@ export function SummaryScreen({
   return (
     <main className="kid-screen kid-screen--summary">
       <h1 data-testid="kid-summary">{messages.kid.summaryTitle}</h1>
+      {guidance}
       {recall > 0 && (
         <p className="kid-summary-counts" data-testid="kid-summary-recall">
           {format(messages.kid.summaryRecall, { words: wordCount(recall) })}
@@ -65,10 +70,12 @@ export function SummaryScreen({
       )}
       <div className="kid-actions">
         <button type="button" className="kid-primary" data-testid="kid-again" onClick={onAgain}>
+          <KidIcon name="retry" />
           {messages.kid.again}
         </button>
         {profiles.length > 1 && (
           <button type="button" data-testid="kid-switch-profile" onClick={onSwitchProfile}>
+            <KidIcon name="arrow-right" />
             {messages.kid.switchProfile}
           </button>
         )}

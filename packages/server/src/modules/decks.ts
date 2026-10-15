@@ -41,6 +41,7 @@ import { computeTargetKey } from "../domain/target-key";
 import { VOCABULARY_SKILLS, type VocabularySkill } from "../domain/types";
 import { buildPayload, payloadToItem, validateItems } from "./item-payload";
 import { assertVocabularyDeck, readDeckKind, readVersionDeckKind } from "./deck-kind";
+import { validateVocabularyFormatItems } from "../domain/picture-vocabulary";
 import { assertAssetPublishable, reconcileDraftAssetsTx, requiredAssetsFor } from "./media-reconciliation";
 import {
   assertEditable,
@@ -152,6 +153,7 @@ async function readDraftDto(db: Executor, versionId: string): Promise<DraftDto> 
     deckId: version.deckId,
     editNumber: version.editNumber,
     status: version.state as DraftDto["status"],
+    vocabularyFormat: version.vocabularyFormat,
     title: version.title,
     items,
     assets: assets.map((a) => ({
@@ -173,6 +175,7 @@ async function readDraftDto(db: Executor, versionId: string): Promise<DraftDto> 
 export async function createDraft(services: Services, input: DraftInput): Promise<DraftDto> {
   const valid = DraftInputSchema.parse(input);
   validateItems(valid.items);
+  validateVocabularyFormatItems(valid.vocabularyFormat, valid.items);
 
   const deckId = randomUUID();
   const versionId = randomUUID();
@@ -188,6 +191,7 @@ export async function createDraft(services: Services, input: DraftInput): Promis
       title: valid.title,
       sourceLocale: valid.items[0]!.locales.source,
       targetLocale: valid.items[0]!.locales.target,
+      vocabularyFormat: valid.vocabularyFormat,
     });
     for (const [position, item] of valid.items.entries()) {
       const itemId = randomUUID();
@@ -243,6 +247,7 @@ export async function createEmptyDeck(
       title,
       sourceLocale: "pl-PL",
       targetLocale: "en-GB",
+      vocabularyFormat: "standard",
     });
 
     return { deckId: command.deckId, created: true };
@@ -491,6 +496,7 @@ export async function editDraft(
       await tx.update(deckVersions).set({ title: valid.title }).where(eq(deckVersions.id, draftId));
     }
     if (valid.items !== undefined) {
+      validateVocabularyFormatItems(version.vocabularyFormat, valid.items);
       await applyItems(tx, draftId, version.deckId, valid.items);
     }
     await bumpEditNumber(tx, draftId);
@@ -531,6 +537,9 @@ export async function publishDraft(
       .orderBy(asc(itemRevisions.position));
     if (revisions.length === 0) {
       throw new AppError("validation", { message: "deck has no items" });
+    }
+    if (version.vocabularyFormat === "picture") {
+      validateVocabularyFormatItems("picture", revisions.map((revision) => payloadToItem(revision.payload)));
     }
     const revisionIds = revisions.map((r) => r.id);
     const assets = await tx
@@ -582,6 +591,11 @@ export async function publishDraft(
         if (!illustration) {
           throw new AppError("validation", {
             message: `illustration not decided for revision ${revision.id}`,
+          });
+        }
+        if (illustration.state === "omitted" && version.vocabularyFormat === "picture") {
+          throw new AppError("validation", {
+            message: `picture vocabulary requires illustration for revision ${revision.id}`,
           });
         }
         if (illustration.state !== "omitted") {
@@ -721,10 +735,11 @@ export async function listDecks(services: Services): Promise<DeckSummaryDto[]> {
     })
     .from(decks)
     .orderBy(desc(decks.createdAt));
-  const editable = await services.db
-    .select({ deckId: deckVersions.deckId, id: deckVersions.id, state: deckVersions.state })
-    .from(deckVersions)
-    .where(inArray(deckVersions.state, ["draft", "review"]));
+  const versions = await services.db
+    .select({ deckId: deckVersions.deckId, id: deckVersions.id, state: deckVersions.state, vocabularyFormat: deckVersions.vocabularyFormat })
+    .from(deckVersions);
+  const editable = versions.filter((version) => version.state === "draft" || version.state === "review");
+  const versionById = new Map(versions.map((version) => [version.id, version]));
   const editableByDeck = new Map(editable.map((v) => [v.deckId, v]));
   return rows.map((row) => {
     const edit = editableByDeck.get(row.id);
@@ -732,6 +747,7 @@ export async function listDecks(services: Services): Promise<DeckSummaryDto[]> {
       deckId: row.id,
       title: row.title,
       kind: row.kind as "vocabulary" | "lesson",
+      vocabularyFormat: edit?.vocabularyFormat ?? versionById.get(row.publishedVersionId ?? "")?.vocabularyFormat ?? "standard",
       state: deckStateOf(row, edit ? (edit.state as "draft" | "review") : null),
       editableVersionId: edit?.id ?? null,
       publishedVersionId: row.publishedVersionId ?? null,
