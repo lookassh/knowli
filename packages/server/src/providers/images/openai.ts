@@ -6,7 +6,7 @@ export interface OpenAiImageOptions {
   baseUrl?: string;
 }
 
-const DEFAULT_MODEL = "gpt-image-1";
+const DEFAULT_MODEL = "gpt-image-2.5-sunburst";
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 
 const MIME_BY_FORMAT: Record<string, string> = {

@@ -559,7 +559,7 @@ export async function executeMediaAsset(services: Services, assetId: string, sig
             prompt: metadata.prompt!,
             // Starsze zasoby sprzed parametryzacji quality/format: odtwarzamy
             // żądanie zgodne z ich fingerprintem (gpt-image-1, high, png).
-            model: metadata.model ?? deps.image.model,
+            model: metadata.model ?? asset.model,
             size: metadata.size!,
             quality: metadata.quality ?? "high",
             format: metadata.format ?? "png",
