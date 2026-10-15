@@ -289,6 +289,14 @@ export function isFamilyDate(value: string): boolean {
 export const DeckStateSchema = z.enum(["draft", "review", "published", "archived"]);
 export type DeckState = z.infer<typeof DeckStateSchema>;
 
+/** Aktywne przypisanie dziecka w skrócie listy zestawów (podzbiór AssignmentDto). */
+export const DeckAssignedChildDtoSchema = z.object({
+  childId: UuidSchema,
+  displayName: z.string(),
+  testDate: z.string().nullable(),
+});
+export type DeckAssignedChildDto = z.infer<typeof DeckAssignedChildDtoSchema>;
+
 export const DeckSummaryDtoSchema = z.object({
   deckId: UuidSchema,
   title: z.string(),
@@ -298,6 +306,11 @@ export const DeckSummaryDtoSchema = z.object({
   vocabularyFormat: VocabularyFormatSchema.default("standard"),
   editableVersionId: UuidSchema.nullable(),
   publishedVersionId: UuidSchema.nullable(),
+  /** Meta listy; OPCJONALNE — starszy serwer może nie wysyłać. Liczba pozycji wersji
+   * reprezentatywnej (published ?? editable; 0 gdy brak wersji). */
+  itemCount: z.number().int().min(0).optional(),
+  /** Aktywne przypisania dzieci, kolejność jak w widoku szczegółu zestawu. */
+  assignedChildren: z.array(DeckAssignedChildDtoSchema).optional(),
 });
 export type DeckSummaryDto = z.infer<typeof DeckSummaryDtoSchema>;
 

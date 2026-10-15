@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { openNewMaterial } from "./helpers/parent-new-material";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -62,7 +63,7 @@ async function createAssignedLesson(
   expect(childId).toBeTruthy();
 
   await page.getByTestId("tab-decks").click();
-  await page.getByTestId("new-lesson-submit").click();
+  await openNewMaterial(page, "lesson");
   const objective = page.getByTestId(`lesson-objective-${objectiveIds[0]}`);
   await expect(objective).toBeVisible();
   const objectives = page.locator('[data-testid^="lesson-objective-"]');
@@ -104,11 +105,10 @@ async function createAssignedLesson(
   expect(savedDeck.draft?.assets).toEqual([]);
   await expect(page.locator('[data-testid^="exercise-audio-state-"]')).toHaveCount(0);
   const deckList = (await (await page.request.get("/api/v1/parent/decks")).json() as unknown[]).map((row) => DeckSummaryDtoSchema.parse(row));
-  const deckRowIndex = deckList.findIndex((deck) => deck.deckId === deckId);
-  expect(deckRowIndex).toBeGreaterThanOrEqual(0);
+  expect(deckList.some((deck) => deck.deckId === deckId)).toBe(true);
   await page.getByTestId("editor-back").click();
   await expect(page.getByTestId("lesson-editor")).toBeHidden();
-  await page.getByTestId(`deck-row-${deckRowIndex}`).click();
+  await page.locator(`[data-deck-id="${deckId}"]`).click();
   await expect(page.getByTestId("lesson-editor")).toBeVisible();
   await expect(page.getByTestId(`example-line-${exampleObjectiveId}-0`)).toHaveValue(APPROVED_EXAMPLE);
   await expect(page.getByTestId("publish-lesson")).toBeEnabled({ timeout: 120_000 });

@@ -88,3 +88,24 @@ test("domyślna nawigacja: strona główna otwiera wybór profilu dziecka, link 
   await expect(page.locator("[data-task-id]")).toBeVisible();
   await expect(page.getByTestId("kid-parent-link")).not.toBeVisible();
 });
+
+test("panel rodzica: zakładki z ikonami i stanem aktywnym", async ({ page }) => {
+  const request = page.request;
+  await request.post("/api/v1/parent/setup", { data: { secret: "1234" } });
+  expect((await request.post("/api/v1/parent/login", { data: { secret: "1234" } })).status()).toBe(200);
+
+  await page.goto("/parent");
+  // Zestawy są aktywne po wejściu; każda zakładka ma ikonę, aktywność steruje aria-current
+  await expect(page.getByTestId("tab-decks")).toHaveAttribute("aria-current", "true");
+  await expect(page.getByTestId("tab-decks").locator("svg")).toBeVisible();
+
+  await page.getByTestId("tab-children").click();
+  await expect(page.getByTestId("tab-children")).toHaveAttribute("aria-current", "true");
+  await expect(page.getByTestId("tab-decks")).toHaveAttribute("aria-current", "false");
+  await expect(page.getByTestId("tab-children").locator("svg")).toBeVisible();
+
+  await page.getByTestId("tab-progress").click();
+  await expect(page.getByTestId("tab-progress")).toHaveAttribute("aria-current", "true");
+  await expect(page.getByTestId("tab-decks")).toHaveAttribute("aria-current", "false");
+  await expect(page.getByTestId("tab-progress").locator("svg")).toBeVisible();
+});

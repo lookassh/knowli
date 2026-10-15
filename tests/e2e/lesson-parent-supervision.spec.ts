@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openNewMaterial } from "./helpers/parent-new-material";
 import { randomUUID } from "node:crypto";
 
 /**
@@ -103,7 +104,7 @@ async function stubSupervision(page: Page): Promise<{
 /** Tworzy, przegląda i PUBLIKUJE lekcję; zwraca deckId. */
 async function createAndPublishLesson(page: Page, title: string): Promise<string> {
   await page.getByTestId("tab-decks").click();
-  await page.getByTestId("new-lesson-submit").click();
+  await openNewMaterial(page, "lesson");
   await expect(page.getByTestId("new-lesson-form")).toBeVisible();
   const objectiveCheckboxes = page.locator('[data-testid^="lesson-objective-"]');
   await expect(objectiveCheckboxes.first()).toBeVisible();

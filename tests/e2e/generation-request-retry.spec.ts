@@ -5,6 +5,7 @@ import { createDatabase } from "@learning/server";
 import { expect, test, type Page } from "@playwright/test";
 import { messages } from "@learning/contracts";
 import { readTestRunConfig } from "../test-run-config";
+import { openNewMaterial } from "./helpers/parent-new-material";
 
 type WorldPool = ReturnType<typeof createDatabase>["pool"];
 let worldPool: WorldPool | null = null;
@@ -73,6 +74,7 @@ test("lost 202 response retries the same command and opens its single deck", asy
   });
 
   await enterParent(page);
+  await openNewMaterial(page, "generate");
   await page.getByTestId("deck-prompt").fill(prompt);
   await page.getByTestId("deck-title").fill(title);
   await page.getByTestId("deck-vocabulary-format").selectOption("picture");
@@ -80,8 +82,13 @@ test("lost 202 response retries the same command and opens its single deck", asy
   await expect(page.getByTestId("api-error")).toHaveText(messages.decks.generationUncertain);
   await expect(page.getByTestId("deck-title")).toBeDisabled();
   await expect(page.getByTestId("deck-prompt")).toBeDisabled();
-  await expect(page.getByTestId("create-empty-submit")).toBeDisabled();
+  await expect(page.getByTestId("new-material-back")).toBeDisabled();
   await expect(page.getByTestId("generate-submit")).toHaveText(messages.decks.retryGenerationRequest);
+  // zamknięcie modala w stanie niepewnym nie gubi polecenia — ponowne otwarcie odtwarza krok generowania
+  await page.getByTestId("new-material-close").click();
+  await page.getByTestId("new-material-open").click();
+  await expect(page.getByTestId("generate-submit")).toHaveText(messages.decks.retryGenerationRequest);
+  await expect(page.getByTestId("deck-title")).toBeDisabled();
   for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1440, height: 900 }]) {
     await page.setViewportSize(viewport);
     await expect(page.locator("body")).toHaveJSProperty("scrollWidth", await page.evaluate(() => window.innerWidth));
@@ -123,6 +130,7 @@ test("malformed 202 response stays uncertain and retries the original command", 
   });
 
   await enterParent(page);
+  await openNewMaterial(page, "generate");
   await page.getByTestId("deck-prompt").fill("angielskie kolory dla dziecka");
   await page.getByTestId("generate-submit").click();
   await expect(page.getByTestId("api-error")).toHaveText(messages.decks.generationUncertain);
@@ -152,6 +160,7 @@ test("a 202 with a malformed deck ID is not opened before retry", async ({ page 
   });
 
   await enterParent(page);
+  await openNewMaterial(page, "generate");
   await page.getByTestId("deck-prompt").fill("angielskie zwierzęta dla dziecka");
   await page.getByTestId("generate-submit").click();
   await expect(page.getByTestId("api-error")).toHaveText(messages.decks.generationUncertain);
@@ -179,6 +188,7 @@ test("a 500 after acceptance can be retried with one logical generation", async 
   });
 
   await enterParent(page);
+  await openNewMaterial(page, "generate");
   await page.getByTestId("deck-prompt").fill("angielskie jedzenie dla dziecka");
   await page.getByTestId("generate-submit").click();
   await expect(page.getByTestId("api-error")).toHaveText(messages.decks.generationUncertain);
@@ -196,6 +206,7 @@ test("two synchronous clicks issue only one generation request", async ({ page }
     await route.continue();
   });
   await enterParent(page);
+  await openNewMaterial(page, "generate");
   await page.getByTestId("deck-prompt").fill("angielskie kolory dla dziecka");
   await page.getByTestId("generate-submit").evaluate((element) => {
     element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -218,6 +229,7 @@ test("validation unlocks correction while authorization failure sends the parent
     await route.continue();
   });
   await enterParent(page);
+  await openNewMaterial(page, "generate");
   await page.getByTestId("deck-prompt").fill("angielskie kolory dla dziecka");
   await page.getByTestId("generate-submit").click();
   await expect(page.getByTestId("api-error")).toHaveText("invalid");
@@ -234,6 +246,7 @@ test("401 clears the pending command and returns the parent to login", async ({ 
     await route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ code: "unauthorized", message: "login" }) });
   });
   await enterParent(page);
+  await openNewMaterial(page, "generate");
   await page.getByTestId("deck-prompt").fill("angielskie kolory dla dziecka");
   await page.getByTestId("generate-submit").click();
   await expect(page.getByTestId("auth-secret")).toBeVisible();
@@ -250,6 +263,7 @@ test("403 is definitive and allows a corrected generation", async ({ page }) => 
     await route.continue();
   });
   await enterParent(page);
+  await openNewMaterial(page, "generate");
   await page.getByTestId("deck-prompt").fill("angielskie kolory dla dziecka");
   await page.getByTestId("generate-submit").click();
   await expect(page.getByTestId("api-error")).toHaveText("denied");
@@ -284,6 +298,7 @@ test("a failed list refresh after acceptance keeps the created editor open", asy
     await route.continue();
   });
   await enterParent(page);
+  await openNewMaterial(page, "generate");
   await page.getByTestId("deck-prompt").fill("angielskie kolory dla dziecka");
   await page.getByTestId("deck-title").fill("Lista może się odświeżyć później");
   await page.getByTestId("generate-submit").click();
@@ -300,10 +315,12 @@ test("a new conscious generation after success uses a new idempotency key", asyn
     await route.continue();
   });
   await enterParent(page);
+  await openNewMaterial(page, "generate");
   await page.getByTestId("deck-prompt").fill("angielskie kolory dla dziecka");
   await page.getByTestId("generate-submit").click();
   await expect(page.getByTestId("generation-banner")).toBeVisible();
   await page.getByTestId("editor-back").click();
+  await openNewMaterial(page, "generate");
   await page.getByTestId("deck-prompt").fill("angielskie owoce dla dziecka");
   await page.getByTestId("generate-submit").click();
   await expect(page.getByTestId("generation-banner")).toBeVisible();
@@ -323,9 +340,11 @@ test("a late acceptance after leaving the decks tab does not open an editor", as
     await route.fulfill({ response });
   });
   await enterParent(page);
+  await openNewMaterial(page, "generate");
   await page.getByTestId("deck-prompt").fill("angielskie kolory dla dziecka");
   await page.getByTestId("generate-submit").click();
   await responseReceived;
+  await page.getByTestId("new-material-close").click();
   await page.getByTestId("tab-children").click();
   releaseResponse?.();
   await expect(page.getByTestId("child-name")).toBeVisible();

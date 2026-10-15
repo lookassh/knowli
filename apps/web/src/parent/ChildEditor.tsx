@@ -3,17 +3,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { messages, type ChildDto, type ChildPatch, type PronunciationSettingsDto } from "@learning/contracts";
 import { apiFetch, errorMessage } from "./api";
-
-const AVATARS: Array<{ key: string; emoji: string }> = [
-  { key: "fox", emoji: "🦊" },
-  { key: "cat", emoji: "🐱" },
-  { key: "owl", emoji: "🦉" },
-  { key: "panda", emoji: "🐼" },
-];
-
-function avatarEmoji(key: string): string {
-  return AVATARS.find((avatar) => avatar.key === key)?.emoji ?? "🙂";
-}
+import { ParentIcon } from "./ParentIcon";
+import { AVATARS, avatarEmoji } from "./avatars";
 
 function PronunciationSettings({ childId }: { childId: string }) {
   const [settings, setSettings] = useState<PronunciationSettingsDto | null>(null);
@@ -242,46 +233,68 @@ export default function ChildEditor({
 
   return (
     <section>
-      <h2>{messages.children.title}</h2>
+      <div className="pp-pagehead">
+        <h2 className="pp-pagehead-title">{messages.children.title}</h2>
+      </div>
       {editStatus && <p role="status">{editStatus}</p>}
-      {childrenList.length === 0 && <p>{messages.children.empty}</p>}
-      <ul className="plain">
+      {childrenList.length === 0 && <p className="pp-empty">{messages.children.empty}</p>}
+      <ul className="pp-plain pp-children-grid">
         {childrenList.map((child, index) => (
-          <li className="card row space" key={child.id} data-testid={`child-row-${index}`}>
-            <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>
-              {avatarEmoji(child.avatarKey)} {child.displayName}
-              {child.birthYear ? ` (${child.birthYear})` : ""}
-            </span>
+          <li className="pp-child-card" key={child.id} data-testid={`child-row-${index}`}>
+            <div className="pp-child-avatar" aria-hidden="true">{avatarEmoji(child.avatarKey)}</div>
+            <div className="pp-child-name">{child.displayName}</div>
+            <div className="pp-child-meta">
+              {child.birthYear ? `ur. ${child.birthYear}` : ""}
+              {child.birthYear ? " · " : ""}
+              {messages.children.recordingMode}:{" "}
+              {child.recordingMode === "hold" ? messages.children.recordingModeHold : messages.children.recordingModeToggle}
+            </div>
             {avatarCounts.get(child.avatarKey)! > 1 && <p className="info" data-testid={`duplicate-avatar-warning-${index}`}>{messages.children.duplicateAvatarWarning}</p>}
-            <div className="row" style={{ minWidth: 0, maxWidth: "100%" }}>
-              <a className="button-link" style={{ maxWidth: "100%", overflowWrap: "anywhere" }} data-testid="child-learn-link" href={`/kids/${child.id}/learn`}>
-                {messages.children.startLearning} · {child.displayName}
+            <div className="pp-child-actions">
+              <a
+                className="pp-btn pp-btn-primary pp-child-learn"
+                data-testid="child-learn-link"
+                href={`/kids/${child.id}/learn`}
+              >
+                <ParentIcon name="play" />
+                {messages.children.startLearning}
               </a>
+              <div className="pp-child-row2">
+                <button
+                  type="button"
+                  className="pp-btn pp-btn-quiet pp-btn-sm"
+                  data-testid="child-edit"
+                  ref={(button) => { if (button) editButtons.current.set(child.id, button); else editButtons.current.delete(child.id); }}
+                  aria-expanded={editing?.id === child.id}
+                  aria-controls={`child-edit-form-${child.id}`}
+                  disabled={editBusy}
+                  onClick={() => editing?.id === child.id ? cancelEdit() : startEdit(child)}
+                >
+                  <ParentIcon name="pencil" />
+                  {messages.children.edit}
+                </button>
+                <button
+                  type="button"
+                  className="pp-btn pp-btn-quiet pp-btn-sm"
+                  data-testid={`child-settings-${index}`}
+                  aria-expanded={openSettings === child.id}
+                  onClick={() => setOpenSettings(openSettings === child.id ? null : child.id)}
+                >
+                  <ParentIcon name="mic" />
+                  {messages.children.pronunciationTitle}
+                </button>
+              </div>
               <button
                 type="button"
-                data-testid="child-edit"
-                ref={(button) => { if (button) editButtons.current.set(child.id, button); else editButtons.current.delete(child.id); }}
-                aria-expanded={editing?.id === child.id}
-                aria-controls={`child-edit-form-${child.id}`}
-                disabled={editBusy}
-                onClick={() => editing?.id === child.id ? cancelEdit() : startEdit(child)}
+                className="pp-btn pp-btn-ghost pp-btn-sm pp-btn-danger"
+                disabled={editBusy && editing?.id === child.id}
+                onClick={() => remove(child.id)}
               >
-                {messages.children.edit}
-              </button>
-              <button
-                type="button"
-                data-testid={`child-settings-${index}`}
-                aria-expanded={openSettings === child.id}
-                onClick={() => setOpenSettings(openSettings === child.id ? null : child.id)}
-              >
-                {messages.children.pronunciationTitle}
-              </button>
-              <button type="button" disabled={editBusy && editing?.id === child.id} onClick={() => remove(child.id)}>
                 {messages.children.remove}
               </button>
             </div>
             {editing?.id === child.id && (
-              <form id={`child-edit-form-${child.id}`} style={{ flexBasis: "100%", minWidth: 0 }} onSubmit={saveEdit}>
+              <form id={`child-edit-form-${child.id}`} className="pp-child-edit-form" onSubmit={saveEdit}>
                 <div className="grid-2">
                   <label>
                     {messages.children.displayName}
@@ -325,21 +338,27 @@ export default function ChildEditor({
           </li>
         ))}
       </ul>
-      <section className="card">
-        <label>
-          {messages.children.displayName}
-          <input data-testid="child-name" value={name} onChange={(event) => setName(event.target.value)} />
-        </label>
-        <label>
-          {messages.children.avatar}
-          <select data-testid="child-avatar" value={avatar} onChange={(event) => setAvatar(event.target.value)}>
-            {AVATARS.map((option) => (
-              <option key={option.key} value={option.key}>
-                {option.emoji}
-              </option>
-            ))}
-          </select>
-        </label>
+      <section className="pp-child-card pp-add-child">
+        <div className="pp-add-child-title">
+          <ParentIcon name="plus" />
+          {messages.children.add}
+        </div>
+        <div className="grid-2">
+          <label>
+            {messages.children.displayName}
+            <input data-testid="child-name" value={name} onChange={(event) => setName(event.target.value)} />
+          </label>
+          <label>
+            {messages.children.avatar}
+            <select data-testid="child-avatar" value={avatar} onChange={(event) => setAvatar(event.target.value)}>
+              {AVATARS.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.emoji}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <label>
           {messages.children.birthYear}
           <input
@@ -351,7 +370,7 @@ export default function ChildEditor({
             onChange={(event) => setBirthYear(event.target.value)}
           />
         </label>
-        <button type="button" data-testid="child-add" onClick={add} disabled={busy || name.length === 0}>
+        <button type="button" data-testid="child-add" className="pp-btn pp-btn-quiet" onClick={add} disabled={busy || name.length === 0}>
           {messages.children.add}
         </button>
         {error && (

@@ -84,7 +84,21 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 768, height: 1024
     });
     await page.goto("/parent");
     await page.getByTestId("tab-progress").click();
-    await page.getByTestId("progress-load").click();
+    // auto-load po wejściu: karty pojawiają się bez przycisku
+    // paski opanowania czytają segmenty z etykiety aria
+    const listeningBar = page.getByTestId("progress-skill-listening");
+    await expect(listeningBar).toHaveAttribute("aria-label", "1 z 2: opanowane 1, do potwierdzenia 1, w trakcie nauki 0, nie sprawdzono 0");
+    const listeningSegments = listeningBar.locator(":scope > span");
+    await expect.poll(async () => (await listeningSegments.nth(2).boundingBox())?.width).toBe(0);
+    await expect.poll(async () => (await listeningSegments.nth(3).boundingBox())?.width).toBe(0);
+    await expect.poll(async () => {
+      const bar = await listeningBar.boundingBox();
+      const first = await listeningSegments.nth(0).boundingBox();
+      const second = await listeningSegments.nth(1).boundingBox();
+      return Math.round((first?.width ?? 0) + (second?.width ?? 0) - (bar?.width ?? 0));
+    }).toBe(0);
+    await expect(page.getByTestId("progress-skill-recall")).toHaveAttribute("aria-label", "0 z 2: opanowane 0, do potwierdzenia 1, w trakcie nauki 0, nie sprawdzono 1");
+    await expect(page.getByTestId("progress-skills")).toContainText("Opanowane (potwierdzone po przerwie)");
     if (viewport.width === 390) {
       await expect(page.getByTestId("progress-picture-note")).toContainText("Wcześniejsze wyniki zostają zachowane");
       await expect(page.getByTestId("progress-picture-note")).toContainText("pełna liczba słów pozostaje w raporcie");
@@ -102,20 +116,37 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 768, height: 1024
     await expect(tiles.last()).toContainText("Dziś");
     await expect(tiles.last()).toContainText("18 min");
     await expect(tiles.first()).toContainText("—");
-    await expect(activity).toContainText("Dni z nauką: 3");
-    await expect(activity).toContainText("Podejścia: 5");
+    // 4 liczby kluczowe zamiast listy; kliknięcia (interactions) celowo poza widokiem
+    await expect(activity).toContainText("38 min");
+    const stats = activity.locator(".pp-stat");
+    await expect(stats.nth(1)).toContainText("3");
+    await expect(stats.nth(1)).toContainText("dni z nauką");
+    await expect(stats.nth(2)).toContainText("5");
+    await expect(stats.nth(2)).toContainText("podejścia");
+    await expect(stats.nth(3)).toContainText("84");
+    await expect(stats.nth(3)).toContainText("odpowiedzi");
+    await expect(activity).toContainText("czas nauki");
+    await expect(activity).toContainText("dni z nauką");
+    await expect(activity).toContainText("podejścia");
+    await expect(activity).toContainText("odpowiedzi");
     await expect(activity).toContainText("Dni tygodnia — 3");
     await expect(activity).toContainText("Owoce — 2");
-    await expect(activity).toContainText("Odpowiedzi: 84");
-    await expect(activity).toContainText("Kliknięcia: 210");
+    await expect(activity).not.toContainText("Kliknięcia");
     const list = page.getByRole("region", { name: "Wszystkie słowa" });
     await expect(list).toBeVisible();
+    // legenda kropek (4 statusy) widoczna nad tabelą/kartami
+    const legend = list.locator(".pp-legend");
+    await expect(legend).toContainText("Opanowane");
+    await expect(legend).toContainText("Do potwierdzenia");
+    await expect(legend).toContainText("W trakcie nauki");
+    await expect(legend).toContainText("Nie sprawdzono");
     const words = viewport.width > 900 ? list.getByRole("row").filter({ has: page.getByRole("rowheader") })
       : list.getByRole("listitem");
     await expect(words).toHaveCount(2);
     const monday = words.nth(0);
     await expect(monday).toContainText("Monday");
     await expect(monday).toContainText("poniedziałek");
+    // statusy czytane z sr-only tekstu przy kropkach / w kartach mobilnych
     for (const status of ["Opanowane", "Do potwierdzenia", "Do ponownego potwierdzenia", "W trakcie nauki", "Nie sprawdzono"]) {
       await expect(monday).toContainText(status);
     }
@@ -138,9 +169,9 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 768, height: 1024
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     }
     await list.screenshot({ path: test.info().outputPath(`words-${viewport.width}.png`) });
-    await page.getByTestId("progress-child").selectOption(otherChildId);
+    await page.getByTestId("progress-child").getByRole("button", { name: "Bartek" }).click();
+    await expect(page.getByTestId("progress-child").getByRole("button", { name: "Bartek" })).toHaveAttribute("aria-pressed", "true");
     await page.getByTestId("progress-deck").selectOption(otherDeckId);
-    await page.getByTestId("progress-load").click();
     await expect(page.getByTestId("progress-heading")).toContainText("Owoce — Bartek");
     // dziecko bez aktywności: jasny komunikat zamiast zer
     await expect(page.getByTestId("progress-activity")).toContainText("Brak rozpoczętej nauki w tym okresie.");
@@ -148,10 +179,27 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 768, height: 1024
     await expect(words.first()).toContainText("apple");
     await expect(list).not.toContainText("Monday");
     await expect(list).not.toContainText("Zmieniono materiał");
-    await page.getByTestId("progress-child").selectOption(childId);
-    await page.getByTestId("progress-load").click();
+    await page.getByTestId("progress-child").getByRole("button", { name: "Ala" }).click();
     await expect(list).toContainText("Brak słów w tym zestawie.");
     await expect(words).toHaveCount(0);
     await expect(list.getByRole("table", { includeHidden: true })).toHaveCount(0);
   });
 }
+
+test("wygaśnięcie sesji podczas ładowania Postępów wraca do ekranu logowania", async ({ page }) => {
+  await page.route("**/api/v1/parent/login", async (route) => {
+    await route.fulfill({ json: { authenticated: true, setupRequired: false } });
+  });
+  await page.route("**/api/v1/parent/children", async (route) => {
+    await route.fulfill({ json: [{ id: childId, displayName: "Ala", avatarKey: "star" }] });
+  });
+  await page.route("**/api/v1/parent/decks", async (route) => {
+    await route.fulfill({ json: [{ deckId, title: "Dni tygodnia", state: "published", editableVersionId: null, publishedVersionId: deckId }] });
+  });
+  await page.route("**/api/v1/parent/progress", async (route) => {
+    await route.fulfill({ status: 401, json: { code: "unauthorized", message: "sesja wygasła" } });
+  });
+  await page.goto("/parent");
+  await page.getByTestId("tab-progress").click();
+  await expect(page.getByTestId("auth-secret")).toBeVisible({ timeout: 10_000 });
+});

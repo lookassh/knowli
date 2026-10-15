@@ -162,6 +162,31 @@ describe("zarządzanie zestawami i przypisaniami (integracja)", () => {
     expect((await listDecks(services))[0]).toMatchObject({ deckId, state: "archived" });
   });
 
+  it("listDecks podaje opcjonalne meta: liczbę pozycji i aktywne przypisania", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = mediaServices(fakes);
+
+    const deck = await publishedDeck(services);
+    const ala = await childId("Ala");
+    const ola = await childId("Ola");
+    await upsertAssignment(services, ala, deck.deckId, "2026-10-24");
+    await upsertAssignment(services, ola, deck.deckId, null);
+
+    const summary = (await listDecks(services)).find((d) => d.deckId === deck.deckId)!;
+    expect(summary.itemCount).toBe(1);
+    expect([...summary.assignedChildren ?? []].sort((a, b) => a.displayName.localeCompare(b.displayName))).toEqual([
+      { childId: ala, displayName: "Ala", testDate: "2026-10-24" },
+      { childId: ola, displayName: "Ola", testDate: null },
+    ]);
+
+    // szkic bez przypisań liczy pozycje wersji edytowalnej, reprezentatywnej dla stanu
+    const manual = await createDraft(services, { title: "Szkicowy", items: [item(), item({ source: "piątek", target: "Friday" })] });
+    const draftSummary = (await listDecks(services)).find((d) => d.deckId === manual.deckId)!;
+    expect(draftSummary.itemCount).toBe(2);
+    expect(draftSummary.assignedChildren).toEqual([]);
+  });
+
   it("listDecks/readDeck prowadzą zestaw przez draft → review → published", async () => {
     const fakes = await fakeGeneration();
     disposers.push(fakes.dispose);

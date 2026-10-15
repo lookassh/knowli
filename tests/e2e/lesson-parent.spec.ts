@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openNewMaterial } from "./helpers/parent-new-material";
 import { randomUUID } from "node:crypto";
 import { LessonDeckDtoSchema } from "@learning/contracts";
 
@@ -26,7 +27,7 @@ async function createLesson(
   waitForGeneration = true,
   selectedObjectiveIds?: readonly string[],
 ): Promise<string> {
-  await page.getByTestId("new-lesson-submit").click();
+  await openNewMaterial(page, "lesson");
   await expect(page.getByTestId("new-lesson-form")).toBeVisible();
   // Katalog ma english_grammar → present_simple z regułami zaznaczonymi domyślnie.
   await expect(page.getByTestId("lesson-subject")).toBeVisible();
@@ -73,7 +74,7 @@ async function createLesson(
 
 test("defaults the pool size to max(60, 12 × selected objectives)", async ({ page }) => {
   await enterParent(page);
-  await page.getByTestId("new-lesson-submit").click();
+  await openNewMaterial(page, "lesson");
   await expect(page.locator('[data-testid^="lesson-objective-"]').first()).toBeVisible();
   const objectiveCount = await page.locator('[data-testid^="lesson-objective-"]').count();
   await expect(page.getByTestId("lesson-pool-size")).toHaveValue(String(Math.max(60, 12 * objectiveCount)));
@@ -226,7 +227,7 @@ test("guards against leaving the lesson editor with unsaved changes", async ({ p
 test("shows a version conflict when the draft changed in another window", async ({ page, context }) => {
   const lessonTitle = `Konflikt ${randomUUID().slice(0, 8)}`;
   await enterParent(page);
-  await createLesson(page, lessonTitle);
+  const deckId = await createLesson(page, lessonTitle);
 
   // Lokalna zmiana zamraża bazę formularza przed zapisem drugiego okna.
   await page.getByTestId("editor-title").fill(`${lessonTitle} lokalnie`);
@@ -236,7 +237,7 @@ test("shows a version conflict when the draft changed in another window", async 
   const other = await context.newPage();
   await other.goto("/parent");
   await other.getByTestId("tab-decks").click();
-  await other.getByTestId("deck-row-0").click();
+  await other.locator(`[data-deck-id="${deckId}"]`).click();
   await expect(other.getByTestId("lesson-editor")).toBeVisible();
   await other.getByTestId("editor-title").fill(`${lessonTitle} zdalnie`);
   const remoteSaved = other.waitForResponse((response) =>
@@ -276,7 +277,7 @@ test("keeps the lesson editor usable at phone and desktop widths", async ({ page
 test("parent edits an AI example before publishing: change is sent in PATCH.examples and persists (P2-10)", async ({ page }) => {
   const lessonTitle = `Przyklady ${randomUUID().slice(0, 8)}`;
   await enterParent(page);
-  await createLesson(page, lessonTitle);
+  const deckId = await createLesson(page, lessonTitle);
 
   // Sekcja przykładów AI jest obecna; przykłady są EDYTOWALNE (wym. 3.3), nie read-only.
   const examplesSection = page.getByTestId("lesson-examples");
@@ -311,10 +312,10 @@ test("parent edits an AI example before publishing: change is sent in PATCH.exam
   expect(body.examples![objectiveId]).toContain(added);
 
   // Przeładowanie edytora pokazuje poprawioną treść przykładu (trwałość).
-  // Wejście od nowa (jak w teście konfliktu): najnowsza lekcja jest pierwsza.
+  // Wejście od nowa (jak w teście konfliktu) — wiersz po deckId, lista jest pogrupowana.
   await page.goto("/parent");
   await page.getByTestId("tab-decks").click();
-  await page.getByTestId("deck-row-0").click();
+  await page.locator(`[data-deck-id="${deckId}"]`).click();
   await expect(page.getByTestId("lesson-editor")).toBeVisible();
   await expect(page.getByTestId(`example-line-${objectiveId}-0`)).toHaveValue(corrected);
 });

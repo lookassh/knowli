@@ -91,6 +91,8 @@ Rodzic może:
 - wycofać zestaw z nauki;
 - zobaczyć postępy i najczęstsze trudności wybranego dziecka.
 
+Panel rodzica (redesign 2026-10) ma wspólną ramę: pasek aplikacji z nazwą i wylogowaniem oraz zakładki Zestawy/Dzieci/Postępy ze stanem aktywnym. Tworzenie materiału (generacja, pusty zestaw, nowa lekcja) żyje w oknie modalnym „Nowy materiał"; lista zestawów jest pogrupowana po stanie (Wymaga Twojej uwagi → Gotowe do nauki → Szkice → Archiwum) z meta pozycji i przypisanych dzieci. Filtry dziecka w Postępach ładują dane automatycznie; wygaśnięcie sesji wraca do logowania.
+
 Szkic wygenerowany przez AI nie jest automatycznie dostępny dziecku. Po edycji opublikowanej treści nowa wersja również wymaga zatwierdzenia. Historyczne odpowiedzi muszą nadal odnosić się do treści, którą dziecko faktycznie widziało.
 
 Edytor zestawu chroni lokalne, niezapisane poprawki przy zmianie zakładki,
@@ -665,7 +667,7 @@ Uzupełnienie review lekcji (2026-10-13, wymaganie 3.3): przed publikacją rodzi
 
 Panel jest prosty, filtrowany według dziecka i zestawu. Pokazuje:
 
-- pełną listę słów bieżącej opublikowanej wersji zestawu, z polskim znaczeniem i osobnym statusem każdej z pięciu umiejętności (tabela na desktopie, karty na telefonie); zmiana materiału wymagająca ponownego sprawdzenia jest oznaczona przy słowie;
+- pełną listę słów bieżącej opublikowanej wersji zestawu, z polskim znaczeniem i osobnym statusem każdej z pięciu umiejętności (tabela na desktopie, karty na telefonie); statusy prezentowane jako kolorowe kropki ze wspólną legendą i tekstem dla czytników ekranu; zmiana materiału wymagająca ponownego sprawdzenia jest oznaczona przy słowie;
 - rozpoznawanie ze słuchu i tekstu;
 - samodzielne przypominanie;
 - samodzielną pisownię;
@@ -674,16 +676,14 @@ Panel jest prosty, filtrowany według dziecka i zestawu. Pokazuje:
 - najczęściej mylone elementy;
 - informację, czy wynik został potwierdzony po przerwie;
 - termin sprawdzianu, jeśli go ustawiono;
-- zbiorczą aktywność dziecka z ostatnich 7 dni, niezależnie od wybranego zestawu: przybliżony czas nauki (liczony do ostatniej aktywności sesji, z obcięciem do limitu sesji), liczbę dni z nauką, liczbę podejść (sesji) łącznie i per zestaw, liczbę odpowiedzi oraz liczbę interakcji (kliknięć); wznowienie sesji w oknie wznowienia to jedno podejście.
+- zbiorczą aktywność dziecka z ostatnich 7 dni, niezależnie od wybranego zestawu: kafelki dobowe i cztery liczby kluczowe — przybliżony czas nauki (liczony do ostatniej aktywności sesji, z obcięciem do limitu sesji), liczba dni z nauką, liczba podejść (sesji) i liczba odpowiedzi; rozkład podejść per zestaw pozostaje w drobnym wierszu, liczba interakcji (kliknięć) pozostaje w danych, ale poza widokiem; wznowienie sesji w oknie wznowienia to jedno podejście;
 
 Przykład:
 
 > Dni tygodnia — Krzysztof  
-> Rozpoznaje ze słuchu: 6/7  
-> Przypomina samodzielnie: 5/7  
-> Pisze samodzielnie: 3/7  
-> Do ćwiczeń: pisownia Wednesday, przypominanie Thursday  
-> Najczęstsza pomyłka: Thursday → Tuesday
+> Opanowanie: paski per umiejętność — Rozpoznaje ze słuchu 6/7, Przypomina samodzielnie 5/7, Pisze samodzielnie 3/7
+> Do ćwiczeń: chipy — Wednesday (pisownia), Thursday (przypominanie)
+> Najczęstsza pomyłka: Thursday → Tuesday (3×)
 
 Nie wymagamy dużego dashboardu analitycznego ani wykresów. Dane liczbowe wymowy są dostępne rodzicowi, ale bez sugerowania, że wynik usługi jest precyzyjną miarą całej znajomości słowa.
 
