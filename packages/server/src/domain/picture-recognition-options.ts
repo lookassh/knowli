@@ -57,7 +57,7 @@ export function buildPictureRecognitionOptions(input: {
   }
   const revealsTargetKeys = new Set(answerKeys(input.target));
   for (const peer of pool) {
-    if (choices.length >= 3) break;
+    if (choices.length >= 4) break;
     const variants = answerKeys(peer);
     const label = normalizeTargetText(peer.source);
     const visual = visualKey(peer.visual);

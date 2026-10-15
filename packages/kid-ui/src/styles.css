@@ -862,14 +862,14 @@
 
 .kid-exercise-frame[data-prompt-kind="picture_listening"] .kid-material-content {
   justify-content: flex-start;
-  gap: 8px;
+  gap: 4px;
   overflow-y: auto;
 }
 
 .kid-exercise-frame[data-prompt-kind="picture_listening"] .kid-play-big {
-  width: clamp(56px, 10svh, 80px) !important;
-  min-height: clamp(56px, 10svh, 80px) !important;
-  height: clamp(56px, 10svh, 80px) !important;
+  width: clamp(52px, 8svh, 80px) !important;
+  min-height: clamp(52px, 8svh, 80px) !important;
+  height: clamp(52px, 8svh, 80px) !important;
   flex: none;
 }
 
@@ -881,23 +881,26 @@
 .kid-picture-options {
   min-height: 0;
   flex: 1;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 8px;
 }
 
 .kid-picture-options > li {
-  flex: none;
+  min-width: 0;
 }
 
 .kid-picture-options .kid-picture-option {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 12px;
-  min-height: max(48px, min(11.25svh, 84px));
-  height: auto;
-  padding-block: 4px;
-  padding-inline: 12px 44px;
-  text-align: left;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  height: clamp(72px, 11svh, 124px);
+  min-height: 72px;
+  padding: 10px;
+  text-align: center;
 }
 
 .kid-picture-options button.kid-option--correct::before,
@@ -907,9 +910,8 @@
 }
 
 .kid-picture-choice-visual {
-  width: min(64px, 20%);
-  height: min(64px, 100%);
-  flex: 0 0 min(64px, 20%);
+  width: clamp(48px, 8svh, 88px);
+  height: clamp(48px, 8svh, 88px);
   display: grid;
   place-items: center;
 }
@@ -920,8 +922,8 @@
   box-sizing: border-box;
   width: 100%;
   height: 100%;
-  max-width: 64px;
-  max-height: 64px;
+  max-width: 112px;
+  max-height: 112px;
   object-fit: contain;
 }
 
@@ -931,9 +933,37 @@
 }
 
 .kid-picture-choice-label {
-  min-width: 0;
-  flex: 1;
-  overflow-wrap: anywhere;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.kid-picture-options .kid-picture-option.kid-option--correct::before,
+.kid-picture-options .kid-picture-option.kid-option--wrong::before {
+  inset-inline: auto 8px;
+  top: 8px;
+  transform: none;
+}
+
+.kid-picture-choice-visual .kid-visual-number--digit text {
+  fill: var(--kid-text);
+}
+
+.kid-page[data-zoomed="true"] .kid-picture-options,
+.kid-page[data-viewport-very-short="true"] .kid-picture-options {
+  flex: none;
+  grid-auto-rows: minmax(112px, auto);
+}
+
+.kid-page[data-zoomed="true"] .kid-picture-options .kid-picture-option,
+.kid-page[data-viewport-very-short="true"] .kid-picture-options .kid-picture-option {
+  height: 112px;
 }
 
 .kid-play-big svg {

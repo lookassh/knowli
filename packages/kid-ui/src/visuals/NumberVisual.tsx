@@ -4,7 +4,10 @@ function columnsForCount(count: number): number {
   return count <= 3 ? count : Math.ceil(Math.sqrt(count * 1.8));
 }
 
-export function NumberVisual({ count, label }: { count: number; label: string }): ReactElement {
+export function NumberVisual({ count, label, display = "apples" }: { count: number; label: string; display?: "apples" | "digit" }): ReactElement {
+  if (display === "digit") {
+    return <svg className="kid-visual kid-visual-number kid-visual-number--digit" viewBox="0 0 160 120" role="img" aria-label={label}><text x="80" y="84" textAnchor="middle" fontSize="88" fontWeight="800" fill="currentColor">{count}</text></svg>;
+  }
   const viewWidth = 160;
   const viewHeight = 120;
   const appleWidth = 24;
