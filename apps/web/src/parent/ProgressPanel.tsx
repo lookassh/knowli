@@ -290,17 +290,27 @@ export default function ProgressPanel({
 
           <ProgressItems items={progress.items} />
 
-          <div className="card" data-testid="progress-pronunciation">
+          <div className="pp-card" data-testid="progress-pronunciation">
             {progress.pronunciation.assessed ? (
-              <ul className="plain">
+              <div>
                 {progress.pronunciation.latestScores.map((score) => (
-                  <li key={score.target}>
-                    {score.target}: {score.score}{" "}
-                    {score.band && `(${score.band})`} — {score.provider}
-                  </li>
+                  <div className="pp-pron-row" key={score.target}>
+                    <span className="pp-pron-word">{score.target}</span>
+                    <span className="pp-pron-track" role="img" aria-label={String(score.score)}>
+                      <span style={{ width: `${Math.max(0, Math.min(100, score.score))}%` }} />
+                    </span>
+                    <span className="pp-pron-v">{score.score}</span>
+                    <span className={`pp-chip ${score.band === "correct" ? "pp-chip-green" : score.band === "partial" ? "pp-chip-amber" : "pp-chip-gray"}`}>
+                      {score.band === "correct"
+                        ? messages.children.pronunciationBandCorrect
+                        : score.band === "partial"
+                          ? messages.children.pronunciationBandPartial
+                          : messages.children.pronunciationBandBelow}
+                    </span>
+                  </div>
                 ))}
-                <li className="info">{fill(messages.progress.pronunciationNote, { provider: progress.pronunciation.latestScores[0]?.provider ?? "" })}</li>
-              </ul>
+                <p className="pp-note"><ParentIcon name="info" />{fill(messages.progress.pronunciationNote, { provider: progress.pronunciation.latestScores[0]?.provider ?? "" })}</p>
+              </div>
             ) : (
               <p>{messages.progress.pronunciationNotAssessed}</p>
             )}

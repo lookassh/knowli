@@ -114,12 +114,19 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 768, height: 1024
     await expect(activity).not.toContainText("Kliknięcia");
     const list = page.getByRole("region", { name: "Wszystkie słowa" });
     await expect(list).toBeVisible();
+    // legenda kropek (4 statusy) widoczna nad tabelą/kartami
+    const legend = list.locator(".pp-legend");
+    await expect(legend).toContainText("Opanowane");
+    await expect(legend).toContainText("Do potwierdzenia");
+    await expect(legend).toContainText("W trakcie nauki");
+    await expect(legend).toContainText("Nie sprawdzono");
     const words = viewport.width > 900 ? list.getByRole("row").filter({ has: page.getByRole("rowheader") })
       : list.getByRole("listitem");
     await expect(words).toHaveCount(2);
     const monday = words.nth(0);
     await expect(monday).toContainText("Monday");
     await expect(monday).toContainText("poniedziałek");
+    // statusy czytane z sr-only tekstu przy kropkach / w kartach mobilnych
     for (const status of ["Opanowane", "Do potwierdzenia", "Do ponownego potwierdzenia", "W trakcie nauki", "Nie sprawdzono"]) {
       await expect(monday).toContainText(status);
     }
