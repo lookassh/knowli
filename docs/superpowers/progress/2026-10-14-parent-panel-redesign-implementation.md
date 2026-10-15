@@ -67,6 +67,19 @@ Plan: `docs/superpowers/plans/2026-10-14-parent-panel-redesign.md`. Baza wykonan
 - `git diff --check` czysty.
 - Dowody pełne: unit 110 plików / 1082 testów OK; integration 37 plików / 362 OK (UMIEM_TEST_RUN_ID=parent-redesign); typecheck OK; build OK; pełny pakiet 13 speków e2e — wynik odnotowany poniżej po zakończeniu runu.
 
+## Review implementacji (niezależny subagent, GLM-5.3)
+
+- Runda 1 (całość 1d5399d..87953e7): **APPROVE_WITH_CHANGES** — I1 duplikat parent.css (x2), I2 nieostylowane odznaki/ton kartkówki, I3 naruszenia ≥44px i kontrastu; M1–M6. Naprawione w 700e24f (+ usuwanie 13 martwych kluczy messages, fokus kroków modala, stabilny toLogin, plan+spec w gałęzi).
+- Runda 2 (diff 700e24f): **REQUEST_CHANGES** — N1 resztka duplikatu tokenów, N2 data-tone „high" zamiast „good", N3 pp-btn-icon 38px na przyciskach destrukcyjnych; doszyto M3 (fokus na nagłówek przy zablokowanym submit). Naprawione w 058c755.
+- Runda 3 (diff 058c755): **APPROVE**. Otwarty Minor: inline `style={{outline:"none"}}` mógłby być regułą CSS (kosmetyka, odłożone).
+- Smoke po iteracjach naprawczych: 28/28 (progress-panel, generation-request-retry, manual-deck-flow); typecheck zielony.
+
+## Pełna weryfikacja (HEAD=058c755+docs)
+
+- unit: 110 plików / 1082 testów OK; integration: 37 / 362 OK; typecheck OK; build OK.
+- e2e pakiet 13 speków panelu: 77/79 w pierwszym pełnym przebiegu → 2 naprawione (supervision: brak otwarcia modala — mój niedopatrzeń patch z Zadania 2; grupowanie: asercja zakładała pusty świat) → rerun 14/14; CI zweryfikuje pełny pakiet na czystym środowisku.
+- git diff --check czysty.
+
 ## Wpływ API → MCP → skill
 
 - API: `DeckSummaryDto` rozszerzone o pola **opcjonalne** (addytywne, bez bumpu schemaVersion). Endpointy bez zmian kształtu poza tym.
