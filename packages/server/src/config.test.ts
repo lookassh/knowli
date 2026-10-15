@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { defaultMediaSettings, graderFromEnv, mediaSettingsFromEnv } from "./config";
 
 describe("mediaSettingsFromEnv", () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it("bez env zwraca domyślne ustawienia (low + webp)", () => {
     expect(mediaSettingsFromEnv({})).toEqual(defaultMediaSettings);
     expect(defaultMediaSettings.image).toMatchObject({ quality: "low", format: "webp" });
@@ -22,6 +24,35 @@ describe("mediaSettingsFromEnv", () => {
       format: "png",
     });
     expect(settings.tts).toEqual(defaultMediaSettings.tts);
+  });
+
+  it("zastępuje nieobsługiwany rozmiar OpenAI domyślnym i ostrzega o konfiguracji", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const settings = mediaSettingsFromEnv({ UMIEM_IMAGE_SIZE: "512x512" });
+
+    expect(settings.image.size).toBe("1024x1024");
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("UMIEM_IMAGE_SIZE"));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("512x512"));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("1024x1024"));
+  });
+
+  it("nie normalizuje rozmiaru dla innego providera obrazów", () => {
+    const settings = mediaSettingsFromEnv({ UMIEM_IMAGE_PROVIDER: "custom", UMIEM_IMAGE_SIZE: "512x512" });
+
+    expect(settings.image.size).toBe("512x512");
+  });
+
+  it("zachowuje niestandardową rozdzielczość dla modelu OpenAI obsługującego dowolne rozmiary", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const settings = mediaSettingsFromEnv({
+      UMIEM_IMAGE_MODEL: "gpt-image-2",
+      UMIEM_IMAGE_SIZE: "1536x864",
+    });
+
+    expect(settings.image.size).toBe("1536x864");
+    expect(warn).not.toHaveBeenCalled();
   });
 });
 

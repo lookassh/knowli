@@ -80,6 +80,17 @@ wchodzą do fingerprintów zasobów. Zasady potwierdzone próbą:
 - model, jakość i format obrazu płyną metadanymi zasobu aż do adaptera, więc
   `UMIEM_IMAGE_MODEL` faktycznie steruje wywołaniem API (także
   `gpt-image-1-mini`), a żądanie nie może się rozjechać z fingerprintem;
+- Standardowe rozmiary OpenAI Images API to `1024x1024`, `1024x1536`,
+  `1536x1024` i — dla modeli, które to obsługują — `auto`. Modele
+  `gpt-image-2` i wskazane snapshoty `gpt-image-2.5` dopuszczają własne
+  rozdzielczości. Dla pozostałych modeli OpenAI nieobsługiwane
+  `UMIEM_IMAGE_SIZE` powoduje ostrzeżenie i użycie `1024x1024` zarówno w
+  fingerprintach, jak i żądaniu; niestandardowi providerzy zachowują własne
+  rozmiary.
+- Po zmianie rozmiaru ponowienie istniejącego zadania generacji nadal używa
+  niezmiennych metadanych starego zasobu. Dla zasobów utworzonych z błędnym
+  rozmiarem trzeba zregenerować ilustrację albo ponownie edytować szkic, aby
+  reconciliation utworzył nowy zasób z aktualnymi ustawieniami.
 - zmiana po wygenerowaniu materiału = nowa generacja przy następnej edycji
   (zgodnie z projektem — nic nie nadpisuje gotowych zasobów);
 - zapis `MediaStore.putImmutable` jest idempotentny i adresowany treścią;

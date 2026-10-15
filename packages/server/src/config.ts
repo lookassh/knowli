@@ -38,8 +38,30 @@ export const defaultMediaSettings: MediaSettings = {
   image: { provider: "openai", model: "gpt-image-1", size: "1024x1024", quality: "low", format: "webp" },
 };
 
+const OPENAI_IMAGE_SIZES = new Set(["1024x1024", "1024x1536", "1536x1024", "auto"]);
+const OPENAI_MODELS_WITH_CUSTOM_IMAGE_SIZES = new Set([
+  "gpt-image-2",
+  "gpt-image-2-2026-04-21",
+  "gpt-image-2.5-sunburst",
+  "gpt-image-2.5-sunburst-2026-09-08",
+  "gpt-image-2.5-flare",
+  "gpt-image-2.5-flare-2026-09-08",
+]);
+
 /** Nadpisywalne zmiennymi środowiskowymi (nazwy, nie sekrety). */
 export function mediaSettingsFromEnv(env: Record<string, string | undefined>): MediaSettings {
+  const imageProvider = env.UMIEM_IMAGE_PROVIDER ?? defaultMediaSettings.image.provider;
+  const imageModel = env.UMIEM_IMAGE_MODEL ?? defaultMediaSettings.image.model;
+  const configuredImageSize = env.UMIEM_IMAGE_SIZE ?? defaultMediaSettings.image.size;
+  const allowsCustomImageSize = OPENAI_MODELS_WITH_CUSTOM_IMAGE_SIZES.has(imageModel);
+  const imageSize = imageProvider === "openai" && !allowsCustomImageSize && !OPENAI_IMAGE_SIZES.has(configuredImageSize)
+    ? defaultMediaSettings.image.size
+    : configuredImageSize;
+  if (imageSize !== configuredImageSize) {
+    console.warn(
+      `[config] Unsupported UMIEM_IMAGE_SIZE "${configuredImageSize}" for OpenAI image generation; using "${imageSize}".`,
+    );
+  }
   return {
     tts: {
       provider: env.UMIEM_TTS_PROVIDER ?? defaultMediaSettings.tts.provider,
@@ -48,9 +70,9 @@ export function mediaSettingsFromEnv(env: Record<string, string | undefined>): M
       format: "mp3",
     },
     image: {
-      provider: env.UMIEM_IMAGE_PROVIDER ?? defaultMediaSettings.image.provider,
-      model: env.UMIEM_IMAGE_MODEL ?? defaultMediaSettings.image.model,
-      size: env.UMIEM_IMAGE_SIZE ?? defaultMediaSettings.image.size,
+      provider: imageProvider,
+      model: imageModel,
+      size: imageSize,
       quality: env.UMIEM_IMAGE_QUALITY ?? defaultMediaSettings.image.quality,
       format: env.UMIEM_IMAGE_FORMAT ?? defaultMediaSettings.image.format,
     },
