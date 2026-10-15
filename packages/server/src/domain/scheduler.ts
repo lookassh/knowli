@@ -240,12 +240,15 @@ function presentedOnce(candidates: readonly ScheduleCandidate[]): ScheduleCandid
  * w pełni rozpoczętym zestawie rotuje całym materiałem zamiast wiercić
  * jeden element (regresja „zawsze styczeń”).
  */
-function practicePool(candidates: readonly ScheduleCandidate[]): ScheduleCandidate[] {
+function practicePool(candidates: readonly ScheduleCandidate[], input: ScheduleInput): ScheduleCandidate[] {
+  const masterySkills = input.canRead === false
+    ? getVocabularyCapabilities({ canRead: false, microphoneEnabled: input.microphoneEnabled }).skills
+    : undefined;
   return candidates
     .filter((c) => c.usedThisSession > 0 || isStarted(c) || c.ownPresentationCompleted === true)
     .sort(
       (a, b) =>
-        Number(isFullyMastered(a)) - Number(isFullyMastered(b)) ||
+        Number(isFullyMastered(a, masterySkills)) - Number(isFullyMastered(b, masterySkills)) ||
         a.usedThisSession - b.usedThisSession ||
         (a.lastContactAt ?? "").localeCompare(b.lastContactAt ?? "") ||
         a.position - b.position,
@@ -408,7 +411,7 @@ function introductionPlan(
   reserved: ReadonlySet<string>,
   keepsReservations: string[],
 ): TaskPlan | null {
-  const pool = practicePool(candidates).slice().sort(
+  const pool = practicePool(candidates, input).slice().sort(
     (a, b) => Number(b.introducedSkills.recall) - Number(a.introducedSkills.recall),
   );
   const capabilities = getVocabularyCapabilities({ canRead: input.canRead ?? true, microphoneEnabled: input.microphoneEnabled });
@@ -445,8 +448,9 @@ function introductionPlan(
 }
 
 /** Czy wszystkie znane umiejętności elementu są opanowane — idą na koniec kolejki. */
-function isFullyMastered(candidate: ScheduleCandidate): boolean {
-  const snapshots = Object.values(candidate.progress).filter((s) => s !== undefined);
+function isFullyMastered(candidate: ScheduleCandidate, skills?: readonly Skill[]): boolean {
+  const snapshots = (skills ? skills.map((skill) => candidate.progress[skill]) : Object.values(candidate.progress))
+    .filter((s) => s !== undefined);
   return snapshots.length > 0 && snapshots.every((s) => s!.status === "mastered");
 }
 
@@ -650,7 +654,7 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
   const needsPreparationBreak =
     recentReasons.length >= 2 && recentReasons.slice(-2).every((reason) => reason === "test-preparation");
   if (needsPreparationBreak) {
-    const safeKnown = practicePool(input.candidates).find((candidate) => !reserved.has(keyOfCandidate(candidate)));
+    const safeKnown = practicePool(input.candidates, input).find((candidate) => !reserved.has(keyOfCandidate(candidate)));
     if (safeKnown) {
       const plan = recognitionPlan(safeKnown, input, reserved, keepsReservations, "test-preparation-break", true);
       if (plan) return plan;
@@ -685,7 +689,7 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
     (task.statusAtIssue === "learning" || task.statusAtIssue === "needs_reconfirmation"),
   );
   if (needsDifficultyBreak) {
-    const safeKnown = practicePool(input.candidates).find((candidate) => !reserved.has(keyOfCandidate(candidate)));
+    const safeKnown = practicePool(input.candidates, input).find((candidate) => !reserved.has(keyOfCandidate(candidate)));
     if (safeKnown) {
       const plan = recognitionPlan(safeKnown, input, reserved, keepsReservations, "difficulty-break", true);
       if (plan) return plan;
@@ -782,10 +786,10 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
   //     utrwalanie, nie samodzielne sprawdzenie, więc dodatkowe ćwiczenie
   //     nie zawyża serii kwalifikujących ani nie zastępuje sprawdzianu.
   //     Budżet sesji obowiązuje jak zwykle.
-  const practiceTarget = practicePool(input.candidates).find((c) => !reserved.has(keyOfCandidate(c)));
-  if (practiceTarget) {
+  for (const practiceTarget of practicePool(input.candidates, input)) {
+    if (reserved.has(keyOfCandidate(practiceTarget))) continue;
     const consolidating = practiceTarget.usedThisSession > 0;
-    return recognitionPlan(
+    const plan = recognitionPlan(
       practiceTarget,
       input,
       reserved,
@@ -795,6 +799,7 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
         ? practiceTarget.practiceMix.listening < practiceTarget.practiceMix.reading
         : input.nextOrdinal % 2 === 0,
     );
+    if (plan) return plan;
   }
 
   return null;
