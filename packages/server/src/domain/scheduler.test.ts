@@ -977,4 +977,14 @@ describe("hasScheduledWork — rekomendacja zestawu na liście dziecka", () => {
       ),
     ).toBe(false);
   });
+
+  it("zachowuje rozpoczęcie materiału ocenionego wcześniej w umiejętności niedostępnej dziecku", () => {
+    expect(
+      hasScheduledWork(
+        [{ progress: [{ skill: "reading", status: "learning", nextReviewAt: FUTURE, streak: 1 }] }],
+        NOW,
+        { canRead: false, microphoneEnabled: false, vocabularyFormat: "picture" },
+      ),
+    ).toBe(false);
+  });
 });

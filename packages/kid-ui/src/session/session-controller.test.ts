@@ -155,6 +155,8 @@ interface ApiState {
   endedSessions: string[];
   disabledSessions: string[];
   startedSessions: { childId: string; microphoneEnabled: boolean; supportsPictureVocabulary: boolean }[];
+  listDeckRequests?: { childId: string; microphoneEnabled?: boolean }[];
+  startSessionResponse?: Partial<SessionDto>;
   submissions: { taskId: string; clientAttemptId: string; modality: string }[];
   speechSubmissions: { taskId: string; clientAttemptId: string }[];
   observations: string[];
@@ -190,7 +192,8 @@ function makeApi(state: ApiState): KidApi {
       if (state.networkDown) throw new TypeError("fetch failed");
       return state.profiles;
     },
-    async listDecks() {
+    async listDecks(childId, options) {
+      state.listDeckRequests?.push({ childId, microphoneEnabled: options?.microphoneEnabled });
       return state.decks;
     },
     async startSession(input) {
@@ -198,7 +201,7 @@ function makeApi(state: ApiState): KidApi {
       const profile = state.profiles.find((item) => item.childId === input.childId);
       const deck = state.decks.find((item) => item.deckId === input.deckId);
       const sessionId = state.startSessionIds?.shift() ?? "55555555-5555-5555-5555-555555555555";
-      return { ...sessionDto(input.childId, sessionId, input.microphoneEnabled), canRead: profile?.canRead ?? true, vocabularyFormat: deck?.vocabularyFormat ?? "standard", mode: input.mode ?? "training" };
+      return { ...sessionDto(input.childId, sessionId, input.microphoneEnabled), canRead: profile?.canRead ?? true, vocabularyFormat: deck?.vocabularyFormat ?? "standard", mode: input.mode ?? "training", ...state.startSessionResponse };
     },
     async nextTask() {
       return state.tasks.shift() ?? null;
@@ -747,13 +750,76 @@ describe("LearningSessionController", () => {
 
   it("domyślnie wyłącza mikrofon przed startem zestawu", async () => {
     const state = baseState();
+    state.listDeckRequests = [];
     const harness = makeHarness(state);
     await harness.controller.start();
     await harness.controller.selectProfile(PROFILE_A.childId);
 
     expect(harness.controller.getScreen()).toMatchObject({ kind: "deck", microphone: false });
+    expect(state.listDeckRequests).toContainEqual({ childId: PROFILE_A.childId, microphoneEnabled: false });
     await harness.controller.startLearning(DECK.deckId);
     expect(harness.state.startedSessions[0]).toMatchObject({ microphoneEnabled: false });
+  });
+
+  it("zachowuje zapamiętaną odmowę mikrofonu po wznowieniu sesji z mikrofonem włączonym po stronie serwera", async () => {
+    const state = baseState();
+    state.startSessionResponse = { microphoneEnabled: true, resumed: true };
+    state.tasks = [taskDto("resumed-recall", { kind: "recall", prompt: "czwartek" })];
+    const storage = createMemoryPreferences();
+    storage.write(MIC_DENIED_KEY, "1");
+    const harness = makeHarness(state, { storage });
+    await harness.controller.start();
+    await harness.controller.selectProfile(PROFILE_A.childId);
+
+    await harness.controller.startLearning(DECK.deckId);
+
+    expect(harness.controller.getScreen()).toMatchObject({
+      kind: "learning",
+      session: { microphoneEnabled: true, resumed: true },
+      micDenied: true,
+    });
+  });
+
+  it("wyłącza mikrofon po stronie serwera przy wznowieniu picture sesji nieczytającego profilu z zapisaną odmową", async () => {
+    const state = baseState();
+    state.profiles = [{ ...PROFILE_A, canRead: false }];
+    state.decks = [{ ...DECK, vocabularyFormat: "picture" }];
+    state.startSessionResponse = { microphoneEnabled: true, resumed: true, canRead: false, vocabularyFormat: "picture" };
+    const recall = taskDto("resumed-picture-recall", { kind: "picture_recall", visual: { kind: "number", count: 2 } });
+    state.tasks = [recall];
+    state.disableError = new TypeError("fetch failed");
+    const storage = createMemoryPreferences();
+    storage.write(MIC_DENIED_KEY, "1");
+    const harness = makeHarness(state, { storage });
+    await harness.controller.start();
+    await harness.controller.selectProfile(PROFILE_A.childId);
+
+    await harness.controller.startLearning(DECK.deckId);
+
+    expect(state.startedSessions.at(-1)).toMatchObject({ microphoneEnabled: false });
+    expect(state.disabledSessions).toEqual(["55555555-5555-5555-5555-555555555555"]);
+    expect(harness.controller.getScreen()).toMatchObject({
+      kind: "learning",
+      session: { microphoneEnabled: true },
+      task: null,
+      micDenied: true,
+      error: messages.errors.picture_microphone_disable_failed,
+    });
+
+    state.disableError = undefined;
+    await harness.controller.retry();
+
+    expect(state.disabledSessions).toEqual([
+      "55555555-5555-5555-5555-555555555555",
+      "55555555-5555-5555-5555-555555555555",
+    ]);
+    expect(harness.controller.getScreen()).toMatchObject({
+      kind: "learning",
+      session: { microphoneEnabled: false },
+      task: { taskId: recall.taskId },
+      micDenied: true,
+      error: null,
+    });
   });
 
   it("exposure zamyka prezentację bez próby; koniec zadań kończy sesję", async () => {
@@ -1237,6 +1303,17 @@ describe("LearningSessionController", () => {
     expect(state.disclosures).toHaveLength(2);
     expect(harness.media.playUrls).toHaveLength(1);
     expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", offline: false });
+  });
+
+  it("autoryzuje odsłuch picture Recall tylko raz", async () => {
+    const state = baseState();
+    const recall = { ...taskDto("picture-recall-audio", { kind: "picture_recall", visual: { kind: "color", color: "#ff0000" } }), exerciseType: "recall" as const };
+    const harness = await startAtTask(state, recall);
+
+    await harness.controller.playTaskAudio();
+
+    expect(state.disclosures).toEqual([{ taskId: recall.taskId, kind: "audio" }]);
+    expect(harness.media.playUrls).toHaveLength(1);
   });
 
   it("odsłuch lekcji tekstowej wymaga zgody serwera PRZED odtworzeniem (wsparcie wym. 4.6)", async () => {

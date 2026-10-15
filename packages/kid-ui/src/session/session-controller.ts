@@ -308,7 +308,7 @@ export class LearningSessionController {
     const epoch = this.#epoch;
     try {
       this.#micDenied = this.#storage.read(MIC_DENIED_KEY) === "1";
-      const decks = await this.#api.listDecks(childId, { microphoneEnabled: !this.#micDenied });
+      const decks = await this.#api.listDecks(childId, { microphoneEnabled: false });
       if (epoch !== this.#epoch) return;
       this.#childId = childId;
       this.#recordingMode = this.#profiles.find((profile) => profile.childId === childId)?.recordingMode ?? "hold";
@@ -394,7 +394,7 @@ export class LearningSessionController {
         reveal: null,
         offline: false,
         busy: true,
-        micDenied: this.#micDenied && microphone,
+        micDenied: this.#micDenied,
         recordingMode: this.#recordingMode,
         microphoneReady: false,
         recordingPhase: "idle",
@@ -406,6 +406,10 @@ export class LearningSessionController {
         guidanceError: false,
       };
       this.#emit();
+      if (session.resumed && session.microphoneEnabled && this.#micDenied && !session.canRead && session.vocabularyFormat === "picture") {
+        await this.#disableSessionMicrophone(session, true);
+        return;
+      }
       await this.#loadNext(epoch, session.sessionId);
     } catch (error) {
       if (epoch !== this.#epoch) return;
@@ -776,7 +780,7 @@ export class LearningSessionController {
       }
     }
     if (!assetId) return;
-    if (screen.session.mode === "mock_test" || AUDIO_DISCLOSURE_EXERCISES.has(task.exerciseType)) {
+    if (task.prompt.kind !== "picture_recall" && (screen.session.mode === "mock_test" || AUDIO_DISCLOSURE_EXERCISES.has(task.exerciseType))) {
       try {
         await this.#api.authorizeDisclosure(task.taskId, "audio");
       } catch (error) {
@@ -990,7 +994,7 @@ export class LearningSessionController {
     this.#setLearning({ recordingPhase: "idle", inputLevel: null, recordingNotice: notice });
   }
 
-  async #disableSessionMicrophone(session: SessionDto): Promise<void> {
+  async #disableSessionMicrophone(session: SessionDto, continueAfterDisable = false): Promise<void> {
     if (session.canRead || session.vocabularyFormat !== "picture") return;
     try {
       const updated = await this.#api.disableMicrophone(session.sessionId);
@@ -998,11 +1002,11 @@ export class LearningSessionController {
       if (current?.session.sessionId !== session.sessionId) return;
       const closedVoiceTask = current.task?.prompt.kind === "picture_recall" || current.task?.prompt.kind === "picture_speech";
       this.#setLearning({ session: updated, error: null });
-      if (closedVoiceTask) await this.#loadNext(this.#epoch, session.sessionId);
+      if (closedVoiceTask || continueAfterDisable) await this.#loadNext(this.#epoch, session.sessionId);
     } catch {
       const current = this.#learning();
       if (current?.session.sessionId !== session.sessionId) return;
-      this.#resume = () => this.#disableSessionMicrophone(session);
+      this.#resume = () => this.#disableSessionMicrophone(session, continueAfterDisable);
       this.#setLearning({ error: messages.errors.picture_microphone_disable_failed, busy: false });
     }
   }

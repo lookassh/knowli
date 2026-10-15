@@ -488,10 +488,10 @@ export function hasScheduledWork(
     let recognitionStreak = 0;
     let recallAssessed = false;
     for (const snapshot of item.progress) {
-      if (!eligible.has(snapshot.skill as (typeof capabilities.skills)[number])) continue;
       if (snapshot.status !== "not_assessed") {
         started = true;
       }
+      if (!eligible.has(snapshot.skill as (typeof capabilities.skills)[number])) continue;
       if (isDue(snapshot, now)) {
         return true;
       }

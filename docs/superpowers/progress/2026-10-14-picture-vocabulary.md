@@ -108,3 +108,36 @@ Plan został zaimplementowany w izolowanym worktree. Nie wykonano wdrożenia ani
 - [ ] Workflow końcowy `verification-before-completion` i `finishing-a-development-branch` oraz utworzenie PR do `main` (bez scalania przez agenta).
 
 
+
+## Ponowna weryfikacja po aktualizacji bazy — 2026-10-15
+
+- Przed PR odświeżono `origin/main`: zawierał commit `1d5399dd3ab2bb3999fe6060355293f1280f58a9` (#64), dotyczący domyślnego wyłączenia mikrofonu. Feature został bez konfliktów przeniesiony na tę bazę. Nowy merge-base `HEAD`/`origin/main`: `1d5399dd3ab2bb3999fe6060355293f1280f58a9`.
+- Po rebase ponownie wykonano pełne bramki: unit 116 plików / 1111 testów PASS; integration 39 plików / 387 testów PASS; E2E 175/175 PASS (7.3 min); MCP 8/8 PASS; typecheck exit 0; build exit 0; `git diff --check` PASS.
+- Ta gałąź jeszcze wymaga końcowego niezależnego potwierdzenia na nowej bazie przed push/PR. Review z rundy 3 dotyczyło wcześniejszego SHA; nie traktować go jako recenzji wyniku rebase.
+
+## Ostatnie poprawki po rebase — TDD RED-GREEN — 2026-10-15
+
+Recenzent rundy po rebase wykrył pięć krawędzi. Każda została odtworzona w teście/probe, naprawiona minimalnie i sprawdzona:
+
+1. Pierwsze pobranie listy zestawów wysyłało `microphoneEnabled=true`, mimo że widoczna kontrolka startuje z `false`. Test kontrolera RED (true zamiast false), GREEN po podaniu false w `#openDeckScreen`.
+2. Wznowiona sesja z `session.microphoneEnabled=true` gubiła lokalną zapisaną odmowę. Test standardowej sesji RED (`micDenied=false`), GREEN po zachowaniu `this.#micDenied`.
+3. Dla promptu picture Recall z `exerciseType=recall` playback pieczętował disclosure dwa razy. Test RED (2 zgody zamiast jednej), GREEN po wykluczeniu picture Recall z drugiej, ogólnej gałęzi.
+4. `hasScheduledWork` pomijał historię niedostępnego dziecku `reading` przed ustaleniem, czy element był już rozpoczęty. Test RED (nowa rekomendacja mimo wcześniejszej oceny), GREEN po wyznaczaniu `started` z pełnej historii przed filtrem kwalifikowalnych umiejętności.
+5. Zapisana odmowa przy wznowieniu picture sesji nieczytającego dziecka nie wyłączała mikrofonu po stronie serwera; niewidoczna karta głosowa mogła nadal zostać wydana. Test RED (brak wywołania disable), GREEN po synchronizacji przez istniejące `disableMicrophone` przed `nextTask`. Błąd sieci pozostawia komunikat i retry; ponowienie wyłącza mikrofon, a potem ładuje zadanie.
+
+Po poprawkach: targeted controller 63/63, scheduler regression GREEN; pełne unit 116 plików / 1115 testów PASS; pełne integration 39/387 PASS z unikalnym `UMIEM_TEST_RUN_ID`; typecheck/build, MCP 8/8, eksport schematu bez diffu. Jedno wcześniejsze pełne uruchomienie integration na domyślnym identyfikatorze pokazało 3 błędy w `sessions.test.ts`; każdy test osobno i cały plik 44/44 przechodziły, a pełne suite na izolowanym identyfikatorze przeszło 387/387. Nie przypisano tym obserwacjom poprawki kodu.
+
+Jedno uruchomienie E2E zostało celowo przerwane w trakcie, gdy dodatkowy review ujawnił wariant wymagający korekty. Nie jest zaliczane jako wynik testowy. Końcowy pełny E2E na ostatnim kodzie, z odrębnym portem i run ID: 175/175 PASS (7.7 min). Niezależny werdykt rundy 4 został zapisany poniżej.
+
+## Niezależne review po rebase — runda 4 — 2026-10-15
+
+- Dedykowany recenzent `/root/independent_picture_review`, `gpt-6.1-sol` xhigh, objął pełny feature oraz zakres `1d5399dd3ab2bb3999fe6060355293f1280f58a9..fba3852b08353949dadfb5b1512e9767f408772e` i wszystkie pięć plików working diffu.
+- Werdykt: **Ready to merge: Yes**; Critical 0, Important 0, Minor 0. Recenzent niezależnie potwierdził pięć poprawek, kolejność wyłączenia mikrofonu i pobrania zadania, retry błędu oraz kontrakty, ekspozycje, kwalifikację ocen, publikację, niezmienność mediów i MCP.
+- Szczegółowy raport: `docs/superpowers/reviews/2026-10-14-picture-vocabulary-implementation-review-round-4.md`.
+- Końcowe bramki: unit 116 plików / 1115 testów; integration 39 plików / 387 testów; E2E 175/175 (7.7 min); MCP 8/8; typecheck/build PASS; eksport schematu bez zmian; `git diff --check` PASS.
+- Rzeczywisty TTS, ilustracje, mowa prawdziwego dziecka i fizyczne urządzenie nie były przedmiotem tego odbioru. Wdrożenie i aktualizacja zainstalowanego skilla Hermesa wymagają osobnych działań.
+
+## Końcowe czynności
+
+- [x] Pełna weryfikacja i niezależny review całego zakresu po rebase; brak otwartych findings.
+- [ ] `git diff --check`, commit zmian po review, push gałęzi roboczej i PR do `main` (bez scalania przez agenta).
