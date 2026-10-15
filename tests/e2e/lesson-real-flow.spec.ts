@@ -67,10 +67,17 @@ async function createAssignedLesson(
   const objective = page.getByTestId(`lesson-objective-${objectiveIds[0]}`);
   await expect(objective).toBeVisible();
   const objectives = page.locator('[data-testid^="lesson-objective-"]');
+  await expect.poll(async () => {
+    const count = await objectives.count();
+    const checked = await objectives.evaluateAll((elements) => elements.filter((element) => (element as HTMLInputElement).checked).length);
+    return count > 0 && checked === count;
+  }).toBe(true);
   for (let index = 0; index < await objectives.count(); index += 1) {
     const checkbox = objectives.nth(index);
     const id = (await checkbox.getAttribute("data-testid"))!.replace("lesson-objective-", "");
-    await checkbox.setChecked(objectiveIds.includes(id));
+    const shouldBeChecked = objectiveIds.includes(id);
+    await checkbox.setChecked(shouldBeChecked);
+    await expect(checkbox).toBeChecked({ checked: shouldBeChecked });
   }
   await page.getByTestId("lesson-material").fill(
     "He plays football every day. She watches television in the evening. They study English on Monday and Tuesday.",
@@ -101,6 +108,7 @@ async function createAssignedLesson(
   await expect(page.getByTestId("editor-title")).toHaveValue(lessonTitle);
 
   const savedDeck = LessonDeckDtoSchema.parse(await (await page.request.get(`/api/v1/parent/lessons/${deckId}`)).json());
+  expect([...savedDeck.draft!.objectiveIds].sort()).toEqual([...objectiveIds].sort());
   expect(savedDeck.draft?.examples[exampleObjectiveId]).toEqual([APPROVED_EXAMPLE]);
   expect(savedDeck.draft?.assets).toEqual([]);
   await expect(page.locator('[data-testid^="exercise-audio-state-"]')).toHaveCount(0);
@@ -123,6 +131,8 @@ async function createAssignedLesson(
   const deckResponse = await page.request.get(`/api/v1/parent/lessons/${deckId}`);
   expect(deckResponse.ok()).toBe(true);
   const publishedDeck = LessonDeckDtoSchema.parse(await deckResponse.json());
+  expect([...publishedDeck.published!.objectiveIds].sort()).toEqual([...objectiveIds].sort());
+  expect(publishedDeck.published!.examples[exampleObjectiveId]).toEqual([APPROVED_EXAMPLE]);
   const versionId = publishedDeck.published?.id;
   expect(versionId).toBeTruthy();
 
@@ -258,6 +268,8 @@ test("approved lesson survives reload and support without duplicate or independe
   test.setTimeout(240_000);
   await enterParent(page);
   const { childId, deckId, versionId } = await createAssignedLesson(page);
+  const published = LessonDeckDtoSchema.parse(await (await page.request.get(`/api/v1/parent/lessons/${deckId}`)).json()).published!;
+  expect(published.examples[OBJECTIVE_ID]).toEqual([APPROVED_EXAMPLE]);
 
   const kidContext = await browser.newContext({ locale: "pl-PL", viewport: { width: 390, height: 844 } });
   try {
@@ -268,10 +280,17 @@ test("approved lesson survives reload and support without duplicate or independe
 
     const firstCard = kid.getByTestId("kid-lesson-card-title");
     await expect(firstCard).toBeVisible();
-    await expect(kid.getByTestId("kid-lesson-card-examples").locator("li")).toHaveText([APPROVED_EXAMPLE]);
-    await expect(kid.getByTestId("kid-lesson-card-examples")).not.toContainText(/^Example for /);
-
     let task = await currentTask(kid);
+    if (task.prompt.kind !== "lesson_card") {
+      throw new Error(`Oczekiwano karty lekcji, otrzymano ${task.prompt.kind}`);
+    }
+    const firstTaskContext = await query<{ objective_id: string }>(
+      "select context->>'objectiveId' as objective_id from learning_app.session_tasks where id = $1",
+      [task.taskId],
+    );
+    expect(firstTaskContext).toEqual([{ objective_id: OBJECTIVE_ID }]);
+    expect(task.prompt.card.examples).toEqual(published.examples[firstTaskContext[0]!.objective_id] ?? []);
+    await expect(kid.getByTestId("kid-lesson-card-examples").locator("li")).toHaveText(task.prompt.card.examples);
     let steps = 0;
     const completedGuidedTaskIds: string[] = [];
     while (task.prompt.kind !== "lesson_gap" && steps < 12) {
