@@ -12,7 +12,8 @@ import type { ConfusionPair } from "./confusion-priority";
 /**
  * Scheduler v1 — jawne priorytety zamiast losowego score (architecture.md §9.3).
  * Czysta funkcja nad migawką stanu: zegar, polityka i postęp przychodzą jako
- * dane, więc decyzje są w pełni powtarzalne i testowalne bez bazy.
+ * dane wraz z prywatną entropią wyboru, więc decyzje są powtarzalne
+ * i testowalne bez bazy.
  *
  * Rezerwacje: dopóki czeka należne niezależne sprawdzenie Recall/pisowni,
  * jego cel nie może zostać pokazany, odtworzony ani użyty jako dystraktor
@@ -83,6 +84,8 @@ export interface SchedulePeer {
 }
 
 export interface ScheduleInput {
+  /** Prywatna entropia wyboru w dopuszczalnej puli; brak = deterministyczne 0. */
+  selectionSeed?: number;
   now: string;
   policy: Policy;
   microphoneEnabled: boolean;
@@ -253,6 +256,48 @@ function practicePool(candidates: readonly ScheduleCandidate[], input: ScheduleI
         (a.lastContactAt ?? "").localeCompare(b.lastContactAt ?? "") ||
         a.position - b.position,
     );
+}
+
+/** Stałe priorytety, losowany wyłącznie wykonalny plan wewnątrz ich granic. */
+function nonReaderPicturePlan(
+  input: ScheduleInput,
+  reserved: ReadonlySet<string>,
+  keepsReservations: string[],
+): TaskPlan | null {
+  const known = input.candidates.filter(candidate => candidate.ownPresentationCompleted || isStarted(candidate));
+  const pending = known.filter(candidate => !isStarted(candidate) &&
+    candidate.practiceMix.listening + candidate.practiceMix.reading === 0);
+  const nextUnseen = unseenFresh(input.candidates).find(candidate => !reserved.has(keyOfCandidate(candidate)));
+  const presentation: TaskPlan | null = nextUnseen && pending.length < 3 ? {
+    itemRevisionId: nextUnseen.itemRevisionId, exerciseType: "exposure", assessed: false,
+    reason: "new-material", revealsTargetKeys: [keyOfCandidate(nextUnseen)], keepsReservations,
+  } : null;
+  // Pierwsze dwa słowa, jeśli dostępne, poznajemy przed rozpoznawaniem.
+  if (known.length < 2 && presentation) return presentation;
+
+  const feasible = practicePool(known, input)
+    .filter(candidate => !reserved.has(keyOfCandidate(candidate)))
+    .filter(candidate => !(
+      (candidate.support
+        ? candidate.support.phase === "waiting" || candidate.support.phase === "retry_due"
+        : candidate.supportedThisSession) &&
+      candidate.lastUsedOrdinal !== null && input.nextOrdinal - candidate.lastUsedOrdinal < 2
+    ))
+    .flatMap(candidate => {
+      const reason = pending.includes(candidate) && candidate.presentationsThisSession > 0 ? "new-practice"
+        : candidate.usedThisSession > 0 ? "filler-practice" : "extra-practice";
+      const plan = recognitionTaskPlan(candidate, input, reserved, keepsReservations, reason, "listening", true);
+      return plan ? [{ candidate, plan }] : [];
+    });
+  const skills = getVocabularyCapabilities({ canRead: false, microphoneEnabled: input.microphoneEnabled }).skills;
+  const firstPriority = feasible[0] && isFullyMastered(feasible[0].candidate, skills);
+  const priorityPool = feasible.filter(({ candidate }) => isFullyMastered(candidate, skills) === firstPriority);
+  const questionCount = (candidate: ScheduleCandidate) => candidate.usedThisSession - candidate.presentationsThisSession;
+  const minimum = Math.min(...priorityPool.map(({ candidate }) => questionCount(candidate)));
+  const plans = priorityPool.filter(({ candidate }) => questionCount(candidate) <= minimum + 1).map(({ plan }) => plan);
+  if (presentation) plans.push(presentation);
+  if (plans.length === 0) return null;
+  return plans[((input.selectionSeed ?? 0) >>> 0) % plans.length]!;
 }
 
 const RECOGNITION_DIRECTIONS: readonly (ReadingDirection | "listening")[] = [
@@ -754,6 +799,10 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
   )) {
     const introduction = introductionPlan(input.candidates, input, reserved, keepsReservations);
     if (introduction) return introduction;
+  }
+
+  if (input.vocabularyFormat === "picture" && input.canRead === false) {
+    return nonReaderPicturePlan(input, reserved, keepsReservations);
   }
 
   // 4. Nowy materiał porcjami 2–3: prezentacje przeplatane łatwym

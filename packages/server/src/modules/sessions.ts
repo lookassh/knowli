@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, lte, max } from "drizzle-orm";
 import {
   PresentationCompletionInputSchema,
@@ -747,6 +747,7 @@ async function planNextTask(
   }));
 
   const plan = selectTask({
+    selectionSeed: randomInt(0x1_0000_0000),
     now: now.toISOString(),
     policy,
     microphoneEnabled: session.microphoneEnabled,

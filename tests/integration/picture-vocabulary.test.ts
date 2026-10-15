@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   completePresentation, computeTargetKey, createChild, createDraft, createDraftFromPublished, createServices, editDraft, endSession,
   executeMediaAsset, listKidDecks, nextTask, prepareUiAudio, publishDraft, readAttempt, reconcileDraftAssets, runDueGenerationWork, startSession, submitAttempt, upsertAssignment,
@@ -11,6 +11,11 @@ import { DisclosureDtoSchema, SessionDtoSchema } from "@learning/contracts";
 import { handleKidApi } from "../../apps/web/src/kid/kid-router";
 import { withApi } from "../../apps/web/src/http/errors";
 const { pool } = testDatabase();
+const selectionEntropy = vi.hoisted(() => ({ seed: 0, calls: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomInt: () => { selectionEntropy.calls++; return selectionEntropy.seed; },
+}));
 
 afterAll(async () => {
   await pool.end();
@@ -62,6 +67,8 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
   let fakes: FakeGeneration;
   let clock: ManualClock;
   beforeEach(async () => {
+    selectionEntropy.seed = 0;
+    selectionEntropy.calls = 0;
     await truncateCoreTables();
     await pool.query("truncate learning_app.generation_runs, learning_app.revision_assets, learning_app.media_assets, learning_app.item_revision_skills, learning_app.item_revisions, learning_app.skill_versions, learning_app.learning_items, learning_app.deck_versions, learning_app.decks cascade");
     fakes = await fakeGeneration();
@@ -72,6 +79,80 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
     for (const asset of pending) await executeMediaAsset(services, asset.id);
   });
   afterEach(async () => { await fakes.dispose(); });
+
+  it("losuje rzeczywisty nextTask, utrwala issued i kończy skończony przebieg", async () => {
+    const colors = ["#ff0000", "#0000ff", "#00ff00", "#ffff00", "#ff00ff", "#00ffff"];
+    const draft = await createDraft(services, {
+      title: "Sześć kolorów", vocabularyFormat: "picture",
+      items: colors.map((color, index) => ({ source: `kolor ${index}`, target: `color ${index}`,
+        acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" },
+        visualType: "color", visualData: { color } })),
+    });
+    await reconcileDraftAssets(services, draft.id);
+    for (let pass = 0; pass < 10; pass++) if ((await runDueGenerationWork(services)).processed === 0) break;
+    await publishDraft(services, draft.id, 1);
+    const revisions = (await pool.query<{ id: string }>(
+      "select id from learning_app.item_revisions where deck_version_id=$1 order by position", [draft.id],
+    )).rows;
+    for (const seed of [0, 1, 2]) {
+      const child = await createChild(services, { displayName: "Ola", avatarKey: "fox", canRead: false });
+      await upsertAssignment(services, child.id, draft.deckId, null);
+      const session = await startSession(services, { childId: child.id, deckId: draft.deckId,
+        microphoneEnabled: false, supportsPictureVocabulary: true });
+      for (let index = 0; index < 2; index++) {
+        const task = await nextTask(services, session.sessionId);
+        expect(task?.prompt.kind).toBe("picture_exposure");
+        await completePresentation(services, { taskId: task!.taskId });
+      }
+      selectionEntropy.seed = seed;
+      const beforeCount = (await pool.query("select count(*)::int as count from learning_app.session_tasks where session_id=$1", [session.sessionId])).rows[0].count;
+      const beforeCalls = selectionEntropy.calls;
+      const [task, simultaneous] = await Promise.all([
+        nextTask(services, session.sessionId), nextTask(services, session.sessionId),
+      ]);
+      expect(simultaneous).toEqual(task);
+      expect(selectionEntropy.calls - beforeCalls).toBe(1);
+      expect((await pool.query("select count(*)::int as count from learning_app.session_tasks where session_id=$1", [session.sessionId])).rows[0].count).toBe(beforeCount + 1);
+      const stored = (await pool.query("select item_revision_id, public_prompt, answer_key from learning_app.session_tasks where id=$1", [task!.taskId])).rows[0];
+      expect(stored.item_revision_id).toBe(revisions[seed]!.id);
+      expect(task?.prompt.kind).toBe(seed === 2 ? "picture_exposure" : "picture_listening");
+      const calls = selectionEntropy.calls;
+      selectionEntropy.seed = 123;
+      const repeated = await Promise.all([nextTask(services, session.sessionId), nextTask(services, session.sessionId)]);
+      expect(repeated).toEqual([task, task]);
+      expect(selectionEntropy.calls).toBe(calls);
+      expect((await pool.query("select item_revision_id, public_prompt, answer_key from learning_app.session_tasks where id=$1", [task!.taskId])).rows[0]).toEqual(stored);
+      if (seed !== 2) { await endSession(services, session.sessionId); continue; }
+      // Przebieg przez publiczne operacje, z rzeczywistymi zapisami prezentacji i prób.
+      let current = task;
+      let assessed = 0;
+      const presented = new Set(revisions.slice(0, 2).map(revision => revision.id));
+      const questioned = new Set<string>();
+      const pending = new Set(presented);
+      for (let step = 0; current && step < 40; step++) {
+        const row = (await pool.query("select item_revision_id, answer_key from learning_app.session_tasks where id=$1", [current.taskId])).rows[0];
+        if (current.prompt.kind === "picture_exposure") {
+          presented.add(row.item_revision_id);
+          if (!questioned.has(row.item_revision_id)) pending.add(row.item_revision_id);
+          await completePresentation(services, { taskId: current.taskId });
+        } else {
+          expect(presented.has(row.item_revision_id)).toBe(true);
+          questioned.add(row.item_revision_id);
+          pending.delete(row.item_revision_id);
+          assessed++;
+          await submitAttempt(services, { taskId: current.taskId, clientAttemptId: randomUUID(),
+            modality: "choice", optionId: row.answer_key.correctOptionId });
+        }
+        expect(pending.size).toBeLessThanOrEqual(3);
+        selectionEntropy.seed = step * 7 + 2;
+        current = await nextTask(services, session.sessionId);
+      }
+      expect(current).toBeNull();
+      expect(assessed).toBe(12);
+      expect(questioned.size).toBeGreaterThanOrEqual(3);
+      expect(await nextTask(services, session.sessionId)).toBeNull();
+    }
+  });
 
   it("aktywny resume-only używa okładki przypiętej wersji nawet po nowej publikacji", async () => {
     const child = await createChild(services, { displayName: "Ola", avatarKey: "fox", canRead: false });
