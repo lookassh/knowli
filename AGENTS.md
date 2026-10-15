@@ -2,6 +2,19 @@
 
 Instrukcje dla agentów pracujących w tym repozytorium. Umieść ten plik w katalogu głównym repozytorium.
 
+<!-- bmad:context -->
+<!-- Verified 2026-10-15 against b820a2420a37f1421d91ae034ecf7bf3e7286eaa. Managed by bmad-project-context; edits inside this block are replaced on refresh. Keep other instructions outside the markers. -->
+
+## Policy
+
+- Nie wypychaj zmian bezpośrednio do `main` i nie scalaj PR bez polecenia właściciela. Osobny PR dokumentacyjny wymaga wyraźnego polecenia; sposób zakończenia implementacji uzgodnij w ramach danego zadania.
+
+## Running and verifying
+
+- Aby skopiować brakujący `.env` w worktree bez instalacji zależności, uruchom `node scripts/setup-worktree.cjs --skip-install`; wywołanie bez tej opcji instaluje zależności, gdy brak `node_modules`.
+
+<!-- /bmad:context -->
+
 ## Tożsamość projektu i język
 
 - Nazwa repozytorium i projektu technicznego: **Knowli**. Identyfikator repozytorium/katalogu: `knowli`.
@@ -20,15 +33,15 @@ Pierwszy moduł to angielskie słownictwo dla początkującego dziecka w wieku o
 
 ## Dokumenty i początek pracy
 
-Przed zmianami przeczytaj dokumenty dotyczące zadania:
+Przed zmianami przeczytaj sekcje dokumentów dotyczące zadania:
 
 1. `docs/SPEC.md` — wymagania i kryteria akceptacji, wersja bazowa 1.1.
-2. `docs/architecture.md` — decyzje i kontrakty, wersja bazowa 1.2 po review.
+2. `docs/architecture.md` — decyzje i kontrakty, obecna wersja 1.3 (bazowo 1.2 po review).
 3. `docs/schema.sql` — początkowy projekt bazy, wersja bazowa 1.2.
 4. `docs/folder-structure.md` — uzgodnione granice i ścieżki.
 5. `docs/implementation-plan.md` — małe zadania, zależności oraz regresje R01–R07.
 
-W początkowym repo umieść powyższe dokumenty w `docs/`. Ten plik uzupełnia je o zasady pracy i branding. Nie zastępuje szczegółowych wymagań ani uzgodnionych kontraktów. Aktualne polecenia właściciela mają pierwszeństwo; istotne nowe ustalenia odzwierciedlaj w dokumentacji.
+Ten plik uzupełnia dokumenty w `docs/` o zasady pracy i branding. Nie zastępuje szczegółowych wymagań ani uzgodnionych kontraktów. Aktualne polecenia właściciela mają pierwszeństwo; istotne nowe ustalenia odzwierciedlaj w dokumentacji.
 
 Na początku sprawdź stan repozytorium, istniejące skrypty i zakres zmian użytkownika. Nie nadpisuj jego niezwiązanych zmian. W razie sprzeczności wpływającej na model danych, prywatność lub publiczny kontrakt wyjaśnij ją przed implementacją zależnego fragmentu. Rutynowe wybory rozstrzygaj samodzielnie.
 
@@ -37,14 +50,14 @@ Na początku sprawdź stan repozytorium, istniejące skrypty i zakres zmian uży
 W celu przyspieszenia pracy agentów i wyeliminowania powtarzalnych, kosztownych operacji przy każdym nowym zadaniu w worktree:
 
 1. **Zależności (`node_modules`)**:
-   - Przed wywołaniem instalatora **zawsze sprawdź, czy katalog `node_modules` już istnieje** (`Test-Path node_modules` lub `[ -d node_modules ]`). Jeśli istnieje, a Twoje zadanie nie modyfikuje `package.json` ani `pnpm-lock.yaml`, **bezwzględnie pomiń krok instalacji** (zignoruj generyczne zalecenie `npm install` ze skilli typu `using-git-worktrees`).
+   - Przed wywołaniem instalatora **zawsze sprawdź, czy katalog `node_modules` już istnieje** (`Test-Path node_modules` lub `[ -d node_modules ]`). Jeśli istnieje, a Twoje zadanie nie modyfikuje `package.json` ani `pnpm-lock.yaml`, **bezwzględnie pomiń krok instalacji**.
    - Jeśli instalacja jest konieczna: używaj wyłącznie `corepack pnpm install --prefer-offline --frozen-lockfile` (lub `pnpm install --prefer-offline --frozen-lockfile`). **Nigdy nie uruchamiaj `npm install`** (niszczy dowiązania pnpm i generuje niepożądany `package-lock.json`).
 2. **Kopiowanie pliku `.env`**:
-   - Nowe worktree nie zawiera plików ignorowanych przez git. Przed uruchomieniem testów lub narzędzi upewnij się, że plik `.env` istnieje. W razie braku skopiuj go jednym poleceniem z głównego repozytorium: `node scripts/setup-worktree.cjs` (lub skopiuj z `$(git rev-parse --git-common-dir)/../.env`).
+   - Nowe worktree nie zawiera plików ignorowanych przez git. Przed uruchomieniem testów lub narzędzi upewnij się, że plik `.env` istnieje. W razie braku skopiuj go z głównego repozytorium: `node scripts/setup-worktree.cjs --skip-install` (lub skopiuj z `$(git rev-parse --git-common-dir)/../.env`).
 3. **Celowane czytanie dokumentacji**:
    - Nie czytaj wszystkich 5 plików dokumentacji (`SPEC.md`, `architecture.md`, `schema.sql`, `folder-structure.md`, `implementation-plan.md`) od deski do deski na początku każdego małego zadania. Przeczytaj **wyłącznie sekcje bezpośrednio powiązane z Twoim zakresem zmian** (np. `schema.sql` przy modelowaniu bazy, `architecture.md` sekcja 19 przy lekcjach, `SPEC.md` sekcje dotyczące danego ekranu).
 4. **Oszczędny baseline test**:
-   - Podczas sprawdzania stanu początkowego (bramka baseline w `using-git-worktrees`) **nie uruchamiaj pełnego monorepo ani testów e2e / Playwright**. Uruchom wyłącznie szybki test jednostkowy związany ze zmienianym modułem (np. `corepack pnpm vitest run <ścieżka-do-testu>` lub `pnpm vitest run <ścieżka-do-testu>`).
+   - Podczas sprawdzania stanu początkowego **nie uruchamiaj pełnego monorepo ani testów e2e / Playwright**. Uruchom wyłącznie szybki test jednostkowy związany ze zmienianym modułem (np. `corepack pnpm vitest run <ścieżka-do-testu>` lub `pnpm vitest run <ścieżka-do-testu>`).
 
 ## Architektura i stack
 
@@ -72,7 +85,7 @@ Nie dodawaj mikroserwisów, Redis, osobnego backendu, ogólnego frameworka plugi
 
 ## Integracja MCP i skill Umiem! — wspólny kontrakt z API
 
-- Serwer MCP Streamable HTTP utrzymuj w `apps/web/src/integrations/` i udostępniaj pod `/api/mcp`, używając istniejących kontraktów i przypadków użycia. Pakiet `integrations/umiem-mcp/` zawiera wyłącznie semantyczny walidator, wygenerowany schemat, manifest kontraktu i skill w `skills/umiem-learning/SKILL.md`; nie zawiera alternatywnego serwera stdio ani klienta REST.
+- Serwer MCP Streamable HTTP utrzymuj w `apps/web/src/integrations/` i udostępniaj pod `/api/mcp`, używając istniejących kontraktów i przypadków użycia. Pakiet `integrations/umiem-mcp/` zawiera semantyczny walidator, wygenerowany schemat, manifest kontraktu i skill w `skills/umiem-learning/SKILL.md`; nie zawiera alternatywnego serwera stdio ani klienta REST.
 - Hermes łączy się jako zwykły klient MCP przez `url` i nagłówki Bearer z chronionego środowiska. Kod raportu rodzinnego pozostaje w repozytorium Hermesa; nie utrzymuj tam niezależnego forka schematu lub skilla.
 - **Przy każdej zmianie API sprawdź wpływ na MCP i `SKILL.md`.** Gdy zmiana dotyczy udostępnionych endpointów, DTO, parametrów, wartości domyślnych, autoryzacji, kodów błędów albo znaczenia danych (np. samodzielności, czasu nauki i terminów sprawdzianów), zaktualizuj w tym samym PR adapter, jego walidację oraz skill w wymaganym zakresie. Samo przejście testów serwera nie potwierdza zgodności integracji.
 - Źródłem kontraktu są schematy w `packages/contracts`. Regeneruj przenośny JSON Schema i aktualizuj jego kopię w pakiecie konsumenta MCP, przykłady oraz testy zgodności; nie rozwijaj ręcznie rozbieżnych definicji. Sprawdź zgodność `schemaVersion` i zachowanie względem już wdrożonych wersji API/MCP; zmianę niezgodną zaplanuj wraz z kolejnością aktualizacji obu stron.
@@ -120,10 +133,10 @@ Nie dodawaj mikroserwisów, Redis, osobnego backendu, ogólnego frameworka plugi
 - Próbę mowy i mediów wykonaj zgodnie z zadaniem 0. Bez kluczy lub docelowego urządzenia opisz brakujące dowody; tekstowy fundament może powstawać dalej. Nie deklaruj gotowej oceny wymowy bez tej próby.
 - Dla reguł oceny, historii, współbieżności i danych dodawaj znaczące testy. Testy domeny używają kontrolowanego zegara, integracyjne docelowego PostgreSQL, a providerów w testach zastępują fake-adaptery.
 - Pokryj odpowiednie regresje R01–R07 z planu; weryfikuj awarie, retry, dwie przeglądarki i usuwanie profilu, nie tylko poprawny przebieg.
-- Uruchamiaj istniejące skrypty adekwatne do zmiany. Planowane komendy: `pnpm test:unit`, `pnpm test:integration`, `pnpm test:e2e`, `pnpm typecheck`, `pnpm build`. Najpierw sprawdź `package.json`; nie twierdź, że skrypty już istnieją.
+- Uruchamiaj istniejące skrypty adekwatne do zmiany: `pnpm test:unit`, `pnpm test:integration`, `pnpm test:e2e`, `pnpm typecheck`, `pnpm build`. Przed wykonaniem sprawdź aktualne definicje w `package.json`.
 - Początkowy SQL jest projektem do odwzorowania. Po wdrożeniu Drizzle utrzymuj autorytatywny schemat TypeScript i przeglądane migracje SQL, w tym wymagane triggery; nie rozwijaj niezależnie dwóch definicji.
 - Aktualizuj dokumentację, gdy zmienia się uzgodniony kontrakt lub decyzja. Raportuj co zmieniono, co rzeczywiście sprawdzono i co pozostaje niezweryfikowane. Sprawdzenia SQL w PGlite nie są testami gotowej aplikacji.
-- Lokalnie dostępne jest narzędzie GitHub CLI (`gh`, w razie braku w `PATH` bieżącej powłoki: `C:\Program Files\GitHub CLI\gh.exe`) z aktywnym uwierzytelnieniem. Agenci mogą z niego korzystać (np. do sprawdzania stanu repozytorium, statusu PR czy tworzenia PR w ramach autoryzowanego workflow). Pamiętaj, że samo istnienie narzędzia nie uprawnia do samodzielnego push do `main`, scalania PR ani otwierania PR poza workflow opisanym w sekcji „Integracja ukończonej implementacji do `main` — Pull Request ze squash”.
+- Lokalnie dostępne jest narzędzie GitHub CLI (`gh`, w razie braku w `PATH` bieżącej powłoki: `C:\Program Files\GitHub CLI\gh.exe`) z aktywnym uwierzytelnieniem. Agenci mogą z niego korzystać do sprawdzania stanu repozytorium i PR oraz do tworzenia PR w ramach autoryzowanego zadania. Samo istnienie narzędzia nie uprawnia do push do `main` ani scalania PR; stosuj zasady z bloku Policy.
 
 ## Poza zakresem MVP
 

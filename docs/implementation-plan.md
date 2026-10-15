@@ -2,13 +2,11 @@
 
 ## Integracja raportu nauki z Hermesem (2026-10-11)
 
-Raportowe API, token `learning:read` i endpoint MCP Streamable HTTP `/api/mcp` są utrzymywane w `apps/web`. Pakiet konsumenta w `integrations/umiem-mcp/` zawiera walidator i skill dla istniejącego runtime raportów Hermesa. Kontrakt i procedura: `docs/integrations/hermes-learning.md`; plan migracji: `docs/superpowers/plans/2026-10-12-umiem-mcp-streamable-http.md`.
+Raportowe API, token `learning:read` i endpoint MCP Streamable HTTP `/api/mcp` są utrzymywane w `apps/web`. Pakiet konsumenta w `integrations/umiem-mcp/` zawiera walidator i skill dla istniejącego runtime raportów Hermesa. Kontrakt i procedura: `docs/integrations/hermes-learning.md`.
 
 ## Uzupełnienie — niezawodność panelu rodzica (2026-10-09)
 
-Panel zachowuje bazowy numer edycji podczas pollingu, ostrzega przed utratą niezapisanych zmian i po konflikcie pokazuje lokalną oraz zdalną wersję. Rodzic jawnie wybiera zdalną wersję, ręcznie przenosi potrzebne poprawki i zatwierdza zakończenie porównania. Nowa wersja po publikacji używa istniejącego przepływu szkicu. Szczegóły i dowody: `superpowers/plans/2026-10-09-parent-edit-protection.md`; testy `parent-edit-protection.spec.ts` (7/7), `manual-deck-flow.spec.ts` i `parent-flow.spec.ts` (24/24), `pnpm typecheck`. Natywne zachowanie `beforeunload` zależy od przeglądarki; automatyzacja sprawdza samo zdarzenie i czysty reload po zapisie.
-
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Wybór trybu należy do użytkownika przed rozpoczęciem implementacji; bieżące zadanie obejmuje wyłącznie dokumentację.
+Panel zachowuje bazowy numer edycji podczas pollingu, ostrzega przed utratą niezapisanych zmian i po konflikcie pokazuje lokalną oraz zdalną wersję. Rodzic jawnie wybiera zdalną wersję, ręcznie przenosi potrzebne poprawki i zatwierdza zakończenie porównania. Nowa wersja po publikacji używa istniejącego przepływu szkicu. Dowody: testy `parent-edit-protection.spec.ts` (7/7), `manual-deck-flow.spec.ts` i `parent-flow.spec.ts` (24/24), `pnpm typecheck`. Natywne zachowanie `beforeunload` zależy od przeglądarki; automatyzacja sprawdza samo zdarzenie i czysty reload po zapisie.
 
 **Goal:** Uruchomić rodzinne MVP, w którym rodzic przygotowuje i zatwierdza materiał, a dzieci uczą się z oddzielną historią, wymową i pisownią.
 
@@ -308,7 +306,7 @@ Przygotowano dokumenty, a nie implementację aplikacji. Sprawdzono 73 instrukcje
 
 ## Uzupełnienie: polityka wymowy per dziecko — 2026-10-09
 
-Zaimplementowano plan `docs/superpowers/plans/2026-10-09-per-child-pronunciation-policy.md`: wersjonowane progi wymowy profilu dziecka, pasma i wizualne fragmenty słowa, adapter fonemów Azure, endpointy i widok ustawień rodzica oraz listę ostatnich ocen. `learning-v2` ma progi początkowe 70/50; wynik poniżej pasma „prawie” pozostaje nieoceniony. Zmiana progów dotyczy nowych sesji.
+Zaimplementowano wersjonowane progi wymowy profilu dziecka, pasma i wizualne fragmenty słowa, adapter fonemów Azure, endpointy i widok ustawień rodzica oraz listę ostatnich ocen. `learning-v2` ma progi początkowe 70/50; wynik poniżej pasma „prawie” pozostaje nieoceniony. Zmiana progów dotyczy nowych sesji.
 
 Weryfikacja tego zakresu: testy unit 200/200, integration 115/115, e2e 10/10, typecheck wszystkich sześciu projektów i produkcyjny build przeszły. Lokalny Compose deploy został zbudowany i uruchomiony; web i worker są healthy, a `/api/v1/health` zwraca `ok`. Read-only odczyt bazy po deployu zawierał `learning-v1`; `learning-v2` jest wstawiane idempotentnie przy pierwszym wejściu w ustawienia wymowy albo rozpoczęciu sesji i nie zostało jeszcze w tej instancji wywołane. Prawdziwe wyniki fonemów Azure z nagraniem dziecka i kalibracja progów na rodzinnych próbach pozostają niezweryfikowane.
 
@@ -332,7 +330,7 @@ Zrzuty listy i edytora na 390×844, 768×1024 i 1440×900 obejrzano; nie ma
 poziomego overflow.
 ### Uzupełnienie: edycja profilu dziecka (2026-10-09)
 
-Kontrakt `updateChild(s: Services, childId: string, input: ChildPatch): Promise<ChildDto>` i PATCH profilu uzupełniają zadanie 1. Testy `auth-profiles.test.ts` obejmują częściową aktualizację, bezpieczeństwo, walidację i dwóch klientów. `history.test.ts` rozszerza R03: edycja zachowuje pełne rekordy historii, politykę, przypisania i dane drugiego dziecka, podczas gdy DELETE nadal usuwa historię przez CASCADE. Plan szczegółowy: `superpowers/plans/2026-10-09-child-profile-edit.md`.
+Kontrakt `updateChild(s: Services, childId: string, input: ChildPatch): Promise<ChildDto>` i PATCH profilu uzupełniają zadanie 1. Testy `auth-profiles.test.ts` obejmują częściową aktualizację, bezpieczeństwo, walidację i dwóch klientów. `history.test.ts` rozszerza R03: edycja zachowuje pełne rekordy historii, politykę, przypisania i dane drugiego dziecka, podczas gdy DELETE nadal usuwa historię przez CASCADE.
 
 ### Uzupełnienie: przygotowanie do sprawdzianu i izolacja runnerów (2026-10-09)
 
@@ -340,7 +338,6 @@ Runner Vitest/Playwright przyjmuje walidowany `UMIEM_TEST_RUN_ID` oraz `UMIEM_E2
 
 ### Uzupełnienie: ochrona zmian rodzica i ponawianie generacji (2026-10-09)
 
-Plan wykonania: `docs/superpowers/plans/2026-10-09-learning-and-parent-reliability.md`.
 Edycja zachowuje bazową rewizję i lokalne poprawki przy konflikcie; wyjście
 w stanie dirty wymaga decyzji rodzica. Generowanie po utracie odpowiedzi
 ponawia ten sam payload i klucz, waliduje oba UUID odpowiedzi 202 oraz otwiera
@@ -354,8 +351,7 @@ potwierdziła jeden generation_run i jeden deck dla ponowionego klucza.
 
 ### Uzupełnienie: audyt i naprawa algorytmu nauki — 2026-10-09
 
-Plan wykonania: `docs/superpowers/plans/2026-10-09-learning-algorithm-repair.md`;
-wyjściowy audyt: `docs/audits/2026-10-09-learning-algorithm-audit.md`.
+Wyjściowy audyt: `docs/audits/2026-10-09-learning-algorithm-audit.md`.
 Zakres I01–I10 obejmuje izolację historii per dziecko i umiejętność, kwalifikację
 audio, jedno ograniczone wsparcie z poprawką, zachowanie należnego późniejszego
 Recall/pisowni, kierunki reading, bezpieczne opcje, deterministyczne fragmenty,
@@ -378,8 +374,6 @@ częścią tej regresji.
 
 ### Uzupełnienie: UX nagrywania i wyniku mowy — 2026-10-10
 
-Plan szczegółowy: `docs/superpowers/plans/2026-10-10-speech-recording-ux.md`;
-specyfikacja projektu: `docs/superpowers/specs/2026-10-10-speech-recording-ux-design.md`.
 Domyślny gest `hold` kończy nagranie po puszczeniu, z klawiaturą, anulowaniem,
 limitem i profilem `toggle` konfigurowanym przez rodzica. Mikrofon i nagranie są zwalniane po
 zatrzymaniu, anulowaniu, zmianie widoku i błędzie. UI pokazuje wiarygodne
@@ -390,19 +384,18 @@ bieżącej próby i zapisuje ekspozycję przed wydaniem zasobu.
 Implementację podzielono na siedem commitowanych zadań w izolowanym worktree.
 Istniejące regresje obejmują próbę idempotentną podczas `processing`,
 konflikt dwóch klientów, usuwanie profilu, 15-sekundowy limit rejestratora,
-zwalnianie śladów mediów oraz niezmienny budżet sesji. Końcowe pokrycie R01,
-R03, R05 i R07 oraz kontrolę R04 odnotowuje dziennik
-`docs/superpowers/progress/2026-10-10-speech-recording-ux-implementation.md`.
+zwalnianie śladów mediów oraz niezmienny budżet sesji. Końcowe pokrycie obejmuje
+R01, R03, R05 i R07 oraz kontrolę R04.
 Testy automatyczne nie zastępują próby na rzeczywistym telefonie/tablecie ani
 walidacji jakości na prawdziwej mowie dziecka; te dowody pozostają wymagane
  przed deklaracją gotowego MVP.
 
 ### Uzupełnienie: preferencja gestu nagrywania dla profilu dziecka — 2026-10-11
 
-Rodzic wybiera `hold` („Przytrzymaj, aby mówić”) lub `toggle` („Naciśnij, aby rozpocząć i zatrzymać”) podczas edycji profilu. Wartość jest kolumną `child_profiles.recording_mode`, ograniczoną do tych dwóch trybów i domyślną jako `hold`; migracja 0005 uzupełnia nią istniejące profile. Parent PATCH aktualizuje tylko dostarczone pola, a Kid Profile DTO dostarcza preferencję do kontrolera. Kid UI nie pokazuje dziecku przełącznika i nie zapisuje trybu lokalnie; pozostałe preferencje urządzenia, np. odmowa mikrofonu, zachowują dotychczasową obsługę. Stary klucz `umiem.recordingMode` jest ignorowany. Specyfikacja i plan: `docs/superpowers/specs/2026-10-11-parent-recording-mode-setting-design.md` i `docs/superpowers/plans/2026-10-11-parent-recording-mode-setting.md`.
+Rodzic wybiera `hold` („Przytrzymaj, aby mówić”) lub `toggle` („Naciśnij, aby rozpocząć i zatrzymać”) podczas edycji profilu. Wartość jest kolumną `child_profiles.recording_mode`, ograniczoną do tych dwóch trybów i domyślną jako `hold`; migracja 0005 uzupełnia nią istniejące profile. Parent PATCH aktualizuje tylko dostarczone pola, a Kid Profile DTO dostarcza preferencję do kontrolera. Kid UI nie pokazuje dziecku przełącznika i nie zapisuje trybu lokalnie; pozostałe preferencje urządzenia, np. odmowa mikrofonu, zachowują dotychczasową obsługę. Stary klucz `umiem.recordingMode` jest ignorowany.
 
 ### Uzupełnienie: obrazkowe zestawy słownictwa — 2026-10-14
 
-Implementację podzielono na siedem zadań Superpowers: profil/kontrakty, generowanie, wizualizacje i publikację, stałe polskie audio, bezpieczny scheduler i Kid API, przenośny Kid UI oraz rodzic/MCP/dokumentacja. Zestaw `picture` jest wariantem vocabulary, nie nowym przedmiotem; zachowuje te same przypisania, wersjonowanie i pięć skillów.
+Implementację podzielono na siedem zadań: profil/kontrakty, generowanie, wizualizacje i publikację, stałe polskie audio, bezpieczny scheduler i Kid API, przenośny Kid UI oraz rodzic/MCP/dokumentacja. Zestaw `picture` jest wariantem vocabulary, nie nowym przedmiotem; zachowuje te same przypisania, wersjonowanie i pięć skillów.
 
 Regresje obejmują brak tekstowych promptów dla profilu nieczytającego, walidację MeaningVisual, niezmienność historii przy aktualizacji `canRead`, ekspozycję przed wydaniem wzorca, wznawianie po zmianie przypisania, próbę bez mikrofonu oraz pełny mianownik raportu. `learning-overview` i `schemaVersion` są bez zmian; skill Hermesa wyjaśnia, że raport nie ujawnia `canRead`. Migracja → worker/media/UI audio → web/Kid UI; nie uruchamiać nowego formatu na starszym workerze. E2E nie zastępuje próby na telefonie ani odbioru z dzieckiem.
