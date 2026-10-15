@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { TaskPlan } from "../domain/scheduler";
 import { materializeTask, type PlannedItem } from "./sessions";
 
@@ -60,6 +60,38 @@ describe("materializeTask option order", () => {
 
 describe("materializeTask picture prompts", () => {
   const meaningVisual = { kind: "color" as const, color: "#ff0000" };
+
+  it.each([
+    { position: 0, random: [0.99, 0.99] },
+    { position: 1, random: [0.99, 0] },
+    { position: 2, random: [0, 0.99] },
+  ])("umieszcza poprawny obrazek na pozycji $position i zachowuje klucz", ({ position, random }) => {
+    const plan = listeningPlan({ options: [
+      { itemRevisionId: "rev-1", text: "czerwony", correct: true, visual: meaningVisual },
+      { itemRevisionId: "rev-2", text: "niebieski", correct: false, visual: { kind: "color", color: "#0000ff" } },
+      { itemRevisionId: "rev-3", text: "zielony", correct: false, visual: { kind: "color", color: "#00ff00" } },
+    ] });
+    const originalPlan = structuredClone(plan);
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValueOnce(random[0]!).mockReturnValueOnce(random[1]!);
+    try {
+      const { prompt, answerKey } = materializeTask(plan, plannedItem({ meaningVisual }), "asset-audio-1", null, null);
+      expect(randomSpy).toHaveBeenCalledTimes(2);
+      if (prompt.kind !== "picture_listening") throw new Error("expected picture listening prompt");
+      expect(prompt.options[position]).toMatchObject({ labelPl: "czerwony", visual: meaningVisual });
+      expect(answerKey.correctOptionId).toBe(prompt.options[position]!.id);
+      for (const option of prompt.options) {
+        const planned = plan.options!.find((item) => item.text === option.labelPl)!;
+        expect(option.visual).toEqual(planned.visual);
+        expect((answerKey.optionItemRevisionIds as Record<string, string>)[option.id]).toBe(planned.itemRevisionId);
+        expect(option).not.toHaveProperty("correct");
+      }
+      expect(prompt).not.toHaveProperty("correctOptionId");
+      expect(JSON.stringify(prompt)).not.toContain("Thursday");
+      expect(plan).toEqual(originalPlan);
+    } finally {
+      randomSpy.mockRestore();
+    }
+  });
 
   it("nie ujawnia angielskiego tekstu przed odpowiedzią w prezentacji obrazkowej", () => {
     const { prompt } = materializeTask(

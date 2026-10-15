@@ -345,6 +345,8 @@ Nie trzeba osiągnąć wysokiej oceny wymowy, żeby ćwiczyć pisownię. Brak mi
 
 Domyślna reguła początkowa: nowe słowa wprowadzamy w małych porcjach, np. po 2–3, przeplatając prezentację z łatwym rozpoznawaniem. Nie odpytujemy od razu z całego nieznanego zestawu.
 
+W zestawie obrazkowym dziecka nieczytającego po dwóch pierwszych prezentacjach losujemy wykonalne pytanie o poznane słowo lub kolejną prezentację. Co najwyżej trzy nowe słowa czekają na pierwsze rozpoznawanie. Pula pytań obejmuje także wcześniej ćwiczone cele: najpierw ten sam priorytet opanowania, potem liczba pytań nie większa niż minimum + 1 w wykonalnej puli tego priorytetu (prezentacje nie zwiększają tej liczby). Ostatnie słowo może powrócić. Należne sprawdzenia, wsparcie, retry, powtórki i wprowadzanie etapów zachowują pierwszeństwo; rezerwacje, bezpieczne opcje oraz budżet nadal obowiązują. Losowa krótka sekwencja może się przypadkowo powtórzyć. Wydane zadanie nie jest ponownie losowane przy wznowieniu.
+
 Opcje odpowiedzi są jednoznaczne, bez duplikatów, a ich pozycja jest zmienna. Gdy zestaw ma za mało sensownych wariantów, stosujemy mniej opcji albo inne zadanie zamiast wymuszać przypadkowe odpowiedzi.
 
 Ćwiczenie wyboru wymaga co najmniej dwóch różnych opcji. Nie używamy celu należnego samodzielnej próbie jako opcji ani dystraktora. Jeśli materiał jest singletonem albo chwilowo brakuje bezpiecznych dystraktorów, dziecko może zakończyć własną prezentację i otrzymać pisemne Recall; nie tworzymy fikcyjnego sukcesu z rozpoznawania.

@@ -66,6 +66,116 @@ const KEY_THURSDAY = computeTargetKey("Thursday", "en-GB");
 const KEY_WEDNESDAY = computeTargetKey("Wednesday", "en-GB");
 const KEY_FRIDAY = computeTargetKey("Friday", "en-GB");
 
+describe("selectTask — wykonalne utrwalanie obrazkowe", () => {
+  function pictureCandidates(): ScheduleCandidate[] {
+    return ["red", "blue", "green"].map((target, position) => candidate({
+      itemRevisionId: `rev-${target}`, position, target, source: target,
+      visual: { kind: "color", color: ["#ff0000", "#0000ff", "#00ff00"][position]! },
+      acceptedAnswers: position === 0 ? ["blue", "green"] : [],
+      ownPresentationCompleted: true,
+      introducedSkills: { recall: true, pronunciation: true },
+    }));
+  }
+
+  function pictureInput(candidates: ScheduleCandidate[], overrides: Partial<ScheduleInput> = {}): ScheduleInput {
+    return input({
+      vocabularyFormat: "picture", canRead: false, microphoneEnabled: false,
+      candidates, peers: candidates.map((item) => peer(item)), ...overrides,
+    });
+  }
+
+  it("pomija niewykonalny pierwszy cel i wydaje bezpieczne opcje kolejnego", () => {
+    const plan = selectTask(pictureInput(pictureCandidates()));
+    expect(plan).toMatchObject({ itemRevisionId: "rev-blue", exerciseType: "listening", reason: "extra-practice" });
+    expect(plan?.options?.map((option) => option.itemRevisionId)).toEqual(["rev-blue", "rev-green"]);
+    expect(plan?.revealsTargetKeys).not.toContain(computeTargetKey("red", "en-GB"));
+  });
+
+  it("kończy bez zadania, gdy wszystkie opcje kolidują i fallbacki są zużyte", () => {
+    const candidates = pictureCandidates().map((item) => ({ ...item, visual: { kind: "color" as const, color: "#ff0000" } }));
+    expect(selectTask(pictureInput(candidates))).toBeNull();
+  });
+
+  it("zachowuje pojedynczy fallback przed pominięciem niewykonalnego celu", () => {
+    const candidates = pictureCandidates();
+    candidates[0]!.recognitionFallbackUsedThisSession = false;
+    expect(selectTask(pictureInput(candidates))).toMatchObject({
+      itemRevisionId: "rev-red", reason: "recognition-fallback", assessed: false,
+    });
+  });
+
+  it("pomija zarezerwowany cel także jako dystraktor", () => {
+    const candidates = pictureCandidates().map((item) => ({ ...item, acceptedAnswers: [] }));
+    const reservedKey = computeTargetKey("red", "en-GB");
+    const plan = selectTask(pictureInput(candidates, { microphoneEnabled: true, reservedTargetKeys: [reservedKey] }));
+    expect(plan?.itemRevisionId).toBe("rev-blue");
+    expect(plan?.options?.map((option) => option.itemRevisionId)).toEqual(["rev-blue", "rev-green"]);
+    expect(plan?.revealsTargetKeys).not.toContain(reservedKey);
+    expect(plan?.keepsReservations).toEqual([reservedKey]);
+  });
+
+  it("szuka dalej po niewykonalnym celu, omijając rezerwację przed bezpiecznymi kandydatami", () => {
+    const [red, blue, green] = pictureCandidates();
+    const reserved = candidate({
+      ...red!, itemRevisionId: "rev-yellow", position: 1, target: "yellow", source: "yellow",
+      acceptedAnswers: [], visual: { kind: "color", color: "#ffff00" },
+    });
+    const candidates = [red!, reserved, { ...blue!, position: 2 }, { ...green!, position: 3 }];
+    const reservedKey = computeTargetKey("yellow", "en-GB");
+    const plan = selectTask(pictureInput(candidates, { microphoneEnabled: true, reservedTargetKeys: [reservedKey] }));
+    expect(plan).toMatchObject({ itemRevisionId: "rev-blue", exerciseType: "listening", reason: "extra-practice" });
+    expect(plan?.options?.map((option) => option.itemRevisionId)).toEqual(["rev-blue", "rev-green"]);
+    expect(plan?.revealsTargetKeys).toEqual([computeTargetKey("blue", "en-GB"), computeTargetKey("green", "en-GB")]);
+    expect(plan?.keepsReservations).toEqual([reservedKey]);
+  });
+
+  it.each([
+    { skill: "recall" as const, expected: "rev-red" },
+    { skill: "pronunciation" as const, expected: "rev-red" },
+    { skill: "reading" as const, expected: "rev-blue" },
+    { skill: "spelling" as const, expected: "rev-blue" },
+  ])("z mikrofonem uwzględnia aktywne umiejętności mastery, trudność: $skill", ({ skill, expected }) => {
+    const mastered = { status: "mastered" as const, nextReviewAt: null, streak: 3 };
+    const candidates = pictureCandidates().slice(0, 2).map((item) => candidate({
+      ...item, acceptedAnswers: [],
+      progress: { listening: mastered, recall: mastered, pronunciation: mastered },
+    }));
+    candidates[0] = candidate({
+      ...candidates[0]!, usedThisSession: 2,
+      progress: { ...candidates[0]!.progress, [skill]: { status: "learning", nextReviewAt: null, streak: 0 } },
+    });
+    const plan = selectTask(pictureInput(candidates, { microphoneEnabled: true }));
+    expect(plan).toMatchObject({
+      itemRevisionId: expected, exerciseType: "listening",
+      reason: expected === "rev-red" ? "filler-practice" : "extra-practice",
+    });
+  });
+
+  it.each([false, true])("uwzględnia historyczne reading/spelling tylko dla czytającego: %s", (canRead) => {
+    const candidates = pictureCandidates().slice(0, 2).map((item) => ({
+      ...item, acceptedAnswers: [],
+      progress: { listening: { status: "mastered" as const, nextReviewAt: null, streak: 3 } },
+    }));
+    const a = candidate({ ...candidates[0]!, usedThisSession: 2, progress: {
+      ...candidates[0]!.progress,
+      reading: { status: "learning", nextReviewAt: null, streak: 0 },
+      spelling: { status: "learning", nextReviewAt: null, streak: 0 },
+    } });
+    const plan = selectTask(pictureInput([a, candidates[1]!], { canRead }));
+    expect(plan?.itemRevisionId).toBe(canRead ? "rev-red" : "rev-blue");
+  });
+
+  it("zachowuje priorytet nieopanowanego słuchania przed rotacją", () => {
+    const candidates = pictureCandidates().slice(0, 2);
+    candidates[0] = candidate({ ...candidates[0]!, acceptedAnswers: [], usedThisSession: 2,
+      progress: { listening: { status: "learning", nextReviewAt: null, streak: 0 } } });
+    candidates[1] = candidate({ ...candidates[1]!, progress: {
+      listening: { status: "mastered", nextReviewAt: null, streak: 3 },
+    } });
+    expect(selectTask(pictureInput(candidates))?.itemRevisionId).toBe("rev-red");
+  });
+});
+
 describe("selectTask — puste wejścia i budżet", () => {
   it("brak kandydatów daje null", () => {
     expect(selectTask(input())).toBeNull();
