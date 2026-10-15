@@ -227,3 +227,7 @@ Edycja profilu: `contracts/src/decks.ts` definiuje `ChildPatchSchema`, `server/s
 ### Wariant obrazkowy słownictwa (2026-10-14)
 
 Zgodność profilu, wersji zestawu i Kid UI: `packages/contracts/src/kid.ts`, `decks.ts`, `ui-audio.ts`; domena/publikacja/generowanie: `packages/server/src/domain/vocabulary-capabilities.ts`, `picture-recognition-options.ts`, `modules/decks.ts` i `modules/sessions.ts`; migracja schematu: `packages/server/drizzle/0010_picture_vocabulary.sql`. Kid UI korzysta z `src/visuals/MeaningVisualView.tsx`, `src/session/guidance-audio.ts`, `src/exercises/Picture*.tsx` oraz istniejącego `KidApi` — bez importu serwera. Testy regresji: `tests/integration/picture-vocabulary.test.ts`, `packages/kid-ui/src/session/session-controller.test.ts` i `tests/e2e/picture-vocabulary.spec.ts`. Raport MCP pozostaje `learning-overview` v1; nie ma nowego endpointu ani schematu konsumenta.
+
+### Okładka zestawu słownictwa (2026-10-15)
+
+Wspólne ustawienie `decks.cover_asset_id`, migracja `0011_deck_cover_image.sql`, endpoint rodzica `/decks/{id}/cover`, walidacja i zapis przez `modules/deck-cover.ts`; Kid API zwraca opcjonalne `coverAssetId`. Rodzic może podglądać lub usunąć okładkę dla zestawu słownictwa. Kid UI wyświetla ją przed dotychczasowym `coverVisual`; MCP i treść wersji zestawu pozostają bez zmian.

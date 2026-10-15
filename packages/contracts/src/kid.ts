@@ -362,6 +362,8 @@ export const KidDeckDtoSchema = z.object({
   kind: z.enum(["vocabulary", "lesson"]).optional(),
   vocabularyFormat: z.enum(["standard", "picture"]).default("standard"),
   coverVisual: MeaningVisualSchema.nullable().default(null),
+  /** Opcjonalna okładka zestawu; brak pola zachowuje zgodność starszych serwerów. */
+  coverAssetId: UuidSchema.nullable().optional(),
   resumeOnly: z.boolean().default(false),
   /** Tytuł przedmiotu dla lekcji; brak/undefined dla słówek (zgodność wsteczna). */
   subjectTitle: z.string().min(1).nullable().optional(),

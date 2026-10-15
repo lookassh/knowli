@@ -715,6 +715,7 @@ export async function readDeck(services: Services, deckId: string): Promise<Deck
   return {
     id: deck.id,
     title: deck.title,
+    coverAssetId: deck.coverAssetId,
     state: deckStateOf(deck, editable ? (editable.state as "draft" | "review") : null),
     draft: editable ? await readDraftDto(services.db, editable.id) : null,
     published: publishedVersionId ? await readDraftDto(services.db, publishedVersionId) : null,
@@ -730,6 +731,7 @@ export async function listDecks(services: Services): Promise<DeckSummaryDto[]> {
       id: decks.id,
       title: decks.title,
       kind: decks.kind,
+      coverAssetId: decks.coverAssetId,
       archivedAt: decks.archivedAt,
       publishedVersionId: decks.publishedVersionId,
     })
@@ -784,6 +786,7 @@ export async function listDecks(services: Services): Promise<DeckSummaryDto[]> {
       deckId: row.id,
       title: row.title,
       kind: row.kind as "vocabulary" | "lesson",
+      coverAssetId: row.coverAssetId,
       vocabularyFormat: edit?.vocabularyFormat ?? versionById.get(row.publishedVersionId ?? "")?.vocabularyFormat ?? "standard",
       state: deckStateOf(row, edit ? (edit.state as "draft" | "review") : null),
       editableVersionId: edit?.id ?? null,

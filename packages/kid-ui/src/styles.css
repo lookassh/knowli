@@ -506,6 +506,15 @@
   text-align: center;
 }
 
+.kid-deck-cover {
+  display: block;
+  width: 7rem;
+  height: 7rem;
+  flex: 0 0 7rem;
+  border-radius: 1rem;
+  object-fit: cover;
+}
+
 .kid-deck-card h3 {
   overflow-wrap: anywhere;
   margin: 0;

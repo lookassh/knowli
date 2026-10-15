@@ -6,6 +6,13 @@ import { createOpenAiLlmProvider } from "./openai/llm";
 import { createOpenAiTtsProvider } from "./openai/tts";
 import { lessonGenerationPolicyFromEnv } from "../modules/lessons/lesson-generation-policy";
 
+/** Opcjonalny provider obrazów dla procesu web; nie wymaga LLM ani TTS. */
+export function imageProviderFromEnv(env: Record<string, string | undefined>) {
+  if (env.UMIEM_FAKE_PROVIDERS === "1") return fakeGenerationDeps(createLocalMediaStore(env.MEDIA_ROOT ?? "./data/media")).image;
+  const apiKey = env.OPENAI_API_KEY;
+  return apiKey ? createOpenAiImageProvider({ apiKey }) : undefined;
+}
+
 /**
  * Składanie zależności generacji ze zmiennych środowiskowych (worker, E2E):
  * UMIEM_FAKE_PROVIDERS=1 wyłącza sieciowe adaptery; bez klucza API wynik jest

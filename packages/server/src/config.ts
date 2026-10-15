@@ -102,6 +102,8 @@ export interface Services {
   media?: MediaSettings;
   generation?: GenerationDeps;
   mediaStore?: MediaStore;
+  /** Obraz provider dostępny w web dla jawnej propozycji okładki rodzica. */
+  imageProvider?: ImageProvider;
   speech?: SpeechDeps;
   /**
    * Model oceniający otwarte odpowiedzi lekcji (zadanie 15). Nieobecny =
@@ -126,6 +128,7 @@ export function createServices(
     media?: MediaSettings;
     generation?: GenerationDeps;
     mediaStore?: MediaStore;
+    imageProvider?: ImageProvider;
     speech?: SpeechDeps;
     grader?: GraderDeps;
     subjects?: SubjectRegistry;
@@ -138,6 +141,7 @@ export function createServices(
     ...(input.media ? { media: input.media } : {}),
     ...(input.generation ? { generation: input.generation } : {}),
     ...(input.mediaStore ? { mediaStore: input.mediaStore } : {}),
+    ...(input.imageProvider ? { imageProvider: input.imageProvider } : {}),
     ...(input.speech ? { speech: input.speech } : {}),
     ...(input.grader ? { grader: input.grader } : {}),
   };

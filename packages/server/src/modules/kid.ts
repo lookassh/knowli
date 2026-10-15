@@ -35,11 +35,11 @@ export async function listKidDecks(services: Services, childId: string, options:
   const microphoneEnabled = options.microphoneEnabled ?? true;
   const [active] = await services.db.select().from(learningSessions).where(and(eq(learningSessions.childId, childId), eq(learningSessions.state, "active")));
   const [activeVersion] = active
-    ? await services.db.select({ vocabularyFormat: deckVersions.vocabularyFormat, deckKind: decks.kind })
+    ? await services.db.select({ vocabularyFormat: deckVersions.vocabularyFormat, deckKind: decks.kind, coverAssetId: decks.coverAssetId })
         .from(deckVersions).innerJoin(decks, eq(deckVersions.deckId, decks.id)).where(eq(deckVersions.id, active.deckVersionId))
     : [];
   const rows = await services.db
-    .select({ deckId: decks.id, title: decks.title, kind: decks.kind, vocabularyFormat: deckVersions.vocabularyFormat, testDate: assignments.testDate, testGoals: assignments.testGoals, mockTestTaskCount: assignments.mockTestTaskCount, versionId: decks.publishedVersionId, lessonContext: deckVersions.lessonContext })
+    .select({ deckId: decks.id, title: decks.title, kind: decks.kind, coverAssetId: decks.coverAssetId, vocabularyFormat: deckVersions.vocabularyFormat, testDate: assignments.testDate, testGoals: assignments.testGoals, mockTestTaskCount: assignments.mockTestTaskCount, versionId: decks.publishedVersionId, lessonContext: deckVersions.lessonContext })
     .from(assignments)
     .innerJoin(decks, eq(decks.id, assignments.deckId))
     .innerJoin(deckVersions, eq(deckVersions.id, decks.publishedVersionId))
@@ -240,6 +240,7 @@ export async function listKidDecks(services: Services, childId: string, options:
       return {
         kind: "lesson",
         vocabularyFormat,
+        coverAssetId: null,
         coverVisual: coverVisualByVersion.get(versionId) ?? null,
         resumeOnly: !child.canRead && isActive,
         subjectTitle,
@@ -257,6 +258,7 @@ export async function listKidDecks(services: Services, childId: string, options:
     return {
       kind: "vocabulary",
       vocabularyFormat,
+      coverAssetId: isActive ? activeVersion?.coverAssetId ?? row.coverAssetId : row.coverAssetId,
       coverVisual: coverVisualByVersion.get(versionId) ?? null,
       resumeOnly: !child.canRead && isActive,
       subjectTitle: null,
@@ -273,13 +275,13 @@ export async function listKidDecks(services: Services, childId: string, options:
     };
   });
   if (active && !result.some((deck) => deck.deckId === active.deckId)) {
-    const [resumable] = await services.db.select({ title: decks.title, kind: decks.kind }).from(decks).where(eq(decks.id, active.deckId));
+    const [resumable] = await services.db.select({ title: decks.title, kind: decks.kind, coverAssetId: decks.coverAssetId }).from(decks).where(eq(decks.id, active.deckId));
     const [pinnedVersion] = await services.db.select({ vocabularyFormat: deckVersions.vocabularyFormat }).from(deckVersions).where(eq(deckVersions.id, active.deckVersionId));
     if (resumable && pinnedVersion) {
       const count = await services.db.select({ id: itemRevisions.id }).from(itemRevisions).where(eq(itemRevisions.deckVersionId, active.deckVersionId));
       result.unshift({
         deckId: active.deckId, title: resumable.title, kind: resumable.kind as "vocabulary" | "lesson",
-        vocabularyFormat: pinnedVersion.vocabularyFormat, coverVisual: coverVisualByVersion.get(active.deckVersionId) ?? null,
+        vocabularyFormat: pinnedVersion.vocabularyFormat, coverAssetId: resumable.coverAssetId, coverVisual: coverVisualByVersion.get(active.deckVersionId) ?? null,
         resumeOnly: true, activeSession: { sessionId: active.id, mode: active.mode }, mockTestAvailable: false,
         itemCount: count.length, independentlyRecalledCount: recalledCountByVersion.get(active.deckVersionId) ?? 0, testDate: null, recommended: false,
         ...(resumable.kind === "lesson" ? { subjectTitle: null } : {}),

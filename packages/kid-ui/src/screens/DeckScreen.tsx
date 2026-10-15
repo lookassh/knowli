@@ -87,7 +87,7 @@ export function DeckScreen({
   );
 }
 
-function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive }: {
+export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive }: {
   deck: KidDeckDto;
   mediaUrl: (assetId: string) => string;
   onStart: (deckId: string) => void;
@@ -101,7 +101,9 @@ function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive }: {
     <li>
       <article className="kid-deck-card" data-testid="kid-deck-card" data-deck-id={deck.deckId} data-kind={deck.kind ?? "vocabulary"}>
         <div className="kid-deck-card__details">
-          {deck.coverVisual && <MeaningVisualView visual={deck.coverVisual} mediaUrl={mediaUrl} />}
+          {deck.coverAssetId
+            ? <img className="kid-deck-cover" src={mediaUrl(deck.coverAssetId)} alt="" data-testid="kid-deck-cover" />
+            : deck.coverVisual && <MeaningVisualView visual={deck.coverVisual} mediaUrl={mediaUrl} />}
           <h3 data-testid="kid-deck-title">
             {deck.title}{" "}
             <span>{isLesson && deck.subjectTitle

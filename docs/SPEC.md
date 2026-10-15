@@ -118,6 +118,10 @@ Rozpoczęta sesja korzysta do końca ze spójnej wersji treści i reguł. Nowa p
 
 Współdzielonego zestawu nie edytujemy osobno dla każdego dziecka w MVP. Ekran edycji powinien jasno wskazywać, że zmiana dotyczy wspólnej treści.
 
+Okładka zestawu słownictwa jest osobnym, współdzielonym ustawieniem kosmetycznym zestawu, niezależnym od wersji treści, sesji i postępu. Rodzic może wgrać lub usunąć obraz PNG, JPEG albo WebP (do 5 MB); dziecko widzi okładkę zamiast wizualizacji pierwszego słowa, a po jej usunięciu wraca dotychczasowy fallback. Okładka nie jest wymagana do publikacji ani nauki.
+
+Rodzic może również jawnie wygenerować propozycję okładki z nazwy zestawu i do ośmiu zapisanych par słówek. Propozycja pozostaje tymczasowym podglądem w przeglądarce; dopiero „Ustaw jako okładkę” wysyła bajty do istniejącej walidacji i prywatnego, niezmiennego magazynu. Odrzucenie i błąd nie zmieniają aktualnej okładki. Generowanie wymaga sesji rodzica, kontroli Origin/CSRF i skonfigurowanego image providera. Prompt nie zawiera profilu ani danych dziecka.
+
 ## 6. Kid Mode — MVP
 
 Interfejs jest po polsku, z angielskim materiałem do nauki. Musi działać wygodnie na telefonie i tablecie.

@@ -10,6 +10,7 @@
     "@learning/contracts": "workspace:*",
     "drizzle-orm": "^0.45.4",
     "pg": "^8.16.0",
+    "sharp": "0.35.5",
     "zod": "^4.0.0"
   },
   "devDependencies": {

@@ -158,6 +158,7 @@ export const decks = app.table(
     id: uuid("id").primaryKey(),
     title: text("title").notNull(),
     kind: text("kind").notNull().default("vocabulary"),
+    coverAssetId: uuid("cover_asset_id").references((): AnyPgColumn => mediaAssets.id),
     publishedVersionId: uuid("published_version_id"),
     archivedAt: timestamps("archived_at"),
     createdAt: timestamps("created_at").notNull().defaultNow(),
@@ -323,7 +324,7 @@ export const mediaAssets = app.table(
     createdAt: timestamps("created_at").notNull().defaultNow(),
   },
   (t) => [
-    check("media_assets_kind_allowed", sql`${t.kind} in ('tts', 'illustration')`),
+    check("media_assets_kind_allowed", sql`${t.kind} in ('tts', 'illustration', 'deck_cover')`),
     check("media_assets_generation_positive", sql`${t.generationNumber} > 0`),
     check("media_assets_state_allowed", sql`${t.state} in ('pending', 'ready', 'failed')`),
     check("media_assets_byte_count_nonnegative", sql`${t.byteCount} is null or ${t.byteCount} >= 0`),
