@@ -863,7 +863,7 @@
 .kid-exercise-frame[data-prompt-kind="picture_listening"] .kid-material-content {
   justify-content: flex-start;
   gap: 8px;
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 .kid-exercise-frame[data-prompt-kind="picture_listening"] .kid-play-big {
@@ -894,9 +894,16 @@
   justify-content: flex-start;
   gap: 12px;
   min-height: max(48px, min(11.25svh, 84px));
-  height: clamp(48px, 11.25svh, 84px);
-  padding: 4px 12px;
+  height: auto;
+  padding-block: 4px;
+  padding-inline: 12px 44px;
   text-align: left;
+}
+
+.kid-picture-options button.kid-option--correct::before,
+.kid-picture-options button.kid-option--wrong::before {
+  inset-inline-start: auto;
+  inset-inline-end: 12px;
 }
 
 .kid-picture-choice-visual {

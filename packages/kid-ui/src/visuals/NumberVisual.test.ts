@@ -13,7 +13,7 @@ function renderNumber(renderer: Renderer, count: number): SvgElement {
     ? Visual({ text: String(count), visualType: "number", visualData: { count } }) as SvgElement
     : MeaningVisualView({ visual: { kind: "number", count }, mediaUrl: () => "" }) as SvgElement;
   if (rendered.type !== NumberVisual) throw new Error(`${renderer} should use NumberVisual`);
-  return NumberVisual(rendered.props as { count: number; label: string });
+  return NumberVisual(rendered.props as { count: number; label: string }) as SvgElement;
 }
 
 function apples(svg: SvgElement): AppleElement[] {
@@ -57,7 +57,7 @@ describe("NumberVisual", () => {
 
     expect(bounds.left + (24 * bounds.scale) / 2).toBeCloseTo(80);
     expect(bounds.top + (28 * bounds.scale) / 2).toBeCloseTo(60);
-    expect(28 * bounds.scale).toBeGreaterThanOrEqual(60);
+    expect(28 * bounds.scale).toBeGreaterThanOrEqual(100);
   });
 
   it("centers an incomplete final row of apples", () => {

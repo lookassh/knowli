@@ -1,5 +1,5 @@
-import { expect, test } from "@playwright/test";
-import { assertKidLayout, installKidUiFixture } from "./helpers/kid-ui-fixture";
+import { expect, test, type Page } from "@playwright/test";
+import { assertKidLayout, installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
 import { pictureChoiceLayoutFixture } from "./helpers/picture-fixtures";
 
 const viewports = [
@@ -10,9 +10,9 @@ const viewports = [
   { width: 727, height: 953 },
 ];
 
-test("trzy odpowiedzi obrazkowe mieszczą się bez przewijania", async ({ page }, testInfo) => {
-  await page.setViewportSize(viewports[0]!);
-  await installKidUiFixture(page, pictureChoiceLayoutFixture());
+async function openPictureChoices(page: Page, fixture: KidUiFixture, viewport = viewports[0]!) {
+  await page.setViewportSize(viewport);
+  await installKidUiFixture(page, fixture);
   const audio = Buffer.alloc(204);
   audio.write("RIFF", 0);
   audio.writeUInt32LE(audio.length - 8, 4);
@@ -32,6 +32,11 @@ test("trzy odpowiedzi obrazkowe mieszczą się bez przewijania", async ({ page }
   await page.getByTestId("kid-profile").click();
   await page.getByTestId("kid-deck").first().click();
   await page.getByTestId("kid-done").click();
+  await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-prompt-kind", "picture_listening");
+}
+
+test("trzy odpowiedzi obrazkowe mieszczą się bez przewijania", async ({ page }, testInfo) => {
+  await openPictureChoices(page, pictureChoiceLayoutFixture());
 
   const options = page.getByTestId("kid-option");
   await expect(options).toHaveCount(3);
@@ -99,4 +104,160 @@ test("trzy odpowiedzi obrazkowe mieszczą się bez przewijania", async ({ page }
       }
     });
   }
+});
+
+test("trzeci kafelek działa z klawiatury, pokazuje błąd i pozwala spróbować ponownie", async ({ page }, testInfo) => {
+  const fixture = pictureChoiceLayoutFixture();
+  const task = fixture.tasks[1];
+  const originalAttempt = fixture.attempts?.[0];
+  if (!task || task.prompt.kind !== "picture_listening" || !originalAttempt) {
+    throw new Error("picture listening fixture missing");
+  }
+  fixture.attempts = [
+    { ...originalAttempt, feedback: { kind: "incorrect", correctText: "żółty" }, taskState: "issued" },
+    { ...originalAttempt, attemptId: "10000000-0000-4000-8000-000000000017", feedback: { kind: "great" }, taskState: "completed" },
+  ];
+
+  let releaseFirstAnswer!: () => void;
+  let signalFirstAnswer!: () => void;
+  const firstAnswerGate = new Promise<void>((resolve) => { releaseFirstAnswer = resolve; });
+  const firstAnswerStarted = new Promise<void>((resolve) => { signalFirstAnswer = resolve; });
+  const submitted: unknown[] = [];
+  let responseIndex = 0;
+  await openPictureChoices(page, fixture);
+  await page.route(`**/api/v1/kid/tasks/${task.taskId}/attempts`, async (route) => {
+    submitted.push(route.request().postDataJSON());
+    const response = fixture.attempts?.[responseIndex];
+    responseIndex += 1;
+    if (!response) throw new Error("choice answer fixture exhausted");
+    if (responseIndex === 1) {
+      signalFirstAnswer();
+      await firstAnswerGate;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(response) });
+  });
+
+  const options = page.getByTestId("kid-option");
+  const material = page.locator(".kid-material-content");
+  const initialScrollTop = await material.evaluate((element) => element.scrollTop);
+  await options.nth(2).focus();
+  await expect(options.nth(2)).toBeFocused();
+  await page.keyboard.press("Enter");
+  await firstAnswerStarted;
+  expect(submitted[0]).toMatchObject({ modality: "choice", optionId: "10000000-0000-4000-8000-000000000014" });
+  await expect.poll(() => options.evaluateAll((elements) => elements.map((element) => (element as HTMLButtonElement).disabled)))
+    .toEqual([true, true, true]);
+  expect(await material.evaluate((element) => element.scrollTop)).toBe(initialScrollTop);
+
+  releaseFirstAnswer();
+  await expect(page.getByTestId("kid-feedback")).toBeVisible();
+  await expect(options.nth(2)).toHaveClass(/kid-option--wrong/);
+  await expect(options.nth(0)).toHaveClass(/kid-option--correct/);
+  await expect(options).toHaveCount(3);
+  const markersAvoidLabels = await options.evaluateAll((elements) => elements.flatMap((element) => {
+    const marker = getComputedStyle(element, "::before");
+    if (marker.content === "none" || marker.content === "normal") return [];
+    const option = element.getBoundingClientRect();
+    const label = element.querySelector(".kid-picture-choice-label")!.getBoundingClientRect();
+    return [option.left + Number.parseFloat(marker.left) >= label.right];
+  }));
+  expect(markersAvoidLabels).toEqual([true, true]);
+  await page.screenshot({ path: testInfo.outputPath("picture-choice-feedback-retry.png") });
+  const beforeRetry = await options.evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().y));
+
+  await page.getByTestId("kid-next").click();
+  await expect(page.getByTestId("kid-feedback")).toHaveCount(0);
+  await expect.poll(() => options.evaluateAll((elements) => elements.map((element) => (element as HTMLButtonElement).disabled)))
+    .toEqual([false, false, false]);
+  const afterRetry = await options.evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().y));
+  expect(afterRetry).toEqual(beforeRetry);
+
+  await options.nth(0).click();
+  await expect(page.getByTestId("kid-feedback")).toBeVisible();
+  await expect(options.nth(0)).toHaveClass(/kid-option--correct/);
+  expect(submitted[1]).toMatchObject({ modality: "choice", optionId: "10000000-0000-4000-8000-000000000008" });
+  await page.screenshot({ path: testInfo.outputPath("picture-choice-feedback-success.png") });
+});
+
+test("długi podpis pozostaje dostępny przez przewijanie materiału", async ({ page }) => {
+  const fixture = pictureChoiceLayoutFixture();
+  const exposure = fixture.tasks[0];
+  const listening = fixture.tasks[1];
+  if (!exposure || !listening || listening.prompt.kind !== "picture_listening") {
+    throw new Error("picture listening fixture missing");
+  }
+  fixture.tasks = [
+    exposure,
+    { ...listening, prompt: { ...listening.prompt, options: listening.prompt.options.map((option, index) =>
+      index === 2 ? { ...option, labelPl: "bardzo długi podpis ".repeat(12).trim() } : option) } },
+    fixture.tasks[2]!,
+  ];
+  await openPictureChoices(page, fixture);
+
+  const content = page.locator(".kid-material-content");
+  await expect.poll(() => content.evaluate((element) => getComputedStyle(element).overflowY)).toBe("auto");
+  const metrics = await content.evaluate((element) => ({ scrollHeight: element.scrollHeight, clientHeight: element.clientHeight }));
+  expect(metrics.scrollHeight).toBeGreaterThan(metrics.clientHeight);
+  await content.hover();
+  await page.mouse.wheel(0, 500);
+  await expect.poll(() => content.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  const lastOption = page.getByTestId("kid-option").last();
+  await expect(lastOption).toBeInViewport();
+  const labelFits = await lastOption.evaluate((option) => {
+    const labelBounds = option.querySelector(".kid-picture-choice-label")!.getBoundingClientRect();
+    const optionBounds = option.getBoundingClientRect();
+    return labelBounds.bottom <= optionBounds.bottom + 1;
+  });
+  expect(labelFits).toBe(true);
+});
+
+test("powiększenie pozwala dosięgnąć ostatniej odpowiedzi i przycisku końca", async ({ page }) => {
+  await openPictureChoices(page, pictureChoiceLayoutFixture(), { width: 390, height: 700 });
+  await page.evaluate(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) throw new Error("visualViewport is required for this browser test");
+    Object.defineProperty(viewport, "scale", { configurable: true, value: 2 });
+    viewport.dispatchEvent(new Event("resize"));
+  });
+  await expect(page.getByTestId("kid-session-frame")).toHaveAttribute("data-zoomed", "true");
+
+  const lastOption = page.getByTestId("kid-option").last();
+  await lastOption.scrollIntoViewIfNeeded();
+  await expect(lastOption).toBeInViewport();
+  const endButton = page.getByTestId("kid-end");
+  await endButton.scrollIntoViewIfNeeded();
+  await expect(endButton).toBeInViewport();
+});
+
+test("układ poziomy zachowuje dostęp do wszystkich odpowiedzi i końca sesji", async ({ page }) => {
+  await openPictureChoices(page, pictureChoiceLayoutFixture(), { width: 640, height: 360 });
+  const root = await page.getByTestId("kid-session-frame").boundingBox();
+  expect(root).not.toBeNull();
+  expect(root!.x + root!.width).toBeLessThanOrEqual(641);
+
+  const options = page.getByTestId("kid-option");
+  await expect(options).toHaveCount(3);
+  await options.last().scrollIntoViewIfNeeded();
+  await expect(options.last()).toBeInViewport();
+  const end = page.getByTestId("kid-end");
+  await end.scrollIntoViewIfNeeded();
+  await expect(end).toBeInViewport();
+});
+
+test("trzy odpowiedzi i jabłko pozostają czytelne w ciemnym motywie", async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await openPictureChoices(page, pictureChoiceLayoutFixture());
+  await assertKidLayout(page);
+
+  const options = page.getByTestId("kid-option");
+  await expect(options).toHaveCount(3);
+  for (const option of await options.all()) await expect(option).toBeInViewport();
+  const background = await page.locator(".kid-ui").evaluate((element) => getComputedStyle(element).backgroundColor);
+  expect(background).toBe("rgb(24, 33, 52)");
+  const content = await page.locator(".kid-material-content").evaluate((element) => ({
+    scrollHeight: element.scrollHeight,
+    clientHeight: element.clientHeight,
+  }));
+  expect(content.scrollHeight).toBeLessThanOrEqual(content.clientHeight + 1);
+  await page.screenshot({ path: testInfo.outputPath("picture-options-dark-360x640.png") });
 });

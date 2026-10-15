@@ -13,7 +13,9 @@ export function NumberVisual({ count, label }: { count: number; label: string })
   const rows = Math.ceil(count / columns);
   const cellWidth = viewWidth / columns;
   const cellHeight = viewHeight / rows;
-  const scale = Math.min(cellWidth / (appleWidth + 4), cellHeight / (appleHeight + 4), 2.5);
+  const scale = count === 1
+    ? Math.min(viewWidth / appleWidth, viewHeight / appleHeight, 4)
+    : Math.min(cellWidth / (appleWidth + 4), cellHeight / (appleHeight + 4), 2.5);
 
   return (
     <svg className="kid-visual kid-visual-number" viewBox={`0 0 ${viewWidth} ${viewHeight}`} role="img" aria-label={label}>
