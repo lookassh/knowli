@@ -38,6 +38,7 @@ import {
   upsertAssignment,
   removeAssignment,
   readRewardActivitySummary,
+  readParentWorkCard,
   type Services,
 } from "@learning/server";
 import {
@@ -88,6 +89,12 @@ export async function handleParentApi(
   }
   if (first === "reward-activity" && request.method === "GET" && second) {
     return Response.json(await readRewardActivitySummary(services, second), { headers: { "Cache-Control": "no-store" } });
+  }
+  if (first === "work-card" && request.method === "GET" && second === undefined) {
+    const params = new URL(request.url).searchParams;
+    const childId = params.get("childId"), date = params.get("date");
+    if (!childId || !date) throw new AppError("validation");
+    return Response.json(await readParentWorkCard(services, { childId, date }), { headers: { "Cache-Control": "no-store" } });
   }
 
   // --- Lekcje (zadanie 11): ścieżki rozłączne z `decks`/`drafts` słówek ---

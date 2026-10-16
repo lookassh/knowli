@@ -21,6 +21,7 @@ export { issueIntegrationToken, listIntegrationTokens, requireLearningReadToken,
 export type { IntegrationPrincipal, IntegrationTokenMetadata } from "./modules/integration-tokens";
 export { getLearningOverview } from "./modules/learning-overview";
 export { recordRewardActivitySignal, authorizeRewardActivityPlayback, readRewardActivitySummary } from "./modules/reward-activity";
+export { readParentWorkCard } from "./modules/parent-work-card";
 export {
   isParentSetupRequired,
   setupParent,
