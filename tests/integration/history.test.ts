@@ -447,26 +447,26 @@ describe("niezmienność historii prób (integracja)", () => {
       .toEqual([{ ...profileBefore[0], display_name: "Ala", avatar_key: "panda" }]);
   });
 
-async function ensureUiAudioCatalog(services: Services): Promise<void> {
-  const { provider, model, voice, format } = services.media!.tts;
-  for (const [key, text] of Object.entries(UI_AUDIO_TEXTS)) {
-    const fingerprint = ttsFingerprint({ text, locale: "pl-PL", provider, model, voice, format });
-    const existing = (await query<{ generation_number: number }>(
-      "select generation_number from learning_app.media_assets where fingerprint = $1 order by generation_number desc limit 1",
-      [fingerprint],
-    ))[0];
-    if (existing) continue;
-    const id = randomUUID();
-    await pool.query(
-      `insert into learning_app.media_assets
-         (id, kind, fingerprint, generation_number, state, storage_key, content_sha256,
-          mime_type, byte_count, provider, model, metadata)
-       values ($1,'tts',$2,1,'ready',$3,$4,'audio/mpeg',1,$5,$6,$7)`,
-      [id, fingerprint, `blob/${id}`, `sha-${id}`, provider, model,
-        { purpose: "kid_ui_guidance", uiAudioKey: key, text, locale: "pl-PL", voice, format }],
-    );
+  async function ensureUiAudioCatalog(services: Services): Promise<void> {
+    const { provider, model, voice, format } = services.media!.tts;
+    for (const [key, text] of Object.entries(UI_AUDIO_TEXTS)) {
+      const fingerprint = ttsFingerprint({ text, locale: "pl-PL", provider, model, voice, format });
+      const existing = (await query<{ generation_number: number }>(
+        "select generation_number from learning_app.media_assets where fingerprint = $1 order by generation_number desc limit 1",
+        [fingerprint],
+      ))[0];
+      if (existing) continue;
+      const id = randomUUID();
+      await pool.query(
+        `insert into learning_app.media_assets
+           (id, kind, fingerprint, generation_number, state, storage_key, content_sha256,
+            mime_type, byte_count, provider, model, metadata)
+         values ($1,'tts',$2,1,'ready',$3,$4,'audio/mpeg',1,$5,$6,$7)`,
+        [id, fingerprint, `blob/${id}`, `sha-${id}`, provider, model,
+          { purpose: "kid_ui_guidance", uiAudioKey: key, text, locale: "pl-PL", voice, format }],
+      );
+    }
   }
-}
 
   it("kwalifikuje próbę picture_listening z opcjami labelPl jako niezależną", async () => {
     const testServices = buildTestServices().services;

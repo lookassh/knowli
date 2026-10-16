@@ -79,7 +79,7 @@ export async function readSkillHistories(
     };
     const prompt = row.publicPrompt as { options?: { text?: string; labelPl?: string }[] } | null;
     const distinctChoiceCount = Array.isArray(prompt?.options)
-      ? new Set(prompt.options.map((option) => (option.text ?? option.labelPl ?? "").normalize("NFC").trim().toLocaleLowerCase())).size
+      ? new Set(prompt.options.map((option) => (option?.text ?? option?.labelPl ?? "").normalize("NFC").trim().toLocaleLowerCase())).size
       : null;
     const qualified = qualifyProjectionEvidence([{
       entry,
