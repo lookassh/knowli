@@ -40,6 +40,7 @@ export {
   readDeck,
   listDecks,
   upsertAssignment,
+  removeAssignment,
   archiveDeck,
   applyItems,
 } from "./modules/decks";

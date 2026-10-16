@@ -263,7 +263,7 @@ async function lessonAssignments(db: Executor, deckId: string): Promise<Assignme
     })
     .from(assignments)
     .innerJoin(childProfiles, eq(childProfiles.id, assignments.childId))
-    .where(eq(assignments.deckId, deckId))
+    .where(and(eq(assignments.deckId, deckId), eq(assignments.active, true)))
     .orderBy(asc(childProfiles.createdAt), asc(childProfiles.id));
 }
 
