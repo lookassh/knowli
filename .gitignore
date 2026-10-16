@@ -32,3 +32,5 @@ backups/
 .zcodeignore
 .kiro/*
 !.kiro/specs/
+_bmad/
+_bmad-output/
