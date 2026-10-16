@@ -76,7 +76,7 @@ export async function analyzeSpeech(
   let pronunciation: SpeechEvidence["pronunciation"] = null;
   if (transcription.status === "ok" && transcription.text !== null && normalizeSpokenAnswerText(transcription.text) !== "") {
     const match = matchSpokenAnswer(transcription.text, key);
-    if (match.ci && match.matchedVariant === key.target) {
+    if (match.ci && match.matchedVariant && match.matchedVariant.toLowerCase() === key.target.toLowerCase()) {
       const result = await deps.pronunciation.assess(audio, key.target, deadline).then(
         (scored) => (deadline.aborted ? ({ status: "failed", overallScore: null, recognizedText: null } satisfies PronunciationResult) : scored),
         () => ({ status: "failed" as const, overallScore: null, recognizedText: null }),
@@ -146,15 +146,23 @@ export function assessSpeechEvidence(
   }
   // Pokazujemy dziecku rozpoznany tekst wyłącznie wtedy, gdy nie został
   // odrzucony jako niepewny. To wynik STT, nie zapis dźwięku ani score.
-  const recognizedText = normalizeSpokenAnswerText(t.text).slice(0, 200) || undefined;
+  // W mowie wielkość liter nie jest cechą fonetyczną — dopasowujemy wielkość liter
+  // do wariantu wzorca, aby uniknąć mylących komunikatów (np. Purple vs purple).
+  const rawRecognized = normalizeSpokenAnswerText(t.text).slice(0, 200) || undefined;
+  const recognizedText = match.ci && match.matchedVariant
+    ? match.matchedVariant
+    : rawRecognized !== undefined && key.target.length > 0 && key.target[0] === key.target[0]!.toLowerCase()
+      ? rawRecognized.toLowerCase()
+      : rawRecognized;
   const recognized = recognizedText ? { recognizedText } : {};
+
   // ćwiczenie wymowy: treść wypowiedzi decyduje o wykonaniu zadania —
   // ocena wymowy może pozostać nieoceniona (§12.6, §15.4)
   const speechAttempt = key.exerciseType === "speech" ? { contentMatched: match.ci } : undefined;
   const recognition: SpeechFeedback["recognition"] = match.ci ? "matched" : "different";
   const referenceText = match.matchedVariant ?? key.target;
   const pronunciationStatus = (): SpeechFeedback["pronunciation"] => {
-    if (!match.ci || match.matchedVariant !== key.target) return "not_applicable";
+    if (!match.ci || !match.matchedVariant || match.matchedVariant.toLowerCase() !== key.target.toLowerCase()) return "not_applicable";
     const result = evidence.pronunciation;
     if (!result || result.status !== "ok" || result.overallScore === null) return result?.status === "failed" ? "unavailable" : "unavailable";
     const configured = ctx.policy.pronunciationBands[result.provider];
@@ -173,12 +181,12 @@ export function assessSpeechEvidence(
   }
 
   const p = evidence.pronunciation;
-  if (!match.ci) {
+  if (!match.ci || !match.matchedVariant) {
     // wiarygodny tekst spoza zatwierdzonego zbioru: wynik wymowy oczekiwanego
     // słowa byłby nieadekwatny — w ogóle go nie oceniamy (Review Focus 3)
     return { skills, attempt, ...recognized, speechFeedback, ...(speechAttempt ? { speechAttempt } : {}) };
   }
-  if (!p || p.status !== "ok" || p.overallScore === null || p.expectedText !== match.matchedVariant) {
+  if (!p || p.status !== "ok" || p.overallScore === null || p.expectedText.toLowerCase() !== match.matchedVariant.toLowerCase()) {
     // oceny nie ma albo dotyczy innego wariantu — pronunciation nieocenione
     skills.pronunciation = unevaluated(p?.status === "failed" ? "technical" : undefined);
     return { skills, attempt, ...recognized, speechFeedback, ...(speechAttempt ? { speechAttempt } : {}) };
