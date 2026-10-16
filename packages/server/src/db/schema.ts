@@ -568,6 +568,55 @@ export const rewardActivitySettlements = app.table(
   ],
 );
 
+/** Stabilne dzienne uprawnienia Xbox, tworzone dopiero przy udanej rezerwacji. */
+export const rewardActivityXboxBlocks = app.table(
+  "reward_activity_xbox_blocks",
+  {
+    id: uuid("id").primaryKey(),
+    childId: uuid("child_id").notNull(),
+    timezone: text("timezone").notNull(),
+    localDate: text("local_date").notNull(),
+    blockNumber: integer("block_number").notNull(),
+    creditedSecondsAtCreation: integer("credited_seconds_at_creation").notNull(),
+    createdAt: timestamps("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({ name: "reward_activity_xbox_block_child_fk", columns: [t.childId], foreignColumns: [childProfiles.id] }).onDelete("cascade"),
+    check("reward_activity_xbox_block_identity_valid", sql`${t.localDate} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' and ${t.blockNumber} > 0`),
+    check("reward_activity_xbox_block_duration", sql`${t.creditedSecondsAtCreation} >= ${t.blockNumber} * 1800`),
+    unique("reward_activity_xbox_block_identity").on(t.childId, t.timezone, t.localDate, t.blockNumber),
+    unique("reward_activity_xbox_block_id_child_unique").on(t.id, t.childId),
+    index("reward_activity_xbox_block_oldest_idx").on(t.childId, t.localDate, t.blockNumber),
+  ],
+);
+
+/** Rodzic rozliczy ręczną realizację w kolejnej historyjce; zachowujemy migawkę żądania. */
+export const rewardActivityXboxRequests = app.table(
+  "reward_activity_xbox_requests",
+  {
+    id: uuid("id").primaryKey(),
+    childId: uuid("child_id").notNull(),
+    blockId: uuid("block_id").notNull(),
+    status: text("status").notNull().default("pending"),
+    timezoneSnapshot: text("timezone_snapshot").notNull(),
+    localDateSnapshot: text("local_date_snapshot").notNull(),
+    blockNumberSnapshot: integer("block_number_snapshot").notNull(),
+    creditedSecondsSnapshot: integer("credited_seconds_snapshot").notNull(),
+    pointsCost: integer("points_cost").notNull().default(30),
+    xboxMinutes: integer("xbox_minutes").notNull().default(15),
+    requestedAt: timestamps("requested_at").notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({ name: "reward_activity_xbox_request_child_fk", columns: [t.childId], foreignColumns: [childProfiles.id] }).onDelete("cascade"),
+    foreignKey({ name: "reward_activity_xbox_request_block_child_fk", columns: [t.blockId, t.childId], foreignColumns: [rewardActivityXboxBlocks.id, rewardActivityXboxBlocks.childId] }).onDelete("cascade"),
+    check("reward_activity_xbox_request_status", sql`${t.status} in ('pending','fulfilled','rejected')`),
+    check("reward_activity_xbox_request_snapshot", sql`${t.pointsCost} = 30 and ${t.xboxMinutes} = 15 and ${t.blockNumberSnapshot} > 0 and ${t.creditedSecondsSnapshot} >= 1800`),
+    uniqueIndex("reward_activity_xbox_one_open_request_per_child").on(t.childId).where(sql`${t.status} = 'pending'`),
+    uniqueIndex("reward_activity_xbox_block_reserved_once").on(t.blockId).where(sql`${t.status} in ('pending','fulfilled')`),
+    index("reward_activity_xbox_request_child_time_idx").on(t.childId, t.requestedAt),
+  ],
+);
+
 /** Ograniczony dziennik aktywności nagrodowej; bez surowej interakcji/audio. */
 export const rewardActivityStreams = app.table(
   "reward_activity_streams",

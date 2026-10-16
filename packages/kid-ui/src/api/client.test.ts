@@ -4,6 +4,19 @@ import { createKidApiClient, KidApiError } from "./client";
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
 describe("Kid API picture support transport", () => {
+  it("submits an Xbox pack request through the validated Kid API route", async () => {
+    const requestId = "11111111-1111-4111-8111-111111111111";
+    const childId = "22222222-2222-4222-8222-222222222222";
+    const fetchImpl = vi.fn().mockResolvedValue(response({
+      requestId, status: "pending", requestedAt: "2026-10-16T10:00:00.000Z",
+      localDate: "2026-10-15", blockNumber: 1, pointsCost: 30, xboxMinutes: 15,
+    }));
+    const api = createKidApiClient({ fetchImpl });
+
+    await expect(api.requestXboxPack(childId)).resolves.toMatchObject({ requestId, status: "pending" });
+    expect(fetchImpl).toHaveBeenCalledWith(`/api/v1/kid/profiles/${childId}/xbox-request`, expect.objectContaining({ method: "POST" }));
+  });
+
   it("reads the validated spoken-guidance catalog and disables the session microphone", async () => {
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(response({ ready: true, assets: { profile_select: "11111111-1111-4111-8111-111111111111" } }))

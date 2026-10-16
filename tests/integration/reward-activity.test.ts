@@ -24,6 +24,56 @@ import { handleKidApi } from "../../apps/web/src/kid/kid-router";
 const { pool } = testDatabase();
 afterAll(async () => { await pool.end(); });
 
+async function seedCreditedDay(
+  services: ReturnType<typeof buildTestServices>["services"],
+  childId: string,
+  minutesByDay: Array<{ day: string; minutes: number }>,
+): Promise<void> {
+  const draft = await createDraft(services, { title: `Xbox ${randomUUID()}`, items: [{
+    source: "kot", target: "cat", acceptedAnswers: [],
+    locales: { source: "pl-PL", target: "en-GB" }, visualType: "none",
+  }] });
+  const revision = (await pool.query<{ id: string }>("select id from learning_app.item_revisions where deck_version_id=$1", [draft.id])).rows[0]!;
+  const assetId = randomUUID();
+  const fingerprint = `xbox-${randomUUID()}`;
+  await pool.query(`insert into learning_app.media_assets
+    (id,kind,fingerprint,generation_number,state,storage_key,content_sha256,mime_type,byte_count,provider,model,metadata)
+    values ($1,'tts',$2,1,'ready',$3,$4,'audio/mpeg',100,'fake','fake','{"durationMs":20000}'::jsonb)`,
+  [assetId, fingerprint, `blob/${assetId}`, `sha-${assetId}`]);
+  await pool.query(`insert into learning_app.revision_assets
+    (item_revision_id,role,asset_id,expected_fingerprint,state) values ($1,'target_audio',$2,$3,'approved')`,
+  [revision.id, assetId, fingerprint]);
+  await pool.query(`insert into learning_app.revision_assets
+    (item_revision_id,role,asset_id,expected_fingerprint,state) values ($1,'illustration',null,$2,'omitted')`,
+  [revision.id, `xbox-ill-${randomUUID()}`]);
+  await publishDraft(services, draft.id, 1);
+  await upsertAssignment(services, childId, draft.deckId, null);
+  const session = await startSession(services, { childId, deckId: draft.deckId, microphoneEnabled: false });
+  const task = await nextTask(services, session.sessionId);
+  const taskId = task!.taskId;
+  const settlementId = randomUUID();
+  const streamId = randomUUID();
+  const completionRef = randomUUID();
+  const totalMilliseconds = minutesByDay.reduce((sum, entry) => sum + entry.minutes * 60_000, 0);
+  const points = Math.floor(totalMilliseconds / 60_000);
+  await pool.query(`insert into learning_app.reward_activity_streams
+    (id,child_id,session_id,task_id,policy_version,last_sequence,last_signal_at,last_interaction_at,active)
+    values ($1,$2,$3,$4,'1',1,$5,$5,false)`,
+  [streamId, childId, session.sessionId, taskId, services.clock.now()]);
+  await pool.query(`insert into learning_app.reward_activity_settlements
+    (id,child_id,session_id,task_id,completion_ref,kind,settled_at,deck_id,credited_milliseconds,awarded_points,remainder_milliseconds,timezone)
+    values ($1,$2,$3,$4,$5,'presentation',$6,$7,$8,$9,0,'Europe/Warsaw')`,
+  [settlementId, childId, session.sessionId, taskId, completionRef, services.clock.now(), draft.deckId, totalMilliseconds, points]);
+  for (const [index, entry] of minutesByDay.entries()) {
+    const start = new Date(`${entry.day}T08:00:00.000Z`);
+    await pool.query(`insert into learning_app.reward_activity_segments
+      (id,stream_id,child_id,session_id,task_id,started_at,ended_at,settlement_ref)
+      values ($1,$2,$3,$4,$5,$6,$7,$8)`,
+    [randomUUID(), streamId, childId, session.sessionId, taskId,
+      new Date(start.getTime() + index * 3_600_000), new Date(start.getTime() + index * 3_600_000 + entry.minutes * 60_000), settlementId]);
+  }
+}
+
 describe("rozliczanie aktywności nagrodowej", () => {
   beforeEach(async () => {
     await truncateCoreTables();
@@ -39,6 +89,72 @@ describe("rozliczanie aktywności nagrodowej", () => {
     const decks = await handleKidApi(new Request(`http://localhost/api/v1/kid/decks?childId=${child.id}`), services, ["decks"]);
     expect(profiles.headers.get("Cache-Control")).toBe("no-store");
     expect(decks.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("pokazuje gotowe bloki wyłącznie z jednego dnia i nie zmienia salda przy niepełnym bloku", async () => {
+    const { services } = buildTestServices("2026-10-16T10:00:00.000Z");
+    const child = await createChild(services, { displayName: "Ola", avatarKey: "fox" });
+    await seedCreditedDay(services, child.id, [
+      { day: "2026-10-14", minutes: 20 },
+      { day: "2026-10-15", minutes: 10 },
+    ]);
+
+    const before = (await listKidProfiles(services))[0]!;
+    expect(before.rewards).toMatchObject({ earnedPoints: 30, pointsToUse: 30, readyXboxPacks: 0 });
+    await expect(handleKidApi(new Request(`http://localhost/api/v1/kid/profiles/${child.id}/xbox-request`, {
+      method: "POST", headers: { Origin: "http://localhost" },
+    }), services, ["profiles", child.id, "xbox-request"])).rejects.toMatchObject({ code: "conflict" });
+    expect(await listKidProfiles(services)).toMatchObject([{ rewards: { earnedPoints: 30, pointsToUse: 30, readyXboxPacks: 0, xboxRequest: null } }]);
+    const blocks = await pool.query("select count(*)::int as count from learning_app.reward_activity_xbox_blocks where child_id=$1", [child.id]);
+    expect(blocks.rows[0]?.count).toBe(0);
+  });
+
+  it("rezerwuje jeden najstarszy blok atomowo i powtarzalnie, odejmując saldo, ale zachowując dorobek", async () => {
+    const { services } = buildTestServices("2026-10-16T10:00:00.000Z");
+    const child = await createChild(services, { displayName: "Ola", avatarKey: "fox" });
+    const child30 = await createChild(services, { displayName: "Ada", avatarKey: "cat" });
+    const child60 = await createChild(services, { displayName: "Jan", avatarKey: "owl" });
+    await seedCreditedDay(services, child.id, [{ day: "2026-10-14", minutes: 60 }, { day: "2026-10-15", minutes: 30 }]);
+    await seedCreditedDay(services, child30.id, [{ day: "2026-10-14", minutes: 30 }]);
+    await seedCreditedDay(services, child60.id, [{ day: "2026-10-14", minutes: 60 }]);
+
+    const profilesBefore = await listKidProfiles(services);
+    const before = profilesBefore.find((profile) => profile.childId === child.id)!;
+    expect(before.rewards).toMatchObject({ earnedPoints: 90, pointsToUse: 90, readyXboxPacks: 3, xboxRequest: null });
+    expect(profilesBefore.find((profile) => profile.childId === child30.id)?.rewards).toMatchObject({ readyXboxPacks: 1 });
+    expect(profilesBefore.find((profile) => profile.childId === child60.id)?.rewards).toMatchObject({ readyXboxPacks: 2 });
+    const request = () => handleKidApi(new Request(`http://localhost/api/v1/kid/profiles/${child.id}/xbox-request`, {
+      method: "POST", headers: { Origin: "http://localhost" },
+    }), services, ["profiles", child.id, "xbox-request"]);
+    const [firstResponse, parallelResponse] = await Promise.all([request(), request()]);
+    const first = await firstResponse.json();
+    const parallel = await parallelResponse.json();
+    expect(firstResponse.status).toBe(200);
+    expect(parallelResponse.status).toBe(200);
+    expect(parallel.requestId).toBe(first.requestId);
+    expect(first).toMatchObject({ status: "pending", localDate: "2026-10-14", blockNumber: 1, pointsCost: 30, xboxMinutes: 15 });
+    await expect((await request()).json()).resolves.toMatchObject({ requestId: first.requestId });
+    expect((await listKidProfiles(services)).find((profile) => profile.childId === child.id)?.rewards).toMatchObject({
+      earnedPoints: 90, pointsToUse: 60, readyXboxPacks: 2,
+      xboxRequest: { requestId: first.requestId, status: "pending", pointsCost: 30, xboxMinutes: 15 },
+    });
+    expect((await listKidProfiles(services)).find((profile) => profile.childId === child30.id)?.rewards)
+      .toMatchObject({ earnedPoints: 30, pointsToUse: 30, readyXboxPacks: 1, xboxRequest: null });
+    const rows = await pool.query("select count(*)::int as count from learning_app.reward_activity_xbox_requests where child_id=$1", [child.id]);
+    expect(rows.rows[0]?.count).toBe(1);
+    const snapshot = await pool.query<{ timezone_snapshot: string; local_date_snapshot: string; block_number_snapshot: number; credited_seconds_snapshot: number; points_cost: number; xbox_minutes: number }>(
+      "select timezone_snapshot, local_date_snapshot, block_number_snapshot, credited_seconds_snapshot, points_cost, xbox_minutes from learning_app.reward_activity_xbox_requests where id=$1",
+      [first.requestId],
+    );
+    expect(snapshot.rows[0]).toMatchObject({
+      timezone_snapshot: "Europe/Warsaw", local_date_snapshot: "2026-10-14",
+      block_number_snapshot: 1, credited_seconds_snapshot: 3600, points_cost: 30, xbox_minutes: 15,
+    });
+    await deleteChild(services, child.id);
+    for (const table of ["reward_activity_xbox_blocks", "reward_activity_xbox_requests"]) {
+      const childRows = await pool.query(`select count(*)::int as count from learning_app.${table} where child_id=$1`, [child.id]);
+      expect(childRows.rows[0]?.count).toBe(0);
+    }
   });
 
   it("rozlicza potwierdzone sekundy raz, dopiero po ukończeniu prezentacji", async () => {

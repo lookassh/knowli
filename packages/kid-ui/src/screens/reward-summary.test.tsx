@@ -43,11 +43,26 @@ describe("kid reward views", () => {
   });
 
   it("uses Polish Xbox pack forms and separates identity from wrapping reward details", () => {
-    const one = <ProfileScreen profiles={[profile]} onSelect={vi.fn()} />;
+    const requestXbox = vi.fn();
+    const one = <ProfileScreen profiles={[profile]} onSelect={vi.fn()} onRequestXbox={requestXbox} />;
     expect(textNodes(one).join(" ")).toContain("Xbox: 1 pakiet po 15 minut");
+    expect(textNodes(one).join(" ")).toContain("Zgłoś pakiet Xbox · 30 pkt");
+    const requestButton = ProfileScreen({ profiles: [profile], onSelect: vi.fn(), onRequestXbox: requestXbox })
+      .props.children[2].props.children[0].props.children[4];
+    requestButton.props.onClick();
+    expect(requestXbox).toHaveBeenCalledWith(profile.childId);
     const two = <ProfileScreen profiles={[{ ...profile, rewards: { ...profile.rewards!, readyXboxPacks: 2 } }]} onSelect={vi.fn()} />;
     expect(textNodes(two).join(" ")).toContain("Xbox: 2 pakiety po 15 minut");
-    const tree = ProfileScreen({ profiles: [profile], onSelect: vi.fn() }).props.children[2].props.children[0].props.children.props.children;
+    const pending = { ...profile, rewards: { ...profile.rewards!, xboxRequest: {
+      requestId: "10000000-0000-4000-8000-000000000003", status: "pending" as const,
+      requestedAt: "2026-10-16T10:00:00.000Z", localDate: "2026-10-15", blockNumber: 1,
+      pointsCost: 30 as const, xboxMinutes: 15 as const,
+    } } };
+    expect(textNodes(<ProfileScreen profiles={[pending]} onSelect={vi.fn()} onRequestXbox={vi.fn()} />).join(" "))
+      .toContain("Zgłoszenie czeka na rodzica.");
+    expect(textNodes(<ProfileScreen profiles={[pending]} onSelect={vi.fn()} onRequestXbox={vi.fn()} />).join(" "))
+      .not.toContain("Zgłoś pakiet Xbox");
+    const tree = ProfileScreen({ profiles: [profile], onSelect: vi.fn() }).props.children[2].props.children[0].props.children[0].props.children;
     expect(tree[0].props.className).toBe("kid-profile-identity");
     expect(tree[1].props.className).toBe("kid-profile-rewards");
   });

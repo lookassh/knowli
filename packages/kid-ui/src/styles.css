@@ -1815,6 +1815,17 @@
   white-space: normal;
 }
 
+.kid-screen--profile .kid-profile-request {
+  min-height: 56px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.kid-screen--profile .kid-profile-request-status {
+  margin: 0;
+  text-align: center;
+}
+
 .kid-profile-identity,
 .kid-profile-rewards {
   display: flex;

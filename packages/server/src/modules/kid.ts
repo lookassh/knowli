@@ -28,10 +28,11 @@ export async function listKidProfiles(services: Services): Promise<KidProfileDto
     const rewards = await readKidRewardSnapshot(services, row.childId);
     return { ...row, rewards: {
       earnedPoints: rewards.earnedPoints,
-      pointsToUse: rewards.earnedPoints,
+      pointsToUse: rewards.pointsToUse,
       readyXboxPacks: rewards.readyXboxPacks,
       todayCreditedSeconds: rewards.todayCreditedSeconds,
       dailyGoalSeconds: 1800 as const,
+      xboxRequest: rewards.xboxRequest,
     } };
   }));
 }

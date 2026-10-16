@@ -308,6 +308,29 @@ export class LearningSessionController {
     this.#emit();
   }
 
+  async requestXboxPack(childId: string): Promise<void> {
+    const requested = await this.#api.requestXboxPack(childId);
+    try {
+      this.#profiles = await this.#api.listProfiles();
+    } catch {
+      this.#profiles = this.#profiles.map((profile) => {
+        if (profile.childId !== childId) return profile;
+        const rewards = profile.rewards ?? { earnedPoints: 0, pointsToUse: 0, readyXboxPacks: 0, todayCreditedSeconds: 0, dailyGoalSeconds: 1800 as const, xboxRequest: null };
+        const isNewReservation = rewards.xboxRequest?.requestId !== requested.requestId;
+        return { ...profile, rewards: {
+          ...rewards,
+          pointsToUse: Math.max(0, rewards.pointsToUse - (isNewReservation ? requested.pointsCost : 0)),
+          readyXboxPacks: Math.max(0, rewards.readyXboxPacks - (isNewReservation ? 1 : 0)),
+          xboxRequest: requested,
+        } };
+      });
+    }
+    if (this.#screen.kind === "profile") {
+      this.#screen = { kind: "profile", profiles: this.#profiles };
+      this.#emit();
+    }
+  }
+
   async selectProfile(childId: string): Promise<void> {
     this.#epoch += 1;
     this.#teardownRecording();

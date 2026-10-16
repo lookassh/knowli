@@ -149,6 +149,7 @@ function makeMedia(recorder: ReturnType<typeof makeRecorder>, playGate?: Promise
 interface ApiState {
   submitError?: unknown;
   profiles: KidProfileDto[];
+  listProfilesFailureCount?: number;
   decks: KidDeckDto[];
   tasks: TaskDto[];
   attempts: AttemptDto[];
@@ -192,8 +193,19 @@ function makeApi(state: ApiState): KidApi {
       return state.uiAudioReady ? { ready: true, assets: { recall: "asset-guidance" } } : { ready: false, assets: {} };
     },
     async listProfiles() {
+      if ((state.listProfilesFailureCount ?? 0) > 0) {
+        state.listProfilesFailureCount = state.listProfilesFailureCount! - 1;
+        throw new TypeError("fetch failed");
+      }
       if (state.networkDown) throw new TypeError("fetch failed");
       return state.profiles;
+    },
+    async requestXboxPack() {
+      return {
+        requestId: "99999999-9999-4999-8999-999999999999", status: "pending",
+        requestedAt: "2026-10-16T10:00:00.000Z", localDate: "2026-10-15",
+        blockNumber: 1, pointsCost: 30, xboxMinutes: 15,
+      };
     },
     async listDecks(childId, options) {
       state.listDeckRequests?.push({ childId, microphoneEnabled: options?.microphoneEnabled });
@@ -325,6 +337,34 @@ async function startAtTask(state: ApiState, task: TaskDto, recorderOpts?: { fail
 }
 
 describe("LearningSessionController", () => {
+  it("po udanej rezerwacji zachowuje oczekiwanie, gdy odświeżenie profili zawiedzie", async () => {
+    const profile: KidProfileDto = {
+      ...PROFILE_A,
+      rewards: {
+        dailyGoalSeconds: 1800,
+        todayCreditedSeconds: 1800,
+        earnedPoints: 30,
+        pointsToUse: 30,
+        readyXboxPacks: 1,
+        xboxRequest: null,
+      },
+    };
+    const state = { ...baseState(), profiles: [profile] };
+    const harness = makeHarness(state);
+    await harness.controller.start();
+
+    state.listProfilesFailureCount = 1;
+    await harness.controller.requestXboxPack(profile.childId);
+
+    expect(harness.controller.getScreen()).toMatchObject({
+      kind: "profile",
+      profiles: [{
+        childId: profile.childId,
+        rewards: { pointsToUse: 0, readyXboxPacks: 0, xboxRequest: { status: "pending" } },
+      }],
+    });
+  });
+
   it("wysyła numerowane sygnały aktywności i zapisuje pauzę offline", async () => {
     const task = taskDto("activity-task", { kind: "recall", prompt: "czwartek" });
     const harness = await startAtTask(baseState(), task);

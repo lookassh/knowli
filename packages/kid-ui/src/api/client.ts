@@ -14,6 +14,7 @@ import {
   TaskDtoSchema,
   RewardActivitySignalDtoSchema,
   RewardActivityPlaybackAuthorizationDtoSchema,
+  XboxRewardRequestDtoSchema,
   type AttemptDto,
   type KidValidationReason,
   type AttemptInput,
@@ -31,6 +32,7 @@ import {
   type RewardActivitySignalDto,
   type RewardActivityPlaybackAuthorizationInput,
   type RewardActivityPlaybackAuthorizationDto,
+  type XboxRewardRequestDto,
 } from "@learning/contracts";
 import type { RecordedAudio } from "../media/platform";
 import type { KidApi } from "./KidApi";
@@ -127,6 +129,9 @@ export function createKidApiClient(options: KidClientOptions = {}): KidApi {
     },
     listProfiles(): Promise<KidProfileDto[]> {
       return request("/api/v1/kid/profiles", { method: "GET" }, parseProfiles);
+    },
+    requestXboxPack(childId: string): Promise<XboxRewardRequestDto> {
+      return post(`/api/v1/kid/profiles/${encodeURIComponent(childId)}/xbox-request`, {}, parseWith(XboxRewardRequestDtoSchema));
     },
     listDecks(childId: string, options: { microphoneEnabled?: boolean } = {}): Promise<KidDeckDto[]> {
       const query = options.microphoneEnabled === undefined ? "" : `&microphoneEnabled=${options.microphoneEnabled}`;

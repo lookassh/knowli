@@ -344,6 +344,17 @@ export const SessionSummaryDtoSchema = SessionSummaryResultsSchema.extend({
 export type SessionSummaryDto = z.infer<typeof SessionSummaryDtoSchema>;
 
 /** Widok profilu dla ekranu dziecka: tylko nazwa i awatar (arch §12). */
+export const XboxRewardRequestDtoSchema = z.object({
+  requestId: UuidSchema,
+  status: z.enum(["pending", "fulfilled", "rejected"]),
+  requestedAt: InstantSchema,
+  localDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  blockNumber: z.number().int().positive(),
+  pointsCost: z.literal(30),
+  xboxMinutes: z.literal(15),
+}).strict();
+export type XboxRewardRequestDto = z.infer<typeof XboxRewardRequestDtoSchema>;
+
 export const KidProfileDtoSchema = z.object({
   childId: UuidSchema,
   displayName: z.string().min(1),
@@ -356,7 +367,8 @@ export const KidProfileDtoSchema = z.object({
     readyXboxPacks: z.number().int().nonnegative(),
     todayCreditedSeconds: z.number().int().nonnegative(),
     dailyGoalSeconds: z.literal(1800),
-  }).default({ earnedPoints: 0, pointsToUse: 0, readyXboxPacks: 0, todayCreditedSeconds: 0, dailyGoalSeconds: 1800 }),
+    xboxRequest: XboxRewardRequestDtoSchema.nullable().default(null),
+  }).default({ earnedPoints: 0, pointsToUse: 0, readyXboxPacks: 0, todayCreditedSeconds: 0, dailyGoalSeconds: 1800, xboxRequest: null }),
 });
 export type KidProfileDto = z.input<typeof KidProfileDtoSchema>;
 

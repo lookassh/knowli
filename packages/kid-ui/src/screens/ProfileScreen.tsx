@@ -31,11 +31,17 @@ export function ProfileScreen({
   onSelect,
   headerActions,
   onGuidance,
+  onRequestXbox,
+  requestingChildId,
+  requestErrorChildId,
 }: {
   profiles: KidProfileDto[];
   onSelect: (childId: string) => void;
   headerActions?: ReactNode;
   onGuidance?: (key: UiAudioKey) => Promise<void>;
+  onRequestXbox?: (childId: string) => void;
+  requestingChildId?: string | null;
+  requestErrorChildId?: string | null;
 }) {
   return (
     <main className="kid-screen kid-screen--profile">
@@ -45,8 +51,11 @@ export function ProfileScreen({
         <p className="kid-hint">{messages.kid.noProfiles}</p>
       ) : (
         <ul className="kid-list">
-          {profiles.map((profile) => (
-            <li key={profile.childId}>
+          {profiles.map((profile) => {
+            const request = profile.rewards?.xboxRequest ?? null;
+            const readyPacks = profile.rewards?.readyXboxPacks ?? 0;
+            const requesting = requestingChildId === profile.childId;
+            return <li key={profile.childId}>
               <button
                 type="button"
                 className="kid-profile"
@@ -76,8 +85,19 @@ export function ProfileScreen({
                   })()}
                 </span>
               </button>
-            </li>
-          ))}
+              {request?.status === "pending" && <p className="kid-hint kid-profile-request-status" data-testid="kid-xbox-request-pending">{messages.kid.rewardXboxRequestPending}</p>}
+              {request?.status === "fulfilled" && <p className="kid-hint kid-profile-request-status">{messages.kid.rewardXboxRequestFulfilled}</p>}
+              {request?.status === "rejected" && <p className="kid-hint kid-profile-request-status">{messages.kid.rewardXboxRequestRejected}</p>}
+              {readyPacks > 0 && request?.status !== "pending" && onRequestXbox && <button
+                type="button"
+                className="kid-profile-request"
+                data-testid="kid-xbox-request"
+                disabled={requesting}
+                onClick={() => onRequestXbox(profile.childId)}
+              >{requesting ? messages.kid.rewardXboxRequestSending : messages.kid.rewardXboxRequestAction}</button>}
+              {requestErrorChildId === profile.childId && <p className="kid-hint kid-profile-request-status" role="alert">{messages.kid.rewardXboxRequestFailure}</p>}
+            </li>;
+          })}
         </ul>
       )}
     </main>

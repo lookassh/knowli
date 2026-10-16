@@ -18,6 +18,7 @@ import type {
   RewardActivitySignalDto,
   RewardActivityPlaybackAuthorizationInput,
   RewardActivityPlaybackAuthorizationDto,
+  XboxRewardRequestDto,
 } from "@learning/contracts";
 import type { RecordedAudio } from "../media/platform";
 
@@ -33,6 +34,7 @@ export interface KidApi {
   /** Omówienie kartkówki lekcji (sesja lekcji) — per cel zamiast per umiejętność. */
   readLessonMockTestSummary(sessionId: string): Promise<LessonMockTestSummaryDto>;
   listProfiles(): Promise<KidProfileDto[]>;
+  requestXboxPack(childId: string): Promise<XboxRewardRequestDto>;
   listDecks(childId: string, options?: { microphoneEnabled?: boolean }): Promise<KidDeckDto[]>;
   startSession(input: SessionInput): Promise<SessionDto>;
   /** Idempotentne wydanie aktywnego zadania; null oznacza koniec sesji. */

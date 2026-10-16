@@ -6,6 +6,7 @@ import {
   type RewardActivitySignalDto,
   type RewardActivityPauseReason,
   type RewardActivitySummaryDto,
+  type XboxRewardRequestDto,
   UuidSchema,
 } from "@learning/contracts";
 import type { Services } from "../config";
@@ -22,6 +23,9 @@ import {
   mediaAssets,
   revisionAssets,
   sessionTasks,
+  childProfiles,
+  rewardActivityXboxBlocks,
+  rewardActivityXboxRequests,
 } from "../db/schema";
 import { AppError } from "../errors";
 import {
@@ -39,6 +43,9 @@ import {
 } from "../domain/reward-activity";
 import { lockTaskWithSession } from "./events";
 import { mp3DurationMs } from "../providers/audio/mp3-duration";
+
+const XBOX_PACK_POINTS = 30;
+const XBOX_PACK_MINUTES = 15;
 
 type PauseReason = NonNullable<RewardActivitySignalDto["pauseReason"]>;
 const PAUSE_REASONS: Record<Extract<RewardActivitySignal["kind"], "pause">, PauseReason> = {
@@ -330,9 +337,23 @@ export async function finishRewardActivitySession(tx: Tx, sessionId: string, at:
 
 export interface KidRewardSnapshot {
   earnedPoints: number;
+  pointsToUse: number;
   todayCreditedSeconds: number;
   readyXboxPacks: number;
+  xboxRequest: XboxRewardRequestDto | null;
   pointsByDeck: Map<string, number>;
+}
+
+function xboxRequestDto(row: typeof rewardActivityXboxRequests.$inferSelect): XboxRewardRequestDto {
+  return {
+    requestId: row.id,
+    status: row.status as XboxRewardRequestDto["status"],
+    requestedAt: row.requestedAt.toISOString(),
+    localDate: row.localDateSnapshot,
+    blockNumber: row.blockNumberSnapshot,
+    pointsCost: 30,
+    xboxMinutes: 15,
+  };
 }
 
 /** Reads the child's server-settled reward ledger and day totals. */
@@ -368,12 +389,99 @@ export async function readKidRewardSnapshot(services: Services, childId: string,
       daily.set(key, (daily.get(key) ?? 0) + milliseconds);
     }
   }
+  const xboxRequests = await services.db.select().from(rewardActivityXboxRequests)
+    .where(eq(rewardActivityXboxRequests.childId, child)).orderBy(asc(rewardActivityXboxRequests.requestedAt));
+  const consumedPacks = xboxRequests.filter((row) => row.status === "pending" || row.status === "fulfilled").length;
+  const latestRequest = xboxRequests.find((row) => row.status === "pending") ?? xboxRequests.at(-1) ?? null;
+  const earnedXboxPacks = [...daily.values()].reduce((sum, milliseconds) => sum + xboxPacksForDay(milliseconds), 0);
   return {
     earnedPoints,
+    pointsToUse: Math.max(0, earnedPoints - consumedPacks * XBOX_PACK_POINTS),
     todayCreditedSeconds: Math.floor((daily.get(`${timezone}:${today}`) ?? 0) / 1000),
-    readyXboxPacks: [...daily.values()].reduce((sum, milliseconds) => sum + xboxPacksForDay(milliseconds), 0),
+    readyXboxPacks: Math.max(0, earnedXboxPacks - consumedPacks),
+    xboxRequest: latestRequest ? xboxRequestDto(latestRequest) : null,
     pointsByDeck,
   };
+}
+
+/** Rezerwuje najstarszy niewykorzystany pełny blok i stałą cenę w jednej blokadzie per dziecko. */
+export async function requestXboxPack(services: Services, childId: string): Promise<XboxRewardRequestDto> {
+  const child = UuidSchema.parse(childId);
+  return services.db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${child}::text, 0))`);
+    const profile = (await tx.select({ id: childProfiles.id }).from(childProfiles).where(eq(childProfiles.id, child)).for("update"))[0];
+    if (!profile) throw new AppError("not_found");
+
+    const pending = (await tx.select().from(rewardActivityXboxRequests).where(and(
+      eq(rewardActivityXboxRequests.childId, child), eq(rewardActivityXboxRequests.status, "pending"),
+    )).orderBy(asc(rewardActivityXboxRequests.requestedAt)).limit(1).for("update"))[0];
+    if (pending) return xboxRequestDto(pending);
+
+    const intervals = await tx.select({
+      start: rewardActivitySegments.startedAt,
+      end: rewardActivitySegments.endedAt,
+      context: learningSessions.context,
+    }).from(rewardActivitySegments).innerJoin(learningSessions, eq(learningSessions.id, rewardActivitySegments.sessionId)).where(and(
+      eq(rewardActivitySegments.childId, child), isNotNull(rewardActivitySegments.settlementRef),
+    ));
+    const daily = new Map<string, { timezone: string; localDate: string; milliseconds: number }>();
+    for (const interval of intervals) {
+      const context = interval.context as { timezone?: unknown };
+      const timezone = validRewardTimezone(context?.timezone);
+      for (const [localDate, milliseconds] of splitRewardIntervalByLocalDay(interval.start, interval.end, timezone)) {
+        const key = `${timezone}:${localDate}`;
+        const current = daily.get(key) ?? { timezone, localDate, milliseconds: 0 };
+        current.milliseconds += milliseconds;
+        daily.set(key, current);
+      }
+    }
+    const qualified = [...daily.values()].flatMap((day) => Array.from(
+      { length: xboxPacksForDay(day.milliseconds) },
+      (_, index) => ({ ...day, blockNumber: index + 1 }),
+    ));
+
+    const earned = (await tx.select({ points: sql<number>`coalesce(sum(${rewardActivitySettlements.awardedPoints}), 0)::int` })
+      .from(rewardActivitySettlements).where(eq(rewardActivitySettlements.childId, child)))[0]?.points ?? 0;
+    const consumed = (await tx.select({ count: sql<number>`count(*)::int` }).from(rewardActivityXboxRequests).where(and(
+      eq(rewardActivityXboxRequests.childId, child), inArray(rewardActivityXboxRequests.status, ["pending", "fulfilled"]),
+    )))[0]?.count ?? 0;
+    if (earned - consumed * XBOX_PACK_POINTS < XBOX_PACK_POINTS || qualified.length <= consumed) {
+      throw new AppError("conflict", { message: "a full Xbox block and 30 available points are required" });
+    }
+
+    const existingBlocks = await tx.select().from(rewardActivityXboxBlocks).where(eq(rewardActivityXboxBlocks.childId, child));
+    const blockIdentity = (timezone: string, localDate: string, blockNumber: number) => `${timezone}:${localDate}:${blockNumber}`;
+    const existingIdentities = new Set(existingBlocks.map((row) => blockIdentity(row.timezone, row.localDate, row.blockNumber)));
+    const missingBlocks = qualified.filter((block) => !existingIdentities.has(blockIdentity(block.timezone, block.localDate, block.blockNumber)));
+    if (missingBlocks.length > 0) {
+      await tx.insert(rewardActivityXboxBlocks).values(missingBlocks.map((block) => ({
+        id: randomUUID(), childId: child, timezone: block.timezone, localDate: block.localDate,
+        blockNumber: block.blockNumber, creditedSecondsAtCreation: Math.floor(block.milliseconds / 1000),
+      }))).onConflictDoNothing({ target: [
+        rewardActivityXboxBlocks.childId, rewardActivityXboxBlocks.timezone,
+        rewardActivityXboxBlocks.localDate, rewardActivityXboxBlocks.blockNumber,
+      ] });
+    }
+
+    const blocks = await tx.select().from(rewardActivityXboxBlocks).where(eq(rewardActivityXboxBlocks.childId, child))
+      .orderBy(asc(rewardActivityXboxBlocks.localDate), asc(rewardActivityXboxBlocks.blockNumber), asc(rewardActivityXboxBlocks.timezone));
+    const usedBlocks = await tx.select({ blockId: rewardActivityXboxRequests.blockId }).from(rewardActivityXboxRequests).where(and(
+      eq(rewardActivityXboxRequests.childId, child), inArray(rewardActivityXboxRequests.status, ["pending", "fulfilled"]),
+    ));
+    const usedBlockIds = new Set(usedBlocks.map((row) => row.blockId));
+    const block = blocks.find((candidate) => !usedBlockIds.has(candidate.id));
+    if (!block) throw new AppError("conflict", { message: "no unreserved full Xbox block is available" });
+    const dailySnapshot = daily.get(`${block.timezone}:${block.localDate}`);
+    const now = services.clock.now();
+    const [request] = await tx.insert(rewardActivityXboxRequests).values({
+      id: randomUUID(), childId: child, blockId: block.id, status: "pending",
+      timezoneSnapshot: block.timezone, localDateSnapshot: block.localDate,
+      blockNumberSnapshot: block.blockNumber, creditedSecondsSnapshot: Math.floor((dailySnapshot?.milliseconds ?? 0) / 1000),
+      pointsCost: XBOX_PACK_POINTS, xboxMinutes: XBOX_PACK_MINUTES, requestedAt: now,
+    }).returning();
+    if (!request) throw new AppError("internal");
+    return xboxRequestDto(request);
+  });
 }
 
 export async function readSessionRewardDelta(tx: Tx, sessionId: string): Promise<{ creditedSeconds: number; pointsEarned: number }> {

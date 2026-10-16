@@ -19,6 +19,7 @@ import {
   submitSpeechAttempt,
   recordRewardActivitySignal,
   authorizeRewardActivityPlayback,
+  requestXboxPack,
   MULTIPART_OVERHEAD_BYTES,
   MAX_AUDIO_BYTES,
   type Services,
@@ -58,6 +59,11 @@ export async function handleKidApi(
 
   if (request.method === "GET" && first === "profiles" && second === undefined) {
     return Response.json(await listKidProfiles(services), { headers: { "Cache-Control": "no-store" } });
+  }
+
+  if (request.method === "POST" && first === "profiles" && second !== undefined && third === "xbox-request") {
+    const requestDto = await requestXboxPack(services, UuidSchema.parse(second));
+    return Response.json(requestDto, { headers: { "Cache-Control": "no-store" } });
   }
 
   if (request.method === "GET" && first === "decks" && second === undefined) {
