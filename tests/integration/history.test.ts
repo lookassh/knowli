@@ -15,13 +15,20 @@ import {
   startSession,
   submitAttempt,
   upsertAssignment,
+  createServices,
+  type Services,
+  ttsFingerprint,
+  readSkillHistories,
+  skillHistoryKey,
 } from "@learning/server";
 import type { TaskDto } from "@learning/contracts";
 import {
   buildTestServices,
+  ManualClock,
   testDatabase,
   truncateCoreTables,
 } from "./helpers";
+import { UI_AUDIO_TEXTS } from "../../packages/server/src/domain/ui-audio-catalog";
 import { readLearningSnapshot } from "../../packages/server/src/modules/learning-snapshot";
 
 /**
@@ -439,4 +446,145 @@ describe("niezmienność historii prób (integracja)", () => {
     expect(await query("select * from learning_app.child_profiles where id = $1", [childId]))
       .toEqual([{ ...profileBefore[0], display_name: "Ala", avatar_key: "panda" }]);
   });
+
+async function ensureUiAudioCatalog(services: Services): Promise<void> {
+  const { provider, model, voice, format } = services.media!.tts;
+  for (const [key, text] of Object.entries(UI_AUDIO_TEXTS)) {
+    const fingerprint = ttsFingerprint({ text, locale: "pl-PL", provider, model, voice, format });
+    const existing = (await query<{ generation_number: number }>(
+      "select generation_number from learning_app.media_assets where fingerprint = $1 order by generation_number desc limit 1",
+      [fingerprint],
+    ))[0];
+    if (existing) continue;
+    const id = randomUUID();
+    await pool.query(
+      `insert into learning_app.media_assets
+         (id, kind, fingerprint, generation_number, state, storage_key, content_sha256,
+          mime_type, byte_count, provider, model, metadata)
+       values ($1,'tts',$2,1,'ready',$3,$4,'audio/mpeg',1,$5,$6,$7)`,
+      [id, fingerprint, `blob/${id}`, `sha-${id}`, provider, model,
+        { purpose: "kid_ui_guidance", uiAudioKey: key, text, locale: "pl-PL", voice, format }],
+    );
+  }
+}
+
+  it("kwalifikuje próbę picture_listening z opcjami labelPl jako niezależną", async () => {
+    const testServices = buildTestServices().services;
+    const sessionServices = createServices({
+      db: testDatabase().db,
+      clock: new ManualClock(),
+      media: {
+        tts: { provider: "fake", model: "fake-tts", voice: "test", format: "mp3" },
+        image: { provider: "fake", model: "fake-image", size: "small", quality: "low", format: "svg" },
+      },
+    });
+    await ensureUiAudioCatalog(sessionServices);
+    const nonReaderId = (await createChild(testServices, { displayName: "Ola", avatarKey: "fox" })).id;
+    await updateChild(testServices, nonReaderId, { canRead: false });
+
+    const draft = await createDraft(testServices, {
+      title: "Kolory",
+      vocabularyFormat: "picture",
+      items: [
+        {
+          source: "czerwony",
+          target: "red",
+          acceptedAnswers: [],
+          locales: { source: "pl-PL", target: "en-GB" },
+          visualType: "color",
+          visualData: { color: "#ff0000" },
+        },
+        {
+          source: "niebieski",
+          target: "blue",
+          acceptedAnswers: [],
+          locales: { source: "pl-PL", target: "en-GB" },
+          visualType: "color",
+          visualData: { color: "#0000ff" },
+        },
+        {
+          source: "zielony",
+          target: "green",
+          acceptedAnswers: [],
+          locales: { source: "pl-PL", target: "en-GB" },
+          visualType: "color",
+          visualData: { color: "#008000" },
+        },
+      ],
+    });
+    for (const index of [0, 1, 2]) {
+      await attachFakeReadyAudio(draft.id, index);
+      const revision = (
+        await query<{ id: string }>(
+          `select id from learning_app.item_revisions
+            where deck_version_id = $1 order by position offset $2 limit 1`,
+          [draft.id, index],
+        )
+      )[0]!;
+      const illustrationId = randomUUID();
+      const fingerprint = `fp-ill-${randomUUID()}`;
+      await pool.query(
+        `insert into learning_app.media_assets
+          (id, kind, fingerprint, generation_number, state, storage_key, content_sha256, mime_type, byte_count, provider, model)
+          values ($1,'illustration',$2,1,'ready',$3,$4,'image/svg+xml',128,'fake','fake-image')`,
+        [illustrationId, fingerprint, `blob/${illustrationId}`, `sha-${illustrationId}`],
+      );
+      await pool.query(
+        `insert into learning_app.revision_assets
+          (item_revision_id, role, asset_id, expected_fingerprint, state) values ($1,'illustration',$2,$3,'approved')`,
+        [revision.id, illustrationId, fingerprint],
+      );
+    }
+    await publishDraft(testServices, draft.id, 1);
+    await upsertAssignment(testServices, nonReaderId, draft.deckId, null);
+
+    const session = await startSession(sessionServices, {
+      childId: nonReaderId,
+      deckId: draft.deckId,
+      microphoneEnabled: true,
+      supportsPictureVocabulary: true,
+    });
+
+    let listeningTask: TaskDto | null = null;
+    for (let step = 0; step < 10; step++) {
+      const task = (await nextTask(sessionServices, session.sessionId))!;
+      if (task.exerciseType === "listening") {
+        listeningTask = task;
+        break;
+      }
+      await completePresentation(sessionServices, { taskId: task.taskId });
+    }
+    expect(listeningTask).not.toBeNull();
+    expect(listeningTask!.prompt.kind).toBe("picture_listening");
+
+    await answerCorrectly(listeningTask!);
+
+    const targetRev = (
+      await query<{ id: string }>(
+        `select item_revision_id as id from learning_app.session_tasks where id = $1`,
+        [listeningTask!.taskId],
+      )
+    )[0]!;
+    const skillVersions = await query<{ id: string }>(
+      `select sv.id from learning_app.skill_versions sv
+         join learning_app.item_revision_skills irs on irs.skill_version_id = sv.id
+        where irs.item_revision_id = $1 and sv.skill = 'listening'`,
+      [targetRev.id],
+    );
+    expect(skillVersions.length).toBeGreaterThan(0);
+
+    const histories = await readSkillHistories(sessionServices.db, [
+      { childId: nonReaderId, skillVersionId: skillVersions[0]!.id, skill: "listening" },
+    ]);
+    const history = histories.get(skillHistoryKey({
+      childId: nonReaderId,
+      skillVersionId: skillVersions[0]!.id,
+      skill: "listening",
+    }));
+
+    expect(history).toBeDefined();
+    expect(history!.length).toBe(1);
+    expect(history![0]!.independent).toBe(true);
+  });
 });
+

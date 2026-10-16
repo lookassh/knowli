@@ -77,9 +77,9 @@ export async function readSkillHistories(
       confirmationEligible: row.confirmationEligible,
       details: row.details as HistoryEntry["details"],
     };
-    const prompt = row.publicPrompt as { options?: { text?: string }[] };
-    const distinctChoiceCount = Array.isArray(prompt.options)
-      ? new Set(prompt.options.map((option) => (option.text ?? "").normalize("NFC").trim().toLocaleLowerCase())).size
+    const prompt = row.publicPrompt as { options?: { text?: string; labelPl?: string }[] } | null;
+    const distinctChoiceCount = Array.isArray(prompt?.options)
+      ? new Set(prompt.options.map((option) => (option.text ?? option.labelPl ?? "").normalize("NFC").trim().toLocaleLowerCase())).size
       : null;
     const qualified = qualifyProjectionEvidence([{
       entry,
