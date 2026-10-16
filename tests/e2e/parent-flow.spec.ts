@@ -504,8 +504,11 @@ test("rodzic edytuje progi wymowy i otwiera listę kalibracyjną", async ({ page
   await page.getByTestId("child-add").click();
   const row = page.locator('[data-testid^="child-row"]').filter({ hasText: childName });
   await expect(row).toBeVisible();
+  const loaded = page.waitForResponse(
+    (response) => response.url().includes("/pronunciation") && response.request().method() === "GET" && response.status() === 200,
+  );
   await page.getByTestId(`child-settings-${childIndex}`).click();
-  await page.waitForLoadState("networkidle");
+  await loaded;
   await expect(page.getByTestId("child-threshold-good")).toHaveValue("70");
   await expect(page.getByTestId("child-threshold-almost")).toHaveValue("50");
   await expect(page.getByTestId("child-attempts")).toBeVisible();
@@ -521,7 +524,11 @@ test("rodzic edytuje progi wymowy i otwiera listę kalibracyjną", async ({ page
   await saved;
   await page.reload();
   await page.getByTestId("tab-children").click();
+  const reloaded = page.waitForResponse(
+    (response) => response.url().includes("/pronunciation") && response.request().method() === "GET" && response.status() === 200,
+  );
   await page.getByTestId(`child-settings-${childIndex}`).click();
+  await reloaded;
   await expect(page.getByTestId("child-threshold-good")).toHaveValue("75");
   await expect(page.getByTestId("child-threshold-almost")).toHaveValue("55");
 });

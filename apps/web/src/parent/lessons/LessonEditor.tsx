@@ -14,6 +14,7 @@ import { apiFetch, ApiCallError, errorMessage } from "../api";
 import AssignmentTestGoalFields, { type AssignmentTestSettings } from "../AssignmentTestGoalFields";
 import type { EditorLeaveState } from "../useParentLeaveGuard";
 import LessonSupervisionPanel from "./LessonSupervisionPanel";
+import { DeckAssignmentsList } from "../DeckAssignmentsList";
 import {
   createLessonSnapshot,
   groupExercisesByObjectiveAndStage,
@@ -66,6 +67,7 @@ export default function LessonEditor({
   const [regenCounts, setRegenCounts] = useState<Record<string, number>>({});
   const [assignDates, setAssignDates] = useState<Record<string, string>>({});
   const [assignSettings, setAssignSettings] = useState<Record<string, AssignmentTestSettings>>({});
+  const [unassigningChildId, setUnassigningChildId] = useState<string | null>(null);
   // Edytowalne przykłady AI per cel (wym. 3.3). Trzymane lokalnie, bo serializacja
   // PATCH-a ćwiczeń żyje w `lesson-editor-state.ts` (poza zakresem tej edycji);
   // przykłady dokładamy do ciała PATCH w `save()`. `null` = jeszcze nie zasiane.
@@ -330,6 +332,20 @@ export default function LessonEditor({
       await load();
     } catch (cause) {
       setError(errorMessage(cause));
+    }
+  };
+
+  const unassign = async (childId: string) => {
+    if (!window.confirm(messages.decks.unassignConfirm)) return;
+    setError(null);
+    setUnassigningChildId(childId);
+    try {
+      await apiFetch("DELETE", `/api/v1/parent/assignments/${childId}/${deckId}`);
+      await load();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setUnassigningChildId(null);
     }
   };
 
@@ -669,13 +685,7 @@ export default function LessonEditor({
                 onChange={(value) => setAssignSettings((c) => ({ ...c, [child.id]: value }))} />
             </div>
           ))}
-          <ul className="plain">
-            {deck.assignments.map((assignment, index) => (
-              <li key={assignment.childId} data-testid={`assignment-row-${index}`}>
-                {assignment.displayName} — {assignment.testDate ?? messages.decks.noDate}
-              </li>
-            ))}
-          </ul>
+          <DeckAssignmentsList assignments={deck.assignments} onUnassign={unassign} busyChildId={unassigningChildId} />
         </section>
       )}
     </section>

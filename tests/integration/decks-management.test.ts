@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   AppError,
@@ -8,10 +9,12 @@ import {
   createServices,
   editDraft,
   enqueueDeckGeneration,
+  getProgress,
   listDecks,
   omitRevisionAsset,
   publishDraft,
   readDeck,
+  removeAssignment,
   runDueGenerationWork,
   upsertAssignment,
   type Services,
@@ -118,6 +121,83 @@ describe("zarządzanie zestawami i przypisaniami (integracja)", () => {
       test_date: null,
       active: true,
     });
+  });
+
+  it("removeAssignment usuwa fizycznie wiersz bez sesji, soft-deaktywuje wiersz z sesjami i odrzuca brak", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = mediaServices(fakes);
+    const ala = await childId("Ala");
+    const bartek = await childId("Bartek");
+    const { deckId, versionId } = await publishedDeck(services);
+
+    await upsertAssignment(services, ala, deckId, "2026-10-14");
+    await upsertAssignment(services, bartek, deckId, "2026-10-25");
+    expect((await getProgress(services, bartek, deckId)).testDate).toBe("2026-10-25");
+
+    // 1. Usunięcie nieistniejącego przypisania rzuca not_found
+    await expectAppError(
+      removeAssignment(services, randomUUID(), deckId),
+      "not_found",
+    );
+
+    // 2. Usunięcie przypisania bez sesji (Ala) -> fizyczne usunięcie rekordu
+    await removeAssignment(services, ala, deckId);
+    const rowsAfterAla = await query<{ child_id: string }>(
+      `select child_id from learning_app.assignments where child_id = $1 and deck_id = $2`,
+      [ala, deckId],
+    );
+    expect(rowsAfterAla).toHaveLength(0);
+
+    // 3. Przypisanie z sesją (Bartek) -> soft-delete (active = false)
+    const bartekAssignment = (
+      await query<{ id: string }>(
+        `select id from learning_app.assignments where child_id = $1 and deck_id = $2`,
+        [bartek, deckId],
+      )
+    )[0]!;
+    await pool.query(
+      `insert into learning_app.learning_policies(id, config) values ('default', '{}') on conflict do nothing`,
+    );
+    await pool.query(
+      `insert into learning_app.learning_sessions
+        (id, child_id, assignment_id, deck_id, deck_version_id, policy_id, microphone_enabled, state, ended_at, task_budget)
+        values ($1, $2, $3, $4, $5, 'default', false, 'ended', now(), 10)`,
+      [randomUUID(), bartek, bartekAssignment.id, deckId, versionId],
+    );
+
+    await removeAssignment(services, bartek, deckId);
+
+    const rowsAfterBartek = await query<{ child_id: string; active: boolean }>(
+      `select child_id, active from learning_app.assignments where child_id = $1 and deck_id = $2`,
+      [bartek, deckId],
+    );
+    expect(rowsAfterBartek).toHaveLength(1);
+    expect(rowsAfterBartek[0]?.active).toBe(false);
+
+    // 4. readDeck, listDecks i getProgress nie zwracają nieaktywnych przypisań / dat
+    const deckDto = await readDeck(services, deckId);
+    expect(deckDto.assignments).toHaveLength(0);
+
+    const decksList = await listDecks(services);
+    const summary = decksList.find((d) => d.deckId === deckId);
+    expect(summary?.assignedChildren).toEqual([]);
+
+    expect((await getProgress(services, bartek, deckId)).testDate).toBeNull();
+
+    // 5. Reaktywacja przez upsertAssignment
+    await upsertAssignment(services, bartek, deckId, "2026-11-01");
+    const reactivatedRows = await query<{ child_id: string; test_date: string | null; active: boolean }>(
+      `select child_id, test_date::text, active from learning_app.assignments where child_id = $1 and deck_id = $2`,
+      [bartek, deckId],
+    );
+    expect(reactivatedRows[0]).toMatchObject({
+      test_date: "2026-11-01",
+      active: true,
+    });
+    const reactivatedDeckDto = await readDeck(services, deckId);
+    expect(reactivatedDeckDto.assignments).toHaveLength(1);
+    expect(reactivatedDeckDto.assignments[0]?.childId).toBe(bartek);
   });
 
   it("upsertAssignment odrzuca nieznane dziecko, nieopublikowany i zarchiwizowany zestaw", async () => {

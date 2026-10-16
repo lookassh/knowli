@@ -204,6 +204,8 @@ export const messages = {
     itemIncomplete: "Uzupełnij polskie i angielskie słowo w każdej karcie.",
     assignTitle: "Przypisz dzieciom",
     assign: "Przypisz",
+    unassign: "Usuń przypisanie",
+    unassignConfirm: "Czy na pewno chcesz usunąć przypisanie tego zestawu dziecku?",
     assignDate: "Termin sprawdzianu",
     mockTestEnabled: "Próbna kartkówka",
     mockTestGoals: "Co sprawdzamy?",

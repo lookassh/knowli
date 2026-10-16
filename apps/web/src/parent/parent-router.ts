@@ -36,6 +36,7 @@ import {
   regenerateRevisionAsset,
   retryGeneration,
   upsertAssignment,
+  removeAssignment,
   type Services,
 } from "@learning/server";
 import {
@@ -263,6 +264,10 @@ export async function handleParentApi(
     if (request.method === "PUT") {
       const cmd = AssignmentPutSchema.parse(await readJson(request));
       await upsertAssignment(services, second, third, cmd.testDate, cmd);
+      return new Response(null, { status: 204 });
+    }
+    if (request.method === "DELETE") {
+      await removeAssignment(services, second, third);
       return new Response(null, { status: 204 });
     }
   }
