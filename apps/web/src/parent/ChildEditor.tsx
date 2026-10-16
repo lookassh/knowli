@@ -13,18 +13,33 @@ function PronunciationSettings({ childId }: { childId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async () => {
-    const data = await apiFetch<PronunciationSettingsDto>("GET", `/api/v1/parent/children/${childId}/pronunciation`);
+  const applyData = useCallback((data: PronunciationSettingsDto) => {
     setSettings(data);
     if (data.thresholds) {
       setGood(String(data.thresholds.correctMinScore));
       setAlmost(String(data.thresholds.partialMinScore));
     }
-  }, [childId]);
+  }, []);
+
+  const load = useCallback(async () => {
+    const data = await apiFetch<PronunciationSettingsDto>("GET", `/api/v1/parent/children/${childId}/pronunciation`);
+    applyData(data);
+    return data;
+  }, [childId, applyData]);
 
   useEffect(() => {
-    load().catch((cause) => setError(errorMessage(cause)));
-  }, [load]);
+    let cancelled = false;
+    apiFetch<PronunciationSettingsDto>("GET", `/api/v1/parent/children/${childId}/pronunciation`)
+      .then((data) => {
+        if (!cancelled) applyData(data);
+      })
+      .catch((cause) => {
+        if (!cancelled) setError(errorMessage(cause));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [childId, applyData]);
 
   const save = async () => {
     setBusy(true);
