@@ -90,6 +90,7 @@ export function KidApp({
           onToggleMicrophone={(on) => controller.setMicrophone(on)}
           onStart={(deckId) => void controller.startLearning(deckId)}
           onMockTest={(deckId) => void controller.startMockTest(deckId)}
+          onDailyRound={(deckId) => void controller.startDailyRound(deckId)}
           onEndActive={(deckId) => void controller.endActiveSession(deckId)}
           headerActions={actions}
           onGuidance={(key: UiAudioKey) => controller.playGuidance(key)}
@@ -112,8 +113,9 @@ export function KidApp({
         <SummaryScreen
           summary={screen.summary}
           profiles={screen.profiles}
-          onAgain={() => void controller.learnAgain()}
+          onAgain={() => void (screen.dailyRound ? controller.backToDecks() : controller.learnAgain())}
           onSwitchProfile={() => void controller.switchProfile()}
+          dailyRound={screen.dailyRound}
           guidance={<GuidanceButton audioKey="summary" onPlay={(key) => controller.playGuidance(key)} testId="kid-summary-guidance" />}
         />
         </KidPage>

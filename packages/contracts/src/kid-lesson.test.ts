@@ -7,7 +7,10 @@ import {
   FeedbackDtoSchema,
   KidDeckDtoSchema,
   SessionSummaryDtoSchema,
+  SessionInputSchema,
+  KidValidationReasonSchema,
 } from "./kid";
+import { messages } from "./messages";
 
 const UUID = "11111111-1111-4111-8111-111111111111";
 const UUID2 = "22222222-2222-4222-8222-222222222222";
@@ -22,6 +25,20 @@ describe("EXERCISE_TYPES includes the 9 lesson types", () => {
     ]) {
       expect(EXERCISE_TYPES as readonly string[]).toContain(t);
     }
+  });
+});
+
+describe("daily round API contract", () => {
+  it("accepts daily_round as a separate kid session mode", () => {
+    expect(SessionInputSchema.parse({
+      childId: UUID, deckId: UUID2, microphoneEnabled: false, mode: "daily_round", supportsPictureVocabulary: true,
+    }).mode).toBe("daily_round");
+  });
+
+  it("has a localized validation reason when a safe round is unavailable", () => {
+    const reason = "daily_round_unavailable";
+    expect(KidValidationReasonSchema.parse(reason)).toBe(reason);
+    expect(messages.errors[reason]).toBe("Dziś nie ma dostępnej rundy dla tego zestawu.");
   });
 });
 

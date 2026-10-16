@@ -55,11 +55,13 @@ import { readUiAudio } from "./ui-audio";
 import { getVocabularyCapabilities } from "../domain/vocabulary-capabilities";
 import { addLegacyTaskPromptDefaults } from "./task-prompt-compat";
 import { deriveSupportStates, type SupportAttempt, type SupportTask } from "../domain/support-cycle";
+import { isDailyRoundFailureFeedback } from "../domain/feedback";
 import { readLearningSnapshot } from "./learning-snapshot";
 import { createMockTestPlan, issueMockTestTask, closeMockTest } from "./mock-tests";
 import { assertVocabularyDeck, readVersionDeckKind, type DeckKind } from "./deck-kind";
 import {
   buildLessonSessionContext,
+  hasSchedulableDailyRoundTask,
   issueNextLessonTask,
   lessonTaskCounts,
 } from "./lessons/lesson-sessions";
@@ -72,6 +74,8 @@ import {
 import { buildLessonSummaryObjectives } from "./lessons/lesson-attempts";
 import { completeDisabledVoiceTask } from "./voice-task-lifecycle";
 import { finishRewardActivitySession, readSessionRewardDelta, settleRewardActivity } from "./reward-activity";
+import { hasDailyRoundForDate, readDailyRoundPool } from "./daily-round";
+import { localDateAt, validRewardTimezone } from "../domain/reward-activity";
 
 /** Okno wznowienia aktywnej sesji od ostatniego zdarzenia (arch §9.1). */
 export const RESUME_WINDOW_MS = 30 * 60_000;
@@ -254,13 +258,15 @@ export async function startSession(services: Services, input: SessionInput): Pro
       const stale =
         now.getTime() - (await lastActivityAt(tx, active.id, active.startedAt)).getTime() >
         RESUME_WINDOW_MS;
-      if (active.deckId === valid.deckId && active.mode === mode && !stale) {
+      const roundDayChanged = mode === "daily_round" && active.mode === "daily_round"
+        && active.dailyRoundDate !== localDateAt(now, validRewardTimezone(await readTimezone(tx)));
+      if (active.deckId === valid.deckId && active.mode === mode && !stale && !roundDayChanged) {
         if (contextOf(active).vocabularyFormat === "picture" && !valid.supportsPictureVocabulary) {
           throw new AppError("validation", { details: { reason: "picture_client_update_required" } });
         }
         return sessionDto(tx, active, true);
       }
-      if (!stale) throw new AppError("conflict", { message: "Wróć do rozpoczętej sesji albo zakończ ją przed nową." });
+      if (!stale && !roundDayChanged) throw new AppError("conflict", { message: "Wróć do rozpoczętej sesji albo zakończ ją przed nową." });
       if (active.mode === "mock_test") {
         if (isLessonMockPlan(active.mockTestPlan)) await closeLessonMockTest(tx, services, active);
         else await closeMockTest(tx, services, active, "ended");
@@ -284,9 +290,16 @@ export async function startSession(services: Services, input: SessionInput): Pro
     if (!deck.publishedVersionId) throw new AppError("validation", { message: "deck is not published" });
     const deckKind = deck.kind as DeckKind;
 
-    const version = (
-      await tx.select().from(deckVersions).where(eq(deckVersions.id, deck.publishedVersionId))
-    )[0]!;
+    const dailyRoundPool = mode === "daily_round"
+      ? await readDailyRoundPool(tx, valid.childId, valid.deckId, now)
+      : null;
+    if (mode === "daily_round" && !dailyRoundPool) throw new AppError("validation", { details: { reason: "daily_round_unavailable" } });
+    if (dailyRoundPool && await hasDailyRoundForDate(tx, valid.childId, dailyRoundPool.date)) {
+      throw new AppError("conflict", { message: "Runda dnia została już rozpoczęta." });
+    }
+    const timezone = dailyRoundPool?.timezone ?? await readTimezone(tx);
+    const versionId = dailyRoundPool?.deckVersionId ?? deck.publishedVersionId;
+    const version = (await tx.select().from(deckVersions).where(eq(deckVersions.id, versionId)))[0]!;
     if (version.vocabularyFormat === "picture" && !valid.supportsPictureVocabulary) {
       throw new AppError("validation", { details: { reason: "picture_client_update_required" } });
     }
@@ -308,12 +321,12 @@ export async function startSession(services: Services, input: SessionInput): Pro
       ? await buildLessonSessionContext(tx, {
           childId: valid.childId,
           deckVersionId: version.id,
-          timezone: await readTimezone(tx),
+          timezone,
           testDate: assignment.testDate,
           now,
         })
       : {
-          timezone: await readTimezone(tx),
+          timezone,
           testDate: assignment.testDate,
           previousContact: await previousContactSnapshot(tx, valid.childId, version.id, now),
           reservations: [],
@@ -321,6 +334,7 @@ export async function startSession(services: Services, input: SessionInput): Pro
         };
     const context: SessionContextShape = {
       ...contextBase,
+      ...(dailyRoundPool ? { dailyRoundRevisionIds: dailyRoundPool.revisionIds, dailyRoundDate: dailyRoundPool.date } : {}),
       canRead: child.canRead,
       vocabularyFormat: version.vocabularyFormat,
       microphoneDisabledTaskIds: [],
@@ -361,13 +375,20 @@ export async function startSession(services: Services, input: SessionInput): Pro
         policyId: childProfile?.policyId ?? CURRENT_POLICY_ID,
         microphoneEnabled: valid.microphoneEnabled,
         state: "active",
-        taskBudget: mockTestPlan?.slots.length ?? DEFAULT_TASK_BUDGET,
+        taskBudget: mode === "daily_round" ? dailyRoundPool!.revisionIds.length : mockTestPlan?.slots.length ?? DEFAULT_TASK_BUDGET,
         mode,
+        dailyRoundDate: dailyRoundPool?.date ?? null,
         mockTestPlan,
         startedAt: now,
         context: context as unknown as Record<string, unknown>,
       })
       .returning();
+    if (mode === "daily_round") {
+      const schedulable = deckKind === "lesson"
+        ? await hasSchedulableDailyRoundTask(services, tx, row!, now)
+        : (await planNextTask(tx, row!, now, row!.taskBudget, 0)) !== null;
+      if (!schedulable) throw new AppError("validation", { details: { reason: "daily_round_unavailable" } });
+    }
     return sessionDto(tx, row!, false);
   });
 }
@@ -411,11 +432,15 @@ async function planNextTask(
   assessedRemaining: number,
   nextOrdinal: number,
 ): Promise<PlannedTask | null> {
-  const revisions = await tx
+  const allRevisions = await tx
     .select()
     .from(itemRevisions)
     .where(eq(itemRevisions.deckVersionId, session.deckVersionId))
     .orderBy(asc(itemRevisions.position));
+  const dailyRoundRevisionIds = (session.context as { dailyRoundRevisionIds?: unknown }).dailyRoundRevisionIds;
+  const revisions = session.mode === "daily_round" && Array.isArray(dailyRoundRevisionIds)
+    ? allRevisions.filter((revision) => dailyRoundRevisionIds.includes(revision.id))
+    : allRevisions;
   if (revisions.length === 0) {
     return null;
   }
@@ -545,7 +570,9 @@ async function planNextTask(
       attemptId: attempts.id,
       taskId: attempts.taskId,
       itemRevisionId: sessionTasks.itemRevisionId,
+      exerciseType: sessionTasks.exerciseType,
       modality: attempts.modality,
+      feedback: attempts.feedback,
       skill: assessments.skill,
       outcome: assessments.outcome,
     })
@@ -561,6 +588,16 @@ async function planNextTask(
     };
     if (row.skill !== null && row.outcome !== null) {
       current.outcomes = [...current.outcomes, { skill: row.skill as Skill, outcome: row.outcome === "unassessed" ? "unevaluated" : row.outcome as "correct" | "incorrect" }];
+    } else if (session.mode === "daily_round" && row.feedback) {
+      const kind = (row.feedback as { kind?: string }).kind;
+      if (isDailyRoundFailureFeedback(kind)) {
+        const skill: Skill = kind === "spelling_hint" || kind === "capitalization_hint" || row.exerciseType === "spelling" || row.exerciseType === "letter_completion"
+          ? "spelling"
+          : row.exerciseType === "listening" ? "listening"
+            : row.exerciseType === "reading" || row.exerciseType === "reverse_recognition" ? "reading"
+              : "recall";
+        current.outcomes = [...current.outcomes, { skill, outcome: "incorrect" }];
+      }
     }
     attemptsById.set(row.attemptId, current);
   }
@@ -935,6 +972,7 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
         return null;
       }
       const counts = await lessonTaskCounts(tx, id);
+      if (session.mode === "daily_round" && counts.total >= session.taskBudget) return null;
       const remaining = session.taskBudget - counts.assessed;
       if (remaining <= 0) return null;
       if (now.getTime() - session.startedAt.getTime() > SESSION_TIME_LIMIT_MS && remaining > PROMISE_REMAINING) {
@@ -964,6 +1002,7 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
     }
 
     const counts = await taskCounts(tx, id);
+    if (session.mode === "daily_round" && counts.total >= session.taskBudget) return null;
     const remaining = session.taskBudget - counts.assessed;
     if (remaining <= 0) {
       return null;
@@ -1051,7 +1090,9 @@ function issuedTaskDto(
     direction: (task.direction ?? null) as TaskDto["direction"],
     state: "issued",
     prompt: prompt as TaskPrompt,
-    remainingAssessed: session.taskBudget - assessedBefore,
+    remainingAssessed: session.mode === "daily_round"
+      ? Math.max(1, session.taskBudget - task.ordinal)
+      : session.taskBudget - assessedBefore,
     ...(pendingAttemptId ? { pendingAttemptId } : {}),
   };
 }
@@ -1062,7 +1103,7 @@ export async function disableSessionMicrophone(services: Services, sessionId: st
   return services.db.transaction(async (tx) => {
     const session = await lockSession(tx, id);
     const context = contextOf(session);
-    if (session.mode !== "training" || context.canRead || context.vocabularyFormat !== "picture") {
+    if ((session.mode !== "training" && session.mode !== "daily_round") || context.canRead || context.vocabularyFormat !== "picture") {
       throw new AppError("validation");
     }
     if (session.state !== "active") throw new AppError("conflict", { message: "session is not active" });

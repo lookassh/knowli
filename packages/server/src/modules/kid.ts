@@ -12,6 +12,7 @@ import { CURRENT_POLICY_ID, ensureLearningPolicy, loadPolicy } from "../policies
 import { readLearningSnapshot } from "./learning-snapshot";
 import { payloadToItem } from "./item-payload";
 import { readKidRewardSnapshot } from "./reward-activity";
+import { hasDailyRoundForDate, readDailyRoundPool } from "./daily-round";
 
 /**
  * Widoki startowe Kid Mode (arch §12): profile dzieci (tylko nazwa i awatar)
@@ -62,6 +63,12 @@ export async function listKidDecks(services: Services, childId: string, options:
       ),
     )
     .orderBy(asc(decks.createdAt));
+  const dailyRounds = new Map<string, boolean>();
+  const nowForRound = services.clock.now();
+  for (const row of rows) {
+    const pool = await readDailyRoundPool(services.db, childId, row.deckId, nowForRound);
+    dailyRounds.set(row.deckId, pool !== null && !(await hasDailyRoundForDate(services.db, childId, pool.date)));
+  }
   const coverVersionIds = [...new Set([...rows.map((row) => row.versionId).filter((id): id is string => id !== null), ...(active ? [active.deckVersionId] : [])])];
   const coverRevisions = coverVersionIds.length ? await services.db.select({ id: itemRevisions.id, deckVersionId: itemRevisions.deckVersionId, position: itemRevisions.position, payload: itemRevisions.payload })
     .from(itemRevisions).where(inArray(itemRevisions.deckVersionId, coverVersionIds)).orderBy(asc(itemRevisions.position)) : [];
@@ -258,9 +265,10 @@ export async function listKidDecks(services: Services, childId: string, options:
         vocabularyFormat,
         coverAssetId: null,
         coverVisual: coverVisualByVersion.get(versionId) ?? null,
-        resumeOnly: !child.canRead && isActive,
+        resumeOnly: isActive && (active?.mode === "daily_round" || !child.canRead),
         subjectTitle,
         mockTestAvailable: child.canRead && (lessonMockAvailable.get(row.deckId) ?? false),
+        dailyRoundAvailable: dailyRounds.get(row.deckId) ?? false,
         earnedPoints: rewards.pointsByDeck.get(row.deckId) ?? 0,
         activeSession,
         deckId: row.deckId,
@@ -277,9 +285,10 @@ export async function listKidDecks(services: Services, childId: string, options:
       vocabularyFormat,
       coverAssetId: isActive ? activeVersion?.coverAssetId ?? row.coverAssetId : row.coverAssetId,
       coverVisual: coverVisualByVersion.get(versionId) ?? null,
-      resumeOnly: !child.canRead && isActive,
+      resumeOnly: isActive && (active?.mode === "daily_round" || !child.canRead),
       subjectTitle: null,
       mockTestAvailable: child.canRead && !!row.testGoals?.length,
+      dailyRoundAvailable: dailyRounds.get(row.deckId) ?? false,
       earnedPoints: rewards.pointsByDeck.get(row.deckId) ?? 0,
       activeSession,
       deckId: row.deckId,
@@ -301,6 +310,7 @@ export async function listKidDecks(services: Services, childId: string, options:
         deckId: active.deckId, title: resumable.title, kind: resumable.kind as "vocabulary" | "lesson",
         vocabularyFormat: pinnedVersion.vocabularyFormat, coverAssetId: resumable.coverAssetId, coverVisual: coverVisualByVersion.get(active.deckVersionId) ?? null,
         resumeOnly: true, activeSession: { sessionId: active.id, mode: active.mode }, mockTestAvailable: false,
+        dailyRoundAvailable: false,
         earnedPoints: rewards.pointsByDeck.get(active.deckId) ?? 0,
         itemCount: count.length, independentlyRecalledCount: recalledCountByVersion.get(active.deckVersionId) ?? 0, testDate: null, recommended: false,
         ...(resumable.kind === "lesson" ? { subjectTitle: null } : {}),

@@ -4,6 +4,7 @@ import {
   completePresentation,
   createChild,
   deleteChild,
+  endSession,
   listKidDecks,
   nextTask,
   startSession,
@@ -12,6 +13,7 @@ import {
 } from "@learning/server";
 import type { TaskDto } from "@learning/contracts";
 import { lessonWorld } from "../fixtures/lesson-world";
+import { readDailyRoundPool } from "../../packages/server/src/modules/daily-round";
 import { mockTestDeck } from "./mock-test-helpers";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
 
@@ -178,6 +180,114 @@ describe("sesja lekcji — start i wydawanie zadań", () => {
     // Karta nie zużyła budżetu: kolejne zadanie ma pełny remainingAssessed.
     const next = await nextTask(services, session.sessionId);
     expect(next?.remainingAssessed).toBe(session.taskBudget);
+  });
+
+  it("runda lekcji przyjmuje odpowiedź bez oceny i zmiany postępu, w limicie trzech wydań", async () => {
+    const { services } = buildTestServices();
+    const child = await createChild(services, { displayName: "Runda", avatarKey: "owl" });
+    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true });
+    const training = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
+    for (let i = 0; i < 3; i++) {
+      const contact = await nextIssuedExercise(services, training.sessionId);
+      const [key] = (await pool.query<{ answer_key: { answer?: string; correctOptionId?: string; itemIds?: string[] } }>(
+        "select answer_key from learning_app.session_tasks where id=$1", [contact.taskId],
+      )).rows;
+      if (key?.answer_key.correctOptionId && "options" in contact.prompt) {
+        await submitAttempt(services, { taskId: contact.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: key.answer_key.correctOptionId });
+      } else if (key?.answer_key.correctOptionId && contact.prompt.kind === "lesson_notice") {
+        await submitAttempt(services, { taskId: contact.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: key.answer_key.correctOptionId });
+      } else if (key?.answer_key.itemIds && contact.prompt.kind === "lesson_order") {
+        await submitAttempt(services, { taskId: contact.taskId, clientAttemptId: randomUUID(), modality: "sequence", itemIds: key.answer_key.itemIds });
+      } else if (key?.answer_key.answer && contact.prompt.kind === "lesson_open_answer") {
+        await submitAttempt(services, { taskId: contact.taskId, clientAttemptId: randomUUID(), modality: "text", text: key.answer_key.answer });
+      } else {
+        await submitAttempt(services, { taskId: contact.taskId, clientAttemptId: randomUUID(), modality: "skip" });
+      }
+    }
+    await endSession(services, training.sessionId);
+    await pool.query(`insert into learning_app.child_objective_progress
+      (child_id, subject_id, objective_id, topic_id, status, streak, projection_version)
+      values ($1, $2, $3, $4, 'mastered', 3, 'test-daily-round')
+      on conflict (child_id, subject_id, objective_id) do update set status='mastered', streak=3`,
+    [child.id, lesson.subjectId, lesson.objectiveId, lesson.topicId]);
+
+    const round = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false, mode: "daily_round" });
+    expect(round.taskBudget).toBe(3);
+    const before = await pool.query<{ assessments: number; progress: number }>(`select
+      (select count(*)::int from learning_app.assessments where child_id=$1) as assessments,
+      (select count(*)::int from learning_app.child_objective_progress where child_id=$1) as progress`, [child.id]);
+    const objectiveProgressBefore = await pool.query<{ subject_id: string; objective_id: string; status: string; streak: number }>(
+      "select subject_id, objective_id, status, streak from learning_app.child_objective_progress where child_id=$1 order by subject_id, objective_id", [child.id],
+    );
+    const issued: TaskDto[] = [];
+    let answeredRoundTask = false;
+    for (let index = 0; index < 3; index++) {
+      const task = await nextTask(services, round.sessionId);
+      expect(task).not.toBeNull();
+      issued.push(task!);
+      if (index === 0) expect(task!.prompt.kind).toBe("lesson_choice");
+      if (index === 1) {
+        expect(task!.exerciseType).toBe("lesson_card");
+        const supportCard = (await pool.query<{ context: Record<string, unknown> }>("select context from learning_app.session_tasks where id=$1", [task!.taskId])).rows[0]!;
+        expect(supportCard.context).toMatchObject({ cardPurpose: "support" });
+      }
+      expect(task!.remainingAssessed).toBe(3 - index);
+      if (task!.exerciseType === "lesson_card") await completePresentation(services, { taskId: task!.taskId });
+      else {
+        const [key] = (await pool.query<{ answer_key: { answer?: string; correctOptionId?: string; itemIds?: string[] } }>(
+          "select answer_key from learning_app.session_tasks where id=$1", [task!.taskId],
+        )).rows;
+        if (task!.prompt.kind === "lesson_choice" || task!.prompt.kind === "lesson_short_answer") {
+          if (index === 0) {
+            const wrongOption = task!.prompt.options.find(option => option.id !== key!.answer_key.correctOptionId);
+            expect(wrongOption).toBeDefined();
+            const result = await submitAttempt(services, { taskId: task!.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: wrongOption!.id });
+            expect(result.feedback?.kind).toBe("incorrect");
+          } else {
+            await submitAttempt(services, { taskId: task!.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: task!.prompt.options[0]!.id });
+          }
+          answeredRoundTask = true;
+        } else if (task!.prompt.kind === "lesson_order") {
+          await submitAttempt(services, { taskId: task!.taskId, clientAttemptId: randomUUID(), modality: "sequence", itemIds: task!.prompt.items.map(item => item.id) });
+          answeredRoundTask = true;
+        } else if (task!.prompt.kind === "lesson_notice") {
+          await submitAttempt(services, { taskId: task!.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: key!.answer_key.correctOptionId! });
+          answeredRoundTask = true;
+        } else if (key?.answer_key.answer && "text" in task!.prompt) {
+          await submitAttempt(services, { taskId: task!.taskId, clientAttemptId: randomUUID(), modality: "text", text: key.answer_key.answer });
+          answeredRoundTask = true;
+        } else {
+          await submitAttempt(services, { taskId: task!.taskId, clientAttemptId: randomUUID(), modality: "skip" });
+        }
+      }
+    }
+    expect(answeredRoundTask, JSON.stringify(issued.map(task => ({ type: task.exerciseType, kind: task.prompt.kind })))).toBe(true);
+    expect(await nextTask(services, round.sessionId)).toBeNull();
+    const after = await pool.query<{ assessments: number; progress: number }>(`select
+      (select count(*)::int from learning_app.assessments where child_id=$1) as assessments,
+      (select count(*)::int from learning_app.child_objective_progress where child_id=$1) as progress`, [child.id]);
+    expect(after.rows).toEqual(before.rows);
+    expect(await pool.query<{ subject_id: string; objective_id: string; status: string; streak: number }>(
+      "select subject_id, objective_id, status, streak from learning_app.child_objective_progress where child_id=$1 order by subject_id, objective_id", [child.id],
+    )).toEqual(objectiveProgressBefore);
+    const count = await pool.query<{ count: number }>("select count(*)::int as count from learning_app.session_tasks where session_id=$1", [round.sessionId]);
+    expect(count.rows[0]!.count).toBe(3);
+  });
+
+  it("wycofuje start rundy lekcji z niepustą pulą, gdy brak schedulowalnego celu", async () => {
+    const { services } = buildTestServices();
+    const child = await createChild(services, { displayName: "Pusta runda", avatarKey: "owl" });
+    const roundDate = new Date("2026-10-07T16:00:00.000Z");
+    const lesson = await lessonWorld(pool, { childId: child.id, now: roundDate, unschedulableDailyRound: true });
+    const available = await readDailyRoundPool(testDatabase().db, child.id, lesson.deckId, roundDate);
+    expect(available?.revisionIds).toContain(lesson.revisionId);
+
+    await expect(startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false, mode: "daily_round" }))
+      .rejects.toMatchObject({ code: "validation", details: { reason: "daily_round_unavailable" } });
+    const rounds = await pool.query<{ count: number }>(
+      "select count(*)::int as count from learning_app.learning_sessions where child_id=$1 and mode='daily_round'", [child.id],
+    );
+    expect(rounds.rows[0]!.count).toBe(0);
   });
 
   it("publiczny prompt nie zawiera odpowiedzi, wariantów, focus, celu ani kategorii", async () => {

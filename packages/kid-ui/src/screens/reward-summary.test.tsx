@@ -63,4 +63,11 @@ describe("kid reward views", () => {
     expect(rendered).toContain("Zdobyto 0 pkt");
     expect(rendered).toContain("30 s");
   });
+
+  it("ends a daily-round summary with a return to decks instead of another round", () => {
+    const rendered = textNodes(<SummaryScreen summary={summary} profiles={[profile]} onAgain={vi.fn()} onSwitchProfile={vi.fn()} dailyRound />).join(" ");
+    expect(rendered).toContain("Podsumowanie rundy dnia");
+    expect(rendered).toContain("Wróć do zestawów");
+    expect(rendered).not.toContain("Jeszcze raz");
+  });
 });

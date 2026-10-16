@@ -216,7 +216,7 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
 export type TaskPrompt = z.infer<typeof TaskPromptSchema>;
 
 export const SessionInputSchema = z.object({
-  mode: z.enum(["training", "mock_test"]).optional(),
+  mode: z.enum(["training", "mock_test", "daily_round"]).optional(),
   childId: UuidSchema,
   deckId: UuidSchema,
   microphoneEnabled: z.boolean(),
@@ -225,7 +225,7 @@ export const SessionInputSchema = z.object({
 export type SessionInput = z.input<typeof SessionInputSchema>;
 
 export const SessionDtoSchema = z.object({
-  mode: z.enum(["training", "mock_test"]),
+  mode: z.enum(["training", "mock_test", "daily_round"]),
   sessionId: UuidSchema,
   childId: UuidSchema,
   deckId: UuidSchema,
@@ -364,7 +364,8 @@ export type KidProfileDto = z.input<typeof KidProfileDtoSchema>;
 export const KidDeckDtoSchema = z.object({
   mockTestAvailable: z.boolean().default(false),
   earnedPoints: z.number().int().nonnegative().default(0),
-  activeSession: z.object({ sessionId: UuidSchema, mode: z.enum(["training", "mock_test"]) }).nullable().default(null),
+  activeSession: z.object({ sessionId: UuidSchema, mode: z.enum(["training", "mock_test", "daily_round"]) }).nullable().default(null),
+  dailyRoundAvailable: z.boolean().default(false),
   /**
    * Rodzaj zestawu. OPCJONALNE dla zgodności wstecznej — brak pola oznacza
    * „vocabulary” (konsumenci traktują `undefined` jak słówka). Nie `.default()`,
@@ -400,6 +401,7 @@ export const KidValidationReasonSchema = z.enum([
   "picture_client_update_required",
   "vocabulary_requires_reading",
   "non_reader_mock_test_unavailable",
+  "daily_round_unavailable",
   "picture_guidance_unavailable",
   "picture_audio_unavailable",
 ]);

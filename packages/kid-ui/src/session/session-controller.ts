@@ -85,7 +85,7 @@ export type KidScreen =
       micDenied: boolean;
     }
   | LearningScreen
-  | { kind: "summary"; childId: string; profiles: KidProfileDto[]; summary: SessionSummaryDto };
+  | { kind: "summary"; childId: string; profiles: KidProfileDto[]; summary: SessionSummaryDto; dailyRound?: boolean };
 
 export interface LearningSessionDeps {
   api: KidApi;
@@ -374,6 +374,10 @@ export class LearningSessionController {
     await this.startLearning(deckId, "mock_test");
   }
 
+  async startDailyRound(deckId: string): Promise<void> {
+    await this.startLearning(deckId, "daily_round");
+  }
+
   async backToDecks(): Promise<void> {
     this.#epoch += 1;
     this.#teardownRecording(); this.#stopPlayback();
@@ -544,7 +548,7 @@ export class LearningSessionController {
       if (epoch !== this.#epoch) return;
       this.#teardownRecording();
       this.#stopPlayback();
-      this.#screen = mockSummary ? { kind: "mockTestSummary", summary: mockSummary } : { kind: "summary", childId, profiles: this.#profiles, summary };
+      this.#screen = mockSummary ? { kind: "mockTestSummary", summary: mockSummary } : { kind: "summary", childId, profiles: this.#profiles, summary, ...(mode === "daily_round" ? { dailyRound: true } : {}) };
       this.#emit();
     } catch (error) {
       if (epoch !== this.#epoch || this.#screen.kind !== "learning") return;

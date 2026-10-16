@@ -99,6 +99,13 @@
       "when": 1792148298127,
       "tag": "0013_reward_points",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1792150223309,
+      "tag": "0014_daily_round",
+      "breakpoints": true
     }
   ]
 }

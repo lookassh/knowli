@@ -414,7 +414,8 @@ export const learningSessions = app.table(
       .notNull()
       .references((): AnyPgColumn => learningPolicies.id),
     microphoneEnabled: boolean("microphone_enabled").notNull(),
-    mode: text("mode").$type<"training" | "mock_test">().notNull().default("training"),
+    mode: text("mode").$type<"training" | "mock_test" | "daily_round">().notNull().default("training"),
+    dailyRoundDate: text("daily_round_date"),
     mockTestPlan: jsonb("mock_test_plan").$type<MockTestPlanSnapshot | LessonMockTestPlanSnapshot>(),
     // completed: jawny koniec z podsumowaniem; ended: zamknięcie systemowe
     state: text("state").notNull(),
@@ -426,7 +427,8 @@ export const learningSessions = app.table(
   },
   (t) => [
     check("learning_sessions_state_allowed", sql`${t.state} in ('active', 'completed', 'ended')`),
-    check("learning_sessions_mode_plan", sql`(${t.mode} = 'training' and ${t.mockTestPlan} is null) or (${t.mode} = 'mock_test' and ${t.mockTestPlan} is not null)`),
+    check("learning_sessions_mode_plan", sql`(${t.mode} in ('training', 'daily_round') and ${t.mockTestPlan} is null) or (${t.mode} = 'mock_test' and ${t.mockTestPlan} is not null)`),
+    check("learning_sessions_daily_round_date", sql`(${t.mode} = 'daily_round') = (${t.dailyRoundDate} is not null)`),
     check("learning_sessions_budget_positive", sql`${t.taskBudget} > 0`),
     check("learning_sessions_active_iff_not_ended", sql`(${t.state} = 'active') = (${t.endedAt} is null)`),
     foreignKey({
@@ -442,6 +444,7 @@ export const learningSessions = app.table(
     unique("learning_sessions_id_child_unique").on(t.id, t.childId),
     unique("learning_sessions_id_version_unique").on(t.id, t.deckVersionId),
     uniqueIndex("one_active_session_per_child").on(t.childId).where(sql`${t.state} = 'active'`),
+    uniqueIndex("one_daily_round_per_child_day").on(t.childId, t.dailyRoundDate).where(sql`${t.mode} = 'daily_round'`),
     index("learning_sessions_child_time_idx").on(t.childId, t.startedAt.desc()),
   ],
 );
