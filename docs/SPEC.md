@@ -152,7 +152,7 @@ Przykład widoku tematu:
 > ★★☆☆☆☆  
 > **Ucz się**
 
-Gwiazdki na liście zestawów to symboliczny wskaźnik postępu (2026-10-11): maksymalnie 6, po jednej za każdą szóstą drogi do kompletu. Oznaczają wyłącznie słowa przypominane samodzielnie; nie towarzyszy im procent ani liczba ułamkowa, a umiejętność nazywa etykieta dostępności. Nie pokazujemy ogólnego „3/7 umiem” ani rozbicia na umiejętności w interfejsie dziecka — szczegóły per umiejętność widzi rodzic w panelu postępów, a dziecko w omówieniu próbnej kartkówki przy wynikach mieszanych (§19.1).
+Gwiazdki na liście zestawów to symboliczny wskaźnik postępu (2026-10-11): maksymalnie 6, po jednej za każdą szóstą drogi do kompletu. Oznaczają słowa opanowane samodzielnie; nie towarzyszy im procent ani liczba ułamkowa, a umiejętność nazywa etykieta dostępności. Dla profilu czytającego (`canRead: true`) gwiazdki zliczają wyłącznie słowa z opanowanym samodzielnym Recall (`recall: "mastered"`). Dla profilu bez czytania (`canRead: false`, 2026-10-16) gwiazdki odzwierciedlają słowa opanowane w dostępnych dla dziecka umiejętnościach (`listening: "mastered"` lub `recall: "mastered"`), dzięki czemu nauka ze słuchu bez użycia mikrofonu również pozwala osiągnąć pełne opanowanie (6 gwiazdek). Nie pokazujemy ogólnego „3/7 umiem” ani rozbicia na umiejętności w interfejsie dziecka — szczegóły per umiejętność widzi rodzic w panelu postępów, a dziecko w omówieniu próbnej kartkówki przy wynikach mieszanych (§19.1).
 
 Gamifikacja nie jest warunkiem MVP. Punkty, serie dni, rankingi i nagrody nie mogą zastąpić czytelnej nauki.
 

@@ -400,7 +400,7 @@ Dziś moduły `sessions.ts`, `attempts.ts`, `mock-tests.ts`, `published-progress
 - `mock-tests.ts` → plan i raport lekcji per cel;
 - `published-progress.ts`/`reporting.ts` → odrzucenie (`deck_kind_mismatch`) lub pominięcie lekcji;
 - `learning-overview.ts` → **filtr `decks.kind = 'vocabulary'` we wszystkich odczytach**, więc kontrakt raportu Hermesa (v1, JSON Schema) jest nienaruszony i nie obejmuje lekcji;
-- `kid.ts` → `KidDeckDto.kind`, `subjectTitle`, gwiazdki lekcji z opanowanych celów;
+- `kid.ts` → `KidDeckDto.kind`, `subjectTitle`, gwiazdki lekcji z opanowanych celów; dla słówek `independentlyRecalledCount` uwzględnia `recall: "mastered"` (dla `canRead: true`) albo `listening: "mastered"` lub `recall: "mastered"` (dla `canRead: false`, 2026-10-16);
 - `progress-rebuild.ts` → odbudowa także `child_objective_progress` w tym samym przejściu i transakcji co słówka;
 - `profiles.ts` (`deleteChild`) → kaskada obejmuje nowe tabele per dziecko.
 
