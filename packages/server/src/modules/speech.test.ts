@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { assessSpeechEvidence, MIN_STT_CONFIDENCE } from "./speech";
+import { describe, expect, it, vi } from "vitest";
+import { analyzeSpeech, assessSpeechEvidence, MIN_STT_CONFIDENCE } from "./speech";
 import { LEARNING_V1_POLICY } from "../policies/learning-v1";
-import type { SpeechEvidence } from "../ports/ai";
+import type { AudioInput, SpeechEvidence } from "../ports/ai";
+import type { Services } from "../config";
 import type { AnswerKey, EvaluationContext, Policy } from "../domain/types";
 
 function ctx(overrides: Partial<EvaluationContext> = {}): EvaluationContext {
@@ -297,4 +298,106 @@ describe("pasma wymowy (design 2026-10-09)", () => {
     expect(correct.skills.pronunciation?.outcome).toBe("correct");
     expect(correct.skills.pronunciation?.confirmationEligible).toBe(true);
   });
+
+  it("ignoruje wielkość liter w transkrypcji STT i dopasowuje recognizedText do docelowego wariantu (Purple vs purple)", () => {
+    // STT zwraca 'Purple.' z wielkiej litery i kropką na początku zdania, podczas gdy cel to 'purple'
+    const grade = assessSpeechEvidence(
+      evidence({
+        transcription: { status: "ok", text: "Purple.", confidence: 0.95 },
+        pronunciation: { status: "ok", overallScore: 80, recognizedText: "Purple.", provider: "fake-pron", expectedText: "purple" },
+      }),
+      { exerciseType: "speech", target: "purple", acceptedAnswers: [] },
+      ctx({ policy: bandedPolicy() }),
+    );
+
+    // recognizedText nie powinien zawierać mylącej wielkiej litery STT
+    expect(grade.recognizedText).toBe("purple");
+    expect(grade.speechFeedback?.referenceText).toBe("purple");
+    expect(grade.speechFeedback?.recognition).toBe("matched");
+    expect(grade.speechFeedback?.pronunciation).toBe("good");
+    expect(grade.skills.pronunciation?.outcome).toBe("correct");
+  });
+
+  it("dopasowuje wielkość liter rozpoznanego tekstu spoza wariantów do oczekiwanego słowa", () => {
+    // Rozpoznane inne słowo przy małej literze celu nie powinno krzyczeć wielką literą z STT
+    const mismatched = assessSpeechEvidence(
+      evidence({
+        transcription: { status: "ok", text: "Turtle.", confidence: 0.9 },
+        pronunciation: null,
+      }),
+      { exerciseType: "speech", target: "purple", acceptedAnswers: [] },
+      ctx({ policy: bandedPolicy() }),
+    );
+    expect(mismatched.recognizedText).toBe("turtle");
+
+    // Ale dla nazwy własnej (Thursday) zachowuje wielką literę
+    const properNoun = assessSpeechEvidence(
+      evidence({
+        transcription: { status: "ok", text: "Tuesday.", confidence: 0.9 },
+        pronunciation: null,
+      }),
+      { exerciseType: "speech", target: "Thursday", acceptedAnswers: [] },
+      ctx({ policy: bandedPolicy() }),
+    );
+    expect(properNoun.recognizedText).toBe("Tuesday");
+  });
+
+  it("ocenia wymowę nawet gdy expectedText i matchedVariant różnią się wielkością liter", () => {
+    const grade = assessSpeechEvidence(
+      evidence({
+        transcription: { status: "ok", text: "purple", confidence: 0.95 },
+        pronunciation: { status: "ok", overallScore: 85, recognizedText: "purple", provider: "fake-pron", expectedText: "Purple" },
+      }),
+      { exerciseType: "speech", target: "purple", acceptedAnswers: [] },
+      ctx({ policy: bandedPolicy() }),
+    );
+    expect(grade.skills.pronunciation?.outcome).toBe("correct");
+    expect(grade.skills.pronunciation?.details?.pronunciation).toMatchObject({ band: "correct" });
+  });
 });
+
+describe("analyzeSpeech — integracja STT i wymowy", () => {
+  it("wywołuje assess wymowy, gdy transkrypcja różni się wielkością liter od celu (Purple. vs purple)", async () => {
+    const assessMock = vi.fn().mockResolvedValue({
+      status: "ok",
+      overallScore: 85,
+      recognizedText: "Purple.",
+    });
+    const fakeServices = {
+      speech: {
+        stt: {
+          name: "fake-stt",
+          transcribe: vi.fn().mockResolvedValue({
+            status: "ok",
+            text: "Purple.",
+            confidence: 0.95,
+          }),
+        },
+        pronunciation: {
+          name: "fake-pron",
+          assess: assessMock,
+        },
+      },
+    } as unknown as Services;
+
+    const audio: AudioInput = {
+      bytes: new Uint8Array([1, 2, 3]),
+      mimeType: "audio/webm",
+      locale: "en-GB",
+    };
+
+    const result = await analyzeSpeech(
+      fakeServices,
+      audio,
+      { exerciseType: "speech", target: "purple", acceptedAnswers: [] },
+    );
+
+    expect(result.transcription.text).toBe("Purple.");
+    expect(assessMock).toHaveBeenCalledWith(audio, "purple", expect.any(AbortSignal));
+    expect(result.pronunciation?.status).toBe("ok");
+    expect(result.pronunciation?.expectedText).toBe("purple");
+  });
+});
+
+
+
