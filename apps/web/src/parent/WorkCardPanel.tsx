@@ -84,16 +84,17 @@ export default function WorkCardPanel({ childrenList, onAuthExpired }: { childre
     const selectedChildId = childId;
     const selectedDate = date;
     const sequenceAtStart = requestSeq.current;
+    const selectionIsCurrent = () => selection.current.childId === selectedChildId
+      && selection.current.date === selectedDate && requestSeq.current === sequenceAtStart;
     setDecisionBusy(requestId);
     setDecisionSaving(decision);
     setDecisionError(null);
     try {
       await apiFetch("POST", `/api/v1/parent/xbox-requests/${requestId}/decision`, { decision });
-      if (selection.current.childId === selectedChildId && selection.current.date === selectedDate
-        && requestSeq.current === sequenceAtStart) await load();
+      if (selectionIsCurrent()) await load();
     } catch (cause) {
       if ((cause as { status?: number }).status === 401) { onAuthExpired(); return; }
-      setDecisionError(errorMessage(cause) || messages.workCard.xboxDecisionFailed);
+      if (selectionIsCurrent()) setDecisionError(errorMessage(cause) || messages.workCard.xboxDecisionFailed);
     } finally {
       setDecisionBusy(null);
       setDecisionSaving(null);
