@@ -22,6 +22,7 @@ import AssignmentTestGoalFields, { type AssignmentTestSettings } from "./Assignm
 import type { EditorLeaveState } from "./useParentLeaveGuard";
 import DeckConflictPanel, { type EditorConflict } from "./DeckConflictPanel";
 import { DeckCoverSettings } from "./DeckCoverSettings";
+import { DeckAssignmentsList } from "./DeckAssignmentsList";
 
 const VISUAL_TYPES: VisualType[] = ["image", "color", "number", "sequence", "none"];
 
@@ -519,6 +520,17 @@ export default function DeckEditor({
     }
   };
 
+  const unassign = async (childId: string) => {
+    if (!window.confirm(messages.decks.unassignConfirm)) return;
+    setError(null);
+    try {
+      await apiFetch("DELETE", `/api/v1/parent/assignments/${childId}/${deckId}`);
+      await load();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    }
+  };
+
   const assetOf = (revisionId: string, role: string) =>
     active?.assets.find((asset) => asset.itemRevisionId === revisionId && asset.role === role) ?? null;
 
@@ -813,13 +825,7 @@ export default function DeckEditor({
               <AssignmentTestGoalFields {...assignmentSettings(child.id)} onChange={value => setAssignSettings(current => ({ ...current, [child.id]: value }))} />
             </div>
           ))}
-          <ul className="plain">
-            {deck.assignments.map((assignment, index) => (
-              <li key={assignment.childId} data-testid={`assignment-row-${index}`}>
-                {assignment.displayName} — {assignment.testDate ?? messages.decks.noDate}
-              </li>
-            ))}
-          </ul>
+          <DeckAssignmentsList assignments={deck.assignments} onUnassign={unassign} />
         </section>
       )}
     </section>

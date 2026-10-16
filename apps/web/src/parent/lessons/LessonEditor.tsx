@@ -14,6 +14,7 @@ import { apiFetch, ApiCallError, errorMessage } from "../api";
 import AssignmentTestGoalFields, { type AssignmentTestSettings } from "../AssignmentTestGoalFields";
 import type { EditorLeaveState } from "../useParentLeaveGuard";
 import LessonSupervisionPanel from "./LessonSupervisionPanel";
+import { DeckAssignmentsList } from "../DeckAssignmentsList";
 import {
   createLessonSnapshot,
   groupExercisesByObjectiveAndStage,
@@ -327,6 +328,17 @@ export default function LessonEditor({
         testDate: (assignDates[childId] ?? deck?.assignments.find((a) => a.childId === childId)?.testDate) || null,
         ...assignmentSettings(childId),
       });
+      await load();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    }
+  };
+
+  const unassign = async (childId: string) => {
+    if (!window.confirm(messages.decks.unassignConfirm)) return;
+    setError(null);
+    try {
+      await apiFetch("DELETE", `/api/v1/parent/assignments/${childId}/${deckId}`);
       await load();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -669,13 +681,7 @@ export default function LessonEditor({
                 onChange={(value) => setAssignSettings((c) => ({ ...c, [child.id]: value }))} />
             </div>
           ))}
-          <ul className="plain">
-            {deck.assignments.map((assignment, index) => (
-              <li key={assignment.childId} data-testid={`assignment-row-${index}`}>
-                {assignment.displayName} — {assignment.testDate ?? messages.decks.noDate}
-              </li>
-            ))}
-          </ul>
+          <DeckAssignmentsList assignments={deck.assignments} onUnassign={unassign} />
         </section>
       )}
     </section>
