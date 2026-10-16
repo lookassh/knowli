@@ -108,4 +108,31 @@ describe("parent work card", () => {
     await expect(readParentWorkCard(services, { childId: randomUUID(), date: "2026-10-16" }))
       .rejects.toMatchObject({ code: "not_found" });
   });
+
+  it("returns every pending Xbox request and only terminal requests for the selected source date", async () => {
+    const { services } = buildTestServices();
+    const child = await createChild(services, { displayName: "Ola", avatarKey: "fox" });
+    const snapshots = [
+      { status: "pending", day: "2026-10-14", block: 1, requested: "2026-10-14T10:00:00Z" },
+      { status: "fulfilled", day: "2026-10-14", block: 2, requested: "2026-10-14T11:00:00Z" },
+      { status: "rejected", day: "2026-10-15", block: 1, requested: "2026-10-15T11:00:00Z" },
+    ] as const;
+    for (const snapshot of snapshots) {
+      const blockId = randomUUID();
+      await pool.query(`insert into learning_app.reward_activity_xbox_blocks
+        (id, child_id, timezone, local_date, block_number, credited_seconds_at_creation)
+        values ($1,$2,'Europe/Warsaw',$3,$4,$5)`,
+      [blockId, child.id, snapshot.day, snapshot.block, snapshot.block * 1800]);
+      await pool.query(`insert into learning_app.reward_activity_xbox_requests
+        (id, child_id, block_id, status, timezone_snapshot, local_date_snapshot, block_number_snapshot,
+         credited_seconds_snapshot, requested_at)
+        values ($1,$2,$3,$4,'Europe/Warsaw',$5,$6,$7,$8)`,
+      [randomUUID(), child.id, blockId, snapshot.status, snapshot.day, snapshot.block, snapshot.block * 1800, snapshot.requested]);
+    }
+
+    const sourceDay = await readParentWorkCard(services, { childId: child.id, date: "2026-10-14" });
+    expect(sourceDay.xboxRequests.map(request => request.status)).toEqual(["pending", "fulfilled"]);
+    const anotherDay = await readParentWorkCard(services, { childId: child.id, date: "2026-10-16" });
+    expect(anotherDay.xboxRequests.map(request => request.status)).toEqual(["pending"]);
+  });
 });

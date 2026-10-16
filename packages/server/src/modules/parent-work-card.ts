@@ -1,15 +1,21 @@
-import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { ParentWorkCardDtoSchema, ParentWorkCardQuerySchema, type ParentWorkCardDto } from "@learning/contracts";
 import type { Services } from "../config";
 import { localDateAt, splitRewardIntervalByLocalDay, validRewardTimezone } from "../domain/reward-activity";
 import { AppError } from "../errors";
-import { attempts, assessments, childProfiles, deckVersions, learningSessions, rewardActivitySegments, rewardActivitySettlements, sessionTasks } from "../db/schema";
+import { attempts, assessments, childProfiles, deckVersions, learningSessions, rewardActivitySegments, rewardActivitySettlements, rewardActivityXboxRequests, sessionTasks } from "../db/schema";
 
 /** Read-only, child-scoped work report. The HTTP parent router authenticates before calling this. */
 export async function readParentWorkCard(services: Services, input: unknown): Promise<ParentWorkCardDto> {
   const query = ParentWorkCardQuerySchema.parse(input);
   const child = await services.db.select({ id: childProfiles.id }).from(childProfiles).where(eq(childProfiles.id, query.childId)).limit(1);
   if (!child.length) throw new AppError("not_found");
+
+  const xboxRequests = await services.db.select().from(rewardActivityXboxRequests)
+    .where(and(eq(rewardActivityXboxRequests.childId, query.childId), or(
+      eq(rewardActivityXboxRequests.status, "pending"),
+      eq(rewardActivityXboxRequests.localDateSnapshot, query.date),
+    ))).orderBy(asc(rewardActivityXboxRequests.requestedAt));
 
   const sessions = await services.db.select({
     id: learningSessions.id, mode: learningSessions.mode, state: learningSessions.state,
@@ -122,6 +128,12 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
   const dayMilliseconds = segments.reduce((total, segment) => total + (splitRewardIntervalByLocalDay(segment.startedAt, segment.endedAt, validRewardTimezone(segment.timezone)).get(query.date) ?? 0), 0);
   return ParentWorkCardDtoSchema.parse({
     childId: query.childId, date: query.date, creditedSeconds: Math.floor(dayMilliseconds / 1000), sessions: reportSessions,
+    xboxRequests: xboxRequests.map(request => ({
+      requestId: request.id, status: request.status, requestedAt: request.requestedAt.toISOString(),
+      timezone: request.timezoneSnapshot, localDate: request.localDateSnapshot,
+      blockNumber: request.blockNumberSnapshot, creditedSeconds: request.creditedSecondsSnapshot,
+      pointsCost: request.pointsCost, xboxMinutes: request.xboxMinutes,
+    })),
     dailyRound: { state: round?.state ?? null, sessionId: round?.id ?? null, deckTitle: round?.deckTitle ?? null,
       steps: round ? roundSteps.length : null, answered: round ? roundSteps.filter(task => task.state === "answered").length : null },
   });

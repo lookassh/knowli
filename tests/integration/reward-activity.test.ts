@@ -11,11 +11,13 @@ import {
   readRewardActivitySummary,
   listKidDecks,
   listKidProfiles,
+  loginParent,
   authorizeRewardActivityPlayback,
   recordRewardActivitySignal,
   startSession,
   submitAttempt,
   upsertAssignment,
+  setupParent,
 } from "@learning/server";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
 import { handleParentApi } from "../../apps/web/src/parent/parent-router";
@@ -155,6 +157,76 @@ describe("rozliczanie aktywności nagrodowej", () => {
       const childRows = await pool.query(`select count(*)::int as count from learning_app.${table} where child_id=$1`, [child.id]);
       expect(childRows.rows[0]?.count).toBe(0);
     }
+  });
+
+  it("pozwala rodzicowi potwierdzić lub odrzucić zgłoszenie idempotentnie pod Parent Mode", async () => {
+    const { services } = buildTestServices("2026-10-16T10:00:00.000Z");
+    const fulfilledChild = await createChild(services, { displayName: "Ola", avatarKey: "fox" });
+    const rejectedChild = await createChild(services, { displayName: "Ada", avatarKey: "cat" });
+    await seedCreditedDay(services, fulfilledChild.id, [{ day: "2026-10-14", minutes: 60 }]);
+    await seedCreditedDay(services, rejectedChild.id, [{ day: "2026-10-15", minutes: 30 }]);
+    await setupParent(services, "xbox-parent-pin");
+    const { token } = await loginParent(services, "xbox-parent-pin");
+
+    const requestPack = async (childId: string) => {
+      const response = await handleKidApi(new Request(`http://localhost/api/v1/kid/profiles/${childId}/xbox-request`, {
+        method: "POST", headers: { Origin: "http://localhost" },
+      }), services, ["profiles", childId, "xbox-request"]);
+      return response.json() as Promise<{ requestId: string }>;
+    };
+    const fulfilledRequest = await requestPack(fulfilledChild.id);
+    const rejectedRequest = await requestPack(rejectedChild.id);
+    const decide = (requestId: string, decision: "fulfilled" | "rejected", authenticated = true, origin = "http://localhost") => handleParentApi(
+      new Request(`http://localhost/api/v1/parent/xbox-requests/${requestId}/decision`, {
+        method: "POST",
+        headers: { ...(origin ? { Origin: origin } : {}), "Content-Type": "application/json", ...(authenticated ? { Cookie: `parent_session=${token}` } : {}) },
+        body: JSON.stringify({ decision }),
+      }), services, ["xbox-requests", requestId, "decision"],
+    );
+
+    await expect(decide(fulfilledRequest.requestId, "fulfilled", false)).rejects.toMatchObject({ code: "unauthorized" });
+    await expect(decide(fulfilledRequest.requestId, "fulfilled", true, "https://attacker.example")).rejects.toMatchObject({ code: "forbidden" });
+    await expect(decide(randomUUID(), "fulfilled")).rejects.toMatchObject({ code: "not_found" });
+    const cardBefore = await handleParentApi(new Request(`http://localhost/api/v1/parent/work-card?childId=${fulfilledChild.id}&date=2026-10-14`, {
+      headers: { Cookie: `parent_session=${token}` },
+    }), services, ["work-card"]);
+    expect(await cardBefore.json()).toMatchObject({
+      date: "2026-10-14", xboxRequests: [{ requestId: fulfilledRequest.requestId, status: "pending", localDate: "2026-10-14", blockNumber: 1 }],
+    });
+
+    const confirmations = await Promise.all([
+      decide(fulfilledRequest.requestId, "fulfilled"),
+      decide(fulfilledRequest.requestId, "fulfilled"),
+    ]);
+    expect(await Promise.all(confirmations.map(response => response.json()))).toMatchObject([
+      { requestId: fulfilledRequest.requestId, status: "fulfilled" },
+      { requestId: fulfilledRequest.requestId, status: "fulfilled" },
+    ]);
+    await expect(decide(fulfilledRequest.requestId, "rejected")).rejects.toMatchObject({ code: "conflict" });
+    expect((await listKidProfiles(services)).find(profile => profile.childId === fulfilledChild.id)?.rewards)
+      .toMatchObject({ earnedPoints: 60, pointsToUse: 30, readyXboxPacks: 1, xboxRequest: { status: "fulfilled" } });
+
+    expect(await (await decide(rejectedRequest.requestId, "rejected")).json()).toMatchObject({
+      requestId: rejectedRequest.requestId, status: "rejected",
+    });
+    expect(await (await decide(rejectedRequest.requestId, "rejected")).json()).toMatchObject({ status: "rejected" });
+    await expect(decide(rejectedRequest.requestId, "fulfilled")).rejects.toMatchObject({ code: "conflict" });
+    expect((await listKidProfiles(services)).find(profile => profile.childId === rejectedChild.id)?.rewards)
+      .toMatchObject({ earnedPoints: 30, pointsToUse: 30, readyXboxPacks: 1, xboxRequest: { status: "rejected" } });
+
+    const raceChild = await createChild(services, { displayName: "Iga", avatarKey: "owl" });
+    await seedCreditedDay(services, raceChild.id, [{ day: "2026-10-13", minutes: 30 }]);
+    const raceRequest = await requestPack(raceChild.id);
+    const race = await Promise.allSettled([
+      decide(raceRequest.requestId, "fulfilled"),
+      decide(raceRequest.requestId, "rejected"),
+    ]);
+    expect(race.filter(result => result.status === "fulfilled")).toHaveLength(1);
+    expect(race.filter(result => result.status === "rejected")).toMatchObject([
+      { status: "rejected", reason: { code: "conflict" } },
+    ]);
+    const raceStatus = (await listKidProfiles(services)).find(profile => profile.childId === raceChild.id)?.rewards?.xboxRequest?.status;
+    expect(["fulfilled", "rejected"]).toContain(raceStatus);
   });
 
   it("rozlicza potwierdzone sekundy raz, dopiero po ukończeniu prezentacji", async () => {

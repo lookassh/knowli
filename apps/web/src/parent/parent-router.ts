@@ -39,6 +39,7 @@ import {
   removeAssignment,
   readRewardActivitySummary,
   readParentWorkCard,
+  decideXboxRewardRequest,
   type Services,
 } from "@learning/server";
 import {
@@ -50,6 +51,7 @@ import {
   GenerationCommandSchema,
   LessonCommandSchema,
   LessonVerdictDecisionSchema,
+  XboxRewardRequestDecisionSchema,
   OmitIllustrationSchema,
   PublishCommandSchema,
   RevisionAssetCommandSchema,
@@ -95,6 +97,10 @@ export async function handleParentApi(
     const childId = params.get("childId"), date = params.get("date");
     if (!childId || !date) throw new AppError("validation");
     return Response.json(await readParentWorkCard(services, { childId, date }), { headers: { "Cache-Control": "no-store" } });
+  }
+  if (first === "xbox-requests" && second && third === "decision" && fourth === undefined && request.method === "POST") {
+    const command = z.object({ decision: XboxRewardRequestDecisionSchema }).strict().parse(await readJson(request));
+    return Response.json(await decideXboxRewardRequest(services, second, command.decision), { headers: { "Cache-Control": "no-store" } });
   }
 
   // --- Lekcje (zadanie 11): ścieżki rozłączne z `decks`/`drafts` słówek ---

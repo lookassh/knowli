@@ -5,10 +5,24 @@ export const ParentWorkCardQuerySchema = z.object({ childId: UuidSchema, date: D
 export type ParentWorkCardQuery = z.infer<typeof ParentWorkCardQuerySchema>;
 
 const NonNegativeInt = z.number().int().nonnegative();
+export const ParentXboxRequestDtoSchema = z.object({
+  requestId: UuidSchema,
+  status: z.enum(["pending", "fulfilled", "rejected"]),
+  requestedAt: InstantSchema,
+  timezone: z.string().min(1),
+  localDate: DaySchema,
+  blockNumber: z.number().int().positive(),
+  creditedSeconds: z.number().int().min(1800),
+  pointsCost: z.literal(30),
+  xboxMinutes: z.literal(15),
+}).strict();
+export type ParentXboxRequestDto = z.infer<typeof ParentXboxRequestDtoSchema>;
+
 export const ParentWorkCardDtoSchema = z.object({
   childId: UuidSchema,
   date: DaySchema,
   creditedSeconds: NonNegativeInt,
+  xboxRequests: z.array(ParentXboxRequestDtoSchema),
   sessions: z.array(z.object({
     sessionId: UuidSchema,
     mode: z.enum(["training", "mock_test", "daily_round"]),

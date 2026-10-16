@@ -6,6 +6,7 @@ import {
   type RewardActivitySignalDto,
   type RewardActivityPauseReason,
   type RewardActivitySummaryDto,
+  type XboxRewardRequestDecision,
   type XboxRewardRequestDto,
   UuidSchema,
 } from "@learning/contracts";
@@ -481,6 +482,34 @@ export async function requestXboxPack(services: Services, childId: string): Prom
     }).returning();
     if (!request) throw new AppError("internal");
     return xboxRequestDto(request);
+  });
+}
+
+/** Changes a parent's Xbox request decision once, serialized with reservations for that child. */
+export async function decideXboxRewardRequest(
+  services: Services,
+  requestId: string,
+  decision: XboxRewardRequestDecision,
+): Promise<XboxRewardRequestDto> {
+  const request = UuidSchema.parse(requestId);
+  return services.db.transaction(async (tx) => {
+    const initial = (await tx.select({ childId: rewardActivityXboxRequests.childId }).from(rewardActivityXboxRequests)
+      .where(eq(rewardActivityXboxRequests.id, request)).limit(1))[0];
+    if (!initial) throw new AppError("not_found");
+    const child = UuidSchema.parse(initial.childId);
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${child}::text, 0))`);
+    const current = (await tx.select().from(rewardActivityXboxRequests)
+      .where(and(eq(rewardActivityXboxRequests.id, request), eq(rewardActivityXboxRequests.childId, child)))
+      .for("update"))[0];
+    if (!current) throw new AppError("not_found");
+    if (current.status !== "pending") {
+      if (current.status === decision) return xboxRequestDto(current);
+      throw new AppError("conflict", { message: "Xbox request already has a different final decision" });
+    }
+    const [updated] = await tx.update(rewardActivityXboxRequests).set({ status: decision })
+      .where(eq(rewardActivityXboxRequests.id, current.id)).returning();
+    if (!updated) throw new AppError("internal");
+    return xboxRequestDto(updated);
   });
 }
 

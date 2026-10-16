@@ -54,6 +54,7 @@
 .pp-work-filters { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:14px; margin:16px 0; }
 .pp-work-filters input[type="date"] { display:block; min-height:42px; border:1px solid var(--pp-line-strong); border-radius:10px; padding:8px 10px; color:var(--pp-text); background:var(--pp-surface); }
 .pp-work-summary, .pp-work-round { margin:14px 0; padding:16px; }
+.pp-work-xbox-actions { display:flex; flex-wrap:wrap; gap:10px; margin:12px 0; }
 .pp-work-summary p { margin:0; font-size:1.25rem; font-weight:700; }
 .pp-work-session { margin:12px 0; padding:16px; }
 .pp-work-session header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }

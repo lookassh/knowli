@@ -4,6 +4,10 @@ import { InstantSchema, UuidSchema } from "./common";
 export const RewardActivityPauseReasonSchema = z.enum(["background", "blur", "offline", "idle", "technical_wait", "signal_timeout", "task_changed", "session_ended"]);
 export type RewardActivityPauseReason = z.infer<typeof RewardActivityPauseReasonSchema>;
 
+/** Rodzic potwierdza ręczne dodanie czasu albo odrzuca pakiet przed jego dodaniem. */
+export const XboxRewardRequestDecisionSchema = z.enum(["fulfilled", "rejected"]);
+export type XboxRewardRequestDecision = z.infer<typeof XboxRewardRequestDecisionSchema>;
+
 /** Klient podaje wyłącznie sygnał; czas i wartość rozliczenia ustala serwer. */
 export const RewardActivitySignalSchema = z.object({
   sessionId: UuidSchema,
