@@ -38,7 +38,7 @@
 - Consumes: `child.canRead`, `progressByRevision`, `snapshots` z `readLearningSnapshot`.
 - Produces: `independentlyRecalledCount` w `KidDeckDto` uwzględniający `listening: "mastered"` lub `recall: "mastered"` dla `!child.canRead`.
 
-- [ ] **Step 1: Write the failing integration test**
+- [x] **Step 1: Write the failing integration test**
 
 W `tests/integration/picture-vocabulary.test.ts` dodaj test integracyjny:
 
@@ -106,13 +106,13 @@ it("dla dziecka nieczytającego liczy gwiazdki z opanowanego słuchania lub reca
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Uruchom:
 `pnpm vitest run tests/integration/picture-vocabulary.test.ts`
 Oczekiwany rezultat: FAIL — `nonReaderDeck.independentlyRecalledCount` wynosi `1` zamiast `2` (bo pies ma tylko `listening: "mastered"` i nie został zaliczony).
 
-- [ ] **Step 3: Implement non-reader mastery logic in `packages/server/src/modules/kid.ts`**
+- [x] **Step 3: Implement non-reader mastery logic in `packages/server/src/modules/kid.ts`**
 
 W `packages/server/src/modules/kid.ts` zaktualizuj wyliczanie `independentlyRecalledRevisions`:
 Po pętli rekonstruującej `progressByRevision` ze snapshotów:
@@ -131,13 +131,13 @@ Po pętli rekonstruującej `progressByRevision` ze snapshotów:
 
 Usunąć wcześniejsze przedwczesne wypełnianie `independentlyRecalledRevisions` w linii 136–138.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Uruchom:
 `pnpm vitest run tests/integration/picture-vocabulary.test.ts`
 Oczekiwany rezultat: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/server/src/modules/kid.ts tests/integration/picture-vocabulary.test.ts
@@ -152,7 +152,7 @@ git commit -m "fix: naliczanie gwiazdek opanowania materiału dla dziecka nieczy
 - Modify: `docs/SPEC.md:155`
 - Modify: `docs/architecture.md:403`
 
-- [ ] **Step 1: Run regression test suite for sessions, picture vocabulary and kid decks**
+- [x] **Step 1: Run regression test suite for sessions, picture vocabulary and kid decks**
 
 Uruchom powiązane testy integracyjne i jednostkowe:
 ```bash
@@ -160,14 +160,14 @@ pnpm vitest run tests/integration/picture-vocabulary.test.ts tests/integration/s
 ```
 Oczekiwany rezultat: PASS.
 
-- [ ] **Step 2: Update documentation**
+- [x] **Step 2: Update documentation**
 
 W `docs/SPEC.md` §6 dopisać wyjaśnienie:
 > Dla dziecka nieczytającego (`canRead: false`) gwiazdki opanowania zestawu na kafelku odzwierciedlają słowa opanowane w dostępnych dla dziecka umiejętnościach (`listening: "mastered"` lub `recall: "mastered"`), dzięki czemu nauka ze słuchu bez użycia mikrofonu również pozwala osiągnąć pełne opanowanie (6 gwiazdek).
 
 W `docs/architecture.md` w sekcji opisu `kid.ts` dopisać wzmiankę o rozróżnieniu kryterium opanowania w zależności od flagi `canRead`.
 
-- [ ] **Step 3: Run full typecheck and formatting checks**
+- [x] **Step 3: Run full typecheck and formatting checks**
 
 ```bash
 pnpm typecheck
@@ -175,7 +175,7 @@ git diff --check
 ```
 Oczekiwany rezultat: czyste wyjście (exit code 0).
 
-- [ ] **Step 4: Commit documentation updates**
+- [x] **Step 4: Commit documentation updates**
 
 ```bash
 git add docs/SPEC.md docs/architecture.md

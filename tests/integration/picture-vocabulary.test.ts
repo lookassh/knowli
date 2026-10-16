@@ -358,12 +358,13 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
     )).rows;
 
     const dogListening = skillVersions.find((s) => s.item_revision_id === revisions[0]!.id && s.skill === "listening")!.skill_version_id;
+    const catListening = skillVersions.find((s) => s.item_revision_id === revisions[1]!.id && s.skill === "listening")!.skill_version_id;
     const catRecall = skillVersions.find((s) => s.item_revision_id === revisions[1]!.id && s.skill === "recall")!.skill_version_id;
 
     await pool.query(
       `insert into learning_app.child_skill_progress(child_id, skill_version_id, status, independent_success_streak, projection_version)
-       values ($1, $2, 'mastered', 3, 'test'), ($1, $3, 'mastered', 3, 'test')`,
-      [nonReader.id, dogListening, catRecall],
+       values ($1, $2, 'mastered', 3, 'test'), ($1, $3, 'mastered', 3, 'test'), ($1, $4, 'mastered', 3, 'test')`,
+      [nonReader.id, dogListening, catListening, catRecall],
     );
     await pool.query(
       `insert into learning_app.child_skill_progress(child_id, skill_version_id, status, independent_success_streak, projection_version)
@@ -387,4 +388,3 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
     });
   });
 });
-
