@@ -548,13 +548,20 @@ export const rewardActivitySettlements = app.table(
     completionRef: uuid("completion_ref").notNull(),
     kind: text("kind").notNull(),
     settledAt: timestamps("settled_at").notNull().defaultNow(),
+    deckId: uuid("deck_id").notNull(),
+    creditedMilliseconds: bigint("credited_milliseconds", { mode: "number" }).notNull().default(0),
+    awardedPoints: integer("awarded_points").notNull().default(0),
+    remainderMilliseconds: integer("remainder_milliseconds").notNull().default(0),
+    timezone: text("timezone").notNull().default("Europe/Warsaw"),
   },
   (t) => [
     foreignKey({ name: "reward_activity_settlement_session_child_fk", columns: [t.sessionId, t.childId], foreignColumns: [learningSessions.id, learningSessions.childId] }).onDelete("cascade"),
     foreignKey({ name: "reward_activity_settlement_task_child_fk", columns: [t.taskId, t.childId], foreignColumns: [sessionTasks.id, sessionTasks.childId] }).onDelete("cascade"),
     check("reward_activity_settlement_kind", sql`${t.kind} in ('attempt','presentation')`),
+    check("reward_activity_settlement_reward_nonnegative", sql`${t.creditedMilliseconds} >= 0 and ${t.awardedPoints} >= 0 and ${t.remainderMilliseconds} >= 0 and ${t.remainderMilliseconds} < 60000`),
     unique("reward_activity_settlement_completion_unique").on(t.taskId, t.completionRef),
     unique("reward_activity_settlement_id_child_unique").on(t.id, t.childId),
+    index("reward_activity_settlement_child_deck_idx").on(t.childId, t.deckId),
   ],
 );
 

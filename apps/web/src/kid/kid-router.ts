@@ -57,7 +57,7 @@ export async function handleKidApi(
   }
 
   if (request.method === "GET" && first === "profiles" && second === undefined) {
-    return Response.json(await listKidProfiles(services));
+    return Response.json(await listKidProfiles(services), { headers: { "Cache-Control": "no-store" } });
   }
 
   if (request.method === "GET" && first === "decks" && second === undefined) {
@@ -68,7 +68,7 @@ export async function handleKidApi(
     }
     const microphoneEnabled = params.get("microphoneEnabled");
     if (microphoneEnabled !== null && microphoneEnabled !== "true" && microphoneEnabled !== "false") throw new AppError("validation");
-    return Response.json(await listKidDecks(services, UuidSchema.parse(childId), microphoneEnabled === null ? {} : { microphoneEnabled: microphoneEnabled === "true" }));
+    return Response.json(await listKidDecks(services, UuidSchema.parse(childId), microphoneEnabled === null ? {} : { microphoneEnabled: microphoneEnabled === "true" }), { headers: { "Cache-Control": "no-store" } });
   }
 
   if (first === "sessions") {

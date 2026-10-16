@@ -251,7 +251,7 @@ function makeApi(state: ApiState): KidApi {
       await state.endSessionGate;
       state.endedSessions.push(sessionId);
       return { sessionId, state: "completed", tasksIssued: 3, assessedTasksIssued: 2, endedAt: "2026-10-07T16:05:00.000Z",
-        independentSuccesses: { recall: 0, spelling: 0 }, practiceItems: [] };
+        independentSuccesses: { recall: 0, spelling: 0 }, practiceItems: [], reward: { creditedSeconds: 0, pointsEarned: 0 } };
     },
     async disableMicrophone(sessionId) {
       state.disabledSessions.push(sessionId);

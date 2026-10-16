@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import {
   RewardActivitySignalSchema,
   type RewardActivitySignal,
@@ -17,6 +17,7 @@ import {
   rewardActivityPlaybackAuthorizations,
   rewardActivitySettlements,
   rewardActivityStreams,
+  familySettings,
   learningEvents,
   mediaAssets,
   revisionAssets,
@@ -29,6 +30,12 @@ import {
   REWARD_ACTIVITY_POLICY_VERSION,
   REWARD_ACTIVITY_SIGNAL_INTERVAL_MS,
   creditedSeconds,
+  REWARD_POINT_INTERVAL_MS,
+  rewardAward,
+  splitRewardIntervalByLocalDay,
+  localDateAt,
+  validRewardTimezone,
+  xboxPacksForDay,
 } from "../domain/reward-activity";
 import { lockTaskWithSession } from "./events";
 import { mp3DurationMs } from "../providers/audio/mp3-duration";
@@ -247,6 +254,9 @@ export async function settleRewardActivity(
   tx: Tx,
   input: { childId: string; sessionId: string; taskId: string; completionRef: string; kind: "attempt" | "presentation"; at: Date },
 ): Promise<void> {
+  // Serialize reward accounting per child without taking locks in the learning
+  // session/profile order used by session start and completion transactions.
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${input.childId}::text, 0))`);
   const streams = await tx.select().from(rewardActivityStreams).where(and(
     eq(rewardActivityStreams.childId, input.childId),
     eq(rewardActivityStreams.sessionId, input.sessionId),
@@ -257,6 +267,8 @@ export async function settleRewardActivity(
   const [settlement] = await tx.insert(rewardActivitySettlements).values({
     id: randomUUID(), childId: input.childId, sessionId: input.sessionId, taskId: input.taskId,
     completionRef: UuidSchema.parse(input.completionRef), kind: input.kind, settledAt: input.at,
+    deckId: sql`(select deck_id from learning_app.learning_sessions where id = ${input.sessionId})`,
+    timezone: sql`(select coalesce(context->>'timezone', 'Europe/Warsaw') from learning_app.learning_sessions where id = ${input.sessionId})`,
   }).onConflictDoNothing({ target: [rewardActivitySettlements.taskId, rewardActivitySettlements.completionRef] }).returning();
   if (!settlement) return;
   await tx.update(rewardActivitySegments).set({ settlementRef: settlement.id }).where(and(
@@ -265,6 +277,14 @@ export async function settleRewardActivity(
     eq(rewardActivitySegments.taskId, input.taskId),
     isNull(rewardActivitySegments.settlementRef),
   ));
+  const credited = (await tx.select({ milliseconds: sql<number>`coalesce(sum(extract(epoch from (${rewardActivitySegments.endedAt} - ${rewardActivitySegments.startedAt})) * 1000), 0)::bigint`.mapWith(Number) })
+    .from(rewardActivitySegments).where(eq(rewardActivitySegments.settlementRef, settlement.id)))[0]?.milliseconds ?? 0;
+  const prior = (await tx.select({ milliseconds: sql<number>`coalesce(sum(${rewardActivitySettlements.creditedMilliseconds}), 0)::bigint`.mapWith(Number) })
+    .from(rewardActivitySettlements).where(and(eq(rewardActivitySettlements.childId, input.childId), sql`${rewardActivitySettlements.id} <> ${settlement.id}`)))[0]?.milliseconds ?? 0;
+  const previousRemainder = prior % REWARD_POINT_INTERVAL_MS;
+  const award = rewardAward(credited, previousRemainder);
+  await tx.update(rewardActivitySettlements).set({ creditedMilliseconds: credited, awardedPoints: award.points, remainderMilliseconds: award.remainderMilliseconds })
+    .where(eq(rewardActivitySettlements.id, settlement.id));
   await tx.update(rewardActivityStreams).set({ active: false, pausedReason: "task_changed" }).where(and(
     eq(rewardActivityStreams.childId, input.childId),
     eq(rewardActivityStreams.taskId, input.taskId),
@@ -306,6 +326,61 @@ export async function finishRewardActivitySession(tx: Tx, sessionId: string, at:
     await recordPause(tx, stream, "session_ended", at);
     await tx.update(rewardActivityStreams).set({ active: false, pausedReason: "session_ended" }).where(eq(rewardActivityStreams.id, stream.id));
   }
+}
+
+export interface KidRewardSnapshot {
+  earnedPoints: number;
+  todayCreditedSeconds: number;
+  readyXboxPacks: number;
+  pointsByDeck: Map<string, number>;
+}
+
+/** Reads the child's server-settled reward ledger and day totals. */
+export async function readKidRewardSnapshot(services: Services, childId: string, now = services.clock.now()): Promise<KidRewardSnapshot> {
+  const child = UuidSchema.parse(childId);
+  const settlements = await services.db.select({
+    deckId: rewardActivitySettlements.deckId,
+    points: rewardActivitySettlements.awardedPoints,
+  }).from(rewardActivitySettlements).where(eq(rewardActivitySettlements.childId, child));
+  const pointsByDeck = new Map<string, number>();
+  let earnedPoints = 0;
+  for (const row of settlements) {
+    earnedPoints += row.points;
+    pointsByDeck.set(row.deckId, (pointsByDeck.get(row.deckId) ?? 0) + row.points);
+  }
+  const [family] = await services.db.select({ timezone: familySettings.timezone }).from(familySettings).limit(1);
+  const currentTimezone = family?.timezone ?? "Europe/Warsaw";
+  const timezone = validRewardTimezone(currentTimezone);
+  const today = localDateAt(now, timezone);
+  const intervals = await services.db.select({
+    start: rewardActivitySegments.startedAt,
+    end: rewardActivitySegments.endedAt,
+    timezone: learningSessions.context,
+  }).from(rewardActivitySegments).innerJoin(learningSessions, eq(learningSessions.id, rewardActivitySegments.sessionId)).where(and(
+    eq(rewardActivitySegments.childId, child), isNotNull(rewardActivitySegments.settlementRef),
+  ));
+  const daily = new Map<string, number>();
+  for (const interval of intervals) {
+    const context = interval.timezone as { timezone?: unknown };
+    const sessionTimezone = validRewardTimezone(context?.timezone);
+    for (const [day, milliseconds] of splitRewardIntervalByLocalDay(interval.start, interval.end, sessionTimezone)) {
+      const key = `${sessionTimezone}:${day}`;
+      daily.set(key, (daily.get(key) ?? 0) + milliseconds);
+    }
+  }
+  return {
+    earnedPoints,
+    todayCreditedSeconds: Math.floor((daily.get(`${timezone}:${today}`) ?? 0) / 1000),
+    readyXboxPacks: [...daily.values()].reduce((sum, milliseconds) => sum + xboxPacksForDay(milliseconds), 0),
+    pointsByDeck,
+  };
+}
+
+export async function readSessionRewardDelta(tx: Tx, sessionId: string): Promise<{ creditedSeconds: number; pointsEarned: number }> {
+  const rows = await tx.select({ milliseconds: rewardActivitySettlements.creditedMilliseconds, points: rewardActivitySettlements.awardedPoints })
+    .from(rewardActivitySettlements).where(eq(rewardActivitySettlements.sessionId, UuidSchema.parse(sessionId)));
+  const milliseconds = rows.reduce((total, row) => total + row.milliseconds, 0);
+  return { creditedSeconds: Math.floor(milliseconds / 1000), pointsEarned: rows.reduce((total, row) => total + row.points, 0) };
 }
 
 /** Ograniczony widok faktów rozliczenia; wywołujący HTTP musi wcześniej sprawdzić Parent Mode. */

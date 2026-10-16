@@ -71,7 +71,7 @@ import {
 } from "./lessons/lesson-mock-tests";
 import { buildLessonSummaryObjectives } from "./lessons/lesson-attempts";
 import { completeDisabledVoiceTask } from "./voice-task-lifecycle";
-import { finishRewardActivitySession, settleRewardActivity } from "./reward-activity";
+import { finishRewardActivitySession, readSessionRewardDelta, settleRewardActivity } from "./reward-activity";
 
 /** Okno wznowienia aktywnej sesji od ostatniego zdarzenia (arch §9.1). */
 export const RESUME_WINDOW_MS = 30 * 60_000;
@@ -1144,6 +1144,7 @@ export async function endSession(services: Services, sessionId: string): Promise
   return services.db.transaction(async (tx) => {
     const session = await lockSession(tx, id);
     await finishRewardActivitySession(tx, id, services.clock.now());
+    const reward = await readSessionRewardDelta(tx, id);
     let state = session.state as "active" | "completed" | "ended";
     if (session.mode === "mock_test") {
       if (isLessonMockPlan(session.mockTestPlan)) {
@@ -1161,6 +1162,7 @@ export async function endSession(services: Services, sessionId: string): Promise
           endedAt: (fresh.endedAt ?? services.clock.now()).toISOString(),
           independentSuccesses: { recall: 0, spelling: 0 },
           practiceItems: [],
+          reward,
         };
       }
       const report = await closeMockTest(tx, services, session, "completed");
@@ -1170,7 +1172,7 @@ export async function endSession(services: Services, sessionId: string): Promise
         .where(and(eq(sessionTasks.sessionId, id), eq(assessments.independent, true), eq(assessments.outcome, "correct")));
       return { sessionId: id, state: report.state, tasksIssued: counts.total, assessedTasksIssued: counts.assessed, endedAt: report.endedAt,
         independentSuccesses: { recall: new Set(summaryRows.filter(r => r.skill === "recall").map(r => r.itemRevisionId)).size,
-          spelling: new Set(summaryRows.filter(r => r.skill === "spelling").map(r => r.itemRevisionId)).size }, practiceItems: [] };
+          spelling: new Set(summaryRows.filter(r => r.skill === "spelling").map(r => r.itemRevisionId)).size }, practiceItems: [], reward };
     }
     let endedAt = session.endedAt;
     if (state === "active") {
@@ -1206,6 +1208,7 @@ export async function endSession(services: Services, sessionId: string): Promise
       assessedTasksIssued: counts.assessed,
       endedAt: endedAt!.toISOString(),
       ...summarizeSessionAssessments(rows.map(row => ({ ...row, target: payloadToItem(row.payload).target }))),
+      reward,
       ...(lessonObjectives ? { objectives: lessonObjectives } : {}),
     };
     if (!saved.success) {

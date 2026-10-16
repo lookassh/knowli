@@ -11,6 +11,7 @@ import { hasSafeLessonMockPortion } from "./lessons/lesson-mock-tests";
 import { CURRENT_POLICY_ID, ensureLearningPolicy, loadPolicy } from "../policies/registry";
 import { readLearningSnapshot } from "./learning-snapshot";
 import { payloadToItem } from "./item-payload";
+import { readKidRewardSnapshot } from "./reward-activity";
 
 /**
  * Widoki startowe Kid Mode (arch §12): profile dzieci (tylko nazwa i awatar)
@@ -22,7 +23,16 @@ export async function listKidProfiles(services: Services): Promise<KidProfileDto
     .select({ childId: childProfiles.id, displayName: childProfiles.displayName, avatarKey: childProfiles.avatarKey, recordingMode: childProfiles.recordingMode, canRead: childProfiles.canRead })
     .from(childProfiles)
     .orderBy(asc(childProfiles.createdAt));
-  return rows;
+  return Promise.all(rows.map(async (row) => {
+    const rewards = await readKidRewardSnapshot(services, row.childId);
+    return { ...row, rewards: {
+      earnedPoints: rewards.earnedPoints,
+      pointsToUse: rewards.earnedPoints,
+      readyXboxPacks: rewards.readyXboxPacks,
+      todayCreditedSeconds: rewards.todayCreditedSeconds,
+      dailyGoalSeconds: 1800 as const,
+    } };
+  }));
 }
 
 export async function listKidDecks(services: Services, childId: string, options: { microphoneEnabled?: boolean } = {}): Promise<KidDeckDto[]> {
@@ -32,6 +42,7 @@ export async function listKidDecks(services: Services, childId: string, options:
   if (!child) {
     throw new AppError("not_found");
   }
+  const rewards = await readKidRewardSnapshot(services, childId);
   const microphoneEnabled = options.microphoneEnabled ?? true;
   const [active] = await services.db.select().from(learningSessions).where(and(eq(learningSessions.childId, childId), eq(learningSessions.state, "active")));
   const [activeVersion] = active
@@ -250,6 +261,7 @@ export async function listKidDecks(services: Services, childId: string, options:
         resumeOnly: !child.canRead && isActive,
         subjectTitle,
         mockTestAvailable: child.canRead && (lessonMockAvailable.get(row.deckId) ?? false),
+        earnedPoints: rewards.pointsByDeck.get(row.deckId) ?? 0,
         activeSession,
         deckId: row.deckId,
         title: row.title,
@@ -268,6 +280,7 @@ export async function listKidDecks(services: Services, childId: string, options:
       resumeOnly: !child.canRead && isActive,
       subjectTitle: null,
       mockTestAvailable: child.canRead && !!row.testGoals?.length,
+      earnedPoints: rewards.pointsByDeck.get(row.deckId) ?? 0,
       activeSession,
       deckId: row.deckId,
       title: row.title,
@@ -288,6 +301,7 @@ export async function listKidDecks(services: Services, childId: string, options:
         deckId: active.deckId, title: resumable.title, kind: resumable.kind as "vocabulary" | "lesson",
         vocabularyFormat: pinnedVersion.vocabularyFormat, coverAssetId: resumable.coverAssetId, coverVisual: coverVisualByVersion.get(active.deckVersionId) ?? null,
         resumeOnly: true, activeSession: { sessionId: active.id, mode: active.mode }, mockTestAvailable: false,
+        earnedPoints: rewards.pointsByDeck.get(active.deckId) ?? 0,
         itemCount: count.length, independentlyRecalledCount: recalledCountByVersion.get(active.deckVersionId) ?? 0, testDate: null, recommended: false,
         ...(resumable.kind === "lesson" ? { subjectTitle: null } : {}),
       });

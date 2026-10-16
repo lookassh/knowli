@@ -23,10 +23,18 @@ export function SummaryScreen({
     return format(plural === "one" ? messages.kid.summaryWordOne
       : plural === "few" ? messages.kid.summaryWordFew : messages.kid.summaryWordMany, { n });
   };
+  const rewardTime = (seconds: number) => seconds === 0
+    ? messages.kid.rewardTimeZero
+    : seconds < 60
+      ? format(messages.kid.rewardTimeSeconds, { n: seconds })
+      : format(messages.kid.rewardTimeMinute, { minutes: Math.floor(seconds / 60), seconds: seconds % 60 });
   return (
     <main className="kid-screen kid-screen--summary">
       <h1 data-testid="kid-summary">{messages.kid.summaryTitle}</h1>
       {guidance}
+      <p className="kid-summary-counts" data-testid="kid-summary-reward">
+        {format(messages.kid.rewardSession, { points: summary.reward.pointsEarned, time: rewardTime(summary.reward.creditedSeconds) })}
+      </p>
       {recall > 0 && (
         <p className="kid-summary-counts" data-testid="kid-summary-recall">
           {format(messages.kid.summaryRecall, { words: wordCount(recall) })}

@@ -92,6 +92,13 @@
       "when": 1792140000000,
       "tag": "0012_reward_activity",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792148298127,
+      "tag": "0013_reward_points",
+      "breakpoints": true
     }
   ]
 }

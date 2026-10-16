@@ -324,6 +324,10 @@ export const SessionSummaryDtoSchema = SessionSummaryResultsSchema.extend({
   tasksIssued: z.number().int().nonnegative(),
   assessedTasksIssued: z.number().int().nonnegative(),
   endedAt: InstantSchema,
+  reward: z.object({
+    creditedSeconds: z.number().int().nonnegative(),
+    pointsEarned: z.number().int().nonnegative(),
+  }).default({ creditedSeconds: 0, pointsEarned: 0 }),
   /**
    * Wariant lekcji (design „Kwalifikacja i projekcja celów”, req 7.7): podsumowanie
    * per cel — ile ćwiczeń celu wykonano i ile poprawnie. BEZ procentów, bez statusów
@@ -346,12 +350,20 @@ export const KidProfileDtoSchema = z.object({
   avatarKey: z.string().min(1),
   recordingMode: RecordingModeSchema,
   canRead: z.boolean().default(true),
+  rewards: z.object({
+    earnedPoints: z.number().int().nonnegative(),
+    pointsToUse: z.number().int().nonnegative(),
+    readyXboxPacks: z.number().int().nonnegative(),
+    todayCreditedSeconds: z.number().int().nonnegative(),
+    dailyGoalSeconds: z.literal(1800),
+  }).default({ earnedPoints: 0, pointsToUse: 0, readyXboxPacks: 0, todayCreditedSeconds: 0, dailyGoalSeconds: 1800 }),
 });
 export type KidProfileDto = z.input<typeof KidProfileDtoSchema>;
 
 /** Zestaw przypisany dziecku, dostępny do nauki (arch §12). */
 export const KidDeckDtoSchema = z.object({
   mockTestAvailable: z.boolean().default(false),
+  earnedPoints: z.number().int().nonnegative().default(0),
   activeSession: z.object({ sessionId: UuidSchema, mode: z.enum(["training", "mock_test"]) }).nullable().default(null),
   /**
    * Rodzaj zestawu. OPCJONALNE dla zgodności wstecznej — brak pola oznacza
