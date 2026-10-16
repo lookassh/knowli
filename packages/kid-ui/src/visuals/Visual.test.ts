@@ -20,6 +20,13 @@ describe("Visual", () => {
     expect(visual.props).toEqual({ count: 11, label: "Eleven" });
   });
 
+  it("delegates number art for zero when valid", () => {
+    const visual = Visual({ text: "Zero", visualType: "number", visualData: { count: 0 } }) as ReactElement<{ count: number; label: string }>;
+
+    expect(visual.type).toBe(NumberVisual);
+    expect(visual.props).toEqual({ count: 0, label: "Zero" });
+  });
+
   it("highlights Monday as the first of seven sequence positions", () => {
     const svg = Visual({ text: "Monday", visualType: "sequence", visualData: { position: 1, total: 7, sequenceStart: "Monday" } }) as ReactElement<{ children: ReactNode; "data-total": number; "data-sequence-start": string }>;
     const positions = Children.toArray(svg.props.children).filter((element) => isValidElement(element));
