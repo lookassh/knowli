@@ -153,4 +153,29 @@ describe("losowanie picture niezależnie od czytania", () => {
         .toMatchObject({ itemRevisionId: "rev-1", reason: skill === "recall" ? "due-check" : "due-review" });
     }
   });
+
+  it("nieczytający z włączonym mikrofonem po opanowaniu słuchania otrzymuje picture_recall i speech", () => {
+    const candidates = numbers(2);
+    for (const item of candidates) {
+      item.ownPresentationCompleted = true;
+      item.usedThisSession = item.presentationsThisSession = 1;
+      item.progress.listening = { status: "learning", nextReviewAt: "2026-10-16T12:00:00Z", streak: 1 };
+      item.introducedSkills = { recall: false, pronunciation: false };
+    }
+    const state = { ...input(candidates, false), microphoneEnabled: true, nextOrdinal: 3 };
+    const recall = selectTask(state)!;
+    expect(recall).toMatchObject({
+      exerciseType: "recall",
+      reason: "stage-introduction",
+      pictureRecall: true,
+      assessmentSkills: ["recall", "pronunciation"],
+    });
+    const target = candidates.find((item) => item.itemRevisionId === recall.itemRevisionId)!;
+    target.introducedSkills.recall = true;
+    const next = selectTask({ ...state, nextOrdinal: 5 });
+    expect(next).toMatchObject({
+      exerciseType: "speech",
+      reason: "stage-introduction",
+    });
+  });
 });
