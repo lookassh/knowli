@@ -149,9 +149,11 @@ export function assessSpeechEvidence(
   // W mowie wielkość liter nie jest cechą fonetyczną — dopasowujemy wielkość liter
   // do wariantu wzorca, aby uniknąć mylących komunikatów (np. Purple vs purple).
   const rawRecognized = normalizeSpokenAnswerText(t.text).slice(0, 200) || undefined;
+  const trimmedTarget = key.target.trim();
+  const targetIsLowercase = trimmedTarget.length > 0 && trimmedTarget[0] === trimmedTarget[0]!.toLowerCase();
   const recognizedText = match.ci && match.matchedVariant
     ? match.matchedVariant
-    : rawRecognized !== undefined && key.target.length > 0 && key.target[0] === key.target[0]!.toLowerCase()
+    : rawRecognized !== undefined && targetIsLowercase
       ? rawRecognized.toLowerCase()
       : rawRecognized;
   const recognized = recognizedText ? { recognizedText } : {};

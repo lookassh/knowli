@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { assessSpeechEvidence, MIN_STT_CONFIDENCE } from "./speech";
+import { describe, expect, it, vi } from "vitest";
+import { analyzeSpeech, assessSpeechEvidence, MIN_STT_CONFIDENCE } from "./speech";
 import { LEARNING_V1_POLICY } from "../policies/learning-v1";
-import type { SpeechEvidence } from "../ports/ai";
+import type { AudioInput, SpeechEvidence } from "../ports/ai";
+import type { Services } from "../config";
 import type { AnswerKey, EvaluationContext, Policy } from "../domain/types";
 
 function ctx(overrides: Partial<EvaluationContext> = {}): EvaluationContext {
@@ -354,5 +355,49 @@ describe("pasma wymowy (design 2026-10-09)", () => {
     expect(grade.skills.pronunciation?.details?.pronunciation).toMatchObject({ band: "correct" });
   });
 });
+
+describe("analyzeSpeech — integracja STT i wymowy", () => {
+  it("wywołuje assess wymowy, gdy transkrypcja różni się wielkością liter od celu (Purple. vs purple)", async () => {
+    const assessMock = vi.fn().mockResolvedValue({
+      status: "ok",
+      overallScore: 85,
+      recognizedText: "Purple.",
+    });
+    const fakeServices = {
+      speech: {
+        stt: {
+          name: "fake-stt",
+          transcribe: vi.fn().mockResolvedValue({
+            status: "ok",
+            text: "Purple.",
+            confidence: 0.95,
+          }),
+        },
+        pronunciation: {
+          name: "fake-pron",
+          assess: assessMock,
+        },
+      },
+    } as unknown as Services;
+
+    const audio: AudioInput = {
+      bytes: new Uint8Array([1, 2, 3]),
+      mimeType: "audio/webm",
+      locale: "en-GB",
+    };
+
+    const result = await analyzeSpeech(
+      fakeServices,
+      audio,
+      { exerciseType: "speech", target: "purple", acceptedAnswers: [] },
+    );
+
+    expect(result.transcription.text).toBe("Purple.");
+    expect(assessMock).toHaveBeenCalledWith(audio, "purple", expect.any(AbortSignal));
+    expect(result.pronunciation?.status).toBe("ok");
+    expect(result.pronunciation?.expectedText).toBe("purple");
+  });
+});
+
 
 

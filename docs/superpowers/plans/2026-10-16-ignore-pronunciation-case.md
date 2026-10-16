@@ -36,39 +36,40 @@
 - Consumes: `matchSpokenAnswer`, `normalizeSpokenAnswerText`, `assessSpeechEvidence`, `analyzeSpeech`
 - Produces: `Grade.recognizedText` zgodne z wielkością liter `match.matchedVariant` i bezpieczna ocena wymowy
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 W `packages/server/src/modules/speech.test.ts` dodać testy sprawdzające:
 1. `Purple.` ze STT dla celu `purple` daje `grade.recognizedText === "purple"`.
 2. Słowo spoza wariantów dla celu z małej litery (`Turtle.` dla `purple`) daje `grade.recognizedText === "turtle"`, a dla nazwy własnej (`Tuesday.` dla `Thursday`) zachowuje `"Tuesday"`.
 3. Ocena wymowy jest poprawna (`correct`), nawet gdy `expectedText` i `matchedVariant` różnią się wielkością liter (`Purple` vs `purple`).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `corepack pnpm vitest run packages/server/src/modules/speech.test.ts`
 Expected: FAIL (asercje `recognizedText` oraz `outcome: "unevaluated"`).
 
-- [ ] **Step 3: Implement case-insensitive logic in `packages/server/src/modules/speech.ts`**
+- [x] **Step 3: Implement case-insensitive logic in `packages/server/src/modules/speech.ts`**
 
 1. W `analyzeSpeech` sprawdzić zgodność wariantu z celem case-insensitively: `match.ci && match.matchedVariant && match.matchedVariant.toLowerCase() === key.target.toLowerCase()`.
 2. W `assessSpeechEvidence` wyliczyć `recognizedText` z uwzględnieniem `match.matchedVariant` (gdy `match.ci`) lub małej litery, gdy `key.target` zaczyna się małą literą.
 3. W `pronunciationStatus` oraz walidacji `p` porównywać `key.target`, `match.matchedVariant` i `p.expectedText` przy użyciu `.toLowerCase()`.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `corepack pnpm vitest run packages/server/src/modules/speech.test.ts`
 Expected: PASS (wszystkie testy zielone).
 
-- [ ] **Step 5: Run full speech unit & integration test suites and typecheck**
+- [x] **Step 5: Run full speech unit & integration test suites and typecheck**
 
 Run: `corepack pnpm vitest run packages/server/src/modules/speech.test.ts packages/server/src/domain/feedback.test.ts packages/kid-ui/src/screens/speech-feedback-view.test.ts packages/contracts/src/speech-feedback.test.ts packages/server/src/providers/azure/pronunciation.test.ts packages/server/src/providers/azure/stt.test.ts`
 Run: `corepack pnpm vitest run --config vitest.integration.config.ts tests/integration/speech.test.ts`
 Run: `corepack pnpm typecheck`
 Expected: ALL PASS.
 
-- [ ] **Step 6: Commit changes**
+- [x] **Step 6: Commit changes**
 
 ```bash
 git add packages/server/src/modules/speech.ts packages/server/src/modules/speech.test.ts docs/superpowers/specs/2026-10-16-ignore-pronunciation-case-design.md docs/superpowers/plans/2026-10-16-ignore-pronunciation-case.md
 git commit -m "fix(server): ignore letter case in speech recognition and pronunciation assessment"
 ```
+
