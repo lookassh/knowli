@@ -37,6 +37,7 @@ import {
   retryGeneration,
   upsertAssignment,
   removeAssignment,
+  readRewardActivitySummary,
   type Services,
 } from "@learning/server";
 import {
@@ -84,6 +85,9 @@ export async function handleParentApi(
     const kind = await readDeckKind(services.db, deckId);
     const list = kind === "lesson" ? await listLessonMockTests(services, childId, deckId) : await listMockTests(services, childId, deckId);
     return Response.json(list, { headers: { "Cache-Control": "no-store" } });
+  }
+  if (first === "reward-activity" && request.method === "GET" && second) {
+    return Response.json(await readRewardActivitySummary(services, second), { headers: { "Cache-Control": "no-store" } });
   }
 
   // --- Lekcje (zadanie 11): ścieżki rozłączne z `decks`/`drafts` słówek ---

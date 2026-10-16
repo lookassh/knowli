@@ -14,6 +14,10 @@ import type {
   SessionInput,
   SessionSummaryDto,
   TaskDto,
+  RewardActivitySignal,
+  RewardActivitySignalDto,
+  RewardActivityPlaybackAuthorizationInput,
+  RewardActivityPlaybackAuthorizationDto,
 } from "@learning/contracts";
 import type { RecordedAudio } from "../media/platform";
 
@@ -45,6 +49,8 @@ export interface KidApi {
   completePresentation(taskId: string, clientCommandId?: string): Promise<PresentationCompletionDto>;
   /** Opcjonalne potwierdzenie obserwacji; nie jest jedynym dowodem ujawnienia. */
   recordObservation(input: EventInput): Promise<void>;
+  signalRewardActivity(input: RewardActivitySignal): Promise<RewardActivitySignalDto>;
+  authorizeRewardActivityPlayback(input: RewardActivityPlaybackAuthorizationInput): Promise<RewardActivityPlaybackAuthorizationDto>;
   endSession(sessionId: string): Promise<SessionSummaryDto>;
   disableMicrophone(sessionId: string): Promise<SessionDto>;
   /** Adres nieprzejrzystego zasobu media (same-origin, immutable cache). */

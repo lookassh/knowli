@@ -48,6 +48,7 @@ import { persistSkillProjection } from "./skill-projections";
 import { resolveTaskAssistance } from "../domain/task-assistance";
 import { assertVocabularyDeck, readDeckKind } from "./deck-kind";
 import { completeDisabledVoiceTask } from "./voice-task-lifecycle";
+import { discardRewardActivity, settleRewardActivity } from "./reward-activity";
 
 /** Leniwa finalizacja przeterminowanych prób processing (arch §9.2a). */
 export const ATTEMPT_PROCESSING_TIMEOUT_MS = 60_000;
@@ -375,6 +376,18 @@ async function finalizeAttemptRow(
     .returning();
   if (completed.length === 0) {
     throw new AppError("conflict", { message: "attempt is already finalized" });
+  }
+
+  const workAccepted = modality !== "skip" && Object.values(grade.skills).some((skill) => skill.outcome !== "unevaluated");
+  if (workAccepted) {
+    await settleRewardActivity(tx, {
+      childId: session.childId, sessionId: session.id, taskId: task.id,
+      completionRef: attempt.id, kind: "attempt", at: now,
+    });
+  } else if (taskState !== "issued") {
+    await discardRewardActivity(tx, {
+      childId: session.childId, sessionId: session.id, taskId: task.id, at: now,
+    });
   }
 
   const stepId = feedback === null ? null : await discloseFeedback(tx, task, session.childId, itemId, feedback, targetKey, now);

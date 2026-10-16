@@ -12,6 +12,8 @@ import {
   SessionDtoSchema,
   SessionSummaryDtoSchema,
   TaskDtoSchema,
+  RewardActivitySignalDtoSchema,
+  RewardActivityPlaybackAuthorizationDtoSchema,
   type AttemptDto,
   type KidValidationReason,
   type AttemptInput,
@@ -25,6 +27,10 @@ import {
   type SessionInput,
   type SessionSummaryDto,
   type TaskDto,
+  type RewardActivitySignal,
+  type RewardActivitySignalDto,
+  type RewardActivityPlaybackAuthorizationInput,
+  type RewardActivityPlaybackAuthorizationDto,
 } from "@learning/contracts";
 import type { RecordedAudio } from "../media/platform";
 import type { KidApi } from "./KidApi";
@@ -176,6 +182,12 @@ export function createKidApiClient(options: KidClientOptions = {}): KidApi {
     },
     async recordObservation(input: EventInput): Promise<void> {
       await post(`/api/v1/kid/tasks/${input.taskId}/events`, input, () => undefined);
+    },
+    signalRewardActivity(input: RewardActivitySignal): Promise<RewardActivitySignalDto> {
+      return post(`/api/v1/kid/tasks/${input.taskId}/activity`, input, parseWith(RewardActivitySignalDtoSchema));
+    },
+    authorizeRewardActivityPlayback(input: RewardActivityPlaybackAuthorizationInput): Promise<RewardActivityPlaybackAuthorizationDto> {
+      return post(`/api/v1/kid/tasks/${input.taskId}/activity/playback-authorization`, input, parseWith(RewardActivityPlaybackAuthorizationDtoSchema));
     },
     endSession(sessionId: string): Promise<SessionSummaryDto> {
       return post(`/api/v1/kid/sessions/${sessionId}/end`, {}, parseSummary);

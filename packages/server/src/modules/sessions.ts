@@ -71,6 +71,7 @@ import {
 } from "./lessons/lesson-mock-tests";
 import { buildLessonSummaryObjectives } from "./lessons/lesson-attempts";
 import { completeDisabledVoiceTask } from "./voice-task-lifecycle";
+import { finishRewardActivitySession, settleRewardActivity } from "./reward-activity";
 
 /** Okno wznowienia aktywnej sesji od ostatniego zdarzenia (arch §9.1). */
 export const RESUME_WINDOW_MS = 30 * 60_000;
@@ -1125,6 +1126,14 @@ export async function completePresentation(
       ...(valid.clientCommandId ? { clientEventId: valid.clientCommandId } : {}),
       exposures: [],
     });
+    await settleRewardActivity(tx, {
+      childId: task.childId,
+      sessionId: task.sessionId,
+      taskId: task.id,
+      completionRef: valid.clientCommandId ?? randomUUID(),
+      kind: "presentation",
+      at: now,
+    });
     return { taskId: task.id, state: "completed" as const, completedAt: now.toISOString() };
   });
 }
@@ -1134,6 +1143,7 @@ export async function endSession(services: Services, sessionId: string): Promise
   const id = UuidSchema.parse(sessionId);
   return services.db.transaction(async (tx) => {
     const session = await lockSession(tx, id);
+    await finishRewardActivitySession(tx, id, services.clock.now());
     let state = session.state as "active" | "completed" | "ended";
     if (session.mode === "mock_test") {
       if (isLessonMockPlan(session.mockTestPlan)) {

@@ -20,6 +20,7 @@ export * as schema from "./db/schema";
 export { issueIntegrationToken, listIntegrationTokens, requireLearningReadToken, revokeIntegrationToken } from "./modules/integration-tokens";
 export type { IntegrationPrincipal, IntegrationTokenMetadata } from "./modules/integration-tokens";
 export { getLearningOverview } from "./modules/learning-overview";
+export { recordRewardActivitySignal, authorizeRewardActivityPlayback, readRewardActivitySummary } from "./modules/reward-activity";
 export {
   isParentSetupRequired,
   setupParent,

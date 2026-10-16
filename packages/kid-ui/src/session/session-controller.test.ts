@@ -120,7 +120,7 @@ function makeRecorder(opts: { failStartWith?: unknown; startGate?: Promise<void>
   };
 }
 
-function makeMedia(recorder: ReturnType<typeof makeRecorder>, playGate?: Promise<void>, onStopPlayback?: () => void): PlatformMedia & { playUrls: string[]; stops: number } {
+function makeMedia(recorder: ReturnType<typeof makeRecorder>, playGate?: Promise<void>, onStopPlayback?: () => void, failPlaybackBeforeStart = false): PlatformMedia & { playUrls: string[]; stops: number } {
   const media = {
     playUrls: [] as string[],
     stops: 0,
@@ -131,8 +131,10 @@ function makeMedia(recorder: ReturnType<typeof makeRecorder>, playGate?: Promise
       return recorder;
     },
     player: {
-      async play(url: string) {
+      async play(url: string, onStarted?: () => void) {
         media.playUrls.push(url);
+        if (failPlaybackBeforeStart) throw new Error("autoplay blocked");
+        onStarted?.();
         await playGate;
       },
       stop() {
@@ -169,6 +171,7 @@ interface ApiState {
   feedbackAudioError?: unknown;
   feedbackAudioAssetId?: string;
   feedbackAudioCalls: string[];
+  activitySignals: { taskId: string; kind: string; sequence: number }[];
   uiAudioReady?: boolean;
   uiAudioReadFailureCount?: number;
   uiAudioReadCalls?: number;
@@ -239,6 +242,11 @@ function makeApi(state: ApiState): KidApi {
       state.observations.push(input.kind);
       return undefined;
     },
+    async signalRewardActivity(input) {
+      state.activitySignals.push({ taskId: input.taskId, kind: input.kind, sequence: input.sequence });
+      return { streamId: input.streamId, sequence: input.sequence, acceptedAt: "2026-10-07T16:00:00.000Z", paused: input.kind === "pause", pauseReason: input.kind === "pause" ? input.pauseReason ?? "background" : null };
+    },
+    async authorizeRewardActivityPlayback() { return { authorizationId: "88888888-8888-4888-8888-888888888888" }; },
     async endSession(sessionId): Promise<SessionSummaryDto> {
       await state.endSessionGate;
       state.endedSessions.push(sessionId);
@@ -291,10 +299,10 @@ const LESSON_DECK: KidDeckDto = {
 
 function makeHarness(
   state: ApiState,
-  options: { failStartWith?: unknown; startGate?: Promise<void>; initialChildId?: string; playGate?: Promise<void>; onStopPlayback?: () => void; storage?: LocalPreferences } = {},
+  options: { failStartWith?: unknown; startGate?: Promise<void>; initialChildId?: string; playGate?: Promise<void>; onStopPlayback?: () => void; failPlaybackBeforeStart?: boolean; storage?: LocalPreferences } = {},
 ) {
   const recorder = makeRecorder(options);
-  const media = makeMedia(recorder, options.playGate, options.onStopPlayback);
+  const media = makeMedia(recorder, options.playGate, options.onStopPlayback, options.failPlaybackBeforeStart);
   const storage = options.storage ?? createMemoryPreferences();
   const controller = new LearningSessionController({
     api: makeApi(state),
@@ -306,7 +314,7 @@ function makeHarness(
   return { controller, recorder, media, storage, state };
 }
 
-async function startAtTask(state: ApiState, task: TaskDto, recorderOpts?: { failStartWith?: unknown; startGate?: Promise<void>; playGate?: Promise<void>; onStopPlayback?: () => void; storage?: LocalPreferences; microphone?: boolean }) {
+async function startAtTask(state: ApiState, task: TaskDto, recorderOpts?: { failStartWith?: unknown; startGate?: Promise<void>; playGate?: Promise<void>; onStopPlayback?: () => void; failPlaybackBeforeStart?: boolean; storage?: LocalPreferences; microphone?: boolean }) {
   state.tasks = [task];
   const harness = makeHarness(state, recorderOpts);
   await harness.controller.start();
@@ -317,6 +325,18 @@ async function startAtTask(state: ApiState, task: TaskDto, recorderOpts?: { fail
 }
 
 describe("LearningSessionController", () => {
+  it("wysyła numerowane sygnały aktywności i zapisuje pauzę offline", async () => {
+    const task = taskDto("activity-task", { kind: "recall", prompt: "czwartek" });
+    const harness = await startAtTask(baseState(), task);
+    harness.controller.pauseRewardActivity("offline");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(harness.state.activitySignals).toEqual([
+      { taskId: task.taskId, kind: "takeover", sequence: 1 },
+      { taskId: task.taskId, kind: "pause", sequence: 2 },
+    ]);
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", activityPaused: true });
+  });
+
   it("wybiera polskie komunikaty dla znanych przyczyn walidacji obrazkowej", () => {
     expect(messageForError(new KidApiError("validation", false, "picture_client_update_required"))).toContain("Zaktualizuj aplikację");
     expect(messageForError(new KidApiError("validation", false, "vocabulary_requires_reading"))).toContain("wymaga umiejętności czytania");
@@ -346,6 +366,8 @@ describe("LearningSessionController", () => {
     expect(harness.media.playUrls).toEqual([]);
     await harness.controller.playTaskAudio();
     expect(harness.media.playUrls).toEqual(["https://media.test/asset-listening"]);
+    expect(harness.state.activitySignals.map(({ kind }) => kind)).toContain("playback_start");
+    expect(harness.state.activitySignals.map(({ kind }) => kind)).toContain("playback_end");
   });
 
   it("nie odtwarza instrukcji podczas uruchamiania ani nagrywania mikrofonu", async () => {
@@ -1139,6 +1161,54 @@ describe("LearningSessionController", () => {
     }
   });
 
+  it("nieoceniona próba wznawia ten sam strumień aktywności", async () => {
+    const recall = taskDto("t1", { kind: "recall", prompt: "czwartek" });
+    const state = baseState();
+    state.attempts = [attemptDto({
+      taskId: recall.taskId, modality: "text", feedback: { kind: "not_assessed" }, taskState: "issued",
+    })];
+    const harness = await startAtTask(state, recall);
+
+    await harness.controller.answerText("");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const interactions = state.activitySignals.filter((signal) => signal.kind === "interaction");
+    expect(interactions.length).toBeGreaterThanOrEqual(2);
+    expect(interactions.at(-1)).toMatchObject({ taskId: recall.taskId, sequence: 4 });
+  });
+
+  it("jawnie przejmuje strumień przy starcie i wznawia go przed playbackiem", async () => {
+    const listening = taskDto("listen", {
+      kind: "listening", audioAssetId: "audio-listen", options: [
+        { id: "a", text: "poniedziałek" }, { id: "b", text: "wtorek" },
+      ],
+    });
+    const state = baseState();
+    const harness = await startAtTask(state, listening);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(state.activitySignals[0]).toMatchObject({ kind: "takeover", sequence: 1 });
+
+    harness.controller.pauseRewardActivity("blur");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await harness.controller.playTaskAudio();
+
+    expect(state.activitySignals.slice(-4).map(({ kind }) => kind)).toEqual([
+      "pause", "interaction", "playback_start", "playback_end",
+    ]);
+  });
+
+  it("nie wysyła playback_end, gdy odtwarzacz odrzuca próbę przed startem", async () => {
+    const listening = taskDto("listen", { kind: "listening", audioAssetId: "audio-listen", options: [] });
+    const state = baseState();
+    const harness = await startAtTask(state, listening, { failPlaybackBeforeStart: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await harness.controller.playTaskAudio();
+
+    expect(state.activitySignals.map(({ kind }) => kind)).not.toContain("playback_end");
+    expect(state.activitySignals.map(({ kind }) => kind)).not.toContain("playback_start");
+  });
+
   it("release przed 300 ms nie wysyła odpowiedzi i pokazuje neutralną wskazówkę", async () => {
     const recall = taskDto("t1", { kind: "recall", prompt: "czwartek" });
     const harness = await startAtTask(baseState(), recall);
@@ -1455,6 +1525,7 @@ function baseState(): ApiState {
     speechSubmissions: [],
     observations: [],
     feedbackAudioCalls: [],
+    activitySignals: [],
     networkDown: false,
   };
 }

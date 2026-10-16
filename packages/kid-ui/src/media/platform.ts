@@ -33,7 +33,7 @@ export interface RecorderOptions {
 /** Odtwarzacz wzorca z cache media; stop zwalnia zasoby audio. */
 export interface AudioPlayer {
   /** Odtwarza do końca; rzuca przy błędzie odtwarzania/sieci. */
-  play(url: string): Promise<void>;
+  play(url: string, onStarted?: () => void): Promise<void>;
   stop(): void;
 }
 

@@ -538,6 +538,122 @@ export const attempts = app.table(
   ],
 );
 
+export const rewardActivitySettlements = app.table(
+  "reward_activity_settlements",
+  {
+    id: uuid("id").primaryKey(),
+    childId: uuid("child_id").notNull().references((): AnyPgColumn => childProfiles.id, { onDelete: "cascade" }),
+    sessionId: uuid("session_id").notNull(),
+    taskId: uuid("task_id").notNull(),
+    completionRef: uuid("completion_ref").notNull(),
+    kind: text("kind").notNull(),
+    settledAt: timestamps("settled_at").notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({ name: "reward_activity_settlement_session_child_fk", columns: [t.sessionId, t.childId], foreignColumns: [learningSessions.id, learningSessions.childId] }).onDelete("cascade"),
+    foreignKey({ name: "reward_activity_settlement_task_child_fk", columns: [t.taskId, t.childId], foreignColumns: [sessionTasks.id, sessionTasks.childId] }).onDelete("cascade"),
+    check("reward_activity_settlement_kind", sql`${t.kind} in ('attempt','presentation')`),
+    unique("reward_activity_settlement_completion_unique").on(t.taskId, t.completionRef),
+    unique("reward_activity_settlement_id_child_unique").on(t.id, t.childId),
+  ],
+);
+
+/** Ograniczony dziennik aktywności nagrodowej; bez surowej interakcji/audio. */
+export const rewardActivityStreams = app.table(
+  "reward_activity_streams",
+  {
+    id: uuid("id").primaryKey(),
+    childId: uuid("child_id").notNull().references((): AnyPgColumn => childProfiles.id, { onDelete: "cascade" }),
+    sessionId: uuid("session_id").notNull(),
+    taskId: uuid("task_id").notNull(),
+    policyVersion: text("policy_version").notNull(),
+    lastSequence: integer("last_sequence").notNull(),
+    lastSignalAt: timestamps("last_signal_at").notNull(),
+    lastInteractionAt: timestamps("last_interaction_at").notNull(),
+    pausedReason: text("paused_reason"),
+    playbackStartedAt: timestamps("playback_started_at"),
+    active: boolean("active").notNull().default(true),
+  },
+  (t) => [
+    foreignKey({ name: "reward_activity_stream_session_child_fk", columns: [t.sessionId, t.childId], foreignColumns: [learningSessions.id, learningSessions.childId] }).onDelete("cascade"),
+    foreignKey({ name: "reward_activity_stream_task_child_fk", columns: [t.taskId, t.childId], foreignColumns: [sessionTasks.id, sessionTasks.childId] }).onDelete("cascade"),
+    check("reward_activity_stream_sequence_positive", sql`${t.lastSequence} > 0`),
+    check("reward_activity_stream_pause_reason", sql`${t.pausedReason} is null or ${t.pausedReason} in ('background','blur','offline','idle','technical_wait','signal_timeout','task_changed','session_ended')`),
+    uniqueIndex("reward_activity_one_stream_per_child").on(t.childId).where(sql`${t.active}`),
+    unique("reward_activity_stream_child_unique").on(t.id, t.childId),
+    index("reward_activity_stream_session_idx").on(t.sessionId),
+  ],
+);
+
+export const rewardActivityPauses = app.table(
+  "reward_activity_pauses",
+  {
+    id: uuid("id").primaryKey(),
+    streamId: uuid("stream_id").notNull(),
+    childId: uuid("child_id").notNull(),
+    pauseReason: text("pause_reason"),
+    occurredAt: timestamps("occurred_at").notNull(),
+  },
+  (t) => [
+    foreignKey({ name: "reward_activity_pause_stream_child_fk", columns: [t.streamId, t.childId], foreignColumns: [rewardActivityStreams.id, rewardActivityStreams.childId] }).onDelete("cascade"),
+    check("reward_activity_pause_reason", sql`${t.pauseReason} in ('background','blur','offline','idle','technical_wait','signal_timeout','task_changed','session_ended')`),
+    index("reward_activity_pause_session_idx").on(t.childId, t.occurredAt),
+  ],
+);
+
+export const rewardActivityPlaybackAuthorizations = app.table(
+  "reward_activity_playback_authorizations",
+  {
+    id: uuid("id").primaryKey(),
+    streamId: uuid("stream_id").notNull(),
+    childId: uuid("child_id").notNull(),
+    sessionId: uuid("session_id").notNull(),
+    taskId: uuid("task_id").notNull(),
+    assetId: uuid("asset_id").notNull(),
+    assetDurationMs: integer("asset_duration_ms").notNull(),
+    authorizedAt: timestamps("authorized_at").notNull(),
+    expiresAt: timestamps("expires_at").notNull(),
+    startedAt: timestamps("started_at"),
+    playbackLimitAt: timestamps("playback_limit_at"),
+    endedAt: timestamps("ended_at"),
+    revokedAt: timestamps("revoked_at"),
+  },
+  (t) => [
+    foreignKey({ name: "reward_activity_playback_stream_child_fk", columns: [t.streamId, t.childId], foreignColumns: [rewardActivityStreams.id, rewardActivityStreams.childId] }).onDelete("cascade"),
+    foreignKey({ name: "reward_activity_playback_session_child_fk", columns: [t.sessionId, t.childId], foreignColumns: [learningSessions.id, learningSessions.childId] }).onDelete("cascade"),
+    foreignKey({ name: "reward_activity_playback_task_child_fk", columns: [t.taskId, t.childId], foreignColumns: [sessionTasks.id, sessionTasks.childId] }).onDelete("cascade"),
+    check("reward_activity_playback_times_ordered", sql`${t.endedAt} is null or (${t.startedAt} is not null and ${t.endedAt} >= ${t.startedAt})`),
+    check("reward_activity_playback_duration_positive", sql`${t.assetDurationMs} > 0`),
+    uniqueIndex("reward_activity_one_pending_playback_authorization").on(t.streamId).where(sql`${t.endedAt} is null and ${t.revokedAt} is null`),
+    index("reward_activity_playback_stream_idx").on(t.streamId, t.authorizedAt),
+  ],
+);
+
+export const rewardActivitySegments = app.table(
+  "reward_activity_segments",
+  {
+    id: uuid("id").primaryKey(),
+    streamId: uuid("stream_id").notNull(),
+    childId: uuid("child_id").notNull(),
+    sessionId: uuid("session_id").notNull(),
+    taskId: uuid("task_id").notNull(),
+    startedAt: timestamps("started_at").notNull(),
+    endedAt: timestamps("ended_at").notNull(),
+    pauseReason: text("pause_reason"),
+    settlementRef: uuid("settlement_ref"),
+  },
+  (t) => [
+    foreignKey({ name: "reward_activity_segment_stream_child_fk", columns: [t.streamId, t.childId], foreignColumns: [rewardActivityStreams.id, rewardActivityStreams.childId] }).onDelete("cascade"),
+    foreignKey({ name: "reward_activity_segment_session_child_fk", columns: [t.sessionId, t.childId], foreignColumns: [learningSessions.id, learningSessions.childId] }).onDelete("cascade"),
+    foreignKey({ name: "reward_activity_segment_task_child_fk", columns: [t.taskId, t.childId], foreignColumns: [sessionTasks.id, sessionTasks.childId] }).onDelete("cascade"),
+    foreignKey({ name: "reward_activity_segment_settlement_child_fk", columns: [t.settlementRef, t.childId], foreignColumns: [rewardActivitySettlements.id, rewardActivitySettlements.childId] }).onDelete("cascade"),
+    check("reward_activity_segment_positive", sql`${t.endedAt} >= ${t.startedAt}`),
+    check("reward_activity_segment_pause_reason", sql`${t.pauseReason} is null or ${t.pauseReason} in ('background','blur','offline','idle','technical_wait','signal_timeout','task_changed','session_ended')`),
+    unique("reward_activity_segment_id_child_unique").on(t.id, t.childId),
+    index("reward_activity_segment_pending_idx").on(t.childId, t.taskId).where(sql`${t.settlementRef} is null`),
+  ],
+);
+
 export const assessments = app.table(
   "assessments",
   {

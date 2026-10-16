@@ -231,3 +231,7 @@ Zgodność profilu, wersji zestawu i Kid UI: `packages/contracts/src/kid.ts`, `d
 ### Okładka zestawu słownictwa (2026-10-15)
 
 Wspólne ustawienie `decks.cover_asset_id`, migracja `0011_deck_cover_image.sql`, endpoint rodzica `/decks/{id}/cover`, walidacja i zapis przez `modules/deck-cover.ts`; Kid API zwraca opcjonalne `coverAssetId`. Rodzic może podglądać lub usunąć okładkę dla zestawu słownictwa. Kid UI wyświetla ją przed dotychczasowym `coverVisual`; MCP i treść wersji zestawu pozostają bez zmian.
+
+### Aktywna praca do rozliczeń nagród (2026-10-16)
+
+Kontrakt sygnału i ograniczonego podsumowania: `packages/contracts/src/reward-activity.ts`; reguły limitów: `packages/server/src/domain/reward-activity.ts`; utrwalenie i transakcyjne rozliczenie: `packages/server/src/modules/reward-activity.ts`, `attempts.ts`, `sessions.ts`, migracja `0012_reward_activity.sql`. Kid UI wysyła sygnały z `session-controller.ts` i hooka cyklu życia; Kid API znajduje się w `apps/web/src/kid/kid-router.ts`. Odczyt rodzica `GET /reward-activity/{childId}` wymaga Parent Mode i jest w `apps/web/src/parent/parent-router.ts`. Testy: `packages/contracts/src/reward-activity.test.ts`, `packages/server/src/domain/reward-activity.test.ts`, `tests/integration/reward-activity.test.ts` i `packages/kid-ui/src/session/session-controller.test.ts`. Raport MCP i jego skill pozostają bez zmian, bo nie konsumują nowego endpointu.

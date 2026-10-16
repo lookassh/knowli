@@ -7,4 +7,5 @@ export * from "./learning-overview";
 export * from "./messages";
 export * from "./ui-audio";
 export * from "./progress";
+export * from "./reward-activity";
 export * from "./mock-tests";
