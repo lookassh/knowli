@@ -53,4 +53,41 @@ describe("DeckAssignmentsList", () => {
     (btn0?.props.onClick as () => void)();
     expect(onUnassign).toHaveBeenCalledWith("10000000-0000-4000-8000-000000000001");
   });
+
+  it("blokuje przycisk usuwania dla dziecka w trakcie operacji (busyChildId)", () => {
+    const rendered = nodes(
+      <DeckAssignmentsList
+        assignments={sampleAssignments}
+        onUnassign={vi.fn()}
+        busyChildId="10000000-0000-4000-8000-000000000001"
+      />,
+    );
+    const btn0 = rendered.find((n) => n.props["data-testid"] === "unassign-submit-0");
+    const btn1 = rendered.find((n) => n.props["data-testid"] === "unassign-submit-1");
+    expect(btn0?.props.disabled).toBe(true);
+    expect(btn1?.props.disabled).toBe(false);
+  });
+
+  it("nie wywołuje akcji usunięcia, gdy użytkownik anuluje okno dialogowe potwierdzenia", () => {
+    const originalWindow = globalThis.window;
+    const confirmMock = vi.fn().mockReturnValue(false);
+    globalThis.window = { confirm: confirmMock } as unknown as Window & typeof globalThis;
+
+    const deleteAction = vi.fn();
+
+    const guardedUnassign = (childId: string) => {
+      if (!window.confirm(messages.decks.unassignConfirm)) return;
+      deleteAction(childId);
+    };
+
+    guardedUnassign("10000000-0000-4000-8000-000000000001");
+    expect(confirmMock).toHaveBeenCalledWith(messages.decks.unassignConfirm);
+    expect(deleteAction).not.toHaveBeenCalled();
+
+    confirmMock.mockReturnValue(true);
+    guardedUnassign("10000000-0000-4000-8000-000000000001");
+    expect(deleteAction).toHaveBeenCalledWith("10000000-0000-4000-8000-000000000001");
+
+    globalThis.window = originalWindow;
+  });
 });

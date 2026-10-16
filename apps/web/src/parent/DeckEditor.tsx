@@ -59,6 +59,7 @@ export default function DeckEditor({
   const [remoteApplied, setRemoteApplied] = useState(false);
   const [assignDates, setAssignDates] = useState<Record<string, string>>({});
   const [assignSettings, setAssignSettings] = useState<Record<string, AssignmentTestSettings>>({});
+  const [unassigningChildId, setUnassigningChildId] = useState<string | null>(null);
   const [coverBusy, setCoverBusy] = useState(false);
   const [generatedCover, setGeneratedCover] = useState<{ objectUrl: string; file: File } | null>(null);
   const generatedCoverRef = useRef<{ objectUrl: string; file: File } | null>(null);
@@ -523,11 +524,14 @@ export default function DeckEditor({
   const unassign = async (childId: string) => {
     if (!window.confirm(messages.decks.unassignConfirm)) return;
     setError(null);
+    setUnassigningChildId(childId);
     try {
       await apiFetch("DELETE", `/api/v1/parent/assignments/${childId}/${deckId}`);
       await load();
     } catch (cause) {
       setError(errorMessage(cause));
+    } finally {
+      setUnassigningChildId(null);
     }
   };
 
@@ -825,7 +829,7 @@ export default function DeckEditor({
               <AssignmentTestGoalFields {...assignmentSettings(child.id)} onChange={value => setAssignSettings(current => ({ ...current, [child.id]: value }))} />
             </div>
           ))}
-          <DeckAssignmentsList assignments={deck.assignments} onUnassign={unassign} />
+          <DeckAssignmentsList assignments={deck.assignments} onUnassign={unassign} busyChildId={unassigningChildId} />
         </section>
       )}
     </section>

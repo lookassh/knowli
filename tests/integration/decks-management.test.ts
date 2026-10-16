@@ -9,6 +9,7 @@ import {
   createServices,
   editDraft,
   enqueueDeckGeneration,
+  getProgress,
   listDecks,
   omitRevisionAsset,
   publishDraft,
@@ -131,7 +132,8 @@ describe("zarządzanie zestawami i przypisaniami (integracja)", () => {
     const { deckId, versionId } = await publishedDeck(services);
 
     await upsertAssignment(services, ala, deckId, "2026-10-14");
-    await upsertAssignment(services, bartek, deckId, null);
+    await upsertAssignment(services, bartek, deckId, "2026-10-25");
+    expect((await getProgress(services, bartek, deckId)).testDate).toBe("2026-10-25");
 
     // 1. Usunięcie nieistniejącego przypisania rzuca not_found
     await expectAppError(
@@ -173,13 +175,15 @@ describe("zarządzanie zestawami i przypisaniami (integracja)", () => {
     expect(rowsAfterBartek).toHaveLength(1);
     expect(rowsAfterBartek[0]?.active).toBe(false);
 
-    // 4. readDeck i listDecks nie zwracają nieaktywnych przypisań
+    // 4. readDeck, listDecks i getProgress nie zwracają nieaktywnych przypisań / dat
     const deckDto = await readDeck(services, deckId);
     expect(deckDto.assignments).toHaveLength(0);
 
     const decksList = await listDecks(services);
     const summary = decksList.find((d) => d.deckId === deckId);
     expect(summary?.assignedChildren).toEqual([]);
+
+    expect((await getProgress(services, bartek, deckId)).testDate).toBeNull();
 
     // 5. Reaktywacja przez upsertAssignment
     await upsertAssignment(services, bartek, deckId, "2026-11-01");

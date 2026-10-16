@@ -42,7 +42,7 @@ export async function getProgress(services: Services, childId: string, deckId: s
   const assignment = (await services.db
     .select({ testDate: assignments.testDate })
     .from(assignments)
-    .where(and(eq(assignments.childId, child), eq(assignments.deckId, deck))))[0];
+    .where(and(eq(assignments.childId, child), eq(assignments.deckId, deck), eq(assignments.active, true))))[0];
   const revisionIds = await readDeckRevisionIds(services.db, deck);
   const { confusions, pronunciationScores, history } = revisionIds.length
     ? await readChildEvidence(services, child, revisionIds)
