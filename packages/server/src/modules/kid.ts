@@ -123,7 +123,6 @@ export async function listKidDecks(services: Services, childId: string, options:
     : [];
 
   const progressByRevision = new Map<string, Array<SkillSnapshot & { skill: Skill }>>();
-  const independentlyRecalledRevisions = new Set<string>();
   for (const row of progressRows) {
     const list = progressByRevision.get(row.revisionId) ?? [];
     list.push({
@@ -133,9 +132,6 @@ export async function listKidDecks(services: Services, childId: string, options:
       streak: row.streak ?? 0,
     });
     progressByRevision.set(row.revisionId, list);
-    if (row.skill === "recall" && row.status === "mastered") {
-      independentlyRecalledRevisions.add(row.revisionId);
-    }
   }
   const now = services.clock.now().toISOString();
   await ensureLearningPolicy(services.db);
@@ -160,6 +156,15 @@ export async function listKidDecks(services: Services, childId: string, options:
       }
     }
     progressByRevision.set(snapshot.itemRevisionId, reconstructed);
+  }
+  const independentlyRecalledRevisions = new Set<string>();
+  for (const [revisionId, skillSnapshots] of progressByRevision.entries()) {
+    const isMastered = child.canRead
+      ? skillSnapshots.some((s) => s.skill === "recall" && s.status === "mastered")
+      : skillSnapshots.some((s) => (s.skill === "listening" || s.skill === "recall") && s.status === "mastered");
+    if (isMastered) {
+      independentlyRecalledRevisions.add(revisionId);
+    }
   }
   const itemsByVersion = new Map<string, DeckWorkloadItem[]>();
   for (const revision of revisions) {

@@ -330,4 +330,61 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
       method: "POST", headers: { "content-type": "application/json" }, body: "{}",
     }))).status).toBe(409);
   });
+
+  it("dla dziecka nieczytającego liczy gwiazdki z opanowanego słuchania lub recall, a dla czytającego wyłącznie z recall", async () => {
+    const nonReader = await createChild(services, { displayName: "Jaś", avatarKey: "fox", canRead: false });
+    const reader = await createChild(services, { displayName: "Zosia", avatarKey: "bear", canRead: true });
+
+    const draft = await createDraft(services, {
+      title: "Zwierzęta", vocabularyFormat: "picture",
+      items: [
+        { source: "pies", target: "dog", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "image", visualData: { imagePrompt: "A friendly dog" } },
+        { source: "kot", target: "cat", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "image", visualData: { imagePrompt: "A cute cat" } },
+      ],
+    });
+    await reconcileDraftAssets(services, draft.id);
+    for (let pass = 0; pass < 6; pass += 1) if ((await runDueGenerationWork(services)).processed === 0) break;
+    await publishDraft(services, draft.id, 1);
+    await upsertAssignment(services, nonReader.id, draft.deckId, null);
+    await upsertAssignment(services, reader.id, draft.deckId, null);
+
+    const revisions = (await pool.query<{ id: string }>(
+      "select id from learning_app.item_revisions where deck_version_id = $1 order by position", [draft.id],
+    )).rows;
+
+    const skillVersions = (await pool.query<{ item_revision_id: string; skill: string; skill_version_id: string }>(
+      "select item_revision_id, skill, skill_version_id from learning_app.item_revision_skills where item_revision_id = any($1)",
+      [[revisions[0]!.id, revisions[1]!.id]],
+    )).rows;
+
+    const dogListening = skillVersions.find((s) => s.item_revision_id === revisions[0]!.id && s.skill === "listening")!.skill_version_id;
+    const catListening = skillVersions.find((s) => s.item_revision_id === revisions[1]!.id && s.skill === "listening")!.skill_version_id;
+    const catRecall = skillVersions.find((s) => s.item_revision_id === revisions[1]!.id && s.skill === "recall")!.skill_version_id;
+
+    await pool.query(
+      `insert into learning_app.child_skill_progress(child_id, skill_version_id, status, independent_success_streak, projection_version)
+       values ($1, $2, 'mastered', 3, 'test'), ($1, $3, 'mastered', 3, 'test'), ($1, $4, 'mastered', 3, 'test')`,
+      [nonReader.id, dogListening, catListening, catRecall],
+    );
+    await pool.query(
+      `insert into learning_app.child_skill_progress(child_id, skill_version_id, status, independent_success_streak, projection_version)
+       values ($1, $2, 'mastered', 3, 'test'), ($1, $3, 'mastered', 3, 'test')`,
+      [reader.id, dogListening, catRecall],
+    );
+
+    const [nonReaderDeck] = await listKidDecks(services, nonReader.id);
+    const [readerDeck] = await listKidDecks(services, reader.id);
+
+    expect(nonReaderDeck).toMatchObject({
+      deckId: draft.deckId,
+      itemCount: 2,
+      independentlyRecalledCount: 2,
+    });
+
+    expect(readerDeck).toMatchObject({
+      deckId: draft.deckId,
+      itemCount: 2,
+      independentlyRecalledCount: 1,
+    });
+  });
 });
