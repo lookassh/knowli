@@ -14,7 +14,7 @@ function colorValue(data: Record<string, unknown> | undefined): string | null {
 
 function countValue(data: Record<string, unknown> | undefined): number | null {
   const count = data?.count;
-  return typeof count === "number" && Number.isInteger(count) && count >= 1 && count <= 50
+  return typeof count === "number" && Number.isInteger(count) && count >= 0 && count <= 50
     ? count
     : null;
 }

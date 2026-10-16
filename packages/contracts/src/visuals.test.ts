@@ -17,6 +17,22 @@ describe("deterministic visual data contract", () => {
         visualData: { count: 11 },
       }).success,
     ).toBe(true);
+    expect(
+      VocabularyItemInputSchema.safeParse({
+        ...base,
+        target: "zero",
+        visualType: "number",
+        visualData: { count: 0 },
+      }).success,
+    ).toBe(true);
+    expect(
+      VocabularyItemInputSchema.safeParse({
+        ...base,
+        target: "0",
+        visualType: "number",
+        visualData: { count: 0 },
+      }).success,
+    ).toBe(true);
   });
 
   it("rejects visual data whose count cannot represent the target quantity", () => {

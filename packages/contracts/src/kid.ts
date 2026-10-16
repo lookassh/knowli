@@ -54,7 +54,7 @@ export type ChoiceOption = z.infer<typeof ChoiceOptionSchema>;
 export const MeaningVisualSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("image"), imageAssetId: UuidSchema }).strict(),
   z.object({ kind: z.literal("color"), color: z.string().regex(/^#[0-9a-f]{6}$/) }).strict(),
-  z.object({ kind: z.literal("number"), count: z.number().int().min(1).max(50) }).strict(),
+  z.object({ kind: z.literal("number"), count: z.number().int().min(0).max(50) }).strict(),
 ]);
 export type MeaningVisual = z.infer<typeof MeaningVisualSchema>;
 

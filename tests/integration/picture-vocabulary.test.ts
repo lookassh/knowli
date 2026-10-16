@@ -87,8 +87,8 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
       title: "Liczby 0–20", vocabularyFormat: "picture",
       items: numbers.map((target, index) => ({ source: `liczba ${index}`, target,
         acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" },
-        ...(index === 0 ? { visualType: "image" as const, visualData: { imagePrompt: "An empty basket for zero" } }
-          : { visualType: "number" as const, visualData: { count: index } }) })),
+        visualType: "number" as const, visualData: { count: index },
+      })),
     });
     await reconcileDraftAssets(services, draft.id);
     for (let pass = 0; pass < 10; pass++) if ((await runDueGenerationWork(services)).processed === 0) break;
