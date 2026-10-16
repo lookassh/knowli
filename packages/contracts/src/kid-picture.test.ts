@@ -14,8 +14,10 @@ describe("kontrakty zestawu obrazkowego", () => {
     const meaning = (kid as typeof kid & { MeaningVisualSchema: { safeParse: (value: unknown) => { success: boolean } } }).MeaningVisualSchema;
     expect(meaning.safeParse({ kind: "image", imageAssetId: id }).success).toBe(true);
     expect(meaning.safeParse({ kind: "color", color: "#ff0000" }).success).toBe(true);
+    expect(meaning.safeParse({ kind: "number", count: 0 }).success).toBe(true);
     expect(meaning.safeParse({ kind: "number", count: 50 }).success).toBe(true);
     expect(meaning.safeParse({ kind: "image", imageAssetId: "x" }).success).toBe(false);
+    expect(meaning.safeParse({ kind: "number", count: -1 }).success).toBe(false);
     expect(meaning.safeParse({ kind: "number", count: 51 }).success).toBe(false);
     expect(ChildInputSchema.parse({ displayName: "Ala", avatarKey: "fox" })).toMatchObject({ canRead: true });
     expect(ChildPatchSchema.safeParse({ canRead: "false" }).success).toBe(false);

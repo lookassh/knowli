@@ -85,7 +85,7 @@ export const ColorVisualDataSchema = z.object({
   color: z.string().regex(/^#[\da-f]{6}$/i),
 }).strict();
 export const NumberVisualDataSchema = z.object({
-  count: z.number().int().min(1).max(50),
+  count: z.number().int().min(0).max(50),
 }).strict();
 export const SequenceVisualDataSchema = z.object({
   position: z.number().int().min(1).max(12),
@@ -104,6 +104,7 @@ const WEEKDAY_POSITIONS: Record<string, number> = {
 };
 
 const ENGLISH_NUMBER_VALUES: Record<string, number> = {
+  zero: 0,
   one: 1,
   two: 2,
   three: 3,
@@ -161,7 +162,7 @@ function knownEnglishNumber(target: string | undefined): number | undefined {
   if (!word) return undefined;
   if (/^\d+$/.test(word)) {
     const numeric = Number(word);
-    return Number.isInteger(numeric) && numeric >= 1 && numeric <= 50 ? numeric : undefined;
+    return Number.isInteger(numeric) && numeric >= 0 && numeric <= 50 ? numeric : undefined;
   }
   const exact = ENGLISH_NUMBER_VALUES[word];
   if (exact !== undefined) return exact;
