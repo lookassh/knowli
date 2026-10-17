@@ -44,14 +44,23 @@ export function useLearningSession(deps: {
   useEffect(() => {
     const onVisibility = () => {
       if (document.visibilityState === "visible") {
-        controller.resumeRewardActivity();
+        void controller.refreshProfiles();
+        if (document.hasFocus()) controller.resumeRewardActivity();
         void controller.refreshStep();
       } else { controller.pauseRewardActivity("background"); controller.cancelRecording(); }
     };
     const onBlur = () => { controller.pauseRewardActivity("blur"); controller.cancelRecording(); };
-    const onFocus = () => controller.resumeRewardActivity();
+    const onFocus = () => {
+      if (document.visibilityState !== "visible" || !document.hasFocus()) return;
+      controller.resumeRewardActivity();
+      void controller.refreshProfiles();
+    };
     const onOffline = () => { controller.pauseRewardActivity("offline"); controller.cancelRecording(); controller.markOffline(); };
-    const onOnline = () => void controller.retry().then(() => controller.resumeRewardActivity());
+    const onOnline = () => {
+      void controller.retry().then(() => {
+        if (document.visibilityState === "visible" && document.hasFocus()) controller.resumeRewardActivity();
+      });
+    };
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("blur", onBlur);
     window.addEventListener("focus", onFocus);

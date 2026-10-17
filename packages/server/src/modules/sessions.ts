@@ -61,6 +61,7 @@ import { createMockTestPlan, issueMockTestTask, closeMockTest } from "./mock-tes
 import { assertVocabularyDeck, readVersionDeckKind, type DeckKind } from "./deck-kind";
 import {
   buildLessonSessionContext,
+  dailyRoundLessonCandidate,
   hasSchedulableDailyRoundTask,
   issueNextLessonTask,
   lessonTaskCounts,
@@ -74,7 +75,7 @@ import {
 import { buildLessonSummaryObjectives } from "./lessons/lesson-attempts";
 import { completeDisabledVoiceTask } from "./voice-task-lifecycle";
 import { finishRewardActivitySession, readSessionRewardDelta, settleRewardActivity } from "./reward-activity";
-import { hasDailyRoundForDate, readDailyRoundPool } from "./daily-round";
+import { hasDailyRoundForDate, readDailyRoundPool, type DailyRoundPool } from "./daily-round";
 import { localDateAt, validRewardTimezone } from "../domain/reward-activity";
 
 /** Okno wznowienia aktywnej sesji od ostatniego zdarzenia (arch §9.1). */
@@ -105,6 +106,9 @@ export function mapStatus(dbStatus: string): ProgressStatus {
 }
 
 async function lockSession(tx: Tx, sessionId: string) {
+  const [identity] = await tx.select({ childId: learningSessions.childId }).from(learningSessions).where(eq(learningSessions.id, sessionId));
+  if (!identity) throw new AppError("not_found");
+  await tx.select({ id: childProfiles.id }).from(childProfiles).where(eq(childProfiles.id, identity.childId)).for("key share");
   const session = (
     await tx.select().from(learningSessions).where(eq(learningSessions.id, sessionId)).for("update")
   )[0];
@@ -241,7 +245,7 @@ export async function startSession(services: Services, input: SessionInput): Pro
   const mode = valid.mode ?? "training";
   return services.db.transaction(async (tx) => {
     const child = (
-      await tx.select({ id: childProfiles.id, canRead: childProfiles.canRead }).from(childProfiles).where(eq(childProfiles.id, valid.childId)).for("update")
+      await tx.select({ id: childProfiles.id, canRead: childProfiles.canRead }).from(childProfiles).where(eq(childProfiles.id, valid.childId)).for("no key update")
     )[0];
     if (!child) {
       throw new AppError("not_found");
@@ -291,7 +295,7 @@ export async function startSession(services: Services, input: SessionInput): Pro
     const deckKind = deck.kind as DeckKind;
 
     const dailyRoundPool = mode === "daily_round"
-      ? await readDailyRoundPool(tx, valid.childId, valid.deckId, now)
+      ? await readEligibleDailyRoundPool(services, tx, valid.childId, valid.deckId, now)
       : null;
     if (mode === "daily_round" && !dailyRoundPool) throw new AppError("validation", { details: { reason: "daily_round_unavailable" } });
     if (dailyRoundPool && await hasDailyRoundForDate(tx, valid.childId, dailyRoundPool.date)) {
@@ -391,6 +395,40 @@ export async function startSession(services: Services, input: SessionInput): Pro
     }
     return sessionDto(tx, row!, false);
   });
+}
+
+/** Read-only preflight shared by the deck list and session start. Filter before
+ * applying the round's three-revision limit so older safe contacts can qualify. */
+export async function readEligibleDailyRoundPool(services: Services, tx: Tx, childId: string, deckId: string, now: Date): Promise<DailyRoundPool | null> {
+  const pool = await readDailyRoundPool(tx, childId, deckId, now);
+  if (!pool) return null;
+  const [child] = await tx.select().from(childProfiles).where(eq(childProfiles.id, childId));
+  const [assignment] = await tx.select().from(assignments).where(and(eq(assignments.childId, childId), eq(assignments.deckId, deckId), eq(assignments.active, true)));
+  const [deck] = await tx.select().from(decks).where(eq(decks.id, deckId));
+  const [version] = await tx.select().from(deckVersions).where(eq(deckVersions.id, pool.deckVersionId));
+  if (!child || !assignment || !deck || deck.archivedAt || !version) return null;
+  if (!child.canRead && (deck.kind !== "vocabulary" || version.vocabularyFormat !== "picture" || !(await readUiAudio(services)).ready)) return null;
+  const contextBase = deck.kind === "lesson"
+    ? await buildLessonSessionContext(tx, { childId, deckVersionId: version.id, timezone: pool.timezone, testDate: assignment.testDate, now })
+    : { timezone: pool.timezone, testDate: assignment.testDate, previousContact: await previousContactSnapshot(tx, childId, version.id, now), reservations: [], settledChecks: [] };
+  const pending = [...pool.revisionIds];
+  const selected: string[] = [];
+  const session: typeof learningSessions.$inferSelect = {
+    id: randomUUID(), childId, assignmentId: assignment.id, deckId, deckVersionId: version.id,
+    policyId: child.policyId ?? CURRENT_POLICY_ID, microphoneEnabled: false, mode: "daily_round", dailyRoundDate: pool.date,
+    mockTestPlan: null, state: "active", taskBudget: 3, startedAt: now, endedAt: null,
+    context: { ...contextBase, canRead: child.canRead, vocabularyFormat: version.vocabularyFormat, microphoneDisabledTaskIds: [] },
+  };
+  while (pending.length && selected.length < 3) {
+    session.context = { ...session.context, dailyRoundRevisionIds: pending };
+    const candidate = deck.kind === "lesson"
+      ? await dailyRoundLessonCandidate(services, tx, session, now)
+      : (await planNextTask(tx, session, now, 3, 0))?.plan.itemRevisionId ?? null;
+    if (!candidate) break;
+    selected.push(candidate);
+    pending.splice(pending.indexOf(candidate), 1);
+  }
+  return selected.length ? { ...pool, revisionIds: selected } : null;
 }
 
 export interface PlannedItem {
@@ -1218,7 +1256,17 @@ export async function endSession(services: Services, sessionId: string): Promise
     let endedAt = session.endedAt;
     if (state === "active") {
       endedAt = services.clock.now();
-      state = "completed";
+      if (session.mode === "daily_round") {
+        const roundTasks = await tx.select({ state: sessionTasks.state }).from(sessionTasks)
+          .where(eq(sessionTasks.sessionId, id));
+        // A round is complete only after its full promised budget has been
+        // issued and every issued step has reached a terminal state.
+        state = roundTasks.length >= session.taskBudget && roundTasks.every((task) => task.state !== "issued")
+          ? "completed"
+          : "ended";
+      } else {
+        state = "completed";
+      }
       await tx
         .update(learningSessions)
         .set({ state, endedAt })

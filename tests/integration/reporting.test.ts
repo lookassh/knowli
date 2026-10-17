@@ -12,6 +12,7 @@ import {
   getProgress,
   nextTask,
   publishDraft,
+  removeAssignment,
   startSession,
   submitAttempt,
   submitSpeechAttempt,
@@ -292,6 +293,17 @@ describe("panel postępów rodzica (integracja)", () => {
     await expectAppError(getProgress(services, randomUUID(), deckId), "not_found");
     const draftOnly = await createDraft(services, { title: "Szkic", items: DAYS.slice(0, 2).map(vocabItem) });
     await expectAppError(getProgress(services, childA, draftOnly.deckId), "not_found");
+  });
+
+  it("nie pokazuje terminu sprawdzianu po odpięciu zestawu z zachowaną historią", async () => {
+    const { deckId } = await publishDeckWithAssignment(services, [childA], DAYS.slice(0, 2), "2026-10-20");
+    const session = await startSession(services, { childId: childA, deckId, microphoneEnabled: false });
+    await removeAssignment(services, childA, deckId);
+
+    const progress = await getProgress(services, childA, deckId);
+    expect(progress.testDate).toBeNull();
+    expect((await query<{ active: boolean }>("select active from learning_app.assignments where child_id=$1 and deck_id=$2", [childA, deckId]))[0]?.active).toBe(false);
+    expect((await query<{ id: string }>("select id from learning_app.learning_sessions where id=$1", [session.sessionId])).length).toBe(1);
   });
 
   it("pomyłka zachowuje kierunek: Thursday → Tuesday nie tworzy pary w drugą stronę", async () => {

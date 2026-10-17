@@ -383,7 +383,11 @@ async function finalizeAttemptRow(
     throw new AppError("conflict", { message: "attempt is already finalized" });
   }
 
-  const workAccepted = modality !== "skip" && Object.values(grade.skills).some((skill) => skill.outcome !== "unevaluated");
+  // Reward submitted work even when text grading is unavailable. Audio with no
+  // reliable assessed result (silence/uncertain STT/provider failure) is not an
+  // accepted response and must not settle the task's pending activity time.
+  const workAccepted = modality !== "skip" && (modality !== "audio"
+    || Object.values(grade.skills).some((skill) => skill.outcome !== "unevaluated"));
   if (workAccepted) {
     await settleRewardActivity(tx, {
       childId: session.childId, sessionId: session.id, taskId: task.id,

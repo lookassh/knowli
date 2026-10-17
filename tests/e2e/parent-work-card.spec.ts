@@ -22,7 +22,7 @@ test("karta pracy odświeża raport po zmianie dziecka i daty", async ({ page })
       requested.push({ childId, date });
       await firstReportGate;
       body = {
-        childId, date, creditedSeconds: childId === firstChild ? 90 : 180, sessions: [],
+        childId, date: date ?? "2026-10-16", creditedSeconds: childId === firstChild ? 90 : 180, sessions: [],
         xboxRequests: [],
         dailyRound: { state: null, sessionId: null, deckTitle: null, steps: null, answered: null },
       };
@@ -36,6 +36,8 @@ test("karta pracy odświeża raport po zmianie dziecka i daty", async ({ page })
   await page.getByTestId("tab-work-card").click();
   await expect(page.getByRole("button", { name: "Ala" })).toBeVisible();
   await expect(page.locator(".pp-work-card .pp-loading")).toHaveText("Wczytuję kartę pracy…");
+  // Clicking the selected child must not invalidate the in-flight response.
+  await page.getByRole("button", { name: "Ala" }).click();
   releaseFirstReport();
   await expect(page.getByText("1 min 30 s")).toBeVisible();
   await expect(page.getByText("Brak zapisanej pracy tego dnia.")).toBeVisible();
@@ -69,7 +71,7 @@ test("oczekujące zgłoszenie Xbox pozostaje widoczne poza wybranym dniem i otwi
       return route.fulfill({ json: { requestId, status, requestedAt: "2026-10-14T10:00:00.000Z", localDate: "2026-10-14", blockNumber: 1, pointsCost: 30, xboxMinutes: 15 } });
     }
     if (url.pathname.endsWith("/work-card")) {
-      const date = url.searchParams.get("date")!;
+      const date = url.searchParams.get("date") ?? "2026-10-16";
       dates.push(date);
       return route.fulfill({ json: {
         childId: firstChild, date, creditedSeconds: 0, sessions: [],
@@ -116,7 +118,7 @@ test("odrzucenie zgłoszenia wysyła właściwą decyzję i pokazuje status odrz
       return route.fulfill({ json: { requestId, status, requestedAt: "2026-10-14T10:00:00.000Z", timezone: "Europe/Warsaw", localDate: "2026-10-14", blockNumber: 1, creditedSeconds: 1800, pointsCost: 30, xboxMinutes: 15 } });
     }
     if (url.pathname.endsWith("/work-card")) {
-      const date = url.searchParams.get("date")!;
+      const date = url.searchParams.get("date") ?? "2026-10-16";
       return route.fulfill({ json: {
         childId: firstChild, date, creditedSeconds: 0, sessions: [],
         xboxRequests: [{ requestId, status, requestedAt: "2026-10-14T10:00:00.000Z", timezone: "Europe/Warsaw", localDate: "2026-10-14", blockNumber: 1, creditedSeconds: 1800, pointsCost: 30, xboxMinutes: 15 }],
@@ -157,7 +159,7 @@ test("błąd odrzuconej decyzji nie przechodzi na kartę po zmianie wyboru", asy
     }
     if (url.pathname.endsWith("/work-card")) {
       const childId = url.searchParams.get("childId")!;
-      const date = url.searchParams.get("date")!;
+      const date = url.searchParams.get("date") ?? "2026-10-16";
       return route.fulfill({ json: {
         childId, date, creditedSeconds: 0, sessions: [],
         xboxRequests: childId === firstChild

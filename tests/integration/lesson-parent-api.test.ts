@@ -139,6 +139,27 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
     return { services, cookie: token };
   }
 
+  it("hides inactive assignments from the lesson editor response", async () => {
+    const fakes = await fakeGeneration(); disposers.push(fakes.dispose);
+    const { services, cookie } = await freshParent(fakes);
+    const { deckId } = await createAndGenerate(services, cookie);
+    const draft = LessonDeckDtoSchema.parse(await (await call(services, "GET", `lessons/${deckId}`, { cookie })).json()).draft!;
+    expect((await call(services, "POST", `lesson-drafts/${draft.id}/publish`, {
+      cookie, body: { expectedEditNumber: draft.editNumber },
+    })).status).toBe(200);
+    const child = await createChild(services, { displayName: "Ala", avatarKey: "cat" });
+    expect((await call(services, "PUT", `assignments/${child.id}/${deckId}`, {
+      cookie, body: { testDate: null },
+    })).status).toBe(204);
+
+    const before = LessonDeckDtoSchema.parse(await (await call(services, "GET", `lessons/${deckId}`, { cookie })).json());
+    expect(before.assignments.map(({ childId }) => childId)).toContain(child.id);
+
+    await pool.query("update learning_app.assignments set active = false where child_id = $1 and deck_id = $2", [child.id, deckId]);
+    const after = LessonDeckDtoSchema.parse(await (await call(services, "GET", `lessons/${deckId}`, { cookie })).json());
+    expect(after.assignments.map(({ childId }) => childId)).not.toContain(child.id);
+  });
+
   it("archiwizuje szkic lekcji przez wspólny endpoint, idempotentnie i tylko z autoryzacją rodzica", async () => {
     const fakes = await fakeGeneration(); disposers.push(fakes.dispose);
     const { services, cookie } = await freshParent(fakes);

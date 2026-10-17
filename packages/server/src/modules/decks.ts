@@ -30,6 +30,7 @@ import {
   generationRuns,
   itemRevisions,
   itemRevisionSkills,
+  learningSessions,
   learningItems,
   learningSessions,
   mediaAssets,
@@ -878,6 +879,19 @@ export async function upsertAssignment(
     }
     throw error;
   }
+}
+
+/** Wycofuje przypisanie z nowych sesji i zachowuje historię zakończonych sesji. */
+export async function removeAssignment(services: Services, childId: string, deckId: string): Promise<void> {
+  const cId = z.uuid().parse(childId);
+  const dId = z.uuid().parse(deckId);
+  const existing = (await services.db.select({ id: assignments.id, active: assignments.active })
+    .from(assignments).where(and(eq(assignments.childId, cId), eq(assignments.deckId, dId))))[0];
+  if (!existing || !existing.active) throw new AppError("not_found");
+  const sessionCount = (await services.db.select({ count: sql<number>`count(*)::int` }).from(learningSessions)
+    .where(eq(learningSessions.assignmentId, existing.id)))[0]?.count ?? 0;
+  if (sessionCount === 0) await services.db.delete(assignments).where(eq(assignments.id, existing.id));
+  else await services.db.update(assignments).set({ active: false }).where(eq(assignments.id, existing.id));
 }
 
 /** Wycofanie zestawu z nowych sesji; idempotentne, historia zostaje. */

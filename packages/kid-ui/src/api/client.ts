@@ -72,15 +72,24 @@ export function createKidApiClient(options: KidClientOptions = {}): KidApi {
   const doFetch = options.fetchImpl ?? ((input: RequestInfo | URL, init?: RequestInit) => fetch(input, init));
 
   async function request<T>(path: string, init: JsonInit, parse: (body: unknown) => T): Promise<T> {
-    const response = await doFetch(base + path, init);
-    if (response.status === 204) {
-      return undefined as T;
-    }
-    const body = await response.json().catch(() => null);
-    if (!response.ok) {
-      throw toKidApiError(body);
-    }
-    return parse(body);
+    const controller = new AbortController();
+    const timeoutMs = path.endsWith("/activity") || path.endsWith("/activity/playback-authorization") ? 2_000 : 30_000;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new TypeError("Kid API request timed out"));
+        controller.abort();
+      }, timeoutMs);
+    });
+    const perform = async (): Promise<T> => {
+      const response = await doFetch(base + path, { ...init, signal: controller.signal });
+      if (response.status === 204) return undefined as T;
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw toKidApiError(body);
+      return parse(body);
+    };
+    try { return await Promise.race([perform(), timeout]); }
+    finally { clearTimeout(timer); }
   }
 
   function toKidApiError(body: unknown): KidApiError {

@@ -12,6 +12,7 @@ import {
   listKidDecks,
   nextTask,
   publishDraft,
+  readParentWorkCard,
   recordEvent,
   startSession,
   submitAttempt,
@@ -551,6 +552,23 @@ describe("cykl życia sesji (integracja)", () => {
     expect(await query<{ count: string }>(
       "select count(*)::text as count from learning_app.learning_sessions where child_id=$1 and mode='daily_round'", [childId],
     )).toEqual([{ count: "2" }]);
+  });
+
+  it("pokazuje ręcznie przerwaną rundę jako nieukończoną rodzicowi", async () => {
+    const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 3));
+    const training = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    await issueTrainingContact(services, training.sessionId);
+    await endSession(services, training.sessionId);
+
+    const round = await startSession(services, { childId, deckId, microphoneEnabled: false, mode: "daily_round" });
+    expect(await nextTask(services, round.sessionId)).not.toBeNull();
+    const summary = await endSession(services, round.sessionId);
+    const [{ daily_round_date: date }] = await query<{ daily_round_date: string }>(
+      "select daily_round_date from learning_app.learning_sessions where id=$1", [round.sessionId],
+    );
+
+    expect(summary.state).toBe("ended");
+    expect((await readParentWorkCard(services, { childId, date })).dailyRound.state).toBe("ended");
   });
 
   it("skraca rundę do liczby bezpiecznych kontaktów w małej puli", async () => {

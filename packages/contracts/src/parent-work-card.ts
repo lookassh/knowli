@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { DaySchema, InstantSchema, UuidSchema } from "./common";
 
-export const ParentWorkCardQuerySchema = z.object({ childId: UuidSchema, date: DaySchema }).strict();
+export const ParentWorkCardQuerySchema = z.object({ childId: UuidSchema, date: DaySchema.optional() }).strict();
 export type ParentWorkCardQuery = z.infer<typeof ParentWorkCardQuerySchema>;
 
 const NonNegativeInt = z.number().int().nonnegative();

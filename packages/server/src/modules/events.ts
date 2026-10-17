@@ -15,6 +15,7 @@ import type { Services } from "../config";
 import type { Tx } from "../db/client";
 import {
   deckVersions,
+  childProfiles,
   eventExposures,
   itemRevisions,
   learningEvents,
@@ -39,6 +40,9 @@ export interface SessionContextShape {
   reservations: string[];
   /** Klucze sprawdzeń rozliczonych w tej sesji (odpowiedź/pominięcie/podpowiedź). */
   settledChecks: string[];
+  /** Revisions eligible for this day's bounded review round. */
+  dailyRoundRevisionIds?: string[];
+  dailyRoundDate?: string;
   /** Niezmienny wynik jawnego zakończenia, zachowany także przy spóźnionej finalizacji mowy. */
   summary?: SessionSummaryDto;
 }
@@ -58,6 +62,10 @@ export function contextOf(session: { context: Record<string, unknown> }): Sessio
     previousContact: raw.previousContact ?? {},
     reservations: raw.reservations ?? [],
     settledChecks: raw.settledChecks ?? [],
+    ...(Array.isArray(raw.dailyRoundRevisionIds)
+      ? { dailyRoundRevisionIds: raw.dailyRoundRevisionIds.filter((id): id is string => typeof id === "string") }
+      : {}),
+    ...(typeof raw.dailyRoundDate === "string" ? { dailyRoundDate: raw.dailyRoundDate } : {}),
     ...(summary.success ? { summary: summary.data } : {}),
     ...(report.success ? { mockTestReport: report.data } : {}),
   };
@@ -119,6 +127,9 @@ export async function lockTaskWithSession(tx: Tx, taskId: string) {
   if (!task) {
     throw new AppError("not_found");
   }
+  // Take the FK-compatible child lock before the session, including when a
+  // concurrent profile deletion is about to cascade into its sessions.
+  await tx.select({ id: childProfiles.id }).from(childProfiles).where(eq(childProfiles.id, task.childId)).for("key share");
   const session = (
     await tx.select().from(learningSessions).where(eq(learningSessions.id, task.sessionId)).for("update")
   )[0]!;

@@ -61,8 +61,10 @@ describe("Visual", () => {
     ).toBeNull();
   });
 
-  it("renders no guessed artwork when visual data is invalid", () => {
-    expect(Visual({ text: "Eleven", visualType: "number", visualData: { count: 0 } })).toBeNull();
+  it("accepts zero as a valid number visual", () => {
+    const visual = Visual({ text: "Zero", visualType: "number", visualData: { count: 0 } }) as ReactElement<{ count: number; label: string }>;
+    expect(visual.type).toBe(NumberVisual);
+    expect(visual.props).toEqual({ count: 0, label: "Zero" });
   });
 
   it("does not draw the wrong quantity for a known English number word", () => {

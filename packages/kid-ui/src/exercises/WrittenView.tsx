@@ -40,7 +40,7 @@ export function WrittenView({ task, busy, recording, recordingPhase, microphoneR
               ref={inputRef}
               data-testid="kid-input"
               value={text}
-              onChange={(event) => setText(event.target.value)}
+              onChange={(event) => { setText(event.target.value); handlers.onInteraction(); }}
               placeholder={messages.kid.typeWord}
               autoComplete="off"
               autoCorrect="off"

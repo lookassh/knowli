@@ -4,6 +4,18 @@ import { createKidApiClient, KidApiError } from "./client";
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
 describe("Kid API picture support transport", () => {
+  it("bounds hanging activity transport and aborts the request", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchImpl = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) => new Promise<Response>(() => undefined));
+      const api = createKidApiClient({ fetchImpl });
+      const pending = api.signalRewardActivity({ sessionId: "11111111-1111-4111-8111-111111111111", taskId: "22222222-2222-4222-8222-222222222222", streamId: "33333333-3333-4333-8333-333333333333", sequence: 1, kind: "takeover" });
+      const assertion = expect(pending).rejects.toBeInstanceOf(TypeError);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(fetchImpl.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+      await assertion;
+    } finally { vi.useRealTimers(); }
+  });
   it("submits an Xbox pack request through the validated Kid API route", async () => {
     const requestId = "11111111-1111-4111-8111-111111111111";
     const childId = "22222222-2222-4222-8222-222222222222";

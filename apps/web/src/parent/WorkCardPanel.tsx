@@ -5,12 +5,6 @@ import { messages, type ChildDto, type ParentWorkCardDto } from "@learning/contr
 import { apiFetch, errorMessage } from "./api";
 import { avatarEmoji } from "./avatars";
 
-function todayLocal(): string {
-  const parts = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
-  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}`;
-}
-
 function duration(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const rest = seconds % 60;
@@ -44,7 +38,8 @@ function stepTypeLabel(type: string): string {
 
 export default function WorkCardPanel({ childrenList, onAuthExpired }: { childrenList: ChildDto[]; onAuthExpired: () => void }) {
   const [childId, setChildId] = useState(childrenList[0]?.id ?? "");
-  const [date, setDate] = useState(todayLocal);
+  // Empty on first load: the API supplies today's date in the family timezone.
+  const [date, setDate] = useState("");
   const [report, setReport] = useState<ParentWorkCardDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -60,13 +55,20 @@ export default function WorkCardPanel({ childrenList, onAuthExpired }: { childre
   }, [childrenList, childId]);
 
   const load = useCallback(async () => {
-    if (!childId || !date) { setReport(null); setError(null); setLoading(false); requestSeq.current++; return; }
+    if (!childId) { setReport(null); setError(null); setLoading(false); requestSeq.current++; return; }
     const seq = ++requestSeq.current;
     setLoading(true); setError(null);
     try {
-      const query = new URLSearchParams({ childId, date });
+      const query = new URLSearchParams({ childId });
+      if (date) query.set("date", date);
       const result = await apiFetch<ParentWorkCardDto>("GET", `/api/v1/parent/work-card?${query}`);
-      if (seq === requestSeq.current) setReport(result);
+      if (seq === requestSeq.current) {
+        setReport(result);
+        if (!date) {
+          selection.current = { childId, date: result.date };
+          setDate(result.date);
+        }
+      }
     } catch (cause) {
       if (seq !== requestSeq.current) return;
       if ((cause as { status?: number }).status === 401) { onAuthExpired(); return; }
@@ -102,6 +104,7 @@ export default function WorkCardPanel({ childrenList, onAuthExpired }: { childre
   };
 
   const selectChild = (nextChildId: string) => {
+    if (nextChildId === childId) return;
     selection.current = { ...selection.current, childId: nextChildId };
     requestSeq.current++;
     setDecisionError(null);

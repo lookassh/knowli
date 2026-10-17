@@ -44,7 +44,7 @@ export function LessonSentenceView({ task, busy, handlers }: ExerciseProps) {
             <input
               data-testid="kid-lesson-input"
               value={text}
-              onChange={(event) => setText(event.target.value)}
+              onChange={(event) => { setText(event.target.value); handlers.onInteraction(); }}
               placeholder={messages.kid.typeWord}
               aria-label={messages.kid.lessonSourceSentence}
               autoComplete="off"

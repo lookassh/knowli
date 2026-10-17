@@ -110,18 +110,19 @@ export async function recordRewardActivitySignal(services: Services, input: Rewa
     if (task.sessionId !== valid.sessionId || task.state !== "issued" || session.state !== "active") {
       throw new AppError("conflict", { message: "reward activity requires the issued task of an active session" });
     }
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${task.childId}::text, 0))`);
     const now = services.clock.now();
     const oldStream = (await tx.select().from(rewardActivityStreams)
       .where(eq(rewardActivityStreams.id, valid.streamId)).for("update"))[0];
     if (oldStream) {
-      if (valid.kind === "takeover" && oldStream.active) {
-        throw new AppError("conflict", { message: "takeover must use a new stream id" });
-      }
-      if (valid.sequence === oldStream.lastSequence) return dto(oldStream);
-      if (valid.sequence < oldStream.lastSequence) throw new AppError("conflict", { message: "reward activity sequence is stale" });
       if (!oldStream.active || oldStream.childId !== task.childId || oldStream.sessionId !== session.id || oldStream.taskId !== task.id) {
         throw new AppError("conflict", { message: "reward activity stream is no longer active for this task" });
       }
+      if (valid.sequence === oldStream.lastSequence) return dto(oldStream);
+      if (valid.kind === "takeover" && oldStream.active) {
+        throw new AppError("conflict", { message: "takeover must use a new stream id" });
+      }
+      if (valid.sequence < oldStream.lastSequence) throw new AppError("conflict", { message: "reward activity sequence is stale" });
       if (valid.sequence !== oldStream.lastSequence + 1) throw new AppError("conflict", { message: "reward activity sequence must increase by one" });
     } else if (valid.sequence !== 1) {
       throw new AppError("conflict", { message: "reward activity stream must start at sequence one" });
@@ -141,7 +142,7 @@ export async function recordRewardActivitySignal(services: Services, input: Rewa
 
     let stream = oldStream;
     if (!stream || valid.kind === "takeover") {
-      if (valid.kind !== "takeover" && stream === null) {
+      if (valid.kind !== "takeover" && !stream) {
         const active = (await tx.select().from(rewardActivityStreams)
           .where(and(eq(rewardActivityStreams.childId, task.childId), eq(rewardActivityStreams.active, true))).for("update"))[0];
         if (active) throw new AppError("conflict", { message: "another device owns the reward activity stream" });
@@ -150,7 +151,9 @@ export async function recordRewardActivitySignal(services: Services, input: Rewa
         const active = (await tx.select().from(rewardActivityStreams)
           .where(and(eq(rewardActivityStreams.childId, task.childId), eq(rewardActivityStreams.active, true))).for("update"))[0];
         if (active) {
-          await closeInterval(tx, active, now, "task_changed");
+          // A takeover may follow a hidden/offline tab whose pause never reached
+          // the server. Do not close its unacknowledged tail at takeover time,
+          // which would otherwise credit time spent away from the lesson.
           await recordPause(tx, active, "task_changed", now);
           await tx.update(rewardActivityStreams).set({ active: false, pausedReason: "task_changed" }).where(eq(rewardActivityStreams.id, active.id));
         }
@@ -167,7 +170,7 @@ export async function recordRewardActivitySignal(services: Services, input: Rewa
       stream = (await tx.select().from(rewardActivityStreams).where(eq(rewardActivityStreams.id, id)))[0]!;
       await recordPause(tx, stream, stream.pausedReason as PauseReason | null, now);
     } else {
-      const idle = now.getTime() >= stream.lastInteractionAt.getTime() + REWARD_ACTIVITY_IDLE_MS;
+      const idle = stream.playbackStartedAt === null && now.getTime() >= stream.lastInteractionAt.getTime() + REWARD_ACTIVITY_IDLE_MS;
       const expired = now.getTime() - stream.lastSignalAt.getTime() > MAX_ACTIVITY_GAP_MS;
       const heartbeatWhilePaused = valid.kind === "heartbeat" && stream.pausedReason !== null;
       if (valid.kind === "playback_start" && stream.playbackStartedAt !== null) {
@@ -395,11 +398,12 @@ export async function readKidRewardSnapshot(services: Services, childId: string,
   const consumedPacks = xboxRequests.filter((row) => row.status === "pending" || row.status === "fulfilled").length;
   const latestRequest = xboxRequests.find((row) => row.status === "pending") ?? xboxRequests.at(-1) ?? null;
   const earnedXboxPacks = [...daily.values()].reduce((sum, milliseconds) => sum + xboxPacksForDay(milliseconds), 0);
+  const pointsToUse = Math.max(0, earnedPoints - consumedPacks * XBOX_PACK_POINTS);
   return {
     earnedPoints,
-    pointsToUse: Math.max(0, earnedPoints - consumedPacks * XBOX_PACK_POINTS),
+    pointsToUse,
     todayCreditedSeconds: Math.floor((daily.get(`${timezone}:${today}`) ?? 0) / 1000),
-    readyXboxPacks: Math.max(0, earnedXboxPacks - consumedPacks),
+    readyXboxPacks: Math.max(0, Math.min(earnedXboxPacks - consumedPacks, Math.floor(pointsToUse / XBOX_PACK_POINTS))),
     xboxRequest: latestRequest ? xboxRequestDto(latestRequest) : null,
     pointsByDeck,
   };
@@ -409,9 +413,11 @@ export async function readKidRewardSnapshot(services: Services, childId: string,
 export async function requestXboxPack(services: Services, childId: string): Promise<XboxRewardRequestDto> {
   const child = UuidSchema.parse(childId);
   return services.db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${child}::text, 0))`);
-    const profile = (await tx.select({ id: childProfiles.id }).from(childProfiles).where(eq(childProfiles.id, child)).for("update"))[0];
+    const profile = (await tx.select({ id: childProfiles.id }).from(childProfiles).where(eq(childProfiles.id, child)).for("key share"))[0];
     if (!profile) throw new AppError("not_found");
+    // Lock order matches session/task operations: profile row before per-child
+    // advisory lock. This avoids a DELETE-profile queue forming a lock cycle.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${child}::text, 0))`);
 
     const pending = (await tx.select().from(rewardActivityXboxRequests).where(and(
       eq(rewardActivityXboxRequests.childId, child), eq(rewardActivityXboxRequests.status, "pending"),

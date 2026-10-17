@@ -34,7 +34,7 @@ export async function readDailyRoundPool(
   const today = rows.filter(row => localDateAt(row.issuedAt, timezone) === date);
   if (today.length === 0) return null;
   const latest = today[today.length - 1]!;
-  const revisionIds = [...new Set(today.filter(row => row.deckVersionId === latest.deckVersionId).reverse().map(row => row.revisionId))].slice(0, 3);
+  const revisionIds = [...new Set(today.filter(row => row.deckVersionId === latest.deckVersionId).reverse().map(row => row.revisionId))];
   if (revisionIds.length === 0) return null;
   return { date, timezone, deckVersionId: latest.deckVersionId, revisionIds };
 }

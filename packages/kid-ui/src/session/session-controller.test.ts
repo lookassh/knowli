@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { messages } from "@learning/contracts";
-import { KidApiError } from "../api/client";
+import { createKidApiClient, KidApiError } from "../api/client";
 import type {
   AttemptDto,
   DisclosureDto,
@@ -316,14 +316,15 @@ function makeHarness(
   const recorder = makeRecorder(options);
   const media = makeMedia(recorder, options.playGate, options.onStopPlayback, options.failPlaybackBeforeStart);
   const storage = options.storage ?? createMemoryPreferences();
+  const api = makeApi(state);
   const controller = new LearningSessionController({
-    api: makeApi(state),
+    api,
     media,
     storage,
     ...(options.initialChildId === undefined ? {} : { initialChildId: options.initialChildId }),
     pollIntervalMs: 1,
   });
-  return { controller, recorder, media, storage, state };
+  return { controller, recorder, media, storage, state, api };
 }
 
 async function startAtTask(state: ApiState, task: TaskDto, recorderOpts?: { failStartWith?: unknown; startGate?: Promise<void>; playGate?: Promise<void>; onStopPlayback?: () => void; failPlaybackBeforeStart?: boolean; storage?: LocalPreferences; microphone?: boolean }) {
@@ -337,6 +338,126 @@ async function startAtTask(state: ApiState, task: TaskDto, recorderOpts?: { fail
 }
 
 describe("LearningSessionController", () => {
+  it.each(["answer", "presentation"])("locks %s before waiting for activity telemetry", async (operation) => {
+    const task = taskDto("telemetry-gate", operation === "answer" ? { kind: "recall", prompt: "czwartek" } : { kind: "exposure", source: "czwartek", target: "Thursday", audioAssetId: "audio", example: null, exampleAudioAssetId: null, imageAssetId: null, visualType: "none" });
+    const harness = await startAtTask(baseState(), task);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const original = harness.api.signalRewardActivity;
+    vi.spyOn(harness.api, "signalRewardActivity").mockImplementation(async (input) => { await gate; return original(input); });
+    const act = () => operation === "answer" ? harness.controller.answerText("Thursday") : harness.controller.completePresentation();
+    const first = act();
+    const second = act();
+    expect(harness.controller.getScreen()).toMatchObject({ busy: true });
+    release();
+    await Promise.all([first, second]);
+    expect(operation === "answer" ? harness.state.submissions : harness.state.presentations).toHaveLength(1);
+    harness.controller.teardown();
+  });
+
+  it("replays the identical lost signal before sending the next kind", async () => {
+    const harness = await startAtTask(baseState(), taskDto("lost-signal", { kind: "recall", prompt: "czwartek" }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const original = harness.api.signalRewardActivity;
+    let loseResponse = true;
+    const spy = vi.spyOn(harness.api, "signalRewardActivity").mockImplementation(async (input) => {
+      const result = await original(input);
+      if (loseResponse) { loseResponse = false; throw new TypeError("response lost after commit"); }
+      return result;
+    });
+    harness.controller.pauseRewardActivity("technical_wait");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    harness.controller.recordInteraction();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(spy.mock.calls.map(([input]) => [input.sequence, input.kind])).toEqual([[2, "pause"], [2, "pause"], [3, "interaction"]]);
+    expect(spy.mock.calls[0]![0]).toEqual(spy.mock.calls[1]![0]);
+    harness.controller.teardown();
+  });
+
+  it("starts a fresh reward stream after an unsuccessful issued attempt", async () => {
+    const state = baseState();
+    state.attempts = [attemptDto({ taskState: "issued", feedback: { kind: "incorrect" } })];
+    const harness = await startAtTask(state, taskDto("retry-stream", { kind: "recall", prompt: "czwartek" }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const spy = vi.spyOn(harness.api, "signalRewardActivity");
+    await harness.controller.answerText("Monday");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const takeover = spy.mock.calls.find(([input]) => input.kind === "takeover")?.[0];
+    expect(takeover).toMatchObject({ sequence: 1, kind: "takeover" });
+    expect(takeover?.streamId).not.toBe(spy.mock.calls[0]![0].streamId);
+    harness.controller.teardown();
+  });
+
+  it("refreshes profile rewards after a session and when returning to profiles", async () => {
+    const harness = await startAtTask(baseState(), taskDto("profile-refresh", { kind: "recall", prompt: "czwartek" }));
+    const updated = { ...PROFILE_A, displayName: "Ola po sesji" };
+    harness.state.profiles = [updated];
+    await harness.controller.endNow();
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "summary", profiles: [updated] });
+    harness.state.profiles = [{ ...updated, displayName: "Ola po powrocie" }];
+    await harness.controller.switchProfile();
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "profile", profiles: [{ displayName: "Ola po powrocie" }] });
+    harness.controller.teardown();
+  });
+
+  it("does not pause or submit a stale task after activity telemetry completes", async () => {
+    const harness = await startAtTask(baseState(), taskDto("stale-telemetry", { kind: "recall", prompt: "czwartek" }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const original = harness.api.signalRewardActivity;
+    const spy = vi.spyOn(harness.api, "signalRewardActivity").mockImplementation(async (input) => { await gate; return original(input); });
+    const answer = harness.controller.answerText("Thursday");
+    await Promise.resolve();
+    await harness.controller.switchProfile();
+    release();
+    await answer;
+    expect(harness.state.submissions).toEqual([]);
+    expect(spy.mock.calls.map(([input]) => input.kind)).toEqual(["interaction"]);
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "profile" });
+    harness.controller.teardown();
+  });
+
+  it("sends the answer after reward transport timeouts and ignores offline input", async () => {
+    vi.useFakeTimers();
+    const harness = await startAtTask(baseState(), taskDto("stalled-activity", { kind: "recall", prompt: "czwartek" }));
+    try {
+      const fetchImpl = vi.fn(() => new Promise<Response>(() => undefined));
+      const transport = createKidApiClient({ fetchImpl });
+      vi.spyOn(harness.api, "signalRewardActivity").mockImplementation(transport.signalRewardActivity);
+      const pending = harness.controller.answerText("Thursday");
+      await vi.advanceTimersByTimeAsync(6_000);
+      expect(harness.state.submissions).toHaveLength(1);
+      await pending;
+      harness.controller.markOffline();
+      const requests = fetchImpl.mock.calls.length;
+      for (let index = 0; index < 100; index += 1) {
+        harness.controller.recordInteraction();
+        harness.controller.pauseRewardActivity("blur");
+        harness.controller.resumeRewardActivity();
+      }
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(fetchImpl.mock.calls).toHaveLength(requests);
+    } finally { harness.controller.teardown(); vi.useRealTimers(); }
+  });
+
+  it("throttles input interactions without sending input contents", async () => {
+    const harness = await startAtTask(baseState(), taskDto("typing", { kind: "recall", prompt: "czwartek" }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const spy = vi.spyOn(harness.api, "signalRewardActivity");
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    try {
+      harness.controller.recordInteraction();
+      harness.controller.recordInteraction();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      now.mockReturnValue(16_000);
+      harness.controller.recordInteraction();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(spy.mock.calls.map(([input]) => input.kind)).toEqual(["interaction", "interaction"]);
+      expect(Object.keys(spy.mock.calls[0]![0]).sort()).toEqual(["kind", "sequence", "sessionId", "streamId", "taskId"]);
+    } finally { now.mockRestore(); harness.controller.teardown(); }
+  });
   it("po udanej rezerwacji zachowuje oczekiwanie, gdy odświeżenie profili zawiedzie", async () => {
     const profile: KidProfileDto = {
       ...PROFILE_A,
@@ -477,7 +598,7 @@ describe("LearningSessionController", () => {
     const state = baseState();
     const first = taskDto("77777777-7777-7777-7777-777777777777", { kind: "recall", prompt: "czwartek" });
     const second = taskDto("88888888-8888-8888-8888-888888888888", { kind: "recall", prompt: "wtorek" });
-    state.tasks = [first, second];
+    state.tasks = [second];
     state.attempts = [attemptDto({ taskId: first.taskId, attemptId: "66666666-6666-6666-6666-666666666666", modality: "audio", feedback: { kind: "almost", referenceAudioAvailable: true } })];
     let release!: () => void;
     state.feedbackAudioGate = new Promise<void>((resolve) => { release = resolve; });
@@ -1201,7 +1322,7 @@ describe("LearningSessionController", () => {
     }
   });
 
-  it("nieoceniona próba wznawia ten sam strumień aktywności", async () => {
+  it("nieoceniona próba rozpoczyna nowy strumień aktywności", async () => {
     const recall = taskDto("t1", { kind: "recall", prompt: "czwartek" });
     const state = baseState();
     state.attempts = [attemptDto({
@@ -1213,9 +1334,9 @@ describe("LearningSessionController", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    const interactions = state.activitySignals.filter((signal) => signal.kind === "interaction");
-    expect(interactions.length).toBeGreaterThanOrEqual(2);
-    expect(interactions.at(-1)).toMatchObject({ taskId: recall.taskId, sequence: 4 });
+    const takeovers = state.activitySignals.filter((signal) => signal.kind === "takeover");
+    expect(takeovers).toHaveLength(2);
+    expect(takeovers.at(-1)).toMatchObject({ taskId: recall.taskId, sequence: 1 });
   });
 
   it("jawnie przejmuje strumień przy starcie i wznawia go przed playbackiem", async () => {
@@ -1228,14 +1349,132 @@ describe("LearningSessionController", () => {
     const harness = await startAtTask(state, listening);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(state.activitySignals[0]).toMatchObject({ kind: "takeover", sequence: 1 });
+    const signalSpy = vi.spyOn(harness.api, "signalRewardActivity");
+    const originalSignal = harness.api.signalRewardActivity.bind(harness.api);
 
     harness.controller.pauseRewardActivity("blur");
     await new Promise((resolve) => setTimeout(resolve, 0));
+    const oldStreamId = signalSpy.mock.calls[0]![0].streamId;
+    await originalSignal({ sessionId: "55555555-5555-5555-5555-555555555555", taskId: listening.taskId, streamId: "99999999-9999-4999-8999-999999999999", sequence: 1, kind: "takeover" });
+    harness.controller.resumeRewardActivity();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     await harness.controller.playTaskAudio();
 
-    expect(state.activitySignals.slice(-4).map(({ kind }) => kind)).toEqual([
-      "pause", "interaction", "playback_start", "playback_end",
+    const resumedTakeover = signalSpy.mock.calls.map(([input]) => input).reverse().find((input) => input.kind === "takeover");
+    expect(resumedTakeover?.streamId).not.toBe(oldStreamId);
+    expect(resumedTakeover?.streamId).not.toBe("99999999-9999-4999-8999-999999999999");
+    expect(state.activitySignals.slice(-5).map(({ kind }) => kind)).toEqual([
+      "pause", "takeover", "takeover", "playback_start", "playback_end",
     ]);
+  });
+
+  it("wysyła pauzę przed takeoverem po szybkim blur i focus", async () => {
+    const listening = taskDto("listen", { kind: "listening", audioAssetId: "audio-listen", options: [] });
+    const state = baseState();
+    const harness = await startAtTask(state, listening);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const originalSignal = harness.api.signalRewardActivity.bind(harness.api);
+    let releasePause!: () => void;
+    let pauseStarted!: () => void;
+    const pauseStartedPromise = new Promise<void>((resolve) => { pauseStarted = resolve; });
+    const pauseGate = new Promise<void>((resolve) => { releasePause = resolve; });
+    vi.spyOn(harness.api, "signalRewardActivity").mockImplementation(async (input) => {
+      if (input.kind === "pause") {
+        pauseStarted();
+        await pauseGate;
+      }
+      return originalSignal(input);
+    });
+    const takeoversBeforeBlur = state.activitySignals.filter(({ kind }) => kind === "takeover").length;
+
+    harness.controller.pauseRewardActivity("blur");
+    await pauseStartedPromise;
+    harness.controller.resumeRewardActivity();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(state.activitySignals.filter(({ kind }) => kind === "takeover")).toHaveLength(takeoversBeforeBlur);
+
+    releasePause();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(state.activitySignals.slice(-2).map(({ kind }) => kind)).toEqual(["pause", "takeover"]);
+  });
+
+  it("ponawia utraconą pauzę przed wznowieniem nowego strumienia", async () => {
+    const listening = taskDto("listen", { kind: "listening", audioAssetId: "audio-listen", options: [] });
+    const state = baseState();
+    const harness = await startAtTask(state, listening);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const originalSignal = harness.api.signalRewardActivity.bind(harness.api);
+    let pauseCalls = 0;
+    vi.spyOn(harness.api, "signalRewardActivity").mockImplementation(async (input) => {
+      if (input.kind === "pause" && pauseCalls++ === 0) throw new TypeError("network lost");
+      return originalSignal(input);
+    });
+
+    harness.controller.pauseRewardActivity("blur");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    harness.controller.resumeRewardActivity();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(pauseCalls).toBeGreaterThanOrEqual(2);
+    expect(state.activitySignals.slice(-3).map(({ kind }) => kind)).toEqual(["pause", "pause", "takeover"]);
+  });
+
+  it("zwalnia nieaktualną pauzę po przejęciu strumienia przez inne urządzenie", async () => {
+    const listening = taskDto("listen", { kind: "listening", audioAssetId: "audio-listen", options: [] });
+    const state = baseState();
+    const harness = await startAtTask(state, listening);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const originalSignal = harness.api.signalRewardActivity.bind(harness.api);
+    const signalSpy = vi.spyOn(harness.api, "signalRewardActivity").mockImplementation(originalSignal);
+    const initialTakeover = signalSpy.mock.calls.length;
+    await originalSignal({
+      sessionId: "55555555-5555-5555-5555-555555555555", taskId: listening.taskId,
+      streamId: "99999999-9999-4999-8999-999999999999", sequence: 1, kind: "takeover",
+    });
+
+    harness.controller.pauseRewardActivity("blur");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    harness.controller.resumeRewardActivity();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const resumedTakeovers = signalSpy.mock.calls.map(([input]) => input).filter(({ kind }) => kind === "takeover");
+    expect(resumedTakeovers.length).toBeGreaterThan(initialTakeover);
+    expect(resumedTakeovers.at(-1)?.streamId).not.toBe("99999999-9999-4999-8999-999999999999");
+  });
+
+  it("waits for playback_end and lets the latest fast playback replace earlier queued playback", async () => {
+    const listening = taskDto("listen", { kind: "listening", audioAssetId: "audio-listen", options: [] });
+    const state = baseState();
+    state.tasks = [listening];
+    const harness = makeHarness(state);
+    let releaseEnd!: () => void;
+    let endStarted!: () => void;
+    const endStartedPromise = new Promise<void>((resolve) => { endStarted = resolve; });
+    const endGate = new Promise<void>((resolve) => { releaseEnd = resolve; });
+    const originalSignal = harness.api.signalRewardActivity.bind(harness.api);
+    vi.spyOn(harness.api, "signalRewardActivity").mockImplementation(async (input) => {
+      if (input.kind === "playback_end") { endStarted(); await endGate; }
+      return originalSignal(input);
+    });
+    const authorize = vi.spyOn(harness.api, "authorizeRewardActivityPlayback");
+    await harness.controller.start();
+    await harness.controller.selectProfile(state.profiles[0]!.childId);
+    harness.controller.setMicrophone(true);
+    await harness.controller.startLearning(DECK.deckId);
+    await endStartedPromise;
+
+    const secondPlayback = harness.controller.playTaskAudio();
+    const thirdPlayback = harness.controller.playTaskAudio();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(authorize).toHaveBeenCalledTimes(1);
+    releaseEnd();
+    await Promise.all([secondPlayback, thirdPlayback]);
+    expect(authorize).toHaveBeenCalledTimes(2);
+    expect(harness.media.playUrls).toHaveLength(2);
+    harness.controller.teardown();
   });
 
   it("nie wysyła playback_end, gdy odtwarzacz odrzuca próbę przed startem", async () => {
@@ -1247,6 +1486,142 @@ describe("LearningSessionController", () => {
 
     expect(state.activitySignals.map(({ kind }) => kind)).not.toContain("playback_end");
     expect(state.activitySignals.map(({ kind }) => kind)).not.toContain("playback_start");
+  });
+
+  it("nie odtwarza audio, gdy autoryzacja nagród wróciła po anulowaniu playbacku", async () => {
+    const listening = taskDto("listen", { kind: "listening", audioAssetId: "audio-listen", options: [
+      { id: "a", text: "poniedziałek" }, { id: "b", text: "wtorek" },
+    ] });
+    const harness = await startAtTask(baseState(), listening);
+    harness.media.playUrls.length = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const authorization = vi.spyOn(harness.api, "authorizeRewardActivityPlayback").mockImplementation(async () => {
+      await gate;
+      return { authorizationId: "late-auth" };
+    });
+    const pending = harness.controller.playTaskAudio();
+    while (authorization.mock.calls.length === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", offline: false });
+    harness.controller.pauseRewardActivity("blur");
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", offline: false });
+    release();
+    await pending;
+    expect(harness.media.playUrls).toEqual([]);
+  });
+
+  it("odrzuca trwale konfliktowy playback_end i pozwala wysłać następny sygnał", async () => {
+    const listening = taskDto("listen", { kind: "listening", audioAssetId: "audio-listen", options: [] });
+    const harness = await startAtTask(baseState(), listening);
+    const original = harness.api.signalRewardActivity.bind(harness.api);
+    vi.spyOn(harness.api, "signalRewardActivity").mockImplementation(async (input) => {
+      if (input.kind === "playback_end") throw new KidApiError("conflict", false);
+      return original(input);
+    });
+    await harness.controller.playTaskAudio();
+    harness.controller.resumeRewardActivity();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(harness.state.activitySignals.map(({ kind }) => kind)).toContain("interaction");
+  });
+
+  it("odrzuca trwale konfliktowy playback_start i pozwala wysłać kolejny sygnał", async () => {
+    const listening = taskDto("listen", { kind: "listening", audioAssetId: "audio-listen", options: [] });
+    const harness = await startAtTask(baseState(), listening);
+    const original = harness.api.signalRewardActivity.bind(harness.api);
+    vi.spyOn(harness.api, "signalRewardActivity").mockImplementation(async (input) => {
+      if (input.kind === "playback_start") throw new KidApiError("conflict", false);
+      return original(input);
+    });
+    await harness.controller.playTaskAudio();
+    harness.controller.resumeRewardActivity();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(harness.state.activitySignals.map(({ kind }) => kind)).toContain("interaction");
+  });
+
+  it("does not start a reward stream for a task reached while the page is backgrounded", async () => {
+    const first = taskDto("background-first", { kind: "exposure", source: "czwartek", target: "Thursday", audioAssetId: "audio", example: null, exampleAudioAssetId: null, imageAssetId: null, visualType: "none" });
+    const second = taskDto("background-second", { kind: "listening", audioAssetId: "background-audio", options: [] });
+    const state = baseState();
+    const harness = await startAtTask(state, first);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    state.tasks = [second];
+    const before = state.activitySignals.filter(({ kind }) => kind === "takeover").length;
+    harness.controller.pauseRewardActivity("blur");
+    await harness.controller.completePresentation();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", task: { taskId: second.taskId }, activityPaused: true });
+    expect(state.activitySignals.filter(({ kind }) => kind === "takeover")).toHaveLength(before);
+    expect(harness.media.playUrls).not.toContain("https://media.test/background-audio");
+    harness.controller.resumeRewardActivity();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(state.activitySignals.filter(({ kind, taskId }) => kind === "takeover" && taskId === second.taskId)).toHaveLength(1);
+  });
+
+  it("keeps lifecycle paused when retrying an offline next-task request in the background", async () => {
+    const first = taskDto("offline-first", { kind: "exposure", source: "kot", target: "cat", audioAssetId: "first-audio", example: null, exampleAudioAssetId: null, imageAssetId: null, visualType: "none" });
+    const second = taskDto("offline-second", { kind: "listening", audioAssetId: "second-audio", options: [] });
+    const state = baseState();
+    const harness = await startAtTask(state, first);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    state.tasks = [second];
+    const originalNextTask = harness.api.nextTask.bind(harness.api);
+    vi.spyOn(harness.api, "nextTask").mockRejectedValueOnce(new TypeError("fetch failed"));
+    await harness.controller.completePresentation();
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", offline: true });
+
+    harness.controller.pauseRewardActivity("background");
+    vi.mocked(harness.api.nextTask).mockImplementation(originalNextTask);
+    await harness.controller.retry();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", task: { taskId: second.taskId }, activityPaused: true });
+    expect(state.activitySignals.filter(({ kind, taskId }) => kind === "takeover" && taskId === second.taskId)).toHaveLength(0);
+    expect(harness.media.playUrls).not.toContain("https://media.test/second-audio");
+  });
+
+  it("clears the lifecycle pause when focus returns while completing a task", async () => {
+    const first = taskDto("busy-first", { kind: "exposure", source: "kot", target: "cat", audioAssetId: "first-audio", example: null, exampleAudioAssetId: null, imageAssetId: null, visualType: "none" });
+    const second = taskDto("busy-second", { kind: "recall", prompt: "pies" });
+    const state = baseState();
+    const harness = await startAtTask(state, first);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    state.tasks = [second];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const originalComplete = harness.api.completePresentation.bind(harness.api);
+    vi.spyOn(harness.api, "completePresentation").mockImplementation(async (taskId) => {
+      await gate;
+      return originalComplete(taskId);
+    });
+
+    const completing = harness.controller.completePresentation();
+    harness.controller.pauseRewardActivity("blur");
+    harness.controller.resumeRewardActivity();
+    release();
+    await completing;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", task: { taskId: second.taskId }, activityPaused: false });
+    expect(state.activitySignals.filter(({ kind, taskId }) => kind === "takeover" && taskId === second.taskId)).toHaveLength(1);
+  });
+
+  it("clears a lifecycle pause on the profile screen before starting learning", async () => {
+    const listening = taskDto("profile-focus", { kind: "listening", audioAssetId: "profile-focus-audio", options: [] });
+    const state = baseState();
+    state.tasks = [listening];
+    const harness = makeHarness(state);
+    await harness.controller.start();
+
+    harness.controller.pauseRewardActivity("blur");
+    harness.controller.resumeRewardActivity();
+    await harness.controller.selectProfile(state.profiles[0]!.childId);
+    harness.controller.setMicrophone(false);
+    await harness.controller.startLearning(DECK.deckId);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", task: { taskId: listening.taskId }, activityPaused: false });
+    expect(state.activitySignals.filter(({ kind, taskId }) => kind === "takeover" && taskId === listening.taskId)).toHaveLength(1);
+    expect(harness.media.playUrls).toContain("https://media.test/profile-focus-audio");
+    harness.controller.teardown();
   });
 
   it("release przed 300 ms nie wysyła odpowiedzi i pokazuje neutralną wskazówkę", async () => {
@@ -1351,6 +1726,7 @@ describe("LearningSessionController", () => {
   it("pytanie słuchowe odtwarza się samo po wyświetleniu (SPEC §12.2)", async () => {
     const listening = taskDto("t1", { kind: "listening", options: [], audioAssetId: "asset-q" });
     const listenHarness = await startAtTask(baseState(), listening);
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(listenHarness.media.playUrls).toEqual(["https://media.test/asset-q"]);
 
     // zadanie tekstowe nie ma audio — nic nie gra samo z siebie
@@ -1371,6 +1747,7 @@ describe("LearningSessionController", () => {
       visualType: "none",
     });
     const harness = await startAtTask(baseState(), exposure);
+    await new Promise((resolve) => setTimeout(resolve, 0));
     await harness.controller.playExampleAudio();
     // prezentacja sama odtwarza słowo; przycisk dokładuje zdanie przykładowe
     expect(harness.media.playUrls).toEqual(["https://media.test/asset-word", "https://media.test/asset-example"]);
@@ -1386,6 +1763,7 @@ describe("LearningSessionController", () => {
 
     const listening = taskDto("t2", { kind: "listening", options: [], audioAssetId: "asset-1" });
     const listenHarness = await startAtTask(baseState(), listening);
+    await new Promise((resolve) => setTimeout(resolve, 0));
     // pytanie słuchowe odtwarza się już samo po wyświetleniu (SPEC §12.2)
     expect(listenHarness.media.playUrls).toEqual(["https://media.test/asset-1"]);
     await listenHarness.controller.playTaskAudio();

@@ -8,7 +8,9 @@ import {
   getLessonMockTestReport,
   listLessonMockTests,
   nextTask,
+  readRewardActivitySummary,
   readLessonMockTestSummary,
+  recordRewardActivitySignal,
   startSession,
   submitAttempt,
   type AppError,
@@ -172,7 +174,7 @@ describe("kartkówka lekcji — odpowiedzi i zamknięcie", () => {
   });
 
   it("nieoceniona odpowiedź (brak modelu) nadal kończy slot bez kary", async () => {
-    const { services } = buildTestServices(); // brak gradera
+    const { services, clock } = buildTestServices(); // brak gradera
     const child = await createChild(services, { displayName: "L", avatarKey: "owl" });
     const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, testDate: "2026-10-20" });
     const session = await startMock(services, child.id, lesson.deckId);
@@ -185,9 +187,12 @@ describe("kartkówka lekcji — odpowiedzi i zamknięcie", () => {
       await answerCorrectly(services, t);
     }
     expect(task).not.toBeNull();
+    await recordRewardActivitySignal(services, { sessionId: session.sessionId, taskId: task!.taskId, streamId: randomUUID(), sequence: 1, kind: "takeover" });
+    clock.advanceMs(15_000);
     const attempt = await submitAttempt(services, { taskId: task!.taskId, clientAttemptId: randomUUID(), modality: "text", text: "zzqq niedopasowane" });
     expect(attempt.feedback).toBeNull();
     expect(attempt.taskState).toBe("answered"); // terminalny mimo unevaluated
+    expect((await readRewardActivitySummary(services, child.id)).creditedSeconds).toBe(15);
   });
 
   it("limit 10 min: po przekroczeniu brak nowej odpowiedzi i zamknięcie", async () => {

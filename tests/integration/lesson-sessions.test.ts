@@ -212,7 +212,9 @@ describe("sesja lekcji — start i wydawanie zadań", () => {
     [child.id, lesson.subjectId, lesson.objectiveId, lesson.topicId]);
 
     const round = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false, mode: "daily_round" });
-    expect(round.taskBudget).toBe(3);
+    // The mastered objective can schedule two contacted revisions without a
+    // grader; the guided-only contact does not inflate the round budget.
+    expect(round.taskBudget).toBe(2);
     const before = await pool.query<{ assessments: number; progress: number }>(`select
       (select count(*)::int from learning_app.assessments where child_id=$1) as assessments,
       (select count(*)::int from learning_app.child_objective_progress where child_id=$1) as progress`, [child.id]);
@@ -221,7 +223,7 @@ describe("sesja lekcji — start i wydawanie zadań", () => {
     );
     const issued: TaskDto[] = [];
     let answeredRoundTask = false;
-    for (let index = 0; index < 3; index++) {
+    for (let index = 0; index < round.taskBudget; index++) {
       const task = await nextTask(services, round.sessionId);
       expect(task).not.toBeNull();
       issued.push(task!);
@@ -231,7 +233,7 @@ describe("sesja lekcji — start i wydawanie zadań", () => {
         const supportCard = (await pool.query<{ context: Record<string, unknown> }>("select context from learning_app.session_tasks where id=$1", [task!.taskId])).rows[0]!;
         expect(supportCard.context).toMatchObject({ cardPurpose: "support" });
       }
-      expect(task!.remainingAssessed).toBe(3 - index);
+      expect(task!.remainingAssessed).toBe(round.taskBudget - index);
       if (task!.exerciseType === "lesson_card") await completePresentation(services, { taskId: task!.taskId });
       else {
         const [key] = (await pool.query<{ answer_key: { answer?: string; correctOptionId?: string; itemIds?: string[] } }>(
@@ -271,7 +273,7 @@ describe("sesja lekcji — start i wydawanie zadań", () => {
       "select subject_id, objective_id, status, streak from learning_app.child_objective_progress where child_id=$1 order by subject_id, objective_id", [child.id],
     )).toEqual(objectiveProgressBefore);
     const count = await pool.query<{ count: number }>("select count(*)::int as count from learning_app.session_tasks where session_id=$1", [round.sessionId]);
-    expect(count.rows[0]!.count).toBe(3);
+    expect(count.rows[0]!.count).toBe(round.taskBudget);
   });
 
   it("wycofuje start rundy lekcji z niepustą pulą, gdy brak schedulowalnego celu", async () => {

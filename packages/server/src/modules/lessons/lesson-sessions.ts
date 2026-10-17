@@ -381,6 +381,15 @@ export async function hasSchedulableDailyRoundTask(
   return (await planLessonTask(services, tx, session, now, session.taskBudget)) !== null;
 }
 
+/** Select the same immutable revision that would anchor the next issued step. */
+export async function dailyRoundLessonCandidate(services: Services, tx: Tx, session: typeof learningSessions.$inferSelect, now: Date): Promise<string | null> {
+  const planned = await planLessonTask(services, tx, session, now, session.taskBudget);
+  if (!planned) return null;
+  return planned.plan.kind === "card"
+    ? planned.exercises.find(exercise => exercise.payload.objectiveId === planned.plan.objectiveId)?.revisionId ?? null
+    : planned.plan.itemRevisionId;
+}
+
 function lessonTaskDto(session: typeof learningSessions.$inferSelect, task: { id: string; ordinal: number; exerciseType: LessonExerciseType; prompt: TaskPrompt }, assessedBefore: number): TaskDto {
   return {
     taskId: task.id,

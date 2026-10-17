@@ -111,6 +111,18 @@ describe("rozliczanie aktywności nagrodowej", () => {
     expect(blocks.rows[0]?.count).toBe(0);
   });
 
+  it("nie pokazuje pakietu bez punktów dla czasu rozliczonego przed wprowadzeniem punktów", async () => {
+    const { services } = buildTestServices("2026-10-16T10:00:00.000Z");
+    const child = await createChild(services, { displayName: "Ola", avatarKey: "fox" });
+    await seedCreditedDay(services, child.id, [{ day: "2026-10-14", minutes: 30 }]);
+    await pool.query("update learning_app.reward_activity_settlements set awarded_points=0 where child_id=$1", [child.id]);
+
+    expect((await listKidProfiles(services))[0]?.rewards).toMatchObject({ earnedPoints: 0, pointsToUse: 0, readyXboxPacks: 0 });
+    await expect(handleKidApi(new Request(`http://localhost/api/v1/kid/profiles/${child.id}/xbox-request`, {
+      method: "POST", headers: { Origin: "http://localhost" },
+    }), services, ["profiles", child.id, "xbox-request"])).rejects.toMatchObject({ code: "conflict" });
+  });
+
   it("rezerwuje jeden najstarszy blok atomowo i powtarzalnie, odejmując saldo, ale zachowując dorobek", async () => {
     const { services } = buildTestServices("2026-10-16T10:00:00.000Z");
     const child = await createChild(services, { displayName: "Ola", avatarKey: "fox" });
@@ -316,15 +328,16 @@ describe("rozliczanie aktywności nagrodowej", () => {
     expect((await readRewardActivitySummary(services, child.id)).creditedSeconds).toBe(0);
     await completePresentation(services, { taskId: task!.taskId });
     const report = await readRewardActivitySummary(services, child.id);
-    expect(report.creditedSeconds).toBe(95);
-    expect(report.sessions).toMatchObject([{ sessionId: session.sessionId, creditedSeconds: 95 }]);
+    // The replacement takeover does not credit the old stream's unclosed tail.
+    expect(report.creditedSeconds).toBe(80);
+    expect(report.sessions).toMatchObject([{ sessionId: session.sessionId, creditedSeconds: 80 }]);
     await pool.query("update learning_app.learning_sessions set context = jsonb_set(context, '{timezone}', '\"Invalid/Zone\"'::jsonb) where id=$1", [session.sessionId]);
     const rewardRow = await pool.query<{ deck_id: string; credited_milliseconds: string; awarded_points: number; remainder_milliseconds: number }>(
       "select deck_id, credited_milliseconds::text, awarded_points, remainder_milliseconds from learning_app.reward_activity_settlements where session_id=$1",
       [session.sessionId],
     );
-    expect(rewardRow.rows).toMatchObject([{ deck_id: draft.deckId, credited_milliseconds: "95000", awarded_points: 1, remainder_milliseconds: 35000 }]);
-    expect(await listKidProfiles(services)).toMatchObject([{ childId: child.id, rewards: { earnedPoints: 1, pointsToUse: 1, readyXboxPacks: 0, todayCreditedSeconds: 95 } }]);
+    expect(rewardRow.rows).toMatchObject([{ deck_id: draft.deckId, credited_milliseconds: "80000", awarded_points: 1, remainder_milliseconds: 20000 }]);
+    expect(await listKidProfiles(services)).toMatchObject([{ childId: child.id, rewards: { earnedPoints: 1, pointsToUse: 1, readyXboxPacks: 0, todayCreditedSeconds: 80 } }]);
     expect(await listKidDecks(services, child.id)).toMatchObject([{ deckId: draft.deckId, earnedPoints: 1 }]);
     const skippedTask = await nextTask(services, session.sessionId);
     expect(skippedTask).toBeTruthy();
@@ -339,12 +352,12 @@ describe("rozliczanie aktywności nagrodowej", () => {
       sessionId: session.sessionId, taskId: followingTask!.taskId, streamId: randomUUID(), sequence: 1, kind: "interaction",
     })).resolves.toMatchObject({ paused: false });
     const afterSkip = await readRewardActivitySummary(services, child.id);
-    expect(afterSkip.creditedSeconds).toBe(95);
+    expect(afterSkip.creditedSeconds).toBe(80);
     await expect(handleParentApi(
       new Request(`http://localhost/api/v1/parent/reward-activity/${child.id}`), services, ["reward-activity", child.id],
     )).rejects.toMatchObject({ code: "unauthorized" });
     const finished = await endSession(services, session.sessionId);
-    expect(finished.reward).toEqual({ creditedSeconds: 95, pointsEarned: 1 });
+    expect(finished.reward).toEqual({ creditedSeconds: 80, pointsEarned: 1 });
 
     // The previous 35-second remainder carries into a different stable deck id.
     const secondDraft = await createDraft(services, { title: "Kolory", items: [{
@@ -379,13 +392,13 @@ describe("rozliczanie aktywności nagrodowej", () => {
       "select credited_milliseconds::text, awarded_points, remainder_milliseconds from learning_app.reward_activity_settlements where session_id=$1",
       [secondSession.sessionId],
     );
-    expect(secondAward.rows).toMatchObject([{ credited_milliseconds: "25000", awarded_points: 1, remainder_milliseconds: 0 }]);
-    expect(await listKidProfiles(services)).toMatchObject([{ childId: child.id, rewards: { earnedPoints: 2, pointsToUse: 2, readyXboxPacks: 0, todayCreditedSeconds: 120 } }]);
+    expect(secondAward.rows).toMatchObject([{ credited_milliseconds: "25000", awarded_points: 0, remainder_milliseconds: 45000 }]);
+    expect(await listKidProfiles(services)).toMatchObject([{ childId: child.id, rewards: { earnedPoints: 1, pointsToUse: 1, readyXboxPacks: 0, todayCreditedSeconds: 105 } }]);
     expect(await listKidDecks(services, child.id)).toEqual(expect.arrayContaining([
       expect.objectContaining({ deckId: draft.deckId, earnedPoints: 1 }),
-      expect.objectContaining({ deckId: secondDraft.deckId, earnedPoints: 1 }),
+      expect.objectContaining({ deckId: secondDraft.deckId, earnedPoints: 0 }),
     ]));
-    expect((await endSession(services, secondSession.sessionId)).reward).toEqual({ creditedSeconds: 25, pointsEarned: 1 });
+    expect((await endSession(services, secondSession.sessionId)).reward).toEqual({ creditedSeconds: 25, pointsEarned: 0 });
     await deleteChild(services, child.id);
     for (const table of ["reward_activity_streams", "reward_activity_segments", "reward_activity_settlements", "reward_activity_pauses", "reward_activity_playback_authorizations"]) {
       const result = await pool.query(`select count(*)::int as count from learning_app.${table} where child_id = $1`, [child.id]);
