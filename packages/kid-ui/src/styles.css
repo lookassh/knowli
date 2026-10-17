@@ -916,15 +916,7 @@
   padding: 0;
   overflow: hidden;
   border-radius: 16px;
-  border: 2px solid var(--kid-line);
-  background: var(--kid-surface);
   text-align: center;
-}
-
-.kid-picture-options button.kid-option--correct::before,
-.kid-picture-options button.kid-option--wrong::before {
-  inset-inline-start: auto;
-  inset-inline-end: 12px;
 }
 
 .kid-picture-choice-visual {
@@ -979,6 +971,7 @@
   top: 8px;
   transform: none;
   z-index: 2;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
 }
 
 .kid-page[data-zoomed="true"] .kid-picture-options,

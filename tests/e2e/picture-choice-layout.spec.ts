@@ -266,6 +266,10 @@ test("cztery opcje mieszczą się na typowym telefonie, a w niskim widoku pozost
     clientHeight: element.clientHeight,
   }));
   expect(content600.scrollHeight).toBeLessThanOrEqual(content600.clientHeight + 1);
+  await expect(options.last()!).toBeInViewport();
+  await expect(page.getByTestId("kid-end")).toBeInViewport();
+
+  await page.setViewportSize({ width: 360, height: 560 });
   await options.last()!.scrollIntoViewIfNeeded();
   await expect(options.last()!).toBeInViewport();
   await page.getByTestId("kid-end").scrollIntoViewIfNeeded();
