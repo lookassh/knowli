@@ -389,6 +389,29 @@ describe("LearningSessionController", () => {
     harness.controller.teardown();
   });
 
+  it("keeps the last confirmed daily activity when its refresh is unavailable", async () => {
+    const confirmed = { ...PROFILE_A, todayActivitySeconds: 25 * 60 };
+    const state = baseState();
+    state.profiles = [confirmed, PROFILE_B];
+    const harness = makeHarness(state);
+    await harness.controller.start();
+    await harness.controller.selectProfile(PROFILE_A.childId);
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    state.profiles = [{ ...PROFILE_A, todayActivityUnavailable: true }, PROFILE_B];
+    await harness.controller.refreshProfiles();
+
+    const screen = harness.controller.getScreen();
+    expect(screen.kind).toBe("deck");
+    if (screen.kind !== "deck") throw new Error("Expected deck screen");
+    expect(screen.profiles[0]).toMatchObject({
+      childId: PROFILE_A.childId,
+      todayActivitySeconds: 25 * 60,
+      todayActivityUnavailable: false,
+    });
+    harness.controller.teardown();
+  });
+
   it.each(["answer", "presentation"])("locks %s before waiting for activity telemetry", async (operation) => {
     const task = taskDto("telemetry-gate", operation === "answer" ? { kind: "recall", prompt: "czwartek" } : { kind: "exposure", source: "czwartek", target: "Thursday", audioAssetId: "audio", example: null, exampleAudioAssetId: null, imageAssetId: null, visualType: "none" });
     const harness = await startAtTask(baseState(), task);

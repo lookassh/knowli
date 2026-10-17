@@ -316,6 +316,19 @@
   width: 100%;
 }
 
+.kid-deck-screen .kid-top-bar {
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.kid-daily-activity {
+  color: var(--kid-text);
+  font-size: 0.9rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .kid-parent-link {
   display: inline-flex;
   align-items: center;

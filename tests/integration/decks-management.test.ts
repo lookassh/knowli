@@ -20,7 +20,7 @@ import {
   type Services,
 } from "@learning/server";
 import type { VocabularyItemInput } from "@learning/contracts";
-import { ManualClock, testDatabase, truncateCoreTables } from "./helpers";
+import { ManualClock, openQuietDatabase, testDatabase, testDatabaseUrl, truncateCoreTables } from "./helpers";
 import { fakeGeneration, type FakeGeneration } from "./fakes";
 
 const { pool } = testDatabase();
@@ -335,6 +335,84 @@ describe("zarządzanie zestawami i przypisaniami (integracja)", () => {
       expect(asset.assetId).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
       );
+    }
+  });
+
+  it("readDeck nie łączy pustego szkicu ze stanem succeeded z nowszej migawki", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const isolated = openQuietDatabase(testDatabaseUrl());
+    const services = createServices({ db: isolated.db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps });
+    const generated = await enqueueDeckGeneration(services, {
+      prompt: "dni tygodnia po angielsku",
+      idempotencyKey: "read-deck-repeatable-snapshot",
+    });
+
+    let signalRead!: () => void;
+    let releaseRead!: () => void;
+    const readingItems = new Promise<void>((resolve) => { signalRead = resolve; });
+    const resumeRead = new Promise<void>((resolve) => { releaseRead = resolve; });
+    const originalConnect = isolated.pool.connect.bind(isolated.pool);
+    let paused = false;
+    const wrapClient = (client: unknown) => {
+      const pgClient = client as { query: (...values: unknown[]) => unknown };
+      const originalClientQuery = pgClient.query.bind(pgClient);
+      const shouldPause = (queryArgs: unknown[]) => {
+        const queryText = typeof queryArgs[0] === "string" ? queryArgs[0] : (queryArgs[0] as { text?: string })?.text ?? "";
+        if (!paused && queryText.includes('from "learning_app"."item_revisions"')) {
+          paused = true;
+          signalRead();
+          return true;
+        }
+        return false;
+      };
+      pgClient.query = ((...queryArgs: unknown[]) => {
+        const callbackIndex = queryArgs.findIndex((value) => typeof value === "function");
+        if (callbackIndex >= 0) {
+          const callback = queryArgs[callbackIndex] as (...values: unknown[]) => void;
+          const wrappedArgs = [...queryArgs];
+          wrappedArgs[callbackIndex] = (...values: unknown[]) => {
+            if (shouldPause(queryArgs)) void resumeRead.then(() => callback(...values));
+            else callback(...values);
+          };
+          return originalClientQuery(...wrappedArgs);
+        }
+        return (originalClientQuery(...queryArgs) as Promise<unknown>).then(async (result) => {
+          if (shouldPause(queryArgs)) await resumeRead;
+          return result;
+        });
+      }) as typeof pgClient.query;
+      return client;
+    };
+    isolated.pool.connect = ((...args: unknown[]) => {
+      const callbackIndex = args.findIndex((value) => typeof value === "function");
+      if (callbackIndex >= 0) {
+        const callback = args[callbackIndex] as (...values: unknown[]) => void;
+        const wrappedArgs = [...args];
+        wrappedArgs[callbackIndex] = (error: unknown, client: unknown, release: unknown) => {
+          callback(error, client ? wrapClient(client) : client, release);
+        };
+        return (originalConnect as (...values: unknown[]) => unknown)(...wrappedArgs);
+      }
+      return (originalConnect as (...values: unknown[]) => Promise<unknown>)(...args).then(wrapClient);
+    }) as typeof isolated.pool.connect;
+
+    const pendingRead = readDeck(services, generated.deckId);
+    try {
+      await readingItems;
+      await runDueGenerationWork(services);
+      const completed = await readDeck(services, generated.deckId);
+      expect(completed.generation?.state).toBe("succeeded");
+      expect(completed.draft?.items).toHaveLength(7);
+      releaseRead();
+
+      const snapshot = await pendingRead;
+      expect(snapshot.generation?.state).toBe("queued");
+      expect(snapshot.draft?.items).toEqual([]);
+    } finally {
+      releaseRead();
+      isolated.pool.connect = originalConnect as typeof isolated.pool.connect;
+      await isolated.pool.end();
     }
   });
 
