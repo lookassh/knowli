@@ -463,6 +463,7 @@ export const messages = {
     recordingLevel: "Poziom głosu",
     sayIt: "Powiedz na głos",
     processing: "Sprawdzam nagranie…",
+    transitioning: "Chwilka, przechodzimy dalej…",
     revealTitle: "To słowo to:",
     pictureRecallPrompt: "Jak jest po angielsku?",
     remaining: "Jeszcze {n} i koniec!",

@@ -40,6 +40,10 @@ import type { RewardActivitySignal } from "@learning/contracts";
 export interface LearningScreen {
   answerSaved?: boolean;
   activityPaused?: boolean;
+  /** Neutral client-side selection while the server decides the outcome. */
+  pendingChoiceId?: string | null;
+  /** A transition request is pending; keep the current task visible and stable. */
+  transitioning?: boolean;
   kind: "learning";
   session: SessionDto;
   task: TaskDto | null;
@@ -162,7 +166,7 @@ export class LearningSessionController {
   #recordingMode: RecordingModeDto = "hold";
   #recorder: SpeechRecorder | null = null;
   /** Ostatnia operacja do ponowienia po powrocie sieci/błędzie aplikacji. */
-  #resume: (() => Promise<void>) | null = null;
+  #resume: { run: () => Promise<void>; keepsTaskVisible: boolean } | null = null;
   /** Wybrana opcja próby w toku; do podświetlenia w feedbacku (design 2026-10-09). */
   #pendingChoice: string | null = null;
   /** Wycofuje operacje zdążające po zmianie ekranu/teardown. */
@@ -222,6 +226,10 @@ export class LearningSessionController {
       recording: recordingPhase === "recording",
     };
     this.#emit();
+  }
+
+  #setResume(run: () => Promise<void>, keepsTaskVisible = false): void {
+    this.#resume = { run, keepsTaskVisible };
   }
 
   #stopPlayback(): void {
@@ -569,7 +577,7 @@ export class LearningSessionController {
 
   async #loadNext(epoch: number, sessionId: string): Promise<void> {
     this.#stopActivityTimer();
-    this.#resume = () => this.#loadNext(epoch, sessionId);
+    this.#setResume(() => this.#loadNext(epoch, sessionId));
     try {
       const task = await this.#api.nextTask(sessionId);
       if (epoch !== this.#epoch || this.#screen.kind !== "learning") return;
@@ -585,6 +593,8 @@ export class LearningSessionController {
         feedback: null,
         reveal: null,
         busy: false,
+        transitioning: false,
+        pendingChoiceId: null,
         offline: false,
         processing: false,
         recordingPhase: "idle",
@@ -616,7 +626,7 @@ export class LearningSessionController {
     if (this.#screen.kind !== "learning") return;
     this.#stopActivityTimer();
     const { sessionId, childId, mode } = this.#screen.session;
-    this.#resume = () => this.#finishSession(epoch);
+    this.#setResume(() => this.#finishSession(epoch));
     try {
       const summary = await this.#api.endSession(sessionId);
       if (epoch !== this.#epoch) return;
@@ -652,7 +662,7 @@ export class LearningSessionController {
       this.#setLearning({ feedback: null });
       return;
     }
-    this.#setLearning({ busy: true });
+    this.#setLearning({ busy: true, transitioning: true, pendingChoiceId: null });
     await this.#loadNext(this.#epoch, screen.session.sessionId);
   }
 
@@ -661,7 +671,7 @@ export class LearningSessionController {
     if (!screen || screen.busy) return;
     this.#teardownRecording();
     this.#stopPlayback();
-    this.#setLearning({ busy: true });
+    this.#setLearning({ busy: true, transitioning: true });
     await this.#finishSession(this.#epoch);
   }
 
@@ -671,16 +681,16 @@ export class LearningSessionController {
     const epoch = this.#epoch;
     const sessionId = screen.session.sessionId;
     const taskId = screen.task.taskId;
-    this.#setLearning({ busy: true });
+    this.#setLearning({ busy: true, transitioning: true });
     await this.#sendActivitySignal("interaction");
     if (epoch !== this.#epoch || this.#learning()?.task?.taskId !== taskId) return;
     await this.#sendActivitySignal("pause", "technical_wait");
     if (epoch !== this.#epoch || this.#learning()?.task?.taskId !== taskId) return;
     this.#stopActivityTimer();
-    this.#resume = async () => {
+    this.#setResume(async () => {
       await this.#api.completePresentation(taskId);
       await this.#loadNext(epoch, sessionId);
-    };
+    });
     try {
       await this.#api.completePresentation(taskId);
       await this.#loadNext(epoch, sessionId);
@@ -716,9 +726,9 @@ export class LearningSessionController {
     const disclose = async (): Promise<void> => {
       const disclosure = await this.#api.authorizeDisclosure(taskId, "hint");
       if (epoch !== this.#epoch || this.#learning() === null) return;
-      this.#setLearning({ reveal: { target: disclosure.reveal?.target ?? "", ...(task.prompt.kind === "picture_recall" ? { visual: task.prompt.visual, ...(disclosure.audioAssetId ? { audioAssetId: disclosure.audioAssetId } : {}) } : {}) }, busy: false });
+      this.#setLearning({ reveal: { target: disclosure.reveal?.target ?? "", ...(task.prompt.kind === "picture_recall" ? { visual: task.prompt.visual, ...(disclosure.audioAssetId ? { audioAssetId: disclosure.audioAssetId } : {}) } : {}) }, busy: false, transitioning: false });
     };
-    this.#resume = disclose;
+    this.#setResume(disclose);
     try {
       await disclose();
     } catch (error) {
@@ -758,28 +768,27 @@ export class LearningSessionController {
     if (!screen?.task || screen.busy || screen.offline) return;
     const epoch = this.#epoch;
     const taskId = screen.task.taskId;
-    this.#setLearning({ busy: true });
+    this.#setLearning({ busy: true, transitioning: true,
+      pendingChoiceId: input.modality === "choice" ? input.optionId : null });
     await this.#sendActivitySignal("interaction");
     if (epoch !== this.#epoch || this.#learning()?.task?.taskId !== taskId) return;
     await this.#sendActivitySignal("pause", "technical_wait");
     if (epoch !== this.#epoch || this.#learning()?.task?.taskId !== taskId) return;
     this.#stopActivityTimer();
     this.#stopPlayback();
-    // przypisujemy dopiero za strażnikiem — odrzucone kliknięcie nie śmieci
     this.#pendingChoice = input.modality === "choice" ? input.optionId : null;
     const clientAttemptId = randomUUID();
-    this.#setLearning({ busy: true });
     const send = async (): Promise<void> => {
       const attempt = await this.#api.submitAnswer({ ...input, taskId, clientAttemptId });
       await this.#applyAttempt(attempt, epoch);
     };
-    this.#resume = send;
+    this.#setResume(send);
     try {
       await send();
     } catch (error) {
       if (epoch !== this.#epoch || this.#screen.kind !== "learning") return;
       if (screen.session.mode === "mock_test" && error instanceof KidApiError && error.code === "conflict") {
-        this.#resume = () => this.#loadNext(epoch, screen.session.sessionId);
+        this.#setResume(() => this.#loadNext(epoch, screen.session.sessionId));
       }
       this.#handleFailure(error);
     }
@@ -795,7 +804,7 @@ export class LearningSessionController {
   }
 
   async #pollAttempt(attemptId: string, epoch: number, deadline: number): Promise<void> {
-    this.#resume = () => this.#pollAttempt(attemptId, epoch, deadline);
+    this.#setResume(() => this.#pollAttempt(attemptId, epoch, deadline));
     try {
       const attempt = await this.#api.readAttempt(attemptId);
       if (epoch !== this.#epoch) return;
@@ -824,6 +833,8 @@ export class LearningSessionController {
     this.#screen = {
       ...this.#screen,
       busy: false,
+      transitioning: false,
+      pendingChoiceId: null,
       processing: false,
       // feedback zastępuje panel ujawnienia podpowiedzi
       reveal: null,
@@ -893,7 +904,7 @@ export class LearningSessionController {
         const current = this.#learning();
         if (playbackGeneration === this.#playbackGeneration && epoch === this.#epoch &&
             current?.session.sessionId === screen.session.sessionId && current.task?.taskId === task.taskId) {
-          this.#resume = () => this.playTaskAudio();
+          this.#setResume(() => this.playTaskAudio(), true);
           this.#handleFailure(error);
         }
         return;
@@ -906,9 +917,11 @@ export class LearningSessionController {
       } catch (error) {
         const current = this.#learning();
         if (playbackGeneration === this.#playbackGeneration && epoch === this.#epoch && current?.session.sessionId === screen.session.sessionId && current.task?.taskId === task.taskId) {
-          this.#resume = screen.session.mode === "mock_test" && error instanceof KidApiError && error.code === "conflict"
-            ? () => this.#loadNext(epoch, screen.session.sessionId)
-            : () => this.playTaskAudio();
+          const resumeIsNextTask = screen.session.mode === "mock_test" && error instanceof KidApiError && error.code === "conflict";
+          this.#setResume(
+            resumeIsNextTask ? () => this.#loadNext(epoch, screen.session.sessionId) : () => this.playTaskAudio(),
+            !resumeIsNextTask,
+          );
           this.#handleFailure(error);
         }
         return;
@@ -1098,7 +1111,7 @@ export class LearningSessionController {
         const attempt = await this.#api.submitSpeech(taskId, clientAttemptId, audio);
         await this.#applyAttempt(attempt, epoch);
       };
-      this.#resume = send;
+      this.#setResume(send);
       await send();
     } catch (error) {
       if (generation !== this.#recordingGeneration || epoch !== this.#epoch || this.#screen.kind !== "learning") return;
@@ -1128,7 +1141,7 @@ export class LearningSessionController {
     } catch {
       const current = this.#learning();
       if (current?.session.sessionId !== session.sessionId) return;
-      this.#resume = () => this.#disableSessionMicrophone(session, continueAfterDisable);
+      this.#setResume(() => this.#disableSessionMicrophone(session, continueAfterDisable));
       this.#setLearning({ error: messages.errors.picture_microphone_disable_failed, busy: false });
     }
   }
@@ -1151,10 +1164,12 @@ export class LearningSessionController {
   async retry(): Promise<void> {
     const screen = this.#learning();
     if (screen === null) return;
-    this.#setLearning({ offline: false, error: null });
+    this.#setLearning({ offline: false, error: null,
+      ...(this.#resume && !this.#resume.keepsTaskVisible ? { busy: true, transitioning: true } : {}) });
     if (this.#resume) {
+      const resume = this.#resume;
       try {
-        await this.#resume();
+        await resume.run();
       } catch (error) {
         const current = this.#learning();
         if (current?.session.mode === "mock_test" && error instanceof KidApiError && error.code === "conflict") {
@@ -1246,9 +1261,9 @@ export class LearningSessionController {
     if (this.#screen.kind !== "learning") return;
     if (isNetworkError(error)) {
       this.#stopPlayback();
-      this.#screen = { ...this.#screen, offline: true, busy: false };
+      this.#screen = { ...this.#screen, offline: true, busy: false, transitioning: false };
     } else {
-      this.#screen = { ...this.#screen, error: messageForError(error), busy: false };
+      this.#screen = { ...this.#screen, error: messageForError(error), busy: false, transitioning: false };
     }
     this.#emit();
   }

@@ -220,6 +220,37 @@ test("long choice labels keep their geometry when feedback markers appear", asyn
   });
 });
 
+test("choice selection and transition feedback appear while reward requests are still pending", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const fixture: KidUiFixture = completedReadingFixture();
+  fixture.onActivitySignal = async (signal) => {
+    if (signal.kind === "interaction") await new Promise((resolve) => setTimeout(resolve, 450));
+  };
+  await installKidUiFixture(page, fixture);
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+
+  const option = page.getByTestId("kid-option").first();
+  const before = await page.getByTestId("kid-exercise").boundingBox();
+  expect(before).not.toBeNull();
+  await option.click();
+
+  await expect(option).toHaveClass(/kid-option--pending/);
+  await expect(option).toHaveAttribute("aria-pressed", "true");
+  await expect(option).not.toHaveClass(/kid-option--correct|kid-option--wrong/);
+  await expect(page.getByTestId("kid-transitioning")).toBeVisible();
+  const during = await page.getByTestId("kid-exercise").boundingBox();
+  expect(during).not.toBeNull();
+  expect(Math.abs(during!.x - before!.x)).toBeLessThanOrEqual(2);
+  expect(Math.abs(during!.y - before!.y)).toBeLessThanOrEqual(2);
+  expect(Math.abs(during!.height - before!.height)).toBeLessThanOrEqual(2);
+
+  await expect(page.getByTestId("kid-next")).toBeVisible();
+  await expect(page.getByTestId("kid-next")).toBeInViewport();
+  await expect(option).toHaveClass(/kid-option--correct/);
+});
+
 for (const kind of ["recall", "speech"] as const) {
 test(`${kind} microphone phases keep exercise controls in place`, async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });

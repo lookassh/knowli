@@ -423,10 +423,35 @@ describe("LearningSessionController", () => {
     const act = () => operation === "answer" ? harness.controller.answerText("Thursday") : harness.controller.completePresentation();
     const first = act();
     const second = act();
-    expect(harness.controller.getScreen()).toMatchObject({ busy: true });
+    expect(harness.controller.getScreen()).toMatchObject({ busy: true, transitioning: true });
     release();
     await Promise.all([first, second]);
     expect(operation === "answer" ? harness.state.submissions : harness.state.presentations).toHaveLength(1);
+    harness.controller.teardown();
+  });
+
+  it("shows neutral choice and transition state before telemetry or grading responds", async () => {
+    const chosen = "88888888-8888-8888-8888-888888888888";
+    const task = taskDto("instant-neutral-choice", {
+      kind: "listening", options: [{ id: chosen, text: "czwartek" }],
+      audioAssetId: "99999999-9999-4999-8999-999999999999",
+    });
+    const harness = await startAtTask(baseState(), task);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const original = harness.api.signalRewardActivity;
+    vi.spyOn(harness.api, "signalRewardActivity").mockImplementation(async (input) => { await gate; return original(input); });
+
+    const answer = harness.controller.answerChoice(chosen);
+    expect(harness.controller.getScreen()).toMatchObject({
+      kind: "learning", busy: true, transitioning: true, pendingChoiceId: chosen,
+    });
+    expect(harness.state.submissions).toHaveLength(0);
+
+    release();
+    await answer;
+    expect(harness.controller.getScreen()).toMatchObject({ transitioning: false, pendingChoiceId: null });
     harness.controller.teardown();
   });
 
@@ -1800,6 +1825,18 @@ describe("LearningSessionController", () => {
     expect(harness.controller.getScreen()).toMatchObject({ feedback: { dto: { kind: "great" } } });
   });
 
+  it("po błędzie i ponowieniu podpowiedzi usuwa stan przejścia po ujawnieniu", async () => {
+    const state = baseState();
+    state.disclosureError = new TypeError("fetch failed");
+    const harness = await startAtTask(state, taskDto("hint-retry", { kind: "recall", prompt: "czwartek" }));
+    await harness.controller.notRemember();
+    state.disclosureError = undefined;
+    await harness.controller.retry();
+    expect(harness.controller.getScreen()).toMatchObject({
+      kind: "learning", reveal: { target: "Thursday" }, busy: false, transitioning: false,
+    });
+  });
+
   it("ujawnia wizualizację dla obrazkowego przypomnienia i przed dźwiękiem ponownie autoryzuje ekspozycję", async () => {
     const recall = taskDto("picture-recall", { kind: "picture_recall", visual: { kind: "color", color: "#ff0000" } });
     const harness = await startAtTask(baseState(), recall);
@@ -1887,11 +1924,23 @@ describe("LearningSessionController", () => {
     expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", offline: true, error: null });
     expect(harness.media.playUrls).toEqual([]);
 
+    state.disclosureError = new KidApiError("conflict", false);
+    await harness.controller.retry();
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", busy: false, transitioning: false });
+
     state.disclosureError = undefined;
     await harness.controller.retry();
-    expect(state.disclosures).toHaveLength(2);
+    expect(state.disclosures).toHaveLength(3);
     expect(harness.media.playUrls).toHaveLength(1);
-    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", offline: false });
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", offline: false, busy: false, transitioning: false });
+
+    state.disclosureError = new TypeError("fetch failed");
+    harness.controller.markOffline();
+    await harness.controller.retry();
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", offline: true, busy: false, transitioning: false });
+    state.disclosureError = undefined;
+    await harness.controller.retry();
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", offline: false, busy: false, transitioning: false });
   });
 
   it("autoryzuje odsłuch picture Recall tylko raz", async () => {

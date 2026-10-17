@@ -19,7 +19,7 @@ export function PictureListeningView({ task, busy, mediaUrl, optionOutcomes, res
           <ul className="kid-options kid-picture-options">
             {task.prompt.options.map(option => {
               const outcome = optionOutcomes.get(option.id);
-              const outcomeLabel = outcome === undefined ? option.labelPl
+              const outcomeLabel = outcome === undefined || outcome === "pending" ? option.labelPl
                 : outcome === "correct"
                   ? format(messages.kid.pictureChoiceCorrect, { answer: option.labelPl })
                   : format(messages.kid.pictureChoiceWrong, { answer: option.labelPl });
@@ -27,12 +27,13 @@ export function PictureListeningView({ task, busy, mediaUrl, optionOutcomes, res
                 <li key={option.id}>
                   <button type="button" data-testid="kid-option" aria-label={outcomeLabel}
                     className={`kid-picture-option${outcome === undefined ? "" : ` kid-option--${outcome}`}`}
+                    aria-pressed={outcome === "pending"}
                     disabled={busy} onClick={() => handlers.onAnswerChoice(option.id)}>
                     <span className="kid-picture-choice-visual">
                       <MeaningVisualView visual={option.visual} mediaUrl={mediaUrl} numberDisplay="digit" />
                     </span>
                     <span className="kid-picture-choice-label">{option.labelPl}</span>
-                    {outcome !== undefined && (
+                    {(outcome === "correct" || outcome === "wrong") && (
                       <span className={`kid-picture-outcome kid-picture-outcome--${outcome}`} aria-hidden="true" data-testid={`kid-outcome-${outcome}`}>
                         {outcome === "correct" ? "✓" : "×"}
                       </span>

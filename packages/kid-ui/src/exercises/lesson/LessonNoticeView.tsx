@@ -25,6 +25,7 @@ export function LessonNoticeView({ task, busy, optionOutcomes, result, resultAct
                     type="button"
                     data-testid="kid-lesson-notice-word"
                     className={["kid-lesson-notice__word", outcome === undefined ? "" : `kid-option--${outcome}`].filter(Boolean).join(" ")}
+                    aria-pressed={outcome === "pending"}
                     disabled={busy}
                     onClick={() => handlers.onAnswerChoice(segment.id)}
                   >

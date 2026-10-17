@@ -25,6 +25,7 @@ export function ReadingView({ task, busy, optionOutcomes, result, resultActions,
                 type="button"
                 data-testid="kid-option"
                 className={outcome === undefined ? undefined : `kid-option--${outcome}`}
+                aria-pressed={outcome === "pending"}
                 disabled={busy}
                 onClick={() => handlers.onAnswerChoice(option.id)}
               >
