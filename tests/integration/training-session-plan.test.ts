@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { createChild, createDraft, publishDraft, upsertAssignment, startSession, nextTask, endSession, completePresentation, submitAttempt, createServices, executeMediaAsset, prepareUiAudio, reconcileDraftAssets, runDueGenerationWork } from "@learning/server";
+import { createChild, createDraft, createDraftFromPublished, editDraft, publishDraft, upsertAssignment, startSession, nextTask, endSession, completePresentation, submitAttempt, createServices, executeMediaAsset, prepareUiAudio, reconcileDraftAssets, runDueGenerationWork } from "@learning/server";
 import { randomUUID } from "node:crypto";
 import { buildTestServices, ManualClock, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration } from "./fakes";
@@ -12,11 +12,12 @@ describe("stały plan treningu słówek", () => {
   let services: ReturnType<typeof buildTestServices>["services"];
   let childId: string;
   let deckId: string;
+  let clock: ManualClock;
 
   beforeEach(async () => {
     await truncateCoreTables();
     await pool.query("truncate learning_app.revision_assets, learning_app.media_assets, learning_app.item_revision_skills, learning_app.item_revisions, learning_app.skill_versions, learning_app.learning_items, learning_app.deck_versions, learning_app.decks cascade");
-    services = buildTestServices().services;
+    ({ services, clock } = buildTestServices());
     childId = (await createChild(services, { displayName: "Ola", avatarKey: "fox" })).id;
     const draft = await createDraft(services, { title: "Stały plan", items: pairs.map(({ source, target }) => ({ source, target, acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "color" as const, visualData: { color: "#4169e1" } })) });
     const revisions = (await pool.query("select id from learning_app.item_revisions where deck_version_id=$1 order by position", [draft.id])).rows as {id:string}[];
@@ -32,6 +33,103 @@ describe("stały plan treningu słówek", () => {
   });
 
   afterAll(async () => { await pool.end(); });
+
+  async function readPlan(sessionId: string) {
+    const row = (await pool.query<{ training_plan: unknown }>(
+      "select training_plan from learning_app.learning_sessions where id=$1", [sessionId],
+    )).rows[0]!;
+    return readTrainingSessionPlan(row.training_plan)!;
+  }
+
+  async function beginWithDifficulty() {
+    const first = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    let task = await nextTask(services, first.sessionId);
+    while (task?.exerciseType === "exposure") {
+      await completePresentation(services, { taskId: task.taskId });
+      clock.advanceMs(1000);
+      task = await nextTask(services, first.sessionId);
+    }
+    if (!task) throw new Error("expected assessed task");
+    const slot = (await readPlan(first.sessionId)).slots.find((slot) => slot.taskId === task!.taskId)!;
+    await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "dont_remember" });
+    await endSession(services, first.sessionId);
+    clock.advanceMs(1000);
+    return slot;
+  }
+
+  it.each(["dont_remember", "skip", "correct"] as const)("zachowuje trudność po retry=%s, rozlicza ją tylko sukces", async (result) => {
+    const original = await beginWithDifficulty();
+    const second = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const plan = await readPlan(second.sessionId);
+    const retry = plan.slots.find((slot) => slot.itemId === original.itemId && slot.reason === "retry-after-support");
+    expect(retry).toBeDefined();
+    for (const slot of plan.slots) {
+      clock.advanceMs(1000);
+      const task = await nextTask(services, second.sessionId);
+      expect(task?.taskId).toBe(slot.taskId);
+      if (slot.exerciseType === "exposure") await completePresentation(services, { taskId: slot.taskId });
+      else if (slot.taskId === retry!.taskId && result === "correct") {
+        await submitAttempt(services, { taskId: slot.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: String(slot.answerKey.correctOptionId) });
+      } else {
+        const modality = slot.taskId === retry!.taskId && result === "dont_remember" ? "dont_remember" : "skip";
+        await submitAttempt(services, { taskId: slot.taskId, clientAttemptId: randomUUID(), modality });
+      }
+      if (slot.taskId === retry!.taskId) break;
+    }
+    expect(await readPlan(second.sessionId)).toEqual(plan);
+    await endSession(services, second.sessionId);
+    clock.advanceMs(1000);
+    const third = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const slots = (await readPlan(third.sessionId)).slots;
+    expect(slots.some((slot) => slot.itemId === original.itemId && slot.reason === "support")).toBe(result !== "correct");
+  });
+
+  it.each([false, true])("przenosi wsparcie przez publikację, chyba że zmieniono kryteria=%s", async (changeCriteria) => {
+    const original = await beginWithDifficulty();
+    let draft = await createDraftFromPublished(services, deckId);
+    if (changeCriteria) draft = await editDraft(services, draft.id, {
+      expectedEditNumber: draft.editNumber,
+      items: draft.items.map((item) => item.id === original.itemId ? { ...item, acceptedAnswers: ["alternative"] } : item),
+    });
+    await publishDraft(services, draft.id, draft.editNumber);
+    const next = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const slots = (await readPlan(next.sessionId)).slots;
+    expect(slots.some((slot) => slot.itemId === original.itemId && slot.reason === "support")).toBe(!changeCriteria);
+  });
+
+  it("nie przenosi trudności innego dziecka", async () => {
+    await beginWithDifficulty();
+    const child = await createChild(services, { displayName: "Adam", avatarKey: "fox" });
+    await upsertAssignment(services, child.id, deckId, null);
+    const session = await startSession(services, { childId: child.id, deckId, microphoneEnabled: false });
+    expect((await readPlan(session.sessionId)).slots.some((slot) => slot.reason === "support")).toBe(false);
+  });
+
+  it("po zmianie znaczenia zachowuje trudność niezmienionej pisowni z wieloumiejętnościowej próby", async () => {
+    await pool.query(`insert into learning_app.child_skill_progress
+      (child_id, skill_version_id, status, independent_success_streak, next_review_at, projection_version)
+      select $1, s.skill_version_id, 'needs_confirmation', 2, '2026-10-01T00:00:00Z', 'test'
+      from learning_app.item_revision_skills s join learning_app.item_revisions r on r.id=s.item_revision_id
+      where r.deck_version_id=(select published_version_id from learning_app.decks where id=$2)
+        and r.position=0 and s.skill in ('recall','spelling')`, [childId, deckId]);
+    const first = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const slot = (await readPlan(first.sessionId)).slots[0]!;
+    expect(slot.exerciseType).toBe("recall");
+    await nextTask(services, first.sessionId);
+    await submitAttempt(services, { taskId: slot.taskId, clientAttemptId: randomUUID(), modality: "dont_remember" });
+    await endSession(services, first.sessionId);
+    clock.advanceMs(1000);
+    const draft = await createDraftFromPublished(services, deckId);
+    const edited = await editDraft(services, draft.id, { expectedEditNumber: draft.editNumber,
+      items: draft.items.map((item) => item.id === slot.itemId ? { ...item, source: "inne znaczenie" } : item),
+    });
+    await publishDraft(services, edited.id, edited.editNumber);
+    const second = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const slots = (await readPlan(second.sessionId)).slots.filter((candidate) => candidate.itemId === slot.itemId);
+    expect(slots.some((candidate) => candidate.reason === "support")).toBe(true);
+    expect(slots.map((candidate) => ({ reason: candidate.reason, exerciseType: candidate.exerciseType })))
+      .toContainEqual({ reason: "retry-after-support", exerciseType: "letter_completion" });
+  });
 
   it("tworzy prywatny, skończony plan atomowo przy starcie i wydaje jego pierwszy krok", async () => {
     const session = await startSession(services, { childId, deckId, microphoneEnabled: false });

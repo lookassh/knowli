@@ -633,7 +633,7 @@ async function planNextTask(
       ...(context?.supportCycleId ? { supportCycleId: context.supportCycleId } : {}),
     };
   })];
-  const supportByRevision = deriveSupportStates(supportTasks, [...historicalSupport.attempts, ...attemptsById.values()], policy.supportAfterFailures);
+  const supportByRevision = deriveSupportStates(supportTasks, [...historicalSupport.attempts, ...attemptsById.values()], policy.supportAfterFailures, planningCache ? session.id : undefined);
 
   const sessionContext = contextOf(session);
   const items = new Map<string, PlannedItem>(
@@ -863,27 +863,41 @@ async function loadHistoricalSupport(
   revisionIds: readonly string[],
 ): Promise<{ tasks: SupportTask[]; attempts: SupportAttempt[] }> {
   if (revisionIds.length === 0) return { tasks: [], attempts: [] };
+  const currentLinks = await tx.select({
+    revisionId: itemRevisionSkills.itemRevisionId, skillVersionId: itemRevisionSkills.skillVersionId,
+  }).from(itemRevisionSkills).where(inArray(itemRevisionSkills.itemRevisionId, [...revisionIds]));
+  const currentRevisionBySkillVersion = new Map(currentLinks.map((link) => [link.skillVersionId, link.revisionId]));
+  if (currentLinks.length === 0) return { tasks: [], attempts: [] };
   const rows = await tx.select({
     id: sessionTasks.id, sessionId: sessionTasks.sessionId, itemRevisionId: sessionTasks.itemRevisionId, exerciseType: sessionTasks.exerciseType,
     state: sessionTasks.state, context: sessionTasks.context, issuedAt: sessionTasks.issuedAt,
+    skillVersionId: itemRevisionSkills.skillVersionId,
   }).from(sessionTasks)
     .innerJoin(learningSessions, eq(learningSessions.id, sessionTasks.sessionId))
-    .where(and(eq(learningSessions.childId, childId), inArray(sessionTasks.itemRevisionId, [...revisionIds])))
-    .orderBy(asc(sessionTasks.issuedAt), asc(sessionTasks.id));
+    .innerJoin(itemRevisionSkills, eq(itemRevisionSkills.itemRevisionId, sessionTasks.itemRevisionId))
+    .where(and(eq(learningSessions.childId, childId), inArray(itemRevisionSkills.skillVersionId, [...currentRevisionBySkillVersion.keys()])))
+    .orderBy(asc(sessionTasks.issuedAt), asc(sessionTasks.sessionId), asc(sessionTasks.ordinal));
   if (rows.length === 0) return { tasks: [], attempts: [] };
-  const taskIds = rows.map((row) => row.id);
+  // A new deck revision shares unchanged skill versions, not revision IDs.
+  const taskRows = [...new Map(rows.map((row) => [row.id, {
+    ...row, itemRevisionId: currentRevisionBySkillVersion.get(row.skillVersionId)!,
+  }])).values()];
+  const taskIds = taskRows.map((row) => row.id);
+  const revisionByTask = new Map(taskRows.map((row) => [row.id, row.itemRevisionId]));
   const graded = await tx.select({
     attemptId: attempts.id, taskId: attempts.taskId, modality: attempts.modality,
-    skill: assessments.skill, outcome: assessments.outcome,
+    skill: assessments.skill, skillVersionId: assessments.skillVersionId, outcome: assessments.outcome,
   }).from(attempts).leftJoin(assessments, eq(assessments.attemptId, attempts.id))
-    .where(inArray(attempts.taskId, taskIds));
+    .where(and(inArray(attempts.taskId, taskIds), eq(attempts.state, "completed")))
+    .orderBy(asc(attempts.attemptNumber));
   const byAttempt = new Map<string, SupportAttempt>();
   for (const row of graded) {
     const attempt = byAttempt.get(row.attemptId) ?? {
       attemptId: row.attemptId, taskId: row.taskId, modality: row.modality,
       outcomes: [] as { skill: Skill; outcome: "correct" | "incorrect" | "unevaluated" }[],
     };
-    if (row.skill !== null && row.outcome !== null) {
+    if (row.skill !== null && row.outcome !== null && row.skillVersionId !== null &&
+        currentRevisionBySkillVersion.get(row.skillVersionId) === revisionByTask.get(row.taskId)) {
       attempt.outcomes = [...attempt.outcomes, {
         skill: row.skill as Skill,
         outcome: row.outcome === "unassessed" ? "unevaluated" : row.outcome as "correct" | "incorrect",
@@ -892,7 +906,7 @@ async function loadHistoricalSupport(
     byAttempt.set(row.attemptId, attempt);
   }
   return {
-    tasks: rows.map((row, ordinal) => {
+    tasks: taskRows.map((row, ordinal) => {
       const context = row.context as { reason?: string; supportCycleId?: string } | null;
       return {
         taskId: row.id, sessionId: row.sessionId, itemRevisionId: row.itemRevisionId, ordinal,
@@ -901,7 +915,11 @@ async function loadHistoricalSupport(
         reason: context?.reason ?? "", ...(context?.supportCycleId ? { supportCycleId: context.supportCycleId } : {}),
       };
     }),
-    attempts: [...byAttempt.values()],
+    attempts: [...byAttempt.values()].map((attempt) => ({
+      ...attempt,
+      // An old declaration cannot reopen support for changed assessment criteria.
+      modality: attempt.modality === "dont_remember" && attempt.outcomes.length === 0 ? "skip" : attempt.modality,
+    })),
   };
 }
 
