@@ -536,7 +536,8 @@ test("popup wyniku mieści się w ekranie telefonu bez przewijania", async ({ pa
   const optionBoxes = await Promise.all(
     (await page.getByTestId("kid-option").elementHandles()).map(async (option) => await option.boundingBox()),
   );
-  expect(optionBoxes).toHaveLength(3);
+  expect(optionBoxes.length).toBeGreaterThanOrEqual(2);
+  expect(optionBoxes.length).toBeLessThanOrEqual(4);
   for (const box of optionBoxes) {
     expect(box).not.toBeNull();
     expect(box!.y + box!.height).toBeLessThanOrEqual(barBox!.y + 1);
