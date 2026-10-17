@@ -94,7 +94,7 @@ type ActivitySessionRow = {
  * Interakcje liczą zdarzenia serwera i obserwacje klienta; rejestr kontaktu
  * (`contact`) nie jest działaniem dziecka.
  */
-async function readActivitySummary(services: Services, childId: string): Promise<ActivitySummaryDto> {
+export async function readActivitySummary(services: Services, childId: string): Promise<ActivitySummaryDto> {
   const now = services.clock.now();
   const period = buildReportPeriod(now.toISOString(), "Europe/Warsaw", ACTIVITY_WINDOW_DAYS);
   const since = new Date(period.startUtc);

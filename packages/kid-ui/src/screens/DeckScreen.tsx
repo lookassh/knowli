@@ -23,6 +23,8 @@ function wordCount(count: number): string {
 export function DeckScreen({
   decks,
   childName,
+  todayActivitySeconds = 0,
+  todayActivityUnavailable = false,
   mediaUrl,
   microphone,
   micDenied,
@@ -35,6 +37,8 @@ export function DeckScreen({
 }: {
   decks: KidDeckDto[];
   childName: string;
+  todayActivitySeconds?: number;
+  todayActivityUnavailable?: boolean;
   mediaUrl?: (assetId: string) => string;
   microphone: boolean;
   micDenied: boolean;
@@ -53,7 +57,15 @@ export function DeckScreen({
 
   return (
     <main className="kid-screen kid-deck-screen">
-      <header className="kid-top-bar">{headerActions}{onGuidance && <GuidanceButton audioKey="deck_select" onPlay={onGuidance} testId="kid-deck-guidance" />}</header>
+      <header className="kid-top-bar">
+        <span className="kid-daily-activity" data-testid="kid-daily-activity">
+          {todayActivityUnavailable
+            ? messages.kid.kidDailyActivityUnavailable
+            : format(messages.kid.kidDailyActivity, { minutes: todayActivitySeconds > 0 ? Math.max(1, Math.round(todayActivitySeconds / 60)) : 0 })}
+        </span>
+        {headerActions}
+        {onGuidance && <GuidanceButton audioKey="deck_select" onPlay={onGuidance} testId="kid-deck-guidance" />}
+      </header>
       <h1>{messages.kid.decksTitle}</h1>
       {childName && <p className="kid-greeting">{format(messages.kid.greeting, { name: childName })}</p>}
 

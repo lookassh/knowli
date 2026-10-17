@@ -101,6 +101,8 @@ export function KidApp({
         <DeckScreen
           decks={screen.decks}
           childName={screen.profiles.find((profile) => profile.childId === screen.childId)?.displayName ?? ""}
+          todayActivitySeconds={screen.profiles.find((profile) => profile.childId === screen.childId)?.todayActivitySeconds}
+          todayActivityUnavailable={screen.profiles.find((profile) => profile.childId === screen.childId)?.todayActivityUnavailable}
           mediaUrl={(assetId) => controller.mediaUrl(assetId)}
           microphone={screen.microphone}
           micDenied={screen.micDenied}

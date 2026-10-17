@@ -10,6 +10,7 @@ import {
   editDraft,
   endSession,
   getProgress,
+  listKidProfiles,
   nextTask,
   publishDraft,
   removeAssignment,
@@ -585,6 +586,10 @@ describe("karta aktywności dziecka w postępach (integracja)", () => {
     expect(progress.activity.daily).toHaveLength(7);
     expect(progress.activity.daily.reduce((sum, d) => sum + d.activeSeconds, 0)).toBe(progress.activity.activeSeconds);
     expect(progress.activity.daily.filter((d) => d.sessions > 0)).toHaveLength(2);
+    const profiles = await listKidProfiles(services);
+    expect(profiles.find(profile => profile.childId === childA)?.todayActivitySeconds)
+      .toBe(progress.activity.daily[progress.activity.daily.length - 1]!.activeSeconds);
+    expect(profiles.find(profile => profile.childId === childB)?.todayActivitySeconds).toBe(0);
 
     // drugie dziecko bez własnej aktywności nie dziedziczy liczb
     const other = await getProgress(services, childB, deckId);

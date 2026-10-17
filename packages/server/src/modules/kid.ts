@@ -12,6 +12,7 @@ import { CURRENT_POLICY_ID, ensureLearningPolicy, loadPolicy } from "../policies
 import { readLearningSnapshot } from "./learning-snapshot";
 import { payloadToItem } from "./item-payload";
 import { readKidRewardSnapshot, readKidRewardSnapshots } from "./reward-activity";
+import { readActivitySummary } from "./reporting";
 
 /**
  * Widoki startowe Kid Mode (arch §12): profile dzieci (tylko nazwa i awatar)
@@ -23,9 +24,22 @@ export async function listKidProfiles(services: Services): Promise<KidProfileDto
     .select({ childId: childProfiles.id, displayName: childProfiles.displayName, avatarKey: childProfiles.avatarKey, recordingMode: childProfiles.recordingMode, canRead: childProfiles.canRead })
     .from(childProfiles)
     .orderBy(asc(childProfiles.createdAt));
-  const rewardsByChild = await readKidRewardSnapshots(services, rows.map(row => row.childId));
+  const [rewardsByChild, activityByChild] = await Promise.all([
+    readKidRewardSnapshots(services, rows.map(row => row.childId)),
+    Promise.all(rows.map(async (row): Promise<[string, { seconds: number | undefined; unavailable: boolean }]> => {
+      try {
+        const activity = await readActivitySummary(services, row.childId);
+        return [row.childId, { seconds: activity.daily[activity.daily.length - 1]?.activeSeconds ?? 0, unavailable: false }];
+      } catch {
+        // Profil i nauka nadal są dostępne, jeśli odczyt raportu aktywności zawiedzie.
+        return [row.childId, { seconds: undefined, unavailable: true }];
+      }
+    })),
+  ]);
+  const activityByChildMap = new Map(activityByChild);
   return rows.map((row) => {
     const rewards = rewardsByChild.get(row.childId)!;
+    const activity = activityByChildMap.get(row.childId);
     return { ...row, rewards: {
       earnedPoints: rewards.earnedPoints,
       pointsToUse: rewards.pointsToUse,
@@ -33,7 +47,7 @@ export async function listKidProfiles(services: Services): Promise<KidProfileDto
       todayCreditedSeconds: rewards.todayCreditedSeconds,
       dailyGoalSeconds: 1800 as const,
       xboxRequest: rewards.xboxRequest,
-    } };
+    }, todayActivitySeconds: activity?.seconds, todayActivityUnavailable: activity?.unavailable };
   });
 }
 

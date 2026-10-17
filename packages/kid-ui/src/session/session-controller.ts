@@ -1194,9 +1194,16 @@ export class LearningSessionController {
     try {
       const profiles = await this.#api.listProfiles();
       if (epoch !== this.#epoch || requestSequence !== this.#profileRequestSequence) return;
-      this.#profiles = profiles;
+      const previousByChild = new Map(this.#profiles.map(profile => [profile.childId, profile]));
+      this.#profiles = profiles.map(profile => {
+        if (!profile.todayActivityUnavailable) return profile;
+        const previous = previousByChild.get(profile.childId);
+        return previous?.todayActivitySeconds !== undefined && !previous.todayActivityUnavailable
+          ? { ...profile, todayActivitySeconds: previous.todayActivitySeconds, todayActivityUnavailable: false }
+          : profile;
+      });
       if (this.#screen.kind === "profile" || this.#screen.kind === "deck" || this.#screen.kind === "summary") {
-        this.#screen = { ...this.#screen, profiles };
+        this.#screen = { ...this.#screen, profiles: this.#profiles };
         this.#emit();
       }
     } catch { /* Keep the last confirmed balances during a temporary network failure. */ }
