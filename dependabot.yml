@@ -1,0 +1,40 @@
+# Dependabot — cotygodniowe PR-y z aktualizacjami zależności.
+# Root jest pnpm workspace; npm pokrywa manifesty pracy i lockfile pnpm-lock.yaml.
+# Python pakiet konsumenta MCP żyje pod integrations/umiem-mcp (uv).
+
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "npm"
+    directory: "/apps/web"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "npm"
+    directory: "/apps/worker"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "npm"
+    directory: "/packages/contracts"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "npm"
+    directory: "/packages/server"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "npm"
+    directory: "/packages/kid-ui"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "uv"
+    directory: "/integrations/umiem-mcp"
+    schedule:
+      interval: "weekly"
