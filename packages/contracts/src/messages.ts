@@ -483,6 +483,8 @@ export const messages = {
     switchProfile: "Zmień profil",
     feedbackNext: "Dalej",
     feedbackRetry: "Spróbuj jeszcze raz",
+    pictureChoiceCorrect: "Poprawna odpowiedź: {answer}",
+    pictureChoiceWrong: "Twój błędny wybór: {answer}",
     feedbackGreat: "Świetnie!",
     feedbackAlmost: "Prawie! Posłuchaj jeszcze raz",
     feedbackCapitalization: "To właściwe słowo! {word} piszemy wielką literą",
