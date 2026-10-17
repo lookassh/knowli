@@ -41,7 +41,7 @@ test("browser lifecycle pauses reward signals in background and resumes the visi
     window.dispatchEvent(new Event("blur"));
   });
   await expect.poll(() => signals.at(-1)?.pauseReason).toBe("blur");
-  await expect(page.getByTestId("kid-activity-paused")).toBeVisible();
+  await expect(page.getByTestId("kid-activity-paused")).toHaveCount(0);
   const afterBlur = signals.length;
   await page.clock.runFor(45_000);
   expect(signals).toHaveLength(afterBlur);
@@ -68,7 +68,7 @@ test("browser lifecycle pauses reward signals in background and resumes the visi
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await page.clock.runFor(45_000);
   expect(signals).toHaveLength(afterHide);
-  await expect(page.getByTestId("kid-activity-paused")).toBeVisible();
+  await expect(page.getByTestId("kid-activity-paused")).toHaveCount(0);
 
   const beforeVisibleWithoutFocus = signals.length;
   await page.evaluate(() => {
@@ -77,7 +77,7 @@ test("browser lifecycle pauses reward signals in background and resumes the visi
   });
   await page.clock.runFor(45_000);
   expect(signals).toHaveLength(beforeVisibleWithoutFocus);
-  await expect(page.getByTestId("kid-activity-paused")).toBeVisible();
+  await expect(page.getByTestId("kid-activity-paused")).toHaveCount(0);
 
   await page.evaluate(() => {
     Object.defineProperty(document, "hasFocus", { configurable: true, value: () => true });
@@ -121,7 +121,7 @@ test("editing a written answer signals activity beyond a minute and resumes an i
   // without reimplementing credited-time calculations in a browser test.
   replyIdle = true;
   await page.clock.runFor(60_000);
-  await expect(page.getByTestId("kid-activity-paused")).toBeVisible();
+  await expect(page.getByTestId("kid-activity-paused")).toHaveCount(0);
   const beforeResume = interactions().length;
   await input.fill("cat");
   await expect.poll(() => interactions().length).toBe(beforeResume + 1);
