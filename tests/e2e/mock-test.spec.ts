@@ -10,7 +10,7 @@ test("written mock test keeps its three slots after errors, reload and transport
   await expect(page.getByTestId("kid-record")).toHaveCount(0);
   await expect(page.getByTestId("kid-not-remember")).toHaveText("Nie pamiętam");
   const first = await page.locator("[data-task-id]").getAttribute("data-task-id");
-  const early = await page.request.get(`/api/v1/kid/sessions/${(await (await page.request.post("/api/v1/kid/sessions", { data: { childId, deckId, mode: "mock_test", microphoneEnabled: false } })).json()).sessionId}/mock-test-summary`);
+  const early = await page.request.get(`/api/v1/kid/sessions/${(await (await page.request.post("/api/v1/kid/sessions", { data: { childId, deckId, mode: "mock_test", microphoneEnabled: false, supportsPictureVocabulary: true } })).json()).sessionId}/mock-test-summary`);
   expect(early.status()).toBe(409);
   let interrupted = false;
   await page.route("**/api/v1/kid/tasks/*/attempts", async route => {
