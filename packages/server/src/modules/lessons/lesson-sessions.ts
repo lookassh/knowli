@@ -224,7 +224,7 @@ export async function lessonTaskCounts(tx: Tx, sessionId: string): Promise<{ tot
 }
 
 /** Wynik oceny per zadanie tej sesji (z `assessments` przez `attempts`). */
-async function loadSessionOutcomes(tx: Tx, sessionId: string, dailyRound: boolean): Promise<Map<string, LessonSessionOutcome>> {
+async function loadSessionOutcomes(tx: Tx, sessionId: string): Promise<Map<string, LessonSessionOutcome>> {
   const rows = await tx
     .select({ taskId: attempts.taskId, modality: attempts.modality, outcome: assessments.outcome, feedback: attempts.feedback })
     .from(attempts)
@@ -238,8 +238,6 @@ async function loadSessionOutcomes(tx: Tx, sessionId: string, dailyRound: boolea
     else if (row.modality === "dont_remember") outcome = "dont_remember";
     else if (row.outcome === "correct") outcome = "correct";
     else if (row.outcome === "incorrect") outcome = "incorrect";
-    else if (dailyRound && ["incorrect", "lesson_hint", "lesson_almost"].includes((row.feedback as { kind?: string } | null)?.kind ?? "")) outcome = "incorrect";
-    else if (dailyRound && (row.feedback as { kind?: string } | null)?.kind === "great") outcome = "correct";
     else outcome = "unevaluated";
     byTask.set(row.taskId, outcome);
   }
@@ -267,10 +265,7 @@ async function planLessonTask(
   const context = lessonContextOf(version);
   const { subject, topic } = requireTopic(services, context);
   const allExercises = await loadExercises(tx, session.deckVersionId);
-  const dailyRoundRevisionIds = (session.context as { dailyRoundRevisionIds?: unknown }).dailyRoundRevisionIds;
-  const exercises = session.mode === "daily_round" && Array.isArray(dailyRoundRevisionIds)
-    ? allExercises.filter(exercise => dailyRoundRevisionIds.includes(exercise.revisionId))
-    : allExercises;
+  const exercises = allExercises;
   if (exercises.length === 0) {
     return null;
   }
@@ -307,7 +302,7 @@ async function planLessonTask(
     .where(eq(sessionTasks.sessionId, session.id))
     .orderBy(asc(sessionTasks.ordinal));
   const exerciseByRevision = new Map(exercises.map((e) => [e.revisionId, e] as const));
-  const outcomeByTask = await loadSessionOutcomes(tx, session.id, session.mode === "daily_round");
+  const outcomeByTask = await loadSessionOutcomes(tx, session.id);
   const cardIndexByObjective = new Map<string, number>();
   const sessionHistory: LessonSessionTask[] = taskRows.map((row) => {
     const taskContext = row.context as { objectiveId?: string; cardPurpose?: string } | null;
@@ -371,25 +366,6 @@ async function planLessonTask(
   return { plan, exercises, topic, subject, context, cardIndexByObjective };
 }
 
-/** Pure daily-round preflight: check schedulability without issuing a task. */
-export async function hasSchedulableDailyRoundTask(
-  services: Services,
-  tx: Tx,
-  session: typeof learningSessions.$inferSelect,
-  now: Date,
-): Promise<boolean> {
-  return (await planLessonTask(services, tx, session, now, session.taskBudget)) !== null;
-}
-
-/** Select the same immutable revision that would anchor the next issued step. */
-export async function dailyRoundLessonCandidate(services: Services, tx: Tx, session: typeof learningSessions.$inferSelect, now: Date): Promise<string | null> {
-  const planned = await planLessonTask(services, tx, session, now, session.taskBudget);
-  if (!planned) return null;
-  return planned.plan.kind === "card"
-    ? planned.exercises.find(exercise => exercise.payload.objectiveId === planned.plan.objectiveId)?.revisionId ?? null
-    : planned.plan.itemRevisionId;
-}
-
 function lessonTaskDto(session: typeof learningSessions.$inferSelect, task: { id: string; ordinal: number; exerciseType: LessonExerciseType; prompt: TaskPrompt }, assessedBefore: number): TaskDto {
   return {
     taskId: task.id,
@@ -399,9 +375,7 @@ function lessonTaskDto(session: typeof learningSessions.$inferSelect, task: { id
     direction: null,
     state: "issued",
     prompt: task.prompt,
-    remainingAssessed: session.mode === "daily_round"
-      ? Math.max(1, session.taskBudget - task.ordinal)
-      : session.taskBudget - assessedBefore,
+    remainingAssessed: session.taskBudget - assessedBefore,
   };
 }
 

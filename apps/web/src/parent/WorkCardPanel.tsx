@@ -154,14 +154,6 @@ export default function WorkCardPanel({ childrenList, onAuthExpired }: { childre
           <section className="pp-work-summary card" aria-label={messages.workCard.creditedTime}>
             <h3>{messages.workCard.creditedTime}</h3><p>{duration(report.creditedSeconds)}</p>
           </section>
-          <section className="pp-work-round card" aria-label={messages.workCard.roundTitle}>
-            <h3>{messages.workCard.roundTitle}</h3>
-            {!report.dailyRound.sessionId ? <p>{messages.workCard.roundMissing}</p> : <>
-              <p>{messages.workCard[`round${report.dailyRound.state === "active" ? "Active" : report.dailyRound.state === "completed" ? "Completed" : "Ended"}`]}</p>
-              {report.dailyRound.deckTitle && <p>{report.dailyRound.deckTitle}</p>}
-              <p>{messages.workCard.roundProgress.replace("{steps}", String(report.dailyRound.steps)).replace("{answered}", String(report.dailyRound.answered))}</p>
-            </>}
-          </section>
           {report.xboxRequests.filter(request => request.localDate === report.date).map(request => (
             <section className="card" aria-label={messages.workCard.xboxRequestTitle} key={request.requestId}>
               <h3>{messages.workCard.xboxRequestTitle}</h3>

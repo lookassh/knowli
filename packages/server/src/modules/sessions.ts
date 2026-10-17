@@ -55,14 +55,11 @@ import { readUiAudio } from "./ui-audio";
 import { getVocabularyCapabilities } from "../domain/vocabulary-capabilities";
 import { addLegacyTaskPromptDefaults } from "./task-prompt-compat";
 import { deriveSupportStates, type SupportAttempt, type SupportTask } from "../domain/support-cycle";
-import { isDailyRoundFailureFeedback } from "../domain/feedback";
 import { readLearningSnapshot } from "./learning-snapshot";
 import { createMockTestPlan, issueMockTestTask, closeMockTest } from "./mock-tests";
 import { assertVocabularyDeck, readVersionDeckKind, type DeckKind } from "./deck-kind";
 import {
   buildLessonSessionContext,
-  dailyRoundLessonCandidate,
-  hasSchedulableDailyRoundTask,
   issueNextLessonTask,
   lessonTaskCounts,
 } from "./lessons/lesson-sessions";
@@ -75,8 +72,6 @@ import {
 import { buildLessonSummaryObjectives } from "./lessons/lesson-attempts";
 import { completeDisabledVoiceTask } from "./voice-task-lifecycle";
 import { finishRewardActivitySession, readSessionRewardDelta, settleRewardActivity } from "./reward-activity";
-import { hasDailyRoundForDate, readDailyRoundPool, type DailyRoundPool } from "./daily-round";
-import { localDateAt, validRewardTimezone } from "../domain/reward-activity";
 
 /** Okno wznowienia aktywnej sesji od ostatniego zdarzenia (arch §9.1). */
 export const RESUME_WINDOW_MS = 30 * 60_000;
@@ -262,15 +257,13 @@ export async function startSession(services: Services, input: SessionInput): Pro
       const stale =
         now.getTime() - (await lastActivityAt(tx, active.id, active.startedAt)).getTime() >
         RESUME_WINDOW_MS;
-      const roundDayChanged = mode === "daily_round" && active.mode === "daily_round"
-        && active.dailyRoundDate !== localDateAt(now, validRewardTimezone(await readTimezone(tx)));
-      if (active.deckId === valid.deckId && active.mode === mode && !stale && !roundDayChanged) {
+      if (active.deckId === valid.deckId && active.mode === mode && !stale) {
         if (contextOf(active).vocabularyFormat === "picture" && !valid.supportsPictureVocabulary) {
           throw new AppError("validation", { details: { reason: "picture_client_update_required" } });
         }
         return sessionDto(tx, active, true);
       }
-      if (!stale && !roundDayChanged) throw new AppError("conflict", { message: "Wróć do rozpoczętej sesji albo zakończ ją przed nową." });
+      if (!stale) throw new AppError("conflict", { message: "Wróć do rozpoczętej sesji albo zakończ ją przed nową." });
       if (active.mode === "mock_test") {
         if (isLessonMockPlan(active.mockTestPlan)) await closeLessonMockTest(tx, services, active);
         else await closeMockTest(tx, services, active, "ended");
@@ -294,15 +287,8 @@ export async function startSession(services: Services, input: SessionInput): Pro
     if (!deck.publishedVersionId) throw new AppError("validation", { message: "deck is not published" });
     const deckKind = deck.kind as DeckKind;
 
-    const dailyRoundPool = mode === "daily_round"
-      ? await readEligibleDailyRoundPool(services, tx, valid.childId, valid.deckId, now)
-      : null;
-    if (mode === "daily_round" && !dailyRoundPool) throw new AppError("validation", { details: { reason: "daily_round_unavailable" } });
-    if (dailyRoundPool && await hasDailyRoundForDate(tx, valid.childId, dailyRoundPool.date)) {
-      throw new AppError("conflict", { message: "Runda dnia została już rozpoczęta." });
-    }
-    const timezone = dailyRoundPool?.timezone ?? await readTimezone(tx);
-    const versionId = dailyRoundPool?.deckVersionId ?? deck.publishedVersionId;
+    const timezone = await readTimezone(tx);
+    const versionId = deck.publishedVersionId;
     const version = (await tx.select().from(deckVersions).where(eq(deckVersions.id, versionId)))[0]!;
     if (version.vocabularyFormat === "picture" && !valid.supportsPictureVocabulary) {
       throw new AppError("validation", { details: { reason: "picture_client_update_required" } });
@@ -338,7 +324,6 @@ export async function startSession(services: Services, input: SessionInput): Pro
         };
     const context: SessionContextShape = {
       ...contextBase,
-      ...(dailyRoundPool ? { dailyRoundRevisionIds: dailyRoundPool.revisionIds, dailyRoundDate: dailyRoundPool.date } : {}),
       canRead: child.canRead,
       vocabularyFormat: version.vocabularyFormat,
       microphoneDisabledTaskIds: [],
@@ -379,56 +364,15 @@ export async function startSession(services: Services, input: SessionInput): Pro
         policyId: childProfile?.policyId ?? CURRENT_POLICY_ID,
         microphoneEnabled: valid.microphoneEnabled,
         state: "active",
-        taskBudget: mode === "daily_round" ? dailyRoundPool!.revisionIds.length : mockTestPlan?.slots.length ?? DEFAULT_TASK_BUDGET,
+        taskBudget: mockTestPlan?.slots.length ?? DEFAULT_TASK_BUDGET,
         mode,
-        dailyRoundDate: dailyRoundPool?.date ?? null,
         mockTestPlan,
         startedAt: now,
         context: context as unknown as Record<string, unknown>,
       })
       .returning();
-    if (mode === "daily_round") {
-      const schedulable = deckKind === "lesson"
-        ? await hasSchedulableDailyRoundTask(services, tx, row!, now)
-        : (await planNextTask(tx, row!, now, row!.taskBudget, 0)) !== null;
-      if (!schedulable) throw new AppError("validation", { details: { reason: "daily_round_unavailable" } });
-    }
     return sessionDto(tx, row!, false);
   });
-}
-
-/** Read-only preflight shared by the deck list and session start. Filter before
- * applying the round's three-revision limit so older safe contacts can qualify. */
-export async function readEligibleDailyRoundPool(services: Services, tx: Tx, childId: string, deckId: string, now: Date): Promise<DailyRoundPool | null> {
-  const pool = await readDailyRoundPool(tx, childId, deckId, now);
-  if (!pool) return null;
-  const [child] = await tx.select().from(childProfiles).where(eq(childProfiles.id, childId));
-  const [assignment] = await tx.select().from(assignments).where(and(eq(assignments.childId, childId), eq(assignments.deckId, deckId), eq(assignments.active, true)));
-  const [deck] = await tx.select().from(decks).where(eq(decks.id, deckId));
-  const [version] = await tx.select().from(deckVersions).where(eq(deckVersions.id, pool.deckVersionId));
-  if (!child || !assignment || !deck || deck.archivedAt || !version) return null;
-  if (!child.canRead && (deck.kind !== "vocabulary" || version.vocabularyFormat !== "picture" || !(await readUiAudio(services)).ready)) return null;
-  const contextBase = deck.kind === "lesson"
-    ? await buildLessonSessionContext(tx, { childId, deckVersionId: version.id, timezone: pool.timezone, testDate: assignment.testDate, now })
-    : { timezone: pool.timezone, testDate: assignment.testDate, previousContact: await previousContactSnapshot(tx, childId, version.id, now), reservations: [], settledChecks: [] };
-  const pending = [...pool.revisionIds];
-  const selected: string[] = [];
-  const session: typeof learningSessions.$inferSelect = {
-    id: randomUUID(), childId, assignmentId: assignment.id, deckId, deckVersionId: version.id,
-    policyId: child.policyId ?? CURRENT_POLICY_ID, microphoneEnabled: false, mode: "daily_round", dailyRoundDate: pool.date,
-    mockTestPlan: null, state: "active", taskBudget: 3, startedAt: now, endedAt: null,
-    context: { ...contextBase, canRead: child.canRead, vocabularyFormat: version.vocabularyFormat, microphoneDisabledTaskIds: [] },
-  };
-  while (pending.length && selected.length < 3) {
-    session.context = { ...session.context, dailyRoundRevisionIds: pending };
-    const candidate = deck.kind === "lesson"
-      ? await dailyRoundLessonCandidate(services, tx, session, now)
-      : (await planNextTask(tx, session, now, 3, 0))?.plan.itemRevisionId ?? null;
-    if (!candidate) break;
-    selected.push(candidate);
-    pending.splice(pending.indexOf(candidate), 1);
-  }
-  return selected.length ? { ...pool, revisionIds: selected } : null;
 }
 
 export interface PlannedItem {
@@ -475,10 +419,7 @@ async function planNextTask(
     .from(itemRevisions)
     .where(eq(itemRevisions.deckVersionId, session.deckVersionId))
     .orderBy(asc(itemRevisions.position));
-  const dailyRoundRevisionIds = (session.context as { dailyRoundRevisionIds?: unknown }).dailyRoundRevisionIds;
-  const revisions = session.mode === "daily_round" && Array.isArray(dailyRoundRevisionIds)
-    ? allRevisions.filter((revision) => dailyRoundRevisionIds.includes(revision.id))
-    : allRevisions;
+  const revisions = allRevisions;
   if (revisions.length === 0) {
     return null;
   }
@@ -626,16 +567,6 @@ async function planNextTask(
     };
     if (row.skill !== null && row.outcome !== null) {
       current.outcomes = [...current.outcomes, { skill: row.skill as Skill, outcome: row.outcome === "unassessed" ? "unevaluated" : row.outcome as "correct" | "incorrect" }];
-    } else if (session.mode === "daily_round" && row.feedback) {
-      const kind = (row.feedback as { kind?: string }).kind;
-      if (isDailyRoundFailureFeedback(kind)) {
-        const skill: Skill = kind === "spelling_hint" || kind === "capitalization_hint" || row.exerciseType === "spelling" || row.exerciseType === "letter_completion"
-          ? "spelling"
-          : row.exerciseType === "listening" ? "listening"
-            : row.exerciseType === "reading" || row.exerciseType === "reverse_recognition" ? "reading"
-              : "recall";
-        current.outcomes = [...current.outcomes, { skill, outcome: "incorrect" }];
-      }
     }
     attemptsById.set(row.attemptId, current);
   }
@@ -1010,7 +941,6 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
         return null;
       }
       const counts = await lessonTaskCounts(tx, id);
-      if (session.mode === "daily_round" && counts.total >= session.taskBudget) return null;
       const remaining = session.taskBudget - counts.assessed;
       if (remaining <= 0) return null;
       if (now.getTime() - session.startedAt.getTime() > SESSION_TIME_LIMIT_MS && remaining > PROMISE_REMAINING) {
@@ -1040,7 +970,6 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
     }
 
     const counts = await taskCounts(tx, id);
-    if (session.mode === "daily_round" && counts.total >= session.taskBudget) return null;
     const remaining = session.taskBudget - counts.assessed;
     if (remaining <= 0) {
       return null;
@@ -1128,9 +1057,7 @@ function issuedTaskDto(
     direction: (task.direction ?? null) as TaskDto["direction"],
     state: "issued",
     prompt: prompt as TaskPrompt,
-    remainingAssessed: session.mode === "daily_round"
-      ? Math.max(1, session.taskBudget - task.ordinal)
-      : session.taskBudget - assessedBefore,
+    remainingAssessed: session.taskBudget - assessedBefore,
     ...(pendingAttemptId ? { pendingAttemptId } : {}),
   };
 }
@@ -1141,7 +1068,7 @@ export async function disableSessionMicrophone(services: Services, sessionId: st
   return services.db.transaction(async (tx) => {
     const session = await lockSession(tx, id);
     const context = contextOf(session);
-    if ((session.mode !== "training" && session.mode !== "daily_round") || context.canRead || context.vocabularyFormat !== "picture") {
+    if ((session.mode !== "training") || context.canRead || context.vocabularyFormat !== "picture") {
       throw new AppError("validation");
     }
     if (session.state !== "active") throw new AppError("conflict", { message: "session is not active" });
@@ -1172,7 +1099,10 @@ export async function completePresentation(
 ): Promise<PresentationCompletionDto> {
   const valid = PresentationCompletionInputSchema.parse(input);
   return services.db.transaction(async (tx) => {
-    const { task, itemId } = await lockTaskWithSession(tx, valid.taskId);
+    const { task, session, itemId } = await lockTaskWithSession(tx, valid.taskId);
+    if (session.mode === "daily_round") {
+      throw new AppError("conflict", { message: "daily round sessions are retired" });
+    }
     if (task.exerciseType !== "exposure" && task.exerciseType !== "lesson_card") {
       throw new AppError("validation", { message: "task is not a presentation" });
     }
@@ -1256,17 +1186,7 @@ export async function endSession(services: Services, sessionId: string): Promise
     let endedAt = session.endedAt;
     if (state === "active") {
       endedAt = services.clock.now();
-      if (session.mode === "daily_round") {
-        const roundTasks = await tx.select({ state: sessionTasks.state }).from(sessionTasks)
-          .where(eq(sessionTasks.sessionId, id));
-        // A round is complete only after its full promised budget has been
-        // issued and every issued step has reached a terminal state.
-        state = roundTasks.length >= session.taskBudget && roundTasks.every((task) => task.state !== "issued")
-          ? "completed"
-          : "ended";
-      } else {
-        state = "completed";
-      }
+      state = "completed";
       await tx
         .update(learningSessions)
         .set({ state, endedAt })

@@ -10,11 +10,11 @@ describe("parent work card contract", () => {
     expect(ParentWorkCardQuerySchema.safeParse({ childId: id, date: "2026-10-16", token: "secret" }).success).toBe(false);
   });
 
-  it("keeps round status separate and rejects private raw fields", () => {
-    const report = { childId: id, date: "2026-10-16", creditedSeconds: 0, sessions: [], xboxRequests: [],
-      dailyRound: { state: null, sessionId: null, deckTitle: null, steps: null, answered: null } };
+  it("omits the retired round report and rejects private raw fields", () => {
+    const report = { childId: id, date: "2026-10-16", creditedSeconds: 0, sessions: [], xboxRequests: [] };
     expect(ParentWorkCardDtoSchema.safeParse(report).success).toBe(true);
     expect(ParentWorkCardDtoSchema.safeParse({ ...report, token: "secret" }).success).toBe(false);
+    expect(ParentWorkCardDtoSchema.safeParse({ ...report, dailyRound: {} }).success).toBe(false);
   });
 
   it("accepts only a bounded parent Xbox request snapshot", () => {
@@ -22,7 +22,7 @@ describe("parent work card contract", () => {
       localDate: "2026-10-14", blockNumber: 1, creditedSeconds: 1800, pointsCost: 30, xboxMinutes: 15 };
     const report = { childId: id, date: "2026-10-16", creditedSeconds: 0, sessions: [],
       xboxRequests: [{ ...snapshot, status: "pending" as const }],
-      dailyRound: { state: null, sessionId: null, deckTitle: null, steps: null, answered: null } };
+      };
     expect(ParentWorkCardDtoSchema.safeParse(report).success).toBe(true);
     expect(ParentWorkCardDtoSchema.safeParse({ ...report, xboxRequests: [{ ...report.xboxRequests[0], microsoftToken: "secret" }] }).success).toBe(false);
     expect(ParentWorkCardDtoSchema.safeParse({ ...report, xboxRequests: [{ ...report.xboxRequests[0], pointsCost: 31 }] }).success).toBe(false);

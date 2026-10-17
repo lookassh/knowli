@@ -15,7 +15,7 @@ describe("parent work card", () => {
       learning_app.deck_versions, learning_app.decks cascade`);
   });
 
-  it("splits settled activity by the stored timezone and keeps missing round neutral", async () => {
+  it("splits settled activity by the stored timezone without a daily-round report", async () => {
     const { services, clock } = buildTestServices("2026-10-16T21:59:45.000Z");
     const child = await createChild(services, { displayName: "Ola", avatarKey: "fox" });
     const draft = await createDraft(services, { title: "Dni", items: [
@@ -48,8 +48,7 @@ describe("parent work card", () => {
 
     const beforeMidnight = await readParentWorkCard(services, { childId: child.id, date: "2026-10-16" });
     const afterMidnight = await readParentWorkCard(services, { childId: child.id, date: "2026-10-17" });
-    expect(beforeMidnight).toMatchObject({ creditedSeconds: 15, sessions: [{ deckTitle: "Dni", creditedSeconds: 15, steps: [{ state: "completed" }] },],
-      dailyRound: { state: null, sessionId: null, steps: null, answered: null } });
+    expect(beforeMidnight).toMatchObject({ creditedSeconds: 15, sessions: [{ deckTitle: "Dni", creditedSeconds: 15, steps: [{ state: "completed" }] },] });
     expect(afterMidnight.creditedSeconds).toBe(15);
     let dontRememberTask = await nextTask(services, session.sessionId);
     for (let i = 0; i < 6 && dontRememberTask?.exerciseType === "exposure"; i++) {
@@ -68,22 +67,6 @@ describe("parent work card", () => {
     expect(responses.sessions[0]?.steps.flatMap(step => step.responses.map(response => response.modality))).toEqual(expect.arrayContaining(["dont_remember", "skip"]));
     expect(responses.sessions[0]?.steps.flatMap(step => step.responses.filter(response => response.modality === "dont_remember").map(response => response.assessment))).toEqual(["none"]);
     await endSession(services, session.sessionId);
-    const round = await startSession(services, { childId: child.id, deckId: draft.deckId, microphoneEnabled: false, mode: "daily_round" });
-    let roundTask = await nextTask(services, round.sessionId);
-    const withRound = await readParentWorkCard(services, { childId: child.id, date: "2026-10-17" });
-    expect(withRound.dailyRound).toMatchObject({ state: "active", sessionId: round.sessionId });
-    expect(withRound.sessions.find(value => value.mode === "daily_round")?.steps.every(step => step.responses.every(response => response.assessment === null))).toBe(true);
-    for (let index = 0; roundTask && index < round.taskBudget; index++) {
-      if (roundTask.exerciseType === "exposure" || roundTask.exerciseType === "lesson_card") {
-        await completePresentation(services, { taskId: roundTask.taskId });
-      } else {
-        await submitAttempt(services, { taskId: roundTask.taskId, clientAttemptId: randomUUID(), modality: "skip" });
-      }
-      roundTask = await nextTask(services, round.sessionId);
-    }
-    expect(roundTask).toBeNull();
-    await endSession(services, round.sessionId);
-    expect((await readParentWorkCard(services, { childId: child.id, date: "2026-10-17" })).dailyRound.state).toBe("completed");
     expect((await readParentWorkCard(services, { childId: child.id, date: "2026-10-15" })).sessions).toEqual([]);
   });
 

@@ -8,7 +8,7 @@ const base: KidDeckDto = {
   independentlyRecalledCount: 2, testDate: "2026-10-20", recommended: true,
   mockTestAvailable: true, activeSession: null,
 };
-const callbacks = { onStart: vi.fn(), onMockTest: vi.fn(), onDailyRound: vi.fn() };
+const callbacks = { onStart: vi.fn(), onMockTest: vi.fn() };
 
 function nodes(element: React.ReactNode): Array<{ type: unknown; props: Record<string, unknown> }> {
   if (Array.isArray(element)) return element.flatMap(nodes);
@@ -35,19 +35,8 @@ describe("DeckCard cover", () => {
     expect(rendered.some((node) => node.props.className === "kid-visual")).toBe(true);
   });
 
-  it("shows an explicit optional daily-round action only when the server reports a safe pool", () => {
-    const available = nodes(<DeckCard deck={{ ...base, dailyRoundAvailable: true }} mediaUrl={() => "/media/item"} {...callbacks} />);
-    const button = available.find((node) => node.props["data-testid"] === "kid-daily-round");
-    expect(button).toBeDefined();
-    (button!.props.onClick as () => void)();
-    expect(callbacks.onDailyRound).toHaveBeenCalledWith(base.deckId);
-
-    const unavailable = nodes(<DeckCard deck={{ ...base, dailyRoundAvailable: false }} mediaUrl={() => "/media/item"} {...callbacks} />);
-    expect(unavailable.some((node) => node.props["data-testid"] === "kid-daily-round")).toBe(false);
-    expect(unavailable.some((node) => node.props["data-testid"] === "kid-daily-round-unavailable")).toBe(true);
-
-    const active = nodes(<DeckCard deck={{ ...base, dailyRoundAvailable: true, activeSession: { sessionId: "33333333-3333-4333-8333-333333333333", mode: "training" } }} mediaUrl={() => "/media/item"} {...callbacks} />);
-    expect(active.some((node) => node.props["data-testid"] === "kid-daily-round")).toBe(false);
-    expect(active.some((node) => node.props["data-testid"] === "kid-daily-round-unavailable")).toBe(false);
+  it("shows no retired daily-round action", () => {
+    const rendered = nodes(<DeckCard deck={base} mediaUrl={() => "/media/item"} {...callbacks} />);
+    expect(rendered.some((node) => String(node.props["data-testid"] ?? "").includes("daily-round"))).toBe(false);
   });
 });

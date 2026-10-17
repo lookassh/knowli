@@ -10,14 +10,12 @@ export function SummaryScreen({
   onAgain,
   onSwitchProfile,
   guidance,
-  dailyRound = false,
 }: {
   summary: SessionSummaryDto;
   profiles: KidProfileDto[];
   onAgain: () => void;
   onSwitchProfile: () => void;
   guidance?: ReactNode;
-  dailyRound?: boolean;
 }) {
   const { recall, spelling } = summary.independentSuccesses;
   const wordCount = (n: number) => {
@@ -32,7 +30,7 @@ export function SummaryScreen({
       : format(messages.kid.rewardTimeMinute, { minutes: Math.floor(seconds / 60), seconds: seconds % 60 });
   return (
     <main className="kid-screen kid-screen--summary">
-      <h1 data-testid="kid-summary">{dailyRound ? messages.kid.dailyRoundSummary : messages.kid.summaryTitle}</h1>
+      <h1 data-testid="kid-summary">{messages.kid.summaryTitle}</h1>
       {guidance}
       <p className="kid-summary-counts" data-testid="kid-summary-reward">
         {format(messages.kid.rewardSession, { points: summary.reward.pointsEarned, time: rewardTime(summary.reward.creditedSeconds) })}
@@ -81,7 +79,7 @@ export function SummaryScreen({
       <div className="kid-actions">
         <button type="button" className="kid-primary" data-testid="kid-again" onClick={onAgain}>
           <KidIcon name="retry" />
-          {dailyRound ? messages.kid.backToDecks : messages.kid.again}
+          {messages.kid.again}
         </button>
         {profiles.length > 1 && (
           <button type="button" data-testid="kid-switch-profile" onClick={onSwitchProfile}>

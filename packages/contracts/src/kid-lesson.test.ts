@@ -28,17 +28,11 @@ describe("EXERCISE_TYPES includes the 9 lesson types", () => {
   });
 });
 
-describe("daily round API contract", () => {
-  it("accepts daily_round as a separate kid session mode", () => {
-    expect(SessionInputSchema.parse({
-      childId: UUID, deckId: UUID2, microphoneEnabled: false, mode: "daily_round", supportsPictureVocabulary: true,
-    }).mode).toBe("daily_round");
-  });
-
-  it("has a localized validation reason when a safe round is unavailable", () => {
-    const reason = "daily_round_unavailable";
-    expect(KidValidationReasonSchema.parse(reason)).toBe(reason);
-    expect(messages.errors[reason]).toBe("Dziś nie ma dostępnej rundy dla tego zestawu.");
+describe("retired daily round API", () => {
+  it("rejects stale requests to start a daily round", () => {
+    expect(SessionInputSchema.safeParse({
+      childId: UUID, deckId: UUID2, microphoneEnabled: false, mode: "daily_round" as never, supportsPictureVocabulary: true,
+    }).success).toBe(false);
   });
 });
 

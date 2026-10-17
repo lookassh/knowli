@@ -18,14 +18,6 @@ export type FeedbackKind =
   | "not_assessed"
   | "spelling_hint";
 
-export const DAILY_ROUND_FAILURE_FEEDBACK_KINDS = [
-  "incorrect", "spelling_hint", "capitalization_hint", "almost", "lesson_hint", "lesson_almost",
-] as const;
-
-export function isDailyRoundFailureFeedback(kind: string | undefined): boolean {
-  return DAILY_ROUND_FAILURE_FEEDBACK_KINDS.some(candidate => candidate === kind);
-}
-
 export interface FeedbackChoice {
   kind: FeedbackKind;
   /** Rozwiązanie własnego zadania; feedback nie ujawnia obcych celów (arch §9.3). */

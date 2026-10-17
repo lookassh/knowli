@@ -429,6 +429,7 @@ export const learningSessions = app.table(
     check("learning_sessions_state_allowed", sql`${t.state} in ('active', 'completed', 'ended')`),
     check("learning_sessions_mode_plan", sql`(${t.mode} in ('training', 'daily_round') and ${t.mockTestPlan} is null) or (${t.mode} = 'mock_test' and ${t.mockTestPlan} is not null)`),
     check("learning_sessions_daily_round_date", sql`(${t.mode} = 'daily_round') = (${t.dailyRoundDate} is not null)`),
+    check("learning_sessions_no_active_daily_round", sql`${t.mode} <> 'daily_round' or ${t.state} <> 'active'`),
     check("learning_sessions_budget_positive", sql`${t.taskBudget} > 0`),
     check("learning_sessions_active_iff_not_ended", sql`(${t.state} = 'active') = (${t.endedAt} is null)`),
     foreignKey({
@@ -566,6 +567,44 @@ export const rewardActivitySettlements = app.table(
     unique("reward_activity_settlement_id_child_unique").on(t.id, t.childId),
     index("reward_activity_settlement_child_deck_idx").on(t.childId, t.deckId),
   ],
+);
+
+/** Rebuildable, transactionally maintained reward read models. */
+export const childRewardProjection = app.table(
+  "child_reward_projection",
+  {
+    childId: uuid("child_id").primaryKey().references((): AnyPgColumn => childProfiles.id, { onDelete: "cascade" }),
+    earnedPoints: integer("earned_points").notNull().default(0),
+    creditedMilliseconds: bigint("credited_milliseconds", { mode: "number" }).notNull().default(0),
+    remainderMilliseconds: integer("remainder_milliseconds").notNull().default(0),
+    qualifiedPacks: integer("qualified_packs").notNull().default(0),
+    consumedPacks: integer("consumed_packs").notNull().default(0),
+    updatedAt: timestamps("updated_at").notNull().defaultNow(),
+  },
+  (t) => [check("child_reward_projection_nonnegative", sql`${t.earnedPoints} >= 0 and ${t.creditedMilliseconds} >= 0 and ${t.remainderMilliseconds} >= 0 and ${t.remainderMilliseconds} < 60000 and ${t.qualifiedPacks} >= 0 and ${t.consumedPacks} >= 0`)],
+);
+
+export const deckRewardProjection = app.table(
+  "deck_reward_projection",
+  {
+    childId: uuid("child_id").notNull().references((): AnyPgColumn => childProfiles.id, { onDelete: "cascade" }),
+    deckId: uuid("deck_id").notNull().references((): AnyPgColumn => decks.id, { onDelete: "cascade" }),
+    earnedPoints: integer("earned_points").notNull().default(0),
+    updatedAt: timestamps("updated_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.childId, t.deckId] }), check("deck_reward_projection_nonnegative", sql`${t.earnedPoints} >= 0`)],
+);
+
+export const rewardDayProjection = app.table(
+  "reward_day_projection",
+  {
+    childId: uuid("child_id").notNull().references((): AnyPgColumn => childProfiles.id, { onDelete: "cascade" }),
+    timezone: text("timezone").notNull(),
+    localDate: text("local_date").notNull(),
+    creditedMilliseconds: bigint("credited_milliseconds", { mode: "number" }).notNull().default(0),
+    updatedAt: timestamps("updated_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.childId, t.timezone, t.localDate] }), check("reward_day_projection_nonnegative", sql`${t.creditedMilliseconds} >= 0 and ${t.localDate} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'`)],
 );
 
 /** Stabilne dzienne uprawnienia Xbox, tworzone dopiero przy udanej rezerwacji. */
@@ -710,6 +749,7 @@ export const rewardActivitySegments = app.table(
     check("reward_activity_segment_pause_reason", sql`${t.pauseReason} is null or ${t.pauseReason} in ('background','blur','offline','idle','technical_wait','signal_timeout','task_changed','session_ended')`),
     unique("reward_activity_segment_id_child_unique").on(t.id, t.childId),
     index("reward_activity_segment_pending_idx").on(t.childId, t.taskId).where(sql`${t.settlementRef} is null`),
+    index("reward_activity_segment_settlement_idx").on(t.settlementRef).where(sql`${t.settlementRef} is not null`),
   ],
 );
 

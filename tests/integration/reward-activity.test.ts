@@ -18,6 +18,7 @@ import {
   submitAttempt,
   upsertAssignment,
   setupParent,
+  rebuildKidRewardProjection,
 } from "@learning/server";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
 import { handleParentApi } from "../../apps/web/src/parent/parent-router";
@@ -74,6 +75,7 @@ async function seedCreditedDay(
     [randomUUID(), streamId, childId, session.sessionId, taskId,
       new Date(start.getTime() + index * 3_600_000), new Date(start.getTime() + index * 3_600_000 + entry.minutes * 60_000), settlementId]);
   }
+  await rebuildKidRewardProjection(services, childId);
 }
 
 describe("rozliczanie aktywności nagrodowej", () => {
@@ -91,6 +93,101 @@ describe("rozliczanie aktywności nagrodowej", () => {
     const decks = await handleKidApi(new Request(`http://localhost/api/v1/kid/decks?childId=${child.id}`), services, ["decks"]);
     expect(profiles.headers.get("Cache-Control")).toBe("no-store");
     expect(decks.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("czyta zestawy i profile bez zapytań do settlement ledger ani segmentów", async () => {
+    const { services } = buildTestServices();
+    const children = await Promise.all(["Ola", "Ada", "Jan"].map((displayName) => createChild(services, { displayName, avatarKey: "fox" })));
+    await seedCreditedDay(services, children[0]!.id, [{ day: "2026-10-14", minutes: 1 }]);
+    await pool.query(`with template as (
+        select * from learning_app.reward_activity_settlements where child_id=$1 limit 1
+      ), generated as (
+        select n, md5('benchmark-settlement-' || n)::uuid as id, md5('benchmark-completion-' || n)::uuid as completion_ref
+        from generate_series(1,500) n
+      )
+      insert into learning_app.reward_activity_settlements
+        (id,child_id,session_id,task_id,completion_ref,kind,settled_at,deck_id,credited_milliseconds,awarded_points,remainder_milliseconds,timezone)
+      select g.id,t.child_id,t.session_id,t.task_id,g.completion_ref,t.kind,t.settled_at,t.deck_id,
+        t.credited_milliseconds,t.awarded_points,t.remainder_milliseconds,t.timezone
+      from template t cross join generated g`, [children[0]!.id]);
+    await pool.query(`with template as (
+        select a.* from learning_app.reward_activity_segments a
+        join learning_app.reward_activity_settlements s on s.id=a.settlement_ref where s.child_id=$1 limit 1
+      ), generated as (select n, md5('benchmark-segment-' || n)::uuid as id, md5('benchmark-settlement-' || n)::uuid as settlement_ref
+        from generate_series(1,500) n)
+      insert into learning_app.reward_activity_segments
+        (id,stream_id,child_id,session_id,task_id,started_at,ended_at,pause_reason,settlement_ref)
+      select g.id,t.stream_id,t.child_id,t.session_id,t.task_id,
+        t.started_at + g.n * interval '1 minute',t.ended_at + g.n * interval '1 minute',t.pause_reason,g.settlement_ref
+      from template t cross join generated g`, [children[0]!.id]);
+    await pool.query(`with generated as (
+        select n, md5('benchmark-block-' || n)::uuid as block_id,
+          md5('benchmark-request-' || n)::uuid as request_id
+        from generate_series(1,500) n
+      )
+      insert into learning_app.reward_activity_xbox_blocks
+        (id,child_id,timezone,local_date,block_number,credited_seconds_at_creation)
+      select block_id,$1,'Europe/Warsaw','2026-10-14',n,n * 1800 from generated`, [children[0]!.id]);
+    await pool.query(`with generated as (
+        select n, md5('benchmark-block-' || n)::uuid as block_id,
+          md5('benchmark-request-' || n)::uuid as request_id
+        from generate_series(1,500) n
+      )
+      insert into learning_app.reward_activity_xbox_requests
+        (id,child_id,block_id,status,timezone_snapshot,local_date_snapshot,block_number_snapshot,credited_seconds_snapshot,requested_at)
+      select request_id,$1,block_id,'rejected','Europe/Warsaw','2026-10-14',n,n * 1800,'2026-10-14T10:00:00Z'::timestamptz + n * interval '1 second'
+      from generated`, [children[0]!.id]);
+    await rebuildKidRewardProjection(services, children[0]!.id);
+    const firstRebuild = (await listKidProfiles(services)).find(profile => profile.childId === children[0]!.id)!.rewards;
+    await rebuildKidRewardProjection(services, children[0]!.id);
+    expect((await listKidProfiles(services)).find(profile => profile.childId === children[0]!.id)!.rewards).toEqual(firstRebuild);
+    const sqlSeen: string[] = [];
+    const originalQuery = pool.query.bind(pool);
+    const instrumentedQuery = (...args: unknown[]) => {
+      const first = args[0];
+      sqlSeen.push(typeof first === "string" ? first : String((first as { text?: unknown } | undefined)?.text ?? ""));
+      return (originalQuery as (...queryArgs: unknown[]) => Promise<unknown>)(...args);
+    };
+    const queryPool = pool as unknown as { query: typeof instrumentedQuery };
+    queryPool.query = instrumentedQuery;
+    try {
+      const baselineStart = sqlSeen.length;
+      const baselineStartedAt = performance.now();
+      await pool.query("select id from learning_app.child_profiles order by created_at");
+      let baselineReadRows = 0;
+      for (const child of children) {
+        const settlementRows = await pool.query("select deck_id,awarded_points from learning_app.reward_activity_settlements where child_id=$1", [child.id]);
+        baselineReadRows += (settlementRows as { rows: unknown[] }).rows.length;
+        await pool.query("select timezone from learning_app.family_settings limit 1");
+        const segmentRows = await pool.query(`select a.started_at,a.ended_at,s.context from learning_app.reward_activity_segments a
+          join learning_app.learning_sessions s on s.id=a.session_id where a.child_id=$1 and a.settlement_ref is not null`, [child.id]);
+        baselineReadRows += (segmentRows as { rows: unknown[] }).rows.length;
+        const requestRows = await pool.query("select * from learning_app.reward_activity_xbox_requests where child_id=$1 order by requested_at", [child.id]);
+        baselineReadRows += (requestRows as { rows: unknown[] }).rows.length;
+      }
+      const baselineCount = sqlSeen.length - baselineStart;
+      const beforeProfiles = sqlSeen.length;
+      const projectionStartedAt = performance.now();
+      await listKidProfiles(services);
+      const projectionElapsedMs = performance.now() - projectionStartedAt;
+      const profileQueries = sqlSeen.slice(beforeProfiles);
+      expect(profileQueries).toHaveLength(7);
+      expect(profileQueries.length).toBeLessThan(baselineCount);
+      expect(profileQueries.some(sql => /LEFT JOIN LATERAL[\s\S]*ORDER BY request\.requested_at DESC, request\.id DESC[\s\S]*LIMIT 1/i.test(sql))).toBe(true);
+      const measuredProfiles = await listKidProfiles(services);
+      expect(measuredProfiles.find(profile => profile.childId === children[0]!.id)?.rewards?.xboxRequest).toMatchObject({
+        status: "rejected", blockNumber: 500, requestedAt: "2026-10-14T10:08:20.000Z",
+      });
+      const baselineElapsedMs = projectionStartedAt - baselineStartedAt;
+      console.info(`[reward projection measurement] baseline=${baselineCount} queries/${baselineReadRows} returned rows/${baselineElapsedMs.toFixed(1)}ms; projections=${profileQueries.length} queries/limited latest-request lookup/${projectionElapsedMs.toFixed(1)}ms`);
+      const beforeDecks = sqlSeen.length;
+      await listKidDecks(services, children[0]!.id);
+      const deckQueries = sqlSeen.slice(beforeDecks);
+      expect(deckQueries.length).toBeGreaterThan(0);
+      expect([...profileQueries, ...deckQueries].some(sql => /reward_activity_(?:segments|settlements)/i.test(sql))).toBe(false);
+    } finally {
+      queryPool.query = originalQuery as unknown as typeof instrumentedQuery;
+    }
   });
 
   it("pokazuje gotowe bloki wyłącznie z jednego dnia i nie zmienia salda przy niepełnym bloku", async () => {
@@ -116,6 +213,7 @@ describe("rozliczanie aktywności nagrodowej", () => {
     const child = await createChild(services, { displayName: "Ola", avatarKey: "fox" });
     await seedCreditedDay(services, child.id, [{ day: "2026-10-14", minutes: 30 }]);
     await pool.query("update learning_app.reward_activity_settlements set awarded_points=0 where child_id=$1", [child.id]);
+    await rebuildKidRewardProjection(services, child.id);
 
     expect((await listKidProfiles(services))[0]?.rewards).toMatchObject({ earnedPoints: 0, pointsToUse: 0, readyXboxPacks: 0 });
     await expect(handleKidApi(new Request(`http://localhost/api/v1/kid/profiles/${child.id}/xbox-request`, {
@@ -404,5 +502,48 @@ describe("rozliczanie aktywności nagrodowej", () => {
       const result = await pool.query(`select count(*)::int as count from learning_app.${table} where child_id = $1`, [child.id]);
       expect(result.rows[0]?.count).toBe(0);
     }
+  });
+
+  it("utrzymuje próg pakietu po zwykłym settlement i zgadza się z odbudową projekcji", async () => {
+    const { services, clock } = buildTestServices("2026-10-16T10:00:00.000Z");
+    const child = await createChild(services, { displayName: "Ola", avatarKey: "fox" });
+    const draft = await createDraft(services, { title: "Próg pakietu", items: [{
+      source: "kot", target: "cat", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "none",
+    }] });
+    const revision = (await pool.query<{ id: string }>("select id from learning_app.item_revisions where deck_version_id=$1", [draft.id])).rows[0]!;
+    const assetId = randomUUID(), fingerprint = `threshold-${randomUUID()}`;
+    await pool.query(`insert into learning_app.media_assets
+      (id,kind,fingerprint,generation_number,state,storage_key,content_sha256,mime_type,byte_count,provider,model,metadata)
+      values ($1,'tts',$2,1,'ready',$3,$4,'audio/mpeg',100,'fake','fake','{"durationMs":20000}'::jsonb)`,
+    [assetId, fingerprint, `blob/${assetId}`, `sha-${assetId}`]);
+    await pool.query(`insert into learning_app.revision_assets
+      (item_revision_id,role,asset_id,expected_fingerprint,state) values ($1,'target_audio',$2,$3,'approved')`, [revision.id, assetId, fingerprint]);
+    await pool.query(`insert into learning_app.revision_assets
+      (item_revision_id,role,asset_id,expected_fingerprint,state) values ($1,'illustration',null,$2,'omitted')`, [revision.id, `ill-${randomUUID()}`]);
+    await publishDraft(services, draft.id, 1);
+    await upsertAssignment(services, child.id, draft.deckId, null);
+    const session = await startSession(services, { childId: child.id, deckId: draft.deckId, microphoneEnabled: false });
+    const task = await nextTask(services, session.sessionId);
+    expect(task?.exerciseType).toBe("exposure");
+    const streamId = randomUUID();
+    await recordRewardActivitySignal(services, { sessionId: session.sessionId, taskId: task!.taskId, streamId, sequence: 1, kind: "interaction" });
+    for (let sequence = 2; sequence <= 121; sequence++) {
+      clock.advanceMs(15_000);
+      await recordRewardActivitySignal(services, { sessionId: session.sessionId, taskId: task!.taskId, streamId, sequence, kind: "interaction" });
+    }
+    await completePresentation(services, { taskId: task!.taskId });
+    const projectionBefore = {
+      child: (await pool.query("select earned_points,credited_milliseconds,remainder_milliseconds,qualified_packs,consumed_packs from learning_app.child_reward_projection where child_id=$1", [child.id])).rows,
+      deck: (await pool.query("select deck_id,earned_points from learning_app.deck_reward_projection where child_id=$1", [child.id])).rows,
+      day: (await pool.query("select timezone,local_date,credited_milliseconds from learning_app.reward_day_projection where child_id=$1", [child.id])).rows,
+    };
+    expect(projectionBefore.child[0]).toMatchObject({ earned_points: 30, credited_milliseconds: "1800000", remainder_milliseconds: 0, qualified_packs: 1, consumed_packs: 0 });
+    expect((await listKidProfiles(services)).find(profile => profile.childId === child.id)?.rewards).toMatchObject({ earnedPoints: 30, readyXboxPacks: 1 });
+    await rebuildKidRewardProjection(services, child.id);
+    expect({
+      child: (await pool.query("select earned_points,credited_milliseconds,remainder_milliseconds,qualified_packs,consumed_packs from learning_app.child_reward_projection where child_id=$1", [child.id])).rows,
+      deck: (await pool.query("select deck_id,earned_points from learning_app.deck_reward_projection where child_id=$1", [child.id])).rows,
+      day: (await pool.query("select timezone,local_date,credited_milliseconds from learning_app.reward_day_projection where child_id=$1", [child.id])).rows,
+    }).toEqual(projectionBefore);
   });
 });

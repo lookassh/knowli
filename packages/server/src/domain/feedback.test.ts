@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FeedbackDtoSchema } from "@learning/contracts";
-import { chooseFeedback, feedbackExposureKeys, isDailyRoundFailureFeedback } from "./feedback";
+import { chooseFeedback, feedbackExposureKeys } from "./feedback";
 import { computeTargetKey } from "./target-key";
 import type { SpellingComparison } from "./spelling-diff";
 import type { Grade, Skill, SkillGrade } from "./types";
@@ -14,15 +14,6 @@ function grade(skills: Partial<Record<Skill, SkillGrade>>): Grade {
 }
 
 describe("chooseFeedback — feedback zgodny z rzeczywistym wynikiem (SPEC §16, §12.8)", () => {
-  it("rozpoznaje wszystkie błędne rodzaje feedbacku rundy dnia, ale nie sukces ani brak oceny", () => {
-    for (const kind of ["incorrect", "spelling_hint", "capitalization_hint", "almost", "lesson_hint", "lesson_almost"]) {
-      expect(isDailyRoundFailureFeedback(kind)).toBe(true);
-    }
-    for (const kind of ["great", "content_matched", "not_assessed", undefined]) {
-      expect(isDailyRoundFailureFeedback(kind)).toBe(false);
-    }
-  });
-
   it("feedback great niesie fragmenty wymowy, content_matched nie", () => {
     const fragments = [{ text: "ch", verdict: "good" as const }, { text: "e", verdict: "almost" as const }];
     const base = {
