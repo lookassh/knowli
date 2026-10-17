@@ -908,14 +908,16 @@
   min-height: 0;
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, auto);
   grid-auto-rows: max-content;
+  justify-content: center;
   align-content: start;
-  gap: 8px;
+  gap: 10px;
 }
 
 .kid-picture-options > li {
   min-width: 0;
+  display: flex;
 }
 
 .kid-picture-options .kid-picture-option {
@@ -923,9 +925,8 @@
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  width: 100%;
-  height: clamp(96px, 15svh, 140px);
-  min-height: 96px;
+  height: clamp(100px, 17svh, 150px);
+  aspect-ratio: 1 / 1;
   padding: 0;
   overflow: hidden;
   border-radius: 16px;
@@ -954,7 +955,7 @@
 }
 
 .kid-picture-choice-visual .kid-illustration {
-  object-fit: cover;
+  object-fit: contain;
   border: none;
   border-radius: 0;
   background: transparent;
@@ -990,6 +991,7 @@
 .kid-page[data-zoomed="true"] .kid-picture-options,
 .kid-page[data-viewport-very-short="true"] .kid-picture-options {
   flex: none;
+  grid-template-rows: none;
   grid-auto-rows: minmax(112px, auto);
 }
 
