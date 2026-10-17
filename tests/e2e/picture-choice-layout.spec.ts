@@ -260,6 +260,15 @@ test("cztery opcje mieszczą się na typowym telefonie, a w niskim widoku pozost
   expect(documentGeometry.scrollHeight).toBeLessThanOrEqual(documentGeometry.clientHeight + 1);
   await page.screenshot({ path: testInfo.outputPath("picture-options-four-390x844.png") });
 
+  await page.setViewportSize({ width: 412, height: 600 });
+  const content600 = await page.locator(".kid-material-content").evaluate((element) => ({
+    scrollHeight: element.scrollHeight,
+    clientHeight: element.clientHeight,
+  }));
+  expect(content600.scrollHeight).toBeLessThanOrEqual(content600.clientHeight + 1);
+  await expect(options.last()!).toBeInViewport();
+  await expect(page.getByTestId("kid-end")).toBeInViewport();
+
   await page.setViewportSize({ width: 360, height: 560 });
   await options.last()!.scrollIntoViewIfNeeded();
   await expect(options.last()!).toBeInViewport();
