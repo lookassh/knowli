@@ -1209,6 +1209,10 @@
   font-size: 0.95rem;
 }
 
+.kid-session-status > .kid-activity-paused {
+  color: var(--kid-accent);
+}
+
 .kid-microphone-status {
   position: relative;
   flex: none;
@@ -1804,6 +1808,38 @@
   border-radius: 18px;
   font-weight: 700;
   transition: background-color 0.15s ease, border-color 0.15s ease;
+  align-items: stretch;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  white-space: normal;
+}
+
+.kid-screen--profile .kid-profile-request {
+  min-height: 56px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.kid-screen--profile .kid-profile-request-status {
+  margin: 0;
+  text-align: center;
+}
+
+.kid-profile-identity,
+.kid-profile-rewards {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.kid-profile-identity {
+  flex-wrap: wrap;
+}
+
+.kid-profile-rewards {
+  flex-wrap: wrap;
 }
 
 .kid-mock-budget {

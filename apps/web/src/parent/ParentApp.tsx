@@ -7,12 +7,13 @@ import ChildEditor from "./ChildEditor";
 import DecksPanel from "./DecksPanel";
 import LeaveEditorDialog from "./LeaveEditorDialog";
 import ProgressPanel from "./ProgressPanel";
+import WorkCardPanel from "./WorkCardPanel";
 import { useParentLeaveGuard } from "./useParentLeaveGuard";
 import { ParentIcon } from "./ParentIcon";
 import "./parent.css";
 
 type Phase = "loading" | "setup" | "login" | "panel";
-type Tab = "decks" | "children" | "progress";
+type Tab = "decks" | "children" | "progress" | "work";
 
 interface AuthStateDto {
   authenticated: boolean;
@@ -210,6 +211,10 @@ export default function ParentApp() {
             <ParentIcon name="trending-up" />
             {messages.progress.title}
           </button>
+          <button type="button" className="pp-tab" data-testid="tab-work-card" aria-current={tab === "work"}
+            onClick={() => tab !== "work" && leaveGuard.requestLeave(() => setTab("work"))}>
+            <ParentIcon name="clipboard-check" />{messages.workCard.title}
+          </button>
         </nav>
       </header>
       <main className="pp-main">
@@ -224,8 +229,10 @@ export default function ParentApp() {
           />
         ) : tab === "children" ? (
           <ChildEditor childrenList={childrenList} onChanged={refreshChildren} />
-        ) : (
+        ) : tab === "progress" ? (
           <ProgressPanel childrenList={childrenList} decks={decks} onAuthExpired={toLogin} />
+        ) : (
+          <WorkCardPanel childrenList={childrenList} onAuthExpired={toLogin} />
         )}
       </main>
       <LeaveEditorDialog open={leaveGuard.pending} onStay={leaveGuard.stay} onLeave={() => void leaveGuard.leave()} />

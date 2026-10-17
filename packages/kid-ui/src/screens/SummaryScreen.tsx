@@ -10,12 +10,14 @@ export function SummaryScreen({
   onAgain,
   onSwitchProfile,
   guidance,
+  dailyRound = false,
 }: {
   summary: SessionSummaryDto;
   profiles: KidProfileDto[];
   onAgain: () => void;
   onSwitchProfile: () => void;
   guidance?: ReactNode;
+  dailyRound?: boolean;
 }) {
   const { recall, spelling } = summary.independentSuccesses;
   const wordCount = (n: number) => {
@@ -23,10 +25,18 @@ export function SummaryScreen({
     return format(plural === "one" ? messages.kid.summaryWordOne
       : plural === "few" ? messages.kid.summaryWordFew : messages.kid.summaryWordMany, { n });
   };
+  const rewardTime = (seconds: number) => seconds === 0
+    ? messages.kid.rewardTimeZero
+    : seconds < 60
+      ? format(messages.kid.rewardTimeSeconds, { n: seconds })
+      : format(messages.kid.rewardTimeMinute, { minutes: Math.floor(seconds / 60), seconds: seconds % 60 });
   return (
     <main className="kid-screen kid-screen--summary">
-      <h1 data-testid="kid-summary">{messages.kid.summaryTitle}</h1>
+      <h1 data-testid="kid-summary">{dailyRound ? messages.kid.dailyRoundSummary : messages.kid.summaryTitle}</h1>
       {guidance}
+      <p className="kid-summary-counts" data-testid="kid-summary-reward">
+        {format(messages.kid.rewardSession, { points: summary.reward.pointsEarned, time: rewardTime(summary.reward.creditedSeconds) })}
+      </p>
       {recall > 0 && (
         <p className="kid-summary-counts" data-testid="kid-summary-recall">
           {format(messages.kid.summaryRecall, { words: wordCount(recall) })}
@@ -71,7 +81,7 @@ export function SummaryScreen({
       <div className="kid-actions">
         <button type="button" className="kid-primary" data-testid="kid-again" onClick={onAgain}>
           <KidIcon name="retry" />
-          {messages.kid.again}
+          {dailyRound ? messages.kid.backToDecks : messages.kid.again}
         </button>
         {profiles.length > 1 && (
           <button type="button" data-testid="kid-switch-profile" onClick={onSwitchProfile}>

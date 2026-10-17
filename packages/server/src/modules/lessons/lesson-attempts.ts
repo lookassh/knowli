@@ -48,6 +48,7 @@ import {
 } from "../../domain/lessons/progress";
 import { loadPolicy } from "../../policies/registry";
 import { lockTaskWithSession } from "../events";
+import { discardRewardActivity, settleRewardActivity } from "../reward-activity";
 import { discloseFeedbackEvent, requestHashOf } from "../attempt-shared";
 import { lessonSessionContextOf, type LessonSessionContext } from "./lesson-sessions";
 
@@ -656,6 +657,7 @@ async function finalizeLessonAttempt(
 ): Promise<AttemptDto> {
   const { task, session, itemId, policy, key, frozen, attemptNumber, requestHash, receivedAt } = start;
   const mockTest = session.mode === "mock_test";
+  const dailyRound = session.mode === "daily_round";
   const result = precomputed ?? gradeLessonAnswer(valid, task, key, services);
   const qualification = qualifyLessonAttempt({
     receivedAt: frozen.receivedAt,
@@ -695,7 +697,7 @@ async function finalizeLessonAttempt(
 
   // Oceny: skip nie tworzy ocen (jak słówka); pozostałe modalności tworzą jedną
   // ocenę celu (skill=objective) z `details` i kwalifikacją.
-  if (valid.modality !== "skip") {
+  if (valid.modality !== "skip" && !dailyRound) {
     const skillRow = (
       await tx
         .select({ skillVersionId: itemRevisionSkills.skillVersionId })
@@ -741,6 +743,11 @@ async function finalizeLessonAttempt(
     throw new AppError("conflict", { message: "attempt is already finalized" });
   }
 
+  if (valid.modality !== "skip") {
+    await settleRewardActivity(tx, { childId: task.childId, sessionId: session.id, taskId: task.id, completionRef: attemptId, kind: "attempt", at: services.clock.now() });
+  } else if (taskState !== "issued") {
+    await discardRewardActivity(tx, { childId: task.childId, sessionId: session.id, taskId: task.id, at: services.clock.now() });
+  }
   const stepId = feedback === null ? null : await discloseLessonFeedback(tx, task, itemId, feedback, receivedAt);
   const freshTask = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, task.id)))[0]!;
   return {
@@ -1019,6 +1026,7 @@ async function finalizeGradedAttempt(
   const { session: freshSession } = await lockTaskWithSession(tx, task.id);
   const reserved = (await tx.select().from(attempts).where(eq(attempts.id, attemptId)))[0];
   const mockTest = freshSession.mode === "mock_test";
+  const dailyRound = freshSession.mode === "daily_round";
 
   // Sesja już zamknięta (raport utrwalony) albo próba już sfinalizowana (leniwa
   // finalizacja / inny klient): NIE zapisujemy oceny, nie zmieniamy projekcji ani
@@ -1086,7 +1094,7 @@ async function finalizeGradedAttempt(
   if (!skillRow) {
     throw new AppError("internal", { message: "missing objective skill version" });
   }
-  await tx.insert(assessments).values({
+  if (!dailyRound) await tx.insert(assessments).values({
     childId: task.childId,
     attemptId,
     itemRevisionId: task.itemRevisionId,
@@ -1098,7 +1106,7 @@ async function finalizeGradedAttempt(
     confirmationEligible: confirmationEligibleFor(result.grade.outcome, qualification.confirmationEligible),
     details: result.details,
   });
-  if (result.grade.outcome !== "unevaluated") {
+  if (!dailyRound && result.grade.outcome !== "unevaluated") {
     await projectAndUpsertObjective(tx, services, task, key, policy, receivedAt);
   }
 
@@ -1121,6 +1129,9 @@ async function finalizeGradedAttempt(
     return dtoOf(fresh, freshTask.state);
   }
 
+  // finalizeGradedAttempt is only reached for an accepted textual response;
+  // an unavailable grader changes mastery, not whether the child did the work.
+  await settleRewardActivity(tx, { childId: task.childId, sessionId: freshSession.id, taskId: task.id, completionRef: attemptId, kind: "attempt", at: services.clock.now() });
   const stepId = feedback === null ? null : await discloseLessonFeedback(tx, task, itemId, feedback, receivedAt);
   const freshTask = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, task.id)))[0]!;
   return {

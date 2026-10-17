@@ -20,6 +20,7 @@ import type { PlatformMedia, RecorderOptions, SpeechRecorder } from "../media/pl
 import { MIC_DENIED_KEY, type LocalPreferences } from "../storage";
 import { randomUUID } from "./uuid";
 import { createGuidanceAudio } from "./guidance-audio";
+import type { RewardActivitySignal } from "@learning/contracts";
 
 /**
  * Sterownik przepływu nauki (plan zadania 9): czysta maszyna stanu nad
@@ -38,6 +39,7 @@ import { createGuidanceAudio } from "./guidance-audio";
 
 export interface LearningScreen {
   answerSaved?: boolean;
+  activityPaused?: boolean;
   kind: "learning";
   session: SessionDto;
   task: TaskDto | null;
@@ -83,7 +85,7 @@ export type KidScreen =
       micDenied: boolean;
     }
   | LearningScreen
-  | { kind: "summary"; childId: string; profiles: KidProfileDto[]; summary: SessionSummaryDto };
+  | { kind: "summary"; childId: string; profiles: KidProfileDto[]; summary: SessionSummaryDto; dailyRound?: boolean };
 
 export interface LearningSessionDeps {
   api: KidApi;
@@ -139,20 +141,7 @@ function audioAssetOf(task: TaskDto): string | null {
   return null;
 }
 
-/** Typy zadań, dla których odsłuch wymaga zgody serwera PRZED odtworzeniem (seal). */
-const AUDIO_DISCLOSURE_EXERCISES = new Set([
-  "recall",
-  "spelling",
-  "letter_completion",
-  "speech",
-  "picture_speech",
-  // Lekcje tekstowe: audio to kanoniczna odpowiedź → ekspozycja pieczętowana i
-  // próba kwalifikowana jako wspomagana (wym. 4.6).
-  "lesson_gap",
-  "lesson_error_fix",
-  "lesson_transform",
-  "lesson_open_answer",
-]);
+const AUDIO_DISCLOSURE_EXERCISES = new Set(["recall", "spelling", "letter_completion", "speech", "picture_speech", "lesson_gap", "lesson_error_fix", "lesson_transform", "lesson_open_answer"]);
 
 export class LearningSessionController {
   readonly #api: KidApi;
@@ -183,6 +172,16 @@ export class LearningSessionController {
   #playbackGeneration = 0;
   #uiAudio: UiAudioCatalogDto = { ready: false, assets: {} };
   #guidance: ReturnType<typeof createGuidanceAudio> | null = null;
+  #activityStreamId: string | null = null;
+  #activityTimer: ReturnType<typeof setInterval> | null = null;
+  #activityReady: Promise<boolean> = Promise.resolve(true);
+  #countedPlaybackDone: Promise<void> = Promise.resolve();
+  #lifecyclePaused = false;
+  #lifecycleGeneration = 0;
+  #lifecyclePauseReady: Promise<boolean> = Promise.resolve(true);
+  #pendingActivityTarget: { sessionId: string; taskId: string } | null = null;
+  #activityState: { id: string; sequence: number; pending: RewardActivitySignal | null; queue: Promise<void> } | null = null;
+  #lastInputInteractionAt: number | null = null;
 
   constructor(deps: LearningSessionDeps) {
     this.#api = deps.api;
@@ -227,6 +226,59 @@ export class LearningSessionController {
     this.#playbackGeneration += 1;
     if (this.#guidance) this.#guidance.stop();
     else this.#media.player.stop();
+  }
+
+  async #playCountedAudio(url: string, assetId: string): Promise<void> {
+    const requestedPlaybackGeneration = this.#playbackGeneration;
+    const requestedEpoch = this.#epoch;
+    const previousPlaybackDone = this.#countedPlaybackDone;
+    let releasePlayback!: () => void;
+    this.#countedPlaybackDone = new Promise<void>((resolve) => { releasePlayback = resolve; });
+    await previousPlaybackDone;
+    try {
+    if (requestedPlaybackGeneration !== this.#playbackGeneration || requestedEpoch !== this.#epoch) return;
+    // A playback started after idle/background pause is fresh child activity.
+    const screen = this.#learning();
+    if (!screen?.task || this.#lifecyclePaused) return;
+    const playbackGeneration = requestedPlaybackGeneration;
+    const epoch = requestedEpoch;
+    const sessionId = screen.session.sessionId;
+    const taskId = screen.task.taskId;
+    const streamId = this.#activityStreamId;
+    const isCurrent = () => {
+      const current = this.#learning();
+      return playbackGeneration === this.#playbackGeneration && epoch === this.#epoch
+        && current?.session.sessionId === sessionId && current.task?.taskId === taskId
+        && this.#activityStreamId === streamId
+        && !this.#lifecyclePaused
+        && !current.offline && current.recordingPhase === "idle" && !current.processing;
+    };
+    if (screen.activityPaused) {
+      await this.#sendActivitySignal("interaction");
+      if (!isCurrent()) return;
+    }
+    if (streamId) {
+      await this.#activityReady;
+      if (!isCurrent()) return;
+    }
+    const authorization = streamId ? await this.#api.authorizeRewardActivityPlayback({
+      sessionId, taskId, streamId, assetId,
+    }).catch(() => null) : null;
+    if (!isCurrent()) return;
+    let playbackStarted = false;
+    try {
+      await this.#media.player.play(url, () => {
+        if (authorization) {
+          playbackStarted = true;
+          void this.#sendActivitySignal("playback_start", undefined, authorization.authorizationId, assetId);
+        }
+      });
+    } finally {
+      if (authorization && playbackStarted) await this.#sendActivitySignal("playback_end", undefined, authorization.authorizationId, assetId);
+    }
+    } finally {
+      releasePlayback();
+    }
   }
 
   async playGuidance(key: UiAudioKey): Promise<void> {
@@ -294,6 +346,29 @@ export class LearningSessionController {
     this.#emit();
   }
 
+  async requestXboxPack(childId: string): Promise<void> {
+    const requested = await this.#api.requestXboxPack(childId);
+    try {
+      this.#profiles = await this.#api.listProfiles();
+    } catch {
+      this.#profiles = this.#profiles.map((profile) => {
+        if (profile.childId !== childId) return profile;
+        const rewards = profile.rewards ?? { earnedPoints: 0, pointsToUse: 0, readyXboxPacks: 0, todayCreditedSeconds: 0, dailyGoalSeconds: 1800 as const, xboxRequest: null };
+        const isNewReservation = rewards.xboxRequest?.requestId !== requested.requestId;
+        return { ...profile, rewards: {
+          ...rewards,
+          pointsToUse: Math.max(0, rewards.pointsToUse - (isNewReservation ? requested.pointsCost : 0)),
+          readyXboxPacks: Math.max(0, rewards.readyXboxPacks - (isNewReservation ? 1 : 0)),
+          xboxRequest: requested,
+        } };
+      });
+    }
+    if (this.#screen.kind === "profile") {
+      this.#screen = { kind: "profile", profiles: this.#profiles };
+      this.#emit();
+    }
+  }
+
   async selectProfile(childId: string): Promise<void> {
     this.#epoch += 1;
     this.#teardownRecording();
@@ -309,6 +384,8 @@ export class LearningSessionController {
     try {
       this.#micDenied = this.#storage.read(MIC_DENIED_KEY) === "1";
       const decks = await this.#api.listDecks(childId, { microphoneEnabled: false });
+      if (epoch !== this.#epoch) return;
+      await this.refreshProfiles();
       if (epoch !== this.#epoch) return;
       this.#childId = childId;
       this.#recordingMode = this.#profiles.find((profile) => profile.childId === childId)?.recordingMode ?? "hold";
@@ -358,6 +435,10 @@ export class LearningSessionController {
 
   async startMockTest(deckId: string): Promise<void> {
     await this.startLearning(deckId, "mock_test");
+  }
+
+  async startDailyRound(deckId: string): Promise<void> {
+    await this.startLearning(deckId, "daily_round");
   }
 
   async backToDecks(): Promise<void> {
@@ -465,6 +546,7 @@ export class LearningSessionController {
   }
 
   async #loadNext(epoch: number, sessionId: string): Promise<void> {
+    this.#stopActivityTimer();
     this.#resume = () => this.#loadNext(epoch, sessionId);
     try {
       const task = await this.#api.nextTask(sessionId);
@@ -495,6 +577,7 @@ export class LearningSessionController {
         await this.#pollAttempt(task.pendingAttemptId, epoch, Date.now() + POLL_DEADLINE_MS);
         return;
       }
+      this.#startRewardActivity(sessionId, task.taskId);
       // prezentacja od razu odtwarza wzorcową wymowę, a pytanie słuchowe
       // stanowi treść zadania (SPEC §12.1, §12.2); ograniczenia urządzenia
       // łapiemy cicho — pozostaje widoczny przycisk odsłuchu
@@ -509,10 +592,13 @@ export class LearningSessionController {
 
   async #finishSession(epoch: number): Promise<void> {
     if (this.#screen.kind !== "learning") return;
+    this.#stopActivityTimer();
     const { sessionId, childId, mode } = this.#screen.session;
     this.#resume = () => this.#finishSession(epoch);
     try {
       const summary = await this.#api.endSession(sessionId);
+      if (epoch !== this.#epoch) return;
+      await this.refreshProfiles();
       if (epoch !== this.#epoch) return;
       if (mode === "mock_test" && this.#mockDeckKind === "lesson") {
         const lessonSummary = await this.#api.readLessonMockTestSummary(sessionId);
@@ -527,7 +613,7 @@ export class LearningSessionController {
       if (epoch !== this.#epoch) return;
       this.#teardownRecording();
       this.#stopPlayback();
-      this.#screen = mockSummary ? { kind: "mockTestSummary", summary: mockSummary } : { kind: "summary", childId, profiles: this.#profiles, summary };
+      this.#screen = mockSummary ? { kind: "mockTestSummary", summary: mockSummary } : { kind: "summary", childId, profiles: this.#profiles, summary, ...(mode === "daily_round" ? { dailyRound: true } : {}) };
       this.#emit();
     } catch (error) {
       if (epoch !== this.#epoch || this.#screen.kind !== "learning") return;
@@ -564,6 +650,11 @@ export class LearningSessionController {
     const sessionId = screen.session.sessionId;
     const taskId = screen.task.taskId;
     this.#setLearning({ busy: true });
+    await this.#sendActivitySignal("interaction");
+    if (epoch !== this.#epoch || this.#learning()?.task?.taskId !== taskId) return;
+    await this.#sendActivitySignal("pause", "technical_wait");
+    if (epoch !== this.#epoch || this.#learning()?.task?.taskId !== taskId) return;
+    this.#stopActivityTimer();
     this.#resume = async () => {
       await this.#api.completePresentation(taskId);
       await this.#loadNext(epoch, sessionId);
@@ -630,7 +721,7 @@ export class LearningSessionController {
       const authorization = await this.#api.authorizeDisclosure(task.taskId, "audio");
       const current = this.#learning();
       if (generation !== this.#playbackGeneration || epoch !== this.#epoch || current?.task?.taskId !== task.taskId || !authorization.audioAssetId) return;
-      await this.#media.player.play(this.#api.mediaUrl(authorization.audioAssetId));
+      await this.#playCountedAudio(this.#api.mediaUrl(authorization.audioAssetId), authorization.audioAssetId);
     } catch {
       if (generation === this.#playbackGeneration && epoch === this.#epoch) this.#handleFailure(new Error("Audio playback failed"));
     }
@@ -643,11 +734,17 @@ export class LearningSessionController {
   async #submitAnswer(input: AnswerPayload): Promise<void> {
     const screen = this.#learning();
     if (!screen?.task || screen.busy || screen.offline) return;
+    const epoch = this.#epoch;
+    const taskId = screen.task.taskId;
+    this.#setLearning({ busy: true });
+    await this.#sendActivitySignal("interaction");
+    if (epoch !== this.#epoch || this.#learning()?.task?.taskId !== taskId) return;
+    await this.#sendActivitySignal("pause", "technical_wait");
+    if (epoch !== this.#epoch || this.#learning()?.task?.taskId !== taskId) return;
+    this.#stopActivityTimer();
     this.#stopPlayback();
     // przypisujemy dopiero za strażnikiem — odrzucone kliknięcie nie śmieci
     this.#pendingChoice = input.modality === "choice" ? input.optionId : null;
-    const epoch = this.#epoch;
-    const taskId = screen.task.taskId;
     const clientAttemptId = randomUUID();
     this.#setLearning({ busy: true });
     const send = async (): Promise<void> => {
@@ -716,6 +813,7 @@ export class LearningSessionController {
         ...(chosenOptionId !== null ? { chosenOptionId } : {}),
       },
     };
+    if (attempt.taskState === "issued" && this.#screen.task) this.#startRewardActivity(this.#screen.session.sessionId, this.#screen.task.taskId);
     this.#emit();
   }
 
@@ -797,7 +895,7 @@ export class LearningSessionController {
       if (playbackGeneration !== this.#playbackGeneration || epoch !== this.#epoch || !current || current.offline || current.recordingPhase !== "idle" || current.processing || current.session.sessionId !== screen.session.sessionId || current.task?.taskId !== task.taskId) return;
     }
     try {
-      await this.#media.player.play(this.#api.mediaUrl(assetId));
+      await this.#playCountedAudio(this.#api.mediaUrl(assetId), assetId);
       const current = this.#learning();
       if (playbackGeneration !== this.#playbackGeneration || epoch !== this.#epoch || !current || current.offline || current.recordingPhase !== "idle" || current.task?.taskId !== task.taskId) return;
       if (task.exerciseType === "listening") {
@@ -835,7 +933,7 @@ export class LearningSessionController {
     const taskId = screen.task.taskId;
     const playbackGeneration = this.#beginPlayback();
     try {
-      await this.#media.player.play(this.#api.mediaUrl(assetId));
+      await this.#playCountedAudio(this.#api.mediaUrl(assetId), assetId);
       const current = this.#learning();
       if (playbackGeneration !== this.#playbackGeneration || epoch !== this.#epoch || !current || current.offline || current.recordingPhase !== "idle" || current.task?.taskId !== taskId) return;
     } catch (error) {
@@ -971,6 +1069,8 @@ export class LearningSessionController {
       this.#recorder = null;
       this.#setLearning({ recordingPhase: "idle", recordingNotice: null, processing: true, busy: true });
       const clientAttemptId = randomUUID();
+      await this.#sendActivitySignal("interaction");
+      await this.#sendActivitySignal("pause", "technical_wait");
       const send = async (): Promise<void> => {
         this.#pendingChoice = null;
         const attempt = await this.#api.submitSpeech(taskId, clientAttemptId, audio);
@@ -1061,6 +1161,21 @@ export class LearningSessionController {
     this.#stopPlayback();
     this.#screen = { kind: "profile", profiles: this.#profiles };
     this.#emit();
+    await this.refreshProfiles();
+  }
+
+  /** Refresh reward balances and parent-managed profile settings without discarding a usable screen. */
+  async refreshProfiles(): Promise<void> {
+    const epoch = this.#epoch;
+    try {
+      const profiles = await this.#api.listProfiles();
+      if (epoch !== this.#epoch) return;
+      this.#profiles = profiles;
+      if (this.#screen.kind === "profile" || this.#screen.kind === "deck" || this.#screen.kind === "summary") {
+        this.#screen = { ...this.#screen, profiles };
+        this.#emit();
+      }
+    } catch { /* Keep the last confirmed balances during a temporary network failure. */ }
   }
 
   /** Czy banner „Jeszcze N i koniec!” jest widoczny dla bieżącego zadania. */
@@ -1103,10 +1218,167 @@ export class LearningSessionController {
 
   /** Opuszczenie widoku: zatrzymuje strumień mikrofonu i odtwarzanie (RF5). */
   teardown(): void {
+    this.pauseRewardActivity("background");
     this.#epoch += 1;
     this.#teardownRecording();
     this.#stopPlayback();
     this.stopGuidance();
+  }
+
+  pauseRewardActivity(reason: "background" | "blur" | "offline" | "technical_wait" = "background"): void {
+    this.#stopActivityTimer();
+    const lifecyclePause = reason === "background" || reason === "blur" || reason === "offline";
+    if (lifecyclePause) {
+      this.#lifecyclePaused = true;
+      this.#lifecycleGeneration += 1;
+    }
+    this.#stopPlayback();
+    if (this.#learning()?.offline) {
+      if (lifecyclePause) this.#lifecyclePauseReady = Promise.resolve(false);
+      return;
+    }
+    if (this.#activityStreamId) {
+      const pause = this.#sendActivitySignal("pause", reason);
+      if (lifecyclePause) this.#lifecyclePauseReady = pause;
+    }
+  }
+
+  /** Only the occurrence of an edit is reported; input values and individual keys stay local. */
+  recordInteraction(): void {
+    const screen = this.#learning();
+    if (!screen?.task || screen.busy || screen.offline || screen.feedback || screen.reveal || screen.error) return;
+    const now = Date.now();
+    if (this.#lastInputInteractionAt !== null && now - this.#lastInputInteractionAt < 15_000) return;
+    this.#lastInputInteractionAt = now;
+    void this.#sendActivitySignal("interaction");
+  }
+
+  resumeRewardActivity(): void {
+    const screen = this.#learning();
+    if (!screen?.task) {
+      // Lifecycle events are bound to the whole Kid UI. Clear a pause that
+      // happened on profile/deck screens so the next learning task can start.
+      this.#lifecycleGeneration += 1;
+      this.#lifecyclePaused = false;
+      return;
+    }
+    if (screen.offline) return;
+    const wasLifecyclePaused = this.#lifecyclePaused;
+    this.#lifecyclePaused = false;
+    if (screen.busy) return;
+    if (wasLifecyclePaused || !this.#activityStreamId) {
+      if (!wasLifecyclePaused) {
+        this.#startRewardActivity(screen.session.sessionId, screen.task.taskId);
+        return;
+      }
+      const generation = ++this.#lifecycleGeneration;
+      const { sessionId } = screen.session;
+      const { taskId } = screen.task;
+      void this.#lifecyclePauseReady.then(async (pauseAccepted) => {
+        // A lost pause response is replayed exactly on its original stream.
+        // Never let a new takeover close an unpaused interval at focus time.
+        const pending = this.#activityState?.pending;
+        if (!pauseAccepted && pending?.kind === "pause") {
+          pauseAccepted = await this.#sendActivitySignal("pause", pending.pauseReason ?? "background");
+        }
+        if (!pauseAccepted && this.#activityState?.pending?.kind === "pause") {
+          this.#lifecyclePaused = true;
+          this.#setLearning({ activityPaused: true });
+          return;
+        }
+        const current = this.#learning();
+        if (generation !== this.#lifecycleGeneration || this.#lifecyclePaused
+          || current?.session.sessionId !== sessionId || current.task?.taskId !== taskId
+          || current.busy || current.offline) return;
+        this.#startRewardActivity(sessionId, taskId);
+      });
+      return;
+    }
+    void this.#sendActivitySignal("interaction");
+    this.#stopActivityTimer();
+    this.#activityTimer = setInterval(() => {
+      const current = this.#learning();
+      if (current?.session.sessionId === screen.session.sessionId && current.task?.taskId === screen.task?.taskId && !current.busy && !current.offline) {
+        void this.#sendActivitySignal("heartbeat");
+      }
+    }, 15_000);
+  }
+
+  #stopActivityTimer(): void {
+    if (this.#activityTimer !== null) clearInterval(this.#activityTimer);
+    this.#activityTimer = null;
+  }
+
+  #startRewardActivity(sessionId: string, taskId: string): void {
+    this.#stopActivityTimer();
+    if (this.#lifecyclePaused) {
+      this.#activityStreamId = null;
+      this.#activityState = null;
+      this.#pendingActivityTarget = { sessionId, taskId };
+      this.#setLearning({ activityPaused: true });
+      return;
+    }
+    this.#pendingActivityTarget = null;
+    this.#activityStreamId = randomUUID();
+    this.#activityState = { id: this.#activityStreamId, sequence: 0, pending: null, queue: Promise.resolve() };
+    this.#lastInputInteractionAt = null;
+    this.#setLearning({ activityPaused: false });
+    this.#activityReady = this.#sendActivitySignal("takeover");
+    this.#activityTimer = setInterval(() => {
+      const screen = this.#learning();
+      if (screen?.session.sessionId === sessionId && screen.task?.taskId === taskId && !screen.busy && !screen.offline) {
+        void this.#sendActivitySignal("heartbeat");
+      }
+    }, 15_000);
+  }
+
+  #sendActivitySignal(kind: RewardActivitySignal["kind"], pauseReason?: RewardActivitySignal["pauseReason"], playbackAuthorizationId?: string, playbackAssetId?: string): Promise<boolean> {
+    const screen = this.#learning();
+    if (!screen?.task || !this.#activityStreamId) return Promise.resolve(false);
+    const streamId = this.#activityStreamId;
+    const state = this.#activityState;
+    if (!state || state.id !== streamId) return Promise.resolve(false);
+    const transmit = async (input: RewardActivitySignal): Promise<void> => {
+      try {
+        const result = await this.#api.signalRewardActivity(input);
+        state.sequence = Math.max(state.sequence, result.sequence);
+        state.pending = null;
+        if (this.#activityState !== state) return;
+        const current = this.#learning();
+        if (current?.session.sessionId === input.sessionId && current.task?.taskId === input.taskId) this.#setLearning({ activityPaused: result.paused });
+      } catch (error) {
+        // A server-side conflict is definitive, unlike a lost response.
+        // These conflicts are definitive: another device may have taken over,
+        // the server revoked playback, or the task already moved forward.
+        if ((input.kind === "playback_end" || input.kind === "playback_start" || input.kind === "pause")
+          && error instanceof KidApiError && error.code === "conflict" && state.pending === input) {
+          state.pending = null;
+        }
+        throw error;
+      }
+    };
+    const send = async (): Promise<void> => {
+      if (this.#activityState !== state) return;
+      // A response may have been lost after the server committed the signal.
+      // Replay exactly that payload before assigning a number to a new kind.
+      if (state.pending) await transmit(state.pending);
+      if (this.#activityState !== state) return;
+      const input: RewardActivitySignal = {
+        sessionId: screen.session.sessionId,
+        taskId: screen.task!.taskId,
+        streamId,
+        sequence: state.sequence + 1,
+        kind,
+        ...(pauseReason === undefined ? {} : { pauseReason }),
+        ...(playbackAuthorizationId === undefined ? {} : { playbackAuthorizationId }),
+        ...(playbackAssetId === undefined ? {} : { playbackAssetId }),
+      };
+      state.pending = input;
+      await transmit(input);
+    };
+    const operation = state.queue.then(send);
+    state.queue = operation.catch(() => undefined);
+    return operation.then(() => true, () => false);
   }
 
   #teardownRecording(): void {

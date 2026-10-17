@@ -9,6 +9,8 @@ import {
   nextTask,
   publishDraft,
   readAttempt,
+  readRewardActivitySummary,
+  recordRewardActivitySignal,
   startSession,
   submitAttempt,
   upsertAssignment,
@@ -300,7 +302,7 @@ async function feedbackEvents(taskId: string) {
 }
 
 /** Symulacja przepływu mowy (zadanie 8): próba processing wstawiona wprost do bazy. */
-async function insertProcessingAttempt(taskId: string, receivedAtIso: string): Promise<string> {
+async function insertProcessingAttempt(taskId: string, receivedAtIso: string, modality: "audio" | "text" = "audio"): Promise<string> {
   const task = (
     await query<{ child_id: string; item_revision_id: string }>(
       `select child_id, item_revision_id from learning_app.session_tasks where id = $1`,
@@ -312,9 +314,9 @@ async function insertProcessingAttempt(taskId: string, receivedAtIso: string): P
     `insert into learning_app.attempts
        (id, child_id, task_id, item_revision_id, client_attempt_id, request_hash, attempt_number,
         modality, state, answer, context, policy_id, received_at)
-     values ($1,$2,$3,$4,$5,'hash',1,'audio','processing',jsonb_build_object('pending',true),
+       values ($1,$2,$3,$4,$5,'hash',1,$7,'processing',jsonb_build_object('pending',true),
              jsonb_build_object('receivedAt', $6::text), 'learning-v1', $6::timestamptz)`,
-    [id, task.child_id, taskId, task.item_revision_id, randomUUID(), receivedAtIso],
+    [id, task.child_id, taskId, task.item_revision_id, randomUUID(), receivedAtIso, modality],
   );
   return id;
 }
@@ -705,6 +707,38 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
     );
     expect(progressRows[0]!.count).toBe(0);
     expect(await feedbackEvents(task.taskId)).toHaveLength(0);
+  });
+
+  it("rozlicza zaakceptowaną odpowiedź nawet gdy końcowa ocena jest nieoceniona", async () => {
+    const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 3));
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const task = await firstAssessedTask(services, session.sessionId);
+    const attemptId = await insertProcessingAttempt(task.taskId, "2026-10-07T16:00:00.000Z", "text");
+    await recordRewardActivitySignal(services, { sessionId: session.sessionId, taskId: task.taskId, streamId: randomUUID(), sequence: 1, kind: "takeover" });
+    clock.advanceMs(15_000);
+
+    await finalizeAttempt(services, attemptId, {
+      skills: { recall: { outcome: "unevaluated", independent: false, confirmationEligible: false } },
+      attempt: { independent: false, confirmationEligible: false },
+    });
+
+    expect((await readRewardActivitySummary(services, childId)).creditedSeconds).toBe(15);
+  });
+
+  it("does not settle activity for audio with no reliable assessment", async () => {
+    const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 3));
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: true });
+    const task = await firstAssessedTask(services, session.sessionId);
+    const attemptId = await insertProcessingAttempt(task.taskId, "2026-10-07T16:00:00.000Z", "audio");
+    await recordRewardActivitySignal(services, { sessionId: session.sessionId, taskId: task.taskId, streamId: randomUUID(), sequence: 1, kind: "takeover" });
+    clock.advanceMs(15_000);
+
+    await finalizeAttempt(services, attemptId, {
+      skills: { listening: { outcome: "unevaluated", independent: false, confirmationEligible: false } },
+      attempt: { independent: false, confirmationEligible: false },
+    });
+
+    expect((await readRewardActivitySummary(services, childId)).creditedSeconds).toBe(0);
   });
 
   it("równoległa finalizacja tej samej próby kończy się jednym kompletem ocen", async () => {

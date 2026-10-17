@@ -19,6 +19,7 @@ import { validateVocabularyFormatItems } from "../domain/picture-vocabulary";
 import { isUiAudioAssetMetadata } from "../domain/ui-audio-catalog";
 import { reconcileDraftAssetsTx } from "./media-reconciliation";
 import { executeLessonGeneration } from "./lessons/lesson-drafts";
+import { mp3DurationMs } from "../providers/audio/mp3-duration";
 import { runWorkerSlots, selectFairWorkerWork, workerAttemptFromKey, workerAttemptKey, workerIdFromAttemptKey, type WorkKind } from "./worker-schedule";
 
 /** Maksymalnie trzy automatyczne próby; dalsze tylko po ręcznym ponowieniu. */
@@ -569,6 +570,7 @@ export async function executeMediaAsset(services: Services, assetId: string, sig
       return;
     }
     const stored = await deps.mediaStore.putImmutable(result.bytes, result.mimeType);
+    const durationMs = asset.kind === "tts" && result.mimeType.startsWith("audio/mpeg") ? mp3DurationMs(result.bytes) : null;
 
     await services.db.transaction(async (tx) => {
       const finalized = await tx
@@ -579,6 +581,7 @@ export async function executeMediaAsset(services: Services, assetId: string, sig
           contentSha256: stored.contentSha256,
           mimeType: result.mimeType,
           byteCount: stored.byteCount,
+          ...(durationMs === null ? {} : { metadata: { ...asset.metadata, durationMs } }),
           leaseToken: null,
           leaseUntil: null,
         })

@@ -11,6 +11,8 @@ import {
   SessionSummaryDtoSchema,
   TaskDtoSchema,
   UiAudioCatalogDtoSchema,
+  RewardActivityPlaybackAuthorizationDtoSchema,
+  RewardActivitySignalSchema,
   type AttemptDto,
   type DisclosureDto,
   type FeedbackAudioDto,
@@ -23,6 +25,8 @@ import {
   type SessionSummaryDto,
   type TaskDto,
   type UiAudioCatalogDto,
+  type RewardActivitySignal,
+  type RewardActivitySignalDto,
 } from "@learning/contracts";
 import { expect, type Page } from "@playwright/test";
 
@@ -39,6 +43,7 @@ export interface KidUiFixture {
   lessonMockSummary?: LessonMockTestSummaryDto;
   feedbackAudio?: FeedbackAudioDto;
   uiAudio?: UiAudioCatalogDto;
+  onActivitySignal?: (signal: RewardActivitySignal) => RewardActivitySignalDto | void;
 }
 
 export async function installKidUiFixture(page: Page, fixture: KidUiFixture): Promise<void> {
@@ -81,6 +86,15 @@ export async function installKidUiFixture(page: Page, fixture: KidUiFixture): Pr
       return json(task);
     }
     if (method === "POST" && /\/tasks\/[^/]+\/events$/.test(path)) return route.fulfill({ status: 204 });
+    if (method === "POST" && /\/tasks\/[^/]+\/activity\/playback-authorization$/.test(path)) {
+      return json(RewardActivityPlaybackAuthorizationDtoSchema.parse({ authorizationId: "10000000-0000-4000-8000-000000000099" }));
+    }
+    if (method === "POST" && /\/tasks\/[^/]+\/activity$/.test(path)) {
+      const signal = RewardActivitySignalSchema.parse(request.postDataJSON());
+      const response = fixture.onActivitySignal?.(signal);
+      return json(response ?? { streamId: signal.streamId, sequence: signal.sequence, acceptedAt: new Date().toISOString(),
+        paused: signal.kind === "pause", pauseReason: signal.kind === "pause" ? signal.pauseReason ?? "background" : null });
+    }
     if (method === "POST" && /\/tasks\/[^/]+\/disclosures$/.test(path)) {
       if (!fixture.disclosure) return missing("disclosure is not configured");
       return json(fixture.disclosure);

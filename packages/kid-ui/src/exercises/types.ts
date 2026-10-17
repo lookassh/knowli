@@ -3,6 +3,8 @@ import type { RecordingModeDto, TaskDto } from "@learning/contracts";
 import type { OptionOutcome } from "./option-outcome";
 
 export interface ExerciseHandlers {
+  /** Content-free activity signal for an actual edit or block move. */
+  onInteraction(): void;
   onPlay(): void;
   /** Odsłuch zdania przykładowego prezentacji (SPEC §22). */
   onPlayExample(): void;

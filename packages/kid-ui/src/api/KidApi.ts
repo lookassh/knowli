@@ -14,6 +14,11 @@ import type {
   SessionInput,
   SessionSummaryDto,
   TaskDto,
+  RewardActivitySignal,
+  RewardActivitySignalDto,
+  RewardActivityPlaybackAuthorizationInput,
+  RewardActivityPlaybackAuthorizationDto,
+  XboxRewardRequestDto,
 } from "@learning/contracts";
 import type { RecordedAudio } from "../media/platform";
 
@@ -29,6 +34,7 @@ export interface KidApi {
   /** Omówienie kartkówki lekcji (sesja lekcji) — per cel zamiast per umiejętność. */
   readLessonMockTestSummary(sessionId: string): Promise<LessonMockTestSummaryDto>;
   listProfiles(): Promise<KidProfileDto[]>;
+  requestXboxPack(childId: string): Promise<XboxRewardRequestDto>;
   listDecks(childId: string, options?: { microphoneEnabled?: boolean }): Promise<KidDeckDto[]>;
   startSession(input: SessionInput): Promise<SessionDto>;
   /** Idempotentne wydanie aktywnego zadania; null oznacza koniec sesji. */
@@ -45,6 +51,8 @@ export interface KidApi {
   completePresentation(taskId: string, clientCommandId?: string): Promise<PresentationCompletionDto>;
   /** Opcjonalne potwierdzenie obserwacji; nie jest jedynym dowodem ujawnienia. */
   recordObservation(input: EventInput): Promise<void>;
+  signalRewardActivity(input: RewardActivitySignal): Promise<RewardActivitySignalDto>;
+  authorizeRewardActivityPlayback(input: RewardActivityPlaybackAuthorizationInput): Promise<RewardActivityPlaybackAuthorizationDto>;
   endSession(sessionId: string): Promise<SessionSummaryDto>;
   disableMicrophone(sessionId: string): Promise<SessionDto>;
   /** Adres nieprzejrzystego zasobu media (same-origin, immutable cache). */

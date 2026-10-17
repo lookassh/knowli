@@ -327,7 +327,6 @@ export async function copyRevisionsSkillsAssets(
     }
   }
 }
-
 /**
  * Nowy edytowalny szkic z aktualnie opublikowanej wersji zestawu słówek
  * (architecture.md §12: POST /decks/:id/draft, SPEC §84). Szkielet wersjonowania
@@ -880,6 +879,19 @@ export async function upsertAssignment(
   }
 }
 
+/** Wycofuje przypisanie z nowych sesji i zachowuje historię zakończonych sesji. */
+export async function removeAssignment(services: Services, childId: string, deckId: string): Promise<void> {
+  const cId = z.uuid().parse(childId);
+  const dId = z.uuid().parse(deckId);
+  const existing = (await services.db.select({ id: assignments.id, active: assignments.active })
+    .from(assignments).where(and(eq(assignments.childId, cId), eq(assignments.deckId, dId))))[0];
+  if (!existing || !existing.active) throw new AppError("not_found");
+  const sessionCount = (await services.db.select({ count: sql<number>`count(*)::int` }).from(learningSessions)
+    .where(eq(learningSessions.assignmentId, existing.id)))[0]?.count ?? 0;
+  if (sessionCount === 0) await services.db.delete(assignments).where(eq(assignments.id, existing.id));
+  else await services.db.update(assignments).set({ active: false }).where(eq(assignments.id, existing.id));
+}
+
 /** Wycofanie zestawu z nowych sesji; idempotentne, historia zostaje. */
 export async function archiveDeck(services: Services, deckId: string): Promise<void> {
   const id = z.uuid().parse(deckId);
@@ -894,49 +906,3 @@ export async function archiveDeck(services: Services, deckId: string): Promise<v
       .where(eq(decks.id, id));
   }
 }
-
-/**
- * Usunięcie przypisania zestawu dziecku.
- * Jeśli dziecko nie odbyło jeszcze żadnych sesji z tym przypisaniem, wiersz jest
- * fizycznie usuwany z bazy. Jeśli istnieją już sesje, przypisanie zostaje
- * oznaczone jako nieaktywne (active = false), aby chronić spójność FK
- * (learning_sessions_assignment_fk) i historię nauki.
- */
-export async function removeAssignment(
-  services: Services,
-  childId: string,
-  deckId: string,
-): Promise<void> {
-  const cId = z.string().uuid().parse(childId);
-  const dId = z.string().uuid().parse(deckId);
-
-  const existing = (
-    await services.db
-      .select({ id: assignments.id, active: assignments.active })
-      .from(assignments)
-      .where(and(eq(assignments.childId, cId), eq(assignments.deckId, dId)))
-  )[0];
-
-  if (!existing || !existing.active) {
-    throw new AppError("not_found");
-  }
-
-  const sessionCount = (
-    await services.db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(learningSessions)
-      .where(eq(learningSessions.assignmentId, existing.id))
-  )[0]?.count ?? 0;
-
-  if (sessionCount === 0) {
-    await services.db
-      .delete(assignments)
-      .where(eq(assignments.id, existing.id));
-  } else {
-    await services.db
-      .update(assignments)
-      .set({ active: false })
-      .where(eq(assignments.id, existing.id));
-  }
-}
-

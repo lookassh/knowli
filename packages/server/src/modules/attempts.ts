@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, max } from "drizzle-orm";
+import { and, eq, inArray, max, sql } from "drizzle-orm";
 import {
   AttemptInputSchema,
   UuidSchema,
@@ -24,7 +24,7 @@ import {
 } from "../db/schema";
 import { AppError } from "../errors";
 import { assessedSkills, evaluateChoice, evaluateNonAnswer, evaluateWritten } from "../domain/evaluate";
-import { chooseFeedback, feedbackExposureKeys } from "../domain/feedback";
+import { chooseFeedback, DAILY_ROUND_FAILURE_FEEDBACK_KINDS, feedbackExposureKeys, isDailyRoundFailureFeedback } from "../domain/feedback";
 import { compareSpelling } from "../domain/spelling-diff";
 import { qualifyAttempt } from "../domain/independence";
 import { computeTargetKey } from "../domain/target-key";
@@ -48,6 +48,7 @@ import { persistSkillProjection } from "./skill-projections";
 import { resolveTaskAssistance } from "../domain/task-assistance";
 import { assertVocabularyDeck, readDeckKind } from "./deck-kind";
 import { completeDisabledVoiceTask } from "./voice-task-lifecycle";
+import { discardRewardActivity, settleRewardActivity } from "./reward-activity";
 
 /** Leniwa finalizacja przeterminowanych prób processing (arch §9.2a). */
 export const ATTEMPT_PROCESSING_TIMEOUT_MS = 60_000;
@@ -310,7 +311,7 @@ async function finalizeAttemptRow(
   const expectedRevisionId = choiceIds[key.correctOptionId ?? ""];
   const answeredRevisionId = choiceOptionId === undefined ? undefined : choiceIds[choiceOptionId];
 
-  if (modality !== "skip") {
+  if (modality !== "skip" && session.mode !== "daily_round") {
     const skillRows = await tx
       .select({ skill: itemRevisionSkills.skill, skillVersionId: itemRevisionSkills.skillVersionId })
       .from(itemRevisionSkills)
@@ -353,7 +354,12 @@ async function finalizeAttemptRow(
     }
   }
 
-  const incorrectAttempts = await tx
+  const incorrectAttempts = session.mode === "daily_round"
+    ? await tx.selectDistinct({ id: attempts.id }).from(attempts).where(and(
+        eq(attempts.taskId, task.id), eq(attempts.state, "completed"),
+        inArray(sql`${attempts.feedback}->>'kind'`, DAILY_ROUND_FAILURE_FEEDBACK_KINDS),
+      ))
+    : await tx
     .selectDistinct({ id: attempts.id })
     .from(attempts)
     .innerJoin(assessments, eq(assessments.attemptId, attempts.id))
@@ -362,7 +368,7 @@ async function finalizeAttemptRow(
     modality,
     grade,
     attempt.attemptNumber,
-    incorrectAttempts.length,
+    incorrectAttempts.length + (session.mode === "daily_round" && isDailyRoundFailureFeedback(feedback?.kind) ? 1 : 0),
   );
   if (taskState !== "issued") {
     await tx.update(sessionTasks).set({ state: taskState }).where(eq(sessionTasks.id, task.id));
@@ -375,6 +381,22 @@ async function finalizeAttemptRow(
     .returning();
   if (completed.length === 0) {
     throw new AppError("conflict", { message: "attempt is already finalized" });
+  }
+
+  // Reward submitted work even when text grading is unavailable. Audio with no
+  // reliable assessed result (silence/uncertain STT/provider failure) is not an
+  // accepted response and must not settle the task's pending activity time.
+  const workAccepted = modality !== "skip" && (modality !== "audio"
+    || Object.values(grade.skills).some((skill) => skill.outcome !== "unevaluated"));
+  if (workAccepted) {
+    await settleRewardActivity(tx, {
+      childId: session.childId, sessionId: session.id, taskId: task.id,
+      completionRef: attempt.id, kind: "attempt", at: now,
+    });
+  } else if (taskState !== "issued") {
+    await discardRewardActivity(tx, {
+      childId: session.childId, sessionId: session.id, taskId: task.id, at: now,
+    });
   }
 
   const stepId = feedback === null ? null : await discloseFeedback(tx, task, session.childId, itemId, feedback, targetKey, now);

@@ -16,6 +16,7 @@ describe("kontrakty zestawu obrazkowego", () => {
     expect(meaning.safeParse({ kind: "color", color: "#ff0000" }).success).toBe(true);
     expect(meaning.safeParse({ kind: "number", count: 0 }).success).toBe(true);
     expect(meaning.safeParse({ kind: "number", count: 50 }).success).toBe(true);
+    expect(meaning.safeParse({ kind: "number", count: 0 }).success).toBe(true);
     expect(meaning.safeParse({ kind: "image", imageAssetId: "x" }).success).toBe(false);
     expect(meaning.safeParse({ kind: "number", count: -1 }).success).toBe(false);
     expect(meaning.safeParse({ kind: "number", count: 51 }).success).toBe(false);

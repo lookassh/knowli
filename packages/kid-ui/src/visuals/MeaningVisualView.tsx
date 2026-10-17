@@ -3,7 +3,7 @@ import { messages } from "@learning/contracts";
 import { formatVisualCountLabel } from "./visual-labels";
 import { NumberVisual } from "./NumberVisual";
 
-export function MeaningVisualView({ visual, mediaUrl, numberDisplay = "apples" }: { visual: MeaningVisualDto; mediaUrl: (id: string) => string; numberDisplay?: "apples" | "digit" }) {
+export function MeaningVisualView({ visual, mediaUrl, numberDisplay = "digit" }: { visual: MeaningVisualDto; mediaUrl: (id: string) => string; numberDisplay?: "apples" | "digit" }) {
   switch (visual.kind) {
     case "image":
       return <img className="kid-illustration" src={mediaUrl(visual.imageAssetId)} alt="" data-testid="kid-illustration" />;

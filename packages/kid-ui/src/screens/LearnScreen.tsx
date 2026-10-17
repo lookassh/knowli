@@ -73,6 +73,7 @@ export function LearnScreen({
         )
       : EMPTY_OUTCOMES;
   const handlers: ExerciseHandlers = {
+    onInteraction: () => controller.recordInteraction(),
     onPlay: () => void controller.playTaskAudio(),
     onPlayExample: () => void controller.playExampleAudio(),
     onAnswerChoice: (optionId) => void controller.answerChoice(optionId),
@@ -109,6 +110,7 @@ export function LearnScreen({
         </details>
       </header>
       <div className="kid-session-status" data-testid="kid-session-status" role="status" aria-live="polite">
+        {screen.activityPaused && <p className="kid-notice kid-activity-paused" data-testid="kid-activity-paused">{messages.kid.activityPaused}</p>}
         {screen.session.mode === "mock_test" && <p className="kid-notice">{messages.kid.mockTestInfo}</p>}
         {screen.answerSaved && <p className="kid-notice">{messages.kid.answerSaved}</p>}
         {screen.processing && (

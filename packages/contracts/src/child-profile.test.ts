@@ -54,4 +54,20 @@ describe("child profile patch", () => {
     expect(toChildDto({ ...child, birthYear: null, recordingMode: "hold", canRead: false } as Parameters<typeof toChildDto>[0]))
       .toMatchObject({ canRead: false });
   });
+
+  it("validates the child-facing pending Xbox request snapshot and fills the empty state", () => {
+    const profile = KidProfileDtoSchema.parse({ childId: child.id, displayName: "Ala", avatarKey: "fox", recordingMode: "hold" });
+    expect(profile.rewards).toMatchObject({ pointsToUse: 0, readyXboxPacks: 0, xboxRequest: null });
+    expect(KidProfileDtoSchema.parse({
+      childId: child.id, displayName: "Ala", avatarKey: "fox", recordingMode: "hold",
+      rewards: {
+        earnedPoints: 30, pointsToUse: 0, readyXboxPacks: 0, todayCreditedSeconds: 1800, dailyGoalSeconds: 1800,
+        xboxRequest: {
+          requestId: "00000000-0000-4000-8000-000000000002", status: "pending",
+          requestedAt: "2026-10-16T10:00:00.000Z", localDate: "2026-10-15", blockNumber: 1,
+          pointsCost: 30, xboxMinutes: 15,
+        },
+      },
+    }).rewards?.xboxRequest).toMatchObject({ status: "pending", pointsCost: 30, xboxMinutes: 15 });
+  });
 });

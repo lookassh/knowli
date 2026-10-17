@@ -44,19 +44,32 @@ export function useLearningSession(deps: {
   useEffect(() => {
     const onVisibility = () => {
       if (document.visibilityState === "visible") {
+        void controller.refreshProfiles();
+        if (document.hasFocus()) controller.resumeRewardActivity();
         void controller.refreshStep();
-      } else controller.cancelRecording();
+      } else { controller.pauseRewardActivity("background"); controller.cancelRecording(); }
     };
-    const onBlur = () => controller.cancelRecording();
-    const onOffline = () => { controller.cancelRecording(); controller.markOffline(); };
-    const onOnline = () => void controller.retry();
+    const onBlur = () => { controller.pauseRewardActivity("blur"); controller.cancelRecording(); };
+    const onFocus = () => {
+      if (document.visibilityState !== "visible" || !document.hasFocus()) return;
+      controller.resumeRewardActivity();
+      void controller.refreshProfiles();
+    };
+    const onOffline = () => { controller.pauseRewardActivity("offline"); controller.cancelRecording(); controller.markOffline(); };
+    const onOnline = () => {
+      void controller.retry().then(() => {
+        if (document.visibilityState === "visible" && document.hasFocus()) controller.resumeRewardActivity();
+      });
+    };
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
     window.addEventListener("offline", onOffline);
     window.addEventListener("online", onOnline);
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
       window.removeEventListener("offline", onOffline);
       window.removeEventListener("online", onOnline);
     };

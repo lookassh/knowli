@@ -29,6 +29,7 @@ export function DeckScreen({
   onToggleMicrophone,
   onStart,
   onMockTest,
+  onDailyRound,
   onEndActive,
   headerActions,
   onGuidance,
@@ -41,6 +42,7 @@ export function DeckScreen({
   onToggleMicrophone: (on: boolean) => void;
   onStart: (deckId: string) => void;
   onMockTest?: (deckId: string) => void;
+  onDailyRound?: (deckId: string) => void;
   onEndActive?: (deckId: string) => void;
   headerActions?: ReactNode;
   onGuidance?: (key: UiAudioKey) => Promise<void>;
@@ -67,7 +69,7 @@ export function DeckScreen({
             </h2>
             <ul className="kid-deck-list">
               {section.items.map((deck) => (
-                <DeckCard key={deck.deckId} deck={deck} mediaUrl={mediaUrl ?? ((id) => `/api/v1/media/${id}`)} onStart={onStart} onMockTest={onMockTest} onEndActive={onEndActive} />
+                <DeckCard key={deck.deckId} deck={deck} mediaUrl={mediaUrl ?? ((id) => `/api/v1/media/${id}`)} onStart={onStart} onMockTest={onMockTest} onDailyRound={onDailyRound} onEndActive={onEndActive} />
               ))}
             </ul>
           </section>
@@ -87,11 +89,12 @@ export function DeckScreen({
   );
 }
 
-export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive }: {
+export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onDailyRound, onEndActive }: {
   deck: KidDeckDto;
   mediaUrl: (assetId: string) => string;
   onStart: (deckId: string) => void;
   onMockTest?: (deckId: string) => void;
+  onDailyRound?: (deckId: string) => void;
   onEndActive?: (deckId: string) => void;
 }) {
   const date = formatDeckTestDate(deck.testDate, new Date().getFullYear());
@@ -114,6 +117,9 @@ export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive }: {
             aria-label={format(messages.kid.deckStarsLabel, { n: stars })}>
             {"★".repeat(stars)}{"☆".repeat(MASTERY_STAR_MAX - stars)}
           </p>
+          <p className="kid-hint" data-testid="kid-deck-reward-points">
+            {format(messages.kid.rewardDeckPoints, { n: deck.earnedPoints ?? 0 })}
+          </p>
           {date !== null && <p className="kid-badge">{messages.kid.testDateLabel}: {date}</p>}
         </div>
         <div className="kid-deck-card__actions">
@@ -126,6 +132,14 @@ export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive }: {
             <button type="button" className="kid-secondary" data-testid="kid-mock-start" onClick={() => onMockTest(deck.deckId)}>
               {messages.kid.mockTest}
             </button>
+          )}
+          {!deck.activeSession && deck.dailyRoundAvailable && onDailyRound && (
+            <button type="button" className="kid-secondary" data-testid="kid-daily-round" onClick={() => onDailyRound(deck.deckId)}>
+              {messages.kid.dailyRound}
+            </button>
+          )}
+          {!deck.activeSession && !deck.dailyRoundAvailable && (
+            <p className="kid-hint" data-testid="kid-daily-round-unavailable">{messages.kid.dailyRoundUnavailable}</p>
           )}
         </div>
       </article>

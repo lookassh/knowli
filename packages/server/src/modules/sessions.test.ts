@@ -1,6 +1,26 @@
 import { describe, expect, it, vi } from "vitest";
 import type { TaskPlan } from "../domain/scheduler";
 import { materializeTask, type PlannedItem } from "./sessions";
+import { contextOf } from "./events";
+
+describe("session context", () => {
+  it("preserves the bounded daily-round revision pool through context updates", () => {
+    expect(contextOf({ context: {
+      canRead: true,
+      vocabularyFormat: "standard",
+      microphoneDisabledTaskIds: [],
+      timezone: "Europe/Warsaw",
+      previousContact: {},
+      reservations: ["target"],
+      settledChecks: [],
+      dailyRoundRevisionIds: ["revision-a", "revision-b"],
+      dailyRoundDate: "2026-10-16",
+    } })).toMatchObject({
+      dailyRoundRevisionIds: ["revision-a", "revision-b"],
+      dailyRoundDate: "2026-10-16",
+    });
+  });
+});
 
 function plannedItem(overrides: Partial<PlannedItem> = {}): PlannedItem {
   return {

@@ -1,0 +1,5 @@
+ALTER TABLE "learning_app"."learning_sessions" DROP CONSTRAINT "learning_sessions_mode_plan";--> statement-breakpoint
+ALTER TABLE "learning_app"."learning_sessions" ADD COLUMN "daily_round_date" text;--> statement-breakpoint
+CREATE UNIQUE INDEX "one_daily_round_per_child_day" ON "learning_app"."learning_sessions" USING btree ("child_id","daily_round_date") WHERE "learning_app"."learning_sessions"."mode" = 'daily_round';--> statement-breakpoint
+ALTER TABLE "learning_app"."learning_sessions" ADD CONSTRAINT "learning_sessions_daily_round_date" CHECK (("learning_app"."learning_sessions"."mode" = 'daily_round') = ("learning_app"."learning_sessions"."daily_round_date" is not null));--> statement-breakpoint
+ALTER TABLE "learning_app"."learning_sessions" ADD CONSTRAINT "learning_sessions_mode_plan" CHECK (("learning_app"."learning_sessions"."mode" in ('training', 'daily_round') and "learning_app"."learning_sessions"."mock_test_plan" is null) or ("learning_app"."learning_sessions"."mode" = 'mock_test' and "learning_app"."learning_sessions"."mock_test_plan" is not null));

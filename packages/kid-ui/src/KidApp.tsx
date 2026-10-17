@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { messages, type UiAudioKey } from "@learning/contracts";
 import type { KidApi } from "./api/KidApi";
 import type { PlatformMedia } from "./media/platform";
@@ -39,6 +39,8 @@ export function KidApp({
   parentLink?: ParentLinkConfig;
   headerActions?: ReactNode;
 }) {
+  const [requestingXboxChildId, setRequestingXboxChildId] = useState<string | null>(null);
+  const [requestErrorChildId, setRequestErrorChildId] = useState<string | null>(null);
   const { controller, screen } = useLearningSession({
     api,
     media,
@@ -51,6 +53,18 @@ export function KidApp({
       {parentLink.label}
     </a>
   ) : undefined);
+
+  async function requestXboxPack(childId: string): Promise<void> {
+    setRequestingXboxChildId(childId);
+    setRequestErrorChildId(null);
+    try {
+      await controller.requestXboxPack(childId);
+    } catch {
+      setRequestErrorChildId(childId);
+    } finally {
+      setRequestingXboxChildId(null);
+    }
+  }
 
   switch (screen.kind) {
     case "loading":
@@ -75,6 +89,9 @@ export function KidApp({
           onSelect={(childId) => void controller.selectProfile(childId)}
           headerActions={actions}
           onGuidance={(key: UiAudioKey) => controller.playGuidance(key)}
+          onRequestXbox={(childId) => void requestXboxPack(childId)}
+          requestingChildId={requestingXboxChildId}
+          requestErrorChildId={requestErrorChildId}
         />
         </KidPage>
       );
@@ -90,6 +107,7 @@ export function KidApp({
           onToggleMicrophone={(on) => controller.setMicrophone(on)}
           onStart={(deckId) => void controller.startLearning(deckId)}
           onMockTest={(deckId) => void controller.startMockTest(deckId)}
+          onDailyRound={(deckId) => void controller.startDailyRound(deckId)}
           onEndActive={(deckId) => void controller.endActiveSession(deckId)}
           headerActions={actions}
           onGuidance={(key: UiAudioKey) => controller.playGuidance(key)}
@@ -112,8 +130,9 @@ export function KidApp({
         <SummaryScreen
           summary={screen.summary}
           profiles={screen.profiles}
-          onAgain={() => void controller.learnAgain()}
+          onAgain={() => void (screen.dailyRound ? controller.backToDecks() : controller.learnAgain())}
           onSwitchProfile={() => void controller.switchProfile()}
+          dailyRound={screen.dailyRound}
           guidance={<GuidanceButton audioKey="summary" onPlay={(key) => controller.playGuidance(key)} testId="kid-summary-guidance" />}
         />
         </KidPage>

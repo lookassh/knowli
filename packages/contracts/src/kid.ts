@@ -216,7 +216,7 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
 export type TaskPrompt = z.infer<typeof TaskPromptSchema>;
 
 export const SessionInputSchema = z.object({
-  mode: z.enum(["training", "mock_test"]).optional(),
+  mode: z.enum(["training", "mock_test", "daily_round"]).optional(),
   childId: UuidSchema,
   deckId: UuidSchema,
   microphoneEnabled: z.boolean(),
@@ -225,7 +225,7 @@ export const SessionInputSchema = z.object({
 export type SessionInput = z.input<typeof SessionInputSchema>;
 
 export const SessionDtoSchema = z.object({
-  mode: z.enum(["training", "mock_test"]),
+  mode: z.enum(["training", "mock_test", "daily_round"]),
   sessionId: UuidSchema,
   childId: UuidSchema,
   deckId: UuidSchema,
@@ -324,6 +324,10 @@ export const SessionSummaryDtoSchema = SessionSummaryResultsSchema.extend({
   tasksIssued: z.number().int().nonnegative(),
   assessedTasksIssued: z.number().int().nonnegative(),
   endedAt: InstantSchema,
+  reward: z.object({
+    creditedSeconds: z.number().int().nonnegative(),
+    pointsEarned: z.number().int().nonnegative(),
+  }).default({ creditedSeconds: 0, pointsEarned: 0 }),
   /**
    * Wariant lekcji (design „Kwalifikacja i projekcja celów”, req 7.7): podsumowanie
    * per cel — ile ćwiczeń celu wykonano i ile poprawnie. BEZ procentów, bez statusów
@@ -340,19 +344,40 @@ export const SessionSummaryDtoSchema = SessionSummaryResultsSchema.extend({
 export type SessionSummaryDto = z.infer<typeof SessionSummaryDtoSchema>;
 
 /** Widok profilu dla ekranu dziecka: tylko nazwa i awatar (arch §12). */
+export const XboxRewardRequestDtoSchema = z.object({
+  requestId: UuidSchema,
+  status: z.enum(["pending", "fulfilled", "rejected"]),
+  requestedAt: InstantSchema,
+  localDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  blockNumber: z.number().int().positive(),
+  pointsCost: z.literal(30),
+  xboxMinutes: z.literal(15),
+}).strict();
+export type XboxRewardRequestDto = z.infer<typeof XboxRewardRequestDtoSchema>;
+
 export const KidProfileDtoSchema = z.object({
   childId: UuidSchema,
   displayName: z.string().min(1),
   avatarKey: z.string().min(1),
   recordingMode: RecordingModeSchema,
   canRead: z.boolean().default(true),
+  rewards: z.object({
+    earnedPoints: z.number().int().nonnegative(),
+    pointsToUse: z.number().int().nonnegative(),
+    readyXboxPacks: z.number().int().nonnegative(),
+    todayCreditedSeconds: z.number().int().nonnegative(),
+    dailyGoalSeconds: z.literal(1800),
+    xboxRequest: XboxRewardRequestDtoSchema.nullable().default(null),
+  }).default({ earnedPoints: 0, pointsToUse: 0, readyXboxPacks: 0, todayCreditedSeconds: 0, dailyGoalSeconds: 1800, xboxRequest: null }),
 });
 export type KidProfileDto = z.input<typeof KidProfileDtoSchema>;
 
 /** Zestaw przypisany dziecku, dostępny do nauki (arch §12). */
 export const KidDeckDtoSchema = z.object({
   mockTestAvailable: z.boolean().default(false),
-  activeSession: z.object({ sessionId: UuidSchema, mode: z.enum(["training", "mock_test"]) }).nullable().default(null),
+  earnedPoints: z.number().int().nonnegative().default(0),
+  activeSession: z.object({ sessionId: UuidSchema, mode: z.enum(["training", "mock_test", "daily_round"]) }).nullable().default(null),
+  dailyRoundAvailable: z.boolean().default(false),
   /**
    * Rodzaj zestawu. OPCJONALNE dla zgodności wstecznej — brak pola oznacza
    * „vocabulary” (konsumenci traktują `undefined` jak słówka). Nie `.default()`,
@@ -388,6 +413,7 @@ export const KidValidationReasonSchema = z.enum([
   "picture_client_update_required",
   "vocabulary_requires_reading",
   "non_reader_mock_test_unavailable",
+  "daily_round_unavailable",
   "picture_guidance_unavailable",
   "picture_audio_unavailable",
 ]);

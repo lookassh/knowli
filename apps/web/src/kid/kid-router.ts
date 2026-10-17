@@ -17,6 +17,9 @@ import {
   disableSessionMicrophone,
   submitAttempt,
   submitSpeechAttempt,
+  recordRewardActivitySignal,
+  authorizeRewardActivityPlayback,
+  requestXboxPack,
   MULTIPART_OVERHEAD_BYTES,
   MAX_AUDIO_BYTES,
   type Services,
@@ -26,6 +29,8 @@ import {
   EventInputSchema,
   SessionInputSchema,
   UuidSchema,
+  RewardActivitySignalSchema,
+  RewardActivityPlaybackAuthorizationInputSchema,
 } from "@learning/contracts";
 import { readJson } from "@/http/errors";
 import { assertSameOrigin } from "@/http/security";
@@ -45,14 +50,20 @@ export async function handleKidApi(
   if (request.method !== "GET" && request.method !== "HEAD") {
     assertSameOrigin(request);
   }
-  const [first, second, third] = segments;
+  const [first, second, ...thirdParts] = segments;
+  const third = thirdParts.join("/");
 
   if (request.method === "GET" && first === "ui-audio" && second === undefined) {
     return Response.json(await readUiAudio(services), { headers: { "Cache-Control": "no-store" } });
   }
 
   if (request.method === "GET" && first === "profiles" && second === undefined) {
-    return Response.json(await listKidProfiles(services));
+    return Response.json(await listKidProfiles(services), { headers: { "Cache-Control": "no-store" } });
+  }
+
+  if (request.method === "POST" && first === "profiles" && second !== undefined && third === "xbox-request") {
+    const requestDto = await requestXboxPack(services, UuidSchema.parse(second));
+    return Response.json(requestDto, { headers: { "Cache-Control": "no-store" } });
   }
 
   if (request.method === "GET" && first === "decks" && second === undefined) {
@@ -63,7 +74,7 @@ export async function handleKidApi(
     }
     const microphoneEnabled = params.get("microphoneEnabled");
     if (microphoneEnabled !== null && microphoneEnabled !== "true" && microphoneEnabled !== "false") throw new AppError("validation");
-    return Response.json(await listKidDecks(services, UuidSchema.parse(childId), microphoneEnabled === null ? {} : { microphoneEnabled: microphoneEnabled === "true" }));
+    return Response.json(await listKidDecks(services, UuidSchema.parse(childId), microphoneEnabled === null ? {} : { microphoneEnabled: microphoneEnabled === "true" }), { headers: { "Cache-Control": "no-store" } });
   }
 
   if (first === "sessions") {
@@ -90,6 +101,14 @@ export async function handleKidApi(
   }
 
   if (first === "tasks" && second !== undefined) {
+    if (request.method === "POST" && third === "activity") {
+      const body = RewardActivitySignalSchema.parse({ ...((await readJson(request)) as object), taskId: second });
+      return Response.json(await recordRewardActivitySignal(services, body), { headers: { "Cache-Control": "no-store" } });
+    }
+    if (request.method === "POST" && third === "activity/playback-authorization") {
+      const body = RewardActivityPlaybackAuthorizationInputSchema.parse({ ...((await readJson(request)) as object), taskId: second });
+      return Response.json(await authorizeRewardActivityPlayback(services, body), { headers: { "Cache-Control": "no-store" } });
+    }
     if (request.method === "POST" && third === "events") {
       const input = EventInputSchema.parse({ ...((await readJson(request)) as object), taskId: second });
       await recordEvent(services, input);

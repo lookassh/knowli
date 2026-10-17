@@ -43,6 +43,8 @@ export interface LessonWorldOptions {
    * = brak audio. Wymaga `richPool`, by istniały ćwiczenia wszystkich typów.
    */
   withTargetAudioFor?: readonly string[];
+  /** Seed one issued contact while omitting all schedulable objectives. */
+  unschedulableDailyRound?: boolean;
 }
 
 /**
@@ -69,7 +71,7 @@ export async function lessonWorld(pool: Pool, options: LessonWorldOptions = {}):
     subjectId,
     topicId,
     topicVersion: 1,
-    objectiveIds: [objectiveId],
+    objectiveIds: options.unschedulableDailyRound ? [] : [objectiveId],
     poolSize: 20,
     examples: { [objectiveId]: ["He plays football."] },
     material: "Present simple: trzecia osoba liczby pojedynczej dodaje -s.",
@@ -122,9 +124,9 @@ export async function lessonWorld(pool: Pool, options: LessonWorldOptions = {}):
   await pool.query("update learning_app.decks set published_version_id = $1 where id = $2", [versionId, deckId]);
 
   if (options.childId) {
-    await pool.query(
+    const assignment = await pool.query<{ id: string }>(
       `insert into learning_app.assignments (id, child_id, deck_id, test_date, test_goals)
-       values ($1, $2, $3, $4, $5)`,
+       values ($1, $2, $3, $4, $5) returning id`,
       [
         randomUUID(),
         options.childId,
@@ -133,6 +135,17 @@ export async function lessonWorld(pool: Pool, options: LessonWorldOptions = {}):
         options.testDate !== undefined && options.testDate !== null ? ["lesson"] : null,
       ],
     );
+    if (options.unschedulableDailyRound) {
+      const sessionId = randomUUID();
+      await pool.query(`insert into learning_app.learning_sessions
+        (id, child_id, assignment_id, deck_id, deck_version_id, policy_id, microphone_enabled, state, task_budget, started_at, ended_at)
+        values ($1, $2, $3, $4, $5, 'learning-v2', false, 'ended', 1, $6, $6)`,
+      [sessionId, options.childId, assignment.rows[0]!.id, deckId, versionId, now]);
+      await pool.query(`insert into learning_app.session_tasks
+        (id, session_id, child_id, deck_version_id, item_revision_id, ordinal, exercise_type, state, public_prompt, answer_key, issued_at)
+        values ($1, $2, $3, $4, $5, 0, 'lesson_choice', 'answered', '{}'::jsonb, '{}'::jsonb, $6)`,
+      [randomUUID(), sessionId, options.childId, versionId, revisionId, now]);
+    }
   }
 
   if (options.withObjectiveAssessment) {

@@ -41,7 +41,7 @@ export function LessonGapView({ task, busy, handlers }: ExerciseProps) {
               className="kid-lesson-gap__input"
               data-testid="kid-lesson-gap-input"
               value={text}
-              onChange={(event) => setText(event.target.value)}
+              onChange={(event) => { setText(event.target.value); handlers.onInteraction(); }}
               aria-label={messages.kid.lessonGapInput}
               placeholder="…"
               autoComplete="off"
