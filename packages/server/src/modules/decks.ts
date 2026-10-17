@@ -641,9 +641,9 @@ export async function readDraft(services: Services, draftId: string): Promise<Dr
 }
 
 /** Najnowszy run generacji zestawu dla wersji; brak runów daje null. */
-async function latestDeckRun(services: Services, deckVersionId: string): Promise<GenerationDto | null> {
+async function latestDeckRun(db: Executor, deckVersionId: string): Promise<GenerationDto | null> {
   const run = (
-    await services.db
+    await db
       .select()
       .from(generationRuns)
       .where(and(eq(generationRuns.deckVersionId, deckVersionId), eq(generationRuns.kind, "deck")))
@@ -656,7 +656,7 @@ async function latestDeckRun(services: Services, deckVersionId: string): Promise
   return {
     id: run.id,
     deckId: (
-      await services.db
+      await db
         .select({ deckId: deckVersions.deckId })
         .from(deckVersions)
         .where(eq(deckVersions.id, deckVersionId))
@@ -668,8 +668,8 @@ async function latestDeckRun(services: Services, deckVersionId: string): Promise
   };
 }
 
-async function deckAssignments(services: Services, deckId: string): Promise<AssignmentDto[]> {
-  return services.db
+async function deckAssignments(db: Executor, deckId: string): Promise<AssignmentDto[]> {
+  return db
     .select({
       childId: assignments.childId,
       displayName: childProfiles.displayName,
@@ -700,13 +700,23 @@ function deckStateOf(deck: { archivedAt: Date | null; publishedVersionId: string
  */
 export async function readDeck(services: Services, deckId: string): Promise<DeckDto> {
   const id = z.uuid().parse(deckId);
-  const deck = (await services.db.select().from(decks).where(eq(decks.id, id)))[0];
+  // Run state and draft contents must come from one snapshot. Otherwise a GET
+  // can read empty items before generation commits, then read succeeded after
+  // commit; the editor stops polling with a permanently empty form.
+  return services.db.transaction((tx) => readDeckSnapshot(tx, id), {
+    isolationLevel: "repeatable read",
+    accessMode: "read only",
+  });
+}
+
+async function readDeckSnapshot(db: Executor, id: string): Promise<DeckDto> {
+  const deck = (await db.select().from(decks).where(eq(decks.id, id)))[0];
   if (!deck) {
     throw new AppError("not_found");
   }
   assertVocabularyDeck(deck.kind as "vocabulary" | "lesson");
   const editable = (
-    await services.db
+    await db
       .select()
       .from(deckVersions)
       .where(and(eq(deckVersions.deckId, id), inArray(deckVersions.state, ["draft", "review"])))
@@ -717,10 +727,10 @@ export async function readDeck(services: Services, deckId: string): Promise<Deck
     title: deck.title,
     coverAssetId: deck.coverAssetId,
     state: deckStateOf(deck, editable ? (editable.state as "draft" | "review") : null),
-    draft: editable ? await readDraftDto(services.db, editable.id) : null,
-    published: publishedVersionId ? await readDraftDto(services.db, publishedVersionId) : null,
-    generation: editable ? await latestDeckRun(services, editable.id) : null,
-    assignments: await deckAssignments(services, id),
+    draft: editable ? await readDraftDto(db, editable.id) : null,
+    published: publishedVersionId ? await readDraftDto(db, publishedVersionId) : null,
+    generation: editable ? await latestDeckRun(db, editable.id) : null,
+    assignments: await deckAssignments(db, id),
   };
 }
 
