@@ -1351,10 +1351,6 @@
   font-size: 0.95rem;
 }
 
-.kid-session-status > .kid-activity-paused {
-  color: var(--kid-accent);
-}
-
 .kid-microphone-status {
   position: relative;
   flex: none;

@@ -368,7 +368,6 @@ export const messages = {
     mockTestSubmit: "Zapisz odpowiedź",
     mockTestNotRemember: "Nie pamiętam",
     answerSaved: "Zapisano odpowiedź",
-    activityPaused: "Pomiar czasu jest wstrzymany. Wróć do zadania, aby wznowić.",
     mockTestFinished: "Kartkówka zakończona",
     mockTestPartial: "Zakończyliśmy wcześniej. Pozostałe zadania są niesprawdzone.",
     mockTestReview: "Sprawdźmy odpowiedzi",
