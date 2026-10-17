@@ -11,6 +11,7 @@ import {
   SessionSummaryDtoSchema,
   TaskDtoSchema,
   UiAudioCatalogDtoSchema,
+  RewardActivityPlaybackAuthorizationDtoSchema,
   RewardActivitySignalSchema,
   type AttemptDto,
   type DisclosureDto,
@@ -85,6 +86,9 @@ export async function installKidUiFixture(page: Page, fixture: KidUiFixture): Pr
       return json(task);
     }
     if (method === "POST" && /\/tasks\/[^/]+\/events$/.test(path)) return route.fulfill({ status: 204 });
+    if (method === "POST" && /\/tasks\/[^/]+\/activity\/playback-authorization$/.test(path)) {
+      return json(RewardActivityPlaybackAuthorizationDtoSchema.parse({ authorizationId: "10000000-0000-4000-8000-000000000099" }));
+    }
     if (method === "POST" && /\/tasks\/[^/]+\/activity$/.test(path)) {
       const signal = RewardActivitySignalSchema.parse(request.postDataJSON());
       const response = fixture.onActivitySignal?.(signal);
