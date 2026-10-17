@@ -1,3 +1,4 @@
+import { startLegacyTrainingSession } from "./helpers";
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -94,7 +95,7 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
 
     const child = await createChild(services, { displayName: "Ola", avatarKey: "fox", canRead: true });
     await upsertAssignment(services, child.id, draft.deckId, null);
-    const session = await startSession(services, { childId: child.id, deckId: draft.deckId,
+    const session = await startLegacyTrainingSession(services, { childId: child.id, deckId: draft.deckId,
       microphoneEnabled: false, supportsPictureVocabulary: true });
     for (let index = 0; index < 2; index++) {
       const exposure = await nextTask(services, session.sessionId);
@@ -111,13 +112,13 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
       modality: "choice", optionId: stored.answer_key.correctOptionId });
     expect((await pool.query("select skill, outcome from learning_app.assessments where attempt_id=$1", [result.attemptId])).rows)
       .toEqual([{ skill: "listening", outcome: "correct" }]);
-    await expect(startSession(services, { childId: child.id, deckId: draft.deckId,
+    await expect(startLegacyTrainingSession(services, { childId: child.id, deckId: draft.deckId,
       microphoneEnabled: false, supportsPictureVocabulary: false }))
       .rejects.toMatchObject({ details: { reason: "picture_client_update_required" } });
 
     const oldChild = await createChild(services, { displayName: "Jan", avatarKey: "fox", canRead: true });
     await upsertAssignment(services, oldChild.id, draft.deckId, null);
-    const oldSession = await startSession(services, { childId: oldChild.id, deckId: draft.deckId,
+    const oldSession = await startLegacyTrainingSession(services, { childId: oldChild.id, deckId: draft.deckId,
       microphoneEnabled: false, supportsPictureVocabulary: false });
     for (let index = 0; index < 2; index++) {
       const exposure = await nextTask(services, oldSession.sessionId);
@@ -146,7 +147,7 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
     for (const seed of [0, 1, 2]) {
       const child = await createChild(services, { displayName: "Ola", avatarKey: "fox", canRead });
       await upsertAssignment(services, child.id, draft.deckId, null);
-      const session = await startSession(services, { childId: child.id, deckId: draft.deckId,
+      const session = await startLegacyTrainingSession(services, { childId: child.id, deckId: draft.deckId,
         microphoneEnabled: false, supportsPictureVocabulary: true });
       expect((await pool.query("select can_read from learning_app.child_profiles where id=$1", [child.id])).rows[0])
         .toEqual({ can_read: canRead });
@@ -230,7 +231,7 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
     // Pierwsza sesja tworzy rzeczywistą historię poznania i wprowadzenia Recall.
     const seenDirections = new Set<string>();
     for (const phase of ["introduction", "started-material"]) {
-      const session = await startSession(services, { childId: child.id, deckId: draft.deckId,
+      const session = await startLegacyTrainingSession(services, { childId: child.id, deckId: draft.deckId,
         microphoneEnabled: false, supportsPictureVocabulary: true });
       expect((await pool.query("select context->'canRead' as can_read, context->>'vocabularyFormat' as format from learning_app.learning_sessions where id=$1", [session.sessionId])).rows[0])
         .toEqual({ can_read: true, format: "picture" });
@@ -274,7 +275,7 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
     for (let pass = 0; pass < 6; pass += 1) if ((await runDueGenerationWork(services)).processed === 0) break;
     await publishDraft(services, original.id, 1);
     await upsertAssignment(services, child.id, original.deckId, null);
-    const session = await startSession(services, { childId: child.id, deckId: original.deckId, microphoneEnabled: true, supportsPictureVocabulary: true });
+    const session = await startLegacyTrainingSession(services, { childId: child.id, deckId: original.deckId, microphoneEnabled: true, supportsPictureVocabulary: true });
 
     const revised = await createDraftFromPublished(services, original.deckId);
     const changed = await editDraft(services, revised.id, {
@@ -305,7 +306,7 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
     }
     await publishDraft(services, draft.id, 1);
     await upsertAssignment(services, child.id, draft.deckId, null);
-    const session = await startSession(services, { childId: child.id, deckId: draft.deckId, microphoneEnabled: true, supportsPictureVocabulary: true });
+    const session = await startLegacyTrainingSession(services, { childId: child.id, deckId: draft.deckId, microphoneEnabled: true, supportsPictureVocabulary: true });
     const exposure = await nextTask(services, session.sessionId);
     expect(exposure?.prompt.kind).toBe("picture_exposure");
     await completePresentation(services, { taskId: exposure!.taskId });

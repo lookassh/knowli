@@ -76,6 +76,17 @@ async function taskInfo(taskId: string): Promise<{ exercise_type: string; state:
   ))[0]!;
 }
 
+async function useLegacyScheduler(sessionId: string): Promise<void> {
+  // This suite covers the compatibility path for sessions created before the
+  // fixed-plan migration. New-session behavior is asserted in the plan suite.
+  await query("alter table learning_app.learning_sessions disable trigger learning_sessions_training_plan_immutable");
+  try {
+    await query("update learning_app.learning_sessions set training_plan = null, task_budget = 20 where id = $1", [sessionId]);
+  } finally {
+    await query("alter table learning_app.learning_sessions enable trigger learning_sessions_training_plan_immutable");
+  }
+}
+
 for (const sample of [
   { target: "Monday", visible: "Mna", letters: ["o", "d", "y"], wrongAnswer: "Mxnday" },
   { target: "New York!", visible: "Nw Yr!", letters: ["e", "o", "k"], wrongAnswer: "Nxw York!" },
@@ -99,6 +110,7 @@ test(`letter_completion accepts only missing letters after spelling difficulty: 
     data: { childId: child.id, deckId, microphoneEnabled: true },
   });
   const { sessionId } = await started.json() as { sessionId: string };
+  await useLegacyScheduler(sessionId);
   const source = await (await parent.post(`/api/v1/kid/sessions/${sessionId}/next`)).json() as { taskId: string; exerciseType: string };
   expect(source.exerciseType).toBe("recall");
   for (let failure = 0; failure < 2; failure += 1) {

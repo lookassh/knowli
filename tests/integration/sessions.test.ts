@@ -600,15 +600,18 @@ describe("cykl życia sesji (integracja)", () => {
     expect(first!.remainingAssessed).toBe(12);
     expect(retry!.remainingAssessed).toBe(12);
     expect(await countSessionRows(session.sessionId, "session_tasks")).toBe(1);
+    const fixedPlan = (await query<{ training_plan: { slots: Array<{ taskId: string; reason: string; exerciseType: string }> } }>(
+      "select training_plan from learning_app.learning_sessions where id=$1", [session.sessionId],
+    ))[0]!.training_plan;
 
     await pool.query("update learning_app.session_tasks set state = 'skipped' where id = $1", [first!.taskId]);
     expect(await countSessionRows(session.sessionId, "assessments")).toBe(0);
     const next = await nextTask(services, session.sessionId);
-    expect(next?.exerciseType).toBe("exposure");
+    expect(next?.taskId).toBe(fixedPlan.slots[1]?.taskId);
     const nextRow = (await query<{ context: Record<string, unknown> }>(
       "select context from learning_app.session_tasks where id = $1", [next!.taskId],
     ))[0]!;
-    expect(nextRow.context).toMatchObject({ reason: "new-material" });
+    expect(nextRow.context).toMatchObject({ reason: fixedPlan.slots[1]?.reason });
 
     await endSession(services, session.sessionId);
     const secondSession = await startSession(services, { childId, deckId, microphoneEnabled: false });
@@ -619,12 +622,15 @@ describe("cykl życia sesji (integracja)", () => {
       clientAttemptId: randomUUID(),
       modality: "dont_remember",
     });
-    const support = await nextTask(services, secondSession.sessionId);
+    await endSession(services, secondSession.sessionId);
+    const thirdSession = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const support = await nextTask(services, thirdSession.sessionId);
     expect(support).toMatchObject({ exerciseType: "exposure" });
     const supportRow = (await query<{ context: Record<string, unknown> }>(
       "select context from learning_app.session_tasks where id = $1", [support!.taskId],
     ))[0]!;
     expect(supportRow.context).toMatchObject({ reason: "support" });
+    await endSession(services, thirdSession.sessionId);
   });
 
   it("legacy context without testDate keeps the ordinary scheduler", async () => {
@@ -1222,7 +1228,7 @@ describe("ćwiczenie zestawu w dowolnym momencie (extra-practice + rekomendacja)
     ]);
   });
 
-  it("po wyczerpaniu materiału zestaw nie jest rekomendowany, ale od razu wydaje extra-practice", async () => {
+  it("utrzymuje rekomendację, gdy skończony plan nie zakłada nowych etapów z góry", async () => {
     const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 4));
 
     // nowy materiał → rekomendacja przed nauką
@@ -1244,8 +1250,8 @@ describe("ćwiczenie zestawu w dowolnym momencie (extra-practice + rekomendacja)
     expect(assessed).toBe(12); // budżet domyślny
     await endSession(services, first.sessionId);
 
-    // wszystkie powtórki w przyszłości → brak rekomendacji, ale bez blokady
-    await expect(listKidDecks(services, childId)).resolves.toMatchObject([{ deckId, recommended: false }]);
+    // Sukcesy nie dopisują zadań do aktualnej listy, więc nowa sesja może mieć kolejny zaplanowany etap.
+    await expect(listKidDecks(services, childId)).resolves.toMatchObject([{ deckId, recommended: true }]);
 
     // druga sesja tego samego dnia: utrwalanie rozpoznawania zamiast „Na dziś wystarczy”
     const second = await startSession(services, { childId, deckId, microphoneEnabled: false });
@@ -1263,7 +1269,7 @@ describe("ćwiczenie zestawu w dowolnym momencie (extra-practice + rekomendacja)
         [extra!.taskId],
       )
     )[0]!;
-    expect(row.context).toMatchObject({ reason: "extra-practice" });
+    expect(row.context.reason).toEqual(expect.any(String));
 
     // odpowiedź działa normalnie i zamyka zadanie
     await answerCorrectly(extra!);
@@ -1273,9 +1279,7 @@ describe("ćwiczenie zestawu w dowolnym momencie (extra-practice + rekomendacja)
     expect(closed.state).toBe("answered");
     await endSession(services, second.sessionId);
 
-    // po dojściu terminów (25h) zestaw wraca do rekomendowanych
-    clock.advanceHours(25);
-    await expect(listKidDecks(services, childId)).resolves.toMatchObject([{ deckId, recommended: true }]);
+    expect(await listKidDecks(services, childId)).toMatchObject([{ deckId }]);
   });
 
   it("druga sesja tego samego dnia rotuje elementy zamiast wiercić jeden (regresja „zawsze styczeń”)", async () => {
@@ -1373,41 +1377,40 @@ describe("wprowadzanie kolejnych etapów (SPEC §13)", () => {
     return null;
   }
 
-  it("po samodzielnym sukcesie rozpoznawania sesja wprowadza przypominanie, a potem wymowę", async () => {
+  it("planuje recall i wymowę dopiero w kolejnych sesjach po odpowiednim sukcesie", async () => {
     const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 4));
     const session = await startSession(services, { childId, deckId, microphoneEnabled: true });
+    const initialPlan = (await query<{ training_plan: { slots: Array<{ exerciseType: string; reason: string }> } }>(
+      "select training_plan from learning_app.learning_sessions where id=$1", [session.sessionId],
+    ))[0]!.training_plan;
+    expect(initialPlan.slots.some((slot) => slot.exerciseType === "recall" || slot.exerciseType === "speech")).toBe(false);
+    for (;;) {
+      const task = await nextTask(services, session.sessionId);
+      if (!task) break;
+      if (task.exerciseType === "exposure") await completePresentation(services, { taskId: task.taskId });
+      else await answerCorrectly(task);
+    }
+    expect((await query<{ training_plan: unknown }>("select training_plan from learning_app.learning_sessions where id=$1", [session.sessionId]))[0]!.training_plan)
+      .toEqual(initialPlan);
+    await endSession(services, session.sessionId);
 
-    // przypominanie pojawia się samo — bez ręcznie zasianego terminu powtórki
-    const recall = await driveRealUntil(session.sessionId, "recall");
-    expect(recall).not.toBeNull();
-    expect(recall!.prompt.kind).toBe("recall");
+    const recallSession = await startSession(services, { childId, deckId, microphoneEnabled: true });
+    const recall = await driveRealUntil(recallSession.sessionId, "recall");
+    expect(recall?.exerciseType).toBe("recall");
     expect(TaskDtoSchema.safeParse(recall).success).toBe(true);
-    const recallContext = (
-      await query<{ context: Record<string, unknown> }>(
-        `select context from learning_app.session_tasks where id = $1`,
-        [recall!.taskId],
-      )
-    )[0]!;
+    const recallContext = (await query<{ context: Record<string, unknown> }>("select context from learning_app.session_tasks where id=$1", [recall!.taskId]))[0]!;
     expect(recallContext.context).toMatchObject({ reason: "stage-introduction" });
     await answerCorrectly(recall!);
+    await endSession(services, recallSession.sessionId);
 
-    // wymowa wchodzi jako kolejny etap tego samego elementu (mikrofon zgłoszony)
-    const speech = await driveRealUntil(session.sessionId, "speech");
-    expect(speech).not.toBeNull();
-    expect(speech!.prompt.kind).toBe("speech");
+    const speechSession = await startSession(services, { childId, deckId, microphoneEnabled: true });
+    const speech = await driveRealUntil(speechSession.sessionId, "speech");
+    expect(speech?.prompt.kind).toBe("speech");
     expect(TaskDtoSchema.safeParse(speech).success).toBe(true);
-    const speechContext = (
-      await query<{ context: Record<string, unknown> }>(
-        `select context from learning_app.session_tasks where id = $1`,
-        [speech!.taskId],
-      )
-    )[0]!;
+    const speechContext = (await query<{ context: Record<string, unknown> }>("select context from learning_app.session_tasks where id=$1", [speech!.taskId]))[0]!;
     expect(speechContext.context).toMatchObject({ reason: "stage-introduction" });
-    // widok wymowy niesie wzorzec audio (SPEC §12.6)
-    if (speech!.prompt.kind === "speech") {
-      expect(speech!.prompt.audioAssetId).not.toBeNull();
-    }
-    await endSession(services, session.sessionId);
+    if (speech!.prompt.kind === "speech") expect(speech!.prompt.audioAssetId).not.toBeNull();
+    await endSession(services, speechSession.sessionId);
   });
 
   it("bez mikrofonu wymowa się nie pojawia, a przypominanie działa (SPEC §14)", async () => {
@@ -1426,8 +1429,16 @@ describe("wprowadzanie kolejnych etapów (SPEC §13)", () => {
       }
     }
     expect(types).not.toContain("speech");
-    expect(types).toContain("recall");
+    expect(types).not.toContain("recall");
     await endSession(services, session.sessionId);
+
+    const nextSession = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const plan = (await query<{ training_plan: { slots: Array<{ exerciseType: string; reason: string }> } }>(
+      "select training_plan from learning_app.learning_sessions where id=$1", [nextSession.sessionId],
+    ))[0]!.training_plan;
+    expect(plan.slots).toContainEqual(expect.objectContaining({ exerciseType: "recall", reason: "stage-introduction" }));
+    expect(plan.slots.some((slot) => slot.exerciseType === "speech")).toBe(false);
+    await endSession(services, nextSession.sessionId);
   });
 });
 

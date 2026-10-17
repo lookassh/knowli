@@ -110,6 +110,8 @@ export type {
   ScheduleReason,
   PlannedOption,
 } from "./domain/scheduler";
+export { readTrainingSessionPlan } from "./domain/training-session-plan";
+export type { TrainingSessionPlanSnapshot, TrainingSessionSlot } from "./domain/training-session-plan";
 export {
   ttsFingerprint,
   imageFingerprint,

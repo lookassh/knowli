@@ -1,3 +1,4 @@
+import { startLegacyTrainingSession } from "./helpers";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -349,7 +350,7 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
       )
     )[0]!;
     await setDueCheck(childId, versionId, 0, "needs_confirmation", 3);
-    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: false });
     const task = (await nextTask(services, session.sessionId))!;
     expect(task.exerciseType).toBe("recall");
 
@@ -386,7 +387,7 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
   it("retry z tym samym clientAttemptId i tą samą treścią zwraca ten sam wynik; inna treść daje 409", async () => {
     const { deckId, versionId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 3));
     await setDueCheck(childId, versionId, 0, "needs_confirmation", 3);
-    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: false });
     const task = (await nextTask(services, session.sessionId))!;
     const clientAttemptId = randomUUID();
 
@@ -410,7 +411,7 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
 
   it("pierwszy błąd zostawia zadanie issued, drugi kończy jako answered i kieruje do wsparcia", async () => {
     const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 4));
-    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: false });
     const task = await firstAssessedTask(services, session.sessionId);
 
     const first = await submitWrong(services, task);
@@ -433,7 +434,7 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
 
   it("zadanie retry po wsparciu spełnia kontrakt Kid DTO (regresja: puste options w listening)", async () => {
     const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 4));
-    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: false });
     const task = await firstAssessedTask(services, session.sessionId);
     await submitWrong(services, task);
     await submitWrong(services, task);
@@ -474,7 +475,7 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
     const revisionId = await setDueCheck(childId, versionId, 0, "needs_confirmation", 2);
     const spellingVersion = (await skillVersionIds(revisionId, "spelling"))[0]!;
     const recallVersion = (await skillVersionIds(revisionId, "recall"))[0]!;
-    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: false });
     const source = (await nextTask(services, session.sessionId))!;
     expect(source.exerciseType).toBe("recall");
     await submitWrong(services, source);
@@ -518,7 +519,7 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
 
   it("„Nie pamiętam” to trudność bez mylonej pary; „Pomiń” nie udaje błędu", async () => {
     const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 4));
-    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: false });
     const task = await firstAssessedTask(services, session.sessionId);
 
     const forgotten = await submitAttempt(services, {
@@ -553,7 +554,7 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
 
   it("odpowiedź dla zadania zakończonego i dla prezentacji jest odrzucana", async () => {
     const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 3));
-    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: false });
     const task = await firstAssessedTask(services, session.sessionId);
     await submitCorrect(services, task);
 
@@ -588,7 +589,7 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
     const recallVersion = (await skillVersionIds(revision0.id, "recall"))[0]!;
 
     // element 0: prezentacja (ekspozycja celu), potem należne sprawdzenie
-    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: false });
     const exposure = (await nextTask(services, session.sessionId))!;
     expect(exposure.exerciseType).toBe("exposure");
     await completePresentation(services, { taskId: exposure.taskId });
@@ -623,7 +624,7 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
   it("ujawnienie na drugim kliencie przed odpowiedzią jest uwzględnione we wspólnej kolejności", async () => {
     const { deckId, versionId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 3));
     await setDueCheck(childId, versionId, 0, "needs_confirmation", 3);
-    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: false });
     const check = (await nextTask(services, session.sessionId))!;
     expect(check.exerciseType).toBe("recall");
 
@@ -652,7 +653,7 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
 
   it("leniwa finalizacja: processing starsze niż 60 s zamienia się w nieocenione przy odczycie i nowej próbie", async () => {
     const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 3));
-    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: false });
     const task = await firstAssessedTask(services, session.sessionId);
 
     const freshId = await insertProcessingAttempt(task.taskId, "2026-10-07T15:59:55.000Z");
@@ -681,7 +682,7 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
 
   it("awaria w połowie finalizacji wycofuje całą transakcję oceny i projekcji", async () => {
     const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 3));
-    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: false });
     const task = await firstAssessedTask(services, session.sessionId);
     const attemptId = await insertProcessingAttempt(task.taskId, "2026-10-07T16:00:00.000Z");
 
@@ -711,7 +712,7 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
 
   it("rozlicza zaakceptowaną odpowiedź nawet gdy końcowa ocena jest nieoceniona", async () => {
     const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 3));
-    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: false });
     const task = await firstAssessedTask(services, session.sessionId);
     const attemptId = await insertProcessingAttempt(task.taskId, "2026-10-07T16:00:00.000Z", "text");
     await recordRewardActivitySignal(services, { sessionId: session.sessionId, taskId: task.taskId, streamId: randomUUID(), sequence: 1, kind: "takeover" });
@@ -727,7 +728,7 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
 
   it("does not settle activity for audio with no reliable assessment", async () => {
     const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 3));
-    const session = await startSession(services, { childId, deckId, microphoneEnabled: true });
+    const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: true });
     const task = await firstAssessedTask(services, session.sessionId);
     const attemptId = await insertProcessingAttempt(task.taskId, "2026-10-07T16:00:00.000Z", "audio");
     await recordRewardActivitySignal(services, { sessionId: session.sessionId, taskId: task.taskId, streamId: randomUUID(), sequence: 1, kind: "takeover" });
@@ -743,7 +744,7 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
 
   it("równoległa finalizacja tej samej próby kończy się jednym kompletem ocen", async () => {
     const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 3));
-    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: false });
     const task = await firstAssessedTask(services, session.sessionId);
     const attemptId = await insertProcessingAttempt(task.taskId, "2026-10-07T16:00:00.000Z");
 
@@ -766,7 +767,7 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
     const other = await createChild(services, { displayName: "Bartek", avatarKey: "bear" });
     await upsertAssignment(services, other.id, deckId, null);
 
-    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: false });
     const task = await firstAssessedTask(services, session.sessionId);
     await submitCorrect(services, task);
 
@@ -798,7 +799,7 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
 
   it("publikacja zmienionego słowa w trakcie sesji nie awansuje nowego skill_version", async () => {
     const { deckId, versionId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 3));
-    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: false });
     const task = await firstAssessedTask(services, session.sessionId); // przypięte do wersji 1
 
     // rodzic publikuje wersję 2 ze zmienionym celem pierwszego elementu
@@ -884,7 +885,7 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
   it("pominięte należne sprawdzenie zwalnia rezerwację i nie wraca w tej sesji", async () => {
     const { deckId, versionId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 4));
     await setDueCheck(childId, versionId, 0, "needs_confirmation", 3);
-    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: false });
     const check = (await nextTask(services, session.sessionId))!;
     expect(check.exerciseType).toBe("recall");
     const contextBefore = await sessionContextRow(session.sessionId);
@@ -913,7 +914,7 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
     await setDueCheck(childId, versionId, 0, "needs_confirmation", 0);
 
     const answerDueCheck = async (text: string): Promise<void> => {
-      const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+      const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: false });
       const check = (await nextTask(services, session.sessionId))!;
       expect(check.exerciseType).toBe("recall");
       clock.advanceMs(301_000); // poza okno 300 s od ekspozycji z poprzedniego cyklu
@@ -945,7 +946,7 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
   it("literówka w progu daje spelling_hint z segmentami; oceny i próby bez zmian (issue #9)", async () => {
     const { deckId, versionId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 3));
     await setDueCheck(childId, versionId, 0, "needs_confirmation", 3);
-    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: false });
     const task = (await nextTask(services, session.sessionId))!;
     expect(task.exerciseType).toBe("recall");
 

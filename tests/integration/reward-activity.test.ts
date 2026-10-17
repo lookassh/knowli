@@ -14,13 +14,12 @@ import {
   loginParent,
   authorizeRewardActivityPlayback,
   recordRewardActivitySignal,
-  startSession,
   submitAttempt,
   upsertAssignment,
   setupParent,
   rebuildKidRewardProjection,
 } from "@learning/server";
-import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
+import { buildTestServices, startLegacyTrainingSession, testDatabase, truncateCoreTables } from "./helpers";
 import { handleParentApi } from "../../apps/web/src/parent/parent-router";
 import { handleKidApi } from "../../apps/web/src/kid/kid-router";
 
@@ -51,7 +50,7 @@ async function seedCreditedDay(
   [revision.id, `xbox-ill-${randomUUID()}`]);
   await publishDraft(services, draft.id, 1);
   await upsertAssignment(services, childId, draft.deckId, null);
-  const session = await startSession(services, { childId, deckId: draft.deckId, microphoneEnabled: false });
+  const session = await startLegacyTrainingSession(services, { childId, deckId: draft.deckId, microphoneEnabled: false });
   const task = await nextTask(services, session.sessionId);
   const taskId = task!.taskId;
   const settlementId = randomUUID();
@@ -346,26 +345,30 @@ describe("rozliczanie aktywności nagrodowej", () => {
   it("rozlicza potwierdzone sekundy raz, dopiero po ukończeniu prezentacji", async () => {
     const { services, clock } = buildTestServices("2026-10-16T10:00:00.000Z");
     const child = await createChild(services, { displayName: "Ola", avatarKey: "fox" });
-    const draft = await createDraft(services, { title: "Dni", items: [{
-      source: "poniedziałek", target: "Monday", acceptedAnswers: [],
-      locales: { source: "pl-PL", target: "en-GB" }, visualType: "none",
-    }] });
-    const revision = (await pool.query<{ id: string }>("select id from learning_app.item_revisions where deck_version_id=$1", [draft.id])).rows[0]!;
-    const assetId = randomUUID();
-    const fingerprint = `reward-${randomUUID()}`;
-    await pool.query(`insert into learning_app.media_assets
-      (id,kind,fingerprint,generation_number,state,storage_key,content_sha256,mime_type,byte_count,provider,model,metadata)
-      values ($1,'tts',$2,1,'ready',$3,$4,'audio/mpeg',100,'fake','fake',$5::jsonb)`,
-    [assetId, fingerprint, `blob/${assetId}`, `sha-${assetId}`, JSON.stringify({ durationMs: 20_000 })]);
-    await pool.query(`insert into learning_app.revision_assets
-      (item_revision_id,role,asset_id,expected_fingerprint,state) values ($1,'target_audio',$2,$3,'approved')`,
-    [revision.id, assetId, fingerprint]);
-    await pool.query(`insert into learning_app.revision_assets
-      (item_revision_id,role,asset_id,expected_fingerprint,state) values ($1,'illustration',null,$2,'omitted')`,
-    [revision.id, `ill-${randomUUID()}`]);
+    const draft = await createDraft(services, { title: "Dni", items: [
+      { source: "poniedziałek", target: "Monday", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "none" },
+      { source: "wtorek", target: "Tuesday", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "none" },
+    ] });
+    const revisions = (await pool.query<{ id: string }>("select id from learning_app.item_revisions where deck_version_id=$1", [draft.id])).rows;
+    let assetIdForFirstRevision = "";
+    for (const revision of revisions) {
+      const assetId = randomUUID();
+      if (revision === revisions[0]) assetIdForFirstRevision = assetId;
+      const fingerprint = `reward-${randomUUID()}`;
+      await pool.query(`insert into learning_app.media_assets
+        (id,kind,fingerprint,generation_number,state,storage_key,content_sha256,mime_type,byte_count,provider,model,metadata)
+        values ($1,'tts',$2,1,'ready',$3,$4,'audio/mpeg',100,'fake','fake',$5::jsonb)`,
+      [assetId, fingerprint, `blob/${assetId}`, `sha-${assetId}`, JSON.stringify({ durationMs: 20_000 })]);
+      await pool.query(`insert into learning_app.revision_assets
+        (item_revision_id,role,asset_id,expected_fingerprint,state) values ($1,'target_audio',$2,$3,'approved')`,
+      [revision.id, assetId, fingerprint]);
+      await pool.query(`insert into learning_app.revision_assets
+        (item_revision_id,role,asset_id,expected_fingerprint,state) values ($1,'illustration',null,$2,'omitted')`,
+      [revision.id, `ill-${randomUUID()}`]);
+    }
     await publishDraft(services, draft.id, 1);
     await upsertAssignment(services, child.id, draft.deckId, null);
-    const session = await startSession(services, { childId: child.id, deckId: draft.deckId, microphoneEnabled: false });
+    const session = await startLegacyTrainingSession(services, { childId: child.id, deckId: draft.deckId, microphoneEnabled: false }, 20);
     const task = await nextTask(services, session.sessionId);
     expect(task?.exerciseType).toBe("exposure");
     const streamId = randomUUID();
@@ -396,6 +399,7 @@ describe("rozliczanie aktywności nagrodowej", () => {
       sessionId: session.sessionId, taskId: task!.taskId, streamId: replacementStreamId, sequence: 4, kind: "interaction",
     });
     expect(resumed).toMatchObject({ paused: false, pauseReason: null });
+    const assetId = assetIdForFirstRevision;
     const playbackAuthorization = await authorizeRewardActivityPlayback(services, { sessionId: session.sessionId, taskId: task!.taskId, streamId: replacementStreamId, assetId });
     clock.advanceMs(15_000);
     await recordRewardActivitySignal(services, {
@@ -441,7 +445,11 @@ describe("rozliczanie aktywności nagrodowej", () => {
     expect(rewardRow.rows).toMatchObject([{ deck_id: draft.deckId, credited_milliseconds: "80000", awarded_points: 1, remainder_milliseconds: 20000 }]);
     expect(await listKidProfiles(services)).toMatchObject([{ childId: child.id, rewards: { earnedPoints: 1, pointsToUse: 1, readyXboxPacks: 0, todayCreditedSeconds: 80 } }]);
     expect(await listKidDecks(services, child.id)).toMatchObject([{ deckId: draft.deckId, earnedPoints: 1 }]);
-    const skippedTask = await nextTask(services, session.sessionId);
+    let skippedTask = await nextTask(services, session.sessionId);
+    while (skippedTask?.exerciseType === "exposure") {
+      await completePresentation(services, { taskId: skippedTask.taskId });
+      skippedTask = await nextTask(services, session.sessionId);
+    }
     expect(skippedTask).toBeTruthy();
     const skippedStreamId = randomUUID();
     await recordRewardActivitySignal(services, {
@@ -481,7 +489,7 @@ describe("rozliczanie aktywności nagrodowej", () => {
     [secondRevision.id, `ill-${randomUUID()}`]);
     await publishDraft(services, secondDraft.id, 1);
     await upsertAssignment(services, child.id, secondDraft.deckId, null);
-    const secondSession = await startSession(services, { childId: child.id, deckId: secondDraft.deckId, microphoneEnabled: false });
+    const secondSession = await startLegacyTrainingSession(services, { childId: child.id, deckId: secondDraft.deckId, microphoneEnabled: false });
     const secondTask = await nextTask(services, secondSession.sessionId);
     expect(secondTask?.exerciseType).toBe("exposure");
     const secondStreamId = randomUUID();
@@ -526,7 +534,7 @@ describe("rozliczanie aktywności nagrodowej", () => {
       (item_revision_id,role,asset_id,expected_fingerprint,state) values ($1,'illustration',null,$2,'omitted')`, [revision.id, `ill-${randomUUID()}`]);
     await publishDraft(services, draft.id, 1);
     await upsertAssignment(services, child.id, draft.deckId, null);
-    const session = await startSession(services, { childId: child.id, deckId: draft.deckId, microphoneEnabled: false });
+    const session = await startLegacyTrainingSession(services, { childId: child.id, deckId: draft.deckId, microphoneEnabled: false });
     const task = await nextTask(services, session.sessionId);
     expect(task?.exerciseType).toBe("exposure");
     const streamId = randomUUID();
