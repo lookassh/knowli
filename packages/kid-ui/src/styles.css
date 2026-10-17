@@ -902,13 +902,14 @@
 }
 
 .kid-picture-options .kid-picture-option {
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   box-sizing: border-box;
   width: 100%;
-  height: clamp(72px, 11svh, 124px);
-  min-height: 72px;
-  padding: 10px;
+  height: clamp(100px, 18svh, 160px);
+  min-height: 100px;
+  padding: 6px;
   text-align: center;
 }
 
@@ -919,10 +920,13 @@
 }
 
 .kid-picture-choice-visual {
-  width: clamp(48px, 8svh, 88px);
-  height: clamp(48px, 8svh, 88px);
-  display: grid;
-  place-items: center;
+  height: 100%;
+  max-height: 100%;
+  max-width: 100%;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .kid-picture-choice-visual .kid-visual,
@@ -931,14 +935,14 @@
   box-sizing: border-box;
   width: 100%;
   height: 100%;
-  max-width: 112px;
-  max-height: 112px;
+  max-width: 100%;
+  max-height: 100%;
   object-fit: contain;
 }
 
 .kid-picture-choice-visual .kid-illustration {
   border-width: 1px;
-  border-radius: 10px;
+  border-radius: 12px;
 }
 
 .kid-picture-choice-label {
@@ -958,6 +962,7 @@
   inset-inline: auto 8px;
   top: 8px;
   transform: none;
+  z-index: 2;
 }
 
 .kid-page[data-zoomed="true"] .kid-picture-options,
