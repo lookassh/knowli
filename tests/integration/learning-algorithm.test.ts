@@ -1,3 +1,4 @@
+import { startLegacyTrainingSession } from "./helpers";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -63,7 +64,7 @@ describe("algorytm nauki — regresja wielodniowa PostgreSQL", () => {
     const issued: Record<string, Set<string>> = Object.fromEntries(children.map((child) => [child.id, new Set<string>()]));
     for (let day = 0; day < 14; day += 1) {
       for (const child of children) {
-        const session = await startSession(services, { childId: child.id, deckId: draft.deckId, microphoneEnabled: false });
+        const session = await startLegacyTrainingSession(services, { childId: child.id, deckId: draft.deckId, microphoneEnabled: false });
         let steps = 0;
         while (steps < 50) {
           steps += 1;

@@ -274,7 +274,7 @@ test("approved lesson survives reload and support without duplicate or independe
     let task = await currentTask(kid);
     let steps = 0;
     const completedGuidedTaskIds: string[] = [];
-    while (task.prompt.kind !== "lesson_gap" && steps < 12) {
+    while (completedGuidedTaskIds.length < 2 && steps < 12) {
       if (task.prompt.kind === "lesson_card") {
         task = await advanceLessonCard(kid, task);
       } else {
@@ -285,11 +285,10 @@ test("approved lesson survives reload and support without duplicate or independe
       }
       steps += 1;
     }
-    expect(steps).toBeLessThan(12);
-    expect(task.prompt.kind).toBe("lesson_gap");
     expect(completedGuidedTaskIds).toHaveLength(2);
+    expect(["lesson_choice", "lesson_order", "lesson_short_answer"]).toContain(task.prompt.kind);
     const sessionId = task.sessionId;
-    const gapTaskId = task.taskId;
+    const difficultyTaskId = task.taskId;
     const completedAttemptsBeforeReload = await query<{ task_id: string; attempt_count: string; assessment_count: string }>(
       `select st.id as task_id, count(distinct a.id)::text as attempt_count,
               count(distinct (asm.attempt_id, asm.skill)) filter (where asm.attempt_id is not null)::text as assessment_count
@@ -308,13 +307,13 @@ test("approved lesson survives reload and support without duplicate or independe
     const beforeReload = await tableCounts(sessionId);
 
     await kid.reload();
-    const nextSessionResponse = kid.waitForResponse((response) =>
+    const resumedSessionResponse = kid.waitForResponse((response) =>
       response.request().method() === "POST" && /\/api\/v1\/kid\/sessions$/.test(new URL(response.url()).pathname),
     );
     await kid.locator(`[data-testid="kid-deck-card"][data-deck-id="${deckId}"]`).getByTestId("kid-deck").click();
-    const resumed = SessionDtoSchema.parse(await (await nextSessionResponse).json());
+    const resumed = SessionDtoSchema.parse(await (await resumedSessionResponse).json());
     expect(resumed).toMatchObject({ sessionId, deckVersionId: versionId, resumed: true });
-    await expect(kid.locator(`main[data-task-id="${gapTaskId}"]`)).toBeVisible();
+    await expect(kid.locator(`main[data-task-id="${difficultyTaskId}"]`)).toBeVisible();
     await expect(kid.getByTestId("kid-lesson-listen")).toHaveCount(0);
     expect(await tableCounts(sessionId)).toEqual(beforeReload);
     const completedAttemptsAfterReload = await query<{ task_id: string; attempt_count: string; assessment_count: string }>(
@@ -329,36 +328,71 @@ test("approved lesson survives reload and support without duplicate or independe
     );
     expect(completedAttemptsAfterReload).toEqual(completedAttemptsBeforeReload);
 
-    await kid.getByTestId("kid-not-remember").click();
-    await expect(kid.getByTestId("kid-reveal")).toBeVisible();
-    const dontRememberResponse = kid.waitForResponse((response) =>
-      response.request().method() === "POST" && /\/tasks\/.+\/attempts$/.test(new URL(response.url()).pathname),
-    );
-    await kid.getByTestId("kid-next").click();
-    const dontRemember = AttemptDtoSchema.parse(await (await dontRememberResponse).json());
-    expect(dontRemember).toMatchObject({
-      taskId: gapTaskId,
-      modality: "dont_remember",
-      taskState: "answered",
-      feedback: { kind: "incorrect" },
-    });
-    expect(dontRemember.feedback?.correctText).toBeTruthy();
-    await expect(kid.getByTestId("kid-feedback")).toContainText("Posłuchaj:");
+    let taskAfterDifficulty = await currentTask(kid);
+    let incorrectCount = 0;
+    let difficultySteps = 0;
+    const incorrectTaskIds: string[] = [];
+    while (incorrectCount < 2 && difficultySteps < 12) {
+      if (taskAfterDifficulty.prompt.kind === "lesson_card") {
+        taskAfterDifficulty = await advanceLessonCard(kid, taskAfterDifficulty);
+      } else if (taskAfterDifficulty.prompt.kind === "lesson_choice") {
+        const correctOptionId = await readCorrectOption(taskAfterDifficulty.taskId);
+        const wrongText = taskAfterDifficulty.prompt.options.find((option) => option.id !== correctOptionId)?.text;
+        expect(wrongText).toBeTruthy();
+        const wrongAttemptResponse = kid.waitForResponse((response) =>
+          response.request().method() === "POST" && /\/tasks\/.+\/attempts$/.test(new URL(response.url()).pathname),
+        );
+        await kid.getByRole("button", { name: wrongText!, exact: true }).click();
+        const wrongAttempt = AttemptDtoSchema.parse(await (await wrongAttemptResponse).json());
+        expect(wrongAttempt).toMatchObject({ taskId: taskAfterDifficulty.taskId, feedback: { kind: "incorrect" } });
+        incorrectCount += 1;
+        incorrectTaskIds.push(taskAfterDifficulty.taskId);
+        const nextTaskResponse = kid.waitForResponse((response) =>
+          response.request().method() === "POST" && /\/api\/v1\/kid\/sessions\/.+\/next$/.test(new URL(response.url()).pathname),
+        );
+        await kid.getByTestId("kid-next").click();
+        taskAfterDifficulty = TaskDtoSchema.parse(await (await nextTaskResponse).json());
+      } else {
+        const { nextTask } = await answerGuided(kid, taskAfterDifficulty);
+        taskAfterDifficulty = nextTask;
+      }
+      difficultySteps += 1;
+    }
+    expect(incorrectCount).toBe(2);
     const difficultyRows = await query<{ attempt_id: string }>(
-      "select attempt_id from learning_app.assessments where attempt_id = $1 and outcome = 'incorrect' and reason = 'dont_remember' and details->>'errorCategory' is null",
-      [dontRemember.attemptId],
+      "select attempt_id from learning_app.assessments where attempt_id in (select id from learning_app.attempts where task_id = any($1::uuid[])) and outcome = 'incorrect'",
+      [incorrectTaskIds],
     );
-    expect(difficultyRows).toHaveLength(1);
+    expect(difficultyRows.length).toBeGreaterThanOrEqual(2);
 
-    await kid.getByTestId("kid-next").click();
-    await expect(kid.getByTestId("kid-lesson-card-title")).toBeVisible();
+    const unchangedNextTask = taskAfterDifficulty;
+    expect(unchangedNextTask.prompt.kind).not.toBe("lesson_card");
+
+    const endFirstSession = kid.waitForResponse((response) =>
+      response.request().method() === "POST" && new URL(response.url()).pathname === `/api/v1/kid/sessions/${sessionId}/end`,
+    );
+    await kid.getByTestId("kid-end").click();
+    const firstSummary = SessionSummaryDtoSchema.parse(await (await endFirstSession).json());
+    expect(firstSummary.sessionId).toBe(sessionId);
+    expect((await tableCounts(sessionId)).attempts).toBe(beforeReload.attempts + 2);
+
+    await kid.goto(`/kids/${childId}/learn`);
+    const deck = kid.locator(`[data-testid="kid-deck-card"][data-deck-id="${deckId}"]`);
+    await expect(deck).toBeVisible();
+    const supportSessionResponse = kid.waitForResponse((response) =>
+      response.request().method() === "POST" && /\/api\/v1\/kid\/sessions$/.test(new URL(response.url()).pathname),
+    );
+    await deck.getByTestId("kid-deck").click();
+    const supportSession = SessionDtoSchema.parse(await (await supportSessionResponse).json());
+    expect(supportSession.sessionId).not.toBe(sessionId);
+    const supportSessionId = supportSession.sessionId;
     const supportCardTask = await currentTask(kid);
     if (supportCardTask.prompt.kind !== "lesson_card") {
       throw new Error(`Oczekiwano karty wsparcia, otrzymano ${supportCardTask.prompt.kind}`);
     }
     const supportTaskContext = await query<{ exercise_type: string; card_purpose: string | null }>(
       "select exercise_type, context->>'cardPurpose' as card_purpose from learning_app.session_tasks where id = $1 and session_id = $2",
-      [supportCardTask.taskId, sessionId],
+      [supportCardTask.taskId, supportSessionId],
     );
     expect(supportTaskContext).toEqual([{ exercise_type: "lesson_card", card_purpose: "support" }]);
     await expect(kid.getByTestId("kid-lesson-card-title")).toHaveText(supportCardTask.prompt.card.title);
@@ -381,12 +415,12 @@ test("approved lesson survives reload and support without duplicate or independe
     expect(projection[0]!.status).not.toBe("mastered");
 
     const endResponse = kid.waitForResponse((response) =>
-      response.request().method() === "POST" && new URL(response.url()).pathname === `/api/v1/kid/sessions/${sessionId}/end`,
+      response.request().method() === "POST" && new URL(response.url()).pathname === `/api/v1/kid/sessions/${supportSessionId}/end`,
     );
     await kid.getByTestId("kid-end").click();
     const summary = SessionSummaryDtoSchema.parse(await (await endResponse).json());
     await expect(kid.getByTestId("kid-summary")).toBeVisible();
-    expect(summary.sessionId).toBe(sessionId);
+    expect(summary.sessionId).toBe(supportSessionId);
     expect(["ended", "completed"]).toContain(summary.state);
     expect(summary.objectives?.map((objective) => objective.objectiveId)).toContain(OBJECTIVE_ID);
     expect((await tableCounts(sessionId)).attempts).toBe(beforeReload.attempts + 2);

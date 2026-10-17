@@ -120,6 +120,13 @@
       "when": 1792236000000,
       "tag": "0016_reward_projections_and_retire_daily_round",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792249478900,
+      "tag": "0017_fixed_training_session_plan",
+      "breakpoints": true
     }
   ]
 }

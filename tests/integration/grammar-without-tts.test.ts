@@ -41,7 +41,7 @@ async function generatedLesson(withAudio = false) {
 
 async function legacyLessonTask(services: Services): Promise<{ childId: string; deckId: string; task: TaskDto }> {
   const child = await createChild(services, { displayName: "Gramatyka", avatarKey: "owl" });
-  const world = await lessonWorld(pool, { childId: child.id, richPool: true, withTargetAudioFor: ["lesson_gap"] });
+  const world = await lessonWorld(pool, { childId: child.id, richPool: true, withObjectiveAssessment: true, withTargetAudioFor: ["lesson_gap"] });
   const session = await startSession(services, { childId: child.id, deckId: world.deckId, microphoneEnabled: false });
   for (let i = 0; i < 20; i++) {
     const task = await nextTask(services, session.sessionId);

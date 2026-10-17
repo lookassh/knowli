@@ -96,6 +96,92 @@ describe("sesja lekcji — start i wydawanie zadań", () => {
     expect(context.previousObjectiveContact).toEqual({});
   });
 
+  it("zapisuje stałą listę treningu lekcji przed wydaniem pierwszego kroku", async () => {
+    const { services } = buildTestServices();
+    const child = await createChild(services, { displayName: "Lekcja", avatarKey: "owl" });
+    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true });
+    const session = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
+    const stored = await pool.query<{ training_plan: { kind: string; slots: Array<{ taskId: string; exerciseType: string; prompt: unknown }> } | null }>(
+      "select training_plan from learning_app.learning_sessions where id=$1", [session.sessionId],
+    );
+    const plan = stored.rows[0]!.training_plan;
+    expect(plan?.kind).toBe("lesson");
+    expect(plan?.slots.length).toBeGreaterThan(0);
+    const before = structuredClone(plan);
+    const first = await nextTask(services, session.sessionId);
+    expect(first?.taskId).toBe(plan!.slots[0]!.taskId);
+    expect(first?.prompt).toEqual(plan!.slots[0]!.prompt);
+    expect(await nextTask(services, session.sessionId)).toEqual(first);
+    let exercise = first!;
+    while (exercise.exerciseType === "lesson_card") {
+      await completePresentation(services, { taskId: exercise.taskId });
+      exercise = (await nextTask(services, session.sessionId))!;
+    }
+    await submitAttempt(services, { taskId: exercise.taskId, clientAttemptId: randomUUID(), modality: "dont_remember" });
+    const following = await nextTask(services, session.sessionId);
+    expect(following?.taskId).toBe(plan!.slots[exercise.ordinal + 1]?.taskId);
+    expect((await pool.query("select training_plan from learning_app.learning_sessions where id=$1", [session.sessionId])).rows[0]!.training_plan).toEqual(before);
+  });
+
+  it("nie awansuje nowego celu na kolejny etap bez sukcesu w historii przed startem", async () => {
+    const { services } = buildTestServices();
+    const child = await createChild(services, { displayName: "Lekcja", avatarKey: "owl" });
+    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true });
+    const session = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
+    const saved = await pool.query<{ training_plan: { slots: Array<{ exerciseType: string }> } }>(
+      "select training_plan from learning_app.learning_sessions where id=$1", [session.sessionId],
+    );
+    const types = saved.rows[0]!.training_plan.slots.map((slot) => slot.exerciseType);
+    expect(types).toContain("lesson_choice");
+    expect(types).not.toContain("lesson_gap");
+    await endSession(services, session.sessionId);
+  });
+
+  it("planuje kartę wsparcia w nowej sesji po rzeczywistym Nie pamiętam", async () => {
+    const { services } = buildTestServices();
+    const child = await createChild(services, { displayName: "Lekcja", avatarKey: "owl" });
+    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true });
+    const first = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
+    const task = await nextIssuedExercise(services, first.sessionId);
+    await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "dont_remember" });
+    await endSession(services, first.sessionId);
+
+    const next = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
+    const saved = await pool.query<{ training_plan: { slots: Array<{ taskKind: string; exerciseType: string; reason: string; context: Record<string, unknown> }> } }>(
+      "select training_plan from learning_app.learning_sessions where id=$1", [next.sessionId],
+    );
+    expect(saved.rows[0]!.training_plan.slots[0]).toMatchObject({ taskKind: "support_card", exerciseType: "lesson_card", reason: "support", context: { cardPurpose: "support" } });
+    await endSession(services, next.sessionId);
+  });
+
+  it("pominięta próba w sesji wsparcia nie kasuje trudności dla kolejnej sesji", async () => {
+    const { services, clock } = buildTestServices();
+    const child = await createChild(services, { displayName: "Lekcja", avatarKey: "owl" });
+    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true });
+    const first = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
+    const task = await nextIssuedExercise(services, first.sessionId);
+    await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "dont_remember" });
+    await endSession(services, first.sessionId);
+
+    clock.advanceMs(60_000);
+    const second = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
+    const card = await nextTask(services, second.sessionId);
+    expect(card?.exerciseType).toBe("lesson_card");
+    await completePresentation(services, { taskId: card!.taskId });
+    const exercise = await nextTask(services, second.sessionId);
+    expect(exercise?.exerciseType).not.toBe("lesson_card");
+    await submitAttempt(services, { taskId: exercise!.taskId, clientAttemptId: randomUUID(), modality: "skip" });
+    await endSession(services, second.sessionId);
+
+    clock.advanceMs(60_000);
+    const third = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
+    const saved = await pool.query<{ training_plan: { slots: Array<{ taskKind: string; reason: string }> } }>(
+      "select training_plan from learning_app.learning_sessions where id=$1", [third.sessionId],
+    );
+    expect(saved.rows[0]!.training_plan.slots[0]).toMatchObject({ taskKind: "support_card", reason: "support" });
+    await endSession(services, third.sessionId);
+  });
+
   it("ponowny start tej samej lekcji wznawia aktywną sesję", async () => {
     const { services } = buildTestServices();
     const child = await createChild(services, { displayName: "Lekcja", avatarKey: "owl" });

@@ -76,6 +76,12 @@ export interface LessonScheduleInput {
   readonly progress: Readonly<Record<string, ObjectiveProgressSnapshot>>;
   /** Stan sprzed sesji; brak pola oznacza sesję starej wersji. */
   readonly initialProgress?: Readonly<Record<string, ObjectiveProgressSnapshot>>;
+  /** Cele z rzeczywistą trudnością w poprzednich sesjach. */
+  readonly supportObjectives?: ReadonlySet<string>;
+  /** Plan construction must not repeat an item merely to consume the budget. */
+  readonly planningMode?: boolean;
+  /** Due check already reserved for the objective in the frozen plan. */
+  readonly reservedDueCheckObjectives?: ReadonlySet<string>;
   readonly exposedTargetKeys: ReadonlySet<string>;
   readonly sessionHistory: readonly LessonSessionTask[];
   readonly lastSeenAt: Readonly<Record<string, string>>;
@@ -226,7 +232,7 @@ function buildSessionState(
     stage: initialStage(objectiveId, input),
     stageStreak: 0,
     supportCycles: 0,
-    supportPending: false,
+    supportPending: input.supportObjectives?.has(objectiveId) ?? false,
   };
 
   const tasks = input.sessionHistory
@@ -303,7 +309,7 @@ function pickExercise(
   objectiveId: string,
   stage: LessonStage,
   input: LessonScheduleInput,
-  options: { requireUnseen?: boolean; respectGrader?: boolean } = {},
+  options: { requireUnseen?: boolean; respectGrader?: boolean; allowRepeat?: boolean } = {},
 ): LessonExerciseCandidate | null {
   const indexed = input.exercises.map((candidate, index) => ({ candidate, index }));
 
@@ -316,6 +322,7 @@ function pickExercise(
   const notRepeated = matching.filter(
     ({ candidate }) => !itemIssuedThisSession(candidate.itemId, input.sessionHistory),
   );
+  if (input.planningMode && notRepeated.length === 0 && options.allowRepeat !== true) return null;
   const pool = notRepeated.length > 0 ? notRepeated : matching;
 
   const seenFilter = options.requireUnseen === true
@@ -390,6 +397,18 @@ export function selectLessonTask(input: LessonScheduleInput): LessonTaskPlan | n
     states.set(id, buildSessionState(id, input));
   }
 
+  // A frozen plan must reserve qualifying due checks before historical support
+  // can expose the same target through its card, example, or guided question.
+  if (input.planningMode) {
+    for (const id of dueObjectives(input)) {
+      if (input.reservedDueCheckObjectives?.has(id)) continue;
+      const candidate =
+        pickExercise(id, "independent", input, { requireUnseen: true, respectGrader: true }) ??
+        pickExercise(id, "productive", input, { requireUnseen: true, respectGrader: true });
+      if (candidate) return exercisePlan(candidate, "due_check", true);
+    }
+  }
+
   // Priorytet 1: cykl wsparcia. Po błędzie (nie unevaluated/skipped) na celu,
   // jeśli limit cykli nie wyczerpany: karta support, potem ćwiczenie guided.
   for (const id of input.objectiveOrder) {
@@ -407,7 +426,7 @@ export function selectLessonTask(input: LessonScheduleInput): LessonTaskPlan | n
   if (supportFollow) return supportFollow;
 
   // Priorytet 2: należne niezależne sprawdzenie na ćwiczeniu niewidzianym.
-  for (const id of dueObjectives(input)) {
+  for (const id of input.planningMode ? [] : dueObjectives(input)) {
     // Sprawdzenie używa etapu samodzielnego, na ćwiczeniu niewidzianym.
     const candidate =
       pickExercise(id, "independent", input, { requireUnseen: true, respectGrader: true }) ??
@@ -443,6 +462,14 @@ export function selectLessonTask(input: LessonScheduleInput): LessonTaskPlan | n
     // ocenionym ćwiczeniu; pierwsze guided po kartach/notice należy do
     // wprowadzania (priorytet 5, `reason: introduce`).
     if (!fromPrior && !hasAssessedThisSession(id, input)) continue;
+    if (input.planningMode) {
+      const plannedAtStage = input.sessionHistory.filter((task) =>
+        task.objectiveId === id && task.kind === "exercise" && stageOf(task.exerciseType) === state.stage,
+      ).length;
+      // Do not expose every distinct productive answer before a later
+      // confirmation can become due; only real outcomes may advance stages.
+      if (plannedAtStage >= input.policy.advanceAfterCorrect) continue;
+    }
     const candidate = pickExercise(id, state.stage, input, { respectGrader: true });
     if (candidate) {
       return exercisePlan(candidate, "continue", false);

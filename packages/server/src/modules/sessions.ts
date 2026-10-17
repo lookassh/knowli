@@ -43,7 +43,7 @@ import {
   type SkillSnapshot,
   type TaskPlan,
 } from "../domain/scheduler";
-import type { ProgressStatus, ReadingDirection, Skill } from "../domain/types";
+import type { Policy, ProgressStatus, ReadingDirection, Skill } from "../domain/types";
 import { loadPolicy, ensureLearningPolicy, CURRENT_POLICY_ID } from "../policies/registry";
 import { lockTaskWithSession, writeSealedEvent, contextOf, type SessionContextShape } from "./events";
 import { payloadToItem } from "./item-payload";
@@ -55,11 +55,14 @@ import { readUiAudio } from "./ui-audio";
 import { getVocabularyCapabilities } from "../domain/vocabulary-capabilities";
 import { addLegacyTaskPromptDefaults } from "./task-prompt-compat";
 import { deriveSupportStates, type SupportAttempt, type SupportTask } from "../domain/support-cycle";
-import { readLearningSnapshot } from "./learning-snapshot";
+import { readTrainingSessionPlan, type TrainingSessionPlanSnapshot, type TrainingSessionSlot } from "../domain/training-session-plan";
+import { readLearningSnapshot, type LearningSnapshotItem } from "./learning-snapshot";
 import { createMockTestPlan, issueMockTestTask, closeMockTest } from "./mock-tests";
 import { assertVocabularyDeck, readVersionDeckKind, type DeckKind } from "./deck-kind";
 import {
   buildLessonSessionContext,
+  createLessonTrainingSessionPlan,
+  issueNextLessonPlanTask,
   issueNextLessonTask,
   lessonTaskCounts,
 } from "./lessons/lesson-sessions";
@@ -373,6 +376,20 @@ export async function startSession(services: Services, input: SessionInput): Pro
         context: context as unknown as Record<string, unknown>,
       })
       .returning();
+    if (mode === "training" && deckKind === "vocabulary") {
+      const plan = await createTrainingSessionPlan(tx, services, row!, now);
+      await tx.update(learningSessions).set({ trainingPlan: plan, taskBudget: plan.taskBudget })
+        .where(eq(learningSessions.id, row!.id));
+      const plannedSession = (await tx.select().from(learningSessions).where(eq(learningSessions.id, row!.id)))[0]!;
+      return sessionDto(tx, plannedSession, false);
+    }
+    if (mode === "training" && deckKind === "lesson") {
+      const plan = await createLessonTrainingSessionPlan(services, tx, row!, now);
+      await tx.update(learningSessions).set({ trainingPlan: plan, taskBudget: plan.taskBudget })
+        .where(eq(learningSessions.id, row!.id));
+      const plannedSession = (await tx.select().from(learningSessions).where(eq(learningSessions.id, row!.id)))[0]!;
+      return sessionDto(tx, plannedSession, false);
+    }
     return sessionDto(tx, row!, false);
   });
 }
@@ -411,6 +428,11 @@ interface ItemStats {
   textListeningCount: number;
 }
 
+interface TrainingPlanPlanningCache {
+  policy: Policy | null;
+  learningSnapshots: readonly LearningSnapshotItem[] | null;
+}
+
 /** Buduje wejście schedulera z przypiętej wersji, projekcji i statystyki sesji. */
 async function planNextTask(
   tx: Tx,
@@ -418,6 +440,9 @@ async function planNextTask(
   now: Date,
   assessedRemaining: number,
   nextOrdinal: number,
+  plannedPrefix: readonly TrainingSessionSlot[] = [],
+  historicalSupport: { tasks: readonly SupportTask[]; attempts: readonly SupportAttempt[] } = { tasks: [], attempts: [] },
+  planningCache?: TrainingPlanPlanningCache,
 ): Promise<PlannedTask | null> {
   const allRevisions = await tx
     .select()
@@ -504,7 +529,7 @@ async function planNextTask(
       },
     ]),
   );
-  const taskRows = await tx
+  const storedTaskRows = await tx
     .select({
       id: sessionTasks.id,
       itemRevisionId: sessionTasks.itemRevisionId,
@@ -518,6 +543,22 @@ async function planNextTask(
     .from(sessionTasks)
     .where(eq(sessionTasks.sessionId, session.id))
     .orderBy(asc(sessionTasks.ordinal));
+  const taskRows = [...storedTaskRows, ...plannedPrefix.map((slot) => ({
+    id: slot.taskId,
+    itemRevisionId: slot.itemRevisionId,
+    exerciseType: slot.exerciseType,
+    direction: slot.direction,
+    ordinal: slot.ordinal,
+    context: {
+      reason: slot.reason,
+      ...(slot.supportCycleId ? { supportCycleId: slot.supportCycleId } : {}),
+      ...(slot.skillAtIssue ? { skillAtIssue: slot.skillAtIssue } : {}),
+      ...(slot.statusAtIssue !== undefined ? { statusAtIssue: slot.statusAtIssue } : {}),
+      ...(slot.assessmentSkills ? { assessmentSkills: slot.assessmentSkills } : {}),
+    },
+    publicPrompt: slot.prompt as unknown as Record<string, unknown>,
+    state: slot.exerciseType === "exposure" ? "completed" : "answered",
+  }))].sort((a, b) => a.ordinal - b.ordinal);
   for (const row of taskRows) {
     const stats = statsByRevision.get(row.itemRevisionId);
     if (!stats) continue;
@@ -546,13 +587,12 @@ async function planNextTask(
   // Trudności z prób tej sesji: oceniony błąd liczy się pojedynczo, a jedno
   // „Nie pamiętam” nasycie próg wsparcia — deklarowana trudność prowadzi do
   // wsparcia bez czekania na drugi błąd (SPEC §15.1, §16).
-  const policy = await loadPolicy(tx, session.policyId);
-  const learningSnapshots = await readLearningSnapshot(tx, {
-    childId: session.childId,
-    revisionIds,
-    policy,
-    now: now.toISOString(),
+  const policy = planningCache?.policy ?? await loadPolicy(tx, session.policyId);
+  if (planningCache && planningCache.policy === null) planningCache.policy = policy;
+  const learningSnapshots = planningCache?.learningSnapshots ?? await readLearningSnapshot(tx, {
+    childId: session.childId, revisionIds, policy, now: now.toISOString(),
   });
+  if (planningCache && planningCache.learningSnapshots === null) planningCache.learningSnapshots = learningSnapshots;
   const snapshotByRevision = new Map(learningSnapshots.map((snapshot) => [snapshot.itemRevisionId, snapshot]));
   const gradedRows = await tx
     .select({
@@ -580,19 +620,20 @@ async function planNextTask(
     }
     attemptsById.set(row.attemptId, current);
   }
-  const supportTasks: SupportTask[] = taskRows.map((row) => {
+  const supportTasks: SupportTask[] = [...historicalSupport.tasks, ...taskRows.map((row) => {
     const context = row.context as { reason?: string; supportCycleId?: string } | null;
     return {
       taskId: row.id,
       itemRevisionId: row.itemRevisionId,
-      ordinal: row.ordinal,
+      sessionId: session.id,
+      ordinal: historicalSupport.tasks.length + row.ordinal,
       exerciseType: row.exerciseType as SupportTask["exerciseType"],
-      state: row.state === "completed" || row.state === "answered" || row.state === "skipped" ? row.state : "issued",
+      state: (row.state === "completed" || row.state === "answered" || row.state === "skipped" ? row.state : "issued") as SupportTask["state"],
       reason: context?.reason ?? "",
       ...(context?.supportCycleId ? { supportCycleId: context.supportCycleId } : {}),
     };
-  });
-  const supportByRevision = deriveSupportStates(supportTasks, [...attemptsById.values()], policy.supportAfterFailures);
+  })];
+  const supportByRevision = deriveSupportStates(supportTasks, [...historicalSupport.attempts, ...attemptsById.values()], policy.supportAfterFailures);
 
   const sessionContext = contextOf(session);
   const items = new Map<string, PlannedItem>(
@@ -707,6 +748,13 @@ async function planNextTask(
     if (row.exerciseType === "speech") flags.pronunciation = true;
     introducedByRevision.set(row.itemRevisionId, flags);
   }
+  for (const slot of plannedPrefix) {
+    if (slot.reason !== "stage-introduction") continue;
+    const flags = introducedByRevision.get(slot.itemRevisionId) ?? { recall: false, pronunciation: false };
+    if (slot.exerciseType === "recall") flags.recall = true;
+    if (slot.exerciseType === "speech") flags.pronunciation = true;
+    introducedByRevision.set(slot.itemRevisionId, flags);
+  }
 
   const candidates: ScheduleCandidate[] = revisions.map((r) => {
     const item = items.get(r.id)!;
@@ -740,7 +788,7 @@ async function planNextTask(
       supportedThisSession: stats.supportedThisSession,
       support: supportByRevision.get(r.id),
       work: learning?.work,
-      ownPresentationCompleted: learning?.ownPresentationCompleted ?? false,
+      ownPresentationCompleted: learning?.ownPresentationCompleted === true || stats.presentationsThisSession > 0,
       recognitionFallbackUsedThisSession: stats.recognitionFallbackUsedThisSession,
       readingEvidenceDirections: learning?.readingEvidenceDirections ?? {},
       usedThisSession: stats.usedThisSession,
@@ -751,7 +799,10 @@ async function planNextTask(
       practiceMix: stats.practiceMix,
       pictureListeningCount: stats.pictureListeningCount,
       textListeningCount: stats.textListeningCount,
-      introducedSkills: learning?.introducedSkills ?? introducedByRevision.get(r.id) ?? { recall: false, pronunciation: false },
+      introducedSkills: {
+        recall: learning?.introducedSkills.recall === true || introducedByRevision.get(r.id)?.recall === true,
+        pronunciation: learning?.introducedSkills.pronunciation === true || introducedByRevision.get(r.id)?.pronunciation === true,
+      },
       hasBeenPresented: historicallyExposed.has(targetKeysByRevision.get(r.id)!),
       testPreparationIssued: taskRows.some(
         (row) =>
@@ -803,6 +854,102 @@ async function planNextTask(
     imageAssetId: imageByRevision.get(plan.itemRevisionId) ?? null,
     exampleAudioAssetId: exampleByRevision.get(plan.itemRevisionId) ?? null,
   };
+}
+
+/** Trudności poprzednich sesji doboru wsparcia; skip i nieocenione próby nie tworzą błędu. */
+async function loadHistoricalSupport(
+  tx: Tx,
+  childId: string,
+  revisionIds: readonly string[],
+): Promise<{ tasks: SupportTask[]; attempts: SupportAttempt[] }> {
+  if (revisionIds.length === 0) return { tasks: [], attempts: [] };
+  const rows = await tx.select({
+    id: sessionTasks.id, sessionId: sessionTasks.sessionId, itemRevisionId: sessionTasks.itemRevisionId, exerciseType: sessionTasks.exerciseType,
+    state: sessionTasks.state, context: sessionTasks.context, issuedAt: sessionTasks.issuedAt,
+  }).from(sessionTasks)
+    .innerJoin(learningSessions, eq(learningSessions.id, sessionTasks.sessionId))
+    .where(and(eq(learningSessions.childId, childId), inArray(sessionTasks.itemRevisionId, [...revisionIds])))
+    .orderBy(asc(sessionTasks.issuedAt), asc(sessionTasks.id));
+  if (rows.length === 0) return { tasks: [], attempts: [] };
+  const taskIds = rows.map((row) => row.id);
+  const graded = await tx.select({
+    attemptId: attempts.id, taskId: attempts.taskId, modality: attempts.modality,
+    skill: assessments.skill, outcome: assessments.outcome,
+  }).from(attempts).leftJoin(assessments, eq(assessments.attemptId, attempts.id))
+    .where(inArray(attempts.taskId, taskIds));
+  const byAttempt = new Map<string, SupportAttempt>();
+  for (const row of graded) {
+    const attempt = byAttempt.get(row.attemptId) ?? {
+      attemptId: row.attemptId, taskId: row.taskId, modality: row.modality,
+      outcomes: [] as { skill: Skill; outcome: "correct" | "incorrect" | "unevaluated" }[],
+    };
+    if (row.skill !== null && row.outcome !== null) {
+      attempt.outcomes = [...attempt.outcomes, {
+        skill: row.skill as Skill,
+        outcome: row.outcome === "unassessed" ? "unevaluated" : row.outcome as "correct" | "incorrect",
+      }];
+    }
+    byAttempt.set(row.attemptId, attempt);
+  }
+  return {
+    tasks: rows.map((row, ordinal) => {
+      const context = row.context as { reason?: string; supportCycleId?: string } | null;
+      return {
+        taskId: row.id, sessionId: row.sessionId, itemRevisionId: row.itemRevisionId, ordinal,
+        exerciseType: row.exerciseType as SupportTask["exerciseType"],
+        state: (row.state === "completed" || row.state === "answered" || row.state === "skipped" ? row.state : "issued") as SupportTask["state"],
+        reason: context?.reason ?? "", ...(context?.supportCycleId ? { supportCycleId: context.supportCycleId } : {}),
+      };
+    }),
+    attempts: [...byAttempt.values()],
+  };
+}
+
+/** Plan słówek materializujemy raz w transakcji startu; każde pytanie jest prywatne do chwili wydania. */
+async function createTrainingSessionPlan(
+  tx: Tx,
+  services: Services,
+  session: typeof learningSessions.$inferSelect,
+  now: Date,
+): Promise<TrainingSessionPlanSnapshot> {
+  const slots: TrainingSessionSlot[] = [];
+  let assessed = 0;
+  const maxSlots = session.taskBudget * 2 + 32;
+  const planRevisions = await tx.select({ id: itemRevisions.id, payload: itemRevisions.payload }).from(itemRevisions)
+    .where(eq(itemRevisions.deckVersionId, session.deckVersionId));
+  const revisionIds = planRevisions.map((row) => row.id);
+  const historicalSupport = await loadHistoricalSupport(tx, session.childId, revisionIds);
+  const planningCache: TrainingPlanPlanningCache = { policy: null, learningSnapshots: null };
+  for (let ordinal = 0; assessed < session.taskBudget && ordinal < maxSlots; ordinal += 1) {
+    const plannedDueKeys = slots.filter((slot) => slot.reason === "due-check").map((slot) => {
+      const revision = planRevisions.find((candidate) => candidate.id === slot.itemRevisionId)!;
+      const item = payloadToItem(revision.payload as Record<string, unknown>);
+      return computeTargetKey(item.target, item.locales.target);
+    });
+    const planningSession = slots.length === 0 ? session : {
+      ...session,
+      context: { ...contextOf(session), reservations: [...slots.at(-1)!.keepsReservations], settledChecks: [...contextOf(session).settledChecks, ...plannedDueKeys] },
+    };
+    const planned = await planNextTask(tx, planningSession, now, session.taskBudget - assessed, ordinal, slots, historicalSupport, planningCache);
+    if (!planned) break;
+    const { plan, item, audioAssetId, imageAssetId, exampleAudioAssetId } = planned;
+    const materialized = materializeTask(plan, item, audioAssetId, imageAssetId, exampleAudioAssetId);
+    const slot: TrainingSessionSlot = {
+      taskId: randomUUID(), itemId: item.itemId, itemRevisionId: plan.itemRevisionId, ordinal,
+      exerciseType: plan.exerciseType, direction: plan.direction ?? null, assessed: plan.assessed,
+      prompt: materialized.prompt, answerKey: materialized.answerKey, reason: plan.reason,
+      ...(plan.supportCycleId ? { supportCycleId: plan.supportCycleId } : {}),
+      ...(plan.skillAtIssue ? { skillAtIssue: plan.skillAtIssue } : {}),
+      ...(plan.statusAtIssue !== undefined ? { statusAtIssue: plan.statusAtIssue } : {}),
+      ...(plan.assessmentSkills ? { assessmentSkills: plan.assessmentSkills } : {}),
+      revealsTargetKeys: plan.revealsTargetKeys,
+      keepsReservations: plan.keepsReservations,
+    };
+    slots.push(slot);
+    if (slot.assessed) assessed += 1;
+  }
+  if (slots.length === 0) throw new AppError("validation", { message: "Nie udało się przygotować zadań do sesji." });
+  return { version: 1, taskBudget: Math.max(1, assessed), slots };
 }
 
 /** Tasowanie Fishera–Yatesa; pętla nie wykonuje się dla 0/1 elementów. */
@@ -966,6 +1113,9 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
       if (now.getTime() - session.startedAt.getTime() > SESSION_TIME_LIMIT_MS && remaining > PROMISE_REMAINING) {
         return null;
       }
+      if (session.trainingPlan && "kind" in session.trainingPlan && session.trainingPlan.kind === "lesson") {
+        return issueNextLessonPlanTask(tx, session, now, counts.total, counts.assessed);
+      }
       return issueNextLessonTask(services, tx, session, now, remaining, counts.total);
     }
 
@@ -997,6 +1147,55 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
     // limit czasu tylko między zadaniami; obiecane ostatnie zadania są dokończone
     if (now.getTime() - session.startedAt.getTime() > SESSION_TIME_LIMIT_MS && remaining > PROMISE_REMAINING) {
       return null;
+    }
+
+    const storedPlan = session.trainingPlan === null
+      ? null
+      : (() => {
+          try { return readTrainingSessionPlan(session.trainingPlan); }
+          catch { throw new AppError("conflict", { message: "Ta sesja wymaga nowszej wersji aplikacji." }); }
+        })();
+    if (storedPlan !== null) {
+      if (storedPlan === null) throw new AppError("conflict");
+      let ordinal = counts.total;
+      let assessedBefore = counts.assessed;
+      let slot = storedPlan.slots[ordinal];
+      while (slot && (contextOf(session).microphoneDisabledTaskIds.includes(slot.taskId) ||
+        (!session.microphoneEnabled && (slot.exerciseType === "speech" || (slot.exerciseType === "recall" && !contextOf(session).canRead))))) {
+        await tx.insert(sessionTasks).values({
+          id: slot.taskId, sessionId: session.id, childId: session.childId, deckVersionId: session.deckVersionId,
+          itemRevisionId: slot.itemRevisionId, ordinal, exerciseType: slot.exerciseType, direction: slot.direction,
+          state: "skipped", publicPrompt: slot.prompt as unknown as Record<string, unknown>, answerKey: slot.answerKey,
+          context: { reason: slot.reason, skipped: "microphone_unavailable" }, issuedAt: now,
+        });
+        ordinal += 1;
+        if (slot.assessed) assessedBefore += 1;
+        slot = storedPlan.slots[ordinal];
+      }
+      if (!slot || assessedBefore >= storedPlan.taskBudget) return null;
+      await tx.insert(sessionTasks).values({
+        id: slot.taskId, sessionId: session.id, childId: session.childId, deckVersionId: session.deckVersionId,
+        itemRevisionId: slot.itemRevisionId, ordinal, exerciseType: slot.exerciseType, direction: slot.direction,
+        state: "issued", publicPrompt: slot.prompt as unknown as Record<string, unknown>, answerKey: slot.answerKey,
+        context: {
+          reason: slot.reason,
+          ...(slot.supportCycleId ? { supportCycleId: slot.supportCycleId } : {}),
+          ...(slot.skillAtIssue ? { skillAtIssue: slot.skillAtIssue } : {}),
+          ...(slot.statusAtIssue !== undefined ? { statusAtIssue: slot.statusAtIssue } : {}),
+          ...(slot.assessmentSkills ? { assessmentSkills: slot.assessmentSkills } : {}),
+        },
+        issuedAt: now,
+      });
+      await writeSealedEvent(tx, {
+        childId: session.childId, taskId: slot.taskId, itemId: slot.itemId, kind: "prompt_issued",
+        stepId: `${slot.taskId}:prompt`, occurredAt: now, exposures: [...slot.revealsTargetKeys],
+      });
+      const context = contextOf(session);
+      if (JSON.stringify(context.reservations) !== JSON.stringify(slot.keepsReservations)) {
+        await tx.update(learningSessions).set({ context: { ...context, reservations: [...slot.keepsReservations] } })
+          .where(eq(learningSessions.id, session.id));
+      }
+      return issuedTaskDto(session, { id: slot.taskId, ordinal, exerciseType: slot.exerciseType, direction: slot.direction, publicPrompt: slot.prompt }, assessedBefore);
     }
 
     const planned = await planNextTask(tx, session, now, remaining, counts.total);

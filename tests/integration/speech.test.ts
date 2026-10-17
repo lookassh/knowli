@@ -1,3 +1,4 @@
+import { startLegacyTrainingSession } from "./helpers";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -274,7 +275,7 @@ async function recallSession(
   itemIndex: number,
 ): Promise<{ sessionId: string; task: TaskDto }> {
   await setDueProgress(childId, versionId, itemIndex, "recall");
-  const session = await startSession(services, { childId, deckId, microphoneEnabled: true });
+  const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: true });
   const task = (await nextTask(services, session.sessionId))!;
   expect(task.exerciseType).toBe("recall");
   return { sessionId: session.sessionId, task };
@@ -283,7 +284,7 @@ async function recallSession(
 async function pictureRecallSession(services: Services, childId: string, deckId: string, versionId: string, itemIndex: number) {
   await ensureUiAudioCatalog(services);
   await setDueProgress(childId, versionId, itemIndex, "recall");
-  const session = await startSession(services, { childId, deckId, microphoneEnabled: true, supportsPictureVocabulary: true });
+  const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: true, supportsPictureVocabulary: true });
   const task = (await nextTask(services, session.sessionId))!;
   expect(task.exerciseType).toBe("recall");
   expect(task.prompt.kind).toBe("picture_recall");
@@ -323,7 +324,7 @@ async function speechSession(
   itemIndex: number,
 ): Promise<{ sessionId: string; task: TaskDto }> {
   await setDueProgress(childId, versionId, itemIndex, "pronunciation");
-  const session = await startSession(services, { childId, deckId, microphoneEnabled: true });
+  const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: true });
   for (let step = 0; step < 30; step++) {
     const candidate = (await nextTask(services, session.sessionId))!;
     expect(candidate).not.toBeNull();
@@ -719,7 +720,7 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
     const fakes = makeFakes(clock, { advanceClockMs: 30_000 });
     const services = speechServices(clock, fakes);
     // element 0: prezentacja (ekspozycja celu), potem należne sprawdzenie
-    const session = await startSession(services, { childId, deckId, microphoneEnabled: true });
+    const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: true });
     const exposure = (await nextTask(services, session.sessionId))!;
     expect(exposure.exerciseType).toBe("exposure");
     await completePresentation(services, { taskId: exposure.taskId });
@@ -911,7 +912,7 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
     await endSession(baseServices, first.sessionId);
 
     clock.advanceHours(24);
-    const resumed = await startSession(baseServices, { childId, deckId, microphoneEnabled: true });
+    const resumed = await startLegacyTrainingSession(baseServices, { childId, deckId, microphoneEnabled: true });
     expect(resumed.sessionId).not.toBe(first.sessionId);
     expect(resumed.microphoneEnabled).toBe(true);
     const [revision] = await query<{ itemRevisionId: string }>(
@@ -974,7 +975,7 @@ describe("ocena mowy bez trwałego audio (integracja)", () => {
     clock.advanceHours(24 * 8);
     await endSession(services, first.sessionId);
     const bare = createServices({ db: testDatabase().db, clock });
-    const retrySession = await startSession(bare, { childId, deckId, microphoneEnabled: true });
+    const retrySession = await startLegacyTrainingSession(bare, { childId, deckId, microphoneEnabled: true });
     const retryTask = await nextTask(bare, retrySession.sessionId);
     expect(retryTask).toMatchObject({ exerciseType: "speech" });
     const technical = await submitSpeechAttempt(

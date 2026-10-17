@@ -1,6 +1,6 @@
 import type { FeedbackDto } from "@learning/contracts";
 
-export type OptionOutcome = "correct" | "wrong";
+export type OptionOutcome = "correct" | "wrong" | "pending";
 
 /**
  * Podświetlenie opcji po próbie wyboru (design 2026-10-09): kolor wyniku

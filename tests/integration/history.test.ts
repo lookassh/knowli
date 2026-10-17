@@ -1,3 +1,4 @@
+import { startLegacyTrainingSession } from "./helpers";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -124,7 +125,7 @@ async function sessionWithAttempt(childId: string): Promise<{ taskId: string; at
   await publishDraft(services, draft.id, 1);
   await upsertAssignment(services, childId, draft.deckId, null);
 
-  const session = await startSession(services, { childId, deckId: draft.deckId, microphoneEnabled: false });
+  const session = await startLegacyTrainingSession(services, { childId, deckId: draft.deckId, microphoneEnabled: false });
   for (let step = 0; step < 10; step++) {
     const task = (await nextTask(services, session.sessionId))!;
     if (task.exerciseType !== "exposure") {
@@ -189,7 +190,7 @@ async function openLearningExercise(childId: string, deckId: string, type: TaskD
   task: TaskDto;
 }> {
   const services = suppliedServices ?? buildTestServices().services;
-  const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+  const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: false });
   for (let step = 0; step < 40; step++) {
     const task = (await nextTask(services, session.sessionId))!;
     if (task.exerciseType === type) return { services, sessionId: session.sessionId, task };
@@ -215,10 +216,10 @@ describe("niezmienność historii prób (integracja)", () => {
   it("utrzymuje zdolność czytania przypiętą do aktywnej sesji po zmianie profilu", async () => {
     const { deckId } = await sharedDeckForChildren([childId]);
     const services = buildTestServices().services;
-    const started = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const started = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: false });
     expect(started.canRead).toBe(true);
     await updateChild(services, childId, { canRead: false });
-    const resumed = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const resumed = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: false });
     expect(resumed).toMatchObject({ resumed: true, canRead: true, vocabularyFormat: "standard" });
     expect((await query<{ context: Record<string, unknown> }>(
       "select context from learning_app.learning_sessions where id = $1", [started.sessionId],
@@ -311,7 +312,7 @@ describe("niezmienność historii prób (integracja)", () => {
     expect(before[0]!.work.recall!.dueNow).toBe(false);
 
     clock.advanceHours(24);
-    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: false });
     const dueTask = await nextTask(services, session.sessionId);
     expect(dueTask?.exerciseType).toBe("recall");
     const after = await readLearningSnapshot(services.db, {
@@ -538,7 +539,7 @@ describe("niezmienność historii prób (integracja)", () => {
     await publishDraft(testServices, draft.id, 1);
     await upsertAssignment(testServices, nonReaderId, draft.deckId, null);
 
-    const session = await startSession(sessionServices, {
+    const session = await startLegacyTrainingSession(sessionServices, {
       childId: nonReaderId,
       deckId: draft.deckId,
       microphoneEnabled: true,

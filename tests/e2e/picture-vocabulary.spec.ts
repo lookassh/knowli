@@ -182,7 +182,7 @@ test("mówione ćwiczenie obrazkowe można świadomie pominąć bez mikrofonu", 
   await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-prompt-kind", "picture_speech");
   await expect(page.getByTestId("kid-input")).toHaveCount(0);
   await page.getByTestId("kid-skip").click();
-  await expect(page.getByRole("status")).toBeVisible();
+  await expect(page.getByTestId("kid-record-status")).toBeVisible();
   await page.getByTestId("kid-next").click();
   await expect(page.getByTestId("kid-summary")).toBeVisible();
 });

@@ -1,7 +1,7 @@
 import type { ExerciseType, Skill, SkillOutcome } from "./types";
 
 export interface SupportTask {
-  taskId: string; itemRevisionId: string; ordinal: number; exerciseType: ExerciseType;
+  taskId: string; itemRevisionId: string; sessionId?: string; ordinal: number; exerciseType: ExerciseType;
   state: "issued" | "answered" | "completed" | "skipped"; reason: string; supportCycleId?: string;
 }
 export interface SupportAttempt {
@@ -27,6 +27,7 @@ export function deriveSupportStates(
   const ordered = [...tasks].sort((a, b) => a.ordinal - b.ordinal || a.taskId.localeCompare(b.taskId));
   const states = new Map<string, SupportState>();
   const lastDifficultyTask = new Map<string, string>();
+  const settledSessionByRevision = new Map<string, string | undefined>();
 
   for (const task of ordered) {
     const prior = states.get(task.itemRevisionId) ?? {
@@ -41,6 +42,7 @@ export function deriveSupportStates(
       continue;
     }
     if (task.reason === "retry-after-support") {
+      if (task.state !== "issued") settledSessionByRevision.set(task.itemRevisionId, task.sessionId);
       states.set(task.itemRevisionId, {
         phase: task.state === "issued" ? "retry_due" : "settled",
         cycleId: task.supportCycleId ?? prior.cycleId,
@@ -49,7 +51,13 @@ export function deriveSupportStates(
       });
       continue;
     }
-    if (prior.phase === "waiting" || prior.phase === "retry_due" || prior.phase === "settled") continue;
+    if (prior.phase === "waiting" || prior.phase === "retry_due") continue;
+    if (prior.phase === "settled") {
+      if (settledSessionByRevision.get(task.itemRevisionId) === task.sessionId) continue;
+      states.set(task.itemRevisionId, {
+        phase: "none", cycleId: null, sourceTaskId: null, retryType: "listening",
+      });
+    }
 
     const taskAttempts = byTask.get(task.taskId) ?? [];
     const incorrect = taskAttempts.filter((attempt) => attempt.outcomes.some((row) => row.outcome === "incorrect"));

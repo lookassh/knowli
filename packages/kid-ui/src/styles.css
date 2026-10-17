@@ -833,6 +833,14 @@
   transform: translateY(-50%);
 }
 
+/* Neutral selection while the answer is in flight; it never predicts an outcome. */
+.kid-options button.kid-option--pending,
+.kid-picture-options .kid-picture-option.kid-option--pending {
+  border-color: var(--kid-accent);
+  background: var(--kid-surface);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--kid-accent) 28%, transparent);
+}
+
 /* podświetlone opcje są wyłączone (feedback na ekranie), ale nie przygaszone */
 .kid-options button.kid-option--correct,
 .kid-options button.kid-option--wrong {
@@ -2139,6 +2147,12 @@
 .kid-lesson-notice__word.kid-option--wrong {
   border-color: var(--kid-wrong);
   background: var(--kid-wrong-bg);
+}
+
+.kid-lesson-notice__word.kid-option--pending {
+  border-radius: 6px;
+  outline: 2px solid var(--kid-accent);
+  outline-offset: 2px;
 }
 
 .kid-lesson-notice__word.kid-option--wrong::before {

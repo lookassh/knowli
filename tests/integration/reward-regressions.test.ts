@@ -10,11 +10,12 @@ afterAll(() => pool.end());
 beforeEach(async () => { await truncateCoreTables(); await pool.query("update learning_app.family_settings set timezone='Europe/Warsaw'"); });
 afterEach(async () => { await pool.query("update learning_app.family_settings set timezone='Europe/Warsaw'"); });
 
-async function lessonTask(startIso = "2026-10-16T10:00:00Z") {
+async function lessonTask(startIso = "2026-10-16T10:00:00Z", delayFirstIssueMs = 0) {
   const { services, clock } = buildTestServices(startIso);
   const child = await createChild(services, { displayName: "Test", avatarKey: "owl" });
   const lesson = await lessonWorld(pool, { childId: child.id, now: clock.now() });
   const session = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
+  if (delayFirstIssueMs > 0) clock.advanceMs(delayFirstIssueMs);
   let task = await nextTask(services, session.sessionId);
   for (let index = 0; task?.exerciseType === "lesson_card" && index < 10; index++) {
     await completePresentation(services, { taskId: task.taskId });
@@ -169,11 +170,8 @@ describe("reward and work-card review regressions", () => {
   });
 
   it("includes today's issued task from a session started yesterday without an answer or reward time", async () => {
-    const { services, clock, child, session } = await lessonTask("2026-10-16T21:59:50Z");
-    const current = await nextTask(services, session.sessionId);
-    await submitAttempt(services, { taskId: current!.taskId, clientAttemptId: randomUUID(), modality: "skip" });
+    const { services, clock, child, session, task: issued } = await lessonTask("2026-10-16T21:59:50Z", 20_000);
     clock.advanceMs(20_000);
-    const issued = await nextTask(services, session.sessionId);
     expect(issued).not.toBeNull();
     const report = await readParentWorkCard(services, { childId: child.id, date: "2026-10-17" });
     expect(report.sessions.flatMap(value => value.steps.map(step => step.taskId))).toContain(issued!.taskId);

@@ -96,11 +96,20 @@ async function issueUntil(services: Services, sessionId: string, type: string, m
   throw new Error(`nie doczekano ćwiczenia ${type}`);
 }
 
-async function newLesson(services: Services, clock: Clock) {
+async function newLesson(services: Services, clock: Clock, withPriorSuccess = false) {
   const child = await createChild(services, { displayName: "Grader", avatarKey: "owl" });
-  const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, now: clock.now() });
+  const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, now: clock.now(), withObjectiveAssessment: withPriorSuccess });
   const session = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
   return { child, lesson, session };
+}
+
+async function seedPracticing(childId: string): Promise<void> {
+  await pool.query(
+    `insert into learning_app.child_objective_progress
+       (child_id, subject_id, objective_id, topic_id, status, streak, projection_version)
+     values ($1, 'english_grammar', 'english_grammar.present_simple.third_person_s', 'present_simple', 'practicing', 1, 'proj-1')`,
+    [childId],
+  );
 }
 
 async function verdictRows(): Promise<{ verdict: string; errorCategory: string | null; normalizedAnswer: string; parentDecision: string | null }[]> {
@@ -126,7 +135,7 @@ describe("model oceniający — mapowanie werdyktów", () => {
   it("verdict correct → great, zadanie answered, jedno wywołanie, wpis cache", async () => {
     const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok" } });
     const { services, clock } = graderServices(grader);
-    const { child, session } = await newLesson(services, clock);
+    const { child, session } = await newLesson(services, clock, true);
     const task = await reserveTransform(services, session.sessionId);
     await recordRewardActivitySignal(services, { sessionId: session.sessionId, taskId: task.taskId, streamId: randomUUID(), sequence: 1, kind: "takeover" });
     clock.advanceMs(15_000);
@@ -141,7 +150,7 @@ describe("model oceniający — mapowanie werdyktów", () => {
   it("verdict almost → lesson_almost z fragmentami i correctText", async () => {
     const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "almost", errorCategory: null, fragments: ["she"], note: "typo" } });
     const { services, clock } = graderServices(grader);
-    const { session } = await newLesson(services, clock);
+    const { session } = await newLesson(services, clock, true);
     const task = await reserveTransform(services, session.sessionId);
     const attempt = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: "she play" });
     expect(attempt.feedback?.kind).toBe("lesson_almost");
@@ -153,7 +162,7 @@ describe("model oceniający — mapowanie werdyktów", () => {
   it("verdict incorrect z kategorią celu → lesson_hint z hintPl i fragmentami", async () => {
     const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "brak -s" } });
     const { services, clock } = graderServices(grader);
-    const { child, session } = await newLesson(services, clock);
+    const { child, session } = await newLesson(services, clock, true);
     const task = await reserveTransform(services, session.sessionId);
     const attempt = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: "she play" });
     expect(attempt.feedback?.kind).toBe("lesson_hint");
@@ -171,7 +180,7 @@ describe("model oceniający — mapowanie werdyktów", () => {
   it("verdict incorrect kategoria other → unevaluated (model_other), zadanie issued, correctText bez podpowiedzi celu", async () => {
     const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "other", fragments: [], note: "off topic" } });
     const { services, clock } = graderServices(grader);
-    const { session } = await newLesson(services, clock);
+    const { session } = await newLesson(services, clock, true);
     const task = await reserveTransform(services, session.sessionId);
     const attempt = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: "she play" });
     expect(attempt.feedback?.kind).toBe("incorrect");
@@ -182,7 +191,7 @@ describe("model oceniający — mapowanie werdyktów", () => {
   it("invalid JSON (zły kształt) → unevaluated technical, bez wpisu cache, licznik zużyty", async () => {
     const grader = new FakeAnswerGrader().onDefault({ raw: { nope: true } });
     const { services, clock } = graderServices(grader);
-    const { session } = await newLesson(services, clock);
+    const { session } = await newLesson(services, clock, true);
     const task = await reserveTransform(services, session.sessionId);
     const attempt = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: "she play" });
     expect(attempt.feedback?.kind).toBe("not_assessed");
@@ -194,7 +203,7 @@ describe("model oceniający — mapowanie werdyktów", () => {
   it("kategoria spoza listy celu → odrzucona → unevaluated, bez cache", async () => {
     const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "not_a_real_category", fragments: [], note: "x" } });
     const { services, clock } = graderServices(grader);
-    const { session } = await newLesson(services, clock);
+    const { session } = await newLesson(services, clock, true);
     const task = await reserveTransform(services, session.sessionId);
     const attempt = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: "she play" });
     expect(attempt.feedback?.kind).toBe("not_assessed");
@@ -204,7 +213,7 @@ describe("model oceniający — mapowanie werdyktów", () => {
   it("wyjątek/timeout gradera → unevaluated technical, bez cache, licznik zużyty", async () => {
     const grader = new FakeAnswerGrader().onDefault({ error: "boom" });
     const { services, clock } = graderServices(grader);
-    const { session } = await newLesson(services, clock);
+    const { session } = await newLesson(services, clock, true);
     const task = await reserveTransform(services, session.sessionId);
     const attempt = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: "she play" });
     expect(attempt.feedback?.kind).toBe("not_assessed");
@@ -222,7 +231,8 @@ describe("cache werdyktów i parent_decision", () => {
     // tylko w obrębie tego samego ćwiczenia.
     const childA = await createChild(services, { displayName: "A", avatarKey: "owl" });
     const childB = await createChild(services, { displayName: "B", avatarKey: "owl" });
-    const lesson = await lessonWorld(pool, { childId: childA.id, richPool: true, now: clock.now() });
+    const lesson = await lessonWorld(pool, { childId: childA.id, richPool: true, now: clock.now(), withObjectiveAssessment: true });
+    await seedPracticing(childB.id);
     await pool.query(
       `insert into learning_app.assignments (id, child_id, deck_id) values (gen_random_uuid(), $1, $2)`,
       [childB.id, lesson.deckId],
@@ -245,7 +255,8 @@ describe("cache werdyktów i parent_decision", () => {
     const { services, clock } = graderServices(grader);
     const childA = await createChild(services, { displayName: "A", avatarKey: "owl" });
     const childB = await createChild(services, { displayName: "B", avatarKey: "owl" });
-    const lesson = await lessonWorld(pool, { childId: childA.id, richPool: true, now: clock.now() });
+    const lesson = await lessonWorld(pool, { childId: childA.id, richPool: true, now: clock.now(), withObjectiveAssessment: true });
+    await seedPracticing(childB.id);
     await pool.query(
       `insert into learning_app.assignments (id, child_id, deck_id) values (gen_random_uuid(), $1, $2)`,
       [childB.id, lesson.deckId],
@@ -270,7 +281,7 @@ describe("rezerwacja, budżet i leniwa finalizacja", () => {
   it("limit wywołań wyczerpany → unevaluated bez wywołania", async () => {
     const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: [], note: "x" } });
     const { services, clock } = graderServices(grader, { maxCallsPerSession: 0 });
-    const { session } = await newLesson(services, clock);
+    const { session } = await newLesson(services, clock, true);
     // gap jest wydawalny przy limicie 0 (nie jest typem zależnym od modelu w selekcji);
     // niedopasowana odpowiedź tekstowa i tak eskaluje do modelu PRZY OCENIE — ale
     // limit=0 blokuje wywołanie → unevaluated.
@@ -283,7 +294,7 @@ describe("rezerwacja, budżet i leniwa finalizacja", () => {
   it("retry przy processing → ten sam wynik bez drugiego wywołania i bez inkrementu", async () => {
     const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "x" } });
     const { services, clock } = graderServices(grader);
-    const { session } = await newLesson(services, clock);
+    const { session } = await newLesson(services, clock, true);
     const task = await reserveTransform(services, session.sessionId);
     const cid = randomUUID();
     const first = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: cid, modality: "text", text: "she play" });
@@ -299,7 +310,8 @@ describe("rezerwacja, budżet i leniwa finalizacja", () => {
     const { services, clock } = graderServices(grader);
     const childA = await createChild(services, { displayName: "A", avatarKey: "owl" });
     const childB = await createChild(services, { displayName: "B", avatarKey: "owl" });
-    const lesson = await lessonWorld(pool, { childId: childA.id, richPool: true, now: clock.now() });
+    const lesson = await lessonWorld(pool, { childId: childA.id, richPool: true, now: clock.now(), withObjectiveAssessment: true });
+    await seedPracticing(childB.id);
     await pool.query(`insert into learning_app.assignments (id, child_id, deck_id) values (gen_random_uuid(), $1, $2)`, [childB.id, lesson.deckId]);
     const sA = await startSession(services, { childId: childA.id, deckId: lesson.deckId, microphoneEnabled: false });
     const sB = await startSession(services, { childId: childB.id, deckId: lesson.deckId, microphoneEnabled: false });
@@ -320,7 +332,7 @@ describe("rezerwacja, budżet i leniwa finalizacja", () => {
     // potem przesuwamy zegar o >60 s i próbujemy ponownie — leniwa finalizacja domyka.
     const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: [], note: "x" } });
     const { services, clock } = graderServices(grader);
-    const { session } = await newLesson(services, clock);
+    const { session } = await newLesson(services, clock, true);
     const task = await reserveTransform(services, session.sessionId);
     // Wstaw osieroconą próbę processing wprost (symulacja crashu po rezerwacji).
     const revisionId = (await pool.query<{ item_revision_id: string }>(
@@ -349,7 +361,7 @@ describe("brak modelu", () => {
     // Używamy gap z odpowiedzią no_match: "completely wrong".
     const { services, clock } = buildTestServices();
     const child = await createChild(services, { displayName: "NoGrader", avatarKey: "owl" });
-    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, now: clock.now() });
+    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, now: clock.now(), withObjectiveAssessment: true });
     const session = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
     const gap = await issueUntil(services, session.sessionId, "lesson_gap");
     const attempt = await submitAttempt(services, { taskId: gap.taskId, clientAttemptId: randomUUID(), modality: "text", text: "completely wrong" });
@@ -363,7 +375,7 @@ describe("prywatność — note modelu i źródło oceny poza Kid DTO", () => {
   it("komentarz note modelu nie trafia do feedbacku dziecka", async () => {
     const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "SEKRETNY-KOMENTARZ-RODZICA" } });
     const { services, clock } = graderServices(grader);
-    const { session } = await newLesson(services, clock);
+    const { session } = await newLesson(services, clock, true);
     const task = await reserveTransform(services, session.sessionId);
     const attempt = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: "she play" });
     const raw = JSON.stringify(attempt.feedback);

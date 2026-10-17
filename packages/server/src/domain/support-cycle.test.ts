@@ -50,4 +50,37 @@ describe("deriveSupportStates", () => {
     ];
     expect(deriveSupportStates(tasks, attempts, 2).get("item-a")?.phase).toBe("none");
   });
+
+  it("reopens support after a later real difficulty following a settled cycle", () => {
+    const tasks = [
+      task({ taskId: "source", sessionId: "session-a", ordinal: 1 }),
+      task({ taskId: "support", sessionId: "session-a", ordinal: 2, exerciseType: "exposure", reason: "support", supportCycleId: "source" }),
+      task({ taskId: "retry", sessionId: "session-a", ordinal: 3, reason: "retry-after-support", supportCycleId: "source" }),
+      task({ taskId: "later", sessionId: "session-b", ordinal: 4, reason: "due-check" }),
+    ];
+    const attempts: SupportAttempt[] = [
+      { attemptId: "bad-1", taskId: "source", modality: "dont_remember", outcomes: [] },
+      { attemptId: "good", taskId: "retry", modality: "text", outcomes: [{ skill: "recall", outcome: "correct" }] },
+      { attemptId: "bad-2", taskId: "later", modality: "text", outcomes: [{ skill: "recall", outcome: "incorrect" }] },
+      { attemptId: "bad-3", taskId: "later", modality: "text", outcomes: [{ skill: "recall", outcome: "incorrect" }] },
+    ];
+    expect(deriveSupportStates(tasks, attempts, 2).get("item-a")?.phase).toBe("needed");
+  });
+
+  it("does not reopen a settled cycle after later difficulty in the same session", () => {
+    const sameSession = (value: Partial<SupportTask>) => ({ ...task(), sessionId: "session-a", ...value }) as SupportTask;
+    const tasks = [
+      sameSession({ taskId: "source", ordinal: 1 }),
+      sameSession({ taskId: "support", ordinal: 2, exerciseType: "exposure", reason: "support", supportCycleId: "source" }),
+      sameSession({ taskId: "retry", ordinal: 3, reason: "retry-after-support", supportCycleId: "source" }),
+      sameSession({ taskId: "later", ordinal: 4, reason: "due-check" }),
+    ];
+    const attempts: SupportAttempt[] = [
+      { attemptId: "bad-1", taskId: "source", modality: "dont_remember", outcomes: [] },
+      { attemptId: "good", taskId: "retry", modality: "text", outcomes: [{ skill: "recall", outcome: "correct" }] },
+      { attemptId: "bad-2", taskId: "later", modality: "text", outcomes: [{ skill: "recall", outcome: "incorrect" }] },
+      { attemptId: "bad-3", taskId: "later", modality: "text", outcomes: [{ skill: "recall", outcome: "incorrect" }] },
+    ];
+    expect(deriveSupportStates(tasks, attempts, 2).get("item-a")?.phase).toBe("settled");
+  });
 });

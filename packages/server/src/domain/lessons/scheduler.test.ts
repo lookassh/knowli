@@ -84,6 +84,10 @@ function input(overrides: Partial<LessonScheduleInput> = {}): LessonScheduleInpu
     exercises: overrides.exercises ?? poolFor(O1),
     objectiveOrder: overrides.objectiveOrder ?? [O1, O2, O3],
     progress: overrides.progress ?? {},
+    ...(overrides.initialProgress === undefined ? {} : { initialProgress: overrides.initialProgress }),
+    ...(overrides.planningMode === undefined ? {} : { planningMode: overrides.planningMode }),
+    ...(overrides.reservedDueCheckObjectives === undefined ? {} : { reservedDueCheckObjectives: overrides.reservedDueCheckObjectives }),
+    ...(overrides.supportObjectives === undefined ? {} : { supportObjectives: overrides.supportObjectives }),
     exposedTargetKeys: overrides.exposedTargetKeys ?? new Set<string>(),
     sessionHistory: overrides.sessionHistory ?? [],
     lastSeenAt: overrides.lastSeenAt ?? {},
@@ -171,6 +175,23 @@ describe("selectLessonTask — wprowadzenie nowego celu (priorytet 5)", () => {
 });
 
 describe("selectLessonTask — kontynuacja celu w toku (priorytet 4)", () => {
+  it("plan sesji zachowuje niewidzianą możliwość ćwiczenia na kolejną sesję", () => {
+    const exercises = [ex(O1, "productive", "a"), ex(O1, "productive", "b"), ex(O1, "productive", "c")];
+    const sessionHistory = [
+      task({ objectiveId: O1, exerciseType: "lesson_gap", itemId: "item:one" }),
+      task({ objectiveId: O1, exerciseType: "lesson_gap", itemId: "item:two" }),
+    ];
+    const plan = selectLessonTask(input({
+      exercises,
+      objectiveOrder: [O1],
+      initialProgress: { [O1]: prog("learning") },
+      progress: { [O1]: prog("learning") },
+      planningMode: true,
+      sessionHistory,
+    }));
+    expect(plan).toBeNull();
+  });
+
   it("awans na productive po 2 kolejnych correct na guided", () => {
     const sessionHistory = [
       task({ objectiveId: O1, exerciseType: "lesson_choice", outcome: "correct", itemId: "g1" }),
@@ -178,6 +199,16 @@ describe("selectLessonTask — kontynuacja celu w toku (priorytet 4)", () => {
     ];
     const plan = selectLessonTask(input({ cardCountByObjective: { [O1]: 0 }, sessionHistory }));
     expect(plan).toMatchObject({ kind: "exercise", objectiveId: O1, exerciseType: "lesson_gap", reason: "continue" });
+  });
+
+  it("fixed plan does not advance stages from planned slots without historical success", () => {
+    const exercises = [...poolFor(O1)];
+    const sessionHistory = [
+      task({ objectiveId: O1, exerciseType: "lesson_choice", itemId: `item:${O1}:guided:a` }),
+      task({ objectiveId: O1, exerciseType: "lesson_choice", itemId: `item:${O1}:guided:b` }),
+    ];
+    const plan = selectLessonTask(input({ exercises, planningMode: true, cardCountByObjective: { [O1]: 0 }, sessionHistory }));
+    expect(plan).toBeNull();
   });
 
   it("błąd zeruje licznik etapu — 1 correct, incorrect, (wsparcie), 1 correct → wciąż guided (brak awansu)", () => {
@@ -284,6 +315,29 @@ describe("selectLessonTask — należne niezależne sprawdzenie (priorytet 2)", 
       }),
     );
     expect(plan).toMatchObject({ objectiveId: O1, reason: "due_check" });
+  });
+
+  it("fixed plan reserves due checks before support from historical difficulty", () => {
+    const plan = selectLessonTask(input({
+      planningMode: true,
+      supportObjectives: new Set([O1]),
+      progress: { [O1]: prog("mastered", "2026-10-10T00:00:00.000Z") },
+      cardCountByObjective: { [O1]: 0 },
+    }));
+    expect(plan).toMatchObject({ kind: "exercise", objectiveId: O1, reason: "due_check", independentCheck: true });
+  });
+
+  it("fixed plan reserves at most one due check per objective and session", () => {
+    const exercises = [ex(O1, "independent", "a"), ex(O1, "independent", "b"),
+      ...["a", "b", "c", "d"].map((variant) => ex(O1, "productive", variant))];
+    const plan = selectLessonTask(input({
+      exercises,
+      planningMode: true,
+      reservedDueCheckObjectives: new Set([O1]),
+      progress: { [O1]: prog("learning", "2026-10-10T00:00:00.000Z") },
+    }));
+
+    expect(plan).not.toMatchObject({ reason: "due_check" });
   });
 });
 

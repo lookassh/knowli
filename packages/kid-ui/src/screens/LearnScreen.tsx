@@ -64,7 +64,7 @@ export function LearnScreen({
   const speechFeedback = feedback !== null && feedback.modality === "audio" && !offline && screen.error === null;
   const writtenFeedback = feedback !== null && feedback.modality !== "audio" && feedback.chosenOptionId === undefined && !offline && screen.error === null;
   // podświetlenia opcji żyją tylko przy feedbacku próby wyboru
-  const outcomes =
+  let outcomes =
     task !== null && screen.feedback?.chosenOptionId !== undefined
       ? optionOutcomes(
           screen.feedback.dto,
@@ -72,6 +72,9 @@ export function LearnScreen({
           "options" in task.prompt ? task.prompt.options : [],
         )
       : EMPTY_OUTCOMES;
+  if (screen.pendingChoiceId) {
+    outcomes = new Map([...outcomes, [screen.pendingChoiceId, "pending" as const]]);
+  }
   const handlers: ExerciseHandlers = {
     onInteraction: () => controller.recordInteraction(),
     onPlay: () => void controller.playTaskAudio(),
@@ -116,6 +119,9 @@ export function LearnScreen({
           <p className="kid-notice" data-testid="kid-processing">
             {messages.kid.processing}
           </p>
+        )}
+        {screen.transitioning && !screen.processing && !offline && screen.error === null && (
+          <p className="kid-notice" data-testid="kid-transitioning">{messages.kid.transitioning}</p>
         )}
         {screen.guidanceError && instructionAudioKey && <div className="kid-notice" data-testid="kid-guidance-error"><p>{messages.errors.picture_guidance_unavailable}</p><button type="button" onClick={() => void controller.playGuidance(instructionAudioKey).catch(() => undefined)}>{messages.errors.picture_audio_retry}</button><button type="button" onClick={() => void controller.endNow()}>{messages.kid.end}</button></div>}
         {screen.taskAudioError && <div className="kid-notice" role="alert" data-testid="kid-task-audio-error"><p>{screen.taskAudioError === "blocked" ? messages.errors.picture_audio_blocked : messages.errors.picture_audio_unavailable}</p><button type="button" data-testid="kid-task-audio-retry" onClick={() => void controller.playTaskAudio()}>{messages.errors.picture_audio_retry}</button><button type="button" onClick={() => void controller.endNow()}>{messages.kid.end}</button></div>}

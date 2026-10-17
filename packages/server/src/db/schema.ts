@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import type { AssignmentGoal, RecordingModeDto, TestGoal } from "@learning/contracts";
 import type { LessonMockTestPlanSnapshot, MockTestPlanSnapshot } from "../domain/mock-test-types";
+import type { StoredTrainingSessionPlan } from "../domain/training-session-plan";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   bigint,
@@ -417,6 +418,7 @@ export const learningSessions = app.table(
     mode: text("mode").$type<"training" | "mock_test" | "daily_round">().notNull().default("training"),
     dailyRoundDate: text("daily_round_date"),
     mockTestPlan: jsonb("mock_test_plan").$type<MockTestPlanSnapshot | LessonMockTestPlanSnapshot>(),
+    trainingPlan: jsonb("training_plan").$type<StoredTrainingSessionPlan>(),
     // completed: jawny koniec z podsumowaniem; ended: zamknięcie systemowe
     state: text("state").notNull(),
     taskBudget: integer("task_budget").notNull().default(12),
@@ -428,6 +430,7 @@ export const learningSessions = app.table(
   (t) => [
     check("learning_sessions_state_allowed", sql`${t.state} in ('active', 'completed', 'ended')`),
     check("learning_sessions_mode_plan", sql`(${t.mode} in ('training', 'daily_round') and ${t.mockTestPlan} is null) or (${t.mode} = 'mock_test' and ${t.mockTestPlan} is not null)`),
+    check("learning_sessions_training_plan_mode", sql`${t.trainingPlan} is null or (${t.mode} = 'training' and ${t.mockTestPlan} is null)`),
     check("learning_sessions_daily_round_date", sql`(${t.mode} = 'daily_round') = (${t.dailyRoundDate} is not null)`),
     check("learning_sessions_no_active_daily_round", sql`${t.mode} <> 'daily_round' or ${t.state} <> 'active'`),
     check("learning_sessions_budget_positive", sql`${t.taskBudget} > 0`),

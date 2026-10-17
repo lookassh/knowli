@@ -3,7 +3,7 @@ import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { completePresentation, createChild, createDraft, createServices, endSession, migrateDatabase, nextTask, publishDraft, readParentWorkCard, rebuildKidRewardProjection, startSession, upsertAssignment } from "@learning/server";
+import { completePresentation, createChild, createDraft, createServices, ensureLearningPolicy, migrateDatabase, publishDraft, readParentWorkCard, rebuildKidRewardProjection, upsertAssignment } from "@learning/server";
 import { ManualClock, openQuietDatabase, testDatabaseUrl, waitForDatabaseIdle } from "./helpers";
 
 const migrationsFolder = path.resolve("packages/server/drizzle");
@@ -31,6 +31,7 @@ describe("reward projection migration", () => {
       closeTestPool = () => pool.end();
       const clock = new ManualClock("2026-10-25T02:00:00.000Z");
       const services = createServices({ db, clock });
+      await ensureLearningPolicy(db);
       const child = await createChild(services, { displayName: "Ola", avatarKey: "fox" });
       const draft = await createDraft(services, { title: "Migration test", items: [{
         source: "kot", target: "cat", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "none",
@@ -46,11 +47,19 @@ describe("reward projection migration", () => {
         values ($1,'target_audio',$2,$3,'approved'), ($1,'illustration',null,'omit-test','omitted')`, [revision.id, assetId, fingerprint]);
       await publishDraft(services, draft.id, 1);
       await upsertAssignment(services, child.id, draft.deckId, null);
-      const session = await startSession(services, { childId: child.id, deckId: draft.deckId, microphoneEnabled: false });
-      const task = (await nextTask(services, session.sessionId))!;
-      expect(task).toBeTruthy();
-      await pool.query("update learning_app.learning_sessions set context=jsonb_set(context,'{timezone}','\"Invalid/Timezone\"'::jsonb,true) where id=$1", [session.sessionId]);
-      await endSession(services, session.sessionId);
+      const assignmentId = (await pool.query("select id from learning_app.assignments where child_id=$1 and deck_id=$2", [child.id, draft.deckId])).rows[0].id as string;
+      const sessionId = randomUUID();
+      await pool.query(`insert into learning_app.learning_sessions
+        (id,child_id,assignment_id,deck_id,deck_version_id,policy_id,microphone_enabled,mode,daily_round_date,mock_test_plan,state,task_budget,started_at,context)
+        values ($1,$2,$3,$4,$5,'learning-v2',false,'training',null,null,'active',12,$6,$7::jsonb)`,
+      [sessionId, child.id, assignmentId, draft.deckId, draft.id, clock.now(), JSON.stringify({ timezone: "Europe/Warsaw" })]);
+      const taskId = randomUUID();
+      await pool.query(`insert into learning_app.session_tasks
+        (id,session_id,child_id,deck_version_id,item_revision_id,ordinal,exercise_type,state,public_prompt,answer_key,context,issued_at)
+        values ($1,$2,$3,$4,$5,0,'exposure','issued','{}','{}','{}',$6)`,
+      [taskId, sessionId, child.id, draft.id, revision.id, clock.now()]);
+      await pool.query("update learning_app.learning_sessions set context=jsonb_set(context,'{timezone}','\"Invalid/Timezone\"'::jsonb,true) where id=$1", [sessionId]);
+      await pool.query("update learning_app.learning_sessions set state='ended',ended_at=$2 where id=$1", [sessionId, clock.now()]);
 
       const legacyRoundId = randomUUID();
       await pool.query(`insert into learning_app.learning_sessions
@@ -58,22 +67,22 @@ describe("reward projection migration", () => {
          mock_test_plan,state,task_budget,started_at,ended_at,context)
         select $2,child_id,assignment_id,deck_id,deck_version_id,policy_id,microphone_enabled,'daily_round','2026-10-25',
          null,'active',task_budget,started_at,null,jsonb_set(context,'{timezone}','"america/new_york"'::jsonb,true)
-        from learning_app.learning_sessions where id=$1`, [session.sessionId, legacyRoundId]);
+      from learning_app.learning_sessions where id=$1`, [sessionId, legacyRoundId]);
       const roundTaskId = randomUUID();
       await pool.query(`insert into learning_app.session_tasks
         (id,session_id,child_id,deck_version_id,item_revision_id,ordinal,exercise_type,direction,state,public_prompt,answer_key,context,issued_at)
         select $2,$3,child_id,deck_version_id,item_revision_id,0,exercise_type,direction,'issued',public_prompt,answer_key,context,issued_at
-        from learning_app.session_tasks where id=$1`, [task.taskId, roundTaskId, legacyRoundId]);
+        from learning_app.session_tasks where id=$1`, [taskId, roundTaskId, legacyRoundId]);
       const completedExposureTaskId = randomUUID();
       const completedLessonCardTaskId = randomUUID();
       await pool.query(`insert into learning_app.session_tasks
         (id,session_id,child_id,deck_version_id,item_revision_id,ordinal,exercise_type,direction,state,public_prompt,answer_key,context,issued_at)
         select $2,$3,child_id,deck_version_id,item_revision_id,1,'exposure',direction,'completed',public_prompt,answer_key,context,issued_at
-        from learning_app.session_tasks where id=$1`, [task.taskId, completedExposureTaskId, legacyRoundId]);
+        from learning_app.session_tasks where id=$1`, [taskId, completedExposureTaskId, legacyRoundId]);
       await pool.query(`insert into learning_app.session_tasks
         (id,session_id,child_id,deck_version_id,item_revision_id,ordinal,exercise_type,direction,state,public_prompt,answer_key,context,issued_at)
         select $2,$3,child_id,deck_version_id,item_revision_id,2,'lesson_card',direction,'completed',public_prompt,answer_key,context,issued_at
-        from learning_app.session_tasks where id=$1`, [task.taskId, completedLessonCardTaskId, legacyRoundId]);
+        from learning_app.session_tasks where id=$1`, [taskId, completedLessonCardTaskId, legacyRoundId]);
       const settlementZero = randomUUID();
       const settlementAwarded = randomUUID();
       const streamZero = randomUUID();
@@ -84,18 +93,18 @@ describe("reward projection migration", () => {
         (id,child_id,session_id,task_id,completion_ref,kind,settled_at,deck_id,credited_milliseconds,awarded_points,remainder_milliseconds,timezone)
         values ($1,$2,$3,$4,$5,'presentation',$6,$7,0,0,0,'Europe/Warsaw'),
                ($8,$2,$11,$9,$10,'presentation',$6,$7,1802500,30,2500,'Europe/Warsaw')`,
-      [settlementZero, child.id, session.sessionId, task.taskId, completionZero, clock.now(), draft.deckId,
+      [settlementZero, child.id, sessionId, taskId, completionZero, clock.now(), draft.deckId,
         settlementAwarded, roundTaskId, completionAwarded, legacyRoundId]);
       await pool.query(`insert into learning_app.reward_activity_streams
         (id,child_id,session_id,task_id,policy_version,last_sequence,last_signal_at,last_interaction_at,active)
         values ($1,$2,$3,$4,'1',1,$5,$5,false), ($6,$2,$7,$8,'1',1,$5,$5,true)`,
-      [streamZero, child.id, session.sessionId, task.taskId, clock.now(), streamAwarded, legacyRoundId, roundTaskId]);
+      [streamZero, child.id, sessionId, taskId, clock.now(), streamAwarded, legacyRoundId, roundTaskId]);
       await pool.query(`insert into learning_app.reward_activity_segments
         (id,stream_id,child_id,session_id,task_id,started_at,ended_at,settlement_ref)
         values ($1,$2,$3,$4,$5,'2026-10-24T21:45:00Z','2026-10-24T22:15:00Z',$6),
                ($7,$8,$3,$9,$10,'2026-10-25T00:45:00Z','2026-10-25T01:15:00Z',$11),
                ($12,$8,$3,$9,$10,'2026-10-25T01:15:00Z','2026-10-25T01:16:00Z',null)`,
-      [randomUUID(), streamZero, child.id, session.sessionId, task.taskId, settlementZero,
+      [randomUUID(), streamZero, child.id, sessionId, taskId, settlementZero,
         randomUUID(), streamAwarded, legacyRoundId, roundTaskId, settlementAwarded, randomUUID()]);
       const blockId = randomUUID();
       await pool.query(`insert into learning_app.reward_activity_xbox_blocks

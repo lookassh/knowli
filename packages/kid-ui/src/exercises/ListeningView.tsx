@@ -34,6 +34,7 @@ export function ListeningView({ task, busy, optionOutcomes, result, resultAction
             <li key={option.id}>
               <button type="button" data-testid="kid-option"
                 className={outcome === undefined ? undefined : `kid-option--${outcome}`}
+                aria-pressed={outcome === "pending"}
                 disabled={busy} onClick={() => handlers.onAnswerChoice(option.id)}>
                 {option.text}
               </button>

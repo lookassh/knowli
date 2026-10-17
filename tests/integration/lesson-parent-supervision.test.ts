@@ -79,6 +79,12 @@ async function parentCookie(services: Services): Promise<string> {
 
 const PRODUCTIVE = new Set(["lesson_gap", "lesson_error_fix", "lesson_transform", "lesson_open_answer"]);
 
+async function seedPracticingProgress(childId: string, objectiveId: string, subjectId: string, topicId: string): Promise<void> {
+  await pool.query(`insert into learning_app.child_objective_progress
+    (child_id, subject_id, objective_id, topic_id, status, streak, projection_version)
+    values ($1, $2, $3, $4, 'practicing', 1, 'proj-1')`, [childId, subjectId, objectiveId, topicId]);
+}
+
 async function answerKeyOf(taskId: string): Promise<Record<string, unknown>> {
   const rows = await pool.query<{ answerKey: Record<string, unknown> }>(
     `select answer_key as "answerKey" from learning_app.session_tasks where id = $1`, [taskId]);
@@ -145,7 +151,8 @@ describe("Parent supervision API (integracja HTTP)", () => {
     const cookie = await parentCookie(services);
     const childA = await createChild(services, { displayName: "A", avatarKey: "owl" });
     const childB = await createChild(services, { displayName: "B", avatarKey: "cat" });
-    const lesson = await lessonWorld(pool, { childId: childA.id, richPool: true, now: new Date() });
+    const lesson = await lessonWorld(pool, { childId: childA.id, richPool: true, withObjectiveAssessment: true, now: new Date() });
+    await seedPracticingProgress(childB.id, lesson.objectiveId, lesson.subjectId, lesson.topicId);
     await pool.query(`insert into learning_app.assignments (id, child_id, deck_id) values (gen_random_uuid(), $1, $2)`, [childB.id, lesson.deckId]);
 
     // Dziecko A popełnia błąd modelowy ("she play") na transformacie.
@@ -177,7 +184,7 @@ describe("Parent supervision API (integracja HTTP)", () => {
     const services = graderServices(grader);
     const cookie = await parentCookie(services);
     const child = await createChild(services, { displayName: "A", avatarKey: "owl" });
-    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, now: new Date() });
+    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, withObjectiveAssessment: true, now: new Date() });
     const session = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
     const task = await issueUntil(services, session.sessionId, "lesson_transform");
     await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: "she play" });
@@ -220,7 +227,8 @@ describe("Parent supervision API (integracja HTTP)", () => {
     const cookie = await parentCookie(services);
     const childA = await createChild(services, { displayName: "A", avatarKey: "owl" });
     const childB = await createChild(services, { displayName: "B", avatarKey: "cat" });
-    const lesson = await lessonWorld(pool, { childId: childA.id, richPool: true, now: new Date() });
+    const lesson = await lessonWorld(pool, { childId: childA.id, richPool: true, withObjectiveAssessment: true, now: new Date() });
+    await seedPracticingProgress(childB.id, lesson.objectiveId, lesson.subjectId, lesson.topicId);
     await pool.query(`insert into learning_app.assignments (id, child_id, deck_id) values (gen_random_uuid(), $1, $2)`, [childB.id, lesson.deckId]);
     const sA = await startSession(services, { childId: childA.id, deckId: lesson.deckId, microphoneEnabled: false });
     const tA = await issueUntil(services, sA.sessionId, "lesson_transform");
@@ -245,7 +253,7 @@ describe("Parent supervision API (integracja HTTP)", () => {
     const services = graderServices(grader);
     const cookie = await parentCookie(services);
     const child = await createChild(services, { displayName: "A", avatarKey: "owl" });
-    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, now: new Date() });
+    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, withObjectiveAssessment: true, now: new Date() });
     const session = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
     const task = await issueUntil(services, session.sessionId, "lesson_transform");
     // "she playz" — niedopasowane deterministycznie (focus plays), ocenione przez model jako correct.
@@ -277,6 +285,7 @@ describe("Parent supervision API (integracja HTTP)", () => {
     const callsBefore = grader.callCount;
     const child2 = await createChild(services, { displayName: "C", avatarKey: "cat" });
     await pool.query(`insert into learning_app.assignments (id, child_id, deck_id) values (gen_random_uuid(), $1, $2)`, [child2.id, lesson.deckId]);
+    await seedPracticingProgress(child2.id, lesson.objectiveId, lesson.subjectId, lesson.topicId);
     const s2 = await startSession(services, { childId: child2.id, deckId: lesson.deckId, microphoneEnabled: false });
     const t2 = await issueUntil(services, s2.sessionId, "lesson_transform");
     const matched = await submitAttempt(services, { taskId: t2.taskId, clientAttemptId: randomUUID(), modality: "text", text: "she playz" });

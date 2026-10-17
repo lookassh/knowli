@@ -43,7 +43,7 @@ export interface KidUiFixture {
   lessonMockSummary?: LessonMockTestSummaryDto;
   feedbackAudio?: FeedbackAudioDto;
   uiAudio?: UiAudioCatalogDto;
-  onActivitySignal?: (signal: RewardActivitySignal) => RewardActivitySignalDto | void;
+  onActivitySignal?: (signal: RewardActivitySignal) => RewardActivitySignalDto | void | Promise<RewardActivitySignalDto | void>;
 }
 
 export async function installKidUiFixture(page: Page, fixture: KidUiFixture): Promise<void> {
@@ -91,7 +91,7 @@ export async function installKidUiFixture(page: Page, fixture: KidUiFixture): Pr
     }
     if (method === "POST" && /\/tasks\/[^/]+\/activity$/.test(path)) {
       const signal = RewardActivitySignalSchema.parse(request.postDataJSON());
-      const response = fixture.onActivitySignal?.(signal);
+      const response = await fixture.onActivitySignal?.(signal);
       return json(response ?? { streamId: signal.streamId, sequence: signal.sequence, acceptedAt: new Date().toISOString(),
         paused: signal.kind === "pause", pauseReason: signal.kind === "pause" ? signal.pauseReason ?? "background" : null });
     }

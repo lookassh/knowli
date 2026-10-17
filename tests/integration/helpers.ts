@@ -2,6 +2,7 @@ import { inject } from "vitest";
 import {
   createDatabase,
   createServices,
+  startSession,
   type Clock,
   type Services,
 } from "@learning/server";
@@ -90,6 +91,23 @@ export function buildTestServices(startIso?: string): { services: Services; cloc
   const { db } = testDatabase();
   const clock = new ManualClock(startIso);
   return { services: createServices({ db, clock }), clock };
+}
+
+/** Tworzy fixture aktywnej sesji w kształcie sprzed migracji 0017. */
+export async function startLegacyTrainingSession(
+  services: Services,
+  input: Parameters<typeof startSession>[1],
+  legacyTaskBudget?: number,
+): Promise<Awaited<ReturnType<typeof startSession>>> {
+  const session = await startSession(services, input);
+  const { pool } = testDatabase();
+  await pool.query("ALTER TABLE learning_app.learning_sessions DISABLE TRIGGER learning_sessions_training_plan_immutable");
+  try {
+    await pool.query("UPDATE learning_app.learning_sessions SET training_plan=NULL, task_budget=coalesce($2, task_budget) WHERE id=$1", [session.sessionId, legacyTaskBudget ?? null]);
+  } finally {
+    await pool.query("ALTER TABLE learning_app.learning_sessions ENABLE TRIGGER learning_sessions_training_plan_immutable");
+  }
+  return session;
 }
 
 /** Osobna pula symuluje restart procesu przy tym samym DATABASE_URL. */
