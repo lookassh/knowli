@@ -103,13 +103,14 @@ async function sealedEvents(childId: string, kind: string): Promise<SealedRow[]>
   return rows.rows;
 }
 
-async function newAudioLesson(services: Services) {
+async function newAudioLesson(services: Services, withPriorProgress = true, richPool = true) {
   const child = await createChild(services, { displayName: "Lekcja", avatarKey: "owl" });
   // target_audio gotowe dla WSZYSTKICH typów (dosiane przed publikacją), by udowodnić,
   // że tylko tekstowe faktycznie je serwują.
   const lesson = await lessonWorld(pool, {
     childId: child.id,
-    richPool: true,
+    richPool,
+    withObjectiveAssessment: withPriorProgress,
     withTargetAudioFor: [
       "lesson_gap", "lesson_error_fix", "lesson_transform", "lesson_open_answer",
       "lesson_choice", "lesson_short_answer", "lesson_notice", "lesson_order",
@@ -184,7 +185,7 @@ describe("A58 — audio lekcji w ćwiczeniach tekstowych", () => {
 
   it("typ zamknięty nie oferuje audio i odrzuca odsłuch", async () => {
     const services = audioServices();
-    const { session } = await newAudioLesson(services);
+    const { session } = await newAudioLesson(services, false, false);
     const choice = await issueUntil(services, session.sessionId, "lesson_choice");
     expect(choice.prompt.kind).toBe("lesson_choice");
     expect((choice.prompt as { audioAssetId?: string }).audioAssetId).toBeUndefined();

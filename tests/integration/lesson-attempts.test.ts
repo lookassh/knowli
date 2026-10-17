@@ -148,9 +148,9 @@ async function answerKeyOf(taskId: string): Promise<Record<string, unknown>> {
   return rows.rows[0]!.answerKey;
 }
 
-async function newLesson(services: Services, clock: ManualClock) {
+async function newLesson(services: Services, clock: ManualClock, withPriorSuccess = false) {
   const child = await createChild(services, { displayName: "Lekcja", avatarKey: "owl" });
-  const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, now: clock.now() });
+  const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, now: clock.now(), withObjectiveAssessment: withPriorSuccess });
   const session = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
   return { child, lesson, session };
 }
@@ -213,7 +213,7 @@ describe("ocena odpowiedzi w lekcji — typy zamknięte i sekwencja", () => {
 describe("ocena odpowiedzi w lekcji — typy tekstowe (luka)", () => {
   it("luka exact → great", async () => {
     const { services, clock } = buildTestServices();
-    const { session } = await newLesson(services, clock);
+    const { session } = await newLesson(services, clock, true);
     const task = await issueUntil(services, session.sessionId, "lesson_gap");
     const attempt = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: "goes" });
     expect(attempt.feedback?.kind).toBe("great");
@@ -226,7 +226,7 @@ describe("ocena odpowiedzi w lekcji — typy tekstowe (luka)", () => {
     // gap ma answer "goes", focus ["goes"] (jeden token) — literówka "gose" pada
     // w focus, więc dopasowanie to no_match → unevaluated, zadanie zostaje issued.
     const { services, clock } = buildTestServices();
-    const { session } = await newLesson(services, clock);
+    const { session } = await newLesson(services, clock, true);
     const task = await issueUntil(services, session.sessionId, "lesson_gap");
     const before = (await exposureKeys(session.childId)).length;
     const attempt = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: "gose" });
@@ -241,7 +241,7 @@ describe("ocena odpowiedzi w lekcji — typy tekstowe (luka)", () => {
     // modelu selektor go deprioryzuje; grader'em włączamy jego wydanie, ale OCENA i
     // tak biegnie deterministycznie (matchLessonAnswer), bo port grader'a to zadanie 15.
     const { services, clock } = graderServices();
-    const { session } = await newLesson(services, clock);
+    const { session } = await newLesson(services, clock, true);
     const task = await issueUntil(services, session.sessionId, "lesson_transform");
     // transform answer "she plays", focus ["plays"]; literówka w "she" (poza focus)
     const attempt = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: "shee plays" });
@@ -253,7 +253,7 @@ describe("ocena odpowiedzi w lekcji — typy tekstowe (luka)", () => {
 
   it("brak dopasowania bez modelu → unevaluated (technical, verdict unavailable), zadanie issued", async () => {
     const { services, clock } = buildTestServices();
-    const { child, session } = await newLesson(services, clock);
+    const { child, session } = await newLesson(services, clock, true);
     const task = await issueUntil(services, session.sessionId, "lesson_gap");
     const attempt = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: "completely wrong" });
     expect(attempt.feedback?.kind).toBe("not_assessed");
@@ -265,26 +265,27 @@ describe("ocena odpowiedzi w lekcji — typy tekstowe (luka)", () => {
     expect(unevaluated!.details.verdict).toBe("unavailable");
   });
 
-  it("skip → próba bez ocen; dont_remember → incorrect z correctText", async () => {
+  it("skip nie tworzy oceny, a dont_remember nie dopisuje wsparcia do stałej listy", async () => {
     const { services, clock } = buildTestServices();
-    const { child, session } = await newLesson(services, clock);
+    const { child, session } = await newLesson(services, clock, true);
     const gap = await issueUntil(services, session.sessionId, "lesson_gap");
     const skip = await submitAttempt(services, { taskId: gap.taskId, clientAttemptId: randomUUID(), modality: "skip" });
     expect(skip.taskState).toBe("skipped");
 
-    const second = await newLesson(services, clock);
+    const second = await newLesson(services, clock, true);
     const gap2 = await issueUntil(services, second.session.sessionId, "lesson_gap");
+    const savedPlan = await pool.query<{ training_plan: { slots: Array<{ taskId: string }> } }>(
+      "select training_plan from learning_app.learning_sessions where id=$1", [second.session.sessionId],
+    );
     const dr = await submitAttempt(services, { taskId: gap2.taskId, clientAttemptId: randomUUID(), modality: "dont_remember" });
     expect(dr.feedback?.kind).toBe("incorrect");
     expect(dr.feedback?.correctText).toBeTruthy();
     expect(dr.taskState).toBe("answered");
     const rows = await assessmentsFor(second.child.id);
     expect(rows.some((r) => r.outcome === "incorrect" && r.reason === "dont_remember")).toBe(true);
-    const support = await nextTask(services, second.session.sessionId);
-    expect(support?.exerciseType).toBe("lesson_card");
-    await completePresentation(services, { taskId: support!.taskId });
-    const guided = await nextTask(services, second.session.sessionId);
-    expect(["lesson_choice", "lesson_order", "lesson_short_answer"]).toContain(guided?.exerciseType);
+    const next = await nextTask(services, second.session.sessionId);
+    expect(next?.taskId).toBe(savedPlan.rows[0]!.training_plan.slots[gap2.ordinal + 1]?.taskId);
+    expect(next?.exerciseType).not.toBe("lesson_card");
     void child;
   });
 });
@@ -339,7 +340,10 @@ describe("kwalifikacja i projekcja celu", () => {
     const key = await answerKeyOf(choice.taskId);
     await submitAttempt(services, { taskId: choice.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: key.correctOptionId as string });
 
-    const gap = await issueUntil(services, session.sessionId, "lesson_gap");
+    await endSession(services, session.sessionId);
+    const deckId = (await pool.query<{ deck_id: string }>("select deck_id from learning_app.learning_sessions where id=$1", [session.sessionId])).rows[0]!.deck_id;
+    const nextSession = await startSession(services, { childId: child.id, deckId, microphoneEnabled: false });
+    const gap = await issueUntil(services, nextSession.sessionId, "lesson_gap");
     await submitAttempt(services, { taskId: gap.taskId, clientAttemptId: randomUUID(), modality: "text", text: "goes" });
 
     const rows = await pool.query<{ independent: boolean; exercise_type: string }>(
@@ -363,58 +367,64 @@ describe("kwalifikacja i projekcja celu", () => {
 
   it("odsłuch odpowiedzi przed odpowiedzią → zależne", async () => {
     const { services, clock } = buildTestServices();
-    const { child, session } = await newLesson(services, clock);
+    const { child, session } = await newLesson(services, clock, true);
     const gap = await issueUntil(services, session.sessionId, "lesson_gap");
     // odsłuch (hint) psuje niezależność
     await authorizeDisclosure(services, { taskId: gap.taskId, kind: "hint" });
     await submitAttempt(services, { taskId: gap.taskId, clientAttemptId: randomUUID(), modality: "text", text: "goes" });
-    const rows = await assessmentsFor(child.id);
-    const correct = rows.find((r) => r.outcome === "correct");
-    expect(correct?.independent).toBe(false);
+    const correct = await pool.query<{ independent: boolean }>(
+      "select independent from learning_app.assessments where attempt_id in (select id from learning_app.attempts where task_id=$1) and outcome='correct'",
+      [gap.taskId],
+    );
+    expect(correct.rows).toEqual([{ independent: false }]);
   });
 });
 
 describe("opanowanie celu end-to-end (projekcja HTTP, kontrolowany zegar)", () => {
-  it("niezależne sukcesy na różnych ćwiczeniach w kolejnych sesjach + potwierdzenie ≥12h → mastered", async () => {
+  it("opanowuje cel po sukcesach na różnych ćwiczeniach i potwierdzeniu po przerwie", async () => {
     const { services, clock } = buildTestServices("2026-10-10T08:00:00.000Z");
     const child = await createChild(services, { displayName: "Opanowanie", avatarKey: "owl" });
     const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, now: clock.now() });
 
-    // Sesja 1: cel awansuje guided → productive → independent; w etapie productive
-    // wychodzą 2 różne ćwiczenia (gap/transform) rozwiązane NIEZALEŻNIE poprawnie.
-    // Bez potwierdzenia po przerwie → db status practicing (domenowe learning, seria < 3).
+    // Sesja 1 rzeczywiście zapisuje sukcesy guided dla nowego celu.
     const s1 = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
-    const distinct1 = await driveSessionCorrectly(services, s1.sessionId, child.id);
-    expect(distinct1.size).toBeGreaterThanOrEqual(2);
+    await driveSessionCorrectly(services, s1.sessionId, child.id);
     expect((await progressRow(child.id))!.status).toBe("practicing");
     await endSession(services, s1.sessionId);
 
-    // Przerwa ≥12 h i inny dzień lokalny → sukces w sesji 2 jest confirmationEligible.
-    clock.advanceHours(26);
-
-    // Sesja 2: startuje od productive (status ≠ not_assessed). Pierwszy niezależny
-    // sukces na NOWYM, różnym ćwiczeniu domyka okno 3 różnych ćwiczeń z
-    // potwierdzeniem → mastered.
+    // Następna sesja planuje dwa niezależne zadania productive, a zachowuje
+    // trzecie niewidziane na należne sprawdzenie w późniejszej sesji.
+    clock.advanceHours(1);
     const s2 = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
-    await driveSessionCorrectly(services, s2.sessionId, child.id, "mastered");
+    const distinct2 = await driveSessionCorrectly(services, s2.sessionId, child.id);
+    expect(distinct2.size).toBeGreaterThanOrEqual(2);
+    expect((await progressRow(child.id))!.status).not.toBe("mastered");
+    await endSession(services, s2.sessionId);
+
+    // Niewidziane ćwiczenie umożliwia niezależne potwierdzenie po przerwie.
+    clock.advanceHours(26);
+    const s3 = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
+    await driveSessionCorrectly(services, s3.sessionId, child.id, "mastered");
     expect((await progressRow(child.id))!.status).toBe("mastered");
 
-    // Gwiazdki listy zestawów dziecka odzwierciedlają opanowanie (zadanie 13 wired:
-    // independentlyRecalledCount = liczba opanowanych celów).
     const decks = await listKidDecks(services, child.id);
     const lessonDeck = decks.find((d) => d.deckId === lesson.deckId)!;
-    expect(lessonDeck.independentlyRecalledCount).toBeGreaterThanOrEqual(1);
+    expect(lessonDeck.independentlyRecalledCount).toBe(1);
   });
 
   it("powtórny sukces na TYM SAMYM ćwiczeniu nie potwierdza opanowania (wymagane różne ćwiczenia)", async () => {
     const { services, clock } = buildTestServices("2026-10-10T08:00:00.000Z");
     const child = await createChild(services, { displayName: "Powtórka", avatarKey: "owl" });
     const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, now: clock.now() });
+    await pool.query(`insert into learning_app.child_objective_progress
+      (child_id, subject_id, objective_id, topic_id, status, streak, projection_version)
+      values ($1, $2, $3, $4, 'practicing', 1, 'proj-1')`,
+    [child.id, lesson.subjectId, lesson.objectiveId, lesson.topicId]);
 
     const s1 = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
     const distinct1 = await driveSessionCorrectly(services, s1.sessionId, child.id);
     const seenItem = [...distinct1][0]!; // ćwiczenie produktywne już rozwiązane w sesji 1
-    expect((await progressRow(child.id))!.status).toBe("practicing");
+    expect(["practicing", "needs_confirmation", "needs_reconfirmation"]).toContain((await progressRow(child.id))!.status);
     await endSession(services, s1.sessionId);
     clock.advanceHours(26);
 
@@ -425,9 +435,10 @@ describe("opanowanie celu end-to-end (projekcja HTTP, kontrolowany zegar)", () =
       const task = await nextTask(services, s2.sessionId);
       if (task === null) break;
       if (task.exerciseType === "lesson_card") { await completePresentation(services, { taskId: task.taskId }); continue; }
-      const revisionId = (await pool.query<{ item_revision_id: string }>(
-        "select item_revision_id from learning_app.session_tasks where id = $1", [task.taskId])).rows[0]!.item_revision_id;
-      if (revisionId === seenItem && PRODUCTIVE_TASK_TYPES.has(task.exerciseType)) {
+      const itemId = (await pool.query<{ item_id: string }>(
+        `select ir.item_id from learning_app.session_tasks st
+           join learning_app.item_revisions ir on ir.id = st.item_revision_id where st.id = $1`, [task.taskId])).rows[0]!.item_id;
+      if (itemId === seenItem && PRODUCTIVE_TASK_TYPES.has(task.exerciseType)) {
         await answerCorrectly(services, task);
       } else {
         await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "skip" });
@@ -440,7 +451,7 @@ describe("opanowanie celu end-to-end (projekcja HTTP, kontrolowany zegar)", () =
 describe("idempotencja", () => {
   it("ten sam clientAttemptId → ten sam wynik; inna treść → 409", async () => {
     const { services, clock } = buildTestServices();
-    const { session } = await newLesson(services, clock);
+    const { session } = await newLesson(services, clock, true);
     const gap = await issueUntil(services, session.sessionId, "lesson_gap");
     const cid = randomUUID();
     const first = await submitAttempt(services, { taskId: gap.taskId, clientAttemptId: cid, modality: "text", text: "goes" });
@@ -469,7 +480,7 @@ describe("idempotencja", () => {
 describe("feedback i prywatność Kid DTO", () => {
   it("Kid feedback nie ujawnia focus/objective/kategorii/źródła oceny", async () => {
     const { services, clock } = buildTestServices();
-    const { session } = await newLesson(services, clock);
+    const { session } = await newLesson(services, clock, true);
     const gap = await issueUntil(services, session.sessionId, "lesson_gap");
     const attempt = await submitAttempt(services, { taskId: gap.taskId, clientAttemptId: randomUUID(), modality: "text", text: "goes" });
     const raw = JSON.stringify(attempt.feedback);
@@ -515,7 +526,7 @@ describe("podsumowanie sesji lekcji", () => {
 describe("kaskada usunięcia profilu", () => {
   it("usunięcie profilu kasuje próby, oceny i child_objective_progress", async () => {
     const { services, clock } = buildTestServices();
-    const { child, session } = await newLesson(services, clock);
+    const { child, session } = await newLesson(services, clock, true);
     const gap = await issueUntil(services, session.sessionId, "lesson_gap");
     await submitAttempt(services, { taskId: gap.taskId, clientAttemptId: randomUUID(), modality: "text", text: "goes" });
     expect(await progressRow(child.id)).toBeDefined();
@@ -532,7 +543,7 @@ describe("kaskada usunięcia profilu", () => {
 describe("delegacja ścieżki prób po rodzaju zestawu (zadanie 9 review minor)", () => {
   it("próba na zadaniu lekcji przechodzi ścieżką lekcji (nie deck_kind_mismatch słówek)", async () => {
     const { services, clock } = buildTestServices();
-    const { session } = await newLesson(services, clock);
+    const { session } = await newLesson(services, clock, true);
     const gap = await issueUntil(services, session.sessionId, "lesson_gap");
     // Gdyby ścieżka słówek przejęła próbę lekcji, assertVocabularyDeck rzuciłby
     // deck_kind_mismatch. Delegacja do silnika lekcji daje poprawny feedback.
@@ -556,7 +567,7 @@ describe("review P1-3: nieoceniona odpowiedź nie łamie CHECK (confirmationElig
   it("wybiera ćwiczenie niewidziane zamiast początku puli z poprzedniej sesji", async () => {
     const { services, clock } = buildTestServices();
     const child = await createChild(services, { displayName: "Historia", avatarKey: "owl" });
-    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true });
+    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, withObjectiveAssessment: true });
     const firstSession = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
     const first = await issueUntil(services, firstSession.sessionId, "lesson_gap");
     await submitAttempt(services, { taskId: first.taskId, clientAttemptId: randomUUID(), modality: "skip" });
@@ -584,7 +595,7 @@ describe("review P1-3: nieoceniona odpowiedź nie łamie CHECK (confirmationElig
       grader: { provider: new FakeAnswerGrader().onDefault({ error: "offline" }), maxCallsPerSession: 20, timeoutMs: 8000 },
     }) : baseServices;
     const child = await createChild(services, { displayName: "Check", avatarKey: "owl" });
-    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, now: clock.now() });
+    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, now: clock.now(), withObjectiveAssessment: true });
 
     // Sesja 1: dotknij celu (kontakt z celem), zakończ.
     const s1 = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });

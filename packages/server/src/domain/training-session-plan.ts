@@ -28,6 +28,19 @@ export interface TrainingSessionPlanSnapshot {
   slots: readonly TrainingSessionSlot[];
 }
 
+/** Wspólny protokół trwałego planu dla lekcji; kontekst jest prywatny jak answerKey. */
+export interface LessonTrainingSessionSlot extends Omit<TrainingSessionSlot, "keepsReservations"> {
+  taskKind: "card" | "support_card" | "exercise";
+  context: Record<string, unknown>;
+}
+export interface LessonTrainingSessionPlanSnapshot {
+  version: 1;
+  kind: "lesson";
+  taskBudget: number;
+  slots: readonly LessonTrainingSessionSlot[];
+}
+export type StoredTrainingSessionPlan = TrainingSessionPlanSnapshot | LessonTrainingSessionPlanSnapshot;
+
 const TrainingSessionSlotSchema = z.object({
   taskId: z.string().uuid(), itemId: z.string().uuid(), itemRevisionId: z.string().uuid(),
   ordinal: z.number().int().nonnegative(), exerciseType: z.string().min(1), direction: z.string().nullable(),
@@ -37,6 +50,16 @@ const TrainingSessionSlotSchema = z.object({
 });
 const TrainingSessionPlanSchema = z.object({
   version: z.literal(1), taskBudget: z.number().int().positive(), slots: z.array(TrainingSessionSlotSchema).min(1).max(256),
+});
+const LessonTrainingSessionPlanSchema = z.object({
+  version: z.literal(1), kind: z.literal("lesson"), taskBudget: z.number().int().positive(),
+  slots: z.array(z.object({
+    taskId: z.string().uuid(), itemId: z.string().uuid(), itemRevisionId: z.string().uuid(),
+    ordinal: z.number().int().nonnegative(), exerciseType: z.string().min(1), direction: z.null(),
+    assessed: z.boolean(), prompt: TaskPromptSchema, answerKey: z.record(z.string(), z.unknown()),
+    reason: z.string().min(1), taskKind: z.enum(["card", "support_card", "exercise"]), context: z.record(z.string(), z.unknown()),
+    revealsTargetKeys: z.array(z.string()),
+  })).min(1).max(256),
 });
 
 /** Nie regenerujemy innego planu, jeśli aplikacja nie zna zapisanej wersji. */
@@ -52,4 +75,18 @@ export function readTrainingSessionPlan(value: unknown): TrainingSessionPlanSnap
     throw new Error("invalid_training_session_plan");
   }
   return parsed.data as TrainingSessionPlanSnapshot;
+}
+
+export function readLessonTrainingSessionPlan(value: unknown): LessonTrainingSessionPlanSnapshot | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "object" || (value as { version?: unknown }).version !== 1 || (value as { kind?: unknown }).kind !== "lesson") {
+    throw new Error("unsupported_training_session_plan_version");
+  }
+  const parsed = LessonTrainingSessionPlanSchema.safeParse(value);
+  if (!parsed.success || parsed.data.slots.some((slot, ordinal) => slot.ordinal !== ordinal) ||
+      new Set(parsed.data.slots.map((slot) => slot.taskId)).size !== parsed.data.slots.length ||
+      parsed.data.slots.filter((slot) => slot.assessed).length > parsed.data.taskBudget) {
+    throw new Error("invalid_training_session_plan");
+  }
+  return parsed.data as LessonTrainingSessionPlanSnapshot;
 }

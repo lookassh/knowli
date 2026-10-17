@@ -6,6 +6,7 @@ import {
   runDueGenerationWork,
   setupParent,
   createChild,
+  endSession,
   startSession,
   nextTask,
   completePresentation,
@@ -284,22 +285,28 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
     expect((await call(services, "POST", `lesson-drafts/${draft.id}/publish`, { cookie, body: { expectedEditNumber: updated.editNumber } })).status).toBe(200);
     const child = await createChild(services, { displayName: "Test przepływu", avatarKey: "owl" });
     expect((await call(services, "PUT", `assignments/${child.id}/${deckId}`, { cookie, body: { testDate: null } })).status).toBe(204);
-    const session = await startSession(sessionServices, { childId: child.id, deckId, microphoneEnabled: false });
     const seen = new Set<string>();
-    for (let i = 0; i < 18; i++) {
-      const task = await nextTask(sessionServices, session.sessionId);
-      if (!task) break;
-      TaskPromptSchema.parse(task.prompt);
-      if (task.exerciseType === "lesson_card") { await completePresentation(sessionServices, { taskId: task.taskId }); continue; }
-      const key = (await pool.query("select answer_key from learning_app.session_tasks where id=$1", [task.taskId])).rows[0].answer_key;
-      const attempt = await submitAttempt(sessionServices, { taskId: task.taskId, clientAttemptId: randomUUID(),
-        ...(["lesson_choice", "lesson_short_answer", "lesson_notice"].includes(task.exerciseType) ? { modality: "choice" as const, optionId: key.correctOptionId }
-          : task.exerciseType === "lesson_order" ? { modality: "sequence" as const, itemIds: key.itemIds }
-          : { modality: "text" as const, text: key.answer }),
-      });
-      expect(attempt.feedback?.kind).toBe("great");
-      seen.add(task.exerciseType);
-    }
+    const completeSession = async (sessionId: string) => {
+      for (let i = 0; i < 18; i++) {
+        const task = await nextTask(sessionServices, sessionId);
+        if (!task) break;
+        TaskPromptSchema.parse(task.prompt);
+        if (task.exerciseType === "lesson_card") { await completePresentation(sessionServices, { taskId: task.taskId }); continue; }
+        const key = (await pool.query("select answer_key from learning_app.session_tasks where id=$1", [task.taskId])).rows[0].answer_key;
+        const attempt = await submitAttempt(sessionServices, { taskId: task.taskId, clientAttemptId: randomUUID(),
+          ...(["lesson_choice", "lesson_short_answer", "lesson_notice"].includes(task.exerciseType) ? { modality: "choice" as const, optionId: key.correctOptionId }
+            : task.exerciseType === "lesson_order" ? { modality: "sequence" as const, itemIds: key.itemIds }
+            : { modality: "text" as const, text: key.answer }),
+        });
+        expect(attempt.feedback?.kind).toBe("great");
+        seen.add(task.exerciseType);
+      }
+      await endSession(sessionServices, sessionId);
+    };
+    const firstSession = await startSession(sessionServices, { childId: child.id, deckId, microphoneEnabled: false });
+    await completeSession(firstSession.sessionId);
+    const nextSession = await startSession(sessionServices, { childId: child.id, deckId, microphoneEnabled: false });
+    await completeSession(nextSession.sessionId);
     expect(seen.has("lesson_choice")).toBe(true);
     expect(seen.has("lesson_transform")).toBe(true);
   });

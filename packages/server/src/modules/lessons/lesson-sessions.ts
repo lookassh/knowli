@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, inArray, lte, max } from "drizzle-orm";
+import { and, asc, eq, inArray, lte, max, sql } from "drizzle-orm";
 import type { TaskDto, TaskPrompt } from "@learning/contracts";
 import type { Services } from "../../config";
 import type { Executor, Tx } from "../../db/client";
@@ -32,6 +32,8 @@ import { renderCard } from "../../domain/lessons/card";
 import { computeTargetKey } from "../../domain/target-key";
 import { isTestPreparationWindow } from "../../domain/test-preparation";
 import type { ProgressStatus } from "../../domain/types";
+import type { LessonTrainingSessionPlanSnapshot, LessonTrainingSessionSlot } from "../../domain/training-session-plan";
+import { readLessonTrainingSessionPlan } from "../../domain/training-session-plan";
 import { contextOf, writeSealedEvent, type SessionContextShape } from "../events";
 import { mapObjectiveStatus as mapStatus } from "../../domain/lessons/progress-status";
 import {
@@ -65,6 +67,7 @@ export interface LessonSessionContext extends SessionContextShape {
   /** Ostatni kontakt dziecka z ćwiczeniem danego celu przed startem sesji. */
   previousObjectiveContact: Record<string, string>;
   initialObjectiveProgress?: Record<string, ObjectiveProgressSnapshot>;
+  supportObjectives?: string[];
 }
 
 /** `lesson_context` zapisany w `deck_versions.lesson_context`. */
@@ -136,6 +139,56 @@ async function previousObjectiveContactSnapshot(
   return result;
 }
 
+/** Cele, których ostatnia oceniona próba w treningu była błędna lub „Nie pamiętam”. */
+async function historicalSupportObjectives(
+  tx: Tx,
+  args: { childId: string; subjectId: string; objectiveIds: readonly string[]; before: Date },
+): Promise<string[]> {
+  if (args.objectiveIds.length === 0) return [];
+  const rows = await tx.select({
+    taskId: sessionTasks.id, payload: itemRevisions.payload, ordinal: sessionTasks.ordinal,
+    startedAt: learningSessions.startedAt, lessonContext: deckVersions.lessonContext,
+  }).from(sessionTasks)
+    .innerJoin(learningSessions, eq(learningSessions.id, sessionTasks.sessionId))
+    .innerJoin(deckVersions, eq(deckVersions.id, sessionTasks.deckVersionId))
+    .innerJoin(itemRevisions, eq(itemRevisions.id, sessionTasks.itemRevisionId))
+    .where(and(
+      eq(learningSessions.childId, args.childId), eq(learningSessions.mode, "training"),
+      lte(learningSessions.startedAt, args.before),
+      sql`${deckVersions.lessonContext}->>'subjectId' = ${args.subjectId}`,
+      inArray(sql<string>`${itemRevisions.payload}->>'objectiveId'`, args.objectiveIds),
+    ));
+  const tasks = rows.flatMap((row) => {
+    const payload = row.payload as { objectiveId?: string };
+    const lessonContext = row.lessonContext as { subjectId?: string } | null;
+    const objectiveId = payload?.objectiveId;
+    if (lessonContext?.subjectId !== args.subjectId || !objectiveId || !args.objectiveIds.includes(objectiveId)) return [];
+    return [{ taskId: row.taskId, objectiveId, ordinal: row.ordinal, startedAt: row.startedAt }];
+  });
+  if (tasks.length === 0) return [];
+  const attemptsByTask = await tx.select({
+    taskId: attempts.taskId, attemptNumber: attempts.attemptNumber, modality: attempts.modality,
+    state: attempts.state, outcome: assessments.outcome,
+  }).from(attempts).leftJoin(assessments, eq(assessments.attemptId, attempts.id))
+    .where(inArray(attempts.taskId, tasks.map((row) => row.taskId))).orderBy(asc(attempts.attemptNumber));
+  const resultByTask = new Map<string, typeof attemptsByTask>();
+  for (const row of attemptsByTask) resultByTask.set(row.taskId, [...(resultByTask.get(row.taskId) ?? []), row]);
+  const latestByObjective = new Map<string, { time: number; ordinal: number; support: boolean }>();
+  for (const task of tasks) {
+    const completed = (resultByTask.get(task.taskId) ?? []).filter((row) => row.state === "completed");
+    const latest = completed[completed.length - 1];
+    if (!latest) continue;
+    const support = latest.modality === "dont_remember" || latest.outcome === "incorrect";
+    if (!support && latest.outcome !== "correct") continue;
+    const prior = latestByObjective.get(task.objectiveId);
+    const time = task.startedAt.getTime();
+    if (!prior || time > prior.time || (time === prior.time && task.ordinal >= prior.ordinal)) {
+      latestByObjective.set(task.objectiveId, { time, ordinal: task.ordinal, support });
+    }
+  }
+  return [...latestByObjective].filter(([, value]) => value.support).map(([id]) => id);
+}
+
 /** Buduje kontekst startowy sesji lekcji (wołane z `startSession` w `sessions.ts`). */
 export async function buildLessonSessionContext(
   tx: Tx,
@@ -161,6 +214,9 @@ export async function buildLessonSessionContext(
     settledChecks: [],
     graderCalls: 0,
     previousObjectiveContact: await previousObjectiveContactSnapshot(tx, args.childId, args.deckVersionId, args.now),
+    supportObjectives: await historicalSupportObjectives(tx, {
+      childId: args.childId, subjectId: context.subjectId, objectiveIds: context.objectiveIds, before: args.now,
+    }),
     initialObjectiveProgress,
   };
 }
@@ -173,6 +229,7 @@ export function lessonSessionContextOf(session: { context: Record<string, unknow
     ...base,
     graderCalls: typeof raw.graderCalls === "number" ? raw.graderCalls : 0,
     previousObjectiveContact: raw.previousObjectiveContact ?? {},
+    supportObjectives: Array.isArray(raw.supportObjectives) ? raw.supportObjectives.filter((id): id is string => typeof id === "string") : [],
     ...(raw.initialObjectiveProgress === undefined ? {} : { initialObjectiveProgress: raw.initialObjectiveProgress }),
   };
 }
@@ -253,14 +310,29 @@ interface PlannedLesson {
   cardIndexByObjective: Map<string, number>;
 }
 
-/** Składa wejście selektora z bazy i wywołuje `selectLessonTask`. */
-async function planLessonTask(
+interface LessonPlanningSnapshot {
+  exercises: LoadedExercise[];
+  topic: LessonTopic;
+  subject: SubjectModule;
+  context: LessonContextShape;
+  objectiveOrder: string[];
+  progress: Record<string, { status: ProgressStatus; nextReviewAt: string | null }>;
+  exposedTargetKeys: Set<string>;
+  sessionHistory: LessonSessionTask[];
+  lastSeenAt: Record<string, string>;
+  cardCountByObjective: Record<string, number>;
+  cardIndexByObjective: Map<string, number>;
+  sessionContext: LessonSessionContext;
+  testWindowOpen: boolean;
+}
+
+/** Odczytuje raz stan potrzebny do zaplanowania całej sesji lekcji. */
+async function loadLessonPlanningSnapshot(
   services: Services,
   tx: Tx,
   session: typeof learningSessions.$inferSelect,
   now: Date,
-  assessedRemaining: number,
-): Promise<PlannedLesson | null> {
+): Promise<LessonPlanningSnapshot | null> {
   const version = (await tx.select().from(deckVersions).where(eq(deckVersions.id, session.deckVersionId)))[0]!;
   const context = lessonContextOf(version);
   const { subject, topic } = requireTopic(services, context);
@@ -335,26 +407,71 @@ async function planLessonTask(
   for (const row of issuedRows) {
     if (row.latest) lastSeenAt[row.itemId] = row.latest.toISOString();
   }
-
   const sessionContext = lessonSessionContextOf(session);
   const testWindowOpen =
     sessionContext.testDate != null && isTestPreparationWindow({ now: now.toISOString(), testDate: sessionContext.testDate, timezone: sessionContext.timezone });
+
+  return {
+    exercises, topic, subject, context, objectiveOrder, progress, exposedTargetKeys,
+    sessionHistory, lastSeenAt, cardCountByObjective, cardIndexByObjective,
+    sessionContext, testWindowOpen,
+  };
+}
+
+/** Składa wejście selektora z migawki i wywołuje go bez ponownych odczytów bazy. */
+function planLessonTaskFromSnapshot(
+  services: Services,
+  session: typeof learningSessions.$inferSelect,
+  now: Date,
+  assessedRemaining: number,
+  snapshot: LessonPlanningSnapshot,
+  plannedPrefix: readonly LessonTrainingSessionSlot[] = [],
+  planningMode = false,
+): PlannedLesson | null {
+  const { exercises, topic, subject, context } = snapshot;
+  const exposedTargetKeys = new Set([...snapshot.exposedTargetKeys, ...plannedPrefix.flatMap((slot) => slot.revealsTargetKeys)]);
+  const cardIndexByObjective = new Map(snapshot.cardIndexByObjective);
+  const sessionHistory = [...snapshot.sessionHistory, ...plannedPrefix.map((slot) => ({
+    ordinal: slot.ordinal,
+    itemId: slot.taskKind === "exercise" ? slot.itemId : null,
+    objectiveId: String(slot.context.objectiveId ?? ""),
+    exerciseType: slot.exerciseType as LessonExerciseType,
+    kind: slot.taskKind,
+  }))];
+  for (const slot of plannedPrefix) {
+    if (slot.taskKind === "card") {
+      const objectiveId = String(slot.context.objectiveId ?? "");
+      cardIndexByObjective.set(objectiveId, (cardIndexByObjective.get(objectiveId) ?? 0) + 1);
+    }
+  }
+  const lastSeenAt = { ...snapshot.lastSeenAt };
+  for (const slot of plannedPrefix) {
+    if (slot.taskKind === "exercise") lastSeenAt[slot.itemId] = now.toISOString();
+  }
 
   const input: LessonScheduleInput = {
     exercises: exercises.map(
       (e): LessonExerciseCandidate => ({ itemId: e.itemId, itemRevisionId: e.revisionId, objectiveId: e.payload.objectiveId, exerciseType: e.payload.exerciseType, targetKey: e.targetKey }),
     ),
-    objectiveOrder,
-    progress,
-    ...(sessionContext.initialObjectiveProgress === undefined ? {} : { initialProgress: sessionContext.initialObjectiveProgress }),
+    objectiveOrder: snapshot.objectiveOrder,
+    progress: snapshot.progress,
+    ...(snapshot.sessionContext.initialObjectiveProgress === undefined ? {} : { initialProgress: snapshot.sessionContext.initialObjectiveProgress }),
+    supportObjectives: new Set(snapshot.sessionContext.supportObjectives ?? []),
+    planningMode,
+    reservedDueCheckObjectives: new Set(plannedPrefix
+      .filter((slot) => slot.reason === "due_check")
+      .map((slot) => String(slot.context.objectiveId ?? ""))),
     exposedTargetKeys,
     sessionHistory,
     lastSeenAt,
-    cardCountByObjective,
+    cardCountByObjective: snapshot.cardCountByObjective,
     assessedRemaining,
-    testWindowOpen,
+    testWindowOpen: snapshot.testWindowOpen,
     graderAvailable: graderAvailable(services),
-    graderCallsLeft: Math.max(0, (services.grader?.maxCallsPerSession ?? GRADER_CALLS_PER_SESSION_FALLBACK) - sessionContext.graderCalls),
+    graderCallsLeft: Math.max(0,
+      (services.grader?.maxCallsPerSession ?? GRADER_CALLS_PER_SESSION_FALLBACK) - snapshot.sessionContext.graderCalls -
+      plannedPrefix.filter((slot) => slot.exerciseType === "lesson_error_fix" || slot.exerciseType === "lesson_transform" || slot.exerciseType === "lesson_open_answer").length,
+    ),
     policy: DEFAULT_LESSON_POLICY,
     now: now.toISOString(),
   };
@@ -364,6 +481,67 @@ async function planLessonTask(
     return null;
   }
   return { plan, exercises, topic, subject, context, cardIndexByObjective };
+}
+
+/** Legacy dynamic sessions load a fresh snapshot for their next-task request. */
+async function planLessonTask(
+  services: Services,
+  tx: Tx,
+  session: typeof learningSessions.$inferSelect,
+  now: Date,
+  assessedRemaining: number,
+): Promise<PlannedLesson | null> {
+  const snapshot = await loadLessonPlanningSnapshot(services, tx, session, now);
+  return snapshot ? planLessonTaskFromSnapshot(services, session, now, assessedRemaining, snapshot) : null;
+}
+
+/** Materiałizuje skończony plan lekcji raz podczas startu nowej sesji treningowej. */
+export async function createLessonTrainingSessionPlan(
+  services: Services,
+  tx: Tx,
+  session: typeof learningSessions.$inferSelect,
+  now: Date,
+): Promise<LessonTrainingSessionPlanSnapshot> {
+  const planningSnapshot = await loadLessonPlanningSnapshot(services, tx, session, now);
+  const slots: LessonTrainingSessionSlot[] = [];
+  let assessed = 0;
+  const maxSlots = session.taskBudget * 2 + 32;
+  while (assessed < session.taskBudget && slots.length < maxSlots) {
+    const planned = planningSnapshot
+      ? planLessonTaskFromSnapshot(services, session, now, session.taskBudget - assessed, planningSnapshot, slots, true)
+      : null;
+    if (!planned) break;
+    const { plan, exercises, topic, subject, context, cardIndexByObjective } = planned;
+    const taskId = randomUUID();
+    let materialized: MaterializedLessonTask;
+    let taskKind: LessonTrainingSessionSlot["taskKind"];
+    let reason: string;
+    if (plan.kind === "card") {
+      const objective = topic.objectives.find((o) => o.id === plan.objectiveId)!;
+      const cardIndex = plan.cardPurpose === "support" ? 0 : cardIndexByObjective.get(plan.objectiveId) ?? 0;
+      const anchor = exercises.find((e) => e.payload.objectiveId === plan.objectiveId) ?? exercises[0]!;
+      materialized = materializeCard(plan, Math.min(cardIndex, objective.cards.length - 1), objective, subject, context.examples[plan.objectiveId] ?? [], anchor.revisionId);
+      taskKind = plan.cardPurpose === "support" ? "support_card" : "card";
+      reason = plan.cardPurpose === "support" ? "support" : "introduce";
+    } else {
+      const exercise = exercises.find((e) => e.revisionId === plan.itemRevisionId)!;
+      materialized = materializeExercise(plan, taskId, exercise, topic, subject);
+      taskKind = "exercise";
+      reason = plan.reason;
+    }
+    const itemId = exercises.find((e) => e.revisionId === materialized.itemRevisionId)!.itemId;
+    slots.push({
+      taskId, itemId, itemRevisionId: materialized.itemRevisionId, ordinal: slots.length,
+      exerciseType: materialized.exerciseType, direction: null, assessed: materialized.exerciseType !== "lesson_card",
+      prompt: materialized.prompt, answerKey: materialized.answerKey, reason, taskKind,
+      context: materialized.context, revealsTargetKeys: materialized.exposures,
+    });
+    if (materialized.exerciseType !== "lesson_card") assessed += 1;
+  }
+  const snapshot = { version: 1 as const, kind: "lesson" as const, taskBudget: Math.max(1, assessed), slots };
+  const validated = readLessonTrainingSessionPlan(snapshot);
+  if (!validated) throw new AppError("internal", { message: "lesson training plan could not be read" });
+  return validated;
 }
 
 function lessonTaskDto(session: typeof learningSessions.$inferSelect, task: { id: string; ordinal: number; exerciseType: LessonExerciseType; prompt: TaskPrompt }, assessedBefore: number): TaskDto {
@@ -438,6 +616,35 @@ export async function issueNextLessonTask(
     exposures: materialized.exposures,
   });
   return lessonTaskDto(session, { id: taskId, ordinal: nextOrdinal, exerciseType: materialized.exerciseType, prompt: materialized.prompt }, counts.assessed);
+}
+
+/** Wydaje kolejny uprzednio przygotowany slot; legacy sessions używają selektora dynamicznego. */
+export async function issueNextLessonPlanTask(
+  tx: Tx,
+  session: typeof learningSessions.$inferSelect,
+  now: Date,
+  nextOrdinal: number,
+  assessedBefore: number,
+): Promise<TaskDto | null> {
+  let plan: LessonTrainingSessionPlanSnapshot | null;
+  try { plan = readLessonTrainingSessionPlan(session.trainingPlan); }
+  catch { throw new AppError("conflict", { message: "Ta sesja wymaga nowszej wersji aplikacji." }); }
+  if (!plan) return null;
+  const slot = plan.slots[nextOrdinal];
+  if (!slot || (slot.assessed && assessedBefore >= plan.taskBudget)) return null;
+  await tx.insert(sessionTasks).values({
+    id: slot.taskId, sessionId: session.id, childId: session.childId, deckVersionId: session.deckVersionId,
+    itemRevisionId: slot.itemRevisionId, ordinal: nextOrdinal, exerciseType: slot.exerciseType,
+    direction: null, state: "issued", publicPrompt: slot.prompt as unknown as Record<string, unknown>,
+    answerKey: slot.answerKey, context: slot.context, issuedAt: now,
+  });
+  await writeSealedEvent(tx, {
+    childId: session.childId, taskId: slot.taskId, itemId: slot.itemId, kind: "prompt_issued",
+    stepId: `${slot.taskId}:prompt`, occurredAt: now, exposures: slot.revealsTargetKeys,
+  });
+  return lessonTaskDto(session, {
+    id: slot.taskId, ordinal: slot.ordinal, exerciseType: slot.exerciseType as LessonExerciseType, prompt: slot.prompt,
+  }, assessedBefore);
 }
 
 /**

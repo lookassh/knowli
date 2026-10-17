@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import type { AssignmentGoal, RecordingModeDto, TestGoal } from "@learning/contracts";
 import type { LessonMockTestPlanSnapshot, MockTestPlanSnapshot } from "../domain/mock-test-types";
-import type { TrainingSessionPlanSnapshot } from "../domain/training-session-plan";
+import type { StoredTrainingSessionPlan } from "../domain/training-session-plan";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   bigint,
@@ -418,7 +418,7 @@ export const learningSessions = app.table(
     mode: text("mode").$type<"training" | "mock_test" | "daily_round">().notNull().default("training"),
     dailyRoundDate: text("daily_round_date"),
     mockTestPlan: jsonb("mock_test_plan").$type<MockTestPlanSnapshot | LessonMockTestPlanSnapshot>(),
-    trainingPlan: jsonb("training_plan").$type<TrainingSessionPlanSnapshot>(),
+    trainingPlan: jsonb("training_plan").$type<StoredTrainingSessionPlan>(),
     // completed: jawny koniec z podsumowaniem; ended: zamknięcie systemowe
     state: text("state").notNull(),
     taskBudget: integer("task_budget").notNull().default(12),

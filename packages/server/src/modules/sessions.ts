@@ -61,6 +61,8 @@ import { createMockTestPlan, issueMockTestTask, closeMockTest } from "./mock-tes
 import { assertVocabularyDeck, readVersionDeckKind, type DeckKind } from "./deck-kind";
 import {
   buildLessonSessionContext,
+  createLessonTrainingSessionPlan,
+  issueNextLessonPlanTask,
   issueNextLessonTask,
   lessonTaskCounts,
 } from "./lessons/lesson-sessions";
@@ -376,6 +378,13 @@ export async function startSession(services: Services, input: SessionInput): Pro
       .returning();
     if (mode === "training" && deckKind === "vocabulary") {
       const plan = await createTrainingSessionPlan(tx, services, row!, now);
+      await tx.update(learningSessions).set({ trainingPlan: plan, taskBudget: plan.taskBudget })
+        .where(eq(learningSessions.id, row!.id));
+      const plannedSession = (await tx.select().from(learningSessions).where(eq(learningSessions.id, row!.id)))[0]!;
+      return sessionDto(tx, plannedSession, false);
+    }
+    if (mode === "training" && deckKind === "lesson") {
+      const plan = await createLessonTrainingSessionPlan(services, tx, row!, now);
       await tx.update(learningSessions).set({ trainingPlan: plan, taskBudget: plan.taskBudget })
         .where(eq(learningSessions.id, row!.id));
       const plannedSession = (await tx.select().from(learningSessions).where(eq(learningSessions.id, row!.id)))[0]!;
@@ -1103,6 +1112,9 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
       if (remaining <= 0) return null;
       if (now.getTime() - session.startedAt.getTime() > SESSION_TIME_LIMIT_MS && remaining > PROMISE_REMAINING) {
         return null;
+      }
+      if (session.trainingPlan && "kind" in session.trainingPlan && session.trainingPlan.kind === "lesson") {
+        return issueNextLessonPlanTask(tx, session, now, counts.total, counts.assessed);
       }
       return issueNextLessonTask(services, tx, session, now, remaining, counts.total);
     }

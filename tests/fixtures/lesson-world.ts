@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { computeTargetKey } from "@learning/server";
+import { LEARNING_V2_POLICY } from "../../packages/server/src/policies/learning-v2";
 import type { testDatabase } from "../integration/helpers";
 
 type Pool = ReturnType<typeof testDatabase>["pool"];
@@ -154,7 +155,8 @@ export async function lessonWorld(pool: Pool, options: LessonWorldOptions = {}):
     const assignmentId = (
       await pool.query<{ id: string }>("select id from learning_app.assignments where child_id = $1 and deck_id = $2", [options.childId, deckId])
     ).rows[0]!.id;
-    const policyId = (await pool.query<{ id: string }>("select id from learning_app.learning_policies limit 1")).rows[0]?.id ?? "learning-v1";
+    const policyId = LEARNING_V2_POLICY.version;
+    await pool.query("insert into learning_app.learning_policies(id, config) values ($1, $2::jsonb) on conflict do nothing", [policyId, JSON.stringify(LEARNING_V2_POLICY)]);
     // Sesja lekcji (ścieżka lekcji jest osobna; tu sesję i zadanie wkładamy wprost,
     // żeby ocena celu miała łańcuch FK task->attempt->assessment).
     await pool.query(
@@ -191,9 +193,9 @@ export async function lessonWorld(pool: Pool, options: LessonWorldOptions = {}):
     );
     await pool.query(
       `insert into learning_app.child_objective_progress
-         (child_id, subject_id, objective_id, topic_id, status, streak, projection_version)
-       values ($1, $2, $3, $4, 'practicing', 1, 'proj-1')`,
-      [options.childId, subjectId, objectiveId, topicId],
+         (child_id, subject_id, objective_id, topic_id, status, streak, last_independent_at, projection_version)
+       values ($1, $2, $3, $4, 'practicing', 1, $5, 'proj-1')`,
+      [options.childId, subjectId, objectiveId, topicId, now],
     );
   }
 
