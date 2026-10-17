@@ -285,7 +285,7 @@ Wspólny format błędu: {code, message, retryable, requestId}. Walidacja na gra
 | Parent | PUT /api/v1/parent/assignments/:childId/:deckId | Przypisanie i termin |
 | Parent | POST /api/v1/parent/decks/:id/archive | Wycofanie z nowych sesji |
 | Parent | GET /api/v1/parent/progress?childId=&deckId= | Podsumowanie umiejętności i pomyłek oraz aktywność dziecka z ostatnich 7 dni (czas, podejścia, odpowiedzi, interakcje) |
-| Kid | GET /api/v1/kid/profiles | Nazwa, awatar i tryb gestu nagrywania z profilu |
+| Kid | GET /api/v1/kid/profiles | Nazwa, awatar, tryb gestu nagrywania oraz opcjonalny czas aktywności sesji z dzisiejszego wiersza raportu (Europe/Warsaw); stan niedostępnego raportu jest osobny od zera |
 | Kid | GET /api/v1/kid/decks?childId= | Przypisane opublikowane zestawy z flagą `recommended`, liczbą słów oraz liczbą elementów z opanowanym samodzielnym Recall |
 | Kid | POST /api/v1/kid/sessions | Start lub resume z przypiętą wersją |
 | Kid | POST /api/v1/kid/sessions/:id/next | Idempotentne wydanie aktywnego zadania |

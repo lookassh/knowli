@@ -138,6 +138,7 @@ Wymagania:
 - feedback przez tekst, symbol i dźwięk tam, gdzie pomaga; kolor nie jest jedyną informacją;
 - możliwość zakończenia sesji bez utraty już zapisanych prób;
 - lista zestawów z sekcją „Rekomendowane” (zestawy z zaplanowaną pracą) i możliwością wyboru dowolnego przypisanego zestawu w każdym momencie;
+- po wybraniu profilu u góry listy zestawów pokazujemy dzisiejszy czas aktywności sesji z tego samego raportu, którego używa panel rodzica;
 - brak ustawień AI, modeli, promptów, CEFR i administracji zestawami;
 - brak procentowych ocen i technicznych wyników wymowy; jedynym wyjątkiem jest wynik ukończonej próby kartkówki w jej omówieniu (§19.1, 2026-10-10).
 

@@ -44,6 +44,8 @@ describe("child profile patch", () => {
     expect(ChildDtoSchema.safeParse(child).success).toBe(false);
     expect(KidProfileDtoSchema.parse({ childId: child.id, displayName: child.displayName, avatarKey: child.avatarKey, recordingMode: "toggle", canRead: true }).recordingMode).toBe("toggle");
     expect(KidProfileDtoSchema.safeParse({ childId: child.id, displayName: child.displayName, avatarKey: child.avatarKey }).success).toBe(false);
+    expect(KidProfileDtoSchema.parse({ childId: child.id, displayName: child.displayName, avatarKey: child.avatarKey, recordingMode: "hold" }).todayActivitySeconds).toBeUndefined();
+    expect(KidProfileDtoSchema.safeParse({ childId: child.id, displayName: child.displayName, avatarKey: child.avatarKey, recordingMode: "hold", todayActivitySeconds: -1 }).success).toBe(false);
   });
 
   it("defaults canRead to true and preserves an explicit false profile setting", () => {

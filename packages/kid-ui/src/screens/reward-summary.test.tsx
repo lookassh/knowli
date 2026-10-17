@@ -2,7 +2,7 @@ import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { KidDeckDto, KidProfileDto, SessionSummaryDto } from "@learning/contracts";
 import { ProfileScreen } from "./ProfileScreen";
-import { DeckCard } from "./DeckScreen";
+import { DeckCard, DeckScreen } from "./DeckScreen";
 import { SummaryScreen } from "./SummaryScreen";
 
 function textNodes(element: React.ReactNode): string[] {
@@ -33,6 +33,25 @@ const summary: SessionSummaryDto = {
 };
 
 describe("kid reward views", () => {
+  it("shows today's session activity at the top of the selected child's deck screen", () => {
+    const screen = (todayActivitySeconds?: number, todayActivityUnavailable = false) => (
+      <DeckScreen
+        decks={[]}
+        childName={profile.displayName}
+        todayActivitySeconds={todayActivitySeconds}
+        todayActivityUnavailable={todayActivityUnavailable}
+        microphone={false}
+        micDenied={false}
+        onToggleMicrophone={vi.fn()}
+        onStart={vi.fn()}
+      />
+    );
+    expect(textNodes(screen(25 * 60)).join(" ")).toContain("Dziś: 25 min");
+    expect(textNodes(screen(0)).join(" ")).toContain("Dziś: 0 min");
+    expect(textNodes(screen()).join(" ")).toContain("Dziś: 0 min");
+    expect(textNodes(screen(undefined, true)).join(" ")).toContain("Dziś: —");
+  });
+
   it("shows the precise daily threshold and earned profile totals", () => {
     const before = textNodes(<ProfileScreen profiles={[profile]} onSelect={vi.fn()} />).join(" ");
     expect(before).toContain("Zdobyte: 9 pkt");

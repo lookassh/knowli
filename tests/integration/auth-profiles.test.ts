@@ -235,6 +235,8 @@ describe("auth i profile dzieci (integracja)", () => {
         readyXboxPacks: 0,
         xboxRequest: null,
       },
+      todayActivitySeconds: 0,
+      todayActivityUnavailable: false,
     }]);
   });
 
