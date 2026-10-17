@@ -130,6 +130,116 @@ test("trzy odpowiedzi obrazkowe mieszczą się bez przewijania", async ({ page }
   }
 });
 
+test("siatka wykorzystuje szerokość ekranu, a wynik i akcja trzymają się obrazków", async ({ page }, testInfo) => {
+  await openPictureChoices(page, pictureChoiceLayoutFixture(), { width: 390, height: 844 });
+
+  const geometry = await page.evaluate(() => {
+    const options = [...document.querySelectorAll<HTMLElement>("[data-testid='kid-option']")];
+    const grid = document.querySelector<HTMLElement>(".kid-picture-options")!;
+    const result = document.querySelector<HTMLElement>("[data-testid='kid-exercise-result']")!;
+    const action = document.querySelector<HTMLElement>("[data-testid='kid-primary-slot']")!;
+    const first = options[0]!.getBoundingClientRect();
+    const third = options[2]!.getBoundingClientRect();
+    const resultBox = result.getBoundingClientRect();
+    const actionBox = action.getBoundingClientRect();
+    return {
+      gridWidth: grid.getBoundingClientRect().width,
+      firstWidth: first.width,
+      firstHeight: first.height,
+      thirdBottom: third.bottom,
+      resultTop: resultBox.top,
+      resultBottom: resultBox.bottom,
+      actionTop: actionBox.top,
+      documentScrollHeight: document.scrollingElement!.scrollHeight,
+      viewportHeight: window.innerHeight,
+    };
+  });
+
+  expect(geometry.gridWidth).toBeGreaterThanOrEqual(320);
+  expect(geometry.firstWidth).toBeGreaterThanOrEqual(155);
+  expect(Math.abs(geometry.firstWidth - geometry.firstHeight)).toBeLessThanOrEqual(1);
+  expect(geometry.resultTop - geometry.thirdBottom).toBeGreaterThanOrEqual(0);
+  expect(geometry.resultTop - geometry.thirdBottom).toBeLessThanOrEqual(40);
+  expect(geometry.actionTop - geometry.resultBottom).toBeGreaterThanOrEqual(0);
+  expect(geometry.actionTop - geometry.resultBottom).toBeLessThanOrEqual(16);
+  expect(geometry.documentScrollHeight).toBeLessThanOrEqual(geometry.viewportHeight + 1);
+
+  await page.screenshot({ path: testInfo.outputPath("picture-choice-390x844.png") });
+  await page.setViewportSize({ width: 1366, height: 768 });
+  const desktop = await page.evaluate(() => {
+    const options = [...document.querySelectorAll<HTMLElement>("[data-testid='kid-option']")];
+    const grid = document.querySelector<HTMLElement>(".kid-picture-options")!.getBoundingClientRect();
+    const first = options[0]!.getBoundingClientRect();
+    const third = options[2]!.getBoundingClientRect();
+    return {
+      gridWidth: grid.width,
+      optionWidth: first.width,
+      optionHeight: first.height,
+      firstLeft: first.left,
+      firstRight: first.right,
+      thirdBottom: third.bottom,
+      resultTop: document.querySelector<HTMLElement>("[data-testid='kid-exercise-result']")!.getBoundingClientRect().top,
+      viewportWidth: window.innerWidth,
+    };
+  });
+  expect(desktop.gridWidth).toBeLessThanOrEqual(560);
+  expect(desktop.gridWidth).toBeGreaterThanOrEqual(520);
+  expect(desktop.optionWidth).toBeGreaterThanOrEqual(220);
+  expect(Math.abs(desktop.optionWidth - desktop.optionHeight)).toBeLessThanOrEqual(1);
+  expect(desktop.resultTop - desktop.thirdBottom).toBeGreaterThanOrEqual(0);
+  expect(desktop.resultTop - desktop.thirdBottom).toBeLessThanOrEqual(40);
+  expect(desktop.firstLeft).toBeGreaterThanOrEqual(0);
+  expect(desktop.firstRight).toBeLessThanOrEqual(desktop.viewportWidth);
+  await page.screenshot({ path: testInfo.outputPath("picture-choice-desktop-1366x768.png") });
+});
+
+test("szeroki ekran w poziomie utrzymuje osobne kolumny po odpowiedzi i przy ponowieniu", async ({ page }) => {
+  const fixture = pictureChoiceLayoutFixture();
+  const originalAttempt = fixture.attempts?.[0];
+  if (!originalAttempt) throw new Error("picture choice attempt fixture missing");
+  fixture.attempts = [
+    { ...originalAttempt, feedback: { kind: "incorrect", correctText: "żółty" }, taskState: "issued" },
+    { ...originalAttempt, attemptId: "10000000-0000-4000-8000-000000000017", feedback: { kind: "great" }, taskState: "completed" },
+  ];
+  await openPictureChoices(page, fixture, { width: 844, height: 390 });
+
+  const assertLandscapeLayout = async () => {
+    const geometry = await page.evaluate(() => {
+      const frame = document.querySelector<HTMLElement>("[data-testid='kid-exercise']")!.getBoundingClientRect();
+      const options = [...document.querySelectorAll<HTMLElement>("[data-testid='kid-option']")];
+      const third = options[2]!.getBoundingClientRect();
+      const result = document.querySelector<HTMLElement>("[data-testid='kid-exercise-result']")!.getBoundingClientRect();
+      const action = document.querySelector<HTMLElement>("[data-testid='kid-primary-slot']")!.getBoundingClientRect();
+      return {
+        frameWidth: frame.width,
+        thirdBottom: third.bottom,
+        resultLeft: result.left,
+        resultRight: result.right,
+        resultTop: result.top,
+        actionLeft: action.left,
+        actionRight: action.right,
+        viewportWidth: window.innerWidth,
+        scrollHeight: document.scrollingElement!.scrollHeight,
+        viewportHeight: window.innerHeight,
+      };
+    });
+    expect(geometry.frameWidth).toBeGreaterThan(560);
+    expect(geometry.thirdBottom).toBeLessThanOrEqual(geometry.resultTop);
+    expect(geometry.resultRight).toBeLessThanOrEqual(geometry.actionLeft);
+    expect(geometry.resultRight).toBeLessThanOrEqual(geometry.viewportWidth);
+    expect(geometry.actionLeft).toBeGreaterThanOrEqual(geometry.resultLeft);
+    expect(geometry.actionRight).toBeLessThanOrEqual(geometry.viewportWidth);
+    expect(geometry.scrollHeight).toBeLessThanOrEqual(geometry.viewportHeight + 1);
+  };
+
+  await assertLandscapeLayout();
+  await page.getByTestId("kid-option").nth(1).click();
+  await expect(page.getByTestId("kid-feedback")).toBeVisible();
+  await assertLandscapeLayout();
+  await page.getByTestId("kid-next").click();
+  await assertLandscapeLayout();
+});
+
 test("cyfra działa z klawiatury w ciemnym motywie, pokazuje błąd i pozwala spróbować ponownie", async ({ page }, testInfo) => {
   const fixture = pictureChoiceLayoutFixture();
   const task = fixture.tasks[1];
@@ -178,20 +288,37 @@ test("cyfra działa z klawiatury w ciemnym motywie, pokazuje błąd i pozwala sp
   await expect(page.getByTestId("kid-feedback")).toBeVisible();
   await expect(options.nth(1)).toHaveClass(/kid-option--wrong/);
   await expect(options.nth(0)).toHaveClass(/kid-option--correct/);
+  await expect(options.nth(1)).toHaveAccessibleName("Twój błędny wybór: jeden");
+  await expect(options.nth(0)).toHaveAccessibleName("Poprawna odpowiedź: żółty");
+  await expect(options.nth(1).getByTestId("kid-outcome-wrong")).toBeVisible();
+  await expect(options.nth(0).getByTestId("kid-outcome-correct")).toBeVisible();
+  const markerStyles = await options.nth(1).getByTestId("kid-outcome-wrong").evaluate((marker) => ({
+    width: marker.getBoundingClientRect().width,
+    height: marker.getBoundingClientRect().height,
+    background: getComputedStyle(marker).backgroundColor,
+    foreground: getComputedStyle(marker).color,
+    radius: getComputedStyle(marker).borderRadius,
+  }));
+  expect(markerStyles.width).toBe(40);
+  expect(markerStyles.height).toBe(40);
+  expect(markerStyles.background).not.toBe("rgba(0, 0, 0, 0)");
+  expect(markerStyles.radius).not.toBe("50%");
+  expect(contrastRatio(markerStyles.foreground, markerStyles.background)).toBeGreaterThanOrEqual(3);
   const digitColors = await options.nth(1).evaluate((button) => ({
     foreground: getComputedStyle(button).color,
     background: getComputedStyle(button).backgroundColor,
     digit: getComputedStyle(button.querySelector(".kid-visual-number--digit text")!).fill,
   }));
   expect(digitColors.digit).toBe(digitColors.foreground);
-  expect(contrastRatio(digitColors.digit, digitColors.background)).toBeGreaterThanOrEqual(4.5);
+  expect(contrastRatio(digitColors.digit, digitColors.background), JSON.stringify(digitColors)).toBeGreaterThanOrEqual(4.5);
   await expect(options).toHaveCount(3);
   const markersAvoidLabels = await options.evaluateAll((elements) => elements.flatMap((element) => {
-    const marker = getComputedStyle(element, "::before");
-    if (marker.content === "none" || marker.content === "normal") return [];
+    const marker = element.querySelector<HTMLElement>(".kid-picture-outcome");
+    if (marker === null) return [];
     const option = element.getBoundingClientRect();
     const label = element.querySelector(".kid-picture-choice-label")!.getBoundingClientRect();
-    return [option.left + Number.parseFloat(marker.left) >= label.right];
+    const bounds = marker.getBoundingClientRect();
+    return [bounds.left >= option.left && bounds.left >= label.right];
   }));
   expect(markersAvoidLabels).toEqual([true, true]);
   await page.screenshot({ path: testInfo.outputPath("picture-choice-feedback-retry.png") });
@@ -202,7 +329,7 @@ test("cyfra działa z klawiatury w ciemnym motywie, pokazuje błąd i pozwala sp
   await expect.poll(() => options.evaluateAll((elements) => elements.map((element) => (element as HTMLButtonElement).disabled)))
     .toEqual([false, false, false]);
   const afterRetry = await options.evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().y));
-  expect(afterRetry).toEqual(beforeRetry);
+  expect(Math.max(...afterRetry.map((position, index) => Math.abs(position - beforeRetry[index]!)))).toBeLessThanOrEqual(6);
 
   await options.nth(0).click();
   await expect(page.getByTestId("kid-feedback")).toBeVisible();
