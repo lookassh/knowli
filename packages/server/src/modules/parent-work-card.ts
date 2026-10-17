@@ -22,7 +22,7 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
   const sessions = await services.db.select({
     id: learningSessions.id, mode: learningSessions.mode, state: learningSessions.state,
     startedAt: learningSessions.startedAt, endedAt: learningSessions.endedAt,
-    dailyRoundDate: learningSessions.dailyRoundDate, context: learningSessions.context, taskBudget: learningSessions.taskBudget,
+    context: learningSessions.context, taskBudget: learningSessions.taskBudget,
     deckTitle: deckVersions.title, deckVersionNumber: deckVersions.versionNumber,
   }).from(learningSessions).innerJoin(deckVersions, eq(deckVersions.id, learningSessions.deckVersionId))
     .where(eq(learningSessions.childId, query.childId)).orderBy(asc(learningSessions.startedAt));
@@ -62,8 +62,6 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
     dayTaskIds.add(row.taskId);
     if (!daySessions.has(row.sessionId)) daySessions.set(row.sessionId, { timezone });
   }
-  const roundRows = sessions.filter(session => session.mode === "daily_round" && session.dailyRoundDate === query.date);
-  for (const session of roundRows) daySessions.set(session.id, { timezone: validRewardTimezone((session.context as Record<string, unknown>).timezone) });
   const issuedTasks = await services.db.select({ sessionId: sessionTasks.sessionId, issuedAt: sessionTasks.issuedAt })
     .from(sessionTasks).where(eq(sessionTasks.childId, query.childId));
   const sessionById = new Map(sessions.map(session => [session.id, session]));
@@ -97,10 +95,7 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
   const reportSessions = sessionIds.map(sessionId => {
     const session = sessionById.get(sessionId)!;
     const zone = daySessions.get(sessionId)!.timezone;
-    const sessionTasksForDay = tasks.filter(task => task.sessionId === sessionId && (
-      session.mode === "daily_round" ? session.dailyRoundDate === query.date || dayTaskIds.has(task.id) || localDateAt(task.issuedAt, zone) === query.date
-        : dayTaskIds.has(task.id) || localDateAt(task.issuedAt, zone) === query.date
-    ));
+    const sessionTasksForDay = tasks.filter(task => task.sessionId === sessionId && (dayTaskIds.has(task.id) || localDateAt(task.issuedAt, zone) === query.date));
     const steps = sessionTasksForDay.map(task => {
       const relevant = (attemptsByTask.get(task.id) ?? []).sort((a, b) => a.attempt.receivedAt.getTime() - b.attempt.receivedAt.getTime());
       const responses = relevant.map(({ attempt }) => {
@@ -112,8 +107,7 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
           ? rawAnswer.itemIds.map(id => typeof id === "string" && typeof itemValues?.[id] === "string" ? itemValues[id] as string : "").filter(Boolean).join(" ").trim().slice(0, 160) || null
           : null;
         const feedbackKind = typeof attempt.feedback?.kind === "string" ? attempt.feedback.kind : null;
-        const assessment = session.mode === "daily_round" ? null
-          : attempt.modality === "skip" || attempt.modality === "dont_remember" ? "none"
+        const assessment = attempt.modality === "skip" || attempt.modality === "dont_remember" ? "none"
             : assessmentByAttempt.get(attempt.id)?.has("unassessed") && [...assessmentByAttempt.get(attempt.id)!].some(outcome => outcome !== "unassessed") ? "mixed"
               : assessmentByAttempt.get(attempt.id)?.has("unassessed") ? "unassessed"
                 : assessmentByAttempt.has(attempt.id) ? "assessed" : "none";
@@ -134,12 +128,9 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
       startedAt: session.startedAt.toISOString(), endedAt: session.endedAt?.toISOString() ?? null,
       deckTitle: session.deckTitle, deckVersionNumber: session.deckVersionNumber,
       creditedSeconds: secondsBySession.get(sessionId) ? Math.floor(secondsBySession.get(sessionId)! / 1000) : 0,
-      remainingSteps: Math.max(0, session.taskBudget - tasks.filter(task => task.sessionId === sessionId &&
-        (session.mode === "daily_round" || (task.exerciseType !== "exposure" && task.exerciseType !== "lesson_card"))).length), steps,
+      remainingSteps: Math.max(0, session.taskBudget - tasks.filter(task => task.sessionId === sessionId && (session.mode === "daily_round" || (task.exerciseType !== "exposure" && task.exerciseType !== "lesson_card"))).length), steps,
     };
   });
-  const round = roundRows[0];
-  const roundSteps = round ? tasks.filter(task => task.sessionId === round.id) : [];
   const dayMilliseconds = segments.reduce((total, segment) => total + (splitRewardIntervalByLocalDay(segment.startedAt, segment.endedAt, validRewardTimezone(segment.timezone)).get(query.date) ?? 0), 0);
   return ParentWorkCardDtoSchema.parse({
     childId: query.childId, date: query.date, creditedSeconds: Math.floor(dayMilliseconds / 1000), sessions: reportSessions,
@@ -149,7 +140,5 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
       blockNumber: request.blockNumberSnapshot, creditedSeconds: request.creditedSecondsSnapshot,
       pointsCost: request.pointsCost, xboxMinutes: request.xboxMinutes,
     })),
-    dailyRound: { state: round?.state ?? null, sessionId: round?.id ?? null, deckTitle: round?.deckTitle ?? null,
-      steps: round ? roundSteps.length : null, answered: round ? roundSteps.filter(task => task.state === "answered").length : null },
   });
 }

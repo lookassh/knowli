@@ -187,66 +187,6 @@ describe("reward and work-card review regressions", () => {
     expect((await readParentWorkCard(services, { childId: child.id })).date).toBe("2026-10-16");
   });
 
-  it("does not offer a daily round when the contacted lesson has no schedulable objective", async () => {
-    const { services, clock } = buildTestServices();
-    await ensureLearningPolicy(services.db);
-    const child = await createChild(services, { displayName: "Test", avatarKey: "owl" });
-    const lesson = await lessonWorld(pool, { childId: child.id, now: clock.now(), unschedulableDailyRound: true });
-    expect((await listKidDecks(services, child.id)).find(deck => deck.deckId === lesson.deckId)?.dailyRoundAvailable).toBe(false);
-    await expect(startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false, mode: "daily_round" })).rejects.toMatchObject({ code: "validation" });
-  });
 
-  it("keeps an older safe revision when newer unschedulable contacts precede the round limit", async () => {
-    const { services, clock } = buildTestServices();
-    const child = await createChild(services, { displayName: "Test", avatarKey: "owl" });
-    const lesson = await lessonWorld(pool, { childId: child.id, now: clock.now(), richPool: true });
-    const training = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
-    const revisions = (await pool.query<{ id: string; exercise_type: string }>(`select id,payload->>'exerciseType' as exercise_type
-      from learning_app.item_revisions where deck_version_id=$1 and position in (3,2,1,5)
-      order by case position when 3 then 0 when 2 then 1 when 1 then 2 else 3 end`, [lesson.versionId])).rows;
-    for (const [index, revision] of revisions.entries()) {
-      await pool.query(`insert into learning_app.session_tasks (id,session_id,child_id,deck_version_id,item_revision_id,ordinal,exercise_type,state,public_prompt,answer_key,issued_at)
-        values ($1,$2,$3,$4,$5,$6,$7,'answered','{}','{}',$8)`,
-      [randomUUID(), training.sessionId, child.id, lesson.versionId, revision.id, index, revision.exercise_type, clock.now()]);
-      clock.advanceMs(1000);
-    }
-    await endSession(services, training.sessionId);
-    await pool.query(`insert into learning_app.child_objective_progress (child_id,subject_id,objective_id,topic_id,status,streak,projection_version)
-      values ($1,$2,$3,$4,'mastered',3,'test')`, [child.id, lesson.subjectId, lesson.objectiveId, lesson.topicId]);
-    const round = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false, mode: "daily_round" });
-    expect(round.taskBudget).toBe(3);
-    const context = (await pool.query("select context from learning_app.learning_sessions where id=$1", [round.sessionId])).rows[0].context;
-    expect(context.dailyRoundRevisionIds).toContain(revisions[0]!.id);
-    expect(context.dailyRoundRevisionIds).toContain(revisions[1]!.id);
-    expect(context.dailyRoundRevisionIds).not.toContain(revisions[2]!.id);
-    expect(context.dailyRoundRevisionIds).toContain(revisions[3]!.id);
-  });
 
-  it("shows a daily-round answer on the day it was submitted across midnight", async () => {
-    const { services, clock } = buildTestServices("2026-10-16T21:59:50Z");
-    const child = await createChild(services, { displayName: "Test", avatarKey: "owl" });
-    const lesson = await lessonWorld(pool, { childId: child.id, now: clock.now(), richPool: true });
-    const training = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
-    const revisions = (await pool.query<{ id: string; exercise_type: string }>(`select id,payload->>'exerciseType' as exercise_type
-      from learning_app.item_revisions where deck_version_id=$1 and position in (3,2,1,5)
-      order by case position when 3 then 0 when 2 then 1 when 1 then 2 else 3 end`, [lesson.versionId])).rows;
-    for (const [index, revision] of revisions.entries()) {
-      await pool.query(`insert into learning_app.session_tasks (id,session_id,child_id,deck_version_id,item_revision_id,ordinal,exercise_type,state,public_prompt,answer_key,issued_at)
-        values ($1,$2,$3,$4,$5,$6,$7,'answered','{}','{}',$8)`,
-      [randomUUID(), training.sessionId, child.id, lesson.versionId, revision.id, index, revision.exercise_type, clock.now()]);
-      clock.advanceMs(1000);
-    }
-    await endSession(services, training.sessionId);
-    await pool.query(`insert into learning_app.child_objective_progress (child_id,subject_id,objective_id,topic_id,status,streak,projection_version)
-      values ($1,$2,$3,$4,'mastered',3,'test')`, [child.id, lesson.subjectId, lesson.objectiveId, lesson.topicId]);
-
-    const round = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false, mode: "daily_round" });
-    const task = await nextTask(services, round.sessionId);
-    expect(task).not.toBeNull();
-    clock.advanceMs(120_000);
-    await submitAttempt(services, { taskId: task!.taskId, clientAttemptId: randomUUID(), modality: "skip" });
-
-    const report = await readParentWorkCard(services, { childId: child.id, date: "2026-10-17" });
-    expect(report.sessions.flatMap(value => value.steps.map(step => step.taskId))).toContain(task!.taskId);
-  });
 });

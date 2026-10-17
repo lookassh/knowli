@@ -2,7 +2,7 @@
 title: 'Krótka zapowiedziana runda dnia'
 type: 'feature'
 created: '2026-10-16'
-status: 'done'
+status: 'withdrawn'
 route: 'dispatch'
 baseline_commit: 'e5a1508dc152f3e6c6833debf768fa1c5c947f41'
 review_loop_iteration: 0
@@ -120,3 +120,7 @@ Runda musi być osobnym trybem/snapshotem, a nie `training` z mniejszym `taskBud
 - `node_modules/.bin/vitest.cmd run --config vitest.integration.config.ts tests/integration/sessions.test.ts tests/integration/lesson-sessions.test.ts` — 2 pliki, 64 testy passed.
 - `corepack pnpm typecheck` — wszystkie 6 konfiguracji TypeScript bez błędów.
 - `git diff --check` — passed.
+
+## Wycofanie (2026-10-17)
+
+Właściciel wycofał funkcję rundy dnia. Migracja 0016 kończy istniejące aktywne rundy bez rozliczania oczekujących segmentów; historia i odczyt historycznego trybu pozostają zachowane. Zastąpiona przez spec-usuniecie-rundy-i-szybkie-zestawy.md.

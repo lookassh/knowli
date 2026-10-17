@@ -27,6 +27,9 @@ import {
   childProfiles,
   rewardActivityXboxBlocks,
   rewardActivityXboxRequests,
+  childRewardProjection,
+  deckRewardProjection,
+  rewardDayProjection,
 } from "../db/schema";
 import { AppError } from "../errors";
 import {
@@ -290,12 +293,50 @@ export async function settleRewardActivity(
   ));
   const credited = (await tx.select({ milliseconds: sql<number>`coalesce(sum(extract(epoch from (${rewardActivitySegments.endedAt} - ${rewardActivitySegments.startedAt})) * 1000), 0)::bigint`.mapWith(Number) })
     .from(rewardActivitySegments).where(eq(rewardActivitySegments.settlementRef, settlement.id)))[0]?.milliseconds ?? 0;
-  const prior = (await tx.select({ milliseconds: sql<number>`coalesce(sum(${rewardActivitySettlements.creditedMilliseconds}), 0)::bigint`.mapWith(Number) })
-    .from(rewardActivitySettlements).where(and(eq(rewardActivitySettlements.childId, input.childId), sql`${rewardActivitySettlements.id} <> ${settlement.id}`)))[0]?.milliseconds ?? 0;
-  const previousRemainder = prior % REWARD_POINT_INTERVAL_MS;
-  const award = rewardAward(credited, previousRemainder);
+  const previous = (await tx.select({ remainder: childRewardProjection.remainderMilliseconds }).from(childRewardProjection)
+    .where(eq(childRewardProjection.childId, input.childId)).for("update"))[0]?.remainder ?? 0;
+  const award = rewardAward(credited, previous);
   await tx.update(rewardActivitySettlements).set({ creditedMilliseconds: credited, awardedPoints: award.points, remainderMilliseconds: award.remainderMilliseconds })
     .where(eq(rewardActivitySettlements.id, settlement.id));
+  const settledSegments = await tx.select({ start: rewardActivitySegments.startedAt, end: rewardActivitySegments.endedAt, timezone: learningSessions.context })
+    .from(rewardActivitySegments).innerJoin(learningSessions, eq(learningSessions.id, rewardActivitySegments.sessionId))
+    .where(eq(rewardActivitySegments.settlementRef, settlement.id));
+  const dayDeltas = new Map<string, { timezone: string; localDate: string; milliseconds: number }>();
+  for (const segment of settledSegments) {
+    const context = segment.timezone as { timezone?: unknown };
+    const timezone = validRewardTimezone(context?.timezone);
+    for (const [localDate, milliseconds] of splitRewardIntervalByLocalDay(segment.start, segment.end, timezone)) {
+      const key = `${timezone}:${localDate}`;
+      const day = dayDeltas.get(key) ?? { timezone, localDate, milliseconds: 0 };
+      day.milliseconds += milliseconds;
+      dayDeltas.set(key, day);
+    }
+  }
+  let qualifiedDelta = 0;
+  for (const day of dayDeltas.values()) {
+    const old = (await tx.select({ milliseconds: rewardDayProjection.creditedMilliseconds }).from(rewardDayProjection).where(and(
+      eq(rewardDayProjection.childId, input.childId), eq(rewardDayProjection.timezone, day.timezone), eq(rewardDayProjection.localDate, day.localDate),
+    )).for("update"))[0]?.milliseconds ?? 0;
+    qualifiedDelta += xboxPacksForDay(old + day.milliseconds) - xboxPacksForDay(old);
+    await tx.insert(rewardDayProjection).values({ childId: input.childId, timezone: day.timezone, localDate: day.localDate, creditedMilliseconds: day.milliseconds })
+      .onConflictDoUpdate({ target: [rewardDayProjection.childId, rewardDayProjection.timezone, rewardDayProjection.localDate], set: {
+        creditedMilliseconds: sql`${rewardDayProjection.creditedMilliseconds} + ${day.milliseconds}`, updatedAt: input.at,
+      } });
+  }
+  await tx.insert(childRewardProjection).values({
+    childId: input.childId, earnedPoints: award.points, creditedMilliseconds: credited,
+    remainderMilliseconds: award.remainderMilliseconds, qualifiedPacks: qualifiedDelta,
+  }).onConflictDoUpdate({ target: childRewardProjection.childId, set: {
+    earnedPoints: sql`${childRewardProjection.earnedPoints} + ${award.points}`,
+    creditedMilliseconds: sql`${childRewardProjection.creditedMilliseconds} + ${credited}`,
+    remainderMilliseconds: award.remainderMilliseconds,
+    qualifiedPacks: sql`${childRewardProjection.qualifiedPacks} + ${qualifiedDelta}`,
+    updatedAt: input.at,
+  } });
+  await tx.insert(deckRewardProjection).values({ childId: input.childId, deckId: settlement.deckId, earnedPoints: award.points })
+    .onConflictDoUpdate({ target: [deckRewardProjection.childId, deckRewardProjection.deckId], set: {
+      earnedPoints: sql`${deckRewardProjection.earnedPoints} + ${award.points}`, updatedAt: input.at,
+    } });
   await tx.update(rewardActivityStreams).set({ active: false, pausedReason: "task_changed" }).where(and(
     eq(rewardActivityStreams.childId, input.childId),
     eq(rewardActivityStreams.taskId, input.taskId),
@@ -360,53 +401,118 @@ function xboxRequestDto(row: typeof rewardActivityXboxRequests.$inferSelect): Xb
   };
 }
 
-/** Reads the child's server-settled reward ledger and day totals. */
-export async function readKidRewardSnapshot(services: Services, childId: string, now = services.clock.now()): Promise<KidRewardSnapshot> {
-  const child = UuidSchema.parse(childId);
-  const settlements = await services.db.select({
-    deckId: rewardActivitySettlements.deckId,
-    points: rewardActivitySettlements.awardedPoints,
-  }).from(rewardActivitySettlements).where(eq(rewardActivitySettlements.childId, child));
-  const pointsByDeck = new Map<string, number>();
-  let earnedPoints = 0;
-  for (const row of settlements) {
-    earnedPoints += row.points;
-    pointsByDeck.set(row.deckId, (pointsByDeck.get(row.deckId) ?? 0) + row.points);
-  }
+/** Reads rebuildable reward projections for several profiles with bounded ledger reads. */
+export async function readKidRewardSnapshots(services: Services, childIds: string[], now = services.clock.now()): Promise<Map<string, KidRewardSnapshot>> {
+  const children = [...new Set(childIds.map(id => UuidSchema.parse(id)))];
+  if (!children.length) return new Map();
+  const projections = await services.db.select().from(childRewardProjection).where(inArray(childRewardProjection.childId, children));
+  const projectionByChild = new Map(projections.map(row => [row.childId, row]));
   const [family] = await services.db.select({ timezone: familySettings.timezone }).from(familySettings).limit(1);
   const currentTimezone = family?.timezone ?? "Europe/Warsaw";
   const timezone = validRewardTimezone(currentTimezone);
   const today = localDateAt(now, timezone);
-  const intervals = await services.db.select({
-    start: rewardActivitySegments.startedAt,
-    end: rewardActivitySegments.endedAt,
-    timezone: learningSessions.context,
-  }).from(rewardActivitySegments).innerJoin(learningSessions, eq(learningSessions.id, rewardActivitySegments.sessionId)).where(and(
-    eq(rewardActivitySegments.childId, child), isNotNull(rewardActivitySegments.settlementRef),
-  ));
-  const daily = new Map<string, number>();
-  for (const interval of intervals) {
-    const context = interval.timezone as { timezone?: unknown };
-    const sessionTimezone = validRewardTimezone(context?.timezone);
-    for (const [day, milliseconds] of splitRewardIntervalByLocalDay(interval.start, interval.end, sessionTimezone)) {
-      const key = `${sessionTimezone}:${day}`;
-      daily.set(key, (daily.get(key) ?? 0) + milliseconds);
-    }
+  const [todayRows, pendingRows, latestResult, deckRows] = await Promise.all([
+    services.db.select({ childId: rewardDayProjection.childId, milliseconds: rewardDayProjection.creditedMilliseconds }).from(rewardDayProjection).where(and(
+      inArray(rewardDayProjection.childId, children), eq(rewardDayProjection.timezone, timezone), eq(rewardDayProjection.localDate, today),
+    )),
+    services.db.select().from(rewardActivityXboxRequests).where(and(
+      inArray(rewardActivityXboxRequests.childId, children), eq(rewardActivityXboxRequests.status, "pending"),
+    )),
+    services.db.execute(sql`SELECT requested.child_id AS "childId", latest.id, latest.block_id AS "blockId", latest.status,
+        latest.timezone_snapshot AS "timezoneSnapshot", latest.local_date_snapshot AS "localDateSnapshot",
+        latest.block_number_snapshot AS "blockNumberSnapshot", latest.credited_seconds_snapshot AS "creditedSecondsSnapshot",
+        latest.points_cost AS "pointsCost", latest.xbox_minutes AS "xboxMinutes", latest.requested_at AS "requestedAt"
+      FROM unnest(${sql.param(children)}::uuid[]) AS requested(child_id)
+      LEFT JOIN LATERAL (
+        SELECT * FROM learning_app.reward_activity_xbox_requests request
+        WHERE request.child_id = requested.child_id
+        ORDER BY request.requested_at DESC, request.id DESC
+        LIMIT 1
+      ) latest ON true`),
+    services.db.select({ childId: deckRewardProjection.childId, deckId: deckRewardProjection.deckId, earnedPoints: deckRewardProjection.earnedPoints })
+      .from(deckRewardProjection).where(inArray(deckRewardProjection.childId, children)),
+  ]);
+  const latestRows = (latestResult.rows as Array<typeof rewardActivityXboxRequests.$inferSelect & { childId: string }>).filter(row => row.id !== null)
+    .map(row => ({ ...row, requestedAt: row.requestedAt instanceof Date ? row.requestedAt : new Date(row.requestedAt as unknown as string) }));
+  const latestByChild = new Map(latestRows.map(row => [row.childId, row]));
+  const pendingByChild = new Map(pendingRows.map(row => [row.childId, row]));
+  const todayByChild = new Map(todayRows.map(row => [row.childId, row.milliseconds]));
+  const decksByChild = new Map<string, Map<string, number>>();
+  for (const row of deckRows) {
+    const points = decksByChild.get(row.childId) ?? new Map<string, number>();
+    points.set(row.deckId, row.earnedPoints);
+    decksByChild.set(row.childId, points);
   }
-  const xboxRequests = await services.db.select().from(rewardActivityXboxRequests)
-    .where(eq(rewardActivityXboxRequests.childId, child)).orderBy(asc(rewardActivityXboxRequests.requestedAt));
-  const consumedPacks = xboxRequests.filter((row) => row.status === "pending" || row.status === "fulfilled").length;
-  const latestRequest = xboxRequests.find((row) => row.status === "pending") ?? xboxRequests.at(-1) ?? null;
-  const earnedXboxPacks = [...daily.values()].reduce((sum, milliseconds) => sum + xboxPacksForDay(milliseconds), 0);
-  const pointsToUse = Math.max(0, earnedPoints - consumedPacks * XBOX_PACK_POINTS);
-  return {
-    earnedPoints,
-    pointsToUse,
-    todayCreditedSeconds: Math.floor((daily.get(`${timezone}:${today}`) ?? 0) / 1000),
-    readyXboxPacks: Math.max(0, Math.min(earnedXboxPacks - consumedPacks, Math.floor(pointsToUse / XBOX_PACK_POINTS))),
-    xboxRequest: latestRequest ? xboxRequestDto(latestRequest) : null,
-    pointsByDeck,
-  };
+  const result = new Map<string, KidRewardSnapshot>();
+  for (const child of children) {
+    const projection = projectionByChild.get(child);
+    const earnedPoints = projection?.earnedPoints ?? 0;
+    const consumedPacks = projection?.consumedPacks ?? 0;
+    const pointsToUse = Math.max(0, earnedPoints - consumedPacks * XBOX_PACK_POINTS);
+    const latest = pendingByChild.get(child) ?? latestByChild.get(child);
+    result.set(child, {
+      earnedPoints, pointsToUse,
+      todayCreditedSeconds: Math.floor((todayByChild.get(child) ?? 0) / 1000),
+      readyXboxPacks: Math.max(0, Math.min((projection?.qualifiedPacks ?? 0) - consumedPacks, Math.floor(pointsToUse / XBOX_PACK_POINTS))),
+      xboxRequest: latest ? xboxRequestDto(latest) : null,
+      pointsByDeck: decksByChild.get(child) ?? new Map(),
+    });
+  }
+  return result;
+}
+
+/** Reads the child's server-settled reward projections. */
+export async function readKidRewardSnapshot(services: Services, childId: string, now = services.clock.now()): Promise<KidRewardSnapshot> {
+  return (await readKidRewardSnapshots(services, [childId], now)).get(childId)!;
+}
+
+/** Explicitly rebuilds one child's projections from immutable settlements under the settlement lock. */
+export async function rebuildKidRewardProjection(services: Services, childId: string): Promise<void> {
+  const child = UuidSchema.parse(childId);
+  await services.db.transaction(async (tx) => {
+    const profile = (await tx.select({ id: childProfiles.id }).from(childProfiles).where(eq(childProfiles.id, child)).for("key share"))[0];
+    if (!profile) throw new AppError("not_found");
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${child}::text, 0))`);
+
+    const settlements = await tx.select().from(rewardActivitySettlements).where(eq(rewardActivitySettlements.childId, child));
+    const earnedPoints = settlements.reduce((sum, row) => sum + row.awardedPoints, 0);
+    const creditedMilliseconds = settlements.reduce((sum, row) => sum + Number(row.creditedMilliseconds), 0);
+    const byDeck = new Map<string, number>();
+    for (const row of settlements) byDeck.set(row.deckId, (byDeck.get(row.deckId) ?? 0) + row.awardedPoints);
+
+    const segments = await tx.select({ start: rewardActivitySegments.startedAt, end: rewardActivitySegments.endedAt, context: learningSessions.context })
+      .from(rewardActivitySegments).innerJoin(learningSessions, eq(learningSessions.id, rewardActivitySegments.sessionId))
+      .where(and(eq(rewardActivitySegments.childId, child), isNotNull(rewardActivitySegments.settlementRef)));
+    const byDay = new Map<string, { timezone: string; localDate: string; milliseconds: number }>();
+    for (const segment of segments) {
+      const context = segment.context as { timezone?: unknown };
+      const timezone = validRewardTimezone(context?.timezone);
+      for (const [localDate, milliseconds] of splitRewardIntervalByLocalDay(segment.start, segment.end, timezone)) {
+        const key = `${timezone}:${localDate}`;
+        const day = byDay.get(key) ?? { timezone, localDate, milliseconds: 0 };
+        day.milliseconds += milliseconds;
+        byDay.set(key, day);
+      }
+    }
+    const [requestCount] = await tx.select({ count: sql<number>`count(*)::int` }).from(rewardActivityXboxRequests).where(and(
+      eq(rewardActivityXboxRequests.childId, child), inArray(rewardActivityXboxRequests.status, ["pending", "fulfilled"]),
+    ));
+
+    await tx.delete(rewardDayProjection).where(eq(rewardDayProjection.childId, child));
+    await tx.delete(deckRewardProjection).where(eq(deckRewardProjection.childId, child));
+    await tx.delete(childRewardProjection).where(eq(childRewardProjection.childId, child));
+    if (byDay.size) await tx.insert(rewardDayProjection).values([...byDay.values()].map(day => ({
+      childId: child, timezone: day.timezone, localDate: day.localDate, creditedMilliseconds: day.milliseconds,
+    })));
+    if (byDeck.size) await tx.insert(deckRewardProjection).values([...byDeck].map(([deckId, points]) => ({ childId: child, deckId, earnedPoints: points })));
+    await tx.insert(childRewardProjection).values({
+      childId: child, earnedPoints, creditedMilliseconds,
+      remainderMilliseconds: creditedMilliseconds % REWARD_POINT_INTERVAL_MS,
+      qualifiedPacks: [...byDay.values()].reduce((sum, day) => sum + xboxPacksForDay(day.milliseconds), 0),
+      consumedPacks: requestCount?.count ?? 0,
+      updatedAt: services.clock.now(),
+    });
+  });
 }
 
 /** Rezerwuje najstarszy niewykorzystany pełny blok i stałą cenę w jednej blokadzie per dziecko. */
@@ -424,34 +530,17 @@ export async function requestXboxPack(services: Services, childId: string): Prom
     )).orderBy(asc(rewardActivityXboxRequests.requestedAt)).limit(1).for("update"))[0];
     if (pending) return xboxRequestDto(pending);
 
-    const intervals = await tx.select({
-      start: rewardActivitySegments.startedAt,
-      end: rewardActivitySegments.endedAt,
-      context: learningSessions.context,
-    }).from(rewardActivitySegments).innerJoin(learningSessions, eq(learningSessions.id, rewardActivitySegments.sessionId)).where(and(
-      eq(rewardActivitySegments.childId, child), isNotNull(rewardActivitySegments.settlementRef),
-    ));
-    const daily = new Map<string, { timezone: string; localDate: string; milliseconds: number }>();
-    for (const interval of intervals) {
-      const context = interval.context as { timezone?: unknown };
-      const timezone = validRewardTimezone(context?.timezone);
-      for (const [localDate, milliseconds] of splitRewardIntervalByLocalDay(interval.start, interval.end, timezone)) {
-        const key = `${timezone}:${localDate}`;
-        const current = daily.get(key) ?? { timezone, localDate, milliseconds: 0 };
-        current.milliseconds += milliseconds;
-        daily.set(key, current);
-      }
-    }
+    const dailyRows = await tx.select({ timezone: rewardDayProjection.timezone, localDate: rewardDayProjection.localDate, milliseconds: rewardDayProjection.creditedMilliseconds })
+      .from(rewardDayProjection).where(eq(rewardDayProjection.childId, child));
+    const daily = new Map(dailyRows.map(day => [`${day.timezone}:${day.localDate}`, day]));
     const qualified = [...daily.values()].flatMap((day) => Array.from(
       { length: xboxPacksForDay(day.milliseconds) },
-      (_, index) => ({ ...day, blockNumber: index + 1 }),
+      (_, index) => ({ timezone: day.timezone, localDate: day.localDate, milliseconds: day.milliseconds, blockNumber: index + 1 }),
     ));
 
-    const earned = (await tx.select({ points: sql<number>`coalesce(sum(${rewardActivitySettlements.awardedPoints}), 0)::int` })
-      .from(rewardActivitySettlements).where(eq(rewardActivitySettlements.childId, child)))[0]?.points ?? 0;
-    const consumed = (await tx.select({ count: sql<number>`count(*)::int` }).from(rewardActivityXboxRequests).where(and(
-      eq(rewardActivityXboxRequests.childId, child), inArray(rewardActivityXboxRequests.status, ["pending", "fulfilled"]),
-    )))[0]?.count ?? 0;
+    const [projection] = await tx.select().from(childRewardProjection).where(eq(childRewardProjection.childId, child)).for("update");
+    const earned = projection?.earnedPoints ?? 0;
+    const consumed = projection?.consumedPacks ?? 0;
     if (earned - consumed * XBOX_PACK_POINTS < XBOX_PACK_POINTS || qualified.length <= consumed) {
       throw new AppError("conflict", { message: "a full Xbox block and 30 available points are required" });
     }
@@ -487,6 +576,10 @@ export async function requestXboxPack(services: Services, childId: string): Prom
       pointsCost: XBOX_PACK_POINTS, xboxMinutes: XBOX_PACK_MINUTES, requestedAt: now,
     }).returning();
     if (!request) throw new AppError("internal");
+    await tx.insert(childRewardProjection).values({ childId: child, consumedPacks: 1 }).onConflictDoUpdate({
+      target: childRewardProjection.childId,
+      set: { consumedPacks: sql`${childRewardProjection.consumedPacks} + 1`, updatedAt: now },
+    });
     return xboxRequestDto(request);
   });
 }
@@ -515,6 +608,9 @@ export async function decideXboxRewardRequest(
     const [updated] = await tx.update(rewardActivityXboxRequests).set({ status: decision })
       .where(eq(rewardActivityXboxRequests.id, current.id)).returning();
     if (!updated) throw new AppError("internal");
+    if (decision === "rejected") await tx.update(childRewardProjection).set({
+      consumedPacks: sql`greatest(0, ${childRewardProjection.consumedPacks} - 1)`, updatedAt: services.clock.now(),
+    }).where(eq(childRewardProjection.childId, child));
     return xboxRequestDto(updated);
   });
 }

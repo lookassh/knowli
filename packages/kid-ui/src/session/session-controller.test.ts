@@ -150,6 +150,7 @@ interface ApiState {
   submitError?: unknown;
   profiles: KidProfileDto[];
   listProfilesFailureCount?: number;
+  listProfilesGate?: Promise<void>;
   decks: KidDeckDto[];
   tasks: TaskDto[];
   attempts: AttemptDto[];
@@ -159,6 +160,7 @@ interface ApiState {
   disabledSessions: string[];
   startedSessions: { childId: string; microphoneEnabled: boolean; supportsPictureVocabulary: boolean }[];
   listDeckRequests?: { childId: string; microphoneEnabled?: boolean }[];
+  listDecksError?: unknown;
   startSessionResponse?: Partial<SessionDto>;
   submissions: { taskId: string; clientAttemptId: string; modality: string }[];
   speechSubmissions: { taskId: string; clientAttemptId: string }[];
@@ -193,6 +195,7 @@ function makeApi(state: ApiState): KidApi {
       return state.uiAudioReady ? { ready: true, assets: { recall: "asset-guidance" } } : { ready: false, assets: {} };
     },
     async listProfiles() {
+      await state.listProfilesGate;
       if ((state.listProfilesFailureCount ?? 0) > 0) {
         state.listProfilesFailureCount = state.listProfilesFailureCount! - 1;
         throw new TypeError("fetch failed");
@@ -209,6 +212,7 @@ function makeApi(state: ApiState): KidApi {
     },
     async listDecks(childId, options) {
       state.listDeckRequests?.push({ childId, microphoneEnabled: options?.microphoneEnabled });
+      if (state.listDecksError !== undefined) throw state.listDecksError;
       return state.decks;
     },
     async startSession(input) {
@@ -338,6 +342,53 @@ async function startAtTask(state: ApiState, task: TaskDto, recorderOpts?: { fail
 }
 
 describe("LearningSessionController", () => {
+  it("starts learning without waiting for a background profile refresh when microphone is off", async () => {
+    const state = baseState();
+    let release!: () => void;
+    const harness = makeHarness(state);
+    await harness.controller.start();
+    state.listProfilesGate = new Promise<void>(resolve => { release = resolve; });
+    await harness.controller.selectProfile(PROFILE_A.childId);
+    const starting = harness.controller.startLearning(DECK.deckId);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(state.startedSessions).toEqual([{ childId: PROFILE_A.childId, microphoneEnabled: false, supportsPictureVocabulary: true }]);
+    release();
+    await starting;
+    harness.controller.teardown();
+  });
+
+  it("applies the newest same-epoch profile response and uses its recording mode", async () => {
+    const state = baseState();
+    const harness = makeHarness(state);
+    await harness.controller.start();
+    await harness.controller.selectProfile(PROFILE_A.childId);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    let resolveOlder!: (profiles: KidProfileDto[]) => void;
+    let resolveNewer!: (profiles: KidProfileDto[]) => void;
+    const older = new Promise<KidProfileDto[]>(resolve => { resolveOlder = resolve; });
+    const newerProfiles = [{ ...PROFILE_A, displayName: "Ola aktualna", recordingMode: "toggle" as const }, PROFILE_B];
+    const newer = new Promise<KidProfileDto[]>(resolve => { resolveNewer = resolve; });
+    vi.spyOn(harness.api, "listProfiles")
+      .mockImplementationOnce(() => older)
+      .mockImplementationOnce(() => newer)
+      .mockResolvedValue(newerProfiles);
+    const olderRefresh = harness.controller.refreshProfiles();
+    const newerRefresh = harness.controller.refreshProfiles();
+    resolveNewer(newerProfiles);
+    await newerRefresh;
+    resolveOlder([PROFILE_A, PROFILE_B]);
+    await olderRefresh;
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "deck" });
+    expect((harness.controller.getScreen() as Extract<ReturnType<typeof harness.controller.getScreen>, { kind: "deck" }>).profiles[0])
+      .toMatchObject({ displayName: "Ola aktualna", recordingMode: "toggle" });
+    state.tasks = [taskDto("fresh-mode", { kind: "recall", prompt: "Thursday" })];
+    harness.controller.setMicrophone(true);
+    await harness.controller.startLearning(DECK.deckId);
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", recordingMode: "toggle" });
+    harness.controller.teardown();
+  });
+
   it.each(["answer", "presentation"])("locks %s before waiting for activity telemetry", async (operation) => {
     const task = taskDto("telemetry-gate", operation === "answer" ? { kind: "recall", prompt: "czwartek" } : { kind: "exposure", source: "czwartek", target: "Thursday", audioAssetId: "audio", example: null, exampleAudioAssetId: null, imageAssetId: null, visualType: "none" });
     const harness = await startAtTask(baseState(), task);
@@ -942,6 +993,33 @@ describe("LearningSessionController", () => {
     expect(state.listDeckRequests).toContainEqual({ childId: PROFILE_A.childId, microphoneEnabled: false });
     await harness.controller.startLearning(DECK.deckId);
     expect(harness.state.startedSessions[0]).toMatchObject({ microphoneEnabled: false });
+  });
+
+  it("pokazuje błąd po nieudanym pobraniu zestawów zamiast pozostawiać ekran loading", async () => {
+    const state = baseState();
+    state.listDecksError = new TypeError("fetch failed");
+    const harness = makeHarness(state);
+    await harness.controller.start();
+    await harness.controller.selectProfile(PROFILE_A.childId);
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "initError" });
+  });
+
+  it("pokazuje zestawy przed zakończeniem odświeżenia profili i ignoruje jego wynik po zmianie profilu", async () => {
+    const state = baseState();
+    const harness = makeHarness(state);
+    await harness.controller.start();
+    let releaseProfiles!: () => void;
+    state.listProfilesGate = new Promise<void>((resolve) => { releaseProfiles = resolve; });
+
+    await harness.controller.selectProfile(PROFILE_A.childId);
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "deck", childId: PROFILE_A.childId });
+
+    await harness.controller.selectProfile(PROFILE_B.childId);
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "deck", childId: PROFILE_B.childId });
+    releaseProfiles();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "deck", childId: PROFILE_B.childId });
+    harness.controller.teardown();
   });
 
   it("zachowuje zapamiętaną odmowę mikrofonu po wznowieniu sesji z mikrofonem włączonym po stronie serwera", async () => {

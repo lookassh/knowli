@@ -85,7 +85,7 @@ export type KidScreen =
       micDenied: boolean;
     }
   | LearningScreen
-  | { kind: "summary"; childId: string; profiles: KidProfileDto[]; summary: SessionSummaryDto; dailyRound?: boolean };
+  | { kind: "summary"; childId: string; profiles: KidProfileDto[]; summary: SessionSummaryDto };
 
 export interface LearningSessionDeps {
   api: KidApi;
@@ -167,6 +167,8 @@ export class LearningSessionController {
   #pendingChoice: string | null = null;
   /** Wycofuje operacje zdążające po zmianie ekranu/teardown. */
   #epoch = 0;
+  #profileRequestSequence = 0;
+  #profileRefreshPromise: Promise<void> | null = null;
   #recordingGeneration = 0;
   #recordingStartedAt = 0;
   #playbackGeneration = 0;
@@ -385,8 +387,6 @@ export class LearningSessionController {
       this.#micDenied = this.#storage.read(MIC_DENIED_KEY) === "1";
       const decks = await this.#api.listDecks(childId, { microphoneEnabled: false });
       if (epoch !== this.#epoch) return;
-      await this.refreshProfiles();
-      if (epoch !== this.#epoch) return;
       this.#childId = childId;
       this.#recordingMode = this.#profiles.find((profile) => profile.childId === childId)?.recordingMode ?? "hold";
       this.#screen = {
@@ -401,7 +401,14 @@ export class LearningSessionController {
       if (epoch !== this.#epoch) return;
       this.#screen = { kind: "initError", message: messageForError(error) };
     }
+    if (epoch !== this.#epoch) return;
     this.#emit();
+    if (this.#screen.kind === "deck" && this.#screen.childId === childId) {
+      void this.refreshProfiles().then(() => {
+        if (epoch !== this.#epoch || this.#screen.kind !== "deck" || this.#screen.childId !== childId) return;
+        this.#recordingMode = this.#profiles.find((profile) => profile.childId === childId)?.recordingMode ?? "hold";
+      });
+    }
   }
 
   async #resumeMockFromDecks(): Promise<void> {
@@ -437,10 +444,6 @@ export class LearningSessionController {
     await this.startLearning(deckId, "mock_test");
   }
 
-  async startDailyRound(deckId: string): Promise<void> {
-    await this.startLearning(deckId, "daily_round");
-  }
-
   async backToDecks(): Promise<void> {
     this.#epoch += 1;
     this.#teardownRecording(); this.#stopPlayback();
@@ -448,17 +451,31 @@ export class LearningSessionController {
     else await this.start();
   }
 
-  async startLearning(deckId: string, mode: SessionDto["mode"] = "training"): Promise<void> {
+  async startLearning(deckId: string, mode: "training" | "mock_test" = "training"): Promise<void> {
     if (this.#screen.kind !== "deck") return;
-    const { childId } = this.#screen;
-    const microphone = this.#screen.microphone && this.#storage.read(MIC_DENIED_KEY) !== "1";
-    const selectedDeck = this.#screen.decks.find((deck) => deck.deckId === deckId);
-    if (selectedDeck?.resumeOnly && selectedDeck.activeSession) mode = selectedDeck.activeSession.mode;
+    const deckScreen = this.#screen;
+    const startingEpoch = this.#epoch;
+    const microphone = mode !== "mock_test" && deckScreen.microphone && this.#storage.read(MIC_DENIED_KEY) !== "1";
+    if (microphone) {
+      this.#screen = { kind: "loading" };
+      this.#emit();
+      await this.refreshProfiles();
+      if (startingEpoch !== this.#epoch || this.#screen.kind !== "loading") return;
+      this.#screen = { ...deckScreen, profiles: this.#profiles };
+      this.#emit();
+    }
+    if (startingEpoch !== this.#epoch || this.#screen.kind !== "deck") return;
+    const { childId } = deckScreen;
+    this.#recordingMode = this.#profiles.find((profile) => profile.childId === childId)?.recordingMode ?? "hold";
+    const selectedDeck = deckScreen.decks.find((deck) => deck.deckId === deckId);
+    if (selectedDeck?.resumeOnly && selectedDeck.activeSession?.mode === "mock_test") mode = "mock_test";
     if (mode === "mock_test") {
-      this.#mockDeckKind = this.#screen.decks.find(d => d.deckId === deckId)?.kind === "lesson" ? "lesson" : "vocabulary";
+      this.#mockDeckKind = deckScreen.decks.find(d => d.deckId === deckId)?.kind === "lesson" ? "lesson" : "vocabulary";
     }
     this.#epoch += 1;
     const epoch = this.#epoch;
+    this.#screen = { kind: "loading" };
+    this.#emit();
     // nowa sesja nie dziedziczy wyboru z poprzedniej (np. przerwanego awarią)
     this.#pendingChoice = null;
     try {
@@ -527,6 +544,11 @@ export class LearningSessionController {
     if (this.#screen.kind !== "sessionConflict") return;
     const { childId, active } = this.#screen;
     this.#screen = { kind: "deck", childId, profiles: this.#profiles, decks: [active], microphone: false, micDenied: false };
+    if (active.activeSession!.mode === "daily_round") {
+      await this.#api.endSession(active.activeSession!.sessionId);
+      await this.startLearning(active.deckId, "training");
+      return;
+    }
     await this.startLearning(active.deckId, active.activeSession!.mode);
   }
 
@@ -613,7 +635,7 @@ export class LearningSessionController {
       if (epoch !== this.#epoch) return;
       this.#teardownRecording();
       this.#stopPlayback();
-      this.#screen = mockSummary ? { kind: "mockTestSummary", summary: mockSummary } : { kind: "summary", childId, profiles: this.#profiles, summary, ...(mode === "daily_round" ? { dailyRound: true } : {}) };
+      this.#screen = mockSummary ? { kind: "mockTestSummary", summary: mockSummary } : { kind: "summary", childId, profiles: this.#profiles, summary };
       this.#emit();
     } catch (error) {
       if (epoch !== this.#epoch || this.#screen.kind !== "learning") return;
@@ -1167,15 +1189,23 @@ export class LearningSessionController {
   /** Refresh reward balances and parent-managed profile settings without discarding a usable screen. */
   async refreshProfiles(): Promise<void> {
     const epoch = this.#epoch;
+    const requestSequence = ++this.#profileRequestSequence;
+    const refresh = (async () => {
     try {
       const profiles = await this.#api.listProfiles();
-      if (epoch !== this.#epoch) return;
+      if (epoch !== this.#epoch || requestSequence !== this.#profileRequestSequence) return;
       this.#profiles = profiles;
       if (this.#screen.kind === "profile" || this.#screen.kind === "deck" || this.#screen.kind === "summary") {
         this.#screen = { ...this.#screen, profiles };
         this.#emit();
       }
     } catch { /* Keep the last confirmed balances during a temporary network failure. */ }
+    })();
+    this.#profileRefreshPromise = refresh;
+    await refresh;
+    if (epoch === this.#epoch && requestSequence !== this.#profileRequestSequence) {
+      await this.#profileRefreshPromise;
+    }
   }
 
   /** Czy banner „Jeszcze N i koniec!” jest widoczny dla bieżącego zadania. */

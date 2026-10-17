@@ -40,9 +40,6 @@ export interface SessionContextShape {
   reservations: string[];
   /** Klucze sprawdzeń rozliczonych w tej sesji (odpowiedź/pominięcie/podpowiedź). */
   settledChecks: string[];
-  /** Revisions eligible for this day's bounded review round. */
-  dailyRoundRevisionIds?: string[];
-  dailyRoundDate?: string;
   /** Niezmienny wynik jawnego zakończenia, zachowany także przy spóźnionej finalizacji mowy. */
   summary?: SessionSummaryDto;
 }
@@ -62,10 +59,6 @@ export function contextOf(session: { context: Record<string, unknown> }): Sessio
     previousContact: raw.previousContact ?? {},
     reservations: raw.reservations ?? [],
     settledChecks: raw.settledChecks ?? [],
-    ...(Array.isArray(raw.dailyRoundRevisionIds)
-      ? { dailyRoundRevisionIds: raw.dailyRoundRevisionIds.filter((id): id is string => typeof id === "string") }
-      : {}),
-    ...(typeof raw.dailyRoundDate === "string" ? { dailyRoundDate: raw.dailyRoundDate } : {}),
     ...(summary.success ? { summary: summary.data } : {}),
     ...(report.success ? { mockTestReport: report.data } : {}),
   };

@@ -24,7 +24,6 @@ test("karta pracy odświeża raport po zmianie dziecka i daty", async ({ page })
       body = {
         childId, date: date ?? "2026-10-16", creditedSeconds: childId === firstChild ? 90 : 180, sessions: [],
         xboxRequests: [],
-        dailyRound: { state: null, sessionId: null, deckTitle: null, steps: null, answered: null },
       };
     } else throw new Error(`Nieoczekiwane API: ${url.pathname}`);
     await route.fulfill({ json: body });
@@ -41,7 +40,6 @@ test("karta pracy odświeża raport po zmianie dziecka i daty", async ({ page })
   releaseFirstReport();
   await expect(page.getByText("1 min 30 s")).toBeVisible();
   await expect(page.getByText("Brak zapisanej pracy tego dnia.")).toBeVisible();
-  await expect(page.getByText("Nie uruchomiono / brak zapisu")).toBeVisible();
 
   await page.getByRole("button", { name: "Bartek" }).click();
   await expect(page.getByText("3 min 0 s")).toBeVisible();
@@ -76,7 +74,6 @@ test("oczekujące zgłoszenie Xbox pozostaje widoczne poza wybranym dniem i otwi
       return route.fulfill({ json: {
         childId: firstChild, date, creditedSeconds: 0, sessions: [],
         xboxRequests: [{ requestId, status, requestedAt: "2026-10-14T10:00:00.000Z", timezone: "Europe/Warsaw", localDate: "2026-10-14", blockNumber: 1, creditedSeconds: 1800, pointsCost: 30, xboxMinutes: 15 }],
-        dailyRound: { state: "completed", sessionId: "00000000-0000-4000-8000-000000000041", deckTitle: "Słówka", steps: 4, answered: 4 },
       } });
     }
     throw new Error(`Nieoczekiwane API: ${url.pathname}`);
@@ -92,7 +89,7 @@ test("oczekujące zgłoszenie Xbox pozostaje widoczne poza wybranym dniem i otwi
   await expect(page.getByRole("button", { name: "Otwórz kartę pracy z 2026-10-14" })).toBeVisible();
   await page.getByRole("button", { name: "Otwórz kartę pracy z 2026-10-14" }).click();
   await expect(page.getByLabel("Dzień")).toHaveValue("2026-10-14");
-  await expect(page.getByText("Runda dnia")).toBeVisible();
+  await expect(page.getByText("Runda dnia")).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Zgłoszenie pakietu Xbox" }).getByText("Pakiet z 2026-10-14 · blok 1")).toBeVisible();
   await expect(page.getByText(/nie oznacza odblokowania konsoli/i)).toBeVisible();
   await page.getByRole("button", { name: "Potwierdzam ręczne dodanie 15 minut" }).click();
@@ -122,7 +119,6 @@ test("odrzucenie zgłoszenia wysyła właściwą decyzję i pokazuje status odrz
       return route.fulfill({ json: {
         childId: firstChild, date, creditedSeconds: 0, sessions: [],
         xboxRequests: [{ requestId, status, requestedAt: "2026-10-14T10:00:00.000Z", timezone: "Europe/Warsaw", localDate: "2026-10-14", blockNumber: 1, creditedSeconds: 1800, pointsCost: 30, xboxMinutes: 15 }],
-        dailyRound: { state: null, sessionId: null, deckTitle: null, steps: null, answered: null },
       } });
     }
     throw new Error(`Nieoczekiwane API: ${url.pathname}`);
@@ -165,7 +161,6 @@ test("błąd odrzuconej decyzji nie przechodzi na kartę po zmianie wyboru", asy
         xboxRequests: childId === firstChild
           ? [{ requestId, status: "pending", requestedAt: "2026-10-14T10:00:00.000Z", timezone: "Europe/Warsaw", localDate: "2026-10-14", blockNumber: 1, creditedSeconds: 1800, pointsCost: 30, xboxMinutes: 15 }]
           : [{ requestId: secondRequestId, status: "pending", requestedAt: "2026-10-14T10:00:00.000Z", timezone: "Europe/Warsaw", localDate: "2026-10-14", blockNumber: 1, creditedSeconds: 1800, pointsCost: 30, xboxMinutes: 15 }],
-        dailyRound: { state: null, sessionId: null, deckTitle: null, steps: null, answered: null },
       } });
     }
     throw new Error(`Nieoczekiwane API: ${url.pathname}`);

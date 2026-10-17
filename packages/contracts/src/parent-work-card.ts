@@ -48,12 +48,5 @@ export const ParentWorkCardDtoSchema = z.object({
       }).strict()),
     }).strict()),
   }).strict()),
-  dailyRound: z.object({
-    state: z.enum(["active", "completed", "ended"]).nullable(),
-    sessionId: UuidSchema.nullable(),
-    deckTitle: z.string().nullable(),
-    steps: NonNegativeInt.nullable(),
-    answered: NonNegativeInt.nullable(),
-  }).strict(),
 }).strict();
 export type ParentWorkCardDto = z.infer<typeof ParentWorkCardDtoSchema>;

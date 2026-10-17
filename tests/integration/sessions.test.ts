@@ -20,7 +20,6 @@ import {
   updateChild,
   type AppError,
 } from "@learning/server";
-import { readDailyRoundPool } from "../../packages/server/src/modules/daily-round";
 import { SessionSummaryDtoSchema, TaskDtoSchema, type TaskDto } from "@learning/contracts";
 import {
   buildTestServices,
@@ -464,190 +463,59 @@ describe("cykl życia sesji (integracja)", () => {
     expect(await countSessionRows(a.sessionId, "learning_sessions")).toBe(1);
   });
 
-  it("startuje jedną rundę dla dzisiejszego kontaktu, a retry i ponowny start zachowują tę samą rundę", async () => {
-    const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 3));
-    const training = await startSession(services, { childId, deckId, microphoneEnabled: false });
-    for (let i = 0; i < 3; i++) await issueTrainingContact(services, training.sessionId);
-    await endSession(services, training.sessionId);
-    expect((await listKidDecks(services, childId)).find(deck => deck.deckId === deckId)?.dailyRoundAvailable).toBe(true);
-
-    const [round, concurrentStart] = await Promise.all([
-      startSession(services, { childId, deckId, microphoneEnabled: false, mode: "daily_round" }),
-      startSession(services, { childId, deckId, microphoneEnabled: false, mode: "daily_round" }),
-    ]);
-    expect(round).toMatchObject({ mode: "daily_round", taskBudget: expect.any(Number), state: "active" });
-    expect(concurrentStart).toMatchObject({ mode: "daily_round", state: "active" });
-    expect(concurrentStart.sessionId).toBe(round.sessionId);
-    expect(await query<{ count: string }>(
-      "select count(*)::text as count from learning_app.learning_sessions where child_id=$1 and mode='daily_round'", [childId],
-    )).toEqual([{ count: "1" }]);
-    expect((await listKidDecks(services, childId)).find(deck => deck.deckId === deckId)?.dailyRoundAvailable).toBe(false);
-    const resumed = await startSession(services, { childId, deckId, microphoneEnabled: false, mode: "daily_round" });
-    expect(resumed).toMatchObject({ sessionId: round.sessionId, resumed: true });
-    const [first, retry] = await Promise.all([
-      nextTask(services, round.sessionId),
-      nextTask(services, concurrentStart.sessionId),
-    ]);
-    expect(retry?.taskId).toBe(first?.taskId);
-    expect(await query<{ count: string }>(
-      "select count(*)::text as count from learning_app.session_tasks where session_id=$1", [round.sessionId],
-    )).toEqual([{ count: "1" }]);
-    let assessedCandidate = first;
-    while (assessedCandidate?.exerciseType === "exposure") {
-      await completePresentation(services, { taskId: assessedCandidate.taskId });
-      assessedCandidate = await nextTask(services, round.sessionId);
-    }
-    expect(assessedCandidate).not.toBeNull();
-    if (assessedCandidate) {
-      const [storedTask] = await query<{ answer_key: { target?: string; correctOptionId?: string } }>(
-        "select answer_key from learning_app.session_tasks where id = $1", [assessedCandidate.taskId],
-      );
-      const masteryBefore = await query<{ skill_version_id: string; status: string; independent_success_streak: number | null; next_review_at: string | null }>(
-        "select skill_version_id, status, independent_success_streak, next_review_at from learning_app.child_skill_progress where child_id=$1 order by skill_version_id", [childId],
-      );
-      const assessmentsBefore = await query<{ count: string }>("select count(*)::text as count from learning_app.assessments where child_id=$1", [childId]);
-      if (storedTask?.answer_key.correctOptionId && "options" in assessedCandidate.prompt) {
-        const options = assessedCandidate.prompt.options;
-        const wrongOption = options.find(option => option.id !== storedTask.answer_key.correctOptionId);
-        expect(wrongOption).toBeDefined();
-        const wrong = await submitAttempt(services, { taskId: assessedCandidate.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: wrongOption!.id });
-        expect(wrong.taskState).toBe("issued");
-        expect((await nextTask(services, round.sessionId))?.taskId).toBe(assessedCandidate.taskId);
-        const secondWrong = await submitAttempt(services, { taskId: assessedCandidate.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: wrongOption!.id });
-        expect(secondWrong.taskState).toBe("answered");
-      } else if (storedTask?.answer_key.target) {
-        const wrong = await submitAttempt(services, { taskId: assessedCandidate.taskId, clientAttemptId: randomUUID(), modality: "text", text: "wrong answer" });
-        expect(wrong.taskState).toBe("issued");
-        expect((await nextTask(services, round.sessionId))?.taskId).toBe(assessedCandidate.taskId);
-        const secondWrong = await submitAttempt(services, { taskId: assessedCandidate.taskId, clientAttemptId: randomUUID(), modality: "text", text: "another wrong answer" });
-        expect(secondWrong.taskState).toBe("answered");
-      }
-      const support = await nextTask(services, round.sessionId);
-      expect(support?.exerciseType).toBe("exposure");
-      expect((await query<{ context: Record<string, unknown> }>("select context from learning_app.session_tasks where id=$1", [support!.taskId]))[0]!.context).toMatchObject({ reason: "support" });
-      await completePresentation(services, { taskId: support!.taskId });
-      expect(await query<{ count: string }>("select count(*)::text as count from learning_app.assessments where child_id=$1", [childId])).toEqual(assessmentsBefore);
-      expect(await query<{ skill_version_id: string; status: string; independent_success_streak: number | null; next_review_at: string | null }>(
-        "select skill_version_id, status, independent_success_streak, next_review_at from learning_app.child_skill_progress where child_id=$1 order by skill_version_id", [childId],
-      )).toEqual(masteryBefore);
-      expect(await query<{ count: string }>("select count(*)::text as count from learning_app.assessments where attempt_id in (select id from learning_app.attempts where task_id=$1)", [assessedCandidate.taskId]))
-        .toEqual([{ count: "0" }]);
-    }
-    expect(await query<{ daily_round_date: string; mode: string }>(
-      "select daily_round_date, mode from learning_app.learning_sessions where id = $1", [round.sessionId],
-    )).toMatchObject([{ mode: "daily_round", daily_round_date: "2026-10-07" }]);
-
-    await endSession(services, round.sessionId);
-    await expectAppError(startSession(services, { childId, deckId, microphoneEnabled: false, mode: "daily_round" }), "conflict");
-    expect(await query<{ count: string }>(
-      "select count(*)::text as count from learning_app.learning_sessions where child_id=$1 and mode='daily_round'", [childId],
-    )).toEqual([{ count: "1" }]);
-
-    clock.advanceMs(24 * 60 * 60_000);
-    const nextDayTraining = await startSession(services, { childId, deckId, microphoneEnabled: false });
-    await nextTask(services, nextDayTraining.sessionId);
-    await endSession(services, nextDayTraining.sessionId);
-    const nextDayRound = await startSession(services, { childId, deckId, microphoneEnabled: false, mode: "daily_round" });
-    expect(nextDayRound.sessionId).not.toBe(round.sessionId);
-    expect(await query<{ count: string }>(
-      "select count(*)::text as count from learning_app.learning_sessions where child_id=$1 and mode='daily_round'", [childId],
-    )).toEqual([{ count: "2" }]);
-  });
-
-  it("pokazuje ręcznie przerwaną rundę jako nieukończoną rodzicowi", async () => {
-    const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 3));
-    const training = await startSession(services, { childId, deckId, microphoneEnabled: false });
-    await issueTrainingContact(services, training.sessionId);
-    await endSession(services, training.sessionId);
-
-    const round = await startSession(services, { childId, deckId, microphoneEnabled: false, mode: "daily_round" });
-    expect(await nextTask(services, round.sessionId)).not.toBeNull();
-    const summary = await endSession(services, round.sessionId);
-    const [{ daily_round_date: date }] = await query<{ daily_round_date: string }>(
-      "select daily_round_date from learning_app.learning_sessions where id=$1", [round.sessionId],
-    );
-
-    expect(summary.state).toBe("ended");
-    expect((await readParentWorkCard(services, { childId, date })).dailyRound.state).toBe("ended");
-  });
-
-  it("skraca rundę do liczby bezpiecznych kontaktów w małej puli", async () => {
-    const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 1));
-    const training = await startSession(services, { childId, deckId, microphoneEnabled: false });
-    await issueTrainingContact(services, training.sessionId);
-    await endSession(services, training.sessionId);
-
-    const round = await startSession(services, { childId, deckId, microphoneEnabled: false, mode: "daily_round" });
-    expect(round.taskBudget).toBe(1);
-    const task = await nextTask(services, round.sessionId);
-    expect(task).not.toBeNull();
-    if (task?.exerciseType === "exposure" || task?.exerciseType === "lesson_card") {
-      await completePresentation(services, { taskId: task.taskId });
-    } else if (task) {
-      await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "skip" });
-    }
-    expect(await nextTask(services, round.sessionId)).toBeNull();
-    expect(await query<{ count: number }>("select count(*)::int as count from learning_app.session_tasks where session_id=$1", [round.sessionId]))
-      .toEqual([{ count: 1 }]);
-  });
-
-  it("readDailyRoundPool wybiera wyłącznie dzisiejsze kontakty z najnowszej wersji", async () => {
-    const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 3));
-    clock.advanceMs(-24 * 60 * 60_000);
-    const yesterdaySession = await startSession(services, { childId, deckId, microphoneEnabled: false });
-    const yesterdayRevision = await issueTrainingContact(services, yesterdaySession.sessionId);
-    await endSession(services, yesterdaySession.sessionId);
-
-    clock.advanceMs(48 * 60 * 60_000);
-    const earlierToday = await startSession(services, { childId, deckId, microphoneEnabled: false });
-    const earlierVersionRevision = await issueTrainingContact(services, earlierToday.sessionId);
-    await endSession(services, earlierToday.sessionId);
-    const draft = await createDraftFromPublished(services, deckId);
-    await publishDraft(services, draft.id, draft.editNumber);
-    const latestToday = await startSession(services, { childId, deckId, microphoneEnabled: false });
-    const latestRevision = await issueTrainingContact(services, latestToday.sessionId);
-    // The controlled clock gives both contacts the same issuedAt; version tie-break must still select the latest one.
-
-    const roundPool = await readDailyRoundPool(testDatabase().db, childId, deckId, clock.now());
-    expect(roundPool).toMatchObject({ date: "2026-10-08", deckVersionId: draft.id });
-    expect(roundPool?.revisionIds).toContain(latestRevision);
-    expect(roundPool?.revisionIds).not.toContain(earlierVersionRevision);
-    expect(roundPool?.revisionIds).not.toContain(yesterdayRevision);
-  });
-
-  it("nie oferuje rundy i nie blokuje zwykłej nauki, gdy dziś nie ma kontaktu", async () => {
+  it("rejects a stale daily_round start request without creating a session", async () => {
     const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 2));
-    const decks = await listKidDecks(services, childId);
-    expect(decks.find(deck => deck.deckId === deckId)?.dailyRoundAvailable).toBe(false);
-    await expect(startSession(services, { childId, deckId, microphoneEnabled: false, mode: "daily_round" }))
-      .rejects.toMatchObject({ code: "validation", details: { reason: "daily_round_unavailable" } });
-    const ordinary = await startSession(services, { childId, deckId, microphoneEnabled: false });
-    expect(ordinary.mode).toBe("training");
+    await expect(startSession(services, { childId, deckId, microphoneEnabled: false, mode: "daily_round" as never }))
+      .rejects.toMatchObject({ name: "ZodError" });
+    expect(await query<{ count: string }>("select count(*)::text as count from learning_app.learning_sessions where child_id=$1", [childId]))
+      .toEqual([{ count: "0" }]);
   });
 
-  it("runda obrazkowa zachowuje wyłączony mikrofon i nie wydaje zadania głosowego", async () => {
-    const draft = await createDraft(services, {
-      title: "Obrazkowe kolory", vocabularyFormat: "picture",
-      items: DAY_ITEMS.slice(7, 11).map((pair, index) => ({
-        ...vocabItem(pair), visualData: { color: ["#ff0000", "#0000ff", "#008000", "#ffff00"][index]! },
-      })),
-    });
-    for (let index = 0; index < 4; index++) {
-      await attachFakeReadyAudio(draft.id, index);
-      await attachApprovedIllustration(draft.id, index);
+  it("does not grade a delayed audio result from an ended legacy daily round", async () => {
+    const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 1));
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: true });
+    let task = (await nextTask(services, session.sessionId))!;
+    while (task.exerciseType === "exposure") {
+      await completePresentation(services, { taskId: task.taskId });
+      task = (await nextTask(services, session.sessionId))!;
     }
-    await publishDraft(services, draft.id, 1);
-    await upsertAssignment(services, childId, draft.deckId, null);
-    const training = await startSession(services, { childId, deckId: draft.deckId, microphoneEnabled: false, supportsPictureVocabulary: true });
-    await issueTrainingContact(services, training.sessionId);
-    await endSession(services, training.sessionId);
+    const legacySessionId = randomUUID();
+    await pool.query(`insert into learning_app.learning_sessions
+      (id, child_id, assignment_id, deck_id, deck_version_id, policy_id, microphone_enabled,
+       mode, daily_round_date, mock_test_plan, state, task_budget, started_at, ended_at, context)
+      select $2, child_id, assignment_id, deck_id, deck_version_id, policy_id, microphone_enabled,
+       'daily_round', '2026-10-17', null, 'ended', task_budget, started_at, $3, context
+      from learning_app.learning_sessions where id=$1`, [session.sessionId, legacySessionId, clock.now()]);
+    const legacyTaskId = randomUUID();
+    await pool.query(`insert into learning_app.session_tasks
+      (id, session_id, child_id, deck_version_id, item_revision_id, ordinal, exercise_type, direction,
+       state, public_prompt, answer_key, context, issued_at)
+      select $2, $3, child_id, deck_version_id, item_revision_id, 0, exercise_type, direction,
+       'issued', public_prompt, answer_key, context, issued_at
+      from learning_app.session_tasks where id=$1`, [task.taskId, legacyTaskId, legacySessionId]);
+    const attemptId = randomUUID();
+    await pool.query(`insert into learning_app.attempts
+      (id, child_id, task_id, item_revision_id, client_attempt_id, request_hash, attempt_number,
+       modality, state, context, policy_id, received_at)
+      select $1, child_id, id, item_revision_id, $2, 'hash', 1, 'audio', 'processing', '{}', $3, $4
+      from learning_app.session_tasks where id = $5`,
+      [attemptId, randomUUID(), session.policyId, clock.now(), legacyTaskId]);
 
-    const round = await startSession(services, { childId, deckId: draft.deckId, microphoneEnabled: false, supportsPictureVocabulary: true, mode: "daily_round" });
-    expect(round).toMatchObject({ mode: "daily_round", microphoneEnabled: false, vocabularyFormat: "picture" });
-    const task = await nextTask(services, round.sessionId);
-    expect(task?.prompt.kind).toBe("recall");
-    expect(task?.prompt.kind).not.toBe("speech");
+    await expect(finalizeAttempt(services, attemptId, {
+      skills: { recall: { outcome: "correct", independent: true, confirmationEligible: true } },
+      attempt: { independent: true, confirmationEligible: true },
+    })).rejects.toMatchObject({ code: "conflict" });
+    const unchanged = await query<{ state: string }>("select state from learning_app.attempts where id=$1", [attemptId]);
+    expect(unchanged[0]?.state).toBe("processing");
+    expect(await query("select * from learning_app.assessments where attempt_id=$1", [attemptId])).toEqual([]);
+    expect(await query("select * from learning_app.reward_activity_settlements where task_id=$1", [legacyTaskId])).toEqual([]);
   });
+
+
+
+
+
+
 
   it("ponowny start tej samej talii wznawia aktywną sesję", async () => {
     const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 2));
