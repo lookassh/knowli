@@ -509,14 +509,15 @@ test("popup wyniku mieści się w ekranie telefonu bez przewijania", async ({ pa
   await driveUntil(page, async () => (await page.getByTestId("kid-option").count()) > 0);
   await page.setViewportSize({ width: 360, height: 640 });
   const choiceId = await currentTaskId(page);
-  const correct = page
-    .getByTestId("kid-option")
-    .filter({ hasText: new RegExp(`^\\s*${escapeRegex(await correctOptionText(choiceId))}\\s*$`) })
-    .first();
-  const wrong = page
-    .getByTestId("kid-option")
-    .filter({ hasNotText: new RegExp(`^\\s*${escapeRegex(await correctOptionText(choiceId))}\\s*$`) })
-    .first();
+  const options = page.getByTestId("kid-option");
+  const optionTexts = (await options.allTextContents()).map((text) => text.trim());
+  const correctText = await correctOptionText(choiceId);
+  const correctIndex = optionTexts.findIndex((text) => text === correctText);
+  const wrongIndex = optionTexts.findIndex((text) => text !== correctText);
+  expect(correctIndex).toBeGreaterThanOrEqual(0);
+  expect(wrongIndex).toBeGreaterThanOrEqual(0);
+  const correct = options.nth(correctIndex);
+  const wrong = options.nth(wrongIndex);
 
   // próba wyboru nie otwiera popupu: pasek na dole nie zasłania siatki, a
   // wybrana błędna opcja świeci czerwono, poprawna zielono (design 2026-10-09)
@@ -535,7 +536,8 @@ test("popup wyniku mieści się w ekranie telefonu bez przewijania", async ({ pa
   const optionBoxes = await Promise.all(
     (await page.getByTestId("kid-option").elementHandles()).map(async (option) => await option.boundingBox()),
   );
-  expect(optionBoxes).toHaveLength(3);
+  expect(optionBoxes.length).toBeGreaterThanOrEqual(2);
+  expect(optionBoxes.length).toBeLessThanOrEqual(4);
   for (const box of optionBoxes) {
     expect(box).not.toBeNull();
     expect(box!.y + box!.height).toBeLessThanOrEqual(barBox!.y + 1);

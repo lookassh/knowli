@@ -30,6 +30,7 @@ import { computeTargetKey } from "../domain/target-key";
 export interface SessionContextShape {
   canRead: boolean;
   vocabularyFormat: "standard" | "picture";
+  supportsPictureVocabulary?: boolean;
   microphoneDisabledTaskIds: string[];
   mockTestReport?: MockTestReportDto;
   timezone: string;
@@ -51,6 +52,7 @@ export function contextOf(session: { context: Record<string, unknown> }): Sessio
   return {
     canRead: raw.canRead ?? true,
     vocabularyFormat: raw.vocabularyFormat === "picture" ? "picture" : "standard",
+    supportsPictureVocabulary: raw.supportsPictureVocabulary === true,
     microphoneDisabledTaskIds: Array.isArray(raw.microphoneDisabledTaskIds)
       ? raw.microphoneDisabledTaskIds.filter((id): id is string => typeof id === "string")
       : [],

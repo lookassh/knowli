@@ -258,7 +258,8 @@ export async function startSession(services: Services, input: SessionInput): Pro
         now.getTime() - (await lastActivityAt(tx, active.id, active.startedAt)).getTime() >
         RESUME_WINDOW_MS;
       if (active.deckId === valid.deckId && active.mode === mode && !stale) {
-        if (contextOf(active).vocabularyFormat === "picture" && !valid.supportsPictureVocabulary) {
+        const activeContext = contextOf(active);
+        if ((activeContext.vocabularyFormat === "picture" || activeContext.supportsPictureVocabulary) && !valid.supportsPictureVocabulary) {
           throw new AppError("validation", { details: { reason: "picture_client_update_required" } });
         }
         return sessionDto(tx, active, true);
@@ -326,6 +327,7 @@ export async function startSession(services: Services, input: SessionInput): Pro
       ...contextBase,
       canRead: child.canRead,
       vocabularyFormat: version.vocabularyFormat,
+      supportsPictureVocabulary: valid.supportsPictureVocabulary,
       microphoneDisabledTaskIds: [],
     };
     const id = randomUUID();
@@ -386,6 +388,7 @@ export interface PlannedItem {
   sourceLocale: string;
   targetLocale: string;
   meaningVisual?: MeaningVisual;
+  listeningVisual?: MeaningVisual;
 }
 
 interface PlannedTask {
@@ -404,6 +407,8 @@ interface ItemStats {
   recognitionFallbackUsedThisSession: boolean;
   readingDirections: Partial<Record<ReadingDirection, number>>;
   practiceMix: { listening: number; reading: number };
+  pictureListeningCount: number;
+  textListeningCount: number;
 }
 
 /** Buduje wejście schedulera z przypiętej wersji, projekcji i statystyki sesji. */
@@ -494,6 +499,8 @@ async function planNextTask(
         recognitionFallbackUsedThisSession: false,
         readingDirections: {},
         practiceMix: { listening: 0, reading: 0 },
+        pictureListeningCount: 0,
+        textListeningCount: 0,
       },
     ]),
   );
@@ -505,6 +512,7 @@ async function planNextTask(
       direction: sessionTasks.direction,
       ordinal: sessionTasks.ordinal,
       context: sessionTasks.context,
+      publicPrompt: sessionTasks.publicPrompt,
       state: sessionTasks.state,
     })
     .from(sessionTasks)
@@ -526,6 +534,8 @@ async function planNextTask(
     }
     if (row.exerciseType === "listening") {
       stats.practiceMix.listening += 1;
+      if ((row.publicPrompt as { kind?: unknown } | null)?.kind === "picture_listening") stats.pictureListeningCount += 1;
+      else stats.textListeningCount += 1;
     } else if (row.exerciseType === "reading" || row.exerciseType === "reverse_recognition") {
       stats.practiceMix.reading += 1;
       const direction = (row.direction ?? (row.exerciseType === "reading" ? "target_to_source" : "source_to_target")) as ReadingDirection;
@@ -609,6 +619,13 @@ async function planNextTask(
                     : MeaningVisualSchema.parse({ kind: "number", count: item.visualData?.count }),
               }
             : {}),
+          ...(item.visualType === "image" && imageByRevision.has(r.id)
+            ? { listeningVisual: MeaningVisualSchema.parse({ kind: "image", imageAssetId: imageByRevision.get(r.id) }) }
+            : item.visualType === "color"
+              ? { listeningVisual: MeaningVisualSchema.parse({ kind: "color", color: item.visualData?.color }) }
+              : item.visualType === "number"
+                ? { listeningVisual: MeaningVisualSchema.parse({ kind: "number", count: item.visualData?.count }) }
+                : {}),
         },
       ];
     }),
@@ -732,6 +749,8 @@ async function planNextTask(
       lastUsedOrdinal: stats.lastUsedOrdinal,
       readingDirections: stats.readingDirections,
       practiceMix: stats.practiceMix,
+      pictureListeningCount: stats.pictureListeningCount,
+      textListeningCount: stats.textListeningCount,
       introducedSkills: learning?.introducedSkills ?? introducedByRevision.get(r.id) ?? { recall: false, pronunciation: false },
       hasBeenPresented: historicallyExposed.has(targetKeysByRevision.get(r.id)!),
       testPreparationIssued: taskRows.some(
@@ -740,7 +759,7 @@ async function planNextTask(
           (row.context as { reason?: unknown } | null)?.reason === "test-preparation",
       ),
       settledReviewSkills: settledReviewSkillsByRevision.get(r.id) ?? [],
-      ...(item.meaningVisual ? { visual: item.meaningVisual } : {}),
+      ...((item.listeningVisual ?? item.meaningVisual) ? { visual: item.listeningVisual ?? item.meaningVisual } : {}),
     };
   });
   const peers = candidates.map((c) => ({
@@ -760,6 +779,7 @@ async function planNextTask(
     microphoneEnabled: session.microphoneEnabled,
     canRead: sessionContext.canRead,
     vocabularyFormat: sessionContext.vocabularyFormat,
+    supportsPictureVocabulary: sessionContext.supportsPictureVocabulary,
     assessedRemaining,
     nextOrdinal,
     candidates,

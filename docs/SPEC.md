@@ -941,3 +941,9 @@ Profil dziecka ma rodzicielską flagę „Dziecko jeszcze nie czyta” (`canRead
 Kid UI pokazuje reprezentacje obrazu, koloru lub liczby. Ćwiczenia to prezentacja i słuchanie z wyborem wizualnym, odpowiedź ustna do obrazka oraz przypominanie do obrazka bez pola tekstowego. Stałe instrukcje mają gotowe nagrania przygotowane przez serwer; audio wzorca słowa i ujawnienie są wydawane dopiero po autoryzacji ekspozycji. Dziecko może pominąć zadanie, a odmowa mikrofonu nie resetuje sesji.
 
 Zmiana `canRead` nie usuwa ani nie przepisuje wcześniejszych prób, ocen lub wyników reading/spelling. Raport rodzica zachowuje pełną liczbę słów i wszystkie pięć umiejętności; informuje, że część ćwiczeń mogła nie wystąpić. `learning-overview` v1 i jego JSON Schema pozostają bez zmian, nie zawierają flagi `canRead`, nadal filtrują lekcje, a skill Hermesa wyjaśnia ograniczenie interpretacji. Zmiana danych profilu obowiązuje nowe sesje; aktywna sesja używa zamrożonego ustawienia.
+
+## 35. Wizualne słuchanie w zwykłych zestawach (2026-10-17)
+
+W zwykłym zestawie profil czytający może otrzymać wybór zatwierdzonych ilustracji po usłyszeniu słowa. Dla każdego słowa warianty listening naprzemiennie używają `picture_listening` i dotychczasowego tekstowego `listening`, zaczynając od wizualnego, jeśli istnieją co najmniej dwie bezpieczne, jednoznaczne opcje. Gdy ilustracji brakuje, są niejednoznaczne albo dystraktory są zarezerwowane, scheduler używa zwykłego tekstowego listening. Wspierany klient deklaruje istniejącą flagę `supportsPictureVocabulary`; klient jej nieobsługujący dostaje prompt tekstowy.
+
+Wizualny wybór ocenia wyłącznie rozumienie ze słuchu. Nie zastępuje samodzielnego Recall ani spelling. Działa na istniejących zatwierdzonych wizualizacjach i nie zmienia pozostałych ćwiczeń, budżetu ani treści wydanego zadania. `learning-overview` v1, API, MCP i skill pozostają bez zmian; znaczenie wyniku pozostaje zwykłym listening.

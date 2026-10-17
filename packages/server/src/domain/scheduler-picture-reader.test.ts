@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { selectTask, type ScheduleCandidate } from "./scheduler";
 import { projectProgress } from "./progress";
 import { evaluateChoice, evaluateWritten } from "./evaluate";
+import { computeTargetKey } from "./target-key";
 import { LEARNING_V1_POLICY as policy } from "../policies/learning-v1";
 import type { HistoryEntry, Skill } from "./types";
 
@@ -177,5 +178,84 @@ describe("losowanie picture niezależnie od czytania", () => {
       exerciseType: "speech",
       reason: "stage-introduction",
     });
+  });
+});
+
+describe("wizualne listening w zwykłym zestawie", () => {
+  it("naprzemiennie wybiera zatwierdzony obraz i dotychczasowe listening tekstowe", () => {
+    const peers = numbers(3);
+    const target = peers[0]!;
+    target.ownPresentationCompleted = true;
+    target.usedThisSession = 1;
+    target.presentationsThisSession = 1;
+    target.practiceMix = { listening: 0, reading: 1 };
+    target.introducedSkills = { recall: true, pronunciation: true };
+    target.visual = { kind: "number", count: 0 };
+    peers[1]!.visual = { kind: "number", count: 1 };
+    peers[2]!.visual = { kind: "number", count: 2 };
+    const base = { ...input([target]), candidates: [target], peers, vocabularyFormat: "standard" as const,
+      supportsPictureVocabulary: true, nextOrdinal: 8 };
+
+    const first = selectTask(base);
+    expect(first?.exerciseType).toBe("listening");
+    expect(first?.options?.every(option => option.visual !== undefined)).toBe(true);
+
+    target.pictureListeningCount = 1;
+    target.textListeningCount = 0;
+    const second = selectTask(base);
+    expect(second?.exerciseType).toBe("listening");
+    expect(second?.options?.every(option => option.visual === undefined)).toBe(true);
+
+    target.textListeningCount = 1;
+    const third = selectTask(base);
+    expect(third?.exerciseType).toBe("listening");
+    expect(third?.options?.every(option => option.visual !== undefined)).toBe(true);
+  });
+
+  it("dla starego klienta zachowuje tekstowy prompt", () => {
+    const peers = numbers(3);
+    const target = peers[0]!;
+    target.ownPresentationCompleted = true;
+    target.usedThisSession = 1;
+    target.presentationsThisSession = 1;
+    target.practiceMix = { listening: 0, reading: 1 };
+    target.introducedSkills = { recall: true, pronunciation: true };
+    target.visual = { kind: "number", count: 0 };
+    const plan = selectTask({ ...input([target]), candidates: [target], peers,
+      vocabularyFormat: "standard", supportsPictureVocabulary: false, nextOrdinal: 8 });
+    expect(plan?.exerciseType).toBe("listening");
+    expect(plan?.options?.every(option => option.visual === undefined)).toBe(true);
+  });
+
+  it("wraca do tekstowego listening gdy nie ma dość wizualnych opcji", () => {
+    const candidates = numbers(3);
+    for (const item of candidates) {
+      item.ownPresentationCompleted = true;
+      item.usedThisSession = item.presentationsThisSession = 1;
+      item.introducedSkills = { recall: true, pronunciation: true };
+    }
+    candidates[0]!.visual = { kind: "number", count: 0 };
+    candidates[1]!.visual = undefined;
+    candidates[2]!.visual = undefined;
+    const plan = selectTask({ ...input(candidates), candidates, peers: candidates,
+      vocabularyFormat: "standard", supportsPictureVocabulary: true });
+    expect(plan?.exerciseType).toBe("listening");
+    expect(plan?.options?.every(option => option.visual === undefined)).toBe(true);
+  });
+
+  it("nie ujawnia zarezerwowanego słowa jako wizualnego dystraktora", () => {
+    const candidates = numbers(3);
+    for (const item of candidates) {
+      item.ownPresentationCompleted = true;
+      item.usedThisSession = item.presentationsThisSession = 1;
+      item.introducedSkills = { recall: true, pronunciation: true };
+    }
+    const reservedKey = computeTargetKey(candidates[2]!.target, candidates[2]!.targetLocale);
+    const plan = selectTask({ ...input(candidates), candidates, peers: candidates,
+      vocabularyFormat: "standard", supportsPictureVocabulary: true,
+      reservedTargetKeys: [reservedKey] });
+    expect(plan?.options?.some(option => option.itemRevisionId === candidates[2]!.itemRevisionId)).toBe(false);
+    expect(plan?.revealsTargetKeys).not.toContain(reservedKey);
+    expect(plan?.keepsReservations).toContain(reservedKey);
   });
 });

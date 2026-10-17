@@ -80,6 +80,53 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
   });
   afterEach(async () => { await fakes.dispose(); });
 
+  it("zwykły zestaw wydaje obrazkowe listening tylko wspieranemu klientowi i ocenia wyłącznie listening", async () => {
+    const draft = await createDraft(services, {
+      title: "Kolory standardowe",
+      items: [
+        { source: "czerwony", target: "red", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "color", visualData: { color: "#ff0000" } },
+        { source: "niebieski", target: "blue", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "color", visualData: { color: "#0000ff" } },
+      ],
+    });
+    await reconcileDraftAssets(services, draft.id);
+    for (let pass = 0; pass < 6; pass++) if ((await runDueGenerationWork(services)).processed === 0) break;
+    await publishDraft(services, draft.id, 1);
+
+    const child = await createChild(services, { displayName: "Ola", avatarKey: "fox", canRead: true });
+    await upsertAssignment(services, child.id, draft.deckId, null);
+    const session = await startSession(services, { childId: child.id, deckId: draft.deckId,
+      microphoneEnabled: false, supportsPictureVocabulary: true });
+    for (let index = 0; index < 2; index++) {
+      const exposure = await nextTask(services, session.sessionId);
+      expect(exposure?.prompt.kind).toBe("exposure");
+      await completePresentation(services, { taskId: exposure!.taskId });
+    }
+    const task = await nextTask(services, session.sessionId);
+    expect(task?.prompt.kind).toBe("picture_listening");
+    expect(await nextTask(services, session.sessionId)).toEqual(task);
+    const stored = (await pool.query<{ answer_key: { correctOptionId: string } }>(
+      "select answer_key from learning_app.session_tasks where id=$1", [task!.taskId],
+    )).rows[0]!;
+    const result = await submitAttempt(services, { taskId: task!.taskId, clientAttemptId: randomUUID(),
+      modality: "choice", optionId: stored.answer_key.correctOptionId });
+    expect((await pool.query("select skill, outcome from learning_app.assessments where attempt_id=$1", [result.attemptId])).rows)
+      .toEqual([{ skill: "listening", outcome: "correct" }]);
+    await expect(startSession(services, { childId: child.id, deckId: draft.deckId,
+      microphoneEnabled: false, supportsPictureVocabulary: false }))
+      .rejects.toMatchObject({ details: { reason: "picture_client_update_required" } });
+
+    const oldChild = await createChild(services, { displayName: "Jan", avatarKey: "fox", canRead: true });
+    await upsertAssignment(services, oldChild.id, draft.deckId, null);
+    const oldSession = await startSession(services, { childId: oldChild.id, deckId: draft.deckId,
+      microphoneEnabled: false, supportsPictureVocabulary: false });
+    for (let index = 0; index < 2; index++) {
+      const exposure = await nextTask(services, oldSession.sessionId);
+      expect(exposure?.prompt.kind).toBe("exposure");
+      await completePresentation(services, { taskId: exposure!.taskId });
+    }
+    expect((await nextTask(services, oldSession.sessionId))?.prompt.kind).toBe("listening");
+  });
+
   it.each([false, true])("liczby 0–20: losuje nextTask, utrwala issued i kończy przebieg, canRead=%s", async canRead => {
     const numbers = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
       "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"];
