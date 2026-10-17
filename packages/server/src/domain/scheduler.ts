@@ -70,6 +70,8 @@ export interface ScheduleCandidate {
   testPreparationIssued?: boolean;
   settledReviewSkills?: readonly Skill[];
   visual?: MeaningVisual;
+  pictureListeningCount?: number;
+  textListeningCount?: number;
 }
 
 /** Inne elementy wersji — pula dystraktorów. */
@@ -91,6 +93,7 @@ export interface ScheduleInput {
   microphoneEnabled: boolean;
   canRead?: boolean;
   vocabularyFormat?: "standard" | "picture";
+  supportsPictureVocabulary?: boolean;
   /** Pozostały budżet zadań ocenianych. */
   assessedRemaining: number;
   /** Ordinal, jaki otrzyma nowo wydane zadanie. */
@@ -364,25 +367,32 @@ function recognitionTaskPlan(
         : capabilities.exerciseTypes.includes("reading"),
     );
   for (const selectedDirection of directions) {
-    if (input.vocabularyFormat === "picture" && selectedDirection === "listening") {
-      if (!target.visual) continue;
-      const pictureOptions = buildPictureRecognitionOptions({
-        target: { ...target, visual: target.visual } as PictureRecognitionItem,
-        peers: input.peers.filter((peer) => peer.visual !== undefined) as PictureRecognitionItem[],
-        reservedTargetKeys: [...reserved],
-        rotateBy: input.nextOrdinal,
-      });
-      if (!pictureOptions) continue;
-      return {
-        itemRevisionId: target.itemRevisionId,
-        exerciseType: "listening",
-        options: pictureOptions.options,
-        revealsTargetKeys: pictureOptions.revealsTargetKeys,
-        assessed: true,
-        reason,
-        keepsReservations,
-        assessmentSkills: ["listening"],
-      };
+    if (selectedDirection === "listening" && (input.vocabularyFormat === "picture" || input.supportsPictureVocabulary !== false)) {
+      const wantPicture = input.vocabularyFormat === "picture" ||
+        ((target.pictureListeningCount ?? 0) + (target.textListeningCount ?? 0)) % 2 === 0;
+      if (!wantPicture) {
+        // The text variant remains the ordinary listening prompt.
+      } else if (target.visual) {
+        const pictureOptions = buildPictureRecognitionOptions({
+          target: { ...target, visual: target.visual } as PictureRecognitionItem,
+          peers: input.peers.filter((peer) => peer.visual !== undefined) as PictureRecognitionItem[],
+          reservedTargetKeys: [...reserved],
+          rotateBy: input.nextOrdinal,
+        });
+        if (pictureOptions) {
+          return {
+            itemRevisionId: target.itemRevisionId,
+            exerciseType: "listening",
+            options: pictureOptions.options,
+            revealsTargetKeys: pictureOptions.revealsTargetKeys,
+            assessed: true,
+            reason,
+            keepsReservations,
+            assessmentSkills: ["listening"],
+          };
+        }
+      }
+      if (input.vocabularyFormat === "picture") continue;
     }
     const built = buildRecognitionOptions({
       target,
