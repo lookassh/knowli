@@ -171,9 +171,13 @@ describe("rozliczanie aktywności nagrodowej", () => {
       await listKidProfiles(services);
       const projectionElapsedMs = performance.now() - projectionStartedAt;
       const profileQueries = sqlSeen.slice(beforeProfiles);
-      expect(profileQueries).toHaveLength(7);
-      expect(profileQueries.length).toBeLessThan(baselineCount);
-      expect(profileQueries.some(sql => /LEFT JOIN LATERAL[\s\S]*ORDER BY request\.requested_at DESC, request\.id DESC[\s\S]*LIMIT 1/i.test(sql))).toBe(true);
+      const isActivityQuery = (query: string) => /with window_sessions as|select count\(\*\)::int as count\s+from learning_app\.(?:attempts|learning_events)/i.test(query);
+      const activityQueries = profileQueries.filter(isActivityQuery);
+      const rewardProjectionQueries = profileQueries.filter(query => !isActivityQuery(query));
+      expect(activityQueries).toHaveLength(children.length * 3);
+      expect(rewardProjectionQueries).toHaveLength(7);
+      expect(rewardProjectionQueries.length).toBeLessThan(baselineCount);
+      expect(rewardProjectionQueries.some(sql => /LEFT JOIN LATERAL[\s\S]*ORDER BY request\.requested_at DESC, request\.id DESC[\s\S]*LIMIT 1/i.test(sql))).toBe(true);
       const measuredProfiles = await listKidProfiles(services);
       expect(measuredProfiles.find(profile => profile.childId === children[0]!.id)?.rewards?.xboxRequest).toMatchObject({
         status: "rejected", blockNumber: 500, requestedAt: "2026-10-14T10:08:20.000Z",
