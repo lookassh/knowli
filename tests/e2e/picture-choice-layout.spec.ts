@@ -233,7 +233,10 @@ test("cztery opcje mieszczą się na typowym telefonie, a w niskim widoku pozost
     const visual = element.querySelector<HTMLElement>(".kid-picture-choice-visual")!.getBoundingClientRect();
     return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height,
       insideViewport: bounds.top >= 0 && bounds.bottom <= window.innerHeight && bounds.left >= 0 && bounds.right <= window.innerWidth,
-      visualInsideOption: visual.top >= bounds.top && visual.bottom <= bounds.bottom && visual.left >= bounds.left && visual.right <= bounds.right };
+      visualInsideOption: visual.top >= bounds.top && visual.bottom <= bounds.bottom && visual.left >= bounds.left && visual.right <= bounds.right,
+      visualWidth: visual.width,
+      visualHeight: visual.height,
+    };
   }));
   expect(positions[0]!.x).toBeLessThan(positions[1]!.x);
   expect(positions[2]!.x).toBe(positions[0]!.x);
@@ -242,6 +245,8 @@ test("cztery opcje mieszczą się na typowym telefonie, a w niskim widoku pozost
   expect(positions[2]!.y - (positions[0]!.y + positions[0]!.height)).toBeLessThanOrEqual(16);
   expect(positions.every((position) => position.insideViewport)).toBe(true);
   expect(positions.every((position) => position.visualInsideOption)).toBe(true);
+  expect(positions.every((position) => position.visualHeight >= 100 && position.visualWidth >= 100)).toBe(true);
+  expect(positions.every((position) => position.height >= 120)).toBe(true);
   await expect(page.getByTestId("kid-end")).toBeInViewport();
   const contentGeometry = await page.locator(".kid-material-content").evaluate((element) => ({
     scrollHeight: element.scrollHeight,
