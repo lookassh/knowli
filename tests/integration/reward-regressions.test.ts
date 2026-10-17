@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import { completePresentation, createChild, createDraft, endSession, listKidDecks, nextTask, publishDraft, readParentWorkCard, readRewardActivitySummary, recordRewardActivitySignal, startSession, submitAttempt, upsertAssignment } from "@learning/server";
+import { completePresentation, createChild, createDraft, endSession, ensureLearningPolicy, listKidDecks, nextTask, publishDraft, readParentWorkCard, readRewardActivitySummary, recordRewardActivitySignal, startSession, submitAttempt, upsertAssignment } from "@learning/server";
 import { settleRewardActivity } from "../../packages/server/src/modules/reward-activity";
 import { lessonWorld } from "../fixtures/lesson-world";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
@@ -189,6 +189,7 @@ describe("reward and work-card review regressions", () => {
 
   it("does not offer a daily round when the contacted lesson has no schedulable objective", async () => {
     const { services, clock } = buildTestServices();
+    await ensureLearningPolicy(services.db);
     const child = await createChild(services, { displayName: "Test", avatarKey: "owl" });
     const lesson = await lessonWorld(pool, { childId: child.id, now: clock.now(), unschedulableDailyRound: true });
     expect((await listKidDecks(services, child.id)).find(deck => deck.deckId === lesson.deckId)?.dailyRoundAvailable).toBe(false);

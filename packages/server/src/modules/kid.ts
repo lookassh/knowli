@@ -5,14 +5,14 @@ import { hasScheduledWork, type DeckWorkloadItem, type SkillSnapshot } from "../
 import type { Skill } from "../domain/types";
 import { assignments, childProfiles, childSkillProgress, deckVersions, decks, familySettings, itemRevisionSkills, itemRevisions, learningSessions, revisionAssets } from "../db/schema";
 import { AppError } from "../errors";
-import { mapStatus } from "./sessions";
+import { mapStatus, readEligibleDailyRoundPool } from "./sessions";
 import { lessonDeckListValues } from "./lessons/lesson-sessions";
 import { hasSafeLessonMockPortion } from "./lessons/lesson-mock-tests";
 import { CURRENT_POLICY_ID, ensureLearningPolicy, loadPolicy } from "../policies/registry";
 import { readLearningSnapshot } from "./learning-snapshot";
 import { payloadToItem } from "./item-payload";
 import { readKidRewardSnapshot } from "./reward-activity";
-import { hasDailyRoundForDate, readDailyRoundPool } from "./daily-round";
+import { hasDailyRoundForDate } from "./daily-round";
 
 /**
  * Widoki startowe Kid Mode (arch §12): profile dzieci (tylko nazwa i awatar)
@@ -67,8 +67,11 @@ export async function listKidDecks(services: Services, childId: string, options:
   const dailyRounds = new Map<string, boolean>();
   const nowForRound = services.clock.now();
   for (const row of rows) {
-    const pool = await readDailyRoundPool(services.db, childId, row.deckId, nowForRound);
-    dailyRounds.set(row.deckId, pool !== null && !(await hasDailyRoundForDate(services.db, childId, pool.date)));
+    const available = await services.db.transaction(async (tx) => {
+      const pool = await readEligibleDailyRoundPool(services, tx, childId, row.deckId, nowForRound);
+      return pool !== null && !(await hasDailyRoundForDate(tx, childId, pool.date));
+    }, { isolationLevel: "repeatable read", accessMode: "read only" });
+    dailyRounds.set(row.deckId, available);
   }
   const coverVersionIds = [...new Set([...rows.map((row) => row.versionId).filter((id): id is string => id !== null), ...(active ? [active.deckVersionId] : [])])];
   const coverRevisions = coverVersionIds.length ? await services.db.select({ id: itemRevisions.id, deckVersionId: itemRevisions.deckVersionId, position: itemRevisions.position, payload: itemRevisions.payload })
