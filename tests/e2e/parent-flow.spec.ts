@@ -405,7 +405,7 @@ test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page,
   );
   expect(mondayImage?.state).toBe("pending");
 
-  // publikacja dopiero, gdy nowy obraz dojrzeje w workerze (fake delay 3 s)
+  // publikacja dopiero, gdy nowy obraz dojrzeje w workerze (regulowany fake delay)
   await expect(page.getByTestId("item-image-state-0")).toContainText("generowanie");
   await expect(page.getByTestId("item-image-state-0")).toContainText("gotowy", { timeout: 60_000 });
   await page.getByTestId("publish-deck").click();

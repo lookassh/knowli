@@ -63,8 +63,7 @@ function hostPort(portOutput: string): string {
 
 /**
  * Jeden odizolowany świat na przebieg E2E: czysta baza, `next dev`, worker
- * z fake providerami i deterministycznym opóźnieniem (żeby generacja trwała
- * na tyle długo, by przetestować odświeżenie strony i blokadę publikacji).
+ * z fake providerami i regulowanym opóźnieniem generacji.
  */
 export default async function globalSetup(): Promise<(() => Promise<void>) | void> {
   const cleanup: Array<() => Promise<void>> = [
@@ -133,7 +132,7 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
       DATABASE_URL: databaseUrl,
       MEDIA_ROOT: mediaRoot,
       UMIEM_FAKE_PROVIDERS: "1",
-      UMIEM_FAKE_DELAY_MS: "3000",
+      UMIEM_FAKE_DELAY_MS: process.env.UMIEM_E2E_FAKE_DELAY_MS ?? "750",
       UMIEM_TTS_PROVIDER: "fake-tts",
       UMIEM_TTS_MODEL: "fake-tts-1",
       UMIEM_TTS_VOICE: "fake-voice",
@@ -143,9 +142,11 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
       WORKER_HEALTH_PORT: String(TEST_RUN_CONFIG.workerHealthPort),
     };
 
+    const nextArgs = ["dev", "--port", String(PORT)];
+    if (process.env.UMIEM_E2E_TURBOPACK === "1") nextArgs.push("--turbopack");
     const web = spawn(
       process.execPath,
-      [join(repoRoot, "apps/web/node_modules/next/dist/bin/next"), "dev", "--port", String(PORT)],
+      [join(repoRoot, "apps/web/node_modules/next/dist/bin/next"), ...nextArgs],
       { cwd: join(repoRoot, "apps/web"), env: sharedEnv, stdio: "inherit" },
     );
     cleanup.push(() => killTree(web));
@@ -153,7 +154,7 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
     const worker = spawn(
       process.execPath,
       [join(repoRoot, "apps/worker/node_modules/tsx/dist/cli.mjs"), "src/main.ts"],
-      { cwd: join(repoRoot, "apps/worker"), env: { ...sharedEnv, WORKER_POLL_MS: "500" }, stdio: "inherit" },
+      { cwd: join(repoRoot, "apps/worker"), env: { ...sharedEnv, WORKER_POLL_MS: "100" }, stdio: "inherit" },
     );
     cleanup.push(() => killTree(worker));
 
