@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type { Executor } from "../db/client";
-import { assessments, attempts, childSkillProgress, eventExposures, itemRevisionSkills, itemRevisions, learningEvents, learningSessions, sessionTasks } from "../db/schema";
+import { assessments, attempts, childSkillProgress, childTargetExposures, eventExposures, itemRevisionSkills, itemRevisions, learningEvents, learningSessions, sessionTasks } from "../db/schema";
 import { projectProgress } from "../domain/progress";
 import { rankConfusions, type ConfusionPair, type ConfusionObservation } from "../domain/confusion-priority";
 import { deriveSkillWork, type SkillWork } from "../domain/learning-work";
@@ -61,8 +61,11 @@ export async function readLearningSnapshot(
     status: childSkillProgress.status,
     nextReviewAt: childSkillProgress.nextReviewAt,
     streak: childSkillProgress.independentSuccessStreak,
+    firstIssuedAt: childSkillProgress.firstIssuedAt,
+    hasQualifyingAssessment: childSkillProgress.hasQualifyingAssessment,
   }).from(childSkillProgress).where(and(
     eq(childSkillProgress.childId, scope.childId),
+    eq(childSkillProgress.policyId, scope.policy.version),
     inArray(childSkillProgress.skillVersionId, versions),
   ));
   const progressByVersion = new Map(progressRows.map((row) => [row.skillVersionId, {
@@ -70,6 +73,7 @@ export async function readLearningSnapshot(
     nextReviewAt: row.nextReviewAt?.toISOString() ?? null,
     streak: row.streak,
   } satisfies SkillSnapshot]));
+  const factsByVersion = new Map(progressRows.map((row) => [row.skillVersionId, row]));
 
   const taskRows = versions.length === 0 ? [] : await exec.select({
     taskId: sessionTasks.id,
@@ -182,12 +186,11 @@ export async function readLearningSnapshot(
     keysByRevision.set(revision.id, keys);
     for (const key of keys) allTargetKeys.add(key);
   }
-  const exposureRows = allTargetKeys.size === 0 ? [] : await exec.select({ targetKey: eventExposures.targetKey, occurredAt: learningEvents.occurredAt })
-    .from(eventExposures).innerJoin(learningEvents, eq(learningEvents.id, eventExposures.eventId))
+  const exposureRows = allTargetKeys.size === 0 ? [] : await exec.select({ targetKey: childTargetExposures.targetKey, occurredAt: childTargetExposures.lastExposureAt })
+    .from(childTargetExposures)
     .where(and(
-      eq(eventExposures.childId, scope.childId),
-      eq(learningEvents.sealed, true),
-      inArray(eventExposures.targetKey, [...allTargetKeys]),
+      eq(childTargetExposures.childId, scope.childId),
+      inArray(childTargetExposures.targetKey, [...allTargetKeys]),
     ));
   const exposureByKey = new Map<string, string>();
   for (const row of exposureRows) {
@@ -214,8 +217,9 @@ export async function readLearningSnapshot(
       const storedSnapshot = progressByVersion.get(link.skillVersionId);
       const history = histories.get(skillHistoryKey({ childId: scope.childId, skillVersionId: link.skillVersionId, skill })) ?? [];
       const policyHistory = history.filter((entry) => entry.policyVersion === scope.policy.version);
-      const projected = policyHistory.length > 0
-        ? projectProgress(policyHistory, scope.policy, scope.now).skills[skill]
+      const crediblePolicyHistory = policyHistory.filter((entry) => entry.outcome !== "unevaluated");
+      const projected = crediblePolicyHistory.length > 0
+        ? projectProgress(crediblePolicyHistory, scope.policy, scope.now).skills[skill]
         : undefined;
       const snapshot = projected
         ? { status: projected.status, nextReviewAt: projected.nextReviewAt, streak: projected.streak }
@@ -225,8 +229,8 @@ export async function readLearningSnapshot(
       work[skill] = deriveSkillWork({
         skill,
         progress: snapshot,
-        hasQualifyingAssessment: policyHistory.some((entry) => entry.independent && entry.outcome !== "unevaluated"),
-        firstIssuedAt: firstIssued.get(`${link.skillVersionId}:${skill}`) ?? null,
+        hasQualifyingAssessment: factsByVersion.get(link.skillVersionId)?.hasQualifyingAssessment ?? crediblePolicyHistory.some((entry) => entry.independent),
+        firstIssuedAt: factsByVersion.get(link.skillVersionId)?.firstIssuedAt?.toISOString() ?? firstIssued.get(`${link.skillVersionId}:${skill}`) ?? null,
         lastRelevantExposureAt,
         now: scope.now,
         policy: scope.policy,

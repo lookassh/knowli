@@ -39,6 +39,15 @@ import { readLearningSnapshot } from "../../packages/server/src/modules/learning
  */
 
 const { pool } = testDatabase();
+let capturedHistoryQueries: string[] | null = null;
+const originalPoolQuery = pool.query.bind(pool);
+pool.query = ((...args: Parameters<typeof pool.query>) => {
+  if (capturedHistoryQueries) {
+    const query = args[0] as unknown as string | { text?: string };
+    capturedHistoryQueries.push(typeof query === "string" ? query : query.text ?? "");
+  }
+  return originalPoolQuery(...args);
+}) as typeof pool.query;
 
 async function query<T>(sql: string, params: unknown[] = []): Promise<T[]> {
   const result = await pool.query(sql, params);
@@ -147,11 +156,11 @@ async function sessionWithAttempt(childId: string): Promise<{ taskId: string; at
   throw new Error("nie wydano zadania ocenianego");
 }
 
-async function answerCorrectly(task: TaskDto): Promise<void> {
+async function answerCorrectly(task: TaskDto, suppliedServices?: Services): Promise<void> {
   const row = (await query<{ answer_key: { correctOptionId?: string; target?: string } }>(
     `select answer_key from learning_app.session_tasks where id = $1`, [task.taskId],
   ))[0]!;
-  await submitAttempt(buildTestServices().services, {
+  await submitAttempt(suppliedServices ?? buildTestServices().services, {
     taskId: task.taskId,
     clientAttemptId: randomUUID(),
     ...(row.answer_key.correctOptionId
@@ -280,11 +289,44 @@ describe("niezmienność historii prób (integracja)", () => {
     expect([...new Set(assessmentChildren.map((row) => row.child_id))].sort()).toEqual([childId, childB].sort());
   });
 
+  it("zachowuje dokładne trójki zakresów przy stałym rozmiarze SQL i pomija pusty odczyt", async () => {
+    const services = buildTestServices().services;
+    const childB = (await createChild(services, { displayName: "Zakres B", avatarKey: "owl" })).id;
+    const first = await sessionWithAttempt(childId);
+    const second = await sessionWithAttempt(childB);
+    const scopes = await query<{ childId: string; skillVersionId: string; skill: "listening" }>(
+      `select child_id as "childId", skill_version_id as "skillVersionId", skill
+       from learning_app.assessments where attempt_id = any($1::uuid[]) order by child_id`,
+      [[first.attemptId, second.attemptId]],
+    );
+    expect(scopes).toHaveLength(2);
+    const crossed = scopes.map((scope, index) => ({ ...scope, childId: scopes[1 - index]!.childId }));
+    expect((await readSkillHistories(services.db, crossed)).size).toBe(0);
+    capturedHistoryQueries = [];
+    try {
+      expect((await readSkillHistories(services.db, [])).size).toBe(0);
+      expect(capturedHistoryQueries).toHaveLength(0);
+      const absent = Array.from({ length: 400 }, (_, index) => ({
+        childId: index % 2 ? childId : childB, skillVersionId: randomUUID(), skill: "listening" as const,
+      }));
+      const result = await readSkillHistories(services.db, [...scopes, ...scopes, ...absent]);
+      expect([...result.keys()].sort()).toEqual(scopes.map(skillHistoryKey).sort());
+      expect([...result.values()].map(history => history.length)).toEqual([1, 1]);
+      // Bounded query text prevents hundreds of OR branches and JIT compilation overhead.
+      expect(capturedHistoryQueries[0]!.length).toBeLessThan(5000);
+    } finally {
+      capturedHistoryQueries = null;
+    }
+  });
+
   it("kwalifikuje reading z audio jako wspomagane przy przyjęciu odpowiedzi", async () => {
     const { deckId } = await sharedDeckForChildren([childId]);
-    const { services: sessionServices, task } = await openLearningExercise(childId, deckId, "reading");
+    const { services: sessionServices, clock } = buildTestServices();
+    const { task } = await openLearningExercise(childId, deckId, "reading", sessionServices);
     await authorizeDisclosure(sessionServices, { taskId: task.taskId, kind: "audio" });
-    await answerCorrectly(task);
+    clock.advanceMs(1);
+    await authorizeDisclosure(sessionServices, { taskId: task.taskId, kind: "audio" });
+    await answerCorrectly(task, sessionServices);
 
     const assessment = await query<{ outcome: string; independent: boolean; confirmation_eligible: boolean }>(
       `select a.outcome, a.independent, a.confirmation_eligible
@@ -293,6 +335,83 @@ describe("niezmienność historii prób (integracja)", () => {
       [task.taskId],
     );
     expect(assessment[0]).toMatchObject({ outcome: "correct", independent: false, confirmation_eligible: false });
+    const scope = (await query<{ child_id: string; skill_version_id: string }>(
+      `select a.child_id, a.skill_version_id from learning_app.assessments a
+        join learning_app.attempts t on t.id = a.attempt_id
+       where t.task_id = $1 and a.skill = 'reading'`,
+      [task.taskId],
+    ))[0]!;
+    const history = await readSkillHistories(sessionServices.db, [{
+      childId: scope.child_id, skillVersionId: scope.skill_version_id, skill: "reading",
+    }]);
+    const entry = history.get(skillHistoryKey({
+      childId: scope.child_id, skillVersionId: scope.skill_version_id, skill: "reading",
+    }));
+    expect(entry).toHaveLength(1);
+    expect(entry![0]).toMatchObject({ independent: false, confirmationEligible: false });
+    expect((await query<{ count: string }>(
+      `select count(*)::text as count from learning_app.learning_events
+        where task_id = $1 and kind = 'audio_issued' and sealed = true`,
+      [task.taskId],
+    ))[0]!.count).toBe("2");
+  });
+
+  it("ignoruje późniejsze i niezapieczętowane audio oraz audio spoza zadania", async () => {
+    const { deckId } = await sharedDeckForChildren([childId]);
+    const services = buildTestServices().services;
+    const { task } = await openLearningExercise(childId, deckId, "reading", services);
+    await answerCorrectly(task, services);
+    const attempt = (await query<{ child_id: string; item_id: string; received_at: Date; skill_version_id: string }>(
+      `select a.child_id, r.item_id, t.received_at, a.skill_version_id
+         from learning_app.assessments a
+         join learning_app.attempts t on t.id = a.attempt_id
+         join learning_app.session_tasks st on st.id = t.task_id
+         join learning_app.item_revisions r on r.id = st.item_revision_id
+        where t.task_id = $1 and a.skill = 'reading'`,
+      [task.taskId],
+    ))[0]!;
+    const timestamp = attempt.received_at;
+    // Testowy, historycznie niemożliwy do zapisania stan unsealed pozwala
+    // zweryfikować filtr obronny czytnika; wyłączony trigger nie opuszcza tej bazy.
+    await pool.query("alter table learning_app.learning_events disable trigger learning_events_sealed_at_commit");
+    try {
+      await pool.query(
+        `insert into learning_app.learning_events
+          (id, child_id, task_id, item_id, sealed, step_id, kind, occurred_at, context)
+         values ($1,$2,$3,$4,false,'unsealed-test','audio_issued',$5,'{}'::jsonb)`,
+        [randomUUID(), attempt.child_id, task.taskId, attempt.item_id, new Date(timestamp.getTime() - 1000)],
+      );
+    } finally {
+      await pool.query("alter table learning_app.learning_events enable trigger learning_events_sealed_at_commit");
+    }
+    await pool.query(
+      `insert into learning_app.learning_events
+        (id, child_id, task_id, item_id, sealed, step_id, kind, occurred_at, context)
+       values ($1,$2,$3,$4,true,'late-audio-test','audio_issued',$5,'{}'::jsonb)`,
+      [randomUUID(), attempt.child_id, task.taskId, attempt.item_id, new Date(timestamp.getTime() + 1000)],
+    );
+    const otherChild = (await createChild(services, { displayName: "Iga", avatarKey: "owl" })).id;
+    await upsertAssignment(services, otherChild, deckId, null);
+    const otherTask = await openLearningExercise(otherChild, deckId, "reading", services);
+    await authorizeDisclosure(services, { taskId: otherTask.task.taskId, kind: "audio" });
+
+    const scope = { childId: attempt.child_id, skillVersionId: attempt.skill_version_id, skill: "reading" as const };
+    const histories = await readSkillHistories(services.db, [scope]);
+    const history = histories.get(skillHistoryKey(scope));
+    expect(history).toHaveLength(1);
+    expect(history![0]!.independent).toBe(true);
+
+    // A historical grade marked independent is requalified by the evidence reader.
+    // No earlier sealed audio can mask the equality boundary in this scenario.
+    await pool.query(
+      `insert into learning_app.learning_events
+        (id, child_id, task_id, item_id, sealed, step_id, kind, occurred_at, context)
+       values ($1,$2,$3,$4,true,'equal-audio-test','audio_issued',$5,'{}'::jsonb)`,
+      [randomUUID(), attempt.child_id, task.taskId, attempt.item_id, timestamp],
+    );
+    const requalified = (await readSkillHistories(services.db, [scope])).get(skillHistoryKey(scope));
+    expect(requalified).toHaveLength(1);
+    expect(requalified![0]).toMatchObject({ independent: false, confirmationEligible: false });
   });
 
   it("zachowuje termin samodzielnego Recall 24 godziny po pierwszym wydaniu", async () => {
@@ -574,9 +693,36 @@ describe("niezmienność historii prób (integracja)", () => {
     );
     expect(skillVersions.length).toBeGreaterThan(0);
 
+    capturedHistoryQueries = [];
     const histories = await readSkillHistories(sessionServices.db, [
       { childId: nonReaderId, skillVersionId: skillVersions[0]!.id, skill: "listening" },
     ]);
+    const historyQueries = capturedHistoryQueries;
+    capturedHistoryQueries = null;
+    expect(historyQueries!.some((statement) => /exists\s*\(\s*select 1 from learning_app\.learning_events/i.test(statement))).toBe(false);
+    const audioQuery = historyQueries!.find((statement) => /from "learning_app"\."learning_events"/i.test(statement));
+    expect(audioQuery).toBeDefined();
+    expect(audioQuery).toMatch(/min\(.*occurred_at.*\).*group by.*task_id/is);
+    expect(audioQuery).toMatch(/task_id.*=\s*any\(/i);
+    const explainClient = await pool.connect();
+    let audioPlan: unknown;
+    try {
+      await explainClient.query("begin");
+      await explainClient.query("set local enable_seqscan = off");
+      const explained = await explainClient.query(
+        `explain (format json)
+         select task_id, min(occurred_at)
+           from learning_app.learning_events
+          where task_id = $1 and kind = 'audio_issued' and sealed = true
+          group by task_id`,
+        [listeningTask!.taskId],
+      );
+      audioPlan = explained.rows[0]?.["QUERY PLAN"];
+      await explainClient.query("rollback");
+    } finally {
+      explainClient.release();
+    }
+    expect(JSON.stringify(audioPlan)).toContain("learning_events_audio_task_occurred_idx");
     const history = histories.get(skillHistoryKey({
       childId: nonReaderId,
       skillVersionId: skillVersions[0]!.id,

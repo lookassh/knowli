@@ -24,6 +24,17 @@ export interface LessonMockPoolEntry {
   readonly targetKey: string;
 }
 
+/** Wspólne mapowanie z lekkiego odczytu listy i pełnej puli startowej. */
+export function toLessonMockPoolEntry(input: {
+  itemId: string;
+  itemRevisionId: string;
+  objectiveId: string;
+  exerciseType: LessonExerciseType;
+  targetKey: string;
+}): LessonMockPoolEntry {
+  return { ...input, stage: stageOf(input.exerciseType) };
+}
+
 /** Wejście planera kartkówki. */
 export interface LessonMockTestInput {
   readonly pool: readonly LessonMockPoolEntry[];

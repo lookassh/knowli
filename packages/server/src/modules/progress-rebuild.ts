@@ -1,5 +1,5 @@
 import { UuidSchema } from "@learning/contracts";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, max, min } from "drizzle-orm";
 import type { Services } from "../config";
 import type { Tx } from "../db/client";
 import {
@@ -12,6 +12,12 @@ import {
   itemRevisions,
   learningSessions,
   skillVersions,
+  sessionTasks,
+  itemRevisionSkills,
+  childSkillProgressLegacy,
+  childTargetExposures,
+  eventExposures,
+  learningEvents,
 } from "../db/schema";
 import type { ProgressStatus, Skill } from "../domain/types";
 import { VOCABULARY_SKILLS } from "../domain/types";
@@ -20,7 +26,7 @@ import { loadPolicy } from "../policies/registry";
 import { projectProgress } from "../domain/progress";
 import { projectObjectiveProgress, lastIndependentObjectiveAt, type ObjectiveHistoryEntry } from "../domain/lessons/progress";
 import { readSkillHistories, skillHistoryKey, type HistoryScope } from "./skill-history";
-import { writeSkillProjection } from "./skill-projections";
+import { SKILL_PROJECTION_VERSION, writeSkillProjection } from "./skill-projections";
 
 export interface RebuildProgressOptions {
   childId?: string;
@@ -28,7 +34,7 @@ export interface RebuildProgressOptions {
 }
 
 export interface RebuildProgressReport {
-  projectionVersion: "proj-2";
+  projectionVersion: typeof SKILL_PROJECTION_VERSION;
   children: number;
   examined: number;
   inserted: number;
@@ -42,7 +48,7 @@ type ChildReport = Omit<RebuildProgressReport, "projectionVersion" | "children">
 type ProgressRow = typeof childSkillProgress.$inferSelect;
 
 function emptyReport(): RebuildProgressReport {
-  return { projectionVersion: "proj-2", children: 0, examined: 0, inserted: 0, updated: 0, deleted: 0, downgraded: 0, unchanged: 0 };
+  return { projectionVersion: SKILL_PROJECTION_VERSION, children: 0, examined: 0, inserted: 0, updated: 0, deleted: 0, downgraded: 0, unchanged: 0 };
 }
 
 function dbStatus(status: ProgressStatus): string {
@@ -109,6 +115,16 @@ async function rebuildChild(
   // ale nie trafiają do child_skill_progress — pomijamy je tu w jednym miejscu.
   const assessmentRows = await tx.selectDistinct({ skillVersionId: assessments.skillVersionId, skill: assessments.skill })
     .from(assessments).where(and(eq(assessments.childId, childId), inArray(assessments.skill, [...VOCABULARY_SKILLS])));
+  const issuedRows = await tx.select({
+    skillVersionId: itemRevisionSkills.skillVersionId,
+    skill: itemRevisionSkills.skill,
+    policyId: learningSessions.policyId,
+    issuedAt: sessionTasks.issuedAt,
+    exerciseType: sessionTasks.exerciseType,
+  }).from(sessionTasks)
+    .innerJoin(learningSessions, eq(learningSessions.id, sessionTasks.sessionId))
+    .innerJoin(itemRevisionSkills, eq(itemRevisionSkills.itemRevisionId, sessionTasks.itemRevisionId))
+    .where(and(eq(learningSessions.childId, childId), inArray(sessionTasks.exerciseType, ["recall", "speech", "letter_completion"])));
   const existingScopes = await tx.select({ skillVersionId: childSkillProgress.skillVersionId, skill: skillVersions.skill })
     .from(childSkillProgress)
     .innerJoin(skillVersions, eq(skillVersions.id, childSkillProgress.skillVersionId))
@@ -122,59 +138,85 @@ async function rebuildChild(
     const scope: HistoryScope = { childId, skillVersionId: row.skillVersionId, skill: row.skill as Skill };
     scopesByKey.set(skillHistoryKey(scope), scope);
   }
+  for (const row of issuedRows) {
+    const relevant = row.exerciseType === "recall" ? row.skill === "recall" || row.skill === "spelling"
+      : row.exerciseType === "speech" ? row.skill === "pronunciation"
+        : row.skill === "spelling";
+    if (!relevant) continue;
+    const scope: HistoryScope = { childId, skillVersionId: row.skillVersionId, skill: row.skill as Skill };
+    scopesByKey.set(skillHistoryKey(scope), scope);
+  }
   const scopes = [...scopesByKey.values()];
   const histories = await readSkillHistories(tx, scopes);
-  const existingByVersion = new Map(existingRows.map((row) => [row.skillVersionId, row]));
+  const existingByVersion = new Map(existingRows.map((row) => [`${row.skillVersionId}:${row.policyId}`, row]));
   const policies = new Map<string, Awaited<ReturnType<typeof loadPolicy>>>();
   const report: ChildReport = { examined: scopes.length, inserted: 0, updated: 0, deleted: 0, downgraded: 0, unchanged: 0 };
+  const rebuiltKeys = new Set<string>();
+
+  const firstIssuedAt = new Map<string, Date>();
+  for (const row of issuedRows) {
+    const skills = row.exerciseType === "recall" ? ["recall", "spelling"] : row.exerciseType === "speech" ? ["pronunciation"] : ["spelling"];
+    for (const skill of skills) {
+      if (row.skill !== skill) continue;
+      const key = `${row.skillVersionId}:${row.policyId}:${row.skill}`;
+      const at = firstIssuedAt.get(key);
+      if (!at || row.issuedAt < at) firstIssuedAt.set(key, row.issuedAt);
+    }
+  }
 
   for (const scope of scopes) {
     const key = skillHistoryKey(scope);
     const history = histories.get(key) ?? [];
-    // Reader returns receivedAt/attemptId order; skip unassessed and technically
-    // invalid evidence when selecting the policy used for this projection.
-    const latestCredible = history.filter((entry) => entry.outcome !== "unevaluated").at(-1);
-    const existing = existingByVersion.get(scope.skillVersionId);
-    if (!latestCredible) {
-      if (existing) {
-        report.deleted += 1;
-        if (apply) await tx.delete(childSkillProgress).where(and(
-          eq(childSkillProgress.childId, childId), eq(childSkillProgress.skillVersionId, scope.skillVersionId),
-        ));
-      } else {
-        report.unchanged += 1;
-      }
-      continue;
+    const policyVersions = new Set(history.filter(e => e.outcome !== "unevaluated").map(e => e.policyVersion));
+    for (const issued of issuedRows) if (issued.skillVersionId === scope.skillVersionId) policyVersions.add(issued.policyId);
+    for (const policyVersion of policyVersions) {
+      rebuiltKeys.add(`${scope.skillVersionId}:${policyVersion}`);
+      let policy = policies.get(policyVersion);
+      if (!policy) { policy = await loadPolicy(tx, policyVersion); policies.set(policyVersion, policy); }
+      const policyHistory = history.filter((entry) => entry.policyVersion === policyVersion);
+      const credible = policyHistory.filter((entry) => entry.outcome !== "unevaluated");
+      const latestCredible = credible.reduce<string | null>((latest, entry) => latest === null || entry.receivedAt > latest ? entry.receivedAt : latest, null);
+      const projected = projectProgress(policyHistory, policy, now.toISOString()).skills[scope.skill];
+      const issuedAt = firstIssuedAt.get(`${scope.skillVersionId}:${policyVersion}:${scope.skill}`) ?? null;
+      const existing = existingByVersion.get(`${scope.skillVersionId}:${policyVersion}`);
+      if (!projected && !issuedAt) continue;
+      const value = projected ?? { status: "not_assessed" as const, streak: 0, nextReviewAt: null };
+      const reviewedAt = latestCredible ? new Date(latestCredible) : null;
+      const expected = {
+        status: dbStatus(value.status), streak: value.streak,
+        lastReviewedAt: reviewedAt,
+        nextReviewAt: value.nextReviewAt === null ? null : new Date(value.nextReviewAt),
+        projectionVersion: SKILL_PROJECTION_VERSION,
+      };
+      if (!existing) { report.inserted += 1; }
+      else if (existing.status === expected.status && existing.independentSuccessStreak === expected.streak && asIso(existing.lastReviewedAt) === asIso(expected.lastReviewedAt) && asIso(existing.nextReviewAt) === asIso(expected.nextReviewAt) && existing.delayedConfirmationAt === null && existing.projectionVersion === expected.projectionVersion && asIso(existing.firstIssuedAt) === asIso(issuedAt) && existing.hasQualifyingAssessment === credible.some(e => e.independent)) { report.unchanged += 1; continue; }
+      else { report.updated += 1; if (isDowngrade(existing, expected.status, expected.streak)) report.downgraded += 1; }
+      if (apply) await writeSkillProjection(tx, scope, policyVersion, value, reviewedAt, now, issuedAt, credible.some(e => e.independent), "exact");
     }
+  }
 
-    let policy = policies.get(latestCredible.policyVersion);
-    if (!policy) {
-      policy = await loadPolicy(tx, latestCredible.policyVersion);
-      policies.set(latestCredible.policyVersion, policy);
-    }
-    const policyHistory = history.filter((entry) => entry.policyVersion === latestCredible.policyVersion);
-    const projected = projectProgress(policyHistory, policy, now.toISOString()).skills[scope.skill];
-    if (!projected) {
-      report.unchanged += 1;
-      continue;
-    }
-    const expected = {
-      status: dbStatus(projected.status),
-      streak: projected.streak,
-      lastReviewedAt: new Date(latestCredible.receivedAt),
-      nextReviewAt: projected.nextReviewAt === null ? null : new Date(projected.nextReviewAt),
-      projectionVersion: "proj-2",
-    };
-    if (!existing) {
-      report.inserted += 1;
-      if (apply) await writeSkillProjection(tx, scope, projected, expected.lastReviewedAt, now);
-    } else if (projectionMatches(existing, expected)) {
-      report.unchanged += 1;
-    } else {
-      report.updated += 1;
-      if (isDowngrade(existing, expected.status, expected.streak)) report.downgraded += 1;
-      if (apply) await writeSkillProjection(tx, scope, projected, expected.lastReviewedAt, now);
-    }
+  for (const row of existingRows) {
+    if (rebuiltKeys.has(`${row.skillVersionId}:${row.policyId}`)) continue;
+    report.deleted += 1;
+    if (apply) await tx.delete(childSkillProgress).where(and(
+      eq(childSkillProgress.childId, childId), eq(childSkillProgress.skillVersionId, row.skillVersionId), eq(childSkillProgress.policyId, row.policyId),
+    ));
+  }
+
+  const exposureFacts = await tx.select({ targetKey: eventExposures.targetKey, firstAt: min(learningEvents.occurredAt), lastAt: max(learningEvents.occurredAt) })
+    .from(eventExposures).innerJoin(learningEvents, eq(learningEvents.id, eventExposures.eventId))
+    .where(and(eq(eventExposures.childId, childId), eq(learningEvents.sealed, true)))
+    .groupBy(eventExposures.targetKey);
+  if (apply) {
+    await tx.delete(childTargetExposures).where(eq(childTargetExposures.childId, childId));
+    if (exposureFacts.length) await tx.insert(childTargetExposures).values(exposureFacts.flatMap(row => row.firstAt && row.lastAt ? [{
+      childId, targetKey: row.targetKey, firstExposureAt: row.firstAt, lastExposureAt: row.lastAt,
+    }] : []));
+  }
+
+  if (apply) {
+    await tx.update(childProfiles).set({ learningProjectionVersion: SKILL_PROJECTION_VERSION }).where(eq(childProfiles.id, childId));
+    await tx.delete(childSkillProgressLegacy).where(eq(childSkillProgressLegacy.childId, childId));
   }
 
   // Cele lekcji w tej samej transakcji (jedno przejście): projekcja

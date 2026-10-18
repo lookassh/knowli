@@ -9,6 +9,50 @@ import {
 
 type Pool = ReturnType<typeof createDatabase>["pool"];
 
+/** Przechwytuje SQL także z klienta transakcyjnego oraz klientów już wcześniej połączonych z pulą. */
+export async function capturePoolQueries<T>(
+  pool: Pool,
+  operation: () => Promise<T>,
+  include: (sql: string) => boolean = () => true,
+): Promise<{ value: T; queries: string[] }> {
+  const rawPool = pool as unknown as { connect: (...args: any[]) => any };
+  const originalConnect = rawPool.connect;
+  const clientOriginals = new Map<any, (...args: any[]) => any>();
+  const queries: string[] = [];
+  const instrument = (client: any) => {
+    if (!client || clientOriginals.has(client)) return client;
+    const originalQuery = client.query;
+    clientOriginals.set(client, originalQuery);
+    client.query = function (...args: any[]) {
+      const input = args[0];
+      const sql = typeof input === "string" ? input : input?.text ?? "";
+      if (include(sql)) queries.push(sql);
+      return originalQuery.apply(this, args);
+    };
+    return client;
+  };
+  rawPool.connect = function (...args: any[]) {
+    const callback = args.find((arg) => typeof arg === "function");
+    if (callback) {
+      const index = args.indexOf(callback);
+      const wrapped = (...callbackArgs: any[]) => {
+        if (callbackArgs[1]) callbackArgs[1] = instrument(callbackArgs[1]);
+        return callback(...callbackArgs);
+      };
+      const nextArgs = [...args];
+      nextArgs[index] = wrapped;
+      return originalConnect.apply(this, nextArgs);
+    }
+    return Promise.resolve(originalConnect.apply(this, args)).then(instrument);
+  };
+  try {
+    return { value: await operation(), queries };
+  } finally {
+    rawPool.connect = originalConnect;
+    for (const [client, originalQuery] of clientOriginals) client.query = originalQuery;
+  }
+}
+
 export function testDatabaseUrl(): string {
   // klucze provide() z global-setup nie są statycznie typowane w Vitest 3
   const url = (inject as (key: string) => unknown)("DATABASE_URL");

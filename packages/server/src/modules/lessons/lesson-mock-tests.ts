@@ -12,11 +12,10 @@ import {
 } from "@learning/contracts";
 import type { Services } from "../../config";
 import type { Tx } from "../../db/client";
-import { attempts, deckVersions, eventExposures, learningEvents, learningSessions, sessionTasks } from "../../db/schema";
+import { attempts, deckVersions, eventExposures, itemRevisions, learningEvents, learningSessions, sessionTasks } from "../../db/schema";
 import { AppError } from "../../errors";
 import { BASE_ERROR_CATEGORIES } from "../../domain/lessons/base-error-categories";
-import { planLessonMockTest, type LessonMockPoolEntry } from "../../domain/lessons/mock-test-plan";
-import { stageOf } from "../../domain/lessons/stages";
+import { planLessonMockTest, toLessonMockPoolEntry, type LessonMockPoolEntry } from "../../domain/lessons/mock-test-plan";
 import type { LessonExerciseType, LessonTopic, SubjectModule } from "../../domain/lessons/types";
 import { writeSealedEvent } from "../events";
 import { lessonContextOf, loadExercises, requireTopic } from "./lesson-sessions";
@@ -57,12 +56,11 @@ export async function createLessonMockTestPlan(
   const exercises = await loadExercises(tx, input.deckVersionId);
 
   const objectiveOrder = topic.objectives.map((o) => o.id).filter((id) => context.objectiveIds.includes(id));
-  const pool: LessonMockPoolEntry[] = exercises.map((e) => ({
+  const pool: LessonMockPoolEntry[] = exercises.map((e) => toLessonMockPoolEntry({
     itemId: e.itemId,
     itemRevisionId: e.revisionId,
     objectiveId: e.payload.objectiveId,
     exerciseType: e.payload.exerciseType,
-    stage: stageOf(e.payload.exerciseType),
     targetKey: e.targetKey,
   }));
 
@@ -126,8 +124,49 @@ export async function hasSafeLessonMockPortion(
   services: Services,
   input: { childId: string; deckVersionId: string; requestedTaskCount: number },
 ): Promise<boolean> {
-  const plan = await createLessonMockTestPlan(tx, services, input);
-  return plan.slots.length > 0;
+  const version = (await tx.select().from(deckVersions).where(eq(deckVersions.id, input.deckVersionId)))[0]!;
+  const context = lessonContextOf(version);
+  const { topic } = requireTopic(services, context);
+  const objectiveOrder = topic.objectives.map((objective) => objective.id)
+    .filter((id) => context.objectiveIds.includes(id));
+  const rows = await tx.select({
+    itemRevisionId: itemRevisions.id,
+    itemId: itemRevisions.itemId,
+    objectiveId: sql<string | null>`${itemRevisions.payload}->>'objectiveId'`,
+    exerciseType: sql<string | null>`${itemRevisions.payload}->>'exerciseType'`,
+    targetKey: itemRevisions.targetKey,
+  }).from(itemRevisions)
+    .where(eq(itemRevisions.deckVersionId, input.deckVersionId))
+    .orderBy(asc(itemRevisions.position), asc(itemRevisions.id));
+  const pool: LessonMockPoolEntry[] = rows.flatMap((row) => {
+    if (!row.objectiveId || !row.exerciseType || !row.targetKey) return [];
+    const exerciseType = row.exerciseType as LessonMockPoolEntry["exerciseType"];
+    return [toLessonMockPoolEntry({
+      itemId: row.itemId,
+      itemRevisionId: row.itemRevisionId,
+      objectiveId: row.objectiveId,
+      exerciseType,
+      targetKey: row.targetKey,
+    })];
+  });
+  const targetKeys = [...new Set(pool.map((entry) => entry.targetKey))];
+  const exposedRows = targetKeys.length
+    ? await tx.selectDistinct({ targetKey: eventExposures.targetKey })
+      .from(eventExposures)
+      .innerJoin(learningEvents, eq(learningEvents.id, eventExposures.eventId))
+      .where(and(
+        eq(eventExposures.childId, input.childId),
+        eq(learningEvents.sealed, true),
+        lte(learningEvents.occurredAt, services.clock.now()),
+        inArray(eventExposures.targetKey, targetKeys),
+      ))
+    : [];
+  return planLessonMockTest({
+    pool,
+    objectiveIds: objectiveOrder,
+    requestedCount: input.requestedTaskCount,
+    exposedTargetKeys: exposedRows.map((row) => row.targetKey),
+  }).length > 0;
 }
 
 /**

@@ -94,6 +94,8 @@ export const childProfiles = app.table(
     recordingMode: text("recording_mode").$type<RecordingModeDto>().notNull().default("hold"),
     // własna wersja polityki dziecka (design 2026-10-09); null = bieżąca globalna
     policyId: text("policy_id").references((): AnyPgColumn => learningPolicies.id),
+    // NULL oznacza legacy dane wymagające jawnej odbudowy; nowe profile są gotowe.
+    learningProjectionVersion: text("learning_projection_version").default("proj-3"),
     createdAt: timestamps("created_at").notNull().defaultNow(),
   },
   (t) => [
@@ -839,6 +841,9 @@ export const learningEvents = app.table(
     unique("learning_events_child_client_id_unique").on(t.childId, t.clientEventId),
     unique("learning_events_id_child_unique").on(t.id, t.childId),
     index("learning_events_contact_idx").on(t.childId, t.itemId, t.occurredAt.desc()),
+    index("learning_events_audio_task_occurred_idx")
+      .on(t.taskId, t.occurredAt)
+      .where(sql`${t.kind} = 'audio_issued' and ${t.sealed} = true`),
   ],
 );
 
@@ -862,8 +867,9 @@ export const eventExposures = app.table(
   ],
 );
 
-export const childSkillProgress = app.table(
-  "child_skill_progress",
+/** Zachowany do odczytu/migracji projekcji sprzed zakresu polityki. */
+export const childSkillProgressLegacy = app.table(
+  "child_skill_progress_legacy",
   {
     childId: uuid("child_id")
       .notNull()
@@ -881,12 +887,62 @@ export const childSkillProgress = app.table(
   },
   (t) => [
     check(
+      "child_skill_progress_legacy_status_allowed",
+      sql`${t.status} in ('unseen', 'practicing', 'needs_confirmation', 'needs_reconfirmation', 'mastered')`,
+    ),
+    check("child_skill_progress_legacy_streak_nonnegative", sql`${t.independentSuccessStreak} >= 0`),
+    primaryKey({ name: "child_skill_progress_legacy_pk", columns: [t.childId, t.skillVersionId] }),
+    index("child_skill_due_legacy_idx").on(t.childId, t.nextReviewAt),
+  ],
+);
+
+export const childSkillProgress = app.table(
+  "child_skill_progress",
+  {
+    childId: uuid("child_id")
+      .notNull()
+      .references((): AnyPgColumn => childProfiles.id, { onDelete: "cascade" }),
+    skillVersionId: uuid("skill_version_id")
+      .notNull()
+      .references((): AnyPgColumn => skillVersions.id),
+    policyId: text("policy_id")
+      .notNull()
+      .references((): AnyPgColumn => learningPolicies.id),
+    status: text("status").notNull(),
+    independentSuccessStreak: integer("independent_success_streak").notNull().default(0),
+    lastReviewedAt: timestamps("last_reviewed_at"),
+    nextReviewAt: timestamps("next_review_at"),
+    delayedConfirmationAt: timestamps("delayed_confirmation_at"),
+    firstIssuedAt: timestamps("first_issued_at"),
+    hasQualifyingAssessment: boolean("has_qualifying_assessment").notNull().default(false),
+    projectionVersion: text("projection_version").notNull(),
+    updatedAt: timestamps("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    check(
       "child_skill_progress_status_allowed",
       sql`${t.status} in ('unseen', 'practicing', 'needs_confirmation', 'needs_reconfirmation', 'mastered')`,
     ),
     check("child_skill_progress_streak_nonnegative", sql`${t.independentSuccessStreak} >= 0`),
-    primaryKey({ name: "child_skill_progress_pk", columns: [t.childId, t.skillVersionId] }),
+    primaryKey({ name: "child_skill_progress_pk", columns: [t.childId, t.skillVersionId, t.policyId] }),
     index("child_skill_due_idx").on(t.childId, t.nextReviewAt),
+    index("child_skill_policy_idx").on(t.childId, t.policyId, t.skillVersionId),
+  ],
+);
+
+export const childTargetExposures = app.table(
+  "child_target_exposures",
+  {
+    childId: uuid("child_id")
+      .notNull()
+      .references((): AnyPgColumn => childProfiles.id, { onDelete: "cascade" }),
+    targetKey: text("target_key").notNull(),
+    firstExposureAt: timestamps("first_exposure_at").notNull(),
+    lastExposureAt: timestamps("last_exposure_at").notNull(),
+  },
+  (t) => [
+    primaryKey({ name: "child_target_exposures_pk", columns: [t.childId, t.targetKey] }),
+    index("child_target_exposures_target_idx").on(t.targetKey, t.childId),
   ],
 );
 
