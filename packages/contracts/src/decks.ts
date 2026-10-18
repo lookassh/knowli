@@ -2,6 +2,7 @@ import { z } from "zod";
 import { UuidSchema, VocabularyFormatSchema } from "./common";
 import { GenerationDtoSchema } from "./generation";
 import { TestGoalsSchema, MockTestTaskCountSchema } from "./mock-tests";
+import { MAX_DECK_ITEMS } from "./limits";
 
 export const RecordingModeSchema = z.enum(["hold", "toggle"]);
 export type RecordingModeDto = z.infer<typeof RecordingModeSchema>;
@@ -239,7 +240,7 @@ export type VocabularyItemInput = z.infer<typeof VocabularyItemInputSchema>;
 
 export const DraftInputSchema = z.object({
   title: z.string().min(1).max(200),
-  items: z.array(VocabularyItemInputSchema).min(1).max(50),
+  items: z.array(VocabularyItemInputSchema).min(1).max(MAX_DECK_ITEMS),
   vocabularyFormat: VocabularyFormatSchema.default("standard"),
 });
 export type DraftInput = z.input<typeof DraftInputSchema>;
@@ -247,7 +248,7 @@ export type DraftInput = z.input<typeof DraftInputSchema>;
 /** Edycja szkicu z optimistic locking: wymagany expectedEditNumber. */
 export const DraftPatchSchema = z.object({
   title: z.string().min(1).max(200).optional(),
-  items: z.array(VocabularyItemInputSchema).min(1).max(50).optional(),
+  items: z.array(VocabularyItemInputSchema).min(1).max(MAX_DECK_ITEMS).optional(),
   expectedEditNumber: z.number().int().positive(),
 });
 export type DraftPatch = z.infer<typeof DraftPatchSchema>;
