@@ -145,7 +145,7 @@ sukcesie odświeżenie listy nie uruchamia ponownej generacji. Stan klienta nie
 jest utrwalany i znika po przeładowaniu strony; kontrakt HTTP i deduplikacja
 serwerowa pozostają bez zmian.
 
-Domyślne ograniczenia MVP: do 50 elementów na zestaw, do 120 znaków celu/źródła, 300 znaków przykładu i 4000 znaków promptu. To limity operacyjne do zmiany w konfiguracji, nie nowe wymagania dydaktyczne. Niepełny zestaw trafia do poprawy. Kompletność zamkniętych tematów, np. dni tygodnia, można sprawdzić prostą regułą; nie budujemy uniwersalnego katalogu wiedzy.
+Domyślne ograniczenia MVP: maksymalnie 100 elementów na zestaw (generator domyślnie prosi o 50), do 120 znaków celu/źródła, 300 znaków przykładu i 4000 znaków promptu. To limity operacyjne, nie nowe wymagania dydaktyczne. Niepełny zestaw trafia do poprawy. Kompletność zamkniętych tematów, np. dni tygodnia, można sprawdzić prostą regułą; nie budujemy uniwersalnego katalogu wiedzy.
 
 ## 8. Zadania w tle i zasoby
 

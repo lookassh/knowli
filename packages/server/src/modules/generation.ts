@@ -3,6 +3,7 @@ import { and, asc, eq, inArray, isNull, lte, ne, not, notInArray, or, sql } from
 import { z } from "zod";
 import {
   GenerationCommandSchema,
+  MAX_DECK_ITEMS,
   type GenerationCommand,
   type GenerationDto,
   type VocabularyItemInput,
@@ -40,7 +41,7 @@ const GeneratedItemSchema = z.object({
   message: "visualData does not match visualType",
 });
 const GeneratedDeckSchema = z.object({
-  items: z.array(GeneratedItemSchema).max(50),
+  items: z.array(GeneratedItemSchema).max(MAX_DECK_ITEMS),
 });
 
 export function requireGeneration(services: Services): GenerationDeps {

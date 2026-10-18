@@ -105,7 +105,7 @@ zachowują swoje kontrakty.
 Istniejący `editDraft` tworzy learning_item, rewizje i klucze umiejętności
 dla nowych kart oraz uzgadnia media w tej samej transakcji. Wykorzystujemy tę
 ścieżkę bez alternatywnego modelu danych. Obowiązuje optimistic locking
-`expectedEditNumber`, limit 50 elementów i obecna walidacja słówek.
+`expectedEditNumber`, limit 100 elementów i obecna walidacja słówek.
 
 Utworzenie pustego szkicu nie potrzebuje konfiguracji providerów. Zapis
 kompletnych kart może zlecać zadania mediów; awaria providera nie usuwa szkicu

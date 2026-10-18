@@ -1,4 +1,8 @@
 ## Accepted risk for private use (2026-10-15)
+- source_spec: _bmad-output/implementation-artifacts/spec-deck-item-limit-100.md
+  summary: Add boundary tests proving deck and generation contracts accept 100 items and reject 101.
+  evidence: Independent review found no tests for the raised limit across draft create/edit, generation request, and generated result schemas; the current manual deck test only checks empty input.
+
 - source_spec: _bmad-output/implementation-artifacts/spec-picture-choice-grid.md
   summary: Older picture clients may not support four-choice prompts when resuming an active session after rollout.
   rationale: The owner confirmed the app is for private home use and accepts updating the household PWA before continuing study after rollout.
