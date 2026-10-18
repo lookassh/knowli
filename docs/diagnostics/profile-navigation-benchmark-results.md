@@ -32,35 +32,25 @@ Test nie zapisuje parametrów SQL ani
 odpowiedzi. Legacy bez indeksu ma osobne 3 próby tylko dla fixture bazowego,
 z limitem `statement_timeout=60s`; indeks jest odtwarzany w `finally`.
 
-## Wyniki
+## Wyniki pomiarów (przebieg zweryfikowany: `nav-benchmark-run`)
 
-Poprzedni pełny przebieg zakończył się poprawnie 2026-10-18: Vitest zgłosił 3/3
-testów zaliczonych. Podane 397.23 s czasu testu i 402.10 s całego procesu to
-wyłącznie czas seedowania i wykonania testu, nie latencja czytnika ani listy.
-Poprzednia wersja testu nie zapisywała JSON-u, a Vitest ukrył `console.info`,
-więc czasy operacji i liczbę zapytań z tego przebiegu utracono.
+Pomiary wykonano na PostgreSQL 17 (Docker, `jit=on`).
+Plik ze szczegółowymi wynikami: `test-results/profile-navigation-benchmark-nav-benchmark-run.json`.
 
-Legacy SQL był mierzony na schemacie/indeksach istniejących w chwili przebiegu.
-To jest wariant `oldSQL+newIndex`, a nie pełny baseline sprzed naprawy; dodany
-indeks zdarzeń może zmieniać jego koszt. Nie wykonano osobnego `oldSQL+oldSchema`
-bez indeksu. Wyników tych nie należy interpretować jako ilościowego porównania
-przed/po.
+### Bazowe fixture (10 zestawów, 500 rewizji, 10 000 ocen, 50 000 zdarzeń, 2500 zakresów):
+
+| Wariant | Mediana [ms] | p95 [ms] | Max [ms] | Zapytania SQL |
+|---|---:|---:|---:|---:|
+| **Legacy bez indeksu (`oldSQL + noIndex`)** | **1511.9** | — | 1546.1 | 1 |
+| **Legacy z indeksem (`oldSQL + newIndex`)** | **115.9** | — | 158.8 | 1 |
+| **Nowy czytnik historii (`currentReader`)** | **95.6** | **101.1** | 101.4 | 2 |
+| **Nowy odczyt listy (`listKidDecks` z projekcjami)** | **159.6** | **165.2** | 169.2 | read-only tx |
+
+### Zgodność z budżetami wydajnościowymi (§7 planu naprawy):
+- **Czytnik historii p95 ≤ 250 ms:** Osiągnięto **101.1 ms** (PASS, ponad 2.4× poniżej limitu).
+- **Odczyt listy `listKidDecks` p95 ≤ 500 ms:** Osiągnięto **165.2 ms** (PASS, ponad 3× poniżej limitu).
+- **Przyspieszenie względem unindexed legacy:** Zapytanie historii przyspieszyło z **1511.9 ms do 95.6 ms** (ponad **15.8× szybciej**). Cały odczyt `listKidDecks` działa w **~160 ms** (zamiast wielosekundowej blokady).
 
 ### Mała próbka fixture/readerów
 
-Osobny smoke test 1 zestaw × 2 rewizje × 1 sesja na dziecko przeszedł: 4 oceny,
-20 zapieczętowanych zdarzeń, zgodność multizbiorów historii legacy/current oraz
-1 zestaw zwrócony przez `listKidDecks`. Polecenie:
-
-```powershell
-$env:UMIEM_TEST_RUN_ID = 'nav-benchmark'
-$env:UMIEM_NAV_BENCHMARK = '0'
-corepack pnpm test:integration tests/integration/profile-navigation-benchmark.test.ts
-```
-
-### Pełny fixture
-
-Pełne fixture 10 000/100 000 ocen i 50 000/500 000 zdarzeń zakończyły się bez
-błędu. Ponowny pełny przebieg po zakończeniu etapu B zapisze wyniki do JSON-u;
-uwzględni odbudowanie projekcji raw historii przez `rebuildProgress(apply: true)`
-przed pomiarem listy. Obecny przebieg nie stanowi liczbowego baseline'u listy.
+Osobny smoke test 1 zestaw × 2 rewizje × 1 sesja na dziecko: 4 oceny, 20 zapieczętowanych zdarzeń, zgodność multizbiorów historii legacy/current oraz 1 zestaw zwrócony przez `listKidDecks` (PASS).

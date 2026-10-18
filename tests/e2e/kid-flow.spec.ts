@@ -162,9 +162,10 @@ async function seedDue(childId: string, versionId: string, itemIndex: number, sk
   for (const { skill_version_id } of skillVersions) {
     await query(
       `insert into learning_app.child_skill_progress
-         (child_id, skill_version_id, status, independent_success_streak, next_review_at, projection_version)
-       values ($1,$2,'needs_confirmation',3,'2026-10-01T00:00:00Z','test')
-       on conflict (child_id, skill_version_id) do update
+         (child_id, skill_version_id, policy_id, status, independent_success_streak, next_review_at, projection_version)
+       select $1, $2, coalesce(c.policy_id, 'learning-v2'), 'needs_confirmation', 3, '2026-10-01T00:00:00Z', 'proj-3'
+       from learning_app.child_profiles c where c.id = $1
+       on conflict (child_id, skill_version_id, policy_id) do update
          set status = 'needs_confirmation', independent_success_streak = 3,
              next_review_at = '2026-10-01T00:00:00Z'`,
       [childId, skill_version_id],

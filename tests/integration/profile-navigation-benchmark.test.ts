@@ -142,13 +142,14 @@ async function sampleLegacyWithoutIndex(scopes: readonly Scope[]): Promise<{
   timeoutMs: 60_000;
 }> {
   const client = await pool.connect();
-  const indexName = "learning_app.learning_events_audio_task_occurred_idx";
+  const indexQualified = "learning_app.learning_events_audio_task_occurred_idx";
+  const indexBare = "learning_events_audio_task_occurred_idx";
   const times: number[] = [];
   const queryCounts: number[] = [];
   let dropped = false;
   let timedOut = false;
   try {
-    await client.query(`drop index ${indexName}`);
+    await client.query(`drop index if exists ${indexQualified}`);
     dropped = true;
     for (let index = 0; index < 3; index += 1) {
       await client.query("begin");
@@ -168,8 +169,13 @@ async function sampleLegacyWithoutIndex(scopes: readonly Scope[]): Promise<{
       }
     }
   } finally {
-    if (dropped) await client.query(`create index if not exists ${indexName} on learning_app.learning_events (task_id, occurred_at) where kind = 'audio_issued' and sealed = true`);
-    client.release();
+    try {
+      if (dropped) {
+        await client.query(`create index if not exists ${indexBare} on learning_app.learning_events (task_id, occurred_at) where kind = 'audio_issued' and sealed = true`);
+      }
+    } finally {
+      client.release();
+    }
   }
   return {
     status: timedOut ? "timeout" : "measured",
@@ -265,58 +271,98 @@ describe("profile navigation benchmark helpers", () => {
 });
 
 describe.skipIf(!benchmarkEnabled)("profile navigation opt-in benchmark", () => {
-  it("compares legacy/current readers and list scaling on synthetic PostgreSQL history", async () => {
-    const reports: unknown[] = [];
-    for (const multiplier of [1, 10] as const) {
-      const world = await seedProfileNavigationWorld({ historyMultiplier: multiplier });
-      const pg = (await pool.query<{ version: string; jit: string }>(
-        "select version() as version,current_setting('jit') as jit",
-      )).rows[0]!;
-      const scopes = await listScopes(world.childIds[0]);
-      for (const childId of world.childIds) {
-        await rebuildProgress(world.services, { childId, apply: true });
-      }
-      const current = await readSkillHistories(world.services.db, scopes);
-      const legacy = await readLegacySkillHistories(scopes);
-      expect(normalizedHistories(scopes, current)).toEqual(normalizedHistories(scopes, legacy));
-
-      const currentReader = await sample(() => readSkillHistories(world.services.db, scopes));
-      const legacyCold = await timeOnce(() => readLegacySkillHistories(scopes));
-      const legacyRuns = [legacyCold, await timeOnce(() => readLegacySkillHistories(scopes)), await timeOnce(() => readLegacySkillHistories(scopes))];
-      expect(normalizedHistories(scopes, legacyRuns[0]!.result)).toEqual(normalizedHistories(scopes, current));
-      const list = await sample(() => listKidDecks(world.services, world.childIds[0]));
-
-      const legacyUnindexed = multiplier === 1
-        ? await sampleLegacyWithoutIndex(scopes)
-        : null;
-
-      reports.push({
-        historyMultiplier: multiplier,
-        code: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
-        postgres: pg.version.split("\n")[0],
-        jit: pg.jit,
-        fixture: {
-          children: world.childIds.length,
-          decks: world.deckIds.length,
-          revisions: world.revisionIds.length,
-          assessments: world.assessmentCount,
-          events: world.eventCount,
-          readerScopes: scopes.length,
-        },
-        currentReader,
-        legacyReader: {
-          coldMs: round(legacyCold.milliseconds),
-          stats: summarizeMilliseconds(legacyRuns.map((run) => run.milliseconds), false),
-          p95OmittedReason: "3 samples; report median and maximum only",
-          queryCounts: [...new Set(legacyRuns.map((run) => run.queries))].sort((a, b) => a - b),
-        },
-        legacyUnindexed,
-        listKidDecks: list,
-      });
-      const reportPath = await persistReports(reports);
-      process.stderr.write(`[profile-navigation-benchmark] results written to ${reportPath}\n`);
+  it("measures baseline fixture (10,000 assessments, 50,000 events)", async () => {
+    const world = await seedProfileNavigationWorld({ historyMultiplier: 1 });
+    const pg = (await pool.query<{ version: string; jit: string }>(
+      "select version() as version,current_setting('jit') as jit",
+    )).rows[0]!;
+    const scopes = await listScopes(world.childIds[0]);
+    for (const childId of world.childIds) {
+      await rebuildProgress(world.services, { childId, apply: true });
     }
-  }, 1_200_000);
+    const current = await readSkillHistories(world.services.db, scopes);
+    const legacy = await readLegacySkillHistories(scopes);
+    expect(normalizedHistories(scopes, current)).toEqual(normalizedHistories(scopes, legacy));
+
+    const currentReader = await sample(() => readSkillHistories(world.services.db, scopes));
+    const legacyCold = await timeOnce(() => readLegacySkillHistories(scopes));
+    const legacyRuns = [legacyCold, await timeOnce(() => readLegacySkillHistories(scopes)), await timeOnce(() => readLegacySkillHistories(scopes))];
+    expect(normalizedHistories(scopes, legacyRuns[0]!.result)).toEqual(normalizedHistories(scopes, current));
+    const list = await sample(() => listKidDecks(world.services, world.childIds[0]));
+    const legacyUnindexed = await sampleLegacyWithoutIndex(scopes);
+
+    const report = {
+      historyMultiplier: 1,
+      code: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
+      postgres: pg.version.split("\n")[0],
+      jit: pg.jit,
+      fixture: {
+        children: world.childIds.length,
+        decks: world.deckIds.length,
+        revisions: world.revisionIds.length,
+        assessments: world.assessmentCount,
+        events: world.eventCount,
+        readerScopes: scopes.length,
+      },
+      currentReader,
+      legacyReader: {
+        coldMs: round(legacyCold.milliseconds),
+        stats: summarizeMilliseconds(legacyRuns.map((run) => run.milliseconds), false),
+        p95OmittedReason: "3 samples; report median and maximum only",
+        queryCounts: [...new Set(legacyRuns.map((run) => run.queries))].sort((a, b) => a - b),
+      },
+      legacyUnindexed,
+      listKidDecks: list,
+    };
+    const reportPath = await persistReports([report]);
+    process.stderr.write(`[profile-navigation-benchmark] results written to ${reportPath}\n`);
+  }, 300_000);
+
+  it("measures 10x scale fixture (100,000 assessments, 500,000 events)", async () => {
+    const world = await seedProfileNavigationWorld({ historyMultiplier: 10 });
+    const pg = (await pool.query<{ version: string; jit: string }>(
+      "select version() as version,current_setting('jit') as jit",
+    )).rows[0]!;
+    const scopes = await listScopes(world.childIds[0]);
+    for (const childId of world.childIds) {
+      await rebuildProgress(world.services, { childId, apply: true });
+    }
+    const current = await readSkillHistories(world.services.db, scopes);
+    const legacy = await readLegacySkillHistories(scopes);
+    expect(normalizedHistories(scopes, current)).toEqual(normalizedHistories(scopes, legacy));
+
+    const currentReader = await sample(() => readSkillHistories(world.services.db, scopes));
+    const legacyCold = await timeOnce(() => readLegacySkillHistories(scopes));
+    const legacyRuns = [legacyCold, await timeOnce(() => readLegacySkillHistories(scopes)), await timeOnce(() => readLegacySkillHistories(scopes))];
+    expect(normalizedHistories(scopes, legacyRuns[0]!.result)).toEqual(normalizedHistories(scopes, current));
+    const list = await sample(() => listKidDecks(world.services, world.childIds[0]));
+
+    const report = {
+      historyMultiplier: 10,
+      code: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
+      postgres: pg.version.split("\n")[0],
+      jit: pg.jit,
+      fixture: {
+        children: world.childIds.length,
+        decks: world.deckIds.length,
+        revisions: world.revisionIds.length,
+        assessments: world.assessmentCount,
+        events: world.eventCount,
+        readerScopes: scopes.length,
+      },
+      currentReader,
+      legacyReader: {
+        coldMs: round(legacyCold.milliseconds),
+        stats: summarizeMilliseconds(legacyRuns.map((run) => run.milliseconds), false),
+        p95OmittedReason: "3 samples; report median and maximum only",
+        queryCounts: [...new Set(legacyRuns.map((run) => run.queries))].sort((a, b) => a - b),
+      },
+      legacyUnindexed: null,
+      listKidDecks: list,
+    };
+    const reportPath = await persistReports([report]);
+    process.stderr.write(`[profile-navigation-benchmark] results written to ${reportPath}\n`);
+  }, 1_800_000);
 });
 
 afterAll(async () => {

@@ -47,7 +47,7 @@ export async function readPublishedProgress(
   childId: string,
   deckId: string,
 ): Promise<PublishedProgress> {
-  const profile = (await exec.select({ id: childProfiles.id }).from(childProfiles).where(eq(childProfiles.id, childId)))[0];
+  const profile = (await exec.select({ id: childProfiles.id, policyId: childProfiles.policyId }).from(childProfiles).where(eq(childProfiles.id, childId)))[0];
   const deck = (await exec.select().from(decks).where(eq(decks.id, deckId)))[0];
   if (!profile || !deck || !deck.publishedVersionId) throw new AppError("not_found");
   const version = (await exec.select({
@@ -78,11 +78,10 @@ export async function readPublishedProgress(
         .from(skillVersions).where(inArray(skillVersions.itemId, itemIds))
     : [];
   const predecessorOf = new Map(versions.map((item) => [item.id, item.predecessorId]));
-  const projected = await exec.select({ skillVersionId: childSkillProgress.skillVersionId, status: childSkillProgress.status, reviewedAt: childSkillProgress.lastReviewedAt, policyId: childSkillProgress.policyId })
-    .from(childSkillProgress).where(and(eq(childSkillProgress.childId, childId), isNotNull(childSkillProgress.lastReviewedAt)))
-    .orderBy(desc(childSkillProgress.lastReviewedAt), desc(childSkillProgress.policyId));
-  const statusOfVersion = new Map<string, string>();
-  for (const row of projected) if (!statusOfVersion.has(row.skillVersionId)) statusOfVersion.set(row.skillVersionId, row.status);
+  const activePolicyId = profile.policyId ?? "learning-v2";
+  const projected = await exec.select({ skillVersionId: childSkillProgress.skillVersionId, status: childSkillProgress.status })
+    .from(childSkillProgress).where(and(eq(childSkillProgress.childId, childId), eq(childSkillProgress.policyId, activePolicyId)));
+  const statusOfVersion = new Map(projected.map(({ skillVersionId, status }) => [skillVersionId, status]));
 
   const statusFor = (skillVersionId: string): { status: ItemSkillStatus; changed: boolean } => {
     const status = statusOfVersion.get(skillVersionId);
