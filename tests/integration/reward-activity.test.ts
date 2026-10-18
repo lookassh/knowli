@@ -141,14 +141,30 @@ describe("rozliczanie aktywności nagrodowej", () => {
     await rebuildKidRewardProjection(services, children[0]!.id);
     expect((await listKidProfiles(services)).find(profile => profile.childId === children[0]!.id)!.rewards).toEqual(firstRebuild);
     const sqlSeen: string[] = [];
-    const originalQuery = pool.query.bind(pool);
-    const instrumentedQuery = (...args: unknown[]) => {
-      const first = args[0];
-      sqlSeen.push(typeof first === "string" ? first : String((first as { text?: unknown } | undefined)?.text ?? ""));
-      return (originalQuery as (...queryArgs: unknown[]) => Promise<unknown>)(...args);
+    const originalConnect = pool.connect.bind(pool);
+    const instrumentedConnect = (...args: unknown[]) => {
+      const cb = typeof args[0] === "function" ? (args[0] as (err: Error | null, client: unknown, done: () => void) => void) : undefined;
+      const wrapClient = (client: unknown) => {
+        const c = client as { _instrumented?: boolean; query: (...qArgs: unknown[]) => Promise<unknown> } | undefined;
+        if (c && !c._instrumented) {
+          c._instrumented = true;
+          const origClientQuery = c.query.bind(c);
+          c.query = (...qArgs: unknown[]) => {
+            const first = qArgs[0];
+            sqlSeen.push(typeof first === "string" ? first : String((first as { text?: unknown } | undefined)?.text ?? ""));
+            return origClientQuery(...qArgs);
+          };
+        }
+        return c;
+      };
+      if (cb) {
+        return (originalConnect as (...cArgs: unknown[]) => unknown)((err: Error | null, client: unknown, done: () => void) => {
+          cb(err, wrapClient(client), done);
+        });
+      }
+      return (originalConnect as (...cArgs: unknown[]) => Promise<unknown>)(...args).then(wrapClient);
     };
-    const queryPool = pool as unknown as { query: typeof instrumentedQuery };
-    queryPool.query = instrumentedQuery;
+    (pool as unknown as { connect: typeof instrumentedConnect }).connect = instrumentedConnect;
     try {
       const baselineStart = sqlSeen.length;
       const baselineStartedAt = performance.now();
@@ -189,7 +205,7 @@ describe("rozliczanie aktywności nagrodowej", () => {
       expect(deckQueries.length).toBeGreaterThan(0);
       expect([...profileQueries, ...deckQueries].some(sql => /reward_activity_(?:segments|settlements)/i.test(sql))).toBe(false);
     } finally {
-      queryPool.query = originalQuery as unknown as typeof instrumentedQuery;
+      (pool as unknown as { connect: typeof originalConnect }).connect = originalConnect;
     }
   });
 

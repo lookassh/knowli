@@ -32,7 +32,12 @@ describe("reward projection migration", () => {
       const clock = new ManualClock("2026-10-25T02:00:00.000Z");
       const services = createServices({ db, clock });
       await ensureLearningPolicy(db);
-      const child = await createChild(services, { displayName: "Ola", avatarKey: "fox" });
+      const childId = randomUUID();
+      await pool.query(
+        "insert into learning_app.child_profiles (id, display_name, avatar_key, can_read) values ($1, $2, $3, true)",
+        [childId, "Ola", "fox"],
+      );
+      const child = { id: childId, displayName: "Ola", avatarKey: "fox", canRead: true };
       const draft = await createDraft(services, { title: "Migration test", items: [{
         source: "kot", target: "cat", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "none",
       }] });
