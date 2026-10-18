@@ -2,6 +2,8 @@
 
 `progress:rebuild` odtwarza projekcje dziecka z historii: `child_skill_progress` (słówka, osobno dla każdej polityki), fakty pierwszego wydania i kwalifikujących ocen, `child_target_exposures` (pierwsze/ostatnie zapieczętowane ujawnienie) oraz `child_objective_progress` (cele lekcji). Apply działa atomowo na dziecko. Domyślnie uruchamia się dry-run. Nie zmienia prób, ocen, źródłowych ekspozycji, transkrypcji, werdyktów modelu (`lesson_verdicts`, w tym decyzji rodzica), materiału ani zapisanych podsumowań.
 
+Rebuild dokładnie zastępuje odtwarzane fakty projekcji, także wartości `NULL` i `false`, aby naprawić wcześniejsze błędne daty lub flagi. Zapis online pozostaje monotoniczny. Po apply powtórny rebuild ma raportować zero insert/update/delete.
+
 ## Przejście na projekcje `proj-3`
 
 Migracja `0018` dodaje indeks dowodów audio. Migracja `0019` wprowadza zakres polityki i fakty potrzebne liście. Istniejące profile otrzymują `learning_projection_version=NULL`, a stare wiersze postępu pozostają w `child_skill_progress_legacy`. Nie przypisuje się im automatycznie bieżącej polityki. Ta tabela nie jest fallbackiem runtime ani kompletnym backupem bazy.

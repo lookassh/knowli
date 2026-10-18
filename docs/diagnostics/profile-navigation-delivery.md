@@ -60,3 +60,11 @@ Szczegóły etapów, komendy i RED/GREEN są w osobnych dziennikach.
 Dotychczasowe 9,10 s → 295 ms dotyczy wyłącznie kontrolnego odczytu podczas
 diagnozy. Nie jest wynikiem wdrożonej implementacji. Finalny raport musi zawierać
 rzeczywiste pomiary nowego kodu, macierz AC01–AC18, wyniki CI i review.
+
+## Poprawki po review PR #93
+
+Plan, kryteria akceptacji i wyniki prac: [plan poprawek](../code-review/2026-10-18-profile-navigation-review-fixes-plan.md).
+Zmiany przywracają dokładne odtwarzanie projekcji przez rebuild, zachowują
+historyczny wybór statusu raportu rodzica po zmianie polityki oraz przechwytują
+SELECT-y z klientów transakcyjnych w testach. MCP i skill zachowują dotychczasowy
+kształt DTO; uzupełniono jedynie interpretację `currentProgress`.

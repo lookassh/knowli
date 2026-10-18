@@ -1,5 +1,11 @@
 # Code Review Brief: Profile Navigation Performance & Policy-Scoped Projections
 
+> Brief historyczny, przygotowany przed poprawkami po review. Aktualny zakres,
+> decyzje i wyniki opisuje [plan poprawek](2026-10-18-profile-navigation-review-fixes-plan.md),
+> a ich ocenę [niezależne review](2026-10-18-profile-navigation-review-fixes-review.md).
+> W szczególności raport rodzica wybiera ostatnią wiarygodną ocenę spośród
+> polityk; opis filtra aktywnej polityki poniżej nie opisuje końcowej implementacji.
+
 **PR:** [#93: perf: optymalizacja czasu wejścia w profil dziecka (listKidDecks)](https://github.com/lookassh/knowli/pull/93)  
 **Branch:** `feature/profile-navigation-performance`  
 **Base commit:** `5356529150a92bd782c6118ab52b49e4fcd905ae` (`origin/main`)  

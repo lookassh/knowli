@@ -189,9 +189,9 @@ async function rebuildChild(
         projectionVersion: SKILL_PROJECTION_VERSION,
       };
       if (!existing) { report.inserted += 1; }
-      else if (existing.status === expected.status && existing.independentSuccessStreak === expected.streak && asIso(existing.lastReviewedAt) === asIso(expected.lastReviewedAt) && asIso(existing.nextReviewAt) === asIso(expected.nextReviewAt) && existing.projectionVersion === expected.projectionVersion && existing.firstIssuedAt?.toISOString() === issuedAt?.toISOString() && existing.hasQualifyingAssessment === credible.some(e => e.independent)) { report.unchanged += 1; continue; }
+      else if (existing.status === expected.status && existing.independentSuccessStreak === expected.streak && asIso(existing.lastReviewedAt) === asIso(expected.lastReviewedAt) && asIso(existing.nextReviewAt) === asIso(expected.nextReviewAt) && existing.delayedConfirmationAt === null && existing.projectionVersion === expected.projectionVersion && asIso(existing.firstIssuedAt) === asIso(issuedAt) && existing.hasQualifyingAssessment === credible.some(e => e.independent)) { report.unchanged += 1; continue; }
       else { report.updated += 1; if (isDowngrade(existing, expected.status, expected.streak)) report.downgraded += 1; }
-      if (apply) await writeSkillProjection(tx, scope, policyVersion, value, reviewedAt, now, issuedAt, credible.some(e => e.independent));
+      if (apply) await writeSkillProjection(tx, scope, policyVersion, value, reviewedAt, now, issuedAt, credible.some(e => e.independent), "exact");
     }
   }
 

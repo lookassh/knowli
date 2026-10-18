@@ -248,6 +248,43 @@ describe("panel postępów rodzica (integracja)", () => {
     childB = (await createChild(services, { displayName: "Ola", avatarKey: "owl" })).id;
   });
 
+  it("raport zachowuje ostatnią wiarygodną umiejętność po zmianie polityki i rozstrzyga remisy stabilnie", async () => {
+    const { deckId, versionId } = await publishDeckWithAssignment(services, [childA], [DAYS[0]!]);
+    const revision = await revisionAt(versionId, 0);
+    const skillVersionId = (await query<{ id: string }>(
+      `select skill_version_id as id from learning_app.item_revision_skills where item_revision_id=$1 and skill='listening'`,
+      [revision.id],
+    ))[0]!.id;
+    await pool.query(`insert into learning_app.child_skill_progress
+      (child_id, skill_version_id, policy_id, status, independent_success_streak, last_reviewed_at,
+       first_issued_at, has_qualifying_assessment, projection_version)
+      values ($1,$2,'learning-v2','mastered',3,'2026-10-06T10:00:00Z','2026-10-01T00:00:00Z',true,'proj-3')`,
+    [childA, skillVersionId]);
+    await pool.query(`update learning_app.child_profiles set policy_id='learning-v1' where id=$1`, [childA]);
+    await pool.query(`insert into learning_app.child_skill_progress
+      (child_id, skill_version_id, policy_id, status, independent_success_streak, first_issued_at,
+       has_qualifying_assessment, projection_version)
+      values ($1,$2,'learning-v1','unseen',0,'2030-01-01T00:00:00Z',false,'proj-3')`, [childA, skillVersionId]);
+
+    const afterSwitch = await getProgress(services, childA, deckId);
+    expect(afterSwitch.items[0]!.skills.listening).toBe("mastered");
+
+    const tiedAt = "2026-10-06T12:00:00Z";
+    await pool.query(`update learning_app.child_skill_progress
+      set status='practicing', independent_success_streak=1, last_reviewed_at=$3, has_qualifying_assessment=true
+      where child_id=$1 and skill_version_id=$2 and policy_id='learning-v1'`, [childA, skillVersionId, tiedAt]);
+    expect((await getProgress(services, childA, deckId)).items[0]!.skills.listening).toBe("practicing");
+    await pool.query(`update learning_app.child_skill_progress
+      set status='needs_confirmation', independent_success_streak=0, last_reviewed_at=$3
+      where child_id=$1 and skill_version_id=$2 and policy_id='learning-v2'`, [childA, skillVersionId, tiedAt]);
+    const tied = await getProgress(services, childA, deckId);
+    // learning-v1 wygrywa remis z learning-v2 zgodnie z porządkiem policy_id.
+    expect(tied.items[0]!.skills.listening).toBe("practicing");
+    await pool.query(`update learning_app.child_skill_progress set last_reviewed_at='2026-10-06T13:00:00Z'
+      where child_id=$1 and skill_version_id=$2 and policy_id='learning-v2'`, [childA, skillVersionId]);
+    expect((await getProgress(services, childA, deckId)).items[0]!.skills.listening).toBe("needs_confirmation");
+  });
+
   it("liczy opanowane elementy per umiejętność tylko dla wybranego dziecka", async () => {
     const { deckId, versionId } = await publishDeckWithAssignment(services, [childA, childB], DAYS, "2026-10-20");
 

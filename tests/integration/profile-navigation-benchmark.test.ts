@@ -10,7 +10,8 @@ import {
 } from "@learning/server";
 import type { ExerciseType, History, Skill } from "../../packages/server/src/domain/types";
 import { qualifyProjectionEvidence } from "../../packages/server/src/domain/projection-evidence";
-import { testDatabase } from "./helpers";
+import { childProfiles } from "../../packages/server/src/db/schema";
+import { capturePoolQueries, testDatabase } from "./helpers";
 import { seedProfileNavigationWorld } from "../fixtures/profile-navigation-world";
 
 const benchmarkEnabled = process.env.UMIEM_NAV_BENCHMARK === "1";
@@ -204,17 +205,8 @@ function normalizedHistories(scopes: readonly Scope[], histories: ReadonlyMap<st
 }
 
 async function captureQueries<T>(operation: () => Promise<T>): Promise<{ result: T; queries: number }> {
-  const original = pool.query.bind(pool);
-  let queries = 0;
-  pool.query = ((...args: Parameters<typeof pool.query>) => {
-    queries += 1;
-    return original(...args);
-  }) as typeof pool.query;
-  try {
-    return { result: await operation(), queries };
-  } finally {
-    pool.query = original as typeof pool.query;
-  }
+  const captured = await capturePoolQueries(pool, operation);
+  return { result: captured.value, queries: captured.queries.length };
 }
 
 async function timeOnce<T>(operation: () => Promise<T>): Promise<{ milliseconds: number; queries: number; result: T }> {
@@ -243,6 +235,29 @@ async function sample<T>(operation: () => Promise<T>): Promise<{
 }
 
 describe("profile navigation benchmark helpers", () => {
+  it("przechwytuje po jednym SELECT z pool.query i transakcji oraz przywraca klienta po błędzie", async () => {
+    const client = await pool.connect();
+    const originalClientQuery = client.query;
+    client.release();
+    const originalConnect = pool.connect;
+    const selects: string[] = [];
+    const failure = new Error("capture cleanup fixture");
+    await expect(capturePoolQueries(pool, async () => {
+      await pool.query("select 1");
+      await testDatabase().db.transaction((tx) => tx.select({ id: childProfiles.id }).from(childProfiles).limit(1));
+      throw failure;
+    }, (statement) => {
+      if (/^\s*select\b/i.test(statement)) selects.push(statement);
+      return true;
+    })).rejects.toBe(failure);
+    expect(selects).toHaveLength(2);
+    expect(pool.connect).toBe(originalConnect);
+    const reused = await pool.connect();
+    expect(reused).toBe(client);
+    expect(reused.query).toBe(originalClientQuery);
+    reused.release();
+  });
+
   it("uses median and nearest-rank p95 and omits p95 for undersized legacy samples", () => {
     expect(summarizeMilliseconds([9, 1, 5, 3, 7])).toEqual({
       samples: 5, medianMs: 5, p95Ms: 9, maxMs: 9, p95Method: "nearest-rank",
@@ -266,7 +281,40 @@ describe("profile navigation benchmark helpers", () => {
     expect(world.deckIds).toHaveLength(1);
     expect(world.revisionIds).toHaveLength(2);
     expect(normalizedHistories(scopes, current)).toEqual(normalizedHistories(scopes, legacy));
-    expect(await listKidDecks(world.services, world.childIds[0])).toHaveLength(1);
+    const listRead = await captureQueries(() => listKidDecks(world.services, world.childIds[0]!));
+    expect(listRead.result).toHaveLength(1);
+    expect(listRead.queries).toBeGreaterThan(0);
+  }, 180_000);
+
+  it("rebuild naprawia dokładnie fakty projekcji i kolejny apply nie zmienia żadnego wiersza", async () => {
+    const world = await seedProfileNavigationWorld({
+      historyMultiplier: 1, deckCount: 1, itemsPerDeck: 5, roundsPerChildDeck: 1,
+    });
+    const childId = world.childIds[0]!;
+    await rebuildProgress(world.services, { childId, apply: true });
+    const readFacts = async () => (await pool.query<{
+      has_qualifying_assessment: boolean; first_issued_at: Date | null; last_reviewed_at: Date | null;
+    }>(
+      `select policy_id, skill_version_id, status, independent_success_streak,
+              last_reviewed_at, next_review_at, delayed_confirmation_at, first_issued_at,
+              has_qualifying_assessment, projection_version
+         from learning_app.child_skill_progress where child_id = $1
+         order by policy_id, skill_version_id`, [childId],
+    )).rows;
+    const expected = await readFacts();
+    expect(expected.length).toBeGreaterThan(0);
+    expect(expected.some((row) => row.has_qualifying_assessment === false)).toBe(true);
+    expect(expected.some((row) => row.first_issued_at !== null)).toBe(true);
+    expect(expected.some((row) => row.last_reviewed_at === null)).toBe(true);
+    await pool.query(`update learning_app.child_skill_progress
+      set first_issued_at='2000-01-01T00:00:00Z', last_reviewed_at='2030-01-01T00:00:00Z',
+          delayed_confirmation_at='2030-01-01T00:00:00Z', has_qualifying_assessment=true
+      where child_id=$1`, [childId]);
+    const repaired = await rebuildProgress(world.services, { childId, apply: true });
+    expect(repaired.updated).toBeGreaterThan(0);
+    expect(await readFacts()).toEqual(expected);
+    const second = await rebuildProgress(world.services, { childId, apply: true });
+    expect(second).toMatchObject({ inserted: 0, updated: 0, deleted: 0 });
   }, 180_000);
 });
 

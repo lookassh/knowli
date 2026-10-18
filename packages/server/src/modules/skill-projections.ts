@@ -105,6 +105,7 @@ export async function writeSkillProjection(
   now: Date,
   firstIssuedAt: Date | null,
   hasQualifyingAssessment: boolean,
+  mode: "monotonic" | "exact" = "monotonic",
 ): Promise<void> {
   await tx.insert(childSkillProgress).values({
     childId: scope.childId,
@@ -124,19 +125,19 @@ export async function writeSkillProjection(
     set: {
       status: dbStatus(projected.status),
       independentSuccessStreak: projected.streak,
-      lastReviewedAt: sql`case
+      lastReviewedAt: mode === "exact" ? sql`excluded.last_reviewed_at` : sql`case
         when ${childSkillProgress.lastReviewedAt} is null then excluded.last_reviewed_at
         when excluded.last_reviewed_at is null then ${childSkillProgress.lastReviewedAt}
         else greatest(${childSkillProgress.lastReviewedAt}, excluded.last_reviewed_at)
       end`,
       nextReviewAt: projected.nextReviewAt === null ? null : new Date(projected.nextReviewAt),
       delayedConfirmationAt: null,
-      firstIssuedAt: sql`case
+      firstIssuedAt: mode === "exact" ? sql`excluded.first_issued_at` : sql`case
         when ${childSkillProgress.firstIssuedAt} is null then excluded.first_issued_at
         when excluded.first_issued_at is null then ${childSkillProgress.firstIssuedAt}
         else least(${childSkillProgress.firstIssuedAt}, excluded.first_issued_at)
       end`,
-      hasQualifyingAssessment: sql`${childSkillProgress.hasQualifyingAssessment} or excluded.has_qualifying_assessment`,
+      hasQualifyingAssessment: mode === "exact" ? sql`excluded.has_qualifying_assessment` : sql`${childSkillProgress.hasQualifyingAssessment} or excluded.has_qualifying_assessment`,
       projectionVersion: SKILL_PROJECTION_VERSION,
       updatedAt: now,
     },

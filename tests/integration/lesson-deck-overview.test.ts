@@ -6,7 +6,7 @@ import { hasSafeLessonMockPortion } from "../../packages/server/src/modules/less
 import { readLessonDeckOverviews, type LessonDeckOverviewInput } from "../../packages/server/src/modules/lessons/lesson-deck-overview";
 import type { LessonContextShape } from "../../packages/server/src/modules/lessons/lesson-sessions";
 import { lessonWorld } from "../fixtures/lesson-world";
-import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
+import { buildTestServices, capturePoolQueries, testDatabase, truncateCoreTables } from "./helpers";
 
 const { pool } = testDatabase();
 
@@ -19,22 +19,9 @@ beforeEach(async () => {
 });
 afterAll(() => pool.end());
 
-type Query = typeof pool.query;
-
 async function captureSelects<T>(run: () => Promise<T>): Promise<{ value: T; selects: string[] }> {
-  const original = pool.query.bind(pool) as Query;
-  const selects: string[] = [];
-  pool.query = ((...args: Parameters<Query>) => {
-    const queryConfig = args[0] as unknown as string | { text?: string };
-    const sql = typeof queryConfig === "string" ? queryConfig : queryConfig.text ?? "";
-    if (/^\s*(select|with)\b/i.test(sql)) selects.push(sql);
-    return original(...args);
-  }) as Query;
-  try {
-    return { value: await run(), selects };
-  } finally {
-    pool.query = original;
-  }
+  const captured = await capturePoolQueries(pool, run, (sql) => /^\s*(select|with)\b/i.test(sql));
+  return { value: captured.value, selects: captured.queries };
 }
 
 describe("zbiorczy odczyt wartości lekcji", () => {
@@ -46,6 +33,7 @@ describe("zbiorczy odczyt wartości lekcji", () => {
       hasSafeLessonMockPortion(tx, services, { childId: child.id, deckVersionId: lesson.versionId, requestedTaskCount: 10 }),
     ));
 
+    expect(selects.length).toBeGreaterThan(0);
     expect(selects.some((sql) => /media_assets|revision_assets/i.test(sql))).toBe(false);
   });
 
