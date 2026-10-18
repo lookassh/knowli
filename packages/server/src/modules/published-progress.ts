@@ -1,4 +1,4 @@
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 import {
   REPORT_SKILLS,
   type ItemSkillStatus,
@@ -78,9 +78,27 @@ export async function readPublishedProgress(
         .from(skillVersions).where(inArray(skillVersions.itemId, itemIds))
     : [];
   const predecessorOf = new Map(versions.map((item) => [item.id, item.predecessorId]));
-  const projected = await exec.select({ skillVersionId: childSkillProgress.skillVersionId, status: childSkillProgress.status })
-    .from(childSkillProgress).where(eq(childSkillProgress.childId, childId));
-  const statusOfVersion = new Map(projected.map(({ skillVersionId, status }) => [skillVersionId, status]));
+  // Raport rodzica zachowuje ostatni wiarygodny wynik bieżącej wersji,
+  // niezależnie od późniejszej zmiany aktywnej polityki profilu.
+  // Wiersz bez lastReviewedAt (np. samo wydanie zadania) nie przykrywa wyniku.
+  const projected = await exec.select({
+    skillVersionId: childSkillProgress.skillVersionId,
+    status: childSkillProgress.status,
+    policyId: childSkillProgress.policyId,
+    lastReviewedAt: childSkillProgress.lastReviewedAt,
+  }).from(childSkillProgress).where(and(
+    eq(childSkillProgress.childId, childId),
+    isNotNull(childSkillProgress.lastReviewedAt),
+  ));
+  const latestByVersion = new Map<string, (typeof projected)[number]>();
+  for (const row of projected) {
+    const current = latestByVersion.get(row.skillVersionId);
+    if (!current || row.lastReviewedAt!.getTime() > current.lastReviewedAt!.getTime() ||
+      (row.lastReviewedAt!.getTime() === current.lastReviewedAt!.getTime() && row.policyId < current.policyId)) {
+      latestByVersion.set(row.skillVersionId, row);
+    }
+  }
+  const statusOfVersion = new Map([...latestByVersion].map(([skillVersionId, row]) => [skillVersionId, row.status]));
 
   const statusFor = (skillVersionId: string): { status: ItemSkillStatus; changed: boolean } => {
     const status = statusOfVersion.get(skillVersionId);

@@ -16,6 +16,43 @@ beforeEach(async () => {
 afterAll(() => pool.end());
 
 describe("GET learning overview read model", () => {
+  it("keeps currentProgress across policy switches and selects newer credible results from either policy", async () => {
+    const { services, clock } = buildTestServices("2026-10-11T17:00:00.000Z");
+    const world = await learningOverviewWorld(services, pool, (ms) => clock.advanceMs(ms));
+    const skillVersionId = (await pool.query<{ skill_version_id: string }>(
+      `select links.skill_version_id from learning_app.item_revision_skills links
+         join learning_app.item_revisions revisions on revisions.id=links.item_revision_id
+        where revisions.deck_version_id=$1 and links.skill='listening' limit 1`, [world.versionId],
+    )).rows[0]!.skill_version_id;
+    await pool.query(`insert into learning_app.child_skill_progress
+      (child_id, skill_version_id, policy_id, status, independent_success_streak,
+       last_reviewed_at, first_issued_at, has_qualifying_assessment, projection_version)
+      values ($1,$2,'learning-v2','mastered',3,'2026-10-06T10:00:00Z','2026-10-01T00:00:00Z',true,'proj-3')`,
+    [world.childId, skillVersionId]);
+    await pool.query(`update learning_app.child_profiles set policy_id='learning-v1' where id=$1`, [world.childId]);
+    await pool.query(`insert into learning_app.child_skill_progress
+      (child_id, skill_version_id, policy_id, status, independent_success_streak, first_issued_at,
+       has_qualifying_assessment, projection_version)
+      values ($1,$2,'learning-v1','unseen',0,'2030-01-01T00:00:00Z',false,'proj-3')`,
+    [world.childId, skillVersionId]);
+
+    const getListening = async () => {
+      const overview = await getLearningOverview(services, { days: 1, upcomingTestDays: 14 }, world.token);
+      return overview.children.find(({ childId }) => childId === world.childId)!.currentProgress
+        .flatMap(({ skills }) => skills).find(({ skill }) => skill === "listening")!;
+    };
+    expect(await getListening()).toMatchObject({ mastered: 1, notAssessed: 0 });
+
+    await pool.query(`update learning_app.child_skill_progress
+      set status='practicing', independent_success_streak=1, last_reviewed_at='2026-10-06T12:00:00Z', has_qualifying_assessment=true
+      where child_id=$1 and skill_version_id=$2 and policy_id='learning-v1'`, [world.childId, skillVersionId]);
+    expect(await getListening()).toMatchObject({ practicing: 1, mastered: 0 });
+    await pool.query(`update learning_app.child_skill_progress
+      set status='needs_confirmation', independent_success_streak=0, last_reviewed_at='2026-10-06T13:00:00Z'
+      where child_id=$1 and skill_version_id=$2 and policy_id='learning-v2'`, [world.childId, skillVersionId]);
+    expect(await getListening()).toMatchObject({ needsConfirmation: 1, practicing: 0 });
+  });
+
   it("keeps all five skill denominators for profiles with different reading settings and exposes no capability flag", async () => {
     const { services, clock } = buildTestServices("2026-10-11T17:00:00.000Z");
     const world = await learningOverviewWorld(services, pool, (ms) => clock.advanceMs(ms));

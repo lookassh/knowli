@@ -71,7 +71,7 @@ export interface LessonSessionContext extends SessionContextShape {
 }
 
 /** `lesson_context` zapisany w `deck_versions.lesson_context`. */
-interface LessonContextShape {
+export interface LessonContextShape {
   subjectId: string;
   topicId: string;
   topicVersion: number;
@@ -80,7 +80,7 @@ interface LessonContextShape {
 }
 
 /** Odczyt `lesson_context` z wersji sesji; rzuca, gdy brak (nie powinno się zdarzyć dla lekcji). */
-export function lessonContextOf(version: typeof deckVersions.$inferSelect): LessonContextShape {
+export function lessonContextOf(version: Pick<typeof deckVersions.$inferSelect, "lessonContext">): LessonContextShape {
   const raw = version.lessonContext as Partial<LessonContextShape> | null;
   if (!raw || typeof raw.subjectId !== "string" || typeof raw.topicId !== "string") {
     throw new AppError("internal", { message: "lesson version without lesson_context" });
@@ -240,7 +240,7 @@ export async function loadExercises(tx: Executor, deckVersionId: string): Promis
     .select({ id: itemRevisions.id, itemId: itemRevisions.itemId, position: itemRevisions.position, payload: itemRevisions.payload, targetKey: itemRevisions.targetKey })
     .from(itemRevisions)
     .where(eq(itemRevisions.deckVersionId, deckVersionId))
-    .orderBy(asc(itemRevisions.position));
+    .orderBy(asc(itemRevisions.position), asc(itemRevisions.id));
 
   // Audio odpowiedzi kanonicznej (`target_audio`) przygotowane przy publikacji,
   // gdy przedmiot ma `ttsForAnswers`. Odtwarzane jako wsparcie w ćwiczeniach

@@ -1,15 +1,16 @@
 import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 import { MeaningVisualSchema, type KidDeckDto, type KidProfileDto } from "@learning/contracts";
 import type { Services } from "../config";
+import type { Tx } from "../db/client";
 import { hasScheduledWork, type DeckWorkloadItem, type SkillSnapshot } from "../domain/scheduler";
 import type { Skill } from "../domain/types";
-import { assignments, childProfiles, childSkillProgress, deckVersions, decks, familySettings, itemRevisionSkills, itemRevisions, learningSessions, revisionAssets } from "../db/schema";
+import { assignments, childProfiles, deckVersions, decks, itemRevisions, learningSessions, revisionAssets } from "../db/schema";
 import { AppError } from "../errors";
-import { mapStatus } from "./sessions";
-import { lessonDeckListValues } from "./lessons/lesson-sessions";
-import { hasSafeLessonMockPortion } from "./lessons/lesson-mock-tests";
-import { CURRENT_POLICY_ID, ensureLearningPolicy, loadPolicy } from "../policies/registry";
-import { readLearningSnapshot } from "./learning-snapshot";
+import { lessonContextOf } from "./lessons/lesson-sessions";
+import { readLessonDeckOverviews } from "./lessons/lesson-deck-overview";
+import { CURRENT_POLICY_ID, loadPolicy } from "../policies/registry";
+import { readDeckLearningOverview, readProjectedExposedTargetKeys } from "./deck-learning-overview";
+import { SKILL_PROJECTION_VERSION } from "./skill-projections";
 import { payloadToItem } from "./item-payload";
 import { readKidRewardSnapshot, readKidRewardSnapshots } from "./reward-activity";
 import { readActivitySummary } from "./reporting";
@@ -52,20 +53,31 @@ export async function listKidProfiles(services: Services): Promise<KidProfileDto
 }
 
 export async function listKidDecks(services: Services, childId: string, options: { microphoneEnabled?: boolean } = {}): Promise<KidDeckDto[]> {
+  const now = services.clock.now();
+  return services.db.transaction(tx => listKidDecksSnapshot(services, tx, childId, options, now), {
+    isolationLevel: "repeatable read", accessMode: "read only",
+  });
+}
+
+async function listKidDecksSnapshot(
+  services: Services, exec: Tx, childId: string,
+  options: { microphoneEnabled?: boolean }, nowDate: Date,
+): Promise<KidDeckDto[]> {
   const child = (
-    await services.db.select({ id: childProfiles.id, policyId: childProfiles.policyId, canRead: childProfiles.canRead }).from(childProfiles).where(eq(childProfiles.id, childId))
+    await exec.select({ id: childProfiles.id, policyId: childProfiles.policyId, canRead: childProfiles.canRead, projectionVersion: childProfiles.learningProjectionVersion }).from(childProfiles).where(eq(childProfiles.id, childId))
   )[0];
   if (!child) {
     throw new AppError("not_found");
   }
-  const rewards = await readKidRewardSnapshot(services, childId);
+  if (child.projectionVersion !== SKILL_PROJECTION_VERSION) throw new AppError("conflict", { message: "learning projection rebuild required" });
+  const rewards = await readKidRewardSnapshot(services, childId, nowDate, exec);
   const microphoneEnabled = options.microphoneEnabled ?? true;
-  const [active] = await services.db.select().from(learningSessions).where(and(eq(learningSessions.childId, childId), eq(learningSessions.state, "active")));
+  const [active] = await exec.select().from(learningSessions).where(and(eq(learningSessions.childId, childId), eq(learningSessions.state, "active")));
   const [activeVersion] = active
-    ? await services.db.select({ vocabularyFormat: deckVersions.vocabularyFormat, deckKind: decks.kind, coverAssetId: decks.coverAssetId })
+    ? await exec.select({ vocabularyFormat: deckVersions.vocabularyFormat, deckKind: decks.kind, coverAssetId: decks.coverAssetId })
         .from(deckVersions).innerJoin(decks, eq(deckVersions.deckId, decks.id)).where(eq(deckVersions.id, active.deckVersionId))
     : [];
-  const rows = await services.db
+  const rows = await exec
     .select({ deckId: decks.id, title: decks.title, kind: decks.kind, coverAssetId: decks.coverAssetId, vocabularyFormat: deckVersions.vocabularyFormat, testDate: assignments.testDate, testGoals: assignments.testGoals, mockTestTaskCount: assignments.mockTestTaskCount, versionId: decks.publishedVersionId, lessonContext: deckVersions.lessonContext })
     .from(assignments)
     .innerJoin(decks, eq(decks.id, assignments.deckId))
@@ -78,10 +90,13 @@ export async function listKidDecks(services: Services, childId: string, options:
       ),
     )
     .orderBy(asc(decks.createdAt));
-  const coverVersionIds = [...new Set([...rows.map((row) => row.versionId).filter((id): id is string => id !== null), ...(active ? [active.deckVersionId] : [])])];
-  const coverRevisions = coverVersionIds.length ? await services.db.select({ id: itemRevisions.id, deckVersionId: itemRevisions.deckVersionId, position: itemRevisions.position, payload: itemRevisions.payload })
+  const visibleRows = child.canRead
+    ? rows
+    : rows.filter((row) => row.kind === "vocabulary" && row.vocabularyFormat === "picture" || active?.deckId === row.deckId);
+  const coverVersionIds = [...new Set([...visibleRows.map((row) => row.versionId).filter((id): id is string => id !== null), ...(active ? [active.deckVersionId] : [])])];
+  const coverRevisions = coverVersionIds.length ? await exec.select({ id: itemRevisions.id, deckVersionId: itemRevisions.deckVersionId, position: itemRevisions.position, payload: itemRevisions.payload })
     .from(itemRevisions).where(inArray(itemRevisions.deckVersionId, coverVersionIds)).orderBy(asc(itemRevisions.position)) : [];
-  const illustrationRows = coverRevisions.length ? await services.db.select({ itemRevisionId: revisionAssets.itemRevisionId, assetId: revisionAssets.assetId })
+  const illustrationRows = coverRevisions.length ? await exec.select({ itemRevisionId: revisionAssets.itemRevisionId, assetId: revisionAssets.assetId })
     .from(revisionAssets).where(and(inArray(revisionAssets.itemRevisionId, coverRevisions.map((revision) => revision.id)), eq(revisionAssets.role, "illustration"), eq(revisionAssets.state, "approved"))) : [];
   const illustrationByRevision = new Map(illustrationRows.map((row) => [row.itemRevisionId, row.assetId]));
   const coverVisualByVersion = new Map<string, KidDeckDto["coverVisual"]>();
@@ -100,9 +115,6 @@ export async function listKidDecks(services: Services, childId: string, options:
     const parsed = MeaningVisualSchema.safeParse(visual);
     coverVisualByVersion.set(revision.deckVersionId, parsed.success ? parsed.data : null);
   }
-  const visibleRows = child.canRead
-    ? rows
-    : rows.filter((row) => row.kind === "vocabulary" && row.vocabularyFormat === "picture" || active?.deckId === row.deckId);
 
   // Izolacja lekcji (zadanie 9): rekomendacja i liczniki słówek liczą się TYLKO
   // dla zestawów słówek. Lekcje dostają wartości bezpieczne i tytuł przedmiotu
@@ -118,72 +130,21 @@ export async function listKidDecks(services: Services, childId: string, options:
     ...vocabRows.map((row) => row.versionId!),
     ...(active && activeVersion?.deckKind === "vocabulary" ? [active.deckVersionId] : []),
   ])];
-  const revisions = versionIds.length
-    ? await services.db
-        .select({ revisionId: itemRevisions.id, versionId: itemRevisions.deckVersionId })
-        .from(itemRevisions)
-        .where(inArray(itemRevisions.deckVersionId, versionIds))
-    : [];
-  const progressRows = revisions.length
-    ? await services.db
-    .select({
-      revisionId: itemRevisionSkills.itemRevisionId,
-      skill: itemRevisionSkills.skill,
-      status: childSkillProgress.status,
-      nextReviewAt: childSkillProgress.nextReviewAt,
-      streak: childSkillProgress.independentSuccessStreak,
-    })
-    .from(itemRevisionSkills)
-    .innerJoin(
-      childSkillProgress,
-      and(
-        eq(childSkillProgress.skillVersionId, itemRevisionSkills.skillVersionId),
-        eq(childSkillProgress.childId, childId),
-      ),
-    )
-    .where(
-      inArray(
-        itemRevisionSkills.itemRevisionId,
-        revisions.map((r) => r.revisionId),
-      ),
-    )
-    : [];
-
-  const progressByRevision = new Map<string, Array<SkillSnapshot & { skill: Skill }>>();
-  for (const row of progressRows) {
-    const list = progressByRevision.get(row.revisionId) ?? [];
-    list.push({
-      skill: row.skill as Skill,
-      status: mapStatus(row.status),
-      nextReviewAt: row.nextReviewAt?.toISOString() ?? null,
-      streak: row.streak ?? 0,
-    });
-    progressByRevision.set(row.revisionId, list);
-  }
-  const now = services.clock.now().toISOString();
-  await ensureLearningPolicy(services.db);
-  const policy = await loadPolicy(services.db, child.policyId ?? CURRENT_POLICY_ID);
-  const snapshots = await readLearningSnapshot(services.db, {
-    childId,
-    revisionIds: revisions.map((revision) => revision.revisionId),
-    policy,
-    now,
+  const versionIdSet = new Set(versionIds);
+  const revisions = coverRevisions.filter(revision => versionIdSet.has(revision.deckVersionId))
+    .map(revision => ({ revisionId: revision.id, versionId: revision.deckVersionId }));
+  const now = nowDate.toISOString();
+  const policy = await loadPolicy(exec, child.policyId ?? CURRENT_POLICY_ID);
+  const snapshots = await readDeckLearningOverview(exec, {
+    childId, revisionIds: revisions.map(revision => revision.revisionId),
+    revisions: coverRevisions, policy, now,
   });
-  const snapshotByRevision = new Map(snapshots.map((snapshot) => [snapshot.itemRevisionId, snapshot]));
-  for (const snapshot of snapshots) {
-    const reconstructed = progressByRevision.get(snapshot.itemRevisionId) ?? [];
-    for (const [skill, progress] of Object.entries(snapshot.progress) as [Skill, SkillSnapshot][]) {
-      const current = reconstructed.find((row) => row.skill === skill);
-      if (current) {
-        current.status = progress.status;
-        current.nextReviewAt = progress.nextReviewAt;
-        current.streak = progress.streak;
-      } else {
-        reconstructed.push({ skill, ...progress });
-      }
-    }
-    progressByRevision.set(snapshot.itemRevisionId, reconstructed);
-  }
+  const snapshotByRevision = new Map(snapshots.map(snapshot => [snapshot.itemRevisionId, snapshot]));
+  const progressByRevision = new Map<string, Array<SkillSnapshot & { skill: Skill }>>(
+    snapshots.map(snapshot => [snapshot.itemRevisionId,
+      (Object.entries(snapshot.progress) as [Skill, SkillSnapshot][]).map(([skill, progress]) => ({ skill, ...progress })),
+    ]),
+  );
   const independentlyRecalledRevisions = new Set<string>();
   for (const [revisionId, skillSnapshots] of progressByRevision.entries()) {
     const isMastered = child.canRead
@@ -227,36 +188,16 @@ export async function listKidDecks(services: Services, childId: string, options:
   // Lekcje (zadanie 13): prawdziwe liczniki i rekomendacja z silnika lekcji
   // (cele, opanowane cele, czy selektor ma pracę). Jedno wywołanie per lekcja.
   const lessonRows = visibleRows.filter((row) => row.kind === "lesson");
-  const familyTimezone = lessonRows.length
-    ? ((await services.db.select({ timezone: familySettings.timezone }).from(familySettings).limit(1))[0]?.timezone ?? "Europe/Warsaw")
-    : "Europe/Warsaw";
-  const lessonValues = new Map<string, { itemCount: number; independentlyRecalledCount: number; recommended: boolean }>();
-  const lessonMockAvailable = new Map<string, boolean>();
-  for (const row of lessonRows) {
-    lessonValues.set(
-      row.deckId,
-      await lessonDeckListValues(services, services.db, {
-        childId,
-        deckVersionId: row.versionId!,
-        testDate: row.testDate,
-        timezone: familyTimezone,
-        now: services.clock.now(),
-      }),
-    );
-    // Kartkówka lekcji (scope 6): cel `lesson` ustawiony ORAZ istnieje bezpieczna
-    // porcja (dry-run planera bez utrwalania). Przy mockTestTaskCount z przypisania.
-    let available = false;
-    if (row.testGoals?.includes("lesson")) {
-      available = await services.db.transaction((tx) =>
-        hasSafeLessonMockPortion(tx, services, {
-          childId,
-          deckVersionId: row.versionId!,
-          requestedTaskCount: row.mockTestTaskCount ?? 10,
-        }),
-      );
-    }
-    lessonMockAvailable.set(row.deckId, available);
-  }
+  const lessonValues = await readLessonDeckOverviews(services, exec, {
+    childId, now: nowDate,
+    decks: lessonRows.map(row => ({
+      deckId: row.deckId, versionId: row.versionId!, testDate: row.testDate,
+      testGoals: row.testGoals, mockTestTaskCount: row.mockTestTaskCount,
+      lessonContext: lessonContextOf(row),
+    })),
+    readExposedTargetKeys: ({ exec, childId, targetKeys, now }) =>
+      readProjectedExposedTargetKeys(exec, childId, targetKeys, now),
+  });
   // Zachowujemy kolejność po createdAt (rows), rozgałęziając per rodzaj zestawu.
   const result = visibleRows.map((row): KidDeckDto => {
     const isActive = active?.deckId === row.deckId;
@@ -268,7 +209,7 @@ export async function listKidDecks(services: Services, childId: string, options:
       // lekcji z silnika lekcji (zadanie 13).
       const subjectId = (row.lessonContext as { subjectId?: string } | null)?.subjectId;
       const subjectTitle = (subjectId ? services.subjects.getSubject(subjectId)?.titlePl : undefined) ?? null;
-      const values = lessonValues.get(row.deckId) ?? { itemCount: 0, independentlyRecalledCount: 0, recommended: false };
+      const values = lessonValues.get(row.deckId) ?? { itemCount: 0, independentlyRecalledCount: 0, recommended: false, mockTestAvailable: false };
       return {
         kind: "lesson",
         vocabularyFormat,
@@ -276,7 +217,7 @@ export async function listKidDecks(services: Services, childId: string, options:
         coverVisual: coverVisualByVersion.get(versionId) ?? null,
         resumeOnly: isActive && !child.canRead,
         subjectTitle,
-        mockTestAvailable: child.canRead && (lessonMockAvailable.get(row.deckId) ?? false),
+        mockTestAvailable: child.canRead && values.mockTestAvailable,
         earnedPoints: rewards.pointsByDeck.get(row.deckId) ?? 0,
         activeSession,
         deckId: row.deckId,
@@ -309,10 +250,10 @@ export async function listKidDecks(services: Services, childId: string, options:
     };
   });
   if (active && !result.some((deck) => deck.deckId === active.deckId)) {
-    const [resumable] = await services.db.select({ title: decks.title, kind: decks.kind, coverAssetId: decks.coverAssetId }).from(decks).where(eq(decks.id, active.deckId));
-    const [pinnedVersion] = await services.db.select({ vocabularyFormat: deckVersions.vocabularyFormat }).from(deckVersions).where(eq(deckVersions.id, active.deckVersionId));
+    const [resumable] = await exec.select({ title: decks.title, kind: decks.kind, coverAssetId: decks.coverAssetId }).from(decks).where(eq(decks.id, active.deckId));
+    const [pinnedVersion] = await exec.select({ vocabularyFormat: deckVersions.vocabularyFormat }).from(deckVersions).where(eq(deckVersions.id, active.deckVersionId));
     if (resumable && pinnedVersion) {
-      const count = await services.db.select({ id: itemRevisions.id }).from(itemRevisions).where(eq(itemRevisions.deckVersionId, active.deckVersionId));
+      const count = await exec.select({ id: itemRevisions.id }).from(itemRevisions).where(eq(itemRevisions.deckVersionId, active.deckVersionId));
       result.unshift({
         deckId: active.deckId, title: resumable.title, kind: resumable.kind as "vocabulary" | "lesson",
         vocabularyFormat: pinnedVersion.vocabularyFormat, coverAssetId: resumable.coverAssetId, coverVisual: coverVisualByVersion.get(active.deckVersionId) ?? null,

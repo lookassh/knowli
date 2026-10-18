@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   MockTestReportDtoSchema,
   type MockTestReportDto,
@@ -16,6 +16,7 @@ import type { Tx } from "../db/client";
 import {
   deckVersions,
   childProfiles,
+  childTargetExposures,
   eventExposures,
   itemRevisions,
   learningEvents,
@@ -113,6 +114,17 @@ export async function writeSealedEvent(tx: Tx, input: SealedEventInput): Promise
     );
   }
   await tx.update(learningEvents).set({ sealed: true }).where(eq(learningEvents.id, eventId));
+  if (exposures.length > 0) {
+    await tx.insert(childTargetExposures).values(
+      exposures.map((targetKey) => ({ childId: input.childId, targetKey, firstExposureAt: input.occurredAt, lastExposureAt: input.occurredAt })),
+    ).onConflictDoUpdate({
+      target: [childTargetExposures.childId, childTargetExposures.targetKey],
+      set: {
+        firstExposureAt: sql`least(${childTargetExposures.firstExposureAt}, excluded.first_exposure_at)`,
+        lastExposureAt: sql`greatest(${childTargetExposures.lastExposureAt}, excluded.last_exposure_at)`,
+      },
+    });
+  }
   return eventId;
 }
 
