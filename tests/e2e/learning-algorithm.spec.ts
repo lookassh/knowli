@@ -35,10 +35,10 @@ async function createAssignedDeck(parent: APIRequestContext, childId: string, ta
   });
   expect(saved.status()).toBe(200);
   let published = false;
-  for (let i = 0; i < 90 && !published; i += 1) {
+  for (let i = 0; i < 720 && !published; i += 1) {
     const current = await (await parent.get(`/api/v1/parent/drafts/${deck.draft.id}`)).json();
     if (current.assets.some((asset: { role: string; state: string }) => asset.role === "target_audio" && asset.state !== "approved")) {
-      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      await new Promise((resolve) => setTimeout(resolve, 250));
       continue;
     }
     published = (await parent.post(`/api/v1/parent/drafts/${deck.draft.id}/publish`, {

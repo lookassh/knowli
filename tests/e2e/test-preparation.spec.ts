@@ -55,15 +55,15 @@ async function assignedDeck(parent: import("@playwright/test").APIRequestContext
   const { deckId } = await generate.json() as { deckId: string };
 
   let draftId: string | null = null;
-  for (let attempt = 0; attempt < 120 && draftId === null; attempt += 1) {
+  for (let attempt = 0; attempt < 960 && draftId === null; attempt += 1) {
     const deck = await (await parent.get(`/api/v1/parent/decks/${deckId}`)).json();
     if (deck.generation?.state === "succeeded" && deck.draft) draftId = deck.draft.id;
-    else await new Promise((resolve) => setTimeout(resolve, 2_000));
+    else await new Promise((resolve) => setTimeout(resolve, 250));
   }
   expect(draftId).not.toBeNull();
 
   let published = false;
-  for (let attempt = 0; attempt < 90 && !published; attempt += 1) {
+  for (let attempt = 0; attempt < 720 && !published; attempt += 1) {
     const draft = await (await parent.get(`/api/v1/parent/drafts/${draftId}`)).json();
     const pendingAudio = draft.assets.some(
       (asset: { role: string; state: string }) => asset.role === "target_audio" && asset.state !== "approved",
@@ -72,7 +72,7 @@ async function assignedDeck(parent: import("@playwright/test").APIRequestContext
       published = (await parent.post(`/api/v1/parent/drafts/${draftId}/publish`, {
         data: { expectedEditNumber: draft.editNumber },
       })).status() === 200;
-    } else await new Promise((resolve) => setTimeout(resolve, 2_000));
+    } else await new Promise((resolve) => setTimeout(resolve, 250));
   }
   expect(published).toBe(true);
   expect((await parent.put(`/api/v1/parent/assignments/${childId}/${deckId}`, { data: { testDate: null } })).status()).toBe(204);

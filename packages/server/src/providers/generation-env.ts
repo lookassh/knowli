@@ -34,7 +34,14 @@ export function createGenerationDepsFromEnv(env: Record<string, string | undefin
   const lessonExecution = lessonGenerationPolicyFromEnv(env);
   if (env.UMIEM_FAKE_PROVIDERS === "1") {
     const delayMs = Number(env.UMIEM_FAKE_DELAY_MS ?? 0);
-    return { ...fakeGenerationDeps(mediaStore, { delayMs: Number.isFinite(delayMs) ? delayMs : 0 }), lessonExecution };
+    const lessonDelayMs = Number(env.UMIEM_FAKE_LESSON_DELAY_MS ?? env.UMIEM_FAKE_DELAY_MS ?? 0);
+    return {
+      ...fakeGenerationDeps(mediaStore, {
+        delayMs: Number.isFinite(delayMs) ? delayMs : 0,
+        lessonDelayMs: Number.isFinite(lessonDelayMs) ? lessonDelayMs : 0,
+      }),
+      lessonExecution,
+    };
   }
   const apiKey = env.OPENAI_API_KEY;
   if (!apiKey) {

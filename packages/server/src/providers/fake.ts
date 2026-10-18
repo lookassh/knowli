@@ -246,9 +246,11 @@ export class FakeLlmProvider implements LlmProvider {
   #behaviors: LlmBehavior[] = [];
   #lessonBehaviors: LlmLessonBehavior[] = [];
   readonly #delayMs: number;
+  readonly #lessonDelayMs: number;
 
-  constructor(options: { delayMs?: number } = {}) {
+  constructor(options: { delayMs?: number; lessonDelayMs?: number } = {}) {
     this.#delayMs = options.delayMs ?? 0;
+    this.#lessonDelayMs = options.lessonDelayMs ?? this.#delayMs;
   }
 
   /** Zastępuje plan zachowań: kolejne wywołania zjadają elementy z kolejki, ostatni się powtarza. */
@@ -284,8 +286,8 @@ export class FakeLlmProvider implements LlmProvider {
     input: LessonPoolInput,
   ): Promise<{ exercises: unknown[]; examples: Record<string, string[]> }> {
     this.lessonRequests.push(input);
-    if (this.#delayMs > 0) {
-      await sleep(this.#delayMs);
+    if (this.#lessonDelayMs > 0) {
+      await sleep(this.#lessonDelayMs);
     }
     const behavior =
       this.#lessonBehaviors.length > 1
@@ -435,7 +437,7 @@ export function fakeSpeechDeps(): SpeechDeps {
 /** Komplet zależności generacji na fake'ach dla wskazanego magazynu mediów. */
 export function fakeGenerationDeps(
   mediaStore: MediaStore,
-  options: { delayMs?: number } = {},
+  options: { delayMs?: number; lessonDelayMs?: number } = {},
 ): GenerationDeps {
   return {
     llm: new FakeLlmProvider(options),
