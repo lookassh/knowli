@@ -253,9 +253,9 @@ async function setDueProgress(childId: string, versionId: string, itemIndex: num
   for (const id of await skillVersionIds(revision.id, skill)) {
     await pool.query(
       `insert into learning_app.child_skill_progress
-         (child_id, skill_version_id, status, independent_success_streak, next_review_at, projection_version)
-       values ($1,$2,'needs_confirmation',3,'2026-10-01T00:00:00Z','test')
-       on conflict (child_id, skill_version_id) do update
+         (child_id, skill_version_id, policy_id, status, independent_success_streak, next_review_at, last_reviewed_at, first_issued_at, has_qualifying_assessment, projection_version)
+       select $1,$2,coalesce((select policy_id from learning_app.learning_sessions where child_id = $1 and state = 'active' order by started_at desc limit 1), c.policy_id, 'learning-v2'),'needs_confirmation',3,'2026-10-01T00:00:00Z','2026-10-01T00:00:00Z','2026-09-01T00:00:00Z',true,'proj-3' from learning_app.child_profiles c where c.id = $1
+       on conflict (child_id, skill_version_id, policy_id) do update
          set status = 'needs_confirmation', independent_success_streak = 3,
              next_review_at = '2026-10-01T00:00:00Z'`,
       [childId, id],

@@ -75,6 +75,7 @@ import {
 import { buildLessonSummaryObjectives } from "./lessons/lesson-attempts";
 import { completeDisabledVoiceTask } from "./voice-task-lifecycle";
 import { finishRewardActivitySession, readSessionRewardDelta, settleRewardActivity } from "./reward-activity";
+import { recordTaskSkillFacts, SKILL_PROJECTION_VERSION } from "./skill-projections";
 
 /** Okno wznowienia aktywnej sesji od ostatniego zdarzenia (arch §9.1). */
 export const RESUME_WINDOW_MS = 30 * 60_000;
@@ -243,7 +244,7 @@ export async function startSession(services: Services, input: SessionInput): Pro
   const mode = valid.mode ?? "training";
   return services.db.transaction(async (tx) => {
     const child = (
-      await tx.select({ id: childProfiles.id, canRead: childProfiles.canRead }).from(childProfiles).where(eq(childProfiles.id, valid.childId)).for("no key update")
+      await tx.select({ id: childProfiles.id, canRead: childProfiles.canRead, projectionVersion: childProfiles.learningProjectionVersion }).from(childProfiles).where(eq(childProfiles.id, valid.childId)).for("no key update")
     )[0];
     if (!child) {
       throw new AppError("not_found");
@@ -275,6 +276,10 @@ export async function startSession(services: Services, input: SessionInput): Pro
         .update(learningSessions)
         .set({ state: "ended", endedAt: now })
         .where(eq(learningSessions.id, active.id));
+    }
+
+    if (child.projectionVersion !== SKILL_PROJECTION_VERSION) {
+      throw new AppError("conflict", { message: "learning projection rebuild required" });
     }
 
     const assignment = (
@@ -353,7 +358,7 @@ export async function startSession(services: Services, input: SessionInput): Pro
           : await createMockTestPlan(tx, services, {
               // Kartkówka słówek obsługuje tylko cele słówkowe; cel `lesson`
               // dotyczy lekcji (osobna ścieżka) i nie trafia tu w czasie wykonania.
-              childId: valid.childId, deckVersionId: version.id,
+              childId: valid.childId, deckVersionId: version.id, policyId: childProfile?.policyId ?? CURRENT_POLICY_ID,
               testGoals: assignment.testGoals!.filter((g): g is TestGoal => g !== "lesson"), testDate: assignment.testDate,
               requestedTaskCount: assignment.mockTestTaskCount,
             });
@@ -509,6 +514,7 @@ async function planNextTask(
       and(
         eq(childSkillProgress.skillVersionId, itemRevisionSkills.skillVersionId),
         eq(childSkillProgress.childId, session.childId),
+        eq(childSkillProgress.policyId, session.policyId),
       ),
     )
     .where(inArray(itemRevisionSkills.itemRevisionId, revisionIds));
@@ -1186,6 +1192,13 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
         },
         issuedAt: now,
       });
+      await recordTaskSkillFacts(tx, {
+        childId: session.childId,
+        itemRevisionId: slot.itemRevisionId,
+        policyId: session.policyId,
+        exerciseType: slot.exerciseType,
+        issuedAt: now,
+      });
       await writeSealedEvent(tx, {
         childId: session.childId, taskId: slot.taskId, itemId: slot.itemId, kind: "prompt_issued",
         stepId: `${slot.taskId}:prompt`, occurredAt: now, exposures: [...slot.revealsTargetKeys],
@@ -1225,6 +1238,13 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
         ...(plan.statusAtIssue ? { statusAtIssue: plan.statusAtIssue } : {}),
         ...(plan.assessmentSkills ? { assessmentSkills: plan.assessmentSkills } : {}),
       },
+      issuedAt: now,
+    });
+    await recordTaskSkillFacts(tx, {
+      childId: session.childId,
+      itemRevisionId: plan.itemRevisionId,
+      policyId: session.policyId,
+      exerciseType: plan.exerciseType,
       issuedAt: now,
     });
     await writeSealedEvent(tx, {

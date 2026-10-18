@@ -11,7 +11,7 @@ import {
   UuidSchema,
 } from "@learning/contracts";
 import type { Services } from "../config";
-import type { Tx } from "../db/client";
+import type { Executor, Tx } from "../db/client";
 import {
   learningSessions,
   rewardActivitySegments,
@@ -402,23 +402,23 @@ function xboxRequestDto(row: typeof rewardActivityXboxRequests.$inferSelect): Xb
 }
 
 /** Reads rebuildable reward projections for several profiles with bounded ledger reads. */
-export async function readKidRewardSnapshots(services: Services, childIds: string[], now = services.clock.now()): Promise<Map<string, KidRewardSnapshot>> {
+export async function readKidRewardSnapshots(services: Services, childIds: string[], now = services.clock.now(), exec: Executor = services.db): Promise<Map<string, KidRewardSnapshot>> {
   const children = [...new Set(childIds.map(id => UuidSchema.parse(id)))];
   if (!children.length) return new Map();
-  const projections = await services.db.select().from(childRewardProjection).where(inArray(childRewardProjection.childId, children));
+  const projections = await exec.select().from(childRewardProjection).where(inArray(childRewardProjection.childId, children));
   const projectionByChild = new Map(projections.map(row => [row.childId, row]));
-  const [family] = await services.db.select({ timezone: familySettings.timezone }).from(familySettings).limit(1);
+  const [family] = await exec.select({ timezone: familySettings.timezone }).from(familySettings).limit(1);
   const currentTimezone = family?.timezone ?? "Europe/Warsaw";
   const timezone = validRewardTimezone(currentTimezone);
   const today = localDateAt(now, timezone);
-  const [todayRows, pendingRows, latestResult, deckRows] = await Promise.all([
-    services.db.select({ childId: rewardDayProjection.childId, milliseconds: rewardDayProjection.creditedMilliseconds }).from(rewardDayProjection).where(and(
+  // A supplied executor may own a single transaction connection; do not queue concurrent queries on it.
+  const todayRows = await exec.select({ childId: rewardDayProjection.childId, milliseconds: rewardDayProjection.creditedMilliseconds }).from(rewardDayProjection).where(and(
       inArray(rewardDayProjection.childId, children), eq(rewardDayProjection.timezone, timezone), eq(rewardDayProjection.localDate, today),
-    )),
-    services.db.select().from(rewardActivityXboxRequests).where(and(
+    ));
+  const pendingRows = await exec.select().from(rewardActivityXboxRequests).where(and(
       inArray(rewardActivityXboxRequests.childId, children), eq(rewardActivityXboxRequests.status, "pending"),
-    )),
-    services.db.execute(sql`SELECT requested.child_id AS "childId", latest.id, latest.block_id AS "blockId", latest.status,
+    ));
+  const latestResult = await exec.execute(sql`SELECT requested.child_id AS "childId", latest.id, latest.block_id AS "blockId", latest.status,
         latest.timezone_snapshot AS "timezoneSnapshot", latest.local_date_snapshot AS "localDateSnapshot",
         latest.block_number_snapshot AS "blockNumberSnapshot", latest.credited_seconds_snapshot AS "creditedSecondsSnapshot",
         latest.points_cost AS "pointsCost", latest.xbox_minutes AS "xboxMinutes", latest.requested_at AS "requestedAt"
@@ -428,10 +428,9 @@ export async function readKidRewardSnapshots(services: Services, childIds: strin
         WHERE request.child_id = requested.child_id
         ORDER BY request.requested_at DESC, request.id DESC
         LIMIT 1
-      ) latest ON true`),
-    services.db.select({ childId: deckRewardProjection.childId, deckId: deckRewardProjection.deckId, earnedPoints: deckRewardProjection.earnedPoints })
-      .from(deckRewardProjection).where(inArray(deckRewardProjection.childId, children)),
-  ]);
+      ) latest ON true`);
+  const deckRows = await exec.select({ childId: deckRewardProjection.childId, deckId: deckRewardProjection.deckId, earnedPoints: deckRewardProjection.earnedPoints })
+      .from(deckRewardProjection).where(inArray(deckRewardProjection.childId, children));
   const latestRows = (latestResult.rows as Array<typeof rewardActivityXboxRequests.$inferSelect & { childId: string }>).filter(row => row.id !== null)
     .map(row => ({ ...row, requestedAt: row.requestedAt instanceof Date ? row.requestedAt : new Date(row.requestedAt as unknown as string) }));
   const latestByChild = new Map(latestRows.map(row => [row.childId, row]));
@@ -462,8 +461,8 @@ export async function readKidRewardSnapshots(services: Services, childIds: strin
 }
 
 /** Reads the child's server-settled reward projections. */
-export async function readKidRewardSnapshot(services: Services, childId: string, now = services.clock.now()): Promise<KidRewardSnapshot> {
-  return (await readKidRewardSnapshots(services, [childId], now)).get(childId)!;
+export async function readKidRewardSnapshot(services: Services, childId: string, now = services.clock.now(), exec: Executor = services.db): Promise<KidRewardSnapshot> {
+  return (await readKidRewardSnapshots(services, [childId], now, exec)).get(childId)!;
 }
 
 /** Explicitly rebuilds one child's projections from immutable settlements under the settlement lock. */

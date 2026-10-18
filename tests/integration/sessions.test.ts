@@ -250,11 +250,12 @@ async function answerIssuedAssessedTask(sessionId: string): Promise<number> {
 
 async function seedSummaryCheck(childId: string, versionId: string): Promise<void> {
   await pool.query(`insert into learning_app.child_skill_progress
-    (child_id, skill_version_id, status, independent_success_streak, next_review_at, projection_version)
-    select $1, s.skill_version_id, 'needs_confirmation', 2, '2026-10-01T00:00:00Z', 'test'
+    (child_id, skill_version_id, policy_id, status, independent_success_streak, next_review_at, last_reviewed_at, first_issued_at, projection_version, has_qualifying_assessment)
+    select $1, s.skill_version_id, coalesce((select policy_id from learning_app.learning_sessions where child_id = $1 and state = 'active' order by started_at desc limit 1), c.policy_id, 'learning-v2'), 'needs_confirmation', 2, '2026-10-01T00:00:00Z', '2026-10-01T00:00:00Z', '2026-09-01T00:00:00Z', 'proj-3', true
     from learning_app.item_revision_skills s
     join learning_app.item_revisions r on r.id = s.item_revision_id
-    where r.deck_version_id = $2 and s.skill in ('recall','spelling')`, [childId, versionId]);
+    cross join learning_app.child_profiles c
+    where c.id = $1 and r.deck_version_id = $2 and s.skill in ('recall','spelling')`, [childId, versionId]);
 }
 
 async function seedPresentedRecognitionAndSpelling(
@@ -272,9 +273,9 @@ async function seedPresentedRecognitionAndSpelling(
   for (const row of rows) {
     await pool.query(
       `insert into learning_app.child_skill_progress
-         (child_id, skill_version_id, status, independent_success_streak, next_review_at, projection_version)
-       values ($1,$2,'practicing',$3,'2030-01-01T00:00:00Z','test')
-       on conflict (child_id, skill_version_id) do update set
+         (child_id, skill_version_id, policy_id, status, independent_success_streak, next_review_at, first_issued_at, projection_version)
+       select $1,$2,coalesce(c.policy_id, 'learning-v2'),'practicing',$3,'2030-01-01T00:00:00Z','2026-09-01T00:00:00Z','proj-3' from learning_app.child_profiles c where c.id = $1
+       on conflict (child_id, skill_version_id, policy_id) do update set
          status = 'practicing', independent_success_streak = excluded.independent_success_streak,
          next_review_at = excluded.next_review_at`,
       [childId, row.skill_version_id, row.skill === "listening" ? 1 : 0],
@@ -1185,8 +1186,8 @@ describe("ćwiczenie zestawu w dowolnym momencie (extra-practice + rekomendacja)
     for (const row of skillRows) {
       await pool.query(
         `insert into learning_app.child_skill_progress
-           (child_id, skill_version_id, status, projection_version)
-         values ($1, $2, 'mastered', 'learning-v1')`,
+           (child_id, skill_version_id, policy_id, status, last_reviewed_at, first_issued_at, projection_version, has_qualifying_assessment)
+         select $1, $2, coalesce(c.policy_id, 'learning-v2'), 'mastered', '2026-10-01T00:00:00Z', '2026-09-01T00:00:00Z', 'proj-3', true from learning_app.child_profiles c where c.id = $1`,
         [childId, row.skill_version_id],
       );
     }
@@ -1208,8 +1209,8 @@ describe("ćwiczenie zestawu w dowolnym momencie (extra-practice + rekomendacja)
     expect(recall).toBeDefined();
     await pool.query(
       `insert into learning_app.child_skill_progress
-         (child_id, skill_version_id, status, projection_version)
-       values ($1, $2, 'mastered', 'learning-v1')`,
+         (child_id, skill_version_id, policy_id, status, last_reviewed_at, first_issued_at, projection_version, has_qualifying_assessment)
+       select $1, $2, coalesce(c.policy_id, 'learning-v2'), 'mastered', '2026-10-01T00:00:00Z', '2026-09-01T00:00:00Z', 'proj-3', true from learning_app.child_profiles c where c.id = $1`,
       [childId, recall!.skill_version_id],
     );
 
@@ -1496,13 +1497,14 @@ describe("polityka per dziecka (design 2026-10-09)", () => {
     const { deckId, versionId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 3));
     await pool.query(
       `insert into learning_app.child_skill_progress
-         (child_id, skill_version_id, status, independent_success_streak, next_review_at, projection_version)
-       select $1, s.skill_version_id, 'practicing', 0,
+         (child_id, skill_version_id, policy_id, status, independent_success_streak, next_review_at, last_reviewed_at, first_issued_at, projection_version, has_qualifying_assessment)
+       select $1, s.skill_version_id, coalesce(c.policy_id, 'learning-v2'), 'practicing', 0,
               case when r.position = 0 then '2026-10-06T00:00:00Z'::timestamptz else '2026-10-05T00:00:00Z'::timestamptz end,
-              'test'
+              '2026-10-01T00:00:00Z', '2026-09-01T00:00:00Z', 'proj-3', true
          from learning_app.item_revision_skills s
          join learning_app.item_revisions r on r.id = s.item_revision_id
-        where r.deck_version_id = $2 and r.position < 2 and s.skill = 'listening'`,
+         cross join learning_app.child_profiles c
+        where c.id = $1 and r.deck_version_id = $2 and r.position < 2 and s.skill = 'listening'`,
       [childId, versionId],
     );
     const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
@@ -1530,13 +1532,14 @@ describe("polityka per dziecka (design 2026-10-09)", () => {
     const { deckId, versionId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 3));
     await pool.query(
       `insert into learning_app.child_skill_progress
-         (child_id, skill_version_id, status, independent_success_streak, next_review_at, projection_version)
-       select $1, s.skill_version_id, 'practicing', 0,
+         (child_id, skill_version_id, policy_id, status, independent_success_streak, next_review_at, last_reviewed_at, first_issued_at, projection_version, has_qualifying_assessment)
+       select $1, s.skill_version_id, coalesce(c.policy_id, 'learning-v2'), 'practicing', 0,
               case when r.position = 0 then '2026-10-05T00:00:00Z'::timestamptz else '2026-10-06T00:00:00Z'::timestamptz end,
-              'test'
+              '2026-10-01T00:00:00Z', '2026-09-01T00:00:00Z', 'proj-3', true
          from learning_app.item_revision_skills s
          join learning_app.item_revisions r on r.id = s.item_revision_id
-        where r.deck_version_id = $2 and r.position < 2 and s.skill = 'listening'`,
+         cross join learning_app.child_profiles c
+        where c.id = $1 and r.deck_version_id = $2 and r.position < 2 and s.skill = 'listening'`,
       [childId, versionId],
     );
     const session = await startSession(services, { childId, deckId, microphoneEnabled: false });

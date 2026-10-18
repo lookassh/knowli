@@ -61,11 +61,12 @@ describe("stały plan treningu słówek", () => {
 
   it("nie planuje ponownie należnego sprawdzenia tego samego celu", async () => {
     await pool.query(`insert into learning_app.child_skill_progress
-      (child_id, skill_version_id, status, independent_success_streak, next_review_at, projection_version)
-      select $1, s.skill_version_id, 'needs_confirmation', 2, '2026-10-01T00:00:00Z', 'test'
+      (child_id, skill_version_id, policy_id, status, independent_success_streak, next_review_at, last_reviewed_at, first_issued_at, has_qualifying_assessment, projection_version)
+      select $1, s.skill_version_id, coalesce(c.policy_id, 'learning-v2'), 'needs_confirmation', 2, '2026-10-01T00:00:00Z', '2026-10-01T00:00:00Z', '2026-09-01T00:00:00Z', true, 'proj-3'
       from learning_app.item_revision_skills s join learning_app.item_revisions r on r.id=s.item_revision_id
+      cross join learning_app.child_profiles c
       where r.deck_version_id=(select id from learning_app.deck_versions where deck_id=$2 and state='published' order by version_number desc limit 1)
-        and s.skill in ('recall','spelling')`, [childId, deckId]);
+        and c.id=$1 and s.skill in ('recall','spelling')`, [childId, deckId]);
     const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
     const [row] = (await pool.query("select training_plan from learning_app.learning_sessions where id=$1", [session.sessionId])).rows as {training_plan:{slots:Array<{reason:string;itemRevisionId:string}>}}[];
     const checks = row!.training_plan.slots.filter((slot) => slot.reason === "due-check");

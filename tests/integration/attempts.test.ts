@@ -208,9 +208,9 @@ async function setDueCheck(
   for (const row of rows) {
     await pool.query(
       `insert into learning_app.child_skill_progress
-         (child_id, skill_version_id, status, independent_success_streak, next_review_at, projection_version)
-       values ($1,$2,$3,$4, '2026-10-01T00:00:00Z', 'test')
-       on conflict (child_id, skill_version_id) do update
+         (child_id, skill_version_id, policy_id, status, independent_success_streak, next_review_at, last_reviewed_at, first_issued_at, projection_version, has_qualifying_assessment)
+       select $1,$2,coalesce((select policy_id from learning_app.learning_sessions where child_id = $1 and state = 'active' order by started_at desc limit 1), c.policy_id, 'learning-v2'),$3,$4,'2026-10-01T00:00:00Z','2026-10-01T00:00:00Z','2026-09-01T00:00:00Z','proj-3',true from learning_app.child_profiles c where c.id = $1
+       on conflict (child_id, skill_version_id, policy_id) do update
          set status = excluded.status, independent_success_streak = excluded.independent_success_streak,
              next_review_at = excluded.next_review_at`,
       [childId, row.skill_version_id, status, streak],

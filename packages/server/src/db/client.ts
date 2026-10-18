@@ -4,6 +4,7 @@ import type { ExtractTablesWithRelations } from "drizzle-orm";
 import type { PgTransaction } from "drizzle-orm/pg-core";
 import { Pool } from "pg";
 import * as schema from "./schema";
+import { ensureLearningPolicy } from "../policies/registry";
 
 export type Database = NodePgDatabase<typeof schema> & { $client: Pool };
 
@@ -30,7 +31,10 @@ export async function migrateDatabase(
 ): Promise<void> {
   const pool = new Pool({ connectionString, max: 1 });
   try {
-    await migrate(drizzle(pool, { schema }) as Database, { migrationsFolder });
+    const database = drizzle(pool, { schema }) as Database;
+    await migrate(database, { migrationsFolder });
+    // Polityki są źródłem konfiguracji sesji; GET nie może ich wstawiać.
+    await ensureLearningPolicy(database);
   } finally {
     await pool.end();
   }

@@ -1,31 +1,52 @@
 # Odbudowa projekcji postępu dziecka
 
-`progress:rebuild` odtwarza projekcje postępu dziecka z jego własnej, wiarygodnej historii ocen: zarówno `child_skill_progress` (słówka), jak i `child_objective_progress` (cele lekcji) — w jednym przejściu, w jednej transakcji na dziecko. Domyślnie działa jako dry-run. Nie zmienia prób, ocen, ekspozycji, transkrypcji, werdyktów modelu (`lesson_verdicts`, w tym decyzji rodzica), materiału ani zapisanych podsumowań.
+`progress:rebuild` odtwarza projekcje dziecka z historii: `child_skill_progress` (słówka, osobno dla każdej polityki), fakty pierwszego wydania i kwalifikujących ocen, `child_target_exposures` (pierwsze/ostatnie zapieczętowane ujawnienie) oraz `child_objective_progress` (cele lekcji). Apply działa atomowo na dziecko. Domyślnie uruchamia się dry-run. Nie zmienia prób, ocen, źródłowych ekspozycji, transkrypcji, werdyktów modelu (`lesson_verdicts`, w tym decyzji rodzica), materiału ani zapisanych podsumowań.
+
+## Przejście na projekcje `proj-3`
+
+Migracja `0018` dodaje indeks dowodów audio. Migracja `0019` wprowadza zakres polityki i fakty potrzebne liście. Istniejące profile otrzymują `learning_projection_version=NULL`, a stare wiersze postępu pozostają w `child_skill_progress_legacy`. Nie przypisuje się im automatycznie bieżącej polityki. Ta tabela nie jest fallbackiem runtime ani kompletnym backupem bazy.
+
+Nowe profile mają gotowy pusty stan `proj-3`. Dla istniejących wymagany jest pełny backfill przed otwarciem nowej wersji aplikacji dla użytkowników. GET nie uruchamia odbudowy. Nie wdrażać nowego kodu ze starymi writerami ani nie traktować samej migracji schematu jako zakończonej aktualizacji.
 
 ## Procedura utrzymaniowa
 
-1. Zaplanuj okno serwisowe i zatrzymaj web oraz worker. Odbudowa odmawia pracy przy aktywnej sesji lub próbie `processing`, ale sam test tych warunków nie potwierdza zatrzymania obu usług.
+1. Zaplanuj okno serwisowe. Przed zatrzymaniem usług upewnij się, że nie pozostały aktywne sesje i próby `processing`; nie kończ ich automatycznie dla wygody migracji. Następnie zatrzymaj stare web oraz worker i zablokuj ruch. Odbudowa odmawia apply przy aktywnej sesji lub próbie `processing`, ale sam test tych warunków nie potwierdza zatrzymania obu usług.
 2. Utwórz backup PostgreSQL i odtwórz go do osobnej bazy testowej. Zweryfikuj, że kopia zawiera historię, profile, sesje, projekcje i przypięte polityki. Nie zapisuj `DATABASE_URL` w logu ani historii poleceń.
-3. Ustaw `DATABASE_URL` przez menedżer sekretów środowiska i uruchom dry-run:
+3. W kontrolowanym procesie migracyjnym wykonaj migracje nowej wersji przy zatrzymanych writerach. Wykonują one także bootstrap polityk; nie robi tego GET listy. Użyj zgodnego obrazu/narzędzi nowej wersji do dalszych kroków. Ustaw `DATABASE_URL` przez menedżer sekretów środowiska i uruchom dry-run:
 
    ```sh
    pnpm --filter @learning/worker progress:rebuild
    ```
 
-   Dry-run raportuje liczbę profili i projekcji (słówka i cele łącznie) bez słów, nazw, odpowiedzi ani sekretów. Dla jednego profilu można dodać `--child <UUID>`. Odbudowa odmawia pracy przy aktywnej sesji lub próbie `processing` dziecka — te same blokady i odmowy obejmują cele lekcji, bo słówka i cele odbudowują się w jednej transakcji na dziecko (jedno przejście, bez przełącznika zakresu).
-4. Sprawdź raport oraz stan profilu. Jawnie zakończ aktywną sesję w aplikacji, jeśli jeszcze istnieje, i ponownie sprawdź, że usługi są zatrzymane.
+   Dry-run raportuje liczby bez słów, nazw, odpowiedzi ani sekretów. Dla jednego profilu można dodać `--child <UUID>`. Dry-run nie ustawia gotowości i nie usuwa wierszy legacy. Nie dodawaj osobnego separatora `--` po nazwie skryptu pnpm: istniejący parser otrzymałby go jako nieobsługiwany argument.
+4. Sprawdź raport i spełnienie warunków apply. Jeśli pozostała aktywna sesja lub przetwarzana próba, nie omijaj zabezpieczenia SQL. Wróć do kontrolowanej procedury poprzedniej wersji albo przerwij aktualizację i wycofaj ją według procedury poniżej.
 5. Uruchom apply dla jednego profilu lub wszystkich:
 
    ```sh
-   pnpm --filter @learning/worker progress:rebuild -- --child <UUID> --apply
-   pnpm --filter @learning/worker progress:rebuild -- --apply
+   pnpm --filter @learning/worker progress:rebuild --child <UUID> --apply
+   pnpm --filter @learning/worker progress:rebuild --apply
    ```
 
-6. Uruchom dry-run ponownie. Powinien pokazać `inserted: 0`, `updated: 0` i `deleted: 0`. Zweryfikuj liczbę projekcji, rekomendacje zestawu i raport postępu w aplikacji.
-7. Uruchom ponownie web i worker, a następnie sprawdź zdrowie aplikacji i możliwość rozpoczęcia nowej sesji.
+6. Apply ustawia gotowość profilu dopiero po kompletnym odtworzeniu i usuwa jego kopię legacy w tej samej transakcji. Przerwane wykonanie nie może oznaczyć nieukończonego profilu jako gotowego; już ukończone profile można ponownie bezpiecznie odbudować. Uruchom dry-run ponownie: oczekiwane `inserted: 0`, `updated: 0`, `deleted: 0`. Weryfikację gotowości wykonaj przez kontrolowane połączenie administracyjne, bez wypisywania danych profili:
+
+   ```sql
+   SELECT count(*) AS profiles_not_ready
+   FROM learning_app.child_profiles
+   WHERE learning_projection_version IS DISTINCT FROM 'proj-3';
+
+   SELECT count(*) AS legacy_rows
+   FROM learning_app.child_skill_progress_legacy;
+   ```
+
+   Oba wyniki po pełnym backfillu mają wynosić zero. Pusta tabela legacy pozostaje jawnie zamodelowana; jej ewentualne usunięcie wymaga późniejszej migracji.
+7. Uruchom zgodne wersje web i worker, wykonaj smoke test listy, wznowienia/startu sesji oraz raportu rodzica i dopiero wtedy przywróć ruch. Zmierz rozgrzany GET listy osobno od startu procesu/kompilacji; porównaj medianę i p95 z baseline na tej samej trasie. Benchmark lokalny nie jest potwierdzeniem czasu produkcyjnego.
 
 ## Wycofanie
 
-Samo cofnięcie kodu nie przywraca starych projekcji. Jeśli weryfikacja po apply wykryje problem, zatrzymaj web i worker, odtwórz backup do nowej bazy, sprawdź historię i projekcje, a dopiero potem przełącz usługę na odtworzoną bazę. Nie przywracaj częściowych tabel z backupu do działającej bazy.
+Samo cofnięcie obrazu nie jest rollbackiem po zmianie klucza i nazw tabel. Zatrzymaj web i worker, zachowaj diagnostycznie obecną bazę, odtwórz pełny backup sprzed migracji do osobnej bazy i sprawdź jego historię, projekcje i zgodność ze starą wersją kodu. Dopiero potem przełącz zatrzymane usługi na odtworzoną bazę i zgodny obraz. Nie przywracaj częściowych tabel do działającej bazy. Jeżeli po aktualizacji przyjęto nowe odpowiedzi, nie przełączaj bez uzgodnienia ich zachowania: przywrócenie starszego backupu utraciłoby te zapisy.
+
+## API i integracje
+
+Optymalizacja zachowuje endpointy i publiczne DTO. Zakres polityki jest jawny wewnątrz projekcji; raport rodzica zachowuje wybór ostatniej wiarygodnej oceny. `learning-overview` i skill Hermesa nadal wykluczają lekcje. Po aktualizacji sprawdź regresje raportów i kontraktu; jeśli zmieni się znaczenie pól lub obsługa błędów integracji, wymagane są odpowiednie zmiany API → MCP → skill. Sama zmiana kodu nie aktualizuje zainstalowanego skilla u konsumenta.
 
 Testy integracyjne używają osobnej bazy PostgreSQL i sztucznych profili. Nie uruchamiaj ich ani procedury serwisowej na rodzinnej bazie.

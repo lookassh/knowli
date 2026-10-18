@@ -92,7 +92,13 @@ describe("rebuildProgress (integracja PostgreSQL)", () => {
     await pool.query(`update learning_app.child_profiles set policy_id='learning-v1' where id=$1`, [children[0]!.id]);
     clock.advanceHours(24);
     const policySession = await startSession(services, { childId: children[0]!.id, deckId: draft.deckId, microphoneEnabled: false });
-    const dueTask = await nextTask(services, policySession.sessionId);
+    let dueTask = await nextTask(services, policySession.sessionId);
+    // New policy has no evidence yet: v2 progress must not leak into v1.
+    expect(dueTask?.exerciseType).toBe("exposure");
+    for (let step = 0; dueTask?.exerciseType === "exposure" && step < 10; step++) {
+      await completePresentation(services, { taskId: dueTask.taskId });
+      dueTask = await nextTask(services, policySession.sessionId);
+    }
     expect(dueTask?.exerciseType).toBe("listening");
     const dueAnswer = (await query<{ target: string; optionId: string | null }>(
       `select answer_key->>'target' as target, answer_key->>'correctOptionId' as "optionId"
@@ -115,15 +121,15 @@ describe("rebuildProgress (integracja PostgreSQL)", () => {
         where r.deck_version_id = $1 and r.position = 0 and s.skill = 'spelling'`, [draft.id],
     ))[0]!.id;
     await pool.query(`insert into learning_app.child_skill_progress
-      (child_id, skill_version_id, status, independent_success_streak, last_reviewed_at, next_review_at, projection_version)
-      values ($1,$2,'mastered',99,'2026-10-01T00:00:00Z','2030-01-01T00:00:00Z','poisoned')
-      on conflict (child_id, skill_version_id) do update set status='mastered', independent_success_streak=99,
+      (child_id, skill_version_id, policy_id, status, independent_success_streak, last_reviewed_at, next_review_at, projection_version)
+      values ($1,$2,'learning-v2','mastered',99,'2026-10-01T00:00:00Z','2030-01-01T00:00:00Z','poisoned')
+      on conflict (child_id, skill_version_id, policy_id) do update set status='mastered', independent_success_streak=99,
         last_reviewed_at='2026-10-01T00:00:00Z', next_review_at='2030-01-01T00:00:00Z', projection_version='poisoned'`,
     [children[0]!.id, skillVersion]);
-    await pool.query(`delete from learning_app.child_skill_progress where child_id=$1 and skill_version_id=$2`, [children[1]!.id, skillVersion]);
+    await pool.query(`delete from learning_app.child_skill_progress where child_id=$1 and skill_version_id=$2 and policy_id='learning-v2'`, [children[1]!.id, skillVersion]);
     await pool.query(`insert into learning_app.child_skill_progress
-      (child_id, skill_version_id, status, independent_success_streak, projection_version)
-      values ($1,$2,'mastered',30,'poisoned')`, [children[0]!.id, orphanSkillVersion]);
+      (child_id, skill_version_id, policy_id, status, independent_success_streak, projection_version)
+      values ($1,$2,'learning-v2','mastered',30,'poisoned')`, [children[0]!.id, orphanSkillVersion]);
 
     const rawSnapshot = async () => (await query<{ raw: Record<string, unknown> }>(
       `select jsonb_build_object(
@@ -139,7 +145,7 @@ describe("rebuildProgress (integracja PostgreSQL)", () => {
     expect(dryRun.inserted).toBeGreaterThan(0);
     expect(dryRun.deleted).toBe(1);
     expect(await rawSnapshot()).toEqual(before);
-    expect(await query<{ child_id: string; status: string }>(`select child_id,status from learning_app.child_skill_progress where child_id=$1 and skill_version_id=$2`, [children[0]!.id, skillVersion])).toEqual([{ child_id: children[0]!.id, status: "mastered" }]);
+    expect(await query<{ child_id: string; status: string }>(`select child_id,status from learning_app.child_skill_progress where child_id=$1 and skill_version_id=$2 and policy_id='learning-v2'`, [children[0]!.id, skillVersion])).toEqual([{ child_id: children[0]!.id, status: "mastered" }]);
 
     const applied = await rebuildProgress(services, { apply: true });
     expect(applied.inserted).toBeGreaterThan(0);
@@ -149,17 +155,17 @@ describe("rebuildProgress (integracja PostgreSQL)", () => {
     expect(await rawSnapshot()).toEqual(before);
     expect(await query<{ child_id: string; status: string; streak: number }>(
       `select child_id, status, independent_success_streak as streak from learning_app.child_skill_progress
-        where child_id = any($1::uuid[]) order by child_id`, [children.map((child) => child.id)],
+        where child_id = any($1::uuid[]) and policy_id='learning-v2' order by child_id`, [children.map((child) => child.id)],
     )).toEqual(children.map((child) => child.id).sort().map((childId) => ({ child_id: childId, status: "practicing", streak: 1 })));
     const second = await rebuildProgress(services, { apply: true });
     expect(second.inserted + second.updated + second.deleted).toBe(0);
-    expect(await query(`select 1 from learning_app.child_skill_progress where child_id=$1 and skill_version_id=$2`, [children[0]!.id, orphanSkillVersion])).toEqual([]);
+    expect(await query(`select 1 from learning_app.child_skill_progress where child_id=$1 and skill_version_id=$2 and policy_id='learning-v2'`, [children[0]!.id, orphanSkillVersion])).toEqual([]);
 
     const active = await startSession(services, { childId: children[0]!.id, deckId: draft.deckId, microphoneEnabled: false });
     await pool.query(`update learning_app.child_skill_progress set status='mastered', independent_success_streak=99
-      where child_id=$1 and skill_version_id=$2`, [children[0]!.id, skillVersion]);
+      where child_id=$1 and skill_version_id=$2 and policy_id='learning-v2'`, [children[0]!.id, skillVersion]);
     await expect(rebuildProgress(services, { childId: children[0]!.id, apply: true })).rejects.toMatchObject({ code: "conflict" });
-    await expect(query<{ status: string }>(`select status from learning_app.child_skill_progress where child_id=$1 and skill_version_id=$2`, [children[0]!.id, skillVersion]))
+    await expect(query<{ status: string }>(`select status from learning_app.child_skill_progress where child_id=$1 and skill_version_id=$2 and policy_id='learning-v2'`, [children[0]!.id, skillVersion]))
       .resolves.toEqual([{ status: "mastered" }]);
     await endSession(services, active.sessionId);
     await pool.query(`insert into learning_app.attempts

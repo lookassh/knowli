@@ -127,6 +127,20 @@
       "when": 1792249478900,
       "tag": "0017_fixed_training_session_plan",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792320000000,
+      "tag": "0018_learning_events_audio_task_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792323600000,
+      "tag": "0019_policy_scoped_learning_projections",
+      "breakpoints": true
     }
   ]
 }

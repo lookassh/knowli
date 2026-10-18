@@ -1,4 +1,4 @@
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import {
   REPORT_SKILLS,
   type ItemSkillStatus,
@@ -78,9 +78,11 @@ export async function readPublishedProgress(
         .from(skillVersions).where(inArray(skillVersions.itemId, itemIds))
     : [];
   const predecessorOf = new Map(versions.map((item) => [item.id, item.predecessorId]));
-  const projected = await exec.select({ skillVersionId: childSkillProgress.skillVersionId, status: childSkillProgress.status })
-    .from(childSkillProgress).where(eq(childSkillProgress.childId, childId));
-  const statusOfVersion = new Map(projected.map(({ skillVersionId, status }) => [skillVersionId, status]));
+  const projected = await exec.select({ skillVersionId: childSkillProgress.skillVersionId, status: childSkillProgress.status, reviewedAt: childSkillProgress.lastReviewedAt, policyId: childSkillProgress.policyId })
+    .from(childSkillProgress).where(and(eq(childSkillProgress.childId, childId), isNotNull(childSkillProgress.lastReviewedAt)))
+    .orderBy(desc(childSkillProgress.lastReviewedAt), desc(childSkillProgress.policyId));
+  const statusOfVersion = new Map<string, string>();
+  for (const row of projected) if (!statusOfVersion.has(row.skillVersionId)) statusOfVersion.set(row.skillVersionId, row.status);
 
   const statusFor = (skillVersionId: string): { status: ItemSkillStatus; changed: boolean } => {
     const status = statusOfVersion.get(skillVersionId);

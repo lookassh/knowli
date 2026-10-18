@@ -1,6 +1,6 @@
-import { and, asc, eq, or, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import type { Executor } from "../db/client";
-import { assessments, attempts, sessionTasks } from "../db/schema";
+import { assessments, attempts, learningEvents, sessionTasks } from "../db/schema";
 import type { History, HistoryEntry, Skill } from "../domain/types";
 import { qualifyProjectionEvidence } from "../domain/projection-evidence";
 
@@ -18,7 +18,7 @@ export async function readSkillHistory(exec: Executor, scope: HistoryScope): Pro
   return (await readSkillHistories(exec, [scope])).get(skillHistoryKey(scope)) ?? [];
 }
 
-/** Reads all requested histories with one scoped query, never crossing child boundaries. */
+/** Reads exact requested histories, then their scoped audio evidence, without per-assessment scans. */
 export async function readSkillHistories(
   exec: Executor,
   scopes: readonly HistoryScope[],
@@ -40,22 +40,37 @@ export async function readSkillHistories(
       attemptId: attempts.id,
       exerciseType: sessionTasks.exerciseType,
       publicPrompt: sessionTasks.publicPrompt,
-      audioIssuedBeforeAnswer: sql<boolean>`exists (
-        select 1 from learning_app.learning_events e
-         where e.task_id = ${attempts.taskId}
-           and e.kind = 'audio_issued' and e.sealed = true
-           and e.occurred_at <= ${attempts.receivedAt}
-      )`,
+      taskId: attempts.taskId,
     })
     .from(assessments)
     .innerJoin(attempts, eq(attempts.id, assessments.attemptId))
     .innerJoin(sessionTasks, eq(sessionTasks.id, attempts.taskId))
-    .where(or(...unique.map((scope) => and(
-      eq(assessments.childId, scope.childId),
-      eq(assessments.skillVersionId, scope.skillVersionId),
-      eq(assessments.skill, scope.skill),
-    ))))
-    .orderBy(asc(attempts.receivedAt), asc(attempts.id));
+    .where(sql`(${assessments.childId}, ${assessments.skillVersionId}, ${assessments.skill}) in (
+      select requested.child_id, requested.skill_version_id, requested.skill
+      from unnest(
+        ${sql.param(unique.map(scope => scope.childId))}::uuid[],
+        ${sql.param(unique.map(scope => scope.skillVersionId))}::uuid[],
+        ${sql.param(unique.map(scope => scope.skill))}::text[]
+      ) as requested(child_id, skill_version_id, skill)
+    )`)
+    .orderBy(asc(attempts.receivedAt), asc(attempts.id), asc(assessments.skill));
+
+  const taskIds = [...new Set(rows.map((row) => row.taskId))];
+  const audioRows = taskIds.length === 0
+    ? []
+    : await exec
+      .select({
+        taskId: learningEvents.taskId,
+        firstAudioAt: sql<Date>`min(${learningEvents.occurredAt})`,
+      })
+      .from(learningEvents)
+      .where(and(
+        sql`${learningEvents.taskId} = any(${sql.param(taskIds)}::uuid[])`,
+        eq(learningEvents.kind, "audio_issued"),
+        eq(learningEvents.sealed, true),
+      ))
+      .groupBy(learningEvents.taskId);
+  const firstAudioAtByTask = new Map(audioRows.map((row) => [row.taskId, row.firstAudioAt]));
 
   const requested = new Map(unique.map((scope) => [skillHistoryKey(scope), scope]));
   const histories = new Map<string, History>();
@@ -85,7 +100,8 @@ export async function readSkillHistories(
       entry,
       exerciseType: row.exerciseType as import("../domain/types").ExerciseType,
       distinctChoiceCount,
-      audioIssuedBeforeAnswer: row.audioIssuedBeforeAnswer,
+      audioIssuedBeforeAnswer: firstAudioAtByTask.get(row.taskId) !== undefined
+        && new Date(firstAudioAtByTask.get(row.taskId)!).getTime() <= row.receivedAt.getTime(),
     }])[0]!;
     histories.set(key, [...(histories.get(key) ?? []), qualified]);
   }

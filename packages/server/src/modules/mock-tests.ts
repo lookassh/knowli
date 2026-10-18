@@ -12,6 +12,7 @@ import { payloadToItem } from "./item-payload";
 import { writeSealedEvent } from "./events";
 import { summarizeMockTestRows } from "../domain/mock-test-report";
 import { AppError } from "../errors";
+import { recordTaskSkillFacts } from "./skill-projections";
 
 export async function closeMockTest(tx: Tx, services: Services, session: typeof learningSessions.$inferSelect, requestedState: "completed" | "ended"): Promise<MockTestReportDto> {
   const saved = MockTestReportDtoSchema.safeParse(session.context.mockTestReport);
@@ -25,7 +26,7 @@ export async function closeMockTest(tx: Tx, services: Services, session: typeof 
       from learning_app.session_tasks t join learning_app.attempts p on p.task_id=t.id and p.state='completed'
       join learning_app.assessments a on a.attempt_id=p.id where t.session_id=${session.id}`);
   const byTaskSkill = new Map(grades.rows.map(g => [`${g.task_id}:${g.skill}`, g]));
-  const progress = await tx.execute<{ skill_version_id: string; status: string }>(sql`select skill_version_id,status from learning_app.child_skill_progress where child_id=${session.childId}`);
+  const progress = await tx.execute<{ skill_version_id: string; status: string }>(sql`select skill_version_id,status from learning_app.child_skill_progress where child_id=${session.childId} and policy_id=${session.policyId}`);
   const statuses = new Map(progress.rows.map(p => [p.skill_version_id, p.status]));
   const rows: MockTestReportRow[] = [];
   for (const item of plan.scope) for (const skill of plan.testGoals) {
@@ -101,7 +102,7 @@ export async function listMockTests(services: Services, childId: string, deckId:
   return result;
 }
 
-export async function createMockTestPlan(tx: Tx, services: Services, input: { childId: string; deckVersionId: string; testGoals: TestGoal[]; testDate: string | null; requestedTaskCount: number }): Promise<MockTestPlanSnapshot> {
+export async function createMockTestPlan(tx: Tx, services: Services, input: { childId: string; deckVersionId: string; policyId: string; testGoals: TestGoal[]; testDate: string | null; requestedTaskCount: number }): Promise<MockTestPlanSnapshot> {
   const revisions = await tx.select().from(itemRevisions).where(eq(itemRevisions.deckVersionId, input.deckVersionId)).orderBy(asc(itemRevisions.position));
   const candidates: MockTestCandidate[] = [];
   for (const r of revisions) {
@@ -117,7 +118,7 @@ export async function createMockTestPlan(tx: Tx, services: Services, input: { ch
           where e.child_id=${input.childId} and e.item_id=${r.itemId} and e.sealed and x.target_key=${computeTargetKey(item.target, item.locales.target)}) as known,
         (select ra.asset_id from learning_app.revision_assets ra join learning_app.media_assets m on m.id=ra.asset_id
           where ra.item_revision_id=${r.id} and ra.role='target_audio' and ra.state='approved' and m.state='ready' limit 1) as audio
-      from learning_app.item_revision_skills s left join learning_app.child_skill_progress p on p.child_id=${input.childId} and p.skill_version_id=s.skill_version_id
+      from learning_app.item_revision_skills s left join learning_app.child_skill_progress p on p.child_id=${input.childId} and p.policy_id=${input.policyId} and p.skill_version_id=s.skill_version_id
       where s.item_revision_id=${r.id} and s.skill in ('recall','spelling','listening')`);
     candidates.push({ itemId: r.itemId, itemRevisionId: r.id, position: r.position, source: item.source, target: item.target,
       targetKey: computeTargetKey(item.target, item.locales.target), acceptedAnswers: item.acceptedAnswers, known: data.rows[0]?.known ?? false,
@@ -138,6 +139,13 @@ export async function issueMockTestTask(tx: Tx, services: Services, session: typ
     itemRevisionId: slot.itemRevisionId, ordinal: tasks.length, exerciseType: slot.exerciseType, direction: null, state: "issued",
     publicPrompt: slot.prompt as unknown as Record<string, unknown>, answerKey: slot.answerKey as unknown as Record<string, unknown>,
     context: { reason: "mock-test" }, issuedAt: services.clock.now() });
+  await recordTaskSkillFacts(tx, {
+    childId: session.childId,
+    itemRevisionId: slot.itemRevisionId,
+    policyId: session.policyId,
+    exerciseType: slot.exerciseType,
+    issuedAt: services.clock.now(),
+  });
   await writeSealedEvent(tx, { childId: session.childId, taskId: slot.taskId, itemId: slot.itemId, kind: "prompt_issued",
     stepId: `${slot.taskId}:prompt`, occurredAt: services.clock.now(), exposures: slot.exerciseType === "listening" ? [slot.targetKey] : [] });
   return { taskId: slot.taskId, sessionId: session.id, ordinal: tasks.length, exerciseType: slot.exerciseType,
