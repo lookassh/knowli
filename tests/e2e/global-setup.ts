@@ -133,6 +133,7 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
       MEDIA_ROOT: mediaRoot,
       UMIEM_FAKE_PROVIDERS: "1",
       UMIEM_FAKE_DELAY_MS: process.env.UMIEM_E2E_FAKE_DELAY_MS ?? "750",
+      UMIEM_FAKE_LESSON_DELAY_MS: process.env.UMIEM_E2E_FAKE_LESSON_DELAY_MS ?? "3000",
       UMIEM_TTS_PROVIDER: "fake-tts",
       UMIEM_TTS_MODEL: "fake-tts-1",
       UMIEM_TTS_VOICE: "fake-voice",
