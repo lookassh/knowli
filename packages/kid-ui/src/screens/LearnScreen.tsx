@@ -17,7 +17,7 @@ import { useFeedbackCooldown } from "./useFeedbackCooldown";
 const EMPTY_OUTCOMES: ReadonlyMap<string, OptionOutcome> = new Map();
 
 function RevealActions({ onConfirm }: { onConfirm: () => void }) {
-  const { buttonRef, onKeyDown } = useFeedbackCooldown<HTMLButtonElement>(onConfirm);
+  const { buttonRef, onKeyDown } = useFeedbackCooldown<HTMLButtonElement>(onConfirm, [], true);
   return (
     <button
       ref={buttonRef}

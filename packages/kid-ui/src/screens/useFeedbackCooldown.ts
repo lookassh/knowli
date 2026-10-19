@@ -8,13 +8,16 @@ import { shouldIgnoreKeyboardShortcut } from "../exercises/useChoiceKeyboard";
 export function useFeedbackCooldown<T extends HTMLButtonElement = HTMLButtonElement>(
   onAction: () => void,
   deps: unknown[] = [],
+  autoFocus = false,
 ) {
   const buttonRef = useRef<T>(null);
   const mountTimeRef = useRef<number>(Date.now());
 
   useEffect(() => {
     mountTimeRef.current = Date.now();
-    buttonRef.current?.focus({ preventScroll: true });
+    if (autoFocus) {
+      buttonRef.current?.focus({ preventScroll: true });
+    }
   }, deps);
 
   // Obsługa Enter i Space na poziomie przycisku: blokada repeat i cooldownu < 300 ms

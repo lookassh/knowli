@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import { useEffect, useRef, type ReactElement } from "react";
 import { messages, type FeedbackDto } from "@learning/contracts";
 import { format } from "../format";
 import { describeSpeechFeedback } from "./speech-feedback-view";
@@ -27,6 +27,10 @@ const fragmentDescriptions = {
 /** Nie-modalna karta wyniku mowy, osadzona bezpośrednio pod bieżącym zadaniem. */
 export function SpeechFeedbackContent(props: SpeechFeedbackCardProps): ReactElement {
   const view = describeSpeechFeedback(props.dto, props.exerciseType);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    headingRef.current?.focus({ preventScroll: true });
+  }, [props.dto, props.retry]);
 
   const toneClass = view.tone === "correct"
     ? "kid-speech-feedback--correct"
@@ -43,7 +47,7 @@ export function SpeechFeedbackContent(props: SpeechFeedbackCardProps): ReactElem
       aria-busy={props.busy}
     >
       <div className="kid-speech-feedback__body">
-        <h2 id="kid-speech-feedback-title" className="kid-speech-feedback__heard">
+        <h2 id="kid-speech-feedback-title" ref={headingRef} tabIndex={-1} className="kid-speech-feedback__heard">
           {view.heardText
             ? format(messages.kid.feedbackHeard, { word: view.heardText })
             : view.message}

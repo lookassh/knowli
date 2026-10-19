@@ -682,29 +682,23 @@ describe("Keyboard Navigation & Focus Management", () => {
   });
 
   describe("Feedback screens & cooldown protection (AnswerFeedback, SpeechFeedbackCard)", () => {
-    it("AnswerFeedbackContent does not set focus on heading", () => {
-      // Ensuring heading does not steal focus
+    it("AnswerFeedbackContent sets focus on title with preventScroll: true to dismiss mobile keyboard", () => {
       const feedback: FeedbackDto = { kind: "great" };
       const { createdElements } = renderWithHooks(() =>
         AnswerFeedbackContent({ dto: feedback, busy: false })
       );
 
-      // No elements in AnswerFeedbackContent should have had .focus() called
-      expect(createdElements.length).toBe(0);
+      expect(createdElements[0].focus).toHaveBeenCalledWith({ preventScroll: true });
     });
 
-    it("AnswerFeedbackActions focuses action button with 300 ms cooldown, tests button onKeyDown and blocks repeat Enter", () => {
+    it("AnswerFeedbackActions protects action button with 300 ms cooldown, tests button onKeyDown and blocks repeat Enter", () => {
       const onNext = vi.fn();
       let now = 1000;
       vi.spyOn(Date, "now").mockImplementation(() => now);
 
-      const { result, createdElements } = renderWithHooks(() =>
+      const { result } = renderWithHooks(() =>
         AnswerFeedbackActions({ dto: { kind: "great" }, retry: false, busy: false, onNext })
       );
-
-      // Button has focus
-      const actionBtn = createdElements[0];
-      expect(actionBtn.focus).toHaveBeenCalledWith({ preventScroll: true });
 
       // Test button.props.onKeyDown during cooldown (<300 ms)
       now = 1100;
@@ -747,12 +741,31 @@ describe("Keyboard Navigation & Focus Management", () => {
       expect(onNext).toHaveBeenCalledTimes(1);
     });
 
+    it("SpeechFeedbackContent sets focus on heading with preventScroll: true", () => {
+      const { createdElements } = renderWithHooks(() =>
+        SpeechFeedbackContent({
+          dto: { kind: "almost" },
+          retry: true,
+          busy: false,
+          audioAvailable: false,
+          audioError: false,
+          exerciseType: "speech",
+          onPlay: vi.fn(),
+          onRetry: vi.fn(),
+          onSkip: vi.fn(),
+          onNext: vi.fn(),
+        })
+      );
+
+      expect(createdElements[0].focus).toHaveBeenCalledWith({ preventScroll: true });
+    });
+
     it("SpeechFeedbackActions protects retry action with cooldown and repeat check", () => {
       const onRetry = vi.fn();
       let now = 2000;
       vi.spyOn(Date, "now").mockImplementation(() => now);
 
-      const { createdElements } = renderWithHooks(() =>
+      renderWithHooks(() =>
         SpeechFeedbackActions({
           dto: { kind: "almost" },
           retry: true,
@@ -766,8 +779,6 @@ describe("Keyboard Navigation & Focus Management", () => {
           onNext: vi.fn(),
         })
       );
-
-      expect(createdElements[0].focus).toHaveBeenCalledWith({ preventScroll: true });
 
       // At 2100 ms (<300 ms cooldown): Enter is blocked
       now = 2100;

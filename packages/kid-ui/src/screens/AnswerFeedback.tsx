@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import { useEffect, useRef, type ReactElement } from "react";
 import { messages, type FeedbackDto } from "@learning/contracts";
 import { format } from "../format";
 import { isIncompleteWord, joinedText } from "./spelling-diff-view";
@@ -78,6 +78,12 @@ function AnswerSegments({ segments, label, testid }: {
 }
 
 export function AnswerFeedbackContent({ dto, busy }: Pick<AnswerFeedbackProps, "dto" | "busy">): ReactElement {
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    // Moving focus off a written field dismisses the mobile keyboard without scrolling the page.
+    titleRef.current?.focus({ preventScroll: true });
+  }, [dto]);
+
   const feedback = dto ?? { kind: "not_assessed" as const };
   const lesson = lessonFeedbackView(dto);
   return (
@@ -90,7 +96,7 @@ export function AnswerFeedbackContent({ dto, busy }: Pick<AnswerFeedbackProps, "
       aria-busy={busy}
     >
       <div className="kid-feedback-content">
-        <h2 className="kid-feedback-text" id="kid-feedback-title">
+        <h2 className="kid-feedback-text" id="kid-feedback-title" ref={titleRef} tabIndex={-1}>
           {feedbackText(dto)}
         </h2>
         {feedback.heardText && (
