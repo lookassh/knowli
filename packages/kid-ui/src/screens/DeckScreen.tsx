@@ -131,20 +131,24 @@ export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive, but
           {deck.coverAssetId
             ? <img className="kid-deck-cover" src={mediaUrl(deck.coverAssetId)} alt="" data-testid="kid-deck-cover" />
             : deck.coverVisual && <MeaningVisualView visual={deck.coverVisual} mediaUrl={mediaUrl} />}
-          <h3 data-testid="kid-deck-title">
-            {deck.title}{" "}
-            <span>{isLesson && deck.subjectTitle
-              ? `— ${format(messages.kid.lessonSubjectLabel, { subject: deck.subjectTitle })}`
-              : `— ${wordCount(deck.itemCount)}`}</span>
-          </h3>
-          <p className="kid-deck-stars" data-testid="kid-deck-stars" role="img"
-            aria-label={format(messages.kid.deckStarsLabel, { n: stars })}>
-            {"★".repeat(stars)}{"☆".repeat(MASTERY_STAR_MAX - stars)}
-          </p>
-          <p className="kid-hint" data-testid="kid-deck-reward-points">
-            {format(messages.kid.rewardDeckPoints, { n: deck.earnedPoints ?? 0 })}
-          </p>
-          {date !== null && <p className="kid-badge">{messages.kid.testDateLabel}: {date}</p>}
+          <div className="kid-deck-card__info">
+            <h3 data-testid="kid-deck-title">
+              {deck.title}{" "}
+              <span>{isLesson && deck.subjectTitle
+                ? `— ${format(messages.kid.lessonSubjectLabel, { subject: deck.subjectTitle })}`
+                : `— ${wordCount(deck.itemCount)}`}</span>
+            </h3>
+            <div className="kid-deck-card__meta">
+              <p className="kid-deck-stars" data-testid="kid-deck-stars" role="img"
+                aria-label={format(messages.kid.deckStarsLabel, { n: stars })}>
+                {"★".repeat(stars)}{"☆".repeat(MASTERY_STAR_MAX - stars)}
+              </p>
+              <p className="kid-hint" data-testid="kid-deck-reward-points">
+                {format(messages.kid.rewardDeckPoints, { n: deck.earnedPoints ?? 0 })}
+              </p>
+              {date !== null && <p className="kid-badge">{messages.kid.testDateLabel}: {date}</p>}
+            </div>
+          </div>
         </div>
         <div className="kid-deck-card__actions">
           <button
@@ -157,10 +161,14 @@ export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive, but
             <span className="kid-visually-hidden">{deck.title}: </span>{deck.resumeOnly ? messages.kid.resumeSession : messages.kid.deckStart}
             <KidIcon name="arrow-right" />
           </button>
-          {deck.resumeOnly && deck.activeSession && onEndActive && <button type="button" className="kid-secondary" data-testid="kid-end-active-session" onClick={() => onEndActive(deck.deckId)}>{messages.kid.endSession}</button>}
+          {deck.resumeOnly && deck.activeSession && onEndActive && (
+            <button type="button" className="kid-secondary" data-testid="kid-end-active-session" onClick={() => onEndActive(deck.deckId)}>
+              <span className="kid-visually-hidden">{deck.title}: </span>{messages.kid.endSession}
+            </button>
+          )}
           {!deck.resumeOnly && deck.mockTestAvailable && onMockTest && (
             <button type="button" className="kid-secondary" data-testid="kid-mock-start" onClick={() => onMockTest(deck.deckId)}>
-              {messages.kid.mockTest}
+              <span className="kid-visually-hidden">{deck.title}: </span>{messages.kid.mockTest}
             </button>
           )}
         </div>
