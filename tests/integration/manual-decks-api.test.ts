@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { loginParent, setupParent } from "@learning/server";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
 import { handleParentApi } from "../../apps/web/src/parent/parent-router";
+import { errorResponse } from "../../apps/web/src/http/errors";
 
 const { pool } = testDatabase();
 const BASE = "http://localhost:3000";
@@ -24,6 +25,11 @@ async function deckCount(): Promise<number> {
   return result.rows[0]!.count as number;
 }
 
+// Poziom pliku: pula współdzielona przez oba bloki describe, zamykana raz na końcu.
+afterAll(async () => {
+  await pool.end();
+});
+
 describe("Parent API ręcznego tworzenia zestawu", () => {
   beforeEach(async () => {
     await truncateCoreTables();
@@ -32,10 +38,6 @@ describe("Parent API ręcznego tworzenia zestawu", () => {
        learning_app.item_revision_skills, learning_app.item_revisions, learning_app.skill_versions,
        learning_app.learning_items, learning_app.deck_versions, learning_app.decks cascade`,
     );
-  });
-
-  afterAll(async () => {
-    await pool.end();
   });
 
   it("creates once, returns its public DTO and treats retry as idempotent", async () => {
@@ -89,5 +91,90 @@ describe("Parent API ręcznego tworzenia zestawu", () => {
     await expect(handleParentApi(request({ deckId }, token, "https://attacker.example"), services, ["decks"]))
       .rejects.toMatchObject({ code: "forbidden" });
     expect(await deckCount()).toBe(0);
+  });
+});
+
+describe("Parent API ustawień sesji zestawu (PATCH /api/v1/parent/decks/:id)", () => {
+  beforeEach(async () => {
+    await truncateCoreTables();
+    await pool.query(
+      `truncate learning_app.generation_runs, learning_app.revision_assets, learning_app.media_assets,
+       learning_app.item_revision_skills, learning_app.item_revisions, learning_app.skill_versions,
+       learning_app.learning_items, learning_app.deck_versions, learning_app.decks cascade`,
+    );
+  });
+
+  async function parentWithDeck(pin: string): Promise<{ services: ReturnType<typeof buildTestServices>["services"]; token: string; deckId: string }> {
+    const { services } = buildTestServices();
+    await setupParent(services, pin);
+    const { token } = await loginParent(services, pin);
+    const deckId = randomUUID();
+    const created = await handleParentApi(
+      new Request(`${BASE}/api/v1/parent/decks`, {
+        method: "POST", headers: { "content-type": "application/json", origin: BASE, cookie: `parent_session=${token}` },
+        body: JSON.stringify({ deckId, title: "Zwierzęta" }),
+      }),
+      services, ["decks"],
+    );
+    expect(created.status).toBe(201);
+    return { services, token, deckId };
+  }
+
+  function patchRequest(deckId: string, token: string, body: unknown): Request {
+    return new Request(`${BASE}/api/v1/parent/decks/${deckId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", origin: BASE, cookie: `parent_session=${token}` },
+      body: JSON.stringify(body),
+    });
+  }
+
+  async function dispatch(request: Request, services: ReturnType<typeof buildTestServices>["services"], segments: string[]): Promise<Response> {
+    return handleParentApi(request, services, segments).catch((error) => errorResponse(error));
+  }
+
+  async function budgetOf(deckId: string): Promise<number | null> {
+    const row = (await pool.query<{ session_task_budget: number }>(
+      "select session_task_budget from learning_app.decks where id=$1", [deckId],
+    )).rows[0];
+    return row?.session_task_budget ?? null;
+  }
+
+  it("zapisuje budżet sesji i zwraca go w DeckDto; wartości poza zakresem nie zmieniają bazy", async () => {
+    const { services, token, deckId } = await parentWithDeck("deck-settings-pin");
+    expect(await budgetOf(deckId)).toBe(20);
+
+    const saved = await dispatch(patchRequest(deckId, token, { sessionTaskBudget: 7 }), services, ["decks", deckId]);
+    expect(saved.status).toBe(200);
+    expect(await saved.json()).toEqual({ sessionTaskBudget: 7 });
+    expect(await budgetOf(deckId)).toBe(7);
+    const detail = await dispatch(new Request(`${BASE}/api/v1/parent/decks/${deckId}`, {
+      headers: { origin: BASE, cookie: `parent_session=${token}` },
+    }), services, ["decks", deckId]);
+    expect(detail.status).toBe(200);
+    expect((await detail.json()).sessionTaskBudget).toBe(7);
+
+    // Walidacja granicy Zod (wzorzec assignments): błąd walidacji API (status
+    // 400 wg wspólnego formatu błędu §12) i brak zmiany w bazie.
+    for (const invalid of [0, 101, 7.5, "7"]) {
+      const response = await dispatch(patchRequest(deckId, token, { sessionTaskBudget: invalid }), services, ["decks", deckId]);
+      expect(response.status, `sessionTaskBudget=${String(invalid)}`).toBe(400);
+      expect(((await response.json()) as { code?: string }).code).toBe("validation");
+    }
+    const missing = await dispatch(patchRequest(deckId, token, {}), services, ["decks", deckId]);
+    expect(missing.status).toBe(400);
+    expect(((await missing.json()) as { code?: string }).code).toBe("validation");
+    expect(await budgetOf(deckId)).toBe(7);
+  });
+
+  it("404 dla nieznanego zestawu i 409 dla zarchiwizowanego", async () => {
+    const { services, token, deckId } = await parentWithDeck("deck-settings-state-pin");
+    const unknown = randomUUID();
+    const notFound = await dispatch(patchRequest(unknown, token, { sessionTaskBudget: 7 }), services, ["decks", unknown]);
+    expect(notFound.status).toBe(404);
+
+    await pool.query("update learning_app.decks set archived_at=now() where id=$1", [deckId]);
+    const conflict = await dispatch(patchRequest(deckId, token, { sessionTaskBudget: 7 }), services, ["decks", deckId]);
+    expect(conflict.status).toBe(409);
+    expect(await budgetOf(deckId)).toBe(20);
   });
 });

@@ -658,8 +658,8 @@ describe("karta aktywności dziecka w postępach (integracja)", () => {
 
     const progress = await getProgress(services, childA, deckId);
     expect(progress.activity.activeSeconds).toBeGreaterThan(0);
-    // limit sesji (10 min) z buforem, nie sześć godzin od startu
-    expect(progress.activity.activeSeconds).toBeLessThanOrEqual(11 * 60);
+    // skalowany limit sesji (budżet domyślny 20 → 15 min) z buforem, nie sześć godzin od startu
+    expect(progress.activity.activeSeconds).toBeLessThanOrEqual(16 * 60);
   });
 
   it("wznowienie w oknie 30 minut to jedno podejście, a czas sesji jest obcięty do limitu", async () => {
@@ -691,7 +691,8 @@ describe("karta aktywności dziecka w postępach (integracja)", () => {
     expect(progress.activity.sessions).toBe(1);
     expect(progress.activity.answers).toBe(1);
     // realna aktywność sesji to ~26 minut od startu; widoczny czas jest obcięty
-    expect(progress.activity.activeSeconds).toBe(11 * 60);
+    // do skalowanego limitu budżetu 20 (15 min) z buforem 60 s
+    expect(progress.activity.activeSeconds).toBe(16 * 60);
   });
 
   it("okno 7 dni pomija sesje i próby sprzed okna", async () => {

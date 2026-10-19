@@ -17,7 +17,7 @@ import {
 import { AppError } from "../errors";
 import { readDeckRevisionIds, readPublishedProgress } from "./published-progress";
 import { assertVocabularyDeck, readDeckKind } from "./deck-kind";
-import { SESSION_TIME_LIMIT_MS } from "./sessions";
+import { sessionTimeLimitMs } from "./sessions";
 import { buildReportPeriod } from "../domain/report-period";
 
 /**
@@ -68,7 +68,9 @@ export async function getProgress(services: Services, childId: string, deckId: s
 }
 /** Okno karty aktywności (SPEC §25) i bufor nad obcięciem czasu sesji. */
 const ACTIVITY_WINDOW_DAYS = 7;
-const ACTIVITY_SESSION_CAP_MS = SESSION_TIME_LIMIT_MS + 60_000;
+/** Bufor nad skalowanym limitem sesji (sessionTimeLimitMs): pokrywa
+ *  zapytania zamknięcia tuż po przekroczeniu limitu międzyzadaniowego. */
+const ACTIVITY_SESSION_GRACE_MS = 60_000;
 
 /** Dni kalendarzowe aktywności liczymy w strefie czasowej rodziny. */
 const ACTIVITY_DAY_FORMAT = new Intl.DateTimeFormat("en-CA", {
@@ -85,12 +87,14 @@ type ActivitySessionRow = {
   deckTitle: string;
   startedAt: Date;
   lastActivity: Date;
+  taskBudget: number;
 };
 
 /**
  * Karta aktywności: okno 7 dni od teraz wg zegara usług. Czas nauki sesji
  * to started_at → ostatnia aktywność (zadania, zdarzenia, próby) obcięty
- * do limitu sesji, więc późne zamknięcie porzuconej sesji nie zawyża czasu.
+ * do skalowanego limitu sesji (sessionTimeLimitMs budżetu tej sesji + bufor),
+ * więc późne zamknięcie porzuconej sesji nie zawyża czasu.
  * Interakcje liczą zdarzenia serwera i obserwacje klienta; rejestr kontaktu
  * (`contact`) nie jest działaniem dziecka.
  */
@@ -102,7 +106,7 @@ export async function readActivitySummary(services: Services, childId: string): 
   const sessions = (
     await services.db.execute<ActivitySessionRow>(sql`
       with window_sessions as (
-        select s.id, s.deck_id, coalesce(v.title, d.title) as title, s.started_at
+        select s.id, s.deck_id, coalesce(v.title, d.title) as title, s.started_at, s.task_budget
           from learning_app.learning_sessions s
           join learning_app.decks d on d.id = s.deck_id
           left join learning_app.deck_versions v on v.id = d.published_version_id
@@ -129,6 +133,7 @@ export async function readActivitySummary(services: Services, childId: string): 
       select ws.deck_id as "deckId",
              ws.title as "deckTitle",
              ws.started_at as "startedAt",
+             ws.task_budget as "taskBudget",
              coalesce(lt.last_at, ws.started_at) as "lastActivity"
         from window_sessions ws
         left join last_touch lt on lt.session_id = ws.id
@@ -145,7 +150,7 @@ export async function readActivitySummary(services: Services, childId: string): 
     const sessionDay = ACTIVITY_DAY_FORMAT.format(new Date(row.startedAt));
     const duration = Math.min(
       new Date(row.lastActivity).getTime() - new Date(row.startedAt).getTime(),
-      ACTIVITY_SESSION_CAP_MS,
+      sessionTimeLimitMs(row.taskBudget) + ACTIVITY_SESSION_GRACE_MS,
     );
     const dayStat = dailyMap.get(sessionDay);
     if (dayStat) {

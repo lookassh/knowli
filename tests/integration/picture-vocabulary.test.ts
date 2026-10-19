@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   completePresentation, computeTargetKey, createChild, createDraft, createDraftFromPublished, createServices, editDraft, endSession,
-  executeMediaAsset, listKidDecks, nextTask, prepareUiAudio, publishDraft, readAttempt, reconcileDraftAssets, runDueGenerationWork, startSession, submitAttempt, upsertAssignment,
+  executeMediaAsset, listKidDecks, nextTask, prepareUiAudio, publishDraft, readAttempt, reconcileDraftAssets, runDueGenerationWork, startSession, submitAttempt, updateDeckSettings, upsertAssignment,
   type Services,
 } from "@learning/server";
 import { fakeGeneration, type FakeGeneration } from "./fakes";
@@ -182,7 +182,7 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
       const questioned = new Set<string>();
       const exerciseKinds = new Set<string>();
       const pending = new Set(presented);
-      for (let step = 0; current && step < 40; step++) {
+      for (let step = 0; current && step < 60; step++) {
         const row = (await pool.query("select item_revision_id, answer_key from learning_app.session_tasks where id=$1", [current.taskId])).rows[0];
         if (current.prompt.kind === "picture_exposure") {
           presented.add(row.item_revision_id);
@@ -203,7 +203,7 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
         current = await nextTask(services, session.sessionId);
       }
       expect(current).toBeNull();
-      expect(assessed).toBe(12);
+      expect(assessed).toBe(20);
       expect(questioned.size).toBeGreaterThanOrEqual(3);
       expect(exerciseKinds).toContain("picture_listening");
       if (canRead) expect(exerciseKinds).toContain("recall");
@@ -227,6 +227,9 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
     for (let pass = 0; pass < 6; pass++) if ((await runDueGenerationWork(services)).processed === 0) break;
     await publishDraft(services, draft.id, 1);
     await upsertAssignment(services, child.id, draft.deckId, null);
+    // Przedział 20 kroków pętli zakłada krótszą sesję: budżet zestawu 12
+    // (test weryfikuje kierunki reading, nie domyślny budżet).
+    await updateDeckSettings(services, draft.deckId, { sessionTaskBudget: 12 });
 
     // Pierwsza sesja tworzy rzeczywistą historię poznania i wprowadzenia Recall.
     const seenDirections = new Set<string>();

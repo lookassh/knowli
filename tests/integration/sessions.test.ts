@@ -16,6 +16,7 @@ import {
   recordEvent,
   startSession,
   submitAttempt,
+  updateDeckSettings,
   upsertAssignment,
   updateChild,
   type AppError,
@@ -598,8 +599,8 @@ describe("cykl życia sesji (integracja)", () => {
     ))[0]!;
     expect(taskRow.context).toMatchObject({ reason: "test-preparation" });
     expect(taskRow.ordinal).toBe(0);
-    expect(first!.remainingAssessed).toBe(12);
-    expect(retry!.remainingAssessed).toBe(12);
+    expect(first!.remainingAssessed).toBe(20);
+    expect(retry!.remainingAssessed).toBe(20);
     expect(await countSessionRows(session.sessionId, "session_tasks")).toBe(1);
     const fixedPlan = (await query<{ training_plan: { slots: Array<{ taskId: string; reason: string; exerciseType: string }> } }>(
       "select training_plan from learning_app.learning_sessions where id=$1", [session.sessionId],
@@ -788,20 +789,21 @@ describe("cykl życia sesji (integracja)", () => {
     const task = await nextTask(services, session.sessionId);
     await completePresentation(services, { taskId: task!.taskId });
 
-    clock.advanceMs(11 * 60_000);
+    // budżet domyślny 20 → efektywny limit 20 × 45 s = 15 minut (arch §9.3)
+    clock.advanceMs(16 * 60_000);
     expect(await nextTask(services, session.sessionId)).toBeNull();
 
     const summary = await endSession(services, session.sessionId);
     expect(summary.state).toBe("completed");
   });
 
-  it("budżet 12 nie rośnie i obietnica „Jeszcze 3” wygrywa z limitem czasu", async () => {
+  it("budżet 20 nie rośnie i obietnica „Jeszcze 3” wygrywa z limitem czasu", async () => {
     const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS);
     const session = await startSession(services, { childId, deckId, microphoneEnabled: true });
 
     let assessed = 0;
     let guard = 0;
-    while (assessed < 9 && guard++ < 40) {
+    while (assessed < 17 && guard++ < 80) {
       const task = await nextTask(services, session.sessionId);
       expect(task).not.toBeNull();
       if (task!.exerciseType === "exposure") {
@@ -811,11 +813,11 @@ describe("cykl życia sesji (integracja)", () => {
         assessed += 1;
       }
     }
-    expect(assessed).toBe(9);
+    expect(assessed).toBe(17);
 
-    // soft limit 10 minut przekroczony, ale trzy ostatnie zadania oceniane
-    // są obiecane; prezentacje między nimi są poza budżetem
-    clock.advanceMs(11 * 60_000);
+    // soft limit 15 minut (budżet 20 × 45 s) przekroczony, ale trzy ostatnie
+    // zadania oceniane są obiecane; prezentacje między nimi są poza budżetem
+    clock.advanceMs(16 * 60_000);
     let promised = 0;
     let steps = 0;
     while (promised < 3) {
@@ -836,7 +838,54 @@ describe("cykl życia sesji (integracja)", () => {
         where session_id = $1 and exercise_type <> 'exposure'`,
       [session.sessionId],
     );
-    expect(assessedRows[0]!.count).toBe(12);
+    expect(assessedRows[0]!.count).toBe(20);
+  });
+
+  it("budżet sesji pochodzi z ustawień zestawu, a zmiana nie wpływa na trwającą sesję", async () => {
+    const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS);
+
+    // domyślnie 20 (decks.session_task_budget NOT NULL DEFAULT 20)
+    expect((await query<{ session_task_budget: number }>(
+      "select session_task_budget from learning_app.decks where id=$1", [deckId],
+    ))[0]!.session_task_budget).toBe(20);
+
+    await updateDeckSettings(services, deckId, { sessionTaskBudget: 5 });
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    expect(session.taskBudget).toBe(5);
+    expect((await query<{ task_budget: number }>(
+      "select task_budget from learning_app.learning_sessions where id=$1", [session.sessionId],
+    ))[0]!.task_budget).toBe(5);
+
+    // zmiana ustawienia w trakcie sesji nie przepisuje przypiętego budżetu
+    await updateDeckSettings(services, deckId, { sessionTaskBudget: 20 });
+    let assessed = 0;
+    for (let step = 0; step < 30; step++) {
+      const task = await nextTask(services, session.sessionId);
+      if (!task) break;
+      if (task.exerciseType === "exposure") {
+        await completePresentation(services, { taskId: task.taskId });
+        continue;
+      }
+      expect(await answerIssuedAssessedTask(session.sessionId)).toBe(1);
+      assessed += 1;
+    }
+    expect(assessed).toBe(5);
+    await endSession(services, session.sessionId);
+
+    // nowa sesja bierze bieżącą wartość zestawu
+    const next = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    expect(next.taskBudget).toBe(20);
+  });
+
+  it("limit czasu skaluje się z budżetem: budżet 20 wydaje zadania także po 10 minutach", async () => {
+    const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 2));
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: true });
+    const task = await nextTask(services, session.sessionId);
+    await completePresentation(services, { taskId: task!.taskId });
+
+    // 11 minut: ponad starym minimum 10 minut, pod skalowanym limitem 15 minut
+    clock.advanceMs(11 * 60_000);
+    expect(await nextTask(services, session.sessionId)).not.toBeNull();
   });
 
   it("podsumowanie rozdziela Recall i pisownię oraz zamyka ekspozycje przed odpowiedzią", async () => {
@@ -1248,7 +1297,7 @@ describe("ćwiczenie zestawu w dowolnym momencie (extra-practice + rekomendacja)
       await answerCorrectly(task);
       assessed += 1;
     }
-    expect(assessed).toBe(12); // budżet domyślny
+    expect(assessed).toBe(20); // budżet domyślny
     await endSession(services, first.sessionId);
 
     // Sukcesy nie dopisują zadań do aktualnej listy, więc nowa sesja może mieć kolejny zaplanowany etap.

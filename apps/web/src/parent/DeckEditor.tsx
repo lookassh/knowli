@@ -19,6 +19,7 @@ import {
 } from "./deck-editor-state";
 import { apiFetch, errorMessage } from "./api";
 import AssignmentTestGoalFields, { type AssignmentTestSettings } from "./AssignmentTestGoalFields";
+import DeckSessionTaskBudgetSettings from "./DeckSessionTaskBudgetSettings";
 import type { EditorLeaveState } from "./useParentLeaveGuard";
 import DeckConflictPanel, { type EditorConflict } from "./DeckConflictPanel";
 import { DeckCoverSettings } from "./DeckCoverSettings";
@@ -61,6 +62,10 @@ export default function DeckEditor({
   const [assignSettings, setAssignSettings] = useState<Record<string, AssignmentTestSettings>>({});
   const [unassigningChildId, setUnassigningChildId] = useState<string | null>(null);
   const [coverBusy, setCoverBusy] = useState(false);
+  // Budżet sesji nauki (decks.session_task_budget): null = bez lokalnej zmiany,
+  // wartość z DTO obowiązuje. Zapis osobnym PATCH, poza szkicem wersji.
+  const [sessionBudgetEdit, setSessionBudgetEdit] = useState<number | null>(null);
+  const [settingsBusy, setSettingsBusy] = useState(false);
   const [generatedCover, setGeneratedCover] = useState<{ objectUrl: string; file: File } | null>(null);
   const generatedCoverRef = useRef<{ objectUrl: string; file: File } | null>(null);
   const coverGenerationToken = useRef(0);
@@ -91,6 +96,7 @@ export default function DeckEditor({
     clearGeneratedCover();
     setCoverBusy(false);
     setCoverGenerating(false);
+    setSessionBudgetEdit(null);
   }, [deckId]);
 
   useEffect(() => () => {
@@ -575,6 +581,27 @@ export default function DeckEditor({
         <DeckCoverSettings coverAssetId={deck.coverAssetId} busy={coverBusy} generating={coverGenerating} generatedPreview={generatedCover?.objectUrl ?? null}
           onUpload={(file) => { void uploadCover(file); }} onRemove={() => { void removeCover(); }} onGenerate={() => { void generateCover(); }}
           onAcceptGenerated={() => { void acceptGeneratedCover(); }} onRejectGenerated={() => setGeneratedCover(null)} />
+      )}
+
+      {deck && (
+        <DeckSessionTaskBudgetSettings
+          deckId={deckId}
+          value={sessionBudgetEdit ?? deck.sessionTaskBudget}
+          edited={sessionBudgetEdit !== null}
+          archived={deck.state === "archived"}
+          busy={settingsBusy}
+          onChange={setSessionBudgetEdit}
+          onBusyChange={setSettingsBusy}
+          onSaved={(savedDeckId, saved) => {
+            // deckId żądania (z chwili kliknięcia zapisu), nie bieżący widok:
+            // nawigacja do innego zestawu w locie nie wbije cudzej wartości.
+            setSessionBudgetEdit(null);
+            setDeck((current) =>
+              current && current.id === savedDeckId ? { ...current, sessionTaskBudget: saved } : current,
+            );
+          }}
+          onError={setError}
+        />
       )}
 
       {conflict && (

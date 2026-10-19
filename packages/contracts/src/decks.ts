@@ -291,6 +291,13 @@ export function isFamilyDate(value: string): boolean {
 export const DeckStateSchema = z.enum(["draft", "review", "published", "archived"]);
 export type DeckState = z.infer<typeof DeckStateSchema>;
 
+/**
+ * Budżet zadań ocenianych sesji nauki zestawu (`decks.session_task_budget`).
+ * Te same granice co `MockTestTaskCountSchema` (1–100); domyślnie 20.
+ */
+export const SessionTaskBudgetSchema = z.number().int().min(1).max(100);
+export type SessionTaskBudget = z.infer<typeof SessionTaskBudgetSchema>;
+
 /** Aktywne przypisanie dziecka w skrócie listy zestawów (podzbiór AssignmentDto). */
 export const DeckAssignedChildDtoSchema = z.object({
   childId: UuidSchema,
@@ -312,6 +319,9 @@ export const DeckSummaryDtoSchema = z.object({
   /** Meta listy; OPCJONALNE — starszy serwer może nie wysyłać. Liczba pozycji wersji
    * reprezentatywnej (published ?? editable; 0 gdy brak wersji). */
   itemCount: z.number().int().min(0).optional(),
+  /** Budżet zadań ocenianych sesji nauki tego zestawu; parse-time default 20
+   * dla starszych ładunków, serwer zawsze wysyła bieżącą wartość. */
+  sessionTaskBudget: SessionTaskBudgetSchema.default(20),
   /** Aktywne przypisania dzieci, kolejność jak w widoku szczegółu zestawu. */
   assignedChildren: z.array(DeckAssignedChildDtoSchema).optional(),
 });
@@ -336,12 +346,25 @@ export const DeckDtoSchema = z.object({
   title: z.string(),
   state: DeckStateSchema,
   coverAssetId: UuidSchema.nullable().default(null),
+  /** Budżet zadań ocenianych sesji nauki tego zestawu; parse-time default 20
+   * dla starszych ładunków, serwer zawsze wysyła bieżącą wartość. */
+  sessionTaskBudget: SessionTaskBudgetSchema.default(20),
   draft: DraftDtoSchema.nullable(),
   published: DraftDtoSchema.nullable(),
   generation: GenerationDtoSchema.nullable(),
   assignments: z.array(AssignmentDtoSchema),
 });
 export type DeckDto = z.infer<typeof DeckDtoSchema>;
+
+/**
+ * PATCH /parent/decks/:id — ustawienia sesji nauki zestawu. Konfiguracja
+ * runtime (jak `assignments`), nie treść: mutacja bez nowego szkicu wersji.
+ * Pole jest wymagane — brak pola to błąd walidacji, a nie cicha zmiana.
+ */
+export const DeckSettingsPatchSchema = z.object({
+  sessionTaskBudget: SessionTaskBudgetSchema,
+});
+export type DeckSettingsPatch = z.infer<typeof DeckSettingsPatchSchema>;
 
 /** Polecenie usunięcia współdzielonej okładki zestawu. */
 export const DeckCoverCommandSchema = z.object({ action: z.literal("clear") }).strict();

@@ -37,6 +37,7 @@ import {
   retryGeneration,
   upsertAssignment,
   removeAssignment,
+  updateDeckSettings,
   readRewardActivitySummary,
   readParentWorkCard,
   decideXboxRewardRequest,
@@ -46,6 +47,7 @@ import {
   AssignmentPutSchema,
   CreateEmptyDeckCommandSchema,
   CreateEmptyDeckResultSchema,
+  DeckSettingsPatchSchema,
   DraftPatchSchema,
   DeckCoverCommandSchema,
   GenerationCommandSchema,
@@ -190,6 +192,12 @@ export async function handleParentApi(
     }
     if (request.method === "GET" && second !== undefined && third === undefined) {
       return Response.json(await readDeck(services, second));
+    }
+    // PATCH /parent/decks/:id — ustawienia sesji nauki zestawu (słówka i lekcje):
+    // budżet zadań ocenianych, konfiguracja runtime bez nowego szkicu wersji.
+    if (request.method === "PATCH" && second !== undefined && third === undefined) {
+      const patch = DeckSettingsPatchSchema.parse(await readJson(request));
+      return Response.json(await updateDeckSettings(services, second, patch));
     }
     if (second !== undefined && third === "cover" && fourth === undefined) {
       if (request.method === "DELETE") {

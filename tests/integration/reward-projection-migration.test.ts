@@ -31,6 +31,14 @@ describe("reward projection migration", () => {
       closeTestPool = () => pool.end();
       const clock = new ManualClock("2026-10-25T02:00:00.000Z");
       const services = createServices({ db, clock });
+      // Bieżący kod TS wstawia po drodze także `decks.session_task_budget`
+      // (kolumna z DEFAULT trafia do listy kolumn INSERT drizzle), której w
+      // migracjach 0000–0015 jeszcze nie ma. Dodajemy ją bez nazwanego CHECK
+      // tylko na czas seedu bieżącym kodem i usuwamy przed pełną migracją,
+      // by 0020 przeszedł dokładnie jak w produkcji.
+      await pool.query(
+        "alter table learning_app.decks add column session_task_budget integer not null default 20",
+      );
       await ensureLearningPolicy(db);
       const childId = randomUUID();
       await pool.query(
@@ -124,6 +132,7 @@ describe("reward projection migration", () => {
         values ($1,$2,$3,$4,$5,$6,20000,$7,$8)`,
       [playbackId, streamAwarded, child.id, legacyRoundId, roundTaskId, assetId, clock.now(), new Date(clock.now().getTime() + 60_000)]);
 
+      await pool.query("alter table learning_app.decks drop column session_task_budget");
       await migrateDatabase(databaseUrl.toString(), migrationsFolder);
       const projection = (await pool.query(`select earned_points, credited_milliseconds, remainder_milliseconds, qualified_packs, consumed_packs
         from learning_app.child_reward_projection where child_id=$1`, [child.id])).rows[0];

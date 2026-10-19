@@ -44,6 +44,7 @@ export {
   upsertAssignment,
   removeAssignment,
   archiveDeck,
+  updateDeckSettings,
   applyItems,
 } from "./modules/decks";
 export {
@@ -137,6 +138,7 @@ export {
   completePresentation,
   RESUME_WINDOW_MS,
   SESSION_TIME_LIMIT_MS,
+  sessionTimeLimitMs,
   DEFAULT_TASK_BUDGET,
 } from "./modules/sessions";
 export { recordEvent, authorizeDisclosure, contextOf } from "./modules/events";

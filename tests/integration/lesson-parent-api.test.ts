@@ -161,6 +161,19 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
     expect(after.assignments.map(({ childId }) => childId)).not.toContain(child.id);
   });
 
+  it("surowy JSON GET lessons/:deckId zawiera sessionTaskBudget po PATCH ustawień", async () => {
+    const fakes = await fakeGeneration(); disposers.push(fakes.dispose);
+    const { services, cookie } = await freshParent(fakes);
+    const { deckId } = await createAndGenerate(services, cookie);
+    // surowy JSON: parse-time default(20) w LessonDeckDtoSchema zamaskowałby
+    // pominięcie pola przez serwer, więc asercja idzie przed schematem.
+    const before = (await (await call(services, "GET", `lessons/${deckId}`, { cookie })).json()) as { sessionTaskBudget?: number };
+    expect(before.sessionTaskBudget).toBe(20);
+    expect((await call(services, "PATCH", `decks/${deckId}`, { cookie, body: { sessionTaskBudget: 7 } })).status).toBe(200);
+    const raw = (await (await call(services, "GET", `lessons/${deckId}`, { cookie })).json()) as Record<string, unknown>;
+    expect(raw.sessionTaskBudget).toBe(7);
+  });
+
   it("archiwizuje szkic lekcji przez wspólny endpoint, idempotentnie i tylko z autoryzacją rodzica", async () => {
     const fakes = await fakeGeneration(); disposers.push(fakes.dispose);
     const { services, cookie } = await freshParent(fakes);

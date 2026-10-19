@@ -11,6 +11,7 @@ import {
   type AssignmentDto,
   type CreateEmptyDeckCommand,
   type DeckDto,
+  type DeckSettingsPatch,
   type DeckState,
   type DeckSummaryDto,
   type DraftDto,
@@ -726,6 +727,7 @@ async function readDeckSnapshot(db: Executor, id: string): Promise<DeckDto> {
     id: deck.id,
     title: deck.title,
     coverAssetId: deck.coverAssetId,
+    sessionTaskBudget: deck.sessionTaskBudget,
     state: deckStateOf(deck, editable ? (editable.state as "draft" | "review") : null),
     draft: editable ? await readDraftDto(db, editable.id) : null,
     published: publishedVersionId ? await readDraftDto(db, publishedVersionId) : null,
@@ -742,6 +744,7 @@ export async function listDecks(services: Services): Promise<DeckSummaryDto[]> {
       title: decks.title,
       kind: decks.kind,
       coverAssetId: decks.coverAssetId,
+      sessionTaskBudget: decks.sessionTaskBudget,
       archivedAt: decks.archivedAt,
       publishedVersionId: decks.publishedVersionId,
     })
@@ -797,6 +800,7 @@ export async function listDecks(services: Services): Promise<DeckSummaryDto[]> {
       title: row.title,
       kind: row.kind as "vocabulary" | "lesson",
       coverAssetId: row.coverAssetId,
+      sessionTaskBudget: row.sessionTaskBudget,
       vocabularyFormat: edit?.vocabularyFormat ?? versionById.get(row.publishedVersionId ?? "")?.vocabularyFormat ?? "standard",
       state: deckStateOf(row, edit ? (edit.state as "draft" | "review") : null),
       editableVersionId: edit?.id ?? null,
@@ -915,4 +919,31 @@ export async function archiveDeck(services: Services, deckId: string): Promise<v
       .set({ archivedAt: services.clock.now() })
       .where(eq(decks.id, id));
   }
+}
+
+/**
+ * PATCH /parent/decks/:id — budżet zadań ocenianych sesji nauki zestawu
+ * (`decks.session_task_budget`, 1–100). Konfiguracja runtime jak
+ * `assignments`: mutacja bezpośrednia, bez nowego szkicu wersji; obowiązuje
+ * słówka i lekcje. Start sesji przypina własną kopię w
+ * `learning_sessions.task_budget`, więc zmiana nie dotyka trwających sesji.
+ */
+export async function updateDeckSettings(
+  services: Services,
+  deckId: string,
+  settings: DeckSettingsPatch,
+): Promise<DeckSettingsPatch> {
+  const id = z.uuid().parse(deckId);
+  const deck = (await services.db.select().from(decks).where(eq(decks.id, id)))[0];
+  if (!deck) {
+    throw new AppError("not_found");
+  }
+  if (deck.archivedAt) {
+    throw new AppError("conflict");
+  }
+  await services.db
+    .update(decks)
+    .set({ sessionTaskBudget: settings.sessionTaskBudget })
+    .where(eq(decks.id, id));
+  return { sessionTaskBudget: settings.sessionTaskBudget };
 }

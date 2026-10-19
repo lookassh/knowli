@@ -44,6 +44,8 @@ CREATE TABLE decks (
   id uuid PRIMARY KEY,
   title text NOT NULL,
   kind text NOT NULL DEFAULT 'vocabulary',
+  -- budżet zadań ocenianych sesji nauki zestawu (konfiguracja runtime, 1–100)
+  session_task_budget integer NOT NULL DEFAULT 20 CHECK (session_task_budget BETWEEN 1 AND 100),
   published_version_id uuid,
   archived_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now()
@@ -200,7 +202,9 @@ CREATE TABLE learning_sessions (
   microphone_enabled boolean NOT NULL,
   -- completed: jawny koniec z podsumowaniem; ended: zamknięcie systemowe
   state text NOT NULL CHECK (state IN ('active','completed','ended')),
-  task_budget integer NOT NULL DEFAULT 12 CHECK (task_budget > 0),
+  -- kopia budżetu przypięta przy starcie sesji: trening/daily_round z
+  -- decks.session_task_budget, mock_test z liczby slotów planu kartkówki
+  task_budget integer NOT NULL DEFAULT 20 CHECK (task_budget > 0),
   started_at timestamptz NOT NULL DEFAULT now(),
   ended_at timestamptz,
   -- snapshot kontaktów z poprzednich sesji i ustawień terminu/strefy:
