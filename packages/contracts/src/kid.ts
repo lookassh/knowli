@@ -27,6 +27,7 @@ export const EXERCISE_TYPES = [
   "listening",
   "reading",
   "reverse_recognition",
+  "picture_recognition",
   "recall",
   "speech",
   "letter_completion",
@@ -113,6 +114,20 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     audioAssetId: UuidSchema,
   }).strict(),
   z.object({ kind: z.literal("picture_recall"), visual: MeaningVisualSchema }).strict(),
+  z.object({
+    kind: z.literal("picture_recognition"),
+    /**
+     * Wizualizacja znaczenia (obraz/kolor/liczba) — zatwierdzona z przygotowaniem
+     * materiału. Prompt nie niesie audio angielskiego słowa (SPEC A07): próba
+     * pozostaje czystym rozpoznawaniem wzrokowym, a odsłuch poprawnej opcji
+     * ujawnia serwer dopiero w feedbacku (`correctAudioAssetId`).
+     */
+    visual: MeaningVisualSchema,
+    /** Polskie słowo źródłowe jako mały podpis pod obrazkiem (np. „koń”). */
+    source: z.string().min(1),
+    /** Angielskie słowa: jedno poprawne + dystraktory, unikalne teksty (SPEC §13). */
+    options: z.array(ChoiceOptionSchema).min(2).max(4),
+  }).strict(),
   z.object({
     kind: z.literal("reading"),
     text: z.string().min(1),
@@ -221,6 +236,12 @@ export const SessionInputSchema = z.object({
   deckId: UuidSchema,
   microphoneEnabled: z.boolean(),
   supportsPictureVocabulary: z.boolean().default(false),
+  /**
+   * Klient rozumie typ `picture_recognition` (obrazek → angielskie słowo).
+   * Klient bez flagi (domyślnie false) nie otrzymuje tego typu w sesji —
+   * degradacja zgodna z wzorcem `supportsPictureVocabulary` (arch §20).
+   */
+  supportsPictureRecognition: z.boolean().default(false),
 });
 export type SessionInput = z.input<typeof SessionInputSchema>;
 
@@ -481,6 +502,13 @@ export const FeedbackDtoSchema = z.object({
   hintPl: z.string().min(1).optional(),
   /** Wskazówka prezentacji; endpoint odsłuchu zawsze ponownie sprawdza uprawnienie. */
   referenceAudioAvailable: z.boolean().optional(),
+  /**
+   * Audio poprawnej opcji `picture_recognition`: identyfikator ujawniany
+   * WYŁĄCZNIE w feedbacku wraz z oceną próby (serwer zamyka zdarzenie
+   * `audio_issued` przed odpowiedzią HTTP). Przed odpowiedzią prompt nie
+   * niesie żadnego audio (SPEC A07).
+   */
+  correctAudioAssetId: UuidSchema.optional(),
 }).strict().superRefine((feedback, ctx) => {
   if (feedback.kind === "spelling_hint" && feedback.spellingDiff === undefined) {
     ctx.addIssue({ code: "custom", path: ["spellingDiff"], message: "spelling_hint requires spellingDiff" });
@@ -512,6 +540,11 @@ export const FeedbackDtoSchema = z.object({
         ctx.addIssue({ code: "custom", path: [field], message: "uncertain recognition cannot disclose speech content" });
       }
     }
+  }
+  // Odsłuch poprawnego słowa ujawnia rozwiązanie: nie towarzyszy feedbackowi,
+  // który niczego nie ujawnia (próba nieoceniona, „Pomiń”, awaria techniczna).
+  if (feedback.kind === "not_assessed" && feedback.correctAudioAssetId !== undefined) {
+    ctx.addIssue({ code: "custom", path: ["correctAudioAssetId"], message: "not_assessed cannot disclose the correct word audio" });
   }
 });
 export type FeedbackDto = z.infer<typeof FeedbackDtoSchema>;

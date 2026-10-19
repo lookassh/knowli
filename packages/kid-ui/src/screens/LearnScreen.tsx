@@ -242,6 +242,9 @@ export function LearnScreen({
                     onNext={() => void controller.continueLearning()} />
                 ) : undefined}
                 reserveResult={choiceFeedback}
+                feedbackAudio={choiceFeedback && feedback !== null && feedback.dto?.correctAudioAssetId !== undefined
+                  ? { assetId: feedback.dto.correctAudioAssetId, onPlay: () => void controller.playCorrectOptionAudio() }
+                  : null}
                 handlers={handlers}
               />
             )}

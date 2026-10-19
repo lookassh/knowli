@@ -16,7 +16,8 @@ export interface PictureChoiceOption extends PlannedOption {
   visual: MeaningVisual;
 }
 
-function visualKey(visual: MeaningVisual): string {
+/** Klucz tożsamości wizualu: identyczny obraz/kolor/liczba to ten sam obrazek dla dziecka. */
+export function visualKey(visual: MeaningVisual): string {
   switch (visual.kind) {
     case "image": return `image:${visual.imageAssetId}`;
     case "color": return `color:${visual.color.toLowerCase()}`;

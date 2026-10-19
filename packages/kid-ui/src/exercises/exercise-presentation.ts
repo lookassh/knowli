@@ -18,6 +18,8 @@ export function getExercisePresentation(task: TaskDto): ExercisePresentation {
       return { instruction: messages.kid.instructionListening, icon: "volume" };
     case "picture_recall":
       return { instruction: messages.kid.instructionRecall, icon: "book" };
+    case "picture_recognition":
+      return { instruction: messages.kid.instructionPictureRecognition, icon: "book" };
     case "reading":
       return { instruction: messages.kid.instructionReading, icon: "book" };
     case "reverse_recognition":

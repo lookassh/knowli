@@ -379,6 +379,157 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
     }))).status).toBe(409);
   });
 
+  it("nieczytający z flagą dostaje picture_recognition: ekspozycje zamknięte, audio dopiero w feedbackzie", async () => {
+    const draft = await createDraft(services, {
+      title: "Kolory rozpoznawanie", vocabularyFormat: "picture",
+      items: [
+        { source: "czerwony", target: "red", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "color", visualData: { color: "#ff0000" } },
+        { source: "niebieski", target: "blue", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "color", visualData: { color: "#0000ff" } },
+        { source: "zielony", target: "green", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "color", visualData: { color: "#008000" } },
+      ],
+    });
+    await reconcileDraftAssets(services, draft.id);
+    for (let pass = 0; pass < 6; pass += 1) if ((await runDueGenerationWork(services)).processed === 0) break;
+    await publishDraft(services, draft.id, 1);
+
+    const child = await createChild(services, { displayName: "Ola", avatarKey: "fox", canRead: false });
+    await upsertAssignment(services, child.id, draft.deckId, null);
+    const session = await startLegacyTrainingSession(services, { childId: child.id, deckId: draft.deckId,
+      microphoneEnabled: false, supportsPictureVocabulary: true, supportsPictureRecognition: true });
+
+    let seenRecognition = false;
+    const kindsByItem = new Map<string, string[]>();
+    for (let step = 0; step < 60; step++) {
+      selectionEntropy.seed = step * 7 + 2;
+      const task = await nextTask(services, session.sessionId);
+      if (!task) break;
+      if (task.prompt.kind === "picture_exposure") {
+        await completePresentation(services, { taskId: task.taskId });
+        continue;
+      }
+      const stored = (await pool.query<{ item_revision_id: string; public_prompt: unknown; answer_key: { correctOptionId: string; target: string; direction?: string; optionItemRevisionIds?: Record<string, string> } }>(
+        "select item_revision_id, public_prompt, answer_key from learning_app.session_tasks where id=$1", [task.taskId],
+      )).rows[0]!;
+      const sequence = kindsByItem.get(stored.item_revision_id) ?? [];
+      sequence.push(task.prompt.kind);
+      kindsByItem.set(stored.item_revision_id, sequence);
+      const correct = stored.answer_key.correctOptionId
+        ? { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "choice" as const, optionId: stored.answer_key.correctOptionId }
+        : { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text" as const, text: stored.answer_key.target };
+      if (task.prompt.kind !== "picture_recognition") {
+        await submitAttempt(services, correct);
+        continue;
+      }
+      seenRecognition = true;
+      // Prompt: obrazek + polski podpis + 2–4 unikalne angielskie słowa, bez audio (A07)
+      const item = (await pool.query<{ source: string; target: string }>(
+        `select payload->>'source' as source, payload->>'target' as target
+         from learning_app.item_revisions where id=(select item_revision_id from learning_app.session_tasks where id=$1)`,
+        [task.taskId],
+      )).rows[0]!;
+      expect(task.exerciseType).toBe("picture_recognition");
+      expect(task.prompt.kind).toBe("picture_recognition");
+      expect(task.prompt.visual.kind).toBe("color");
+      expect(task.prompt.source).toBe(item.source);
+      expect(task.prompt.options.length).toBeGreaterThanOrEqual(2);
+      expect(task.prompt.options.length).toBeLessThanOrEqual(4);
+      const texts = task.prompt.options.map((option) => option.text);
+      expect(new Set(texts).size).toBe(texts.length);
+      expect(texts).toContain(item.target);
+      expect(texts.every((text) => ["red", "blue", "green"].includes(text))).toBe(true);
+      expect(JSON.stringify(task.prompt)).not.toContain("audioAssetId");
+      expect(stored.public_prompt).toEqual(task.prompt);
+      // Ekspozycje promptu zamknięte w tej samej transakcji co wydanie zadania
+      const issuance = await pool.query<{ sealed: boolean; exposures: number }>(
+        `select e.sealed, count(distinct x.target_key)::int as exposures
+         from learning_app.learning_events e
+         left join learning_app.event_exposures x on x.event_id=e.id
+         where e.task_id=$1 and e.kind='prompt_issued' group by e.id`, [task.taskId],
+      );
+      expect(issuance.rows).toHaveLength(1);
+      expect(issuance.rows[0]).toEqual({ sealed: true, exposures: texts.length });
+      // Przed odpowiedzią żadne audio nie zostało ujawnione
+      expect((await pool.query(
+        "select count(*)::int as count from learning_app.learning_events where task_id=$1 and kind='audio_issued'", [task.taskId],
+      )).rows[0]).toEqual({ count: 0 });
+
+      // Pomyłka: druga próba, feedback z poprawnym słowem i jego audio
+      const wrongOption = task.prompt.options.find((option) => option.id !== stored.answer_key.correctOptionId)!;
+      const wrong = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(),
+        modality: "choice", optionId: wrongOption.id });
+      expect(wrong.taskState).toBe("issued");
+      expect(wrong.feedback?.kind).toBe("incorrect");
+      expect(wrong.feedback?.correctText).toBe(item.target);
+      expect(wrong.feedback?.correctAudioAssetId).toMatch(/^[0-9a-f-]{36}$/i);
+      const audio = (await pool.query<{ asset_id: string }>(
+        `select ra.asset_id from learning_app.revision_assets ra
+         join learning_app.media_assets a on a.id = ra.asset_id
+         where ra.item_revision_id = (select item_revision_id from learning_app.session_tasks where id=$1)
+           and ra.role='target_audio' and ra.state='approved' and a.kind='tts' and a.state='ready'`, [task.taskId],
+      )).rows[0]!;
+      expect(wrong.feedback?.correctAudioAssetId).toBe(audio.asset_id);
+      // audio ujawnione dopiero wraz ze zwrotem oceny — zamknięte przed HTTP
+      const disclosed = await pool.query<{ sealed: boolean; exposures: number }>(
+        `select e.sealed, count(x.target_key)::int as exposures
+         from learning_app.learning_events e
+         left join learning_app.event_exposures x on x.event_id=e.id
+         where e.task_id=$1 and e.kind='audio_issued' group by e.id`, [task.taskId],
+      );
+      expect(disclosed.rows).toHaveLength(1);
+      expect(disclosed.rows[0]).toMatchObject({ sealed: true });
+      expect(disclosed.rows[0]!.exposures).toBeGreaterThanOrEqual(1);
+      expect((await pool.query("select skill, outcome from learning_app.assessments where attempt_id=$1", [wrong.attemptId])).rows)
+        .toEqual([{ skill: "reading", outcome: "incorrect" }]);
+
+      // Druga próba poprawna: zalicza reading z kierunkiem pojęcie→słowo
+      const retry = await submitAttempt(services, correct);
+      expect(retry.taskState).toBe("answered");
+      expect((await pool.query("select skill, outcome, details->>'direction' as direction from learning_app.assessments where attempt_id=$1", [retry.attemptId])).rows)
+        .toEqual([{ skill: "reading", outcome: "correct", direction: "source_to_target" }]);
+      expect((await pool.query("select independent from learning_app.assessments where attempt_id=$1", [retry.attemptId])).rows[0])
+        .toEqual({ independent: false });
+    }
+    expect(seenRecognition).toBe(true);
+    // Licznik practiceMix.reading (sessions.ts) pilnuje serii obrazkowych pytań
+    // tekstowych: po co najwyżej dwóch kolejnych picture_recognition element
+    // wraca do pytania słuchowego (preferListening = listening < reading).
+    // Zepsucie licznika wydłużyłoby serię bez ograniczeń.
+    for (const [revisionId, sequence] of kindsByItem) {
+      let run = 0;
+      for (const kind of sequence) {
+        run = kind === "picture_recognition" ? run + 1 : 0;
+        expect(run, `item ${revisionId}: ${sequence.join(",")}`).toBeLessThanOrEqual(2);
+      }
+    }
+    await endSession(services, session.sessionId);
+
+    // Starszy klient (bez flagi): typ nie wydawany — graceful
+    const oldChild = await createChild(services, { displayName: "Jan", avatarKey: "fox", canRead: false });
+    await upsertAssignment(services, oldChild.id, draft.deckId, null);
+    const oldSession = await startLegacyTrainingSession(services, { childId: oldChild.id, deckId: draft.deckId,
+      microphoneEnabled: false, supportsPictureVocabulary: true, supportsPictureRecognition: false });
+    const kinds = new Set<string>();
+    for (let step = 0; step < 60; step++) {
+      selectionEntropy.seed = step * 7 + 2;
+      const task = await nextTask(services, oldSession.sessionId);
+      if (!task) break;
+      kinds.add(task.prompt.kind);
+      if (task.prompt.kind === "picture_exposure") {
+        await completePresentation(services, { taskId: task.taskId });
+        continue;
+      }
+      const stored = (await pool.query<{ answer_key: { correctOptionId: string; target: string } }>(
+        "select answer_key from learning_app.session_tasks where id=$1", [task.taskId],
+      )).rows[0]!;
+      await submitAttempt(services, stored.answer_key.correctOptionId
+        ? { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: stored.answer_key.correctOptionId }
+        : { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: stored.answer_key.target });
+    }
+    expect(kinds).not.toContain("picture_recognition");
+    expect(kinds).toContain("picture_listening");
+    await endSession(services, oldSession.sessionId);
+  });
+
   it("dla dziecka nieczytającego liczy gwiazdki z opanowanego słuchania lub recall, a dla czytającego wyłącznie z recall", async () => {
     const nonReader = await createChild(services, { displayName: "Jaś", avatarKey: "fox", canRead: false });
     const reader = await createChild(services, { displayName: "Zosia", avatarKey: "bear", canRead: true });

@@ -336,6 +336,7 @@ export async function startSession(services: Services, input: SessionInput): Pro
       canRead: child.canRead,
       vocabularyFormat: version.vocabularyFormat,
       supportsPictureVocabulary: valid.supportsPictureVocabulary,
+      supportsPictureRecognition: valid.supportsPictureRecognition,
       microphoneDisabledTaskIds: [],
     };
     const id = randomUUID();
@@ -583,7 +584,7 @@ async function planNextTask(
       stats.practiceMix.listening += 1;
       if ((row.publicPrompt as { kind?: unknown } | null)?.kind === "picture_listening") stats.pictureListeningCount += 1;
       else stats.textListeningCount += 1;
-    } else if (row.exerciseType === "reading" || row.exerciseType === "reverse_recognition") {
+    } else if (row.exerciseType === "reading" || row.exerciseType === "reverse_recognition" || row.exerciseType === "picture_recognition") {
       stats.practiceMix.reading += 1;
       const direction = (row.direction ?? (row.exerciseType === "reading" ? "target_to_source" : "source_to_target")) as ReadingDirection;
       stats.readingDirections[direction] = (stats.readingDirections[direction] ?? 0) + 1;
@@ -837,6 +838,7 @@ async function planNextTask(
     canRead: sessionContext.canRead,
     vocabularyFormat: sessionContext.vocabularyFormat,
     supportsPictureVocabulary: sessionContext.supportsPictureVocabulary,
+    supportsPictureRecognition: sessionContext.supportsPictureRecognition,
     assessedRemaining,
     nextOrdinal,
     candidates,
@@ -1030,6 +1032,16 @@ export function materializeTask(
       break;
     case "reverse_recognition":
       prompt = { kind: "reverse_recognition", prompt: item.source, options: promptOptions };
+      break;
+    case "picture_recognition":
+      // Obrazek + polski podpis → wybór angielskiego słowa. Prompt celowo nie
+      // niesie audio (SPEC A07): odsłuch poprawnej opcji ujawnia dopiero feedback.
+      prompt = {
+        kind: "picture_recognition",
+        visual: item.meaningVisual ?? item.listeningVisual!,
+        source: item.source,
+        options: promptOptions,
+      };
       break;
     case "recall":
       prompt = plan.pictureRecall

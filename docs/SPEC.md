@@ -292,6 +292,14 @@ Dziecko widzi „Monday” i wybiera „poniedziałek”. Audio może zostać od
 
 Dziecko widzi „poniedziałek” i wybiera spośród angielskich słów. Wynik nie awansuje automatycznie samodzielnego przypominania.
 
+### 12.4a. Obrazek → angielskie słowo (2026-10-19)
+
+Dziecko nieczytające w zestawie obrazkowym widzi zatwierdzoną wizualizację znaczenia (obraz, kolor lub liczbę) z małym polskim podpisem, np. obrazek konia z podpisem „koń”, i wybiera jedno z 2–4 angielskich słów („horse”, „house”, „mouse”). To ćwiczenie rozpoznawania tekstu: poprawna odpowiedź zalicza umiejętność `reading` z kierunkiem pojęcie→słowo i nie awansuje samodzielnego przypominania. Polski podpis nie ujawnia angielskiej odpowiedzi, więc nie zmienia kwalifikacji próby.
+
+Prompt celowo nie zawiera nagrania angielskiego słowa — ćwiczenie pozostaje czystym rozpoznawaniem wzrokowym. Odsłuch poprawnego słowa jest częścią feedbacku: serwer ujawnia identyfikator gotowego nagrania dopiero wraz z oceną próby (z pieczęcią ekspozycji przed odpowiedzią HTTP), a kid-ui pokazuje głośniczek przy podświetlonej poprawnej opcji.
+
+Typ dostają wyłącznie profile `canRead=false` w zestawach `picture`; czytający dzieci nie otrzymują go wcale. Klient deklaruje obsługę nową flagą zdolności przy starcie sesji; klient bez flagi nie dostaje tego typu zadań (graceful). Dystraktory pochodzą ze wspólnego mechanizmu opcji: unikalne teksty, cel zarezerwowany dla należnego sprawdzenia recall/pisowni nigdy nie jest opcją ani dystraktorem, a ekspozycje wszystkich pokazanych słów są zapisane i zamknięte przed wysłaniem treści. Brak jednoznacznego wizualu lub zbyt mała pula pomija typ — sesja trwa innymi zadaniami, bez wymuszania losowej odpowiedzi. Standardowa maszyna stanów: pomyłka daje drugą próbę, druga pomyłka prowadzi do wsparcia, „Nie pamiętam” jest trudnością.
+
 ### 12.5. Samodzielne przypominanie — Recall
 
 Dziecko widzi polskie znaczenie, bez angielskiego wzorca i bez gotowych odpowiedzi. Może odpowiedzieć głosem lub pisemnie, zależnie od dostępnego trybu.
@@ -941,6 +949,8 @@ Profil dziecka ma rodzicielską flagę „Dziecko jeszcze nie czyta” (`canRead
 Kid UI pokazuje reprezentacje obrazu, koloru lub liczby. Ćwiczenia to prezentacja i słuchanie z wyborem wizualnym, odpowiedź ustna do obrazka oraz przypominanie do obrazka bez pola tekstowego. Stałe instrukcje mają gotowe nagrania przygotowane przez serwer; audio wzorca słowa i ujawnienie są wydawane dopiero po autoryzacji ekspozycji. Dziecko może pominąć zadanie, a odmowa mikrofonu nie resetuje sesji.
 
 Zmiana `canRead` nie usuwa ani nie przepisuje wcześniejszych prób, ocen lub wyników reading/spelling. Raport rodzica zachowuje pełną liczbę słów i wszystkie pięć umiejętności; informuje, że część ćwiczeń mogła nie wystąpić. `learning-overview` v1 i jego JSON Schema pozostają bez zmian, nie zawierają flagi `canRead`, nadal filtrują lekcje, a skill Hermesa wyjaśnia ograniczenie interpretacji. Zmiana danych profilu obowiązuje nowe sesje; aktywna sesja używa zamrożonego ustawienia.
+
+Rozszerzenie (2026-10-19): w zestawach obrazkowych dziecko nieczytające dostaje dodatkowo ćwiczenie §12.4a — obrazek z polskim podpisem i wybór pasującego angielskiego słowa. Ćwiczenie uczy skojarzenia obrazka z pisanym wyrazem i zalicza rozpoznawanie tekstu (`reading`), ale gwiazdki i kryteria §18 dla nieczytających nadal liczą listening/recall. Nowy typ `picture_recognition` wydaje wyłącznie klientowi, który zadeklarował odpowiednią flagę zdolności przy starcie sesji; starsi klienci nie otrzymują go wcale (graceful, wzorzec §35). Odsłuch poprawnego słowa odbywa się tylko w feedbackzie. `learning-overview` v1, MCP i skill Hermesa pozostają bez zmian.
 
 ## 35. Wizualne słuchanie w zwykłych zestawach (2026-10-17)
 

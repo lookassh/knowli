@@ -4,7 +4,7 @@ import type { ExerciseType, Policy, ProgressStatus, ReadingDirection, Skill } fr
 import type { SupportState } from "./support-cycle";
 import type { SkillWork } from "./learning-work";
 import { buildRecognitionOptions } from "./recognition-options";
-import { buildPictureRecognitionOptions, type PictureRecognitionItem } from "./picture-recognition-options";
+import { buildPictureRecognitionOptions, visualKey, type PictureRecognitionItem } from "./picture-recognition-options";
 import { getVocabularyCapabilities } from "./vocabulary-capabilities";
 import type { MeaningVisual } from "@learning/contracts";
 import type { ConfusionPair } from "./confusion-priority";
@@ -94,6 +94,8 @@ export interface ScheduleInput {
   canRead?: boolean;
   vocabularyFormat?: "standard" | "picture";
   supportsPictureVocabulary?: boolean;
+  /** Klient zadeklarował obsługę `picture_recognition` przy starcie sesji (arch §20). */
+  supportsPictureRecognition?: boolean;
   /** Pozostały budżet zadań ocenianych. */
   assessedRemaining: number;
   /** Ordinal, jaki otrzyma nowo wydane zadanie. */
@@ -160,6 +162,24 @@ const CHECK_SKILLS: readonly ("recall" | "spelling")[] = ["recall", "spelling"];
 
 function keyOf(target: string, locale: string): string {
   return computeTargetKey(target, locale);
+}
+
+/**
+ * Możliwości słówek sesji; `picture_recognition` wchodzi do `exerciseTypes`
+ * wyłącznie dla nieczytającego w zestawie picture z flagą klienta.
+ */
+function capabilitiesOf(input: {
+  canRead?: boolean;
+  microphoneEnabled: boolean;
+  vocabularyFormat?: "standard" | "picture";
+  supportsPictureRecognition?: boolean;
+}) {
+  return getVocabularyCapabilities({
+    canRead: input.canRead ?? true,
+    microphoneEnabled: input.microphoneEnabled,
+    ...(input.vocabularyFormat === undefined ? {} : { vocabularyFormat: input.vocabularyFormat }),
+    ...(input.supportsPictureRecognition === undefined ? {} : { supportsPictureRecognition: input.supportsPictureRecognition }),
+  });
 }
 
 function isDue(snapshot: SkillSnapshot | undefined, now: string): boolean {
@@ -248,7 +268,7 @@ function presentedOnce(candidates: readonly ScheduleCandidate[]): ScheduleCandid
  */
 function practicePool(candidates: readonly ScheduleCandidate[], input: ScheduleInput): ScheduleCandidate[] {
   const masterySkills = input.canRead === false || input.vocabularyFormat === "picture"
-    ? getVocabularyCapabilities({ canRead: input.canRead ?? true, microphoneEnabled: input.microphoneEnabled }).skills
+    ? capabilitiesOf(input).skills
     : undefined;
   return candidates
     .filter((c) => c.usedThisSession > 0 || isStarted(c) || c.ownPresentationCompleted === true)
@@ -297,7 +317,7 @@ function picturePracticePlan(
             : input.nextOrdinal % 2 === 0);
       return plan ? [{ candidate, plan }] : [];
     });
-  const skills = getVocabularyCapabilities({ canRead: input.canRead ?? true, microphoneEnabled: input.microphoneEnabled }).skills;
+  const skills = capabilitiesOf(input).skills;
   const firstPriority = feasible[0] && isFullyMastered(feasible[0].candidate, skills);
   const priorityPool = feasible.filter(({ candidate }) => isFullyMastered(candidate, skills) === firstPriority);
   const questionCount = (candidate: ScheduleCandidate) => candidate.usedThisSession - candidate.presentationsThisSession;
@@ -315,12 +335,19 @@ const RECOGNITION_DIRECTIONS: readonly (ReadingDirection | "listening")[] = [
 function recognitionPossibleWithoutReservations(target: ScheduleCandidate, peers: readonly SchedulePeer[], input?: ScheduleInput): boolean {
   if (input?.vocabularyFormat === "picture") {
     if (!target.visual) return false;
-    return buildPictureRecognitionOptions({
+    const listeningPossible = buildPictureRecognitionOptions({
       target: { ...target, visual: target.visual } as PictureRecognitionItem,
       peers: peers.filter((peer) => peer.visual !== undefined) as PictureRecognitionItem[],
       reservedTargetKeys: [],
       rotateBy: 0,
     }) !== null;
+    // picture_recognition (obrazek → angielskie słowo): również ścieżka dowodu
+    // rozpoznawania dla nieczytającego klienta z flagą zdolności.
+    const recognitionPossible = capabilitiesOf(input).exerciseTypes.includes("picture_recognition") &&
+      buildRecognitionOptions({
+        target, peers, direction: "source_to_target", reservedTargetKeys: [], rotateBy: 0,
+      }) !== null;
+    return listeningPossible || recognitionPossible;
   }
   return RECOGNITION_DIRECTIONS.some((direction) => buildRecognitionOptions({
     target, peers, direction, reservedTargetKeys: [], rotateBy: 0,
@@ -358,12 +385,16 @@ function recognitionTaskPlan(
   direction: ReadingDirection | "listening",
   allowAlternative = false,
 ): TaskPlan | null {
-  const capabilities = getVocabularyCapabilities({ canRead: input.canRead ?? true, microphoneEnabled: input.microphoneEnabled });
+  const capabilities = capabilitiesOf(input);
+  const pictureRecognition = capabilities.exerciseTypes.includes("picture_recognition");
   const directions = (allowAlternative
     ? [direction, ...RECOGNITION_DIRECTIONS.filter((item) => item !== direction)]
     : [direction]).filter((candidateDirection) =>
-      candidateDirection === "listening"
-        ? capabilities.exerciseTypes.includes("listening")
+    candidateDirection === "listening"
+      ? capabilities.exerciseTypes.includes("listening")
+      : candidateDirection === "source_to_target" && pictureRecognition
+        // Nieczytający: jedyna tekstowa forma rozpoznawania to obrazek → słowo.
+        ? true
         : capabilities.exerciseTypes.includes("reading"),
     );
   for (const selectedDirection of directions) {
@@ -394,6 +425,39 @@ function recognitionTaskPlan(
       }
       if (input.vocabularyFormat === "picture") continue;
     }
+    if (selectedDirection === "source_to_target" && pictureRecognition) {
+      // picture_recognition (SPEC §12.4a): prompt = wizualizacja znaczenia,
+      // opcje = angielskie słowa. Wymaga jednoznacznego wizualu celu; pula i
+      // rezerwacje rozstrzyga wspólny `buildRecognitionOptions` — cel
+      // zarezerwowany dla należnego sprawdzenia nie jest opcją ani dystraktorem.
+      if (!target.visual) continue;
+      // Dystraktor o wizualu identycznym z celem pasuje do obrazka tak samo
+      // jak odpowiedź — walidator picture nie pilnuje unikalności wizuali,
+      // więc odfiltrowujemy sami (analogia visualKey z picture-recognition-options).
+      const targetVisual = visualKey(target.visual);
+      const built = buildRecognitionOptions({
+        target,
+        peers: input.peers.filter((peer) => peer.visual === undefined || visualKey(peer.visual) !== targetVisual),
+        direction: "source_to_target",
+        reservedTargetKeys: [...reserved],
+        rotateBy: input.nextOrdinal,
+        preferredRevisionIds: input.confusions
+          ?.filter((pair) => pair.expectedItemRevisionId === target.itemRevisionId &&
+            pair.exerciseType === "picture_recognition")
+          .map((pair) => pair.answeredItemRevisionId),
+      });
+      if (!built) continue;
+      return {
+        itemRevisionId: target.itemRevisionId,
+        exerciseType: "picture_recognition",
+        direction: "source_to_target",
+        options: built.options,
+        revealsTargetKeys: built.revealsTargetKeys,
+        assessed: true,
+        reason,
+        keepsReservations,
+      };
+    }
     const built = buildRecognitionOptions({
       target,
       peers: input.peers,
@@ -422,7 +486,12 @@ function recognitionTaskPlan(
   }
   const fallbackEligible = reason === "new-practice" || reason === "filler-practice" ||
     reason === "extra-practice" || reason === "test-preparation-break";
-  const hasDueRecognition = isDue(target.progress.listening, input.now) || isDue(target.progress.reading, input.now);
+  // Należne powtórki reading liczą się tylko tam, gdzie są planowane
+  // (reading w skills sesji). Nieczytający zbiera realny postęp reading z
+  // picture_recognition, ale jego due nigdy nie jest obsługiwane — nie może
+  // więc tłumić fallbacku rozpoznawania i odbierać sesji zadań.
+  const hasDueRecognition = isDue(target.progress.listening, input.now) ||
+    (capabilities.skills.includes("reading") && isDue(target.progress.reading, input.now));
   return fallbackEligible && !hasDueRecognition
     ? recognitionFallback(target, reserved, input.peers, input, keepsReservations)
     : null;
@@ -474,7 +543,7 @@ function introductionPlan(
   const pool = practicePool(candidates, input).slice().sort(
     (a, b) => Number(b.introducedSkills.recall) - Number(a.introducedSkills.recall),
   );
-  const capabilities = getVocabularyCapabilities({ canRead: input.canRead ?? true, microphoneEnabled: input.microphoneEnabled });
+  const capabilities = capabilitiesOf(input);
   for (const target of pool) {
     if (reserved.has(keyOfCandidate(target))) continue;
     const noRecognitionEvidenceAvailable =
@@ -632,7 +701,7 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
   const reserved = new Set(input.reservedTargetKeys);
   if (input.vocabularyFormat === "picture" && !input.microphoneEnabled) reserved.clear();
   const settled = new Set(input.settledCheckTargetKeys ?? []);
-  const capabilities = getVocabularyCapabilities({ canRead: input.canRead ?? true, microphoneEnabled: input.microphoneEnabled });
+  const capabilities = capabilitiesOf(input);
   const eligible = new Set(capabilities.skills);
   const dueCheckSkills = new Set(capabilities.skills.filter((skill) => skill === "recall" || skill === "spelling"));
   for (const candidate of input.candidates) {
@@ -790,7 +859,13 @@ export function selectTask(input: ScheduleInput): TaskPlan | null {
   );
   for (const dueSkill of dueSkills) {
     if (dueSkill.skill === "reading") {
-      const direction = chooseReadingDirection(dueSkill.candidate.readingEvidenceDirections ?? {}, dueSkill.candidate.readingDirections);
+      // `reading` nie należy do skills nieczytającego, więc należne powtórki
+      // reading dla niego nie są planowane (rotacja picturePracticePlan i tak
+      // ćwiczy materiał); kierunek obrazek→słowo zabezpiecza przyszłe rozszerzenia
+      // eligibilności bez tekstu po polsku→angielsku dla nieczytającego.
+      const direction = capabilities.exerciseTypes.includes("picture_recognition")
+        ? "source_to_target"
+        : chooseReadingDirection(dueSkill.candidate.readingEvidenceDirections ?? {}, dueSkill.candidate.readingDirections);
       const plan = recognitionTaskPlan(dueSkill.candidate, input, reserved, keepsReservations, "due-review", direction);
       if (plan) return { ...plan, skillAtIssue: dueSkill.skill, statusAtIssue: dueSkill.candidate.progress[dueSkill.skill]?.status };
       continue;
@@ -885,6 +960,9 @@ function recognitionPlan(
 ): TaskPlan | null {
   const direction = preferListening
     ? "listening"
-    : chooseReadingDirection(target.readingEvidenceDirections ?? {}, target.readingDirections);
+    : capabilitiesOf(input).exerciseTypes.includes("picture_recognition")
+      // Nieczytający: tekstową stronę miksów zastępuje obrazek → angielskie słowo.
+      ? "source_to_target"
+      : chooseReadingDirection(target.readingEvidenceDirections ?? {}, target.readingDirections);
   return recognitionTaskPlan(target, input, reserved, keepsReservations, reason, direction, true);
 }

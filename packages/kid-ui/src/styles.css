@@ -1139,6 +1139,47 @@
   width: min(100%, 112px);
 }
 
+/* picture_recognition (SPEC §12.4a): obrazek znaczenia z małym polskim
+   podpisem nad siatką angielskich słów. */
+.kid-recognition-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.kid-recognition-prompt .kid-illustration {
+  width: min(52vw, 220px);
+  height: min(28svh, 220px);
+}
+
+.kid-picture-caption {
+  margin: 0;
+  font-size: 1.15rem;
+  color: var(--kid-muted);
+  text-align: center;
+}
+
+/* Opcja ze wsparciem odsłuchu poprawnego słowa w feedbackzie: przycisk
+   audio pojawia się tylko przy podświetlonej poprawnej odpowiedzi. */
+.kid-recognition-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.kid-recognition-option > button:not(.kid-option-audio) {
+  flex: 1;
+}
+
+.kid-ui .kid-option-audio.kid-audio-round {
+  width: 56px;
+  height: 56px;
+  min-height: 56px;
+  font-size: 1.3rem;
+  margin-inline-end: 44px;
+}
+
 @media (min-width: 700px) and (orientation: landscape) {
   .kid-picture-options .kid-picture-option {
     width: min(100%, 35svh);

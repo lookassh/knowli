@@ -32,6 +32,8 @@ export interface SessionContextShape {
   canRead: boolean;
   vocabularyFormat: "standard" | "picture";
   supportsPictureVocabulary?: boolean;
+  /** Klient obsługuje `picture_recognition`; brak/null = starszy klient (graceful). */
+  supportsPictureRecognition?: boolean;
   microphoneDisabledTaskIds: string[];
   mockTestReport?: MockTestReportDto;
   timezone: string;
@@ -54,6 +56,7 @@ export function contextOf(session: { context: Record<string, unknown> }): Sessio
     canRead: raw.canRead ?? true,
     vocabularyFormat: raw.vocabularyFormat === "picture" ? "picture" : "standard",
     supportsPictureVocabulary: raw.supportsPictureVocabulary === true,
+    supportsPictureRecognition: raw.supportsPictureRecognition === true,
     microphoneDisabledTaskIds: Array.isArray(raw.microphoneDisabledTaskIds)
       ? raw.microphoneDisabledTaskIds.filter((id): id is string => typeof id === "string")
       : [],

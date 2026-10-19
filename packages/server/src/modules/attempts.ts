@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, max, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, max, sql } from "drizzle-orm";
 import {
   AttemptInputSchema,
   UuidSchema,
@@ -55,7 +55,7 @@ export const ATTEMPT_PROCESSING_TIMEOUT_MS = 60_000;
 
 /** Zadania, w których ujawnienie angielskiego rozwiązania psuje samodzielność (SPEC §12.5–12.8). */
 const RECALL_LIKE: ReadonlySet<string> = new Set(["recall", "spelling", "letter_completion"]);
-const CHOICE_EXERCISES: ReadonlySet<string> = new Set(["listening", "reading", "reverse_recognition"]);
+const CHOICE_EXERCISES: ReadonlySet<string> = new Set(["listening", "reading", "reverse_recognition", "picture_recognition"]);
 const WRITTEN_EXERCISES: ReadonlySet<string> = new Set(["recall", "spelling", "letter_completion"]);
 
 type AttemptRow = typeof attempts.$inferSelect;
@@ -300,6 +300,25 @@ async function finalizeAttemptRow(
       : undefined;
     feedback = { ...feedback, referenceAudioAvailable: Boolean(audio) };
   }
+  // picture_recognition: odsłuch poprawnego słowa jest częścią feedbacku, nie
+  // zadania (SPEC §12.4a, A07). Ujawniamy identyfikator gotowego audio tylko
+  // razem z oceną; feedback nieoceniony niczego nie odsłuchuje.
+  if (feedback !== null && feedback.kind !== "not_assessed" && key.exerciseType === "picture_recognition") {
+    const [correctAudio] = await tx.select({ id: mediaAssets.id })
+      .from(revisionAssets)
+      .innerJoin(mediaAssets, eq(mediaAssets.id, revisionAssets.assetId))
+      .where(and(
+        eq(revisionAssets.itemRevisionId, task.itemRevisionId),
+        eq(revisionAssets.role, "target_audio"),
+        eq(revisionAssets.state, "approved"),
+        eq(mediaAssets.kind, "tts"),
+        eq(mediaAssets.state, "ready"),
+      ))
+      // przy kilku zatwierdzonych nagraniach wybór musi być deterministyczny:
+      // najnowszy gotowy zasób, remis rozstrzyga id
+      .orderBy(desc(mediaAssets.createdAt), desc(mediaAssets.id));
+    if (correctAudio) feedback = { ...feedback, correctAudioAssetId: correctAudio.id };
+  }
   const chosenText =
     modality === "choice"
       ? ((attempt.answer as { optionText?: string } | null)?.optionText ?? "")
@@ -395,6 +414,24 @@ async function finalizeAttemptRow(
   }
 
   const stepId = feedback === null ? null : await discloseFeedback(tx, task, session.childId, itemId, feedback, targetKey, now);
+  // picture_recognition: zgoda na odsłuch poprawnego słowa (feedback) to
+  // ujawnienie rozwiązania — pieczęcimy audio_issued z ekspozycją celu w tej
+  // samej transakcji, przed zwrotem oceny w HTTP (arch §9.2).
+  if (feedback?.correctAudioAssetId !== undefined) {
+    const prior = await tx
+      .select({ id: learningEvents.id })
+      .from(learningEvents)
+      .where(and(eq(learningEvents.taskId, task.id), inArray(learningEvents.kind, ["audio_issued", "hint_issued"])));
+    await writeSealedEvent(tx, {
+      childId: session.childId,
+      taskId: task.id,
+      itemId,
+      kind: "audio_issued",
+      stepId: `${task.id}:d${prior.length + 1}`,
+      occurredAt: now,
+      exposures: [targetKey],
+    });
+  }
   if (session.mode === "mock_test") {
     await writeSealedEvent(tx, {
       childId: session.childId,
