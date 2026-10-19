@@ -44,6 +44,37 @@ function getGitPaths() {
   }
 }
 
+function linkSharedDirectory(sourcePath, linkPath, label) {
+  if (!fs.existsSync(sourcePath)) {
+    console.log(`[setup-worktree] Skipping ${label}: shared directory is not installed (${sourcePath}).`);
+    return;
+  }
+
+  try {
+    const linkStat = fs.lstatSync(linkPath);
+    if (linkStat.isSymbolicLink()) {
+      console.log(`[setup-worktree] ✓ ${label} link already exists.`);
+    } else {
+      console.log(`[setup-worktree] Keeping worktree-local ${label} (${linkPath}).`);
+    }
+    return;
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      console.warn(`[setup-worktree] Could not inspect ${label}: ${error.message}`);
+      return;
+    }
+  }
+
+  try {
+    fs.mkdirSync(path.dirname(linkPath), { recursive: true });
+    // Windows junctions do not require Developer Mode or elevated privileges.
+    fs.symlinkSync(sourcePath, linkPath, 'junction');
+    console.log(`[setup-worktree] ✓ Linked ${label} to the main checkout.`);
+  } catch (error) {
+    console.warn(`[setup-worktree] Could not link ${label}: ${error.message}`);
+  }
+}
+
 function setupWorktree(options = {}) {
   const gitPaths = getGitPaths();
   if (!gitPaths) {
@@ -59,6 +90,23 @@ function setupWorktree(options = {}) {
   }
 
   console.log(`[setup-worktree] Initializing workspace in: ${rootDir}`);
+
+  // BMAD skills are installed once in the main checkout. Expose them to each
+  // worktree while keeping docs/bmad local for safe plan-to-implementation handoff.
+  if (gitPaths.isWorktree) {
+    for (const [relativePath, label] of [
+      ['_bmad', 'BMAD runtime'],
+      [path.join('.agents', 'skills'), 'Codex BMAD skills'],
+      [path.join('.zcode', 'skills'), 'ZCode BMAD skills'],
+      [path.join('.agent', 'skills'), 'Antigravity BMAD skills'],
+    ]) {
+      linkSharedDirectory(
+        path.join(gitPaths.mainRepoRoot, relativePath),
+        path.join(rootDir, relativePath),
+        label,
+      );
+    }
+  }
 
   // 1. Copy .env if missing
   const localEnvPath = path.join(rootDir, '.env');
