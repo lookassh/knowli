@@ -34,3 +34,6 @@ backups/
 !.kiro/specs/
 _bmad/
 _bmad-output/
+/.agent/skills/bmad-*/
+/.agents/skills/bmad-*/
+/.zcode/skills/bmad-*/
