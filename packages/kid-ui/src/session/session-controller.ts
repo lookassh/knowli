@@ -487,7 +487,7 @@ export class LearningSessionController {
     // nowa sesja nie dziedziczy wyboru z poprzedniej (np. przerwanego awarią)
     this.#pendingChoice = null;
     try {
-      const session = await this.#api.startSession({ childId, deckId, microphoneEnabled: mode === "mock_test" ? false : microphone, mode, supportsPictureVocabulary: true });
+      const session = await this.#api.startSession({ childId, deckId, microphoneEnabled: mode === "mock_test" ? false : microphone, mode, supportsPictureVocabulary: true, supportsPictureRecognition: true });
       if (epoch !== this.#epoch) return;
       if (session.mode === "mock_test" && (!session.resumed || session.tasksIssued === 0)) {
         this.#screen = { kind: "mockTestReady", session }; this.#emit(); return;
@@ -877,6 +877,32 @@ export class LearningSessionController {
       if (playbackGeneration === this.#playbackGeneration && epoch === this.#epoch && current?.task?.taskId === taskId && current.feedback?.attemptId === attemptId) {
         this.#setLearning({ feedback: { ...current.feedback, audioError: true } });
       }
+    }
+  }
+
+  /**
+   * Odsłuch poprawnego słowa w feedbacku `picture_recognition`: identyfikator
+   * wysłał serwer razem z oceną (z pieczęcią audio_issued przed HTTP), więc
+   * odtwarzamy plik bezpośrednio, bez ponownej autoryzacji ujawnienia.
+   */
+  async playCorrectOptionAudio(): Promise<void> {
+    const screen = this.#learning();
+    const feedback = screen?.feedback;
+    const assetId = feedback?.dto?.correctAudioAssetId;
+    const taskId = screen?.task?.taskId;
+    if (!screen || !screen.task || taskId === undefined || feedback === null || feedback === undefined ||
+        assetId === undefined || screen.offline || screen.busy) return;
+    const epoch = this.#epoch;
+    const playbackGeneration = this.#beginPlayback();
+    const feedbackAttemptId = feedback.attemptId;
+    try {
+      await this.#media.player.play(this.#api.mediaUrl(assetId));
+      const current = this.#learning();
+      if (playbackGeneration !== this.#playbackGeneration || epoch !== this.#epoch ||
+          current?.task?.taskId !== taskId || current.feedback?.attemptId !== feedbackAttemptId) return;
+    } catch {
+      // Odsłuch jest dodatkiem wzmacniającym skojarzenie: awaria pliku nie
+      // psuje feedbacku ani przebiegu — przycisk po prostu nic nie odtwarza.
     }
   }
 

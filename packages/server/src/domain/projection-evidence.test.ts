@@ -22,6 +22,17 @@ describe("qualifyProjectionEvidence", () => {
     ]);
   });
 
+  it("disqualifies audio-assisted picture_recognition but keeps a clean choice independent", () => {
+    const result = qualifyProjectionEvidence([
+      { entry, exerciseType: "picture_recognition", distinctChoiceCount: 3, audioIssuedBeforeAnswer: true },
+      { entry, exerciseType: "picture_recognition", distinctChoiceCount: 3, audioIssuedBeforeAnswer: false },
+      { entry, exerciseType: "picture_recognition", distinctChoiceCount: 1, audioIssuedBeforeAnswer: false },
+    ]);
+    expect(result.map((row) => [row.independent, row.confirmationEligible])).toEqual([
+      [false, false], [true, true], [false, false],
+    ]);
+  });
+
   it("leaves assessment records unchanged when the evidence is disqualified", () => {
     const before = structuredClone(entry);
     qualifyProjectionEvidence([{ entry, exerciseType: "reverse_recognition", distinctChoiceCount: 1, audioIssuedBeforeAnswer: false }]);

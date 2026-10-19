@@ -42,6 +42,8 @@ function skillsForExercise(exerciseType: ExerciseType): readonly Skill[] {
       return ["listening"];
     case "reading":
     case "reverse_recognition":
+    // Obrazek → angielskie słowo zalicza rozpoznawanie tekstu (SPEC §12.4a).
+    case "picture_recognition":
       return ["reading"];
     case "recall":
     case "spelling":
@@ -61,9 +63,15 @@ export function assessedSkills(exerciseType: ExerciseType): readonly Skill[] {
 }
 
 function directionFor(key: AnswerKey): ReadingDirection | undefined {
-  if (key.exerciseType !== "reading" && key.exerciseType !== "reverse_recognition") {
+  if (
+    key.exerciseType !== "reading" &&
+    key.exerciseType !== "reverse_recognition" &&
+    key.exerciseType !== "picture_recognition"
+  ) {
     return undefined;
   }
+  // picture_recognition to kierunek pojęcie→słowo: obrazek/podpis PL, odpowiedź EN.
+  if (key.exerciseType === "picture_recognition") return key.direction ?? "source_to_target";
   return key.direction ?? (key.exerciseType === "reading" ? "target_to_source" : "source_to_target");
 }
 

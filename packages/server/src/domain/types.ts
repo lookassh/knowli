@@ -52,6 +52,11 @@ export type ExerciseType =
   | "listening"
   | "reading"
   | "reverse_recognition"
+  /**
+   * Obrazek → wybór angielskiego słowa dla dziecka nieczytającego w zestawie
+   * picture (SPEC §12.4a): oceniane jako `reading`, kierunek pojęcie→słowo.
+   */
+  | "picture_recognition"
   | "recall"
   | "speech"
   | "letter_completion"

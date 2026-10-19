@@ -147,7 +147,7 @@ export async function readLearningSnapshot(
     .where(and(
       eq(assessments.childId, scope.childId),
       inArray(attempts.itemRevisionId, [...scope.revisionIds]),
-      inArray(sessionTasks.exerciseType, ["listening", "reading", "reverse_recognition"]),
+      inArray(sessionTasks.exerciseType, ["listening", "reading", "reverse_recognition", "picture_recognition"]),
       inArray(assessments.skill, ["listening", "reading"]),
     ));
   const observations: ConfusionObservation[] = recognitionRows.map((row) => {

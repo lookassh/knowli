@@ -31,6 +31,22 @@ describe("rankConfusions", () => {
     ])).toEqual([]);
   });
 
+  it("ranks repeated picture_recognition mistakes the same way as textual recognition", () => {
+    const picture = (attemptId: string) => observation({
+      attemptId, expectedItemRevisionId: "horse", answeredItemRevisionId: "house",
+      exerciseType: "picture_recognition", direction: "source_to_target",
+    });
+    expect(rankConfusions([picture("a"), picture("b")])).toEqual([{
+      expectedItemRevisionId: "horse", answeredItemRevisionId: "house",
+      exerciseType: "picture_recognition", direction: "source_to_target", count: 2,
+    }]);
+    // obrazkowe pomyłki nie łączą się z tekstowymi tego samego słowa
+    expect(rankConfusions([
+      picture("a"),
+      observation({ attemptId: "b", expectedItemRevisionId: "horse", answeredItemRevisionId: "house" }),
+    ])).toEqual([]);
+  });
+
   it("never combines evidence from different children", () => {
     expect(rankConfusions([
       observation({ attemptId: "child-a-1", childId: "child-a" }),

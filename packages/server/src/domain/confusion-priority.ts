@@ -1,6 +1,6 @@
 import type { ExerciseType, ReadingDirection } from "./types";
 
-const RECOGNITION_TYPES = new Set<ExerciseType>(["listening", "reading", "reverse_recognition"]);
+const RECOGNITION_TYPES = new Set<ExerciseType>(["listening", "reading", "reverse_recognition", "picture_recognition"]);
 const WINDOW_SIZE = 20;
 
 export interface ConfusionObservation {

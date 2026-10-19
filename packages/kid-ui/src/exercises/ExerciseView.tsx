@@ -15,6 +15,7 @@ import { LessonSentenceView } from "./lesson/LessonSentenceView";
 import { PictureExposureView } from "./PictureExposureView";
 import { PictureListeningView } from "./PictureListeningView";
 import { PictureRecallView } from "./PictureRecallView";
+import { PictureRecognitionView } from "./PictureRecognitionView";
 import { PictureSpeechView } from "./PictureSpeechView";
 
 /**
@@ -35,6 +36,8 @@ export function ExerciseView(props: ExerciseProps) {
       return <PictureListeningView {...props} />;
     case "picture_recall":
       return <PictureRecallView key={props.task.taskId} {...props} />;
+    case "picture_recognition":
+      return <PictureRecognitionView key={props.task.taskId} {...props} />;
     case "reading":
     case "reverse_recognition":
       return <ReadingView {...props} />;

@@ -481,6 +481,7 @@ function promptText(prompt: TaskPrompt): string {
     case "speech":
     case "picture_speech":
     case "picture_recall":
+    case "picture_recognition":
       // Typy nielekcyjne i karta nie są slotami kartkówki lekcji.
       return "";
     default: {

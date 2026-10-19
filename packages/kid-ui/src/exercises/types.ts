@@ -41,6 +41,11 @@ export interface ExerciseProps {
   mediaUrl: (assetId: string) => string;
   /** Podświetlenia opcji po próbie wyboru; puste poza feedbackiem. */
   optionOutcomes: ReadonlyMap<string, OptionOutcome>;
+  /**
+   * Odsłuch poprawnego słowa w feedbacku `picture_recognition`: identyfikator
+   * ujawniony serwerowo dopiero wraz z oceną (audio_issued przed HTTP).
+   */
+  feedbackAudio?: { assetId: string; onPlay: () => void } | null;
   /** Wynik próby wyboru pozostaje w tej samej ramie co podświetlone odpowiedzi. */
   result?: ReactNode;
   /** Główna akcja dostępna po wyniku próby; wynik sam pozostaje w material/result slot. */
