@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { openNewMaterial } from "./helpers/parent-new-material";
 import { randomUUID } from "node:crypto";
+import { DeckDtoSchema } from "@learning/contracts";
 
 async function enterParent(page: Page): Promise<void> {
   await page.goto("/parent");
@@ -164,8 +165,11 @@ test("preserves edits made while an asset-polling read is in flight", async ({ p
   let holdNextRead = false;
   let releaseRead: (() => void) | undefined;
   let notifyRead: (() => void) | undefined;
+  let markReadFulfilled: (() => void) | undefined;
   const readReceived = new Promise<void>((resolve) => { notifyRead = resolve; });
   const readRelease = new Promise<void>((resolve) => { releaseRead = resolve; });
+  const readFulfilled = new Promise<void>((resolve) => { markReadFulfilled = resolve; });
+  let deckId: string | undefined;
   await page.route("**/api/v1/parent/decks/*", async (route) => {
     if (route.request().method() !== "GET" || !holdNextRead) {
       await route.continue();
@@ -173,13 +177,29 @@ test("preserves edits made while an asset-polling read is in flight", async ({ p
     }
     holdNextRead = false;
     const response = await route.fetch();
+    const body = await response.json() as {
+      draft?: { assets: { itemRevisionId: string; role: string; state: string }[] };
+    };
+    const audio = body.draft?.assets?.find((asset) => asset.role === "target_audio");
+    expect(audio).toBeDefined();
+    // Kontrolowany stary odczyt sygnalizuje gotowy asset, aby dać UI widoczny
+    // efekt zastosowania tej konkretnej odpowiedzi. Zapis i końcowy odczyt są realne.
+    audio!.state = "approved";
     notifyRead?.();
     await readRelease;
-    await route.fulfill({ response });
+    await route.fulfill({ response, body: JSON.stringify(body) });
+    markReadFulfilled?.();
   });
+  try {
   await enterParent(page);
   await openNewMaterial(page, "empty");
+  const createdResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST" && response.url().endsWith("/api/v1/parent/decks"),
+  );
   await page.getByTestId("create-empty-submit").click();
+  const created = await createdResponse;
+  deckId = ((await created.json()) as { deckId: string }).deckId;
+  expect(deckId).toBeTruthy();
   await page.getByTestId("add-item").click();
   await page.getByTestId("item-source-0").fill("kot");
   await page.getByTestId("item-target-0").fill(targetValue);
@@ -190,7 +210,19 @@ test("preserves edits made while an asset-polling read is in flight", async ({ p
   await readReceived;
   await page.getByTestId("item-source-0").fill("kotek");
   releaseRead?.();
+  // Wait for this exact response to finish, then assert the rendered edit is
+  // still present. A dirty editor intentionally drops the stale GET payload.
+  await readFulfilled;
   await expect(page.getByTestId("item-source-0")).toHaveValue("kotek");
+  const save = page.waitForResponse((response) => response.request().method() === "PATCH" && response.url().includes("/drafts/"));
+  await page.getByTestId("save-items").click();
+  expect((await save).status()).toBe(200);
+  const persisted = DeckDtoSchema.parse(await (await page.request.get(`/api/v1/parent/decks/${deckId}`)).json());
+  expect(persisted.draft?.items[0]?.source).toBe("kotek");
+  } finally {
+    releaseRead?.();
+    await page.unroute("**/api/v1/parent/decks/*");
+  }
 });
 
 test("keeps the editor open when the list refresh fails after successful creation", async ({ page }) => {

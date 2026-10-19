@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { readTestRunConfig } from "../test-run-config";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { createDatabase } from "@learning/server";
+import { TaskDtoSchema } from "@learning/contracts";
 
 // Kid-flow obejmuje krótkotrwałe testowe audio; nie zapisujemy trace, HAR ani video.
 test.use({ trace: "off" });
@@ -55,9 +56,10 @@ async function createChild(
   displayName: string,
   avatarKey: string,
   canRead = true,
-): Promise<{ id: string }> {
+): Promise<{ id: string; displayName: string }> {
+  const uniqueName = `${displayName} ${randomUUID().slice(0, 8)}`;
   const child = await (
-    await parent.post("/api/v1/parent/children", { data: { displayName, avatarKey, canRead } })
+    await parent.post("/api/v1/parent/children", { data: { displayName: uniqueName, avatarKey, canRead } })
   ).json();
   expect(child.id).toBeDefined();
   return child;
@@ -210,13 +212,23 @@ async function startFakeRecording(page: Page): Promise<void> {
     await record.click();
     await expect(record).toHaveAttribute("data-ready", "true");
   }
+  const startsBefore = await page.evaluate(() => Number(sessionStorage.getItem("test.recorderStarts") ?? "0"));
   await record.click();
   await expect(record).toHaveAttribute("aria-pressed", "true");
-  await page.waitForTimeout(350);
+  await expect.poll(() => page.evaluate(() => Number(sessionStorage.getItem("test.recorderStarts") ?? "0"))).toBeGreaterThan(startsBefore);
+  // The controller rejects captures shorter than 300 ms; wait beyond that guard
+  // after the recorder actually starts, rather than sleeping from the click.
+  await expect.poll(() => page.evaluate(() =>
+    Date.now() - Number(sessionStorage.getItem("test.recorderStartedAt") ?? "0"),
+  )).toBeGreaterThanOrEqual(350);
 }
 
 async function stopFakeRecording(page: Page): Promise<void> {
+  const stopsBefore = await page.evaluate(() => Number(sessionStorage.getItem("test.recorderStops") ?? "0"));
+  const tracksBefore = await page.evaluate(() => Number(sessionStorage.getItem("test.trackStops") ?? "0"));
   await page.getByTestId("kid-record").click();
+  await expect.poll(() => page.evaluate(() => Number(sessionStorage.getItem("test.recorderStops") ?? "0"))).toBeGreaterThan(stopsBefore);
+  await expect.poll(() => page.evaluate(() => Number(sessionStorage.getItem("test.trackStops") ?? "0"))).toBeGreaterThan(tracksBefore);
 }
 
 /**
@@ -225,8 +237,8 @@ async function stopFakeRecording(page: Page): Promise<void> {
  * momencie złapałoby poprzednie zadanie.
  */
 async function settled(page: Page): Promise<void> {
-  await page
-    .waitForFunction(
+  try {
+    await page.waitForFunction(
       () => {
         const disabled = [...document.querySelectorAll("[data-testid][disabled]")];
         const input = document.querySelector('[data-testid="kid-input"]');
@@ -238,8 +250,14 @@ async function settled(page: Page): Promise<void> {
       },
       undefined,
       { timeout: 20_000 },
-    )
-    .catch(() => undefined);
+    );
+  } catch (error) {
+    const taskId = await page.locator("[data-task-id]").getAttribute("data-task-id").catch(() => null);
+    const type = taskId ? (await query<{ exercise_type: string }>(
+      "select exercise_type from learning_app.session_tasks where id = $1", [taskId],
+    ))[0]?.exercise_type ?? "nieznany" : "brak bieżącego zadania";
+    throw new Error(`Timeout przejścia zadania: taskId=${taskId ?? "brak"}, exerciseType=${type}`, { cause: error });
+  }
 }
 
 /** Prowadzi UI przez prezentacje i zadania z wyborem do momentu spełnienia warunku. */
@@ -295,27 +313,21 @@ async function driveUntil(page: Page, stop: () => Promise<boolean>): Promise<voi
       await page.getByTestId("kid-next").click();
       continue;
     }
-    await page.waitForTimeout(500);
+    throw new Error(`Nieobsłużony stabilny stan zadania: taskId=${await currentTaskId(page)}`);
   }
   throw new Error("driveUntil: przekroczono liczbę kroków");
 }
 
-test("jeden profil pomija wybór i prowadzi sesję do obiecanego końca", async ({ page }) => {
+test("wybór profilu prowadzi sesję do obiecanego końca", async ({ page }) => {
   test.slow();
   // sesja z mikrofonem wprowadza też ćwiczenie wymowy (SPEC §13) — fake media
   // podmienia tylko getUserMedia/MediaRecorder, odpowiedź przechodzi prawdziwy kod
   await injectFakeMediaPlatform(page);
   const parent = await parentSession(page);
-  // Global setup runs once per E2E process. Earlier tests may leave profiles
-  // behind, so make the single-profile scenario independent of test order.
-  const existingChildren = (await (await parent.get("/api/v1/parent/children")).json()) as { id: string }[];
-  for (const existingChild of existingChildren) {
-    const deleted = await parent.delete(`/api/v1/parent/children/${existingChild.id}`);
-    expect(deleted.status()).toBe(204);
-  }
   const child = await createChild(parent, "Ola", "fox");
   await configureToggleRecording(parent, child.id);
-  await createAssignedDeck(parent, child.id, "Dni tygodnia", `kid-flow-1-${randomUUID()}`);
+  const deckTitle = `Dni tygodnia ${randomUUID().slice(0, 8)}`;
+  await createAssignedDeck(parent, child.id, deckTitle, `kid-flow-1-${randomUUID()}`);
 
   // manifest PWA: polska nazwa, start z ekranu nauki, ikony; brak service
   // workera — aplikacja nie obiecuje nauki offline ani nie cache'uje API
@@ -335,21 +347,50 @@ test("jeden profil pomija wybór i prowadzi sesję do obiecanego końca", async 
     ),
   ).toBe(0);
 
-  // pojedynczy profil pokazuje ekran wyboru profilu z linkiem do rodzica
-  await expect(page.getByTestId("kid-profile").filter({ hasText: "Ola" })).toBeVisible();
+  // Wybieramy własny profil po unikalnym imieniu; nie usuwamy profili innych testów.
+  await expect(page.getByTestId("kid-profile").filter({ hasText: child.displayName })).toBeVisible();
   await expect(page.getByTestId("kid-parent-link")).toBeVisible();
-  await page.getByTestId("kid-profile").filter({ hasText: "Ola" }).click();
+  await page.getByTestId("kid-profile").filter({ hasText: child.displayName }).click();
   await expect(page.getByTestId("kid-deck").first()).toBeVisible();
   await page.getByTestId("kid-mic-toggle").check();
-  await page.getByTestId("kid-deck").first().click();
+  const taskResponses = new Map<string, number>();
+  page.on("response", (response) => {
+    if (response.request().method() !== "POST" || !/\/api\/v1\/kid\/sessions\/[^/]+\/next$/.test(new URL(response.url()).pathname)) return;
+    void response.json().then((json: unknown) => {
+      const task = TaskDtoSchema.safeParse(json);
+      if (task.success) taskResponses.set(task.data.taskId, task.data.remainingAssessed);
+    }).catch(() => undefined);
+  });
+  await page.getByTestId("kid-deck").filter({ hasText: deckTitle }).click();
   await page.waitForSelector('[data-task-id], [data-testid="kid-summary"]', { timeout: 30_000 });
   let sawRemaining = false;
   let sawIllustration = false;
+  let promisedSessionId: string | null = null;
+  let promisedRemaining = 0;
+  let assessedAtPromise = 0;
   for (let step = 0; step < 90; step++) {
     await page.waitForSelector('[data-task-id], [data-testid="kid-summary"]', { timeout: 30_000 });
     await settled(page);
     if (await page.getByTestId("kid-summary").isVisible()) break;
-    if (await page.getByTestId("kid-remaining").isVisible()) sawRemaining = true;
+    if (await page.getByTestId("kid-remaining").isVisible()) {
+      sawRemaining = true;
+      const taskId = await currentTaskId(page);
+      await expect.poll(() => taskResponses.get(taskId) ?? 0).toBeGreaterThan(0);
+      const taskRemaining = taskResponses.get(taskId)!;
+      const shownText = await page.getByTestId("kid-remaining").innerText();
+      const shownRemaining = Number(shownText.match(/\d+/)?.[0]);
+      expect(shownRemaining).toBe(taskRemaining);
+      promisedRemaining = taskRemaining;
+      const session = (await query<{ session_id: string }>("select session_id from learning_app.session_tasks where id = $1", [taskId]))[0]!;
+      promisedSessionId = session.session_id;
+      const assessed = await query<{ count: string }>(
+        `select count(distinct st.id)::text as count from learning_app.session_tasks st
+         join learning_app.attempts a on a.task_id = st.id
+         join learning_app.assessments asm on asm.attempt_id = a.id
+         where st.session_id = $1`, [promisedSessionId],
+      );
+      assessedAtPromise = Number(assessed[0]!.count);
+    }
     if (await page.getByTestId("kid-done").isVisible()) {
       // prezentacja niesie zatwierdzoną ilustrację (SPEC §12.1); karty bez
       // obrazu (sobota/niedziela w fake providerze) pokazują placeholder
@@ -415,11 +456,20 @@ test("jeden profil pomija wybór i prowadzi sesję do obiecanego końca", async 
   expect(sawRemaining).toBe(true);
   expect(sawIllustration).toBe(true);
   // obiecany koniec jest też końcem po stronie serwera
-  const sessions = await query<{ state: string }>(
-    `select state from learning_app.learning_sessions where child_id = $1 order by started_at`,
-    [child.id],
+  expect(promisedSessionId).not.toBeNull();
+  const sessions = await query<{ state: string; task_budget: number }>(
+    `select state, task_budget from learning_app.learning_sessions where id = $1`, [promisedSessionId],
   );
-  expect(sessions.at(-1)!.state).toBe("completed");
+  expect(sessions).toEqual([expect.objectContaining({ state: "completed" })]);
+  const assessed = await query<{ count: string }>(
+    `select count(distinct st.id)::text as count from learning_app.session_tasks st
+     join learning_app.attempts a on a.task_id = st.id
+     join learning_app.assessments asm on asm.attempt_id = a.id
+     where st.session_id = $1`, [promisedSessionId],
+  );
+  const finalAssessedCount = Number(assessed[0]!.count);
+  expect(finalAssessedCount).toBeLessThanOrEqual(sessions[0]!.task_budget);
+  expect(finalAssessedCount - assessedAtPromise).toBe(promisedRemaining);
 });
 
 test("popup wyniku mieści się w ekranie telefonu bez przewijania", async ({ page }) => {
@@ -429,7 +479,7 @@ test("popup wyniku mieści się w ekranie telefonu bez przewijania", async ({ pa
   const child = await createChild(parent, "Popup", "fox");
   const { publishedVersionId } = await createAssignedDeck(parent, child.id, "Popup", `popup-${randomUUID()}`);
   await seedDue(child.id, publishedVersionId, 0, "recall");
-  await openLearn(page, "Popup");
+  await openLearn(page, child.displayName);
   await page.getByTestId("kid-deck").first().click();
   await expect(page.getByTestId("kid-input")).toBeVisible();
   const taskId = await currentTaskId(page);
@@ -519,7 +569,7 @@ test("odpowiedź obrazkowa pokazuje oba wyniki i czyści je po ponowieniu", asyn
   const parent = await parentSession(page);
   const child = await createChild(parent, "Maja", "fox");
   await createAssignedDeck(parent, child.id, "Wybór obrazkowy", `choice-popup-${randomUUID()}`);
-  await openLearn(page, "Maja");
+  await openLearn(page, child.displayName);
   await page.getByTestId("kid-deck").first().click();
   await driveUntil(page, async () => (await page.getByTestId("kid-option").count()) > 0);
   await page.setViewportSize({ width: 360, height: 640 });
@@ -568,8 +618,8 @@ test("dwa profile mają osobne sesje", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Kto się dziś uczy?" })).toBeVisible();
   expect(await page.getByTestId("kid-profile").count()).toBeGreaterThanOrEqual(2);
-  await expect(page.getByTestId("kid-profile").filter({ hasText: "Zosia" })).toHaveCount(1);
-  await expect(page.getByTestId("kid-profile").filter({ hasText: "Ewa" })).toHaveCount(1);
+  await expect(page.getByTestId("kid-profile").filter({ hasText: ola.displayName })).toHaveCount(1);
+  await expect(page.getByTestId("kid-profile").filter({ hasText: ewa.displayName })).toHaveCount(1);
 
   // Bezpośredni link rodzica wybiera Zosię i pomija wybór profilu.
   await page.goto(`/kids/${ola.id}/learn`);
@@ -584,7 +634,7 @@ test("dwa profile mają osobne sesje", async ({ page }) => {
 
   // Ewa: własna, świeża sesja tego samego zestawu
   await page.getByTestId("kid-switch-profile").click();
-  await page.getByTestId("kid-profile").filter({ hasText: "Ewa" }).click();
+  await page.getByTestId("kid-profile").filter({ hasText: ewa.displayName }).click();
   await page.getByTestId("kid-deck").first().click();
   await expect(page.locator("[data-task-id]")).toBeVisible();
 
@@ -614,7 +664,7 @@ test("recall z należnego sprawdzenia: pisemna pisownia, Nie pamiętam i Pomiń"
   await seedDue(child.id, publishedVersionId, 1, "recall");
   await seedDue(child.id, publishedVersionId, 2, "recall");
 
-  await openLearn(page, "Cezary");
+  await openLearn(page, child.displayName);
   await page.getByTestId("kid-deck").first().click();
 
   // zadanie 1: samodzielne przypomnienie wpisane z klawiaturą ocenia
@@ -701,7 +751,7 @@ test("odmowa mikrofonu przełącza na tryb bez nagrywania", async ({ page }) => 
     });
   });
 
-  await openLearn(page, "Darek");
+  await openLearn(page, child.displayName);
   await page.getByTestId("kid-mic-toggle").check();
   await page.getByTestId("kid-deck").first().click();
   await expect(page.getByTestId("kid-record")).toBeVisible();
@@ -739,7 +789,7 @@ test("błąd sieci pokazuje brak połączenia i nie dopisuje sukcesu", async ({ 
   const child = await createChild(parent, "Ewelina", "fox");
   await createAssignedDeck(parent, child.id, "Dni tygodnia dla Eweliny", `kid-flow-5-${randomUUID()}`);
 
-  await openLearn(page, "Ewelina");
+  await openLearn(page, child.displayName);
   await page.getByTestId("kid-deck").first().click();
 
   // dojdź do pierwszego zadania ocenianego z wyborem odpowiedzi
@@ -782,6 +832,8 @@ async function injectFakeMediaPlatform(page: Page): Promise<void> {
     if (sessionStorage.getItem("test.trackStops") === null) {
       sessionStorage.setItem("test.trackStops", "0");
     }
+    sessionStorage.setItem("test.recorderStarts", "0");
+    sessionStorage.setItem("test.recorderStops", "0");
     const stopTrack = (): void => {
       sessionStorage.setItem("test.trackStops", String(Number(sessionStorage.getItem("test.trackStops") ?? "0") + 1));
     };
@@ -817,9 +869,12 @@ async function injectFakeMediaPlatform(page: Page): Promise<void> {
       onerror: (() => void) | null = null;
       start(): void {
         this.state = "recording";
+        sessionStorage.setItem("test.recorderStarts", String(Number(sessionStorage.getItem("test.recorderStarts") ?? "0") + 1));
+        sessionStorage.setItem("test.recorderStartedAt", String(Date.now()));
       }
       stop(): void {
         this.state = "inactive";
+        sessionStorage.setItem("test.recorderStops", String(Number(sessionStorage.getItem("test.recorderStops") ?? "0") + 1));
         // BrowserRecorder składa bajty z ondataavailable i domyka się na onstop
         queueMicrotask(() => {
           this.ondataavailable?.({ data: new Blob([webm]) });
@@ -868,7 +923,7 @@ test("profil bez czytania przechodzi obrazkowe ćwiczenie mówione przez rzeczyw
       parent, child.id, "Kolory obrazkowe", `picture-voice-${randomUUID()}`, "picture",
     );
     await seedDue(child.id, publishedVersionId, 0, "recall");
-    await openLearn(page, "Ola bez czytania");
+    await openLearn(page, child.displayName);
     expect(await (await page.request.get("/api/v1/kid/profiles")).json()).toContainEqual(
       expect.objectContaining({ childId: child.id, canRead: false }),
     );
@@ -929,7 +984,7 @@ test("opuszczenie widoku w trakcie nagrywania zatrzymuje strumień", async ({ pa
   );
   await seedDue(child.id, publishedVersionId, 0, "recall");
 
-  await openLearn(page, "Filip");
+  await openLearn(page, child.displayName);
   await page.getByTestId("kid-mic-toggle").check();
   await page.getByTestId("kid-deck").first().click();
   await startFakeRecording(page);

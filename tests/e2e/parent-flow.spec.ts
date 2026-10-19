@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { openNewMaterial } from "./helpers/parent-new-material";
 import { randomUUID } from "node:crypto";
 import { DeckDtoSchema, messages } from "@learning/contracts";
+import { loginParent } from "./helpers/parent-session";
 
 /**
  * Pełny obieg rodzica z zadania 4: generuj → preview/edit → publikuj → przypisz.
@@ -9,7 +10,7 @@ import { DeckDtoSchema, messages } from "@learning/contracts";
  * współdzielony z innymi specami — własne wiersze lokalizujemy po treści.
  */
 
-const DECK_TITLE = "Dni tygodnia — obieg rodzica";
+const DECK_TITLE = `Dni tygodnia — obieg rodzica ${randomUUID().slice(0, 8)}`;
 
 function deckRow(page: Page) {
   return page.locator('[data-testid^="deck-row"]').filter({ hasText: DECK_TITLE });
@@ -45,23 +46,50 @@ function isoDate(daysAhead: number): string {
 }
 
 async function profileForEditing(page: Page, avatarKey = "fox", paddedName = false) {
-  await page.goto("/parent");
-  await page.getByTestId("auth-secret").fill("1234");
-  await page.getByTestId("auth-submit").click();
-  await expect(page.getByTestId("tab-children")).toBeVisible();
+  await loginParent(page);
   const name = `${paddedName ? "  " : ""}Edycja-${randomUUID()}${paddedName ? "  " : ""}`;
   const response = await page.request.post("/api/v1/parent/children", {
     data: { displayName: name, avatarKey, birthYear: 2018 },
   });
   expect(response.status()).toBe(201);
   const child = await response.json() as { id: string; displayName: string; avatarKey: string; birthYear: number; recordingMode: "hold" | "toggle" };
-  await page.reload();
+  await page.goto("/parent");
   await page.getByTestId("tab-children").click();
   const href = `/kids/${child.id}/learn`;
   const row = page.locator('li[data-testid^="child-row-"]').filter({ has: page.locator(`a[href="${href}"]`) });
   await expect(row).toBeVisible();
   await expect(row.getByTestId("child-edit")).toBeVisible({ timeout: 5_000 });
   return { child, row, href, path: `/api/v1/parent/children/${child.id}` };
+}
+
+async function createReadyManualDraft(page: Page, title: string): Promise<string> {
+  await loginParent(page);
+  const deckId = randomUUID();
+  const created = await page.request.post("/api/v1/parent/decks", { data: { deckId, title } });
+  expect(created.status()).toBe(201);
+  const deck = DeckDtoSchema.parse(await (await page.request.get(`/api/v1/parent/decks/${deckId}`)).json());
+  expect(deck.draft).not.toBeNull();
+  const edited = await page.request.patch(`/api/v1/parent/drafts/${deck.draft!.id}`, {
+    data: {
+      expectedEditNumber: deck.draft!.editNumber,
+      items: [
+        { source: "poniedziałek", target: "monday", acceptedAnswers: ["Monday"], locales: { source: "pl-PL", target: "en-GB" }, visualType: "none" },
+        { source: "wtorek", target: "tuesday", acceptedAnswers: ["Tuesday"], locales: { source: "pl-PL", target: "en-GB" }, visualType: "none" },
+      ],
+    },
+  });
+  expect(edited.status()).toBe(200);
+  await expect.poll(async () => {
+    const current = DeckDtoSchema.parse(await (await page.request.get(`/api/v1/parent/decks/${deckId}`)).json());
+    return current.draft?.assets.filter((asset) => asset.role === "target_audio").every((asset) => asset.state === "approved") ?? false;
+  }, { timeout: 60_000 }).toBe(true);
+  await page.goto("/parent");
+  await page.getByTestId("tab-decks").click();
+  const row = page.locator(`[data-deck-id="${deckId}"]`);
+  await expect(row).toBeVisible();
+  await row.click();
+  await expect(page.getByTestId("item-card-1")).toBeVisible();
+  return deckId;
 }
 
 test("zakładka Dzieci: karty profili z avatarem, nauką jako główną akcją i kartą dodawania", async ({ page }) => {
@@ -280,19 +308,23 @@ test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page,
   // Profile dwojga dzieci — świat współdzieli bazę z innymi specami,
   // więc szukamy wierszy po imieniu, a nie po indeksie.
   await page.getByTestId("tab-children").click();
-  await page.getByTestId("child-name").fill("Ala");
+  const alaName = `Ala ${randomUUID().slice(0, 6)}`;
+  const bartekName = `Bartek ${randomUUID().slice(0, 6)}`;
+  await page.getByTestId("child-name").fill(alaName);
   await page.getByTestId("child-year").fill("2018");
   await page.getByTestId("child-add").click();
-  const alaRow = page.locator('[data-testid^="child-row"]').filter({ hasText: "Ala" });
+  const alaRow = page.locator('[data-testid^="child-row"]').filter({ hasText: alaName });
   await expect(alaRow).toHaveCount(1);
   const alaLearnLink = alaRow.getByTestId("child-learn-link");
   await expect(alaLearnLink).toHaveAttribute("href", /^\/kids\/[0-9a-f-]{36}\/learn$/);
-  await page.getByTestId("child-name").fill("Bartek");
+  const alaId = (await alaLearnLink.getAttribute("href"))!.match(/\/kids\/([0-9a-f-]{36})\//)![1]!;
+  await page.getByTestId("child-name").fill(bartekName);
   await page.getByTestId("child-add").click();
-  const bartekRow = page.locator('[data-testid^="child-row"]').filter({ hasText: "Bartek" });
+  const bartekRow = page.locator('[data-testid^="child-row"]').filter({ hasText: bartekName });
   await expect(bartekRow).toHaveCount(1);
   const bartekLearnLink = bartekRow.getByTestId("child-learn-link");
   await expect(bartekLearnLink).toHaveAttribute("href", /^\/kids\/[0-9a-f-]{36}\/learn$/);
+  const bartekId = (await bartekLearnLink.getAttribute("href"))!.match(/\/kids\/([0-9a-f-]{36})\//)![1]!;
   expect(await alaLearnLink.getAttribute("href")).not.toBe(await bartekLearnLink.getAttribute("href"));
 
   // Nowy zestaw o znanym terminie sprawdzianu (za siedem dni).
@@ -356,20 +388,24 @@ test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page,
   // Przypisanie dwojgu dzieciom z różnymi terminami sprawdzianu.
   const alaDate = isoDate(7);
   const bartekDate = isoDate(14);
-  const alaAssignRow = page.locator('[data-testid^="assign-row-"]').filter({ hasText: "Ala" });
+  const alaAssignRow = page.locator('[data-testid^="assign-row-"]').filter({ hasText: alaName });
   await alaAssignRow.locator('[data-testid^="assign-date-"]').fill(alaDate);
   await alaAssignRow.locator('[data-testid^="assign-submit-"]').click();
-  await expect(page.getByTestId("assignment-row-0")).toContainText(alaDate);
-  const bartekAssignRow = page.locator('[data-testid^="assign-row-"]').filter({ hasText: "Bartek" });
+  await expect(page.locator('[data-testid^="assignment-row-"]').filter({ hasText: alaName })).toContainText(alaDate);
+  const bartekAssignRow = page.locator('[data-testid^="assign-row-"]').filter({ hasText: bartekName });
   await bartekAssignRow.locator('[data-testid^="assign-date-"]').fill(bartekDate);
   await bartekAssignRow.locator('[data-testid^="assign-submit-"]').click();
-  await expect(page.getByTestId("assignment-row-1")).toContainText(bartekDate);
+  await expect(page.locator('[data-testid^="assignment-row-"]').filter({ hasText: bartekName })).toContainText(bartekDate);
+  // Kid API exposes a published deck only after assignment to that child.
+  const assignedKidDecks = await request.get(`/api/v1/kid/decks?childId=${alaId}`);
+  expect(assignedKidDecks.ok()).toBe(true);
+  expect((await assignedKidDecks.json() as { deckId: string }[]).some((entry) => entry.deckId === deckId)).toBe(true);
 
   // Przypisania przeżywają odświeżenie strony.
   await page.reload();
   await deckRow(page).click();
-  await expect(page.getByTestId("assignment-row-0")).toContainText(alaDate);
-  await expect(page.getByTestId("assignment-row-1")).toContainText(bartekDate);
+  await expect(page.locator('[data-testid^="assignment-row-"]').filter({ hasText: alaName })).toContainText(alaDate);
+  await expect(page.locator('[data-testid^="assignment-row-"]').filter({ hasText: bartekName })).toContainText(bartekDate);
 
   // Nowa wersja opublikowanego materiału (SPEC §84): wgląd w opublikowane
   // elementy, szkic v2 z kopią treści i mediów, zmiana znaczenia słowa,
@@ -412,41 +448,32 @@ test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page,
   await expect(page.getByTestId("publish-status")).toContainText(messages.decks.published);
 
   // Nieopublikowana treść nie jest dostępna w Kid API.
-  const kid = await request.get("/api/v1/kid/decks?childId=00000000-0000-0000-0000-000000000000");
-  expect(kid.status()).toBe(404);
+  const visible = await request.get(`/api/v1/kid/decks?childId=${bartekId}`);
+  expect(visible.ok()).toBe(true);
+  expect((await visible.json() as { deckId: string }[]).some((entry) => entry.deckId === deckId)).toBe(true);
 });
 
-const MANUAL_DECK_TITLE = "Dni tygodnia — edycja ręczna";
+const MANUAL_DECK_TITLE = `Dni tygodnia — edycja ręczna ${randomUUID().slice(0, 8)}`;
 
 test("ręczna edycja zestawu: dodaj element, usuń element, zmień tytuł", async ({ page }) => {
   test.slow();
 
-  await page.goto("/parent");
-  await page.getByTestId("auth-secret").fill("1234");
-  await page.getByTestId("auth-submit").click();
-  await expect(page.getByTestId("tab-decks")).toBeVisible();
-
-  await openNewMaterial(page, "generate");
-  await page.getByTestId("deck-prompt").fill("angielskie dni tygodnia dla początkującego dziecka");
-  await page.getByTestId("deck-title").fill(MANUAL_DECK_TITLE);
-  await page.getByTestId("generate-submit").click();
-  const manualRow = page.locator('[data-testid^="deck-row"]').filter({ hasText: MANUAL_DECK_TITLE });
+  const deckId = await createReadyManualDraft(page, MANUAL_DECK_TITLE);
+  const manualRow = page.locator(`[data-deck-id="${deckId}"]`);
   await expect(page.getByTestId("editor-title")).toHaveValue(MANUAL_DECK_TITLE);
-  await expect(page.getByTestId("item-card-0")).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByTestId("item-card-6")).toBeVisible();
 
   // Nowa, pusta karta na końcu listy — dopóki rodzic nie wypełni pól.
   await page.getByTestId("add-item").click();
-  await expect(page.getByTestId("item-card-7")).toBeVisible();
-  await expect(page.getByTestId("item-source-7")).toHaveValue("");
+  await expect(page.getByTestId("item-card-2")).toBeVisible();
+  await expect(page.getByTestId("item-source-2")).toHaveValue("");
 
   // Pusta karta blokuje zapis całości: polski komunikat zanim PATCH poleci na serwer.
   await page.getByTestId("save-items").click();
   await expect(page.getByTestId("api-error")).toContainText(messages.decks.itemIncomplete);
 
   // Uzupełniona karta zapisuje się jako nowy element; serwer zleca jej media.
-  await page.getByTestId("item-source-7").fill("gruszka");
-  await page.getByTestId("item-target-7").fill("pear");
+  await page.getByTestId("item-source-2").fill("gruszka");
+  await page.getByTestId("item-target-2").fill("pear");
   const added = page.waitForResponse(
     (response) => response.request().method() === "PATCH" && response.url().includes("/drafts/"),
   );
@@ -454,14 +481,14 @@ test("ręczna edycja zestawu: dodaj element, usuń element, zmień tytuł", asyn
   const addedResponse = await added;
   expect(addedResponse.status()).toBe(200);
   const addedDraft = (await addedResponse.json()) as { items: { source: string }[] };
-  expect(addedDraft.items).toHaveLength(8);
-  expect(addedDraft.items[7]!.source).toBe("gruszka");
-  await expect(page.getByTestId("item-audio-state-7")).toContainText("generowanie");
-  await expect(page.getByTestId("item-audio-state-7")).toContainText("gotowe", { timeout: 60_000 });
+  expect(addedDraft.items).toHaveLength(3);
+  expect(addedDraft.items[2]!.source).toBe("gruszka");
+  await expect(page.getByTestId("item-audio-state-2")).toContainText("generowanie");
+  await expect(page.getByTestId("item-audio-state-2")).toContainText("gotowe", { timeout: 60_000 });
 
   // Usunięcie karty jest częścią formularza: znika po zapisie jako element wersji.
   await page.getByTestId("item-remove-0").click();
-  await expect(page.getByTestId("item-card-7")).toHaveCount(0);
+  await expect(page.getByTestId("item-card-2")).toHaveCount(0);
   await expect(page.getByTestId("item-source-0")).toHaveValue("wtorek");
   const removed = page.waitForResponse(
     (response) => response.request().method() === "PATCH" && response.url().includes("/drafts/"),
@@ -470,7 +497,7 @@ test("ręczna edycja zestawu: dodaj element, usuń element, zmień tytuł", asyn
   const removedResponse = await removed;
   expect(removedResponse.status()).toBe(200);
   const removedDraft = (await removedResponse.json()) as { items: { source: string }[] };
-  expect(removedDraft.items).toHaveLength(7);
+  expect(removedDraft.items).toHaveLength(2);
   expect(removedDraft.items.map((item) => item.source)).not.toContain("poniedziałek");
 
   // Tytuł edytujemy w tym samym formularzu; wiersz zestawu na liście podąży
@@ -485,10 +512,11 @@ test("ręczna edycja zestawu: dodaj element, usuń element, zmień tytuł", asyn
   await page.reload();
   await manualRow.click();
   await expect(page.getByTestId("editor-title")).toHaveValue(`${MANUAL_DECK_TITLE} v2`);
-  await expect(page.getByTestId("item-card-6")).toBeVisible();
-  await expect(page.getByTestId("item-card-7")).toHaveCount(0);
-  await expect(page.getByTestId("item-source-6")).toHaveValue("gruszka");
+  await expect(page.getByTestId("item-card-1")).toBeVisible();
+  await expect(page.getByTestId("item-card-2")).toHaveCount(0);
   await expect(page.getByTestId("item-target-0")).toHaveValue("tuesday");
+  await expect(page.getByTestId("item-source-1")).toHaveValue("gruszka");
+  await expect(page.getByTestId("item-target-1")).toHaveValue("pear");
 });
 
 test("rodzic edytuje progi wymowy i otwiera listę kalibracyjną", async ({ page }) => {
@@ -535,15 +563,12 @@ test("rodzic edytuje progi wymowy i otwiera listę kalibracyjną", async ({ page
 
 test("ostrzega rodzica, gdy profile współdzielą obrazek awatara", async ({ page }) => {
   const suffix = randomUUID().slice(0, 8);
-  await page.goto("/parent");
-  await page.getByTestId("auth-secret").fill("1234");
-  await page.getByTestId("auth-submit").click();
-  await page.getByTestId("tab-children").click();
+  await loginParent(page);
   const firstName = `Awatar A ${suffix}`;
   const secondName = `Awatar B ${suffix}`;
   expect((await page.request.post("/api/v1/parent/children", { data: { displayName: firstName, avatarKey: "fox" } })).status()).toBe(201);
   expect((await page.request.post("/api/v1/parent/children", { data: { displayName: secondName, avatarKey: "fox" } })).status()).toBe(201);
-  await page.reload();
+  await page.goto("/parent");
   await page.getByTestId("tab-children").click();
   const first = page.locator('[data-testid^="child-row-"]').filter({ hasText: firstName });
   const second = page.locator('[data-testid^="child-row-"]').filter({ hasText: secondName });

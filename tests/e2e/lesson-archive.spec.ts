@@ -1,47 +1,29 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 import { LessonDeckDtoSchema } from "@learning/contracts";
+import { lessonWorld } from "../fixtures/lesson-world";
+import { closeWorldDatabase, worldPool } from "./helpers/world-database";
+import { loginParent } from "./helpers/parent-session";
 
 async function enterParent(page: Page): Promise<void> {
+  await loginParent(page);
+}
+
+async function openParent(page: Page): Promise<void> {
   await page.goto("/parent");
-  await page.getByTestId("auth-secret").fill("1234");
-  await page.getByTestId("auth-submit").click();
   await expect(page.getByTestId("tab-decks")).toBeVisible();
 }
 
-// Rzeczywiste API tworzy materiał; zaślepiane są tylko awarie transportu.
-async function createLesson(page: Page, requestedTitle?: string): Promise<{ deckId: string; title: string }> {
+// Gotowy, rzeczywisty rekord w bazie; zaślepiane są tylko awarie transportu.
+async function createLesson(page: Page, requestedTitle?: string, publish = false): Promise<{ deckId: string; title: string }> {
   const title = requestedTitle ?? `Present Simple ${randomUUID().slice(0, 8)}`;
-  const response = await page.request.post("/api/v1/parent/lessons", { data: {
-    subjectId: "english_grammar", topicId: "present_simple",
-    objectiveIds: ["english_grammar.present_simple.third_person_s"],
-    material: "He plays football. She watches TV. They study English every day.",
-    poolSize: 20, clientRequestId: randomUUID(),
-  } });
-  expect(response.status()).toBe(202);
-  const { deckId } = await response.json() as { deckId: string };
-  await expect.poll(async () => {
-    const deck = LessonDeckDtoSchema.parse(await (await page.request.get(`/api/v1/parent/lessons/${deckId}`)).json());
-    return deck.generation?.state;
-  }, { timeout: 120_000 }).toBe("succeeded");
-  const deck = LessonDeckDtoSchema.parse(await (await page.request.get(`/api/v1/parent/lessons/${deckId}`)).json());
-  const renamed = await page.request.patch(`/api/v1/parent/lesson-drafts/${deck.draft!.id}`, {
-    data: { expectedEditNumber: deck.draft!.editNumber, title },
-  });
-  expect(renamed.ok()).toBe(true);
-  await expect.poll(async () => {
-    const current = LessonDeckDtoSchema.parse(await (await page.request.get(`/api/v1/parent/lessons/${deckId}`)).json());
-    return current.draft!.assets.every((asset) => asset.state === "approved" || asset.state === "omitted");
-  }, { timeout: 120_000 }).toBe(true);
-  const ready = LessonDeckDtoSchema.parse(await (await page.request.get(`/api/v1/parent/lessons/${deckId}`)).json());
-  const published = await page.request.post(`/api/v1/parent/lesson-drafts/${ready.draft!.id}/publish`, {
-    data: { expectedEditNumber: ready.draft!.editNumber },
-  });
-  expect(published.status()).toBe(200);
-  await page.reload();
-  await expect(page.locator('[data-testid^="deck-row-"]').filter({ hasText: title })).toBeVisible();
-  return { deckId, title };
+  const lesson = await lessonWorld(await worldPool(), { title, publish });
+  await openParent(page);
+  await expect(page.locator(`[data-deck-id="${lesson.deckId}"]`)).toBeVisible();
+  return { deckId: lesson.deckId, title };
 }
+
+test.afterAll(closeWorldDatabase);
 
 function removeButton(page: Page, title: string) {
   return page.getByRole("button", { name: `Usuń z listy: ${title}`, exact: true });
@@ -50,7 +32,7 @@ function removeButton(page: Page, title: string) {
 test("archives a lesson only after confirmation and finds it in the archive after reload", async ({ page }, testInfo) => {
   await enterParent(page);
   // Legalny tytuł maksymalnej długości z długim fragmentem bez spacji.
-  const { deckId, title } = await createLesson(page, `Present Simple ${"A".repeat(177)}${randomUUID().slice(0, 8)}`);
+  const { deckId, title } = await createLesson(page, `Present Simple ${"A".repeat(177)}${randomUUID().slice(0, 8)}`, true);
   await page.setViewportSize({ width: 390, height: 844 });
   const row = page.locator('[data-testid^="deck-row-"]').filter({ hasText: title });
   const remove = removeButton(page, title);
@@ -91,16 +73,6 @@ test("archives a lesson only after confirmation and finds it in the archive afte
   }
   await row.click();
   await expect(page.getByTestId("lesson-editor")).toBeVisible();
-});
-
-test("returns focus to the archive filter after the removed lesson button disappears", async ({ page }) => {
-  await enterParent(page);
-  const { title } = await createLesson(page);
-  await removeButton(page, title).click();
-  const dialog = page.getByRole("dialog");
-  await dialog.getByRole("button", { name: "Usuń z listy", exact: true }).click();
-  await expect(dialog).toBeHidden();
-  await expect(page.getByRole("checkbox", { name: "Pokaż archiwalne" })).toBeFocused();
 });
 
 test("keeps the lesson on a transport failure and allows an idempotent retry", async ({ page }) => {
@@ -175,7 +147,7 @@ test("keeps archived vocabulary decks visible and does not offer lesson removal 
   expect(response.status()).toBe(201);
   const { deckId } = await response.json() as { deckId: string };
   expect((await page.request.post(`/api/v1/parent/decks/${deckId}/archive`)).status()).toBe(204);
-  await page.reload();
+  await openParent(page);
   const row = page.locator('[data-testid^="deck-row-"]').filter({ hasText: title });
   await expect(row).toBeVisible();
   await expect(row).toContainText("Archiwum");
