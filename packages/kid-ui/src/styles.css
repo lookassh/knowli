@@ -1160,6 +1160,39 @@
   text-align: center;
 }
 
+/* picture_recognition nigdy nie renderuje akcji pomocniczych, więc pusty slot
+   secondary (visibility:hidden zajmuje 52px) jest zwijany jak przy
+   picture_listening. Gdyby widok zyskał secondaryActions, tę regułę cofnij. */
+.kid-exercise-frame[data-prompt-kind="picture_recognition"] .kid-exercise-secondary {
+  display: none;
+}
+
+/* Telefony do ~800px wysokości (m.in. S10e ~360×740), czyli poniżej progu
+   redukcji viewport-short (≤700px): obrazek, podpis i 2–4 słowa muszą się
+   zmieścić bez przewijania. Wyższe ekrany zachowują pełny rozmiar. */
+@media (max-height: 800px) {
+  .kid-exercise-frame[data-prompt-kind="picture_recognition"] .kid-material-content {
+    gap: 8px;
+  }
+
+  .kid-exercise-frame[data-prompt-kind="picture_recognition"] .kid-recognition-prompt {
+    gap: 6px;
+  }
+
+  .kid-exercise-frame[data-prompt-kind="picture_recognition"] .kid-recognition-prompt .kid-illustration {
+    width: min(46vw, 200px);
+    height: min(21svh, 190px);
+  }
+
+  .kid-exercise-frame[data-prompt-kind="picture_recognition"] .kid-options {
+    gap: 8px;
+  }
+
+  .kid-exercise-frame[data-prompt-kind="picture_recognition"] .kid-options button {
+    min-height: 48px;
+  }
+}
+
 /* Opcja ze wsparciem odsłuchu poprawnego słowa w feedbackzie: przycisk
    audio pojawia się tylko przy podświetlonej poprawnej odpowiedzi. */
 .kid-recognition-option {
