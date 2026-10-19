@@ -1,9 +1,10 @@
-import { useEffect, useRef, type ReactElement } from "react";
+import type { ReactElement } from "react";
 import { messages, type FeedbackDto } from "@learning/contracts";
 import { format } from "../format";
 import { isIncompleteWord, joinedText } from "./spelling-diff-view";
 import { lessonFeedbackView } from "./lesson-feedback-view";
 import { KidIcon } from "../components/KidIcon";
+import { useFeedbackCooldown } from "./useFeedbackCooldown";
 
 export interface AnswerFeedbackProps {
   dto: FeedbackDto | null;
@@ -77,12 +78,6 @@ function AnswerSegments({ segments, label, testid }: {
 }
 
 export function AnswerFeedbackContent({ dto, busy }: Pick<AnswerFeedbackProps, "dto" | "busy">): ReactElement {
-  const titleRef = useRef<HTMLHeadingElement>(null);
-  useEffect(() => {
-    // Moving focus off a written field dismisses the mobile keyboard without scrolling the page.
-    titleRef.current?.focus({ preventScroll: true });
-  }, [dto]);
-
   const feedback = dto ?? { kind: "not_assessed" as const };
   const lesson = lessonFeedbackView(dto);
   return (
@@ -95,7 +90,7 @@ export function AnswerFeedbackContent({ dto, busy }: Pick<AnswerFeedbackProps, "
       aria-busy={busy}
     >
       <div className="kid-feedback-content">
-        <h2 className="kid-feedback-text" id="kid-feedback-title" ref={titleRef} tabIndex={-1}>
+        <h2 className="kid-feedback-text" id="kid-feedback-title">
           {feedbackText(dto)}
         </h2>
         {feedback.heardText && (
@@ -187,9 +182,18 @@ export function AnswerFeedbackContent({ dto, busy }: Pick<AnswerFeedbackProps, "
   );
 }
 
-export function AnswerFeedbackActions({ retry, busy, onNext }: Pick<AnswerFeedbackProps, "retry" | "busy" | "onNext">): ReactElement {
+export function AnswerFeedbackActions({ dto, retry, busy, onNext }: Partial<Pick<AnswerFeedbackProps, "dto">> & Pick<AnswerFeedbackProps, "retry" | "busy" | "onNext">): ReactElement {
+  const { buttonRef, onKeyDown } = useFeedbackCooldown<HTMLButtonElement>(onNext, [dto, retry]);
   return (
-    <button type="button" className="kid-primary" data-testid="kid-next" disabled={busy} onClick={onNext}>
+    <button
+      ref={buttonRef}
+      onKeyDown={onKeyDown}
+      type="button"
+      className="kid-primary"
+      data-testid="kid-next"
+      disabled={busy}
+      onClick={onNext}
+    >
       <KidIcon name={retry ? "retry" : "arrow-right"} />
       {retry ? messages.kid.feedbackRetry : messages.kid.feedbackNext}
     </button>
@@ -213,7 +217,7 @@ export function AnswerFeedback(props: AnswerFeedbackProps): ReactElement {
     <div className="kid-answer-feedback-layout">
       <AnswerFeedbackContent dto={props.dto} busy={props.busy} />
       <div className="kid-feedback-actions">
-        <AnswerFeedbackActions retry={props.retry} busy={props.busy} onNext={props.onNext} />
+        <AnswerFeedbackActions dto={props.dto} retry={props.retry} busy={props.busy} onNext={props.onNext} />
         <AnswerFeedbackSecondaryActions {...props} />
       </div>
     </div>

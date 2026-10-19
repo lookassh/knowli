@@ -423,7 +423,11 @@
 }
 
 .kid-profile:focus-visible,
-.kid-screen button:focus-visible {
+.kid-screen button:focus-visible,
+.kid-written input:focus-visible,
+.kid-letter-input:focus-visible,
+.kid-lesson-gap__input:focus-visible,
+.kid-lesson-input:focus-visible {
   outline: 3px solid var(--kid-accent);
   outline-offset: 3px;
 }

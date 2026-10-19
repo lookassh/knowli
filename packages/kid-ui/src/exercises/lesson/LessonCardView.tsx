@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { messages } from "@learning/contracts";
 import { ExerciseFrame } from "../ExerciseFrame";
 import type { ExerciseProps } from "../types";
@@ -8,6 +9,12 @@ import type { ExerciseProps } from "../types";
  * zużywa budżetu). Jeden jasny krok, bez pól do wypełnienia.
  */
 export function LessonCardView({ task, busy, handlers }: ExerciseProps) {
+  const nextRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    nextRef.current?.focus({ preventScroll: true });
+  }, [task.taskId]);
+
   if (task.prompt.kind !== "lesson_card") return null;
   const { title, body, examples } = task.prompt.card;
   return (
@@ -28,6 +35,7 @@ export function LessonCardView({ task, busy, handlers }: ExerciseProps) {
       )}
       actions={(
         <button
+          ref={nextRef}
           type="button"
           className="kid-primary"
           data-testid="kid-lesson-next"

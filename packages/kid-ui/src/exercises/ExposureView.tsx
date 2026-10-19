@@ -1,8 +1,10 @@
+import { useEffect, useRef } from "react";
 import { messages } from "@learning/contracts";
 import { KidIcon } from "../components/KidIcon";
 import { Visual } from "../visuals/Visual";
 import { ExerciseFrame } from "./ExerciseFrame";
 import type { ExerciseProps } from "./types";
+import { shouldIgnoreKeyboardShortcut } from "./useChoiceKeyboard";
 
 /**
  * Poznanie słowa (SPEC §12.1): angielskie słowo, polskie znaczenie i pomoc
@@ -10,6 +12,30 @@ import type { ExerciseProps } from "./types";
  * odsłuch na żądanie. Bez odpowiedzi i bez oceny.
  */
 export function ExposureView({ task, busy, mediaUrl, handlers }: ExerciseProps) {
+  const doneRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    doneRef.current?.focus({ preventScroll: true });
+  }, [task.taskId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (shouldIgnoreKeyboardShortcut(event)) return;
+      if (event.key === " " || event.code === "Space") {
+        if (event.repeat) return;
+        const active = typeof document !== "undefined" ? document.activeElement : null;
+        if (active?.getAttribute("data-testid") === "kid-done") return;
+        if (task.prompt.kind === "exposure" && task.prompt.audioAssetId !== null && !busy) {
+          event.preventDefault();
+          handlers.onPlay();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [task.taskId, task.prompt, busy, handlers]);
+
   if (task.prompt.kind !== "exposure") {
     return null;
   }
@@ -75,6 +101,7 @@ export function ExposureView({ task, busy, mediaUrl, handlers }: ExerciseProps) 
       )}
       actions={(
         <button
+          ref={doneRef}
           type="button"
           className="kid-primary"
           data-testid="kid-done"

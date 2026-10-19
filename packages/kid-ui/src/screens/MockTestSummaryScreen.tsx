@@ -3,15 +3,18 @@ import { messages, type MockTestSummaryDto, type SessionDto } from "@learning/co
 import { KidIcon } from "../components/KidIcon";
 import { format } from "../format";
 import { computeMockTestScore, MOCK_TEST_SOLUTION_ICONS, mockTestResultBadgeClass, mockTestResultBadgeLabel, mockTestScoreTone, mockTestSolutionDetail, mockTestWordStatus } from "./mock-test-score";
+import { useAutoFocus } from "./useAutoFocus";
 
 export function MockTestReadyScreen({ session, onStart, onCancel }: { session: SessionDto; onStart: () => Promise<void>; onCancel: () => Promise<void> }) {
   const [error, setError] = useState(false);
+  const startRef = useAutoFocus<HTMLButtonElement>(true);
+
   return <main className="kid-screen kid-screen--mock-ready">
     <h1>{messages.kid.mockTest}</h1>
     <p className="kid-mock-budget" data-testid="kid-mock-budget">{format(messages.kid.mockTestBudget, { n: session.taskBudget })}</p>
     <p className="kid-mock-info" data-testid="kid-mock-info">{messages.kid.mockTestInfo}</p>
     {error && <p role="alert">{messages.kid.offlineMessage}</p>}
-    <button type="button" className="kid-primary" data-testid="kid-mock-confirm" onClick={() => void onStart().catch(() => setError(true))}>{messages.kid.mockTestStart}</button>
+    <button ref={startRef} type="button" className="kid-primary" data-testid="kid-mock-confirm" onClick={() => void onStart().catch(() => setError(true))}>{messages.kid.mockTestStart}</button>
     <button type="button" className="kid-end kid-flow-secondary" onClick={() => void onCancel().catch(() => setError(true))}>{messages.kid.end}</button>
   </main>;
 }
@@ -20,6 +23,8 @@ export function MockTestSummaryScreen({ summary, onPlay, onPractice, onSwitchPro
   summary: MockTestSummaryDto; onPlay: (taskId: string) => Promise<void>; onPractice: () => Promise<void>; onSwitchProfile: () => Promise<void>;
 }) {
   const [error, setError] = useState(false);
+  const practiceRef = useAutoFocus<HTMLButtonElement>(true);
+
   const run = (promise: Promise<void>) => { setError(false); void promise.catch(() => setError(true)); };
   const score = computeMockTestScore(summary.solutions);
   const tone = mockTestScoreTone(score);
@@ -49,7 +54,7 @@ export function MockTestSummaryScreen({ summary, onPlay, onPractice, onSwitchPro
       </li>;
     })}</ul>
     {error && <p role="alert">{messages.kid.offlineMessage}</p>}
-    <button type="button" className="kid-primary" data-testid="kid-mock-practice" onClick={() => run(onPractice())}>{messages.kid.mockTestPractice}</button>
+    <button ref={practiceRef} type="button" className="kid-primary" data-testid="kid-mock-practice" onClick={() => run(onPractice())}>{messages.kid.mockTestPractice}</button>
     <button type="button" className="kid-flow-secondary" onClick={() => run(onSwitchProfile())}>{messages.kid.profilesTitle}</button>
   </main>;
 }

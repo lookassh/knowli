@@ -1,23 +1,49 @@
+import { useEffect, useRef } from "react";
 import { ExerciseFrame } from "./ExerciseFrame";
 import { messages } from "@learning/contracts";
 import { KidIcon } from "../components/KidIcon";
 import { MeaningVisualView } from "../visuals/MeaningVisualView";
 import type { ExerciseProps } from "./types";
 import { format } from "../format";
+import { useChoiceKeyboard } from "./useChoiceKeyboard";
 
 export function PictureListeningView({ task, busy, mediaUrl, optionOutcomes, result, resultActions, handlers }: ExerciseProps) {
+  const prompt = task.prompt.kind === "picture_listening" ? task.prompt : null;
+  const options = prompt ? prompt.options : [];
+  const playRef = useRef<HTMLButtonElement>(null);
+  const optionRefs = useChoiceKeyboard({
+    options,
+    busy,
+    onChoice: handlers.onAnswerChoice,
+    onPlay: handlers.onPlay,
+  });
+
+  useEffect(() => {
+    if (task.prompt.kind === "picture_listening") {
+      playRef.current?.focus({ preventScroll: true });
+    }
+  }, [task.taskId, task.prompt.kind]);
+
   if (task.prompt.kind !== "picture_listening") return null;
+
   return (
     <ExerciseFrame
       task={task}
       content={(
         <>
-          <button type="button" className="kid-play-big" data-testid="kid-play" disabled={busy}
-            onClick={handlers.onPlay} aria-label={messages.kid.listen}>
+          <button
+            ref={playRef}
+            type="button"
+            className="kid-play-big"
+            data-testid="kid-play"
+            disabled={busy}
+            onClick={handlers.onPlay}
+            aria-label={messages.kid.listen}
+          >
             <KidIcon name="volume" />
           </button>
           <ul className="kid-options kid-picture-options">
-            {task.prompt.options.map(option => {
+            {options.map((option, index) => {
               const outcome = optionOutcomes.get(option.id);
               const outcomeLabel = outcome === undefined || outcome === "pending" ? option.labelPl
                 : outcome === "correct"
@@ -25,10 +51,16 @@ export function PictureListeningView({ task, busy, mediaUrl, optionOutcomes, res
                   : format(messages.kid.pictureChoiceWrong, { answer: option.labelPl });
               return (
                 <li key={option.id}>
-                  <button type="button" data-testid="kid-option" aria-label={outcomeLabel}
+                  <button
+                    ref={(btn) => { optionRefs.current[index] = btn; }}
+                    type="button"
+                    data-testid="kid-option"
+                    aria-label={outcomeLabel}
                     className={`kid-picture-option${outcome === undefined ? "" : ` kid-option--${outcome}`}`}
                     aria-pressed={outcome === "pending"}
-                    disabled={busy} onClick={() => handlers.onAnswerChoice(option.id)}>
+                    disabled={busy}
+                    onClick={() => handlers.onAnswerChoice(option.id)}
+                  >
                     <span className="kid-picture-choice-visual">
                       <MeaningVisualView visual={option.visual} mediaUrl={mediaUrl} numberDisplay="digit" />
                     </span>

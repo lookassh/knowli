@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { messages } from "@learning/contracts";
 import { KidIcon } from "../../components/KidIcon";
 import { ExerciseFrame } from "../ExerciseFrame";
@@ -15,6 +15,12 @@ import type { ExerciseProps } from "../types";
  */
 export function LessonSentenceView({ task, busy, handlers }: ExerciseProps) {
   const [text, setText] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus({ preventScroll: true });
+  }, [task.taskId]);
+
   if (
     task.prompt.kind !== "lesson_error_fix" &&
     task.prompt.kind !== "lesson_transform" &&
@@ -42,6 +48,7 @@ export function LessonSentenceView({ task, busy, handlers }: ExerciseProps) {
             }}
           >
             <input
+              ref={inputRef}
               data-testid="kid-lesson-input"
               value={text}
               onChange={(event) => { setText(event.target.value); handlers.onInteraction(); }}

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { messages } from "@learning/contracts";
 import { SpeechRecordButton } from "./SpeechRecordButton";
 import { ExerciseFrame } from "./ExerciseFrame";
@@ -16,6 +16,10 @@ export function WrittenView({ task, busy, recording, recordingPhase, microphoneR
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const formId = `kid-written-${task.taskId}`;
+
+  useEffect(() => {
+    inputRef.current?.focus({ preventScroll: true });
+  }, [task.taskId]);
   if (task.prompt.kind !== "recall" && task.prompt.kind !== "spelling") {
     return null;
   }
