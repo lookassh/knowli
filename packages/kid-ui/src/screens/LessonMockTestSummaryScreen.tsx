@@ -2,6 +2,7 @@ import { messages, type LessonMockTestSummaryDto } from "@learning/contracts";
 import { format } from "../format";
 import { computeLessonMockScore, LESSON_MOCK_STATUS_ICONS, lessonMockOutcomeStatus } from "./lesson-mock-score";
 import { mockTestScoreTone } from "./mock-test-score";
+import { useAutoFocus } from "./useAutoFocus";
 
 /**
  * Omówienie próbnej kartkówki lekcji dla dziecka po zamknięciu (requirements
@@ -14,6 +15,8 @@ export function LessonMockTestSummaryScreen({ summary, onPractice, onSwitchProfi
   onPractice: () => Promise<void>;
   onSwitchProfile: () => Promise<void>;
 }) {
+  const practiceRef = useAutoFocus<HTMLButtonElement>(true);
+
   const score = computeLessonMockScore(summary.solutions);
   const tone = mockTestScoreTone(score);
   const run = (promise: Promise<void>) => { void promise.catch(() => undefined); };
@@ -42,7 +45,7 @@ export function LessonMockTestSummaryScreen({ summary, onPractice, onSwitchProfi
         </div>
       </li>;
     })}</ul>
-    <button type="button" className="kid-primary" data-testid="kid-lesson-mock-practice" onClick={() => run(onPractice())}>{messages.kid.mockTestPractice}</button>
+    <button ref={practiceRef} type="button" className="kid-primary" data-testid="kid-lesson-mock-practice" onClick={() => run(onPractice())}>{messages.kid.mockTestPractice}</button>
     <button type="button" className="kid-flow-secondary" onClick={() => run(onSwitchProfile())}>{messages.kid.profilesTitle}</button>
   </main>;
 }

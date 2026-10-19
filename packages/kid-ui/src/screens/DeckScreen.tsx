@@ -6,6 +6,7 @@ import { format } from "../format";
 import { formatDeckTestDate, groupDecks } from "./deck-presentation";
 import { MASTERY_STAR_MAX, starsForFraction } from "./stars";
 import { MeaningVisualView } from "../visuals/MeaningVisualView";
+import { useAutoFocus } from "./useAutoFocus";
 
 function wordCount(count: number): string {
   const lastTwoDigits = count % 100;
@@ -55,6 +56,8 @@ export function DeckScreen({
     { kind: "other", title: messages.kid.otherDecksTitle, items: groups.other },
   ].filter((section) => section.items.length > 0);
 
+  const firstButtonRef = useAutoFocus<HTMLButtonElement>(true);
+
   return (
     <main className="kid-screen kid-deck-screen">
       <header className="kid-top-bar">
@@ -72,15 +75,26 @@ export function DeckScreen({
       {decks.length === 0 ? (
         <p className="kid-hint" data-testid="kid-no-decks">{messages.kid.noDecks}</p>
       ) : (
-        sections.map((section) => (
+        sections.map((section, sectionIndex) => (
           <section key={section.kind} aria-label={section.title} data-kind={section.kind}>
             <h2 className="kid-deck-group-title" data-testid={section.kind === "recommended" ? "kid-section-recommended" : "kid-section-other"}>
               {section.title}
             </h2>
             <ul className="kid-deck-list">
-              {section.items.map((deck) => (
-                <DeckCard key={deck.deckId} deck={deck} mediaUrl={mediaUrl ?? ((id) => `/api/v1/media/${id}`)} onStart={onStart} onMockTest={onMockTest} onEndActive={onEndActive} />
-              ))}
+              {section.items.map((deck, itemIndex) => {
+                const isFirst = sectionIndex === 0 && itemIndex === 0;
+                return (
+                  <DeckCard
+                    key={deck.deckId}
+                    deck={deck}
+                    mediaUrl={mediaUrl ?? ((id) => `/api/v1/media/${id}`)}
+                    onStart={onStart}
+                    onMockTest={onMockTest}
+                    onEndActive={onEndActive}
+                    buttonRef={isFirst ? firstButtonRef : undefined}
+                  />
+                );
+              })}
             </ul>
           </section>
         ))
@@ -99,12 +113,13 @@ export function DeckScreen({
   );
 }
 
-export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive }: {
+export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive, buttonRef }: {
   deck: KidDeckDto;
   mediaUrl: (assetId: string) => string;
   onStart: (deckId: string) => void;
   onMockTest?: (deckId: string) => void;
   onEndActive?: (deckId: string) => void;
+  buttonRef?: React.Ref<HTMLButtonElement>;
 }) {
   const date = formatDeckTestDate(deck.testDate, new Date().getFullYear());
   const stars = starsForFraction(deck.independentlyRecalledCount, deck.itemCount);
@@ -132,7 +147,13 @@ export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive }: {
           {date !== null && <p className="kid-badge">{messages.kid.testDateLabel}: {date}</p>}
         </div>
         <div className="kid-deck-card__actions">
-          <button type="button" className="kid-primary" data-testid={deck.resumeOnly ? "kid-resume-session" : "kid-deck"} onClick={() => onStart(deck.deckId)}>
+          <button
+            ref={buttonRef}
+            type="button"
+            className="kid-primary"
+            data-testid={deck.resumeOnly ? "kid-resume-session" : "kid-deck"}
+            onClick={() => onStart(deck.deckId)}
+          >
             <span className="kid-visually-hidden">{deck.title}: </span>{deck.resumeOnly ? messages.kid.resumeSession : messages.kid.deckStart}
             <KidIcon name="arrow-right" />
           </button>

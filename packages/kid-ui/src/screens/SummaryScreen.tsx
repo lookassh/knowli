@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { messages, type KidProfileDto, type SessionSummaryDto } from "@learning/contracts";
 import { format } from "../format";
 import { KidIcon } from "../components/KidIcon";
+import { useAutoFocus } from "./useAutoFocus";
 
 /** Ekran końca: odnosi się do faktycznych wyników, nie obiecuje opanowania. */
 export function SummaryScreen({
@@ -17,6 +18,8 @@ export function SummaryScreen({
   onSwitchProfile: () => void;
   guidance?: ReactNode;
 }) {
+  const againRef = useAutoFocus<HTMLButtonElement>(true);
+
   const { recall, spelling } = summary.independentSuccesses;
   const wordCount = (n: number) => {
     const plural = new Intl.PluralRules("pl-PL").select(n);
@@ -77,7 +80,7 @@ export function SummaryScreen({
         </section>
       )}
       <div className="kid-actions">
-        <button type="button" className="kid-primary" data-testid="kid-again" onClick={onAgain}>
+        <button ref={againRef} type="button" className="kid-primary" data-testid="kid-again" onClick={onAgain}>
           <KidIcon name="retry" />
           {messages.kid.again}
         </button>

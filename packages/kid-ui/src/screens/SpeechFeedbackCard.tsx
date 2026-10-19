@@ -3,6 +3,7 @@ import { messages, type FeedbackDto } from "@learning/contracts";
 import { format } from "../format";
 import { describeSpeechFeedback } from "./speech-feedback-view";
 import { KidIcon } from "../components/KidIcon";
+import { useFeedbackCooldown } from "./useFeedbackCooldown";
 
 export interface SpeechFeedbackCardProps {
   dto: FeedbackDto | null;
@@ -105,13 +106,31 @@ export function SpeechFeedbackContent(props: SpeechFeedbackCardProps): ReactElem
 }
 
 export function SpeechFeedbackActions(props: SpeechFeedbackCardProps): ReactElement {
+  const action = props.retry ? props.onRetry : props.onNext;
+  const { buttonRef, onKeyDown } = useFeedbackCooldown<HTMLButtonElement>(action, [props.retry, props.dto]);
   return props.retry ? (
-    <button type="button" className="kid-primary" data-testid="kid-feedback-retry" disabled={props.busy} onClick={props.onRetry}>
+    <button
+      ref={buttonRef}
+      onKeyDown={onKeyDown}
+      type="button"
+      className="kid-primary"
+      data-testid="kid-feedback-retry"
+      disabled={props.busy}
+      onClick={props.onRetry}
+    >
       <KidIcon name="retry" />
       {messages.kid.feedbackRecordAgain}
     </button>
   ) : (
-    <button type="button" className="kid-primary" data-testid="kid-next" disabled={props.busy} onClick={props.onNext}>
+    <button
+      ref={buttonRef}
+      onKeyDown={onKeyDown}
+      type="button"
+      className="kid-primary"
+      data-testid="kid-next"
+      disabled={props.busy}
+      onClick={props.onNext}
+    >
       <KidIcon name="arrow-right" />
       {messages.kid.feedbackNext}
     </button>

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { messages } from "@learning/contracts";
 import { format } from "../format";
 import { ExerciseFrame } from "./ExerciseFrame";
@@ -10,13 +10,23 @@ export function LetterCompletionView({ task, busy, recording, handlers, letterDr
   const letters = letterDraft ?? localLetters;
   const updateLetters = onLetterDraftChange ?? setLocalLetters;
   const inputRefs = useRef<Record<number, HTMLInputElement | null>>({});
-  if (task.prompt.kind !== "letter_completion") return null;
 
-  const characters = Array.from(task.prompt.fragment);
+  const fragment = task.prompt.kind === "letter_completion" ? task.prompt.fragment : "";
+  const characters = Array.from(fragment);
   const gapPositions = characters.flatMap((character, index) => character === "_" ? [index] : []);
   const complete = gapPositions.length > 0 && gapPositions.every((position) => Boolean(letters[position]));
   const disabled = busy || recording;
   const formId = `kid-letters-${task.taskId}`;
+
+  useEffect(() => {
+    if (task.prompt.kind !== "letter_completion") return;
+    const firstEmpty = gapPositions.find((pos) => !letters[pos]) ?? gapPositions[0];
+    if (firstEmpty !== undefined) {
+      inputRefs.current[firstEmpty]?.focus({ preventScroll: true });
+    }
+  }, [task.taskId, task.prompt.kind]);
+
+  if (task.prompt.kind !== "letter_completion") return null;
 
   return (
     <ExerciseFrame
@@ -50,7 +60,32 @@ export function LetterCompletionView({ task, busy, recording, handlers, letterDr
                     handlers.onInteraction();
                     if (value !== "") {
                       const nextPosition = gapPositions.find((position) => position > index);
-                      if (nextPosition !== undefined) inputRefs.current[nextPosition]?.focus();
+                      if (nextPosition !== undefined) inputRefs.current[nextPosition]?.focus({ preventScroll: true });
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Backspace") {
+                      if (!letters[index] || letters[index] === "") {
+                        const prevPosition = [...gapPositions].reverse().find((position) => position < index);
+                        if (prevPosition !== undefined) {
+                          event.preventDefault();
+                          const prevInput = inputRefs.current[prevPosition];
+                          prevInput?.focus({ preventScroll: true });
+                          prevInput?.select();
+                        }
+                      }
+                    } else if (event.key === "ArrowLeft") {
+                      const prevPosition = [...gapPositions].reverse().find((position) => position < index);
+                      if (prevPosition !== undefined) {
+                        event.preventDefault();
+                        inputRefs.current[prevPosition]?.focus({ preventScroll: true });
+                      }
+                    } else if (event.key === "ArrowRight") {
+                      const nextPosition = gapPositions.find((position) => position > index);
+                      if (nextPosition !== undefined) {
+                        event.preventDefault();
+                        inputRefs.current[nextPosition]?.focus({ preventScroll: true });
+                      }
                     }
                   }}
                   maxLength={1}

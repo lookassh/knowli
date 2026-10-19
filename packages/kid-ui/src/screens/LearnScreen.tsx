@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { messages } from "@learning/contracts";
+import { messages, type UiAudioKey } from "@learning/contracts";
 import { ExerciseView } from "../exercises/ExerciseView";
 import type { ExerciseHandlers } from "../exercises/types";
 import { optionOutcomes, type OptionOutcome } from "../exercises/option-outcome";
@@ -9,12 +9,28 @@ import { ExerciseFrame } from "../exercises/ExerciseFrame";
 import { KidIcon } from "../components/KidIcon";
 import { GuidanceButton } from "../components/GuidanceButton";
 import { MeaningVisualView } from "../visuals/MeaningVisualView";
-import type { UiAudioKey } from "@learning/contracts";
 import { SpeechFeedbackActions, SpeechFeedbackContent, SpeechFeedbackSecondaryActions } from "./SpeechFeedbackCard";
 import type { LearningSessionController, LearningScreen as LearningScreenState } from "../session/session-controller";
+import { useFeedbackCooldown } from "./useFeedbackCooldown";
 
 /** Brak podświetleń poza feedbackem próby wyboru. */
 const EMPTY_OUTCOMES: ReadonlyMap<string, OptionOutcome> = new Map();
+
+function RevealActions({ onConfirm }: { onConfirm: () => void }) {
+  const { buttonRef, onKeyDown } = useFeedbackCooldown<HTMLButtonElement>(onConfirm, [], true);
+  return (
+    <button
+      ref={buttonRef}
+      onKeyDown={onKeyDown}
+      type="button"
+      className="kid-primary"
+      data-testid="kid-next"
+      onClick={onConfirm}
+    >
+      {messages.kid.understand}
+    </button>
+  );
+}
 
 /**
  * Ekran nauki: jedno jasne zadanie na ekranie. Po utracie sieci treść
@@ -152,8 +168,7 @@ export function LearnScreen({
                   <p className="kid-word">{screen.reveal.target}</p>
                   {screen.reveal.audioAssetId && <button type="button" className="kid-audio-round" data-testid="kid-reveal-audio" onClick={() => void controller.playRevealAudio()} aria-label={messages.kid.listen}><KidIcon name="volume" /></button>}
                 </section>
-              )} actions={(<button type="button" className="kid-primary" data-testid="kid-next"
-                onClick={() => void controller.confirmReveal()}>{messages.kid.understand}</button>)} />
+              )} actions={<RevealActions onConfirm={() => void controller.confirmReveal()} />} />
             ) : speechFeedback && feedback !== null ? (
               <ExerciseFrame
                 task={task}
@@ -200,7 +215,7 @@ export function LearnScreen({
               <ExerciseFrame
                 task={task}
                 content={<AnswerFeedbackContent dto={feedback.dto} busy={busy} />}
-                actions={<AnswerFeedbackActions retry={feedback.retry} busy={busy}
+                actions={<AnswerFeedbackActions dto={feedback.dto} retry={feedback.retry} busy={busy}
                   onNext={() => void controller.continueLearning()} />}
                 secondaryActions={<AnswerFeedbackSecondaryActions dto={feedback.dto} retry={feedback.retry} busy={busy}
                   onNext={() => void controller.continueLearning()} onSkip={() => void controller.skip()} />}
@@ -223,7 +238,7 @@ export function LearnScreen({
                 optionOutcomes={outcomes}
                 result={choiceFeedback && feedback !== null ? <AnswerFeedbackContent dto={feedback.dto} busy={busy} /> : undefined}
                 resultActions={choiceFeedback && feedback !== null ? (
-                  <AnswerFeedbackActions retry={feedback.retry} busy={busy}
+                  <AnswerFeedbackActions dto={feedback.dto} retry={feedback.retry} busy={busy}
                     onNext={() => void controller.continueLearning()} />
                 ) : undefined}
                 reserveResult={choiceFeedback}

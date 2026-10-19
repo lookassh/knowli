@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { messages } from "@learning/contracts";
 import { format } from "../../format";
 import { KidIcon } from "../../components/KidIcon";
@@ -17,6 +17,12 @@ import { splitGap } from "./gap";
  */
 export function LessonGapView({ task, busy, handlers }: ExerciseProps) {
   const [text, setText] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus({ preventScroll: true });
+  }, [task.taskId]);
+
   if (task.prompt.kind !== "lesson_gap") return null;
   const { before, after } = splitGap(task.prompt.stemWithGap);
   const hint = task.prompt.hint;
@@ -38,6 +44,7 @@ export function LessonGapView({ task, busy, handlers }: ExerciseProps) {
           <p className="kid-lesson-gap__stem">
             <span>{before}</span>
             <input
+              ref={inputRef}
               className="kid-lesson-gap__input"
               data-testid="kid-lesson-gap-input"
               value={text}
