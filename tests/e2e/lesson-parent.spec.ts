@@ -2,6 +2,9 @@ import { expect, test, type Page } from "@playwright/test";
 import { openNewMaterial } from "./helpers/parent-new-material";
 import { randomUUID } from "node:crypto";
 import { LessonDeckDtoSchema } from "@learning/contracts";
+import { lessonWorld } from "../fixtures/lesson-world";
+import { closeWorldDatabase, worldPool } from "./helpers/world-database";
+import { loginParent } from "./helpers/parent-session";
 
 /**
  * E2E panelu rodzica dla lekcji (fake providerzy, zadanie 12). Pełny przepływ:
@@ -20,6 +23,18 @@ async function enterParent(page: Page): Promise<void> {
   await expect(page.getByTestId("tab-decks")).toBeVisible();
   await page.getByTestId("tab-decks").click();
 }
+
+async function openReadyDraft(page: Page, title: string): Promise<string> {
+  await loginParent(page);
+  const lesson = await lessonWorld(await worldPool(), { title, publish: false, editorReady: true });
+  await page.goto("/parent");
+  await page.getByTestId("tab-decks").click();
+  await page.locator(`[data-deck-id="${lesson.deckId}"]`).click();
+  await expect(page.getByTestId("lesson-editor")).toBeVisible();
+  return lesson.deckId;
+}
+
+test.afterAll(closeWorldDatabase);
 
 async function createLesson(
   page: Page,
@@ -127,20 +142,16 @@ test("creates a lesson, reviews it grouped by objective and stage, fixes a valid
   const lessonTitle = `Present Simple ${suffix}`;
 
   await enterParent(page);
-  // dziecko do przypisania
-  await page.getByTestId("tab-children").click();
-  await page.getByTestId("child-name").fill(childName);
-  await page.getByTestId("child-add").click();
-  const childRow = page.locator('[data-testid^="child-row-"]').filter({ hasText: childName });
-  await expect(childRow).toHaveCount(1);
-  const childHref = await childRow.getByTestId("child-learn-link").getAttribute("href");
-  const childId = childHref?.match(/\/kids\/([0-9a-f-]{36})\//)?.[1];
-  expect(childId).toBeTruthy();
-  await childRow.getByTestId("child-edit").click();
-  await childRow.getByTestId("child-edit-can-read").check();
-  await childRow.getByTestId("child-edit-save").click();
-  await expect(childRow.getByTestId("child-edit")).toHaveAttribute("aria-expanded", "false");
-
+  // Create the reusable child fixture through the API; this keeps this editor
+  // flow focused on lesson generation, review, publishing, and assignment UI.
+  const childResponse = await page.request.post("/api/v1/parent/children", {
+    data: { displayName: childName, avatarKey: "fox", birthYear: 2018, canRead: false },
+  });
+  expect(childResponse.status(), await childResponse.text()).toBe(201);
+  const child = await childResponse.json() as { id: string };
+  const childId = child.id;
+  // Refresh the parent snapshot so the editor's assignment list sees the API-seeded profile.
+  await page.reload();
   await page.getByTestId("tab-decks").click();
   await createLesson(page, lessonTitle);
 
@@ -214,8 +225,7 @@ test("creates a lesson, reviews it grouped by objective and stage, fixes a valid
 
 test("guards against leaving the lesson editor with unsaved changes", async ({ page }) => {
   const lessonTitle = `Ochrona ${randomUUID().slice(0, 8)}`;
-  await enterParent(page);
-  await createLesson(page, lessonTitle);
+  await openReadyDraft(page, lessonTitle);
   await page.getByTestId("editor-title").fill(`${lessonTitle} zmienione`);
   // Próba wyjścia z brudnym formularzem → dialog ochrony.
   await page.getByTestId("editor-back").click();
@@ -226,8 +236,7 @@ test("guards against leaving the lesson editor with unsaved changes", async ({ p
 
 test("shows a version conflict when the draft changed in another window", async ({ page, context }) => {
   const lessonTitle = `Konflikt ${randomUUID().slice(0, 8)}`;
-  await enterParent(page);
-  const deckId = await createLesson(page, lessonTitle);
+  const deckId = await openReadyDraft(page, lessonTitle);
 
   // Lokalna zmiana zamraża bazę formularza przed zapisem drugiego okna.
   await page.getByTestId("editor-title").fill(`${lessonTitle} lokalnie`);
@@ -244,7 +253,8 @@ test("shows a version conflict when the draft changed in another window", async 
     response.request().method() === "PATCH" && response.url().includes("/api/v1/parent/lesson-drafts/"),
   );
   await other.getByTestId("save-lesson").click();
-  expect((await remoteSaved).status()).toBe(200);
+  const remoteResponse = await remoteSaved;
+  expect(remoteResponse.status(), await remoteResponse.text()).toBe(200);
   await expect(other.getByTestId("editor-title")).toHaveValue(`${lessonTitle} zdalnie`);
   await other.close();
 
@@ -262,8 +272,7 @@ test("shows a version conflict when the draft changed in another window", async 
 
 test("keeps the lesson editor usable at phone and desktop widths", async ({ page }, testInfo) => {
   const lessonTitle = `Mobile ${randomUUID().slice(0, 8)}`;
-  await enterParent(page);
-  await createLesson(page, lessonTitle);
+  await openReadyDraft(page, lessonTitle);
   for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
     await page.setViewportSize(viewport);
     await expect(page.getByTestId("save-lesson")).toBeVisible();
@@ -276,8 +285,7 @@ test("keeps the lesson editor usable at phone and desktop widths", async ({ page
 
 test("parent edits an AI example before publishing: change is sent in PATCH.examples and persists (P2-10)", async ({ page }) => {
   const lessonTitle = `Przyklady ${randomUUID().slice(0, 8)}`;
-  await enterParent(page);
-  const deckId = await createLesson(page, lessonTitle);
+  const deckId = await openReadyDraft(page, lessonTitle);
 
   // Sekcja przykładów AI jest obecna; przykłady są EDYTOWALNE (wym. 3.3), nie read-only.
   const examplesSection = page.getByTestId("lesson-examples");
@@ -289,7 +297,9 @@ test("parent edits an AI example before publishing: change is sent in PATCH.exam
   await expect(exampleInput).toBeVisible();
   const previews = page.getByTestId(`lesson-card-preview-${objectiveId}`);
   await expect(previews.first()).toBeVisible();
-  await expect(previews.first()).toContainText("Forma podstawowa");
+  // The ready fixture has a deterministic first exercise ("Dodaj -s"); do not
+  // depend on which generated example happened to appear first in a worker run.
+  await expect(previews.first()).toContainText("Dodaj -s");
 
   const corrected = `He plays football every day. ${randomUUID().slice(0, 6)}`;
   await exampleInput.fill(corrected);
@@ -301,12 +311,13 @@ test("parent edits an AI example before publishing: change is sent in PATCH.exam
   await expect(previews.last()).toContainText(added);
 
   // Zapis wysyła poprawione przykłady w PATCH.examples.
-  const patchPromise = page.waitForRequest(
-    (r) => r.method() === "PATCH" && /\/api\/v1\/parent\/lesson-drafts\//.test(r.url()),
+  const patchPromise = page.waitForResponse(
+    (r) => r.request().method() === "PATCH" && /\/api\/v1\/parent\/lesson-drafts\//.test(r.url()),
   );
   await page.getByTestId("save-lesson").click();
   const patch = await patchPromise;
-  const body = JSON.parse(patch.postData() ?? "{}") as { examples?: Record<string, string[]> };
+  expect(patch.status(), await patch.text()).toBe(200);
+  const body = await patch.json() as { examples?: Record<string, string[]> };
   expect(body.examples).toBeTruthy();
   expect(body.examples![objectiveId]).toContain(corrected);
   expect(body.examples![objectiveId]).toContain(added);

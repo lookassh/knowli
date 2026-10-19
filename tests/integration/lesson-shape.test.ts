@@ -72,6 +72,27 @@ async function answerKeyOf(taskId: string): Promise<Record<string, unknown>> {
 }
 
 describe("kształt payloadu lekcji — correctOption po ID (P1-1)", () => {
+  it("editorReady seeds a valid 3/4/2 pool and honors draft versus published state", async () => {
+    const draft = await lessonWorld(pool, { editorReady: true, publish: false });
+    const draftRows = await pool.query<{ payload: LessonExerciseDraft }>(
+      "select payload from learning_app.item_revisions where deck_version_id=$1 and position > 0 order by position",
+      [draft.versionId],
+    );
+    const draftValidation = validatePool(draftRows.rows.map((row) => row.payload), SUBJECT, TOPIC);
+    expect(draftValidation.rejected).toEqual([]);
+    expect(draftValidation.valid).toHaveLength(9);
+    expect((await pool.query<{ state: string }>("select state from learning_app.deck_versions where id=$1", [draft.versionId])).rows[0]?.state).toBe("draft");
+
+    const published = await lessonWorld(pool, { editorReady: true });
+    expect((await pool.query<{ state: string }>("select state from learning_app.deck_versions where id=$1", [published.versionId])).rows[0]?.state).toBe("published");
+  });
+
+  it("rolls back all rows when fixture setup fails after seeding", async () => {
+    const title = `rollback-${randomUUID()}`;
+    await expect(lessonWorld(pool, { title, withObjectiveAssessment: true })).rejects.toThrow("wymaga childId");
+    expect((await pool.query("select id from learning_app.decks where title=$1", [title])).rows).toHaveLength(0);
+  });
+
   it("podstawowy fixture short_answer ma walidowalny payload wyboru", async () => {
     const lesson = await lessonWorld(pool);
     const row = await pool.query<{ payload: LessonExerciseDraft }>("select payload from learning_app.item_revisions where deck_version_id=$1 order by position limit 1", [lesson.versionId]);
