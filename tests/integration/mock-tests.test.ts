@@ -30,6 +30,21 @@ it("pins configured count and material across resume and issues one fixed task",
   expect(await nextTask(services, s.sessionId)).toBeNull();
   await endSession(services, s.sessionId);
 });
+it("scaled time limit: porcja 20 slotów wydaje zadania po 10 minutach i zamyka się po 15", async () => {
+  const { services, clock } = buildTestServices(); const a = await mockTestDeck(services, 20); clock.advanceHours(13);
+  await upsertAssignment(services, a.childId, a.deckId, null, { testGoals: ["recall"], mockTestTaskCount: 20 });
+  const s = await startSession(services, { childId: a.childId, deckId: a.deckId, microphoneEnabled: false, mode: "mock_test" });
+  expect(s.taskBudget).toBe(20);
+  const first = (await nextTask(services, s.sessionId))!;
+  await submitAttempt(services, { taskId: first.taskId, clientAttemptId: randomUUID(), modality: "skip" });
+  clock.advanceMs(11 * 60_000); // ponad podłogę 10 minut, pod skalowanym limitem 20 × 45 s
+  const second = (await nextTask(services, s.sessionId))!;
+  expect(second.taskId).not.toBe(first.taskId);
+  await submitAttempt(services, { taskId: second.taskId, clientAttemptId: randomUUID(), modality: "skip" });
+  clock.advanceMs(5 * 60_001); // łącznie ponad 15 minut od startu sesji
+  expect(await nextTask(services, s.sessionId)).toBeNull();
+  expect((await pool.query(`select state from learning_app.learning_sessions where id=$1`, [s.sessionId])).rows[0]).toEqual({ state: "ended" });
+});
 it("does not create an empty mock test for unknown material", async () => {
   const { services } = buildTestServices(); const a = await mockTestDeck(services, 1, false);
   await upsertAssignment(services, a.childId, a.deckId, null, { testGoals: ["recall"] });

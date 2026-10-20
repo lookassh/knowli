@@ -79,12 +79,25 @@ import { recordTaskSkillFacts, SKILL_PROJECTION_VERSION } from "./skill-projecti
 
 /** Okno wznowienia aktywnej sesji od ostatniego zdarzenia (arch §9.1). */
 export const RESUME_WINDOW_MS = 30 * 60_000;
-/** Miękki limit czasu sesji — egzekwowany tylko między zadaniami (arch §9.3). */
+/** Miękki minimalny limit czasu sesji — egzekwowany tylko między zadaniami (arch §9.3). */
 export const SESSION_TIME_LIMIT_MS = 10 * 60_000;
+/**
+ * Efektywny limit czasu sesji: skaluje się z budżetem zadań ocenianych sesji
+ * (45 s na zadanie, minimum 10 minut). Budżety ≤ 13 zachowują 10 minut;
+ * budżet 20 → 15 minut. Liczymy od budżetu sesji (maksymalna obietnica
+ * wydawania), nie od liczby już wydanych zadań.
+ */
+export function sessionTimeLimitMs(taskBudget: number): number {
+  return Math.max(SESSION_TIME_LIMIT_MS, taskBudget * 45_000);
+}
 /** Po komunikacie „Jeszcze N” obietnica wobec dziecka waży więcej niż limit. */
 const PROMISE_REMAINING = 3;
-/** Startowy budżet zadań ocenianych; prezentacje go nie powiększają. */
-export const DEFAULT_TASK_BUDGET = 12;
+/**
+ * Startowy budżet zadań ocenianych; prezentacje go nie powiększają. Wartość
+ * domyślna `decks.session_task_budget`; stała pozostaje fallbackiem dla
+ * ścieżek startu sesji bez wczytanego zestawu (obecnie nieistniejących).
+ */
+export const DEFAULT_TASK_BUDGET = 20;
 
 /** Statusy child_skill_progress odwzorowane na domenową projekcję zadania 5. */
 export function mapStatus(dbStatus: string): ProgressStatus {
@@ -375,7 +388,7 @@ export async function startSession(services: Services, input: SessionInput): Pro
         policyId: childProfile?.policyId ?? CURRENT_POLICY_ID,
         microphoneEnabled: valid.microphoneEnabled,
         state: "active",
-        taskBudget: mockTestPlan?.slots.length ?? DEFAULT_TASK_BUDGET,
+        taskBudget: mockTestPlan?.slots.length ?? deck.sessionTaskBudget,
         mode,
         mockTestPlan,
         startedAt: now,
@@ -1087,7 +1100,7 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
     const now = services.clock.now();
     if (session.mode === "mock_test") {
       const lessonMock = isLessonMockPlan(session.mockTestPlan);
-      if (now.getTime() - session.startedAt.getTime() > SESSION_TIME_LIMIT_MS) {
+      if (now.getTime() - session.startedAt.getTime() > sessionTimeLimitMs(session.taskBudget)) {
         if (lessonMock) await closeLessonMockTest(tx, services, session);
         else await closeMockTest(tx, services, session, "ended");
         return null;
@@ -1128,7 +1141,7 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
       const counts = await lessonTaskCounts(tx, id);
       const remaining = session.taskBudget - counts.assessed;
       if (remaining <= 0) return null;
-      if (now.getTime() - session.startedAt.getTime() > SESSION_TIME_LIMIT_MS && remaining > PROMISE_REMAINING) {
+      if (now.getTime() - session.startedAt.getTime() > sessionTimeLimitMs(session.taskBudget) && remaining > PROMISE_REMAINING) {
         return null;
       }
       if (session.trainingPlan && "kind" in session.trainingPlan && session.trainingPlan.kind === "lesson") {
@@ -1163,7 +1176,7 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
       return null;
     }
     // limit czasu tylko między zadaniami; obiecane ostatnie zadania są dokończone
-    if (now.getTime() - session.startedAt.getTime() > SESSION_TIME_LIMIT_MS && remaining > PROMISE_REMAINING) {
+    if (now.getTime() - session.startedAt.getTime() > sessionTimeLimitMs(session.taskBudget) && remaining > PROMISE_REMAINING) {
       return null;
     }
 

@@ -162,12 +162,16 @@ export const decks = app.table(
     title: text("title").notNull(),
     kind: text("kind").notNull().default("vocabulary"),
     coverAssetId: uuid("cover_asset_id").references((): AnyPgColumn => mediaAssets.id),
+    // Budżet zadań ocenianych sesji nauki tego zestawu (konfiguracja runtime,
+    // nie treść — mutacja bez nowego szkicu wersji). Obowiązuje słówka i lekcje.
+    sessionTaskBudget: integer("session_task_budget").notNull().default(20),
     publishedVersionId: uuid("published_version_id"),
     archivedAt: timestamps("archived_at"),
     createdAt: timestamps("created_at").notNull().defaultNow(),
   },
   (t) => [
     check("decks_kind_allowed", sql`${t.kind} in ('vocabulary', 'lesson')`),
+    check("decks_session_task_budget", sql`${t.sessionTaskBudget} between 1 and 100`),
     // Aplikacja ustawia published_version_id wyłącznie na state=published.
     foreignKey({
       name: "published_version_belongs_to_deck",
@@ -423,7 +427,9 @@ export const learningSessions = app.table(
     trainingPlan: jsonb("training_plan").$type<StoredTrainingSessionPlan>(),
     // completed: jawny koniec z podsumowaniem; ended: zamknięcie systemowe
     state: text("state").notNull(),
-    taskBudget: integer("task_budget").notNull().default(12),
+    // kopia budżetu przypięta przy starcie sesji: trening/daily_round z
+    // decks.session_task_budget, mock_test z liczby slotów planu kartkówki
+    taskBudget: integer("task_budget").notNull().default(20),
     startedAt: timestamps("started_at").notNull().defaultNow(),
     endedAt: timestamps("ended_at"),
     // snapshot kontaktów z poprzednich sesji i ustawień terminu/strefy

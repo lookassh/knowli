@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { InstantSchema, UuidSchema } from "./common";
-import { AssignmentDtoSchema, DeckStateSchema, RevisionAssetDtoSchema } from "./decks";
+import { AssignmentDtoSchema, DeckStateSchema, RevisionAssetDtoSchema, SessionTaskBudgetSchema } from "./decks";
 import { GenerationDtoSchema } from "./generation";
 
 /**
@@ -178,6 +178,9 @@ export const LessonDeckDtoSchema = z.object({
   id: UuidSchema,
   title: z.string(),
   state: DeckStateSchema,
+  /** Budżet zadań ocenianych sesji nauki tej lekcji; parse-time default 20
+   * dla starszych ładunków, serwer zawsze wysyła bieżącą wartość. */
+  sessionTaskBudget: SessionTaskBudgetSchema.default(20),
   draft: LessonDraftDtoSchema.nullable(),
   published: LessonDraftDtoSchema.nullable(),
   generation: GenerationDtoSchema.nullable(),

@@ -12,6 +12,7 @@ import {
 } from "@learning/contracts";
 import { apiFetch, ApiCallError, errorMessage } from "../api";
 import AssignmentTestGoalFields, { type AssignmentTestSettings } from "../AssignmentTestGoalFields";
+import DeckSessionTaskBudgetSettings from "../DeckSessionTaskBudgetSettings";
 import type { EditorLeaveState } from "../useParentLeaveGuard";
 import LessonSupervisionPanel from "./LessonSupervisionPanel";
 import { DeckAssignmentsList } from "../DeckAssignmentsList";
@@ -68,6 +69,11 @@ export default function LessonEditor({
   const [assignDates, setAssignDates] = useState<Record<string, string>>({});
   const [assignSettings, setAssignSettings] = useState<Record<string, AssignmentTestSettings>>({});
   const [unassigningChildId, setUnassigningChildId] = useState<string | null>(null);
+  // Budżet sesji nauki (decks.session_task_budget): null = bez lokalnej zmiany,
+  // wartość z DTO obowiązuje. Zapis przez PATCH /parent/decks/:id (wspólny
+  // dla słówek i lekcji — konfiguracja runtime, poza szkicem wersji).
+  const [sessionBudgetEdit, setSessionBudgetEdit] = useState<number | null>(null);
+  const [settingsBusy, setSettingsBusy] = useState(false);
   // Edytowalne przykłady AI per cel (wym. 3.3). Trzymane lokalnie, bo serializacja
   // PATCH-a ćwiczeń żyje w `lesson-editor-state.ts` (poza zakresem tej edycji);
   // przykłady dokładamy do ciała PATCH w `save()`. `null` = jeszcze nie zasiane.
@@ -151,6 +157,10 @@ export default function LessonEditor({
 
   useEffect(() => () => {
     loadVersion.current += 1;
+  }, [deckId]);
+
+  useEffect(() => {
+    setSessionBudgetEdit(null);
   }, [deckId]);
 
   const mutateExercise = (clientKey: string, patch: Partial<EditableLessonExercise>) => {
@@ -411,6 +421,27 @@ export default function LessonEditor({
             onChange={(e) => { markDirty(); setForm((c) => (c ? { ...c, title: e.target.value } : c)); }}
           />
         </label>
+      )}
+
+      {deck && (
+        <DeckSessionTaskBudgetSettings
+          deckId={deckId}
+          value={sessionBudgetEdit ?? deck.sessionTaskBudget}
+          edited={sessionBudgetEdit !== null}
+          archived={deck.state === "archived"}
+          busy={settingsBusy}
+          onChange={setSessionBudgetEdit}
+          onBusyChange={setSettingsBusy}
+          onSaved={(savedDeckId, saved) => {
+            // deckId żądania (z chwili kliknięcia zapisu), nie bieżący widok:
+            // nawigacja do innej lekcji w locie nie wbije cudzej wartości.
+            setSessionBudgetEdit(null);
+            setDeck((current) =>
+              current && current.id === savedDeckId ? { ...current, sessionTaskBudget: saved } : current,
+            );
+          }}
+          onError={setError}
+        />
       )}
 
       {/* Karty wyjaśnienia: tekst reguły z katalogu (read-only); przykłady AI

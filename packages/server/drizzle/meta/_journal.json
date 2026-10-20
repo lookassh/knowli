@@ -141,6 +141,13 @@
       "when": 1792323600000,
       "tag": "0019_policy_scoped_learning_projections",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792436852039,
+      "tag": "0020_deck_session_task_budget",
+      "breakpoints": true
     }
   ]
 }

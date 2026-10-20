@@ -23,6 +23,7 @@ import {
   sessionTasks,
 } from "../db/schema";
 import { AppError } from "../errors";
+import { sessionTimeLimitMs } from "./sessions";
 import { assessedSkills, evaluateChoice, evaluateNonAnswer, evaluateWritten } from "../domain/evaluate";
 import { chooseFeedback, feedbackExposureKeys } from "../domain/feedback";
 import { compareSpelling } from "../domain/spelling-diff";
@@ -571,7 +572,9 @@ export async function startAttempt(
   if (session.state !== "active") {
     throw new AppError("conflict", { message: "session is closed" });
   }
-  if (session.mode === "mock_test" && now.getTime() - session.startedAt.getTime() > 600_000) {
+  // Skalowany limit kartkówki (jak w nextTask): max(10 minut, 45 s × budżet
+  // sesji), żeby odpowiedzi na dużą porcję nie były blokowane po 10 minutach.
+  if (session.mode === "mock_test" && now.getTime() - session.startedAt.getTime() > sessionTimeLimitMs(session.taskBudget)) {
     throw new AppError("conflict", { message: "Czas kartkówki minął. Przejdź do omówienia." });
   }
   if (task.exerciseType === "exposure") {

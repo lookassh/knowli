@@ -305,6 +305,7 @@ async function readLessonDeckSnapshot(db: Executor, services: Services, id: stri
     id: deck.id,
     title: deck.title,
     state,
+    sessionTaskBudget: deck.sessionTaskBudget,
     draft: editable ? await readLessonDraftDto(db, services, editable.id) : null,
     published: publishedVersionId ? await readLessonDraftDto(db, services, publishedVersionId) : null,
     generation: editable ? await latestLessonRun(db, editable.id) : null,

@@ -223,6 +223,11 @@ describe("LessonDeckDtoSchema", () => {
   it("requires the grading field", () => {
     expect(LessonDeckDtoSchema.safeParse(base).success).toBe(false);
   });
+  it("domyśla sessionTaskBudget do 20 i przyjmuje wartość zestawu", () => {
+    const withGrading = { ...base, grading: { available: false } };
+    expect(LessonDeckDtoSchema.parse(withGrading).sessionTaskBudget).toBe(20);
+    expect(LessonDeckDtoSchema.parse({ ...withGrading, sessionTaskBudget: 7 }).sessionTaskBudget).toBe(7);
+  });
 });
 
 describe("ObjectiveProgressDtoSchema", () => {

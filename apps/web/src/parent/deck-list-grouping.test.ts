@@ -8,6 +8,7 @@ function deck(id: string, title: string, state: DeckSummaryDto["state"], kind?: 
     title,
     state,
     vocabularyFormat: "standard",
+    sessionTaskBudget: 20,
     ...(kind ? { kind } : {}),
     editableVersionId: null,
     publishedVersionId: null,
