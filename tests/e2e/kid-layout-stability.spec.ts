@@ -220,13 +220,16 @@ test("long choice labels keep their geometry when feedback markers appear", asyn
   });
 });
 
-test("choice selection and transition feedback appear while reward requests are still pending", async ({ page }) => {
+test("choice selection and transition feedback appear while the answer request is still pending", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const fixture: KidUiFixture = completedReadingFixture();
-  fixture.onActivitySignal = async (signal) => {
-    if (signal.kind === "interaction") await new Promise((resolve) => setTimeout(resolve, 450));
-  };
   await installKidUiFixture(page, fixture);
+  // Opóźnienie rejestrujemy PO fixture'u, żeby przejął routing; `fallback()`
+  // oddaje żądanie fixture'owi po wprowadzonym opóźnieniu.
+  await page.route("**/api/v1/kid/tasks/*/attempts", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    await route.fallback();
+  });
   await page.goto("/");
   await page.getByTestId("kid-profile").click();
   await page.getByTestId("kid-deck").click();

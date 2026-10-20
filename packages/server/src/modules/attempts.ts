@@ -49,7 +49,6 @@ import { persistSkillProjection } from "./skill-projections";
 import { resolveTaskAssistance } from "../domain/task-assistance";
 import { assertVocabularyDeck, readDeckKind } from "./deck-kind";
 import { completeDisabledVoiceTask } from "./voice-task-lifecycle";
-import { discardRewardActivity, settleRewardActivity } from "./reward-activity";
 
 /** Leniwa finalizacja przeterminowanych prób processing (arch §9.2a). */
 export const ATTEMPT_PROCESSING_TIMEOUT_MS = 60_000;
@@ -398,22 +397,8 @@ async function finalizeAttemptRow(
     throw new AppError("conflict", { message: "attempt is already finalized" });
   }
 
-  // Reward submitted work even when text grading is unavailable. Audio with no
-  // reliable assessed result (silence/uncertain STT/provider failure) is not an
-  // accepted response and must not settle the task's pending activity time.
-  const workAccepted = modality !== "skip" && (modality !== "audio"
-    || Object.values(grade.skills).some((skill) => skill.outcome !== "unevaluated"));
-  if (workAccepted) {
-    await settleRewardActivity(tx, {
-      childId: session.childId, sessionId: session.id, taskId: task.id,
-      completionRef: attempt.id, kind: "attempt", at: now,
-    });
-  } else if (taskState !== "issued") {
-    await discardRewardActivity(tx, {
-      childId: session.childId, sessionId: session.id, taskId: task.id, at: now,
-    });
-  }
-
+  // Aktywność sesji rozlicza wyłącznie raport FE na końcu sesji (spec
+  // client-reward-time); próba zostawia tylko ocenę i ekspozycje.
   const stepId = feedback === null ? null : await discloseFeedback(tx, task, session.childId, itemId, feedback, targetKey, now);
   // picture_recognition: zgoda na odsłuch poprawnego słowa (feedback) to
   // ujawnienie rozwiązania — pieczęcimy audio_issued z ekspozycją celu w tej

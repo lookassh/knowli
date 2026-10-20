@@ -1,11 +1,61 @@
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { completePresentation, createChild, createDraft, endSession, loginParent, nextTask, publishDraft, readParentWorkCard, recordRewardActivitySignal, setupParent, startSession, submitAttempt, upsertAssignment } from "@learning/server";
+import { completePresentation, createChild, createDraft, createServices, endSession, fakeSessionActivityDeps, FakeSessionActivityReviewer, loginParent, nextTask, publishDraft, readParentWorkCard, setupParent, startSession, submitAttempt, upsertAssignment } from "@learning/server";
+import type { SessionActivityReport } from "@learning/contracts";
 import { handleParentApi } from "../../apps/web/src/parent/parent-router";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
-import { randomUUID } from "node:crypto";
 
 const { pool } = testDatabase();
 afterAll(async () => { await pool.end(); });
+
+/**
+ * Karta pracy po zmianie kontraktu (spec client-reward-time): zatwierdzony czas
+ * sesji ocenionych zakończonych danego dnia, liczba sesji bez oceny, szczegóły
+ * wykluczeń w retencji 7 dni. Bez Xbox i segmentów.
+ */
+
+function reportOf(tasks: { taskId: string; exerciseType: string; interval: [number, number]; attempts?: string[] }[], elapsedMs: number): SessionActivityReport {
+  return {
+    version: 1,
+    elapsedMs,
+    activeMs: tasks.reduce((total, task) => total + (task.interval[1] - task.interval[0]), 0),
+    compacted: false,
+    tasks: tasks.map((task, index) => ({
+      taskId: task.taskId,
+      exerciseType: task.exerciseType,
+      shownFromMs: index === 0 ? 0 : tasks[index - 1]!.interval[1],
+      shownToMs: task.interval[1],
+      activeIntervals: [task.interval],
+      editCount: 1,
+      editWindows: [{ atMs: task.interval[0], count: 1 }],
+      submittedAttempts: task.attempts ?? [],
+      playbacks: [],
+      pauses: [],
+    })),
+  };
+}
+
+async function deckWithTwoWords(services: ReturnType<typeof buildTestServices>["services"], childId: string) {
+  const draft = await createDraft(services, { title: "Dni", items: [
+    { source: "poniedziałek", target: "Monday", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "none" },
+    { source: "wtorek", target: "Tuesday", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "none" },
+  ] });
+  const revisions = (await pool.query<{ id: string }>("select id from learning_app.item_revisions where deck_version_id=$1", [draft.id])).rows;
+  for (const revision of revisions) {
+    const assetId = randomUUID(), fingerprint = `work-card-${randomUUID()}`;
+    await pool.query(`insert into learning_app.media_assets
+      (id,kind,fingerprint,generation_number,state,storage_key,content_sha256,mime_type,byte_count,provider,model,metadata)
+      values ($1,'tts',$2,1,'ready',$3,$4,'audio/mpeg',100,'fake','fake',$5::jsonb)`,
+    [assetId, fingerprint, `blob/${assetId}`, `sha-${assetId}`, JSON.stringify({ durationMs: 20_000 })]);
+    await pool.query(`insert into learning_app.revision_assets
+      (item_revision_id,role,asset_id,expected_fingerprint,state) values ($1,'target_audio',$2,$3,'approved')`, [revision.id, assetId, fingerprint]);
+    await pool.query(`insert into learning_app.revision_assets
+      (item_revision_id,role,asset_id,expected_fingerprint,state) values ($1,'illustration',null,$2,'omitted')`, [revision.id, `ill-${randomUUID()}`]);
+  }
+  await publishDraft(services, draft.id, 1);
+  await upsertAssignment(services, childId, draft.deckId, null);
+  return draft.deckId;
+}
 
 describe("parent work card", () => {
   beforeEach(async () => {
@@ -15,58 +65,75 @@ describe("parent work card", () => {
       learning_app.deck_versions, learning_app.decks cascade`);
   });
 
-  it("splits settled activity by the stored timezone without a daily-round report", async () => {
-    const { services, clock } = buildTestServices("2026-10-16T21:59:45.000Z");
+  it("sums approved seconds of evaluated sessions ended that day and counts unevaluated ones", async () => {
+    const base = buildTestServices("2026-10-16T10:00:00.000Z");
+    const provider = new FakeSessionActivityReviewer();
+    const services = createServices({ db: base.services.db, clock: base.clock, sessionActivity: fakeSessionActivityDeps({ provider }) });
     const child = await createChild(services, { displayName: "Ola", avatarKey: "fox" });
-    const draft = await createDraft(services, { title: "Dni", items: [
-      { source: "poniedziałek", target: "Monday", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "none" },
-      { source: "wtorek", target: "Tuesday", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "none" },
-    ] });
-    const revisions = (await pool.query<{ id: string }>("select id from learning_app.item_revisions where deck_version_id=$1", [draft.id])).rows;
-    for (const revision of revisions) {
-      const assetId = randomUUID(), fingerprint = `work-card-${randomUUID()}`;
-      await pool.query(`insert into learning_app.media_assets
-        (id,kind,fingerprint,generation_number,state,storage_key,content_sha256,mime_type,byte_count,provider,model,metadata)
-        values ($1,'tts',$2,1,'ready',$3,$4,'audio/mpeg',100,'fake','fake',$5::jsonb)`,
-      [assetId, fingerprint, `blob/${assetId}`, `sha-${assetId}`, JSON.stringify({ durationMs: 20_000 })]);
-      await pool.query(`insert into learning_app.revision_assets
-        (item_revision_id,role,asset_id,expected_fingerprint,state) values ($1,'target_audio',$2,$3,'approved')`, [revision.id, assetId, fingerprint]);
-      await pool.query(`insert into learning_app.revision_assets
-        (item_revision_id,role,asset_id,expected_fingerprint,state) values ($1,'illustration',null,$2,'omitted')`, [revision.id, `ill-${randomUUID()}`]);
-    }
-    await publishDraft(services, draft.id, 1);
-    await upsertAssignment(services, child.id, draft.deckId, null);
-    const session = await startSession(services, { childId: child.id, deckId: draft.deckId, microphoneEnabled: false });
-    const task = await nextTask(services, session.sessionId);
-    expect(task?.exerciseType).toBe("exposure");
-    const streamId = randomUUID();
-    await recordRewardActivitySignal(services, { sessionId: session.sessionId, taskId: task!.taskId, streamId, sequence: 1, kind: "interaction" });
-    clock.advanceMs(15_000);
-    await recordRewardActivitySignal(services, { sessionId: session.sessionId, taskId: task!.taskId, streamId, sequence: 2, kind: "heartbeat" });
-    clock.advanceMs(15_000);
-    await completePresentation(services, { taskId: task!.taskId });
+    const deckId = await deckWithTwoWords(services, child.id);
 
-    const beforeMidnight = await readParentWorkCard(services, { childId: child.id, date: "2026-10-16" });
-    const afterMidnight = await readParentWorkCard(services, { childId: child.id, date: "2026-10-17" });
-    expect(beforeMidnight).toMatchObject({ creditedSeconds: 15, sessions: [{ deckTitle: "Dni", creditedSeconds: 15, steps: [{ state: "completed" }] },] });
-    expect(afterMidnight.creditedSeconds).toBe(15);
-    let dontRememberTask = await nextTask(services, session.sessionId);
-    for (let i = 0; i < 6 && dontRememberTask?.exerciseType === "exposure"; i++) {
-      await completePresentation(services, { taskId: dontRememberTask.taskId });
-      dontRememberTask = await nextTask(services, session.sessionId);
+    // Sesja oceniona z wykluczeniem pierwszego zadania ocenianego (60 s → 0)
+    // i drugiego (60 s → 60 s); prezentacje pomijamy.
+    const session = await startSession(services, { childId: child.id, deckId, microphoneEnabled: false });
+    const assessed: Awaited<ReturnType<typeof nextTask>>[] = [];
+    let attemptId: string | null = null;
+    for (let index = 0; index < 8; index += 1) {
+      const task = await nextTask(services, session.sessionId);
+      if (task === null) break;
+      if (task.exerciseType === "exposure" || task.exerciseType === "lesson_card") {
+        await completePresentation(services, { taskId: task.taskId });
+        continue;
+      }
+      if (assessed.length === 0) {
+        attemptId = (await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "dont_remember" })).attemptId;
+      }
+      assessed.push(task);
+      if (assessed.length === 2) break;
     }
-    expect(dontRememberTask).toBeTruthy();
-    await submitAttempt(services, { taskId: dontRememberTask!.taskId, clientAttemptId: randomUUID(), modality: "dont_remember" });
-    let skippedTask = await nextTask(services, session.sessionId);
-    for (let i = 0; i < 6 && skippedTask?.exerciseType === "exposure"; i++) {
-      await completePresentation(services, { taskId: skippedTask.taskId });
-      skippedTask = await nextTask(services, session.sessionId);
+    expect(assessed).toHaveLength(2);
+    const [first, second] = assessed;
+    base.clock.advanceMs(120_000);
+    const firstOrdinal = (await pool.query<{ ordinal: number }>("select ordinal from learning_app.session_tasks where id=$1", [first!.taskId])).rows[0]!.ordinal;
+    provider.queue({ raw: {
+      reason: "Jedno zadanie wykluczone.",
+      excludedTasks: [{ taskOrdinal: firstOrdinal, reason: "Brak próby." }],
+    } });
+    await endSession(services, session.sessionId, reportOf([
+      { taskId: first!.taskId, exerciseType: first!.exerciseType, interval: [0, 60_000], attempts: attemptId === null ? [] : [attemptId] },
+      { taskId: second!.taskId, exerciseType: second!.exerciseType, interval: [60_000, 120_000] },
+    ], 120_000));
+
+    // Sesja zakończona bez raportu (np. z innego urządzenia): jawny brak oceny.
+    const bare = await startSession(services, { childId: child.id, deckId, microphoneEnabled: false });
+    for (let index = 0; index < 3; index += 1) {
+      const task = await nextTask(services, bare.sessionId);
+      if (task === null) break;
+      if (task.exerciseType === "exposure" || task.exerciseType === "lesson_card") {
+        await completePresentation(services, { taskId: task.taskId });
+        continue;
+      }
+      await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "dont_remember" });
+      break;
     }
-    if (skippedTask) await submitAttempt(services, { taskId: skippedTask.taskId, clientAttemptId: randomUUID(), modality: "skip" });
-    const responses = await readParentWorkCard(services, { childId: child.id, date: "2026-10-17" });
-    expect(responses.sessions[0]?.steps.flatMap(step => step.responses.map(response => response.modality))).toEqual(expect.arrayContaining(["dont_remember", "skip"]));
-    expect(responses.sessions[0]?.steps.flatMap(step => step.responses.filter(response => response.modality === "dont_remember").map(response => response.assessment))).toEqual(["none"]);
-    await endSession(services, session.sessionId);
+    await endSession(services, bare.sessionId);
+
+    const card = await readParentWorkCard(services, { childId: child.id });
+    expect(card.creditedSeconds).toBe(60);
+    expect(card.unevaluatedSessions).toBe(1);
+    const evaluated = card.sessions.find((entry) => entry.sessionId === session.sessionId)!;
+    expect(evaluated.activity).toMatchObject({ status: "evaluated", approvedSeconds: 60, pointsAwarded: 1 });
+    expect(evaluated.activity.excludedTasks).toEqual([{ taskOrdinal: firstOrdinal, reason: "Brak próby." }]);
+    const unevaluated = card.sessions.find((entry) => entry.sessionId === bare.sessionId)!;
+    expect(unevaluated.activity).toMatchObject({ status: "not_delivered" });
+
+    // Po retencji szczegóły wykluczeń znikają, krótki wynik zostaje.
+    await pool.query("update learning_app.learning_sessions set activity_report_expires_at = $2 where id=$1", [session.sessionId, new Date(base.clock.now().getTime() - 1_000)]);
+    const expired = await readParentWorkCard(services, { childId: child.id });
+    const expiredSession = expired.sessions.find((entry) => entry.sessionId === session.sessionId)!;
+    expect(expiredSession.activity.excludedTasks).toBeNull();
+    expect(expiredSession.activity.approvedSeconds).toBe(60);
+
+    // Nagroda należy do lokalnej daty KOŃCA sesji.
     expect((await readParentWorkCard(services, { childId: child.id, date: "2026-10-15" })).sessions).toEqual([]);
   });
 
@@ -85,37 +152,10 @@ describe("parent work card", () => {
     );
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(await response.json()).toMatchObject({ childId: child.id, date: "2026-10-16", sessions: [], creditedSeconds: 0 });
+    expect(await response.json()).toMatchObject({ childId: child.id, date: "2026-10-16", sessions: [], creditedSeconds: 0, unevaluatedSessions: 0 });
     const other = await createChild(services, { displayName: "Jan", avatarKey: "bear" });
     expect(await readParentWorkCard(services, { childId: other.id, date: "2026-10-16" })).toMatchObject({ childId: other.id, sessions: [], creditedSeconds: 0 });
     await expect(readParentWorkCard(services, { childId: randomUUID(), date: "2026-10-16" }))
       .rejects.toMatchObject({ code: "not_found" });
-  });
-
-  it("returns every pending Xbox request and only terminal requests for the selected source date", async () => {
-    const { services } = buildTestServices();
-    const child = await createChild(services, { displayName: "Ola", avatarKey: "fox" });
-    const snapshots = [
-      { status: "pending", day: "2026-10-14", block: 1, requested: "2026-10-14T10:00:00Z" },
-      { status: "fulfilled", day: "2026-10-14", block: 2, requested: "2026-10-14T11:00:00Z" },
-      { status: "rejected", day: "2026-10-15", block: 1, requested: "2026-10-15T11:00:00Z" },
-    ] as const;
-    for (const snapshot of snapshots) {
-      const blockId = randomUUID();
-      await pool.query(`insert into learning_app.reward_activity_xbox_blocks
-        (id, child_id, timezone, local_date, block_number, credited_seconds_at_creation)
-        values ($1,$2,'Europe/Warsaw',$3,$4,$5)`,
-      [blockId, child.id, snapshot.day, snapshot.block, snapshot.block * 1800]);
-      await pool.query(`insert into learning_app.reward_activity_xbox_requests
-        (id, child_id, block_id, status, timezone_snapshot, local_date_snapshot, block_number_snapshot,
-         credited_seconds_snapshot, requested_at)
-        values ($1,$2,$3,$4,'Europe/Warsaw',$5,$6,$7,$8)`,
-      [randomUUID(), child.id, blockId, snapshot.status, snapshot.day, snapshot.block, snapshot.block * 1800, snapshot.requested]);
-    }
-
-    const sourceDay = await readParentWorkCard(services, { childId: child.id, date: "2026-10-14" });
-    expect(sourceDay.xboxRequests.map(request => request.status)).toEqual(["pending", "fulfilled"]);
-    const anotherDay = await readParentWorkCard(services, { childId: child.id, date: "2026-10-16" });
-    expect(anotherDay.xboxRequests.map(request => request.status)).toEqual(["pending"]);
   });
 });

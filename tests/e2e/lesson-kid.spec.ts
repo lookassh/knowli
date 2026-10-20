@@ -133,7 +133,7 @@ const attempts: AttemptDto[] = [
 const summary: SessionSummaryDto = {
   sessionId, state: "ended", tasksIssued: 8, assessedTasksIssued: 6,
   independentSuccesses: { recall: 0, spelling: 0 }, practiceItems: [],
-  endedAt: "2026-10-11T10:01:00.000Z", reward: { creditedSeconds: 0, pointsEarned: 0 },
+  endedAt: "2026-10-11T10:01:00.000Z",
   objectives: [
     { objectiveId: "obj-s", titlePl: "-s w 3. osobie", practiced: 4, correct: 3 },
     { objectiveId: "obj-order", titlePl: "szyk zdania oznajmującego", practiced: 1, correct: 1 },

@@ -383,7 +383,7 @@ export class BrowserAudioPlayer implements AudioPlayer {
   #abort: AbortController | null = null;
   #settle: (() => void) | null = null;
 
-  async play(url: string, onStarted?: () => void): Promise<void> {
+  async play(url: string, onStarted?: (durationMs: number | null) => void): Promise<void> {
     this.stop();
     const generation = ++this.#generation;
     const abort = new AbortController();
@@ -416,7 +416,10 @@ export class BrowserAudioPlayer implements AudioPlayer {
           else resolve();
         };
         this.#settle = () => finish();
-        audio.onplaying = () => onStarted?.();
+        audio.onplaying = () => {
+          const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? Math.round(audio.duration * 1000) : null;
+          onStarted?.(duration);
+        };
         audio.onended = () => finish();
         audio.onerror = () => finish(new Error("audio decode failed"));
         audio.play().catch((error: unknown) => finish(error instanceof Error ? error : new Error("playback blocked")));

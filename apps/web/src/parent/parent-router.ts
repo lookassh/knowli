@@ -38,9 +38,7 @@ import {
   upsertAssignment,
   removeAssignment,
   updateDeckSettings,
-  readRewardActivitySummary,
   readParentWorkCard,
-  decideXboxRewardRequest,
   type Services,
 } from "@learning/server";
 import {
@@ -53,7 +51,6 @@ import {
   GenerationCommandSchema,
   LessonCommandSchema,
   LessonVerdictDecisionSchema,
-  XboxRewardRequestDecisionSchema,
   OmitIllustrationSchema,
   PublishCommandSchema,
   RevisionAssetCommandSchema,
@@ -91,20 +88,12 @@ export async function handleParentApi(
     const list = kind === "lesson" ? await listLessonMockTests(services, childId, deckId) : await listMockTests(services, childId, deckId);
     return Response.json(list, { headers: { "Cache-Control": "no-store" } });
   }
-  if (first === "reward-activity" && request.method === "GET" && second) {
-    return Response.json(await readRewardActivitySummary(services, second), { headers: { "Cache-Control": "no-store" } });
-  }
   if (first === "work-card" && request.method === "GET" && second === undefined) {
     const params = new URL(request.url).searchParams;
     const childId = params.get("childId"), date = params.get("date");
     if (!childId) throw new AppError("validation");
     return Response.json(await readParentWorkCard(services, { childId, ...(date === null ? {} : { date }) }), { headers: { "Cache-Control": "no-store" } });
   }
-  if (first === "xbox-requests" && second && third === "decision" && fourth === undefined && request.method === "POST") {
-    const command = z.object({ decision: XboxRewardRequestDecisionSchema }).strict().parse(await readJson(request));
-    return Response.json(await decideXboxRewardRequest(services, second, command.decision), { headers: { "Cache-Control": "no-store" } });
-  }
-
   // --- Lekcje (zadanie 11): ścieżki rozłączne z `decks`/`drafts` słówek ---
   if (first === "lesson-catalog" && request.method === "GET" && second === undefined) {
     return Response.json(lessonCatalog(services));

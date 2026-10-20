@@ -93,6 +93,7 @@ export function LearnScreen({
   }
   const handlers: ExerciseHandlers = {
     onInteraction: () => controller.recordInteraction(),
+    onEdit: () => controller.recordEdit(),
     onPlay: () => void controller.playTaskAudio(),
     onPlayExample: () => void controller.playExampleAudio(),
     onAnswerChoice: (optionId) => void controller.answerChoice(optionId),

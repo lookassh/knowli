@@ -3,6 +3,13 @@ import { expect, test } from "@playwright/test";
 const firstChild = "00000000-0000-4000-8000-000000000001";
 const secondChild = "00000000-0000-4000-8000-000000000002";
 
+function workCardBody(childId: string, date: string, overrides: Record<string, unknown> = {}) {
+  return {
+    childId, date, creditedSeconds: 0, unevaluatedSessions: 0, reviewService: null, sessions: [],
+    ...overrides,
+  };
+}
+
 test("karta pracy odświeża raport po zmianie dziecka i daty", async ({ page }) => {
   const requested: Array<{ childId: string | null; date: string | null }> = [];
   let releaseFirstReport!: () => void;
@@ -21,10 +28,7 @@ test("karta pracy odświeża raport po zmianie dziecka i daty", async ({ page })
       const date = url.searchParams.get("date");
       requested.push({ childId, date });
       await firstReportGate;
-      body = {
-        childId, date: date ?? "2026-10-16", creditedSeconds: childId === firstChild ? 90 : 180, sessions: [],
-        xboxRequests: [],
-      };
+      body = workCardBody(childId!, date ?? "2026-10-16", { creditedSeconds: childId === firstChild ? 90 : 180 });
     } else throw new Error(`Nieoczekiwane API: ${url.pathname}`);
     await route.fulfill({ json: body });
   });
@@ -51,11 +55,9 @@ test("karta pracy odświeża raport po zmianie dziecka i daty", async ({ page })
   expect(requested.some((value) => value.childId === firstChild)).toBe(true);
 });
 
-test("oczekujące zgłoszenie Xbox pozostaje widoczne poza wybranym dniem i otwiera kartę źródłową", async ({ page }) => {
-  const requestId = "00000000-0000-4000-8000-000000000031";
-  let status: "pending" | "fulfilled" | "rejected" = "pending";
-  const dates: string[] = [];
-  const decisions: string[] = [];
+test("karta pracy pokazuje wynik oceny sesji, wykluczenia i sesje bez oceny", async ({ page }) => {
+  const sessionId = "00000000-0000-4000-8000-000000000031";
+  const taskId = "00000000-0000-4000-8000-000000000032";
   await page.route("**/api/v1/parent/**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/login")) return route.fulfill({ json: { authenticated: true, setupRequired: false } });
@@ -63,18 +65,26 @@ test("oczekujące zgłoszenie Xbox pozostaje widoczne poza wybranym dniem i otwi
       { id: firstChild, displayName: "Ala", avatarKey: "star", canRead: true },
     ] });
     if (url.pathname.endsWith("/decks")) return route.fulfill({ json: [] });
-    if (url.pathname.endsWith(`/xbox-requests/${requestId}/decision`)) {
-      status = (route.request().postDataJSON() as { decision: "fulfilled" | "rejected" }).decision;
-      decisions.push(status);
-      return route.fulfill({ json: { requestId, status, requestedAt: "2026-10-14T10:00:00.000Z", localDate: "2026-10-14", blockNumber: 1, pointsCost: 30, xboxMinutes: 15 } });
-    }
     if (url.pathname.endsWith("/work-card")) {
-      const date = url.searchParams.get("date") ?? "2026-10-16";
-      dates.push(date);
-      return route.fulfill({ json: {
-        childId: firstChild, date, creditedSeconds: 0, sessions: [],
-        xboxRequests: [{ requestId, status, requestedAt: "2026-10-14T10:00:00.000Z", timezone: "Europe/Warsaw", localDate: "2026-10-14", blockNumber: 1, creditedSeconds: 1800, pointsCost: 30, xboxMinutes: 15 }],
-      } });
+      return route.fulfill({ json: workCardBody(firstChild, "2026-10-16", {
+        creditedSeconds: 180,
+        unevaluatedSessions: 1,
+        sessions: [
+          {
+            sessionId, mode: "training", state: "completed",
+            startedAt: "2026-10-16T10:00:00.000Z", endedAt: "2026-10-16T10:06:00.000Z",
+            deckTitle: "Dni tygodnia", deckVersionNumber: 3, remainingSteps: 0,
+            activity: {
+              status: "evaluated", durationSeconds: 360, activeSeconds: 300, approvedSeconds: 180,
+              pointsAwarded: 3, reason: "Większość zadań zawierała rzeczywiste próby.", errorCode: null,
+              excludedTasks: [{ taskOrdinal: 1, reason: "Wysłano wyłącznie aaa." }],
+              details: { modelReason: "Jedno zadanie nie zawierało pracy.", tasks: [{ taskOrdinal: 0, instruction: "Przypomnij słowo", stimulus: "kot", options: [], acceptedAnswers: ["cat"], submittedAnswers: ["cat"], activeMilliseconds: 12000, editCount: 2, playbackCount: 1, modelNote: null }] },
+            },
+            steps: [{ taskId, ordinal: 0, exerciseType: "recall", state: "answered", issuedAt: "2026-10-16T10:00:05.000Z", responses: [] }],
+          },
+        ],
+        reviewService: "review.example · model-a",
+      }) });
     }
     throw new Error(`Nieoczekiwane API: ${url.pathname}`);
   });
@@ -83,85 +93,62 @@ test("oczekujące zgłoszenie Xbox pozostaje widoczne poza wybranym dniem i otwi
   await page.goto("/parent");
   await childrenLoaded;
   await page.getByTestId("tab-work-card").click();
-  await expect(page.getByRole("button", { name: "Otwórz kartę pracy z 2026-10-14" })).toBeVisible();
-  await page.getByLabel("Dzień").fill("2026-10-16");
-  await expect.poll(() => dates.at(-1)).toBe("2026-10-16");
-  await expect(page.getByRole("button", { name: "Otwórz kartę pracy z 2026-10-14" })).toBeVisible();
-  await page.getByRole("button", { name: "Otwórz kartę pracy z 2026-10-14" }).click();
-  await expect(page.getByLabel("Dzień")).toHaveValue("2026-10-14");
-  await expect(page.getByText("Runda dnia")).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "Zgłoszenie pakietu Xbox" }).getByText("Pakiet z 2026-10-14 · blok 1")).toBeVisible();
-  await expect(page.getByText(/nie oznacza odblokowania konsoli/i)).toBeVisible();
-  await page.getByRole("button", { name: "Potwierdzam ręczne dodanie 15 minut" }).click();
-  expect(decisions).toEqual(["fulfilled"]);
-  await expect(page.getByText("Potwierdzono dodanie czasu")).toBeVisible();
-  await expect(page.getByText("Oczekuje na decyzję rodzica")).toHaveCount(0);
+  await expect(page.getByTestId("work-card-credited")).toHaveText("3 min 0 s");
+  await expect(page.getByText("Sesje bez oceny: 1")).toBeVisible();
+  const activity = page.getByTestId("work-card-activity");
+  await expect(activity).toHaveAttribute("data-status", "evaluated");
+  await expect(activity.getByText("Czas całkowity: 6 min 0 s")).toBeVisible();
+  await expect(activity.getByText("Czas aktywny: 5 min 0 s")).toBeVisible();
+  await expect(activity.getByText("Zatwierdzony: 3 min 0 s")).toBeVisible();
+  await expect(activity.getByText("Punkty: 3")).toBeVisible();
+  await expect(activity.getByText("Uzasadnienie oceny: Większość zadań zawierała rzeczywiste próby.")).toBeVisible();
+  await expect(activity.getByText("Zadania wykluczone z zaliczenia czasu")).toBeVisible();
+  await activity.getByText("Zadania wykluczone z zaliczenia czasu").click();
+  await expect(activity.getByText("Zadanie 2: Wysłano wyłącznie aaa.")).toBeVisible();
+  await expect(page.getByTestId("work-card-review-service")).toContainText("review.example · model-a");
+  await activity.getByText("Szczegóły oceny zadań").click();
+  await expect(activity.getByText("Wzorzec: cat")).toBeVisible();
+  await expect(activity.getByText("Odpowiedzi: cat")).toBeVisible();
 });
 
-test("odrzucenie zgłoszenia wysyła właściwą decyzję i pokazuje status odrzucony", async ({ page }) => {
-  const requestId = "00000000-0000-4000-8000-000000000051";
-  let status: "pending" | "rejected" = "pending";
-  let decisionPayload: unknown;
+test("karta pracy informuje, gdy szczegóły oceny wygasły", async ({ page }) => {
   await page.route("**/api/v1/parent/**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/login")) return route.fulfill({ json: { authenticated: true, setupRequired: false } });
-    if (url.pathname.endsWith("/children")) return route.fulfill({ json: [
-      { id: firstChild, displayName: "Ala", avatarKey: "star", canRead: true },
-    ] });
+    if (url.pathname.endsWith("/children")) return route.fulfill({ json: [{ id: firstChild, displayName: "Ala", avatarKey: "star", canRead: true }] });
     if (url.pathname.endsWith("/decks")) return route.fulfill({ json: [] });
-    if (url.pathname.endsWith(`/xbox-requests/${requestId}/decision`)) {
-      decisionPayload = route.request().postDataJSON();
-      status = (decisionPayload as { decision: "rejected" }).decision;
-      return route.fulfill({ json: { requestId, status, requestedAt: "2026-10-14T10:00:00.000Z", timezone: "Europe/Warsaw", localDate: "2026-10-14", blockNumber: 1, creditedSeconds: 1800, pointsCost: 30, xboxMinutes: 15 } });
-    }
-    if (url.pathname.endsWith("/work-card")) {
-      const date = url.searchParams.get("date") ?? "2026-10-16";
-      return route.fulfill({ json: {
-        childId: firstChild, date, creditedSeconds: 0, sessions: [],
-        xboxRequests: [{ requestId, status, requestedAt: "2026-10-14T10:00:00.000Z", timezone: "Europe/Warsaw", localDate: "2026-10-14", blockNumber: 1, creditedSeconds: 1800, pointsCost: 30, xboxMinutes: 15 }],
-      } });
-    }
+    if (url.pathname.endsWith("/work-card")) return route.fulfill({ json: workCardBody(firstChild, "2026-10-16", { sessions: [{
+      sessionId: "00000000-0000-4000-8000-000000000051", mode: "training", state: "completed",
+      startedAt: "2026-10-16T10:00:00.000Z", endedAt: "2026-10-16T10:06:00.000Z", deckTitle: "Dni", deckVersionNumber: 1, remainingSteps: 0,
+      activity: { status: "evaluated", durationSeconds: 360, activeSeconds: 300, approvedSeconds: 180, pointsAwarded: 3, reason: "Zaliczone.", errorCode: null, excludedTasks: null, details: null }, steps: [],
+    }] }) });
     throw new Error(`Nieoczekiwane API: ${url.pathname}`);
   });
-
-  const childrenLoaded = page.waitForResponse(response => response.url().includes("/api/v1/parent/children"));
   await page.goto("/parent");
-  await childrenLoaded;
   await page.getByTestId("tab-work-card").click();
-  await expect(page.getByRole("button", { name: "Otwórz kartę pracy z 2026-10-14" })).toBeVisible();
-  await page.getByRole("button", { name: "Otwórz kartę pracy z 2026-10-14" }).click();
-  await page.getByRole("button", { name: "Nie dodano czasu — odrzuć zgłoszenie" }).click();
-  expect(decisionPayload).toEqual({ decision: "rejected" });
-  await expect(page.getByText("Odrzucono przed dodaniem czasu")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Nie dodano czasu — odrzuć zgłoszenie" })).toHaveCount(0);
+  await expect(page.getByText("Szczegóły oceny są już niedostępne (dostępne 7 dni od sesji).")).toBeVisible();
 });
 
-test("błąd odrzuconej decyzji nie przechodzi na kartę po zmianie wyboru", async ({ page }) => {
-  const requestId = "00000000-0000-4000-8000-000000000061";
-  const secondRequestId = "00000000-0000-4000-8000-000000000062";
-  let failDecision!: () => void;
-  const decisionGate = new Promise<void>(resolve => { failDecision = resolve; });
+test("sesja bez raportu ma jawny brak oceny, a nie zero zatwierdzonej aktywności", async ({ page }) => {
+  const sessionId = "00000000-0000-4000-8000-000000000041";
   await page.route("**/api/v1/parent/**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/login")) return route.fulfill({ json: { authenticated: true, setupRequired: false } });
     if (url.pathname.endsWith("/children")) return route.fulfill({ json: [
       { id: firstChild, displayName: "Ala", avatarKey: "star", canRead: true },
-      { id: secondChild, displayName: "Bartek", avatarKey: "bear", canRead: true },
     ] });
     if (url.pathname.endsWith("/decks")) return route.fulfill({ json: [] });
-    if (url.pathname.endsWith(`/xbox-requests/${requestId}/decision`)) {
-      await decisionGate;
-      return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ message: "Błąd decyzji" }) });
-    }
     if (url.pathname.endsWith("/work-card")) {
-      const childId = url.searchParams.get("childId")!;
-      const date = url.searchParams.get("date") ?? "2026-10-16";
-      return route.fulfill({ json: {
-        childId, date, creditedSeconds: 0, sessions: [],
-        xboxRequests: childId === firstChild
-          ? [{ requestId, status: "pending", requestedAt: "2026-10-14T10:00:00.000Z", timezone: "Europe/Warsaw", localDate: "2026-10-14", blockNumber: 1, creditedSeconds: 1800, pointsCost: 30, xboxMinutes: 15 }]
-          : [{ requestId: secondRequestId, status: "pending", requestedAt: "2026-10-14T10:00:00.000Z", timezone: "Europe/Warsaw", localDate: "2026-10-14", blockNumber: 1, creditedSeconds: 1800, pointsCost: 30, xboxMinutes: 15 }],
-      } });
+      return route.fulfill({ json: workCardBody(firstChild, "2026-10-16", {
+        unevaluatedSessions: 1,
+        sessions: [{
+          sessionId, mode: "training", state: "ended",
+          startedAt: "2026-10-16T10:00:00.000Z", endedAt: "2026-10-16T10:06:00.000Z",
+          deckTitle: "Dni tygodnia", deckVersionNumber: 3, remainingSteps: 0,
+          activity: { status: "not_delivered", durationSeconds: 0, activeSeconds: 0, approvedSeconds: 0, pointsAwarded: 0, reason: null, errorCode: null, excludedTasks: null },
+          steps: [],
+        }],
+      }) });
     }
     throw new Error(`Nieoczekiwane API: ${url.pathname}`);
   });
@@ -170,17 +157,9 @@ test("błąd odrzuconej decyzji nie przechodzi na kartę po zmianie wyboru", asy
   await page.goto("/parent");
   await childrenLoaded;
   await page.getByTestId("tab-work-card").click();
-  await expect(page.getByRole("button", { name: "Otwórz kartę pracy z 2026-10-14" })).toBeVisible();
-  await page.getByRole("button", { name: "Otwórz kartę pracy z 2026-10-14" }).click();
-  await page.getByRole("button", { name: "Nie dodano czasu — odrzuć zgłoszenie" }).click();
-  await page.getByRole("button", { name: "Bartek" }).click();
-  const otherDecision = page.getByRole("button", { name: "Potwierdzam ręczne dodanie 15 minut" });
-  await expect(otherDecision).toBeVisible();
-  await expect(otherDecision).toBeDisabled();
-  failDecision();
-  await expect(otherDecision).toBeEnabled();
-  await expect(page.getByText("Błąd decyzji")).toHaveCount(0);
-  await expect(page.getByText("Bartek")).toBeVisible();
+  const activity = page.getByTestId("work-card-activity");
+  await expect(activity).toHaveAttribute("data-status", "not_delivered");
+  await expect(activity.getByText("Brak raportu aktywności — czas tej sesji nie został oceniony.")).toBeVisible();
 });
 
 test("karta pracy pokazuje błąd ładowania raportu", async ({ page }) => {

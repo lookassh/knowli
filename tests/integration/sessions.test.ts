@@ -510,7 +510,6 @@ describe("cykl życia sesji (integracja)", () => {
     const unchanged = await query<{ state: string }>("select state from learning_app.attempts where id=$1", [attemptId]);
     expect(unchanged[0]?.state).toBe("processing");
     expect(await query("select * from learning_app.assessments where attempt_id=$1", [attemptId])).toEqual([]);
-    expect(await query("select * from learning_app.reward_activity_settlements where task_id=$1", [legacyTaskId])).toEqual([]);
   });
 
 

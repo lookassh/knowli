@@ -4,6 +4,7 @@ import type {
   ImageProvider,
   LlmProvider,
   PronunciationProvider,
+  SessionActivityReviewer,
   SttProvider,
   TtsProvider,
 } from "./ports/ai";
@@ -11,6 +12,7 @@ import type { MediaStore } from "./ports/media";
 import { createAzurePronunciationProvider } from "./providers/azure/pronunciation";
 import { createAzureSttProvider } from "./providers/azure/stt";
 import { createOpenAiCompatibleGrader } from "./providers/openai-compatible/grader";
+import { createOpenAiCompatibleSessionActivityReviewer } from "./providers/openai-compatible/session-activity";
 import { createProductionSubjectRegistry } from "./domain/lessons/subjects";
 import type { SubjectRegistry } from "./domain/lessons/registry";
 import type { LessonGenerationPolicy } from "./modules/lessons/lesson-generation-policy";
@@ -91,6 +93,19 @@ export interface GraderDeps {
 }
 
 /**
+ * Zależności oceny aktywności sesji (spec client-reward-time). Współdzieli
+ * połączenie `UMIEM_GRADER_*` z graderem lekcji, ale ma osobny port, prompt i
+ * deadline (domyślnie 20 s). Nieobecność = ocena wyłączona (zapis błędu, bez
+ * punktów). Bez cache i bez limitu wywołań odpowiedzi lekcyjnych.
+ */
+export interface SessionActivityDeps {
+  provider: SessionActivityReviewer;
+  timeoutMs: number;
+  /** Bezpieczna, publiczna nazwa hosta/modelu; nigdy URL z credentials ani klucz. */
+  publicService?: string;
+}
+
+/**
  * Zależności serwowe przekazywane do przypadków użycia. `media` pozwala webowi
  * uzgadniać zasoby w transakcji edycji; `generation` wykonuje pracę w tle;
  * `mediaStore` służy webowi do wydawania gotowych zasobów (podgląd rodzica);
@@ -112,6 +127,11 @@ export interface Services {
    */
   grader?: GraderDeps;
   /**
+   * Ocena aktywności sesji (raport FE → wykluczenia zadań → punkty). Proces
+   * web; nieobecność = polityka błędu bez punktów.
+   */
+  sessionActivity?: SessionActivityDeps;
+  /**
    * Rejestr przedmiotów lekcji (zadanie 9). Wstrzykiwany jako wartość, nie
    * importowany globalnie w modułach — `createServices` nadaje mu produkcyjną
    * domyślkę `createProductionSubjectRegistry()`, więc żaden wywołujący nie
@@ -131,6 +151,7 @@ export function createServices(
     imageProvider?: ImageProvider;
     speech?: SpeechDeps;
     grader?: GraderDeps;
+    sessionActivity?: SessionActivityDeps;
     subjects?: SubjectRegistry;
   },
 ): Services {
@@ -144,6 +165,7 @@ export function createServices(
     ...(input.imageProvider ? { imageProvider: input.imageProvider } : {}),
     ...(input.speech ? { speech: input.speech } : {}),
     ...(input.grader ? { grader: input.grader } : {}),
+    ...(input.sessionActivity ? { sessionActivity: input.sessionActivity } : {}),
   };
 }
 
@@ -167,6 +189,9 @@ export function speechFromEnv(env: Record<string, string | undefined>): SpeechDe
 /** Domyślne limity gradera (design „Model oceniający”). */
 export const DEFAULT_GRADER_TIMEOUT_MS = 8000;
 export const DEFAULT_GRADER_MAX_CALLS_PER_SESSION = 20;
+
+/** Termin jednego wywołania oceny aktywności; krótszy niż limit żądania klienta. */
+export const DEFAULT_SESSION_ACTIVITY_TIMEOUT_MS = 20_000;
 
 /** Dodatnia liczba całkowita z env albo błąd (nazwa zmiennej w komunikacie). */
 function positiveIntEnv(name: string, raw: string | undefined, fallback: number): number {
@@ -214,5 +239,34 @@ export function graderFromEnv(env: Record<string, string | undefined>): GraderDe
     provider: createOpenAiCompatibleGrader({ baseUrl: baseUrl!, apiKey: apiKey!, model: model! }),
     maxCallsPerSession,
     timeoutMs,
+  };
+}
+
+/**
+ * Ocena aktywności sesji ze zmiennych środowiskowych. Świadomie współdzieli
+ * `UMIEM_GRADER_BASE_URL/API_KEY/MODEL` z graderem lekcji (decyzja handoff.md
+ * §4): brak konfiguracji gradera = ocena aktywności również wyłączona. Osobny
+ * deadline `UMIEM_SESSION_ACTIVITY_TIMEOUT_MS` (domyślnie 20 s).
+ */
+export function sessionActivityFromEnv(env: Record<string, string | undefined>): SessionActivityDeps | undefined {
+  const baseUrl = env.UMIEM_GRADER_BASE_URL;
+  const apiKey = env.UMIEM_GRADER_API_KEY;
+  const model = env.UMIEM_GRADER_MODEL;
+  const present = [baseUrl, apiKey, model].filter((v) => v !== undefined && v !== "").length;
+  if (present === 0) {
+    return undefined;
+  }
+  if (present < 3) {
+    throw new Error("UMIEM_GRADER_* requires all of BASE_URL, API_KEY and MODEL, or none");
+  }
+  const timeoutMs = positiveIntEnv(
+    "UMIEM_SESSION_ACTIVITY_TIMEOUT_MS",
+    env.UMIEM_SESSION_ACTIVITY_TIMEOUT_MS,
+    DEFAULT_SESSION_ACTIVITY_TIMEOUT_MS,
+  );
+  return {
+    provider: createOpenAiCompatibleSessionActivityReviewer({ baseUrl: baseUrl!, apiKey: apiKey!, model: model! }),
+    timeoutMs,
+    publicService: `${new URL(baseUrl!).host} · ${model}`,
   };
 }

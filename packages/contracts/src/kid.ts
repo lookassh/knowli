@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { InstantSchema, UuidSchema } from "./common";
 import { isVisualDataValid, RecordingModeSchema, VisualTypeSchema } from "./decks";
+import { SessionActivityResultDtoSchema } from "./reward-activity";
 
 const visualPromptFields = {
   visualType: VisualTypeSchema.default("none"),
@@ -345,10 +346,14 @@ export const SessionSummaryDtoSchema = SessionSummaryResultsSchema.extend({
   tasksIssued: z.number().int().nonnegative(),
   assessedTasksIssued: z.number().int().nonnegative(),
   endedAt: InstantSchema,
-  reward: z.object({
-    creditedSeconds: z.number().int().nonnegative(),
-    pointsEarned: z.number().int().nonnegative(),
-  }).default({ creditedSeconds: 0, pointsEarned: 0 }),
+  /**
+   * Wynik oceny aktywności (punkty/albo jawny brak oceny). OPCJONALNY:
+   * zamrożony raport wiedzy w `context.summary` go NIE zawiera — dołączamy go
+   * do odpowiedzi HTTP z `learning_sessions.activity_review`, więc powtórne
+   * zakończenie zwraca ten sam wynik bez ponownego modelu. Brak pola = sesja
+   * zakończona bez raportu (nie jest to dowód braku nauki).
+   */
+  activity: SessionActivityResultDtoSchema.optional(),
   /**
    * Wariant lekcji (design „Kwalifikacja i projekcja celów”, req 7.7): podsumowanie
    * per cel — ile ćwiczeń celu wykonano i ile poprawnie. BEZ procentów, bez statusów
@@ -364,18 +369,10 @@ export const SessionSummaryDtoSchema = SessionSummaryResultsSchema.extend({
 });
 export type SessionSummaryDto = z.infer<typeof SessionSummaryDtoSchema>;
 
-/** Widok profilu dla ekranu dziecka: tylko nazwa i awatar (arch §12). */
-export const XboxRewardRequestDtoSchema = z.object({
-  requestId: UuidSchema,
-  status: z.enum(["pending", "fulfilled", "rejected"]),
-  requestedAt: InstantSchema,
-  localDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  blockNumber: z.number().int().positive(),
-  pointsCost: z.literal(30),
-  xboxMinutes: z.literal(15),
-}).strict();
-export type XboxRewardRequestDto = z.infer<typeof XboxRewardRequestDtoSchema>;
-
+/**
+ * Widok profilu dla ekranu dziecka: nazwa, awatar (arch §12) oraz jeden ogólny
+ * licznik dorobku punktów. Bez salda do wydania, dziennych celów i pakietów.
+ */
 export const KidProfileDtoSchema = z.object({
   childId: UuidSchema,
   displayName: z.string().min(1),
@@ -386,21 +383,14 @@ export const KidProfileDtoSchema = z.object({
   todayActivitySeconds: z.number().int().nonnegative().optional(),
   /** Distinguishes an unavailable report from an older server that omits the activity field. */
   todayActivityUnavailable: z.boolean().optional(),
-  rewards: z.object({
-    earnedPoints: z.number().int().nonnegative(),
-    pointsToUse: z.number().int().nonnegative(),
-    readyXboxPacks: z.number().int().nonnegative(),
-    todayCreditedSeconds: z.number().int().nonnegative(),
-    dailyGoalSeconds: z.literal(1800),
-    xboxRequest: XboxRewardRequestDtoSchema.nullable().default(null),
-  }).default({ earnedPoints: 0, pointsToUse: 0, readyXboxPacks: 0, todayCreditedSeconds: 0, dailyGoalSeconds: 1800, xboxRequest: null }),
+  /** Ogólny dorobek dziecka (1 pkt / pełna zatwierdzona minuta nauki). */
+  rewardPoints: z.number().int().nonnegative().default(0),
 });
 export type KidProfileDto = z.input<typeof KidProfileDtoSchema>;
 
 /** Zestaw przypisany dziecku, dostępny do nauki (arch §12). */
 export const KidDeckDtoSchema = z.object({
   mockTestAvailable: z.boolean().default(false),
-  earnedPoints: z.number().int().nonnegative().default(0),
   activeSession: z.object({ sessionId: UuidSchema, mode: z.enum(["training", "mock_test", "daily_round"]) }).nullable().default(null),
   /**
    * Rodzaj zestawu. OPCJONALNE dla zgodności wstecznej — brak pola oznacza
@@ -439,6 +429,8 @@ export const KidValidationReasonSchema = z.enum([
   "non_reader_mock_test_unavailable",
   "picture_guidance_unavailable",
   "picture_audio_unavailable",
+  /** Raport aktywności ma nieznaną wersję formatu — klient musi się odświeżyć. */
+  "activity_report_update_required",
 ]);
 export type KidValidationReason = z.infer<typeof KidValidationReasonSchema>;
 export const KidValidationDetailsSchema = z.object({ reason: KidValidationReasonSchema }).strict();

@@ -40,7 +40,7 @@ export function LessonOrderView({ task, busy, handlers }: ExerciseProps) {
                 data-testid="kid-lesson-order-placed"
                 disabled={disabled}
                 aria-label={format(messages.kid.lessonOrderRemoveBlock, { word: item.text })}
-                onClick={() => { setState((current) => removeAt(current, index)); handlers.onInteraction(); }}
+                onClick={() => { setState((current) => removeAt(current, index)); handlers.onEdit(); }}
               >
                 {item.text}
               </button>
@@ -61,7 +61,7 @@ export function LessonOrderView({ task, busy, handlers }: ExerciseProps) {
                 data-testid="kid-lesson-order-block"
                 disabled={disabled}
                 aria-label={format(messages.kid.lessonOrderAddBlock, { word: item.text })}
-                onClick={() => { setState((current) => addBlock(current, item.id)); handlers.onInteraction(); }}
+                onClick={() => { setState((current) => addBlock(current, item.id)); handlers.onEdit(); }}
               >
                 {item.text}
               </button>

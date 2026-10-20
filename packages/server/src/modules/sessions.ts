@@ -74,7 +74,8 @@ import {
 } from "./lessons/lesson-mock-tests";
 import { buildLessonSummaryObjectives } from "./lessons/lesson-attempts";
 import { completeDisabledVoiceTask } from "./voice-task-lifecycle";
-import { finishRewardActivitySession, readSessionRewardDelta, settleRewardActivity } from "./reward-activity";
+import { reviewSessionActivity, readSessionActivityResult } from "./session-activity";
+import type { SessionActivityReport } from "@learning/contracts";
 import { recordTaskSkillFacts, SKILL_PROJECTION_VERSION } from "./skill-projections";
 
 /** Okno wznowienia aktywnej sesji od ostatniego zdarzenia (arch §9.1). */
@@ -1399,25 +1400,34 @@ export async function completePresentation(
       ...(valid.clientCommandId ? { clientEventId: valid.clientCommandId } : {}),
       exposures: [],
     });
-    await settleRewardActivity(tx, {
-      childId: task.childId,
-      sessionId: task.sessionId,
-      taskId: task.id,
-      completionRef: valid.clientCommandId ?? randomUUID(),
-      kind: "presentation",
-      at: now,
-    });
     return { taskId: task.id, state: "completed" as const, completedAt: now.toISOString() };
   });
 }
 
-/** Jawny koniec z podsumowaniem; idempotentny dla sesji już zakończonej. */
-export async function endSession(services: Services, sessionId: string): Promise<SessionSummaryDto> {
+/**
+ * Jawny koniec z podsumowaniem; idempotentny dla sesji już zakończonej.
+ * Opcjonalny raport aktywności (zebrany lokalnie przez FE) uruchamia JEDNĄ
+ * ocenę poza transakcją zamknięcia wiedzy; wynik/błąd zwracany jest w polu
+ * `activity` bez wpisywania punktów do zamrożonego raportu wiedzy.
+ */
+export async function endSession(
+  services: Services,
+  sessionId: string,
+  activityReport?: SessionActivityReport,
+): Promise<SessionSummaryDto> {
+  const summary = await closeSessionKnowledge(services, sessionId);
+  if (activityReport !== undefined) {
+    const result = await reviewSessionActivity(services, sessionId, activityReport);
+    return { ...summary, activity: result };
+  }
+  const stored = await readSessionActivityResult(services, sessionId);
+  return stored === null ? summary : { ...summary, activity: stored };
+}
+
+async function closeSessionKnowledge(services: Services, sessionId: string): Promise<SessionSummaryDto> {
   const id = UuidSchema.parse(sessionId);
   return services.db.transaction(async (tx) => {
     const session = await lockSession(tx, id);
-    await finishRewardActivitySession(tx, id, services.clock.now());
-    const reward = await readSessionRewardDelta(tx, id);
     let state = session.state as "active" | "completed" | "ended";
     if (session.mode === "mock_test") {
       if (isLessonMockPlan(session.mockTestPlan)) {
@@ -1435,7 +1445,6 @@ export async function endSession(services: Services, sessionId: string): Promise
           endedAt: (fresh.endedAt ?? services.clock.now()).toISOString(),
           independentSuccesses: { recall: 0, spelling: 0 },
           practiceItems: [],
-          reward,
         };
       }
       const report = await closeMockTest(tx, services, session, "completed");
@@ -1445,7 +1454,7 @@ export async function endSession(services: Services, sessionId: string): Promise
         .where(and(eq(sessionTasks.sessionId, id), eq(assessments.independent, true), eq(assessments.outcome, "correct")));
       return { sessionId: id, state: report.state, tasksIssued: counts.total, assessedTasksIssued: counts.assessed, endedAt: report.endedAt,
         independentSuccesses: { recall: new Set(summaryRows.filter(r => r.skill === "recall").map(r => r.itemRevisionId)).size,
-          spelling: new Set(summaryRows.filter(r => r.skill === "spelling").map(r => r.itemRevisionId)).size }, practiceItems: [], reward };
+          spelling: new Set(summaryRows.filter(r => r.skill === "spelling").map(r => r.itemRevisionId)).size }, practiceItems: [] };
     }
     let endedAt = session.endedAt;
     if (state === "active") {
@@ -1481,7 +1490,6 @@ export async function endSession(services: Services, sessionId: string): Promise
       assessedTasksIssued: counts.assessed,
       endedAt: endedAt!.toISOString(),
       ...summarizeSessionAssessments(rows.map(row => ({ ...row, target: payloadToItem(row.payload).target }))),
-      reward,
       ...(lessonObjectives ? { objectives: lessonObjectives } : {}),
     };
     if (!saved.success) {

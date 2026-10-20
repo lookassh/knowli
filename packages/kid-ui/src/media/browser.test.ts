@@ -262,6 +262,28 @@ describe("BrowserRecorder — nagrywanie bez pozostawiania strumienia (arch §11
 });
 
 describe("BrowserAudioPlayer — anulowanie także oczekującego pobrania", () => {
+  it("przekazuje rzeczywistą długość dopiero po rozpoczęciu odtwarzania", async () => {
+    let audio!: { onplaying: (() => void) | null; onended: (() => void) | null; onerror: (() => void) | null; duration: number };
+    class FakeAudio {
+      onplaying: (() => void) | null = null;
+      onended: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      duration = 2;
+      constructor(_url: string) { audio = this; }
+      async play() { audio.onplaying?.(); audio.onended?.(); }
+      pause() {}
+    }
+    vi.stubGlobal("Audio", FakeAudio);
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, blob: async () => new Blob(["audio"]) })));
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:duration");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    const started = vi.fn();
+    await new BrowserAudioPlayer().play("/media", started);
+    expect(started).toHaveBeenCalledWith(2_000);
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
   it.each(["fetch", "blob"] as const)("stop przed zakończeniem %s nie uruchamia audio.play", async (stage) => {
     let resolveFetch!: (response: Response) => void;
     let resolveBlob!: (blob: Blob) => void;

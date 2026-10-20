@@ -162,6 +162,7 @@ function renderWithHooks<T>(renderFn: () => T) {
 
 const mockHandlers = {
   onInteraction: vi.fn(),
+  onEdit: vi.fn(),
   onPlay: vi.fn(),
   onPlayExample: vi.fn(),
   onAnswerChoice: vi.fn(),
@@ -374,6 +375,45 @@ describe("Keyboard Navigation & Focus Management", () => {
       );
 
       expect(createdElements[0].focus).toHaveBeenCalledWith({ preventScroll: true });
+    });
+
+    it("lesson edits call onEdit so editCount/editWindows capture lesson work", () => {
+      const findNodes = (node: any, predicate: (n: any) => boolean, found: any[] = []): any[] => {
+        if (!node || typeof node !== "object") return found;
+        if (predicate(node)) found.push(node);
+        // Mirror attachRefs: ExerciseFrame trzyma treść także w content/actions.
+        for (const slot of ["children", "content", "actions", "secondaryActions"]) {
+          const children = node.props?.[slot];
+          if (Array.isArray(children)) children.forEach((child: any) => findNodes(child, predicate, found));
+          else findNodes(children, predicate, found);
+        }
+        return found;
+      };
+
+      const gapTask = {
+        taskId: "lesson-gap-edit",
+        exerciseType: "lesson_gap",
+        prompt: { kind: "lesson_gap", stemWithGap: "She {gap} tennis.", hint: "play" } as any,
+      } as unknown as TaskDto;
+      const gapProps = createExerciseProps({ task: gapTask });
+      const gap = renderWithHooks(() => LessonGapView(gapProps));
+      const gapInput = findNodes(gap.result, (node) => typeof node.props?.onChange === "function")[0];
+      expect(gapInput).toBeTruthy();
+      gapInput.props.onChange({ target: { value: "plays" } });
+      expect(gapProps.handlers.onEdit).toHaveBeenCalled();
+      expect(gapProps.handlers.onInteraction).not.toHaveBeenCalled();
+
+      const sentenceTask = {
+        taskId: "lesson-sentence-edit",
+        exerciseType: "lesson_error_fix",
+        prompt: { kind: "lesson_error_fix", statement: "She play tennis.", instructionPl: "Popraw." } as any,
+      } as unknown as TaskDto;
+      const sentenceProps = createExerciseProps({ task: sentenceTask });
+      const sentence = renderWithHooks(() => LessonSentenceView(sentenceProps));
+      const sentenceInput = findNodes(sentence.result, (node) => typeof node.props?.onChange === "function")[0];
+      expect(sentenceInput).toBeTruthy();
+      sentenceInput.props.onChange({ target: { value: "She plays tennis." } });
+      expect(sentenceProps.handlers.onEdit).toHaveBeenCalled();
     });
 
     it("LessonSentenceView automatically focuses input with preventScroll: true", () => {
@@ -867,6 +907,7 @@ describe("Keyboard Navigation & Focus Management", () => {
       const { createdElements } = renderWithHooks(() =>
         MockTestSummaryScreen({
           summary,
+          activity: null,
           onPlay: vi.fn(),
           onPractice: vi.fn(),
           onSwitchProfile: vi.fn(),
@@ -890,6 +931,7 @@ describe("Keyboard Navigation & Focus Management", () => {
       const { createdElements } = renderWithHooks(() =>
         LessonMockTestSummaryScreen({
           summary,
+          activity: null,
           onPractice: vi.fn(),
           onSwitchProfile: vi.fn(),
         })

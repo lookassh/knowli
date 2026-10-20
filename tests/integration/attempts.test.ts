@@ -10,8 +10,6 @@ import {
   nextTask,
   publishDraft,
   readAttempt,
-  readRewardActivitySummary,
-  recordRewardActivitySignal,
   startSession,
   submitAttempt,
   upsertAssignment,
@@ -708,38 +706,6 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
     );
     expect(progressRows[0]!.count).toBe(0);
     expect(await feedbackEvents(task.taskId)).toHaveLength(0);
-  });
-
-  it("rozlicza zaakceptowaną odpowiedź nawet gdy końcowa ocena jest nieoceniona", async () => {
-    const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 3));
-    const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: false });
-    const task = await firstAssessedTask(services, session.sessionId);
-    const attemptId = await insertProcessingAttempt(task.taskId, "2026-10-07T16:00:00.000Z", "text");
-    await recordRewardActivitySignal(services, { sessionId: session.sessionId, taskId: task.taskId, streamId: randomUUID(), sequence: 1, kind: "takeover" });
-    clock.advanceMs(15_000);
-
-    await finalizeAttempt(services, attemptId, {
-      skills: { recall: { outcome: "unevaluated", independent: false, confirmationEligible: false } },
-      attempt: { independent: false, confirmationEligible: false },
-    });
-
-    expect((await readRewardActivitySummary(services, childId)).creditedSeconds).toBe(15);
-  });
-
-  it("does not settle activity for audio with no reliable assessment", async () => {
-    const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 3));
-    const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: true });
-    const task = await firstAssessedTask(services, session.sessionId);
-    const attemptId = await insertProcessingAttempt(task.taskId, "2026-10-07T16:00:00.000Z", "audio");
-    await recordRewardActivitySignal(services, { sessionId: session.sessionId, taskId: task.taskId, streamId: randomUUID(), sequence: 1, kind: "takeover" });
-    clock.advanceMs(15_000);
-
-    await finalizeAttempt(services, attemptId, {
-      skills: { listening: { outcome: "unevaluated", independent: false, confirmationEligible: false } },
-      attempt: { independent: false, confirmationEligible: false },
-    });
-
-    expect((await readRewardActivitySummary(services, childId)).creditedSeconds).toBe(0);
   });
 
   it("równoległa finalizacja tej samej próby kończy się jednym kompletem ocen", async () => {

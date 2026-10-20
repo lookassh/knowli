@@ -143,9 +143,6 @@ export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive, but
                 aria-label={format(messages.kid.deckStarsLabel, { n: stars })}>
                 {"★".repeat(stars)}{"☆".repeat(MASTERY_STAR_MAX - stars)}
               </p>
-              <p className="kid-hint" data-testid="kid-deck-reward-points">
-                {format(messages.kid.rewardDeckPoints, { n: deck.earnedPoints ?? 0 })}
-              </p>
               {date !== null && <p className="kid-badge">{messages.kid.testDateLabel}: {date}</p>}
             </div>
           </div>

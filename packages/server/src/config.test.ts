@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultMediaSettings, graderFromEnv, mediaSettingsFromEnv } from "./config";
+import { defaultMediaSettings, graderFromEnv, mediaSettingsFromEnv, sessionActivityFromEnv } from "./config";
 
 describe("mediaSettingsFromEnv", () => {
   it("bez env zwraca domyślne ustawienia (low + webp)", () => {
@@ -68,5 +68,46 @@ describe("graderFromEnv", () => {
   it("nieliczbowy albo niedodatni limit/timeout → błąd", () => {
     expect(() => graderFromEnv({ ...base, UMIEM_GRADER_TIMEOUT_MS: "nope" })).toThrow();
     expect(() => graderFromEnv({ ...base, UMIEM_GRADER_MAX_CALLS_PER_SESSION: "0" })).toThrow();
+  });
+});
+
+describe("sessionActivityFromEnv", () => {
+  const base = {
+    UMIEM_GRADER_BASE_URL: "https://grader.example/v1",
+    UMIEM_GRADER_API_KEY: "secret",
+    UMIEM_GRADER_MODEL: "cheap-1",
+  };
+
+  it("bez konfiguracji gradera → undefined (ocena aktywności wyłączona)", () => {
+    expect(sessionActivityFromEnv({})).toBeUndefined();
+  });
+
+  it("komplet UMIEM_GRADER_* → provider z domyślnym terminem 20 s", () => {
+    const deps = sessionActivityFromEnv({ ...base });
+    expect(deps).toBeDefined();
+    expect(deps!.provider.model).toBe("cheap-1");
+    expect(deps!.timeoutMs).toBe(20_000);
+    expect(deps!.publicService).toBe("grader.example · cheap-1");
+    expect(deps!.publicService).not.toContain("secret");
+  });
+
+  it("public service identity strips URL credentials, path and query", () => {
+    const deps = sessionActivityFromEnv({
+      ...base,
+      UMIEM_GRADER_BASE_URL: "https://user:pass@grader.example:8443/v1?token=hidden",
+    });
+    expect(deps!.publicService).toBe("grader.example:8443 · cheap-1");
+    expect(deps!.publicService).not.toContain("hidden");
+    expect(deps!.publicService).not.toContain("pass");
+  });
+
+  it("częściowa konfiguracja → rzut (współdzielone zmienne gradera)", () => {
+    expect(() => sessionActivityFromEnv({ UMIEM_GRADER_BASE_URL: base.UMIEM_GRADER_BASE_URL, UMIEM_GRADER_API_KEY: "k" })).toThrow();
+  });
+
+  it("pusty UMIEM_SESSION_ACTIVITY_TIMEOUT_MS → default 20000; własna wartość → użyta", () => {
+    expect(sessionActivityFromEnv({ ...base, UMIEM_SESSION_ACTIVITY_TIMEOUT_MS: "" })!.timeoutMs).toBe(20_000);
+    expect(sessionActivityFromEnv({ ...base, UMIEM_SESSION_ACTIVITY_TIMEOUT_MS: "45000" })!.timeoutMs).toBe(45_000);
+    expect(() => sessionActivityFromEnv({ ...base, UMIEM_SESSION_ACTIVITY_TIMEOUT_MS: "-1" })).toThrow();
   });
 });

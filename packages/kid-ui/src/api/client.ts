@@ -12,9 +12,6 @@ import {
   SessionDtoSchema,
   SessionSummaryDtoSchema,
   TaskDtoSchema,
-  RewardActivitySignalDtoSchema,
-  RewardActivityPlaybackAuthorizationDtoSchema,
-  XboxRewardRequestDtoSchema,
   type AttemptDto,
   type KidValidationReason,
   type AttemptInput,
@@ -24,15 +21,11 @@ import {
   type KidDeckDto,
   type KidProfileDto,
   type PresentationCompletionDto,
+  type SessionActivityReport,
   type SessionDto,
   type SessionInput,
   type SessionSummaryDto,
   type TaskDto,
-  type RewardActivitySignal,
-  type RewardActivitySignalDto,
-  type RewardActivityPlaybackAuthorizationInput,
-  type RewardActivityPlaybackAuthorizationDto,
-  type XboxRewardRequestDto,
 } from "@learning/contracts";
 import type { RecordedAudio } from "../media/platform";
 import type { KidApi } from "./KidApi";
@@ -73,7 +66,9 @@ export function createKidApiClient(options: KidClientOptions = {}): KidApi {
 
   async function request<T>(path: string, init: JsonInit, parse: (body: unknown) => T): Promise<T> {
     const controller = new AbortController();
-    const timeoutMs = path.endsWith("/activity") || path.endsWith("/activity/playback-authorization") ? 2_000 : 30_000;
+    // Koniec sesji z raportem czeka na jedną ocenę modelu (termin 20 s),
+    // więc limit żądania musi go przewyższać (design §6).
+    const timeoutMs = path.endsWith("/end") ? 45_000 : 30_000;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
@@ -139,9 +134,6 @@ export function createKidApiClient(options: KidClientOptions = {}): KidApi {
     listProfiles(): Promise<KidProfileDto[]> {
       return request("/api/v1/kid/profiles", { method: "GET" }, parseProfiles);
     },
-    requestXboxPack(childId: string): Promise<XboxRewardRequestDto> {
-      return post(`/api/v1/kid/profiles/${encodeURIComponent(childId)}/xbox-request`, {}, parseWith(XboxRewardRequestDtoSchema));
-    },
     listDecks(childId: string, options: { microphoneEnabled?: boolean } = {}): Promise<KidDeckDto[]> {
       const query = options.microphoneEnabled === undefined ? "" : `&microphoneEnabled=${options.microphoneEnabled}`;
       return request(
@@ -197,14 +189,12 @@ export function createKidApiClient(options: KidClientOptions = {}): KidApi {
     async recordObservation(input: EventInput): Promise<void> {
       await post(`/api/v1/kid/tasks/${input.taskId}/events`, input, () => undefined);
     },
-    signalRewardActivity(input: RewardActivitySignal): Promise<RewardActivitySignalDto> {
-      return post(`/api/v1/kid/tasks/${input.taskId}/activity`, input, parseWith(RewardActivitySignalDtoSchema));
-    },
-    authorizeRewardActivityPlayback(input: RewardActivityPlaybackAuthorizationInput): Promise<RewardActivityPlaybackAuthorizationDto> {
-      return post(`/api/v1/kid/tasks/${input.taskId}/activity/playback-authorization`, input, parseWith(RewardActivityPlaybackAuthorizationDtoSchema));
-    },
-    endSession(sessionId: string): Promise<SessionSummaryDto> {
-      return post(`/api/v1/kid/sessions/${sessionId}/end`, {}, parseSummary);
+    endSession(sessionId: string, activityReport?: SessionActivityReport): Promise<SessionSummaryDto> {
+      return post(
+        `/api/v1/kid/sessions/${sessionId}/end`,
+        activityReport === undefined ? {} : { activityReport },
+        parseSummary,
+      );
     },
     disableMicrophone(sessionId: string): Promise<SessionDto> {
       return post(`/api/v1/kid/sessions/${sessionId}/disable-microphone`, {}, parseSession);

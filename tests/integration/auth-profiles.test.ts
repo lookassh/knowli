@@ -227,14 +227,7 @@ describe("auth i profile dzieci (integracja)", () => {
       avatarKey: "owl",
       recordingMode: "toggle",
       canRead: true,
-      rewards: {
-        dailyGoalSeconds: 1800,
-        todayCreditedSeconds: 0,
-        earnedPoints: 0,
-        pointsToUse: 0,
-        readyXboxPacks: 0,
-        xboxRequest: null,
-      },
+      rewardPoints: 0,
       todayActivitySeconds: 0,
       todayActivityUnavailable: false,
     }]);

@@ -6,8 +6,6 @@ import {
   createServices,
   FakeAnswerGrader,
   nextTask,
-  recordRewardActivitySignal,
-  readRewardActivitySummary,
   readAttempt,
   startSession,
   submitAttempt,
@@ -137,14 +135,11 @@ describe("model oceniający — mapowanie werdyktów", () => {
     const { services, clock } = graderServices(grader);
     const { child, session } = await newLesson(services, clock, true);
     const task = await reserveTransform(services, session.sessionId);
-    await recordRewardActivitySignal(services, { sessionId: session.sessionId, taskId: task.taskId, streamId: randomUUID(), sequence: 1, kind: "takeover" });
-    clock.advanceMs(15_000);
     const attempt = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: "she play" });
     expect(attempt.feedback?.kind).toBe("great");
     expect(attempt.taskState).toBe("answered");
     expect(grader.callCount).toBe(1);
     expect((await verdictRows()).length).toBe(1);
-    expect((await readRewardActivitySummary(services, child.id)).creditedSeconds).toBe(15);
   });
 
   it("verdict almost → lesson_almost z fragmentami i correctText", async () => {
