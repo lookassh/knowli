@@ -1,60 +1,268 @@
 import { z } from "zod";
 import { InstantSchema, UuidSchema } from "./common";
 
-export const RewardActivityPauseReasonSchema = z.enum(["background", "blur", "offline", "idle", "technical_wait", "signal_timeout", "task_changed", "session_ended"]);
-export type RewardActivityPauseReason = z.infer<typeof RewardActivityPauseReasonSchema>;
+/**
+ * Kontrakty raportu aktywności sesji i prostej oceny punktów (spec
+ * client-reward-time). FE zbiera aktywność lokalnie i wysyła JEDEN raport na
+ * koniec sesji; serwer dołącza własne zadania/odpowiedzi, jeden raz woła model
+ * (lista wykluczonych zadań) i wyłącznie kod liczy czas oraz punkty
+ * (1 pkt / 60 s, reszta przechodzi między sesjami).
+ */
 
-/** Rodzic potwierdza ręczne dodanie czasu albo odrzuca pakiet przed jego dodaniem. */
-export const XboxRewardRequestDecisionSchema = z.enum(["fulfilled", "rejected"]);
-export type XboxRewardRequestDecision = z.infer<typeof XboxRewardRequestDecisionSchema>;
+/** Wersja formatu raportu; zmiana wersji wymaga odświeżenia klienta. */
+export const SESSION_ACTIVITY_REPORT_VERSION = 1;
 
-/** Klient podaje wyłącznie sygnał; czas i wartość rozliczenia ustala serwer. */
-export const RewardActivitySignalSchema = z.object({
-  sessionId: UuidSchema,
+/** Maksymalna liczba skompaktowanych wpisów (przedziały/okna/odsłuchy/pauzy). */
+export const SESSION_ACTIVITY_MAX_ENTRIES = 4096;
+/** Maksymalna liczba zadań w raporcie (największa wspierana kartkówka + zapas). */
+export const SESSION_ACTIVITY_MAX_TASKS = 512;
+
+/** Twardy sufit rozmiaru raportu przyjmowanego przez serwer (256 KiB). */
+export const SESSION_ACTIVITY_REPORT_MAX_BYTES = 256 * 1024;
+
+/** Rodzaje przerw pomiaru; `unobserved` to brak obserwacji (np. odświeżenie). */
+export const SessionActivityPauseKindSchema = z.enum([
+  "background",
+  "blur",
+  "offline",
+  "idle",
+  "technical_wait",
+  "unobserved",
+]);
+export type SessionActivityPauseKind = z.infer<typeof SessionActivityPauseKindSchema>;
+
+/** Przedział aktywności w milisekundach od początku pomiaru [start, koniec]. */
+export const SessionActivityIntervalSchema = z.tuple([
+  z.number().int().nonnegative(),
+  z.number().int().nonnegative(),
+]);
+export type SessionActivityInterval = z.infer<typeof SessionActivityIntervalSchema>;
+
+/** Zagregowane okno edycji: czas początku okna i liczba zmian w oknie. */
+export const SessionActivityEditWindowSchema = z.object({
+  atMs: z.number().int().nonnegative(),
+  count: z.number().int().positive(),
+}).strict();
+export type SessionActivityEditWindow = z.infer<typeof SessionActivityEditWindowSchema>;
+
+/** Rzeczywisty odsłuch: start/koniec odtwarzania od początku pomiaru. */
+export const SessionActivityPlaybackSchema = z.object({
+  assetId: UuidSchema,
+  fromMs: z.number().int().nonnegative(),
+  toMs: z.number().int().nonnegative(),
+}).strict();
+export type SessionActivityPlayback = z.infer<typeof SessionActivityPlaybackSchema>;
+
+export const SessionActivityPauseSchema = z.object({
+  kind: SessionActivityPauseKindSchema,
+  fromMs: z.number().int().nonnegative(),
+  toMs: z.number().int().nonnegative(),
+}).strict();
+export type SessionActivityPause = z.infer<typeof SessionActivityPauseSchema>;
+
+/** Aktywność jednego zadania; identyfikatory służą wyłącznie powiązaniu. */
+export const SessionActivityTaskReportSchema = z.object({
   taskId: UuidSchema,
-  streamId: UuidSchema,
-  sequence: z.number().int().positive(),
-  kind: z.enum(["interaction", "heartbeat", "playback_start", "playback_end", "pause", "takeover"]),
-  pauseReason: z.enum(["background", "blur", "offline", "idle", "technical_wait", "task_changed", "session_ended"]).optional(),
-  playbackAuthorizationId: UuidSchema.optional(),
-  playbackAssetId: UuidSchema.optional(),
-}).strict().superRefine((signal, ctx) => {
-  const playback = signal.kind === "playback_start" || signal.kind === "playback_end";
-  if (playback && (!signal.playbackAuthorizationId || !signal.playbackAssetId)) {
-    ctx.addIssue({ code: "custom", message: "playback signals require server authorization and an asset id" });
-  }
-  if (!playback && (signal.playbackAuthorizationId || signal.playbackAssetId)) {
-    ctx.addIssue({ code: "custom", message: "playback authorization is only valid for playback signals" });
-  }
-  if (signal.pauseReason !== undefined && signal.kind !== "pause") {
-    ctx.addIssue({ code: "custom", message: "pause reason is only valid for pause signals" });
-  }
-});
-export type RewardActivitySignal = z.infer<typeof RewardActivitySignalSchema>;
-
-export const RewardActivityPlaybackAuthorizationInputSchema = z.object({ sessionId: UuidSchema, taskId: UuidSchema, streamId: UuidSchema, assetId: UuidSchema }).strict();
-export type RewardActivityPlaybackAuthorizationInput = z.infer<typeof RewardActivityPlaybackAuthorizationInputSchema>;
-export const RewardActivityPlaybackAuthorizationDtoSchema = z.object({ authorizationId: UuidSchema }).strict();
-export type RewardActivityPlaybackAuthorizationDto = z.infer<typeof RewardActivityPlaybackAuthorizationDtoSchema>;
-
-export const RewardActivitySignalDtoSchema = z.object({
-  streamId: UuidSchema,
-  sequence: z.number().int().positive(),
-  acceptedAt: InstantSchema,
-  paused: z.boolean(),
-  pauseReason: RewardActivityPauseReasonSchema.nullable(),
+  exerciseType: z.string().min(1),
+  shownFromMs: z.number().int().nonnegative(),
+  shownToMs: z.number().int().nonnegative(),
+  activeIntervals: z.array(SessionActivityIntervalSchema).max(256),
+  editCount: z.number().int().nonnegative(),
+  editWindows: z.array(SessionActivityEditWindowSchema).max(256),
+  submittedAttempts: z.array(UuidSchema).max(64),
+  playbacks: z.array(SessionActivityPlaybackSchema).max(128),
+  pauses: z.array(SessionActivityPauseSchema).max(128),
 }).strict();
-export type RewardActivitySignalDto = z.infer<typeof RewardActivitySignalDtoSchema>;
+export type SessionActivityTaskReport = z.infer<typeof SessionActivityTaskReportSchema>;
 
-export const RewardActivitySummaryDtoSchema = z.object({
-  childId: UuidSchema,
-  sessions: z.array(z.object({
-    sessionId: UuidSchema,
-    startedAt: InstantSchema,
-    endedAt: InstantSchema.nullable(),
-    creditedSeconds: z.number().int().nonnegative(),
-    pauseReasons: z.array(RewardActivityPauseReasonSchema),
-  }).strict()),
-  creditedSeconds: z.number().int().nonnegative(),
+/** Suma długości unii przedziałów (bez nakładania). */
+export function unionDurationMs(intervals: readonly (readonly [number, number])[]): number {
+  const sorted = [...intervals]
+    .filter(([from, to]) => to > from)
+    .sort((a, b) => a[0] - b[0]);
+  let total = 0;
+  let lastEnd = -1;
+  for (const [from, to] of sorted) {
+    const start = Math.max(from, lastEnd);
+    if (to > start) {
+      total += to - start;
+      lastEnd = to;
+    }
+  }
+  return total;
+}
+
+/** Aktywny czas zadania = unia przedziałów aktywności i rzeczywistych odsłuchów. */
+export function taskActiveMs(task: Pick<SessionActivityTaskReport, "activeIntervals" | "playbacks">): number {
+  return unionDurationMs([
+    ...task.activeIntervals,
+    ...task.playbacks.map((playback) => [playback.fromMs, playback.toMs] as const),
+  ]);
+}
+
+export const SessionActivityReportSchema = z
+  .object({
+    version: z.literal(SESSION_ACTIVITY_REPORT_VERSION),
+    /** Czas od pierwszego pokazania zadania do zamrożenia raportu. */
+    elapsedMs: z.number().int().positive(),
+    /** Suma unii aktywnych przedziałów wszystkich zadań. */
+    activeMs: z.number().int().nonnegative(),
+    compacted: z.boolean(),
+    /** Raport nie mieścił się w limitach pamięci/rozmiaru — jawnie odnotowane. */
+    incomplete: z.enum(["storage_unavailable", "size_limit"]).optional(),
+    tasks: z.array(SessionActivityTaskReportSchema).max(SESSION_ACTIVITY_MAX_TASKS),
+  })
+  .strict()
+  .superRefine((report, ctx) => {
+    let entries = 0;
+    const taskUnions: { from: number; to: number }[][] = [];
+    const seenTaskIds = new Set<string>();
+    for (const [index, task] of report.tasks.entries()) {
+      const path = ["tasks", index];
+      if (seenTaskIds.has(task.taskId)) {
+        ctx.addIssue({ code: "custom", path: [...path, "taskId"], message: "taskId appears more than once in the report" });
+      }
+      seenTaskIds.add(task.taskId);
+      if (task.shownToMs < task.shownFromMs) {
+        ctx.addIssue({ code: "custom", path: [...path, "shownToMs"], message: "shownToMs precedes shownFromMs" });
+      }
+      if (task.shownToMs > report.elapsedMs) {
+        ctx.addIssue({ code: "custom", path: [...path, "shownToMs"], message: "task presentation exceeds report elapsed time" });
+      }
+      for (const [from, to] of [...task.activeIntervals, ...task.playbacks.map((p) => [p.fromMs, p.toMs] as const)]) {
+        if (to < from) {
+          ctx.addIssue({ code: "custom", path: [...path, "activeIntervals"], message: "interval ends before it starts" });
+        }
+        if (from < 0 || to > report.elapsedMs) {
+          ctx.addIssue({ code: "custom", path: [...path, "activeIntervals"], message: "interval outside report time range" });
+        }
+      }
+      for (const pause of task.pauses) {
+        if (pause.toMs < pause.fromMs) {
+          ctx.addIssue({ code: "custom", path: [...path, "pauses"], message: "pause ends before it starts" });
+        }
+        if (pause.fromMs < 0 || pause.toMs > report.elapsedMs) {
+          ctx.addIssue({ code: "custom", path: [...path, "pauses"], message: "pause outside report time range" });
+        }
+      }
+      for (const window of task.editWindows) {
+        if (window.atMs > report.elapsedMs) {
+          ctx.addIssue({ code: "custom", path: [...path, "editWindows"], message: "edit window outside report time range" });
+        }
+      }
+      entries += task.activeIntervals.length + task.editWindows.length
+        + task.submittedAttempts.length + task.playbacks.length + task.pauses.length;
+      // Unia aktywnego czasu jednego zadania: nakładanie przedziału na odsłuch
+      // jest dopuszczalne wewnątrz zadania (B02), nie między zadaniami.
+      const union: { from: number; to: number }[] = [];
+      for (const span of [...task.activeIntervals, ...task.playbacks.map((p) => [p.fromMs, p.toMs] as const)]
+        .filter(([from, to]) => to > from)
+        .map(([from, to]) => ({ from, to }))
+        .sort((a, b) => a.from - b.from)) {
+        const last = union.at(-1);
+        if (last && span.from <= last.to) last.to = Math.max(last.to, span.to);
+        else union.push({ ...span });
+      }
+      taskUnions.push(union);
+    }
+    if (entries > SESSION_ACTIVITY_MAX_ENTRIES) {
+      ctx.addIssue({ code: "custom", path: ["tasks"], message: "report exceeds the compacted entry limit" });
+    }
+    // Różne zadania nie mogą nakładać się aktywnym czasem. Po zliczeniu unii
+    // per zadanie każde nakładanie na globalnej osi musi być między zadaniami.
+    const flat = taskUnions.flat().sort((a, b) => a.from - b.from);
+    for (let i = 1; i < flat.length; i += 1) {
+      if (flat[i]!.from < flat[i - 1]!.to) {
+        ctx.addIssue({ code: "custom", path: ["tasks"], message: "active intervals of different tasks overlap" });
+        break;
+      }
+    }
+    const activeMs = report.tasks.reduce((total, task) => total + taskActiveMs(task), 0);
+    if (activeMs !== report.activeMs) {
+      ctx.addIssue({ code: "custom", path: ["activeMs"], message: "activeMs must equal the union of task intervals" });
+    }
+    if (report.activeMs > report.elapsedMs) {
+      ctx.addIssue({ code: "custom", path: ["activeMs"], message: "activeMs exceeds elapsedMs" });
+    }
+  });
+export type SessionActivityReport = z.infer<typeof SessionActivityReportSchema>;
+
+/** Wejście końca sesji: opcjonalny raport aktywności zebrany przez FE. */
+export const SessionEndInputSchema = z.object({
+  activityReport: SessionActivityReportSchema.optional(),
 }).strict();
-export type RewardActivitySummaryDto = z.infer<typeof RewardActivitySummaryDtoSchema>;
+export type SessionEndInput = z.infer<typeof SessionEndInputSchema>;
+
+// ===== Wynik oceny modelu (wykluczenia zadań) =====
+
+/** Jedno wykluczenie: zadanie bez podstaw do zaliczenia pracy + uzasadnienie. */
+export const SessionActivityExcludedTaskSchema = z.object({
+  /** Zerowy porządek zadania w sesji (session_tasks.ordinal). */
+  taskOrdinal: z.number().int().nonnegative(),
+  reason: z.string().min(1).max(300),
+}).strict();
+export type SessionActivityExcludedTask = z.infer<typeof SessionActivityExcludedTaskSchema>;
+
+/**
+ * Ścisły wynik modelu: uzasadnienie ogólne + lista wykluczonych zadań.
+ * Model NIGDY nie zwraca sekund, punktów ani procentów — dodatkowe pola
+ * oznaczają błąd oceny.
+ */
+export const SessionActivityReviewVerdictSchema = z.object({
+  reason: z.string().min(1).max(500),
+  excludedTasks: z.array(SessionActivityExcludedTaskSchema),
+}).strict();
+export type SessionActivityReviewVerdict = z.infer<typeof SessionActivityReviewVerdictSchema>;
+
+// ===== Wynik publiczny (dziecko) i trwały (rodzic) =====
+
+export const SessionActivityResultStatusSchema = z.enum(["evaluated", "error", "already_started"]);
+export type SessionActivityResultStatus = z.infer<typeof SessionActivityResultStatusSchema>;
+
+/**
+ * Mały wynik widoczny dla dziecka: punkty albo jawny brak oceny. Bez
+ * uzasadnień modelu, sekund i technicznych szczegółów.
+ */
+export const SessionActivityResultDtoSchema = z.object({
+  status: SessionActivityResultStatusSchema,
+  pointsAwarded: z.number().int().nonnegative(),
+  errorCode: z.string().min(1).nullable(),
+}).strict();
+export type SessionActivityResultDto = z.infer<typeof SessionActivityResultDtoSchema>;
+
+/** Trwały krótki wynik oceny sesji (learning_sessions.activity_review). */
+export const SessionActivityReviewRecordSchema = z.object({
+  status: z.enum(["evaluated", "error"]),
+  /** Czas całkowity od pierwszego wydania zadania do końca sesji (sekundy). */
+  durationSeconds: z.number().int().nonnegative(),
+  /** Zmierzona aktywność FE (sekundy, obcięta do czasu całkowitego). */
+  activeSeconds: z.number().int().nonnegative(),
+  /** Zatwierdzony czas po wykluczeniach; null przy błędzie oceny. */
+  approvedMilliseconds: z.number().int().nonnegative().nullable(),
+  approvedSeconds: z.number().int().nonnegative().nullable(),
+  pointsAwarded: z.number().int().nonnegative(),
+  /** Krótkie uzasadnienie (model albo opis techniczny); nie przepisuje odpowiedzi. */
+  reason: z.string().nullable(),
+  evaluatedAt: InstantSchema,
+  errorCode: z.string().min(1).nullable(),
+}).strict();
+export type SessionActivityReviewRecord = z.infer<typeof SessionActivityReviewRecordSchema>;
+
+/** Naliczenie punktów: 1 pkt / 60 s; reszta przechodzi między sesjami. */
+export const SESSION_ACTIVITY_POINT_INTERVAL_MS = 60_000;
+
+export function sessionActivityAward(
+  approvedMilliseconds: number,
+  previousRemainderMs: number,
+): { pointsAwarded: number; remainderMs: number } {
+  if (!Number.isSafeInteger(approvedMilliseconds) || approvedMilliseconds < 0
+    || !Number.isSafeInteger(previousRemainderMs) || previousRemainderMs < 0
+    || previousRemainderMs >= SESSION_ACTIVITY_POINT_INTERVAL_MS) {
+    throw new RangeError("Invalid approved activity duration");
+  }
+  const totalMs = previousRemainderMs + approvedMilliseconds;
+  return {
+    pointsAwarded: Math.floor(totalMs / SESSION_ACTIVITY_POINT_INTERVAL_MS),
+    remainderMs: totalMs % SESSION_ACTIVITY_POINT_INTERVAL_MS,
+  };
+}

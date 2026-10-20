@@ -36,6 +36,40 @@ function stepTypeLabel(type: string): string {
   return messages.workCard.stepType[type as keyof typeof messages.workCard.stepType] ?? "Ćwiczenie";
 }
 
+/** Karta wyniku oceny aktywności jednej sesji: czasy, punkty i wyjaśnienie. */
+function SessionActivityCard({ activity }: { activity: ParentWorkCardDto["sessions"][number]["activity"] }) {
+  return (
+    <div className="pp-work-activity" data-testid="work-card-activity" data-status={activity.status}>
+      {activity.status === "evaluated" ? (
+        <>
+          <p>{messages.workCard.activityDuration.replace("{time}", duration(activity.durationSeconds))}</p>
+          <p>{messages.workCard.activityActive.replace("{time}", duration(activity.activeSeconds))}</p>
+          <p>{messages.workCard.activityApproved.replace("{time}", duration(activity.approvedSeconds))}</p>
+          <p>{messages.workCard.activityPoints.replace("{n}", String(activity.pointsAwarded))}</p>
+        </>
+      ) : activity.status === "error" ? (
+        <p>{messages.workCard.activityError}</p>
+      ) : (
+        <p>{messages.workCard.activityNotDelivered}</p>
+      )}
+      {activity.status === "evaluated" && activity.reason && (
+        <p>{messages.workCard.activityReasonLabel}: {activity.reason}</p>
+      )}
+      {activity.excludedTasks !== null && activity.excludedTasks.length > 0 && (
+        <details>
+          <summary>{messages.workCard.activityExcludedTitle}</summary>
+          <ul>{activity.excludedTasks.map((excluded, index) => (
+            <li key={index}>{messages.workCard.activityExcludedTask.replace("{n}", String(excluded.taskOrdinal + 1)).replace("{reason}", excluded.reason)}</li>
+          ))}</ul>
+        </details>
+      )}
+      {activity.status === "evaluated" && activity.excludedTasks === null && (
+        <p className="info">{messages.workCard.activityDetailsExpired}</p>
+      )}
+    </div>
+  );
+}
+
 export default function WorkCardPanel({ childrenList, onAuthExpired }: { childrenList: ChildDto[]; onAuthExpired: () => void }) {
   const [childId, setChildId] = useState(childrenList[0]?.id ?? "");
   // Empty on first load: the API supplies today's date in the family timezone.
@@ -43,9 +77,6 @@ export default function WorkCardPanel({ childrenList, onAuthExpired }: { childre
   const [report, setReport] = useState<ParentWorkCardDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [decisionBusy, setDecisionBusy] = useState<string | null>(null);
-  const [decisionSaving, setDecisionSaving] = useState<"fulfilled" | "rejected" | null>(null);
-  const [decisionError, setDecisionError] = useState<string | null>(null);
   const requestSeq = useRef(0);
   const selection = useRef({ childId, date });
   selection.current = { childId, date };
@@ -80,40 +111,15 @@ export default function WorkCardPanel({ childrenList, onAuthExpired }: { childre
 
   useEffect(() => { void load(); return () => { requestSeq.current++; }; }, [load]);
 
-  useEffect(() => { setDecisionError(null); }, [childId, date]);
-
-  const decide = async (requestId: string, decision: "fulfilled" | "rejected") => {
-    const selectedChildId = childId;
-    const selectedDate = date;
-    const sequenceAtStart = requestSeq.current;
-    const selectionIsCurrent = () => selection.current.childId === selectedChildId
-      && selection.current.date === selectedDate && requestSeq.current === sequenceAtStart;
-    setDecisionBusy(requestId);
-    setDecisionSaving(decision);
-    setDecisionError(null);
-    try {
-      await apiFetch("POST", `/api/v1/parent/xbox-requests/${requestId}/decision`, { decision });
-      if (selectionIsCurrent()) await load();
-    } catch (cause) {
-      if ((cause as { status?: number }).status === 401) { onAuthExpired(); return; }
-      if (selectionIsCurrent()) setDecisionError(errorMessage(cause) || messages.workCard.xboxDecisionFailed);
-    } finally {
-      setDecisionBusy(null);
-      setDecisionSaving(null);
-    }
-  };
-
   const selectChild = (nextChildId: string) => {
     if (nextChildId === childId) return;
     selection.current = { ...selection.current, childId: nextChildId };
     requestSeq.current++;
-    setDecisionError(null);
     setChildId(nextChildId);
   };
   const selectDate = (nextDate: string) => {
     selection.current = { ...selection.current, date: nextDate };
     requestSeq.current++;
-    setDecisionError(null);
     setDate(nextDate);
   };
 
@@ -135,52 +141,20 @@ export default function WorkCardPanel({ childrenList, onAuthExpired }: { childre
       </div>
       {loading && <p className="pp-loading" role="status">{messages.workCard.loading}</p>}
       {error && <p className="pp-error" role="alert">{error}</p>}
-      {decisionError && <p className="pp-error" role="alert">{decisionError}</p>}
       {report && !loading && (
         <>
-          <section className="card" aria-label={messages.workCard.xboxPendingTitle}>
-            <h3>{messages.workCard.xboxPendingTitle}</h3>
-            {report.xboxRequests.filter(request => request.status === "pending").length === 0
-              ? <p>{messages.workCard.xboxPendingEmpty}</p>
-              : <ul>{report.xboxRequests.filter(request => request.status === "pending").map(request => (
-                <li key={request.requestId}>
-                  <button type="button" onClick={() => selectDate(request.localDate)}
-                    aria-label={messages.workCard.xboxOpenOnDate.replace("{date}", request.localDate)}>
-                    {messages.workCard.xboxRequestBlock.replace("{date}", request.localDate).replace("{block}", String(request.blockNumber))}
-                  </button>
-                </li>
-              ))}</ul>}
-          </section>
           <section className="pp-work-summary card" aria-label={messages.workCard.creditedTime}>
-            <h3>{messages.workCard.creditedTime}</h3><p>{duration(report.creditedSeconds)}</p>
+            <h3>{messages.workCard.creditedTime}</h3>
+            <p data-testid="work-card-credited">{duration(report.creditedSeconds)}</p>
+            {report.unevaluatedSessions > 0 && (
+              <p className="info">{messages.workCard.unevaluatedSessions.replace("{n}", String(report.unevaluatedSessions))}</p>
+            )}
           </section>
-          {report.xboxRequests.filter(request => request.localDate === report.date).map(request => (
-            <section className="card" aria-label={messages.workCard.xboxRequestTitle} key={request.requestId}>
-              <h3>{messages.workCard.xboxRequestTitle}</h3>
-              <p>{messages.workCard.xboxRequestBlock.replace("{date}", request.localDate).replace("{block}", String(request.blockNumber))}</p>
-              <p>{messages.workCard.xboxRequestStatus[request.status]}</p>
-              <p>{request.pointsCost} pkt · {request.xboxMinutes} min</p>
-              {request.status === "pending" && <>
-                <p>{messages.workCard.xboxManualSteps}</p>
-                <p>{messages.workCard.xboxUncertain}</p>
-                <div className="pp-work-xbox-actions">
-                  <button type="button" disabled={decisionBusy !== null}
-                    onClick={() => void decide(request.requestId, "fulfilled")}>
-                    {decisionBusy === request.requestId && decisionSaving === "fulfilled" ? messages.workCard.xboxSavingFulfilled : messages.workCard.xboxConfirm}
-                  </button>
-                  <button type="button" disabled={decisionBusy !== null}
-                    onClick={() => void decide(request.requestId, "rejected")}>
-                    {decisionBusy === request.requestId && decisionSaving === "rejected" ? messages.workCard.xboxSavingRejected : messages.workCard.xboxReject}
-                  </button>
-                </div>
-              </>}
-            </section>
-          ))}
           <h3>{messages.workCard.sessions}</h3>
           {report.sessions.length === 0 ? <p className="info">{messages.workCard.emptyDay}</p> : <div className="pp-work-sessions">
             {report.sessions.map(session => <article className="card pp-work-session" key={session.sessionId}>
-              <header><div><h4>{session.deckTitle}</h4><p>{sessionLabel(session.mode)} · v{session.deckVersionNumber} · {stateLabel(session.state)}</p></div>
-                <p>{duration(session.creditedSeconds)}</p></header>
+              <header><div><h4>{session.deckTitle}</h4><p>{sessionLabel(session.mode)} · v{session.deckVersionNumber} · {stateLabel(session.state)}</p></div></header>
+              <SessionActivityCard activity={session.activity} />
               <p>{messages.workCard.steps}: {session.steps.length} · {messages.workCard.remaining}: {session.remainingSteps}</p>
               {session.steps.length > 0 && <ol>{session.steps.map(step => <li key={step.taskId}>
                 <span>{stepTypeLabel(step.exerciseType)} · {messages.workCard.stepState[step.state]}</span>

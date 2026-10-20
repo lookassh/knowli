@@ -1,0 +1,523 @@
+import { randomUUID } from "node:crypto";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  completePresentation,
+  createChild,
+  createDraft,
+  createServices,
+  endSession,
+  fakeSessionActivityDeps,
+  FakeSessionActivityReviewer,
+  type FakeSessionActivityBehavior,
+  listKidProfiles,
+  nextTask,
+  publishDraft,
+  readParentWorkCard,
+  reviewSessionActivity,
+  cleanupExpiredActivityReports,
+  startSession,
+  submitAttempt,
+  upsertAssignment,
+  type Services,
+} from "@learning/server";
+import type { SessionActivityReport } from "@learning/contracts";
+import { SESSION_ACTIVITY_REPORT_MAX_BYTES } from "@learning/contracts";
+import { createKidApiClient } from "../../packages/kid-ui/src/api/client";
+import { handleKidApi } from "../../apps/web/src/kid/kid-router";
+import { AppError } from "../../packages/server/src/errors";
+import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
+
+const { pool } = testDatabase();
+afterAll(() => pool.end());
+
+/**
+ * Ocena aktywności sesji na prawdziwym PostgreSQL (spec client-reward-time):
+ * raport FE → zapis przed oceną → jedno wywołanie fake reviewera → punkty.
+ * Zastępuje dawne regresje reward-activity/client/regressions.
+ */
+
+const DAY_ITEMS: { source: string; target: string }[] = [
+  { source: "poniedziałek", target: "Monday" },
+  { source: "wtorek", target: "Tuesday" },
+  { source: "środa", target: "Wednesday" },
+];
+
+function vocabItem(pair: { source: string; target: string }) {
+  return {
+    source: pair.source,
+    target: pair.target,
+    acceptedAnswers: [],
+    locales: { source: "pl-PL", target: "en-GB" },
+    visualType: "color" as const,
+    visualData: { color: "#4169e1" },
+  };
+}
+
+async function publishDeck(services: Services, childId: string) {
+  const draft = await createDraft(services, { title: "Aktywność sesji", items: DAY_ITEMS.map(vocabItem) });
+  for (const index of DAY_ITEMS.keys()) {
+    const revision = (await pool.query<{ id: string }>(
+      "select id from learning_app.item_revisions where deck_version_id=$1 order by position offset $2 limit 1",
+      [draft.id, index],
+    )).rows[0]!;
+    const assetId = randomUUID();
+    const fingerprint = `fp-${randomUUID()}`;
+    await pool.query(`insert into learning_app.media_assets
+      (id,kind,fingerprint,generation_number,state,storage_key,content_sha256,mime_type,byte_count,provider,model,metadata)
+      values ($1,'tts',$2,1,'ready',$3,$4,'audio/mpeg',1024,'fake','fake-tts','{"durationMs":20000}'::jsonb)`,
+    [assetId, fingerprint, `blob/${assetId}`, `sha-${assetId}`]);
+    await pool.query(`insert into learning_app.revision_assets
+      (item_revision_id,role,asset_id,expected_fingerprint,state) values ($1,'target_audio',$2,$3,'approved')`,
+    [revision.id, assetId, fingerprint]);
+    await pool.query(`insert into learning_app.revision_assets
+      (item_revision_id,role,asset_id,expected_fingerprint,state) values ($1,'illustration',null,$2,'omitted')`,
+    [revision.id, `ill-${randomUUID()}`]);
+  }
+  await publishDraft(services, draft.id, 1);
+  await upsertAssignment(services, childId, draft.deckId, null);
+  return draft.deckId;
+}
+
+interface TaskActivity {
+  taskId: string;
+  exerciseType: string;
+  intervals: [number, number][];
+  edits: number;
+  attempts: string[];
+}
+
+function reportOf(tasks: TaskActivity[], elapsedMs: number): SessionActivityReport {
+  const activeMs = tasks.reduce((total, task) => {
+    const union = [...task.intervals].sort((a, b) => a[0] - b[0]);
+    let sum = 0;
+    let lastEnd = -1;
+    for (const [from, to] of union) {
+      const start = Math.max(from, lastEnd);
+      if (to > start) {
+        sum += to - start;
+        lastEnd = to;
+      }
+    }
+    return total + sum;
+  }, 0);
+  let cursor = 0;
+  return {
+    version: 1,
+    elapsedMs,
+    activeMs,
+    compacted: false,
+    tasks: tasks.map((task) => {
+      const shownFrom = cursor;
+      cursor = Math.min(elapsedMs, task.intervals.at(-1)?.[1] ?? shownFrom + 1_000);
+      return {
+        taskId: task.taskId,
+        exerciseType: task.exerciseType,
+        shownFromMs: shownFrom,
+        shownToMs: cursor,
+        activeIntervals: task.intervals,
+        editCount: task.edits,
+        editWindows: task.edits > 0 ? [{ atMs: task.intervals[0]?.[0] ?? 0, count: task.edits }] : [],
+        submittedAttempts: task.attempts,
+        playbacks: [],
+        pauses: [],
+      };
+    }),
+  };
+}
+
+async function reviewerServices(startIso?: string, behaviors?: FakeSessionActivityBehavior[]) {
+  const base = buildTestServices(startIso);
+  const provider = new FakeSessionActivityReviewer();
+  if (behaviors) provider.queue(...behaviors);
+  const services = createServices({
+    db: base.services.db,
+    clock: base.clock,
+    sessionActivity: fakeSessionActivityDeps({ provider }),
+  });
+  return { services, clock: base.clock, provider };
+}
+
+/** Pełna sesja treningowa: prezentacje + dwa zadania oceniane, jedna odpowiedź. */
+async function playedSession(services: Services, childId: string) {
+  const deckId = await publishDeck(services, childId);
+  const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+  const tasks: Awaited<ReturnType<typeof nextTask>>[] = [];
+  let attemptIds: string[] = [];
+  for (let index = 0; index < 8; index += 1) {
+    const task = await nextTask(services, session.sessionId);
+    if (task === null) break;
+    if (task.exerciseType === "exposure" || task.exerciseType === "lesson_card") {
+      await completePresentation(services, { taskId: task.taskId });
+      continue;
+    }
+    if (tasks.length === 0) {
+      const attempt = await submitAttempt(services, {
+        taskId: task.taskId, clientAttemptId: randomUUID(), modality: "dont_remember",
+      });
+      attemptIds = [attempt.attemptId];
+    }
+    tasks.push(task);
+    if (tasks.length === 2) break;
+  }
+  expect(tasks).toHaveLength(2);
+  return { session, tasks: [tasks[0]!, tasks[1]!], attemptIds };
+}
+
+async function childWithProfile(services: Services) {
+  return createChild(services, { displayName: "Ola", avatarKey: "fox" });
+}
+
+async function rewardPointsOf(childId: string): Promise<{ points: number; remainder: number }> {
+  const row = (await pool.query("select reward_points, reward_remainder_ms from learning_app.child_profiles where id=$1", [childId])).rows[0]!;
+  return { points: row.reward_points as number, remainder: row.reward_remainder_ms as number };
+}
+
+beforeEach(async () => {
+  await truncateCoreTables();
+  await pool.query("update learning_app.family_settings set timezone='Europe/Warsaw'");
+});
+
+describe("session activity review", () => {
+  it("awards points from the measured time of tasks the model did not exclude", async () => {
+    const { services, clock, provider } = await reviewerServices("2026-10-16T10:00:00.000Z");
+    const child = await childWithProfile(services);
+    const { session, tasks, attemptIds } = await playedSession(services, child.id);
+    clock.advanceMs(90_000);
+    const report = reportOf([
+      { taskId: tasks[0]!.taskId, exerciseType: tasks[0]!.exerciseType, intervals: [[0, 65_000]], edits: 5, attempts: attemptIds },
+      { taskId: tasks[1]!.taskId, exerciseType: tasks[1]!.exerciseType, intervals: [[65_000, 90_000]], edits: 2, attempts: [] },
+    ], 90_000);
+    const summary = await endSession(services, session.sessionId, report);
+    expect(summary.activity).toMatchObject({ status: "evaluated", pointsAwarded: 1 });
+    // Kształt payloadu do modelu: wyłącznie dozwolone pola, bez identyfikatorów
+    // dziecka/sesji; odpowiedzi bez attemptId/receivedAt, tekst przycięty ≤200.
+    const payload = provider.requests[0]!;
+    const serialized = JSON.stringify(payload);
+    expect(serialized).not.toContain(child.id);
+    expect(serialized).not.toContain(session.sessionId);
+    for (const task of payload.tasks) {
+      expect(Object.keys(task).sort()).toEqual(["acceptedAnswers", "activeIntervals", "editCount", "editWindows", "instruction", "options", "pauses", "playbacks", "stimulus", "submittedAnswers", "taskOrdinal"]);
+      for (const answer of task.submittedAnswers) {
+        expect(Object.keys(answer).sort()).toEqual(["modality", "supportDisclosedBefore", "text", "uncertain"]);
+        if (answer.text !== null) expect(answer.text.length).toBeLessThanOrEqual(200);
+      }
+    }
+    expect(await rewardPointsOf(child.id)).toEqual({ points: 1, remainder: 30_000 });
+    const review = (await pool.query("select activity_review from learning_app.learning_sessions where id=$1", [session.sessionId])).rows[0].activity_review;
+    expect(review.approvedMilliseconds).toBe(90_000);
+    expect(review.durationSeconds).toBe(90);
+    expect(review.reason).toBe("Próby są związane z zadaniami.");
+  });
+
+  it("excludes only the tasks the model listed and keeps their time out of the award", async () => {
+    const { services, clock, provider } = await reviewerServices("2026-10-16T10:00:00.000Z");
+    const child = await childWithProfile(services);
+    const { session, tasks, attemptIds } = await playedSession(services, child.id);
+    const firstOrdinal = (await pool.query<{ ordinal: number }>("select ordinal from learning_app.session_tasks where id=$1", [tasks[0]!.taskId])).rows[0]!.ordinal;
+    provider.queue({ raw: {
+      reason: "Jedno zadanie bez rzeczywistej próby.",
+      excludedTasks: [{ taskOrdinal: firstOrdinal, reason: "Jedyna próba to aaa." }],
+    } });
+    clock.advanceMs(90_000);
+    const report = reportOf([
+      { taskId: tasks[0]!.taskId, exerciseType: tasks[0]!.exerciseType, intervals: [[0, 65_000]], edits: 0, attempts: attemptIds },
+      { taskId: tasks[1]!.taskId, exerciseType: tasks[1]!.exerciseType, intervals: [[65_000, 90_000]], edits: 2, attempts: [] },
+    ], 90_000);
+    const summary = await endSession(services, session.sessionId, report);
+    expect(summary.activity).toMatchObject({ status: "evaluated", pointsAwarded: 0 });
+    expect(await rewardPointsOf(child.id)).toEqual({ points: 0, remainder: 25_000 });
+    expect(provider.callCount).toBe(1);
+    const workCard = await readParentWorkCard(services, { childId: child.id });
+    expect(workCard.creditedSeconds).toBe(25);
+    expect(workCard.sessions[0]!.activity.excludedTasks).toEqual([{ taskOrdinal: firstOrdinal, reason: "Jedyna próba to aaa." }]);
+  });
+
+  it("rejects a foreign task id instead of reading another child's data", async () => {
+    const { services } = await reviewerServices();
+    const child = await childWithProfile(services);
+    const { session } = await playedSession(services, child.id);
+    const report = reportOf([
+      { taskId: randomUUID(), exerciseType: "recall", intervals: [[0, 10_000]], edits: 0, attempts: [] },
+    ], 10_000);
+    await expect(reviewSessionActivity(services, session.sessionId, report)).rejects.toMatchObject({ code: "validation" });
+  });
+
+  it("keeps the report and records an error when the model is not configured (no points, no queue)", async () => {
+    const { services, clock } = buildTestServices("2026-10-16T10:00:00.000Z");
+    const child = await childWithProfile(services);
+    const { session, tasks } = await playedSession(services, child.id);
+    clock.advanceMs(60_000);
+    const summary = await endSession(services, session.sessionId, reportOf([
+      { taskId: tasks[0]!.taskId, exerciseType: tasks[0]!.exerciseType, intervals: [[0, 60_000]], edits: 1, attempts: [] },
+    ], 60_000));
+    expect(summary.activity).toMatchObject({ status: "error", pointsAwarded: 0, errorCode: "model_not_configured" });
+    expect(await rewardPointsOf(child.id)).toEqual({ points: 0, remainder: 0 });
+    // Raport pozostaje zapisany wraz z kodem błędu (szczegóły do retencji).
+    const stored = (await pool.query("select activity_report, activity_report_hash is not null as hashed from learning_app.learning_sessions where id=$1", [session.sessionId])).rows[0]!;
+    expect(stored.activity_report.errorCode).toBe("model_not_configured");
+    expect(stored.hashed).toBe(true);
+  });
+
+  it("treats an invalid verdict (seconds/points) as an evaluation error without retry", async () => {
+    const { services, clock, provider } = await reviewerServices("2026-10-16T10:00:00.000Z", [
+      { raw: { reason: "ok", excludedTasks: [], approvedSeconds: 120 } },
+    ]);
+    const child = await childWithProfile(services);
+    const { session, tasks } = await playedSession(services, child.id);
+    clock.advanceMs(60_000);
+    const summary = await endSession(services, session.sessionId, reportOf([
+      { taskId: tasks[0]!.taskId, exerciseType: tasks[0]!.exerciseType, intervals: [[0, 60_000]], edits: 1, attempts: [] },
+    ], 60_000));
+    expect(summary.activity).toMatchObject({ status: "error", errorCode: "invalid_verdict", pointsAwarded: 0 });
+    expect(provider.callCount).toBe(1);
+  });
+
+  it("a model timeout keeps the report and error without points, and a retry starts no new call", async () => {
+    const base = buildTestServices("2026-10-16T10:00:00.000Z");
+    const provider = new FakeSessionActivityReviewer();
+    // Opóźnienie dłuższe niż deadline zamyka wywołanie przez AbortController.
+    provider.queue({ raw: { reason: "nieużyte", excludedTasks: [] }, delayMs: 30_000 });
+    const services = createServices({
+      db: base.services.db,
+      clock: base.clock,
+      sessionActivity: fakeSessionActivityDeps({ provider, timeoutMs: 100 }),
+    });
+    const child = await childWithProfile(services);
+    const { session, tasks } = await playedSession(services, child.id);
+    base.clock.advanceMs(60_000);
+    const report = reportOf([
+      { taskId: tasks[0]!.taskId, exerciseType: tasks[0]!.exerciseType, intervals: [[0, 60_000]], edits: 1, attempts: [] },
+    ], 60_000);
+    const summary = await endSession(services, session.sessionId, report);
+    expect(summary.activity).toMatchObject({ status: "error", errorCode: "model_timeout", pointsAwarded: 0 });
+    expect(await rewardPointsOf(child.id)).toEqual({ points: 0, remainder: 0 });
+    // Raport i kod błędu pozostają zapisane (szczegóły w retencji 7 dni).
+    const stored = (await pool.query("select activity_report from learning_app.learning_sessions where id=$1", [session.sessionId])).rows[0]!;
+    expect(stored.activity_report.errorCode).toBe("model_timeout");
+    // Powtórzenie żądania zwraca zapisany błąd bez kolejnego wywołania modelu.
+    const retry = await endSession(services, session.sessionId, report);
+    expect(retry.activity).toMatchObject({ status: "error", errorCode: "model_timeout", pointsAwarded: 0 });
+    expect(provider.callCount).toBe(1);
+  });
+
+  it("returns the stored result on retry without a second model call or points", async () => {
+    const { services, clock, provider } = await reviewerServices("2026-10-16T10:00:00.000Z");
+    const child = await childWithProfile(services);
+    const { session, tasks, attemptIds } = await playedSession(services, child.id);
+    clock.advanceMs(70_000);
+    const report = reportOf([
+      { taskId: tasks[0]!.taskId, exerciseType: tasks[0]!.exerciseType, intervals: [[0, 70_000]], edits: 3, attempts: attemptIds },
+      { taskId: tasks[1]!.taskId, exerciseType: tasks[1]!.exerciseType, intervals: [], edits: 0, attempts: [] },
+    ], 70_000);
+    const first = await endSession(services, session.sessionId, report);
+    const second = await endSession(services, session.sessionId, report);
+    expect(second.activity).toEqual(first.activity);
+    expect(provider.callCount).toBe(1);
+    expect(await rewardPointsOf(child.id)).toEqual({ points: 1, remainder: 10_000 });
+  });
+
+  it("conflicts on a different report for an already accepted session", async () => {
+    const { services, clock } = await reviewerServices("2026-10-16T10:00:00.000Z");
+    const child = await childWithProfile(services);
+    const { session, tasks } = await playedSession(services, child.id);
+    clock.advanceMs(60_000);
+    const report = reportOf([
+      { taskId: tasks[0]!.taskId, exerciseType: tasks[0]!.exerciseType, intervals: [[0, 60_000]], edits: 1, attempts: [] },
+    ], 60_000);
+    await endSession(services, session.sessionId, report);
+    const tampered = reportOf([
+      { taskId: tasks[0]!.taskId, exerciseType: tasks[0]!.exerciseType, intervals: [[0, 600_000]], edits: 1, attempts: [] },
+    ], 600_000);
+    await expect(endSession(services, session.sessionId, tampered)).rejects.toMatchObject({ code: "conflict" });
+  });
+
+  it("parallel identical deliveries award points at most once", async () => {
+    const { services, clock } = await reviewerServices("2026-10-16T10:00:00.000Z");
+    const child = await childWithProfile(services);
+    const { session, tasks } = await playedSession(services, child.id);
+    clock.advanceMs(60_000);
+    const report = reportOf([
+      { taskId: tasks[0]!.taskId, exerciseType: tasks[0]!.exerciseType, intervals: [[0, 60_000]], edits: 1, attempts: [] },
+    ], 60_000);
+    const results = await Promise.all([
+      reviewSessionActivity(services, session.sessionId, report),
+      reviewSessionActivity(services, session.sessionId, report),
+      reviewSessionActivity(services, session.sessionId, report),
+    ]);
+    const evaluated = results.filter((result) => result.status === "evaluated");
+    const already = results.filter((result) => result.status === "already_started");
+    expect(evaluated.length + already.length).toBe(3);
+    expect(await rewardPointsOf(child.id)).toEqual({ points: 1, remainder: 0 });
+  });
+
+  it("after the deadline an interrupted marker ends as a technical error without points", async () => {
+    const { services, clock } = await reviewerServices("2026-10-16T10:00:00.000Z");
+    const child = await childWithProfile(services);
+    const { session, tasks } = await playedSession(services, child.id);
+    clock.advanceMs(60_000);
+    // Symulacja restartu: znacznik rozpoczęcia zapisany, wyniku brak.
+    await pool.query(
+      "update learning_app.learning_sessions set activity_review_started_at=$2, activity_report_expires_at=$3 where id=$1",
+      [session.sessionId, clock.now(), new Date(clock.now().getTime() + 7 * 86_400_000)],
+    );
+    clock.advanceMs(130_000);
+    const report = reportOf([
+      { taskId: tasks[0]!.taskId, exerciseType: tasks[0]!.exerciseType, intervals: [[0, 60_000]], edits: 1, attempts: [] },
+    ], 60_000);
+    const result = await reviewSessionActivity(services, session.sessionId, report);
+    expect(result).toMatchObject({ status: "error", errorCode: "review_interrupted", pointsAwarded: 0 });
+    expect(await rewardPointsOf(child.id)).toEqual({ points: 0, remainder: 0 });
+  });
+
+  it("an empty cancelled session evaluates to zero without calling the model", async () => {
+    const { services, provider } = await reviewerServices("2026-10-16T10:00:00.000Z");
+    const child = await childWithProfile(services);
+    const deckId = await publishDeck(services, child.id);
+    // Anulowana kartkówka przed pierwszym zadaniem: sesja bez wydanych zadań.
+    const session = await startSession(services, { childId: child.id, deckId, microphoneEnabled: false });
+    const summary = await endSession(services, session.sessionId, reportOf([], 1));
+    expect(summary.activity).toMatchObject({ status: "evaluated", pointsAwarded: 0 });
+    expect(provider.callCount).toBe(0);
+  });
+
+  it("carries the sub-minute remainder between sessions", async () => {
+    const { services, clock } = await reviewerServices("2026-10-16T10:00:00.000Z");
+    const child = await childWithProfile(services);
+    const first = await playedSession(services, child.id);
+    clock.advanceMs(40_000);
+    await endSession(services, first.session.sessionId, reportOf([
+      { taskId: first.tasks[0]!.taskId, exerciseType: first.tasks[0]!.exerciseType, intervals: [[0, 40_000]], edits: 1, attempts: first.attemptIds },
+    ], 40_000));
+    expect(await rewardPointsOf(child.id)).toEqual({ points: 0, remainder: 40_000 });
+    const second = await playedSession(services, child.id);
+    clock.advanceMs(50_000);
+    const summary = await endSession(services, second.session.sessionId, reportOf([
+      { taskId: second.tasks[0]!.taskId, exerciseType: second.tasks[0]!.exerciseType, intervals: [[0, 50_000]], edits: 1, attempts: second.attemptIds },
+    ], 50_000));
+    expect(summary.activity).toMatchObject({ status: "evaluated", pointsAwarded: 1 });
+    expect(await rewardPointsOf(child.id)).toEqual({ points: 1, remainder: 30_000 });
+    const profiles = await listKidProfiles(services);
+    expect(profiles.find((profile) => profile.childId === child.id)?.rewardPoints).toBe(1);
+  });
+
+  it("cleanup drops expired details but keeps points, short result and the once-marker", async () => {
+    const { services, clock } = await reviewerServices("2026-10-16T10:00:00.000Z");
+    const child = await childWithProfile(services);
+    const { session, tasks, attemptIds } = await playedSession(services, child.id);
+    clock.advanceMs(60_000);
+    await endSession(services, session.sessionId, reportOf([
+      { taskId: tasks[0]!.taskId, exerciseType: tasks[0]!.exerciseType, intervals: [[0, 60_000]], edits: 2, attempts: attemptIds },
+    ], 60_000));
+    const before = await rewardPointsOf(child.id);
+    // Retencja minęła, worker jeszcze nie czyścił: API nie udostępnia szczegółów.
+    await pool.query("update learning_app.learning_sessions set activity_report_expires_at = $2 where id=$1", [session.sessionId, new Date(clock.now().getTime() - 1_000)]);
+    const expiredCard = await readParentWorkCard(services, { childId: child.id });
+    expect(expiredCard.sessions[0]!.activity.excludedTasks).toBeNull();
+    expect(expiredCard.sessions[0]!.activity.pointsAwarded).toBe(before.points);
+    // Fizyczne czyszczenie: JSONB znika, krótki wynik i punkty zostają.
+    const cleaned = await cleanupExpiredActivityReports(services);
+    expect(cleaned).toBeGreaterThanOrEqual(1);
+    const row = (await pool.query("select activity_report, activity_review, activity_report_hash, activity_review_started_at is not null as marked from learning_app.learning_sessions where id=$1", [session.sessionId])).rows[0]!;
+    expect(row.activity_report).toBeNull();
+    expect(row.activity_report_hash).not.toBeNull();
+    expect(row.marked).toBe(true);
+    expect((row.activity_review as { pointsAwarded: number }).pointsAwarded).toBe(before.points);
+    expect(await rewardPointsOf(child.id)).toEqual(before);
+  });
+
+  it("does not re-evaluate a report delivered after retention", async () => {
+    const { services, clock, provider } = await reviewerServices("2026-10-16T10:00:00.000Z");
+    const child = await childWithProfile(services);
+    const { session, tasks } = await playedSession(services, child.id);
+    clock.advanceMs(60_000);
+    const report = reportOf([
+      { taskId: tasks[0]!.taskId, exerciseType: tasks[0]!.exerciseType, intervals: [[0, 60_000]], edits: 1, attempts: [] },
+    ], 60_000);
+    await endSession(services, session.sessionId, report);
+    await pool.query("update learning_app.learning_sessions set activity_report_expires_at = $2 where id=$1", [session.sessionId, new Date(clock.now().getTime() - 8 * 86_400_000)]);
+    const calls = provider.callCount;
+    const retry = await reviewSessionActivity(services, session.sessionId, report);
+    // Wynik już zapisany → zwracany bez modelu; retencja nie tworzy ponownej oceny.
+    expect(retry.status).toBe("evaluated");
+    expect(provider.callCount).toBe(calls);
+  });
+
+  it("a legacy session predating the rollout cannot be settled by the new mechanism", async () => {
+    const { services, clock, provider } = await reviewerServices("2026-10-16T10:00:00.000Z");
+    const child = await childWithProfile(services);
+    const { session, tasks } = await playedSession(services, child.id);
+    // Migracja 0021 ustawia wygasły termin wszystkim istniejącym sesjom.
+    await pool.query("update learning_app.learning_sessions set activity_report_expires_at = $2 where id=$1", [session.sessionId, clock.now()]);
+    clock.advanceMs(60_000);
+    const result = await reviewSessionActivity(services, session.sessionId, reportOf([
+      { taskId: tasks[0]!.taskId, exerciseType: tasks[0]!.exerciseType, intervals: [[0, 60_000]], edits: 1, attempts: [] },
+    ], 60_000));
+    expect(result).toMatchObject({ status: "error", errorCode: "report_expired", pointsAwarded: 0 });
+    expect(provider.callCount).toBe(0);
+    expect(await rewardPointsOf(child.id)).toEqual({ points: 0, remainder: 0 });
+  });
+});
+
+describe("session activity kid transport", () => {
+  it("delivers the report through the real Kid router end route", async () => {
+    const { services, clock } = await reviewerServices("2026-10-16T10:00:00.000Z");
+    const child = await childWithProfile(services);
+    const { session, tasks, attemptIds } = await playedSession(services, child.id);
+    clock.advanceMs(65_000);
+    const api = createKidApiClient({
+      baseUrl: "http://localhost",
+      fetchImpl: async (input, init) => {
+        const url = new URL(String(input), "http://localhost");
+        return handleKidApi(new Request(url, init), services, url.pathname.replace("/api/v1/kid/", "").split("/"));
+      },
+    });
+    const summary = await api.endSession(session.sessionId, reportOf([
+      { taskId: tasks[0]!.taskId, exerciseType: tasks[0]!.exerciseType, intervals: [[0, 65_000]], edits: 4, attempts: attemptIds },
+    ], 65_000));
+    expect(summary.activity).toMatchObject({ status: "evaluated", pointsAwarded: 1 });
+    expect(await rewardPointsOf(child.id)).toEqual({ points: 1, remainder: 5_000 });
+  });
+
+  it("requires a client refresh for an unknown report version", async () => {
+    const { services } = buildTestServices("2026-10-16T10:00:00.000Z");
+    const child = await childWithProfile(services);
+    const deckId = await publishDeck(services, child.id);
+    const session = await startSession(services, { childId: child.id, deckId, microphoneEnabled: false });
+    await expect(handleKidApi(
+      new Request(`http://localhost/api/v1/kid/sessions/${session.sessionId}/end`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ activityReport: { version: 2, elapsedMs: 10, activeMs: 0, compacted: false, tasks: [] } }),
+      }),
+      services,
+      ["sessions", session.sessionId, "end"],
+    )).rejects.toMatchObject({ code: "validation", details: { reason: "activity_report_update_required" } });
+  });
+
+  it("rejects an oversized report with a validation error instead of silently dropping it", async () => {
+    const { services } = buildTestServices("2026-10-16T10:00:00.000Z");
+    const child = await childWithProfile(services);
+    const deckId = await publishDeck(services, child.id);
+    const session = await startSession(services, { childId: child.id, deckId, microphoneEnabled: false });
+    await expect(handleKidApi(
+      new Request(`http://localhost/api/v1/kid/sessions/${session.sessionId}/end`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          activityReport: { version: 1, elapsedMs: 10, activeMs: 0, compacted: false, tasks: [], padding: "x".repeat(SESSION_ACTIVITY_REPORT_MAX_BYTES + 512) },
+        }),
+      }),
+      services,
+      ["sessions", session.sessionId, "end"],
+    )).rejects.toMatchObject({ code: "validation" });
+    // Sesja pozostała aktywna — raport nie zniknął po cichu razem z oceną.
+    const state = (await pool.query("select state from learning_app.learning_sessions where id=$1", [session.sessionId])).rows[0]!;
+    expect(state.state).toBe("active");
+  });
+});
+
+describe("session activity guardrails", () => {
+  it("AppError code mapping stays available for router reuse", () => {
+    expect(new AppError("conflict").code).toBe("conflict");
+  });
+});

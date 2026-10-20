@@ -36,7 +36,7 @@ export function pictureVocabularyFixture(): KidUiFixture {
         taskState: "completed", stepId: "step-1", receivedAt: "2026-10-14T10:00:01.000Z", completedAt: "2026-10-14T10:00:02.000Z" },
     ],
     summary: { sessionId, state: "completed", tasksIssued: 2, assessedTasksIssued: 1, endedAt: "2026-10-14T10:00:05.000Z",
-      independentSuccesses: { recall: 0, spelling: 0 }, practiceItems: [], reward: { creditedSeconds: 0, pointsEarned: 0 } },
+      independentSuccesses: { recall: 0, spelling: 0 }, practiceItems: [] },
     presentation: { taskId: taskIds[0]!, state: "completed", completedAt: "2026-10-14T10:00:01.000Z" },
   };
 }

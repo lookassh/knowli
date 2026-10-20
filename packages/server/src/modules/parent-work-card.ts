@@ -1,9 +1,10 @@
-import { and, asc, eq, inArray, isNotNull, or } from "drizzle-orm";
-import { ParentWorkCardDtoSchema, ParentWorkCardQuerySchema, type ParentWorkCardDto } from "@learning/contracts";
+import { and, asc, eq, inArray } from "drizzle-orm";
+import { ParentWorkCardDtoSchema, ParentWorkCardQuerySchema, SessionActivityReviewRecordSchema, type ParentSessionActivityDto, type ParentWorkCardDto } from "@learning/contracts";
 import type { Services } from "../config";
-import { localDateAt, splitRewardIntervalByLocalDay, validRewardTimezone } from "../domain/reward-activity";
+import { localDateAt, validRewardTimezone } from "../domain/reward-activity";
 import { AppError } from "../errors";
-import { attempts, assessments, childProfiles, deckVersions, familySettings, learningSessions, rewardActivitySegments, rewardActivitySettlements, rewardActivityXboxRequests, sessionTasks } from "../db/schema";
+import { attempts, assessments, childProfiles, deckVersions, familySettings, learningSessions, sessionTasks } from "../db/schema";
+import { activityDetailsAvailable } from "./session-activity";
 
 /** Read-only, child-scoped work report. The HTTP parent router authenticates before calling this. */
 export async function readParentWorkCard(services: Services, input: unknown): Promise<ParentWorkCardDto> {
@@ -13,40 +14,24 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
   const child = await services.db.select({ id: childProfiles.id }).from(childProfiles).where(eq(childProfiles.id, query.childId)).limit(1);
   if (!child.length) throw new AppError("not_found");
 
-  const xboxRequests = await services.db.select().from(rewardActivityXboxRequests)
-    .where(and(eq(rewardActivityXboxRequests.childId, query.childId), or(
-      eq(rewardActivityXboxRequests.status, "pending"),
-      eq(rewardActivityXboxRequests.localDateSnapshot, query.date),
-    ))).orderBy(asc(rewardActivityXboxRequests.requestedAt));
-
   const sessions = await services.db.select({
     id: learningSessions.id, mode: learningSessions.mode, state: learningSessions.state,
     startedAt: learningSessions.startedAt, endedAt: learningSessions.endedAt,
     context: learningSessions.context, taskBudget: learningSessions.taskBudget,
+    activityReview: learningSessions.activityReview, activityReport: learningSessions.activityReport,
+    activityReportExpiresAt: learningSessions.activityReportExpiresAt,
     deckTitle: deckVersions.title, deckVersionNumber: deckVersions.versionNumber,
   }).from(learningSessions).innerJoin(deckVersions, eq(deckVersions.id, learningSessions.deckVersionId))
     .where(eq(learningSessions.childId, query.childId)).orderBy(asc(learningSessions.startedAt));
 
-  const segments = await services.db.select({ sessionId: rewardActivitySegments.sessionId,
-    taskId: rewardActivitySegments.taskId, startedAt: rewardActivitySegments.startedAt, endedAt: rewardActivitySegments.endedAt,
-    timezone: rewardActivitySettlements.timezone }).from(rewardActivitySegments)
-    .innerJoin(rewardActivitySettlements, eq(rewardActivitySettlements.id, rewardActivitySegments.settlementRef))
-    .where(and(eq(rewardActivitySegments.childId, query.childId), isNotNull(rewardActivitySegments.settlementRef)));
+  const timezoneOf = (context: unknown): string => validRewardTimezone((context as Record<string, unknown> | null)?.timezone);
 
-  const daySessions = new Map<string, { timezone: string }>();
-  const dayTaskIds = new Set<string>();
-  for (const session of sessions) {
-    const timezone = validRewardTimezone((session.context as Record<string, unknown>).timezone);
-    if (localDateAt(session.startedAt, timezone) === query.date) daySessions.set(session.id, { timezone });
-  }
-  for (const segment of segments) {
-    const timezone = validRewardTimezone(segment.timezone);
-    const days = splitRewardIntervalByLocalDay(segment.startedAt, segment.endedAt, timezone);
-    if (!days.has(query.date)) continue;
-    if (!daySessions.has(segment.sessionId)) daySessions.set(segment.sessionId, { timezone });
-    dayTaskIds.add(segment.taskId);
-  }
-  // A completed answer can be relevant even when all active time was discarded (skip/cancel).
+  // Nagroda należy do lokalnej daty KOŃCA sesji (design §9) — nie rozbijamy
+  // zatwierdzonego czasu na dni i nie odtwarzamy starych podziałów.
+  const endedThatDay = sessions.filter((session) => session.endedAt !== null
+    && localDateAt(session.endedAt, timezoneOf(session.context)) === query.date);
+
+  const daySessionIds = new Set<string>(endedThatDay.map((session) => session.id));
   const allAttempts = await services.db.select({ attempt: attempts, sessionId: sessionTasks.sessionId, taskId: sessionTasks.id,
     issuedAt: sessionTasks.issuedAt, context: learningSessions.context })
     .from(attempts).innerJoin(sessionTasks, eq(sessionTasks.id, attempts.taskId))
@@ -54,13 +39,12 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
     .where(eq(attempts.childId, query.childId));
   const attemptsByTask = new Map<string, typeof allAttempts>();
   for (const row of allAttempts) {
-    const timezone = validRewardTimezone((row.context as Record<string, unknown>).timezone);
+    const timezone = timezoneOf(row.context);
     if (localDateAt(row.attempt.receivedAt, timezone) !== query.date) continue;
     const list = attemptsByTask.get(row.taskId) ?? [];
     list.push(row);
     attemptsByTask.set(row.taskId, list);
-    dayTaskIds.add(row.taskId);
-    if (!daySessions.has(row.sessionId)) daySessions.set(row.sessionId, { timezone });
+    daySessionIds.add(row.sessionId);
   }
   const issuedTasks = await services.db.select({ sessionId: sessionTasks.sessionId, issuedAt: sessionTasks.issuedAt })
     .from(sessionTasks).where(eq(sessionTasks.childId, query.childId));
@@ -68,10 +52,9 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
   for (const task of issuedTasks) {
     const session = sessionById.get(task.sessionId);
     if (!session) continue;
-    const timezone = validRewardTimezone((session.context as Record<string, unknown>).timezone);
-    if (localDateAt(task.issuedAt, timezone) === query.date) daySessions.set(session.id, { timezone });
+    if (localDateAt(task.issuedAt, timezoneOf(session.context)) === query.date) daySessionIds.add(task.sessionId);
   }
-  const sessionIds = [...daySessions.keys()];
+  const sessionIds = [...daySessionIds];
   const tasks = sessionIds.length ? await services.db.select().from(sessionTasks).where(and(
     eq(sessionTasks.childId, query.childId), inArray(sessionTasks.sessionId, sessionIds),
   )).orderBy(asc(sessionTasks.ordinal)) : [];
@@ -85,17 +68,43 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
     values.add(row.outcome);
     assessmentByAttempt.set(row.attemptId, values);
   }
-  const secondsBySession = new Map<string, number>();
-  for (const segment of segments) {
-    const zone = validRewardTimezone(segment.timezone);
-    const milliseconds = splitRewardIntervalByLocalDay(segment.startedAt, segment.endedAt, zone).get(query.date) ?? 0;
-    if (milliseconds) secondsBySession.set(segment.sessionId, (secondsBySession.get(segment.sessionId) ?? 0) + milliseconds);
-  }
+
+  const now = services.clock.now();
+  const reviewOf = (session: typeof sessions[number]): ParentSessionActivityDto => {
+    const saved = session.activityReview === null ? null : SessionActivityReviewRecordSchema.safeParse(session.activityReview);
+    if (!saved || !saved.success) {
+      return {
+        status: "not_delivered",
+        durationSeconds: 0,
+        activeSeconds: 0,
+        approvedSeconds: 0,
+        pointsAwarded: 0,
+        reason: null,
+        errorCode: null,
+        excludedTasks: null,
+      };
+    }
+    const review = saved.data;
+    const details = activityDetailsAvailable(session, now)
+      ? ((session.activityReport as { verdict?: { excludedTasks?: { taskOrdinal: number; reason: string }[] } | null } | null)?.verdict?.excludedTasks ?? [])
+      : null;
+    return {
+      status: review.status,
+      durationSeconds: review.durationSeconds,
+      activeSeconds: review.activeSeconds,
+      approvedSeconds: review.approvedSeconds ?? 0,
+      pointsAwarded: review.pointsAwarded,
+      reason: review.reason,
+      errorCode: review.errorCode,
+      excludedTasks: details,
+    };
+  };
 
   const reportSessions = sessionIds.map(sessionId => {
     const session = sessionById.get(sessionId)!;
-    const zone = daySessions.get(sessionId)!.timezone;
-    const sessionTasksForDay = tasks.filter(task => task.sessionId === sessionId && (dayTaskIds.has(task.id) || localDateAt(task.issuedAt, zone) === query.date));
+    const zone = timezoneOf(session.context);
+    const sessionTasksForDay = tasks.filter(task => task.sessionId === sessionId
+      && (localDateAt(task.issuedAt, zone) === query.date || (attemptsByTask.get(task.id) ?? []).length > 0));
     const steps = sessionTasksForDay.map(task => {
       const relevant = (attemptsByTask.get(task.id) ?? []).sort((a, b) => a.attempt.receivedAt.getTime() - b.attempt.receivedAt.getTime());
       const responses = relevant.map(({ attempt }) => {
@@ -127,18 +136,21 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
       sessionId, mode: session.mode as "training" | "mock_test" | "daily_round", state: session.state as "active" | "completed" | "ended",
       startedAt: session.startedAt.toISOString(), endedAt: session.endedAt?.toISOString() ?? null,
       deckTitle: session.deckTitle, deckVersionNumber: session.deckVersionNumber,
-      creditedSeconds: secondsBySession.get(sessionId) ? Math.floor(secondsBySession.get(sessionId)! / 1000) : 0,
-      remainingSteps: Math.max(0, session.taskBudget - tasks.filter(task => task.sessionId === sessionId && (session.mode === "daily_round" || (task.exerciseType !== "exposure" && task.exerciseType !== "lesson_card"))).length), steps,
+      remainingSteps: Math.max(0, session.taskBudget - tasks.filter(task => task.sessionId === sessionId && (session.mode === "daily_round" || (task.exerciseType !== "exposure" && task.exerciseType !== "lesson_card"))).length),
+      activity: reviewOf(session),
+      steps,
     };
   });
-  const dayMilliseconds = segments.reduce((total, segment) => total + (splitRewardIntervalByLocalDay(segment.startedAt, segment.endedAt, validRewardTimezone(segment.timezone)).get(query.date) ?? 0), 0);
+  // Suma zatwierdzonego czasu: tylko ocenione sesje zakończone tego dnia.
+  const creditedSeconds = endedThatDay.reduce((total, session) => {
+    const saved = session.activityReview === null ? null : SessionActivityReviewRecordSchema.safeParse(session.activityReview);
+    return saved?.success && saved.data.status === "evaluated" ? total + (saved.data.approvedSeconds ?? 0) : total;
+  }, 0);
+  const unevaluatedSessions = endedThatDay.filter((session) => {
+    const saved = session.activityReview === null ? null : SessionActivityReviewRecordSchema.safeParse(session.activityReview);
+    return !saved?.success || saved.data.status !== "evaluated";
+  }).length;
   return ParentWorkCardDtoSchema.parse({
-    childId: query.childId, date: query.date, creditedSeconds: Math.floor(dayMilliseconds / 1000), sessions: reportSessions,
-    xboxRequests: xboxRequests.map(request => ({
-      requestId: request.id, status: request.status, requestedAt: request.requestedAt.toISOString(),
-      timezone: request.timezoneSnapshot, localDate: request.localDateSnapshot,
-      blockNumber: request.blockNumberSnapshot, creditedSeconds: request.creditedSecondsSnapshot,
-      pointsCost: request.pointsCost, xboxMinutes: request.xboxMinutes,
-    })),
+    childId: query.childId, date: query.date, creditedSeconds, unevaluatedSessions, sessions: reportSessions,
   });
 }

@@ -4,29 +4,36 @@ import { createKidApiClient, KidApiError } from "./client";
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
 describe("Kid API picture support transport", () => {
-  it("bounds hanging activity transport and aborts the request", async () => {
+  it("bounds hanging session-end transport (single LLM review) and aborts the request", async () => {
     vi.useFakeTimers();
     try {
       const fetchImpl = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) => new Promise<Response>(() => undefined));
       const api = createKidApiClient({ fetchImpl });
-      const pending = api.signalRewardActivity({ sessionId: "11111111-1111-4111-8111-111111111111", taskId: "22222222-2222-4222-8222-222222222222", streamId: "33333333-3333-4333-8333-333333333333", sequence: 1, kind: "takeover" });
+      const pending = api.endSession("11111111-1111-4111-8111-111111111111");
       const assertion = expect(pending).rejects.toBeInstanceOf(TypeError);
-      await vi.advanceTimersByTimeAsync(2_000);
+      await vi.advanceTimersByTimeAsync(45_000);
       expect(fetchImpl.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
       await assertion;
     } finally { vi.useRealTimers(); }
   });
-  it("submits an Xbox pack request through the validated Kid API route", async () => {
-    const requestId = "11111111-1111-4111-8111-111111111111";
-    const childId = "22222222-2222-4222-8222-222222222222";
+
+  it("sends the frozen activity report once with the session-end request", async () => {
+    const sessionId = "11111111-1111-4111-8111-111111111111";
     const fetchImpl = vi.fn().mockResolvedValue(response({
-      requestId, status: "pending", requestedAt: "2026-10-16T10:00:00.000Z",
-      localDate: "2026-10-15", blockNumber: 1, pointsCost: 30, xboxMinutes: 15,
+      sessionId, state: "completed", tasksIssued: 1, assessedTasksIssued: 1,
+      endedAt: "2026-10-16T10:00:00.000Z", independentSuccesses: { recall: 0, spelling: 0 }, practiceItems: [],
+      activity: { status: "evaluated", pointsAwarded: 7, errorCode: null },
     }));
     const api = createKidApiClient({ fetchImpl });
-
-    await expect(api.requestXboxPack(childId)).resolves.toMatchObject({ requestId, status: "pending" });
-    expect(fetchImpl).toHaveBeenCalledWith(`/api/v1/kid/profiles/${childId}/xbox-request`, expect.objectContaining({ method: "POST" }));
+    const report = {
+      version: 1, elapsedMs: 90_000, activeMs: 0, compacted: false, tasks: [],
+    };
+    await expect(api.endSession(sessionId, report as never)).resolves.toMatchObject({
+      activity: { status: "evaluated", pointsAwarded: 7 },
+    });
+    expect(fetchImpl).toHaveBeenCalledWith(`/api/v1/kid/sessions/${sessionId}/end`, expect.objectContaining({
+      method: "POST", body: JSON.stringify({ activityReport: report }),
+    }));
   });
 
   it("reads the validated spoken-guidance catalog and disables the session microphone", async () => {
@@ -44,7 +51,7 @@ describe("Kid API picture support transport", () => {
   });
 
   it("preserves known validation reasons from HTTP details and ignores unknown details", async () => {
-    const reasons = ["picture_client_update_required", "vocabulary_requires_reading", "non_reader_mock_test_unavailable", "picture_guidance_unavailable", "picture_audio_unavailable"];
+    const reasons = ["picture_client_update_required", "vocabulary_requires_reading", "non_reader_mock_test_unavailable", "picture_guidance_unavailable", "picture_audio_unavailable", "activity_report_update_required"];
     const fetchImpl = vi.fn();
     for (const reason of reasons) fetchImpl.mockResolvedValueOnce(response({ code: "validation", message: "validation", retryable: false, details: { reason } }, 422));
     fetchImpl.mockResolvedValueOnce(response({ code: "validation", message: "validation", retryable: false, details: { reason: "future_reason" } }, 422));

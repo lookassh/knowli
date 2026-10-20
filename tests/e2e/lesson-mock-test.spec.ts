@@ -83,7 +83,6 @@ const lessonSummary: LessonMockTestSummaryDto = {
 const summary: SessionSummaryDto = {
   sessionId, state: "ended", tasksIssued: 2, assessedTasksIssued: 2,
   independentSuccesses: { recall: 0, spelling: 0 }, practiceItems: [], endedAt: "2026-10-12T10:01:00.000Z",
-  reward: { creditedSeconds: 0, pointsEarned: 0 },
 };
 
 async function openLessonMock(page: Page): Promise<void> {

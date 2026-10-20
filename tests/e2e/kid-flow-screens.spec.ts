@@ -40,7 +40,7 @@ function summary(practiceCount = 0): SessionSummaryDto {
       itemId: `10000000-0000-4000-8000-${String(index + 100).padStart(12, "0")}`,
       target: `word-${index + 1}`, skills: ["recall" as const, "spelling" as const],
     })),
-    endedAt: "2026-10-11T10:01:00.000Z", reward: { creditedSeconds: 0, pointsEarned: 0 } };
+    endedAt: "2026-10-11T10:01:00.000Z" };
 }
 
 async function setup(page: Parameters<typeof installKidUiFixture>[0], options: {

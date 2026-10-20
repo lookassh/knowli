@@ -3,10 +3,11 @@ title: 'Raport sesji, ocena LLM i proste punkty'
 type: 'refactor'
 created: '2026-10-19'
 updated: '2026-10-20'
-status: 'ready-for-dev'
+status: 'done'
 route: 'dispatch'
 review_loop_iteration: 0
 context: []
+baseline_commit: '12963bf192d1bc19a571cef0b22e894ecae9586b'
 ---
 
 <frozen-after-approval reason="human-owned intent — do not modify unless human renegotiates">
@@ -51,14 +52,14 @@ Pełne ścieżki i działania: tabela w `client-reward-time/migration.md`, sekcj
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/kid-ui/src/session/activity-report.ts` i pliki FE z mapy — lokalny raport z podmienialnym zegarem, kopią do odbioru i limitami; usunąć sygnały nagrodowe.
-- [ ] Kontrakty/router z mapy — raport końcowy, wersja formatu, walidacja i wymóg odświeżenia starego klienta.
-- [ ] `packages/server/src/modules/session-activity.ts`, `ports/ai.ts`, adapter providera — zapis przed pojedynczą oceną poza transakcją; Zod wyniku i timeout. Zadania/odpowiedzi jako dane, nie instrukcje. Serwer dołącza własne zadania i odpowiedzi.
-- [ ] `schema.ts` i migracja w `packages/server/drizzle/` — raport JSONB/retencja i krótki wynik sesji, licznik/reszta punktów profilu. Przenieść dorobek, usunąć 10 tabel nagrodowych i zależności. Bez migracji produkcyjnej.
-- [ ] Moduły serwera z mapy — usunąć Xbox, streamy, stare rozliczenia/odbudowę nagród. Krótkie znaczniki przyjęcia/rozliczenia w sesji chronią przed równoległą oceną i ponownymi punktami; bez maszyny stanów.
-- [ ] `apps/web/src/parent/WorkCardPanel.tsx`, ekrany profilu/podsumowania — wynik sesji i punkty, bez Xbox i salda do wydania.
-- [ ] `apps/worker/src/tasks.ts` — czyścić wygasły JSONB/szczegóły błędu, zachować sesję/punkty.
-- [ ] `docs/{SPEC,architecture}.md` i testy — nowy model, migracja i API → MCP → skill; osobny szacunek learning-overview pozostaje.
+- [x] `packages/kid-ui/src/session/activity-report.ts` i pliki FE z mapy — lokalny raport z podmienialnym zegarem, kopią do odbioru i limitami; usunąć sygnały nagrodowe.
+- [x] Kontrakty/router z mapy — raport końcowy, wersja formatu, walidacja i wymóg odświeżenia starego klienta.
+- [x] `packages/server/src/modules/session-activity.ts`, `ports/ai.ts`, adapter providera — zapis przed pojedynczą oceną poza transakcją; Zod wyniku i timeout. Zadania/odpowiedzi jako dane, nie instrukcje. Serwer dołącza własne zadania i odpowiedzi.
+- [x] `schema.ts` i migracja w `packages/server/drizzle/` — raport JSONB/retencja i krótki wynik sesji, licznik/reszta punktów profilu. Przenieść dorobek, usunąć 10 tabel nagrodowych i zależności. Bez migracji produkcyjnej.
+- [x] Moduły serwera z mapy — usunąć Xbox, streamy, stare rozliczenia/odbudowę nagród. Krótkie znaczniki przyjęcia/rozliczenia w sesji chronią przed równoległą oceną i ponownymi punktami; bez maszyny stanów.
+- [x] `apps/web/src/parent/WorkCardPanel.tsx`, ekrany profilu/podsumowania — wynik sesji i punkty, bez Xbox i salda do wydania.
+- [x] `apps/worker/src/tasks.ts` — czyścić wygasły JSONB/szczegóły błędu, zachować sesję/punkty.
+- [x] `docs/{SPEC,architecture}.md` i testy — nowy model, migracja i API → MCP → skill; osobny szacunek learning-overview pozostaje.
 
 **Acceptance Criteria:**
 - Given poprawny raport, when LLM wskaże wykluczone zadania, then kod oblicza czas pozostałych i punkty z resztą.
@@ -69,6 +70,8 @@ Pełne ścieżki i działania: tabela w `client-reward-time/migration.md`, sekcj
 ## Implementation Notes
 
 - 2026-10-20: właściciel zatwierdził cały pakiet. Przygotowanie przekazania nie oznacza rozpoczęcia implementacji.
+- 2026-10-20: ZCode wdrożył cały zakres w worktree `impl/client-reward-time` (TDD na kontraktach, reporterze FE i module serwera; integracja PostgreSQL; E2E lifecycle/karta pracy). Szczegóły weryfikacji w raporcie implementacji; wdrożenie produkcyjne migracji 0021 wymaga osobnego polecenia.
+- 2026-10-20: niezależny review (3 warstwy) — 17 łatek naniesiono (m.in. zamrożenie raportu raz przy retry, walidacje kontraktu, per-dziecko kontrola migracji, odtworzone regresje karty pracy, testy adaptera/payloadu/worker); 1 odkrycie odroczono (brak długości nagrania w porcie AudioPlayer); podczas weryfikacji końcowej naprawiono też utajony bug useChoiceKeyboard (strzałki po usunięciu przypadkowego re-emitu). Pełne suite'y zielone: unit 1352, integracja 472, E2E 204, typecheck, build.
 
 ## Spec Change Log
 
@@ -77,6 +80,33 @@ Pełne ścieżki i działania: tabela w `client-reward-time/migration.md`, sekcj
 - 2026-10-20: właściciel zaakceptował korektę: LLM wyklucza zadania, kod liczy czas i punkty; awarie bez monitoringu i ponowień.
 
 ## Review Triage Log
+
+Review 2026-10-20 (blind-hunter + edge-case-hunter + verification-gap; triage po samodzielnej weryfikacji każdego twierdzenia):
+
+- high/patch — ponowienie końca sesji po utracie odpowiedzi HTTP zamraża raport od nowa (inny elapsedMs → inny fingerprint → trwały 409 zamiast zwrotu zapisanego wyniku; narusza wiersz macierzy „Retry transportu"). Fix: zamrożenie raz i ponowne użycie obiektu.
+- medium/patch — utracone regresje Karty pracy (ocena mixed, answerExample sekwencji, domyślna data wg strefy rodziny, zadanie sprzed północy, remainingSteps) — acceptance §6 wymaga ich zachowania; fix: odtworzenie scenariuszy.
+- medium/patch — widoki lekcji (gap/sentence/order) wołają onInteraction zamiast onEdit → editCount/editWindows zerowe dla zadań lekcji (verification-gap, pre-verified).
+- medium/patch — brak testu wiązania cleanup w processDueWork (godzinny throttle, błąd nie psuje przebiegu) — retention opiera się na nietestowanym kleju (pre-verified).
+- medium/patch — adapter OpenAI-compatible i sessionActivityFromEnv bez testów transportowych mimo wzorca grader.test.ts (pre-verified).
+- medium/patch — brak asercji kształtu payloadu do modelu (brak attemptId, ≤200 znaków) — prywatność bez sieci regresyjnej (pre-verified).
+- medium/patch — readCappedJson buforuje całe żądanie przed limitem i porównuje UTF-16 length zamiast bajtów (Content-Length precheck + Buffer.byteLength).
+- medium/patch — zadanie z pendingAttemptId nie dostaje taskShown (wznowienie w trakcie processing): czas niewymierzony, próba przypisana poprzedniemu zadaniu.
+- medium/patch — migracja 0021 porównuje sumy globalne ledgera/projekcji; przeciwstawny rozjazd per dziecko przechodzi (D02 wymaga porównania per child_id).
+- medium/patch — raport może przypisać próbę innego zadania tej sesji; weryfikacja tylko do sesji + O(n²) (Set + sprawdzenie próba→zadanie).
+- low/patch — zdublowana arytmetyka punktów (inline 60_000) zamiast sessionActivityAward; new Date() w catch not_found zamiast services.clock.now().
+- low/patch — pauzy bez walidacji zakresu/kolejności w superRefine; brak kontroli duplikatów taskId.
+- low/patch — pendingPause (technical_wait) domykany przy pierwszej aktywności następnego zadania — pauza w niewłaściwym zadaniu.
+- low/patch — play() odrzucone po starcie zostawia wiszący odsłuch (try/finally w #playCountedAudio).
+- low/patch — drabina kompakcji nie reaguje na rozmiar bajtowy i nie scala stykających się przedziałów (unia zachowana) — realny maksimum ~100 KB po drabinie wpisów, ale tania odporność.
+- low/patch — SummaryScreen dubluje SessionActivityResultView; already_started bez asercji renderowania.
+- low/patch — higiena: literówki („komaktuje", „kopy brak", „bazieMIGRACJI"), brak nowej linii w _journal.json, martwe wyrażenie w describeTaskPrompt.
+- low/defer — playbackStarted(assetId, null) w produkcji: port AudioPlayer nie wystawia długości nagrania, przycinanie odsłuchu tylko deklaratywne (wymaga zmiany portu; odnotowane w raporcie implementacji).
+- false — granularność kopii roboczej (task/pauza, nie co klawisz): projekt §4 świadomie tak stanowi i akceptuje konserwatywny brak obserwacji.
+- false — already_started „ślepy" UX: projekt §4/§8 świadomie akceptuje (pierwsze żądanie dokończy; komunikat zgodny ze stanem).
+- false — ujemne fromMs po regresji zegara: oba operandy pochodzą z trwałego stanu (zawsze ≥); Math.max chroni nowOffset.
+- false — overflow int4 od zmodyfikowanego klienta: design §5 wprost wyklucza ochronę przed ręcznie zmodyfikowanym klientem.
+- high/patch (fix podczas weryfikacji końcowej) — useChoiceKeyboard czyścił tablicę refów w efekcie po montażu; strzałki działały tylko dzięki przypadkowemu re-emitowi starego #startRewardActivity, który ta zmiana usunęła → e2e picture_recognition „strzałki przenoszą fokus" padał. Fix: przycinanie do liczby opcji zamiast czyszczenia.
+- rejected (low/negligible) — zawyżony licznik czyszczenia przy wyścigu dwóch workerów; brak AbortSignal w pętli czyszczenia; brak sprzątania porzuconych kluczy kopii (kwota localStorage niezagrożona przy realnych rozmiarach).
 
 ## Verification
 

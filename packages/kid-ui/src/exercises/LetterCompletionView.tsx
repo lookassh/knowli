@@ -57,7 +57,7 @@ export function LetterCompletionView({ task, busy, recording, handlers, letterDr
                     const value = event.target.value.normalize("NFC");
                     if (Array.from(value).length > 1) return;
                     updateLetters({ ...letters, [index]: value });
-                    handlers.onInteraction();
+                    handlers.onEdit();
                     if (value !== "") {
                       const nextPosition = gapPositions.find((position) => position > index);
                       if (nextPosition !== undefined) inputRefs.current[nextPosition]?.focus({ preventScroll: true });

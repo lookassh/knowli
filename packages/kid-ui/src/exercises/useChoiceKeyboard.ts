@@ -26,7 +26,10 @@ export function useChoiceKeyboard({ options, busy, onChoice, onPlay }: UseChoice
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   useEffect(() => {
-    optionRefs.current = [];
+    // Tniemy do rzeczywistej liczby opcji, ale NIE czyścimy wpisów: refy
+    // inline uzupełniają tablicę dopiero przy kolejnym renderze, więc wyczyszczenie
+    // po montażu unieruchamia strzałki do pierwszego re-renderu.
+    optionRefs.current.length = options.length;
   }, [options]);
 
   useEffect(() => {

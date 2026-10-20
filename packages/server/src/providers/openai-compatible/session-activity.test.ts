@@ -1,0 +1,166 @@
+import { describe, expect, it } from "vitest";
+import { createOpenAiCompatibleSessionActivityReviewer } from "./session-activity";
+import type { SessionActivityReviewTask } from "../../ports/ai";
+
+/**
+ * Adapter oceny aktywności sesji (spec client-reward-time). Wzorzec grader.test.ts:
+ * wstrzyknięty `fetch`; poprawny JSON i JSON w płotku ```json; brak `choices` →
+ * błąd; HTTP !ok → błąd BEZ treści odpowiedzi w komunikacie; abort przez signal;
+ * kształt żądania (temperature 0, response_format json_object, system+user,
+ * przekazany signal); odpowiedzi dziecka tylko w wiadomości `user`.
+ */
+
+const tasks: SessionActivityReviewTask[] = [
+  {
+    taskOrdinal: 0,
+    instruction: "Przypomnij angielskie słowo",
+    stimulus: "kot",
+    options: [],
+    acceptedAnswers: ["cat"],
+    submittedAnswers: [{ modality: "text", text: "cat", uncertain: false, supportDisclosedBefore: false }],
+    editCount: 3,
+    editWindows: [{ atMs: 1_000, count: 3 }],
+    playbacks: [],
+    pauses: [],
+    activeIntervals: [[0, 30_000]],
+  },
+  {
+    taskOrdinal: 1,
+    instruction: "Zapisz angielskie słowo",
+    stimulus: "pies",
+    options: [],
+    acceptedAnswers: ["dog"],
+    submittedAnswers: [{ modality: "text", text: "aaa", uncertain: false, supportDisclosedBefore: false }],
+    editCount: 0,
+    editWindows: [],
+    playbacks: [],
+    pauses: [],
+    activeIntervals: [[30_000, 60_000]],
+  },
+];
+
+interface CapturedRequest {
+  url: string;
+  init: { method: string; headers: Record<string, string>; body: string; signal?: AbortSignal };
+}
+
+function capturingFetch(response: () => Response): {
+  fetchImpl: (url: string, init: CapturedRequest["init"]) => Promise<Response>;
+  calls: CapturedRequest[];
+} {
+  const calls: CapturedRequest[] = [];
+  return {
+    calls,
+    fetchImpl: async (url, init) => {
+      calls.push({ url, init });
+      return response();
+    },
+  };
+}
+
+function chatResponse(content: string, status = 200): Response {
+  return new Response(JSON.stringify({ choices: [{ message: { content } }] }), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+const VALID_JSON = JSON.stringify({
+  reason: "Jedno zadanie bez rzeczywistej próby.",
+  excludedTasks: [{ taskOrdinal: 1, reason: "Jedyna odpowiedź to aaa." }],
+});
+
+describe("createOpenAiCompatibleSessionActivityReviewer", () => {
+  it("zwraca surowy obiekt dla poprawnego JSON", async () => {
+    const { fetchImpl } = capturingFetch(() => chatResponse(VALID_JSON));
+    const reviewer = createOpenAiCompatibleSessionActivityReviewer({ baseUrl: "https://g.example/v1", apiKey: "secret-token", model: "cheap-1", fetchImpl });
+    const raw = await reviewer.review({ tasks }, AbortSignal.timeout(1000));
+    expect(raw).toEqual({
+      reason: "Jedno zadanie bez rzeczywistej próby.",
+      excludedTasks: [{ taskOrdinal: 1, reason: "Jedyna odpowiedź to aaa." }],
+    });
+  });
+
+  it("wyciąga JSON z bloku markdown", async () => {
+    const fenced = "```json\n" + VALID_JSON + "\n```";
+    const { fetchImpl } = capturingFetch(() => chatResponse(fenced));
+    const reviewer = createOpenAiCompatibleSessionActivityReviewer({ baseUrl: "https://g.example/v1", apiKey: "t", model: "m", fetchImpl });
+    const raw = (await reviewer.review({ tasks }, AbortSignal.timeout(1000))) as { reason: string };
+    expect(raw.reason).toBe("Jedno zadanie bez rzeczywistej próby.");
+  });
+
+  it("żądanie niesie temperature 0, response_format json_object, Bearer, system+user i przekazany signal", async () => {
+    const { fetchImpl, calls } = capturingFetch(() => chatResponse(VALID_JSON));
+    const reviewer = createOpenAiCompatibleSessionActivityReviewer({ baseUrl: "https://g.example/v1", apiKey: "secret-token", model: "cheap-1", fetchImpl });
+    const signal = AbortSignal.timeout(1000);
+    await reviewer.review({ tasks }, signal);
+    expect(calls).toHaveLength(1);
+    const call = calls[0]!;
+    expect(call.url).toBe("https://g.example/v1/chat/completions");
+    expect(call.init.method).toBe("POST");
+    expect(call.init.headers.authorization ?? call.init.headers.Authorization).toBe("Bearer secret-token");
+    expect(call.init.signal).toBe(signal);
+    const body = JSON.parse(call.init.body) as {
+      model: string;
+      temperature: number;
+      response_format: { type: string };
+      messages: { role: string; content: string }[];
+    };
+    expect(body.model).toBe("cheap-1");
+    expect(body.temperature).toBe(0);
+    expect(body.response_format).toEqual({ type: "json_object" });
+    const system = body.messages.find((m) => m.role === "system")!;
+    const user = body.messages.find((m) => m.role === "user")!;
+    expect(system.content.length).toBeGreaterThan(0);
+    // Odpowiedzi dziecka tylko w wiadomości user; token nigdy w treści promptu.
+    expect(system.content).not.toContain("aaa");
+    expect(system.content).not.toContain("secret-token");
+    expect(user.content).toContain("aaa");
+    expect(user.content).toContain("cat");
+    expect(user.content).not.toContain("secret-token");
+    // Dane zadań trafiają do wiadomości user jako odgrodzony JSON.
+    expect(user.content).toContain("```json");
+  });
+
+  it("brak choices → wyjątek bez tokenu i bez odpowiedzi dziecka", async () => {
+    const fetchImpl = async () => new Response(JSON.stringify({ choices: [] }), { status: 200, headers: { "content-type": "application/json" } });
+    const reviewer = createOpenAiCompatibleSessionActivityReviewer({ baseUrl: "https://g.example/v1", apiKey: "secret-token", model: "m", fetchImpl });
+    await reviewer.review({ tasks }, AbortSignal.timeout(1000)).then(
+      () => {
+        throw new Error("oczekiwano wyjątku");
+      },
+      (error: unknown) => {
+        const message = String((error as Error).message);
+        expect(message).not.toContain("secret-token");
+        expect(message).not.toContain("aaa");
+      },
+    );
+  });
+
+  it("HTTP !ok → wyjątek BEZ treści odpowiedzi w komunikacie", async () => {
+    const leaking = new Response(JSON.stringify({ error: { echo: "aaa secret-token" } }), { status: 429, headers: { "content-type": "application/json" } });
+    const fetchImpl = async () => leaking;
+    const reviewer = createOpenAiCompatibleSessionActivityReviewer({ baseUrl: "https://g.example/v1", apiKey: "secret-token", model: "m", fetchImpl });
+    await expect(reviewer.review({ tasks }, AbortSignal.timeout(1000))).rejects.toSatisfy(
+      (error: unknown) => {
+        const message = String((error as Error).message);
+        return !message.includes("secret-token") && !message.includes("aaa") && message.includes("429");
+      },
+    );
+  });
+
+  it("przekazuje AbortSignal do fetch (abort kończy się wyjątkiem)", async () => {
+    const fetchImpl = async (_url: string, init: CapturedRequest["init"]) =>
+      new Promise<Response>((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+      });
+    const reviewer = createOpenAiCompatibleSessionActivityReviewer({ baseUrl: "https://g.example/v1", apiKey: "t", model: "m", fetchImpl });
+    await expect(reviewer.review({ tasks }, AbortSignal.timeout(10))).rejects.toThrow();
+  });
+
+  it("promptVersion jest stałą adaptera", () => {
+    const reviewer = createOpenAiCompatibleSessionActivityReviewer({ baseUrl: "https://g.example/v1", apiKey: "t", model: "m" });
+    expect(typeof reviewer.promptVersion).toBe("string");
+    expect(reviewer.promptVersion.length).toBeGreaterThan(0);
+  });
+});

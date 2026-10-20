@@ -225,6 +225,46 @@ export interface AnswerGraderProvider {
   grade(input: GraderInput, signal: AbortSignal): Promise<unknown>;
 }
 
+/**
+ * Jedno zadanie w wejściu oceny aktywności sesji (spec client-reward-time).
+ * Zadania i odpowiedzi pochodzą z bazy serwera, ponumerowane ordinalami —
+ * model nie dostaje imion dziecka, identyfikatorów ani kluczy transportowych.
+ */
+export interface SessionActivityReviewTask {
+  readonly taskOrdinal: number;
+  /** Instrukcja/bodziec ćwiczenia jako dane (tekst widoczny dla dziecka). */
+  readonly instruction: string;
+  readonly stimulus: string | null;
+  readonly options: readonly string[];
+  readonly acceptedAnswers: readonly string[];
+  /** Faktycznie wysłane odpowiedzi; `uncertain` oznacza niepewne rozpoznanie STT. */
+  readonly submittedAnswers: readonly {
+    readonly modality: string;
+    readonly text: string | null;
+    readonly uncertain: boolean;
+    /** Czy przed tą próbą ujawniono podpowiedź/odpowiedź (osobna pozycja czasowa). */
+    readonly supportDisclosedBefore: boolean;
+  }[];
+  readonly editCount: number;
+  readonly editWindows: readonly { readonly atMs: number; readonly count: number }[];
+  readonly playbacks: readonly { readonly fromMs: number; readonly toMs: number }[];
+  readonly pauses: readonly { readonly kind: string; readonly fromMs: number; readonly toMs: number }[];
+  readonly activeIntervals: readonly (readonly [number, number])[];
+}
+
+/**
+ * Wąski port oceny aktywności sesji — osobny od `AnswerGraderProvider` i
+ * `lesson_verdicts`; bez cache i limitu wywołań odpowiedzi lekcyjnych. Model
+ * wskazuje WYŁĄCZNIE zadania bez podstaw do zaliczenia pracy; nie zwraca
+ * sekund, punktów ani mnożników. Walidację kształtu robi moduł domeny.
+ */
+export interface SessionActivityReviewer {
+  readonly name: string;
+  readonly model: string;
+  readonly promptVersion: string;
+  review(input: { tasks: readonly SessionActivityReviewTask[] }, signal: AbortSignal): Promise<unknown>;
+}
+
 export interface PronunciationProvider {
   readonly name: string;
   assess(

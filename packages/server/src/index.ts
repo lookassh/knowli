@@ -20,7 +20,14 @@ export * as schema from "./db/schema";
 export { issueIntegrationToken, listIntegrationTokens, requireLearningReadToken, revokeIntegrationToken } from "./modules/integration-tokens";
 export type { IntegrationPrincipal, IntegrationTokenMetadata } from "./modules/integration-tokens";
 export { getLearningOverview } from "./modules/learning-overview";
-export { recordRewardActivitySignal, authorizeRewardActivityPlayback, readRewardActivitySummary, requestXboxPack, decideXboxRewardRequest, rebuildKidRewardProjection } from "./modules/reward-activity";
+export {
+  reviewSessionActivity,
+  readSessionActivityResult,
+  cleanupExpiredActivityReports,
+  SESSION_ACTIVITY_RETENTION_MS,
+  SESSION_ACTIVITY_REVIEW_DEADLINE_MS,
+  type SessionActivityErrorCode,
+} from "./modules/session-activity";
 export { readParentWorkCard } from "./modules/parent-work-card";
 export {
   isParentSetupRequired,
@@ -186,6 +193,8 @@ export type {
   PronunciationProvider,
   AnswerGraderProvider,
   GraderInput,
+  SessionActivityReviewTask,
+  SessionActivityReviewer,
 } from "./ports/ai";
 export type { MediaStore, StoredBlob } from "./ports/media";
 export { createLocalMediaStore } from "./providers/media/local";
@@ -196,6 +205,8 @@ export { createOpenAiImageProvider } from "./providers/images/openai";
 export { createAzureSttProvider } from "./providers/azure/stt";
 export { createAzurePronunciationProvider } from "./providers/azure/pronunciation";
 export { createOpenAiCompatibleGrader } from "./providers/openai-compatible/grader";
+export { createOpenAiCompatibleSessionActivityReviewer } from "./providers/openai-compatible/session-activity";
+export { sessionActivityFromEnv, DEFAULT_SESSION_ACTIVITY_TIMEOUT_MS, type SessionActivityDeps } from "./config";
 export {
   MAX_AUDIO_BYTES,
   MAX_AUDIO_SECONDS,
@@ -217,7 +228,10 @@ export {
   fakeMediaSettings,
   fakeSpeechDeps,
   fakeGraderDeps,
+  fakeSessionActivityDeps,
   FakeAnswerGrader,
+  FakeSessionActivityReviewer,
+  type FakeSessionActivityBehavior,
   DEFAULT_FAKE_DECK_ITEMS,
   FakeImageProvider,
   FakeLlmProvider,

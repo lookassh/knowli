@@ -5,24 +5,39 @@ export const ParentWorkCardQuerySchema = z.object({ childId: UuidSchema, date: D
 export type ParentWorkCardQuery = z.infer<typeof ParentWorkCardQuerySchema>;
 
 const NonNegativeInt = z.number().int().nonnegative();
-export const ParentXboxRequestDtoSchema = z.object({
-  requestId: UuidSchema,
-  status: z.enum(["pending", "fulfilled", "rejected"]),
-  requestedAt: InstantSchema,
-  timezone: z.string().min(1),
-  localDate: DaySchema,
-  blockNumber: z.number().int().positive(),
-  creditedSeconds: z.number().int().min(1800),
-  pointsCost: z.literal(30),
-  xboxMinutes: z.literal(15),
+
+/** Wykluczenie zadania wskazane przez model; widoczne tylko w retencji 7 dni. */
+export const ParentActivityExcludedTaskDtoSchema = z.object({
+  taskOrdinal: NonNegativeInt,
+  reason: z.string().min(1).max(300),
 }).strict();
-export type ParentXboxRequestDto = z.infer<typeof ParentXboxRequestDtoSchema>;
+export type ParentActivityExcludedTaskDto = z.infer<typeof ParentActivityExcludedTaskDtoSchema>;
+
+/**
+ * Wynik oceny aktywności jednej sesji. `not_delivered` = sesja zakończona bez
+ * raportu (systemowo/z innego urządzenia) — to JAWNY brak oceny, nie zero
+ * potwierdzonej aktywności.
+ */
+export const ParentSessionActivityDtoSchema = z.object({
+  status: z.enum(["evaluated", "error", "not_delivered"]),
+  durationSeconds: NonNegativeInt,
+  activeSeconds: NonNegativeInt,
+  approvedSeconds: NonNegativeInt,
+  pointsAwarded: NonNegativeInt,
+  reason: z.string().nullable(),
+  errorCode: z.string().nullable(),
+  /** Szczegóły wykluczeń znikają po 7 dniach retencji raportu. */
+  excludedTasks: z.array(ParentActivityExcludedTaskDtoSchema).nullable(),
+}).strict();
+export type ParentSessionActivityDto = z.infer<typeof ParentSessionActivityDtoSchema>;
 
 export const ParentWorkCardDtoSchema = z.object({
   childId: UuidSchema,
   date: DaySchema,
+  /** Suma zatwierdzonego czasu sesji ocenionych, zakończonych tego dnia. */
   creditedSeconds: NonNegativeInt,
-  xboxRequests: z.array(ParentXboxRequestDtoSchema),
+  /** Liczba sesji tego dnia bez oceny aktywności (brak raportu albo błąd). */
+  unevaluatedSessions: NonNegativeInt,
   sessions: z.array(z.object({
     sessionId: UuidSchema,
     mode: z.enum(["training", "mock_test", "daily_round"]),
@@ -31,8 +46,8 @@ export const ParentWorkCardDtoSchema = z.object({
     endedAt: InstantSchema.nullable(),
     deckTitle: z.string(),
     deckVersionNumber: z.number().int().positive(),
-    creditedSeconds: NonNegativeInt,
     remainingSteps: NonNegativeInt,
+    activity: ParentSessionActivityDtoSchema,
     steps: z.array(z.object({
       taskId: UuidSchema,
       ordinal: NonNegativeInt,

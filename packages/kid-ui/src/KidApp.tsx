@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { messages, type UiAudioKey } from "@learning/contracts";
 import type { KidApi } from "./api/KidApi";
 import type { PlatformMedia } from "./media/platform";
@@ -39,8 +39,6 @@ export function KidApp({
   parentLink?: ParentLinkConfig;
   headerActions?: ReactNode;
 }) {
-  const [requestingXboxChildId, setRequestingXboxChildId] = useState<string | null>(null);
-  const [requestErrorChildId, setRequestErrorChildId] = useState<string | null>(null);
   const { controller, screen } = useLearningSession({
     api,
     media,
@@ -53,18 +51,6 @@ export function KidApp({
       {parentLink.label}
     </a>
   ) : undefined);
-
-  async function requestXboxPack(childId: string): Promise<void> {
-    setRequestingXboxChildId(childId);
-    setRequestErrorChildId(null);
-    try {
-      await controller.requestXboxPack(childId);
-    } catch {
-      setRequestErrorChildId(childId);
-    } finally {
-      setRequestingXboxChildId(null);
-    }
-  }
 
   switch (screen.kind) {
     case "loading":
@@ -89,9 +75,6 @@ export function KidApp({
           onSelect={(childId) => void controller.selectProfile(childId)}
           headerActions={actions}
           onGuidance={(key: UiAudioKey) => controller.playGuidance(key)}
-          onRequestXbox={(childId) => void requestXboxPack(childId)}
-          requestingChildId={requestingXboxChildId}
-          requestErrorChildId={requestErrorChildId}
         />
         </KidPage>
       );
@@ -120,9 +103,9 @@ export function KidApp({
     case "mockTestReady":
       return <KidPage mode="flow"><MockTestReadyScreen session={screen.session} onStart={() => controller.beginMockTest()} onCancel={() => controller.cancelMockTest()} /></KidPage>;
     case "mockTestSummary":
-      return <KidPage mode="flow"><MockTestSummaryScreen summary={screen.summary} onPlay={taskId => controller.playMockTestSolution(taskId)} onPractice={() => controller.learnAgain()} onSwitchProfile={() => controller.switchProfile()} /></KidPage>;
+      return <KidPage mode="flow"><MockTestSummaryScreen summary={screen.summary} activity={controller.getActivityResult()} onPlay={taskId => controller.playMockTestSolution(taskId)} onPractice={() => controller.learnAgain()} onSwitchProfile={() => controller.switchProfile()} /></KidPage>;
     case "lessonMockTestSummary":
-      return <KidPage mode="flow"><LessonMockTestSummaryScreen summary={screen.summary} onPractice={() => controller.learnAgain()} onSwitchProfile={() => controller.switchProfile()} /></KidPage>;
+      return <KidPage mode="flow"><LessonMockTestSummaryScreen summary={screen.summary} activity={controller.getActivityResult()} onPractice={() => controller.learnAgain()} onSwitchProfile={() => controller.switchProfile()} /></KidPage>;
     case "sessionConflict":
       return <KidPage mode="flow"><SessionConflictScreen onResume={() => controller.resumeConflictingSession()} onClose={() => controller.closeConflictingSession()} /></KidPage>;
     case "summary":

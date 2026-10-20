@@ -12,7 +12,6 @@ import { CURRENT_POLICY_ID, loadPolicy } from "../policies/registry";
 import { readDeckLearningOverview, readProjectedExposedTargetKeys } from "./deck-learning-overview";
 import { SKILL_PROJECTION_VERSION } from "./skill-projections";
 import { payloadToItem } from "./item-payload";
-import { readKidRewardSnapshot, readKidRewardSnapshots } from "./reward-activity";
 import { readActivitySummary } from "./reporting";
 
 /**
@@ -22,33 +21,23 @@ import { readActivitySummary } from "./reporting";
  */
 export async function listKidProfiles(services: Services): Promise<KidProfileDto[]> {
   const rows = await services.db
-    .select({ childId: childProfiles.id, displayName: childProfiles.displayName, avatarKey: childProfiles.avatarKey, recordingMode: childProfiles.recordingMode, canRead: childProfiles.canRead })
+    .select({ childId: childProfiles.id, displayName: childProfiles.displayName, avatarKey: childProfiles.avatarKey, recordingMode: childProfiles.recordingMode, canRead: childProfiles.canRead, rewardPoints: childProfiles.rewardPoints })
     .from(childProfiles)
     .orderBy(asc(childProfiles.createdAt));
-  const [rewardsByChild, activityByChild] = await Promise.all([
-    readKidRewardSnapshots(services, rows.map(row => row.childId)),
-    Promise.all(rows.map(async (row): Promise<[string, { seconds: number | undefined; unavailable: boolean }]> => {
-      try {
-        const activity = await readActivitySummary(services, row.childId);
-        return [row.childId, { seconds: activity.daily[activity.daily.length - 1]?.activeSeconds ?? 0, unavailable: false }];
-      } catch {
-        // Profil i nauka nadal są dostępne, jeśli odczyt raportu aktywności zawiedzie.
-        return [row.childId, { seconds: undefined, unavailable: true }];
-      }
-    })),
-  ]);
+  const activityByChild = await Promise.all(rows.map(async (row): Promise<[string, { seconds: number | undefined; unavailable: boolean }]> => {
+    try {
+      const activity = await readActivitySummary(services, row.childId);
+      return [row.childId, { seconds: activity.daily[activity.daily.length - 1]?.activeSeconds ?? 0, unavailable: false }];
+    } catch {
+      // Profil i nauka nadal są dostępne, jeśli odczyt raportu aktywności zawiedzie.
+      return [row.childId, { seconds: undefined, unavailable: true }];
+    }
+  }));
   const activityByChildMap = new Map(activityByChild);
   return rows.map((row) => {
-    const rewards = rewardsByChild.get(row.childId)!;
     const activity = activityByChildMap.get(row.childId);
-    return { ...row, rewards: {
-      earnedPoints: rewards.earnedPoints,
-      pointsToUse: rewards.pointsToUse,
-      readyXboxPacks: rewards.readyXboxPacks,
-      todayCreditedSeconds: rewards.todayCreditedSeconds,
-      dailyGoalSeconds: 1800 as const,
-      xboxRequest: rewards.xboxRequest,
-    }, todayActivitySeconds: activity?.seconds, todayActivityUnavailable: activity?.unavailable };
+    // Jeden ogólny licznik dorobku z profilu; bez salda, pakietów i celów dnia.
+    return { ...row, todayActivitySeconds: activity?.seconds, todayActivityUnavailable: activity?.unavailable };
   });
 }
 
@@ -70,7 +59,6 @@ async function listKidDecksSnapshot(
     throw new AppError("not_found");
   }
   if (child.projectionVersion !== SKILL_PROJECTION_VERSION) throw new AppError("conflict", { message: "learning projection rebuild required" });
-  const rewards = await readKidRewardSnapshot(services, childId, nowDate, exec);
   const microphoneEnabled = options.microphoneEnabled ?? true;
   const [active] = await exec.select().from(learningSessions).where(and(eq(learningSessions.childId, childId), eq(learningSessions.state, "active")));
   const [activeVersion] = active
@@ -218,7 +206,6 @@ async function listKidDecksSnapshot(
         resumeOnly: isActive && !child.canRead,
         subjectTitle,
         mockTestAvailable: child.canRead && values.mockTestAvailable,
-        earnedPoints: rewards.pointsByDeck.get(row.deckId) ?? 0,
         activeSession,
         deckId: row.deckId,
         title: row.title,
@@ -237,7 +224,6 @@ async function listKidDecksSnapshot(
       resumeOnly: isActive && !child.canRead,
       subjectTitle: null,
       mockTestAvailable: child.canRead && !!row.testGoals?.length,
-      earnedPoints: rewards.pointsByDeck.get(row.deckId) ?? 0,
       activeSession,
       deckId: row.deckId,
       title: row.title,
@@ -258,7 +244,6 @@ async function listKidDecksSnapshot(
         deckId: active.deckId, title: resumable.title, kind: resumable.kind as "vocabulary" | "lesson",
         vocabularyFormat: pinnedVersion.vocabularyFormat, coverAssetId: resumable.coverAssetId, coverVisual: coverVisualByVersion.get(active.deckVersionId) ?? null,
         resumeOnly: true, activeSession: { sessionId: active.id, mode: active.mode }, mockTestAvailable: false,
-        earnedPoints: rewards.pointsByDeck.get(active.deckId) ?? 0,
         itemCount: count.length, independentlyRecalledCount: recalledCountByVersion.get(active.deckVersionId) ?? 0, testDate: null, recommended: false,
         ...(resumable.kind === "lesson" ? { subjectTitle: null } : {}),
       });

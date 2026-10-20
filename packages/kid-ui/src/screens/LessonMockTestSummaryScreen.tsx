@@ -1,4 +1,5 @@
-import { messages, type LessonMockTestSummaryDto } from "@learning/contracts";
+import { messages, type LessonMockTestSummaryDto, type SessionActivityResultDto } from "@learning/contracts";
+import { SessionActivityResultView } from "./SessionActivityResultView";
 import { format } from "../format";
 import { computeLessonMockScore, LESSON_MOCK_STATUS_ICONS, lessonMockOutcomeStatus } from "./lesson-mock-score";
 import { mockTestScoreTone } from "./mock-test-score";
@@ -10,8 +11,9 @@ import { useAutoFocus } from "./useAutoFocus";
  * odpowiedzią oraz prostym wynikiem per zadanie; wyjątek procentowy omówienia
  * jak w słówkach. Bez kategorii błędów i werdyktu modelu — te widzi rodzic.
  */
-export function LessonMockTestSummaryScreen({ summary, onPractice, onSwitchProfile }: {
+export function LessonMockTestSummaryScreen({ summary, activity, onPractice, onSwitchProfile }: {
   summary: LessonMockTestSummaryDto;
+  activity: SessionActivityResultDto | null;
   onPractice: () => Promise<void>;
   onSwitchProfile: () => Promise<void>;
 }) {
@@ -23,6 +25,7 @@ export function LessonMockTestSummaryScreen({ summary, onPractice, onSwitchProfi
   return <main className="kid-screen kid-screen--mock-summary" data-testid="kid-lesson-mock-summary">
     <h1>{messages.kid.mockTestFinished}</h1>
     {!summary.complete && <p>{messages.kid.mockTestPartial}</p>}
+    <SessionActivityResultView activity={activity} />
     {score.total > 0 && <div className="kid-mock-score" data-testid="kid-lesson-mock-score" data-tone={tone}>
       <p className="kid-mock-score__value">{format(messages.kid.mockTestScore, { correct: score.correct, total: score.total, percent: score.percent })}</p>
       <p className="kid-mock-score__stars" role="img" aria-label={format(messages.kid.mockTestStarsLabel, { n: score.stars })}>{"★".repeat(score.stars)}{"☆".repeat(6 - score.stars)}</p>

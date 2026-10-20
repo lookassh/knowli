@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { messages, type MockTestSummaryDto, type SessionDto } from "@learning/contracts";
+import { messages, type MockTestSummaryDto, type SessionActivityResultDto, type SessionDto } from "@learning/contracts";
+import { SessionActivityResultView } from "./SessionActivityResultView";
 import { KidIcon } from "../components/KidIcon";
 import { format } from "../format";
 import { computeMockTestScore, MOCK_TEST_SOLUTION_ICONS, mockTestResultBadgeClass, mockTestResultBadgeLabel, mockTestScoreTone, mockTestSolutionDetail, mockTestWordStatus } from "./mock-test-score";
@@ -19,8 +20,8 @@ export function MockTestReadyScreen({ session, onStart, onCancel }: { session: S
   </main>;
 }
 
-export function MockTestSummaryScreen({ summary, onPlay, onPractice, onSwitchProfile }: {
-  summary: MockTestSummaryDto; onPlay: (taskId: string) => Promise<void>; onPractice: () => Promise<void>; onSwitchProfile: () => Promise<void>;
+export function MockTestSummaryScreen({ summary, activity, onPlay, onPractice, onSwitchProfile }: {
+  summary: MockTestSummaryDto; activity: SessionActivityResultDto | null; onPlay: (taskId: string) => Promise<void>; onPractice: () => Promise<void>; onSwitchProfile: () => Promise<void>;
 }) {
   const [error, setError] = useState(false);
   const practiceRef = useAutoFocus<HTMLButtonElement>(true);
@@ -31,6 +32,7 @@ export function MockTestSummaryScreen({ summary, onPlay, onPractice, onSwitchPro
   return <main className="kid-screen kid-screen--mock-summary" data-testid="kid-mock-summary">
     <h1>{messages.kid.mockTestFinished}</h1>
     {!summary.complete && <p>{messages.kid.mockTestPartial}</p>}
+    <SessionActivityResultView activity={activity} />
     {score.total > 0 && <div className="kid-mock-score" data-testid="kid-mock-score" data-tone={tone}>
       <p className="kid-mock-score__value">{format(messages.kid.mockTestScore, { correct: score.correct, total: score.total, percent: score.percent })}</p>
       <p className="kid-mock-score__stars" role="img" aria-label={format(messages.kid.mockTestStarsLabel, { n: score.stars })}>{"★".repeat(score.stars)}{"☆".repeat(6 - score.stars)}</p>

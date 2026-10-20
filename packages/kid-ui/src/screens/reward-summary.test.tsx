@@ -4,6 +4,7 @@ import type { KidDeckDto, KidProfileDto, SessionSummaryDto } from "@learning/con
 import { ProfileScreen } from "./ProfileScreen";
 import { DeckCard, DeckScreen } from "./DeckScreen";
 import { SummaryScreen } from "./SummaryScreen";
+import { SessionActivityResultView } from "./SessionActivityResultView";
 
 function textNodes(element: React.ReactNode): string[] {
   if (Array.isArray(element)) return element.flatMap(textNodes);
@@ -18,18 +19,17 @@ function textNodes(element: React.ReactNode): string[] {
 
 const profile: KidProfileDto = {
   childId: "10000000-0000-4000-8000-000000000001", displayName: "Ola", avatarKey: "cat", recordingMode: "hold",
-  rewards: { earnedPoints: 9, pointsToUse: 9, readyXboxPacks: 1, todayCreditedSeconds: 1799, dailyGoalSeconds: 1800 },
+  rewardPoints: 9,
 };
 
 const deck: KidDeckDto = {
   deckId: "10000000-0000-4000-8000-000000000002", title: "Kolory", itemCount: 4, independentlyRecalledCount: 2,
-  testDate: null, recommended: false, mockTestAvailable: false, activeSession: null, earnedPoints: 3,
+  testDate: null, recommended: false, mockTestAvailable: false, activeSession: null,
 };
 
 const summary: SessionSummaryDto = {
   sessionId: "10000000-0000-4000-8000-000000000003", state: "completed", tasksIssued: 1, assessedTasksIssued: 1,
   endedAt: "2026-10-16T10:00:00.000Z", independentSuccesses: { recall: 0, spelling: 0 }, practiceItems: [],
-  reward: { creditedSeconds: 30, pointsEarned: 0 },
 };
 
 describe("kid reward views", () => {
@@ -52,50 +52,30 @@ describe("kid reward views", () => {
     expect(textNodes(screen(undefined, true)).join(" ")).toContain("Dziś: —");
   });
 
-  it("shows the precise daily threshold and earned profile totals", () => {
-    const before = textNodes(<ProfileScreen profiles={[profile]} onSelect={vi.fn()} />).join(" ");
-    expect(before).toContain("Zdobyte: 9 pkt");
-    expect(before).toContain("29 z 30 min");
-    expect(before).not.toContain("30 min osiągnięte");
-    const reached = textNodes(<ProfileScreen profiles={[{ ...profile, rewards: { ...profile.rewards!, todayCreditedSeconds: 1800 } }]} onSelect={vi.fn()} />).join(" ");
-    expect(reached).toContain("30 min osiągnięte");
+  it("shows a single general points counter without balances, packs and daily goals", () => {
+    const rendered = textNodes(<ProfileScreen profiles={[profile]} onSelect={vi.fn()} />).join(" ");
+    expect(rendered).toContain("Punkty: 9");
+    expect(rendered).not.toContain("Xbox");
+    expect(rendered).not.toContain("Do wykorzystania");
+    expect(rendered).not.toContain("30 min");
   });
 
-  it("uses Polish Xbox pack forms and separates identity from wrapping reward details", () => {
-    const requestXbox = vi.fn();
-    const one = <ProfileScreen profiles={[profile]} onSelect={vi.fn()} onRequestXbox={requestXbox} />;
-    expect(textNodes(one).join(" ")).toContain("Xbox: 1 pakiet po 15 minut");
-    expect(textNodes(one).join(" ")).toContain("Zgłoś pakiet Xbox · 30 pkt");
-    const requestButton = ProfileScreen({ profiles: [profile], onSelect: vi.fn(), onRequestXbox: requestXbox })
-      .props.children[2].props.children[0].props.children[4];
-    requestButton.props.onClick();
-    expect(requestXbox).toHaveBeenCalledWith(profile.childId);
-    const two = <ProfileScreen profiles={[{ ...profile, rewards: { ...profile.rewards!, readyXboxPacks: 2 } }]} onSelect={vi.fn()} />;
-    expect(textNodes(two).join(" ")).toContain("Xbox: 2 pakiety po 15 minut");
-    const pending = { ...profile, rewards: { ...profile.rewards!, xboxRequest: {
-      requestId: "10000000-0000-4000-8000-000000000003", status: "pending" as const,
-      requestedAt: "2026-10-16T10:00:00.000Z", localDate: "2026-10-15", blockNumber: 1,
-      pointsCost: 30 as const, xboxMinutes: 15 as const,
-    } } };
-    expect(textNodes(<ProfileScreen profiles={[pending]} onSelect={vi.fn()} onRequestXbox={vi.fn()} />).join(" "))
-      .toContain("Zgłoszenie czeka na rodzica.");
-    expect(textNodes(<ProfileScreen profiles={[pending]} onSelect={vi.fn()} onRequestXbox={vi.fn()} />).join(" "))
-      .not.toContain("Zgłoś pakiet Xbox");
-    const tree = ProfileScreen({ profiles: [profile], onSelect: vi.fn() }).props.children[2].props.children[0].props.children[0].props.children;
-    expect(tree[0].props.className).toBe("kid-profile-identity");
-    expect(tree[1].props.className).toBe("kid-profile-rewards");
-  });
-
-  it("shows deck points independently from mastery stars", () => {
+  it("keeps mastery stars on deck cards without per-deck points", () => {
     const rendered = textNodes(<DeckCard deck={deck} mediaUrl={() => ""} onStart={vi.fn()} />).join(" ");
-    expect(rendered).toContain("Zdobyte tutaj: 3 pkt");
     expect(rendered).toContain("★★★ ☆☆☆");
+    expect(rendered).not.toContain("Zdobyte tutaj");
   });
 
-  it("shows the actual session reward delta, including partial minutes", () => {
-    const rendered = textNodes(<SummaryScreen summary={summary} profiles={[profile]} onAgain={vi.fn()} onSwitchProfile={vi.fn()} />).join(" ");
-    expect(rendered).toContain("Zdobyto 0 pkt");
-    expect(rendered).toContain("30 s");
+  it("shows the session points or an explicit no-rating message", () => {
+    const awarded = textNodes(<SummaryScreen summary={{ ...summary, activity: { status: "evaluated", pointsAwarded: 7, errorCode: null } }} profiles={[profile]} onAgain={vi.fn()} onSwitchProfile={vi.fn()} />).join(" ");
+    expect(awarded).toContain("Zdobyto 7 pkt");
+    const failed = textNodes(<SummaryScreen summary={{ ...summary, activity: { status: "error", pointsAwarded: 0, errorCode: "model_timeout" } }} profiles={[profile]} onAgain={vi.fn()} onSwitchProfile={vi.fn()} />).join(" ");
+    expect(failed).toContain("Nauka zapisana. Nie udało się naliczyć punktów.");
+    const inProgress = textNodes(<SummaryScreen summary={{ ...summary, activity: { status: "already_started", pointsAwarded: 0, errorCode: null } }} profiles={[profile]} onAgain={vi.fn()} onSwitchProfile={vi.fn()} />).join(" ");
+    expect(inProgress).toContain("Punkty z tej nauki są jeszcze liczone.");
+    expect(textNodes(<SessionActivityResultView activity={{ status: "already_started", pointsAwarded: 0, errorCode: null }} />).join(" ")).toContain("Punkty z tej nauki są jeszcze liczone.");
+    const missing = textNodes(<SummaryScreen summary={summary} profiles={[profile]} onAgain={vi.fn()} onSwitchProfile={vi.fn()} />).join(" ");
+    expect(missing).not.toContain("Zdobyto");
+    expect(textNodes(<SessionActivityResultView activity={null} />).join(" ")).toBe("");
   });
-
 });

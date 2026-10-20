@@ -17,9 +17,6 @@ import {
   disableSessionMicrophone,
   submitAttempt,
   submitSpeechAttempt,
-  recordRewardActivitySignal,
-  authorizeRewardActivityPlayback,
-  requestXboxPack,
   MULTIPART_OVERHEAD_BYTES,
   MAX_AUDIO_BYTES,
   type Services,
@@ -28,13 +25,36 @@ import {
   AttemptInputSchema,
   EventInputSchema,
   SessionInputSchema,
+  SessionEndInputSchema,
+  SESSION_ACTIVITY_REPORT_VERSION,
+  SESSION_ACTIVITY_REPORT_MAX_BYTES,
   UuidSchema,
-  RewardActivitySignalSchema,
-  RewardActivityPlaybackAuthorizationInputSchema,
 } from "@learning/contracts";
 import { readJson } from "@/http/errors";
 import { assertSameOrigin } from "@/http/security";
 import { readCappedFormData } from "./multipart";
+
+/** Odczyt JSON z limitem bajtów — raport aktywności ma twardy sufit rozmiaru. */
+async function readCappedJson(request: Request, capBytes: number): Promise<unknown> {
+  // Content-Length ponad limit odrzucamy od razu, bez buforowania żądania.
+  const declaredLength = Number(request.headers.get("content-length") ?? "");
+  if (Number.isFinite(declaredLength) && declaredLength > capBytes) {
+    throw new AppError("validation", { message: "payload exceeds the activity report size limit" });
+  }
+  const text = await request.text();
+  // Brak ciała = koniec sesji bez raportu; nadmiarowy lub zepsuty JSON
+  // dostaje jawny błąd walidacji, a nie ciche porzucenie raportu.
+  if (text.trim() === "") return null;
+  // Limit deklarowany w bajtach — porównujemy bajty UTF-8, nie jednostki UTF-16.
+  if (Buffer.byteLength(text, "utf8") > capBytes) {
+    throw new AppError("validation", { message: "payload exceeds the activity report size limit" });
+  }
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new AppError("validation");
+  }
+}
 
 /**
  * Router Kid API pod /api/v1/kid/* (ścieżki wg architecture.md §12). Model
@@ -59,11 +79,6 @@ export async function handleKidApi(
 
   if (request.method === "GET" && first === "profiles" && second === undefined) {
     return Response.json(await listKidProfiles(services), { headers: { "Cache-Control": "no-store" } });
-  }
-
-  if (request.method === "POST" && first === "profiles" && second !== undefined && third === "xbox-request") {
-    const requestDto = await requestXboxPack(services, UuidSchema.parse(second));
-    return Response.json(requestDto, { headers: { "Cache-Control": "no-store" } });
   }
 
   if (request.method === "GET" && first === "decks" && second === undefined) {
@@ -93,7 +108,18 @@ export async function handleKidApi(
       return task === null ? new Response(null, { status: 204 }) : Response.json(task);
     }
     if (request.method === "POST" && second !== undefined && third === "end") {
-      return Response.json(await endSession(services, second));
+      // Opcjonalny raport aktywności: jeden, ograniczony rozmiarem, w znanej
+      // wersji formatu. Nieznana wersja wymaga odświeżenia klienta.
+      const body = await readCappedJson(request, SESSION_ACTIVITY_REPORT_MAX_BYTES);
+      const end = SessionEndInputSchema.safeParse(body ?? {});
+      if (!end.success) {
+        const version = (body as { activityReport?: { version?: unknown } } | null)?.activityReport?.version;
+        if (version !== undefined && version !== SESSION_ACTIVITY_REPORT_VERSION) {
+          throw new AppError("validation", { details: { reason: "activity_report_update_required" } });
+        }
+        throw new AppError("validation");
+      }
+      return Response.json(await endSession(services, second, end.data.activityReport));
     }
     if (request.method === "POST" && second !== undefined && third === "disable-microphone") {
       return Response.json(await disableSessionMicrophone(services, second));
@@ -101,14 +127,6 @@ export async function handleKidApi(
   }
 
   if (first === "tasks" && second !== undefined) {
-    if (request.method === "POST" && third === "activity") {
-      const body = RewardActivitySignalSchema.parse({ ...((await readJson(request)) as object), taskId: second });
-      return Response.json(await recordRewardActivitySignal(services, body), { headers: { "Cache-Control": "no-store" } });
-    }
-    if (request.method === "POST" && third === "activity/playback-authorization") {
-      const body = RewardActivityPlaybackAuthorizationInputSchema.parse({ ...((await readJson(request)) as object), taskId: second });
-      return Response.json(await authorizeRewardActivityPlayback(services, body), { headers: { "Cache-Control": "no-store" } });
-    }
     if (request.method === "POST" && third === "events") {
       const input = EventInputSchema.parse({ ...((await readJson(request)) as object), taskId: second });
       await recordEvent(services, input);

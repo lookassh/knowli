@@ -12,3 +12,6 @@
 - source_spec: `docs/bmad/implementation-artifacts/spec-deck-question-count.md`
   summary: Aktualizacja AGENTS.md („Sesje trwają około 5–10 minut") po podniesieniu domyślnego budżetu sesji do 20 (limit do 15 min).
   evidence: AGENTS.md to plik agent-context wyłączony z edycji w tym buildzie; treść niespójna z zatwierdzoną decyzją o skalowanym limicie max(10 min, 45 s × budżet).
+- source_spec: `docs/bmad/implementation-artifacts/spec-client-reward-time.md`
+  summary: Przycinanie odsłuchu do długości nagrania działa deklaratywnie — port AudioPlayer w kid-ui nie wystawia metadanych durationMs, więc reporter przekazuje null i limit egzekwuje się dopiero, gdy port je udostępni.
+  evidence: Test jednostkowy "clips playback to the recording length" przechodzi (reporter obsługuje durationMs), ale produkcja woła playbackStarted(assetId, null); odnotowane w Review Triage Log (low/defer). Dowiedzie zmiana portu AudioPlayer zwracająca długość zasobu i asercja w teście kontrolera/e2e.

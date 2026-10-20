@@ -3,12 +3,14 @@ import type { KidApi } from "../api/KidApi";
 import type { PlatformMedia } from "../media/platform";
 import type { LocalPreferences } from "../storage";
 import { LearningSessionController, type KidScreen } from "./session-controller";
+import { createBrowserActivityDraftStore } from "./activity-draft-store";
 
 /**
  * Spinacz Reacta nad sterownikiem przepływu. Cała logika pozostaje w
  * kontrolerze (przenośność, testowalność bez DOM); hook dodaje subskrypcję
  * snapshotu oraz reakcje przeglądarki: powrót z tła odświeża krok, zdarzenia
- * online/offline sterują trybem bez sieci.
+ * online/offline sterują trybem bez sieci. Pauzy lokalnego pomiaru aktywności
+ * (tło/blur/offline) trafiają wyłącznie do raportu końcowego — bez heartbeatów.
  */
 export function useLearningSession(deps: {
   api: KidApi;
@@ -23,6 +25,7 @@ export function useLearningSession(deps: {
         api: deps.api,
         media: deps.media,
         storage: deps.storage,
+        activityDrafts: createBrowserActivityDraftStore(),
         ...(deps.initialChildId === undefined ? {} : { initialChildId: deps.initialChildId }),
         ...(deps.pollIntervalMs === undefined ? {} : { pollIntervalMs: deps.pollIntervalMs }),
       }),
@@ -45,20 +48,20 @@ export function useLearningSession(deps: {
     const onVisibility = () => {
       if (document.visibilityState === "visible") {
         void controller.refreshProfiles();
-        if (document.hasFocus()) controller.resumeRewardActivity();
+        controller.resumeActivity();
         void controller.refreshStep();
-      } else { controller.pauseRewardActivity("background"); controller.cancelRecording(); }
+      } else { controller.pauseActivity("background"); controller.cancelRecording(); }
     };
-    const onBlur = () => { controller.pauseRewardActivity("blur"); controller.cancelRecording(); };
+    const onBlur = () => { controller.pauseActivity("blur"); controller.cancelRecording(); };
     const onFocus = () => {
       if (document.visibilityState !== "visible" || !document.hasFocus()) return;
-      controller.resumeRewardActivity();
+      controller.resumeActivity();
       void controller.refreshProfiles();
     };
-    const onOffline = () => { controller.pauseRewardActivity("offline"); controller.cancelRecording(); controller.markOffline(); };
+    const onOffline = () => { controller.pauseActivity("offline"); controller.cancelRecording(); controller.markOffline(); };
     const onOnline = () => {
       void controller.retry().then(() => {
-        if (document.visibilityState === "visible" && document.hasFocus()) controller.resumeRewardActivity();
+        if (document.visibilityState === "visible" && document.hasFocus()) controller.resumeActivity();
       });
     };
     document.addEventListener("visibilitychange", onVisibility);

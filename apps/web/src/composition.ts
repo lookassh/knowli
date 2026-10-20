@@ -5,10 +5,13 @@ import {
   createServices,
   fakeGraderDeps,
   FakeAnswerGrader,
+  fakeSessionActivityDeps,
+  FakeSessionActivityReviewer,
   fakeSpeechDeps,
   graderFromEnv,
   imageProviderFromEnv,
   mediaSettingsFromEnv,
+  sessionActivityFromEnv,
   speechFromEnv,
   systemClock,
   type Services,
@@ -38,6 +41,13 @@ function initialize(): { services: Services; pool: Pool } {
     (process.env.UMIEM_FAKE_PROVIDERS === "1"
       ? fakeGraderDeps({ provider: new FakeAnswerGrader({ keywordRouting: true }) })
       : undefined);
+  // Ocena aktywności sesji współdzieli połączenie UMIEM_GRADER_*; w trybie fake
+  // deterministiczny reviewer (heurystyka „aaa” → wykluczenie zadania).
+  const sessionActivity =
+    sessionActivityFromEnv(process.env) ??
+    (process.env.UMIEM_FAKE_PROVIDERS === "1"
+      ? fakeSessionActivityDeps({ provider: new FakeSessionActivityReviewer() })
+      : undefined);
   const imageProvider = imageProviderFromEnv(process.env);
   return {
     services: createServices({
@@ -50,6 +60,7 @@ function initialize(): { services: Services; pool: Pool } {
       // ścieżka mowy to krótkie żądanie web → provider, bez kolejki (arch §11)
       ...(speech ? { speech } : {}),
       ...(grader ? { grader } : {}),
+      ...(sessionActivity ? { sessionActivity } : {}),
     }),
     pool,
   };

@@ -5,6 +5,8 @@ import type { OptionOutcome } from "./option-outcome";
 export interface ExerciseHandlers {
   /** Content-free activity signal for an actual edit or block move. */
   onInteraction(): void;
+  /** Edycja pola/układanie odpowiedzi: licznik zmian bez treści wpisów. */
+  onEdit(): void;
   onPlay(): void;
   /** Odsłuch zdania przykładowego prezentacji (SPEC §22). */
   onPlayExample(): void;

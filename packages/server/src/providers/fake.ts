@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { GenerationDeps, SpeechDeps } from "../config";
+import type { GenerationDeps, SessionActivityDeps, SpeechDeps } from "../config";
 import type {
   AnswerGraderProvider,
   AudioInput,
@@ -11,6 +11,8 @@ import type {
   LlmProvider,
   PronunciationProvider,
   PronunciationResult,
+  SessionActivityReviewTask,
+  SessionActivityReviewer,
   SttProvider,
   TtsProvider,
   TtsSynthesizeInput,
@@ -543,5 +545,85 @@ export function fakeGraderDeps(
     provider: options.provider ?? new FakeAnswerGrader(),
     maxCallsPerSession: options.maxCallsPerSession ?? 20,
     timeoutMs: options.timeoutMs ?? 8000,
+  };
+}
+
+/**
+ * Zachowanie fake oceny aktywności sesji: surowy wynik, awaria albo opóźnienie
+ * (symulacja timeoutu 20 s — moduł domeny przerywa wywołanie).
+ */
+export type FakeSessionActivityBehavior =
+  | { raw: unknown; delayMs?: number }
+  | { error: string; delayMs?: number };
+
+/**
+ * Deterministyczny fake `SessionActivityReviewer`: liczy wywołania i zwraca
+ * zaprogramowany surowy wynik (walidację robi domena). Bez zachowania stosuje
+ * heurystykę: wyklucza zadania, których JEDYNE wysłane odpowiedzi tekstowe są
+ * identyczne, krótkie i nie należą do wariantów poprawnych (wzorzec „aaa”).
+ */
+export class FakeSessionActivityReviewer implements SessionActivityReviewer {
+  readonly name = "fake-session-activity";
+  readonly model = "fake-session-activity-1";
+  readonly promptVersion = "fake-session-activity-v1";
+  readonly requests: Array<{ tasks: readonly SessionActivityReviewTask[] }> = [];
+  #behaviors: FakeSessionActivityBehavior[] = [];
+
+  queue(...behaviors: FakeSessionActivityBehavior[]): void {
+    this.#behaviors = behaviors;
+  }
+
+  get callCount(): number {
+    return this.requests.length;
+  }
+
+  async review(input: { tasks: readonly SessionActivityReviewTask[] }, signal: AbortSignal): Promise<unknown> {
+    this.requests.push(input);
+    const behavior = this.#behaviors.length > 1 ? this.#behaviors.shift()! : this.#behaviors[0] ?? null;
+    if (behavior?.delayMs && behavior.delayMs > 0) {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, behavior.delayMs);
+        signal.addEventListener("abort", () => {
+          clearTimeout(timer);
+          reject(new DOMException("aborted", "AbortError"));
+        });
+      });
+    }
+    if (behavior && "error" in behavior) {
+      throw new Error(behavior.error);
+    }
+    if (behavior) {
+      return behavior.raw;
+    }
+    const excludedTasks = input.tasks
+      .filter((task) => {
+        const answers = task.submittedAnswers.filter((answer) => answer.text !== null && !answer.uncertain);
+        if (answers.length === 0 || answers.some((answer) => answer.modality !== "text")) return false;
+        const texts = [...new Set(answers.map((answer) => answer.text!.trim().toLowerCase()))];
+        if (texts.length !== 1) return false;
+        const text = texts[0]!;
+        const accepted = task.acceptedAnswers.map((answer) => answer.trim().toLowerCase());
+        return text.length <= 3 && !accepted.includes(text) && !accepted.includes(task.stimulus?.trim().toLowerCase() ?? "\u0000");
+      })
+      .map((task) => ({
+        taskOrdinal: task.taskOrdinal,
+        reason: `Jedyna odpowiedź to „${task.submittedAnswers[0]?.text ?? ""}”, niezwiązana z poleceniem.`,
+      }));
+    return {
+      reason: excludedTasks.length > 0
+        ? "Część zadań zawierała wyłącznie odpowiedzi niezwiązane z poleceniami."
+        : "Próby są związane z zadaniami.",
+      excludedTasks,
+    };
+  }
+}
+
+/** Zależności oceny aktywności na fake'u — do integracji i trybu UMIEM_FAKE_PROVIDERS. */
+export function fakeSessionActivityDeps(
+  options: { provider?: FakeSessionActivityReviewer; timeoutMs?: number } = {},
+): SessionActivityDeps {
+  return {
+    provider: options.provider ?? new FakeSessionActivityReviewer(),
+    timeoutMs: options.timeoutMs ?? 20_000,
   };
 }
