@@ -87,6 +87,18 @@ describe("sessionActivityFromEnv", () => {
     expect(deps).toBeDefined();
     expect(deps!.provider.model).toBe("cheap-1");
     expect(deps!.timeoutMs).toBe(20_000);
+    expect(deps!.publicService).toBe("grader.example · cheap-1");
+    expect(deps!.publicService).not.toContain("secret");
+  });
+
+  it("public service identity strips URL credentials, path and query", () => {
+    const deps = sessionActivityFromEnv({
+      ...base,
+      UMIEM_GRADER_BASE_URL: "https://user:pass@grader.example:8443/v1?token=hidden",
+    });
+    expect(deps!.publicService).toBe("grader.example:8443 · cheap-1");
+    expect(deps!.publicService).not.toContain("hidden");
+    expect(deps!.publicService).not.toContain("pass");
   });
 
   it("częściowa konfiguracja → rzut (współdzielone zmienne gradera)", () => {

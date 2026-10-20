@@ -5,7 +5,7 @@ const secondChild = "00000000-0000-4000-8000-000000000002";
 
 function workCardBody(childId: string, date: string, overrides: Record<string, unknown> = {}) {
   return {
-    childId, date, creditedSeconds: 0, unevaluatedSessions: 0, sessions: [],
+    childId, date, creditedSeconds: 0, unevaluatedSessions: 0, reviewService: null, sessions: [],
     ...overrides,
   };
 }
@@ -78,10 +78,12 @@ test("karta pracy pokazuje wynik oceny sesji, wykluczenia i sesje bez oceny", as
               status: "evaluated", durationSeconds: 360, activeSeconds: 300, approvedSeconds: 180,
               pointsAwarded: 3, reason: "Większość zadań zawierała rzeczywiste próby.", errorCode: null,
               excludedTasks: [{ taskOrdinal: 1, reason: "Wysłano wyłącznie aaa." }],
+              details: { modelReason: "Jedno zadanie nie zawierało pracy.", tasks: [{ taskOrdinal: 0, instruction: "Przypomnij słowo", stimulus: "kot", options: [], acceptedAnswers: ["cat"], submittedAnswers: ["cat"], activeMilliseconds: 12000, editCount: 2, playbackCount: 1, modelNote: null }] },
             },
             steps: [{ taskId, ordinal: 0, exerciseType: "recall", state: "answered", issuedAt: "2026-10-16T10:00:05.000Z", responses: [] }],
           },
         ],
+        reviewService: "review.example · model-a",
       }) });
     }
     throw new Error(`Nieoczekiwane API: ${url.pathname}`);
@@ -103,6 +105,28 @@ test("karta pracy pokazuje wynik oceny sesji, wykluczenia i sesje bez oceny", as
   await expect(activity.getByText("Zadania wykluczone z zaliczenia czasu")).toBeVisible();
   await activity.getByText("Zadania wykluczone z zaliczenia czasu").click();
   await expect(activity.getByText("Zadanie 2: Wysłano wyłącznie aaa.")).toBeVisible();
+  await expect(page.getByTestId("work-card-review-service")).toContainText("review.example · model-a");
+  await activity.getByText("Szczegóły oceny zadań").click();
+  await expect(activity.getByText("Wzorzec: cat")).toBeVisible();
+  await expect(activity.getByText("Odpowiedzi: cat")).toBeVisible();
+});
+
+test("karta pracy informuje, gdy szczegóły oceny wygasły", async ({ page }) => {
+  await page.route("**/api/v1/parent/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/login")) return route.fulfill({ json: { authenticated: true, setupRequired: false } });
+    if (url.pathname.endsWith("/children")) return route.fulfill({ json: [{ id: firstChild, displayName: "Ala", avatarKey: "star", canRead: true }] });
+    if (url.pathname.endsWith("/decks")) return route.fulfill({ json: [] });
+    if (url.pathname.endsWith("/work-card")) return route.fulfill({ json: workCardBody(firstChild, "2026-10-16", { sessions: [{
+      sessionId: "00000000-0000-4000-8000-000000000051", mode: "training", state: "completed",
+      startedAt: "2026-10-16T10:00:00.000Z", endedAt: "2026-10-16T10:06:00.000Z", deckTitle: "Dni", deckVersionNumber: 1, remainingSteps: 0,
+      activity: { status: "evaluated", durationSeconds: 360, activeSeconds: 300, approvedSeconds: 180, pointsAwarded: 3, reason: "Zaliczone.", errorCode: null, excludedTasks: null, details: null }, steps: [],
+    }] }) });
+    throw new Error(`Nieoczekiwane API: ${url.pathname}`);
+  });
+  await page.goto("/parent");
+  await page.getByTestId("tab-work-card").click();
+  await expect(page.getByText("Szczegóły oceny są już niedostępne (dostępne 7 dni od sesji).")).toBeVisible();
 });
 
 test("sesja bez raportu ma jawny brak oceny, a nie zero zatwierdzonej aktywności", async ({ page }) => {

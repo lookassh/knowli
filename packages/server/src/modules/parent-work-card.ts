@@ -1,10 +1,10 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
-import { ParentWorkCardDtoSchema, ParentWorkCardQuerySchema, SessionActivityReviewRecordSchema, type ParentSessionActivityDto, type ParentWorkCardDto } from "@learning/contracts";
+import { and, asc, eq, inArray, isNull, lt } from "drizzle-orm";
+import { ParentWorkCardDtoSchema, ParentWorkCardQuerySchema, SessionActivityReviewRecordSchema, taskActiveMs, type ParentSessionActivityDto, type ParentWorkCardDto } from "@learning/contracts";
 import type { Services } from "../config";
 import { localDateAt, validRewardTimezone } from "../domain/reward-activity";
 import { AppError } from "../errors";
 import { attempts, assessments, childProfiles, deckVersions, familySettings, learningSessions, sessionTasks } from "../db/schema";
-import { activityDetailsAvailable } from "./session-activity";
+import { activityDetailsAvailable, resolveInterruptedSessionActivity, SESSION_ACTIVITY_REVIEW_DEADLINE_MS, type StoredReport } from "./session-activity";
 
 /** Read-only, child-scoped work report. The HTTP parent router authenticates before calling this. */
 export async function readParentWorkCard(services: Services, input: unknown): Promise<ParentWorkCardDto> {
@@ -13,6 +13,14 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
   const query = { ...parsed, date: parsed.date ?? localDateAt(services.clock.now(), validRewardTimezone(family?.timezone)) };
   const child = await services.db.select({ id: childProfiles.id }).from(childProfiles).where(eq(childProfiles.id, query.childId)).limit(1);
   if (!child.length) throw new AppError("not_found");
+
+  const reviewCutoff = new Date(services.clock.now().getTime() - SESSION_ACTIVITY_REVIEW_DEADLINE_MS);
+  const reviewCandidates = await services.db.select({ id: learningSessions.id }).from(learningSessions).where(and(
+    eq(learningSessions.childId, query.childId),
+    isNull(learningSessions.activityReview),
+    lt(learningSessions.activityReviewStartedAt, reviewCutoff),
+  ));
+  for (const session of reviewCandidates) await resolveInterruptedSessionActivity(services, session.id);
 
   const sessions = await services.db.select({
     id: learningSessions.id, mode: learningSessions.mode, state: learningSessions.state,
@@ -82,12 +90,33 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
         reason: null,
         errorCode: null,
         excludedTasks: null,
+        details: null,
       };
     }
     const review = saved.data;
-    const details = activityDetailsAvailable(session, now)
-      ? ((session.activityReport as { verdict?: { excludedTasks?: { taskOrdinal: number; reason: string }[] } | null } | null)?.verdict?.excludedTasks ?? [])
+    const retained = activityDetailsAvailable(session, now)
+      ? session.activityReport as StoredReport | null
       : null;
+    const details = retained ? {
+      modelReason: retained.verdict?.reason ?? review.reason ?? "",
+      tasks: (retained.tasks ?? []).map((task) => {
+        const measured = retained.fe?.tasks?.find((entry) => entry.taskId === task.taskId);
+        const excluded = retained.verdict?.excludedTasks?.find((entry) => entry.taskOrdinal === task.taskOrdinal);
+        return {
+          taskOrdinal: task.taskOrdinal,
+          instruction: task.instruction,
+          stimulus: task.stimulus,
+          options: task.options,
+          acceptedAnswers: task.acceptedAnswers,
+          submittedAnswers: task.attempts.map((attempt) => attempt.text).filter((answer): answer is string => answer !== null),
+          activeMilliseconds: measured ? taskActiveMs(measured) : 0,
+          editCount: measured?.editCount ?? 0,
+          playbackCount: measured?.playbacks.length ?? 0,
+          modelNote: excluded?.reason ?? null,
+        };
+      }),
+    } : null;
+    const excludedTasks = retained?.verdict?.excludedTasks ?? null;
     return {
       status: review.status,
       durationSeconds: review.durationSeconds,
@@ -96,7 +125,8 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
       pointsAwarded: review.pointsAwarded,
       reason: review.reason,
       errorCode: review.errorCode,
-      excludedTasks: details,
+      excludedTasks,
+      details,
     };
   };
 
@@ -151,6 +181,8 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
     return !saved?.success || saved.data.status !== "evaluated";
   }).length;
   return ParentWorkCardDtoSchema.parse({
-    childId: query.childId, date: query.date, creditedSeconds, unevaluatedSessions, sessions: reportSessions,
+    childId: query.childId, date: query.date, creditedSeconds, unevaluatedSessions,
+    reviewService: services.sessionActivity?.publicService ?? null,
+    sessions: reportSessions,
   });
 }

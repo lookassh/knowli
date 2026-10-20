@@ -255,8 +255,8 @@ export class LearningSessionController {
   /** Odtwarza plik audio rejestrując rzeczywisty odsłuch w lokalnym raporcie. */
   async #playCountedAudio(url: string, assetId: string): Promise<void> {
     try {
-      await this.#media.player.play(url, () => {
-        this.#activity?.playbackStarted(assetId, null);
+      await this.#media.player.play(url, (durationMs) => {
+        this.#activity?.playbackStarted(assetId, durationMs);
       });
     } finally {
       // Odrzucenie po uruchomieniu start-callbacku też domyka odsłuch —
@@ -326,10 +326,13 @@ export class LearningSessionController {
     const activity = this.#activity;
     const sessionId = this.#activitySessionId;
     if (!activity || sessionId === null || !activity.started) return;
+    const existing = this.#activityDrafts.load(sessionId);
     const saved = this.#activityDrafts.save({
       sessionId,
       savedAtMs: this.#activityClock.now(),
       state: activity.state,
+      childId: this.#learning()?.session.childId ?? existing?.childId,
+      ...(existing?.finalPayload === undefined ? {} : { finalPayload: existing.finalPayload }),
     });
     if (!saved) activity.markStorageUnavailable();
   }
@@ -340,6 +343,7 @@ export class LearningSessionController {
   }
 
   async start(): Promise<void> {
+    const epoch = this.#epoch;
     try {
       this.#profiles = await this.#api.listProfiles();
       try {
@@ -353,6 +357,7 @@ export class LearningSessionController {
         const requestedProfile = this.#profiles.find((profile) => profile.childId === this.#initialChildId);
         if (requestedProfile) {
           await this.#openDeckScreen(requestedProfile.childId);
+          await this.#deliverPendingActivity(requestedProfile.childId, epoch);
           await this.#resumeMockFromDecks();
           return;
         }
@@ -369,12 +374,56 @@ export class LearningSessionController {
 
   async selectProfile(childId: string): Promise<void> {
     this.#epoch += 1;
+    const epoch = this.#epoch;
     this.#teardownRecording();
     this.#stopPlayback();
     this.#screen = { kind: "loading" };
     this.#emit();
     await this.#openDeckScreen(childId);
+    await this.#deliverPendingActivity(childId, epoch);
     await this.#resumeMockFromDecks();
+  }
+
+  /** Redelivers an exact final report left by a closed tab; no new evaluation is made. */
+  async #deliverPendingActivity(childId: string, epoch: number): Promise<void> {
+    const pendingDrafts = this.#activityDrafts.listForChild(childId);
+    let acknowledged = false;
+    const acknowledgedSessionIds = new Set<string>();
+    for (const draft of pendingDrafts) {
+      if (!draft.finalPayload) continue;
+      try {
+        const summary = await this.#api.endSession(draft.sessionId, draft.finalPayload);
+        acknowledged = true;
+        acknowledgedSessionIds.add(draft.sessionId);
+        if (summary.activity?.status === "already_started") continue;
+        if (epoch === this.#epoch && this.#childId === childId) this.#lastActivityResult = summary.activity ?? null;
+        this.#activityDrafts.remove(draft.sessionId);
+      } catch {
+        // Keep the exact payload for a later profile selection/network retry.
+      }
+    }
+    // The first deck snapshot may still advertise a mock test whose /end ACK
+    // was lost. Refresh only after a successful redelivery, and never let this
+    // asynchronous result overwrite a later profile/view selection.
+    if (acknowledged && epoch === this.#epoch && this.#screen.kind === "deck" && this.#screen.childId === childId) {
+      try {
+        const decks = await this.#api.listDecks(childId, { microphoneEnabled: false });
+        if (epoch === this.#epoch && this.#screen.kind === "deck" && this.#screen.childId === childId) {
+          this.#screen = { ...this.#screen, decks };
+          this.#emit();
+        }
+      } catch {
+        // Do not auto-resume a mock session known to have ended using the stale
+        // pre-recovery deck snapshot if refreshing that snapshot failed.
+        if (epoch === this.#epoch && this.#screen.kind === "deck" && this.#screen.childId === childId) {
+          this.#screen = { ...this.#screen, decks: this.#screen.decks.map((deck) =>
+            deck.activeSession && acknowledgedSessionIds.has(deck.activeSession.sessionId)
+              ? { ...deck, activeSession: null } : deck) };
+          this.#emit();
+        }
+      }
+    }
+    void this.refreshProfiles();
   }
 
   async #openDeckScreen(childId: string): Promise<void> {
@@ -598,8 +647,10 @@ export class LearningSessionController {
       this.#activity?.taskShown(task.taskId, task.exerciseType);
       this.#saveActivityDraft();
       if (task.pendingAttemptId) {
+        this.#activity?.pause("technical_wait");
+        this.#saveActivityDraft();
         this.#setLearning({ processing: true, busy: true });
-        await this.#pollAttempt(task.pendingAttemptId, epoch, Date.now() + POLL_DEADLINE_MS);
+        await this.#pollAttempt(task.pendingAttemptId, epoch, Date.now() + POLL_DEADLINE_MS, task.taskId);
         return;
       }
       // prezentacja od razu odtwarza wzorcową wymowę, a pytanie słuchowe
@@ -623,6 +674,16 @@ export class LearningSessionController {
     // więc serwer zwraca zapisany wynik zamiast konfliktu (macierz „Retry transportu").
     if (this.#frozenActivityReport === undefined) {
       this.#frozenActivityReport = this.#activity !== null && this.#activity.started ? this.#activity.freeze() : null;
+      if (this.#frozenActivityReport) {
+        const state = this.#activity!.state;
+        if (!this.#activityDrafts.save({
+          sessionId,
+          childId,
+          savedAtMs: this.#activityClock.now(),
+          state,
+          finalPayload: this.#frozenActivityReport,
+        })) this.#activity!.markStorageUnavailable();
+      }
     }
     const report = this.#frozenActivityReport ?? undefined;
     try {
@@ -631,7 +692,7 @@ export class LearningSessionController {
       this.#lastActivityResult = summary.activity ?? null;
       // Potwierdzenie zapisu żądania końca: kopia robocza tej sesji znika
       // (spóźniona odpowiedź nie kasuje raportu nowej sesji — klucz per sesja).
-      if (report !== undefined) this.#activityDrafts.remove(sessionId);
+      if (report !== undefined && summary.activity?.status !== "already_started") this.#activityDrafts.remove(sessionId);
       await this.refreshProfiles();
       if (epoch !== this.#epoch) return;
       if (mode === "mock_test" && this.#mockDeckKind === "lesson") {
@@ -776,7 +837,7 @@ export class LearningSessionController {
     const clientAttemptId = randomUUID();
     const send = async (): Promise<void> => {
       const attempt = await this.#api.submitAnswer({ ...input, taskId, clientAttemptId });
-      await this.#applyAttempt(attempt, epoch);
+      await this.#applyAttempt(attempt, epoch, taskId);
     };
     this.#setResume(send);
     try {
@@ -790,26 +851,28 @@ export class LearningSessionController {
     }
   }
 
-  async #applyAttempt(attempt: AttemptDto, epoch: number): Promise<void> {
+  async #applyAttempt(attempt: AttemptDto, epoch: number, expectedTaskId: string): Promise<void> {
+    if (epoch !== this.#epoch || this.#screen.kind !== "learning" || this.#screen.task?.taskId !== expectedTaskId) return;
     // Próba przyjęta przez serwer: łączymy raport z faktyczną odpowiedzią.
     this.#activity?.attemptSubmitted(attempt.attemptId);
     if (attempt.state === "processing") {
       this.#setLearning({ processing: true, busy: true });
-      await this.#pollAttempt(attempt.attemptId, epoch, Date.now() + POLL_DEADLINE_MS);
+      await this.#pollAttempt(attempt.attemptId, epoch, Date.now() + POLL_DEADLINE_MS, expectedTaskId);
       return;
     }
     await this.#showResult(attempt, epoch);
   }
 
-  async #pollAttempt(attemptId: string, epoch: number, deadline: number): Promise<void> {
-    this.#setResume(() => this.#pollAttempt(attemptId, epoch, deadline));
+  async #pollAttempt(attemptId: string, epoch: number, deadline: number, expectedTaskId?: string): Promise<void> {
+    const taskId = expectedTaskId ?? (this.#learning()?.task?.taskId ?? "");
+    this.#setResume(() => this.#pollAttempt(attemptId, epoch, deadline, taskId));
     try {
       const attempt = await this.#api.readAttempt(attemptId);
-      if (epoch !== this.#epoch) return;
+      if (epoch !== this.#epoch || this.#screen.kind !== "learning" || this.#screen.task?.taskId !== taskId) return;
       if (attempt.state === "processing" && Date.now() < deadline) {
         await sleep(this.#pollIntervalMs);
         if (epoch !== this.#epoch) return;
-        await this.#pollAttempt(attemptId, epoch, deadline);
+        await this.#pollAttempt(attemptId, epoch, deadline, taskId);
         return;
       }
       await this.#showResult(attempt, epoch);
@@ -866,7 +929,7 @@ export class LearningSessionController {
           current.offline || current.recordingPhase !== "idle" || current.processing ||
           current.task?.taskId !== taskId || current.feedback?.attemptId !== attemptId) return;
       if (authorization.attemptId !== attemptId || authorization.taskId !== taskId) return;
-      await this.#media.player.play(this.#api.mediaUrl(authorization.audioAssetId));
+      await this.#playCountedAudio(this.#api.mediaUrl(authorization.audioAssetId), authorization.audioAssetId);
       const afterPlay = this.#learning();
       if (playbackGeneration !== this.#playbackGeneration || epoch !== this.#epoch || !afterPlay ||
           afterPlay.task?.taskId !== taskId || afterPlay.feedback?.attemptId !== attemptId) return;
@@ -894,7 +957,7 @@ export class LearningSessionController {
     const playbackGeneration = this.#beginPlayback();
     const feedbackAttemptId = feedback.attemptId;
     try {
-      await this.#media.player.play(this.#api.mediaUrl(assetId));
+      await this.#playCountedAudio(this.#api.mediaUrl(assetId), assetId);
       const current = this.#learning();
       if (playbackGeneration !== this.#playbackGeneration || epoch !== this.#epoch ||
           current?.task?.taskId !== taskId || current.feedback?.attemptId !== feedbackAttemptId) return;
@@ -1133,7 +1196,7 @@ export class LearningSessionController {
       const send = async (): Promise<void> => {
         this.#pendingChoice = null;
         const attempt = await this.#api.submitSpeech(taskId, clientAttemptId, audio);
-        await this.#applyAttempt(attempt, epoch);
+        await this.#applyAttempt(attempt, epoch, taskId);
       };
       this.#setResume(send);
       await send();

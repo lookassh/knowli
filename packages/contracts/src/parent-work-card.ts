@@ -13,6 +13,19 @@ export const ParentActivityExcludedTaskDtoSchema = z.object({
 }).strict();
 export type ParentActivityExcludedTaskDto = z.infer<typeof ParentActivityExcludedTaskDtoSchema>;
 
+const ParentActivityTaskDetailSchema = z.object({
+  taskOrdinal: NonNegativeInt,
+  instruction: z.string(),
+  stimulus: z.string().nullable(),
+  options: z.array(z.string()),
+  acceptedAnswers: z.array(z.string()),
+  submittedAnswers: z.array(z.string()),
+  activeMilliseconds: NonNegativeInt,
+  editCount: NonNegativeInt,
+  playbackCount: NonNegativeInt,
+  modelNote: z.string().nullable(),
+}).strict();
+
 /**
  * Wynik oceny aktywności jednej sesji. `not_delivered` = sesja zakończona bez
  * raportu (systemowo/z innego urządzenia) — to JAWNY brak oceny, nie zero
@@ -28,6 +41,8 @@ export const ParentSessionActivityDtoSchema = z.object({
   errorCode: z.string().nullable(),
   /** Szczegóły wykluczeń znikają po 7 dniach retencji raportu. */
   excludedTasks: z.array(ParentActivityExcludedTaskDtoSchema).nullable(),
+  /** Zadaniowy snapshot oceny, dostępny wyłącznie w siedmiodniowej retencji. */
+  details: z.object({ modelReason: z.string(), tasks: z.array(ParentActivityTaskDetailSchema) }).strict().nullable(),
 }).strict();
 export type ParentSessionActivityDto = z.infer<typeof ParentSessionActivityDtoSchema>;
 
@@ -38,6 +53,7 @@ export const ParentWorkCardDtoSchema = z.object({
   creditedSeconds: NonNegativeInt,
   /** Liczba sesji tego dnia bez oceny aktywności (brak raportu albo błąd). */
   unevaluatedSessions: NonNegativeInt,
+  reviewService: z.string().nullable(),
   sessions: z.array(z.object({
     sessionId: UuidSchema,
     mode: z.enum(["training", "mock_test", "daily_round"]),

@@ -82,6 +82,18 @@ async function seedLegacyRewardState(databaseUrl: string): Promise<{ childId: st
       (id,session_id,child_id,deck_version_id,item_revision_id,ordinal,exercise_type,state,public_prompt,answer_key,context,issued_at)
       values ($1,$2,$3,$4,$5,0,'exposure','completed','{}','{}','{}',$6)`,
     [taskId, sessionId, child.id, draft.id, revisionId, clock.now()]);
+    const attemptId = randomUUID();
+    const skillVersion = (await pool.query<{ id: string; skill: string }>(`select sv.id, sv.skill from learning_app.skill_versions sv
+      join learning_app.item_revisions ir on ir.item_id=sv.item_id where ir.id=$1 order by sv.created_at limit 1`, [revisionId])).rows[0]!;
+    await pool.query(`insert into learning_app.attempts
+      (id,child_id,task_id,item_revision_id,client_attempt_id,request_hash,attempt_number,modality,state,answer,context,feedback,policy_id,received_at,completed_at)
+      values ($1,$2,$3,$4,$5,'migration-attempt-hash',1,'text','processing','{"text":"cat"}'::jsonb,'{"source":"fixture"}'::jsonb,'{"kind":"great"}'::jsonb,'learning-v2',$6,null)`,
+    [attemptId, child.id, taskId, revisionId, randomUUID(), clock.now()]);
+    await pool.query(`insert into learning_app.assessments
+      (child_id,attempt_id,item_revision_id,skill,skill_version_id,outcome,reason,independent,confirmation_eligible,details)
+      values ($1,$2,$3,$4,$5,'correct','fixture assessment',true,true,'{"source":"migration-test"}'::jsonb)`,
+    [child.id, attemptId, revisionId, skillVersion.skill, skillVersion.id]);
+    await pool.query("update learning_app.attempts set state='completed', completed_at=$2 where id=$1", [attemptId, clock.now()]);
     const settlementId = randomUUID();
     await pool.query(`insert into learning_app.reward_activity_settlements
       (id,child_id,session_id,task_id,completion_ref,kind,settled_at,deck_id,credited_milliseconds,awarded_points,remainder_milliseconds,timezone)
@@ -116,6 +128,14 @@ describe("session activity migration 0021", () => {
     try {
       databaseUrl = await prepareLegacyDatabase(temporaryFolder, 20);
       const { childId } = await seedLegacyRewardState(databaseUrl);
+      const before = openQuietDatabase(databaseUrl);
+      let beforeHistory: { attempts: unknown; assessments: unknown; summary: Record<string, unknown> };
+      try {
+        const attempts = (await before.pool.query("select * from learning_app.attempts where child_id=$1 order by id", [childId])).rows;
+        const assessments = (await before.pool.query("select a.* from learning_app.assessments a where child_id=$1 order by attempt_id,skill", [childId])).rows;
+        const summary = (await before.pool.query("select context->'summary' as summary from learning_app.learning_sessions where child_id=$1", [childId])).rows[0].summary;
+        beforeHistory = { attempts, assessments, summary };
+      } finally { await before.pool.end(); }
       // Pełny dziennik (z 0021) na tej samej bazie.
       await migrateDatabase(databaseUrl, migrationsFolder);
       const verify = openQuietDatabase(databaseUrl);
@@ -127,7 +147,10 @@ describe("session activity migration 0021", () => {
         // Pola nagrodowe usunięte z NIEchronionego context.summary (wynik wiedzy zostaje).
         const context = (await verify.pool.query("select context->'summary' as summary from learning_app.learning_sessions limit 1")).rows[0].summary;
         expect(context).not.toHaveProperty("reward");
-        expect(context).toHaveProperty("independentSuccesses");
+        const { reward: _removedReward, ...preservedSummary } = beforeHistory.summary;
+        expect(context).toEqual(preservedSummary);
+        expect((await verify.pool.query("select * from learning_app.attempts where child_id=$1 order by id", [childId])).rows).toEqual(beforeHistory.attempts);
+        expect((await verify.pool.query("select a.* from learning_app.assessments a where child_id=$1 order by attempt_id,skill", [childId])).rows).toEqual(beforeHistory.assessments);
         // Legacy sesje dostają przeszły termin → nowy mechanizm ich nie rozlicza.
         const expiry = (await verify.pool.query("select activity_report_expires_at <= now() as expired from learning_app.learning_sessions")).rows[0];
         expect(expiry.expired).toBe(true);

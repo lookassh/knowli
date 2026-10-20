@@ -36,6 +36,9 @@ export interface KidUiFixture {
   disclosure?: DisclosureDto;
   presentation?: PresentationCompletionDto;
   summary?: SessionSummaryDto;
+  /** Test transport ACK loss and idempotent redelivery without simulating a pre-acceptance failure. */
+  dropFirstEndResponse?: boolean;
+  endActivityResults?: NonNullable<SessionSummaryDto["activity"]>[];
   mockSummary?: MockTestSummaryDto;
   lessonMockSummary?: LessonMockTestSummaryDto;
   feedbackAudio?: FeedbackAudioDto;
@@ -59,7 +62,9 @@ export async function installKidUiFixture(page: Page, fixture: KidUiFixture): Pr
   if (fixture.uiAudio) UiAudioCatalogDtoSchema.parse(fixture.uiAudio);
 
   let taskIndex = 0;
+  let sessionStartCount = 0;
   let attemptPostIndex = 0;
+  let endRequestCount = 0;
   const attemptReadIndex = new Map<string, number>();
   await page.route("**/api/v1/kid/**", async (route) => {
     const request = route.request();
@@ -75,7 +80,11 @@ export async function installKidUiFixture(page: Page, fixture: KidUiFixture): Pr
     if (method === "GET" && path === "/api/v1/kid/profiles") return json(fixture.profiles);
     if (method === "GET" && path === "/api/v1/kid/ui-audio") return json(fixture.uiAudio ?? { ready: false, assets: {} });
     if (method === "GET" && path === "/api/v1/kid/decks") return json(fixture.decks);
-    if (method === "POST" && path === "/api/v1/kid/sessions") return json(fixture.session);
+    if (method === "POST" && path === "/api/v1/kid/sessions") {
+      if (sessionStartCount > 0) { taskIndex = 0; attemptPostIndex = 0; }
+      sessionStartCount += 1;
+      return json(fixture.session);
+    }
     if (method === "POST" && path === `/api/v1/kid/sessions/${fixture.session.sessionId}/disable-microphone`) return json({ ...fixture.session, microphoneEnabled: false });
     if (method === "POST" && path === `/api/v1/kid/sessions/${fixture.session.sessionId}/next`) {
       if (taskIndex >= fixture.tasks.length) return missing("task queue exhausted");
@@ -115,7 +124,10 @@ export async function installKidUiFixture(page: Page, fixture: KidUiFixture): Pr
       if (!fixture.summary) return missing("session summary is not configured");
       const body = request.postDataJSON() as { activityReport?: unknown } | null;
       if (body?.activityReport !== undefined) fixture.onEndSession?.(body.activityReport as SessionActivityReport);
-      return json(fixture.summary);
+      endRequestCount += 1;
+      if (fixture.dropFirstEndResponse && endRequestCount === 1) return route.abort("failed");
+      const activity = fixture.endActivityResults?.[endRequestCount - (fixture.dropFirstEndResponse ? 2 : 1)];
+      return json(activity ? { ...fixture.summary, activity } : fixture.summary);
     }
     if (method === "GET" && path === `/api/v1/kid/sessions/${fixture.session.sessionId}/mock-test-summary`) {
       if (fixture.lessonMockSummary) return json(fixture.lessonMockSummary);

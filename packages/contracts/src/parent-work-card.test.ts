@@ -5,7 +5,7 @@ const id = "00000000-0000-4000-8000-000000000001";
 const taskId = "00000000-0000-4000-8000-000000000002";
 
 function cardWith(sessions: unknown[], overrides: Record<string, unknown> = {}) {
-  return { childId: id, date: "2026-10-16", creditedSeconds: 0, unevaluatedSessions: 0, sessions, ...overrides };
+  return { childId: id, date: "2026-10-16", creditedSeconds: 0, unevaluatedSessions: 0, reviewService: null, sessions, ...overrides };
 }
 
 const evaluatedSession = {
@@ -16,6 +16,7 @@ const evaluatedSession = {
     status: "evaluated", durationSeconds: 300, activeSeconds: 240, approvedSeconds: 180,
     pointsAwarded: 3, reason: "Rzeczywiste próby.", errorCode: null,
     excludedTasks: [{ taskOrdinal: 1, reason: "Powtarzane aaa." }],
+    details: { modelReason: "Przebieg zadań", tasks: [{ taskOrdinal: 1, instruction: "Pytanie", stimulus: "Kot", options: [], acceptedAnswers: ["cat"], submittedAnswers: ["aaa"], activeMilliseconds: 10_000, editCount: 2, playbackCount: 1, modelNote: "Brak związku z pytaniem." }] },
   },
   steps: [{ taskId, ordinal: 0, exerciseType: "recall", state: "answered", issuedAt: "2026-10-16T10:00:05.000Z", responses: [] }],
 };
@@ -32,10 +33,10 @@ describe("parent work card contract", () => {
     expect(ParentWorkCardDtoSchema.safeParse({ ...cardWith([evaluatedSession]), token: "secret" }).success).toBe(false);
     expect(ParentWorkCardDtoSchema.safeParse({ ...cardWith([evaluatedSession]), xboxRequests: [] }).success).toBe(false);
     // Retencja: szczegóły wykluczeń znikają po 7 dniach — pole robi się null.
-    const expired = { ...evaluatedSession, activity: { ...evaluatedSession.activity, excludedTasks: null } };
+    const expired = { ...evaluatedSession, activity: { ...evaluatedSession.activity, excludedTasks: null, details: null } };
     expect(ParentWorkCardDtoSchema.safeParse(cardWith([expired])).success).toBe(true);
     // Brak raportu to jawny status, nie zero zatwierdzonej aktywności.
-    const notDelivered = { ...evaluatedSession, activity: { ...evaluatedSession.activity, status: "not_delivered", approvedSeconds: 0, pointsAwarded: 0, reason: null, excludedTasks: null } };
+    const notDelivered = { ...evaluatedSession, activity: { ...evaluatedSession.activity, status: "not_delivered", approvedSeconds: 0, pointsAwarded: 0, reason: null, excludedTasks: null, details: null } };
     expect(ParentWorkCardDtoSchema.safeParse(cardWith([notDelivered])).success).toBe(true);
     expect(ParentWorkCardDtoSchema.safeParse(cardWith([{ ...evaluatedSession, activity: { ...evaluatedSession.activity, status: "weird" } }])).success).toBe(false);
   });

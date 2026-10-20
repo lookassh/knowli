@@ -63,6 +63,23 @@ function SessionActivityCard({ activity }: { activity: ParentWorkCardDto["sessio
           ))}</ul>
         </details>
       )}
+      {activity.details && (
+        <details>
+          <summary>{messages.workCard.activityTaskDetails}</summary>
+          <p>{activity.details.modelReason}</p>
+          <ol>{activity.details.tasks.map((task) => (
+            <li key={task.taskOrdinal}>
+              <strong>{task.instruction}</strong>
+              {task.stimulus && <p>{task.stimulus}</p>}
+              {task.options.length > 0 && <p>{messages.workCard.activityOptions}: {task.options.join(" · ")}</p>}
+              {task.acceptedAnswers.length > 0 && <p>{messages.workCard.activityExpectedAnswers}: {task.acceptedAnswers.join(" / ")}</p>}
+              {task.submittedAnswers.length > 0 && <p>{messages.workCard.activityAnswers}: {task.submittedAnswers.join(" / ")}</p>}
+              <p>{messages.workCard.activityMeasured}: {duration(Math.floor(task.activeMilliseconds / 1000))}; {messages.workCard.activityEdits}: {task.editCount}; {messages.workCard.activityPlaybacks}: {task.playbackCount}</p>
+              {task.modelNote && <p>Uwaga oceny: {task.modelNote}</p>}
+            </li>
+          ))}</ol>
+        </details>
+      )}
       {activity.status === "evaluated" && activity.excludedTasks === null && (
         <p className="info">{messages.workCard.activityDetailsExpired}</p>
       )}
@@ -146,6 +163,9 @@ export default function WorkCardPanel({ childrenList, onAuthExpired }: { childre
           <section className="pp-work-summary card" aria-label={messages.workCard.creditedTime}>
             <h3>{messages.workCard.creditedTime}</h3>
             <p data-testid="work-card-credited">{duration(report.creditedSeconds)}</p>
+            <p className="info" data-testid="work-card-review-service">
+              {report.reviewService ? messages.workCard.activityService.replace("{service}", report.reviewService) : messages.workCard.activityServiceUnavailable}
+            </p>
             {report.unevaluatedSessions > 0 && (
               <p className="info">{messages.workCard.unevaluatedSessions.replace("{n}", String(report.unevaluatedSessions))}</p>
             )}

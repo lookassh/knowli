@@ -69,9 +69,36 @@ Pełne ścieżki i działania: tabela w `client-reward-time/migration.md`, sekcj
 
 ## Implementation Notes
 
+### Review Findings — Codex, 2026-10-20
+
+Odbiór po poprawkach GPT-6 Luna i kolejnym niezależnym review: wszystkie poniższe pozycje zamknięte. Aktualny plan, triage i końcowe dowody są w [specyfikacji poprawek](spec-client-reward-time-review-fixes.md#odbiór-końcowy--główny-agent). Test prawdziwego LLM i wdrożenie produkcyjne pozostają osobnymi krokami.
+
+Niezależny review końcowego commitu `78c7575`. Pełne dowody, triage wszystkich zgłoszeń, ocena prostoty i granice weryfikacji: [raport review](client-reward-time/review-codex-2026-10-20.md). Kod aplikacji nie został zmieniony. Status wraca do `in-progress` z powodu niepoprawionych usterek. Nie synchronizowano sprint-status: brak wskazanego story key.
+
+- [x] [Review][Patch][P1] F01: blur zalicza wcześniejszą bezczynność [packages/kid-ui/src/session/activity-report.ts:287].
+- [x] [Review][Patch][P1] F02: snapshot LLM gubi kanoniczne odpowiedzi, sekwencje i treści lekcji [packages/server/src/modules/session-activity.ts:247].
+- [x] [Review][Patch][P2] F03: brak odzyskania finalnego raportu zamkniętej sesji po restarcie FE [packages/kid-ui/src/session/session-controller.ts:624].
+- [x] [Review][Patch][P2] F04: kompakcja ignoruje limity pojedynczego zadania [packages/kid-ui/src/session/activity-report.ts:360].
+- [x] [Review][Patch][P2] F05: limit audio niepodłączony i nieskuteczny dla całej aktywności [packages/kid-ui/src/session/session-controller.ts:259].
+- [x] [Review][Patch][P2] F06: feedback audio omija pomiar [packages/kid-ui/src/session/session-controller.ts:869].
+- [x] [Review][Patch][P2] F07: wznowione processing liczy techniczne oczekiwanie [packages/kid-ui/src/session/session-controller.ts:598].
+- [x] [Review][Patch][P2] F08: spóźniona próba starej sesji mutuje nowy reporter [packages/kid-ui/src/session/session-controller.ts:795].
+- [x] [Review][Patch][P2] F09: odczyt nie rozstrzyga przerwanej oceny po deadline [packages/server/src/modules/session-activity.ts:530].
+- [x] [Review][Patch][P2] F10: rodzic nie dostaje informacji o usłudze nowej oceny aktywności [apps/web/src/parent/WorkCardPanel.tsx:40].
+- [x] [Review][Patch][P2] F11: rodzic nie ma rozwinięcia kontekstu oceny z raportu [packages/server/src/modules/parent-work-card.ts:88].
+- [x] [Review][Patch][P2] F12: trwałe reason może kopiować szczegóły odpowiedzi dziecka [packages/server/src/modules/session-activity.ts:450].
+- [x] [Review][Patch][P2] G01: test reloadu przez magazyn przeglądarkowy i nowy kontroler [tests/e2e/kid-activity-lifecycle.spec.ts:1].
+- [x] [Review][Patch][P2] G02: test migracji z porównaniem rzeczywistych prób/ocen i treści summary [tests/integration/session-activity-migration.test.ts:124].
+
+#### Rejected
+
+- `false`: blind 7b / edge 4b — odpowiedź wyboru segmentu lesson_notice nie ginie: jest zapisywana jako optionText i odczytywana przez snapshot.
+- `low`: blind 10 — buforowanie body przed limitem jest faktem, ale wykazany scenariusz wymaga własnego nadmiarowego żądania; dodanie parsera strumieniowego wykracza poza uzgodniony zakres tej rodzinnej aplikacji. Pełne uzasadnienie w raporcie.
+
 - 2026-10-20: właściciel zatwierdził cały pakiet. Przygotowanie przekazania nie oznacza rozpoczęcia implementacji.
 - 2026-10-20: ZCode wdrożył cały zakres w worktree `impl/client-reward-time` (TDD na kontraktach, reporterze FE i module serwera; integracja PostgreSQL; E2E lifecycle/karta pracy). Szczegóły weryfikacji w raporcie implementacji; wdrożenie produkcyjne migracji 0021 wymaga osobnego polecenia.
 - 2026-10-20: niezależny review (3 warstwy) — 17 łatek naniesiono (m.in. zamrożenie raportu raz przy retry, walidacje kontraktu, per-dziecko kontrola migracji, odtworzone regresje karty pracy, testy adaptera/payloadu/worker); 1 odkrycie odroczono (brak długości nagrania w porcie AudioPlayer); podczas weryfikacji końcowej naprawiono też utajony bug useChoiceKeyboard (strzałki po usunięciu przypadkowego re-emitu). Pełne suite'y zielone: unit 1352, integracja 472, E2E 204, typecheck, build.
+- 2026-10-20: poprawiono wszystkie F01–F12/G01–G02 i usunięto odroczenie pomiaru długości audio; raport RED/GREEN, macierz dowodów i aktualne komendy są w [raporcie implementacji](spec-client-reward-time-review-fixes.md). Status `in-review`; produkcyjna migracja 0021 i niezależny review pozostają poza wykonaniem tego worktree.
 
 ## Spec Change Log
 

@@ -1,15 +1,19 @@
 import { createHash } from "node:crypto";
+import { z } from "zod";
 import { and, asc, eq, inArray, lt, isNotNull, sql } from "drizzle-orm";
 import {
   SessionActivityReportSchema,
   SessionActivityReviewRecordSchema,
   SessionActivityReviewVerdictSchema,
+  TaskPromptSchema,
   sessionActivityAward,
   taskActiveMs,
   type SessionActivityReport,
   type SessionActivityResultDto,
   type SessionActivityReviewRecord,
   type SessionActivityReviewVerdict,
+  type TaskPrompt,
+  type MeaningVisual,
 } from "@learning/contracts";
 import type { Services } from "../config";
 import type { Tx } from "../db/client";
@@ -73,7 +77,7 @@ interface StoredTaskSnapshot {
   processingExcluded: number;
 }
 
-interface StoredReport {
+export interface StoredReport {
   fe: SessionActivityReport;
   tasks: StoredTaskSnapshot[];
   verdict?: SessionActivityReviewVerdict;
@@ -126,61 +130,102 @@ function errorRecord(
 }
 
 /** Instrukcja/bodziec/opcje widoczne dla dziecka — jako dane, nie polecenia. */
-function describeTaskPrompt(prompt: unknown, exerciseType: string): { instruction: string; stimulus: string | null; options: string[] } {
-  const p = prompt as Record<string, unknown> | null;
-  const text = (value: unknown): string | null => (typeof value === "string" && value.length > 0 ? value : null);
-  const options = Array.isArray(p?.options)
-    ? p!.options.map((option) => text((option as Record<string, unknown>).text)).filter((option): option is string => option !== null)
-    : [];
-  switch (p?.kind ?? exerciseType) {
+export function describeTaskPrompt(p: TaskPrompt): { instruction: string; stimulus: string | null; options: string[] } {
+  const options = (items: readonly { text: string }[] | undefined): string[] => items?.map(({ text }) => text) ?? [];
+  switch (p.kind) {
     case "exposure":
-      return { instruction: "Prezentacja nowego słowa", stimulus: [text(p?.source), text(p?.target)].filter(Boolean).join(" → ") || null, options: [] };
+      return { instruction: "Prezentacja nowego słowa", stimulus: `${p.source} → ${p.target}`, options: [] };
     case "picture_exposure":
-      return { instruction: "Prezentacja nowego słowa (obrazek)", stimulus: null, options: [] };
+      return { instruction: "Prezentacja nowego słowa (obrazek)", stimulus: describeVisual(p.visual), options: [] };
     case "listening":
-      return { instruction: "Pytanie słuchowe: wybierz znaczenie", stimulus: null, options };
+      return { instruction: "Pytanie słuchowe: wybierz znaczenie", stimulus: null, options: options(p.options) };
     case "picture_listening":
-      return { instruction: "Pytanie słuchowe z obrazkami: wybierz znaczenie", stimulus: null, options };
+      return { instruction: "Pytanie słuchowe z obrazkami: wybierz znaczenie", stimulus: null, options: p.options.map((option) => option.labelPl) };
     case "reading":
-      return { instruction: "Wybierz znaczenie słowa", stimulus: text(p?.text), options };
+      return { instruction: "Wybierz znaczenie słowa", stimulus: p.text, options: options(p.options) };
     case "reverse_recognition":
-      return { instruction: "Wybierz angielskie słowo", stimulus: text(p?.prompt), options };
+      return { instruction: "Wybierz angielskie słowo", stimulus: p.prompt, options: options(p.options) };
     case "picture_recognition":
-      return { instruction: "Wybierz słowo pasujące do obrazka", stimulus: text(p?.source), options };
+      return { instruction: "Wybierz słowo pasujące do obrazka", stimulus: `${describeVisual(p.visual)}: ${p.source}`, options: options(p.options) };
     case "recall":
-      return { instruction: "Przypomnij angielskie słowo", stimulus: text(p?.prompt), options: [] };
+      return { instruction: "Przypomnij angielskie słowo", stimulus: p.prompt, options: [] };
     case "picture_recall":
-      return { instruction: "Przypomnij słowo do obrazka", stimulus: null, options: [] };
+      return { instruction: "Przypomnij słowo do obrazka", stimulus: describeVisual(p.visual), options: [] };
     case "spelling":
-      return { instruction: "Zapisz angielskie słowo", stimulus: text(p?.prompt), options: [] };
+      return { instruction: "Zapisz angielskie słowo", stimulus: p.prompt, options: [] };
     case "letter_completion":
-      return { instruction: "Uzupełnij brakujące litery", stimulus: text(p?.prompt), options: [] };
+      return { instruction: "Uzupełnij brakujące litery", stimulus: p.prompt, options: [] };
     case "speech":
-      return { instruction: "Powiedz słowo na głos", stimulus: text(p?.text), options: [] };
+      return { instruction: "Powiedz słowo na głos", stimulus: p.text, options: [] };
     case "picture_speech":
-      return { instruction: "Powiedz słowo do obrazka na głos", stimulus: null, options: [] };
-    case "lesson_card":
-      return { instruction: "Karta lekcji (przeczytanie)", stimulus: text((p?.card as Record<string, unknown> | undefined)?.title), options: [] };
-    case "lesson_notice":
-      return { instruction: text(p?.instructionPl) ?? "Zauważ różnicę", stimulus: null, options: [] };
+      return { instruction: "Powiedz słowo do obrazka na głos", stimulus: describeVisual(p.visual), options: [] };
+    case "lesson_card": {
+      const cardText = [p.card.title, p.card.body, ...p.card.examples].join("\n");
+      return { instruction: "Karta lekcji (przeczytanie)", stimulus: cardText, options: [] };
+    }
+    case "lesson_notice": {
+      const sentences = p.segments.map((sentence) => sentence.map(({ text }) => text).join(" "));
+      return { instruction: p.instructionPl, stimulus: sentences.join(" | "), options: [] };
+    }
     case "lesson_choice":
-      return { instruction: text(p?.instructionPl) ?? "Wybierz odpowiedź", stimulus: text(p?.stem), options };
+      return { instruction: p.instructionPl, stimulus: p.stem, options: options(p.options) };
     case "lesson_order":
-      return { instruction: text(p?.instructionPl) ?? "Ułóż w kolejności", stimulus: null, options: Array.isArray(p?.items)
-        ? p!.items.map((item) => text((item as Record<string, unknown>).text)).filter((item): item is string => item !== null)
-        : [] };
+      return { instruction: p.instructionPl, stimulus: null, options: options(p.items) };
     case "lesson_short_answer":
-      return { instruction: "Krótka odpowiedź", stimulus: text(p?.question), options };
+      return { instruction: "Krótka odpowiedź", stimulus: p.question, options: options(p.options) };
     case "lesson_gap":
-      return { instruction: text(p?.instructionPl) ?? "Uzupełnij lukę", stimulus: text(p?.stemWithGap), options: [] };
+      return { instruction: p.instructionPl, stimulus: p.stemWithGap, options: [] };
     case "lesson_error_fix":
-      return { instruction: text(p?.instructionPl) ?? "Popraw zdanie", stimulus: text(p?.statement), options: [] };
+      return { instruction: p.instructionPl, stimulus: p.statement, options: [] };
     case "lesson_transform":
-      return { instruction: text(p?.instructionPl) ?? "Przekształć zdanie", stimulus: text(p?.statement), options: [] };
+      return { instruction: p.instructionPl, stimulus: p.statement, options: [] };
     case "lesson_open_answer":
-      return { instruction: text(p?.instructionPl) ?? "Odpowiedz własnymi słowami", stimulus: text(p?.prompt), options: [] };
-    default:
-      return { instruction: `Ćwiczenie typu ${exerciseType}`, stimulus: null, options };
+      return { instruction: p.instructionPl, stimulus: p.prompt, options: [] };
+    default: {
+      const exhaustive: never = p;
+      return exhaustive;
+    }
+  }
+}
+
+/** Resolves canonical lesson answers from the same answer-key shapes used by materialization. */
+export const LessonAnswerSnapshotSchema = z.object({
+  answer: z.string().optional(), target: z.string().optional(), acceptedAnswers: z.array(z.string()).optional(),
+  correctOptionId: z.string().optional(), optionValues: z.record(z.string(), z.string()).optional(),
+  segmentValues: z.record(z.string(), z.string()).optional(), itemIds: z.array(z.string()).optional(),
+  itemValues: z.record(z.string(), z.string()).optional(),
+});
+type LessonAnswerSnapshot = z.infer<typeof LessonAnswerSnapshotSchema>;
+
+export function lessonAnswerValues(key: LessonAnswerSnapshot, prompt: TaskPrompt | null): { valuesById: Map<string, string>; acceptedAnswers: string[] } {
+  const valuesById = new Map<string, string>();
+  if (prompt?.kind === "lesson_choice" || prompt?.kind === "lesson_short_answer" || prompt?.kind === "reading" || prompt?.kind === "reverse_recognition") {
+    for (const option of prompt.options) valuesById.set(option.id, option.text);
+  }
+  if (prompt?.kind === "lesson_order") for (const item of prompt.items) valuesById.set(item.id, item.text);
+  if (prompt?.kind === "lesson_notice") for (const sentence of prompt.segments) for (const segment of sentence) valuesById.set(segment.id, segment.text);
+  for (const values of [key?.optionValues, key?.segmentValues, key?.itemValues]) {
+    for (const [id, value] of Object.entries(values ?? {})) valuesById.set(id, value);
+  }
+  const sequence = key?.itemIds
+    ? key.itemIds.map((id) => valuesById.get(id)).filter((value): value is string => Boolean(value))
+    : [];
+  const acceptedAnswers = [
+    ...(key?.answer ? [key.answer] : []),
+    ...(key?.target ? [key.target] : []),
+    ...(key?.acceptedAnswers ?? []),
+    ...(key?.correctOptionId ? [valuesById.get(key.correctOptionId) ?? ""] : []),
+    ...(sequence.length > 0 ? [sequence.join(" ")] : []),
+  ].filter((answer) => answer.length > 0);
+  return { valuesById, acceptedAnswers: [...new Set(acceptedAnswers)] };
+}
+
+/** Opis widocznej grafiki bez asset ID i bajtów mediów. */
+function describeVisual(visual: MeaningVisual): string {
+  switch (visual.kind) {
+    case "color": return `Kolor ${visual.color}`;
+    case "number": return `Liczba elementów: ${visual.count}`;
+    case "image": return "Ilustracja obrazkowa";
   }
 }
 
@@ -208,7 +253,6 @@ function uncertainAttempt(attempt: typeof attempts.$inferSelect): boolean {
 async function buildTaskSnapshot(tx: Tx, sessionId: string, report: SessionActivityReport): Promise<StoredTaskSnapshot[]> {
   const tasks = await tx.select().from(sessionTasks).where(eq(sessionTasks.sessionId, sessionId)).orderBy(asc(sessionTasks.ordinal));
   const taskById = new Map(tasks.map((task) => [task.id, task]));
-  const reportByTaskId = new Map(report.tasks.map((task) => [task.taskId, task]));
   for (const task of report.tasks) {
     if (!taskById.has(task.taskId)) {
       throw new AppError("validation", { message: "activity report references a task outside this session" });
@@ -243,18 +287,15 @@ async function buildTaskSnapshot(tx: Tx, sessionId: string, report: SessionActiv
   }
   const snapshots: StoredTaskSnapshot[] = [];
   for (const task of tasks) {
-    const described = describeTaskPrompt(task.publicPrompt, task.exerciseType);
-    const promptOptions = new Map<string, string>(
-      ((task.publicPrompt as { options?: Array<{ id?: unknown; text?: unknown }> | null })?.options ?? [])
-        .filter((option) => typeof option.id === "string" && typeof option.text === "string")
-        .map((option) => [option.id as string, option.text as string]),
+    const publicPrompt = TaskPromptSchema.safeParse(task.publicPrompt);
+    const answerSnapshot = LessonAnswerSnapshotSchema.safeParse(task.answerKey);
+    const described = publicPrompt.success
+      ? describeTaskPrompt(publicPrompt.data)
+      : { instruction: `Ćwiczenie typu ${task.exerciseType}`, stimulus: null, options: [] };
+    const { valuesById: promptOptions, acceptedAnswers: accepted } = lessonAnswerValues(
+      answerSnapshot.success ? answerSnapshot.data : {},
+      publicPrompt.success ? publicPrompt.data : null,
     );
-    const key = task.answerKey as { target?: unknown; acceptedAnswers?: unknown; correctOptionId?: unknown } | null;
-    const accepted = [
-      ...(typeof key?.target === "string" ? [key.target] : []),
-      ...(Array.isArray(key?.acceptedAnswers) ? key.acceptedAnswers.filter((a): a is string => typeof a === "string") : []),
-      ...(typeof key?.correctOptionId === "string" ? [promptOptions.get(key.correctOptionId) ?? ""] : []),
-    ].filter((value) => value.length > 0);
     const taskAttempts = attemptRows.filter((attempt) => attempt.taskId === task.id);
     const disclosures = (disclosuresByTask.get(task.id) ?? []).sort((a, b) => a.getTime() - b.getTime());
     snapshots.push({
@@ -426,7 +467,7 @@ export async function reviewSessionActivity(
   if (!verdict.success) {
     return reviewRecordDto(await finalize(errorRecord("invalid_verdict", facts, services.clock.now()), undefined, "invalid_verdict"));
   }
-  const ordinals = new Set(plan.stored.tasks.map((task) => task.taskOrdinal));
+  const ordinals = new Set(plan.reviewTasks.map((task) => task.taskOrdinal));
   const excluded = new Set<number>();
   for (const exclusion of verdict.data.excludedTasks) {
     if (!ordinals.has(exclusion.taskOrdinal) || excluded.has(exclusion.taskOrdinal)) {
@@ -497,7 +538,19 @@ async function finalizeSessionActivity(
         // Arytmetyka punktów wyłącznie z kontraktu (1 pkt / pełna minuta,
         // reszta przenoszona między sesjami) — bez zdublowanej logiki inline.
         const award = sessionActivityAward(approved, profile.remainder);
-        finalRecord = { ...record, pointsAwarded: award.pointsAwarded };
+        const savedActivity = session.activityReport as StoredReport | null;
+        const reviewedOrdinals = new Set(savedActivity?.tasks
+          .filter((task) => savedActivity.fe.tasks.some((feTask) => feTask.taskId === task.taskId))
+          .map((task) => task.taskOrdinal) ?? []);
+        const taskCount = reviewedOrdinals.size;
+        const excludedCount = verdict?.excludedTasks.length ?? 0;
+        finalRecord = {
+          ...record,
+          pointsAwarded: award.pointsAwarded,
+          reason: excludedCount === 0
+            ? `Ocena aktywności: zaliczono pracę w ${taskCount} zadaniach.`
+            : `Ocena aktywności: zaliczono pracę w ${taskCount - excludedCount} z ${taskCount} zadań; ${excludedCount} wykluczono.`,
+        };
         await tx.update(childProfiles).set({
           rewardPoints: profile.rewardPoints + award.pointsAwarded,
           rewardRemainderMs: award.remainderMs,
@@ -528,11 +581,29 @@ async function finalizeSessionActivity(
 
 /** Wynik zapisany w sesji (do podpięcia do podsumowania bez ponownej oceny). */
 export async function readSessionActivityResult(services: Services, sessionId: string): Promise<SessionActivityResultDto | null> {
+  await resolveInterruptedSessionActivity(services, sessionId);
   const [row] = await services.db.select({ review: learningSessions.activityReview }).from(learningSessions).where(eq(learningSessions.id, sessionId));
   if (!row?.review) return null;
   const saved = SessionActivityReviewRecordSchema.safeParse(row.review);
   if (!saved.success) return null;
   return reviewRecordDto(saved.data);
+}
+
+/** Read/end paths can settle a review abandoned after its single-call deadline. */
+export async function resolveInterruptedSessionActivity(services: Services, sessionId: string): Promise<void> {
+  await services.db.transaction(async (tx) => {
+    const session = await lockSession(tx, sessionId);
+    if (session.activityReview !== null || session.activityReviewStartedAt === null
+      || services.clock.now().getTime() - session.activityReviewStartedAt.getTime() < SESSION_ACTIVITY_REVIEW_DEADLINE_MS) return;
+    const [firstIssued] = await tx.select({ issuedAt: sessionTasks.issuedAt }).from(sessionTasks)
+      .where(eq(sessionTasks.sessionId, sessionId)).orderBy(asc(sessionTasks.issuedAt)).limit(1);
+    const facts = sessionFacts(session, firstIssued?.issuedAt ?? null);
+    const stored = session.activityReport as { fe?: { activeMs?: unknown } } | null;
+    const activeSeconds = typeof stored?.fe?.activeMs === "number"
+      ? Math.min(Math.floor(stored.fe.activeMs / 1000), facts.durationSeconds) : 0;
+    const review = errorRecord("review_interrupted", { durationSeconds: facts.durationSeconds, activeSeconds }, services.clock.now());
+    await tx.update(learningSessions).set({ activityReview: review }).where(eq(learningSessions.id, sessionId));
+  });
 }
 
 /** Czy szczegóły raportu są jeszcze w okresie retencji (widok rodzica). */

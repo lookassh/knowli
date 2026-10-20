@@ -60,6 +60,67 @@ describe("SessionActivityReporter", () => {
     expect(report.elapsedMs).toBe(190_000);
   });
 
+  it("caps idle time before blur using the same rule as freeze", () => {
+    const clock = new ManualClock();
+    const reporter = new SessionActivityReporter(clock);
+    reporter.taskShown(TASK_A, "recall");
+    clock.advanceMs(300_000);
+    reporter.pause("blur");
+    const report = reporter.freeze();
+    expect(report.activeMs).toBe(SESSION_ACTIVITY_IDLE_MS);
+    expect(report.tasks[0]!.pauses).toContainEqual({ kind: "idle", fromMs: SESSION_ACTIVITY_IDLE_MS, toMs: 300_000 });
+    expect(SessionActivityReportSchema.safeParse(report).success).toBe(true);
+  });
+
+  it("compacts per-task array limits even while global entry count is low", () => {
+    const clock = new ManualClock();
+    const reporter = new SessionActivityReporter(clock);
+    reporter.taskShown(TASK_A, "spelling");
+    for (let i = 0; i < 257; i += 1) {
+      reporter.recordEdit();
+      clock.advanceMs(30_001);
+    }
+    const report = reporter.freeze();
+    expect(report.compacted).toBe(true);
+    expect(report.tasks[0]!.editWindows.length).toBeLessThanOrEqual(256);
+    expect(SessionActivityReportSchema.safeParse(report).success).toBe(true);
+  });
+
+  it("compacts playback and pause details at their per-task limits", () => {
+    const clock = new ManualClock();
+    const reporter = new SessionActivityReporter(clock);
+    reporter.taskShown(TASK_A, "listening");
+    for (let i = 0; i < 129; i += 1) {
+      reporter.playbackStarted(ASSET_A, 1_000);
+      clock.advanceMs(1_000);
+      reporter.playbackEnded(ASSET_A);
+      reporter.pause("blur");
+      clock.advanceMs(5_001);
+      reporter.recordInteraction();
+    }
+    const report = reporter.freeze();
+    expect(report.compacted).toBe(true);
+    expect(report.tasks[0]!.playbacks.length).toBeLessThanOrEqual(128);
+    expect(report.tasks[0]!.pauses.length).toBeLessThanOrEqual(128);
+    expect(SessionActivityReportSchema.safeParse(report).success).toBe(true);
+  });
+
+  it("keeps 257 disjoint active intervals without merging idle gaps", () => {
+    const clock = new ManualClock();
+    const reporter = new SessionActivityReporter(clock);
+    reporter.taskShown(TASK_A, "recall");
+    for (let i = 0; i < 257; i += 1) {
+      clock.advanceMs(1_000);
+      reporter.pause("blur");
+      clock.advanceMs(1_000);
+      reporter.recordInteraction();
+    }
+    const report = reporter.freeze();
+    expect(report.tasks[0]!.activeIntervals.length).toBe(257);
+    expect(report.activeMs).toBe(257_000);
+    expect(SessionActivityReportSchema.safeParse(report).success).toBe(true);
+  });
+
   it("counts real playback as activity in union with typing (not a sum)", () => {
     const clock = new ManualClock();
     const reporter = new SessionActivityReporter(clock);
@@ -87,6 +148,50 @@ describe("SessionActivityReporter", () => {
     reporter.playbackEnded(ASSET_A);
     const report = reporter.freeze();
     expect(report.tasks[0]!.playbacks).toEqual([{ assetId: ASSET_A, fromMs: 0, toMs: 3_000 }]);
+    expect(report.activeMs).toBeLessThanOrEqual(63_000);
+  });
+
+  it("does not treat a delayed audio callback as activity after the child's edit", () => {
+    const clock = new ManualClock();
+    const reporter = new SessionActivityReporter(clock);
+    reporter.taskShown(TASK_A, "recall");
+    reporter.playbackStarted(ASSET_A, 2_000);
+    clock.advanceMs(250_000);
+    reporter.recordEdit();
+    clock.advanceMs(50_000);
+    reporter.playbackEnded(ASSET_A);
+    const report = reporter.freeze();
+    expect(report.activeMs).toBe(112_000);
+    expect(report.tasks[0]!.pauses).toContainEqual({ kind: "idle", fromMs: 62_000, toMs: 250_000 });
+  });
+
+  it("keeps ordinary thinking time after a short audio ends", () => {
+    const clock = new ManualClock();
+    const reporter = new SessionActivityReporter(clock);
+    reporter.taskShown(TASK_A, "listening");
+    reporter.playbackStarted(ASSET_A, 2_000);
+    clock.advanceMs(2_000);
+    reporter.playbackEnded(ASSET_A);
+    clock.advanceMs(8_000);
+    reporter.recordInteraction();
+    expect(reporter.freeze().activeMs).toBe(10_000);
+  });
+
+  it("freezes an independent payload after edits, attempts, and playback mutate reporter collections", () => {
+    const clock = new ManualClock();
+    const reporter = new SessionActivityReporter(clock);
+    reporter.taskShown(TASK_A, "recall");
+    clock.advanceMs(2_000);
+    reporter.recordEdit();
+    const frozen = reporter.freeze();
+    const snapshot = JSON.stringify(frozen);
+    clock.advanceMs(2_000);
+    reporter.recordEdit(); // mutates the existing five-second edit window
+    reporter.attemptSubmitted("66666666-6666-4666-8666-666666666666");
+    reporter.playbackStarted(ASSET_A, 1_000);
+    clock.advanceMs(1_000);
+    reporter.playbackEnded(ASSET_A);
+    expect(JSON.stringify(frozen)).toBe(snapshot);
   });
 
   it("records lifecycle pauses and resumes only on activity", () => {

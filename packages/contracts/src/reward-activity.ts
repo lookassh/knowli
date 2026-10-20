@@ -16,6 +16,13 @@ export const SESSION_ACTIVITY_REPORT_VERSION = 1;
 export const SESSION_ACTIVITY_MAX_ENTRIES = 4096;
 /** Maksymalna liczba zadań w raporcie (największa wspierana kartkówka + zapas). */
 export const SESSION_ACTIVITY_MAX_TASKS = 512;
+// Rozłącznych okien aktywności nie da się skompaktować bez zmiany naliczanego
+// czasu. Ogranicza je więc istniejący globalny limit wpisów.
+export const SESSION_ACTIVITY_MAX_INTERVALS_PER_TASK = SESSION_ACTIVITY_MAX_ENTRIES;
+export const SESSION_ACTIVITY_MAX_EDITS_PER_TASK = 256;
+export const SESSION_ACTIVITY_MAX_ATTEMPTS_PER_TASK = 64;
+export const SESSION_ACTIVITY_MAX_PLAYBACKS_PER_TASK = 128;
+export const SESSION_ACTIVITY_MAX_PAUSES_PER_TASK = 128;
 
 /** Twardy sufit rozmiaru raportu przyjmowanego przez serwer (256 KiB). */
 export const SESSION_ACTIVITY_REPORT_MAX_BYTES = 256 * 1024;
@@ -66,12 +73,12 @@ export const SessionActivityTaskReportSchema = z.object({
   exerciseType: z.string().min(1),
   shownFromMs: z.number().int().nonnegative(),
   shownToMs: z.number().int().nonnegative(),
-  activeIntervals: z.array(SessionActivityIntervalSchema).max(256),
+  activeIntervals: z.array(SessionActivityIntervalSchema).max(SESSION_ACTIVITY_MAX_INTERVALS_PER_TASK),
   editCount: z.number().int().nonnegative(),
-  editWindows: z.array(SessionActivityEditWindowSchema).max(256),
-  submittedAttempts: z.array(UuidSchema).max(64),
-  playbacks: z.array(SessionActivityPlaybackSchema).max(128),
-  pauses: z.array(SessionActivityPauseSchema).max(128),
+  editWindows: z.array(SessionActivityEditWindowSchema).max(SESSION_ACTIVITY_MAX_EDITS_PER_TASK),
+  submittedAttempts: z.array(UuidSchema).max(SESSION_ACTIVITY_MAX_ATTEMPTS_PER_TASK),
+  playbacks: z.array(SessionActivityPlaybackSchema).max(SESSION_ACTIVITY_MAX_PLAYBACKS_PER_TASK),
+  pauses: z.array(SessionActivityPauseSchema).max(SESSION_ACTIVITY_MAX_PAUSES_PER_TASK),
 }).strict();
 export type SessionActivityTaskReport = z.infer<typeof SessionActivityTaskReportSchema>;
 

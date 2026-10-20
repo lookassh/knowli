@@ -121,7 +121,7 @@ function makeRecorder(opts: { failStartWith?: unknown; startGate?: Promise<void>
   };
 }
 
-function makeMedia(recorder: ReturnType<typeof makeRecorder>, playGate?: Promise<void>, onStopPlayback?: () => void, failPlaybackBeforeStart = false): PlatformMedia & { playUrls: string[]; stops: number } {
+function makeMedia(recorder: ReturnType<typeof makeRecorder>, playGate?: Promise<void>, onStopPlayback?: () => void, failPlaybackBeforeStart = false, playbackDurationMs: number | null = null): PlatformMedia & { playUrls: string[]; stops: number } {
   const media = {
     playUrls: [] as string[],
     stops: 0,
@@ -132,10 +132,10 @@ function makeMedia(recorder: ReturnType<typeof makeRecorder>, playGate?: Promise
       return recorder;
     },
     player: {
-      async play(url: string, onStarted?: () => void) {
+      async play(url: string, onStarted?: (durationMs: number | null) => void) {
         media.playUrls.push(url);
         if (failPlaybackBeforeStart) throw new Error("autoplay blocked");
-        onStarted?.();
+        onStarted?.(playbackDurationMs);
         await playGate;
       },
       stop() {
@@ -161,6 +161,7 @@ interface ApiState {
   disabledSessions: string[];
   startedSessions: { childId: string; microphoneEnabled: boolean; supportsPictureVocabulary: boolean }[];
   listDeckRequests?: { childId: string; microphoneEnabled?: boolean }[];
+  listDeckResponses?: KidDeckDto[][];
   listDecksError?: unknown;
   startSessionResponse?: Partial<SessionDto>;
   submissions: { taskId: string; clientAttemptId: string; modality: string }[];
@@ -169,6 +170,7 @@ interface ApiState {
   /** Gdy ustawione, submitAnswer rzuca TypeError (brak sieci). */
   networkDown: boolean;
   disclosureGate?: Promise<void>;
+  readAttemptGate?: Promise<void>;
   endSessionGate?: Promise<void>;
   disclosureError?: unknown;
   feedbackAudioGate?: Promise<void>;
@@ -210,7 +212,7 @@ function makeApi(state: ApiState): KidApi {
     async listDecks(childId, options) {
       state.listDeckRequests?.push({ childId, microphoneEnabled: options?.microphoneEnabled });
       if (state.listDecksError !== undefined) throw state.listDecksError;
-      return state.decks;
+      return state.listDeckResponses?.shift() ?? state.decks;
     },
     async startSession(input) {
       state.startedSessions.push({ childId: input.childId, microphoneEnabled: input.microphoneEnabled, supportsPictureVocabulary: input.supportsPictureVocabulary === true });
@@ -233,6 +235,7 @@ function makeApi(state: ApiState): KidApi {
       return state.attempts.length > 0 ? (state.attempts.shift()!) : attemptDto({ taskId, modality: "audio" });
     },
     async readAttempt(attemptId) {
+      await state.readAttemptGate;
       return state.attempts.length > 0 ? (state.attempts.shift()!) : attemptDto({ attemptId });
     },
     async authorizeDisclosure(taskId, kind): Promise<DisclosureDto> {
@@ -310,13 +313,13 @@ const LESSON_DECK: KidDeckDto = {
 
 function makeHarness(
   state: ApiState,
-  options: { failStartWith?: unknown; startGate?: Promise<void>; initialChildId?: string; playGate?: Promise<void>; onStopPlayback?: () => void; failPlaybackBeforeStart?: boolean; storage?: LocalPreferences; activityClock?: import("./activity-report").ActivityClock } = {},
+  options: { failStartWith?: unknown; startGate?: Promise<void>; initialChildId?: string; playGate?: Promise<void>; onStopPlayback?: () => void; failPlaybackBeforeStart?: boolean; playbackDurationMs?: number | null; storage?: LocalPreferences; activityClock?: import("./activity-report").ActivityClock; activityDrafts?: ReturnType<typeof createMemoryActivityDraftStore> } = {},
 ) {
   const recorder = makeRecorder(options);
-  const media = makeMedia(recorder, options.playGate, options.onStopPlayback, options.failPlaybackBeforeStart);
+  const media = makeMedia(recorder, options.playGate, options.onStopPlayback, options.failPlaybackBeforeStart, options.playbackDurationMs);
   const storage = options.storage ?? createMemoryPreferences();
   const api = makeApi(state);
-  const activityDrafts = createMemoryActivityDraftStore();
+  const activityDrafts = options.activityDrafts ?? createMemoryActivityDraftStore();
   const controller = new LearningSessionController({
     api,
     media,
@@ -329,7 +332,7 @@ function makeHarness(
   return { controller, recorder, media, storage, state, api, activityDrafts };
 }
 
-async function startAtTask(state: ApiState, task: TaskDto, recorderOpts?: { failStartWith?: unknown; startGate?: Promise<void>; playGate?: Promise<void>; onStopPlayback?: () => void; failPlaybackBeforeStart?: boolean; storage?: LocalPreferences; microphone?: boolean }) {
+async function startAtTask(state: ApiState, task: TaskDto, recorderOpts?: { failStartWith?: unknown; startGate?: Promise<void>; playGate?: Promise<void>; onStopPlayback?: () => void; failPlaybackBeforeStart?: boolean; playbackDurationMs?: number | null; storage?: LocalPreferences; microphone?: boolean; activityDrafts?: ReturnType<typeof createMemoryActivityDraftStore>; activityClock?: import("./activity-report").ActivityClock }) {
   state.tasks = [task];
   const harness = makeHarness(state, recorderOpts);
   await harness.controller.start();
@@ -614,6 +617,23 @@ describe("LearningSessionController", () => {
     releaseEnd();
     releasePlay();
     await ending;
+  });
+
+  it("przenosi długość odtwarzacza do raportu aktywności", async () => {
+    const state = baseState();
+    const task = taskDto("duration-forwarding", { kind: "exposure", source: "kot", target: "cat", example: null, audioAssetId: "question-audio", exampleAudioAssetId: null, imageAssetId: null, visualType: "none" });
+    let now = 0;
+    let finishPlayback!: () => void;
+    const playGate = new Promise<void>((resolve) => { finishPlayback = resolve; });
+    const harness = await startAtTask(state, task, { playbackDurationMs: 2_000, playGate, activityClock: { now: () => now } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    now = 2_000;
+    finishPlayback();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await harness.controller.endNow();
+    expect(state.endReports[0]?.tasks[0]?.playbacks).toEqual([
+      expect.objectContaining({ assetId: "question-audio", toMs: 2_000 }),
+    ]);
   });
 
   it("anuluje mikrofon przed oczekiwaniem na zakończenie sesji i nie wysyła próby po limicie", async () => {
@@ -1031,6 +1051,54 @@ describe("LearningSessionController", () => {
     });
   });
 
+  it("spóźniona awaria submitu sesji A nie zmienia raportu ani ekranu sesji B", async () => {
+    const taskA = taskDto("stale-session-a", { kind: "recall", prompt: "kot" });
+    const taskB = taskDto("current-session-b", { kind: "recall", prompt: "pies" });
+    const state = baseState();
+    state.tasks = [taskA, taskB];
+    state.startSessionIds = ["55555555-5555-5555-5555-555555555555", "77777777-7777-4777-8777-777777777777"];
+    const harness = makeHarness(state);
+    await harness.controller.start();
+    await harness.controller.selectProfile(PROFILE_A.childId);
+    await harness.controller.startLearning(DECK.deckId);
+    let failSubmit!: (error: Error) => void;
+    const waiting = new Promise<void>((_resolve, reject) => { failSubmit = reject; });
+    vi.spyOn(harness.api, "submitAnswer").mockImplementation(async () => { await waiting; throw new TypeError("fetch failed"); });
+    const staleAnswer = harness.controller.answerText("cat");
+    await harness.controller.selectProfile(PROFILE_B.childId);
+    await harness.controller.startLearning(DECK.deckId);
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", session: { sessionId: "77777777-7777-4777-8777-777777777777" }, task: { taskId: taskB.taskId }, offline: false });
+    failSubmit(new TypeError("late network failure"));
+    await staleAnswer;
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", task: { taskId: taskB.taskId }, offline: false, feedback: null });
+    expect(harness.activityDrafts.load("77777777-7777-4777-8777-777777777777")?.state.tasks.map((task) => task.taskId)).toEqual([taskB.taskId]);
+    harness.controller.teardown();
+  });
+
+  it("spóźniony sukces submitu A po retry i starcie B nie trafia do raportu B", async () => {
+    const taskA = taskDto("stale-success-a", { kind: "recall", prompt: "kot" });
+    const taskB = taskDto("current-success-b", { kind: "recall", prompt: "pies" });
+    const state = baseState();
+    state.tasks = [taskA, taskB];
+    state.startSessionIds = ["55555555-5555-5555-5555-555555555555", "77777777-7777-4777-8777-777777777777"];
+    const harness = makeHarness(state);
+    await harness.controller.start();
+    await harness.controller.selectProfile(PROFILE_A.childId);
+    await harness.controller.startLearning(DECK.deckId);
+    let finishSubmit!: (attempt: AttemptDto) => void;
+    const waiting = new Promise<AttemptDto>((resolve) => { finishSubmit = resolve; });
+    vi.spyOn(harness.api, "submitAnswer").mockImplementation(async () => waiting);
+    const staleAnswer = harness.controller.answerText("cat");
+    await harness.controller.selectProfile(PROFILE_B.childId);
+    await harness.controller.startLearning(DECK.deckId);
+    finishSubmit(attemptDto({ attemptId: "66666666-6666-4666-8666-666666666661", taskId: taskA.taskId }));
+    await staleAnswer;
+    await harness.controller.endNow();
+    const reportB = state.endReports.find((report) => report.tasks.some((task) => task.taskId === taskB.taskId));
+    expect(reportB?.tasks.find((task) => task.taskId === taskB.taskId)?.submittedAttempts).not.toContain("66666666-6666-4666-8666-666666666661");
+    harness.controller.teardown();
+  });
+
   it("odmowa mikrofonu przełącza na tryb bez nagrywania i jest zapamiętywana", async () => {
     const recall = taskDto("t1", { kind: "recall", prompt: "czwartek" });
     const state = baseState();
@@ -1353,6 +1421,67 @@ describe("LearningSessionController", () => {
     harness.controller.teardown();
   });
 
+  it("odzyskuje finalny raport przez nową instancję kontrolera po utracie odpowiedzi", async () => {
+    const state = baseState();
+    const drafts = createMemoryActivityDraftStore();
+    const first = await startAtTask(state, taskDto("final-recovery", { kind: "recall", prompt: "czwartek" }), { activityDrafts: drafts });
+    state.endSessionError = new TypeError("fetch failed");
+    await first.controller.endNow();
+    const saved = drafts.listForChild(PROFILE_A.childId)[0]!;
+    expect(saved.finalPayload).toBeDefined();
+    const exactPayload = saved.finalPayload;
+    first.controller.teardown();
+
+    state.endSessionError = undefined;
+    const restored = makeHarness(state, { activityDrafts: drafts, initialChildId: PROFILE_A.childId });
+    await restored.controller.start();
+    expect(state.endReports).toHaveLength(1);
+    expect(state.endReports[0]).toEqual(exactPayload);
+    expect(drafts.load("55555555-5555-5555-5555-555555555555")).toBeNull();
+    restored.controller.teardown();
+  });
+
+  it("odświeża deck po odzyskaniu ACK, zanim wznowi kartkówkę z pierwszego snapshotu", async () => {
+    const state = baseState();
+    const oldSessionId = "88888888-8888-4888-8888-888888888888";
+    const activeDeck = { ...DECK, activeSession: { sessionId: oldSessionId, mode: "mock_test" as const } };
+    const drafts = createMemoryActivityDraftStore();
+    drafts.save({ sessionId: oldSessionId, childId: PROFILE_A.childId, savedAtMs: Date.now(), state: {
+      version: 1, startedAtMs: 0, lastActivityAtMs: 0, lastEventAtMs: 0, activeStartMs: null, openPlayback: null,
+      pendingPause: null, currentTaskId: null, compacted: false, incomplete: undefined, tasks: [],
+    }, finalPayload: { version: 1, elapsedMs: 1, activeMs: 0, compacted: false, tasks: [] } });
+    state.listDeckRequests = [];
+    state.listDeckResponses = [[activeDeck], [DECK]];
+    state.endActivityResult = { status: "evaluated", pointsAwarded: 1, errorCode: null };
+    const harness = makeHarness(state, { activityDrafts: drafts });
+    await harness.controller.start();
+    await harness.controller.selectProfile(PROFILE_A.childId);
+    expect(state.listDeckRequests).toHaveLength(2);
+    expect(state.startedSessions).toHaveLength(0);
+    expect(drafts.load(oldSessionId)).toBeNull();
+    harness.controller.teardown();
+  });
+
+  it("zachowuje draft po already_started i usuwa go dopiero po końcowym wyniku", async () => {
+    const state = baseState();
+    const sessionId = "88888888-8888-4888-8888-888888888888";
+    const drafts = createMemoryActivityDraftStore();
+    drafts.save({ sessionId, childId: PROFILE_A.childId, savedAtMs: Date.now(), state: {
+      version: 1, startedAtMs: 0, lastActivityAtMs: 0, lastEventAtMs: 0, activeStartMs: null, openPlayback: null,
+      pendingPause: null, currentTaskId: null, compacted: false, incomplete: undefined, tasks: [],
+    }, finalPayload: { version: 1, elapsedMs: 1, activeMs: 0, compacted: false, tasks: [] } });
+    state.listDeckResponses = [[DECK], [DECK], [DECK]];
+    state.endActivityResult = { status: "already_started", pointsAwarded: 0, errorCode: null };
+    const harness = makeHarness(state, { activityDrafts: drafts });
+    await harness.controller.start();
+    await harness.controller.selectProfile(PROFILE_A.childId);
+    expect(drafts.load(sessionId)?.finalPayload).toBeDefined();
+    state.endActivityResult = { status: "evaluated", pointsAwarded: 1, errorCode: null };
+    await harness.controller.selectProfile(PROFILE_A.childId);
+    expect(drafts.load(sessionId)).toBeNull();
+    harness.controller.teardown();
+  });
+
   it("nie dołącza raportu, gdy sesja zakończyła się przed pierwszym zadaniem", async () => {
     const state = baseState();
     state.tasks = [];
@@ -1469,10 +1598,17 @@ describe("LearningSessionController", () => {
     const state = baseState();
     state.tasks = [pendingTask];
     state.attempts = [attemptDto({ taskId: pendingTask.taskId, attemptId: pendingTask.pendingAttemptId, modality: "audio" })];
+    let releaseAttempt!: () => void;
+    state.readAttemptGate = new Promise<void>((resolve) => { releaseAttempt = resolve; });
     const harness = makeHarness(state);
     await harness.controller.start();
     await harness.controller.selectProfile(PROFILE_A.childId);
-    await harness.controller.startLearning(DECK.deckId);
+    const starting = harness.controller.startLearning(DECK.deckId);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", processing: true, busy: true });
+    expect(harness.activityDrafts.load("55555555-5555-5555-5555-555555555555")?.state.pendingPause?.kind).toBe("technical_wait");
+    releaseAttempt();
+    await starting;
     expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", feedback: { attemptId: pendingTask.pendingAttemptId }, busy: false, processing: false });
     expect(state.speechSubmissions).toHaveLength(0);
     expect(state.submissions).toHaveLength(0);

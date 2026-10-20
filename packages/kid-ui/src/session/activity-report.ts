@@ -1,5 +1,10 @@
 import {
   SESSION_ACTIVITY_MAX_ENTRIES,
+  SESSION_ACTIVITY_MAX_INTERVALS_PER_TASK,
+  SESSION_ACTIVITY_MAX_EDITS_PER_TASK,
+  SESSION_ACTIVITY_MAX_ATTEMPTS_PER_TASK,
+  SESSION_ACTIVITY_MAX_PLAYBACKS_PER_TASK,
+  SESSION_ACTIVITY_MAX_PAUSES_PER_TASK,
   SESSION_ACTIVITY_REPORT_MAX_BYTES,
   SESSION_ACTIVITY_REPORT_VERSION,
   taskActiveMs,
@@ -172,6 +177,7 @@ export class SessionActivityReporter {
   #activityEvent(): void {
     const now = this.#clock.now();
     const nowOffset = this.#offset(now);
+    this.#finishExpiredPlayback(nowOffset);
     if (this.#state.pendingPause !== null) {
       // Działanie wznawia pomiar; koniec pauzy przypada na teraz.
       const task = this.#currentTask();
@@ -194,7 +200,10 @@ export class SessionActivityReporter {
     const now = this.#clock.now();
     const nowOffset = this.#offset(now);
     if (this.#state.currentTaskId === taskId) return;
+    this.#finishExpiredPlayback(nowOffset);
+    const stoppedPlayback = this.#state.openPlayback !== null;
     this.#finishPlayback(nowOffset);
+    if (stoppedPlayback) this.#state.lastActivityAtMs = Math.max(this.#state.lastActivityAtMs, now);
     this.#closeActiveAt(nowOffset, true);
     const previous = this.#currentTask();
     if (previous) {
@@ -255,7 +264,9 @@ export class SessionActivityReporter {
     this.#state.openPlayback = {
       assetId,
       fromMs: this.#offset(this.#clock.now()),
-      limitMs: durationMs !== null && durationMs > 0 ? Math.round(durationMs) : null,
+      // Nieznany rozmiar nagrania dostaje konserwatywny limit bezczynności;
+      // spóźnione zakończenie nie może zmienić wielominutowego czekania w odsłuch.
+      limitMs: durationMs !== null && durationMs > 0 ? Math.round(durationMs) : SESSION_ACTIVITY_IDLE_MS,
     };
   }
 
@@ -270,12 +281,31 @@ export class SessionActivityReporter {
     this.#state.openPlayback = null;
   }
 
+  /** Domyka odsłuch, którego zadeklarowana długość minęła przed callbackiem. */
+  #finishExpiredPlayback(nowOffset: number): void {
+    const playback = this.#state.openPlayback;
+    if (playback === null) return;
+    const actualEnd = playback.fromMs + (playback.limitMs ?? SESSION_ACTIVITY_IDLE_MS);
+    if (nowOffset < actualEnd) return;
+    this.#finishPlayback(nowOffset);
+    this.#state.lastActivityAtMs = Math.max(this.#state.lastActivityAtMs, this.#state.startedAtMs + actualEnd);
+  }
+
   playbackEnded(assetId: string): void {
     const playback = this.#state.openPlayback;
     if (playback === null || playback.assetId !== assetId) return;
     const now = this.#clock.now();
-    this.#finishPlayback(this.#offset(now));
-    this.#state.lastActivityAtMs = now;
+    const endOffset = this.#offset(now);
+    this.#finishExpiredPlayback(endOffset);
+    if (this.#state.openPlayback !== null) {
+      this.#finishPlayback(endOffset);
+      this.#state.lastActivityAtMs = Math.max(this.#state.lastActivityAtMs, now);
+    }
+    // A media callback is not a new user action. Keep thinking/work time open
+    // through the ordinary idle window, then cap it from the last real action
+    // (or the actual audio end when there was no later interaction).
+    const idleDeadline = this.#state.lastActivityAtMs - this.#state.startedAtMs + SESSION_ACTIVITY_IDLE_MS;
+    if (endOffset >= idleDeadline) this.#closeActiveAt(endOffset, true);
     this.#state.lastEventAtMs = now;
   }
 
@@ -283,12 +313,15 @@ export class SessionActivityReporter {
   pause(kind: SessionActivityPauseKind): void {
     const now = this.#clock.now();
     const nowOffset = this.#offset(now);
-    this.#finishPlayback(nowOffset);
-    this.#closeActiveAt(nowOffset, false);
+    this.#finishExpiredPlayback(nowOffset);
+    if (this.#state.openPlayback !== null) {
+      this.#finishPlayback(nowOffset);
+      this.#state.lastActivityAtMs = Math.max(this.#state.lastActivityAtMs, now);
+    }
+    this.#closeActiveAt(nowOffset, true);
     if (this.#state.pendingPause === null) {
       this.#state.pendingPause = { kind, fromMs: nowOffset };
     }
-    this.#state.lastActivityAtMs = now;
     this.#state.lastEventAtMs = now;
   }
 
@@ -297,8 +330,13 @@ export class SessionActivityReporter {
    * limitem), kompaktuje do limitów i buduje publiczny kształt kontraktu.
    */
   freeze(): SessionActivityReport {
-    const nowOffset = this.#offset(this.#clock.now());
-    this.#finishPlayback(nowOffset);
+    const now = this.#clock.now();
+    const nowOffset = this.#offset(now);
+    this.#finishExpiredPlayback(nowOffset);
+    if (this.#state.openPlayback !== null) {
+      this.#finishPlayback(nowOffset);
+      this.#state.lastActivityAtMs = Math.max(this.#state.lastActivityAtMs, now);
+    }
     this.#closeActiveAt(nowOffset, true);
     if (this.#state.pendingPause !== null) {
       const task = this.#currentTask();
@@ -315,12 +353,12 @@ export class SessionActivityReporter {
       exerciseType: task.exerciseType,
       shownFromMs: task.shownFromMs,
       shownToMs: task.shownToMs,
-      activeIntervals: task.activeIntervals,
+      activeIntervals: task.activeIntervals.map(([from, to]) => [from, to]),
       editCount: task.editCount,
-      editWindows: task.editWindows,
-      submittedAttempts: task.submittedAttempts,
-      playbacks: task.playbacks,
-      pauses: task.pauses,
+      editWindows: task.editWindows.map((window) => ({ ...window })),
+      submittedAttempts: [...task.submittedAttempts],
+      playbacks: task.playbacks.map((playback) => ({ ...playback })),
+      pauses: task.pauses.map((pause) => ({ ...pause })),
     }));
     const activeMs = tasks.reduce((total, task) => total + taskActiveMs(task), 0);
     // Regresja zegara urządzenia nie może zmniejszyć elapsedMs poniżej już
@@ -357,7 +395,7 @@ export class SessionActivityReporter {
    * wpisów ORAZ od rozmiaru bajtowego zserializowanego raportu.
    */
   #compactIfNeeded(): void {
-    if (this.#entryCount() <= SESSION_ACTIVITY_MAX_ENTRIES && !this.#overSizeLimit()) {
+    if (this.#withinLimits()) {
       this.#maybeMarkSizeLimit();
       return;
     }
@@ -373,7 +411,7 @@ export class SessionActivityReporter {
       }
       task.activeIntervals = merged;
     }
-    if (this.#entryCount() <= SESSION_ACTIVITY_MAX_ENTRIES && !this.#overSizeLimit()) return this.#maybeMarkSizeLimit();
+    if (this.#withinLimits()) return this.#maybeMarkSizeLimit();
     // 1. Zgrubnij okna edycji do 30 s (suma count bez zmian).
     for (const task of this.#state.tasks) {
       const merged: { atMs: number; count: number }[] = [];
@@ -384,7 +422,7 @@ export class SessionActivityReporter {
       }
       task.editWindows = merged;
     }
-    if (this.#entryCount() <= SESSION_ACTIVITY_MAX_ENTRIES && !this.#overSizeLimit()) return this.#maybeMarkSizeLimit();
+    if (this.#withinLimits()) return this.#maybeMarkSizeLimit();
     // 2. Połącz sąsiednie pauzy tego samego rodzaju.
     for (const task of this.#state.tasks) {
       const merged: TaskState["pauses"] = [];
@@ -395,16 +433,23 @@ export class SessionActivityReporter {
       }
       task.pauses = merged;
     }
-    if (this.#entryCount() <= SESSION_ACTIVITY_MAX_ENTRIES && !this.#overSizeLimit()) return this.#maybeMarkSizeLimit();
+    if (this.#withinLimits()) return this.#maybeMarkSizeLimit();
     // 3. Wchłoń odsłuchy w przedziały aktywności (unia zachowana dokładnie).
     for (const task of this.#state.tasks) {
       task.activeIntervals.push(...task.playbacks.map((playback) => [playback.fromMs, playback.toMs] as [number, number]));
+      const merged: [number, number][] = [];
+      for (const [from, to] of [...task.activeIntervals].sort((a, b) => a[0] - b[0])) {
+        const last = merged.at(-1);
+        if (last && from <= last[1]) last[1] = Math.max(last[1], to);
+        else merged.push([from, to]);
+      }
+      task.activeIntervals = merged;
       task.playbacks = [];
     }
-    if (this.#entryCount() <= SESSION_ACTIVITY_MAX_ENTRIES && !this.#overSizeLimit()) return this.#maybeMarkSizeLimit();
+    if (this.#withinLimits()) return this.#maybeMarkSizeLimit();
     // 4. Opuść szczegóły pauz; przedziały pozostają.
     for (const task of this.#state.tasks) task.pauses = [];
-    if (this.#entryCount() <= SESSION_ACTIVITY_MAX_ENTRIES) return this.#maybeMarkSizeLimit();
+    if (this.#withinLimits()) return this.#maybeMarkSizeLimit();
     // 5. Pojedyncze okno edycji per zadanie (licznik sumaryczny).
     for (const task of this.#state.tasks) {
       if (task.editWindows.length > 1) {
@@ -415,6 +460,15 @@ export class SessionActivityReporter {
       }
     }
     this.#maybeMarkSizeLimit();
+  }
+
+  #withinLimits(): boolean {
+    return this.#entryCount() <= SESSION_ACTIVITY_MAX_ENTRIES && !this.#overSizeLimit()
+      && this.#state.tasks.every((task) => task.activeIntervals.length <= SESSION_ACTIVITY_MAX_INTERVALS_PER_TASK
+        && task.editWindows.length <= SESSION_ACTIVITY_MAX_EDITS_PER_TASK
+        && task.submittedAttempts.length <= SESSION_ACTIVITY_MAX_ATTEMPTS_PER_TASK
+        && task.playbacks.length <= SESSION_ACTIVITY_MAX_PLAYBACKS_PER_TASK
+        && task.pauses.length <= SESSION_ACTIVITY_MAX_PAUSES_PER_TASK);
   }
 
   #maybeMarkSizeLimit(): void {

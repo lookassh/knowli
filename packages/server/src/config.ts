@@ -101,6 +101,8 @@ export interface GraderDeps {
 export interface SessionActivityDeps {
   provider: SessionActivityReviewer;
   timeoutMs: number;
+  /** Bezpieczna, publiczna nazwa hosta/modelu; nigdy URL z credentials ani klucz. */
+  publicService?: string;
 }
 
 /**
@@ -265,5 +267,6 @@ export function sessionActivityFromEnv(env: Record<string, string | undefined>):
   return {
     provider: createOpenAiCompatibleSessionActivityReviewer({ baseUrl: baseUrl!, apiKey: apiKey!, model: model! }),
     timeoutMs,
+    publicService: `${new URL(baseUrl!).host} · ${model}`,
   };
 }

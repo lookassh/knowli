@@ -25,6 +25,8 @@ import { SESSION_ACTIVITY_REPORT_MAX_BYTES } from "@learning/contracts";
 import { createKidApiClient } from "../../packages/kid-ui/src/api/client";
 import { handleKidApi } from "../../apps/web/src/kid/kid-router";
 import { AppError } from "../../packages/server/src/errors";
+import { materializeExercise, type LoadedExercise } from "../../packages/server/src/modules/lessons/lesson-materialize";
+import { englishGrammarSubject } from "../../packages/server/src/domain/lessons/subjects/english-grammar/module";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
 
 const { pool } = testDatabase();
@@ -178,6 +180,51 @@ beforeEach(async () => {
 });
 
 describe("session activity review", () => {
+  it("sends lesson order/gap prompts and canonical answers to the reviewer", async () => {
+    const { services, clock, provider } = await reviewerServices("2026-10-16T10:00:00.000Z");
+    const child = await childWithProfile(services);
+    const { session } = await playedSession(services, child.id);
+    const subject = englishGrammarSubject;
+    const topic = subject.topics[0]!;
+    const loaded = (payload: LoadedExercise["payload"]): LoadedExercise => ({ revisionId: randomUUID(), itemId: randomUUID(), position: 0, payload, targetKey: "test-target", audioAssetId: null });
+    const ordered = materializeExercise({ independentCheck: false, reason: "practice" }, randomUUID(), loaded({
+      exerciseType: "lesson_order", objectiveId: "english_grammar.present_simple.third_person_s", instructionPl: "Ułóż zdanie",
+      items: [{ id: "first", text: "She" }, { id: "second", text: "reads" }, { id: "third", text: "books" }],
+      answer: "She reads books", acceptedAnswers: [], focus: ["reads"], answerLocale: "en-GB", promptLocale: "pl-PL",
+    }), topic, subject);
+    const firstItems = Array.isArray(ordered.answerKey.itemIds)
+      ? ordered.answerKey.itemIds.filter((id): id is string => typeof id === "string")
+      : [];
+    const gap = materializeExercise({ independentCheck: false, reason: "practice" }, randomUUID(), loaded({
+      exerciseType: "lesson_gap", objectiveId: "english_grammar.present_simple.third_person_s", instructionPl: "Uzupełnij lukę",
+      stem: "She ___ books", answer: "reads", acceptedAnswers: [], focus: ["reads"], answerLocale: "en-GB", promptLocale: "pl-PL",
+    }), topic, subject);
+    const base = (await pool.query("select child_id,deck_version_id,item_revision_id,(select coalesce(max(ordinal),-1)+1 from learning_app.session_tasks where session_id=$1) as ordinal from learning_app.session_tasks where session_id=$1 limit 1", [session.sessionId])).rows[0]!;
+    const lessonTaskIds = [randomUUID(), randomUUID()];
+    for (const [index, materialized] of [ordered, gap].entries()) {
+      await pool.query(`insert into learning_app.session_tasks
+        (id,session_id,child_id,deck_version_id,item_revision_id,ordinal,exercise_type,state,public_prompt,answer_key,context,issued_at)
+        values ($1,$2,$3,$4,$5,$6,$7,'answered',$8::jsonb,$9::jsonb,'{}'::jsonb,$10)`, [
+        lessonTaskIds[index], session.sessionId, base.child_id, base.deck_version_id, base.item_revision_id, Number(base.ordinal) + index,
+        materialized.exerciseType, JSON.stringify(materialized.prompt), JSON.stringify(materialized.answerKey), clock.now(),
+      ]);
+    }
+    const sequenceAttemptId = randomUUID();
+    await pool.query(`insert into learning_app.attempts
+      (id,child_id,task_id,item_revision_id,client_attempt_id,request_hash,attempt_number,modality,state,answer,context,policy_id,received_at,completed_at)
+      values ($1,$2,$3,$4,$5,$6,1,'sequence','completed',$7::jsonb,'{}'::jsonb,'learning-v2',$8,$8)`, [
+      sequenceAttemptId, base.child_id, lessonTaskIds[0], base.item_revision_id, randomUUID(), randomUUID(), JSON.stringify({ itemIds: firstItems }), clock.now(),
+    ]);
+    clock.advanceMs(30_000);
+    await endSession(services, session.sessionId, reportOf([
+      { taskId: lessonTaskIds[0]!, exerciseType: "lesson_order", intervals: [[0, 15_000]], edits: 2, attempts: [sequenceAttemptId] },
+      { taskId: lessonTaskIds[1]!, exerciseType: "lesson_gap", intervals: [[15_000, 30_000]], edits: 1, attempts: [] },
+    ], 30_000));
+    expect(provider.requests[0]!.tasks[0]).toMatchObject({ instruction: "Ułóż zdanie", acceptedAnswers: ["She reads books"], submittedAnswers: [{ modality: "sequence", text: "She reads books" }] });
+    expect(provider.requests[0]!.tasks[0]!.options).toEqual(expect.arrayContaining(["She", "reads", "books"]));
+    expect(provider.requests[0]!.tasks[1]).toMatchObject({ instruction: "Uzupełnij lukę", stimulus: "She ___ books", acceptedAnswers: ["reads"] });
+  });
+
   it("awards points from the measured time of tasks the model did not exclude", async () => {
     const { services, clock, provider } = await reviewerServices("2026-10-16T10:00:00.000Z");
     const child = await childWithProfile(services);
@@ -206,7 +253,28 @@ describe("session activity review", () => {
     const review = (await pool.query("select activity_review from learning_app.learning_sessions where id=$1", [session.sessionId])).rows[0].activity_review;
     expect(review.approvedMilliseconds).toBe(90_000);
     expect(review.durationSeconds).toBe(90);
-    expect(review.reason).toBe("Próby są związane z zadaniami.");
+    expect(review.reason).toBe("Ocena aktywności: zaliczono pracę w 2 zadaniach.");
+  });
+
+  it("counts only FE-reported reviewer tasks and accepts exclusions for an included presentation", async () => {
+    const { services, clock, provider } = await reviewerServices("2026-10-16T10:00:00.000Z");
+    const child = await childWithProfile(services);
+    const { session, tasks } = await playedSession(services, child.id);
+    const presentation = (await pool.query<{ id: string; ordinal: number }>(
+      "select id, ordinal from learning_app.session_tasks where session_id=$1 and exercise_type in ('exposure','lesson_card') order by ordinal limit 1", [session.sessionId],
+    )).rows[0]!;
+    provider.queue({ raw: { reason: "Prezentacja wyłączona.", excludedTasks: [{ taskOrdinal: presentation.ordinal, reason: "Bez odpowiedzi." }] } });
+    clock.advanceMs(15_000);
+    const summary = await endSession(services, session.sessionId, reportOf([
+      { taskId: presentation.id, exerciseType: "exposure", intervals: [[0, 5_000]], edits: 0, attempts: [] },
+      { taskId: tasks[0]!.taskId, exerciseType: tasks[0]!.exerciseType, intervals: [[5_000, 15_000]], edits: 1, attempts: [] },
+    ], 15_000));
+    expect(provider.requests[0]!.tasks).toHaveLength(2);
+    expect(summary.activity).toMatchObject({ status: "evaluated" });
+    const savedReview = (await pool.query("select activity_review from learning_app.learning_sessions where id=$1", [session.sessionId])).rows[0]!.activity_review;
+    expect(savedReview.approvedMilliseconds).toBe(10_000);
+    const card = await readParentWorkCard(services, { childId: child.id });
+    expect(card.sessions[0]!.activity.reason).toBe("Ocena aktywności: zaliczono pracę w 1 z 2 zadań; 1 wykluczono.");
   });
 
   it("excludes only the tasks the model listed and keeps their time out of the award", async () => {
@@ -230,6 +298,31 @@ describe("session activity review", () => {
     const workCard = await readParentWorkCard(services, { childId: child.id });
     expect(workCard.creditedSeconds).toBe(25);
     expect(workCard.sessions[0]!.activity.excludedTasks).toEqual([{ taskOrdinal: firstOrdinal, reason: "Jedyna próba to aaa." }]);
+    expect(workCard.sessions[0]!.activity.reason).toBe("Ocena aktywności: zaliczono pracę w 1 z 2 zadań; 1 wykluczono.");
+    expect(workCard.sessions[0]!.activity.details?.tasks[0]).toMatchObject({ instruction: expect.any(String), acceptedAnswers: expect.any(Array), submittedAnswers: expect.any(Array), activeMilliseconds: expect.any(Number) });
+    expect(workCard.reviewService).toBeNull();
+  });
+
+  it("keeps a model-quoted child answer only in the expiring report details", async () => {
+    const { services, clock, provider } = await reviewerServices("2026-10-16T10:00:00.000Z");
+    const child = await childWithProfile(services);
+    const { session, tasks, attemptIds } = await playedSession(services, child.id);
+    const reportedOrdinal = (await pool.query<{ ordinal: number }>("select ordinal from learning_app.session_tasks where id=$1", [tasks[0]!.taskId])).rows[0]!.ordinal;
+    provider.queue({ raw: { reason: "Dziecko wpisało \"private-answer\".", excludedTasks: [{ taskOrdinal: reportedOrdinal, reason: "Odpowiedź private-answer nie pasowała." }] } });
+    clock.advanceMs(60_000);
+    await endSession(services, session.sessionId, reportOf([
+      { taskId: tasks[0]!.taskId, exerciseType: tasks[0]!.exerciseType, intervals: [[0, 60_000]], edits: 2, attempts: attemptIds },
+    ], 60_000));
+    const row = (await pool.query("select activity_review, activity_report from learning_app.learning_sessions where id=$1", [session.sessionId])).rows[0]!;
+    expect(row.activity_review.reason).toBe("Ocena aktywności: zaliczono pracę w 0 z 1 zadań; 1 wykluczono.");
+    expect(JSON.stringify(row.activity_report)).toContain("private-answer");
+    const beforeCleanup = await readParentWorkCard(services, { childId: child.id });
+    expect(JSON.stringify(beforeCleanup.sessions[0]!.activity.details)).toContain("private-answer");
+    await pool.query("update learning_app.learning_sessions set activity_report_expires_at=$2 where id=$1", [session.sessionId, new Date(clock.now().getTime() - 1)]);
+    await cleanupExpiredActivityReports(services);
+    const afterCleanup = await readParentWorkCard(services, { childId: child.id });
+    expect(afterCleanup.sessions[0]!.activity.details).toBeNull();
+    expect(afterCleanup.sessions[0]!.activity.reason).not.toContain("private-answer");
   });
 
   it("rejects a foreign task id instead of reading another child's data", async () => {
@@ -361,12 +454,12 @@ describe("session activity review", () => {
       [session.sessionId, clock.now(), new Date(clock.now().getTime() + 7 * 86_400_000)],
     );
     clock.advanceMs(130_000);
-    const report = reportOf([
-      { taskId: tasks[0]!.taskId, exerciseType: tasks[0]!.exerciseType, intervals: [[0, 60_000]], edits: 1, attempts: [] },
-    ], 60_000);
-    const result = await reviewSessionActivity(services, session.sessionId, report);
-    expect(result).toMatchObject({ status: "error", errorCode: "review_interrupted", pointsAwarded: 0 });
+    // Zwykłe zakończenie bez raportu/odczyt wyniku ma rozstrzygnąć przerwany review.
+    const result = await endSession(services, session.sessionId);
+    expect(result).toMatchObject({ activity: { status: "error", errorCode: "review_interrupted", pointsAwarded: 0 } });
     expect(await rewardPointsOf(child.id)).toEqual({ points: 0, remainder: 0 });
+    const card = await readParentWorkCard(services, { childId: child.id });
+    expect(card.sessions[0]!.activity).toMatchObject({ status: "error", errorCode: "review_interrupted" });
   });
 
   it("an empty cancelled session evaluates to zero without calling the model", async () => {

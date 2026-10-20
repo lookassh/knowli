@@ -1,4 +1,5 @@
 import type { ActivityReportState } from "./activity-report";
+import type { SessionActivityReport } from "@learning/contracts";
 
 /**
  * Osobny, mały magazyn roboczej kopii raportu aktywności (spec client-reward-time,
@@ -12,12 +13,15 @@ export interface SessionActivityDraft {
   sessionId: string;
   savedAtMs: number;
   state: ActivityReportState;
+  childId?: string;
+  finalPayload?: SessionActivityReport;
 }
 
 export interface SessionActivityDraftStore {
   /** False, gdy zapis się nie powiódł (brak miejsca/dostępu). */
   save(draft: SessionActivityDraft): boolean;
   load(sessionId: string): SessionActivityDraft | null;
+  listForChild(childId: string): SessionActivityDraft[];
   remove(sessionId: string): void;
 }
 
@@ -62,6 +66,10 @@ export function createMemoryActivityDraftStore(nowMs = () => Date.now()): Sessio
       }
       return fresh;
     },
+    listForChild(childId) {
+      return [...store.values()].map(parseDraft).filter((draft): draft is SessionActivityDraft => draft !== null
+        && draft.childId === childId && draft.finalPayload !== undefined && isFreshDraft(draft, nowMs()));
+    },
     remove(sessionId) {
       store.delete(sessionId);
     },
@@ -92,6 +100,20 @@ export function createBrowserActivityDraftStore(nowMs = () => Date.now()): Sessi
       } catch {
         return null;
       }
+    },
+    listForChild(childId) {
+      const drafts: SessionActivityDraft[] = [];
+      try {
+        const keys = Array.from({ length: globalThis.localStorage.length }, (_, index) => globalThis.localStorage.key(index));
+        for (const key of keys) {
+          if (!key?.startsWith(STORAGE_PREFIX)) continue;
+          const draft = parseDraft(globalThis.localStorage.getItem(key));
+          if (!draft) continue;
+          if (!isFreshDraft(draft, nowMs())) { globalThis.localStorage.removeItem(key); continue; }
+          if (draft.childId === childId && draft.finalPayload !== undefined) drafts.push(draft);
+        }
+      } catch { return drafts; }
+      return drafts;
     },
     remove(sessionId) {
       try {

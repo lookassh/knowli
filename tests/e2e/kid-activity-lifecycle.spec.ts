@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import type { SessionActivityReport } from "@learning/contracts";
+import type { SessionActivityReport, SessionActivityResultDto } from "@learning/contracts";
 import { installKidUiFixture } from "./helpers/kid-ui-fixture";
 
 const childId = "10000000-0000-4000-8000-000000000001";
@@ -13,7 +13,7 @@ const summary = {
   activity: { status: "evaluated" as const, pointsAwarded: 2, errorCode: null },
 };
 
-async function openWrittenTask(page: Page, onEndSession: (report: SessionActivityReport) => void) {
+async function openWrittenTask(page: Page, onEndSession: (report: SessionActivityReport) => void, options: { dropFirstEndResponse?: boolean; endActivityResults?: SessionActivityResultDto[] } = {}) {
   await page.clock.install();
   await installKidUiFixture(page, {
     profiles: [{ childId, displayName: "Ola", avatarKey: "cat", recordingMode: "hold" }],
@@ -36,6 +36,7 @@ async function openWrittenTask(page: Page, onEndSession: (report: SessionActivit
     }],
     summary,
     onEndSession,
+    ...options,
   });
   await page.goto("/");
   await page.getByTestId("kid-profile").click();
@@ -79,4 +80,52 @@ test("background blur becomes an explicit pause in the frozen report", async ({ 
   await expect(page.getByTestId("kid-summary")).toBeVisible();
   const pauses = reports[0]!.tasks[0]!.pauses;
   expect(pauses.some((pause) => pause.kind === "blur" || pause.kind === "technical_wait")).toBe(true);
+});
+
+test("reload resumes the active report draft before ending the same session", async ({ page }) => {
+  const reports: SessionActivityReport[] = [];
+  await openWrittenTask(page, (report) => { reports.push(report); });
+  await page.getByTestId("kid-input").fill("ca");
+  await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+  await page.reload();
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+  await expect(page.getByTestId("kid-input")).toBeVisible();
+  await page.getByTestId("kid-input").fill("cat");
+  await page.getByTestId("kid-submit").click();
+  await page.getByTestId("kid-next").click();
+  await expect(page.getByTestId("kid-summary")).toBeVisible();
+  expect(reports).toHaveLength(1);
+  expect(reports[0]!.tasks[0]!.editCount).toBeGreaterThanOrEqual(2);
+  expect(reports[0]!.tasks[0]!.pauses.some((pause) => pause.kind === "unobserved")).toBe(true);
+});
+
+test("lost end ACK retries the exact browser draft, keeps it on already_started, and removes it on final result", async ({ page }) => {
+  const reports: SessionActivityReport[] = [];
+  await openWrittenTask(page, (report) => { reports.push(report); }, {
+    dropFirstEndResponse: true,
+    endActivityResults: [
+      { status: "already_started", pointsAwarded: 0, errorCode: null },
+      { status: "evaluated", pointsAwarded: 2, errorCode: null },
+    ],
+  });
+  await page.getByTestId("kid-input").fill("cat");
+  await page.getByTestId("kid-submit").click();
+  await page.getByTestId("kid-next").click();
+  await expect.poll(() => reports.length).toBe(1);
+
+  await page.reload();
+  await page.getByTestId("kid-profile").click();
+  await expect(page.getByTestId("kid-deck")).toBeVisible();
+  await expect.poll(() => reports.length).toBe(2);
+  expect(reports[1]).toEqual(reports[0]);
+  const draftKey = `umiem.activity-draft.${sessionId}`;
+  expect(await page.evaluate((key) => localStorage.getItem(key) !== null, draftKey)).toBe(true);
+
+  await page.reload();
+  await page.getByTestId("kid-profile").click();
+  await expect(page.getByTestId("kid-deck")).toBeVisible();
+  await expect.poll(() => reports.length).toBe(3);
+  expect(reports[2]).toEqual(reports[0]);
+  expect(await page.evaluate((key) => localStorage.getItem(key), draftKey)).toBeNull();
 });
