@@ -1902,9 +1902,9 @@ describe("LearningSessionController — automatyczna próba mowy z VAD (quick 26
       await vi.advanceTimersByTimeAsync(300);
       let releaseSubmit!: () => void;
       const submitGate = new Promise<void>((resolve) => { releaseSubmit = resolve; });
-      vi.spyOn(harness.api, "submitSpeech").mockImplementation(async (taskId, clientAttemptId) => {
+      vi.spyOn(harness.api, "submitSpeech").mockImplementation(async (taskId, clientAttemptId, audio) => {
         await submitGate;
-        return makeApi(harness.state).submitSpeech(taskId, clientAttemptId);
+        return makeApi(harness.state).submitSpeech(taskId, clientAttemptId, audio);
       });
       // grace 3 (echo bipu), mowa 2, cisza 12
       for (let index = 0; index < 3; index += 1) harness.recorder.pushLevel(1);
