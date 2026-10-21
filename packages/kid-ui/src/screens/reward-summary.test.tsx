@@ -17,6 +17,17 @@ function textNodes(element: React.ReactNode): string[] {
   return textNodes(rendered);
 }
 
+function buttons(element: React.ReactNode): React.ReactElement[] {
+  if (Array.isArray(element)) return element.flatMap(buttons);
+  if (!React.isValidElement(element)) return [];
+  const node = element as React.ReactElement<{ children?: React.ReactNode }>;
+  if (node.type === "button") return [node];
+  const rendered = typeof node.type === "function"
+    ? (node.type as (props: Record<string, unknown>) => React.ReactNode)(node.props)
+    : node.props.children;
+  return buttons(rendered);
+}
+
 const profile: KidProfileDto = {
   childId: "10000000-0000-4000-8000-000000000001", displayName: "Ola", avatarKey: "cat", recordingMode: "hold",
   rewardPoints: 9,
@@ -73,7 +84,11 @@ describe("kid reward views", () => {
     expect(failed).toContain("Nauka zapisana. Nie udało się naliczyć punktów.");
     const inProgress = textNodes(<SummaryScreen summary={{ ...summary, activity: { status: "already_started", pointsAwarded: 0, errorCode: null } }} profiles={[profile]} onAgain={vi.fn()} onSwitchProfile={vi.fn()} />).join(" ");
     expect(inProgress).toContain("Punkty z tej nauki są jeszcze liczone.");
-    expect(textNodes(<SessionActivityResultView activity={{ status: "already_started", pointsAwarded: 0, errorCode: null }} />).join(" ")).toContain("Punkty z tej nauki są jeszcze liczone.");
+    const pendingView = <SessionActivityResultView activity={{ status: "already_started", pointsAwarded: 0, errorCode: null }} />;
+    expect(textNodes(pendingView).join(" ")).toContain("Punkty z tej nauki są jeszcze liczone.");
+    const pendingStatus = (pendingView.type as (props: { activity: unknown }) => React.ReactElement)(pendingView.props);
+    expect(pendingStatus.props).toMatchObject({ role: "status", "aria-live": "polite" });
+    expect(buttons(<SummaryScreen summary={{ ...summary, activity: { status: "already_started", pointsAwarded: 0, errorCode: null } }} profiles={[profile, { ...profile, childId: "other" }]} onAgain={vi.fn()} onSwitchProfile={vi.fn()} />).map(button => button.props.disabled)).not.toContain(true);
     const missing = textNodes(<SummaryScreen summary={summary} profiles={[profile]} onAgain={vi.fn()} onSwitchProfile={vi.fn()} />).join(" ");
     expect(missing).not.toContain("Zdobyto");
     expect(textNodes(<SessionActivityResultView activity={null} />).join(" ")).toBe("");
