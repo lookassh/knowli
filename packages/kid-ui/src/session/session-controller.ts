@@ -1233,6 +1233,9 @@ export class LearningSessionController {
         if (generation !== this.#recordingGeneration) return;
         this.#recordingGeneration += 1;
         this.#recorder = null;
+        // pełny reset stanu auto (PR #109, P2 #3): zgubny #autoStartBeep i #vad
+        // nie mogą przetrwać do ręcznej próby po awarii urządzenia (jak WR-01)
+        this.#resetAutoCapture();
         this.#setLearning({ recordingPhase: "idle", microphoneReady: false, inputLevel: null, recordingNotice: messages.kid.recordingUnavailable });
       },
     };

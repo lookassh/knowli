@@ -2190,6 +2190,26 @@ describe("LearningSessionController — automatyczna próba mowy z VAD (quick 26
     expect(harness.media.beeps).toEqual([]);
     harness.controller.cancelRecording();
   });
+
+  it("PR #109 P2 #3: awaria urządzenia w auto-próbie zeruje stan auto — ręczne „Nagraj jeszcze raz” bez bipu startu", async () => {
+    const harness = await startAtTask(baseState(), speechTask());
+    await harness.controller.autoCaptureSpeech();
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "recording" });
+    expect(harness.media.beeps).toEqual(["start"]);
+    // awaria urządzenia w trakcie auto-nagrania (onError, nie próba dziecka)
+    harness.recorder.fail();
+    expect(harness.controller.getScreen()).toMatchObject({
+      recordingPhase: "idle",
+      recordingNotice: messages.kid.recordingUnavailable,
+    });
+    // ręczna próba na tym samym kontrolerze: bez hooka i bez kolejnego bipu
+    await harness.controller.startRecording();
+    await harness.controller.startRecording();
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "recording" });
+    expect(harness.media.lastRecorderOptions?.onMicrophoneReady).toBeUndefined();
+    expect(harness.media.beeps).toEqual(["start"]);
+    harness.controller.cancelRecording();
+  });
 });
 
 function baseState(): ApiState {
