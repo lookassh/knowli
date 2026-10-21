@@ -100,6 +100,31 @@ describe("illustrationPrompt", () => {
     );
   });
 
+  it("flaga includeExampleInImage=false pomija przykład (prompt jak bez przykładu)", () => {
+    const withoutExample = illustrationPrompt({ source: "czwartek", target: "Thursday" });
+    expect(
+      illustrationPrompt({
+        source: "czwartek",
+        target: "Thursday",
+        example: "See you on Thursday.",
+        visualData: { includeExampleInImage: false },
+      }),
+    ).toBe(withoutExample);
+  });
+
+  it("flaga includeExampleInImage=true zachowuje przykład", () => {
+    expect(
+      illustrationPrompt({
+        source: "czwartek",
+        target: "Thursday",
+        example: "See you on Thursday.",
+        visualData: { includeExampleInImage: true },
+      }),
+    ).toBe(
+      illustrationPrompt({ source: "czwartek", target: "Thursday", example: "See you on Thursday." }),
+    );
+  });
+
   it("uwzględnia jawne doprecyzowanie imagePrompt", () => {
     const item = { source: "czwartek", target: "Thursday" };
     const withHint = illustrationPrompt({

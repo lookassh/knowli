@@ -345,6 +345,24 @@ export default function DeckEditor({
     );
   };
 
+  // flaga promptu obrazka: zmiana zapisuje się z formularzem, a nowy
+  // fingerprint zleci regenerację ilustracji dopiero po „Zapisz"
+  const toggleExampleInImage = (index: number, checked: boolean) => {
+    markDirty();
+    setForm((current) =>
+      current
+        ? {
+            ...current,
+            items: current.items.map((item, position) =>
+              position === index
+                ? { ...item, visualData: { ...item.visualData, includeExampleInImage: checked } }
+                : item,
+            ),
+          }
+        : current,
+    );
+  };
+
   // nowy element ląduje na końcu listy; bez id serwer tworzy learning_item
   // z kluczami umiejętności v1 i zleca media w tej samej transakcji zapisu
   const addItem = () => {
@@ -693,6 +711,18 @@ export default function DeckEditor({
                 onChange={(event) => mutate("example", event.target.value, index)}
               />
             </label>
+            {item.visualType === "image" && item.example.trim().length > 0 && (
+              <label>
+                <input
+                  type="checkbox"
+                  data-testid={`item-example-in-image-${index}`}
+                  checked={item.visualData?.includeExampleInImage !== false}
+                  disabled={!editable || busy}
+                  onChange={(event) => toggleExampleInImage(index, event.target.checked)}
+                />
+                {messages.decks.exampleInImage}
+              </label>
+            )}
             <label>
               {messages.decks.visualLabel}
               <select
