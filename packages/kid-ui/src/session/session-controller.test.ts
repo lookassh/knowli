@@ -126,6 +126,7 @@ function makeMedia(recorder: ReturnType<typeof makeRecorder>, playGate?: Promise
     playUrls: [] as string[],
     stops: 0,
     async prepareMicrophone() {},
+    async playBeep() {},
     createRecorder: (options?: RecorderOptions) => {
       recorder.setFailureHandler(options?.onError);
       recorder.setLimitHandler(options?.onLimitReached);

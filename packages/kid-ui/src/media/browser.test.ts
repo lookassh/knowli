@@ -261,6 +261,139 @@ describe("BrowserRecorder — nagrywanie bez pozostawiania strumienia (arch §11
   });
 });
 
+describe("BrowserRecorder — hook onMicrophoneReady (sygnał „teraz mów")", () => {
+  it("woła hook PO udanym getUserMedia i PRZED konstrukcją MediaRecorder oraz startem przechwytywania", async () => {
+    const { stream } = fakeStream();
+    const log: string[] = [];
+    const getUserMedia = vi.fn(async () => {
+      await Promise.resolve();
+      log.push("getUserMedia");
+      return stream as unknown as MediaStream;
+    });
+    const hooked = class extends FakeMediaRecorder {
+      override start(): void {
+        log.push("recorder.start");
+        super.start();
+      }
+    };
+    const onMicrophoneReady = vi.fn(async () => {
+      log.push("hook");
+    });
+    const recorder = new BrowserRecorder({
+      getUserMedia,
+      mediaRecorder: hooked as unknown as typeof MediaRecorder,
+      timers: fakeTimers().timers,
+    }, { onMicrophoneReady });
+    await recorder.start();
+    expect(log).toEqual(["getUserMedia", "hook", "recorder.start"]);
+    expect(onMicrophoneReady).toHaveBeenCalledOnce();
+  });
+
+  it("odrzucenie hooka jest połykane — start nagrywania mimo to kończy się sukcesem", async () => {
+    const { stream } = fakeStream();
+    const onMicrophoneReady = vi.fn(async () => {
+      throw new Error("beep failed");
+    });
+    const recorder = new BrowserRecorder(deps(stream).deps, { onMicrophoneReady });
+    await expect(recorder.start()).resolves.toBeUndefined();
+    expect(recorder.active).toBe(true);
+    expect(onMicrophoneReady).toHaveBeenCalledOnce();
+  });
+
+  it("brak opcji — hook nie jest wołany i start przebiega jak dotychczas", async () => {
+    const { stream } = fakeStream();
+    const recorder = new BrowserRecorder(deps(stream).deps);
+    await recorder.start();
+    expect(recorder.active).toBe(true);
+  });
+});
+
+describe("createBrowserMedia — bip WebAudio (sygnały „teraz mów"/„koniec")", () => {
+  function fakeBeepContext(state: AudioContextState = "running") {
+    const events: string[] = [];
+    let onended: (() => void) | null = null;
+    const oscillator = {
+      frequency: { value: 0 },
+      connect: vi.fn(),
+      start: vi.fn(() => events.push("oscillator:start")),
+      stop: vi.fn(() => {
+        events.push("oscillator:stop");
+        onended?.();
+      }),
+      set onended(handler: (() => void) | null) { onended = handler; },
+    };
+    const gain = {
+      gain: {
+        setValueAtTime: vi.fn(() => events.push("gain:setValueAtTime")),
+        exponentialRampToValueAtTime: vi.fn(() => events.push("gain:ramp")),
+      },
+      connect: vi.fn(),
+    };
+    const Ctor = class {
+      state = state;
+      currentTime = 0;
+      destination = {};
+      createOscillator() { events.push("createOscillator"); return oscillator; }
+      createGain() { events.push("createGain"); return gain; }
+      close = vi.fn(async () => { events.push("context:close"); });
+    };
+    const stream = fakeStream();
+    const getUserMedia = vi.fn(async () => stream.stream as unknown as MediaStream);
+    const media = createBrowserMedia({ getUserMedia, audioContext: Ctor as unknown as typeof AudioContext });
+    return { events, oscillator, gain, media, Ctor, stream };
+  }
+
+  it("playBeep start i end grają oscylator przez GainNode z obwiednią i zamykają kontekst", async () => {
+    const start = fakeBeepContext();
+    await start.media.playBeep("start");
+    // oscylator podłączony do gain, gain do destination, obwiednia przeciw klikowi
+    expect(start.oscillator.connect).toHaveBeenCalledWith(start.gain);
+    expect(start.gain.connect).toHaveBeenCalled();
+    expect(start.gain.gain.setValueAtTime).toHaveBeenCalled();
+    expect(start.gain.gain.exponentialRampToValueAtTime).toHaveBeenCalled();
+    expect(start.oscillator.start).toHaveBeenCalled();
+    expect(start.oscillator.stop).toHaveBeenCalled();
+    // krótkotrwały kontekst zamykany po zagraniu (limit równoczesnych kontekstów)
+    expect(start.events.filter((event) => event === "context:close")).toHaveLength(1);
+
+    const end = fakeBeepContext();
+    await end.media.playBeep("end");
+    expect(end.oscillator.start).toHaveBeenCalled();
+    expect(end.events.filter((event) => event === "context:close")).toHaveLength(1);
+    // bip startu wyższy niż bip końca — rozróżnialne sygnały dla dziecka
+    expect(start.oscillator.frequency.value).toBeGreaterThan(end.oscillator.frequency.value);
+    expect(start.oscillator.frequency.value).toBeGreaterThan(0);
+  });
+
+  it("brak AudioContext w otoczeniu — obietnica rozstrzyga się natychmiast, bez rzucania", async () => {
+    const { stream } = fakeStream();
+    const getUserMedia = vi.fn(async () => stream as unknown as MediaStream);
+    const media = createBrowserMedia({ getUserMedia });
+    await expect(media.playBeep("start")).resolves.toBeUndefined();
+  });
+
+  it("kontekst suspended (polityka autoplay) — bez grania, bez czekania na resume", async () => {
+    const fake = fakeBeepContext("suspended");
+    await expect(fake.media.playBeep("end")).resolves.toBeUndefined();
+    expect(fake.oscillator.start).not.toHaveBeenCalled();
+    expect(fake.events).toContain("context:close");
+  });
+
+  it("awaria Web Audio w trakcie — bip degraduje się po cichu (nagrywanie obowiązkowe)", async () => {
+    const broken = class {
+      state = "running";
+      currentTime = 0;
+      destination = {};
+      createOscillator(): OscillatorNode { throw new Error("web audio broken"); }
+      close = vi.fn(async () => undefined);
+    };
+    const { stream } = fakeStream();
+    const getUserMedia = vi.fn(async () => stream as unknown as MediaStream);
+    const media = createBrowserMedia({ getUserMedia, audioContext: broken as unknown as typeof AudioContext });
+    await expect(media.playBeep("start")).resolves.toBeUndefined();
+  });
+});
+
 describe("BrowserAudioPlayer — anulowanie także oczekującego pobrania", () => {
   it("przekazuje rzeczywistą długość dopiero po rozpoczęciu odtwarzania", async () => {
     let audio!: { onplaying: (() => void) | null; onended: (() => void) | null; onerror: (() => void) | null; duration: number };
