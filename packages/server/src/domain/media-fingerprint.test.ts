@@ -73,6 +73,7 @@ describe("illustrationPrompt", () => {
       source: "gorąco",
       target: "hot",
       example: "It is hot in summer.",
+      visualData: { includeExampleInImage: true },
     });
     expect(prompt).toBe(
       `Simple child-friendly illustration of "hot" (gorąco). It is hot in summer. No text in the image.`,
@@ -80,18 +81,23 @@ describe("illustrationPrompt", () => {
   });
 
   it("domyka przykład bez interpunkcji końcowej i zmienia prompt", () => {
+    const flag = { includeExampleInImage: true };
     const closed = illustrationPrompt({
       source: "gorąco",
       target: "hot",
       example: "It is hot in summer.",
+      visualData: flag,
     });
     const open = illustrationPrompt({
       source: "gorąco",
       target: "hot",
       example: "It is hot in summer",
+      visualData: flag,
     });
     expect(open).toBe(closed);
-    expect(illustrationPrompt({ source: "gorąco", target: "hot" })).not.toBe(closed);
+    expect(
+      illustrationPrompt({ source: "gorąco", target: "hot", visualData: flag }),
+    ).not.toBe(closed);
   });
 
   it("pusty przykład nie zmienia promptu", () => {
@@ -100,8 +106,15 @@ describe("illustrationPrompt", () => {
     );
   });
 
-  it("flaga includeExampleInImage=false pomija przykład (prompt jak bez przykładu)", () => {
+  it("domyślnie pomija przykład (flaga nieustawiona lub false)", () => {
     const withoutExample = illustrationPrompt({ source: "czwartek", target: "Thursday" });
+    expect(
+      illustrationPrompt({
+        source: "czwartek",
+        target: "Thursday",
+        example: "See you on Thursday.",
+      }),
+    ).toBe(withoutExample);
     expect(
       illustrationPrompt({
         source: "czwartek",
@@ -112,7 +125,7 @@ describe("illustrationPrompt", () => {
     ).toBe(withoutExample);
   });
 
-  it("flaga includeExampleInImage=true zachowuje przykład", () => {
+  it("flaga includeExampleInImage=true dokleja przykład", () => {
     expect(
       illustrationPrompt({
         source: "czwartek",
@@ -121,7 +134,7 @@ describe("illustrationPrompt", () => {
         visualData: { includeExampleInImage: true },
       }),
     ).toBe(
-      illustrationPrompt({ source: "czwartek", target: "Thursday", example: "See you on Thursday." }),
+      `Simple child-friendly illustration of "Thursday" (czwartek). See you on Thursday. No text in the image.`,
     );
   });
 
