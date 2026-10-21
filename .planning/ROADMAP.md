@@ -8,6 +8,7 @@
 
 - [ ] **Phase 1: Prywatne wdrożenie i odzyskanie danych** - Potwierdzenie uruchomienia, trwałości po restarcie i odtworzenia danych istniejącego stosu.
 - [ ] **Phase 2: Odbiór rodzinnej sesji na urządzeniu** - Potwierdzenie zatwierdzonego przez rodzica przepływu dziecka, historii per umiejętność i uczciwego zachowania ścieżek audio.
+- [ ] **Phase 3: Asynchroniczne kończenie sesji i naliczanie punktów** - Pokazanie podsumowania od razu i uzupełnienie punktów po ocenie w tle.
 
 ## Phase Details
 
@@ -43,9 +44,20 @@
 
 **UI hint**: yes
 
+### Phase 3: Asynchroniczne kończenie sesji i naliczanie punktów
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 2
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run $gsd-plan-phase 3 to break down)
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
 | --- | --- | --- | --- |
 | 1. Prywatne wdrożenie i odzyskanie danych | 0/TBD | Not started | - |
 | 2. Odbiór rodzinnej sesji na urządzeniu | 0/TBD | Not started | - |
+| 3. Asynchroniczne kończenie sesji i naliczanie punktów | 0/TBD | Not planned | - |

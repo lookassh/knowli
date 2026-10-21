@@ -1,0 +1,28 @@
+{
+  "contract": "1.0.0",
+  "flavor": "core",
+  "milestone": null,
+  "phases": [
+    {
+      "number": "1",
+      "name": "Prywatne wdrożenie i odzyskanie danych",
+      "status": "pending"
+    },
+    {
+      "number": "2",
+      "name": "Odbiór rodzinnej sesji na urządzeniu",
+      "status": "pending"
+    },
+    {
+      "number": "3",
+      "name": "Asynchroniczne kończenie sesji i naliczanie punktów",
+      "status": "pending"
+    }
+  ],
+  "next": {
+    "command": "$gsd-progress --next",
+    "label": "Advance to the next step (plan phase 1)",
+    "reason": "Phase 1 of 3 — needs a plan"
+  },
+  "updated_at": "2026-10-21T13:18:09.894Z"
+}
