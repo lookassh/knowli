@@ -282,6 +282,8 @@ test(`${kind} microphone phases keep exercise controls in place`, async ({ page 
     // AudioContext z analizatorem (cisza), bo realny createMediaStreamSource
     // odrzuciłby strumień-testowy obiekt i przerwał auto-start
     class FakeAudioContext {
+      // PR #109 r2: auto-próba akceptuje wyłącznie stan "running"
+      readonly state = "running";
       createAnalyser() {
         return {
           fftSize: 256,

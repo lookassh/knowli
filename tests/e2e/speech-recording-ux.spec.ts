@@ -366,6 +366,9 @@ async function installFakeMicrophone(page: Page, deny = false): Promise<void> {
       getChannelData: () => new Float32Array(length),
     });
     class FakeAudioContext {
+      // PR #109 r2: auto-próba akceptuje wyłącznie stan "running" — fake mikrofonu
+      // jest zawsze gotowy do nasłuchu (brak polityki autoplay w teście)
+      readonly state = "running";
       async decodeAudioData(): Promise<AudioBuffer> { return decodedBuffer(96_000, 48_000) as unknown as AudioBuffer; }
       // sterowalny analyser: poziom mikrofonu (skala rms×4 z browser.ts)
       // kontroluje test przez window.__kidMicLevel — domyślnie cisza

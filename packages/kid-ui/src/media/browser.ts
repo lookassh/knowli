@@ -4,6 +4,13 @@ import { LevelMonitorUnavailableError } from "./platform";
 /** Limit nagrania po stronie klienta — odpowiada limitowi serwera (arch §11). */
 export const MAX_RECORDING_MS = 15_000;
 
+/**
+ * Limit jednej próby resume() AudioContext w trybie auto (PR #109, runda 2,
+ * finding 1): przeglądarka może wstrzymać odblokowanie audio — bez limitu
+ * start wisiałby w „starting” z nieuzbrojonym limitem nagrania.
+ */
+export const LEVEL_MONITOR_RESUME_TIMEOUT_MS = 750;
+
 /** Preferowane kodeki w kolejności; pierwszy wspierany wygrywa. */
 const PREFERRED_MIME_TYPES = ["audio/webm;codecs=opus", "audio/webm"] as const;
 
@@ -167,6 +174,7 @@ export class BrowserRecorder implements SpeechRecorder {
   #generation = 0;
   #lastLevelAt = Number.NEGATIVE_INFINITY;
   #levelHandle: unknown = null;
+  #resumeTimeoutHandle: unknown = null;
   #levelContext: AudioContext | null = null;
   #analyser: AnalyserNode | null = null;
   #samples: Float32Array<ArrayBuffer> | null = null;
@@ -409,32 +417,53 @@ export class BrowserRecorder implements SpeechRecorder {
   }
 
   /**
-   * Inicjalizuje monitor poziomów (PR #109, P1 #2) i zwraca jego stan:
+   * Inicjalizuje monitor poziomów (PR #109, P1 #2 + runda 2) i zwraca jego stan:
    * "running" — AnalyserNode podłączony i odświeżany; "unavailable" — brak
-   * konstruktora AudioContext, awaria konstrukcji albo kontekst pozostaje
-   * suspended po JEDNEJ próbie resume (polityka autoplay bez gestu).
-   * Wywoływane przed sygnałem „teraz mów”; przy requireLevelMonitor stan
-   * inny niż running przerywa start (LevelMonitorUnavailableError).
+   * konstruktora AudioContext, awaria konstrukcji/podłączenia albo (tylko w
+   * trybie auto) kontekst, który po ograniczonej czasowo próbie resume nie
+   * osiąga stanu "running" (suspended/interrupted/…). Wywoływane przed
+   * sygnałem „teraz mów”; przy requireLevelMonitor stan inny niż running
+   * przerywa start (LevelMonitorUnavailableError).
+   *
+   * Runda 2, finding 1: w trybie RĘCZNYM nigdy nie czekamy na resume() —
+   * monitor podłączamy best-effort jak przed PR #109 (odblokowanie audio
+   * zostawiamy przeglądarce, fire-and-forget), bo ręczne nagrywanie nie zależy
+   * od poziomów i nie może wisieć w „starting”. W trybie AUTO resume()
+   * ścigamy z krótkim limitem na wstrzykniętych timerach — przeglądarka może
+   * wstrzymać odblokowanie audio (polityka autoplay) i bez limitu start
+   * wisiałby bezterminowo, z nieuzbrojonym limitem 15 s.
+   *
+   * Runda 2, finding 3: kontekst przypisujemy do #levelContext NATYCHMIAST po
+   * konstrukcji — sprzątanie (catch/#stopLevelMonitor) zamyka go na każdej
+   * ścieżce awarii (createAnalyser/connect/…), więc kolejne próby nie zbiegają
+   * kontekstów audio.
    */
   async #initializeLevelMonitor(stream: MediaStream): Promise<"running" | "unavailable"> {
     if (!this.#AudioContext || !this.#options.onLevel) return "unavailable";
     try {
       const context = new this.#AudioContext();
-      if (context.state === "suspended") {
-        try {
-          await context.resume();
-        } catch {
-          // jednorazowa próba — kontekst bez gestu może pozostać suspended
+      this.#levelContext = context;
+      if (this.#options.requireLevelMonitor) {
+        // AUTO przyjmuje WYŁĄCZNIE stan "running" (runda 2, finding 2):
+        // "suspended", "interrupted" (Safari/iOS) i każdy inny stan nie dostarcza
+        // próbek — VAD usłyszałby ciszę i limit 15 s anulował dobrą wypowiedź
+        if (context.state !== "running") {
+          const resumed = await this.#resumeWithinTimeout(context);
+          // resume() mutuje stan kontekstu — asercja rozwija zawężenie z gorętszego
+          // warunku, bo kontrola przepływu nie śledzi mutacji przez resume()
+          const stateAfterResume = context.state as AudioContextState;
+          if (!resumed || stateAfterResume !== "running") {
+            this.#stopLevelMonitor();
+            return "unavailable";
+          }
         }
-        if (context.state === "suspended") {
-          await context.close().catch(() => undefined);
-          return "unavailable";
-        }
+      } else if (context.state === "suspended") {
+        // ręcznie: fire-and-forget, bez blokowania startu nagrywania
+        void context.resume().catch(() => undefined);
       }
       const analyser = context.createAnalyser();
       analyser.fftSize = 256;
       context.createMediaStreamSource(stream).connect(analyser);
-      this.#levelContext = context;
       this.#analyser = analyser;
       this.#samples = new Float32Array(analyser.fftSize);
       const setInterval = this.#timers.setInterval ?? ((handler: () => void, ms: number) => globalThis.setInterval(handler, ms));
@@ -452,14 +481,33 @@ export class BrowserRecorder implements SpeechRecorder {
       }, 100);
       return "running";
     } catch {
-      this.#analyser = null;
-      this.#samples = null;
-      this.#levelHandle = null;
-      const context = this.#levelContext;
-      this.#levelContext = null;
-      await context?.close().catch(() => undefined);
+      this.#stopLevelMonitor();
       return "unavailable";
     }
+  }
+
+  /**
+   * Jedna próba resume() ścigana z limitem czasu na wstrzykniętych timerach
+   * (runda 2, finding 1): zwraca false przy odrzuceniu; upłynięcie limitu
+   * rozstrzyga się po stronie wywołującego przez ponowny test stanu kontekstu.
+   */
+  async #resumeWithinTimeout(context: AudioContext): Promise<boolean> {
+    try {
+      await Promise.race([
+        context.resume(),
+        new Promise<void>((resolve) => {
+          this.#resumeTimeoutHandle = this.#timers.set(() => resolve(), LEVEL_MONITOR_RESUME_TIMEOUT_MS);
+        }),
+      ]);
+    } catch {
+      return false;
+    } finally {
+      if (this.#resumeTimeoutHandle !== null) {
+        this.#timers.clear(this.#resumeTimeoutHandle);
+        this.#resumeTimeoutHandle = null;
+      }
+    }
+    return true;
   }
 
   #stopLevelMonitor(): void {
