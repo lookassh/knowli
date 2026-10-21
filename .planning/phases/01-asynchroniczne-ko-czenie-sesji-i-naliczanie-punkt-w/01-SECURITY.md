@@ -44,7 +44,7 @@ created: "2026-10-21"
 
 | Audit Date | Threats Total | Closed | Open | Run By |
 |------------|---------------|--------|------|--------|
-| 2026-10-21 | 11 | 11 | 0 | gsd-security-auditor + owner |
+| 2026-10-21 | 11 | 11 | 0 | gsd-security-auditor; post-acceptance recheck |
 
 ## Sign-Off
 
