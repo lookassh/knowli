@@ -272,6 +272,12 @@ test(`${kind} microphone phases keep exercise controls in place`, async ({ page 
         return stream;
       } },
     });
+    // WR-02: uprawnienie mikrofonu "granted" — auto-próba na zadaniu speech
+    // sama rozpoczyna przygotowanie (pierwsze getUserMedia jest bramkowane)
+    Object.defineProperty(navigator, "permissions", {
+      configurable: true,
+      value: { query: async () => ({ state: "granted" }) },
+    });
     class FakeMediaRecorder {
       static isTypeSupported(): boolean { return true; }
       state = "inactive";

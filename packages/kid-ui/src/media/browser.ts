@@ -1,4 +1,4 @@
-import type { AudioPlayer, BeepKind, PlatformMedia, RecordedAudio, RecorderOptions, SpeechRecorder } from "./platform";
+import type { AudioPlayer, BeepKind, MicrophonePermission, PlatformMedia, RecordedAudio, RecorderOptions, SpeechRecorder } from "./platform";
 
 /** Limit nagrania po stronie klienta — odpowiada limitowi serwera (arch §11). */
 export const MAX_RECORDING_MS = 15_000;
@@ -72,6 +72,7 @@ export interface BrowserRecorderDeps {
   };
   audioContext?: typeof AudioContext;
   now?: () => number;
+  permissions?: Permissions;
 }
 
 const defaultTimers = {
@@ -516,12 +517,34 @@ export class BrowserAudioPlayer implements AudioPlayer {
   }
 }
 
+/**
+ * Zapytanie o stan uprawnienia mikrofonu (WR-02, decyzja właściciela
+ * 2026-10-21): wyłącznie Permissions API — bez getUserMedia, bez promptu i bez
+ * efektów ubocznych. Brak API (np. Firefox), niewspierana nazwa uprawnienia
+ * albo awaria rozstrzygają się bezpiecznie jako "unknown".
+ */
+export async function queryMicrophonePermission(
+  permissions: Permissions | undefined,
+): Promise<MicrophonePermission> {
+  if (!permissions?.query) return "unknown";
+  try {
+    const status = await permissions.query({ name: "microphone" } as PermissionDescriptor);
+    if (status.state === "granted" || status.state === "prompt" || status.state === "denied") {
+      return status.state;
+    }
+    return "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
 export interface BrowserMediaDeps extends BrowserRecorderDeps {}
 
 /** Adaptery przeglądarkowe za portami PlatformMedia. */
 export function createBrowserMedia(deps: BrowserMediaDeps = {}): PlatformMedia {
   const getUserMedia = deps.getUserMedia ?? ((constraints: MediaStreamConstraints) => navigator.mediaDevices.getUserMedia(constraints));
   const AudioContextCtor = deps.audioContext ?? globalThis.AudioContext;
+  const permissions = deps.permissions ?? (globalThis as { navigator?: Navigator }).navigator?.permissions;
   return {
     prepareMicrophone: async () => {
       const stream = await getUserMedia({ audio: true });
@@ -530,5 +553,6 @@ export function createBrowserMedia(deps: BrowserMediaDeps = {}): PlatformMedia {
     createRecorder: (options) => new BrowserRecorder({ ...deps, getUserMedia }, options),
     player: new BrowserAudioPlayer(),
     playBeep: (kind) => playBeepViaWebAudio(AudioContextCtor, kind),
+    getMicrophonePermission: () => queryMicrophonePermission(permissions),
   };
 }

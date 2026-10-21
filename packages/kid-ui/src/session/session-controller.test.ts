@@ -14,7 +14,7 @@ import type {
   TaskDto,
 } from "@learning/contracts";
 import type { KidApi } from "../api/KidApi";
-import type { AudioPlayer, PlatformMedia, RecorderOptions, SpeechRecorder } from "../media/platform";
+import type { AudioPlayer, MicrophonePermission, PlatformMedia, RecorderOptions, SpeechRecorder } from "../media/platform";
 import { createMemoryPreferences, MIC_DENIED_KEY, type LocalPreferences } from "../storage";
 import { createMemoryActivityDraftStore } from "./activity-draft-store";
 import { LearningSessionController, messageForError } from "./session-controller";
@@ -133,14 +133,23 @@ function makeRecorder(opts: { failStartWith?: unknown; startGate?: Promise<void>
   };
 }
 
-function makeMedia(recorder: ReturnType<typeof makeRecorder>, playGate?: Promise<void>, onStopPlayback?: () => void, failPlaybackBeforeStart = false, playbackDurationMs: number | null = null, sharedLog?: string[]): PlatformMedia & { playUrls: string[]; stops: number; beeps: string[]; lastRecorderOptions?: RecorderOptions } {
+function makeMedia(recorder: ReturnType<typeof makeRecorder>, playGate?: Promise<void>, onStopPlayback?: () => void, failPlaybackBeforeStart = false, playbackDurationMs: number | null = null, sharedLog?: string[], microphonePermission: MicrophonePermission = "granted"): PlatformMedia & { playUrls: string[]; stops: number; beeps: string[]; lastRecorderOptions?: RecorderOptions; permissionQueries: number; setMicrophonePermission(next: MicrophonePermission): void } {
   const media = {
     playUrls: [] as string[],
     stops: 0,
     beeps: [] as string[],
     lastRecorderOptions: undefined as RecorderOptions | undefined,
+    permissionQueries: 0,
+    setMicrophonePermission(next: MicrophonePermission) {
+      microphonePermission = next;
+    },
     async prepareMicrophone() {
       sharedLog?.push("prepareMicrophone");
+    },
+    async getMicrophonePermission() {
+      media.permissionQueries += 1;
+      sharedLog?.push(`permission:${microphonePermission}`);
+      return microphonePermission;
     },
     async playBeep(kind: "start" | "end") {
       media.beeps.push(kind);
@@ -336,10 +345,10 @@ const LESSON_DECK: KidDeckDto = {
 
 function makeHarness(
   state: ApiState,
-  options: { failStartWith?: unknown; startGate?: Promise<void>; initialChildId?: string; playGate?: Promise<void>; onStopPlayback?: () => void; failPlaybackBeforeStart?: boolean; playbackDurationMs?: number | null; storage?: LocalPreferences; activityClock?: import("./activity-report").ActivityClock; activityDrafts?: ReturnType<typeof createMemoryActivityDraftStore>; sharedLog?: string[] } = {},
+  options: { failStartWith?: unknown; startGate?: Promise<void>; initialChildId?: string; playGate?: Promise<void>; onStopPlayback?: () => void; failPlaybackBeforeStart?: boolean; playbackDurationMs?: number | null; storage?: LocalPreferences; activityClock?: import("./activity-report").ActivityClock; activityDrafts?: ReturnType<typeof createMemoryActivityDraftStore>; sharedLog?: string[]; microphonePermission?: MicrophonePermission } = {},
 ) {
   const recorder = makeRecorder(options);
-  const media = makeMedia(recorder, options.playGate, options.onStopPlayback, options.failPlaybackBeforeStart, options.playbackDurationMs, options.sharedLog);
+  const media = makeMedia(recorder, options.playGate, options.onStopPlayback, options.failPlaybackBeforeStart, options.playbackDurationMs, options.sharedLog, options.microphonePermission ?? "granted");
   const storage = options.storage ?? createMemoryPreferences();
   const api = makeApi(state);
   const activityDrafts = options.activityDrafts ?? createMemoryActivityDraftStore();
@@ -355,7 +364,7 @@ function makeHarness(
   return { controller, recorder, media, storage, state, api, activityDrafts };
 }
 
-async function startAtTask(state: ApiState, task: TaskDto, recorderOpts?: { failStartWith?: unknown; startGate?: Promise<void>; playGate?: Promise<void>; onStopPlayback?: () => void; failPlaybackBeforeStart?: boolean; playbackDurationMs?: number | null; storage?: LocalPreferences; microphone?: boolean; activityDrafts?: ReturnType<typeof createMemoryActivityDraftStore>; activityClock?: import("./activity-report").ActivityClock; sharedLog?: string[] }) {
+async function startAtTask(state: ApiState, task: TaskDto, recorderOpts?: { failStartWith?: unknown; startGate?: Promise<void>; playGate?: Promise<void>; onStopPlayback?: () => void; failPlaybackBeforeStart?: boolean; playbackDurationMs?: number | null; storage?: LocalPreferences; microphone?: boolean; activityDrafts?: ReturnType<typeof createMemoryActivityDraftStore>; activityClock?: import("./activity-report").ActivityClock; sharedLog?: string[]; microphonePermission?: MicrophonePermission }) {
   state.tasks = [task];
   const harness = makeHarness(state, recorderOpts);
   await harness.controller.start();
@@ -2090,6 +2099,62 @@ describe("LearningSessionController — automatyczna próba mowy z VAD (quick 26
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("WR-02: uprawnienie „prompt” pomija auto-start — bez sondy i bez getUserMedia; micDenied nie zostaje zapamiętane", async () => {
+    const log: string[] = [];
+    const harness = await startAtTask(baseState(), speechTask(), { sharedLog: log, microphonePermission: "prompt" });
+    await harness.controller.autoCaptureSpeech();
+    expect(harness.media.permissionQueries).toBe(1);
+    // cichy skip: żadnej sondy prepareMicrophone ani startu rejestratora
+    expect(log).toEqual(["permission:prompt"]);
+    expect(harness.recorder.started).toBe(0);
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "idle", micDenied: false, feedback: null });
+    expect(harness.state.speechSubmissions).toHaveLength(0);
+    // świadome naciśnięcie przycisku pozostaje pełną ścieżką: przygotowanie…
+    await harness.controller.startRecording();
+    expect(harness.controller.getScreen()).toMatchObject({ microphoneReady: true, recordingPhase: "idle" });
+    // …a kolejne wciśnięcie rozpoczyna nagrywanie ręczne
+    await harness.controller.startRecording();
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "recording" });
+    expect(harness.recorder.started).toBe(1);
+    harness.controller.cancelRecording();
+  });
+
+  it("WR-02: uprawnienie „denied” również pomija auto-start bez zapamiętania odmowy", async () => {
+    const harness = await startAtTask(baseState(), speechTask(), { microphonePermission: "denied" });
+    await harness.controller.autoCaptureSpeech();
+    expect(harness.recorder.started).toBe(0);
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "idle", micDenied: false });
+  });
+
+  it("WR-02: nieznany stan uprawnień („unknown”) pomija auto-start — bezpieczne domyślnie", async () => {
+    const harness = await startAtTask(baseState(), speechTask(), { microphonePermission: "unknown" });
+    await harness.controller.autoCaptureSpeech();
+    expect(harness.recorder.started).toBe(0);
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "idle" });
+  });
+
+  it("WR-02: uprawnienie „granted” — auto-start przebiega jak dotychczas", async () => {
+    const log: string[] = [];
+    const harness = await startAtTask(baseState(), speechTask(), { sharedLog: log, microphonePermission: "granted" });
+    await harness.controller.autoCaptureSpeech();
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "recording" });
+    expect(log).toEqual(["permission:granted", "prepareMicrophone", "beep:start", "capture"]);
+    harness.controller.teardown();
+  });
+
+  it("WR-02: mikrofon już gotowy w sesji — auto-start bez pytania o uprawnienie", async () => {
+    const log: string[] = [];
+    const harness = await startAtTask(baseState(), speechTask(), { sharedLog: log });
+    await harness.controller.prepareMicrophone();
+    harness.media.permissionQueries = 0;
+    log.length = 0;
+    await harness.controller.autoCaptureSpeech();
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "recording" });
+    expect(harness.media.permissionQueries).toBe(0);
+    expect(log).toEqual(["beep:start", "capture"]);
+    harness.controller.teardown();
   });
 });
 

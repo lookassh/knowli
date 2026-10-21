@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BrowserAudioPlayer, BrowserRecorder, createBrowserMedia, MAX_RECORDING_MS } from "./browser";
+import { BrowserAudioPlayer, BrowserRecorder, createBrowserMedia, MAX_RECORDING_MS, queryMicrophonePermission } from "./browser";
 
 /** Fałszywy MediaRecorder — sterowany z testu, bez prawdziwego DOM. */
 class FakeMediaRecorder {
@@ -370,6 +370,28 @@ describe("createBrowserMedia — bip WebAudio (sygnały: teraz mów / koniec)", 
     const getUserMedia = vi.fn(async () => stream as unknown as MediaStream);
     const media = createBrowserMedia({ getUserMedia });
     await expect(media.playBeep("start")).resolves.toBeUndefined();
+  });
+
+  it("getMicrophonePermission mapuje stan Permissions API, a awaria daje unknown (WR-02)", async () => {
+    const permissionsOf = (state: string): Permissions =>
+      ({ query: async () => ({ state }) } as unknown as Permissions);
+    // wyłącznie zapytanie o stan — bez getUserMedia i bez efektów ubocznych
+    await expect(queryMicrophonePermission(permissionsOf("granted"))).resolves.toBe("granted");
+    await expect(queryMicrophonePermission(permissionsOf("prompt"))).resolves.toBe("prompt");
+    await expect(queryMicrophonePermission(permissionsOf("denied"))).resolves.toBe("denied");
+    await expect(queryMicrophonePermission(permissionsOf("coś-innego"))).resolves.toBe("unknown");
+    // niewspierana nazwa / awaria API (np. Firefox) — bezpieczne "unknown"
+    const throwing: Permissions = {
+      query: async () => { throw new TypeError("unsupported permission"); },
+    } as unknown as Permissions;
+    await expect(queryMicrophonePermission(throwing)).resolves.toBe("unknown");
+    await expect(queryMicrophonePermission(undefined)).resolves.toBe("unknown");
+    // deps przez createBrowserMedia także działa i nie dotyka getUserMedia
+    const { stream } = fakeStream();
+    const getUserMedia = vi.fn(async () => stream as unknown as MediaStream);
+    const media = createBrowserMedia({ getUserMedia, permissions: permissionsOf("granted") });
+    await expect(media.getMicrophonePermission()).resolves.toBe("granted");
+    expect(getUserMedia).not.toHaveBeenCalled();
   });
 
   it("kontekst suspended (polityka autoplay) — bez grania, bez czekania na resume", async () => {

@@ -186,6 +186,12 @@ test("mówione ćwiczenie obrazkowe można świadomie pominąć bez mikrofonu", 
       configurable: true,
       value: { getUserMedia: async () => stream },
     });
+    // WR-02: uprawnienie mikrofonu "granted" — auto-próba picture_speech może
+    // sama rozpocząć nagrywanie (anulowane ciszą, bez próby)
+    Object.defineProperty(navigator, "permissions", {
+      configurable: true,
+      value: { query: async () => ({ state: "granted" }) },
+    });
     class FakeMediaRecorder {
       static isTypeSupported(type: string): boolean { return type.includes("webm"); }
       state = "inactive";

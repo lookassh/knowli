@@ -18,7 +18,7 @@ import {
 } from "@learning/contracts";
 import type { KidApi } from "../api/KidApi";
 import { isNetworkError, KidApiError } from "../api/client";
-import type { PlatformMedia, RecorderOptions, SpeechRecorder } from "../media/platform";
+import type { MicrophonePermission, PlatformMedia, RecorderOptions, SpeechRecorder } from "../media/platform";
 import { createSpeechVad, type SpeechVad } from "../media/vad";
 import { MIC_DENIED_KEY, type LocalPreferences } from "../storage";
 import { randomUUID } from "./uuid";
@@ -1124,6 +1124,12 @@ export class LearningSessionController {
    * anuluje nagrywanie i zostawia przycisk jako fallback. Po „Nagraj jeszcze
    * raz" mikrofon nie startuje sam — auto-start wyłącznie na nowym zadaniu
    * (SPEC §16); zadania pisemne (WrittenView) i kartkówka pozostają ręczne (D-02).
+   *
+   * WR-02 (decyzja właściciela 2026-10-21): automat woła getUserMedia wyłącznie
+   * przy już nadanym uprawnieniu mikrofonu (lub gdy mikrofon był już używany w
+   * tej sesji — wtedy nowy prompt nie jest możliwy). Pierwsze nadanie zgody
+   * dzieje się świadomym naciśnięciem przycisku nagrywania; po nadaniu zgody
+   * kolejne zadanie mowy wystartuje samo (zapytanie o stan zwróci "granted").
    */
   async autoCaptureSpeech(): Promise<void> {
     const screen = this.#learning();
@@ -1133,8 +1139,24 @@ export class LearningSessionController {
     const epoch = this.#epoch;
     const taskId = screen.task.taskId;
     if (!screen.microphoneReady) {
-      // sonda uprawnień — odmowa zostaje przy istniejącej ścieżce micDenied,
-      // bez pętli automatycznych ponowień (AGENTS)
+      // wyłącznie zapytanie o STAN uprawnienia (bez promptu, bez getUserMedia);
+      // awaria API rozstrzyga się bezpiecznie jako brak zgody
+      let permission: MicrophonePermission;
+      try {
+        permission = await this.#media.getMicrophonePermission();
+      } catch {
+        permission = "unknown";
+      }
+      const probed = this.#learning();
+      if (!probed || epoch !== this.#epoch || probed.task?.taskId !== taskId) return;
+      if (permission !== "granted") {
+        // cichy skip auto dla tego zadania: bez sondy getUserMedia i bez
+        // zapamiętania micDenied — odmowa/prompt należą wyłącznie do ścieżki
+        // ręcznej (przycisk); nic nie blokuje kolejnych zadań po nadaniu zgody
+        return;
+      }
+      // zgoda już nadana — sonda nie wywoła promptu; ewentualna odmowa na poziomie
+      // urządzenia zostaje przy istniejącej ścieżce micDenied, bez pętli ponowień
       await this.prepareMicrophone();
       const current = this.#learning();
       if (!current || epoch !== this.#epoch || current.task?.taskId !== taskId) return;

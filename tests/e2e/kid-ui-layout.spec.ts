@@ -545,6 +545,12 @@ for (const recordingMode of ["hold", "toggle"] as const) {
         configurable: true,
         value: { getUserMedia: () => new Promise<MediaStream>(() => undefined) },
       });
+      // WR-02: uprawnienie mikrofonu "granted", aby auto-próba mogła sama
+      // rozpocząć przygotowanie (wiszący getUserMedia utrzymuje fazę preparing)
+      Object.defineProperty(navigator, "permissions", {
+        configurable: true,
+        value: { query: async () => ({ state: "granted" }) },
+      });
     });
     const fixture = recallFixture(recordingMode);
     fixture.session.microphoneEnabled = true;

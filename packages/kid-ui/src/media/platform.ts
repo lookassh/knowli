@@ -48,7 +48,17 @@ export interface AudioPlayer {
 /** Rodzaj sygnału dźwiękowego dla dziecka: „teraz mów” / „koniec”. */
 export type BeepKind = "start" | "end";
 
-/** Adaptery platformowe za portami — domena UI ich nie zna (plan zadania 9). */
+/**
+ * Stan uprawnienia mikrofonu (WR-02, decyzja właściciela 2026-10-21):
+ * “granted” — zgoda już nadana, getUserMedia nie wywoła promptu;
+ * “prompt” — zgody jeszcze nie ma, pierwsze nadanie wymaga gestu użytkownika
+ * (świadome naciśnięcie przycisku nagrywania); “denied” — zgoda odrzucona;
+ * “unknown” — API stanu uprawnień niedostępne (np. Firefox) — traktowane
+ * jak brak zgody dla ścieżki automatycznej.
+ */
+export type MicrophonePermission = "granted" | "prompt" | "denied" | "unknown";
+
+/** Adaptery platformowe za portami — domena UI ich nie zna (plan zadanie 9). */
 export interface PlatformMedia {
   /** Request permission without recording; every acquired track is released. */
   prepareMicrophone(): Promise<void>;
@@ -60,4 +70,10 @@ export interface PlatformMedia {
    * albo awaria rozstrzygają się po cichu i nigdy nie blokują nagrywania.
    */
   playBeep(kind: BeepKind): Promise<void>;
+  /**
+   * Wyłącznie zapytanie o stan uprawnienia mikrofonu (Permissions API po
+   * stronie adaptera) — bez getUserMedia, bez efektów ubocznych, bez promptu.
+   * Awaria lub brak API rozstrzyga się jako “unknown” (bezpieczne domyślnie).
+   */
+  getMicrophonePermission(): Promise<MicrophonePermission>;
 }

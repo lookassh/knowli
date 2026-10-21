@@ -875,6 +875,16 @@ async function injectFakeMediaPlatform(page: Page): Promise<void> {
       configurable: true,
       value: { getUserMedia: async () => fakeStream },
     });
+    // WR-02: uprawnienie mikrofonu "granted" — auto-próba mowy może wołać
+    // getUserMedia bez promptu; sterowanie przez window.__kidMicPermission
+    Object.defineProperty(navigator, "permissions", {
+      configurable: true,
+      value: {
+        query: async () => ({
+          state: ((window as unknown as { __kidMicPermission?: string }).__kidMicPermission ?? "granted"),
+        }),
+      },
+    });
     // minimalny ważny webm: EBML header + Segment→Info→Duration 2000 (2 s) —
     // serwer czyta czas trwania z metadanych i odrzuca nagrania bez niego
     const webm = new Uint8Array([

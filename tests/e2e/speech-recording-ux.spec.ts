@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import { createDatabase } from "@learning/server";
 import { readTestRunConfig } from "../test-run-config";
+import { installKidUiFixture } from "./helpers/kid-ui-fixture";
+import { pictureVocabularyFixture } from "./helpers/picture-fixtures";
 
 test.use({ trace: "off", viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 
@@ -322,6 +324,17 @@ async function createLearningTask(page: Page, name: string, recordingMode: "hold
 
 async function installFakeMicrophone(page: Page, deny = false): Promise<void> {
   await page.addInitScript((shouldDeny) => {
+    // WR-02: sterowalny stan uprawnienia mikrofonu (Permissions API) —
+    // domyślnie "granted", żeby auto-próba działała bez promptu; test ustawia
+    // window.__kidMicPermission przed wejściem w zadanie mowy
+    Object.defineProperty(navigator, "permissions", {
+      configurable: true,
+      value: {
+        query: async () => ({
+          state: ((window as unknown as { __kidMicPermission?: string }).__kidMicPermission ?? "granted"),
+        }),
+      },
+    });
     const track = { kind: "audio", stop: () => undefined, addEventListener: () => undefined };
     const stream = { getTracks: () => [track], getAudioTracks: () => [track] };
     Object.defineProperty(navigator, "mediaDevices", {
@@ -533,6 +546,50 @@ test("cisza bez wykrytej mowy anuluje automatyczne nagrywanie bez próby", async
   expect(await query<{ modality: string }>(
     "select modality from learning_app.attempts where task_id = $1", [taskId],
   )).toHaveLength(0);
+});
+
+test("bez nadanego uprawnienia mikrofonu automat nie startuje — dopiero świadomy przycisk (WR-02)", async ({ page }) => {
+  await installFakeMicrophone(page);
+  // fixture obrazkowy: pierwsze zadanie sesji to od razu picture_speech, więc
+  // brak wcześniejszego użycia mikrofonu — auto-próba musi zapytać o uprawnienie
+  const fixture = pictureVocabularyFixture();
+  const source = fixture.tasks[0];
+  if (!source || source.prompt.kind !== "picture_exposure") throw new Error("picture exposure fixture missing");
+  fixture.profiles[0]!.recordingMode = "toggle";
+  fixture.session.microphoneEnabled = true;
+  fixture.tasks = [{
+    ...source,
+    taskId: "10000000-0000-4000-8000-000000000017",
+    exerciseType: "speech",
+    prompt: { kind: "picture_speech", audioAssetId: "10000000-0000-4000-8000-000000000014", visual: source.prompt.visual },
+  }, null];
+  await installKidUiFixture(page, fixture);
+  await page.goto("/");
+  // świeża przeglądarka: zgoda na mikrofon jeszcze nie została nadana
+  await page.evaluate(() => {
+    (window as unknown as { __kidMicPermission?: string }).__kidMicPermission = "prompt";
+  });
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").first().click();
+  await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-prompt-kind", "picture_speech");
+  const button = page.getByTestId("kid-record");
+
+  // automat nie ruszył sam: faza idle bez kliku, brak wskaźnika nagrywania
+  // (żadnego getUserMedia poza gestem użytkownika — WR-02)
+  await page.waitForTimeout(1_500);
+  await expect(button).toHaveAttribute("data-phase", "idle");
+  await expect(page.getByTestId("kid-recording")).toHaveCount(0);
+
+  // pierwsza zgoda należy do świadomego naciśnięcia: przygotowanie mikrofonu…
+  await button.click();
+  await expect(button).toHaveAttribute("data-ready", "true");
+  await expect(button).toHaveAttribute("data-phase", "idle");
+  // …kolejne naciśnięcie rozpoczyna nagrywanie na ścieżce ręcznej
+  await button.click();
+  await expect(button).toHaveAttribute("data-phase", "recording", { timeout: 10_000 });
+  await expect(page.getByTestId("kid-recording")).toBeVisible();
+  await button.click();
+  await expect(button).toHaveAttribute("data-phase", "idle", { timeout: 30_000 });
 });
 
 test("microphone denial is available on request and leaves the written learning path available", async ({ page }) => {
