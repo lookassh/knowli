@@ -2,9 +2,6 @@
 
 Instrukcje dla agentów pracujących w tym repozytorium. Umieść ten plik w katalogu głównym repozytorium.
 
-<!-- bmad:context -->
-<!-- Verified 2026-10-15 against b820a2420a37f1421d91ae034ecf7bf3e7286eaa. Managed by bmad-project-context; edits inside this block are replaced on refresh. Keep other instructions outside the markers. -->
-
 ## Policy
 
 - Nie wypychaj zmian bezpośrednio do `main` i nie scalaj PR bez polecenia właściciela. Osobny PR dokumentacyjny wymaga wyraźnego polecenia; sposób zakończenia implementacji uzgodnij w ramach danego zadania.
@@ -12,8 +9,6 @@ Instrukcje dla agentów pracujących w tym repozytorium. Umieść ten plik w kat
 ## Running and verifying
 
 - Aby skopiować brakujący `.env` w worktree bez instalacji zależności, uruchom `node scripts/setup-worktree.cjs --skip-install`; wywołanie bez tej opcji instaluje zależności, gdy brak `node_modules`.
-
-<!-- /bmad:context -->
 
 ## Tożsamość projektu i język
 
@@ -58,18 +53,6 @@ W celu przyspieszenia pracy agentów i wyeliminowania powtarzalnych, kosztownych
    - Nie czytaj wszystkich 5 plików dokumentacji (`SPEC.md`, `architecture.md`, `schema.sql`, `folder-structure.md`, `implementation-plan.md`) od deski do deski na początku każdego małego zadania. Przeczytaj **wyłącznie sekcje bezpośrednio powiązane z Twoim zakresem zmian** (np. `schema.sql` przy modelowaniu bazy, `architecture.md` sekcja 19 przy lekcjach, `SPEC.md` sekcje dotyczące danego ekranu).
 4. **Oszczędny baseline test**:
    - Podczas sprawdzania stanu początkowego **nie uruchamiaj pełnego monorepo ani testów e2e / Playwright**. Uruchom wyłącznie szybki test jednostkowy związany ze zmienianym modułem (np. `corepack pnpm vitest run <ścieżka-do-testu>` lub `pnpm vitest run <ścieżka-do-testu>`).
-5. **BMAD w worktree**:
-   - Runtime BMAD (`_bmad/`) i skills dla Codex/ZCode/Antigravity (`.agents/skills/`, `.zcode/skills/`, `.agent/skills/`) instaluj w głównym checkoutcie. Plik `.worktreeinclude` kopiuje te ignorowane katalogi do nowych worktree tworzonych przez Codex. Zwykłe worktree tworzone ręcznie przez Git mogą korzystać z `scripts/setup-worktree.cjs` i hooka `post-checkout`; Codexowe worktree nie uruchamiają tego hooka. Jeśli worktree ZCode lub Antigravity nie ma runtime’u albo skilli, uruchom w nim `node scripts/setup-worktree.cjs --skip-install`.
-   - **Przekazanie BMAD Codex → ZCode:** Codex przygotowuje specyfikację, plan i historie w `docs/bmad/` w swoim worktree. Przed przekazaniem zapisuje te dokumenty commitem na gałęzi planistycznej; nie scala ani nie wypycha ich do `main`. Następnie ZCode tworzy własny worktree na bazie tej gałęzi/commitu i implementuje wskazaną, gotową historię przez `bmad-build`. Jeśli Git nie pozwala ponownie checkoutować tej samej gałęzi, bo jest zajęta przez worktree Codex, ZCode tworzy własną gałąź implementacyjną od commitu planu. Dzięki temu dokumenty są dostępne w ZCode, a jego zmiany nie współdzielą checkoutu z Codex. Artefakty BMAD pozostają pod `docs/bmad/` i są wersjonowane razem z właściwą zmianą. Po implementacji Codex może kontynuować pracę na gałęzi implementacyjnej.
-   - Świeżą instalację albo odtworzenie lokalnego runtime’u wykonaj stabilną wersją BMAD i skonfiguruj Codex, ZCode oraz Antigravity:
-
-     ```sh
-     npx --yes bmad-method@6.12.4 install --modules bmm --tools codex,zcode,antigravity \
-       --communication-language Polish --document-output-language Polish \
-       --output-folder docs/bmad \
-       --set 'bmm.planning_artifacts={project-root}/docs/bmad/planning-artifacts' \
-       --set 'bmm.implementation_artifacts={project-root}/docs/bmad/implementation-artifacts'
-     ```
 
 ## Architektura i stack
 
