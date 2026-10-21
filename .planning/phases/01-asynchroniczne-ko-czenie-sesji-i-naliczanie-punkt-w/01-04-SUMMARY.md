@@ -41,6 +41,7 @@ Podsumowanie sesji pozostaje dostępne podczas naliczania punktów, a regresja E
 | --- | --- |
 | df9ad4f | Semantyczny, nieblokujący komunikat statusu punktów |
 | c42e704 | Regresja E2E trwałego statusu i utraconego ACK |
+| 68d8796 | Poprawka typu w teście przywraca pełny typecheck |
 
 ## What Changed
 

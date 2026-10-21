@@ -22,6 +22,7 @@ key_files:
 decisions:
   - "Brak utrwalonego wyniku endpoint przedstawia jako publiczne already_started, bez ponawiania raportu lub oceny."
   - "Status aktywności jest prywatnym kontraktem Kid API i pozostaje poza learning-overview oraz skillem Hermesa."
+  - "Właściciel potwierdził zachowanie zaufanego Kid API z architecture.md §13; brak autoryzacji dziecka przy odczycie wyniku jest zaakceptowanym ryzykiem T-01-03 dla prywatnej instancji."
 metrics:
   duration: "~20 min"
   completed: "2026-10-21"
@@ -44,6 +45,10 @@ Kid UI pobiera trwały, mały status oceny aktywności przez `GET /api/v1/kid/se
 | --- | --- |
 | 7a19a0a | RED: testy endpointu statusu i parsera klienta |
 | 871cab3 | GREEN: endpoint, kontrakt `KidApi` i klient HTTP |
+
+## Security Follow-up
+
+Właściciel zaakceptował T-01-03 w zgodzie z `docs/architecture.md` §13. Odczyt nadal ogranicza się do UUID sesji i publicznego DTO bez cache; Kid API nie dodaje autoryzacji dziecka.
 
 ## What Changed
 
