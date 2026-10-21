@@ -28,6 +28,14 @@ export interface RecorderOptions {
   onLimitReached?: () => void;
   /** Awaria urządzenia podczas aktywnego nagrania; nie jest próbą dziecka. */
   onError?: () => void;
+  /**
+   * Sygnał „teraz mów” (quick 261021-lsw, D-04): wołany PO udanym
+   * getUserMedia i PRZED rozpoczęciem przechwytywania, żeby bip startu
+   * zagrał dopiero po gotowości mikrofonu i nie trafił do nagrania.
+   * Odrzucenie jest połykane przez rejestrator — sygnał jest opcjonalny,
+   * nagrywanie obowiązkowe.
+   */
+  onMicrophoneReady?: () => Promise<void> | void;
 }
 
 /** Odtwarzacz wzorca z cache media; stop zwalnia zasoby audio. */
@@ -37,10 +45,19 @@ export interface AudioPlayer {
   stop(): void;
 }
 
+/** Rodzaj sygnału dźwiękowego dla dziecka: „teraz mów” / „koniec”. */
+export type BeepKind = "start" | "end";
+
 /** Adaptery platformowe za portami — domena UI ich nie zna (plan zadania 9). */
 export interface PlatformMedia {
   /** Request permission without recording; every acquired track is released. */
   prepareMicrophone(): Promise<void>;
   createRecorder(options?: RecorderOptions): SpeechRecorder;
   player: AudioPlayer;
+  /**
+   * Krótki sygnał dźwiękowy (WebAudio po stronie adaptera — kontroler nie zna
+   * Web Audio). Bip jest opcjonalny: brak konstruktorów, kontekst suspended
+   * albo awaria rozstrzygają się po cichu i nigdy nie blokują nagrywania.
+   */
+  playBeep(kind: BeepKind): Promise<void>;
 }

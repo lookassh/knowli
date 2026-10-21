@@ -1,10 +1,64 @@
-import type { AudioPlayer, PlatformMedia, RecordedAudio, RecorderOptions, SpeechRecorder } from "./platform";
+import type { AudioPlayer, BeepKind, PlatformMedia, RecordedAudio, RecorderOptions, SpeechRecorder } from "./platform";
 
 /** Limit nagrania po stronie klienta — odpowiada limitowi serwera (arch §11). */
 export const MAX_RECORDING_MS = 15_000;
 
 /** Preferowane kodeki w kolejności; pierwszy wspierany wygrywa. */
 const PREFERRED_MIME_TYPES = ["audio/webm;codecs=opus", "audio/webm"] as const;
+
+/** Wysokości bipów (Hz): start wyraźnie wyższy, koniec niższy (quick 261021-lsw). */
+const BEEP_FREQUENCY_HZ: Record<BeepKind, number> = { start: 880, end: 590 };
+const BEEP_DURATION_S = 0.13;
+const BEEP_ATTACK_S = 0.01;
+const BEEP_DECAY_S = 0.05;
+const BEEP_PEAK_GAIN = 0.3;
+
+/**
+ * Krótki sygnał dźwiękowy WebAudio: krótkotrwały AudioContext zamykany po
+ * zagraniu (limit równoczesnych kontekstów na iOS), obwiednia ataku/decay
+ * przeciw klikowi. Bip jest opcjonalny — brak konstruktorów, kontekst
+ * suspended (polityka autoplay) albo awaria rozstrzygają się po cichu,
+ * bez rzucania i bez czekania na resume() (nagrywanie obowiązkowe).
+ */
+async function playBeepViaWebAudio(AudioContextCtor: typeof AudioContext | undefined, kind: BeepKind): Promise<void> {
+  if (!AudioContextCtor) return;
+  let context: AudioContext | null = null;
+  try {
+    context = new AudioContextCtor();
+    if (context.state === "suspended") return;
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.frequency.value = BEEP_FREQUENCY_HZ[kind];
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    const startAt = context.currentTime;
+    gain.gain.setValueAtTime(0.0001, startAt);
+    gain.gain.exponentialRampToValueAtTime(BEEP_PEAK_GAIN, startAt + BEEP_ATTACK_S);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + BEEP_DECAY_S);
+    oscillator.start(startAt);
+    oscillator.stop(startAt + BEEP_DURATION_S);
+    // onended normalnie domyka grę; czasomierz zabezpiecza środowiska, które
+    // zdarzenia nie dostarczą, żeby bip nigdy nie wstrzymał obiegu nagrywania
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      oscillator.onended = finish;
+      globalThis.setTimeout(finish, Math.round((BEEP_DURATION_S + 0.1) * 1000));
+    });
+  } catch {
+    // bip degraduje się po cichu (T-261021-02)
+  } finally {
+    try {
+      await context?.close();
+    } catch {
+      // zamykanie porzuconego kontekstu nie może rzucić observable
+    }
+  }
+}
 
 export interface BrowserRecorderDeps {
   getUserMedia?: (constraints: MediaStreamConstraints) => Promise<MediaStream>;
@@ -160,6 +214,16 @@ export class BrowserRecorder implements SpeechRecorder {
       throw new Error("recording cancelled");
     }
     this.#stream = stream;
+    // Sygnał „teraz mów” (quick 261021-lsw, D-04): bip startu gra dopiero PO
+    // udanym getUserMedia i PRZED rozpoczęciem przechwytywania — szybka reakcja
+    // dziecka nie wyprzedza gotowości rejestratora, a bip nie trafia do
+    // nagrania. Odrzucenie hooka połykamy: bip opcjonalny, nagrywanie
+    // obowiązkowe (T-261021-02).
+    await Promise.resolve(this.#options.onMicrophoneReady?.()).catch(() => undefined);
+    if (this.#cancelled || generation !== this.#generation) {
+      stream.getTracks().forEach((track) => track.stop());
+      throw new Error("recording cancelled");
+    }
     let recorder: MediaRecorder;
     try {
       recorder = new this.#MediaRecorder(stream, { mimeType });
@@ -457,6 +521,7 @@ export interface BrowserMediaDeps extends BrowserRecorderDeps {}
 /** Adaptery przeglądarkowe za portami PlatformMedia. */
 export function createBrowserMedia(deps: BrowserMediaDeps = {}): PlatformMedia {
   const getUserMedia = deps.getUserMedia ?? ((constraints: MediaStreamConstraints) => navigator.mediaDevices.getUserMedia(constraints));
+  const AudioContextCtor = deps.audioContext ?? globalThis.AudioContext;
   return {
     prepareMicrophone: async () => {
       const stream = await getUserMedia({ audio: true });
@@ -464,5 +529,6 @@ export function createBrowserMedia(deps: BrowserMediaDeps = {}): PlatformMedia {
     },
     createRecorder: (options) => new BrowserRecorder({ ...deps, getUserMedia }, options),
     player: new BrowserAudioPlayer(),
+    playBeep: (kind) => playBeepViaWebAudio(AudioContextCtor, kind),
   };
 }

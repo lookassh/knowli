@@ -261,7 +261,7 @@ describe("BrowserRecorder — nagrywanie bez pozostawiania strumienia (arch §11
   });
 });
 
-describe("BrowserRecorder — hook onMicrophoneReady (sygnał „teraz mów")", () => {
+describe("BrowserRecorder — hook onMicrophoneReady (sygnał: teraz mów)", () => {
   it("woła hook PO udanym getUserMedia i PRZED konstrukcją MediaRecorder oraz startem przechwytywania", async () => {
     const { stream } = fakeStream();
     const log: string[] = [];
@@ -308,7 +308,7 @@ describe("BrowserRecorder — hook onMicrophoneReady (sygnał „teraz mów")", 
   });
 });
 
-describe("createBrowserMedia — bip WebAudio (sygnały „teraz mów"/„koniec")", () => {
+describe("createBrowserMedia — bip WebAudio (sygnały: teraz mów / koniec)", () => {
   function fakeBeepContext(state: AudioContextState = "running") {
     const events: string[] = [];
     let onended: (() => void) | null = null;

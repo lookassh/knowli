@@ -8,6 +8,7 @@ import {
   VAD_SPEECH_LEVEL_THRESHOLD,
   VAD_SUSTAIN_SAMPLES,
   VAD_TRAILING_SILENCE_SAMPLES,
+  type VadState,
 } from "./vad";
 
 /**
@@ -42,7 +43,7 @@ describe("reduceVadSample — fazy i progi", () => {
   });
 
   it("mowa = próg mowy przez 2 kolejne próbki → faza spoken", () => {
-    let state = { ...createInitialVadState(), phase: "listening" as const };
+    let state: VadState = { ...createInitialVadState(), phase: "listening" };
     const first = reduceVadSample(state, VAD_SPEECH_LEVEL_THRESHOLD);
     expect(first.state.phase).toBe("listening");
     const second = reduceVadSample(first.state, VAD_SPEECH_LEVEL_THRESHOLD);
@@ -51,7 +52,7 @@ describe("reduceVadSample — fazy i progi", () => {
   });
 
   it("poziom poniżej progu mowy w listening zeruje licznik sustain", () => {
-    let state = { ...createInitialVadState(), phase: "listening" as const };
+    let state: VadState = { ...createInitialVadState(), phase: "listening" };
     state = reduceVadSample(state, VAD_SPEECH_LEVEL_THRESHOLD).state;
     // przerwanie serii: poziom nachylenia między progami nie jest mową
     state = reduceVadSample(state, 0.06).state;
@@ -63,7 +64,7 @@ describe("reduceVadSample — fazy i progi", () => {
   });
 
   it("cisza w fazie listening nie stopuje nigdy — czeka na mowę bezterminowo", () => {
-    let state = { ...createInitialVadState(), phase: "listening" as const };
+    let state: VadState = { ...createInitialVadState(), phase: "listening" };
     for (let index = 0; index < 200; index += 1) {
       const result = reduceVadSample(state, index % 2 === 0 ? 0 : VAD_SILENCE_LEVEL_THRESHOLD - 0.001);
       expect(result.action).toBe("none");
@@ -73,7 +74,7 @@ describe("reduceVadSample — fazy i progi", () => {
   });
 
   it("po mowie 12 kolejnych cisz daje auto_stop i stan terminalny", () => {
-    let state = { ...createInitialVadState(), phase: "spoken" as const };
+    let state: VadState = { ...createInitialVadState(), phase: "spoken" };
     for (let index = 1; index < VAD_TRAILING_SILENCE_SAMPLES; index += 1) {
       const result = reduceVadSample(state, 0.01);
       expect(result.action).toBe("none");
@@ -90,7 +91,7 @@ describe("reduceVadSample — fazy i progi", () => {
   });
 
   it("poziom ≥ progu ciszy w fazie spoken resetuje licznik ciszy", () => {
-    let state = { ...createInitialVadState(), phase: "spoken" as const };
+    let state: VadState = { ...createInitialVadState(), phase: "spoken" };
     for (let index = 0; index < VAD_TRAILING_SILENCE_SAMPLES - 1; index += 1) {
       state = reduceVadSample(state, 0.01).state;
     }
