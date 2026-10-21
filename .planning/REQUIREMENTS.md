@@ -1,7 +1,7 @@
 # Wymagania: Knowli
 
-**Zdefiniowano:** 2026-10-21  
-**Najważniejsza wartość:** Rodzic zatwierdza materiał, dziecko kończy krótką sesję również bez mikrofonu, a system zapisuje wiarygodny postęp per umiejętność.  
+**Zdefiniowano:** 2026-10-21\
+**Najważniejsza wartość:** Rodzic zatwierdza materiał, dziecko kończy krótką sesję również bez mikrofonu, a system zapisuje wiarygodny postęp per umiejętność.\
 **Zakres tego pliku:** pozostałe wymagania odbiorowe dla istniejącego MVP, a nie spis funkcji do ponownego zaimplementowania.
 
 ## v1 Requirements
@@ -64,5 +64,5 @@ Nie są one kopiowane do v1 tego cyklu ani przypisywane do nowych faz. Ich bież
 - Unmapped: 0 ✓
 
 ---
-*Requirements defined: 2026-10-21*  
+*Requirements defined: 2026-10-21*\
 *Last updated: 2026-10-21 after brownfield planning initialization*

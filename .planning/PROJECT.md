@@ -1,7 +1,7 @@
 # Projekt: Knowli
 
-**Nazwa dla użytkownika:** Umiem!  
-**Stan projektu:** istniejąca aplikacja typu brownfield; inicjalizacja planowania operacyjnego  
+**Nazwa dla użytkownika:** Umiem!\
+**Stan projektu:** istniejąca aplikacja typu brownfield; inicjalizacja planowania operacyjnego\
 **Ostatnia aktualizacja:** 2026-10-21
 
 ## Co to jest

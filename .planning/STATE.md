@@ -10,9 +10,9 @@ See: `.planning/PROJECT.md` (updated 2026-10-21)
 
 ## Current Position
 
-**Phase:** 1 of 2 — Prywatne wdrożenie i odzyskanie danych  
-**Plan:** Not planned  
-**Status:** Ready for phase planning  
+**Phase:** 1 of 2 — Prywatne wdrożenie i odzyskanie danych\
+**Plan:** Not planned\
+**Status:** Ready for phase planning\
 **Progress:** [░░░░░░░░░░] 0%
 
 ## Performance Metrics
