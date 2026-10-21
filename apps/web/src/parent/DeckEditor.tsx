@@ -716,7 +716,7 @@ export default function DeckEditor({
                 <input
                   type="checkbox"
                   data-testid={`item-example-in-image-${index}`}
-                  checked={item.visualData?.includeExampleInImage !== false}
+                  checked={item.visualData?.includeExampleInImage === true}
                   disabled={!editable || busy}
                   onChange={(event) => toggleExampleInImage(index, event.target.checked)}
                 />
