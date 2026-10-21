@@ -159,7 +159,6 @@ test("awaria pliku dźwiękowego pokazuje ponowienie i pozwala zakończyć sesj�
 });
 
 test("mówione ćwiczenie obrazkowe można świadomie pominąć bez mikrofonu", async ({ page }) => {
-  test.slow();
   const fixture = pictureVocabularyFixture();
   const source = fixture.tasks[0];
   if (!source || source.prompt.kind !== "picture_exposure") throw new Error("picture exposure fixture missing");
@@ -175,33 +174,14 @@ test("mówione ćwiczenie obrazkowe można świadomie pominąć bez mikrofonu", 
     prompt: { kind: "picture_speech", audioAssetId: "10000000-0000-4000-8000-000000000014", visual: source.prompt.visual },
   }, null];
   fixture.attempts = [{ ...attempt, taskId, modality: "skip" }];
-  // Działający fake mikrofonu: auto-próba (quick 261021-lsw) startuje sama po
-  // wyświetleniu zadania picture_speech. Bez sterowanego analizera VAD słyszy
-  // ciszę, więc limit 15 s anuluje nagrywanie bez próby — dopiero wtedy
-  // „Pomiń” (celowo zablokowany podczas nagrywania) staje się dostępny.
+  // WR-02: uprawnienie "prompt" (nienadane) blokuje auto-start próby — zgodnie
+  // z intencją testu dziecko jest na tym ekranie bez działającego mikrofonu
+  // i świadomie używa „Pomiń”, bez żadnego nagrywania.
   await page.addInitScript(() => {
-    const track = { kind: "audio", stop: () => undefined, addEventListener: () => undefined };
-    const stream = { getTracks: () => [track], getAudioTracks: () => [track] };
-    Object.defineProperty(navigator, "mediaDevices", {
-      configurable: true,
-      value: { getUserMedia: async () => stream },
-    });
-    // WR-02: uprawnienie mikrofonu "granted" — auto-próba picture_speech może
-    // sama rozpocząć nagrywanie (anulowane ciszą, bez próby)
     Object.defineProperty(navigator, "permissions", {
       configurable: true,
-      value: { query: async () => ({ state: "granted" }) },
+      value: { query: async () => ({ state: "prompt" }) },
     });
-    class FakeMediaRecorder {
-      static isTypeSupported(type: string): boolean { return type.includes("webm"); }
-      state = "inactive";
-      ondataavailable: ((event: { data: Blob }) => void) | null = null;
-      onstop: (() => void) | null = null;
-      onerror: (() => void) | null = null;
-      start(): void { this.state = "recording"; }
-      stop(): void { this.state = "inactive"; }
-    }
-    (window as unknown as { MediaRecorder: typeof FakeMediaRecorder }).MediaRecorder = FakeMediaRecorder;
   });
   await installKidUiFixture(page, fixture);
   await page.goto("/");
@@ -210,9 +190,8 @@ test("mówione ćwiczenie obrazkowe można świadomie pominąć bez mikrofonu", 
 
   await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-prompt-kind", "picture_speech");
   await expect(page.getByTestId("kid-input")).toHaveCount(0);
-  await expect(page.getByTestId("kid-record")).toHaveAttribute("data-phase", "recording", { timeout: 10_000 });
-  // auto-anulowanie ciszą (limit 15 s) wraca do data-phase=idle
-  await expect(page.getByTestId("kid-record")).toHaveAttribute("data-phase", "idle", { timeout: 25_000 });
+  // bez nadanego uprawnienia auto-start nie rusza — przycisk pozostaje w idle
+  await expect(page.getByTestId("kid-record")).toHaveAttribute("data-phase", "idle");
   await page.getByTestId("kid-skip").click();
   await expect(page.getByTestId("kid-record-status")).toBeVisible();
   await page.getByTestId("kid-next").click();
