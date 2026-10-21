@@ -181,6 +181,8 @@ interface ApiState {
   endReports: import("@learning/contracts").SessionActivityReport[];
   endSessionError?: unknown;
   endActivityResult?: import("@learning/contracts").SessionActivityResultDto;
+  activityResults: Array<import("@learning/contracts").SessionActivityResultDto | Error>;
+  activityResultCalls: string[];
   uiAudioReady?: boolean;
   uiAudioReadFailureCount?: number;
   uiAudioReadCalls?: number;
@@ -281,8 +283,11 @@ function makeApi(state: ApiState): KidApi {
       if (state.networkDown) throw new TypeError("fetch failed");
       return state.lessonMockSummary ?? { sessionId, deckId: LESSON_DECK.deckId, state: "completed", complete: true, taskBudget: 2, answeredCount: 2, solutions: [] };
     },
-    async readSessionActivityResult() {
-      return state.endActivityResult ?? { status: "already_started", pointsAwarded: 0, errorCode: null };
+    async readSessionActivityResult(sessionId) {
+      state.activityResultCalls.push(sessionId);
+      const result = state.activityResults.shift() ?? state.endActivityResult ?? { status: "already_started", pointsAwarded: 0, errorCode: null };
+      if (result instanceof Error) throw result;
+      return result;
     },
     mediaUrl(assetId) {
       return `https://media.test/${assetId}`;
@@ -1485,6 +1490,50 @@ describe("LearningSessionController", () => {
     harness.controller.teardown();
   });
 
+  it("pokazuje pending od razu, a polling przeżywa zmianę profilu i odświeża właściciela sesji", async () => {
+    vi.useFakeTimers();
+    try {
+      const state = baseState();
+      state.endActivityResult = { status: "already_started", pointsAwarded: 0, errorCode: null };
+      state.activityResults = [new TypeError("fetch failed"), { status: "evaluated", pointsAwarded: 4, errorCode: null }];
+      const harness = await startAtTask(state, taskDto("pending-result", { kind: "recall", prompt: "czwartek" }));
+
+      await harness.controller.endNow();
+      expect(harness.controller.getScreen()).toMatchObject({ kind: "summary", summary: { activity: { status: "already_started" } } });
+      expect(harness.activityDrafts.load("55555555-5555-5555-5555-555555555555")).toEqual({
+        version: 1, sessionId: "55555555-5555-5555-5555-555555555555", childId: PROFILE_A.childId, savedAtMs: expect.any(Number),
+      });
+
+      await harness.controller.switchProfile();
+      await harness.controller.selectProfile(PROFILE_B.childId);
+      state.profiles = [{ ...PROFILE_A, rewardPoints: 4 }, PROFILE_B];
+      await vi.advanceTimersByTimeAsync(2);
+      await vi.advanceTimersByTimeAsync(2);
+
+      expect(state.activityResultCalls).toEqual(["55555555-5555-5555-5555-555555555555", "55555555-5555-5555-5555-555555555555"]);
+      expect(harness.activityDrafts.load("55555555-5555-5555-5555-555555555555")).toBeNull();
+      expect(harness.controller.getScreen()).toMatchObject({ kind: "deck", childId: PROFILE_B.childId, profiles: [{ childId: PROFILE_A.childId, rewardPoints: 4 }] });
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("resumes a persisted pending result after reload without sending the report again", async () => {
+    vi.useFakeTimers();
+    try {
+      const state = baseState();
+      const drafts = createMemoryActivityDraftStore();
+      drafts.savePendingResult({ version: 1, sessionId: "pending-reload", childId: PROFILE_A.childId, savedAtMs: Date.now() });
+      state.activityResults = [{ status: "error", pointsAwarded: 0, errorCode: "review_failed" }];
+      const restored = makeHarness(state, { activityDrafts: drafts, initialChildId: PROFILE_B.childId });
+
+      await restored.controller.start();
+      await vi.advanceTimersByTimeAsync(2);
+
+      expect(state.activityResultCalls).toEqual(["pending-reload"]);
+      expect(state.endReports).toEqual([]);
+      expect(drafts.load("pending-reload")).toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
+
   it("nie dołącza raportu, gdy sesja zakończyła się przed pierwszym zadaniem", async () => {
     const state = baseState();
     state.tasks = [];
@@ -1850,6 +1899,8 @@ function baseState(): ApiState {
     observations: [],
     feedbackAudioCalls: [],
     endReports: [],
+    activityResults: [],
+    activityResultCalls: [],
     networkDown: false,
   };
 }
