@@ -4,10 +4,18 @@
  * zero timerów — próbki poziomu dostarcza wywołujący.
  *
  * Założenie próbkowania: onLevel z BrowserRecorder emituje poziom co ~100 ms
- * (AnalyserNode, fftSize 256). Przy tej kadencji grace 3 próbki ≈ 300 ms
- * (tłumienie echa bipu startu), sustain 2 próbki ≈ 200 ms potwierdzenia mowy,
- * a 12 próbki ciszy ≈ 1,2 s końca wypowiedzi. Skala poziomów to rms×4 z
- * browser.ts (0–1); progi są stałymi eksportowanymi do kalibracji.
+ * (AnalyserNode, fftSize 256). Przy tej kadencji sustain 2 próbki ≈ 200 ms
+ * potwierdzenia mowy, a 12 próbek ciszy ≈ 1,2 s końca wypowiedzi. Skala
+ * poziomów to rms×4 z browser.ts (0–1); progi są stałymi eksportowanymi do
+ * kalibracji.
+ *
+ * Bez martwej strefy na start (PR #109, P1 #1): bip startu kończy się PRZED
+ * rozpoczęciem przechwytywania (onMicrophoneReady jest awaitowane przed
+ * konstrukcją MediaRecorder w BrowserRecorder.start), więc tłumienie echa
+ * bipu nie wymaga żadnych ignorowanych próbek — krótkie słowo (~200 ms =
+ * 2 próbki) wypowiedziane od razu po sygnale musi być wykrywalne od pierwszej
+ * próbki. Pojedynczy impuls szumu odsiewa dopiero próg sustain (2 kolejne
+ * próbki mowy).
  *
  * Cisza bez wykrytej mowy NIE stopuje nigdy — wtedy nagrywanie domyka limit
  * czasu (onLimitReached), a kontroler anuluje próbę: milczenie nie jest
@@ -18,8 +26,12 @@
 export const VAD_SPEECH_LEVEL_THRESHOLD = 0.09;
 /** Poziom rms×4, poniżej którego próbka liczy się jako cisza. */
 export const VAD_SILENCE_LEVEL_THRESHOLD = 0.05;
-/** Próbki ignorowane po starcie (~300 ms) — tłumienie echa bipu startu. */
-export const VAD_GRACE_SAMPLES = 3;
+/**
+ * Próbki ignorowane po starcie; 0 — bip startu kończy się przed rozpoczęciem
+ * przechwytywania, więc tłumienie echa bipu nie wymaga martwej strefy
+ * (PR #109, P1 #1). Wartość > 0 pozostaje kalibracyjna dla przyszłych hostów.
+ */
+export const VAD_GRACE_SAMPLES = 0;
 /** Kolejne próbki mowy wymagane do wykrycia wypowiedzi. */
 export const VAD_SUSTAIN_SAMPLES = 2;
 /** Kolejne cisze po wypowiedzi domykające nagranie (~1,2 s). */
@@ -53,8 +65,10 @@ export function reduceVadSample(state: VadState, level: number): { state: VadSta
     if (graceUsed < VAD_GRACE_SAMPLES) {
       return { state: { ...state, graceUsed }, action: "none" };
     }
-    // grace wyczerpany — od następnej próbki słuchamy mowy
-    return { state: { phase: "listening", graceUsed, sustainCount: 0, silenceCount: 0 }, action: "none" };
+    // grace wyczerpany: próbka PRZEJŚCIA podlega już ocenie w listening
+    // (fall-through, PR #109 P1 #1) — przy GRACE=0 ocena zaczyna się od
+    // próbki #0, więc krótkie słowo od t=0 nie wpada w martwą strefę
+    return reduceVadSample({ phase: "listening", graceUsed, sustainCount: 0, silenceCount: 0 }, level);
   }
   if (state.phase === "listening") {
     if (level >= VAD_SPEECH_LEVEL_THRESHOLD) {

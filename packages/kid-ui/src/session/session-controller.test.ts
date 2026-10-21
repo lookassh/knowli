@@ -1915,7 +1915,7 @@ describe("LearningSessionController — automatyczna próba mowy z VAD (quick 26
         await submitGate;
         return makeApi(harness.state).submitSpeech(taskId, clientAttemptId, audio);
       });
-      // grace 3 (echo bipu), mowa 2, cisza 12
+      // mowa 2 próbki (bez martwej strefy — PR #109 P1 #1), cisza 12
       for (let index = 0; index < 3; index += 1) harness.recorder.pushLevel(1);
       for (let index = 0; index < 2; index += 1) harness.recorder.pushLevel(0.2);
       for (let index = 0; index < 12; index += 1) harness.recorder.pushLevel(0);
@@ -1959,7 +1959,7 @@ describe("LearningSessionController — automatyczna próba mowy z VAD (quick 26
       await harness.controller.prepareMicrophone();
       await harness.controller.autoCaptureSpeech();
       await vi.advanceTimersByTimeAsync(400);
-      // grace 3 + mowa 2 → speechDetected; bez ciszy limit domyka nagranie
+      // 5 próbek mowy → speechDetected (sustain 2); bez ciszy limit domyka nagranie
       for (let index = 0; index < 5; index += 1) harness.recorder.pushLevel(0.3);
       harness.recorder.hitLimit();
       await vi.advanceTimersByTimeAsync(0);
@@ -2076,7 +2076,7 @@ describe("LearningSessionController — automatyczna próba mowy z VAD (quick 26
       await harness.controller.prepareMicrophone();
       await harness.controller.autoCaptureSpeech();
       await vi.advanceTimersByTimeAsync(300);
-      // pełny cykl auto: grace + mowa + cisza → auto-stop → jedyna próba audio
+      // pełny cykl auto: mowa + cisza → auto-stop → jedyna próba audio
       for (let index = 0; index < 3; index += 1) harness.recorder.pushLevel(1);
       for (let index = 0; index < 2; index += 1) harness.recorder.pushLevel(0.2);
       for (let index = 0; index < 12; index += 1) harness.recorder.pushLevel(0);
