@@ -256,6 +256,54 @@ describe("session activity review", () => {
     expect(review.reason).toBe("Ocena aktywności: zaliczono pracę w 2 zadaniach.");
   });
 
+  it("returns the session summary after accepting the report while the reviewer is still pending", async () => {
+    const base = buildTestServices("2026-10-16T10:00:00.000Z");
+    let releaseReview = () => undefined;
+    const reviewerGate = new Promise<void>((resolve) => { releaseReview = resolve; });
+    let calls = 0;
+    const services = createServices({
+      db: base.services.db,
+      clock: base.clock,
+      sessionActivity: {
+        timeoutMs: 20_000,
+        provider: {
+          name: "pending-reviewer",
+          model: "pending-reviewer-v1",
+          promptVersion: "pending-reviewer-v1",
+          async review() {
+            calls += 1;
+            await reviewerGate;
+            return { reason: "Potwierdzona aktywność.", excludedTasks: [] };
+          },
+        },
+      },
+    });
+    const child = await childWithProfile(services);
+    const { session, tasks } = await playedSession(services, child.id);
+    base.clock.advanceMs(60_000);
+    const report = reportOf([
+      { taskId: tasks[0]!.taskId, exerciseType: tasks[0]!.exerciseType, intervals: [[0, 60_000]], edits: 1, attempts: [] },
+    ], 60_000);
+
+    const ending = endSession(services, session.sessionId, report);
+    try {
+      const summaryReturnedBeforeReviewer = await Promise.race([
+        ending.then(() => true),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 25)),
+      ]);
+
+      expect(summaryReturnedBeforeReviewer).toBe(true);
+      const summary = await ending;
+      expect(summary.activity).toEqual({ status: "already_started", pointsAwarded: 0, errorCode: null });
+      const stored = (await pool.query("select activity_report_hash is not null as accepted from learning_app.learning_sessions where id=$1", [session.sessionId])).rows[0]!;
+      expect(stored.accepted).toBe(true);
+      expect(calls).toBe(1);
+    } finally {
+      releaseReview();
+      await ending;
+    }
+  });
+
   it("counts only FE-reported reviewer tasks and accepts exclusions for an included presentation", async () => {
     const { services, clock, provider } = await reviewerServices("2026-10-16T10:00:00.000Z");
     const child = await childWithProfile(services);
