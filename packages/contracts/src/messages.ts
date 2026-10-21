@@ -530,6 +530,8 @@ export const messages = {
     recordingUnavailable: "Nie udało się uruchomić mikrofonu. Spróbuj ponownie albo ucz się bez nagrywania.",
     recordingStartCancelled: "Przytrzymaj, aż zobaczysz „Słucham”.",
     recordingTooShort: "Przytrzymaj przycisk i powiedz całe słowo.",
+    // Auto-nagrywanie z VAD (quick 261021-lsw): cisza nie tworzy próby (SPEC §15).
+    autoCaptureNoSpeech: "Nie usłyszałem słowa. Dotknij mikrofonu i powiedz je jeszcze raz.",
     loading: "Chwilka…",
     lessonNext: "Dalej",
     lessonCheck: "Sprawdź",

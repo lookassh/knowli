@@ -75,7 +75,7 @@ function attemptDto(overrides: Partial<AttemptDto> = {}): AttemptDto {
   };
 }
 
-function makeRecorder(opts: { failStartWith?: unknown; startGate?: Promise<void> } = {}): SpeechRecorder & {
+function makeRecorder(opts: { failStartWith?: unknown; startGate?: Promise<void>; sharedLog?: string[] } = {}): SpeechRecorder & {
   cancelled: number;
   stopped: number;
   started: number;
@@ -83,15 +83,23 @@ function makeRecorder(opts: { failStartWith?: unknown; startGate?: Promise<void>
   setFailureHandler(callback?: () => void): void;
   hitLimit(): void;
   setLimitHandler(callback?: () => void): void;
+  setLevelHandler(callback?: (level: number) => void): void;
+  setMicrophoneReadyHandler(callback?: () => Promise<void> | void): void;
+  pushLevel(level: number): void;
 } {
   const state = { cancelled: 0, stopped: 0, started: 0 };
   let onError: (() => void) | undefined;
   let onLimit: (() => void) | undefined;
+  let onLevel: ((level: number) => void) | undefined;
+  let onMicrophoneReady: (() => Promise<void> | void) | undefined;
   return {
     fail() { onError?.(); },
     setFailureHandler(callback) { onError = callback; },
     hitLimit() { onLimit?.(); },
     setLimitHandler(callback) { onLimit = callback; },
+    setLevelHandler(callback) { onLevel = callback; },
+    setMicrophoneReadyHandler(callback) { onMicrophoneReady = callback; },
+    pushLevel(level: number) { onLevel?.(level); },
     get cancelled() {
       return state.cancelled;
     },
@@ -110,6 +118,10 @@ function makeRecorder(opts: { failStartWith?: unknown; startGate?: Promise<void>
       if (opts.failStartWith !== undefined) {
         throw opts.failStartWith;
       }
+      // symetrycznie do BrowserRecorder: sygnał „teraz mów” awaitujemy PRZED
+      // rozpoczęciem przechwytywania (quick 261021-lsw)
+      await onMicrophoneReady?.();
+      opts.sharedLog?.push("capture");
     },
     async stop() {
       state.stopped += 1;
@@ -121,15 +133,25 @@ function makeRecorder(opts: { failStartWith?: unknown; startGate?: Promise<void>
   };
 }
 
-function makeMedia(recorder: ReturnType<typeof makeRecorder>, playGate?: Promise<void>, onStopPlayback?: () => void, failPlaybackBeforeStart = false, playbackDurationMs: number | null = null): PlatformMedia & { playUrls: string[]; stops: number } {
+function makeMedia(recorder: ReturnType<typeof makeRecorder>, playGate?: Promise<void>, onStopPlayback?: () => void, failPlaybackBeforeStart = false, playbackDurationMs: number | null = null, sharedLog?: string[]): PlatformMedia & { playUrls: string[]; stops: number; beeps: string[]; lastRecorderOptions?: RecorderOptions } {
   const media = {
     playUrls: [] as string[],
     stops: 0,
-    async prepareMicrophone() {},
-    async playBeep() {},
+    beeps: [] as string[],
+    lastRecorderOptions: undefined as RecorderOptions | undefined,
+    async prepareMicrophone() {
+      sharedLog?.push("prepareMicrophone");
+    },
+    async playBeep(kind: "start" | "end") {
+      media.beeps.push(kind);
+      sharedLog?.push(`beep:${kind}`);
+    },
     createRecorder: (options?: RecorderOptions) => {
       recorder.setFailureHandler(options?.onError);
       recorder.setLimitHandler(options?.onLimitReached);
+      recorder.setLevelHandler(options?.onLevel);
+      recorder.setMicrophoneReadyHandler(options?.onMicrophoneReady);
+      media.lastRecorderOptions = options;
       return recorder;
     },
     player: {
@@ -314,10 +336,10 @@ const LESSON_DECK: KidDeckDto = {
 
 function makeHarness(
   state: ApiState,
-  options: { failStartWith?: unknown; startGate?: Promise<void>; initialChildId?: string; playGate?: Promise<void>; onStopPlayback?: () => void; failPlaybackBeforeStart?: boolean; playbackDurationMs?: number | null; storage?: LocalPreferences; activityClock?: import("./activity-report").ActivityClock; activityDrafts?: ReturnType<typeof createMemoryActivityDraftStore> } = {},
+  options: { failStartWith?: unknown; startGate?: Promise<void>; initialChildId?: string; playGate?: Promise<void>; onStopPlayback?: () => void; failPlaybackBeforeStart?: boolean; playbackDurationMs?: number | null; storage?: LocalPreferences; activityClock?: import("./activity-report").ActivityClock; activityDrafts?: ReturnType<typeof createMemoryActivityDraftStore>; sharedLog?: string[] } = {},
 ) {
   const recorder = makeRecorder(options);
-  const media = makeMedia(recorder, options.playGate, options.onStopPlayback, options.failPlaybackBeforeStart, options.playbackDurationMs);
+  const media = makeMedia(recorder, options.playGate, options.onStopPlayback, options.failPlaybackBeforeStart, options.playbackDurationMs, options.sharedLog);
   const storage = options.storage ?? createMemoryPreferences();
   const api = makeApi(state);
   const activityDrafts = options.activityDrafts ?? createMemoryActivityDraftStore();
@@ -333,7 +355,7 @@ function makeHarness(
   return { controller, recorder, media, storage, state, api, activityDrafts };
 }
 
-async function startAtTask(state: ApiState, task: TaskDto, recorderOpts?: { failStartWith?: unknown; startGate?: Promise<void>; playGate?: Promise<void>; onStopPlayback?: () => void; failPlaybackBeforeStart?: boolean; playbackDurationMs?: number | null; storage?: LocalPreferences; microphone?: boolean; activityDrafts?: ReturnType<typeof createMemoryActivityDraftStore>; activityClock?: import("./activity-report").ActivityClock }) {
+async function startAtTask(state: ApiState, task: TaskDto, recorderOpts?: { failStartWith?: unknown; startGate?: Promise<void>; playGate?: Promise<void>; onStopPlayback?: () => void; failPlaybackBeforeStart?: boolean; playbackDurationMs?: number | null; storage?: LocalPreferences; microphone?: boolean; activityDrafts?: ReturnType<typeof createMemoryActivityDraftStore>; activityClock?: import("./activity-report").ActivityClock; sharedLog?: string[] }) {
   state.tasks = [task];
   const harness = makeHarness(state, recorderOpts);
   await harness.controller.start();
@@ -1829,6 +1851,210 @@ describe("LearningSessionController", () => {
     await harness.controller.continueLearning();
     expect(harness.controller.getScreen()).toMatchObject({ kind: "summary" });
     expect(state.endedSessions).toHaveLength(1);
+  });
+});
+
+describe("LearningSessionController — automatyczna próba mowy z VAD (quick 261021-lsw)", () => {
+  const speechTask = () => taskDto("auto-speech", { kind: "speech", text: "apple", visualType: "none", imageAssetId: null, audioAssetId: null });
+
+  it("auto-próba: bip startu po gotowości mikrofonu i przed rozpoczęciem przechwytywania (D-04)", async () => {
+    const log: string[] = [];
+    const harness = await startAtTask(baseState(), speechTask(), { sharedLog: log });
+    await harness.controller.prepareMicrophone();
+    await harness.controller.autoCaptureSpeech();
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "recording" });
+    // kolejność: prepareMicrophone → playBeep("start") → marker przechwytywania
+    expect(log).toEqual(["prepareMicrophone", "beep:start", "capture"]);
+    harness.controller.teardown();
+  });
+
+  it("odrzucenie bipu startu nie blokuje nagrywania (bip opcjonalny, nagrywanie obowiązkowe)", async () => {
+    const harness = await startAtTask(baseState(), speechTask());
+    await harness.controller.prepareMicrophone();
+    harness.media.playBeep = async () => {
+      throw new Error("autoplay blocked");
+    };
+    await harness.controller.autoCaptureSpeech();
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "recording" });
+    expect(harness.recorder.started).toBe(1);
+    harness.controller.teardown();
+  });
+
+  it("ręczne startRecording nie przekazuje hooka i nie gra bipu startu", async () => {
+    const log: string[] = [];
+    const harness = await startAtTask(baseState(), speechTask(), { sharedLog: log });
+    await harness.controller.prepareMicrophone();
+    await harness.controller.startRecording();
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "recording" });
+    expect(harness.media.lastRecorderOptions?.onMicrophoneReady).toBeUndefined();
+    expect(harness.media.beeps).toEqual([]);
+    harness.controller.cancelRecording();
+  });
+
+  it("auto-stop po mowie i ~1,2 s ciszy: jedno stopRecording, jedna próba audio, bip końca (D-03)", async () => {
+    vi.useFakeTimers();
+    try {
+      const task = speechTask();
+      const harness = await startAtTask(baseState(), task);
+      await harness.controller.prepareMicrophone();
+      await harness.controller.autoCaptureSpeech();
+      expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "recording" });
+      await vi.advanceTimersByTimeAsync(300);
+      let releaseSubmit!: () => void;
+      const submitGate = new Promise<void>((resolve) => { releaseSubmit = resolve; });
+      vi.spyOn(harness.api, "submitSpeech").mockImplementation(async (taskId, clientAttemptId) => {
+        await submitGate;
+        return makeApi(harness.state).submitSpeech(taskId, clientAttemptId);
+      });
+      // grace 3 (echo bipu), mowa 2, cisza 12
+      for (let index = 0; index < 3; index += 1) harness.recorder.pushLevel(1);
+      for (let index = 0; index < 2; index += 1) harness.recorder.pushLevel(0.2);
+      for (let index = 0; index < 12; index += 1) harness.recorder.pushLevel(0);
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(harness.recorder.stopped).toBe(1);
+      expect(harness.recorder.cancelled).toBe(0);
+      // bip końca po zebraniu bajtów, przed wysyłką (nie blokuje submitSpeech)
+      expect(harness.media.beeps).toEqual(["start", "end"]);
+      expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "idle", processing: true, busy: true });
+      releaseSubmit();
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(harness.state.speechSubmissions).toHaveLength(1);
+      expect(harness.state.speechSubmissions[0]).toMatchObject({ taskId: task.taskId });
+      expect(harness.controller.getScreen()).toMatchObject({ feedback: { modality: "audio" } });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("cisza bez mowy: limit 15 s anuluje nagrywanie z komunikatem i bez próby (SPEC §15)", async () => {
+    const harness = await startAtTask(baseState(), speechTask());
+    await harness.controller.prepareMicrophone();
+    await harness.controller.autoCaptureSpeech();
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "recording" });
+    harness.recorder.hitLimit();
+    expect(harness.recorder.cancelled).toBe(1);
+    expect(harness.recorder.stopped).toBe(0);
+    expect(harness.state.speechSubmissions).toHaveLength(0);
+    expect(harness.controller.getScreen()).toMatchObject({
+      recordingPhase: "idle",
+      recordingNotice: messages.kid.autoCaptureNoSpeech,
+    });
+  });
+
+  it("limit po usłyszanej mowie prowadzi do stopRecording — realna mowa nie zostaje porzucona", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = await startAtTask(baseState(), speechTask());
+      await harness.controller.prepareMicrophone();
+      await harness.controller.autoCaptureSpeech();
+      await vi.advanceTimersByTimeAsync(400);
+      // grace 3 + mowa 2 → speechDetected; bez ciszy limit domyka nagranie
+      for (let index = 0; index < 5; index += 1) harness.recorder.pushLevel(0.3);
+      harness.recorder.hitLimit();
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(harness.recorder.stopped).toBe(1);
+      expect(harness.recorder.cancelled).toBe(0);
+      expect(harness.state.speechSubmissions).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("odmowa mikrofonu w trybie auto: ścieżka micDenied, zero próby, brak pętli ponowień", async () => {
+    const harness = await startAtTask(baseState(), speechTask());
+    harness.media.prepareMicrophone = async () => {
+      throw new DOMException("Permission dismissed", "NotAllowedError");
+    };
+    await harness.controller.autoCaptureSpeech();
+    expect(harness.controller.getScreen()).toMatchObject({ micDenied: true, recordingPhase: "idle", recording: false });
+    expect(harness.recorder.started).toBe(0);
+    expect(harness.state.speechSubmissions).toHaveLength(0);
+    expect(harness.storage.read(MIC_DENIED_KEY)).toBe("1");
+    // ponowne wywołanie nie odpala kolejnej próby — tylko przycisk
+    await harness.controller.autoCaptureSpeech();
+    expect(harness.recorder.started).toBe(0);
+  });
+
+  it("teardown w trakcie auto-nagrywania anuluje bez próby; drugie autoCaptureSpeech to no-op (RF5)", async () => {
+    const harness = await startAtTask(baseState(), speechTask());
+    await harness.controller.prepareMicrophone();
+    await harness.controller.autoCaptureSpeech();
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "recording" });
+    await harness.controller.autoCaptureSpeech();
+    expect(harness.recorder.started).toBe(1);
+    harness.controller.teardown();
+    expect(harness.recorder.cancelled).toBe(1);
+    expect(harness.state.speechSubmissions).toHaveLength(0);
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "idle" });
+  });
+
+  it("autoCaptureSpeech nic nie robi dla zadania pisemnego i w kartkówce (D-02)", async () => {
+    const written = await startAtTask(baseState(), taskDto("written", { kind: "recall", prompt: "czwartek" }));
+    await written.controller.autoCaptureSpeech();
+    expect(written.recorder.started).toBe(0);
+    expect(written.media.beeps).toEqual([]);
+
+    const state = baseState();
+    state.tasks = [speechTask()];
+    const mockHarness = makeHarness(state);
+    await mockHarness.controller.start();
+    await mockHarness.controller.selectProfile(PROFILE_A.childId);
+    await mockHarness.controller.startMockTest(DECK.deckId);
+    await mockHarness.controller.beginMockTest();
+    expect(mockHarness.controller.getScreen()).toMatchObject({ kind: "learning" });
+    await mockHarness.controller.autoCaptureSpeech();
+    expect(mockHarness.recorder.started).toBe(0);
+    expect(mockHarness.media.beeps).toEqual([]);
+  });
+
+  it("po powrocie do ćwiczenia z retry (Nagraj jeszcze raz) autoCaptureSpeech nie startuje samo (SPEC §16)", async () => {
+    vi.useFakeTimers();
+    try {
+      const task = speechTask();
+      const state = baseState();
+      state.attempts = [attemptDto({ taskId: task.taskId, modality: "audio", feedback: { kind: "almost" }, taskState: "issued" })];
+      const harness = await startAtTask(state, task);
+      await harness.controller.prepareMicrophone();
+      await harness.controller.autoCaptureSpeech();
+      await vi.advanceTimersByTimeAsync(300);
+      for (let index = 0; index < 3; index += 1) harness.recorder.pushLevel(1);
+      for (let index = 0; index < 2; index += 1) harness.recorder.pushLevel(0.2);
+      for (let index = 0; index < 12; index += 1) harness.recorder.pushLevel(0);
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(harness.state.speechSubmissions).toHaveLength(1);
+      expect(harness.controller.getScreen()).toMatchObject({ feedback: { retry: true } });
+      // retry tego samego zadania: feedback znika, ale mikrofon nie startuje sam
+      await harness.controller.continueLearning();
+      expect(harness.controller.getScreen()).toMatchObject({ feedback: null, task: { taskId: task.taskId } });
+      await harness.controller.autoCaptureSpeech();
+      expect(harness.recorder.started).toBe(1);
+      expect(harness.state.speechSubmissions).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ręczne nagrywanie po cichu auto-anulowania działa i nie gra bipów", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = await startAtTask(baseState(), speechTask());
+      await harness.controller.prepareMicrophone();
+      await harness.controller.autoCaptureSpeech();
+      harness.recorder.hitLimit();
+      expect(harness.controller.getScreen()).toMatchObject({ recordingNotice: messages.kid.autoCaptureNoSpeech });
+      // przycisk pozostaje fallbackiem: ręczna próba po auto-anulowaniu
+      await harness.controller.startRecording();
+      await vi.advanceTimersByTimeAsync(301);
+      await harness.controller.stopRecording();
+      expect(harness.state.speechSubmissions).toHaveLength(1);
+      expect(harness.media.beeps).toEqual(["start"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
