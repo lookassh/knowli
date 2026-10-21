@@ -76,8 +76,8 @@ export interface LearningScreen {
 
 export type KidScreen =
   | { kind: "mockTestReady"; session: SessionDto }
-  | { kind: "mockTestSummary"; summary: MockTestSummaryDto }
-  | { kind: "lessonMockTestSummary"; summary: LessonMockTestSummaryDto }
+  | { kind: "mockTestSummary"; childId: string; summary: MockTestSummaryDto }
+  | { kind: "lessonMockTestSummary"; childId: string; summary: LessonMockTestSummaryDto }
   | { kind: "sessionConflict"; active: KidDeckDto; childId: string }
   | { kind: "loading" }
   | { kind: "initError"; message: string }
@@ -200,6 +200,8 @@ export class LearningSessionController {
   #frozenActivityReport: SessionActivityReport | null | undefined = undefined;
   /** Wynik oceny aktywności ostatnio zakończonej sesji (punkty/błąd). */
   #lastActivityResult: SessionActivityResultDto | null = null;
+  #lastActivitySessionId: string | null = null;
+  #lastActivityChildId: string | null = null;
   #activityResultTimers = new Map<string, ReturnType<typeof setTimeout>>();
   #activityResultPolling = new Set<string>();
   #disposed = false;
@@ -316,6 +318,8 @@ export class LearningSessionController {
     this.#activity = null;
     this.#activitySessionId = sessionId;
     this.#lastActivityResult = null;
+    this.#lastActivitySessionId = null;
+    this.#lastActivityChildId = null;
     this.#frozenActivityReport = undefined;
     const draft = this.#activityDrafts.load(sessionId);
     if (draft && "state" in draft) {
@@ -372,12 +376,15 @@ export class LearningSessionController {
       // Usuwamy znacznik przed odświeżeniem profili, aby spóźnione lub
       // równoległe wywołanie nie wykonało kolejnego odczytu terminalnego.
       this.#activityDrafts.remove(pending.sessionId);
-      const visibleScreen = this.#screen.kind === "summary"
-        && this.#screen.childId === pending.childId && this.#screen.summary.sessionId === pending.sessionId
-        ? this.#screen : null;
-      if (visibleScreen) {
+      const visibleSummary = this.#screen.kind === "summary"
+        && this.#screen.childId === pending.childId && this.#screen.summary.sessionId === pending.sessionId;
+      const visibleQuizSummary = (this.#screen.kind === "mockTestSummary" || this.#screen.kind === "lessonMockTestSummary")
+        && this.#screen.childId === pending.childId && this.#screen.summary.sessionId === pending.sessionId;
+      if (visibleSummary || visibleQuizSummary) {
         this.#lastActivityResult = result;
-        this.#screen = { ...visibleScreen, summary: { ...visibleScreen.summary, activity: result } };
+        this.#lastActivitySessionId = pending.sessionId;
+        this.#lastActivityChildId = pending.childId;
+        if (this.#screen.kind === "summary") this.#screen = { ...this.#screen, summary: { ...this.#screen.summary, activity: result } };
         this.#emit();
       }
       // listProfiles odświeża wszystkie profile, lecz owner wyniku pozostaje
@@ -394,7 +401,13 @@ export class LearningSessionController {
 
   /** Ostatni wynik oceny aktywności (punkty/błąd) dla ekranów podsumowania. */
   getActivityResult(): SessionActivityResultDto | null {
-    return this.#lastActivityResult;
+    const screenOwner = this.#screen.kind === "summary"
+      ? { sessionId: this.#screen.summary.sessionId, childId: this.#screen.childId }
+      : this.#screen.kind === "mockTestSummary" || this.#screen.kind === "lessonMockTestSummary"
+        ? { sessionId: this.#screen.summary.sessionId, childId: this.#screen.childId }
+        : null;
+    return screenOwner?.sessionId === this.#lastActivitySessionId && screenOwner.childId === this.#lastActivityChildId
+      ? this.#lastActivityResult : null;
   }
 
   async start(): Promise<void> {
@@ -749,6 +762,8 @@ export class LearningSessionController {
       const summary = await this.#api.endSession(sessionId, report);
       if (epoch !== this.#epoch) return;
       this.#lastActivityResult = summary.activity ?? null;
+      this.#lastActivitySessionId = sessionId;
+      this.#lastActivityChildId = childId;
       // Po zaakceptowaniu raportu nie zachowujemy już payloadu aktywności.
       // Pending zawiera tylko identyfikator sesji i właściciela wyniku.
       if (report !== undefined && summary.activity?.status === "already_started") {
@@ -766,20 +781,36 @@ export class LearningSessionController {
       }
       void this.refreshProfiles();
       if (mode === "mock_test" && this.#mockDeckKind === "lesson") {
-        const lessonSummary = await this.#api.readLessonMockTestSummary(sessionId);
-        if (epoch !== this.#epoch) return;
         this.#teardownRecording();
         this.#stopPlayback();
-        this.#screen = { kind: "lessonMockTestSummary", summary: lessonSummary };
+        const pendingSummary: LessonMockTestSummaryDto = {
+          sessionId, deckId: this.#screen.session.deckId, state: summary.state, complete: summary.state === "completed",
+          taskBudget: this.#screen.session.taskBudget, answeredCount: summary.assessedTasksIssued, solutions: [],
+        };
+        this.#screen = { kind: "lessonMockTestSummary", childId, summary: pendingSummary };
         this.#emit();
+        void this.#api.readLessonMockTestSummary(sessionId).then(lessonSummary => {
+          if (this.#disposed || epoch !== this.#epoch || this.#screen.kind !== "lessonMockTestSummary"
+            || this.#screen.summary.sessionId !== sessionId || this.#screen.childId !== childId) return;
+          this.#screen = { ...this.#screen, summary: lessonSummary };
+          this.#emit();
+        }).catch(() => undefined);
         return;
       }
-      const mockSummary = mode === "mock_test" ? await this.#api.readMockTestSummary(sessionId) : null;
-      if (epoch !== this.#epoch) return;
       this.#teardownRecording();
       this.#stopPlayback();
-      this.#screen = mockSummary ? { kind: "mockTestSummary", summary: mockSummary } : { kind: "summary", childId, profiles: this.#profiles, summary };
+      const pendingSummary: MockTestSummaryDto = {
+        sessionId, deckId: this.#screen.session.deckId, state: summary.state, complete: summary.state === "completed",
+        taskBudget: this.#screen.session.taskBudget, answeredCount: summary.assessedTasksIssued, solutions: [],
+      };
+      this.#screen = { kind: "mockTestSummary", childId, summary: pendingSummary };
       this.#emit();
+      void this.#api.readMockTestSummary(sessionId).then(details => {
+        if (this.#disposed || epoch !== this.#epoch || this.#screen.kind !== "mockTestSummary"
+          || this.#screen.summary.sessionId !== sessionId || this.#screen.childId !== childId) return;
+        this.#screen = { ...this.#screen, summary: details };
+        this.#emit();
+      }).catch(() => undefined);
     } catch (error) {
       if (epoch !== this.#epoch || this.#screen.kind !== "learning") return;
       this.#handleFailure(error);
@@ -1395,10 +1426,12 @@ export class LearningSessionController {
   }
 
   async reviewMockTest(sessionId: string): Promise<void> {
+    if (this.#childId === null) return;
     const epoch = this.#epoch;
+    const childId = this.#childId;
     const summary = await this.#api.readMockTestSummary(sessionId);
     if (epoch !== this.#epoch) return;
-    this.#screen = { kind: "mockTestSummary", summary }; this.#emit();
+    this.#screen = { kind: "mockTestSummary", childId, summary }; this.#emit();
   }
 
   async playMockTestSolution(taskId: string): Promise<void> {

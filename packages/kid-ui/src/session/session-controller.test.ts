@@ -172,6 +172,10 @@ interface ApiState {
   disclosureGate?: Promise<void>;
   readAttemptGate?: Promise<void>;
   endSessionGate?: Promise<void>;
+  mockSummaryGate?: Promise<void>;
+  lessonMockSummaryGate?: Promise<void>;
+  mockSummaryError?: unknown;
+  lessonMockSummaryError?: unknown;
   disclosureError?: unknown;
   feedbackAudioGate?: Promise<void>;
   feedbackAudioError?: unknown;
@@ -276,10 +280,14 @@ function makeApi(state: ApiState): KidApi {
       return { ...sessionDto(PROFILE_A.childId, sessionId, false), canRead: false, vocabularyFormat: "picture" };
     },
     async readMockTestSummary(sessionId) {
+      await state.mockSummaryGate;
+      if (state.mockSummaryError !== undefined) throw state.mockSummaryError;
       if (state.networkDown) throw new TypeError("fetch failed");
       return { sessionId, deckId: DECK.deckId, state: "completed", complete: true, taskBudget: 2, answeredCount: 2, solutions: [] };
     },
     async readLessonMockTestSummary(sessionId) {
+      await state.lessonMockSummaryGate;
+      if (state.lessonMockSummaryError !== undefined) throw state.lessonMockSummaryError;
       if (state.networkDown) throw new TypeError("fetch failed");
       return state.lessonMockSummary ?? { sessionId, deckId: LESSON_DECK.deckId, state: "completed", complete: true, taskBudget: 2, answeredCount: 2, solutions: [] };
     },
@@ -867,7 +875,7 @@ describe("LearningSessionController", () => {
     await controller.beginMockTest();
     await controller.answerText("go");
     // kompletność bierzemy z complete=true (stan completed po Fix round 1)
-    expect(controller.getScreen()).toMatchObject({ kind: "lessonMockTestSummary", summary: { complete: true, deckId: LESSON_DECK.deckId, solutions: [{ objectiveId: "obj-present-simple", outcome: "correct" }] } });
+    await vi.waitFor(() => expect(controller.getScreen()).toMatchObject({ kind: "lessonMockTestSummary", summary: { complete: true, deckId: LESSON_DECK.deckId, solutions: [{ objectiveId: "obj-present-simple", outcome: "correct" }] } }));
   });
 
   it("kartkówka słówek nadal kończy się słówkowym omówieniem (bez regresji)", async () => {
@@ -880,6 +888,110 @@ describe("LearningSessionController", () => {
     await controller.beginMockTest();
     await controller.answerText("Monday");
     expect(controller.getScreen()).toMatchObject({ kind: "mockTestSummary" });
+  });
+
+  it.each([
+    { label: "słówek", deck: DECK, screen: "mockTestSummary", gate: "mockSummaryGate" as const },
+    { label: "lekcji", deck: LESSON_DECK, screen: "lessonMockTestSummary", gate: "lessonMockSummaryGate" as const },
+  ])("pokazuje pending podsumowanie kartkówki $label przed odczytem szczegółów", async ({ deck, screen, gate }) => {
+    const state = baseState();
+    state.decks = [DECK, LESSON_DECK];
+    state.tasks = [taskDto("mock-pending", { kind: "recall", prompt: "poniedziałek" })];
+    state.endActivityResult = { status: "already_started", pointsAwarded: 0, errorCode: null };
+    let release!: () => void;
+    state[gate] = new Promise<void>(resolve => { release = resolve; });
+    const { controller } = makeHarness(state);
+    await controller.start(); await controller.selectProfile(PROFILE_A.childId);
+    await controller.startMockTest(deck.deckId); await controller.beginMockTest();
+
+    const ending = controller.endNow();
+    await Promise.resolve(); await Promise.resolve();
+    expect(controller.getScreen().kind).toBe(screen);
+    expect(controller.getActivityResult()).toMatchObject({ status: "already_started" });
+
+    release();
+    await ending;
+    await vi.waitFor(() => expect(controller.getScreen()).toMatchObject({ kind: screen, summary: { answeredCount: 2 } }));
+    controller.teardown();
+  });
+
+  it.each([
+    { label: "słówek", deck: DECK, screen: "mockTestSummary", error: "mockSummaryError" as const },
+    { label: "lekcji", deck: LESSON_DECK, screen: "lessonMockTestSummary", error: "lessonMockSummaryError" as const },
+  ])("nie cofa pending podsumowania kartkówki $label po błędzie GET szczegółów", async ({ deck, screen, error }) => {
+    const state = baseState();
+    state.decks = [DECK, LESSON_DECK];
+    state.tasks = [taskDto("mock-details-error", { kind: "recall", prompt: "poniedziałek" })];
+    state.endActivityResult = { status: "already_started", pointsAwarded: 0, errorCode: null };
+    state[error] = new TypeError("fetch failed");
+    const { controller } = makeHarness(state);
+    await controller.start(); await controller.selectProfile(PROFILE_A.childId);
+    await controller.startMockTest(deck.deckId); await controller.beginMockTest();
+
+    await controller.endNow();
+    await Promise.resolve(); await Promise.resolve();
+
+    expect(controller.getScreen()).toMatchObject({ kind: screen, childId: PROFILE_A.childId, summary: { sessionId: "55555555-5555-5555-5555-555555555555" } });
+    expect(controller.getActivityResult()).toMatchObject({ status: "already_started" });
+    controller.teardown();
+  });
+
+  it.each([
+    { label: "słówek", deck: DECK },
+    { label: "lekcji", deck: LESSON_DECK },
+  ])("polling aktualizuje wynik kartkówki $label na evaluated albo error", async ({ deck }) => {
+    vi.useFakeTimers();
+    try {
+      for (const result of [
+        { status: "evaluated" as const, pointsAwarded: 3, errorCode: null },
+        { status: "error" as const, pointsAwarded: 0, errorCode: "review_failed" },
+      ]) {
+        const state = baseState();
+        state.decks = [DECK, LESSON_DECK];
+        state.tasks = [taskDto("mock-terminal", { kind: "recall", prompt: "poniedziałek" })];
+        state.endActivityResult = { status: "already_started", pointsAwarded: 0, errorCode: null };
+        state.activityResults = [result];
+        const { controller } = makeHarness(state);
+        await controller.start(); await controller.selectProfile(PROFILE_A.childId);
+        await controller.startMockTest(deck.deckId); await controller.beginMockTest();
+        await controller.endNow();
+        expect(controller.getScreen()).toMatchObject({ kind: deck.kind === "lesson" ? "lessonMockTestSummary" : "mockTestSummary", childId: PROFILE_A.childId });
+
+        await vi.advanceTimersByTimeAsync(2);
+
+        expect(controller.getActivityResult()).toEqual(result);
+        controller.teardown();
+      }
+    } finally { vi.useRealTimers(); }
+  });
+
+  it.each([
+    { label: "słówek", deck: DECK },
+    { label: "lekcji", deck: LESSON_DECK },
+  ])("wynik kartkówki $label po zmianie profilu nie trafia do aktywnego dziecka", async ({ deck }) => {
+    vi.useFakeTimers();
+    try {
+      const state = baseState();
+      state.decks = [DECK, LESSON_DECK];
+      state.tasks = [taskDto("mock-owner", { kind: "recall", prompt: "poniedziałek" })];
+      state.endActivityResult = { status: "already_started", pointsAwarded: 0, errorCode: null };
+      state.activityResults = [{ status: "evaluated", pointsAwarded: 5, errorCode: null }];
+      const { controller } = makeHarness(state);
+      await controller.start(); await controller.selectProfile(PROFILE_A.childId);
+      await controller.startMockTest(deck.deckId); await controller.beginMockTest();
+      await controller.endNow();
+      await controller.switchProfile(); await controller.selectProfile(PROFILE_B.childId);
+      state.profiles = [{ ...PROFILE_A, rewardPoints: 5 }, PROFILE_B];
+
+      await vi.advanceTimersByTimeAsync(2);
+
+      expect(state.activityResultCalls).toEqual(["55555555-5555-5555-5555-555555555555"]);
+      const screen = controller.getScreen();
+      expect(screen).toMatchObject({ kind: "deck", childId: PROFILE_B.childId });
+      expect(screen.kind === "deck" && screen.profiles.find(profile => profile.childId === PROFILE_A.childId)?.rewardPoints).toBe(5);
+      expect(controller.getActivityResult()).toBeNull();
+      controller.teardown();
+    } finally { vi.useRealTimers(); }
   });
 
   it("pojedynczy profil bez initialChildId zatrzymuje się na ekranie wyboru profilu", async () => {
