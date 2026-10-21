@@ -164,6 +164,7 @@ export const messages = {
     targetLabel: "Po angielsku",
     acceptedLabel: "Poprawne warianty (po przecinku)",
     exampleLabel: "Przykład",
+    exampleInImage: "Przykład w obrazie",
     visualLabel: "Wizualizacja",
     coverLabel: "Obraz okładkowy zestawu",
     coverHelp: "PNG, JPEG lub WebP do 5 MB. Obraz dotyczy całego zestawu.",

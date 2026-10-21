@@ -63,12 +63,15 @@ export interface IllustratableItem {
 /**
  * Deterministyczny prompt ilustracji z treści karty; zdanie przykładu
  * jednoznacza znaczenie celu (moderacja obrazów odrzuca wieloznaczne słowa
- * jak „hot"), imagePrompt doprecyzowuje dalej.
+ * jak „hot"), ale rodzic może je wyłączyć per karta flagą
+ * visualData.includeExampleInImage (domyślnie przykład jest w prompcie),
+ * imagePrompt doprecyzowuje dalej.
  */
 export function illustrationPrompt(item: IllustratableItem): string {
   const raw = item.visualData?.imagePrompt;
   const hint = typeof raw === "string" && raw.trim() ? ` ${raw.trim()}` : "";
-  const example = item.example?.trim();
+  const includeExample = item.visualData?.includeExampleInImage !== false;
+  const example = includeExample ? item.example?.trim() : undefined;
   const exampleSentence =
     example !== undefined && example !== ""
       ? ` ${/[.!?…]$/.test(example) ? example : `${example}.`}`
