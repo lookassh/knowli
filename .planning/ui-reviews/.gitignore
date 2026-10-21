@@ -1,4 +1,5 @@
-# UI-audit captures — never commit*.png
+# UI-audit captures — never commit generated screenshots
+*.png
 *.webp
 *.jpg
 *.jpeg
