@@ -185,3 +185,25 @@ Beep-w-całości-przed-przechwytywaniem pozostaje celową decyzją (czysty paylo
 
 - 501 testów jednostkowych zielonych (packages/kid-ui + contracts; kontroler 101, przeglądarka 31, VAD 13), `corepack pnpm typecheck` czysty.
 - Pięć speców e2e zielonych na Dockerze (global-setup): speech-recording-ux, kid-flow, kid-ui-layout, picture-vocabulary (wariant IN-03 pominięcia), kid-layout-stability — łącznie 78 testów (2,5 min).
+
+## Codex review round 2 (inline) — findings addressed
+
+Jeden atomowy commit **a95f1a2** na fix/speech-recognition; wszystkie trzy uwagi dotyczyły `#initializeLevelMonitor` (browser.ts), każda potwierdzona w kodzie:
+
+### R2 #1 fixed — wiszące resume() blokowało start w obu trybach
+
+Tryb RĘCZNY nigdy nie czeka na resume(): monitor podłączany best-effort dokładnie jak przed PR #109 (kontekst + analizator + interwał; dla suspended wyłącznie fire-and-forget `void context.resume().catch(…)`) — ręczne nagrywanie startuje niezależnie od monitora. Tryb AUTO ściga resume() z limitem `LEVEL_MONITOR_RESUME_TIMEOUT_MS = 750` (eksportowana stała) na wstrzykniętych timerach — upłynięcie limitu albo odrzucenie rozstrzyga się jak niedostępny monitor (LevelMonitorUnavailableError: strumień zwolniony, bez bipu, bez nagrania, bez próby, ekran wraca do idle z komunikatem).
+
+### R2 #2 fixed — auto akceptuje wyłącznie state "running"
+
+Po (ograniczonej) próbie resume auto wymagające monitora akceptuje wyłącznie `state === "running"`; „suspended", „interrupted" (Safari/iOS) i każdy inny stan zamyka kontekst i przerywa próbę czysto — koniec trybu awarii „VAD głuchy przez niedziałający kontekst". Tryb ręczny zachowuje nieblokujący best-effort z R2 #1.
+
+### R2 #3 fixed — zbieganie kontekstów audio przy awarii analizatora
+
+Kontekst przypisywany do `#levelContext` natychmiast po konstrukcji, więc sprzątanie (catch → #stopLevelMonitor) zamyka go na KAŻDEJ ścieżce awarii (createAnalyser, createMediaStreamSource(…).connect, dalsza inicjalizacja) — `close()` dokładnie raz na próbę, bez wycieków przy powtórnych próbach.
+
+### Testy i e2e (runda 2)
+
+- RED-first potwierdzone (stash implementacji): oba testy wiszącego resume zawieszały się na starym kodzie (timeout 5 s). Nowe przypadki w browser.test.ts: ręczny startuje bez czekania; auto przerywa po limicie na wstrzykniętych timerach (resume wołane raz, close raz, strumień zwolniony); „interrupted" — auto odrzuca, ręczny nagrywa; awarie createAnalyser/connect zamykają kontekst dokładnie raz. Kontrakt przerwania po stronie kontrolera (notice, zero prób, przycisk działa) pokryty testem z P1 #2 — wyścig resume żyje w adapterze, więc jego limity testowane są na poziomie przeglądarki.
+- E2E: fake AudioContext w speech-recording-ux, kid-flow i kid-layout-stability dostały `state: "running"` (auto akceptuje tylko działający nasłuch); picture-vocabulary (wariant IN-03, bez mikrofonu) i kid-ui-layout (auto nie dosięga rejestratora — wiszące getUserMedia) bez zmian.
+- Weryfikacja po commicie: 149 testów w targeted suite (kontroler + VAD + przeglądarka, przeglądarka 35), 506 jednostkowych w packages/kid-ui + contracts, typecheck czysty, pięć speców e2e zielonych na Dockerze — 78 testów (2,5 min).
