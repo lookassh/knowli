@@ -17,11 +17,11 @@ function textNodes(element: React.ReactNode): string[] {
   return textNodes(rendered);
 }
 
-function buttons(element: React.ReactNode): React.ReactElement[] {
+function buttons(element: React.ReactNode): React.ReactElement<{ disabled?: boolean }>[] {
   if (Array.isArray(element)) return element.flatMap(buttons);
   if (!React.isValidElement(element)) return [];
   const node = element as React.ReactElement<{ children?: React.ReactNode }>;
-  if (node.type === "button") return [node];
+  if (node.type === "button") return [node as React.ReactElement<{ disabled?: boolean }>];
   const rendered = typeof node.type === "function"
     ? (node.type as (props: Record<string, unknown>) => React.ReactNode)(node.props)
     : node.props.children;
