@@ -15,6 +15,7 @@ import type {
 } from "@learning/contracts";
 import type { KidApi } from "../api/KidApi";
 import type { AudioPlayer, MicrophonePermission, PlatformMedia, RecorderOptions, SpeechRecorder } from "../media/platform";
+import { LevelMonitorUnavailableError } from "../media/platform";
 import { createMemoryPreferences, MIC_DENIED_KEY, type LocalPreferences } from "../storage";
 import { createMemoryActivityDraftStore } from "./activity-draft-store";
 import { LearningSessionController, messageForError } from "./session-controller";
@@ -113,11 +114,16 @@ function makeRecorder(opts: { failStartWith?: unknown; startGate?: Promise<void>
       return false;
     },
     async start() {
+      // awaria startu przerywa PRZED hookiem „teraz mów” i PRZED rozpoczęciem
+      // przechwytywania (PR #109, P1 #2) — licznik started rośnie tylko przy
+      // udanym starcie; awaria jest jednorazowa, kolejna próba działa
+      if (opts.failStartWith !== undefined) {
+        const failure = opts.failStartWith;
+        opts.failStartWith = undefined;
+        throw failure;
+      }
       state.started += 1;
       await opts.startGate;
-      if (opts.failStartWith !== undefined) {
-        throw opts.failStartWith;
-      }
       // symetrycznie do BrowserRecorder: sygnał „teraz mów” awaitujemy PRZED
       // rozpoczęciem przechwytywania (quick 261021-lsw)
       await onMicrophoneReady?.();
@@ -2155,6 +2161,34 @@ describe("LearningSessionController — automatyczna próba mowy z VAD (quick 26
     expect(harness.media.permissionQueries).toBe(0);
     expect(log).toEqual(["beep:start", "capture"]);
     harness.controller.teardown();
+  });
+
+  it("PR #109 P1 #2: niedostępny monitor poziomów przerywa auto-próbę bez bipu, próby i odmowy — przycisk działa", async () => {
+    const log: string[] = [];
+    const harness = await startAtTask(baseState(), speechTask(), {
+      sharedLog: log,
+      failStartWith: new LevelMonitorUnavailableError(),
+    });
+    await harness.controller.autoCaptureSpeech();
+    // czysta przerwa: żadnego bipu startu, żadnego przechwytywania, zero prób
+    expect(log).toEqual(["permission:granted", "prepareMicrophone"]);
+    expect(harness.recorder.started).toBe(0);
+    expect(harness.media.beeps).toEqual([]);
+    expect(harness.state.speechSubmissions).toHaveLength(0);
+    // dziecko widzi komunikat i niezmienioną ścieżkę ręczną (bez micDenied)
+    expect(harness.controller.getScreen()).toMatchObject({
+      recordingPhase: "idle",
+      micDenied: false,
+      recordingNotice: messages.kid.autoCaptureListenUnavailable,
+    });
+    // świadomy przycisk: przygotowanie i nagrywanie działają bez analizatora
+    await harness.controller.startRecording();
+    await harness.controller.startRecording();
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "recording" });
+    expect(harness.recorder.started).toBe(1);
+    expect(harness.media.lastRecorderOptions?.onMicrophoneReady).toBeUndefined();
+    expect(harness.media.beeps).toEqual([]);
+    harness.controller.cancelRecording();
   });
 });
 

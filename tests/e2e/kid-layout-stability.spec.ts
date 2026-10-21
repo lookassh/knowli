@@ -278,6 +278,21 @@ test(`${kind} microphone phases keep exercise controls in place`, async ({ page 
       configurable: true,
       value: { query: async () => ({ state: "granted" }) },
     });
+    // PR #109 P1 #2: auto-próba wymaga sprawnego monitora poziomów — fake
+    // AudioContext z analizatorem (cisza), bo realny createMediaStreamSource
+    // odrzuciłby strumień-testowy obiekt i przerwał auto-start
+    class FakeAudioContext {
+      createAnalyser() {
+        return {
+          fftSize: 256,
+          getFloatTimeDomainData: (samples: Float32Array) => samples.fill(0),
+          disconnect: () => undefined,
+        };
+      }
+      createMediaStreamSource() { return { connect: () => undefined }; }
+      async close(): Promise<void> {}
+    }
+    Object.defineProperty(window, "AudioContext", { configurable: true, value: FakeAudioContext });
     class FakeMediaRecorder {
       static isTypeSupported(): boolean { return true; }
       state = "inactive";

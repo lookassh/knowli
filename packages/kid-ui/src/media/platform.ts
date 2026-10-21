@@ -36,6 +36,31 @@ export interface RecorderOptions {
    * nagrywanie obowiązkowe.
    */
   onMicrophoneReady?: () => Promise<void> | void;
+  /**
+   * Wymaga sprawnego monitora poziomów (PR #109, P1 #2): tryb automatyczny nie
+   * może nagrywać „głuchy” — bez poziomów VAD słyszy ciszę i limit 15 s anuluje
+   * dobrą wypowiedź. Gdy inicjalizacja monitora (AudioContext + AnalyserNode,
+   * z jedną próbą resume dla kontekstu suspended) nie powiedzie się, start()
+   * odrzuca LevelMonitorUnavailableError PRZED sygnałem „teraz mów” i przed
+   * MediaRecorder — strumień mikrofonu zostaje zwolniony, próba nie powstaje.
+   * Tryb ręczny nie ustawia flagi: monitor pozostaje best-effort (miernik
+   * poziomu), bo ręczne domknięcie nie zależy od VAD.
+   */
+  requireLevelMonitor?: boolean;
+}
+
+/**
+ * Monitor poziomów niedostępny (PR #109, P1 #2): brak konstruktora
+ * AudioContext, awaria konstrukcji albo kontekst pozostający suspended po
+ * jednej próbie resume. Kontroler rozpoznaje ten błąd i przerywa próbę
+ * automatyczną bez próby i bez zapamiętania odmowy — ścieżka ręczna działa
+ * bez analizatora.
+ */
+export class LevelMonitorUnavailableError extends Error {
+  constructor(message = "level monitor unavailable") {
+    super(message);
+    this.name = "LevelMonitorUnavailableError";
+  }
 }
 
 /** Odtwarzacz wzorca z cache media; stop zwalnia zasoby audio. */

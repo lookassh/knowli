@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BrowserAudioPlayer, BrowserRecorder, createBrowserMedia, MAX_RECORDING_MS, queryMicrophonePermission } from "./browser";
+import { LevelMonitorUnavailableError } from "./platform";
 
 /** Fałszywy MediaRecorder — sterowany z testu, bez prawdziwego DOM. */
 class FakeMediaRecorder {
@@ -304,6 +305,93 @@ describe("BrowserRecorder — hook onMicrophoneReady (sygnał: teraz mów)", () 
     const { stream } = fakeStream();
     const recorder = new BrowserRecorder(deps(stream).deps);
     await recorder.start();
+    expect(recorder.active).toBe(true);
+  });
+});
+
+describe("BrowserRecorder — wymagany monitor poziomów w trybie auto (PR #109, P1 #2)", () => {
+  it("brak AudioContext: auto odrzuca start przed bipem i przechwytywaniem, strumień zwolniony", async () => {
+    const { stream, stop } = fakeStream();
+    const onMicrophoneReady = vi.fn(async () => undefined);
+    const recorder = new BrowserRecorder(deps(stream).deps, {
+      onLevel: vi.fn(),
+      onMicrophoneReady,
+      requireLevelMonitor: true,
+    });
+    await expect(recorder.start()).rejects.toBeInstanceOf(LevelMonitorUnavailableError);
+    expect(onMicrophoneReady).not.toHaveBeenCalled();
+    expect(FakeMediaRecorder.instances).toHaveLength(0);
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("awaria konstrukcji AudioContext: auto odrzuca start bez bipu i nagrania", async () => {
+    const { stream, stop } = fakeStream();
+    const broken = class {
+      constructor() { throw new Error("audio context broken"); }
+    } as unknown as typeof AudioContext;
+    const onMicrophoneReady = vi.fn(async () => undefined);
+    const recorder = new BrowserRecorder({
+      ...deps(stream).deps,
+      audioContext: broken,
+    }, { onLevel: vi.fn(), onMicrophoneReady, requireLevelMonitor: true });
+    await expect(recorder.start()).rejects.toBeInstanceOf(LevelMonitorUnavailableError);
+    expect(onMicrophoneReady).not.toHaveBeenCalled();
+    expect(FakeMediaRecorder.instances).toHaveLength(0);
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("kontekst suspended po jednej próbie resume: auto odrzuca start, resume wołane raz", async () => {
+    const { stream, stop } = fakeStream();
+    const resume = vi.fn(async () => undefined);
+    const close = vi.fn(async () => undefined);
+    const suspended = class {
+      state = "suspended";
+      resume = resume;
+      close = close;
+    } as unknown as typeof AudioContext;
+    const onMicrophoneReady = vi.fn(async () => undefined);
+    const recorder = new BrowserRecorder({
+      ...deps(stream).deps,
+      audioContext: suspended,
+    }, { onLevel: vi.fn(), onMicrophoneReady, requireLevelMonitor: true });
+    await expect(recorder.start()).rejects.toBeInstanceOf(LevelMonitorUnavailableError);
+    expect(resume).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledOnce();
+    expect(onMicrophoneReady).not.toHaveBeenCalled();
+    expect(FakeMediaRecorder.instances).toHaveLength(0);
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("kontekst suspended z udanym resume: auto-przepływ przebiega normalnie", async () => {
+    const { stream } = fakeStream();
+    const timer = fakeTimers();
+    const disconnect = vi.fn();
+    const resumable = class {
+      state = "suspended";
+      async resume(): Promise<void> { this.state = "running"; }
+      createAnalyser() {
+        return { fftSize: 4, getFloatTimeDomainData: (samples: Float32Array) => samples.fill(0.5), disconnect };
+      }
+      createMediaStreamSource() { return { connect: vi.fn() }; }
+      close = vi.fn(async () => undefined);
+    } as unknown as typeof AudioContext;
+    const onLevel = vi.fn();
+    const onMicrophoneReady = vi.fn(async () => undefined);
+    const recorder = new BrowserRecorder({
+      ...deps(stream, timer).deps,
+      audioContext: resumable,
+    }, { onLevel, onMicrophoneReady, requireLevelMonitor: true });
+    await expect(recorder.start()).resolves.toBeUndefined();
+    expect(onMicrophoneReady).toHaveBeenCalledOnce();
+    expect(recorder.active).toBe(true);
+    timer.fireInterval();
+    expect(onLevel).toHaveBeenCalledWith(1);
+  });
+
+  it("tryb ręczny bez flagi: niedostępny monitor nie blokuje nagrywania (best-effort)", async () => {
+    const { stream } = fakeStream();
+    const recorder = new BrowserRecorder(deps(stream).deps, { onLevel: vi.fn() });
+    await expect(recorder.start()).resolves.toBeUndefined();
     expect(recorder.active).toBe(true);
   });
 });

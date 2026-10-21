@@ -1,4 +1,5 @@
 import type { AudioPlayer, BeepKind, MicrophonePermission, PlatformMedia, RecordedAudio, RecorderOptions, SpeechRecorder } from "./platform";
+import { LevelMonitorUnavailableError } from "./platform";
 
 /** Limit nagrania po stronie klienta — odpowiada limitowi serwera (arch §11). */
 export const MAX_RECORDING_MS = 15_000;
@@ -215,13 +216,31 @@ export class BrowserRecorder implements SpeechRecorder {
       throw new Error("recording cancelled");
     }
     this.#stream = stream;
+    // Monitor poziomów PRZED sygnałem „teraz mów” i PRZED przechwytywaniem
+    // (PR #109, P1 #2): w trybie auto niedostępny monitor przerywa start —
+    // bez poziomów VAD słyszy ciszę i limit anuluje dobrą wypowiedź. W trybie
+    // ręcznym monitor pozostaje best-effort (tylko miernik poziomu).
+    const monitor = await this.#initializeLevelMonitor(stream);
+    if (this.#cancelled || generation !== this.#generation) {
+      this.#stopLevelMonitor();
+      stream.getTracks().forEach((track) => track.stop());
+      throw new Error("recording cancelled");
+    }
+    if (monitor !== "running" && this.#options.requireLevelMonitor) {
+      this.#stopLevelMonitor();
+      this.#releaseStream();
+      throw new LevelMonitorUnavailableError();
+    }
     // Sygnał „teraz mów” (quick 261021-lsw, D-04): bip startu gra dopiero PO
-    // udanym getUserMedia i PRZED rozpoczęciem przechwytywania — szybka reakcja
-    // dziecka nie wyprzedza gotowości rejestratora, a bip nie trafia do
-    // nagrania. Odrzucenie hooka połykamy: bip opcjonalny, nagrywanie
-    // obowiązkowe (T-261021-02).
+    // udanym getUserMedia (i sprawnym monitorze poziomów) i PRZED rozpoczęciem
+    // przechwytywania — szybka reakcja dziecka nie wyprzedza gotowości
+    // rejestratora, a bip nie trafia do nagrania. Odrzucenie hooka połykamy:
+    // bip opcjonalny, nagrywanie obowiązkowe (T-261021-02). Przycinanie
+    // ewentualnego echa bipu z nagrania rozważono i odrzucono jako
+    // nieproporcjonalne (PR #109, P2 #4) — bip w całości poprzedza capture.
     await Promise.resolve(this.#options.onMicrophoneReady?.()).catch(() => undefined);
     if (this.#cancelled || generation !== this.#generation) {
+      this.#stopLevelMonitor();
       stream.getTracks().forEach((track) => track.stop());
       throw new Error("recording cancelled");
     }
@@ -229,6 +248,7 @@ export class BrowserRecorder implements SpeechRecorder {
     try {
       recorder = new this.#MediaRecorder(stream, { mimeType });
     } catch (error) {
+      this.#stopLevelMonitor();
       this.#releaseStream();
       throw new Error("failed to start recording", { cause: error });
     }
@@ -268,7 +288,7 @@ export class BrowserRecorder implements SpeechRecorder {
       this.#state = "idle";
       throw new Error("failed to start recording", { cause: error });
     }
-    this.#startLevelMonitor(stream);
+    // monitor poziomów żyje już od przed sygnałem „teraz mów” (P1 #2)
     this.#timeoutHandle = this.#timers.set(() => {
       if (this.#state === "recording") {
         this.#state = "finalizing";
@@ -388,10 +408,29 @@ export class BrowserRecorder implements SpeechRecorder {
     this.#chunks = [];
   }
 
-  #startLevelMonitor(stream: MediaStream): void {
-    if (!this.#AudioContext || !this.#options.onLevel) return;
+  /**
+   * Inicjalizuje monitor poziomów (PR #109, P1 #2) i zwraca jego stan:
+   * "running" — AnalyserNode podłączony i odświeżany; "unavailable" — brak
+   * konstruktora AudioContext, awaria konstrukcji albo kontekst pozostaje
+   * suspended po JEDNEJ próbie resume (polityka autoplay bez gestu).
+   * Wywoływane przed sygnałem „teraz mów”; przy requireLevelMonitor stan
+   * inny niż running przerywa start (LevelMonitorUnavailableError).
+   */
+  async #initializeLevelMonitor(stream: MediaStream): Promise<"running" | "unavailable"> {
+    if (!this.#AudioContext || !this.#options.onLevel) return "unavailable";
     try {
       const context = new this.#AudioContext();
+      if (context.state === "suspended") {
+        try {
+          await context.resume();
+        } catch {
+          // jednorazowa próba — kontekst bez gestu może pozostać suspended
+        }
+        if (context.state === "suspended") {
+          await context.close().catch(() => undefined);
+          return "unavailable";
+        }
+      }
       const analyser = context.createAnalyser();
       analyser.fftSize = 256;
       context.createMediaStreamSource(stream).connect(analyser);
@@ -411,12 +450,15 @@ export class BrowserRecorder implements SpeechRecorder {
         const level = Math.max(0, Math.min(1, rms * 4));
         if (Number.isFinite(level) && this.#state === "recording") this.#options.onLevel?.(level);
       }, 100);
+      return "running";
     } catch {
-      void this.#levelContext?.close().catch(() => undefined);
-      this.#levelContext = null;
       this.#analyser = null;
       this.#samples = null;
       this.#levelHandle = null;
+      const context = this.#levelContext;
+      this.#levelContext = null;
+      await context?.close().catch(() => undefined);
+      return "unavailable";
     }
   }
 

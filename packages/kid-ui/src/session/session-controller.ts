@@ -18,7 +18,7 @@ import {
 } from "@learning/contracts";
 import type { KidApi } from "../api/KidApi";
 import { isNetworkError, KidApiError } from "../api/client";
-import type { MicrophonePermission, PlatformMedia, RecorderOptions, SpeechRecorder } from "../media/platform";
+import { LevelMonitorUnavailableError, type MicrophonePermission, type PlatformMedia, type RecorderOptions, type SpeechRecorder } from "../media/platform";
 import { createSpeechVad, type SpeechVad } from "../media/vad";
 import { MIC_DENIED_KEY, type LocalPreferences } from "../storage";
 import { randomUUID } from "./uuid";
@@ -1204,8 +1204,12 @@ export class LearningSessionController {
     const options: RecorderOptions = {
       // auto-próba: bip startu gra wewnątrz BrowserRecorder.start — PO udanym
       // getUserMedia i PRZED MediaRecorder.start; ścieżka ręczna (pole null)
-      // nie przekazuje hooka i nie gra bipu (D-04)
-      ...(this.#autoStartBeep !== null ? { onMicrophoneReady: this.#autoStartBeep } : {}),
+      // nie przekazuje hooka i nie gra bipu (D-04). Auto wymaga też sprawnego
+      // monitora poziomów (PR #109, P1 #2): bez poziomów VAD słyszy ciszę i
+      // limit anuluje dobrą wypowiedź — start odrzuca
+      // LevelMonitorUnavailableError zanim zagra bip i zacznie przechwytywanie;
+      // ręczna próba działa bez analizatora (monitor best-effort).
+      ...(this.#autoStartBeep !== null ? { onMicrophoneReady: this.#autoStartBeep, requireLevelMonitor: true } : {}),
       onLevel: (level) => {
         if (generation !== this.#recordingGeneration || !Number.isFinite(level)) return;
         this.#setLearning({ inputLevel: Math.max(0, Math.min(1, level)) });
@@ -1258,12 +1262,22 @@ export class LearningSessionController {
       if (epoch !== this.#epoch || !current || current.session.sessionId !== screen.session.sessionId) return;
       const taskUnchanged = current.task?.taskId === taskId;
       if (generation !== this.#recordingGeneration && taskUnchanged) return;
+      // niedostępny monitor poziomów (PR #109, P1 #2): czysto przerywa próbę
+      // automatyczną — bez próby i bez zapamiętania odmowy; sygnał dla dziecka
+      // kieruje na świadomy przycisk, który działa bez analizatora
+      const listenUnavailable = error instanceof LevelMonitorUnavailableError;
       this.#setLearning({
         recordingPhase: "idle",
         microphoneReady: false,
         inputLevel: null,
         micDenied: denied,
-        recordingNotice: taskUnchanged ? denied ? messages.kid.micDenied : messages.kid.recordingUnavailable : null,
+        recordingNotice: taskUnchanged
+          ? denied
+            ? messages.kid.micDenied
+            : listenUnavailable
+              ? messages.kid.autoCaptureListenUnavailable
+              : messages.kid.recordingUnavailable
+          : null,
       });
     }
   }
