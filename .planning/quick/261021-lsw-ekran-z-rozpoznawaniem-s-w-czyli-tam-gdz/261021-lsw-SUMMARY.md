@@ -155,3 +155,33 @@ Wszystkie 15 plików z planu istnieje; wszystkie 5 commitów zadania (0c0f3fa, 6
 - SPEC §6/§12: dopisany warunek już nadanego uprawnienia dla automatycznego rozpoczęcia (2026-10-21).
 
 **Weryfikacja:** 491 testów jednostkowych zielonych (packages/kid-ui + contracts, w tym 99 kontrolera), `pnpm typecheck` czysty, pięć speców e2e zielonych — 78 testów (77 wcześniejszych + nowy przypadek "prompt").
+
+## Codex review (PR #109) — findings addressed
+
+Trzy atomowe commity na fix/speech-recognition (Request changes rozpatrzony w całości):
+
+### P1 #1 fixed (commit fff468f) — VAD bez martwej strefy
+
+- `VAD_GRACE_SAMPLES` 3→0: bip startu kończy się przed rozpoczęciem przechwytywania (`onMicrophoneReady` awaitowane przed konstrukcją MediaRecorder), więc tłumienie echa bipu nie wymaga ignorowanych próbek — krótkie słowo (~200 ms = 2 próbki) od t=0 wpadało wcześniej w grace i traciło próbę przez limit 15 s.
+- Przejście arming→listening ocenia próbkę przejścia (fall-through): przy GRACE=0 sustain liczy się od próbki #0. Sustain 2 (strażnik pojedynczego impulsu szumu) i cisza 12 bez zmian; nagłówek modułu przepisany (stara racjonalizacja echa usunięta).
+- Testy: słowo od t=0 wykrywane; początek po ~150 ms ciszy wykrywany; pojedynczy impuls szumu nie wykrywa mowy; pełny cykl bez próbek grace (zaktualizowane testy grace).
+
+### P1 #2 fixed (commit bdfbf44) — martwy monitor poziomów przerywa auto-próbę zamiast gubić wypowiedź
+
+- Kontrakt: auto-próba nigdy nie nagrywa „głuchy" — bez poziomów VAD słyszy ciszę i limit anuluje dobrą wypowiedź mimo działającego MediaRecordera.
+- Port: `RecorderOptions.requireLevelMonitor` + `LevelMonitorUnavailableError` (platform.ts). BrowserRecorder inicjalizuje monitor (AudioContext + AnalyserNode, JEDNA próba `resume()` dla suspended) PRZED sygnałem „teraz mów" i PRZED MediaRecorder; brak konstruktora, rzut konstruktora albo suspended po resume → `LevelMonitorUnavailableError` ze zwolnieniem strumienia. Ścieżka ręczna bez flagi — monitor best-effort (miernik poziomu), bez zmian.
+- Kontroler: auto przekazuje `requireLevelMonitor`; błąd mapowany na nowy komunikat `kid.autoCaptureListenUnavailable` („Nie udało się nasłuchiwać mowy. Nagraj przyciskiem.") — bez próby, bez zapamiętania odmowy, stan auto zerowany; przycisk ręczny działa bez analizatora.
+- Testy: kontroler — czysta przerwa auto (bez bipu, `recorder.started === 0`, komunikat, zero prób, ręczne nagrywanie działa); przeglądarka — trzy kształty awarii + suspended-z-udanym-resume przebiega normalnie + tryb ręczny bez flagi nieblokowany. kid-layout-stability dostał fake AudioContext z analizatorem (realny `createMediaStreamSource` odrzuciłby strumień-testowy).
+
+### P2 #3 fixed (commit a542cf4) — onError zeruje stan auto
+
+`onError` (awaria urządzenia w trakcie auto-nagrania) woła teraz `#resetAutoCapture()` — zgubny `#autoStartBeep`/`#vad` nie przetrwają do ręcznej próby (ta sama klasa defektu co WR-01). Test regresyjny RED-first: auto-start → `recorder.fail()` → ręczne startRecording bez hooka i bez kolejnego bipu startu.
+
+### P2 #4 — design kept + documented (w commicie fff468f)
+
+Beep-w-całości-przed-przechwytywaniem pozostaje celową decyzją (czysty payload STT; okno ryzyka = czas trwania bipu; dziecko uczy się mówić po sygnale). Przycinanie prowadzącego bipu z webm/opus rozważono i odrzucono jako nieproporcjonalne. SPEC §12 doprecyzowuje kontrakt: dziecko mówi po zakończeniu sygnału startu, a pomiar rzeczywistego odstępu sygnał–przechwytywanie na urządzeniu docelowym pozostaje na liście kontrolnej właściciela.
+
+### Weryfikacja całości (po trzech commitach)
+
+- 501 testów jednostkowych zielonych (packages/kid-ui + contracts; kontroler 101, przeglądarka 31, VAD 13), `corepack pnpm typecheck` czysty.
+- Pięć speców e2e zielonych na Dockerze (global-setup): speech-recording-ux, kid-flow, kid-ui-layout, picture-vocabulary (wariant IN-03 pominięcia), kid-layout-stability — łącznie 78 testów (2,5 min).

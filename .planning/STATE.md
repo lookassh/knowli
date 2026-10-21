@@ -46,13 +46,13 @@ See: `.planning/PROJECT.md` (updated 2026-10-21)
 
 | # | Description | Date | Commit | Status | Directory |
 |---|-------------|------|--------|--------|-----------|
-| 261021-lsw | Automatyczne nagrywanie z VAD na ekranach mowy (SpeechView/PictureSpeechView): auto-start po wyświetleniu zadania, auto-stop po mowie + ~1,2 s ciszy, bip WebAudio start/koniec, cisza bez próby; fix ucinania początku wypowiedzi (bip za getUserMedia, hook onMicrophoneReady) | 2026-10-21 | f696dbb | Needs Review | [261021-lsw-ekran-z-rozpoznawaniem-s-w-czyli-tam-gdz](./quick/261021-lsw-ekran-z-rozpoznawaniem-s-w-czyli-tam-gdz/) |
+| 261021-lsw | Automatyczne nagrywanie z VAD na ekranach mowy (SpeechView/PictureSpeechView): auto-start po wyświetleniu zadania, auto-stop po mowie + ~1,2 s ciszy, bip WebAudio start/koniec, cisza bez próby; fix ucinania początku wypowiedzi (bip za getUserMedia, hook onMicrophoneReady) | 2026-10-21 | a542cf4 | Needs Review | [261021-lsw-ekran-z-rozpoznawaniem-s-w-czyli-tam-gdz](./quick/261021-lsw-ekran-z-rozpoznawaniem-s-w-czyli-tam-gdz/) |
 
 ## Session Continuity
 
 **Last action:** Created brownfield PROJECT, REQUIREMENTS, ROADMAP and STATE artifacts from current repository documents and codebase mapping.
 
-**Last activity:** 2026-10-21 - Completed quick task 261021-lsw: automatyczne nagrywanie z VAD na ekranach mowy (gałąź fix/speech-recognition, HEAD f696dbb; WR-01 i WR-02 z review naprawione — WR-02 wg decyzji właściciela: auto-start tylko przy nadanym uprawnieniu; weryfikacja human_needed — kalibracja VAD, bipy i e2e na urządzeniu po stronie właściciela)
+**Last activity:** 2026-10-21 - Completed quick task 261021-lsw: automatyczne nagrywanie z VAD na ekranach mowy (gałąź fix/speech-recognition, HEAD a542cf4; WR-01 i WR-02 z review naprawione — WR-02 wg decyzji właściciela: auto-start tylko przy nadanym uprawnieniu; weryfikacja human_needed — kalibracja VAD, bipy i e2e na urządzeniu po stronie właściciela)
 
 **Next action:** Run `$gsd-plan-phase 1` to turn private deployment and recovery criteria into an executable plan.
 
