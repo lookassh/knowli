@@ -50,6 +50,216 @@ async function query<T>(sql: string, values: unknown[] = []): Promise<T[]> {
   return (await (await pool()).query(sql, values)).rows as T[];
 }
 
+interface TaskRow {
+  answer_key: { target: string; correctOptionId: string };
+  public_prompt: { options?: Array<{ id: string; text: string | null; labelPl: string | null }> };
+}
+
+async function taskRow(taskId: string): Promise<TaskRow> {
+  return (await query<TaskRow>(
+    "select answer_key, public_prompt from learning_app.session_tasks where id = $1", [taskId],
+  ))[0]!;
+}
+
+/**
+ * Etykieta poprawnej opcji obrazkowej: w UI widnieje labelPl (visual niesie
+ * obrazek/cyfrę), więc labelPl ma pierwszeństwo przed tekstem.
+ */
+async function correctOptionLabel(taskId: string): Promise<string> {
+  const row = await taskRow(taskId);
+  const correct = row.public_prompt.options!.find((o) => o.id === row.answer_key.correctOptionId);
+  return correct!.labelPl ?? correct!.text!;
+}
+
+function currentFeedback(page: Page) {
+  return page.getByTestId("kid-feedback").or(page.getByTestId("kid-speech-feedback"));
+}
+
+/**
+ * Czeka na stabilny, interaktywny stan kroku; trwające (także automatyczne)
+ * nagrywanie traktujemy jako stabilne — jego domknięcie należy do testu.
+ */
+async function taskSettled(page: Page): Promise<void> {
+  await page.waitForFunction(() => {
+    if (document.querySelector('[data-testid="kid-recording"]') !== null) return true;
+    const disabled = [...document.querySelectorAll("[data-testid][disabled]")];
+    const input = document.querySelector('[data-testid="kid-input"]');
+    if (input !== null && !input.hasAttribute("disabled")) {
+      return disabled.every((el) => el.getAttribute("data-testid") === "kid-submit");
+    }
+    return disabled.length === 0;
+  }, undefined, { timeout: 20_000 });
+}
+
+/**
+ * Świat testów auto-próby (quick 261021-lsw): profil nieczytający + zestaw
+ * obrazkowy z mikrofonem. Po prezentacjach i sukcesie rozpoznawania scheduler
+ * wydaje wprowadzenie recall (picture_recall, ręczne), a następnie — jako
+ * kolejny wybór etapu — ćwiczenie wymowy (picture_speech), na którym auto-próba
+ * ma rozpoczynać nagrywanie sama (scheduler-picture-reader.test.ts „nieczytający
+ * z włączonym mikrofonem po opanowaniu słuchania otrzymuje picture_recall i speech").
+ */
+async function openPictureSpeechSession(page: Page, name: string): Promise<void> {
+  const parent = page.request;
+  await parent.post("/api/v1/parent/setup", { data: { secret: "1234" } });
+  expect((await parent.post("/api/v1/parent/login", { data: { secret: "1234" } })).status()).toBe(200);
+  const child = await (await parent.post("/api/v1/parent/children", {
+    data: { displayName: name, avatarKey: "fox", canRead: false },
+  })).json() as { id: string };
+  // tryb przełącznika upraszcza ręczne domknięcie picture_recall w pętli
+  expect((await parent.patch(`/api/v1/parent/children/${child.id}`, { data: { recordingMode: "toggle" } })).status()).toBe(200);
+  const idempotencyKey = `speech-auto-${randomUUID()}`;
+  const generated = await parent.post("/api/v1/parent/decks/generate", {
+    data: { prompt: "angielskie dni tygodnia dla początkującego dziecka", idempotencyKey, title: `Obrazki dla ${name}`, vocabularyFormat: "picture" },
+  });
+  expect(generated.status()).toBe(202);
+  const { deckId } = await generated.json() as { deckId: string };
+  let draftId: string | null = null;
+  for (let attempt = 0; attempt < 960 && draftId === null; attempt += 1) {
+    const deck = await (await parent.get(`/api/v1/parent/decks/${deckId}`)).json();
+    if (deck.generation?.state === "succeeded" && deck.draft) draftId = deck.draft.id;
+    else await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  expect(draftId).not.toBeNull();
+  let published = false;
+  for (let attempt = 0; attempt < 720 && !published; attempt += 1) {
+    const draft = await (await parent.get(`/api/v1/parent/drafts/${draftId}`)).json();
+    const pending = draft.assets.some((asset: { role: string; state: string }) =>
+      (asset.role === "target_audio" || asset.role === "illustration") && asset.state !== "approved");
+    if (!pending) {
+      published = (await parent.post(`/api/v1/parent/drafts/${draftId}/publish`, { data: { expectedEditNumber: draft.editNumber } })).status() === 200;
+    } else await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  expect(published).toBe(true);
+  expect((await parent.put(`/api/v1/parent/assignments/${child.id}/${deckId}`, { data: { testDate: null } })).status()).toBe(204);
+  // Siejemy sukces rozpoznawania słuchowego (streak 1, termin w przyszłości, by
+  // nie tworzyć należnego powtórzenia): po własnej prezentacji element od razu
+  // kwalifikuje się do wprowadzenia recall (picture_recall), a kolejny wybór
+  // etapu to ćwiczenie wymowy (speech/picture_speech) — scheduler-picture-reader
+  // „nieczytający z włączonym mikrofonem po opanowaniu słuchania…". Bez tego
+  // sesja zużywa budżet na fazę rozpoznawania i nigdy nie dochodzi do mowy.
+  const version = await (await parent.get(`/api/v1/parent/decks/${deckId}`)).json() as { published: { id: string } };
+  const revisionIds = await query<{ id: string }>(
+    "select id from learning_app.item_revisions where deck_version_id = $1 order by position",
+    [version.published.id],
+  );
+  for (const { id: revisionId } of revisionIds) {
+    const skills = await query<{ skill_version_id: string }>(
+      "select skill_version_id from learning_app.item_revision_skills where item_revision_id = $1 and skill = 'listening'",
+      [revisionId],
+    );
+    for (const { skill_version_id } of skills) {
+      await query(
+        `insert into learning_app.child_skill_progress
+           (child_id, skill_version_id, policy_id, status, independent_success_streak, last_reviewed_at, next_review_at, projection_version)
+         select $1, $2, coalesce(c.policy_id, 'learning-v2'), 'practicing', 1, '2026-10-20T00:00:00Z', '2027-01-01T00:00:00Z', 'proj-3'
+         from learning_app.child_profiles c where c.id = $1
+         on conflict (child_id, skill_version_id, policy_id) do update set status='practicing', independent_success_streak=1,
+              last_reviewed_at='2026-10-20T00:00:00Z', next_review_at='2027-01-01T00:00:00Z'`,
+        [child.id, skill_version_id],
+      );
+    }
+  }
+  await page.goto(`/kids/${child.id}/learn`);
+  await expect(page.getByTestId("kid-deck")).toBeVisible();
+  await page.getByTestId("kid-mic-toggle").check();
+  await page.getByTestId("kid-deck").filter({ hasText: `Obrazki dla ${name}` }).click();
+}
+
+/** Ręcznie domyka picture_recall (nagranie przez przycisk) i przechodzi dalej. */
+async function completeSpokenRecall(page: Page): Promise<void> {
+  const record = page.getByTestId("kid-record");
+  if (await record.getAttribute("data-ready") !== "true") {
+    await record.click({ timeout: 15_000 });
+    await expect(record).toHaveAttribute("data-ready", "true");
+  }
+  await record.click({ timeout: 15_000 });
+  await expect(record).toHaveAttribute("data-phase", "recording", { timeout: 10_000 });
+  // kontroler odrzuca nagrania krótsze niż 300 ms — czekamy ponad ten strażnik
+  await page.waitForTimeout(400);
+  await record.click({ timeout: 15_000 });
+  await expect(currentFeedback(page)).toBeVisible({ timeout: 30_000 });
+  if (await page.getByTestId("kid-feedback-skip").count()) {
+    await page.getByTestId("kid-feedback-skip").click({ timeout: 15_000 });
+  }
+  await page.getByTestId("kid-next").click({ timeout: 15_000 });
+  await expect(currentFeedback(page)).toHaveCount(0);
+}
+
+/**
+ * Prowadzi obrazkową sesję z mikrofonem do pierwszego zadania wymowy
+ * (picture_speech/speech) — tam auto-próba rozpoczyna nagrywanie sama,
+ * bez naciskania przycisku.
+ */
+async function driveToAutoSpeechTask(page: Page, deckTitle: string): Promise<string> {
+  for (let step = 0; step < 30; step += 1) {
+    await page.waitForSelector(
+      '[data-testid="kid-option"], [data-testid="kid-done"], [data-testid="kid-record"], [data-testid="kid-summary"]',
+      { timeout: 30_000 },
+    );
+    if (await page.getByTestId("kid-summary").isVisible()) break;
+    await taskSettled(page);
+    const kind = await page.getByTestId("kid-exercise").getAttribute("data-prompt-kind");
+    if (kind === "speech" || kind === "picture_speech") {
+      const taskId = await page.locator("[data-task-id]").getAttribute("data-task-id");
+      expect(taskId).toBeTruthy();
+      return taskId!;
+    }
+    if ((await page.getByTestId("kid-done").count()) > 0) {
+      await page.getByTestId("kid-done").click({ timeout: 15_000 });
+      continue;
+    }
+    const taskId = await page.locator("[data-task-id]").getAttribute("data-task-id");
+    expect(taskId).toBeTruthy();
+    if ((await page.getByTestId("kid-option").count()) > 0) {
+      const correct = await correctOptionLabel(taskId!);
+      // dopasowanie odporne na warianty widoków: opcje obrazkowe słuchowe mają
+      // aria-label = labelPl (przycisk niesie wizual, np. cyfrę), a opcje
+      // rozpoznawania obrazkowego sam tekst — porównujemy dokładnie, bez
+      // dopasowań podciągiem (kolizje typu „one”/„money”)
+      const options = page.getByTestId("kid-option");
+      const total = await options.count();
+      const index = await page.evaluate(
+        ({ label, expected }) => {
+          const buttons = [...document.querySelectorAll<HTMLButtonElement>('[data-testid="kid-option"]')];
+          if (buttons.length !== expected) return -2;
+          return buttons.findIndex((button) =>
+            (button.getAttribute("aria-label") ?? "").trim() === label ||
+            (button.textContent ?? "").trim() === label);
+        },
+        { label: correct, expected: total },
+      );
+      expect(index, `brak opcji o etykiecie "${correct}" wśród ${total} opcji`).toBeGreaterThanOrEqual(0);
+      await options.nth(index).click({ timeout: 15_000 });
+      await expect(currentFeedback(page)).toBeVisible();
+      await page.getByTestId("kid-next").click({ timeout: 15_000 });
+      await expect(currentFeedback(page)).toHaveCount(0);
+    } else if ((await page.getByTestId("kid-record").count()) > 0) {
+      // picture_recall — wprowadzenie etapu przypomnienia, ścieżka ręczna
+      await completeSpokenRecall(page);
+    } else {
+      throw new Error(`Nieobsłużony stan zadania przed speech: kind=${kind}`);
+    }
+  }
+  const served = await query<{ exercise_type: string; state: string }>(
+    `select st.exercise_type, st.state from learning_app.session_tasks st
+       join learning_app.learning_sessions s on s.id = st.session_id
+       join learning_app.deck_versions dv on dv.id = s.deck_version_id
+       join learning_app.decks d on d.id = dv.deck_id
+       where d.title = $1
+       order by s.started_at desc, st.ordinal`,
+    [deckTitle],
+  );
+  throw new Error(`Nie napotkano zadania mowy (picture_speech/speech) w budżecie kroków sesji; served=${JSON.stringify(served)}`);
+}
+
+/** Ustawia poziom sztucznego mikrofonu (skala rms×4 z browser.ts). */
+async function setMicLevel(page: Page, level: number): Promise<void> {
+  await page.evaluate((value) => {
+    (window as unknown as { __kidMicLevel?: number }).__kidMicLevel = value;
+  }, level);
+}
+
 async function createLearningTask(page: Page, name: string, recordingMode: "hold" | "toggle" = "hold"): Promise<void> {
   const parent: APIRequestContext = page.request;
   await parent.post("/api/v1/parent/setup", { data: { secret: "1234" } });
@@ -144,6 +354,19 @@ async function installFakeMicrophone(page: Page, deny = false): Promise<void> {
     });
     class FakeAudioContext {
       async decodeAudioData(): Promise<AudioBuffer> { return decodedBuffer(96_000, 48_000) as unknown as AudioBuffer; }
+      // sterowalny analyser: poziom mikrofonu (skala rms×4 z browser.ts)
+      // kontroluje test przez window.__kidMicLevel — domyślnie cisza
+      createMediaStreamSource() { return { connect: () => undefined }; }
+      createAnalyser() {
+        return {
+          fftSize: 256,
+          getFloatTimeDomainData: (samples: Float32Array) => {
+            const level = (window as unknown as { __kidMicLevel?: number }).__kidMicLevel ?? 0;
+            samples.fill(level / 4);
+          },
+          disconnect: () => undefined,
+        };
+      }
       async close(): Promise<void> {}
     }
     class FakeOfflineAudioContext {
@@ -257,6 +480,59 @@ test("tryb toggle z profilu rodzica działa po odświeżeniu i nie pokazuje prze
   await expect(button).toHaveAttribute("data-phase", "recording");
   await button.click();
   await expect(button).toHaveAttribute("data-phase", "idle");
+});
+
+test("automat na zadaniu mowy sam nagrywa i sam kończy po wypowiedzi z ciszą", async ({ page }) => {
+  test.slow();
+  await installFakeMicrophone(page);
+  const name = `Auto ${randomUUID().slice(0, 6)}`;
+  await openPictureSpeechSession(page, name);
+  const taskId = await driveToAutoSpeechTask(page, `Obrazki dla ${name}`);
+  const button = page.getByTestId("kid-record");
+
+  // D-01: nagrywanie startuje samo po wyświetleniu zadania — bez kliknięcia
+  await expect(button).toHaveAttribute("data-phase", "recording", { timeout: 10_000 });
+  await expect(page.getByTestId("kid-recording")).toBeVisible();
+  await expect(button).toHaveAttribute("aria-pressed", "true");
+
+  // D-03: mowa powyżej progu, potem cisza — VAD kończy nagrywanie samo
+  // (grace 3 + sustain 2 próbki mowy, potem 12 próbek ciszy; okno 2 s toleruje
+  // wolniejszą realną kadencję próbkowania w headless). Domknięcie potwierdzamy
+  // kartą wyniku i dokładnie jedną próbą w bazie — przejściowa faza idle trwa
+  // krócej niż interwał pollowania atrybutu.
+  await setMicLevel(page, 0.2);
+  await page.waitForTimeout(2_000);
+  await setMicLevel(page, 0);
+
+  // dokładnie jedna próba audio dla zadania (D-03), feedback inline
+  await expect(page.getByTestId("kid-speech-feedback")).toBeVisible({ timeout: 30_000 });
+  await expect.poll(async () => (await query<{ modality: string }>(
+    "select modality from learning_app.attempts where task_id = $1", [taskId],
+  )).length, { timeout: 30_000 }).toBe(1);
+  const attempts = await query<{ modality: string }>(
+    "select modality from learning_app.attempts where task_id = $1", [taskId],
+  );
+  expect(attempts).toEqual([{ modality: "audio" }]);
+});
+
+test("cisza bez wykrytej mowy anuluje automatyczne nagrywanie bez próby", async ({ page }) => {
+  test.slow();
+  await installFakeMicrophone(page);
+  const name = `Cisza ${randomUUID().slice(0, 6)}`;
+  await openPictureSpeechSession(page, name);
+  const taskId = await driveToAutoSpeechTask(page, `Obrazki dla ${name}`);
+  const button = page.getByTestId("kid-record");
+
+  // auto-start bez kliknięcia; poziom pozostaje 0 (cisza) przez cały limit
+  await expect(button).toHaveAttribute("data-phase", "recording", { timeout: 10_000 });
+  // SPEC §15: limit 15 s w trybie auto anuluje nagrywanie — bez próby, z krótkim
+  // komunikatem; przycisk wraca jako fallback do ręcznej próby
+  await expect(button).toHaveAttribute("data-phase", "idle", { timeout: 25_000 });
+  await expect(page.getByTestId("kid-record-status")).toContainText("Nie usłyszałem słowa");
+  await expect(button).toHaveAttribute("aria-pressed", "false");
+  expect(await query<{ modality: string }>(
+    "select modality from learning_app.attempts where task_id = $1", [taskId],
+  )).toHaveLength(0);
 });
 
 test("microphone denial is available on request and leaves the written learning path available", async ({ page }) => {

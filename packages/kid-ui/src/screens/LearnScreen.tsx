@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { messages, type UiAudioKey } from "@learning/contracts";
 import { ExerciseView } from "../exercises/ExerciseView";
 import type { ExerciseHandlers } from "../exercises/types";
@@ -107,6 +107,23 @@ export function LearnScreen({
     onCancelRecording: () => controller.cancelRecording(),
     onPrepareRecording: () => void controller.prepareMicrophone(),
   };
+
+  // Auto-nagrywanie mowy (quick 261021-lsw, D-01): na świeżo wyświetlonym
+  // zadaniu speech/picture_speech nagrywanie startuje samo, bez naciskania
+  // przycisku. Jedyny punkt wiringu auto-startu, wspólny dla SpeechView i
+  // PictureSpeechView — logika żyje w kontrolerze sesji i media/vad.ts.
+  // Zależności celowo BEZ screen.feedback: efekt odpala się raz na nowe
+  // zadanie (taskId + rodzaj promptu) i nigdy po „Nagraj jeszcze raz”
+  // (SPEC §16). Podwójne wywołanie (np. StrictMode) jest bezpieczne —
+  // synchroniczne ustawienie fazy preparing przez prepareMicrophone i latch
+  // taskId w kontrolerze czynią drugie wywołanie no-opem.
+  const autoTaskId = task?.taskId;
+  const autoPromptKind = task?.prompt.kind;
+  useEffect(() => {
+    if (autoPromptKind === "speech" || autoPromptKind === "picture_speech") {
+      void controller.autoCaptureSpeech();
+    }
+  }, [controller, autoTaskId, autoPromptKind]);
 
   return (
     <main className="kid-screen kid-learning" data-task-id={task?.taskId ?? undefined}>

@@ -556,7 +556,9 @@ for (const recordingMode of ["hold", "toggle"] as const) {
     await expect(page.getByTestId("kid-record-mode")).toHaveCount(0);
     await expect(page.getByText("Wolisz nacisnąć raz? Zmień tryb")).toHaveCount(0);
     const recordButton = page.getByTestId("kid-record");
-    await recordButton.click();
+    // Auto-próba mowy (quick 261021-lsw): przygotowanie mikrofonu startuje
+    // samo po wyświetleniu zadania — data-phase=preparing pojawia się bez
+    // kliku i wisi na nie rozwiązującym się getUserMedia
     await expect(recordButton).toHaveAttribute("data-phase", "preparing");
     if (recordingMode === "hold") {
       await expect(recordButton).toContainText("Przytrzymaj");
@@ -601,6 +603,15 @@ test("speech play action uses the shared speaker icon instead of an emoji", asyn
 });
 
 test("record control uses the shared microphone icon instead of an emoji", async ({ page }) => {
+  // Auto-próba mowy przygotowuje mikrofon zaraz po wyświetleniu zadania;
+  // wiszący getUserMedia utrzymuje fazę preparing, więc przycisk (i ikona)
+  // pozostaje w DOM deterministycznie — realne API headless odmawia od razu.
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia: () => new Promise<MediaStream>(() => undefined) },
+    });
+  });
   const fixture = recallFixture();
   fixture.session.microphoneEnabled = true;
   await installKidUiFixture(page, { ...fixture, tasks: [taskFor("speech")] });
