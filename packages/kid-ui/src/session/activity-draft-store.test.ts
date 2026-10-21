@@ -33,7 +33,7 @@ describe("browser activity draft store", () => {
 
 describe("pending activity result store", () => {
   it("keeps only a versioned session and child marker after the report is accepted", () => {
-    const store = createMemoryActivityDraftStore();
+    const store = createMemoryActivityDraftStore(() => 100);
     store.savePendingResult({ version: 1, sessionId: "session-1", childId: "child-1", savedAtMs: 100 });
 
     expect(store.load("session-1")).toEqual({ version: 1, sessionId: "session-1", childId: "child-1", savedAtMs: 100 });

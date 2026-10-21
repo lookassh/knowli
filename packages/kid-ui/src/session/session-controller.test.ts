@@ -1079,7 +1079,8 @@ describe("LearningSessionController", () => {
     failSubmit(new TypeError("late network failure"));
     await staleAnswer;
     expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", task: { taskId: taskB.taskId }, offline: false, feedback: null });
-    expect(harness.activityDrafts.load("77777777-7777-4777-8777-777777777777")?.state.tasks.map((task) => task.taskId)).toEqual([taskB.taskId]);
+    const currentDraft = harness.activityDrafts.load("77777777-7777-4777-8777-777777777777");
+    expect(currentDraft && "state" in currentDraft && currentDraft.state.tasks.map((task) => task.taskId)).toEqual([taskB.taskId]);
     harness.controller.teardown();
   });
 
@@ -1470,7 +1471,7 @@ describe("LearningSessionController", () => {
     harness.controller.teardown();
   });
 
-  it("zachowuje draft po already_started i usuwa go dopiero po końcowym wyniku", async () => {
+  it("zamienia zaakceptowany draft already_started na minimalny znacznik pending", async () => {
     const state = baseState();
     const sessionId = "88888888-8888-4888-8888-888888888888";
     const drafts = createMemoryActivityDraftStore();
@@ -1483,10 +1484,7 @@ describe("LearningSessionController", () => {
     const harness = makeHarness(state, { activityDrafts: drafts });
     await harness.controller.start();
     await harness.controller.selectProfile(PROFILE_A.childId);
-    expect(drafts.load(sessionId)?.finalPayload).toBeDefined();
-    state.endActivityResult = { status: "evaluated", pointsAwarded: 1, errorCode: null };
-    await harness.controller.selectProfile(PROFILE_A.childId);
-    expect(drafts.load(sessionId)).toBeNull();
+    expect(drafts.load(sessionId)).toMatchObject({ version: 1, sessionId, childId: PROFILE_A.childId });
     harness.controller.teardown();
   });
 
@@ -1512,7 +1510,9 @@ describe("LearningSessionController", () => {
 
       expect(state.activityResultCalls).toEqual(["55555555-5555-5555-5555-555555555555", "55555555-5555-5555-5555-555555555555"]);
       expect(harness.activityDrafts.load("55555555-5555-5555-5555-555555555555")).toBeNull();
-      expect(harness.controller.getScreen()).toMatchObject({ kind: "deck", childId: PROFILE_B.childId, profiles: [{ childId: PROFILE_A.childId, rewardPoints: 4 }] });
+    const screen = harness.controller.getScreen();
+    expect(screen).toMatchObject({ kind: "deck", childId: PROFILE_B.childId });
+    expect(screen.kind === "deck" && screen.profiles.find(profile => profile.childId === PROFILE_A.childId)?.rewardPoints).toBe(4);
     } finally { vi.useRealTimers(); }
   });
 
@@ -1658,7 +1658,8 @@ describe("LearningSessionController", () => {
     const starting = harness.controller.startLearning(DECK.deckId);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", processing: true, busy: true });
-    expect(harness.activityDrafts.load("55555555-5555-5555-5555-555555555555")?.state.pendingPause?.kind).toBe("technical_wait");
+    const pendingDraft = harness.activityDrafts.load("55555555-5555-5555-5555-555555555555");
+    expect(pendingDraft && "state" in pendingDraft && pendingDraft.state.pendingPause?.kind).toBe("technical_wait");
     releaseAttempt();
     await starting;
     expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", feedback: { attemptId: pendingTask.pendingAttemptId }, busy: false, processing: false });

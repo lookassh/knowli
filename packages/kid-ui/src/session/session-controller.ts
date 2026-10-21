@@ -23,7 +23,7 @@ import { MIC_DENIED_KEY, type LocalPreferences } from "../storage";
 import { randomUUID } from "./uuid";
 import { createGuidanceAudio } from "./guidance-audio";
 import { SessionActivityReporter, type ActivityClock } from "./activity-report";
-import { createMemoryActivityDraftStore, type SessionActivityDraftStore } from "./activity-draft-store";
+import { createMemoryActivityDraftStore, type PendingActivityResult, type SessionActivityDraftStore } from "./activity-draft-store";
 
 /**
  * Sterownik przepływu nauki (plan zadania 9): czysta maszyna stanu nad
@@ -200,6 +200,9 @@ export class LearningSessionController {
   #frozenActivityReport: SessionActivityReport | null | undefined = undefined;
   /** Wynik oceny aktywności ostatnio zakończonej sesji (punkty/błąd). */
   #lastActivityResult: SessionActivityResultDto | null = null;
+  #activityResultTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  #activityResultPolling = new Set<string>();
+  #disposed = false;
 
   constructor(deps: LearningSessionDeps) {
     this.#api = deps.api;
@@ -315,7 +318,7 @@ export class LearningSessionController {
     this.#lastActivityResult = null;
     this.#frozenActivityReport = undefined;
     const draft = this.#activityDrafts.load(sessionId);
-    if (draft) {
+    if (draft && "state" in draft) {
       this.#activity = SessionActivityReporter.resume(this.#activityClock, draft.state);
       return;
     }
@@ -332,9 +335,61 @@ export class LearningSessionController {
       savedAtMs: this.#activityClock.now(),
       state: activity.state,
       childId: this.#learning()?.session.childId ?? existing?.childId,
-      ...(existing?.finalPayload === undefined ? {} : { finalPayload: existing.finalPayload }),
+      ...(existing && "state" in existing && existing.finalPayload !== undefined ? { finalPayload: existing.finalPayload } : {}),
     });
     if (!saved) activity.markStorageUnavailable();
+  }
+
+  #rememberPendingActivityResult(sessionId: string, childId: string): void {
+    const pending: PendingActivityResult = { version: 1, sessionId, childId, savedAtMs: this.#activityClock.now() };
+    if (this.#activityDrafts.savePendingResult(pending)) this.#scheduleActivityResultPoll(pending);
+  }
+
+  #resumePendingActivityResults(): void {
+    for (const pending of this.#activityDrafts.listPendingResults()) this.#scheduleActivityResultPoll(pending);
+  }
+
+  #scheduleActivityResultPoll(pending: PendingActivityResult): void {
+    if (this.#disposed || this.#activityResultTimers.has(pending.sessionId) || this.#activityResultPolling.has(pending.sessionId)) return;
+    const timer = setTimeout(() => {
+      this.#activityResultTimers.delete(pending.sessionId);
+      void this.#pollActivityResult(pending);
+    }, this.#pollIntervalMs);
+    this.#activityResultTimers.set(pending.sessionId, timer);
+  }
+
+  async #pollActivityResult(pending: PendingActivityResult): Promise<void> {
+    if (this.#disposed || this.#activityResultPolling.has(pending.sessionId)) return;
+    this.#activityResultPolling.add(pending.sessionId);
+    let retry = false;
+    try {
+      const result = await this.#api.readSessionActivityResult(pending.sessionId);
+      if (this.#disposed) return;
+      if (result.status === "already_started") {
+        retry = true;
+        return;
+      }
+      // Usuwamy znacznik przed odświeżeniem profili, aby spóźnione lub
+      // równoległe wywołanie nie wykonało kolejnego odczytu terminalnego.
+      this.#activityDrafts.remove(pending.sessionId);
+      const visibleScreen = this.#screen.kind === "summary"
+        && this.#screen.childId === pending.childId && this.#screen.summary.sessionId === pending.sessionId
+        ? this.#screen : null;
+      if (visibleScreen) {
+        this.#lastActivityResult = result;
+        this.#screen = { ...visibleScreen, summary: { ...visibleScreen.summary, activity: result } };
+        this.#emit();
+      }
+      // listProfiles odświeża wszystkie profile, lecz owner wyniku pozostaje
+      // przypięty do znacznika; nigdy nie wiążemy go z aktualnym wyborem UI.
+      if (this.#profiles.some(profile => profile.childId === pending.childId)) await this.refreshProfiles();
+    } catch {
+      // Krótkotrwała utrata sieci nie zmienia widoku ani nie usuwa źródła prawdy.
+      retry = !this.#disposed;
+    } finally {
+      this.#activityResultPolling.delete(pending.sessionId);
+      if (retry) this.#scheduleActivityResultPoll(pending);
+    }
   }
 
   /** Ostatni wynik oceny aktywności (punkty/błąd) dla ekranów podsumowania. */
@@ -346,6 +401,7 @@ export class LearningSessionController {
     const epoch = this.#epoch;
     try {
       this.#profiles = await this.#api.listProfiles();
+      this.#resumePendingActivityResults();
       try {
         this.#uiAudio = await this.#api.readUiAudio();
         this.#guidance = createGuidanceAudio(this.#uiAudio, this.#media.player, (id) => this.#api.mediaUrl(id));
@@ -395,7 +451,10 @@ export class LearningSessionController {
         const summary = await this.#api.endSession(draft.sessionId, draft.finalPayload);
         acknowledged = true;
         acknowledgedSessionIds.add(draft.sessionId);
-        if (summary.activity?.status === "already_started") continue;
+        if (summary.activity?.status === "already_started") {
+          this.#rememberPendingActivityResult(draft.sessionId, childId);
+          continue;
+        }
         if (epoch === this.#epoch && this.#childId === childId) this.#lastActivityResult = summary.activity ?? null;
         this.#activityDrafts.remove(draft.sessionId);
       } catch {
@@ -690,11 +749,22 @@ export class LearningSessionController {
       const summary = await this.#api.endSession(sessionId, report);
       if (epoch !== this.#epoch) return;
       this.#lastActivityResult = summary.activity ?? null;
-      // Potwierdzenie zapisu żądania końca: kopia robocza tej sesji znika
-      // (spóźniona odpowiedź nie kasuje raportu nowej sesji — klucz per sesja).
-      if (report !== undefined && summary.activity?.status !== "already_started") this.#activityDrafts.remove(sessionId);
-      await this.refreshProfiles();
-      if (epoch !== this.#epoch) return;
+      // Po zaakceptowaniu raportu nie zachowujemy już payloadu aktywności.
+      // Pending zawiera tylko identyfikator sesji i właściciela wyniku.
+      if (report !== undefined && summary.activity?.status === "already_started") {
+        this.#rememberPendingActivityResult(sessionId, childId);
+      } else if (report !== undefined) {
+        this.#activityDrafts.remove(sessionId);
+      }
+      if (mode !== "mock_test") {
+        this.#teardownRecording();
+        this.#stopPlayback();
+        this.#screen = { kind: "summary", childId, profiles: this.#profiles, summary };
+        this.#emit();
+        void this.refreshProfiles();
+        return;
+      }
+      void this.refreshProfiles();
       if (mode === "mock_test" && this.#mockDeckKind === "lesson") {
         const lessonSummary = await this.#api.readLessonMockTestSummary(sessionId);
         if (epoch !== this.#epoch) return;
@@ -1359,6 +1429,9 @@ export class LearningSessionController {
   /** Opuszczenie widoku: zatrzymuje strumień mikrofonu i odtwarzanie (RF5). */
   teardown(): void {
     this.pauseActivity("background");
+    this.#disposed = true;
+    for (const timer of this.#activityResultTimers.values()) clearTimeout(timer);
+    this.#activityResultTimers.clear();
     this.#epoch += 1;
     this.#teardownRecording();
     this.#stopPlayback();
