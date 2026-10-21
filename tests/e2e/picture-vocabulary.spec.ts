@@ -192,8 +192,12 @@ test("mówione ćwiczenie obrazkowe można świadomie pominąć bez mikrofonu", 
   await expect(page.getByTestId("kid-input")).toHaveCount(0);
   // bez nadanego uprawnienia auto-start nie rusza — przycisk pozostaje w idle
   await expect(page.getByTestId("kid-record")).toHaveAttribute("data-phase", "idle");
-  await page.getByTestId("kid-skip").click();
+  // hint uprawnień w slocie nagrywania jest widoczny PRZED pominięciem; po
+  // „Pomiń” LearnScreen podmienia cały widok ćwiczenia na feedback, więc
+  // asercja elementów ćwiczenia po kliknięciu byłaby wyścigiem z odpowiedzią
   await expect(page.getByTestId("kid-record-status")).toBeVisible();
+  await page.getByTestId("kid-skip").click();
+  // „Dalej” pojawia się w widoku feedbacku — klik sam oczekuje na podmianę
   await page.getByTestId("kid-next").click();
   await expect(page.getByTestId("kid-summary")).toBeVisible();
 });
