@@ -56,12 +56,22 @@ export function imageFingerprint(input: ImageFingerprintInput): string {
 export interface IllustratableItem {
   source: string;
   target: string;
+  example?: string;
   visualData?: Record<string, unknown>;
 }
 
-/** Deterministyczny prompt ilustracji z treści karty; imagePrompt doprecyzowuje. */
+/**
+ * Deterministyczny prompt ilustracji z treści karty; zdanie przykładu
+ * jednoznacza znaczenie celu (moderacja obrazów odrzuca wieloznaczne słowa
+ * jak „hot"), imagePrompt doprecyzowuje dalej.
+ */
 export function illustrationPrompt(item: IllustratableItem): string {
   const raw = item.visualData?.imagePrompt;
   const hint = typeof raw === "string" && raw.trim() ? ` ${raw.trim()}` : "";
-  return `Simple child-friendly illustration of "${item.target}" (${item.source}). No text in the image.${hint}`;
+  const example = item.example?.trim();
+  const exampleSentence =
+    example !== undefined && example !== ""
+      ? ` ${/[.!?…]$/.test(example) ? example : `${example}.`}`
+      : "";
+  return `Simple child-friendly illustration of "${item.target}" (${item.source}).${exampleSentence} No text in the image.${hint}`;
 }

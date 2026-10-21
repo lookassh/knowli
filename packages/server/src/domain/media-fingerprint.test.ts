@@ -62,6 +62,44 @@ describe("illustrationPrompt", () => {
     expect(illustrationPrompt({ source: "czwartek", target: "Friday" })).not.toBe(illustrationPrompt(item));
   });
 
+  it("bez przykładu zachowuje dotychczasowy prompt (fingerprint bez zmian)", () => {
+    expect(illustrationPrompt({ source: "czwartek", target: "Thursday" })).toBe(
+      `Simple child-friendly illustration of "Thursday" (czwartek). No text in the image.`,
+    );
+  });
+
+  it("wstawia zdanie przykładu przed końcówkę promptu", () => {
+    const prompt = illustrationPrompt({
+      source: "gorąco",
+      target: "hot",
+      example: "It is hot in summer.",
+    });
+    expect(prompt).toBe(
+      `Simple child-friendly illustration of "hot" (gorąco). It is hot in summer. No text in the image.`,
+    );
+  });
+
+  it("domyka przykład bez interpunkcji końcowej i zmienia prompt", () => {
+    const closed = illustrationPrompt({
+      source: "gorąco",
+      target: "hot",
+      example: "It is hot in summer.",
+    });
+    const open = illustrationPrompt({
+      source: "gorąco",
+      target: "hot",
+      example: "It is hot in summer",
+    });
+    expect(open).toBe(closed);
+    expect(illustrationPrompt({ source: "gorąco", target: "hot" })).not.toBe(closed);
+  });
+
+  it("pusty przykład nie zmienia promptu", () => {
+    expect(illustrationPrompt({ source: "czwartek", target: "Thursday", example: "  " })).toBe(
+      illustrationPrompt({ source: "czwartek", target: "Thursday" }),
+    );
+  });
+
   it("uwzględnia jawne doprecyzowanie imagePrompt", () => {
     const item = { source: "czwartek", target: "Thursday" };
     const withHint = illustrationPrompt({
