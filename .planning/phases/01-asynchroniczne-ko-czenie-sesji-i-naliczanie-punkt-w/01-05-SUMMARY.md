@@ -76,6 +76,10 @@ Oba rodzaje kartkówek pokazują pending bez oczekiwania na GET szczegółów, a
 
 None — plan wykonany zgodnie z zakresem. Nie zmieniono Kid API, reguł punktacji ani przyjętej decyzji T-01-03.
 
+## Independent Review
+
+Review 01-05 found one non-blocking warning (WR-01): if the one-time quiz details GET fails permanently, the view remains usable but answer solutions stay empty. The async points field and navigation remain available. No blocker or additional security finding was reported.
+
 ## MCP Boundary
 
 Zmiana dotyczy lokalnego stanu i prezentacji w Kid UI. Nie zmienia endpointów, DTO publicznego API ani raportu MCP/skill Hermesa.

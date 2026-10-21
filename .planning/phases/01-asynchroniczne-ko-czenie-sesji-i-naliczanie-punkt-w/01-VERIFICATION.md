@@ -25,7 +25,7 @@ covered_files:
   - packages/server/src/modules/session-activity.ts
   - tests/e2e/mock-test.spec.ts
   - tests/e2e/lesson-mock-test.spec.ts
-covered_digest: "v3:sha256:3bfa4c30648604866d73c16f72ec5d4833f86591891b6f38d52abc6550149609"
+covered_digest: "v3:sha256:afe47cb445e4641ceefd8dd710bfda4a09a87470110584ef65b95464af9911de"
 gaps: []
 behavior_unverified: 0
 overrides_applied: 0
@@ -94,7 +94,7 @@ overrides_applied: 0
 
 ## Regressions and Decisions
 
-Brak wykrytych regresji w wykonanych testach. Decyzja właściciela utrzymująca obecny model zaufania Kid API została zachowana; nie wprowadzono uwierzytelniania sesyjnego ani zmian w publicznych kontraktach.
+Testy jednostkowe, integracyjne i E2E nie wykazały regresji. Niezależny przegląd wskazał jedno ostrzeżenie (WR-01, bez blockerów): trwałe niepowodzenie pojedynczego GET szczegółów kartkówki pozostawia omówienie bez rozwiązań; nie ma ponowienia tego GET ani widocznego stanu błędu. Nie blokuje to podsumowania, pola punktów ani dalszej nawigacji, więc nie zmienia spełnienia ASYNC-01–04. Decyzja właściciela utrzymująca obecny model zaufania Kid API została zachowana; nie wprowadzono uwierzytelniania sesyjnego ani zmian w publicznych kontraktach.
 
 ## Gaps Summary
 
