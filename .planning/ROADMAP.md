@@ -15,11 +15,11 @@
 **Goal:** Po zakończeniu ćwiczenia lub kartkówki dziecko od razu widzi podsumowanie, a wynik punktowy pojawia się po asynchronicznej ocenie i trafia do właściwego profilu także po zmianie ekranu lub profilu.
 **Requirements**: ASYNC-01, ASYNC-02, ASYNC-03, ASYNC-04
 **Depends on:** Nothing (first phase)
-**Plans:** 4 plans
+**Plans:** 1/4 plans executed
 
 Plans:
 **Wave 1**
-- [ ] 01-01-PLAN.md — Trwałe przyjęcie oceny i asynchroniczna finalizacja punktów
+- [x] 01-01-PLAN.md — Trwałe przyjęcie oceny i asynchroniczna finalizacja punktów
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 01-02-PLAN.md — Bezpieczny odczyt statusu przez Kid API
@@ -34,4 +34,4 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 | --- | --- | --- | --- |
-| 1. Asynchroniczne kończenie sesji i naliczanie punktów | 0/4 | Planned | - |
+| 1. Asynchroniczne kończenie sesji i naliczanie punktów | 1/4 | In Progress | - |
