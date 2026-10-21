@@ -2056,6 +2056,41 @@ describe("LearningSessionController — automatyczna próba mowy z VAD (quick 26
       vi.useRealTimers();
     }
   });
+
+  it("po udanej auto-próbie ręczne „Nagraj jeszcze raz” nie gra bipu startu (reset stanu auto, D-04)", async () => {
+    vi.useFakeTimers();
+    try {
+      const task = speechTask();
+      const state = baseState();
+      state.attempts = [attemptDto({ taskId: task.taskId, modality: "audio", feedback: { kind: "almost" }, taskState: "issued" })];
+      const harness = await startAtTask(state, task);
+      await harness.controller.prepareMicrophone();
+      await harness.controller.autoCaptureSpeech();
+      await vi.advanceTimersByTimeAsync(300);
+      // pełny cykl auto: grace + mowa + cisza → auto-stop → jedyna próba audio
+      for (let index = 0; index < 3; index += 1) harness.recorder.pushLevel(1);
+      for (let index = 0; index < 2; index += 1) harness.recorder.pushLevel(0.2);
+      for (let index = 0; index < 12; index += 1) harness.recorder.pushLevel(0);
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(harness.state.speechSubmissions).toHaveLength(1);
+      expect(harness.controller.getScreen()).toMatchObject({ feedback: { retry: true } });
+      await harness.controller.continueLearning();
+      expect(harness.controller.getScreen()).toMatchObject({ feedback: null, task: { taskId: task.taskId } });
+
+      // ręczna próba na tym samym kontrolerze: bez hooka onMicrophoneReady
+      // i bez kolejnego bipu startu — stan auto-próby skonsumował stopRecording
+      await harness.controller.startRecording();
+      expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "recording" });
+      expect(harness.recorder.started).toBe(2);
+      expect(harness.media.lastRecorderOptions?.onMicrophoneReady).toBeUndefined();
+      expect(harness.media.beeps).toEqual(["start", "end"]);
+      harness.controller.cancelRecording();
+      expect(harness.state.speechSubmissions).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 function baseState(): ApiState {

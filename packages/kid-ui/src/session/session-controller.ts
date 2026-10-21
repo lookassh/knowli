@@ -1259,9 +1259,13 @@ export class LearningSessionController {
     const taskId = screen.task.taskId;
     const generation = ++this.#recordingGeneration;
     // auto-próba konsumowana na początku zatrzymania — dotyczy także ręcznego
-    // domknięcia auto-nagrania (toggle), nie dotyczy czysto ręcznych nagrań
+    // domknięcia auto-nagrania (toggle), nie dotyczy czysto ręcznych nagrań.
+    // Pełny reset stanu auto (vad, bip startu): ręczna próba po udanej auto
+    // („Nagraj jeszcze raz") nie może grać bipu startu ani wołać hooka (D-04).
+    // Bezpieczne — #recordingGeneration już awansował, więc spóźnione poziomy
+    // starego rejestratora nie widzą wyzerowanego VAD.
     const autoCapture = this.#autoCaptureActive;
-    this.#autoCaptureActive = false;
+    this.#resetAutoCapture();
     this.#setLearning({ recordingPhase: "stopping", inputLevel: null });
     if (Date.now() - this.#recordingStartedAt < 300) {
       this.#recorder = null;
