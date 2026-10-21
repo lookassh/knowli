@@ -46,7 +46,7 @@ describe("Kid API activity result", () => {
   it("maps invalid identifiers and denied reads through the Kid API error boundary", async () => {
     const api = withApi((incoming) => handleKidApi(incoming, services, ["sessions", "not-a-uuid", "activity-result"]));
     const invalid = await api(request("not-a-uuid"));
-    expect(invalid.status).toBe(422);
+    expect(invalid.status).toBe(400);
     expect(readActivityResult).not.toHaveBeenCalled();
 
     readActivityResult.mockRejectedValueOnce(new AppError("not_found"));

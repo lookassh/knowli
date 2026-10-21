@@ -281,6 +281,9 @@ function makeApi(state: ApiState): KidApi {
       if (state.networkDown) throw new TypeError("fetch failed");
       return state.lessonMockSummary ?? { sessionId, deckId: LESSON_DECK.deckId, state: "completed", complete: true, taskBudget: 2, answeredCount: 2, solutions: [] };
     },
+    async readSessionActivityResult() {
+      return state.endActivityResult ?? { status: "already_started", pointsAwarded: 0, errorCode: null };
+    },
     mediaUrl(assetId) {
       return `https://media.test/${assetId}`;
     },

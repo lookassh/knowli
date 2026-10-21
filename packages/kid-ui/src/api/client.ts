@@ -11,6 +11,7 @@ import {
   PresentationCompletionDtoSchema,
   SessionDtoSchema,
   SessionSummaryDtoSchema,
+  SessionActivityResultDtoSchema,
   TaskDtoSchema,
   type AttemptDto,
   type KidValidationReason,
@@ -22,6 +23,7 @@ import {
   type KidProfileDto,
   type PresentationCompletionDto,
   type SessionActivityReport,
+  type SessionActivityResultDto,
   type SessionDto,
   type SessionInput,
   type SessionSummaryDto,
@@ -115,6 +117,7 @@ export function createKidApiClient(options: KidClientOptions = {}): KidApi {
   const parseAttempt = parseWith(AttemptDtoSchema);
   const parseSession = parseWith(SessionDtoSchema);
   const parseSummary = parseWith(SessionSummaryDtoSchema);
+  const parseActivityResult = parseWith(SessionActivityResultDtoSchema);
   const parseDisclosure = parseWith(DisclosureDtoSchema);
   const parseFeedbackAudio = parseWith(FeedbackAudioDtoSchema);
   const parsePresentation = parseWith(PresentationCompletionDtoSchema);
@@ -130,6 +133,9 @@ export function createKidApiClient(options: KidClientOptions = {}): KidApi {
     },
     readLessonMockTestSummary(sessionId) {
       return request(`/api/v1/kid/sessions/${sessionId}/mock-test-summary`, { method: "GET" }, parseWith(LessonMockTestSummaryDtoSchema));
+    },
+    readSessionActivityResult(sessionId: string): Promise<SessionActivityResultDto> {
+      return request(`/api/v1/kid/sessions/${sessionId}/activity-result`, { method: "GET" }, parseActivityResult);
     },
     listProfiles(): Promise<KidProfileDto[]> {
       return request("/api/v1/kid/profiles", { method: "GET" }, parseProfiles);
