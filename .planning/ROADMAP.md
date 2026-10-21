@@ -15,7 +15,7 @@
 **Goal:** Po zakończeniu ćwiczenia lub kartkówki dziecko od razu widzi podsumowanie, a wynik punktowy pojawia się po asynchronicznej ocenie i trafia do właściwego profilu także po zmianie ekranu lub profilu.
 **Requirements**: ASYNC-01, ASYNC-02, ASYNC-03, ASYNC-04
 **Depends on:** Nothing (first phase)
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans executed
 
 Plans:
 **Wave 1**
@@ -28,10 +28,10 @@ Plans:
 - [x] 01-03-PLAN.md — Polling kontrolera odporny na nawigację, zmianę profilu i reload
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 01-04-PLAN.md — Komunikacja UI, regresja przebiegu i kontrola granicy MCP
+- [x] 01-04-PLAN.md — Komunikacja UI, regresja przebiegu i kontrola granicy MCP
 
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
 | --- | --- | --- | --- |
-| 1. Asynchroniczne kończenie sesji i naliczanie punktów | 3/4 | In Progress | - |
+| 1. Asynchroniczne kończenie sesji i naliczanie punktów | 4/4 | In Progress | - |
