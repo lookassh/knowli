@@ -1,0 +1,8 @@
+{
+  "planning": {
+    "commit_docs": true
+  },
+  "workflow": {
+    "tdd_mode": true
+  }
+}
