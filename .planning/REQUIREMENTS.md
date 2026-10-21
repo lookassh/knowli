@@ -8,10 +8,10 @@
 
 ### Asynchroniczne zakończenie sesji
 
-- [ ] **ASYNC-01**: Po zakończeniu ćwiczenia lub kartkówki dziecko od razu widzi zapisane podsumowanie, a oczekiwanie na ocenę aktywności dotyczy wyłącznie pola punktów i nie blokuje dalszych działań.
-- [ ] **ASYNC-02**: Klient odczytuje trwały status oceny krótkim pollingiem, kontynuuje go po zmianie ekranu lub profilu i po zakończeniu odświeża punkty właściwego dziecka; wynik można odzyskać po odświeżeniu aplikacji.
-- [ ] **ASYNC-03**: Każda sesja uruchamia najwyżej jedną ocenę aktywności; odczyt statusu nie wywołuje modelu ani ponownego naliczenia, a awaria techniczna zapisuje błąd bez punktów i bez automatycznego ponowienia.
-- [ ] **ASYNC-04**: Publiczny status Kid API ujawnia wyłącznie bezpieczny, walidowany wynik punktowy; nie rozszerza `learning-overview`, MCP ani skilla Hermesa o punkty lub szczegóły oceny.
+- [x] **ASYNC-01**: Po zakończeniu ćwiczenia lub kartkówki dziecko od razu widzi zapisane podsumowanie, a oczekiwanie na ocenę aktywności dotyczy wyłącznie pola punktów i nie blokuje dalszych działań.
+- [x] **ASYNC-02**: Klient odczytuje trwały status oceny krótkim pollingiem, kontynuuje go po zmianie ekranu lub profilu i po zakończeniu odświeża punkty właściwego dziecka; wynik można odzyskać po odświeżeniu aplikacji.
+- [x] **ASYNC-03**: Każda sesja uruchamia najwyżej jedną ocenę aktywności; odczyt statusu nie wywołuje modelu ani ponownego naliczenia, a awaria techniczna zapisuje błąd bez punktów i bez automatycznego ponowienia.
+- [x] **ASYNC-04**: Publiczny status Kid API ujawnia wyłącznie bezpieczny, walidowany wynik punktowy; nie rozszerza `learning-overview`, MCP ani skilla Hermesa o punkty lub szczegóły oceny.
 
 ### Prywatne wdrożenie i odtwarzanie
 
@@ -57,10 +57,10 @@ Nie są one kopiowane do v1 tego cyklu ani przypisywane do nowych faz. Ich bież
 
 | Requirement | Phase | Status |
 | --- | --- | --- |
-| ASYNC-01 | Phase 1 | Pending |
-| ASYNC-02 | Phase 1 | Pending |
-| ASYNC-03 | Phase 1 | Pending |
-| ASYNC-04 | Phase 1 | Pending |
+| ASYNC-01 | Phase 1 | Complete |
+| ASYNC-02 | Phase 1 | Complete |
+| ASYNC-03 | Phase 1 | Complete |
+| ASYNC-04 | Phase 1 | Complete |
 | OPS-01 | Earlier Phase 1 | Owner-confirmed complete |
 | OPS-02 | Earlier Phase 1 | Owner-confirmed complete |
 | REC-01 | Earlier Phase 1 | Owner-confirmed complete |

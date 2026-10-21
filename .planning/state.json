@@ -6,13 +6,13 @@
     {
       "number": "1",
       "name": "Asynchroniczne kończenie sesji i naliczanie punktów",
-      "status": "in_progress"
+      "status": "complete"
     }
   ],
   "next": {
-    "command": "$gsd-progress --next",
-    "label": "Advance to the next step (plan phase 1)",
-    "reason": "Phase 1 of 1 — needs a plan"
+    "command": "$gsd-new-milestone",
+    "label": "Start a new milestone",
+    "reason": "All phases complete — start a new milestone"
   },
-  "updated_at": "2026-10-21T13:45:18.535Z"
+  "updated_at": "2026-10-21T19:39:01.562Z"
 }
