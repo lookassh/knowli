@@ -135,3 +135,23 @@ Brak nowej powierzchni poza modelem zagrożeń planu — mitigacje T-261021-01/0
 ## Self-Check: PASSED
 
 Wszystkie 15 plików z planu istnieje; wszystkie 5 commitów zadania (0c0f3fa, 6433a33, 83f0079, 4e27de5, e42acad) jest przodkami HEAD; SUMMARY.md utworzony.
+
+## Review follow-up
+
+### WR-01 resolved (commit 52c55c1)
+
+`stopRecording()` po skonsumowaniu flagi auto wywołuje pełny `#resetAutoCapture()` — zgubny `#autoStartBeep` i terminalny `#vad` nie przetrwały do ręcznej próby „Nagraj jeszcze raz" (D-04: ścieżka ręczna bez hooka i bez bipu startu). Test regresyjny w session-controller.test.ts (RED bez fixu).
+
+### WR-02 resolved (decyzja właściciela 2026-10-21)
+
+**Decyzja:** automatyczna próba mowy woła getUserMedia wyłącznie przy już nadanym uprawnieniu mikrofonu (lub gdy mikrofon był już używany w tej sesji — wtedy nowy prompt nie jest możliwy). Pierwsze nadanie zgody dzieje się świadomym naciśnięciem przycisku nagrywania; automat nigdy sam nie wywołuje pytania o zgodę. Po nadaniu zgody przyciskiem kolejne zadanie mowy wystartuje samo.
+
+**Implementacja:**
+- Port `PlatformMedia.getMicrophonePermission(): Promise<"granted" | "prompt" | "denied" | "unknown">` (packages/kid-ui/src/media/platform.ts) — typ `MicrophonePermission`; pakiet nadal przenośny, zero nowych zależności.
+- Adapter przeglądarkowy `queryMicrophonePermission` (browser.ts): wyłącznie `navigator.permissions.query({ name: "microphone" })` w try/catch, bez getUserMedia i bez efektów ubocznych; brak API (np. Firefox), niewspierana nazwa albo awaria → bezpieczne "unknown".
+- Brama w `autoCaptureSpeech()` (session-controller.ts): przy niedostępnym mikrofonie najpierw zapytanie o STAN uprawnienia; "granted" → dotychczasowa sonda + auto-start; cokolwiek innego ("prompt"/"denied"/"unknown") → cichy skip dla tego zadania — bez sondy, bez getUserMedia i bez zapamiętania micDenied. Ścieżka ręczna (przycisk) bez zmian: naciśnięcie jest gestem użytkownika, przeglądarka może pokazać prompt, a po nadaniu zgody następne zadanie mowy startuje samo.
+- Testy jednostkowe (session-controller.test.ts, RED-first): "prompt" → brak auto-startu, zero wywołań getUserMedia, micDenied niezapamiętane, ręczne startRecording działa; "denied" → skip; "unknown" → skip (bezpieczne domyślnie); "granted" → auto-start jak dotychczas; mikrofon gotowy → auto-start bez pytania o uprawnienie. Adapter: mapowanie stanów + awaria → "unknown" + brak dotykania getUserMedia (browser.test.ts).
+- E2E: fake Permissions API w installFakeMicrophone/injectFakeMediaPlatform (sterowalny `window.__kidMicPermission`, domyślnie "granted" — istniejące spece auto bez zmian); initScripts w kid-ui-layout/kid-layout-stability/picture-vocabulary z "granted"; nowy przypadek w speech-recording-ux.spec.ts (fixture picture_speech, uprawnienie "prompt"): bez auto-startu (idle bez kliku, brak wskaźnika nagrywania), świadome naciśnięcie przygotowuje i rozpoczyna nagrywanie.
+- SPEC §6/§12: dopisany warunek już nadanego uprawnienia dla automatycznego rozpoczęcia (2026-10-21).
+
+**Weryfikacja:** 491 testów jednostkowych zielonych (packages/kid-ui + contracts, w tym 99 kontrolera), `pnpm typecheck` czysty, pięć speców e2e zielonych — 78 testów (77 wcześniejszych + nowy przypadek "prompt").
