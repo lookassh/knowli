@@ -246,6 +246,7 @@ export function LearnScreen({
                 onLetterDraftChange={(letters) => setLetterDraft({ taskId: task.taskId, letters })}
                 busy={busy || screen.feedback !== null || screen.reveal !== null}
                 recording={screen.recording}
+                automaticRecording={screen.automaticRecording}
                 recordingPhase={screen.recordingPhase}
                 microphoneReady={screen.microphoneReady}
                 inputLevel={screen.inputLevel}

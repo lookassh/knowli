@@ -31,8 +31,11 @@ const BEEP_PEAK_GAIN = 0.3;
  * opcjonalny — brak konstruktorów, blokada autoplay albo awaria
  * rozstrzygają się po cichu, bez blokowania nagrywania bez końca.
  */
-async function playBeepViaWebAudio(AudioContextCtor: typeof AudioContext | undefined, kind: BeepKind): Promise<void> {
-  if (!AudioContextCtor) return;
+async function playBeepViaWebAudio(AudioContextCtor: typeof AudioContext | undefined, kind: BeepKind, signal?: AbortSignal): Promise<void> {
+  if (!AudioContextCtor || signal?.aborted) return;
+  let abort!: () => void;
+  const cancelled = new Promise<void>((resolve) => { abort = resolve; });
+  signal?.addEventListener("abort", abort, { once: true });
   let context: AudioContext | null = null;
   try {
     context = new AudioContextCtor();
@@ -40,6 +43,7 @@ async function playBeepViaWebAudio(AudioContextCtor: typeof AudioContext | undef
       let resumeTimeout: ReturnType<typeof setTimeout> | undefined;
       try {
         await Promise.race([
+          cancelled,
           context.resume(),
           new Promise<void>((resolve) => {
             resumeTimeout = globalThis.setTimeout(resolve, LEVEL_MONITOR_RESUME_TIMEOUT_MS);
@@ -49,7 +53,7 @@ async function playBeepViaWebAudio(AudioContextCtor: typeof AudioContext | undef
         globalThis.clearTimeout(resumeTimeout);
       }
     }
-    if (context.state !== "running") return;
+    if (signal?.aborted || context.state !== "running") return;
     const oscillator = context.createOscillator();
     const gain = context.createGain();
     oscillator.frequency.value = BEEP_FREQUENCY_HZ[kind];
@@ -66,19 +70,25 @@ async function playBeepViaWebAudio(AudioContextCtor: typeof AudioContext | undef
     oscillator.stop(startAt + BEEP_DURATION_S);
     // onended normalnie domyka grę; czasomierz zabezpiecza środowiska, które
     // zdarzenia nie dostarczą, żeby bip nigdy nie wstrzymał obiegu nagrywania
-    await new Promise<void>((resolve) => {
-      let settled = false;
-      const finish = () => {
-        if (settled) return;
-        settled = true;
-        resolve();
-      };
-      oscillator.onended = finish;
-      globalThis.setTimeout(finish, Math.round((BEEP_DURATION_S + 0.1) * 1000));
-    });
+    let beepTimeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([cancelled, new Promise<void>((resolve) => {
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          resolve();
+        };
+        oscillator.onended = finish;
+        beepTimeout = globalThis.setTimeout(finish, Math.round((BEEP_DURATION_S + 0.1) * 1000));
+      })]);
+    } finally {
+      globalThis.clearTimeout(beepTimeout);
+    }
   } catch {
     // bip degraduje się po cichu (T-261021-02)
   } finally {
+    signal?.removeEventListener("abort", abort);
     try {
       await context?.close();
     } catch {
@@ -661,7 +671,7 @@ export function createBrowserMedia(deps: BrowserMediaDeps = {}): PlatformMedia {
     },
     createRecorder: (options) => new BrowserRecorder({ ...deps, getUserMedia }, options),
     player: new BrowserAudioPlayer(),
-    playBeep: (kind) => playBeepViaWebAudio(AudioContextCtor, kind),
+    playBeep: (kind, signal) => playBeepViaWebAudio(AudioContextCtor, kind, signal),
     getMicrophonePermission: () => queryMicrophonePermission(permissions),
   };
 }

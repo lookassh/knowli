@@ -551,13 +551,13 @@ test("cisza bez wykrytej mowy anuluje automatyczne nagrywanie bez próby", async
   )).toHaveLength(0);
 });
 
-for (const action of ["click", "Escape"] as const) {
+for (const action of ["click", "Escape", "hold-touch", "hold-silent", "Space", "Enter", "listen", "guidance", "skip"] as const) {
   test(`automatyczne nagranie reaguje na pierwszy ${action}`, async ({ page }) => {
     await installFakeMicrophone(page);
     const fixture = pictureVocabularyFixture();
     const source = fixture.tasks[0];
     if (!source || source.prompt.kind !== "picture_exposure") throw new Error("picture exposure fixture missing");
-    fixture.profiles[0]!.recordingMode = "toggle";
+    fixture.profiles[0]!.recordingMode = action === "click" || action === "Escape" ? "toggle" : "hold";
     fixture.session.microphoneEnabled = true;
     const taskId = "10000000-0000-4000-8000-000000000017";
     fixture.tasks = [{
@@ -565,6 +565,10 @@ for (const action of ["click", "Escape"] as const) {
       prompt: { kind: "picture_speech", audioAssetId: "10000000-0000-4000-8000-000000000014", visual: source.prompt.visual },
     }, null];
     fixture.attempts = [{ ...fixture.attempts![0]!, taskId, modality: "audio" }];
+    const audioId = "10000000-0000-4000-8000-000000000014";
+    fixture.disclosure = { taskId, stepId: "listen", kind: "audio", reveal: null, audioAssetId: audioId };
+    fixture.uiAudio = { ready: true, assets: { speech: audioId } };
+    if (action === "skip") fixture.attempts = [{ ...fixture.attempts[0]!, modality: "skip" }];
     let submissions = 0;
     page.on("request", (request) => {
       if (request.method() === "POST" && /\/tasks\/[^/]+\/attempts$/.test(new URL(request.url()).pathname)) submissions += 1;
@@ -575,15 +579,35 @@ for (const action of ["click", "Escape"] as const) {
     await page.getByTestId("kid-deck").first().click();
     const button = page.getByTestId("kid-record");
     await expect(button).toHaveAttribute("data-phase", "recording");
-    // Rzeczywista próba musi przekroczyć minimalne 300 ms nagrania.
+    // Wysłanie audio wymaga wykrytej mowy oraz minimum 300 ms nagrania.
+    if (action === "click" || action === "hold-touch") {
+      await page.evaluate(() => { (window as unknown as { __kidMicLevel: number }).__kidMicLevel = 0.2; });
+    }
     await page.waitForTimeout(400);
-    if (action === "click") {
-      await button.click();
+    if (action === "click" || action === "hold-touch") {
+      if (action === "click") await button.click();
+      else await button.tap();
       await expect(page.getByTestId("kid-speech-feedback")).toBeVisible();
       expect(submissions).toBe(1);
-    } else {
+    } else if (action === "Space" || action === "Enter") {
       await button.focus();
+      await page.keyboard.press(action);
+      await expect(button).toHaveAttribute("data-phase", "recording");
+      expect(submissions).toBe(0);
       await page.keyboard.press("Escape");
+      await expect(button).toHaveAttribute("data-phase", "idle");
+    } else if (action === "listen" || action === "guidance") {
+      await page.getByTestId(action === "listen" ? "kid-play" : "kid-guidance-play").click();
+      await expect(button).toHaveAttribute("data-phase", "idle");
+      await page.waitForTimeout(500);
+      expect(submissions).toBe(0);
+    } else if (action === "skip") {
+      await page.getByTestId("kid-skip").click();
+      await expect(page.getByTestId("kid-feedback")).toBeVisible();
+      expect(submissions).toBe(1);
+    } else {
+      if (action === "hold-silent") await button.tap();
+      else { await button.focus(); await page.keyboard.press("Escape"); }
       await expect(button).toHaveAttribute("data-phase", "idle");
       await page.waitForTimeout(1_500);
       expect(submissions).toBe(0);

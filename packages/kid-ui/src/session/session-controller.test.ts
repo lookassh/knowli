@@ -1872,6 +1872,86 @@ describe("LearningSessionController", () => {
 describe("LearningSessionController — automatyczna próba mowy z VAD (quick 261021-lsw)", () => {
   const speechTask = () => taskDto("auto-speech", { kind: "speech", text: "apple", visualType: "none", imageAssetId: null, audioAssetId: null });
 
+  it.each([false, true])("ręczna zgoda po blur zachowuje wynik (odmowa: %s)", async (denied) => {
+    const harness = await startAtTask(baseState(), speechTask());
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    harness.media.prepareMicrophone = async () => {
+      await gate;
+      if (denied) throw new DOMException("Permission denied", "NotAllowedError");
+    };
+    const preparation = harness.controller.prepareMicrophone();
+    harness.controller.cancelRecording();
+    release();
+    await preparation;
+    expect(harness.controller.getScreen()).toMatchObject({ microphoneReady: !denied, micDenied: denied, recordingPhase: "idle" });
+    expect(harness.recorder.started).toBe(0);
+    harness.controller.teardown();
+  });
+
+  it("awaria automatycznej sondy urządzenia nie wyłącza sesji obrazkowej ani nie pomija zadania", async () => {
+    const state = baseState();
+    state.profiles = [{ ...PROFILE_A, canRead: false }];
+    state.decks = [{ ...DECK, vocabularyFormat: "picture" }];
+    const task = taskDto("auto-device-error", { kind: "picture_speech", audioAssetId: "pattern", visual: { kind: "color", color: "#ff0000" } });
+    const harness = await startAtTask(state, task);
+    harness.media.prepareMicrophone = async () => { throw new DOMException("Device missing", "NotFoundError"); };
+    await harness.controller.autoCaptureSpeech();
+    expect(state.disabledSessions).toEqual([]);
+    expect(harness.controller.getScreen()).toMatchObject({ task: { taskId: task.taskId }, session: { microphoneEnabled: true }, recordingPhase: "idle", micDenied: false });
+    expect(state.speechSubmissions).toHaveLength(0);
+    harness.controller.teardown();
+  });
+
+  it("ręczne zakończenie cichego autostartu nie wysyła próby", async () => {
+    const harness = await startAtTask(baseState(), speechTask());
+    await harness.controller.autoCaptureSpeech();
+    const now = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now + 500);
+    try {
+      await harness.controller.stopRecording();
+      expect(harness.state.speechSubmissions).toHaveLength(0);
+      expect(harness.recorder.cancelled).toBe(1);
+      expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "idle" });
+    } finally { clock.mockRestore(); harness.controller.teardown(); }
+  });
+
+  it("anulowanie startu przekazuje anulowanie do oczekującego bipa", async () => {
+    const harness = await startAtTask(baseState(), speechTask());
+    let entered!: () => void;
+    let release!: () => void;
+    let signal: AbortSignal | undefined;
+    const reached = new Promise<void>((resolve) => { entered = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    harness.media.playBeep = async (_kind, cancellation) => { signal = cancellation; entered(); await gate; };
+    const capture = harness.controller.autoCaptureSpeech();
+    await reached;
+    harness.controller.cancelRecording();
+    expect(signal?.aborted).toBe(true);
+    release();
+    await capture;
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "idle" });
+    expect(harness.state.speechSubmissions).toHaveLength(0);
+    harness.controller.teardown();
+  });
+
+  it.each(["pattern", "guidance", "skip"])("%s przerywa autostart bez wysyłki audio i wykonuje żądaną akcję", async (action) => {
+    const state = baseState();
+    state.uiAudioReady = true;
+    const task = taskDto("auto-interrupted", { kind: "speech", text: "apple", visualType: "none", imageAssetId: null, audioAssetId: "pattern" });
+    const harness = await startAtTask(state, task);
+    harness.media.playUrls.length = 0;
+    await harness.controller.autoCaptureSpeech();
+    if (action === "pattern") await harness.controller.playTaskAudio();
+    else if (action === "guidance") await harness.controller.playGuidance("recall");
+    else await harness.controller.skip();
+    expect(harness.recorder.cancelled).toBeGreaterThan(0);
+    expect(state.speechSubmissions).toHaveLength(0);
+    if (action === "skip") expect(state.submissions).toContainEqual(expect.objectContaining({ modality: "skip" }));
+    else expect(harness.media.playUrls).toHaveLength(1);
+    harness.controller.teardown();
+  });
+
   it("auto-próba: bip startu po gotowości mikrofonu i przed rozpoczęciem przechwytywania (D-04)", async () => {
     const log: string[] = [];
     const harness = await startAtTask(baseState(), speechTask(), { sharedLog: log });

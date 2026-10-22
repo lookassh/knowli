@@ -93,8 +93,9 @@ export interface PlatformMedia {
    * Krótki sygnał dźwiękowy (WebAudio po stronie adaptera — kontroler nie zna
    * Web Audio). Bip jest opcjonalny: brak konstruktorów, kontekst suspended
    * albo awaria rozstrzygają się po cichu i nigdy nie blokują nagrywania.
+   * Sygnał anulowania przerywa oczekujące wznowienie i odtwarzanie bipa.
    */
-  playBeep(kind: BeepKind): Promise<void>;
+  playBeep(kind: BeepKind, signal?: AbortSignal): Promise<void>;
   /**
    * Wyłącznie zapytanie o stan uprawnienia mikrofonu (Permissions API po
    * stronie adaptera) — bez getUserMedia, bez efektów ubocznych, bez promptu.

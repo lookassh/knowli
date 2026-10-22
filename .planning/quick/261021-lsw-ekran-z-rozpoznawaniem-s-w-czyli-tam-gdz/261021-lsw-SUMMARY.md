@@ -263,3 +263,16 @@ Pełny grep vad.ts (nagłówek włącznie), vad.test.ts, session-controller(.tes
 Weryfikacja: pięć nowych testów jednostkowych odtworzyło błędy przed poprawką (RED), po zmianie 514/514 testów kid-ui + contracts zielonych; pełny `pnpm typecheck` i `git diff --check` bez błędów. E2E na izolowanym PostgreSQL/Docker: 14 istniejących scenariuszy w speech-recording-ux i picture-vocabulary zielonych, dwa nowe scenariusze kliknięcia/Escape zielone w celowanym powtórzeniu. Pierwsza wersja testu kliknięcia kończyła nagranie przed minimalnymi 300 ms; po uwzględnieniu minimum test potwierdza dokładnie jedną wysyłkę, a Escape zero wysyłek.
 
 API → MCP → skill: brak wpływu; zmiany dotyczą wyłącznie obsługi nagrywania i testów klienta, bez zmian endpointów, DTO, autoryzacji ani znaczenia danych raportu. Kalibracja i odsłuch na fizycznym urządzeniu pozostają do sprawdzenia przez właściciela.
+
+## Review round 6 — sześć uwag Gitar, Greptile i Qodo (2026-10-22)
+
+- Ręczne przygotowanie mikrofonu zachowuje zgodę i odmowę po blur, bez samoczynnego rozpoczęcia nagrywania. Strażnik anulowania obowiązuje automatyczne przygotowanie; strażniki zadania i epoki obowiązują oba tryby.
+- Awaria urządzenia podczas automatycznej sondy pozostawia zadanie i włączony mikrofon sesji obrazkowej. Automatyczna sonda nie uruchamia wyłączenia całej sesji po błędzie innym niż odmowa.
+- Space/Enter nie tworzy nowego gestu przytrzymania podczas autostartu. Kontroler dodatkowo anuluje każde ręczne zakończenie automatycznej próby bez wykrytej mowy, bez wysyłki audio.
+- Dotknięcie mikrofonu w domyślnym trybie przytrzymania kończy automatyczną próbę, a podczas jej startu ją anuluje. Ręczne nagrania zachowują właściciela gestu i kończą się po puszczeniu.
+- Odsłuch wzorca, instrukcja i „Pomiń” mogą przerwać automatyczne nagrywanie. Anulowanie następuje przed odtworzeniem/autoryzacją ujawnienia lub zgłoszeniem pominięcia; porzucone audio nie jest wysyłane.
+- Lokalny port `PlatformMedia.playBeep` przyjmuje opcjonalny AbortSignal. Anulowanie próby przerywa oczekiwanie na resume i odtwarzanie bipa, zamyka kontekst i usuwa listener/timery; opóźnione resume nie odtwarza sygnału.
+
+Weryfikacja: osiem nowych testów najpierw odtworzyło błędy (RED); po poprawkach i dodatkowym teście przekazania sygnału anulowania 523/523 testów kid-ui + contracts zielonych. Pełny typecheck i git diff --check bez błędów. W dwóch specach E2E (speech-recording-ux, picture-vocabulary) przeszły 22 scenariusze; scenariusz 15-sekundowego limitu ciszy zakłócił lokalny HMR podczas ostatniej edycji kontrolera, a jego osobne powtórzenie na niezmienianych plikach przeszło. Łącznie sprawdzono 23 scenariusze, w tym dotyk z mową i bez niej, Space/Enter, Escape, odsłuch, instrukcję i pominięcie podczas autostartu.
+
+SPEC uzupełniono o zachowanie przerwania autostartu. API → MCP → skill: bez wpływu na endpointy, DTO, autoryzację ani semantykę raportu; zmieniony port mediów jest lokalnym interfejsem klienta. Systemowy dialog uprawnień i odsłuch na fizycznym urządzeniu pozostają poza dowodami z testów przeglądarkowych/fake-adapterów.

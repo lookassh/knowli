@@ -542,6 +542,26 @@ describe("BrowserRecorder — wymagany monitor poziomów w trybie auto (PR #109,
 });
 
 describe("createBrowserMedia — bip WebAudio (sygnały: teraz mów / koniec)", () => {
+  it("anulowanie podczas resume nie pozwala zagrać spóźnionemu bipowi", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const oscillator = vi.fn();
+    const close = vi.fn(async () => undefined);
+    class Context {
+      state = "suspended";
+      async resume() { await gate; this.state = "running"; }
+      createOscillator = oscillator;
+      close = close;
+    }
+    const media = createBrowserMedia({ audioContext: Context as unknown as typeof AudioContext });
+    const cancellation = new AbortController();
+    const beep = media.playBeep("start", cancellation.signal);
+    cancellation.abort();
+    release();
+    await beep;
+    expect(oscillator).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledOnce();
+  });
   function fakeBeepContext(state: AudioContextState = "running", resumeState: AudioContextState | "pending" = state) {
     const events: string[] = [];
     let onended: (() => void) | null = null;

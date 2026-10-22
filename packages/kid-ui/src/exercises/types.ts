@@ -32,6 +32,7 @@ export interface ExerciseProps {
   onLetterDraftChange?: (letters: Record<number, string>) => void;
   busy: boolean;
   recording: boolean;
+  automaticRecording?: boolean;
   recordingPhase: "idle" | "preparing" | "starting" | "recording" | "stopping";
   microphoneReady: boolean;
   inputLevel: number | null;
