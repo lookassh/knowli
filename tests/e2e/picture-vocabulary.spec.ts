@@ -162,14 +162,14 @@ test("mówione ćwiczenie obrazkowe można świadomie pominąć bez mikrofonu", 
   const fixture = pictureVocabularyFixture();
   const source = fixture.tasks[0];
   if (!source || source.prompt.kind !== "picture_exposure") throw new Error("picture exposure fixture missing");
-  const taskId = source.taskId;
+  const taskId = "10000000-0000-4000-8000-000000000016";
   const attempts = fixture.attempts;
   const attempt = attempts?.[0];
   if (!attempt) throw new Error("skip attempt fixture missing");
   fixture.session.microphoneEnabled = true;
   fixture.tasks = [{
     ...source,
-    taskId: "10000000-0000-4000-8000-000000000016",
+    taskId,
     exerciseType: "speech",
     prompt: { kind: "picture_speech", audioAssetId: "10000000-0000-4000-8000-000000000014", visual: source.prompt.visual },
   }, null];
@@ -197,7 +197,9 @@ test("mówione ćwiczenie obrazkowe można świadomie pominąć bez mikrofonu", 
   // asercja elementów ćwiczenia po kliknięciu byłaby wyścigiem z odpowiedzią
   await expect(page.getByTestId("kid-record-status")).toBeVisible();
   await page.getByTestId("kid-skip").click();
-  // „Dalej” pojawia się w widoku feedbacku — klik sam oczekuje na podmianę
+  // deterministyczna asercja przejścia na widok feedbacku (z #110); „Dalej”
+  // pojawia się w tym widoku — klik sam oczekuje na podmianę
+  await expect(page.getByTestId("kid-feedback")).toBeVisible();
   await page.getByTestId("kid-next").click();
   await expect(page.getByTestId("kid-summary")).toBeVisible();
 });
