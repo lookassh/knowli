@@ -13,7 +13,7 @@ const summary = {
   activity: { status: "evaluated" as const, pointsAwarded: 2, errorCode: null },
 };
 
-async function openWrittenTask(page: Page, onEndSession: (report: SessionActivityReport) => void, options: { dropFirstEndResponse?: boolean; endActivityResults?: SessionActivityResultDto[] } = {}) {
+async function openWrittenTask(page: Page, onEndSession: (report: SessionActivityReport) => void, options: { dropFirstEndResponse?: boolean; endActivityResults?: SessionActivityResultDto[]; activityResultResults?: SessionActivityResultDto[] } = {}) {
   await page.clock.install();
   await installKidUiFixture(page, {
     profiles: [{ childId, displayName: "Ola", avatarKey: "cat", recordingMode: "hold" }],
@@ -93,6 +93,8 @@ test("reload resumes the active report draft before ending the same session", as
   await expect(page.getByTestId("kid-input")).toBeVisible();
   await page.getByTestId("kid-input").fill("cat");
   await page.getByTestId("kid-submit").click();
+  await expect(page.getByTestId("kid-feedback")).toBeVisible();
+  await expect(page.getByTestId("kid-next")).toBeEnabled();
   await page.getByTestId("kid-next").click();
   await expect(page.getByTestId("kid-summary")).toBeVisible();
   expect(reports).toHaveLength(1);
@@ -108,6 +110,7 @@ test("lost end ACK retries the exact browser draft, keeps it on already_started,
       { status: "already_started", pointsAwarded: 0, errorCode: null },
       { status: "evaluated", pointsAwarded: 2, errorCode: null },
     ],
+    activityResultResults: [{ status: "evaluated", pointsAwarded: 2, errorCode: null }],
   });
   await page.getByTestId("kid-input").fill("cat");
   await page.getByTestId("kid-submit").click();
@@ -125,7 +128,37 @@ test("lost end ACK retries the exact browser draft, keeps it on already_started,
   await page.reload();
   await page.getByTestId("kid-profile").click();
   await expect(page.getByTestId("kid-deck")).toBeVisible();
-  await expect.poll(() => reports.length).toBe(3);
-  expect(reports[2]).toEqual(reports[0]);
-  expect(await page.evaluate((key) => localStorage.getItem(key), draftKey)).toBeNull();
+  await page.clock.fastForward(1_100);
+  expect(reports).toHaveLength(2);
+  await expect.poll(() => page.evaluate((key) => localStorage.getItem(key), draftKey)).toBeNull();
+});
+
+test("accepted pending reward keeps the summary usable and reaches one terminal result through GET status", async ({ page }) => {
+  const reports: SessionActivityReport[] = [];
+  const reads: string[] = [];
+  await openWrittenTask(page, (report) => { reports.push(report); }, {
+    endActivityResults: [{ status: "already_started", pointsAwarded: 0, errorCode: null }],
+  });
+  const statuses: SessionActivityResultDto[] = [
+    { status: "already_started", pointsAwarded: 0, errorCode: null },
+    { status: "evaluated", pointsAwarded: 5, errorCode: null },
+  ];
+  await page.route(`**/api/v1/kid/sessions/${sessionId}/activity-result`, async (route) => {
+    reads.push(route.request().method());
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify(statuses.shift() ?? { status: "evaluated", pointsAwarded: 5, errorCode: null }) });
+  });
+
+  await page.getByTestId("kid-input").fill("cat");
+  await page.getByTestId("kid-submit").click();
+  await expect(page.getByTestId("kid-feedback")).toBeVisible();
+  await expect(page.getByTestId("kid-next")).toBeEnabled();
+  await page.getByTestId("kid-next").click();
+  await expect(page.getByTestId("kid-summary")).toBeVisible();
+  await expect(page.getByTestId("kid-summary-reward")).toContainText("Punkty z tej nauki są jeszcze liczone.");
+  await expect(page.getByTestId("kid-again")).toBeEnabled();
+
+  await page.clock.fastForward(2_100);
+  await expect(page.getByTestId("kid-summary-reward")).toContainText("Zdobyto 5 pkt");
+  expect(reads).toEqual(["GET", "GET"]);
+  expect(reports).toHaveLength(1);
 });

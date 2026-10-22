@@ -74,7 +74,7 @@ import {
 } from "./lessons/lesson-mock-tests";
 import { buildLessonSummaryObjectives } from "./lessons/lesson-attempts";
 import { completeDisabledVoiceTask } from "./voice-task-lifecycle";
-import { reviewSessionActivity, readSessionActivityResult } from "./session-activity";
+import { beginSessionActivityReview, readSessionActivityResult } from "./session-activity";
 import type { SessionActivityReport } from "@learning/contracts";
 import { recordTaskSkillFacts, SKILL_PROJECTION_VERSION } from "./skill-projections";
 
@@ -1417,7 +1417,7 @@ export async function endSession(
 ): Promise<SessionSummaryDto> {
   const summary = await closeSessionKnowledge(services, sessionId);
   if (activityReport !== undefined) {
-    const result = await reviewSessionActivity(services, sessionId, activityReport);
+    const result = await beginSessionActivityReview(services, sessionId, activityReport);
     return { ...summary, activity: result };
   }
   const stored = await readSessionActivityResult(services, sessionId);

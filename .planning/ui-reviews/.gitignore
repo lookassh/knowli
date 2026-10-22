@@ -1,0 +1,9 @@
+# UI-audit captures — never commit generated screenshots
+*.png
+*.webp
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+interaction/

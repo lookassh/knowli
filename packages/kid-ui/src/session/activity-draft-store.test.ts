@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createBrowserActivityDraftStore, type SessionActivityDraft } from "./activity-draft-store";
+import { createBrowserActivityDraftStore, createMemoryActivityDraftStore, type SessionActivityDraft } from "./activity-draft-store";
 
 class FakeStorage implements Storage {
   #values = new Map<string, string>();
@@ -28,5 +28,15 @@ describe("browser activity draft store", () => {
     const store = createBrowserActivityDraftStore(() => now);
     expect(store.listForChild("child")).toEqual([fresh]);
     expect(store.load("fresh")).toEqual(fresh);
+  });
+});
+
+describe("pending activity result store", () => {
+  it("keeps only a versioned session and child marker after the report is accepted", () => {
+    const store = createMemoryActivityDraftStore(() => 100);
+    store.savePendingResult({ version: 1, sessionId: "session-1", childId: "child-1", savedAtMs: 100 });
+
+    expect(store.load("session-1")).toEqual({ version: 1, sessionId: "session-1", childId: "child-1", savedAtMs: 100 });
+    expect(store.listPendingResults()).toEqual([{ version: 1, sessionId: "session-1", childId: "child-1", savedAtMs: 100 }]);
   });
 });

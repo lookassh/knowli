@@ -2,6 +2,7 @@ import {
   AppError,
   readMockTestSummary,
   readLessonMockTestSummary,
+  readSessionActivityResult,
   readUiAudio,
   mockTestKindOfSession,
   authorizeDisclosure,
@@ -28,6 +29,7 @@ import {
   SessionEndInputSchema,
   SESSION_ACTIVITY_REPORT_VERSION,
   SESSION_ACTIVITY_REPORT_MAX_BYTES,
+  SessionActivityResultDtoSchema,
   UuidSchema,
 } from "@learning/contracts";
 import { readJson } from "@/http/errors";
@@ -93,6 +95,16 @@ export async function handleKidApi(
   }
 
   if (first === "sessions") {
+    if (request.method === "GET" && second !== undefined && third === "activity-result") {
+      const sessionId = UuidSchema.parse(second);
+      const result = await readSessionActivityResult(services, sessionId);
+      // Brak trwałego wyniku oznacza jedynie oczekującą ocenę. Nie ponawiamy
+      // raportu ani nie ujawniamy danych oceny poza małym DTO dla dziecka.
+      return Response.json(
+        SessionActivityResultDtoSchema.parse(result ?? { status: "already_started", pointsAwarded: 0, errorCode: null }),
+        { headers: { "Cache-Control": "no-store" } },
+      );
+    }
     if (request.method === "GET" && second !== undefined && third === "mock-test-summary") {
       // Lekcja → omówienie per cel; słówka → omówienie słówkowe.
       const kind = await mockTestKindOfSession(services.db, second);

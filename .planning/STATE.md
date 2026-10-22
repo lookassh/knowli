@@ -1,3 +1,19 @@
+---
+gsd_state_version: "1.0"
+current_phase: 01
+current_plan: Not started
+status: completed
+stopped_at: Phase 01 complete — all phases complete
+last_updated: "2026-10-21T19:42:28.342Z"
+state_head: fc01425b4cd56e8ce4cceca6cb4ccfb1ea34f829
+progress:
+  total_phases: 1
+  completed_phases: 1
+  total_plans: 5
+  completed_plans: 5
+  percent: 100
+---
+
 # Project State
 
 ## Project Reference
@@ -6,41 +22,53 @@ See: `.planning/PROJECT.md` (updated 2026-10-21)
 
 **Core value:** Rodzic zatwierdza materiał, dziecko uczy się w krótkiej sesji także bez mikrofonu, a system zachowuje wiarygodną historię per umiejętność.
 
-**Current focus:** Phase 1 — Prywatne wdrożenie i odzyskanie danych.
+**Current focus:** Phase 1 — Asynchroniczne kończenie sesji i naliczanie punktów.
 
 ## Current Position
 
-**Phase:** 1 of 2 — Prywatne wdrożenie i odzyskanie danych\
-**Plan:** Not planned\
-**Status:** Ready for phase planning\
-**Progress:** [░░░░░░░░] 0%
+**Phase:** 01
+**Current Plan:** Not started
+**Total Plans in Phase:** 5
+**Status:** All phases complete
+**Progress:** [██████████] 100%
 
 ## Performance Metrics
 
 | Metric | Value |
 | --- | --- |
-| Roadmap phases complete | 0/2 |
-| Plans complete | 0/TBD |
-| Active requirements complete | 0/7 |
-| Requirement coverage | 7/7 mapped |
+| Roadmap phases complete | 1/1 |
+| Plans complete | 5/5 |
+| Active requirements complete | 4/4 |
+| Requirement coverage | 4/4 mapped |
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 01 P05 | 6 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
 ### Decisions
 
-- This is a brownfield operational-acceptance roadmap. Existing material, session, history and UI capabilities are not scheduled for reimplementation.
+- Roadmap narrowed to the asynchronous session completion and points experience after the owner confirmed the earlier operational-acceptance phases are already done.
 - The roadmap uses the default sequential phase IDs because `.planning/config.json` is absent.
 - Private, single-instance deployment remains a boundary. Public access, replicas and native mobile distribution require separate scope decisions.
+- [Phase 01]: Podsumowanie obu quizów jest emitowane z danych końca sesji, a GET szczegółów uzupełnia je bez blokowania widoku.
+- [Phase 01]: Wynik pollingu jest wyświetlany wyłącznie dla quizu zgodnego z zapisanym sessionId i childId.
 
 ### Evidence and open work
 
 - Codebase mapping dated 2026-10-21 identifies a substantially implemented stack: Next.js web/API/MCP host, portable Kid UI, server domain, PostgreSQL/Drizzle and worker.
-- This planning run did not execute test suites, Compose, a migration, backup/restore, physical-device flows or a real speech-provider trial.
-- Current documented evidence gap: complete Compose smoke/restart, backup restore to a clean instance, real-device child acceptance and real-child speech calibration.
+- Phase 1 verification passed on 2026-10-21: 1417 unit tests, 23 activity integration tests, 7 quiz E2E tests and monorepo typecheck.
+- The removed operational-acceptance phases are outside the active roadmap scope. Their prior evidence notes are retained below as historical context only.
 
 ### Blockers
 
-- None for Phase 1 planning. Running a real speech acceptance in Phase 2 requires a target device, consent to use the configured provider and a suitable test session with the child.
+- None for the completed milestone.
+
+### Roadmap Evolution
+
+- Roadmap narrowed: wcześniejsze fazy operacyjne usunięto na prośbę właściciela; faza o asynchronicznym kończeniu sesji jest teraz fazą 1.
 
 ### Quick Tasks Completed
 
@@ -50,10 +78,12 @@ See: `.planning/PROJECT.md` (updated 2026-10-21)
 
 ## Session Continuity
 
-**Last action:** Created brownfield PROJECT, REQUIREMENTS, ROADMAP and STATE artifacts from current repository documents and codebase mapping.
+**Last session:** 2026-10-21T19:39:06.000Z
+**Stopped at:** Phase 01 complete — all phases complete
+**Resume file:** None
 
-**Last activity:** 2026-10-21 - Completed quick task 261021-lsw: automatyczne nagrywanie z VAD na ekranach mowy (gałąź fix/speech-recognition, HEAD a542cf4; WR-01 i WR-02 z review naprawione — WR-02 wg decyzji właściciela: auto-start tylko przy nadanym uprawnieniu; weryfikacja human_needed — kalibracja VAD, bipy i e2e na urządzeniu po stronie właściciela)
+**Last action:** Completed Phase 1, including quiz summary gap closure and verification.
 
-**Next action:** Run `$gsd-plan-phase 1` to turn private deployment and recovery criteria into an executable plan.
+**Next action:** Start a new milestone with `$gsd-new-milestone` when ready.
 
-**Resume note:** Recheck current repository and deployment state before treating historical test/deploy reports as current proof. Preserve the untracked ingest artifacts and do not overwrite unrelated user changes.
+**Resume note:** Phase 1 implementation is on `feature/async-session-completion`; no push or merge was performed. Start later milestones only after reviewing the current roadmap.

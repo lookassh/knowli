@@ -364,9 +364,40 @@ export async function reviewSessionActivity(
   sessionId: string,
   report: SessionActivityReport,
 ): Promise<SessionActivityResultDto> {
+  const plan = await acceptSessionActivityReview(services, sessionId, report);
+  return settleAcceptedSessionActivity(services, sessionId, plan);
+}
+
+/**
+ * Trwale przyjmuje raport i rozpoczyna jego pojedynczą ocenę poza ścieżką
+ * odpowiedzi HTTP. Wynik pozostaje dostępny przez readSessionActivityResult().
+ */
+export async function beginSessionActivityReview(
+  services: Services,
+  sessionId: string,
+  report: SessionActivityReport,
+): Promise<SessionActivityResultDto> {
+  const plan = await acceptSessionActivityReview(services, sessionId, report);
+  if (plan.kind !== "fresh") return settleAcceptedSessionActivity(services, sessionId, plan);
+
+  // Każdy błąd providera jest zapisywany przez settleAcceptedSessionActivity.
+  // Niespodziewany błąd finalizacji nie może zostać nieobsłużonym rejection;
+  // trwały marker zostanie domknięty jako review_interrupted przy późniejszym odczycie.
+  void settleAcceptedSessionActivity(services, sessionId, plan).catch((error: unknown) => {
+    const errorCode = error instanceof AppError ? error.code : error instanceof Error ? error.name : "unexpected";
+    console.error(`[session-activity] finalizacja oceny nie powiodła się: ${errorCode}`);
+  });
+  return { status: "already_started", pointsAwarded: 0, errorCode: null };
+}
+
+async function acceptSessionActivityReview(
+  services: Services,
+  sessionId: string,
+  report: SessionActivityReport,
+): Promise<AcceptancePlan> {
   const parsed = SessionActivityReportSchema.parse(report);
   const hash = reportHash(parsed);
-  const plan = await services.db.transaction(async (tx) => {
+  return services.db.transaction(async (tx) => {
     const session = await lockSession(tx, sessionId);
     const now = services.clock.now();
     // Fingerprint pierwszego raportu: identyczne ponowienie dostarczenia jest
@@ -436,7 +467,13 @@ export async function reviewSessionActivity(
       facts,
     } as AcceptancePlan;
   });
+}
 
+async function settleAcceptedSessionActivity(
+  services: Services,
+  sessionId: string,
+  plan: AcceptancePlan,
+): Promise<SessionActivityResultDto> {
   if (plan.kind === "stored") return reviewRecordDto(plan.review);
   if (plan.kind === "already_started") {
     return { status: "already_started", pointsAwarded: 0, errorCode: null };

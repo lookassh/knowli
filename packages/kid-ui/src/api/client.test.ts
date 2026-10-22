@@ -36,6 +36,27 @@ describe("Kid API picture support transport", () => {
     }));
   });
 
+  it("reads every valid durable activity status and rejects malformed status responses", async () => {
+    const sessionId = "11111111-1111-4111-8111-111111111111";
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(response({ status: "evaluated", pointsAwarded: 3, errorCode: null }))
+      .mockResolvedValueOnce(response({ status: "error", pointsAwarded: 0, errorCode: "review_failed" }))
+      .mockResolvedValueOnce(response({ status: "already_started", pointsAwarded: 0, errorCode: null }))
+      .mockResolvedValueOnce(response({ status: "pending", pointsAwarded: 0, errorCode: null }));
+    const api = createKidApiClient({ baseUrl: "https://umiem.test/", fetchImpl });
+
+    await expect(api.readSessionActivityResult!(sessionId)).resolves.toEqual({ status: "evaluated", pointsAwarded: 3, errorCode: null });
+    await expect(api.readSessionActivityResult!(sessionId)).resolves.toEqual({ status: "error", pointsAwarded: 0, errorCode: "review_failed" });
+    await expect(api.readSessionActivityResult!(sessionId)).resolves.toEqual({ status: "already_started", pointsAwarded: 0, errorCode: null });
+    await expect(api.readSessionActivityResult!(sessionId)).rejects.toMatchObject({ code: "internal" });
+    expect(fetchImpl.mock.calls.map(([url]) => String(url))).toEqual([
+      `https://umiem.test/api/v1/kid/sessions/${sessionId}/activity-result`,
+      `https://umiem.test/api/v1/kid/sessions/${sessionId}/activity-result`,
+      `https://umiem.test/api/v1/kid/sessions/${sessionId}/activity-result`,
+      `https://umiem.test/api/v1/kid/sessions/${sessionId}/activity-result`,
+    ]);
+  });
+
   it("reads the validated spoken-guidance catalog and disables the session microphone", async () => {
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(response({ ready: true, assets: { profile_select: "11111111-1111-4111-8111-111111111111" } }))

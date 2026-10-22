@@ -24,7 +24,7 @@ import { MIC_DENIED_KEY, type LocalPreferences } from "../storage";
 import { randomUUID } from "./uuid";
 import { createGuidanceAudio } from "./guidance-audio";
 import { SessionActivityReporter, type ActivityClock } from "./activity-report";
-import { createMemoryActivityDraftStore, type SessionActivityDraftStore } from "./activity-draft-store";
+import { createMemoryActivityDraftStore, type PendingActivityResult, type SessionActivityDraftStore } from "./activity-draft-store";
 
 /**
  * Sterownik przepływu nauki (plan zadania 9): czysta maszyna stanu nad
@@ -79,8 +79,8 @@ export interface LearningScreen {
 
 export type KidScreen =
   | { kind: "mockTestReady"; session: SessionDto }
-  | { kind: "mockTestSummary"; summary: MockTestSummaryDto }
-  | { kind: "lessonMockTestSummary"; summary: LessonMockTestSummaryDto }
+  | { kind: "mockTestSummary"; childId: string; summary: MockTestSummaryDto; detailsLoading?: boolean; detailsError?: boolean }
+  | { kind: "lessonMockTestSummary"; childId: string; summary: LessonMockTestSummaryDto; detailsLoading?: boolean; detailsError?: boolean }
   | { kind: "sessionConflict"; active: KidDeckDto; childId: string }
   | { kind: "loading" }
   | { kind: "initError"; message: string }
@@ -197,7 +197,7 @@ export class LearningSessionController {
   /** Wycofuje operacje zdążające po zmianie ekranu/teardown. */
   #epoch = 0;
   #profileRequestSequence = 0;
-  #profileRefreshPromise: Promise<void> | null = null;
+  #profileRefreshPromise: Promise<boolean> | null = null;
   #recordingGeneration = 0;
   #recordingStartedAt = 0;
   #playbackGeneration = 0;
@@ -214,6 +214,12 @@ export class LearningSessionController {
   #frozenActivityReport: SessionActivityReport | null | undefined = undefined;
   /** Wynik oceny aktywności ostatnio zakończonej sesji (punkty/błąd). */
   #lastActivityResult: SessionActivityResultDto | null = null;
+  #lastActivitySessionId: string | null = null;
+  #lastActivityChildId: string | null = null;
+  #activityResultTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  #activityResultPolling = new Map<string, number>();
+  #activityResultRetryAttempts = new Map<string, number>();
+  #disposed = false;
 
   constructor(deps: LearningSessionDeps) {
     this.#api = deps.api;
@@ -329,9 +335,11 @@ export class LearningSessionController {
     this.#activity = null;
     this.#activitySessionId = sessionId;
     this.#lastActivityResult = null;
+    this.#lastActivitySessionId = null;
+    this.#lastActivityChildId = null;
     this.#frozenActivityReport = undefined;
     const draft = this.#activityDrafts.load(sessionId);
-    if (draft) {
+    if (draft && "state" in draft) {
       this.#activity = SessionActivityReporter.resume(this.#activityClock, draft.state);
       return;
     }
@@ -343,25 +351,131 @@ export class LearningSessionController {
     const sessionId = this.#activitySessionId;
     if (!activity || sessionId === null || !activity.started) return;
     const existing = this.#activityDrafts.load(sessionId);
+    // Po ACK serwera szkic nie może nadpisać znacznika odzyskiwania wyniku
+    // podczas blur/teardown.
+    if (existing && "version" in existing) return;
     const saved = this.#activityDrafts.save({
       sessionId,
       savedAtMs: this.#activityClock.now(),
       state: activity.state,
       childId: this.#learning()?.session.childId ?? existing?.childId,
-      ...(existing?.finalPayload === undefined ? {} : { finalPayload: existing.finalPayload }),
+      ...(existing && "state" in existing && existing.finalPayload !== undefined ? { finalPayload: existing.finalPayload } : {}),
     });
     if (!saved) activity.markStorageUnavailable();
   }
 
+  #rememberPendingActivityResult(sessionId: string, childId: string): void {
+    const pending: PendingActivityResult = { version: 1, sessionId, childId, savedAtMs: this.#activityClock.now() };
+    this.#activityDrafts.savePendingResult(pending);
+    // Bieżące polling działa także bez localStorage; zapis decyduje tylko o
+    // możliwości wznowienia go po przeładowaniu aplikacji.
+    this.#scheduleActivityResultPoll(pending);
+  }
+
+  #resumePendingActivityResults(): void {
+    for (const pending of this.#activityDrafts.listPendingResults()) this.#scheduleActivityResultPoll(pending);
+  }
+
+  #scheduleActivityResultPoll(pending: PendingActivityResult): void {
+    if (this.#disposed || !this.#api.readSessionActivityResult
+      || this.#activityResultTimers.has(pending.sessionId)
+      || this.#activityResultPolling.get(pending.sessionId) === this.#epoch) return;
+    const attempt = this.#activityResultRetryAttempts.get(pending.sessionId) ?? 0;
+    const delay = Math.min(this.#pollIntervalMs * 2 ** attempt, 30_000);
+    const timer = setTimeout(() => {
+      this.#activityResultTimers.delete(pending.sessionId);
+      void this.#pollActivityResult(pending);
+    }, delay);
+    this.#activityResultTimers.set(pending.sessionId, timer);
+  }
+
+  async #pollActivityResult(pending: PendingActivityResult): Promise<void> {
+    const epoch = this.#epoch;
+    if (this.#disposed || this.#activityResultPolling.get(pending.sessionId) === epoch) return;
+    const readActivityResult = this.#api.readSessionActivityResult;
+    if (!readActivityResult) return;
+    this.#activityResultPolling.set(pending.sessionId, epoch);
+    let retry = false;
+    let backoffRetry = false;
+    try {
+      const result = await readActivityResult.call(this.#api, pending.sessionId);
+      if (this.#disposed || epoch !== this.#epoch) return;
+      if (result.status === "already_started") {
+        // To normalny stan oczekiwania na ocenę, nie błąd. Zachowaj krótki,
+        // stały interwał, by szybko pokazać wynik po zakończeniu modelu.
+        this.#activityResultRetryAttempts.delete(pending.sessionId);
+        retry = true;
+        return;
+      }
+      const visibleSummary = this.#screen.kind === "summary"
+        && this.#screen.childId === pending.childId && this.#screen.summary.sessionId === pending.sessionId;
+      const visibleQuizSummary = (this.#screen.kind === "mockTestSummary" || this.#screen.kind === "lessonMockTestSummary")
+        && this.#screen.childId === pending.childId && this.#screen.summary.sessionId === pending.sessionId;
+      if (visibleSummary || visibleQuizSummary) {
+        this.#lastActivityResult = result;
+        this.#lastActivitySessionId = pending.sessionId;
+        this.#lastActivityChildId = pending.childId;
+        if (this.#screen.kind === "summary") this.#screen = { ...this.#screen, summary: { ...this.#screen.summary, activity: result } };
+        this.#emit();
+      }
+      // listProfiles odświeża wszystkie profile, lecz owner wyniku pozostaje
+      // przypięty do znacznika; nigdy nie wiążemy go z aktualnym wyborem UI.
+      // Zachowujemy marker i ponawiamy GET terminalnego wyniku, jeśli nie udało
+      // się odświeżyć salda właściwego dziecka.
+      if (result.status === "evaluated" && this.#profiles.some(profile => profile.childId === pending.childId)) {
+        if (!await this.refreshProfiles()) {
+          retry = !this.#disposed && epoch === this.#epoch;
+          backoffRetry = retry;
+          return;
+        }
+      }
+      this.#activityDrafts.remove(pending.sessionId);
+      this.#activityResultRetryAttempts.delete(pending.sessionId);
+    } catch (error) {
+      if (this.#disposed || epoch !== this.#epoch) return;
+      // Tylko jawne błędy domenowe są trwałe. Odpowiedź HTML z proxy 502/503
+      // i niepoprawne JSON klient mapuje na `internal`; takie błędy są chwilowe.
+      if (error instanceof KidApiError && !error.retryable && error.code !== "internal") {
+        this.#activityDrafts.remove(pending.sessionId);
+        this.#activityResultRetryAttempts.delete(pending.sessionId);
+        return;
+      }
+      // Błędy transportu i serwera ponawiamy z backoffem, zachowując źródło prawdy.
+      retry = !this.#disposed;
+      backoffRetry = retry;
+    } finally {
+      if (this.#activityResultPolling.get(pending.sessionId) === epoch) {
+        this.#activityResultPolling.delete(pending.sessionId);
+      }
+      if (retry) {
+        if (backoffRetry) {
+          this.#activityResultRetryAttempts.set(pending.sessionId, (this.#activityResultRetryAttempts.get(pending.sessionId) ?? 0) + 1);
+        }
+        this.#scheduleActivityResultPoll(pending);
+      }
+    }
+  }
+
   /** Ostatni wynik oceny aktywności (punkty/błąd) dla ekranów podsumowania. */
   getActivityResult(): SessionActivityResultDto | null {
-    return this.#lastActivityResult;
+    const screenOwner = this.#screen.kind === "summary"
+      ? { sessionId: this.#screen.summary.sessionId, childId: this.#screen.childId }
+      : this.#screen.kind === "mockTestSummary" || this.#screen.kind === "lessonMockTestSummary"
+        ? { sessionId: this.#screen.summary.sessionId, childId: this.#screen.childId }
+        : null;
+    return screenOwner?.sessionId === this.#lastActivitySessionId && screenOwner.childId === this.#lastActivityChildId
+      ? this.#lastActivityResult : null;
   }
 
   async start(): Promise<void> {
+    // React StrictMode może ponownie uruchomić efekt z tym samym kontrolerem.
+    this.#disposed = false;
     const epoch = this.#epoch;
     try {
-      this.#profiles = await this.#api.listProfiles();
+      const profiles = await this.#api.listProfiles();
+      if (this.#disposed || epoch !== this.#epoch) return;
+      this.#profiles = profiles;
+      this.#resumePendingActivityResults();
       try {
         this.#uiAudio = await this.#api.readUiAudio();
         this.#guidance = createGuidanceAudio(this.#uiAudio, this.#media.player, (id) => this.#api.mediaUrl(id));
@@ -369,11 +483,14 @@ export class LearningSessionController {
         this.#uiAudio = { ready: false, assets: {} };
         this.#guidance = null;
       }
+      if (this.#disposed || epoch !== this.#epoch) return;
       if (this.#initialChildId !== undefined) {
         const requestedProfile = this.#profiles.find((profile) => profile.childId === this.#initialChildId);
         if (requestedProfile) {
           await this.#openDeckScreen(requestedProfile.childId);
+          if (this.#disposed || epoch !== this.#epoch) return;
           await this.#deliverPendingActivity(requestedProfile.childId, epoch);
+          if (this.#disposed || epoch !== this.#epoch) return;
           await this.#resumeMockFromDecks();
           return;
         }
@@ -383,6 +500,7 @@ export class LearningSessionController {
         this.#screen = { kind: "profile", profiles: this.#profiles };
       }
     } catch (error) {
+      if (this.#disposed || epoch !== this.#epoch) return;
       this.#screen = { kind: "initError", message: messageForError(error) };
     }
     this.#emit();
@@ -411,7 +529,10 @@ export class LearningSessionController {
         const summary = await this.#api.endSession(draft.sessionId, draft.finalPayload);
         acknowledged = true;
         acknowledgedSessionIds.add(draft.sessionId);
-        if (summary.activity?.status === "already_started") continue;
+        if (summary.activity?.status === "already_started") {
+          this.#rememberPendingActivityResult(draft.sessionId, childId);
+          continue;
+        }
         if (epoch === this.#epoch && this.#childId === childId) this.#lastActivityResult = summary.activity ?? null;
         this.#activityDrafts.remove(draft.sessionId);
       } catch {
@@ -710,30 +831,77 @@ export class LearningSessionController {
       const summary = await this.#api.endSession(sessionId, report);
       if (epoch !== this.#epoch) return;
       this.#lastActivityResult = summary.activity ?? null;
-      // Potwierdzenie zapisu żądania końca: kopia robocza tej sesji znika
-      // (spóźniona odpowiedź nie kasuje raportu nowej sesji — klucz per sesja).
-      if (report !== undefined && summary.activity?.status !== "already_started") this.#activityDrafts.remove(sessionId);
-      await this.refreshProfiles();
-      if (epoch !== this.#epoch) return;
-      if (mode === "mock_test" && this.#mockDeckKind === "lesson") {
-        const lessonSummary = await this.#api.readLessonMockTestSummary(sessionId);
-        if (epoch !== this.#epoch) return;
+      this.#lastActivitySessionId = sessionId;
+      this.#lastActivityChildId = childId;
+      // Po zaakceptowaniu raportu nie zachowujemy już payloadu aktywności.
+      // Pending zawiera tylko identyfikator sesji i właściciela wyniku.
+      if (report !== undefined && summary.activity?.status === "already_started") {
+        this.#rememberPendingActivityResult(sessionId, childId);
+      } else if (report !== undefined) {
+        this.#activityDrafts.remove(sessionId);
+      }
+      if (mode !== "mock_test") {
         this.#teardownRecording();
         this.#stopPlayback();
-        this.#screen = { kind: "lessonMockTestSummary", summary: lessonSummary };
+        this.#screen = { kind: "summary", childId, profiles: this.#profiles, summary };
         this.#emit();
+        void this.refreshProfiles();
         return;
       }
-      const mockSummary = mode === "mock_test" ? await this.#api.readMockTestSummary(sessionId) : null;
-      if (epoch !== this.#epoch) return;
+      void this.refreshProfiles();
+      if (mode === "mock_test" && this.#mockDeckKind === "lesson") {
+        this.#teardownRecording();
+        this.#stopPlayback();
+        const pendingSummary: LessonMockTestSummaryDto = {
+          sessionId, deckId: this.#screen.session.deckId, state: summary.state, complete: summary.state === "completed",
+          taskBudget: this.#screen.session.taskBudget, answeredCount: summary.assessedTasksIssued, solutions: [],
+        };
+        this.#screen = { kind: "lessonMockTestSummary", childId, summary: pendingSummary, detailsLoading: true, detailsError: false };
+        this.#emit();
+        void this.retryMockTestSummaryDetails();
+        return;
+      }
       this.#teardownRecording();
       this.#stopPlayback();
-      this.#screen = mockSummary ? { kind: "mockTestSummary", summary: mockSummary } : { kind: "summary", childId, profiles: this.#profiles, summary };
+      const pendingSummary: MockTestSummaryDto = {
+        sessionId, deckId: this.#screen.session.deckId, state: summary.state, complete: summary.state === "completed",
+        taskBudget: this.#screen.session.taskBudget, answeredCount: summary.assessedTasksIssued, solutions: [],
+      };
+      this.#screen = { kind: "mockTestSummary", childId, summary: pendingSummary, detailsLoading: true, detailsError: false };
       this.#emit();
+      void this.retryMockTestSummaryDetails();
     } catch (error) {
       if (epoch !== this.#epoch || this.#screen.kind !== "learning") return;
       this.#handleFailure(error);
     }
+  }
+
+  /** Ponawia pobranie szczegółów kartkówki bez opuszczania podsumowania. */
+  async retryMockTestSummaryDetails(): Promise<void> {
+    const initial = this.#screen;
+    if (initial.kind !== "mockTestSummary" && initial.kind !== "lessonMockTestSummary") return;
+    const epoch = this.#epoch;
+    const { sessionId } = initial.summary;
+    this.#screen = { ...initial, detailsLoading: true, detailsError: false };
+    this.#emit();
+    try {
+      if (initial.kind === "mockTestSummary") {
+        const summary = await this.#api.readMockTestSummary(sessionId);
+        if (this.#disposed || epoch !== this.#epoch || this.#screen.kind !== "mockTestSummary"
+          || this.#screen.summary.sessionId !== sessionId || this.#screen.childId !== initial.childId) return;
+        this.#screen = { ...this.#screen, summary, detailsLoading: false, detailsError: false };
+      } else {
+        const summary = await this.#api.readLessonMockTestSummary(sessionId);
+        if (this.#disposed || epoch !== this.#epoch || this.#screen.kind !== "lessonMockTestSummary"
+          || this.#screen.summary.sessionId !== sessionId || this.#screen.childId !== initial.childId) return;
+        this.#screen = { ...this.#screen, summary, detailsLoading: false, detailsError: false };
+      }
+    } catch {
+      if (this.#disposed || epoch !== this.#epoch || this.#screen.kind !== initial.kind
+        || this.#screen.summary.sessionId !== sessionId || this.#screen.childId !== initial.childId) return;
+      this.#screen = { ...this.#screen, detailsLoading: false, detailsError: true };
+    }
+    this.#emit();
   }
 
   /** Dalej po feedbacku albo ponowne podejście, gdy zadanie na to pozwala. */
@@ -1471,13 +1639,13 @@ export class LearningSessionController {
   }
 
   /** Refresh reward balances and parent-managed profile settings without discarding a usable screen. */
-  async refreshProfiles(): Promise<void> {
+  async refreshProfiles(): Promise<boolean> {
     const epoch = this.#epoch;
     const requestSequence = ++this.#profileRequestSequence;
-    const refresh = (async () => {
+    const refresh = (async (): Promise<boolean> => {
     try {
       const profiles = await this.#api.listProfiles();
-      if (epoch !== this.#epoch || requestSequence !== this.#profileRequestSequence) return;
+      if (epoch !== this.#epoch || requestSequence !== this.#profileRequestSequence) return false;
       const previousByChild = new Map(this.#profiles.map(profile => [profile.childId, profile]));
       this.#profiles = profiles.map(profile => {
         if (!profile.todayActivityUnavailable) return profile;
@@ -1490,13 +1658,15 @@ export class LearningSessionController {
         this.#screen = { ...this.#screen, profiles: this.#profiles };
         this.#emit();
       }
-    } catch { /* Keep the last confirmed balances during a temporary network failure. */ }
+      return true;
+    } catch { /* Keep the last confirmed balances during a temporary network failure. */ return false; }
     })();
     this.#profileRefreshPromise = refresh;
-    await refresh;
+    const succeeded = await refresh;
     if (epoch === this.#epoch && requestSequence !== this.#profileRequestSequence) {
-      await this.#profileRefreshPromise;
+      return await this.#profileRefreshPromise ?? succeeded;
     }
+    return succeeded;
   }
 
   /** Czy banner „Jeszcze N i koniec!” jest widoczny dla bieżącego zadania. */
@@ -1506,10 +1676,12 @@ export class LearningSessionController {
   }
 
   async reviewMockTest(sessionId: string): Promise<void> {
+    if (this.#childId === null) return;
     const epoch = this.#epoch;
+    const childId = this.#childId;
     const summary = await this.#api.readMockTestSummary(sessionId);
     if (epoch !== this.#epoch) return;
-    this.#screen = { kind: "mockTestSummary", summary }; this.#emit();
+    this.#screen = { kind: "mockTestSummary", childId, summary }; this.#emit();
   }
 
   async playMockTestSolution(taskId: string): Promise<void> {
@@ -1540,6 +1712,10 @@ export class LearningSessionController {
   /** Opuszczenie widoku: zatrzymuje strumień mikrofonu i odtwarzanie (RF5). */
   teardown(): void {
     this.pauseActivity("background");
+    this.#disposed = true;
+    for (const timer of this.#activityResultTimers.values()) clearTimeout(timer);
+    this.#activityResultTimers.clear();
+    this.#activityResultRetryAttempts.clear();
     this.#epoch += 1;
     this.#teardownRecording();
     this.#stopPlayback();

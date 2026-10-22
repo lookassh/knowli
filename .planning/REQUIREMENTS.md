@@ -2,22 +2,29 @@
 
 **Zdefiniowano:** 2026-10-21\
 **Najważniejsza wartość:** Rodzic zatwierdza materiał, dziecko kończy krótką sesję również bez mikrofonu, a system zapisuje wiarygodny postęp per umiejętność.\
-**Zakres tego pliku:** pozostałe wymagania odbiorowe dla istniejącego MVP, a nie spis funkcji do ponownego zaimplementowania.
+**Zakres tego pliku:** aktywne wymagania fazy asynchronicznego kończenia sesji oraz wymagania z wcześniejszych faz, których właściciel potwierdził zakończenie.
 
 ## v1 Requirements
 
+### Asynchroniczne zakończenie sesji
+
+- [x] **ASYNC-01**: Po zakończeniu ćwiczenia lub kartkówki dziecko od razu widzi zapisane podsumowanie, a oczekiwanie na ocenę aktywności dotyczy wyłącznie pola punktów i nie blokuje dalszych działań.
+- [x] **ASYNC-02**: Klient odczytuje trwały status oceny krótkim pollingiem, kontynuuje go po zmianie ekranu lub profilu i po zakończeniu odświeża punkty właściwego dziecka; wynik można odzyskać po odświeżeniu aplikacji.
+- [x] **ASYNC-03**: Każda sesja uruchamia najwyżej jedną ocenę aktywności; odczyt statusu nie wywołuje modelu ani ponownego naliczenia, a awaria techniczna zapisuje błąd bez punktów i bez automatycznego ponowienia.
+- [x] **ASYNC-04**: Publiczny status Kid API ujawnia wyłącznie bezpieczny, walidowany wynik punktowy; nie rozszerza `learning-overview`, MCP ani skilla Hermesa o punkty lub szczegóły oceny.
+
 ### Prywatne wdrożenie i odtwarzanie
 
-- [ ] **OPS-01**: Operator może uruchomić prywatny stos z jedną instancją web, workerem i PostgreSQL, przeprowadzić migracje oraz potwierdzić gotowość usług przez udokumentowane healthchecki.
-- [ ] **OPS-02**: Po kontrolowanym restarcie weba i workera aplikacja zachowuje zatwierdzony materiał, historię nauki, projekcje postępu i gotowe media.
-- [ ] **REC-01**: Operator może odtworzyć sprawdzony backup do oddzielnej pustej instancji i potwierdzić obecność profili, opublikowanej wersji materiału, historii oraz mediów.
+- [x] **OPS-01**: Operator może uruchomić prywatny stos z jedną instancją web, workerem i PostgreSQL, przeprowadzić migracje oraz potwierdzić gotowość usług przez udokumentowane healthchecki.
+- [x] **OPS-02**: Po kontrolowanym restarcie weba i workera aplikacja zachowuje zatwierdzony materiał, historię nauki, projekcje postępu i gotowe media.
+- [x] **REC-01**: Operator może odtworzyć sprawdzony backup do oddzielnej pustej instancji i potwierdzić obecność profili, opublikowanej wersji materiału, historii oraz mediów.
 
 ### Rodzinna ścieżka na urządzeniu dziecka
 
-- [ ] **FLOW-01**: Rodzic może przygotować lub wybrać materiał, sprawdzić go, zatwierdzić i przypisać właściwemu profilowi przed rozpoczęciem sesji dziecka.
-- [ ] **FLOW-02**: Dziecko może na rzeczywistym telefonie lub tablecie ukończyć sesję trwającą około 5–10 minut bez mikrofonu, także gdy odmówi dostępu do mikrofonu.
-- [ ] **HIST-01**: Po sesji rodzic może odczytać trwałą historię i postęp oddzielnie dla właściwego dziecka oraz umiejętności, z rozróżnieniem wyniku samodzielnego, wspieranego i nieocenionego.
-- [ ] **SPEECH-01**: Jeżeli instalacja włącza STT i ocenę wymowy, próba na rzeczywistym urządzeniu z prawdziwą mową dziecka potwierdza uczciwe rozróżnienie treści, wymowy i wyniku technicznie nieocenionego; ustalone ograniczenia zostają zapisane przed deklaracją gotowości tej ścieżki.
+- [x] **FLOW-01**: Rodzic może przygotować lub wybrać materiał, sprawdzić go, zatwierdzić i przypisać właściwemu profilowi przed rozpoczęciem sesji dziecka.
+- [x] **FLOW-02**: Dziecko może na rzeczywistym telefonie lub tablecie ukończyć sesję trwającą około 5–10 minut bez mikrofonu, także gdy odmówi dostępu do mikrofonu.
+- [x] **HIST-01**: Po sesji rodzic może odczytać trwałą historię i postęp oddzielnie dla właściwego dziecka oraz umiejętności, z rozróżnieniem wyniku samodzielnego, wspieranego i nieocenionego.
+- [x] **SPEECH-01**: Jeżeli instalacja włącza STT i ocenę wymowy, próba na rzeczywistym urządzeniu z prawdziwą mową dziecka potwierdza uczciwe rozróżnienie treści, wymowy i wyniku technicznie nieocenionego; ustalone ograniczenia zostają zapisane przed deklaracją gotowości tej ścieżki.
 
 ## Udokumentowana baza już obecna w repozytorium
 
@@ -50,17 +57,22 @@ Nie są one kopiowane do v1 tego cyklu ani przypisywane do nowych faz. Ich bież
 
 | Requirement | Phase | Status |
 | --- | --- | --- |
-| OPS-01 | Phase 1 | Pending |
-| OPS-02 | Phase 1 | Pending |
-| REC-01 | Phase 1 | Pending |
-| FLOW-01 | Phase 2 | Pending |
-| FLOW-02 | Phase 2 | Pending |
-| HIST-01 | Phase 2 | Pending |
-| SPEECH-01 | Phase 2 | Pending |
+| ASYNC-01 | Phase 1 | Complete |
+| ASYNC-02 | Phase 1 | Complete |
+| ASYNC-03 | Phase 1 | Complete |
+| ASYNC-04 | Phase 1 | Complete |
+| OPS-01 | Earlier Phase 1 | Owner-confirmed complete |
+| OPS-02 | Earlier Phase 1 | Owner-confirmed complete |
+| REC-01 | Earlier Phase 1 | Owner-confirmed complete |
+| FLOW-01 | Earlier Phase 2 | Owner-confirmed complete |
+| FLOW-02 | Earlier Phase 2 | Owner-confirmed complete |
+| HIST-01 | Earlier Phase 2 | Owner-confirmed complete |
+| SPEECH-01 | Earlier Phase 2 | Owner-confirmed complete |
 
 **Coverage:**
-- v1 requirements: 7 total
-- Mapped to phases: 7
+- v1 requirements: 11 total
+- Active in current roadmap: 4 (ASYNC-01 through ASYNC-04)
+- Earlier phases owner-confirmed complete: 7
 - Unmapped: 0 ✓
 
 ---

@@ -39,6 +39,8 @@ export interface KidUiFixture {
   /** Test transport ACK loss and idempotent redelivery without simulating a pre-acceptance failure. */
   dropFirstEndResponse?: boolean;
   endActivityResults?: NonNullable<SessionSummaryDto["activity"]>[];
+  /** Kolejne trwałe odpowiedzi GET statusu aktywności po zaakceptowaniu raportu. */
+  activityResultResults?: NonNullable<SessionSummaryDto["activity"]>[];
   mockSummary?: MockTestSummaryDto;
   lessonMockSummary?: LessonMockTestSummaryDto;
   feedbackAudio?: FeedbackAudioDto;
@@ -65,6 +67,7 @@ export async function installKidUiFixture(page: Page, fixture: KidUiFixture): Pr
   let sessionStartCount = 0;
   let attemptPostIndex = 0;
   let endRequestCount = 0;
+  let activityResultReadCount = 0;
   const attemptReadIndex = new Map<string, number>();
   await page.route("**/api/v1/kid/**", async (route) => {
     const request = route.request();
@@ -128,6 +131,11 @@ export async function installKidUiFixture(page: Page, fixture: KidUiFixture): Pr
       if (fixture.dropFirstEndResponse && endRequestCount === 1) return route.abort("failed");
       const activity = fixture.endActivityResults?.[endRequestCount - (fixture.dropFirstEndResponse ? 2 : 1)];
       return json(activity ? { ...fixture.summary, activity } : fixture.summary);
+    }
+    if (method === "GET" && path === `/api/v1/kid/sessions/${fixture.session.sessionId}/activity-result`) {
+      const activity = fixture.activityResultResults?.[activityResultReadCount++];
+      if (!activity) return missing("activity-result is not configured");
+      return json(activity);
     }
     if (method === "GET" && path === `/api/v1/kid/sessions/${fixture.session.sessionId}/mock-test-summary`) {
       if (fixture.lessonMockSummary) return json(fixture.lessonMockSummary);
