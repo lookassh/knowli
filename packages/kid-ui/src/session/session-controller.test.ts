@@ -2191,6 +2191,43 @@ describe("LearningSessionController — automatyczna próba mowy z VAD (quick 26
     harness.controller.cancelRecording();
   });
 
+  it("PR #109 runda 4: monitor niedostępny w obrazkowej sesji nieczytającego nie wyłącza mikrofonu sesji", async () => {
+    // główny przypadek picture_speech: nieczytający + zestaw obrazkowy; awaria
+    // monitora (autoplay/interrupted) musi zostać przy auto-próbie — wspólne
+    // disableForPicture wyłączyłoby mikrofon CAŁEJ sesji i dziecko straciło
+    // przycisk mimo komunikatu „Nagraj przyciskiem.”
+    const state = baseState();
+    state.profiles = [{ ...PROFILE_A, canRead: false }];
+    state.decks = [{ ...DECK, vocabularyFormat: "picture" }];
+    const spoken = taskDto("r4-picture-speech", {
+      kind: "picture_speech",
+      audioAssetId: "asset-pattern",
+      visual: { kind: "color", color: "#ff0000" },
+    });
+    const harness = await startAtTask(state, spoken, {
+      failStartWith: new LevelMonitorUnavailableError(),
+    });
+    await harness.controller.autoCaptureSpeech();
+    // czysta przerwa auto: bez próby, bez odmowy i BEZ wyłączenia mikrofonu sesji
+    expect(harness.recorder.started).toBe(0);
+    expect(harness.state.speechSubmissions).toHaveLength(0);
+    expect(harness.state.disabledSessions).toEqual([]);
+    expect(harness.controller.getScreen()).toMatchObject({
+      kind: "learning",
+      recordingPhase: "idle",
+      micDenied: false,
+      recordingNotice: messages.kid.autoCaptureListenUnavailable,
+    });
+    // przycisk pozostaje: mikrofon sesji wciąż włączony, ręczna próba działa
+    expect(harness.controller.getScreen()).toMatchObject({
+      session: { microphoneEnabled: true, canRead: false, vocabularyFormat: "picture" },
+    });
+    await harness.controller.startRecording();
+    await harness.controller.startRecording();
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "recording" });
+    harness.controller.cancelRecording();
+  });
+
   it("PR #109 P2 #3: awaria urządzenia w auto-próbie zeruje stan auto — ręczne „Nagraj jeszcze raz” bez bipu startu", async () => {
     const harness = await startAtTask(baseState(), speechTask());
     await harness.controller.autoCaptureSpeech();

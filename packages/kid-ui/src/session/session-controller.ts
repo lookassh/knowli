@@ -1261,6 +1261,26 @@ export class LearningSessionController {
     } catch (error) {
       if (generation !== this.#recordingGeneration || epoch !== this.#epoch) return;
       this.#recorder = null;
+      // Niedostępny monitor poziomów (PR #109, P1 #2 + runda 4): czysta przerwa
+      // PRÓBY AUTOMATYCZNEJ, obsługana PRZED wspólnym torem odmowy — w sesjach
+      // obrazkowych nieczytającego disableForPicture wyłączyłoby mikrofon
+      // CAŁEJ sesji serwerowo i dziecko straciłoby przycisk mimo komunikatu
+      // „Nagraj przyciskiem.” Bez próby, bez micDenied, bez wyłączenia sesji;
+      // ręczne nagrywanie działa bez analizatora.
+      if (error instanceof LevelMonitorUnavailableError) {
+        const aborted = this.#learning();
+        if (epoch !== this.#epoch || !aborted || aborted.session.sessionId !== screen.session.sessionId) return;
+        const abortedTaskUnchanged = aborted.task?.taskId === taskId;
+        if (generation !== this.#recordingGeneration && abortedTaskUnchanged) return;
+        this.#setLearning({
+          recordingPhase: "idle",
+          microphoneReady: false,
+          inputLevel: null,
+          micDenied: false,
+          recordingNotice: abortedTaskUnchanged ? messages.kid.autoCaptureListenUnavailable : null,
+        });
+        return;
+      }
       const denied = (error as { name?: unknown } | null)?.name === "NotAllowedError" ||
         (error as { name?: unknown } | null)?.name === "PermissionDeniedError";
       const disableForPicture = !screen.session.canRead && screen.session.vocabularyFormat === "picture";
@@ -1273,22 +1293,12 @@ export class LearningSessionController {
       if (epoch !== this.#epoch || !current || current.session.sessionId !== screen.session.sessionId) return;
       const taskUnchanged = current.task?.taskId === taskId;
       if (generation !== this.#recordingGeneration && taskUnchanged) return;
-      // niedostępny monitor poziomów (PR #109, P1 #2): czysto przerywa próbę
-      // automatyczną — bez próby i bez zapamiętania odmowy; sygnał dla dziecka
-      // kieruje na świadomy przycisk, który działa bez analizatora
-      const listenUnavailable = error instanceof LevelMonitorUnavailableError;
       this.#setLearning({
         recordingPhase: "idle",
         microphoneReady: false,
         inputLevel: null,
         micDenied: denied,
-        recordingNotice: taskUnchanged
-          ? denied
-            ? messages.kid.micDenied
-            : listenUnavailable
-              ? messages.kid.autoCaptureListenUnavailable
-              : messages.kid.recordingUnavailable
-          : null,
+        recordingNotice: taskUnchanged ? denied ? messages.kid.micDenied : messages.kid.recordingUnavailable : null,
       });
     }
   }
