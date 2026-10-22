@@ -286,3 +286,5 @@ Codacy zgłosiło dwa limity liczby parametrów w SpeechView i PictureSpeechView
 Greptile i Qodo niezależnie zgłosiły nakładające się ręczne przygotowania mikrofonu. Osobny numer generacji przygotowania unieważnia starsze wyniki po rozpoczęciu nowszego przygotowania. Sam blur nadal pozwala zachować ręczną zgodę, a starszy sukces/odmowa nie resetują fazy nowszego nagrania ani flagi micDenied. Oba scenariusze odtworzone RED-first, następnie GREEN.
 
 Lokalna weryfikacja: 525/525 kid-ui + contracts, pełny typecheck, git diff --check oraz 22/22 E2E (kid-decks-layout i speech-recording-ux). API → MCP → skill: bez wpływu; zmiany klienta i fixture.
+
+Dodatkowa uwaga CodeRabbit: opóźniony odczyt uprawnienia nie może uruchomić autostartu, gdy w międzyczasie dziecko ręcznie przygotowało mikrofon na tym samym zadaniu. Po odczycie kontroler sprawdza aktualną gotowość i możliwość autostartu. Regresja RED-first; po poprawce 526/526 kid-ui + contracts i pełny typecheck zielone. Bez wpływu na API/MCP/skill.

@@ -1164,6 +1164,9 @@ export class LearningSessionController {
       }
       const probed = this.#learning();
       if (generation !== this.#recordingGeneration || !probed || epoch !== this.#epoch || probed.task?.taskId !== taskId) return;
+      // Odczyt uprawnienia mógł czekać na ręczne włączenie mikrofonu.
+      // Takie przygotowanie pozostawia start pod kontrolą przycisku.
+      if (probed.microphoneReady || !this.#autoCaptureAllowed(probed)) return;
       if (permission !== "granted") {
         // cichy skip auto dla tego zadania: bez sondy getUserMedia i bez
         // zapamiętania micDenied — odmowa/prompt należą wyłącznie do ścieżki

@@ -1924,6 +1924,20 @@ describe("LearningSessionController — automatyczna próba mowy z VAD (quick 26
     harness.controller.cancelRecording();
   });
 
+  it("spóźniony odczyt uprawnienia nie uruchamia autostartu po ręcznym włączeniu mikrofonu", async () => {
+    const harness = await startAtTask(baseState(), speechTask());
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    harness.media.getMicrophonePermission = async () => { await gate; return "granted"; };
+    const autoCapture = harness.controller.autoCaptureSpeech();
+    await harness.controller.prepareMicrophone();
+    release();
+    await autoCapture;
+    expect(harness.recorder.started).toBe(0);
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "idle", microphoneReady: true });
+    harness.controller.teardown();
+  });
+
   it("ręczne zakończenie cichego autostartu nie wysyła próby", async () => {
     const harness = await startAtTask(baseState(), speechTask());
     await harness.controller.autoCaptureSpeech();
