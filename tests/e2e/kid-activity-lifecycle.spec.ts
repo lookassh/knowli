@@ -128,7 +128,7 @@ test("lost end ACK retries the exact browser draft, keeps it on already_started,
   await expect(page.getByTestId("kid-deck")).toBeVisible();
   await page.clock.fastForward(1_100);
   expect(reports).toHaveLength(2);
-  expect(await page.evaluate((key) => localStorage.getItem(key), draftKey)).toBeNull();
+  await expect.poll(() => page.evaluate((key) => localStorage.getItem(key), draftKey)).toBeNull();
 });
 
 test("accepted pending reward keeps the summary usable and reaches one terminal result through GET status", async ({ page }) => {
