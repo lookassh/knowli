@@ -162,14 +162,14 @@ test("mówione ćwiczenie obrazkowe można świadomie pominąć bez mikrofonu", 
   const fixture = pictureVocabularyFixture();
   const source = fixture.tasks[0];
   if (!source || source.prompt.kind !== "picture_exposure") throw new Error("picture exposure fixture missing");
-  const taskId = source.taskId;
+  const taskId = "10000000-0000-4000-8000-000000000016";
   const attempts = fixture.attempts;
   const attempt = attempts?.[0];
   if (!attempt) throw new Error("skip attempt fixture missing");
   fixture.session.microphoneEnabled = true;
   fixture.tasks = [{
     ...source,
-    taskId: "10000000-0000-4000-8000-000000000016",
+    taskId,
     exerciseType: "speech",
     prompt: { kind: "picture_speech", audioAssetId: "10000000-0000-4000-8000-000000000014", visual: source.prompt.visual },
   }, null];
@@ -182,7 +182,7 @@ test("mówione ćwiczenie obrazkowe można świadomie pominąć bez mikrofonu", 
   await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-prompt-kind", "picture_speech");
   await expect(page.getByTestId("kid-input")).toHaveCount(0);
   await page.getByTestId("kid-skip").click();
-  await expect(page.getByTestId("kid-record-status")).toBeVisible();
+  await expect(page.getByTestId("kid-feedback")).toBeVisible();
   await page.getByTestId("kid-next").click();
   await expect(page.getByTestId("kid-summary")).toBeVisible();
 });
