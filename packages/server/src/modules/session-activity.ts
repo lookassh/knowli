@@ -383,7 +383,10 @@ export async function beginSessionActivityReview(
   // Każdy błąd providera jest zapisywany przez settleAcceptedSessionActivity.
   // Niespodziewany błąd finalizacji nie może zostać nieobsłużonym rejection;
   // trwały marker zostanie domknięty jako review_interrupted przy późniejszym odczycie.
-  void settleAcceptedSessionActivity(services, sessionId, plan).catch(() => undefined);
+  void settleAcceptedSessionActivity(services, sessionId, plan).catch((error: unknown) => {
+    const errorCode = error instanceof AppError ? error.code : error instanceof Error ? error.name : "unexpected";
+    console.error(`[session-activity] finalizacja oceny nie powiodła się: ${errorCode}`);
+  });
   return { status: "already_started", pointsAwarded: 0, errorCode: null };
 }
 

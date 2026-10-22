@@ -93,6 +93,8 @@ test("reload resumes the active report draft before ending the same session", as
   await expect(page.getByTestId("kid-input")).toBeVisible();
   await page.getByTestId("kid-input").fill("cat");
   await page.getByTestId("kid-submit").click();
+  await expect(page.getByTestId("kid-feedback")).toBeVisible();
+  await expect(page.getByTestId("kid-next")).toBeEnabled();
   await page.getByTestId("kid-next").click();
   await expect(page.getByTestId("kid-summary")).toBeVisible();
   expect(reports).toHaveLength(1);
@@ -148,6 +150,8 @@ test("accepted pending reward keeps the summary usable and reaches one terminal 
 
   await page.getByTestId("kid-input").fill("cat");
   await page.getByTestId("kid-submit").click();
+  await expect(page.getByTestId("kid-feedback")).toBeVisible();
+  await expect(page.getByTestId("kid-next")).toBeEnabled();
   await page.getByTestId("kid-next").click();
   await expect(page.getByTestId("kid-summary")).toBeVisible();
   await expect(page.getByTestId("kid-summary-reward")).toContainText("Punkty z tej nauki są jeszcze liczone.");

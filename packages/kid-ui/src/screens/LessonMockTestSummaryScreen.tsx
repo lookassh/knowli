@@ -11,9 +11,12 @@ import { useAutoFocus } from "./useAutoFocus";
  * odpowiedzią oraz prostym wynikiem per zadanie; wyjątek procentowy omówienia
  * jak w słówkach. Bez kategorii błędów i werdyktu modelu — te widzi rodzic.
  */
-export function LessonMockTestSummaryScreen({ summary, activity, onPractice, onSwitchProfile }: {
+export function LessonMockTestSummaryScreen({ summary, activity, detailsLoading, detailsError, onRetryDetails, onPractice, onSwitchProfile }: {
   summary: LessonMockTestSummaryDto;
   activity: SessionActivityResultDto | null;
+  detailsLoading: boolean;
+  detailsError: boolean;
+  onRetryDetails: () => Promise<void>;
   onPractice: () => Promise<void>;
   onSwitchProfile: () => Promise<void>;
 }) {
@@ -31,6 +34,8 @@ export function LessonMockTestSummaryScreen({ summary, activity, onPractice, onS
       <p className="kid-mock-score__stars" role="img" aria-label={format(messages.kid.mockTestStarsLabel, { n: score.stars })}>{"★".repeat(score.stars)}{"☆".repeat(6 - score.stars)}</p>
     </div>}
     <h2>{messages.kid.mockTestReview}</h2>
+    {detailsLoading && <p role="status" data-testid="kid-lesson-mock-details-loading">{messages.kid.loading}</p>}
+    {detailsError && <div role="alert" data-testid="kid-lesson-mock-details-error"><p>{messages.kid.mockTestDetailsError}</p><button type="button" onClick={() => run(onRetryDetails())}>{messages.kid.offlineRetry}</button></div>}
     <ul className="kid-mock-list">{summary.solutions.map(solution => {
       const status = lessonMockOutcomeStatus(solution.outcome);
       return <li className={`kid-mock-row kid-mock-row--${status}`} key={solution.taskId} data-testid="kid-lesson-mock-solution" data-status={status}>

@@ -382,6 +382,7 @@ export const messages = {
     mockTestFinished: "Kartkówka zakończona",
     mockTestPartial: "Zakończyliśmy wcześniej. Pozostałe zadania są niesprawdzone.",
     mockTestReview: "Sprawdźmy odpowiedzi",
+    mockTestDetailsError: "Nie udało się wczytać omówienia. Spróbuj ponownie.",
     mockTestPractice: "Poćwicz ten zestaw",
     mockTestNotTested: "Nie sprawdzono",
     mockTestSkipped: "Pominięte",

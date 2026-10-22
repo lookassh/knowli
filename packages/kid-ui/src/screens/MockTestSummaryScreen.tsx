@@ -20,8 +20,8 @@ export function MockTestReadyScreen({ session, onStart, onCancel }: { session: S
   </main>;
 }
 
-export function MockTestSummaryScreen({ summary, activity, onPlay, onPractice, onSwitchProfile }: {
-  summary: MockTestSummaryDto; activity: SessionActivityResultDto | null; onPlay: (taskId: string) => Promise<void>; onPractice: () => Promise<void>; onSwitchProfile: () => Promise<void>;
+export function MockTestSummaryScreen({ summary, activity, detailsLoading, detailsError, onRetryDetails, onPlay, onPractice, onSwitchProfile }: {
+  summary: MockTestSummaryDto; activity: SessionActivityResultDto | null; detailsLoading: boolean; detailsError: boolean; onRetryDetails: () => Promise<void>; onPlay: (taskId: string) => Promise<void>; onPractice: () => Promise<void>; onSwitchProfile: () => Promise<void>;
 }) {
   const [error, setError] = useState(false);
   const practiceRef = useAutoFocus<HTMLButtonElement>(true);
@@ -38,6 +38,8 @@ export function MockTestSummaryScreen({ summary, activity, onPlay, onPractice, o
       <p className="kid-mock-score__stars" role="img" aria-label={format(messages.kid.mockTestStarsLabel, { n: score.stars })}>{"★".repeat(score.stars)}{"☆".repeat(6 - score.stars)}</p>
     </div>}
     <h2>{messages.kid.mockTestReview}</h2>
+    {detailsLoading && <p role="status" data-testid="kid-mock-details-loading">{messages.kid.loading}</p>}
+    {detailsError && <div role="alert" data-testid="kid-mock-details-error"><p>{messages.kid.mockTestDetailsError}</p><button type="button" onClick={() => run(onRetryDetails())}>{messages.kid.offlineRetry}</button></div>}
     <ul className="kid-mock-list">{summary.solutions.map(solution => {
       const status = mockTestWordStatus(solution.results);
       const detail = mockTestSolutionDetail(solution.results);

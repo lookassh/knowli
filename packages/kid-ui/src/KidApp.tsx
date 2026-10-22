@@ -103,9 +103,9 @@ export function KidApp({
     case "mockTestReady":
       return <KidPage mode="flow"><MockTestReadyScreen session={screen.session} onStart={() => controller.beginMockTest()} onCancel={() => controller.cancelMockTest()} /></KidPage>;
     case "mockTestSummary":
-      return <KidPage mode="flow"><MockTestSummaryScreen summary={screen.summary} activity={controller.getActivityResult()} onPlay={taskId => controller.playMockTestSolution(taskId)} onPractice={() => controller.learnAgain()} onSwitchProfile={() => controller.switchProfile()} /></KidPage>;
+      return <KidPage mode="flow"><MockTestSummaryScreen summary={screen.summary} activity={controller.getActivityResult()} detailsLoading={screen.detailsLoading ?? false} detailsError={screen.detailsError ?? false} onRetryDetails={() => controller.retryMockTestSummaryDetails()} onPlay={taskId => controller.playMockTestSolution(taskId)} onPractice={() => controller.learnAgain()} onSwitchProfile={() => controller.switchProfile()} /></KidPage>;
     case "lessonMockTestSummary":
-      return <KidPage mode="flow"><LessonMockTestSummaryScreen summary={screen.summary} activity={controller.getActivityResult()} onPractice={() => controller.learnAgain()} onSwitchProfile={() => controller.switchProfile()} /></KidPage>;
+      return <KidPage mode="flow"><LessonMockTestSummaryScreen summary={screen.summary} activity={controller.getActivityResult()} detailsLoading={screen.detailsLoading ?? false} detailsError={screen.detailsError ?? false} onRetryDetails={() => controller.retryMockTestSummaryDetails()} onPractice={() => controller.learnAgain()} onSwitchProfile={() => controller.switchProfile()} /></KidPage>;
     case "sessionConflict":
       return <KidPage mode="flow"><SessionConflictScreen onResume={() => controller.resumeConflictingSession()} onClose={() => controller.closeConflictingSession()} /></KidPage>;
     case "summary":

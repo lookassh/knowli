@@ -908,6 +908,9 @@ describe("Keyboard Navigation & Focus Management", () => {
         MockTestSummaryScreen({
           summary,
           activity: null,
+          detailsLoading: false,
+          detailsError: false,
+          onRetryDetails: vi.fn(),
           onPlay: vi.fn(),
           onPractice: vi.fn(),
           onSwitchProfile: vi.fn(),
@@ -932,6 +935,9 @@ describe("Keyboard Navigation & Focus Management", () => {
         LessonMockTestSummaryScreen({
           summary,
           activity: null,
+          detailsLoading: false,
+          detailsError: false,
+          onRetryDetails: vi.fn(),
           onPractice: vi.fn(),
           onSwitchProfile: vi.fn(),
         })

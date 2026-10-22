@@ -307,7 +307,9 @@ describe("session activity review", () => {
     try {
       const summaryReturnedBeforeReviewer = await Promise.race([
         ending.then(() => true),
-        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 25)),
+        // Pozostaw margines dla wolniejszego PostgreSQL CI; reviewerGate pozostaje
+        // zamknięty, więc poprawna odpowiedź musi nadal wrócić przed oceną modelu.
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 2_000)),
       ]);
 
       expect(summaryReturnedBeforeReviewer).toBe(true);

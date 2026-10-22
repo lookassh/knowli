@@ -397,6 +397,25 @@ async function startAtTask(state: ApiState, task: TaskDto, recorderOpts?: { fail
 }
 
 describe("LearningSessionController", () => {
+  it("nie pozwala, by start sprzed teardown nadpisał nowszy wybór profilu", async () => {
+    let releaseFirst!: () => void;
+    const state = baseState();
+    state.listProfilesGate = new Promise<void>(resolve => { releaseFirst = resolve; });
+    const harness = makeHarness(state);
+    const firstStart = harness.controller.start();
+    await Promise.resolve();
+
+    harness.controller.teardown();
+    state.listProfilesGate = undefined;
+    await harness.controller.start();
+    await harness.controller.selectProfile(PROFILE_B.childId);
+    releaseFirst();
+    await firstStart;
+
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "deck", childId: PROFILE_B.childId });
+    harness.controller.teardown();
+  });
+
   it("starts learning without waiting for a background profile refresh when microphone is off", async () => {
     const state = baseState();
     let release!: () => void;
@@ -969,8 +988,11 @@ describe("LearningSessionController", () => {
     await controller.endNow();
     await Promise.resolve(); await Promise.resolve();
 
-    expect(controller.getScreen()).toMatchObject({ kind: screen, childId: PROFILE_A.childId, summary: { sessionId: "55555555-5555-5555-5555-555555555555" } });
+    expect(controller.getScreen()).toMatchObject({ kind: screen, childId: PROFILE_A.childId, detailsError: true, summary: { sessionId: "55555555-5555-5555-5555-555555555555" } });
     expect(controller.getActivityResult()).toMatchObject({ status: "already_started" });
+    delete state[error];
+    await controller.retryMockTestSummaryDetails();
+    expect(controller.getScreen()).toMatchObject({ kind: screen, detailsLoading: false, detailsError: false });
     controller.teardown();
   });
 
@@ -1761,6 +1783,38 @@ describe("LearningSessionController", () => {
       expect(state.activityResultCalls).toEqual(["pending-deleted-session"]);
       expect(drafts.load("pending-deleted-session")).toBeNull();
       controller.teardown();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("zachowuje znacznik po błędach internal i ponawia odczyt z rosnącym odstępem", async () => {
+    vi.useFakeTimers();
+    try {
+      const state = baseState();
+      const drafts = createMemoryActivityDraftStore();
+      drafts.savePendingResult({ version: 1, sessionId: "pending-transient-error", childId: PROFILE_A.childId, savedAtMs: Date.now() });
+      state.activityResults = [
+        new TypeError("fetch failed"),
+        new KidApiError("internal", false),
+        { status: "evaluated", pointsAwarded: 2, errorCode: null },
+      ];
+      const harness = makeHarness(state, { activityDrafts: drafts });
+      await harness.controller.start();
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(state.activityResultCalls).toHaveLength(1);
+      expect(drafts.load("pending-transient-error")).not.toBeNull();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(state.activityResultCalls).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(state.activityResultCalls).toHaveLength(2);
+      expect(drafts.load("pending-transient-error")).not.toBeNull();
+      await vi.advanceTimersByTimeAsync(3);
+      expect(state.activityResultCalls).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(state.activityResultCalls).toHaveLength(3);
+      expect(drafts.load("pending-transient-error")).toBeNull();
+      harness.controller.teardown();
     } finally { vi.useRealTimers(); }
   });
 

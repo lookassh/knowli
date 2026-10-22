@@ -79,8 +79,8 @@ export interface LearningScreen {
 
 export type KidScreen =
   | { kind: "mockTestReady"; session: SessionDto }
-  | { kind: "mockTestSummary"; childId: string; summary: MockTestSummaryDto }
-  | { kind: "lessonMockTestSummary"; childId: string; summary: LessonMockTestSummaryDto }
+  | { kind: "mockTestSummary"; childId: string; summary: MockTestSummaryDto; detailsLoading?: boolean; detailsError?: boolean }
+  | { kind: "lessonMockTestSummary"; childId: string; summary: LessonMockTestSummaryDto; detailsLoading?: boolean; detailsError?: boolean }
   | { kind: "sessionConflict"; active: KidDeckDto; childId: string }
   | { kind: "loading" }
   | { kind: "initError"; message: string }
@@ -218,6 +218,7 @@ export class LearningSessionController {
   #lastActivityChildId: string | null = null;
   #activityResultTimers = new Map<string, ReturnType<typeof setTimeout>>();
   #activityResultPolling = new Set<string>();
+  #activityResultRetryAttempts = new Map<string, number>();
   #disposed = false;
 
   constructor(deps: LearningSessionDeps) {
@@ -377,10 +378,12 @@ export class LearningSessionController {
 
   #scheduleActivityResultPoll(pending: PendingActivityResult): void {
     if (this.#disposed || this.#activityResultTimers.has(pending.sessionId) || this.#activityResultPolling.has(pending.sessionId)) return;
+    const attempt = this.#activityResultRetryAttempts.get(pending.sessionId) ?? 0;
+    const delay = Math.min(this.#pollIntervalMs * 2 ** attempt, 30_000);
     const timer = setTimeout(() => {
       this.#activityResultTimers.delete(pending.sessionId);
       void this.#pollActivityResult(pending);
-    }, this.#pollIntervalMs);
+    }, delay);
     this.#activityResultTimers.set(pending.sessionId, timer);
   }
 
@@ -417,16 +420,23 @@ export class LearningSessionController {
         }
       }
       this.#activityDrafts.remove(pending.sessionId);
+      this.#activityResultRetryAttempts.delete(pending.sessionId);
     } catch (error) {
-      if (error instanceof KidApiError && !error.retryable) {
+      // Tylko jawne błędy domenowe są trwałe. Odpowiedź HTML z proxy 502/503
+      // i niepoprawne JSON klient mapuje na `internal`; takie błędy są chwilowe.
+      if (error instanceof KidApiError && !error.retryable && error.code !== "internal") {
         this.#activityDrafts.remove(pending.sessionId);
+        this.#activityResultRetryAttempts.delete(pending.sessionId);
         return;
       }
-      // Krótkotrwała utrata sieci nie zmienia widoku ani nie usuwa źródła prawdy.
+      // Błędy transportu i serwera ponawiamy z backoffem, zachowując źródło prawdy.
       retry = !this.#disposed;
     } finally {
       this.#activityResultPolling.delete(pending.sessionId);
-      if (retry) this.#scheduleActivityResultPoll(pending);
+      if (retry) {
+        this.#activityResultRetryAttempts.set(pending.sessionId, (this.#activityResultRetryAttempts.get(pending.sessionId) ?? 0) + 1);
+        this.#scheduleActivityResultPoll(pending);
+      }
     }
   }
 
@@ -446,7 +456,9 @@ export class LearningSessionController {
     this.#disposed = false;
     const epoch = this.#epoch;
     try {
-      this.#profiles = await this.#api.listProfiles();
+      const profiles = await this.#api.listProfiles();
+      if (this.#disposed || epoch !== this.#epoch) return;
+      this.#profiles = profiles;
       this.#resumePendingActivityResults();
       try {
         this.#uiAudio = await this.#api.readUiAudio();
@@ -455,11 +467,14 @@ export class LearningSessionController {
         this.#uiAudio = { ready: false, assets: {} };
         this.#guidance = null;
       }
+      if (this.#disposed || epoch !== this.#epoch) return;
       if (this.#initialChildId !== undefined) {
         const requestedProfile = this.#profiles.find((profile) => profile.childId === this.#initialChildId);
         if (requestedProfile) {
           await this.#openDeckScreen(requestedProfile.childId);
+          if (this.#disposed || epoch !== this.#epoch) return;
           await this.#deliverPendingActivity(requestedProfile.childId, epoch);
+          if (this.#disposed || epoch !== this.#epoch) return;
           await this.#resumeMockFromDecks();
           return;
         }
@@ -469,6 +484,7 @@ export class LearningSessionController {
         this.#screen = { kind: "profile", profiles: this.#profiles };
       }
     } catch (error) {
+      if (this.#disposed || epoch !== this.#epoch) return;
       this.#screen = { kind: "initError", message: messageForError(error) };
     }
     this.#emit();
@@ -824,14 +840,9 @@ export class LearningSessionController {
           sessionId, deckId: this.#screen.session.deckId, state: summary.state, complete: summary.state === "completed",
           taskBudget: this.#screen.session.taskBudget, answeredCount: summary.assessedTasksIssued, solutions: [],
         };
-        this.#screen = { kind: "lessonMockTestSummary", childId, summary: pendingSummary };
+        this.#screen = { kind: "lessonMockTestSummary", childId, summary: pendingSummary, detailsLoading: true, detailsError: false };
         this.#emit();
-        void this.#api.readLessonMockTestSummary(sessionId).then(lessonSummary => {
-          if (this.#disposed || epoch !== this.#epoch || this.#screen.kind !== "lessonMockTestSummary"
-            || this.#screen.summary.sessionId !== sessionId || this.#screen.childId !== childId) return;
-          this.#screen = { ...this.#screen, summary: lessonSummary };
-          this.#emit();
-        }).catch(() => undefined);
+        void this.retryMockTestSummaryDetails();
         return;
       }
       this.#teardownRecording();
@@ -840,18 +851,41 @@ export class LearningSessionController {
         sessionId, deckId: this.#screen.session.deckId, state: summary.state, complete: summary.state === "completed",
         taskBudget: this.#screen.session.taskBudget, answeredCount: summary.assessedTasksIssued, solutions: [],
       };
-      this.#screen = { kind: "mockTestSummary", childId, summary: pendingSummary };
+      this.#screen = { kind: "mockTestSummary", childId, summary: pendingSummary, detailsLoading: true, detailsError: false };
       this.#emit();
-      void this.#api.readMockTestSummary(sessionId).then(details => {
-        if (this.#disposed || epoch !== this.#epoch || this.#screen.kind !== "mockTestSummary"
-          || this.#screen.summary.sessionId !== sessionId || this.#screen.childId !== childId) return;
-        this.#screen = { ...this.#screen, summary: details };
-        this.#emit();
-      }).catch(() => undefined);
+      void this.retryMockTestSummaryDetails();
     } catch (error) {
       if (epoch !== this.#epoch || this.#screen.kind !== "learning") return;
       this.#handleFailure(error);
     }
+  }
+
+  /** Ponawia pobranie szczegółów kartkówki bez opuszczania podsumowania. */
+  async retryMockTestSummaryDetails(): Promise<void> {
+    const initial = this.#screen;
+    if (initial.kind !== "mockTestSummary" && initial.kind !== "lessonMockTestSummary") return;
+    const epoch = this.#epoch;
+    const { sessionId } = initial.summary;
+    this.#screen = { ...initial, detailsLoading: true, detailsError: false };
+    this.#emit();
+    try {
+      if (initial.kind === "mockTestSummary") {
+        const summary = await this.#api.readMockTestSummary(sessionId);
+        if (this.#disposed || epoch !== this.#epoch || this.#screen.kind !== "mockTestSummary"
+          || this.#screen.summary.sessionId !== sessionId || this.#screen.childId !== initial.childId) return;
+        this.#screen = { ...this.#screen, summary, detailsLoading: false, detailsError: false };
+      } else {
+        const summary = await this.#api.readLessonMockTestSummary(sessionId);
+        if (this.#disposed || epoch !== this.#epoch || this.#screen.kind !== "lessonMockTestSummary"
+          || this.#screen.summary.sessionId !== sessionId || this.#screen.childId !== initial.childId) return;
+        this.#screen = { ...this.#screen, summary, detailsLoading: false, detailsError: false };
+      }
+    } catch {
+      if (this.#disposed || epoch !== this.#epoch || this.#screen.kind !== initial.kind
+        || this.#screen.summary.sessionId !== sessionId || this.#screen.childId !== initial.childId) return;
+      this.#screen = { ...this.#screen, detailsLoading: false, detailsError: true };
+    }
+    this.#emit();
   }
 
   /** Dalej po feedbacku albo ponowne podejście, gdy zadanie na to pozwala. */
