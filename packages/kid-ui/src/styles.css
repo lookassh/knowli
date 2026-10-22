@@ -1224,13 +1224,11 @@
   margin-inline-end: 44px;
 }
 
-@media (min-width: 700px) and (orientation: landscape) {
-  .kid-picture-options .kid-picture-option {
-    width: min(100%, 35svh);
-  }
-}
-
-@media (min-width: 700px) and (max-height: 540px) and (orientation: landscape) {
+/* Układ ratunkowy dwukolumnowy: próg 900 px (audyt UI 2026-10-22, fix #2)
+   obejmuje przeglądarkowy iframe kiosku (~860–880 px wysokości) oraz laptopy
+   do 900 px wysokości. Telefony landscape (≤540 px) nadal wpadają w ten sam
+   układ, a very-short/zoom mają własne nadpisanie 112 px w bloku poniżej. */
+@media (min-width: 700px) and (max-height: 900px) and (orientation: landscape) {
   .kid-ui .kid-learning {
     max-width: min(100%, 920px);
   }
@@ -1254,10 +1252,11 @@
   .kid-exercise-frame[data-prompt-kind="picture_listening"] .kid-material {
     grid-column: 1;
     grid-row: 2;
-  }
-
-  .kid-exercise-frame[data-prompt-kind="picture_listening"] .kid-picture-options .kid-picture-option {
-    width: min(100%, 35svh);
+    /* align-items:center ramki każe materiałowi przyjąć wysokość treści
+       (max-content), co łamie budżet wysokości w dole pasma 541–900 px —
+       rozciągamy do wiersza 1fr, aby siatka obrazków dostawała dostępne
+       miejsce, a nie rozmiar naturalny. */
+    align-self: stretch;
   }
 
   .kid-exercise-frame[data-prompt-kind="picture_listening"] .kid-exercise-actions {
@@ -1266,10 +1265,11 @@
   }
 }
 
-@media (min-width: 700px) and (max-height: 540px) and (orientation: landscape) {
+@media (min-width: 700px) and (max-height: 900px) and (orientation: landscape) {
   .kid-page[data-zoomed="true"] .kid-picture-options .kid-picture-option,
   .kid-page[data-viewport-very-short="true"] .kid-picture-options .kid-picture-option {
     width: min(100%, 112px);
+    height: auto;
   }
 }
 
