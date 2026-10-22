@@ -10,7 +10,8 @@ import type { ExerciseProps } from "./types";
  * usłyszeć wzorzec (oczekiwana część nauki — §13.2), potem je wypowiada.
  * Bez działającego mikrofonu pozostaje komunikat i „Pomiń” — bez oceny.
  */
-export function SpeechView({ task, busy, recordingPhase, automaticRecording, microphoneReady, inputLevel, recordingNotice, recordingMode, micAvailable, mediaUrl, handlers }: ExerciseProps) {
+export function SpeechView(props: ExerciseProps) {
+  const { task, busy, recordingPhase, automaticRecording, microphoneReady, inputLevel, recordingNotice, recordingMode, micAvailable, mediaUrl, handlers } = props;
   if (task.prompt.kind !== "speech") {
     return null;
   }

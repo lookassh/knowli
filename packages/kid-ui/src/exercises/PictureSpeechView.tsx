@@ -5,7 +5,8 @@ import { MeaningVisualView } from "../visuals/MeaningVisualView";
 import { SpeechRecordButton } from "./SpeechRecordButton";
 import type { ExerciseProps } from "./types";
 
-export function PictureSpeechView({ task, busy, mediaUrl, micAvailable, recordingPhase, automaticRecording, microphoneReady, inputLevel, recordingNotice, recordingMode, handlers }: ExerciseProps) {
+export function PictureSpeechView(props: ExerciseProps) {
+  const { task, busy, mediaUrl, micAvailable, recordingPhase, automaticRecording, microphoneReady, inputLevel, recordingNotice, recordingMode, handlers } = props;
   if (task.prompt.kind !== "picture_speech") return null;
   const captureBlocksActions = recordingPhase !== "idle" && !automaticRecording;
   return <ExerciseFrame

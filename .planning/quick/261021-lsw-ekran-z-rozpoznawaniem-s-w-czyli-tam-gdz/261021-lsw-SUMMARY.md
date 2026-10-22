@@ -276,3 +276,13 @@ API → MCP → skill: brak wpływu; zmiany dotyczą wyłącznie obsługi nagryw
 Weryfikacja: osiem nowych testów najpierw odtworzyło błędy (RED); po poprawkach i dodatkowym teście przekazania sygnału anulowania 523/523 testów kid-ui + contracts zielonych. Pełny typecheck i git diff --check bez błędów. W dwóch specach E2E (speech-recording-ux, picture-vocabulary) przeszły 22 scenariusze; scenariusz 15-sekundowego limitu ciszy zakłócił lokalny HMR podczas ostatniej edycji kontrolera, a jego osobne powtórzenie na niezmienianych plikach przeszło. Łącznie sprawdzono 23 scenariusze, w tym dotyk z mową i bez niej, Space/Enter, Escape, odsłuch, instrukcję i pominięcie podczas autostartu.
 
 SPEC uzupełniono o zachowanie przerwania autostartu. API → MCP → skill: bez wpływu na endpointy, DTO, autoryzację ani semantykę raportu; zmieniony port mediów jest lokalnym interfejsem klienta. Systemowy dialog uprawnień i odsłuch na fizycznym urządzeniu pozostają poza dowodami z testów przeglądarkowych/fake-adapterów.
+
+## CI i review po rundzie 6 (2026-10-22)
+
+CI dla 76056b9: unit/integration/build oraz shardy 2/3 i 3/3 przeszły, shard 1/3 upadł na kid-decks-layout (short phone viewport). Test sprawdzał dane POST startu sesji, ale pozwalał uruchomić sesję z pustą kolejką fixture; następujący POST /next zgłaszał task queue exhausted. Test teraz jawnie przechwytuje żądanie startu i przerywa je po zarejestrowaniu, jak sąsiedni test mapowania przycisków, zachowując asercję deckId/mode/microphoneEnabled. Globalny helper nadal odrzuca nieprzewidziane żądania.
+
+Codacy zgłosiło dwa limity liczby parametrów w SpeechView i PictureSpeechView po dodaniu automaticRecording. Komponenty przyjmują teraz pojedynczy obiekt ExerciseProps i rozpakowują pola w ciele funkcji; zachowanie UI bez zmian.
+
+Greptile i Qodo niezależnie zgłosiły nakładające się ręczne przygotowania mikrofonu. Osobny numer generacji przygotowania unieważnia starsze wyniki po rozpoczęciu nowszego przygotowania. Sam blur nadal pozwala zachować ręczną zgodę, a starszy sukces/odmowa nie resetują fazy nowszego nagrania ani flagi micDenied. Oba scenariusze odtworzone RED-first, następnie GREEN.
+
+Lokalna weryfikacja: 525/525 kid-ui + contracts, pełny typecheck, git diff --check oraz 22/22 E2E (kid-decks-layout i speech-recording-ux). API → MCP → skill: bez wpływu; zmiany klienta i fixture.

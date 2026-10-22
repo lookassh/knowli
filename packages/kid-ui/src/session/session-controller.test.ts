@@ -1903,6 +1903,27 @@ describe("LearningSessionController — automatyczna próba mowy z VAD (quick 26
     harness.controller.teardown();
   });
 
+  it.each([false, true])("spóźnione ręczne przygotowanie nie zmienia nowszego nagrania (błąd: %s)", async (fail) => {
+    const harness = await startAtTask(baseState(), speechTask());
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    harness.media.prepareMicrophone = async () => {
+      await gate;
+      if (fail) throw new DOMException("Permission denied", "NotAllowedError");
+    };
+    const oldPreparation = harness.controller.prepareMicrophone();
+    harness.controller.cancelRecording();
+    harness.media.prepareMicrophone = async () => undefined;
+    await harness.controller.prepareMicrophone();
+    await harness.controller.startRecording();
+    release();
+    await oldPreparation;
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "recording", microphoneReady: true, micDenied: false });
+    expect(harness.state.disabledSessions).toEqual([]);
+    expect(harness.storage.read(MIC_DENIED_KEY)).toBeNull();
+    harness.controller.cancelRecording();
+  });
+
   it("ręczne zakończenie cichego autostartu nie wysyła próby", async () => {
     const harness = await startAtTask(baseState(), speechTask());
     await harness.controller.autoCaptureSpeech();

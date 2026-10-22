@@ -184,6 +184,8 @@ export class LearningSessionController {
   /** True wyłącznie od auto-startu do zatrzymania auto-próby. */
   #autoCaptureActive = false;
   #autoBeepCancellation: AbortController | null = null;
+  /** Nowe przygotowanie unieważnia stare; sam blur nie odrzuca ręcznej zgody. */
+  #microphonePreparationGeneration = 0;
   /** Sygnał „teraz mów" grany w startRecording przez hook onMicrophoneReady. */
   #autoStartBeep: (() => Promise<void>) | null = null;
   /** Zadanie, na którym auto-start już padł — raz na wyświetlenie zadania (SPEC §16). */
@@ -1091,16 +1093,20 @@ export class LearningSessionController {
     this.#stopPlayback();
     const epoch = this.#epoch;
     const generation = this.#recordingGeneration;
+    const preparation = ++this.#microphonePreparationGeneration;
+    const taskId = screen.task.taskId;
+    const isCurrent = () => preparation === this.#microphonePreparationGeneration &&
+      epoch === this.#epoch && this.#learning()?.task?.taskId === taskId &&
+      (!options.automatic || generation === this.#recordingGeneration);
     this.#setLearning({ recordingPhase: "preparing", recordingNotice: null, inputLevel: null });
     try {
       await this.#media.prepareMicrophone();
-      const current = this.#learning();
-      if ((options.automatic && generation !== this.#recordingGeneration) || epoch !== this.#epoch || !current || current.task?.taskId !== screen.task.taskId) return;
+      if (!isCurrent()) return;
       this.#micDenied = false;
       this.#storage.remove(MIC_DENIED_KEY);
       this.#setLearning({ microphoneReady: true, recordingPhase: "idle", micDenied: false, recordingNotice: null });
     } catch (error) {
-      if ((options.automatic && generation !== this.#recordingGeneration) || epoch !== this.#epoch || this.#learning()?.task?.taskId !== screen.task.taskId) return;
+      if (!isCurrent()) return;
       const denied = (error as { name?: unknown } | null)?.name === "NotAllowedError" ||
         (error as { name?: unknown } | null)?.name === "PermissionDeniedError";
       const disableForPicture = !options.automatic && !screen.session.canRead && screen.session.vocabularyFormat === "picture";
@@ -1110,7 +1116,7 @@ export class LearningSessionController {
       }
       if (denied || disableForPicture) await this.#disableSessionMicrophone(screen.session);
       const current = this.#learning();
-      if (epoch !== this.#epoch || !current || current.session.sessionId !== screen.session.sessionId) return;
+      if (preparation !== this.#microphonePreparationGeneration || epoch !== this.#epoch || !current || current.session.sessionId !== screen.session.sessionId) return;
       const taskUnchanged = current.task?.taskId === screen.task.taskId;
       this.#setLearning({
         recordingPhase: "idle",

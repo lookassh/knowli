@@ -90,6 +90,9 @@ test("short phone viewport reaches lower decks and the microphone bar by scrolli
   await lastCard.getByRole("button", { name: "Ucz się" }).scrollIntoViewIfNeeded();
   await expect(page.getByTestId("kid-mic-toggle")).toBeInViewport();
 
+  // Ten test sprawdza dane żądania startu. Nie uruchamia sesji z pustą
+  // kolejką zadań fixture (następny request /next nie jest tu skonfigurowany).
+  await page.route("**/api/v1/kid/sessions", async (route) => route.abort());
   const learningRequest = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/v1/kid/sessions" && request.method() === "POST");
   await lastCard.getByRole("button", { name: "Ucz się" }).click();
   expect((await learningRequest).postDataJSON()).toMatchObject({ deckId: decks[3]!.deckId, mode: "training", microphoneEnabled: false });
