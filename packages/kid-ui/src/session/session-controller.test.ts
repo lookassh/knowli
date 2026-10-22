@@ -1636,6 +1636,67 @@ describe("LearningSessionController", () => {
     await harness.controller.selectProfile(PROFILE_A.childId);
     expect(drafts.load(sessionId)).toMatchObject({ version: 1, sessionId, childId: PROFILE_A.childId });
     harness.controller.teardown();
+    expect(drafts.load(sessionId)).toMatchObject({ version: 1, sessionId, childId: PROFILE_A.childId });
+  });
+
+  it("prowadzi bieżący polling, gdy zapis znacznika w localStorage się nie powiedzie", async () => {
+    vi.useFakeTimers();
+    try {
+      const state = baseState();
+      state.endActivityResult = { status: "already_started", pointsAwarded: 0, errorCode: null };
+      state.activityResults = [{ status: "evaluated", pointsAwarded: 4, errorCode: null }];
+      const drafts = createMemoryActivityDraftStore();
+      vi.spyOn(drafts, "savePendingResult").mockReturnValue(false);
+      const harness = await startAtTask(state, taskDto("pending-storage-failure", { kind: "recall", prompt: "czwartek" }), { activityDrafts: drafts });
+
+      await harness.controller.endNow();
+      await vi.advanceTimersByTimeAsync(2);
+
+      expect(state.activityResultCalls).toEqual(["55555555-5555-5555-5555-555555555555"]);
+      expect(harness.controller.getActivityResult()).toMatchObject({ status: "evaluated", pointsAwarded: 4 });
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("wznawia polling oczekującego wyniku po ponownym uruchomieniu tego samego kontrolera", async () => {
+    vi.useFakeTimers();
+    try {
+      const state = baseState();
+      const drafts = createMemoryActivityDraftStore();
+      drafts.savePendingResult({ version: 1, sessionId: "pending-remount", childId: PROFILE_A.childId, savedAtMs: Date.now() });
+      state.activityResults = [{ status: "evaluated", pointsAwarded: 2, errorCode: null }];
+      const { controller } = makeHarness(state, { activityDrafts: drafts });
+
+      await controller.start();
+      controller.teardown();
+      await controller.start();
+      await vi.advanceTimersByTimeAsync(2);
+
+      expect(state.activityResultCalls).toEqual(["pending-remount"]);
+      expect(drafts.load("pending-remount")).toBeNull();
+      controller.teardown();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("zachowuje znacznik do skutecznego odświeżenia punktów profilu", async () => {
+    vi.useFakeTimers();
+    try {
+      const state = baseState();
+      state.endActivityResult = { status: "already_started", pointsAwarded: 0, errorCode: null };
+      state.activityResults = Array.from({ length: 10 }, () => ({ status: "evaluated" as const, pointsAwarded: 4, errorCode: null }));
+      const harness = await startAtTask(state, taskDto("pending-profile-refresh", { kind: "recall", prompt: "czwartek" }));
+      await harness.controller.endNow();
+      state.networkDown = true;
+      await vi.advanceTimersByTimeAsync(2);
+      expect(harness.activityDrafts.load("55555555-5555-5555-5555-555555555555")).toMatchObject({ version: 1 });
+
+      state.profiles = [{ ...PROFILE_A, rewardPoints: 4 }, PROFILE_B];
+      state.networkDown = false;
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect(state.activityResultCalls.length).toBeGreaterThanOrEqual(2);
+      expect(harness.activityDrafts.load("55555555-5555-5555-5555-555555555555")).toBeNull();
+      expect(harness.controller.getScreen()).toMatchObject({ kind: "summary", profiles: expect.arrayContaining([expect.objectContaining({ childId: PROFILE_A.childId, rewardPoints: 4 })]) });
+    } finally { vi.useRealTimers(); }
   });
 
   it("pokazuje pending od razu, a polling przeżywa zmianę profilu i odświeża właściciela sesji", async () => {
@@ -1681,6 +1742,25 @@ describe("LearningSessionController", () => {
       expect(state.activityResultCalls).toEqual(["pending-reload"]);
       expect(state.endReports).toEqual([]);
       expect(drafts.load("pending-reload")).toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("usuwa trwały znacznik po nieponawialnym błędzie API wyniku", async () => {
+    vi.useFakeTimers();
+    try {
+      const state = baseState();
+      const drafts = createMemoryActivityDraftStore();
+      drafts.savePendingResult({ version: 1, sessionId: "pending-deleted-session", childId: PROFILE_A.childId, savedAtMs: Date.now() });
+      state.activityResults = [new KidApiError("not_found", false)];
+      const { controller } = makeHarness(state, { activityDrafts: drafts });
+
+      await controller.start();
+      await vi.advanceTimersByTimeAsync(2);
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect(state.activityResultCalls).toEqual(["pending-deleted-session"]);
+      expect(drafts.load("pending-deleted-session")).toBeNull();
+      controller.teardown();
     } finally { vi.useRealTimers(); }
   });
 

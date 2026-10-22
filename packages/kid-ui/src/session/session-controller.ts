@@ -197,7 +197,7 @@ export class LearningSessionController {
   /** Wycofuje operacje zdążające po zmianie ekranu/teardown. */
   #epoch = 0;
   #profileRequestSequence = 0;
-  #profileRefreshPromise: Promise<void> | null = null;
+  #profileRefreshPromise: Promise<boolean> | null = null;
   #recordingGeneration = 0;
   #recordingStartedAt = 0;
   #playbackGeneration = 0;
@@ -350,6 +350,9 @@ export class LearningSessionController {
     const sessionId = this.#activitySessionId;
     if (!activity || sessionId === null || !activity.started) return;
     const existing = this.#activityDrafts.load(sessionId);
+    // Po ACK serwera szkic nie może nadpisać znacznika odzyskiwania wyniku
+    // podczas blur/teardown.
+    if (existing && "version" in existing) return;
     const saved = this.#activityDrafts.save({
       sessionId,
       savedAtMs: this.#activityClock.now(),
@@ -362,7 +365,10 @@ export class LearningSessionController {
 
   #rememberPendingActivityResult(sessionId: string, childId: string): void {
     const pending: PendingActivityResult = { version: 1, sessionId, childId, savedAtMs: this.#activityClock.now() };
-    if (this.#activityDrafts.savePendingResult(pending)) this.#scheduleActivityResultPoll(pending);
+    this.#activityDrafts.savePendingResult(pending);
+    // Bieżące polling działa także bez localStorage; zapis decyduje tylko o
+    // możliwości wznowienia go po przeładowaniu aplikacji.
+    this.#scheduleActivityResultPoll(pending);
   }
 
   #resumePendingActivityResults(): void {
@@ -389,9 +395,6 @@ export class LearningSessionController {
         retry = true;
         return;
       }
-      // Usuwamy znacznik przed odświeżeniem profili, aby spóźnione lub
-      // równoległe wywołanie nie wykonało kolejnego odczytu terminalnego.
-      this.#activityDrafts.remove(pending.sessionId);
       const visibleSummary = this.#screen.kind === "summary"
         && this.#screen.childId === pending.childId && this.#screen.summary.sessionId === pending.sessionId;
       const visibleQuizSummary = (this.#screen.kind === "mockTestSummary" || this.#screen.kind === "lessonMockTestSummary")
@@ -405,8 +408,20 @@ export class LearningSessionController {
       }
       // listProfiles odświeża wszystkie profile, lecz owner wyniku pozostaje
       // przypięty do znacznika; nigdy nie wiążemy go z aktualnym wyborem UI.
-      if (this.#profiles.some(profile => profile.childId === pending.childId)) await this.refreshProfiles();
-    } catch {
+      // Zachowujemy marker i ponawiamy GET terminalnego wyniku, jeśli nie udało
+      // się odświeżyć salda właściwego dziecka.
+      if (result.status === "evaluated" && this.#profiles.some(profile => profile.childId === pending.childId)) {
+        if (!await this.refreshProfiles()) {
+          retry = !this.#disposed;
+          return;
+        }
+      }
+      this.#activityDrafts.remove(pending.sessionId);
+    } catch (error) {
+      if (error instanceof KidApiError && !error.retryable) {
+        this.#activityDrafts.remove(pending.sessionId);
+        return;
+      }
       // Krótkotrwała utrata sieci nie zmienia widoku ani nie usuwa źródła prawdy.
       retry = !this.#disposed;
     } finally {
@@ -427,6 +442,8 @@ export class LearningSessionController {
   }
 
   async start(): Promise<void> {
+    // React StrictMode może ponownie uruchomić efekt z tym samym kontrolerem.
+    this.#disposed = false;
     const epoch = this.#epoch;
     try {
       this.#profiles = await this.#api.listProfiles();
@@ -1572,13 +1589,13 @@ export class LearningSessionController {
   }
 
   /** Refresh reward balances and parent-managed profile settings without discarding a usable screen. */
-  async refreshProfiles(): Promise<void> {
+  async refreshProfiles(): Promise<boolean> {
     const epoch = this.#epoch;
     const requestSequence = ++this.#profileRequestSequence;
-    const refresh = (async () => {
+    const refresh = (async (): Promise<boolean> => {
     try {
       const profiles = await this.#api.listProfiles();
-      if (epoch !== this.#epoch || requestSequence !== this.#profileRequestSequence) return;
+      if (epoch !== this.#epoch || requestSequence !== this.#profileRequestSequence) return false;
       const previousByChild = new Map(this.#profiles.map(profile => [profile.childId, profile]));
       this.#profiles = profiles.map(profile => {
         if (!profile.todayActivityUnavailable) return profile;
@@ -1591,13 +1608,15 @@ export class LearningSessionController {
         this.#screen = { ...this.#screen, profiles: this.#profiles };
         this.#emit();
       }
-    } catch { /* Keep the last confirmed balances during a temporary network failure. */ }
+      return true;
+    } catch { /* Keep the last confirmed balances during a temporary network failure. */ return false; }
     })();
     this.#profileRefreshPromise = refresh;
-    await refresh;
+    const succeeded = await refresh;
     if (epoch === this.#epoch && requestSequence !== this.#profileRequestSequence) {
-      await this.#profileRefreshPromise;
+      return await this.#profileRefreshPromise ?? succeeded;
     }
+    return succeeded;
   }
 
   /** Czy banner „Jeszcze N i koniec!” jest widoczny dla bieżącego zadania. */

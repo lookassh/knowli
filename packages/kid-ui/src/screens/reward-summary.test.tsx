@@ -88,7 +88,9 @@ describe("kid reward views", () => {
     expect(textNodes(pendingView).join(" ")).toContain("Punkty z tej nauki są jeszcze liczone.");
     const pendingStatus = (pendingView.type as (props: { activity: unknown }) => React.ReactElement)(pendingView.props);
     expect(pendingStatus.props).toMatchObject({ role: "status", "aria-live": "polite" });
-    expect(buttons(<SummaryScreen summary={{ ...summary, activity: { status: "already_started", pointsAwarded: 0, errorCode: null } }} profiles={[profile, { ...profile, childId: "other" }]} onAgain={vi.fn()} onSwitchProfile={vi.fn()} />).map(button => button.props.disabled)).not.toContain(true);
+    const pendingActions = buttons(<SummaryScreen summary={{ ...summary, activity: { status: "already_started", pointsAwarded: 0, errorCode: null } }} profiles={[profile, { ...profile, childId: "other" }]} onAgain={vi.fn()} onSwitchProfile={vi.fn()} />);
+    expect(pendingActions).toHaveLength(2);
+    expect(pendingActions.map(button => button.props.disabled)).not.toContain(true);
     const missing = textNodes(<SummaryScreen summary={summary} profiles={[profile]} onAgain={vi.fn()} onSwitchProfile={vi.fn()} />).join(" ");
     expect(missing).not.toContain("Zdobyto");
     expect(textNodes(<SessionActivityResultView activity={null} />).join(" ")).toBe("");

@@ -15,16 +15,16 @@
 
 ### Prywatne wdrożenie i odtwarzanie
 
-- [ ] **OPS-01**: Operator może uruchomić prywatny stos z jedną instancją web, workerem i PostgreSQL, przeprowadzić migracje oraz potwierdzić gotowość usług przez udokumentowane healthchecki.
-- [ ] **OPS-02**: Po kontrolowanym restarcie weba i workera aplikacja zachowuje zatwierdzony materiał, historię nauki, projekcje postępu i gotowe media.
-- [ ] **REC-01**: Operator może odtworzyć sprawdzony backup do oddzielnej pustej instancji i potwierdzić obecność profili, opublikowanej wersji materiału, historii oraz mediów.
+- [x] **OPS-01**: Operator może uruchomić prywatny stos z jedną instancją web, workerem i PostgreSQL, przeprowadzić migracje oraz potwierdzić gotowość usług przez udokumentowane healthchecki.
+- [x] **OPS-02**: Po kontrolowanym restarcie weba i workera aplikacja zachowuje zatwierdzony materiał, historię nauki, projekcje postępu i gotowe media.
+- [x] **REC-01**: Operator może odtworzyć sprawdzony backup do oddzielnej pustej instancji i potwierdzić obecność profili, opublikowanej wersji materiału, historii oraz mediów.
 
 ### Rodzinna ścieżka na urządzeniu dziecka
 
-- [ ] **FLOW-01**: Rodzic może przygotować lub wybrać materiał, sprawdzić go, zatwierdzić i przypisać właściwemu profilowi przed rozpoczęciem sesji dziecka.
-- [ ] **FLOW-02**: Dziecko może na rzeczywistym telefonie lub tablecie ukończyć sesję trwającą około 5–10 minut bez mikrofonu, także gdy odmówi dostępu do mikrofonu.
-- [ ] **HIST-01**: Po sesji rodzic może odczytać trwałą historię i postęp oddzielnie dla właściwego dziecka oraz umiejętności, z rozróżnieniem wyniku samodzielnego, wspieranego i nieocenionego.
-- [ ] **SPEECH-01**: Jeżeli instalacja włącza STT i ocenę wymowy, próba na rzeczywistym urządzeniu z prawdziwą mową dziecka potwierdza uczciwe rozróżnienie treści, wymowy i wyniku technicznie nieocenionego; ustalone ograniczenia zostają zapisane przed deklaracją gotowości tej ścieżki.
+- [x] **FLOW-01**: Rodzic może przygotować lub wybrać materiał, sprawdzić go, zatwierdzić i przypisać właściwemu profilowi przed rozpoczęciem sesji dziecka.
+- [x] **FLOW-02**: Dziecko może na rzeczywistym telefonie lub tablecie ukończyć sesję trwającą około 5–10 minut bez mikrofonu, także gdy odmówi dostępu do mikrofonu.
+- [x] **HIST-01**: Po sesji rodzic może odczytać trwałą historię i postęp oddzielnie dla właściwego dziecka oraz umiejętności, z rozróżnieniem wyniku samodzielnego, wspieranego i nieocenionego.
+- [x] **SPEECH-01**: Jeżeli instalacja włącza STT i ocenę wymowy, próba na rzeczywistym urządzeniu z prawdziwą mową dziecka potwierdza uczciwe rozróżnienie treści, wymowy i wyniku technicznie nieocenionego; ustalone ograniczenia zostają zapisane przed deklaracją gotowości tej ścieżki.
 
 ## Udokumentowana baza już obecna w repozytorium
 
@@ -70,9 +70,9 @@ Nie są one kopiowane do v1 tego cyklu ani przypisywane do nowych faz. Ich bież
 | SPEECH-01 | Earlier Phase 2 | Owner-confirmed complete |
 
 **Coverage:**
-- v1 requirements: 15 total
+- v1 requirements: 11 total
 - Active in current roadmap: 4 (ASYNC-01 through ASYNC-04)
-- Earlier phases owner-confirmed complete: 11
+- Earlier phases owner-confirmed complete: 7
 - Unmapped: 0 ✓
 
 ---
