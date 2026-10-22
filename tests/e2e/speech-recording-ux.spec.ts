@@ -512,7 +512,7 @@ test("automat na zadaniu mowy sam nagrywa i sam kończy po wypowiedzi z ciszą",
   await expect(button).toHaveAttribute("aria-pressed", "true");
 
   // D-03: mowa powyżej progu, potem cisza — VAD kończy nagrywanie samo
-  // (grace 3 + sustain 2 próbki mowy, potem 12 próbek ciszy; okno 2 s toleruje
+  // (sustain 2 próbki mowy bez grace, potem 12 próbek ciszy; okno 2 s toleruje
   // wolniejszą realną kadencję próbkowania w headless). Domknięcie potwierdzamy
   // kartą wyniku i dokładnie jedną próbą w bazie — przejściowa faza idle trwa
   // krócej niż interwał pollowania atrybutu.
@@ -550,6 +550,46 @@ test("cisza bez wykrytej mowy anuluje automatyczne nagrywanie bez próby", async
     "select modality from learning_app.attempts where task_id = $1", [taskId],
   )).toHaveLength(0);
 });
+
+for (const action of ["click", "Escape"] as const) {
+  test(`automatyczne nagranie reaguje na pierwszy ${action}`, async ({ page }) => {
+    await installFakeMicrophone(page);
+    const fixture = pictureVocabularyFixture();
+    const source = fixture.tasks[0];
+    if (!source || source.prompt.kind !== "picture_exposure") throw new Error("picture exposure fixture missing");
+    fixture.profiles[0]!.recordingMode = "toggle";
+    fixture.session.microphoneEnabled = true;
+    const taskId = "10000000-0000-4000-8000-000000000017";
+    fixture.tasks = [{
+      ...source, taskId, exerciseType: "speech",
+      prompt: { kind: "picture_speech", audioAssetId: "10000000-0000-4000-8000-000000000014", visual: source.prompt.visual },
+    }, null];
+    fixture.attempts = [{ ...fixture.attempts![0]!, taskId, modality: "audio" }];
+    let submissions = 0;
+    page.on("request", (request) => {
+      if (request.method() === "POST" && /\/tasks\/[^/]+\/attempts$/.test(new URL(request.url()).pathname)) submissions += 1;
+    });
+    await installKidUiFixture(page, fixture);
+    await page.goto("/");
+    await page.getByTestId("kid-profile").click();
+    await page.getByTestId("kid-deck").first().click();
+    const button = page.getByTestId("kid-record");
+    await expect(button).toHaveAttribute("data-phase", "recording");
+    // Rzeczywista próba musi przekroczyć minimalne 300 ms nagrania.
+    await page.waitForTimeout(400);
+    if (action === "click") {
+      await button.click();
+      await expect(page.getByTestId("kid-speech-feedback")).toBeVisible();
+      expect(submissions).toBe(1);
+    } else {
+      await button.focus();
+      await page.keyboard.press("Escape");
+      await expect(button).toHaveAttribute("data-phase", "idle");
+      await page.waitForTimeout(1_500);
+      expect(submissions).toBe(0);
+    }
+  });
+}
 
 test("bez nadanego uprawnienia mikrofonu automat nie startuje — dopiero świadomy przycisk (WR-02)", async ({ page }) => {
   await installFakeMicrophone(page);

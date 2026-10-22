@@ -1083,16 +1083,17 @@ export class LearningSessionController {
     if (!screen?.task || screen.offline || screen.busy || screen.recordingPhase !== "idle" || screen.microphoneReady) return;
     this.#stopPlayback();
     const epoch = this.#epoch;
+    const generation = this.#recordingGeneration;
     this.#setLearning({ recordingPhase: "preparing", recordingNotice: null, inputLevel: null });
     try {
       await this.#media.prepareMicrophone();
       const current = this.#learning();
-      if (epoch !== this.#epoch || !current || current.task?.taskId !== screen.task.taskId) return;
+      if (generation !== this.#recordingGeneration || epoch !== this.#epoch || !current || current.task?.taskId !== screen.task.taskId) return;
       this.#micDenied = false;
       this.#storage.remove(MIC_DENIED_KEY);
       this.#setLearning({ microphoneReady: true, recordingPhase: "idle", micDenied: false, recordingNotice: null });
     } catch (error) {
-      if (epoch !== this.#epoch || this.#learning()?.task?.taskId !== screen.task.taskId) return;
+      if (generation !== this.#recordingGeneration || epoch !== this.#epoch || this.#learning()?.task?.taskId !== screen.task.taskId) return;
       const denied = (error as { name?: unknown } | null)?.name === "NotAllowedError" ||
         (error as { name?: unknown } | null)?.name === "PermissionDeniedError";
       const disableForPicture = !screen.session.canRead && screen.session.vocabularyFormat === "picture";
@@ -1137,6 +1138,7 @@ export class LearningSessionController {
     if (!this.#autoCaptureAllowed(screen)) return;
     if (this.#autoCaptureTaskId === screen.task.taskId) return;
     const epoch = this.#epoch;
+    const generation = this.#recordingGeneration;
     const taskId = screen.task.taskId;
     if (!screen.microphoneReady) {
       // wyłącznie zapytanie o STAN uprawnienia (bez promptu, bez getUserMedia);
@@ -1148,7 +1150,7 @@ export class LearningSessionController {
         permission = "unknown";
       }
       const probed = this.#learning();
-      if (!probed || epoch !== this.#epoch || probed.task?.taskId !== taskId) return;
+      if (generation !== this.#recordingGeneration || !probed || epoch !== this.#epoch || probed.task?.taskId !== taskId) return;
       if (permission !== "granted") {
         // cichy skip auto dla tego zadania: bez sondy getUserMedia i bez
         // zapamiętania micDenied — odmowa/prompt należą wyłącznie do ścieżki
@@ -1159,7 +1161,7 @@ export class LearningSessionController {
       // urządzenia zostaje przy istniejącej ścieżce micDenied, bez pętli ponowień
       await this.prepareMicrophone();
       const current = this.#learning();
-      if (!current || epoch !== this.#epoch || current.task?.taskId !== taskId) return;
+      if (generation !== this.#recordingGeneration || !current || epoch !== this.#epoch || current.task?.taskId !== taskId) return;
       if (!current.microphoneReady || !this.#autoCaptureAllowed(current)) return;
     }
     this.#autoCaptureTaskId = taskId;

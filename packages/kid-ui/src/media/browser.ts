@@ -27,16 +27,29 @@ const BEEP_PEAK_GAIN = 0.3;
  * ~10 ms ataku na początku, plate na szczycie wytrzymuje do BEEP_DURATION_S −
  * BEEP_DECAY_S, a ~50 ms decay domyka sygnał na KOŃCU — bip słychalny przez
  * niemal całe 130 ms, bo to jedyny sygnał „teraz mów” dla dziecka (PR #109
- * runda 3). Bip jest opcjonalny — brak konstruktorów, kontekst suspended
- * (polityka autoplay) albo awaria rozstrzygają się po cichu, bez rzucania
- * i bez czekania na resume() (nagrywanie obowiązkowe).
+ * runda 3). Zawieszony kontekst wznawiamy z limitem 750 ms. Bip jest
+ * opcjonalny — brak konstruktorów, blokada autoplay albo awaria
+ * rozstrzygają się po cichu, bez blokowania nagrywania bez końca.
  */
 async function playBeepViaWebAudio(AudioContextCtor: typeof AudioContext | undefined, kind: BeepKind): Promise<void> {
   if (!AudioContextCtor) return;
   let context: AudioContext | null = null;
   try {
     context = new AudioContextCtor();
-    if (context.state === "suspended") return;
+    if (context.state === "suspended") {
+      let resumeTimeout: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          context.resume(),
+          new Promise<void>((resolve) => {
+            resumeTimeout = globalThis.setTimeout(resolve, LEVEL_MONITOR_RESUME_TIMEOUT_MS);
+          }),
+        ]);
+      } finally {
+        globalThis.clearTimeout(resumeTimeout);
+      }
+    }
+    if (context.state !== "running") return;
     const oscillator = context.createOscillator();
     const gain = context.createGain();
     oscillator.frequency.value = BEEP_FREQUENCY_HZ[kind];
@@ -252,7 +265,7 @@ export class BrowserRecorder implements SpeechRecorder {
     // bip opcjonalny, nagrywanie obowiązkowe (T-261021-02). Przycinanie
     // ewentualnego echa bipu z nagrania rozważono i odrzucono jako
     // nieproporcjonalne (PR #109, P2 #4) — bip w całości poprzedza capture.
-    await Promise.resolve(this.#options.onMicrophoneReady?.()).catch(() => undefined);
+    await Promise.resolve().then(() => this.#options.onMicrophoneReady?.()).catch(() => undefined);
     if (this.#cancelled || generation !== this.#generation) {
       this.#stopLevelMonitor();
       stream.getTracks().forEach((track) => track.stop());

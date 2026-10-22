@@ -251,3 +251,15 @@ Pełny grep vad.ts (nagłówek włącznie), vad.test.ts, session-controller(.tes
 - Targeted suite (kontroler + VAD + przeglądarka): 152 testy zielone (kontroler 104).
 - packages/kid-ui + contracts: 509 testów jednostkowych; typecheck czysty.
 - Pięć speców e2e zielonych na Dockerze (global-setup): speech-recording-ux, kid-flow, kid-ui-layout, picture-vocabulary (7/7 po scaleniu #110), kid-layout-stability — 78 testów (2,6 min).
+
+## Review round 5 — poprawki PR #109 (2026-10-22)
+
+- Anulowanie podczas zapytania o uprawnienia lub przygotowania mikrofonu unieważnia oczekujący auto-start przez `recordingGeneration`. Spóźnione przygotowanie nie zmienia gotowości mikrofonu ani nie zapisuje odmowy.
+- Przycisk w trybie przełącznika zatrzymuje nagranie uruchomione automatycznie po pierwszym kliknięciu; Escape anuluje je także bez wcześniejszego gestu.
+- Synchroniczny wyjątek `onMicrophoneReady` jest obsługiwany tak samo jak odrzucona obietnica: opcjonalny bip nie przerywa startu i nie pozostawia porzuconego strumienia.
+- Bip próbuje wznowić nowy zawieszony AudioContext z limitem 750 ms; gra wyłącznie przy stanie `running`, a przy blokadzie lub timeout zamyka kontekst i kończy się bez błędu.
+- Test pomijania `picture_speech` liczy wywołania getUserMedia, także przy braku natywnego mediaDevices, i sprawdza zero wywołań przez 1,5 s przy uprawnieniu `prompt`.
+
+Weryfikacja: pięć nowych testów jednostkowych odtworzyło błędy przed poprawką (RED), po zmianie 514/514 testów kid-ui + contracts zielonych; pełny `pnpm typecheck` i `git diff --check` bez błędów. E2E na izolowanym PostgreSQL/Docker: 14 istniejących scenariuszy w speech-recording-ux i picture-vocabulary zielonych, dwa nowe scenariusze kliknięcia/Escape zielone w celowanym powtórzeniu. Pierwsza wersja testu kliknięcia kończyła nagranie przed minimalnymi 300 ms; po uwzględnieniu minimum test potwierdza dokładnie jedną wysyłkę, a Escape zero wysyłek.
+
+API → MCP → skill: brak wpływu; zmiany dotyczą wyłącznie obsługi nagrywania i testów klienta, bez zmian endpointów, DTO, autoryzacji ani znaczenia danych raportu. Kalibracja i odsłuch na fizycznym urządzeniu pozostają do sprawdzenia przez właściciela.

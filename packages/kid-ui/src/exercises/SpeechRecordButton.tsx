@@ -71,6 +71,12 @@ export function SpeechRecordButton({ phase, ready, disabled, level, notice = nul
 
   function toggle(): void {
     if (blocked) return;
+    // Automatyczny start nie ma właściciela gestu. Pierwszy klik zatrzymuje
+    // rzeczywiście trwające nagranie, zamiast ponownie żądać startu.
+    if (phase === "recording" && !gesture.active) {
+      onStop();
+      return;
+    }
     if (phase === "idle" && !ready) {
       onPrepare();
       return;
@@ -144,9 +150,10 @@ export function SpeechRecordButton({ phase, ready, disabled, level, notice = nul
           if (gesture.owner?.kind === "key") cancel(gesture.owner);
         }}
         onKeyDownCapture={(event) => {
-          if (event.key === "Escape" && gesture.active) {
+          if (event.key === "Escape" && (gesture.active || phase === "starting" || phase === "recording")) {
             event.preventDefault();
-            act({ type: "escape" });
+            if (gesture.active) act({ type: "escape" });
+            else onCancel();
           }
         }}
         onClick={(event) => {

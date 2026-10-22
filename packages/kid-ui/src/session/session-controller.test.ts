@@ -2150,6 +2150,29 @@ describe("LearningSessionController — automatyczna próba mowy z VAD (quick 26
     harness.controller.teardown();
   });
 
+  it.each(["permission", "preparation"])("anulowanie podczas %s blokuje oczekujący auto-start", async (stage) => {
+    const harness = await startAtTask(baseState(), speechTask());
+    let release!: () => void;
+    let entered!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    const reached = new Promise<void>((resolve) => { entered = resolve; });
+    if (stage === "permission") {
+      harness.media.getMicrophonePermission = async () => { entered(); await pending; return "granted"; };
+    } else {
+      harness.media.prepareMicrophone = async () => { entered(); await pending; };
+    }
+    const capture = harness.controller.autoCaptureSpeech();
+    await reached;
+    harness.controller.cancelRecording();
+    release();
+    await capture;
+    expect(harness.recorder.started).toBe(0);
+    expect(harness.media.beeps).toEqual([]);
+    expect(harness.state.speechSubmissions).toHaveLength(0);
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "idle", microphoneReady: false });
+    harness.controller.teardown();
+  });
+
   it("WR-02: mikrofon już gotowy w sesji — auto-start bez pytania o uprawnienie", async () => {
     const log: string[] = [];
     const harness = await startAtTask(baseState(), speechTask(), { sharedLog: log });

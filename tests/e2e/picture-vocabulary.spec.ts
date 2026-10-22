@@ -178,6 +178,20 @@ test("mówione ćwiczenie obrazkowe można świadomie pominąć bez mikrofonu", 
   // z intencją testu dziecko jest na tym ekranie bez działającego mikrofonu
   // i świadomie używa „Pomiń”, bez żadnego nagrywania.
   await page.addInitScript(() => {
+    let calls = 0;
+    (window as unknown as { __gumCalls: () => number }).__gumCalls = () => calls;
+    const devices = navigator.mediaDevices;
+    const original = devices?.getUserMedia?.bind(devices);
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: async (constraints: MediaStreamConstraints) => {
+          calls += 1;
+          if (original) return original(constraints);
+          throw new DOMException("Unexpected getUserMedia call", "NotAllowedError");
+        },
+      },
+    });
     Object.defineProperty(navigator, "permissions", {
       configurable: true,
       value: { query: async () => ({ state: "prompt" }) },
@@ -191,6 +205,9 @@ test("mówione ćwiczenie obrazkowe można świadomie pominąć bez mikrofonu", 
   await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-prompt-kind", "picture_speech");
   await expect(page.getByTestId("kid-input")).toHaveCount(0);
   // bez nadanego uprawnienia auto-start nie rusza — przycisk pozostaje w idle
+  await expect(page.getByTestId("kid-record")).toHaveAttribute("data-phase", "idle");
+  await page.waitForTimeout(1_500);
+  expect(await page.evaluate(() => (window as unknown as { __gumCalls: () => number }).__gumCalls())).toBe(0);
   await expect(page.getByTestId("kid-record")).toHaveAttribute("data-phase", "idle");
   // hint uprawnień w slocie nagrywania jest widoczny PRZED pominięciem; po
   // „Pomiń” LearnScreen podmienia cały widok ćwiczenia na feedback, więc

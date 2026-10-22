@@ -263,6 +263,17 @@ describe("BrowserRecorder — nagrywanie bez pozostawiania strumienia (arch §11
 });
 
 describe("BrowserRecorder — hook onMicrophoneReady (sygnał: teraz mów)", () => {
+  it("synchroniczny błąd hooka nie przerywa nagrania i pozwala zwolnić mikrofon", async () => {
+    const { stream, stop } = fakeStream();
+    const recorder = new BrowserRecorder(deps(stream).deps, {
+      onMicrophoneReady: () => { throw new Error("beep failed synchronously"); },
+    });
+    await expect(recorder.start()).resolves.toBeUndefined();
+    expect(recorder.active).toBe(true);
+    recorder.cancel();
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
   it("woła hook PO udanym getUserMedia i PRZED konstrukcją MediaRecorder oraz startem przechwytywania", async () => {
     const { stream } = fakeStream();
     const log: string[] = [];
@@ -531,7 +542,7 @@ describe("BrowserRecorder — wymagany monitor poziomów w trybie auto (PR #109,
 });
 
 describe("createBrowserMedia — bip WebAudio (sygnały: teraz mów / koniec)", () => {
-  function fakeBeepContext(state: AudioContextState = "running") {
+  function fakeBeepContext(state: AudioContextState = "running", resumeState: AudioContextState | "pending" = state) {
     const events: string[] = [];
     let onended: (() => void) | null = null;
     const oscillator = {
@@ -555,6 +566,11 @@ describe("createBrowserMedia — bip WebAudio (sygnały: teraz mów / koniec)", 
       state = state;
       currentTime = 0;
       destination = {};
+      resume = vi.fn(async () => {
+        events.push("context:resume");
+        if (resumeState === "pending") await new Promise<void>(() => undefined);
+        else this.state = resumeState;
+      });
       createOscillator() { events.push("createOscillator"); return oscillator; }
       createGain() { events.push("createGain"); return gain; }
       close = vi.fn(async () => { events.push("context:close"); });
@@ -621,11 +637,36 @@ describe("createBrowserMedia — bip WebAudio (sygnały: teraz mów / koniec)", 
     expect(getUserMedia).not.toHaveBeenCalled();
   });
 
-  it("kontekst suspended (polityka autoplay) — bez grania, bez czekania na resume", async () => {
+  it("kontekst pozostaje suspended po resume — bez grania, z zamknięciem kontekstu", async () => {
     const fake = fakeBeepContext("suspended");
     await expect(fake.media.playBeep("end")).resolves.toBeUndefined();
     expect(fake.oscillator.start).not.toHaveBeenCalled();
     expect(fake.events).toContain("context:close");
+  });
+
+  it("wznawia nowy zawieszony kontekst przed zagraniem bipa", async () => {
+    const fake = fakeBeepContext("suspended", "running");
+    await fake.media.playBeep("start");
+    expect(fake.events.indexOf("context:resume")).toBeLessThan(fake.events.indexOf("createOscillator"));
+    expect(fake.oscillator.start).toHaveBeenCalledOnce();
+    expect(fake.events.filter((event) => event === "context:close")).toHaveLength(1);
+  });
+
+  it("wiszące resume bipa kończy się po limicie i zamyka kontekst", async () => {
+    vi.useFakeTimers();
+    try {
+      const fake = fakeBeepContext("suspended", "pending");
+      const beep = fake.media.playBeep("start");
+      await vi.advanceTimersByTimeAsync(LEVEL_MONITOR_RESUME_TIMEOUT_MS - 1);
+      expect(fake.events).toContain("context:resume");
+      expect(fake.events).not.toContain("context:close");
+      await vi.advanceTimersByTimeAsync(1);
+      await beep;
+      expect(fake.oscillator.start).not.toHaveBeenCalled();
+      expect(fake.events).toContain("context:close");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("awaria Web Audio w trakcie — bip degraduje się po cichu (nagrywanie obowiązkowe)", async () => {
