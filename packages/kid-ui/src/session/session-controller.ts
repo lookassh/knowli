@@ -1167,6 +1167,14 @@ export class LearningSessionController {
     this.#vad = createSpeechVad();
     this.#autoStartBeep = () => this.#media.playBeep("start").catch(() => undefined);
     await this.startRecording();
+    // Własność stanu auto (PR #109 runda 3): ogon sprawdza fazę tylko wtedy,
+    // gdy ta próba wciąż jest właścicielem — późny start POPRZEDNIEGO zadania
+    // (wiszące getUserMedia rozwiązane po przejściu dalej) nie może skasować
+    // VAD/bipu nowego zadania: bez VAD onLimitReached uznałby auto za wyłączone
+    // i stopRecording wysłał ciszę jako próbę (SPEC §15). Latch
+    // #autoCaptureTaskId przeżywa resety — jego cyklem życia zarządza
+    // wyświetlanie zadań, nie #resetAutoCapture.
+    if (this.#autoCaptureTaskId !== taskId) return;
     const current = this.#learning();
     if (!current || current.recordingPhase !== "recording") {
       // start nie doszedł do skutku (błąd urządzenia, anulowanie) — przywracamy

@@ -2210,6 +2210,122 @@ describe("LearningSessionController — automatyczna próba mowy z VAD (quick 26
     expect(harness.media.beeps).toEqual(["start"]);
     harness.controller.cancelRecording();
   });
+
+  it("runda 3: późny start auto zadania A nie kasuje VAD zadania B — mowa daje dokładnie jedną próbę", async () => {
+    vi.useFakeTimers();
+    try {
+      const taskA = speechTask();
+      const taskB = taskDto("auto-speech-b", { kind: "speech", text: "bee", visualType: "none", imageAssetId: null, audioAssetId: null });
+      let releaseA!: () => void;
+      let releaseB!: () => void;
+      const gateA = new Promise<void>((resolve) => { releaseA = resolve; });
+      const gateB = new Promise<void>((resolve) => { releaseB = resolve; });
+      const recorderOpts: { startGate?: Promise<void> } = { startGate: gateA };
+      const state = baseState();
+      const harness = await startAtTask(state, taskA, recorderOpts);
+      const phaseOf = (): string => {
+        const screen = harness.controller.getScreen();
+        return screen.kind === "learning" ? screen.recordingPhase : "inny-ekran";
+      };
+      const taskIdOf = (): string | null => {
+        const screen = harness.controller.getScreen();
+        return screen.kind === "learning" ? (screen.task?.taskId ?? null) : null;
+      };
+      // A: auto-start wisi na bramce getUserMedia (faza starting)
+      const autoA = harness.controller.autoCaptureSpeech();
+      for (let index = 0; index < 10 && phaseOf() !== "starting"; index += 1) {
+        await vi.advanceTimersByTimeAsync(0);
+      }
+      expect(phaseOf()).toBe("starting");
+      // użytkownik przerywa A i przechodzi do następnego zadania
+      harness.controller.cancelRecording();
+      expect(phaseOf()).toBe("idle");
+      recorderOpts.startGate = gateB;
+      state.tasks.push(taskB);
+      await harness.controller.skip();
+      await harness.controller.continueLearning();
+      expect(taskIdOf()).toBe(taskB.taskId);
+      // B: własna auto-próba wisi w starting (start B na drugiej bramce)
+      const autoB = harness.controller.autoCaptureSpeech();
+      for (let index = 0; index < 10 && phaseOf() !== "starting"; index += 1) {
+        await vi.advanceTimersByTimeAsync(0);
+      }
+      expect(phaseOf()).toBe("starting");
+      // późne rozwiązanie bramki A: ogon A nie może wyzerować stanu auto B
+      releaseA();
+      await autoA;
+      releaseB();
+      await autoB;
+      expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "recording", task: { taskId: taskB.taskId } });
+      // pełna wypowiedź B: mowa + ~1,2 s ciszy → auto-stop z JEDNĄ próbą audio
+      await vi.advanceTimersByTimeAsync(300);
+      harness.recorder.pushLevel(0.3);
+      harness.recorder.pushLevel(0.3);
+      for (let index = 0; index < 12; index += 1) harness.recorder.pushLevel(0);
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(harness.recorder.stopped).toBe(1);
+      expect(harness.state.speechSubmissions).toHaveLength(1);
+      expect(harness.state.speechSubmissions[0]).toMatchObject({ taskId: taskB.taskId });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("runda 3: późny start auto zadania A nie kasuje VAD zadania B — cisza nie tworzy próby (SPEC §15)", async () => {
+    vi.useFakeTimers();
+    try {
+      const taskA = speechTask();
+      const taskB = taskDto("auto-speech-b", { kind: "speech", text: "bee", visualType: "none", imageAssetId: null, audioAssetId: null });
+      let releaseA!: () => void;
+      let releaseB!: () => void;
+      const gateA = new Promise<void>((resolve) => { releaseA = resolve; });
+      const gateB = new Promise<void>((resolve) => { releaseB = resolve; });
+      const recorderOpts: { startGate?: Promise<void> } = { startGate: gateA };
+      const state = baseState();
+      const harness = await startAtTask(state, taskA, recorderOpts);
+      const phaseOf = (): string => {
+        const screen = harness.controller.getScreen();
+        return screen.kind === "learning" ? screen.recordingPhase : "inny-ekran";
+      };
+      const taskIdOf = (): string | null => {
+        const screen = harness.controller.getScreen();
+        return screen.kind === "learning" ? (screen.task?.taskId ?? null) : null;
+      };
+      const autoA = harness.controller.autoCaptureSpeech();
+      for (let index = 0; index < 10 && phaseOf() !== "starting"; index += 1) {
+        await vi.advanceTimersByTimeAsync(0);
+      }
+      expect(phaseOf()).toBe("starting");
+      harness.controller.cancelRecording();
+      recorderOpts.startGate = gateB;
+      state.tasks.push(taskB);
+      await harness.controller.skip();
+      await harness.controller.continueLearning();
+      const autoB = harness.controller.autoCaptureSpeech();
+      for (let index = 0; index < 10 && phaseOf() !== "starting"; index += 1) {
+        await vi.advanceTimersByTimeAsync(0);
+      }
+      expect(phaseOf()).toBe("starting");
+      releaseA();
+      await autoA;
+      releaseB();
+      await autoB;
+      expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "recording" });
+      // cisza przez cały limit: bez VAD ogon wysłałby milczenie jako próbę
+      await vi.advanceTimersByTimeAsync(300);
+      harness.recorder.hitLimit();
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(harness.state.speechSubmissions).toHaveLength(0);
+      expect(harness.controller.getScreen()).toMatchObject({
+        recordingPhase: "idle",
+        recordingNotice: messages.kid.autoCaptureNoSpeech,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 function baseState(): ApiState {
