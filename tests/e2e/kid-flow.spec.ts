@@ -219,11 +219,19 @@ async function startFakeRecording(page: Page): Promise<void> {
     const autoPossible = promptKind === "speech" || promptKind === "picture_speech";
     let started = false;
     if (autoPossible) {
+      // PR #109 runda 4: regresja auto-startu nie może cicho degradować do
+      // ścieżki ręcznej — fallback zostaje tylko, gdy test JAWNIE ustawił brak
+      // zgody (window.__kidMicPermission = "prompt"/"denied"); przy domyślnym
+      // "granted" timeout polla jest twardą porażką testu
+      const permission = await page.evaluate(() =>
+        (window as unknown as { __kidMicPermission?: string }).__kidMicPermission ?? "granted");
+      const autoExpected = permission !== "prompt" && permission !== "denied";
       try {
         await expect.poll(recorderStarts, { timeout: 3_000 }).toBeGreaterThan(startsBefore);
         await expect(record).toHaveAttribute("data-phase", "recording");
         started = true;
-      } catch {
+      } catch (error) {
+        if (autoExpected) throw error;
         started = false;
       }
     }
