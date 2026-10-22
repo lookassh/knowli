@@ -229,3 +229,25 @@ Wyścig: auto-start A wisi na getUserMedia → użytkownik anuluje A i przechodz
 - Targeted suite (kontroler + VAD + przeglądarka): 151 testów zielonych (kontroler 103, przeglądarka 35, VAD 13).
 - packages/kid-ui + contracts: 508 testów jednostkowych zielonych; typecheck czysty (0 błędów; unia KidScreen w nowych testach zawężana pomocnikami phaseOf/taskIdOf).
 - Pięć speców e2e zielonych na Dockerze (global-setup): speech-recording-ux, kid-flow, kid-ui-layout, picture-vocabulary, kid-layout-stability — 78 testów (2,9 min).
+
+## Review round 4 — findings addressed
+
+Dwa commity na fix/speech-recognition (po scaleniu origin/main, merge 31ad823); trzecie znalezisko nie wymagało zmiany:
+
+### R4 — P1 (gitar-bot): monitor niedostępny nie wyłącza mikrofonu obrazkowej sesji (commit 7ad259f)
+
+Wspólny catch startRecording liczył disableForPicture (nieczytający + picture) i wyłączał mikrofon sesji serwerowo ZANIM obsłużono LevelMonitorUnavailableError — w głównym przypadku picture_speech awaria monitora (autoplay/interrupted) zabierała dziecku przycisk mimo komunikatu „Nagraj przyciskiem.". Fix: LMUE obsługany PIERWSZY, z wczesnym powrotem (idle + autoCaptureListenUnavailable, bez micDenied i bez #disableSessionMicrophone; strażniki generacji/epoki zachowane); pozostałe błędy bez zmian. Test RED-first (stary kod wpisował się do disabledSessions): obrazkowa sesja nieczytającego, picture_speech, awaria monitora → zero prób, zero wyłączeń sesji, mikrofon sesji włączony, przycisk i ręczne nagrywanie działają.
+
+### R4 (codacy): startFakeRecording nie połyka regresji auto-startu (commit 64e15fc)
+
+Timeout polla auto-startu w helperze kid-flow był cicho łapany i test schodził do klików ręcznych — regresja auto mowy przechodziła niezauważona (powrót IN-02). Teraz fallback ręczny zostaje tylko przy jawnie ustawionym braku zgody w teście (window.__kidMicPermission = prompt/denied); przy domyślnym granted timeout jest twardą porażką z kontekstem expect.poll. Wszystkie testy kid-flow zielone — auto-start realnie działa we wszystkich ścieżkach, które go oczekują.
+
+### R4 (codacy): przeterminowana dokumentacja „~300 ms grace" w vad.ts — nieaktualne, pominięto commit
+
+Pełny grep vad.ts (nagłówek włącznie), vad.test.ts, session-controller(.test).ts i docs/SPEC.md nie znajduje żadnego „300 ms"/„grace 3"/„martwa strefa" jako OPISU zachowania — pozostałe wzmianki „grace" to żywe pole stanu (graceUsed) i stała VAD_GRACE_SAMPLES=0 z poprawnym uzasadnieniem z rundy 3 (bip kończy się przed przechwytywaniem). Zgodnie z instrukcją commit pominięto.
+
+### Weryfikacja po rundzie 4
+
+- Targeted suite (kontroler + VAD + przeglądarka): 152 testy zielone (kontroler 104).
+- packages/kid-ui + contracts: 509 testów jednostkowych; typecheck czysty.
+- Pięć speców e2e zielonych na Dockerze (global-setup): speech-recording-ux, kid-flow, kid-ui-layout, picture-vocabulary (7/7 po scaleniu #110), kid-layout-stability — 78 testów (2,6 min).
