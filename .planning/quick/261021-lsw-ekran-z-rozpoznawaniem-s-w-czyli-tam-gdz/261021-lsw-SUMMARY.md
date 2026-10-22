@@ -207,3 +207,25 @@ Kontekst przypisywany do `#levelContext` natychmiast po konstrukcji, więc sprz�
 - RED-first potwierdzone (stash implementacji): oba testy wiszącego resume zawieszały się na starym kodzie (timeout 5 s). Nowe przypadki w browser.test.ts: ręczny startuje bez czekania; auto przerywa po limicie na wstrzykniętych timerach (resume wołane raz, close raz, strumień zwolniony); „interrupted" — auto odrzuca, ręczny nagrywa; awarie createAnalyser/connect zamykają kontekst dokładnie raz. Kontrakt przerwania po stronie kontrolera (notice, zero prób, przycisk działa) pokryty testem z P1 #2 — wyścig resume żyje w adapterze, więc jego limity testowane są na poziomie przeglądarki.
 - E2E: fake AudioContext w speech-recording-ux, kid-flow i kid-layout-stability dostały `state: "running"` (auto akceptuje tylko działający nasłuch); picture-vocabulary (wariant IN-03, bez mikrofonu) i kid-ui-layout (auto nie dosięga rejestratora — wiszące getUserMedia) bez zmian.
 - Weryfikacja po commicie: 149 testów w targeted suite (kontroler + VAD + przeglądarka, przeglądarka 35), 506 jednostkowych w packages/kid-ui + contracts, typecheck czysty, pięć speców e2e zielonych na Dockerze — 78 testów (2,5 min).
+
+## Review round 3 — findings addressed
+
+Trzy commity na fix/speech-recognition (CodeRacket/właściciel, wszystkie potwierdzone w kodzie):
+
+### R3 — obwiednia bipu (commit efd37eb)
+
+Poprzednia obwiednia schodziła do zera już po ~50 ms (decay liczony od ataku), zostawiając 80 ms ciszy — dziecko łatwo przegapiało jedyny sygnał „teraz mów". Teraz atak ~10 ms do szczytu 0.3, plate wytrzymuje do BEEP_DURATION_S − BEEP_DECAY_S (80 ms), a decay ~50 ms domyka sygnał na końcu — bip słyszalny niemal pełne 130 ms. Częstotliwości (880/590 Hz), długości i pozostałe stałe bez zmian; test weryfikuje kolejność i argumenty obwiedni (setValueAtTime ×2, rampy ×2).
+
+### R3 — P1: późny auto-start A kasował VAD nowego zadania B (commit fa8d129)
+
+Wyścig: auto-start A wisi na getUserMedia → użytkownik anuluje A i przechodzi dalej → B startuje własną auto-próbę (własny VAD/bip, faza starting) → późne rozwiązanie A widziało starting ≠ recording i bezwarunkowo wołało #resetAutoCapture(), kasując stan auto B → B nagrywało bez VAD → onLimitReached (autoCaptureActive=false) pchało ciszę przez stopRecording jako PRÓBĘ — naruszenie SPEC §15. Fix: ogon autoCaptureSpeech bada własność (#autoCaptureTaskId === taskId) przed sprawdzeniem fazy — obcy ogon jest no-opem; latch przeżywa resety (cyklem życia zarządza wyświetlanie zadań), generacje izolują rekordery jak dotychczas. Testy RED-first (oba zawodziły na starym kodzie): wiszący start A na bramce + pełne przejście na B → mowa B daje dokładnie jedną próbę audio (dawniej: zero auto-stopów); cisza B → anulowanie z komunikatem i zerem zgłoszeń (dawniej: 1 zgłoszenie ciszy).
+
+### R3 — literówka w SPEC §6 (commit 106d04d)
+
+„obrazkowe mówi one" → „obrazkowe mówione" — jednowierszowa zmiana dokumentacyjna.
+
+### Weryfikacja po rundzie 3
+
+- Targeted suite (kontroler + VAD + przeglądarka): 151 testów zielonych (kontroler 103, przeglądarka 35, VAD 13).
+- packages/kid-ui + contracts: 508 testów jednostkowych zielonych; typecheck czysty (0 błędów; unia KidScreen w nowych testach zawężana pomocnikami phaseOf/taskIdOf).
+- Pięć speców e2e zielonych na Dockerze (global-setup): speech-recording-ux, kid-flow, kid-ui-layout, picture-vocabulary, kid-layout-stability — 78 testów (2,9 min).
