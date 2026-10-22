@@ -1835,6 +1835,32 @@ describe("LearningSessionController", () => {
     } finally { vi.useRealTimers(); }
   });
 
+  it("sprawdza already_started ze stałym interwałem, bez opóźniania końcowego wyniku", async () => {
+    vi.useFakeTimers();
+    try {
+      const state = baseState();
+      const drafts = createMemoryActivityDraftStore();
+      drafts.savePendingResult({ version: 1, sessionId: "pending-long-review", childId: PROFILE_A.childId, savedAtMs: Date.now() });
+      state.activityResults = [
+        { status: "already_started", pointsAwarded: 0, errorCode: null },
+        { status: "already_started", pointsAwarded: 0, errorCode: null },
+        { status: "evaluated", pointsAwarded: 3, errorCode: null },
+      ];
+      const harness = makeHarness(state, { activityDrafts: drafts });
+      await harness.controller.start();
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(state.activityResultCalls).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(state.activityResultCalls).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(state.activityResultCalls).toHaveLength(3);
+      expect(drafts.load("pending-long-review")).toBeNull();
+      harness.controller.teardown();
+    } finally { vi.useRealTimers(); }
+  });
+
   it("nie dołącza raportu, gdy sesja zakończyła się przed pierwszym zadaniem", async () => {
     const state = baseState();
     state.tasks = [];

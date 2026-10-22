@@ -394,10 +394,14 @@ export class LearningSessionController {
     if (!readActivityResult) return;
     this.#activityResultPolling.add(pending.sessionId);
     let retry = false;
+    let backoffRetry = false;
     try {
       const result = await readActivityResult.call(this.#api, pending.sessionId);
       if (this.#disposed) return;
       if (result.status === "already_started") {
+        // To normalny stan oczekiwania na ocenę, nie błąd. Zachowaj krótki,
+        // stały interwał, by szybko pokazać wynik po zakończeniu modelu.
+        this.#activityResultRetryAttempts.delete(pending.sessionId);
         retry = true;
         return;
       }
@@ -419,6 +423,7 @@ export class LearningSessionController {
       if (result.status === "evaluated" && this.#profiles.some(profile => profile.childId === pending.childId)) {
         if (!await this.refreshProfiles()) {
           retry = !this.#disposed;
+          backoffRetry = retry;
           return;
         }
       }
@@ -434,10 +439,13 @@ export class LearningSessionController {
       }
       // Błędy transportu i serwera ponawiamy z backoffem, zachowując źródło prawdy.
       retry = !this.#disposed;
+      backoffRetry = retry;
     } finally {
       this.#activityResultPolling.delete(pending.sessionId);
       if (retry) {
-        this.#activityResultRetryAttempts.set(pending.sessionId, (this.#activityResultRetryAttempts.get(pending.sessionId) ?? 0) + 1);
+        if (backoffRetry) {
+          this.#activityResultRetryAttempts.set(pending.sessionId, (this.#activityResultRetryAttempts.get(pending.sessionId) ?? 0) + 1);
+        }
         this.#scheduleActivityResultPoll(pending);
       }
     }
