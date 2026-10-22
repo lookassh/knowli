@@ -1883,6 +1883,42 @@ describe("LearningSessionController", () => {
     } finally { vi.useRealTimers(); }
   });
 
+  it("wznawia polling po teardown, nawet gdy odczyt poprzedniej generacji nadal trwa", async () => {
+    vi.useFakeTimers();
+    let finishOldRead!: (value: import("@learning/contracts").SessionActivityResultDto) => void;
+    try {
+      const state = baseState();
+      const drafts = createMemoryActivityDraftStore();
+      drafts.savePendingResult({ version: 1, sessionId: "pending-inflight-remount", childId: PROFILE_A.childId, savedAtMs: Date.now() });
+      const baseApi = makeApi(state);
+      const api: KidApi = {
+        ...baseApi,
+        async readSessionActivityResult(sessionId) {
+          state.activityResultCalls.push(sessionId);
+          if (state.activityResultCalls.length === 1) return new Promise((resolve) => { finishOldRead = resolve; });
+          return { status: "evaluated", pointsAwarded: 2, errorCode: null };
+        },
+      };
+      const harness = makeHarness(state, { api, activityDrafts: drafts });
+      await harness.controller.start();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(state.activityResultCalls).toHaveLength(1);
+
+      harness.controller.teardown();
+      await harness.controller.start();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(state.activityResultCalls).toHaveLength(2);
+
+      finishOldRead({ status: "already_started", pointsAwarded: 0, errorCode: null });
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(state.activityResultCalls).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(drafts.load("pending-inflight-remount")).toBeNull();
+      harness.controller.teardown();
+    } finally { vi.useRealTimers(); }
+  });
+
   it("nie dołącza raportu, gdy sesja zakończyła się przed pierwszym zadaniem", async () => {
     const state = baseState();
     state.tasks = [];

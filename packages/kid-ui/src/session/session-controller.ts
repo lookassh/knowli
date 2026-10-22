@@ -217,7 +217,7 @@ export class LearningSessionController {
   #lastActivitySessionId: string | null = null;
   #lastActivityChildId: string | null = null;
   #activityResultTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  #activityResultPolling = new Set<string>();
+  #activityResultPolling = new Map<string, number>();
   #activityResultRetryAttempts = new Map<string, number>();
   #disposed = false;
 
@@ -378,7 +378,8 @@ export class LearningSessionController {
 
   #scheduleActivityResultPoll(pending: PendingActivityResult): void {
     if (this.#disposed || !this.#api.readSessionActivityResult
-      || this.#activityResultTimers.has(pending.sessionId) || this.#activityResultPolling.has(pending.sessionId)) return;
+      || this.#activityResultTimers.has(pending.sessionId)
+      || this.#activityResultPolling.get(pending.sessionId) === this.#epoch) return;
     const attempt = this.#activityResultRetryAttempts.get(pending.sessionId) ?? 0;
     const delay = Math.min(this.#pollIntervalMs * 2 ** attempt, 30_000);
     const timer = setTimeout(() => {
@@ -389,15 +390,16 @@ export class LearningSessionController {
   }
 
   async #pollActivityResult(pending: PendingActivityResult): Promise<void> {
-    if (this.#disposed || this.#activityResultPolling.has(pending.sessionId)) return;
+    const epoch = this.#epoch;
+    if (this.#disposed || this.#activityResultPolling.get(pending.sessionId) === epoch) return;
     const readActivityResult = this.#api.readSessionActivityResult;
     if (!readActivityResult) return;
-    this.#activityResultPolling.add(pending.sessionId);
+    this.#activityResultPolling.set(pending.sessionId, epoch);
     let retry = false;
     let backoffRetry = false;
     try {
       const result = await readActivityResult.call(this.#api, pending.sessionId);
-      if (this.#disposed) return;
+      if (this.#disposed || epoch !== this.#epoch) return;
       if (result.status === "already_started") {
         // To normalny stan oczekiwania na ocenę, nie błąd. Zachowaj krótki,
         // stały interwał, by szybko pokazać wynik po zakończeniu modelu.
@@ -422,7 +424,7 @@ export class LearningSessionController {
       // się odświeżyć salda właściwego dziecka.
       if (result.status === "evaluated" && this.#profiles.some(profile => profile.childId === pending.childId)) {
         if (!await this.refreshProfiles()) {
-          retry = !this.#disposed;
+          retry = !this.#disposed && epoch === this.#epoch;
           backoffRetry = retry;
           return;
         }
@@ -430,6 +432,7 @@ export class LearningSessionController {
       this.#activityDrafts.remove(pending.sessionId);
       this.#activityResultRetryAttempts.delete(pending.sessionId);
     } catch (error) {
+      if (this.#disposed || epoch !== this.#epoch) return;
       // Tylko jawne błędy domenowe są trwałe. Odpowiedź HTML z proxy 502/503
       // i niepoprawne JSON klient mapuje na `internal`; takie błędy są chwilowe.
       if (error instanceof KidApiError && !error.retryable && error.code !== "internal") {
@@ -441,7 +444,9 @@ export class LearningSessionController {
       retry = !this.#disposed;
       backoffRetry = retry;
     } finally {
-      this.#activityResultPolling.delete(pending.sessionId);
+      if (this.#activityResultPolling.get(pending.sessionId) === epoch) {
+        this.#activityResultPolling.delete(pending.sessionId);
+      }
       if (retry) {
         if (backoffRetry) {
           this.#activityResultRetryAttempts.set(pending.sessionId, (this.#activityResultRetryAttempts.get(pending.sessionId) ?? 0) + 1);
