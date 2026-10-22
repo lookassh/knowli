@@ -1710,6 +1710,7 @@ export class LearningSessionController {
     this.#disposed = true;
     for (const timer of this.#activityResultTimers.values()) clearTimeout(timer);
     this.#activityResultTimers.clear();
+    this.#activityResultRetryAttempts.clear();
     this.#epoch += 1;
     this.#teardownRecording();
     this.#stopPlayback();

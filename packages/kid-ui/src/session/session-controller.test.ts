@@ -1861,6 +1861,28 @@ describe("LearningSessionController", () => {
     } finally { vi.useRealTimers(); }
   });
 
+  it("zeruje backoff po teardown, aby ponowne uruchomienie wznowiło szybki polling", async () => {
+    vi.useFakeTimers();
+    try {
+      const state = baseState();
+      const drafts = createMemoryActivityDraftStore();
+      drafts.savePendingResult({ version: 1, sessionId: "pending-remount-backoff", childId: PROFILE_A.childId, savedAtMs: Date.now() });
+      state.activityResults = [new TypeError("fetch failed"), { status: "evaluated", pointsAwarded: 1, errorCode: null }];
+      const harness = makeHarness(state, { activityDrafts: drafts });
+      await harness.controller.start();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(state.activityResultCalls).toHaveLength(1);
+
+      harness.controller.teardown();
+      await harness.controller.start();
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(state.activityResultCalls).toHaveLength(2);
+      expect(drafts.load("pending-remount-backoff")).toBeNull();
+      harness.controller.teardown();
+    } finally { vi.useRealTimers(); }
+  });
+
   it("nie dołącza raportu, gdy sesja zakończyła się przed pierwszym zadaniem", async () => {
     const state = baseState();
     state.tasks = [];
