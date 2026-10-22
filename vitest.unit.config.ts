@@ -7,6 +7,8 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: {
     alias: {
+      // Codacy nie ładuje typów Node dla konfiguracji Vitest poza tsconfigiem.
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
       "@": resolve(process.cwd(), "apps/web/src"),
     },
   },
