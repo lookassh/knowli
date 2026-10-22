@@ -301,7 +301,7 @@ describe("SessionActivityDraftStore", () => {
     reporter.taskShown(TASK_A, "recall");
     expect(store.save({ sessionId: "session-1", savedAtMs: nowMs, state: reporter.state })).toBe(true);
     const loaded = store.load("session-1");
-    expect(loaded && "state" in loaded && loaded.state.tasks[0]!.taskId).toBe(TASK_A);
+    expect(loaded).toMatchObject({ state: { tasks: [{ taskId: TASK_A }] } });
     expect(store.load("session-2")).toBeNull();
     store.remove("session-1");
     expect(store.load("session-1")).toBeNull();

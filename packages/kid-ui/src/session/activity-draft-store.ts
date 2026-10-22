@@ -103,16 +103,20 @@ export function createMemoryActivityDraftStore(nowMs = () => Date.now()): Sessio
 export function createBrowserActivityDraftStore(nowMs = () => Date.now()): SessionActivityDraftStore {
   const loadRecord = (sessionId: string): SessionActivityRecord | null => {
     try {
-      const fresh = parseRecord(globalThis.localStorage?.getItem(STORAGE_PREFIX + sessionId) ?? null);
+      const storage = Reflect.get(globalThis, "localStorage") as Storage | undefined;
+      if (!storage) return null;
+      const fresh = parseRecord(storage.getItem(STORAGE_PREFIX + sessionId));
       if (!fresh) return null;
-      if (!isFreshRecord(fresh, nowMs())) { globalThis.localStorage?.removeItem(STORAGE_PREFIX + sessionId); return null; }
+      if (!isFreshRecord(fresh, nowMs())) { storage.removeItem(STORAGE_PREFIX + sessionId); return null; }
       return fresh;
     } catch { return null; }
   };
   return {
     save(draft) {
       try {
-        globalThis.localStorage?.setItem(STORAGE_PREFIX + draft.sessionId, JSON.stringify(draft));
+        const storage = Reflect.get(globalThis, "localStorage") as Storage | undefined;
+        if (!storage) return false;
+        storage.setItem(STORAGE_PREFIX + draft.sessionId, JSON.stringify(draft));
         return true;
       } catch {
         // prywatny tryb przeglądarki/brak miejsca: nauka działa, kopii brak
@@ -120,13 +124,20 @@ export function createBrowserActivityDraftStore(nowMs = () => Date.now()): Sessi
       }
     },
     savePendingResult(result) {
-      try { globalThis.localStorage?.setItem(STORAGE_PREFIX + result.sessionId, JSON.stringify(result)); return true; } catch { return false; }
+      try {
+        const storage = Reflect.get(globalThis, "localStorage") as Storage | undefined;
+        if (!storage) return false;
+        storage.setItem(STORAGE_PREFIX + result.sessionId, JSON.stringify(result));
+        return true;
+      } catch { return false; }
     },
     load: loadRecord,
     listForChild(childId) {
       const drafts: SessionActivityDraft[] = [];
       try {
-        const keys = Array.from({ length: globalThis.localStorage.length }, (_, index) => globalThis.localStorage.key(index));
+        const storage = Reflect.get(globalThis, "localStorage") as Storage | undefined;
+        if (!storage) return drafts;
+        const keys = Array.from({ length: storage.length }, (_, index) => storage.key(index));
         for (const key of keys) {
           if (!key?.startsWith(STORAGE_PREFIX)) continue;
           const draft = loadRecord(key.slice(STORAGE_PREFIX.length));
