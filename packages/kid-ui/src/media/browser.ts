@@ -23,10 +23,13 @@ const BEEP_PEAK_GAIN = 0.3;
 
 /**
  * Krótki sygnał dźwiękowy WebAudio: krótkotrwały AudioContext zamykany po
- * zagraniu (limit równoczesnych kontekstów na iOS), obwiednia ataku/decay
- * przeciw klikowi. Bip jest opcjonalny — brak konstruktorów, kontekst
- * suspended (polityka autoplay) albo awaria rozstrzygają się po cichu,
- * bez rzucania i bez czekania na resume() (nagrywanie obowiązkowe).
+ * zagraniu (limit równoczesnych kontekstów na iOS). Obwiednia przeciw klikowi:
+ * ~10 ms ataku na początku, plate na szczycie wytrzymuje do BEEP_DURATION_S −
+ * BEEP_DECAY_S, a ~50 ms decay domyka sygnał na KOŃCU — bip słychalny przez
+ * niemal całe 130 ms, bo to jedyny sygnał „teraz mów” dla dziecka (PR #109
+ * runda 3). Bip jest opcjonalny — brak konstruktorów, kontekst suspended
+ * (polityka autoplay) albo awaria rozstrzygają się po cichu, bez rzucania
+ * i bez czekania na resume() (nagrywanie obowiązkowe).
  */
 async function playBeepViaWebAudio(AudioContextCtor: typeof AudioContext | undefined, kind: BeepKind): Promise<void> {
   if (!AudioContextCtor) return;
@@ -40,9 +43,12 @@ async function playBeepViaWebAudio(AudioContextCtor: typeof AudioContext | undef
     oscillator.connect(gain);
     gain.connect(context.destination);
     const startAt = context.currentTime;
+    // atak od ciszy do szczytu, plate na szczycie, decay dopiero na końcu —
+    // sygnał słyszalny przez pełne BEEP_DURATION_S minus krótkie wybrzmienie
     gain.gain.setValueAtTime(0.0001, startAt);
     gain.gain.exponentialRampToValueAtTime(BEEP_PEAK_GAIN, startAt + BEEP_ATTACK_S);
-    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + BEEP_DECAY_S);
+    gain.gain.setValueAtTime(BEEP_PEAK_GAIN, startAt + BEEP_DURATION_S - BEEP_DECAY_S);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + BEEP_DURATION_S);
     oscillator.start(startAt);
     oscillator.stop(startAt + BEEP_DURATION_S);
     // onended normalnie domyka grę; czasomierz zabezpiecza środowiska, które

@@ -571,8 +571,13 @@ describe("createBrowserMedia — bip WebAudio (sygnały: teraz mów / koniec)", 
     // oscylator podłączony do gain, gain do destination, obwiednia przeciw klikowi
     expect(start.oscillator.connect).toHaveBeenCalledWith(start.gain);
     expect(start.gain.connect).toHaveBeenCalled();
-    expect(start.gain.gain.setValueAtTime).toHaveBeenCalled();
-    expect(start.gain.gain.exponentialRampToValueAtTime).toHaveBeenCalled();
+    // obwiednia (PR #109 runda 3): atak ~10 ms do szczytu 0.3, plate do
+    // 130−50 ms, decay ~50 ms dopiero na KOŃCU — bip słyszalny niemal 130 ms
+    // (currentTime fake'a = 0)
+    expect(start.gain.gain.setValueAtTime).toHaveBeenNthCalledWith(1, 0.0001, 0);
+    expect(start.gain.gain.exponentialRampToValueAtTime).toHaveBeenNthCalledWith(1, 0.3, 0.01);
+    expect(start.gain.gain.setValueAtTime).toHaveBeenNthCalledWith(2, 0.3, 0.13 - 0.05);
+    expect(start.gain.gain.exponentialRampToValueAtTime).toHaveBeenNthCalledWith(2, 0.0001, 0.13);
     expect(start.oscillator.start).toHaveBeenCalled();
     expect(start.oscillator.stop).toHaveBeenCalled();
     // krótkotrwały kontekst zamykany po zagraniu (limit równoczesnych kontekstów)
