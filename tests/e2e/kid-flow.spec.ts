@@ -208,14 +208,43 @@ function currentFeedback(page: Page) {
 async function startFakeRecording(page: Page): Promise<void> {
   await expect(page.getByTestId("kid-record-mode")).toHaveCount(0);
   const record = page.getByTestId("kid-record");
-  if (await record.getAttribute("data-ready") !== "true") {
-    await record.click();
-    await expect(record).toHaveAttribute("data-ready", "true");
+  const recorderStarts = () => page.evaluate(() => Number(sessionStorage.getItem("test.recorderStarts") ?? "0"));
+  const startsBefore = await recorderStarts();
+  if ((await record.getAttribute("data-phase")) !== "recording") {
+    // Najpierw krótkie okno na auto-start (speech/picture_speech): nagrywanie
+    // rusza samo po wyświetleniu zadania. Klik inicjujący gotowość zostaje
+    // tylko jako fallback ścieżki ręcznej (WrittenView, recall/pisownia) oraz
+    // po wyczerpanej autopróbie (latch zadania w kontrolerze).
+    const promptKind = await page.getByTestId("kid-exercise").getAttribute("data-prompt-kind");
+    const autoPossible = promptKind === "speech" || promptKind === "picture_speech";
+    let started = false;
+    if (autoPossible) {
+      // PR #109 runda 4: regresja auto-startu nie może cicho degradować do
+      // ścieżki ręcznej — fallback zostaje tylko, gdy test JAWNIE ustawił brak
+      // zgody (window.__kidMicPermission = "prompt"/"denied"); przy domyślnym
+      // "granted" timeout polla jest twardą porażką testu
+      const permission = await page.evaluate(() =>
+        (window as unknown as { __kidMicPermission?: string }).__kidMicPermission ?? "granted");
+      const autoExpected = permission !== "prompt" && permission !== "denied";
+      try {
+        await expect.poll(recorderStarts, { timeout: 3_000 }).toBeGreaterThan(startsBefore);
+        await expect(record).toHaveAttribute("data-phase", "recording");
+        started = true;
+      } catch (error) {
+        if (autoExpected) throw error;
+        started = false;
+      }
+    }
+    if (!started) {
+      if (await record.getAttribute("data-ready") !== "true") {
+        await record.click();
+        await expect(record).toHaveAttribute("data-ready", "true");
+      }
+      await record.click();
+      await expect(record).toHaveAttribute("aria-pressed", "true");
+      await expect.poll(recorderStarts).toBeGreaterThan(startsBefore);
+    }
   }
-  const startsBefore = await page.evaluate(() => Number(sessionStorage.getItem("test.recorderStarts") ?? "0"));
-  await record.click();
-  await expect(record).toHaveAttribute("aria-pressed", "true");
-  await expect.poll(() => page.evaluate(() => Number(sessionStorage.getItem("test.recorderStarts") ?? "0"))).toBeGreaterThan(startsBefore);
   // The controller rejects captures shorter than 300 ms; wait beyond that guard
   // after the recorder actually starts, rather than sleeping from the click.
   await expect.poll(() => page.evaluate(() =>
@@ -234,12 +263,15 @@ async function stopFakeRecording(page: Page): Promise<void> {
 /**
  * Czeka, aż przejście między zadaniami się zakończy: podczas zmiany kroku
  * stara karta zostaje z nieaktywnymi przyciskami, więc czytanie stanu w tym
- * momencie złapałoby poprzednie zadanie.
+ * momencie złapałoby poprzednie zadanie. Trwające nagrywanie (także-auto)
+ * traktujemy jako stan stabilny — pomocnicze „Pomiń”/odsłuch są wtedy celowo
+ * wyłączone i domknie je sterujący test.
  */
 async function settled(page: Page): Promise<void> {
   try {
     await page.waitForFunction(
       () => {
+        if (document.querySelector('[data-testid="kid-recording"]') !== null) return true;
         const disabled = [...document.querySelectorAll("[data-testid][disabled]")];
         const input = document.querySelector('[data-testid="kid-input"]');
         if (input !== null && !input.hasAttribute("disabled")) {
@@ -851,6 +883,16 @@ async function injectFakeMediaPlatform(page: Page): Promise<void> {
       configurable: true,
       value: { getUserMedia: async () => fakeStream },
     });
+    // WR-02: uprawnienie mikrofonu "granted" — auto-próba mowy może wołać
+    // getUserMedia bez promptu; sterowanie przez window.__kidMicPermission
+    Object.defineProperty(navigator, "permissions", {
+      configurable: true,
+      value: {
+        query: async () => ({
+          state: ((window as unknown as { __kidMicPermission?: string }).__kidMicPermission ?? "granted"),
+        }),
+      },
+    });
     // minimalny ważny webm: EBML header + Segment→Info→Duration 2000 (2 s) —
     // serwer czyta czas trwania z metadanych i odrzuca nagrania bez niego
     const webm = new Uint8Array([
@@ -892,8 +934,25 @@ async function injectFakeMediaPlatform(page: Page): Promise<void> {
       getChannelData: () => new Float32Array(length),
     });
     class FakeAudioContext {
+      // PR #109 r2: auto-próba akceptuje wyłącznie stan "running" — fake mikrofonu
+      // jest zawsze gotowy do nasłuchu (brak polityki autoplay w teście)
+      readonly state = "running";
       async decodeAudioData(): Promise<AudioBuffer> {
         return decodedBuffer(96_000, 48_000) as unknown as AudioBuffer;
+      }
+      // sterowalny analyser: poziom mikrofonu (skala rms×4 z browser.ts)
+      // kontroluje test przez window.__kidMicLevel — domyślnie cisza, więc
+      // auto-próba mowy czeka na ręczne domknięcie kliknięciem przycisku
+      createMediaStreamSource() { return { connect: () => undefined }; }
+      createAnalyser() {
+        return {
+          fftSize: 256,
+          getFloatTimeDomainData: (samples: Float32Array) => {
+            const level = (window as unknown as { __kidMicLevel?: number }).__kidMicLevel ?? 0;
+            samples.fill(level / 4);
+          },
+          disconnect: () => undefined,
+        };
       }
       async close(): Promise<void> {}
     }
@@ -1001,10 +1060,11 @@ test("opuszczenie widoku w trakcie nagrywania zatrzymuje strumień", async ({ pa
   await page.getByTestId("kid-again").click();
   await page.getByTestId("kid-mic-toggle").check();
   await page.getByTestId("kid-deck").first().click();
-  await expect(page.locator("[data-task-id]")).toBeVisible();
-  await expect(page.getByTestId("kid-recording")).toHaveCount(0);
   // The next session has its own fixed plan and need not repeat a speech slot.
-  // The lifecycle assertion above verifies the old stream was released.
+  // The lifecycle assertion above verifies the old stream was released; nowa
+  // sesja może też zgodnie z produktem sama rozpocząć nagrywanie na zadaniu
+  // mowy, więc nie zakładamy już braku wskaźnika nagrywania w pierwszej chwili.
+  await expect(page.locator("[data-task-id]")).toBeVisible({ timeout: 30_000 });
 });
 
 test("szczegółowe podsumowanie pokazuje samodzielne wyniki i słowa do ćwiczenia na telefonie i tablecie", async ({ page }, testInfo) => {

@@ -18,7 +18,8 @@ import {
 } from "@learning/contracts";
 import type { KidApi } from "../api/KidApi";
 import { isNetworkError, KidApiError } from "../api/client";
-import type { PlatformMedia, RecorderOptions, SpeechRecorder } from "../media/platform";
+import { LevelMonitorUnavailableError, type MicrophonePermission, type PlatformMedia, type RecorderOptions, type SpeechRecorder } from "../media/platform";
+import { createSpeechVad, type SpeechVad } from "../media/vad";
 import { MIC_DENIED_KEY, type LocalPreferences } from "../storage";
 import { randomUUID } from "./uuid";
 import { createGuidanceAudio } from "./guidance-audio";
@@ -66,6 +67,8 @@ export interface LearningScreen {
   recordingNotice: string | null;
   recordingMode: RecordingModeDto;
   recording: boolean;
+  /** Automatyczną próbę można porzucić, aby odsłuchać wzorzec lub pominąć. */
+  automaticRecording?: boolean;
   /** Odpowiedź ustna w drodze/oceniana przez serwer. */
   processing: boolean;
   /** Błąd aplikacji (nie sieci) z przyciskiem ponowienia. */
@@ -176,6 +179,17 @@ export class LearningSessionController {
   #mockDeckKind: "vocabulary" | "lesson" = "vocabulary";
   #recordingMode: RecordingModeDto = "hold";
   #recorder: SpeechRecorder | null = null;
+  /** Maszyna VAD aktywnej auto-próby; null poza trybem auto (quick 261021-lsw). */
+  #vad: SpeechVad | null = null;
+  /** True wyłącznie od auto-startu do zatrzymania auto-próby. */
+  #autoCaptureActive = false;
+  #autoBeepCancellation: AbortController | null = null;
+  /** Nowe przygotowanie unieważnia stare; sam blur nie odrzuca ręcznej zgody. */
+  #microphonePreparationGeneration = 0;
+  /** Sygnał „teraz mów" grany w startRecording przez hook onMicrophoneReady. */
+  #autoStartBeep: (() => Promise<void>) | null = null;
+  /** Zadanie, na którym auto-start już padł — raz na wyświetlenie zadania (SPEC §16). */
+  #autoCaptureTaskId: string | null = null;
   /** Ostatnia operacja do ponowienia po powrocie sieci/błędzie aplikacji. */
   #resume: { run: () => Promise<void>; keepsTaskVisible: boolean } | null = null;
   /** Wybrana opcja próby w toku; do podświetlenia w feedbacku (design 2026-10-09). */
@@ -243,6 +257,7 @@ export class LearningSessionController {
       ...patch,
       recordingPhase,
       recording: recordingPhase === "recording",
+      automaticRecording: this.#autoCaptureActive && (recordingPhase === "starting" || recordingPhase === "recording"),
     };
     this.#emit();
   }
@@ -271,6 +286,7 @@ export class LearningSessionController {
   }
 
   async playGuidance(key: UiAudioKey): Promise<void> {
+    if (this.#autoCaptureActive) this.cancelRecording();
     const screen = this.#learning();
     if (screen && (screen.offline || screen.busy || screen.processing || screen.recordingPhase !== "idle")) return;
     this.#stopPlayback();
@@ -696,6 +712,10 @@ export class LearningSessionController {
       }
       // odsłuch poprzedniego zadania nie przenosi się do następnego
       this.#stopPlayback();
+      // nowo wyświetlone zadanie dopuszcza auto-start; stan auto-próby
+      // poprzedniej karty nie przetrwa przejścia (SPEC §16)
+      this.#resetAutoCapture();
+      this.#autoCaptureTaskId = null;
       this.#screen = {
         ...this.#screen,
         task,
@@ -921,6 +941,7 @@ export class LearningSessionController {
   }
 
   async skip(): Promise<void> {
+    if (this.#autoCaptureActive) this.cancelRecording();
     await this.#submitAnswer({ modality: "skip" });
   }
 
@@ -1075,6 +1096,7 @@ export class LearningSessionController {
    * gdy plik jest już w cache przeglądarki (arch §9.2).
    */
   async playTaskAudio(): Promise<void> {
+    if (this.#autoCaptureActive) this.cancelRecording();
     const screen = this.#learning();
     if (!screen?.task || screen.offline || screen.recordingPhase !== "idle" || screen.processing) return;
     const task = screen.task;
@@ -1166,31 +1188,36 @@ export class LearningSessionController {
     }
   }
 
-  async prepareMicrophone(): Promise<void> {
+  async prepareMicrophone(options: { automatic?: boolean } = {}): Promise<void> {
     const screen = this.#learning();
     if (!screen?.task || screen.offline || screen.busy || screen.recordingPhase !== "idle" || screen.microphoneReady) return;
     this.#stopPlayback();
     const epoch = this.#epoch;
+    const generation = this.#recordingGeneration;
+    const preparation = ++this.#microphonePreparationGeneration;
+    const taskId = screen.task.taskId;
+    const isCurrent = () => preparation === this.#microphonePreparationGeneration &&
+      epoch === this.#epoch && this.#learning()?.task?.taskId === taskId &&
+      (!options.automatic || generation === this.#recordingGeneration);
     this.#setLearning({ recordingPhase: "preparing", recordingNotice: null, inputLevel: null });
     try {
       await this.#media.prepareMicrophone();
-      const current = this.#learning();
-      if (epoch !== this.#epoch || !current || current.task?.taskId !== screen.task.taskId) return;
+      if (!isCurrent()) return;
       this.#micDenied = false;
       this.#storage.remove(MIC_DENIED_KEY);
       this.#setLearning({ microphoneReady: true, recordingPhase: "idle", micDenied: false, recordingNotice: null });
     } catch (error) {
-      if (epoch !== this.#epoch || this.#learning()?.task?.taskId !== screen.task.taskId) return;
+      if (!isCurrent()) return;
       const denied = (error as { name?: unknown } | null)?.name === "NotAllowedError" ||
         (error as { name?: unknown } | null)?.name === "PermissionDeniedError";
-      const disableForPicture = !screen.session.canRead && screen.session.vocabularyFormat === "picture";
+      const disableForPicture = !options.automatic && !screen.session.canRead && screen.session.vocabularyFormat === "picture";
       if (denied) {
         this.#micDenied = true;
         this.#storage.write(MIC_DENIED_KEY, "1");
       }
       if (denied || disableForPicture) await this.#disableSessionMicrophone(screen.session);
       const current = this.#learning();
-      if (epoch !== this.#epoch || !current || current.session.sessionId !== screen.session.sessionId) return;
+      if (preparation !== this.#microphonePreparationGeneration || epoch !== this.#epoch || !current || current.session.sessionId !== screen.session.sessionId) return;
       const taskUnchanged = current.task?.taskId === screen.task.taskId;
       this.#setLearning({
         recordingPhase: "idle",
@@ -1199,6 +1226,99 @@ export class LearningSessionController {
         recordingNotice: taskUnchanged ? denied ? messages.kid.micDenied : messages.kid.recordingUnavailable : null,
       });
     }
+  }
+
+  /**
+   * Automatyczna próba mowy (quick 261021-lsw): na świeżo wyświetlonym zadaniu
+   * speech/picture_speech nagrywanie startuje samo, bez naciskania przycisku.
+   * Sygnałem „teraz mów" jest bip startu grany wewnątrz startu rejestratora
+   * (onMicrophoneReady) — po udanym getUserMedia i PRZED przechwytywaniem, więc
+   * szybka reakcja dziecka nie wyprzedza gotowości rejestratora (D-04), a bip
+   * nie trafia do nagrania. Auto-stop prowadzi VAD na poziomach mikrofonu
+   * (mowa + ~1,2 s ciszy); cisza bez mowy nie tworzy próby (SPEC §15) — limit
+   * anuluje nagrywanie i zostawia przycisk jako fallback. Po „Nagraj jeszcze
+   * raz" mikrofon nie startuje sam — auto-start wyłącznie na nowym zadaniu
+   * (SPEC §16); zadania pisemne (WrittenView) i kartkówka pozostają ręczne (D-02).
+   *
+   * WR-02 (decyzja właściciela 2026-10-21): automat woła getUserMedia wyłącznie
+   * przy już nadanym uprawnieniu mikrofonu (lub gdy mikrofon był już używany w
+   * tej sesji — wtedy nowy prompt nie jest możliwy). Pierwsze nadanie zgody
+   * dzieje się świadomym naciśnięciem przycisku nagrywania; po nadaniu zgody
+   * kolejne zadanie mowy wystartuje samo (zapytanie o stan zwróci "granted").
+   */
+  async autoCaptureSpeech(): Promise<void> {
+    const screen = this.#learning();
+    if (!screen?.task) return;
+    if (!this.#autoCaptureAllowed(screen)) return;
+    if (this.#autoCaptureTaskId === screen.task.taskId) return;
+    const epoch = this.#epoch;
+    const generation = this.#recordingGeneration;
+    const taskId = screen.task.taskId;
+    if (!screen.microphoneReady) {
+      // wyłącznie zapytanie o STAN uprawnienia (bez promptu, bez getUserMedia);
+      // awaria API rozstrzyga się bezpiecznie jako brak zgody
+      let permission: MicrophonePermission;
+      try {
+        permission = await this.#media.getMicrophonePermission();
+      } catch {
+        permission = "unknown";
+      }
+      const probed = this.#learning();
+      if (generation !== this.#recordingGeneration || !probed || epoch !== this.#epoch || probed.task?.taskId !== taskId) return;
+      // Odczyt uprawnienia mógł czekać na ręczne włączenie mikrofonu.
+      // Takie przygotowanie pozostawia start pod kontrolą przycisku.
+      if (probed.microphoneReady || !this.#autoCaptureAllowed(probed)) return;
+      if (permission !== "granted") {
+        // cichy skip auto dla tego zadania: bez sondy getUserMedia i bez
+        // zapamiętania micDenied — odmowa/prompt należą wyłącznie do ścieżki
+        // ręcznej (przycisk); nic nie blokuje kolejnych zadań po nadaniu zgody
+        return;
+      }
+      // zgoda już nadana — sonda nie wywoła promptu; ewentualna odmowa na poziomie
+      // urządzenia zostaje przy istniejącej ścieżce micDenied, bez pętli ponowień
+      await this.prepareMicrophone({ automatic: true });
+      const current = this.#learning();
+      if (generation !== this.#recordingGeneration || !current || epoch !== this.#epoch || current.task?.taskId !== taskId) return;
+      if (!current.microphoneReady || !this.#autoCaptureAllowed(current)) return;
+    }
+    this.#autoCaptureTaskId = taskId;
+    this.#autoCaptureActive = true;
+    this.#vad = createSpeechVad();
+    const beepCancellation = new AbortController();
+    this.#autoBeepCancellation = beepCancellation;
+    this.#autoStartBeep = () => this.#media.playBeep("start", beepCancellation.signal).catch(() => undefined);
+    await this.startRecording();
+    // Własność stanu auto (PR #109 runda 3): ogon sprawdza fazę tylko wtedy,
+    // gdy ta próba wciąż jest właścicielem — późny start POPRZEDNIEGO zadania
+    // (wiszące getUserMedia rozwiązane po przejściu dalej) nie może skasować
+    // VAD/bipu nowego zadania: bez VAD onLimitReached uznałby auto za wyłączone
+    // i stopRecording wysłał ciszę jako próbę (SPEC §15). Latch
+    // #autoCaptureTaskId przeżywa resety — jego cyklem życia zarządza
+    // wyświetlanie zadań, nie #resetAutoCapture.
+    if (this.#autoCaptureTaskId !== taskId) return;
+    const current = this.#learning();
+    if (!current || current.recordingPhase !== "recording") {
+      // start nie doszedł do skutku (błąd urządzenia, anulowanie) — przywracamy
+      // czysty stan; ponowna próba należy do przycisku, nie do automatyki
+      this.#resetAutoCapture();
+    }
+  }
+
+  #autoCaptureAllowed(screen: LearningScreen): boolean {
+    if (screen.task?.prompt.kind !== "speech" && screen.task?.prompt.kind !== "picture_speech") return false;
+    if (screen.session.mode === "mock_test" || !screen.session.microphoneEnabled || screen.micDenied) return false;
+    if (screen.offline || screen.busy || screen.processing) return false;
+    if (screen.feedback !== null || screen.reveal !== null) return false;
+    if (screen.recordingPhase !== "idle" || this.#recorder !== null) return false;
+    return true;
+  }
+
+  #resetAutoCapture(): void {
+    this.#autoBeepCancellation?.abort();
+    this.#autoBeepCancellation = null;
+    this.#vad = null;
+    this.#autoCaptureActive = false;
+    this.#autoStartBeep = null;
   }
 
   async startRecording(): Promise<void> {
@@ -1213,17 +1333,40 @@ export class LearningSessionController {
     const taskId = screen.task.taskId;
     const generation = ++this.#recordingGeneration;
     const options: RecorderOptions = {
+      // auto-próba: bip startu gra wewnątrz BrowserRecorder.start — PO udanym
+      // getUserMedia i PRZED MediaRecorder.start; ścieżka ręczna (pole null)
+      // nie przekazuje hooka i nie gra bipu (D-04). Auto wymaga też sprawnego
+      // monitora poziomów (PR #109, P1 #2): bez poziomów VAD słyszy ciszę i
+      // limit anuluje dobrą wypowiedź — start odrzuca
+      // LevelMonitorUnavailableError zanim zagra bip i zacznie przechwytywanie;
+      // ręczna próba działa bez analizatora (monitor best-effort).
+      ...(this.#autoStartBeep !== null ? { onMicrophoneReady: this.#autoStartBeep, requireLevelMonitor: true } : {}),
       onLevel: (level) => {
         if (generation !== this.#recordingGeneration || !Number.isFinite(level)) return;
         this.#setLearning({ inputLevel: Math.max(0, Math.min(1, level)) });
+        // VAD zamyka auto-próbę po wykryciu mowy i ~1,2 s ciszy; guard
+        // generacji w stopRecording chroni przed podwójnym zatrzymaniem
+        const action = this.#vad?.sample(level);
+        if (action === "auto_stop") void this.stopRecording();
       },
       onLimitReached: () => {
-        if (generation === this.#recordingGeneration) void this.stopRecording();
+        if (generation !== this.#recordingGeneration) return;
+        // cisza bez wykrytej mowy nie tworzy próby (SPEC §15) — limit w trybie
+        // auto anuluje nagrywanie z komunikatem i zostawia przycisk; realna
+        // wypowiedź (także ręczna) idzie normalną ścieżką stopRecording
+        if (this.#autoCaptureActive && this.#vad?.speechDetected === false) {
+          this.cancelRecording(messages.kid.autoCaptureNoSpeech);
+        } else {
+          void this.stopRecording();
+        }
       },
       onError: () => {
         if (generation !== this.#recordingGeneration) return;
         this.#recordingGeneration += 1;
         this.#recorder = null;
+        // pełny reset stanu auto (PR #109, P2 #3): zgubny #autoStartBeep i #vad
+        // nie mogą przetrwać do ręcznej próby po awarii urządzenia (jak WR-01)
+        this.#resetAutoCapture();
         this.#setLearning({ recordingPhase: "idle", microphoneReady: false, inputLevel: null, recordingNotice: messages.kid.recordingUnavailable });
       },
     };
@@ -1241,6 +1384,26 @@ export class LearningSessionController {
     } catch (error) {
       if (generation !== this.#recordingGeneration || epoch !== this.#epoch) return;
       this.#recorder = null;
+      // Niedostępny monitor poziomów (PR #109, P1 #2 + runda 4): czysta przerwa
+      // PRÓBY AUTOMATYCZNEJ, obsługana PRZED wspólnym torem odmowy — w sesjach
+      // obrazkowych nieczytającego disableForPicture wyłączyłoby mikrofon
+      // CAŁEJ sesji serwerowo i dziecko straciłoby przycisk mimo komunikatu
+      // „Nagraj przyciskiem.” Bez próby, bez micDenied, bez wyłączenia sesji;
+      // ręczne nagrywanie działa bez analizatora.
+      if (error instanceof LevelMonitorUnavailableError) {
+        const aborted = this.#learning();
+        if (epoch !== this.#epoch || !aborted || aborted.session.sessionId !== screen.session.sessionId) return;
+        const abortedTaskUnchanged = aborted.task?.taskId === taskId;
+        if (generation !== this.#recordingGeneration && abortedTaskUnchanged) return;
+        this.#setLearning({
+          recordingPhase: "idle",
+          microphoneReady: false,
+          inputLevel: null,
+          micDenied: false,
+          recordingNotice: abortedTaskUnchanged ? messages.kid.autoCaptureListenUnavailable : null,
+        });
+        return;
+      }
       const denied = (error as { name?: unknown } | null)?.name === "NotAllowedError" ||
         (error as { name?: unknown } | null)?.name === "PermissionDeniedError";
       const disableForPicture = !screen.session.canRead && screen.session.vocabularyFormat === "picture";
@@ -1272,9 +1435,23 @@ export class LearningSessionController {
       return;
     }
     if (screen.recordingPhase !== "recording") return;
+    // Każdy sposób zakończenia automatycznej próby musi respektować VAD,
+    // także przycisk i klawiatura: sama cisza nigdy nie jest próbą dziecka.
+    if (this.#autoCaptureActive && !this.#vad?.speechDetected) {
+      this.cancelRecording(messages.kid.autoCaptureNoSpeech);
+      return;
+    }
     const epoch = this.#epoch;
     const taskId = screen.task.taskId;
     const generation = ++this.#recordingGeneration;
+    // auto-próba konsumowana na początku zatrzymania — dotyczy także ręcznego
+    // domknięcia auto-nagrania (toggle), nie dotyczy czysto ręcznych nagrań.
+    // Pełny reset stanu auto (vad, bip startu): ręczna próba po udanej auto
+    // („Nagraj jeszcze raz") nie może grać bipu startu ani wołać hooka (D-04).
+    // Bezpieczne — #recordingGeneration już awansował, więc spóźnione poziomy
+    // starego rejestratora nie widzą wyzerowanego VAD.
+    const autoCapture = this.#autoCaptureActive;
+    this.#resetAutoCapture();
     this.#setLearning({ recordingPhase: "stopping", inputLevel: null });
     if (Date.now() - this.#recordingStartedAt < 300) {
       this.#recorder = null;
@@ -1289,6 +1466,9 @@ export class LearningSessionController {
         audio.bytes.fill(0);
         return;
       }
+      // bip końca PO zebraniu bajtów nagrania i przed wysyłką — sygnał „koniec"
+      // dla dziecka, nigdy w nagraniu i nigdy blokada submitSpeech
+      if (autoCapture) void this.#media.playBeep("end").catch(() => undefined);
       this.#recorder = null;
       this.#setLearning({ recordingPhase: "idle", recordingNotice: null, processing: true, busy: true });
       const clientAttemptId = randomUUID();
@@ -1313,6 +1493,7 @@ export class LearningSessionController {
     this.#recordingGeneration += 1;
     const recorder = this.#recorder;
     this.#recorder = null;
+    this.#resetAutoCapture();
     recorder?.cancel();
     this.#setLearning({ recordingPhase: "idle", inputLevel: null, recordingNotice: notice });
   }
@@ -1503,9 +1684,10 @@ export class LearningSessionController {
     this.#recordingGeneration += 1;
     const recorder = this.#recorder;
     this.#recorder = null;
+    this.#resetAutoCapture();
     recorder?.cancel();
     if (this.#screen.kind === "learning") {
-      this.#screen = { ...this.#screen, recording: false, recordingPhase: "idle", inputLevel: null };
+      this.#screen = { ...this.#screen, recording: false, automaticRecording: false, recordingPhase: "idle", inputLevel: null };
     }
   }
 }

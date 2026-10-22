@@ -71,6 +71,12 @@ export function SpeechRecordButton({ phase, ready, disabled, level, notice = nul
 
   function toggle(): void {
     if (blocked) return;
+    // Automatyczny start nie ma właściciela gestu. Pierwszy klik zatrzymuje
+    // rzeczywiście trwające nagranie, zamiast ponownie żądać startu.
+    if (phase === "recording" && !gesture.active) {
+      onStop();
+      return;
+    }
     if (phase === "idle" && !ready) {
       onPrepare();
       return;
@@ -103,6 +109,14 @@ export function SpeechRecordButton({ phase, ready, disabled, level, notice = nul
         disabled={nativeDisabled}
         aria-disabled={blocked}
         onPointerDown={(event) => {
+          if (mode === "hold" && !disabled && !gesture.active &&
+              (event.pointerType !== "mouse" || event.button === 0) &&
+              (phase === "starting" || phase === "recording")) {
+            event.preventDefault();
+            if (phase === "starting") onCancel();
+            else onStop();
+            return;
+          }
           if (mode !== "hold" || blocked || gesture.active || (event.pointerType === "mouse" && event.button !== 0)) return;
           event.preventDefault();
           if (!ready) {
@@ -126,6 +140,9 @@ export function SpeechRecordButton({ phase, ready, disabled, level, notice = nul
           const owner = keyOwner(event.key);
           if (!owner) return;
           event.preventDefault();
+          // Autostart nie należy do gestu klawisza: puszczenie Space/Enter
+          // nie może przypadkiem zamienić ciszy w wysłaną próbę.
+          if (phase !== "idle") return;
           if (!ready && phase === "idle") {
             if (!event.repeat) onPrepare();
             return;
@@ -144,9 +161,10 @@ export function SpeechRecordButton({ phase, ready, disabled, level, notice = nul
           if (gesture.owner?.kind === "key") cancel(gesture.owner);
         }}
         onKeyDownCapture={(event) => {
-          if (event.key === "Escape" && gesture.active) {
+          if (event.key === "Escape" && (gesture.active || phase === "starting" || phase === "recording")) {
             event.preventDefault();
-            act({ type: "escape" });
+            if (gesture.active) act({ type: "escape" });
+            else onCancel();
           }
         }}
         onClick={(event) => {

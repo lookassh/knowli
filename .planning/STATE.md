@@ -70,6 +70,12 @@ See: `.planning/PROJECT.md` (updated 2026-10-21)
 
 - Roadmap narrowed: wcześniejsze fazy operacyjne usunięto na prośbę właściciela; faza o asynchronicznym kończeniu sesji jest teraz fazą 1.
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Status | Directory |
+|---|-------------|------|--------|--------|-----------|
+| 261021-lsw | Automatyczne nagrywanie z VAD na ekranach mowy (SpeechView/PictureSpeechView): auto-start po wyświetleniu zadania, auto-stop po mowie + ~1,2 s ciszy, bip WebAudio start/koniec, cisza bez próby; fix ucinania początku wypowiedzi (bip za getUserMedia, hook onMicrophoneReady) | 2026-10-21 | a542cf4 | Needs Review | [261021-lsw-ekran-z-rozpoznawaniem-s-w-czyli-tam-gdz](./quick/261021-lsw-ekran-z-rozpoznawaniem-s-w-czyli-tam-gdz/) |
+
 ## Session Continuity
 
 **Last session:** 2026-10-21T19:39:06.000Z

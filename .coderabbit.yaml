@@ -1,0 +1,144 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# Knowli / Umiem! - high-signal AI pull-request review.
+# CodeRabbit automatically reads the repository's AGENTS.md as code guidelines.
+
+inheritance: true
+language: "pl-PL"
+tone_instructions: >-
+  Pisz zwięźle po polsku. Zgłaszaj błędy z konkretnym scenariuszem awarii,
+  konsekwencją i proponowaną poprawką. Unikaj pochwał, stylu i kosmetyki.
+
+reviews:
+  profile: chill
+  request_changes_workflow: true
+  allow_author_approval: false
+  high_level_summary: false
+  review_status: false
+  review_info: true
+  collapse_walkthrough: true
+  changed_files_summary: false
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  related_issues: false
+  related_prs: false
+  suggested_labels: false
+  suggested_reviewers: false
+  enable_prompt_for_ai_agents: false
+
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: true
+    # GSD often produces more than five commits in a PR.
+    auto_pause_after_reviewed_commits: 0
+
+  # Keep GSD CONTEXT/PLAN/RESEARCH files as review context, but skip
+  # status logs and completed verification notes. Do not exclude product specs.
+  path_filters:
+    - "!pnpm-lock.yaml"
+    - "!uv.lock"
+    - "!.planning/STATE.md"
+    - "!.planning/**/*-REVIEW.md"
+    - "!.planning/**/*-SUMMARY.md"
+    - "!.planning/**/*-VERIFICATION.md"
+
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+    autofix:
+      enabled: false
+    fix_ci:
+      enabled: false
+    resolve_merge_conflict:
+      enabled: false
+
+  path_instructions:
+    - path: "**/*.{ts,tsx,js,mjs,cjs,sql}"
+      instructions: |
+        Review for actionable defects, not formatting or harmless refactoring.
+        Before reporting a finding, trace the real control/data flow and account
+        for existing guards, tests, and contracts. Give the exact failure scenario,
+        impact, affected code, and a minimal correction or regression test.
+        Focus on regressions, async race conditions, stale callbacks, timeouts,
+        resource cleanup, auth boundaries, and data corruption.
+        Prioritize high-confidence P1/P2 issues. Do not report speculative risks
+        as confirmed bugs. If risk is plausible but unproven, state the missing
+        reproduction clearly. Do not duplicate CI, TypeScript, or lint results.
+
+    - path: "packages/kid-ui/src/**"
+      instructions: |
+        Audit async recording lifecycle (start/cancel/stop/timeout), VAD,
+        microphone permissions, cleanup and task/epoch/generation isolation.
+        Check whether old async completions can reset a newer task's state.
+        Silence, skipped input, or technical failures must not become incorrect
+        learning attempts or upload unintended microphone audio.
+        Preserve manual recording and no-microphone fallback paths.
+        Require targeted regression tests for actual race conditions.
+
+    - path: "packages/server/src/**"
+      instructions: |
+        Check server-side authorization on every operation, especially Parent
+        Mode and isolation of each child's history and progress. Inspect
+        PostgreSQL/Drizzle transactions, concurrency, idempotency and retries.
+        Preserve immutable published content and learning history.
+        Verify exposure is persisted before revealing an answer, and that
+        canceled/retried jobs cannot overwrite completed work or media.
+
+    - path: "apps/web/**"
+      instructions: |
+        Review Next.js handlers and server/client boundaries. Check that access
+        control is enforced server-side, never inferred from selected profiles.
+        Prevent exposing secrets, answer keys, private child data or technical
+        grading internals in client DTOs, pages, errors and logs.
+        For changed API endpoints, review compatibility with contracts and MCP.
+
+    - path: "apps/worker/**"
+      instructions: |
+        Focus on retry safety, leases, job ownership, duplicate execution,
+        transactional updates, cancellation and immutable media assets.
+        Verify failures do not leave jobs or data in inconsistent states.
+
+    - path: "packages/contracts/**"
+      instructions: |
+        Check public DTO and Zod schema compatibility, including optionality,
+        defaults, validation, auth semantics and error shapes. Any API contract
+        or semantics change must be assessed against the MCP adapter,
+        generated JSON schema and integrations/umiem-mcp/skills/umiem-learning/SKILL.md.
+
+    - path: "integrations/umiem-mcp/**"
+      instructions: |
+        Verify MCP tool names, input/output semantics, authorization and error
+        handling match the server API and packages/contracts. Ensure exported
+        schemas, validation, manifest, examples and skill instructions agree.
+        Do not leak private child data, credentials, raw recordings or answer keys.
+
+    - path: "**/*.{test,spec}.{ts,tsx,js,mjs,cjs}"
+      instructions: |
+        Review whether tests can actually fail for the bug they claim to cover.
+        Look for missing assertions, mocked-away behavior, flaky timing,
+        stale UI assumptions and missing failure/cancellation race coverage.
+        Avoid suggestions based only on test style or naming.
+
+    - path: "**/tests/**"
+      instructions: |
+        Review whether tests can actually fail for the bug they claim to cover.
+        Look for missing assertions, mocked-away behavior, flaky timing,
+        stale UI assumptions and missing failure/cancellation race coverage.
+        Avoid suggestions based only on test style or naming.
+
+    - path: "**/test_*.py"
+      instructions: |
+        Review whether tests can actually fail for the bug they claim to cover.
+        Look for missing assertions, mocked-away behavior, flaky timing,
+        stale UI assumptions and missing failure/cancellation race coverage.
+        Avoid suggestions based only on test style or naming.
+
+knowledge_base:
+  code_guidelines:
+    enabled: true  # AGENTS.md is auto-detected; do not duplicate its content.

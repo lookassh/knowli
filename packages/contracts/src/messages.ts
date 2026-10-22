@@ -530,6 +530,11 @@ export const messages = {
     recordingUnavailable: "Nie udało się uruchomić mikrofonu. Spróbuj ponownie albo ucz się bez nagrywania.",
     recordingStartCancelled: "Przytrzymaj, aż zobaczysz „Słucham”.",
     recordingTooShort: "Przytrzymaj przycisk i powiedz całe słowo.",
+    // Auto-nagrywanie z VAD (quick 261021-lsw): cisza nie tworzy próby (SPEC §15).
+    autoCaptureNoSpeech: "Nie usłyszałem słowa. Dotknij mikrofonu i powiedz je jeszcze raz.",
+    // PR #109, P1 #2: automat bez sprawnego nasłuchu poziomów nie nagrywa —
+    // próba należy do świadomego przycisku (działa bez analizatora).
+    autoCaptureListenUnavailable: "Nie udało się nasłuchiwać mowy. Nagraj przyciskiem.",
     loading: "Chwilka…",
     lessonNext: "Dalej",
     lessonCheck: "Sprawdź",
