@@ -1,4 +1,4 @@
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { defineConfig } from "vitest/config";
 
 // Testy domenowe: czysta logika z kontrolowanym zegarem, bez bazy i sieci.
@@ -7,7 +7,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: {
     alias: {
-      "@": fileURLToPath(new URL("./apps/web/src", import.meta.url)),
+      "@": resolve(process.cwd(), "apps/web/src"),
     },
   },
   test: {
