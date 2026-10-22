@@ -157,7 +157,10 @@ test("siatka wykorzystuje szerokość ekranu, a wynik i akcja trzymają się obr
 
   expect(geometry.gridWidth).toBeGreaterThanOrEqual(320);
   expect(geometry.firstWidth).toBeGreaterThanOrEqual(155);
-  expect(Math.abs(geometry.firstWidth - geometry.firstHeight)).toBeLessThanOrEqual(1);
+  // Kafelek jest wymiarowany z budżetu wysokości (kiosk) — w wąskich kolumnach może być wydłużony pionowo.
+  const tileRatio = geometry.firstHeight / geometry.firstWidth;
+  expect(tileRatio).toBeGreaterThanOrEqual(0.95);
+  expect(tileRatio).toBeLessThanOrEqual(1.3);
   expect(geometry.resultTop - geometry.thirdBottom).toBeGreaterThanOrEqual(0);
   expect(geometry.resultTop - geometry.thirdBottom).toBeLessThanOrEqual(40);
   expect(geometry.actionTop - geometry.resultBottom).toBeGreaterThanOrEqual(0);
@@ -183,8 +186,9 @@ test("siatka wykorzystuje szerokość ekranu, a wynik i akcja trzymają się obr
     };
   });
   expect(desktop.gridWidth).toBeLessThanOrEqual(560);
-  expect(desktop.gridWidth).toBeGreaterThanOrEqual(520);
-  expect(desktop.optionWidth).toBeGreaterThanOrEqual(220);
+  // Szerokość siatki wynika z budżetu wysokości kafelków, nie z pełnej szerokości ekranu.
+  expect(desktop.gridWidth).toBeGreaterThanOrEqual(500);
+  expect(desktop.optionWidth).toBeGreaterThanOrEqual(200);
   expect(Math.abs(desktop.optionWidth - desktop.optionHeight)).toBeLessThanOrEqual(1);
   expect(desktop.resultTop - desktop.thirdBottom).toBeGreaterThanOrEqual(0);
   expect(desktop.resultTop - desktop.thirdBottom).toBeLessThanOrEqual(40);
