@@ -1227,9 +1227,11 @@
 /* Układ ratunkowy dwukolumnowy: próg 900 px (audyt UI 2026-10-22, fix #2)
    obejmuje przeglądarkowy iframe kiosku (~860–880 px wysokości) oraz laptopy
    do 900 px wysokości. Telefony landscape (≤540 px) nadal wpadają w ten sam
-   układ, a very-short/zoom mają własne nadpisanie 112 px w bloku poniżej. */
+   układ, a very-short/zoom mają własne nadpisanie 112 px w bloku poniżej.
+   Poszerzenie do 920 px dotyczy tylko ekranu obrazków — pozostałe ćwiczenia
+   zostają przy 560 px, żeby nagłówek nie robił się szerszy niż zadanie. */
 @media (min-width: 700px) and (max-height: 900px) and (orientation: landscape) {
-  .kid-ui .kid-learning {
+  .kid-ui .kid-learning:has(.kid-exercise-frame[data-prompt-kind="picture_listening"]) {
     max-width: min(100%, 920px);
   }
 
