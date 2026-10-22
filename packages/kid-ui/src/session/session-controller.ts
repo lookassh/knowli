@@ -377,7 +377,8 @@ export class LearningSessionController {
   }
 
   #scheduleActivityResultPoll(pending: PendingActivityResult): void {
-    if (this.#disposed || this.#activityResultTimers.has(pending.sessionId) || this.#activityResultPolling.has(pending.sessionId)) return;
+    if (this.#disposed || !this.#api.readSessionActivityResult
+      || this.#activityResultTimers.has(pending.sessionId) || this.#activityResultPolling.has(pending.sessionId)) return;
     const attempt = this.#activityResultRetryAttempts.get(pending.sessionId) ?? 0;
     const delay = Math.min(this.#pollIntervalMs * 2 ** attempt, 30_000);
     const timer = setTimeout(() => {
@@ -389,10 +390,12 @@ export class LearningSessionController {
 
   async #pollActivityResult(pending: PendingActivityResult): Promise<void> {
     if (this.#disposed || this.#activityResultPolling.has(pending.sessionId)) return;
+    const readActivityResult = this.#api.readSessionActivityResult;
+    if (!readActivityResult) return;
     this.#activityResultPolling.add(pending.sessionId);
     let retry = false;
     try {
-      const result = await this.#api.readSessionActivityResult(pending.sessionId);
+      const result = await readActivityResult.call(this.#api, pending.sessionId);
       if (this.#disposed) return;
       if (result.status === "already_started") {
         retry = true;

@@ -45,10 +45,10 @@ describe("Kid API picture support transport", () => {
       .mockResolvedValueOnce(response({ status: "pending", pointsAwarded: 0, errorCode: null }));
     const api = createKidApiClient({ baseUrl: "https://umiem.test/", fetchImpl });
 
-    await expect(api.readSessionActivityResult(sessionId)).resolves.toEqual({ status: "evaluated", pointsAwarded: 3, errorCode: null });
-    await expect(api.readSessionActivityResult(sessionId)).resolves.toEqual({ status: "error", pointsAwarded: 0, errorCode: "review_failed" });
-    await expect(api.readSessionActivityResult(sessionId)).resolves.toEqual({ status: "already_started", pointsAwarded: 0, errorCode: null });
-    await expect(api.readSessionActivityResult(sessionId)).rejects.toMatchObject({ code: "internal" });
+    await expect(api.readSessionActivityResult!(sessionId)).resolves.toEqual({ status: "evaluated", pointsAwarded: 3, errorCode: null });
+    await expect(api.readSessionActivityResult!(sessionId)).resolves.toEqual({ status: "error", pointsAwarded: 0, errorCode: "review_failed" });
+    await expect(api.readSessionActivityResult!(sessionId)).resolves.toEqual({ status: "already_started", pointsAwarded: 0, errorCode: null });
+    await expect(api.readSessionActivityResult!(sessionId)).rejects.toMatchObject({ code: "internal" });
     expect(fetchImpl.mock.calls.map(([url]) => String(url))).toEqual([
       `https://umiem.test/api/v1/kid/sessions/${sessionId}/activity-result`,
       `https://umiem.test/api/v1/kid/sessions/${sessionId}/activity-result`,

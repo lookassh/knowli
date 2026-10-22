@@ -30,8 +30,12 @@ export interface KidApi {
   readMockTestSummary(sessionId: string): Promise<MockTestSummaryDto>;
   /** Omówienie kartkówki lekcji (sesja lekcji) — per cel zamiast per umiejętność. */
   readLessonMockTestSummary(sessionId: string): Promise<LessonMockTestSummaryDto>;
-  /** Trwały status asynchronicznej oceny aktywności; `already_started` oznacza oczekiwanie. */
-  readSessionActivityResult(sessionId: string): Promise<SessionActivityResultDto>;
+  /**
+   * Trwały status asynchronicznej oceny aktywności; `already_started` oznacza
+   * oczekiwanie. Opcjonalne dla zgodności starszych hostów, których endSession
+   * zwraca wynik terminalny synchronicznie. Hosty asynchroniczne implementują GET.
+   */
+  readSessionActivityResult?(sessionId: string): Promise<SessionActivityResultDto>;
   listProfiles(): Promise<KidProfileDto[]>;
   listDecks(childId: string, options?: { microphoneEnabled?: boolean }): Promise<KidDeckDto[]>;
   startSession(input: SessionInput): Promise<SessionDto>;

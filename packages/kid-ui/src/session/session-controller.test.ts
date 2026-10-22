@@ -367,12 +367,12 @@ const LESSON_DECK: KidDeckDto = {
 
 function makeHarness(
   state: ApiState,
-  options: { failStartWith?: unknown; startGate?: Promise<void>; initialChildId?: string; playGate?: Promise<void>; onStopPlayback?: () => void; failPlaybackBeforeStart?: boolean; playbackDurationMs?: number | null; storage?: LocalPreferences; activityClock?: import("./activity-report").ActivityClock; activityDrafts?: ReturnType<typeof createMemoryActivityDraftStore>; sharedLog?: string[]; microphonePermission?: MicrophonePermission } = {},
+  options: { api?: KidApi; failStartWith?: unknown; startGate?: Promise<void>; initialChildId?: string; playGate?: Promise<void>; onStopPlayback?: () => void; failPlaybackBeforeStart?: boolean; playbackDurationMs?: number | null; storage?: LocalPreferences; activityClock?: import("./activity-report").ActivityClock; activityDrafts?: ReturnType<typeof createMemoryActivityDraftStore>; sharedLog?: string[]; microphonePermission?: MicrophonePermission } = {},
 ) {
   const recorder = makeRecorder(options);
   const media = makeMedia(recorder, options.playGate, options.onStopPlayback, options.failPlaybackBeforeStart, options.playbackDurationMs, options.sharedLog, options.microphonePermission ?? "granted");
   const storage = options.storage ?? createMemoryPreferences();
-  const api = makeApi(state);
+  const api = options.api ?? makeApi(state);
   const activityDrafts = options.activityDrafts ?? createMemoryActivityDraftStore();
   const controller = new LearningSessionController({
     api,
@@ -429,6 +429,23 @@ describe("LearningSessionController", () => {
     expect(state.startedSessions).toEqual([{ childId: PROFILE_A.childId, microphoneEnabled: false, supportsPictureVocabulary: true }]);
     release();
     await starting;
+    harness.controller.teardown();
+  });
+
+  it("zachowuje zgodność ze starszym hostem KidApi bez endpointu wyniku asynchronicznego", async () => {
+    const state = baseState();
+    state.tasks = [taskDto("legacy-host", { kind: "recall", prompt: "czwartek" })];
+    state.endActivityResult = { status: "already_started", pointsAwarded: 0, errorCode: null };
+    const { readSessionActivityResult: _readResult, ...legacyApi } = makeApi(state);
+    const harness = makeHarness(state, { api: legacyApi });
+
+    await harness.controller.start();
+    await harness.controller.selectProfile(PROFILE_A.childId);
+    await harness.controller.startLearning(DECK.deckId);
+    await harness.controller.endNow();
+
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "summary", summary: { activity: { status: "already_started" } } });
+    expect(state.activityResultCalls).toEqual([]);
     harness.controller.teardown();
   });
 
