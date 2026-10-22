@@ -10,7 +10,7 @@ tone_instructions: >-
 
 reviews:
   profile: chill
-  request_changes_workflow: false
+  request_changes_workflow: true
   high_level_summary: false
   review_status: false
   review_info: true
