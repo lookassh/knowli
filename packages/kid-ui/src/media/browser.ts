@@ -1,10 +1,101 @@
-import type { AudioPlayer, PlatformMedia, RecordedAudio, RecorderOptions, SpeechRecorder } from "./platform";
+import type { AudioPlayer, BeepKind, MicrophonePermission, PlatformMedia, RecordedAudio, RecorderOptions, SpeechRecorder } from "./platform";
+import { LevelMonitorUnavailableError } from "./platform";
 
 /** Limit nagrania po stronie klienta — odpowiada limitowi serwera (arch §11). */
 export const MAX_RECORDING_MS = 15_000;
 
+/**
+ * Limit jednej próby resume() AudioContext w trybie auto (PR #109, runda 2,
+ * finding 1): przeglądarka może wstrzymać odblokowanie audio — bez limitu
+ * start wisiałby w „starting” z nieuzbrojonym limitem nagrania.
+ */
+export const LEVEL_MONITOR_RESUME_TIMEOUT_MS = 750;
+
 /** Preferowane kodeki w kolejności; pierwszy wspierany wygrywa. */
 const PREFERRED_MIME_TYPES = ["audio/webm;codecs=opus", "audio/webm"] as const;
+
+/** Wysokości bipów (Hz): start wyraźnie wyższy, koniec niższy (quick 261021-lsw). */
+const BEEP_FREQUENCY_HZ: Record<BeepKind, number> = { start: 880, end: 590 };
+const BEEP_DURATION_S = 0.13;
+const BEEP_ATTACK_S = 0.01;
+const BEEP_DECAY_S = 0.05;
+const BEEP_PEAK_GAIN = 0.3;
+
+/**
+ * Krótki sygnał dźwiękowy WebAudio: krótkotrwały AudioContext zamykany po
+ * zagraniu (limit równoczesnych kontekstów na iOS). Obwiednia przeciw klikowi:
+ * ~10 ms ataku na początku, plate na szczycie wytrzymuje do BEEP_DURATION_S −
+ * BEEP_DECAY_S, a ~50 ms decay domyka sygnał na KOŃCU — bip słychalny przez
+ * niemal całe 130 ms, bo to jedyny sygnał „teraz mów” dla dziecka (PR #109
+ * runda 3). Zawieszony kontekst wznawiamy z limitem 750 ms. Bip jest
+ * opcjonalny — brak konstruktorów, blokada autoplay albo awaria
+ * rozstrzygają się po cichu, bez blokowania nagrywania bez końca.
+ */
+async function playBeepViaWebAudio(AudioContextCtor: typeof AudioContext | undefined, kind: BeepKind, signal?: AbortSignal): Promise<void> {
+  if (!AudioContextCtor || signal?.aborted) return;
+  let abort!: () => void;
+  const cancelled = new Promise<void>((resolve) => { abort = resolve; });
+  signal?.addEventListener("abort", abort, { once: true });
+  let context: AudioContext | null = null;
+  try {
+    context = new AudioContextCtor();
+    if (context.state === "suspended") {
+      let resumeTimeout: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          cancelled,
+          context.resume(),
+          new Promise<void>((resolve) => {
+            resumeTimeout = globalThis.setTimeout(resolve, LEVEL_MONITOR_RESUME_TIMEOUT_MS);
+          }),
+        ]);
+      } finally {
+        globalThis.clearTimeout(resumeTimeout);
+      }
+    }
+    if (signal?.aborted || context.state !== "running") return;
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.frequency.value = BEEP_FREQUENCY_HZ[kind];
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    const startAt = context.currentTime;
+    // atak od ciszy do szczytu, plate na szczycie, decay dopiero na końcu —
+    // sygnał słyszalny przez pełne BEEP_DURATION_S minus krótkie wybrzmienie
+    gain.gain.setValueAtTime(0.0001, startAt);
+    gain.gain.exponentialRampToValueAtTime(BEEP_PEAK_GAIN, startAt + BEEP_ATTACK_S);
+    gain.gain.setValueAtTime(BEEP_PEAK_GAIN, startAt + BEEP_DURATION_S - BEEP_DECAY_S);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + BEEP_DURATION_S);
+    oscillator.start(startAt);
+    oscillator.stop(startAt + BEEP_DURATION_S);
+    // onended normalnie domyka grę; czasomierz zabezpiecza środowiska, które
+    // zdarzenia nie dostarczą, żeby bip nigdy nie wstrzymał obiegu nagrywania
+    let beepTimeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([cancelled, new Promise<void>((resolve) => {
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          resolve();
+        };
+        oscillator.onended = finish;
+        beepTimeout = globalThis.setTimeout(finish, Math.round((BEEP_DURATION_S + 0.1) * 1000));
+      })]);
+    } finally {
+      globalThis.clearTimeout(beepTimeout);
+    }
+  } catch {
+    // bip degraduje się po cichu (T-261021-02)
+  } finally {
+    signal?.removeEventListener("abort", abort);
+    try {
+      await context?.close();
+    } catch {
+      // zamykanie porzuconego kontekstu nie może rzucić observable
+    }
+  }
+}
 
 export interface BrowserRecorderDeps {
   getUserMedia?: (constraints: MediaStreamConstraints) => Promise<MediaStream>;
@@ -18,6 +109,7 @@ export interface BrowserRecorderDeps {
   };
   audioContext?: typeof AudioContext;
   now?: () => number;
+  permissions?: Permissions;
 }
 
 const defaultTimers = {
@@ -111,6 +203,7 @@ export class BrowserRecorder implements SpeechRecorder {
   #generation = 0;
   #lastLevelAt = Number.NEGATIVE_INFINITY;
   #levelHandle: unknown = null;
+  #resumeTimeoutHandle: unknown = null;
   #levelContext: AudioContext | null = null;
   #analyser: AnalyserNode | null = null;
   #samples: Float32Array<ArrayBuffer> | null = null;
@@ -160,10 +253,39 @@ export class BrowserRecorder implements SpeechRecorder {
       throw new Error("recording cancelled");
     }
     this.#stream = stream;
+    // Monitor poziomów PRZED sygnałem „teraz mów” i PRZED przechwytywaniem
+    // (PR #109, P1 #2): w trybie auto niedostępny monitor przerywa start —
+    // bez poziomów VAD słyszy ciszę i limit anuluje dobrą wypowiedź. W trybie
+    // ręcznym monitor pozostaje best-effort (tylko miernik poziomu).
+    const monitor = await this.#initializeLevelMonitor(stream);
+    if (this.#cancelled || generation !== this.#generation) {
+      this.#stopLevelMonitor();
+      stream.getTracks().forEach((track) => track.stop());
+      throw new Error("recording cancelled");
+    }
+    if (monitor !== "running" && this.#options.requireLevelMonitor) {
+      this.#stopLevelMonitor();
+      this.#releaseStream();
+      throw new LevelMonitorUnavailableError();
+    }
+    // Sygnał „teraz mów” (quick 261021-lsw, D-04): bip startu gra dopiero PO
+    // udanym getUserMedia (i sprawnym monitorze poziomów) i PRZED rozpoczęciem
+    // przechwytywania — szybka reakcja dziecka nie wyprzedza gotowości
+    // rejestratora, a bip nie trafia do nagrania. Odrzucenie hooka połykamy:
+    // bip opcjonalny, nagrywanie obowiązkowe (T-261021-02). Przycinanie
+    // ewentualnego echa bipu z nagrania rozważono i odrzucono jako
+    // nieproporcjonalne (PR #109, P2 #4) — bip w całości poprzedza capture.
+    await Promise.resolve().then(() => this.#options.onMicrophoneReady?.()).catch(() => undefined);
+    if (this.#cancelled || generation !== this.#generation) {
+      this.#stopLevelMonitor();
+      stream.getTracks().forEach((track) => track.stop());
+      throw new Error("recording cancelled");
+    }
     let recorder: MediaRecorder;
     try {
       recorder = new this.#MediaRecorder(stream, { mimeType });
     } catch (error) {
+      this.#stopLevelMonitor();
       this.#releaseStream();
       throw new Error("failed to start recording", { cause: error });
     }
@@ -203,7 +325,7 @@ export class BrowserRecorder implements SpeechRecorder {
       this.#state = "idle";
       throw new Error("failed to start recording", { cause: error });
     }
-    this.#startLevelMonitor(stream);
+    // monitor poziomów żyje już od przed sygnałem „teraz mów” (P1 #2)
     this.#timeoutHandle = this.#timers.set(() => {
       if (this.#state === "recording") {
         this.#state = "finalizing";
@@ -323,14 +445,54 @@ export class BrowserRecorder implements SpeechRecorder {
     this.#chunks = [];
   }
 
-  #startLevelMonitor(stream: MediaStream): void {
-    if (!this.#AudioContext || !this.#options.onLevel) return;
+  /**
+   * Inicjalizuje monitor poziomów (PR #109, P1 #2 + runda 2) i zwraca jego stan:
+   * "running" — AnalyserNode podłączony i odświeżany; "unavailable" — brak
+   * konstruktora AudioContext, awaria konstrukcji/podłączenia albo (tylko w
+   * trybie auto) kontekst, który po ograniczonej czasowo próbie resume nie
+   * osiąga stanu "running" (suspended/interrupted/…). Wywoływane przed
+   * sygnałem „teraz mów”; przy requireLevelMonitor stan inny niż running
+   * przerywa start (LevelMonitorUnavailableError).
+   *
+   * Runda 2, finding 1: w trybie RĘCZNYM nigdy nie czekamy na resume() —
+   * monitor podłączamy best-effort jak przed PR #109 (odblokowanie audio
+   * zostawiamy przeglądarce, fire-and-forget), bo ręczne nagrywanie nie zależy
+   * od poziomów i nie może wisieć w „starting”. W trybie AUTO resume()
+   * ścigamy z krótkim limitem na wstrzykniętych timerach — przeglądarka może
+   * wstrzymać odblokowanie audio (polityka autoplay) i bez limitu start
+   * wisiałby bezterminowo, z nieuzbrojonym limitem 15 s.
+   *
+   * Runda 2, finding 3: kontekst przypisujemy do #levelContext NATYCHMIAST po
+   * konstrukcji — sprzątanie (catch/#stopLevelMonitor) zamyka go na każdej
+   * ścieżce awarii (createAnalyser/connect/…), więc kolejne próby nie zbiegają
+   * kontekstów audio.
+   */
+  async #initializeLevelMonitor(stream: MediaStream): Promise<"running" | "unavailable"> {
+    if (!this.#AudioContext || !this.#options.onLevel) return "unavailable";
     try {
       const context = new this.#AudioContext();
+      this.#levelContext = context;
+      if (this.#options.requireLevelMonitor) {
+        // AUTO przyjmuje WYŁĄCZNIE stan "running" (runda 2, finding 2):
+        // "suspended", "interrupted" (Safari/iOS) i każdy inny stan nie dostarcza
+        // próbek — VAD usłyszałby ciszę i limit 15 s anulował dobrą wypowiedź
+        if (context.state !== "running") {
+          const resumed = await this.#resumeWithinTimeout(context);
+          // resume() mutuje stan kontekstu — asercja rozwija zawężenie z gorętszego
+          // warunku, bo kontrola przepływu nie śledzi mutacji przez resume()
+          const stateAfterResume = context.state as AudioContextState;
+          if (!resumed || stateAfterResume !== "running") {
+            this.#stopLevelMonitor();
+            return "unavailable";
+          }
+        }
+      } else if (context.state === "suspended") {
+        // ręcznie: fire-and-forget, bez blokowania startu nagrywania
+        void context.resume().catch(() => undefined);
+      }
       const analyser = context.createAnalyser();
       analyser.fftSize = 256;
       context.createMediaStreamSource(stream).connect(analyser);
-      this.#levelContext = context;
       this.#analyser = analyser;
       this.#samples = new Float32Array(analyser.fftSize);
       const setInterval = this.#timers.setInterval ?? ((handler: () => void, ms: number) => globalThis.setInterval(handler, ms));
@@ -346,13 +508,35 @@ export class BrowserRecorder implements SpeechRecorder {
         const level = Math.max(0, Math.min(1, rms * 4));
         if (Number.isFinite(level) && this.#state === "recording") this.#options.onLevel?.(level);
       }, 100);
+      return "running";
     } catch {
-      void this.#levelContext?.close().catch(() => undefined);
-      this.#levelContext = null;
-      this.#analyser = null;
-      this.#samples = null;
-      this.#levelHandle = null;
+      this.#stopLevelMonitor();
+      return "unavailable";
     }
+  }
+
+  /**
+   * Jedna próba resume() ścigana z limitem czasu na wstrzykniętych timerach
+   * (runda 2, finding 1): zwraca false przy odrzuceniu; upłynięcie limitu
+   * rozstrzyga się po stronie wywołującego przez ponowny test stanu kontekstu.
+   */
+  async #resumeWithinTimeout(context: AudioContext): Promise<boolean> {
+    try {
+      await Promise.race([
+        context.resume(),
+        new Promise<void>((resolve) => {
+          this.#resumeTimeoutHandle = this.#timers.set(() => resolve(), LEVEL_MONITOR_RESUME_TIMEOUT_MS);
+        }),
+      ]);
+    } catch {
+      return false;
+    } finally {
+      if (this.#resumeTimeoutHandle !== null) {
+        this.#timers.clear(this.#resumeTimeoutHandle);
+        this.#resumeTimeoutHandle = null;
+      }
+    }
+    return true;
   }
 
   #stopLevelMonitor(): void {
@@ -452,11 +636,34 @@ export class BrowserAudioPlayer implements AudioPlayer {
   }
 }
 
+/**
+ * Zapytanie o stan uprawnienia mikrofonu (WR-02, decyzja właściciela
+ * 2026-10-21): wyłącznie Permissions API — bez getUserMedia, bez promptu i bez
+ * efektów ubocznych. Brak API (np. Firefox), niewspierana nazwa uprawnienia
+ * albo awaria rozstrzygają się bezpiecznie jako "unknown".
+ */
+export async function queryMicrophonePermission(
+  permissions: Permissions | undefined,
+): Promise<MicrophonePermission> {
+  if (!permissions?.query) return "unknown";
+  try {
+    const status = await permissions.query({ name: "microphone" } as PermissionDescriptor);
+    if (status.state === "granted" || status.state === "prompt" || status.state === "denied") {
+      return status.state;
+    }
+    return "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
 export interface BrowserMediaDeps extends BrowserRecorderDeps {}
 
 /** Adaptery przeglądarkowe za portami PlatformMedia. */
 export function createBrowserMedia(deps: BrowserMediaDeps = {}): PlatformMedia {
   const getUserMedia = deps.getUserMedia ?? ((constraints: MediaStreamConstraints) => navigator.mediaDevices.getUserMedia(constraints));
+  const AudioContextCtor = deps.audioContext ?? globalThis.AudioContext;
+  const permissions = deps.permissions ?? (globalThis as { navigator?: Navigator }).navigator?.permissions;
   return {
     prepareMicrophone: async () => {
       const stream = await getUserMedia({ audio: true });
@@ -464,5 +671,7 @@ export function createBrowserMedia(deps: BrowserMediaDeps = {}): PlatformMedia {
     },
     createRecorder: (options) => new BrowserRecorder({ ...deps, getUserMedia }, options),
     player: new BrowserAudioPlayer(),
+    playBeep: (kind, signal) => playBeepViaWebAudio(AudioContextCtor, kind, signal),
+    getMicrophonePermission: () => queryMicrophonePermission(permissions),
   };
 }

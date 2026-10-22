@@ -174,6 +174,29 @@ test("mówione ćwiczenie obrazkowe można świadomie pominąć bez mikrofonu", 
     prompt: { kind: "picture_speech", audioAssetId: "10000000-0000-4000-8000-000000000014", visual: source.prompt.visual },
   }, null];
   fixture.attempts = [{ ...attempt, taskId, modality: "skip" }];
+  // WR-02: uprawnienie "prompt" (nienadane) blokuje auto-start próby — zgodnie
+  // z intencją testu dziecko jest na tym ekranie bez działającego mikrofonu
+  // i świadomie używa „Pomiń”, bez żadnego nagrywania.
+  await page.addInitScript(() => {
+    let calls = 0;
+    (window as unknown as { __gumCalls: () => number }).__gumCalls = () => calls;
+    const devices = navigator.mediaDevices;
+    const original = devices?.getUserMedia?.bind(devices);
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: async (constraints: MediaStreamConstraints) => {
+          calls += 1;
+          if (original) return original(constraints);
+          throw new DOMException("Unexpected getUserMedia call", "NotAllowedError");
+        },
+      },
+    });
+    Object.defineProperty(navigator, "permissions", {
+      configurable: true,
+      value: { query: async () => ({ state: "prompt" }) },
+    });
+  });
   await installKidUiFixture(page, fixture);
   await page.goto("/");
   await page.getByTestId("kid-profile").click();
@@ -181,7 +204,18 @@ test("mówione ćwiczenie obrazkowe można świadomie pominąć bez mikrofonu", 
 
   await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-prompt-kind", "picture_speech");
   await expect(page.getByTestId("kid-input")).toHaveCount(0);
+  // bez nadanego uprawnienia auto-start nie rusza — przycisk pozostaje w idle
+  await expect(page.getByTestId("kid-record")).toHaveAttribute("data-phase", "idle");
+  await page.waitForTimeout(1_500);
+  expect(await page.evaluate(() => (window as unknown as { __gumCalls: () => number }).__gumCalls())).toBe(0);
+  await expect(page.getByTestId("kid-record")).toHaveAttribute("data-phase", "idle");
+  // hint uprawnień w slocie nagrywania jest widoczny PRZED pominięciem; po
+  // „Pomiń” LearnScreen podmienia cały widok ćwiczenia na feedback, więc
+  // asercja elementów ćwiczenia po kliknięciu byłaby wyścigiem z odpowiedzią
+  await expect(page.getByTestId("kid-record-status")).toBeVisible();
   await page.getByTestId("kid-skip").click();
+  // deterministyczna asercja przejścia na widok feedbacku (z #110); „Dalej”
+  // pojawia się w tym widoku — klik sam oczekuje na podmianę
   await expect(page.getByTestId("kid-feedback")).toBeVisible();
   await page.getByTestId("kid-next").click();
   await expect(page.getByTestId("kid-summary")).toBeVisible();

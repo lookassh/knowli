@@ -272,6 +272,29 @@ test(`${kind} microphone phases keep exercise controls in place`, async ({ page 
         return stream;
       } },
     });
+    // WR-02: uprawnienie mikrofonu "granted" — auto-próba na zadaniu speech
+    // sama rozpoczyna przygotowanie (pierwsze getUserMedia jest bramkowane)
+    Object.defineProperty(navigator, "permissions", {
+      configurable: true,
+      value: { query: async () => ({ state: "granted" }) },
+    });
+    // PR #109 P1 #2: auto-próba wymaga sprawnego monitora poziomów — fake
+    // AudioContext z analizatorem (cisza), bo realny createMediaStreamSource
+    // odrzuciłby strumień-testowy obiekt i przerwał auto-start
+    class FakeAudioContext {
+      // PR #109 r2: auto-próba akceptuje wyłącznie stan "running"
+      readonly state = "running";
+      createAnalyser() {
+        return {
+          fftSize: 256,
+          getFloatTimeDomainData: (samples: Float32Array) => samples.fill(0),
+          disconnect: () => undefined,
+        };
+      }
+      createMediaStreamSource() { return { connect: () => undefined }; }
+      async close(): Promise<void> {}
+    }
+    Object.defineProperty(window, "AudioContext", { configurable: true, value: FakeAudioContext });
     class FakeMediaRecorder {
       static isTypeSupported(): boolean { return true; }
       state = "inactive";
@@ -320,18 +343,39 @@ test(`${kind} microphone phases keep exercise controls in place`, async ({ page 
         : null,
     };
   });
-  const before = await measure();
   const record = page.getByTestId("kid-record");
-  await record.click();
-  await expect(record).toHaveAttribute("data-phase", "preparing");
-  const preparing = await measure();
-  await page.evaluate(() => {
-    const browserWindow = window as typeof window & { resolveMicrophonePreparation?: () => void };
-    browserWindow.resolveMicrophonePreparation?.();
-  });
-  await expect(record).toHaveAttribute("data-ready", "true");
-  await record.click();
-  await expect(record).toHaveAttribute("data-phase", "recording");
+  type PhaseMeasure = Awaited<ReturnType<typeof measure>>;
+  let before: PhaseMeasure;
+  let preparing: PhaseMeasure;
+  if (kind === "speech") {
+    // Auto-cykl mowy (quick 261021-lsw): przygotowanie mikrofonu startuje samo
+    // po wyświetleniu zadania i wisi na pierwszym wywołaniu fake getUserMedia.
+    // Stan idle jest ulotny, więc punktem odniesienia pomiarów jest preparing;
+    // po zwolnieniu sondy auto-start osiąga recording bez żadnego kliku (drugie
+    // wywołanie getUserMedia nie jest bramkowane, bip degraduje się po cichu).
+    await expect(record).toHaveAttribute("data-phase", "preparing");
+    before = await measure();
+    preparing = before;
+    await page.evaluate(() => {
+      const browserWindow = window as typeof window & { resolveMicrophonePreparation?: () => void };
+      browserWindow.resolveMicrophonePreparation?.();
+    });
+    await expect(record).toHaveAttribute("data-phase", "recording", { timeout: 10_000 });
+  } else {
+    // recall (WrittenView) pozostaje na ścieżce ręcznej — przygotowanie i start
+    // przez kliknięcia, jak dotychczas
+    before = await measure();
+    await record.click();
+    await expect(record).toHaveAttribute("data-phase", "preparing");
+    preparing = await measure();
+    await page.evaluate(() => {
+      const browserWindow = window as typeof window & { resolveMicrophonePreparation?: () => void };
+      browserWindow.resolveMicrophonePreparation?.();
+    });
+    await expect(record).toHaveAttribute("data-ready", "true");
+    await record.click();
+    await expect(record).toHaveAttribute("data-phase", "recording");
+  }
   const recording = await measure();
 
   for (const phase of [preparing, recording]) {

@@ -10,7 +10,8 @@ import type { ExerciseProps } from "./types";
  * usłyszeć wzorzec (oczekiwana część nauki — §13.2), potem je wypowiada.
  * Bez działającego mikrofonu pozostaje komunikat i „Pomiń” — bez oceny.
  */
-export function SpeechView({ task, busy, recordingPhase, microphoneReady, inputLevel, recordingNotice, recordingMode, micAvailable, mediaUrl, handlers }: ExerciseProps) {
+export function SpeechView(props: ExerciseProps) {
+  const { task, busy, recordingPhase, automaticRecording, microphoneReady, inputLevel, recordingNotice, recordingMode, micAvailable, mediaUrl, handlers } = props;
   if (task.prompt.kind !== "speech") {
     return null;
   }
@@ -60,7 +61,7 @@ export function SpeechView({ task, busy, recordingPhase, microphoneReady, inputL
             className="kid-audio-round kid-audio-round-sm"
             data-testid="kid-play"
             aria-label={messages.kid.listen}
-            disabled={busy || recordingPhase !== "idle"}
+            disabled={busy || (recordingPhase !== "idle" && !automaticRecording)}
             onClick={handlers.onPlay}
           >
             <KidIcon name="volume" />
@@ -70,7 +71,7 @@ export function SpeechView({ task, busy, recordingPhase, microphoneReady, inputL
       secondaryActions={<div className="kid-secondary-actions">
         {/* świadome pominięcie bez oceny — także po awarii technicznej próby,
             żeby dziecko nie utknęło na jednym słowie (SPEC §15.3) */}
-        <button type="button" data-testid="kid-skip" disabled={busy || recordingPhase !== "idle"} onClick={handlers.onSkip}>
+        <button type="button" data-testid="kid-skip" disabled={busy || (recordingPhase !== "idle" && !automaticRecording)} onClick={handlers.onSkip}>
           {messages.kid.skip}
         </button>
       </div>}
