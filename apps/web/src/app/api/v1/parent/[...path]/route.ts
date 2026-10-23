@@ -1,14 +1,25 @@
 import { getServerServices } from "@/composition";
 import { withApi } from "@/http/errors";
+import { withORpcFallback } from "@/http/orpc-fallback";
 import { handleParentApi } from "@/parent/parent-router";
+import { createOpenApiHandler } from "@/orpc/handler";
+import { emptyParentORpcRouter } from "@/orpc/parent-router";
 
 interface RouteContext {
   params: Promise<{ path?: string[] }>;
 }
 
+// Handler oRPC budowany raz per proces (module scope); `Services` trafiają
+// per żądanie przez kontekst przekazywany w `withORpcFallback`.
+const parentORpcHandler = createOpenApiHandler(emptyParentORpcRouter);
+
+// Router oRPC ma priorytet; brak dopasowania (pusty router ⇒ zawsze) woła
+// legacy `handleParentApi` z tymi samymi argumentami — zero zmiany zachowania.
+const dispatchORpc = withORpcFallback(parentORpcHandler, "/api/v1/parent", handleParentApi);
+
 const dispatch = withApi<RouteContext>(async (request, context) => {
   const { path } = await context.params;
-  return handleParentApi(request, getServerServices(), path ?? []);
+  return dispatchORpc(request, getServerServices(), path ?? []);
 });
 
 /** Catch-all API rodzica; statyczne trasy (login, children) mają pierwszeństwo. */
