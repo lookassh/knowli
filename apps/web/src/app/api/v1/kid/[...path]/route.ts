@@ -3,7 +3,7 @@ import { withApi } from "@/http/errors";
 import { withORpcFallback } from "@/http/orpc-fallback";
 import { handleKidApi } from "@/kid/kid-router";
 import { createOpenApiHandler } from "@/orpc/handler";
-import { emptyKidORpcRouter } from "@/orpc/kid-router";
+import { kidRouter } from "@/orpc/kid-router";
 
 interface RouteContext {
   params: Promise<{ path?: string[] }>;
@@ -11,10 +11,10 @@ interface RouteContext {
 
 // Handler oRPC budowany raz per proces (module scope); `Services` trafiają
 // per żądanie przez kontekst przekazywany w `withORpcFallback`.
-const kidORpcHandler = createOpenApiHandler(emptyKidORpcRouter);
+const kidORpcHandler = createOpenApiHandler(kidRouter);
 
-// Router oRPC ma priorytet; brak dopasowania (pusty router ⇒ zawsze) woła
-// legacy `handleKidApi` z tymi samymi argumentami — zero zmiany zachowania.
+// Router oRPC ma priorytet (odczyty + feedback-audio); brak dopasowania
+// (sesje/zadania na POST) woła legacy `handleKidApi` z tymi samymi argumentami.
 const dispatchORpc = withORpcFallback(kidORpcHandler, "/api/v1/kid", handleKidApi);
 
 const dispatch = withApi<RouteContext>(async (request, context) => {

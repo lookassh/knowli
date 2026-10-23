@@ -1,21 +1,12 @@
 import {
   AppError,
-  readMockTestSummary,
-  readLessonMockTestSummary,
-  readSessionActivityResult,
-  readUiAudio,
-  mockTestKindOfSession,
   authorizeDisclosure,
-  authorizeFeedbackAudio,
   completePresentation,
   endSession,
-  listKidDecks,
-  listKidProfiles,
+  disableSessionMicrophone,
   nextTask,
-  readAttempt,
   recordEvent,
   startSession,
-  disableSessionMicrophone,
   submitAttempt,
   submitSpeechAttempt,
   MULTIPART_OVERHEAD_BYTES,
@@ -29,7 +20,6 @@ import {
   SessionEndInputSchema,
   SESSION_ACTIVITY_REPORT_VERSION,
   SESSION_ACTIVITY_REPORT_MAX_BYTES,
-  SessionActivityResultDtoSchema,
   UuidSchema,
 } from "@learning/contracts";
 import { readJson } from "@/http/errors";
@@ -59,10 +49,12 @@ async function readCappedJson(request: Request, capBytes: number): Promise<unkno
 }
 
 /**
- * Router Kid API pod /api/v1/kid/* (ścieżki wg architecture.md §12). Model
- * zaufany bez autoryzacji dziecka (arch §13); mutacje sprawdzają Origin jak
- * w API rodzica. Odpowiedzi nigdy nie zawierają klucza odpowiedzi ani
- * technicznych score'ów — o tym decydują DTO w @learning/contracts.
+ * Router Kid API pod /api/v1/kid/* (ścieżki wg architecture.md §12) — część
+ * legacy obsługująca mutacje (POST). Odczyty (GET) i odsłuch feedbacku serwuje
+ * oRPC (`../orpc/kid-router`) z priorytetem w catch-all. Model zaufany bez
+ * autoryzacji dziecka (arch §13); mutacje sprawdzają Origin jak w API rodzica.
+ * Odpowiedzi nigdy nie zawierają klucza odpowiedzi ani technicznych score'ów —
+ * o tym decydują DTO w @learning/contracts.
  */
 export async function handleKidApi(
   request: Request,
@@ -75,42 +67,7 @@ export async function handleKidApi(
   const [first, second, ...thirdParts] = segments;
   const third = thirdParts.join("/");
 
-  if (request.method === "GET" && first === "ui-audio" && second === undefined) {
-    return Response.json(await readUiAudio(services), { headers: { "Cache-Control": "no-store" } });
-  }
-
-  if (request.method === "GET" && first === "profiles" && second === undefined) {
-    return Response.json(await listKidProfiles(services), { headers: { "Cache-Control": "no-store" } });
-  }
-
-  if (request.method === "GET" && first === "decks" && second === undefined) {
-    const params = new URL(request.url).searchParams;
-    const childId = params.get("childId");
-    if (!childId) {
-      throw new AppError("validation");
-    }
-    const microphoneEnabled = params.get("microphoneEnabled");
-    if (microphoneEnabled !== null && microphoneEnabled !== "true" && microphoneEnabled !== "false") throw new AppError("validation");
-    return Response.json(await listKidDecks(services, UuidSchema.parse(childId), microphoneEnabled === null ? {} : { microphoneEnabled: microphoneEnabled === "true" }), { headers: { "Cache-Control": "no-store" } });
-  }
-
   if (first === "sessions") {
-    if (request.method === "GET" && second !== undefined && third === "activity-result") {
-      const sessionId = UuidSchema.parse(second);
-      const result = await readSessionActivityResult(services, sessionId);
-      // Brak trwałego wyniku oznacza jedynie oczekującą ocenę. Nie ponawiamy
-      // raportu ani nie ujawniamy danych oceny poza małym DTO dla dziecka.
-      return Response.json(
-        SessionActivityResultDtoSchema.parse(result ?? { status: "already_started", pointsAwarded: 0, errorCode: null }),
-        { headers: { "Cache-Control": "no-store" } },
-      );
-    }
-    if (request.method === "GET" && second !== undefined && third === "mock-test-summary") {
-      // Lekcja → omówienie per cel; słówka → omówienie słówkowe.
-      const kind = await mockTestKindOfSession(services.db, second);
-      const summary = kind === "lesson" ? await readLessonMockTestSummary(services, second) : await readMockTestSummary(services, second);
-      return Response.json(summary, { headers: { "Cache-Control": "no-store" } });
-    }
     if (request.method === "POST" && second === undefined) {
       const input = SessionInputSchema.parse(await readJson(request));
       return Response.json(await startSession(services, input));
@@ -192,13 +149,6 @@ export async function handleKidApi(
       const attempt = await submitAttempt(services, input);
       return Response.json(attempt, { status: attempt.state === "processing" ? 202 : 200 });
     }
-  }
-
-  if (request.method === "GET" && first === "attempts" && second !== undefined && third === undefined) {
-    return Response.json(await readAttempt(services, second));
-  }
-  if (request.method === "POST" && first === "attempts" && second !== undefined && third === "feedback-audio") {
-    return Response.json(await authorizeFeedbackAudio(services, second), { headers: { "Cache-Control": "no-store" } });
   }
 
   throw new AppError("not_found");
