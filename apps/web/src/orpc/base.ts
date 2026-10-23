@@ -52,7 +52,7 @@ function requestFromHeaders(headers: Headers): Request {
 }
 
 /** Typ middlewares bez mutacji kontekstu. */
-type PassthroughMiddleware = Middleware<
+export type PassthroughMiddleware = Middleware<
   ORpcContext,
   Record<never, never>,
   unknown,

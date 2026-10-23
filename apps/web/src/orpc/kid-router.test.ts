@@ -1,15 +1,19 @@
-import { ApiErrorSchema } from "@learning/contracts";
+import { ApiErrorSchema, SESSION_ACTIVITY_REPORT_MAX_BYTES } from "@learning/contracts";
 import {
   AppError,
   authorizeFeedbackAudio,
+  disableSessionMicrophone,
+  endSession,
   listKidDecks,
   listKidProfiles,
   mockTestKindOfSession,
+  nextTask,
   readAttempt,
   readLessonMockTestSummary,
   readMockTestSummary,
   readSessionActivityResult,
   readUiAudio,
+  startSession,
   type Services,
 } from "@learning/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -29,6 +33,10 @@ vi.mock("@learning/server", async (importActual) => {
     mockTestKindOfSession: vi.fn(),
     readAttempt: vi.fn(),
     authorizeFeedbackAudio: vi.fn(),
+    startSession: vi.fn(),
+    nextTask: vi.fn(),
+    endSession: vi.fn(),
+    disableSessionMicrophone: vi.fn(),
   };
 });
 
@@ -88,6 +96,88 @@ const lessonSummary = {
       outcome: "correct" as const,
     },
   ],
+};
+
+const sessionDto = {
+  mode: "training" as const,
+  sessionId,
+  childId,
+  deckId: deck.deckId,
+  deckVersionId: "88888888-8888-4888-8888-888888888888",
+  policyId: "policy-1",
+  microphoneEnabled: true,
+  canRead: true,
+  vocabularyFormat: "standard" as const,
+  state: "active" as const,
+  taskBudget: 5,
+  tasksIssued: 0,
+  assessedTasksIssued: 0,
+  startedAt: "2026-10-23T09:00:00.000Z",
+  resumed: false,
+};
+
+const taskDto = {
+  taskId: "55555555-5555-4555-8555-555555555555",
+  sessionId,
+  ordinal: 0,
+  exerciseType: "listening" as const,
+  direction: null,
+  state: "issued" as const,
+  prompt: {
+    kind: "listening" as const,
+    options: [{ id: "99999999-9999-4999-8999-999999999999", text: "cat" }],
+    audioAssetId: "77777777-7777-4777-8777-777777777777",
+  },
+  remainingAssessed: 3,
+};
+
+const sessionSummary = {
+  sessionId,
+  state: "completed" as const,
+  tasksIssued: 3,
+  assessedTasksIssued: 3,
+  endedAt: "2026-10-23T10:00:00.000Z",
+  independentSuccesses: { recall: 1, spelling: 0 },
+  practiceItems: [
+    { itemId: "a0000000-0000-4000-8000-000000000001", target: "cat", skills: ["recall" as const] },
+  ],
+};
+
+/** Minimalny poprawny raport aktywności (wersja 1, zero zadań). */
+const validReport = {
+  version: 1,
+  elapsedMs: 1,
+  activeMs: 0,
+  compacted: false,
+  tasks: [],
+};
+
+/**
+ * Poprawny schematowo raport, którego kompaktowy JSON przekracza
+ * SESSION_ACTIVITY_REPORT_MAX_BYTES: 512 zadań po 8 niepokrywających się
+ * odsłuchów (4096 wpisów — dokładnie limit) daje ~400 KiB.
+ */
+const oversizedValidReport = {
+  version: 1,
+  elapsedMs: 5120,
+  activeMs: 4096,
+  compacted: true,
+  tasks: Array.from({ length: 512 }, (_, i) => ({
+    taskId: `10000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
+    exerciseType: "recall",
+    shownFromMs: i * 10,
+    shownToMs: i * 10 + 8,
+    activeIntervals: [],
+    editCount: 0,
+    editWindows: [],
+    submittedAttempts: [],
+    playbacks: Array.from({ length: 8 }, (_, j) => ({
+      assetId: "77777777-7777-4777-8777-777777777777",
+      fromMs: i * 10 + j,
+      toMs: i * 10 + j + 1,
+    })),
+    pauses: [],
+  })),
 };
 
 async function call(path: string, init?: RequestInit): Promise<Response> {
@@ -238,5 +328,191 @@ describe("kid oRPC router — odczyty (GET)", () => {
     expect(response.status).toBe(404);
     const body = ApiErrorSchema.parse(await response.json());
     expect(body.code).toBe("not_found");
+  });
+});
+
+describe("kid oRPC router — sesje (POST)", () => {
+  it("create startuje sesję i zwraca SessionDto", async () => {
+    vi.mocked(startSession).mockResolvedValueOnce(sessionDto as never);
+
+    const input = {
+      childId,
+      deckId: deck.deckId,
+      microphoneEnabled: true,
+      supportsPictureVocabulary: false,
+      supportsPictureRecognition: false,
+    };
+    const response = await call("/sessions", {
+      method: "POST",
+      body: JSON.stringify(input),
+      headers: { "content-type": "application/json" },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(sessionDto);
+    expect(startSession).toHaveBeenCalledWith(services, input);
+  });
+
+  it("create odrzuca niekompletne wejście jako validation/400", async () => {
+    const response = await call("/sessions", {
+      method: "POST",
+      body: JSON.stringify({ childId, deckId: deck.deckId }),
+      headers: { "content-type": "application/json" },
+    });
+
+    expect(response.status).toBe(400);
+    const body = ApiErrorSchema.parse(await response.json());
+    expect(body.code).toBe("validation");
+    expect(startSession).not.toHaveBeenCalled();
+  });
+
+  it("next bez zadania zwraca 204 z pustym ciałem (regresja R05)", async () => {
+    vi.mocked(nextTask).mockResolvedValueOnce(null);
+
+    const response = await call(`/sessions/${sessionId}/next`, { method: "POST" });
+
+    expect(response.status).toBe(204);
+    expect(await response.text()).toBe("");
+    expect(nextTask).toHaveBeenCalledWith(services, sessionId);
+  });
+
+  it("next z zadaniem zwraca 200 + TaskDto", async () => {
+    vi.mocked(nextTask).mockResolvedValueOnce(taskDto as never);
+
+    const response = await call(`/sessions/${sessionId}/next`, { method: "POST" });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(taskDto);
+  });
+
+  it("end bez ciała kończy sesję bez raportu (activityReport undefined)", async () => {
+    vi.mocked(endSession).mockResolvedValueOnce(sessionSummary as never);
+
+    const response = await call(`/sessions/${sessionId}/end`, { method: "POST" });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(sessionSummary);
+    expect(endSession).toHaveBeenCalledWith(services, sessionId, undefined);
+  });
+
+  it("end z pustym obiektem {} działa jak brak raportu (paritet z kid-ui)", async () => {
+    vi.mocked(endSession).mockResolvedValueOnce(sessionSummary as never);
+
+    const response = await call(`/sessions/${sessionId}/end`, {
+      method: "POST",
+      body: "{}",
+      headers: { "content-type": "application/json" },
+    });
+
+    expect(response.status).toBe(200);
+    expect(endSession).toHaveBeenCalledWith(services, sessionId, undefined);
+  });
+
+  it("end z poprawnym raportem przekazuje go do endSession", async () => {
+    vi.mocked(endSession).mockResolvedValueOnce(sessionSummary as never);
+
+    const response = await call(`/sessions/${sessionId}/end`, {
+      method: "POST",
+      body: JSON.stringify({ activityReport: validReport }),
+      headers: { "content-type": "application/json" },
+    });
+
+    expect(response.status).toBe(200);
+    expect(endSession).toHaveBeenCalledWith(services, sessionId, validReport);
+  });
+
+  it("end z raportem w nieznanej wersji daje validation + reason aktualizacji", async () => {
+    const response = await call(`/sessions/${sessionId}/end`, {
+      method: "POST",
+      body: JSON.stringify({ activityReport: { ...validReport, version: 2 } }),
+      headers: { "content-type": "application/json" },
+    });
+
+    expect(response.status).toBe(400);
+    const body = ApiErrorSchema.parse(await response.json());
+    expect(body.code).toBe("validation");
+    expect(body.details).toEqual({ reason: "activity_report_update_required" });
+    expect(endSession).not.toHaveBeenCalled();
+  });
+
+  it("end z content-length ponad limit raportu pada przed wykonaniem endSession", async () => {
+    const response = await call(`/sessions/${sessionId}/end`, {
+      method: "POST",
+      body: "{}",
+      headers: {
+        "content-type": "application/json",
+        // undici nie wystawia content-length dla ciała stringowego — ustawiamy
+        // jawnie, jak robi to każde prawdziwe żądanie HTTP z buforem.
+        "content-length": String(SESSION_ACTIVITY_REPORT_MAX_BYTES + 1),
+      },
+    });
+
+    expect(response.status).toBe(400);
+    const body = ApiErrorSchema.parse(await response.json());
+    expect(body.code).toBe("validation");
+    expect(endSession).not.toHaveBeenCalled();
+  });
+
+  it("end z poprawnym raportem ponad limit bajtów (bez content-length) pada na limicie", async () => {
+    const response = await call(`/sessions/${sessionId}/end`, {
+      method: "POST",
+      body: JSON.stringify({ activityReport: oversizedValidReport }),
+      headers: { "content-type": "application/json" },
+    });
+
+    expect(response.status).toBe(400);
+    const body = ApiErrorSchema.parse(await response.json());
+    expect(body.code).toBe("validation");
+    expect(endSession).not.toHaveBeenCalled();
+  });
+
+  it("disable-microphone wyłącza mikrofon i zwraca SessionDto", async () => {
+    vi.mocked(disableSessionMicrophone).mockResolvedValueOnce({ ...sessionDto, microphoneEnabled: false } as never);
+
+    const response = await call(`/sessions/${sessionId}/disable-microphone`, { method: "POST" });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ...sessionDto, microphoneEnabled: false });
+    expect(disableSessionMicrophone).toHaveBeenCalledWith(services, sessionId);
+  });
+
+  it("mutacje sesji z obcym Origin kończą się forbidden/403 bez wywołania przypadków użycia", async () => {
+    const evil = { origin: "http://evil.example" };
+    const createResponse = await call("/sessions", {
+      method: "POST",
+      body: JSON.stringify({
+        childId,
+        deckId: deck.deckId,
+        microphoneEnabled: true,
+        supportsPictureVocabulary: false,
+        supportsPictureRecognition: false,
+      }),
+      headers: { "content-type": "application/json", ...evil },
+    });
+    const nextResponse = await call(`/sessions/${sessionId}/next`, { method: "POST", headers: evil });
+    const endResponse = await call(`/sessions/${sessionId}/end`, {
+      method: "POST",
+      body: "{}",
+      headers: { "content-type": "application/json", ...evil },
+    });
+    const disableResponse = await call(`/sessions/${sessionId}/disable-microphone`, {
+      method: "POST",
+      headers: evil,
+    });
+
+    for (const [label, response] of [
+      ["create", createResponse],
+      ["next", nextResponse],
+      ["end", endResponse],
+      ["disable-microphone", disableResponse],
+    ] as const) {
+      expect(response.status, label).toBe(403);
+      const body = ApiErrorSchema.parse(await response.json());
+      expect(body.code, label).toBe("forbidden");
+    }
+    expect(startSession).not.toHaveBeenCalled();
+    expect(nextTask).not.toHaveBeenCalled();
+    expect(endSession).not.toHaveBeenCalled();
+    expect(disableSessionMicrophone).not.toHaveBeenCalled();
   });
 });

@@ -55,7 +55,7 @@ export interface KidClientOptions {
   fetchImpl?: typeof fetch;
 }
 
-type JsonInit = { method: "GET" | "POST" | "PUT"; body?: string | FormData };
+type JsonInit = { method: "GET" | "POST" | "PUT"; body?: string | FormData; headers?: Record<string, string> };
 
 /**
  * Klient HTTP Kid API. Waliduje odpowiedzi schematami kontraktów na granicy
@@ -97,7 +97,10 @@ export function createKidApiClient(options: KidClientOptions = {}): KidApi {
   }
 
   function post<T>(path: string, payload: unknown, parse: (body: unknown) => T): Promise<T> {
-    return request(path, { method: "POST", body: JSON.stringify(payload) }, parse);
+    // Jawny content-type jest konieczny od migracji sesji na oRPC: kodek serwera
+    // deserializuje ciało JSON tylko po tym nagłówku, a bez niego fetch domyślnie
+    // oznacza ciało tekstowe jako text/plain (legacy readJson to tolerował).
+    return request(path, { method: "POST", body: JSON.stringify(payload), headers: { "content-type": "application/json" } }, parse);
   }
 
   /** Strukturalny kształt zodowego safeParse — bez zależności pakietu od zod. */

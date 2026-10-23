@@ -88,4 +88,33 @@ describe("Kid API picture support transport", () => {
       }
     }
   });
+
+  it("sends JSON bodies with an explicit content-type (oRPC parses only declared JSON)", async () => {
+    // Router oRPC czyta ciało JSON wyłącznie po nagłówku content-type — bez
+    // niego fetch domyślnie oznacza ciało tekstowe jako text/plain i serwer
+    // dostaje File zamiast obiektu (e2e kid-flow: create → 400). Legacy
+    // readJson tolerował brak nagłówka; klient musi go deklarować jawnie.
+    const fetchImpl = vi.fn().mockResolvedValue(response({
+      mode: "training", sessionId: "11111111-1111-4111-8111-111111111111",
+      childId: "22222222-2222-4222-8222-222222222222", deckId: "33333333-3333-4333-8333-333333333333",
+      deckVersionId: "44444444-4444-4444-8444-444444444444", policyId: "learning-v1",
+      microphoneEnabled: true, canRead: true, vocabularyFormat: "standard", state: "active",
+      taskBudget: 5, tasksIssued: 0, assessedTasksIssued: 0, startedAt: "2026-10-23T10:00:00.000Z", resumed: false,
+    }));
+    const api = createKidApiClient({ fetchImpl });
+
+    await api.startSession({
+      childId: "22222222-2222-4222-8222-222222222222",
+      deckId: "33333333-3333-4333-8333-333333333333",
+      microphoneEnabled: true,
+      supportsPictureVocabulary: false,
+      supportsPictureRecognition: false,
+    } as never);
+
+    expect(fetchImpl).toHaveBeenCalledWith("/api/v1/kid/sessions", expect.objectContaining({
+      method: "POST",
+      body: expect.any(String),
+      headers: { "content-type": "application/json" },
+    }));
+  });
 });

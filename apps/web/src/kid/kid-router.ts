@@ -2,11 +2,7 @@ import {
   AppError,
   authorizeDisclosure,
   completePresentation,
-  endSession,
-  disableSessionMicrophone,
-  nextTask,
   recordEvent,
-  startSession,
   submitAttempt,
   submitSpeechAttempt,
   MULTIPART_OVERHEAD_BYTES,
@@ -16,42 +12,17 @@ import {
 import {
   AttemptInputSchema,
   EventInputSchema,
-  SessionInputSchema,
-  SessionEndInputSchema,
-  SESSION_ACTIVITY_REPORT_VERSION,
-  SESSION_ACTIVITY_REPORT_MAX_BYTES,
   UuidSchema,
 } from "@learning/contracts";
 import { readJson } from "@/http/errors";
 import { assertSameOrigin } from "@/http/security";
 import { readCappedFormData } from "./multipart";
 
-/** Odczyt JSON z limitem bajtów — raport aktywności ma twardy sufit rozmiaru. */
-async function readCappedJson(request: Request, capBytes: number): Promise<unknown> {
-  // Content-Length ponad limit odrzucamy od razu, bez buforowania żądania.
-  const declaredLength = Number(request.headers.get("content-length") ?? "");
-  if (Number.isFinite(declaredLength) && declaredLength > capBytes) {
-    throw new AppError("validation", { message: "payload exceeds the activity report size limit" });
-  }
-  const text = await request.text();
-  // Brak ciała = koniec sesji bez raportu; nadmiarowy lub zepsuty JSON
-  // dostaje jawny błąd walidacji, a nie ciche porzucenie raportu.
-  if (text.trim() === "") return null;
-  // Limit deklarowany w bajtach — porównujemy bajty UTF-8, nie jednostki UTF-16.
-  if (Buffer.byteLength(text, "utf8") > capBytes) {
-    throw new AppError("validation", { message: "payload exceeds the activity report size limit" });
-  }
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    throw new AppError("validation");
-  }
-}
-
 /**
  * Router Kid API pod /api/v1/kid/* (ścieżki wg architecture.md §12) — część
- * legacy obsługująca mutacje (POST). Odczyty (GET) i odsłuch feedbacku serwuje
- * oRPC (`../orpc/kid-router`) z priorytetem w catch-all. Model zaufany bez
+ * legacy obsługująca mutacje zadań (POST /tasks/*). Odczyty (GET), odsłuch
+ * feedbacku i mutacje sesji (POST /sessions/*) serwuje oRPC
+ * (`../orpc/kid-router`) z priorytetem w catch-all. Model zaufany bez
  * autoryzacji dziecka (arch §13); mutacje sprawdzają Origin jak w API rodzica.
  * Odpowiedzi nigdy nie zawierają klucza odpowiedzi ani technicznych score'ów —
  * o tym decydują DTO w @learning/contracts.
@@ -66,34 +37,6 @@ export async function handleKidApi(
   }
   const [first, second, ...thirdParts] = segments;
   const third = thirdParts.join("/");
-
-  if (first === "sessions") {
-    if (request.method === "POST" && second === undefined) {
-      const input = SessionInputSchema.parse(await readJson(request));
-      return Response.json(await startSession(services, input));
-    }
-    if (request.method === "POST" && second !== undefined && third === "next") {
-      const task = await nextTask(services, second);
-      return task === null ? new Response(null, { status: 204 }) : Response.json(task);
-    }
-    if (request.method === "POST" && second !== undefined && third === "end") {
-      // Opcjonalny raport aktywności: jeden, ograniczony rozmiarem, w znanej
-      // wersji formatu. Nieznana wersja wymaga odświeżenia klienta.
-      const body = await readCappedJson(request, SESSION_ACTIVITY_REPORT_MAX_BYTES);
-      const end = SessionEndInputSchema.safeParse(body ?? {});
-      if (!end.success) {
-        const version = (body as { activityReport?: { version?: unknown } } | null)?.activityReport?.version;
-        if (version !== undefined && version !== SESSION_ACTIVITY_REPORT_VERSION) {
-          throw new AppError("validation", { details: { reason: "activity_report_update_required" } });
-        }
-        throw new AppError("validation");
-      }
-      return Response.json(await endSession(services, second, end.data.activityReport));
-    }
-    if (request.method === "POST" && second !== undefined && third === "disable-microphone") {
-      return Response.json(await disableSessionMicrophone(services, second));
-    }
-  }
 
   if (first === "tasks" && second !== undefined) {
     if (request.method === "POST" && third === "events") {
