@@ -1,5 +1,6 @@
 import { AppError, type Services } from "@learning/server";
 import { os, ORPCError, type Middleware } from "@orpc/server";
+import { mapTriggerError } from "../http/errors";
 import { assertSameOrigin, requireParentSession } from "../http/security";
 
 /**
@@ -60,9 +61,21 @@ type PassthroughMiddleware = Middleware<
   Record<never, never>
 >;
 
+/** Konwersja AppError → ORPCError; `cause` można podmienić na błąd pierwotny. */
+function fromAppError(error: AppError, cause: unknown = error): ORPCError<string, unknown> {
+  return new ORPCError(error.code.toUpperCase(), {
+    message: error.message,
+    ...(error.details === undefined ? {} : { data: error.details }),
+    cause,
+  });
+}
+
 /**
  * Konwertuje wyrzucony `AppError` na `ORPCError` o kodzie `AppError.code`
  * wielkimi literami; `message`, `details` (jako `data`) i `cause` zachowane.
+ * Port klasyfikacji z `errorResponse` (http/errors.ts): surowy błąd triggera
+ * Postgresa (publikacja/edycja szkiców) mapuje na `IMMUTABLE`/`CONFLICT` (409),
+ * a nie `INTERNAL_SERVER_ERROR`/500 — parzystość kodu i statusu z granicą REST.
  * Kopertę HTTP `{code, message, retryable, requestId, details?}` buduje
  * autorytatywnie encoder w `../orpc/handler` — ten middleware tylko typuje błąd.
  */
@@ -71,11 +84,11 @@ export const appErrorMiddleware: PassthroughMiddleware = async ({ next }) => {
     return await next();
   } catch (error) {
     if (error instanceof AppError) {
-      throw new ORPCError(error.code.toUpperCase(), {
-        message: error.message,
-        ...(error.details === undefined ? {} : { data: error.details }),
-        cause: error,
-      });
+      throw fromAppError(error);
+    }
+    const mapped = mapTriggerError(error);
+    if (mapped) {
+      throw fromAppError(mapped, error);
     }
     throw error;
   }

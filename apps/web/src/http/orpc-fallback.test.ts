@@ -20,7 +20,35 @@ const boom = baseOs
     throw new AppError("not_found", { details: { segment: "decks" } });
   });
 
-const handler = createOpenApiHandler({ boom });
+/** Surowe błędy triggerów Postgresa — klasyfikacja jak w granicy withApi. */
+const sealed = baseOs
+  .meta(openapi({ method: "GET", path: "/sealed" }))
+  .use(appErrorMiddleware)
+  .handler(() => {
+    throw new Error("ERROR: Event must be sealed before completing the session");
+  });
+
+const reopened = baseOs
+  .meta(openapi({ method: "GET", path: "/reopened" }))
+  .use(appErrorMiddleware)
+  .handler(() => {
+    throw new Error("ERROR: Terminal task cannot be reopened");
+  });
+
+/** Procedury BEZ appErrorMiddleware — defensywna koperta encodera. */
+const unwrapped = baseOs
+  .meta(openapi({ method: "GET", path: "/unwrapped" }))
+  .handler(() => {
+    throw new AppError("unauthorized");
+  });
+
+const crashing = baseOs
+  .meta(openapi({ method: "GET", path: "/crashing" }))
+  .handler(() => {
+    throw new Error("connection reset by peer");
+  });
+
+const handler = createOpenApiHandler({ boom, sealed, reopened, unwrapped, crashing });
 
 const legacy = vi.fn(
   async (_request: Request, _services: Services, segments: string[]): Promise<Response> => {
@@ -93,6 +121,56 @@ describe("withORpcFallback", () => {
       ...legacyBody,
       requestId: "normalized",
     });
+  });
+
+  it("maps raw DB trigger errors to immutable/409 like the legacy withApi boundary", async () => {
+    const response = await fallback(request("/sealed"), services, ["sealed"]);
+
+    expect(response.status).toBe(409);
+    const body = ApiErrorSchema.parse(await response.json());
+    expect(body.code).toBe("immutable");
+    expect(body.message).toBe("Te dane są już zakończone i nie mogą być zmienione.");
+    expect(body.retryable).toBe(false);
+
+    const legacyEnvelope = (await (
+      await errorResponse(new Error("ERROR: Event must be sealed before completing the session"))
+    ).json()) as ApiError;
+    expect({ ...body, requestId: "normalized" }).toEqual({
+      ...legacyEnvelope,
+      requestId: "normalized",
+    });
+  });
+
+  it("maps terminal-task trigger errors to conflict/409", async () => {
+    const response = await fallback(request("/reopened"), services, ["reopened"]);
+
+    expect(response.status).toBe(409);
+    const body = ApiErrorSchema.parse(await response.json());
+    expect(body.code).toBe("conflict");
+    expect(body.message).toBe("Ta operacja nie jest już możliwa. Odśwież i spróbuj ponownie.");
+    expect(body.retryable).toBe(false);
+  });
+
+  it("recovers the envelope code from an AppError cause even without appErrorMiddleware", async () => {
+    const response = await fallback(request("/unwrapped"), services, ["unwrapped"]);
+
+    // Status zostaje 500 (oRPC opakowało AppError jako INTERNAL_SERVER_ERROR,
+    // a encoder nie zmienia statusu) — ale kod koperty nie może być fałszywy.
+    expect(response.status).toBe(500);
+    const body = ApiErrorSchema.parse(await response.json());
+    expect(body.code).toBe("unauthorized");
+    expect(body.message).toBe("Sesja wygasła. Zaloguj się ponownie.");
+    expect(body.retryable).toBe(false);
+  });
+
+  it("maps unknown crashes to the internal envelope (retryable, like withApi)", async () => {
+    const response = await fallback(request("/crashing"), services, ["crashing"]);
+
+    expect(response.status).toBe(500);
+    const body = ApiErrorSchema.parse(await response.json());
+    expect(body.code).toBe("internal");
+    expect(body.message).toBe("Coś nie zadziałało. Spróbuj ponownie.");
+    expect(body.retryable).toBe(true);
   });
 
   it("keeps the full client round trip working through the fallback (OpenAPILink)", async () => {

@@ -74,6 +74,34 @@ describe("appErrorMiddleware", () => {
 
     await expect(rejection(call(crashing, undefined, { context: context() }))).resolves.toBe(failure);
   });
+
+  it("classifies raw DB trigger errors as IMMUTABLE with the original cause", async () => {
+    const trigger = new Error("ERROR: snapshot is immutable for deck 123");
+    const sealed = baseOs.use(appErrorMiddleware).handler(() => {
+      throw trigger;
+    });
+
+    const error = (await rejection(
+      call(sealed, undefined, { context: context() }),
+    )) as ORPCError<string, unknown>;
+
+    expect(error).toBeInstanceOf(ORPCError);
+    expect(error.code).toBe("IMMUTABLE");
+    expect(error.cause).toBe(trigger);
+  });
+
+  it("classifies terminal-task trigger errors as CONFLICT", async () => {
+    const reopened = baseOs.use(appErrorMiddleware).handler(() => {
+      throw new Error("Terminal task cannot be reopened");
+    });
+
+    const error = (await rejection(
+      call(reopened, undefined, { context: context() }),
+    )) as ORPCError<string, unknown>;
+
+    expect(error).toBeInstanceOf(ORPCError);
+    expect(error.code).toBe("CONFLICT");
+  });
 });
 
 describe("parentSessionMiddleware", () => {

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { messages, type ApiError } from "@learning/contracts";
-import type { AppErrorCode } from "@learning/server";
+import { AppError, type AppErrorCode } from "@learning/server";
 import { OpenAPIHandler } from "@orpc/openapi/fetch";
 import type { AnyORPCError, Context, Router } from "@orpc/server";
 
@@ -65,18 +65,33 @@ function toApiError(code: AppErrorCode, requestId: string, details?: unknown): A
 }
 
 /**
- * Kod `ORPCError` → kod aplikacji z koperty. Kody aplikacji (wielkie litery
- * po konwersji w `appErrorMiddleware`) wracają do małych liter i przenoszą
- * `data` jako `details`. Kody wewnętrzne oRPC mapują jak ich odpowiedniki
- * w `withApi` (ZodError → `validation`, limit body → `validation`, niewidziany
- * kod → `validation`/400 — spójnie z fallbackiem statusu handlera).
+ * Kod `ORPCError` → kod aplikacji z koperty + `details`. Kody aplikacji
+ * (wielkie litery po konwersji w `appErrorMiddleware`) wracają do małych liter
+ * i przenoszą `data` jako `details`. Defensywnie (M1): `AppError` w `cause`
+ * oznacza procedurę bez `appErrorMiddleware` lub odwróconą kolejność middleware —
+ * kod koperty bierzemy wtedy z przyczyny, żeby kompozycja nie fałszowała kodów
+ * (status pozostaje wg kodu zewnętrznego — encoder nie zmienia statusu).
+ * Kody wewnętrzne oRPC mapują jak ich odpowiedniki w `withApi`: walidacja
+ * inputu (`BAD_REQUEST`) i limit body (`PAYLOAD_TOO_LARGE`) → `validation`,
+ * `INTERNAL_SERVER_ERROR` (oRPC owija nim też nieznane awarie) → `internal`.
+ * Niewidziane kody → `validation`, spójnie z fallbackiem statusu 400 handlera.
  */
-function appCodeFrom(upperCode: string): { code: AppErrorCode; carryDetails: boolean } {
-  const lower = upperCode.toLowerCase();
-  if (APP_CODES.has(lower)) {
-    return { code: lower as AppErrorCode, carryDetails: true };
+function classifyError(error: AnyORPCError): { code: AppErrorCode; details?: unknown } {
+  const upperCode = String(error.code);
+  const lowerCode = upperCode.toLowerCase();
+  if (APP_CODES.has(lowerCode)) {
+    return { code: lowerCode as AppErrorCode, details: error.data };
   }
-  return { code: "validation", carryDetails: false };
+  if (error.cause instanceof AppError) {
+    return { code: error.cause.code, details: error.cause.details };
+  }
+  if (upperCode === "BAD_REQUEST" || upperCode === "PAYLOAD_TOO_LARGE") {
+    return { code: "validation" };
+  }
+  if (upperCode === "INTERNAL_SERVER_ERROR") {
+    return { code: "internal" };
+  }
+  return { code: "validation" };
 }
 
 /**
@@ -86,12 +101,11 @@ function appCodeFrom(upperCode: string): { code: AppErrorCode; carryDetails: boo
  * jak w `errorResponse` z `../http/errors.ts`.
  */
 export const appErrorEncoder = (error: AnyORPCError): unknown => {
-  const upperCode = String(error.code);
-  const { code, carryDetails } = appCodeFrom(upperCode);
+  const { code, details } = classifyError(error);
   const requestId = randomUUID();
   // Log jak w errorResponse: kod, requestId, komunikat i przyczyna do korelacji.
   console.error("[api]", code, requestId, error.message, error.cause ?? "");
-  return toApiError(code, requestId, carryDetails ? error.data : undefined);
+  return toApiError(code, requestId, details);
 };
 
 /**
