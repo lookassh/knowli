@@ -1,7 +1,11 @@
 import { ApiErrorSchema, SESSION_ACTIVITY_REPORT_MAX_BYTES } from "@learning/contracts";
 import {
   AppError,
+  MAX_AUDIO_BYTES,
+  MULTIPART_OVERHEAD_BYTES,
+  authorizeDisclosure,
   authorizeFeedbackAudio,
+  completePresentation,
   disableSessionMicrophone,
   endSession,
   listKidDecks,
@@ -13,7 +17,10 @@ import {
   readMockTestSummary,
   readSessionActivityResult,
   readUiAudio,
+  recordEvent,
   startSession,
+  submitAttempt,
+  submitSpeechAttempt,
   type Services,
 } from "@learning/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -37,6 +44,11 @@ vi.mock("@learning/server", async (importActual) => {
     nextTask: vi.fn(),
     endSession: vi.fn(),
     disableSessionMicrophone: vi.fn(),
+    recordEvent: vi.fn(),
+    authorizeDisclosure: vi.fn(),
+    completePresentation: vi.fn(),
+    submitAttempt: vi.fn(),
+    submitSpeechAttempt: vi.fn(),
   };
 });
 
@@ -46,6 +58,9 @@ const handler = createOpenApiHandler(kidRouter);
 const childId = "11111111-1111-4111-8111-111111111111";
 const sessionId = "22222222-2222-4222-8222-222222222222";
 const attemptId = "33333333-3333-4333-8333-333333333333";
+const taskId = "55555555-5555-4555-8555-555555555555";
+const clientEventId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const clientCommandId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
 const profile = {
   childId,
@@ -151,6 +166,51 @@ const validReport = {
   compacted: false,
   tasks: [],
 };
+
+const disclosureDto = {
+  taskId,
+  stepId: "step-1",
+  kind: "hint" as const,
+  reveal: { target: "cat" },
+};
+
+const completionDto = {
+  taskId,
+  state: "completed" as const,
+  completedAt: "2026-10-23T10:00:02.000Z",
+};
+
+/** Próba zakończona (200) i w trakcie analizy (202) — jedno DTO, dwa stany. */
+const completedAttemptDto = {
+  attemptId,
+  taskId,
+  state: "completed" as const,
+  modality: "audio" as const,
+  feedback: null,
+  taskState: "completed" as const,
+  stepId: "step-2",
+  receivedAt: "2026-10-23T10:00:00.000Z",
+  completedAt: "2026-10-23T10:00:01.000Z",
+};
+const processingAttemptDto = {
+  ...completedAttemptDto,
+  state: "processing" as const,
+  taskState: "issued" as const,
+  completedAt: null,
+};
+
+/** Multipart z nagraniem dziecka (bajty poza JSON-em, arch §11–12). */
+function recordingForm(
+  bytes: Uint8Array<ArrayBuffer>,
+  options?: { withClientAttemptId?: boolean; withAudio?: boolean },
+): FormData {
+  const form = new FormData();
+  if (options?.withClientAttemptId !== false) form.append("clientAttemptId", attemptId);
+  if (options?.withAudio !== false) {
+    form.append("audio", new File([bytes], "rec.webm", { type: "audio/webm" }));
+  }
+  return form;
+}
 
 /**
  * Poprawny schematowo raport, którego kompaktowy JSON przekracza
@@ -514,5 +574,215 @@ describe("kid oRPC router — sesje (POST)", () => {
     expect(nextTask).not.toHaveBeenCalled();
     expect(endSession).not.toHaveBeenCalled();
     expect(disableSessionMicrophone).not.toHaveBeenCalled();
+  });
+});
+
+describe("kid oRPC router — zadania (POST)", () => {
+  it("events zapisuje zdarzenie i zwraca 204 z pustym ciałem", async () => {
+    vi.mocked(recordEvent).mockResolvedValueOnce(undefined);
+
+    const input = { clientEventId, kind: "audio_played" as const, stepId: "step-1" };
+    const response = await call(`/tasks/${taskId}/events`, {
+      method: "POST",
+      body: JSON.stringify(input),
+      headers: { "content-type": "application/json" },
+    });
+
+    expect(response.status).toBe(204);
+    expect(await response.text()).toBe("");
+    expect(recordEvent).toHaveBeenCalledWith(services, { taskId, ...input });
+  });
+
+  it("events z niepoprawnym kind pada na walidacji bez wywołania recordEvent", async () => {
+    const response = await call(`/tasks/${taskId}/events`, {
+      method: "POST",
+      body: JSON.stringify({ clientEventId, kind: "mystery" }),
+      headers: { "content-type": "application/json" },
+    });
+
+    expect(response.status).toBe(400);
+    const body = ApiErrorSchema.parse(await response.json());
+    expect(body.code).toBe("validation");
+    expect(recordEvent).not.toHaveBeenCalled();
+  });
+
+  it("disclosures z kind hint autoryzuje ujawnienie i zwraca DTO", async () => {
+    vi.mocked(authorizeDisclosure).mockResolvedValueOnce(disclosureDto);
+
+    const response = await call(`/tasks/${taskId}/disclosures`, {
+      method: "POST",
+      body: JSON.stringify({ kind: "hint" }),
+      headers: { "content-type": "application/json" },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(disclosureDto);
+    expect(authorizeDisclosure).toHaveBeenCalledWith(services, { taskId, kind: "hint" });
+  });
+
+  it("disclosures z kind spoza enumu (video) daje validation bez ujawnienia", async () => {
+    const response = await call(`/tasks/${taskId}/disclosures`, {
+      method: "POST",
+      body: JSON.stringify({ kind: "video" }),
+      headers: { "content-type": "application/json" },
+    });
+
+    expect(response.status).toBe(400);
+    const body = ApiErrorSchema.parse(await response.json());
+    expect(body.code).toBe("validation");
+    expect(authorizeDisclosure).not.toHaveBeenCalled();
+  });
+
+  it("complete-presentation bez ciała kończy prezentację (clientCommandId opcjonalne)", async () => {
+    vi.mocked(completePresentation).mockResolvedValueOnce(completionDto as never);
+
+    const response = await call(`/tasks/${taskId}/complete-presentation`, { method: "POST" });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(completionDto);
+    expect(completePresentation).toHaveBeenCalledWith(services, { taskId });
+  });
+
+  it("complete-presentation z clientCommandId przekazuje klucz idempotencji", async () => {
+    vi.mocked(completePresentation).mockResolvedValueOnce(completionDto as never);
+
+    const response = await call(`/tasks/${taskId}/complete-presentation`, {
+      method: "POST",
+      body: JSON.stringify({ clientCommandId }),
+      headers: { "content-type": "application/json" },
+    });
+
+    expect(response.status).toBe(200);
+    expect(completePresentation).toHaveBeenCalledWith(services, { taskId, clientCommandId });
+  });
+
+  it("attempts JSON: completed → 200, processing → 202 (korelacja statusu z ciałem)", async () => {
+    vi.mocked(submitAttempt)
+      .mockResolvedValueOnce({ ...completedAttemptDto, modality: "choice" } as never)
+      .mockResolvedValueOnce({ ...processingAttemptDto, modality: "choice" } as never);
+    const input = { clientAttemptId: attemptId, modality: "choice" as const, optionId: attemptId };
+
+    const completed = await call(`/tasks/${taskId}/attempts`, {
+      method: "POST",
+      body: JSON.stringify(input),
+      headers: { "content-type": "application/json" },
+    });
+    const processing = await call(`/tasks/${taskId}/attempts`, {
+      method: "POST",
+      body: JSON.stringify(input),
+      headers: { "content-type": "application/json" },
+    });
+
+    expect(completed.status).toBe(200);
+    await expect(completed.json()).resolves.toEqual({ ...completedAttemptDto, modality: "choice" });
+    expect(processing.status).toBe(202);
+    await expect(processing.json()).resolves.toEqual({ ...processingAttemptDto, modality: "choice" });
+    expect(submitAttempt).toHaveBeenCalledWith(services, { taskId, ...input });
+  });
+
+  it("attempts JSON: nieznana modality daje validation bez próby", async () => {
+    const response = await call(`/tasks/${taskId}/attempts`, {
+      method: "POST",
+      body: JSON.stringify({ clientAttemptId: attemptId, modality: "shout" }),
+      headers: { "content-type": "application/json" },
+    });
+
+    expect(response.status).toBe(400);
+    const body = ApiErrorSchema.parse(await response.json());
+    expect(body.code).toBe("validation");
+    expect(submitAttempt).not.toHaveBeenCalled();
+  });
+
+  it("attempts multipart: completed → 200, processing → 202; bajty/mime/locale/signal do use case'a", async () => {
+    vi.mocked(submitSpeechAttempt)
+      .mockResolvedValueOnce(completedAttemptDto as never)
+      .mockResolvedValueOnce(processingAttemptDto as never);
+    const bytes = new Uint8Array([1, 2, 3]);
+
+    const completed = await call(`/tasks/${taskId}/attempts`, {
+      method: "POST",
+      body: recordingForm(bytes),
+    });
+    const processing = await call(`/tasks/${taskId}/attempts`, {
+      method: "POST",
+      body: recordingForm(bytes),
+    });
+
+    expect(completed.status).toBe(200);
+    await expect(completed.json()).resolves.toEqual(completedAttemptDto);
+    expect(processing.status).toBe(202);
+    await expect(processing.json()).resolves.toEqual(processingAttemptDto);
+    expect(submitSpeechAttempt).toHaveBeenCalledWith(
+      services,
+      { taskId, clientAttemptId: attemptId },
+      { bytes, mimeType: "audio/webm", locale: "en-GB" },
+      expect.any(AbortSignal),
+    );
+  });
+
+  it("attempts multipart z content-length ponad limit pada przed submitSpeechAttempt (bez przetwarzania nagrania)", async () => {
+    const response = await call(`/tasks/${taskId}/attempts`, {
+      method: "POST",
+      body: recordingForm(new Uint8Array([1, 2, 3])),
+      headers: {
+        // jawny nagłówek jak w prawdziwym żądaniu HTTP z buforem (undici
+        // nie wystawia content-length dla ciała FormData)
+        "content-length": String(MAX_AUDIO_BYTES + MULTIPART_OVERHEAD_BYTES + 1),
+      },
+    });
+
+    expect(response.status).toBe(400);
+    const body = ApiErrorSchema.parse(await response.json());
+    expect(body.code).toBe("validation");
+    expect(submitSpeechAttempt).not.toHaveBeenCalled();
+  });
+
+  it("attempts multipart bez pola audio daje validation z komunikatem jak w legacy", async () => {
+    const response = await call(`/tasks/${taskId}/attempts`, {
+      method: "POST",
+      body: recordingForm(new Uint8Array([1, 2, 3]), { withAudio: false }),
+    });
+
+    expect(response.status).toBe(400);
+    const body = ApiErrorSchema.parse(await response.json());
+    expect(body.code).toBe("validation");
+    expect(submitSpeechAttempt).not.toHaveBeenCalled();
+  });
+
+  it("attempts multipart bez clientAttemptId daje validation", async () => {
+    const response = await call(`/tasks/${taskId}/attempts`, {
+      method: "POST",
+      body: recordingForm(new Uint8Array([1, 2, 3]), { withClientAttemptId: false }),
+    });
+
+    expect(response.status).toBe(400);
+    const body = ApiErrorSchema.parse(await response.json());
+    expect(body.code).toBe("validation");
+    expect(submitSpeechAttempt).not.toHaveBeenCalled();
+  });
+
+  it("mutacje zadań z obcym Origin kończą się forbidden/403 bez wywołania przypadków użycia", async () => {
+    const evil = { origin: "http://evil.example" };
+    const eventsResponse = await call(`/tasks/${taskId}/events`, {
+      method: "POST",
+      body: JSON.stringify({ clientEventId, kind: "display_confirmed" }),
+      headers: { "content-type": "application/json", ...evil },
+    });
+    const attemptsResponse = await call(`/tasks/${taskId}/attempts`, {
+      method: "POST",
+      body: recordingForm(new Uint8Array([1, 2, 3])),
+      headers: evil,
+    });
+
+    for (const [label, response] of [
+      ["events", eventsResponse],
+      ["attempts", attemptsResponse],
+    ] as const) {
+      expect(response.status, label).toBe(403);
+      const body = ApiErrorSchema.parse(await response.json());
+      expect(body.code, label).toBe("forbidden");
+    }
+    expect(recordEvent).not.toHaveBeenCalled();
+    expect(submitSpeechAttempt).not.toHaveBeenCalled();
   });
 });

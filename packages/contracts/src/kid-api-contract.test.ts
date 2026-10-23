@@ -269,7 +269,10 @@ describe("zadania", () => {
     const meta = metaOf(kidApiContract.tasks.attempts);
     expect(meta.method).toBe("POST");
     expect(meta.path).toBe("/tasks/{taskId}/attempts");
-    expect(meta.requestBodyHint).toBe("form-data");
+    // Celowo bez requestBodyHint: w beta.45 hint trafia do parsera ciała
+    // i wymuszałby formData() także dla JSON (TypeError → 400). Formę rozstrzyga
+    // Content-Type żądania; multipart w spece wynika z detekcji File w unii.
+    expect(meta.requestBodyHint).toBeUndefined();
     expect(meta.outputStructure).toBe("detailed");
     const input = inputOf(kidApiContract.tasks.attempts);
     // Gałąź JSON — AttemptInput wprost z ciała.

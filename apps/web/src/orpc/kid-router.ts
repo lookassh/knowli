@@ -6,7 +6,11 @@ import {
 } from "@learning/contracts";
 import {
   AppError,
+  MAX_AUDIO_BYTES,
+  MULTIPART_OVERHEAD_BYTES,
+  authorizeDisclosure,
   authorizeFeedbackAudio,
+  completePresentation,
   disableSessionMicrophone,
   endSession,
   listKidDecks,
@@ -18,7 +22,10 @@ import {
   readMockTestSummary,
   readSessionActivityResult,
   readUiAudio,
+  recordEvent,
   startSession,
+  submitAttempt,
+  submitSpeechAttempt,
 } from "@learning/server";
 import { implement, type Router } from "@orpc/server";
 import { appErrorMiddleware, sameOriginMiddleware, type ORpcContext, type PassthroughMiddleware } from "./base";
@@ -27,14 +34,14 @@ import { assertDeclaredBodyCap, compactJsonBytes, payloadTooLargeError } from ".
 /**
  * Router oRPC Kid API montowany w catch-all `/api/v1/kid/[...path]` z priorytetem
  * nad legacy `handleKidApi` (wzorzec strangler, migracja oRPC v2). Ten plik
- * implementuje odczyty (GET), odsłuch feedbacku i mutacje sesji (POST:
- * create/next/end/disable-microphone); brak dopasowania (POST zadań) spada do
- * routera legacy, dopóki kolejne zadania migracji nie przejmą reszty
- * kontraktu `kidApiContract`.
+ * implementuje cały kontrakt `kidApiContract`: odczyty (GET), mutacje sesji
+ * (POST /sessions/*) i mutacje zadań (POST /tasks/*: events, disclosures,
+ * complete-presentation, attempts z multipartem nagrań dziecka). Legacy router
+ * to już tylko fallback `not_found`.
  *
  * Kompozycja wg spike'u v2: `implement()` nie przyjmuje buildera — middlewares
- * dokleja się na implementerze; implementuje się tylko zaimplementowane
- * poddrzewa kontraktu, więc `os.router()` wymaga kompletu wybranych gałęzi.
+ * dokleja się na implementerze; implementuje się tylko zaimplementowane poddrzewa
+ * kontraktu, więc `os.router()` wymaga kompletu wybranych gałęzi.
  */
 
 /** Odpowiedź 200 z wymuszonym brakiem cache (regresja R04). */
@@ -61,6 +68,12 @@ const kidOs = implement({
   attempts: {
     get: kidApiContract.attempts.get,
     feedbackAudio: kidApiContract.attempts.feedbackAudio,
+  },
+  tasks: {
+    events: kidApiContract.tasks.events,
+    disclosures: kidApiContract.tasks.disclosures,
+    completePresentation: kidApiContract.tasks.completePresentation,
+    attempts: kidApiContract.tasks.attempts,
   },
 })
   .$context<ORpcContext>()
@@ -178,10 +191,75 @@ const disableMicrophone = kidOs.sessions.disableMicrophone
     disableSessionMicrophone(context.services, input.sessionId),
   );
 
+/**
+ * Pre-check deklarowanego rozmiaru multipartu z nagraniem dziecka (arch §11).
+ * Limit = bajty nagrania + zapas na pola formularza i boundary — identycznie
+ * jak strumień legacy `readCappedFormData`. Kodek oRPC parsuje ciało przed
+ * łańcuchem procedury, więc ten check nie chroni przed buforowaniem przez
+ * kodek — chroni przed PRZETWARZANIEM: nadmiarowe nagranie nigdy nie trafia
+ * do `submitSpeechAttempt`. Resztkowe ryzyko (strumień bez content-length)
+ * pochłania kodek przed tym guardem; twardy limit bajtów nagrania egzekwuje
+ * nadal `normalizeAudioInput` wewnątrz przypadku użycia.
+ */
+const audioCapGuard: PassthroughMiddleware = async ({ context, next }) => {
+  assertDeclaredBodyCap(
+    context.headers,
+    MAX_AUDIO_BYTES + MULTIPART_OVERHEAD_BYTES,
+    "payload exceeds audio limit",
+  );
+  return next();
+};
+
+const events = kidOs.tasks.events
+  .use(sameOriginMiddleware)
+  // 204 bez ciała: sukces deklaruje successStatus w kontrakcie, output void.
+  .handler(async ({ context, input }) => {
+    await recordEvent(context.services, input);
+  });
+
+const disclosures = kidOs.tasks.disclosures
+  .use(sameOriginMiddleware)
+  .handler(async ({ context, input }) => authorizeDisclosure(context.services, input));
+
+const completePresentationProcedure = kidOs.tasks.completePresentation
+  .use(sameOriginMiddleware)
+  .handler(async ({ context, input }) => completePresentation(context.services, input));
+
+/**
+ * Odpowiedź na zadanie: JSON (choice/text/…) albo multipart z nagraniem.
+ * Forma rozstrzygnięta już przez Content-Type przy parsowaniu kodeka —
+ * po walidacji unii pozostaje tylko rozróżnienie pola `audio`. Status musi
+ * odpowiadać stanowi próby: 202 dopóki trwa analiza mowy, 200 po zakończeniu
+ * (regresja R05). `signal` pochodzi z `request.signal` żądania (wtyczka
+ * ~signal-sync robi sygnał pochodny, ale propagacja abortu działa) i pozwala
+ * przerwać płatną analizę STT po zerwaniu połączenia.
+ */
+const attempts = kidOs.tasks.attempts
+  .use(sameOriginMiddleware)
+  .use(audioCapGuard)
+  .handler(async ({ context, input, signal }) => {
+    if ("audio" in input) {
+      const attempt = await submitSpeechAttempt(
+        context.services,
+        { taskId: input.taskId, clientAttemptId: input.clientAttemptId },
+        {
+          bytes: new Uint8Array(await input.audio.arrayBuffer()),
+          mimeType: input.audio.type || "application/octet-stream",
+          locale: "en-GB",
+        },
+        signal,
+      );
+      return { status: attempt.state === "processing" ? 202 as const : 200 as const, body: attempt };
+    }
+    const attempt = await submitAttempt(context.services, input);
+    return { status: attempt.state === "processing" ? 202 as const : 200 as const, body: attempt };
+  });
+
 export const kidRouter: Router<ORpcContext> = kidOs.router({
   uiAudio,
   profiles,
   decks,
   sessions: { create: createSession, next, end, disableMicrophone, activityResult, mockTestSummary },
   attempts: { get: getAttempt, feedbackAudio },
+  tasks: { events, disclosures, completePresentation: completePresentationProcedure, attempts },
 });

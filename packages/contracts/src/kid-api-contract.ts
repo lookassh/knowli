@@ -195,8 +195,12 @@ export const kidApiContract = {
 
     attempts: oc
       // Jedna procedura, dwie formy wejścia: JSON (AttemptInput) albo multipart
-      // z nagraniem (spike v2 potwierdził form-data + File); faktyczne parsowanie
-      // rozstrzyga Content-Type żądania — hint steruje tylko spece OpenAPI.
+      // z nagraniem (spike v2 potwierdził form-data + File). Parsowanie ciała
+      // rozstrzyga Content-Type żądania — `requestBodyHint` z meta NIE jest
+      // neutralnym hintem speki: w beta.45 kodek przekazuje go do parsera
+      // żądania i wymusiłby formData() także dla JSON (udowodnione testem:
+      // TypeError → 400). Multipart w spece OpenAPI wynika z detekcji pola
+      // File w schemacie unii, więc hint jest zbędny po obu stronach.
       .input(z.union([AttemptInputSchema, SpeechAttemptMultipartInputSchema]))
       // Próba audio wraca 202 dopóki trwa analiza; literały statusów trafiają
       // do specyfikacji (regresja R05).
@@ -208,7 +212,6 @@ export const kidApiContract = {
       .meta(openapi({
         method: "POST",
         path: "/tasks/{taskId}/attempts",
-        requestBodyHint: "form-data",
         outputStructure: "detailed",
       })),
   },

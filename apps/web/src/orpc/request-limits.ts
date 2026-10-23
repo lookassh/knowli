@@ -2,15 +2,19 @@ import { AppError } from "@learning/server";
 
 /**
  * Limity rozmiaru ciał żądań dla ścieżki kid (oRPC + ewentualne ręczne
- * czytniki). Twarde sufity pilnują raportu aktywności sesji: pre-check
- * `content-length` (nagłówki z kontekstu oRPC) odrzuca nadmiarowy payload
- * bez buforowania, a czytnik `readCappedJson` — przeniesiony z legacy
- * `kid/kid-router.ts` — pilnuje limitu także po odczycie tekstu.
+ * czytniki). Twarde sufity pilnują raportu aktywności sesji (end) oraz nagrań
+ * dziecka z multipartu (attempts): pre-check `content-length` (nagłówki z
+ * kontekstu oRPC) odrzuca nadmiarowy payload bez wołania przypadku użycia,
+ * a czytnik `readCappedJson` pilnuje limitu także po odczycie tekstu.
  */
 
-/** Błąd limitu rozmiaru ciała — kod i komunikat 1:1 z legacy kid-routera. */
-export function payloadTooLargeError(): AppError {
-  return new AppError("validation", { message: "payload exceeds the activity report size limit" });
+/**
+ * Błąd limitu rozmiaru ciała — kod 1:1 z legacy kid-routera; komunikat (widoczny
+ * w logach, koperta na wire bierze tekst z katalogu messages) doprecyzowuje
+ * przekroczony limit: raport aktywności sesji albo nagranie dziecka.
+ */
+export function payloadTooLargeError(message: string = "payload exceeds the activity report size limit"): AppError {
+  return new AppError("validation", { message });
 }
 
 /**
@@ -18,11 +22,16 @@ export function payloadTooLargeError(): AppError {
  * Tani (same nagłówki) i zgodny z prawdziwymi klientami HTTP, które wysyłają
  * ten nagłówek dla każdego ciała z buforem. Brak/nieliczbowy nagłówek nie
  * odrzuca żądania — wtedy o rozmiarze decyduje dopiero odczyt ciała.
+ * `message` trafia wyłącznie do logów (komunikat 1:1 z legacy dla danego limitu).
  */
-export function assertDeclaredBodyCap(headers: Headers, capBytes: number): void {
+export function assertDeclaredBodyCap(
+  headers: Headers,
+  capBytes: number,
+  message: string = "payload exceeds the activity report size limit",
+): void {
   const declaredLength = Number(headers.get("content-length") ?? "");
   if (Number.isFinite(declaredLength) && declaredLength > capBytes) {
-    throw payloadTooLargeError();
+    throw payloadTooLargeError(message);
   }
 }
 

@@ -13,8 +13,9 @@ interface RouteContext {
 // per żądanie przez kontekst przekazywany w `withORpcFallback`.
 const kidORpcHandler = createOpenApiHandler(kidRouter);
 
-// Router oRPC ma priorytet (odczyty + feedback-audio); brak dopasowania
-// (sesje/zadania na POST) woła legacy `handleKidApi` z tymi samymi argumentami.
+// Router oRPC serwuje cały kontrakt kid API; dopasowana ścieżka nigdy nie
+// spada do legacy. Fallback `handleKidApi` zostaje tylko dla adresów spoza
+// kontraktu — woła `not_found` dla zewnętrznej granicy `withApi`.
 const dispatchORpc = withORpcFallback(kidORpcHandler, "/api/v1/kid", handleKidApi);
 
 const dispatch = withApi<RouteContext>(async (request, context) => {
