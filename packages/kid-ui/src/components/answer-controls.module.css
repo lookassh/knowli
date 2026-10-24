@@ -1,0 +1,130 @@
+.action {
+  min-height: 54px;
+  font-weight: 700;
+  font-size: 1rem;
+  line-height: 1.35;
+  white-space: normal;
+  transition: background-color 150ms, border-color 150ms;
+}
+
+.field {
+  width: 100%;
+}
+
+.input {
+  min-height: 54px;
+  background: #101a30;
+  border-color: #2c3d5e;
+  color: #f0f5ff;
+}
+
+.grid {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  list-style: none;
+}
+
+.item {
+  min-width: 0;
+}
+
+.option {
+  width: 100%;
+  min-width: 0;
+  min-height: 76px;
+  padding: 12px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid #2c3d5e;
+  border-radius: 20px;
+  background: #17223d;
+  color: #f0f5ff;
+  text-align: center;
+  touch-action: manipulation;
+  transition: background-color 150ms, border-color 150ms, transform 150ms;
+}
+
+.option:hover:not(:disabled) {
+  border-color: #8dd5ff;
+  background: #1b2a48;
+}
+
+.option:focus-visible {
+  outline: 2px solid #8dd5ff;
+  outline-offset: 3px;
+}
+
+.option:disabled {
+  cursor: default;
+}
+
+.option[data-outcome="pending"] {
+  border-color: #8dd5ff;
+  background: #203653;
+  box-shadow: 0 0 0 1px #8dd5ff;
+}
+
+.option[data-outcome="correct"] {
+  border-color: #79d3a0;
+  background: #183b32;
+}
+
+.option[data-outcome="wrong"] {
+  border-color: #ff8f91;
+  background: #492b38;
+}
+
+.label,
+.visualOnly,
+.content {
+  min-width: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.visualOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.content {
+  display: grid;
+  place-items: center;
+  width: 100%;
+}
+
+.outcome {
+  width: 26px;
+  height: 26px;
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #080d1c;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action,
+  .option {
+    transition: none;
+  }
+}
