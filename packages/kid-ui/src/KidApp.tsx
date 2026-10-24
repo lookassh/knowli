@@ -1,3 +1,5 @@
+"use client";
+
 import { type ReactNode } from "react";
 import { messages, type UiAudioKey } from "@learning/contracts";
 import type { KidApi } from "./api/KidApi";
@@ -12,6 +14,7 @@ import { useLearningSession } from "./session/useLearningSession";
 import type { LocalPreferences } from "./storage";
 import { KidPage } from "./layout/KidPage";
 import { GuidanceButton } from "./components/GuidanceButton";
+import { KidThemeProvider } from "./theme/KidThemeProvider";
 
 export interface ParentLinkConfig {
   label: string;
@@ -25,6 +28,35 @@ export interface ParentLinkConfig {
  * Capacitor podmieni wyłącznie te zależności.
  */
 export function KidApp({
+  api,
+  media,
+  storage,
+  initialChildId,
+  parentLink,
+  headerActions,
+}: {
+  api: KidApi;
+  media: PlatformMedia;
+  storage: LocalPreferences;
+  initialChildId?: string;
+  parentLink?: ParentLinkConfig;
+  headerActions?: ReactNode;
+}) {
+  return (
+    <KidThemeProvider>
+      <KidAppContent
+        api={api}
+        media={media}
+        storage={storage}
+        {...(initialChildId === undefined ? {} : { initialChildId })}
+        {...(parentLink === undefined ? {} : { parentLink })}
+        {...(headerActions === undefined ? {} : { headerActions })}
+      />
+    </KidThemeProvider>
+  );
+}
+
+function KidAppContent({
   api,
   media,
   storage,

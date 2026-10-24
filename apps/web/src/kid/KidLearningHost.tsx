@@ -9,6 +9,8 @@ import {
   KidApp,
 } from "@learning/kid-ui";
 import "@learning/kid-ui/styles.css";
+import "@learning/kid-ui/theme.css";
+import "../kid-fonts.css";
 
 /** Next.js host injects only route context, parent link and browser adapters into portable Kid UI. */
 export function KidLearningHost({
