@@ -2269,7 +2269,7 @@
   line-height: 1.4;
 }
 
-.kid-lesson-notice__word {
+.kid-ui .kid-lesson-notice__word {
   position: relative;
   min-height: 48px;
   padding: 6px calc(12px + 0.8em);
@@ -2282,7 +2282,7 @@
   cursor: pointer;
 }
 
-.kid-lesson-notice__word:active {
+.kid-ui .kid-lesson-notice__word:active {
   background: var(--kid-soft);
 }
 
@@ -2356,7 +2356,8 @@
   justify-content: center;
 }
 
-.kid-lesson-block {
+.kid-ui .kid-lesson-block {
+  min-width: 44px;
   min-height: 52px;
   padding: 8px 16px;
   font: inherit;
@@ -2369,16 +2370,16 @@
   cursor: pointer;
 }
 
-.kid-lesson-block:active {
+.kid-ui .kid-lesson-block:active {
   background: var(--kid-soft);
 }
 
-.kid-lesson-block--placed {
+.kid-ui .kid-lesson-block--placed {
   border-color: var(--kid-accent);
   background: var(--kid-surface);
 }
 
-.kid-lesson-block:focus-visible {
+.kid-ui .kid-lesson-block:focus-visible {
   outline: 3px solid var(--kid-accent);
   outline-offset: 3px;
 }

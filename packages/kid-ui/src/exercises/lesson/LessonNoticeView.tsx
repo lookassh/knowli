@@ -1,4 +1,5 @@
 import { messages } from "@learning/contracts";
+import { Text, UnstyledButton } from "@mantine/core";
 import { ExerciseFrame } from "../ExerciseFrame";
 import type { ExerciseProps } from "../types";
 
@@ -16,11 +17,11 @@ export function LessonNoticeView({ task, busy, optionOutcomes, result, resultAct
       content={(
         <div className="kid-lesson-notice" data-testid="kid-lesson-notice">
           {task.prompt.segments.map((sentence, sentenceIndex) => (
-            <p key={sentenceIndex} className="kid-lesson-notice__sentence">
+            <Text component="p" key={sentenceIndex} className="kid-lesson-notice__sentence">
               {sentence.map((segment) => {
                 const outcome = optionOutcomes.get(segment.id);
                 return (
-                  <button
+                  <UnstyledButton
                     key={segment.id}
                     type="button"
                     data-testid="kid-lesson-notice-word"
@@ -30,10 +31,10 @@ export function LessonNoticeView({ task, busy, optionOutcomes, result, resultAct
                     onClick={() => handlers.onAnswerChoice(segment.id)}
                   >
                     {segment.text}
-                  </button>
+                  </UnstyledButton>
                 );
               })}
-            </p>
+            </Text>
           ))}
         </div>
       )}

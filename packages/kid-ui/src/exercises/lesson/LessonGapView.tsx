@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import { Text } from "@mantine/core";
 import { messages } from "@learning/contracts";
 import { format } from "../../format";
 import { KidIcon } from "../../components/KidIcon";
+import { ActionButton } from "../../components/ActionButton";
+import { AnswerField } from "../../components/AnswerField";
 import { ExerciseFrame } from "../ExerciseFrame";
 import type { ExerciseProps } from "../types";
 import { splitGap } from "./gap";
@@ -41,11 +44,12 @@ export function LessonGapView({ task, busy, handlers }: ExerciseProps) {
           data-testid="kid-lesson-gap"
           onSubmit={(event) => { event.preventDefault(); submit(); }}
         >
-          <p className="kid-lesson-gap__stem">
-            <span>{before}</span>
-            <input
+          <div className="kid-lesson-gap__stem">
+            <Text component="span">{before}</Text>
+            <AnswerField
               ref={inputRef}
-              className="kid-lesson-gap__input"
+              className="kid-lesson-gap__field"
+              classNames={{ input: "kid-lesson-gap__input" }}
               data-testid="kid-lesson-gap-input"
               value={text}
               onChange={(event) => { setText(event.target.value); handlers.onEdit(); }}
@@ -57,29 +61,33 @@ export function LessonGapView({ task, busy, handlers }: ExerciseProps) {
               spellCheck={false}
               disabled={disabled}
             />
-            <span>{after}</span>
-          </p>
+            <Text component="span">{after}</Text>
+          </div>
           {hint !== undefined && (
-            <p className="kid-lesson-gap__hint" data-testid="kid-lesson-gap-hint">
+            <Text component="p" className="kid-lesson-gap__hint" data-testid="kid-lesson-gap-hint">
               {format(messages.kid.lessonGapHint, { hint })}
-            </p>
+            </Text>
           )}
           {hasAudio && (
-            <button
+            <ActionButton
               type="button"
               className="kid-play"
+              priority="secondary"
+              size="sm"
+              fullWidth={false}
+              styles={{ root: { minHeight: 44 } }}
               data-testid="kid-lesson-listen"
               disabled={disabled}
               onClick={handlers.onPlay}
               aria-label={messages.kid.listen}
             >
               <KidIcon name="volume" />
-            </button>
+            </ActionButton>
           )}
         </form>
       )}
       actions={(
-        <button
+        <ActionButton
           form={formId}
           type="submit"
           className="kid-primary"
@@ -87,16 +95,16 @@ export function LessonGapView({ task, busy, handlers }: ExerciseProps) {
           disabled={disabled || text.trim() === ""}
         >
           {messages.kid.lessonCheck}
-        </button>
+        </ActionButton>
       )}
       secondaryActions={(
         <div className="kid-secondary-actions">
-          <button type="button" data-testid="kid-not-remember" disabled={disabled} onClick={handlers.onNotRemember}>
+          <ActionButton priority="secondary" size="sm" fullWidth={false} type="button" data-testid="kid-not-remember" disabled={disabled} onClick={handlers.onNotRemember}>
             {messages.kid.notRemember}
-          </button>
-          <button type="button" data-testid="kid-skip" disabled={disabled} onClick={handlers.onSkip}>
+          </ActionButton>
+          <ActionButton priority="secondary" size="sm" fullWidth={false} type="button" data-testid="kid-skip" disabled={disabled} onClick={handlers.onSkip}>
             {messages.kid.skip}
-          </button>
+          </ActionButton>
         </div>
       )}
     />

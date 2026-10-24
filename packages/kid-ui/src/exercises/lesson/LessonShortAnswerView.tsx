@@ -1,6 +1,7 @@
 import { ExerciseFrame } from "../ExerciseFrame";
 import type { ExerciseProps } from "../types";
 import { useChoiceKeyboard } from "../useChoiceKeyboard";
+import { AnswerGrid } from "../../components/AnswerGrid";
 
 /**
  * Krótka odpowiedź (`lesson_short_answer`): pytanie jest poleceniem (ramka
@@ -21,25 +22,15 @@ export function LessonShortAnswerView({ task, busy, optionOutcomes, result, resu
   return (
     <ExerciseFrame
       task={task}
-      content={<ul className="kid-options" data-testid="kid-lesson-short-answer">
-        {options.map((option, index) => {
-          const outcome = optionOutcomes.get(option.id);
-          return (
-            <li key={option.id}>
-              <button
-                ref={(btn) => { optionRefs.current[index] = btn; }}
-                type="button"
-                data-testid="kid-option"
-                className={outcome === undefined ? undefined : `kid-option--${outcome}`}
-                disabled={busy}
-                onClick={() => handlers.onAnswerChoice(option.id)}
-              >
-                {option.text}
-              </button>
-            </li>
-          );
-        })}
-      </ul>}
+      content={<AnswerGrid
+        options={options.map((option) => ({ id: option.id, label: option.text, content: null }))}
+        outcomes={optionOutcomes}
+        disabled={busy}
+        optionRefs={optionRefs}
+        onChoose={handlers.onAnswerChoice}
+        className="kid-options"
+        itemClassName={() => "kid-lesson-short-answer"}
+      />}
       actions={resultActions}
       result={result}
       reserveResult

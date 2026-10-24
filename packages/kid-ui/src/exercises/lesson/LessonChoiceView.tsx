@@ -1,6 +1,7 @@
 import { ExerciseFrame } from "../ExerciseFrame";
 import type { ExerciseProps } from "../types";
 import { useChoiceKeyboard } from "../useChoiceKeyboard";
+import { AnswerGrid } from "../../components/AnswerGrid";
 
 /**
  * Wybór (`lesson_choice`): zdanie z luką/pytaniem (`stem`) i opcje do wyboru;
@@ -21,27 +22,14 @@ export function LessonChoiceView({ task, busy, optionOutcomes, result, resultAct
     <ExerciseFrame
       task={task}
       content={<>
-      <p className="kid-lesson-stem" data-testid="kid-lesson-stem">{task.prompt.stem}</p>
-      <ul className="kid-options">
-        {options.map((option, index) => {
-          const outcome = optionOutcomes.get(option.id);
-          return (
-            <li key={option.id}>
-              <button
-                ref={(btn) => { optionRefs.current[index] = btn; }}
-                type="button"
-                data-testid="kid-option"
-                className={outcome === undefined ? undefined : `kid-option--${outcome}`}
-                aria-pressed={outcome === "pending"}
-                disabled={busy}
-                onClick={() => handlers.onAnswerChoice(option.id)}
-              >
-                {option.text}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+        <p className="kid-lesson-stem" data-testid="kid-lesson-stem">{task.prompt.stem}</p>
+        <AnswerGrid
+          options={options.map((option) => ({ id: option.id, label: option.text, content: null }))}
+          outcomes={optionOutcomes}
+          disabled={busy}
+          optionRefs={optionRefs}
+          onChoose={handlers.onAnswerChoice}
+        />
       </>}
       actions={resultActions}
       result={result}

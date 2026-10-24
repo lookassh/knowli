@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { UnstyledButton } from "@mantine/core";
 import { messages } from "@learning/contracts";
 import { format } from "../../format";
+import { ActionButton } from "../../components/ActionButton";
 import { ExerciseFrame } from "../ExerciseFrame";
 import type { ExerciseProps } from "../types";
 import { addBlock, blockState, isComplete, placedIds, removeAt } from "./block-order";
@@ -15,6 +17,9 @@ import { addBlock, blockState, isComplete, placedIds, removeAt } from "./block-o
  */
 export function LessonOrderView({ task, busy, handlers }: ExerciseProps) {
   const [state, setState] = useState(() => blockState(task.prompt.kind === "lesson_order" ? task.prompt.items : []));
+  useEffect(() => {
+    if (task.prompt.kind === "lesson_order") setState(blockState(task.prompt.items));
+  }, [task.taskId, task.prompt]);
   if (task.prompt.kind !== "lesson_order") return null;
   const complete = isComplete(state);
   const disabled = busy;
@@ -32,7 +37,7 @@ export function LessonOrderView({ task, busy, handlers }: ExerciseProps) {
           >
             {state.placed.length === 0 && <span className="kid-hint">{messages.kid.lessonOrderEmpty}</span>}
             {state.placed.map((item, index) => (
-              <button
+              <UnstyledButton
                 key={item.id}
                 type="button"
                 role="listitem"
@@ -43,7 +48,7 @@ export function LessonOrderView({ task, busy, handlers }: ExerciseProps) {
                 onClick={() => { setState((current) => removeAt(current, index)); handlers.onEdit(); }}
               >
                 {item.text}
-              </button>
+              </UnstyledButton>
             ))}
           </div>
           <div
@@ -53,7 +58,7 @@ export function LessonOrderView({ task, busy, handlers }: ExerciseProps) {
             aria-label={messages.kid.lessonOrderPool}
           >
             {state.pool.map((item) => (
-              <button
+              <UnstyledButton
                 key={item.id}
                 type="button"
                 role="listitem"
@@ -64,13 +69,13 @@ export function LessonOrderView({ task, busy, handlers }: ExerciseProps) {
                 onClick={() => { setState((current) => addBlock(current, item.id)); handlers.onEdit(); }}
               >
                 {item.text}
-              </button>
+              </UnstyledButton>
             ))}
           </div>
         </div>
       )}
       actions={(
-        <button
+        <ActionButton
           type="button"
           className="kid-primary"
           data-testid="kid-lesson-check"
@@ -78,7 +83,7 @@ export function LessonOrderView({ task, busy, handlers }: ExerciseProps) {
           onClick={() => handlers.onAnswerSequence(placedIds(state))}
         >
           {messages.kid.lessonCheck}
-        </button>
+        </ActionButton>
       )}
     />
   );
