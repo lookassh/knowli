@@ -90,6 +90,10 @@ test("processing status does not move task slots", async ({ page }) => {
   await page.getByTestId("kid-submit").click();
   await expect(page.getByTestId("kid-processing")).toBeVisible();
   const during = await bounds();
+  const status = await page.getByTestId("kid-session-status").boundingBox();
+  const processing = await page.getByTestId("kid-processing").boundingBox();
+  expect(processing!.y).toBeGreaterThanOrEqual(status!.y - 1);
+  expect(processing!.y + processing!.height).toBeLessThanOrEqual(status!.y + status!.height + 1);
 
   for (const key of ["frame", "instruction", "material"] as const) {
     expect(Math.abs(during[key].y - before[key].y), `${key} moved vertically during processing`).toBeLessThanOrEqual(2);
@@ -220,21 +224,26 @@ test("long choice labels keep their geometry when feedback markers appear", asyn
   });
 });
 
-test("choice selection and transition feedback appear while the answer request is still pending", async ({ page }) => {
+for (const enlargedText of [false, true]) {
+test(`choice selection and transition feedback appear while the answer request is still pending${enlargedText ? " with 200% text" : ""}`, async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const fixture: KidUiFixture = completedReadingFixture();
   await installKidUiFixture(page, fixture);
   // Opóźnienie rejestrujemy PO fixture'u, żeby przejął routing; `fallback()`
   // oddaje żądanie fixture'owi po wprowadzonym opóźnieniu.
+  let releaseAttempt!: () => void;
+  const pendingAttempt = new Promise<void>((resolve) => { releaseAttempt = resolve; });
   await page.route("**/api/v1/kid/tasks/*/attempts", async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 450));
+    await pendingAttempt;
     await route.fallback();
   });
   await page.goto("/");
   await page.getByTestId("kid-profile").click();
   await page.getByTestId("kid-deck").click();
+  if (enlargedText) await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
 
   const option = page.getByTestId("kid-option").first();
+  await option.scrollIntoViewIfNeeded();
   const before = await page.getByTestId("kid-exercise").boundingBox();
   expect(before).not.toBeNull();
   await option.click();
@@ -249,10 +258,29 @@ test("choice selection and transition feedback appear while the answer request i
   expect(Math.abs(during!.y - before!.y)).toBeLessThanOrEqual(2);
   expect(Math.abs(during!.height - before!.height)).toBeLessThanOrEqual(2);
 
+  const status = await page.getByTestId("kid-session-status").boundingBox();
+  const notice = page.getByTestId("kid-transitioning");
+  const noticeBounds = await notice.boundingBox();
+  expect(noticeBounds!.y).toBeGreaterThanOrEqual(status!.y - 1);
+  expect(noticeBounds!.y + noticeBounds!.height).toBeLessThanOrEqual(status!.y + status!.height + 1);
+  const textStart = await notice.evaluate((element) => {
+    element.scrollTop = 0;
+    const range = document.createRange();
+    range.setStart(element.firstChild!, 0);
+    range.setEnd(element.firstChild!, 1);
+    return range.getBoundingClientRect().top - element.getBoundingClientRect().top;
+  });
+  expect(textStart, "the beginning of a wrapped status must stay reachable").toBeGreaterThanOrEqual(0);
+  if (enlargedText) {
+    expect(await notice.evaluate((element) => { element.scrollTop = element.scrollHeight; return element.scrollTop; })).toBeGreaterThan(0);
+  }
+
+  releaseAttempt();
   await expect(page.getByTestId("kid-next")).toBeVisible();
   await expect(page.getByTestId("kid-next")).toBeInViewport();
   await expect(option).toHaveClass(/kid-option--correct/);
 });
+}
 
 for (const kind of ["recall", "speech"] as const) {
 test(`${kind} microphone phases keep exercise controls in place`, async ({ page }) => {

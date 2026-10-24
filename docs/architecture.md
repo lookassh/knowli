@@ -90,6 +90,10 @@ Przy powiększeniu gestem rama sesji wraca do naturalnego flow, aby zachować zo
 
 W trakcie zadania `ExerciseFrame` rezerwuje stałe sloty dla instrukcji, materiału oraz głównej i pomocniczej akcji. Wynik pisemny zastępuje treść materiału, a jego przyciski zajmują te same sloty co formularz; wybór odpowiedzi zachowuje opcje w treści i rezerwuje kompaktowy, przewijalny slot na krótki feedback. Nagrywanie odpowiedzi pisemnej pozostaje przy polu odpowiedzi, poza głównym slotem, aby jego dostępność i status nie zmieniały położenia przycisku „Sprawdź”. Przy niezmienionej geometrii zewnętrzne granice stref pozostają stałe; długie treści i wyniki przewijają się wewnątrz, zaś bardzo niski viewport może przewijać całą ramę. Są to wewnętrzne elementy prezentacji Kid UI bez wpływu na API, DTO, MCP ani skill klienta.
 
+Karta poznania słowa (`exposure`) nie rezerwuje pustego slotu akcji pomocniczych, a jej zagnieżdżona rama nie powiela paddingu zewnętrznego ekranu. Ilustracja oddaje wysokość tekstowi i odsłuchom, a przyciski pozostają obok słowa i przykładu; typowa karta mieści się nad „Rozumiem” bez przewijania. Długie treści, powiększenie i bardzo niski ekran zachowują przewijanie jako ścieżkę dostępności. Reguły te dotyczą wyłącznie prezentacji w `packages/kid-ui`; nie zmieniają zależności modułów, transakcji ani kontraktu API → MCP → skill.
+
+W sesji treningowej stały slot komunikatu między paskiem górnym a zadaniem ma standardowo 32 px zamiast 52 px, także kiedy jest pusty. Rośnie wraz z powiększeniem tekstu; pojawienie się „Sprawdzam…” lub komunikatu przejścia nie zmienia geometrii zadania. Próbny sprawdzian zachowuje dotychczasową rezerwę na dodatkową informację.
+
 Po wybraniu odpowiedzi Kid UI od razu pokazuje neutralny stan oczekiwania i zaznacza wybór bez lokalnego werdyktu; właściwy feedback nadal pochodzi z serwera. W czasie przejścia istniejące sloty ekranu zachowują geometrię. To wyłącznie zachowanie prezentacji, bez zmiany DTO, kolejności operacji, raportu `learning-overview`, MCP i skilla Hermesa.
 
 ## 6. Dane i wersjonowanie
