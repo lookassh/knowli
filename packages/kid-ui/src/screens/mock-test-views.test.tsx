@@ -43,7 +43,7 @@ describe("mock test Mantine screens", () => {
     renderKid(<MockTestSummaryScreen summary={summary} activity={null} detailsLoading={false} detailsError onRetryDetails={onRetryDetails} onPlay={onPlay} onPractice={onPractice} onSwitchProfile={onSwitchProfile} />);
     expect(screen.getAllByTestId("kid-mock-solution").map((row) => row.getAttribute("data-status"))).toEqual(["correct", "incorrect", "notAssessed"]);
     const retry = screen.getByRole("button", { name: "Spróbuj ponownie" });
-    expect(retry.style.minHeight).toBe("44px");
+    expect(retry.style.minHeight).toBe("48px");
     fireEvent.click(retry);
     expect(onRetryDetails).toHaveBeenCalledOnce();
     const audio = screen.getByRole("button", { name: "Posłuchaj" });
@@ -84,6 +84,6 @@ describe("mock test Mantine screens", () => {
     fireEvent.click(screen.getByTestId("kid-lesson-mock-practice"));
     expect(props.onPractice).toHaveBeenCalledOnce();
     view.rerender(<LessonMockTestSummaryScreen {...props} detailsLoading={false} detailsError />);
-    expect(screen.getByRole("button", { name: "Spróbuj ponownie" }).style.minHeight).toBe("44px");
+    expect(screen.getByRole("button", { name: "Spróbuj ponownie" }).style.minHeight).toBe("48px");
   });
 });

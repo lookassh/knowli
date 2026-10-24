@@ -41,7 +41,7 @@ export function LessonMockTestSummaryScreen({ summary, activity, detailsLoading,
     <KidScreen.Content>
       <Title order={2}>{messages.kid.mockTestReview}</Title>
       {detailsLoading && <Text role="status" data-testid="kid-lesson-mock-details-loading">{messages.kid.loading}</Text>}
-      {detailsError && <Paper role="alert" data-testid="kid-lesson-mock-details-error" p="sm" withBorder><Text>{messages.kid.mockTestDetailsError}</Text><ActionButton priority="secondary" size="sm" fullWidth={false} styles={{ root: { minHeight: 44 } }} onClick={() => run(onRetryDetails())}>{messages.kid.offlineRetry}</ActionButton></Paper>}
+      {detailsError && <Paper role="alert" data-testid="kid-lesson-mock-details-error" p="sm" withBorder><Text>{messages.kid.mockTestDetailsError}</Text><ActionButton priority="secondary" size="sm" fullWidth={false} styles={{ root: { minHeight: 48 } }} onClick={() => run(onRetryDetails())}>{messages.kid.offlineRetry}</ActionButton></Paper>}
       <Stack component="ul" className="kid-mock-list" gap="sm">{summary.solutions.map(solution => {
       const status = lessonMockOutcomeStatus(solution.outcome);
       return <Paper component="li" className={`kid-mock-row kid-mock-row--${status}`} key={solution.taskId} data-testid="kid-lesson-mock-solution" data-status={status} radius="md" p="xs" withBorder>

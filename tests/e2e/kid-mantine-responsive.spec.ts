@@ -199,3 +199,89 @@ test("summary actions remain reachable without horizontal overflow on short phon
     }
   }
 });
+
+const materialViewports = [
+  { name: "compact portrait", width: 360, height: 640 },
+  { name: "compact landscape", width: 640, height: 360 },
+  { name: "expanded width compact height", width: 840, height: 480 },
+  { name: "expanded landscape", width: 1024, height: 600 },
+  { name: "large desktop", width: 1920, height: 1080 },
+] as const;
+
+async function expectInteractiveTargets(page: import("@playwright/test").Page, selectors: string[]) {
+  const targets = await page.evaluate((wanted) => wanted.flatMap((selector) =>
+    [...document.querySelectorAll<HTMLElement>(selector)].map((element) => {
+      const rect = element.getBoundingClientRect();
+      return { selector, width: rect.width, height: rect.height };
+    }),
+  ), selectors);
+  expect(targets.length).toBeGreaterThan(0);
+  for (const target of targets) {
+    expect(target.height, `${target.selector} touch height`).toBeGreaterThanOrEqual(48);
+    expect(target.width, `${target.selector} touch width`).toBeGreaterThanOrEqual(48);
+  }
+}
+
+test("Material window classes keep written answers reachable with 48px targets", async ({ page }) => {
+  await installKidUiFixture(page, recallLayoutFixture());
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+  await page.getByTestId("kid-input").fill("cat");
+
+  for (const viewport of materialViewports) {
+    await page.setViewportSize(viewport);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth
+      || document.body.scrollWidth > document.body.clientWidth);
+    expect(overflow, `horizontal overflow: ${viewport.name}`).toBe(false);
+    await expectInteractiveTargets(page, [
+      "[data-testid='kid-input']",
+      "[data-testid='kid-submit']",
+      "[data-testid='kid-not-remember']",
+      "[data-testid='kid-skip']",
+      "[data-testid='kid-end']",
+    ]);
+    for (const testId of ["kid-input", "kid-submit", "kid-not-remember", "kid-skip", "kid-end"]) {
+      const control = page.getByTestId(testId);
+      await control.scrollIntoViewIfNeeded();
+      await expect(control, `${testId}: ${viewport.name}`).toBeInViewport();
+    }
+    await expect(page.getByTestId("kid-input")).toHaveValue("cat");
+    const progressClipped = await page.getByTestId("kid-remaining").evaluate((element) =>
+      element.scrollWidth > element.clientWidth + 1 || element.scrollHeight > element.clientHeight + 1);
+    expect(progressClipped, `progress label clipped: ${viewport.name}`).toBe(false);
+  }
+});
+
+test("Material window classes keep every picture choice reachable", async ({ page }) => {
+  await installKidUiFixture(page, pictureChoiceLayoutFixture());
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").first().click();
+  await page.getByTestId("kid-done").click();
+  await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-prompt-kind", "picture_listening");
+
+  for (const viewport of materialViewports) {
+    await page.setViewportSize(viewport);
+    await page.evaluate(async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    });
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth
+      || document.body.scrollWidth > document.body.clientWidth);
+    expect(overflow, `horizontal overflow: ${viewport.name}`).toBe(false);
+    await expectInteractiveTargets(page, ["[data-testid='kid-option']", "[data-testid='kid-end']"]);
+    await expect.poll(async () => page.evaluate(() => {
+      const contentElement = document.querySelector<HTMLElement>(".kid-material-content")!;
+      const content = contentElement.getBoundingClientRect();
+      const clipped = [...document.querySelectorAll<HTMLElement>("[data-testid='kid-option']")].find((element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.left < 0 || rect.top < 0 || rect.right > window.innerWidth || rect.bottom > window.innerHeight
+          || rect.left < content.left - 1 || rect.top < content.top - 1
+          || rect.right > content.right + 1 || rect.bottom > content.bottom + 1;
+      });
+      if (!clipped) return "ok";
+      const rect = clipped.getBoundingClientRect();
+      return JSON.stringify({ inner: [window.innerWidth, window.innerHeight], content: [content.x, content.y, content.width, content.height], option: [rect.x, rect.y, rect.width, rect.height] });
+    }), { message: `picture option clipped: ${viewport.name}` }).toBe("ok");
+  }
+});

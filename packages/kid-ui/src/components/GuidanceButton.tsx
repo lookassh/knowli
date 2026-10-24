@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { messages, type UiAudioKey } from "@learning/contracts";
+import { ActionButton } from "./ActionButton";
+import { IconActionButton } from "./IconActionButton";
 import { KidIcon } from "./KidIcon";
 
 /** Jawny odsłuch krótkiej instrukcji albo komunikatu interfejsu. */
@@ -24,12 +26,12 @@ export function GuidanceButton({
     }
   };
   return <>
-    <button type="button" className="kid-icon-button" data-testid={testId} aria-label={messages.kid.listen} onClick={() => void play()}>
+    <IconActionButton className="kid-icon-button" data-testid={testId} aria-label={messages.kid.listen} onClick={() => void play()}>
       <KidIcon name="volume" />
-    </button>
+    </IconActionButton>
     {failed && showError && <div className="kid-notice" role="alert" data-testid={`${testId}-error`}>
       <p>{messages.errors.picture_guidance_unavailable}</p>
-      <button type="button" onClick={() => void play()}>{messages.errors.picture_audio_retry}</button>
+      <ActionButton priority="secondary" fullWidth={false} size="sm" onClick={() => void play()}>{messages.errors.picture_audio_retry}</ActionButton>
     </div>}
   </>;
 }

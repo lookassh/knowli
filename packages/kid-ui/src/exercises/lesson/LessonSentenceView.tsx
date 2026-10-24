@@ -71,7 +71,7 @@ export function LessonSentenceView({ task, busy, handlers }: ExerciseProps) {
               priority="secondary"
               size="sm"
               fullWidth={false}
-              styles={{ root: { minHeight: 44 } }}
+              styles={{ root: { minHeight: 48 } }}
               data-testid="kid-lesson-listen"
               disabled={disabled}
               onClick={handlers.onPlay}

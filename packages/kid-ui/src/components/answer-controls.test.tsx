@@ -3,6 +3,7 @@ import { createRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, renderKid, screen } from "../test/render-kid";
 import { ActionButton } from "./ActionButton";
+import { IconActionButton } from "./IconActionButton";
 import { AnswerField } from "./AnswerField";
 import { AnswerGrid } from "./AnswerGrid";
 import { SessionProgress } from "./SessionProgress";
@@ -93,6 +94,18 @@ describe("ActionButton and AnswerField", () => {
     expect(screen.getByRole("button", { name: "Sprawdź" }).className).not.toContain("mantine-Button-root");
     fireEvent.click(screen.getByRole("button", { name: "Sprawdź" }));
     expect(submit).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps icon actions at a named 48px square target", () => {
+    const onClick = vi.fn();
+    renderKid(<IconActionButton aria-label="Posłuchaj" onClick={onClick}><span aria-hidden="true">▶</span></IconActionButton>);
+    const button = screen.getByRole("button", { name: "Posłuchaj" });
+    expect(button.style.width).toBe("48px");
+    expect(button.style.height).toBe("48px");
+    expect(button.style.minWidth).toBe("48px");
+    expect(button.style.minHeight).toBe("48px");
+    fireEvent.click(button);
+    expect(onClick).toHaveBeenCalledTimes(1);
   });
 
   it("preserves the exact controlled input value and spelling attributes", () => {

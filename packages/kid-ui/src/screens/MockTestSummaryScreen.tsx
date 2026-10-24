@@ -48,7 +48,7 @@ export function MockTestSummaryScreen({ summary, activity, detailsLoading, detai
     <KidScreen.Content>
       <Title order={2}>{messages.kid.mockTestReview}</Title>
       {detailsLoading && <Text role="status" data-testid="kid-mock-details-loading">{messages.kid.loading}</Text>}
-      {detailsError && <Paper role="alert" data-testid="kid-mock-details-error" p="sm" withBorder><Text>{messages.kid.mockTestDetailsError}</Text><ActionButton priority="secondary" size="sm" fullWidth={false} styles={{ root: { minHeight: 44 } }} onClick={() => run(onRetryDetails())}>{messages.kid.offlineRetry}</ActionButton></Paper>}
+      {detailsError && <Paper role="alert" data-testid="kid-mock-details-error" p="sm" withBorder><Text>{messages.kid.mockTestDetailsError}</Text><ActionButton priority="secondary" size="sm" fullWidth={false} styles={{ root: { minHeight: 48 } }} onClick={() => run(onRetryDetails())}>{messages.kid.offlineRetry}</ActionButton></Paper>}
       <Stack component="ul" className="kid-mock-list" gap="sm">{summary.solutions.map(solution => {
       const status = mockTestWordStatus(solution.results);
       const detail = mockTestSolutionDetail(solution.results);
@@ -63,7 +63,7 @@ export function MockTestSummaryScreen({ summary, activity, detailsLoading, detai
             {solution.results.map(result => <Badge variant="light" className={mockTestResultBadgeClass(result)} key={result.skill}>{mockTestResultBadgeLabel(result)}</Badge>)}
           </Box>}
         </div>
-        {solution.audioAssetId && <ActionButton priority="secondary" size="sm" fullWidth={false} styles={{ root: { minWidth: 44, minHeight: 44 } }} className="kid-mock-row__audio" aria-label={messages.kid.listen} onClick={() => run(onPlay(solution.taskId))}><KidIcon name="volume" /></ActionButton>}
+        {solution.audioAssetId && <ActionButton priority="secondary" size="sm" fullWidth={false} styles={{ root: { minWidth: 48, minHeight: 48 } }} className="kid-mock-row__audio" aria-label={messages.kid.listen} onClick={() => run(onPlay(solution.taskId))}><KidIcon name="volume" /></ActionButton>}
       </Paper>;
     })}</Stack>
       {error && <Text role="alert" c="red.3">{messages.kid.offlineMessage}</Text>}

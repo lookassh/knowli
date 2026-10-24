@@ -8,3 +8,19 @@
   color: #f0f5ff;
   background: #203653;
 }
+
+/* Compact width: wrap instead of ellipsizing the remaining-task label. */
+@media (max-width: 599px) {
+  .root {
+    height: auto;
+    padding-block: 6px;
+    line-height: 1.15;
+    text-align: center;
+  }
+
+  .root :global(.mantine-Badge-label) {
+    overflow: visible;
+    white-space: normal;
+    text-overflow: clip;
+  }
+}

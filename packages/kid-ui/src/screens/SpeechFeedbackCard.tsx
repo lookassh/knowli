@@ -98,9 +98,9 @@ export function SpeechFeedbackContent(props: SpeechFeedbackCardProps): ReactElem
 
       <div className="kid-speech-feedback__actions">
         {props.audioAvailable && (
-          <button type="button" className="kid-secondary" data-testid="kid-play-reference" disabled={props.busy} onClick={props.onPlay}>
+          <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-play-reference" disabled={props.busy} onClick={props.onPlay}>
             {messages.kid.feedbackPlayReference}
-          </button>
+          </ActionButton>
         )}
       </div>
     </Box>

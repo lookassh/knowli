@@ -2,7 +2,10 @@
   width: min(100%, 1000px);
   min-width: 0;
   margin-inline: auto;
-  padding: 16px;
+  padding-top: max(16px, env(safe-area-inset-top));
+  padding-right: max(16px, env(safe-area-inset-right));
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  padding-left: max(16px, env(safe-area-inset-left));
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -12,7 +15,8 @@
   width: min(100%, 560px);
   height: 100%;
   min-height: 0;
-  padding: 12px 16px;
+  padding-top: max(12px, env(safe-area-inset-top));
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 8px;
@@ -39,7 +43,7 @@
 
 .actions {
   display: grid;
-  grid-template-rows: minmax(54px, auto) minmax(44px, auto);
+  grid-template-rows: minmax(54px, auto) minmax(48px, auto);
   align-content: end;
   gap: 8px;
 }
@@ -78,10 +82,7 @@
 
 @media (max-width: 359px) {
   .root {
-    padding-inline: 12px;
-  }
-
-  .root[data-mode="session"] {
-    padding-inline: 12px;
+    padding-right: max(12px, env(safe-area-inset-right));
+    padding-left: max(12px, env(safe-area-inset-left));
   }
 }

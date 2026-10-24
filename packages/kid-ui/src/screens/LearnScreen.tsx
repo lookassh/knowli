@@ -15,6 +15,7 @@ import type { LearningSessionController, LearningScreen as LearningScreenState }
 import { useFeedbackCooldown } from "./useFeedbackCooldown";
 import { SessionProgress } from "../components/SessionProgress";
 import { ActionButton } from "../components/ActionButton";
+import { IconActionButton } from "../components/IconActionButton";
 
 /** Brak podświetleń poza feedbackem próby wyboru. */
 const EMPTY_OUTCOMES: ReadonlyMap<string, OptionOutcome> = new Map();
@@ -22,7 +23,7 @@ const EMPTY_OUTCOMES: ReadonlyMap<string, OptionOutcome> = new Map();
 function RevealActions({ onConfirm }: { onConfirm: () => void }) {
   const { buttonRef, onKeyDown } = useFeedbackCooldown<HTMLButtonElement>(onConfirm, [], true);
   return (
-    <button
+    <ActionButton
       ref={buttonRef}
       onKeyDown={onKeyDown}
       type="button"
@@ -31,7 +32,7 @@ function RevealActions({ onConfirm }: { onConfirm: () => void }) {
       onClick={onConfirm}
     >
       {messages.kid.understand}
-    </button>
+    </ActionButton>
   );
 }
 
@@ -156,8 +157,8 @@ export function LearnScreen({
         {screen.transitioning && !screen.processing && !offline && screen.error === null && (
           <p className="kid-notice" data-testid="kid-transitioning">{messages.kid.transitioning}</p>
         )}
-        {screen.guidanceError && instructionAudioKey && <div className="kid-notice" data-testid="kid-guidance-error"><p>{messages.errors.picture_guidance_unavailable}</p><button type="button" onClick={() => void controller.playGuidance(instructionAudioKey).catch(() => undefined)}>{messages.errors.picture_audio_retry}</button><button type="button" onClick={() => void controller.endNow()}>{messages.kid.end}</button></div>}
-        {screen.taskAudioError && <div className="kid-notice" role="alert" data-testid="kid-task-audio-error"><p>{screen.taskAudioError === "blocked" ? messages.errors.picture_audio_blocked : messages.errors.picture_audio_unavailable}</p><button type="button" data-testid="kid-task-audio-retry" onClick={() => void controller.playTaskAudio()}>{messages.errors.picture_audio_retry}</button><button type="button" onClick={() => void controller.endNow()}>{messages.kid.end}</button></div>}
+        {screen.guidanceError && instructionAudioKey && <div className="kid-notice" data-testid="kid-guidance-error"><p>{messages.errors.picture_guidance_unavailable}</p><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" onClick={() => void controller.playGuidance(instructionAudioKey).catch(() => undefined)}>{messages.errors.picture_audio_retry}</ActionButton><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" onClick={() => void controller.endNow()}>{messages.kid.end}</ActionButton></div>}
+        {screen.taskAudioError && <div className="kid-notice" role="alert" data-testid="kid-task-audio-error"><p>{screen.taskAudioError === "blocked" ? messages.errors.picture_audio_blocked : messages.errors.picture_audio_unavailable}</p><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-task-audio-retry" onClick={() => void controller.playTaskAudio()}>{messages.errors.picture_audio_retry}</ActionButton><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" onClick={() => void controller.endNow()}>{messages.kid.end}</ActionButton></div>}
       </div>
 
       {offline ? (
@@ -183,7 +184,7 @@ export function LearnScreen({
                   <p>{messages.kid.revealTitle}</p>
                   {screen.reveal.visual && <MeaningVisualView visual={screen.reveal.visual} mediaUrl={(assetId) => controller.mediaUrl(assetId)} />}
                   <p className="kid-word">{screen.reveal.target}</p>
-                  {screen.reveal.audioAssetId && <button type="button" className="kid-audio-round" data-testid="kid-reveal-audio" onClick={() => void controller.playRevealAudio()} aria-label={messages.kid.listen}><KidIcon name="volume" /></button>}
+                  {screen.reveal.audioAssetId && <IconActionButton className="kid-audio-round" data-testid="kid-reveal-audio" radius="50%" style={{ width: 64, height: 64, minWidth: 64, minHeight: 64 }} onClick={() => void controller.playRevealAudio()} aria-label={messages.kid.listen}><KidIcon name="volume" /></IconActionButton>}
                 </section>
               )} actions={<RevealActions onConfirm={() => void controller.confirmReveal()} />} />
             ) : speechFeedback && feedback !== null ? (
