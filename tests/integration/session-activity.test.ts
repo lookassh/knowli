@@ -22,14 +22,13 @@ import {
   type Services,
 } from "@learning/server";
 import type { SessionActivityReport } from "@learning/contracts";
-import { SESSION_ACTIVITY_REPORT_MAX_BYTES } from "@learning/contracts";
+import { ApiErrorSchema, SESSION_ACTIVITY_REPORT_MAX_BYTES } from "@learning/contracts";
 import { createKidApiClient } from "../../packages/kid-ui/src/api/client";
-import { handleKidApi } from "../../apps/web/src/kid/kid-router";
 import { AppError } from "../../packages/server/src/errors";
 import { createOpenAiCompatibleSessionActivityReviewer } from "../../packages/server/src/providers/openai-compatible/session-activity";
 import { materializeExercise, type LoadedExercise } from "../../packages/server/src/modules/lessons/lesson-materialize";
 import { englishGrammarSubject } from "../../packages/server/src/domain/lessons/subjects/english-grammar/module";
-import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
+import { buildTestServices, handleKidApi, testDatabase, truncateCoreTables } from "./helpers";
 
 const { pool } = testDatabase();
 afterAll(() => pool.end());
@@ -695,7 +694,7 @@ describe("session activity kid transport", () => {
       baseUrl: "http://localhost",
       fetchImpl: async (input, init) => {
         const url = new URL(String(input), "http://localhost");
-        return handleKidApi(new Request(url, init), services, url.pathname.replace("/api/v1/kid/", "").split("/"));
+        return handleKidApi(new Request(url, init), services);
       },
     });
     const summary = await api.endSession(session.sessionId, reportOf([
@@ -711,15 +710,18 @@ describe("session activity kid transport", () => {
     const child = await childWithProfile(services);
     const deckId = await publishDeck(services, child.id);
     const session = await startSession(services, { childId: child.id, deckId, microphoneEnabled: false });
-    await expect(handleKidApi(
+    const response = await handleKidApi(
       new Request(`http://localhost/api/v1/kid/sessions/${session.sessionId}/end`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ activityReport: { version: 2, elapsedMs: 10, activeMs: 0, compacted: false, tasks: [] } }),
       }),
       services,
-      ["sessions", session.sessionId, "end"],
-    )).rejects.toMatchObject({ code: "validation", details: { reason: "activity_report_update_required" } });
+    );
+    expect(response.status).toBe(400);
+    const body = ApiErrorSchema.parse(await response.json());
+    expect(body.code).toBe("validation");
+    expect(body.details).toEqual({ reason: "activity_report_update_required" });
   });
 
   it("rejects an oversized report with a validation error instead of silently dropping it", async () => {
@@ -727,7 +729,7 @@ describe("session activity kid transport", () => {
     const child = await childWithProfile(services);
     const deckId = await publishDeck(services, child.id);
     const session = await startSession(services, { childId: child.id, deckId, microphoneEnabled: false });
-    await expect(handleKidApi(
+    const response = await handleKidApi(
       new Request(`http://localhost/api/v1/kid/sessions/${session.sessionId}/end`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -736,8 +738,9 @@ describe("session activity kid transport", () => {
         }),
       }),
       services,
-      ["sessions", session.sessionId, "end"],
-    )).rejects.toMatchObject({ code: "validation" });
+    );
+    expect(response.status).toBe(400);
+    expect(ApiErrorSchema.parse(await response.json()).code).toBe("validation");
     // Sesja pozostała aktywna — raport nie zniknął po cichu razem z oceną.
     const state = (await pool.query("select state from learning_app.learning_sessions where id=$1", [session.sessionId])).rows[0]!;
     expect(state.state).toBe("active");

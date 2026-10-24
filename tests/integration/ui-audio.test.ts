@@ -2,9 +2,8 @@ import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createServices, executeMediaAsset, prepareUiAudio, readReadyMedia, readUiAudio, type Services } from "@learning/server";
 import { messages } from "@learning/contracts";
-import { testDatabase, truncateCoreTables } from "./helpers";
+import { testDatabase, truncateCoreTables, handleKidApi } from "./helpers";
 import { fakeGeneration, type FakeGeneration } from "./fakes";
-import { handleKidApi } from "../../apps/web/src/kid/kid-router";
 import { ttsFingerprint } from "../../packages/server/src/domain/media-fingerprint";
 
 const { pool } = testDatabase();
@@ -30,7 +29,7 @@ afterEach(async () => { for (const dispose of disposers.splice(0)) await dispose
 
 describe("wskazówki głosowe Kid UI (integracja)", () => {
   it("GET jest tylko odczytem i nie zleca ani nie syntezuje brakującego audio", async () => {
-    const response = await handleKidApi(new Request("http://local/api/v1/kid/ui-audio"), services, ["ui-audio"]);
+    const response = await handleKidApi(new Request("http://local/api/v1/kid/ui-audio"), services);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ready: false, assets: {} });
     expect(await rows("select id from learning_app.media_assets")).toHaveLength(0);

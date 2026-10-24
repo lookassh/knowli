@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { messages, type ChildDto, type ParentWorkCardDto } from "@learning/contracts";
-import { apiFetch, errorMessage } from "./api";
+import { callParent, errorMessage, parentClient } from "./api";
 import { avatarEmoji } from "./avatars";
 
 function duration(seconds: number): string {
@@ -107,10 +107,14 @@ export default function WorkCardPanel({ childrenList, onAuthExpired }: { childre
     const seq = ++requestSeq.current;
     setLoading(true); setError(null);
     try {
-      const query = new URLSearchParams({ childId });
-      if (date) query.set("date", date);
-      const result = await apiFetch<ParentWorkCardDto>("GET", `/api/v1/parent/work-card?${query}`);
+      // date wysyłamy tylko niepuste — pusty string z inputa nie przeszedłby
+      // walidacji granicy (DaySchema), a semantycznie znaczy „dzień dzisiejszy”.
+      const response = await callParent(() => parentClient.workCard.get({
+        childId,
+        ...(date ? { date } : {}),
+      }));
       if (seq === requestSeq.current) {
+        const result: ParentWorkCardDto = response.body;
         setReport(result);
         if (!date) {
           selection.current = { childId, date: result.date };

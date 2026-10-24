@@ -18,15 +18,7 @@ import {
   upsertAssignment,
   type AppError,
 } from "@learning/server";
-import { buildTestServices, testDatabase, testDatabaseUrl, truncateCoreTables } from "./helpers";
-
-process.env.DATABASE_URL = testDatabaseUrl();
-import { disposeServerServices } from "../../apps/web/src/composition";
-import { POST as loginRoute } from "../../apps/web/src/app/api/v1/parent/login/route";
-import {
-  GET as getPronunciationRoute,
-  PUT as putPronunciationRoute,
-} from "../../apps/web/src/app/api/v1/parent/children/[id]/pronunciation/route";
+import { buildTestServices, handleParentApi, testDatabase, truncateCoreTables } from "./helpers";
 
 const BASE = "http://localhost:3000";
 
@@ -130,15 +122,12 @@ function wavInput() {
   return { bytes: new Uint8Array(buffer), mimeType: "audio/wav", locale: "en-GB" };
 }
 
-const context = (id: string) => ({ params: Promise.resolve({ id }) });
-
 describe("ustawienia wymowy per dziecko (design 2026-10-09)", () => {
   beforeEach(async () => {
     await truncateCoreTables();
   });
 
   afterAll(async () => {
-    await disposeServerServices();
     await testDatabase().pool.end();
   });
 
@@ -242,15 +231,21 @@ describe("ustawienia wymowy per dziecko (design 2026-10-09)", () => {
   });
 
   it("GET i PUT wymagają sesji rodzica", async () => {
+    const { services } = buildTestServices();
     const id = randomUUID();
-    const get = await getPronunciationRoute(new Request(`${BASE}/api/v1/parent/children/${id}/pronunciation`), context(id));
-    const put = await putPronunciationRoute(
+    const get = await handleParentApi(
+      new Request(`${BASE}/api/v1/parent/children/${id}/pronunciation`),
+      services,
+      ["children", id, "pronunciation"],
+    );
+    const put = await handleParentApi(
       new Request(`${BASE}/api/v1/parent/children/${id}/pronunciation`, {
         method: "PUT",
         headers: { "content-type": "application/json", origin: BASE },
         body: JSON.stringify({ correctMinScore: 75, partialMinScore: 55 }),
       }),
-      context(id),
+      services,
+      ["children", id, "pronunciation"],
     );
     expect(get.status).toBe(401);
     expect(put.status).toBe(401);
@@ -260,17 +255,20 @@ describe("ustawienia wymowy per dziecko (design 2026-10-09)", () => {
     const { services } = buildTestServices();
     await setupParent(services, "rodzinny-pin-1");
     const child = await createChild(services, { displayName: "Szymon", avatarKey: "fox" });
-    const loginResponse = await loginRoute(new Request(`${BASE}/api/v1/parent/login`, {
+    // jawny Host jak w żądaniu przyjmowanym przez serwer — kontrola Origin
+    // porównuje go z nagłówkiem Origin (undici nie wystawia Host z URL)
+    const loginResponse = await handleParentApi(new Request(`${BASE}/api/v1/parent/login`, {
       method: "POST",
-      headers: { "content-type": "application/json", origin: BASE },
+      headers: { "content-type": "application/json", origin: BASE, host: "localhost:3000" },
       body: JSON.stringify({ secret: "rodzinny-pin-1" }),
-    }));
+    }), services);
     const cookie = loginResponse.headers.getSetCookie().find((value) => value.startsWith("parent_session="))!.split(";")[0]!;
-    const response = await getPronunciationRoute(
+    const response = await handleParentApi(
       new Request(`${BASE}/api/v1/parent/children/${child.id}/pronunciation`, {
         headers: { cookie },
       }),
-      context(child.id),
+      services,
+      ["children", child.id, "pronunciation"],
     );
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ pronunciationAvailable: false, thresholds: null });

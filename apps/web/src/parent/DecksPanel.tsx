@@ -5,11 +5,10 @@ import {
   messages,
   type ChildDto,
   type CreateEmptyDeckCommand,
-  type CreateEmptyDeckResult,
   type DeckSummaryDto,
   type GenerationCommand,
 } from "@learning/contracts";
-import { apiFetch, ApiCallError, errorMessage } from "./api";
+import { callParent, ApiCallError, errorMessage, parentClient } from "./api";
 import { isDefinitiveGenerationRejection, readGenerationAcceptance } from "./generation-request";
 import DeckEditor from "./DeckEditor";
 import LessonEditor from "./lessons/LessonEditor";
@@ -109,7 +108,7 @@ export default function DecksPanel({
     setArchiveBusy(true);
     setArchiveError(null);
     try {
-      await apiFetch("POST", `/api/v1/parent/decks/${archiveLesson.deckId}/archive`);
+      await callParent(() => parentClient.decks.archive({ deckId: archiveLesson.deckId }));
       if (!mounted.current) return;
       setArchivedIds((current) => new Set([...current, archiveLesson.deckId]));
       setArchiveLesson(null);
@@ -162,7 +161,7 @@ export default function DecksPanel({
     };
     pendingGenerationCommand.current = command;
     try {
-      const response = await apiFetch<unknown>("POST", "/api/v1/parent/decks/generate", command);
+      const response = await callParent(() => parentClient.decks.generate(command));
       const acceptance = readGenerationAcceptance(response);
       if (!acceptance) {
         if (mounted.current) setError(messages.decks.generationUncertain);
@@ -209,12 +208,12 @@ export default function DecksPanel({
     pendingEmptyCommand.current = command;
 
     try {
-      const created = await apiFetch<CreateEmptyDeckResult>("POST", "/api/v1/parent/decks", command);
+      const created = await callParent(() => parentClient.decks.create(command));
       pendingEmptyCommand.current = null;
       setPrompt("");
       setTitle("");
       setActiveDeckKind("vocabulary");
-      setActiveDeckId(created.deckId);
+      setActiveDeckId(created.body.deckId);
       setNewMaterialOpen(false);
       // Utworzenie już się powiodło; problem odświeżenia listy nie może wyglądać
       // jak błąd tworzenia i nie może uruchomić nowego UUID przy kolejnym kliknięciu.

@@ -37,7 +37,7 @@ function field(overrides: Partial<Parameters<typeof DeckSessionTaskBudgetSetting
 describe("DeckSessionTaskBudgetSettings", () => {
   it("zapisuje edytowaną wartość przez PATCH /parent/decks/:id i odświeża stan edytora", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ sessionTaskBudget: 7 }), { status: 200 }),
+      new Response(JSON.stringify({ sessionTaskBudget: 7 }), { status: 200, headers: { "content-type": "application/json" } }),
     );
     vi.stubGlobal("fetch", fetchMock);
     try {
@@ -91,7 +91,7 @@ describe("DeckSessionTaskBudgetSettings", () => {
 
   it("zgłasza błąd zapisu do edytora bez zapisu stanu", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ code: "validation", message: "Nieprawidłowa wartość." }), { status: 400 }),
+      new Response(JSON.stringify({ code: "validation", message: "Nieprawidłowa wartość." }), { status: 400, headers: { "content-type": "application/json" } }),
     );
     vi.stubGlobal("fetch", fetchMock);
     const onError = vi.fn();

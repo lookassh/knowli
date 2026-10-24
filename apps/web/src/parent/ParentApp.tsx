@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { messages, type ChildDto, type DeckSummaryDto } from "@learning/contracts";
-import { apiFetch, errorMessage } from "./api";
+import { callParent, errorMessage, parentClient } from "./api";
 import ChildEditor from "./ChildEditor";
 import DecksPanel from "./DecksPanel";
 import LeaveEditorDialog from "./LeaveEditorDialog";
@@ -14,11 +14,6 @@ import "./parent.css";
 
 type Phase = "loading" | "setup" | "login" | "panel";
 type Tab = "decks" | "children" | "progress" | "work";
-
-interface AuthStateDto {
-  authenticated: boolean;
-  setupRequired: boolean;
-}
 
 /**
  * Panel rodzica Umiem!: pierwsze uruchomienie (PIN), logowanie, zestawy
@@ -35,16 +30,16 @@ export default function ParentApp() {
   const toLogin = useCallback(() => setPhase("login"), []);
 
   const refreshChildren = useCallback(async () => {
-    setChildrenList(await apiFetch<ChildDto[]>("GET", "/api/v1/parent/children"));
+    setChildrenList(await callParent(() => parentClient.children.list()));
   }, []);
   const refreshDecks = useCallback(async () => {
-    setDecks(await apiFetch<DeckSummaryDto[]>("GET", "/api/v1/parent/decks"));
+    setDecks(await callParent(() => parentClient.decks.list()));
   }, []);
 
   useEffect(() => {
     (async () => {
       try {
-        const state = await apiFetch<AuthStateDto>("GET", "/api/v1/parent/login");
+        const state = await callParent(() => parentClient.auth.state());
         if (state.authenticated) {
           setPhase("panel");
           await Promise.all([refreshChildren(), refreshDecks()]);
@@ -63,9 +58,9 @@ export default function ParentApp() {
     try {
       if (phase === "setup") {
         // pierwsze uruchomienie tworzy PIN i od razu nim loguje
-        await apiFetch("POST", "/api/v1/parent/setup", { secret });
+        await callParent(() => parentClient.auth.setup({ secret }));
       }
-      await apiFetch("POST", "/api/v1/parent/login", { secret });
+      await callParent(() => parentClient.auth.login({ secret }));
       setSecret("");
       setPhase("panel");
       await Promise.all([refreshChildren(), refreshDecks()]);
@@ -76,7 +71,7 @@ export default function ParentApp() {
 
   const logout = async () => {
     try {
-      await apiFetch("POST", "/api/v1/parent/logout");
+      await callParent(() => parentClient.auth.logout());
     } catch {
       // brak sesji też kończy panel
     }

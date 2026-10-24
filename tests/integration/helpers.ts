@@ -1,13 +1,73 @@
 import { inject } from "vitest";
 import {
+  AppError,
   createDatabase,
   createServices,
   startSession,
+  MAX_AUDIO_BYTES,
+  MAX_DECK_COVER_BYTES,
+  MULTIPART_OVERHEAD_BYTES,
   type Clock,
   type Services,
 } from "@learning/server";
+import { createOpenApiHandler } from "@/orpc/handler";
+import { kidRouter } from "@/orpc/kid-router";
+import { parentORpcRouter } from "@/orpc/parent-router";
 
 type Pool = ReturnType<typeof createDatabase>["pool"];
+
+// Te same limity surowego strumienia co catch-all-e produkcyjne (route.ts).
+const kidApiHandler = createOpenApiHandler(kidRouter, {
+  maxBodySize: MAX_AUDIO_BYTES + MULTIPART_OVERHEAD_BYTES,
+});
+const parentApiHandler = createOpenApiHandler(parentORpcRouter, {
+  maxBodySize: MAX_DECK_COVER_BYTES + 64 * 1024,
+});
+
+/**
+ * Wywołanie Kid API w testach integracyjnych po dekomisji legacy routera:
+ * ta sama kompozycja co catch-all `apps/web/src/app/api/v1/kid/[...path]/route.ts`
+ * (handler oRPC, prefix /api/v1/kid, brak dopasowania → `not_found`), z tą
+ * różnicą, że usługi wstrzykuje wywołujący test zamiast singletonu kompozycji.
+ * Dopasowanie idzie po pełnym URL żądania, więc ścieżki muszą zawierać
+ * prawdziwe identyfikatory (taskId/sessionId) — segments z czasów legacy
+ * przepadają.
+ */
+export async function handleKidApi(request: Request, services: Services): Promise<Response> {
+  const { matched, response } = await kidApiHandler.handle(request, {
+    prefix: "/api/v1/kid",
+    context: { services, headers: request.headers, url: request.url },
+  });
+  if (matched) {
+    return response;
+  }
+  throw new AppError("not_found");
+}
+
+/**
+ * Wywołanie Parent API w testach integracyjnych po dekomisji fallbacku legacy
+ * (zadanie 13): dokładna kompozycja catch-all
+ * `apps/web/src/app/api/v1/parent/[...path]/route.ts` — router oRPC obsługuje
+ * cały kontrakt (auth/login-setup-logout, children/decks/drafts/mock-tests/
+ * work-card/lekcje/werdykty/lesson-drafts/generation/assignments/progress),
+ * a brak dopasowania rzuca `not_found`. `segments` pozostają akceptowane
+ * wyłącznie dla zapisu istniejących testów — dopasowanie oRPC chodzi po
+ * pełnym URL żądania, więc są ignorowane.
+ */
+export async function handleParentApi(
+  request: Request,
+  services: Services,
+  _segments?: string[],
+): Promise<Response> {
+  const { matched, response } = await parentApiHandler.handle(request, {
+    prefix: "/api/v1/parent",
+    context: { services, headers: request.headers, url: request.url },
+  });
+  if (matched) {
+    return response;
+  }
+  throw new AppError("not_found");
+}
 
 /** Przechwytuje SQL także z klienta transakcyjnego oraz klientów już wcześniej połączonych z pulą. */
 export async function capturePoolQueries<T>(

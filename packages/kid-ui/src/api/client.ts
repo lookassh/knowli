@@ -13,14 +13,15 @@ import {
   SessionSummaryDtoSchema,
   SessionActivityResultDtoSchema,
   TaskDtoSchema,
+  kidApiContract,
   type AttemptDto,
-  type KidValidationReason,
   type AttemptInput,
   type DisclosureDto,
-  type FeedbackAudioDto,
   type EventInput,
+  type FeedbackAudioDto,
   type KidDeckDto,
   type KidProfileDto,
+  type KidValidationReason,
   type PresentationCompletionDto,
   type SessionActivityReport,
   type SessionActivityResultDto,
@@ -29,6 +30,10 @@ import {
   type SessionSummaryDto,
   type TaskDto,
 } from "@learning/contracts";
+import { createORPCClient, MalformedResponseError, ORPCError, type AnyORPCError } from "@orpc/client";
+import type { RouterContractClient } from "@orpc/contract";
+import { OpenAPILink } from "@orpc/openapi/fetch";
+import type { JsonifiedClient } from "@orpc/openapi";
 import type { RecordedAudio } from "../media/platform";
 import type { KidApi } from "./KidApi";
 
@@ -55,22 +60,32 @@ export interface KidClientOptions {
   fetchImpl?: typeof fetch;
 }
 
-type JsonInit = { method: "GET" | "POST" | "PUT"; body?: string | FormData };
+/** Typowany klient z kontraktu kid API (wartości jak na wire, czyli JSON). */
+type KidContractClient = JsonifiedClient<RouterContractClient<typeof kidApiContract>>;
+
+/** Szczegółowa odpowiedź HTTP procedury z outputStructure: "detailed". */
+type Detailed<T> = { status: number; headers: unknown; body: T };
 
 /**
- * Klient HTTP Kid API. Waliduje odpowiedzi schematami kontraktów na granicy
- * klienta; błędy sieci pozostają TypeError (obsługa trybu offline), a błędy
- * aplikacji stają się KidApiError z kodem do katalogu komunikatów.
+ * Klient HTTP Kid API na `OpenAPILink` (oRPC v2). Adresy, metody i ciała buduje
+ * wyłącznie kontrakt `kidApiContract` z `@learning/contracts`; klient waliduje
+ * odpowiedzi schematami kontraktów na granicy, błędy sieci pozostają TypeError
+ * (obsługa trybu offline), a błędy aplikacji stają się KidApiError z kodem do
+ * katalogu komunikatów.
  */
 export function createKidApiClient(options: KidClientOptions = {}): KidApi {
   const base = (options.baseUrl ?? "").replace(/\/+$/, "");
   const doFetch = options.fetchImpl ?? ((input: RequestInfo | URL, init?: RequestInit) => fetch(input, init));
 
-  async function request<T>(path: string, init: JsonInit, parse: (body: unknown) => T): Promise<T> {
+  /**
+   * Budżet pojedynczego żądania przez AbortController we wstrzykniętym fetch.
+   * Koniec sesji z raportem czeka na jedną ocenę modelu (termin 20 s), więc
+   * limit żądania musi go przewyższać (design §6); reszta dostaje 30 s.
+   */
+  function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const timeoutMs = url.endsWith("/end") ? 45_000 : 30_000;
     const controller = new AbortController();
-    // Koniec sesji z raportem czeka na jedną ocenę modelu (termin 20 s),
-    // więc limit żądania musi go przewyższać (design §6).
-    const timeoutMs = path.endsWith("/end") ? 45_000 : 30_000;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
@@ -78,26 +93,48 @@ export function createKidApiClient(options: KidClientOptions = {}): KidApi {
         controller.abort();
       }, timeoutMs);
     });
-    const perform = async (): Promise<T> => {
-      const response = await doFetch(base + path, { ...init, signal: controller.signal });
-      if (response.status === 204) return undefined as T;
-      const body = await response.json().catch(() => null);
-      if (!response.ok) throw toKidApiError(body);
-      return parse(body);
-    };
-    try { return await Promise.race([perform(), timeout]); }
-    finally { clearTimeout(timer); }
+    const perform = doFetch(input, { ...init, signal: controller.signal });
+    return Promise.race([perform, timeout]).finally(() => clearTimeout(timer));
   }
 
-  function toKidApiError(body: unknown): KidApiError {
-    const apiError = body as { code?: string; retryable?: boolean; details?: unknown } | null;
+  /**
+   * Koperta błędu serwera `{code, message, retryable, requestId, details?}`
+   * mapowana na ORPCError — bez dekodera link zgłasza MalformedResponseError
+   * (spike v2). Kod koperty przenosimy 1:1; dane = cała koperta.
+   */
+  // beta.45: dekoder zwraca AnyORPCError — klasa jest generyczna po kodzie/danych,
+  // a kod koperty jest dowolnym stringiem (ORPCErrorCode przyjmuje każdy).
+  const errorEnvelopeDecoder = (body: unknown): AnyORPCError | null => {
+    if (typeof body === "object" && body !== null && typeof (body as { code?: unknown }).code === "string") {
+      return new ORPCError((body as { code: string }).code, { data: body });
+    }
+    return null;
+  };
+
+  function toKidApiError(envelope: unknown): KidApiError {
+    const apiError = envelope as { code?: string; retryable?: boolean; details?: unknown } | null;
     const details = apiError?.details as { reason?: unknown } | undefined;
     const parsed = KidValidationReasonSchema.safeParse(details?.reason);
     return new KidApiError(apiError?.code ?? "internal", apiError?.retryable ?? false, parsed.success ? parsed.data : undefined);
   }
 
-  function post<T>(path: string, payload: unknown, parse: (body: unknown) => T): Promise<T> {
-    return request(path, { method: "POST", body: JSON.stringify(payload) }, parse);
+  /**
+   * Wspólne opakowanie wywołania oRPC: TypeError przechodzi (tryb offline),
+   * ORPCError z kopertą staje się KidApiError, a odpowiedź spoza kontraktu
+   * (np. proxy) spada do kodu internal bez ujawniania typu transportu.
+   */
+  async function call<T>(run: () => Promise<T>): Promise<T> {
+    try {
+      return await run();
+    } catch (error) {
+      if (error instanceof TypeError) throw error;
+      if (error instanceof KidApiError) throw error;
+      if (error instanceof ORPCError) throw toKidApiError(error.data);
+      if (error instanceof MalformedResponseError || error instanceof SyntaxError) {
+        throw new KidApiError("internal", false);
+      }
+      throw error;
+    }
   }
 
   /** Strukturalny kształt zodowego safeParse — bez zależności pakietu od zod. */
@@ -121,89 +158,95 @@ export function createKidApiClient(options: KidClientOptions = {}): KidApi {
   const parseDisclosure = parseWith(DisclosureDtoSchema);
   const parseFeedbackAudio = parseWith(FeedbackAudioDtoSchema);
   const parsePresentation = parseWith(PresentationCompletionDtoSchema);
+  const parseCatalog = parseWith(UiAudioCatalogDtoSchema);
+  const parseMockTestSummary = parseWith(MockTestSummaryDtoSchema);
+  const parseLessonMockTestSummary = parseWith(LessonMockTestSummaryDtoSchema);
   const parseProfiles = parseWith(KidProfileDtoSchema.array());
   const parseDecks = parseWith(KidDeckDtoSchema.array());
 
+  const link = new OpenAPILink(kidApiContract, {
+    origin: base || undefined,
+    url: "/api/v1/kid",
+    fetch: fetchWithTimeout,
+    customErrorResponseBodyDecoder: errorEnvelopeDecoder,
+  });
+  // beta.45: createORPCClient przyjmuje pojedynczy link (nie tablicę jak w v1)
+  const client: KidContractClient = createORPCClient(link);
+
   return {
     readUiAudio() {
-      return request("/api/v1/kid/ui-audio", { method: "GET" }, parseWith(UiAudioCatalogDtoSchema));
+      return call(async () => parseCatalog((await client.uiAudio() as Detailed<unknown>).body));
     },
     readMockTestSummary(sessionId) {
-      return request(`/api/v1/kid/sessions/${sessionId}/mock-test-summary`, { method: "GET" }, parseWith(MockTestSummaryDtoSchema));
+      return call(async () => parseMockTestSummary((await client.sessions.mockTestSummary({ sessionId }) as Detailed<unknown>).body));
     },
     readLessonMockTestSummary(sessionId) {
-      return request(`/api/v1/kid/sessions/${sessionId}/mock-test-summary`, { method: "GET" }, parseWith(LessonMockTestSummaryDtoSchema));
+      return call(async () => parseLessonMockTestSummary((await client.sessions.mockTestSummary({ sessionId }) as Detailed<unknown>).body));
     },
     readSessionActivityResult(sessionId: string): Promise<SessionActivityResultDto> {
-      return request(`/api/v1/kid/sessions/${sessionId}/activity-result`, { method: "GET" }, parseActivityResult);
+      return call(async () => parseActivityResult((await client.sessions.activityResult({ sessionId }) as Detailed<unknown>).body));
     },
     listProfiles(): Promise<KidProfileDto[]> {
-      return request("/api/v1/kid/profiles", { method: "GET" }, parseProfiles);
+      return call(async () => parseProfiles((await client.profiles() as Detailed<unknown>).body));
     },
     listDecks(childId: string, options: { microphoneEnabled?: boolean } = {}): Promise<KidDeckDto[]> {
-      const query = options.microphoneEnabled === undefined ? "" : `&microphoneEnabled=${options.microphoneEnabled}`;
-      return request(
-        `/api/v1/kid/decks?childId=${encodeURIComponent(childId)}${query}`,
-        { method: "GET" },
-        parseDecks,
-      );
+      // Query przychodzą jako stringi (spike v2), więc boolean musi pójść
+      // na wire jako literal "true"/"false" — zgodnie z z.input stringbool.
+      const query = options.microphoneEnabled === undefined
+        ? { childId }
+        : { childId, microphoneEnabled: String(options.microphoneEnabled) };
+      return call(async () => parseDecks((await client.decks(query) as Detailed<unknown>).body));
     },
     startSession(input: SessionInput): Promise<SessionDto> {
-      return post("/api/v1/kid/sessions", input, parseSession);
+      return call(async () => parseSession(await client.sessions.create(input)));
     },
     async nextTask(sessionId: string): Promise<TaskDto | null> {
-      const response = await doFetch(`${base}/api/v1/kid/sessions/${sessionId}/next`, { method: "POST" });
-      if (response.status === 204) {
-        return null;
-      }
-      if (!response.ok) {
-        throw toKidApiError(await response.json().catch(() => null));
-      }
-      return parseTask(await response.json());
+      return call(async () => {
+        const output = await client.sessions.next({ sessionId }) as Detailed<TaskDto | null | undefined>;
+        // 204 = wyczerpany budżet sesji; ciało detailed nie niesie zadania.
+        return output.status === 204 || output.body == null ? null : parseTask(output.body);
+      });
     },
     submitAnswer(input: Exclude<AttemptInput, { modality: "audio" }>): Promise<AttemptDto> {
-      return post(`/api/v1/kid/tasks/${input.taskId}/attempts`, input, parseAttempt);
+      return call(async () => parseAttempt((await client.tasks.attempts(input) as Detailed<unknown>).body));
     },
     async submitSpeech(taskId: string, clientAttemptId: string, audio: RecordedAudio): Promise<AttemptDto> {
-      // bajty nagrania idą multipartem poza JSON (arch §11–12); przeglądarka
-      // sama ustawi Content-Type z granicznikiem
-      const form = new FormData();
-      form.append("audio", new Blob([audio.bytes as BlobPart], { type: audio.mimeType }), "recording.webm");
-      form.append("clientAttemptId", clientAttemptId);
-      const response = await doFetch(`${base}/api/v1/kid/tasks/${taskId}/attempts`, { method: "POST", body: form });
-      if (!response.ok) {
-        throw toKidApiError(await response.json().catch(() => null));
-      }
-      return parseAttempt(await response.json());
+      // bajty nagrania idą multipartem poza JSON (arch §11–12); File w polu
+      // input każe serializatorowi linku zbudować FormData (nazwa pliku
+      // trafia do Content-Disposition), a granicznik dodaje przeglądarka
+      return call(async () => {
+        const output = await client.tasks.attempts({
+          taskId,
+          clientAttemptId,
+          audio: new File([audio.bytes as BlobPart], "recording.webm", { type: audio.mimeType }),
+        }) as Detailed<unknown>;
+        return parseAttempt(output.body);
+      });
     },
     readAttempt(attemptId: string): Promise<AttemptDto> {
-      return request(`/api/v1/kid/attempts/${attemptId}`, { method: "GET" }, parseAttempt);
+      return call(async () => parseAttempt(await client.attempts.get({ attemptId })));
     },
     authorizeDisclosure(taskId: string, kind: "audio" | "hint"): Promise<DisclosureDto> {
-      return post(`/api/v1/kid/tasks/${taskId}/disclosures`, { kind }, parseDisclosure);
+      return call(async () => parseDisclosure(await client.tasks.disclosures({ taskId, kind })));
     },
     authorizeFeedbackAudio(attemptId: string): Promise<FeedbackAudioDto> {
-      return post(`/api/v1/kid/attempts/${attemptId}/feedback-audio`, {}, parseFeedbackAudio);
+      return call(async () => parseFeedbackAudio((await client.attempts.feedbackAudio({ attemptId }) as Detailed<unknown>).body));
     },
     async completePresentation(taskId: string, clientCommandId?: string): Promise<PresentationCompletionDto> {
-      return post(
-        `/api/v1/kid/tasks/${taskId}/complete-presentation`,
-        clientCommandId === undefined ? {} : { clientCommandId },
-        parsePresentation,
-      );
+      return call(async () => parsePresentation(await client.tasks.completePresentation(
+        clientCommandId === undefined ? { taskId } : { taskId, clientCommandId },
+      )));
     },
     async recordObservation(input: EventInput): Promise<void> {
-      await post(`/api/v1/kid/tasks/${input.taskId}/events`, input, () => undefined);
+      await call(() => client.tasks.events(input));
     },
     endSession(sessionId: string, activityReport?: SessionActivityReport): Promise<SessionSummaryDto> {
-      return post(
-        `/api/v1/kid/sessions/${sessionId}/end`,
-        activityReport === undefined ? {} : { activityReport },
-        parseSummary,
-      );
+      return call(async () => parseSummary(await client.sessions.end(
+        activityReport === undefined ? { sessionId } : { sessionId, activityReport },
+      )));
     },
     disableMicrophone(sessionId: string): Promise<SessionDto> {
-      return post(`/api/v1/kid/sessions/${sessionId}/disable-microphone`, {}, parseSession);
+      return call(async () => parseSession(await client.sessions.disableMicrophone({ sessionId })));
     },
     mediaUrl(assetId: string): string {
       return `${base}/api/v1/media/${assetId}`;

@@ -7,9 +7,8 @@ import {
   type Services,
 } from "@learning/server";
 import { fakeGeneration, type FakeGeneration } from "./fakes";
-import { ManualClock, testDatabase, truncateCoreTables } from "./helpers";
+import { ManualClock, testDatabase, truncateCoreTables, handleKidApi } from "./helpers";
 import { DisclosureDtoSchema, SessionDtoSchema } from "@learning/contracts";
-import { handleKidApi } from "../../apps/web/src/kid/kid-router";
 import { withApi } from "../../apps/web/src/http/errors";
 const { pool } = testDatabase();
 const selectionEntropy = vi.hoisted(() => ({ seed: 0, calls: 0 }));
@@ -316,11 +315,11 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
     const recall = await nextTask(services, session.sessionId);
     expect(recall?.prompt.kind).toBe("picture_recall");
     expect(JSON.stringify(recall?.prompt)).not.toContain("red");
-    const api = withApi((request) => handleKidApi(request, services, ["tasks", recall!.taskId, "disclosures"]));
-    const audioResponse = await api(new Request("http://localhost/api/v1/kid/tasks/disclosures", {
+    const api = withApi((request) => handleKidApi(request, services));
+    const audioResponse = await api(new Request(`http://localhost/api/v1/kid/tasks/${recall!.taskId}/disclosures`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind: "audio" }),
     }));
-    const hintResponse = await api(new Request("http://localhost/api/v1/kid/tasks/disclosures", {
+    const hintResponse = await api(new Request(`http://localhost/api/v1/kid/tasks/${recall!.taskId}/disclosures`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind: "hint" }),
     }));
     expect(audioResponse.status).toBe(200);
@@ -347,15 +346,15 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
       select $1, child_id, id, item_revision_id, $2, 'picture-disable-processing', 1, 'audio', 'processing', '{}', '{}', $3, now()
       from learning_app.session_tasks where id = $4`, [attemptId, randomUUID(), session.policyId, recall!.taskId]);
 
-    const disableApi = withApi((request) => handleKidApi(request, services, ["sessions", session.sessionId, "disable-microphone"]));
-    const disabledResponse = await disableApi(new Request("http://localhost/api/v1/kid/sessions/disable-microphone", {
+    const disableApi = withApi((request) => handleKidApi(request, services));
+    const disabledResponse = await disableApi(new Request(`http://localhost/api/v1/kid/sessions/${session.sessionId}/disable-microphone`, {
       method: "POST", headers: { "content-type": "application/json" }, body: "{}",
     }));
     expect(disabledResponse.status).toBe(200);
     const disabled = SessionDtoSchema.parse(await disabledResponse.json());
     expect(disabled.microphoneEnabled).toBe(false);
     expect((await pool.query<{ reservations: string[] }>("select context->'reservations' as reservations from learning_app.learning_sessions where id=$1", [session.sessionId])).rows[0]?.reservations).toEqual([]);
-    const repeated = await disableApi(new Request("http://localhost/api/v1/kid/sessions/disable-microphone", {
+    const repeated = await disableApi(new Request(`http://localhost/api/v1/kid/sessions/${session.sessionId}/disable-microphone`, {
       method: "POST", headers: { "content-type": "application/json" }, body: "{}",
     }));
     expect(SessionDtoSchema.parse(await repeated.json())).toMatchObject({ microphoneEnabled: false });
@@ -377,7 +376,7 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
     await completePresentation(services, { taskId: fallback!.taskId });
     expect(await nextTask(services, session.sessionId)).toBeNull();
     await endSession(services, session.sessionId);
-    expect((await disableApi(new Request("http://localhost/api/v1/kid/sessions/disable-microphone", {
+    expect((await disableApi(new Request(`http://localhost/api/v1/kid/sessions/${session.sessionId}/disable-microphone`, {
       method: "POST", headers: { "content-type": "application/json" }, body: "{}",
     }))).status).toBe(409);
   });

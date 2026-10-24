@@ -36,14 +36,18 @@ Nazwy pakietów: @learning/contracts, @learning/kid-ui i @learning/server. apps/
 | apps/web/src/app/parent/page.tsx | Lista dzieci, tematów i wejście do postępów |
 | apps/web/src/app/parent/decks/[id]/page.tsx | Edycja/podgląd zestawu |
 | apps/web/src/app/parent/progress/page.tsx | Panel dziecka i zestawu |
-| apps/web/src/app/api/v1/parent/login/route.ts | Login i cookie rodzica |
 | apps/web/src/app/api/v1/parent/[...path]/route.ts | Cienki dispatch zatwierdzonych operacji Parent API |
 | apps/web/src/app/api/v1/kid/[...path]/route.ts | Cienki dispatch zatwierdzonych operacji Kid API |
+| apps/web/src/app/api/openapi.json/route.ts | Read-only spec OpenAPI Kid API generowana z kontraktu `kidApiContract` |
 | apps/web/src/app/api/v1/media/[id]/route.ts | Odczyt autoryzowanego zasobu |
 | apps/web/src/app/api/health/route.ts | Liveness i readiness web (proces + baza) dla Compose |
 | apps/web/src/app/manifest.ts | Manifest PWA |
-| apps/web/src/parent/parent-router.ts | Jawna tabela endpointów rodzica |
-| apps/web/src/http/kid-router.ts | Jawna tabela endpointów dziecka |
+| apps/web/src/orpc/base.ts | Kontekst oRPC i middleware: koperta AppError, kontrola Origin/CSRF |
+| apps/web/src/orpc/handler.ts | Fabryka OpenAPIHandler: autorytatywna koperta błędu i mapa statusów |
+| apps/web/src/orpc/request-limits.ts | Limity rozmiaru ciała: JSON, multipart audio i pre-check content-length |
+| apps/web/src/orpc/parent-router.ts | Router oRPC Parent API — cały kontrakt /api/v1/parent (w tym auth) |
+| apps/web/src/orpc/kid-router.ts | Router oRPC Kid API — cały kontrakt /api/v1/kid |
+| apps/web/src/parent/orpc-contract.ts | Kontrakt Parent API (oRPC, wewnętrzny dla web; nie trafia do @learning/contracts) |
 | apps/web/src/http/errors.ts | Jednolity format błędów i requestId |
 | apps/web/src/http/security.ts | Sesja, Origin/CSRF, limity żądań |
 | apps/web/src/parent/DeckEditor.tsx | Formularz szkicu, warianty i zasoby |
@@ -64,7 +68,7 @@ Catch-all jest wyłącznie mapą jawnie dozwolonych operacji, nie dynamicznym do
 | Ścieżka | Odpowiedzialność |
 | --- | --- |
 | packages/kid-ui/src/KidApp.tsx | Główne widoki i przejścia |
-| packages/kid-ui/src/api/client.ts | KidApi z konfigurowalnym baseUrl |
+| packages/kid-ui/src/api/client.ts | KidApi na OpenAPILink (oRPC) z konfigurowalnym baseUrl |
 | packages/kid-ui/src/session/useLearningSession.ts | Stan sesji, zapis i wznowienie |
 | packages/kid-ui/src/screens/ProfilePicker.tsx | Wybór dziecka |
 | packages/kid-ui/src/screens/DeckPicker.tsx | Przypisane tematy |
@@ -223,7 +227,7 @@ Lekcje i moduły przedmiotów (moduł gramatyki, 2026-10-12): silnik i przedmiot
 
 Testy lekcji: `packages/server/src/domain/lessons/*.test.ts` (jednostkowe, kontrolowany zegar), `tests/integration/lesson-*.test.ts` (PostgreSQL + fake grader), `tests/e2e/lesson-*.spec.ts` (Playwright, fake providerzy). Fixtures lekcji w `tests/fixtures/`.
 
-Edycja profilu: `contracts/src/decks.ts` definiuje `ChildPatchSchema`, `server/src/modules/profiles.ts` implementuje `updateChild`, a `web/src/app/api/v1/parent/children/[id]/route.ts` udostępnia PATCH. `ChildEditor.tsx` odpowiada także za formularz imienia i awatara; istniejąca historia nie jest modyfikowana.
+Edycja profilu: `contracts/src/decks.ts` definiuje `ChildPatchSchema`, `server/src/modules/profiles.ts` implementuje `updateChild`, a PATCH `/children/{id}` udostępnia router oRPC Parent API (`apps/web/src/parent/orpc-contract.ts` + `apps/web/src/orpc/parent-router.ts`). `ChildEditor.tsx` odpowiada także za formularz imienia i awatara; istniejąca historia nie jest modyfikowana.
 
 ### Wariant obrazkowy słownictwa (2026-10-14)
 
@@ -235,7 +239,7 @@ Wspólne ustawienie `decks.cover_asset_id`, migracja `0011_deck_cover_image.sql`
 
 ### Aktywna praca do rozliczeń nagród (2026-10-16)
 
-Kontrakt sygnału i ograniczonego podsumowania: `packages/contracts/src/reward-activity.ts`; reguły limitów: `packages/server/src/domain/reward-activity.ts`; utrwalenie i transakcyjne rozliczenie: `packages/server/src/modules/reward-activity.ts`, `attempts.ts`, `sessions.ts`, migracja `0012_reward_activity.sql`. Kid UI wysyła sygnały z `session-controller.ts` i hooka cyklu życia; Kid API znajduje się w `apps/web/src/kid/kid-router.ts`. Odczyt rodzica `GET /reward-activity/{childId}` wymaga Parent Mode i jest w `apps/web/src/parent/parent-router.ts`. Testy: `packages/contracts/src/reward-activity.test.ts`, `packages/server/src/domain/reward-activity.test.ts`, `tests/integration/reward-activity.test.ts` i `packages/kid-ui/src/session/session-controller.test.ts`. Raport MCP i jego skill pozostają bez zmian, bo nie konsumują nowego endpointu.
+Kontrakt sygnału i ograniczonego podsumowania: `packages/contracts/src/reward-activity.ts`; reguły limitów: `packages/server/src/domain/reward-activity.ts`; utrwalenie i transakcyjne rozliczenie: `packages/server/src/modules/reward-activity.ts`, `attempts.ts`, `sessions.ts`, migracja `0012_reward_activity.sql`. Kid UI wysyła sygnały z `session-controller.ts` i hooka cyklu życia; Kid API znajduje się w `apps/web/src/orpc/kid-router.ts`. Odczyt rodzica `GET /reward-activity/{childId}` wymaga Parent Mode i jest w `apps/web/src/orpc/parent-router.ts`. Testy: `packages/contracts/src/reward-activity.test.ts`, `packages/server/src/domain/reward-activity.test.ts`, `tests/integration/reward-activity.test.ts` i `packages/kid-ui/src/session/session-controller.test.ts`. Raport MCP i jego skill pozostają bez zmian, bo nie konsumują nowego endpointu.
 
 Naliczanie punktów i podsumowania: settlement przechowuje czas, punkty, resztę oraz stabilny `deck_id`; `packages/server/src/domain/reward-activity.ts` zawiera arytmetykę minut i podział dni lokalnych, a `packages/server/src/modules/reward-activity.ts` odczytuje widoki dziecka. Kid DTO/teksty są w `packages/contracts/src/kid.ts` i `messages.ts`; ekrany to `ProfileScreen.tsx`, `DeckScreen.tsx` i `SummaryScreen.tsx`. Migracja `0013_reward_points.sql`. MCP nie konsumuje nagród i zachowuje estymowaną semantykę `learning-overview`.
 
