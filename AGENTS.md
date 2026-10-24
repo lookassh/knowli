@@ -78,6 +78,43 @@ SDK dostawców występują tylko w adapterach za portami LLM, TTS, STT, pronunci
 
 Nie dodawaj mikroserwisów, Redis, osobnego backendu, ogólnego frameworka pluginów ani abstrakcji repozytorium dla każdej tabeli.
 
+## Architektura nowych funkcji i refaktoryzacji
+
+Rozwijaj Knowli jako **modularny monolit**, stosując proporcjonalnie **Feature Modules / Vertical Slices**, **Ports & Adapters** oraz **Functional Core, Imperative Shell**. Pozostajemy przy obecnym stacku i jednej bazie danych.
+
+### Moduły i zależności
+
+- Umieszczaj nową funkcję w module odpowiedzialnym za dany obszar produktu. Najpierw sprawdź istniejące granice; rozbuduj właściwy moduł zamiast tworzyć równoległą implementację.
+- Moduł udostępnia małe, jawne publiczne API. Inne moduły korzystają z niego zamiast importować jego wewnętrzne pliki, modele ORM lub helpery.
+- Zależności między modułami muszą być kierunkowe i bez cykli. Kod współdzielony wydzielaj dopiero przy rzeczywistym wspólnym znaczeniu; unikaj ogólnych katalogów `utils`, `common` i `shared` jako miejsca na dowolną logikę.
+- Własność danych i reguł powinna być jednoznaczna. Zmiany danych należących do innego modułu prowadź przez uzgodnioną operację tego modułu.
+- Istniejące ścieżki pakietów pozostają obowiązujące. Nowy moduł nie wymaga osobnego pakietu, procesu ani usługi.
+
+### Reguły biznesowe i adaptery
+
+- Reguły oceniania, samodzielności, planowania sesji, powtórek i postępu implementuj jako funkcje domenowe nad jawnie przekazanymi danymi. Czas, losowość i identyfikatory przekazuj jawnie, gdy wpływają na decyzję.
+- Domena nie importuje Next.js, oRPC, Drizzle, klientów bazy, SDK providerów ani konfiguracji środowiska. Używa typów domenowych; modele ORM i typy transportowe mapuj na granicach.
+- Przypadki użycia koordynują autoryzację, odczyty, wywołanie reguł i zapisy. Kontrolery HTTP, procedury oRPC, MCP oraz zadania workera wywołują przypadki użycia; nie zawierają własnych kopii reguł biznesowych.
+- Dostęp do infrastruktury zamykaj w adapterach. Porty definiuj według potrzeb operacji biznesowej, nie jako kopię API biblioteki ani repozytorium dla każdej tabeli.
+- Nowe przedmioty dodawaj przez `SubjectModule` i rejestr. Nową mechanikę ćwiczenia rozwijaj jawnie w kontraktach, silniku, edytorze i widokach odpowiednich klientów.
+
+### Transakcje i historia
+
+- Granica modułu nie może rozbić wymaganej operacji atomowej. Powiązane zapisy prób, ocen, ekspozycji i projekcji pozostają w jednej transakcji, gdy wymagają tego reguły Knowli.
+- Koordynator przypadku użycia ustala granicę transakcji. Współpracujące moduły muszą uczestniczyć w niej bez ukrytych, niezależnych commitów.
+- Zachowuj blokady, idempotencję, kolejność ujawnień, wersjonowanie i niezmienność historii.
+- Nie wprowadzaj event busa, asynchronicznej komunikacji między modułami ani eventual consistency wyłącznie dla uzyskania modularności.
+
+### Proporcjonalność i weryfikacja
+
+- Przed implementacją krótko wskaż moduł odpowiedzialny za funkcję, jego zależności oraz granicę transakcji. Rutynowe wybory rozstrzygaj samodzielnie; nie wymagają osobnej akceptacji architektury.
+- Nie przebudowuj całego obszaru przy każdej funkcji. Poprawiaj granice w zakresie potrzebnym do zadania i zachowuj zgodność publicznych kontraktów.
+- Dodawaj znaczące testy reguł domenowych, a gwarancje bazy i współbieżności sprawdzaj integracyjnie. Dla istotnych nowych granic stosuj prostą kontrolę importów.
+- Nie twórz abstrakcji bez konkretnej potrzeby. Przenośność oznacza możliwość zachowania reguł i testów przy wymianie adaptera; sam podział na katalogi jej nie zapewnia.
+- W raporcie końcowym wskaż, gdzie umieszczono reguły, jakie zależności dodano i jakie gwarancje zweryfikowano.
+
+Te zasady określają kierunek nowych zmian. Nie są poleceniem natychmiastowej przebudowy istniejącej aplikacji.
+
 ## Integracja MCP i skill Umiem! — wspólny kontrakt z API
 
 - Serwer MCP Streamable HTTP utrzymuj w `apps/web/src/integrations/` i udostępniaj pod `/api/mcp`, używając istniejących kontraktów i przypadków użycia. Pakiet `integrations/umiem-mcp/` zawiera semantyczny walidator, wygenerowany schemat, manifest kontraktu i skill w `skills/umiem-learning/SKILL.md`; nie zawiera alternatywnego serwera stdio ani klienta REST.
