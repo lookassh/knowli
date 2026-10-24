@@ -110,9 +110,12 @@ export const appErrorEncoder = (error: AnyORPCError): unknown => {
   // niosą odrzucone wejście (invalidData), np. PIN rodzica lub odpowiedź
   // dziecka (review PR #114, P1); treść żądania nie jest nigdy logowana.
   const cause = error.cause;
-  const safeMessage = cause instanceof AppError ? cause.message : (CATALOGUE[code] ?? "error");
+  // Log wyłącznie stałych metadanych: kod, requestId i komunikat z KATALOGU
+  // (nigdy error/cause.message — komunikaty walidacji mogą nieść treść
+  // żądania, np. item.target z edycji szkicu; CWE-532, review PR #114).
+  // cause.code (AppError) pozostaje do korelacji, surowe obiekty nigdy.
   const causeCode = cause instanceof AppError ? cause.code : undefined;
-  console.error("[api]", code, requestId, safeMessage, causeCode ?? "");
+  console.error("[api]", code, requestId, CATALOGUE[code] ?? "error", causeCode ?? "");
   return toApiError(code, requestId, details);
 };
 

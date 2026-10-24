@@ -226,3 +226,22 @@ describe("appErrorEncoder — log nie zapisuje surowej przyczyny (review P1)", (
     }
   });
 });
+
+describe("appErrorEncoder — komunikaty przyczyn nigdy w logu (CWE-532)", () => {
+  it("canary w AppError.message nie trafia do logu", () => {
+    const canary = "REVIEW_FAKE_ITEM_TARGET_CANARY";
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const err = new ORPCError("VALIDATION", {
+        message: "validation failed",
+        cause: new AppError("validation", { message: `item.target ${canary} is invalid` }),
+      });
+      appErrorEncoder(err);
+      const logged = log.mock.calls.map((parts) => format(...parts)).join(" | ");
+      expect(logged).not.toContain(canary);
+      expect(logged).toContain("validation");
+    } finally {
+      log.mockRestore();
+    }
+  });
+});

@@ -61,6 +61,24 @@ describe("kid catch-all — surowy limit bajtów raportu aktywności (review P2)
     expect(endSession).not.toHaveBeenCalled();
   });
 
+  it("cap działa także przez trailing slash i %-encodowanie ścieżki (review gitar)", async () => {
+    const padding = " ".repeat(300_000) + "{}";
+    for (const path of [`/sessions/${sessionId}/end/`, `/sessions/${sessionId}/%65nd`]) {
+      const request = new Request(`http://localhost/api/v1/kid${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: padding,
+      });
+
+      const response = await POST(request, contextFor(["sessions", sessionId, "end"]));
+
+      expect(response.status).toBe(400);
+      const body = ApiErrorSchema.parse(await response.json());
+      expect(body.code).toBe("validation");
+      expect(endSession).not.toHaveBeenCalled();
+    }
+  });
+
   it("przepuszcza legalny raport po surowym limicie do procedury", async () => {
     const request = new Request(`http://localhost/api/v1/kid/sessions/${sessionId}/end`, {
       method: "POST",

@@ -28,11 +28,24 @@ const kidORpcHandler = createOpenApiHandler(kidRouter, {
 // gdzie ten sam wyjątek leciał z ostatniego wpadu legacy routera.
 // Raport aktywności ma własny, niższy limit niż globalny sufit audio: surowe
 // bajty tego ciała liczone są PRZED dekodowaniem oRPC (nadmiarowe formatowanie
-// JSON nie może ominąć limitu; review PR #114, P2).
+// JSON nie może ominąć limitu; review PR #114, P2). Ścieżkę normalizujemy jak
+// matcher oRPC (dekodowanie %-encodowania, redukcja slashy, bez końcowego) —
+// inaczej `/end/` czy `/%65nd` ominęłoby regex, a dopasowałoby procedurę
+// (review PR #114, gitar).
+function kidPathname(url: string): string {
+  let pathname = new URL(url).pathname;
+  try {
+    pathname = decodeURIComponent(pathname);
+  } catch {
+    // niepoprawne sekwencje zostają surowe — regex wtedy nie zmatchuje,
+    // a wtedy bezpiecznieśniej ograniczyć tylko globalem.
+  }
+  return pathname.replace(/\/{2,}/g, "/").replace(/\/+$/, "");
+}
 const SESSION_END_PATH = /\/sessions\/[^/]+\/end$/;
 
 const dispatch = withApi<RouteContext>(async (request, _context) => {
-  const limited = SESSION_END_PATH.test(new URL(request.url).pathname)
+  const limited = SESSION_END_PATH.test(kidPathname(request.url))
     ? await withRawBodyCap(request, SESSION_ACTIVITY_REPORT_MAX_BYTES)
     : request;
   const { matched, response } = await kidORpcHandler.handle(limited, {
