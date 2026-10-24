@@ -2,15 +2,22 @@ import { getServerServices } from "@/composition";
 import { withApi } from "@/http/errors";
 import { createOpenApiHandler } from "@/orpc/handler";
 import { kidRouter } from "@/orpc/kid-router";
-import { AppError } from "@learning/server";
+import { AppError, MAX_AUDIO_BYTES, MULTIPART_OVERHEAD_BYTES } from "@learning/server";
 
 interface RouteContext {
   params: Promise<{ path?: string[] }>;
 }
 
 // Handler oRPC budowany raz per proces (module scope); `Services` trafiają
-// per żądanie przez kontekst przekazywany do `handle`.
-const kidORpcHandler = createOpenApiHandler(kidRouter);
+// per żądanie przez kontekst przekazywany do `handle`. Kid API jest
+// nieuwierzytelnione, więc surowy strumień żądania ma twardy sufit bajtów
+// (największe legalne ciało = multipart z nagraniem) pilnowany przez
+// `RequestLimitHandlerPlugin` ZANIM kodek oRPC zbuforuje ciało — ochrona
+// DoS jak w streamingowych routerach legacy; dokładniejsze limity per
+// endpoint (raport aktywności) pilnują strażniki w procedurach.
+const kidORpcHandler = createOpenApiHandler(kidRouter, {
+  maxBodySize: MAX_AUDIO_BYTES + MULTIPART_OVERHEAD_BYTES,
+});
 
 // oRPC jest jedynym serwerem kontraktu Kid API (arch §12) — ręczny router
 // legacy został zdekomisjonowany. Ścieżka spoza kontraktu (`matched === false`)
@@ -20,7 +27,7 @@ const kidORpcHandler = createOpenApiHandler(kidRouter);
 const dispatch = withApi<RouteContext>(async (request, _context) => {
   const { matched, response } = await kidORpcHandler.handle(request, {
     prefix: "/api/v1/kid",
-    context: { services: getServerServices(), headers: request.headers },
+    context: { services: getServerServices(), headers: request.headers, url: request.url },
   });
   if (matched) {
     return response;

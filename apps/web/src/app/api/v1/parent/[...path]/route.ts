@@ -2,15 +2,21 @@ import { getServerServices } from "@/composition";
 import { withApi } from "@/http/errors";
 import { createOpenApiHandler } from "@/orpc/handler";
 import { parentORpcRouter } from "@/orpc/parent-router";
-import { AppError } from "@learning/server";
+import { AppError, MAX_DECK_COVER_BYTES } from "@learning/server";
 
 interface RouteContext {
   params: Promise<{ path?: string[] }>;
 }
 
 // Handler oRPC budowany raz per proces (module scope); `Services` trafiają
-// per żądanie przez kontekst przekazywany do `handle`.
-const parentORpcHandler = createOpenApiHandler(parentORpcRouter);
+// per żądanie przez kontekst przekazywany do `handle`. Sufit bajtów surowego
+// strumienia = największe legalne ciało (okładka 5 MB) + 64 KB luzu na
+// ramki multipart/JSON — `RequestLimitHandlerPlugin` odrzuca nadmiar ZANIM
+// kodek oRPC zbuforuje ciało; dokładne limity per endpoint (okładka, audio)
+// pilnują strażniki w procedurach.
+const parentORpcHandler = createOpenApiHandler(parentORpcRouter, {
+  maxBodySize: MAX_DECK_COVER_BYTES + 64 * 1024,
+});
 
 // oRPC jest jedynym serwerem kontraktu Parent API (arch §12) — ręczny router
 // legacy i fallback `withORpcFallback` zostały zdekomisjonowane (zadanie 13
@@ -21,7 +27,7 @@ const parentORpcHandler = createOpenApiHandler(parentORpcRouter);
 const dispatch = withApi<RouteContext>(async (request, _context) => {
   const { matched, response } = await parentORpcHandler.handle(request, {
     prefix: "/api/v1/parent",
-    context: { services: getServerServices(), headers: request.headers },
+    context: { services: getServerServices(), headers: request.headers, url: request.url },
   });
   if (matched) {
     return response;

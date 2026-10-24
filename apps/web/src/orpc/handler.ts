@@ -3,6 +3,7 @@ import { messages, type ApiError } from "@learning/contracts";
 import { AppError, type AppErrorCode } from "@learning/server";
 import { OpenAPIHandler } from "@orpc/openapi/fetch";
 import type { AnyORPCError, Context, Router } from "@orpc/server";
+import { RequestLimitHandlerPlugin } from "@orpc/server/plugins";
 
 /**
  * Autorytatywne źródło koperty błędu oRPC: `{code, message, retryable,
@@ -112,10 +113,27 @@ export const appErrorEncoder = (error: AnyORPCError): unknown => {
  * Fabryka handlera OpenAPI dla routerów oRPC — jednolita konfiguracja
  * (encoder koperty + mapowanie statusów) dla każdego montowanego routera.
  * Kontekst przekazuje catch-all (route.ts) przy każdym `handle`.
+ *
+ * `maxBodySize` włącza `RequestLimitHandlerPlugin`: surowy strumień żądania
+ * jest limitowany ZANIM kodek oRPC zbuforuje i sparsuje ciało (pre-check
+ * `content-length`, a bez nagłówka — odrzucenie po przekroczeniu limitu przy
+ * pobieraniu ~limitu + kilka chunków). To odtwarza ochronę DoS streamingowych
+ * routerów legacy: kodek parsuje ciało przed łańcuchem procedury, więc strażniki
+ * per-procedura (audio/report/cover) odrzucałyby nadmiarowe payloady dopiero
+ * po pełnym buforowaniu. `PAYLOAD_TOO_LARGE` mapuje się przez `errorStatusMap`
+ * + `classifyError` na kopertę `validation`/400 — jak odrzucenia w legacy.
+ * Limit dobiera route per powierzchnia API (największe legalne ciało + luz);
+ * dokładniejsze limity per endpoint pilnują nadal strażniki w procedurach.
  */
-export function createOpenApiHandler<T extends Context>(router: Router<T>): OpenAPIHandler<T> {
+export function createOpenApiHandler<T extends Context>(
+  router: Router<T>,
+  options?: { maxBodySize: number },
+): OpenAPIHandler<T> {
   return new OpenAPIHandler(router, {
     errorStatusMap,
     customErrorResponseBodyEncoder: appErrorEncoder,
+    ...(options === undefined
+      ? {}
+      : { plugins: [new RequestLimitHandlerPlugin({ maxBodySize: options.maxBodySize })] }),
   });
 }

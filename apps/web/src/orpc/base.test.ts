@@ -18,8 +18,8 @@ vi.mock("@learning/server", async (importActual) => {
 const services = {} as Services;
 const parentGuard = vi.mocked(requireParent);
 
-function context(headers: HeadersInit = []): ORpcContext {
-  return { services, headers: new Headers(headers) };
+function context(headers: HeadersInit = [], url = "http://localhost/rpc"): ORpcContext {
+  return { services, headers: new Headers(headers), url };
 }
 
 /** Zwraca odrzucony błąd zamiast samego faktu odrzucenia. */

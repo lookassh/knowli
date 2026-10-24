@@ -310,7 +310,7 @@ async function call(path: string, init?: RequestInit): Promise<Response> {
   const request = new Request(`http://localhost/api/v1/parent${path}`, init);
   const { matched, response } = await handler.handle(request, {
     prefix: "/api/v1/parent",
-    context: { services, headers: request.headers },
+    context: { services, headers: request.headers, url: request.url },
   });
   if (!matched) throw new Error(`no oRPC match for ${path}`);
   return response;
@@ -442,7 +442,24 @@ describe("parent oRPC router — auth bootstrap (login/logout/setup)", () => {
       new Request("http://localhost", { headers: { "x-forwarded-proto": "https" } }),
       "https-token",
     );
-    expect(response.headers.get("set-cookie")).toBe(expected);
+    expect(response!.headers.get("set-cookie")).toBe(expected);
+    expect(expected).toContain("Secure");
+  });
+
+  it("POST /login po bezpośrednim https (bez proxy-header) dostaje Secure (CWE-614)", async () => {
+    vi.mocked(loginParent).mockResolvedValueOnce({ token: "direct-https-token", expiresAt: instant });
+
+    // Bezpośrednie HTTPS bez x-forwarded-proto: protokół czytany z URL żądania
+    // przekazywanego w kontekście oRPC — atrybut Secure nie może zniknąć.
+    const request = new Request(`https://umiem.test/api/v1/parent/login`, authInit(secret));
+    const { matched, response } = await handler.handle(request, {
+      prefix: "/api/v1/parent",
+      context: { services, headers: request.headers, url: request.url },
+    });
+    expect(matched).toBe(true);
+
+    const expected = buildSessionCookie(new Request("https://umiem.test"), "direct-https-token");
+    expect(response!.headers.get("set-cookie")).toBe(expected);
     expect(expected).toContain("Secure");
   });
 
@@ -1325,7 +1342,7 @@ describe("parent oRPC — pełne koło klient→handler (OpenAPILink)", () => {
       headers.set("cookie", sessionCookie.cookie);
       const request = new Request(new URL(String(input), "http://localhost"), { ...init, headers });
       return handler
-        .handle(request, { prefix: "/api/v1/parent", context: { services, headers: request.headers } })
+        .handle(request, { prefix: "/api/v1/parent", context: { services, headers: request.headers, url: request.url } })
         .then(({ response }) => response);
     });
   }

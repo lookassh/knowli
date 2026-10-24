@@ -244,14 +244,87 @@ async function call(path: string, init?: RequestInit): Promise<Response> {
   const request = new Request(`http://localhost/api/v1/kid${path}`, init);
   const { matched, response } = await handler.handle(request, {
     prefix: "/api/v1/kid",
-    context: { services, headers: request.headers },
+    context: { services, headers: request.headers, url: request.url },
   });
   if (!matched) throw new Error(`no oRPC match for ${path}`);
   return response;
 }
 
+// Handler z limitem surowego strumienia jak w route.ts (RequestLimitHandlerPlugin).
+const cappedHandler = createOpenApiHandler(kidRouter, {
+  maxBodySize: MAX_AUDIO_BYTES + MULTIPART_OVERHEAD_BYTES,
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+describe("kid oRPC router — limit surowego strumienia (RequestLimitHandlerPlugin)", () => {
+  const attemptsUrl = `/tasks/66666666-6666-4666-8666-666666666666/attempts`;
+
+  it("odrzuca strumień bez content-length ponad limit zanim codec zbuforuje całość", async () => {
+    let pulled = 0;
+    const oversized = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        controller.enqueue(new Uint8Array(64 * 1024).fill(65));
+      },
+    });
+    const request = new Request(`http://localhost/api/v1/kid${attemptsUrl}`, {
+      method: "POST",
+      headers: { "content-type": "multipart/form-data; boundary=x" },
+      body: oversized,
+      // @ts-expect-error -- duplex wymagany dla strumieniowych ciał w undici
+      duplex: "half",
+    });
+
+    const { matched, response } = await cappedHandler.handle(request, {
+      prefix: "/api/v1/kid",
+      context: { services, headers: request.headers, url: request.url },
+    });
+
+    expect(matched).toBe(true);
+    expect(response!.status).toBe(400);
+    const body = ApiErrorSchema.parse(await response!.json());
+    expect(body.code).toBe("validation");
+    // Źródło pobiera co najwyżej limit + kilka chunków, nie całość (ochrona DoS).
+    expect(pulled).toBeLessThan(80);
+    expect(vi.mocked(submitSpeechAttempt)).not.toHaveBeenCalled();
+  });
+
+  it("odrzuca po content-length ponad limit bez czytania ciała", async () => {
+    let reads = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        reads += 1;
+        controller.enqueue(new Uint8Array(64 * 1024).fill(66));
+      },
+    });
+    const request = new Request(`http://localhost/api/v1/kid${attemptsUrl}`, {
+      method: "POST",
+      headers: {
+        "content-type": "multipart/form-data; boundary=x",
+        "content-length": String(MAX_AUDIO_BYTES + MULTIPART_OVERHEAD_BYTES + 1),
+      },
+      body,
+      // @ts-expect-error -- duplex wymagany dla strumieniowych ciał w undici
+      duplex: "half",
+    });
+
+    const { matched, response } = await cappedHandler.handle(request, {
+      prefix: "/api/v1/kid",
+      context: { services, headers: request.headers, url: request.url },
+    });
+
+    expect(matched).toBe(true);
+    expect(response!.status).toBe(400);
+    const parsed = ApiErrorSchema.parse(await response!.json());
+    expect(parsed.code).toBe("validation");
+    // undici czyta do 1 chunku z wyprzedzeniem przed odrzuceniem — gwarancją
+    // jest ograniczony odczyt (brak pełnego buforowania), nie zero odczytów.
+    expect(reads).toBeLessThan(3);
+    expect(vi.mocked(submitSpeechAttempt)).not.toHaveBeenCalled();
+  });
 });
 
 describe("kid oRPC router — odczyty (GET)", () => {
@@ -294,7 +367,7 @@ describe("kid oRPC router — odczyty (GET)", () => {
     const response = await call(`/decks?childId=not-a-uuid`);
 
     expect(response.status).toBe(400);
-    const body = ApiErrorSchema.parse(await response.json());
+    const body = ApiErrorSchema.parse(await response!.json());
     expect(body.code).toBe("validation");
     expect(listKidDecks).not.toHaveBeenCalled();
   });
@@ -375,7 +448,7 @@ describe("kid oRPC router — odczyty (GET)", () => {
     });
 
     expect(response.status).toBe(403);
-    const body = ApiErrorSchema.parse(await response.json());
+    const body = ApiErrorSchema.parse(await response!.json());
     expect(body.code).toBe("forbidden");
     expect(authorizeFeedbackAudio).not.toHaveBeenCalled();
   });
@@ -386,7 +459,7 @@ describe("kid oRPC router — odczyty (GET)", () => {
     const response = await call(`/attempts/${attemptId}`);
 
     expect(response.status).toBe(404);
-    const body = ApiErrorSchema.parse(await response.json());
+    const body = ApiErrorSchema.parse(await response!.json());
     expect(body.code).toBe("not_found");
   });
 });
@@ -421,7 +494,7 @@ describe("kid oRPC router — sesje (POST)", () => {
     });
 
     expect(response.status).toBe(400);
-    const body = ApiErrorSchema.parse(await response.json());
+    const body = ApiErrorSchema.parse(await response!.json());
     expect(body.code).toBe("validation");
     expect(startSession).not.toHaveBeenCalled();
   });
@@ -489,7 +562,7 @@ describe("kid oRPC router — sesje (POST)", () => {
     });
 
     expect(response.status).toBe(400);
-    const body = ApiErrorSchema.parse(await response.json());
+    const body = ApiErrorSchema.parse(await response!.json());
     expect(body.code).toBe("validation");
     expect(body.details).toEqual({ reason: "activity_report_update_required" });
     expect(endSession).not.toHaveBeenCalled();
@@ -508,7 +581,7 @@ describe("kid oRPC router — sesje (POST)", () => {
     });
 
     expect(response.status).toBe(400);
-    const body = ApiErrorSchema.parse(await response.json());
+    const body = ApiErrorSchema.parse(await response!.json());
     expect(body.code).toBe("validation");
     expect(endSession).not.toHaveBeenCalled();
   });
@@ -521,7 +594,7 @@ describe("kid oRPC router — sesje (POST)", () => {
     });
 
     expect(response.status).toBe(400);
-    const body = ApiErrorSchema.parse(await response.json());
+    const body = ApiErrorSchema.parse(await response!.json());
     expect(body.code).toBe("validation");
     expect(endSession).not.toHaveBeenCalled();
   });
@@ -567,7 +640,7 @@ describe("kid oRPC router — sesje (POST)", () => {
       ["disable-microphone", disableResponse],
     ] as const) {
       expect(response.status, label).toBe(403);
-      const body = ApiErrorSchema.parse(await response.json());
+      const body = ApiErrorSchema.parse(await response!.json());
       expect(body.code, label).toBe("forbidden");
     }
     expect(startSession).not.toHaveBeenCalled();
@@ -601,7 +674,7 @@ describe("kid oRPC router — zadania (POST)", () => {
     });
 
     expect(response.status).toBe(400);
-    const body = ApiErrorSchema.parse(await response.json());
+    const body = ApiErrorSchema.parse(await response!.json());
     expect(body.code).toBe("validation");
     expect(recordEvent).not.toHaveBeenCalled();
   });
@@ -628,7 +701,7 @@ describe("kid oRPC router — zadania (POST)", () => {
     });
 
     expect(response.status).toBe(400);
-    const body = ApiErrorSchema.parse(await response.json());
+    const body = ApiErrorSchema.parse(await response!.json());
     expect(body.code).toBe("validation");
     expect(authorizeDisclosure).not.toHaveBeenCalled();
   });
@@ -688,7 +761,7 @@ describe("kid oRPC router — zadania (POST)", () => {
     });
 
     expect(response.status).toBe(400);
-    const body = ApiErrorSchema.parse(await response.json());
+    const body = ApiErrorSchema.parse(await response!.json());
     expect(body.code).toBe("validation");
     expect(submitAttempt).not.toHaveBeenCalled();
   });
@@ -732,7 +805,7 @@ describe("kid oRPC router — zadania (POST)", () => {
     });
 
     expect(response.status).toBe(400);
-    const body = ApiErrorSchema.parse(await response.json());
+    const body = ApiErrorSchema.parse(await response!.json());
     expect(body.code).toBe("validation");
     expect(submitSpeechAttempt).not.toHaveBeenCalled();
   });
@@ -744,7 +817,7 @@ describe("kid oRPC router — zadania (POST)", () => {
     });
 
     expect(response.status).toBe(400);
-    const body = ApiErrorSchema.parse(await response.json());
+    const body = ApiErrorSchema.parse(await response!.json());
     expect(body.code).toBe("validation");
     expect(submitSpeechAttempt).not.toHaveBeenCalled();
   });
@@ -756,7 +829,7 @@ describe("kid oRPC router — zadania (POST)", () => {
     });
 
     expect(response.status).toBe(400);
-    const body = ApiErrorSchema.parse(await response.json());
+    const body = ApiErrorSchema.parse(await response!.json());
     expect(body.code).toBe("validation");
     expect(submitSpeechAttempt).not.toHaveBeenCalled();
   });
@@ -779,7 +852,7 @@ describe("kid oRPC router — zadania (POST)", () => {
       ["attempts", attemptsResponse],
     ] as const) {
       expect(response.status, label).toBe(403);
-      const body = ApiErrorSchema.parse(await response.json());
+      const body = ApiErrorSchema.parse(await response!.json());
       expect(body.code, label).toBe("forbidden");
     }
     expect(recordEvent).not.toHaveBeenCalled();

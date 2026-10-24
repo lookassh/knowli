@@ -57,7 +57,7 @@ const handler = createOpenApiHandler({ boom, sealed, reopened, unwrapped, crashi
 async function call(path: string): Promise<Response> {
   const { matched, response } = await handler.handle(new Request(`http://localhost${PREFIX}${path}`), {
     prefix: PREFIX,
-    context: { services, headers: new Headers() },
+    context: { services, headers: new Headers(), url: "http://localhost/rpc" },
   });
   if (!matched) throw new Error(`ścieżka testowa ${path} musi pasować`);
   return response;
@@ -147,7 +147,7 @@ describe("createOpenApiHandler — encoder koperty błędów", () => {
         fetch: async (input, init) => {
           const { matched, response } = await handler.handle(new Request(input, init), {
             prefix: PREFIX,
-            context: { services, headers: new Headers() },
+            context: { services, headers: new Headers(), url: "http://localhost/rpc" },
           });
           if (!matched) throw new Error("ścieżka testowa musi pasować");
           return response;

@@ -69,6 +69,8 @@ export interface LearningOverviewRequestState {
 export interface LearningOverviewContext {
   services: Services;
   headers: Headers;
+  /** Pełny adres żądania (spójny kontekst bazowy oRPC; nieużywany bezpośrednio). */
+  url: string;
   /** Współdzielony limit z endpointem MCP; domyślnie singleton `learningOverviewLimiter`. */
   limiter: IntegrationReadLimiter;
   state: LearningOverviewRequestState;
@@ -175,7 +177,7 @@ export async function handleLearningOverviewRequest(
   try {
     const { matched, response } = await learningOverviewHandler.handle(request, {
       prefix: LEARNING_OVERVIEW_PREFIX,
-      context: { services, headers: request.headers, state, limiter },
+      context: { services, headers: request.headers, url: request.url, state, limiter },
     });
     if (matched) {
       return response.ok ? response : decorateError(response, state);

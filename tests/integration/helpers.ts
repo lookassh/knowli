@@ -4,6 +4,9 @@ import {
   createDatabase,
   createServices,
   startSession,
+  MAX_AUDIO_BYTES,
+  MAX_DECK_COVER_BYTES,
+  MULTIPART_OVERHEAD_BYTES,
   type Clock,
   type Services,
 } from "@learning/server";
@@ -13,8 +16,13 @@ import { parentORpcRouter } from "@/orpc/parent-router";
 
 type Pool = ReturnType<typeof createDatabase>["pool"];
 
-const kidApiHandler = createOpenApiHandler(kidRouter);
-const parentApiHandler = createOpenApiHandler(parentORpcRouter);
+// Te same limity surowego strumienia co catch-all-e produkcyjne (route.ts).
+const kidApiHandler = createOpenApiHandler(kidRouter, {
+  maxBodySize: MAX_AUDIO_BYTES + MULTIPART_OVERHEAD_BYTES,
+});
+const parentApiHandler = createOpenApiHandler(parentORpcRouter, {
+  maxBodySize: MAX_DECK_COVER_BYTES + 64 * 1024,
+});
 
 /**
  * Wywołanie Kid API w testach integracyjnych po dekomisji legacy routera:
@@ -28,7 +36,7 @@ const parentApiHandler = createOpenApiHandler(parentORpcRouter);
 export async function handleKidApi(request: Request, services: Services): Promise<Response> {
   const { matched, response } = await kidApiHandler.handle(request, {
     prefix: "/api/v1/kid",
-    context: { services, headers: request.headers },
+    context: { services, headers: request.headers, url: request.url },
   });
   if (matched) {
     return response;
@@ -53,7 +61,7 @@ export async function handleParentApi(
 ): Promise<Response> {
   const { matched, response } = await parentApiHandler.handle(request, {
     prefix: "/api/v1/parent",
-    context: { services, headers: request.headers },
+    context: { services, headers: request.headers, url: request.url },
   });
   if (matched) {
     return response;

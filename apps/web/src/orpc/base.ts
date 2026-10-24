@@ -32,24 +32,37 @@ export interface ORpcAuthContext {
   parent?: ORpcParent;
 }
 
+/**
+ * Bazowe pola kontekstu każdego handlera oRPC web. `url` to pełny adres
+ * oryginalnego żądania (z route.ts): `isSecureRequest` czyta z niego protokół,
+ * więc ciastko sesji dostaje atrybut `Secure` także na wdrożeniach HTTPS bez
+ * proxy ustawiającego `x-forwarded-proto` (CWE-614), a host to ostatnie
+ * źródło kontroli Origin.
+ */
+export interface ORpcBaseContext {
+  services: Services;
+  headers: Headers;
+  url: string;
+}
+
 /** Pełny kontekst handlera oRPC web: baza + pola middleware autoryzacji. */
-export type ORpcContext = { services: Services; headers: Headers } & ORpcAuthContext;
+export type ORpcContext = ORpcBaseContext & ORpcAuthContext;
 
 /**
  * Bazowy builder procedur code-first. Kontrakt-first zaczyna się od
  * `implement(contract).$context<ORpcContext>()` i dokleja middlewares z tego
  * pliku przez `.use(...)` — wtedy `baseOs` służy wyłącznie jako ich źródło.
  */
-export const baseOs = os.$context<{ services: Services; headers: Headers }>();
+export const baseOs = os.$context<ORpcBaseContext>();
 
 /**
  * `requireParentSession`, `assertSameOrigin` i helpery ciastek czytają `Request`;
  * oRPC trzyma nagłówki żądania w kontekście, więc odtwarzamy minimalny obiekt
- * żądania. Adres jest techniczny — te funkcje patrzą wyłącznie na nagłówki
- * (włącznie z `x-forwarded-proto` dla atrybutu Secure).
+ * żądania. Adres pochodzi z oryginalnego żądania — protokół decyduje o atrybucie
+ * `Secure` ciastka sesji, a host jest ostatnim źródłem dla kontroli Origin.
  */
-export function requestFromHeaders(headers: Headers): Request {
-  return new Request("http://orpc.internal", { headers });
+export function requestFromHeaders(headers: Headers, url: string): Request {
+  return new Request(url, { headers });
 }
 
 /** Typ middlewares bez mutacji kontekstu. */
@@ -111,7 +124,7 @@ export const parentSessionMiddleware: Middleware<
   if (context.authLoaded && context.parent) {
     return next({ context: { parent: context.parent, authLoaded: true } });
   }
-  const token = await requireParentSession(requestFromHeaders(context.headers), context.services);
+  const token = await requireParentSession(requestFromHeaders(context.headers, context.url), context.services);
   return next({ context: { parent: { token }, authLoaded: true } });
 };
 
@@ -121,6 +134,6 @@ export const parentSessionMiddleware: Middleware<
  * Rzuca `AppError("forbidden")`; stosować na procedurach zmieniających stan.
  */
 export const sameOriginMiddleware: PassthroughMiddleware = async ({ context, next }) => {
-  assertSameOrigin(requestFromHeaders(context.headers));
+  assertSameOrigin(requestFromHeaders(context.headers, context.url));
   return next();
 };
