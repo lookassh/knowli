@@ -69,3 +69,51 @@ export async function readCappedJson(request: Request, capBytes: number): Promis
     throw new AppError("validation");
   }
 }
+
+/**
+ * Surowy limit bajtów ciała żądania egzekwowany PRZED dekodowaniem oRPC
+ * (review PR #114, P2): guard w procedurze mierzy ponownie zserializowany
+ * kompaktowy JSON, więc nadmiarowo sformatowane ciało (np. 300 tys. spacji
+ * + `{}`) omijało limit raportu aktywności. Tu liczymy bajty ze strumienia
+ * jak legacy `readCappedJson`: pre-check `content-length`, potem czytanie
+ * z limitem i anulowanie readera przy przekroczeniu — nadmiarowe żądanie
+ * pada na `validation` zanim cokolwiek dotknie procedury. Ciało ≤ limitu
+ * wraca jako nowe żądanie z zbuforowanym ciałem (rozmiar ≤ limitu, więc
+ * buforowanie jest bounded); `content-length` usuwamy, bo undici ustawi go
+ * sam dla nowego ciała.
+ */
+export async function withRawBodyCap(request: Request, capBytes: number): Promise<Request> {
+  assertDeclaredBodyCap(request.headers, capBytes);
+  if (request.body === null) {
+    return request;
+  }
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    length += value.byteLength;
+    if (length > capBytes) {
+      await reader.cancel();
+      throw payloadTooLargeError();
+    }
+    chunks.push(value);
+  }
+  const headers = new Headers(request.headers);
+  // undici sam ustawi content-length dla nowego, zbuforowanego ciała;
+  // nagłówek z oryginalnego żądania może być nieaktualny po przeczytaniu.
+  headers.delete("content-length");
+  const body = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new Request(request.url, {
+    method: request.method,
+    headers,
+    body,
+    redirect: request.redirect,
+  });
+}

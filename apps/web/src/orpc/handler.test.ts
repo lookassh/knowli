@@ -3,9 +3,10 @@ import { AppError, type Services } from "@learning/server";
 import { createORPCClient, ORPCError } from "@orpc/client";
 import { openapi } from "@orpc/openapi";
 import { OpenAPILink } from "@orpc/openapi/fetch";
-import { describe, expect, it } from "vitest";
+import { format } from "node:util";
+import { describe, expect, it, vi } from "vitest";
 import { appErrorMiddleware, baseOs } from "./base";
-import { createOpenApiHandler, errorStatusMap } from "./handler";
+import { appErrorEncoder, createOpenApiHandler, errorStatusMap } from "./handler";
 import { errorResponse } from "../http/errors";
 
 const services = {} as Services;
@@ -197,6 +198,31 @@ describe("errorStatusMap", () => {
 
     for (const code of codes) {
       expect(errorStatusMap[code.toUpperCase()]).toBe(new AppError(code).status);
+    }
+  });
+});
+
+describe("appErrorEncoder — log nie zapisuje surowej przyczyny (review P1)", () => {
+  it("błąd walidacji z invalidData nie trafia do logu; kod i requestId tak", async () => {
+    const canary = "REVIEW_FAKE_SECRET_CANARY";
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      // ValidationError oRPC: message bezpieczny, ale cause niesie odrzucone wejście.
+      const validationLike = new ORPCError("BAD_REQUEST", {
+        message: "Input validation failed",
+        cause: { invalidData: { secret: canary, extra: true } },
+      });
+
+      appErrorEncoder(validationLike);
+
+      // util.format jak prawdziwy console.error — inaczej obiekty degenerują się do [object Object]
+      const logged = log.mock.calls.map((parts) => format(...parts)).join(" | ");
+      expect(logged).not.toContain(canary);
+      expect(logged).not.toContain("invalidData");
+      expect(logged).toContain("validation");
+      expect(logged).toMatch(/[0-9a-f-]{36}/);
+    } finally {
+      log.mockRestore();
     }
   });
 });

@@ -104,8 +104,15 @@ function classifyError(error: AnyORPCError): { code: AppErrorCode; details?: unk
 export const appErrorEncoder = (error: AnyORPCError): unknown => {
   const { code, details } = classifyError(error);
   const requestId = randomUUID();
-  // Log jak w errorResponse: kod, requestId, komunikat i przyczyna do korelacji.
-  console.error("[api]", code, requestId, error.message, error.cause ?? "");
+  // Log wyłącznie metadanych dozwolonych do zapisu: kod, requestId, komunikat
+  // z katalogu (lub kontrolowany komunikat AppError w cause) i kod przyczyny.
+  // SUROWY obiekt przyczyny NIE może trafić do logu — błędy walidacji oRPC
+  // niosą odrzucone wejście (invalidData), np. PIN rodzica lub odpowiedź
+  // dziecka (review PR #114, P1); treść żądania nie jest nigdy logowana.
+  const cause = error.cause;
+  const safeMessage = cause instanceof AppError ? cause.message : (CATALOGUE[code] ?? "error");
+  const causeCode = cause instanceof AppError ? cause.code : undefined;
+  console.error("[api]", code, requestId, safeMessage, causeCode ?? "");
   return toApiError(code, requestId, details);
 };
 

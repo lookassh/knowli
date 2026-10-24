@@ -1,6 +1,6 @@
 import { ApiErrorSchema, type ApiError } from "@learning/contracts";
-import { AppError } from "@learning/server";
-import { describe, expect, it, vi } from "vitest";
+import { AppError, endSession } from "@learning/server";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { errorResponse } from "@/http/errors";
 
 // Ścieżki spoza kontraktu nigdy nie docierają do przypadków użycia, więc
@@ -8,6 +8,11 @@ import { errorResponse } from "@/http/errors";
 vi.mock("@/composition", () => ({
   getServerServices: vi.fn(() => ({ db: {} }) as never),
 }));
+
+vi.mock("@learning/server", async (importActual) => {
+  const actual = await importActual<typeof import("@learning/server")>();
+  return { ...actual, endSession: vi.fn() };
+});
 
 import { GET, POST } from "./route";
 
@@ -19,6 +24,57 @@ function contextFor(segments: string[]): { params: Promise<{ path?: string[] }> 
 function request(path: string, method: "GET" | "POST" = "GET"): Request {
   return new Request(`http://localhost/api/v1/kid${path}`, { method });
 }
+
+describe("kid catch-all — surowy limit bajtów raportu aktywności (review P2)", () => {
+  const sessionId = "22222222-2222-4222-8222-222222222222";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Pełny DTO — walidacja outputu odrzuca pusty obiekt (błąd outputu nosi
+    // kod walidacji, więc zwróciłby mylący 400 zamiast 200).
+    vi.mocked(endSession).mockResolvedValue({
+      sessionId,
+      state: "completed",
+      tasksIssued: 1,
+      assessedTasksIssued: 1,
+      endedAt: "2026-10-24T10:00:00.000Z",
+      independentSuccesses: { recall: 0, spelling: 0 },
+      practiceItems: [],
+    } as never);
+  });
+
+  it("odrzuca nadmiarowo sformatowane ciało bez content-length zanim endSession wystartuje", async () => {
+    // 300 000 spacji + "{}" = 300 002 bajty surowego ciała; kompaktowy JSON
+    // po dekodowaniu ma 2 bajty i wcześniej przechodził przez guard.
+    const padding = " ".repeat(300_000) + "{}";
+    const request = new Request(`http://localhost/api/v1/kid/sessions/${sessionId}/end`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: padding,
+    });
+
+    const response = await POST(request, contextFor(["sessions", sessionId, "end"]));
+
+    expect(response.status).toBe(400);
+    const body = ApiErrorSchema.parse(await response.json());
+    expect(body.code).toBe("validation");
+    expect(endSession).not.toHaveBeenCalled();
+  });
+
+  it("przepuszcza legalny raport po surowym limicie do procedury", async () => {
+    const request = new Request(`http://localhost/api/v1/kid/sessions/${sessionId}/end`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ activityReport: { version: 1, elapsedMs: 30_000, activeMs: 0, compacted: false, tasks: [] } }),
+    });
+
+    const response = await POST(request, contextFor(["sessions", sessionId, "end"]));
+
+    // Bez bazy endSession (mock) może rzucić — liczy się, że limit NIE odrzucił.
+    expect(response.status).not.toBe(400);
+    expect(endSession).toHaveBeenCalled();
+  });
+});
 
 describe("kid catch-all — dekomisja legacy routera", () => {
   it("GET poza kontraktem zwraca standardową kopertę not_found/404", async () => {
