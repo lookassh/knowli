@@ -40,8 +40,9 @@ import {
  * Kontrakt Parent API pod /api/v1/parent — WEWNĘTRZNY dla apps/web (plan oRPC
  * v2: kontrakt parent nie trafia do @learning/contracts, bo klient jest
  * wyłącznie panel w tej samej aplikacji). Obejmuje wszystkie grupy URL:
- * children, decks, drafts, mock-tests, work-card, lesson-catalog, lessons,
- * lesson-verdicts, lesson-drafts, generation, assignments i progress.
+ * auth (login/setup/logout), children, decks, drafts, mock-tests, work-card,
+ * lesson-catalog, lessons, lesson-verdicts, lesson-drafts, generation,
+ * assignments i progress.
  * Schematy, ścieżki, metody, statusy (201/202/204) i nagłówki (no-store)
  * odwzorowują dekomisjonowane ręczne trasy (`parent/parent-router.ts` +
  * trasy children); prefix montowania dokleja handler przy `handle()`.
@@ -176,6 +177,15 @@ const LessonDraftPublishInputSchema = PublishCommandSchema.extend({ lessonDraftI
 const AssignmentPutInputSchema = AssignmentPutSchema.extend({
   childId: UuidSchema,
   deckId: UuidSchema,
+});
+
+/** Wejście POST /login i POST /setup: sekret PIN/hasła rodzica. */
+const SecretInputSchema = z.object({ secret: z.string().min(1) }).strict();
+
+/** Stan ekranu logowania (GET /login): czy pokazać setup pierwszego uruchomienia. */
+const AuthStateOutputSchema = z.object({
+  authenticated: z.boolean(),
+  setupRequired: z.boolean(),
 });
 
 /**
@@ -434,5 +444,43 @@ export const parentApiContract = {
       .input(ProgressQuerySchema)
       .output(ProgressDtoSchema)
       .meta(openapi({ method: "GET", path: "/progress" })),
+  },
+
+  /**
+   * Bootstrap autoryzacji rodzica (dekomisjonowane trasy statyczne
+   * login/setup/logout). Te procedury celowo NIE wymagają sesji rodzica —
+   * kontrakt jest obsługiwany przez osobny implementer bez
+   * `parentSessionMiddleware` w `../orpc/parent-router`. Login/logout
+   * wystawiają `set-cookie` przez `outputStructure: "detailed"` (spike v2:
+   * klucze nagłówków małymi literami); atrybuty ciastka buduje `sessionCookie`/
+   * `clearingSessionCookie`, więc są bajt w bajt jak w legacy. Setup NIE
+   * loguje — cookie wystawia dopiero POST /login (paritet z ParentApp).
+   */
+  auth: {
+    state: oc
+      .output(AuthStateOutputSchema)
+      .meta(openapi({ method: "GET", path: "/login" })),
+
+    login: oc
+      .input(SecretInputSchema)
+      .output(z.object({
+        status: z.literal(200).optional(),
+        headers: z.object({ "set-cookie": z.string() }),
+        body: z.object({ expiresAt: z.string() }),
+      }))
+      .meta(openapi({ method: "POST", path: "/login", outputStructure: "detailed" })),
+
+    logout: oc
+      // 204 nie może nieść ciała (wzorzec sessions.next) — samo czyszczące cookie.
+      .output(z.object({
+        status: z.literal(204),
+        headers: z.object({ "set-cookie": z.string() }),
+      }))
+      .meta(openapi({ method: "POST", path: "/logout", outputStructure: "detailed" })),
+
+    setup: oc
+      .input(SecretInputSchema)
+      .output(z.object({ ok: z.literal(true) }))
+      .meta(openapi({ method: "POST", path: "/setup", successStatus: 201 })),
   },
 };

@@ -61,8 +61,8 @@ export const parentClient: ParentClient = createORPCClient(
 /**
  * Normalizacja błędów klienta oRPC do `ApiCallError` — zmigrowane ekrany
  * zachowują dotychczasową obsługę (`code`, `status`, `errorMessage`).
- * Awaria sieci pozostaje TypeError (jak w apiFetch), bo tylko ona uzasadnia
- * stany „niepewnego polecenia” (ponowienie z tym samym kluczem).
+ * Awaria sieci pozostaje TypeError (jak w dawny `apiFetch`), bo tylko ona
+ * uzasadnia stany „niepewnego polecenia” (ponowienie z tym samym kluczem).
  */
 export async function callParent<T>(run: () => Promise<T>): Promise<T> {
   try {
@@ -84,28 +84,6 @@ export async function callParent<T>(run: () => Promise<T>): Promise<T> {
     }
     throw error;
   }
-}
-
-/** Wywołanie API panelu: same-origin z cookie sesji, błędy jako ApiCallError. */
-export async function apiFetch<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const response = await fetch(path, {
-    method,
-    ...(body === undefined ? {} : { headers: { "content-type": "application/json" } }),
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { code?: string; message?: string; details?: unknown } | null;
-    throw new ApiCallError(
-      payload?.message ?? messages.errors.internal,
-      payload?.code,
-      response.status,
-      payload?.details,
-    );
-  }
-  if (response.status === 204) {
-    return undefined as T;
-  }
-  return (await response.json()) as T;
 }
 
 export function errorMessage(error: unknown): string {

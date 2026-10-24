@@ -40,10 +40,11 @@ export async function handleKidApi(request: Request, services: Services): Promis
 /**
  * Wywołanie Parent API w testach integracyjnych — dokładna kompozycja catch-all
  * `apps/web/src/app/api/v1/parent/[...path]/route.ts`: router oRPC obsługuje
- * cały kontrakt (children/decks/drafts/mock-tests/work-card/lekcje/werdykty/
- * lesson-drafts/generation/assignments/progress), brak dopasowania spada do
- * resztki legacy `handleParentApi` (`not_found`; dekomisja w zadaniu 13).
- * `segments` pozostają opcjonalne — dopasowanie oRPC chodzi po pełnym URL.
+ * cały kontrakt (auth/login-setup-logout, children/decks/drafts/mock-tests/
+ * work-card/lekcje/werdykty/lesson-drafts/generation/assignments/progress),
+ * brak dopasowania spada do resztki legacy `handleParentApi` (`not_found`;
+ * dekomisja w zadaniu 13). `segments` pozostają opcjonalne — dopasowanie oRPC
+ * chodzi po pełnym URL.
  */
 const parentApiDispatch = withORpcFallback(
   createOpenApiHandler(parentORpcRouter),

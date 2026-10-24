@@ -13,26 +13,15 @@ import {
   setupParent,
   type AppError,
 } from "@learning/server";
-import { disposeServerServices } from "../../apps/web/src/composition";
 import {
   buildTestServices,
   countRows,
   handleParentApi,
   openRestartedServices,
   testDatabase,
-  testDatabaseUrl,
   truncateCoreTables,
   UUID_PATTERN,
 } from "./helpers";
-
-// route handlery tworzą Services z process.env — ustawiamy zanim padnie pierwsze żądanie
-process.env.DATABASE_URL = testDatabaseUrl();
-import {
-  GET as loginStatus,
-  POST as login,
-} from "../../apps/web/src/app/api/v1/parent/login/route";
-import { POST as setup } from "../../apps/web/src/app/api/v1/parent/setup/route";
-import { POST as logout } from "../../apps/web/src/app/api/v1/parent/logout/route";
 
 const BASE = "http://localhost:3000";
 const SESSION_COOKIE = "parent_session";
@@ -79,7 +68,6 @@ describe("auth i profile dzieci (integracja)", () => {
   });
 
   afterAll(async () => {
-    await disposeServerServices();
     const { pool } = testDatabase();
     await pool.end();
   });
@@ -260,7 +248,10 @@ describe("auth i profile dzieci (integracja)", () => {
     const { services } = buildTestServices();
     await setupParent(services, "pin-edit");
     const child = await createChild(services, { displayName: "Ala", avatarKey: "fox", birthYear: 2018 });
-    const cookie = sessionCookieFrom(await login(jsonRequest("/api/v1/parent/login", "POST", { secret: "pin-edit" }, { origin: BASE })));
+    const cookie = sessionCookieFrom(await handleParentApi(
+      jsonRequest("/api/v1/parent/login", "POST", { secret: "pin-edit" }, { origin: BASE }),
+      services,
+    ));
     const patchChild = (body: unknown, headers: Record<string, string>, childId = child.id) =>
       handleParentApi(jsonRequest(`/api/v1/parent/children/${childId}`, "PATCH", body, headers), services);
     const authHeaders = { cookie, origin: BASE };
@@ -302,8 +293,11 @@ describe("auth i profile dzieci (integracja)", () => {
     const child = await createChild(services, { displayName: "Ala", avatarKey: "fox" });
     const origin = { origin: BASE };
 
-    // sesja przez route — cookie w pełni spójne z usługami route handlera
-    const loginResponse = await login(jsonRequest("/api/v1/parent/login", "POST", { secret: "pin-usun" }, origin));
+    // sesja przez router oRPC (kompozycja catch-all) — Services testu
+    const loginResponse = await handleParentApi(
+      jsonRequest("/api/v1/parent/login", "POST", { secret: "pin-usun" }, origin),
+      services,
+    );
     expect(loginResponse.status).toBe(200);
     const cookie = sessionCookieFrom(loginResponse);
     const deleteChildApi = (childId: string, headers: Record<string, string>) =>
@@ -341,34 +335,38 @@ describe("auth i profile dzieci (integracja)", () => {
     }
   });
 
-  describe("przepływ HTTP przez route handlery", () => {
+  describe("przepływ HTTP przez router oRPC (kompozycja catch-all)", () => {
     it("setup → login → children → create → delete → logout", async () => {
-      // children idą przez kompozycję oRPC (helpers), login/setup/logout przez
-      // własne trasy — Services współdzielą tę samą bazę testową
+      // cały przepływ idzie przez handleParentApi (router oRPC + fallback) —
+      // dokładna kompozycja catch-all /api/v1/parent/[...path]
       const { services } = buildTestServices();
       const origin = { origin: BASE };
 
-      const status0 = await loginStatus(jsonRequest("/api/v1/parent/login", "GET"));
+      const status0 = await handleParentApi(jsonRequest("/api/v1/parent/login", "GET"), services);
       expect(status0.status).toBe(200);
       expect(await readBody(status0)).toEqual({ authenticated: false, setupRequired: true });
 
-      const setupResponse = await setup(
+      const setupResponse = await handleParentApi(
         jsonRequest("/api/v1/parent/setup", "POST", { secret: "http-pin" }, origin),
+        services,
       );
       expect(setupResponse.status).toBe(201);
-      const setupAgain = await setup(
+      const setupAgain = await handleParentApi(
         jsonRequest("/api/v1/parent/setup", "POST", { secret: "inny" }, origin),
+        services,
       );
       expect(setupAgain.status).toBe(409);
 
-      const wrongLogin = await login(
+      const wrongLogin = await handleParentApi(
         jsonRequest("/api/v1/parent/login", "POST", { secret: "zle" }, origin),
+        services,
       );
       expect(wrongLogin.status).toBe(401);
       expect(wrongLogin.headers.getSetCookie()).toEqual([]);
 
-      const loginResponse = await login(
+      const loginResponse = await handleParentApi(
         jsonRequest("/api/v1/parent/login", "POST", { secret: "http-pin" }, origin),
+        services,
       );
       expect(loginResponse.status).toBe(200);
       const cookie = sessionCookieFrom(loginResponse);
@@ -422,8 +420,9 @@ describe("auth i profile dzieci (integracja)", () => {
       );
       expect(deleted.status).toBe(204);
 
-      const logoutResponse = await logout(
+      const logoutResponse = await handleParentApi(
         jsonRequest("/api/v1/parent/logout", "POST", undefined, authHeaders),
+        services,
       );
       expect(logoutResponse.status).toBe(204);
       expect(logoutResponse.headers.getSetCookie().join("\n")).toContain("Max-Age=0");

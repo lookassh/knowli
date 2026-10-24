@@ -18,11 +18,7 @@ import {
   upsertAssignment,
   type AppError,
 } from "@learning/server";
-import { buildTestServices, handleParentApi, testDatabase, testDatabaseUrl, truncateCoreTables } from "./helpers";
-
-process.env.DATABASE_URL = testDatabaseUrl();
-import { disposeServerServices } from "../../apps/web/src/composition";
-import { POST as loginRoute } from "../../apps/web/src/app/api/v1/parent/login/route";
+import { buildTestServices, handleParentApi, testDatabase, truncateCoreTables } from "./helpers";
 
 const BASE = "http://localhost:3000";
 
@@ -132,7 +128,6 @@ describe("ustawienia wymowy per dziecko (design 2026-10-09)", () => {
   });
 
   afterAll(async () => {
-    await disposeServerServices();
     await testDatabase().pool.end();
   });
 
@@ -260,11 +255,13 @@ describe("ustawienia wymowy per dziecko (design 2026-10-09)", () => {
     const { services } = buildTestServices();
     await setupParent(services, "rodzinny-pin-1");
     const child = await createChild(services, { displayName: "Szymon", avatarKey: "fox" });
-    const loginResponse = await loginRoute(new Request(`${BASE}/api/v1/parent/login`, {
+    // jawny Host jak w żądaniu przyjmowanym przez serwer — kontrola Origin
+    // porównuje go z nagłówkiem Origin (undici nie wystawia Host z URL)
+    const loginResponse = await handleParentApi(new Request(`${BASE}/api/v1/parent/login`, {
       method: "POST",
-      headers: { "content-type": "application/json", origin: BASE },
+      headers: { "content-type": "application/json", origin: BASE, host: "localhost:3000" },
       body: JSON.stringify({ secret: "rodzinny-pin-1" }),
-    }));
+    }), services);
     const cookie = loginResponse.headers.getSetCookie().find((value) => value.startsWith("parent_session="))!.split(";")[0]!;
     const response = await handleParentApi(
       new Request(`${BASE}/api/v1/parent/children/${child.id}/pronunciation`, {

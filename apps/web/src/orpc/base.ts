@@ -43,11 +43,12 @@ export type ORpcContext = { services: Services; headers: Headers } & ORpcAuthCon
 export const baseOs = os.$context<{ services: Services; headers: Headers }>();
 
 /**
- * `requireParentSession` i `assertSameOrigin` czytają `Request`; oRPC trzyma
- * nagłówki żądania w kontekście, więc odtwarzamy minimalny obiekt żądania.
- * Adres jest techniczny — obie funkcje patrzą wyłącznie na nagłówki.
+ * `requireParentSession`, `assertSameOrigin` i helpery ciastek czytają `Request`;
+ * oRPC trzyma nagłówki żądania w kontekście, więc odtwarzamy minimalny obiekt
+ * żądania. Adres jest techniczny — te funkcje patrzą wyłącznie na nagłówki
+ * (włącznie z `x-forwarded-proto` dla atrybutu Secure).
  */
-function requestFromHeaders(headers: Headers): Request {
+export function requestFromHeaders(headers: Headers): Request {
   return new Request("http://orpc.internal", { headers });
 }
 

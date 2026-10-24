@@ -23,7 +23,7 @@ const dispatch = withApi<RouteContext>(async (request, context) => {
   return dispatchORpc(request, getServerServices(), path ?? []);
 });
 
-/** Catch-all API rodzica; statyczne trasy (login) mają pierwszeństwo. */
+/** Catch-all API rodzica — po dekomisji tras statycznych login/setup/logout obsługuje cały /api/v1/parent. */
 export const GET = (request: Request, context: RouteContext): Promise<Response> =>
   dispatch(request, context);
 export const POST = (request: Request, context: RouteContext): Promise<Response> =>

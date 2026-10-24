@@ -20,6 +20,7 @@ import {
   getMockTestReport,
   getProgress,
   getPronunciationSettings,
+  isParentSetupRequired,
   lessonCatalog,
   lessonObjectiveProgress,
   listChildren,
@@ -27,6 +28,7 @@ import {
   listLessonMockTests,
   listLessonVerdicts,
   listMockTests,
+  logoutParent,
   mockTestKindOfSession,
   omitRevisionAsset,
   publishDraft,
@@ -40,8 +42,10 @@ import {
   regenerateObjective,
   regenerateRevisionAsset,
   removeAssignment,
+  requireParent,
   retryGeneration,
   setDeckCover,
+  setupParent,
   updateChild,
   updateDeckSettings,
   updatePronunciationBands,
@@ -49,24 +53,39 @@ import {
 } from "@learning/server";
 import { implement, type Router } from "@orpc/server";
 import { parentApiContract } from "../parent/orpc-contract";
-import { appErrorMiddleware, parentSessionMiddleware, sameOriginMiddleware, type ORpcContext } from "./base";
+import {
+  appErrorMiddleware,
+  parentSessionMiddleware,
+  requestFromHeaders,
+  sameOriginMiddleware,
+  type ORpcContext,
+} from "./base";
+import {
+  clearingSessionCookie,
+  getSessionToken,
+  loginAndBuildCookie,
+  requireParentSession,
+} from "../http/security";
 import { assertDeclaredBodyCap } from "./request-limits";
 
 /**
  * Router oRPC Parent API montowany z priorytetem w catch-all
  * `/api/v1/parent/[...path]` (wzorzec strangler, migracja oRPC v2). Ten plik
- * implementuje cały kontrakt (`parentApiContract`): profile dzieci, zestawy
- * (decks, w tym okładka ze streamingiem 5 MB), szkice wersji (drafts),
- * kartkówki (mock-tests z dispatchem lekcja/słówka), kartę pracy, lekcje
- * (lessons, lesson-catalog, lesson-verdicts, lesson-drafts), generację
- * (generation), przypisania (assignments) i postępy (progress). Ścieżki spoza
- * kontraktu (`matched === false`) spadają do legacy `handleParentApi` —
- * resztka routera (autoryzacja logowania migruje w zadaniu 12, demontaż
- * fallbacku w 13).
+ * implementuje cały kontrakt (`parentApiContract`): bootstrap autoryzacji
+ * (auth: login/logout/setup), profile dzieci, zestawy (decks, w tym okładka
+ * ze streamingiem 5 MB), szkice wersji (drafts), kartkówki (mock-tests
+ * z dispatchem lekcja/słówka), kartę pracy, lekcje (lessons, lesson-catalog,
+ * lesson-verdicts, lesson-drafts), generację (generation), przypisania
+ * (assignments) i postępy (progress). Ścieżki spoza kontraktu
+ * (`matched === false`) spadają do legacy `handleParentApi` — reszka routera
+ * (demontaż fallbacku w zadaniu 13).
  *
- * Autoryzacja: każda procedura wymaga sesji rodzica (`parentSessionMiddleware`
- * na implementerze — działa przed walidacją inputu, jak w legacy), mutacje
- * dodatkowo kontrolują Origin/CSRF (`sameOriginMiddleware` na procedurze).
+ * Autoryzacja: procedury poza grupą `auth` wymagają sesji rodzica
+ * (`parentSessionMiddleware` na implementerze — działa przed walidacją inputu,
+ * jak w legacy), mutacje dodatkowo kontrolują Origin/CSRF
+ * (`sameOriginMiddleware` na procedurze). Grupa `auth` ma OSOBNY implementer
+ * bez middleware sesji — login/setup muszą działać bez cookie, a logout
+ * weryfikuje sesję sam w handlerze (semantyka legacy `requireParentSession`).
  */
 
 /** Dopuszczalne typy MIME wgrywanego obrazu okładki (1:1 z legacy). */
@@ -89,6 +108,31 @@ const parentOs = implement({
   .$context<ORpcContext>()
   .use(appErrorMiddleware)
   .use(parentSessionMiddleware);
+
+/**
+ * Osobny implementer bootstrapu autoryzacji (wzorzec `kidSessionEndOs` z
+ * kid-router): login/setup/logout NIE mogą wymagać sesji rodzica. Mutacje
+ * (POST) nadal kontrolują Origin/CSRF przez `sameOriginMiddleware` na
+ * procedurze, a logout sam weryfikuje sesję — semantyka 1:1 z
+ * dekomisjonowanymi trasami statycznymi `login/setup/logout/route.ts`.
+ */
+const parentAuthOs = implement({ auth: parentApiContract.auth })
+  .$context<ORpcContext>()
+  .use(appErrorMiddleware);
+
+/**
+ * Korzeń routera — implementer CAŁEGO kontraktu bez middleware sesji.
+ * W v2 `implementer.router()` dokleja middlewares implementera do każdej
+ * procedury przekazanego drzewa (augmentImplementedRouter), więc korzeniem
+ * nie może być `parentOs` — login/setup dostałyby 401 przed własnym handlerem.
+ * Procedury poza grupą `auth` buduje `parentOs` (sesja w czasie tworzenia),
+ * więc `parentSessionMiddleware` działa na nich dokładnie raz; `auth` korzysta
+ * wyłącznie z `parentAuthOs`. Doklejony przez korzeń `appErrorMiddleware`
+ * to czysty wrapper — podwójne wykonanie jest niezmienne (ustalenie v2).
+ */
+const parentRootOs = implement(parentApiContract)
+  .$context<ORpcContext>()
+  .use(appErrorMiddleware);
 
 /** Odpowiedź 200 z `Cache-Control: no-store` (wzorzec kid-router). */
 function noStore<T>(body: T): { headers: { "cache-control": "no-store" }; body: T } {
@@ -391,7 +435,72 @@ const progressGet = parentOs.progress.get.handler(async ({ context, input }) =>
   getProgress(context.services, input.childId, input.deckId),
 );
 
-export const parentORpcRouter: Router<ORpcContext> = parentOs.router({
+/**
+ * Stan ekranu logowania (GET /login): czy pokazać setup pierwszego uruchomienia
+ * i czy wisząca sesja jest jeszcze ważna. Wygasła sesja nie wywala granicy —
+ * klient dostaje po prostu `authenticated: false` (jak w legacy GET).
+ */
+const authState = parentAuthOs.auth.state.handler(async ({ context }) => {
+  const setupRequired = await isParentSetupRequired(context.services);
+  let authenticated = false;
+  const token = getSessionToken(requestFromHeaders(context.headers));
+  if (token) {
+    try {
+      await requireParent(context.services, token);
+      authenticated = true;
+    } catch {
+      authenticated = false;
+    }
+  }
+  return { authenticated, setupRequired };
+});
+
+/**
+ * Login (POST /login): cookie buduje ten sam `loginAndBuildCookie` co trasa
+ * legacy — atrybuty (HttpOnly, SameSite=Lax, Max-Age, Secure za proxy https)
+ * są więc bajt w bajt identyczne; `set-cookie` wraca przez detailed output.
+ */
+const authLogin = parentAuthOs.auth.login
+  .use(sameOriginMiddleware)
+  .handler(async ({ context, input }) => {
+    const { body, cookie } = await loginAndBuildCookie(
+      requestFromHeaders(context.headers),
+      context.services,
+      input.secret,
+    );
+    return { headers: { "set-cookie": cookie }, body };
+  });
+
+/**
+ * Logout (POST /logout): wymaga ważnej sesji (paritet legacy — bez cookie 401,
+ * bo `requireParentSession` rzuca unauthorized), unieważnia token w bazie
+ * i czyści cookie. 204 nie może nieść ciała, więc detailed output ma sam
+ * nagłówek (wzorzec `sessions.next` z kid API).
+ */
+const authLogout = parentAuthOs.auth.logout
+  .use(sameOriginMiddleware)
+  .handler(async ({ context }) => {
+    const request = requestFromHeaders(context.headers);
+    const token = await requireParentSession(request, context.services);
+    await logoutParent(context.services, token);
+    return { status: 204 as const, headers: { "set-cookie": clearingSessionCookie(request) } };
+  });
+
+/** Setup pierwszego uruchomienia (POST /setup): tylko utworzenie PIN-u, bez logowania. */
+const authSetup = parentAuthOs.auth.setup
+  .use(sameOriginMiddleware)
+  .handler(async ({ context, input }) => {
+    await setupParent(context.services, input.secret);
+    return { ok: true as const };
+  });
+
+export const parentORpcRouter: Router<ORpcContext> = parentRootOs.router({
+  auth: {
+    state: authState,
+    login: authLogin,
+    logout: authLogout,
+    setup: authSetup,
+  },
   children: {
     list: childrenList,
     create: childrenCreate,

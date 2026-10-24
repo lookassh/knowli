@@ -6,6 +6,7 @@ import {
   archiveDeck,
   clearDeckCover,
   createChild,
+  isParentSetupRequired,
   createDraftFromPublished,
   createEmptyDeck,
   createLesson,
@@ -28,6 +29,8 @@ import {
   listLessonMockTests,
   listLessonVerdicts,
   listMockTests,
+  loginParent,
+  logoutParent,
   mockTestKindOfSession,
   omitRevisionAsset,
   publishDraft,
@@ -44,6 +47,7 @@ import {
   requireParent,
   retryGeneration,
   setDeckCover,
+  setupParent,
   updateChild,
   updateDeckSettings,
   updatePronunciationBands,
@@ -52,6 +56,7 @@ import {
 } from "@learning/server";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { ApiCallError, callParent, parentClient } from "../parent/api";
+import { clearingSessionCookie, sessionCookie as buildSessionCookie } from "../http/security";
 import { createOpenApiHandler } from "./handler";
 import { parentORpcRouter } from "./parent-router";
 
@@ -60,6 +65,10 @@ vi.mock("@learning/server", async (importActual) => {
   return {
     ...actual,
     requireParent: vi.fn(),
+    isParentSetupRequired: vi.fn(),
+    loginParent: vi.fn(),
+    logoutParent: vi.fn(),
+    setupParent: vi.fn(),
     listChildren: vi.fn(),
     createChild: vi.fn(),
     updateChild: vi.fn(),
@@ -315,11 +324,21 @@ function jsonInit(body: unknown, headers: Record<string, string> = {}): RequestI
   };
 }
 
+/** POST bootstrapu autoryzacji — celowo BEZ cookie sesji (login/setup nie mogą jej wymagać). */
+function authInit(body: unknown, headers: Record<string, string> = {}): RequestInit {
+  return {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { "content-type": "application/json", ...headers },
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   // Sesja rodzica istnieje domyślnie (requireParent zwraca void — token byłby
   // tylko w cookie); testy 401 podmieniają oczekiwanie na odrzucenie.
   vi.mocked(requireParent).mockResolvedValue(undefined);
+  vi.mocked(isParentSetupRequired).mockResolvedValue(false);
 });
 
 describe("parent oRPC router — sesja rodzica", () => {
@@ -363,6 +382,143 @@ describe("parent oRPC router — sesja rodzica", () => {
 
     expect(response.status).toBe(401);
     expect(enqueueDeckGeneration).not.toHaveBeenCalled();
+  });
+});
+
+describe("parent oRPC router — auth bootstrap (login/logout/setup)", () => {
+  const secret = { secret: "1234" };
+
+  it("GET /login zwraca stan ekranu logowania bez cookie i bez sesji", async () => {
+    vi.mocked(isParentSetupRequired).mockResolvedValueOnce(true);
+
+    const response = await call("/login");
+
+    expect(response.status).toBe(200);
+    // paritet z legacy: zwykły JSON bez cache-control
+    expect(response.headers.get("cache-control")).toBeNull();
+    await expect(response.json()).resolves.toEqual({ authenticated: false, setupRequired: true });
+    expect(isParentSetupRequired).toHaveBeenCalledWith(services);
+  });
+
+  it("GET /login z ważną sesją raportuje authenticated", async () => {
+    const response = await call("/login", { headers: sessionCookie });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ authenticated: true, setupRequired: false });
+  });
+
+  it("GET /login z nieważną sesją nie wywala granicy (authenticated false)", async () => {
+    vi.mocked(requireParent).mockRejectedValueOnce(new AppError("unauthorized"));
+
+    const response = await call("/login", { headers: sessionCookie });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ authenticated: false, setupRequired: false });
+  });
+
+  it("POST /login ustawia cookie bajt w bajt jak loginAndBuildCookie i zwraca {expiresAt} — bez sesji", async () => {
+    const token = "raw-session-token";
+    vi.mocked(loginParent).mockResolvedValueOnce({ token, expiresAt: instant });
+
+    const response = await call("/login", authInit(secret));
+
+    expect(response.status).toBe(200);
+    // oczekiwane ciastko buduje TEN SAM helper (HttpOnly, SameSite=Lax, Max-Age)
+    const expected = buildSessionCookie(new Request("http://localhost"), token);
+    expect(response.headers.get("set-cookie")).toBe(expected);
+    expect(expected).toContain("HttpOnly");
+    expect(expected).toContain("SameSite=Lax");
+    await expect(response.json()).resolves.toEqual({ expiresAt: instant });
+    expect(loginParent).toHaveBeenCalledWith(services, "1234");
+  });
+
+  it("POST /login za proxy https dostaje Secure — atrybuty dalej jak w helperze", async () => {
+    vi.mocked(loginParent).mockResolvedValueOnce({ token: "https-token", expiresAt: instant });
+
+    const response = await call("/login", authInit(secret, { "x-forwarded-proto": "https" }));
+
+    expect(response.status).toBe(200);
+    const expected = buildSessionCookie(
+      new Request("http://localhost", { headers: { "x-forwarded-proto": "https" } }),
+      "https-token",
+    );
+    expect(response.headers.get("set-cookie")).toBe(expected);
+    expect(expected).toContain("Secure");
+  });
+
+  it("POST /login ze złym PIN-em → 401 invalid_credentials bez cookie", async () => {
+    vi.mocked(loginParent).mockRejectedValueOnce(new AppError("invalid_credentials"));
+
+    const response = await call("/login", authInit({ secret: "zly-pin" }));
+
+    expect(response.status).toBe(401);
+    const body = ApiErrorSchema.parse(await response.json());
+    expect(body.code).toBe("invalid_credentials");
+    expect(body.retryable).toBe(false);
+    expect(response.headers.get("set-cookie")).toBeNull();
+  });
+
+  it("POST /login bez setupu → 409 setup_required", async () => {
+    vi.mocked(loginParent).mockRejectedValueOnce(new AppError("setup_required"));
+
+    const response = await call("/login", authInit(secret));
+
+    expect(response.status).toBe(409);
+    const body = ApiErrorSchema.parse(await response.json());
+    expect(body.code).toBe("setup_required");
+  });
+
+  it("POST /login z pustym sekretem → 400 validation bez wywołania loginParent", async () => {
+    const response = await call("/login", authInit({ secret: "" }));
+
+    expect(response.status).toBe(400);
+    const body = ApiErrorSchema.parse(await response.json());
+    expect(body.code).toBe("validation");
+    expect(loginParent).not.toHaveBeenCalled();
+  });
+
+  it("POST /logout z sesją czyści cookie (204, Max-Age=0) i unieważnia token", async () => {
+    vi.mocked(logoutParent).mockResolvedValueOnce(undefined);
+
+    const response = await call("/logout", { method: "POST", headers: sessionCookie });
+
+    expect(response.status).toBe(204);
+    expect(await response.text()).toBe("");
+    const expected = clearingSessionCookie(new Request("http://localhost"));
+    expect(response.headers.get("set-cookie")).toBe(expected);
+    expect(expected).toContain("Max-Age=0");
+    expect(logoutParent).toHaveBeenCalledWith(services, "session-token");
+  });
+
+  it("POST /logout bez cookie → 401 unauthorized (paritet legacy), bez wywołania logoutParent", async () => {
+    const response = await call("/logout", { method: "POST" });
+
+    expect(response.status).toBe(401);
+    const body = ApiErrorSchema.parse(await response.json());
+    expect(body.code).toBe("unauthorized");
+    expect(logoutParent).not.toHaveBeenCalled();
+  });
+
+  it("POST /setup pierwsze uruchomienie → 201 {ok:true} bez cookie i bez sesji", async () => {
+    vi.mocked(setupParent).mockResolvedValueOnce(undefined);
+
+    const response = await call("/setup", authInit(secret));
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toEqual({ ok: true });
+    // setup nie loguje — cookie wystawia dopiero POST /login (paritet legacy)
+    expect(response.headers.get("set-cookie")).toBeNull();
+    expect(setupParent).toHaveBeenCalledWith(services, "1234");
+  });
+
+  it("POST /setup po konfiguracji → 409 already_configured", async () => {
+    vi.mocked(setupParent).mockRejectedValueOnce(new AppError("already_configured"));
+
+    const response = await call("/setup", authInit({ secret: "inny-pin" }));
+
+    expect(response.status).toBe(409);
+    const body = ApiErrorSchema.parse(await response.json());
+    expect(body.code).toBe("already_configured");
   });
 });
 
@@ -1038,6 +1194,9 @@ describe("parent oRPC router — CSRF (Origin)", () => {
     const evil = { origin: "http://evil.example" };
 
     const cases: Array<[string, RequestInit, Mock]> = [
+      ["/login", authInit({ secret: "1234" }, evil), vi.mocked(loginParent)],
+      ["/logout", { method: "POST", headers: { ...sessionCookie, ...evil } }, vi.mocked(logoutParent)],
+      ["/setup", authInit({ secret: "1234" }, evil), vi.mocked(setupParent)],
       ["/children", jsonInit({ displayName: "Ola", avatarKey: "fox", canRead: true }, evil), vi.mocked(createChild)],
       [
         `/children/${childId}`,
@@ -1280,6 +1439,42 @@ describe("parent oRPC — pełne koło klient→handler (OpenAPILink)", () => {
     expect((error as ApiCallError).message).toBe("Błąd raportu");
     expect((error as ApiCallError).status).toBe(500);
     expect((error as ApiCallError).code).toBeUndefined();
+    vi.unstubAllGlobals();
+  });
+
+  it("auth.login przez klienta: detailed output z body {expiresAt} i nagłówkiem set-cookie", async () => {
+    stubFetchWithHandler();
+    vi.mocked(loginParent).mockResolvedValueOnce({ token: "client-token", expiresAt: instant });
+
+    const result = await callParent(() => parentClient.auth.login({ secret: "1234" }));
+
+    expect(result.body).toEqual({ expiresAt: instant });
+    expect(result.headers["set-cookie"]).toContain("parent_session=client-token");
+    expect(result.headers["set-cookie"]).toContain("HttpOnly");
+    vi.unstubAllGlobals();
+  });
+
+  it("auth.state przez klienta zwraca stan ekranu logowania", async () => {
+    stubFetchWithHandler();
+    vi.mocked(isParentSetupRequired).mockResolvedValueOnce(true);
+
+    const state = await callParent(() => parentClient.auth.state());
+
+    // stub fetcha dokleja cookie sesji (jak przeglądarka), a requireParent
+    // domyślnie przechodzi — więc stan raportuje zalogowanie.
+    expect(state).toEqual({ authenticated: true, setupRequired: true });
+    vi.unstubAllGlobals();
+  });
+
+  it("auth.logout przez klienta: 204 z czyszczącym cookie", async () => {
+    stubFetchWithHandler();
+    vi.mocked(logoutParent).mockResolvedValueOnce(undefined);
+
+    const result = await callParent(() => parentClient.auth.logout());
+
+    expect(result.status).toBe(204);
+    expect(result.headers["set-cookie"]).toContain("Max-Age=0");
+    expect(logoutParent).toHaveBeenCalledWith(services, "session-token");
     vi.unstubAllGlobals();
   });
 });
