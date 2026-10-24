@@ -60,7 +60,7 @@ describe("kid reward views", () => {
     expect(textNodes(screen(25 * 60)).join(" ")).toContain("Zatwierdzono dziś: 25 min");
     expect(textNodes(screen(125)).join(" ")).toContain("Zatwierdzono dziś: 2 min 5 s");
     expect(textNodes(screen(0)).join(" ")).toContain("Zatwierdzono dziś: 0 s");
-    expect(textNodes(screen()).join(" ")).toContain("Zatwierdzono dziś: 0 s");
+    expect(textNodes(screen()).join(" ")).toContain("Zatwierdzony czas: —");
     expect(textNodes(screen(undefined, true)).join(" ")).toContain("Zatwierdzony czas: —");
   });
 
