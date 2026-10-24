@@ -236,7 +236,7 @@ export const SessionActivityResultDtoSchema = z.object({
   /** Zatwierdzony czas po ocenie; nullable/optional dla starszych klientów i braku oceny. */
   approvedSeconds: z.number().int().nonnegative().nullable().optional(),
   errorCode: z.string().min(1).nullable(),
-}).strict();
+});
 export type SessionActivityResultDto = z.infer<typeof SessionActivityResultDtoSchema>;
 
 /** Trwały krótki wynik oceny sesji (learning_sessions.activity_review). */
