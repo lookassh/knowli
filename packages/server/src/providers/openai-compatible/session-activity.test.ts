@@ -2,6 +2,25 @@ import { describe, expect, it } from "vitest";
 import { createOpenAiCompatibleSessionActivityReviewer } from "./session-activity";
 import type { SessionActivityReviewTask } from "../../ports/ai";
 
+describe("safe session activity provider diagnostics", () => {
+  it.each([
+    { status: 429, body: "private-child-answer secret-token", failureKind: "http_error", httpStatus: 429 },
+    { status: 200, body: "private-child-answer secret-token", failureKind: "invalid_response", httpStatus: undefined },
+    { status: 200, body: JSON.stringify({ choices: [] }), failureKind: "missing_content", httpStatus: undefined },
+    { status: 200, body: JSON.stringify({ choices: [{ message: { content: "private-child-answer secret-token" } }] }), failureKind: "invalid_json", httpStatus: undefined },
+  ])("classifies $failureKind without leaking the response", async ({ status, body, failureKind, httpStatus }) => {
+    const reviewer = createOpenAiCompatibleSessionActivityReviewer({
+      baseUrl: "https://test.invalid/v1", apiKey: "secret-token", model: "fake",
+      fetchImpl: async () => new Response(body, { status }),
+    });
+    const error = await reviewer.review({ tasks: [] }, new AbortController().signal).catch((error: unknown) => error);
+    expect(error).toMatchObject({ name: "SessionActivityProviderError", failureKind, httpStatus });
+    expect(String(error)).not.toContain("private-child-answer");
+    expect(String(error)).not.toContain("secret-token");
+    expect(JSON.stringify(error)).not.toContain("private-child-answer");
+  });
+});
+
 /**
  * Adapter oceny aktywności sesji (spec client-reward-time). Wzorzec grader.test.ts:
  * wstrzyknięty `fetch`; poprawny JSON i JSON w płotku ```json; brak `choices` →

@@ -70,6 +70,33 @@ Tryb E2E/smoke bez klucza: `UMIEM_FAKE_PROVIDERS=1` wstawia deterministyczny fak
 grader (routing po słowach kluczowych w odpowiedzi: „almost" → almost, „wrong" →
 incorrect, inaczej correct), tak jak fake providerzy mowy i generacji.
 
+## Ocena aktywności sesji (web)
+
+`SessionActivityReviewer` używa połączenia `UMIEM_GRADER_*`, ale ma osobny
+limit `UMIEM_SESSION_ACTIVITY_TIMEOUT_MS` (domyślnie 60000 ms). Nie zmienia go
+`UMIEM_GRADER_TIMEOUT_MS`. Ocena działa w tle; podsumowanie sesji pojawia się
+od razu. Limit powinien pozostawiać zapas przed deadline finalizacji 120 s.
+Zmiana zmiennej wymaga odtworzenia kontenera z nowym środowiskiem; sam zapis
+w panelu Coolify nie potwierdza wartości używanej przez proces web.
+
+Jedno wywołanie na sesję, bez automatycznych ponowień i bez przeliczania
+zapisanych ocen. Błąd nie przyznaje punktów i nie zmienia postępu wiedzy.
+Log `[session-activity] ocena nie powiodła się` zawiera identyfikator sesji,
+kod błędu, liczbę zadań, czas wywołania, skonfigurowany timeout oraz kategorię
+awarii. Dla HTTP dodaje status; dla walidacji tylko kody naruszeń Zod.
+Kategorie rozróżniają timeout, HTTP, błędną odpowiedź JSON, brak treści,
+niepoprawny JSON werdyktu, naruszenie schematu, nieznany lub powtórzony
+numer zadania. Log nie zawiera body, komunikatu wyjątku providera, zadań,
+odpowiedzi, uzasadnień modelu ani kluczy odrzuconych przez schemat.
+
+Kod zapisanej awarii jest dostępny także w autoryzowanym
+`GET /api/v1/parent/work-card?childId=…&date=…` (`sessions[].activity.errorCode`).
+Nie wymaga dostępu do bazy ani zachowania szczegółowego raportu po 7 dniach.
+
+API → MCP → skill: zmiana limitu i diagnostyki nie zmienia endpointów, DTO,
+kodów błędów ani sposobu liczenia czasu/punktów. `learning-overview` i skill
+Hermesa zachowują dotychczasowy kontrakt; konsument nie wymaga aktualizacji.
+
 ## Ustawienia medialne i fingerprinty
 
 `UMIEM_TTS_PROVIDER/MODEL/VOICE` oraz `UMIEM_IMAGE_PROVIDER/MODEL/SIZE/QUALITY/FORMAT`
