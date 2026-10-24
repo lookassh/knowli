@@ -18,6 +18,9 @@ export interface AnswerGridProps {
   onChoose: (optionId: string) => void;
   optionRefs?: RefObject<Array<HTMLButtonElement | null>>;
   visualOnly?: boolean;
+  className?: string;
+  optionClassName?: string;
+  labelClassName?: string;
 }
 
 export function AnswerGrid({
@@ -27,9 +30,12 @@ export function AnswerGrid({
   onChoose,
   optionRefs,
   visualOnly = false,
+  className,
+  optionClassName,
+  labelClassName,
 }: AnswerGridProps) {
   return (
-    <ul className={classes.grid}>
+    <ul className={[classes.grid, className].filter(Boolean).join(" ")} data-visual-only={visualOnly || undefined}>
       {options.map((option, index) => {
         const outcome = outcomes.get(option.id);
         const accessibleName = outcome === "correct"
@@ -45,7 +51,7 @@ export function AnswerGrid({
                 if (optionRefs) optionRefs.current[index] = element;
               }}
               type="button"
-              className={classes.option}
+              className={[classes.option, optionClassName, outcome ? `kid-option--${outcome}` : undefined].filter(Boolean).join(" ")}
               data-testid="kid-option"
               data-option-id={option.id}
               data-outcome={outcome}
@@ -57,13 +63,13 @@ export function AnswerGrid({
               }}
             >
               {visualOnly ? (
-                <span className={classes.visualOnly} data-testid="kid-option-label" aria-hidden="true">{option.label}</span>
+                <span className={[classes.visualOnly, labelClassName].filter(Boolean).join(" ")} data-testid="kid-option-label" aria-hidden="true">{option.label}</span>
               ) : (
                 <span className={classes.label}>{option.label}</span>
               )}
               <span className={classes.content}>{option.content}</span>
-              {outcome === "correct" && <span className={classes.outcome} aria-hidden="true" data-testid="kid-outcome-correct">✓</span>}
-              {outcome === "wrong" && <span className={classes.outcome} aria-hidden="true" data-testid="kid-outcome-wrong">×</span>}
+              {outcome === "correct" && <span className={`${classes.outcome} kid-picture-outcome kid-picture-outcome--correct`} aria-hidden="true" data-outcome={outcome} data-testid="kid-outcome-correct">✓</span>}
+              {outcome === "wrong" && <span className={`${classes.outcome} kid-picture-outcome kid-picture-outcome--wrong`} aria-hidden="true" data-outcome={outcome} data-testid="kid-outcome-wrong">×</span>}
             </UnstyledButton>
           </li>
         );

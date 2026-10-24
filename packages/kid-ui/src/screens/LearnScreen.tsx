@@ -12,6 +12,8 @@ import { MeaningVisualView } from "../visuals/MeaningVisualView";
 import { SpeechFeedbackActions, SpeechFeedbackContent, SpeechFeedbackSecondaryActions } from "./SpeechFeedbackCard";
 import type { LearningSessionController, LearningScreen as LearningScreenState } from "../session/session-controller";
 import { useFeedbackCooldown } from "./useFeedbackCooldown";
+import { SessionProgress } from "../components/SessionProgress";
+import { ActionButton } from "../components/ActionButton";
 
 /** Brak podświetleń poza feedbackem próby wyboru. */
 const EMPTY_OUTCOMES: ReadonlyMap<string, OptionOutcome> = new Map();
@@ -129,14 +131,10 @@ export function LearnScreen({
     <main className="kid-screen kid-learning" data-task-id={task?.taskId ?? undefined}>
       <header className="kid-header">
         {instructionAudioKey && <GuidanceButton audioKey={instructionAudioKey} onPlay={(key) => controller.playGuidance(key)} testId="kid-guidance-play" showError={false} />}
-        {remaining !== null && (
-          <p className="kid-remaining" data-testid="kid-remaining">
-            {format(messages.kid.remaining, { n: remaining })}
-          </p>
-        )}
-        <button type="button" className="kid-end" data-testid="kid-end" disabled={busy} onClick={() => void controller.endNow()}>
+        <SessionProgress remaining={remaining} />
+        <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" className="kid-end" data-testid="kid-end" disabled={busy} onClick={() => void controller.endNow()}>
           {messages.kid.end}
-        </button>
+        </ActionButton>
         <details className="kid-microphone-status" data-microphone-state={micState}>
           <summary aria-label={micLabel} data-testid="kid-microphone-status">
             <KidIcon name={micState === "off" || micState === "unavailable" ? "microphone-off" : "microphone"} />

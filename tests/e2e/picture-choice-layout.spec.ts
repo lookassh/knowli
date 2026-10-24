@@ -160,7 +160,7 @@ test("siatka wykorzystuje szerokość ekranu, a wynik i akcja trzymają się obr
   // Kafelek jest wymiarowany z budżetu wysokości (kiosk) — w wąskich kolumnach może być wydłużony pionowo.
   const tileRatio = geometry.firstHeight / geometry.firstWidth;
   expect(tileRatio).toBeGreaterThanOrEqual(0.95);
-  expect(tileRatio).toBeLessThanOrEqual(1.3);
+  expect(tileRatio, JSON.stringify(geometry)).toBeLessThanOrEqual(1.3);
   expect(geometry.resultTop - geometry.thirdBottom).toBeGreaterThanOrEqual(0);
   expect(geometry.resultTop - geometry.thirdBottom).toBeLessThanOrEqual(40);
   expect(geometry.actionTop - geometry.resultBottom).toBeGreaterThanOrEqual(0);

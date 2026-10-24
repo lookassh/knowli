@@ -1,0 +1,153 @@
+.root {
+  box-sizing: border-box;
+  width: min(100%, 560px);
+  max-width: 560px;
+  min-height: 0;
+  margin-inline: auto;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.root > [data-testid="kid-instruction"] {
+  min-height: 48px;
+  padding-inline: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #f0f5ff;
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.3;
+  text-align: center;
+}
+
+.root > [data-testid="kid-instruction"] :global(.kid-icon) {
+  width: 22px;
+  height: 22px;
+  color: #8dd5ff;
+}
+
+.material {
+  box-sizing: border-box;
+  min-height: 0;
+  padding: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0;
+  overflow: hidden;
+}
+
+.root .material > :global(.kid-material-content) {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: safe center;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.root .material > :global(.kid-exercise-result) {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 40px;
+  height: 40px;
+  padding: 0;
+  flex: none;
+  overflow-y: auto;
+}
+
+.root .material > :global(.kid-exercise-result:empty) {
+  visibility: hidden;
+}
+
+.primary {
+  min-width: 0;
+  min-height: 54px;
+  display: flex;
+  align-items: stretch;
+}
+
+.primary > * {
+  width: 100%;
+}
+
+.secondary {
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+.secondary > * {
+  width: 100%;
+}
+
+.root [data-testid="kid-exercise-secondary"] {
+  width: min(100%, 560px);
+  margin-inline: auto;
+  display: flex;
+  justify-content: center;
+}
+
+.root [data-testid="kid-secondary-slot"] {
+  box-sizing: border-box;
+  min-height: 44px;
+  width: 100%;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+}
+
+.root [data-testid="kid-secondary-slot"]:empty {
+  visibility: hidden;
+}
+
+.root[data-prompt-kind="picture_listening"] {
+  gap: 8px;
+}
+
+.root[data-prompt-kind="picture_listening"] .material {
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.root[data-prompt-kind="picture_listening"] .material > :global(.kid-material-content) {
+  min-height: 0;
+  justify-content: flex-start;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.root[data-prompt-kind="picture_listening"] .material > :global(.kid-exercise-result) {
+  min-height: 56px;
+  height: 56px;
+  overflow: visible;
+}
+
+.root[data-prompt-kind="picture_listening"] [data-testid="kid-secondary-slot"] {
+  display: none;
+}
+
+@media (max-height: 700px) {
+  .root[data-prompt-kind="picture_listening"] .material > :global(.kid-exercise-result) {
+    min-height: 48px;
+    height: 48px;
+  }
+}
+
+@media (max-width: 359px) {
+  .root {
+    padding-inline: 12px;
+  }
+}

@@ -5,6 +5,7 @@ import { cleanup, fireEvent, renderKid, screen } from "../test/render-kid";
 import { ActionButton } from "./ActionButton";
 import { AnswerField } from "./AnswerField";
 import { AnswerGrid } from "./AnswerGrid";
+import { SessionProgress } from "./SessionProgress";
 import styles from "./answer-controls.module.css";
 
 afterEach(cleanup);
@@ -119,5 +120,15 @@ describe("ActionButton and AnswerField", () => {
     expect(input.classList.contains("custom-input")).toBe(true);
     expect(input.classList.contains(styles.input)).toBe(true);
     expect(screen.getByText("Etykieta pola").classList.contains("custom-label")).toBe(true);
+  });
+});
+
+describe("SessionProgress", () => {
+  it("renders only the existing remaining-task message", () => {
+    const { rerender } = renderKid(<SessionProgress remaining={null} />);
+    expect(screen.queryByTestId("kid-remaining")).toBeNull();
+    rerender(<SessionProgress remaining={2} />);
+    expect(screen.getByTestId("kid-remaining").textContent).toContain("2");
+    expect(screen.queryByText(/%/)).toBeNull();
   });
 });

@@ -1,6 +1,9 @@
 import type { ReactElement, ReactNode } from "react";
+import { Box } from "@mantine/core";
 import type { TaskDto } from "@learning/contracts";
 import { KidIcon } from "../components/KidIcon";
+import { KidScreen } from "../layout/KidScreen";
+import classes from "./ExerciseFrame.module.css";
 import { getExercisePresentation } from "./exercise-presentation";
 
 export function ExerciseFrame({
@@ -22,23 +25,25 @@ export function ExerciseFrame({
 }): ReactElement {
   const presentation = getExercisePresentation(task);
   return (
-    <section className="kid-exercise-frame" data-testid="kid-exercise" data-prompt-kind={task.prompt.kind}>
-      <div className="kid-exercise-instruction" data-testid="kid-instruction">
+    <KidScreen mode="session" className={`kid-exercise-frame ${classes.root}`} data-testid="kid-exercise" data-prompt-kind={task.prompt.kind}>
+      <KidScreen.Header className="kid-exercise-instruction" data-testid="kid-instruction">
         <KidIcon name={presentation.icon} className="kid-exercise-instruction-icon" />
         <span>{presentation.instruction}</span>
-      </div>
-      <div className="kid-material" data-testid="kid-material">
-        <div className="kid-material-content">{content}</div>
+      </KidScreen.Header>
+      <KidScreen.Content className={`kid-material ${classes.material}`} data-testid="kid-material">
+        <Box className="kid-material-content">{content}</Box>
         {(reserveResult || result !== undefined) && (
-          <div className="kid-exercise-result" data-testid="kid-exercise-result">{result}</div>
+          <Box className="kid-exercise-result" data-testid="kid-exercise-result">{result}</Box>
         )}
-      </div>
-      <div className="kid-exercise-actions" data-testid="kid-exercise-actions">
-        <div className="kid-primary-slot" data-testid="kid-primary-slot">{resultActions ?? actions}</div>
-      </div>
-      <div className="kid-exercise-secondary" data-testid="kid-exercise-secondary">
-        <div className="kid-secondary-slot" data-testid="kid-secondary-slot">{secondaryActions}</div>
-      </div>
-    </section>
+      </KidScreen.Content>
+      <KidScreen.Actions
+        className="kid-exercise-actions"
+        data-testid="kid-exercise-actions"
+        secondary={<Box className="kid-exercise-secondary" data-testid="kid-exercise-secondary">{secondaryActions}</Box>}
+        classNames={{ primary: classes.primary, secondary: classes.secondary }}
+      >
+        {resultActions ?? actions}
+      </KidScreen.Actions>
+    </KidScreen>
   );
 }
