@@ -285,6 +285,8 @@ Pierwszy kandydat wymowy: Azure. Wzorzec TTS: OpenAI. Adapter LLM: OpenAI; póź
 
 Wspólny format błędu: {code, message, retryable, requestId}. Walidacja na granicy przez Zod, daty ISO UTC, deadline sprawdzianu jako lokalna data rodziny. Każdy endpoint rodzica sprawdza sesję niezależnie od widoczności przycisków.
 
+Serwowanie (migracja oRPC v2, 2026-10-23): wszystkie grupy endpointów obsługuje `OpenAPIHandler` oRPC w podejściu contract-first — parent i kid w cienkich catch-all `apps/web/src/app/api/v1/[...]/[...path]/route.ts`, a integracja `learning-overview` we własnej trasie statycznej z Bearer i współdzielonym limitem (`apps/web/src/integrations/learning-overview-orpc.ts`). Kontrakt Kid API (`kidApiContract`) jest współdzielony z kid-ui w `@learning/contracts`; kontrakt Parent API pozostaje wewnętrzny dla procesu web (`apps/web/src/parent/orpc-contract.ts`). Koperta błędu, autoryzacja, limity i kształt odpowiedzi na wire są bez zmian względem wcześniejszych routerów ręcznych. Read-only spec OpenAPI Kid API generuje `GET /api/openapi.json` (bez `tasks/{taskId}/attempts` — znane ograniczenie generatora beta.45, opisane w `apps/web/src/app/api/openapi.json/route.ts`).
+
 | Grupa | Endpoint | Wynik |
 | --- | --- | --- |
 | Parent | POST /api/v1/parent/login; POST /logout | Cookie sesji lub błąd |
