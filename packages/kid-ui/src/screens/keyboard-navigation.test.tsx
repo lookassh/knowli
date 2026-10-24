@@ -479,11 +479,10 @@ describe("Keyboard Navigation & Focus Management", () => {
         ReadingView(createExerciseProps({ task: readingTask }))
       );
 
-      // Attach refs to the option buttons in the rendered tree
-      const optionsUl = (result as any).props.content.props.children[1];
-      optionsUl.props.children.forEach((li: any, index: number) => {
-        const btn = li.props.children;
-        (btn.props.ref ?? btn.ref)(mockButtons[index]);
+      // AnswerGrid owns the rendered option buttons and receives the shared refs.
+      const answerGrid = (result as any).props.content.props.children[1];
+      mockButtons.forEach((button, index) => {
+        answerGrid.props.optionRefs.current[index] = button;
       });
 
       // Press ArrowDown when focus is outside options (e.g. body) -> does not intercept

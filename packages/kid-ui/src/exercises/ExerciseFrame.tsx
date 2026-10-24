@@ -39,7 +39,7 @@ export function ExerciseFrame({
       <KidScreen.Actions
         className="kid-exercise-actions"
         data-testid="kid-exercise-actions"
-        secondary={<Box className="kid-exercise-secondary" data-testid="kid-exercise-secondary">{secondaryActions}</Box>}
+        secondary={secondaryActions ? <Box className="kid-exercise-secondary" data-testid="kid-exercise-secondary">{secondaryActions}</Box> : undefined}
         classNames={{ primary: classes.primary, secondary: classes.secondary }}
       >
         {resultActions ?? actions}

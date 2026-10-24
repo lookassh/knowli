@@ -1386,6 +1386,7 @@
   width: min(100%, 420px);
   height: 164px;
   min-height: 164px;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 64px 40px 24px 12px;
 }
 
@@ -1398,7 +1399,7 @@
   justify-content: center;
 }
 
-.kid-record-button {
+.kid-ui .kid-record-button {
   box-sizing: border-box;
   width: min(100%, 360px);
   min-width: 0;

@@ -51,6 +51,11 @@
   align-items: stretch;
 }
 
+.root[data-mode="session"] > .actions > .secondary:has(> *) {
+  min-height: 52px;
+  height: 52px;
+}
+
 .primary > *,
 .secondary > * {
   width: 100%;
