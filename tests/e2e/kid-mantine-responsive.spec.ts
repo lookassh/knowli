@@ -1,6 +1,22 @@
 import { expect, test } from "@playwright/test";
-import { installKidUiFixture } from "./helpers/kid-ui-fixture";
+import { installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
 import { pictureChoiceLayoutFixture } from "./helpers/picture-fixtures";
+
+function recallLayoutFixture(): KidUiFixture {
+  const childId = "10000000-0000-4000-8000-000000000101";
+  const deckId = "10000000-0000-4000-8000-000000000102";
+  const sessionId = "10000000-0000-4000-8000-000000000103";
+  return {
+    profiles: [{ childId, displayName: "Ola", avatarKey: "cat", recordingMode: "hold", canRead: true }],
+    decks: [{ deckId, title: "Dni tygodnia", itemCount: 7, independentlyRecalledCount: 0, testDate: null,
+      recommended: true, mockTestAvailable: false, activeSession: null }],
+    session: { mode: "training", sessionId, childId, deckId, deckVersionId: "10000000-0000-4000-8000-000000000104",
+      policyId: "default", microphoneEnabled: false, canRead: true, state: "active", taskBudget: 1, tasksIssued: 1,
+      assessedTasksIssued: 1, startedAt: "2026-10-24T10:00:00.000Z", resumed: false },
+    tasks: [{ taskId: "10000000-0000-4000-8000-000000000105", sessionId, ordinal: 0, exerciseType: "recall",
+      direction: "source_to_target", state: "issued", prompt: { kind: "recall", prompt: "kot" }, remainingAssessed: 1 }],
+  };
+}
 
 test("Mantine picture choices keep their geometry until the server verdict", async ({ page }) => {
   const fixture = pictureChoiceLayoutFixture();
@@ -70,4 +86,34 @@ test("Mantine picture choices keep their geometry until the server verdict", asy
       expect(Math.abs(after.options[index]![dimension] - before.options[index]![dimension]), `option ${index}.${dimension} moved`).toBeLessThanOrEqual(1);
     }
   }
+});
+
+test("Mantine recall keeps the exact draft and focus through viewport changes", async ({ page }) => {
+  await installKidUiFixture(page, recallLayoutFixture());
+  await page.setViewportSize({ width: 360, height: 760 });
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+
+  const input = page.getByTestId("kid-input");
+  await input.fill("ca");
+  await input.focus();
+  await page.setViewportSize({ width: 360, height: 360 });
+  await expect(input).toHaveValue("ca");
+  await expect(input).toBeFocused();
+  await page.setViewportSize({ width: 360, height: 760 });
+  await expect(input).toHaveValue("ca");
+  await expect(input).toBeFocused();
+
+  await page.evaluate(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) throw new Error("visualViewport is required for this browser test");
+    Object.defineProperty(viewport, "scale", { configurable: true, value: 2 });
+    viewport.dispatchEvent(new Event("resize"));
+  });
+  await expect(page.getByTestId("kid-session-frame")).toHaveAttribute("data-zoomed", "true");
+  await expect(input).toHaveValue("ca");
+  await page.getByTestId("kid-submit").scrollIntoViewIfNeeded();
+  await expect(page.getByTestId("kid-submit")).toBeInViewport();
+  await expect(page.getByTestId("kid-skip")).toBeAttached();
 });
