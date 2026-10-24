@@ -26,6 +26,7 @@ import {
 } from "../db/schema";
 import { AppError } from "../errors";
 import type { SessionActivityReviewTask } from "../ports/ai";
+import { SessionActivityProviderError } from "../ports/session-activity-error";
 
 /**
  * Ocena aktywności sesji (spec client-reward-time): FE dostarcza JEDEN raport
@@ -42,7 +43,7 @@ export const SESSION_ACTIVITY_RETENTION_MS = 7 * 24 * 60 * 60_000;
 /**
  * Deadline finalizacji od znacznika rozpoczęcia oceny. Po terminie istniejący
  * odczyt kończy krótki wynik technicznym błędem — bez modelu i bez punktów.
- * Musi przewyższać deadline pojedynczego wywołania modelu (20 s) oraz limity
+ * Musi przewyższać deadline pojedynczego wywołania modelu (60 s) oraz limity
  * transportu klienta, żeby zwykłe powtórzenie nie tworzyło fałszywego błędu.
  */
 export const SESSION_ACTIVITY_REVIEW_DEADLINE_MS = 120_000;
@@ -487,8 +488,21 @@ async function settleAcceptedSessionActivity(
     finalizeSessionActivity(services, sessionId, record, verdict, errorCode);
 
   const facts = { durationSeconds: plan.facts.durationSeconds, activeSeconds: Math.min(Math.floor(plan.stored.fe.activeMs / 1000), plan.facts.durationSeconds) };
+  const startedAt = performance.now();
+  const fail = async (errorCode: SessionActivityErrorCode, diagnostics: {
+    failureKind: string; httpStatus?: number; validationCodes?: string[];
+  }) => {
+    // Wyłącznie metadane z jawnej listy; bez Error.message, body i szczegółów Zod.
+    console.error("[session-activity] ocena nie powiodła się", {
+      sessionId, errorCode, taskCount: plan.reviewTasks.length,
+      elapsedMs: Math.round(performance.now() - startedAt),
+      timeoutMs: services.sessionActivity?.timeoutMs ?? null,
+      ...diagnostics,
+    });
+    return reviewRecordDto(await finalize(errorRecord(errorCode, facts, services.clock.now()), undefined, errorCode));
+  };
   if (!services.sessionActivity) {
-    return reviewRecordDto(await finalize(errorRecord("model_not_configured", facts, services.clock.now()), undefined, "model_not_configured"));
+    return fail("model_not_configured", { failureKind: "not_configured" });
   }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), services.sessionActivity.timeoutMs);
@@ -498,18 +512,20 @@ async function settleAcceptedSessionActivity(
   } catch (error) {
     clearTimeout(timer);
     const code: SessionActivityErrorCode = (error as { name?: unknown })?.name === "AbortError" ? "model_timeout" : "model_failed";
-    return reviewRecordDto(await finalize(errorRecord(code, facts, services.clock.now()), undefined, code));
+    return fail(code, error instanceof SessionActivityProviderError
+      ? { failureKind: error.failureKind, ...(error.httpStatus !== undefined ? { httpStatus: error.httpStatus } : {}) }
+      : { failureKind: code === "model_timeout" ? "timeout" : "provider_error" });
   }
   clearTimeout(timer);
   const verdict = SessionActivityReviewVerdictSchema.safeParse(raw);
   if (!verdict.success) {
-    return reviewRecordDto(await finalize(errorRecord("invalid_verdict", facts, services.clock.now()), undefined, "invalid_verdict"));
+    return fail("invalid_verdict", { failureKind: "schema_validation", validationCodes: [...new Set(verdict.error.issues.map((issue) => issue.code))] });
   }
   const ordinals = new Set(plan.reviewTasks.map((task) => task.taskOrdinal));
   const excluded = new Set<number>();
   for (const exclusion of verdict.data.excludedTasks) {
     if (!ordinals.has(exclusion.taskOrdinal) || excluded.has(exclusion.taskOrdinal)) {
-      return reviewRecordDto(await finalize(errorRecord("invalid_verdict", facts, services.clock.now()), undefined, "invalid_verdict"));
+      return fail("invalid_verdict", { failureKind: ordinals.has(exclusion.taskOrdinal) ? "duplicate_task_ordinal" : "unknown_task_ordinal" });
     }
     excluded.add(exclusion.taskOrdinal);
   }

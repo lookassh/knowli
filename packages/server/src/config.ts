@@ -190,8 +190,8 @@ export function speechFromEnv(env: Record<string, string | undefined>): SpeechDe
 export const DEFAULT_GRADER_TIMEOUT_MS = 8000;
 export const DEFAULT_GRADER_MAX_CALLS_PER_SESSION = 20;
 
-/** Termin jednego wywołania oceny aktywności; krótszy niż limit żądania klienta. */
-export const DEFAULT_SESSION_ACTIVITY_TIMEOUT_MS = 20_000;
+/** Termin asynchronicznej oceny; zostawia zapas przed finalizacją po 120 s. */
+export const DEFAULT_SESSION_ACTIVITY_TIMEOUT_MS = 60_000;
 
 /** Dodatnia liczba całkowita z env albo błąd (nazwa zmiennej w komunikacie). */
 function positiveIntEnv(name: string, raw: string | undefined, fallback: number): number {
@@ -246,7 +246,7 @@ export function graderFromEnv(env: Record<string, string | undefined>): GraderDe
  * Ocena aktywności sesji ze zmiennych środowiskowych. Świadomie współdzieli
  * `UMIEM_GRADER_BASE_URL/API_KEY/MODEL` z graderem lekcji (decyzja handoff.md
  * §4): brak konfiguracji gradera = ocena aktywności również wyłączona. Osobny
- * deadline `UMIEM_SESSION_ACTIVITY_TIMEOUT_MS` (domyślnie 20 s).
+ * deadline `UMIEM_SESSION_ACTIVITY_TIMEOUT_MS` (domyślnie 60 s).
  */
 export function sessionActivityFromEnv(env: Record<string, string | undefined>): SessionActivityDeps | undefined {
   const baseUrl = env.UMIEM_GRADER_BASE_URL;

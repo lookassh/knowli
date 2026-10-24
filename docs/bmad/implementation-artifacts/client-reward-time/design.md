@@ -136,7 +136,7 @@ Przykładowy wynik:
 
 Zod: ścisły obiekt reason/excludedTasks, uzasadnienie do 500 znaków, uzasadnienia wykluczeń do 300 znaków; najwyżej tyle wykluczeń, ile jest zadań. Numery zadań są unikalne i należą do tej sesji. Nieznany numer, duplikat, dodatkowe pole z sekundami/punktami lub niepoprawny JSON oznaczają błąd oceny. Pusta lista wykluczeń zalicza cały zmierzony aktywny czas, pełna lista daje 0. Szczegółowe wykluczenia z uzasadnieniami znikają po 7 dniach; trwałe krótkie uzasadnienie nie przepisuje odpowiedzi dziecka.
 
-Jedno wywołanie przez nowy wąski port `SessionActivityReviewer`, osobny od `AnswerGraderProvider` i `lesson_verdicts`. Współdzielimy istniejące połączenie `UMIEM_GRADER_*`, ale z osobnym promptem i adapterem metody; bez wybierania nowego płatnego modelu w tym zadaniu. Termin wywołania 20 s, mniej niż limit żądania klienta. Transport bez automatycznych powtórek SDK. Brak konfiguracji = zapis błędu, bez punktów; rodzic widzi brak oceny, nauka nadal się kończy.
+Jedno wywołanie przez nowy wąski port `SessionActivityReviewer`, osobny od `AnswerGraderProvider` i `lesson_verdicts`. Współdzielimy istniejące połączenie `UMIEM_GRADER_*`, ale z osobnym promptem i adapterem metody; bez wybierania nowego płatnego modelu w tym zadaniu. Termin wywołania domyślnie 60 s (`UMIEM_SESSION_ACTIVITY_TIMEOUT_MS`), z zapasem przed deadline finalizacji 120 s. Ocena działa poza odpowiedzią HTTP i nie blokuje podsumowania. Transport bez automatycznych powtórek SDK. Brak konfiguracji = zapis błędu, bez punktów; rodzic widzi brak oceny, nauka nadal się kończy.
 
 ## 7. Minimalne dane w bazie
 
