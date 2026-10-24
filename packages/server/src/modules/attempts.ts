@@ -29,6 +29,7 @@ import { chooseFeedback, feedbackExposureKeys } from "../domain/feedback";
 import { compareSpelling } from "../domain/spelling-diff";
 import { qualifyAttempt } from "../domain/independence";
 import { computeTargetKey } from "../domain/target-key";
+import { taskStateAfterAttempt } from "../domain/task-completion";
 import { payloadToItem } from "./item-payload";
 import type {
   AnswerKey,
@@ -175,44 +176,6 @@ function gradeOf(input: AttemptInput, key: AnswerKey, ctx: EvaluationContext): G
       // `modules/lessons/lesson-attempts.ts` (design „Przyjęcie odpowiedzi”).
       throw new AppError("validation", { message: "sequence attempts require the lesson path" });
   }
-}
-
-/**
- * Przejście stanu zadania po próbie (arch §9.1a): poprawna odpowiedź kończy,
- * pierwszy błąd zostawia drugą próbę, „Nie pamiętam” i drugi błąd kończą
- * z kierunkiem na wsparcie, „Pomiń” zamyka bez oceny. Próby bez oceny
- * (techniczne, niejednoznaczne) nie są błędem wiedzy i nie zamykają zadania.
- */
-function nextTaskState(
-  modality: AnyModality,
-  grade: Grade,
-  attemptNumber: number,
-  incorrectAttemptCount: number,
-): "issued" | "answered" | "skipped" {
-  if (modality === "skip") {
-    return "skipped";
-  }
-  // ćwiczenie wymowy: wypowiedzenie właściwego słowa wykonuje zadanie także
-  // bez oceny wymowy (SPEC §15.4); druga wiarygodna rozbieżność kończy bez
-  // ocen wiedzy — dziecko nie może utknąć na jednym słowie (§15.3)
-  if (grade.speechAttempt) {
-    if (grade.speechAttempt.contentMatched || attemptNumber >= 2) {
-      return "answered";
-    }
-  }
-  const values = Object.values(grade.skills);
-  const anyCorrect = values.some((s) => s.outcome === "correct");
-  const anyIncorrect = values.some((s) => s.outcome === "incorrect");
-  if (anyCorrect && !anyIncorrect) {
-    return "answered";
-  }
-  if (modality === "dont_remember") {
-    return "answered";
-  }
-  if (anyIncorrect && incorrectAttemptCount >= 2) {
-    return "answered";
-  }
-  return "issued";
 }
 
 function dbOutcome(outcome: SkillGrade["outcome"]): "correct" | "incorrect" | "unassessed" {
@@ -378,12 +341,14 @@ async function finalizeAttemptRow(
     .from(attempts)
     .innerJoin(assessments, eq(assessments.attemptId, attempts.id))
     .where(and(eq(attempts.taskId, task.id), eq(assessments.outcome, "incorrect")));
-  const taskState = session.mode === "mock_test" ? (modality === "skip" ? "skipped" : "answered") : nextTaskState(
-    modality,
-    grade,
-    attempt.attemptNumber,
-    incorrectAttempts.length,
-  );
+  const taskState = taskStateAfterAttempt({
+    isMockTest: session.mode === "mock_test",
+    action: modality === "skip" || modality === "dont_remember" ? modality : "answer",
+    outcomes: Object.values(grade.skills).map((skill) => skill.outcome),
+    attemptNumber: attempt.attemptNumber,
+    incorrectAttemptCount: incorrectAttempts.length,
+    speechContentMatched: grade.speechAttempt?.contentMatched,
+  });
   if (taskState !== "issued") {
     await tx.update(sessionTasks).set({ state: taskState }).where(eq(sessionTasks.id, task.id));
   }
