@@ -1949,7 +1949,7 @@
    Kolor wiersza odpowiada wynikowi słowa: wszystko poprawnie zielono, jakakolwiek
    pomyłka czerwono, nic nie sprawdzono neutralnie; ikona ✓/✗/– dubluje kolor,
    żeby kolor nie był jedyną informacją. */
-.kid-mock-list {
+.kid-ui .kid-mock-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -1958,7 +1958,7 @@
   gap: 8px;
 }
 
-.kid-mock-row {
+.kid-ui .kid-mock-row {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1968,12 +1968,12 @@
   padding: 6px 10px;
 }
 
-.kid-mock-row--correct {
+.kid-ui .kid-mock-row--correct {
   border-color: var(--kid-good);
   background: var(--kid-good-bg);
 }
 
-.kid-mock-row--incorrect {
+.kid-ui .kid-mock-row--incorrect {
   border-color: var(--kid-wrong);
   background: var(--kid-wrong-bg);
 }
@@ -2049,7 +2049,7 @@
 }
 
 /* Wynik próby: próg koloru 80%/50%, paleta jak feedback — zielony, bursztyn, czerwony. */
-.kid-mock-score {
+.kid-ui .kid-mock-score {
   text-align: center;
   border: 2px solid var(--kid-line);
   border-radius: 16px;
@@ -2069,33 +2069,33 @@
   letter-spacing: 2px;
 }
 
-.kid-mock-score[data-tone="good"] {
+.kid-ui .kid-mock-score[data-tone="good"] {
   border-color: var(--kid-good);
   background: var(--kid-good-bg);
 }
 
-.kid-mock-score[data-tone="good"] .kid-mock-score__value,
-.kid-mock-score[data-tone="good"] .kid-mock-score__stars {
+.kid-ui .kid-mock-score[data-tone="good"] .kid-mock-score__value,
+.kid-ui .kid-mock-score[data-tone="good"] .kid-mock-score__stars {
   color: var(--kid-good);
 }
 
-.kid-mock-score[data-tone="mid"] {
+.kid-ui .kid-mock-score[data-tone="mid"] {
   border-color: var(--kid-warm-line);
   background: var(--kid-warm);
 }
 
-.kid-mock-score[data-tone="mid"] .kid-mock-score__value,
-.kid-mock-score[data-tone="mid"] .kid-mock-score__stars {
+.kid-ui .kid-mock-score[data-tone="mid"] .kid-mock-score__value,
+.kid-ui .kid-mock-score[data-tone="mid"] .kid-mock-score__stars {
   color: var(--kid-warm-text);
 }
 
-.kid-mock-score[data-tone="low"] {
+.kid-ui .kid-mock-score[data-tone="low"] {
   border-color: var(--kid-wrong);
   background: var(--kid-wrong-bg);
 }
 
-.kid-mock-score[data-tone="low"] .kid-mock-score__value,
-.kid-mock-score[data-tone="low"] .kid-mock-score__stars {
+.kid-ui .kid-mock-score[data-tone="low"] .kid-mock-score__value,
+.kid-ui .kid-mock-score[data-tone="low"] .kid-mock-score__stars {
   color: var(--kid-wrong);
 }
 

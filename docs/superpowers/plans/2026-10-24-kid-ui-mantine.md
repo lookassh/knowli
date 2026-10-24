@@ -269,10 +269,10 @@ W E2E rozszerz scenariusz odmowy: ścieżka tekstowa działa. Przy fake streamie
 
 **Interfaces:** Zachowaj istniejące eksporty MockTestReadyScreen, SessionConflictScreen, MockTestSummaryScreen, LessonMockTestSummaryScreen i ich propsy; score helpers bez zmian. Użyj `ComponentProps<typeof ExistingScreen>` w testach, nie drugiego kontraktu DTO.
 
-- [ ] **Step 1: Testy.** mock_test choice: pojedynczy tap wysyła odpowiedź, nie pokazuje correctness przed podsumowaniem; actual taskBudget różny od 6 wyświetla rzeczywisty budżet. Ready start/cancel i conflict resume/end wywołują istniejące callbacki. Podsumowania: details loading/error/retry z callbacks, realne correct/wrong/ungraded i authorized audio, długie omówienie scrolluje. Dodaj nową asercję motywu/kontrolek; użyj danych z istniejących mock-test helpers zamiast nowego lokalnego scoringu.
-- [ ] **Step 2: RED.** `corepack pnpm exec vitest run --config vitest.unit.config.ts packages/kid-ui/src/screens/mock-test-views.test.tsx` FAIL nowych kontrolek; nowe E2E sprawdzające Mantine flow w kid-flow-screens FAIL przed migracją.
-- [ ] **Step 3: Migruj ekrany do KidScreen mode flow.** Wszystkie akcje przez ActionButton, karty Mantine, istniejące badges/summary helpers. Nie dodawaj progressu procentowego bez prawdziwego mianownika. Zachowaj mockTestInfo/answerSaved z LearnScreen, brak bieżącej oceny, konfigurację serwera i loading/retry detali. Bez lokalnego nowego endpointu.
-- [ ] **Step 4: GREEN.** Unit z Step 2 i `corepack pnpm exec playwright test tests/e2e/mock-test.spec.ts tests/e2e/lesson-mock-test.spec.ts tests/e2e/kid-flow-screens.spec.ts` PASS. `corepack pnpm typecheck` PASS.
+- [x] **Step 1: Testy.** `mock-test-views.test.tsx` renderuje ekrany z `ComponentProps`, sprawdza budżet z session, ready/cancel/conflict callbacki, statusy correct/incorrect/unassessed, retry i dostępne audio/praktykę. Assercje Mantine oraz retry 44 px.
+- [x] **Step 2: RED.** Testy najpierw FAIL na braku `mantine-Button-root` w ekranie gotowości, akcji odsłuchu i praktyki. Stany błędu/redirection sprawdzono również E2E.
+- [x] **Step 3: Migruj ekrany do KidScreen mode flow.** Wszystkie akcje przez ActionButton, wyniki i wiersze przez Mantine Paper/Badge/Text. Zachowane helpery score, rzeczywisty taskBudget, brak oceny bieżącej odpowiedzi, dostępność audio i callbacki.
+- [x] **Step 4: GREEN.** Unit: 4/4; Kid UI tsc PASS. `mock-test.spec.ts`, `lesson-mock-test.spec.ts`, `kid-flow-screens.spec.ts`: 13/13 PASS. Po korekcie kolorów Mantine ponownie ekran ready + conflict + summary PASS; po asercjach Mantine E2E ready i summary 2/2. Review GPT‑6.1 Sol medium: oba P2 zamknięte (Paper status/flex oraz retry min. 44 px), brak pozostałych P0–P2.
 - [ ] **Step 5: Commit.** Selektywny add Files; `git commit -m "feat(kid-ui): migrate mock test screens and reviews"`.
 
 ## Task 10: Profile i zestawy na rzeczywistych danych
