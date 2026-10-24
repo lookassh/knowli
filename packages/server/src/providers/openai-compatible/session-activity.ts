@@ -1,4 +1,5 @@
 import type { SessionActivityReviewTask, SessionActivityReviewer } from "../../ports/ai";
+import { SessionActivityProviderError } from "../../ports/session-activity-error";
 
 /**
  * Adapter oceny aktywności sesji zgodny z OpenAI (spec client-reward-time).
@@ -80,7 +81,7 @@ function extractJson(content: string): unknown {
   try {
     return JSON.parse(candidate);
   } catch {
-    throw new Error("session activity reviewer returned non-JSON content");
+    throw new SessionActivityProviderError("invalid_json");
   }
 }
 
@@ -112,14 +113,20 @@ export function createOpenAiCompatibleSessionActivityReviewer(
       });
       if (!response.ok) {
         // bez body w komunikacie — może nieść echo odpowiedzi dziecka; bez tokenu
-        throw new Error(`session activity review failed: ${response.status}`);
+        throw new SessionActivityProviderError("http_error", response.status);
       }
-      const payload = (await response.json()) as {
+      let payload: {
         choices?: Array<{ message?: { content?: string } }>;
-      };
-      const content = payload.choices?.[0]?.message?.content;
-      if (!content) {
-        throw new Error("session activity reviewer returned no content");
+      } | null;
+      try {
+        payload = (await response.json()) as typeof payload;
+      } catch (error) {
+        if (signal.aborted) throw error;
+        throw new SessionActivityProviderError("invalid_response");
+      }
+      const content = payload?.choices?.[0]?.message?.content;
+      if (typeof content !== "string" || !content) {
+        throw new SessionActivityProviderError("missing_content");
       }
       return extractJson(content);
     },

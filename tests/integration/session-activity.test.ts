@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   completePresentation,
   createChild,
@@ -26,6 +26,7 @@ import { SESSION_ACTIVITY_REPORT_MAX_BYTES } from "@learning/contracts";
 import { createKidApiClient } from "../../packages/kid-ui/src/api/client";
 import { handleKidApi } from "../../apps/web/src/kid/kid-router";
 import { AppError } from "../../packages/server/src/errors";
+import { createOpenAiCompatibleSessionActivityReviewer } from "../../packages/server/src/providers/openai-compatible/session-activity";
 import { materializeExercise, type LoadedExercise } from "../../packages/server/src/modules/lessons/lesson-materialize";
 import { englishGrammarSubject } from "../../packages/server/src/domain/lessons/subjects/english-grammar/module";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
@@ -419,6 +420,65 @@ describe("session activity review", () => {
     const stored = (await pool.query("select activity_report, activity_report_hash is not null as hashed from learning_app.learning_sessions where id=$1", [session.sessionId])).rows[0]!;
     expect(stored.activity_report.errorCode).toBe("model_not_configured");
     expect(stored.hashed).toBe(true);
+  });
+
+  it.each(["timeout", "http_error", "provider_error", "unknown_task_ordinal", "duplicate_task_ordinal"])("logs safe diagnostics for %s", async (failureKind) => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const base = buildTestServices("2026-10-16T10:00:00.000Z");
+      const provider = new FakeSessionActivityReviewer();
+      if (failureKind === "timeout") provider.queue({ raw: {}, delayMs: 30_000 });
+      if (failureKind === "provider_error") provider.queue({ error: "private-child-answer secret-token" });
+      if (failureKind.endsWith("task_ordinal")) {
+        provider.review = async ({ tasks }) => ({ reason: "ok", excludedTasks: failureKind === "unknown_task_ordinal"
+          ? [{ taskOrdinal: 999_999, reason: "private-child-answer" }]
+          : [0, 1].map(() => ({ taskOrdinal: tasks[0]!.taskOrdinal, reason: "private-child-answer" })) });
+      }
+      const httpProvider = createOpenAiCompatibleSessionActivityReviewer({
+        baseUrl: "https://test.invalid/v1", apiKey: "secret-token", model: "fake",
+        fetchImpl: async () => new Response("private-child-answer secret-token", { status: 429 }),
+      });
+      const services = createServices({ db: base.services.db, clock: base.clock, sessionActivity: {
+        provider: failureKind === "http_error" ? httpProvider : provider, timeoutMs: 10,
+      } });
+      const child = await childWithProfile(services);
+      const { session, tasks } = await playedSession(services, child.id);
+      base.clock.advanceMs(60_000);
+      const report = reportOf([{ taskId: tasks[0]!.taskId, exerciseType: tasks[0]!.exerciseType, intervals: [[0, 60_000]], edits: 1, attempts: [] }], 60_000);
+      const errorCode = failureKind === "timeout" ? "model_timeout" : failureKind.endsWith("task_ordinal") ? "invalid_verdict" : "model_failed";
+      expect(await reviewEndedSession(services, session.sessionId, report)).toMatchObject({ errorCode, pointsAwarded: 0 });
+      expect(log).toHaveBeenCalledWith("[session-activity] ocena nie powiodła się", expect.objectContaining({
+        sessionId: session.sessionId, errorCode, failureKind, taskCount: 1, timeoutMs: 10,
+        ...(failureKind === "http_error" ? { httpStatus: 429 } : {}),
+      }));
+      expect(JSON.stringify(log.mock.calls)).not.toMatch(/private-child-answer|secret-token/);
+      expect(await rewardPointsOf(child.id)).toEqual({ points: 0, remainder: 0 });
+    } finally { log.mockRestore(); }
+  });
+
+  it("logs schema failure codes without raw values and does not log again on delivery retry", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const { services, clock, provider } = await reviewerServices("2026-10-16T10:00:00.000Z", [
+        { raw: { reason: "private-child-answer", excludedTasks: [], "secret-token": 120 } },
+      ]);
+      const child = await childWithProfile(services);
+      const { session, tasks } = await playedSession(services, child.id);
+      clock.advanceMs(60_000);
+      const report = reportOf([
+        { taskId: tasks[0]!.taskId, exerciseType: tasks[0]!.exerciseType, intervals: [[0, 60_000]], edits: 1, attempts: [] },
+      ], 60_000);
+      expect(await reviewEndedSession(services, session.sessionId, report)).toMatchObject({ errorCode: "invalid_verdict", pointsAwarded: 0 });
+      expect(log).toHaveBeenCalledWith("[session-activity] ocena nie powiodła się", expect.objectContaining({
+        sessionId: session.sessionId, errorCode: "invalid_verdict", failureKind: "schema_validation",
+        validationCodes: ["unrecognized_keys"], taskCount: 1, timeoutMs: 20_000, elapsedMs: expect.any(Number),
+      }));
+      expect(JSON.stringify(log.mock.calls)).not.toMatch(/private-child-answer|secret-token/);
+      await reviewEndedSession(services, session.sessionId, report);
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(provider.callCount).toBe(1);
+      expect(await rewardPointsOf(child.id)).toEqual({ points: 0, remainder: 0 });
+    } finally { log.mockRestore(); }
   });
 
   it("treats an invalid verdict (seconds/points) as an evaluation error without retry", async () => {

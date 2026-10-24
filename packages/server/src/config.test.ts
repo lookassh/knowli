@@ -82,11 +82,11 @@ describe("sessionActivityFromEnv", () => {
     expect(sessionActivityFromEnv({})).toBeUndefined();
   });
 
-  it("komplet UMIEM_GRADER_* → provider z domyślnym terminem 20 s", () => {
+  it("komplet UMIEM_GRADER_* → provider z domyślnym terminem 60 s", () => {
     const deps = sessionActivityFromEnv({ ...base });
     expect(deps).toBeDefined();
     expect(deps!.provider.model).toBe("cheap-1");
-    expect(deps!.timeoutMs).toBe(20_000);
+    expect(deps!.timeoutMs).toBe(60_000);
     expect(deps!.publicService).toBe("grader.example · cheap-1");
     expect(deps!.publicService).not.toContain("secret");
   });
@@ -105,8 +105,8 @@ describe("sessionActivityFromEnv", () => {
     expect(() => sessionActivityFromEnv({ UMIEM_GRADER_BASE_URL: base.UMIEM_GRADER_BASE_URL, UMIEM_GRADER_API_KEY: "k" })).toThrow();
   });
 
-  it("pusty UMIEM_SESSION_ACTIVITY_TIMEOUT_MS → default 20000; własna wartość → użyta", () => {
-    expect(sessionActivityFromEnv({ ...base, UMIEM_SESSION_ACTIVITY_TIMEOUT_MS: "" })!.timeoutMs).toBe(20_000);
+  it("pusty UMIEM_SESSION_ACTIVITY_TIMEOUT_MS → default 60000; własna wartość → użyta", () => {
+    expect(sessionActivityFromEnv({ ...base, UMIEM_SESSION_ACTIVITY_TIMEOUT_MS: "" })!.timeoutMs).toBe(60_000);
     expect(sessionActivityFromEnv({ ...base, UMIEM_SESSION_ACTIVITY_TIMEOUT_MS: "45000" })!.timeoutMs).toBe(45_000);
     expect(() => sessionActivityFromEnv({ ...base, UMIEM_SESSION_ACTIVITY_TIMEOUT_MS: "-1" })).toThrow();
   });
