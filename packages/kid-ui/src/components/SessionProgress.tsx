@@ -8,7 +8,7 @@ export function SessionProgress({ remaining }: { remaining: number | null }): Re
   if (remaining === null) return null;
 
   return (
-    <Badge className={classes.root} variant="light" radius="xl" data-testid="kid-remaining">
+    <Badge className={[classes.root, "kid-remaining"].join(" ")} variant="light" radius="xl" data-testid="kid-remaining">
       {format(messages.kid.remaining, { n: remaining })}
     </Badge>
   );

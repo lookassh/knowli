@@ -5,6 +5,7 @@ import { KidIcon } from "../components/KidIcon";
 import { MeaningVisualView } from "../visuals/MeaningVisualView";
 import type { ExerciseProps } from "./types";
 import { shouldIgnoreKeyboardShortcut } from "./useChoiceKeyboard";
+import { ActionButton } from "../components/ActionButton";
 
 export function PictureExposureView({ task, busy, mediaUrl, handlers }: ExerciseProps) {
   const doneRef = useRef<HTMLButtonElement>(null);
@@ -39,7 +40,8 @@ export function PictureExposureView({ task, busy, mediaUrl, handlers }: Exercise
       content={(
         <div className="kid-exposure-content">
           <MeaningVisualView visual={task.prompt.visual} mediaUrl={mediaUrl} />
-          <button
+          <ActionButton
+            fullWidth={false}
             type="button"
             className="kid-play-big"
             data-testid="kid-play"
@@ -48,11 +50,11 @@ export function PictureExposureView({ task, busy, mediaUrl, handlers }: Exercise
             aria-label={messages.kid.listen}
           >
             <KidIcon name="volume" />
-          </button>
+          </ActionButton>
         </div>
       )}
       actions={(
-        <button
+        <ActionButton
           ref={doneRef}
           type="button"
           className="kid-primary"
@@ -62,7 +64,7 @@ export function PictureExposureView({ task, busy, mediaUrl, handlers }: Exercise
         >
           <KidIcon name="check" />
           {messages.kid.understand}
-        </button>
+        </ActionButton>
       )}
     />
   );

@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 import { messages } from "@learning/contracts";
+import { ActionButton } from "../components/ActionButton";
+import { AnswerGrid } from "../components/AnswerGrid";
 import { KidIcon } from "../components/KidIcon";
 import { ExerciseFrame } from "./ExerciseFrame";
 import type { ExerciseProps } from "./types";
@@ -36,7 +38,8 @@ export function ListeningView({ task, busy, optionOutcomes, result, resultAction
       task={task}
       content={(
         <>
-          <button
+          <ActionButton
+            fullWidth={false}
             ref={playRef}
             type="button"
             className="kid-play-big"
@@ -46,33 +49,22 @@ export function ListeningView({ task, busy, optionOutcomes, result, resultAction
             aria-label={messages.kid.listen}
           >
             <KidIcon name="volume" />
-          </button>
-          <ul className="kid-options">
-            {options.map((option, index) => {
-              const outcome = optionOutcomes.get(option.id);
-              return (
-                <li key={option.id}>
-                  <button
-                    ref={(btn) => { optionRefs.current[index] = btn; }}
-                    type="button"
-                    data-testid="kid-option"
-                    className={outcome === undefined ? undefined : `kid-option--${outcome}`}
-                    aria-pressed={outcome === "pending"}
-                    disabled={busy}
-                    onClick={() => handlers.onAnswerChoice(option.id)}
-                  >
-                    {option.text}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+          </ActionButton>
+          <AnswerGrid
+            className="kid-options"
+            choiceList
+            options={options.map((option) => ({ id: option.id, label: option.text, content: null }))}
+            outcomes={optionOutcomes}
+            disabled={busy}
+            optionRefs={optionRefs}
+            onChoose={handlers.onAnswerChoice}
+          />
         </>
       )}
       actions={resultActions}
       secondaryActions={mockTest && <div className="kid-secondary-actions">
-        <button type="button" data-testid="kid-not-remember" disabled={busy} onClick={handlers.onNotRemember}>{messages.kid.mockTestNotRemember}</button>
-        <button type="button" data-testid="kid-skip" disabled={busy} onClick={handlers.onSkip}>{messages.kid.skip}</button>
+        <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-not-remember" disabled={busy} onClick={handlers.onNotRemember}>{messages.kid.mockTestNotRemember}</ActionButton>
+        <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-skip" disabled={busy} onClick={handlers.onSkip}>{messages.kid.skip}</ActionButton>
       </div>}
       result={result}
       reserveResult

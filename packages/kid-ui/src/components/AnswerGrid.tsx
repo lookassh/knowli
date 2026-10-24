@@ -21,6 +21,11 @@ export interface AnswerGridProps {
   className?: string;
   optionClassName?: string;
   labelClassName?: string;
+  afterOption?: (option: AnswerGridOption) => ReactNode;
+  itemClassName?: (option: AnswerGridOption) => string | undefined;
+  choiceList?: boolean;
+  compactChoiceGrid?: boolean;
+  optionLang?: string;
 }
 
 export function AnswerGrid({
@@ -33,9 +38,14 @@ export function AnswerGrid({
   className,
   optionClassName,
   labelClassName,
+  afterOption,
+  itemClassName,
+  choiceList = false,
+  compactChoiceGrid = false,
+  optionLang,
 }: AnswerGridProps) {
   return (
-    <ul className={[classes.grid, className].filter(Boolean).join(" ")} data-visual-only={visualOnly || undefined}>
+    <ul className={[classes.grid, choiceList ? classes.choiceList : undefined, compactChoiceGrid ? classes.compactChoiceGrid : undefined, className].filter(Boolean).join(" ")} data-visual-only={visualOnly || undefined}>
       {options.map((option, index) => {
         const outcome = outcomes.get(option.id);
         const accessibleName = outcome === "correct"
@@ -45,7 +55,7 @@ export function AnswerGrid({
             : option.label;
 
         return (
-          <li className={classes.item} key={option.id}>
+          <li className={[classes.item, itemClassName?.(option)].filter(Boolean).join(" ")} key={option.id}>
             <UnstyledButton
               ref={(element) => {
                 if (optionRefs) optionRefs.current[index] = element;
@@ -55,6 +65,7 @@ export function AnswerGrid({
               data-testid="kid-option"
               data-option-id={option.id}
               data-outcome={outcome}
+              lang={optionLang}
               aria-label={accessibleName}
               aria-pressed={outcome === "pending"}
               disabled={disabled}
@@ -67,10 +78,13 @@ export function AnswerGrid({
               ) : (
                 <span className={classes.label}>{option.label}</span>
               )}
-              <span className={classes.content}>{option.content}</span>
+              {option.content !== null && option.content !== undefined && (
+                <span className={classes.content} data-testid="kid-option-content">{option.content}</span>
+              )}
               {outcome === "correct" && <span className={`${classes.outcome} kid-picture-outcome kid-picture-outcome--correct`} aria-hidden="true" data-outcome={outcome} data-testid="kid-outcome-correct">✓</span>}
               {outcome === "wrong" && <span className={`${classes.outcome} kid-picture-outcome kid-picture-outcome--wrong`} aria-hidden="true" data-outcome={outcome} data-testid="kid-outcome-wrong">×</span>}
             </UnstyledButton>
+          {afterOption?.(option)}
           </li>
         );
       })}

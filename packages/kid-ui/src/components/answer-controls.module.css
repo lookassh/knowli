@@ -1,10 +1,15 @@
 .action {
-  min-height: 54px;
   font-weight: 700;
   font-size: 1rem;
   line-height: 1.35;
   white-space: normal;
   transition: background-color 150ms, border-color 150ms;
+}
+
+.action:not([data-size="sm"]) {
+  min-height: 54px;
+  height: 54px;
+  padding-block: 0;
 }
 
 .field {
@@ -41,6 +46,55 @@
 
 .item {
   min-width: 0;
+}
+
+.choiceList {
+  display: flex;
+  flex-direction: column;
+  align-content: stretch;
+}
+
+.choiceList .option {
+  min-height: 64px;
+  padding-inline: 44px;
+  border-radius: 18px;
+  font-size: 1.3rem;
+}
+
+.choiceList .item {
+  width: 100%;
+}
+
+:global(.kid-ui .kid-options).compactChoiceGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+:global(.kid-ui .kid-options).compactChoiceGrid .item {
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+  gap: 6px;
+}
+
+:global(.kid-ui .kid-options).compactChoiceGrid .option {
+  flex: 1 1 auto;
+  min-height: 48px;
+  padding-inline: 12px;
+  font-size: 1rem;
+}
+
+@media (max-height: 780px) {
+  .choiceList .option {
+    min-height: 48px;
+  }
+}
+
+@media (max-height: 780px) {
+  :global(.kid-ui .kid-options).compactChoiceGrid {
+    gap: 6px;
+  }
 }
 
 .option {

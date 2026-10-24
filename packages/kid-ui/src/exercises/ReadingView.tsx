@@ -2,6 +2,8 @@ import { messages } from "@learning/contracts";
 import type { ExerciseProps } from "./types";
 import { ExerciseFrame } from "./ExerciseFrame";
 import { useChoiceKeyboard } from "./useChoiceKeyboard";
+import { AnswerGrid } from "../components/AnswerGrid";
+import { Text } from "@mantine/core";
 
 /**
  * Rozpoznawanie tekstu i odwrotne (SPEC §12.3–12.4): widoczne słowo/prompt
@@ -24,27 +26,16 @@ export function ReadingView({ task, busy, optionOutcomes, result, resultActions,
     <ExerciseFrame
       task={task}
       content={<>
-        <p className="kid-word" data-testid="kid-word">{visible}</p>
-        <ul className="kid-options">
-        {options.map((option, index) => {
-          const outcome = optionOutcomes.get(option.id);
-          return (
-            <li key={option.id}>
-              <button
-                ref={(btn) => { optionRefs.current[index] = btn; }}
-                type="button"
-                data-testid="kid-option"
-                className={outcome === undefined ? undefined : `kid-option--${outcome}`}
-                aria-pressed={outcome === "pending"}
-                disabled={busy}
-                onClick={() => handlers.onAnswerChoice(option.id)}
-              >
-                {option.text}
-              </button>
-            </li>
-          );
-        })}
-        </ul>
+        <Text component="p" className="kid-word" data-testid="kid-word">{visible}</Text>
+        <AnswerGrid
+          className="kid-options"
+          choiceList
+          options={options.map((option) => ({ id: option.id, label: option.text, content: null }))}
+          outcomes={optionOutcomes}
+          disabled={busy}
+          optionRefs={optionRefs}
+          onChoose={handlers.onAnswerChoice}
+        />
       </>}
       actions={resultActions}
       reserveResult
