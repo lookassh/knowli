@@ -249,6 +249,43 @@
   padding: 4px 0;
 }
 
+/* Keep the complete word card in the available material slot. The image
+   yields space to text; exceptionally long content can still scroll. */
+.kid-ui .kid-exposure-content {
+  flex: 1;
+  min-height: 0;
+  justify-content: safe center;
+}
+
+.kid-ui .kid-exposure-content > .kid-illustration {
+  flex: 0 1 260px;
+  min-height: 64px;
+}
+
+.kid-ui .kid-exposure-content > :not(.kid-illustration) {
+  flex: none;
+}
+
+.kid-ui .kid-exposure-content .kid-word-row,
+.kid-ui .kid-exposure-content .kid-example-block {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.kid-ui .kid-exposure-content .kid-word-row:not(:has(button)),
+.kid-ui .kid-exposure-content .kid-example-block:not(:has(button)) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.kid-ui .kid-exposure-content .kid-word {
+  min-width: 0;
+  font-size: clamp(1.5rem, 6vw, 2.4rem);
+  line-height: 1.2;
+  font-weight: 800;
+}
+
 .kid-screen {
   max-width: 560px;
   margin: 0 auto;
@@ -733,7 +770,7 @@
   margin-bottom: auto;
 }
 
-.kid-word {
+.kid-ui .kid-word {
   font-size: 2.4rem;
   font-weight: 800;
   margin: 0;
@@ -748,7 +785,7 @@
   text-align: center;
 }
 
-.kid-example {
+.kid-ui .kid-example {
   font-size: 1.05rem;
   color: var(--kid-muted);
   margin: 0;
@@ -1504,6 +1541,24 @@
 
 .kid-session-status:empty {
   visibility: hidden;
+}
+
+/* Reserve one compact line throughout training, including the empty state.
+   Grow with enlarged text; mock tests retain room for their extra notice. */
+.kid-session-status[data-mode="training"] {
+  height: max(32px, calc(1.5rem + 8px));
+  min-height: max(32px, calc(1.5rem + 8px));
+}
+
+.kid-session-status[data-mode="training"] > .kid-notice {
+  padding-block: 4px;
+  line-height: 1.4;
+}
+
+.kid-session-status[data-mode="training"] > .kid-notice:not(:has(> button)) {
+  flex: none;
+  max-height: 100%;
+  overflow-y: auto;
 }
 
 .kid-session-status > .kid-notice {
