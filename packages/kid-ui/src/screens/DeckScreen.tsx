@@ -24,7 +24,7 @@ function wordCount(count: number): string {
 export function DeckScreen({
   decks,
   childName,
-  todayActivitySeconds = 0,
+  todayActivitySeconds,
   todayActivityUnavailable = false,
   mediaUrl,
   microphone,
@@ -57,14 +57,20 @@ export function DeckScreen({
   ].filter((section) => section.items.length > 0);
 
   const firstButtonRef = useAutoFocus<HTMLButtonElement>(true);
+  const approvedSecondsToday = todayActivitySeconds ?? 0;
+  const approvedMinutes = Math.floor(approvedSecondsToday / 60);
+  const approvedRemainder = approvedSecondsToday % 60;
+  const approvedTime = approvedMinutes > 0
+    ? `${approvedMinutes} min${approvedRemainder ? ` ${approvedRemainder} s` : ""}`
+    : `${approvedRemainder} s`;
 
   return (
     <main className="kid-screen kid-deck-screen">
       <header className="kid-top-bar">
         <span className="kid-daily-activity" data-testid="kid-daily-activity">
-          {todayActivityUnavailable
+          {todayActivityUnavailable || todayActivitySeconds === undefined
             ? messages.kid.kidDailyActivityUnavailable
-            : format(messages.kid.kidDailyActivity, { minutes: todayActivitySeconds > 0 ? Math.max(1, Math.round(todayActivitySeconds / 60)) : 0 })}
+            : format(messages.kid.kidDailyActivity, { time: approvedTime })}
         </span>
         {headerActions}
         {onGuidance && <GuidanceButton audioKey="deck_select" onPlay={onGuidance} testId="kid-deck-guidance" />}

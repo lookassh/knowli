@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, sql } from "drizzle-orm";
 import { MeaningVisualSchema, type KidDeckDto, type KidProfileDto } from "@learning/contracts";
 import type { Services } from "../config";
 import type { Tx } from "../db/client";
@@ -12,7 +12,7 @@ import { CURRENT_POLICY_ID, loadPolicy } from "../policies/registry";
 import { readDeckLearningOverview, readProjectedExposedTargetKeys } from "./deck-learning-overview";
 import { SKILL_PROJECTION_VERSION } from "./skill-projections";
 import { payloadToItem } from "./item-payload";
-import { readActivitySummary } from "./reporting";
+import { localDateAt, validRewardTimezone } from "../domain/reward-activity";
 
 /**
  * Widoki startowe Kid Mode (arch §12): profile dzieci (tylko nazwa i awatar)
@@ -24,18 +24,40 @@ export async function listKidProfiles(services: Services): Promise<KidProfileDto
     .select({ childId: childProfiles.id, displayName: childProfiles.displayName, avatarKey: childProfiles.avatarKey, recordingMode: childProfiles.recordingMode, canRead: childProfiles.canRead, rewardPoints: childProfiles.rewardPoints })
     .from(childProfiles)
     .orderBy(asc(childProfiles.createdAt));
-  const activityByChild = await Promise.all(rows.map(async (row): Promise<[string, { seconds: number | undefined; unavailable: boolean }]> => {
-    try {
-      const activity = await readActivitySummary(services, row.childId);
-      return [row.childId, { seconds: activity.daily[activity.daily.length - 1]?.activeSeconds ?? 0, unavailable: false }];
-    } catch {
-      // Profil i nauka nadal są dostępne, jeśli odczyt raportu aktywności zawiedzie.
-      return [row.childId, { seconds: undefined, unavailable: true }];
+  const activityByChild = new Map<string, { seconds: number; unavailable: boolean }>();
+  try {
+    const today = services.clock.now();
+    // UTC window is wider than any civil-day boundary, including UTC-12/UTC+14.
+    const sessionWindowStart = new Date(today.getTime() - 48 * 60 * 60_000);
+    const todayByChild = new Map(rows.map((row) => [row.childId, { seconds: 0 }]));
+    if (rows.length) {
+      const sessions = await services.db.select({
+        childId: learningSessions.childId, endedAt: learningSessions.endedAt,
+        timezone: sql<string | null>`${learningSessions.context}->>'timezone'`,
+        reviewStatus: sql<string | null>`${learningSessions.activityReview}->>'status'`,
+        approvedSeconds: sql<string | null>`${learningSessions.activityReview}->>'approvedSeconds'`,
+      }).from(learningSessions).where(and(
+        inArray(learningSessions.childId, rows.map((row) => row.childId)),
+        gte(learningSessions.endedAt, sessionWindowStart),
+      ));
+      for (const session of sessions) {
+        if (!session.endedAt) continue;
+        const timezone = validRewardTimezone(session.timezone);
+        const profileDay = todayByChild.get(session.childId);
+        if (!profileDay || localDateAt(today, timezone) !== localDateAt(session.endedAt, timezone)) continue;
+        const approvedSeconds = session.approvedSeconds === null ? NaN : Number(session.approvedSeconds);
+        if (session.reviewStatus === "evaluated" && Number.isSafeInteger(approvedSeconds) && approvedSeconds >= 0) {
+          profileDay.seconds += approvedSeconds;
+        }
+      }
     }
-  }));
-  const activityByChildMap = new Map(activityByChild);
+    for (const [childId, summary] of todayByChild) activityByChild.set(childId, { seconds: summary.seconds, unavailable: false });
+  } catch {
+    // Profil i nauka nadal są dostępne, jeśli odczyt zatwierdzonego czasu zawiedzie.
+    for (const row of rows) activityByChild.set(row.childId, { seconds: 0, unavailable: true });
+  }
   return rows.map((row) => {
-    const activity = activityByChildMap.get(row.childId);
+    const activity = activityByChild.get(row.childId);
     // Jeden ogólny licznik dorobku z profilu; bez salda, pakietów i celów dnia.
     return { ...row, todayActivitySeconds: activity?.seconds, todayActivityUnavailable: activity?.unavailable };
   });

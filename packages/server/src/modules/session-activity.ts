@@ -107,6 +107,7 @@ function reviewRecordDto(review: SessionActivityReviewRecord): SessionActivityRe
   return {
     status: review.status === "error" ? "error" : "evaluated",
     pointsAwarded: review.pointsAwarded,
+    approvedSeconds: review.approvedSeconds,
     errorCode: review.errorCode,
   };
 }
