@@ -127,6 +127,15 @@ importers:
       '@learning/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@orpc/client':
+        specifier: 2.0.0-beta.45
+        version: 2.0.0-beta.45
+      '@orpc/contract':
+        specifier: 2.0.0-beta.45
+        version: 2.0.0-beta.45
+      '@orpc/openapi':
+        specifier: 2.0.0-beta.45
+        version: 2.0.0-beta.45
     devDependencies:
       '@types/react':
         specifier: ^19.1.0
