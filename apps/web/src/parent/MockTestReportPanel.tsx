@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { messages, MockTestReportDtoSchema, type MockTestReportDto } from "@learning/contracts";
 import { mockTestResultBadgeClass, mockTestResultBadgeLabel, mockTestScoreTone } from "@learning/kid-ui";
-import { apiFetch, errorMessage } from "./api";
+import { callParent, errorMessage, parentClient } from "./api";
 import { groupMockReportWords, type MockReportWord } from "./mock-report-words";
 import { ParentIcon } from "./ParentIcon";
 
@@ -40,8 +40,8 @@ export default function MockTestReportPanel({ childId, deckId, currentDeckVersio
     let cancelled = false;
     setReports([]); setSelected(""); setError(null);
     if (!childId || !deckId) return;
-    void apiFetch<unknown>("GET", `/api/v1/parent/mock-tests?childId=${childId}&deckId=${deckId}`)
-      .then(raw => { const data = MockTestReportDtoSchema.array().parse(raw); if (!cancelled) { setReports(data); setSelected(data[0]?.sessionId ?? ""); } })
+    void callParent(() => parentClient.mockTests.list({ childId, deckId }))
+      .then(result => { const data = MockTestReportDtoSchema.array().parse(result.body); if (!cancelled) { setReports(data); setSelected(data[0]?.sessionId ?? ""); } })
       .catch(cause => { if (!cancelled) setError(errorMessage(cause)); });
     return () => { cancelled = true; };
   }, [childId, deckId]);

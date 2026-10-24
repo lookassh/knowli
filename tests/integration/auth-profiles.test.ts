@@ -13,33 +13,15 @@ import {
   setupParent,
   type AppError,
 } from "@learning/server";
-import { disposeServerServices } from "../../apps/web/src/composition";
 import {
   buildTestServices,
   countRows,
+  handleParentApi,
   openRestartedServices,
   testDatabase,
-  testDatabaseUrl,
   truncateCoreTables,
   UUID_PATTERN,
 } from "./helpers";
-
-// route handlery tworzą Services z process.env — ustawiamy zanim padnie pierwsze żądanie
-process.env.DATABASE_URL = testDatabaseUrl();
-import {
-  GET as loginStatus,
-  POST as login,
-} from "../../apps/web/src/app/api/v1/parent/login/route";
-import {
-  GET as listChildrenRoute,
-  POST as createChildRoute,
-} from "../../apps/web/src/app/api/v1/parent/children/route";
-import {
-  DELETE as deleteChildRoute,
-  PATCH as updateChildRoute,
-} from "../../apps/web/src/app/api/v1/parent/children/[id]/route";
-import { POST as setup } from "../../apps/web/src/app/api/v1/parent/setup/route";
-import { POST as logout } from "../../apps/web/src/app/api/v1/parent/logout/route";
 
 const BASE = "http://localhost:3000";
 const SESSION_COOKIE = "parent_session";
@@ -48,6 +30,9 @@ function jsonRequest(path: string, method: string, body?: unknown, headers: Reco
   return new Request(`${BASE}${path}`, {
     method,
     headers: {
+      // jawny Host jak w żądaniu przyjmowanym przez serwer — kontrola Origin
+      // porównuje go z nagłówkiem Origin (undici nie wystawia Host z URL)
+      host: "localhost:3000",
       ...(body === undefined ? {} : { "content-type": "application/json" }),
       ...headers,
     },
@@ -77,15 +62,12 @@ async function expectAppError(promise: Promise<unknown>, code: string): Promise<
   return error as AppError;
 }
 
-const childRouteContext = (id: string) => ({ params: Promise.resolve({ id }) });
-
 describe("auth i profile dzieci (integracja)", () => {
   beforeEach(async () => {
     await truncateCoreTables();
   });
 
   afterAll(async () => {
-    await disposeServerServices();
     const { pool } = testDatabase();
     await pool.end();
   });
@@ -124,7 +106,7 @@ describe("auth i profile dzieci (integracja)", () => {
     await setupParent(services, "rodzinny-pin-1");
     await loginParent(services, "rodzinny-pin-1");
 
-    const response = await listChildrenRoute(jsonRequest("/api/v1/parent/children", "GET"));
+    const response = await handleParentApi(jsonRequest("/api/v1/parent/children", "GET"), services);
     expect(response.status).toBe(401);
     const body = await readBody(response);
     expect(body).toMatchObject({ code: "unauthorized", retryable: false });
@@ -266,15 +248,19 @@ describe("auth i profile dzieci (integracja)", () => {
     const { services } = buildTestServices();
     await setupParent(services, "pin-edit");
     const child = await createChild(services, { displayName: "Ala", avatarKey: "fox", birthYear: 2018 });
-    const cookie = sessionCookieFrom(await login(jsonRequest("/api/v1/parent/login", "POST", { secret: "pin-edit" }, { origin: BASE })));
-    const path = `/api/v1/parent/children/${child.id}`;
+    const cookie = sessionCookieFrom(await handleParentApi(
+      jsonRequest("/api/v1/parent/login", "POST", { secret: "pin-edit" }, { origin: BASE }),
+      services,
+    ));
+    const patchChild = (body: unknown, headers: Record<string, string>, childId = child.id) =>
+      handleParentApi(jsonRequest(`/api/v1/parent/children/${childId}`, "PATCH", body, headers), services);
     const authHeaders = { cookie, origin: BASE };
     for (const [headers, status] of [
       [{ origin: BASE }, 401],
       [{ cookie, origin: "https://evil.example" }, 403],
       [{ ...authHeaders, "sec-fetch-site": "cross-site" }, 403],
     ] as const) {
-      const response = await updateChildRoute(jsonRequest(path, "PATCH", { displayName: "Ewa" }, headers), childRouteContext(child.id));
+      const response = await patchChild({ displayName: "Ewa" }, headers);
       expect(response.status).toBe(status);
       expect(await listChildren(services)).toEqual([child]);
     }
@@ -282,22 +268,22 @@ describe("auth i profile dzieci (integracja)", () => {
       { displayName: "a".repeat(81) }, { avatarKey: "a".repeat(41) },
       { displayName: "Ewa", id: randomUUID() }, { displayName: "Ewa", birthYear: 2019 },
       { displayName: "Ewa", policyId: "learning-v2" }]) {
-      const response = await updateChildRoute(jsonRequest(path, "PATCH", body, authHeaders), childRouteContext(child.id));
+      const response = await patchChild(body, authHeaders);
       expect(response.status).toBe(400);
       expect(await listChildren(services)).toEqual([child]);
     }
-    const brokenJson = new Request(`${BASE}${path}`, { method: "PATCH", headers: { ...authHeaders, "content-type": "application/json" }, body: "{" });
-    expect((await updateChildRoute(brokenJson, childRouteContext(child.id))).status).toBe(400);
-    expect((await updateChildRoute(jsonRequest(path, "PATCH", { avatarKey: "cat" }, authHeaders), childRouteContext("invalid"))).status).toBe(400);
-    expect((await updateChildRoute(jsonRequest(path, "PATCH", { avatarKey: "cat" }, authHeaders), childRouteContext(randomUUID()))).status).toBe(404);
+    const brokenJson = new Request(`${BASE}/api/v1/parent/children/${child.id}`, { method: "PATCH", headers: { ...authHeaders, "content-type": "application/json" }, body: "{" });
+    expect((await handleParentApi(brokenJson, services)).status).toBe(400);
+    expect((await patchChild({ avatarKey: "cat" }, authHeaders, "invalid")).status).toBe(400);
+    expect((await patchChild({ avatarKey: "cat" }, authHeaders, randomUUID())).status).toBe(404);
     expect(await listChildren(services)).toEqual([child]);
-    const ok = await updateChildRoute(jsonRequest(path, "PATCH", { displayName: "  Ewa  ", avatarKey: "owl" }, authHeaders), childRouteContext(child.id));
+    const ok = await patchChild({ displayName: "  Ewa  ", avatarKey: "owl" }, authHeaders);
     expect(ok.status).toBe(200);
     expect(await ok.json()).toEqual({ ...child, displayName: "Ewa", avatarKey: "owl" });
-    const modeOnly = await updateChildRoute(jsonRequest(path, "PATCH", { recordingMode: "toggle" }, authHeaders), childRouteContext(child.id));
+    const modeOnly = await patchChild({ recordingMode: "toggle" }, authHeaders);
     expect(modeOnly.status).toBe(200);
     expect(await modeOnly.json()).toEqual({ ...child, displayName: "Ewa", avatarKey: "owl", recordingMode: "toggle" });
-    const invalidMode = await updateChildRoute(jsonRequest(path, "PATCH", { recordingMode: "tap" }, authHeaders), childRouteContext(child.id));
+    const invalidMode = await patchChild({ recordingMode: "tap" }, authHeaders);
     expect(invalidMode.status).toBe(400);
   });
 
@@ -307,37 +293,30 @@ describe("auth i profile dzieci (integracja)", () => {
     const child = await createChild(services, { displayName: "Ala", avatarKey: "fox" });
     const origin = { origin: BASE };
 
-    // sesja przez route — cookie w pełni spójne z usługami route handlera
-    const loginResponse = await login(jsonRequest("/api/v1/parent/login", "POST", { secret: "pin-usun" }, origin));
+    // sesja przez router oRPC (kompozycja catch-all) — Services testu
+    const loginResponse = await handleParentApi(
+      jsonRequest("/api/v1/parent/login", "POST", { secret: "pin-usun" }, origin),
+      services,
+    );
     expect(loginResponse.status).toBe(200);
     const cookie = sessionCookieFrom(loginResponse);
+    const deleteChildApi = (childId: string, headers: Record<string, string>) =>
+      handleParentApi(jsonRequest(`/api/v1/parent/children/${childId}`, "DELETE", undefined, headers), services);
 
     // bez sesji — 401; z sesją, ale z obcym Origin — 403 (mutacja)
-    const anonymous = await deleteChildRoute(
-      jsonRequest(`/api/v1/parent/children/${child.id}`, "DELETE", undefined, origin),
-      childRouteContext(child.id),
-    );
+    const anonymous = await deleteChildApi(child.id, origin);
     expect(anonymous.status).toBe(401);
-    const crossOrigin = await deleteChildRoute(
-      jsonRequest(`/api/v1/parent/children/${child.id}`, "DELETE", undefined, {
-        cookie,
-        origin: "https://evil.example",
-      }),
-      childRouteContext(child.id),
-    );
+    const crossOrigin = await deleteChildApi(child.id, {
+      cookie,
+      origin: "https://evil.example",
+    });
     expect(crossOrigin.status).toBe(403);
     expect(await listChildren(services)).toHaveLength(1);
 
     // właściwe żądanie usuwa profil; powtórzone zwraca 404
-    const ok = await deleteChildRoute(
-      jsonRequest(`/api/v1/parent/children/${child.id}`, "DELETE", undefined, { cookie, ...origin }),
-      childRouteContext(child.id),
-    );
+    const ok = await deleteChildApi(child.id, { cookie, ...origin });
     expect(ok.status).toBe(204);
-    const unknown = await deleteChildRoute(
-      jsonRequest(`/api/v1/parent/children/${randomUUID()}`, "DELETE", undefined, { cookie, ...origin }),
-      childRouteContext(randomUUID()),
-    );
+    const unknown = await deleteChildApi(randomUUID(), { cookie, ...origin });
     expect(unknown.status).toBe(404);
     expect(await listChildren(services)).toEqual([]);
   });
@@ -356,31 +335,38 @@ describe("auth i profile dzieci (integracja)", () => {
     }
   });
 
-  describe("przepływ HTTP przez route handlery", () => {
+  describe("przepływ HTTP przez router oRPC (kompozycja catch-all)", () => {
     it("setup → login → children → create → delete → logout", async () => {
+      // cały przepływ idzie przez handleParentApi (router oRPC, bez
+      // fallbacku) — dokładna kompozycja catch-all /api/v1/parent/[...path]
+      const { services } = buildTestServices();
       const origin = { origin: BASE };
 
-      const status0 = await loginStatus(jsonRequest("/api/v1/parent/login", "GET"));
+      const status0 = await handleParentApi(jsonRequest("/api/v1/parent/login", "GET"), services);
       expect(status0.status).toBe(200);
       expect(await readBody(status0)).toEqual({ authenticated: false, setupRequired: true });
 
-      const setupResponse = await setup(
+      const setupResponse = await handleParentApi(
         jsonRequest("/api/v1/parent/setup", "POST", { secret: "http-pin" }, origin),
+        services,
       );
       expect(setupResponse.status).toBe(201);
-      const setupAgain = await setup(
+      const setupAgain = await handleParentApi(
         jsonRequest("/api/v1/parent/setup", "POST", { secret: "inny" }, origin),
+        services,
       );
       expect(setupAgain.status).toBe(409);
 
-      const wrongLogin = await login(
+      const wrongLogin = await handleParentApi(
         jsonRequest("/api/v1/parent/login", "POST", { secret: "zle" }, origin),
+        services,
       );
       expect(wrongLogin.status).toBe(401);
       expect(wrongLogin.headers.getSetCookie()).toEqual([]);
 
-      const loginResponse = await login(
+      const loginResponse = await handleParentApi(
         jsonRequest("/api/v1/parent/login", "POST", { secret: "http-pin" }, origin),
+        services,
       );
       expect(loginResponse.status).toBe(200);
       const cookie = sessionCookieFrom(loginResponse);
@@ -391,51 +377,59 @@ describe("auth i profile dzieci (integracja)", () => {
 
       const authHeaders = { cookie, ...origin };
 
-      const emptyList = await listChildrenRoute(jsonRequest("/api/v1/parent/children", "GET", undefined, { cookie }));
+      const emptyList = await handleParentApi(
+        jsonRequest("/api/v1/parent/children", "GET", undefined, { cookie }),
+        services,
+      );
       expect(emptyList.status).toBe(200);
       expect(await emptyList.json()).toEqual([]);
 
-      const created = await createChildRoute(
+      const created = await handleParentApi(
         jsonRequest("/api/v1/parent/children", "POST", { displayName: "Ala", avatarKey: "fox" }, authHeaders),
+        services,
       );
       expect(created.status).toBe(201);
       const child = (await readBody(created)) as { id: string; displayName: string };
 
-      const invalid = await createChildRoute(
+      const invalid = await handleParentApi(
         jsonRequest(
           "/api/v1/parent/children",
           "POST",
           { displayName: "", avatarKey: "fox" },
           authHeaders,
         ),
+        services,
       );
       expect(invalid.status).toBe(400);
       expect(await readBody(invalid)).toMatchObject({ code: "validation", retryable: false });
 
-      const crossOrigin = await createChildRoute(
+      const crossOrigin = await handleParentApi(
         jsonRequest(
           "/api/v1/parent/children",
           "POST",
           { displayName: "Nowe", avatarKey: "cat" },
           { cookie, origin: "https://evil.example" },
         ),
+        services,
       );
       expect(crossOrigin.status).toBe(403);
 
-      const deleted = await deleteChildRoute(
+      const deleted = await handleParentApi(
         jsonRequest(`/api/v1/parent/children/${child.id}`, "DELETE", undefined, authHeaders),
-        childRouteContext(child.id),
+        services,
       );
       expect(deleted.status).toBe(204);
 
-      const logoutResponse = await logout(
+      const logoutResponse = await handleParentApi(
         jsonRequest("/api/v1/parent/logout", "POST", undefined, authHeaders),
+        services,
       );
       expect(logoutResponse.status).toBe(204);
       expect(logoutResponse.headers.getSetCookie().join("\n")).toContain("Max-Age=0");
 
-      const afterLogout = await listChildrenRoute(
+      const afterLogout = await handleParentApi(
         jsonRequest("/api/v1/parent/children", "GET", undefined, { cookie }),
+        services,
       );
       expect(afterLogout.status).toBe(401);
     });

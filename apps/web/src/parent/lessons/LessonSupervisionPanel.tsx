@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   messages,
+  LessonMockTestReportDtoSchema,
   type ChildDto,
   type LessonMockTestReportDto,
   type LessonVerdictDecision,
   type LessonVerdictDto,
   type ObjectiveProgressDto,
 } from "@learning/contracts";
-import { apiFetch, errorMessage } from "../api";
+import { callParent, errorMessage, parentClient } from "../api";
 
 /**
  * Panel nadzoru rodzica nad lekcją (zadanie 16): postęp celów dziecka (statusy po
@@ -56,8 +57,8 @@ export default function LessonSupervisionPanel({
       return;
     }
     try {
-      const nextProgress = await apiFetch<ObjectiveProgressDto[]>("GET", `/api/v1/parent/lessons/${deckId}/progress?childId=${childId}`);
-      if (requestId === progressRequestSequence.current) setProgress(nextProgress);
+      const nextProgress = await callParent(() => parentClient.lessons.progress({ deckId, childId }));
+      if (requestId === progressRequestSequence.current) setProgress(nextProgress.body);
     } catch (cause) {
       if (requestId === progressRequestSequence.current) setProgressError(errorMessage(cause));
     }
@@ -65,7 +66,8 @@ export default function LessonSupervisionPanel({
 
   const loadVerdicts = useCallback(async () => {
     try {
-      setVerdicts(await apiFetch<LessonVerdictDto[]>("GET", `/api/v1/parent/lessons/${deckId}/verdicts`));
+      const nextVerdicts = await callParent(() => parentClient.lessons.verdicts({ deckId }));
+      setVerdicts(nextVerdicts.body);
     } catch (cause) {
       setError(errorMessage(cause));
     }
@@ -77,7 +79,10 @@ export default function LessonSupervisionPanel({
       return;
     }
     try {
-      setMockTests(await apiFetch<LessonMockTestReportDto[]>("GET", `/api/v1/parent/mock-tests?childId=${childId}&deckId=${deckId}`));
+      // Unia raportów (słówka vs lekcja) zwężana schematem — panel lekcji
+      // czyta wyłącznie raporty lekcji, obca odpowiedź pada na walidacji.
+      const result = await callParent(() => parentClient.mockTests.list({ childId, deckId }));
+      setMockTests(LessonMockTestReportDtoSchema.array().parse(result.body));
     } catch (cause) {
       setError(errorMessage(cause));
     }
@@ -98,7 +103,7 @@ export default function LessonSupervisionPanel({
     setError(null);
     setNotice(null);
     try {
-      await apiFetch("POST", `/api/v1/parent/lesson-verdicts/${verdictId}/decision`, { decision });
+      await callParent(() => parentClient.lessonVerdicts.decision({ verdictId, decision }));
       await loadVerdicts();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -112,7 +117,7 @@ export default function LessonSupervisionPanel({
     setError(null);
     setNotice(null);
     try {
-      await apiFetch("POST", `/api/v1/parent/lesson-verdicts/${verdictId}/accept-as-variant`, {});
+      await callParent(() => parentClient.lessonVerdicts.acceptAsVariant({ verdictId }));
       setNotice(messages.lessons.verdictVariantAdded);
       await loadVerdicts();
     } catch (cause) {

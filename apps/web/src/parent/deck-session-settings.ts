@@ -1,4 +1,4 @@
-import { apiFetch } from "./api";
+import { callParent, parentClient } from "./api";
 
 /**
  * PATCH ustawień sesji nauki zestawu (`decks.session_task_budget`) — wspólna
@@ -9,10 +9,6 @@ export async function patchDeckSessionTaskBudget(
   deckId: string,
   sessionTaskBudget: number,
 ): Promise<number> {
-  const result = await apiFetch<{ sessionTaskBudget: number }>(
-    "PATCH",
-    `/api/v1/parent/decks/${deckId}`,
-    { sessionTaskBudget },
-  );
+  const result = await callParent(() => parentClient.decks.updateSettings({ deckId, sessionTaskBudget }));
   return result.sessionTaskBudget;
 }

@@ -3,6 +3,7 @@ export * from "./limits";
 export * from "./decks";
 export * from "./generation";
 export * from "./kid";
+export * from "./kid-api-contract";
 export * from "./lessons";
 export * from "./learning-overview";
 export * from "./messages";

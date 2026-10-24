@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { completePresentation, createChild, createDraft, createServices, endSession, fakeSessionActivityDeps, FakeSessionActivityReviewer, loginParent, nextTask, publishDraft, readParentWorkCard, setupParent, startSession, submitAttempt, upsertAssignment } from "@learning/server";
 import type { SessionActivityReport } from "@learning/contracts";
-import { handleParentApi } from "../../apps/web/src/parent/parent-router";
+import { handleParentApi } from "./helpers";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
 
 const { pool } = testDatabase();
@@ -142,8 +142,11 @@ describe("parent work card", () => {
     await setupParent(services, "work-card-pin");
     const { token } = await loginParent(services, "work-card-pin");
     const child = await createChild(services, { displayName: "Ola", avatarKey: "fox" });
-    await expect(handleParentApi(new Request(`http://localhost/api/v1/parent/work-card?childId=${child.id}&date=2026-10-16`), services, ["work-card"]))
-      .rejects.toMatchObject({ code: "unauthorized" });
+    // Granica oRPC zwraca kopertę 401 zamiast rzucanego wyjątku legacy —
+    // semantyka HTTP bez zmian, zmienia się tylko nośnik (Response, nie throw).
+    const anonymous = await handleParentApi(new Request(`http://localhost/api/v1/parent/work-card?childId=${child.id}&date=2026-10-16`), services, ["work-card"]);
+    expect(anonymous.status).toBe(401);
+    expect(await anonymous.json()).toMatchObject({ code: "unauthorized" });
     await expect(readParentWorkCard(services, { childId: child.id, date: "16.10.2026" })).rejects.toMatchObject({ name: "ZodError" });
     const response = await handleParentApi(
       new Request(`http://localhost/api/v1/parent/work-card?childId=${child.id}&date=2026-10-16`, { headers: { cookie: `parent_session=${token}` } }),

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { messages, type ChildDto, type ChildPatch, type PronunciationSettingsDto } from "@learning/contracts";
-import { apiFetch, errorMessage } from "./api";
+import { callParent, errorMessage, parentClient } from "./api";
 import { ParentIcon } from "./ParentIcon";
 import { AVATARS, avatarEmoji } from "./avatars";
 
@@ -22,14 +22,14 @@ function PronunciationSettings({ childId }: { childId: string }) {
   }, []);
 
   const load = useCallback(async () => {
-    const data = await apiFetch<PronunciationSettingsDto>("GET", `/api/v1/parent/children/${childId}/pronunciation`);
+    const data = await callParent(() => parentClient.children.getPronunciation({ childId }));
     applyData(data);
     return data;
   }, [childId, applyData]);
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch<PronunciationSettingsDto>("GET", `/api/v1/parent/children/${childId}/pronunciation`)
+    callParent(() => parentClient.children.getPronunciation({ childId }))
       .then((data) => {
         if (!cancelled) applyData(data);
       })
@@ -45,10 +45,11 @@ function PronunciationSettings({ childId }: { childId: string }) {
     setBusy(true);
     setError(null);
     try {
-      await apiFetch("PUT", `/api/v1/parent/children/${childId}/pronunciation`, {
+      await callParent(() => parentClient.children.putPronunciation({
+        childId,
         correctMinScore: Number(good),
         partialMinScore: Number(almost),
-      });
+      }));
       await load();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -193,7 +194,7 @@ export default function ChildEditor({
     setEditError(null);
     setEditStatus(null);
     try {
-      await apiFetch<ChildDto>("PATCH", `/api/v1/parent/children/${editing.id}`, patch);
+      await callParent(() => parentClient.children.update({ childId: editing.id, ...patch }));
       restoreFocus.current = editing.id;
       setEditing(null);
       setEditStatus(messages.children.saved);
@@ -214,11 +215,11 @@ export default function ChildEditor({
     setBusy(true);
     setError(null);
     try {
-      await apiFetch("POST", "/api/v1/parent/children", {
+      await callParent(() => parentClient.children.create({
         displayName: name,
         avatarKey: avatar,
         ...(birthYear ? { birthYear: Number(birthYear) } : {}),
-      });
+      }));
       setName("");
       setBirthYear("");
       await onChanged();
@@ -236,7 +237,7 @@ export default function ChildEditor({
     }
     setError(null);
     try {
-      await apiFetch("DELETE", `/api/v1/parent/children/${childId}`);
+      await callParent(() => parentClient.children.remove({ childId }));
       await onChanged();
     } catch (cause) {
       setError(errorMessage(cause));

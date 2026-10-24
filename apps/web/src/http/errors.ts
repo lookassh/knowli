@@ -30,7 +30,12 @@ const TRIGGER_PATTERNS: ReadonlyArray<{ patterns: readonly RegExp[]; code: AppEr
   },
 ];
 
-function mapTriggerError(error: unknown): AppError | undefined {
+/**
+ * Klasyfikacja surowych błędów triggerów Postgresa po treści wiadomości.
+ * Współdzielona z warstwą oRPC (`apps/web/src/orpc/base.ts`) — obie granice
+ * HTTP muszą mapować te same błędy na te same kody.
+ */
+export function mapTriggerError(error: unknown): AppError | undefined {
   const message = error instanceof Error ? error.message : String(error);
   for (const { patterns, code } of TRIGGER_PATTERNS) {
     if (patterns.some((p) => p.test(message))) {
@@ -80,12 +85,4 @@ export function withApi<C = unknown>(
       return errorResponse(error);
     }
   };
-}
-
-export async function readJson(request: Request): Promise<unknown> {
-  try {
-    return await request.json();
-  } catch {
-    throw new AppError("validation");
-  }
 }

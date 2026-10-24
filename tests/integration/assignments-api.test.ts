@@ -13,7 +13,7 @@ import {
 } from "@learning/server";
 import { ManualClock, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration } from "./fakes";
-import { handleParentApi } from "../../apps/web/src/parent/parent-router";
+import { handleParentApi } from "./helpers";
 import { errorResponse } from "../../apps/web/src/http/errors";
 
 const { pool } = testDatabase();
@@ -27,6 +27,10 @@ function parentRequest(method: string, path: string, cookie: string, body?: unkn
   return new Request(`${BASE}/api/v1/parent/${path}`, {
     method,
     headers: {
+      // jawny Host jak w żądaniu przyjmowanym przez serwer — router oRPC
+      // odtwarza Request z samych nagłówków, więc kontrola Origin (CSRF)
+      // musi widzieć własnego hosta, nie tylko URL konstruktora.
+      host: "localhost:3000",
       "content-type": "application/json",
       origin: BASE,
       cookie: `parent_session=${cookie}`,

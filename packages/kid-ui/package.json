@@ -8,7 +8,10 @@
     "./styles.css": "./src/styles.css"
   },
   "dependencies": {
-    "@learning/contracts": "workspace:*"
+    "@learning/contracts": "workspace:*",
+    "@orpc/client": "2.0.0-beta.45",
+    "@orpc/contract": "2.0.0-beta.45",
+    "@orpc/openapi": "2.0.0-beta.45"
   },
   "peerDependencies": {
     "react": "^19.0.0"
