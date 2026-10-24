@@ -284,7 +284,7 @@ W E2E rozszerz scenariusz odmowy: ścieżka tekstowa działa. Przy fake streamie
 
 **Interfaces:** Zachowaj publiczne propsy ProfileScreen/DeckScreen/DeckCard i `deck-presentation.ts`. Avatar map fox/bear/cat/dog/owl/rabbit pozostaje zgodny z avatarKey. Brak nowego DTO lub ukrytego filtrowania listy.
 
-- [ ] **Step 1: Testy i poprawny renderer.** Przenieś `reward-summary.test.tsx` z ręcznego wołania funkcji komponentów na `renderKid` + screen/container i prawdziwy React. Nie wywołuj `node.type(props)` i nie mockuj hooków. Zachowaj wszystkie istniejące asercje, szczególnie:
+- [x] **Step 1: Testy i poprawny renderer.** Przenieś `reward-summary.test.tsx` z ręcznego wołania funkcji komponentów na `renderKid` + screen/container i prawdziwy React. Nie wywołuj `node.type(props)` i nie mockuj hooków. Zachowaj wszystkie istniejące asercje, szczególnie:
 
 ```tsx
 expect(screen.getByText('Zatwierdzono dziś: 2 min 5 s')).toBeTruthy(); // 125
@@ -294,10 +294,10 @@ expect(screen.queryByText('Xbox')).toBeNull();
 ```
 
 Każdy przypadek renderuj osobno z cleanup. `profile-decks.test.tsx`: wybór prawdziwego childId, także jeden profil; canRead=false marker, faktyczny rewardPoints; deck recommended/other, termin, coverVisual, resume/end/mock callbacks z deckId, pusta lista i długi tytuł. Nowa asercja Mantine karty/akcji daje RED. Stars test sprawdza sens i liczbę, niekoniecznie surowy ciąg znaków jeśli przechodzą na dostępne ikony.
-- [ ] **Step 2: RED.** `corepack pnpm exec vitest run --config vitest.unit.config.ts packages/kid-ui/src/screens/profile-decks.test.tsx packages/kid-ui/src/screens/reward-summary.test.tsx` — część przeniesionych regresji może PASS; nowa prezentacja musi FAIL.
-- [ ] **Step 3: Migruj profile i deck.** KidScreen flow, Paper/karty Mantine; przydatne mniejsze prywatne komponenty trzymaj obok ekranów, bez kopiowania fikcyjnych kart z FlowScreens. Szerokość czytelnej treści max 1000 px, na telefonie padding 16 px (12 px przy krótkiej sesji tylko w sesji); listy rosną naturalnie. Nie zmieniaj startu od profilu, prawdziwego linku rodzica i mikrofonowego opt-in. Czas i punkty przez istniejące formatery, odmienna niedostępność. Cover z MeaningVisualView/mediaUrl, zachowaj heading/recommended groups.
-- [ ] **Step 4: GREEN.** Unit z Step 2 i `corepack pnpm exec playwright test tests/e2e/kid-decks-layout.spec.ts tests/e2e/deck-cover-image.spec.ts tests/e2e/kid-flow-screens.spec.ts tests/e2e/navigation.spec.ts` PASS. Profile/deck na 360×640 i 200% tekstu bez poziomego overflow i z osiągalnym ostatnim zestawem.
-- [ ] **Step 5: Commit.** Selektywny add Files; `git commit -m "feat(kid-ui): migrate profiles and deck selection"`.
+- [x] **Step 2: RED.** `corepack pnpm exec vitest run --config vitest.unit.config.ts packages/kid-ui/src/screens/profile-decks.test.tsx packages/kid-ui/src/screens/reward-summary.test.tsx` — część przeniesionych regresji może PASS; nowa prezentacja musi FAIL.
+- [x] **Step 3: Migruj profile i deck.** KidScreen flow, Paper/karty Mantine; przydatne mniejsze prywatne komponenty trzymaj obok ekranów, bez kopiowania fikcyjnych kart z FlowScreens. Szerokość czytelnej treści max 1000 px, na telefonie padding 16 px (12 px przy krótkiej sesji tylko w sesji); listy rosną naturalnie. Nie zmieniaj startu od profilu, prawdziwego linku rodzica i mikrofonowego opt-in. Czas i punkty przez istniejące formatery, odmienna niedostępność. Cover z MeaningVisualView/mediaUrl, zachowaj heading/recommended groups.
+- [x] **Step 4: GREEN.** Unit z Step 2 i `corepack pnpm exec playwright test tests/e2e/kid-decks-layout.spec.ts tests/e2e/deck-cover-image.spec.ts tests/e2e/kid-flow-screens.spec.ts tests/e2e/navigation.spec.ts` PASS. Profile/deck na 360×640 i 200% tekstu bez poziomego overflow i z osiągalnym ostatnim zestawem.
+- [x] **Step 5: Commit.** Selektywny add Files; `git commit -m "feat(kid-ui): migrate profiles and deck selection"`.
 
 ## Task 11: Natychmiastowe podsumowanie i pozostałe stany aplikacji
 

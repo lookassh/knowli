@@ -2458,3 +2458,7 @@
   flex-direction: column;
   gap: 8px;
 }
+
+.kid-deck-content {
+  flex: 1;
+}
