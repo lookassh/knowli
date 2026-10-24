@@ -50,7 +50,7 @@ describe("written exercise controls", () => {
     fireEvent.change(nextInput, { target: { value: " dog " } });
     fireEvent.click(screen.getByTestId("kid-submit"));
     expect(props.handlers.onSubmitText).toHaveBeenLastCalledWith(" dog ");
-    expect((screen.getByTestId("kid-submit").className)).toContain("mantine-Button-root");
+    expect((screen.getByTestId("kid-submit").className)).toContain("mantine-UnstyledButton-root");
   });
 
   it("rejects empty/space-only values and disables submission while busy", () => {

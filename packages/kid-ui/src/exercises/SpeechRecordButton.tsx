@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useRef } from "react";
-import { Button } from "@mantine/core";
+import { UnstyledButton } from "@mantine/core";
 import { messages } from "@learning/contracts";
 import type { RecordingModeDto } from "@learning/contracts";
 import { KidIcon } from "../components/KidIcon";
@@ -100,8 +100,7 @@ export function SpeechRecordButton({ phase, ready, disabled, level, notice = nul
 
   return (
     <div className="kid-record-controls" data-testid="kid-record-controls">
-      <Button
-        variant="filled"
+      <UnstyledButton
         type="button"
         className="kid-primary kid-record-button"
         data-testid="kid-record"
@@ -177,7 +176,7 @@ export function SpeechRecordButton({ phase, ready, disabled, level, notice = nul
       >
         <KidIcon name="microphone" />
         <span>{label}</span>
-      </Button>
+      </UnstyledButton>
       {(notice ?? status) !== null && <p className="kid-record-status" role="status" data-testid="kid-record-status">{notice ?? status}</p>}
       {active && (
         <div className="kid-recording" data-testid="kid-recording" role="status"><KidIcon name="microphone" /> {messages.kid.recording}</div>

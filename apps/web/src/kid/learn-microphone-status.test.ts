@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { messages } from "@learning/contracts";
 import { LearnScreen } from "../../../../packages/kid-ui/src/screens/LearnScreen";
 import type { LearningScreen, LearningSessionController } from "../../../../packages/kid-ui/src/session/session-controller";
+import { KidThemeProvider } from "../../../../packages/kid-ui/src/theme/KidThemeProvider";
 
 const screen: LearningScreen = {
   kind: "learning",
@@ -24,7 +25,9 @@ const screen: LearningScreen = {
 function render(overrides: Partial<LearningScreen> = {}) {
   // Rendering does not execute handlers; only the remaining counter is read.
   const controller = { remainingFor: () => null } as unknown as LearningSessionController;
-  return renderToStaticMarkup(createElement(LearnScreen, { screen: { ...screen, ...overrides }, controller }));
+  return renderToStaticMarkup(createElement(KidThemeProvider, null,
+    createElement(LearnScreen, { screen: { ...screen, ...overrides }, controller }),
+  ));
 }
 
 describe("status mikrofonu w nagłówku sesji", () => {

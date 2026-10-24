@@ -26,7 +26,7 @@ describe("Mantine vocabulary views preserve exercise behavior", () => {
     expect(props.handlers.onComplete).toHaveBeenCalledOnce();
     expect(props.handlers.onAnswerChoice).not.toHaveBeenCalled();
     expect(props.handlers.onSubmitText).not.toHaveBeenCalled();
-    expect(screen.getByTestId("kid-done").className).toContain("mantine-Button");
+    expect(screen.getByTestId("kid-done").className).toContain("mantine-UnstyledButton-root");
   });
 
   it("picture exposure completes once and does not invent audio", () => {
@@ -36,7 +36,7 @@ describe("Mantine vocabulary views preserve exercise behavior", () => {
     expect(screen.queryByTestId("kid-play")?.getAttribute("disabled")).not.toBeNull();
     fireEvent.click(screen.getByTestId("kid-done"));
     expect(props.handlers.onComplete).toHaveBeenCalledOnce();
-    expect(screen.getByTestId("kid-done").className).toContain("mantine-Button");
+    expect(screen.getByTestId("kid-done").className).toContain("mantine-UnstyledButton-root");
   });
 
   it.each([

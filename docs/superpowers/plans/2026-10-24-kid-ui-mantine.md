@@ -211,8 +211,8 @@ Nowy `kid-mantine-responsive.spec.ts`: z `pictureChoiceLayoutFixture` po ekspozy
 E2E w responsive: otwórz recall na 360×760, wpisz `ca`, zmień viewport na 360×360 i wróć. Oczekuj `toHaveValue('ca')`, zachowanego aktywnego elementu i osiągalnego submit/skip po scrollIntoView. Zasymuluj `visualViewport.scale=2` istniejącym wzorcem testów viewportu: `data-zoomed=true`, tryb flow, content i actions osiągalne. Nie nazywaj zmiany wysokości rzeczywistą klawiaturą.
 - [x] **Step 2: RED.** `corepack pnpm exec vitest run --config vitest.unit.config.ts packages/kid-ui/src/exercises/written-controls.test.tsx`; najpierw testy RED na braku kontrolki Mantine. E2E tylko nowy test responsive (użyj `-g` z nazwą dodanego testu). FAIL ma dotyczyć nowej prezentacji/osiągalności, nie błędnego fixture.
 - [x] **Step 3: Wymień input/button na AnswerField/ActionButton.** Zachowaj formId i type=submit/form (przycisk poza form), disabled i focus. Recording przy polu, poza primary slot. Nie dodawaj localStorage/draft store ani nowego klucza dla resize. LetterCompletion zachowuje własne małe pola i handler; styl Input przez Mantine, logika składania bez zmian. Materiał nieczytający korzysta z dotychczasowych visual/label zasad.
-- [ ] **Step 4: GREEN.** Unit z Step 2 i `corepack pnpm exec playwright test tests/e2e/kid-mantine-responsive.spec.ts tests/e2e/kid-layout-stability.spec.ts tests/e2e/kid-flow.spec.ts tests/e2e/spelling-diff-feedback.spec.ts` PASS.
-- [ ] **Step 5: Commit.** Selektywny add Files; `git commit -m "feat(kid-ui): migrate written answers with keyboard-safe layout"`.
+- [x] **Step 4: GREEN.** Unit z Step 2 i `corepack pnpm exec playwright test tests/e2e/kid-mantine-responsive.spec.ts tests/e2e/kid-layout-stability.spec.ts tests/e2e/kid-flow.spec.ts tests/e2e/spelling-diff-feedback.spec.ts` PASS.
+- [x] **Step 5: Commit.** Selektywny add Files; `git commit -m "feat(kid-ui): migrate written answers with keyboard-safe layout"`.
 
 ## Task 6: Pozostałe słownictwo i ekspozycje
 
@@ -227,7 +227,7 @@ E2E w responsive: otwórz recall na 360×760, wpisz `ca`, zmień viewport na 360
 - [x] **Step 2: RED.** Pierwszy przebieg testu wykazał brak Mantine Button/UnstyledButton w niezmigrowanych widokach.
 - [x] **Step 3: Migruj prezentację.** Opcje przez AnswerGrid, akcje przez ActionButton, tekst przez Mantine Text. Zachowano useChoiceKeyboard, kolejność serwera, odsłuchy i identyfikatory. AnswerGrid obsługuje pionową listę i kompaktową siatkę dla rozpoznawania obrazkowego; puste treści wewnętrzne nie zajmują miejsca.
 - [x] **Step 4: GREEN.** Unit: vocabulary/answer-controls/written-controls 18/18 PASS; package tsc PASS. Pełne E2E `picture-vocabulary.spec.ts picture-recognition.spec.ts picture-recognition-layout.spec.ts picture-choice-layout.spec.ts kid-ui-layout.spec.ts` — 69/69 PASS. Po poprawkach review dodatkowe E2E `picture-recognition.spec.ts kid-ui-layout.spec.ts` — 7/7 PASS. E2E krótkiego viewportu ma tolerancję 1 px na ułamek piksela z visualViewport. Review GPT‑6.1 Sol medium: dwa P2 naprawione (duplikat tekstu, `lang=en-GB`), następnie pusty span naprawiony; finalnie brak P0–P2.
-- [ ] **Step 5: Commit.** Selektywny add Files; `git commit -m "feat(kid-ui): migrate vocabulary and exposure views"`.
+- [x] **Step 5: Commit.** Selektywny add Files; `git commit -m "feat(kid-ui): migrate vocabulary and exposure views"`.
 
 ## Task 7: Mowa i feedback z niezmienionym cyklem nagrywania
 
@@ -244,7 +244,7 @@ W E2E rozszerz scenariusz odmowy: ścieżka tekstowa działa. Przy fake streamie
 - [x] **Step 2: RED.** Nowy test wykazał brak migrowanego komponentu Mantine przed implementacją; nie wykryto regresji kontrolera gestów.
 - [x] **Step 3: Migruj wygląd.** SpeechRecordButton używa Mantine Button, zachowuje pointer handler/ref, stany i klawisze. Widoki mowy i karty feedbacku używają wspólnych akcji Mantine; rozróżnienia feedbacku oraz źródło werdyktu pozostają bez zmian.
 - [x] **Step 4: GREEN.** Vitest: 46/46 testów `SpeechRecordButton`, gestów i nawigacji PASS. Kid UI tsc PASS. Playwright: 32/34 testów trzech wskazanych plików przeszły w przebiegu zbiorczym; dwa testy wykryły zmianę intrinsic width Button w fazie nagrania. Po zwiększeniu specyficzności `.kid-ui .kid-record-button` oba scenariusze mikrofonu przeszły ponownie (2/2). Oddzielnie `speech feedback` i picture recognition 360×640 PASS (2/2). Review GPT‑6.1 Sol medium: brak P0–P2.
-- [ ] **Step 5: Commit.** Selektywny add Files; `git commit -m "feat(kid-ui): migrate speech controls and honest feedback"`.
+- [x] **Step 5: Commit.** Selektywny add Files; `git commit -m "feat(kid-ui): migrate speech controls and honest feedback"`.
 
 ## Task 8: Wszystkie typy ćwiczeń lekcyjnych
 
@@ -258,7 +258,7 @@ W E2E rozszerz scenariusz odmowy: ścieżka tekstowa działa. Przy fake streamie
 - [x] **Step 2: RED.** Nowy test najpierw FAIL na braku `mantine-Button-root` dla „Dalej” i odsłuchu zdania; asercje handlerów i payloadów przeszły.
 - [x] **Step 3: Wymień warstwę prezentacji.** Karty, formularze i akcje przeszły na Mantine/wspólne kontrole; choice/short-answer używają AnswerGrid. Zachowane callbacki, order IDs, taskId reset oraz reguły audio. Reset Mantine nie zmniejsza kafelków poniżej 44 px.
 - [x] **Step 4: GREEN.** Unit: 19/19 wraz z `block-order` i `gap`; Kid UI tsc PASS. `lesson-kid.spec.ts` + `lesson-real-flow.spec.ts`: 9/9 PASS; po dodaniu minimalnych wymiarów osobny pełny przebieg lekcji 1/1 i długi `lesson_order` na 360×640 1/1. Review GPT‑6.1 Sol medium: P2 krótkich klocków zamknięty (`min-width:44px` i selektory z większą specyficznością), brak pozostałych P0–P2.
-- [ ] **Step 5: Commit.** Selektywny add Files i zmieniony lesson-kid spec; `git commit -m "feat(kid-ui): migrate lesson exercise views"`.
+- [x] **Step 5: Commit.** Selektywny add Files i zmieniony lesson-kid spec; `git commit -m "feat(kid-ui): migrate lesson exercise views"`.
 
 ## Task 9: Kartkówki, konflikt sesji i omówienia
 
@@ -273,7 +273,7 @@ W E2E rozszerz scenariusz odmowy: ścieżka tekstowa działa. Przy fake streamie
 - [x] **Step 2: RED.** Testy najpierw FAIL na braku `mantine-Button-root` w ekranie gotowości, akcji odsłuchu i praktyki. Stany błędu/redirection sprawdzono również E2E.
 - [x] **Step 3: Migruj ekrany do KidScreen mode flow.** Wszystkie akcje przez ActionButton, wyniki i wiersze przez Mantine Paper/Badge/Text. Zachowane helpery score, rzeczywisty taskBudget, brak oceny bieżącej odpowiedzi, dostępność audio i callbacki.
 - [x] **Step 4: GREEN.** Unit: 4/4; Kid UI tsc PASS. `mock-test.spec.ts`, `lesson-mock-test.spec.ts`, `kid-flow-screens.spec.ts`: 13/13 PASS. Po korekcie kolorów Mantine ponownie ekran ready + conflict + summary PASS; po asercjach Mantine E2E ready i summary 2/2. Review GPT‑6.1 Sol medium: oba P2 zamknięte (Paper status/flex oraz retry min. 44 px), brak pozostałych P0–P2.
-- [ ] **Step 5: Commit.** Selektywny add Files; `git commit -m "feat(kid-ui): migrate mock test screens and reviews"`.
+- [x] **Step 5: Commit.** Selektywny add Files; `git commit -m "feat(kid-ui): migrate mock test screens and reviews"`.
 
 ## Task 10: Profile i zestawy na rzeczywistych danych
 
@@ -308,11 +308,11 @@ Każdy przypadek renderuj osobno z cleanup. `profile-decks.test.tsx`: wybór pra
 
 **Interfaces:** Consumes istniejący controller/screen union, activity polling i Task 10 renderer. Produces te same kontrakty ekranów; bez zmian useLearningSession/controller ani zależności efektów.
 
-- [ ] **Step 1: Testy.** `summary-states.test.tsx`: summary bez activity, pending/already_started, evaluated, error pokazują właściwy komunikat i dostępny back/profile. Testy reward zachowują realne punkty, approved seconds i brak wpisania zera zamiast niedostępności. W kid-activity-lifecycle dodaj wariant opóźnionego GET wyniku: po end widoczne summary i back; resize 360×360→360×760 i powrót do profili nie zwiększają liczby POST end. Wybierz drugie dziecko, zwolnij stary GET z punktami pierwszego; ekran drugiego nie zawiera wyniku pierwszego. Użyj dwóch fixture profili i route obsługującego childId z query; nie zmieniaj API produkcyjnego dla testu.
-- [ ] **Step 2: RED.** `corepack pnpm exec vitest run --config vitest.unit.config.ts packages/kid-ui/src/screens/summary-states.test.tsx` → FAIL nowej prezentacji. Run `corepack pnpm exec playwright test tests/e2e/kid-activity-lifecycle.spec.ts` dla zabezpieczenia obecnego lifecycle; jeśli już PASS, to dowód zachowanej regresji, nie wymuszaj sztucznego błędu.
-- [ ] **Step 3: Migruj podsumowanie i wszystkie pozostałe gałęzie KidApp.** Loading/initError/offline/sessionConflict/empty states w tym samym motywie; offline nadal usuwa zadanie i blokuje oceniane odpowiedzi. Summary flow, jego aktywność aktualizowana istniejącą subskrypcją; żadnego await na grade w renderze/nawigacji, nowego timera, fetch ani onMount POST. Zachowaj dzisiejsze aria-live i polskie komunikaty. Po zakończeniu przejrzyj każdą gałąź switch KidApp oraz ExerciseView — każda ma migrowaną prezentację, exhaustive never zostaje.
-- [ ] **Step 4: GREEN.** Unit summary/reward i `corepack pnpm exec playwright test tests/e2e/kid-activity-lifecycle.spec.ts tests/e2e/kid-flow-screens.spec.ts tests/e2e/kid-flow.spec.ts` PASS, brak dodatkowych żądań końca/wywołań providerów.
-- [ ] **Step 5: Commit.** Selektywny add Files; `git commit -m "feat(kid-ui): migrate summaries and application states"`.
+- [x] **Step 1: Testy.** `summary-states.test.tsx`: summary bez activity, pending/already_started, evaluated, error pokazują właściwy komunikat i dostępny back/profile. Testy reward zachowują realne punkty, approved seconds i brak wpisania zera zamiast niedostępności. W kid-activity-lifecycle dodaj wariant opóźnionego GET wyniku: po end widoczne summary i back; resize 360×360→360×760 i powrót do profili nie zwiększają liczby POST end. Wybierz drugie dziecko, zwolnij stary GET z punktami pierwszego; ekran drugiego nie zawiera wyniku pierwszego. Użyj dwóch fixture profili i route obsługującego childId z query; nie zmieniaj API produkcyjnego dla testu.
+- [x] **Step 2: RED.** `corepack pnpm exec vitest run --config vitest.unit.config.ts packages/kid-ui/src/screens/summary-states.test.tsx` → FAIL nowej prezentacji. Run `corepack pnpm exec playwright test tests/e2e/kid-activity-lifecycle.spec.ts` dla zabezpieczenia obecnego lifecycle; jeśli już PASS, to dowód zachowanej regresji, nie wymuszaj sztucznego błędu.
+- [x] **Step 3: Migruj podsumowanie i wszystkie pozostałe gałęzie KidApp.** Loading/initError/offline/sessionConflict/empty states w tym samym motywie; offline nadal usuwa zadanie i blokuje oceniane odpowiedzi. Summary flow, jego aktywność aktualizowana istniejącą subskrypcją; żadnego await na grade w renderze/nawigacji, nowego timera, fetch ani onMount POST. Zachowaj dzisiejsze aria-live i polskie komunikaty. Po zakończeniu przejrzyj każdą gałąź switch KidApp oraz ExerciseView — każda ma migrowaną prezentację, exhaustive never zostaje.
+- [x] **Step 4: GREEN.** Unit summary/reward i `corepack pnpm exec playwright test tests/e2e/kid-activity-lifecycle.spec.ts tests/e2e/kid-flow-screens.spec.ts tests/e2e/kid-flow.spec.ts` PASS, brak dodatkowych żądań końca/wywołań providerów.
+- [x] **Step 5: Commit.** Selektywny add Files; `git commit -m "feat(kid-ui): migrate summaries and application states"`.
 
 ## Task 12: Domknięcie responsywności, cleanup i dokumentacja
 
@@ -323,10 +323,10 @@ Każdy przypadek renderuj osobno z cleanup. `profile-decks.test.tsx`: wybór pra
 
 **Interfaces:** Żadnych nowych API/typów. Konsumuje wszystkie poprzednie zadania i macierz §6 specyfikacji. Raport weryfikacji zawiera osobno wykonane testy, ograniczenia i odbiór fizyczny.
 
-- [ ] **Step 1: Domknij brakujące testy responsive przed poprawkami.** Dla recall, 3/4 obrazków, długiego lesson_order, listy deck i summary sprawdź macierz 360×640/360×760/768×1024/1440×960. Na krótkim 360×320 i 360×420 wszystkie akcje osiągalne po scrollu, brak poziomego overflow. Przy 200% font/zoom nie wymagaj wszystkich obrazków bez scrollu — wymagaj dostępności wszystkich treści. Emuluj reduced-motion i sprawdź brak dekoracyjnych ciągłych animacji. `kid-mantine-theme` porównuje parent styles także po załadowaniu pełnej sesji, nie tylko profilu. Rozszerz istniejące helpers, nie kopiuj algorytmu viewportu do testu.
-- [ ] **Step 2: RED dla rzeczywistej luki.** `corepack pnpm exec playwright test tests/e2e/kid-mantine-responsive.spec.ts tests/e2e/kid-mantine-theme.spec.ts`. Zanotuj failing case przed poprawką. Jeżeli cała macierz PASS, odnotuj, że dodatkowa poprawka layoutu nie była potrzebna; nie dodawaj jej profilaktycznie.
-- [ ] **Step 3: Cleanup i minimalne poprawki.** `rg` sprawdza konsumentów każdego usuwanego starego selektora, zwłaszcza kotwic `.kid-material-content` i screenshot assertions. Usuń tylko nieużywane style; nie usuwaj potrzebnych layout anchors i klas dostępności. Zachowaj jeden provider i jeden viewport hook, bez importów `.planning`, globalnych resetów, `!important` jako obejścia i dwóch kopii React. Aktualizuj dokumentację faktycznego komponentu i portable host; opisz font/import stylów oraz brak wpływu API → MCP → skill. Jeśli potrzebna nowa etykieta, dodaj ją do messages, nie inline.
-- [ ] **Step 4: Końcowa walidacja.** Wykonaj kolejno:
+- [x] **Step 1: Domknij brakujące testy responsive przed poprawkami.** Dla recall, 3/4 obrazków, długiego lesson_order, listy deck i summary sprawdź macierz 360×640/360×760/768×1024/1440×960. Na krótkim 360×320 i 360×420 wszystkie akcje osiągalne po scrollu, brak poziomego overflow. Przy 200% font/zoom nie wymagaj wszystkich obrazków bez scrollu — wymagaj dostępności wszystkich treści. Emuluj reduced-motion i sprawdź brak dekoracyjnych ciągłych animacji. `kid-mantine-theme` porównuje parent styles także po załadowaniu pełnej sesji, nie tylko profilu. Rozszerz istniejące helpers, nie kopiuj algorytmu viewportu do testu.
+- [x] **Step 2: RED dla rzeczywistej luki.** `corepack pnpm exec playwright test tests/e2e/kid-mantine-responsive.spec.ts tests/e2e/kid-mantine-theme.spec.ts`. Zanotuj failing case przed poprawką. Jeżeli cała macierz PASS, odnotuj, że dodatkowa poprawka layoutu nie była potrzebna; nie dodawaj jej profilaktycznie.
+- [x] **Step 3: Cleanup i minimalne poprawki.** `rg` sprawdza konsumentów każdego usuwanego starego selektora, zwłaszcza kotwic `.kid-material-content` i screenshot assertions. Usuń tylko nieużywane style; nie usuwaj potrzebnych layout anchors i klas dostępności. Zachowaj jeden provider i jeden viewport hook, bez importów `.planning`, globalnych resetów, `!important` jako obejścia i dwóch kopii React. Aktualizuj dokumentację faktycznego komponentu i portable host; opisz font/import stylów oraz brak wpływu API → MCP → skill. Jeśli potrzebna nowa etykieta, dodaj ją do messages, nie inline.
+- [x] **Step 4: Końcowa walidacja.** Wykonaj kolejno:
 
 ```powershell
 corepack pnpm test:unit
@@ -340,7 +340,7 @@ Wszystko PASS; nie używaj historycznego wyniku. Jeśli zmieniono controller/tra
 
 W raporcie podaj status każdego z 12 zadań, wykonane komendy i wyniki, migrowane 22 prompt kinds oraz gałęzie KidApp, API/MCP wpływ=brak z uzasadnieniem. Screenshoty kluczowych ekranów przy 360×640 i desktop zapisz jako artefakty testów; oceń je względem A, bez kopiowania przykładowych danych do produkcji. R01/R04/R07: reload/dwie przeglądarki/complete-presentation/mowa muszą pozostać pokryte istniejącą regresją. Odbiór fizycznego Galaxy S10e w browser/PWA zapisz jako **niewykonany**, jeśli urządzenia nie testowano; to jawny brak dowodu, nie automatyczny powód do dodania kolejnej implementacji.
 
-- [ ] **Step 5: Commit i review.** Selektywnie dodaj cleanup/docs/tests, `git commit -m "refactor(kid-ui): finish Mantine migration and document verification"`. Przeprowadź review zgodnie z uzgodnioną metodą wykonania, skupione na pięciu Review Focus i granicy UI/domena; napraw findingi z adekwatnymi testami, a po zmianach uruchom dotknięte kontrole. Nie pushuj i nie twórz PR bez polecenia właściciela.
+- [x] **Step 5: Commit i review.** Selektywnie dodaj cleanup/docs/tests, `git commit -m "refactor(kid-ui): finish Mantine migration and document verification"`. Przeprowadź review zgodnie z uzgodnioną metodą wykonania, skupione na pięciu Review Focus i granicy UI/domena; napraw findingi z adekwatnymi testami, a po zmianach uruchom dotknięte kontrole. Nie pushuj i nie twórz PR bez polecenia właściciela.
 
 ## Handoff i zasady wykonania przez słabszy model
 

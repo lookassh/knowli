@@ -54,7 +54,7 @@ describe("profile and deck Mantine screens", () => {
     expect(screen.getByTestId("kid-section-other")).toBeTruthy();
     expect(screen.getByText(/2 lis/)).toBeTruthy();
     expect(screen.getAllByTestId("kid-deck-title")[2]!.textContent).toContain("Język angielski");
-    expect(screen.getAllByTestId("kid-deck")[0]!.className).toContain("mantine-Button-root");
+    expect(screen.getAllByTestId("kid-deck")[0]!.className).toContain("mantine-UnstyledButton-root");
     screen.getAllByTestId("kid-deck").forEach(button => fireEvent.click(button));
     fireEvent.click(screen.getByTestId("kid-mock-start"));
     fireEvent.click(screen.getByTestId("kid-resume-session"));

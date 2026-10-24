@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { ActionIcon } from "@mantine/core";
+import { UnstyledButton } from "@mantine/core";
 import { ExerciseFrame } from "./ExerciseFrame";
 import { messages } from "@learning/contracts";
 import { KidIcon } from "../components/KidIcon";
@@ -34,7 +34,7 @@ export function PictureListeningView({ task, busy, mediaUrl, optionOutcomes, res
       task={task}
       content={(
         <>
-          <ActionIcon
+          <UnstyledButton
             ref={playRef}
             type="button"
             className="kid-play-big"
@@ -44,7 +44,7 @@ export function PictureListeningView({ task, busy, mediaUrl, optionOutcomes, res
             aria-label={messages.kid.listen}
           >
             <KidIcon name="volume" />
-          </ActionIcon>
+          </UnstyledButton>
           <AnswerGrid
             options={options.map((option) => ({
               id: option.id,

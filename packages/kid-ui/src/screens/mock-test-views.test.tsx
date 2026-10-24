@@ -28,7 +28,7 @@ describe("mock test Mantine screens", () => {
     const props: ComponentProps<typeof MockTestReadyScreen> = { session, onStart: vi.fn(async () => {}), onCancel: vi.fn(async () => {}) };
     renderKid(<MockTestReadyScreen {...props} />);
     expect(screen.getByTestId("kid-mock-budget").textContent).toContain("3");
-    expect(screen.getByTestId("kid-mock-confirm").className).toContain("mantine-Button-root");
+    expect(screen.getByTestId("kid-mock-confirm").className).toContain("mantine-UnstyledButton-root");
     fireEvent.click(screen.getByTestId("kid-mock-confirm"));
     fireEvent.click(screen.getByText(/Koniec/));
     expect(props.onStart).toHaveBeenCalledOnce();
@@ -47,14 +47,14 @@ describe("mock test Mantine screens", () => {
     fireEvent.click(retry);
     expect(onRetryDetails).toHaveBeenCalledOnce();
     const audio = screen.getByRole("button", { name: "Posłuchaj" });
-    expect(audio.className).toContain("mantine-Button-root");
+    expect(audio.className).toContain("mantine-UnstyledButton-root");
     fireEvent.click(audio);
     fireEvent.click(screen.getByTestId("kid-mock-practice"));
     fireEvent.click(screen.getByRole("button", { name: "Kto się dziś uczy?" }));
     expect(onPlay).toHaveBeenCalledWith(id(5));
     expect(onPractice).toHaveBeenCalledOnce();
     expect(onSwitchProfile).toHaveBeenCalledOnce();
-    expect(screen.getByTestId("kid-mock-practice").className).toContain("mantine-Button-root");
+    expect(screen.getByTestId("kid-mock-practice").className).toContain("mantine-UnstyledButton-root");
   });
 
   it("wires conflict resume and close", () => {
@@ -80,7 +80,7 @@ describe("mock test Mantine screens", () => {
     expect(screen.getByTestId("kid-lesson-mock-details-loading")).toBeTruthy();
     expect(screen.getByTestId("kid-lesson-mock-solution").textContent).toContain("play");
     expect(screen.getByTestId("kid-lesson-mock-solution").textContent).toContain("plays");
-    expect(screen.getByTestId("kid-lesson-mock-practice").className).toContain("mantine-Button-root");
+    expect(screen.getByTestId("kid-lesson-mock-practice").className).toContain("mantine-UnstyledButton-root");
     fireEvent.click(screen.getByTestId("kid-lesson-mock-practice"));
     expect(props.onPractice).toHaveBeenCalledOnce();
     view.rerender(<LessonMockTestSummaryScreen {...props} detailsLoading={false} detailsError />);

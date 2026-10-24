@@ -35,7 +35,7 @@ To jawne doprecyzowanie SPEC §27: „jeden deploy aplikacji” oznacza wspólne
 | Web | Next.js App Router, React, TypeScript strict, runtime Node.js |
 | Kid UI | Biblioteka React/TypeScript, bez importów z Next.js |
 | Kontrakty wejścia/wyjścia | Zod + jawne DTO HTTP/JSON |
-| UI | Tailwind CSS; proste komponenty dostosowane do dziecka |
+| UI | Panel rodzica: Tailwind CSS; Kid UI: Mantine i lokalne CSS Modules |
 | Baza i zapytania | PostgreSQL, Drizzle ORM, sterownik pg |
 | Migracje | Drizzle Kit generujący SQL do przeglądu i zatwierdzenia |
 | Kolejka | Graphile Worker w tej samej instancji PostgreSQL, własny schemat narzędzia |
@@ -57,7 +57,7 @@ SQL w schema.sql jest przeglądowym modelem początkowym. Podczas implementacji 
 | Część | Odpowiedzialność | Czego nie robi |
 | --- | --- | --- |
 | contracts | DTO, walidacja, typy bez sekretów oraz wspólny katalog komunikatów UI | Nie importuje bazy ani SDK AI |
-| kid-ui | Zadania, ekran profilu, audio, mikrofon, feedback | Nie oblicza autorytatywnego postępu |
+| kid-ui | Przenośne ekrany profilu, talii, sesji i wyników w React/Mantine; viewport przez KidPage, układ ekranu przez KidScreen | Nie oblicza autorytatywnego postępu |
 | server/domain | Reguły nauki, wsparcie, ocenianie pisowni i harmonogram | Nie zna Next.js, SQL ani Azure |
 | server/modules | Przypadki użycia i granice transakcji | Nie renderuje UI |
 | server/db | Drizzle, migracje, konkretne operacje zapisu/odczytu | Nie zawiera reguł dydaktycznych |

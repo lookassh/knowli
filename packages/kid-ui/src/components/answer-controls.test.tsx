@@ -89,6 +89,8 @@ describe("ActionButton and AnswerField", () => {
     expect(onKeyDown).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "Sprawdź" }).getAttribute("type")).toBe("submit");
     expect(screen.getByRole("button", { name: "Sprawdź" }).getAttribute("form")).toBe("answer");
+    expect(screen.getByRole("button", { name: "Sprawdź" }).className).toContain("mantine-UnstyledButton-root");
+    expect(screen.getByRole("button", { name: "Sprawdź" }).className).not.toContain("mantine-Button-root");
     fireEvent.click(screen.getByRole("button", { name: "Sprawdź" }));
     expect(submit).toHaveBeenCalledTimes(1);
   });

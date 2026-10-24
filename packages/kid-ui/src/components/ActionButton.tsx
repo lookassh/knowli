@@ -1,10 +1,13 @@
-import { Button, type ButtonProps } from "@mantine/core";
+import { UnstyledButton, type UnstyledButtonProps } from "@mantine/core";
 import type { ElementProps } from "@mantine/core";
 import type { ReactElement, Ref } from "react";
 import classes from "./answer-controls.module.css";
 
-export interface ActionButtonProps extends Omit<ButtonProps, "variant">, ElementProps<"button", keyof ButtonProps> {
+export interface ActionButtonProps extends Omit<UnstyledButtonProps, "variant">, ElementProps<"button", keyof UnstyledButtonProps> {
   priority?: "primary" | "secondary";
+  size?: "sm" | "md" | "lg";
+  radius?: number | string;
+  fullWidth?: boolean;
   ref?: Ref<HTMLButtonElement>;
 }
 
@@ -19,14 +22,14 @@ export function ActionButton({
   ...props
 }: ActionButtonProps): ReactElement {
   return (
-    <Button
+    <UnstyledButton
       {...props}
       ref={ref}
       type={type}
-      size={size}
-      radius={radius}
-      fullWidth={fullWidth}
-      variant={priority === "primary" ? "filled" : "outline"}
+      data-size={size}
+      data-priority={priority}
+      data-full-width={fullWidth}
+      style={{ ...props.style, borderRadius: radius }}
       className={[classes.action, className].filter(Boolean).join(" ")}
     />
   );

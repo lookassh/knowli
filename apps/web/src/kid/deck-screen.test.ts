@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { KidDeckDto } from "@learning/contracts";
 import { DeckScreen } from "../../../../packages/kid-ui/src/screens/DeckScreen";
+import { KidThemeProvider } from "../../../../packages/kid-ui/src/theme/KidThemeProvider";
 
 const DECK: KidDeckDto = {
   mockTestAvailable: false,
@@ -17,14 +18,14 @@ const DECK: KidDeckDto = {
 
 function renderDeckScreen(deck: KidDeckDto): string {
   return renderToStaticMarkup(
-    createElement(DeckScreen, {
+    createElement(KidThemeProvider, null, createElement(DeckScreen, {
       decks: [deck],
       childName: "Krzysztof",
       microphone: false,
       micDenied: false,
       onToggleMicrophone: () => undefined,
       onStart: () => undefined,
-    }),
+    })),
   );
 }
 
@@ -65,14 +66,14 @@ describe("DeckScreen — powitanie i postępy na kafelkach (SPEC §6)", () => {
 describe("DeckScreen — przełącznik mikrofonu (SPEC §14)", () => {
   it("pokazuje przełącznik także po odmowie, z podpowiedzią pod nim", () => {
     const markup = renderToStaticMarkup(
-      createElement(DeckScreen, {
+      createElement(KidThemeProvider, null, createElement(DeckScreen, {
         decks: [DECK],
         childName: "Krzysztof",
         microphone: false,
         micDenied: true,
         onToggleMicrophone: () => undefined,
         onStart: () => undefined,
-      }),
+      })),
     );
 
     expect(markup).toContain('data-testid="kid-mic-toggle"');

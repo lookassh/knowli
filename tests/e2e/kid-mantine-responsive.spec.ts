@@ -117,3 +117,85 @@ test("Mantine recall keeps the exact draft and focus through viewport changes", 
   await expect(page.getByTestId("kid-submit")).toBeInViewport();
   await expect(page.getByTestId("kid-skip")).toBeAttached();
 });
+
+test("deck flow stays within the viewport matrix and keeps all decks reachable", async ({ page }, testInfo) => {
+  const fixture = recallLayoutFixture();
+  fixture.decks = Array.from({ length: 8 }, (_, index) => ({
+    ...fixture.decks[0]!,
+    deckId: `10000000-0000-4000-8000-${String(200 + index).padStart(12, "0")}`,
+    title: index === 7 ? `Długi tytuł ${"zestawów i słówek ".repeat(6)}` : `Zestaw ${index + 1}`,
+    recommended: index < 3,
+  }));
+  await installKidUiFixture(page, fixture);
+  await page.setViewportSize({ width: 360, height: 640 });
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+
+  for (const viewport of [
+    { width: 360, height: 320 },
+    { width: 360, height: 420 },
+    { width: 360, height: 640 },
+    { width: 360, height: 760 },
+    { width: 768, height: 1024 },
+    { width: 1440, height: 960 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect(page.getByTestId("kid-deck-screen")).toBeVisible();
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+    expect(overflow, `horizontal overflow at ${viewport.width}x${viewport.height}`).toBe(false);
+    const finalDeck = page.getByTestId("kid-deck-card").last();
+    await finalDeck.scrollIntoViewIfNeeded();
+    await expect(finalDeck).toBeVisible();
+    await expect(finalDeck.getByTestId("kid-deck-title")).toContainText("Długi tytuł");
+    if (viewport.width === 360 && viewport.height === 640 || viewport.width === 1440) {
+      await page.screenshot({ path: testInfo.outputPath(`decks-${viewport.width}x${viewport.height}.png`), fullPage: true });
+    }
+  }
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const reducedMotion = await page.evaluate(() => {
+    const indicator = document.createElement("span");
+    indicator.className = "kid-recording";
+    document.body.append(indicator);
+    const style = getComputedStyle(indicator);
+    const result = { matches: matchMedia("(prefers-reduced-motion: reduce)").matches, animationName: style.animationName };
+    indicator.remove();
+    return result;
+  });
+  expect(reducedMotion).toEqual({ matches: true, animationName: "none" });
+});
+
+test("summary actions remain reachable without horizontal overflow on short phones and larger screens", async ({ page }, testInfo) => {
+  const fixture = recallLayoutFixture();
+  fixture.summary = {
+    sessionId: fixture.session.sessionId, state: "completed", tasksIssued: 1, assessedTasksIssued: 1,
+    endedAt: "2026-10-24T10:01:00.000Z", independentSuccesses: { recall: 1, spelling: 0 }, practiceItems: [],
+  };
+  await installKidUiFixture(page, fixture);
+  await page.setViewportSize({ width: 360, height: 640 });
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+  await page.getByTestId("kid-end").click();
+  await expect(page.getByTestId("kid-summary")).toBeVisible();
+
+  for (const viewport of [
+    { width: 360, height: 320 },
+    { width: 360, height: 420 },
+    { width: 360, height: 640 },
+    { width: 360, height: 760 },
+    { width: 768, height: 1024 },
+    { width: 1440, height: 960 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+    expect(overflow, `horizontal overflow at ${viewport.width}x${viewport.height}`).toBe(false);
+    const again = page.getByTestId("kid-again");
+    await again.scrollIntoViewIfNeeded();
+    await expect(again).toBeInViewport();
+    await expect(again).toBeEnabled();
+    if (viewport.width === 360 && viewport.height === 640 || viewport.width === 1440) {
+      await page.screenshot({ path: testInfo.outputPath(`summary-${viewport.width}x${viewport.height}.png`), fullPage: true });
+    }
+  }
+});

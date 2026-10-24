@@ -1,4 +1,7 @@
-/* Mantine 9.7.3 component styles required by Kid UI. Keep imports component-scoped. */
+/* Mantine 9.7.3 component styles required by Kid UI. Keep imports component-scoped.
+   Do NOT add layer(...): the Next.js production build emits it literally as
+   @media layer(...), which browsers never match (verified 2026-10-24).
+   Local styles that must beat Mantine resets use .kid-ui-scoped selectors. */
 @import "@mantine/core/styles/UnstyledButton.css";
 @import "@mantine/core/styles/Button.css";
 @import "@mantine/core/styles/Input.css";

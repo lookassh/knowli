@@ -24,7 +24,7 @@ describe("lesson exercise Mantine views", () => {
     renderKid(<LessonCardView {...props} />);
     expect(screen.getByTestId("kid-lesson-card-title").textContent).toBe("Reguła");
     const next = screen.getByTestId("kid-lesson-next");
-    expect(next.className).toContain("mantine-Button-root");
+    expect(next.className).toContain("mantine-UnstyledButton-root");
     fireEvent.click(next);
     expect(props.handlers.onComplete).toHaveBeenCalledOnce();
   });
@@ -75,7 +75,7 @@ describe("lesson exercise Mantine views", () => {
 
     const sentenceProps = makeExerciseProps(task({ kind: "lesson_error_fix", instructionPl: "Popraw", statement: "He play.", audioAssetId: id(9) }));
     renderKid(<LessonSentenceView {...sentenceProps} />);
-    expect(screen.getByTestId("kid-lesson-listen").className).toContain("mantine-Button-root");
+    expect(screen.getByTestId("kid-lesson-listen").className).toContain("mantine-UnstyledButton-root");
     fireEvent.click(screen.getByTestId("kid-lesson-listen"));
     expect(sentenceProps.handlers.onPlay).toHaveBeenCalledOnce();
     fireEvent.change(screen.getByTestId("kid-lesson-input"), { target: { value: "He plays." } });
