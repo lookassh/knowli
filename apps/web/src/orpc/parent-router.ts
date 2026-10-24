@@ -443,7 +443,7 @@ const progressGet = parentOs.progress.get.handler(async ({ context, input }) =>
 const authState = parentAuthOs.auth.state.handler(async ({ context }) => {
   const setupRequired = await isParentSetupRequired(context.services);
   let authenticated = false;
-  const token = getSessionToken(requestFromHeaders(context.headers));
+  const token = getSessionToken(requestFromHeaders(context.headers, context.url));
   if (token) {
     try {
       await requireParent(context.services, token);
@@ -464,7 +464,7 @@ const authLogin = parentAuthOs.auth.login
   .use(sameOriginMiddleware)
   .handler(async ({ context, input }) => {
     const { body, cookie } = await loginAndBuildCookie(
-      requestFromHeaders(context.headers),
+      requestFromHeaders(context.headers, context.url),
       context.services,
       input.secret,
     );
@@ -480,7 +480,7 @@ const authLogin = parentAuthOs.auth.login
 const authLogout = parentAuthOs.auth.logout
   .use(sameOriginMiddleware)
   .handler(async ({ context }) => {
-    const request = requestFromHeaders(context.headers);
+    const request = requestFromHeaders(context.headers, context.url);
     const token = await requireParentSession(request, context.services);
     await logoutParent(context.services, token);
     return { status: 204 as const, headers: { "set-cookie": clearingSessionCookie(request) } };
