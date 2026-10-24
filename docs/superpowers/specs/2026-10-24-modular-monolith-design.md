@@ -1,7 +1,7 @@
 # Knowli — stopniowe uporządkowanie kodu według funkcji produktu
 
 Data: 2026-10-24. Podstawa rozpoznania: commit `99308d3`.
-Status: kierunek wybrany przez właściciela; dokument do akceptacji przed planowaniem.
+Status: zaakceptowany jako podstawa planu poleceniem właściciela z 2026-10-24.
 
 ## Cel i uzgodnienia
 
