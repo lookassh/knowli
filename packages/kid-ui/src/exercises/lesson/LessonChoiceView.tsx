@@ -29,6 +29,7 @@ export function LessonChoiceView({ task, busy, optionOutcomes, result, resultAct
           disabled={busy}
           optionRefs={optionRefs}
           onChoose={handlers.onAnswerChoice}
+          className="kid-options"
         />
       </>}
       actions={resultActions}

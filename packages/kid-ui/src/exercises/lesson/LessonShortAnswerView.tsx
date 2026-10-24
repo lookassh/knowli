@@ -28,6 +28,7 @@ export function LessonShortAnswerView({ task, busy, optionOutcomes, result, resu
         disabled={busy}
         optionRefs={optionRefs}
         onChoose={handlers.onAnswerChoice}
+        listTestId="kid-lesson-short-answer"
         className="kid-options"
         itemClassName={() => "kid-lesson-short-answer"}
       />}

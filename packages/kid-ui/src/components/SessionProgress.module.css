@@ -1,4 +1,4 @@
-.root {
+:global(.kid-ui) .root {
   min-height: 36px;
   padding-inline: 14px;
   display: inline-flex;
@@ -11,14 +11,14 @@
 
 /* Compact width: wrap instead of ellipsizing the remaining-task label. */
 @media (max-width: 599px) {
-  .root {
+  :global(.kid-ui) .root {
     height: auto;
     padding-block: 6px;
     line-height: 1.15;
     text-align: center;
   }
 
-  .root :global(.mantine-Badge-label) {
+  :global(.kid-ui) .root :global(.mantine-Badge-label) {
     overflow: visible;
     white-space: normal;
     text-overflow: clip;

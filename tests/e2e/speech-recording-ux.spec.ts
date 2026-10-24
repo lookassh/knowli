@@ -478,13 +478,16 @@ test("hold gesture handles keyboard, capture loss and release outside the button
   await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: touchX, y: touchY, id: 2 }] });
   await expect(button).toHaveAttribute("aria-pressed", "true");
   await page.waitForTimeout(350);
+  const trackStopsBeforeCancel = await page.evaluate(
+    () => (window as unknown as { __microphoneTrackStops?: number }).__microphoneTrackStops ?? 0,
+  );
   await page.evaluate(() => {
     const button = document.querySelector<HTMLButtonElement>('[data-testid="kid-record"]')!;
     button.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true, pointerId: 2, pointerType: "touch" }));
   });
   await expect(button).toHaveAttribute("data-phase", "idle");
   await expect.poll(() => page.evaluate(() => (window as unknown as { __microphoneTrackStops?: number }).__microphoneTrackStops ?? 0))
-    .toBeGreaterThan(0);
+    .toBeGreaterThan(trackStopsBeforeCancel);
   await cdp.detach();
 });
 

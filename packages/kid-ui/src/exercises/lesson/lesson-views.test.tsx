@@ -51,6 +51,7 @@ describe("lesson exercise Mantine views", () => {
   it("short answer sends a choice immediately", () => {
     const props = makeExerciseProps(task({ kind: "lesson_short_answer", question: "Does he play?", options: [{ id: id(5), text: "Yes" }] }));
     renderKid(<LessonShortAnswerView {...props} />);
+    expect(screen.getByTestId("kid-lesson-short-answer").tagName).toBe("UL");
     fireEvent.click(screen.getByTestId("kid-option"));
     expect(props.handlers.onAnswerChoice).toHaveBeenCalledWith(id(5));
   });
@@ -62,6 +63,17 @@ describe("lesson exercise Mantine views", () => {
     fireEvent.click(screen.getAllByTestId("kid-lesson-order-block")[0]!);
     fireEvent.click(screen.getByTestId("kid-lesson-check"));
     expect(props.handlers.onAnswerSequence).toHaveBeenCalledWith([id(4), id(3)]);
+  });
+
+  it("order keeps placed blocks when the same task arrives as a fresh prompt object", () => {
+    const items = [{ id: id(3), text: "He" }, { id: id(4), text: "plays" }];
+    const props = makeExerciseProps(task({ kind: "lesson_order", instructionPl: "Ułóż", items }));
+    const view = renderKid(<LessonOrderView {...props} />);
+    fireEvent.click(screen.getAllByTestId("kid-lesson-order-block")[0]!);
+    expect(screen.getByTestId("kid-lesson-order-sentence").querySelectorAll("[data-testid='kid-lesson-order-placed']")).toHaveLength(1);
+    const refreshed = makeExerciseProps(task({ kind: "lesson_order", instructionPl: "Ułóż", items: items.map((item) => ({ ...item })) }));
+    view.rerender(<LessonOrderView {...refreshed} handlers={props.handlers} />);
+    expect(screen.getByTestId("kid-lesson-order-sentence").querySelectorAll("[data-testid='kid-lesson-order-placed']")).toHaveLength(1);
   });
 
   it("gap and sentence forms keep text payloads and only play issued audio", () => {

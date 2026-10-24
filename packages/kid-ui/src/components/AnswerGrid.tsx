@@ -23,6 +23,7 @@ export interface AnswerGridProps {
   labelClassName?: string;
   afterOption?: (option: AnswerGridOption) => ReactNode;
   itemClassName?: (option: AnswerGridOption) => string | undefined;
+  listTestId?: string;
   choiceList?: boolean;
   compactChoiceGrid?: boolean;
   optionLang?: string;
@@ -40,12 +41,13 @@ export function AnswerGrid({
   labelClassName,
   afterOption,
   itemClassName,
+  listTestId,
   choiceList = false,
   compactChoiceGrid = false,
   optionLang,
 }: AnswerGridProps) {
   return (
-    <ul className={[classes.grid, choiceList ? classes.choiceList : undefined, compactChoiceGrid ? classes.compactChoiceGrid : undefined, className].filter(Boolean).join(" ")} data-visual-only={visualOnly || undefined}>
+    <ul className={[classes.grid, choiceList ? classes.choiceList : undefined, compactChoiceGrid ? classes.compactChoiceGrid : undefined, className].filter(Boolean).join(" ")} data-visual-only={visualOnly || undefined} data-testid={listTestId}>
       {options.map((option, index) => {
         const outcome = outcomes.get(option.id);
         const accessibleName = outcome === "correct"
@@ -67,7 +69,7 @@ export function AnswerGrid({
               data-outcome={outcome}
               lang={optionLang}
               aria-label={accessibleName}
-              aria-pressed={outcome === "pending"}
+              aria-pressed={outcome === "pending" ? true : undefined}
               disabled={disabled}
               onClick={() => {
                 if (!disabled) onChoose(option.id);

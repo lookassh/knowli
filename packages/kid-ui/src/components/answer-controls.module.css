@@ -48,7 +48,7 @@
 :global(.kid-ui) .input {
   min-height: 54px;
   background: #101a30;
-  border-color: #2c3d5e;
+  border-color: #5f7fb8;
   color: #f0f5ff;
 }
 
@@ -136,7 +136,7 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  border: 1px solid #2c3d5e;
+  border: 1px solid #5f7fb8;
   border-radius: 20px;
   background: #17223d;
   color: #f0f5ff;
@@ -151,7 +151,6 @@
   max-width: min(100%, 35svh);
   max-height: min(35svh, calc((100vw - 76px) / 2 * 1.3));
   min-height: 0;
-  padding: 0;
   aspect-ratio: 1 / 1;
   padding: 8px;
   border-radius: 22px;
@@ -198,7 +197,7 @@
 }
 
 .option:focus-visible {
-  outline: 2px solid #8dd5ff;
+  outline: 2px solid var(--kid-accent);
   outline-offset: 3px;
 }
 

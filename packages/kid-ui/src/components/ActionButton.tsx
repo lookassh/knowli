@@ -29,7 +29,7 @@ export function ActionButton({
       data-size={size}
       data-priority={priority}
       data-full-width={fullWidth}
-      style={{ ...props.style, borderRadius: radius }}
+      style={{ borderRadius: radius, ...props.style }}
       className={[classes.action, className].filter(Boolean).join(" ")}
     />
   );

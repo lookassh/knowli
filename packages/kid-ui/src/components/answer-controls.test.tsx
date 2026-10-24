@@ -36,7 +36,7 @@ describe("AnswerGrid", () => {
     expect(onChoose.mock.calls).toEqual([["one"]]);
     fireEvent.keyDown(screen.getAllByTestId("kid-option")[0]!, { key: "Enter" });
     expect(onChoose).toHaveBeenCalledTimes(1);
-    expect(screen.getAllByTestId("kid-option")[0]!.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getAllByTestId("kid-option")[0]!.getAttribute("aria-pressed")).toBeNull();
     expect(screen.queryByTestId("kid-submit")).toBeNull();
 
     rerender(view(true, new Map([["one", "pending"]])));

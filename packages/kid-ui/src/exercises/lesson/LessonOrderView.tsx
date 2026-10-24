@@ -19,7 +19,7 @@ export function LessonOrderView({ task, busy, handlers }: ExerciseProps) {
   const [state, setState] = useState(() => blockState(task.prompt.kind === "lesson_order" ? task.prompt.items : []));
   useEffect(() => {
     if (task.prompt.kind === "lesson_order") setState(blockState(task.prompt.items));
-  }, [task.taskId, task.prompt]);
+  }, [task.taskId]);
   if (task.prompt.kind !== "lesson_order") return null;
   const complete = isComplete(state);
   const disabled = busy;

@@ -203,6 +203,7 @@ test("summary actions remain reachable without horizontal overflow on short phon
 const materialViewports = [
   { name: "compact portrait", width: 360, height: 640 },
   { name: "compact landscape", width: 640, height: 360 },
+  { name: "compact-height landscape band", width: 760, height: 450 },
   { name: "expanded width compact height", width: 840, height: 480 },
   { name: "expanded landscape", width: 1024, height: 600 },
   { name: "large desktop", width: 1920, height: 1080 },
@@ -269,7 +270,7 @@ test("Material window classes keep every picture choice reachable", async ({ pag
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth
       || document.body.scrollWidth > document.body.clientWidth);
     expect(overflow, `horizontal overflow: ${viewport.name}`).toBe(false);
-    await expectInteractiveTargets(page, ["[data-testid='kid-option']", "[data-testid='kid-end']"]);
+    await expectInteractiveTargets(page, ["[data-testid='kid-option']", "[data-testid='kid-end']", "[data-testid='kid-play']"]);
     await expect.poll(async () => page.evaluate(() => {
       const contentElement = document.querySelector<HTMLElement>(".kid-material-content")!;
       const content = contentElement.getBoundingClientRect();

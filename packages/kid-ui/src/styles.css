@@ -229,9 +229,6 @@
 
 .kid-exercise-result .kid-answer-feedback {
   height: 100%;
-}
-
-.kid-exercise-result .kid-answer-feedback {
   gap: 0;
   padding: 6px 10px;
 }
@@ -355,11 +352,16 @@
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 
-.kid-parent-link:hover,
+.kid-parent-link:hover {
+  background: var(--kid-soft);
+  color: var(--kid-text);
+}
+
 .kid-parent-link:focus-visible {
   background: var(--kid-soft);
   color: var(--kid-text);
-  outline: none;
+  outline: 3px solid var(--kid-accent);
+  outline-offset: 2px;
 }
 
 .kid-screen h1 {
@@ -375,10 +377,6 @@
 }
 
 /* Niebieski jest kolorem nawigacji i rekomendacji; zielony zarezerwowany na poprawny wynik. */
-.kid-recommended-title {
-  color: var(--kid-accent);
-}
-
 .kid-hint,
 .kid-notice {
   text-align: center;
@@ -821,7 +819,7 @@
   background: var(--kid-surface);
 }
 
-.kid-profile-tag {
+.kid-ui .kid-profile-tag {
   display: block;
   color: var(--kid-muted);
   font-size: .85rem;
@@ -1376,12 +1374,6 @@
 .kid-secondary-actions button:disabled {
   opacity: 0.55;
   cursor: default;
-}
-
-.kid-recording-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
 }
 
 .kid-record-controls {
@@ -2033,6 +2025,7 @@
 }
 
 .kid-mock-row__words {
+  overflow-wrap: anywhere;
   margin: 0;
   font-size: 1.05rem;
   overflow-wrap: anywhere;
@@ -2055,12 +2048,12 @@
   white-space: nowrap;
 }
 
-.kid-mock-badge--correct {
+.kid-ui .kid-mock-badge--correct {
   color: var(--kid-good);
   font-weight: 700;
 }
 
-.kid-mock-badge--incorrect {
+.kid-ui .kid-mock-badge--incorrect {
   color: var(--kid-wrong);
   font-weight: 700;
 }
@@ -2146,17 +2139,6 @@
   gap: 8px;
   min-width: 0;
   white-space: normal;
-}
-
-.kid-screen--profile .kid-profile-request {
-  min-height: 56px;
-  font-size: 1rem;
-  font-weight: 700;
-}
-
-.kid-screen--profile .kid-profile-request-status {
-  margin: 0;
-  text-align: center;
 }
 
 .kid-profile-identity,
@@ -2389,6 +2371,8 @@
 
 .kid-ui .kid-lesson-block {
   min-width: 48px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   min-height: 52px;
   padding: 8px 16px;
   font: inherit;
@@ -2434,6 +2418,17 @@
   font-size: 1.5rem;
   line-height: 1.5;
   text-align: center;
+}
+
+.kid-ui .kid-lesson-gap__field {
+  width: auto;
+  flex: 0 1 180px;
+  min-width: 120px;
+}
+
+.kid-ui .kid-lesson-gap__stem > span {
+  font-size: inherit;
+  line-height: inherit;
 }
 
 .kid-lesson-gap__input {

@@ -51,7 +51,6 @@ export function LetterCompletionView({ task, busy, recording, handlers, letterDr
                 <TextInput
                   key={index}
                   ref={(input) => { inputRefs.current[index] = input; }}
-                  className="kid-letter-input"
                   classNames={{ input: "kid-letter-input" }}
                   data-testid="kid-letter-input"
                   aria-label={format(messages.kid.missingLetterPosition, { n: index + 1 })}
