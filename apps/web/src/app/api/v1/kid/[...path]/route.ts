@@ -1,26 +1,31 @@
 import { getServerServices } from "@/composition";
 import { withApi } from "@/http/errors";
-import { withORpcFallback } from "@/http/orpc-fallback";
-import { handleKidApi } from "@/kid/kid-router";
 import { createOpenApiHandler } from "@/orpc/handler";
 import { kidRouter } from "@/orpc/kid-router";
+import { AppError } from "@learning/server";
 
 interface RouteContext {
   params: Promise<{ path?: string[] }>;
 }
 
 // Handler oRPC budowany raz per proces (module scope); `Services` trafiają
-// per żądanie przez kontekst przekazywany w `withORpcFallback`.
+// per żądanie przez kontekst przekazywany do `handle`.
 const kidORpcHandler = createOpenApiHandler(kidRouter);
 
-// Router oRPC serwuje cały kontrakt kid API; dopasowana ścieżka nigdy nie
-// spada do legacy. Fallback `handleKidApi` zostaje tylko dla adresów spoza
-// kontraktu — woła `not_found` dla zewnętrznej granicy `withApi`.
-const dispatchORpc = withORpcFallback(kidORpcHandler, "/api/v1/kid", handleKidApi);
-
-const dispatch = withApi<RouteContext>(async (request, context) => {
-  const { path } = await context.params;
-  return dispatchORpc(request, getServerServices(), path ?? []);
+// oRPC jest jedynym serwerem kontraktu Kid API (arch §12) — ręczny router
+// legacy został zdekomisjonowany. Ścieżka spoza kontraktu (`matched === false`)
+// rzuca `AppError("not_found")`, które zewnętrzna granica `withApi`
+// serializuje do koperty 404 — bajt w bajt jak koniecówka starego dispatchu,
+// gdzie ten sam wyjątek leciał z ostatniego wpadu legacy routera.
+const dispatch = withApi<RouteContext>(async (request, _context) => {
+  const { matched, response } = await kidORpcHandler.handle(request, {
+    prefix: "/api/v1/kid",
+    context: { services: getServerServices(), headers: request.headers },
+  });
+  if (matched) {
+    return response;
+  }
+  throw new AppError("not_found");
 });
 
 /** Catch-all Kid API (arch §12): sesje, zadania, ujawnienia i próby dziecka. */

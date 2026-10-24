@@ -32,12 +32,12 @@ import { appErrorMiddleware, sameOriginMiddleware, type ORpcContext, type Passth
 import { assertDeclaredBodyCap, compactJsonBytes, payloadTooLargeError } from "./request-limits";
 
 /**
- * Router oRPC Kid API montowany w catch-all `/api/v1/kid/[...path]` z priorytetem
- * nad legacy `handleKidApi` (wzorzec strangler, migracja oRPC v2). Ten plik
- * implementuje cały kontrakt `kidApiContract`: odczyty (GET), mutacje sesji
+ * Router oRPC Kid API montowany w catch-all `/api/v1/kid/[...path]` — po
+ * dekomisji legacy routera (koniec migracji oRPC v2) jedyny serwer kontraktu.
+ * Ten plik implementuje cały `kidApiContract`: odczyty (GET), mutacje sesji
  * (POST /sessions/*) i mutacje zadań (POST /tasks/*: events, disclosures,
- * complete-presentation, attempts z multipartem nagrań dziecka). Legacy router
- * to już tylko fallback `not_found`.
+ * complete-presentation, attempts z multipartem nagrań dziecka). Ścieżki
+ * spoza kontraktu kończą się `not_found` na poziomie `route.ts`.
  *
  * Kompozycja wg spike'u v2: `implement()` nie przyjmuje buildera — middlewares
  * dokleja się na implementerze; implementuje się tylko zaimplementowane poddrzewa

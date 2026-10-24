@@ -1,13 +1,38 @@
 import { inject } from "vitest";
 import {
+  AppError,
   createDatabase,
   createServices,
   startSession,
   type Clock,
   type Services,
 } from "@learning/server";
+import { createOpenApiHandler } from "@/orpc/handler";
+import { kidRouter } from "@/orpc/kid-router";
 
 type Pool = ReturnType<typeof createDatabase>["pool"];
+
+const kidApiHandler = createOpenApiHandler(kidRouter);
+
+/**
+ * Wywołanie Kid API w testach integracyjnych po dekomisji legacy routera:
+ * ta sama kompozycja co catch-all `apps/web/src/app/api/v1/kid/[...path]/route.ts`
+ * (handler oRPC, prefix /api/v1/kid, brak dopasowania → `not_found`), z tą
+ * różnicą, że usługi wstrzykuje wywołujący test zamiast singletonu kompozycji.
+ * Dopasowanie idzie po pełnym URL żądania, więc ścieżki muszą zawierać
+ * prawdziwe identyfikatory (taskId/sessionId) — segments z czasów legacy
+ * przepadają.
+ */
+export async function handleKidApi(request: Request, services: Services): Promise<Response> {
+  const { matched, response } = await kidApiHandler.handle(request, {
+    prefix: "/api/v1/kid",
+    context: { services, headers: request.headers },
+  });
+  if (matched) {
+    return response;
+  }
+  throw new AppError("not_found");
+}
 
 /** Przechwytuje SQL także z klienta transakcyjnego oraz klientów już wcześniej połączonych z pulą. */
 export async function capturePoolQueries<T>(

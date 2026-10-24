@@ -27,7 +27,8 @@ import { UiAudioCatalogDtoSchema } from "./ui-audio";
  * Kontrakt Kid API pod /api/v1/kid (arch §12) w podejściu contract-first oRPC
  * v2: schematy + meta openapi, bez żadnego kodu serwera — ten plik importuje
  * też kid-ui w przeglądarce. Statusy, nagłówki i kształt ciał odwzorowują
- * `apps/web/src/kid/kid-router.ts` 1:1; prefix montowania (/api/v1/kid)
+ * router serwera `apps/web/src/orpc/kid-router.ts` (jedyny serwer kontraktu
+ * po dekomisji legacy `kid/kid-router.ts`); prefix montowania (/api/v1/kid)
  * dokleja handler przy `handle()`, nie kontrakt.
  */
 
