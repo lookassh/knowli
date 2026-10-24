@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { UnstyledButton } from "@mantine/core";
 import { ExerciseFrame } from "./ExerciseFrame";
 import { messages } from "@learning/contracts";
 import { KidIcon } from "../components/KidIcon";
@@ -6,6 +7,8 @@ import { MeaningVisualView } from "../visuals/MeaningVisualView";
 import type { ExerciseProps } from "./types";
 import { format } from "../format";
 import { useChoiceKeyboard } from "./useChoiceKeyboard";
+import { AnswerGrid } from "../components/AnswerGrid";
+import classes from "./PictureListeningView.module.css";
 
 export function PictureListeningView({ task, busy, mediaUrl, optionOutcomes, result, resultActions, handlers }: ExerciseProps) {
   const prompt = task.prompt.kind === "picture_listening" ? task.prompt : null;
@@ -31,7 +34,7 @@ export function PictureListeningView({ task, busy, mediaUrl, optionOutcomes, res
       task={task}
       content={(
         <>
-          <button
+          <UnstyledButton
             ref={playRef}
             type="button"
             className="kid-play-big"
@@ -41,40 +44,22 @@ export function PictureListeningView({ task, busy, mediaUrl, optionOutcomes, res
             aria-label={messages.kid.listen}
           >
             <KidIcon name="volume" />
-          </button>
-          <ul className="kid-options kid-picture-options">
-            {options.map((option, index) => {
-              const outcome = optionOutcomes.get(option.id);
-              const outcomeLabel = outcome === undefined || outcome === "pending" ? option.labelPl
-                : outcome === "correct"
-                  ? format(messages.kid.pictureChoiceCorrect, { answer: option.labelPl })
-                  : format(messages.kid.pictureChoiceWrong, { answer: option.labelPl });
-              return (
-                <li key={option.id}>
-                  <button
-                    ref={(btn) => { optionRefs.current[index] = btn; }}
-                    type="button"
-                    data-testid="kid-option"
-                    aria-label={outcomeLabel}
-                    className={`kid-picture-option${outcome === undefined ? "" : ` kid-option--${outcome}`}`}
-                    aria-pressed={outcome === "pending"}
-                    disabled={busy}
-                    onClick={() => handlers.onAnswerChoice(option.id)}
-                  >
-                    <span className="kid-picture-choice-visual">
-                      <MeaningVisualView visual={option.visual} mediaUrl={mediaUrl} numberDisplay="digit" />
-                    </span>
-                    <span className="kid-picture-choice-label">{option.labelPl}</span>
-                    {(outcome === "correct" || outcome === "wrong") && (
-                      <span className={`kid-picture-outcome kid-picture-outcome--${outcome}`} aria-hidden="true" data-testid={`kid-outcome-${outcome}`}>
-                        {outcome === "correct" ? "✓" : "×"}
-                      </span>
-                    )}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+          </UnstyledButton>
+          <AnswerGrid
+            options={options.map((option) => ({
+              id: option.id,
+              label: option.labelPl,
+              content: <span className="kid-picture-choice-visual"><MeaningVisualView visual={option.visual} mediaUrl={mediaUrl} numberDisplay="digit" /></span>,
+            }))}
+            outcomes={optionOutcomes}
+            disabled={busy}
+            onChoose={handlers.onAnswerChoice}
+            optionRefs={optionRefs}
+            visualOnly
+            className="kid-picture-options"
+            optionClassName="kid-picture-option"
+            labelClassName="kid-picture-choice-label"
+          />
         </>
       )}
       actions={resultActions}

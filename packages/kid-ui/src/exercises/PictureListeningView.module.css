@@ -1,0 +1,15 @@
+.play {
+  width: clamp(48px, 6svh, 60px);
+  min-width: clamp(48px, 6svh, 60px);
+  height: clamp(48px, 6svh, 60px);
+  min-height: clamp(48px, 6svh, 60px);
+  flex: none;
+  border: 1px solid #2c3d5e;
+  background: #17223d;
+  color: #f0f5ff;
+}
+
+.play :global(.kid-icon) {
+  width: 32px;
+  height: 32px;
+}

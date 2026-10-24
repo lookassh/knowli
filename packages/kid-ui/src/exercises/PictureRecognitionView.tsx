@@ -1,5 +1,7 @@
 import { messages } from "@learning/contracts";
 import { KidIcon } from "../components/KidIcon";
+import { AnswerGrid } from "../components/AnswerGrid";
+import { ActionButton } from "../components/ActionButton";
 import { ExerciseFrame } from "./ExerciseFrame";
 import type { ExerciseProps } from "./types";
 import { useChoiceKeyboard } from "./useChoiceKeyboard";
@@ -31,28 +33,26 @@ export function PictureRecognitionView({ task, busy, mediaUrl, optionOutcomes, r
             <MeaningVisualView visual={task.prompt.visual} mediaUrl={mediaUrl} />
             <p className="kid-picture-caption" data-testid="kid-picture-caption" lang="pl-PL">{task.prompt.source}</p>
           </div>
-          <ul className="kid-options">
-            {options.map((option, index) => {
+          <AnswerGrid
+            className="kid-options"
+            compactChoiceGrid
+            optionLang="en-GB"
+            options={options.map((option) => ({ id: option.id, label: option.text, content: null }))}
+            outcomes={optionOutcomes}
+            disabled={busy}
+            optionRefs={optionRefs}
+            onChoose={handlers.onAnswerChoice}
+            itemClassName={(option) => feedbackAudio && optionOutcomes.get(option.id) === "correct" ? "kid-recognition-option" : undefined}
+            afterOption={(gridOption) => {
+              const option = options.find((candidate) => candidate.id === gridOption.id)!;
               const outcome = optionOutcomes.get(option.id);
               const audio = feedbackAudio !== undefined && feedbackAudio !== null && outcome === "correct"
                 ? feedbackAudio
                 : null;
-              return (
-                <li key={option.id} className={audio === null ? undefined : "kid-recognition-option"}>
-                  <button
-                    ref={(btn) => { optionRefs.current[index] = btn; }}
-                    type="button"
-                    data-testid="kid-option"
-                    className={outcome === undefined ? undefined : `kid-option--${outcome}`}
-                    aria-pressed={outcome === "pending"}
-                    disabled={busy}
-                    onClick={() => handlers.onAnswerChoice(option.id)}
-                    lang="en-GB"
-                  >
-                    {option.text}
-                  </button>
-                  {audio !== null && (
-                    <button
+              return audio === null ? null : (
+                    <ActionButton
+                      fullWidth={false}
+                      size="sm"
                       type="button"
                       className="kid-audio-round kid-option-audio"
                       data-testid="kid-option-audio"
@@ -60,12 +60,10 @@ export function PictureRecognitionView({ task, busy, mediaUrl, optionOutcomes, r
                       onClick={audio.onPlay}
                     >
                       <KidIcon name="volume" />
-                    </button>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
+                    </ActionButton>
+                  );
+            }}
+          />
         </>
       )}
       actions={resultActions}

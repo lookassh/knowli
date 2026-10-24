@@ -1,8 +1,11 @@
 import type { ReactNode } from "react";
+import { Box, Group, Paper, Stack, Switch, Text, Title } from "@mantine/core";
 import { messages, type KidDeckDto, type UiAudioKey } from "@learning/contracts";
 import { GuidanceButton } from "../components/GuidanceButton";
 import { KidIcon } from "../components/KidIcon";
+import { ActionButton } from "../components/ActionButton";
 import { format } from "../format";
+import { KidScreen } from "../layout/KidScreen";
 import { formatDeckTestDate, groupDecks } from "./deck-presentation";
 import { MASTERY_STAR_MAX, starsForFraction } from "./stars";
 import { MeaningVisualView } from "../visuals/MeaningVisualView";
@@ -65,28 +68,31 @@ export function DeckScreen({
     : `${approvedRemainder} s`;
 
   return (
-    <main className="kid-screen kid-deck-screen">
+    <KidScreen mode="flow" role="main" className="kid-screen kid-deck-screen" data-testid="kid-deck-screen">
+      <KidScreen.Header>
       <header className="kid-top-bar">
-        <span className="kid-daily-activity" data-testid="kid-daily-activity">
+        <Text component="span" className="kid-daily-activity" data-testid="kid-daily-activity">
           {todayActivityUnavailable || todayActivitySeconds === undefined
             ? messages.kid.kidDailyActivityUnavailable
             : format(messages.kid.kidDailyActivity, { time: approvedTime })}
-        </span>
+        </Text>
         {headerActions}
         {onGuidance && <GuidanceButton audioKey="deck_select" onPlay={onGuidance} testId="kid-deck-guidance" />}
       </header>
-      <h1>{messages.kid.decksTitle}</h1>
-      {childName && <p className="kid-greeting">{format(messages.kid.greeting, { name: childName })}</p>}
+      <Title order={1}>{messages.kid.decksTitle}</Title>
+      {childName && <Text className="kid-greeting">{format(messages.kid.greeting, { name: childName })}</Text>}
+      </KidScreen.Header>
+      <KidScreen.Content className="kid-deck-content">
 
       {decks.length === 0 ? (
-        <p className="kid-hint" data-testid="kid-no-decks">{messages.kid.noDecks}</p>
+        <Text className="kid-hint" data-testid="kid-no-decks">{messages.kid.noDecks}</Text>
       ) : (
         sections.map((section, sectionIndex) => (
-          <section key={section.kind} aria-label={section.title} data-kind={section.kind}>
-            <h2 className="kid-deck-group-title" data-testid={section.kind === "recommended" ? "kid-section-recommended" : "kid-section-other"}>
+          <Box component="section" key={section.kind} aria-label={section.title} data-kind={section.kind}>
+            <Title order={2} className="kid-deck-group-title" data-testid={section.kind === "recommended" ? "kid-section-recommended" : "kid-section-other"}>
               {section.title}
-            </h2>
-            <ul className="kid-deck-list">
+            </Title>
+            <Stack component="ul" className="kid-deck-list" gap="sm">
               {section.items.map((deck, itemIndex) => {
                 const isFirst = sectionIndex === 0 && itemIndex === 0;
                 return (
@@ -101,21 +107,19 @@ export function DeckScreen({
                   />
                 );
               })}
-            </ul>
-          </section>
+            </Stack>
+          </Box>
         ))
       )}
 
-      <aside className="kid-deck-microphone">
-        <label className="kid-toggle">
-          <input type="checkbox" data-testid="kid-mic-toggle" checked={microphone}
-            onChange={(event) => onToggleMicrophone(event.target.checked)} />
-          <span>{messages.kid.microphone}</span>
-        </label>
-        <p className="kid-microphone-hint" data-testid="kid-microphone-hint">{messages.kid.microphoneLearningHint}</p>
-        {micDenied && <p className="kid-hint" data-testid="kid-mic-denied-hint">{messages.kid.microphoneDeniedHint}</p>}
-      </aside>
-    </main>
+      <Paper component="aside" className="kid-deck-microphone" radius="lg" p="md" withBorder>
+        <Switch className="kid-toggle" data-testid="kid-mic-toggle" checked={microphone} label={messages.kid.microphone}
+          onChange={(event) => onToggleMicrophone(event.currentTarget.checked)} />
+        <Text className="kid-microphone-hint" data-testid="kid-microphone-hint">{messages.kid.microphoneLearningHint}</Text>
+        {micDenied && <Text className="kid-hint" data-testid="kid-mic-denied-hint">{messages.kid.microphoneDeniedHint}</Text>}
+      </Paper>
+      </KidScreen.Content>
+    </KidScreen>
   );
 }
 
@@ -132,29 +136,29 @@ export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive, but
   const isLesson = deck.kind === "lesson";
   return (
     <li>
-      <article className="kid-deck-card" data-testid="kid-deck-card" data-deck-id={deck.deckId} data-kind={deck.kind ?? "vocabulary"}>
+      <Paper component="article" className="kid-deck-card" data-testid="kid-deck-card" data-deck-id={deck.deckId} data-kind={deck.kind ?? "vocabulary"} radius="lg" p="md" withBorder>
         <div className="kid-deck-card__details">
           {deck.coverAssetId
             ? <img className="kid-deck-cover" src={mediaUrl(deck.coverAssetId)} alt="" data-testid="kid-deck-cover" />
             : deck.coverVisual && <MeaningVisualView visual={deck.coverVisual} mediaUrl={mediaUrl} />}
           <div className="kid-deck-card__info">
-            <h3 data-testid="kid-deck-title">
+            <Title order={3} data-testid="kid-deck-title">
               {deck.title}{" "}
               <span>{isLesson && deck.subjectTitle
                 ? `— ${format(messages.kid.lessonSubjectLabel, { subject: deck.subjectTitle })}`
                 : `— ${wordCount(deck.itemCount)}`}</span>
-            </h3>
-            <div className="kid-deck-card__meta">
-              <p className="kid-deck-stars" data-testid="kid-deck-stars" role="img"
+            </Title>
+            <Group className="kid-deck-card__meta" gap="xs" wrap="wrap">
+              <Text component="p" className="kid-deck-stars" data-testid="kid-deck-stars" role="img"
                 aria-label={format(messages.kid.deckStarsLabel, { n: stars })}>
                 {"★".repeat(stars)}{"☆".repeat(MASTERY_STAR_MAX - stars)}
-              </p>
-              {date !== null && <p className="kid-badge">{messages.kid.testDateLabel}: {date}</p>}
-            </div>
+              </Text>
+              {date !== null && <Text component="p" className="kid-badge">{messages.kid.testDateLabel}: {date}</Text>}
+            </Group>
           </div>
         </div>
         <div className="kid-deck-card__actions">
-          <button
+          <ActionButton
             ref={buttonRef}
             type="button"
             className="kid-primary"
@@ -163,19 +167,19 @@ export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive, but
           >
             <span className="kid-visually-hidden">{deck.title}: </span>{deck.resumeOnly ? messages.kid.resumeSession : messages.kid.deckStart}
             <KidIcon name="arrow-right" />
-          </button>
+          </ActionButton>
           {deck.resumeOnly && deck.activeSession && onEndActive && (
-            <button type="button" className="kid-secondary" data-testid="kid-end-active-session" onClick={() => onEndActive(deck.deckId)}>
+            <ActionButton type="button" priority="secondary" className="kid-secondary" data-testid="kid-end-active-session" onClick={() => onEndActive(deck.deckId)}>
               <span className="kid-visually-hidden">{deck.title}: </span>{messages.kid.endSession}
-            </button>
+            </ActionButton>
           )}
           {!deck.resumeOnly && deck.mockTestAvailable && onMockTest && (
-            <button type="button" className="kid-secondary" data-testid="kid-mock-start" onClick={() => onMockTest(deck.deckId)}>
+            <ActionButton type="button" priority="secondary" className="kid-secondary" data-testid="kid-mock-start" onClick={() => onMockTest(deck.deckId)}>
               <span className="kid-visually-hidden">{deck.title}: </span>{messages.kid.mockTest}
-            </button>
+            </ActionButton>
           )}
         </div>
-      </article>
+      </Paper>
     </li>
   );
 }

@@ -1,7 +1,10 @@
 import type { ReactNode } from "react";
+import { Box, Stack, Text, Title } from "@mantine/core";
 import { messages, type KidProfileDto, type SessionSummaryDto } from "@learning/contracts";
 import { format } from "../format";
 import { KidIcon } from "../components/KidIcon";
+import { ActionButton } from "../components/ActionButton";
+import { KidScreen } from "../layout/KidScreen";
 import { SessionActivityResultView } from "./SessionActivityResultView";
 import { useAutoFocus } from "./useAutoFocus";
 
@@ -28,63 +31,66 @@ export function SummaryScreen({
       : plural === "few" ? messages.kid.summaryWordFew : messages.kid.summaryWordMany, { n });
   };
   return (
-    <main className="kid-screen kid-screen--summary">
-      <h1 data-testid="kid-summary">{messages.kid.summaryTitle}</h1>
-      {guidance}
-      {summary.activity !== undefined && <SessionActivityResultView activity={summary.activity} />}
+    <KidScreen mode="flow" role="main" className="kid-screen kid-screen--summary">
+      <KidScreen.Header>
+        <Title order={1} data-testid="kid-summary">{messages.kid.summaryTitle}</Title>
+        {guidance}
+        {summary.activity !== undefined && <SessionActivityResultView activity={summary.activity} />}
+      </KidScreen.Header>
+      <KidScreen.Content>
       {recall > 0 && (
-        <p className="kid-summary-counts" data-testid="kid-summary-recall">
+        <Text component="p" className="kid-summary-counts" data-testid="kid-summary-recall">
           {format(messages.kid.summaryRecall, { words: wordCount(recall) })}
-        </p>
+        </Text>
       )}
       {spelling > 0 && (
-        <p className="kid-summary-counts" data-testid="kid-summary-spelling">
+        <Text component="p" className="kid-summary-counts" data-testid="kid-summary-spelling">
           {format(messages.kid.summarySpelling, { words: wordCount(spelling) })}
-        </p>
+        </Text>
       )}
       {recall === 0 && spelling === 0 && (
-        <p className="kid-hint" data-testid="kid-summary-neutral">
+        <Text component="p" className="kid-hint" data-testid="kid-summary-neutral">
           {summary.tasksIssued === 0 ? messages.kid.summaryEmpty : messages.kid.summaryNeutral}
-        </p>
+        </Text>
       )}
       {summary.objectives !== undefined && summary.objectives.length > 0 && (
-        <section className="kid-summary-practice" aria-labelledby="kid-summary-objectives-title" data-testid="kid-summary-objectives">
-          <h2 id="kid-summary-objectives-title">{messages.kid.lessonSummaryTitle}</h2>
-          <ul className="kid-list">
+        <Box component="section" className="kid-summary-practice" aria-labelledby="kid-summary-objectives-title" data-testid="kid-summary-objectives">
+          <Title order={2} id="kid-summary-objectives-title">{messages.kid.lessonSummaryTitle}</Title>
+          <Stack component="ul" className="kid-list" gap="sm">
             {summary.objectives.map(objective => (
               <li key={objective.objectiveId} data-testid="kid-summary-objective">
                 {format(messages.kid.lessonSummaryObjective, { title: objective.titlePl })}
               </li>
             ))}
-          </ul>
-        </section>
+          </Stack>
+        </Box>
       )}
       {summary.practiceItems.length > 0 && (
-        <section className="kid-summary-practice" aria-labelledby="kid-summary-practice-title" data-testid="kid-summary-practice">
-          <h2 id="kid-summary-practice-title">{messages.kid.summaryPractice}</h2>
-          <ul className="kid-list">
+        <Box component="section" className="kid-summary-practice" aria-labelledby="kid-summary-practice-title" data-testid="kid-summary-practice">
+          <Title order={2} id="kid-summary-practice-title">{messages.kid.summaryPractice}</Title>
+          <Stack component="ul" className="kid-list" gap="sm">
             {summary.practiceItems.map(item => (
               <li key={item.itemId}>
-                <strong lang="en-GB">{item.target}</strong>
-                <span>{item.skills.map(skill => skill === "recall"
-                  ? messages.kid.summarySkillRecall : messages.kid.summarySkillSpelling).join(", ")}</span>
+                <Text component="strong" lang="en-GB">{item.target}</Text>
+                <Text component="span">{item.skills.map(skill => skill === "recall"
+                  ? messages.kid.summarySkillRecall : messages.kid.summarySkillSpelling).join(", ")}</Text>
               </li>
             ))}
-          </ul>
-        </section>
+          </Stack>
+        </Box>
       )}
-      <div className="kid-actions">
-        <button ref={againRef} type="button" className="kid-primary" data-testid="kid-again" onClick={onAgain}>
+      </KidScreen.Content>
+      <KidScreen.Actions className="kid-actions" secondary={profiles.length > 1 && (
+        <ActionButton priority="secondary" className="kid-summary-secondary" data-testid="kid-switch-profile" onClick={onSwitchProfile}>
+          <KidIcon name="arrow-right" />
+          {messages.kid.switchProfile}
+        </ActionButton>
+      )}>
+        <ActionButton ref={againRef} type="button" className="kid-primary" data-testid="kid-again" onClick={onAgain}>
           <KidIcon name="retry" />
           {messages.kid.again}
-        </button>
-        {profiles.length > 1 && (
-          <button type="button" data-testid="kid-switch-profile" onClick={onSwitchProfile}>
-            <KidIcon name="arrow-right" />
-            {messages.kid.switchProfile}
-          </button>
-        )}
-      </div>
-    </main>
+        </ActionButton>
+      </KidScreen.Actions>
+    </KidScreen>
   );
 }

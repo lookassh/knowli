@@ -590,6 +590,8 @@ test("popup wyniku mieści się w ekranie telefonu bez przewijania", async ({ pa
   await expect(next).toBeDisabled();
   releaseRequest();
   await expect(page.getByTestId("kid-offline")).toBeVisible();
+  await expect(page.getByTestId('kid-offline')).toHaveClass(/mantine-Paper-root/);
+  await expect(page.getByTestId('kid-retry')).toHaveClass(/mantine-UnstyledButton-root/);
   await expect(feedback).toHaveCount(0);
   await page.unroute("**/api/v1/kid/sessions/*/next");
   await page.getByTestId("kid-retry").click();
@@ -832,6 +834,8 @@ test("błąd sieci pokazuje brak połączenia i nie dopisuje sukcesu", async ({ 
   // utrata sieci: karta zadania znika (ukrycie wzorców), próby zablokowane
   await page.context().setOffline(true);
   await expect(page.getByTestId("kid-offline")).toBeVisible();
+  await expect(page.getByTestId('kid-offline')).toHaveClass(/mantine-Paper-root/);
+  await expect(page.getByTestId('kid-retry')).toHaveClass(/mantine-UnstyledButton-root/);
   await expect(page.getByTestId("kid-feedback")).toHaveCount(0);
   await expect(page.getByTestId("kid-option")).toHaveCount(0);
   expect(await query(`select id from learning_app.attempts where task_id = $1`, [taskId])).toHaveLength(0);

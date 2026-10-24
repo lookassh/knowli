@@ -140,12 +140,12 @@ const summary: SessionSummaryDto = {
   ],
 };
 
-async function openLesson(page: Page): Promise<void> {
+async function openLesson(page: Page, tasks: Array<TaskDto | null> = [cardTask, noticeTask, choiceTask, orderTask, gapErrorTask, reminderCard, easierChoice, gapTypoTask, null]): Promise<void> {
   await installKidUiFixture(page, {
     profiles: [profile()],
     decks: [lessonDeck()],
     session: session(),
-    tasks: [cardTask, noticeTask, choiceTask, orderTask, gapErrorTask, reminderCard, easierChoice, gapTypoTask, null],
+    tasks,
     attempts,
     presentation: { taskId: t(1), state: "completed", completedAt: "2026-10-11T10:00:00.500Z" },
     summary,
@@ -172,6 +172,12 @@ test("child works a whole lesson: card → notice → choice → blocks → gap 
 
   // Wskazanie: dotknięcie słowa.
   await expect(page.getByTestId("kid-lesson-notice")).toBeVisible();
+  const shortWordSize = await page.getByTestId("kid-lesson-notice-word").filter({ hasText: /^She$/ }).evaluate((element) => {
+    const { width, height } = element.getBoundingClientRect();
+    return { width, height };
+  });
+  expect(shortWordSize.width).toBeGreaterThanOrEqual(44);
+  expect(shortWordSize.height).toBeGreaterThanOrEqual(44);
   await page.getByTestId("kid-lesson-notice-word").filter({ hasText: "plays" }).click();
   await expect(page.getByTestId("kid-feedback")).toContainText("Świetnie!");
   await page.getByTestId("kid-next").click();
@@ -184,6 +190,13 @@ test("child works a whole lesson: card → notice → choice → blocks → gap 
 
   // Klocki: dodaj wszystkie, „Sprawdź” aktywne dopiero po ułożeniu.
   await expect(page.getByTestId("kid-lesson-check")).toBeDisabled();
+  const shortBlockSize = await page.getByTestId("kid-lesson-order-block").filter({ hasText: /^She$/ }).evaluate((element) => {
+    const { width, height } = element.getBoundingClientRect();
+    return { width, height, minWidth: Number.parseFloat(getComputedStyle(element).minWidth) };
+  });
+  expect(shortBlockSize.width).toBeGreaterThanOrEqual(44);
+  expect(shortBlockSize.height).toBeGreaterThanOrEqual(44);
+  expect(shortBlockSize.minWidth).toBeGreaterThanOrEqual(44);
   for (const word of ["She", "plays", "football"]) {
     await page.getByTestId("kid-lesson-order-block").filter({ hasText: new RegExp(`^${word}$`) }).click();
   }
@@ -223,6 +236,35 @@ test("child works a whole lesson: card → notice → choice → blocks → gap 
   await expect(page.getByTestId("kid-summary-objective")).toHaveCount(2);
   await expect(page.getByTestId("kid-summary-objectives")).toContainText("Ćwiczyłeś: -s w 3. osobie");
   await expect(page.getByTestId("kid-summary-objectives")).not.toContainText("%");
+});
+
+test("long order at 360×640 keeps the last block and submit reachable", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 640 });
+  const longOrder: TaskDto = {
+    ...base(t(4), "lesson_order"),
+    prompt: { kind: "lesson_order", instructionPl: "Ułóż zdanie", items: Array.from({ length: 8 }, (_, index) => ({ id: o(11 + index), text: `word${index + 1}` })) },
+  };
+  await openLesson(page, [cardTask, noticeTask, choiceTask, longOrder, null]);
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+  await page.getByTestId("kid-lesson-next").click();
+  await page.getByTestId("kid-lesson-notice-word").filter({ hasText: "plays" }).click();
+  await page.getByTestId("kid-next").click();
+  await page.getByTestId("kid-option").filter({ hasText: "plays" }).click();
+  await page.getByTestId("kid-next").click();
+
+  const lastBlock = page.getByTestId("kid-lesson-order-block").last();
+  await lastBlock.scrollIntoViewIfNeeded();
+  await expect(lastBlock).toBeInViewport();
+  for (let index = 0; index < 8; index += 1) {
+    await page.getByTestId("kid-lesson-order-block").first().click();
+  }
+  const check = page.getByTestId("kid-lesson-check");
+  await check.scrollIntoViewIfNeeded();
+  await expect(check).toBeInViewport();
+  await expect(check).toBeEnabled();
+  await check.click();
+  await expect(page.getByTestId("kid-feedback")).toContainText("Świetnie!");
 });
 
 test("lesson needs no microphone and never requests access", async ({ page }) => {

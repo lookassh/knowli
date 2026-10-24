@@ -1,0 +1,32 @@
+.root {
+  color-scheme: dark;
+  color: #f0f5ff;
+  background: #080d1c;
+  font-family: KnowliKidManrope, sans-serif;
+  min-height: 100dvh;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.root,
+.root *,
+.root *::before,
+.root *::after {
+  box-sizing: border-box;
+}
+
+.root button,
+.root input,
+.root textarea,
+.root select {
+  font: inherit;
+}
+
+.root button,
+.root select {
+  text-transform: none;
+}
+
+.root :focus-visible {
+  outline: 2px solid var(--kid-accent);
+  outline-offset: 3px;
+}

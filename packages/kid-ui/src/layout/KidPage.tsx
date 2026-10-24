@@ -23,7 +23,7 @@ export function KidPage({
       data-testid={mode === "session" ? "kid-session-frame" : undefined}
       data-zoomed={zoomed ? "true" : "false"}
       data-viewport-short={session && viewport.height !== null && viewport.height <= 700 ? "true" : undefined}
-      data-viewport-very-short={session && viewport.height !== null && viewport.height <= 420 ? "true" : undefined}
+      data-viewport-very-short={session && viewport.height !== null && viewport.height <= 479 ? "true" : undefined}
       style={style}
     >
       {children}

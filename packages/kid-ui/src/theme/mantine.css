@@ -1,0 +1,51 @@
+/* Mantine 9.7.3 component styles required by Kid UI. Keep imports component-scoped.
+   Do NOT add layer(...): the Next.js production build emits it literally as
+   @media layer(...), which browsers never match (verified 2026-10-24).
+   Local styles that must beat Mantine resets use .kid-ui-scoped selectors. */
+@import "@mantine/core/styles/UnstyledButton.css";
+@import "@mantine/core/styles/Button.css";
+@import "@mantine/core/styles/Input.css";
+@import "@mantine/core/styles/Text.css";
+@import "@mantine/core/styles/Title.css";
+@import "@mantine/core/styles/Paper.css";
+@import "@mantine/core/styles/ActionIcon.css";
+@import "@mantine/core/styles/Badge.css";
+@import "@mantine/core/styles/Alert.css";
+
+/* Scoped equivalents of Mantine global.css utility selectors. */
+.kid-theme[data-mantine-color-scheme="light"] .mantine-light-hidden {
+  display: none;
+}
+
+.kid-theme[data-mantine-color-scheme="dark"] .mantine-dark-hidden {
+  display: none;
+}
+
+.kid-theme .mantine-focus-auto:focus-visible,
+.kid-theme .mantine-focus-always:focus {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: calc(0.125rem * var(--mantine-scale));
+}
+
+.kid-theme .mantine-focus-never:focus {
+  outline: none;
+}
+
+.kid-theme .mantine-active:active {
+  transform: translateY(calc(0.0625rem * var(--mantine-scale)));
+}
+
+.kid-theme fieldset:disabled .mantine-active:active {
+  transform: none;
+}
+
+.kid-theme :where([dir="rtl"]) .mantine-rotate-rtl {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kid-theme [data-respect-reduced-motion] [data-reduce-motion] {
+    transition: none;
+    animation: none;
+  }
+}

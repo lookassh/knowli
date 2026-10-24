@@ -335,7 +335,15 @@ async function installFakeMicrophone(page: Page, deny = false): Promise<void> {
         }),
       },
     });
-    const track = { kind: "audio", stop: () => undefined, addEventListener: () => undefined };
+    (window as unknown as { __microphoneTrackStops?: number }).__microphoneTrackStops = 0;
+    const track = {
+      kind: "audio",
+      stop: () => {
+        const state = window as unknown as { __microphoneTrackStops?: number };
+        state.__microphoneTrackStops = (state.__microphoneTrackStops ?? 0) + 1;
+      },
+      addEventListener: () => undefined,
+    };
     const stream = { getTracks: () => [track], getAudioTracks: () => [track] };
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
@@ -470,9 +478,16 @@ test("hold gesture handles keyboard, capture loss and release outside the button
   await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: touchX, y: touchY, id: 2 }] });
   await expect(button).toHaveAttribute("aria-pressed", "true");
   await page.waitForTimeout(350);
-  await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 8, y: 8, id: 2 }] });
-  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-  await expect(button).toHaveAttribute("aria-pressed", "false");
+  const trackStopsBeforeCancel = await page.evaluate(
+    () => (window as unknown as { __microphoneTrackStops?: number }).__microphoneTrackStops ?? 0,
+  );
+  await page.evaluate(() => {
+    const button = document.querySelector<HTMLButtonElement>('[data-testid="kid-record"]')!;
+    button.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true, pointerId: 2, pointerType: "touch" }));
+  });
+  await expect(button).toHaveAttribute("data-phase", "idle");
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __microphoneTrackStops?: number }).__microphoneTrackStops ?? 0))
+    .toBeGreaterThan(trackStopsBeforeCancel);
   await cdp.detach();
 });
 

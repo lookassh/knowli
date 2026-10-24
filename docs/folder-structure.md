@@ -67,28 +67,22 @@ Catch-all jest wyłącznie mapą jawnie dozwolonych operacji, nie dynamicznym do
 
 | Ścieżka | Odpowiedzialność |
 | --- | --- |
-| packages/kid-ui/src/KidApp.tsx | Główne widoki i przejścia |
+| packages/kid-ui/src/KidApp.tsx | Główne widoki, przejścia i złożenie przenośnych ekranów |
 | packages/kid-ui/src/api/client.ts | KidApi na OpenAPILink (oRPC) z konfigurowalnym baseUrl |
-| packages/kid-ui/src/session/useLearningSession.ts | Stan sesji, zapis i wznowienie |
-| packages/kid-ui/src/screens/ProfilePicker.tsx | Wybór dziecka |
-| packages/kid-ui/src/screens/DeckPicker.tsx | Przypisane tematy |
-| packages/kid-ui/src/screens/SessionScreen.tsx | Jedno zadanie, odsłuch, feedback |
-| packages/kid-ui/src/screens/SessionSummary.tsx | Krótkie podsumowanie bez score |
-| packages/kid-ui/src/exercises/Exposure.tsx | Prezentacja nowego słowa |
-| packages/kid-ui/src/exercises/Choice.tsx | Rozpoznawanie słuchowe, tekstowe i odwrotne |
-| packages/kid-ui/src/exercises/Recall.tsx | Odpowiedź ustna lub pisemna |
-| packages/kid-ui/src/exercises/Pronunciation.tsx | Powtarzanie widocznego wzorca |
-| packages/kid-ui/src/exercises/SpeechRecordButton.tsx | Gest z trybu profilu, stan mikrofonu i klawiatura |
-| packages/kid-ui/src/exercises/recording-gesture.ts | Czysta redukcja gestu nagrywania |
-| packages/kid-ui/src/screens/SpeechFeedbackCard.tsx | Nie-modalny, dostępny wynik mowy i następne działanie |
-| packages/kid-ui/src/screens/speech-feedback-view.ts | Uczciwe mapowanie statusu STT/wymowy na tekst i ton |
-| packages/kid-ui/src/exercises/Spelling.tsx | Luki i pełny zapis |
-| packages/kid-ui/src/media/platform.ts | Interfejsy nagrywania/odtwarzania i lokalnych preferencji urządzenia (bez trybu profilu) |
-| packages/kid-ui/src/media/browser.ts | Implementacja przeglądarkowa |
-| packages/kid-ui/src/visuals/Visual.tsx | Kolor, liczba, sekwencja, obraz albo brak |
-| packages/kid-ui/src/styles.css | Motyw dziecka i style Tailwind |
+| packages/kid-ui/src/theme/KidThemeProvider.tsx | Scoped Mantine theme dla dziecięcego UI |
+| packages/kid-ui/src/layout/KidPage.tsx | Pomiar viewportu i hostowy podział flow/session |
+| packages/kid-ui/src/layout/KidScreen.tsx | Wspólny ekran Mantine z nagłówkiem, treścią i akcjami |
+| packages/kid-ui/src/components/ | Wspólne przyciski, postęp, ikony i feedback dostępny dotykowo |
+| packages/kid-ui/src/screens/ | Ekrany profilu, talii, podsumowań, próbnych testów i przebiegu lekcji |
+| packages/kid-ui/src/exercises/ExerciseView.tsx | Wybór widoku według rodzaju ćwiczenia |
+| packages/kid-ui/src/exercises/ExerciseFrame.tsx | Wspólny nagłówek, materiał, wynik oraz dolne akcje ćwiczenia |
+| packages/kid-ui/src/exercises/ | Widoki ćwiczeń, pisania, odpowiedzi obrazkowych, mowy i lekcji |
+| packages/kid-ui/src/session/ | Kontroler sesji, odczyt stanu i lokalne zdarzenia aktywności |
+| packages/kid-ui/src/media/ | Przenośne interfejsy nagrywania, odtwarzania i preferencji |
+| packages/kid-ui/src/visuals/ | Wizualizacje znaczeń i okładek |
+| packages/kid-ui/src/styles.css oraz pliki CSS Modules | Warstwa wizualna Kid UI i style własnych komponentów Mantine |
 
-Uzupełnienie UX (2026-10-11): `kid-ui/src/layout/viewport.ts` mierzy widoczny viewport bez zależności od Next.js; `layout/KidPage.tsx` rozdziela ograniczoną ramę sesji od naturalnego widoku `flow`, a `exercises/ExerciseFrame.tsx` współdzieli instrukcję, materiał, wynik i akcje. `components/KidIcon.tsx`, `exercises/exercise-presentation.ts` oraz `screens/deck-presentation.ts` dostarczają zamknięte ikony i prezentację bez zmiany DTO. Host web ustawia viewport wyłącznie dla tras dziecka. Testy Playwright w `tests/e2e/kid-ui-layout.spec.ts`, `kid-decks-layout.spec.ts` i `kid-flow-screens.spec.ts` są macierzą przeglądarkową; odbiór rzeczywistego Galaxy S25/PWA pozostaje osobnym wymaganiem i nie wynika z symulacji viewportu.
+Uzupełnienie UI (2026-10-24): `KidThemeProvider` ogranicza nocny motyw Mantine do aplikacji dziecka; `KidPage` mierzy viewport bez zależności od Next.js, a `KidScreen` i `ExerciseFrame` dzielą widok na stabilne sloty. Style rodzica pozostają poza tym zakresem. Macierz Playwright obejmuje wirtualne ekrany telefonów, tabletów i desktopu; nie jest odbiorem fizycznego urządzenia. Fizyczny test Galaxy S10e/PWA pozostaje osobnym dowodem.
 
 Nie importujemy tutaj next/navigation, next/image, Server Actions ani @learning/server. Zwykły img i serwerowy media URL wystarczą do ilustracji. Transport API nie jest wbudowany w komponent ćwiczenia; dostarcza go KidApp przez zależność.
 

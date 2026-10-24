@@ -4,6 +4,7 @@ import { Visual } from "../visuals/Visual";
 import { ExerciseFrame } from "./ExerciseFrame";
 import { SpeechRecordButton } from "./SpeechRecordButton";
 import type { ExerciseProps } from "./types";
+import { ActionButton } from "../components/ActionButton";
 
 /**
  * Ćwiczenie wymowy (SPEC §12.6): dziecko widzi angielskie słowo, może
@@ -56,7 +57,10 @@ export function SpeechView(props: ExerciseProps) {
       )}
       actions={<div className="kid-speech-actions">
         {task.prompt.audioAssetId !== null && (
-          <button
+          <ActionButton
+            priority="secondary"
+            fullWidth={false}
+            size="sm"
             type="button"
             className="kid-audio-round kid-audio-round-sm"
             data-testid="kid-play"
@@ -65,15 +69,15 @@ export function SpeechView(props: ExerciseProps) {
             onClick={handlers.onPlay}
           >
             <KidIcon name="volume" />
-          </button>
+          </ActionButton>
         )}
       </div>}
       secondaryActions={<div className="kid-secondary-actions">
         {/* świadome pominięcie bez oceny — także po awarii technicznej próby,
             żeby dziecko nie utknęło na jednym słowie (SPEC §15.3) */}
-        <button type="button" data-testid="kid-skip" disabled={busy || (recordingPhase !== "idle" && !automaticRecording)} onClick={handlers.onSkip}>
+        <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-skip" disabled={busy || (recordingPhase !== "idle" && !automaticRecording)} onClick={handlers.onSkip}>
           {messages.kid.skip}
-        </button>
+        </ActionButton>
       </div>}
     />
   );

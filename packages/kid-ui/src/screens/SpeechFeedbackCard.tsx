@@ -4,6 +4,8 @@ import { format } from "../format";
 import { describeSpeechFeedback } from "./speech-feedback-view";
 import { KidIcon } from "../components/KidIcon";
 import { useFeedbackCooldown } from "./useFeedbackCooldown";
+import { Box } from "@mantine/core";
+import { ActionButton } from "../components/ActionButton";
 
 export interface SpeechFeedbackCardProps {
   dto: FeedbackDto | null;
@@ -40,7 +42,7 @@ export function SpeechFeedbackContent(props: SpeechFeedbackCardProps): ReactElem
   const hasLocalPractice = view.fragments.some((fragment) => fragment.verdict === "almost");
 
   return (
-    <section
+    <Box component="section"
       className={["kid-speech-feedback", toneClass].join(" ")}
       data-testid="kid-speech-feedback"
       aria-labelledby="kid-speech-feedback-title"
@@ -96,12 +98,12 @@ export function SpeechFeedbackContent(props: SpeechFeedbackCardProps): ReactElem
 
       <div className="kid-speech-feedback__actions">
         {props.audioAvailable && (
-          <button type="button" className="kid-secondary" data-testid="kid-play-reference" disabled={props.busy} onClick={props.onPlay}>
+          <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-play-reference" disabled={props.busy} onClick={props.onPlay}>
             {messages.kid.feedbackPlayReference}
-          </button>
+          </ActionButton>
         )}
       </div>
-    </section>
+    </Box>
   );
 }
 
@@ -109,7 +111,7 @@ export function SpeechFeedbackActions(props: SpeechFeedbackCardProps): ReactElem
   const action = props.retry ? props.onRetry : props.onNext;
   const { buttonRef, onKeyDown } = useFeedbackCooldown<HTMLButtonElement>(action, [props.retry, props.dto]);
   return props.retry ? (
-    <button
+    <ActionButton
       ref={buttonRef}
       onKeyDown={onKeyDown}
       type="button"
@@ -120,9 +122,9 @@ export function SpeechFeedbackActions(props: SpeechFeedbackCardProps): ReactElem
     >
       <KidIcon name="retry" />
       {messages.kid.feedbackRecordAgain}
-    </button>
+    </ActionButton>
   ) : (
-    <button
+    <ActionButton
       ref={buttonRef}
       onKeyDown={onKeyDown}
       type="button"
@@ -133,17 +135,17 @@ export function SpeechFeedbackActions(props: SpeechFeedbackCardProps): ReactElem
     >
       <KidIcon name="arrow-right" />
       {messages.kid.feedbackNext}
-    </button>
+    </ActionButton>
   );
 }
 
 export function SpeechFeedbackSecondaryActions(props: SpeechFeedbackCardProps): ReactElement | null {
   if (!props.retry) return null;
   return (
-    <button type="button" className="kid-flow-secondary" data-testid="kid-feedback-skip" disabled={props.busy} onClick={props.onSkip}>
+    <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" className="kid-flow-secondary" data-testid="kid-feedback-skip" disabled={props.busy} onClick={props.onSkip}>
       <KidIcon name="arrow-right" />
       {messages.kid.skip}
-    </button>
+    </ActionButton>
   );
 }
 

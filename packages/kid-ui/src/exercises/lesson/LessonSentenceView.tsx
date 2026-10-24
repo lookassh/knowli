@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { Text } from "@mantine/core";
 import { messages } from "@learning/contracts";
 import { KidIcon } from "../../components/KidIcon";
+import { ActionButton } from "../../components/ActionButton";
+import { AnswerField } from "../../components/AnswerField";
 import { ExerciseFrame } from "../ExerciseFrame";
 import type { ExerciseProps } from "../types";
 
@@ -38,7 +41,7 @@ export function LessonSentenceView({ task, busy, handlers }: ExerciseProps) {
       task={task}
       content={(
         <>
-          <p className="kid-lesson-source" data-testid="kid-lesson-source" lang="en-GB">{source}</p>
+          <Text component="p" className="kid-lesson-source" data-testid="kid-lesson-source" lang="en-GB">{source}</Text>
           <form
             id={formId}
             className="kid-written"
@@ -47,7 +50,7 @@ export function LessonSentenceView({ task, busy, handlers }: ExerciseProps) {
               if (text.trim() !== "" && !disabled) handlers.onSubmitText(text);
             }}
           >
-            <input
+            <AnswerField
               ref={inputRef}
               data-testid="kid-lesson-input"
               value={text}
@@ -62,21 +65,25 @@ export function LessonSentenceView({ task, busy, handlers }: ExerciseProps) {
             />
           </form>
           {hasAudio && (
-            <button
+            <ActionButton
               type="button"
               className="kid-play"
+              priority="secondary"
+              size="sm"
+              fullWidth={false}
+              styles={{ root: { minHeight: 48 } }}
               data-testid="kid-lesson-listen"
               disabled={disabled}
               onClick={handlers.onPlay}
               aria-label={messages.kid.listen}
             >
               <KidIcon name="volume" />
-            </button>
+            </ActionButton>
           )}
         </>
       )}
       actions={(
-        <button
+        <ActionButton
           form={formId}
           type="submit"
           className="kid-primary"
@@ -84,15 +91,15 @@ export function LessonSentenceView({ task, busy, handlers }: ExerciseProps) {
           disabled={disabled || text.trim() === ""}
         >
           {messages.kid.lessonCheck}
-        </button>
+        </ActionButton>
       )}
       secondaryActions={<div className="kid-secondary-actions">
-        <button type="button" data-testid="kid-not-remember" disabled={disabled} onClick={handlers.onNotRemember}>
+        <ActionButton priority="secondary" size="sm" fullWidth={false} type="button" data-testid="kid-not-remember" disabled={disabled} onClick={handlers.onNotRemember}>
           {messages.kid.notRemember}
-        </button>
-        <button type="button" data-testid="kid-skip" disabled={disabled} onClick={handlers.onSkip}>
+        </ActionButton>
+        <ActionButton priority="secondary" size="sm" fullWidth={false} type="button" data-testid="kid-skip" disabled={disabled} onClick={handlers.onSkip}>
           {messages.kid.skip}
-        </button>
+        </ActionButton>
       </div>}
     />
   );

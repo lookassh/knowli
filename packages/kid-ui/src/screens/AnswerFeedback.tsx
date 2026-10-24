@@ -5,6 +5,8 @@ import { isIncompleteWord, joinedText } from "./spelling-diff-view";
 import { lessonFeedbackView } from "./lesson-feedback-view";
 import { KidIcon } from "../components/KidIcon";
 import { useFeedbackCooldown } from "./useFeedbackCooldown";
+import { Box } from "@mantine/core";
+import { ActionButton } from "../components/ActionButton";
 
 export interface AnswerFeedbackProps {
   dto: FeedbackDto | null;
@@ -87,7 +89,7 @@ export function AnswerFeedbackContent({ dto, busy }: Pick<AnswerFeedbackProps, "
   const feedback = dto ?? { kind: "not_assessed" as const };
   const lesson = lessonFeedbackView(dto);
   return (
-    <section
+    <Box component="section"
       className={["kid-answer-feedback", feedbackTone(dto)].filter(Boolean).join(" ")}
       data-testid="kid-feedback"
       role="status"
@@ -184,14 +186,14 @@ export function AnswerFeedbackContent({ dto, busy }: Pick<AnswerFeedbackProps, "
           </div>
         )}
       </div>
-    </section>
+    </Box>
   );
 }
 
 export function AnswerFeedbackActions({ dto, retry, busy, onNext }: Partial<Pick<AnswerFeedbackProps, "dto">> & Pick<AnswerFeedbackProps, "retry" | "busy" | "onNext">): ReactElement {
   const { buttonRef, onKeyDown } = useFeedbackCooldown<HTMLButtonElement>(onNext, [dto, retry]);
   return (
-    <button
+    <ActionButton
       ref={buttonRef}
       onKeyDown={onKeyDown}
       type="button"
@@ -202,7 +204,7 @@ export function AnswerFeedbackActions({ dto, retry, busy, onNext }: Partial<Pick
     >
       <KidIcon name={retry ? "retry" : "arrow-right"} />
       {retry ? messages.kid.feedbackRetry : messages.kid.feedbackNext}
-    </button>
+    </ActionButton>
   );
 }
 
@@ -210,10 +212,10 @@ export function AnswerFeedbackSecondaryActions({ dto, retry, busy, onSkip }: Ans
   const lesson = lessonFeedbackView(dto);
   if (lesson?.technical !== true || !retry || onSkip === undefined) return null;
   return (
-    <button type="button" className="kid-flow-secondary" data-testid="kid-lesson-skip" disabled={busy} onClick={onSkip}>
+    <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" className="kid-flow-secondary" data-testid="kid-lesson-skip" disabled={busy} onClick={onSkip}>
       <KidIcon name="arrow-right" />
       {messages.kid.skip}
-    </button>
+    </ActionButton>
   );
 }
 

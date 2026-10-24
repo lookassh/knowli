@@ -13,10 +13,10 @@ const summary = {
   activity: { status: "evaluated" as const, pointsAwarded: 2, errorCode: null },
 };
 
-async function openWrittenTask(page: Page, onEndSession: (report: SessionActivityReport) => void, options: { dropFirstEndResponse?: boolean; endActivityResults?: SessionActivityResultDto[]; activityResultResults?: SessionActivityResultDto[] } = {}) {
+async function openWrittenTask(page: Page, onEndSession: (report: SessionActivityReport) => void, options: { dropFirstEndResponse?: boolean; endActivityResults?: SessionActivityResultDto[]; activityResultResults?: SessionActivityResultDto[]; profiles?: Array<{ childId: string; displayName: string; avatarKey: string; recordingMode: "hold" | "toggle" }> } = {}) {
   await page.clock.install();
   await installKidUiFixture(page, {
-    profiles: [{ childId, displayName: "Ola", avatarKey: "cat", recordingMode: "hold" }],
+    profiles: options.profiles ?? [{ childId, displayName: "Ola", avatarKey: "cat", recordingMode: "hold" }],
     decks: [{ deckId, title: "Zwierzęta", itemCount: 1, independentlyRecalledCount: 0, testDate: null,
       recommended: true, mockTestAvailable: false, activeSession: null }],
     session: { mode: "training", sessionId, childId, deckId,
@@ -39,7 +39,7 @@ async function openWrittenTask(page: Page, onEndSession: (report: SessionActivit
     ...options,
   });
   await page.goto("/");
-  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-profile").first().click();
   await page.getByTestId("kid-deck").click();
   await expect(page.getByTestId("kid-input")).toBeVisible();
 }
@@ -88,7 +88,7 @@ test("reload resumes the active report draft before ending the same session", as
   await page.getByTestId("kid-input").fill("ca");
   await page.evaluate(() => window.dispatchEvent(new Event("blur")));
   await page.reload();
-  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-profile").first().click();
   await page.getByTestId("kid-deck").click();
   await expect(page.getByTestId("kid-input")).toBeVisible();
   await page.getByTestId("kid-input").fill("cat");
@@ -118,7 +118,7 @@ test("lost end ACK retries the exact browser draft, keeps it on already_started,
   await expect.poll(() => reports.length).toBe(1);
 
   await page.reload();
-  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-profile").first().click();
   await expect(page.getByTestId("kid-deck")).toBeVisible();
   await expect.poll(() => reports.length).toBe(2);
   expect(reports[1]).toEqual(reports[0]);
@@ -126,7 +126,7 @@ test("lost end ACK retries the exact browser draft, keeps it on already_started,
   expect(await page.evaluate((key) => localStorage.getItem(key) !== null, draftKey)).toBe(true);
 
   await page.reload();
-  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-profile").first().click();
   await expect(page.getByTestId("kid-deck")).toBeVisible();
   await page.clock.fastForward(1_100);
   expect(reports).toHaveLength(2);
@@ -160,5 +160,50 @@ test("accepted pending reward keeps the summary usable and reaches one terminal 
   await page.clock.fastForward(2_100);
   await expect(page.getByTestId("kid-summary-reward")).toContainText("Zdobyto 5 pkt");
   expect(reads).toEqual(["GET", "GET"]);
+  expect(reports).toHaveLength(1);
+});
+
+test("pending result keeps summary responsive and cannot leak after switching children", async ({ page }) => {
+  const reports: SessionActivityReport[] = [];
+  const secondChildId = "10000000-0000-4000-8000-000000000009";
+  await openWrittenTask(page, (report) => { reports.push(report); }, {
+    profiles: [
+      { childId, displayName: "Ola", avatarKey: "cat", recordingMode: "hold" },
+      { childId: secondChildId, displayName: "Maja", avatarKey: "fox", recordingMode: "hold" },
+    ],
+    endActivityResults: [{ status: "already_started", pointsAwarded: 0, errorCode: null }],
+    activityResultResults: [{ status: "evaluated", pointsAwarded: 99, errorCode: null }],
+  });
+
+  let releaseOldResult!: () => void;
+  const oldResultGate = new Promise<void>((resolve) => { releaseOldResult = resolve; });
+  let pendingReads = 0;
+  await page.route(`**/api/v1/kid/sessions/${sessionId}/activity-result`, async (route) => {
+    pendingReads += 1;
+    await oldResultGate;
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ status: "evaluated", pointsAwarded: 99, errorCode: null }) });
+  });
+
+  await page.setViewportSize({ width: 360, height: 360 });
+  await page.getByTestId("kid-input").fill("cat");
+  await page.getByTestId("kid-submit").click();
+  await page.getByTestId("kid-next").click();
+  await expect(page.getByTestId("kid-summary")).toBeVisible();
+  await expect(page.getByTestId("kid-summary-reward")).toContainText("Punkty z tej nauki są jeszcze liczone.");
+  await page.clock.fastForward(1_100);
+  await expect.poll(() => pendingReads).toBe(1);
+  await expect(page.getByTestId("kid-summary")).toBeVisible();
+
+  await page.setViewportSize({ width: 360, height: 760 });
+  await page.getByTestId("kid-switch-profile").click();
+  await page.getByTestId("kid-profile").nth(1).click();
+  await expect(page.getByTestId("kid-deck-screen")).toBeVisible();
+  await expect(page.getByTestId("kid-deck-screen")).toContainText("Cześć, Maja!");
+  const staleResponse = page.waitForResponse(response => new URL(response.url()).pathname === `/api/v1/kid/sessions/${sessionId}/activity-result`);
+  releaseOldResult();
+  await (await staleResponse).finished();
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(page.getByTestId("kid-deck-screen")).toContainText("Cześć, Maja!");
+  await expect(page.getByTestId("kid-summary-reward")).toHaveCount(0);
   expect(reports).toHaveLength(1);
 });

@@ -121,6 +121,8 @@ test("empty decks and a denied microphone still offer recovery", async ({ page }
   await openDeckScreen(page, []);
   await expect(page.getByText("Nie masz jeszcze zestawów do nauki.")).toBeVisible();
   await expect(page.getByTestId("kid-mic-denied-hint")).toBeVisible();
+  const micBottom = await page.getByTestId("kid-mic-toggle").boundingBox();
+  expect(micBottom?.y ?? 0).toBeGreaterThan(600);
   await page.getByTestId("kid-mic-toggle").check();
   await expect(page.getByTestId("kid-mic-denied-hint")).toHaveCount(0);
   await expect(page.getByTestId("kid-parent-link")).toBeVisible();

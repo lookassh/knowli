@@ -1,4 +1,5 @@
 import { useEffect, useReducer, useRef } from "react";
+import { UnstyledButton } from "@mantine/core";
 import { messages } from "@learning/contracts";
 import type { RecordingModeDto } from "@learning/contracts";
 import { KidIcon } from "../components/KidIcon";
@@ -99,7 +100,7 @@ export function SpeechRecordButton({ phase, ready, disabled, level, notice = nul
 
   return (
     <div className="kid-record-controls" data-testid="kid-record-controls">
-      <button
+      <UnstyledButton
         type="button"
         className="kid-primary kid-record-button"
         data-testid="kid-record"
@@ -107,7 +108,7 @@ export function SpeechRecordButton({ phase, ready, disabled, level, notice = nul
         data-phase={phase}
         aria-pressed={phase === "recording"}
         disabled={nativeDisabled}
-        aria-disabled={blocked}
+        aria-disabled={blocked && phase !== "starting"}
         onPointerDown={(event) => {
           if (mode === "hold" && !disabled && !gesture.active &&
               (event.pointerType !== "mouse" || event.button === 0) &&
@@ -175,10 +176,10 @@ export function SpeechRecordButton({ phase, ready, disabled, level, notice = nul
       >
         <KidIcon name="microphone" />
         <span>{label}</span>
-      </button>
+      </UnstyledButton>
       {(notice ?? status) !== null && <p className="kid-record-status" role="status" data-testid="kid-record-status">{notice ?? status}</p>}
       {active && (
-        <div className="kid-recording" data-testid="kid-recording" role="status"><KidIcon name="microphone" /> {messages.kid.recording}</div>
+        <div className="kid-recording" data-testid="kid-recording"><KidIcon name="microphone" /> {messages.kid.recording}</div>
       )}
       {levelValue !== null && phase === "recording" && (
         <div className="kid-input-level" data-testid="kid-input-level" role="meter" aria-label={messages.kid.recordingLevel} aria-valuemin={0} aria-valuemax={100} aria-valuenow={levelValue}>

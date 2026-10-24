@@ -1,4 +1,7 @@
+"use client";
+
 import { type ReactNode } from "react";
+import { Text } from "@mantine/core";
 import { messages, type UiAudioKey } from "@learning/contracts";
 import type { KidApi } from "./api/KidApi";
 import type { PlatformMedia } from "./media/platform";
@@ -12,6 +15,9 @@ import { useLearningSession } from "./session/useLearningSession";
 import type { LocalPreferences } from "./storage";
 import { KidPage } from "./layout/KidPage";
 import { GuidanceButton } from "./components/GuidanceButton";
+import { KidThemeProvider } from "./theme/KidThemeProvider";
+import { ActionButton } from "./components/ActionButton";
+import { KidScreen } from "./layout/KidScreen";
 
 export interface ParentLinkConfig {
   label: string;
@@ -25,6 +31,35 @@ export interface ParentLinkConfig {
  * Capacitor podmieni wyłącznie te zależności.
  */
 export function KidApp({
+  api,
+  media,
+  storage,
+  initialChildId,
+  parentLink,
+  headerActions,
+}: {
+  api: KidApi;
+  media: PlatformMedia;
+  storage: LocalPreferences;
+  initialChildId?: string;
+  parentLink?: ParentLinkConfig;
+  headerActions?: ReactNode;
+}) {
+  return (
+    <KidThemeProvider>
+      <KidAppContent
+        api={api}
+        media={media}
+        storage={storage}
+        {...(initialChildId === undefined ? {} : { initialChildId })}
+        {...(parentLink === undefined ? {} : { parentLink })}
+        {...(headerActions === undefined ? {} : { headerActions })}
+      />
+    </KidThemeProvider>
+  );
+}
+
+function KidAppContent({
   api,
   media,
   storage,
@@ -55,17 +90,25 @@ export function KidApp({
   switch (screen.kind) {
     case "loading":
       return (
-        <KidPage mode="flow"><main className="kid-screen">
-          <p className="kid-hint">{messages.kid.loading}</p>
-        </main></KidPage>
+        <KidPage mode="flow">
+          <KidScreen mode="flow" role="main" className="kid-screen">
+            <KidScreen.Content><Text className="kid-hint" role="status">{messages.kid.loading}</Text></KidScreen.Content>
+          </KidScreen>
+        </KidPage>
       );
     case "initError":
       return (
-        <KidPage mode="flow"><main className="kid-screen">
-          {actions && <header className="kid-top-bar">{actions}</header>}
-          <p className="kid-hint" data-testid="kid-init-error">{screen.message}</p>
-          <button type="button" className="kid-primary" data-testid="kid-back-decks" onClick={() => void controller.backToDecks()}>{messages.kid.backToLearning}</button>
-        </main></KidPage>
+        <KidPage mode="flow">
+          <KidScreen mode="flow" role="main" className="kid-screen kid-init-error-screen">
+            {actions && <KidScreen.Header><header className="kid-top-bar">{actions}</header></KidScreen.Header>}
+            <KidScreen.Content><Text className="kid-hint" data-testid="kid-init-error" role="alert">{screen.message}</Text></KidScreen.Content>
+            <KidScreen.Actions>
+              <ActionButton type="button" className="kid-primary" data-testid="kid-back-decks" onClick={() => void controller.backToDecks()}>
+                {messages.kid.backToLearning}
+              </ActionButton>
+            </KidScreen.Actions>
+          </KidScreen>
+        </KidPage>
       );
     case "profile":
       return (

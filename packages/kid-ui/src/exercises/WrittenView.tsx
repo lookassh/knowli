@@ -3,6 +3,8 @@ import { messages } from "@learning/contracts";
 import { SpeechRecordButton } from "./SpeechRecordButton";
 import { ExerciseFrame } from "./ExerciseFrame";
 import type { ExerciseProps } from "./types";
+import { AnswerField } from "../components/AnswerField";
+import { ActionButton } from "../components/ActionButton";
 
 /**
  * Samodzielne przypomnienie i samodzielna pisownia
@@ -40,7 +42,7 @@ export function WrittenView({ task, busy, recording, recordingPhase, microphoneR
               }
             }}
           >
-            <input
+            <AnswerField
               ref={inputRef}
               data-testid="kid-input"
               value={text}
@@ -71,7 +73,7 @@ export function WrittenView({ task, busy, recording, recordingPhase, microphoneR
         </>
       )}
       actions={(
-        <button
+        <ActionButton
           form={formId}
           type="submit"
           className="kid-primary"
@@ -79,15 +81,15 @@ export function WrittenView({ task, busy, recording, recordingPhase, microphoneR
           disabled={disabled || text.trim() === ""}
         >
           {mockTest ? messages.kid.mockTestSubmit : messages.kid.check}
-        </button>
+        </ActionButton>
       )}
       secondaryActions={<div className="kid-secondary-actions">
-        <button type="button" data-testid="kid-not-remember" disabled={disabled} onClick={handlers.onNotRemember}>
+        <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-not-remember" disabled={disabled} onClick={handlers.onNotRemember}>
           {mockTest ? messages.kid.mockTestNotRemember : messages.kid.notRemember}
-        </button>
-        <button type="button" data-testid="kid-skip" disabled={disabled} onClick={handlers.onSkip}>
+        </ActionButton>
+        <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-skip" disabled={disabled} onClick={handlers.onSkip}>
           {messages.kid.skip}
-        </button>
+        </ActionButton>
       </div>}
     />
   );

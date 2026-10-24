@@ -107,11 +107,22 @@ test("mock-test ready screen styles start and cancel as clear actions", async ({
   await expect(page.getByTestId("kid-mock-budget")).toContainText("1 zadań");
   const start = page.getByTestId("kid-mock-confirm");
   await expect(start).toBeVisible();
+  await expect(start).toHaveClass(/mantine-UnstyledButton-root/);
   await expectThemeToken(page, start, "accent");
   const info = page.getByTestId("kid-mock-info");
   await expect(info).toContainText("Odpowiedzi omówimy na końcu.");
   await expectThemeToken(page, info);
-  await page.getByRole("button", { name: "Koniec" }).click();
+  const cancel = page.getByRole("button", { name: "Koniec" });
+  // Regresja kaskady: reset Mantine UnstyledButton nie może kasować lokalnych
+  // stylów przycisku drugorzędnego (ramka, wypełnienie, tło).
+  const cancelStyle = await cancel.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { borderTopWidth: style.borderTopWidth, paddingLeft: style.paddingLeft, backgroundColor: style.backgroundColor };
+  });
+  expect(cancelStyle.borderTopWidth).not.toBe("0px");
+  expect(cancelStyle.paddingLeft).not.toBe("0px");
+  expect(cancelStyle.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+  await cancel.click();
   await expect(page.getByTestId("kid-deck-card")).toBeVisible();
 });
 
@@ -192,6 +203,8 @@ test("mock-test summary retains word outcomes and reachable follow-up actions", 
   await page.getByTestId("kid-mock-start").click();
   await page.getByTestId("kid-mock-confirm").click();
   await expect(page.getByTestId("kid-mock-summary")).toBeVisible();
+  await expect(page.getByTestId("kid-mock-practice")).toHaveClass(/mantine-UnstyledButton-root/);
+  await expect(page.getByTestId("kid-mock-solution")).toHaveClass(/mantine-Paper-root/);
   await expect(page.getByTestId("kid-mock-score")).toContainText("1/1");
   await expect(page.getByTestId("kid-mock-solution")).toHaveAttribute("data-status", "correct");
   await expect(page.getByTestId("kid-mock-practice")).toBeVisible();

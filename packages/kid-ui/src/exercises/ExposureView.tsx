@@ -5,6 +5,8 @@ import { Visual } from "../visuals/Visual";
 import { ExerciseFrame } from "./ExerciseFrame";
 import type { ExerciseProps } from "./types";
 import { shouldIgnoreKeyboardShortcut } from "./useChoiceKeyboard";
+import { ActionButton } from "../components/ActionButton";
+import { Text } from "@mantine/core";
 
 /**
  * Poznanie słowa (SPEC §12.1): angielskie słowo, polskie znaczenie i pomoc
@@ -59,11 +61,13 @@ export function ExposureView({ task, busy, mediaUrl, handlers }: ExerciseProps) 
             />
           )}
           <div className="kid-word-row">
-            <p className="kid-word" data-testid="kid-target">
+              <Text component="p" className="kid-word" data-testid="kid-target">
               {task.prompt.target}
-            </p>
+              </Text>
             {task.prompt.audioAssetId !== null && (
-              <button
+              <ActionButton
+                fullWidth={false}
+                size="sm"
                 type="button"
                 className="kid-audio-round"
                 data-testid="kid-play"
@@ -72,7 +76,7 @@ export function ExposureView({ task, busy, mediaUrl, handlers }: ExerciseProps) 
                 aria-label={messages.kid.listen}
               >
                 <KidIcon name="volume" />
-              </button>
+              </ActionButton>
             )}
           </div>
           <p className="kid-source" data-testid="kid-source">
@@ -80,11 +84,13 @@ export function ExposureView({ task, busy, mediaUrl, handlers }: ExerciseProps) 
           </p>
           {task.prompt.example !== null && (
             <div className="kid-example-block">
-              <p className="kid-example" data-testid="kid-example">
+                <Text component="p" className="kid-example" data-testid="kid-example">
                 {task.prompt.example}
-              </p>
+                </Text>
               {task.prompt.exampleAudioAssetId !== null && (
-                <button
+                <ActionButton
+                  fullWidth={false}
+                  size="sm"
                   type="button"
                   className="kid-audio-round kid-audio-round-sm"
                   data-testid="kid-play-example"
@@ -93,14 +99,14 @@ export function ExposureView({ task, busy, mediaUrl, handlers }: ExerciseProps) 
                   aria-label={messages.kid.listenExample}
                 >
                   <KidIcon name="volume" />
-                </button>
+                </ActionButton>
               )}
             </div>
           )}
         </div>
       )}
       actions={(
-        <button
+        <ActionButton
           ref={doneRef}
           type="button"
           className="kid-primary"
@@ -110,7 +116,7 @@ export function ExposureView({ task, busy, mediaUrl, handlers }: ExerciseProps) 
         >
           <KidIcon name="check" />
           {messages.kid.understand}
-        </button>
+        </ActionButton>
       )}
     />
   );
