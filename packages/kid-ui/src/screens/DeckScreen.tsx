@@ -57,6 +57,11 @@ export function DeckScreen({
   ].filter((section) => section.items.length > 0);
 
   const firstButtonRef = useAutoFocus<HTMLButtonElement>(true);
+  const approvedMinutes = Math.floor(todayActivitySeconds / 60);
+  const approvedRemainder = todayActivitySeconds % 60;
+  const approvedTime = approvedMinutes > 0
+    ? `${approvedMinutes} min${approvedRemainder ? ` ${approvedRemainder} s` : ""}`
+    : `${approvedRemainder} s`;
 
   return (
     <main className="kid-screen kid-deck-screen">
@@ -64,7 +69,7 @@ export function DeckScreen({
         <span className="kid-daily-activity" data-testid="kid-daily-activity">
           {todayActivityUnavailable
             ? messages.kid.kidDailyActivityUnavailable
-            : format(messages.kid.kidDailyActivity, { minutes: todayActivitySeconds > 0 ? Math.max(1, Math.round(todayActivitySeconds / 60)) : 0 })}
+            : format(messages.kid.kidDailyActivity, { time: approvedTime })}
         </span>
         {headerActions}
         {onGuidance && <GuidanceButton audioKey="deck_select" onPlay={onGuidance} testId="kid-deck-guidance" />}
