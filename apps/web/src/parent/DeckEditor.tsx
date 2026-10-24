@@ -17,7 +17,7 @@ import {
   type EditableDeckForm,
   type EditorSnapshot,
 } from "./deck-editor-state";
-import { apiFetch, callParent, errorMessage, parentClient } from "./api";
+import { callParent, errorMessage, parentClient } from "./api";
 import AssignmentTestGoalFields, { type AssignmentTestSettings } from "./AssignmentTestGoalFields";
 import DeckSessionTaskBudgetSettings from "./DeckSessionTaskBudgetSettings";
 import type { EditorLeaveState } from "./useParentLeaveGuard";
@@ -486,9 +486,10 @@ export default function DeckEditor({
     if (!deck?.generation) {
       return;
     }
+    const runId = deck.generation.id;
     setError(null);
     try {
-      await apiFetch("POST", `/api/v1/parent/generation/${deck.generation.id}/retry`);
+      await callParent(() => parentClient.generation.retry({ runId }));
       await load();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -533,10 +534,12 @@ export default function DeckEditor({
   const assign = async (childId: string) => {
     setError(null);
     try {
-      await apiFetch("PUT", `/api/v1/parent/assignments/${childId}/${deckId}`, {
+      await callParent(() => parentClient.assignments.put({
+        childId,
+        deckId,
         testDate: (assignDates[childId] ?? deck?.assignments.find(a => a.childId === childId)?.testDate) || null,
         ...assignmentSettings(childId),
-      });
+      }));
       await load();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -548,7 +551,7 @@ export default function DeckEditor({
     setError(null);
     setUnassigningChildId(childId);
     try {
-      await apiFetch("DELETE", `/api/v1/parent/assignments/${childId}/${deckId}`);
+      await callParent(() => parentClient.assignments.remove({ childId, deckId }));
       await load();
     } catch (cause) {
       setError(errorMessage(cause));

@@ -27,6 +27,10 @@ function parentRequest(method: string, path: string, cookie: string, body?: unkn
   return new Request(`${BASE}/api/v1/parent/${path}`, {
     method,
     headers: {
+      // jawny Host jak w żądaniu przyjmowanym przez serwer — router oRPC
+      // odtwarza Request z samych nagłówków, więc kontrola Origin (CSRF)
+      // musi widzieć własnego hosta, nie tylko URL konstruktora.
+      host: "localhost:3000",
       "content-type": "application/json",
       origin: BASE,
       cookie: `parent_session=${cookie}`,

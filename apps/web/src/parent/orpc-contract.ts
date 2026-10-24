@@ -2,6 +2,7 @@ import { z } from "zod";
 import { oc } from "@orpc/contract";
 import { openapi } from "@orpc/openapi";
 import {
+  AssignmentPutSchema,
   ChildDtoSchema,
   ChildInputSchema,
   ChildPatchSchema,
@@ -13,21 +14,37 @@ import {
   DraftDtoSchema,
   DraftPatchSchema,
   GenerationCommandSchema,
+  GenerationDtoSchema,
+  LessonCommandSchema,
+  LessonDeckDtoSchema,
+  LessonDraftDtoSchema,
+  LessonExerciseInputSchema,
+  LessonMockTestReportDtoSchema,
+  LessonVerdictDecisionSchema,
+  LessonVerdictDtoSchema,
+  MockTestReportDtoSchema,
+  ObjectiveProgressDtoSchema,
   OmitIllustrationSchema,
+  ParentWorkCardDtoSchema,
+  ParentWorkCardQuerySchema,
+  ProgressDtoSchema,
   PronunciationBandsInputSchema,
   PronunciationSettingsDtoSchema,
   PublishCommandSchema,
   RevisionAssetCommandSchema,
+  SubjectCatalogDtoSchema,
   UuidSchema,
 } from "@learning/contracts";
 
 /**
- * Kontrakt Parent API cz. 1 (children, decks, drafts) pod /api/v1/parent —
- * WEWNĘTRZNY dla apps/web (plan oRPC v2: kontrakt parent nie trafia do
- * @learning/contracts, bo klient jest wyłącznie panel w tej samej aplikacji).
- * Schematy, ścieżki, metody, statusy (201/202/204) i nagłówki odwzorowują
- * dekomisjonowane ręczne trasy (`parent/parent-router.ts` + trasy children);
- * prefix montowania dokleja handler przy `handle()`.
+ * Kontrakt Parent API pod /api/v1/parent — WEWNĘTRZNY dla apps/web (plan oRPC
+ * v2: kontrakt parent nie trafia do @learning/contracts, bo klient jest
+ * wyłącznie panel w tej samej aplikacji). Obejmuje wszystkie grupy URL:
+ * children, decks, drafts, mock-tests, work-card, lesson-catalog, lessons,
+ * lesson-verdicts, lesson-drafts, generation, assignments i progress.
+ * Schematy, ścieżki, metody, statusy (201/202/204) i nagłówki (no-store)
+ * odwzorowują dekomisjonowane ręczne trasy (`parent/parent-router.ts` +
+ * trasy children); prefix montowania dokleja handler przy `handle()`.
  *
  * Upload okładki: surowy strumień obrazu (octet-stream). Kontraktowym typem
  * ciała jest `ReadableStream | Blob` — serwer z meta `requestBodyHint:
@@ -44,6 +61,16 @@ const ChildPathSchema = z.object({ childId: UuidSchema });
 const DeckPathSchema = z.object({ deckId: UuidSchema });
 /** Parametr ścieżki `{draftId}` dla operacji na szkicu wersji. */
 const DraftPathSchema = z.object({ draftId: UuidSchema });
+/** Parametr ścieżki `{sessionId}` — sesja kartkówki (lista/raport mock-tests). */
+const SessionPathSchema = z.object({ sessionId: UuidSchema });
+/** Parametr ścieżki `{runId}` — run generacji (generation). */
+const RunPathSchema = z.object({ runId: UuidSchema });
+/** Parametr ścieżki `{verdictId}` — werdykt oceny odpowiedzi lekcji. */
+const VerdictPathSchema = z.object({ verdictId: UuidSchema });
+/** Parametr ścieżki `{lessonDraftId}` — wersja szkicu lekcji. */
+const LessonDraftPathSchema = z.object({ lessonDraftId: UuidSchema });
+/** Parametry ścieżki `{childId}/{deckId}` — przypisanie zestawu dziecku. */
+const ChildDeckPathSchema = z.object({ childId: UuidSchema, deckId: UuidSchema });
 
 /** Wejście PATCH /children/{childId}: ścieżka + częściowa edycja profilu. */
 const ChildUpdateInputSchema = ChildPatchSchema.extend({ childId: UuidSchema }).strict();
@@ -78,9 +105,82 @@ const CoverProposalOutputSchema = z.object({
 });
 
 /**
- * Kontrakt Parent API cz. 1 — zagnieżdżenie odzwierciedla grupy URL.
- * Kolejne zadania (T11) dopisują tu lekcje, werdykty, generation,
- * assignments, progress, mock-tests i work-card.
+ * Szczegółowa odpowiedź HTTP (outputStructure: "detailed") z wymuszonym
+ * `Cache-Control: no-store` — odczyty danych dziecka na żywo (kartkówki,
+ * karta pracy, postęp celów, werdykty). Wzorzec z kontraktu kid API
+ * (`packages/contracts/src/kid-api-contract.ts`): nagłówek jest wymagany,
+ * więc implementacja, która go opuści, pada na walidacji wyjścia.
+ */
+function noStoreOutput<T extends z.ZodType>(body: T) {
+  return z.object({
+    status: z.literal(200).optional(),
+    headers: z.object({ "cache-control": z.literal("no-store") }).loose(),
+    body,
+  });
+}
+
+/** Query listy kartkówek: dziecko × zestaw (GET /mock-tests). */
+const MockTestsQuerySchema = z.object({ childId: UuidSchema, deckId: UuidSchema });
+
+/** Query postępu słówek: dziecko × zestaw (GET /progress). */
+const ProgressQuerySchema = z.object({ childId: UuidSchema, deckId: UuidSchema });
+
+/** Wejście GET /lessons/{deckId}/progress: zestaw ze ścieżki + dziecko z query. */
+const LessonProgressInputSchema = z.object({ deckId: UuidSchema, childId: UuidSchema });
+
+/** Ciało POST /lesson-verdicts/{verdictId}/decision — decyzja rodzica. */
+const VerdictDecisionInputSchema = VerdictPathSchema.extend({
+  decision: LessonVerdictDecisionSchema,
+}).strict();
+
+/**
+ * Polecenie dogenerowania ćwiczeń celu w szkicu lekcji — hoisted z inline
+ * schematu legacy routera (`POST /lesson-drafts/:id/regenerate`). `deckId`
+ * dokleja implementacja z `deckIdOfLessonVersion` — `regenerateObjective`
+ * bierze deckId, nie identyfikator wersji.
+ */
+export const LessonRegenerateCommandSchema = z.object({
+  objectiveId: z.string().min(1),
+  count: z.number().int().positive(),
+  expectedEditNumber: z.number().int().positive(),
+  clientRequestId: UuidSchema,
+}).strict();
+export type LessonRegenerateCommand = z.infer<typeof LessonRegenerateCommandSchema>;
+
+/** Wejście POST /lesson-drafts/{lessonDraftId}/regenerate: ścieżka + polecenie. */
+const LessonRegenerateInputSchema = LessonRegenerateCommandSchema.extend({ lessonDraftId: UuidSchema });
+
+/**
+ * Patch edycji szkicu lekcji (PATCH /lesson-drafts/{lessonDraftId}) — kształt
+ * `LessonDraftPatch` z domeny (`lesson-editor-state.ts` ma ten sam interfejs
+ * po stronie klienta); semantyczną walidacją ćwiczeń dalej zajmuje się
+ * `editLessonDraft`, granica pilnuje kształtu i limitów jak przy słówkach.
+ */
+const LessonDraftPatchContractSchema = z.object({
+  expectedEditNumber: z.number().int().positive(),
+  title: z.string().min(1).max(200).optional(),
+  exercises: z.array(LessonExerciseInputSchema).optional(),
+  examples: z.record(z.string(), z.array(z.string())).optional(),
+}).refine(
+  (patch) => patch.title !== undefined || patch.exercises !== undefined || patch.examples !== undefined,
+  { message: "patch must change title, exercises or examples" },
+);
+
+/** Wejście PATCH /lesson-drafts/{lessonDraftId}: ścieżka + patch edycji. */
+const LessonDraftEditInputSchema = LessonDraftPatchContractSchema.extend({ lessonDraftId: UuidSchema });
+
+/** Wejście POST /lesson-drafts/{lessonDraftId}/publish: ścieżka + optimistic locking. */
+const LessonDraftPublishInputSchema = PublishCommandSchema.extend({ lessonDraftId: UuidSchema });
+
+/** Wejście PUT /assignments/{childId}/{deckId}: ścieżka + ustawienia przypisania. */
+const AssignmentPutInputSchema = AssignmentPutSchema.extend({
+  childId: UuidSchema,
+  deckId: UuidSchema,
+});
+
+/**
+ * Kontrakt Parent API — zagnieżdżenie odzwierciedla grupy URL pierwszego
+ * segmentu ścieżki (children, decks, drafts, …, progress).
  */
 export const parentApiContract = {
   children: {
@@ -206,5 +306,133 @@ export const parentApiContract = {
       .input(OmitAssetInputSchema)
       .output(z.void())
       .meta(openapi({ method: "POST", path: "/drafts/{draftId}/assets/omit", successStatus: 204 })),
+  },
+
+  /**
+   * Kartkówki (mock-tests): lista per dziecko×zestaw i raport jednej sesji.
+   * Wybór kształtu (słówka vs lekcja) robi serwer po `readDeckKind`/
+   * `mockTestKindOfSession`, więc output jest unią raportów obu rodzajów.
+   */
+  mockTests: {
+    list: oc
+      .input(MockTestsQuerySchema)
+      .output(noStoreOutput(z.union([
+        MockTestReportDtoSchema.array(),
+        LessonMockTestReportDtoSchema.array(),
+      ])))
+      .meta(openapi({ method: "GET", path: "/mock-tests", outputStructure: "detailed" })),
+
+    get: oc
+      .input(SessionPathSchema)
+      .output(noStoreOutput(z.union([MockTestReportDtoSchema, LessonMockTestReportDtoSchema])))
+      .meta(openapi({ method: "GET", path: "/mock-tests/{sessionId}", outputStructure: "detailed" })),
+  },
+
+  /** Karta pracy dnia (work-card): dane dnia wyliczane per żądanie. */
+  workCard: {
+    get: oc
+      .input(ParentWorkCardQuerySchema)
+      .output(noStoreOutput(ParentWorkCardDtoSchema))
+      .meta(openapi({ method: "GET", path: "/work-card", outputStructure: "detailed" })),
+  },
+
+  /** Katalog przedmiotów/tematów/reguł dla formularza nowej lekcji. */
+  lessonCatalog: {
+    get: oc
+      .output(SubjectCatalogDtoSchema)
+      .meta(openapi({ method: "GET", path: "/lesson-catalog" })),
+  },
+
+  /** Zestawy-lekcje: tworzenie, widok, postęp celów, werdykty, nowy szkic. */
+  lessons: {
+    create: oc
+      .input(LessonCommandSchema)
+      .output(z.object({ runId: UuidSchema, deckId: UuidSchema }))
+      .meta(openapi({ method: "POST", path: "/lessons", successStatus: 202 })),
+
+    get: oc
+      .input(DeckPathSchema)
+      .output(LessonDeckDtoSchema)
+      .meta(openapi({ method: "GET", path: "/lessons/{deckId}" })),
+
+    progress: oc
+      .input(LessonProgressInputSchema)
+      .output(noStoreOutput(ObjectiveProgressDtoSchema.array()))
+      .meta(openapi({ method: "GET", path: "/lessons/{deckId}/progress", outputStructure: "detailed" })),
+
+    verdicts: oc
+      .input(DeckPathSchema)
+      .output(noStoreOutput(LessonVerdictDtoSchema.array()))
+      .meta(openapi({ method: "GET", path: "/lessons/{deckId}/verdicts", outputStructure: "detailed" })),
+
+    draft: oc
+      .input(DeckPathSchema)
+      .output(LessonDraftDtoSchema)
+      .meta(openapi({ method: "POST", path: "/lessons/{deckId}/draft", successStatus: 201 })),
+  },
+
+  /** Werdykty oceny odpowiedzi lekcji — decyzje rodzica. */
+  lessonVerdicts: {
+    decision: oc
+      .input(VerdictDecisionInputSchema)
+      .output(LessonVerdictDtoSchema)
+      .meta(openapi({ method: "POST", path: "/lesson-verdicts/{verdictId}/decision" })),
+
+    acceptAsVariant: oc
+      .input(VerdictPathSchema)
+      .output(z.object({ deckVersionId: UuidSchema, added: z.boolean() }))
+      .meta(openapi({ method: "POST", path: "/lesson-verdicts/{verdictId}/accept-as-variant" })),
+  },
+
+  /** Szkice wersji lekcji: edycja, publikacja, dogenerowanie celu. */
+  lessonDrafts: {
+    edit: oc
+      .input(LessonDraftEditInputSchema)
+      .output(LessonDraftDtoSchema)
+      .meta(openapi({ method: "PATCH", path: "/lesson-drafts/{lessonDraftId}" })),
+
+    publish: oc
+      .input(LessonDraftPublishInputSchema)
+      .output(z.object({ deckVersionId: UuidSchema }))
+      .meta(openapi({ method: "POST", path: "/lesson-drafts/{lessonDraftId}/publish" })),
+
+    regenerate: oc
+      .input(LessonRegenerateInputSchema)
+      .output(z.object({ generationRunId: UuidSchema, deckId: UuidSchema }))
+      .meta(openapi({ method: "POST", path: "/lesson-drafts/{lessonDraftId}/regenerate", successStatus: 202 })),
+  },
+
+  /** Runy generacji materiałów: odczyt statusu i ponowienie nieudanego. */
+  generation: {
+    get: oc
+      .input(RunPathSchema)
+      .output(GenerationDtoSchema)
+      .meta(openapi({ method: "GET", path: "/generation/{runId}" })),
+
+    retry: oc
+      .input(RunPathSchema)
+      .output(z.object({ runId: UuidSchema }))
+      .meta(openapi({ method: "POST", path: "/generation/{runId}/retry" })),
+  },
+
+  /** Przypisania zestawów dzieciom z terminami sprawdzianów. */
+  assignments: {
+    put: oc
+      .input(AssignmentPutInputSchema)
+      .output(z.void())
+      .meta(openapi({ method: "PUT", path: "/assignments/{childId}/{deckId}", successStatus: 204 })),
+
+    remove: oc
+      .input(ChildDeckPathSchema)
+      .output(z.void())
+      .meta(openapi({ method: "DELETE", path: "/assignments/{childId}/{deckId}", successStatus: 204 })),
+  },
+
+  /** Postęp nauki słówek dla pary dziecko × zestaw (panel postępów). */
+  progress: {
+    get: oc
+      .input(ProgressQuerySchema)
+      .output(ProgressDtoSchema)
+      .meta(openapi({ method: "GET", path: "/progress" })),
   },
 };

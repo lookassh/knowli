@@ -24,11 +24,24 @@ export class ApiCallError extends Error {
  * mapowana na ORPCError — bez dekodera link zgłasza MalformedResponseError
  * (spike v2). Kod koperty przenosimy 1:1; dane niosą kopertę oraz status HTTP
  * odpowiedzi, z którego ekrany rozpoznają wygasłą sesję (401).
+ *
+ * Ciało błędu BEZ koperty (np. JSON proxy z samym `message`) nie może gubić
+ * komunikatu — dawny `apiFetch` czytał `message` z każdego błędu, więc i tu
+ * ratujemy go z kodem nieokreślonym (paritety UX pilnuje test e2e work-card).
  */
 const errorEnvelopeDecoder = (body: unknown, response?: { status: number }): AnyORPCError | null => {
-  if (typeof body === "object" && body !== null && typeof (body as { code?: unknown }).code === "string") {
-    return new ORPCError((body as { code: string }).code, {
+  if (typeof body !== "object" || body === null) {
+    return null;
+  }
+  const envelope = body as { code?: unknown; message?: unknown };
+  if (typeof envelope.code === "string") {
+    return new ORPCError(envelope.code, {
       data: { envelope: body, status: response?.status },
+    });
+  }
+  if (typeof envelope.message === "string") {
+    return new ORPCError("INTERNAL_SERVER_ERROR", {
+      data: { envelope: { message: envelope.message }, status: response?.status },
     });
   }
   return null;

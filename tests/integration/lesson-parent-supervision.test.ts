@@ -59,6 +59,9 @@ function call(
 ): Promise<Response> {
   const origin = options.origin === undefined ? BASE : options.origin;
   const headers: Record<string, string> = {};
+  // jawny Host jak w żądaniu przyjmowanym przez serwer — router oRPC odtwarza
+  // Request z samych nagłówków, więc kontrola Origin musi widzieć własnego hosta
+  headers.host = "localhost:3000";
   if (options.body !== undefined) headers["content-type"] = "application/json";
   if (origin) headers.origin = origin;
   if (options.cookie) headers.cookie = `parent_session=${options.cookie}`;

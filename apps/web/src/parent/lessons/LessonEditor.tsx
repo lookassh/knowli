@@ -10,7 +10,7 @@ import {
   type LessonExerciseErrors,
   type SubjectCatalogDto,
 } from "@learning/contracts";
-import { apiFetch, ApiCallError, errorMessage } from "../api";
+import { callParent, ApiCallError, errorMessage, parentClient } from "../api";
 import AssignmentTestGoalFields, { type AssignmentTestSettings } from "../AssignmentTestGoalFields";
 import DeckSessionTaskBudgetSettings from "../DeckSessionTaskBudgetSettings";
 import type { EditorLeaveState } from "../useParentLeaveGuard";
@@ -106,7 +106,7 @@ export default function LessonEditor({
   const load = useCallback(async (): Promise<boolean> => {
     const requestVersion = ++loadVersion.current;
     try {
-      const result = await apiFetch<LessonDeckDto>("GET", `/api/v1/parent/lessons/${deckId}`);
+      const result = await callParent(() => parentClient.lessons.get({ deckId }));
       if (requestVersion === loadVersion.current && !dirty.current && !conflict) {
         setDeck(result);
       }
@@ -125,7 +125,7 @@ export default function LessonEditor({
 
   useEffect(() => {
     let cancelled = false;
-    void apiFetch<SubjectCatalogDto>("GET", "/api/v1/parent/lesson-catalog")
+    void callParent(() => parentClient.lessonCatalog.get())
       .then((result) => { if (!cancelled) setCatalog(result); })
       .catch((cause) => { if (!cancelled) setError(errorMessage(cause)); });
     return () => { cancelled = true; };
@@ -207,7 +207,10 @@ export default function LessonEditor({
       // Przykłady serwer nadpisuje całością per cel; dokładamy aktualny stan,
       // bo serializacja ćwiczeń (lesson-editor-state) ich nie obejmuje.
       if (examplesForm) patch.examples = examplesForm;
-      const saved = await apiFetch<LessonDraftDto>("PATCH", `/api/v1/parent/lesson-drafts/${snapshot.versionId}`, patch);
+      const saved = await callParent(() => parentClient.lessonDrafts.edit({
+        lessonDraftId: snapshot.versionId,
+        ...patch,
+      }));
       baseSnapshot.current = createLessonSnapshot(saved, newKey);
       setForm(baseSnapshot.current.form);
       setExamplesForm(structuredClone(saved.examples ?? {}));
@@ -239,7 +242,7 @@ export default function LessonEditor({
   const loadCurrentVersion = async () => {
     setBusyState(true);
     try {
-      const result = await apiFetch<LessonDeckDto>("GET", `/api/v1/parent/lessons/${deckId}`);
+      const result = await callParent(() => parentClient.lessons.get({ deckId }));
       dirty.current = false;
       setIsDirty(false);
       setConflict(false);
@@ -264,7 +267,10 @@ export default function LessonEditor({
     setBusyState(true);
     setError(null);
     try {
-      await apiFetch("POST", `/api/v1/parent/lesson-drafts/${draft.id}/publish`, { expectedEditNumber: draft.editNumber });
+      await callParent(() => parentClient.lessonDrafts.publish({
+        lessonDraftId: draft.id,
+        expectedEditNumber: draft.editNumber,
+      }));
       dirty.current = false;
       setIsDirty(false);
       await load();
@@ -281,7 +287,7 @@ export default function LessonEditor({
     setBusyState(true);
     setError(null);
     try {
-      await apiFetch("POST", `/api/v1/parent/lessons/${deckId}/draft`);
+      await callParent(() => parentClient.lessons.draft({ deckId }));
       dirty.current = false;
       await load();
     } catch (cause) {
@@ -293,10 +299,11 @@ export default function LessonEditor({
 
   const retry = async () => {
     if (!deck?.generation || busyRef.current || dirty.current || conflict) return;
+    const runId = deck.generation.id;
     setBusyState(true);
     setError(null);
     try {
-      await apiFetch("POST", `/api/v1/parent/generation/${deck.generation.id}/retry`);
+      await callParent(() => parentClient.generation.retry({ runId }));
       await load();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -312,12 +319,13 @@ export default function LessonEditor({
     setBusyState(true);
     setError(null);
     try {
-      await apiFetch("POST", `/api/v1/parent/lesson-drafts/${draft.id}/regenerate`, {
+      await callParent(() => parentClient.lessonDrafts.regenerate({
+        lessonDraftId: draft.id,
         objectiveId,
         count,
         expectedEditNumber: draft.editNumber,
         clientRequestId: crypto.randomUUID(),
-      });
+      }));
       await load();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -335,10 +343,12 @@ export default function LessonEditor({
   const assign = async (childId: string) => {
     setError(null);
     try {
-      await apiFetch("PUT", `/api/v1/parent/assignments/${childId}/${deckId}`, {
+      await callParent(() => parentClient.assignments.put({
+        childId,
+        deckId,
         testDate: (assignDates[childId] ?? deck?.assignments.find((a) => a.childId === childId)?.testDate) || null,
         ...assignmentSettings(childId),
-      });
+      }));
       await load();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -350,7 +360,7 @@ export default function LessonEditor({
     setError(null);
     setUnassigningChildId(childId);
     try {
-      await apiFetch("DELETE", `/api/v1/parent/assignments/${childId}/${deckId}`);
+      await callParent(() => parentClient.assignments.remove({ childId, deckId }));
       await load();
     } catch (cause) {
       setError(errorMessage(cause));

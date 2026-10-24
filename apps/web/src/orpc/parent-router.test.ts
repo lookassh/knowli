@@ -2,28 +2,52 @@ import { ApiErrorSchema, messages } from "@learning/contracts";
 import {
   AppError,
   MAX_DECK_COVER_BYTES,
+  acceptVerdictAsVariant,
   archiveDeck,
   clearDeckCover,
   createChild,
   createDraftFromPublished,
   createEmptyDeck,
+  createLesson,
+  createLessonDraftFromPublished,
+  decideLessonVerdict,
+  deckIdOfLessonVersion,
   deleteChild,
   editDraft,
+  editLessonDraft,
   enqueueDeckGeneration,
   generateDeckCover,
+  getLessonMockTestReport,
   getPronunciationSettings,
+  getMockTestReport,
+  getProgress,
+  lessonCatalog,
+  lessonObjectiveProgress,
   listChildren,
   listDecks,
+  listLessonMockTests,
+  listLessonVerdicts,
+  listMockTests,
+  mockTestKindOfSession,
   omitRevisionAsset,
   publishDraft,
+  publishLessonDraft,
   readDeck,
+  readDeckKind,
   readDraft,
+  readGeneration,
+  readLessonDeck,
+  readParentWorkCard,
+  regenerateObjective,
   regenerateRevisionAsset,
+  removeAssignment,
   requireParent,
+  retryGeneration,
   setDeckCover,
   updateChild,
   updateDeckSettings,
   updatePronunciationBands,
+  upsertAssignment,
   type Services,
 } from "@learning/server";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
@@ -57,6 +81,30 @@ vi.mock("@learning/server", async (importActual) => {
     publishDraft: vi.fn(),
     regenerateRevisionAsset: vi.fn(),
     omitRevisionAsset: vi.fn(),
+    getMockTestReport: vi.fn(),
+    listMockTests: vi.fn(),
+    getLessonMockTestReport: vi.fn(),
+    listLessonMockTests: vi.fn(),
+    readDeckKind: vi.fn(),
+    mockTestKindOfSession: vi.fn(),
+    createLesson: vi.fn(),
+    createLessonDraftFromPublished: vi.fn(),
+    deckIdOfLessonVersion: vi.fn(),
+    editLessonDraft: vi.fn(),
+    getProgress: vi.fn(),
+    lessonCatalog: vi.fn(),
+    publishLessonDraft: vi.fn(),
+    readGeneration: vi.fn(),
+    readLessonDeck: vi.fn(),
+    lessonObjectiveProgress: vi.fn(),
+    listLessonVerdicts: vi.fn(),
+    decideLessonVerdict: vi.fn(),
+    acceptVerdictAsVariant: vi.fn(),
+    regenerateObjective: vi.fn(),
+    retryGeneration: vi.fn(),
+    upsertAssignment: vi.fn(),
+    removeAssignment: vi.fn(),
+    readParentWorkCard: vi.fn(),
   };
 });
 
@@ -67,6 +115,10 @@ const childId = "11111111-1111-4111-8111-111111111111";
 const deckId = "44444444-4444-4444-8444-444444444444";
 const draftId = "88888888-8888-4888-8888-888888888888";
 const assetId = "77777777-7777-4777-8777-777777777777";
+const sessionId = "33333333-3333-4333-8333-333333333333";
+const runId = "55555555-5555-4555-8555-555555555555";
+const verdictId = "22222222-2222-4222-8222-222222222222";
+const lessonDraftId = "12121212-1212-4121-8121-121212121212";
 const sessionCookie = { cookie: "parent_session=session-token" };
 
 const childDto = {
@@ -111,6 +163,121 @@ const draftDto = {
   title: "Zwierzęta",
   items: [],
   assets: [],
+};
+
+const instant = "2026-10-23T10:00:00.000Z";
+const mockTestReport = {
+  deckTitle: "Zwierzęta",
+  deckVersionNumber: 1,
+  sessionId,
+  childId,
+  deckId,
+  deckVersionId: draftId,
+  testDate: null,
+  testGoals: ["recall" as const],
+  requestedTaskCount: 10,
+  taskBudget: 10,
+  state: "completed" as const,
+  complete: true,
+  startedAt: instant,
+  endedAt: instant,
+  skills: [],
+  rows: [],
+};
+const lessonMockTestReport = {
+  sessionId,
+  objectives: [],
+  complete: true,
+  taskBudget: 10,
+  startedAt: instant,
+  endedAt: instant,
+};
+const workCardDto = {
+  childId,
+  date: "2026-10-23",
+  creditedSeconds: 60,
+  unevaluatedSessions: 0,
+  reviewService: null,
+  sessions: [],
+};
+const lessonDeckDto = {
+  id: deckId,
+  title: "Lekcja",
+  state: "draft" as const,
+  sessionTaskBudget: 20,
+  draft: null,
+  published: null,
+  generation: null,
+  assignments: [],
+  grading: { available: false },
+};
+const lessonDraftDto = {
+  id: lessonDraftId,
+  deckId,
+  editNumber: 1,
+  status: "draft" as const,
+  title: "Lekcja",
+  subjectId: "english",
+  topicId: "basics",
+  topicVersion: 1,
+  objectiveIds: ["obj-1"],
+  examples: {},
+  exercises: [],
+  assets: [],
+  rejectedCount: 0,
+  coverage: [],
+};
+const objectiveProgress = {
+  objectiveId: "obj-1",
+  titlePl: "Cel",
+  status: "learning" as const,
+  lastIndependentAt: null,
+  nextReviewAt: null,
+  poolExhausted: false,
+  topErrors: [],
+};
+const verdictDto = {
+  id: verdictId,
+  exerciseRevisionId: draftId,
+  objectiveId: "obj-1",
+  childAnswer: "go",
+  verdict: "correct" as const,
+  errorCategory: null,
+  note: "",
+  graderModel: "g-x",
+  parentDecision: null,
+  createdAt: instant,
+};
+const generationDto = {
+  id: runId,
+  deckId,
+  deckVersionId: null,
+  state: "failed" as const,
+  attempts: 1,
+  errorCode: null,
+};
+const progressDto = {
+  childId,
+  childName: "Ola",
+  deckId,
+  deckTitle: "Zwierzęta",
+  testDate: null,
+  totalItems: 0,
+  skills: [],
+  items: [],
+  confusions: [],
+  pronunciation: { assessed: false, latestScores: [] },
+  history: [],
+  activity: {
+    days: 7,
+    activeSeconds: 0,
+    activeDays: 0,
+    sessions: 0,
+    answers: 0,
+    interactions: 0,
+    decks: [],
+    daily: [],
+  },
 };
 
 /** Strumień obrazu z obserwowalnym anulowaniem (regresja limitu 5 MB). */
@@ -165,6 +332,15 @@ describe("parent oRPC router — sesja rodzica", () => {
       ["decks.get", `/decks/${deckId}`, vi.mocked(readDeck)],
       ["drafts.get", `/drafts/${draftId}`, vi.mocked(readDraft)],
       ["children.getPronunciation", `/children/${childId}/pronunciation`, vi.mocked(getPronunciationSettings)],
+      ["mockTests.list", `/mock-tests?childId=${childId}&deckId=${deckId}`, vi.mocked(readDeckKind)],
+      ["mockTests.get", `/mock-tests/${sessionId}`, vi.mocked(mockTestKindOfSession)],
+      ["workCard.get", `/work-card?childId=${childId}`, vi.mocked(readParentWorkCard)],
+      ["lessonCatalog.get", "/lesson-catalog", vi.mocked(lessonCatalog)],
+      ["lessons.get", `/lessons/${deckId}`, vi.mocked(readLessonDeck)],
+      ["lessons.progress", `/lessons/${deckId}/progress?childId=${childId}`, vi.mocked(lessonObjectiveProgress)],
+      ["lessons.verdicts", `/lessons/${deckId}/verdicts`, vi.mocked(listLessonVerdicts)],
+      ["generation.get", `/generation/${runId}`, vi.mocked(readGeneration)],
+      ["progress.get", `/progress?childId=${childId}&deckId=${deckId}`, vi.mocked(getProgress)],
     ];
 
     for (const [label, path, useCase] of reads) {
@@ -522,6 +698,341 @@ describe("parent oRPC router — drafts", () => {
   });
 });
 
+describe("parent oRPC router — mock-tests (dispatch lekcja/słówka)", () => {
+  it("lista bez query childId/deckId kończy się validation/400 bez czytania rodzaju zestawu", async () => {
+    const response = await call("/mock-tests", { headers: sessionCookie });
+
+    expect(response.status).toBe(400);
+    const body = ApiErrorSchema.parse(await response.json());
+    expect(body.code).toBe("validation");
+    expect(readDeckKind).not.toHaveBeenCalled();
+    expect(listMockTests).not.toHaveBeenCalled();
+    expect(listLessonMockTests).not.toHaveBeenCalled();
+  });
+
+  it("lista dla zestawu słówek woła listMockTests z no-store", async () => {
+    vi.mocked(readDeckKind).mockResolvedValueOnce("vocabulary");
+    vi.mocked(listMockTests).mockResolvedValueOnce([mockTestReport]);
+
+    const response = await call(`/mock-tests?childId=${childId}&deckId=${deckId}`, { headers: sessionCookie });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    await expect(response.json()).resolves.toEqual([mockTestReport]);
+    expect(readDeckKind).toHaveBeenCalledWith(services.db, deckId);
+    expect(listMockTests).toHaveBeenCalledWith(services, childId, deckId);
+    expect(listLessonMockTests).not.toHaveBeenCalled();
+  });
+
+  it("lista dla zestawu lekcji woła listLessonMockTests z no-store", async () => {
+    vi.mocked(readDeckKind).mockResolvedValueOnce("lesson");
+    vi.mocked(listLessonMockTests).mockResolvedValueOnce([lessonMockTestReport]);
+
+    const response = await call(`/mock-tests?childId=${childId}&deckId=${deckId}`, { headers: sessionCookie });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    await expect(response.json()).resolves.toEqual([lessonMockTestReport]);
+    expect(listLessonMockTests).toHaveBeenCalledWith(services, childId, deckId);
+    expect(listMockTests).not.toHaveBeenCalled();
+  });
+
+  it("szczegóły sesji słówek woła getMockTestReport z no-store", async () => {
+    vi.mocked(mockTestKindOfSession).mockResolvedValueOnce("vocabulary");
+    vi.mocked(getMockTestReport).mockResolvedValueOnce(mockTestReport);
+
+    const response = await call(`/mock-tests/${sessionId}`, { headers: sessionCookie });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    await expect(response.json()).resolves.toEqual(mockTestReport);
+    expect(mockTestKindOfSession).toHaveBeenCalledWith(services.db, sessionId);
+    expect(getMockTestReport).toHaveBeenCalledWith(services, sessionId);
+    expect(getLessonMockTestReport).not.toHaveBeenCalled();
+  });
+
+  it("szczegóły sesji lekcji woła getLessonMockTestReport z no-store", async () => {
+    vi.mocked(mockTestKindOfSession).mockResolvedValueOnce("lesson");
+    vi.mocked(getLessonMockTestReport).mockResolvedValueOnce(lessonMockTestReport);
+
+    const response = await call(`/mock-tests/${sessionId}`, { headers: sessionCookie });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    await expect(response.json()).resolves.toEqual(lessonMockTestReport);
+    expect(getLessonMockTestReport).toHaveBeenCalledWith(services, sessionId);
+  });
+});
+
+describe("parent oRPC router — work-card", () => {
+  it("zwraca kartę pracy dla dziecka (no-store, bez daty)", async () => {
+    vi.mocked(readParentWorkCard).mockResolvedValueOnce(workCardDto);
+
+    const response = await call(`/work-card?childId=${childId}`, { headers: sessionCookie });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    await expect(response.json()).resolves.toEqual(workCardDto);
+    expect(readParentWorkCard).toHaveBeenCalledWith(services, { childId });
+  });
+
+  it("data jest opcjonalna i przechodzi do przypadku użycia", async () => {
+    vi.mocked(readParentWorkCard).mockResolvedValueOnce(workCardDto);
+
+    const response = await call(`/work-card?childId=${childId}&date=2026-10-20`, { headers: sessionCookie });
+
+    expect(response.status).toBe(200);
+    expect(readParentWorkCard).toHaveBeenCalledWith(services, { childId, date: "2026-10-20" });
+  });
+
+  it("bez childId kończy się validation/400", async () => {
+    const response = await call("/work-card", { headers: sessionCookie });
+
+    expect(response.status).toBe(400);
+    const body = ApiErrorSchema.parse(await response.json());
+    expect(body.code).toBe("validation");
+    expect(readParentWorkCard).not.toHaveBeenCalled();
+  });
+});
+
+describe("parent oRPC router — lesson-catalog i lessons", () => {
+  const catalog = { subjects: [] };
+  const lessonCommand = {
+    deckId,
+    subjectId: "english",
+    topicId: "basics",
+    objectiveIds: ["obj-1"],
+    material: "red blue",
+    poolSize: 20,
+    clientRequestId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  };
+
+  it("lesson-catalog zwraca katalog przedmiotów (200)", async () => {
+    vi.mocked(lessonCatalog).mockReturnValueOnce(catalog);
+
+    const response = await call("/lesson-catalog", { headers: sessionCookie });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(catalog);
+    expect(lessonCatalog).toHaveBeenCalledWith(services);
+  });
+
+  it("create przyjmuje lekcję i zwraca 202 {runId, deckId}", async () => {
+    vi.mocked(createLesson).mockResolvedValueOnce({ runId, deckId });
+
+    const response = await call("/lessons", jsonInit(lessonCommand));
+
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toEqual({ runId, deckId });
+    expect(createLesson).toHaveBeenCalledWith(services, lessonCommand);
+  });
+
+  it("get zwraca widok zestawu lekcji (200)", async () => {
+    vi.mocked(readLessonDeck).mockResolvedValueOnce(lessonDeckDto as never);
+
+    const response = await call(`/lessons/${deckId}`, { headers: sessionCookie });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(lessonDeckDto);
+    expect(readLessonDeck).toHaveBeenCalledWith(services, deckId);
+  });
+
+  it("progress bez childId kończy się validation/400", async () => {
+    const response = await call(`/lessons/${deckId}/progress`, { headers: sessionCookie });
+
+    expect(response.status).toBe(400);
+    const body = ApiErrorSchema.parse(await response.json());
+    expect(body.code).toBe("validation");
+    expect(lessonObjectiveProgress).not.toHaveBeenCalled();
+  });
+
+  it("progress zwraca cele z no-store", async () => {
+    vi.mocked(lessonObjectiveProgress).mockResolvedValueOnce([objectiveProgress]);
+
+    const response = await call(`/lessons/${deckId}/progress?childId=${childId}`, { headers: sessionCookie });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    await expect(response.json()).resolves.toEqual([objectiveProgress]);
+    expect(lessonObjectiveProgress).toHaveBeenCalledWith(services, deckId, childId);
+  });
+
+  it("verdicts zwraca werdykty z no-store", async () => {
+    vi.mocked(listLessonVerdicts).mockResolvedValueOnce([verdictDto]);
+
+    const response = await call(`/lessons/${deckId}/verdicts`, { headers: sessionCookie });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    await expect(response.json()).resolves.toEqual([verdictDto]);
+    expect(listLessonVerdicts).toHaveBeenCalledWith(services, deckId);
+  });
+
+  it("draft tworzy szkic lekcji z opublikowanej wersji (201)", async () => {
+    vi.mocked(createLessonDraftFromPublished).mockResolvedValueOnce(lessonDraftDto as never);
+
+    const response = await call(`/lessons/${deckId}/draft`, { method: "POST", headers: sessionCookie });
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toEqual(lessonDraftDto);
+    expect(createLessonDraftFromPublished).toHaveBeenCalledWith(services, deckId);
+  });
+});
+
+describe("parent oRPC router — lesson-verdicts", () => {
+  it("decision zapisuje decyzję rodzica i zwraca werdykt (200)", async () => {
+    const decided = { ...verdictDto, parentDecision: "confirmed" as const };
+    vi.mocked(decideLessonVerdict).mockResolvedValueOnce(decided);
+
+    const response = await call(`/lesson-verdicts/${verdictId}/decision`, jsonInit({ decision: "confirmed" }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(decided);
+    expect(decideLessonVerdict).toHaveBeenCalledWith(services, verdictId, "confirmed");
+  });
+
+  it("nieznana decyzja pada na validation/400 bez wywołania przypadku użycia", async () => {
+    const response = await call(`/lesson-verdicts/${verdictId}/decision`, jsonInit({ decision: "maybe" }));
+
+    expect(response.status).toBe(400);
+    const body = ApiErrorSchema.parse(await response.json());
+    expect(body.code).toBe("validation");
+    expect(decideLessonVerdict).not.toHaveBeenCalled();
+  });
+
+  it("accept-as-variant dodaje wariant (200)", async () => {
+    vi.mocked(acceptVerdictAsVariant).mockResolvedValueOnce({ deckVersionId: draftId, added: true });
+
+    const response = await call(`/lesson-verdicts/${verdictId}/accept-as-variant`, { method: "POST", headers: sessionCookie });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ deckVersionId: draftId, added: true });
+    expect(acceptVerdictAsVariant).toHaveBeenCalledWith(services, verdictId);
+  });
+});
+
+describe("parent oRPC router — lesson-drafts", () => {
+  it("edit zapisuje poprawki szkicu lekcji (200)", async () => {
+    vi.mocked(editLessonDraft).mockResolvedValueOnce(lessonDraftDto as never);
+    const patch = { title: "Lekcja 2", expectedEditNumber: 1 };
+
+    const response = await call(`/lesson-drafts/${lessonDraftId}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+      headers: { "content-type": "application/json", ...sessionCookie },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(lessonDraftDto);
+    expect(editLessonDraft).toHaveBeenCalledWith(services, lessonDraftId, patch);
+  });
+
+  it("publish publikuje szkic lekcji (200)", async () => {
+    vi.mocked(publishLessonDraft).mockResolvedValueOnce({ deckVersionId: draftId });
+
+    const response = await call(`/lesson-drafts/${lessonDraftId}/publish`, jsonInit({ expectedEditNumber: 2 }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ deckVersionId: draftId });
+    expect(publishLessonDraft).toHaveBeenCalledWith(services, lessonDraftId, 2);
+  });
+
+  it("regenerate rozwiązuje deckId z wersji i zwraca 202 {generationRunId, deckId}", async () => {
+    vi.mocked(deckIdOfLessonVersion).mockResolvedValueOnce(deckId);
+    vi.mocked(regenerateObjective).mockResolvedValueOnce({ runId, deckId });
+
+    const command = {
+      objectiveId: "obj-1",
+      count: 4,
+      expectedEditNumber: 1,
+      clientRequestId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    };
+    const response = await call(`/lesson-drafts/${lessonDraftId}/regenerate`, jsonInit(command));
+
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toEqual({ generationRunId: runId, deckId });
+    // regenerateObjective bierze deckId, nie versionId — wyznaczony z wersji.
+    expect(deckIdOfLessonVersion).toHaveBeenCalledWith(services, lessonDraftId);
+    expect(regenerateObjective).toHaveBeenCalledWith(services, { deckId, ...command });
+  });
+});
+
+describe("parent oRPC router — generation", () => {
+  it("get zwraca run generacji (200)", async () => {
+    vi.mocked(readGeneration).mockResolvedValueOnce(generationDto);
+
+    const response = await call(`/generation/${runId}`, { headers: sessionCookie });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(generationDto);
+    expect(readGeneration).toHaveBeenCalledWith(services, runId);
+  });
+
+  it("retry ponawia nieudany run (200)", async () => {
+    vi.mocked(retryGeneration).mockResolvedValueOnce({ runId });
+
+    const response = await call(`/generation/${runId}/retry`, { method: "POST", headers: sessionCookie });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ runId });
+    expect(retryGeneration).toHaveBeenCalledWith(services, runId);
+  });
+});
+
+describe("parent oRPC router — assignments", () => {
+  it("put zapisuje przypisanie z terminem i celami (204)", async () => {
+    vi.mocked(upsertAssignment).mockResolvedValueOnce(undefined);
+
+    const response = await call(`/assignments/${childId}/${deckId}`, {
+      method: "PUT",
+      body: JSON.stringify({ testDate: "2026-10-30", testGoals: ["lesson"], mockTestTaskCount: 10 }),
+      headers: { "content-type": "application/json", ...sessionCookie },
+    });
+
+    expect(response.status).toBe(204);
+    expect(await response.text()).toBe("");
+    expect(upsertAssignment).toHaveBeenCalledWith(services, childId, deckId, "2026-10-30", {
+      testGoals: ["lesson"],
+      mockTestTaskCount: 10,
+    });
+  });
+
+  it("remove usuwa przypisanie (204)", async () => {
+    vi.mocked(removeAssignment).mockResolvedValueOnce(undefined);
+
+    const response = await call(`/assignments/${childId}/${deckId}`, { method: "DELETE", headers: sessionCookie });
+
+    expect(response.status).toBe(204);
+    expect(await response.text()).toBe("");
+    expect(removeAssignment).toHaveBeenCalledWith(services, childId, deckId);
+  });
+});
+
+describe("parent oRPC router — progress", () => {
+  it("zwraca postęp dla pary dziecko×zestaw (200, bez no-store jak w legacy)", async () => {
+    vi.mocked(getProgress).mockResolvedValueOnce(progressDto as never);
+
+    const response = await call(`/progress?childId=${childId}&deckId=${deckId}`, { headers: sessionCookie });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBeNull();
+    await expect(response.json()).resolves.toEqual(progressDto);
+    expect(getProgress).toHaveBeenCalledWith(services, childId, deckId);
+  });
+
+  it("bez childId lub deckId kończy się validation/400", async () => {
+    const missingChild = await call(`/progress?deckId=${deckId}`, { headers: sessionCookie });
+    const missingDeck = await call(`/progress?childId=${childId}`, { headers: sessionCookie });
+
+    for (const response of [missingChild, missingDeck]) {
+      expect(response.status).toBe(400);
+      const body = ApiErrorSchema.parse(await response.json());
+      expect(body.code).toBe("validation");
+    }
+    expect(getProgress).not.toHaveBeenCalled();
+  });
+});
+
 describe("parent oRPC router — CSRF (Origin)", () => {
   it("mutacje z obcym Origin kończą się forbidden/403 bez wywołania przypadków użycia", async () => {
     const evil = { origin: "http://evil.example" };
@@ -583,6 +1094,48 @@ describe("parent oRPC router — CSRF (Origin)", () => {
       [`/drafts/${draftId}/publish`, jsonInit({ expectedEditNumber: 1 }, evil), vi.mocked(publishDraft)],
       [`/drafts/${draftId}/assets/regenerate`, jsonInit({ itemRevisionId: draftId, role: "illustration" }, evil), vi.mocked(regenerateRevisionAsset)],
       [`/drafts/${draftId}/assets/omit`, jsonInit({ itemRevisionId: draftId }, evil), vi.mocked(omitRevisionAsset)],
+      [
+        "/lessons",
+        jsonInit({
+          deckId,
+          subjectId: "english",
+          topicId: "basics",
+          objectiveIds: ["obj-1"],
+          material: "red blue",
+          poolSize: 20,
+          clientRequestId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        }, evil),
+        vi.mocked(createLesson),
+      ],
+      [`/lessons/${deckId}/draft`, { method: "POST", headers: { ...sessionCookie, ...evil } }, vi.mocked(createLessonDraftFromPublished)],
+      [`/lesson-verdicts/${verdictId}/decision`, jsonInit({ decision: "confirmed" }, evil), vi.mocked(decideLessonVerdict)],
+      [`/lesson-verdicts/${verdictId}/accept-as-variant`, { method: "POST", headers: { ...sessionCookie, ...evil } }, vi.mocked(acceptVerdictAsVariant)],
+      [
+        `/lesson-drafts/${lessonDraftId}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ title: "Lekcja 2", expectedEditNumber: 1 }),
+          headers: { "content-type": "application/json", ...sessionCookie, ...evil },
+        },
+        vi.mocked(editLessonDraft),
+      ],
+      [`/lesson-drafts/${lessonDraftId}/publish`, jsonInit({ expectedEditNumber: 1 }, evil), vi.mocked(publishLessonDraft)],
+      [
+        `/lesson-drafts/${lessonDraftId}/regenerate`,
+        jsonInit({ objectiveId: "obj-1", count: 4, expectedEditNumber: 1, clientRequestId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }, evil),
+        vi.mocked(regenerateObjective),
+      ],
+      [`/generation/${runId}/retry`, { method: "POST", headers: { ...sessionCookie, ...evil } }, vi.mocked(retryGeneration)],
+      [
+        `/assignments/${childId}/${deckId}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ testDate: "2026-10-30", testGoals: ["lesson"], mockTestTaskCount: 10 }),
+          headers: { "content-type": "application/json", ...sessionCookie, ...evil },
+        },
+        vi.mocked(upsertAssignment),
+      ],
+      [`/assignments/${childId}/${deckId}`, { method: "DELETE", headers: { ...sessionCookie, ...evil } }, vi.mocked(removeAssignment)],
     ];
 
     for (const [path, init, useCase] of cases) {
@@ -682,6 +1235,51 @@ describe("parent oRPC — pełne koło klient→handler (OpenAPILink)", () => {
     expect(created.status).toBe(201);
     expect(created.body).toEqual({ deckId });
     expect(resumed.status).toBe(200);
+    vi.unstubAllGlobals();
+  });
+
+  it("lessons.create przez klienta zwraca akceptację 202 {runId, deckId}", async () => {
+    stubFetchWithHandler();
+    vi.mocked(createLesson).mockResolvedValueOnce({ runId, deckId });
+
+    const acceptance = await callParent(() => parentClient.lessons.create({
+      deckId,
+      subjectId: "english",
+      topicId: "basics",
+      objectiveIds: ["obj-1"],
+      material: "red blue",
+      poolSize: 20,
+      clientRequestId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    }));
+
+    expect(acceptance).toEqual({ runId, deckId });
+    vi.unstubAllGlobals();
+  });
+
+  it("lessons.progress przez klienta: query + detailed output z no-store", async () => {
+    stubFetchWithHandler();
+    vi.mocked(lessonObjectiveProgress).mockResolvedValueOnce([objectiveProgress]);
+
+    const result = await callParent(() => parentClient.lessons.progress({ deckId, childId }));
+
+    expect(result.body).toEqual([objectiveProgress]);
+    expect(result.headers["cache-control"]).toBe("no-store");
+    expect(lessonObjectiveProgress).toHaveBeenCalledWith(services, deckId, childId);
+    vi.unstubAllGlobals();
+  });
+
+  it("błąd bez koperty (np. proxy) zachowuje komunikat i status, jak apiFetch", async () => {
+    vi.stubGlobal("fetch", () => Promise.resolve(new Response(
+      JSON.stringify({ message: "Błąd raportu" }),
+      { status: 500, headers: { "content-type": "application/json" } },
+    )));
+
+    const error = await callParent(() => parentClient.workCard.get({ childId })).catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(ApiCallError);
+    expect((error as ApiCallError).message).toBe("Błąd raportu");
+    expect((error as ApiCallError).status).toBe(500);
+    expect((error as ApiCallError).code).toBeUndefined();
     vi.unstubAllGlobals();
   });
 });

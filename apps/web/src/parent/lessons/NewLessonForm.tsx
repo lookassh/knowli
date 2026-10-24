@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { messages, type LessonCommand, type SubjectCatalogDto } from "@learning/contracts";
-import { apiFetch, errorMessage } from "../api";
+import { callParent, errorMessage, parentClient } from "../api";
 import { isDefinitiveGenerationRejection, readLessonAcceptance } from "../generation-request";
 
 const MATERIAL_MAX = 8000;
@@ -54,7 +54,7 @@ export default function NewLessonForm({
   useEffect(() => {
     (async () => {
       try {
-        const data = await apiFetch<SubjectCatalogDto>("GET", "/api/v1/parent/lesson-catalog");
+        const data = await callParent(() => parentClient.lessonCatalog.get());
         if (!mounted.current) return;
         setCatalog(data);
         const firstSubject = data.subjects[0];
@@ -133,7 +133,7 @@ export default function NewLessonForm({
     };
     pendingCommand.current = command;
     try {
-      const response = await apiFetch<unknown>("POST", "/api/v1/parent/lessons", command);
+      const response = await callParent(() => parentClient.lessons.create(command));
       const acceptance = readLessonAcceptance(response);
       if (!acceptance) {
         if (mounted.current) setError(messages.lessons.createUncertain);

@@ -7,7 +7,7 @@ import {
   type DeckSummaryDto,
   type ProgressDto,
 } from "@learning/contracts";
-import { apiFetch, errorMessage } from "./api";
+import { callParent, errorMessage, parentClient } from "./api";
 import ProgressItems from "./ProgressItems";
 import MockTestReportPanel from "./MockTestReportPanel";
 import { buildSkillRows } from "./build-skill-rows";
@@ -71,7 +71,7 @@ export default function ProgressPanel({
     setError(null);
     setLoading(true);
     try {
-      const data = await apiFetch<ProgressDto>("GET", `/api/v1/parent/progress?childId=${childId}&deckId=${deckId}`);
+      const data = await callParent(() => parentClient.progress.get({ childId, deckId }));
       if (seq !== requestSeq.current) return;
       setProgress(data);
       setReportVersion(value => value + 1);

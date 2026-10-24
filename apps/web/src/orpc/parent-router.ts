@@ -1,27 +1,51 @@
 import {
   AppError,
   MAX_DECK_COVER_BYTES,
+  acceptVerdictAsVariant,
   archiveDeck,
   clearDeckCover,
   createChild,
   createDraftFromPublished,
   createEmptyDeck,
+  createLesson,
+  createLessonDraftFromPublished,
+  decideLessonVerdict,
+  deckIdOfLessonVersion,
   deleteChild,
   editDraft,
+  editLessonDraft,
   enqueueDeckGeneration,
   generateDeckCover,
+  getLessonMockTestReport,
+  getMockTestReport,
+  getProgress,
   getPronunciationSettings,
+  lessonCatalog,
+  lessonObjectiveProgress,
   listChildren,
   listDecks,
+  listLessonMockTests,
+  listLessonVerdicts,
+  listMockTests,
+  mockTestKindOfSession,
   omitRevisionAsset,
   publishDraft,
+  publishLessonDraft,
   readDeck,
+  readDeckKind,
   readDraft,
+  readGeneration,
+  readLessonDeck,
+  readParentWorkCard,
+  regenerateObjective,
   regenerateRevisionAsset,
+  removeAssignment,
+  retryGeneration,
   setDeckCover,
   updateChild,
   updateDeckSettings,
   updatePronunciationBands,
+  upsertAssignment,
 } from "@learning/server";
 import { implement, type Router } from "@orpc/server";
 import { parentApiContract } from "../parent/orpc-contract";
@@ -31,10 +55,14 @@ import { assertDeclaredBodyCap } from "./request-limits";
 /**
  * Router oRPC Parent API montowany z priorytetem w catch-all
  * `/api/v1/parent/[...path]` (wzorzec strangler, migracja oRPC v2). Ten plik
- * implementuje cz. 1 kontraktu (`parentApiContract`): profile dzieci, zestawy
- * (decks, w tym okładka ze streamingiem 5 MB) i szkice wersji (drafts).
- * Ścieżki spoza kontraktu (`matched === false`) spadają do legacy
- * `handleParentApi` — pozostałe grupy migruje zadanie 11.
+ * implementuje cały kontrakt (`parentApiContract`): profile dzieci, zestawy
+ * (decks, w tym okładka ze streamingiem 5 MB), szkice wersji (drafts),
+ * kartkówki (mock-tests z dispatchem lekcja/słówka), kartę pracy, lekcje
+ * (lessons, lesson-catalog, lesson-verdicts, lesson-drafts), generację
+ * (generation), przypisania (assignments) i postępy (progress). Ścieżki spoza
+ * kontraktu (`matched === false`) spadają do legacy `handleParentApi` —
+ * resztka routera (autoryzacja logowania migruje w zadaniu 12, demontaż
+ * fallbacku w 13).
  *
  * Autoryzacja: każda procedura wymaga sesji rodzica (`parentSessionMiddleware`
  * na implementerze — działa przed walidacją inputu, jak w legacy), mutacje
@@ -48,10 +76,24 @@ const parentOs = implement({
   children: parentApiContract.children,
   decks: parentApiContract.decks,
   drafts: parentApiContract.drafts,
+  mockTests: parentApiContract.mockTests,
+  workCard: parentApiContract.workCard,
+  lessonCatalog: parentApiContract.lessonCatalog,
+  lessons: parentApiContract.lessons,
+  lessonVerdicts: parentApiContract.lessonVerdicts,
+  lessonDrafts: parentApiContract.lessonDrafts,
+  generation: parentApiContract.generation,
+  assignments: parentApiContract.assignments,
+  progress: parentApiContract.progress,
 })
   .$context<ORpcContext>()
   .use(appErrorMiddleware)
   .use(parentSessionMiddleware);
+
+/** Odpowiedź 200 z `Cache-Control: no-store` (wzorzec kid-router). */
+function noStore<T>(body: T): { headers: { "cache-control": "no-store" }; body: T } {
+  return { headers: { "cache-control": "no-store" }, body };
+}
 
 /**
  * Czyta strumień obrazu z limitem 5 MB — dokładny port czytnika z legacy
@@ -245,6 +287,110 @@ const draftsOmitAsset = parentOs.drafts.omitAsset
     await omitRevisionAsset(context.services, input);
   });
 
+/** Lista kartkówek: dispatch po rodzaju zestawu (lekcja vs słówka). */
+const mockTestsList = parentOs.mockTests.list.handler(async ({ context, input }) => {
+  const kind = await readDeckKind(context.services.db, input.deckId);
+  const list = kind === "lesson"
+    ? await listLessonMockTests(context.services, input.childId, input.deckId)
+    : await listMockTests(context.services, input.childId, input.deckId);
+  return noStore(list);
+});
+
+/** Raport jednej kartkówki: dispatch po rodzaju sesji (lekcja vs słówka). */
+const mockTestsGet = parentOs.mockTests.get.handler(async ({ context, input }) => {
+  const kind = await mockTestKindOfSession(context.services.db, input.sessionId);
+  const report = kind === "lesson"
+    ? await getLessonMockTestReport(context.services, input.sessionId)
+    : await getMockTestReport(context.services, input.sessionId);
+  return noStore(report);
+});
+
+const workCardGet = parentOs.workCard.get.handler(async ({ context, input }) =>
+  noStore(await readParentWorkCard(context.services, input)),
+);
+
+const lessonCatalogGet = parentOs.lessonCatalog.get.handler(async ({ context }) =>
+  lessonCatalog(context.services),
+);
+
+const lessonsCreate = parentOs.lessons.create
+  .use(sameOriginMiddleware)
+  .handler(async ({ context, input }) => createLesson(context.services, input));
+
+const lessonsGet = parentOs.lessons.get.handler(async ({ context, input }) =>
+  readLessonDeck(context.services, input.deckId),
+);
+
+const lessonsProgress = parentOs.lessons.progress.handler(async ({ context, input }) =>
+  noStore(await lessonObjectiveProgress(context.services, input.deckId, input.childId)),
+);
+
+const lessonsVerdicts = parentOs.lessons.verdicts.handler(async ({ context, input }) =>
+  noStore(await listLessonVerdicts(context.services, input.deckId)),
+);
+
+const lessonsDraft = parentOs.lessons.draft
+  .use(sameOriginMiddleware)
+  .handler(async ({ context, input }) => createLessonDraftFromPublished(context.services, input.deckId));
+
+const lessonVerdictsDecision = parentOs.lessonVerdicts.decision
+  .use(sameOriginMiddleware)
+  .handler(async ({ context, input }) =>
+    decideLessonVerdict(context.services, input.verdictId, input.decision),
+  );
+
+const lessonVerdictsAcceptAsVariant = parentOs.lessonVerdicts.acceptAsVariant
+  .use(sameOriginMiddleware)
+  .handler(async ({ context, input }) => acceptVerdictAsVariant(context.services, input.verdictId));
+
+const lessonDraftsEdit = parentOs.lessonDrafts.edit
+  .use(sameOriginMiddleware)
+  .handler(async ({ context, input }) => {
+    const { lessonDraftId, ...patch } = input;
+    return editLessonDraft(context.services, lessonDraftId, patch);
+  });
+
+const lessonDraftsPublish = parentOs.lessonDrafts.publish
+  .use(sameOriginMiddleware)
+  .handler(async ({ context, input }) =>
+    publishLessonDraft(context.services, input.lessonDraftId, input.expectedEditNumber),
+  );
+
+const lessonDraftsRegenerate = parentOs.lessonDrafts.regenerate
+  .use(sameOriginMiddleware)
+  .handler(async ({ context, input }) => {
+    const { lessonDraftId, ...command } = input;
+    // regenerateObjective bierze deckId, nie versionId — wyznaczamy go z wersji.
+    const deckId = await deckIdOfLessonVersion(context.services, lessonDraftId);
+    const result = await regenerateObjective(context.services, { deckId, ...command });
+    return { generationRunId: result.runId, deckId: result.deckId };
+  });
+
+const generationGet = parentOs.generation.get.handler(async ({ context, input }) =>
+  readGeneration(context.services, input.runId),
+);
+
+const generationRetry = parentOs.generation.retry
+  .use(sameOriginMiddleware)
+  .handler(async ({ context, input }) => retryGeneration(context.services, input.runId));
+
+const assignmentsPut = parentOs.assignments.put
+  .use(sameOriginMiddleware)
+  .handler(async ({ context, input }) => {
+    const { childId, deckId, testDate, ...options } = input;
+    await upsertAssignment(context.services, childId, deckId, testDate, options);
+  });
+
+const assignmentsRemove = parentOs.assignments.remove
+  .use(sameOriginMiddleware)
+  .handler(async ({ context, input }) => {
+    await removeAssignment(context.services, input.childId, input.deckId);
+  });
+
+const progressGet = parentOs.progress.get.handler(async ({ context, input }) =>
+  getProgress(context.services, input.childId, input.deckId),
+);
+
 export const parentORpcRouter: Router<ORpcContext> = parentOs.router({
   children: {
     list: childrenList,
@@ -272,5 +418,42 @@ export const parentORpcRouter: Router<ORpcContext> = parentOs.router({
     publish: draftsPublish,
     regenerateAsset: draftsRegenerateAsset,
     omitAsset: draftsOmitAsset,
+  },
+  mockTests: {
+    list: mockTestsList,
+    get: mockTestsGet,
+  },
+  workCard: {
+    get: workCardGet,
+  },
+  lessonCatalog: {
+    get: lessonCatalogGet,
+  },
+  lessons: {
+    create: lessonsCreate,
+    get: lessonsGet,
+    progress: lessonsProgress,
+    verdicts: lessonsVerdicts,
+    draft: lessonsDraft,
+  },
+  lessonVerdicts: {
+    decision: lessonVerdictsDecision,
+    acceptAsVariant: lessonVerdictsAcceptAsVariant,
+  },
+  lessonDrafts: {
+    edit: lessonDraftsEdit,
+    publish: lessonDraftsPublish,
+    regenerate: lessonDraftsRegenerate,
+  },
+  generation: {
+    get: generationGet,
+    retry: generationRetry,
+  },
+  assignments: {
+    put: assignmentsPut,
+    remove: assignmentsRemove,
+  },
+  progress: {
+    get: progressGet,
   },
 });
