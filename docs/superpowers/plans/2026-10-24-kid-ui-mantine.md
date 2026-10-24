@@ -137,21 +137,26 @@ CSS: **nie importuj `@mantine/core/styles.css` ani nieskopowanych trzech bazowyc
 - Produces: Mantine factory `KidScreen` z ref `HTMLDivElement`, `BoxProps`, `ElementProps<'div'>`, `StylesApiProps<KidScreenFactory>` i `mode?: 'flow'|'session'` (default flow).
 - Produces: `KidScreen.Header`, `.Content`, `.Actions` jako factory elementów div z children/ref/Styles API; `Actions` przyjmuje ponadto `secondary?: ReactNode`. Styles names wspólne: `root|header|content|actions|primary|secondary`; kontekst udostępnia `getStyles` i mode. Zagnieżdżony KidScreen jest dozwolony i bierze najbliższy kontekst.
 
-- [ ] **Step 1: Zapisz test `KidScreen.test.tsx`.** W `renderKid` wyrenderuj header, input w Content, Actions z pustym children i przyciskiem w secondary. Asercje:
+- [x] **Step 1: Zapisz test `KidScreen.test.tsx`.** W `renderKid` wyrenderuj header, input w Content, Actions z pustym children i przyciskiem w secondary. Asercje:
 
 ```tsx
-expect(screen.getByTestId('kid-primary-slot')).not.toBeNull();
+expect(screen.getByTestId('kid-primary-slot').textContent).toBe('');
 expect(screen.getByTestId('kid-secondary-slot').textContent).toContain('Pomiń');
 expect(screen.getByLabelText('Wpis')).toBe(inputBeforeRerender);
 expect((screen.getByLabelText('Wpis') as HTMLInputElement).value).toBe('ca');
-expect(ref.current).toBe(container.querySelector('[data-kid-screen]'));
+expect(rootRef.current).toBe(screen.getByTestId('kid-screen'));
+expect(contentRef.current).toBe(screen.getByTestId('kid-content'));
+expect(screen.getByTestId('kid-screen').getAttribute('data-mode')).toBe('session');
+expect(screen.getByTestId('kid-screen').hasAttribute('data-active')).toBe(true);
+expect(screen.getByTestId('kid-primary-slot').classList.contains('custom-primary')).toBe(true);
+expect((screen.getByTestId('kid-secondary-slot') as HTMLElement).style.color).toBe('rgb(1, 2, 3)');
 ```
 
 Ostatnie dwie sprawdź po `fireEvent.change` i `rerender` z inną treścią nagłówka bez zmiany typu/key. Sprawdź `classNames={{content:'probe-content'}}` na Content i ref subkomponentu. Pojedyncze test ID slotów w każdej ramie; nie twórz ich na innych wrapperach.
-- [ ] **Step 2: RED.** `corepack pnpm exec vitest run --config vitest.unit.config.ts packages/kid-ui/src/layout/KidScreen.test.tsx` → FAIL brak KidScreen.
-- [ ] **Step 3: Wdroż interfejs.** Czytaj skill `mantine-custom-components` przed factory. Użyj `factory/useProps/useStyles`, prywatnego kontekstu i CSS Modules. `KidScreen` nie renderuje `KidPage`, nie czyta window/visualViewport, nie instaluje ResizeObserver. Session: grid header/`minmax(0,1fr)`/actions, `min-width:0`, `min-height:0`. Actions ma dwa stałe sloty: główny minimum 54 px i pomocniczy minimum 44 px, gap 8 px; przyciski mogą rosnąć przy 200% tekście. Główna akcja nie znika z siatki gdy pusta. Content może scrollować; flow nie ogranicza wysokości. Przy `data-viewport-very-short` naturalny wzrost ramy i przewijanie na poziomie KidPage, bez klipowania. Scope pomiaru opiera się na istniejących atrybutach, nie nowym detektorze telefonu. Focus outline 2 px z offsetem 3 px.
-- [ ] **Step 4: GREEN.** Polecenie z Step 2 PASS i `corepack pnpm exec vitest run --config vitest.unit.config.ts packages/kid-ui/src/layout/viewport.test.ts` PASS. Testy geometrii w nowym pliku dodaj z Task 4, gdy rama ma produkcyjnego konsumenta; sam jsdom nie dowodzi geometrii.
-- [ ] **Step 5: Commit.** `git add packages/kid-ui/src/layout` i tylko nowy spec jeśli już zawiera wykonywalny test, `git commit -m "feat(kid-ui): add compound KidScreen layout"`.
+- [x] **Step 2: RED.** `corepack pnpm exec vitest run --config vitest.unit.config.ts packages/kid-ui/src/layout/KidScreen.test.tsx` → FAIL brak KidScreen. Dodatkowa asercja mod początkowo FAIL potwierdziła utratę trybu; lokalne overrides Styles API początkowo FAIL.
+- [x] **Step 3: Wdroż interfejs.** Czytaj skill `mantine-custom-components` przed factory. Użyj `factory/useProps/useStyles`, prywatnego kontekstu i CSS Modules. `KidScreen` nie renderuje `KidPage`, nie czyta window/visualViewport, nie instaluje ResizeObserver. Session: grid header/`minmax(0,1fr)`/actions, `min-width:0`, `min-height:0`. Actions ma dwa stałe sloty: główny minimum 54 px i pomocniczy minimum 44 px, gap 8 px; przyciski mogą rosnąć przy 200% tekście. Główna akcja nie znika z siatki gdy pusta. Content może scrollować; flow nie ogranicza wysokości. Przy `data-viewport-very-short` naturalny wzrost ramy i przewijanie na poziomie KidPage, bez klipowania. Scope pomiaru opiera się na istniejących atrybutach, nie nowym detektorze telefonu. Focus outline 2 px z offsetem 3 px. Scoping CSS używa bezpośrednich dzieci, by nie stylować zagnieżdżonego KidScreen.
+- [x] **Step 4: GREEN.** Polecenie z Step 2 PASS i `corepack pnpm exec vitest run --config vitest.unit.config.ts packages/kid-ui/src/layout/viewport.test.ts` PASS. Testy geometrii w nowym pliku dodaj z Task 4, gdy rama ma produkcyjnego konsumenta; sam jsdom nie dowodzi geometrii. Rzeczywisty wynik: KidScreen + viewport 8/8, kid-ui typecheck PASS.
+- [x] **Step 5: Commit.** `git add packages/kid-ui/src/layout` i tylko nowy spec jeśli już zawiera wykonywalny test, `git commit -m "feat(kid-ui): add compound KidScreen layout"`. Independent review GPT‑6.1 Sol/medium nie wykrył dalszych P0–P2.
 
 ## Task 3: Przyciski, pola i natychmiastowy wybór
 

@@ -1,0 +1,82 @@
+.root {
+  width: min(100%, 1000px);
+  min-width: 0;
+  margin-inline: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.root[data-mode="session"] {
+  width: min(100%, 560px);
+  height: 100%;
+  min-height: 0;
+  padding: 12px 16px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.header,
+.content,
+.actions {
+  min-width: 0;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.root[data-mode="session"] > .content {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.actions {
+  display: grid;
+  grid-template-rows: minmax(54px, auto) minmax(44px, auto);
+  align-content: end;
+  gap: 8px;
+}
+
+.primary,
+.secondary {
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+.primary > *,
+.secondary > * {
+  width: 100%;
+}
+
+.root[data-mode="flow"] > .actions {
+  grid-template-rows: auto auto;
+}
+
+:global(.kid-page[data-viewport-very-short="true"]) .root[data-mode="session"] {
+  height: auto;
+  min-height: 100%;
+  grid-template-rows: auto auto auto;
+}
+
+:global(.kid-page[data-viewport-very-short="true"]) .root[data-mode="session"] > .content {
+  min-height: auto;
+  overflow: visible;
+}
+
+@media (max-width: 359px) {
+  .root {
+    padding-inline: 12px;
+  }
+
+  .root[data-mode="session"] {
+    padding-inline: 12px;
+  }
+}
