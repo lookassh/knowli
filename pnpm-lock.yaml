@@ -52,6 +52,9 @@ importers:
       '@orpc/client':
         specifier: 2.0.0-beta.45
         version: 2.0.0-beta.45
+      '@orpc/contract':
+        specifier: 2.0.0-beta.45
+        version: 2.0.0-beta.45
       '@orpc/openapi':
         specifier: 2.0.0-beta.45
         version: 2.0.0-beta.45

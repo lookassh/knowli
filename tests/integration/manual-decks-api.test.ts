@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { loginParent, setupParent } from "@learning/server";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
-import { handleParentApi } from "../../apps/web/src/parent/parent-router";
+import { handleParentApi } from "./helpers";
 import { errorResponse } from "../../apps/web/src/http/errors";
 
 const { pool } = testDatabase();
@@ -13,6 +13,9 @@ function request(body: unknown, cookie: string | null, origin = BASE): Request {
     method: "POST",
     headers: {
       "content-type": "application/json",
+      // jawny Host jak w żądaniu przyjmowanym przez serwer (undici nie
+      // materializuje go z URL), żeby kontrola Origin widziała własnego hosta
+      host: "localhost:3000",
       origin,
       ...(cookie ? { cookie: `parent_session=${cookie}` } : {}),
     },
@@ -75,7 +78,10 @@ describe("Parent API ręcznego tworzenia zestawu", () => {
       { deckId: randomUUID(), prompt: "Do not accept AI prompts here" },
       { deckId: randomUUID(), items: [] },
     ]) {
-      await expect(handleParentApi(request(body, token), services, ["decks"])).rejects.toBeDefined();
+      // walidacja granicy idzie z encodera oRPC jako odpowiedź 400/validation
+      const response = await handleParentApi(request(body, token), services, ["decks"]);
+      expect(response.status).toBe(400);
+      expect(((await response.json()) as { code?: string }).code).toBe("validation");
     }
     expect(await deckCount()).toBe(1);
   });
@@ -85,11 +91,13 @@ describe("Parent API ręcznego tworzenia zestawu", () => {
     await setupParent(services, "manual-deck-security-pin");
     const deckId = randomUUID();
 
-    await expect(handleParentApi(request({ deckId }, null), services, ["decks"]))
-      .rejects.toMatchObject({ code: "unauthorized" });
+    const anonymous = await handleParentApi(request({ deckId }, null), services, ["decks"]);
+    expect(anonymous.status).toBe(401);
+    expect(((await anonymous.json()) as { code?: string }).code).toBe("unauthorized");
     const { token } = await loginParent(services, "manual-deck-security-pin");
-    await expect(handleParentApi(request({ deckId }, token, "https://attacker.example"), services, ["decks"]))
-      .rejects.toMatchObject({ code: "forbidden" });
+    const crossOrigin = await handleParentApi(request({ deckId }, token, "https://attacker.example"), services, ["decks"]);
+    expect(crossOrigin.status).toBe(403);
+    expect(((await crossOrigin.json()) as { code?: string }).code).toBe("forbidden");
     expect(await deckCount()).toBe(0);
   });
 });
@@ -111,7 +119,7 @@ describe("Parent API ustawień sesji zestawu (PATCH /api/v1/parent/decks/:id)", 
     const deckId = randomUUID();
     const created = await handleParentApi(
       new Request(`${BASE}/api/v1/parent/decks`, {
-        method: "POST", headers: { "content-type": "application/json", origin: BASE, cookie: `parent_session=${token}` },
+        method: "POST", headers: { "content-type": "application/json", host: "localhost:3000", origin: BASE, cookie: `parent_session=${token}` },
         body: JSON.stringify({ deckId, title: "Zwierzęta" }),
       }),
       services, ["decks"],
@@ -123,7 +131,7 @@ describe("Parent API ustawień sesji zestawu (PATCH /api/v1/parent/decks/:id)", 
   function patchRequest(deckId: string, token: string, body: unknown): Request {
     return new Request(`${BASE}/api/v1/parent/decks/${deckId}`, {
       method: "PATCH",
-      headers: { "content-type": "application/json", origin: BASE, cookie: `parent_session=${token}` },
+      headers: { "content-type": "application/json", host: "localhost:3000", origin: BASE, cookie: `parent_session=${token}` },
       body: JSON.stringify(body),
     });
   }
@@ -148,7 +156,7 @@ describe("Parent API ustawień sesji zestawu (PATCH /api/v1/parent/decks/:id)", 
     expect(await saved.json()).toEqual({ sessionTaskBudget: 7 });
     expect(await budgetOf(deckId)).toBe(7);
     const detail = await dispatch(new Request(`${BASE}/api/v1/parent/decks/${deckId}`, {
-      headers: { origin: BASE, cookie: `parent_session=${token}` },
+      headers: { host: "localhost:3000", origin: BASE, cookie: `parent_session=${token}` },
     }), services, ["decks", deckId]);
     expect(detail.status).toBe(200);
     expect((await detail.json()).sessionTaskBudget).toBe(7);

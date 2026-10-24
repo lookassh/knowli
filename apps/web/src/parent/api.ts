@@ -1,4 +1,9 @@
 import { messages } from "@learning/contracts";
+import { createORPCClient, MalformedResponseError, ORPCError, type AnyORPCError } from "@orpc/client";
+import type { RouterContractClient } from "@orpc/contract";
+import { OpenAPILink } from "@orpc/openapi/fetch";
+import type { JsonifiedClient } from "@orpc/openapi";
+import { parentApiContract } from "./orpc-contract";
 
 /** Błąd API w jednolitym formacie {code, message, retryable, requestId}. */
 export class ApiCallError extends Error {
@@ -11,6 +16,60 @@ export class ApiCallError extends Error {
     this.code = code;
     this.status = status;
     this.details = details;
+  }
+}
+
+/**
+ * Koperta błędu serwera `{code, message, retryable, requestId, details?}`
+ * mapowana na ORPCError — bez dekodera link zgłasza MalformedResponseError
+ * (spike v2). Kod koperty przenosimy 1:1; dane niosą kopertę oraz status HTTP
+ * odpowiedzi, z którego ekrany rozpoznają wygasłą sesję (401).
+ */
+const errorEnvelopeDecoder = (body: unknown, response?: { status: number }): AnyORPCError | null => {
+  if (typeof body === "object" && body !== null && typeof (body as { code?: unknown }).code === "string") {
+    return new ORPCError((body as { code: string }).code, {
+      data: { envelope: body, status: response?.status },
+    });
+  }
+  return null;
+};
+
+/** Typowany klient Parent API z kontraktu (wartości jak na wire, czyli JSON). */
+export type ParentClient = JsonifiedClient<RouterContractClient<typeof parentApiContract>>;
+
+/** Klient oRPC panelu rodzica: same-origin, cookie sesji z domyślnych credentials. */
+export const parentClient: ParentClient = createORPCClient(
+  new OpenAPILink(parentApiContract, {
+    url: "/api/v1/parent",
+    customErrorResponseBodyDecoder: errorEnvelopeDecoder,
+  }),
+);
+
+/**
+ * Normalizacja błędów klienta oRPC do `ApiCallError` — zmigrowane ekrany
+ * zachowują dotychczasową obsługę (`code`, `status`, `errorMessage`).
+ * Awaria sieci pozostaje TypeError (jak w apiFetch), bo tylko ona uzasadnia
+ * stany „niepewnego polecenia” (ponowienie z tym samym kluczem).
+ */
+export async function callParent<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof ApiCallError) throw error;
+    if (error instanceof ORPCError) {
+      const data = error.data as { envelope?: { code?: string; message?: string; details?: unknown }; status?: number } | undefined;
+      const envelope = data?.envelope;
+      throw new ApiCallError(
+        envelope?.message ?? messages.errors.internal,
+        envelope?.code,
+        data?.status ?? 500,
+        envelope?.details,
+      );
+    }
+    if (error instanceof MalformedResponseError || error instanceof SyntaxError) {
+      throw new ApiCallError(messages.errors.internal, "internal", 500);
+    }
+    throw error;
   }
 }
 

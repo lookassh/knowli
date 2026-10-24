@@ -9,6 +9,7 @@
     "@learning/server": "workspace:*",
     "@modelcontextprotocol/sdk": "1.32.1",
     "@orpc/client": "2.0.0-beta.45",
+    "@orpc/contract": "2.0.0-beta.45",
     "@orpc/openapi": "2.0.0-beta.45",
     "@orpc/server": "2.0.0-beta.45",
     "next": "^15.3.0",

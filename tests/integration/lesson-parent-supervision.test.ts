@@ -20,7 +20,7 @@ import {
 } from "@learning/contracts";
 import { lessonWorld } from "../fixtures/lesson-world";
 import { testDatabase, truncateCoreTables, ManualClock } from "./helpers";
-import { handleParentApi } from "../../apps/web/src/parent/parent-router";
+import { handleParentApi } from "./helpers";
 import { errorResponse } from "../../apps/web/src/http/errors";
 
 /**

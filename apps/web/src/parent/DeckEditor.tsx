@@ -17,7 +17,7 @@ import {
   type EditableDeckForm,
   type EditorSnapshot,
 } from "./deck-editor-state";
-import { apiFetch, errorMessage } from "./api";
+import { apiFetch, callParent, errorMessage, parentClient } from "./api";
 import AssignmentTestGoalFields, { type AssignmentTestSettings } from "./AssignmentTestGoalFields";
 import DeckSessionTaskBudgetSettings from "./DeckSessionTaskBudgetSettings";
 import type { EditorLeaveState } from "./useParentLeaveGuard";
@@ -116,14 +116,13 @@ export default function DeckEditor({
     setCoverBusy(true);
     setError(null);
     try {
-      const response = await fetch(`/api/v1/parent/decks/${deckId}/cover`, {
-        method: "POST", headers: { "content-type": contentType }, body: file,
-      });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null) as { message?: string } | null;
-        throw new Error(payload?.message ?? messages.errors.internal);
-      }
-      const result = await response.json() as { coverAssetId: string };
+      const result = await callParent(() => parentClient.decks.setCover({
+        params: { deckId },
+        headers: { "content-type": contentType },
+        // File (Blob) przepuszczany przez serializator linku; serwer czyta
+        // strumień z limitem 5 MB i anulowaniem (kontrakt: octet-stream).
+        body: file,
+      }));
       if (deckIdRef.current === requestDeckId) {
         setDeck((current) => current?.id === requestDeckId ? { ...current, coverAssetId: result.coverAssetId } : current);
       }
@@ -144,7 +143,7 @@ export default function DeckEditor({
     setCoverBusy(true);
     setError(null);
     try {
-      await apiFetch("DELETE", `/api/v1/parent/decks/${deckId}/cover`);
+      await callParent(() => parentClient.decks.clearCover({ deckId }));
       if (deckIdRef.current === requestDeckId) {
         setDeck((current) => current?.id === requestDeckId ? { ...current, coverAssetId: null } : current);
       }
@@ -161,18 +160,15 @@ export default function DeckEditor({
     const requestToken = coverGenerationToken.current;
     setCoverBusy(true); setCoverGenerating(true); setError(null);
     try {
-      const response = await fetch(`/api/v1/parent/decks/${requestDeckId}/cover/generate`, { method: "POST" });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null) as { message?: string } | null;
-        throw new Error(payload?.message ?? messages.decks.coverGenerateFailed);
-      }
-      const blob = await response.blob();
+      const output = await callParent(() => parentClient.decks.generateCover({ deckId: requestDeckId }));
+      const blob = output.body;
       if (deckIdRef.current !== requestDeckId || coverGenerationToken.current !== requestToken) return;
+      const mimeType = typeof output.headers?.["content-type"] === "string" ? output.headers["content-type"] : blob.type;
       const objectUrl = URL.createObjectURL(blob);
-      const file = new File([blob], `generated-cover.${blob.type === "image/jpeg" ? "jpg" : blob.type.split("/")[1]}`, { type: blob.type });
+      const file = new File([blob], `generated-cover.${mimeType === "image/jpeg" ? "jpg" : mimeType.split("/")[1]}`, { type: mimeType });
       generatedCoverRef.current = { objectUrl, file };
       setGeneratedCover(generatedCoverRef.current);
-    } catch (cause) { if (deckIdRef.current === requestDeckId && coverGenerationToken.current === requestToken) setError(errorMessage(cause)); }
+    } catch (cause) { if (deckIdRef.current === requestDeckId && coverGenerationToken.current !== requestToken) setError(errorMessage(cause)); }
     finally { if (deckIdRef.current === requestDeckId && coverGenerationToken.current === requestToken) { setCoverBusy(false); setCoverGenerating(false); } }
   };
   const acceptGeneratedCover = async () => {
@@ -198,7 +194,7 @@ export default function DeckEditor({
   const load = useCallback(async (): Promise<boolean> => {
     const requestVersion = ++loadVersion.current;
     try {
-      const result = await apiFetch<DeckDto>("GET", `/api/v1/parent/decks/${deckId}`);
+      const result = await callParent(() => parentClient.decks.get({ deckId }));
       if (requestVersion === loadVersion.current && deckIdRef.current === deckId && !dirty.current && !conflictActive.current) {
         setDeck(result);
         return true;
@@ -220,7 +216,7 @@ export default function DeckEditor({
     conflictActive.current = true;
     setConflict({ local, remote: null, loadError: null });
     try {
-      const remote = await apiFetch<DeckDto>("GET", `/api/v1/parent/decks/${deckId}`);
+      const remote = await callParent(() => parentClient.decks.get({ deckId }));
       setConflict((current) => current ? { ...current, remote, loadError: null } : current);
       setError(null);
     } catch {
@@ -235,8 +231,8 @@ export default function DeckEditor({
     try {
       let current = remote;
       if (!current.draft && current.published) {
-        await apiFetch("POST", `/api/v1/parent/decks/${deckId}/draft`);
-        current = await apiFetch<DeckDto>("GET", `/api/v1/parent/decks/${deckId}`);
+        await callParent(() => parentClient.decks.createDraft({ deckId }));
+        current = await callParent(() => parentClient.decks.get({ deckId }));
       }
       if (!current.draft) {
         setConflict((existing) => existing ? { ...existing, remote: current, loadError: messages.decks.conflictNotFound } : existing);
@@ -408,7 +404,7 @@ export default function DeckEditor({
     setBusyState(true);
     setError(null);
     try {
-      const saved = await apiFetch<DraftDto>("PATCH", `/api/v1/parent/drafts/${snapshot.draftId}`, toDraftPatch(snapshot));
+      const saved = await callParent(() => parentClient.drafts.edit({ draftId: snapshot.draftId, ...toDraftPatch(snapshot) }));
       baseSnapshot.current = createEditorSnapshot(saved, newKey);
       baseRevisionIds.current = new Map(saved.items.flatMap((item) => item.id ? [[item.id, item.revisionId] as const] : []));
       setForm(baseSnapshot.current.form);
@@ -443,9 +439,10 @@ export default function DeckEditor({
     setBusyState(true);
     setError(null);
     try {
-      await apiFetch("POST", `/api/v1/parent/drafts/${draft.id}/publish`, {
+      await callParent(() => parentClient.drafts.publish({
+        draftId: draft.id,
         expectedEditNumber: draft.editNumber,
-      });
+      }));
       dirty.current = false;
       setIsDirty(false);
       await load();
@@ -460,7 +457,7 @@ export default function DeckEditor({
     setBusyState(true);
     setError(null);
     try {
-      await apiFetch("POST", `/api/v1/parent/decks/${deckId}/archive`);
+      await callParent(() => parentClient.decks.archive({ deckId }));
       await load();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -475,7 +472,7 @@ export default function DeckEditor({
     setBusyState(true);
     setError(null);
     try {
-      await apiFetch("POST", `/api/v1/parent/decks/${deckId}/draft`);
+      await callParent(() => parentClient.decks.createDraft({ deckId }));
       dirty.current = false;
       await load();
     } catch (cause) {
@@ -504,10 +501,11 @@ export default function DeckEditor({
     }
     setError(null);
     try {
-      await apiFetch("POST", `/api/v1/parent/drafts/${draft.id}/assets/regenerate`, {
+      await callParent(() => parentClient.drafts.regenerateAsset({
+        draftId: draft.id,
         itemRevisionId,
         role,
-      });
+      }));
       await load();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -520,7 +518,7 @@ export default function DeckEditor({
     }
     setError(null);
     try {
-      await apiFetch("POST", `/api/v1/parent/drafts/${draft.id}/assets/omit`, { itemRevisionId });
+      await callParent(() => parentClient.drafts.omitAsset({ draftId: draft.id, itemRevisionId }));
       await load();
     } catch (cause) {
       setError(errorMessage(cause));

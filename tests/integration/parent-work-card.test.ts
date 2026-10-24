@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { completePresentation, createChild, createDraft, createServices, endSession, fakeSessionActivityDeps, FakeSessionActivityReviewer, loginParent, nextTask, publishDraft, readParentWorkCard, setupParent, startSession, submitAttempt, upsertAssignment } from "@learning/server";
 import type { SessionActivityReport } from "@learning/contracts";
-import { handleParentApi } from "../../apps/web/src/parent/parent-router";
+import { handleParentApi } from "./helpers";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
 
 const { pool } = testDatabase();

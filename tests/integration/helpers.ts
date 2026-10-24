@@ -7,8 +7,11 @@ import {
   type Clock,
   type Services,
 } from "@learning/server";
+import { withORpcFallback } from "@/http/orpc-fallback";
+import { handleParentApi as legacyHandleParentApi } from "@/parent/parent-router";
 import { createOpenApiHandler } from "@/orpc/handler";
 import { kidRouter } from "@/orpc/kid-router";
+import { parentORpcRouter } from "@/orpc/parent-router";
 
 type Pool = ReturnType<typeof createDatabase>["pool"];
 
@@ -32,6 +35,29 @@ export async function handleKidApi(request: Request, services: Services): Promis
     return response;
   }
   throw new AppError("not_found");
+}
+
+/**
+ * Wywołanie Parent API w testach integracyjnych — dokładna kompozycja catch-all
+ * `apps/web/src/app/api/v1/parent/[...path]/route.ts`: najpierw router oRPC
+ * (children/decks/drafts), brak dopasowania spada do legacy `handleParentApi`
+ * z segmentami ścieżki (grupy migrowane w kolejnych zadaniach). `segments`
+ * pozostają opcjonalne — dopasowanie oRPC chodzi po pełnym URL żądania.
+ */
+const parentApiDispatch = withORpcFallback(
+  createOpenApiHandler(parentORpcRouter),
+  "/api/v1/parent",
+  legacyHandleParentApi,
+);
+
+export async function handleParentApi(
+  request: Request,
+  services: Services,
+  segments?: string[],
+): Promise<Response> {
+  const path = segments ??
+    new URL(request.url).pathname.replace(/^\/api\/v1\/parent\/?/, "").split("/").filter(Boolean);
+  return parentApiDispatch(request, services, path);
 }
 
 /** Przechwytuje SQL także z klienta transakcyjnego oraz klientów już wcześniej połączonych z pulą. */

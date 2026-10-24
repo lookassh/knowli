@@ -13,7 +13,7 @@ import {
 } from "@learning/server";
 import { ManualClock, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration } from "./fakes";
-import { handleParentApi } from "../../apps/web/src/parent/parent-router";
+import { handleParentApi } from "./helpers";
 import { errorResponse } from "../../apps/web/src/http/errors";
 
 const { pool } = testDatabase();
