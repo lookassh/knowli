@@ -8,8 +8,8 @@ import type { AnyORPCError, Context, Router } from "@orpc/server";
  * Autorytatywne źródło koperty błędu oRPC: `{code, message, retryable,
  * requestId, details?}` powstaje WYŁĄCZNIE tutaj, w `customErrorResponseBodyEncoder`
  * handlera — dokładny port serializacji z `../http/errors.ts` (`withApi`).
- * Wrapper `withORpcFallback` przepuszcza odpowiedzi błędowe oRPC 1:1, bez
- * ponownego rzucania wyjątków.
+ * Catch-all przekazuje odpowiedzi błędowe oRPC 1:1, bez ponownego rzucania
+ * wyjątków.
  */
 
 const CATALOGUE = messages.errors as Record<string, string | undefined>;
@@ -17,7 +17,7 @@ const CATALOGUE = messages.errors as Record<string, string | undefined>;
 /**
  * Port mapowania kod→status z CODE_PROFILES (`packages/server/src/errors.ts`).
  * Klucze wielkimi literami — kody `ORPCError` po konwersji z `AppError`.
- * Parzystość pilnuje test w `../http/orpc-fallback.test.ts`.
+ * Parzystość pilnuje test w `./handler.test.ts`.
  */
 const APP_ERROR_STATUS: Record<AppErrorCode, number> = {
   unauthorized: 401,
@@ -111,7 +111,7 @@ export const appErrorEncoder = (error: AnyORPCError): unknown => {
 /**
  * Fabryka handlera OpenAPI dla routerów oRPC — jednolita konfiguracja
  * (encoder koperty + mapowanie statusów) dla każdego montowanego routera.
- * Kontekst przekazuje `withORpcFallback` przy każdym `handle`.
+ * Kontekst przekazuje catch-all (route.ts) przy każdym `handle`.
  */
 export function createOpenApiHandler<T extends Context>(router: Router<T>): OpenAPIHandler<T> {
   return new OpenAPIHandler(router, {

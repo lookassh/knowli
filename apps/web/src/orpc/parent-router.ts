@@ -77,8 +77,8 @@ import { assertDeclaredBodyCap } from "./request-limits";
  * z dispatchem lekcja/słówka), kartę pracy, lekcje (lessons, lesson-catalog,
  * lesson-verdicts, lesson-drafts), generację (generation), przypisania
  * (assignments) i postępy (progress). Ścieżki spoza kontraktu
- * (`matched === false`) spadają do legacy `handleParentApi` — reszka routera
- * (demontaż fallbacku w zadaniu 13).
+ * (`matched === false`) dostają `AppError("not_found")` bezpośrednio
+ * w catch-all — fallback legacy został zdekomisjonowany (zadanie 13).
  *
  * Autoryzacja: procedury poza grupą `auth` wymagają sesji rodzica
  * (`parentSessionMiddleware` na implementerze — działa przed walidacją inputu,

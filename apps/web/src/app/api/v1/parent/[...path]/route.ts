@@ -1,29 +1,35 @@
 import { getServerServices } from "@/composition";
 import { withApi } from "@/http/errors";
-import { withORpcFallback } from "@/http/orpc-fallback";
-import { handleParentApi } from "@/parent/parent-router";
 import { createOpenApiHandler } from "@/orpc/handler";
 import { parentORpcRouter } from "@/orpc/parent-router";
+import { AppError } from "@learning/server";
 
 interface RouteContext {
   params: Promise<{ path?: string[] }>;
 }
 
 // Handler oRPC budowany raz per proces (module scope); `Services` trafiają
-// per żądanie przez kontekst przekazywany w `withORpcFallback`.
+// per żądanie przez kontekst przekazywany do `handle`.
 const parentORpcHandler = createOpenApiHandler(parentORpcRouter);
 
-// Router oRPC ma priorytet; brak dopasowania (ścieżki spoza kontraktu) woła
-// resztkę legacy `handleParentApi` (`not_found`) z tymi samymi argumentami —
-// dekomisja fallbacku w zadaniu 13 migracji oRPC v2.
-const dispatchORpc = withORpcFallback(parentORpcHandler, "/api/v1/parent", handleParentApi);
-
-const dispatch = withApi<RouteContext>(async (request, context) => {
-  const { path } = await context.params;
-  return dispatchORpc(request, getServerServices(), path ?? []);
+// oRPC jest jedynym serwerem kontraktu Parent API (arch §12) — ręczny router
+// legacy i fallback `withORpcFallback` zostały zdekomisjonowane (zadanie 13
+// migracji oRPC v2). Ścieżka spoza kontraktu (`matched === false`) rzuca
+// `AppError("not_found")`, które zewnętrzna granica `withApi` serializuje do
+// koperty 404 — bajt w bajt jak koniecówka starego dispatchu, gdzie ten sam
+// wyjątek leciał z ostatniego wpadu legacy routera.
+const dispatch = withApi<RouteContext>(async (request, _context) => {
+  const { matched, response } = await parentORpcHandler.handle(request, {
+    prefix: "/api/v1/parent",
+    context: { services: getServerServices(), headers: request.headers },
+  });
+  if (matched) {
+    return response;
+  }
+  throw new AppError("not_found");
 });
 
-/** Catch-all API rodzica — po dekomisji tras statycznych login/setup/logout obsługuje cały /api/v1/parent. */
+/** Catch-all API rodzica — jedyny serwer /api/v1/parent: auth, dzieci, zestawy, lekcje i postępy. */
 export const GET = (request: Request, context: RouteContext): Promise<Response> =>
   dispatch(request, context);
 export const POST = (request: Request, context: RouteContext): Promise<Response> =>

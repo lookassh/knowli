@@ -49,7 +49,7 @@ describe("kid catch-all — dekomisja legacy routera", () => {
   it("koperta not_found jest kształtem 1:1 z granicą withApi (parzystość po usunięciu fallbacku)", async () => {
     // Referencja: dokładnie ten wyjątek leciał kiedyś z ostatniego wpadu legacy
     // routera i serializowała go granica withApi — porównanie jak w
-    // http/orpc-fallback.test.ts (requestId losowy per odpowiedź).
+    // orpc/handler.test.ts (requestId losowy per odpowiedź).
     const reference = (await (
       await errorResponse(new AppError("not_found"))
     ).json()) as ApiError;

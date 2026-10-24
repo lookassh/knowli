@@ -337,8 +337,8 @@ describe("auth i profile dzieci (integracja)", () => {
 
   describe("przepływ HTTP przez router oRPC (kompozycja catch-all)", () => {
     it("setup → login → children → create → delete → logout", async () => {
-      // cały przepływ idzie przez handleParentApi (router oRPC + fallback) —
-      // dokładna kompozycja catch-all /api/v1/parent/[...path]
+      // cały przepływ idzie przez handleParentApi (router oRPC, bez
+      // fallbacku) — dokładna kompozycja catch-all /api/v1/parent/[...path]
       const { services } = buildTestServices();
       const origin = { origin: BASE };
 

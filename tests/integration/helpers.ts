@@ -7,8 +7,6 @@ import {
   type Clock,
   type Services,
 } from "@learning/server";
-import { withORpcFallback } from "@/http/orpc-fallback";
-import { handleParentApi as legacyHandleParentApi } from "@/parent/parent-router";
 import { createOpenApiHandler } from "@/orpc/handler";
 import { kidRouter } from "@/orpc/kid-router";
 import { parentORpcRouter } from "@/orpc/parent-router";
@@ -16,6 +14,7 @@ import { parentORpcRouter } from "@/orpc/parent-router";
 type Pool = ReturnType<typeof createDatabase>["pool"];
 
 const kidApiHandler = createOpenApiHandler(kidRouter);
+const parentApiHandler = createOpenApiHandler(parentORpcRouter);
 
 /**
  * Wywołanie Kid API w testach integracyjnych po dekomisji legacy routera:
@@ -38,28 +37,28 @@ export async function handleKidApi(request: Request, services: Services): Promis
 }
 
 /**
- * Wywołanie Parent API w testach integracyjnych — dokładna kompozycja catch-all
- * `apps/web/src/app/api/v1/parent/[...path]/route.ts`: router oRPC obsługuje
+ * Wywołanie Parent API w testach integracyjnych po dekomisji fallbacku legacy
+ * (zadanie 13): dokładna kompozycja catch-all
+ * `apps/web/src/app/api/v1/parent/[...path]/route.ts` — router oRPC obsługuje
  * cały kontrakt (auth/login-setup-logout, children/decks/drafts/mock-tests/
  * work-card/lekcje/werdykty/lesson-drafts/generation/assignments/progress),
- * brak dopasowania spada do resztki legacy `handleParentApi` (`not_found`;
- * dekomisja w zadaniu 13). `segments` pozostają opcjonalne — dopasowanie oRPC
- * chodzi po pełnym URL.
+ * a brak dopasowania rzuca `not_found`. `segments` pozostają akceptowane
+ * wyłącznie dla zapisu istniejących testów — dopasowanie oRPC chodzi po
+ * pełnym URL żądania, więc są ignorowane.
  */
-const parentApiDispatch = withORpcFallback(
-  createOpenApiHandler(parentORpcRouter),
-  "/api/v1/parent",
-  legacyHandleParentApi,
-);
-
 export async function handleParentApi(
   request: Request,
   services: Services,
-  segments?: string[],
+  _segments?: string[],
 ): Promise<Response> {
-  const path = segments ??
-    new URL(request.url).pathname.replace(/^\/api\/v1\/parent\/?/, "").split("/").filter(Boolean);
-  return parentApiDispatch(request, services, path);
+  const { matched, response } = await parentApiHandler.handle(request, {
+    prefix: "/api/v1/parent",
+    context: { services, headers: request.headers },
+  });
+  if (matched) {
+    return response;
+  }
+  throw new AppError("not_found");
 }
 
 /** Przechwytuje SQL także z klienta transakcyjnego oraz klientów już wcześniej połączonych z pulą. */

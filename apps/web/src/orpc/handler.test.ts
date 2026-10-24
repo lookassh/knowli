@@ -3,11 +3,10 @@ import { AppError, type Services } from "@learning/server";
 import { createORPCClient, ORPCError } from "@orpc/client";
 import { openapi } from "@orpc/openapi";
 import { OpenAPILink } from "@orpc/openapi/fetch";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { appErrorMiddleware, baseOs } from "../orpc/base";
-import { createOpenApiHandler, errorStatusMap } from "../orpc/handler";
-import { errorResponse, withApi } from "./errors";
-import { withORpcFallback } from "./orpc-fallback";
+import { describe, expect, it } from "vitest";
+import { appErrorMiddleware, baseOs } from "./base";
+import { createOpenApiHandler, errorStatusMap } from "./handler";
+import { errorResponse } from "../http/errors";
 
 const services = {} as Services;
 const PREFIX = "/api/rpc/probe";
@@ -50,55 +49,23 @@ const crashing = baseOs
 
 const handler = createOpenApiHandler({ boom, sealed, reopened, unwrapped, crashing });
 
-const legacy = vi.fn(
-  async (_request: Request, _services: Services, segments: string[]): Promise<Response> => {
-    if (segments[0] === "legacy-ok") {
-      return Response.json({ handledBy: "legacy" });
-    }
-    throw new AppError("not_found");
-  },
-);
-
-const fallback = withORpcFallback(handler, PREFIX, legacy);
-
-function request(path: string): Request {
-  return new Request(`http://localhost${PREFIX}${path}`);
+/**
+ * Wywołanie handlera jak w catch-all (route.ts): dopasowanie po pełnym URL
+ * pod prefixem, usługi przez kontekst. Ścieżki procedur testowych zawsze
+ * pasują, więc `matched` jest zawsze prawdziwe.
+ */
+async function call(path: string): Promise<Response> {
+  const { matched, response } = await handler.handle(new Request(`http://localhost${PREFIX}${path}`), {
+    prefix: PREFIX,
+    context: { services, headers: new Headers() },
+  });
+  if (!matched) throw new Error(`ścieżka testowa ${path} musi pasować`);
+  return response;
 }
 
-beforeEach(() => {
-  vi.clearAllMocks();
-});
-
-describe("withORpcFallback", () => {
-  it("delegates unmatched paths to the legacy router and returns its response", async () => {
-    const response = await fallback(request("/legacy-ok"), services, ["legacy-ok"]);
-
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ handledBy: "legacy" });
-    expect(legacy).toHaveBeenCalledTimes(1);
-    expect(legacy).toHaveBeenCalledWith(expect.any(Request), services, ["legacy-ok"]);
-  });
-
-  it("does not call legacy when the oRPC handler matched the path", async () => {
-    await fallback(request("/boom"), services, ["boom"]);
-
-    expect(legacy).not.toHaveBeenCalled();
-  });
-
-  it("turns a legacy miss into the standard not_found envelope when composed with withApi", async () => {
-    const api = withApi((incoming) => fallback(incoming, services, ["unknown"]));
-
-    const response = await api(request("/unknown"));
-
-    expect(response.status).toBe(404);
-    const body = ApiErrorSchema.parse(await response.json());
-    expect(body.code).toBe("not_found");
-    expect(body.retryable).toBe(false);
-    expect(legacy).toHaveBeenCalledTimes(1);
-  });
-
-  it("passes the encoder error envelope through 1:1 for a procedure throwing AppError", async () => {
-    const response = await fallback(request("/boom"), services, ["boom"]);
+describe("createOpenApiHandler — encoder koperty błędów", () => {
+  it("buduje kopertę z kodu, komunikatu i details dla procedury rzucającej AppError", async () => {
+    const response = await call("/boom");
 
     expect(response.status).toBe(404);
     const body = ApiErrorSchema.parse(await response.json());
@@ -109,8 +76,7 @@ describe("withORpcFallback", () => {
   });
 
   it("produces the same envelope shape as the legacy withApi error boundary", async () => {
-    const orpcResponse = await fallback(request("/boom"), services, ["boom"]);
-    const orpcBody = (await orpcResponse.json()) as ApiError;
+    const orpcBody = (await (await call("/boom")).json()) as ApiError;
     const legacyBody = (await (
       await errorResponse(new AppError("not_found", { details: { segment: "decks" } }))
     ).json()) as ApiError;
@@ -124,7 +90,7 @@ describe("withORpcFallback", () => {
   });
 
   it("maps raw DB trigger errors to immutable/409 like the legacy withApi boundary", async () => {
-    const response = await fallback(request("/sealed"), services, ["sealed"]);
+    const response = await call("/sealed");
 
     expect(response.status).toBe(409);
     const body = ApiErrorSchema.parse(await response.json());
@@ -142,7 +108,7 @@ describe("withORpcFallback", () => {
   });
 
   it("maps terminal-task trigger errors to conflict/409", async () => {
-    const response = await fallback(request("/reopened"), services, ["reopened"]);
+    const response = await call("/reopened");
 
     expect(response.status).toBe(409);
     const body = ApiErrorSchema.parse(await response.json());
@@ -152,7 +118,7 @@ describe("withORpcFallback", () => {
   });
 
   it("recovers the envelope code from an AppError cause even without appErrorMiddleware", async () => {
-    const response = await fallback(request("/unwrapped"), services, ["unwrapped"]);
+    const response = await call("/unwrapped");
 
     // Status zostaje 500 (oRPC opakowało AppError jako INTERNAL_SERVER_ERROR,
     // a encoder nie zmienia statusu) — ale kod koperty nie może być fałszywy.
@@ -164,7 +130,7 @@ describe("withORpcFallback", () => {
   });
 
   it("maps unknown crashes to the internal envelope (retryable, like withApi)", async () => {
-    const response = await fallback(request("/crashing"), services, ["crashing"]);
+    const response = await call("/crashing");
 
     expect(response.status).toBe(500);
     const body = ApiErrorSchema.parse(await response.json());
@@ -173,12 +139,19 @@ describe("withORpcFallback", () => {
     expect(body.retryable).toBe(true);
   });
 
-  it("keeps the full client round trip working through the fallback (OpenAPILink)", async () => {
+  it("keeps the full client round trip working through the handler (OpenAPILink)", async () => {
     const client = createORPCClient<{ boom: () => Promise<unknown> }>(
       new OpenAPILink({ boom }, {
         origin: "http://localhost",
         url: PREFIX,
-        fetch: (input, init) => fallback(new Request(input, init), services, []),
+        fetch: async (input, init) => {
+          const { matched, response } = await handler.handle(new Request(input, init), {
+            prefix: PREFIX,
+            context: { services, headers: new Headers() },
+          });
+          if (!matched) throw new Error("ścieżka testowa musi pasować");
+          return response;
+        },
         customErrorResponseBodyDecoder: (body) => {
           const parsed = ApiErrorSchema.parse(body);
           return new ORPCError(parsed.code.toUpperCase(), { data: parsed });
@@ -200,7 +173,6 @@ describe("withORpcFallback", () => {
     expect(orpcError.data.requestId).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
     );
-    expect(legacy).not.toHaveBeenCalled();
   });
 });
 
