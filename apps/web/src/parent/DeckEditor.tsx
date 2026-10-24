@@ -168,7 +168,7 @@ export default function DeckEditor({
       const file = new File([blob], `generated-cover.${mimeType === "image/jpeg" ? "jpg" : mimeType.split("/")[1]}`, { type: mimeType });
       generatedCoverRef.current = { objectUrl, file };
       setGeneratedCover(generatedCoverRef.current);
-    } catch (cause) { if (deckIdRef.current === requestDeckId && coverGenerationToken.current !== requestToken) setError(errorMessage(cause)); }
+    } catch (cause) { if (deckIdRef.current === requestDeckId && coverGenerationToken.current === requestToken) setError(errorMessage(cause)); }
     finally { if (deckIdRef.current === requestDeckId && coverGenerationToken.current === requestToken) { setCoverBusy(false); setCoverGenerating(false); } }
   };
   const acceptGeneratedCover = async () => {

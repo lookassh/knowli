@@ -528,6 +528,15 @@ describe("parent oRPC router — CSRF (Origin)", () => {
 
     const cases: Array<[string, RequestInit, Mock]> = [
       ["/children", jsonInit({ displayName: "Ola", avatarKey: "fox", canRead: true }, evil), vi.mocked(createChild)],
+      [
+        `/children/${childId}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ displayName: "Ola G." }),
+          headers: { "content-type": "application/json", ...sessionCookie, ...evil },
+        },
+        vi.mocked(updateChild),
+      ],
       [`/children/${childId}`, { method: "DELETE", headers: { ...sessionCookie, ...evil } }, vi.mocked(deleteChild)],
       [
         `/children/${childId}/pronunciation`,
@@ -559,8 +568,20 @@ describe("parent oRPC router — CSRF (Origin)", () => {
         vi.mocked(setDeckCover),
       ],
       [`/decks/${deckId}/cover`, { method: "DELETE", headers: { ...sessionCookie, ...evil } }, vi.mocked(clearDeckCover)],
+      [`/decks/${deckId}/cover/generate`, { method: "POST", headers: { ...sessionCookie, ...evil } }, vi.mocked(generateDeckCover)],
+      [`/decks/${deckId}/draft`, { method: "POST", headers: { ...sessionCookie, ...evil } }, vi.mocked(createDraftFromPublished)],
       [`/decks/${deckId}/archive`, { method: "POST", headers: { ...sessionCookie, ...evil } }, vi.mocked(archiveDeck)],
+      [
+        `/drafts/${draftId}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ title: "Zwierzęta domowe", expectedEditNumber: 1 }),
+          headers: { "content-type": "application/json", ...sessionCookie, ...evil },
+        },
+        vi.mocked(editDraft),
+      ],
       [`/drafts/${draftId}/publish`, jsonInit({ expectedEditNumber: 1 }, evil), vi.mocked(publishDraft)],
+      [`/drafts/${draftId}/assets/regenerate`, jsonInit({ itemRevisionId: draftId, role: "illustration" }, evil), vi.mocked(regenerateRevisionAsset)],
       [`/drafts/${draftId}/assets/omit`, jsonInit({ itemRevisionId: draftId }, evil), vi.mocked(omitRevisionAsset)],
     ];
 
