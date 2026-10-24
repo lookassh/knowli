@@ -624,8 +624,9 @@ describe("karta aktywności dziecka w postępach (integracja)", () => {
     expect(progress.activity.daily.reduce((sum, d) => sum + d.activeSeconds, 0)).toBe(progress.activity.activeSeconds);
     expect(progress.activity.daily.filter((d) => d.sessions > 0)).toHaveLength(2);
     const profiles = await listKidProfiles(services);
-    expect(profiles.find(profile => profile.childId === childA)?.todayActivitySeconds)
-      .toBe(progress.activity.daily[progress.activity.daily.length - 1]!.activeSeconds);
+    // Górny licznik dziecka pokazuje wyłącznie zatwierdzone sekundy; te sesje
+    // nie mają oceny aktywności, mimo że raport rodzica pokazuje czas aktywny.
+    expect(profiles.find(profile => profile.childId === childA)?.todayActivitySeconds).toBe(0);
     expect(profiles.find(profile => profile.childId === childB)?.todayActivitySeconds).toBe(0);
 
     // drugie dziecko bez własnej aktywności nie dziedziczy liczb

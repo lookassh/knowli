@@ -544,7 +544,7 @@ describe("session activity review", () => {
     expect(provider.callCount).toBe(0);
   });
 
-  it("carries the sub-minute remainder between sessions", async () => {
+  it("carries the sub-minute remainder across days but counts only today's approved time", async () => {
     const { services, clock } = await reviewerServices("2026-10-16T10:00:00.000Z");
     const child = await childWithProfile(services);
     const first = await playedSession(services, child.id);
@@ -553,6 +553,8 @@ describe("session activity review", () => {
       { taskId: first.tasks[0]!.taskId, exerciseType: first.tasks[0]!.exerciseType, intervals: [[0, 40_000]], edits: 1, attempts: first.attemptIds },
     ], 40_000));
     expect(await rewardPointsOf(child.id)).toEqual({ points: 0, remainder: 40_000 });
+    clock.advanceHours(24);
+    expect((await listKidProfiles(services)).find((profile) => profile.childId === child.id)?.todayActivitySeconds).toBe(0);
     const second = await playedSession(services, child.id);
     clock.advanceMs(50_000);
     const activity = await reviewEndedSession(services, second.session.sessionId, reportOf([
@@ -562,6 +564,7 @@ describe("session activity review", () => {
     expect(await rewardPointsOf(child.id)).toEqual({ points: 1, remainder: 30_000 });
     const profiles = await listKidProfiles(services);
     expect(profiles.find((profile) => profile.childId === child.id)?.rewardPoints).toBe(1);
+    expect(profiles.find((profile) => profile.childId === child.id)?.todayActivitySeconds).toBe(50);
   });
 
   it("cleanup drops expired details but keeps points, short result and the once-marker", async () => {

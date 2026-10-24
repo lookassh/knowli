@@ -379,7 +379,7 @@ export const KidProfileDtoSchema = z.object({
   avatarKey: z.string().min(1),
   recordingMode: RecordingModeSchema,
   canRead: z.boolean().default(true),
-  /** Sekundy aktywności sesji z dzisiejszego wiersza raportu rodzica; brak oznacza starszy serwer lub niedostępne dane. */
+  /** Suma zatwierdzonych sekund sesji zakończonych dzisiaj; brak oznacza starszy serwer lub niedostępne dane. */
   todayActivitySeconds: z.number().int().nonnegative().optional(),
   /** Distinguishes an unavailable report from an older server that omits the activity field. */
   todayActivityUnavailable: z.boolean().optional(),

@@ -44,7 +44,7 @@ const summary: SessionSummaryDto = {
 };
 
 describe("kid reward views", () => {
-  it("shows today's session activity at the top of the selected child's deck screen", () => {
+  it("shows today's approved time at the top of the selected child's deck screen", () => {
     const screen = (todayActivitySeconds?: number, todayActivityUnavailable = false) => (
       <DeckScreen
         decks={[]}
@@ -57,10 +57,11 @@ describe("kid reward views", () => {
         onStart={vi.fn()}
       />
     );
-    expect(textNodes(screen(25 * 60)).join(" ")).toContain("Dziś: 25 min");
-    expect(textNodes(screen(0)).join(" ")).toContain("Dziś: 0 min");
-    expect(textNodes(screen()).join(" ")).toContain("Dziś: 0 min");
-    expect(textNodes(screen(undefined, true)).join(" ")).toContain("Dziś: —");
+    expect(textNodes(screen(25 * 60)).join(" ")).toContain("Zatwierdzono dziś: 25 min");
+    expect(textNodes(screen(125)).join(" ")).toContain("Zatwierdzono dziś: 2 min 5 s");
+    expect(textNodes(screen(0)).join(" ")).toContain("Zatwierdzono dziś: 0 s");
+    expect(textNodes(screen()).join(" ")).toContain("Zatwierdzony czas: —");
+    expect(textNodes(screen(undefined, true)).join(" ")).toContain("Zatwierdzony czas: —");
   });
 
   it("shows a single general points counter without balances, packs and daily goals", () => {
@@ -78,8 +79,9 @@ describe("kid reward views", () => {
   });
 
   it("shows the session points or an explicit no-rating message", () => {
-    const awarded = textNodes(<SummaryScreen summary={{ ...summary, activity: { status: "evaluated", pointsAwarded: 7, errorCode: null } }} profiles={[profile]} onAgain={vi.fn()} onSwitchProfile={vi.fn()} />).join(" ");
+    const awarded = textNodes(<SummaryScreen summary={{ ...summary, activity: { status: "evaluated", pointsAwarded: 7, approvedSeconds: 125, errorCode: null } }} profiles={[profile]} onAgain={vi.fn()} onSwitchProfile={vi.fn()} />).join(" ");
     expect(awarded).toContain("Zdobyto 7 pkt");
+    expect(awarded).toContain("Zatwierdzony czas nauki: 2 min 5 s");
     const failed = textNodes(<SummaryScreen summary={{ ...summary, activity: { status: "error", pointsAwarded: 0, errorCode: "model_timeout" } }} profiles={[profile]} onAgain={vi.fn()} onSwitchProfile={vi.fn()} />).join(" ");
     expect(failed).toContain("Nauka zapisana. Nie udało się naliczyć punktów.");
     const inProgress = textNodes(<SummaryScreen summary={{ ...summary, activity: { status: "already_started", pointsAwarded: 0, errorCode: null } }} profiles={[profile]} onAgain={vi.fn()} onSwitchProfile={vi.fn()} />).join(" ");

@@ -227,14 +227,16 @@ export const SessionActivityResultStatusSchema = z.enum(["evaluated", "error", "
 export type SessionActivityResultStatus = z.infer<typeof SessionActivityResultStatusSchema>;
 
 /**
- * Mały wynik widoczny dla dziecka: punkty albo jawny brak oceny. Bez
- * uzasadnień modelu, sekund i technicznych szczegółów.
+ * Mały wynik widoczny dla dziecka: punkty, zatwierdzony czas albo jawny brak
+ * oceny. Bez uzasadnień modelu i technicznych szczegółów.
  */
 export const SessionActivityResultDtoSchema = z.object({
   status: SessionActivityResultStatusSchema,
   pointsAwarded: z.number().int().nonnegative(),
+  /** Zatwierdzony czas po ocenie; nullable/optional dla starszych klientów i braku oceny. */
+  approvedSeconds: z.number().int().nonnegative().nullable().optional(),
   errorCode: z.string().min(1).nullable(),
-}).strict();
+});
 export type SessionActivityResultDto = z.infer<typeof SessionActivityResultDtoSchema>;
 
 /** Trwały krótki wynik oceny sesji (learning_sessions.activity_review). */

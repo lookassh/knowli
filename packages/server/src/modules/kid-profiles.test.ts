@@ -1,20 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { Services } from "../config";
 
-vi.mock("./reporting", () => ({ readActivitySummary: vi.fn() }));
-
 import { listKidProfiles } from "./kid";
-import { readActivitySummary } from "./reporting";
 
 const childId = "10000000-0000-4000-8000-000000000001";
 
 describe("Kid profile activity", () => {
-  beforeEach(() => {
-    vi.mocked(readActivitySummary).mockReset();
-  });
-
-  it("keeps profile selection available when today's activity report fails", async () => {
-    vi.mocked(readActivitySummary).mockRejectedValue(new Error("report unavailable"));
+  it("keeps profile selection available when the approved-time query fails", async () => {
     const services = {
       db: {
         select: () => ({
@@ -27,16 +19,18 @@ describe("Kid profile activity", () => {
               canRead: true,
               rewardPoints: 7,
             }],
+            where: async () => { throw new Error("review query unavailable"); },
           }),
         }),
       },
+      clock: { now: () => new Date("2026-10-24T12:00:00.000Z") },
     } as unknown as Services;
 
     await expect(listKidProfiles(services)).resolves.toMatchObject([{
       childId,
       displayName: "Ola",
       rewardPoints: 7,
-      todayActivitySeconds: undefined,
+      todayActivitySeconds: 0,
       todayActivityUnavailable: true,
     }]);
   });
