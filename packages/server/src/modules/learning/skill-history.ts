@@ -73,7 +73,7 @@ export async function readSkillHistories(
   const firstAudioAtByTask = new Map(audioRows.map((row) => [row.taskId, row.firstAudioAt]));
 
   const requested = new Map(unique.map((scope) => [skillHistoryKey(scope), scope]));
-  const histories = new Map<string, History>();
+  const histories = new Map<string, HistoryEntry[]>();
   for (const row of rows) {
     const scope: HistoryScope = {
       childId: row.childId,
@@ -103,7 +103,9 @@ export async function readSkillHistories(
       audioIssuedBeforeAnswer: firstAudioAtByTask.get(row.taskId) !== undefined
         && new Date(firstAudioAtByTask.get(row.taskId)!).getTime() <= row.receivedAt.getTime(),
     }])[0]!;
-    histories.set(key, [...(histories.get(key) ?? []), qualified]);
+    const list = histories.get(key);
+    if (list) list.push(qualified);
+    else histories.set(key, [qualified]);
   }
   return histories;
 }
