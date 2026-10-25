@@ -27,7 +27,16 @@ const fragmentDescriptions = {
 } as const;
 
 /** Nie-modalna karta wyniku mowy, osadzona bezpośrednio pod bieżącym zadaniem. */
-export function SpeechFeedbackContent(props: SpeechFeedbackCardProps): ReactElement {
+export function SpeechFeedbackReferenceAction(props: SpeechFeedbackCardProps): ReactElement | null {
+  if (!props.audioAvailable) return null;
+  return (
+    <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-play-reference" disabled={props.busy} onClick={props.onPlay}>
+      {messages.kid.feedbackPlayReference}
+    </ActionButton>
+  );
+}
+
+export function SpeechFeedbackContent(props: SpeechFeedbackCardProps & { inDock?: boolean }): ReactElement {
   const view = describeSpeechFeedback(props.dto, props.exerciseType);
   const headingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
@@ -45,6 +54,8 @@ export function SpeechFeedbackContent(props: SpeechFeedbackCardProps): ReactElem
     <Box component="section"
       className={["kid-speech-feedback", toneClass].join(" ")}
       data-testid="kid-speech-feedback"
+      role="status"
+      aria-live="polite"
       aria-labelledby="kid-speech-feedback-title"
       aria-busy={props.busy}
     >
@@ -96,13 +107,11 @@ export function SpeechFeedbackContent(props: SpeechFeedbackCardProps): ReactElem
         {props.audioError && <p role="alert" className="kid-speech-feedback__error">{messages.kid.feedbackAudioError}</p>}
       </div>
 
-      <div className="kid-speech-feedback__actions">
-        {props.audioAvailable && (
-          <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-play-reference" disabled={props.busy} onClick={props.onPlay}>
-            {messages.kid.feedbackPlayReference}
-          </ActionButton>
-        )}
-      </div>
+      {!props.inDock && (
+        <div className="kid-speech-feedback__actions">
+          <SpeechFeedbackReferenceAction {...props} />
+        </div>
+      )}
     </Box>
   );
 }

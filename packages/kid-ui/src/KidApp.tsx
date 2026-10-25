@@ -91,7 +91,7 @@ function KidAppContent({
     case "loading":
       return (
         <KidPage mode="flow">
-          <KidScreen mode="flow" role="main" className="kid-screen">
+          <KidScreen role="main" className="kid-screen">
             <KidScreen.Content><Text className="kid-hint" role="status">{messages.kid.loading}</Text></KidScreen.Content>
           </KidScreen>
         </KidPage>
@@ -99,7 +99,7 @@ function KidAppContent({
     case "initError":
       return (
         <KidPage mode="flow">
-          <KidScreen mode="flow" role="main" className="kid-screen kid-init-error-screen">
+          <KidScreen role="main" className="kid-screen kid-init-error-screen">
             {actions && <KidScreen.Header><header className="kid-top-bar">{actions}</header></KidScreen.Header>}
             <KidScreen.Content><Text className="kid-hint" data-testid="kid-init-error" role="alert">{screen.message}</Text></KidScreen.Content>
             <KidScreen.Actions>

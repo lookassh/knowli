@@ -16,21 +16,17 @@ import {
 import type { ReactNode } from "react";
 import classes from "./KidScreen.module.css";
 
-type KidScreenMode = "flow" | "session";
 type KidScreenStylesNames = "root" | "header" | "content" | "actions" | "primary" | "secondary";
 
 interface KidScreenContextValue {
   getStyles: GetStylesApi<KidScreenFactory>;
-  mode: KidScreenMode;
 }
 
 const [KidScreenProvider, useKidScreenContext] = createSafeContext<KidScreenContextValue>(
   "KidScreen sub-components must be rendered inside KidScreen",
 );
 
-export interface KidScreenProps extends BoxProps, StylesApiProps<KidScreenFactory>, ElementProps<"div"> {
-  mode?: KidScreenMode;
-}
+export interface KidScreenProps extends BoxProps, StylesApiProps<KidScreenFactory>, ElementProps<"div"> {}
 
 export interface KidScreenHeaderProps extends BoxProps, CompoundStylesApiProps<KidScreenHeaderFactory>, ElementProps<"div"> {}
 export interface KidScreenContentProps extends BoxProps, CompoundStylesApiProps<KidScreenContentFactory>, ElementProps<"div"> {}
@@ -70,8 +66,6 @@ export type KidScreenFactory = Factory<{
   };
 }>;
 
-const rootDefaultProps = { mode: "flow" } satisfies Partial<KidScreenProps>;
-
 export const KidScreenHeader = factory<KidScreenHeaderFactory>((_props) => {
   const props = useProps("KidScreenHeader", {}, _props);
   const { className, style, classNames, styles, children, ...others } = props;
@@ -105,8 +99,8 @@ export const KidScreenActions = factory<KidScreenActionsFactory>((_props) => {
 KidScreenActions.displayName = "KidScreenActions";
 
 export const KidScreen = factory<KidScreenFactory>((_props) => {
-  const props = useProps("KidScreen", rootDefaultProps, _props);
-  const { classNames, className, style, styles, unstyled, vars, attributes, mode, mod, children, ...others } = props;
+  const props = useProps("KidScreen", {}, _props);
+  const { classNames, className, style, styles, unstyled, vars, attributes, children, ...others } = props;
   const getStyles = useStyles<KidScreenFactory>({
     name: "KidScreen",
     classes,
@@ -121,8 +115,8 @@ export const KidScreen = factory<KidScreenFactory>((_props) => {
   });
 
   return (
-    <KidScreenProvider value={{ getStyles, mode }}>
-      <Box data-testid="kid-screen" data-kid-screen="true" mod={[mod, { mode }]} {...getStyles("root")} {...others}>
+    <KidScreenProvider value={{ getStyles }}>
+      <Box data-testid="kid-screen" data-kid-screen="true" {...getStyles("root")} {...others}>
         {children}
       </Box>
     </KidScreenProvider>

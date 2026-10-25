@@ -7,7 +7,7 @@ import type { ExerciseProps } from "./types";
 import { shouldIgnoreKeyboardShortcut } from "./useChoiceKeyboard";
 import { ActionButton } from "../components/ActionButton";
 
-export function PictureExposureView({ task, busy, mediaUrl, handlers }: ExerciseProps) {
+export function PictureExposureView({ task, busy, mediaUrl, dock, handlers }: ExerciseProps) {
   const doneRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -36,6 +36,7 @@ export function PictureExposureView({ task, busy, mediaUrl, handlers }: Exercise
 
   return (
     <ExerciseFrame
+      dock={dock}
       task={task}
       content={(
         <div className="kid-exposure-content">

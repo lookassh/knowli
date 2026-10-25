@@ -8,7 +8,7 @@ import { AnswerGrid } from "../../components/AnswerGrid";
  * bierze je z prezentacji), a dziecko wybiera jedną z krótkich opcji —
  * odpowiedź `choice`. Wynik podświetlany z feedbacku serwera.
  */
-export function LessonShortAnswerView({ task, busy, optionOutcomes, result, resultActions, handlers }: ExerciseProps) {
+export function LessonShortAnswerView({ task, busy, optionOutcomes, dock, handlers }: ExerciseProps) {
   const prompt = task.prompt.kind === "lesson_short_answer" ? task.prompt : null;
   const options = prompt ? prompt.options : [];
   const optionRefs = useChoiceKeyboard({
@@ -32,9 +32,7 @@ export function LessonShortAnswerView({ task, busy, optionOutcomes, result, resu
         className="kid-options"
         itemClassName={() => "kid-lesson-short-answer"}
       />}
-      actions={resultActions}
-      result={result}
-      reserveResult
+      dock={dock}
     />
   );
 }

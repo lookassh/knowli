@@ -12,7 +12,7 @@ import { useChoiceKeyboard } from "./useChoiceKeyboard";
  * zapis nie jest widoczny przed odpowiedzią; ponowny odsłuch nie zdradza
  * polskiej odpowiedzi (§13.2).
  */
-export function ListeningView({ task, busy, optionOutcomes, result, resultActions, handlers, mockTest }: ExerciseProps) {
+export function ListeningView({ task, busy, optionOutcomes, dock, handlers, mockTest }: ExerciseProps) {
   const prompt = task.prompt.kind === "listening" ? task.prompt : null;
   const options = prompt ? prompt.options : [];
   const playRef = useRef<HTMLButtonElement>(null);
@@ -61,13 +61,11 @@ export function ListeningView({ task, busy, optionOutcomes, result, resultAction
           />
         </>
       )}
-      actions={resultActions}
+      dock={dock}
       secondaryActions={mockTest && <div className="kid-secondary-actions">
         <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-not-remember" disabled={busy} onClick={handlers.onNotRemember}>{messages.kid.mockTestNotRemember}</ActionButton>
         <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-skip" disabled={busy} onClick={handlers.onSkip}>{messages.kid.skip}</ActionButton>
       </div>}
-      result={result}
-      reserveResult
     />
   );
 }
