@@ -6,6 +6,7 @@ import { KidIcon } from "../../components/KidIcon";
 import { ActionButton } from "../../components/ActionButton";
 import { AnswerField } from "../../components/AnswerField";
 import { ExerciseFrame } from "../ExerciseFrame";
+import { useRetryReset } from "../useRetryReset";
 import type { ExerciseProps } from "../types";
 import { splitGap } from "./gap";
 
@@ -18,13 +19,14 @@ import { splitGap } from "./gap";
  * wzorcowego jest dozwolonym wsparciem (wym. 4.6; serwer pieczętuje ekspozycję
  * i kwalifikuje próbę jako wspomaganą).
  */
-export function LessonGapView({ task, busy, handlers }: ExerciseProps) {
+export function LessonGapView({ task, busy, dock, handlers }: ExerciseProps) {
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     inputRef.current?.focus({ preventScroll: true });
   }, [task.taskId]);
+  useRetryReset(dock, () => setText(""), () => inputRef.current?.focus({ preventScroll: true }));
 
   if (task.prompt.kind !== "lesson_gap") return null;
   const { before, after } = splitGap(task.prompt.stemWithGap);
@@ -36,6 +38,7 @@ export function LessonGapView({ task, busy, handlers }: ExerciseProps) {
 
   return (
     <ExerciseFrame
+      dock={dock}
       task={task}
       content={(
         <form

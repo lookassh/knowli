@@ -9,7 +9,7 @@ afterEach(cleanup);
 describe("KidScreen", () => {
   it("keeps primary and secondary action slots even when the primary is empty", () => {
     renderKid(
-      <KidScreen mode="session" mod={{ active: true }}>
+      <KidScreen mod={{ active: true }}>
         <KidScreen.Header>Nagłówek</KidScreen.Header>
         <KidScreen.Content>Treść</KidScreen.Content>
         <KidScreen.Actions secondary={<button type="button">Pomiń</button>} />
@@ -18,7 +18,7 @@ describe("KidScreen", () => {
 
     expect(screen.getByTestId("kid-primary-slot").textContent).toBe("");
     expect(screen.getByTestId("kid-secondary-slot").textContent).toContain("Pomiń");
-    expect(screen.getByTestId("kid-screen").getAttribute("data-mode")).toBe("session");
+    expect(screen.getByTestId("kid-screen").getAttribute("data-kid-screen")).toBe("true");
     expect(screen.getByTestId("kid-screen").hasAttribute("data-active")).toBe(true);
   });
 
@@ -27,7 +27,7 @@ describe("KidScreen", () => {
     const contentRef = createRef<HTMLDivElement>();
     const rootRef = createRef<HTMLDivElement>();
     const view = (heading: string) => (
-      <KidScreen ref={rootRef} mode="flow">
+      <KidScreen ref={rootRef}>
         <KidScreen.Header>{heading}</KidScreen.Header>
         <KidScreen.Content ref={contentRef} classNames={{ content: "probe-content" }}>
           <input ref={ref} aria-label="Wpis" defaultValue="" />

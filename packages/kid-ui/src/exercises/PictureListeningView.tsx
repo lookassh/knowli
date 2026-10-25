@@ -10,7 +10,7 @@ import { useChoiceKeyboard } from "./useChoiceKeyboard";
 import { AnswerGrid } from "../components/AnswerGrid";
 import classes from "./PictureListeningView.module.css";
 
-export function PictureListeningView({ task, busy, mediaUrl, optionOutcomes, result, resultActions, handlers }: ExerciseProps) {
+export function PictureListeningView({ task, busy, mediaUrl, optionOutcomes, dock, handlers }: ExerciseProps) {
   const prompt = task.prompt.kind === "picture_listening" ? task.prompt : null;
   const options = prompt ? prompt.options : [];
   const playRef = useRef<HTMLButtonElement>(null);
@@ -62,9 +62,7 @@ export function PictureListeningView({ task, busy, mediaUrl, optionOutcomes, res
           />
         </>
       )}
-      actions={resultActions}
-      result={result}
-      reserveResult
+      dock={dock}
     />
   );
 }

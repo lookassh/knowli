@@ -1,5 +1,7 @@
 .root {
-  width: min(100%, 1000px);
+  box-sizing: border-box;
+  width: min(100%, 560px);
+  min-height: 100dvh;
   min-width: 0;
   margin-inline: auto;
   padding-top: max(16px, env(safe-area-inset-top));
@@ -9,17 +11,6 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
-}
-
-.root[data-mode="session"] {
-  width: min(100%, 560px);
-  height: 100%;
-  min-height: 0;
-  padding-top: max(12px, env(safe-area-inset-top));
-  padding-bottom: max(12px, env(safe-area-inset-bottom));
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: 8px;
 }
 
 .header,
@@ -35,17 +26,19 @@
   gap: 12px;
 }
 
-.root[data-mode="session"] > .content {
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
 .actions {
   display: grid;
   grid-template-rows: minmax(54px, auto) minmax(48px, auto);
   align-content: end;
   gap: 8px;
+}
+
+.primary {
+  min-height: 54px;
+}
+
+.secondary {
+  min-height: 48px;
 }
 
 .primary,
@@ -55,34 +48,22 @@
   align-items: stretch;
 }
 
-.root[data-mode="session"] > .actions > .secondary:has(> *) {
-  min-height: 52px;
-  height: 52px;
-}
-
 .primary > *,
 .secondary > * {
   width: 100%;
-}
-
-.root[data-mode="flow"] > .actions {
-  grid-template-rows: auto auto;
-}
-
-:global(.kid-page[data-viewport-very-short="true"]) .root[data-mode="session"] {
-  height: auto;
-  min-height: 100%;
-  grid-template-rows: auto auto auto;
-}
-
-:global(.kid-page[data-viewport-very-short="true"]) .root[data-mode="session"] > .content {
-  min-height: auto;
-  overflow: visible;
 }
 
 @media (max-width: 359px) {
   .root {
     padding-right: max(12px, env(safe-area-inset-right));
     padding-left: max(12px, env(safe-area-inset-left));
+  }
+}
+
+@media (max-height: 700px) {
+  .root {
+    gap: 4px;
+    padding-top: max(12px, env(safe-area-inset-top));
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
   }
 }

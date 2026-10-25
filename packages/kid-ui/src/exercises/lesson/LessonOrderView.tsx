@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { UnstyledButton } from "@mantine/core";
 import { messages } from "@learning/contracts";
 import { format } from "../../format";
 import { ActionButton } from "../../components/ActionButton";
 import { ExerciseFrame } from "../ExerciseFrame";
+import { useRetryReset } from "../useRetryReset";
 import type { ExerciseProps } from "../types";
 import { addBlock, blockState, isComplete, placedIds, removeAt } from "./block-order";
 
@@ -15,20 +16,25 @@ import { addBlock, blockState, isComplete, placedIds, removeAt } from "./block-o
  * jest czysty (`block-order`), więc widok pozostaje cienki. Kolor nie jest
  * jedynym nośnikiem: pula i zdanie są osobnymi, opisanymi grupami.
  */
-export function LessonOrderView({ task, busy, handlers }: ExerciseProps) {
+export function LessonOrderView({ task, busy, dock, handlers }: ExerciseProps) {
   const [state, setState] = useState(() => blockState(task.prompt.kind === "lesson_order" ? task.prompt.items : []));
   useEffect(() => {
     if (task.prompt.kind === "lesson_order") setState(blockState(task.prompt.items));
   }, [task.taskId]);
+  const containerRef = useRef<HTMLDivElement>(null);
+  useRetryReset(dock, () => {
+    if (task.prompt.kind === "lesson_order") setState(blockState(task.prompt.items));
+  }, () => containerRef.current?.querySelector("button")?.focus({ preventScroll: true }));
   if (task.prompt.kind !== "lesson_order") return null;
   const complete = isComplete(state);
   const disabled = busy;
 
   return (
     <ExerciseFrame
+      dock={dock}
       task={task}
       content={(
-        <div className="kid-lesson-order" data-testid="kid-lesson-order">
+        <div ref={containerRef} className="kid-lesson-order" data-testid="kid-lesson-order">
           <div
             className="kid-lesson-order__sentence"
             data-testid="kid-lesson-order-sentence"

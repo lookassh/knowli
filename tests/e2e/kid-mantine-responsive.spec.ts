@@ -110,7 +110,8 @@ test("Mantine picture choices keep their geometry until the server verdict", asy
   await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-prompt-kind", "picture_listening");
 
   await expect(page.locator(".kid-theme")).toBeVisible();
-  await expect(page.locator("[data-kid-screen='true']")).toBeVisible();
+  await expect(page.getByTestId("kid-session-frame")).toBeVisible();
+  await expect(page.getByTestId("kid-exercise")).toBeVisible();
   const options = page.getByTestId("kid-option");
   await expect(options).toHaveCount(3);
   const geometry = async () => page.evaluate(() => {

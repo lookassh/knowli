@@ -522,6 +522,11 @@ test("popup wyniku mieści się w ekranie telefonu bez przewijania", async ({ pa
   const next = page.getByTestId("kid-next");
   async function assertVisibleWithoutScrolling() {
     await expect(feedback).toBeVisible();
+    await expect.poll(async () => {
+      const box = await next.boundingBox();
+      const visibleHeight = await page.evaluate(() => window.visualViewport?.height ?? window.innerHeight);
+      return box ? Math.round(box.y + box.height - visibleHeight) : 999;
+    }, { message: "feedback action settles inside the visual viewport" }).toBeLessThanOrEqual(0);
     // toBeVisible() alone allows elements below the viewport. Bounding boxes
     // are read before click(), which otherwise scrolls automatically.
     for (const locator of [feedback, next]) {

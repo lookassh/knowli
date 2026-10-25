@@ -132,11 +132,17 @@ test("trzy odpowiedzi obrazkowe mieszczą się bez przewijania", async ({ page }
 
 test("siatka wykorzystuje szerokość ekranu, a wynik i akcja trzymają się obrazków", async ({ page }, testInfo) => {
   await openPictureChoices(page, pictureChoiceLayoutFixture(), { width: 390, height: 844 });
+  await page.getByTestId("kid-option").first().click();
+  await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
+  await expect.poll(async () => {
+    const box = await page.getByTestId("kid-feedback-dock").boundingBox();
+    return box ? Math.round(box.y + box.height) : 99999;
+  }, { message: "dock settles at the viewport bottom" }).toBeLessThanOrEqual(845);
 
   const geometry = await page.evaluate(() => {
     const options = [...document.querySelectorAll<HTMLElement>("[data-testid='kid-option']")];
     const grid = document.querySelector<HTMLElement>(".kid-picture-options")!;
-    const result = document.querySelector<HTMLElement>("[data-testid='kid-exercise-result']")!;
+    const result = document.querySelector<HTMLElement>("[data-testid='kid-feedback-dock']")!;
     const action = document.querySelector<HTMLElement>("[data-testid='kid-primary-slot']")!;
     const first = options[0]!.getBoundingClientRect();
     const third = options[2]!.getBoundingClientRect();
@@ -162,9 +168,11 @@ test("siatka wykorzystuje szerokość ekranu, a wynik i akcja trzymają się obr
   expect(tileRatio).toBeGreaterThanOrEqual(0.95);
   expect(tileRatio, JSON.stringify(geometry)).toBeLessThanOrEqual(1.3);
   expect(geometry.resultTop - geometry.thirdBottom).toBeGreaterThanOrEqual(0);
-  expect(geometry.resultTop - geometry.thirdBottom).toBeLessThanOrEqual(40);
-  expect(geometry.actionTop - geometry.resultBottom).toBeGreaterThanOrEqual(0);
-  expect(geometry.actionTop - geometry.resultBottom).toBeLessThanOrEqual(16);
+  // Dock jest zakotwiczony w dolnej krawędzi kadru, nie tuż pod kafelkami.
+  expect(geometry.resultBottom).toBeGreaterThanOrEqual(geometry.viewportHeight - 32);
+  expect(geometry.resultBottom).toBeLessThanOrEqual(geometry.viewportHeight + 1);
+  expect(geometry.actionTop).toBeGreaterThanOrEqual(geometry.resultTop);
+  expect(geometry.actionTop).toBeLessThanOrEqual(geometry.resultBottom);
   expect(geometry.documentScrollHeight).toBeLessThanOrEqual(geometry.viewportHeight + 1);
 
   await page.screenshot({ path: testInfo.outputPath("picture-choice-390x844.png") });
@@ -181,7 +189,8 @@ test("siatka wykorzystuje szerokość ekranu, a wynik i akcja trzymają się obr
       firstLeft: first.left,
       firstRight: first.right,
       thirdBottom: third.bottom,
-      resultTop: document.querySelector<HTMLElement>("[data-testid='kid-exercise-result']")!.getBoundingClientRect().top,
+      resultTop: document.querySelector<HTMLElement>("[data-testid='kid-feedback-dock']")!.getBoundingClientRect().top,
+      dockLeft: document.querySelector<HTMLElement>("[data-testid='kid-feedback-dock']")!.getBoundingClientRect().left,
       viewportWidth: window.innerWidth,
     };
   });
@@ -190,8 +199,7 @@ test("siatka wykorzystuje szerokość ekranu, a wynik i akcja trzymają się obr
   expect(desktop.gridWidth).toBeGreaterThanOrEqual(500);
   expect(desktop.optionWidth).toBeGreaterThanOrEqual(200);
   expect(Math.abs(desktop.optionWidth - desktop.optionHeight)).toBeLessThanOrEqual(1);
-  expect(desktop.resultTop - desktop.thirdBottom).toBeGreaterThanOrEqual(0);
-  expect(desktop.resultTop - desktop.thirdBottom).toBeLessThanOrEqual(40);
+  expect(desktop.dockLeft).toBeGreaterThanOrEqual(desktop.firstRight);
   expect(desktop.firstLeft).toBeGreaterThanOrEqual(0);
   expect(desktop.firstRight).toBeLessThanOrEqual(desktop.viewportWidth);
   await page.screenshot({ path: testInfo.outputPath("picture-choice-desktop-1366x768.png") });
@@ -207,13 +215,16 @@ test("szeroki ekran w poziomie utrzymuje osobne kolumny po odpowiedzi i przy pon
   ];
   await openPictureChoices(page, fixture, { width: 844, height: 390 });
 
-  const assertLandscapeLayout = async () => {
+  const assertLandscapeLayout = async (withDock = true) => {
+    if (withDock) await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
     const geometry = await page.evaluate(() => {
       const frame = document.querySelector<HTMLElement>("[data-testid='kid-exercise']")!.getBoundingClientRect();
       const options = [...document.querySelectorAll<HTMLElement>("[data-testid='kid-option']")];
       const third = options[2]!.getBoundingClientRect();
-      const result = document.querySelector<HTMLElement>("[data-testid='kid-exercise-result']")!.getBoundingClientRect();
-      const action = document.querySelector<HTMLElement>("[data-testid='kid-primary-slot']")!.getBoundingClientRect();
+      const dockElement = document.querySelector<HTMLElement>("[data-testid='kid-feedback-dock']");
+      const result = dockElement ? dockElement.getBoundingClientRect() : { left: 0, right: 0, top: Number.POSITIVE_INFINITY };
+      const actionElement = document.querySelector<HTMLElement>("[data-testid='kid-primary-slot']");
+      const action = actionElement ? actionElement.getBoundingClientRect() : { left: 0, right: 0 };
       return {
         frameWidth: frame.width,
         thirdBottom: third.bottom,
@@ -228,20 +239,31 @@ test("szeroki ekran w poziomie utrzymuje osobne kolumny po odpowiedzi i przy pon
       };
     });
     expect(geometry.frameWidth).toBeGreaterThan(560);
-    expect(geometry.thirdBottom).toBeLessThanOrEqual(geometry.resultTop);
-    expect(geometry.resultRight).toBeLessThanOrEqual(geometry.actionLeft);
+    if (withDock) {
+      await expect.poll(async () => {
+        const box = await page.getByTestId("kid-feedback-dock").boundingBox();
+        return box ? Math.round(box.y + box.height) : 99999;
+      }, { message: "landscape dock settles at the viewport bottom" }).toBeLessThanOrEqual(391);
+      const settled = await page.evaluate(() => {
+        const third = document.querySelectorAll<HTMLElement>("[data-testid='kid-option']")[2]!.getBoundingClientRect();
+        const dockEl = document.querySelector<HTMLElement>("[data-testid='kid-feedback-dock']");
+        return dockEl ? { thirdBottom: third.bottom, thirdRight: third.right, dockTop: dockEl.getBoundingClientRect().top, dockLeft: dockEl.getBoundingClientRect().left } : null;
+      });
+      // W poziomie dock stoi obok kafelkow: rozdzial jest poziomy, bez wyjatkow.
+      if (settled) expect(settled.thirdRight, JSON.stringify(settled)).toBeLessThanOrEqual(settled.dockLeft + 1);
     expect(geometry.resultRight).toBeLessThanOrEqual(geometry.viewportWidth);
     expect(geometry.actionLeft).toBeGreaterThanOrEqual(geometry.resultLeft);
-    expect(geometry.actionRight).toBeLessThanOrEqual(geometry.viewportWidth);
+    expect(geometry.actionRight).toBeLessThanOrEqual(geometry.resultRight + 1);
+    }
     expect(geometry.scrollHeight).toBeLessThanOrEqual(geometry.viewportHeight + 1);
   };
 
-  await assertLandscapeLayout();
+  await assertLandscapeLayout(false);
   await page.getByTestId("kid-option").nth(1).click();
   await expect(page.getByTestId("kid-feedback")).toBeVisible();
   await assertLandscapeLayout();
   await page.getByTestId("kid-next").click();
-  await assertLandscapeLayout();
+  await assertLandscapeLayout(false);
 });
 
 test("cyfra działa z klawiatury w ciemnym motywie, pokazuje błąd i pozwala spróbować ponownie", async ({ page }, testInfo) => {
