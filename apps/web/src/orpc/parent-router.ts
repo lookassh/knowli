@@ -16,8 +16,7 @@ import {
   editLessonDraft,
   enqueueDeckGeneration,
   generateDeckCover,
-  getLessonMockTestReport,
-  getMockTestReport,
+  getMockTestReportForSession,
   getProgress,
   getPronunciationSettings,
   isParentSetupRequired,
@@ -25,16 +24,13 @@ import {
   lessonObjectiveProgress,
   listChildren,
   listDecks,
-  listLessonMockTests,
   listLessonVerdicts,
-  listMockTests,
   logoutParent,
-  mockTestKindOfSession,
   omitRevisionAsset,
   publishDraft,
   publishLessonDraft,
   readDeck,
-  readDeckKind,
+  listMockTestReportsForDeck,
   readDraft,
   readGeneration,
   readLessonDeck,
@@ -331,22 +327,12 @@ const draftsOmitAsset = parentOs.drafts.omitAsset
     await omitRevisionAsset(context.services, input);
   });
 
-/** Lista kartkówek: dispatch po rodzaju zestawu (lekcja vs słówka). */
 const mockTestsList = parentOs.mockTests.list.handler(async ({ context, input }) => {
-  const kind = await readDeckKind(context.services.db, input.deckId);
-  const list = kind === "lesson"
-    ? await listLessonMockTests(context.services, input.childId, input.deckId)
-    : await listMockTests(context.services, input.childId, input.deckId);
-  return noStore(list);
+  return noStore(await listMockTestReportsForDeck(context.services, input.childId, input.deckId));
 });
 
-/** Raport jednej kartkówki: dispatch po rodzaju sesji (lekcja vs słówka). */
 const mockTestsGet = parentOs.mockTests.get.handler(async ({ context, input }) => {
-  const kind = await mockTestKindOfSession(context.services.db, input.sessionId);
-  const report = kind === "lesson"
-    ? await getLessonMockTestReport(context.services, input.sessionId)
-    : await getMockTestReport(context.services, input.sessionId);
-  return noStore(report);
+  return noStore(await getMockTestReportForSession(context.services, input.sessionId));
 });
 
 const workCardGet = parentOs.workCard.get.handler(async ({ context, input }) =>

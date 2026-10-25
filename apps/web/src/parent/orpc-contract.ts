@@ -320,8 +320,8 @@ export const parentApiContract = {
 
   /**
    * Kartkówki (mock-tests): lista per dziecko×zestaw i raport jednej sesji.
-   * Wybór kształtu (słówka vs lekcja) robi serwer po `readDeckKind`/
-   * `mockTestKindOfSession`, więc output jest unią raportów obu rodzajów.
+   * Wybór kształtu (słówka vs lekcja) robi publiczna operacja raportowania
+   * serwera, więc output jest unią raportów obu rodzajów.
    */
   mockTests: {
     list: oc

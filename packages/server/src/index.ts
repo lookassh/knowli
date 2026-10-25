@@ -152,6 +152,11 @@ export { recordEvent, authorizeDisclosure, contextOf } from "./modules/events";
 export type { SessionContextShape } from "./modules/events";
 export { getMockTestReport, listMockTests, readMockTestSummary } from "./modules/mock-tests";
 export {
+  getMockTestReportForSession,
+  listMockTestReportsForDeck,
+  readMockTestSummaryForSession,
+} from "./modules/mock-test-reports";
+export {
   getLessonMockTestReport,
   listLessonMockTests,
   readLessonMockTestSummary,
