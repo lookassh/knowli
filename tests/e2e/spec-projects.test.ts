@@ -37,7 +37,10 @@ const MOCK_SIGNALS: readonly RegExp[] = [
 
 describe("partycja speców E2E (spec-projects)", () => {
   it("każdy plik *.spec.ts jest sklasyfikowany dokładnie raz", () => {
-    const onDisk = readdirSync(E2E_DIR)
+    // Rekurencyjnie: spec w podkatalogu też musi zostać sklasyfikowany,
+    // inaczej żaden projekt by go nie uruchomił, a test przeszedłby zielono.
+    const onDisk = readdirSync(E2E_DIR, { recursive: true })
+      .map((name) => String(name).replaceAll("\\", "/"))
       .filter((name) => name.endsWith(".spec.ts"))
       .sort();
     const classified = [...MOCKED_SPECS, ...REAL_SPECS].sort();

@@ -84,9 +84,11 @@ function parseInteger(name, value, min, max) {
   return parsed;
 }
 
+const DETACHED = process.platform !== "win32";
+
 function runInherit(args, cwd, env) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, args, { cwd, env, stdio: "inherit" });
+    const child = spawn(process.execPath, args, { cwd, env, stdio: "inherit", detached: DETACHED });
     children.add(child);
     child.once("error", (error) => {
       children.delete(child);
@@ -100,12 +102,18 @@ function runInherit(args, cwd, env) {
   });
 }
 
-function killTree(child) {
+function killTree(child, signal = "SIGTERM") {
   if (child.pid === undefined || child.exitCode !== null) return;
   if (process.platform === "win32") {
     exec("taskkill", ["/pid", String(child.pid), "/T", "/F"]).catch(() => undefined);
-  } else {
-    child.kill("SIGTERM");
+    return;
+  }
+  // POSIX: dzieci startują detached, więc sygnał idzie do całej grupy
+  // procesów (Playwright, `next start`, worker ze świata global-setup).
+  try {
+    process.kill(-child.pid, signal);
+  } catch {
+    child.kill(signal);
   }
 }
 
@@ -140,6 +148,7 @@ function runPlaywright(label, runId, port, playwrightArgs) {
         UMIEM_E2E_SKIP_BUILD: "1",
       },
       stdio: ["ignore", "pipe", "pipe"],
+      detached: DETACHED,
     });
     children.add(child);
     prefixStream(child.stdout, `[${label}]`, process.stdout);
@@ -228,16 +237,26 @@ async function main() {
     console.log(`[shards]   ${result.label}: ${result.code === 0 ? "PASS" : `FAIL (kod ${result.code})`}${result.error ? ` — ${result.error}` : ""}`);
     if (result.code !== 0) failed = true;
   }
-  if (failed) process.exitCode = 1;
+  if (failed && !process.exitCode) process.exitCode = 1;
 }
 
 let interrupted = false;
 process.on("SIGINT", () => {
-  if (interrupted) process.exit(130);
+  if (interrupted) {
+    // Drugie Ctrl+C: twarda eskalacja i wyjście bez czekania na cleanup.
+    for (const child of children) killTree(child, "SIGKILL");
+    process.exit(130);
+  }
   interrupted = true;
-  // Ubijamy całe drzewa procesów: sam CLI Playwrighta zostawiłby osierocone
-  // `next start` i workery światów na ich portach.
-  for (const child of children) killTree(child);
+  process.exitCode = 130;
+  // Pierwsze Ctrl+C: SIGINT do grup procesów dzieci, żeby Playwright zdążył
+  // wykonać global-teardown światów (next start, worker, kontener), a runner
+  // doczekał do cleanupContainers w finally. SIGKILL po limicie, gdyby teardown
+  // zawiesił się na dobre.
+  for (const child of children) {
+    killTree(child, "SIGINT");
+    setTimeout(() => killTree(child, "SIGKILL"), 15_000).unref();
+  }
 });
 
 main().catch((error) => {
