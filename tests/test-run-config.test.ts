@@ -9,6 +9,8 @@ describe("readTestRunConfig", () => {
     expect(a.integrationContainerPrefix).not.toBe(b.integrationContainerPrefix);
     expect(a.e2eContainer).not.toBe(b.e2eContainer);
     expect(a.worldFile).not.toBe(b.worldFile);
+    expect(a.outputDir).not.toBe(b.outputDir);
+    expect(a.outputDir).toBe("test-results/run-a");
     expect(a.workerHealthPort).not.toBe(b.workerHealthPort);
     expect(a.e2ePort).toBe(24510);
     expect(b.e2ePort).toBe(24511);
@@ -23,6 +25,10 @@ describe("readTestRunConfig", () => {
       e2ePort: 24500,
       workerHealthPort: 9301,
       worldFile: "tests/e2e/.world.json",
+      outputDir: "test-results",
+      e2eWebMode: "start",
+      e2eSkipBuild: false,
+      e2eWorkers: 4,
     });
   });
 
@@ -36,5 +42,35 @@ describe("readTestRunConfig", () => {
 
   it.each(["", "abc", "1023", "65536", "24x10"])("rejects invalid worker health port %j", (port) => {
     expect(() => readTestRunConfig({ UMIEM_WORKER_HEALTH_PORT: port })).toThrow(/UMIEM_WORKER_HEALTH_PORT/);
+  });
+
+  it("defaults to production web mode and allows dev opt-in", () => {
+    expect(readTestRunConfig({}).e2eWebMode).toBe("start");
+    expect(readTestRunConfig({ UMIEM_E2E_WEB_MODE: "start" }).e2eWebMode).toBe("start");
+    expect(readTestRunConfig({ UMIEM_E2E_WEB_MODE: "dev" }).e2eWebMode).toBe("dev");
+  });
+
+  it.each(["", "prod", "START", "1"])("rejects invalid web mode %j", (mode) => {
+    expect(() => readTestRunConfig({ UMIEM_E2E_WEB_MODE: mode })).toThrow(/UMIEM_E2E_WEB_MODE/);
+  });
+
+  it("parses skip-build flag", () => {
+    expect(readTestRunConfig({}).e2eSkipBuild).toBe(false);
+    expect(readTestRunConfig({ UMIEM_E2E_SKIP_BUILD: "0" }).e2eSkipBuild).toBe(false);
+    expect(readTestRunConfig({ UMIEM_E2E_SKIP_BUILD: "1" }).e2eSkipBuild).toBe(true);
+  });
+
+  it.each(["", "true", "2"])("rejects invalid skip-build %j", (value) => {
+    expect(() => readTestRunConfig({ UMIEM_E2E_SKIP_BUILD: value })).toThrow(/UMIEM_E2E_SKIP_BUILD/);
+  });
+
+  it("parses workers with a default of 4", () => {
+    expect(readTestRunConfig({}).e2eWorkers).toBe(4);
+    expect(readTestRunConfig({ UMIEM_E2E_WORKERS: "1" }).e2eWorkers).toBe(1);
+    expect(readTestRunConfig({ UMIEM_E2E_WORKERS: "32" }).e2eWorkers).toBe(32);
+  });
+
+  it.each(["", "0", "33", "-1", "2x", "50%"])("rejects invalid workers %j", (value) => {
+    expect(() => readTestRunConfig({ UMIEM_E2E_WORKERS: value })).toThrow(/UMIEM_E2E_WORKERS/);
   });
 });
