@@ -28,6 +28,7 @@ import {
   testDatabase,
   truncateCoreTables,
   type ManualClock,
+  startLegacyTrainingSession,
 } from "./helpers";
 
 const { pool } = testDatabase();
@@ -715,6 +716,47 @@ describe("cykl życia sesji (integracja)", () => {
     expect(retry!.taskId).toBe(first!.taskId);
     expect(retry!.ordinal).toBe(first!.ordinal);
     expect(await countSessionRows(session.sessionId, "session_tasks")).toBe(1);
+  });
+
+  it("legacy session preserves materialized choice IDs and key across concurrency and restart", async () => {
+    const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 4));
+    const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: false });
+    const [legacy] = await query<{ training_plan: unknown }>("select training_plan from learning_app.learning_sessions where id=$1", [session.sessionId]);
+    expect(legacy?.training_plan).toBeNull();
+
+    let task: TaskDto | null = null;
+    for (let ordinal = 0; ordinal < 30; ordinal += 1) {
+      task = await nextTask(services, session.sessionId);
+      if (!task) throw new Error("expected legacy next task");
+      if ("options" in task.prompt && task.prompt.options.length >= 2) break;
+      if (task.exerciseType === "exposure") await completePresentation(services, { taskId: task.taskId });
+      else await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "skip" });
+      task = null;
+    }
+    expect(task).not.toBeNull();
+    expect(task?.prompt).toHaveProperty("options");
+    const [stored] = await query<{ public_prompt: unknown; answer_key: Record<string, unknown> }>(
+      "select public_prompt, answer_key from learning_app.session_tasks where id=$1", [task!.taskId],
+    );
+    const [event] = await query<{ id: string; sealed: boolean }>(
+      "select id, sealed from learning_app.learning_events where task_id=$1 and kind='prompt_issued'", [task!.taskId],
+    );
+    expect(event?.sealed).toBe(true);
+    expect((await query("select target_key from learning_app.event_exposures where event_id=$1", [event?.id])).length).toBeGreaterThan(0);
+
+    const concurrent = await Promise.all([nextTask(services, session.sessionId), nextTask(services, session.sessionId)]);
+    expect(concurrent[0]).toEqual(concurrent[1]);
+    expect(concurrent[0]).toMatchObject({ taskId: task!.taskId, prompt: stored!.public_prompt });
+    const restarted = openRestartedServices();
+    try {
+      expect(await nextTask(restarted.services, session.sessionId)).toMatchObject({ taskId: task!.taskId, prompt: stored!.public_prompt });
+    } finally {
+      await restarted.dispose();
+    }
+    expect((await query<{ answer_key: Record<string, unknown> }>("select answer_key from learning_app.session_tasks where id=$1", [task!.taskId]))[0]?.answer_key)
+      .toEqual(stored?.answer_key);
+    expect(await countSessionRows(session.sessionId, "session_tasks")).toBeGreaterThan(0);
+    await endSession(services, session.sessionId);
   });
 
   it("pierwsze zadanie nowego materiału to prezentacja z ujawnieniem celu przed odpowiedzią", async () => {

@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createChild, createDraft, publishDraft, upsertAssignment, startSession, nextTask, endSession, completePresentation, submitAttempt, createServices, executeMediaAsset, prepareUiAudio, reconcileDraftAssets, runDueGenerationWork } from "@learning/server";
 import { randomUUID } from "node:crypto";
-import { buildTestServices, ManualClock, testDatabase, truncateCoreTables } from "./helpers";
+import { buildTestServices, ManualClock, openRestartedServices, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration } from "./fakes";
 import { readTrainingSessionPlan } from "@learning/server";
 
@@ -48,6 +48,44 @@ describe("stały plan treningu słówek", () => {
     expect(await nextTask(services, session.sessionId)).toMatchObject({ taskId: task?.taskId });
     const [unchanged] = (await pool.query("select training_plan from learning_app.learning_sessions where id=$1", [session.sessionId])).rows as typeof row[];
     expect(unchanged?.training_plan).toEqual(row?.training_plan);
+    await endSession(services, session.sessionId);
+  });
+
+  it("utrzymuje przypięte opcje i ekspozycję zadania przy równoległym next i restarcie", async () => {
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const [before] = (await pool.query("select training_plan from learning_app.learning_sessions where id=$1", [session.sessionId])).rows as { training_plan: { slots: Array<{ taskId: string; prompt: { options?: unknown[] } }> } }[];
+    expect((await pool.query("select id from learning_app.session_tasks where session_id=$1", [session.sessionId])).rows).toHaveLength(0);
+    expect((await pool.query("select e.id from learning_app.learning_events e join learning_app.session_tasks t on t.id=e.task_id where t.session_id=$1", [session.sessionId])).rows).toHaveLength(0);
+    const choice = before!.training_plan.slots.find((slot) => (slot.prompt.options?.length ?? 0) >= 2);
+    expect(choice).toBeDefined();
+
+    let task: Awaited<ReturnType<typeof nextTask>> = null;
+    for (let index = 0; index < before!.training_plan.slots.length; index += 1) {
+      task = await nextTask(services, session.sessionId);
+      if (!task) throw new Error("expected next task");
+      if (task.taskId === choice!.taskId) break;
+      if (task.exerciseType === "exposure") await completePresentation(services, { taskId: task.taskId });
+      else await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "skip" });
+    }
+    expect(task?.taskId).toBe(choice!.taskId);
+    expect(task?.prompt).toHaveProperty("options");
+    const [stored] = (await pool.query("select answer_key, public_prompt from learning_app.session_tasks where id=$1", [task!.taskId])).rows as { answer_key: Record<string, unknown>; public_prompt: unknown }[];
+    const [event] = (await pool.query("select id, sealed from learning_app.learning_events where task_id=$1 and kind='prompt_issued'", [task!.taskId])).rows as { id: string; sealed: boolean }[];
+    expect(event?.sealed).toBe(true);
+    expect((await pool.query("select target_key from learning_app.event_exposures where event_id=$1", [event?.id])).rows.length).toBeGreaterThan(0);
+
+    const concurrent = await Promise.all([nextTask(services, session.sessionId), nextTask(services, session.sessionId)]);
+    expect(concurrent[0]).toEqual(concurrent[1]);
+    expect(concurrent[0]).toMatchObject({ taskId: task!.taskId, prompt: stored!.public_prompt });
+    const restarted = openRestartedServices();
+    try {
+      expect(await nextTask(restarted.services, session.sessionId)).toMatchObject({ taskId: task!.taskId, prompt: stored!.public_prompt });
+    } finally {
+      await restarted.dispose();
+    }
+    const [after] = (await pool.query("select answer_key from learning_app.session_tasks where id=$1", [task!.taskId])).rows as { answer_key: Record<string, unknown> }[];
+    expect(after?.answer_key).toEqual(stored?.answer_key);
+    expect((await pool.query("select id from learning_app.session_tasks where session_id=$1 and id=$2", [session.sessionId, task!.taskId])).rows).toHaveLength(1);
     await endSession(services, session.sessionId);
   });
 

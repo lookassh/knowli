@@ -13,8 +13,6 @@ import {
   type TaskDto,
   type TaskPrompt,
   type TestGoal,
-  type VisualType,
-  type MeaningVisual,
 } from "@learning/contracts";
 import type { Services } from "../config";
 import type { Tx } from "../db/client";
@@ -44,12 +42,13 @@ import {
   type TaskPlan,
 } from "../domain/scheduler";
 import type { Policy, ProgressStatus, ReadingDirection, Skill } from "../domain/types";
+import { buildTaskContent, type PlannedItem, type TaskContent } from "../domain/task-materialization";
+export type { PlannedItem } from "../domain/task-materialization";
 import { loadPolicy, ensureLearningPolicy, CURRENT_POLICY_ID } from "../policies/registry";
 import { lockTaskWithSession, writeSealedEvent, contextOf, type SessionContextShape } from "./events";
 import { payloadToItem } from "./item-payload";
 import { summarizeSessionAssessments } from "../domain/session-summary";
 import { computeTargetKey } from "../domain/target-key";
-import { buildLetterFragment } from "../domain/letter-fragment";
 import { MeaningVisualSchema } from "@learning/contracts";
 import { readUiAudio } from "./ui-audio";
 import { getVocabularyCapabilities } from "../domain/vocabulary-capabilities";
@@ -412,20 +411,6 @@ export async function startSession(services: Services, input: SessionInput): Pro
     }
     return sessionDto(tx, row!, false);
   });
-}
-
-export interface PlannedItem {
-  itemId: string;
-  source: string;
-  target: string;
-  acceptedAnswers: string[];
-  visualType: VisualType;
-  visualData?: Record<string, unknown>;
-  example?: string;
-  sourceLocale: string;
-  targetLocale: string;
-  meaningVisual?: MeaningVisual;
-  listeningVisual?: MeaningVisual;
 }
 
 interface PlannedTask {
@@ -975,13 +960,18 @@ async function createTrainingSessionPlan(
 }
 
 /** Tasowanie Fishera–Yatesa; pętla nie wykonuje się dla 0/1 elementów. */
-function shuffled<T>(items: readonly T[]): T[] {
+function shuffled<T>(items: readonly T[], random: () => number): T[] {
   const out = [...items];
   for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(random() * (i + 1));
     [out[i], out[j]] = [out[j]!, out[i]!];
   }
   return out;
+}
+
+export interface TaskMaterializationEffects {
+  random(): number;
+  createOptionId(): string;
 }
 
 export function materializeTask(
@@ -990,100 +980,22 @@ export function materializeTask(
   audioAssetId: string | null,
   imageAssetId: string | null,
   exampleAudioAssetId: string | null,
-): { prompt: TaskPrompt; answerKey: Record<string, unknown> } {
+  effects: TaskMaterializationEffects = { random: Math.random, createOptionId: randomUUID },
+): TaskContent {
   // Plan trzyma kanoniczną kolejność (poprawna pierwsza); kolejność prezentacji
   // losujemy raz przy wydaniu zadania, bo wydany prompt jest niezmienny, więc
   // ponowne wyświetlenie tego samego zadania zachowuje układ opcji.
-  const plannedOptions = shuffled(plan.options ?? []);
-  const optionIds = new Map(
-    plannedOptions.map((o) => [o.text, randomUUID()] as const),
-  );
-  const promptOptions = plannedOptions.map((o) => ({
-    id: optionIds.get(o.text)!,
-    text: o.text,
-  }));
-  const picturePromptOptions = plannedOptions.map((o) => ({
-    id: optionIds.get(o.text)!,
-    labelPl: o.text,
-    visual: o.visual!,
-  }));
-  const correctOption = plannedOptions.find((o) => o.correct);
-  const answerKey: Record<string, unknown> = {
-    exerciseType: plan.exerciseType,
-    target: item.target,
-    acceptedAnswers: item.acceptedAnswers,
-    ...(plan.direction ? { direction: plan.direction } : {}),
-    ...(correctOption ? { correctOptionId: optionIds.get(correctOption.text)! } : {}),
-    ...(plannedOptions.length > 0 ? { optionItemRevisionIds: Object.fromEntries(plannedOptions.map((option) => [optionIds.get(option.text)!, option.itemRevisionId])) } : {}),
-  };
-
-  let prompt: TaskPrompt;
-  switch (plan.exerciseType) {
-    case "exposure":
-      prompt = item.meaningVisual
-        ? { kind: "picture_exposure", visual: item.meaningVisual, audioAssetId }
-        : {
-        kind: "exposure",
-        source: item.source,
-        target: item.target,
-        example: item.example ?? null,
-        audioAssetId,
-        exampleAudioAssetId,
-        imageAssetId,
-        visualType: item.visualType,
-        ...(item.visualType !== "image" && item.visualType !== "none" && item.visualData !== undefined
-          ? { visualData: item.visualData }
-          : {}),
-        };
-      break;
-    case "listening":
-      prompt = plannedOptions.length > 0 && plannedOptions.every((option) => option.visual !== undefined)
-        ? { kind: "picture_listening", options: picturePromptOptions, audioAssetId: audioAssetId! }
-        : { kind: "listening", options: promptOptions, audioAssetId: audioAssetId! };
-      break;
-    case "reading":
-      prompt = { kind: "reading", text: item.target, options: promptOptions };
-      break;
-    case "reverse_recognition":
-      prompt = { kind: "reverse_recognition", prompt: item.source, options: promptOptions };
-      break;
-    case "picture_recognition":
-      // Obrazek + polski podpis → wybór angielskiego słowa. Prompt celowo nie
-      // niesie audio (SPEC A07): odsłuch poprawnej opcji ujawnia dopiero feedback.
-      prompt = {
-        kind: "picture_recognition",
-        visual: item.meaningVisual ?? item.listeningVisual!,
-        source: item.source,
-        options: promptOptions,
-      };
-      break;
-    case "recall":
-      prompt = plan.pictureRecall
-        ? { kind: "picture_recall", visual: item.meaningVisual! }
-        : { kind: "recall", prompt: item.source };
-      break;
-    case "spelling":
-      prompt = { kind: "spelling", prompt: item.source };
-      break;
-    case "letter_completion":
-      prompt = { kind: "letter_completion", prompt: item.source, fragment: buildLetterFragment(item.target) };
-      break;
-    case "speech":
-      prompt = item.meaningVisual
-        ? { kind: "picture_speech", visual: item.meaningVisual, audioAssetId }
-        : {
-        kind: "speech",
-        text: item.target,
-        audioAssetId,
-        imageAssetId,
-        visualType: item.visualType,
-        ...(item.visualType !== "image" && item.visualType !== "none" && item.visualData !== undefined
-          ? { visualData: item.visualData }
-          : {}),
-        };
-      break;
-  }
-  return { prompt, answerKey };
+  const plannedOptions = shuffled(plan.options ?? [], effects.random);
+  const optionIds = new Map(plannedOptions.map((option) => [option.text, effects.createOptionId()] as const));
+  const options = plannedOptions.map((option) => ({ ...option, id: optionIds.get(option.text)! }));
+  return buildTaskContent({
+    plan,
+    item,
+    options,
+    audioAssetId,
+    imageAssetId,
+    exampleAudioAssetId,
+  });
 }
 
 /**

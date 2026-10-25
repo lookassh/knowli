@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { TaskPlan } from "../domain/scheduler";
 import { materializeTask, type PlannedItem } from "./sessions";
 
@@ -33,28 +33,53 @@ function listeningPlan(overrides: Partial<TaskPlan> = {}): TaskPlan {
 }
 
 describe("materializeTask option order", () => {
-  it("shuffles options so the correct answer has no fixed position", () => {
-    const positionsOfCorrect = new Set<number>();
+  it.each([
+    { position: 0, random: [0.99, 0.99] },
+    { position: 1, random: [0.99, 0] },
+    { position: 2, random: [0, 0.99] },
+  ])("uses injected Fisher-Yates values to place the answer at $position", ({ position, random }) => {
+    const calls: string[] = [];
+    let ids = 0;
+    const effects = {
+      random: () => { calls.push("random"); return random.shift()!; },
+      createOptionId: () => { calls.push("id"); ids += 1; return `o${ids}`; },
+    };
+    const { prompt, answerKey } = materializeTask(listeningPlan(), plannedItem(), "asset-audio-1", null, null, effects);
+    expect(calls).toEqual(["random", "random", "id", "id", "id"]);
+    if (prompt.kind !== "listening") throw new Error(`expected listening prompt, got ${prompt.kind}`);
+    expect(prompt.options.findIndex((option) => option.id === answerKey.correctOptionId)).toBe(position);
+    expect(prompt.options.map((option) => option.id)).toEqual(["o1", "o2", "o3"]);
+    expect(prompt.options.map((option) => option.text)).toEqual(position === 0
+      ? ["Thursday", "Friday", "Wednesday"]
+      : position === 1 ? ["Friday", "Thursday", "Wednesday"] : ["Wednesday", "Friday", "Thursday"]);
+  });
 
-    for (let run = 0; run < 60; run++) {
-      const { prompt, answerKey } = materializeTask(
-        listeningPlan(),
-        plannedItem(),
-        "asset-audio-1",
-        null,
-        null,
-      );
-      if (prompt.kind !== "listening") {
-        throw new Error(`expected listening prompt, got ${prompt.kind}`);
-      }
-      const correctId = answerKey.correctOptionId;
-      expect(typeof correctId).toBe("string");
-      const correctOption = prompt.options.find((o) => o.id === correctId);
-      expect(correctOption?.text).toBe("Thursday");
-      positionsOfCorrect.add(prompt.options.findIndex((o) => o.text === "Thursday"));
-    }
+  it.each([{ count: 0, expectedIds: 0 }, { count: 1, expectedIds: 1 }])("uses no randomness for $count option(s)", ({ count, expectedIds }) => {
+    const calls: string[] = [];
+    const plan = listeningPlan({ options: listeningPlan().options!.slice(0, count) });
+    const { prompt } = materializeTask(plan, plannedItem(), "asset-audio-1", null, null, {
+      random: () => { calls.push("random"); return 0.5; },
+      createOptionId: () => { calls.push("id"); return "only-id"; },
+    });
+    expect(calls).toEqual(Array(expectedIds).fill("id"));
+    if (prompt.kind !== "listening") throw new Error("expected listening prompt");
+    expect(prompt.options).toHaveLength(count);
+  });
 
-    expect(positionsOfCorrect.size).toBeGreaterThanOrEqual(2);
+  it("preserves the existing last-ID mapping for duplicate option text", () => {
+    const plan = listeningPlan({ options: [
+      { itemRevisionId: "rev-1", text: "Thursday", correct: true },
+      { itemRevisionId: "rev-2", text: "Thursday", correct: false },
+    ] });
+    let id = 0;
+    const { prompt, answerKey } = materializeTask(plan, plannedItem(), "audio", null, null, {
+      random: () => 0,
+      createOptionId: () => `duplicate-${++id}`,
+    });
+    if (prompt.kind !== "listening") throw new Error("expected listening prompt");
+    expect(prompt.options.map((option) => option.id)).toEqual(["duplicate-2", "duplicate-2"]);
+    expect(answerKey.correctOptionId).toBe("duplicate-2");
+    expect(answerKey.optionItemRevisionIds).toEqual({ "duplicate-2": "rev-1" });
   });
 });
 
@@ -72,25 +97,24 @@ describe("materializeTask picture prompts", () => {
       { itemRevisionId: "rev-3", text: "zielony", correct: false, visual: { kind: "color", color: "#00ff00" } },
     ] });
     const originalPlan = structuredClone(plan);
-    const randomSpy = vi.spyOn(Math, "random").mockReturnValueOnce(random[0]!).mockReturnValueOnce(random[1]!);
-    try {
-      const { prompt, answerKey } = materializeTask(plan, plannedItem({ meaningVisual }), "asset-audio-1", null, null);
-      expect(randomSpy).toHaveBeenCalledTimes(2);
-      if (prompt.kind !== "picture_listening") throw new Error("expected picture listening prompt");
-      expect(prompt.options[position]).toMatchObject({ labelPl: "czerwony", visual: meaningVisual });
-      expect(answerKey.correctOptionId).toBe(prompt.options[position]!.id);
-      for (const option of prompt.options) {
-        const planned = plan.options!.find((item) => item.text === option.labelPl)!;
-        expect(option.visual).toEqual(planned.visual);
-        expect((answerKey.optionItemRevisionIds as Record<string, string>)[option.id]).toBe(planned.itemRevisionId);
-        expect(option).not.toHaveProperty("correct");
-      }
-      expect(prompt).not.toHaveProperty("correctOptionId");
-      expect(JSON.stringify(prompt)).not.toContain("Thursday");
-      expect(plan).toEqual(originalPlan);
-    } finally {
-      randomSpy.mockRestore();
+    let randomIndex = 0;
+    let optionId = 0;
+    const { prompt, answerKey } = materializeTask(plan, plannedItem({ meaningVisual }), "asset-audio-1", null, null, {
+      random: () => random[randomIndex++]!, createOptionId: () => `option-${++optionId}`,
+    });
+    expect(randomIndex).toBe(2);
+    if (prompt.kind !== "picture_listening") throw new Error("expected picture listening prompt");
+    expect(prompt.options[position]).toMatchObject({ labelPl: "czerwony", visual: meaningVisual });
+    expect(answerKey.correctOptionId).toBe(prompt.options[position]!.id);
+    for (const option of prompt.options) {
+      const planned = plan.options!.find((item) => item.text === option.labelPl)!;
+      expect(option.visual).toEqual(planned.visual);
+      expect((answerKey.optionItemRevisionIds as Record<string, string>)[option.id]).toBe(planned.itemRevisionId);
+      expect(option).not.toHaveProperty("correct");
     }
+    expect(prompt).not.toHaveProperty("correctOptionId");
+    expect(JSON.stringify(prompt)).not.toContain("Thursday");
+    expect(plan).toEqual(originalPlan);
   });
 
   it("nie ujawnia angielskiego tekstu przed odpowiedzią w prezentacji obrazkowej", () => {

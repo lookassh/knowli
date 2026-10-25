@@ -99,6 +99,7 @@ Nie importujemy tutaj next/navigation, next/image, Server Actions ani @learning/
 | packages/server/src/domain/evaluate.ts | Reguły treści i pisowni |
 | packages/server/src/domain/independence.ts | Kwalifikacja próby i ekspozycje |
 | packages/server/src/domain/task-completion.ts | Decyzja o stanie zadania po próbie; `attempts.ts` koordynuje zapis wyniku |
+| packages/server/src/domain/task-materialization.ts | Składa prompt i prywatny klucz z gotowych opcji; `sessions.ts` tasuje opcje, tworzy ID i zapisuje zadanie |
 | packages/server/src/domain/progress.ts | Wyliczanie projekcji z historii |
 | packages/server/src/domain/learning-work.ts | Oddzielne terminy i gotowość Recall, pisowni i wymowy |
 | packages/server/src/domain/support-cycle.ts | Odtwarzanie pojedynczego cyklu wsparcia z historii sesji |
