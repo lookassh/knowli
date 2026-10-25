@@ -60,15 +60,14 @@ export {
   executeMediaAsset,
   retryGeneration,
   readGeneration,
-  runDueGenerationWork,
   enqueueGenerationRun,
   claimQueuedRun,
   markRun,
   errorCodeOf,
   requireGeneration,
   MAX_AUTOMATIC_ATTEMPTS,
-  type WorkerLimits,
 } from "./modules/generation";
+export { runDueGenerationWork, type WorkerLimits } from "./modules/generation-worker";
 export {
   createLesson,
   executeLessonGeneration,
