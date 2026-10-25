@@ -127,8 +127,9 @@ Komunikaty wynikowe generowane przez domenę (feedback.ts) trafiają do klienta 
 | packages/server/src/modules/decks.ts | Szkice, rewizje, przypisania, publikacja |
 | packages/server/src/modules/generation.ts | Zlecanie i wykonywanie generacji |
 | packages/server/src/modules/media-reconciliation.ts | Dopasowanie fingerprintów szkicu, zachowanie zgodnych zasobów i enqueue brakujących |
-| packages/server/src/modules/sessions.ts | Start/resume z przypięciem terminu, next, historia ekspozycji, completePresentation, koniec |
-| packages/server/src/modules/vocabulary-plan-tasks.ts | Wydanie slotu słownictwa z niezmiennego planu w transakcji koordynowanej przez sessions.ts |
+| packages/server/src/modules/sessions.ts | Start/resume, koordynacja next i starsze planowanie treningu, historia ekspozycji, completePresentation, koniec |
+| packages/server/src/modules/vocabulary-plan-tasks.ts | Wybór i pomijanie slotu z niezmiennego planu; wydanie deleguje do wspólnego writera |
+| packages/server/src/modules/vocabulary-task-issuance.ts | Wspólny zapis zadania treningu słownictwa, faktów, ekspozycji i rezerwacji w Tx koordynatora |
 | packages/server/src/domain/training-session-plan.ts | Prywatny format planu treningu słówek, walidacja wersji oraz niezmienne sloty |
 | packages/server/src/modules/events.ts | Kontekst sesji i zapis/zamknięcie ujawnienia przed HTTP; opcjonalne potwierdzenia klienta |
 | packages/server/src/modules/attempts.ts | Rezerwacja i finalizacja prób |

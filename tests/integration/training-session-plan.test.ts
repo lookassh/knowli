@@ -1,12 +1,18 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createRequire } from "node:module";
 import { createChild, createDraft, publishDraft, upsertAssignment, startSession, nextTask, endSession, completePresentation, submitAttempt, createServices, executeMediaAsset, prepareUiAudio, reconcileDraftAssets, runDueGenerationWork } from "@learning/server";
 import { randomUUID } from "node:crypto";
 import { buildTestServices, ManualClock, openRestartedServices, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration } from "./fakes";
 import { readTrainingSessionPlan } from "@learning/server";
 import { issueNextVocabularyPlanTask } from "../../packages/server/src/modules/vocabulary-plan-tasks";
-import { childProfiles, learningSessions } from "../../packages/server/src/db/schema";
+import { childProfiles, itemRevisionSkills, learningSessions } from "../../packages/server/src/db/schema";
 import type { TrainingSessionPlanSnapshot, TrainingSessionSlot } from "../../packages/server/src/domain/training-session-plan";
+import { computeTargetKey } from "../../packages/server/src/domain/target-key";
+import type { Tx } from "../../packages/server/src/db/client";
+import { childSkillProgress, childTargetExposures, eventExposures, learningEvents, sessionTasks } from "../../packages/server/src/db/schema";
+
+const { and, eq } = createRequire(new URL("../../packages/server/package.json", import.meta.url))("drizzle-orm") as typeof import("../../packages/server/node_modules/drizzle-orm");
 
 const { pool } = testDatabase();
 const pairs = Array.from({ length: 4 }, (_, index) => ({ source: `słowo ${index}`, target: `word${index}` }));
@@ -45,14 +51,18 @@ describe("stały plan treningu słówek", () => {
     throwAfterIssue?: boolean;
     nextOrdinal?: number;
     enrichFirst?: boolean;
+    revealKeys?: readonly string[];
+    keepsReservations?: readonly string[];
+    prepareExistingFacts?: boolean;
+    afterIssue?: (tx: Tx, result: Awaited<ReturnType<typeof issueNextVocabularyPlanTask>> | null, session: typeof learningSessions.$inferSelect) => Promise<void>;
   }) {
     const started = await startSession(services, { childId, deckId, microphoneEnabled: options.microphoneEnabled ?? false });
     const [stored] = (await pool.query("select training_plan from learning_app.learning_sessions where id=$1", [started.sessionId])).rows as { training_plan: TrainingSessionPlanSnapshot }[];
     const original = readTrainingSessionPlan(stored!.training_plan)!;
     const slots = options.exercises.map(({ exerciseType, assessed }, ordinal): TrainingSessionSlot => ({
       ...original.slots[ordinal]!, taskId: randomUUID(), ordinal, exerciseType,
-      assessed: assessed ?? true, reason: "test-issue", revealsTargetKeys: [`target-${ordinal}`],
-      keepsReservations: [`reservation-${ordinal}`],
+      assessed: assessed ?? true, reason: "test-issue", revealsTargetKeys: options.revealKeys ?? [`target-${ordinal}`],
+      keepsReservations: options.keepsReservations ?? [`reservation-${ordinal}`],
       ...(options.enrichFirst && ordinal === 0 ? {
         supportCycleId: randomUUID(), skillAtIssue: "recall", statusAtIssue: null,
         assessmentSkills: ["recall", "spelling"],
@@ -60,25 +70,50 @@ describe("stały plan treningu słówek", () => {
     }));
     const plan = readTrainingSessionPlan({ version: 1, taskBudget: options.taskBudget, slots })!;
     const originalSnapshot = structuredClone(plan);
-    await pool.query("update learning_app.learning_sessions set microphone_enabled=$2, context=context || $3::jsonb where id=$1", [
-      started.sessionId, options.microphoneEnabled ?? false,
-      JSON.stringify({ canRead: options.canRead, reservations: ["old-reservation"], microphoneDisabledTaskIds: options.disabledFirst ? [plan.slots[0]!.taskId] : [] }),
-    ]);
-    const progressCountBefore = Number((await pool.query("select count(*)::int as count from learning_app.child_skill_progress where child_id=$1", [childId])).rows[0].count);
+    const revisionId = plan.slots[0]!.itemRevisionId;
+    if (options.prepareExistingFacts) {
+      const issuedAt = services.clock.now();
+      const earlier = new Date(issuedAt.getTime() - 60 * 60 * 1000);
+      const later = new Date(issuedAt.getTime() + 60 * 60 * 1000);
+      await pool.query(`insert into learning_app.child_skill_progress
+        (child_id, skill_version_id, policy_id, status, independent_success_streak, first_issued_at, has_qualifying_assessment, projection_version, updated_at)
+        select $1, skill_version_id, $2, 'unseen', 0, $4, false, 'proj-3', $3
+        from learning_app.item_revision_skills where item_revision_id=$5 and skill in ('recall','spelling')
+        on conflict (child_id,skill_version_id,policy_id) do update set first_issued_at=excluded.first_issued_at, updated_at=excluded.updated_at`, [childId, "learning-v2", earlier, later, revisionId]);
+      await pool.query(`insert into learning_app.child_target_exposures (child_id,target_key,first_exposure_at,last_exposure_at)
+        values ($1,$2,$4,$3),($1,$5,$4,$3)
+        on conflict (child_id,target_key) do update set first_exposure_at=excluded.first_exposure_at,last_exposure_at=excluded.last_exposure_at`,
+        [childId, options.revealKeys?.[0], earlier, new Date(issuedAt.getTime() - 2 * 60 * 60 * 1000), options.revealKeys?.[1]]);
+    }
+    const beforeProgress = options.prepareExistingFacts
+      ? (await pool.query("select * from learning_app.child_skill_progress where child_id=$1 and policy_id='learning-v2' order by skill_version_id", [childId])).rows
+      : [];
+    const beforeExposures = options.prepareExistingFacts
+      ? (await pool.query("select * from learning_app.child_target_exposures where child_id=$1 and target_key=any($2::text[]) order by target_key", [childId, options.revealKeys])).rows
+      : [];
+    const [beforeContext] = (await pool.query("select context from learning_app.learning_sessions where id=$1", [started.sessionId])).rows as { context: Record<string, unknown> }[];
     const run = services.db.transaction(async (tx) => {
-      await tx.select().from(childProfiles).for("key share");
-      const rows = await tx.select().from(learningSessions).for("update");
-      const session = rows.find((row) => row.id === started.sessionId);
+      await tx.select({ id: childProfiles.id }).from(childProfiles).where(eq(childProfiles.id, childId)).for("key share");
+      let session = (await tx.select().from(learningSessions).where(eq(learningSessions.id, started.sessionId)).for("update"))[0];
       if (!session) throw new Error("expected session");
+      session = (await tx.update(learningSessions).set({
+        microphoneEnabled: options.microphoneEnabled ?? false,
+        context: {
+          ...session.context, canRead: options.canRead,
+          reservations: ["old-reservation"], microphoneDisabledTaskIds: options.disabledFirst ? [plan.slots[0]!.taskId] : [],
+          timezone: "Europe/Warsaw", previousContact: { preserved: "yes" }, settledChecks: ["settled-before"],
+        },
+      }).where(eq(learningSessions.id, session.id)).returning())[0]!;
       const result = await issueNextVocabularyPlanTask(tx, session, plan, services.clock.now(), options.nextOrdinal ?? 0, 0);
+      if (options.afterIssue) await options.afterIssue(tx, result, session);
       if (options.throwAfterIssue) throw new Error("abort-issued-slot");
       return result;
     });
     if (options.throwAfterIssue) await expect(run).rejects.toThrow("abort-issued-slot");
     const result = options.throwAfterIssue ? null : await run;
     expect(plan).toEqual(originalSnapshot);
-    await endSession(services, started.sessionId);
-    return { sessionId: started.sessionId, plan, result, progressCountBefore };
+    if (!options.throwAfterIssue) await endSession(services, started.sessionId);
+    return { sessionId: started.sessionId, plan, result, beforeProgress, beforeExposures, beforeContext: beforeContext!.context };
   }
 
   it("pomija niedostępne zadania głosowe bez zapisu historii uczenia", async () => {
@@ -118,9 +153,56 @@ describe("stały plan treningu słówek", () => {
     expect((await pool.query("select count(*)::int as count from learning_app.session_tasks where session_id=$1", [noSlots.sessionId])).rows[0].count).toBe(0);
   });
 
+  it("omits absent support metadata and leaves an unchanged reservation context intact", async () => {
+    const issued = await runPlannedIssue({
+      exercises: [{ exerciseType: "recall" }], taskBudget: 1, canRead: true,
+      keepsReservations: ["old-reservation"],
+      afterIssue: async (tx, result, session) => {
+        const [task] = await tx.select().from(sessionTasks).where(eq(sessionTasks.id, result!.slot.taskId));
+        expect(task?.context).toEqual({ reason: "test-issue" });
+        const [after] = await tx.select().from(learningSessions).where(eq(learningSessions.id, session.id));
+        expect(after?.context).toMatchObject({
+          reservations: ["old-reservation"], canRead: true, timezone: "Europe/Warsaw",
+          previousContact: { preserved: "yes" }, settledChecks: ["settled-before"],
+        });
+      },
+    });
+    expect(issued.result).toMatchObject({ slot: { ordinal: 0 }, assessedBefore: 0 });
+  });
+
   it("zapisuje komplet slotu i wycofuje wszystkie fakty, gdy caller przerywa transakcję", async () => {
+    const revealKeys = [
+      computeTargetKey("word0", "en-GB"), computeTargetKey("word1", "en-GB"), computeTargetKey("word0", "en-GB"),
+    ];
     const issued = await runPlannedIssue({
       exercises: [{ exerciseType: "recall" }], taskBudget: 1, canRead: true, enrichFirst: true,
+      revealKeys, prepareExistingFacts: true,
+      afterIssue: async (tx, result, currentSession) => {
+        expect(result).not.toBeNull();
+        const task = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, result!.slot.taskId)))[0]!;
+        expect(task).toMatchObject({
+          state: "issued", publicPrompt: result!.slot.prompt, answerKey: result!.slot.answerKey,
+          context: { reason: "test-issue", supportCycleId: result!.slot.supportCycleId, skillAtIssue: "recall", statusAtIssue: null, assessmentSkills: ["recall", "spelling"] },
+        });
+        const [event] = await tx.select().from(learningEvents).where(eq(learningEvents.taskId, result!.slot.taskId));
+        expect(event).toMatchObject({ kind: "prompt_issued", sealed: true, stepId: `${result!.slot.taskId}:prompt` });
+        const exposures = await tx.select().from(eventExposures).where(eq(eventExposures.eventId, event!.id));
+        expect(exposures.map(({ targetKey }) => targetKey).sort()).toEqual([...new Set(revealKeys)].sort());
+        const links = await tx.select().from(itemRevisionSkills).where(eq(itemRevisionSkills.itemRevisionId, result!.slot.itemRevisionId));
+        const expectedSkills = links.filter(({ skill }) => skill === "recall" || skill === "spelling");
+        const actualSkills = await tx.select().from(childSkillProgress).where(and(
+          eq(childSkillProgress.childId, childId), eq(childSkillProgress.policyId, currentSession.policyId),
+        ));
+        expect(actualSkills.map(({ skillVersionId, policyId, firstIssuedAt }) => ({ skillVersionId, policyId, firstIssuedAt })).sort((a, b) => a.skillVersionId.localeCompare(b.skillVersionId))).toEqual(
+          expectedSkills.map(({ skillVersionId }) => ({ skillVersionId, policyId: currentSession.policyId, firstIssuedAt: services.clock.now() })).sort((a, b) => a.skillVersionId.localeCompare(b.skillVersionId)),
+        );
+        const projected = await tx.select().from(childTargetExposures).where(and(
+          eq(childTargetExposures.childId, childId), eq(childTargetExposures.targetKey, revealKeys[0]!),
+        ));
+        expect(projected[0]?.lastExposureAt).toEqual(services.clock.now());
+        const session = (await tx.select().from(learningSessions).where(eq(learningSessions.id, task.sessionId)))[0]!;
+        expect(session.context).toMatchObject({ reservations: ["reservation-0"], canRead: true, timezone: "Europe/Warsaw", previousContact: { preserved: "yes" }, settledChecks: ["settled-before"] });
+      },
     });
     expect(issued.result).toMatchObject({ slot: { ordinal: 0 }, assessedBefore: 0 });
     const task = (await pool.query("select public_prompt, answer_key, context from learning_app.session_tasks where id=$1", [issued.result!.slot.taskId])).rows[0];
@@ -131,17 +213,33 @@ describe("stały plan treningu słówek", () => {
       skillAtIssue: "recall", statusAtIssue: null, assessmentSkills: ["recall", "spelling"],
     });
     expect((await pool.query("select sealed from learning_app.learning_events where task_id=$1", [issued.result!.slot.taskId])).rows).toEqual([{ sealed: true }]);
-    expect((await pool.query("select target_key from learning_app.event_exposures where event_id=(select id from learning_app.learning_events where task_id=$1)", [issued.result!.slot.taskId])).rows).toEqual([{ target_key: "target-0" }]);
+    expect((await pool.query("select target_key from learning_app.event_exposures where event_id=(select id from learning_app.learning_events where task_id=$1) order by target_key", [issued.result!.slot.taskId])).rows.map(({ target_key }: { target_key: string }) => target_key)).toEqual([...new Set(revealKeys)].sort());
     expect((await pool.query("select context->'reservations' as reservations from learning_app.learning_sessions where id=$1", [issued.sessionId])).rows[0].reservations).toEqual(["reservation-0"]);
-    expect(Number((await pool.query("select count(*)::int as count from learning_app.child_skill_progress where child_id=$1 and first_issued_at is not null", [childId])).rows[0].count)).toBeGreaterThan(0);
 
-    const rollback = await runPlannedIssue({ exercises: [{ exerciseType: "recall" }], taskBudget: 1, canRead: true, throwAfterIssue: true });
+    const rollback = await runPlannedIssue({
+      exercises: [{ exerciseType: "recall" }], taskBudget: 1, canRead: true, throwAfterIssue: true,
+      revealKeys, prepareExistingFacts: true,
+      afterIssue: async (tx, result, currentSession) => {
+        expect(result).not.toBeNull();
+        expect((await tx.select().from(sessionTasks).where(eq(sessionTasks.id, result!.slot.taskId)))).toHaveLength(1);
+        const [event] = await tx.select().from(learningEvents).where(eq(learningEvents.taskId, result!.slot.taskId));
+        expect(event?.sealed).toBe(true);
+        expect(await tx.select().from(eventExposures).where(eq(eventExposures.eventId, event!.id))).toHaveLength(2);
+        const progressRows = await tx.select().from(childSkillProgress).where(and(eq(childSkillProgress.childId, childId), eq(childSkillProgress.policyId, currentSession.policyId)));
+        expect(progressRows.every(({ firstIssuedAt }) => firstIssuedAt?.getTime() === services.clock.now().getTime())).toBe(true);
+        const [projection] = await tx.select().from(childTargetExposures).where(and(eq(childTargetExposures.childId, childId), eq(childTargetExposures.targetKey, revealKeys[0]!)));
+        expect(projection?.lastExposureAt).toEqual(services.clock.now());
+        const [updatedSession] = await tx.select().from(learningSessions).where(eq(learningSessions.id, currentSession.id));
+        expect(updatedSession?.context).toMatchObject({ reservations: ["reservation-0"], canRead: true, timezone: "Europe/Warsaw", previousContact: { preserved: "yes" }, settledChecks: ["settled-before"] });
+      },
+    });
     expect((await pool.query("select count(*)::int as count from learning_app.session_tasks where session_id=$1", [rollback.sessionId])).rows[0].count).toBe(0);
     expect((await pool.query("select count(*)::int as count from learning_app.learning_events e join learning_app.session_tasks t on t.id=e.task_id where t.session_id=$1", [rollback.sessionId])).rows[0].count).toBe(0);
     expect((await pool.query("select count(*)::int as count from learning_app.event_exposures x join learning_app.learning_events e on e.id=x.event_id join learning_app.session_tasks t on t.id=e.task_id where t.session_id=$1", [rollback.sessionId])).rows[0].count).toBe(0);
     expect((await pool.query("select count(*)::int as count from learning_app.assessments a join learning_app.attempts p on p.id=a.attempt_id join learning_app.session_tasks t on t.id=p.task_id where t.session_id=$1", [rollback.sessionId])).rows[0].count).toBe(0);
-    expect(Number((await pool.query("select count(*)::int as count from learning_app.child_skill_progress where child_id=$1", [childId])).rows[0].count)).toBe(rollback.progressCountBefore);
-    expect((await pool.query("select context->'reservations' as reservations from learning_app.learning_sessions where id=$1", [rollback.sessionId])).rows[0].reservations).toEqual(["old-reservation"]);
+    expect((await pool.query("select * from learning_app.child_skill_progress where child_id=$1 and policy_id='learning-v2' order by skill_version_id", [childId])).rows).toEqual(rollback.beforeProgress);
+    expect((await pool.query("select * from learning_app.child_target_exposures where child_id=$1 and target_key=any($2::text[]) order by target_key", [childId, revealKeys])).rows).toEqual(rollback.beforeExposures);
+    expect((await pool.query("select context from learning_app.learning_sessions where id=$1", [rollback.sessionId])).rows[0].context).toEqual(rollback.beforeContext);
   });
 
   it("tworzy prywatny, skończony plan atomowo przy starcie i wydaje jego pierwszy krok", async () => {

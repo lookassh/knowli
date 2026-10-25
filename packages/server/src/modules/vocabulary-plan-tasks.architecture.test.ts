@@ -5,8 +5,8 @@ import ts from "typescript";
 function violations(source: string): string[] {
   const ast = ts.createSourceFile("vocabulary-plan-tasks.ts", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const found: string[] = [];
-  const runtime = new Set(["drizzle-orm", "../db/schema", "./events", "./skill-projections"]);
-  const types = new Set(["../db/client", "../domain/training-session-plan"]);
+  const runtime = new Set(["../db/schema", "./events", "./vocabulary-task-issuance"]);
+  const types = new Set(["../db/client", "../db/schema", "../domain/training-session-plan", "./vocabulary-task-issuance"]);
   function visit(node: ts.Node): void {
     if (ts.isImportDeclaration(node)) {
       const specifier = ts.isStringLiteralLike(node.moduleSpecifier) ? node.moduleSpecifier.text : "<non-literal>";
@@ -28,7 +28,6 @@ describe("granica wydawania slotów planu słówek", () => {
   it("dopuszcza typ Tx, ale blokuje zależności wsteczne i własną transakcję", () => {
     expect(violations([
       'import type { Tx } from "../db/client";',
-      'import { eq } from "drizzle-orm";',
       'function issue(tx: Tx) { return tx.transaction(() => undefined); }',
     ].join("\n"))).toContain("nested-transaction");
     for (const source of [

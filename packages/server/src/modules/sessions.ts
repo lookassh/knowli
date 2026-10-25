@@ -72,11 +72,12 @@ import {
   isLessonMockPlan,
 } from "./lessons/lesson-mock-tests";
 import { issueNextVocabularyPlanTask } from "./vocabulary-plan-tasks";
+import { issueVocabularyTask, type VocabularyTaskSnapshot } from "./vocabulary-task-issuance";
 import { buildLessonSummaryObjectives } from "./lessons/lesson-attempts";
 import { completeDisabledVoiceTask } from "./voice-task-lifecycle";
 import { beginSessionActivityReview, readSessionActivityResult } from "./session-activity";
 import type { SessionActivityReport } from "@learning/contracts";
-import { recordTaskSkillFacts, SKILL_PROJECTION_VERSION } from "./skill-projections";
+import { SKILL_PROJECTION_VERSION } from "./skill-projections";
 
 /** Okno wznowienia aktywnej sesji od ostatniego zdarzenia (arch §9.1). */
 export const RESUME_WINDOW_MS = 30 * 60_000;
@@ -1121,51 +1122,24 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
     const { plan, item, audioAssetId, imageAssetId, exampleAudioAssetId } = planned;
     const materialized = materializeTask(plan, item, audioAssetId, imageAssetId, exampleAudioAssetId);
     const taskId = randomUUID();
-
-    await tx.insert(sessionTasks).values({
-      id: taskId,
-      sessionId: session.id,
-      childId: session.childId,
-      deckVersionId: session.deckVersionId,
+    const task: VocabularyTaskSnapshot = {
+      taskId,
+      itemId: item.itemId,
       itemRevisionId: plan.itemRevisionId,
       ordinal: counts.total,
       exerciseType: plan.exerciseType,
       direction: plan.direction ?? null,
-      state: "issued",
-      publicPrompt: materialized.prompt as unknown as Record<string, unknown>,
+      prompt: materialized.prompt,
       answerKey: materialized.answerKey,
-      context: {
-        reason: plan.reason,
-        ...(plan.supportCycleId ? { supportCycleId: plan.supportCycleId } : {}),
-        ...(plan.skillAtIssue ? { skillAtIssue: plan.skillAtIssue } : {}),
-        ...(plan.statusAtIssue ? { statusAtIssue: plan.statusAtIssue } : {}),
-        ...(plan.assessmentSkills ? { assessmentSkills: plan.assessmentSkills } : {}),
-      },
-      issuedAt: now,
-    });
-    await recordTaskSkillFacts(tx, {
-      childId: session.childId,
-      itemRevisionId: plan.itemRevisionId,
-      policyId: session.policyId,
-      exerciseType: plan.exerciseType,
-      issuedAt: now,
-    });
-    await writeSealedEvent(tx, {
-      childId: session.childId,
-      taskId,
-      itemId: item.itemId,
-      kind: "prompt_issued",
-      stepId: `${taskId}:prompt`,
-      occurredAt: now,
-      exposures: plan.revealsTargetKeys,
-    });
-    const context = contextOf(session);
-    if (JSON.stringify(context.reservations) !== JSON.stringify(plan.keepsReservations)) {
-      await tx
-        .update(learningSessions)
-        .set({ context: { ...context, reservations: plan.keepsReservations } })
-        .where(eq(learningSessions.id, session.id));
-    }
+      reason: plan.reason,
+      revealsTargetKeys: plan.revealsTargetKeys,
+      keepsReservations: plan.keepsReservations,
+      ...(plan.supportCycleId ? { supportCycleId: plan.supportCycleId } : {}),
+      ...(plan.skillAtIssue ? { skillAtIssue: plan.skillAtIssue } : {}),
+      ...(plan.statusAtIssue ? { statusAtIssue: plan.statusAtIssue } : {}),
+      ...(plan.assessmentSkills ? { assessmentSkills: plan.assessmentSkills } : {}),
+    };
+    await issueVocabularyTask(tx, session, task, now);
     return issuedTaskDto(session, { exerciseType: plan.exerciseType, direction: plan.direction ?? null, id: taskId, ordinal: counts.total, publicPrompt: materialized.prompt }, counts.assessed);
   });
 }

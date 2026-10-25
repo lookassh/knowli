@@ -1,14 +1,11 @@
-import { eq } from "drizzle-orm";
 import type { Tx } from "../db/client";
-import { learningSessions, sessionTasks } from "../db/schema";
+import { sessionTasks } from "../db/schema";
+import type { learningSessions } from "../db/schema";
 import type { TrainingSessionPlanSnapshot, TrainingSessionSlot } from "../domain/training-session-plan";
-import { contextOf, writeSealedEvent } from "./events";
-import { recordTaskSkillFacts } from "./skill-projections";
+import { contextOf } from "./events";
+import { issueVocabularyTask, type VocabularyTaskSession } from "./vocabulary-task-issuance";
 
-export type VocabularyPlanSession = Readonly<Pick<
-  typeof learningSessions.$inferSelect,
-  "id" | "childId" | "deckVersionId" | "policyId" | "microphoneEnabled" | "context"
->>;
+export type VocabularyPlanSession = VocabularyTaskSession & Pick<typeof learningSessions.$inferSelect, "microphoneEnabled">;
 
 export interface IssuedVocabularyPlanSlot {
   readonly slot: TrainingSessionSlot;
@@ -43,33 +40,6 @@ export async function issueNextVocabularyPlanTask(
   }
   if (!slot || assessed >= plan.taskBudget) return null;
 
-  await tx.insert(sessionTasks).values({
-    id: slot.taskId, sessionId: session.id, childId: session.childId, deckVersionId: session.deckVersionId,
-    itemRevisionId: slot.itemRevisionId, ordinal, exerciseType: slot.exerciseType, direction: slot.direction,
-    state: "issued", publicPrompt: slot.prompt as unknown as Record<string, unknown>, answerKey: slot.answerKey,
-    context: {
-      reason: slot.reason,
-      ...(slot.supportCycleId ? { supportCycleId: slot.supportCycleId } : {}),
-      ...(slot.skillAtIssue ? { skillAtIssue: slot.skillAtIssue } : {}),
-      ...(slot.statusAtIssue !== undefined ? { statusAtIssue: slot.statusAtIssue } : {}),
-      ...(slot.assessmentSkills ? { assessmentSkills: slot.assessmentSkills } : {}),
-    },
-    issuedAt: now,
-  });
-  await recordTaskSkillFacts(tx, {
-    childId: session.childId,
-    itemRevisionId: slot.itemRevisionId,
-    policyId: session.policyId,
-    exerciseType: slot.exerciseType,
-    issuedAt: now,
-  });
-  await writeSealedEvent(tx, {
-    childId: session.childId, taskId: slot.taskId, itemId: slot.itemId, kind: "prompt_issued",
-    stepId: `${slot.taskId}:prompt`, occurredAt: now, exposures: [...slot.revealsTargetKeys],
-  });
-  if (JSON.stringify(context.reservations) !== JSON.stringify(slot.keepsReservations)) {
-    await tx.update(learningSessions).set({ context: { ...context, reservations: [...slot.keepsReservations] } })
-      .where(eq(learningSessions.id, session.id));
-  }
+  await issueVocabularyTask(tx, session, slot, now);
   return { slot, assessedBefore: assessed };
 }
