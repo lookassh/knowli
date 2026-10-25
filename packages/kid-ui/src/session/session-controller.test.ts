@@ -2312,6 +2312,21 @@ describe("LearningSessionController", () => {
     expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", feedback: null, task: { taskId: "t2" } });
   });
 
+  it("nie pobiera następnego zadania przy feedbacku mowy z odsłuchem wzorca", async () => {
+    // #showResult rozstrzyga o prefetachu po samym feedbacku próby; próba
+    // z referenceAudioAvailable musi zostać najnowszym zadaniem sesji, bo
+    // serwer tylko dla niego autoryzuje odsłuch wzorca (feedback-audio).
+    const recall = taskDto("t1", { kind: "recall", prompt: "czwartek" });
+    const state = baseState();
+    state.attempts = [attemptDto({ modality: "audio", taskState: "answered", feedback: { kind: "great", referenceAudioAvailable: true } })];
+    const harness = await startAtTask(state, recall);
+    const callsBefore = state.nextTaskCalls ?? 0;
+    await harness.controller.answerText("Thursday");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(harness.controller.getScreen()).toMatchObject({ feedback: { dto: { kind: "great" }, retry: false } });
+    expect(state.nextTaskCalls).toBe(callsBefore);
+  });
+
   it("nie pobiera następnego zadania, gdy próba ma drugie podejście", async () => {
     const recall = taskDto("t1", { kind: "recall", prompt: "czwartek" });
     const state = baseState();

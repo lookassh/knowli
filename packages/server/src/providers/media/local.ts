@@ -72,13 +72,20 @@ export function createLocalMediaStore(rootDir: string): MediaStore {
         throw error;
       }
       const ext = storageKey.split(".")[1]!;
-      const stream = createReadStream(target);
       return {
         mimeType: MIME_BY_EXT[ext],
         byteCount: size,
         body: (async function* () {
-          for await (const chunk of stream) {
-            yield Uint8Array.from(chunk as Buffer);
+          // Strumień powstaje dopiero przy pierwszej porcji i jest niszczony
+          // także przy anulowaniu przed/po starcie — inaczej porzucone body
+          // zostawiałoby otwarty deskryptor pliku.
+          const stream = createReadStream(target);
+          try {
+            for await (const chunk of stream) {
+              yield Uint8Array.from(chunk as Buffer);
+            }
+          } finally {
+            stream.destroy();
           }
         })(),
       };

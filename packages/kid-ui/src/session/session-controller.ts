@@ -1166,7 +1166,10 @@ export class LearningSessionController {
     // Zakończona próba: następne zadanie i jego obrazy pobieramy już teraz,
     // w czasie oglądania feedbacku — klik „Dalej” nie czeka na sieć (przy
     // retry zadanie zostaje to samo, więc nie ma czego pobierać).
-    if (attempt.taskState !== "issued") {
+    // Wyjątek: feedback mowy z odsłuchem wzorca — serwer autoryzuje go tylko
+    // dla najnowszego zadania sesji, więc wydanie następnego przed kliknięciem
+    // „Posłuchaj” kończyłoby się konfliktem i błędem audio na karcie wyniku.
+    if (attempt.taskState !== "issued" && attempt.feedback?.referenceAudioAvailable !== true) {
       this.#prefetchNextTask(epoch, this.#screen.session.sessionId);
     }
   }
