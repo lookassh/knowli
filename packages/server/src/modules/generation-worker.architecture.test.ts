@@ -6,6 +6,12 @@ import ts from "typescript";
 const generation = "modules/generation.ts";
 const lesson = "modules/lessons/lesson-drafts.ts";
 const worker = "modules/generation-worker.ts";
+const media = "modules/media-generation.ts";
+const runtime = "modules/generation-runtime.ts";
+const publicNames = new Set([
+  "runDueGenerationWork", "WorkerLimits", "executeMediaAsset",
+  "requireGeneration", "errorCodeOf", "MAX_AUTOMATIC_ATTEMPTS",
+]);
 
 function localTarget(file: string, specifier: string): string {
   if (!specifier.startsWith(".")) return specifier;
@@ -18,7 +24,13 @@ function sourceFile(file: string, source: string): ts.SourceFile {
 }
 
 function backwardDependencies(file: string, source: string): string[] {
-  const forbidden = new Set(file === generation ? [worker, lesson] : [worker]);
+  const forbidden = new Set(file === generation
+    ? [worker, lesson]
+    : file === media
+      ? [generation, worker, lesson]
+      : file === runtime
+        ? [generation, worker, lesson, media]
+        : [worker, media]);
   const found: string[] = [];
   function record(node: ts.Node | undefined): void {
     if (node && ts.isStringLiteralLike(node)) {
@@ -43,7 +55,7 @@ function backwardDependencies(file: string, source: string): string[] {
   return found;
 }
 
-function workerExports(source: string): Array<{ original: string; exported: string; target: string }> {
+function publicExports(source: string): Array<{ original: string; exported: string; target: string }> {
   const found: Array<{ original: string; exported: string; target: string }> = [];
   for (const node of sourceFile("index.ts", source).statements) {
     if (!ts.isExportDeclaration(node) || !node.moduleSpecifier
@@ -51,12 +63,25 @@ function workerExports(source: string): Array<{ original: string; exported: stri
       || !node.exportClause || !ts.isNamedExports(node.exportClause)) continue;
     for (const element of node.exportClause.elements) {
       const original = (element.propertyName ?? element.name).text;
-      if (original === "runDueGenerationWork" || original === "WorkerLimits") {
+      if (publicNames.has(original)) {
         found.push({ original, exported: element.name.text, target: localTarget("index.ts", node.moduleSpecifier.text) });
       }
     }
   }
   return found;
+}
+
+function topLevelDeclarations(source: string): string[] {
+  const names: string[] = [];
+  for (const node of sourceFile(generation, source).statements) {
+    if ((ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) && node.name) {
+      names.push(node.name.text);
+    } else if (ts.isVariableStatement(node)) {
+      names.push(...node.declarationList.declarations.flatMap((declaration) =>
+        ts.isIdentifier(declaration.name) ? [declaration.name.text] : []));
+    }
+  }
+  return names;
 }
 
 describe("granica koordynacji generowania", () => {
@@ -80,10 +105,14 @@ describe("granica koordynacji generowania", () => {
       .toEqual([]);
     expect(backwardDependencies(generation, "import { applyItems } from './decks';"))
       .toEqual([]);
+    expect(backwardDependencies(media, "import { requireGeneration } from './generation-runtime';"))
+      .toEqual([]);
+    expect(backwardDependencies(runtime, "import type { Services } from '../config';"))
+      .toEqual([]);
   });
 
   it("rozpoznaje oryginalne i publiczne nazwy reeksportu przy aliasach", () => {
-    expect(workerExports("export { runDueGenerationWork as run, type WorkerLimits as Limits } from './modules/generation-worker';"))
+    expect(publicExports("export { runDueGenerationWork as run, type WorkerLimits as Limits } from './modules/generation-worker';"))
       .toEqual([
         { original: "runDueGenerationWork", exported: "run", target: worker },
         { original: "WorkerLimits", exported: "Limits", target: worker },
@@ -97,11 +126,30 @@ describe("granica koordynacji generowania", () => {
     }
   });
 
-  it("publiczne API eksportuje poller i limity bezpośrednio z koordynatora", () => {
+  it("wykonawca mediów i wspólne wsparcie nie zależą wstecz od treści ani koordynacji", () => {
+    for (const file of [media, runtime]) {
+      const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+      expect(backwardDependencies(file, source), file).toEqual([]);
+    }
+  });
+
+  it("wspólne elementy i wykonawca mediów mają jedno źródło implementacji", () => {
+    const source = readFileSync(new URL("../modules/generation.ts", import.meta.url), "utf8");
+    expect(topLevelDeclarations(source)).not.toContain("executeMediaAsset");
+    expect(topLevelDeclarations(source)).not.toContain("requireGeneration");
+    expect(topLevelDeclarations(source)).not.toContain("errorCodeOf");
+    expect(topLevelDeclarations(source)).not.toContain("MAX_AUTOMATIC_ATTEMPTS");
+  });
+
+  it("publiczne API eksportuje operacje z ich modułów właścicielskich", () => {
     const source = readFileSync(new URL("../index.ts", import.meta.url), "utf8");
-    expect(workerExports(source)).toEqual([
+    expect(publicExports(source)).toEqual(expect.arrayContaining([
       { original: "runDueGenerationWork", exported: "runDueGenerationWork", target: worker },
       { original: "WorkerLimits", exported: "WorkerLimits", target: worker },
-    ]);
+      { original: "executeMediaAsset", exported: "executeMediaAsset", target: media },
+      { original: "requireGeneration", exported: "requireGeneration", target: runtime },
+      { original: "errorCodeOf", exported: "errorCodeOf", target: runtime },
+      { original: "MAX_AUTOMATIC_ATTEMPTS", exported: "MAX_AUTOMATIC_ATTEMPTS", target: runtime },
+    ]));
   });
 });

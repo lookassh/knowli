@@ -57,16 +57,14 @@ export {
 export {
   enqueueDeckGeneration,
   executeGeneration,
-  executeMediaAsset,
   retryGeneration,
   readGeneration,
   enqueueGenerationRun,
   claimQueuedRun,
   markRun,
-  errorCodeOf,
-  requireGeneration,
-  MAX_AUTOMATIC_ATTEMPTS,
 } from "./modules/generation";
+export { executeMediaAsset } from "./modules/media-generation";
+export { errorCodeOf, requireGeneration, MAX_AUTOMATIC_ATTEMPTS } from "./modules/generation-runtime";
 export { runDueGenerationWork, type WorkerLimits } from "./modules/generation-worker";
 export {
   createLesson,

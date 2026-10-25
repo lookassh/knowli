@@ -34,12 +34,11 @@ import type {
 } from "../../domain/lessons/types";
 import type { LessonPoolInput, LlmLessonStageCounts } from "../../ports/ai";
 import {
-  MAX_AUTOMATIC_ATTEMPTS,
   claimQueuedRun,
   enqueueGenerationRun,
-  requireGeneration,
   supersedeLessonRuns,
 } from "../generation";
+import { MAX_AUTOMATIC_ATTEMPTS, requireGeneration } from "../generation-runtime";
 import { classifyLessonGenerationFailure, lessonRetryDelayMs } from "./lesson-generation-errors";
 import { assertLessonGenerationFinalizationAllowed, LessonGenerationCancelledError, withLessonGenerationControl } from "./lesson-generation-control";
 import { DEFAULT_LESSON_GENERATION_POLICY } from "./lesson-generation-policy";
