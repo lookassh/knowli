@@ -81,15 +81,18 @@ export async function readPublishedProgress(
   // Raport rodzica zachowuje ostatni wiarygodny wynik bieżącej wersji,
   // niezależnie od późniejszej zmiany aktywnej polityki profilu.
   // Wiersz bez lastReviewedAt (np. samo wydanie zadania) nie przykrywa wyniku.
-  const projected = await exec.select({
+  const relevantVersionIds = versions.map(({ id }) => id);
+  const projected = relevantVersionIds.length ? await exec.select({
     skillVersionId: childSkillProgress.skillVersionId,
     status: childSkillProgress.status,
     policyId: childSkillProgress.policyId,
     lastReviewedAt: childSkillProgress.lastReviewedAt,
   }).from(childSkillProgress).where(and(
     eq(childSkillProgress.childId, childId),
+    inArray(childSkillProgress.skillVersionId, relevantVersionIds),
     isNotNull(childSkillProgress.lastReviewedAt),
-  ));
+  )) : [];
+
   const latestByVersion = new Map<string, (typeof projected)[number]>();
   for (const row of projected) {
     const current = latestByVersion.get(row.skillVersionId);
