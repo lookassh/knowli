@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createChild, createDraft, endSession, publishDraft, startSession, upsertAssignment, type Services, type createDatabase } from "@learning/server";
-import { writeSealedEvent } from "../../packages/server/src/modules/events";
+import { writeSealedEvent } from "../../packages/server/src/modules/learning/events";
 import { sessionTasks } from "../../packages/server/src/db/schema";
 import { computeTargetKey } from "../../packages/server/src/domain/target-key";
 

@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import {
   createDatabase,
@@ -54,6 +54,47 @@ describe("trwałe generowanie zestawu (integracja)", () => {
 
   afterAll(async () => {
     await pool.end();
+  });
+
+  it("wyłączone kolejki nie uruchamiają zleconych decków ani lekcji", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = generationServices(fakes);
+    const deck = await enqueueDeckGeneration(services, COMMAND);
+    const lesson = await createLesson(services, {
+      subjectId: "english_grammar",
+      topicId: "present_simple",
+      objectiveIds: ["english_grammar.present_simple.third_person_s"],
+      material: "He plays football. She watches television. They study English.",
+      clientRequestId: randomUUID(),
+    });
+    const generateDeck = vi.spyOn(fakes.llm, "generateDeck");
+    const generateLesson = vi.spyOn(fakes.llm, "generateLessonPool");
+
+    expect(await runDueGenerationWork(services, { deck: 0, lesson: 0, tts: 0, images: 0 }))
+      .toEqual({ processed: 0 });
+    for (const runId of [deck.runId, lesson.runId]) {
+      expect(await readGeneration(services, runId)).toMatchObject({ state: "queued", attempts: 0 });
+    }
+    expect(generateDeck).not.toHaveBeenCalled();
+    expect(generateLesson).not.toHaveBeenCalled();
+  });
+
+  it("anulowanie przed startem nie przejmuje runu ani nie zgłasza postępu", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = generationServices(fakes);
+    const deck = await enqueueDeckGeneration(services, COMMAND);
+    const generateDeck = vi.spyOn(fakes.llm, "generateDeck");
+    const onProgress = vi.fn();
+    const controller = new AbortController();
+    controller.abort();
+
+    expect(await runDueGenerationWork(services, {}, { signal: controller.signal, onProgress }))
+      .toEqual({ processed: 0 });
+    expect(await readGeneration(services, deck.runId)).toMatchObject({ state: "queued", attempts: 0 });
+    expect(generateDeck).not.toHaveBeenCalled();
+    expect(onProgress).not.toHaveBeenCalled();
   });
 
   it("powtórzone żądanie o tym samym kluczu idempotencji nie tworzy drugiego zestawu", async () => {

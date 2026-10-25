@@ -1,0 +1,188 @@
+import { and, asc, eq, inArray, isNull, lt } from "drizzle-orm";
+import { ParentWorkCardDtoSchema, ParentWorkCardQuerySchema, SessionActivityReviewRecordSchema, taskActiveMs, type ParentSessionActivityDto, type ParentWorkCardDto } from "@learning/contracts";
+import type { Services } from "../../config";
+import { localDateAt, validRewardTimezone } from "../../domain/reward-activity";
+import { AppError } from "../../errors";
+import { attempts, assessments, childProfiles, deckVersions, familySettings, learningSessions, sessionTasks } from "../../db/schema";
+import { activityDetailsAvailable, resolveInterruptedSessionActivity, SESSION_ACTIVITY_REVIEW_DEADLINE_MS, type StoredReport } from "../learning";
+
+/** Read-only, child-scoped work report. The HTTP parent router authenticates before calling this. */
+export async function readParentWorkCard(services: Services, input: unknown): Promise<ParentWorkCardDto> {
+  const parsed = ParentWorkCardQuerySchema.parse(input);
+  const [family] = await services.db.select({ timezone: familySettings.timezone }).from(familySettings).limit(1);
+  const query = { ...parsed, date: parsed.date ?? localDateAt(services.clock.now(), validRewardTimezone(family?.timezone)) };
+  const child = await services.db.select({ id: childProfiles.id }).from(childProfiles).where(eq(childProfiles.id, query.childId)).limit(1);
+  if (!child.length) throw new AppError("not_found");
+
+  const reviewCutoff = new Date(services.clock.now().getTime() - SESSION_ACTIVITY_REVIEW_DEADLINE_MS);
+  const reviewCandidates = await services.db.select({ id: learningSessions.id }).from(learningSessions).where(and(
+    eq(learningSessions.childId, query.childId),
+    isNull(learningSessions.activityReview),
+    lt(learningSessions.activityReviewStartedAt, reviewCutoff),
+  ));
+  for (const session of reviewCandidates) await resolveInterruptedSessionActivity(services, session.id);
+
+  const sessions = await services.db.select({
+    id: learningSessions.id, mode: learningSessions.mode, state: learningSessions.state,
+    startedAt: learningSessions.startedAt, endedAt: learningSessions.endedAt,
+    context: learningSessions.context, taskBudget: learningSessions.taskBudget,
+    activityReview: learningSessions.activityReview, activityReport: learningSessions.activityReport,
+    activityReportExpiresAt: learningSessions.activityReportExpiresAt,
+    deckTitle: deckVersions.title, deckVersionNumber: deckVersions.versionNumber,
+  }).from(learningSessions).innerJoin(deckVersions, eq(deckVersions.id, learningSessions.deckVersionId))
+    .where(eq(learningSessions.childId, query.childId)).orderBy(asc(learningSessions.startedAt));
+
+  const timezoneOf = (context: unknown): string => validRewardTimezone((context as Record<string, unknown> | null)?.timezone);
+
+  // Nagroda należy do lokalnej daty KOŃCA sesji (design §9) — nie rozbijamy
+  // zatwierdzonego czasu na dni i nie odtwarzamy starych podziałów.
+  const endedThatDay = sessions.filter((session) => session.endedAt !== null
+    && localDateAt(session.endedAt, timezoneOf(session.context)) === query.date);
+
+  const daySessionIds = new Set<string>(endedThatDay.map((session) => session.id));
+  const allAttempts = await services.db.select({ attempt: attempts, sessionId: sessionTasks.sessionId, taskId: sessionTasks.id,
+    issuedAt: sessionTasks.issuedAt, context: learningSessions.context })
+    .from(attempts).innerJoin(sessionTasks, eq(sessionTasks.id, attempts.taskId))
+    .innerJoin(learningSessions, eq(learningSessions.id, sessionTasks.sessionId))
+    .where(eq(attempts.childId, query.childId));
+  const attemptsByTask = new Map<string, typeof allAttempts>();
+  for (const row of allAttempts) {
+    const timezone = timezoneOf(row.context);
+    if (localDateAt(row.attempt.receivedAt, timezone) !== query.date) continue;
+    const list = attemptsByTask.get(row.taskId) ?? [];
+    list.push(row);
+    attemptsByTask.set(row.taskId, list);
+    daySessionIds.add(row.sessionId);
+  }
+  const issuedTasks = await services.db.select({ sessionId: sessionTasks.sessionId, issuedAt: sessionTasks.issuedAt })
+    .from(sessionTasks).where(eq(sessionTasks.childId, query.childId));
+  const sessionById = new Map(sessions.map(session => [session.id, session]));
+  for (const task of issuedTasks) {
+    const session = sessionById.get(task.sessionId);
+    if (!session) continue;
+    if (localDateAt(task.issuedAt, timezoneOf(session.context)) === query.date) daySessionIds.add(task.sessionId);
+  }
+  const sessionIds = [...daySessionIds];
+  const tasks = sessionIds.length ? await services.db.select().from(sessionTasks).where(and(
+    eq(sessionTasks.childId, query.childId), inArray(sessionTasks.sessionId, sessionIds),
+  )).orderBy(asc(sessionTasks.ordinal)) : [];
+  const taskIds = tasks.map(task => task.id);
+  const assessmentRows = taskIds.length ? await services.db.select({ attemptId: assessments.attemptId, outcome: assessments.outcome })
+    .from(assessments).innerJoin(attempts, eq(attempts.id, assessments.attemptId))
+    .where(and(eq(assessments.childId, query.childId), inArray(attempts.taskId, taskIds))) : [];
+  const assessmentByAttempt = new Map<string, Set<string>>();
+  for (const row of assessmentRows) {
+    const values = assessmentByAttempt.get(row.attemptId) ?? new Set<string>();
+    values.add(row.outcome);
+    assessmentByAttempt.set(row.attemptId, values);
+  }
+
+  const now = services.clock.now();
+  const reviewOf = (session: typeof sessions[number]): ParentSessionActivityDto => {
+    const saved = session.activityReview === null ? null : SessionActivityReviewRecordSchema.safeParse(session.activityReview);
+    if (!saved || !saved.success) {
+      return {
+        status: "not_delivered",
+        durationSeconds: 0,
+        activeSeconds: 0,
+        approvedSeconds: 0,
+        pointsAwarded: 0,
+        reason: null,
+        errorCode: null,
+        excludedTasks: null,
+        details: null,
+      };
+    }
+    const review = saved.data;
+    const retained = activityDetailsAvailable(session, now)
+      ? session.activityReport as StoredReport | null
+      : null;
+    const details = retained ? {
+      modelReason: retained.verdict?.reason ?? review.reason ?? "",
+      tasks: (retained.tasks ?? []).map((task) => {
+        const measured = retained.fe?.tasks?.find((entry) => entry.taskId === task.taskId);
+        const excluded = retained.verdict?.excludedTasks?.find((entry) => entry.taskOrdinal === task.taskOrdinal);
+        return {
+          taskOrdinal: task.taskOrdinal,
+          instruction: task.instruction,
+          stimulus: task.stimulus,
+          options: task.options,
+          acceptedAnswers: task.acceptedAnswers,
+          submittedAnswers: task.attempts.map((attempt) => attempt.text).filter((answer): answer is string => answer !== null),
+          activeMilliseconds: measured ? taskActiveMs(measured) : 0,
+          editCount: measured?.editCount ?? 0,
+          playbackCount: measured?.playbacks.length ?? 0,
+          modelNote: excluded?.reason ?? null,
+        };
+      }),
+    } : null;
+    const excludedTasks = retained?.verdict?.excludedTasks ?? null;
+    return {
+      status: review.status,
+      durationSeconds: review.durationSeconds,
+      activeSeconds: review.activeSeconds,
+      approvedSeconds: review.approvedSeconds ?? 0,
+      pointsAwarded: review.pointsAwarded,
+      reason: review.reason,
+      errorCode: review.errorCode,
+      excludedTasks,
+      details,
+    };
+  };
+
+  const reportSessions = sessionIds.map(sessionId => {
+    const session = sessionById.get(sessionId)!;
+    const zone = timezoneOf(session.context);
+    const sessionTasksForDay = tasks.filter(task => task.sessionId === sessionId
+      && (localDateAt(task.issuedAt, zone) === query.date || (attemptsByTask.get(task.id) ?? []).length > 0));
+    const steps = sessionTasksForDay.map(task => {
+      const relevant = (attemptsByTask.get(task.id) ?? []).sort((a, b) => a.attempt.receivedAt.getTime() - b.attempt.receivedAt.getTime());
+      const responses = relevant.map(({ attempt }) => {
+        const rawAnswer = attempt.answer as Record<string, unknown> | null;
+        const textAnswer = attempt.modality === "text" && typeof rawAnswer?.text === "string" ? rawAnswer.text.trim().slice(0, 160) : null;
+        const optionAnswer = attempt.modality === "choice" && typeof rawAnswer?.optionText === "string" ? rawAnswer.optionText.trim().slice(0, 160) : null;
+        const itemValues = (task.answerKey as { itemValues?: Record<string, unknown> } | null)?.itemValues;
+        const sequenceAnswer = attempt.modality === "sequence" && Array.isArray(rawAnswer?.itemIds)
+          ? rawAnswer.itemIds.map(id => typeof id === "string" && typeof itemValues?.[id] === "string" ? itemValues[id] as string : "").filter(Boolean).join(" ").trim().slice(0, 160) || null
+          : null;
+        const feedbackKind = typeof attempt.feedback?.kind === "string" ? attempt.feedback.kind : null;
+        const assessment = attempt.modality === "skip" || attempt.modality === "dont_remember" ? "none"
+            : assessmentByAttempt.get(attempt.id)?.has("unassessed") && [...assessmentByAttempt.get(attempt.id)!].some(outcome => outcome !== "unassessed") ? "mixed"
+              : assessmentByAttempt.get(attempt.id)?.has("unassessed") ? "unassessed"
+                : assessmentByAttempt.has(attempt.id) ? "assessed" : "none";
+        return {
+          modality: attempt.modality as "choice" | "text" | "audio" | "dont_remember" | "skip" | "sequence",
+          answerExample: attempt.modality === "dont_remember" ? "Nie pamiętam" : textAnswer ?? optionAnswer ?? sequenceAnswer,
+          feedbackKind, assessment,
+          responseSeconds: Math.max(0, Math.ceil((attempt.receivedAt.getTime() - task.issuedAt.getTime()) / 1000)),
+        };
+      });
+      return {
+        taskId: task.id, ordinal: task.ordinal, exerciseType: task.exerciseType, state: task.state as "issued" | "answered" | "completed" | "skipped",
+        issuedAt: task.issuedAt.toISOString(), responses,
+      };
+    });
+    return {
+      sessionId, mode: session.mode as "training" | "mock_test" | "daily_round", state: session.state as "active" | "completed" | "ended",
+      startedAt: session.startedAt.toISOString(), endedAt: session.endedAt?.toISOString() ?? null,
+      deckTitle: session.deckTitle, deckVersionNumber: session.deckVersionNumber,
+      remainingSteps: Math.max(0, session.taskBudget - tasks.filter(task => task.sessionId === sessionId && (session.mode === "daily_round" || (task.exerciseType !== "exposure" && task.exerciseType !== "lesson_card"))).length),
+      activity: reviewOf(session),
+      steps,
+    };
+  });
+  // Suma zatwierdzonego czasu: tylko ocenione sesje zakończone tego dnia.
+  const creditedSeconds = endedThatDay.reduce((total, session) => {
+    const saved = session.activityReview === null ? null : SessionActivityReviewRecordSchema.safeParse(session.activityReview);
+    return saved?.success && saved.data.status === "evaluated" ? total + (saved.data.approvedSeconds ?? 0) : total;
+  }, 0);
+  const unevaluatedSessions = endedThatDay.filter((session) => {
+    const saved = session.activityReview === null ? null : SessionActivityReviewRecordSchema.safeParse(session.activityReview);
+    return !saved?.success || saved.data.status !== "evaluated";
+  }).length;
+  return ParentWorkCardDtoSchema.parse({
+    childId: query.childId, date: query.date, creditedSeconds, unevaluatedSessions,
+    reviewService: services.sessionActivity?.publicService ?? null,
+    sessions: reportSessions,
+  });
+}
