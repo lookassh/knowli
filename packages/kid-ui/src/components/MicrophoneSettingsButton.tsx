@@ -46,7 +46,7 @@ export function MicrophoneSettingsButton({
       window.removeEventListener("resize", positionPanel);
       window.removeEventListener("scroll", positionPanel, true);
     };
-  }, [opened]);
+  }, [opened, microphone, micDenied]);
 
   useEffect(() => {
     if (!opened) return;

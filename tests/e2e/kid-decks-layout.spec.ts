@@ -68,7 +68,7 @@ test("all assigned decks render in one scrollable list in group order", async ({
   await expect(page.getByTestId("kid-decks-page")).toHaveCount(0);
 });
 
-test("short phone viewport reaches lower decks and the microphone bar by scrolling", async ({ page }) => {
+test("short phone viewport reaches lower decks with microphone settings in the header", async ({ page }) => {
   const decks = [
     makeDeck(0, { recommended: true, title: "Dni tygodnia i pory roku" }),
     makeDeck(1, { recommended: true }),
@@ -83,12 +83,21 @@ test("short phone viewport reaches lower decks and the microphone bar by scrolli
     documentHeight: document.documentElement.scrollHeight,
   }));
   expect(layout.documentHeight, JSON.stringify(layout)).toBeGreaterThan(layout.viewportHeight);
+  await expect(page.getByTestId("kid-mic-settings")).toBeInViewport();
+  const microphoneButton = await page.getByTestId("kid-mic-settings").boundingBox();
+  expect(microphoneButton?.width ?? 0).toBeGreaterThanOrEqual(48);
+  expect(microphoneButton?.height ?? 0).toBeGreaterThanOrEqual(48);
+  await page.getByTestId("kid-mic-settings").click();
   await expect(page.getByTestId("kid-mic-toggle")).not.toBeChecked();
   await expect(page.getByTestId("kid-microphone-hint")).toBeVisible();
+  await page.getByTestId("kid-mic-settings").click();
 
   const lastCard = page.getByTestId("kid-deck-card").filter({ hasText: decks[3]!.title });
-  await lastCard.getByRole("button", { name: "Ucz się" }).scrollIntoViewIfNeeded();
-  await expect(page.getByTestId("kid-mic-toggle")).toBeInViewport();
+  const lastDeckAction = lastCard.getByRole("button", { name: "Ucz się" });
+  await lastDeckAction.scrollIntoViewIfNeeded();
+  const actionBox = await lastDeckAction.boundingBox();
+  expect(actionBox?.y ?? -1).toBeGreaterThanOrEqual(0);
+  expect((actionBox?.y ?? Infinity) + (actionBox?.height ?? 0)).toBeLessThanOrEqual(640);
 
   // Ten test sprawdza dane żądania startu. Nie uruchamia sesji z pustą
   // kolejką zadań fixture (następny request /next nie jest tu skonfigurowany).
@@ -111,6 +120,15 @@ test("long deck titles and actions remain available at 200 percent text size", a
   await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
   const card = page.getByTestId("kid-deck-card");
   await expect(card.getByTestId("kid-deck-title")).toHaveText(`${title} — 12 słów`);
+  const microphoneButton = page.getByTestId("kid-mic-settings");
+  await microphoneButton.click();
+  const microphonePanel = page.getByTestId("kid-mic-settings-panel");
+  await expect(microphonePanel).toBeVisible();
+  const panelBox = await microphonePanel.boundingBox();
+  expect(panelBox!.x).toBeGreaterThanOrEqual(0);
+  expect(panelBox!.x + panelBox!.width).toBeLessThanOrEqual(390);
+  expect(panelBox!.y + panelBox!.height).toBeLessThanOrEqual(844);
+  await microphoneButton.click();
   const start = card.getByRole("button", { name: "Ucz się" });
   await start.scrollIntoViewIfNeeded();
   await expect(start).toBeVisible();
@@ -120,10 +138,82 @@ test("empty decks and a denied microphone still offer recovery", async ({ page }
   await page.addInitScript(() => localStorage.setItem("umiem.micDenied", "1"));
   await openDeckScreen(page, []);
   await expect(page.getByText("Nie masz jeszcze zestawów do nauki.")).toBeVisible();
+  await page.getByTestId("kid-mic-settings").click();
   await expect(page.getByTestId("kid-mic-denied-hint")).toBeVisible();
   const micBottom = await page.getByTestId("kid-mic-toggle").boundingBox();
-  expect(micBottom?.y ?? 0).toBeGreaterThan(600);
+  expect(micBottom?.y ?? 0).toBeGreaterThan(0);
   await page.getByTestId("kid-mic-toggle").check();
   await expect(page.getByTestId("kid-mic-denied-hint")).toHaveCount(0);
   await expect(page.getByTestId("kid-parent-link")).toBeVisible();
+});
+
+test("microphone settings stay inside portrait, landscape, tablet and desktop viewports", async ({ page }) => {
+  const viewports = [
+    { width: 360, height: 640 },
+    { width: 390, height: 844 },
+    { width: 844, height: 390 },
+    { width: 768, height: 1024 },
+    { width: 1280, height: 800 },
+  ];
+
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    await page.addInitScript(() => {
+      Object.defineProperty(window, "microphonePermissionRequests", { configurable: true, writable: true, value: 0 });
+      if (navigator.mediaDevices) {
+        navigator.mediaDevices.getUserMedia = async () => {
+          (window as unknown as Window & { microphonePermissionRequests: number }).microphonePermissionRequests++;
+          throw new DOMException("Unexpected microphone request", "NotAllowedError");
+        };
+      }
+    });
+    await openDeckScreen(page, [makeDeck(0), makeDeck(1)]);
+    const button = page.getByTestId("kid-mic-settings");
+    const buttonBox = await button.boundingBox();
+    expect(buttonBox?.width ?? 0, JSON.stringify(viewport)).toBeGreaterThanOrEqual(48);
+    expect(buttonBox?.height ?? 0, JSON.stringify(viewport)).toBeGreaterThanOrEqual(48);
+    expect(buttonBox!.x, JSON.stringify(viewport)).toBeGreaterThanOrEqual(0);
+    expect(buttonBox!.x + buttonBox!.width, JSON.stringify(viewport)).toBeLessThanOrEqual(viewport.width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), JSON.stringify(viewport)).toBe(true);
+
+    await button.focus();
+    await page.keyboard.press("Enter");
+    const panel = page.getByTestId("kid-mic-settings-panel");
+    await expect(panel).toBeVisible();
+    await page.keyboard.press("Tab");
+    await expect(page.getByTestId("kid-mic-toggle")).toBeFocused();
+    expect(await page.evaluate(() => (window as unknown as Window & { microphonePermissionRequests: number }).microphonePermissionRequests)).toBe(0);
+    await page.getByTestId("kid-daily-activity").click();
+    await expect(panel).toHaveCount(0);
+    await button.click();
+    await expect(panel).toBeVisible();
+    const panelBox = await panel.boundingBox();
+    expect(panelBox!.x, JSON.stringify(viewport)).toBeGreaterThanOrEqual(0);
+    expect(panelBox!.x + panelBox!.width, JSON.stringify(viewport)).toBeLessThanOrEqual(viewport.width);
+    expect(panelBox!.y, JSON.stringify(viewport)).toBeGreaterThanOrEqual(0);
+    expect(panelBox!.y + panelBox!.height, JSON.stringify(viewport)).toBeLessThanOrEqual(viewport.height);
+    await page.keyboard.press("Escape");
+    await expect(button).toHaveAttribute("aria-expanded", "false");
+    await expect(button).toBeFocused();
+    await page.goto("/");
+  }
+});
+
+test("microphone settings remain inside a short viewport when denial details appear", async ({ page }) => {
+  const viewport = { width: 360, height: 320 };
+  await page.setViewportSize(viewport);
+  await openDeckScreen(page, [makeDeck(0)]);
+
+  const settingsButton = page.getByTestId("kid-mic-settings");
+  await settingsButton.click();
+  const toggle = page.getByTestId("kid-mic-toggle");
+  await toggle.check();
+  await expect(settingsButton).toHaveAccessibleName("Odpowiedzi głosowe włączone");
+  await toggle.uncheck();
+  await expect(page.getByTestId("kid-mic-denied-hint")).toBeVisible();
+
+  const panel = page.getByTestId("kid-mic-settings-panel");
+  const panelBox = await panel.boundingBox();
+  expect(panelBox!.y).toBeGreaterThanOrEqual(0);
+  expect(panelBox!.y + panelBox!.height).toBeLessThanOrEqual(viewport.height);
 });

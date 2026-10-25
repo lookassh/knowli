@@ -384,6 +384,7 @@ test("wybór profilu prowadzi sesję do obiecanego końca", async ({ page }) => 
   await expect(page.getByTestId("kid-parent-link")).toBeVisible();
   await page.getByTestId("kid-profile").filter({ hasText: child.displayName }).click();
   await expect(page.getByTestId("kid-deck").first()).toBeVisible();
+  await page.getByTestId("kid-mic-settings").click();
   await page.getByTestId("kid-mic-toggle").check();
   const taskResponses = new Map<string, number>();
   page.on("response", (response) => {
@@ -791,6 +792,7 @@ test("odmowa mikrofonu przełącza na tryb bez nagrywania", async ({ page }) => 
   });
 
   await openLearn(page, child.displayName);
+  await page.getByTestId("kid-mic-settings").click();
   await page.getByTestId("kid-mic-toggle").check();
   await page.getByTestId("kid-deck").first().click();
   await expect(page.getByTestId("kid-record")).toBeVisible();
@@ -995,6 +997,7 @@ test("profil bez czytania przechodzi obrazkowe ćwiczenie mówione przez rzeczyw
     expect(await (await page.request.get("/api/v1/kid/profiles")).json()).toContainEqual(
       expect.objectContaining({ childId: child.id, canRead: false }),
     );
+    await page.getByTestId("kid-mic-settings").click();
     const microphone = page.getByTestId("kid-mic-toggle");
     if (!(await microphone.isChecked())) await microphone.check();
     await page.getByTestId("kid-deck").filter({ hasText: "Kolory obrazkowe" }).click();
@@ -1053,6 +1056,7 @@ test("opuszczenie widoku w trakcie nagrywania zatrzymuje strumień", async ({ pa
   await seedDue(child.id, publishedVersionId, 0, "recall");
 
   await openLearn(page, child.displayName);
+  await page.getByTestId("kid-mic-settings").click();
   await page.getByTestId("kid-mic-toggle").check();
   await page.getByTestId("kid-deck").first().click();
   await startFakeRecording(page);
@@ -1067,6 +1071,7 @@ test("opuszczenie widoku w trakcie nagrywania zatrzymuje strumień", async ({ pa
   // Nowa sesja może zacząć od prezentacji. Cleanup mikrofonu sprawdzamy
   // przy kolejnym zadaniu z nagrywaniem, bez narzucania kolejności schedulera.
   await page.getByTestId("kid-again").click();
+  await page.getByTestId("kid-mic-settings").click();
   await page.getByTestId("kid-mic-toggle").check();
   await page.getByTestId("kid-deck").first().click();
   // The next session has its own fixed plan and need not repeat a speech slot.
@@ -1086,6 +1091,7 @@ test("szczegółowe podsumowanie pokazuje samodzielne wyniki i słowa do ćwicze
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`/kids/${child.id}/learn`);
     await expect(page.getByTestId("kid-deck")).toBeVisible();
+    await page.getByTestId("kid-mic-settings").click();
     await page.getByTestId("kid-mic-toggle").uncheck();
     await page.getByTestId("kid-deck").filter({ hasText: "Podsumowanie słów" }).click();
     await expect(page.getByTestId("kid-input")).toBeVisible();

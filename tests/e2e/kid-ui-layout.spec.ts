@@ -142,6 +142,7 @@ test("turning recording off on the deck screen gives a neutral session status", 
   await installKidUiFixture(page, recallFixture());
   await page.goto("/");
   await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-mic-settings").click();
   await page.getByTestId("kid-mic-toggle").uncheck();
   await page.getByTestId("kid-deck").click();
   const status = page.getByTestId("kid-microphone-status");
