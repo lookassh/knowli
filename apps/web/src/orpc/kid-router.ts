@@ -15,11 +15,9 @@ import {
   endSession,
   listKidDecks,
   listKidProfiles,
-  mockTestKindOfSession,
   nextTask,
   readAttempt,
-  readLessonMockTestSummary,
-  readMockTestSummary,
+  readMockTestSummaryForSession,
   readSessionActivityResult,
   readUiAudio,
   recordEvent,
@@ -145,13 +143,7 @@ const activityResult = kidOs.sessions.activityResult.handler(async ({ context, i
 });
 
 const mockTestSummary = kidOs.sessions.mockTestSummary.handler(async ({ context, input }) => {
-  // Lekcja → omówienie per cel; słówka → omówienie słówkowe (arch §12).
-  const kind = await mockTestKindOfSession(context.services.db, input.sessionId);
-  const summary =
-    kind === "lesson"
-      ? await readLessonMockTestSummary(context.services, input.sessionId)
-      : await readMockTestSummary(context.services, input.sessionId);
-  return noStore(summary);
+  return noStore(await readMockTestSummaryForSession(context.services, input.sessionId));
 });
 
 const getAttempt = kidOs.attempts.get.handler(async ({ context, input }) =>

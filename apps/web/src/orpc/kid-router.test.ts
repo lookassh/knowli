@@ -10,11 +10,9 @@ import {
   endSession,
   listKidDecks,
   listKidProfiles,
-  mockTestKindOfSession,
   nextTask,
   readAttempt,
-  readLessonMockTestSummary,
-  readMockTestSummary,
+  readMockTestSummaryForSession,
   readSessionActivityResult,
   readUiAudio,
   recordEvent,
@@ -35,9 +33,7 @@ vi.mock("@learning/server", async (importActual) => {
     listKidProfiles: vi.fn(),
     listKidDecks: vi.fn(),
     readSessionActivityResult: vi.fn(),
-    readMockTestSummary: vi.fn(),
-    readLessonMockTestSummary: vi.fn(),
-    mockTestKindOfSession: vi.fn(),
+    readMockTestSummaryForSession: vi.fn(),
     readAttempt: vi.fn(),
     authorizeFeedbackAudio: vi.fn(),
     startSession: vi.fn(),
@@ -387,21 +383,20 @@ describe("kid oRPC router — odczyty (GET)", () => {
     expect(readSessionActivityResult).toHaveBeenCalledWith(services, sessionId);
   });
 
-  it("mock-test-summary rozdziela lekcję i słówka przez mockTestKindOfSession", async () => {
-    vi.mocked(mockTestKindOfSession).mockResolvedValueOnce("lesson");
-    vi.mocked(readLessonMockTestSummary).mockResolvedValueOnce(lessonSummary);
+  it("mock-test-summary przekazuje obie odmiany DTO przez publiczną operację serwera", async () => {
+    vi.mocked(readMockTestSummaryForSession).mockResolvedValueOnce(lessonSummary as never);
     const lessonResponse = await call(`/sessions/${sessionId}/mock-test-summary`);
     expect(lessonResponse.status).toBe(200);
     expect(lessonResponse.headers.get("cache-control")).toBe("no-store");
     await expect(lessonResponse.json()).resolves.toEqual(lessonSummary);
-    expect(readLessonMockTestSummary).toHaveBeenCalledWith(services, sessionId);
 
-    vi.mocked(mockTestKindOfSession).mockResolvedValueOnce("vocabulary");
-    vi.mocked(readMockTestSummary).mockResolvedValueOnce(vocabularySummary);
+    vi.mocked(readMockTestSummaryForSession).mockResolvedValueOnce(vocabularySummary as never);
     const vocabularyResponse = await call(`/sessions/${sessionId}/mock-test-summary`);
     expect(vocabularyResponse.status).toBe(200);
+    expect(vocabularyResponse.headers.get("cache-control")).toBe("no-store");
     await expect(vocabularyResponse.json()).resolves.toEqual(vocabularySummary);
-    expect(mockTestKindOfSession).toHaveBeenCalledWith(services.db, sessionId);
+    expect(readMockTestSummaryForSession).toHaveBeenNthCalledWith(1, services, sessionId);
+    expect(readMockTestSummaryForSession).toHaveBeenNthCalledWith(2, services, sessionId);
   });
 
   it("odczyt próby zwraca DTO bez no-store", async () => {

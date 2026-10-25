@@ -1,0 +1,1149 @@
+import { randomUUID } from "node:crypto";
+import { and, asc, eq } from "drizzle-orm";
+import {
+  AttemptInputSchema,
+  type AttemptDto,
+  type AttemptInput,
+  type FeedbackDto,
+} from "@learning/contracts";
+import type { Services } from "../../../config";
+import type { Tx } from "../../../db/client";
+import {
+  assessments,
+  attempts,
+  childObjectiveProgress,
+  deckVersions,
+  eventExposures,
+  itemRevisions,
+  itemRevisionSkills,
+  learningEvents,
+  learningSessions,
+  lessonVerdicts,
+  sessionTasks,
+} from "../../../db/schema";
+import { AppError } from "../../../errors";
+import type { AssistanceKind, Policy, SkillOutcome } from "../../../domain/types";
+import {
+  buildAnswerSegments,
+  closestApprovedVariant,
+  evaluateChoice as evaluateLessonChoice,
+  evaluateSequence,
+  gradeFromMatch,
+  gradeFromVerdict,
+  matchLessonAnswer,
+  validateVerdict,
+  type GraderVerdict,
+  type LessonAnswerKey,
+  type ObjectiveGrade,
+} from "../../../domain/lessons/evaluate";
+import type { GraderInput } from "../../../ports/ai";
+import type { LearningObjective, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
+import { BASE_ERROR_CATEGORIES } from "../../../domain/lessons/base-error-categories";
+import {
+  projectObjectiveProgress,
+  lastIndependentObjectiveAt,
+  qualifyLessonAttempt,
+  type LessonQualificationContext,
+  type ObjectiveHistoryEntry,
+} from "../../../domain/lessons/progress";
+import { loadPolicy } from "../../../policies/registry";
+import { lockTaskWithSession } from "../events";
+import { discloseFeedbackEvent, requestHashOf } from "../attempt-shared";
+import { lessonSessionContextOf, type LessonSessionContext } from "./lesson-sessions";
+
+/**
+ * Przyjęcie i ocena odpowiedzi w lekcji (design „Przyjęcie odpowiedzi” kroki 1–2,
+ * „Ocena”, „Kwalifikacja i projekcja celów”). `attempts.ts` deleguje tu zadania
+ * `lesson_*`. Współdzieli mechanikę słówek przez `attempt-shared`: hasz treści dla
+ * idempotencji i zapieczętowany `feedback_issued` z ekspozycją przed odpowiedzią HTTP.
+ *
+ * Zakres zadania 13B: ocena DETERMINISTYCZNA (dopasowanie + typy zamknięte + sekwencja).
+ * Model oceniający i cache werdyktów to zadanie 15: brak dopasowania bez modelu →
+ * `unevaluated` (technical, `verdict='unavailable'`), zadanie zostaje `issued`
+ * (ruling progress.md 114, req 6.8). Jedna oceniona odpowiedź kończy zadanie
+ * (`answered`); po błędzie cykl wsparcia prowadzi selektor (ruling 113, zadanie 13).
+ */
+
+/** Leniwa finalizacja przeterminowanej próby lekcji (jak słówka, arch §9.2a). */
+export const LESSON_ATTEMPT_PROCESSING_TIMEOUT_MS = 60_000;
+
+type TaskRow = typeof sessionTasks.$inferSelect;
+type SessionRow = typeof learningSessions.$inferSelect;
+type AttemptRow = typeof attempts.$inferSelect;
+type LessonModality = "choice" | "text" | "dont_remember" | "skip" | "sequence";
+
+/** Prywatny `answer_key` zadania lekcji (materializowany w `lesson-sessions.ts`). */
+interface LessonTaskAnswerKey extends LessonAnswerKey {
+  objectiveId: string;
+  subjectId: string;
+  targetKey: string;
+  independentCheck?: boolean;
+  reason?: string;
+  optionValues?: Record<string, string>;
+  itemValues?: Record<string, string>;
+  segmentValues?: Record<string, string>;
+}
+
+/** Zamrożony przy received_at kontekst kwalifikacji próby lekcji (arch §9.2). */
+interface FrozenLessonContext {
+  receivedAt: string;
+  policyVersion: string;
+  firstTry: boolean;
+  assistance: AssistanceKind[];
+  answerPreviouslyExposed: boolean;
+  previousSessionContactAt: string | null;
+  timezone: string;
+}
+
+function keyOf(task: TaskRow): LessonTaskAnswerKey {
+  return task.answerKey as unknown as LessonTaskAnswerKey;
+}
+
+/** Odwrotność `mapObjectiveStatus`: status domeny → słownik bazy (ruling 97). */
+function toDbObjectiveStatus(status: string): string {
+  switch (status) {
+    case "not_assessed":
+      return "unseen";
+    case "learning":
+      return "practicing";
+    default:
+      return status; // needs_confirmation / needs_reconfirmation / mastered bez zmian
+  }
+}
+
+/** Czy przedmiot ma normalizator (zawsze, gdy przedmiot istnieje w rejestrze). */
+function normalizerFor(services: Services, subjectId: string) {
+  const subject = services.subjects.getSubject(subjectId);
+  if (!subject) {
+    throw new AppError("internal", { message: `lesson subject missing: ${subjectId}` });
+  }
+  return subject.normalizer;
+}
+
+/** Ujawnienie `target_key` ćwiczenia dziecku PRZED wydaniem tego zadania (req 7.2). */
+async function answerPreviouslyExposed(tx: Tx, childId: string, targetKey: string, task: TaskRow): Promise<boolean> {
+  const rows = await tx
+    .select({ eventId: eventExposures.eventId, taskId: learningEvents.taskId })
+    .from(eventExposures)
+    .innerJoin(learningEvents, eq(learningEvents.id, eventExposures.eventId))
+    .where(and(eq(eventExposures.childId, childId), eq(eventExposures.targetKey, targetKey), eq(learningEvents.sealed, true)));
+  // Ekspozycje zapisane przy wydaniu TEGO zadania (prompt/feedback tego taskId)
+  // się nie liczą — tylko wcześniejsze, z dowolnej sesji/lekcji/kartkówki.
+  return rows.some((row) => row.taskId !== task.id);
+}
+
+/** Wsparcie użyte w zadaniu przed odpowiedzią (guided options / odsłuch / podpowiedź). */
+async function assistanceFor(tx: Tx, task: TaskRow, key: LessonTaskAnswerKey, receivedAt: Date): Promise<AssistanceKind[]> {
+  const assistance = new Set<AssistanceKind>();
+  // Typy prowadzone ujawniają rozwiązanie w prompt'cie: wybór z opcji
+  // (choice/short_answer), zaznaczenie w segmencie (notice) oraz ułożenie
+  // podanych klocków (order) — dziecko dostaje gotowe elementy, więc pierwsze
+  // poprawne ułożenie jest wspomagane, nie niezależne (req 7.2, design etapów).
+  if (
+    key.exerciseType === "lesson_choice" ||
+    key.exerciseType === "lesson_short_answer" ||
+    key.exerciseType === "lesson_notice" ||
+    key.exerciseType === "lesson_order"
+  ) {
+    assistance.add("options");
+  }
+  const disclosures = await tx
+    .select({ kind: learningEvents.kind, occurredAt: learningEvents.occurredAt })
+    .from(learningEvents)
+    .where(and(eq(learningEvents.taskId, task.id), eq(learningEvents.sealed, true)));
+  for (const row of disclosures) {
+    if (row.occurredAt > receivedAt) continue;
+    if (row.kind === "hint_issued") assistance.add("hint");
+    if (row.kind === "audio_issued") assistance.add("model_audio");
+  }
+  return [...assistance];
+}
+
+/** Tekst rozwiązania własnego zadania pokazywany dziecku (design feedback). */
+function correctTextFor(task: TaskRow, key: LessonTaskAnswerKey): string {
+  if (key.exerciseType === "lesson_choice" || key.exerciseType === "lesson_short_answer") {
+    return key.optionValues?.[key.correctOptionId ?? ""] ?? key.answer;
+  }
+  if (key.exerciseType === "lesson_notice") {
+    return key.segmentValues?.[key.correctOptionId ?? ""] ?? key.answer;
+  }
+  if (key.exerciseType === "lesson_order") {
+    const ids = key.itemIds ?? [];
+    const values = key.itemValues ?? {};
+    const text = ids.map((id) => values[id]).filter((t): t is string => Boolean(t)).join(" ");
+    return text || key.answer;
+  }
+  return key.answer;
+}
+
+interface LessonGradeResult {
+  grade: ObjectiveGrade;
+  feedback: FeedbackDto;
+  /** Ekspozycje feedbacku (klucze celów pokazane dziecku); puste dla not_assessed. */
+  exposures: string[];
+  /** `details` zapisywane w assessments. */
+  details: Record<string, unknown>;
+}
+
+/**
+ * Ocena deterministyczna odpowiedzi + feedback + ekspozycje (design „Ocena”,
+ * tabela mapowania). `no_match` bez modelu → unevaluated/unavailable → not_assessed.
+ */
+function gradeLessonAnswer(
+  input: Extract<AttemptInput, { modality: LessonModality }>,
+  task: TaskRow,
+  key: LessonTaskAnswerKey,
+  services: Services,
+): LessonGradeResult {
+  const objectiveId = key.objectiveId;
+  const correctText = correctTextFor(task, key);
+
+  // „Pomiń” → próba bez ocen (jak słówka): nie ma ObjectiveGrade.
+  if (input.modality === "skip") {
+    return { grade: { outcome: "unevaluated", verdict: "unavailable" }, feedback: { kind: "not_assessed" }, exposures: [], details: { objectiveId, verdict: "skipped" } };
+  }
+
+  if (input.modality === "dont_remember") {
+    return {
+      grade: { outcome: "incorrect", reason: "dont_remember", verdict: "closed_incorrect" },
+      feedback: { kind: "incorrect", correctText },
+      exposures: [key.targetKey],
+      details: { objectiveId, verdict: "dont_remember" },
+    };
+  }
+
+  if (input.modality === "choice") {
+    const correct = evaluateLessonChoice(input.optionId, key);
+    if (correct) {
+      return { grade: { outcome: "correct", verdict: "closed_correct" }, feedback: { kind: "great" }, exposures: [key.targetKey], details: { objectiveId, verdict: "closed_correct" } };
+    }
+    return { grade: { outcome: "incorrect", verdict: "closed_incorrect" }, feedback: { kind: "incorrect", correctText }, exposures: [key.targetKey], details: { objectiveId, verdict: "closed_incorrect" } };
+  }
+
+  if (input.modality === "sequence") {
+    const correct = evaluateSequence(input.itemIds, key);
+    if (correct) {
+      return { grade: { outcome: "correct", verdict: "closed_correct" }, feedback: { kind: "great" }, exposures: [key.targetKey], details: { objectiveId, verdict: "closed_correct" } };
+    }
+    return { grade: { outcome: "incorrect", verdict: "closed_incorrect" }, feedback: { kind: "incorrect", correctText }, exposures: [key.targetKey], details: { objectiveId, verdict: "closed_incorrect" } };
+  }
+
+  // text: luka / error_fix / transform / open_answer → dopasowanie deterministyczne
+  const normalizer = normalizerFor(services, key.subjectId);
+  const match = matchLessonAnswer(input.text, key, normalizer);
+  const grade = gradeFromMatch(match);
+  if (grade === null) {
+    // brak dopasowania, brak modelu w tym zadaniu → nieocenione (technical)
+    return {
+      grade: { outcome: "unevaluated", reason: "technical", verdict: "unavailable" },
+      feedback: { kind: "not_assessed" },
+      exposures: [],
+      details: { objectiveId, verdict: "unavailable" },
+    };
+  }
+  if (match.kind === "minor_typo") {
+    const variant = closestApprovedVariant(input.text, key, normalizer);
+    const segments = buildAnswerSegments(input.text, [match.typoToken]);
+    const feedback: FeedbackDto = {
+      kind: "lesson_almost",
+      correctText: variant,
+      ...(segments ? { answerSegments: segments } : {}),
+    };
+    return { grade, feedback, exposures: [key.targetKey], details: { objectiveId, verdict: "minor_typo", typoToken: match.typoToken } };
+  }
+  // exact
+  return { grade, feedback: { kind: "great" }, exposures: [key.targetKey], details: { objectiveId, verdict: "exact" } };
+}
+
+// ───────────────────────────── model oceniający (zadanie 15) ─────────────────────────────
+
+/** Cel + temat przedmiotu dla danego ćwiczenia (opis, kategorie, podpowiedzi). */
+function resolveObjective(services: Services, key: LessonTaskAnswerKey): { subject: SubjectModule; topic: LessonTopic; objective: LearningObjective } {
+  const subject = services.subjects.getSubject(key.subjectId);
+  if (!subject) {
+    throw new AppError("internal", { message: `lesson subject missing: ${key.subjectId}` });
+  }
+  for (const topic of subject.topics) {
+    const objective = topic.objectives.find((o) => o.id === key.objectiveId);
+    if (objective) return { subject, topic, objective };
+  }
+  throw new AppError("internal", { message: `lesson objective missing: ${key.subjectId}/${key.objectiveId}` });
+}
+
+/** Etykiety kategorii dla celu: bazowe ∪ przedmiotu ∪ tematu, po kodzie. */
+function categoryLabels(subject: SubjectModule, topic: LessonTopic): Map<string, string> {
+  const labels = new Map<string, string>();
+  for (const category of BASE_ERROR_CATEGORIES) labels.set(category.code, category.labelPl);
+  for (const category of subject.errorCategories) labels.set(category.code, category.labelPl);
+  for (const category of topic.extraErrorCategories) labels.set(category.code, category.labelPl);
+  return labels;
+}
+
+/**
+ * Deterministyczny klucz cache z odpowiedzi dziecka: pierwszy wariant sekwencji
+ * z normalizatora przedmiotu, tokeny złączone spacją. Ten sam materiał (ta sama
+ * znormalizowana odpowiedź) trafia w ten sam wiersz niezależnie od wielkości
+ * liter czy interpunkcji — co jest sensem wspólnego cache werdyktów.
+ */
+function normalizedAnswerKey(services: Services, key: LessonTaskAnswerKey, text: string): string {
+  const normalizer = normalizerFor(services, key.subjectId);
+  const sequences = normalizer.normalize(text).filter((seq) => seq.length > 0);
+  const first = sequences[0];
+  return first ? first.join(" ") : text.trim().toLowerCase();
+}
+
+/** Buduje wejście modelu z profilu przedmiotu i ćwiczenia (odpowiedź jako dane). */
+function buildGraderInput(
+  services: Services,
+  task: TaskRow,
+  key: LessonTaskAnswerKey,
+  childAnswer: string,
+): GraderInput {
+  const { subject, topic, objective } = resolveObjective(services, key);
+  const labels = categoryLabels(subject, topic);
+  const prompt = task.publicPrompt as { instructionPl?: string; stem?: string; statement?: string; prompt?: string; stemWithGap?: string } | null;
+  const instruction = prompt?.instructionPl ?? "";
+  const stimulus = prompt?.stem ?? prompt?.stemWithGap ?? prompt?.statement ?? prompt?.prompt ?? null;
+  return {
+    subjectTitle: subject.titlePl,
+    topicTitle: topic.titlePl,
+    roleProfile: { gradingRole: subject.prompts.gradingRole, almostDefinition: subject.prompts.almostDefinition },
+    instruction,
+    stimulus,
+    objective: {
+      description: objective.descriptionEn,
+      errorCategories: objective.errorCategories.map((code) => ({ code, label: labels.get(code) ?? code })),
+    },
+    acceptedAnswers: [key.answer, ...key.acceptedAnswers],
+    childAnswer: childAnswer.slice(0, 200),
+  };
+}
+
+/** Kategorie dozwolone w werdykcie dla tego celu (do `validateVerdict`). */
+function allowedCategoriesFor(services: Services, key: LessonTaskAnswerKey): readonly string[] {
+  const { objective } = resolveObjective(services, key);
+  return objective.errorCategories;
+}
+
+/** Szablon podpowiedzi kategorii celu (po polsku); null, gdy kategoria nieznana. */
+function hintTemplateFor(services: Services, key: LessonTaskAnswerKey, errorCategory: string): string | null {
+  const { objective } = resolveObjective(services, key);
+  return objective.hints[errorCategory] ?? null;
+}
+
+/**
+ * Buduje `LessonGradeResult` z werdyktu (lub jego braku) wg tabeli mapowania
+ * (design „Ocena”). `model_correct` → great; `model_almost` → lesson_almost z
+ * fragmentami; `model_incorrect` → lesson_hint z fragmentami + hintPl kategorii;
+ * `model_other` → incorrect z correctText bez podpowiedzi celu; brak werdyktu →
+ * not_assessed. Komentarz `note` modelu NIGDY nie wchodzi do Kid DTO.
+ */
+function resultFromVerdict(
+  services: Services,
+  task: TaskRow,
+  key: LessonTaskAnswerKey,
+  childAnswer: string,
+  verdict: GraderVerdict | null,
+  verdictId: string | null,
+  authoritativeIncorrect = false,
+): LessonGradeResult {
+  const objectiveId = key.objectiveId;
+  const grade: ObjectiveGrade = authoritativeIncorrect
+    ? { outcome: "incorrect", verdict: "model_incorrect", ...(verdict?.errorCategory && verdict.errorCategory !== "other" ? { errorCategory: verdict.errorCategory } : {}) }
+    : gradeFromVerdict(verdict);
+  const normalizer = normalizerFor(services, key.subjectId);
+  const correctText = closestApprovedVariant(childAnswer, key, normalizer);
+
+  if (grade.verdict === "unavailable") {
+    return { grade, feedback: { kind: "not_assessed" }, exposures: [], details: { objectiveId, verdict: "unavailable" } };
+  }
+
+  const fragments = verdict?.fragments ?? [];
+  const segments = fragments.length > 0 ? buildAnswerSegments(childAnswer, [...fragments]) : null;
+  const detailsBase: Record<string, unknown> = {
+    objectiveId,
+    verdict: grade.verdict,
+    ...(verdictId ? { verdictId } : {}),
+    ...(fragments.length > 0 ? { fragments: [...fragments] } : {}),
+  };
+
+  switch (grade.verdict) {
+    case "model_correct":
+      return { grade, feedback: { kind: "great" }, exposures: [key.targetKey], details: detailsBase };
+    case "model_almost":
+      return {
+        grade,
+        feedback: { kind: "lesson_almost", correctText, ...(segments ? { answerSegments: segments } : {}) },
+        exposures: [key.targetKey],
+        details: detailsBase,
+      };
+    case "model_incorrect": {
+      const hintPl = grade.errorCategory ? hintTemplateFor(services, key, grade.errorCategory) : null;
+      return {
+        grade,
+        feedback: {
+          kind: "lesson_hint",
+          correctText,
+          ...(hintPl ? { hintPl } : {}),
+          ...(segments ? { answerSegments: segments } : {}),
+        },
+        exposures: [key.targetKey],
+        details: { ...detailsBase, ...(grade.errorCategory ? { errorCategory: grade.errorCategory } : {}) },
+      };
+    }
+    case "model_other":
+      // błąd poza celem: pokaż poprawną odpowiedź, bez podpowiedzi celu; nieoceniane
+      return { grade, feedback: { kind: "incorrect", correctText }, exposures: [key.targetKey], details: detailsBase };
+    default:
+      return { grade, feedback: { kind: "not_assessed" }, exposures: [], details: detailsBase };
+  }
+}
+
+type LessonVerdictRow = typeof lessonVerdicts.$inferSelect;
+
+/**
+ * Zapisany werdykt → `GraderVerdict` z `parent_decision` NADRZĘDNYM (design):
+ * `overridden_correct` → correct bez kategorii/fragmentów; `overridden_incorrect`
+ * → incorrect z zachowaną kategorią (albo `other`); `confirmed`/brak → werdykt
+ * zapisany. Zwrócony kształt przechodzi przez `gradeFromVerdict` jak świeży.
+ */
+function verdictFromCacheRow(row: LessonVerdictRow): GraderVerdict {
+  const stored: GraderVerdict = {
+    verdict: row.verdict as GraderVerdict["verdict"],
+    errorCategory: row.errorCategory,
+    fragments: row.fragments ?? [],
+    note: row.note ?? "",
+  };
+  switch (row.parentDecision) {
+    case "overridden_correct":
+      return { verdict: "correct", errorCategory: null, fragments: [], note: stored.note };
+    case "overridden_incorrect":
+      return { verdict: "incorrect", errorCategory: stored.errorCategory ?? "other", fragments: stored.fragments, note: stored.note };
+    default:
+      return stored;
+  }
+}
+
+function dbOutcome(outcome: SkillOutcome): "correct" | "incorrect" | "unassessed" {
+  return outcome === "unevaluated" ? "unassessed" : outcome;
+}
+
+/**
+ * `confirmation_eligible` zapisywane do oceny. „Nieocenione" (`unevaluated` →
+ * `unassessed`) jest NEUTRALNE: nie potwierdza niczego, więc flaga musi być
+ * false — inaczej CHECK `assessments_unassessed_no_score` (outcome='unassessed'
+ * ⇒ score null AND NOT confirmation_eligible) rzuca 23514. Dla ocenionych
+ * zachowujemy wynik kwalifikacji (ta sama reguła przerwy co słówka).
+ */
+function confirmationEligibleFor(outcome: SkillOutcome, qualified: boolean): boolean {
+  return outcome === "unevaluated" ? false : qualified;
+}
+
+/**
+ * Przejście stanu zadania lekcji po ocenie (ruling 113): jedna oceniona
+ * odpowiedź (poprawna albo błędna) kończy zadanie (`answered`); `skip` →
+ * `skipped`; brak oceny (`unevaluated`) zostawia `issued` (retry / „Pomiń”).
+ * W KARTKÓWCE jedna odpowiedź na slot jest zawsze terminalna: `skip` → `skipped`,
+ * każda inna (w tym `unevaluated` bez kary) → `answered` (nigdy retry).
+ */
+function nextLessonTaskState(modality: LessonModality, outcome: SkillOutcome, mockTest = false): "issued" | "answered" | "skipped" {
+  if (modality === "skip") return "skipped";
+  if (mockTest) return "answered";
+  if (outcome === "unevaluated") return "issued";
+  return "answered";
+}
+
+/** Historia ocen celu dziecka (bieżąca wersja polityki filtruje projektor). */
+async function objectiveHistory(tx: Tx, childId: string, objectiveId: string): Promise<ObjectiveHistoryEntry[]> {
+  const rows = await tx
+    .select({
+      receivedAt: attempts.receivedAt,
+      policyId: attempts.policyId,
+      itemId: itemRevisions.itemId,
+      outcome: assessments.outcome,
+      reason: assessments.reason,
+      independent: assessments.independent,
+      confirmationEligible: assessments.confirmationEligible,
+      objectiveId: assessments.details,
+    })
+    .from(assessments)
+    .innerJoin(attempts, eq(attempts.id, assessments.attemptId))
+    .innerJoin(itemRevisions, eq(itemRevisions.id, assessments.itemRevisionId))
+    .where(and(eq(assessments.childId, childId), eq(assessments.skill, "objective")));
+
+  // Wersja polityki wyprowadzona WPROST z zapisanego rekordu polityki (join przez
+  // loadPolicy), a nie z założenia `policyId === version`. Gdyby id i version
+  // kiedykolwiek się rozjechały, projektor nadal filtruje po PRAWDZIWEJ wersji
+  // zamiast po cichu odrzucić całą historię. Cache per policyId w tej pętli.
+  const versionByPolicyId = new Map<string, string>();
+  const resolveVersion = async (policyId: string): Promise<string> => {
+    const cached = versionByPolicyId.get(policyId);
+    if (cached !== undefined) return cached;
+    const version = (await loadPolicy(tx, policyId)).version;
+    versionByPolicyId.set(policyId, version);
+    return version;
+  };
+
+  const relevant = rows.filter(
+    (row) => (row.objectiveId as { objectiveId?: string } | null)?.objectiveId === objectiveId,
+  );
+  const entries: ObjectiveHistoryEntry[] = [];
+  for (const row of relevant) {
+    entries.push({
+      receivedAt: row.receivedAt.toISOString(),
+      policyVersion: await resolveVersion(row.policyId),
+      objectiveId,
+      itemId: row.itemId,
+      outcome: row.outcome === "unassessed" ? "unevaluated" : (row.outcome as SkillOutcome),
+      ...(row.reason ? { reason: row.reason } : {}),
+      independent: row.independent,
+      confirmationEligible: row.confirmationEligible,
+    });
+  }
+  return entries;
+}
+
+/** Interfejs wyniku wstępu przyjęcia odpowiedzi lekcji. */
+interface LessonAttemptStart {
+  task: TaskRow;
+  session: SessionRow;
+  itemId: string;
+  policy: Policy;
+  key: LessonTaskAnswerKey;
+  frozen: FrozenLessonContext;
+  attemptNumber: number;
+  requestHash: string;
+  receivedAt: Date;
+}
+
+/**
+ * Wspólny wstęp (arch §9.1a, §9.2): blokada sesji, idempotencja, leniwa
+ * finalizacja, walidacje stanu, zamrożenie kontekstu kwalifikacji. Zwraca
+ * `{ kind: 'dto' }` dla idempotentnego/istniejącego wyniku albo `{ kind: 'fresh' }`.
+ */
+async function startLessonAttempt(
+  tx: Tx,
+  services: Services,
+  valid: Extract<AttemptInput, { modality: LessonModality }>,
+): Promise<{ kind: "dto"; dto: AttemptDto } | { kind: "conflict"; error: AppError } | ({ kind: "fresh" } & LessonAttemptStart)> {
+  const { task, session, itemId } = await lockTaskWithSession(tx, valid.taskId);
+  const now = services.clock.now();
+  const requestHash = requestHashOf(valid);
+
+  const existing = (
+    await tx.select().from(attempts).where(and(eq(attempts.childId, task.childId), eq(attempts.clientAttemptId, valid.clientAttemptId)))
+  )[0];
+  if (existing) {
+    if (existing.requestHash !== requestHash) {
+      throw new AppError("conflict", { message: "clientAttemptId reused with different answer" });
+    }
+    await lazyFinalizeStale(tx, services, task, session, itemId, now);
+    const fresh = (await tx.select().from(attempts).where(eq(attempts.id, existing.id)))[0]!;
+    const state = await rereadTaskState(tx, task.id);
+    // Kartkówka: idempotentny odczyt NIE ujawnia feedbacku (omówienie po końcu).
+    if (session.mode !== "mock_test" && fresh.state === "completed" && fresh.feedback) {
+      const stepId = await discloseLessonFeedback(tx, task, itemId, fresh.feedback as FeedbackDto, now);
+      return { kind: "dto", dto: dtoOf(fresh, state, stepId) };
+    }
+    return { kind: "dto", dto: dtoOf(fresh, state) };
+  }
+
+  await lazyFinalizeStale(tx, services, task, session, itemId, now);
+
+  if (session.state !== "active") {
+    return { kind: "conflict", error: new AppError("conflict", { message: "session is closed" }) };
+  }
+  // Kartkówka: twardy limit 10 min — po nim żadnej nowej odpowiedzi (jak słówka).
+  if (session.mode === "mock_test" && now.getTime() - session.startedAt.getTime() > 600_000) {
+    return { kind: "conflict", error: new AppError("conflict", { message: "Czas kartkówki minął. Przejdź do omówienia." }) };
+  }
+  if (await rereadTaskState(tx, task.id) !== "issued") {
+    // Recovery musi zostać utrwalone nawet wtedy, gdy nowa próba jest odrzucona.
+    return { kind: "conflict", error: new AppError("conflict", { message: "task is no longer issued" }) };
+  }
+  const key = keyOf(task);
+  // Walidacja modalności vs typ ćwiczenia.
+  assertModalityMatchesExercise(valid.modality, key.exerciseType);
+
+  const processing = (
+    await tx.select().from(attempts).where(and(eq(attempts.taskId, task.id), eq(attempts.state, "processing")))
+  )[0];
+  if (processing) {
+    return { kind: "dto", dto: dtoOf(processing, await rereadTaskState(tx, task.id)) };
+  }
+
+  const priorAttempts = await tx.select({ id: attempts.id }).from(attempts).where(eq(attempts.taskId, task.id));
+  const attemptNumber = priorAttempts.length + 1;
+  const policy = await loadPolicy(tx, session.policyId);
+  const sessionContext = lessonSessionContextOf(session);
+  const frozen: FrozenLessonContext = {
+    receivedAt: now.toISOString(),
+    policyVersion: policy.version,
+    firstTry: attemptNumber === 1,
+    assistance: await assistanceFor(tx, task, key, now),
+    answerPreviouslyExposed: await answerPreviouslyExposed(tx, task.childId, key.targetKey, task),
+    previousSessionContactAt: sessionContext.previousObjectiveContact[key.objectiveId] ?? null,
+    timezone: sessionContext.timezone,
+  };
+
+  return { kind: "fresh", task, session, itemId, policy, key, frozen, attemptNumber, requestHash, receivedAt: now };
+}
+
+/** Modalność musi pasować do typu ćwiczenia (jak walidacja słówek). */
+function assertModalityMatchesExercise(modality: LessonModality, exerciseType: string): void {
+  if (modality === "skip" || modality === "dont_remember") return;
+  const CHOICE_TYPES = ["lesson_choice", "lesson_short_answer", "lesson_notice"];
+  const TEXT_TYPES = ["lesson_gap", "lesson_error_fix", "lesson_transform", "lesson_open_answer"];
+  const ok =
+    (modality === "choice" && CHOICE_TYPES.includes(exerciseType)) ||
+    (modality === "sequence" && exerciseType === "lesson_order") ||
+    (modality === "text" && TEXT_TYPES.includes(exerciseType));
+  if (!ok) {
+    throw new AppError("validation", { message: "attempt modality does not match exercise" });
+  }
+}
+
+function dtoOf(attempt: AttemptRow, taskState: string, stepId: string | null = null): AttemptDto {
+  return {
+    attemptId: attempt.id,
+    taskId: attempt.taskId,
+    state: attempt.state as "processing" | "completed",
+    modality: attempt.modality as AttemptDto["modality"],
+    feedback: (attempt.feedback as FeedbackDto | null) ?? null,
+    taskState: taskState as AttemptDto["taskState"],
+    stepId,
+    receivedAt: attempt.receivedAt.toISOString(),
+    completedAt: attempt.completedAt?.toISOString() ?? null,
+  };
+}
+
+async function rereadTaskState(tx: Tx, taskId: string): Promise<string> {
+  const row = (await tx.select({ state: sessionTasks.state }).from(sessionTasks).where(eq(sessionTasks.id, taskId)))[0]!;
+  return row.state;
+}
+
+/** Zapis ekspozycji feedbacku lekcji przed odpowiedzią HTTP (jak słówka). */
+async function discloseLessonFeedback(tx: Tx, task: TaskRow, itemId: string, feedback: FeedbackDto, now: Date): Promise<string> {
+  const key = keyOf(task);
+  // not_assessed niczego nie ujawnia; w pozostałych pokazujemy rozwiązanie
+  // własnego zadania (target_key celu) oraz, przy minor_typo, wariant correctText.
+  const exposures = feedback.kind === "not_assessed" ? [] : [key.targetKey];
+  return discloseFeedbackEvent(tx, { task, childId: task.childId, itemId, exposures, now });
+}
+
+/**
+ * Finalizuje świeżą próbę lekcji w jednej transakcji: ocena, assessments
+ * (skill=`objective`), projekcja celu, przejście zadania, ekspozycja feedbacku.
+ */
+async function finalizeLessonAttempt(
+  tx: Tx,
+  services: Services,
+  start: LessonAttemptStart,
+  valid: Extract<AttemptInput, { modality: LessonModality }>,
+  precomputed?: LessonGradeResult,
+): Promise<AttemptDto> {
+  const { task, session, itemId, policy, key, frozen, attemptNumber, requestHash, receivedAt } = start;
+  const mockTest = session.mode === "mock_test";
+  const result = precomputed ?? gradeLessonAnswer(valid, task, key, services);
+  const qualification = qualifyLessonAttempt({
+    receivedAt: frozen.receivedAt,
+    policy,
+    firstTry: frozen.firstTry,
+    assistance: frozen.assistance,
+    answerPreviouslyExposed: frozen.answerPreviouslyExposed,
+    previousSessionContactAt: frozen.previousSessionContactAt,
+    timezone: frozen.timezone,
+  } satisfies LessonQualificationContext);
+
+  const answer =
+    valid.modality === "text"
+      ? { text: valid.text }
+      : valid.modality === "choice"
+        ? { optionId: valid.optionId, optionText: key.optionValues?.[valid.optionId] ?? key.segmentValues?.[valid.optionId] ?? "" }
+        : valid.modality === "sequence"
+          ? { itemIds: valid.itemIds }
+          : null;
+
+  const attemptId = randomUUID();
+  await tx.insert(attempts).values({
+    id: attemptId,
+    childId: task.childId,
+    taskId: task.id,
+    itemRevisionId: task.itemRevisionId,
+    clientAttemptId: valid.clientAttemptId,
+    requestHash,
+    attemptNumber,
+    modality: valid.modality,
+    state: "processing",
+    answer,
+    context: frozen as unknown as Record<string, unknown>,
+    policyId: session.policyId,
+    receivedAt,
+  });
+
+  // Oceny: skip nie tworzy ocen (jak słówka); pozostałe modalności tworzą jedną
+  // ocenę celu (skill=objective) z `details` i kwalifikacją.
+  if (valid.modality !== "skip") {
+    const skillRow = (
+      await tx
+        .select({ skillVersionId: itemRevisionSkills.skillVersionId })
+        .from(itemRevisionSkills)
+        .where(and(eq(itemRevisionSkills.itemRevisionId, task.itemRevisionId), eq(itemRevisionSkills.skill, "objective")))
+    )[0];
+    if (!skillRow) {
+      throw new AppError("internal", { message: "missing objective skill version" });
+    }
+    await tx.insert(assessments).values({
+      childId: task.childId,
+      attemptId,
+      itemRevisionId: task.itemRevisionId,
+      skill: "objective",
+      skillVersionId: skillRow.skillVersionId,
+      outcome: dbOutcome(result.grade.outcome),
+      ...(result.grade.reason ? { reason: result.grade.reason } : {}),
+      independent: qualification.independent,
+      confirmationEligible: confirmationEligibleFor(result.grade.outcome, qualification.confirmationEligible),
+      details: result.details,
+    });
+
+    // Projekcja celu w tej samej transakcji (tylko gdy oceniono — unevaluated jest neutralne).
+    if (result.grade.outcome !== "unevaluated") {
+      await projectAndUpsertObjective(tx, services, task, key, policy, receivedAt);
+    }
+  }
+
+  const taskState = nextLessonTaskState(valid.modality, result.grade.outcome, mockTest);
+  if (taskState !== "issued") {
+    await tx.update(sessionTasks).set({ state: taskState }).where(eq(sessionTasks.id, task.id));
+  }
+
+  // Kartkówka: wynik niewidoczny dla dziecka — żadnego feedbacku ani ekspozycji
+  // feedbacku w trakcie (omówienie dopiero po zamknięciu).
+  const feedback = mockTest || valid.modality === "skip" ? null : result.feedback;
+  const completed = await tx
+    .update(attempts)
+    .set({ state: "completed", completedAt: receivedAt, feedback: feedback as unknown as Record<string, unknown> })
+    .where(and(eq(attempts.id, attemptId), eq(attempts.state, "processing")))
+    .returning();
+  if (completed.length === 0) {
+    throw new AppError("conflict", { message: "attempt is already finalized" });
+  }
+
+  // Aktywność sesji rozlicza wyłącznie raport FE na końcu sesji (spec
+  // client-reward-time); próba zostawia tylko ocenę i ekspozycje.
+  const stepId = feedback === null ? null : await discloseLessonFeedback(tx, task, itemId, feedback, receivedAt);
+  const freshTask = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, task.id)))[0]!;
+  return {
+    attemptId,
+    taskId: task.id,
+    state: "completed",
+    modality: valid.modality,
+    feedback,
+    taskState: freshTask.state as AttemptDto["taskState"],
+    stepId,
+    receivedAt: receivedAt.toISOString(),
+    completedAt: receivedAt.toISOString(),
+  };
+}
+
+/** Projekcja celu z historii ocen i upsert `child_objective_progress`. */
+async function projectAndUpsertObjective(
+  tx: Tx,
+  services: Services,
+  task: TaskRow,
+  key: LessonTaskAnswerKey,
+  policy: Policy,
+  now: Date,
+): Promise<void> {
+  const history = await objectiveHistory(tx, task.childId, key.objectiveId);
+  const projection = projectObjectiveProgress(history, policy, now.toISOString())[key.objectiveId];
+  if (!projection) return;
+  const topicId = await objectiveTopicId(tx, task, key, services);
+  const lastIndependentAt = lastIndependentObjectiveAt(history, policy.version);
+  await tx
+    .insert(childObjectiveProgress)
+    .values({
+      childId: task.childId,
+      subjectId: key.subjectId,
+      objectiveId: key.objectiveId,
+      topicId,
+      status: toDbObjectiveStatus(projection.status),
+      streak: projection.streak,
+      ...(projection.nextReviewAt ? { nextReviewAt: new Date(projection.nextReviewAt) } : {}),
+      ...(lastIndependentAt ? { lastIndependentAt: new Date(lastIndependentAt) } : {}),
+      projectionVersion: policy.version,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [childObjectiveProgress.childId, childObjectiveProgress.subjectId, childObjectiveProgress.objectiveId],
+      set: {
+        status: toDbObjectiveStatus(projection.status),
+        streak: projection.streak,
+        nextReviewAt: projection.nextReviewAt ? new Date(projection.nextReviewAt) : null,
+        ...(lastIndependentAt ? { lastIndependentAt: new Date(lastIndependentAt) } : {}),
+        projectionVersion: policy.version,
+        updatedAt: now,
+      },
+    });
+}
+
+/** Temat celu z `lesson_context` wersji (dla klucza child_objective_progress). */
+async function objectiveTopicId(tx: Tx, task: TaskRow, key: LessonTaskAnswerKey, services: Services): Promise<string> {
+  const version = (await tx.select({ lessonContext: deckVersions.lessonContext }).from(deckVersions).where(eq(deckVersions.id, task.deckVersionId)))[0];
+  const topicId = (version?.lessonContext as { topicId?: string } | null)?.topicId;
+  if (topicId) return topicId;
+  // zapas: znajdź temat zawierający cel w rejestrze
+  const subject = services.subjects.getSubject(key.subjectId);
+  for (const topic of subject?.topics ?? []) {
+    if (topic.objectives.some((o) => o.id === key.objectiveId)) return topic.id;
+  }
+  // Brak topic_id to niespójna wersja lekcji — nie zapisujemy pustego klucza
+  // do child_objective_progress, tylko sygnalizujemy błąd.
+  throw new AppError("internal", { message: `lesson topic missing for objective: ${key.subjectId}/${key.objectiveId}` });
+}
+
+/** Leniwa finalizacja przeterminowanej próby processing lekcji (arch §9.2a). */
+async function lazyFinalizeStale(tx: Tx, services: Services, task: TaskRow, session: SessionRow, itemId: string, now: Date): Promise<void> {
+  void services;
+  const stale = await tx.select().from(attempts).where(and(eq(attempts.taskId, task.id), eq(attempts.state, "processing")));
+  for (const attempt of stale) {
+    if (now.getTime() - attempt.receivedAt.getTime() <= LESSON_ATTEMPT_PROCESSING_TIMEOUT_MS) continue;
+    // technical: żadnej oceny wiedzy; zadanie zostaje issued; feedback not_assessed bez ekspozycji
+    const completed = await tx
+      .update(attempts)
+      .set({ state: "completed", completedAt: now, feedback: session.mode === "mock_test" ? null : { kind: "not_assessed" } as unknown as Record<string, unknown> })
+      .where(and(eq(attempts.id, attempt.id), eq(attempts.state, "processing")))
+      .returning();
+    if (completed.length === 0) continue;
+    if (session.mode === "mock_test") {
+      if (session.state === "active") await tx.update(sessionTasks).set({ state: "answered" }).where(eq(sessionTasks.id, task.id));
+    } else {
+      await discloseLessonFeedback(tx, task, itemId, { kind: "not_assessed" }, now);
+    }
+  }
+}
+
+/**
+ * Przyjmuje odpowiedź dziecka na zadanie lekcji (design „Przyjęcie odpowiedzi”).
+ * Walidacja wejścia, idempotencja i blokada sesji wspólne ze słówkami; ocena,
+ * projekcja celu i ujawnienie feedbacku to jedna transakcja.
+ */
+export async function submitLessonAttempt(services: Services, input: AttemptInput): Promise<AttemptDto> {
+  const valid = AttemptInputSchema.parse(input);
+  if (valid.modality === "audio") {
+    throw new AppError("validation", { message: "speech attempts require the audio path" });
+  }
+  const typed = valid as Extract<AttemptInput, { modality: LessonModality }>;
+
+  // Faza 1 (pod blokadą sesji): wstęp, ocena deterministyczna i decyzja o ścieżce.
+  const phase1 = await services.db.transaction(async (tx) => {
+    const started = await startLessonAttempt(tx, services, typed);
+    if (started.kind === "conflict") return started;
+    if (started.kind === "dto") {
+      return { kind: "done" as const, dto: started.dto };
+    }
+    const result = gradeLessonAnswer(typed, started.task, started.key, services);
+
+    // Tylko niedopasowana odpowiedź TEKSTOWA eskaluje do zapisanego werdyktu / modelu.
+    const needsModel = typed.modality === "text" && result.grade.verdict === "unavailable";
+    if (!needsModel) {
+      const dto = await finalizeLessonAttempt(tx, services, started, typed, result);
+      return { kind: "done" as const, dto };
+    }
+
+    const childAnswer = typed.text;
+    const normalizedAnswer = normalizedAnswerKey(services, started.key, childAnswer);
+    const promptVersion = services.grader?.provider.promptVersion;
+
+    // Krok 3: trafienie w cache (ten sam materiał) — finalizacja jak deterministyczna.
+    if (promptVersion) {
+      const cached = await readCachedVerdict(tx, started.task.itemRevisionId, normalizedAnswer, promptVersion);
+      if (cached) {
+        const verdict = verdictFromCacheRow(cached);
+        const cachedResult = resultFromVerdict(services, started.task, started.key, childAnswer, verdict, cached.id, cached.parentDecision === "overridden_incorrect");
+        const dto = await finalizeLessonAttempt(tx, services, started, typed, cachedResult);
+        return { kind: "done" as const, dto };
+      }
+    }
+
+    // Krok 4: brak werdyktu. Model niedostępny lub limit wyczerpany → nieocenione.
+    const grader = services.grader;
+    const sessionContext = lessonSessionContextOf(started.session);
+    const underLimit = grader !== undefined && sessionContext.graderCalls < grader.maxCallsPerSession;
+    if (!grader || !underLimit) {
+      const unavailable = resultFromVerdict(services, started.task, started.key, childAnswer, null, null);
+      const dto = await finalizeLessonAttempt(tx, services, started, typed, unavailable);
+      return { kind: "done" as const, dto };
+    }
+
+    // Rezerwacja: inkrement graderCalls + wstawienie próby `processing` w tej transakcji.
+    await incrementGraderCalls(tx, started.session.id, sessionContext);
+    const attemptId = await reserveProcessingAttempt(tx, started, typed, childAnswer);
+    return {
+      kind: "grade" as const,
+      start: started,
+      attemptId,
+      childAnswer,
+      normalizedAnswer,
+      promptVersion: grader.provider.promptVersion,
+      graderModel: grader.provider.model,
+      timeoutMs: grader.timeoutMs,
+    };
+  });
+
+  if (phase1.kind === "conflict") throw phase1.error;
+  if (phase1.kind === "done") {
+    return phase1.dto;
+  }
+
+  // Wywołanie modelu POZA transakcją (deadline). Awaria/timeout/odrzucenie → brak werdyktu.
+  const grader = services.grader!;
+  const graderInput = buildGraderInput(services, phase1.start.task, phase1.start.key, phase1.childAnswer);
+  const allowed = allowedCategoriesFor(services, phase1.start.key);
+  let verdict: GraderVerdict | null = null;
+  try {
+    const signal = AbortSignal.timeout(phase1.timeoutMs);
+    const raw = await grader.provider.grade(graderInput, signal);
+    verdict = validateVerdict(raw, { allowedCategories: allowed, childAnswer: phase1.childAnswer });
+  } catch {
+    verdict = null; // technical: timeout / 5xx / sieć / 429 → nieocenione, licznik zużyty
+  }
+
+  // Faza 2 (CAS): zapis werdyktu do cache (ON CONFLICT DO NOTHING), odczyt wiersza,
+  // ocena z wiersza cache (równoległe identyczne odpowiedzi → ten sam werdykt),
+  // finalizacja zarezerwowanej próby.
+  return services.db.transaction(async (tx) => {
+    return finalizeGradedAttempt(tx, services, phase1.start, phase1.attemptId, {
+      childAnswer: phase1.childAnswer,
+      normalizedAnswer: phase1.normalizedAnswer,
+      promptVersion: phase1.promptVersion,
+      graderModel: phase1.graderModel,
+      verdict,
+    });
+  });
+}
+
+/** Odczyt zapisanego werdyktu po kluczu cache (ta sama transakcja). */
+async function readCachedVerdict(
+  tx: Tx,
+  itemRevisionId: string,
+  normalizedAnswer: string,
+  promptVersion: string,
+): Promise<LessonVerdictRow | undefined> {
+  return (
+    await tx
+      .select()
+      .from(lessonVerdicts)
+      .where(
+        and(
+          eq(lessonVerdicts.itemRevisionId, itemRevisionId),
+          eq(lessonVerdicts.normalizedAnswer, normalizedAnswer),
+          eq(lessonVerdicts.promptVersion, promptVersion),
+        ),
+      )
+  )[0];
+}
+
+/** Inkrement `learning_sessions.context.graderCalls` w tej transakcji (pod blokadą). */
+async function incrementGraderCalls(tx: Tx, sessionId: string, context: LessonSessionContext): Promise<void> {
+  const next = { ...context, graderCalls: context.graderCalls + 1 } as unknown as Record<string, unknown>;
+  await tx.update(learningSessions).set({ context: next }).where(eq(learningSessions.id, sessionId));
+}
+
+/** Rezerwuje próbę `processing` dla ścieżki modelu (finalizowana w fazie 2). */
+async function reserveProcessingAttempt(
+  tx: Tx,
+  start: LessonAttemptStart,
+  valid: Extract<AttemptInput, { modality: "text" }>,
+  childAnswer: string,
+): Promise<string> {
+  const attemptId = randomUUID();
+  await tx.insert(attempts).values({
+    id: attemptId,
+    childId: start.task.childId,
+    taskId: start.task.id,
+    itemRevisionId: start.task.itemRevisionId,
+    clientAttemptId: valid.clientAttemptId,
+    requestHash: start.requestHash,
+    attemptNumber: start.attemptNumber,
+    modality: "text",
+    state: "processing",
+    answer: { text: childAnswer },
+    context: start.frozen as unknown as Record<string, unknown>,
+    policyId: start.session.policyId,
+    receivedAt: start.receivedAt,
+  });
+  return attemptId;
+}
+
+interface GradedFinalizeArgs {
+  childAnswer: string;
+  normalizedAnswer: string;
+  promptVersion: string;
+  graderModel: string;
+  verdict: GraderVerdict | null;
+}
+
+/**
+ * Faza 2: finalizacja zarezerwowanej próby po wywołaniu modelu. Werdykt (gdy
+ * jest) zapisywany do cache `ON CONFLICT DO NOTHING`, po czym czytamy wiersz —
+ * dwie równoległe identyczne odpowiedzi zbiegają się na JEDNYM wpisie i obie
+ * oceniają z tego samego werdyktu. Brak werdyktu → nieocenione, bez wpisu w
+ * cache, licznik nie cofany. Ocena, projekcja celu, ekspozycja, przejście
+ * zadania — jak ścieżka deterministyczna.
+ */
+async function finalizeGradedAttempt(
+  tx: Tx,
+  services: Services,
+  start: LessonAttemptStart,
+  attemptId: string,
+  args: GradedFinalizeArgs,
+): Promise<AttemptDto> {
+  const { task, itemId, policy, key, frozen, receivedAt } = start;
+
+  // Faza 2 MUSI działać pod TĄ SAMĄ wspólną blokadą sesji co faza 1 / endSession:
+  // bez niej drugi klient mógł w międzyczasie zamknąć sesję (np. kartkówkę) i
+  // utrwalić NIEZMIENNY raport, a spóźniony werdykt rozjechałby omówienie dziecka
+  // z raportem rodzica. Blokada ustawia wspólną kolejność; po niej odczytujemy
+  // aktualny stan próby i sesji.
+  const { session: freshSession } = await lockTaskWithSession(tx, task.id);
+  const reserved = (await tx.select().from(attempts).where(eq(attempts.id, attemptId)))[0];
+  const mockTest = freshSession.mode === "mock_test";
+
+  // Sesja już zamknięta (raport utrwalony) albo próba już sfinalizowana (leniwa
+  // finalizacja / inny klient): NIE zapisujemy oceny, nie zmieniamy projekcji ani
+  // zadania. Domykamy zarezerwowaną próbę jako nieocenioną (bez wpisu assessment,
+  // bez feedbacku) i zwracamy bieżący stan zgodny z utrwalonym raportem.
+  if (freshSession.state !== "active" || !reserved || reserved.state !== "processing") {
+    if (reserved && reserved.state === "processing") {
+      await tx
+        .update(attempts)
+        .set({ state: "completed", completedAt: receivedAt, feedback: { kind: "not_assessed" } as unknown as Record<string, unknown> })
+        .where(and(eq(attempts.id, attemptId), eq(attempts.state, "processing")));
+    }
+    const current = (await tx.select().from(attempts).where(eq(attempts.id, attemptId)))[0]!;
+    const freshTask = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, task.id)))[0]!;
+    return dtoOf(current, freshTask.state);
+  }
+
+  // Zapis werdyktu do cache i odczyt wiersza (zbieżność równoległych odpowiedzi).
+  let effectiveVerdict: GraderVerdict | null = args.verdict;
+  let authoritativeIncorrect = false;
+  let verdictId: string | null = null;
+  if (args.verdict !== null) {
+    await tx
+      .insert(lessonVerdicts)
+      .values({
+        id: randomUUID(),
+        itemRevisionId: task.itemRevisionId,
+        normalizedAnswer: args.normalizedAnswer,
+        promptVersion: args.promptVersion,
+        graderModel: args.graderModel,
+        verdict: args.verdict.verdict,
+        errorCategory: args.verdict.errorCategory,
+        fragments: [...args.verdict.fragments],
+        note: args.verdict.note,
+        createdAt: receivedAt,
+      })
+      .onConflictDoNothing({
+        target: [lessonVerdicts.itemRevisionId, lessonVerdicts.normalizedAnswer, lessonVerdicts.promptVersion],
+      });
+    const row = await readCachedVerdict(tx, task.itemRevisionId, args.normalizedAnswer, args.promptVersion);
+    if (row) {
+      effectiveVerdict = verdictFromCacheRow(row);
+      verdictId = row.id;
+      authoritativeIncorrect = row.parentDecision === "overridden_incorrect";
+    }
+  }
+
+  const result = resultFromVerdict(services, task, key, args.childAnswer, effectiveVerdict, verdictId, authoritativeIncorrect);
+  const qualification = qualifyLessonAttempt({
+    receivedAt: frozen.receivedAt,
+    policy,
+    firstTry: frozen.firstTry,
+    assistance: frozen.assistance,
+    answerPreviouslyExposed: frozen.answerPreviouslyExposed,
+    previousSessionContactAt: frozen.previousSessionContactAt,
+    timezone: frozen.timezone,
+  } satisfies LessonQualificationContext);
+
+  const skillRow = (
+    await tx
+      .select({ skillVersionId: itemRevisionSkills.skillVersionId })
+      .from(itemRevisionSkills)
+      .where(and(eq(itemRevisionSkills.itemRevisionId, task.itemRevisionId), eq(itemRevisionSkills.skill, "objective")))
+  )[0];
+  if (!skillRow) {
+    throw new AppError("internal", { message: "missing objective skill version" });
+  }
+  await tx.insert(assessments).values({
+    childId: task.childId,
+    attemptId,
+    itemRevisionId: task.itemRevisionId,
+    skill: "objective",
+    skillVersionId: skillRow.skillVersionId,
+    outcome: dbOutcome(result.grade.outcome),
+    ...(result.grade.reason ? { reason: result.grade.reason } : {}),
+    independent: qualification.independent,
+    confirmationEligible: confirmationEligibleFor(result.grade.outcome, qualification.confirmationEligible),
+    details: result.details,
+  });
+  if (result.grade.outcome !== "unevaluated") {
+    await projectAndUpsertObjective(tx, services, task, key, policy, receivedAt);
+  }
+
+  const taskState = nextLessonTaskState("text", result.grade.outcome, mockTest);
+  if (taskState !== "issued") {
+    await tx.update(sessionTasks).set({ state: taskState }).where(eq(sessionTasks.id, task.id));
+  }
+
+  // Kartkówka: wynik niewidoczny — brak feedbacku/ekspozycji w trakcie.
+  const feedback = mockTest ? null : result.feedback;
+  const completed = await tx
+    .update(attempts)
+    .set({ state: "completed", completedAt: receivedAt, feedback: feedback as unknown as Record<string, unknown> })
+    .where(and(eq(attempts.id, attemptId), eq(attempts.state, "processing")))
+    .returning();
+  if (completed.length === 0) {
+    // Już sfinalizowana (np. leniwa finalizacja w międzyczasie) — zwróć bieżący stan.
+    const fresh = (await tx.select().from(attempts).where(eq(attempts.id, attemptId)))[0]!;
+    const freshTask = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, task.id)))[0]!;
+    return dtoOf(fresh, freshTask.state);
+  }
+
+  // finalizeGradedAttempt is only reached for an accepted textual response;
+  // an unavailable grader changes mastery, not whether the child did the work.
+  // Aktywność sesji rozlicza wyłącznie raport FE na końcu sesji.
+  const stepId = feedback === null ? null : await discloseLessonFeedback(tx, task, itemId, feedback, receivedAt);
+  const freshTask = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, task.id)))[0]!;
+  return {
+    attemptId,
+    taskId: task.id,
+    state: "completed",
+    modality: "text",
+    feedback,
+    taskState: freshTask.state as AttemptDto["taskState"],
+    stepId,
+    receivedAt: receivedAt.toISOString(),
+    completedAt: receivedAt.toISOString(),
+  };
+}
+
+/**
+ * Odczyt próby lekcji (arch §12). Rozlicza leniwe processing; ponowne wydanie
+ * feedbacku zapisuje kolejne ujawnienie przed odpowiedzią (jak słówka).
+ */
+export async function readLessonAttempt(services: Services, attempt: AttemptRow): Promise<AttemptDto> {
+  return services.db.transaction(async (tx) => {
+    const { task, session, itemId } = await lockTaskWithSession(tx, attempt.taskId);
+    const now = services.clock.now();
+    await lazyFinalizeStale(tx, services, task, session, itemId, now);
+    const fresh = (await tx.select().from(attempts).where(eq(attempts.id, attempt.id)))[0]!;
+    const freshTask = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, task.id)))[0]!;
+    if (session.mode !== "mock_test" && fresh.state === "completed" && fresh.feedback) {
+      const stepId = await discloseLessonFeedback(tx, freshTask, itemId, fresh.feedback as FeedbackDto, now);
+      return dtoOf(fresh, freshTask.state, stepId);
+    }
+    return dtoOf(fresh, freshTask.state);
+  });
+}

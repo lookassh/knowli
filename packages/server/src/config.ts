@@ -15,7 +15,7 @@ import { createOpenAiCompatibleGrader } from "./providers/openai-compatible/grad
 import { createOpenAiCompatibleSessionActivityReviewer } from "./providers/openai-compatible/session-activity";
 import { createProductionSubjectRegistry } from "./domain/lessons/subjects";
 import type { SubjectRegistry } from "./domain/lessons/registry";
-import type { LessonGenerationPolicy } from "./modules/lessons/lesson-generation-policy";
+import type { LessonGenerationPolicy } from "./modules/materials/lessons/lesson-generation-policy";
 
 /** Zegar jako zależność — domena i moduły nie wołają Date.now() bezpośrednio. */
 export interface Clock {

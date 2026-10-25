@@ -1,8 +1,8 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createChild, createDraft, ensureLearningPolicy, listKidDecks } from "@learning/server";
-import { readLearningSnapshot } from "../../packages/server/src/modules/learning-snapshot";
+import { readLearningSnapshot } from "../../packages/server/src/modules/learning/learning-snapshot";
 import { LEARNING_V1_POLICY } from "../../packages/server/src/policies/learning-v1";
-import { recordSkillIssued } from "../../packages/server/src/modules/skill-projections";
+import { recordSkillIssued } from "../../packages/server/src/modules/learning/skill-projections";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
 
 const { pool } = testDatabase();

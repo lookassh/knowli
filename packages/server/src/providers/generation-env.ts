@@ -4,7 +4,7 @@ import { createLocalMediaStore } from "./media/local";
 import { createOpenAiImageProvider } from "./images/openai";
 import { createOpenAiLlmProvider } from "./openai/llm";
 import { createOpenAiTtsProvider } from "./openai/tts";
-import { lessonGenerationPolicyFromEnv } from "../modules/lessons/lesson-generation-policy";
+import { lessonGenerationPolicyFromEnv } from "../modules/materials/lessons/lesson-generation-policy";
 
 /** Opcjonalny provider obrazów dla procesu web; nie wymaga LLM ani TTS. */
 export function imageProviderFromEnv(env: Record<string, string | undefined>) {

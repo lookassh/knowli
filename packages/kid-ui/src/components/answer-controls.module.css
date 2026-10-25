@@ -64,13 +64,16 @@
 }
 
 .grid[data-visual-only="true"] {
+  --visual-choice-max-size: min(35svh, calc((100vw - 76px) / 2 * 1.3));
+  --visual-choice-gap: 12px;
   width: 100%;
   min-height: 0;
+  max-height: calc(2 * var(--visual-choice-max-size) + var(--visual-choice-gap));
   flex: 1 1 auto;
   grid-auto-rows: minmax(112px, 1fr);
   justify-content: stretch;
   align-content: start;
-  gap: 12px;
+  gap: var(--visual-choice-gap);
 }
 
 .item {
@@ -149,7 +152,7 @@
   width: auto;
   height: 100%;
   max-width: min(100%, 35svh);
-  max-height: min(35svh, calc((100vw - 76px) / 2 * 1.3));
+  max-height: var(--visual-choice-max-size);
   min-height: 0;
   aspect-ratio: 1 / 1;
   padding: 8px;
@@ -165,13 +168,13 @@
 @media (max-height: 700px) {
   .grid[data-visual-only="true"] {
     grid-auto-rows: minmax(104px, 1fr);
-    gap: 8px;
+    --visual-choice-gap: 8px;
   }
 }
 
 @media (max-height: 900px) {
   .grid[data-visual-only="true"] {
-    gap: 6px;
+    --visual-choice-gap: 6px;
   }
 }
 
@@ -179,6 +182,7 @@
    width for one row instead of clipping a second row in a short viewport. */
 @media (min-width: 600px) and (orientation: landscape) and (max-height: 600px) {
   .grid[data-visual-only="true"] {
+    max-height: none;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     grid-auto-rows: minmax(72px, 1fr);
     align-content: center;
