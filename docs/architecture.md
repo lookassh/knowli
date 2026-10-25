@@ -84,6 +84,8 @@ MediaRecorder, odtwarzacz i lokalne ustawienia są za adapterami platformowymi. 
 
 ### Responsywny układ Kid UI
 
+Kid UI używa stałego motywu nocnego: `KidThemeProvider` wymusza `dark`, a tokeny `--kid-*` w `styles.css` mają tę samą paletę niezależnie od `prefers-color-scheme` systemu. Rozdzielenie tych ustawień powodowało ciemny tekst na ciemnych opcjach przy jasnym motywie laptopa. Regresję pokrywa `kid-answer-contrast.spec.ts`, mierząc kontrast opcji i wpisanego tekstu w luce dla obu motywów systemu. Zmiana pozostaje w warstwie prezentacji `packages/kid-ui`, bez nowych zależności, transakcji ani wpływu na API → MCP → skill.
+
 Przenośny `@learning/kid-ui` używa wspólnej ramy `KidPage` oraz prezentacji zadania `ExerciseFrame`. `KidPage` ma dwa jawne tryby: `session` ogranicza zadanie do aktualnie widocznego prostokąta, odczytywanego z `visualViewport` z fallbackiem do `100dvh`; `flow` zachowuje naturalną wysokość i przewijanie dla profili, wyboru zestawów i długich podsumowań. Zmiana rozmiaru, orientacji lub widocznego viewportu nie kluczuje ponownie drzewa zadania. Host dziecka udostępnia ustawienie viewportu na trasach Kid Mode, bez wpływu na wspólny layout i panel rodzica.
 
 Przy powiększeniu gestem rama sesji wraca do naturalnego flow, aby zachować zoom i przewijanie. Dla długich treści lub małej dostępnej wysokości przewija się wyznaczona część szczegółów, a główna akcja pozostaje osiągalna; listy i raporty nie mają wymogu zerowego przewijania. To zasada prezentacji klienta. Nie zmienia endpointów ani kolejności operacji sesji: kontroler nadal autoryzuje próby, ekspozycje, odsłuch i zakończenie prezentacji. Rzeczywista zgodność z konkretnym telefonem/PWA wymaga osobnego odbioru urządzenia; test Playwright nie jest jego substytutem.
