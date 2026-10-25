@@ -9,13 +9,16 @@ export interface KidViewportMeasurement {
 export function computeKidViewport({
   innerHeight,
   visualViewport,
+  rootFontSize = 16,
 }: {
   innerHeight: number;
   visualViewport: { height: number; offsetTop: number; scale?: number } | null;
+  rootFontSize?: number;
 }): KidViewportMeasurement {
   const safeInnerHeight = Number.isFinite(innerHeight) ? Math.max(0, innerHeight) : 0;
   const scale = visualViewport?.scale;
-  const zoomed = typeof scale === "number" && Number.isFinite(scale) && scale > 1.01;
+  const zoomed = (typeof scale === "number" && Number.isFinite(scale) && scale > 1.01)
+    || (Number.isFinite(rootFontSize) && rootFontSize > 20);
   if (zoomed) return { height: safeInnerHeight, offsetTop: 0, zoomed: true };
 
   if (
@@ -49,6 +52,7 @@ export function useKidViewport(): KidViewport {
     const update = () => {
       setViewport(computeKidViewport({
         innerHeight: window.innerHeight,
+        rootFontSize: Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize),
         visualViewport: visualViewport === null ? null : {
           height: visualViewport.height,
           offsetTop: visualViewport.offsetTop,
@@ -57,10 +61,14 @@ export function useKidViewport(): KidViewport {
       }));
     };
     update();
+    // Text enlargement can change without visualViewport.scale or a resize.
+    const fontObserver = new MutationObserver(update);
+    fontObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["style", "class"] });
     window.addEventListener("resize", update);
     visualViewport?.addEventListener("resize", update);
     visualViewport?.addEventListener("scroll", update);
     return () => {
+      fontObserver.disconnect();
       window.removeEventListener("resize", update);
       visualViewport?.removeEventListener("resize", update);
       visualViewport?.removeEventListener("scroll", update);

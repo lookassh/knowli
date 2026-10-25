@@ -1713,6 +1713,20 @@
   text-align: center;
 }
 
+.kid-feedback-answer-label {
+  display: block;
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.kid-feedback-answer {
+  display: block;
+  margin-top: 4px;
+  font-size: 1.4rem;
+  line-height: 1.2;
+}
+
 .kid-fragments {
   display: flex;
   gap: 0.25rem;
@@ -2356,4 +2370,56 @@
    większa od wystawania panelu, więc słowa nie lądują pod dockiem. */
 .kid-exercise-frame[data-prompt-kind="picture_recognition"]:has([data-testid="kid-feedback-dock"]) .kid-material-content {
   padding-bottom: 56px;
+}
+
+/* Telefon: odpowiedź i akcja zajmują dwa rzędy. Rezerwa nie pozwala
+   panelowi zakryć dolnego rzędu obrazków. */
+@media (max-width: 599px) {
+  .kid-exercise-frame[data-prompt-kind="picture_listening"] .kid-material-content,
+  .kid-exercise-frame[data-prompt-kind="picture_recognition"]:has([data-testid="kid-feedback-dock"]) .kid-material-content {
+    padding-bottom: 144px;
+  }
+}
+
+@media (max-width: 599px) and (max-height: 600px) {
+  .kid-exercise-frame[data-prompt-kind="picture_recognition"] .kid-material-content {
+    gap: 4px;
+  }
+
+  .kid-exercise-frame[data-prompt-kind="picture_recognition"] .kid-recognition-prompt {
+    gap: 2px;
+  }
+
+  .kid-exercise-frame[data-prompt-kind="picture_recognition"] .kid-recognition-prompt .kid-illustration,
+  .kid-exercise-frame[data-prompt-kind="picture_recognition"] .kid-recognition-prompt .kid-visual {
+    width: 48px;
+    height: 48px;
+  }
+
+  .kid-exercise-frame[data-prompt-kind="picture_recognition"] .kid-options button {
+    font-size: 1rem;
+  }
+}
+
+/* W układzie przewijanym wynik jest częścią treści, więc nawet większy
+   tekst nie wymaga zgadywania wysokości rezerwy pod nakładką. */
+.kid-page[data-zoomed="true"] .kid-feedback-overlay,
+.kid-page[data-viewport-very-short="true"] .kid-feedback-overlay {
+  position: static;
+}
+
+.kid-page[data-zoomed="true"] .kid-exercise-frame .kid-material,
+.kid-page[data-zoomed="true"] .kid-exercise-frame .kid-material-content,
+.kid-page[data-viewport-very-short="true"] .kid-exercise-frame .kid-material,
+.kid-page[data-viewport-very-short="true"] .kid-exercise-frame .kid-material-content {
+  overflow: visible;
+}
+
+.kid-page[data-zoomed="true"] .kid-header {
+  flex-wrap: wrap;
+}
+
+.kid-page[data-zoomed="true"] .kid-header .kid-remaining {
+  flex: 1 1 100%;
+  order: 4;
 }
