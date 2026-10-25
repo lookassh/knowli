@@ -56,6 +56,11 @@ export function ExerciseFrame({
     const anchor = anchorRef.current;
     const overlay = overlayRef.current;
     if (!material || !anchor || !overlay) return;
+    const page = overlay.closest<HTMLElement>(".kid-page");
+    const needsPageScroll = page?.dataset.zoomed === "true" || page?.dataset.viewportVeryShort === "true";
+    const revealFrame = needsPageScroll
+      ? requestAnimationFrame(() => overlay.scrollIntoView({ block: "end" }))
+      : null;
     // Dock kompaktowy (obrazki) ma stałą rezerwę w materiale
     // (picture_listening 56 px zawsze, picture_recognition 56 px przy
     // docku), większą od wystawania panelu — dynamiczny padding tylko
@@ -110,6 +115,7 @@ export function ExerciseFrame({
     return () => {
       measureRef.current = null;
       cancelAnimationFrame(frame);
+      if (revealFrame !== null) cancelAnimationFrame(revealFrame);
       observer?.disconnect();
     };
   }, [dock]);
