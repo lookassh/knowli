@@ -12,12 +12,13 @@ import { ActionButton } from "../components/ActionButton";
  * Bez działającego mikrofonu pozostaje komunikat i „Pomiń” — bez oceny.
  */
 export function SpeechView(props: ExerciseProps) {
-  const { task, busy, recordingPhase, automaticRecording, microphoneReady, inputLevel, recordingNotice, recordingMode, micAvailable, mediaUrl, handlers } = props;
+  const { task, busy, recordingPhase, automaticRecording, microphoneReady, inputLevel, recordingNotice, recordingMode, micAvailable, mediaUrl, dock, handlers } = props;
   if (task.prompt.kind !== "speech") {
     return null;
   }
   return (
     <ExerciseFrame
+      dock={dock}
       task={task}
       content={(
         <>

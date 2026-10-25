@@ -13,7 +13,7 @@ import { Text } from "@mantine/core";
  * wizualna; wzorcowa wymowa odtwarzana po świadomym „Start” sesji, ponowny
  * odsłuch na żądanie. Bez odpowiedzi i bez oceny.
  */
-export function ExposureView({ task, busy, mediaUrl, handlers }: ExerciseProps) {
+export function ExposureView({ task, busy, mediaUrl, dock, handlers }: ExerciseProps) {
   const doneRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -43,6 +43,7 @@ export function ExposureView({ task, busy, mediaUrl, handlers }: ExerciseProps) 
   }
   return (
     <ExerciseFrame
+      dock={dock}
       task={task}
       content={(
         <div className="kid-exposure-content">

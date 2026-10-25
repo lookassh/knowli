@@ -103,4 +103,34 @@ describe("written exercise controls", () => {
     fireEvent.submit(input.form!);
     expect(handlers.onSubmitText).toHaveBeenCalledExactlyOnceWith("cat");
   });
+
+  it("keeps the letter draft but restores focus to the gap after retry", () => {
+    const handlers = makeExerciseProps(letterTask()).handlers;
+    const base = makeExerciseProps(letterTask(), {
+      handlers,
+      letterDraft: { 1: "a" },
+      onLetterDraftChange: () => undefined,
+    });
+    const { rerender } = renderKid(<ExerciseView {...base} dock={<span>wynik</span>} />);
+    const input = screen.getByTestId("kid-letter-input") as HTMLInputElement;
+    input.blur();
+    expect(document.activeElement).not.toBe(input);
+    rerender(<ExerciseView {...base} />);
+    expect(input.value).toBe("a");
+    expect(document.activeElement).toBe(input);
+  });
+
+  it("clears the written draft and restores focus after retry", () => {
+    const handlers = makeExerciseProps(task()).handlers;
+    const { rerender } = renderKid(<ExerciseView {...makeExerciseProps(task(), { handlers })} />);
+    fireEvent.change(screen.getByTestId("kid-input"), { target: { value: "dog" } });
+    rerender(<ExerciseView {...makeExerciseProps(task(), { handlers, dock: <span>wynik</span> })} />);
+    const dockedInput = screen.getByTestId("kid-input") as HTMLInputElement;
+    dockedInput.blur();
+    expect(document.activeElement).not.toBe(dockedInput);
+    rerender(<ExerciseView {...makeExerciseProps(task(), { handlers })} />);
+    const input = screen.getByTestId("kid-input") as HTMLInputElement;
+    expect(input.value).toBe("");
+    expect(document.activeElement).toBe(input);
+  });
 });

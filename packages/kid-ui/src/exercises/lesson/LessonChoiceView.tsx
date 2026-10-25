@@ -7,7 +7,7 @@ import { AnswerGrid } from "../../components/AnswerGrid";
  * Wybór (`lesson_choice`): zdanie z luką/pytaniem (`stem`) i opcje do wyboru;
  * dotknięcie opcji wysyła `choice`. Podświetlenie wyniku z feedbacku serwera.
  */
-export function LessonChoiceView({ task, busy, optionOutcomes, result, resultActions, handlers }: ExerciseProps) {
+export function LessonChoiceView({ task, busy, optionOutcomes, dock, handlers }: ExerciseProps) {
   const prompt = task.prompt.kind === "lesson_choice" ? task.prompt : null;
   const options = prompt ? prompt.options : [];
   const optionRefs = useChoiceKeyboard({
@@ -32,9 +32,7 @@ export function LessonChoiceView({ task, busy, optionOutcomes, result, resultAct
           className="kid-options"
         />
       </>}
-      actions={resultActions}
-      result={result}
-      reserveResult
+      dock={dock}
     />
   );
 }

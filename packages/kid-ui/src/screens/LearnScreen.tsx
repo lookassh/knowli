@@ -5,12 +5,15 @@ import { ExerciseView } from "../exercises/ExerciseView";
 import type { ExerciseHandlers } from "../exercises/types";
 import { optionOutcomes, type OptionOutcome } from "../exercises/option-outcome";
 import { format } from "../format";
-import { AnswerFeedbackActions, AnswerFeedbackContent, AnswerFeedbackSecondaryActions } from "./AnswerFeedback";
+import { AnswerFeedbackActions, AnswerFeedbackContent, AnswerFeedbackSecondaryActions, feedbackTone } from "./AnswerFeedback";
+import { ExerciseFeedbackDock, type FeedbackDockTone } from "./ExerciseFeedbackDock";
 import { ExerciseFrame } from "../exercises/ExerciseFrame";
 import { KidIcon } from "../components/KidIcon";
 import { GuidanceButton } from "../components/GuidanceButton";
 import { MeaningVisualView } from "../visuals/MeaningVisualView";
-import { SpeechFeedbackActions, SpeechFeedbackContent, SpeechFeedbackSecondaryActions } from "./SpeechFeedbackCard";
+import { SpeechFeedbackActions, SpeechFeedbackContent, SpeechFeedbackReferenceAction, SpeechFeedbackSecondaryActions } from "./SpeechFeedbackCard";
+import { lessonFeedbackView } from "./lesson-feedback-view";
+import { describeSpeechFeedback } from "./speech-feedback-view";
 import type { LearningSessionController, LearningScreen as LearningScreenState } from "../session/session-controller";
 import { useFeedbackCooldown } from "./useFeedbackCooldown";
 import { SessionProgress } from "../components/SessionProgress";
@@ -36,10 +39,26 @@ function RevealActions({ onConfirm }: { onConfirm: () => void }) {
   );
 }
 
+function answerDockTone(dto: Parameters<typeof feedbackTone>[0]): FeedbackDockTone {
+  switch (dto?.kind) {
+    case "great":
+    case "capitalization_hint": return "correct";
+    case "incorrect": return "incorrect";
+    case "almost":
+    case "spelling_hint":
+    case "lesson_almost":
+    case "lesson_hint": return "partial";
+    case "not_assessed": return "technical";
+    default: return "neutral";
+  }
+}
+
 /**
  * Ekran nauki: jedno jasne zadanie na ekranie. Po utracie sieci treść
  * zadania znika (ukrycie wzorców), odsłuchy i oceniane próby są zablokowane,
  * a sukces może pochodzić wyłącznie z odpowiedzi serwera (plan zadania 9).
+ * Wynik próby pokazuje wspólny dock w stopce ramy — bodziec i odpowiedzi
+ * nie zmieniają miejsca po ocenie.
  */
 export function LearnScreen({
   screen,
@@ -78,11 +97,8 @@ export function LearnScreen({
   const micHint = micState === "unavailable" ? messages.kid.microphoneUnavailableHint
     : micState === "off" ? messages.kid.microphoneOffHint
       : micState === "ready" ? messages.kid.microphoneReadyHint : messages.kid.microphonePendingHint;
-  // feedback próby wyboru = pasek wyniku zamiast karteczki
-  const choiceFeedback =
-    feedback !== null && feedback.chosenOptionId !== undefined && !offline && screen.error === null;
-  const speechFeedback = feedback !== null && feedback.modality === "audio" && !offline && screen.error === null;
-  const writtenFeedback = feedback !== null && feedback.modality !== "audio" && feedback.chosenOptionId === undefined && !offline && screen.error === null;
+  const hasFeedback = feedback !== null && !offline && screen.error === null;
+  const speechFeedback = hasFeedback && feedback.modality === "audio";
   // podświetlenia opcji żyją tylko przy feedbacku próby wyboru
   let outcomes =
     task !== null && screen.feedback?.chosenOptionId !== undefined
@@ -128,6 +144,56 @@ export function LearnScreen({
       void controller.autoCaptureSpeech();
     }
   }, [controller, autoTaskId, autoPromptKind]);
+
+  const speechFeedbackProps = feedback !== null && task !== null ? {
+    dto: feedback.dto,
+    retry: feedback.retry,
+    busy: busy || screen.processing,
+    audioAvailable: feedback.dto?.referenceAudioAvailable === true,
+    audioError: feedback.audioError === true,
+    exerciseType: task.exerciseType,
+    onPlay: () => void controller.playFeedbackAudio(),
+    onRetry: () => void controller.continueLearning(),
+    onSkip: () => void controller.skip(),
+    onNext: () => void controller.continueLearning(),
+  } : null;
+
+  const speechTone = speechFeedback && feedback !== null
+    ? describeSpeechFeedback(feedback.dto, task?.exerciseType ?? "").tone
+    : null;
+  const speechDockTone: FeedbackDockTone = speechTone === "correct" ? "correct"
+    : speechTone === "practice" ? "partial"
+      : speechTone === "technical" ? "technical" : "neutral";
+
+  const dock = !hasFeedback || feedback === null ? undefined
+    : speechFeedback && speechFeedbackProps !== null ? (
+      <ExerciseFeedbackDock
+        kind="speech"
+        tone={speechDockTone}
+        primary={<SpeechFeedbackActions {...speechFeedbackProps} />}
+        secondary={speechFeedbackProps.audioAvailable || speechFeedbackProps.retry ? (
+          <div className="kid-feedback-dock-secondary-actions">
+            <SpeechFeedbackReferenceAction {...speechFeedbackProps} />
+            <SpeechFeedbackSecondaryActions {...speechFeedbackProps} />
+          </div>
+        ) : undefined}
+      >
+        <SpeechFeedbackContent {...speechFeedbackProps} inDock />
+      </ExerciseFeedbackDock>
+    ) : (
+      <ExerciseFeedbackDock
+        compact={task?.prompt.kind === "picture_listening" || task?.prompt.kind === "picture_recognition"}
+        tone={answerDockTone(feedback.dto)}
+        primary={<AnswerFeedbackActions dto={feedback.dto} retry={feedback.retry} busy={busy}
+          onNext={() => void controller.continueLearning()} />}
+        secondary={lessonFeedbackView(feedback.dto)?.technical === true && feedback.retry ? (
+          <AnswerFeedbackSecondaryActions dto={feedback.dto} retry={feedback.retry} busy={busy}
+            onNext={() => void controller.continueLearning()} onSkip={() => void controller.skip()} />
+        ) : undefined}
+      >
+        <AnswerFeedbackContent dto={feedback.dto} busy={busy} />
+      </ExerciseFeedbackDock>
+    );
 
   return (
     <main className="kid-screen kid-learning" data-task-id={task?.taskId ?? undefined}>
@@ -187,57 +253,6 @@ export function LearnScreen({
                   {screen.reveal.audioAssetId && <IconActionButton className="kid-audio-round" data-testid="kid-reveal-audio" radius="50%" style={{ width: 64, height: 64, minWidth: 64, minHeight: 64 }} onClick={() => void controller.playRevealAudio()} aria-label={messages.kid.listen}><KidIcon name="volume" /></IconActionButton>}
                 </section>
               )} actions={<RevealActions onConfirm={() => void controller.confirmReveal()} />} />
-            ) : speechFeedback && feedback !== null ? (
-              <ExerciseFrame
-                task={task}
-                content={(
-                  <SpeechFeedbackContent
-                    dto={feedback.dto}
-                    retry={feedback.retry}
-                    busy={busy || screen.processing}
-                    audioAvailable={feedback.dto?.referenceAudioAvailable === true}
-                    audioError={feedback.audioError === true}
-                    exerciseType={task.exerciseType}
-                    onPlay={() => void controller.playFeedbackAudio()}
-                    onRetry={() => void controller.continueLearning()}
-                    onSkip={() => void controller.skip()}
-                    onNext={() => void controller.continueLearning()}
-                  />
-                )}
-                actions={<SpeechFeedbackActions
-                  dto={feedback.dto}
-                  retry={feedback.retry}
-                  busy={busy || screen.processing}
-                  audioAvailable={feedback.dto?.referenceAudioAvailable === true}
-                  audioError={feedback.audioError === true}
-                  exerciseType={task.exerciseType}
-                  onPlay={() => void controller.playFeedbackAudio()}
-                  onRetry={() => void controller.continueLearning()}
-                  onSkip={() => void controller.skip()}
-                  onNext={() => void controller.continueLearning()}
-                />}
-                secondaryActions={<SpeechFeedbackSecondaryActions
-                  dto={feedback.dto}
-                  retry={feedback.retry}
-                  busy={busy || screen.processing}
-                  audioAvailable={feedback.dto?.referenceAudioAvailable === true}
-                  audioError={feedback.audioError === true}
-                  exerciseType={task.exerciseType}
-                  onPlay={() => void controller.playFeedbackAudio()}
-                  onRetry={() => void controller.continueLearning()}
-                  onSkip={() => void controller.skip()}
-                  onNext={() => void controller.continueLearning()}
-                />}
-              />
-            ) : writtenFeedback && feedback !== null ? (
-              <ExerciseFrame
-                task={task}
-                content={<AnswerFeedbackContent dto={feedback.dto} busy={busy} />}
-                actions={<AnswerFeedbackActions dto={feedback.dto} retry={feedback.retry} busy={busy}
-                  onNext={() => void controller.continueLearning()} />}
-                secondaryActions={<AnswerFeedbackSecondaryActions dto={feedback.dto} retry={feedback.retry} busy={busy}
-                  onNext={() => void controller.continueLearning()} onSkip={() => void controller.skip()} />}
-              />
             ) : (
               <ExerciseView
                 mockTest={screen.session.mode === "mock_test"}
@@ -255,13 +270,8 @@ export function LearnScreen({
                 micAvailable={micAvailable}
                 mediaUrl={(assetId) => controller.mediaUrl(assetId)}
                 optionOutcomes={outcomes}
-                result={choiceFeedback && feedback !== null ? <AnswerFeedbackContent dto={feedback.dto} busy={busy} /> : undefined}
-                resultActions={choiceFeedback && feedback !== null ? (
-                  <AnswerFeedbackActions dto={feedback.dto} retry={feedback.retry} busy={busy}
-                    onNext={() => void controller.continueLearning()} />
-                ) : undefined}
-                reserveResult={choiceFeedback}
-                feedbackAudio={choiceFeedback && feedback !== null && feedback.dto?.correctAudioAssetId !== undefined
+                dock={screen.reveal === null ? dock : undefined}
+                feedbackAudio={hasFeedback && feedback !== null && feedback.chosenOptionId !== undefined && feedback.dto?.correctAudioAssetId !== undefined
                   ? { assetId: feedback.dto.correctAudioAssetId, onPlay: () => void controller.playCorrectOptionAudio() }
                   : null}
                 handlers={handlers}

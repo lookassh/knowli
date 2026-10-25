@@ -137,6 +137,8 @@ test("written feedback keeps the material and primary action position", async ({
   await page.getByTestId("kid-submit").click();
   await expect(page.getByTestId("kid-feedback")).toBeVisible();
   const materialAfter = await material.boundingBox();
+  await expect(page.getByTestId("kid-next")).toBeInViewport();
+  const dockBox = await page.getByTestId("kid-feedback-dock").boundingBox();
   const actionAfter = await page.getByTestId("kid-next").boundingBox();
 
   expect(materialBefore).not.toBeNull();
@@ -146,8 +148,19 @@ test("written feedback keeps the material and primary action position", async ({
   expect(Math.abs(materialAfter!.y - materialBefore!.y), "material top moved").toBeLessThanOrEqual(2);
   expect(Math.abs(materialAfter!.height - materialBefore!.height),
     `material height changed from ${materialBefore!.height} to ${materialAfter!.height}`).toBeLessThanOrEqual(2);
-  expect(Math.abs(actionAfter!.y - actionBefore!.y),
-    `primary action moved from ${actionBefore!.y} to ${actionAfter!.y}`).toBeLessThanOrEqual(2);
+  expect(actionAfter!.y).toBeGreaterThanOrEqual(dockBox!.y);
+  expect(actionAfter!.y + actionAfter!.height).toBeLessThanOrEqual(dockBox!.y + dockBox!.height + 1);
+  // Slot akcji nie zmienia miejsca, a akcja docka kończy się dokładnie
+  // nad dolną krawędzią panelu (padding 10, bez pustego wiersza secondary).
+  const slotAfter = await page.getByTestId("kid-primary-slot").boundingBox();
+  expect(slotAfter).not.toBeNull();
+  expect(Math.abs(slotAfter!.y - actionBefore!.y), "primary slot moved").toBeLessThanOrEqual(2);
+  await expect.poll(async () => {
+    const action = await page.getByTestId("kid-next").boundingBox();
+    const dockNow = await page.getByTestId("kid-feedback-dock").boundingBox();
+    return action && dockNow ? Math.abs(Math.round((action.y + action.height) - (dockNow.y + dockNow.height - 10))) : 999;
+  }, { message: "dock action settles exactly above the dock bottom edge" }).toBeLessThanOrEqual(2);
+
 });
 
 test("choice feedback keeps each option in place", async ({ page }) => {

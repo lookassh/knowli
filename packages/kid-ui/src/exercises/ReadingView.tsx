@@ -9,7 +9,7 @@ import { Text } from "@mantine/core";
  * Rozpoznawanie tekstu i odwrotne (SPEC §12.3–12.4): widoczne słowo/prompt
  * i wybór odpowiedzi; wynik nie awansuje samodzielnego przypominania.
  */
-export function ReadingView({ task, busy, optionOutcomes, result, resultActions, handlers }: ExerciseProps) {
+export function ReadingView({ task, busy, optionOutcomes, dock, handlers }: ExerciseProps) {
   const prompt = task.prompt.kind === "reading" || task.prompt.kind === "reverse_recognition" ? task.prompt : null;
   const options = prompt ? prompt.options : [];
   const optionRefs = useChoiceKeyboard({
@@ -37,9 +37,7 @@ export function ReadingView({ task, busy, optionOutcomes, result, resultActions,
           onChoose={handlers.onAnswerChoice}
         />
       </>}
-      actions={resultActions}
-      reserveResult
-      result={result}
+      dock={dock}
     />
   );
 }

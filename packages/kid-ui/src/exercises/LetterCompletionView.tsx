@@ -4,10 +4,11 @@ import { format } from "../format";
 import { TextInput } from "@mantine/core";
 import { ActionButton } from "../components/ActionButton";
 import { ExerciseFrame } from "./ExerciseFrame";
+import { useRetryReset } from "./useRetryReset";
 import type { ExerciseProps } from "./types";
 
 /** Luki są jedynymi polami edycji; pełną odpowiedź ocenia istniejące Kid API. */
-export function LetterCompletionView({ task, busy, recording, handlers, letterDraft, onLetterDraftChange }: ExerciseProps) {
+export function LetterCompletionView({ task, busy, recording, handlers, letterDraft, onLetterDraftChange, dock }: ExerciseProps) {
   const [localLetters, setLocalLetters] = useState<Record<number, string>>({});
   const letters = letterDraft ?? localLetters;
   const updateLetters = onLetterDraftChange ?? setLocalLetters;
@@ -20,18 +21,24 @@ export function LetterCompletionView({ task, busy, recording, handlers, letterDr
   const disabled = busy || recording;
   const formId = `kid-letters-${task.taskId}`;
 
-  useEffect(() => {
-    if (task.prompt.kind !== "letter_completion") return;
+  const focusFirstGap = () => {
     const firstEmpty = gapPositions.find((pos) => !letters[pos]) ?? gapPositions[0];
     if (firstEmpty !== undefined) {
       inputRefs.current[firstEmpty]?.focus({ preventScroll: true });
     }
+  };
+  useEffect(() => {
+    if (task.prompt.kind !== "letter_completion") return;
+    focusFirstGap();
   }, [task.taskId, task.prompt.kind]);
+  // Wpis celowo zostaje na kolejną próbę tego zadania; wraca tylko fokus.
+  useRetryReset(dock, () => {}, focusFirstGap);
 
   if (task.prompt.kind !== "letter_completion") return null;
 
   return (
     <ExerciseFrame
+      dock={dock}
       task={task}
       content={(
         <>

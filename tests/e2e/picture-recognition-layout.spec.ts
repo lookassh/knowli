@@ -131,6 +131,11 @@ for (const optionCount of [3, 4] as const) {
     await page.getByTestId("kid-option").nth(0).click();
     await expect(page.getByTestId("kid-feedback")).toContainText("Świetnie!");
     await expect(page.getByTestId("kid-option-audio")).toHaveCount(1);
+    await expect(page.getByTestId("kid-feedback-dock")).toHaveAttribute("data-compact", "true");
+    await expect.poll(async () => {
+      const box = await page.getByTestId("kid-next").boundingBox();
+      return box ? Math.round(box.y + box.height) : 9999;
+    }, { message: "compact dock action settles in view" }).toBeLessThanOrEqual(740);
 
     const geometry = await page.evaluate(() => {
       const content = document.querySelector<HTMLElement>(".kid-material-content")!;
