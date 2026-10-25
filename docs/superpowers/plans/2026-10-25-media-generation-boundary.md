@@ -139,4 +139,6 @@ E2E, fizyczne urządzenia i prawdziwi providerzy nie są wymaganymi dowodami teg
 - Commit implementacji: `37600f4 refactor: separate media generation execution`.
 
 - Niezależny przegląd całego zakresu `0bdbe1d..37600f4` oraz staged dokumentacji: bez uwag Critical/Important/Minor; zgodność z planem potwierdzona. Reviewer nie uruchamiał testów ani nie zmieniał drzewa roboczego.
-- Ograniczenia dowodów: nie testowano prawdziwych providerów, E2E/fizycznych urządzeń/produkcji ani pełnego grafu pośrednich importów. Nie są to cele tego refaktoru; rzeczywiste zachowanie zewnętrznych providerów i pozostałe krawędzie pośrednie pozostają poza zweryfikowanym zakresem.
+- Ograniczenia dowodów: nie testowano prawdziwych providerów, E2E/fizycznych urządzeń/produkcji ani pełnego grafu pośrednich importów. Nie są to cele tego refaktoru; rzeczywiste zachowanie zewnętrznych providerów i pozostałe krawędzie pośrednie pozostają poza zweryfikowanym zakresem.- Pełny zestaw jednostkowy: `corepack pnpm test:unit` — 172 pliki, 1816 testów PASS.
+- Pełny zestaw integracyjny: `corepack pnpm test:integration` — 52 pliki, 498 testów PASS, 2 pominięte; PostgreSQL 17.
+- Nie uruchamiano E2E, bo nie zmieniono interfejsu; nie uruchamiano MCP, bo publiczne API ani raport nie uległy zmianie.
