@@ -86,6 +86,13 @@ describe("stały plan treningu słówek", () => {
     const [after] = (await pool.query("select answer_key from learning_app.session_tasks where id=$1", [task!.taskId])).rows as { answer_key: Record<string, unknown> }[];
     expect(after?.answer_key).toEqual(stored?.answer_key);
     expect((await pool.query("select id from learning_app.session_tasks where session_id=$1 and id=$2", [session.sessionId, task!.taskId])).rows).toHaveLength(1);
+    if (!("options" in task!.prompt)) throw new Error("expected a choice prompt");
+    const correctOptionId = String(stored!.answer_key.correctOptionId);
+    expect(task!.prompt.options.some((option) => option.id === correctOptionId)).toBe(true);
+    const assessment = await submitAttempt(services, {
+      taskId: task!.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: correctOptionId,
+    });
+    expect(assessment.feedback?.kind).toBe("great");
     await endSession(services, session.sessionId);
   });
 

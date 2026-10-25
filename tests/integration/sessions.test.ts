@@ -756,6 +756,13 @@ describe("cykl życia sesji (integracja)", () => {
     expect((await query<{ answer_key: Record<string, unknown> }>("select answer_key from learning_app.session_tasks where id=$1", [task!.taskId]))[0]?.answer_key)
       .toEqual(stored?.answer_key);
     expect(await countSessionRows(session.sessionId, "session_tasks")).toBeGreaterThan(0);
+    if (!("options" in task!.prompt)) throw new Error("expected a choice prompt");
+    const correctOptionId = String(stored!.answer_key.correctOptionId);
+    expect(task!.prompt.options.some((option) => option.id === correctOptionId)).toBe(true);
+    const assessment = await submitAttempt(services, {
+      taskId: task!.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: correctOptionId,
+    });
+    expect(assessment.feedback?.kind).toBe("great");
     await endSession(services, session.sessionId);
   });
 
