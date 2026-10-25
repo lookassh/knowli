@@ -4,6 +4,10 @@ export interface TestRunConfig {
   e2ePort: number;
   workerHealthPort: number;
   worldFile: string;
+  outputDir: string;
+  e2eWebMode: "start" | "dev";
+  e2eSkipBuild: boolean;
+  e2eWorkers: number;
 }
 
 export function readTestRunConfig(env: Record<string, string | undefined>): TestRunConfig {
@@ -32,11 +36,38 @@ export function readTestRunConfig(env: Record<string, string | undefined>): Test
     throw new Error("UMIEM_WORKER_HEALTH_PORT must be an integer from 1024 to 65535");
   }
 
+  const rawWebMode = env.UMIEM_E2E_WEB_MODE;
+  if (rawWebMode !== undefined && rawWebMode !== "start" && rawWebMode !== "dev") {
+    throw new Error('UMIEM_E2E_WEB_MODE must be "start" or "dev"');
+  }
+  const e2eWebMode = rawWebMode === "dev" ? "dev" : "start";
+
+  const rawSkipBuild = env.UMIEM_E2E_SKIP_BUILD;
+  if (rawSkipBuild !== undefined && rawSkipBuild !== "0" && rawSkipBuild !== "1") {
+    throw new Error('UMIEM_E2E_SKIP_BUILD must be "0" or "1"');
+  }
+  const e2eSkipBuild = rawSkipBuild === "1";
+
+  const rawWorkers = env.UMIEM_E2E_WORKERS;
+  if (rawWorkers !== undefined && !/^\d+$/.test(rawWorkers)) {
+    throw new Error("UMIEM_E2E_WORKERS must be an integer from 1 to 32");
+  }
+  const e2eWorkers = rawWorkers === undefined ? 4 : Number(rawWorkers);
+  if (!Number.isInteger(e2eWorkers) || e2eWorkers < 1 || e2eWorkers > 32) {
+    throw new Error("UMIEM_E2E_WORKERS must be an integer from 1 to 32");
+  }
+
   return {
     integrationContainerPrefix: runId ? `knowli-it-${runId}-` : "knowli-it-",
     e2eContainer: runId ? `knowli-e2e-${runId}` : "knowli-e2e",
     e2ePort,
     workerHealthPort,
     worldFile: `tests/e2e/${runId ? `.world-${runId}.json` : ".world.json"}`,
+    // Równoległe procesy Playwright czyszczą wspólny outputDir na starcie
+    // i kasują sobie nawzajem artefakty; run z własnym ID ma własny katalog.
+    outputDir: runId ? `test-results/${runId}` : "test-results",
+    e2eWebMode,
+    e2eSkipBuild,
+    e2eWorkers,
   };
 }

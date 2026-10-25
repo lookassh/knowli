@@ -4,7 +4,7 @@
 # Testy są samowystarczalne: integration i e2e stawiają własne kontenery
 # postgres:17-alpine w global-setup, e2e działa na fake providerach (bez kluczy).
 # E2e biegnie w 3 równoległych shardach (osobne runnery, każdy z własnym światem),
-# bo szeregowe 128 testów na jednym workerze trwało ~10 minut.
+# bo szeregowy przebieg całego zestawu na jednym workerze trwał ~10 minut.
 name: CI
 
 on:
@@ -23,7 +23,7 @@ concurrency:
 permissions:
   contents: read
 
-# Telemetria Next.js off wszędzie, także dla `next dev` stawianego przez e2e.
+# Telemetria Next.js off wszędzie, także dla buildu i `next start` stawianego przez e2e.
 env:
   NEXT_TELEMETRY_DISABLED: "1"
 
@@ -68,9 +68,9 @@ jobs:
     strategy:
       # Pierwszy failure nie zabiera pozostałych shardów — pełny obraz runu.
       fail-fast: false
-      # Każdy shard to osobny świat (własny postgres, `next dev`, worker),
-      # bo global-setup działa per shard. Playwright dzieli speci na shardy
-      # w całości (po plikach), więc testy jednego pliku nie rozpadają się.
+      # Każdy shard to osobny świat (własny postgres, `next start`, worker),
+      # bo global-setup działa per shard. Pliki projektu `real` trafiają do shardów w całości; bezstanowe
+      # testy `mocked` (fullyParallel) Playwright może rozdzielić między shardy także wewnątrz pliku.
       # Zmiana liczby shardów: sprawdź rozkład przez `playwright test
       # --shard=k/n --list` — pusty shard wychodzi zielony i marnuje runnera.
       matrix:

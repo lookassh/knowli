@@ -9,6 +9,9 @@ Instrukcje dla agentów pracujących w tym repozytorium. Umieść ten plik w kat
 ## Running and verifying
 
 - Aby skopiować brakujący `.env` w worktree bez instalacji zależności, uruchom `node scripts/setup-worktree.cjs --skip-install`; wywołanie bez tej opcji instaluje zależności, gdy brak `node_modules`.
+- Pełny suite E2E uruchamiaj szybko przez `pnpm test:e2e:shards`: jeden build produkcyjny, równolegle projekt `mocked` (API zaślepione w przeglądarce, wielu workerów) i shardy projektu `real` (każdy z własnym światem: baza, `next start`, worker) — lokalnie ok. 2,5 min dla całego zestawu wobec ponad 5 min szeregowo. Opcje: `--shards=N`, `--mocked-workers=N`, `--grep=<wzorzec>`, `--base-port=N`.
+- Przy pracy nad pojedynczym specem domyślny przebieg (`pnpm exec playwright test <plik>`) buduje aplikację i stawia `next start`; do szybkiej iteracji bez buildu użyj `UMIEM_E2E_WEB_MODE=dev` (serwer deweloperski) albo po wcześniejszym `pnpm build` — `UMIEM_E2E_SKIP_BUILD=1`. Przed PR i tak wykonaj pełny przebieg `pnpm test:e2e:shards` na buildzie produkcyjnym.
+- Nowy spec E2E dopisz do partycji w `tests/e2e/spec-projects.ts`: do `mocked` tylko wtedy, gdy całe API jest zaślepione w przeglądarce (`installKidUiFixture` albo route rodzica) i spec nie dotyka bazy, workera ani API spoza przeglądarki; w przeciwnym razie do `real`. Kompletności partycji pilnuje test jednostkowy `spec-projects.test.ts`.
 
 ## Tożsamość projektu i język
 
