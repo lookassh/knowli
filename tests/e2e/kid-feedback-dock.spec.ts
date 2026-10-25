@@ -213,3 +213,31 @@ test("feedback dock stays reachable on a short landscape screen with reduced mot
   });
   expect(animation.name === "none" || animation.duration === "0s", JSON.stringify(animation)).toBe(true);
 });
+
+test("dock reveals after viewport mode changes and does not jump again on repeated updates", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    const browserWindow = window as typeof window & { dockRevealCalls?: number };
+    browserWindow.dockRevealCalls = 0;
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (options?: boolean | ScrollIntoViewOptions) {
+      if (this.classList.contains("kid-feedback-overlay")) browserWindow.dockRevealCalls = (browserWindow.dockRevealCalls ?? 0) + 1;
+      original?.call(this, options);
+    };
+  });
+  await installKidUiFixture(page, completedRecallFixture());
+  await openTask(page);
+  await page.getByTestId("kid-input").fill("cat");
+  await page.getByTestId("kid-submit").click();
+  const dock = page.getByTestId("kid-feedback-dock");
+  await expect(dock).toBeVisible();
+
+  await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
+  await expect(page.locator(".kid-page")).toHaveAttribute("data-zoomed", "true");
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { dockRevealCalls?: number }).dockRevealCalls)).toBe(1);
+
+  const pageScroll = await page.locator(".kid-page").evaluate((element) => element.scrollTop);
+  await page.locator(".kid-page").evaluate((element) => element.setAttribute("data-zoomed", "true"));
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { dockRevealCalls?: number }).dockRevealCalls)).toBe(1);
+  expect(await page.locator(".kid-page").evaluate((element) => element.scrollTop)).toBe(pageScroll);
+});

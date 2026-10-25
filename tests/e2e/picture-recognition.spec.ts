@@ -95,7 +95,7 @@ test("picture_recognition: pomyłka podświetla wybór, odsłuch poprawnego sło
   await expect(page.getByTestId("kid-option-audio")).toHaveCount(0);
   // pomyłka: wybrana opcja czerwona podświetlenia, poprawna zielona + głośniczek
   await options.nth(1).click();
-  await expect(page.getByTestId("kid-feedback")).toContainText("Posłuchaj: red. Poćwiczymy razem");
+  await expect(page.getByTestId("kid-feedback-correct-answer")).toHaveText("red");
   await expect(options.nth(1)).toHaveClass(/kid-option--wrong/);
   await expect(options.nth(0)).toHaveClass(/kid-option--correct/);
   await expect(page.getByTestId("kid-option-audio")).toHaveCount(1);

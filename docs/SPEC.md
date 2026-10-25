@@ -441,7 +441,7 @@ Feedback ma być pozytywny i zgodny z wynikiem:
 - „Świetnie!” i „Dobrze!” po poprawnej odpowiedzi;
 - „Prawie! Posłuchaj jeszcze raz” przy rzeczywiście częściowo poprawnej próbie;
 - „Prawie! Popraw zapis:” z zaznaczoną różnicą między wpisem dziecka a właściwym zapisem przy błędzie bliskim poprawnemu wariantowi;
-- „Posłuchaj: Thursday. Poćwiczymy razem” przy niepoprawnej odpowiedzi;
+- „Poprawna odpowiedź” i osobno wyróżnione „Thursday” przy niepoprawnej odpowiedzi z ujawnionym rozwiązaniem; na telefonie akcja ponowienia jest pod komunikatem, a jej wysokość rośnie wraz z tekstem;
 - „Nie udało się ocenić nagrania” przy problemie technicznym.
 
 Nie pokazujemy „ŹLE”, kar, rankingów ani technicznego „37%”. Nie chwalimy niepoprawnej odpowiedzi jako poprawnej.
