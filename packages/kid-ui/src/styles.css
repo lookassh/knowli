@@ -2,50 +2,30 @@
    Klasy prefiksowane kid-, aby nie kolidowały z panelem rodzica. */
 
 .kid-ui {
-  --kid-bg: #f6f8fd;
-  --kid-surface: #ffffff;
-  --kid-text: #202c45;
-  --kid-muted: #596982;
-  --kid-accent: #3855ca;
-  --kid-on-accent: #ffffff;
-  --kid-line: #dae2f0;
-  --kid-soft: #e9eefb;
-  --kid-good: #196044;
-  --kid-good-bg: #e6f3e9;
-  --kid-wrong: #a52b24;
-  --kid-wrong-bg: #fdeeee;
-  --kid-on-good: #ffffff;
-  --kid-on-wrong: #ffffff;
-  --kid-warm: #fbefd8;
-  --kid-warm-text: #78521d;
-  --kid-warm-line: #ecd8b1;
-  color-scheme: light dark;
+  /* Match KidThemeProvider's forced dark scheme, regardless of the OS theme.
+     System-dependent text tokens cannot be mixed with dark answer controls. */
+  --kid-bg: #182134;
+  --kid-surface: #253049;
+  --kid-text: #f1f5ff;
+  --kid-muted: #bdc9df;
+  --kid-accent: #aec0ff;
+  --kid-on-accent: #18244a;
+  --kid-line: #455370;
+  --kid-soft: #303f64;
+  --kid-good: #a1e0ba;
+  --kid-good-bg: #214b36;
+  --kid-wrong: #ffb5ab;
+  --kid-wrong-bg: #542c32;
+  --kid-on-good: #143323;
+  --kid-on-wrong: #48201d;
+  --kid-warm: #493f2b;
+  --kid-warm-text: #f3d8a4;
+  --kid-warm-line: #79633e;
+  color-scheme: dark;
   color: var(--kid-text);
   background: var(--kid-bg);
   min-height: 100dvh;
   font-family: inherit;
-}
-
-@media (prefers-color-scheme: dark) {
-  .kid-ui {
-    --kid-bg: #182134;
-    --kid-surface: #253049;
-    --kid-text: #f1f5ff;
-    --kid-muted: #bdc9df;
-    --kid-accent: #aec0ff;
-    --kid-on-accent: #18244a;
-    --kid-line: #455370;
-    --kid-soft: #303f64;
-    --kid-good: #a1e0ba;
-    --kid-good-bg: #214b36;
-    --kid-wrong: #ffb5ab;
-    --kid-wrong-bg: #542c32;
-    --kid-on-good: #143323;
-    --kid-on-wrong: #48201d;
-    --kid-warm: #493f2b;
-    --kid-warm-text: #f3d8a4;
-    --kid-warm-line: #79633e;
-  }
 }
 
 .kid-page--flow {
