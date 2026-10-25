@@ -338,15 +338,15 @@ test("cyfra działa z klawiatury w ciemnym motywie, pokazuje błąd i pozwala sp
   expect(digitColors.digit).toBe(digitColors.foreground);
   expect(contrastRatio(digitColors.digit, digitColors.background), JSON.stringify(digitColors)).toBeGreaterThanOrEqual(4.5);
   await expect(options).toHaveCount(3);
-  const markersAvoidLabels = await options.evaluateAll((elements) => elements.flatMap((element) => {
+  const markersStayInsideTiles = await options.evaluateAll((elements) => elements.flatMap((element) => {
     const marker = element.querySelector<HTMLElement>(".kid-picture-outcome");
     if (marker === null) return [];
     const option = element.getBoundingClientRect();
-    const label = element.querySelector(".kid-picture-choice-label")!.getBoundingClientRect();
     const bounds = marker.getBoundingClientRect();
-    return [bounds.left >= option.left && bounds.left >= label.right];
+    return [bounds.left >= option.left && bounds.right <= option.right
+      && bounds.top >= option.top && bounds.bottom <= option.bottom];
   }));
-  expect(markersAvoidLabels).toEqual([true, true]);
+  expect(markersStayInsideTiles).toEqual([true, true]);
   await page.screenshot({ path: testInfo.outputPath("picture-choice-feedback-retry.png") });
   const beforeRetry = await options.evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().y));
 

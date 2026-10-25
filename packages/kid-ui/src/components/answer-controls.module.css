@@ -32,8 +32,8 @@
 :global(.kid-ui) .action[data-size="md"],
 :global(.kid-ui) .action[data-size="lg"] {
   min-height: 54px;
-  height: 54px;
-  padding-block: 0;
+  height: auto;
+  padding-block: 8px;
 }
 
 :global(.kid-ui) .action:disabled {
@@ -175,6 +175,12 @@
 @media (max-height: 900px) {
   .grid[data-visual-only="true"] {
     --visual-choice-gap: 6px;
+  }
+}
+
+@media (max-width: 599px) and (max-height: 600px) {
+  .grid[data-visual-only="true"] {
+    grid-auto-rows: minmax(48px, 1fr);
   }
 }
 
