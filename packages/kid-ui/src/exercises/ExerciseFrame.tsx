@@ -4,6 +4,11 @@ import type { TaskDto } from "@learning/contracts";
 import { KidIcon } from "../components/KidIcon";
 import classes from "./ExerciseFrame.module.css";
 import { getExercisePresentation } from "./exercise-presentation";
+import {
+  scheduleFeedbackDockReveal,
+  shouldRevealFeedbackDock,
+  type FeedbackDockRevealState,
+} from "./feedback-dock-reveal";
 
 /**
  * Rama zadania: siatka instrukcja / materiał / akcje. Tylko obszar
@@ -34,7 +39,56 @@ export function ExerciseFrame({
   const gatedDockRef = useRef<{ overlay: HTMLElement; enabled: boolean } | null>(null);
   const scrolledKeyRef = useRef<{ overlay: HTMLElement; key: string } | null>(null);
   const measureRef = useRef<(() => void) | null>(null);
+  const revealStateRef = useRef<FeedbackDockRevealState>({ overlay: null, required: false });
+  const revealCleanupRef = useRef<(() => void) | null>(null);
+  const revealTaskIdRef = useRef<string | null>(null);
   const [dockPad, setDockPad] = useState(0);
+  const hasDock = dock !== undefined;
+
+  // Revealing is tied to a dock/task and viewport mode, never to the newly
+  // allocated JSX node passed by LearnScreen on unrelated renders. Observe
+  // KidPage directly so rotation/zoom changes work without a child render.
+  useEffect(() => {
+    if (revealTaskIdRef.current !== task.taskId) {
+      revealTaskIdRef.current = task.taskId;
+      revealStateRef.current = { overlay: null, required: false };
+    }
+    if (!hasDock) {
+      revealStateRef.current = { overlay: null, required: false };
+      return;
+    }
+    const overlay = overlayRef.current;
+    const page = overlay?.closest<HTMLElement>(".kid-page");
+    if (!overlay || !page) return;
+    let active = true;
+
+    const revealIfNeeded = () => {
+      if (!active) return;
+      const required = page.dataset.zoomed === "true" || page.dataset.viewportVeryShort === "true";
+      const shouldReveal = shouldRevealFeedbackDock(revealStateRef.current, overlay, required);
+      if (!required) {
+        revealCleanupRef.current?.();
+        revealCleanupRef.current = null;
+        return;
+      }
+      if (!shouldReveal) return;
+      revealCleanupRef.current?.();
+      revealCleanupRef.current = scheduleFeedbackDockReveal(overlay);
+    };
+
+    revealIfNeeded();
+    const observer = new MutationObserver(revealIfNeeded);
+    observer.observe(page, { attributes: true, attributeFilter: ["data-zoomed", "data-viewport-very-short"] });
+    return () => {
+      active = false;
+      observer.disconnect();
+      revealCleanupRef.current?.();
+      revealCleanupRef.current = null;
+      // Also allows React Strict Mode's setup/cleanup replay to schedule
+      // the frame again after the first setup was cancelled.
+      revealStateRef.current.required = false;
+    };
+  }, [hasDock, task.taskId]);
 
   // Dock zwykły i mowy rezerwuje w materiale dokładnie tyle, o ile
   // panel wystaje ponad stopkę (kompaktowy ma stałą rezerwę CSS niżej)
@@ -56,11 +110,6 @@ export function ExerciseFrame({
     const anchor = anchorRef.current;
     const overlay = overlayRef.current;
     if (!material || !anchor || !overlay) return;
-    const page = overlay.closest<HTMLElement>(".kid-page");
-    const needsPageScroll = page?.dataset.zoomed === "true" || page?.dataset.viewportVeryShort === "true";
-    const revealFrame = needsPageScroll
-      ? requestAnimationFrame(() => overlay.scrollIntoView({ block: "end" }))
-      : null;
     // Dock kompaktowy (obrazki) ma stałą rezerwę w materiale
     // (picture_listening 56 px zawsze, picture_recognition 56 px przy
     // docku), większą od wystawania panelu — dynamiczny padding tylko
@@ -115,7 +164,6 @@ export function ExerciseFrame({
     return () => {
       measureRef.current = null;
       cancelAnimationFrame(frame);
-      if (revealFrame !== null) cancelAnimationFrame(revealFrame);
       observer?.disconnect();
     };
   }, [dock]);
