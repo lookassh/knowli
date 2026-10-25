@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { computeKidViewport } from "./viewport";
 
 describe("computeKidViewport", () => {
+  it("uses natural flow for enlarged text even without pinch zoom", () => {
+    expect(computeKidViewport({ innerHeight: 640, visualViewport: null, rootFontSize: 32 }))
+      .toEqual({ height: 640, offsetTop: 0, zoomed: true });
+  });
   it("uses the visible viewport height and offset when the keyboard is open", () => {
     expect(computeKidViewport({
       innerHeight: 700,

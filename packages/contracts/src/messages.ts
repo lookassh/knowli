@@ -489,6 +489,7 @@ export const messages = {
     feedbackAlmost: "Prawie! Posłuchaj jeszcze raz",
     feedbackCapitalization: "To właściwe słowo! {word} piszemy wielką literą",
     feedbackIncorrect: "Posłuchaj: {word}. Poćwiczymy razem",
+    feedbackCorrectAnswer: "Poprawna odpowiedź",
     feedbackSpelling: "Prawie! Popraw zapis:",
     feedbackSpellingCapitalization: "Prawie! {word} piszemy wielką literą",
     feedbackSpellingMissingLetters: "Prawie! Uzupełnij brakujące litery:",
