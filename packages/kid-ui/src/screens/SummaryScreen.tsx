@@ -31,7 +31,7 @@ export function SummaryScreen({
       : plural === "few" ? messages.kid.summaryWordFew : messages.kid.summaryWordMany, { n });
   };
   return (
-    <KidScreen mode="flow" role="main" className="kid-screen kid-screen--summary">
+    <KidScreen role="main" className="kid-screen kid-screen--summary">
       <KidScreen.Header>
         <Title order={1} data-testid="kid-summary">{messages.kid.summaryTitle}</Title>
         {guidance}

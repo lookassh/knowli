@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { messages } from "@learning/contracts";
 import { SpeechRecordButton } from "./SpeechRecordButton";
 import { ExerciseFrame } from "./ExerciseFrame";
+import { useRetryReset } from "./useRetryReset";
 import type { ExerciseProps } from "./types";
 import { AnswerField } from "../components/AnswerField";
 import { ActionButton } from "../components/ActionButton";
@@ -14,7 +15,7 @@ import { ActionButton } from "../components/ActionButton";
  * Recall; wsparcie pisowni pozostaje zadaniem tekstowym. Dostępne są też
  * „Nie pamiętam — pokaż” i „Pomiń”.
  */
-export function WrittenView({ task, busy, recording, recordingPhase, microphoneReady, inputLevel, recordingNotice, recordingMode, micAvailable, handlers, mockTest }: ExerciseProps) {
+export function WrittenView({ task, busy, recording, recordingPhase, microphoneReady, inputLevel, recordingNotice, recordingMode, micAvailable, dock, handlers, mockTest }: ExerciseProps) {
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const formId = `kid-written-${task.taskId}`;
@@ -22,12 +23,14 @@ export function WrittenView({ task, busy, recording, recordingPhase, microphoneR
   useEffect(() => {
     inputRef.current?.focus({ preventScroll: true });
   }, [task.taskId]);
+  useRetryReset(dock, () => setText(""), () => inputRef.current?.focus({ preventScroll: true }));
   if (task.prompt.kind !== "recall" && task.prompt.kind !== "spelling") {
     return null;
   }
   const disabled = busy || recording || recordingPhase !== "idle";
   return (
     <ExerciseFrame
+      dock={dock}
       task={task}
       content={(
         <>

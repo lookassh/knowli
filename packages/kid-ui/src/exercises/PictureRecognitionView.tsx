@@ -13,7 +13,7 @@ import { MeaningVisualView } from "../visuals/MeaningVisualView";
  * Prompt nie niesie audio (A07) — odsłuch poprawnej opcji pojawia się
  * dopiero w feedbackzie, przy podświetlonej poprawnej odpowiedzi.
  */
-export function PictureRecognitionView({ task, busy, mediaUrl, optionOutcomes, result, resultActions, feedbackAudio, handlers }: ExerciseProps) {
+export function PictureRecognitionView({ task, busy, mediaUrl, optionOutcomes, dock, feedbackAudio, handlers }: ExerciseProps) {
   const prompt = task.prompt.kind === "picture_recognition" ? task.prompt : null;
   const options = prompt ? prompt.options : [];
   const optionRefs = useChoiceKeyboard({
@@ -66,9 +66,7 @@ export function PictureRecognitionView({ task, busy, mediaUrl, optionOutcomes, r
           />
         </>
       )}
-      actions={resultActions}
-      result={result}
-      reserveResult
+      dock={dock}
     />
   );
 }

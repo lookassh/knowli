@@ -13,7 +13,7 @@ export function MockTestReadyScreen({ session, onStart, onCancel }: { session: S
   const [error, setError] = useState(false);
   const startRef = useAutoFocus<HTMLButtonElement>(true);
 
-  return <KidScreen mode="flow" className="kid-screen kid-screen--mock-ready">
+  return <KidScreen className="kid-screen kid-screen--mock-ready">
     <KidScreen.Header><Title order={1}>{messages.kid.mockTest}</Title></KidScreen.Header>
     <KidScreen.Content>
       <Text className="kid-mock-budget" data-testid="kid-mock-budget">{format(messages.kid.mockTestBudget, { n: session.taskBudget })}</Text>
@@ -35,7 +35,7 @@ export function MockTestSummaryScreen({ summary, activity, detailsLoading, detai
   const run = (promise: Promise<void>) => { setError(false); void promise.catch(() => setError(true)); };
   const score = computeMockTestScore(summary.solutions);
   const tone = mockTestScoreTone(score);
-  return <KidScreen mode="flow" className="kid-screen kid-screen--mock-summary" data-testid="kid-mock-summary">
+  return <KidScreen className="kid-screen kid-screen--mock-summary" data-testid="kid-mock-summary">
     <KidScreen.Header>
       <Title order={1}>{messages.kid.mockTestFinished}</Title>
       {!summary.complete && <Text>{messages.kid.mockTestPartial}</Text>}
@@ -76,7 +76,7 @@ export function MockTestSummaryScreen({ summary, activity, detailsLoading, detai
 
 export function SessionConflictScreen({ onResume, onClose }: { onResume: () => Promise<void>; onClose: () => Promise<void> }) {
   const [error, setError] = useState(false);
-  return <KidScreen mode="flow" className="kid-screen kid-screen--conflict">
+  return <KidScreen className="kid-screen kid-screen--conflict">
     <KidScreen.Content>
       <Text className="kid-conflict-info" data-testid="kid-conflict-info">{messages.kid.sessionConflict}</Text>
       {error && <Text role="alert" c="red.3">{messages.kid.offlineMessage}</Text>}
