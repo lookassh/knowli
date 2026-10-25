@@ -139,7 +139,7 @@ export function ExerciseFrame({
           <Box ref={anchorRef} className={classes.dockAnchor}>
             <Box data-testid="kid-primary-slot" className={classes.primary} aria-hidden="true" />
             <Box data-testid="kid-secondary-slot" className={classes.secondary} aria-hidden="true" />
-            <Box ref={overlayRef} className={classes.dockOverlay}>{dock}</Box>
+            <Box ref={overlayRef} className={`kid-feedback-overlay ${classes.dockOverlay}`}>{dock}</Box>
           </Box>
         ) : (
           <>

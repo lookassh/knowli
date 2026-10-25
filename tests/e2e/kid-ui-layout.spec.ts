@@ -118,7 +118,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     await page.getByTestId("kid-deck").click();
     await page.getByTestId("kid-option").nth(1).click();
     const feedback = page.getByTestId("kid-feedback");
-    await expect(feedback).toContainText("Poćwiczymy razem");
+    await expect(feedback.getByTestId("kid-feedback-correct-answer")).toHaveText("kot");
     await expect(page.getByTestId("kid-next")).toBeInViewport();
     const colors = await feedback.evaluate((element) => {
       const style = getComputedStyle(element);
@@ -668,7 +668,7 @@ test("written feedback moves focus out of the answer field without opening a mod
   await input.focus();
   await page.getByTestId("kid-submit").click();
   const feedback = page.getByTestId("kid-feedback");
-  await expect(feedback).toContainText("Posłuchaj: cat. Poćwiczymy razem");
+  await expect(feedback.getByTestId("kid-feedback-correct-answer")).toHaveText("cat");
   await expect(feedback).not.toHaveJSProperty("open", true);
   await expect(page.getByTestId("kid-next")).toBeInViewport();
   expect(await page.evaluate(() => document.activeElement?.id)).toBe("kid-feedback-title");
