@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
-import { Box, Group, Paper, Stack, Switch, Text, Title } from "@mantine/core";
+import { Box, Group, Paper, Stack, Text, Title } from "@mantine/core";
 import { messages, type KidDeckDto, type UiAudioKey } from "@learning/contracts";
 import { GuidanceButton } from "../components/GuidanceButton";
+import { MicrophoneSettingsButton } from "../components/MicrophoneSettingsButton";
 import { KidIcon } from "../components/KidIcon";
 import { ActionButton } from "../components/ActionButton";
 import { format } from "../format";
@@ -77,7 +78,10 @@ export function DeckScreen({
             : format(messages.kid.kidDailyActivity, { time: approvedTime })}
         </Text>
         {headerActions}
-        {onGuidance && <GuidanceButton audioKey="deck_select" onPlay={onGuidance} testId="kid-deck-guidance" />}
+        <div className="kid-deck-screen__header-actions">
+          <MicrophoneSettingsButton microphone={microphone} micDenied={micDenied} onToggleMicrophone={onToggleMicrophone} />
+          {onGuidance && <GuidanceButton audioKey="deck_select" onPlay={onGuidance} testId="kid-deck-guidance" />}
+        </div>
       </header>
       <Title order={1}>{messages.kid.decksTitle}</Title>
       {childName && <Text className="kid-greeting">{format(messages.kid.greeting, { name: childName })}</Text>}
@@ -112,12 +116,6 @@ export function DeckScreen({
         ))
       )}
 
-      <Paper component="aside" className="kid-deck-microphone" radius="lg" p="md" withBorder>
-        <Switch className="kid-toggle" data-testid="kid-mic-toggle" checked={microphone} label={messages.kid.microphone}
-          onChange={(event) => onToggleMicrophone(event.currentTarget.checked)} />
-        <Text className="kid-microphone-hint" data-testid="kid-microphone-hint">{messages.kid.microphoneLearningHint}</Text>
-        {micDenied && <Text className="kid-hint" data-testid="kid-mic-denied-hint">{messages.kid.microphoneDeniedHint}</Text>}
-      </Paper>
       </KidScreen.Content>
     </KidScreen>
   );
