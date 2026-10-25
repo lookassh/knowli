@@ -260,6 +260,9 @@ process.on("SIGINT", () => {
 });
 
 main().catch((error) => {
+  // Przerwanie (SIGINT) ustawiło już exitCode = 130; odrzucenie z ubitego
+  // buildu/dzieci nie jest zwykłą awarią i nie może nadpisać tego kodu.
+  if (interrupted) return;
   console.error(`[shards] ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;
 });
