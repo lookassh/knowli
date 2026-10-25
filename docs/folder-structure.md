@@ -125,7 +125,9 @@ Komunikaty wynikowe generowane przez domenę (feedback.ts) trafiają do klienta 
 | packages/server/src/modules/profiles.ts | Profile, kasowanie danych dziecka |
 | packages/server/src/modules/auth.ts | Hasło/PIN, sesje i limity logowania |
 | packages/server/src/modules/decks.ts | Szkice, rewizje, przypisania, publikacja |
-| packages/server/src/modules/generation.ts | Zlecanie, odczyt i retry generacji; wykonanie słówek i mediów oraz pomocniki runów |
+| packages/server/src/modules/generation.ts | Zlecanie, odczyt i retry runów; wykonanie treści słówek oraz delegowanie runów mediów |
+| packages/server/src/modules/media-generation.ts | Wykonanie jednego zasobu TTS/ilustracji: lease assetu, wywołanie providera, zapis niezmiennego pliku i finalizacja asset/run |
+| packages/server/src/modules/generation-runtime.ts | Wspólne wymagane zależności generowania, limit prób i klasyfikacja błędów dla wykonawców oraz workera |
 | packages/server/src/modules/generation-worker.ts | Koordynacja pracy generowania: odczyt kolejek, limity i delegowanie do wykonawców słówek, lekcji i mediów |
 | packages/server/src/modules/worker-schedule.ts | Reguły rotacji kolejek i obsługi wolnych slotów, bez zależności od bazy |
 | packages/server/src/modules/media-reconciliation.ts | Dopasowanie fingerprintów szkicu, zachowanie zgodnych zasobów i enqueue brakujących |
