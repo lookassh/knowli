@@ -647,7 +647,7 @@ test(`${kind} choice keeps the highlighted option and readable success action in
   await expect(correct).toHaveClass(/kid-option--correct/);
   await expect(correct).toBeDisabled();
   await expect.poll(() => correct.evaluate((element) => getComputedStyle(element, "::before").content)).toBe('"✓ "');
-  await expect(page.getByTestId("kid-exercise-result")).toContainText("Świetnie");
+  await expect(page.getByTestId("kid-feedback-dock")).toContainText("Świetnie");
   await expect(page.getByTestId("kid-next")).toBeInViewport();
 });
 }

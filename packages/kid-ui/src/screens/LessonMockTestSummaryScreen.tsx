@@ -28,7 +28,7 @@ export function LessonMockTestSummaryScreen({ summary, activity, detailsLoading,
   const score = computeLessonMockScore(summary.solutions);
   const tone = mockTestScoreTone(score);
   const run = (promise: Promise<void>) => { void promise.catch(() => undefined); };
-  return <KidScreen mode="flow" className="kid-screen kid-screen--mock-summary" data-testid="kid-lesson-mock-summary">
+  return <KidScreen className="kid-screen kid-screen--mock-summary" data-testid="kid-lesson-mock-summary">
     <KidScreen.Header>
       <Title order={1}>{messages.kid.mockTestFinished}</Title>
       {!summary.complete && <Text>{messages.kid.mockTestPartial}</Text>}

@@ -10,7 +10,7 @@ import type { ExerciseProps } from "../types";
  * zamyka prezentację przez `complete-presentation` (nie jest oceniana, nie
  * zużywa budżetu). Jeden jasny krok, bez pól do wypełnienia.
  */
-export function LessonCardView({ task, busy, handlers }: ExerciseProps) {
+export function LessonCardView({ task, busy, dock, handlers }: ExerciseProps) {
   const nextRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -21,6 +21,7 @@ export function LessonCardView({ task, busy, handlers }: ExerciseProps) {
   const { title, body, examples } = task.prompt.card;
   return (
     <ExerciseFrame
+      dock={dock}
       task={task}
       content={(
         <Paper className="kid-lesson-card" data-testid="kid-lesson-card" radius="lg" p="md" withBorder>

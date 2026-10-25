@@ -13,9 +13,9 @@ describe("describeSpeechFeedback", () => {
     [{ kind: "great", heardText: "Thursday", speech: { ...speech, pronunciation: "good" } }, messages.kid.feedbackGreat, "correct"],
     [{ kind: "almost", heardText: "Thursday", speech }, messages.kid.feedbackAlmost, "practice"],
     [{ kind: "incorrect", correctText: "Thursday", heardText: "Tuesday", speech: { ...speech, recognition: "different", pronunciation: "not_applicable" } }, "Ćwiczymy: Thursday", "practice"],
-    [{ kind: "not_assessed", speech: { recognition: "uncertain", pronunciation: "not_applicable" } }, messages.kid.feedbackSpeechUncertain, "neutral"],
-    [{ kind: "not_assessed", speech: { recognition: "no_speech", pronunciation: "not_applicable" } }, messages.kid.feedbackSpeechNoSpeech, "neutral"],
-    [{ kind: "not_assessed", speech: { recognition: "unavailable", pronunciation: "not_applicable" } }, messages.kid.feedbackSpeechUnavailable, "neutral"],
+    [{ kind: "not_assessed", speech: { recognition: "uncertain", pronunciation: "not_applicable" } }, messages.kid.feedbackSpeechUncertain, "technical"],
+    [{ kind: "not_assessed", speech: { recognition: "no_speech", pronunciation: "not_applicable" } }, messages.kid.feedbackSpeechNoSpeech, "technical"],
+    [{ kind: "not_assessed", speech: { recognition: "unavailable", pronunciation: "not_applicable" } }, messages.kid.feedbackSpeechUnavailable, "technical"],
   ] as const)("maps %j to an honest message and tone", (dto, message, tone) => {
     expect(describeSpeechFeedback(dto as FeedbackDto)).toMatchObject({ message, tone });
   });
@@ -51,7 +51,7 @@ describe("describeSpeechFeedback", () => {
     expect(describeSpeechFeedback(null)).toEqual({
       message: messages.kid.feedbackNotAssessed,
       fragments: [],
-      tone: "neutral",
+      tone: "technical",
     });
     expect(describeSpeechFeedback({ kind: "great" })).toEqual({
       message: messages.kid.feedbackGreat,

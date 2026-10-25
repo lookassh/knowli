@@ -6,9 +6,10 @@ import { SpeechRecordButton } from "./SpeechRecordButton";
 import type { ExerciseProps } from "./types";
 import { ActionButton } from "../components/ActionButton";
 
-export function PictureRecallView({ task, busy, mediaUrl, micAvailable, recordingPhase, microphoneReady, inputLevel, recordingNotice, recordingMode, handlers }: ExerciseProps) {
+export function PictureRecallView({ task, busy, mediaUrl, micAvailable, recordingPhase, microphoneReady, inputLevel, recordingNotice, recordingMode, dock, handlers }: ExerciseProps) {
   if (task.prompt.kind !== "picture_recall") return null;
   return <ExerciseFrame task={task}
+      dock={dock}
     content={<>
       <MeaningVisualView visual={task.prompt.visual} mediaUrl={mediaUrl} />
       <p className="kid-hint">{messages.kid.pictureRecallPrompt}</p>

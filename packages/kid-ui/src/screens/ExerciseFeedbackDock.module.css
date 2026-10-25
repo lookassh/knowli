@@ -1,0 +1,141 @@
+@keyframes kid-dock-in {
+  from {
+    transform: translateY(24px);
+    opacity: 0.4;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.dock {
+  box-sizing: border-box;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--kid-line);
+  border-radius: 20px 20px 0 0;
+  background: var(--kid-surface);
+  animation: kid-dock-in 200ms ease-out;
+}
+
+/* Wariant kompaktowy (ćwiczenia obrazkowe): jeden rząd o wysokości
+   zwykłej stopki, więc panel nie zmienia geometrii kafelków. Dłuższy
+   komunikat przewija się wewnątrz obszaru treści. */
+.compact {
+  flex-direction: row;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.compact .scroll {
+  flex: 1;
+  min-width: 0;
+}
+
+.compact .content :global(.kid-answer-feedback) {
+  max-height: 72px;
+  padding: 6px;
+}
+
+.compact .content :global(.kid-feedback-text) {
+  font-size: 1rem;
+  line-height: 1.15;
+}
+
+.compact .actions {
+  flex: none;
+  width: min(38%, 180px);
+}
+
+.compact .secondary {
+  display: none;
+}
+
+.correct {
+  border-color: var(--kid-good);
+  background: var(--kid-good-bg);
+}
+
+.incorrect {
+  border-color: var(--kid-wrong);
+  background: var(--kid-wrong-bg);
+}
+
+.partial {
+  border-color: var(--kid-warm-line);
+  background: var(--kid-warm);
+}
+
+.technical {
+  border-color: var(--kid-accent);
+  background: var(--kid-soft);
+}
+
+/* Mantine ScrollArea wymaga useEffectEvent (niedostępne w przypiętym
+   React), dlatego długa treść przewija się wewnątrz kart feedbacku,
+   których wysokość ogranicza dock. */
+.scroll {
+  min-width: 0;
+}
+
+.content {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.content :global(.kid-answer-feedback) {
+  max-height: min(36vh, 300px);
+}
+
+.content :global(.kid-feedback-content) {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.content :global(.kid-speech-feedback) {
+  max-height: min(36vh, 300px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Karty feedbacku były wymiarowane na pełną treść zadania; w docku rosną
+   wyłącznie do dostępnej wysokości panelu. */
+.content :global(.kid-speech-feedback) {
+  height: auto;
+  flex: none;
+}
+
+.content :global(.kid-answer-feedback) {
+  border: 0;
+  padding: 4px;
+}
+
+.actions,
+.secondary {
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+.actions > *,
+.secondary > * {
+  width: 100%;
+}
+
+.secondary {
+  justify-content: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dock {
+    animation: none;
+  }
+}

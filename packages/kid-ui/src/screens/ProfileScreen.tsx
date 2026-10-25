@@ -35,7 +35,7 @@ export function ProfileScreen({
   onGuidance?: (key: UiAudioKey) => Promise<void>;
 }) {
   return (
-    <KidScreen mode="flow" role="main" className="kid-screen kid-screen--profile" data-testid="kid-profile-screen">
+    <KidScreen role="main" className="kid-screen kid-screen--profile" data-testid="kid-profile-screen">
       <KidScreen.Header>
         <header className="kid-top-bar">{headerActions}{onGuidance && <GuidanceButton audioKey="profile_select" onPlay={onGuidance} testId="kid-profile-guidance" />}</header>
         <Title order={1}>{messages.kid.profilesTitle}</Title>

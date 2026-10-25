@@ -68,7 +68,7 @@ export function DeckScreen({
     : `${approvedRemainder} s`;
 
   return (
-    <KidScreen mode="flow" role="main" className="kid-screen kid-deck-screen" data-testid="kid-deck-screen">
+    <KidScreen role="main" className="kid-screen kid-deck-screen" data-testid="kid-deck-screen">
       <KidScreen.Header>
       <header className="kid-top-bar">
         <Text component="span" className="kid-daily-activity" data-testid="kid-daily-activity">

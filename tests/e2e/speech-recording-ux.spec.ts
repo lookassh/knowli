@@ -784,8 +784,15 @@ test("speech feedback stays inline, explains fragments and exposes only the avai
   expect(retryScrollY).toBe(submitScrollY);
   expect(submitBounds).not.toBeNull();
   expect(retryBounds).not.toBeNull();
-  expect(Math.abs(retryBounds!.y - submitBounds!.y), "speech retry moved out of the primary action slot").toBeLessThanOrEqual(2);
-  expect(Math.abs(retryBounds!.width - submitBounds!.width), "speech retry changed the primary action width").toBeLessThanOrEqual(2);
+  const dockBounds = await page.getByTestId("kid-feedback-dock").boundingBox();
+  expect(dockBounds).not.toBeNull();
+  expect(retryBounds!.y).toBeGreaterThanOrEqual(dockBounds!.y);
+  expect(retryBounds!.y + retryBounds!.height).toBeLessThanOrEqual(dockBounds!.y + dockBounds!.height + 1);
+  expect(retryBounds!.width).toBeGreaterThanOrEqual(48);
+  expect(retryBounds!.height, "speech retry target height").toBeGreaterThanOrEqual(48);
+  expect(Math.abs(retryBounds!.x - (dockBounds!.x + 10)), "speech retry x inside dock padding").toBeLessThanOrEqual(2);
+  expect(Math.abs(retryBounds!.width - (dockBounds!.width - 20)), "speech retry width fills the dock").toBeLessThanOrEqual(2);
+  await expect(page.getByTestId("kid-feedback-dock")).toHaveAttribute("data-dock-kind", "speech");
 
   for (const selector of ["[data-testid='kid-play-reference']", "[data-testid='kid-feedback-skip']"]) {
     const button = page.locator(selector);

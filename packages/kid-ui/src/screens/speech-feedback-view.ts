@@ -7,7 +7,7 @@ export interface SpeechFeedbackView {
   pronunciationMessage?: string;
   referenceText?: string;
   fragments: readonly PronunciationFragmentDto[];
-  tone: "correct" | "practice" | "neutral";
+  tone: "correct" | "practice" | "technical" | "neutral";
 }
 
 /** Dobiera krótki komunikat wyłącznie z jawnych wyników STT i wymowy. */
@@ -16,7 +16,7 @@ export function describeSpeechFeedback(
   exerciseType?: string,
 ): SpeechFeedbackView {
   if (dto === null) {
-    return { message: messages.kid.feedbackNotAssessed, fragments: [], tone: "neutral" };
+    return { message: messages.kid.feedbackNotAssessed, fragments: [], tone: "technical" };
   }
   const fragments = dto.fragments ?? [];
   const base = {
@@ -28,13 +28,13 @@ export function describeSpeechFeedback(
     const speech = dto.speech;
     const referenceText = speech.referenceText;
     if (speech.recognition === "no_speech") {
-      return { ...base, message: messages.kid.feedbackSpeechNoSpeech, tone: "neutral" };
+      return { ...base, message: messages.kid.feedbackSpeechNoSpeech, tone: "technical" };
     }
     if (speech.recognition === "unavailable") {
-      return { ...base, message: messages.kid.feedbackSpeechUnavailable, tone: "neutral" };
+      return { ...base, message: messages.kid.feedbackSpeechUnavailable, tone: "technical" };
     }
     if (speech.recognition === "uncertain") {
-      return { ...base, message: messages.kid.feedbackSpeechUncertain, tone: "neutral" };
+      return { ...base, message: messages.kid.feedbackSpeechUncertain, tone: "technical" };
     }
     if (speech.recognition === "different") {
       const expected = referenceText ?? dto.correctText ?? "";
