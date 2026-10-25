@@ -6,7 +6,6 @@ for (const kind of ["picture_listening", "picture_recognition"] as const) {
 for (const correctText of ["płaszcz", "pracownia komputerowa"]) {
 test(`${kind}: incorrect feedback keeps ${correctText} and retry label readable`, async ({ page }, testInfo) => {
   const fixture = pictureChoiceLayoutFixture();
-  fixture.uiAudio = { ready: true, assets: {} };
   const task = fixture.tasks[1]!;
   if (task.prompt.kind !== "picture_listening") throw new Error("Expected picture listening");
   task.prompt.options[0]!.labelPl = correctText;
@@ -19,21 +18,8 @@ test(`${kind}: incorrect feedback keeps ${correctText} and retry label readable`
   fixture.attempts = [{ ...fixture.attempts![0]!, taskState: "issued",
     feedback: { kind: "incorrect", correctText } }];
   await installKidUiFixture(page, fixture);
-  const audio = Buffer.alloc(204);
-  audio.write("RIFF", 0);
-  audio.writeUInt32LE(audio.length - 8, 4);
-  audio.write("WAVEfmt ", 8);
-  audio.writeUInt32LE(16, 16);
-  audio.writeUInt16LE(1, 20);
-  audio.writeUInt16LE(1, 22);
-  audio.writeUInt32LE(8000, 24);
-  audio.writeUInt32LE(16000, 28);
-  audio.writeUInt16LE(2, 32);
-  audio.writeUInt16LE(16, 34);
-  audio.write("data", 36);
-  audio.writeUInt32LE(audio.length - 44, 40);
-  await page.route("**/api/v1/media/10000000-0000-4000-8000-000000000012", (route) =>
-    route.fulfill({ contentType: "audio/wav", body: audio }));
+  await page.route("**/api/v1/media/10000000-0000-4000-8000-000000000015", (route) =>
+    route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2 2" />' }));
   await page.setViewportSize({ width: 384, height: 640 });
   await page.goto("/");
   await page.getByTestId("kid-profile").click();
