@@ -26,7 +26,7 @@ import { ApiErrorSchema, SESSION_ACTIVITY_REPORT_MAX_BYTES } from "@learning/con
 import { createKidApiClient } from "../../packages/kid-ui/src/api/client";
 import { AppError } from "../../packages/server/src/errors";
 import { createOpenAiCompatibleSessionActivityReviewer } from "../../packages/server/src/providers/openai-compatible/session-activity";
-import { materializeExercise, type LoadedExercise } from "../../packages/server/src/modules/lessons/lesson-materialize";
+import { materializeExercise, type LoadedExercise } from "../../packages/server/src/modules/learning/lessons/lesson-materialize";
 import { englishGrammarSubject } from "../../packages/server/src/domain/lessons/subjects/english-grammar/module";
 import { buildTestServices, handleKidApi, testDatabase, truncateCoreTables } from "./helpers";
 

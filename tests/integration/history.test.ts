@@ -30,7 +30,7 @@ import {
   truncateCoreTables,
 } from "./helpers";
 import { UI_AUDIO_TEXTS } from "../../packages/server/src/domain/ui-audio-catalog";
-import { readLearningSnapshot } from "../../packages/server/src/modules/learning-snapshot";
+import { readLearningSnapshot } from "../../packages/server/src/modules/learning/learning-snapshot";
 
 /**
  * Historia prób (zadanie 7): klucz odpowiedzi wydanego zadania, ekspozycje

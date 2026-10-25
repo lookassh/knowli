@@ -17,9 +17,9 @@ export * from "./errors";
 export { createDatabase, migrateDatabase, type Database } from "./db/client";
 export { waitUntilDatabaseReady, type DatabaseReadinessOptions } from "./db/ready";
 export * as schema from "./db/schema";
-export { issueIntegrationToken, listIntegrationTokens, requireLearningReadToken, revokeIntegrationToken } from "./modules/integration-tokens";
-export type { IntegrationPrincipal, IntegrationTokenMetadata } from "./modules/integration-tokens";
-export { getLearningOverview } from "./modules/learning-overview";
+export { issueIntegrationToken, listIntegrationTokens, requireLearningReadToken, revokeIntegrationToken } from "./modules/family";
+export type { IntegrationPrincipal, IntegrationTokenMetadata } from "./modules/family";
+export { getLearningOverview } from "./modules/reporting";
 export {
   reviewSessionActivity,
   readSessionActivityResult,
@@ -27,8 +27,8 @@ export {
   SESSION_ACTIVITY_RETENTION_MS,
   SESSION_ACTIVITY_REVIEW_DEADLINE_MS,
   type SessionActivityErrorCode,
-} from "./modules/session-activity";
-export { readParentWorkCard } from "./modules/parent-work-card";
+} from "./modules/learning";
+export { readParentWorkCard } from "./modules/reporting";
 export {
   isParentSetupRequired,
   setupParent,
@@ -36,8 +36,9 @@ export {
   requireParent,
   logoutParent,
   SESSION_TTL_MS,
-} from "./modules/auth";
-export { listChildren, createChild, updateChild, deleteChild, getPronunciationSettings, updatePronunciationBands } from "./modules/profiles";
+} from "./modules/family";
+export { listChildren, createChild, updateChild, deleteChild } from "./modules/family";
+export { getPronunciationSettings, updatePronunciationBands } from "./modules/learning";
 export {
   createEmptyDeck,
   createDraft,
@@ -53,26 +54,24 @@ export {
   archiveDeck,
   updateDeckSettings,
   applyItems,
-} from "./modules/decks";
+} from "./modules/materials";
 export {
   enqueueDeckGeneration,
   executeGeneration,
   retryGeneration,
   readGeneration,
-  enqueueGenerationRun,
-  claimQueuedRun,
-  markRun,
-} from "./modules/generation";
-export { executeMediaAsset } from "./modules/media-generation";
-export { errorCodeOf, requireGeneration, MAX_AUTOMATIC_ATTEMPTS } from "./modules/generation-runtime";
-export { runDueGenerationWork, type WorkerLimits } from "./modules/generation-worker";
+} from "./modules/materials";
+export { claimQueuedRun, enqueueGenerationRun, markRun } from "./modules/materials";
+export { executeMediaAsset } from "./modules/materials";
+export { errorCodeOf, requireGeneration, MAX_AUTOMATIC_ATTEMPTS } from "./modules/materials";
+export { runDueGenerationWork, type WorkerLimits } from "./modules/materials";
 export {
   createLesson,
   executeLessonGeneration,
   regenerateObjective,
   applyLessonExercises,
   splitStages,
-} from "./modules/lessons/lesson-drafts";
+} from "./modules/materials";
 export {
   lessonCatalog,
   readLessonDeck,
@@ -80,25 +79,25 @@ export {
   publishLessonDraft,
   createLessonDraftFromPublished,
   deckIdOfLessonVersion,
-} from "./modules/lessons/lesson-api";
+} from "./modules/materials";
 export {
   lessonObjectiveProgress,
   listLessonVerdicts,
   decideLessonVerdict,
   acceptVerdictAsVariant,
-} from "./modules/lessons/lesson-supervision";
+} from "./modules/materials";
 export {
   reconcileDraftAssets,
   regenerateRevisionAsset,
   omitRevisionAsset,
   readReadyMedia,
-} from "./modules/media-reconciliation";
-export { prepareUiAudio, readUiAudio } from "./modules/ui-audio";
+} from "./modules/materials";
+export { prepareUiAudio, readUiAudio } from "./modules/materials";
 export {
   buildPayload,
   payloadToItem,
   validateItems,
-} from "./modules/item-payload";
+} from "./modules/materials";
 export { classifyRevisionImpact, buildSkillCriteria } from "./domain/revision-impact";
 export { computeTargetKey, normalizeTargetText } from "./domain/target-key";
 export { chooseReadingDirection, hasScheduledWork, selectTask } from "./domain/scheduler";
@@ -140,37 +139,35 @@ export {
   nextTask,
   endSession,
   completePresentation,
-  RESUME_WINDOW_MS,
-  SESSION_TIME_LIMIT_MS,
-  sessionTimeLimitMs,
   DEFAULT_TASK_BUDGET,
-} from "./modules/sessions";
-export { recordEvent, authorizeDisclosure, contextOf } from "./modules/events";
-export type { SessionContextShape } from "./modules/events";
-export { getMockTestReport, listMockTests, readMockTestSummary } from "./modules/mock-tests";
+} from "./modules/learning";
+export { RESUME_WINDOW_MS, SESSION_TIME_LIMIT_MS, sessionTimeLimitMs } from "./domain/session-limits";
+export { recordEvent, authorizeDisclosure, contextOf } from "./modules/learning";
+export type { SessionContextShape } from "./modules/learning";
+export { getMockTestReport, listMockTests, readMockTestSummary } from "./modules/learning";
 export {
   getMockTestReportForSession,
   listMockTestReportsForDeck,
   readMockTestSummaryForSession,
-} from "./modules/mock-test-reports";
+} from "./modules/learning";
 export {
   getLessonMockTestReport,
   listLessonMockTests,
   readLessonMockTestSummary,
   isLessonMockPlan,
-} from "./modules/lessons/lesson-mock-tests";
-export { readDeckKind, mockTestKindOfSession } from "./modules/deck-kind";
+} from "./modules/learning";
+
 export {
   submitAttempt,
   readAttempt,
   finalizeAttempt,
   ATTEMPT_PROCESSING_TIMEOUT_MS,
-} from "./modules/attempts";
-export { listKidProfiles, listKidDecks } from "./modules/kid";
+} from "./modules/learning";
+export { listKidProfiles, listKidDecks } from "./modules/reporting";
 export { getProgress } from "./modules/reporting";
-export { readSkillHistory, readSkillHistories, skillHistoryKey } from "./modules/skill-history";
-export { persistSkillProjection } from "./modules/skill-projections";
-export { rebuildProgress, type RebuildProgressOptions, type RebuildProgressReport } from "./modules/progress-rebuild";
+export { readSkillHistory, readSkillHistories, skillHistoryKey } from "./modules/learning";
+export { persistSkillProjection } from "./modules/learning";
+export { rebuildProgress, type RebuildProgressOptions, type RebuildProgressReport } from "./modules/learning";
 export { evaluateWritten, evaluateChoice, evaluateNonAnswer, assessedSkills } from "./domain/evaluate";
 export { chooseFeedback } from "./domain/feedback";
 export { projectProgress } from "./domain/progress";
@@ -200,7 +197,7 @@ export type {
 } from "./ports/ai";
 export type { MediaStore, StoredBlob } from "./ports/media";
 export { createLocalMediaStore } from "./providers/media/local";
-export { setDeckCover, clearDeckCover, generateDeckCover, MAX_DECK_COVER_BYTES, MAX_DECK_COVER_SAMPLE_ITEMS } from "./modules/deck-cover";
+export { setDeckCover, clearDeckCover, generateDeckCover, MAX_DECK_COVER_BYTES, MAX_DECK_COVER_SAMPLE_ITEMS } from "./modules/materials";
 export { createOpenAiLlmProvider } from "./providers/openai/llm";
 export { createOpenAiTtsProvider } from "./providers/openai/tts";
 export { createOpenAiImageProvider } from "./providers/images/openai";
@@ -222,8 +219,8 @@ export {
   MIN_STT_CONFIDENCE,
   SPEECH_ANALYSIS_TIMEOUT_MS,
   type SpeechAttemptInput,
-} from "./modules/speech";
-export { authorizeFeedbackAudio } from "./modules/feedback-audio";
+} from "./modules/learning";
+export { authorizeFeedbackAudio } from "./modules/learning";
 export {
   deterministicBytes,
   fakeGenerationDeps,

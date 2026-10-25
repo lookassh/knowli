@@ -26,8 +26,16 @@ function forbiddenDependencies(source: string): string[] {
     } else if (ts.isCallExpression(node)) {
       if (node.expression.kind === ts.SyntaxKind.ImportKeyword) {
         forbidden.push("dynamic import");
-      } else if (ts.isIdentifier(node.expression) && node.expression.text === "require") {
-        forbidden.push("require");
+      } else if (ts.isIdentifier(node.expression) && (node.expression.text === "require" || node.expression.text === "randomUUID")) {
+        forbidden.push(node.expression.text);
+      }
+    } else if (ts.isPropertyAccessExpression(node)) {
+      const receiver = node.expression.getText(ast);
+      if ((receiver === "Math" && node.name.text === "random")
+        || (receiver === "crypto" && node.name.text === "randomUUID")
+        || (receiver === "Date" && node.name.text === "now")
+        || (receiver === "process" && node.name.text === "env")) {
+        forbidden.push(`${receiver}.${node.name.text}`);
       }
     }
 
@@ -61,6 +69,11 @@ describe("granica zależności reguły zakończenia zadania", () => {
     'require("next/server");',
     'import type { X } from "@orpc/server";',
     'import x = require("../config");',
+    "function decide() { return Math.random() > 0.5; }",
+    "function decide() { return crypto.randomUUID(); }",
+    "function decide() { return randomUUID(); }",
+    "function decide() { return Date.now(); }",
+    "function decide() { return process.env.FLAG; }",
   ])("odrzuca zależność spoza typów domenowych: %s", (source) => {
     expect(forbiddenDependencies(source)).not.toEqual([]);
   });

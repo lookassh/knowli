@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { buildTestServices, ManualClock, openRestartedServices, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration } from "./fakes";
 import { readTrainingSessionPlan } from "@learning/server";
-import { issueNextVocabularyPlanTask } from "../../packages/server/src/modules/vocabulary-plan-tasks";
+import { issueNextVocabularyPlanTask } from "../../packages/server/src/modules/learning/vocabulary-plan-tasks";
 import { childProfiles, itemRevisionSkills, learningSessions } from "../../packages/server/src/db/schema";
 import type { TrainingSessionPlanSnapshot, TrainingSessionSlot } from "../../packages/server/src/domain/training-session-plan";
 import { computeTargetKey } from "../../packages/server/src/domain/target-key";

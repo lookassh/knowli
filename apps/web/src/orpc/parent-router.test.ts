@@ -863,7 +863,7 @@ describe("parent oRPC router — drafts", () => {
   });
 });
 
-describe("parent oRPC router — mock-tests (dispatch lekcja/słówka)", () => {
+describe("parent oRPC router — mock-tests (fasada lekcja/słówka po stronie serwera)", () => {
   it("lista bez query childId/deckId kończy się validation/400 bez czytania rodzaju zestawu", async () => {
     const response = await call("/mock-tests", { headers: sessionCookie });
 

@@ -100,14 +100,15 @@ Nie importujemy tutaj next/navigation, next/image, Server Actions ani @learning/
 | packages/server/src/domain/independence.ts | Kwalifikacja próby i ekspozycje |
 | packages/server/src/domain/task-completion.ts | Decyzja o stanie zadania po próbie; `attempts.ts` koordynuje zapis wyniku |
 | packages/server/src/domain/task-materialization.ts | Składa prompt i prywatny klucz z gotowych opcji; `sessions.ts` tasuje opcje, tworzy ID i zapisuje zadanie |
+| packages/server/src/domain/session-limits.ts | Czyste limity czasu sesji współdzielone przez sesje, próby i raportowanie |
 | packages/server/src/domain/progress.ts | Wyliczanie projekcji z historii |
 | packages/server/src/domain/learning-work.ts | Oddzielne terminy i gotowość Recall, pisowni i wymowy |
 | packages/server/src/domain/support-cycle.ts | Odtwarzanie pojedynczego cyklu wsparcia z historii sesji |
 | packages/server/src/domain/recognition-options.ts | Bezpieczne, unikalne opcje rozpoznawania i fragmentów |
 | packages/server/src/domain/confusion-priority.ts | Kierunkowe rankowanie wiarygodnych mylonych par |
-| packages/server/src/modules/skill-history.ts | Odczyt historii ocen ograniczony do dziecka, skill version i umiejętności |
-| packages/server/src/modules/skill-projections.ts | Wspólny zapis projekcji postępu |
-| packages/server/src/modules/learning-snapshot.ts | Zbiorcza migawka postępu, pracy, ekspozycji i pomyłek |
+| packages/server/src/modules/learning/skill-history.ts | Odczyt historii ocen ograniczony do dziecka, skill version i umiejętności |
+| packages/server/src/modules/learning/skill-projections.ts | Wspólny zapis projekcji postępu |
+| packages/server/src/modules/learning/learning-snapshot.ts | Zbiorcza migawka postępu, pracy, ekspozycji i pomyłek |
 | packages/server/src/domain/scheduler.ts | Wybór ćwiczenia z ochroną celów oczekujących na samodzielne sprawdzenie |
 | packages/server/src/domain/test-preparation.ts | Czyste wyznaczanie 48-godzinnego okna terminu w strefie rodziny, z obsługą DST |
 | packages/server/src/domain/feedback.ts | Komunikaty zgodne z wynikiem |
@@ -120,27 +121,31 @@ Komunikaty wynikowe generowane przez domenę (feedback.ts) trafiają do klienta 
 
 ## 5. Przypadki użycia i infrastruktura
 
+Przypadki użycia w `packages/server/src/modules/` są pogrupowane w cztery obszary produktu: `materials/` (zestawy, rewizje, generowanie, zasoby), `learning/` (sesje, zadania, próby, oceny, ekspozycje, projekcje, kartkówki), `family/` (profile, dostęp rodzica, tokeny integracyjne) i `reporting/` (modele odczytu postępu i aktywności). Każdy obszar ma wąski `index.ts` jako publiczne API; inne obszary importują wyłącznie z barrela, a wewnątrz obszaru obowiązują bezpośrednie importy plików. Dozwolone kierunki to reporting → learning → materials oraz zależność każdego obszaru od `family`; moduły źródłowe nie importują raportowania. Granic pilnuje `packages/server/src/modules/module-boundaries.architecture.test.ts`, który dodatkowo sprawdza, że czysta domena (`src/domain`) nie importuje modułów ani infrastruktury. Publiczne `packages/server/src/index.ts` komponuje eksporty pakietu z barreli obszarów; klienci web i worker korzystają wyłącznie z `@learning/server`. Wyjątek stanowią testy integracyjne, które dla kilku wewnętrznych helperów (np. zapis ekspozycji, migawka nauki) importują pliki obszarów bezpośrednio — to jawnie nazwany dług testowy, nie druga ścieżka wykonania.
+
 | Ścieżka | Odpowiedzialność |
 | --- | --- |
-| packages/server/src/modules/profiles.ts | Profile, kasowanie danych dziecka |
-| packages/server/src/modules/auth.ts | Hasło/PIN, sesje i limity logowania |
-| packages/server/src/modules/decks.ts | Szkice, rewizje, przypisania, publikacja |
-| packages/server/src/modules/generation.ts | Zlecanie, odczyt i retry runów; wykonanie treści słówek oraz delegowanie runów mediów |
-| packages/server/src/modules/media-generation.ts | Wykonanie jednego zasobu TTS/ilustracji: lease assetu, wywołanie providera, zapis niezmiennego pliku i finalizacja asset/run |
-| packages/server/src/modules/generation-runtime.ts | Wspólne wymagane zależności generowania, limit prób i klasyfikacja błędów dla wykonawców oraz workera |
-| packages/server/src/modules/generation-worker.ts | Koordynacja pracy generowania: odczyt kolejek, limity i delegowanie do wykonawców słówek, lekcji i mediów |
-| packages/server/src/modules/worker-schedule.ts | Reguły rotacji kolejek i obsługi wolnych slotów, bez zależności od bazy |
-| packages/server/src/modules/media-reconciliation.ts | Dopasowanie fingerprintów szkicu, zachowanie zgodnych zasobów i enqueue brakujących |
-| packages/server/src/modules/sessions.ts | Start/resume, koordynacja next i starsze planowanie treningu, historia ekspozycji, completePresentation, koniec |
-| packages/server/src/modules/vocabulary-plan-tasks.ts | Wybór i pomijanie slotu z niezmiennego planu; wydanie deleguje do wspólnego writera |
-| packages/server/src/modules/vocabulary-task-issuance.ts | Wspólny zapis zadania treningu słownictwa, faktów, ekspozycji i rezerwacji w Tx koordynatora |
-| packages/server/src/modules/mock-test-reports.ts | Publiczny dispatch raportu, listy i omówienia do implementacji kartkówki słówek albo lekcji; istniejące operacje zachowują własne transakcje, blokady, zamykanie sesji i zapis ekspozycji |
+| packages/server/src/modules/family/profiles.ts | Tożsamość i preferencje profilu, kasowanie danych dziecka |
+| packages/server/src/modules/learning/learning-settings.ts | Ustawienia polityki nauki dziecka (progi wymowy, nowe wersje polityki) |
+| packages/server/src/modules/family/auth.ts | Hasło/PIN, sesje i limity logowania |
+| packages/server/src/modules/materials/decks.ts | Szkice, rewizje, przypisania, publikacja |
+| packages/server/src/modules/materials/generation.ts | Zlecanie zestawu słówek, odczyt i retry runów; wykonanie treści słówek oraz delegowanie runów mediów |
+| packages/server/src/modules/materials/generation-runs.ts | Współdzielony cykl życia runów generacji (zlecenie idempotentne, claim CAS, status, unieważnianie runów lekcji) dla wykonawców słówek, lekcji i mediów |
+| packages/server/src/modules/materials/media-generation.ts | Wykonanie jednego zasobu TTS/ilustracji: lease assetu, wywołanie providera, zapis niezmiennego pliku i finalizacja asset/run |
+| packages/server/src/modules/materials/generation-runtime.ts | Wspólne wymagane zależności generowania, limit prób i klasyfikacja błędów dla wykonawców oraz workera |
+| packages/server/src/modules/materials/generation-worker.ts | Koordynacja pracy generowania: odczyt kolejek, limity i delegowanie do wykonawców słówek, lekcji i mediów |
+| packages/server/src/modules/materials/worker-schedule.ts | Reguły rotacji kolejek i obsługi wolnych slotów, bez zależności od bazy |
+| packages/server/src/modules/materials/media-reconciliation.ts | Dopasowanie fingerprintów szkicu, zachowanie zgodnych zasobów i enqueue brakujących |
+| packages/server/src/modules/learning/sessions.ts | Start/resume, koordynacja next i starsze planowanie treningu, historia ekspozycji, completePresentation, koniec |
+| packages/server/src/modules/learning/vocabulary-plan-tasks.ts | Wybór i pomijanie slotu z niezmiennego planu; wydanie deleguje do wspólnego writera |
+| packages/server/src/modules/learning/vocabulary-task-issuance.ts | Wspólny zapis zadania treningu słownictwa, faktów, ekspozycji i rezerwacji w Tx koordynatora |
+| packages/server/src/modules/learning/mock-test-reports.ts | Publiczny dispatch raportu, listy i omówienia do implementacji kartkówki słówek albo lekcji; istniejące operacje zachowują własne transakcje, blokady, zamykanie sesji i zapis ekspozycji |
 | packages/server/src/domain/training-session-plan.ts | Prywatny format planu treningu słówek, walidacja wersji oraz niezmienne sloty |
-| packages/server/src/modules/events.ts | Kontekst sesji i zapis/zamknięcie ujawnienia przed HTTP; opcjonalne potwierdzenia klienta |
-| packages/server/src/modules/attempts.ts | Rezerwacja i finalizacja prób |
-| packages/server/src/modules/speech.ts | Krótka analiza nagrania i wynik częściowy |
-| packages/server/src/modules/reporting.ts | Postęp i mylone pary |
-| packages/server/src/modules/progress-rebuild.ts | Dry-run oraz transakcyjna, scoped odbudowa projekcji z historii |
+| packages/server/src/modules/learning/events.ts | Kontekst sesji i zapis/zamknięcie ujawnienia przed HTTP; opcjonalne potwierdzenia klienta |
+| packages/server/src/modules/learning/attempts.ts | Rezerwacja i finalizacja prób |
+| packages/server/src/modules/learning/speech.ts | Krótka analiza nagrania i wynik częściowy |
+| packages/server/src/modules/reporting/reporting.ts | Postęp i mylone pary |
+| packages/server/src/modules/learning/progress-rebuild.ts | Dry-run oraz transakcyjna, scoped odbudowa projekcji z historii |
 | packages/server/src/db/client.ts | Połączenie, pula i transakcje |
 | packages/server/src/db/schema.ts | Autorytatywna definicja tabel Drizzle po implementacji |
 | packages/server/src/db/queries/ | Konkretne zapytania grupowane według modułu |
@@ -198,11 +203,11 @@ DocumentAnalysisProvider pojawi się dopiero podczas budowy source_material. Nie
 
 ## 7. Czego nie tworzymy teraz
 
-Uzupełnienie #30 (2026-10-10): `contracts/src/mock-tests.ts` definiuje cele, liczbę i publiczne raporty; prywatne typy planu są w `server/src/domain/mock-test-types.ts`. `mock-test-plan.ts` dobiera zamrożoną porcję, `mock-test-report.ts` liczy pełny zakres, a `server/src/modules/mock-tests.ts` wydaje sloty, zamyka próbę i czyta raport/omówienie. Migracja `server/drizzle/0004_mock_tests.sql` dodaje konfigurację przypisania, tryb i niezmienność planu/raportu. `kid-ui/src/screens/MockTestSummaryScreen.tsx` obsługuje potwierdzenie porcji i omówienie; rodzic korzysta z `web/src/parent/AssignmentTestGoalFields.tsx` oraz `MockTestReportPanel.tsx`. Synthetic fixtures pozostają w `tests/fixtures/mock-test-world.ts`; nowe testy obejmują `mock-test-settings`, `mock-tests`, `mock-test-reporting` (PostgreSQL) i `mock-test`, `mock-test-parent` (E2E).
+Uzupełnienie #30 (2026-10-10): `contracts/src/mock-tests.ts` definiuje cele, liczbę i publiczne raporty; prywatne typy planu są w `server/src/domain/mock-test-types.ts`. `mock-test-plan.ts` dobiera zamrożoną porcję, `mock-test-report.ts` liczy pełny zakres, a `server/src/modules/learning/mock-tests.ts` wydaje sloty, zamyka próbę i czyta raport/omówienie. Migracja `server/drizzle/0004_mock_tests.sql` dodaje konfigurację przypisania, tryb i niezmienność planu/raportu. `kid-ui/src/screens/MockTestSummaryScreen.tsx` obsługuje potwierdzenie porcji i omówienie; rodzic korzysta z `web/src/parent/AssignmentTestGoalFields.tsx` oraz `MockTestReportPanel.tsx`. Synthetic fixtures pozostają w `tests/fixtures/mock-test-world.ts`; nowe testy obejmują `mock-test-settings`, `mock-tests`, `mock-test-reporting` (PostgreSQL) i `mock-test`, `mock-test-parent` (E2E).
 
 Brak apps/android, osobnego backendu Express/Nest, package OCR, repozytorium wektorowego i systemu pluginów. Przyszły host Capacitor będzie konsumował @learning/kid-ui i @learning/contracts oraz istniejące API. Nie trzeba dziś budować go tylko po to, aby wykazać możliwość rozbudowy.
 
-Lekcje i moduły przedmiotów (moduł gramatyki, 2026-10-12): silnik i przedmioty żyją w `packages/server/src/domain/lessons/**`, a przypadki użycia w `packages/server/src/modules/lessons/**`. Dodane ścieżki:
+Lekcje i moduły przedmiotów (moduł gramatyki, 2026-10-12): silnik i przedmioty żyją w `packages/server/src/domain/lessons/**`, a przypadki użycia w obszarach lekcji: autorstwo i generowanie w `packages/server/src/modules/materials/lessons/**`, silnik sesji i prób w `packages/server/src/modules/learning/lessons/**`. Dodane ścieżki:
 
 | Ścieżka | Rola |
 | --- | --- |
@@ -220,7 +225,8 @@ Lekcje i moduły przedmiotów (moduł gramatyki, 2026-10-12): silnik i przedmiot
 | packages/server/src/domain/lessons/mock-test-plan.ts | Plan kartkówki lekcji |
 | packages/server/src/domain/lessons/subjects/english-grammar/ | `module.ts`, `normalizer.ts`, `error-categories.ts`, `validators.ts`, `prompts.ts`, `topics/present-simple.ts` |
 | packages/server/src/domain/lessons/testing/history-like-subject.ts | Fixture przedmiotu nie-językowego (dowód niezależności silnika) |
-| packages/server/src/modules/lessons/ | `lesson-api.ts`, `lesson-drafts.ts`, `lesson-sessions.ts`, `lesson-attempts.ts`, `lesson-materialize.ts`, `lesson-mock-tests.ts`, `lesson-supervision.ts` |
+| packages/server/src/modules/materials/lessons/ | `lesson-api.ts`, `lesson-drafts.ts`, `lesson-supervision.ts`, `lesson-generation-{control,errors,policy}.ts` (autorstwo, generowanie i nadzór nad materiałem lekcji) |
+| packages/server/src/modules/learning/lessons/ | `lesson-sessions.ts`, `lesson-attempts.ts`, `lesson-materialize.ts`, `lesson-mock-tests.ts`, `lesson-deck-overview.ts` (sesje, próby i kartkówki lekcji) |
 | packages/server/src/ports/ai.ts | + `AnswerGraderProvider`, `LlmProvider.generateLessonPool` |
 | packages/server/src/providers/openai-compatible/grader.ts | Adapter modelu oceniającego (zgodny z OpenAI) |
 | packages/contracts/src/lessons.ts | DTO lekcji, ćwiczeń, postępu celów, werdyktów, raportu kartkówki, katalogu przedmiotów |
@@ -230,15 +236,15 @@ Lekcje i moduły przedmiotów (moduł gramatyki, 2026-10-12): silnik i przedmiot
 
 Testy lekcji: `packages/server/src/domain/lessons/*.test.ts` (jednostkowe, kontrolowany zegar), `tests/integration/lesson-*.test.ts` (PostgreSQL + fake grader), `tests/e2e/lesson-*.spec.ts` (Playwright, fake providerzy). Fixtures lekcji w `tests/fixtures/`.
 
-Edycja profilu: `contracts/src/decks.ts` definiuje `ChildPatchSchema`, `server/src/modules/profiles.ts` implementuje `updateChild`, a PATCH `/children/{id}` udostępnia router oRPC Parent API (`apps/web/src/parent/orpc-contract.ts` + `apps/web/src/orpc/parent-router.ts`). `ChildEditor.tsx` odpowiada także za formularz imienia i awatara; istniejąca historia nie jest modyfikowana.
+Edycja profilu: `contracts/src/decks.ts` definiuje `ChildPatchSchema`, `server/src/modules/family/profiles.ts` implementuje `updateChild`, a PATCH `/children/{id}` udostępnia router oRPC Parent API (`apps/web/src/parent/orpc-contract.ts` + `apps/web/src/orpc/parent-router.ts`). `ChildEditor.tsx` odpowiada także za formularz imienia i awatara; istniejąca historia nie jest modyfikowana.
 
 ### Wariant obrazkowy słownictwa (2026-10-14)
 
-Zgodność profilu, wersji zestawu i Kid UI: `packages/contracts/src/kid.ts`, `decks.ts`, `ui-audio.ts`; domena/publikacja/generowanie: `packages/server/src/domain/vocabulary-capabilities.ts`, `picture-recognition-options.ts`, `modules/decks.ts` i `modules/sessions.ts`; migracja schematu: `packages/server/drizzle/0010_picture_vocabulary.sql`. Kid UI korzysta z `src/visuals/MeaningVisualView.tsx`, `src/session/guidance-audio.ts`, `src/exercises/Picture*.tsx` oraz istniejącego `KidApi` — bez importu serwera. Testy regresji: `tests/integration/picture-vocabulary.test.ts`, `packages/kid-ui/src/session/session-controller.test.ts` i `tests/e2e/picture-vocabulary.spec.ts`. Raport MCP pozostaje `learning-overview` v1; nie ma nowego endpointu ani schematu konsumenta.
+Zgodność profilu, wersji zestawu i Kid UI: `packages/contracts/src/kid.ts`, `decks.ts`, `ui-audio.ts`; domena/publikacja/generowanie: `packages/server/src/domain/vocabulary-capabilities.ts`, `picture-recognition-options.ts`, `modules/materials/decks.ts` i `modules/learning/sessions.ts`; migracja schematu: `packages/server/drizzle/0010_picture_vocabulary.sql`. Kid UI korzysta z `src/visuals/MeaningVisualView.tsx`, `src/session/guidance-audio.ts`, `src/exercises/Picture*.tsx` oraz istniejącego `KidApi` — bez importu serwera. Testy regresji: `tests/integration/picture-vocabulary.test.ts`, `packages/kid-ui/src/session/session-controller.test.ts` i `tests/e2e/picture-vocabulary.spec.ts`. Raport MCP pozostaje `learning-overview` v1; nie ma nowego endpointu ani schematu konsumenta.
 
 ### Okładka zestawu słownictwa (2026-10-15)
 
-Wspólne ustawienie `decks.cover_asset_id`, migracja `0011_deck_cover_image.sql`, endpoint rodzica `/decks/{id}/cover`, walidacja i zapis przez `modules/deck-cover.ts`; Kid API zwraca opcjonalne `coverAssetId`. Rodzic może podglądać lub usunąć okładkę dla zestawu słownictwa. Kid UI wyświetla ją przed dotychczasowym `coverVisual`; MCP i treść wersji zestawu pozostają bez zmian.
+Wspólne ustawienie `decks.cover_asset_id`, migracja `0011_deck_cover_image.sql`, endpoint rodzica `/decks/{id}/cover`, walidacja i zapis przez `modules/materials/deck-cover.ts`; Kid API zwraca opcjonalne `coverAssetId`. Rodzic może podglądać lub usunąć okładkę dla zestawu słownictwa. Kid UI wyświetla ją przed dotychczasowym `coverVisual`; MCP i treść wersji zestawu pozostają bez zmian.
 
 ### Aktywna praca do rozliczeń nagród (2026-10-16)
 
@@ -248,4 +254,4 @@ Naliczanie punktów i podsumowania: settlement przechowuje czas, punkty, resztę
 
 ### Projekcje nagród i wycofanie rundy dnia (2026-10-17)
 
-`packages/server/drizzle/0016_reward_projections_and_retire_daily_round.sql` odtwarza `child_reward_projection`, `deck_reward_projection` i `reward_day_projection`, kończy istniejące aktywne rundy bez settlementu oraz blokuje tworzenie aktywnej sesji `daily_round`. `packages/server/src/modules/reward-activity.ts` utrzymuje projekcje w transakcji settlementu i używa ich przy odczytach profili, zestawów oraz rezerwacji Xbox; ręczna odbudowa pojedynczego dziecka pozostaje jawna. Usunięto start rundy i preflight z `modules/sessions.ts`, `modules/lessons/`, API wejściowego oraz Kid UI; historyczny tryb jest zachowany w DTO i widoku karty rodzica. Zmiana DTO Kid/Parent Work Card nie zmienia `learning-overview`: MCP, walidator, JSON Schema i skill Hermesa nie konsumują tych kontraktów ani nagród.
+`packages/server/drizzle/0016_reward_projections_and_retire_daily_round.sql` odtwarza `child_reward_projection`, `deck_reward_projection` i `reward_day_projection`, kończy istniejące aktywne rundy bez settlementu oraz blokuje tworzenie aktywnej sesji `daily_round`. `packages/server/src/modules/reward-activity.ts` utrzymuje projekcje w transakcji settlementu i używa ich przy odczytach profili, zestawów oraz rezerwacji Xbox; ręczna odbudowa pojedynczego dziecka pozostaje jawna. Usunięto start rundy i preflight z `modules/learning/sessions.ts`, `modules/lessons/`, API wejściowego oraz Kid UI; historyczny tryb jest zachowany w DTO i widoku karty rodzica. Zmiana DTO Kid/Parent Work Card nie zmienia `learning-overview`: MCP, walidator, JSON Schema i skill Hermesa nie konsumują tych kontraktów ani nagród.

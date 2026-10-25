@@ -70,7 +70,7 @@ import { assertDeclaredBodyCap } from "./request-limits";
  * implementuje cały kontrakt (`parentApiContract`): bootstrap autoryzacji
  * (auth: login/logout/setup), profile dzieci, zestawy (decks, w tym okładka
  * ze streamingiem 5 MB), szkice wersji (drafts), kartkówki (mock-tests
- * z dispatchem lekcja/słówka), kartę pracy, lekcje (lessons, lesson-catalog,
+ * dispatch lekcja/słówka prowadzi fasada serwera), kartę pracy, lekcje (lessons, lesson-catalog,
  * lesson-verdicts, lesson-drafts), generację (generation), przypisania
  * (assignments) i postępy (progress). Ścieżki spoza kontraktu
  * (`matched === false`) dostają `AppError("not_found")` bezpośrednio
