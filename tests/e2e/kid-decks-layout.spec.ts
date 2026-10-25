@@ -199,6 +199,21 @@ test("microphone settings stay inside portrait, landscape, tablet and desktop vi
   }
 });
 
+test("microphone settings respect safe-area insets", async ({ page }) => {
+  const viewport = { width: 844, height: 390 };
+  await page.setViewportSize(viewport);
+  await openDeckScreen(page, [makeDeck(0)]);
+  await page.addStyleTag({ content: ".kid-ui { --kid-safe-left: 32px; --kid-safe-right: 47px; --kid-safe-top: 12px; --kid-safe-bottom: 21px; }" });
+
+  await page.getByTestId("kid-mic-settings").click();
+  const panel = page.getByTestId("kid-mic-settings-panel");
+  const panelBox = await panel.boundingBox();
+  expect(panelBox!.x).toBeGreaterThanOrEqual(32);
+  expect(panelBox!.x + panelBox!.width).toBeLessThanOrEqual(viewport.width - 47);
+  expect(panelBox!.y).toBeGreaterThanOrEqual(12);
+  expect(panelBox!.y + panelBox!.height).toBeLessThanOrEqual(viewport.height - 21);
+});
+
 test("microphone settings remain inside a short viewport when denial details appear", async ({ page }) => {
   const viewport = { width: 360, height: 320 };
   await page.setViewportSize(viewport);

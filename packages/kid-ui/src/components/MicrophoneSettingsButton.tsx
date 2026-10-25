@@ -1,6 +1,7 @@
 import { Paper, Switch, Text, Title } from "@mantine/core";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement } from "react";
 import { messages } from "@learning/contracts";
+import { useKidPageViewport } from "../layout/viewport";
 import { IconActionButton } from "./IconActionButton";
 import { KidIcon } from "./KidIcon";
 
@@ -22,18 +23,21 @@ export function MicrophoneSettingsButton({
   const buttonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [panelPosition, setPanelPosition] = useState<CSSProperties>();
+  const viewport = useKidPageViewport();
   const label = microphone ? messages.kid.microphoneSettingsOn : messages.kid.microphoneSettingsOff;
 
   const positionPanel = () => {
     const button = buttonRef.current;
     const panel = panelRef.current;
-    if (!button || !panel) return;
+    if (!button || !panel || viewport.width === null || viewport.height === null) return;
 
     const buttonRect = button.getBoundingClientRect();
     const panelRect = panel.getBoundingClientRect();
-    const margin = 16;
-    const left = Math.max(margin, Math.min(buttonRect.left, window.innerWidth - panelRect.width - margin));
-    const top = Math.max(margin, Math.min(buttonRect.bottom + 8, window.innerHeight - panelRect.height - margin));
+    const styles = window.getComputedStyle(button);
+    const inset = (name: string) => Math.max(16, Number.parseFloat(styles.getPropertyValue(name)) || 0);
+    const left = Math.max(inset("--kid-safe-left"), Math.min(buttonRect.left, viewport.width - panelRect.width - inset("--kid-safe-right")));
+    const viewportTop = viewport.offsetTop;
+    const top = Math.max(viewportTop + inset("--kid-safe-top"), Math.min(buttonRect.bottom + 8, viewportTop + viewport.height - panelRect.height - inset("--kid-safe-bottom")));
     setPanelPosition({ position: "fixed", left, top });
   };
 
@@ -46,7 +50,7 @@ export function MicrophoneSettingsButton({
       window.removeEventListener("resize", positionPanel);
       window.removeEventListener("scroll", positionPanel, true);
     };
-  }, [opened, microphone, micDenied]);
+  }, [opened, microphone, micDenied, viewport.width, viewport.height]);
 
   useEffect(() => {
     if (!opened) return;

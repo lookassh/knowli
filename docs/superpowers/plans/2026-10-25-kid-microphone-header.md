@@ -4,13 +4,13 @@
 
 **Goal:** Zastąpić dolny panel mikrofonu ikoną w nagłówku, która otwiera ustawienie odpowiedzi głosowych.
 
-**Architecture:** Właścicielem zmiany jest `packages/kid-ui`. Nowy wspólny komponent `MicrophoneSettingsButton` składa `IconActionButton`, `KidIcon`, Mantine Popover i Switch; `DeckScreen` odpowiada za jego położenie. Istniejący kontroler zachowuje reguły i wywołania API, bez nowych zależności serwerowych i bez zmian transakcji.
+**Architecture:** Właścicielem zmiany jest `packages/kid-ui`. Nowy wspólny komponent `MicrophoneSettingsButton` składa `IconActionButton`, `KidIcon`, pozycjonowany `fixed` panel Mantine `Paper` i Switch; `DeckScreen` odpowiada za jego położenie. `KidPage` dostarcza pomiary viewportu przez kontekst, a panel uwzględnia safe area. Istniejący kontroler zachowuje reguły i wywołania API, bez nowych zależności serwerowych i bez zmian transakcji.
 
 **Tech Stack:** React, TypeScript, Mantine, Vitest/Testing Library, Playwright, pnpm.
 
 **Spec:** `docs/superpowers/specs/2026-10-25-kid-microphone-header-design.md` — propozycja do przeglądu razem z planem.
 
-## Global Constraints
+## Ograniczenia globalne
 
 - `KidPage` pozostaje jedynym właścicielem pomiaru viewportu; kompozycja ekranu przez `KidScreen`.
 - `IconActionButton`, minimum 48 × 48 px; bez surowych kontrolek HTML poza komponentami wspólnymi.
@@ -20,7 +20,7 @@
 - Bez zmian `LearnScreen`, kontrolera, DTO, backendu, bazy i MCP. Jeśli implementacja ujawni potrzebę zmiany kontraktu, najpierw zaktualizować plan.
 - Nie commitować niezwiązanych plików; nie pushować i nie tworzyć PR w ramach samego przygotowania planu.
 
-## Review Focus
+## Punkty przeglądu
 
 1. Długi czas aktywności, „Strefa rodzica”, błąd odsłuchu i brak odsłuchu: ikony oraz lista nadal osiągalne — zadanie 2.
 2. `microphone=false, micDenied=true` po świadomym wyłączeniu: neutralny stan wyłączony, bez fałszywego błędu uprawnień — zadanie 1.
@@ -79,6 +79,6 @@
 - [x] **Step 5: Review i raport.** Niezależny reviewer przejrzał cały diff względem `origin/main` i poprawkę krótkiego viewportu; brak actionable findings. Brak odbioru fizycznego telefonu. API → MCP → skill bez zmian: UI w Kid UI nie zmienia endpointów, DTO, autoryzacji ani znaczenia raportów.
 - [x] **Step 6: Commit regresji.** Dodać wyłącznie pliki planu, specyfikacji i E2E; commit `test(kid-ui): cover header microphone settings and responsive layouts`. Push i PR są autoryzowane przez właściciela w bieżącym poleceniu.
 
-## Self-review planu
+## Samoocena planu
 
-Zakres projektu przypisany do zadań 1–2; komponent nie zmienia publicznych propsów DeckScreen ani reguł kontrolera. Zidentyfikowano wszystkie aktualne pliki E2E i SSR z przełącznikiem. Każdy punkt Review Focus ma test w zadaniu właściciela. Błąd Mantine Popover rozwiązano przez przewidywalny panel w portalu aplikacji; E2E potwierdza geometrię panelu.
+Zakres projektu przypisany do zadań 1–2; komponent nie zmienia publicznych propsów DeckScreen ani reguł kontrolera. Zidentyfikowano wszystkie aktualne pliki E2E i SSR z przełącznikiem. Każdy punkt przeglądu ma test w zadaniu właściciela. Błąd Mantine Popover rozwiązano przez panel Mantine `Paper` pozycjonowany `fixed` bez portalu; `KidPage` pozostaje właścicielem pomiarów viewportu, a panel korzysta z tych wartości i zmiennych safe area.
