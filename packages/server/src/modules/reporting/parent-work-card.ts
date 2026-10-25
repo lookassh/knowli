@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, lt } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lt, lte, or } from "drizzle-orm";
 import { ParentWorkCardDtoSchema, ParentWorkCardQuerySchema, SessionActivityReviewRecordSchema, taskActiveMs, type ParentSessionActivityDto, type ParentWorkCardDto } from "@learning/contracts";
 import type { Services } from "../../config";
 import { localDateAt, validRewardTimezone } from "../../domain/reward-activity";
@@ -22,6 +22,11 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
   ));
   for (const session of reviewCandidates) await resolveInterruptedSessionActivity(services, session.id);
 
+  // Okno UTC z buforem pokrywa żądany dzień lokalny w każdej strefie z kontekstu sesji;
+  // dokładny dzień nadal rozstrzygają poniższe filtry localDateAt w JS.
+  const dayUtcMs = new Date(`${query.date}T00:00:00.000Z`).getTime();
+  const windowStart = new Date(dayUtcMs - 172_800_000);
+  const windowEnd = new Date(dayUtcMs + 259_200_000);
   const sessions = await services.db.select({
     id: learningSessions.id, mode: learningSessions.mode, state: learningSessions.state,
     startedAt: learningSessions.startedAt, endedAt: learningSessions.endedAt,
@@ -30,7 +35,7 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
     activityReportExpiresAt: learningSessions.activityReportExpiresAt,
     deckTitle: deckVersions.title, deckVersionNumber: deckVersions.versionNumber,
   }).from(learningSessions).innerJoin(deckVersions, eq(deckVersions.id, learningSessions.deckVersionId))
-    .where(eq(learningSessions.childId, query.childId)).orderBy(asc(learningSessions.startedAt));
+    .where(and(eq(learningSessions.childId, query.childId), lte(learningSessions.startedAt, windowEnd), or(isNull(learningSessions.endedAt), gte(learningSessions.endedAt, windowStart)))).orderBy(asc(learningSessions.startedAt));
 
   const timezoneOf = (context: unknown): string => validRewardTimezone((context as Record<string, unknown> | null)?.timezone);
 
@@ -44,7 +49,7 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
     issuedAt: sessionTasks.issuedAt, context: learningSessions.context })
     .from(attempts).innerJoin(sessionTasks, eq(sessionTasks.id, attempts.taskId))
     .innerJoin(learningSessions, eq(learningSessions.id, sessionTasks.sessionId))
-    .where(eq(attempts.childId, query.childId));
+    .where(and(eq(attempts.childId, query.childId), gte(attempts.receivedAt, windowStart), lt(attempts.receivedAt, windowEnd)));
   const attemptsByTask = new Map<string, typeof allAttempts>();
   for (const row of allAttempts) {
     const timezone = timezoneOf(row.context);
@@ -55,14 +60,15 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
     daySessionIds.add(row.sessionId);
   }
   const issuedTasks = await services.db.select({ sessionId: sessionTasks.sessionId, issuedAt: sessionTasks.issuedAt })
-    .from(sessionTasks).where(eq(sessionTasks.childId, query.childId));
+    .from(sessionTasks).where(and(eq(sessionTasks.childId, query.childId), gte(sessionTasks.issuedAt, windowStart), lt(sessionTasks.issuedAt, windowEnd)));
   const sessionById = new Map(sessions.map(session => [session.id, session]));
   for (const task of issuedTasks) {
     const session = sessionById.get(task.sessionId);
     if (!session) continue;
     if (localDateAt(task.issuedAt, timezoneOf(session.context)) === query.date) daySessionIds.add(task.sessionId);
   }
-  const sessionIds = [...daySessionIds];
+  // Sesja spoza okna mogłaby wejść tu tylko przez anomalną próbę po endedAt; pomiń ją zamiast błędu.
+  const sessionIds = [...daySessionIds].filter((sessionId) => sessionById.has(sessionId));
   const tasks = sessionIds.length ? await services.db.select().from(sessionTasks).where(and(
     eq(sessionTasks.childId, query.childId), inArray(sessionTasks.sessionId, sessionIds),
   )).orderBy(asc(sessionTasks.ordinal)) : [];

@@ -520,6 +520,8 @@ export const sessionTasks = app.table(
     unique("session_tasks_id_child_unique").on(t.id, t.childId),
     unique("session_tasks_id_revision_unique").on(t.id, t.itemRevisionId),
     uniqueIndex("one_issued_task_per_session").on(t.sessionId).where(sql`${t.state} = 'issued'`),
+    index("session_tasks_child_issued_idx").on(t.childId, t.issuedAt),
+    index("session_tasks_revision_issued_idx").on(t.itemRevisionId, t.issuedAt),
   ],
 );
 
@@ -568,6 +570,8 @@ export const attempts = app.table(
     unique("attempts_id_child_unique").on(t.id, t.childId),
     uniqueIndex("one_processing_attempt_per_task").on(t.taskId).where(sql`${t.state} = 'processing'`),
     index("attempts_stale_idx").on(t.receivedAt).where(sql`${t.state} = 'processing'`),
+    index("attempts_child_received_idx").on(t.childId, t.receivedAt.desc()),
+    index("attempts_item_revision_idx").on(t.itemRevisionId),
   ],
 );
 
@@ -619,6 +623,7 @@ export const assessments = app.table(
       foreignColumns: [itemRevisionSkills.itemRevisionId, itemRevisionSkills.skill, itemRevisionSkills.skillVersionId],
     }),
     index("assessments_skill_history_idx").on(t.skillVersionId, t.attemptId),
+    index("assessments_child_skill_idx").on(t.childId, t.skillVersionId, t.skill),
   ],
 );
 
@@ -654,6 +659,7 @@ export const learningEvents = app.table(
     unique("learning_events_child_client_id_unique").on(t.childId, t.clientEventId),
     unique("learning_events_id_child_unique").on(t.id, t.childId),
     index("learning_events_contact_idx").on(t.childId, t.itemId, t.occurredAt.desc()),
+    index("learning_events_child_occurred_idx").on(t.childId, t.occurredAt.desc()),
     index("learning_events_audio_task_occurred_idx")
       .on(t.taskId, t.occurredAt)
       .where(sql`${t.kind} = 'audio_issued' and ${t.sealed} = true`),
@@ -677,6 +683,7 @@ export const eventExposures = app.table(
       foreignColumns: [learningEvents.id, learningEvents.childId],
     }).onDelete("cascade"),
     index("event_exposures_target_idx").on(t.targetKey, t.eventId),
+    index("event_exposures_child_target_idx").on(t.childId, t.targetKey),
   ],
 );
 

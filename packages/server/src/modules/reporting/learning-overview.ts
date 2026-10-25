@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, sql } from "drizzle-orm";
 import {
   LearningOverviewDtoSchema,
   LearningOverviewQuerySchema,
@@ -280,7 +280,9 @@ export async function getLearningOverview(
       ? await tx.select({ childId: learningSessions.childId, context: learningSessions.context })
         .from(learningSessions)
         .innerJoin(decks, eq(decks.id, learningSessions.deckId))
-        .where(and(inArray(learningSessions.childId, childIds), eq(learningSessions.mode, "mock_test"), isNotNull(learningSessions.endedAt), eq(decks.kind, "vocabulary")))
+        // Bufor 48 h przed okresem: dzień rozstrzyga filtr JS po report.endedAt i strefie.
+        // Filtr po session.endedAt zakłada niezmiennik closeMockTest: endedAt sesji i raportu to ten sam instant.
+        .where(and(inArray(learningSessions.childId, childIds), eq(learningSessions.mode, "mock_test"), isNotNull(learningSessions.endedAt), gte(learningSessions.endedAt, new Date(Date.parse(period.startUtc) - 172_800_000)), eq(decks.kind, "vocabulary")))
       : [];
     for (const row of mockRows) {
       const parsed = MockTestReportDtoSchema.safeParse(row.context.mockTestReport);
