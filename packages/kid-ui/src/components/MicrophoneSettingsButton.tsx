@@ -1,5 +1,5 @@
 import { Paper, Switch, Text, Title } from "@mantine/core";
-import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement } from "react";
 import { messages } from "@learning/contracts";
 import { useKidPageViewport } from "../layout/viewport";
 import { IconActionButton } from "./IconActionButton";
@@ -26,7 +26,7 @@ export function MicrophoneSettingsButton({
   const viewport = useKidPageViewport();
   const label = microphone ? messages.kid.microphoneSettingsOn : messages.kid.microphoneSettingsOff;
 
-  const positionPanel = () => {
+  const positionPanel = useCallback(() => {
     const button = buttonRef.current;
     const panel = panelRef.current;
     if (!button || !panel || viewport.width === null || viewport.height === null) return;
@@ -39,18 +39,23 @@ export function MicrophoneSettingsButton({
     const viewportTop = viewport.offsetTop;
     const top = Math.max(viewportTop + inset("--kid-safe-top"), Math.min(buttonRect.bottom + 8, viewportTop + viewport.height - panelRect.height - inset("--kid-safe-bottom")));
     setPanelPosition({ position: "fixed", left, top });
-  };
+  }, [viewport.width, viewport.height, viewport.offsetTop]);
 
   useLayoutEffect(() => {
     if (!opened) return;
     positionPanel();
+    const visualViewport = window.visualViewport;
     window.addEventListener("resize", positionPanel);
     window.addEventListener("scroll", positionPanel, true);
+    visualViewport?.addEventListener("resize", positionPanel);
+    visualViewport?.addEventListener("scroll", positionPanel);
     return () => {
       window.removeEventListener("resize", positionPanel);
       window.removeEventListener("scroll", positionPanel, true);
+      visualViewport?.removeEventListener("resize", positionPanel);
+      visualViewport?.removeEventListener("scroll", positionPanel);
     };
-  }, [opened, microphone, micDenied, viewport.width, viewport.height]);
+  }, [opened, microphone, micDenied, positionPanel]);
 
   useEffect(() => {
     if (!opened) return;

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, renderKid, screen } from "../test/render-kid";
+import { KidViewportProvider } from "../layout/viewport";
 import { MicrophoneSettingsButton } from "./MicrophoneSettingsButton";
 
 afterEach(cleanup);
@@ -58,5 +59,35 @@ describe("MicrophoneSettingsButton", () => {
 
     expect(screen.queryByTestId("kid-mic-settings-panel")).toBeNull();
     expect(document.activeElement).toBe(button);
+  });
+
+  it("repositions the open panel when the visible viewport offset changes", async () => {
+    const originalVisualViewport = Object.getOwnPropertyDescriptor(window, "visualViewport");
+    const addViewportListener = vi.fn();
+    const removeViewportListener = vi.fn();
+    Object.defineProperty(window, "visualViewport", {
+      configurable: true,
+      value: {
+        addEventListener: addViewportListener,
+        removeEventListener: removeViewportListener,
+      } as unknown as VisualViewport,
+    });
+    const renderSettings = (offsetTop: number) => (
+      <KidViewportProvider viewport={{ width: 360, height: 640, offsetTop, zoomed: false }}>
+        <MicrophoneSettingsButton microphone={false} micDenied={false} onToggleMicrophone={vi.fn()} />
+      </KidViewportProvider>
+    );
+    const { rerender } = renderKid(renderSettings(0));
+    fireEvent.click(screen.getByTestId("kid-mic-settings"));
+    const panel = await screen.findByTestId("kid-mic-settings-panel");
+    expect(panel.style.top).toBe("16px");
+    expect(addViewportListener).toHaveBeenCalledWith("scroll", expect.any(Function));
+
+    rerender(renderSettings(24));
+
+    expect(panel.style.top).toBe("40px");
+    expect(removeViewportListener).toHaveBeenCalledWith("scroll", expect.any(Function));
+    if (originalVisualViewport) Object.defineProperty(window, "visualViewport", originalVisualViewport);
+    else Reflect.deleteProperty(window, "visualViewport");
   });
 });
