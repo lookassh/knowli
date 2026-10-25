@@ -10,6 +10,20 @@
   gap: 8px;
 }
 
+/* The exercise is nested inside the session screen: do not apply the outer
+   KidScreen padding a second time, regardless of CSS chunk order. */
+:global(.kid-ui) .root[data-mode="session"][data-prompt-kind="exposure"] {
+  padding: 0;
+}
+
+.root[data-prompt-kind="exposure"] > [data-testid="kid-exercise-actions"] {
+  grid-template-rows: minmax(54px, auto);
+}
+
+.root[data-prompt-kind="exposure"] [data-testid="kid-secondary-slot"] {
+  display: none;
+}
+
 .root > [data-testid="kid-instruction"] {
   min-height: 48px;
   padding-inline: 4px;
