@@ -71,6 +71,7 @@ import {
   closeLessonMockTest,
   isLessonMockPlan,
 } from "./lessons/lesson-mock-tests";
+import { issueNextVocabularyPlanTask } from "./vocabulary-plan-tasks";
 import { buildLessonSummaryObjectives } from "./lessons/lesson-attempts";
 import { completeDisabledVoiceTask } from "./voice-task-lifecycle";
 import { beginSessionActivityReview, readSessionActivityResult } from "./session-activity";
@@ -1100,53 +1101,17 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
           catch { throw new AppError("conflict", { message: "Ta sesja wymaga nowszej wersji aplikacji." }); }
         })();
     if (storedPlan !== null) {
-      if (storedPlan === null) throw new AppError("conflict");
-      let ordinal = counts.total;
-      let assessedBefore = counts.assessed;
-      let slot = storedPlan.slots[ordinal];
-      while (slot && (contextOf(session).microphoneDisabledTaskIds.includes(slot.taskId) ||
-        (!session.microphoneEnabled && (slot.exerciseType === "speech" || (slot.exerciseType === "recall" && !contextOf(session).canRead))))) {
-        await tx.insert(sessionTasks).values({
-          id: slot.taskId, sessionId: session.id, childId: session.childId, deckVersionId: session.deckVersionId,
-          itemRevisionId: slot.itemRevisionId, ordinal, exerciseType: slot.exerciseType, direction: slot.direction,
-          state: "skipped", publicPrompt: slot.prompt as unknown as Record<string, unknown>, answerKey: slot.answerKey,
-          context: { reason: slot.reason, skipped: "microphone_unavailable" }, issuedAt: now,
-        });
-        ordinal += 1;
-        if (slot.assessed) assessedBefore += 1;
-        slot = storedPlan.slots[ordinal];
-      }
-      if (!slot || assessedBefore >= storedPlan.taskBudget) return null;
-      await tx.insert(sessionTasks).values({
-        id: slot.taskId, sessionId: session.id, childId: session.childId, deckVersionId: session.deckVersionId,
-        itemRevisionId: slot.itemRevisionId, ordinal, exerciseType: slot.exerciseType, direction: slot.direction,
-        state: "issued", publicPrompt: slot.prompt as unknown as Record<string, unknown>, answerKey: slot.answerKey,
-        context: {
-          reason: slot.reason,
-          ...(slot.supportCycleId ? { supportCycleId: slot.supportCycleId } : {}),
-          ...(slot.skillAtIssue ? { skillAtIssue: slot.skillAtIssue } : {}),
-          ...(slot.statusAtIssue !== undefined ? { statusAtIssue: slot.statusAtIssue } : {}),
-          ...(slot.assessmentSkills ? { assessmentSkills: slot.assessmentSkills } : {}),
-        },
-        issuedAt: now,
-      });
-      await recordTaskSkillFacts(tx, {
-        childId: session.childId,
-        itemRevisionId: slot.itemRevisionId,
-        policyId: session.policyId,
-        exerciseType: slot.exerciseType,
-        issuedAt: now,
-      });
-      await writeSealedEvent(tx, {
-        childId: session.childId, taskId: slot.taskId, itemId: slot.itemId, kind: "prompt_issued",
-        stepId: `${slot.taskId}:prompt`, occurredAt: now, exposures: [...slot.revealsTargetKeys],
-      });
-      const context = contextOf(session);
-      if (JSON.stringify(context.reservations) !== JSON.stringify(slot.keepsReservations)) {
-        await tx.update(learningSessions).set({ context: { ...context, reservations: [...slot.keepsReservations] } })
-          .where(eq(learningSessions.id, session.id));
-      }
-      return issuedTaskDto(session, { id: slot.taskId, ordinal, exerciseType: slot.exerciseType, direction: slot.direction, publicPrompt: slot.prompt }, assessedBefore);
+      const issued = await issueNextVocabularyPlanTask(
+        tx, session, storedPlan, now, counts.total, counts.assessed,
+      );
+      if (!issued) return null;
+      return issuedTaskDto(session, {
+        id: issued.slot.taskId,
+        ordinal: issued.slot.ordinal,
+        exerciseType: issued.slot.exerciseType,
+        direction: issued.slot.direction,
+        publicPrompt: issued.slot.prompt,
+      }, issued.assessedBefore);
     }
 
     const planned = await planNextTask(tx, session, now, remaining, counts.total);

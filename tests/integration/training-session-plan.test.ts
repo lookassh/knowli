@@ -4,6 +4,9 @@ import { randomUUID } from "node:crypto";
 import { buildTestServices, ManualClock, openRestartedServices, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration } from "./fakes";
 import { readTrainingSessionPlan } from "@learning/server";
+import { issueNextVocabularyPlanTask } from "../../packages/server/src/modules/vocabulary-plan-tasks";
+import { childProfiles, learningSessions } from "../../packages/server/src/db/schema";
+import type { TrainingSessionPlanSnapshot, TrainingSessionSlot } from "../../packages/server/src/domain/training-session-plan";
 
 const { pool } = testDatabase();
 const pairs = Array.from({ length: 4 }, (_, index) => ({ source: `słowo ${index}`, target: `word${index}` }));
@@ -32,6 +35,114 @@ describe("stały plan treningu słówek", () => {
   });
 
   afterAll(async () => { await pool.end(); });
+
+  async function runPlannedIssue(options: {
+    exercises: Array<{ exerciseType: string; assessed?: boolean }>;
+    taskBudget: number;
+    canRead: boolean;
+    microphoneEnabled?: boolean;
+    disabledFirst?: boolean;
+    throwAfterIssue?: boolean;
+    nextOrdinal?: number;
+    enrichFirst?: boolean;
+  }) {
+    const started = await startSession(services, { childId, deckId, microphoneEnabled: options.microphoneEnabled ?? false });
+    const [stored] = (await pool.query("select training_plan from learning_app.learning_sessions where id=$1", [started.sessionId])).rows as { training_plan: TrainingSessionPlanSnapshot }[];
+    const original = readTrainingSessionPlan(stored!.training_plan)!;
+    const slots = options.exercises.map(({ exerciseType, assessed }, ordinal): TrainingSessionSlot => ({
+      ...original.slots[ordinal]!, taskId: randomUUID(), ordinal, exerciseType,
+      assessed: assessed ?? true, reason: "test-issue", revealsTargetKeys: [`target-${ordinal}`],
+      keepsReservations: [`reservation-${ordinal}`],
+      ...(options.enrichFirst && ordinal === 0 ? {
+        supportCycleId: randomUUID(), skillAtIssue: "recall", statusAtIssue: null,
+        assessmentSkills: ["recall", "spelling"],
+      } : {}),
+    }));
+    const plan = readTrainingSessionPlan({ version: 1, taskBudget: options.taskBudget, slots })!;
+    const originalSnapshot = structuredClone(plan);
+    await pool.query("update learning_app.learning_sessions set microphone_enabled=$2, context=context || $3::jsonb where id=$1", [
+      started.sessionId, options.microphoneEnabled ?? false,
+      JSON.stringify({ canRead: options.canRead, reservations: ["old-reservation"], microphoneDisabledTaskIds: options.disabledFirst ? [plan.slots[0]!.taskId] : [] }),
+    ]);
+    const progressCountBefore = Number((await pool.query("select count(*)::int as count from learning_app.child_skill_progress where child_id=$1", [childId])).rows[0].count);
+    const run = services.db.transaction(async (tx) => {
+      await tx.select().from(childProfiles).for("key share");
+      const rows = await tx.select().from(learningSessions).for("update");
+      const session = rows.find((row) => row.id === started.sessionId);
+      if (!session) throw new Error("expected session");
+      const result = await issueNextVocabularyPlanTask(tx, session, plan, services.clock.now(), options.nextOrdinal ?? 0, 0);
+      if (options.throwAfterIssue) throw new Error("abort-issued-slot");
+      return result;
+    });
+    if (options.throwAfterIssue) await expect(run).rejects.toThrow("abort-issued-slot");
+    const result = options.throwAfterIssue ? null : await run;
+    expect(plan).toEqual(originalSnapshot);
+    await endSession(services, started.sessionId);
+    return { sessionId: started.sessionId, plan, result, progressCountBefore };
+  }
+
+  it("pomija niedostępne zadania głosowe bez zapisu historii uczenia", async () => {
+    const { sessionId, result } = await runPlannedIssue({
+      exercises: [{ exerciseType: "speech" }, { exerciseType: "recall" }, { exerciseType: "listening" }], taskBudget: 3, canRead: false,
+    });
+    expect(result).toMatchObject({ slot: { ordinal: 2, exerciseType: "listening" }, assessedBefore: 2 });
+    const tasks = (await pool.query("select id, ordinal, state from learning_app.session_tasks where session_id=$1 order by ordinal", [sessionId])).rows;
+    expect(tasks.map((row: { state: string }) => row.state)).toEqual(["skipped", "skipped", "issued"]);
+    const eventCount = (await pool.query("select count(*)::int as count from learning_app.learning_events e join learning_app.session_tasks t on t.id=e.task_id where t.session_id=$1", [sessionId])).rows[0].count;
+    expect(eventCount).toBe(1);
+    const evidenceCount = (await pool.query("select count(*)::int as count from learning_app.attempts a join learning_app.session_tasks t on t.id=a.task_id where t.session_id=$1", [sessionId])).rows[0].count;
+    expect(evidenceCount).toBe(0);
+    const assessmentCount = (await pool.query("select count(*)::int as count from learning_app.assessments a join learning_app.attempts p on p.id=a.attempt_id join learning_app.session_tasks t on t.id=p.task_id where t.session_id=$1", [sessionId])).rows[0].count;
+    expect(assessmentCount).toBe(0);
+    expect(Number((await pool.query("select count(*)::int as count from learning_app.child_skill_progress where child_id=$1", [childId])).rows[0].count)).toBe(0);
+    const readable = await runPlannedIssue({
+      exercises: [{ exerciseType: "speech" }, { exerciseType: "recall" }, { exerciseType: "listening" }], taskBudget: 3, canRead: true,
+    });
+    expect(readable.result).toMatchObject({ slot: { ordinal: 1, exerciseType: "recall" }, assessedBefore: 1 });
+    expect((await pool.query("select state from learning_app.session_tasks where session_id=$1 order by ordinal", [readable.sessionId])).rows).toEqual([{ state: "skipped" }, { state: "issued" }]);
+  });
+
+  it("respects explicitly disabled slot IDs and leaves no exposure after skipped slots exhaust the budget", async () => {
+    const explicitlyDisabled = await runPlannedIssue({
+      exercises: [{ exerciseType: "speech" }, { exerciseType: "recall" }], taskBudget: 2, canRead: true, microphoneEnabled: true, disabledFirst: true,
+    });
+    expect(explicitlyDisabled.result).toMatchObject({ slot: { ordinal: 1, exerciseType: "recall" }, assessedBefore: 1 });
+    const exhausted = await runPlannedIssue({
+      exercises: [{ exerciseType: "speech" }, { exerciseType: "recall" }, { exerciseType: "exposure", assessed: false }], taskBudget: 2, canRead: false,
+    });
+    expect(exhausted.result).toBeNull();
+    expect((await pool.query("select state from learning_app.session_tasks where session_id=$1 order by ordinal", [exhausted.sessionId])).rows).toEqual([{ state: "skipped" }, { state: "skipped" }]);
+    expect((await pool.query("select count(*)::int as count from learning_app.learning_events e join learning_app.session_tasks t on t.id=e.task_id where t.session_id=$1", [exhausted.sessionId])).rows[0].count).toBe(0);
+    const noSlots = await runPlannedIssue({ exercises: [{ exerciseType: "recall" }], taskBudget: 1, canRead: true, nextOrdinal: 1 });
+    expect(noSlots.result).toBeNull();
+    expect((await pool.query("select count(*)::int as count from learning_app.session_tasks where session_id=$1", [noSlots.sessionId])).rows[0].count).toBe(0);
+  });
+
+  it("zapisuje komplet slotu i wycofuje wszystkie fakty, gdy caller przerywa transakcję", async () => {
+    const issued = await runPlannedIssue({
+      exercises: [{ exerciseType: "recall" }], taskBudget: 1, canRead: true, enrichFirst: true,
+    });
+    expect(issued.result).toMatchObject({ slot: { ordinal: 0 }, assessedBefore: 0 });
+    const task = (await pool.query("select public_prompt, answer_key, context from learning_app.session_tasks where id=$1", [issued.result!.slot.taskId])).rows[0];
+    expect(task.public_prompt).toEqual(issued.result!.slot.prompt);
+    expect(task.answer_key).toEqual(issued.result!.slot.answerKey);
+    expect(task.context).toMatchObject({
+      reason: "test-issue", supportCycleId: issued.result!.slot.supportCycleId,
+      skillAtIssue: "recall", statusAtIssue: null, assessmentSkills: ["recall", "spelling"],
+    });
+    expect((await pool.query("select sealed from learning_app.learning_events where task_id=$1", [issued.result!.slot.taskId])).rows).toEqual([{ sealed: true }]);
+    expect((await pool.query("select target_key from learning_app.event_exposures where event_id=(select id from learning_app.learning_events where task_id=$1)", [issued.result!.slot.taskId])).rows).toEqual([{ target_key: "target-0" }]);
+    expect((await pool.query("select context->'reservations' as reservations from learning_app.learning_sessions where id=$1", [issued.sessionId])).rows[0].reservations).toEqual(["reservation-0"]);
+    expect(Number((await pool.query("select count(*)::int as count from learning_app.child_skill_progress where child_id=$1 and first_issued_at is not null", [childId])).rows[0].count)).toBeGreaterThan(0);
+
+    const rollback = await runPlannedIssue({ exercises: [{ exerciseType: "recall" }], taskBudget: 1, canRead: true, throwAfterIssue: true });
+    expect((await pool.query("select count(*)::int as count from learning_app.session_tasks where session_id=$1", [rollback.sessionId])).rows[0].count).toBe(0);
+    expect((await pool.query("select count(*)::int as count from learning_app.learning_events e join learning_app.session_tasks t on t.id=e.task_id where t.session_id=$1", [rollback.sessionId])).rows[0].count).toBe(0);
+    expect((await pool.query("select count(*)::int as count from learning_app.event_exposures x join learning_app.learning_events e on e.id=x.event_id join learning_app.session_tasks t on t.id=e.task_id where t.session_id=$1", [rollback.sessionId])).rows[0].count).toBe(0);
+    expect((await pool.query("select count(*)::int as count from learning_app.assessments a join learning_app.attempts p on p.id=a.attempt_id join learning_app.session_tasks t on t.id=p.task_id where t.session_id=$1", [rollback.sessionId])).rows[0].count).toBe(0);
+    expect(Number((await pool.query("select count(*)::int as count from learning_app.child_skill_progress where child_id=$1", [childId])).rows[0].count)).toBe(rollback.progressCountBefore);
+    expect((await pool.query("select context->'reservations' as reservations from learning_app.learning_sessions where id=$1", [rollback.sessionId])).rows[0].reservations).toEqual(["old-reservation"]);
+  });
 
   it("tworzy prywatny, skończony plan atomowo przy starcie i wydaje jego pierwszy krok", async () => {
     const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
