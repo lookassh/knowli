@@ -99,7 +99,12 @@ export function AnswerFeedbackContent({ dto, busy }: Pick<AnswerFeedbackProps, "
     >
       <div className="kid-feedback-content">
         <h2 className="kid-feedback-text" id="kid-feedback-title" ref={titleRef} tabIndex={-1}>
-          {feedbackText(dto)}
+          {feedback.kind === "incorrect" && feedback.correctText ? (
+            <>
+              <span className="kid-feedback-answer-label">{messages.kid.feedbackCorrectAnswer}</span>
+              <strong className="kid-feedback-answer" data-testid="kid-feedback-correct-answer">{feedback.correctText}</strong>
+            </>
+          ) : feedbackText(dto)}
         </h2>
         {feedback.heardText && (
           <p className="kid-heard-text" data-testid="kid-heard-text">
