@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import sharp from "sharp";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { MediaSettings, Services } from "../../config";
@@ -557,6 +558,125 @@ export async function readReadyMedia(
   }
   // kopia do własnego ArrayBuffer: BodyInit/BlobPart wymagają Uint8Array<ArrayBuffer>
   return { bytes: new Uint8Array(blob.bytes), mimeType: asset.mimeType ?? blob.mimeType };
+}
+
+/** Maksymalny bok ilustracji serwowanej klientowi (wyświetlanie, nie oryginał). */
+export const ILLUSTRATION_DISPLAY_MAX_PX = 768;
+
+/**
+ * Wariant wyświetlania ilustracji: oryginał generowany 1024×1024 (PNG nawet
+ * ~1,7 MB) trafia w aplikacji na kafelki kilkuset px, więc route mediów
+ * serwuje przeskalowane WebP — zwykle kilkadziesiąt KB. Magazyn i rekord
+ * zasobu pozostają nietknięte; transformacja liczy się w locie i jest
+ * cache'owana w procesie. Błąd transformacji degraduje do oryginału.
+ */
+export async function toDisplayIllustration(bytes: Uint8Array): Promise<{ bytes: Uint8Array; mimeType: string } | null> {
+  try {
+    const out = await sharp(bytes, { failOn: "error" })
+      .rotate()
+      .resize({ width: ILLUSTRATION_DISPLAY_MAX_PX, height: ILLUSTRATION_DISPLAY_MAX_PX, fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 80 })
+      .toBuffer();
+    return { bytes: Uint8Array.from(out), mimeType: "image/webp" };
+  } catch {
+    return null;
+  }
+}
+
+const DISPLAY_CACHE_MAX_BYTES = 16 * 1024 * 1024;
+const displayIllustrationCache = new Map<string, { bytes: Uint8Array; mimeType: string }>();
+let displayIllustrationCacheBytes = 0;
+
+function cacheDisplayIllustration(cacheKey: string, variant: { bytes: Uint8Array; mimeType: string }): void {
+  const size = variant.bytes.byteLength;
+  if (size > DISPLAY_CACHE_MAX_BYTES) return;
+  const existing = displayIllustrationCache.get(cacheKey);
+  if (existing) {
+    displayIllustrationCacheBytes -= existing.bytes.byteLength;
+    displayIllustrationCache.delete(cacheKey);
+  }
+  while (displayIllustrationCacheBytes + size > DISPLAY_CACHE_MAX_BYTES) {
+    const oldest = displayIllustrationCache.keys().next().value as string | undefined;
+    if (oldest === undefined) break;
+    displayIllustrationCacheBytes -= displayIllustrationCache.get(oldest)!.bytes.byteLength;
+    displayIllustrationCache.delete(oldest);
+  }
+  displayIllustrationCache.set(cacheKey, variant);
+  displayIllustrationCacheBytes += size;
+}
+
+export interface ReadyMediaStream {
+  body: AsyncIterable<Uint8Array>;
+  mimeType: string;
+  byteCount: number | null;
+  /**
+   * Czy odpowiedź wolno oznaczyć rocznym cache immutable. Fałsz tylko dla
+   * awaryjnego oryginału ilustracji po błędzie transformacji: ten sam URL
+   * docelowo zwraca wariant WebP, więc oryginał nie może zostać przypięty
+   * w cache klienta na rok (review workflow, zatruwanie cache).
+   */
+  immutableCache: boolean;
+}
+
+async function* singleChunk(bytes: Uint8Array): AsyncIterable<Uint8Array> {
+  yield bytes;
+}
+
+/**
+ * Serwowanie gotowego zasobu klientowi (GET /api/v1/media/:id): audio leci
+ * strumieniem z dysku bez ładowania całości do pamięci procesu, ilustracje
+ * jako przeskalowany wariant WebP (powyżej). Tylko stan ready, jak
+ * `readReadyMedia`; brak strumienia w magazynie degraduje do `get`.
+ */
+export async function readReadyMediaStream(
+  services: Services,
+  assetId: string,
+): Promise<ReadyMediaStream | null> {
+  const parsed = z.uuid().safeParse(assetId);
+  if (!parsed.success) {
+    return null;
+  }
+  const id = parsed.data;
+  const asset = (
+    await services.db
+      .select({ state: mediaAssets.state, storageKey: mediaAssets.storageKey, mimeType: mediaAssets.mimeType, kind: mediaAssets.kind, byteCount: mediaAssets.byteCount })
+      .from(mediaAssets)
+      .where(eq(mediaAssets.id, id))
+  )[0];
+  if (!asset || asset.state !== "ready" || !asset.storageKey || !services.mediaStore) {
+    return null;
+  }
+  if (asset.kind === "illustration" && (asset.mimeType?.startsWith("image/") ?? false)) {
+    // klucz obejmuje storageKey: ponownie użyte id z innymi bajtami (np.
+    // odbudowana baza w tym samym procesie) nie serwuje starego wariantu
+    const cacheKey = `${id}:${asset.storageKey}`;
+    const cached = displayIllustrationCache.get(cacheKey);
+    if (cached) {
+      return { body: singleChunk(cached.bytes), mimeType: cached.mimeType, byteCount: cached.bytes.byteLength, immutableCache: true };
+    }
+    const blob = await services.mediaStore.get(asset.storageKey);
+    if (!blob) {
+      return null;
+    }
+    const variant = await toDisplayIllustration(blob.bytes);
+    if (variant) {
+      cacheDisplayIllustration(cacheKey, variant);
+      return { body: singleChunk(variant.bytes), mimeType: variant.mimeType, byteCount: variant.bytes.byteLength, immutableCache: true };
+    }
+    return { body: singleChunk(new Uint8Array(blob.bytes)), mimeType: asset.mimeType ?? blob.mimeType, byteCount: blob.bytes.byteLength, immutableCache: false };
+  }
+  if (services.mediaStore.getStream) {
+    const streamed = await services.mediaStore.getStream(asset.storageKey);
+    if (!streamed) {
+      return null;
+    }
+    return { body: streamed.body, mimeType: asset.mimeType ?? streamed.mimeType, byteCount: asset.byteCount ?? streamed.byteCount, immutableCache: true };
+  }
+  const blob = await services.mediaStore.get(asset.storageKey);
+  if (!blob) {
+    return null;
+  }
+  return { body: singleChunk(new Uint8Array(blob.bytes)), mimeType: asset.mimeType ?? blob.mimeType, byteCount: blob.bytes.byteLength, immutableCache: true };
 }
 
 /** Publikacja sprawdza gotowość i zgodność fingerprintu powiązanego zasobu. */

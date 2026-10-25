@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { MediaStore, StoredBlob } from "../../ports/media";
 
@@ -54,6 +55,33 @@ export function createLocalMediaStore(rootDir: string): MediaStore {
         }
       }
       return { storageKey, contentSha256, byteCount: bytes.byteLength };
+    },
+
+    async getStream(storageKey: string) {
+      if (!KEY_PATTERN.test(storageKey)) {
+        return null;
+      }
+      const target = pathOf(storageKey);
+      let size: number;
+      try {
+        size = (await stat(target)).size;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+          return null;
+        }
+        throw error;
+      }
+      const ext = storageKey.split(".")[1]!;
+      const stream = createReadStream(target);
+      return {
+        mimeType: MIME_BY_EXT[ext],
+        byteCount: size,
+        body: (async function* () {
+          for await (const chunk of stream) {
+            yield Uint8Array.from(chunk as Buffer);
+          }
+        })(),
+      };
     },
 
     async get(storageKey: string) {
