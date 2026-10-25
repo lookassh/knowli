@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createChild, endSession, nextTask, readLessonMockTestSummary, startSession, submitAttempt } from "@learning/server";
-import { lessonDeckListValues } from "../../packages/server/src/modules/lessons/lesson-sessions";
-import { hasSafeLessonMockPortion } from "../../packages/server/src/modules/lessons/lesson-mock-tests";
-import { readLessonDeckOverviews, type LessonDeckOverviewInput } from "../../packages/server/src/modules/lessons/lesson-deck-overview";
-import type { LessonContextShape } from "../../packages/server/src/modules/lessons/lesson-sessions";
+import { lessonDeckListValues } from "../../packages/server/src/modules/learning/lessons/lesson-sessions";
+import { hasSafeLessonMockPortion } from "../../packages/server/src/modules/learning/lessons/lesson-mock-tests";
+import { readLessonDeckOverviews, type LessonDeckOverviewInput } from "../../packages/server/src/modules/learning/lessons/lesson-deck-overview";
+import type { LessonContextShape } from "../../packages/server/src/modules/learning/lessons/lesson-sessions";
 import { lessonWorld } from "../fixtures/lesson-world";
 import { buildTestServices, capturePoolQueries, testDatabase, truncateCoreTables } from "./helpers";
 

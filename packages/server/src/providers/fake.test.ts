@@ -4,7 +4,7 @@ import { stageOf } from "../domain/lessons/stages";
 import { englishGrammarSubject } from "../domain/lessons/subjects/english-grammar/module";
 import { presentSimpleV1 } from "../domain/lessons/subjects/english-grammar/topics/present-simple";
 import type { LessonPoolInput } from "../ports/ai";
-import { toExerciseDraft } from "../modules/lessons/lesson-drafts";
+import { toExerciseDraft } from "../modules/materials/lessons/lesson-drafts";
 import { FakeLlmProvider } from "./fake";
 
 describe("FakeLlmProvider lesson pool", () => {

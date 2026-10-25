@@ -18,6 +18,77 @@ function recallLayoutFixture(): KidUiFixture {
   };
 }
 
+test("exposure keeps the complete word card above its action without scrolling on phones", async ({ page }, testInfo) => {
+  const fixture = recallLayoutFixture();
+  const assetId = "10000000-0000-4000-8000-000000000106";
+  fixture.uiAudio = { ready: true, assets: {} };
+  fixture.tasks = [{ ...fixture.tasks[0]!, exerciseType: "exposure", direction: null, prompt: {
+    kind: "exposure", target: "computer room", source: "pracownia komputerowa",
+    example: "The computer room has many computers to use.",
+    audioAssetId: assetId, exampleAudioAssetId: assetId, imageAssetId: assetId, visualType: "image",
+  } }];
+  await installKidUiFixture(page, fixture);
+  await page.route(`**/api/v1/media/${assetId}`, async (route) => {
+    if (route.request().resourceType() !== "image") return route.fallback();
+    await route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300"><rect width="300" height="300" fill="#96a8ef"/></svg>' });
+  });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.setViewportSize({ width: 384, height: 640 });
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+  await expect(page.getByTestId("kid-target")).toHaveText("computer room");
+  await expect(page.getByTestId("kid-task-audio-error")).toHaveCount(0);
+
+  for (const viewport of [{ width: 384, height: 640 }, { width: 360, height: 640 }, { width: 360, height: 540 },
+    { width: 390, height: 660 }, { width: 768, height: 1024 }, { width: 1440, height: 960 }]) {
+    await page.setViewportSize(viewport);
+    await expect(page.getByTestId("kid-session-frame")).toHaveCSS("height", `${viewport.height}px`);
+    const header = await page.locator(".kid-header").boundingBox();
+    const instruction = await page.getByTestId("kid-instruction").boundingBox();
+    expect(instruction!.y - (header!.y + header!.height), "instruction should stay close to the top bar")
+      .toBeLessThanOrEqual(viewport.height <= 700 ? 44 : 60);
+    await expect.poll(() => page.evaluate(() => {
+      const selectors = [".kid-learning", ".kid-exercise-frame", ".kid-material", ".kid-material-content", ".kid-exposure-content"];
+      return selectors.filter((selector) => {
+        const element = document.querySelector<HTMLElement>(selector)!;
+        return element.scrollHeight > element.clientHeight + 1;
+      });
+    }), { timeout: 1500, message: `card requires scrolling at ${viewport.width}x${viewport.height}` }).toEqual([]);
+    const material = await page.getByTestId("kid-material").boundingBox();
+    const action = await page.getByTestId("kid-done").boundingBox();
+    expect(material!.y + material!.height).toBeLessThanOrEqual(action!.y + 1);
+    expect(action!.y + action!.height).toBeLessThanOrEqual(viewport.height);
+    expect(action!.height).toBeGreaterThanOrEqual(54);
+    for (const testId of ["kid-illustration", "kid-target", "kid-source", "kid-example", "kid-play", "kid-play-example"]) {
+      const bounds = await page.getByTestId(testId).boundingBox();
+      expect(bounds!.y, testId).toBeGreaterThanOrEqual(material!.y - 1);
+      expect(bounds!.y + bounds!.height, testId).toBeLessThanOrEqual(material!.y + material!.height + 1);
+      expect(bounds!.x, testId).toBeGreaterThanOrEqual(0);
+      expect(bounds!.x + bounds!.width, testId).toBeLessThanOrEqual(viewport.width);
+      if (testId.startsWith("kid-play")) expect(bounds!.height).toBeGreaterThanOrEqual(48);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
+    await page.screenshot({ path: testInfo.outputPath(`exposure-${viewport.width}x${viewport.height}.png`) });
+  }
+
+  // Accessibility and unusually short windows retain the complete card through scrolling.
+  for (const viewport of [{ width: 640, height: 360 }, { width: 760, height: 450 }, { width: 360, height: 640 }]) {
+    await page.setViewportSize(viewport);
+    if (viewport.width === 360) await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
+    for (const testId of ["kid-illustration", "kid-target", "kid-source", "kid-example", "kid-play-example", "kid-done"]) {
+      const element = page.getByTestId(testId);
+      await element.scrollIntoViewIfNeeded();
+      // Native scrolling rounds fractional CSS pixels; allow at most one pixel.
+      await expect(element).toBeInViewport({ ratio: 0.98 });
+      const bounds = await element.boundingBox();
+      expect(bounds!.y, `${testId} at ${viewport.width}x${viewport.height}`).toBeGreaterThanOrEqual(-1);
+      expect(bounds!.y + bounds!.height, testId).toBeLessThanOrEqual(viewport.height + 1);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
+  }
+});
+
 test("Mantine picture choices keep their geometry until the server verdict", async ({ page }) => {
   const fixture = pictureChoiceLayoutFixture();
   const attempt = fixture.attempts![0]!;

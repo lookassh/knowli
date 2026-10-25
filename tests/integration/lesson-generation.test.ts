@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import {
   createDatabase,
   createLesson,
+  claimQueuedRun,
   createServices,
   executeMediaAsset,
   createSubjectRegistry,
@@ -20,7 +21,7 @@ import type { LessonCommand } from "@learning/contracts";
 import { countRows, testDatabase, testDatabaseUrl } from "./helpers";
 import { ManualClock } from "./helpers";
 import { fakeGeneration, FakeLlmProvider, type FakeGeneration } from "./fakes";
-import { claimQueuedRun } from "../../packages/server/src/modules/generation";
+
 import { GenerationProviderError } from "../../packages/server/src/ports/generation-error";
 import { lessonExerciseIdentity, lessonExerciseStimulusRecord } from "../../packages/server/src/domain/lessons/exercise-identity";
 import type { LessonExerciseDraft } from "../../packages/server/src/domain/lessons/types";

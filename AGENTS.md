@@ -97,6 +97,23 @@ Rozwijaj Knowli jako **modularny monolit**, stosując proporcjonalnie **Feature 
 - Własność danych i reguł powinna być jednoznaczna. Zmiany danych należących do innego modułu prowadź przez uzgodnioną operację tego modułu.
 - Istniejące ścieżki pakietów pozostają obowiązujące. Nowy moduł nie wymaga osobnego pakietu, procesu ani usługi.
 
+### Obszary w `packages/server/src/modules`
+
+Przypadki użycia serwera są pogrupowane w cztery obszary produktu. Nowy plik umieszczaj w obszarze właściciela reguły, a nie tam, gdzie akurat jest wywołujący:
+
+| Obszar | Odpowiedzialność |
+| --- | --- |
+| `materials/` | Zestawy, elementy, rewizje, kryteria, przypisania, publikacja, generowanie treści i mediów, zasoby; autorstwo i nadzór nad materiałem lekcji w `materials/lessons/` |
+| `learning/` | Sesje, zadania, próby, oceny, ekspozycje, projekcje postępu, kartkówki, rozliczenie aktywności, ustawienia polityki nauki; silnik sesji i prób lekcji w `learning/lessons/` |
+| `family/` | Tożsamość i preferencje profili dzieci, uwierzytelnianie rodzica, tokeny integracyjne |
+| `reporting/` | Modele odczytu postępu i aktywności oraz widoki startowe dziecka; bez własności źródłowych ocen i postępu |
+
+- Dozwolone kierunki zależności: `reporting` → `learning` → `materials` oraz każdy obszar → `family`. Moduły źródłowe nigdy nie importują raportowania.
+- Każdy obszar ma wąski `index.ts` jako publiczne API. Inny obszar importuje wyłącznie z barrela (`../materials`, `../family` itd.), nigdy z jego wewnętrznych plików; wewnątrz obszaru obowiązują bezpośrednie importy plików, a własny barrel jest zakazany. Nowy eksport potrzebny innemu obszarowi dopisz do barrela właściciela. Publiczne `packages/server/src/index.ts` komponuje eksporty pakietu z barreli obszarów; klienci web i worker korzystają wyłącznie z `@learning/server`.
+- Własność jest semantyczna, nie tabelowa: np. pole polityki nauki w wierszu profilu należy do `learning` (zapis w `learning-settings.ts`, w tej samej transakcji co dotąd), a raportowanie może czytać tabele źródłowe własnymi zapytaniami, ale nie modyfikuje ocen ani postępu.
+- Granic pilnuje `packages/server/src/modules/module-boundaries.architecture.test.ts` (kierunki, barrele, czystość `src/domain`) oraz węższe testy `*.architecture.test.ts` przy wydzielonych fragmentach. Po zmianie w `modules/` uruchom najpierw te szybkie testy, potem testy obszaru.
+- Nazwane wyjątki — nie kopiuj ich jako wzorca ani nie „naprawiaj” przy okazji innego zadania: `config.ts` i adaptery providerów importują bezpośrednio `materials/lessons/lesson-generation-policy` (typ i parsowanie env potrzebne przed złożeniem usług); testy integracyjne importują kilka plików wewnętrznych obszarów wprost; root `index.ts` eksportuje też infrastrukturę (schemat, fabryki providerów) dla obecnych klientów i testów.
+
 ### Reguły biznesowe i adaptery
 
 - Reguły oceniania, samodzielności, planowania sesji, powtórek i postępu implementuj jako funkcje domenowe nad jawnie przekazanymi danymi. Czas, losowość i identyfikatory przekazuj jawnie, gdy wpływają na decyzję.

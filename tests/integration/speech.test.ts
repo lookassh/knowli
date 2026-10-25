@@ -23,7 +23,7 @@ import {
 } from "@learning/server";
 import { AttemptDtoSchema, type TaskDto } from "@learning/contracts";
 import { letterGroups } from "../../packages/server/src/domain/pronunciation-fragments";
-import { readLearningSnapshot } from "../../packages/server/src/modules/learning-snapshot";
+import { readLearningSnapshot } from "../../packages/server/src/modules/learning/learning-snapshot";
 import { loadPolicy } from "../../packages/server/src/policies/registry";
 import { selectTask } from "../../packages/server/src/domain/scheduler";
 import { buildTestServices, testDatabase, truncateCoreTables, ManualClock } from "./helpers";

@@ -146,7 +146,7 @@ export function LearnScreen({
           </p>
         </details>
       </header>
-      <div className="kid-session-status" data-testid="kid-session-status" role="status" aria-live="polite">
+      <div className="kid-session-status" data-testid="kid-session-status" data-mode={screen.session.mode} role="status" aria-live="polite">
         {screen.session.mode === "mock_test" && <p className="kid-notice">{messages.kid.mockTestInfo}</p>}
         {screen.answerSaved && <p className="kid-notice">{messages.kid.answerSaved}</p>}
         {screen.processing && (

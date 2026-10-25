@@ -18,25 +18,21 @@ import {
   editLessonDraft,
   enqueueDeckGeneration,
   generateDeckCover,
-  getLessonMockTestReport,
+  getMockTestReportForSession,
   getPronunciationSettings,
-  getMockTestReport,
   getProgress,
   lessonCatalog,
   lessonObjectiveProgress,
   listChildren,
   listDecks,
-  listLessonMockTests,
+  listMockTestReportsForDeck,
   listLessonVerdicts,
-  listMockTests,
   loginParent,
   logoutParent,
-  mockTestKindOfSession,
   omitRevisionAsset,
   publishDraft,
   publishLessonDraft,
   readDeck,
-  readDeckKind,
   readDraft,
   readGeneration,
   readLessonDeck,
@@ -90,12 +86,8 @@ vi.mock("@learning/server", async (importActual) => {
     publishDraft: vi.fn(),
     regenerateRevisionAsset: vi.fn(),
     omitRevisionAsset: vi.fn(),
-    getMockTestReport: vi.fn(),
-    listMockTests: vi.fn(),
-    getLessonMockTestReport: vi.fn(),
-    listLessonMockTests: vi.fn(),
-    readDeckKind: vi.fn(),
-    mockTestKindOfSession: vi.fn(),
+    getMockTestReportForSession: vi.fn(),
+    listMockTestReportsForDeck: vi.fn(),
     createLesson: vi.fn(),
     createLessonDraftFromPublished: vi.fn(),
     deckIdOfLessonVersion: vi.fn(),
@@ -351,8 +343,8 @@ describe("parent oRPC router — sesja rodzica", () => {
       ["decks.get", `/decks/${deckId}`, vi.mocked(readDeck)],
       ["drafts.get", `/drafts/${draftId}`, vi.mocked(readDraft)],
       ["children.getPronunciation", `/children/${childId}/pronunciation`, vi.mocked(getPronunciationSettings)],
-      ["mockTests.list", `/mock-tests?childId=${childId}&deckId=${deckId}`, vi.mocked(readDeckKind)],
-      ["mockTests.get", `/mock-tests/${sessionId}`, vi.mocked(mockTestKindOfSession)],
+      ["mockTests.list", `/mock-tests?childId=${childId}&deckId=${deckId}`, vi.mocked(listMockTestReportsForDeck)],
+      ["mockTests.get", `/mock-tests/${sessionId}`, vi.mocked(getMockTestReportForSession)],
       ["workCard.get", `/work-card?childId=${childId}`, vi.mocked(readParentWorkCard)],
       ["lessonCatalog.get", "/lesson-catalog", vi.mocked(lessonCatalog)],
       ["lessons.get", `/lessons/${deckId}`, vi.mocked(readLessonDeck)],
@@ -871,69 +863,70 @@ describe("parent oRPC router — drafts", () => {
   });
 });
 
-describe("parent oRPC router — mock-tests (dispatch lekcja/słówka)", () => {
+describe("parent oRPC router — mock-tests (fasada lekcja/słówka po stronie serwera)", () => {
   it("lista bez query childId/deckId kończy się validation/400 bez czytania rodzaju zestawu", async () => {
     const response = await call("/mock-tests", { headers: sessionCookie });
 
     expect(response.status).toBe(400);
     const body = ApiErrorSchema.parse(await response.json());
     expect(body.code).toBe("validation");
-    expect(readDeckKind).not.toHaveBeenCalled();
-    expect(listMockTests).not.toHaveBeenCalled();
-    expect(listLessonMockTests).not.toHaveBeenCalled();
+    expect(listMockTestReportsForDeck).not.toHaveBeenCalled();
   });
 
-  it("lista dla zestawu słówek woła listMockTests z no-store", async () => {
-    vi.mocked(readDeckKind).mockResolvedValueOnce("vocabulary");
-    vi.mocked(listMockTests).mockResolvedValueOnce([mockTestReport]);
+  it("lista kartkówek słówek zwraca DTO z no-store", async () => {
+    vi.mocked(listMockTestReportsForDeck).mockResolvedValueOnce([mockTestReport] as never);
 
     const response = await call(`/mock-tests?childId=${childId}&deckId=${deckId}`, { headers: sessionCookie });
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
     await expect(response.json()).resolves.toEqual([mockTestReport]);
-    expect(readDeckKind).toHaveBeenCalledWith(services.db, deckId);
-    expect(listMockTests).toHaveBeenCalledWith(services, childId, deckId);
-    expect(listLessonMockTests).not.toHaveBeenCalled();
+    expect(listMockTestReportsForDeck).toHaveBeenCalledWith(services, childId, deckId);
   });
 
-  it("lista dla zestawu lekcji woła listLessonMockTests z no-store", async () => {
-    vi.mocked(readDeckKind).mockResolvedValueOnce("lesson");
-    vi.mocked(listLessonMockTests).mockResolvedValueOnce([lessonMockTestReport]);
+  it("lista kartkówek lekcji zwraca DTO z no-store", async () => {
+    vi.mocked(listMockTestReportsForDeck).mockResolvedValueOnce([lessonMockTestReport] as never);
 
     const response = await call(`/mock-tests?childId=${childId}&deckId=${deckId}`, { headers: sessionCookie });
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
     await expect(response.json()).resolves.toEqual([lessonMockTestReport]);
-    expect(listLessonMockTests).toHaveBeenCalledWith(services, childId, deckId);
-    expect(listMockTests).not.toHaveBeenCalled();
+    expect(listMockTestReportsForDeck).toHaveBeenCalledWith(services, childId, deckId);
   });
 
-  it("szczegóły sesji słówek woła getMockTestReport z no-store", async () => {
-    vi.mocked(mockTestKindOfSession).mockResolvedValueOnce("vocabulary");
-    vi.mocked(getMockTestReport).mockResolvedValueOnce(mockTestReport);
+  it("szczegóły kartkówki słówek zwracają DTO z no-store", async () => {
+    vi.mocked(getMockTestReportForSession).mockResolvedValueOnce(mockTestReport as never);
 
     const response = await call(`/mock-tests/${sessionId}`, { headers: sessionCookie });
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
     await expect(response.json()).resolves.toEqual(mockTestReport);
-    expect(mockTestKindOfSession).toHaveBeenCalledWith(services.db, sessionId);
-    expect(getMockTestReport).toHaveBeenCalledWith(services, sessionId);
-    expect(getLessonMockTestReport).not.toHaveBeenCalled();
+    expect(getMockTestReportForSession).toHaveBeenCalledWith(services, sessionId);
   });
 
-  it("szczegóły sesji lekcji woła getLessonMockTestReport z no-store", async () => {
-    vi.mocked(mockTestKindOfSession).mockResolvedValueOnce("lesson");
-    vi.mocked(getLessonMockTestReport).mockResolvedValueOnce(lessonMockTestReport);
+  it("szczegóły kartkówki lekcji zwracają DTO z no-store", async () => {
+    vi.mocked(getMockTestReportForSession).mockResolvedValueOnce(lessonMockTestReport as never);
 
     const response = await call(`/mock-tests/${sessionId}`, { headers: sessionCookie });
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
     await expect(response.json()).resolves.toEqual(lessonMockTestReport);
-    expect(getLessonMockTestReport).toHaveBeenCalledWith(services, sessionId);
+    expect(getMockTestReportForSession).toHaveBeenCalledWith(services, sessionId);
+  });
+
+  it("mapuje błędy fasady na dotychczasowe 404 i 409", async () => {
+    vi.mocked(getMockTestReportForSession).mockRejectedValueOnce(new AppError("not_found"));
+    const missing = await call(`/mock-tests/${sessionId}`, { headers: sessionCookie });
+    expect(missing.status).toBe(404);
+    expect(ApiErrorSchema.parse(await missing.json()).code).toBe("not_found");
+
+    vi.mocked(getMockTestReportForSession).mockRejectedValueOnce(new AppError("conflict"));
+    const active = await call(`/mock-tests/${sessionId}`, { headers: sessionCookie });
+    expect(active.status).toBe(409);
+    expect(ApiErrorSchema.parse(await active.json()).code).toBe("conflict");
   });
 });
 

@@ -3,6 +3,7 @@ import {
   createDraft,
   createServices,
   editDraft,
+  executeGeneration,
   executeMediaAsset,
   publishDraft,
   readDraft,
@@ -151,6 +152,36 @@ describe("zasoby medialne i uzgodnienia szkicu (integracja)", () => {
     expect((await assetLink(a.id, 0, "target_audio")).state).toBe("approved");
     expect((await assetLink(b.id, 0, "target_audio")).state).toBe("approved");
     expect(await countRows("media_assets")).toBe(1);
+  });
+
+  it("wejście executeGeneration wykonuje run TTS i zachowuje idempotencję", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = mediaServices(fakes);
+    const draft = await createDraft(services, { title: "Dni", items: [item()] });
+    await reconcileDraftAssets(services, draft.id);
+    const assetId = (await assetLink(draft.id, 0, "target_audio")).asset_id!;
+    const run = await runOfAsset(assetId);
+
+    await executeGeneration(services, run.id);
+
+    const readyAsset = await assetRow(assetId);
+    const succeededRun = await runOfAsset(assetId);
+    expect(readyAsset.state).toBe("ready");
+    expect(succeededRun.state).toBe("succeeded");
+    expect(succeededRun.attempts).toBe(1);
+    expect(fakes.tts.callsFor("Thursday")).toBe(1);
+
+    await executeGeneration(services, run.id);
+
+    const repeatedAsset = await assetRow(assetId);
+    const repeatedRun = await runOfAsset(assetId);
+    expect(repeatedAsset.state).toBe("ready");
+    expect(repeatedAsset.storage_key).toBe(readyAsset.storage_key);
+    expect(repeatedAsset.content_sha256).toBe(readyAsset.content_sha256);
+    expect(repeatedRun.state).toBe("succeeded");
+    expect(repeatedRun.attempts).toBe(1);
+    expect(fakes.tts.callsFor("Thursday")).toBe(1);
   });
 
   it("ponawia historyczną ilustrację modelem zapisanym w zasobie, gdy metadata nie ma modelu", async () => {
