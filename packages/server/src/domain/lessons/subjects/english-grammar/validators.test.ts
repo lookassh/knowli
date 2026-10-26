@@ -201,6 +201,27 @@ describe("validateEnglishGrammarExercise — lesson_gap, temat to_be", () => {
     expect(errors.length === 0).toBe(valid);
   });
 
+  it.each([
+    ["odpowiedź he am do bodźca z luką", "he am", false],
+    ["odpowiedź he is do bodźca z luką", "he is", true],
+  ])("zgodność zaimka ze skrótu z formą: %s", (_name, answer, valid) => {
+    const ex: LessonExerciseDraft = {
+      exerciseType: "lesson_short_answer",
+      objectiveId: "english_grammar.to_be.short_answers",
+      prompt: "Is he ready? Yes, ___.",
+      answer,
+      acceptedAnswers: [],
+      focus: [],
+      options: [
+        { id: "a", text: "he is" },
+        { id: "b", text: "he am" },
+      ],
+      correctOption: valid ? "a" : "b",
+    };
+    const errors = validateEnglishGrammarExercise(ex, toBeV1);
+    expect(errors.length === 0).toBe(valid);
+  });
+
   it("odrzuca skrót I'm jako odpowiedź luki krótkiej odpowiedzi, pełna forma przechodzi", () => {
     const SHORT = "english_grammar.to_be.short_answers";
     expect(validateEnglishGrammarExercise(beGap(SHORT, "Yes, I ___.", "I'm", "be"), toBeV1)).not.toEqual([]);

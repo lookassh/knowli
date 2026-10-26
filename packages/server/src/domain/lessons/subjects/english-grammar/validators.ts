@@ -215,7 +215,7 @@ const BE_DETERMINERS: ReadonlySet<string> = new Set(["the", "a", "an", "my", "hi
 const BE_WH_WORDS: ReadonlySet<string> = new Set(["what", "where", "when", "who", "whom", "whose", "why", "how"]);
 
 /** Tokeny przed luką, które nie są podmiotem (pytajniki, „there”, spójnik). */
-const BE_NON_SUBJECT_BEFORE: ReadonlySet<string> = new Set([...BE_WH_WORDS, "there", "and"]);
+const BE_NON_SUBJECT_BEFORE: ReadonlySet<string> = new Set([...BE_WH_WORDS, "there", "and", "yes", "no"]);
 
 /** Tokeny po luce pomijane przy szukaniu podmiotu (określniki i liczebniki słowne). */
 const BE_AFTER_SKIP: ReadonlySet<string> = new Set([
@@ -398,6 +398,13 @@ function validateBeAnswerText(ex: LessonExerciseDraft, answer: string, field: st
     // (isn't, am not) — sprawdzamy ją tym samym parserem co odpowiedź luki.
     const parsed = parseBeGapAnswer(answer);
     if (parsed !== null) {
+      if (parsed.pronoun !== undefined && BE_FORM_BY_SUBJECT[parsed.pronoun] !== parsed.form) {
+        errors.push(`${field}: forma „${parsed.form}” nie pasuje do osoby „${parsed.pronoun}” ze skrótu`);
+      }
+      const stemPronoun = bePronounNearGap(gapContext);
+      if (parsed.pronoun !== undefined && stemPronoun !== undefined && parsed.pronoun !== stemPronoun) {
+        errors.push(`${field}: osoba „${parsed.pronoun}” w odpowiedzi nie pasuje do podmiotu „${stemPronoun}”`);
+      }
       const expected = expectedBeFormNearGap(gapContext);
       if (expected !== undefined && expected !== parsed.form) {
         errors.push(`${field}: forma „${parsed.form}” nie pasuje do podmiotu (poprawnie: ${expected})`);
