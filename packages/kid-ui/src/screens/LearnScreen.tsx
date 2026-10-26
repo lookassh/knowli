@@ -132,18 +132,21 @@ export function LearnScreen({
   // zadaniu speech/picture_speech nagrywanie startuje samo, bez naciskania
   // przycisku. Jedyny punkt wiringu auto-startu, wspólny dla SpeechView i
   // PictureSpeechView — logika żyje w kontrolerze sesji i media/vad.ts.
-  // Zależności celowo BEZ screen.feedback: efekt odpala się raz na nowe
-  // zadanie (taskId + rodzaj promptu) i nigdy po „Nagraj jeszcze raz”
+  // Wiring odpala się raz na zamontowanie panelu nowego zadania
+  // i nigdy po „Nagraj jeszcze raz”
   // (SPEC §16). Podwójne wywołanie (np. StrictMode) jest bezpieczne —
   // synchroniczne ustawienie fazy preparing przez prepareMicrophone i latch
   // taskId w kontrolerze czynią drugie wywołanie no-opem.
-  const autoTaskId = task?.taskId;
   const autoPromptKind = task?.prompt.kind;
-  useEffect(() => {
-    if (autoPromptKind === "speech" || autoPromptKind === "picture_speech") {
+  // Auto-start odpala TaskPane po zamontowaniu nowego panelu (patrz niżej),
+  // nie efekt keyed taskId: przy AnimatePresence mode="wait" nowy panel
+  // montuje się dopiero po wyjściu poprzedniego, a nagrywanie nie może
+  // wystartować przed pokazaniem bodźca.
+  const handlePaneMount = (mountedTaskId: string) => {
+    if (mountedTaskId === task?.taskId && (autoPromptKind === "speech" || autoPromptKind === "picture_speech")) {
       void controller.autoCaptureSpeech();
     }
-  }, [controller, autoTaskId, autoPromptKind]);
+  };
 
   const speechFeedbackProps = feedback !== null && task !== null ? {
     dto: feedback.dto,
@@ -244,7 +247,7 @@ export function LearnScreen({
       ) : (
         task !== null && (
           <div className="kid-task">
-            <TaskTransition taskId={task.taskId}>
+            <TaskTransition taskId={task.taskId} onPaneMount={handlePaneMount}>
             {screen.reveal !== null ? (
               <ExerciseFrame task={task} content={(
                 <section className="kid-card kid-reveal" data-testid="kid-reveal">

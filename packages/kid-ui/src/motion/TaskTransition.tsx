@@ -1,12 +1,24 @@
 "use client";
 
-import type { ReactElement, ReactNode } from "react";
+import { useEffect, useRef, type ReactElement, type ReactNode } from "react";
 import { AnimatePresence, m, useIsPresent, useReducedMotion } from "motion/react";
 import { kidTaskExit, kidTaskTransition } from "./kid-motion";
 
-function TaskPane({ children }: { children: ReactNode }): ReactElement {
+function TaskPane({ taskId, onPaneMount, children }: {
+  taskId: string;
+  onPaneMount?: (taskId: string) => void;
+  children: ReactNode;
+}): ReactElement {
   const isPresent = useIsPresent();
   const reduceMotion = useReducedMotion();
+  const mountRef = useRef(onPaneMount);
+  mountRef.current = onPaneMount;
+  // Fires only when this pane is actually mounted (after the previous pane
+  // has animated out in "wait" mode) - effects keyed on taskId in the parent
+  // would run earlier, before the new task is visible.
+  useEffect(() => {
+    mountRef.current?.(taskId);
+  }, [taskId]);
   return (
     <m.div
       data-testid="kid-task-transition"
@@ -26,10 +38,14 @@ function TaskPane({ children }: { children: ReactNode }): ReactElement {
 /** Animated switch between tasks; the session header stays still.
  * The exiting pane is inert, so its controls cannot act on the new task.
  * Only transform and opacity move, so layout geometry is untouched. */
-export function TaskTransition({ taskId, children }: { taskId: string; children: ReactNode }): ReactElement {
+export function TaskTransition({ taskId, onPaneMount, children }: {
+  taskId: string;
+  onPaneMount?: (taskId: string) => void;
+  children: ReactNode;
+}): ReactElement {
   return (
     <AnimatePresence mode="wait" initial={false}>
-      <TaskPane key={taskId}>{children}</TaskPane>
+      <TaskPane key={taskId} taskId={taskId} onPaneMount={onPaneMount}>{children}</TaskPane>
     </AnimatePresence>
   );
 }
