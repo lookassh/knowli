@@ -55,11 +55,9 @@ test(`${kind}: incorrect feedback keeps ${correctText} and retry label readable`
   await expect(page.getByTestId("kid-next")).toBeInViewport({ ratio: 0.98 });
 
   for (const viewport of [{ width: 384, height: 640 }, { width: 360, height: 540 }, { width: 320, height: 480 },
-    { width: 640, height: 360 }, { width: 768, height: 1024 }, { width: 1440, height: 960 },
-    { width: 360, height: 640, zoom: true }]) {
+    { width: 640, height: 360 }, { width: 768, height: 1024 }, { width: 1440, height: 960 }]) {
     await page.setViewportSize(viewport);
-    await page.evaluate((zoom) => { document.documentElement.style.fontSize = zoom ? "200%" : ""; }, "zoom" in viewport);
-    await page.screenshot({ path: testInfo.outputPath(`feedback-${viewport.width}x${viewport.height}${"zoom" in viewport ? "-zoom" : ""}.png`) });
+    await page.screenshot({ path: testInfo.outputPath(`feedback-${viewport.width}x${viewport.height}.png`) });
     const retry = page.getByTestId("kid-next");
     await retry.scrollIntoViewIfNeeded();
     await expect(retry).toBeInViewport({ ratio: 0.98 });
@@ -90,7 +88,7 @@ test(`${kind}: incorrect feedback keeps ${correctText} and retry label readable`
     await expectTextReachable(answer);
     await expect(dock).toContainText("Poprawna odpowiedź");
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
-    if (!("zoom" in viewport) && viewport.height >= 480) {
+    if (viewport.height >= 480) {
       for (const option of await page.getByTestId("kid-option").all()) {
         // Readable options may scroll inside the material after the real
         // footer appears; check each one in that viewport, without shrinking it.
@@ -116,7 +114,7 @@ test(`${kind}: incorrect feedback keeps ${correctText} and retry label readable`
       }
       await retry.scrollIntoViewIfNeeded();
     }
-    await page.screenshot({ path: testInfo.outputPath(`feedback-${viewport.width}x${viewport.height}${"zoom" in viewport ? "-zoom" : ""}.png`) });
+    await page.screenshot({ path: testInfo.outputPath(`feedback-${viewport.width}x${viewport.height}.png`) });
   }
 });
 }

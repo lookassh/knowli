@@ -25,7 +25,7 @@ describe("summary screen states", () => {
     const onAgain = vi.fn();
     const onSwitchProfile = vi.fn();
     renderKid(<SummaryScreen summary={{ ...summary, activity }} profiles={[profile, { ...profile, childId: "10000000-0000-4000-8000-000000000002" }]} onAgain={onAgain} onSwitchProfile={onSwitchProfile} />);
-    expect(screen.getByRole("main").className).toContain("mantine-KidScreen-root");
+    expect(screen.getByRole("main").getAttribute("data-kid-screen")).toBe("true");
     expect(screen.getByRole("status").textContent).toContain(message);
     expect(screen.getByTestId("kid-summary").tagName).toBe("H1");
     fireEvent.click(screen.getByTestId("kid-again"));
@@ -34,9 +34,9 @@ describe("summary screen states", () => {
     expect(onSwitchProfile).toHaveBeenCalledTimes(1);
   });
 
-  it("renders a summary without activity as a Mantine screen and does not invent a reward", () => {
+  it("renders a summary without activity as a kid screen and does not invent a reward", () => {
     renderKid(<SummaryScreen summary={summary} profiles={[profile]} onAgain={vi.fn()} onSwitchProfile={vi.fn()} />);
-    expect(screen.getByRole("main").className).toContain("mantine-KidScreen-root");
+    expect(screen.getByRole("main").getAttribute("data-kid-screen")).toBe("true");
     expect(screen.queryByTestId("kid-summary-reward")).toBeNull();
     expect(screen.queryByTestId("kid-switch-profile")).toBeNull();
   });

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("Mantine child theme stays scoped while navigating between child and parent", async ({ page }) => {
+test("child theme stays scoped while navigating between child and parent", async ({ page }) => {
   await page.goto("/parent");
   await expect(page.getByTestId("auth-secret")).toBeVisible();
   const parentBefore = await page.evaluate(() => {
@@ -13,12 +13,12 @@ test("Mantine child theme stays scoped while navigating between child and parent
       borderColor: style.borderColor,
       padding: style.padding,
       lineHeight: style.lineHeight,
-      rootScheme: document.documentElement.getAttribute("data-mantine-color-scheme"),
+      rootKidTheme: document.documentElement.getAttribute("data-kid-theme"),
     };
   });
 
   await page.getByTestId("to-learning").click();
-  await expect(page.locator(".kid-theme[data-mantine-color-scheme='dark']")).toBeAttached();
+  await expect(page.locator(".kid-theme[data-kid-theme='night']")).toBeAttached();
   await page.getByTestId("kid-parent-link").click();
   await expect(page.getByTestId("auth-secret")).toBeVisible();
 
@@ -32,14 +32,14 @@ test("Mantine child theme stays scoped while navigating between child and parent
       borderColor: style.borderColor,
       padding: style.padding,
       lineHeight: style.lineHeight,
-      rootScheme: document.documentElement.getAttribute("data-mantine-color-scheme"),
+      rootKidTheme: document.documentElement.getAttribute("data-kid-theme"),
     };
   });
 
   expect(parentAfter).toEqual(parentBefore);
 
   await page.getByTestId("to-learning").click();
-  await expect(page.locator(".kid-theme[data-mantine-color-scheme='dark']")).toBeAttached();
+  await expect(page.locator(".kid-theme[data-kid-theme='night']")).toBeAttached();
   await page.goBack();
   await expect(page.getByTestId("auth-secret")).toBeVisible();
   const parentAfterHistory = await page.evaluate(() => {
@@ -52,7 +52,7 @@ test("Mantine child theme stays scoped while navigating between child and parent
       borderColor: style.borderColor,
       padding: style.padding,
       lineHeight: style.lineHeight,
-      rootScheme: document.documentElement.getAttribute("data-mantine-color-scheme"),
+      rootKidTheme: document.documentElement.getAttribute("data-kid-theme"),
     };
   });
   expect(parentAfterHistory).toEqual(parentBefore);

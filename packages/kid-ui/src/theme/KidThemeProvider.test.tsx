@@ -1,26 +1,17 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, renderKid } from "../test/render-kid";
 
-afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
-});
+afterEach(cleanup);
 
 describe("KidThemeProvider", () => {
-  it("scopes dark color scheme to the child UI", () => {
-    const originalScheme = document.documentElement.getAttribute("data-mantine-color-scheme");
-    vi.stubGlobal("matchMedia", vi.fn(() => ({
-      matches: false,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    })));
-
+  it("scopes the fixed night theme to the child UI", () => {
     const { container, unmount } = renderKid(<button type="button">Test</button>);
 
-    expect(container.querySelector(".kid-theme")?.getAttribute("data-mantine-color-scheme")).toBe("dark");
-    expect(document.documentElement.getAttribute("data-mantine-color-scheme")).toBe(originalScheme);
+    const root = container.querySelector(".kid-theme");
+    expect(root?.getAttribute("data-kid-theme")).toBe("night");
+    expect(document.documentElement.classList.contains("kid-theme")).toBe(false);
     unmount();
-    expect(document.documentElement.getAttribute("data-mantine-color-scheme")).toBe(originalScheme);
+    expect(container.querySelector(".kid-theme")).toBeNull();
   });
 });

@@ -18,7 +18,7 @@ const deck = (n: number, overrides: Partial<KidDeckDto> = {}): KidDeckDto => ({
   ...overrides,
 });
 
-describe("profile and deck Mantine screens", () => {
+describe("profile and deck screens", () => {
   it("renders all avatar keys, points, non-reader state and selection callbacks", () => {
     const avatars = ["fox", "bear", "cat", "dog", "owl", "rabbit"];
     const profiles = avatars.map((avatar, index) => ({ ...profile(avatar, index + 1), canRead: index !== 2 }));
@@ -26,7 +26,7 @@ describe("profile and deck Mantine screens", () => {
     renderKid(<ProfileScreen profiles={profiles} onSelect={onSelect} />);
     expect(screen.getAllByTestId("kid-profile")).toHaveLength(6);
     expect(screen.getByRole("main")).toBeTruthy();
-    expect(screen.getAllByTestId("kid-profile")[2]!.className).toContain("mantine-UnstyledButton-root");
+    expect(screen.getAllByTestId("kid-profile")[2]!.tagName).toBe("BUTTON");
     expect(screen.getAllByTestId("kid-profile-points").map((badge) => badge.textContent)).toContain("Punkty: 1");
     expect(screen.getAllByText("Uczę się bez czytania")).toHaveLength(1);
     fireEvent.click(screen.getAllByTestId("kid-profile")[2]!);
@@ -54,7 +54,7 @@ describe("profile and deck Mantine screens", () => {
     expect(screen.getByTestId("kid-section-other")).toBeTruthy();
     expect(screen.getByText(/2 lis/)).toBeTruthy();
     expect(screen.getAllByTestId("kid-deck-title")[2]!.textContent).toContain("Język angielski");
-    expect(screen.getAllByTestId("kid-deck")[0]!.className).toContain("mantine-UnstyledButton-root");
+    expect(screen.getAllByTestId("kid-deck")[0]!.tagName).toBe("BUTTON");
     screen.getAllByTestId("kid-deck").forEach(button => fireEvent.click(button));
     fireEvent.click(screen.getByTestId("kid-mock-start"));
     fireEvent.click(screen.getByTestId("kid-resume-session"));
@@ -81,7 +81,7 @@ describe("profile and deck Mantine screens", () => {
     expect(screen.queryByTestId("kid-mic-toggle")).toBeNull();
     fireEvent.click(settings);
     const toggle = await screen.findByTestId("kid-mic-toggle");
-    expect(toggle.className).toContain("mantine-Switch-input");
+    expect(toggle.className).toContain("kid-toggle");
     fireEvent.click(toggle);
     expect(onToggleMicrophone).toHaveBeenCalledWith(true);
     expect(screen.queryByTestId("kid-deck-microphone")).toBeNull();

@@ -43,14 +43,14 @@ describe("written exercise controls", () => {
     fireEvent.submit(input.form!);
     expect(props.handlers.onSubmitText).toHaveBeenCalledExactlyOnceWith(" ca ");
     expect(props.handlers.onEdit).toHaveBeenCalledTimes(1);
-    expect(input.classList.contains("mantine-Input-input")).toBe(true);
+    expect(input.tagName).toBe("INPUT");
 
     rerender(<ExerciseView {...makeExerciseProps(task("recall", "10000000-0000-4000-8000-000000000006"), { handlers: props.handlers })} />);
     const nextInput = screen.getByTestId("kid-input") as HTMLInputElement;
     fireEvent.change(nextInput, { target: { value: " dog " } });
     fireEvent.click(screen.getByTestId("kid-submit"));
     expect(props.handlers.onSubmitText).toHaveBeenLastCalledWith(" dog ");
-    expect((screen.getByTestId("kid-submit").className)).toContain("mantine-UnstyledButton-root");
+    expect(screen.getByTestId("kid-submit").tagName).toBe("BUTTON");
   });
 
   it("rejects empty/space-only values and disables submission while busy", () => {
@@ -99,7 +99,7 @@ describe("written exercise controls", () => {
     expect(input.getAttribute("autocorrect")).toBe("off");
     expect(input.getAttribute("autocapitalize")).toBe("off");
     expect(input.getAttribute("spellcheck")).toBe("false");
-    expect(input.classList.contains("mantine-Input-input")).toBe(true);
+    expect(input.tagName).toBe("INPUT");
     fireEvent.submit(input.form!);
     expect(handlers.onSubmitText).toHaveBeenCalledExactlyOnceWith("cat");
   });

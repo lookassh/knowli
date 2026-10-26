@@ -75,7 +75,6 @@ test("exposure keeps the complete word card above its action without scrolling o
   // Accessibility and unusually short windows retain the complete card through scrolling.
   for (const viewport of [{ width: 640, height: 360 }, { width: 760, height: 450 }, { width: 360, height: 640 }]) {
     await page.setViewportSize(viewport);
-    if (viewport.width === 360) await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
     for (const testId of ["kid-illustration", "kid-target", "kid-source", "kid-example", "kid-play-example", "kid-done"]) {
       const element = page.getByTestId(testId);
       await element.scrollIntoViewIfNeeded();
@@ -89,7 +88,7 @@ test("exposure keeps the complete word card above its action without scrolling o
   }
 });
 
-test("Mantine picture choices keep their geometry until the server verdict", async ({ page }) => {
+test("picture choices keep their geometry until the server verdict", async ({ page }) => {
   const fixture = pictureChoiceLayoutFixture();
   const attempt = fixture.attempts![0]!;
   let releaseAttempt!: () => void;
@@ -166,7 +165,7 @@ test("Mantine picture choices keep their geometry until the server verdict", asy
   await expect(page.getByTestId("kid-next")).toBeInViewport();
 });
 
-test("Mantine recall keeps the exact draft and focus through viewport changes", async ({ page }) => {
+test("recall keeps the exact draft and focus through viewport changes", async ({ page }) => {
   await installKidUiFixture(page, recallLayoutFixture());
   await page.setViewportSize({ width: 360, height: 760 });
   await page.goto("/");

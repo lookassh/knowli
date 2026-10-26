@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
-import { Box } from "@mantine/core";
 import type { TaskDto } from "@learning/contracts";
 import { ExerciseInstruction, type ExerciseInstructionAudio } from "../components/ExerciseInstruction";
 import classes from "./ExerciseFrame.module.css";
@@ -13,10 +12,10 @@ import {
 /**
  * Rama zadania: siatka instrukcja / materiał / akcje. Zwykle przewija się
  * tylko materiał; przy długiej odpowiedzi wyboru rama też może się przewinąć,
- * aby zachować pełny tekst i czytelne minimum materiału. AppShell Mantine nie przeszedł
+ * aby zachować pełny tekst i czytelne minimum materiału. AppShell nie przeszedł
  * weryfikacji runtime (jego hooki wymagają `useEffectEvent`,
  * niedostępnego w przypiętym React), dlatego szkielet opiera się na
- * Box i module CSS. Wynik próby trafia do stopki jako `dock` — bodziec
+ * zwyklych elementach i module CSS. Wynik próby trafia do stopki jako `dock` — bodziec
  * i odpowiedzi pozostają zamontowane. W trybie flow stopka ma rzeczywistą
  * wysokość; materiał może się zmniejszyć lub przewijać po werdykcie.
  */
@@ -186,33 +185,33 @@ export function ExerciseFrame({
   }, [dockPad]);
 
   return (
-    <Box className={`kid-exercise-frame ${classes.root}`} data-testid="kid-exercise" data-prompt-kind={task.prompt.kind} data-feedback-layout={feedbackLayout}>
+    <div className={`kid-exercise-frame ${classes.root}`} data-testid="kid-exercise" data-prompt-kind={task.prompt.kind} data-feedback-layout={feedbackLayout}>
       <ExerciseInstruction instruction={presentation.instruction} icon={presentation.icon} audio={instructionAudio} />
-      <Box ref={materialRef} className={`kid-material ${classes.material}`} data-testid="kid-material">
-        <Box
+      <div ref={materialRef} className={`kid-material ${classes.material}`} data-testid="kid-material">
+        <div
           className={`kid-material-content ${classes.materialContent}`}
           style={dock !== undefined && dockPad > 0 ? { paddingBottom: dockPad + 4, minHeight: `calc(100% + ${dockPad}px)` } : undefined}
-        >{content}</Box>
-      </Box>
-      <Box className={`kid-exercise-actions ${classes.actions}`} data-testid="kid-exercise-actions">
+        >{content}</div>
+      </div>
+      <div className={`kid-exercise-actions ${classes.actions}`} data-testid="kid-exercise-actions">
         {flowFeedback ? (
-          dock ? <Box ref={overlayRef} className={classes.flowDock}>{dock}</Box> : <>
-            {actions && <Box data-testid="kid-primary-slot" className={classes.primary}>{actions}</Box>}
-            {secondaryActions && <Box data-testid="kid-secondary-slot" className={classes.secondary}>{secondaryActions}</Box>}
+          dock ? <div ref={overlayRef} className={classes.flowDock}>{dock}</div> : <>
+            {actions && <div data-testid="kid-primary-slot" className={classes.primary}>{actions}</div>}
+            {secondaryActions && <div data-testid="kid-secondary-slot" className={classes.secondary}>{secondaryActions}</div>}
           </>
         ) : dock ? (
-          <Box ref={anchorRef} className={classes.dockAnchor}>
-            <Box data-testid="kid-primary-slot" className={classes.primary} aria-hidden="true" />
-            <Box data-testid="kid-secondary-slot" className={classes.secondary} aria-hidden="true" />
-            <Box ref={overlayRef} className={`kid-feedback-overlay ${classes.dockOverlay}`}>{dock}</Box>
-          </Box>
+          <div ref={anchorRef} className={classes.dockAnchor}>
+            <div data-testid="kid-primary-slot" className={classes.primary} aria-hidden="true" />
+            <div data-testid="kid-secondary-slot" className={classes.secondary} aria-hidden="true" />
+            <div ref={overlayRef} className={`kid-feedback-overlay ${classes.dockOverlay}`}>{dock}</div>
+          </div>
         ) : (
           <>
-            <Box data-testid="kid-primary-slot" className={classes.primary}>{actions}</Box>
-            <Box data-testid="kid-secondary-slot" className={classes.secondary}>{secondaryActions}</Box>
+            <div data-testid="kid-primary-slot" className={classes.primary}>{actions}</div>
+            <div data-testid="kid-secondary-slot" className={classes.secondary}>{secondaryActions}</div>
           </>
         )}
-      </Box>
-    </Box>
+      </div>
+    </div>
   );
 }

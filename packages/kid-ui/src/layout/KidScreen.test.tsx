@@ -9,7 +9,7 @@ afterEach(cleanup);
 describe("KidScreen", () => {
   it("keeps primary and secondary action slots even when the primary is empty", () => {
     renderKid(
-      <KidScreen mod={{ active: true }}>
+      <KidScreen data-active="true">
         <KidScreen.Header>Nagłówek</KidScreen.Header>
         <KidScreen.Content>Treść</KidScreen.Content>
         <KidScreen.Actions secondary={<button type="button">Pomiń</button>} />
@@ -22,14 +22,14 @@ describe("KidScreen", () => {
     expect(screen.getByTestId("kid-screen").hasAttribute("data-active")).toBe(true);
   });
 
-  it("preserves child state, refs and Styles API classes across rerenders", () => {
+  it("preserves child state, refs and classes across rerenders", () => {
     const ref = { current: null as HTMLInputElement | null };
     const contentRef = createRef<HTMLDivElement>();
     const rootRef = createRef<HTMLDivElement>();
     const view = (heading: string) => (
       <KidScreen ref={rootRef}>
         <KidScreen.Header>{heading}</KidScreen.Header>
-        <KidScreen.Content ref={contentRef} classNames={{ content: "probe-content" }}>
+        <KidScreen.Content ref={contentRef} className="probe-content">
           <input ref={ref} aria-label="Wpis" defaultValue="" />
         </KidScreen.Content>
         <KidScreen.Actions />
@@ -50,19 +50,19 @@ describe("KidScreen", () => {
     expect(container.querySelector(".probe-content")).toBe(screen.getByTestId("kid-content"));
   });
 
-  it("applies local Styles API overrides to each action slot", () => {
+  it("passes className and style through to the screen root", () => {
     renderKid(
-      <KidScreen>
+      <KidScreen className="probe-screen" style={{ color: "rgb(1, 2, 3)" }}>
         <KidScreen.Header />
         <KidScreen.Content />
-        <KidScreen.Actions
-          classNames={{ primary: "custom-primary" }}
-          styles={{ secondary: { color: "rgb(1, 2, 3)" } }}
-        />
+        <KidScreen.Actions />
       </KidScreen>,
     );
 
-    expect(screen.getByTestId("kid-primary-slot").classList.contains("custom-primary")).toBe(true);
-    expect((screen.getByTestId("kid-secondary-slot") as HTMLElement).style.color).toBe("rgb(1, 2, 3)");
+    const root = screen.getByTestId("kid-screen");
+    expect(root.classList.contains("probe-screen")).toBe(true);
+    expect((root as HTMLElement).style.color).toBe("rgb(1, 2, 3)");
+    expect(screen.getByTestId("kid-primary-slot")).toBeTruthy();
+    expect(screen.getByTestId("kid-secondary-slot")).toBeTruthy();
   });
 });

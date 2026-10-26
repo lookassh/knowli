@@ -94,6 +94,12 @@
 }
 
 :global(.kid-ui) .input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 14px;
+  border: 1px solid #5f7fb8;
+  font: inherit;
+  font-size: var(--kid-type-body-size);
   min-height: 54px;
   background: #101a30;
   border-color: #5f7fb8;
