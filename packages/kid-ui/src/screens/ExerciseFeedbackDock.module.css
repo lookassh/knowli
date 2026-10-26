@@ -18,7 +18,7 @@
   gap: 8px;
   padding: 10px;
   border: 1px solid var(--kid-line);
-  border-radius: 20px 20px 0 0;
+  border-radius: var(--kid-shape-xl) var(--kid-shape-xl) var(--kid-shape-none) var(--kid-shape-none);
   background: var(--kid-surface);
   animation: kid-dock-in 200ms ease-out;
 }
@@ -42,7 +42,7 @@
 }
 
 .compact .content :global(.kid-feedback-text) {
-  font-size: 1rem;
+  font-size: var(--kid-type-body-size);
   line-height: 1.15;
 }
 

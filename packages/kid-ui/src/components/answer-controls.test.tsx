@@ -96,6 +96,27 @@ describe("ActionButton and AnswerField", () => {
     expect(submit).toHaveBeenCalledTimes(1);
   });
 
+  it("resolves Material 3 variants with legacy priority as an alias", () => {
+    renderKid(<ActionButton>Filled</ActionButton>);
+    expect(screen.getByRole("button", { name: "Filled" }).getAttribute("data-variant")).toBe("filled");
+    expect(screen.getByRole("button", { name: "Filled" }).getAttribute("data-priority")).toBe("primary");
+    cleanup();
+
+    renderKid(<ActionButton priority="secondary">Tonal</ActionButton>);
+    expect(screen.getByRole("button", { name: "Tonal" }).getAttribute("data-variant")).toBe("tonal");
+    cleanup();
+
+    renderKid(<ActionButton variant="outlined" priority="secondary">Outlined</ActionButton>);
+    const outlined = screen.getByRole("button", { name: "Outlined" });
+    expect(outlined.getAttribute("data-variant")).toBe("outlined");
+    expect(outlined.getAttribute("data-priority")).toBe("secondary");
+    expect(outlined.style.borderRadius).toBe("var(--kid-shape-xl)");
+    cleanup();
+
+    renderKid(<ActionButton variant="text">Text</ActionButton>);
+    expect(screen.getByRole("button", { name: "Text" }).getAttribute("data-variant")).toBe("text");
+  });
+
   it("keeps icon actions at a named 48px square target", () => {
     const onClick = vi.fn();
     renderKid(<IconActionButton aria-label="Posłuchaj" onClick={onClick}><span aria-hidden="true">▶</span></IconActionButton>);
