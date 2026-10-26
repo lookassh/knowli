@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import { useKidViewport } from "./viewport";
+import { KidViewportProvider, useKidViewport } from "./viewport";
 
 export function KidPage({
   mode,
@@ -16,17 +16,19 @@ export function KidPage({
     : undefined;
 
   return (
-    <div
-      className={["kid-ui", "kid-page", session ? "kid-page--session" : "kid-page--flow"]
-        .filter(Boolean)
-        .join(" ")}
-      data-testid={mode === "session" ? "kid-session-frame" : undefined}
-      data-zoomed={zoomed ? "true" : "false"}
-      data-viewport-short={session && viewport.height !== null && viewport.height <= 700 ? "true" : undefined}
-      data-viewport-very-short={session && viewport.height !== null && viewport.height <= 479 ? "true" : undefined}
-      style={style}
-    >
-      {children}
-    </div>
+    <KidViewportProvider viewport={{ width: viewport.width, height: viewport.height, offsetTop: viewport.offsetTop, zoomed: viewport.zoomed }}>
+      <div
+        className={["kid-ui", "kid-page", session ? "kid-page--session" : "kid-page--flow"]
+          .filter(Boolean)
+          .join(" ")}
+        data-testid={mode === "session" ? "kid-session-frame" : undefined}
+        data-zoomed={zoomed ? "true" : "false"}
+        data-viewport-short={session && viewport.height !== null && viewport.height <= 700 ? "true" : undefined}
+        data-viewport-very-short={session && viewport.height !== null && viewport.height <= 479 ? "true" : undefined}
+        style={style}
+      >
+        {children}
+      </div>
+    </KidViewportProvider>
   );
 }

@@ -164,7 +164,9 @@ async function openPictureSpeechSession(page: Page, name: string): Promise<void>
   }
   await page.goto(`/kids/${child.id}/learn`);
   await expect(page.getByTestId("kid-deck")).toBeVisible();
+  await page.getByTestId("kid-mic-settings").click();
   await page.getByTestId("kid-mic-toggle").check();
+  await page.getByTestId("kid-mic-settings").click();
   await page.getByTestId("kid-deck").filter({ hasText: `Obrazki dla ${name}` }).click();
 }
 
@@ -317,7 +319,9 @@ async function createLearningTask(page: Page, name: string, recordingMode: "hold
   }
   await page.goto(`/kids/${child.id}/learn`);
   await expect(page.getByTestId("kid-deck")).toBeVisible();
+  await page.getByTestId("kid-mic-settings").click();
   await page.getByTestId("kid-mic-toggle").check();
+  await page.getByTestId("kid-mic-settings").click();
   await page.getByTestId("kid-deck").filter({ hasText: `Dni dla ${name}` }).click();
   await expect(page.getByTestId("kid-input")).toBeVisible();
 }
