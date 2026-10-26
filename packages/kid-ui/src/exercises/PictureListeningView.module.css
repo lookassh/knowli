@@ -1,18 +1,5 @@
-:global(.kid-ui) .play {
-  flex: none;
-  border: 2px solid var(--kid-line);
-  border-radius: 50%;
-  background: var(--kid-soft);
-  color: var(--kid-text);
-}
-
-:global(.kid-ui) .play :global(.kid-icon) {
-  width: 36px;
-  height: 36px;
-}
-
-/* The play button consumes its natural height; this box gives AnswerGrid
-   exactly the remaining rectangle, without subtracting guessed pixel budgets. */
+/* The frame gives AnswerGrid its available rectangle, independently of
+   the instruction's natural height, without guessed pixel budgets. */
 .answers {
   width: 100%;
   min-height: 0;

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { Box } from "@mantine/core";
 import type { TaskDto } from "@learning/contracts";
-import { KidIcon } from "../components/KidIcon";
+import { ExerciseInstruction, type ExerciseInstructionAudio } from "../components/ExerciseInstruction";
 import classes from "./ExerciseFrame.module.css";
 import { getExercisePresentation } from "./exercise-presentation";
 import {
@@ -11,9 +11,9 @@ import {
 } from "./feedback-dock-reveal";
 
 /**
- * Rama zadania: siatka instrukcja / materiał / akcje. Tylko obszar
- * materiału przewija się — instrukcja i akcje stoją poza scrollerem,
- * więc zawsze zostają na miejscu. AppShell Mantine nie przeszedł
+ * Rama zadania: siatka instrukcja / materiał / akcje. Zwykle przewija się
+ * tylko materiał; przy długiej odpowiedzi wyboru rama też może się przewinąć,
+ * aby zachować pełny tekst i czytelne minimum materiału. AppShell Mantine nie przeszedł
  * weryfikacji runtime (jego hooki wymagają `useEffectEvent`,
  * niedostępnego w przypiętym React), dlatego szkielet opiera się na
  * Box i module CSS. Wynik próby trafia do stopki jako `dock` — bodziec
@@ -27,6 +27,7 @@ export function ExerciseFrame({
   secondaryActions,
   dock,
   feedbackLayout = "overlay",
+  instructionAudio,
 }: {
   task: TaskDto;
   content: ReactNode;
@@ -35,6 +36,7 @@ export function ExerciseFrame({
   dock?: ReactNode;
   /** Choice tasks use a real footer instead of reserving space for an overlay. */
   feedbackLayout?: "overlay" | "flow";
+  instructionAudio?: ExerciseInstructionAudio;
 }): ReactElement {
   const presentation = getExercisePresentation(task);
   const materialRef = useRef<HTMLDivElement>(null);
@@ -174,10 +176,7 @@ export function ExerciseFrame({
 
   return (
     <Box className={`kid-exercise-frame ${classes.root}`} data-testid="kid-exercise" data-prompt-kind={task.prompt.kind} data-feedback-layout={feedbackLayout}>
-      <Box component="header" className={`kid-exercise-instruction ${classes.instruction}`} data-testid="kid-instruction">
-        <KidIcon name={presentation.icon} className="kid-exercise-instruction-icon" />
-        <span>{presentation.instruction}</span>
-      </Box>
+      <ExerciseInstruction instruction={presentation.instruction} icon={presentation.icon} audio={instructionAudio} />
       <Box ref={materialRef} className={`kid-material ${classes.material}`} data-testid="kid-material">
         <Box
           className={`kid-material-content ${classes.materialContent}`}
