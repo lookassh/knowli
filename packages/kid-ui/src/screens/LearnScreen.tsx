@@ -16,6 +16,7 @@ import { describeSpeechFeedback } from "./speech-feedback-view";
 import type { LearningSessionController, LearningScreen as LearningScreenState } from "../session/session-controller";
 import { useFeedbackCooldown } from "./useFeedbackCooldown";
 import { SessionProgress } from "../components/SessionProgress";
+import { TaskTransition } from "../motion/TaskTransition";
 import { ActionButton } from "../components/ActionButton";
 import { IconActionButton } from "../components/IconActionButton";
 
@@ -243,6 +244,7 @@ export function LearnScreen({
       ) : (
         task !== null && (
           <div className="kid-task">
+            <TaskTransition taskId={task.taskId}>
             {screen.reveal !== null ? (
               <ExerciseFrame task={task} content={(
                 <section className="kid-card kid-reveal" data-testid="kid-reveal">
@@ -276,6 +278,7 @@ export function LearnScreen({
                 handlers={handlers}
               />
             )}
+            </TaskTransition>
           </div>
         )
       )}

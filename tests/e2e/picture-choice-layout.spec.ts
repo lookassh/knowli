@@ -284,7 +284,7 @@ test("cyfra działa z klawiatury w ciemnym motywie, pokazuje błąd i pozwala sp
   const firstAnswerStarted = new Promise<void>((resolve) => { signalFirstAnswer = resolve; });
   const submitted: unknown[] = [];
   let responseIndex = 0;
-  await page.emulateMedia({ colorScheme: "dark" });
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
   await openPictureChoices(page, fixture);
   await page.route(`**/api/v1/kid/tasks/${task.taskId}/attempts`, async (route) => {
     submitted.push(route.request().postDataJSON());
@@ -463,7 +463,7 @@ test("układ poziomy zachowuje dostęp do wszystkich odpowiedzi i końca sesji",
 });
 
 test("trzy odpowiedzi i cyfra pozostają czytelne w ciemnym motywie", async ({ page }, testInfo) => {
-  await page.emulateMedia({ colorScheme: "dark" });
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
   await openPictureChoices(page, pictureChoiceLayoutFixture());
   await assertKidLayout(page);
 

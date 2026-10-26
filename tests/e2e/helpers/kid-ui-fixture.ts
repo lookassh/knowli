@@ -49,7 +49,10 @@ export interface KidUiFixture {
   onEndSession?: (report: SessionActivityReport) => void;
 }
 
-export async function installKidUiFixture(page: Page, fixture: KidUiFixture): Promise<void> {
+export async function installKidUiFixture(page: Page, fixture: KidUiFixture, options: { reducedMotion?: boolean } = {}): Promise<void> {
+  // Geometry specs measure a static layout: Motion honours reduced motion,
+  // so the whole mocked Kid UI runs without animation unless a spec opts out.
+  await page.emulateMedia({ reducedMotion: options.reducedMotion === false ? "no-preference" : "reduce" });
   KidProfileDtoSchema.array().parse(fixture.profiles);
   KidDeckDtoSchema.array().parse(fixture.decks);
   SessionDtoSchema.parse(fixture.session);

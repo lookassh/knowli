@@ -1,4 +1,6 @@
 import type { ReactElement, ReactNode } from "react";
+import { m } from "motion/react";
+import { kidSpringGentle } from "../motion/kid-motion";
 import classes from "./ExerciseFeedbackDock.module.css";
 
 export type FeedbackDockTone = "correct" | "incorrect" | "partial" | "technical" | "neutral";
@@ -7,8 +9,7 @@ export type FeedbackDockTone = "correct" | "incorrect" | "partial" | "technical"
  * Wspólny dolny panel wyniku ćwiczenia: wysuwa się w stopce ramy zadania,
  * nie podmienia bodźca ani odpowiedzi. Treść i akcje pochodzą z istniejących
  * kart feedbacku; dock odpowiada wyłącznie za prezentację i jedną akcję główną.
- * Animacja jest własna (CSS), bo Mantine Transition wymaga eksportu
- * `Activity` z React, niedostępnego w przypiętej wersji.
+ * Animacja wejścia: Motion (sprężyna, tylko transform i opacity).
  */
 export function ExerciseFeedbackDock({
   tone,
@@ -26,7 +27,10 @@ export function ExerciseFeedbackDock({
   secondary?: ReactNode;
 }): ReactElement {
   return (
-    <div
+    <m.div
+      initial={{ opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={kidSpringGentle}
       data-testid="kid-feedback-dock"
       data-tone={tone}
       data-dock-kind={kind}
@@ -44,6 +48,6 @@ export function ExerciseFeedbackDock({
           {secondary}
         </div>
       )}
-    </div>
+    </m.div>
   );
 }

@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 import { messages, type KidProfileDto, type UiAudioKey } from "@learning/contracts";
 import { GuidanceButton } from "../components/GuidanceButton";
 import { ProfileChoiceButton } from "../components/ProfileChoiceButton";
+import { m } from "motion/react";
+import { kidSpringGentle, kidStaggerSeconds } from "../motion/kid-motion";
 import { format } from "../format";
 import { KidScreen } from "../layout/KidScreen";
 
@@ -45,8 +47,8 @@ export function ProfileScreen({
         <p className="kid-hint">{messages.kid.noProfiles}</p>
       ) : (
         <ul className="kid-list">
-          {profiles.map((profile) => (
-            <li key={profile.childId}>
+          {profiles.map((profile, index) => (
+            <m.li key={profile.childId} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ ...kidSpringGentle, delay: Math.min(index, 6) * kidStaggerSeconds }}>
               <ProfileChoiceButton
                 type="button"
                 className="kid-profile"
@@ -62,7 +64,7 @@ export function ProfileScreen({
                   <span className="kid-profile-tag" data-testid="kid-profile-points">{format(messages.kid.rewardEarned, { n: profile.rewardPoints ?? 0 })}</span>
                 </span>
               </ProfileChoiceButton>
-            </li>
+            </m.li>
           ))}
         </ul>
       )}

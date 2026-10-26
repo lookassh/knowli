@@ -10,6 +10,8 @@ import { formatDeckTestDate, groupDecks } from "./deck-presentation";
 import { MASTERY_STAR_MAX, starsForFraction } from "./stars";
 import { MeaningVisualView } from "../visuals/MeaningVisualView";
 import { useAutoFocus } from "./useAutoFocus";
+import { m } from "motion/react";
+import { kidSpringGentle, kidStaggerSeconds } from "../motion/kid-motion";
 
 function wordCount(count: number): string {
   const lastTwoDigits = count % 100;
@@ -107,6 +109,7 @@ export function DeckScreen({
                     onMockTest={onMockTest}
                     onEndActive={onEndActive}
                     buttonRef={isFirst ? firstButtonRef : undefined}
+                    index={itemIndex}
                   />
                 );
               })}
@@ -120,19 +123,20 @@ export function DeckScreen({
   );
 }
 
-export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive, buttonRef }: {
+export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive, buttonRef, index = 0 }: {
   deck: KidDeckDto;
   mediaUrl: (assetId: string) => string;
   onStart: (deckId: string) => void;
   onMockTest?: (deckId: string) => void;
   onEndActive?: (deckId: string) => void;
   buttonRef?: React.Ref<HTMLButtonElement>;
+  index?: number;
 }) {
   const date = formatDeckTestDate(deck.testDate, new Date().getFullYear());
   const stars = starsForFraction(deck.independentlyRecalledCount, deck.itemCount);
   const isLesson = deck.kind === "lesson";
   return (
-    <li>
+    <m.li initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ ...kidSpringGentle, delay: Math.min(index, 6) * kidStaggerSeconds }}>
       <article className="kid-deck-card" data-testid="kid-deck-card" data-deck-id={deck.deckId} data-kind={deck.kind ?? "vocabulary"}>
         <div className="kid-deck-card__details">
           {deck.coverAssetId
@@ -177,6 +181,6 @@ export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive, but
           )}
         </div>
       </article>
-    </li>
+    </m.li>
   );
 }

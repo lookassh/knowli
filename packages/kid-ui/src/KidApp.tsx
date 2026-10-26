@@ -15,6 +15,7 @@ import type { LocalPreferences } from "./storage";
 import { KidPage } from "./layout/KidPage";
 import { GuidanceButton } from "./components/GuidanceButton";
 import { KidThemeProvider } from "./theme/KidThemeProvider";
+import { LazyMotion, MotionConfig, domAnimation } from "motion/react";
 import { ActionButton } from "./components/ActionButton";
 import { KidScreen } from "./layout/KidScreen";
 
@@ -46,14 +47,18 @@ export function KidApp({
 }) {
   return (
     <KidThemeProvider>
-      <KidAppContent
+      <MotionConfig reducedMotion="user">
+        <LazyMotion features={domAnimation}>
+          <KidAppContent
         api={api}
         media={media}
         storage={storage}
         {...(initialChildId === undefined ? {} : { initialChildId })}
         {...(parentLink === undefined ? {} : { parentLink })}
         {...(headerActions === undefined ? {} : { headerActions })}
-      />
+          />
+        </LazyMotion>
+      </MotionConfig>
     </KidThemeProvider>
   );
 }
