@@ -11,6 +11,8 @@ export const kidTheme: MantineThemeOverride = createTheme({
       "#78c7f4", "#6cbae8", "#4599c6", "#26769f", "#15516f",
     ],
   },
-  defaultRadius: 26,
+  /* Mantine radius names mirror the --kid-shape-* scale in styles.css. */
+  radius: { xs: "4px", sm: "8px", md: "12px", lg: "16px", xl: "28px" },
+  defaultRadius: "lg",
   autoContrast: true,
 });

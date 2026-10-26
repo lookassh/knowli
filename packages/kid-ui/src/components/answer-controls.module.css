@@ -8,25 +8,61 @@
   min-width: 0;
   min-height: 48px;
   padding: 8px 16px;
-  border: 2px solid var(--kid-line);
-  background: var(--kid-surface);
-  color: var(--kid-text);
-  font-weight: 700;
-  font-size: 1rem;
-  line-height: 1.35;
+  border: 2px solid var(--action-border, var(--md-sys-color-outline));
+  background: var(--action-bg, var(--md-sys-color-surface-container));
+  color: var(--action-fg, var(--md-sys-color-on-surface));
+  font-weight: var(--kid-type-label-weight);
+  font-size: var(--kid-type-label-size);
+  line-height: var(--kid-type-label-line-height);
   white-space: normal;
   cursor: pointer;
-  transition: background-color 150ms, border-color 150ms;
+  /* State layers switch instantly (no ripple by design); animating the
+     disabled-to-enabled color change would flash translucent colors. */
+  transition: border-color 150ms;
 }
 
 :global(.kid-ui) .action[data-full-width="true"] {
   width: 100%;
 }
 
-:global(.kid-ui) .action[data-priority="primary"] {
-  border-color: var(--kid-accent);
-  background: var(--kid-accent);
-  color: var(--kid-on-accent);
+/* Material 3 variants. The state layer mixes the content color into the
+   container at the M3 hover (8%) and pressed (10%) opacities. */
+/* :where() keeps variant defaults below global .kid-* overrides in styles.css. */
+:global(.kid-ui) .action:where([data-variant="filled"]) {
+  --action-bg: var(--md-sys-color-primary);
+  --action-fg: var(--md-sys-color-on-primary);
+  --action-border: var(--md-sys-color-primary);
+}
+
+:global(.kid-ui) .action:where([data-variant="tonal"]) {
+  --action-bg: var(--md-sys-color-secondary-container);
+  --action-fg: var(--md-sys-color-on-secondary-container);
+  --action-border: transparent;
+}
+
+:global(.kid-ui) .action:where([data-variant="outlined"]) {
+  --action-bg: transparent;
+  --action-fg: var(--md-sys-color-primary);
+  --action-border: var(--md-sys-color-outline);
+}
+
+:global(.kid-ui) .action:where([data-variant="text"]) {
+  --action-bg: transparent;
+  --action-fg: var(--md-sys-color-primary);
+  --action-border: transparent;
+}
+
+:global(.kid-ui) .action:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--action-fg) calc(var(--kid-state-hover-opacity) * 100%), var(--action-bg));
+}
+
+:global(.kid-ui) .action:active:not(:disabled) {
+  background: color-mix(in srgb, var(--action-fg) calc(var(--kid-state-pressed-opacity) * 100%), var(--action-bg));
+}
+
+:global(.kid-ui) .action:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 3px;
 }
 
 :global(.kid-ui) .action[data-size="md"],
@@ -36,9 +72,21 @@
   padding-block: 8px;
 }
 
+/* M3 disabled: container at 12% and content at 38% of on-surface. */
 :global(.kid-ui) .action:disabled {
   cursor: default;
-  opacity: 0.55;
+  border-color: transparent;
+  background: var(--kid-color-disabled-container);
+  color: var(--kid-color-disabled-content);
+}
+
+:global(.kid-ui) .action:where([data-variant="outlined"]):disabled,
+:global(.kid-ui) .action:where([data-variant="text"]):disabled {
+  background: transparent;
+}
+
+:global(.kid-ui) .action:where([data-variant="outlined"]):disabled {
+  border-color: var(--kid-color-disabled-container);
 }
 
 .field {
@@ -49,7 +97,8 @@
   min-height: 54px;
   background: #101a30;
   border-color: #5f7fb8;
-  color: #f0f5ff;
+  color: var(--md-sys-color-on-surface);
+  border-radius: var(--kid-shape-l);
 }
 
 .grid {
@@ -90,8 +139,8 @@
 :global(.kid-ui) .choiceList .option {
   min-height: 64px;
   padding-inline: 44px;
-  border-radius: 18px;
-  font-size: 1.3rem;
+  border-radius: var(--kid-shape-xl);
+  font-size: var(--kid-type-title-size);
 }
 
 .choiceList .item {
@@ -115,7 +164,7 @@
   flex: 1 1 auto;
   min-height: 48px;
   padding-inline: 12px;
-  font-size: 1rem;
+  font-size: var(--kid-type-label-size);
 }
 
 @media (max-height: 780px) {
@@ -141,9 +190,9 @@
   justify-content: center;
   overflow: hidden;
   border: 1px solid #5f7fb8;
-  border-radius: 20px;
-  background: #17223d;
-  color: #f0f5ff;
+  border-radius: var(--kid-shape-xl);
+  background: var(--md-sys-color-surface-container-low);
+  color: var(--md-sys-color-on-surface);
   text-align: center;
   touch-action: manipulation;
   transition: background-color 150ms, border-color 150ms, transform 150ms;
@@ -155,8 +204,8 @@
   min-height: 0;
   aspect-ratio: 1;
   padding: 8px;
-  border-radius: 22px;
   border-color: transparent;
+  border-radius: var(--kid-shape-xl);
 }
 
 /* Keep neutral image choices quiet; focus and server outcomes remain explicit. */
@@ -197,7 +246,7 @@
 }
 
 .option:focus-visible {
-  outline: 2px solid var(--kid-accent);
+  outline: 2px solid var(--md-sys-color-primary);
   outline-offset: 3px;
 }
 
@@ -225,9 +274,9 @@
 .visualOnly,
 .content {
   min-width: 0;
-  font-size: 1rem;
-  font-weight: 700;
-  line-height: 1.35;
+  font-size: var(--kid-type-label-size);
+  font-weight: var(--kid-type-label-weight);
+  line-height: var(--kid-type-label-line-height);
   overflow-wrap: anywhere;
 }
 
@@ -255,14 +304,14 @@
   right: 8px;
   display: grid;
   place-items: center;
-  border-radius: 50%;
-  background: #080d1c;
-  font-size: 1rem;
+  border-radius: var(--kid-shape-full);
+  background: var(--md-sys-color-surface-container-lowest);
+  font-size: var(--kid-type-label-size);
   line-height: 1;
 }
 
 .outcome[data-outcome="wrong"] {
-  border-radius: 12px;
+  border-radius: var(--kid-shape-m);
   background: #ff8f91;
   color: #1d0e17;
 }
