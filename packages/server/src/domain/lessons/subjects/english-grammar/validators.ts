@@ -150,6 +150,9 @@ const BE_FORM_BY_SUBJECT: Readonly<Record<string, string>> = {
   they: "are",
 };
 
+/** Twierdzące skróty osoba+„to be” — nie mogą kończyć krótkiej odpowiedzi (Yes, I'm. to błąd). */
+const BE_AFFIRMATIVE_CONTRACTIONS: ReadonlySet<string> = new Set(["i'm", "you're", "we're", "they're", "he's", "she's", "it's"]);
+
 const BE_CONTRACTED_TOKENS: Readonly<Record<string, readonly string[]>> = {
   "i'm": ["i", "am"],
   "you're": ["you", "are"],
@@ -341,6 +344,12 @@ function validateBeGapAnswer(ex: LessonExerciseDraft, answer: string, field: str
   if (parsed.pronoun !== undefined && BE_FORM_BY_SUBJECT[parsed.pronoun] !== parsed.form) {
     errors.push(`${field}: forma „${parsed.form}” nie pasuje do osoby „${parsed.pronoun}” ze skrótu`);
   }
+  if (objective === "short_answers" && !parsed.negative) {
+    const rawLast = normalizeTokens(answer).at(-1);
+    if (rawLast !== undefined && BE_AFFIRMATIVE_CONTRACTIONS.has(rawLast)) {
+      errors.push(`${field}: krótka odpowiedź twierdząca nie może kończyć się skrótem „${rawLast}” — zapisz pełną formę (Yes, I am)`);
+    }
+  }
   const stemPronoun = ex.stem === undefined ? undefined : bePronounNearGap(ex.stem);
   if (parsed.pronoun !== undefined && stemPronoun !== undefined && parsed.pronoun !== stemPronoun) {
     errors.push(`${field}: osoba „${parsed.pronoun}” w odpowiedzi nie pasuje do podmiotu „${stemPronoun}”`);
@@ -371,7 +380,7 @@ function validateBeAnswerText(ex: LessonExerciseDraft, answer: string, field: st
     // Twierdząca krótka odpowiedź nie może kończyć się samym skrótem (Yes, I'm. jest błędem);
     // przeczenie No, I'm not. jest poprawne, bo po skrócie stoi „not”.
     const rawLast = normalizeTokens(answer).at(-1);
-    if (rawLast !== undefined && ["i'm", "you're", "we're", "they're", "he's", "she's", "it's"].includes(rawLast)) {
+    if (rawLast !== undefined && BE_AFFIRMATIVE_CONTRACTIONS.has(rawLast)) {
       errors.push(`${field}: krótka odpowiedź twierdząca nie może kończyć się skrótem „${rawLast}” — zapisz pełną formę (Yes, I am)`);
       return;
     }

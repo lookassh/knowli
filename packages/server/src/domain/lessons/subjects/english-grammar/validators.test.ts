@@ -179,6 +179,12 @@ describe("validateEnglishGrammarExercise — lesson_gap, temat to_be", () => {
     expect(validateEnglishGrammarExercise(beGap(objectiveId, stem, answer, "be"), toBeV1)).not.toEqual([]);
   });
 
+  it("odrzuca skrót I'm jako odpowiedź luki krótkiej odpowiedzi, pełna forma przechodzi", () => {
+    const SHORT = "english_grammar.to_be.short_answers";
+    expect(validateEnglishGrammarExercise(beGap(SHORT, "Yes, I ___.", "I'm", "be"), toBeV1)).not.toEqual([]);
+    expect(validateEnglishGrammarExercise(beGap(SHORT, "Yes, I ___.", "am", "be"), toBeV1)).toEqual([]);
+  });
+
   it.each(["is", "jest", "to be"])("odrzuca hint %s dla luki to_be (dozwolony tylko „be” albo brak)", (hint) => {
     expect(validateEnglishGrammarExercise(beGap(AFF, "She ___ happy.", "is", hint), toBeV1)).not.toEqual([]);
   });
