@@ -240,20 +240,43 @@ function beSubjectTokensBefore(stem: string): string[] {
   return normalizeTokens(before).filter((token) => !BE_ADVERBS.has(token));
 }
 
-function bePronounNearGap(stem: string): string | undefined {
+/** Dozwolone osoby odpowiedzi dla zaimka z części pytajnej bodźca (zmiana perspektywy). */
+const BE_ANSWER_PERSONS: Readonly<Record<string, readonly string[]>> = {
+  i: ["you"],
+  you: ["i", "we"],
+  we: ["we", "you"],
+  he: ["he"],
+  she: ["she"],
+  it: ["it"],
+  they: ["they"],
+};
+
+interface BeNearPronoun {
+  readonly pronoun: string;
+  /** Czy zaimek pochodzi z części pytajnej bodźca (wtedy odpowiedź zmienia perspektywę). */
+  readonly fromQuestion: boolean;
+}
+
+/** Czy zaimek odpowiedzi pasuje do podmiotu przy luce, z uwzględnieniem perspektywy pytania. */
+function beAnswerPronounAllowed(answerPronoun: string, near: BeNearPronoun): boolean {
+  const allowed = near.fromQuestion ? (BE_ANSWER_PERSONS[near.pronoun] ?? [near.pronoun]) : [near.pronoun];
+  return allowed.includes(answerPronoun);
+}
+
+function bePronounNearGap(stem: string): BeNearPronoun | undefined {
   const [, after = ""] = stem.split("___", 2);
   const beforeTokens = beSubjectTokensBefore(stem);
   const prev = beforeTokens.at(-1);
-  if (prev !== undefined && Object.hasOwn(BE_FORM_BY_SUBJECT, prev)) return prev;
+  if (prev !== undefined && Object.hasOwn(BE_FORM_BY_SUBJECT, prev)) return { pronoun: prev, fromQuestion: false };
   const next = normalizeTokens(after)[0];
-  if (next !== undefined && Object.hasOwn(BE_FORM_BY_SUBJECT, next)) return next;
+  if (next !== undefined && Object.hasOwn(BE_FORM_BY_SUBJECT, next)) return { pronoun: next, fromQuestion: false };
   // Bodziec krótkiej odpowiedzi niesie podmiot w części pytajnej sprzed luki
   // („Is he ready? Yes, ___.”): zaimek przy formie „to be”, najbliżej luki.
   for (let i = beforeTokens.length - 2; i >= 0; i--) {
     const token = beforeTokens[i]!;
     const following = beforeTokens[i + 1]!;
-    if (BE_FORMS.has(token) && Object.hasOwn(BE_FORM_BY_SUBJECT, following)) return following;
-    if (Object.hasOwn(BE_FORM_BY_SUBJECT, token) && BE_FORMS.has(following)) return token;
+    if (BE_FORMS.has(token) && Object.hasOwn(BE_FORM_BY_SUBJECT, following)) return { pronoun: following, fromQuestion: true };
+    if (Object.hasOwn(BE_FORM_BY_SUBJECT, token) && BE_FORMS.has(following)) return { pronoun: token, fromQuestion: true };
   }
   return undefined;
 }
@@ -360,8 +383,8 @@ function validateBeGapAnswer(ex: LessonExerciseDraft, answer: string, field: str
     }
   }
   const stemPronoun = ex.stem === undefined ? undefined : bePronounNearGap(ex.stem);
-  if (parsed.pronoun !== undefined && stemPronoun !== undefined && parsed.pronoun !== stemPronoun) {
-    errors.push(`${field}: osoba „${parsed.pronoun}” w odpowiedzi nie pasuje do podmiotu „${stemPronoun}”`);
+  if (parsed.pronoun !== undefined && stemPronoun !== undefined && !beAnswerPronounAllowed(parsed.pronoun, stemPronoun)) {
+    errors.push(`${field}: osoba „${parsed.pronoun}” w odpowiedzi nie pasuje do podmiotu „${stemPronoun.pronoun}”`);
   }
   const expected = ex.stem === undefined ? undefined : expectedBeFormNearGap(ex.stem);
   if (expected !== undefined && expected !== parsed.form) {
@@ -411,8 +434,8 @@ function validateBeAnswerText(ex: LessonExerciseDraft, answer: string, field: st
         errors.push(`${field}: forma „${parsed.form}” nie pasuje do osoby „${parsed.pronoun}” ze skrótu`);
       }
       const stemPronoun = bePronounNearGap(gapContext);
-      if (parsed.pronoun !== undefined && stemPronoun !== undefined && parsed.pronoun !== stemPronoun) {
-        errors.push(`${field}: osoba „${parsed.pronoun}” w odpowiedzi nie pasuje do podmiotu „${stemPronoun}”`);
+      if (parsed.pronoun !== undefined && stemPronoun !== undefined && !beAnswerPronounAllowed(parsed.pronoun, stemPronoun)) {
+        errors.push(`${field}: osoba „${parsed.pronoun}” w odpowiedzi nie pasuje do podmiotu „${stemPronoun.pronoun}”`);
       }
       const expected = expectedBeFormNearGap(gapContext);
       if (expected !== undefined && expected !== parsed.form) {

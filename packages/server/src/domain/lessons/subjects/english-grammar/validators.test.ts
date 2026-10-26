@@ -223,6 +223,20 @@ describe("validateEnglishGrammarExercise — lesson_gap, temat to_be", () => {
     expect(errors.length === 0).toBe(valid);
   });
 
+  it.each([
+    ["pytanie o you, odpowiedź I am", "Are you ready? Yes, ___.", "I am", true],
+    ["pytanie o you, odpowiedź No I'm not", "Are you ready? Yes, ___.", "No, I'm not", true],
+    ["pytanie o you, odpowiedź you are zła perspektywa", "Are you ready? Yes, ___.", "you are", false],
+    ["pytanie Am I, odpowiedź you are", "Am I late? Yes, ___.", "you are", true],
+    ["pytanie o he, odpowiedź she is zła osoba", "Is he ready? Yes, ___.", "she is", false],
+  ])("perspektywa krótkiej odpowiedzi w luce: %s", (_name, stem, answer, valid) => {
+    const errors = validateEnglishGrammarExercise(
+      beGap("english_grammar.to_be.short_answers", stem, answer, "be"),
+      toBeV1,
+    );
+    expect(errors.length === 0).toBe(valid);
+  });
+
   it("odrzuca skrót I'm jako odpowiedź luki krótkiej odpowiedzi, pełna forma przechodzi", () => {
     const SHORT = "english_grammar.to_be.short_answers";
     expect(validateEnglishGrammarExercise(beGap(SHORT, "Yes, I ___.", "I'm", "be"), toBeV1)).not.toEqual([]);
