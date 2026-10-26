@@ -2011,9 +2011,27 @@ describe("LearningSessionController", () => {
     await harness.controller.notRemember();
     expect(state.disclosures).toEqual([{ taskId: "t1", kind: "hint" }]);
     expect(harness.controller.getScreen()).toMatchObject({ reveal: { target: "Thursday" } });
+    state.tasks = [taskDto("support", { kind: "exposure", source: "czwartek", target: "Thursday", example: null, exampleAudioAssetId: null, audioAssetId: null, visualType: "none", imageAssetId: null })];
+    state.attempts = [attemptDto({ taskId: "t1", modality: "dont_remember", taskState: "answered", feedback: { kind: "incorrect", correctText: "Thursday" } })];
     await harness.controller.confirmReveal();
     expect(state.submissions[0]).toMatchObject({ modality: "dont_remember" });
-    expect(harness.controller.getScreen()).toMatchObject({ feedback: { dto: { kind: "great" } } });
+    expect(harness.controller.getScreen()).toMatchObject({ task: { taskId: "support" }, reveal: null, feedback: null, busy: false });
+  });
+
+  it("ponawia zapis trudności po utracie sieci i przechodzi bez powtórnego feedbacku", async () => {
+    const state = baseState();
+    const harness = await startAtTask(state, taskDto("t1", { kind: "recall", prompt: "czwartek" }));
+    await harness.controller.notRemember();
+    state.networkDown = true;
+    await harness.controller.confirmReveal();
+    expect(harness.controller.getScreen()).toMatchObject({ offline: true });
+    state.networkDown = false;
+    state.tasks = [taskDto("retry-recall", { kind: "recall", prompt: "czwartek" })];
+    state.attempts = [attemptDto({ taskId: "t1", modality: "dont_remember", taskState: "answered" })];
+    await harness.controller.retry();
+    expect(harness.controller.getScreen()).toMatchObject({ task: { taskId: "retry-recall" }, reveal: null, feedback: null, busy: false, offline: false });
+    await harness.controller.answerText("Thursday");
+    expect(state.submissions).toMatchObject([{ taskId: "t1", modality: "dont_remember" }, { taskId: "retry-recall", modality: "text" }]);
   });
 
   it("po błędzie i ponowieniu podpowiedzi usuwa stan przejścia po ujawnieniu", async () => {

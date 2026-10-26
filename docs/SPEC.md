@@ -419,6 +419,8 @@ Wymowa poniżej progu częściowego pozostaje nieoceniona — nie jest błędem 
 
 W zadaniach sprawdzających wiedzę dziecko ma dostęp do przycisku **„Nie pamiętam — pokaż”**. Aplikacja ujawnia odpowiedź i proponuje wsparcie bez wymagania zgadywania lub dwóch błędnych prób.
 
+Potwierdzenie „Rozumiem” zapisuje zadeklarowaną trudność i przechodzi do następnego zadania lub podsumowania. Nie pokazuje ponownie zakończonego formularza z zablokowanym polem i tą samą poprawną odpowiedzią.
+
 Takie zdarzenie oznacza zadeklarowaną trudność i zwiększa potrzebę powtórki. Nie jest błędem technicznym, nie generuje fikcyjnej mylonej pary i nie jest oceną wymowy. W niezależnym sprawdzaniu przerywa serię sukcesów opisaną w sekcji 18.
 
 „Pomiń”, przerwanie sesji i brak wiarygodnego nagrania nie dowodzą braku wiedzy. Zapisujemy je osobno, bez obniżania umiejętności. Pominięty element może wrócić w późniejszej sesji, ale nie otrzymuje dodatkowej wagi błędu ani wymuszonej natychmiastowej powtórki. Cisza w nagraniu nie jest automatycznie interpretowana jako „Nie pamiętam”.
