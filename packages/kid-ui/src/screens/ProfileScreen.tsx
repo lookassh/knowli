@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { messages, type KidProfileDto, type UiAudioKey } from "@learning/contracts";
 import { GuidanceButton } from "../components/GuidanceButton";
+import { ProfileChoiceButton } from "../components/ProfileChoiceButton";
 import { format } from "../format";
 import { KidScreen } from "../layout/KidScreen";
 
@@ -46,7 +47,7 @@ export function ProfileScreen({
         <ul className="kid-list">
           {profiles.map((profile) => (
             <li key={profile.childId}>
-              <button
+              <ProfileChoiceButton
                 type="button"
                 className="kid-profile"
                 data-testid="kid-profile"
@@ -60,7 +61,7 @@ export function ProfileScreen({
                 <span className="kid-profile-rewards">
                   <span className="kid-profile-tag" data-testid="kid-profile-points">{format(messages.kid.rewardEarned, { n: profile.rewardPoints ?? 0 })}</span>
                 </span>
-              </button>
+              </ProfileChoiceButton>
             </li>
           ))}
         </ul>

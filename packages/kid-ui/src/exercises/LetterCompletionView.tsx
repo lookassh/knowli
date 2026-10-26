@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { messages } from "@learning/contracts";
 import { format } from "../format";
 import { ActionButton } from "../components/ActionButton";
+import { LetterField } from "../components/LetterField";
 import { ExerciseFrame } from "./ExerciseFrame";
 import { useRetryReset } from "./useRetryReset";
 import type { ExerciseProps } from "./types";
@@ -54,7 +55,7 @@ export function LetterCompletionView({ task, busy, recording, handlers, letterDr
           >
             <div className="kid-letter-fragment" data-testid="kid-fragment" role="group" aria-label={messages.kid.fillLetters}>
               {characters.map((character, index) => character === "_" ? (
-                <input
+                <LetterField
                   key={index}
                   ref={(input) => { inputRefs.current[index] = input; }}
                   className="kid-letter-input"

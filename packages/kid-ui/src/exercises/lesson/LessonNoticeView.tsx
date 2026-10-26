@@ -1,5 +1,6 @@
 import { messages } from "@learning/contracts";
 import { ExerciseFrame } from "../ExerciseFrame";
+import { WordChoiceButton } from "../../components/WordChoiceButton";
 import type { ExerciseProps } from "../types";
 
 /**
@@ -20,7 +21,7 @@ export function LessonNoticeView({ task, busy, optionOutcomes, dock, handlers }:
               {sentence.map((segment) => {
                 const outcome = optionOutcomes.get(segment.id);
                 return (
-                  <button
+                  <WordChoiceButton
                     key={segment.id}
                     type="button"
                     data-testid="kid-lesson-notice-word"
@@ -30,7 +31,7 @@ export function LessonNoticeView({ task, busy, optionOutcomes, dock, handlers }:
                     onClick={() => handlers.onAnswerChoice(segment.id)}
                   >
                     {segment.text}
-                  </button>
+                  </WordChoiceButton>
                 );
               })}
             </p>

@@ -48,7 +48,7 @@ export function LessonMockTestSummaryScreen({ summary, activity, detailsLoading,
         <div className="kid-mock-row__body">
           <p className="kid-mock-row__objective">{format(messages.kid.mockTestObjectiveLabel, { title: solution.titlePl })}</p>
           <p className="kid-mock-row__words">{solution.prompt}</p>
-          <p className="kid-mock-row__detail">
+          <p className="kid-mock-row__detail kid-mock-row__detail--answers">
             <span className="kid-mock-answer kid-mock-answer--child">{messages.kid.mockTestYourAnswer}: {solution.childAnswer.trim() === "" ? messages.kid.mockTestNoAnswer : solution.childAnswer}</span>
             <span className="kid-mock-answer kid-mock-answer--correct">{messages.kid.mockTestCorrectAnswer}: {solution.correctAnswer}</span>
           </p>

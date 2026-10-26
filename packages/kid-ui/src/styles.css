@@ -377,7 +377,7 @@
   outline-offset: 3px;
 }
 
-.kid-avatar {
+.kid-ui .kid-avatar {
   font-size: 2rem;
   display: inline-grid;
   place-items: center;
@@ -404,7 +404,7 @@
   padding: 4px 12px;
 }
 
-.kid-toggle {
+.kid-ui .kid-toggle {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -413,12 +413,12 @@
   font-size: 1.05rem;
 }
 
-.kid-toggle {
+.kid-ui .kid-toggle {
   position: relative;
   cursor: pointer;
 }
 
-.kid-toggle input {
+.kid-ui .kid-toggle input {
   position: absolute;
   width: 44px;
   height: 28px;
@@ -427,7 +427,7 @@
   cursor: pointer;
 }
 
-.kid-toggle__track {
+.kid-ui .kid-toggle__track {
   width: 44px;
   height: 28px;
   flex: none;
@@ -440,7 +440,7 @@
   border: 1px solid var(--md-sys-color-outline);
 }
 
-.kid-toggle__knob {
+.kid-ui .kid-toggle__knob {
   width: 20px;
   height: 20px;
   border-radius: var(--kid-shape-full);
@@ -448,23 +448,23 @@
   transition: transform 150ms ease, background-color 150ms ease;
 }
 
-.kid-toggle input:checked ~ .kid-toggle__track {
+.kid-ui .kid-toggle input:checked ~ .kid-toggle__track {
   background: var(--md-sys-color-primary);
   border-color: var(--md-sys-color-primary);
 }
 
-.kid-toggle input:checked ~ .kid-toggle__track .kid-toggle__knob {
+.kid-ui .kid-toggle input:checked ~ .kid-toggle__track .kid-toggle__knob {
   transform: translateX(16px);
   background: var(--md-sys-color-on-primary);
 }
 
-.kid-toggle input:focus-visible ~ .kid-toggle__track {
+.kid-ui .kid-toggle input:focus-visible ~ .kid-toggle__track {
   outline: 2px solid var(--kid-accent);
   outline-offset: 3px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .kid-toggle__knob {
+  .kid-ui .kid-toggle__knob {
     transition: none;
   }
 }
@@ -1887,6 +1887,13 @@
   font-size: 1.15rem;
 }
 
+.kid-ui .kid-mock-row__detail--answers {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 4px;
+}
+
 .kid-mock-row__detail {
   margin: 0;
   font-size: 0.85rem;
@@ -2095,7 +2102,7 @@
 
 /* ── Lekcje (zadanie 14): karta, wskazanie, wybór, klocki, luka, zdanie ── */
 
-.kid-lesson-card {
+.kid-ui .kid-lesson-card {
   box-sizing: border-box;
   padding: 16px;
   border: 1px solid var(--kid-line);

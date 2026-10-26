@@ -79,6 +79,7 @@ describe("mock test screens", () => {
     const view = renderKid(<LessonMockTestSummaryScreen {...props} />);
     expect(screen.getByTestId("kid-lesson-mock-details-loading")).toBeTruthy();
     expect(screen.getByTestId("kid-lesson-mock-solution").textContent).toContain("play");
+    expect(screen.getByTestId("kid-lesson-mock-solution").querySelector(".kid-mock-row__detail--answers")).toBeTruthy();
     expect(screen.getByTestId("kid-lesson-mock-solution").textContent).toContain("plays");
     expect(screen.getByTestId("kid-lesson-mock-practice").tagName).toBe("BUTTON");
     fireEvent.click(screen.getByTestId("kid-lesson-mock-practice"));
