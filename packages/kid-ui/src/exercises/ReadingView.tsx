@@ -3,7 +3,6 @@ import type { ExerciseProps } from "./types";
 import { ExerciseFrame } from "./ExerciseFrame";
 import { useChoiceKeyboard } from "./useChoiceKeyboard";
 import { AnswerGrid } from "../components/AnswerGrid";
-import { Text } from "@mantine/core";
 
 /**
  * Rozpoznawanie tekstu i odwrotne (SPEC §12.3–12.4): widoczne słowo/prompt
@@ -27,7 +26,7 @@ export function ReadingView({ task, busy, optionOutcomes, dock, handlers }: Exer
       task={task}
       feedbackLayout="flow"
       content={<>
-        <Text component="p" className="kid-word" data-testid="kid-word">{visible}</Text>
+        <p className="kid-word" data-testid="kid-word">{visible}</p>
         <AnswerGrid
           className="kid-options"
           choiceList

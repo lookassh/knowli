@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import { Box, Group, Paper, Stack, Text, Title } from "@mantine/core";
 import { messages, type KidDeckDto, type UiAudioKey } from "@learning/contracts";
 import { GuidanceButton } from "../components/GuidanceButton";
 import { MicrophoneSettingsButton } from "../components/MicrophoneSettingsButton";
@@ -72,31 +71,31 @@ export function DeckScreen({
     <KidScreen role="main" className="kid-screen kid-deck-screen" data-testid="kid-deck-screen">
       <KidScreen.Header>
       <header className="kid-top-bar">
-        <Text component="span" className="kid-daily-activity" data-testid="kid-daily-activity">
+        <span className="kid-daily-activity" data-testid="kid-daily-activity">
           {todayActivityUnavailable || todayActivitySeconds === undefined
             ? messages.kid.kidDailyActivityUnavailable
             : format(messages.kid.kidDailyActivity, { time: approvedTime })}
-        </Text>
+        </span>
         {headerActions}
         <div className="kid-deck-screen__header-actions">
           <MicrophoneSettingsButton microphone={microphone} micDenied={micDenied} onToggleMicrophone={onToggleMicrophone} />
           {onGuidance && <GuidanceButton audioKey="deck_select" onPlay={onGuidance} testId="kid-deck-guidance" />}
         </div>
       </header>
-      <Title order={1}>{messages.kid.decksTitle}</Title>
-      {childName && <Text className="kid-greeting">{format(messages.kid.greeting, { name: childName })}</Text>}
+      <h1>{messages.kid.decksTitle}</h1>
+      {childName && <p className="kid-greeting">{format(messages.kid.greeting, { name: childName })}</p>}
       </KidScreen.Header>
       <KidScreen.Content className="kid-deck-content">
 
       {decks.length === 0 ? (
-        <Text className="kid-hint" data-testid="kid-no-decks">{messages.kid.noDecks}</Text>
+        <p className="kid-hint" data-testid="kid-no-decks">{messages.kid.noDecks}</p>
       ) : (
         sections.map((section, sectionIndex) => (
-          <Box component="section" key={section.kind} aria-label={section.title} data-kind={section.kind}>
-            <Title order={2} className="kid-deck-group-title" data-testid={section.kind === "recommended" ? "kid-section-recommended" : "kid-section-other"}>
+          <section key={section.kind} aria-label={section.title} data-kind={section.kind}>
+            <h2 className="kid-deck-group-title" data-testid={section.kind === "recommended" ? "kid-section-recommended" : "kid-section-other"}>
               {section.title}
-            </Title>
-            <Stack component="ul" className="kid-deck-list" gap="sm">
+            </h2>
+            <ul className="kid-deck-list">
               {section.items.map((deck, itemIndex) => {
                 const isFirst = sectionIndex === 0 && itemIndex === 0;
                 return (
@@ -111,8 +110,8 @@ export function DeckScreen({
                   />
                 );
               })}
-            </Stack>
-          </Box>
+            </ul>
+          </section>
         ))
       )}
 
@@ -134,25 +133,25 @@ export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive, but
   const isLesson = deck.kind === "lesson";
   return (
     <li>
-      <Paper component="article" className="kid-deck-card" data-testid="kid-deck-card" data-deck-id={deck.deckId} data-kind={deck.kind ?? "vocabulary"} radius="lg" p="md" withBorder>
+      <article className="kid-deck-card" data-testid="kid-deck-card" data-deck-id={deck.deckId} data-kind={deck.kind ?? "vocabulary"}>
         <div className="kid-deck-card__details">
           {deck.coverAssetId
             ? <img className="kid-deck-cover" src={mediaUrl(deck.coverAssetId)} alt="" data-testid="kid-deck-cover" />
             : deck.coverVisual && <MeaningVisualView visual={deck.coverVisual} mediaUrl={mediaUrl} />}
           <div className="kid-deck-card__info">
-            <Title order={3} data-testid="kid-deck-title">
+            <h3 data-testid="kid-deck-title">
               {deck.title}{" "}
               <span>{isLesson && deck.subjectTitle
                 ? `— ${format(messages.kid.lessonSubjectLabel, { subject: deck.subjectTitle })}`
                 : `— ${wordCount(deck.itemCount)}`}</span>
-            </Title>
-            <Group className="kid-deck-card__meta" gap="xs" wrap="wrap">
-              <Text component="p" className="kid-deck-stars" data-testid="kid-deck-stars" role="img"
+            </h3>
+            <div className="kid-deck-card__meta">
+              <p className="kid-deck-stars" data-testid="kid-deck-stars" role="img"
                 aria-label={format(messages.kid.deckStarsLabel, { n: stars })}>
                 {"★".repeat(stars)}{"☆".repeat(MASTERY_STAR_MAX - stars)}
-              </Text>
-              {date !== null && <Text component="p" className="kid-badge">{messages.kid.testDateLabel}: {date}</Text>}
-            </Group>
+              </p>
+              {date !== null && <p className="kid-badge">{messages.kid.testDateLabel}: {date}</p>}
+            </div>
           </div>
         </div>
         <div className="kid-deck-card__actions">
@@ -177,7 +176,7 @@ export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive, but
             </ActionButton>
           )}
         </div>
-      </Paper>
+      </article>
     </li>
   );
 }

@@ -1,0 +1,40 @@
+/* Kid UI theme base. Everything is scoped to .kid-theme so child styles
+   never leak into the parent panel (and vice versa). */
+
+.kid-theme h1,
+.kid-theme h2,
+.kid-theme h3,
+.kid-theme h1,
+.kid-theme h2,
+.kid-theme h3 {
+  font-weight: 800;
+}
+
+.kid-theme p {
+  margin: 0;
+}
+
+
+.kid-theme :where(button) {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+.kid-theme :focus-visible {
+  outline: 2px solid var(--kid-accent);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kid-theme *,
+  .kid-theme *::before,
+  .kid-theme *::after {
+    transition: none;
+    animation: none;
+  }
+}

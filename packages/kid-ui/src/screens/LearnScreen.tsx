@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Paper, Text } from "@mantine/core";
 import { messages, type UiAudioKey } from "@learning/contracts";
 import { ExerciseView } from "../exercises/ExerciseView";
 import type { ExerciseHandlers } from "../exercises/types";
@@ -228,19 +227,19 @@ export function LearnScreen({
       </div>
 
       {offline ? (
-        <Paper component="section" className="kid-card kid-offline" data-testid="kid-offline" radius="lg" p="md" withBorder>
-          <Text>{messages.kid.offlineMessage}</Text>
+        <section className="kid-card kid-offline" data-testid="kid-offline">
+          <p>{messages.kid.offlineMessage}</p>
           <ActionButton type="button" className="kid-primary" data-testid="kid-retry" onClick={() => void controller.retry()}>
             {messages.kid.offlineRetry}
           </ActionButton>
-        </Paper>
+        </section>
       ) : screen.error !== null ? (
-        <Paper component="section" className="kid-card kid-error" data-testid="kid-error" radius="lg" p="md" withBorder>
-          <Text>{screen.error}</Text>
+        <section className="kid-card kid-error" data-testid="kid-error">
+          <p>{screen.error}</p>
           <ActionButton type="button" className="kid-primary" data-testid="kid-retry" onClick={() => void controller.retry()}>
             {messages.kid.offlineRetry}
           </ActionButton>
-        </Paper>
+        </section>
       ) : (
         task !== null && (
           <div className="kid-task">

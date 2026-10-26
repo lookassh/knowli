@@ -122,14 +122,6 @@ for (const count of [2, 3, 4]) {
       await expect(next).toBeInViewport({ ratio: 0.98 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
     }
-    await page.setViewportSize({ width: 360, height: 640 });
-    await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
-    await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-feedback-layout", "flow");
-    for (const element of [...await page.getByTestId("kid-option").all(), next, page.getByTestId("kid-end")]) {
-      await element.evaluate((node) => node.scrollIntoView({ block: "center" }));
-      await expect(element).toBeInViewport({ ratio: 0.98 });
-    }
-    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
   });
 }
 

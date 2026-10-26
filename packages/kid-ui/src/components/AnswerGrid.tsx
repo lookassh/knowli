@@ -1,4 +1,3 @@
-import { UnstyledButton } from "@mantine/core";
 import type { CSSProperties, ReactNode, RefObject } from "react";
 import { messages } from "@learning/contracts";
 import { format } from "../format";
@@ -59,7 +58,7 @@ export function AnswerGrid({
 
         return (
           <li className={[classes.item, itemClassName?.(option)].filter(Boolean).join(" ")} key={option.id}>
-            <UnstyledButton
+            <button
               ref={(element) => {
                 if (optionRefs) optionRefs.current[index] = element;
               }}
@@ -86,7 +85,7 @@ export function AnswerGrid({
               )}
               {outcome === "correct" && <span className={`${classes.outcome} kid-picture-outcome kid-picture-outcome--correct`} aria-hidden="true" data-outcome={outcome} data-testid="kid-outcome-correct">✓</span>}
               {outcome === "wrong" && <span className={`${classes.outcome} kid-picture-outcome kid-picture-outcome--wrong`} aria-hidden="true" data-outcome={outcome} data-testid="kid-outcome-wrong">×</span>}
-            </UnstyledButton>
+            </button>
           {afterOption?.(option)}
           </li>
         );

@@ -4,7 +4,6 @@ import { format } from "../format";
 import { describeSpeechFeedback } from "./speech-feedback-view";
 import { KidIcon } from "../components/KidIcon";
 import { useFeedbackCooldown } from "./useFeedbackCooldown";
-import { Box } from "@mantine/core";
 import { ActionButton } from "../components/ActionButton";
 
 export interface SpeechFeedbackCardProps {
@@ -51,7 +50,7 @@ export function SpeechFeedbackContent(props: SpeechFeedbackCardProps & { inDock?
   const hasLocalPractice = view.fragments.some((fragment) => fragment.verdict === "almost");
 
   return (
-    <Box component="section"
+    <section
       className={["kid-speech-feedback", toneClass].join(" ")}
       data-testid="kid-speech-feedback"
       role="status"
@@ -112,7 +111,7 @@ export function SpeechFeedbackContent(props: SpeechFeedbackCardProps & { inDock?
           <SpeechFeedbackReferenceAction {...props} />
         </div>
       )}
-    </Box>
+    </section>
   );
 }
 

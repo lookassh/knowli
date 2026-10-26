@@ -377,8 +377,15 @@
   outline-offset: 3px;
 }
 
-.kid-avatar {
+.kid-ui .kid-avatar {
   font-size: 2rem;
+  display: inline-grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  flex: none;
+  border-radius: var(--kid-shape-xxl);
+  background: var(--md-sys-color-primary-container);
 }
 
 .kid-deck {
@@ -397,7 +404,7 @@
   padding: 4px 12px;
 }
 
-.kid-toggle {
+.kid-ui .kid-toggle {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -406,9 +413,60 @@
   font-size: 1.05rem;
 }
 
-.kid-toggle input {
-  width: 22px;
-  height: 22px;
+.kid-ui .kid-toggle {
+  position: relative;
+  cursor: pointer;
+}
+
+.kid-ui .kid-toggle input {
+  position: absolute;
+  width: 44px;
+  height: 28px;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.kid-ui .kid-toggle__track {
+  width: 44px;
+  height: 28px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  box-sizing: border-box;
+  border-radius: var(--kid-shape-full);
+  background: var(--md-sys-color-surface-container-high);
+  border: 1px solid var(--md-sys-color-outline);
+}
+
+.kid-ui .kid-toggle__knob {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--kid-shape-full);
+  background: var(--md-sys-color-on-surface-variant);
+  transition: transform 150ms ease, background-color 150ms ease;
+}
+
+.kid-ui .kid-toggle input:checked ~ .kid-toggle__track {
+  background: var(--md-sys-color-primary);
+  border-color: var(--md-sys-color-primary);
+}
+
+.kid-ui .kid-toggle input:checked ~ .kid-toggle__track .kid-toggle__knob {
+  transform: translateX(16px);
+  background: var(--md-sys-color-on-primary);
+}
+
+.kid-ui .kid-toggle input:focus-visible ~ .kid-toggle__track {
+  outline: 2px solid var(--kid-accent);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kid-ui .kid-toggle__knob {
+    transition: none;
+  }
 }
 
 .kid-deck-screen {
@@ -589,7 +647,8 @@
   max-height: min(70dvh, 320px);
   overflow-y: auto;
   padding: 16px;
-  border-color: var(--kid-line);
+  border: 1px solid var(--kid-line);
+  border-radius: var(--kid-shape-l);
   background: var(--kid-surface);
   color: var(--kid-text);
 }
@@ -775,7 +834,11 @@
 }
 
 .kid-ui .kid-profile-tag {
-  display: block;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--kid-shape-full);
+  background: var(--md-sys-color-secondary-container);
   color: var(--kid-muted);
   font-size: .85rem;
 }
@@ -1824,6 +1887,13 @@
   font-size: 1.15rem;
 }
 
+.kid-ui .kid-mock-row__detail--answers {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 4px;
+}
+
 .kid-mock-row__detail {
   margin: 0;
   font-size: 0.85rem;
@@ -1862,6 +1932,17 @@
 }
 
 /* Wynik próby: próg koloru 80%/50%, paleta jak feedback — zielony, bursztyn, czerwony. */
+.kid-ui .kid-details-error {
+  padding: 16px;
+  border: 1px solid var(--kid-line);
+  border-radius: var(--kid-shape-l);
+  background: var(--kid-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
 .kid-ui .kid-mock-score {
   text-align: center;
   border: 2px solid var(--kid-line);
@@ -2021,8 +2102,12 @@
 
 /* ── Lekcje (zadanie 14): karta, wskazanie, wybór, klocki, luka, zdanie ── */
 
-.kid-lesson-card {
+.kid-ui .kid-lesson-card {
   box-sizing: border-box;
+  padding: 16px;
+  border: 1px solid var(--kid-line);
+  border-radius: var(--kid-shape-l);
+  background: var(--kid-surface);
   width: 100%;
   display: flex;
   flex-direction: column;

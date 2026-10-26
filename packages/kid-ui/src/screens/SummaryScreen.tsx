@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import { Box, Stack, Text, Title } from "@mantine/core";
 import { messages, type KidProfileDto, type SessionSummaryDto } from "@learning/contracts";
 import { format } from "../format";
 import { KidIcon } from "../components/KidIcon";
@@ -33,51 +32,51 @@ export function SummaryScreen({
   return (
     <KidScreen role="main" className="kid-screen kid-screen--summary">
       <KidScreen.Header>
-        <Title order={1} data-testid="kid-summary">{messages.kid.summaryTitle}</Title>
+        <h1 data-testid="kid-summary">{messages.kid.summaryTitle}</h1>
         {guidance}
         {summary.activity !== undefined && <SessionActivityResultView activity={summary.activity} />}
       </KidScreen.Header>
       <KidScreen.Content>
       {recall > 0 && (
-        <Text component="p" className="kid-summary-counts" data-testid="kid-summary-recall">
+        <p className="kid-summary-counts" data-testid="kid-summary-recall">
           {format(messages.kid.summaryRecall, { words: wordCount(recall) })}
-        </Text>
+        </p>
       )}
       {spelling > 0 && (
-        <Text component="p" className="kid-summary-counts" data-testid="kid-summary-spelling">
+        <p className="kid-summary-counts" data-testid="kid-summary-spelling">
           {format(messages.kid.summarySpelling, { words: wordCount(spelling) })}
-        </Text>
+        </p>
       )}
       {recall === 0 && spelling === 0 && (
-        <Text component="p" className="kid-hint" data-testid="kid-summary-neutral">
+        <p className="kid-hint" data-testid="kid-summary-neutral">
           {summary.tasksIssued === 0 ? messages.kid.summaryEmpty : messages.kid.summaryNeutral}
-        </Text>
+        </p>
       )}
       {summary.objectives !== undefined && summary.objectives.length > 0 && (
-        <Box component="section" className="kid-summary-practice" aria-labelledby="kid-summary-objectives-title" data-testid="kid-summary-objectives">
-          <Title order={2} id="kid-summary-objectives-title">{messages.kid.lessonSummaryTitle}</Title>
-          <Stack component="ul" className="kid-list" gap="sm">
+        <section className="kid-summary-practice" aria-labelledby="kid-summary-objectives-title" data-testid="kid-summary-objectives">
+          <h2 id="kid-summary-objectives-title">{messages.kid.lessonSummaryTitle}</h2>
+          <ul className="kid-list">
             {summary.objectives.map(objective => (
               <li key={objective.objectiveId} data-testid="kid-summary-objective">
                 {format(messages.kid.lessonSummaryObjective, { title: objective.titlePl })}
               </li>
             ))}
-          </Stack>
-        </Box>
+          </ul>
+        </section>
       )}
       {summary.practiceItems.length > 0 && (
-        <Box component="section" className="kid-summary-practice" aria-labelledby="kid-summary-practice-title" data-testid="kid-summary-practice">
-          <Title order={2} id="kid-summary-practice-title">{messages.kid.summaryPractice}</Title>
-          <Stack component="ul" className="kid-list" gap="sm">
+        <section className="kid-summary-practice" aria-labelledby="kid-summary-practice-title" data-testid="kid-summary-practice">
+          <h2 id="kid-summary-practice-title">{messages.kid.summaryPractice}</h2>
+          <ul className="kid-list">
             {summary.practiceItems.map(item => (
               <li key={item.itemId}>
-                <Text component="strong" lang="en-GB">{item.target}</Text>
-                <Text component="span">{item.skills.map(skill => skill === "recall"
-                  ? messages.kid.summarySkillRecall : messages.kid.summarySkillSpelling).join(", ")}</Text>
+                <strong lang="en-GB">{item.target}</strong>
+                <span>{item.skills.map(skill => skill === "recall"
+                  ? messages.kid.summarySkillRecall : messages.kid.summarySkillSpelling).join(", ")}</span>
               </li>
             ))}
-          </Stack>
-        </Box>
+          </ul>
+        </section>
       )}
       </KidScreen.Content>
       <KidScreen.Actions className="kid-actions" secondary={profiles.length > 1 && (

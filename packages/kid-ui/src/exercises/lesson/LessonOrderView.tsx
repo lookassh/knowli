@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { UnstyledButton } from "@mantine/core";
 import { messages } from "@learning/contracts";
 import { format } from "../../format";
 import { ActionButton } from "../../components/ActionButton";
+import { LessonBlockButton } from "../../components/LessonBlockButton";
 import { ExerciseFrame } from "../ExerciseFrame";
 import { useRetryReset } from "../useRetryReset";
 import type { ExerciseProps } from "../types";
@@ -43,7 +43,7 @@ export function LessonOrderView({ task, busy, dock, handlers }: ExerciseProps) {
           >
             {state.placed.length === 0 && <span className="kid-hint">{messages.kid.lessonOrderEmpty}</span>}
             {state.placed.map((item, index) => (
-              <UnstyledButton
+              <LessonBlockButton
                 key={item.id}
                 type="button"
                 role="listitem"
@@ -54,7 +54,7 @@ export function LessonOrderView({ task, busy, dock, handlers }: ExerciseProps) {
                 onClick={() => { setState((current) => removeAt(current, index)); handlers.onEdit(); }}
               >
                 {item.text}
-              </UnstyledButton>
+              </LessonBlockButton>
             ))}
           </div>
           <div
@@ -64,7 +64,7 @@ export function LessonOrderView({ task, busy, dock, handlers }: ExerciseProps) {
             aria-label={messages.kid.lessonOrderPool}
           >
             {state.pool.map((item) => (
-              <UnstyledButton
+              <LessonBlockButton
                 key={item.id}
                 type="button"
                 role="listitem"
@@ -75,7 +75,7 @@ export function LessonOrderView({ task, busy, dock, handlers }: ExerciseProps) {
                 onClick={() => { setState((current) => addBlock(current, item.id)); handlers.onEdit(); }}
               >
                 {item.text}
-              </UnstyledButton>
+              </LessonBlockButton>
             ))}
           </div>
         </div>
