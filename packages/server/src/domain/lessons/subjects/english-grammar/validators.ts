@@ -504,11 +504,15 @@ function validateVisualPronoun(ex: LessonExerciseDraft, errors: string[]): void 
   if (answerPronoun !== undefined && Object.hasOwn(BE_FORM_BY_SUBJECT, answerPronoun) && answerPronoun !== pronoun) {
     errors.push(`visualSubject: odpowiedź zaczyna się od „${answerPronoun}”, a obrazek wymaga „${pronoun}”`);
   }
-  for (const token of normalizeTokens(ex.stem ?? "")) {
-    if (Object.hasOwn(BE_FORM_BY_SUBJECT, token) && token !== pronoun) {
+  const stemTokens = normalizeTokens(ex.stem ?? "");
+  stemTokens.forEach((token, index) => {
+    // Podmiotem jest tylko zaimek, po którym stoi luka albo forma „to be” —
+    // zaimki w dopełnieniu („see you”, „next to it”) nie liczą się.
+    const next = stemTokens[index + 1];
+    if (Object.hasOwn(BE_FORM_BY_SUBJECT, token) && token !== pronoun && (next === "___" || (next !== undefined && BE_FORMS.has(next)))) {
       errors.push(`visualSubject: zaimek „${token}” w bodźcu nie pasuje do obrazka (poprawnie: ${pronoun})`);
     }
-  }
+  });
   const expectedForm = BE_FORM_BY_SUBJECT[pronoun]!;
   for (const form of normalizeTokens(ex.stem ?? "").filter((token) => BE_FORMS.has(token))) {
     if (form !== expectedForm) {

@@ -385,6 +385,7 @@ describe("validateEnglishGrammarExercise — visualSubject (wybór z obrazkiem)"
     ["boy", "___ is happy.", "He"],
     ["group", "___ are happy.", "They"],
     ["dog", "___ is small.", "It"],
+    ["girl", "___ is happy to see you.", "She"],
   ] as const)("akceptuje piktogram %s z zaimkiem %s", (visualSubject, stem, answer) => {
     expect(validateEnglishGrammarExercise(visualChoice(visualSubject, stem, answer), toBeV1)).toEqual([]);
   });
