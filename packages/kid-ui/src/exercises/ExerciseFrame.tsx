@@ -96,8 +96,7 @@ export function ExerciseFrame({
   }, [hasDock, task.taskId]);
 
   // Dock zwykły i mowy rezerwuje w materiale dokładnie tyle, o ile
-  // panel wystaje ponad stopkę (kompaktowy ma stałą rezerwę CSS niżej)
-  // — ale tylko gdy treść naprawdę
+  // panel wystaje ponad stopkę w trybie overlay — ale tylko gdy treść naprawdę
   // wchodzi pod panel; inaczej nie powstaje zbędny ogon scrolla. Rezerwa
   // jest wyliczana od zera przy każdej zmianie rozmiaru (materiał, panel,
   // okno/klawiatura), więc nie rośnie monotonicznie. Przewinięcie
