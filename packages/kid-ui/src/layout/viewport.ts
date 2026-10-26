@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { createContext, createElement, useContext, useEffect, useState, type ReactNode } from "react";
 
 export interface KidViewportMeasurement {
   height: number;
@@ -37,12 +37,23 @@ export function computeKidViewport({
 }
 
 export interface KidViewport {
+  width: number | null;
   height: number | null;
   offsetTop: number;
   zoomed: boolean;
 }
 
-const SERVER_VIEWPORT: KidViewport = { height: null, offsetTop: 0, zoomed: false };
+const SERVER_VIEWPORT: KidViewport = { width: null, height: null, offsetTop: 0, zoomed: false };
+
+const KidViewportContext = createContext<KidViewport>(SERVER_VIEWPORT);
+
+export function KidViewportProvider({ viewport, children }: { viewport: KidViewport; children: ReactNode }) {
+  return createElement(KidViewportContext.Provider, { value: viewport }, children);
+}
+
+export function useKidPageViewport(): KidViewport {
+  return useContext(KidViewportContext);
+}
 
 export function useKidViewport(): KidViewport {
   const [viewport, setViewport] = useState<KidViewport>(SERVER_VIEWPORT);
@@ -50,15 +61,18 @@ export function useKidViewport(): KidViewport {
   useEffect(() => {
     const visualViewport = window.visualViewport;
     const update = () => {
-      setViewport(computeKidViewport({
-        innerHeight: window.innerHeight,
-        rootFontSize: Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize),
-        visualViewport: visualViewport === null ? null : {
-          height: visualViewport.height,
-          offsetTop: visualViewport.offsetTop,
-          scale: visualViewport.scale,
-        },
-      }));
+      setViewport({
+        width: Number.isFinite(window.innerWidth) ? Math.max(0, window.innerWidth) : 0,
+        ...computeKidViewport({
+          innerHeight: window.innerHeight,
+          rootFontSize: Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize),
+          visualViewport: visualViewport === null ? null : {
+            height: visualViewport.height,
+            offsetTop: visualViewport.offsetTop,
+            scale: visualViewport.scale,
+          },
+        }),
+      });
     };
     update();
     // Text enlargement can change without visualViewport.scale or a resize.

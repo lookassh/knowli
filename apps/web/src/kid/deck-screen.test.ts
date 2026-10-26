@@ -63,8 +63,8 @@ describe("DeckScreen — powitanie i postępy na kafelkach (SPEC §6)", () => {
   });
 });
 
-describe("DeckScreen — przełącznik mikrofonu (SPEC §14)", () => {
-  it("pokazuje przełącznik także po odmowie, z podpowiedzią pod nim", () => {
+describe("DeckScreen — ustawienie mikrofonu w nagłówku (SPEC §14)", () => {
+  it("pokazuje ikonę ustawienia po odmowie, a szczegóły dopiero po otwarciu", () => {
     const markup = renderToStaticMarkup(
       createElement(KidThemeProvider, null, createElement(DeckScreen, {
         decks: [DECK],
@@ -76,16 +76,18 @@ describe("DeckScreen — przełącznik mikrofonu (SPEC §14)", () => {
       })),
     );
 
-    expect(markup).toContain('data-testid="kid-mic-toggle"');
-    expect(markup).toContain('data-testid="kid-mic-denied-hint"');
-    expect(markup).toContain("Mikrofon");
+    expect(markup).toContain('data-testid="kid-mic-settings"');
+    expect(markup).not.toContain('data-testid="kid-mic-toggle"');
+    expect(markup).not.toContain('data-testid="kid-mic-denied-hint"');
+    expect(markup).toContain('aria-label="Odpowiedzi głosowe wyłączone"');
   });
 
-  it("bez odmowy pokazuje przełącznik i informację o nauce bez nagrywania", () => {
+  it("bez odmowy pokazuje ikonę, a ustawienie pozostaje zamknięte", () => {
     const markup = renderDeckScreen(DECK);
 
-    expect(markup).toContain('data-testid="kid-mic-toggle"');
+    expect(markup).toContain('data-testid="kid-mic-settings"');
+    expect(markup).not.toContain('data-testid="kid-mic-toggle"');
     expect(markup).not.toContain("kid-mic-denied-hint");
-    expect(markup).toContain("Możesz uczyć się również bez nagrywania.");
+    expect(markup).not.toContain("Możesz uczyć się również bez nagrywania.");
   });
 });

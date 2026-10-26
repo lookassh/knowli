@@ -131,7 +131,9 @@ test(`letter_completion accepts only missing letters after spelling difficulty: 
   await page.goto(`/kids/${child.id}/learn`);
   await page.waitForSelector('[data-testid="kid-profile"], [data-testid="kid-deck"]', { timeout: 30_000 });
   if (await page.getByTestId("kid-profile").count()) await page.getByTestId("kid-profile").filter({ hasText: child.displayName }).click();
+  await page.getByTestId("kid-mic-settings").click();
   await page.getByTestId("kid-mic-toggle").check();
+  await page.getByTestId("kid-mic-settings").click();
   await page.getByTestId("kid-deck").filter({ hasText: `Pisownia` }).first().click();
 
   const letterTaskId = retry.taskId;

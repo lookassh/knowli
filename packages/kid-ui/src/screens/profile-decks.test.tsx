@@ -39,7 +39,7 @@ describe("profile and deck Mantine screens", () => {
     expect(screen.queryByTestId("kid-profile")).toBeNull();
   });
 
-  it("keeps recommended and other assigned decks, their real metadata and actions", () => {
+  it("keeps recommended and other assigned decks, their real metadata and actions", async () => {
     const assigned = [
       deck(10, { recommended: true, mockTestAvailable: true, testDate: "2026-11-02", independentlyRecalledCount: 4 }),
       deck(11, { recommended: false, resumeOnly: true, activeSession: { sessionId: id(30), mode: "training" } }),
@@ -64,10 +64,11 @@ describe("profile and deck Mantine screens", () => {
     expect(onStart).toHaveBeenCalledWith(id(12));
     expect(onMockTest).toHaveBeenCalledWith(id(10));
     expect(onEndActive).toHaveBeenCalledWith(id(11));
-    expect(screen.getByTestId("kid-mic-denied-hint")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("kid-mic-settings"));
+    expect(await screen.findByTestId("kid-mic-denied-hint")).toBeTruthy();
   });
 
-  it("distinguishes approved activity from unavailable data and preserves microphone callback", () => {
+  it("distinguishes approved activity from unavailable data and preserves microphone callback", async () => {
     const onToggleMicrophone = vi.fn();
     const props: ComponentProps<typeof DeckScreen> = {
       decks: [deck(10)], childName: "Ola", todayActivitySeconds: 125, microphone: false,
@@ -75,10 +76,15 @@ describe("profile and deck Mantine screens", () => {
     };
     const view = renderKid(<DeckScreen {...props} />);
     expect(screen.getByTestId("kid-daily-activity").textContent).toContain("2 min 5 s");
-    const toggle = screen.getByTestId("kid-mic-toggle");
+    const settings = screen.getByTestId("kid-mic-settings");
+    expect(settings.closest("header")).toBeTruthy();
+    expect(screen.queryByTestId("kid-mic-toggle")).toBeNull();
+    fireEvent.click(settings);
+    const toggle = await screen.findByTestId("kid-mic-toggle");
     expect(toggle.className).toContain("mantine-Switch-input");
     fireEvent.click(toggle);
     expect(onToggleMicrophone).toHaveBeenCalledWith(true);
+    expect(screen.queryByTestId("kid-deck-microphone")).toBeNull();
     view.rerender(<DeckScreen {...props} todayActivitySeconds={undefined} todayActivityUnavailable />);
     expect(screen.getByTestId("kid-daily-activity").textContent).toContain("—");
   });
