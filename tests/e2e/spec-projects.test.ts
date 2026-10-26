@@ -64,6 +64,12 @@ describe("partycja speców E2E (spec-projects)", () => {
     expect(Number(match![1])).toBe(REAL_BUCKETS.length);
   });
 
+  it("matrix CI obejmuje dokładnie kosze REAL_BUCKETS", () => {
+    const ci = readFileSync(join(process.cwd(), ".github/workflows/ci.yml"), "utf8");
+    const buckets = [...ci.matchAll(/bucket:\s*"(\d+)"/g)].map((m) => Number(m[1])).sort((a, b) => a - b);
+    expect(buckets).toEqual(REAL_BUCKETS.map((_, i) => i + 1));
+  });
+
   it.each(MOCKED_SPECS)("mocked/%s zaślepia API i nie dotyka realnego świata", (file) => {
     const content = readFileSync(join(E2E_DIR, file), "utf8");
     expect(
