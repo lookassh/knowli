@@ -109,49 +109,20 @@ describe("createProductionSubjectRegistry", () => {
   });
 });
 
-describe("temat to_be — 5 celów", () => {
-  const topic = englishGrammarSubject.topics.find((t) => t.id === "to_be")!;
-
-  it("ma dokładnie 5 celów w kolejności nauki: formy, skróty, przeczenia, pytania, krótkie odpowiedzi", () => {
-    expect(topic.objectives.map((o) => o.id)).toEqual([
+const TOPIC_CASES = [
+  {
+    id: "to_be",
+    objectiveIds: [
       "english_grammar.to_be.affirmative_forms",
       "english_grammar.to_be.contractions",
       "english_grammar.to_be.negative_forms",
       "english_grammar.to_be.questions",
       "english_grammar.to_be.short_answers",
-    ]);
-  });
-
-  it("każdy cel ma kategorie błędów z szablonami podpowiedzi", () => {
-    for (const objective of topic.objectives) {
-      expect(objective.errorCategories.length).toBeGreaterThanOrEqual(2);
-      for (const code of objective.errorCategories) {
-        expect(objective.hints[code]).toBeTruthy();
-      }
-    }
-  });
-
-  it("każdy cel ma co najmniej jedną kartę z miejscem {{examples}}", () => {
-    for (const objective of topic.objectives) {
-      const hasExamples = objective.cards.some(
-        (card) => card.title.includes("{{examples}}") || card.body.includes("{{examples}}"),
-      );
-      expect(hasExamples, `cel ${objective.id} bez {{examples}}`).toBe(true);
-    }
-  });
-
-  it("ma trzy przekształcenia tematu", () => {
-    expect(topic.transforms.map((t) => t.id).sort()).toEqual(
-      ["to_affirmative", "to_negative", "to_question"].sort(),
-    );
-  });
-});
-
-describe("temat present_simple — 7 celów", () => {
-  const topic = englishGrammarSubject.topics.find((t) => t.id === "present_simple")!;
-
-  it("ma dokładnie 7 celów w kolejności nauki", () => {
-    expect(topic.objectives.map((o) => o.id)).toEqual([
+    ],
+  },
+  {
+    id: "present_simple",
+    objectiveIds: [
       "english_grammar.present_simple.affirmative_base",
       "english_grammar.present_simple.third_person_s",
       "english_grammar.present_simple.spelling_es_ies",
@@ -159,30 +130,40 @@ describe("temat present_simple — 7 celów", () => {
       "english_grammar.present_simple.question",
       "english_grammar.present_simple.short_answers",
       "english_grammar.present_simple.base_form_after_does",
-    ]);
-  });
+    ],
+  },
+] as const;
 
-  it("każdy cel ma kategorie błędów z szablonami podpowiedzi", () => {
-    for (const objective of topic.objectives) {
-      expect(objective.errorCategories.length).toBeGreaterThanOrEqual(2);
-      for (const code of objective.errorCategories) {
-        expect(objective.hints[code]).toBeTruthy();
+for (const topicCase of TOPIC_CASES) {
+  describe(`temat ${topicCase.id} — spójność katalogu`, () => {
+    const topic = englishGrammarSubject.topics.find((t) => t.id === topicCase.id)!;
+
+    it("ma cele w oczekiwanej kolejności nauki", () => {
+      expect(topic.objectives.map((o) => o.id)).toEqual(topicCase.objectiveIds);
+    });
+
+    it("każdy cel ma kategorie błędów z szablonami podpowiedzi", () => {
+      for (const objective of topic.objectives) {
+        expect(objective.errorCategories.length).toBeGreaterThanOrEqual(2);
+        for (const code of objective.errorCategories) {
+          expect(objective.hints[code]).toBeTruthy();
+        }
       }
-    }
-  });
+    });
 
-  it("każdy cel ma co najmniej jedną kartę z miejscem {{examples}}", () => {
-    for (const objective of topic.objectives) {
-      const hasExamples = objective.cards.some(
-        (card) => card.title.includes("{{examples}}") || card.body.includes("{{examples}}"),
+    it("każdy cel ma co najmniej jedną kartę z miejscem {{examples}}", () => {
+      for (const objective of topic.objectives) {
+        const hasExamples = objective.cards.some(
+          (card) => card.title.includes("{{examples}}") || card.body.includes("{{examples}}"),
+        );
+        expect(hasExamples, `cel ${objective.id} bez {{examples}}`).toBe(true);
+      }
+    });
+
+    it("ma trzy przekształcenia tematu", () => {
+      expect(topic.transforms.map((t) => t.id).sort()).toEqual(
+        ["to_affirmative", "to_negative", "to_question"].sort(),
       );
-      expect(hasExamples, `cel ${objective.id} bez {{examples}}`).toBe(true);
-    }
+    });
   });
-
-  it("ma trzy przekształcenia tematu", () => {
-    expect(topic.transforms.map((t) => t.id).sort()).toEqual(
-      ["to_affirmative", "to_negative", "to_question"].sort(),
-    );
-  });
-});
+}
