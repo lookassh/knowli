@@ -9,6 +9,18 @@ export interface TestRunConfig {
   e2eSkipBuild: boolean;
   e2eWorkers: number;
   e2eBucket: number | null;
+  integrationBucket: number | null;
+}
+
+// Kosz czasowy wybierany zmienną `<name>` (REAL_BUCKETS dla E2E,
+// INTEGRATION_BUCKETS dla integracji); brak albo pusta wartość (np. pozycja
+// matrixa CI bez kosza) = wszystkie pliki. Zgodność indeksu z liczbą koszy
+// sprawdza config danego runnera (playwright / vitest.integration).
+function parseBucket(raw: string | undefined, name: string): number | null {
+  if (raw !== undefined && raw !== "" && !/^[1-9]$/.test(raw)) {
+    throw new Error(`${name} must be an integer from 1 to 9`);
+  }
+  return raw === undefined || raw === "" ? null : Number(raw);
 }
 
 export function readTestRunConfig(env: Record<string, string | undefined>): TestRunConfig {
@@ -58,14 +70,8 @@ export function readTestRunConfig(env: Record<string, string | undefined>): Test
     throw new Error("UMIEM_E2E_WORKERS must be an integer from 1 to 32");
   }
 
-  // Kosz czasowy projektu `real` (REAL_BUCKETS w tests/e2e/spec-projects.ts);
-  // brak albo pusta wartość (np. pozycja matrixa CI bez kosza) = wszystkie
-  // specy. Zgodność indeksu z liczbą koszy sprawdza playwright.config.ts.
-  const rawBucket = env.UMIEM_E2E_BUCKET;
-  if (rawBucket !== undefined && rawBucket !== "" && !/^[1-9]$/.test(rawBucket)) {
-    throw new Error("UMIEM_E2E_BUCKET must be an integer from 1 to 9");
-  }
-  const e2eBucket = rawBucket === undefined || rawBucket === "" ? null : Number(rawBucket);
+  const e2eBucket = parseBucket(env.UMIEM_E2E_BUCKET, "UMIEM_E2E_BUCKET");
+  const integrationBucket = parseBucket(env.UMIEM_INTEGRATION_BUCKET, "UMIEM_INTEGRATION_BUCKET");
 
   return {
     integrationContainerPrefix: runId ? `knowli-it-${runId}-` : "knowli-it-",
@@ -80,5 +86,6 @@ export function readTestRunConfig(env: Record<string, string | undefined>): Test
     e2eSkipBuild,
     e2eWorkers,
     e2eBucket,
+    integrationBucket,
   };
 }
