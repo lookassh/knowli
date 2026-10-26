@@ -393,6 +393,7 @@ describe("validateEnglishGrammarExercise — visualSubject (wybór z obrazkiem)"
     ["girl", "___ is happy.", "He"],
     ["group", "___ are happy.", "She"],
     ["girl", "___ are happy.", "She"],
+    ["boy", "She ___ happy.", "is"],
   ] as const)("odrzuca niezgodność piktogram/stem/odpowiedź: %s", (visualSubject, stem, answer) => {
     expect(validateEnglishGrammarExercise(visualChoice(visualSubject, stem, answer), toBeV1)).not.toEqual([]);
   });
