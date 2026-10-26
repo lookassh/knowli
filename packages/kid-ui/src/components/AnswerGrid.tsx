@@ -1,5 +1,5 @@
 import { UnstyledButton } from "@mantine/core";
-import type { ReactNode, RefObject } from "react";
+import type { CSSProperties, ReactNode, RefObject } from "react";
 import { messages } from "@learning/contracts";
 import { format } from "../format";
 import type { OptionOutcome } from "../exercises/option-outcome";
@@ -47,7 +47,8 @@ export function AnswerGrid({
   optionLang,
 }: AnswerGridProps) {
   return (
-    <ul className={[classes.grid, choiceList ? classes.choiceList : undefined, compactChoiceGrid ? classes.compactChoiceGrid : undefined, className].filter(Boolean).join(" ")} data-visual-only={visualOnly || undefined} data-testid={listTestId}>
+    <ul className={[classes.grid, choiceList ? classes.choiceList : undefined, compactChoiceGrid ? classes.compactChoiceGrid : undefined, className].filter(Boolean).join(" ")} data-visual-only={visualOnly || undefined} data-testid={listTestId}
+      style={visualOnly ? { "--visual-choice-count": options.length, "--visual-choice-rows": Math.ceil(options.length / 2) } as CSSProperties : undefined}>
       {options.map((option, index) => {
         const outcome = outcomes.get(option.id);
         const accessibleName = outcome === "correct"

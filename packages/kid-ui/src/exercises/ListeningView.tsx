@@ -36,6 +36,7 @@ export function ListeningView({ task, busy, optionOutcomes, dock, handlers, mock
   return (
     <ExerciseFrame
       task={task}
+      feedbackLayout="flow"
       content={(
         <>
           <ActionButton

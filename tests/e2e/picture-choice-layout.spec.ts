@@ -50,6 +50,89 @@ async function openPictureChoices(page: Page, fixture: KidUiFixture, viewport = 
   await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-prompt-kind", "picture_listening");
 }
 
+test("cztery ilustracje tworzą czytelną zwartą siatkę także między progami responsywności", async ({ page }, testInfo) => {
+  const fixture = pictureChoiceLayoutFixture();
+  const task = fixture.tasks[1]!;
+  if (task.prompt.kind !== "picture_listening") throw new Error("picture listening fixture missing");
+  task.prompt.options = Array.from({ length: 4 }, (_, index) => ({
+    id: `10000000-0000-4000-8000-${String(80 + index).padStart(12, "0")}`,
+    labelPl: `Obrazek ${index + 1}`,
+    visual: { kind: "image", imageAssetId: "10000000-0000-4000-8000-000000000015" },
+  }));
+  await openPictureChoices(page, fixture, { width: 360, height: 560 });
+
+  for (const [width, height] of [[360, 560], [390, 740], [489, 500], [498, 610],
+    [599, 650], [600, 650], [699, 780], [700, 780], [840, 480], [768, 1024], [1392, 984]] as const) {
+    await page.setViewportSize({ width, height });
+    await expect(page.getByTestId("kid-session-frame")).toHaveCSS("height", `${height}px`);
+    await expect.poll(() => page.getByTestId("kid-option").evaluateAll((elements) => {
+      const boxes = elements.map((element) => element.getBoundingClientRect());
+      return Math.min(...boxes.map((box) => box.width));
+    }), { message: `illustrations must stay readable at ${width}x${height}` }).toBeGreaterThanOrEqual(112);
+    const geometry = await page.evaluate(() => {
+      const boxes = [...document.querySelectorAll<HTMLElement>("[data-testid='kid-option']")].map((element) => element.getBoundingClientRect());
+      const material = document.querySelector<HTMLElement>(".kid-material")!.getBoundingClientRect();
+      const grid = document.querySelector<HTMLElement>(".kid-picture-options")!.getBoundingClientRect();
+      return {
+        square: boxes.every((box) => Math.abs(box.width - box.height) <= 1),
+        horizontalGap: boxes[1]!.left - boxes[0]!.right,
+        centerOffset: Math.abs((grid.left + grid.right) / 2 - (material.left + material.right) / 2),
+        materialCenterOffset: Math.abs((material.left + material.right) / 2 - innerWidth / 2),
+        horizontalOverflow: document.documentElement.scrollWidth > innerWidth,
+      };
+    });
+    expect(geometry.square, JSON.stringify({ width, height, geometry })).toBe(true);
+    expect(geometry.horizontalGap).toBeGreaterThanOrEqual(8);
+    expect(geometry.horizontalGap).toBeLessThanOrEqual(16);
+    expect(geometry.centerOffset).toBeLessThanOrEqual(1);
+    expect(geometry.materialCenterOffset).toBeLessThanOrEqual(1);
+    expect(geometry.horizontalOverflow).toBe(false);
+    await page.screenshot({ path: testInfo.outputPath(`compact-image-grid-${width}x${height}.png`) });
+  }
+});
+
+for (const count of [2, 3, 4]) {
+  test(`${count} obrazki zachowują czytelność i dostępność z feedbackiem oraz tekstem 200%`, async ({ page }) => {
+    const fixture = pictureChoiceLayoutFixture();
+    const task = fixture.tasks[1]!;
+    if (task.prompt.kind !== "picture_listening") throw new Error("picture listening fixture missing");
+    task.prompt.options = Array.from({ length: count }, (_, index) => ({
+      id: `10000000-0000-4000-8000-${String(80 + index).padStart(12, "0")}`,
+      labelPl: `Obrazek ${index + 1}`,
+      visual: { kind: "image", imageAssetId: "10000000-0000-4000-8000-000000000015" },
+    }));
+    await openPictureChoices(page, fixture, { width: 360, height: 560 });
+    await page.getByTestId("kid-option").first().click();
+    const next = page.getByTestId("kid-next");
+    await expect(next).toBeVisible();
+    for (const [width, height] of [[360, 560], [489, 500], [600, 650], [844, 390], [1392, 984]] as const) {
+      await page.setViewportSize({ width, height });
+      await expect(page.getByTestId("kid-session-frame")).toHaveCSS("height", `${height}px`);
+      // A resize can switch to page scrolling and schedule the footer reveal.
+      // Wait for that frame before checking manual access to earlier options.
+      await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+      for (const option of await page.getByTestId("kid-option").all()) {
+        await option.evaluate((element) => element.scrollIntoView({ block: "center" }));
+        await expect(option, `option at ${width}x${height}`).toBeInViewport({ ratio: 0.98 });
+        const bounds = await option.boundingBox();
+        expect(bounds!.width).toBeGreaterThanOrEqual(112);
+        expect(Math.abs(bounds!.width - bounds!.height)).toBeLessThanOrEqual(1);
+      }
+      await next.scrollIntoViewIfNeeded();
+      await expect(next).toBeInViewport({ ratio: 0.98 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+    }
+    await page.setViewportSize({ width: 360, height: 640 });
+    await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
+    await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-feedback-layout", "flow");
+    for (const element of [...await page.getByTestId("kid-option").all(), next, page.getByTestId("kid-end")]) {
+      await element.evaluate((node) => node.scrollIntoView({ block: "center" }));
+      await expect(element).toBeInViewport({ ratio: 0.98 });
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+  });
+}
+
 test("trzy odpowiedzi obrazkowe mieszczą się bez przewijania", async ({ page }, testInfo) => {
   await openPictureChoices(page, pictureChoiceLayoutFixture());
 
@@ -130,140 +213,65 @@ test("trzy odpowiedzi obrazkowe mieszczą się bez przewijania", async ({ page }
   }
 });
 
-test("siatka wykorzystuje szerokość ekranu, a wynik i akcja trzymają się obrazków", async ({ page }, testInfo) => {
+test("wynik zajmuje rzeczywistą stopkę pod zwartą siatką na telefonie i desktopie", async ({ page }, testInfo) => {
   await openPictureChoices(page, pictureChoiceLayoutFixture(), { width: 390, height: 844 });
+  await expect(page.getByTestId("kid-exercise-actions")).toBeEmpty();
   await page.getByTestId("kid-option").first().click();
   await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
-  await expect.poll(async () => {
-    const box = await page.getByTestId("kid-feedback-dock").boundingBox();
-    return box ? Math.round(box.y + box.height) : 99999;
-  }, { message: "dock settles at the viewport bottom" }).toBeLessThanOrEqual(845);
-
-  const geometry = await page.evaluate(() => {
-    const options = [...document.querySelectorAll<HTMLElement>("[data-testid='kid-option']")];
-    const grid = document.querySelector<HTMLElement>(".kid-picture-options")!;
-    const result = document.querySelector<HTMLElement>("[data-testid='kid-feedback-dock']")!;
-    const action = document.querySelector<HTMLElement>("[data-testid='kid-primary-slot']")!;
-    const first = options[0]!.getBoundingClientRect();
-    const third = options[2]!.getBoundingClientRect();
-    const resultBox = result.getBoundingClientRect();
-    const actionBox = action.getBoundingClientRect();
-    return {
-      gridWidth: grid.getBoundingClientRect().width,
-      firstWidth: first.width,
-      firstHeight: first.height,
-      thirdBottom: third.bottom,
-      resultTop: resultBox.top,
-      resultBottom: resultBox.bottom,
-      actionTop: actionBox.top,
-      documentScrollHeight: document.scrollingElement!.scrollHeight,
-      viewportHeight: window.innerHeight,
-    };
-  });
-
-  expect(geometry.gridWidth).toBeGreaterThanOrEqual(320);
-  expect(geometry.firstWidth).toBeGreaterThanOrEqual(155);
-  // Kafelek jest wymiarowany z budżetu wysokości (kiosk) — w wąskich kolumnach może być wydłużony pionowo.
-  const tileRatio = geometry.firstHeight / geometry.firstWidth;
-  expect(tileRatio).toBeGreaterThanOrEqual(0.95);
-  expect(tileRatio, JSON.stringify(geometry)).toBeLessThanOrEqual(1.3);
-  expect(geometry.resultTop - geometry.thirdBottom).toBeGreaterThanOrEqual(0);
-  // Dock jest zakotwiczony w dolnej krawędzi kadru, nie tuż pod kafelkami.
-  expect(geometry.resultBottom).toBeGreaterThanOrEqual(geometry.viewportHeight - 32);
-  expect(geometry.resultBottom).toBeLessThanOrEqual(geometry.viewportHeight + 1);
-  expect(geometry.actionTop).toBeGreaterThanOrEqual(geometry.resultTop);
-  expect(geometry.actionTop).toBeLessThanOrEqual(geometry.resultBottom);
-  expect(geometry.documentScrollHeight).toBeLessThanOrEqual(geometry.viewportHeight + 1);
-
-  await page.screenshot({ path: testInfo.outputPath("picture-choice-390x844.png") });
-  await page.setViewportSize({ width: 1366, height: 768 });
-  const desktop = await page.evaluate(() => {
-    const options = [...document.querySelectorAll<HTMLElement>("[data-testid='kid-option']")];
-    const grid = document.querySelector<HTMLElement>(".kid-picture-options")!.getBoundingClientRect();
-    const first = options[0]!.getBoundingClientRect();
-    const third = options[2]!.getBoundingClientRect();
-    return {
-      gridWidth: grid.width,
-      optionWidth: first.width,
-      optionHeight: first.height,
-      firstLeft: first.left,
-      firstRight: first.right,
-      thirdBottom: third.bottom,
-      resultTop: document.querySelector<HTMLElement>("[data-testid='kid-feedback-dock']")!.getBoundingClientRect().top,
-      dockLeft: document.querySelector<HTMLElement>("[data-testid='kid-feedback-dock']")!.getBoundingClientRect().left,
-      viewportWidth: window.innerWidth,
-    };
-  });
-  expect(desktop.gridWidth).toBeLessThanOrEqual(560);
-  // Szerokość siatki wynika z budżetu wysokości kafelków, nie z pełnej szerokości ekranu.
-  expect(desktop.gridWidth).toBeGreaterThanOrEqual(500);
-  expect(desktop.optionWidth).toBeGreaterThanOrEqual(200);
-  expect(Math.abs(desktop.optionWidth - desktop.optionHeight)).toBeLessThanOrEqual(1);
-  expect(desktop.dockLeft).toBeGreaterThanOrEqual(desktop.firstRight);
-  expect(desktop.firstLeft).toBeGreaterThanOrEqual(0);
-  expect(desktop.firstRight).toBeLessThanOrEqual(desktop.viewportWidth);
-  await page.screenshot({ path: testInfo.outputPath("picture-choice-desktop-1366x768.png") });
+  for (const viewport of [{ width: 390, height: 844 }, { width: 1366, height: 768 }, { width: 489, height: 500 }]) {
+    await page.setViewportSize(viewport);
+    const next = page.getByTestId("kid-next");
+    await next.scrollIntoViewIfNeeded();
+    await expect(next).toBeInViewport();
+    const geometry = await page.evaluate(() => {
+      const material = document.querySelector<HTMLElement>(".kid-material")!.getBoundingClientRect();
+      const dock = document.querySelector<HTMLElement>("[data-testid='kid-feedback-dock']")!.getBoundingClientRect();
+      const options = [...document.querySelectorAll<HTMLElement>("[data-testid='kid-option']")].map((e) => e.getBoundingClientRect());
+      return { materialBottom: material.bottom, dockTop: dock.top, dockBottom: dock.bottom,
+        materialCenter: (material.left + material.right) / 2,
+        widths: options.map((r) => r.width), square: options.every((r) => Math.abs(r.width - r.height) <= 1),
+        gap: options[1]!.left - options[0]!.right };
+    });
+    expect(geometry.materialBottom).toBeLessThanOrEqual(geometry.dockTop + 1);
+    expect(geometry.dockBottom).toBeLessThanOrEqual(viewport.height + 1);
+    expect(geometry.materialCenter).toBeCloseTo(viewport.width / 2, 0);
+    expect(Math.min(...geometry.widths)).toBeGreaterThanOrEqual(112);
+    expect(geometry.square).toBe(true);
+    expect(geometry.gap).toBeLessThanOrEqual(16);
+    const last = page.getByTestId("kid-option").last();
+    await last.scrollIntoViewIfNeeded();
+    await expect(last).toBeInViewport({ ratio: 0.98 });
+    await page.screenshot({ path: testInfo.outputPath(`picture-feedback-${viewport.width}x${viewport.height}.png`) });
+  }
 });
 
-test("szeroki ekran w poziomie utrzymuje osobne kolumny po odpowiedzi i przy ponowieniu", async ({ page }) => {
+test("landscape zachowuje dostęp do siatki i stopki bez pustej bocznej kolumny", async ({ page }) => {
   const fixture = pictureChoiceLayoutFixture();
-  const originalAttempt = fixture.attempts?.[0];
-  if (!originalAttempt) throw new Error("picture choice attempt fixture missing");
-  fixture.attempts = [
-    { ...originalAttempt, feedback: { kind: "incorrect", correctText: "żółty" }, taskState: "issued" },
-    { ...originalAttempt, attemptId: "10000000-0000-4000-8000-000000000017", feedback: { kind: "great" }, taskState: "completed" },
-  ];
+  const original = fixture.attempts![0]!;
+  fixture.attempts = [{ ...original, feedback: { kind: "incorrect", correctText: "żółty" }, taskState: "issued" }];
   await openPictureChoices(page, fixture, { width: 844, height: 390 });
-
-  const assertLandscapeLayout = async (withDock = true) => {
-    if (withDock) await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
-    const geometry = await page.evaluate(() => {
-      const frame = document.querySelector<HTMLElement>("[data-testid='kid-exercise']")!.getBoundingClientRect();
-      const options = [...document.querySelectorAll<HTMLElement>("[data-testid='kid-option']")];
-      const third = options[2]!.getBoundingClientRect();
-      const dockElement = document.querySelector<HTMLElement>("[data-testid='kid-feedback-dock']");
-      const result = dockElement ? dockElement.getBoundingClientRect() : { left: 0, right: 0, top: Number.POSITIVE_INFINITY };
-      const actionElement = document.querySelector<HTMLElement>("[data-testid='kid-primary-slot']");
-      const action = actionElement ? actionElement.getBoundingClientRect() : { left: 0, right: 0 };
-      return {
-        frameWidth: frame.width,
-        thirdBottom: third.bottom,
-        resultLeft: result.left,
-        resultRight: result.right,
-        resultTop: result.top,
-        actionLeft: action.left,
-        actionRight: action.right,
-        viewportWidth: window.innerWidth,
-        scrollHeight: document.scrollingElement!.scrollHeight,
-        viewportHeight: window.innerHeight,
-      };
-    });
-    expect(geometry.frameWidth).toBeGreaterThan(560);
-    if (withDock) {
-      await expect.poll(async () => {
-        const box = await page.getByTestId("kid-feedback-dock").boundingBox();
-        return box ? Math.round(box.y + box.height) : 99999;
-      }, { message: "landscape dock settles at the viewport bottom" }).toBeLessThanOrEqual(391);
-      const settled = await page.evaluate(() => {
-        const third = document.querySelectorAll<HTMLElement>("[data-testid='kid-option']")[2]!.getBoundingClientRect();
-        const dockEl = document.querySelector<HTMLElement>("[data-testid='kid-feedback-dock']");
-        return dockEl ? { thirdBottom: third.bottom, thirdRight: third.right, dockTop: dockEl.getBoundingClientRect().top, dockLeft: dockEl.getBoundingClientRect().left } : null;
-      });
-      // W poziomie dock stoi obok kafelkow: rozdzial jest poziomy, bez wyjatkow.
-      if (settled) expect(settled.thirdRight, JSON.stringify(settled)).toBeLessThanOrEqual(settled.dockLeft + 1);
-    expect(geometry.resultRight).toBeLessThanOrEqual(geometry.viewportWidth);
-    expect(geometry.actionLeft).toBeGreaterThanOrEqual(geometry.resultLeft);
-    expect(geometry.actionRight).toBeLessThanOrEqual(geometry.resultRight + 1);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const checkOptions = async () => {
+    for (const option of await page.getByTestId("kid-option").all()) {
+      // Chromium's CDP scroll helper considers the inner box of a disabled
+      // button; center the whole border box, including the 4px outcome border.
+      await option.evaluate((element) => element.scrollIntoView({ block: "center" }));
+      await expect(option).toBeInViewport({ ratio: 0.98 });
     }
-    expect(geometry.scrollHeight).toBeLessThanOrEqual(geometry.viewportHeight + 1);
+    expect(await page.locator(".kid-material").evaluate((e) => {
+      const r = e.getBoundingClientRect(); return Math.abs((r.left + r.right) / 2 - innerWidth / 2);
+    })).toBeLessThanOrEqual(1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
   };
-
-  await assertLandscapeLayout(false);
+  await checkOptions();
   await page.getByTestId("kid-option").nth(1).click();
-  await expect(page.getByTestId("kid-feedback")).toBeVisible();
-  await assertLandscapeLayout();
+  await page.getByTestId("kid-next").scrollIntoViewIfNeeded();
+  await expect(page.getByTestId("kid-next")).toBeInViewport();
+  await expect(page.getByTestId("kid-feedback-dock")).toBeInViewport({ ratio: 1 });
+  await checkOptions();
   await page.getByTestId("kid-next").click();
-  await assertLandscapeLayout(false);
+  await expect(page.getByTestId("kid-exercise-actions")).toBeEmpty();
+  await checkOptions();
 });
 
 test("cyfra działa z klawiatury w ciemnym motywie, pokazuje błąd i pozwala spróbować ponownie", async ({ page }, testInfo) => {
@@ -299,10 +307,11 @@ test("cyfra działa z klawiatury w ciemnym motywie, pokazuje błąd i pozwala sp
   });
 
   const options = page.getByTestId("kid-option");
-  const material = page.locator(".kid-material-content");
+  const material = page.locator(".kid-material");
   await options.nth(1).focus();
   await expect(options.nth(1)).toBeFocused();
   const scrollBeforeAnswer = await material.evaluate((element) => element.scrollTop);
+  const initialPositions = await options.evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().y));
   await page.keyboard.press("Enter");
   await firstAnswerStarted;
   expect(submitted[0]).toMatchObject({ modality: "choice", optionId: "10000000-0000-4000-8000-000000000009" });
@@ -348,14 +357,13 @@ test("cyfra działa z klawiatury w ciemnym motywie, pokazuje błąd i pozwala sp
   }));
   expect(markersStayInsideTiles).toEqual([true, true]);
   await page.screenshot({ path: testInfo.outputPath("picture-choice-feedback-retry.png") });
-  const beforeRetry = await options.evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().y));
 
   await page.getByTestId("kid-next").click();
   await expect(page.getByTestId("kid-feedback")).toHaveCount(0);
   await expect.poll(() => options.evaluateAll((elements) => elements.map((element) => (element as HTMLButtonElement).disabled)))
     .toEqual([false, false, false]);
   const afterRetry = await options.evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().y));
-  expect(Math.max(...afterRetry.map((position, index) => Math.abs(position - beforeRetry[index]!)))).toBeLessThanOrEqual(6);
+  expect(Math.max(...afterRetry.map((position, index) => Math.abs(position - initialPositions[index]!)))).toBeLessThanOrEqual(6);
 
   await options.nth(0).click();
   await expect(page.getByTestId("kid-feedback")).toBeVisible();

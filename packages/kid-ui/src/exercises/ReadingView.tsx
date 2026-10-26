@@ -25,6 +25,7 @@ export function ReadingView({ task, busy, optionOutcomes, dock, handlers }: Exer
   return (
     <ExerciseFrame
       task={task}
+      feedbackLayout="flow"
       content={<>
         <Text component="p" className="kid-word" data-testid="kid-word">{visible}</Text>
         <AnswerGrid

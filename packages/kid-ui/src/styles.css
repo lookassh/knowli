@@ -859,78 +859,6 @@
   background: var(--kid-soft) !important;
 }
 
-.kid-exercise-frame[data-prompt-kind="picture_listening"] {
-  justify-content: center;
-  gap: 8px;
-}
-
-/* Siatka obrazków picture_listening ma budżet wysokości z miejsca dostępnego
-   w kolumnie zadania (łańcuch flex:1 + min-height:0 + overflow:hidden:
-   kid-material → kid-material-content → kid-picture-options), a nie z pełnego
-   svh viewportu — audyt UI 2026-10-22 (iframe kiosku ~860–880 px wysokości).
-   Kafelek rośnie z wysokości wiersza minmax(112px, 1fr), gdzie 112 px to
-   minimum dotykowe; tryby zoom/very-short wracają do naturalnej wysokości
-   i scrolla strony. */
-.kid-exercise-frame[data-prompt-kind="picture_listening"] .kid-material {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.kid-exercise-frame[data-prompt-kind="picture_listening"] .kid-material-content {
-  flex: 1;
-  min-height: 0;
-  justify-content: flex-start;
-  gap: 6px;
-  overflow: hidden;
-}
-
-.kid-exercise-frame[data-prompt-kind="picture_listening"] .kid-play-big {
-  width: clamp(48px, 6svh, 60px) !important;
-  min-height: clamp(48px, 6svh, 60px) !important;
-  height: clamp(48px, 6svh, 60px) !important;
-  flex: none;
-}
-
-.kid-exercise-frame[data-prompt-kind="picture_listening"] .kid-play-big .kid-icon {
-  width: 32px;
-  height: 32px;
-}
-
-.kid-picture-options {
-  width: 100%;
-  flex: 1 1 auto;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-auto-rows: minmax(112px, 1fr);
-  justify-content: stretch;
-  align-content: start;
-  gap: 12px;
-}
-
-.kid-picture-options > li {
-  min-width: 0;
-  display: flex;
-  justify-content: center;
-}
-
-.kid-picture-options .kid-picture-option {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  width: auto;
-  height: 100%;
-  max-width: min(100%, 35svh);
-  min-height: 0;
-  aspect-ratio: 1 / 1;
-  padding: 0;
-  overflow: hidden;
-  border-radius: 20px;
-  text-align: center;
-}
-
 .kid-picture-options .kid-picture-option.kid-option--correct {
   border: 4px solid var(--kid-good);
   background: var(--kid-good-bg);
@@ -1023,19 +951,6 @@
   border-radius: 12px;
 }
 
-.kid-page[data-zoomed="true"] .kid-picture-options,
-.kid-page[data-viewport-very-short="true"] .kid-picture-options {
-  flex: none;
-  grid-template-rows: none;
-  grid-auto-rows: minmax(112px, auto);
-}
-
-.kid-page[data-zoomed="true"] .kid-picture-options .kid-picture-option,
-.kid-page[data-viewport-very-short="true"] .kid-picture-options .kid-picture-option {
-  width: min(100%, 112px);
-  height: auto;
-}
-
 /* picture_recognition (SPEC §12.4a): obrazek znaczenia z małym polskim
    podpisem nad siatką angielskich słów. */
 .kid-recognition-prompt {
@@ -1045,45 +960,11 @@
   gap: 8px;
 }
 
-.kid-recognition-prompt .kid-illustration {
-  width: min(52vw, 220px);
-  height: min(28svh, 220px);
-}
-
 .kid-picture-caption {
   margin: 0;
   font-size: 1.15rem;
   color: var(--kid-muted);
   text-align: center;
-}
-
-/* picture_recognition nigdy nie renderuje akcji pomocniczych, więc pusty slot
-   secondary (visibility:hidden zajmuje 52px) jest zwijany jak przy
-   picture_listening. Gdyby widok zyskał secondaryActions, tę regułę cofnij. */
-/* Telefony do ~800px wysokości (m.in. S10e ~360×740), czyli poniżej progu
-   redukcji viewport-short (≤700px): obrazek, podpis i 2–4 słowa muszą się
-   zmieścić bez przewijania. Wyższe ekrany zachowują pełny rozmiar. */
-@media (max-height: 800px) {
-  .kid-exercise-frame[data-prompt-kind="picture_recognition"] .kid-material-content {
-    gap: 8px;
-  }
-
-  .kid-exercise-frame[data-prompt-kind="picture_recognition"] .kid-recognition-prompt {
-    gap: 6px;
-  }
-
-  .kid-exercise-frame[data-prompt-kind="picture_recognition"] .kid-recognition-prompt .kid-illustration {
-    width: min(46vw, 200px);
-    height: min(21svh, 190px);
-  }
-
-  .kid-exercise-frame[data-prompt-kind="picture_recognition"] .kid-options {
-    gap: 8px;
-  }
-
-  .kid-exercise-frame[data-prompt-kind="picture_recognition"] .kid-options button {
-    min-height: 48px;
-  }
 }
 
 /* Opcja ze wsparciem odsłuchu poprawnego słowa w feedbackzie: przycisk
@@ -1104,57 +985,6 @@
   min-height: 56px;
   font-size: 1.3rem;
   margin-inline-end: 44px;
-}
-
-/* Układ ratunkowy dwukolumnowy: próg 900 px (audyt UI 2026-10-22, fix #2)
-   obejmuje przeglądarkowy iframe kiosku (~860–880 px wysokości) oraz laptopy
-   do 900 px wysokości. Telefony landscape (≤540 px) nadal wpadają w ten sam
-   układ, a very-short/zoom mają własne nadpisanie 112 px w bloku poniżej.
-   Poszerzenie do 920 px dotyczy tylko ekranu obrazków — pozostałe ćwiczenia
-   zostają przy 560 px, żeby nagłówek nie robił się szerszy niż zadanie. */
-@media (min-width: 700px) and (max-height: 900px) and (orientation: landscape) {
-  .kid-ui .kid-learning:has(.kid-exercise-frame[data-prompt-kind="picture_listening"]) {
-    max-width: min(100%, 920px);
-  }
-
-  .kid-exercise-frame[data-prompt-kind="picture_listening"] {
-    display: grid;
-    width: min(100%, 880px);
-    max-width: 880px;
-    grid-template-columns: minmax(0, 1.2fr) minmax(220px, 0.8fr);
-    grid-template-rows: auto 1fr;
-    align-content: center;
-    align-items: center;
-    gap: 12px 24px;
-  }
-
-  .kid-exercise-frame[data-prompt-kind="picture_listening"] .kid-exercise-instruction {
-    grid-column: 1 / -1;
-    grid-row: 1;
-  }
-
-  .kid-exercise-frame[data-prompt-kind="picture_listening"] .kid-material {
-    grid-column: 1;
-    grid-row: 2;
-    /* align-items:center ramki każe materiałowi przyjąć wysokość treści
-       (max-content), co łamie budżet wysokości w dole pasma 541–900 px —
-       rozciągamy do wiersza 1fr, aby siatka obrazków dostawała dostępne
-       miejsce, a nie rozmiar naturalny. */
-    align-self: stretch;
-  }
-
-  .kid-exercise-frame[data-prompt-kind="picture_listening"] .kid-exercise-actions {
-    grid-column: 2;
-    grid-row: 2;
-  }
-}
-
-@media (min-width: 700px) and (max-height: 900px) and (orientation: landscape) {
-  .kid-page[data-zoomed="true"] .kid-picture-options .kid-picture-option,
-  .kid-page[data-viewport-very-short="true"] .kid-picture-options .kid-picture-option {
-    width: min(100%, 112px);
-    height: auto;
-  }
 }
 
 .kid-play-big svg {
@@ -2389,41 +2219,6 @@
 
 .kid-deck-content {
   flex: 1;
-}
-
-/* Kompaktowy dock recognition: stała rezerwa jak przy listening (56 px),
-   większa od wystawania panelu, więc słowa nie lądują pod dockiem. */
-.kid-exercise-frame[data-prompt-kind="picture_recognition"]:has([data-testid="kid-feedback-dock"]) .kid-material-content {
-  padding-bottom: 56px;
-}
-
-/* Telefon: odpowiedź i akcja zajmują dwa rzędy. Rezerwa nie pozwala
-   panelowi zakryć dolnego rzędu obrazków. */
-@media (max-width: 599px) {
-  .kid-exercise-frame[data-prompt-kind="picture_listening"] .kid-material-content,
-  .kid-exercise-frame[data-prompt-kind="picture_recognition"]:has([data-testid="kid-feedback-dock"]) .kid-material-content {
-    padding-bottom: 144px;
-  }
-}
-
-@media (max-width: 599px) and (max-height: 600px) {
-  .kid-exercise-frame[data-prompt-kind="picture_recognition"] .kid-material-content {
-    gap: 4px;
-  }
-
-  .kid-exercise-frame[data-prompt-kind="picture_recognition"] .kid-recognition-prompt {
-    gap: 2px;
-  }
-
-  .kid-exercise-frame[data-prompt-kind="picture_recognition"] .kid-recognition-prompt .kid-illustration,
-  .kid-exercise-frame[data-prompt-kind="picture_recognition"] .kid-recognition-prompt .kid-visual {
-    width: 48px;
-    height: 48px;
-  }
-
-  .kid-exercise-frame[data-prompt-kind="picture_recognition"] .kid-options button {
-    font-size: 1rem;
-  }
 }
 
 /* W układzie przewijanym wynik jest częścią treści, więc nawet większy

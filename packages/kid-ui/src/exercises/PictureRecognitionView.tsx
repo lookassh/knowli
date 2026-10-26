@@ -27,6 +27,7 @@ export function PictureRecognitionView({ task, busy, mediaUrl, optionOutcomes, d
   return (
     <ExerciseFrame
       task={task}
+      feedbackLayout="flow"
       content={(
         <>
           <div className="kid-recognition-prompt">

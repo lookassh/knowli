@@ -98,12 +98,55 @@
   display: none;
 }
 
-.root[data-prompt-kind="picture_listening"] .materialContent {
+.root[data-feedback-layout="flow"] .actions:empty {
+  display: none;
+}
+
+.root[data-feedback-layout="flow"] .materialContent {
   justify-content: flex-start;
-  gap: 6px;
-  /* Kafelki są wymiarowane z budżetu wysokości materiału; rezerwa odpowiada
-     dawnej wysokości slotu wyniku, więc dock nie zmienia ich geometrii. */
-  padding-bottom: 56px;
+}
+
+.flowDock {
+  min-width: 0;
+}
+
+/* Only the frame owns the available material rectangle. Size containment
+   gives the grid real container units without measuring the DOM in JS. */
+.root[data-prompt-kind="picture_listening"] .material,
+.root[data-prompt-kind="picture_recognition"] .material {
+  container-type: size;
+}
+
+.root[data-prompt-kind="picture_listening"] .materialContent {
+  flex: none;
+  height: 100%;
+  min-height: 100%;
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+.root[data-prompt-kind="picture_recognition"] .materialContent {
+  gap: 12px;
+}
+
+.root[data-prompt-kind="picture_recognition"] :global(.kid-recognition-prompt) {
+  flex: none;
+}
+
+.root[data-prompt-kind="picture_recognition"] :global(.kid-recognition-prompt) :is(:global(.kid-illustration), :global(.kid-visual)) {
+  width: min(100cqw, clamp(112px, 38cqh, 220px));
+  height: clamp(112px, 38cqh, 220px);
+}
+
+/* With page scrolling there is no definite material height to contain. */
+:global(.kid-page[data-zoomed="true"]) .material,
+:global(.kid-page[data-viewport-very-short="true"]) .material {
+  container-type: inline-size;
+}
+
+:global(.kid-page[data-zoomed="true"]) .root[data-prompt-kind="picture_listening"] .materialContent,
+:global(.kid-page[data-viewport-very-short="true"]) .root[data-prompt-kind="picture_listening"] .materialContent {
+  height: auto;
 }
 
 /* Dock nie zmienia wysokości stopki: puste sloty rezerwują miejsce akcji,

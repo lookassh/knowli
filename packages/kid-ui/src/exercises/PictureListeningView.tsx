@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { UnstyledButton } from "@mantine/core";
+import { IconActionButton } from "../components/IconActionButton";
 import { ExerciseFrame } from "./ExerciseFrame";
 import { messages } from "@learning/contracts";
 import { KidIcon } from "../components/KidIcon";
@@ -32,34 +32,39 @@ export function PictureListeningView({ task, busy, mediaUrl, optionOutcomes, doc
   return (
     <ExerciseFrame
       task={task}
+      feedbackLayout="flow"
       content={(
         <>
-          <UnstyledButton
+          <IconActionButton
             ref={playRef}
             type="button"
-            className="kid-play-big"
+            className={classes.play}
+            radius="50%"
+            style={{ width: 60, height: 60, minWidth: 60, minHeight: 60 }}
             data-testid="kid-play"
             disabled={busy}
             onClick={handlers.onPlay}
             aria-label={messages.kid.listen}
           >
             <KidIcon name="volume" />
-          </UnstyledButton>
-          <AnswerGrid
-            options={options.map((option) => ({
-              id: option.id,
-              label: option.labelPl,
-              content: <span className="kid-picture-choice-visual"><MeaningVisualView visual={option.visual} mediaUrl={mediaUrl} numberDisplay="digit" /></span>,
-            }))}
-            outcomes={optionOutcomes}
-            disabled={busy}
-            onChoose={handlers.onAnswerChoice}
-            optionRefs={optionRefs}
-            visualOnly
-            className="kid-picture-options"
-            optionClassName="kid-picture-option"
-            labelClassName="kid-picture-choice-label"
-          />
+          </IconActionButton>
+          <div className={classes.answers}>
+            <AnswerGrid
+              options={options.map((option) => ({
+                id: option.id,
+                label: option.labelPl,
+                content: <span className="kid-picture-choice-visual"><MeaningVisualView visual={option.visual} mediaUrl={mediaUrl} numberDisplay="digit" /></span>,
+              }))}
+              outcomes={optionOutcomes}
+              disabled={busy}
+              onChoose={handlers.onAnswerChoice}
+              optionRefs={optionRefs}
+              visualOnly
+              className="kid-picture-options"
+              optionClassName="kid-picture-option"
+              labelClassName="kid-picture-choice-label"
+            />
+          </div>
         </>
       )}
       dock={dock}

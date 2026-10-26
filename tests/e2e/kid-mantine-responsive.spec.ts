@@ -126,7 +126,7 @@ test("Mantine picture choices keep their geometry until the server verdict", asy
       }),
       instruction: rect("[data-testid='kid-instruction']"),
       content: rect(".kid-material-content"),
-      primary: rect("[data-testid='kid-primary-slot']"),
+      footer: rect("[data-testid='kid-exercise-actions']"),
       overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
     };
   });
@@ -140,24 +140,24 @@ test("Mantine picture choices keep their geometry until the server verdict", asy
   await expect(options.first()).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("kid-outcome-correct")).toHaveCount(0);
   const pending = await geometry();
-  for (const key of ["instruction", "content", "primary"] as const) {
+  for (const key of ["instruction", "content", "footer"] as const) {
     for (const dimension of ["x", "y", "width", "height"] as const) {
       expect(Math.abs(pending[key][dimension] - before[key][dimension]), `${key}.${dimension} moved before feedback`).toBeLessThanOrEqual(1);
     }
   }
+  expect(pending.options).toEqual(before.options);
   releaseAttempt();
   await expect(page.getByTestId("kid-outcome-correct")).toBeVisible();
   const after = await geometry();
-  for (const key of ["instruction", "content", "primary"] as const) {
-    for (const dimension of ["x", "y", "width", "height"] as const) {
-      expect(Math.abs(after[key][dimension] - before[key][dimension]), `${key}.${dimension} moved after feedback`).toBeLessThanOrEqual(1);
-    }
+  expect(after.instruction).toEqual(before.instruction);
+  expect(after.overflow).toBe(false);
+  expect(after.footer.height).toBeGreaterThan(before.footer.height);
+  expect(after.content.y + after.content.height).toBeLessThanOrEqual(after.footer.y + 1);
+  for (const option of await options.all()) {
+    await option.scrollIntoViewIfNeeded();
+    await expect(option).toBeInViewport({ ratio: 0.98 });
   }
-  for (let index = 0; index < before.options.length; index += 1) {
-    for (const dimension of ["x", "y", "width", "height"] as const) {
-      expect(Math.abs(after.options[index]![dimension] - before.options[index]![dimension]), `option ${index}.${dimension} moved`).toBeLessThanOrEqual(1);
-    }
-  }
+  await expect(page.getByTestId("kid-next")).toBeInViewport();
 });
 
 test("Mantine recall keeps the exact draft and focus through viewport changes", async ({ page }) => {
@@ -343,6 +343,13 @@ test("Material window classes keep every picture choice reachable", async ({ pag
       || document.body.scrollWidth > document.body.clientWidth);
     expect(overflow, `horizontal overflow: ${viewport.name}`).toBe(false);
     await expectInteractiveTargets(page, ["[data-testid='kid-option']", "[data-testid='kid-end']", "[data-testid='kid-play']"]);
+    if (viewport.height < 480) {
+      for (const option of await page.getByTestId("kid-option").all()) {
+        await option.scrollIntoViewIfNeeded();
+        await expect(option).toBeInViewport({ ratio: 0.98 });
+      }
+      continue;
+    }
     await expect.poll(async () => page.evaluate(() => {
       const contentElement = document.querySelector<HTMLElement>(".kid-material-content")!;
       const content = contentElement.getBoundingClientRect();

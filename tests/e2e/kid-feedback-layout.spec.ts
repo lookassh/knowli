@@ -59,10 +59,13 @@ test(`${kind}: incorrect feedback keeps ${correctText} and retry label readable`
       const material = await page.getByTestId("kid-material").boundingBox();
       const panel = await dock.boundingBox();
       for (const option of await page.getByTestId("kid-option").all()) {
+        // Readable options may scroll inside the material after the real
+        // footer appears; check each one in that viewport, without shrinking it.
+        await option.evaluate((element) => element.scrollIntoView({ block: "center" }));
         const bounds = await option.boundingBox();
         expect(bounds!.y).toBeGreaterThanOrEqual(material!.y - 1);
         expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(material!.y + material!.height + 1);
-        expect(bounds!.height).toBeGreaterThanOrEqual(48);
+        expect(bounds!.height).toBeGreaterThanOrEqual(kind === "picture_listening" ? 112 : 48);
         expect(bounds!.y + bounds!.height, "feedback must not cover an answer tile").toBeLessThanOrEqual(panel!.y + 1);
       }
     }
