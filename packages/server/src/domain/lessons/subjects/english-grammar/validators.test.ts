@@ -231,59 +231,25 @@ describe("validateEnglishGrammarExercise — lesson_gap, temat to_be", () => {
     expect(errors.length === 0).toBe(valid);
   });
 
+  const shortAnswerCase = (prompt: string, answer: string, other: string) => ({
+    exerciseType: "lesson_short_answer",
+    objectiveId: "english_grammar.to_be.short_answers",
+    prompt,
+    answer,
+    acceptedAnswers: [] as string[],
+    focus: [] as string[],
+    options: [
+      { id: "a", text: answer },
+      { id: "b", text: other },
+    ],
+    correctOption: "a",
+  });
+
   it.each([
-    ["krótka odpowiedź z perspektywą you na pytanie o you", {
-      exerciseType: "lesson_short_answer",
-      objectiveId: "english_grammar.to_be.short_answers",
-      prompt: "Are you ready?",
-      answer: "Yes, you are.",
-      acceptedAnswers: [],
-      focus: [],
-      options: [
-        { id: "a", text: "Yes, I am." },
-        { id: "b", text: "Yes, you are." },
-      ],
-      correctOption: "b",
-    }, false],
-    ["twierdząca krótka odpowiedź nie może kończyć się skrótem I'm", {
-      exerciseType: "lesson_short_answer",
-      objectiveId: "english_grammar.to_be.short_answers",
-      prompt: "Are you ready?",
-      answer: "Yes, I'm.",
-      acceptedAnswers: [],
-      focus: [],
-      options: [
-        { id: "a", text: "Yes, I am." },
-        { id: "b", text: "Yes, I'm." },
-      ],
-      correctOption: "b",
-    }, false],
-    ["przecząca krótka odpowiedź ze skrótem I'm not jest poprawna", {
-      exerciseType: "lesson_short_answer",
-      objectiveId: "english_grammar.to_be.short_answers",
-      prompt: "Are you ready?",
-      answer: "No, I'm not.",
-      acceptedAnswers: [],
-      focus: [],
-      options: [
-        { id: "a", text: "No, I'm not." },
-        { id: "b", text: "No, I am." },
-      ],
-      correctOption: "a",
-    }, true],
-    ["krótka odpowiedź you na pytanie Am I jest poprawna", {
-      exerciseType: "lesson_short_answer",
-      objectiveId: "english_grammar.to_be.short_answers",
-      prompt: "Am I late?",
-      answer: "Yes, you are.",
-      acceptedAnswers: [],
-      focus: [],
-      options: [
-        { id: "a", text: "Yes, you are." },
-        { id: "b", text: "Yes, I am." },
-      ],
-      correctOption: "a",
-    }, true],
+    ["krótka odpowiedź z perspektywą you na pytanie o you", shortAnswerCase("Are you ready?", "Yes, you are.", "Yes, I am."), false],
+    ["twierdząca krótka odpowiedź nie może kończyć się skrótem I'm", shortAnswerCase("Are you ready?", "Yes, I'm.", "Yes, I am."), false],
+    ["przecząca krótka odpowiedź ze skrótem I'm not jest poprawna", shortAnswerCase("Are you ready?", "No, I'm not.", "No, I am."), true],
+    ["krótka odpowiedź you na pytanie Am I jest poprawna", shortAnswerCase("Am I late?", "Yes, you are.", "Yes, I am."), true],
   ] as const)("%s", (_name, ex, valid) => {
     const errors = validateEnglishGrammarExercise(ex as unknown as LessonExerciseDraft, toBeV1);
     expect(errors.length === 0).toBe(valid);
