@@ -139,11 +139,15 @@ function makeRecorder(opts: { failStartWith?: unknown; startGate?: Promise<void>
   };
 }
 
-function makeMedia(recorder: ReturnType<typeof makeRecorder>, playGate?: Promise<void>, onStopPlayback?: () => void, failPlaybackBeforeStart = false, playbackDurationMs: number | null = null, sharedLog?: string[], microphonePermission: MicrophonePermission = "granted"): PlatformMedia & { playUrls: string[]; stops: number; beeps: string[]; lastRecorderOptions?: RecorderOptions; permissionQueries: number; setMicrophonePermission(next: MicrophonePermission): void } {
+function makeMedia(recorder: ReturnType<typeof makeRecorder>, playGate?: Promise<void>, onStopPlayback?: () => void, failPlaybackBeforeStart = false, playbackDurationMs: number | null = null, sharedLog?: string[], microphonePermission: MicrophonePermission = "granted"): PlatformMedia & { playUrls: string[]; stops: number; beeps: string[]; preloadedImages: string[]; lastRecorderOptions?: RecorderOptions; permissionQueries: number; setMicrophonePermission(next: MicrophonePermission): void } {
   const media = {
     playUrls: [] as string[],
     stops: 0,
     beeps: [] as string[],
+    preloadedImages: [] as string[],
+    async preloadImage(url: string) {
+      media.preloadedImages.push(url);
+    },
     lastRecorderOptions: undefined as RecorderOptions | undefined,
     permissionQueries: 0,
     setMicrophonePermission(next: MicrophonePermission) {
@@ -232,6 +236,7 @@ interface ApiState {
   disableError?: unknown;
   disableGate?: Promise<void>;
   startSessionIds?: string[];
+  nextTaskCalls?: number;
 }
 
 function makeApi(state: ApiState): KidApi {
@@ -266,6 +271,7 @@ function makeApi(state: ApiState): KidApi {
       return { ...sessionDto(input.childId, sessionId, input.microphoneEnabled), canRead: profile?.canRead ?? true, vocabularyFormat: deck?.vocabularyFormat ?? "standard", mode: input.mode ?? "training", ...state.startSessionResponse };
     },
     async nextTask() {
+      state.nextTaskCalls = (state.nextTaskCalls ?? 0) + 1;
       return state.tasks.shift() ?? null;
     },
     async submitAnswer(input) {
@@ -663,6 +669,8 @@ describe("LearningSessionController", () => {
     let release!: () => void;
     state.feedbackAudioGate = new Promise<void>((resolve) => { release = resolve; });
     const harness = await startAtTask(state, first);
+    // następne zadanie istnieje już przy feedbacku — kontroler pobiera je w tle
+    state.tasks = [second];
     await harness.controller.answerText("Thursday");
     const pending = harness.controller.playFeedbackAudio();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -2266,6 +2274,69 @@ describe("LearningSessionController", () => {
     await harness.controller.continueLearning();
     expect(harness.controller.getScreen()).toMatchObject({ kind: "summary" });
     expect(state.endedSessions).toHaveLength(1);
+  });
+
+  it("po zakończonej próbie pobiera następne zadanie i jego obrazy w tle, jeszcze przy feedbacku", async () => {
+    const optionA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const optionB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const first = taskDto("t1", {
+      kind: "picture_listening",
+      audioAssetId: "99999999-9999-9999-9999-999999999999",
+      options: [
+        { id: optionA, labelPl: "kot", visual: { kind: "image", imageAssetId: "11111111-1111-4111-8111-111111111111" } },
+        { id: optionB, labelPl: "pies", visual: { kind: "image", imageAssetId: "22222222-2222-4222-8222-222222222222" } },
+      ],
+    });
+    const second = taskDto("t2", {
+      kind: "picture_recognition",
+      visual: { kind: "image", imageAssetId: "33333333-3333-4333-8333-333333333333" },
+      source: "kot",
+      options: [{ id: optionA, text: "cat" }, { id: optionB, text: "dog" }],
+    });
+    const state = baseState();
+    const harness = await startAtTask(state, first);
+    state.tasks = [second];
+    state.attempts = [attemptDto({ modality: "choice", feedback: { kind: "great" }, taskState: "answered" })];
+    const callsBefore = state.nextTaskCalls ?? 0;
+
+    await harness.controller.answerChoice(optionA);
+    expect(harness.controller.getScreen()).toMatchObject({ feedback: { dto: { kind: "great" }, retry: false } });
+    // prefetch dzieje się przy widocznym feedbacku, bez kliknięcia „Dalej”
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(state.nextTaskCalls).toBe(callsBefore + 1);
+    expect(harness.media.preloadedImages).toEqual(["https://media.test/33333333-3333-4333-8333-333333333333"]);
+
+    // „Dalej” używa pobranego zadania — bez drugiego żądania do serwera
+    await harness.controller.continueLearning();
+    expect(state.nextTaskCalls).toBe(callsBefore + 1);
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", feedback: null, task: { taskId: "t2" } });
+  });
+
+  it("nie pobiera następnego zadania przy feedbacku mowy z odsłuchem wzorca", async () => {
+    // #showResult rozstrzyga o prefetachu po samym feedbacku próby; próba
+    // z referenceAudioAvailable musi zostać najnowszym zadaniem sesji, bo
+    // serwer tylko dla niego autoryzuje odsłuch wzorca (feedback-audio).
+    const recall = taskDto("t1", { kind: "recall", prompt: "czwartek" });
+    const state = baseState();
+    state.attempts = [attemptDto({ modality: "audio", taskState: "answered", feedback: { kind: "great", referenceAudioAvailable: true } })];
+    const harness = await startAtTask(state, recall);
+    const callsBefore = state.nextTaskCalls ?? 0;
+    await harness.controller.answerText("Thursday");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(harness.controller.getScreen()).toMatchObject({ feedback: { dto: { kind: "great" }, retry: false } });
+    expect(state.nextTaskCalls).toBe(callsBefore);
+  });
+
+  it("nie pobiera następnego zadania, gdy próba ma drugie podejście", async () => {
+    const recall = taskDto("t1", { kind: "recall", prompt: "czwartek" });
+    const state = baseState();
+    state.attempts = [attemptDto({ feedback: { kind: "incorrect", correctText: "Thursday" }, taskState: "issued" })];
+    const harness = await startAtTask(state, recall);
+    const callsBefore = state.nextTaskCalls ?? 0;
+    await harness.controller.answerText("Tusday");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(harness.controller.getScreen()).toMatchObject({ feedback: { retry: true } });
+    expect(state.nextTaskCalls).toBe(callsBefore);
   });
 });
 
