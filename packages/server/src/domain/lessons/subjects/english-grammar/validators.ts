@@ -366,8 +366,8 @@ function validateBeGapAnswer(ex: LessonExerciseDraft, answer: string, field: str
  * formą w pełnym zdaniu (z podmiotami złożonymi), brak do/does oraz
  * biegunowość celu — przy przekształceniu biegunowość celu wyznacza
  * przekształcenie (to_negative/to_affirmative), nie reguła ćwiczenia.
- * Pojedyncza forma (wybór odpowiedzi) jest sprawdzana względem podmiotu
- * w bodźcu.
+ * Forma będąca odpowiedzią na bodziec z luką (wybór odpowiedzi) jest
+ * sprawdzana względem podmiotu w bodźcu.
  */
 function validateBeAnswerText(ex: LessonExerciseDraft, answer: string, field: string, errors: string[]): void {
   const objective = ex.objectiveId.split(".").at(-1) ?? "";
@@ -392,15 +392,20 @@ function validateBeAnswerText(ex: LessonExerciseDraft, answer: string, field: st
       return;
     }
   }
-  if (tokens.length === 1 && BE_FORMS.has(tokens[0]!)) {
-    const context = ex.stem ?? ex.prompt ?? ex.statement;
-    if (context !== undefined && context.includes("___")) {
-      const expected = expectedBeFormNearGap(context);
-      if (expected !== undefined && expected !== tokens[0]) {
-        errors.push(`${field}: forma „${tokens[0]}” nie pasuje do podmiotu (poprawnie: ${expected})`);
+  const gapContext = ex.stem ?? ex.prompt ?? ex.statement;
+  if (gapContext !== undefined && gapContext.includes("___")) {
+    // Odpowiedź na bodziec z luką (wybór, krótka odpowiedź) może być wielotokenowa
+    // (isn't, am not) — sprawdzamy ją tym samym parserem co odpowiedź luki.
+    const parsed = parseBeGapAnswer(answer);
+    if (parsed !== null) {
+      const expected = expectedBeFormNearGap(gapContext);
+      if (expected !== undefined && expected !== parsed.form) {
+        errors.push(`${field}: forma „${parsed.form}” nie pasuje do podmiotu (poprawnie: ${expected})`);
       }
+      const stemCtx = beStemContext(gapContext);
+      checkBePolarity(objective, parsed.negative || stemCtx.negative, parsed.marker ?? stemCtx.marker, field, errors);
+      return;
     }
-    return;
   }
   const firstBeIndex = tokens.findIndex((token) => BE_FORMS.has(token));
   let hasBe = false;

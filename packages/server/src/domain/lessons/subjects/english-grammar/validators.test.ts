@@ -179,6 +179,28 @@ describe("validateEnglishGrammarExercise — lesson_gap, temat to_be", () => {
     expect(validateEnglishGrammarExercise(beGap(objectiveId, stem, answer, "be"), toBeV1)).not.toEqual([]);
   });
 
+  it.each([
+    ["choice z isn't dla podmiotu they", "isn't", false],
+    ["choice z aren't dla podmiotu they", "aren't", true],
+    ["choice z am not dla podmiotu they", "am not", false],
+  ])("wielotokenowa forma w choice: %s", (_name, answer, valid) => {
+    const ex: LessonExerciseDraft = {
+      exerciseType: "lesson_choice",
+      objectiveId: NEG,
+      stem: "They ___ ready.",
+      answer,
+      acceptedAnswers: [],
+      focus: [],
+      options: [
+        { id: "a", text: "isn't" },
+        { id: "b", text: "aren't" },
+      ],
+      correctOption: answer === "aren't" ? "b" : "a",
+    };
+    const errors = validateEnglishGrammarExercise(ex, toBeV1);
+    expect(errors.length === 0).toBe(valid);
+  });
+
   it("odrzuca skrót I'm jako odpowiedź luki krótkiej odpowiedzi, pełna forma przechodzi", () => {
     const SHORT = "english_grammar.to_be.short_answers";
     expect(validateEnglishGrammarExercise(beGap(SHORT, "Yes, I ___.", "I'm", "be"), toBeV1)).not.toEqual([]);
