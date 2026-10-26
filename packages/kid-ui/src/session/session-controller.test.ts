@@ -237,6 +237,7 @@ interface ApiState {
   disableGate?: Promise<void>;
   startSessionIds?: string[];
   nextTaskCalls?: number;
+  nextTaskGate?: Promise<void>;
 }
 
 function makeApi(state: ApiState): KidApi {
@@ -272,6 +273,7 @@ function makeApi(state: ApiState): KidApi {
     },
     async nextTask() {
       state.nextTaskCalls = (state.nextTaskCalls ?? 0) + 1;
+      await state.nextTaskGate;
       return state.tasks.shift() ?? null;
     },
     async submitAnswer(input) {
@@ -2016,6 +2018,22 @@ describe("LearningSessionController", () => {
     await harness.controller.confirmReveal();
     expect(state.submissions[0]).toMatchObject({ modality: "dont_remember" });
     expect(harness.controller.getScreen()).toMatchObject({ task: { taskId: "support" }, reveal: null, feedback: null, busy: false });
+  });
+
+  it("zachowuje ujawnione słowo podczas pobierania następnego zadania", async () => {
+    const state = baseState();
+    const harness = await startAtTask(state, taskDto("t1", { kind: "recall", prompt: "czwartek" }));
+    await harness.controller.notRemember();
+    let releaseNext!: () => void;
+    state.nextTaskGate = new Promise<void>((resolve) => { releaseNext = resolve; });
+    state.tasks = [taskDto("next", { kind: "recall", prompt: "piątek" })];
+    state.attempts = [attemptDto({ taskId: "t1", modality: "dont_remember", taskState: "answered" })];
+    const confirming = harness.controller.confirmReveal();
+    await vi.waitFor(() => expect(state.nextTaskCalls).toBe(2));
+    expect(harness.controller.getScreen()).toMatchObject({ reveal: { target: "Thursday" }, busy: true, feedback: null });
+    releaseNext();
+    await confirming;
+    expect(harness.controller.getScreen()).toMatchObject({ task: { taskId: "next" }, reveal: null, busy: false });
   });
 
   it("ponawia zapis trudności po utracie sieci i przechodzi bez powtórnego feedbacku", async () => {

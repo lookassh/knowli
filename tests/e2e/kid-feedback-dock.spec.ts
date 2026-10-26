@@ -62,7 +62,20 @@ test("confirming a revealed answer opens the next written task with an editable 
   await openTask(page);
   await page.getByTestId("kid-not-remember").click();
   await expect(page.getByTestId("kid-reveal")).toContainText("cat");
+  let releaseNext!: () => void;
+  const nextGate = new Promise<void>((resolve) => { releaseNext = resolve; });
+  let nextRequested = false;
+  await page.route(`**/api/v1/kid/sessions/${sessionId}/next`, async (route) => {
+    nextRequested = true;
+    await nextGate;
+    await route.fallback();
+  });
   await page.getByTestId("kid-next").click();
+  await expect.poll(() => nextRequested).toBe(true);
+  await expect(page.getByTestId("kid-reveal")).toContainText("cat");
+  await expect(page.getByTestId("kid-input")).toHaveCount(0);
+  await expect(page.getByTestId("kid-next")).toBeDisabled();
+  releaseNext();
   await expect(page.locator(".kid-learning")).toHaveAttribute("data-task-id", nextId);
   await expect(page.getByTestId("kid-feedback")).toHaveCount(0);
   await expect(page.getByTestId("kid-input")).toBeEditable();
