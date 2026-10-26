@@ -30,6 +30,10 @@ test("animated task switch and feedback dock keep the session flow working", asy
 
   // Task switch animates (exit + enter); the next task must land and work.
   await page.getByTestId("kid-done").click();
+  // The exiting pane must be inert while it animates out, and the switch
+  // must actually animate (sampled mid-transition, not just eventually).
+  await expect.poll(() => page.getByTestId("kid-task-transition").evaluate((el) => el.hasAttribute("inert")), { intervals: [20, 50, 100] }).toBe(true);
+  await expect.poll(() => page.getByTestId("kid-task-transition").evaluate((el) => Number.parseFloat(getComputedStyle(el).opacity)), { intervals: [50, 100, 200] }).toBeLessThan(1);
   await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-prompt-kind", "picture_listening");
 
   await page.getByTestId("kid-option").first().click();
