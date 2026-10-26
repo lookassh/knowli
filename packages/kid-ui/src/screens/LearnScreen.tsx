@@ -23,7 +23,7 @@ import { IconActionButton } from "../components/IconActionButton";
 /** Brak podświetleń poza feedbackem próby wyboru. */
 const EMPTY_OUTCOMES: ReadonlyMap<string, OptionOutcome> = new Map();
 
-function RevealActions({ onConfirm }: { onConfirm: () => void }) {
+function RevealActions({ onConfirm, busy }: { onConfirm: () => void; busy: boolean }) {
   const { buttonRef, onKeyDown } = useFeedbackCooldown<HTMLButtonElement>(onConfirm, [], true);
   return (
     <ActionButton
@@ -32,6 +32,7 @@ function RevealActions({ onConfirm }: { onConfirm: () => void }) {
       type="button"
       className="kid-primary"
       data-testid="kid-next"
+      disabled={busy}
       onClick={onConfirm}
     >
       {messages.kid.understand}
@@ -256,7 +257,7 @@ export function LearnScreen({
                   <p className="kid-word">{screen.reveal.target}</p>
                   {screen.reveal.audioAssetId && <IconActionButton className="kid-audio-round" data-testid="kid-reveal-audio" radius="50%" style={{ width: 64, height: 64, minWidth: 64, minHeight: 64 }} onClick={() => void controller.playRevealAudio()} aria-label={messages.kid.listen}><KidIcon name="volume" /></IconActionButton>}
                 </section>
-              )} actions={<RevealActions onConfirm={() => void controller.confirmReveal()} />} />
+              )} actions={<RevealActions busy={busy} onConfirm={() => void controller.confirmReveal()} />} />
             ) : (
               <ExerciseView
                 mockTest={screen.session.mode === "mock_test"}
