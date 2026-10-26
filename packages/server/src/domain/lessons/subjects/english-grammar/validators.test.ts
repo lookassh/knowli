@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { validateEnglishGrammarExercise } from "./validators";
 import { presentSimpleV1 } from "./topics/present-simple";
+import { toBeV1 } from "./topics/to-be";
+import { validateLessonExercise } from "../../pool-validation";
+import { englishGrammarSubject } from "./module";
 import type { LessonExerciseDraft } from "../../types";
 
 /** Buduje szkic `lesson_gap` z czasownikiem w podpowiedzi (bezokolicznik) i odpowiedzią luki. */
@@ -66,6 +69,210 @@ describe("validateEnglishGrammarExercise — lesson_gap, forma czasownika w Pres
   it("bez podpowiedzi (hint) nie dokłada reguły czasownika", () => {
     const noHint: LessonExerciseDraft = { ...gap("play", "plays"), hint: undefined };
     expect(validateEnglishGrammarExercise(noHint, presentSimpleV1)).toEqual([]);
+  });
+});
+
+describe("validateEnglishGrammarExercise — lesson_gap, temat to_be", () => {
+  const beGap = (objectiveId: string, stem: string, answer: string, hint?: string): LessonExerciseDraft => ({
+    exerciseType: "lesson_gap",
+    objectiveId,
+    stem,
+    ...(hint === undefined ? {} : { hint }),
+    answer,
+    acceptedAnswers: [],
+    focus: answer.split(" "),
+  });
+  const AFF = "english_grammar.to_be.affirmative_forms";
+  const NEG = "english_grammar.to_be.negative_forms";
+
+  it.each([
+    ["I ___ happy.", "am"],
+    ["She ___ happy.", "is"],
+    ["They ___ happy.", "are"],
+    ["___ she happy?", "Is"],
+    ["___ they ready?", "Are"],
+  ])("akceptuje formę zgodną z podmiotem: %s → %s", (stem, answer) => {
+    expect(validateEnglishGrammarExercise(beGap(AFF, stem, answer, "be"), toBeV1)).toEqual([]);
+  });
+
+  it.each([
+    ["She is ___ happy.", "not"],
+    ["She ___ happy.", "is not"],
+    ["She ___ happy.", "isn't"],
+    ["They ___ ready.", "aren't"],
+    ["I ___ ready.", "am not"],
+  ])("akceptuje przeczenie: %s → %s", (stem, answer) => {
+    expect(validateEnglishGrammarExercise(beGap(NEG, stem, answer, "be"), toBeV1)).toEqual([]);
+  });
+
+  it.each([
+    ["They ___ happy.", "is"],
+    ["I ___ happy.", "is"],
+    ["She ___ happy.", "are"],
+    ["She ___ happy.", "does"],
+    ["They ___ happy.", "do"],
+    ["She ___ happy.", "plays"],
+    ["I ___ happy.", "not"],
+  ])("odrzuca formę niezgodną z podmiotem albo spoza „be”: %s → %s", (stem, answer) => {
+    expect(validateEnglishGrammarExercise(beGap(AFF, stem, answer, "be"), toBeV1)).not.toEqual([]);
+  });
+
+  it("bez podpowiedzi poprawna forma nadal przechodzi", () => {
+    expect(validateEnglishGrammarExercise(beGap(AFF, "We ___ happy.", "are"), toBeV1)).toEqual([]);
+  });
+
+  it.each([
+    ["biegunowość: twierdzenie z przeczeniem", AFF, "She ___ happy.", "is not", "be"],
+    ["biegunowość: przeczenie bez not", NEG, "She ___ happy.", "is", "be"],
+    ["biegunowość: Yes z przeczeniem", "english_grammar.to_be.short_answers", "Yes, she ___.", "isn't", "be"],
+    ["biegunowość: No bez przeczenia", "english_grammar.to_be.short_answers", "No, she ___.", "is", "be"],
+    ["brak hint nadal sprawdza formę", AFF, "They ___ happy.", "is", undefined],
+    ["podmiot rzeczownikowy l.mn.", AFF, "The dogs ___ happy.", "is", "be"],
+    ["pytanie o this", "english_grammar.to_be.questions", "What ___ this?", "are", "be"],
+    ["skrót z inną osobą niż podmiot", AFF, "She ___ happy.", "he's", "be"],
+  ])("odrzuca: %s", (_name, objectiveId, stem, answer, hint) => {
+    expect(validateEnglishGrammarExercise(beGap(objectiveId, stem, answer, hint), toBeV1)).not.toEqual([]);
+  });
+
+  it.each([
+    ["hint w formie „to be”", AFF, "She ___ happy.", "is", "to be"],
+    ["podmiot złożony You and I", AFF, "You and I ___ happy.", "are", "be"],
+    ["podmiot rzeczownikowy l.poj.", AFF, "The dog ___ happy.", "is", "be"],
+    ["podmiot rzeczownikowy l.mn.", AFF, "The dogs ___ happy.", "are", "be"],
+    ["pytanie o this", "english_grammar.to_be.questions", "What ___ this?", "is", "be"],
+  ])("akceptuje: %s", (_name, objectiveId, stem, answer, hint) => {
+    expect(validateEnglishGrammarExercise(beGap(objectiveId, stem, answer, hint), toBeV1)).toEqual([]);
+  });
+
+  it("odrzuca błędny wariant akceptowany luki, nie tylko odpowiedź kanoniczną", () => {
+    const ex: LessonExerciseDraft = {
+      ...beGap(AFF, "She ___ happy.", "is", "be"),
+      acceptedAnswers: ["are"],
+    };
+    expect(validateEnglishGrammarExercise(ex, toBeV1)).not.toEqual([]);
+  });
+
+  it.each([
+    ["error_fix ze złą zgodnością w odpowiedzi", {
+      exerciseType: "lesson_error_fix",
+      objectiveId: AFF,
+      statement: "She is happy.",
+      answer: "She are happy.",
+      acceptedAnswers: [],
+      focus: ["are"],
+    }],
+    ["transform z do zamiast inwersji", {
+      exerciseType: "lesson_transform",
+      objectiveId: "english_grammar.to_be.questions",
+      statement: "She is happy.",
+      transformId: "to_question",
+      answer: "Does she is happy?",
+      acceptedAnswers: [],
+      focus: ["Does"],
+    }],
+    ["open_answer ze złą zgodnością", {
+      exerciseType: "lesson_open_answer",
+      objectiveId: AFF,
+      prompt: "Oni są szczęśliwi.",
+      answer: "They is happy.",
+      acceptedAnswers: [],
+      focus: ["is"],
+    }],
+    ["choice z formą niezgodną z podmiotem w stem", {
+      exerciseType: "lesson_choice",
+      objectiveId: AFF,
+      stem: "She ___ happy.",
+      answer: "are",
+      acceptedAnswers: [],
+      focus: [],
+      options: [
+        { id: "a", text: "is" },
+        { id: "b", text: "are" },
+      ],
+      correctOption: "b",
+    }],
+  ] as const)("odrzuca typ inny niż luka: %s", (_name, ex) => {
+    expect(validateEnglishGrammarExercise(ex as LessonExerciseDraft, toBeV1)).not.toEqual([]);
+  });
+});
+
+describe("temat to_be — reprezentatywne ćwiczenia przechodzą walidację puli", () => {
+  const base = { acceptedAnswers: [] as string[], focus: [] as string[] };
+  const exercises: LessonExerciseDraft[] = [
+    {
+      ...base,
+      exerciseType: "lesson_choice",
+      objectiveId: "english_grammar.to_be.affirmative_forms",
+      stem: "She ___ happy.",
+      answer: "is",
+      options: [
+        { id: "a", text: "am" },
+        { id: "b", text: "is" },
+        { id: "c", text: "are" },
+      ],
+      correctOption: "b",
+    },
+    {
+      ...base,
+      exerciseType: "lesson_gap",
+      objectiveId: "english_grammar.to_be.affirmative_forms",
+      stem: "They ___ happy.",
+      hint: "be",
+      answer: "are",
+      focus: ["are"],
+    },
+    {
+      ...base,
+      exerciseType: "lesson_error_fix",
+      objectiveId: "english_grammar.to_be.affirmative_forms",
+      statement: "She are happy.",
+      answer: "She is happy.",
+      focus: ["is"],
+    },
+    {
+      ...base,
+      exerciseType: "lesson_transform",
+      objectiveId: "english_grammar.to_be.questions",
+      statement: "She is happy.",
+      transformId: "to_question",
+      answer: "Is she happy?",
+      focus: ["Is", "she"],
+    },
+    {
+      ...base,
+      exerciseType: "lesson_transform",
+      objectiveId: "english_grammar.to_be.negative_forms",
+      statement: "They are ready.",
+      transformId: "to_negative",
+      answer: "They are not ready.",
+      acceptedAnswers: [],
+      focus: ["are", "not"],
+    },
+    {
+      ...base,
+      exerciseType: "lesson_short_answer",
+      objectiveId: "english_grammar.to_be.short_answers",
+      prompt: "Is she happy?",
+      answer: "Yes, she is.",
+      options: [
+        { id: "a", text: "Yes, she is." },
+        { id: "b", text: "Yes, she are." },
+      ],
+      correctOption: "a",
+    },
+    {
+      ...base,
+      exerciseType: "lesson_open_answer",
+      objectiveId: "english_grammar.to_be.affirmative_forms",
+      prompt: "Ona jest szczęśliwa.",
+      answer: "She is happy.",
+      acceptedAnswers: [],
+      focus: ["is"],
+    },
+  ];
+
+  it.each(exercises.map((ex) => [ex.exerciseType, ex] as const))("%s bez błędów", (_type, ex) => {
+    expect(validateLessonExercise(ex, englishGrammarSubject, toBeV1)).toEqual([]);
   });
 });
 

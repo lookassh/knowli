@@ -49,6 +49,14 @@ describe("englishGrammarSubject — spójność katalogu", () => {
     expect(rules).toMatch(/hint/i);
   });
 
+  it("fieldRules definiują reguły tematu to_be dla generacji puli", () => {
+    const rules = englishGrammarPrompts.fieldRules ?? "";
+    expect(rules).toContain(".to_be.");
+    expect(rules).toMatch(/am, is or are matching the subject/);
+    expect(rules).toMatch(/never use do or does/);
+    expect(rules).toMatch(/only the form itself/);
+  });
+
   it("przykłady fieldRules są legalne wobec walidatora i normalizatora przedmiotu (kontrakt prompt↔walidacja)", () => {
     // Review C2: odpowiedzi wielosłowowe z podmiotem („does she play”) NIE
     // przechodzą walidatora przy ustawionym hint — fieldRules nie może ich
@@ -83,6 +91,14 @@ describe("createProductionSubjectRegistry", () => {
     expect(PRODUCTION_SUBJECTS).toContain(englishGrammarSubject);
   });
 
+  it("rejestr udostępnia temat to_be@1", () => {
+    const registry = createProductionSubjectRegistry();
+    const topic = registry.getTopic("english_grammar", "to_be", 1);
+    expect(topic?.id).toBe("to_be");
+    expect(topic?.version).toBe(1);
+    expect(topic?.titlePl).toBe("Czasownik „to be”");
+  });
+
   it("rejestr udostępnia przedmiot i temat present_simple@1", () => {
     const registry = createProductionSubjectRegistry();
     expect(registry.getSubject("english_grammar")).toBe(englishGrammarSubject);
@@ -90,6 +106,44 @@ describe("createProductionSubjectRegistry", () => {
     expect(topic?.id).toBe("present_simple");
     expect(topic?.version).toBe(1);
     expect(topic?.titlePl).toBe("Present Simple");
+  });
+});
+
+describe("temat to_be — 5 celów", () => {
+  const topic = englishGrammarSubject.topics.find((t) => t.id === "to_be")!;
+
+  it("ma dokładnie 5 celów w kolejności nauki: formy, skróty, przeczenia, pytania, krótkie odpowiedzi", () => {
+    expect(topic.objectives.map((o) => o.id)).toEqual([
+      "english_grammar.to_be.affirmative_forms",
+      "english_grammar.to_be.contractions",
+      "english_grammar.to_be.negative_forms",
+      "english_grammar.to_be.questions",
+      "english_grammar.to_be.short_answers",
+    ]);
+  });
+
+  it("każdy cel ma kategorie błędów z szablonami podpowiedzi", () => {
+    for (const objective of topic.objectives) {
+      expect(objective.errorCategories.length).toBeGreaterThanOrEqual(2);
+      for (const code of objective.errorCategories) {
+        expect(objective.hints[code]).toBeTruthy();
+      }
+    }
+  });
+
+  it("każdy cel ma co najmniej jedną kartę z miejscem {{examples}}", () => {
+    for (const objective of topic.objectives) {
+      const hasExamples = objective.cards.some(
+        (card) => card.title.includes("{{examples}}") || card.body.includes("{{examples}}"),
+      );
+      expect(hasExamples, `cel ${objective.id} bez {{examples}}`).toBe(true);
+    }
+  });
+
+  it("ma trzy przekształcenia tematu", () => {
+    expect(topic.transforms.map((t) => t.id).sort()).toEqual(
+      ["to_affirmative", "to_negative", "to_question"].sort(),
+    );
   });
 });
 

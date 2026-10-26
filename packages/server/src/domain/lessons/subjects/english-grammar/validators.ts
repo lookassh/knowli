@@ -139,9 +139,212 @@ function hasBaseVerbAfterGap(stem: string, hint?: string): boolean {
 /**
  * Walidator ćwiczeń przedmiotu. Zwraca listę błędów po polsku (pusta = poprawne).
  */
+/** Formy „to be” po podmiocie (osoba → jedyna poprawna forma). */
+const BE_FORM_BY_SUBJECT: Readonly<Record<string, string>> = {
+  i: "am",
+  he: "is",
+  she: "is",
+  it: "is",
+  you: "are",
+  we: "are",
+  they: "are",
+};
+
+const BE_CONTRACTED_TOKENS: Readonly<Record<string, readonly string[]>> = {
+  "i'm": ["i", "am"],
+  "you're": ["you", "are"],
+  "we're": ["we", "are"],
+  "they're": ["they", "are"],
+  "he's": ["he", "is"],
+  "she's": ["she", "is"],
+  "it's": ["it", "is"],
+  "isn't": ["is", "not"],
+  "aren't": ["are", "not"],
+  isnt: ["is", "not"],
+  arent: ["are", "not"],
+};
+
+/** Rozkłada odpowiedź luki tematu „to be” na formę i biegunowość; null = to nie jest forma „to be”. */
+function parseBeGapAnswer(answer: string): { form: string; negative: boolean; marker?: string; pronoun?: string } | null {
+  let tokens = normalizeTokens(answer);
+  let marker: string | undefined;
+  if (tokens[0] === "yes" || tokens[0] === "no") {
+    marker = tokens[0];
+    tokens = tokens.slice(1);
+  }
+  const expanded = tokens.flatMap((token) => BE_CONTRACTED_TOKENS[token] ?? [token]);
+  const pronoun = expanded[0] !== undefined && Object.hasOwn(BE_FORM_BY_SUBJECT, expanded[0])
+    ? expanded[0]
+    : undefined;
+  const rest = pronoun === undefined ? expanded : expanded.slice(1);
+  const [form, ...tail] = rest;
+  if (form === undefined || !BE_FORMS.has(form)) {
+    return null;
+  }
+  if (tail.length === 0) return { form, negative: false, marker, pronoun };
+  if (tail.length === 1 && tail[0] === "not") return { form, negative: true, marker, pronoun };
+  return null;
+}
+
+const BE_FORMS: ReadonlySet<string> = new Set(Object.values(BE_FORM_BY_SUBJECT));
+
+const BE_DEMONSTRATIVE_FORM: Readonly<Record<string, string>> = {
+  this: "is",
+  that: "is",
+  these: "are",
+  those: "are",
+};
+
+const BE_IRREGULAR_PLURALS: ReadonlySet<string> = new Set(["children", "men", "women", "people", "feet", "teeth"]);
+
+/** Czy rzeczownik przy luce wygląda na liczbę mnogą (prosta heurystyka dla materiału dziecięcego). */
+function looksPlural(token: string): boolean {
+  if (BE_IRREGULAR_PLURALS.has(token)) return true;
+  return token.length > 1 && token.endsWith("s") && !token.endsWith("ss") && !token.endsWith("us") && !token.endsWith("is") && token !== "news";
+}
+
+const BE_DETERMINERS: ReadonlySet<string> = new Set(["the", "a", "an", "my", "his", "her", "its", "our", "your", "their", "this", "that", "these", "those"]);
+
+/** Zaimek osobowy widoczny przy luce (przed nią albo tuż po niej, jak w pytaniu). */
+function bePronounNearGap(stem: string): string | undefined {
+  const [before = "", after = ""] = stem.split("___", 2);
+  const nearby = [...normalizeTokens(before).reverse(), ...normalizeTokens(after)];
+  return nearby.find((token) => Object.hasOwn(BE_FORM_BY_SUBJECT, token));
+}
+
+/**
+ * Forma „to be” wymagana przez podmiot widoczny przy luce; undefined = nie da
+ * się ustalić. Podmiot złożony z „and” jest liczbą mnogą, wskazujące
+ * this/that/these/those niosą własną liczbę, a rzeczownik oceniamy prostą
+ * heurystyką liczby (dog → is, dogs → are). Własności prototypu JS (np.
+ * „constructor”) nie są podmiotami — stąd Object.hasOwn zamiast `in`.
+ */
+function expectedBeFormNearGap(stem: string): string | undefined {
+  const [before = "", after = ""] = stem.split("___", 2);
+  const beforeTokens = normalizeTokens(before);
+  const afterTokens = normalizeTokens(after);
+  if (beforeTokens.includes("and")) return "are";
+  const pronoun = bePronounNearGap(stem);
+  if (pronoun !== undefined) return BE_FORM_BY_SUBJECT[pronoun];
+  const nearby = [...[...beforeTokens].reverse(), ...afterTokens];
+  const demonstrative = nearby.find((token) => Object.hasOwn(BE_DEMONSTRATIVE_FORM, token));
+  if (demonstrative !== undefined) return BE_DEMONSTRATIVE_FORM[demonstrative];
+  const nounBefore = [...beforeTokens].reverse().find((token) => !BE_DETERMINERS.has(token) && token !== "and");
+  const nounAfter = afterTokens.find((token) => !BE_DETERMINERS.has(token) && token !== "and");
+  const noun = nounBefore ?? nounAfter;
+  if (noun === undefined) return undefined;
+  return looksPlural(noun) ? "are" : "is";
+}
+
+/** Czy zdanie-otoczenie luki samo niesie przeczenie albo znacznik Yes/No. */
+function beStemContext(stem: string | undefined): { negative: boolean; marker?: string } {
+  if (stem === undefined) return { negative: false };
+  const tokens = normalizeTokens(stem).flatMap((token) => BE_CONTRACTED_TOKENS[token] ?? [token]);
+  return {
+    negative: tokens.includes("not"),
+    marker: tokens[0] === "yes" || tokens[0] === "no" ? tokens[0] : undefined,
+  };
+}
+
+function checkBePolarity(
+  objective: string,
+  effectiveNegative: boolean,
+  marker: string | undefined,
+  field: string,
+  errors: string[],
+): void {
+  if (marker === "yes" && effectiveNegative) {
+    errors.push(`${field}: odpowiedź po „Yes” nie może być przeczeniem`);
+  }
+  if (marker === "no" && !effectiveNegative) {
+    errors.push(`${field}: odpowiedź po „No” musi być przeczeniem`);
+  }
+  if ((objective === "affirmative_forms" || objective === "contractions") && effectiveNegative) {
+    errors.push(`${field}: forma przecząca nie pasuje do celu twierdzącego`);
+  }
+  if (objective === "negative_forms" && !effectiveNegative) {
+    errors.push(`${field}: brak przeczenia (not) wymaganego przez cel`);
+  }
+}
+
+/**
+ * Reguła luki tematu „to be”: odpowiedź (i każdy wariant) musi być formą
+ * am/is/are zgodną z podmiotem przy luce i biegunowością celu. Samo „not”
+ * jest poprawne tylko dla celu przeczeń (forma stoi już w zdaniu).
+ */
+function validateBeGapAnswer(ex: LessonExerciseDraft, answer: string, field: string, errors: string[]): void {
+  const objective = ex.objectiveId.split(".").at(-1) ?? "";
+  const stemCtx = beStemContext(ex.stem);
+  if (normalizeTokens(answer).join(" ") === "not") {
+    if (objective !== "negative_forms") {
+      errors.push(`${field}: odpowiedź „${answer}” nie jest formą czasownika „be” w temacie „to be”`);
+    }
+    return;
+  }
+  const parsed = parseBeGapAnswer(answer);
+  if (parsed === null) {
+    errors.push(`${field}: odpowiedź „${answer}” nie jest formą czasownika „be” (am, is, are)`);
+    return;
+  }
+  const stemPronoun = ex.stem === undefined ? undefined : bePronounNearGap(ex.stem);
+  if (parsed.pronoun !== undefined && stemPronoun !== undefined && parsed.pronoun !== stemPronoun) {
+    errors.push(`${field}: osoba „${parsed.pronoun}” w odpowiedzi nie pasuje do podmiotu „${stemPronoun}”`);
+  }
+  const expected = ex.stem === undefined ? undefined : expectedBeFormNearGap(ex.stem);
+  if (expected !== undefined && expected !== parsed.form) {
+    errors.push(`${field}: forma „${parsed.form}” nie pasuje do podmiotu (poprawnie: ${expected})`);
+  }
+  checkBePolarity(objective, parsed.negative || stemCtx.negative, parsed.marker ?? stemCtx.marker, field, errors);
+}
+
+/**
+ * Reguła odpowiedzi tekstowych tematu „to be” poza luką: zgodność osoby z
+ * formą w pełnym zdaniu, brak do/does oraz biegunowość celu. Pojedyncza forma
+ * (wybór odpowiedzi) jest sprawdzana względem podmiotu w bodźcu.
+ */
+function validateBeAnswerText(ex: LessonExerciseDraft, answer: string, field: string, errors: string[]): void {
+  const objective = ex.objectiveId.split(".").at(-1) ?? "";
+  const tokens = normalizeTokens(answer).flatMap((token) => BE_CONTRACTED_TOKENS[token] ?? [token]);
+  if (tokens.includes("do") || tokens.includes("does")) {
+    errors.push(`${field}: zdanie z „to be” nie używa „do/does”`);
+    return;
+  }
+  if (tokens.length === 1 && BE_FORMS.has(tokens[0]!)) {
+    const context = ex.stem ?? ex.prompt ?? ex.statement;
+    if (context !== undefined && context.includes("___")) {
+      const expected = expectedBeFormNearGap(context);
+      if (expected !== undefined && expected !== tokens[0]) {
+        errors.push(`${field}: forma „${tokens[0]}” nie pasuje do podmiotu (poprawnie: ${expected})`);
+      }
+    }
+    return;
+  }
+  let hasBe = false;
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]!;
+    const next = tokens[i + 1];
+    if (next === undefined) continue;
+    if (Object.hasOwn(BE_FORM_BY_SUBJECT, token) && BE_FORMS.has(next)) {
+      hasBe = true;
+      if (BE_FORM_BY_SUBJECT[token] !== next) {
+        errors.push(`${field}: forma „${next}” nie pasuje do osoby „${token}” (poprawnie: ${BE_FORM_BY_SUBJECT[token]})`);
+      }
+    }
+    if (BE_FORMS.has(token) && Object.hasOwn(BE_FORM_BY_SUBJECT, next)) {
+      hasBe = true;
+      if (BE_FORM_BY_SUBJECT[next] !== token) {
+        errors.push(`${field}: forma „${token}” nie pasuje do osoby „${next}” (poprawnie: ${BE_FORM_BY_SUBJECT[next]})`);
+      }
+    }
+  }
+  if (!hasBe) return;
+  const marker = tokens[0] === "yes" || tokens[0] === "no" ? tokens[0] : undefined;
+  checkBePolarity(objective, tokens.includes("not"), marker, field, errors);
+}
+
 export function validateEnglishGrammarExercise(
   ex: LessonExerciseDraft,
-  _topic: LessonTopic,
+  topic: LessonTopic,
 ): string[] {
   const errors: string[] = [];
 
@@ -151,7 +354,13 @@ export function validateEnglishGrammarExercise(
     }
   }
 
-  if (ex.exerciseType === "lesson_gap") {
+  if (topic.id === "to_be" && ex.exerciseType === "lesson_gap") {
+    validateBeGapAnswer(ex, ex.answer, "lesson_gap", errors);
+    for (const variant of ex.acceptedAnswers) validateBeGapAnswer(ex, variant, "acceptedAnswers", errors);
+  } else if (topic.id === "to_be" && ex.exerciseType !== "lesson_card" && ex.exerciseType !== "lesson_notice") {
+    validateBeAnswerText(ex, ex.answer, "answer", errors);
+    for (const variant of ex.acceptedAnswers) validateBeAnswerText(ex, variant, "acceptedAnswers", errors);
+  } else if (ex.exerciseType === "lesson_gap") {
     const hint = ex.hint?.trim() ?? "";
     const infinitive = hint ? normalizeTokens(hint)[0] : undefined;
     const operator = operatorAnswer(ex.answer);
