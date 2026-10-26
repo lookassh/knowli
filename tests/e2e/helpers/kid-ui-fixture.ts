@@ -49,6 +49,23 @@ export interface KidUiFixture {
   onEndSession?: (report: SessionActivityReport) => void;
 }
 
+/** Silent WAV clip used by mocked Kid UI specs that stub media routes. */
+export function silentWavBuffer(): Buffer {
+  const audio = Buffer.alloc(204);
+  audio.write("RIFF", 0);
+  audio.writeUInt32LE(audio.length - 8, 4);
+  audio.write("WAVEfmt ", 8);
+  audio.writeUInt32LE(16, 16);
+  audio.writeUInt16LE(1, 20);
+  audio.writeUInt16LE(1, 22);
+  audio.writeUInt32LE(8000, 24);
+  audio.writeUInt32LE(16000, 28);
+  audio.writeUInt16LE(2, 32);
+  audio.writeUInt16LE(16, 34);
+  audio.write("data", 36);
+  audio.writeUInt32LE(audio.length - 44, 40);
+  return audio;
+}
 export async function installKidUiFixture(page: Page, fixture: KidUiFixture, options: { reducedMotion?: boolean } = {}): Promise<void> {
   // Geometry specs measure a static layout: Motion honours reduced motion,
   // so the whole mocked Kid UI runs without animation unless a spec opts out.

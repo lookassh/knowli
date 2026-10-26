@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { installKidUiFixture } from "./helpers/kid-ui-fixture";
+import { installKidUiFixture, silentWavBuffer } from "./helpers/kid-ui-fixture";
 import { pictureChoiceLayoutFixture } from "./helpers/picture-fixtures";
 
 // Motion runs for real here (no reduced-motion emulation): the animated
@@ -7,21 +7,8 @@ import { pictureChoiceLayoutFixture } from "./helpers/picture-fixtures";
 test("animated task switch and feedback dock keep the session flow working", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await installKidUiFixture(page, pictureChoiceLayoutFixture(), { reducedMotion: false });
-  const audio = Buffer.alloc(204);
-  audio.write("RIFF", 0);
-  audio.writeUInt32LE(audio.length - 8, 4);
-  audio.write("WAVEfmt ", 8);
-  audio.writeUInt32LE(16, 16);
-  audio.writeUInt16LE(1, 20);
-  audio.writeUInt16LE(1, 22);
-  audio.writeUInt32LE(8000, 24);
-  audio.writeUInt32LE(16000, 28);
-  audio.writeUInt16LE(2, 32);
-  audio.writeUInt16LE(16, 34);
-  audio.write("data", 36);
-  audio.writeUInt32LE(audio.length - 44, 40);
   await page.route("**/api/v1/media/10000000-0000-4000-8000-000000000012", (route) =>
-    route.fulfill({ status: 200, contentType: "audio/wav", body: audio }));
+    route.fulfill({ status: 200, contentType: "audio/wav", body: silentWavBuffer() }));
 
   await page.goto("/");
   await page.getByTestId("kid-profile").click();
