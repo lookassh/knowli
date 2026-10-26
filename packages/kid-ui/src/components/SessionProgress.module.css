@@ -3,9 +3,9 @@
   padding-inline: 14px;
   display: inline-flex;
   align-items: center;
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: #f0f5ff;
+  font-size: var(--kid-type-label-sm-size);
+  font-weight: var(--kid-type-label-sm-weight);
+  color: var(--md-sys-color-on-surface);
   background: #203653;
 }
 

@@ -3,21 +3,81 @@
 
 .kid-ui {
   /* Match KidThemeProvider's forced dark scheme, regardless of the OS theme.
-     System-dependent text tokens cannot be mixed with dark answer controls. */
-  --kid-bg: #182134;
-  --kid-surface: #253049;
-  --kid-text: #f1f5ff;
-  --kid-muted: #bdc9df;
-  --kid-accent: #aec0ff;
-  --kid-on-accent: #18244a;
-  --kid-line: #455370;
-  --kid-soft: #303f64;
-  --kid-good: #a1e0ba;
-  --kid-good-bg: #214b36;
-  --kid-wrong: #ffb5ab;
-  --kid-wrong-bg: #542c32;
-  --kid-on-good: #143323;
-  --kid-on-wrong: #48201d;
+     System-dependent text tokens cannot be mixed with dark answer controls.
+     Material 3 roles below are the source of truth; --kid-* are aliases. */
+  --md-sys-color-primary: #aec0ff;
+  --md-sys-color-on-primary: #18244a;
+  --md-sys-color-primary-container: #303f64;
+  --md-sys-color-on-primary-container: #f1f5ff;
+  --md-sys-color-secondary-container: #303f64;
+  --md-sys-color-on-secondary-container: #f1f5ff;
+  /* Tertiary doubles as success; M3 defines no success role. */
+  --md-sys-color-tertiary: #a1e0ba;
+  --md-sys-color-on-tertiary: #143323;
+  --md-sys-color-tertiary-container: #214b36;
+  --md-sys-color-on-tertiary-container: #a1e0ba;
+  --md-sys-color-error: #ffb5ab;
+  --md-sys-color-on-error: #48201d;
+  --md-sys-color-error-container: #542c32;
+  --md-sys-color-on-error-container: #ffb5ab;
+  --md-sys-color-surface: #182134;
+  --md-sys-color-on-surface: #f1f5ff;
+  --md-sys-color-on-surface-variant: #bdc9df;
+  --md-sys-color-surface-container-lowest: #080d1c;
+  --md-sys-color-surface-container-low: #17223d;
+  --md-sys-color-surface-container: #253049;
+  --md-sys-color-surface-container-high: #303f64;
+  --md-sys-color-outline: #455370;
+  --md-sys-color-outline-variant: #303f64;
+  --md-sys-color-inverse-surface: #f1f5ff;
+  --md-sys-color-inverse-on-surface: #182134;
+  --kid-state-hover-opacity: 0.08;
+  --kid-state-pressed-opacity: 0.1;
+  --kid-color-disabled-container: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent);
+  --kid-color-disabled-content: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent);
+  --kid-shape-none: 0;
+  --kid-shape-xs: 4px;
+  --kid-shape-s: 8px;
+  --kid-shape-m: 12px;
+  --kid-shape-l: 16px;
+  --kid-shape-xl: 20px;
+  --kid-shape-xxl: 28px;
+  --kid-shape-full: 999px;
+  --kid-type-display-size: 2rem;
+  --kid-type-display-weight: 800;
+  --kid-type-display-line-height: 1.2;
+  --kid-type-headline-size: 1.6rem;
+  --kid-type-headline-weight: 800;
+  --kid-type-headline-line-height: 1.25;
+  --kid-type-title-size: 1.3rem;
+  --kid-type-title-weight: 700;
+  --kid-type-title-line-height: 1.3;
+  --kid-type-title-sm-size: 1.05rem;
+  --kid-type-title-sm-weight: 700;
+  --kid-type-title-sm-line-height: 1.3;
+  --kid-type-body-size: 1rem;
+  --kid-type-body-weight: 600;
+  --kid-type-body-line-height: 1.4;
+  --kid-type-label-sm-size: 0.95rem;
+  --kid-type-label-sm-weight: 700;
+  --kid-type-label-sm-line-height: 1.15;
+  --kid-type-label-size: 1rem;
+  --kid-type-label-weight: 700;
+  --kid-type-label-line-height: 1.35;
+  --kid-bg: var(--md-sys-color-surface);
+  --kid-surface: var(--md-sys-color-surface-container);
+  --kid-text: var(--md-sys-color-on-surface);
+  --kid-muted: var(--md-sys-color-on-surface-variant);
+  --kid-accent: var(--md-sys-color-primary);
+  --kid-on-accent: var(--md-sys-color-on-primary);
+  --kid-line: var(--md-sys-color-outline);
+  --kid-soft: var(--md-sys-color-surface-container-high);
+  --kid-good: var(--md-sys-color-tertiary);
+  --kid-good-bg: var(--md-sys-color-tertiary-container);
+  --kid-wrong: var(--md-sys-color-error);
+  --kid-wrong-bg: var(--md-sys-color-error-container);
+  --kid-on-good: var(--md-sys-color-on-tertiary);
+  --kid-on-wrong: var(--md-sys-color-on-error);
   --kid-warm: #493f2b;
   --kid-warm-text: #f3d8a4;
   --kid-warm-line: #79633e;
@@ -510,14 +570,15 @@
 
 .kid-deck-card__actions .kid-primary {
   border: 0;
-  background: var(--kid-accent);
-  color: var(--kid-on-accent);
+  --action-bg: var(--kid-accent);
+  --action-fg: var(--kid-on-accent);
 }
 
 .kid-deck-card__actions .kid-secondary {
-  border: 1px solid var(--kid-line);
-  background: var(--kid-soft);
-  color: var(--kid-text);
+  border-width: 1px;
+  --action-bg: var(--kid-soft);
+  --action-fg: var(--kid-text);
+  --action-border: var(--kid-line);
 }
 
 .kid-ui .kid-microphone-settings {
@@ -677,8 +738,9 @@
   padding: 0;
   border-radius: 50%;
   font-size: 1.7rem;
-  background: var(--kid-soft);
-  border: 2px solid var(--kid-line);
+  --action-bg: var(--kid-soft);
+  --action-fg: var(--kid-text);
+  --action-border: var(--kid-line);
   flex: none;
 }
 
@@ -836,9 +898,9 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  background: var(--kid-accent);
-  border-color: var(--kid-accent);
-  color: var(--kid-on-accent);
+  --action-bg: var(--kid-accent);
+  --action-border: var(--kid-accent);
+  --action-fg: var(--kid-on-accent);
   font-weight: 700;
 }
 
@@ -1078,10 +1140,6 @@
   cursor: pointer;
 }
 
-.kid-secondary-actions button:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
 
 .kid-record-controls {
   box-sizing: border-box;
@@ -1331,14 +1389,11 @@
   font-size: 1rem;
   border-radius: 14px;
   border: 2px solid var(--kid-line);
-  color: var(--kid-text);
-  background: var(--kid-surface);
+  --action-fg: var(--kid-text);
+  --action-bg: var(--kid-surface);
   cursor: pointer;
 }
 
-.kid-end:disabled {
-  opacity: 0.55;
-}
 
 .kid-offline,
 .kid-error {
@@ -1545,9 +1600,10 @@
 }
 
 .kid-ui .kid-speech-feedback__actions .kid-secondary {
-  border: 1px solid var(--kid-line);
-  color: var(--kid-text);
-  background: var(--kid-soft);
+  border-width: 1px;
+  --action-fg: var(--kid-text);
+  --action-bg: var(--kid-soft);
+  --action-border: var(--kid-line);
 }
 
 .kid-speech-feedback__error {
@@ -1923,8 +1979,8 @@
   padding: 10px 16px;
   border: 2px solid var(--kid-line);
   border-radius: 16px;
-  background: var(--kid-surface);
-  color: var(--kid-text);
+  --action-bg: var(--kid-surface);
+  --action-fg: var(--kid-text);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -1933,9 +1989,9 @@
 .kid-screen--mock-ready > .kid-end {
   width: 100%;
   min-height: 52px;
-  border-color: var(--kid-line);
-  background: var(--kid-surface);
-  color: var(--kid-text);
+  --action-border: var(--kid-line);
+  --action-bg: var(--kid-surface);
+  --action-fg: var(--kid-text);
 }
 
 .kid-screen--mock-summary > .kid-flow-secondary {

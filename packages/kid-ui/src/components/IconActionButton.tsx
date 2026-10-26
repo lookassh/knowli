@@ -7,11 +7,12 @@ export interface IconActionButtonProps extends Omit<ActionButtonProps, "size" | 
 }
 
 /** Square 48x48 icon action built on ActionButton; use instead of raw icon buttons. */
-export function IconActionButton({ priority = "secondary", radius = 14, style, ...props }: IconActionButtonProps): ReactElement {
+export function IconActionButton({ variant, priority = "secondary", radius = "var(--kid-shape-l)", style, ...props }: IconActionButtonProps): ReactElement {
   return (
     <ActionButton
       {...props}
-      priority={priority}
+      variant={variant}
+      priority={variant === undefined ? priority : undefined}
       size="sm"
       fullWidth={false}
       radius={radius}
