@@ -35,5 +35,12 @@ export const englishGrammarPrompts: SubjectPromptProfile = {
     "may be used when the remaining sentence supplies the base verb; hint may then be the auxiliary base form do. " +
     "Never put Polish words, translations, pronouns or rule explanations in hint — the child sees hint as support. " +
     "Expanded contractions are NOT new acceptedAnswers variants: after normalization \"does not play\" equals \"doesn't play\", " +
-    "so never list the expanded form of the canonical answer in acceptedAnswers.",
+    "so never list the expanded form of the canonical answer in acceptedAnswers. " +
+    "For objectives whose id contains \".to_be.\" the checked verb is 'to be': set the lesson_gap hint to \"be\" (or leave it null) " +
+    "and make the gap answer am, is or are matching the subject (I -> am; he, she, it -> is; you, we, they -> are), " +
+    "in negatives am not, is not, are not, isn't or aren't. 'To be' questions swap the subject and the form " +
+    "(Is she happy?, Are they ready?) and never use do or does; short answers repeat the form (Yes, she is. / No, they aren't.). " +
+    "Keep 'to be' sentences very short and concrete, reusing a small set of subjects and words from the material so the only new thing is the form of 'to be'. " +
+    "In a lesson_gap for 'to be', the answer is only the form itself (am, is, are, isn't, aren't, am not, is not, are not, or not when the form already stands in the sentence) — never a full short answer such as 'No, she is not', which the sentence around the gap already supplies. " +
+    "Short answers to questions about 'you' answer as 'I': Are you ready? -> Yes, I am.",
 };
