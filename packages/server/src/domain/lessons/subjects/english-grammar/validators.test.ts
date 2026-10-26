@@ -165,6 +165,15 @@ describe("validateEnglishGrammarExercise — lesson_gap, temat to_be", () => {
     expect(validateEnglishGrammarExercise(beGap(objectiveId, stem, answer, "be"), toBeV1)).not.toEqual([]);
   });
 
+  it.each([
+    ["przysłówek między podmiotem a luką (she)", AFF, "She always ___ happy.", "is"],
+    ["przysłówek między podmiotem a luką (I)", AFF, "I always ___ tired.", "am"],
+    ["przysłówek między podmiotem a luką (we)", AFF, "We never ___ late.", "are"],
+    ["imię własne James kończące się na s", AFF, "James ___ happy.", "is"],
+  ])("akceptuje: %s", (_name, objectiveId, stem, answer) => {
+    expect(validateEnglishGrammarExercise(beGap(objectiveId, stem, answer, "be"), toBeV1)).toEqual([]);
+  });
+
   it.each(["is", "jest", "to be"])("odrzuca hint %s dla luki to_be (dozwolony tylko „be” albo brak)", (hint) => {
     expect(validateEnglishGrammarExercise(beGap(AFF, "She ___ happy.", "is", hint), toBeV1)).not.toEqual([]);
   });
@@ -212,6 +221,38 @@ describe("validateEnglishGrammarExercise — lesson_gap, temat to_be", () => {
       acceptedAnswers: [],
       focus: ["Is", "he"],
     }, false],
+  ] as const)("%s", (_name, ex, valid) => {
+    const errors = validateEnglishGrammarExercise(ex as unknown as LessonExerciseDraft, toBeV1);
+    expect(errors.length === 0).toBe(valid);
+  });
+
+  it.each([
+    ["krótka odpowiedź z perspektywą you na pytanie o you", {
+      exerciseType: "lesson_short_answer",
+      objectiveId: "english_grammar.to_be.short_answers",
+      prompt: "Are you ready?",
+      answer: "Yes, you are.",
+      acceptedAnswers: [],
+      focus: [],
+      options: [
+        { id: "a", text: "Yes, I am." },
+        { id: "b", text: "Yes, you are." },
+      ],
+      correctOption: "b",
+    }, false],
+    ["krótka odpowiedź you na pytanie Am I jest poprawna", {
+      exerciseType: "lesson_short_answer",
+      objectiveId: "english_grammar.to_be.short_answers",
+      prompt: "Am I late?",
+      answer: "Yes, you are.",
+      acceptedAnswers: [],
+      focus: [],
+      options: [
+        { id: "a", text: "Yes, you are." },
+        { id: "b", text: "Yes, I am." },
+      ],
+      correctOption: "a",
+    }, true],
   ] as const)("%s", (_name, ex, valid) => {
     const errors = validateEnglishGrammarExercise(ex as unknown as LessonExerciseDraft, toBeV1);
     expect(errors.length === 0).toBe(valid);

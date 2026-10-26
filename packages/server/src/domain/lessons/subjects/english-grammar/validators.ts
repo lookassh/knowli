@@ -197,8 +197,12 @@ const BE_DEMONSTRATIVE_FORM: Readonly<Record<string, string>> = {
 
 const BE_IRREGULAR_PLURALS: ReadonlySet<string> = new Set(["children", "men", "women", "people", "feet", "teeth"]);
 
+/** Imiona własne kończące się na „s”, które heurystyka liczby wzięłaby za liczbę mnogą. */
+const BE_S_ENDING_NAMES: ReadonlySet<string> = new Set(["james", "charles", "lucas", "miles", "lewis", "francis"]);
+
 /** Czy rzeczownik przy luce wygląda na liczbę mnogą (prosta heurystyka dla materiału dziecięcego). */
 function looksPlural(token: string): boolean {
+  if (BE_S_ENDING_NAMES.has(token)) return false;
   if (BE_IRREGULAR_PLURALS.has(token)) return true;
   return token.length > 1 && token.endsWith("s") && !token.endsWith("ss") && !token.endsWith("us") && !token.endsWith("is") && token !== "news";
 }
@@ -222,9 +226,20 @@ const BE_AFTER_SKIP: ReadonlySet<string> = new Set([
  * albo pierwszy po niej (pytanie z inwersją). Tylko sąsiedztwo — zaimek
  * z innej części zdania (np. dopełnienie „for you”) nie jest podmiotem.
  */
+/** Przysłówki, które mogą stać między podmiotem a luką (She always ___). */
+const BE_ADVERBS: ReadonlySet<string> = new Set([
+  "always", "usually", "often", "sometimes", "never", "rarely", "seldom", "also", "just", "still", "really", "very",
+]);
+
+/** Tokeny przed luką bez przysłówków — na nich szukamy podmiotu. */
+function beSubjectTokensBefore(stem: string): string[] {
+  const [before = ""] = stem.split("___", 2);
+  return normalizeTokens(before).filter((token) => !BE_ADVERBS.has(token));
+}
+
 function bePronounNearGap(stem: string): string | undefined {
-  const [before = "", after = ""] = stem.split("___", 2);
-  const prev = normalizeTokens(before).at(-1);
+  const [, after = ""] = stem.split("___", 2);
+  const prev = beSubjectTokensBefore(stem).at(-1);
   if (prev !== undefined && Object.hasOwn(BE_FORM_BY_SUBJECT, prev)) return prev;
   const next = normalizeTokens(after)[0];
   if (next !== undefined && Object.hasOwn(BE_FORM_BY_SUBJECT, next)) return next;
@@ -242,8 +257,8 @@ function bePronounNearGap(stem: string): string | undefined {
  * „constructor”) nie są podmiotami — stąd Object.hasOwn zamiast `in`.
  */
 function expectedBeFormNearGap(stem: string): string | undefined {
-  const [before = "", after = ""] = stem.split("___", 2);
-  const beforeTokens = normalizeTokens(before);
+  const [, after = ""] = stem.split("___", 2);
+  const beforeTokens = beSubjectTokensBefore(stem);
   const afterTokens = normalizeTokens(after);
   const prev = beforeTokens.at(-1);
   const prev2 = beforeTokens.at(-2);
@@ -345,6 +360,15 @@ function validateBeAnswerText(ex: LessonExerciseDraft, answer: string, field: st
   if (tokens.includes("do") || tokens.includes("does")) {
     errors.push(`${field}: zdanie z „to be” nie używa „do/does”`);
     return;
+  }
+  if (objective === "short_answers") {
+    // Na pytanie o „you” odpowiada się o sobie („I”), nie z perspektywy pytającego.
+    const questionTokens = normalizeTokens(ex.prompt ?? ex.stem ?? "");
+    const asksAboutYou = BE_FORMS.has(questionTokens[0] ?? "") && questionTokens[1] === "you";
+    if (asksAboutYou && tokens.includes("you")) {
+      errors.push(`${field}: po pytaniu o „you” odpowiedź musi używać osoby „I” (Yes, I am)`);
+      return;
+    }
   }
   if (tokens.length === 1 && BE_FORMS.has(tokens[0]!)) {
     const context = ex.stem ?? ex.prompt ?? ex.statement;
