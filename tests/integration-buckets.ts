@@ -20,67 +20,81 @@
  * Nowy plik integracyjny trzeba dopisać do jednego z koszy (preferuj
  * najlżejszy) — kompletności podziału i zgodności z matrixem CI pilnuje
  * `tests/integration-buckets.test.ts` (suite jednostkowa).
+ *
+ * Nazwy plików są zapisane jako bloki tekstowe (jedna nazwa w linii),
+ * a nie jako tablica literałów: detekcja duplikacji Sonara (CPD) abstrahuje
+ * wartości stringów, więc długa lista literałów uchodzi za duplikat
+ * analogicznych list z tests/e2e/spec-projects.ts i wywraca bramkę jakości
+ * na nowym kodzie (SonarCloud działa tu w trybie Automatic Analysis, bez
+ * konfiguracji wykluczeń w repo).
  */
+function bucket(names: string): string[] {
+  return names
+    .trim()
+    .split("\n")
+    .map((name) => `tests/integration/${name.trim()}`);
+}
+
 export const INTEGRATION_BUCKETS: readonly (readonly string[])[] = [
-  [
-    "tests/integration/attempts.test.ts",
-    "tests/integration/auth-profiles.test.ts",
-    "tests/integration/db-history-indexes.test.ts",
-    "tests/integration/deck-cover.test.ts",
-    "tests/integration/feedback-audio.test.ts",
-    "tests/integration/generation.test.ts",
-    "tests/integration/grammar-without-tts.test.ts",
-    "tests/integration/history-policy-scope.test.ts",
-    "tests/integration/learning-algorithm.test.ts",
-    "tests/integration/lesson-attempts.test.ts",
-    "tests/integration/lesson-audio.test.ts",
-    "tests/integration/lesson-deck-overview.test.ts",
-    "tests/integration/lesson-mock-tests.test.ts",
-    "tests/integration/lesson-sessions.test.ts",
-    "tests/integration/manual-decks-api.test.ts",
-    "tests/integration/manual-decks.test.ts",
-    "tests/integration/parent-work-card.test.ts",
-    "tests/integration/reporting.test.ts",
-  ],
-  [
-    "tests/integration/assignments-api.test.ts",
-    "tests/integration/database-teardown.test.ts",
-    "tests/integration/history.test.ts",
-    "tests/integration/learning-overview-concurrency.test.ts",
-    "tests/integration/lesson-grader.test.ts",
-    "tests/integration/lesson-isolation.test.ts",
-    "tests/integration/lesson-parent-api.test.ts",
-    "tests/integration/lesson-parent-supervision.test.ts",
-    "tests/integration/media.test.ts",
-    "tests/integration/mock-test-reporting.test.ts",
-    "tests/integration/parent-work-card-regressions.test.ts",
-    "tests/integration/profile-navigation-benchmark.test.ts",
-    "tests/integration/projection-facts.test.ts",
-    "tests/integration/session-activity.test.ts",
-    "tests/integration/sessions.test.ts",
-    "tests/integration/speech.test.ts",
-    "tests/integration/ui-audio.test.ts",
-  ],
-  [
-    "tests/integration/deck-learning-overview.test.ts",
-    "tests/integration/decks-management.test.ts",
-    "tests/integration/integration-tokens.test.ts",
-    "tests/integration/learning-mcp.test.ts",
-    "tests/integration/learning-overview.test.ts",
-    "tests/integration/lesson-generation.test.ts",
-    "tests/integration/lesson-schema.test.ts",
-    "tests/integration/lesson-shape.test.ts",
-    "tests/integration/mock-test-report-access.test.ts",
-    "tests/integration/mock-test-settings.test.ts",
-    "tests/integration/mock-tests.test.ts",
-    "tests/integration/picture-vocabulary.test.ts",
-    "tests/integration/progress-rebuild.test.ts",
-    "tests/integration/pronunciation-settings.test.ts",
-    "tests/integration/recording-mode-migration.test.ts",
-    "tests/integration/revisions.test.ts",
-    "tests/integration/session-activity-migration.test.ts",
-    "tests/integration/training-session-plan.test.ts",
-  ],
+  bucket(`
+    attempts.test.ts
+    auth-profiles.test.ts
+    db-history-indexes.test.ts
+    deck-cover.test.ts
+    feedback-audio.test.ts
+    generation.test.ts
+    grammar-without-tts.test.ts
+    history-policy-scope.test.ts
+    learning-algorithm.test.ts
+    lesson-attempts.test.ts
+    lesson-audio.test.ts
+    lesson-deck-overview.test.ts
+    lesson-mock-tests.test.ts
+    lesson-sessions.test.ts
+    manual-decks-api.test.ts
+    manual-decks.test.ts
+    parent-work-card.test.ts
+    reporting.test.ts
+  `),
+  bucket(`
+    assignments-api.test.ts
+    database-teardown.test.ts
+    history.test.ts
+    learning-overview-concurrency.test.ts
+    lesson-grader.test.ts
+    lesson-isolation.test.ts
+    lesson-parent-api.test.ts
+    lesson-parent-supervision.test.ts
+    media.test.ts
+    mock-test-reporting.test.ts
+    parent-work-card-regressions.test.ts
+    profile-navigation-benchmark.test.ts
+    projection-facts.test.ts
+    session-activity.test.ts
+    sessions.test.ts
+    speech.test.ts
+    ui-audio.test.ts
+  `),
+  bucket(`
+    deck-learning-overview.test.ts
+    decks-management.test.ts
+    integration-tokens.test.ts
+    learning-mcp.test.ts
+    learning-overview.test.ts
+    lesson-generation.test.ts
+    lesson-schema.test.ts
+    lesson-shape.test.ts
+    mock-test-report-access.test.ts
+    mock-test-settings.test.ts
+    mock-tests.test.ts
+    picture-vocabulary.test.ts
+    progress-rebuild.test.ts
+    pronunciation-settings.test.ts
+    recording-mode-migration.test.ts
+    revisions.test.ts
+    session-activity-migration.test.ts
+    training-session-plan.test.ts
+  `),
 ];
 
 export const INTEGRATION_SPECS: readonly string[] = INTEGRATION_BUCKETS.flat();
