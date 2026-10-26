@@ -8,6 +8,7 @@ export interface TestRunConfig {
   e2eWebMode: "start" | "dev";
   e2eSkipBuild: boolean;
   e2eWorkers: number;
+  e2eBucket: number | null;
 }
 
 export function readTestRunConfig(env: Record<string, string | undefined>): TestRunConfig {
@@ -57,6 +58,15 @@ export function readTestRunConfig(env: Record<string, string | undefined>): Test
     throw new Error("UMIEM_E2E_WORKERS must be an integer from 1 to 32");
   }
 
+  // Kosz czasowy projektu `real` (REAL_BUCKETS w tests/e2e/spec-projects.ts);
+  // brak albo pusta wartość (np. pozycja matrixa CI bez kosza) = wszystkie
+  // specy. Zgodność indeksu z liczbą koszy sprawdza playwright.config.ts.
+  const rawBucket = env.UMIEM_E2E_BUCKET;
+  if (rawBucket !== undefined && rawBucket !== "" && !/^[1-9]$/.test(rawBucket)) {
+    throw new Error("UMIEM_E2E_BUCKET must be an integer from 1 to 9");
+  }
+  const e2eBucket = rawBucket === undefined || rawBucket === "" ? null : Number(rawBucket);
+
   return {
     integrationContainerPrefix: runId ? `knowli-it-${runId}-` : "knowli-it-",
     e2eContainer: runId ? `knowli-e2e-${runId}` : "knowli-e2e",
@@ -69,5 +79,6 @@ export function readTestRunConfig(env: Record<string, string | undefined>): Test
     e2eWebMode,
     e2eSkipBuild,
     e2eWorkers,
+    e2eBucket,
   };
 }

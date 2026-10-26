@@ -29,6 +29,7 @@ describe("readTestRunConfig", () => {
       e2eWebMode: "start",
       e2eSkipBuild: false,
       e2eWorkers: 4,
+      e2eBucket: null,
     });
   });
 
@@ -72,5 +73,16 @@ describe("readTestRunConfig", () => {
 
   it.each(["", "0", "33", "-1", "2x", "50%"])("rejects invalid workers %j", (value) => {
     expect(() => readTestRunConfig({ UMIEM_E2E_WORKERS: value })).toThrow(/UMIEM_E2E_WORKERS/);
+  });
+
+  it("parses bucket; unset and empty mean all real specs", () => {
+    expect(readTestRunConfig({}).e2eBucket).toBeNull();
+    expect(readTestRunConfig({ UMIEM_E2E_BUCKET: "" }).e2eBucket).toBeNull();
+    expect(readTestRunConfig({ UMIEM_E2E_BUCKET: "1" }).e2eBucket).toBe(1);
+    expect(readTestRunConfig({ UMIEM_E2E_BUCKET: "9" }).e2eBucket).toBe(9);
+  });
+
+  it.each(["0", "10", "-1", "a", "1.5"])("rejects invalid bucket %j", (value) => {
+    expect(() => readTestRunConfig({ UMIEM_E2E_BUCKET: value })).toThrow(/UMIEM_E2E_BUCKET/);
   });
 });

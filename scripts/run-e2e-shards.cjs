@@ -3,10 +3,10 @@
  * Lokalny równoległy przebieg E2E (odpowiednik shardingu z CI):
  * jeden build produkcyjny, potem równolegle:
  *  - projekt `mocked` na wielu workerach w jednym świecie,
- *  - projekt `real` podzielony na N shardów, każdy z własnym światem
+ *  - projekt `real` podzielony na kosze czasowe (REAL_BUCKETS), każdy z własnym światem
  *    (osobny Postgres, `next start` i worker przez UMIEM_TEST_RUN_ID).
  *
- * Użycie: pnpm test:e2e:shards [--shards=3] [--mocked-workers=4]
+ * Użycie: pnpm test:e2e:shards [--buckets=4] [--mocked-workers=4]
  *         [--base-port=24600] [--grep=<wzorzec>] [--skip-mocked] [--skip-real]
  * Z UMIEM_E2E_SKIP_BUILD=1 pomija build (wymaga istniejącego apps/web/.next).
  */
@@ -22,10 +22,13 @@ const repoRoot = path.resolve(__dirname, "..");
 const NEXT_BIN = path.join(repoRoot, "apps/web/node_modules/next/dist/bin/next");
 const PLAYWRIGHT_CLI = path.join(repoRoot, "node_modules/@playwright/test/cli.js");
 const BUILD_ID = path.join(repoRoot, "apps/web/.next/BUILD_ID");
+// Liczba koszy czasowych REAL_BUCKETS (tests/e2e/spec-projects.ts);
+// zgodności pilnuje test jednostkowy spec-projects.test.ts.
+const DEFAULT_REAL_BUCKETS = 4;
 
 function parseArgs(argv) {
   const options = {
-    shards: 3,
+    shards: DEFAULT_REAL_BUCKETS,
     mockedWorkers: 4,
     basePort: 24600,
     grep: null,
@@ -37,6 +40,7 @@ function parseArgs(argv) {
     if (!match) throw new Error(`Nieznany argument: ${arg} (oczekiwane --nazwa[=wartość])`);
     const [, name, value] = match;
     switch (name) {
+      case "buckets":
       case "shards":
         options.shards = parseInteger(name, value, 1, 8);
         break;
@@ -58,7 +62,7 @@ function parseArgs(argv) {
         break;
       case "help":
         console.log(
-          "pnpm test:e2e:shards [--shards=3] [--mocked-workers=4] [--base-port=24600] "
+          "pnpm test:e2e:shards [--buckets=4] [--mocked-workers=4] [--base-port=24600] "
           + "[--grep=<wzorzec>] [--skip-mocked] [--skip-real]",
         );
         process.exit(0);
@@ -133,7 +137,7 @@ function prefixStream(stream, prefix, target) {
 
 const children = new Set();
 
-function runPlaywright(label, runId, port, playwrightArgs) {
+function runPlaywright(label, runId, port, playwrightArgs, extraEnv = {}) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [PLAYWRIGHT_CLI, "test", ...playwrightArgs], {
       cwd: repoRoot,
@@ -146,6 +150,10 @@ function runPlaywright(label, runId, port, playwrightArgs) {
         UMIEM_WORKER_HEALTH_PORT: String(10_000 + (port % 50_000)),
         UMIEM_E2E_WEB_MODE: "start",
         UMIEM_E2E_SKIP_BUILD: "1",
+        // Kosz tylko z extraEnv danego świata; wartość z powłoki nie może
+        // zawęzić innych światów (pusta = wszystkie specy real).
+        UMIEM_E2E_BUCKET: "",
+        ...extraEnv,
       },
       stdio: ["ignore", "pipe", "pipe"],
       detached: DETACHED,
@@ -211,15 +219,19 @@ async function main() {
     ]));
   }
   if (!options.skipReal) {
+    // Domyślna liczba światów = kosze czasowe REAL_BUCKETS (wybór przez
+    // UMIEM_E2E_BUCKET). Inna liczba (--buckets/--shards) wraca do podziału
+    // Playwrighta po liczbie testów (--shard), który pokrywa całość raz.
+    const bucketMode = options.shards === DEFAULT_REAL_BUCKETS;
     for (let shard = 1; shard <= options.shards; shard += 1) {
       const runId = `shards-real-${shard}${suffix}`;
       runIds.push(runId);
       runs.push(runPlaywright(`real-${shard}/${options.shards}`, runId, options.basePort + shard * 10, [
         "--project=real",
-        `--shard=${shard}/${options.shards}`,
+        ...(bucketMode ? [] : [`--shard=${shard}/${options.shards}`]),
         "--workers=1",
         ...grepArgs,
-      ]));
+      ], bucketMode ? { UMIEM_E2E_BUCKET: String(shard) } : {}));
     }
   }
 

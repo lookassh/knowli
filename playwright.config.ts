@@ -1,8 +1,18 @@
 import { defineConfig } from "@playwright/test";
 import { readTestRunConfig } from "./tests/test-run-config";
-import { MOCKED_SPECS, REAL_SPECS } from "./tests/e2e/spec-projects";
+import { MOCKED_SPECS, REAL_BUCKETS, REAL_SPECS } from "./tests/e2e/spec-projects";
 
 const TEST_RUN_CONFIG = readTestRunConfig(process.env);
+
+// UMIEM_E2E_BUCKET wybiera jeden kosz czasowy projektu `real` (równoległe
+// światy w runnerze shardów i CI); bez niego projekt obejmuje wszystkie specy.
+const bucket = TEST_RUN_CONFIG.e2eBucket;
+if (bucket !== null && (bucket < 1 || bucket > REAL_BUCKETS.length)) {
+  throw new Error(
+    `UMIEM_E2E_BUCKET=${bucket} poza zakresem: zdefiniowano ${REAL_BUCKETS.length} kosze (tests/e2e/spec-projects.ts)`,
+  );
+}
+const realSpecs = bucket === null ? REAL_SPECS : REAL_BUCKETS[bucket - 1]!;
 
 const sharedUse = {
   baseURL: `http://127.0.0.1:${TEST_RUN_CONFIG.e2ePort}`,
@@ -22,7 +32,8 @@ const sharedUse = {
 // - `mocked`: API zaślepione w przeglądarce, testy bezstanowe — biegną
 //   równolegle na `UMIEM_E2E_WORKERS` workerach (domyślnie 4);
 // - `real`: prawdziwy świat (baza, worker, narastające dane) — szeregowo
-//   na 1 workerze; równoległość daje sharding światów (`pnpm test:e2e:shards`).
+//   na 1 workerze; równoległość dają kosze czasowe REAL_BUCKETS odpalane
+//   jako osobne światy (`pnpm test:e2e:shards` lokalnie, matrix w CI).
 export default defineConfig({
   testDir: "tests/e2e",
   outputDir: TEST_RUN_CONFIG.outputDir,
@@ -40,7 +51,7 @@ export default defineConfig({
     },
     {
       name: "real",
-      testMatch: [...REAL_SPECS],
+      testMatch: [...realSpecs],
       fullyParallel: false,
       workers: 1,
       use: sharedUse,
