@@ -387,15 +387,16 @@ test("reading prompt retains space beside a short option list", async ({ page })
   expect(promptBox!.height).toBeGreaterThan(0);
 });
 
-test("large listening action keeps its speaker icon at presentation size", async ({ page }) => {
+test("listening instruction contains one playback action with a touch-sized target", async ({ page }) => {
   const task = taskFor("listening");
   await openTask(page, task);
-  const icon = page.locator(".kid-play-big svg");
-  await expect(icon).toBeVisible();
-  const bounds = await icon.boundingBox();
+  const playback = page.getByTestId("kid-instruction").getByTestId("kid-play");
+  await expect(playback).toBeVisible();
+  await expect(page.getByTestId("kid-play")).toHaveCount(1);
+  const bounds = await playback.boundingBox();
   expect(bounds).not.toBeNull();
-  expect(bounds!.width).toBeGreaterThanOrEqual(44);
-  expect(bounds!.height).toBeGreaterThanOrEqual(44);
+  expect(bounds!.width).toBeGreaterThanOrEqual(48);
+  expect(bounds!.height).toBeGreaterThanOrEqual(48);
 });
 
 test("dark theme keeps text controls and notices readable", async ({ page }) => {

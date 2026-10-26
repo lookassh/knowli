@@ -60,6 +60,7 @@ describe("kid Material 3 tokens", () => {
     const shared = [
       read("components/answer-controls.module.css"),
       read("components/SessionProgress.module.css"),
+      read("components/ExerciseInstruction.module.css"),
       read("exercises/ExerciseFrame.module.css"),
       read("screens/ExerciseFeedbackDock.module.css"),
     ].join("\n");

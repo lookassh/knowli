@@ -1,11 +1,7 @@
 import { useEffect, useRef } from "react";
-import { IconActionButton } from "../components/IconActionButton";
 import { ExerciseFrame } from "./ExerciseFrame";
-import { messages } from "@learning/contracts";
-import { KidIcon } from "../components/KidIcon";
 import { MeaningVisualView } from "../visuals/MeaningVisualView";
 import type { ExerciseProps } from "./types";
-import { format } from "../format";
 import { useChoiceKeyboard } from "./useChoiceKeyboard";
 import { AnswerGrid } from "../components/AnswerGrid";
 import classes from "./PictureListeningView.module.css";
@@ -33,21 +29,9 @@ export function PictureListeningView({ task, busy, mediaUrl, optionOutcomes, doc
     <ExerciseFrame
       task={task}
       feedbackLayout="flow"
+      instructionAudio={{ ref: playRef, disabled: busy, onPlay: handlers.onPlay }}
       content={(
         <>
-          <IconActionButton
-            ref={playRef}
-            type="button"
-            className={classes.play}
-            radius="50%"
-            style={{ width: 60, height: 60, minWidth: 60, minHeight: 60 }}
-            data-testid="kid-play"
-            disabled={busy}
-            onClick={handlers.onPlay}
-            aria-label={messages.kid.listen}
-          >
-            <KidIcon name="volume" />
-          </IconActionButton>
           <div className={classes.answers}>
             <AnswerGrid
               options={options.map((option) => ({

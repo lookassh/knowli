@@ -37,8 +37,14 @@
 }
 
 .compact .content :global(.kid-answer-feedback) {
-  max-height: max(96px, 6rem);
+  max-height: none;
   padding: 6px;
+  background: transparent;
+}
+
+.compact .content :global(.kid-feedback-content) {
+  overflow: visible;
+  flex: none;
 }
 
 .compact .content :global(.kid-feedback-text) {

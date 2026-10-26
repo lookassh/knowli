@@ -109,6 +109,12 @@ test("Mantine picture choices keep their geometry until the server verdict", asy
   await page.getByTestId("kid-done").click();
   await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-prompt-kind", "picture_listening");
 
+  await expect(page.getByTestId("kid-instruction").getByTestId("kid-play")).toHaveCount(1);
+  await expect(page.getByTestId("kid-material").getByTestId("kid-play")).toHaveCount(0);
+  for (const option of await page.getByTestId("kid-option").all()) {
+    await expect(option).toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
+  }
+
   await expect(page.locator(".kid-theme")).toBeVisible();
   await expect(page.getByTestId("kid-session-frame")).toBeVisible();
   await expect(page.getByTestId("kid-exercise")).toBeVisible();

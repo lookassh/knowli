@@ -115,7 +115,7 @@
   --visual-choice-gap: 12px;
   /* Width and actual material height constrain the same square. A readable
      minimum wins over squeezing; the frame supplies scrolling when needed. */
-  --visual-choice-size: min(260px, calc((100cqw - var(--visual-choice-gap)) / 2), max(112px, calc((100cqh - (var(--visual-choice-rows) - 1) * var(--visual-choice-gap)) / var(--visual-choice-rows))));
+  --visual-choice-size: min(260px, calc((100cqw - var(--visual-choice-gap)) / 2), max(var(--kid-visual-choice-min-size), calc((100cqh - (var(--visual-choice-rows) - 1) * var(--visual-choice-gap)) / var(--visual-choice-rows))));
   width: max-content;
   max-width: 100%;
   flex: none;
@@ -203,7 +203,23 @@
   min-height: 0;
   aspect-ratio: 1;
   padding: 8px;
+  border-color: transparent;
   border-radius: var(--kid-shape-xl);
+}
+
+
+/* Keep neutral image choices quiet; focus and server outcomes remain explicit. */
+:global(.kid-ui) .grid[data-visual-only="true"] .option[data-outcome="pending"] {
+  border-color: var(--kid-accent);
+}
+
+:global(.kid-ui) .grid[data-visual-only="true"] .option[data-outcome="correct"] {
+  border-color: var(--kid-good);
+}
+
+:global(.kid-ui) .grid[data-visual-only="true"] .option[data-outcome="wrong"] {
+  border-color: var(--kid-wrong);
+
 }
 
 .grid[data-visual-only="true"] .item {
@@ -220,7 +236,7 @@
    This adapts to the component's space, independently of window breakpoints. */
 @container (min-width: 484px) and (max-height: 300px) {
   .grid[data-visual-only="true"] {
-    --visual-choice-size: min(220px, calc((100cqw - (var(--visual-choice-count) - 1) * var(--visual-choice-gap)) / var(--visual-choice-count)), max(112px, 100cqh));
+    --visual-choice-size: min(220px, calc((100cqw - (var(--visual-choice-count) - 1) * var(--visual-choice-gap)) / var(--visual-choice-count)), max(var(--kid-visual-choice-min-size), 100cqh));
     grid-template-columns: repeat(var(--visual-choice-count), var(--visual-choice-size));
   }
 }
