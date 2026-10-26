@@ -568,16 +568,17 @@
   cursor: pointer;
 }
 
-.kid-deck-card__actions .kid-primary {
+.kid-deck-card__actions .action.kid-primary {
   border: 0;
-  background: var(--kid-accent);
-  color: var(--kid-on-accent);
+  --action-bg: var(--kid-accent);
+  --action-fg: var(--kid-on-accent);
 }
 
-.kid-deck-card__actions .kid-secondary {
-  border: 1px solid var(--kid-line);
-  background: var(--kid-soft);
-  color: var(--kid-text);
+.kid-deck-card__actions .action.kid-secondary {
+  border-width: 1px;
+  --action-bg: var(--kid-soft);
+  --action-fg: var(--kid-text);
+  --action-border: var(--kid-line);
 }
 
 .kid-ui .kid-microphone-settings {
@@ -730,15 +731,16 @@
 
 /* Okrągły odsłuch zamiast pastylki w rzędzie akcji (SPEC §12.1): widoczny
    przycisk dla zablokowanego autoodtwarzania, ale nie konkuruje z „Rozumiem”. */
-.kid-ui .kid-audio-round {
+.kid-ui .action.kid-audio-round {
   width: 64px;
   height: 64px;
   min-height: 64px;
   padding: 0;
   border-radius: 50%;
   font-size: 1.7rem;
-  background: var(--kid-soft);
-  border: 2px solid var(--kid-line);
+  --action-bg: var(--kid-soft);
+  --action-fg: var(--kid-text);
+  --action-border: var(--kid-line);
   flex: none;
 }
 
@@ -891,14 +893,14 @@
   opacity: 0.55;
 }
 
-.kid-ui .kid-primary {
+.kid-ui .action.kid-primary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  background: var(--kid-accent);
-  border-color: var(--kid-accent);
-  color: var(--kid-on-accent);
+  --action-bg: var(--kid-accent);
+  --action-border: var(--kid-accent);
+  --action-fg: var(--kid-on-accent);
   font-weight: 700;
 }
 
@@ -1138,10 +1140,6 @@
   cursor: pointer;
 }
 
-.kid-secondary-actions button:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
 
 .kid-record-controls {
   box-sizing: border-box;
@@ -1385,20 +1383,17 @@
   color: var(--kid-good);
 }
 
-.kid-ui .kid-end {
+.kid-ui .action.kid-end {
   min-height: 48px;
   padding: 6px 16px;
   font-size: 1rem;
   border-radius: 14px;
   border: 2px solid var(--kid-line);
-  color: var(--kid-text);
-  background: var(--kid-surface);
+  --action-fg: var(--kid-text);
+  --action-bg: var(--kid-surface);
   cursor: pointer;
 }
 
-.kid-end:disabled {
-  opacity: 0.55;
-}
 
 .kid-offline,
 .kid-error {
@@ -1604,10 +1599,11 @@
   min-height: 52px;
 }
 
-.kid-ui .kid-speech-feedback__actions .kid-secondary {
-  border: 1px solid var(--kid-line);
-  color: var(--kid-text);
-  background: var(--kid-soft);
+.kid-ui .kid-speech-feedback__actions .action.kid-secondary {
+  border-width: 1px;
+  --action-fg: var(--kid-text);
+  --action-bg: var(--kid-soft);
+  --action-border: var(--kid-line);
 }
 
 .kid-speech-feedback__error {
@@ -1978,24 +1974,24 @@
   font-weight: 700;
 }
 
-.kid-ui .kid-flow-secondary {
+.kid-ui .action.kid-flow-secondary {
   min-height: 52px;
   padding: 10px 16px;
   border: 2px solid var(--kid-line);
   border-radius: 16px;
-  background: var(--kid-surface);
-  color: var(--kid-text);
+  --action-bg: var(--kid-surface);
+  --action-fg: var(--kid-text);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
 }
 
-.kid-screen--mock-ready > .kid-end {
+.kid-screen--mock-ready > .action.kid-end {
   width: 100%;
   min-height: 52px;
-  border-color: var(--kid-line);
-  background: var(--kid-surface);
-  color: var(--kid-text);
+  --action-border: var(--kid-line);
+  --action-bg: var(--kid-surface);
+  --action-fg: var(--kid-text);
 }
 
 .kid-screen--mock-summary > .kid-flow-secondary {

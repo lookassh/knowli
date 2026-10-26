@@ -20,6 +20,26 @@ async function expectReadable(control: Locator) {
   expect(contrast.ratio, JSON.stringify(contrast)).toBeGreaterThanOrEqual(4.5);
 }
 
+test("round audio buttons keep a readable icon on their resting background", async ({ page }) => {
+  const fixture = pictureVocabularyFixture();
+  const assetId = "10000000-0000-4000-8000-000000000012";
+  fixture.tasks = [{ ...fixture.tasks[0]!, exerciseType: "exposure", direction: null, prompt: {
+    kind: "exposure", source: "kot", target: "cat", example: "The cat is sleeping.",
+    audioAssetId: assetId, exampleAudioAssetId: assetId, imageAssetId: assetId, visualType: "image",
+  } }];
+  await installKidUiFixture(page, fixture);
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").first().click();
+  for (const testId of ["kid-play", "kid-play-example"]) {
+    const control = page.getByTestId(testId);
+    await expect(control).toBeVisible();
+    await expectReadable(control);
+  }
+});
+
 for (const colorScheme of ["light", "dark"] as const) {
   for (const kind of ["reading", "lesson_gap"] as const) {
     test(`${kind} answers remain readable with ${colorScheme} system theme`, async ({ page }, testInfo) => {
