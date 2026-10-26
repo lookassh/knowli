@@ -327,6 +327,12 @@ function validateBeGapAnswer(ex: LessonExerciseDraft, answer: string, field: str
     }
     return;
   }
+  const lastBeforeGap = ex.stem === undefined
+    ? undefined
+    : normalizeTokens(ex.stem.split("___", 2)[0] ?? "").at(-1);
+  if (lastBeforeGap !== undefined && BE_ADVERBS.has(lastBeforeGap)) {
+    errors.push(`${field}: przysłówek „${lastBeforeGap}” stoi po am/is/are (She is always happy), nie przed luką`);
+  }
   const parsed = parseBeGapAnswer(answer);
   if (parsed === null) {
     errors.push(`${field}: odpowiedź „${answer}” nie jest formą czasownika „be” (am, is, are)`);
@@ -362,6 +368,13 @@ function validateBeAnswerText(ex: LessonExerciseDraft, answer: string, field: st
     return;
   }
   if (objective === "short_answers") {
+    // Twierdząca krótka odpowiedź nie może kończyć się samym skrótem (Yes, I'm. jest błędem);
+    // przeczenie No, I'm not. jest poprawne, bo po skrócie stoi „not”.
+    const rawLast = normalizeTokens(answer).at(-1);
+    if (rawLast !== undefined && ["i'm", "you're", "we're", "they're", "he's", "she's", "it's"].includes(rawLast)) {
+      errors.push(`${field}: krótka odpowiedź twierdząca nie może kończyć się skrótem „${rawLast}” — zapisz pełną formę (Yes, I am)`);
+      return;
+    }
     // Na pytanie o „you” odpowiada się o sobie („I”), nie z perspektywy pytającego.
     const questionTokens = normalizeTokens(ex.prompt ?? ex.stem ?? "");
     const asksAboutYou = BE_FORMS.has(questionTokens[0] ?? "") && questionTokens[1] === "you";

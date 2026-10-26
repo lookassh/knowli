@@ -166,12 +166,17 @@ describe("validateEnglishGrammarExercise — lesson_gap, temat to_be", () => {
   });
 
   it.each([
-    ["przysłówek między podmiotem a luką (she)", AFF, "She always ___ happy.", "is"],
-    ["przysłówek między podmiotem a luką (I)", AFF, "I always ___ tired.", "am"],
-    ["przysłówek między podmiotem a luką (we)", AFF, "We never ___ late.", "are"],
     ["imię własne James kończące się na s", AFF, "James ___ happy.", "is"],
   ])("akceptuje: %s", (_name, objectiveId, stem, answer) => {
     expect(validateEnglishGrammarExercise(beGap(objectiveId, stem, answer, "be"), toBeV1)).toEqual([]);
+  });
+
+  it.each([
+    ["przysłówek częstotliwości przed luką (she)", AFF, "She always ___ happy.", "is"],
+    ["przysłówek częstotliwości przed luką (I)", AFF, "I always ___ tired.", "am"],
+    ["przysłówek częstotliwości przed luką (we)", AFF, "We never ___ late.", "are"],
+  ])("odrzuca zły szyk przysłówka: %s", (_name, objectiveId, stem, answer) => {
+    expect(validateEnglishGrammarExercise(beGap(objectiveId, stem, answer, "be"), toBeV1)).not.toEqual([]);
   });
 
   it.each(["is", "jest", "to be"])("odrzuca hint %s dla luki to_be (dozwolony tylko „be” albo brak)", (hint) => {
@@ -240,6 +245,32 @@ describe("validateEnglishGrammarExercise — lesson_gap, temat to_be", () => {
       ],
       correctOption: "b",
     }, false],
+    ["twierdząca krótka odpowiedź nie może kończyć się skrótem I'm", {
+      exerciseType: "lesson_short_answer",
+      objectiveId: "english_grammar.to_be.short_answers",
+      prompt: "Are you ready?",
+      answer: "Yes, I'm.",
+      acceptedAnswers: [],
+      focus: [],
+      options: [
+        { id: "a", text: "Yes, I am." },
+        { id: "b", text: "Yes, I'm." },
+      ],
+      correctOption: "b",
+    }, false],
+    ["przecząca krótka odpowiedź ze skrótem I'm not jest poprawna", {
+      exerciseType: "lesson_short_answer",
+      objectiveId: "english_grammar.to_be.short_answers",
+      prompt: "Are you ready?",
+      answer: "No, I'm not.",
+      acceptedAnswers: [],
+      focus: [],
+      options: [
+        { id: "a", text: "No, I'm not." },
+        { id: "b", text: "No, I am." },
+      ],
+      correctOption: "a",
+    }, true],
     ["krótka odpowiedź you na pytanie Am I jest poprawna", {
       exerciseType: "lesson_short_answer",
       objectiveId: "english_grammar.to_be.short_answers",
