@@ -204,6 +204,7 @@ describe("validateEnglishGrammarExercise — lesson_gap, temat to_be", () => {
   it.each([
     ["odpowiedź he am do bodźca z luką", "he am", false],
     ["odpowiedź he is do bodźca z luką", "he is", true],
+    ["odpowiedź she is na pytanie o he", "she is", false],
   ])("zgodność zaimka ze skrótu z formą: %s", (_name, answer, valid) => {
     const ex: LessonExerciseDraft = {
       exerciseType: "lesson_short_answer",

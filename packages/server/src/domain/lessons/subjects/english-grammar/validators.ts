@@ -242,10 +242,19 @@ function beSubjectTokensBefore(stem: string): string[] {
 
 function bePronounNearGap(stem: string): string | undefined {
   const [, after = ""] = stem.split("___", 2);
-  const prev = beSubjectTokensBefore(stem).at(-1);
+  const beforeTokens = beSubjectTokensBefore(stem);
+  const prev = beforeTokens.at(-1);
   if (prev !== undefined && Object.hasOwn(BE_FORM_BY_SUBJECT, prev)) return prev;
   const next = normalizeTokens(after)[0];
   if (next !== undefined && Object.hasOwn(BE_FORM_BY_SUBJECT, next)) return next;
+  // Bodziec krótkiej odpowiedzi niesie podmiot w części pytajnej sprzed luki
+  // („Is he ready? Yes, ___.”): zaimek przy formie „to be”, najbliżej luki.
+  for (let i = beforeTokens.length - 2; i >= 0; i--) {
+    const token = beforeTokens[i]!;
+    const following = beforeTokens[i + 1]!;
+    if (BE_FORMS.has(token) && Object.hasOwn(BE_FORM_BY_SUBJECT, following)) return following;
+    if (Object.hasOwn(BE_FORM_BY_SUBJECT, token) && BE_FORMS.has(following)) return token;
+  }
   return undefined;
 }
 
