@@ -159,6 +159,29 @@ function audioAssetOf(task: TaskDto): string | null {
 
 const AUDIO_DISCLOSURE_EXERCISES = new Set(["recall", "spelling", "letter_completion", "speech", "picture_speech", "lesson_gap", "lesson_error_fix", "lesson_transform", "lesson_open_answer"]);
 
+/**
+ * Identyfikatory obrazów zadania do ogrzania cache przy prefetchu: pola
+ * `imageAssetId` występują jako wizualizacja promptu, opcje obrazkowe
+ * i ilustracja karty — zbieramy je rekurencyjnie z publicznego promptu,
+ * bez znajomości poszczególnych rodzajów ćwiczeń.
+ */
+export function imageAssetIdsOf(task: TaskDto): string[] {
+  const found = new Set<string>();
+  const visit = (value: unknown, depth: number): void => {
+    if (depth > 6 || value === null || typeof value !== "object") return;
+    if (Array.isArray(value)) {
+      for (const entry of value) visit(entry, depth + 1);
+      return;
+    }
+    for (const [key, entry] of Object.entries(value)) {
+      if (key === "imageAssetId" && typeof entry === "string") found.add(entry);
+      else visit(entry, depth + 1);
+    }
+  };
+  visit(task.prompt, 0);
+  return [...found];
+}
+
 export class LearningSessionController {
   readonly #api: KidApi;
   readonly #media: PlatformMedia;
@@ -194,6 +217,13 @@ export class LearningSessionController {
   #resume: { run: () => Promise<void>; keepsTaskVisible: boolean } | null = null;
   /** Wybrana opcja próby w toku; do podświetlenia w feedbacku (design 2026-10-09). */
   #pendingChoice: string | null = null;
+  /**
+   * Następne zadanie pobrane w tle przy feedbacku zakończonej próby: klik
+   * „Dalej” pokazuje je bez czekania na sieć i pobranie obrazów. Ważne tylko
+   * dla epoki i sesji, dla których je pobrano; błąd pobrania jest odrzucany
+   * po cichu, a `continueLearning` wraca wtedy do zwykłego pobrania.
+   */
+  #nextTaskPrefetch: { epoch: number; sessionId: string; promise: Promise<TaskDto | null> } | null = null;
   /** Wycofuje operacje zdążające po zmianie ekranu/teardown. */
   #epoch = 0;
   #profileRequestSequence = 0;
@@ -750,10 +780,45 @@ export class LearningSessionController {
     await this.#openDeckScreen(this.#screen.childId);
   }
 
+  /**
+   * Prefetch następnego zadania przy feedbacku ZAKOŃCZONEJ próby (nie retry,
+   * nie kartkówka — ta nie pokazuje feedbacku): serwer wydaje zadanie
+   * i pieczętuje ekspozycje tak samo jak przy zwykłym pobraniu, a klient
+   * trzyma je w pamięci do kliknięcia „Dalej”. Obrazy zadania ogrzewamy
+   * od razu, żeby nie pobierały się dopiero po przejściu. Zadanie nie jest
+   * pokazywane ani mierzone jako wyświetlone przed kliknięciem.
+   */
+  #prefetchNextTask(epoch: number, sessionId: string): void {
+    if (this.#nextTaskPrefetch?.epoch === epoch && this.#nextTaskPrefetch.sessionId === sessionId) return;
+    const promise = this.#api.nextTask(sessionId);
+    this.#nextTaskPrefetch = { epoch, sessionId, promise };
+    void promise.then((task) => {
+      if (task === null || this.#nextTaskPrefetch?.promise !== promise) return;
+      for (const assetId of imageAssetIdsOf(task)) {
+        void this.#media.preloadImage?.(this.#api.mediaUrl(assetId)).catch(() => undefined);
+      }
+    }, () => undefined);
+  }
+
+  /** Pobiera wynik prefetchu dla bieżącej epoki/sesji albo zgłasza jego brak. */
+  async #takePrefetchedTask(epoch: number, sessionId: string): Promise<{ hit: true; task: TaskDto | null } | { hit: false }> {
+    const prefetch = this.#nextTaskPrefetch;
+    if (!prefetch || prefetch.epoch !== epoch || prefetch.sessionId !== sessionId) return { hit: false };
+    this.#nextTaskPrefetch = null;
+    try {
+      return { hit: true, task: await prefetch.promise };
+    } catch {
+      // Prefetch nie zmienia semantyki błędu: zwykłe pobranie w #loadNext
+      // ponawia żądanie i przechodzi normalną obsługę awarii/sieci.
+      return { hit: false };
+    }
+  }
+
   async #loadNext(epoch: number, sessionId: string): Promise<void> {
     this.#setResume(() => this.#loadNext(epoch, sessionId));
     try {
-      const task = await this.#api.nextTask(sessionId);
+      const prefetched = await this.#takePrefetchedTask(epoch, sessionId);
+      const task = prefetched.hit ? prefetched.task : await this.#api.nextTask(sessionId);
       if (epoch !== this.#epoch || this.#screen.kind !== "learning") return;
       if (task === null) {
         await this.#finishSession(epoch);
@@ -1098,6 +1163,15 @@ export class LearningSessionController {
     };
     // Drugie podejście tego samego zadania: pomiar trwa dalej bez zmiany zadania.
     this.#emit();
+    // Zakończona próba: następne zadanie i jego obrazy pobieramy już teraz,
+    // w czasie oglądania feedbacku — klik „Dalej” nie czeka na sieć (przy
+    // retry zadanie zostaje to samo, więc nie ma czego pobierać).
+    // Wyjątek: feedback mowy z odsłuchem wzorca — serwer autoryzuje go tylko
+    // dla najnowszego zadania sesji, więc wydanie następnego przed kliknięciem
+    // „Posłuchaj” kończyłoby się konfliktem i błędem audio na karcie wyniku.
+    if (attempt.taskState !== "issued" && attempt.feedback?.referenceAudioAvailable !== true) {
+      this.#prefetchNextTask(epoch, this.#screen.session.sessionId);
+    }
   }
 
   /** Odtwarza wzorzec wskazany przez serwer dla nadal widocznej karty wyniku. */

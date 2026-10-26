@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BrowserAudioPlayer, BrowserRecorder, createBrowserMedia, LEVEL_MONITOR_RESUME_TIMEOUT_MS, MAX_RECORDING_MS, queryMicrophonePermission } from "./browser";
+import { BrowserAudioPlayer, BrowserRecorder, createBrowserMedia, LEVEL_MONITOR_RESUME_TIMEOUT_MS, MAX_RECORDING_MS, preloadImage, queryMicrophonePermission } from "./browser";
 import { LevelMonitorUnavailableError } from "./platform";
 
 /** Fałszywy MediaRecorder — sterowany z testu, bez prawdziwego DOM. */
@@ -786,5 +786,29 @@ describe("BrowserAudioPlayer — anulowanie także oczekującego pobrania", () =
     finishPlay();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+});
+
+describe("preloadImage — ogrzanie cache obrazu następnego zadania", () => {
+  it("ustawia src i rozstrzyga się przy błędzie pobrania bez odrzucenia", async () => {
+    let image!: { onload: (() => void) | null; onerror: (() => void) | null; src: string; decode?: () => Promise<void> };
+    class FakeImage {
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      src = "";
+      constructor() { image = this; }
+    }
+    vi.stubGlobal("Image", FakeImage);
+    const pending = preloadImage("https://media.test/asset-1");
+    expect(image.src).toBe("https://media.test/asset-1");
+    image.onerror?.();
+    await expect(pending).resolves.toBeUndefined();
+    vi.unstubAllGlobals();
+  });
+
+  it("rozstrzyga się od razu bez konstruktora Image", async () => {
+    vi.stubGlobal("Image", undefined);
+    await expect(preloadImage("https://media.test/asset-2")).resolves.toBeUndefined();
+    vi.unstubAllGlobals();
   });
 });
