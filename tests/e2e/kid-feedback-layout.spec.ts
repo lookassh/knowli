@@ -28,6 +28,7 @@ for (const kind of ["picture_listening", "picture_recognition"] as const) {
 for (const correctText of ["płaszcz", "pracownia komputerowa", "Nie wolno nam jeść w klasie.", "Podczas lekcji słuchamy nauczyciela, pomagamy kolegom i spokojnie wykonujemy wszystkie zadania zapisane na szkolnej tablicy."]) {
 test(`${kind}: incorrect feedback keeps ${correctText} and retry label readable`, async ({ page }, testInfo) => {
   const fixture = pictureChoiceLayoutFixture();
+  fixture.uiAudio = { ready: true, assets: {} };
   const task = fixture.tasks[1]!;
   if (task.prompt.kind !== "picture_listening") throw new Error("Expected picture listening");
   task.prompt.options[0]!.labelPl = correctText;
@@ -42,7 +43,7 @@ test(`${kind}: incorrect feedback keeps ${correctText} and retry label readable`
   await installKidUiFixture(page, fixture);
   await page.route("**/api/v1/media/10000000-0000-4000-8000-000000000015", (route) =>
     route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2 2" />' }));
-  await page.setViewportSize({ width: 384, height: 640 });
+  await page.setViewportSize({ width: 320, height: 480 });
   await page.goto("/");
   await page.getByTestId("kid-profile").click();
   await page.getByTestId("kid-deck").first().click();
@@ -50,6 +51,8 @@ test(`${kind}: incorrect feedback keeps ${correctText} and retry label readable`
   await page.getByTestId("kid-option").nth(1).click();
   const dock = page.getByTestId("kid-feedback-dock");
   await expect(dock).toBeVisible();
+  // Before screenshots or manual scrolling, the verdict must reveal its action.
+  await expect(page.getByTestId("kid-next")).toBeInViewport({ ratio: 0.98 });
 
   for (const viewport of [{ width: 384, height: 640 }, { width: 360, height: 540 }, { width: 320, height: 480 },
     { width: 640, height: 360 }, { width: 768, height: 1024 }, { width: 1440, height: 960 },

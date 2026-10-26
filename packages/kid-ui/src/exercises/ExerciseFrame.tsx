@@ -54,7 +54,8 @@ export function ExerciseFrame({
 
   // Revealing is tied to a dock/task and viewport mode, never to the newly
   // allocated JSX node passed by LearnScreen on unrelated renders. Observe
-  // KidPage directly so rotation/zoom changes work without a child render.
+  // KidPage and frame geometry so rotation/zoom and growing feedback work
+  // without a child render. Manual scrolling never triggers another reveal.
   useEffect(() => {
     if (revealTaskIdRef.current !== task.taskId) {
       revealTaskIdRef.current = task.taskId;
@@ -66,12 +67,15 @@ export function ExerciseFrame({
     }
     const overlay = overlayRef.current;
     const page = overlay?.closest<HTMLElement>(".kid-page");
+    const frameRoot = overlay?.closest<HTMLElement>(".kid-exercise-frame");
     if (!overlay || !page) return;
     let active = true;
 
     const revealIfNeeded = () => {
       if (!active) return;
-      const required = page.dataset.zoomed === "true" || page.dataset.viewportVeryShort === "true";
+      const frameOverflows = flowFeedback && frameRoot !== null && frameRoot !== undefined
+        && frameRoot.scrollHeight > frameRoot.clientHeight + 1;
+      const required = page.dataset.zoomed === "true" || page.dataset.viewportVeryShort === "true" || frameOverflows;
       const shouldReveal = shouldRevealFeedbackDock(revealStateRef.current, overlay, required);
       if (!required) {
         revealCleanupRef.current?.();
@@ -86,16 +90,23 @@ export function ExerciseFrame({
     revealIfNeeded();
     const observer = new MutationObserver(revealIfNeeded);
     observer.observe(page, { attributes: true, attributeFilter: ["data-zoomed", "data-viewport-very-short"] });
+    const resizeObserver = flowFeedback && typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(revealIfNeeded) : null;
+    if (resizeObserver && frameRoot) {
+      resizeObserver.observe(frameRoot);
+      resizeObserver.observe(overlay);
+    }
     return () => {
       active = false;
       observer.disconnect();
+      resizeObserver?.disconnect();
       revealCleanupRef.current?.();
       revealCleanupRef.current = null;
       // Also allows React Strict Mode's setup/cleanup replay to schedule
       // the frame again after the first setup was cancelled.
       revealStateRef.current.required = false;
     };
-  }, [hasDock, task.taskId]);
+  }, [hasDock, task.taskId, flowFeedback]);
 
   // Dock zwykły i mowy rezerwuje w materiale dokładnie tyle, o ile
   // panel wystaje ponad stopkę w trybie overlay — ale tylko gdy treść naprawdę
