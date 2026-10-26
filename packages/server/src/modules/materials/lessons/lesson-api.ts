@@ -147,6 +147,7 @@ function exerciseDtoFromPayload(
     ...(draft.noticeSegments === undefined
       ? {}
       : { noticeSegments: draft.noticeSegments.map((s) => [...s]) }),
+    ...(draft.visualSubject === undefined ? {} : { visualSubject: draft.visualSubject }),
     answer: draft.answer,
     acceptedAnswers: [...draft.acceptedAnswers],
     focus: [...draft.focus],

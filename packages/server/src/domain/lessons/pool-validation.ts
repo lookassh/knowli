@@ -147,6 +147,13 @@ function countGapMarkers(stem: string): number {
  * delegacja do `subject.validateExercise`. Zwraca listę błędów po polsku;
  * pusta lista = ćwiczenie poprawne. Nie rzuca — zbiera wszystkie naruszenia.
  */
+/** Piktogram bodźca (`visualSubject`) jest dozwolony tylko przy wyborze z listy. */
+function validateVisualSubject(ex: LessonExerciseDraft, errors: string[]): void {
+  if (ex.visualSubject !== undefined && ex.exerciseType !== "lesson_choice") {
+    errors.push("visualSubject: piktogram jest dozwolony tylko dla „lesson_choice”");
+  }
+}
+
 export function validateLessonExercise(
   ex: LessonExerciseDraft,
   subject: SubjectModule,
@@ -178,6 +185,7 @@ export function validateLessonExercise(
     errors.push(`exerciseType: typ „${ex.exerciseType}” nie jest dozwolony dla celu „${objective.id}”`);
   }
 
+  validateVisualSubject(ex, errors);
   validateTextFieldLengths(ex, errors);
   validateFocus(ex, normalizer, errors);
   validateByType(ex, topic, objective, normalizer, errors);

@@ -97,6 +97,15 @@ const ExerciseOptionSchema = z.object({
   text: text,
 });
 
+/**
+ * Piktogram osoby/zwierzęcia jako bodziec obrazkowy wyboru (`lesson_choice`):
+ * dziecko dopasowuje zaimek do tego, kto jest na piktogramie. Katalog wartości
+ * jest wspólny dla przedmiotów; mapowanie piktogram → zaimek należy do
+ * przedmiotu (walidator gramatyki), nie do kontraktu.
+ */
+export const LessonVisualSubjectSchema = z.enum(["boy", "girl", "man", "woman", "group", "dog"]);
+export type LessonVisualSubject = z.infer<typeof LessonVisualSubjectSchema>;
+
 const ExerciseItemSchema = z.object({
   id: z.string().min(1),
   text: text,
@@ -120,6 +129,7 @@ export const LessonExerciseInputSchema = z.object({
   prompt: text.optional(),
   hint: text.optional(),
   transformId: z.string().min(1).optional(),
+  visualSubject: LessonVisualSubjectSchema.optional(),
   noticeSegments: z.array(
     z.array(text).min(MIN_NOTICE_SEGMENTS).max(MAX_NOTICE_SEGMENTS),
   ).min(MIN_NOTICE_SENTENCES).max(MAX_NOTICE_SENTENCES).optional(),

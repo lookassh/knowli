@@ -363,6 +363,54 @@ describe("validateEnglishGrammarExercise — lesson_gap, temat to_be", () => {
   });
 });
 
+describe("validateEnglishGrammarExercise — visualSubject (wybór z obrazkiem)", () => {
+  const visualChoice = (visualSubject: LessonExerciseDraft["visualSubject"], stem: string, answer: string): LessonExerciseDraft => {
+    const options = [
+      { id: "a", text: "She" },
+      { id: "b", text: "He" },
+      { id: "c", text: "They" },
+      { id: "d", text: "It" },
+    ];
+    return {
+      exerciseType: "lesson_choice",
+      objectiveId: "english_grammar.to_be.affirmative_forms",
+      stem,
+      visualSubject,
+      answer,
+      acceptedAnswers: [],
+      focus: [answer],
+      options,
+      correctOption: options.find((option) => option.text === answer)?.id ?? "a",
+    };
+  };
+
+  it.each([
+    ["girl", "___ is happy.", "She"],
+    ["boy", "___ is happy.", "He"],
+    ["group", "___ are happy.", "They"],
+    ["dog", "___ is small.", "It"],
+    ["girl", "___ is happy to see you.", "She"],
+    ["girl", "Who is next to you?", "She"],
+  ] as const)("akceptuje piktogram %s z zaimkiem %s", (visualSubject, stem, answer) => {
+    expect(validateEnglishGrammarExercise(visualChoice(visualSubject, stem, answer), toBeV1)).toEqual([]);
+  });
+
+  it("odrzuca opcję poprawną z innym zaimkiem niż obrazek", () => {
+    const ex = { ...visualChoice("boy", "___ is happy.", "He"), correctOption: "a" };
+    expect(validateEnglishGrammarExercise(ex, toBeV1)).not.toEqual([]);
+  });
+
+  it.each([
+    ["girl", "___ is happy.", "He"],
+    ["group", "___ are happy.", "She"],
+    ["girl", "___ are happy.", "She"],
+    ["boy", "She ___ happy.", "is"],
+    ["boy", "Is she happy? Yes, ___ is.", "He"],
+  ] as const)("odrzuca niezgodność piktogram/stem/odpowiedź: %s", (visualSubject, stem, answer) => {
+    expect(validateEnglishGrammarExercise(visualChoice(visualSubject, stem, answer), toBeV1)).not.toEqual([]);
+  });
+});
+
 describe("temat to_be — reprezentatywne ćwiczenia przechodzą walidację puli", () => {
   const base = { acceptedAnswers: [] as string[], focus: [] as string[] };
   const exercises: LessonExerciseDraft[] = [

@@ -167,6 +167,7 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
       "lesson_transform: the sentence to transform), " +
       "optional prompt, optional hint (a short child-facing support clue in the answer language), " +
       "optional transformId (for lesson_transform), optional noticeSegments (lesson_notice: 2-3 sentences, each an array of 1-15 word segments), " +
+      "optional visualSubject (lesson_choice picture choice: one of boy, girl, man, woman, group, dog — who is pictured; null otherwise), " +
       "answer (canonical answer in the answer language), acceptedAnswers (array of accepted variants), " +
       "focus (the checked answer tokens: copy the whitespace-separated tokens of the canonical answer, or one contiguous run of them — " +
       "never words that are not in the answer), " +

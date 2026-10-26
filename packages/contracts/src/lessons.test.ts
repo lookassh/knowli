@@ -113,6 +113,15 @@ describe("LessonExerciseInputSchema", () => {
     });
     expect(parsed.success).toBe(true);
   });
+  it("accepts visualSubject from the pictogram catalog and rejects values outside it", () => {
+    const base = {
+      exerciseType: "lesson_choice", objectiveId: "o1", stem: "___ is happy.",
+      answer: "She", acceptedAnswers: [], focus: ["She"],
+      options: [{ id: "a", text: "She" }, { id: "b", text: "He" }], correctOption: "a",
+    };
+    expect(LessonExerciseInputSchema.safeParse({ ...base, visualSubject: "girl" }).success).toBe(true);
+    expect(LessonExerciseInputSchema.safeParse({ ...base, visualSubject: "teacher" }).success).toBe(false);
+  });
   it("accepts an optional id of an existing item", () => {
     expect(LessonExerciseInputSchema.safeParse({
       id: UUID, exerciseType: "lesson_open_answer", objectiveId: "o1",

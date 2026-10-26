@@ -483,11 +483,66 @@ function validateBeAnswerText(ex: LessonExerciseDraft, answer: string, field: st
   checkBePolarity(polarityObjective, tokens.includes("not"), marker, field, errors);
 }
 
+/** Zaimek wymagany przez piktogram bodźca obrazkowego (kto jest na obrazku). */
+const VISUAL_SUBJECT_PRONOUN: Readonly<Record<string, string>> = {
+  boy: "he",
+  girl: "she",
+  man: "he",
+  woman: "she",
+  group: "they",
+  dog: "it",
+};
+
+/**
+ * Ćwiczenie z piktogramem: odpowiedź musi zaczynać się zaimkiem osoby z
+ * obrazka, a forma „to be” w bodźcu musi zgadzać się z tą osobą.
+ */
+function validateVisualPronoun(ex: LessonExerciseDraft, errors: string[]): void {
+  if (ex.visualSubject === undefined || !Object.hasOwn(VISUAL_SUBJECT_PRONOUN, ex.visualSubject)) return;
+  const pronoun = VISUAL_SUBJECT_PRONOUN[ex.visualSubject]!;
+  const answerPronoun = normalizeTokens(ex.answer)[0];
+  if (answerPronoun !== undefined && Object.hasOwn(BE_FORM_BY_SUBJECT, answerPronoun) && answerPronoun !== pronoun) {
+    errors.push(`visualSubject: odpowiedź zaczyna się od „${answerPronoun}”, a obrazek wymaga „${pronoun}”`);
+  }
+  // Opcja oznaczona jako poprawna musi nieść ten sam zaimek co odpowiedź kanoniczna.
+  const correctText = ex.options?.find((option) => option.id === ex.correctOption)?.text;
+  const correctPronoun = correctText === undefined ? undefined : normalizeTokens(correctText)[0];
+  if (correctPronoun !== undefined && Object.hasOwn(BE_FORM_BY_SUBJECT, correctPronoun) && correctPronoun !== pronoun) {
+    errors.push(`visualSubject: opcja poprawna zaczyna się od „${correctPronoun}”, a obrazek wymaga „${pronoun}”`);
+  }
+  const stemTokens = normalizeTokens(ex.stem ?? "");
+  stemTokens.forEach((token, index) => {
+    // Podmiotem jest zaimek sąsiadujący z formą „to be” (przed nią albo po niej
+    // w pytaniu z inwersją) — zaimki w dopełnieniu („see you”) nie liczą się.
+    const next = stemTokens[index + 1];
+    const prev = stemTokens[index - 1];
+    const isSubject = (next !== undefined && BE_FORMS.has(next)) || (prev !== undefined && BE_FORMS.has(prev));
+    if (Object.hasOwn(BE_FORM_BY_SUBJECT, token) && token !== pronoun && isSubject) {
+      errors.push(`visualSubject: zaimek „${token}” w bodźcu nie pasuje do obrazka (poprawnie: ${pronoun})`);
+    }
+  });
+  // Zaimek tuż przed luką (tylko gdy luka istnieje; marker ___ znika w tokenizacji).
+  const stemRaw = ex.stem ?? "";
+  const gapIndex = stemRaw.indexOf("___");
+  const beforeGapLast = gapIndex < 0 ? undefined : normalizeTokens(stemRaw.slice(0, gapIndex)).at(-1);
+  if (beforeGapLast !== undefined && Object.hasOwn(BE_FORM_BY_SUBJECT, beforeGapLast) && beforeGapLast !== pronoun) {
+    errors.push(`visualSubject: zaimek „${beforeGapLast}” w bodźcu nie pasuje do obrazka (poprawnie: ${pronoun})`);
+  }
+  const expectedForm = BE_FORM_BY_SUBJECT[pronoun]!;
+  for (const form of normalizeTokens(ex.stem ?? "").filter((token) => BE_FORMS.has(token))) {
+    if (form !== expectedForm) {
+      errors.push(`visualSubject: forma „${form}” w bodźcu nie pasuje do osoby z obrazka (poprawnie: ${expectedForm})`);
+    }
+  }
+}
+
 export function validateEnglishGrammarExercise(
   ex: LessonExerciseDraft,
   topic: LessonTopic,
 ): string[] {
   const errors: string[] = [];
+
+  validateVisualPronoun(ex, errors);
 
   if (ex.exerciseType === "lesson_open_answer" && ex.prompt !== undefined) {
     if ([ex.answer, ...ex.acceptedAnswers].some((answer) => equivalentText(ex.prompt!, answer))) {

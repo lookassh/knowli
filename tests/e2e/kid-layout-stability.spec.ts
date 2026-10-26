@@ -273,6 +273,47 @@ for (const kind of ["reading", "listening", "lesson_choice"] as const) {
   });
 }
 
+test("lesson_choice pictogram keeps geometry across viewports", async ({ page }) => {
+  const fixture: KidUiFixture = completedReadingFixture();
+  const task = fixture.tasks[0]!;
+  fixture.tasks = [{ ...task, exerciseType: "lesson_choice", prompt: {
+    kind: "lesson_choice", instructionPl: "Kto to jest? Wybierz.", visualSubject: "girl", stem: "___ is happy.",
+    options: ["She", "He", "They"].map((text, index) => ({ id: optionIds[index]!, text })),
+  } }];
+  fixture.uiAudio = { ready: true, assets: {} };
+  await installKidUiFixture(page, fixture);
+  await page.setViewportSize({ width: 360, height: 640 });
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+  await expect(page.getByTestId("kid-lesson-visual")).toBeVisible();
+
+  for (const viewport of [
+    { width: 360, height: 640 },
+    { width: 640, height: 360 },
+    { width: 768, height: 1024 },
+    { width: 1280, height: 800 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const visual = await page.getByTestId("kid-lesson-visual").boundingBox();
+    const material = await page.getByTestId("kid-material").boundingBox();
+    const stem = await page.getByTestId("kid-lesson-stem").boundingBox();
+    expect(visual, `visual at ${viewport.width}x${viewport.height}`).not.toBeNull();
+    expect(material).not.toBeNull();
+    expect(visual!.x).toBeGreaterThanOrEqual(material!.x - 1);
+    expect(visual!.x + visual!.width).toBeLessThanOrEqual(material!.x + material!.width + 1);
+    expect(visual!.y).toBeGreaterThanOrEqual(material!.y - 1);
+    expect(visual!.y + visual!.height).toBeLessThanOrEqual(stem!.y + 1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
+    for (const option of await page.getByTestId("kid-option").all()) {
+      const box = await option.boundingBox();
+      expect(box!.height).toBeGreaterThanOrEqual(48);
+      await option.scrollIntoViewIfNeeded();
+      await expect(option).toBeInViewport({ ratio: 0.95 });
+    }
+  }
+});
+
 test("choice selection and transition feedback appear while the answer request is still pending", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const fixture: KidUiFixture = completedReadingFixture();

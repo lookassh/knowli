@@ -15,6 +15,9 @@ export interface ErrorCategory {
 }
 
 /** Typy ćwiczeń lekcji (design: 9 typów `lesson_*`). */
+/** Piktogram bodźca obrazkowego wyboru — kto/co jest na obrazku. */
+export type LessonVisualSubject = "boy" | "girl" | "man" | "woman" | "group" | "dog";
+
 export type LessonExerciseType =
   | "lesson_card"
   | "lesson_notice"
@@ -102,6 +105,8 @@ export interface LessonExerciseDraft {
    * tego typu (wybór wskazaniem, nie z listy opcji).
    */
   readonly noticeSegments?: readonly (readonly string[])[];
+  /** Piktogram bodźca obrazkowego (`lesson_choice`); wartości z kontraktu lekcji. */
+  readonly visualSubject?: LessonVisualSubject;
   readonly answer: string;
   readonly acceptedAnswers: readonly string[];
   readonly focus: readonly string[];
