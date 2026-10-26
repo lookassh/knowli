@@ -135,7 +135,6 @@ describe("validateEnglishGrammarExercise — lesson_gap, temat to_be", () => {
   });
 
   it.each([
-    ["hint w formie „to be”", AFF, "She ___ happy.", "is", "to be"],
     ["podmiot złożony You and I", AFF, "You and I ___ happy.", "are", "be"],
     ["podmiot rzeczownikowy l.poj.", AFF, "The dog ___ happy.", "is", "be"],
     ["podmiot rzeczownikowy l.mn.", AFF, "The dogs ___ happy.", "are", "be"],
@@ -144,12 +143,78 @@ describe("validateEnglishGrammarExercise — lesson_gap, temat to_be", () => {
     expect(validateEnglishGrammarExercise(beGap(objectiveId, stem, answer, hint), toBeV1)).toEqual([]);
   });
 
+  it.each([
+    ["pytanie Where z podmiotem po luce", AFF, "Where ___ the dogs?", "are"],
+    ["pytanie How old z podmiotem po luce", AFF, "How old ___ your brothers?", "are"],
+    ["konstrukcja There z podmiotem po luce", AFF, "There ___ two cats.", "are"],
+    ["dopełnienie you nie jest podmiotem", AFF, "This ___ for you.", "is"],
+    ["rzeczownik z dopełnieniem you", AFF, "The cake ___ for you.", "is"],
+    ["podmiot przed porównaniem z you", AFF, "My brother ___ taller than you.", "is"],
+    ["luka na początku zdania, skrót They're", AFF, "___ happy.", "They're"],
+    ["luka na początku zdania, skrót I'm", AFF, "___ happy.", "I'm"],
+  ])("akceptuje podmiot sąsiadujący z luką: %s", (_name, objectiveId, stem, answer) => {
+    expect(validateEnglishGrammarExercise(beGap(objectiveId, stem, answer, "be"), toBeV1)).toEqual([]);
+  });
+
+  it.each([
+    ["pytanie Where ze złą formą", AFF, "Where ___ the dogs?", "is"],
+    ["pytanie o the dog z Are", "english_grammar.to_be.questions", "___ the dog happy?", "Are"],
+    ["luka przed dogs ze skrótem She's", AFF, "___ dogs.", "She's"],
+    ["This ze złą formą", AFF, "This ___ for you.", "are"],
+  ])("odrzuca podmiot sąsiadujący z luką: %s", (_name, objectiveId, stem, answer) => {
+    expect(validateEnglishGrammarExercise(beGap(objectiveId, stem, answer, "be"), toBeV1)).not.toEqual([]);
+  });
+
+  it.each(["is", "jest", "to be"])("odrzuca hint %s dla luki to_be (dozwolony tylko „be” albo brak)", (hint) => {
+    expect(validateEnglishGrammarExercise(beGap(AFF, "She ___ happy.", "is", hint), toBeV1)).not.toEqual([]);
+  });
+
   it("odrzuca błędny wariant akceptowany luki, nie tylko odpowiedź kanoniczną", () => {
     const ex: LessonExerciseDraft = {
       ...beGap(AFF, "She ___ happy.", "is", "be"),
       acceptedAnswers: ["are"],
     };
     expect(validateEnglishGrammarExercise(ex, toBeV1)).not.toEqual([]);
+  });
+
+  it.each([
+    ["transform to_affirmative spod celu przeczeń jest poprawny", {
+      exerciseType: "lesson_transform",
+      objectiveId: NEG,
+      statement: "She isn't happy.",
+      transformId: "to_affirmative",
+      answer: "She is happy.",
+      acceptedAnswers: [],
+      focus: ["is"],
+    }, true],
+    ["zdanie z podmiotem złożonym Tom and I", {
+      exerciseType: "lesson_open_answer",
+      objectiveId: AFF,
+      prompt: "Tom i ja jesteśmy szczęśliwi.",
+      answer: "Tom and I are happy.",
+      acceptedAnswers: [],
+      focus: ["are"],
+    }, true],
+    ["błąd w drugiej klauzuli po and", {
+      exerciseType: "lesson_open_answer",
+      objectiveId: AFF,
+      prompt: "Tom jest szczęśliwy, a on jest smutny.",
+      answer: "Tom is happy and he are sad.",
+      acceptedAnswers: [],
+      focus: ["are"],
+    }, false],
+    ["pytanie z podmiotem złożonym po inwersji", {
+      exerciseType: "lesson_transform",
+      objectiveId: "english_grammar.to_be.questions",
+      statement: "He is happy.",
+      transformId: "to_question",
+      answer: "Is he and Tom happy?",
+      acceptedAnswers: [],
+      focus: ["Is", "he"],
+    }, false],
+  ] as const)("%s", (_name, ex, valid) => {
+    const errors = validateEnglishGrammarExercise(ex as unknown as LessonExerciseDraft, toBeV1);
+    expect(errors.length === 0).toBe(valid);
   });
 
   it.each([

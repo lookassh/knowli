@@ -203,37 +203,68 @@ function looksPlural(token: string): boolean {
   return token.length > 1 && token.endsWith("s") && !token.endsWith("ss") && !token.endsWith("us") && !token.endsWith("is") && token !== "news";
 }
 
-const BE_DETERMINERS: ReadonlySet<string> = new Set(["the", "a", "an", "my", "his", "her", "its", "our", "your", "their", "this", "that", "these", "those"]);
+const BE_DETERMINERS: ReadonlySet<string> = new Set(["the", "a", "an", "my", "his", "her", "its", "our", "your", "their"]);
 
-/** Zaimek osobowy widoczny przy luce (przed nią albo tuż po niej, jak w pytaniu). */
+const BE_WH_WORDS: ReadonlySet<string> = new Set(["what", "where", "when", "who", "whom", "whose", "why", "how"]);
+
+/** Tokeny przed luką, które nie są podmiotem (pytajniki, „there”, spójnik). */
+const BE_NON_SUBJECT_BEFORE: ReadonlySet<string> = new Set([...BE_WH_WORDS, "there", "and"]);
+
+/** Tokeny po luce pomijane przy szukaniu podmiotu (określniki i liczebniki słowne). */
+const BE_AFTER_SKIP: ReadonlySet<string> = new Set([
+  ...BE_DETERMINERS,
+  "this", "that", "these", "those",
+  "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+]);
+
+/**
+ * Zaimek osobowy bezpośrednio przy luce: ostatni token przed luką (zdanie)
+ * albo pierwszy po niej (pytanie z inwersją). Tylko sąsiedztwo — zaimek
+ * z innej części zdania (np. dopełnienie „for you”) nie jest podmiotem.
+ */
 function bePronounNearGap(stem: string): string | undefined {
   const [before = "", after = ""] = stem.split("___", 2);
-  const nearby = [...normalizeTokens(before).reverse(), ...normalizeTokens(after)];
-  return nearby.find((token) => Object.hasOwn(BE_FORM_BY_SUBJECT, token));
+  const prev = normalizeTokens(before).at(-1);
+  if (prev !== undefined && Object.hasOwn(BE_FORM_BY_SUBJECT, prev)) return prev;
+  const next = normalizeTokens(after)[0];
+  if (next !== undefined && Object.hasOwn(BE_FORM_BY_SUBJECT, next)) return next;
+  return undefined;
 }
 
 /**
- * Forma „to be” wymagana przez podmiot widoczny przy luce; undefined = nie da
- * się ustalić. Podmiot złożony z „and” jest liczbą mnogą, wskazujące
- * this/that/these/those niosą własną liczbę, a rzeczownik oceniamy prostą
- * heurystyką liczby (dog → is, dogs → are). Własności prototypu JS (np.
+ * Forma „to be” wymagana przez podmiot sąsiadujący z luką; undefined = nie
+ * da się ustalić (np. po luce jest sam orzecznik „happy”). Kolejność reguł:
+ * podmiot złożony z „and” tuż przed luką → are; zaimek/wskazujący przy luce;
+ * rzeczownik przed luką w kontekście podmiotu (po określniku albo na
+ * początku zdania, nie po pytajniku); rzeczownik po luce, gdy poprzedza go
+ * określnik/liczebnik albo sam jest liczbą mnogą. Liczbę rzeczownika daje
+ * prosta heurystyka (dog → is, dogs → are). Własności prototypu JS (np.
  * „constructor”) nie są podmiotami — stąd Object.hasOwn zamiast `in`.
  */
 function expectedBeFormNearGap(stem: string): string | undefined {
   const [before = "", after = ""] = stem.split("___", 2);
   const beforeTokens = normalizeTokens(before);
   const afterTokens = normalizeTokens(after);
-  if (beforeTokens.includes("and")) return "are";
-  const pronoun = bePronounNearGap(stem);
-  if (pronoun !== undefined) return BE_FORM_BY_SUBJECT[pronoun];
-  const nearby = [...[...beforeTokens].reverse(), ...afterTokens];
-  const demonstrative = nearby.find((token) => Object.hasOwn(BE_DEMONSTRATIVE_FORM, token));
-  if (demonstrative !== undefined) return BE_DEMONSTRATIVE_FORM[demonstrative];
-  const nounBefore = [...beforeTokens].reverse().find((token) => !BE_DETERMINERS.has(token) && token !== "and");
-  const nounAfter = afterTokens.find((token) => !BE_DETERMINERS.has(token) && token !== "and");
-  const noun = nounBefore ?? nounAfter;
-  if (noun === undefined) return undefined;
-  return looksPlural(noun) ? "are" : "is";
+  const prev = beforeTokens.at(-1);
+  const prev2 = beforeTokens.at(-2);
+  const next = afterTokens[0];
+  if (prev !== undefined && prev !== "and" && prev2 === "and") return "are";
+  if (prev !== undefined && Object.hasOwn(BE_FORM_BY_SUBJECT, prev)) return BE_FORM_BY_SUBJECT[prev];
+  if (prev !== undefined && Object.hasOwn(BE_DEMONSTRATIVE_FORM, prev)) return BE_DEMONSTRATIVE_FORM[prev];
+  if (next !== undefined && Object.hasOwn(BE_FORM_BY_SUBJECT, next)) return BE_FORM_BY_SUBJECT[next];
+  if (next !== undefined && Object.hasOwn(BE_DEMONSTRATIVE_FORM, next)) return BE_DEMONSTRATIVE_FORM[next];
+  if (prev !== undefined && !BE_DETERMINERS.has(prev) && !BE_NON_SUBJECT_BEFORE.has(prev)) {
+    const inSubjectContext = beforeTokens.length === 1 || (prev2 !== undefined && !BE_WH_WORDS.has(prev2));
+    if (inSubjectContext) return looksPlural(prev) ? "are" : "is";
+  }
+  const afterSubjectIndex = afterTokens.findIndex((token) => !BE_AFTER_SKIP.has(token) && !/^\d+$/.test(token));
+  if (afterSubjectIndex >= 0) {
+    const nounAfter = afterTokens[afterSubjectIndex]!;
+    if (afterSubjectIndex > 0 || looksPlural(nounAfter)) {
+      return looksPlural(nounAfter) ? "are" : "is";
+    }
+  }
+  return undefined;
 }
 
 /** Czy zdanie-otoczenie luki samo niesie przeczenie albo znacznik Yes/No. */
@@ -286,6 +317,9 @@ function validateBeGapAnswer(ex: LessonExerciseDraft, answer: string, field: str
     errors.push(`${field}: odpowiedź „${answer}” nie jest formą czasownika „be” (am, is, are)`);
     return;
   }
+  if (parsed.pronoun !== undefined && BE_FORM_BY_SUBJECT[parsed.pronoun] !== parsed.form) {
+    errors.push(`${field}: forma „${parsed.form}” nie pasuje do osoby „${parsed.pronoun}” ze skrótu`);
+  }
   const stemPronoun = ex.stem === undefined ? undefined : bePronounNearGap(ex.stem);
   if (parsed.pronoun !== undefined && stemPronoun !== undefined && parsed.pronoun !== stemPronoun) {
     errors.push(`${field}: osoba „${parsed.pronoun}” w odpowiedzi nie pasuje do podmiotu „${stemPronoun}”`);
@@ -299,8 +333,11 @@ function validateBeGapAnswer(ex: LessonExerciseDraft, answer: string, field: str
 
 /**
  * Reguła odpowiedzi tekstowych tematu „to be” poza luką: zgodność osoby z
- * formą w pełnym zdaniu, brak do/does oraz biegunowość celu. Pojedyncza forma
- * (wybór odpowiedzi) jest sprawdzana względem podmiotu w bodźcu.
+ * formą w pełnym zdaniu (z podmiotami złożonymi), brak do/does oraz
+ * biegunowość celu — przy przekształceniu biegunowość celu wyznacza
+ * przekształcenie (to_negative/to_affirmative), nie reguła ćwiczenia.
+ * Pojedyncza forma (wybór odpowiedzi) jest sprawdzana względem podmiotu
+ * w bodźcu.
  */
 function validateBeAnswerText(ex: LessonExerciseDraft, answer: string, field: string, errors: string[]): void {
   const objective = ex.objectiveId.split(".").at(-1) ?? "";
@@ -319,6 +356,7 @@ function validateBeAnswerText(ex: LessonExerciseDraft, answer: string, field: st
     }
     return;
   }
+  const firstBeIndex = tokens.findIndex((token) => BE_FORMS.has(token));
   let hasBe = false;
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i]!;
@@ -326,20 +364,33 @@ function validateBeAnswerText(ex: LessonExerciseDraft, answer: string, field: st
     if (next === undefined) continue;
     if (Object.hasOwn(BE_FORM_BY_SUBJECT, token) && BE_FORMS.has(next)) {
       hasBe = true;
-      if (BE_FORM_BY_SUBJECT[token] !== next) {
-        errors.push(`${field}: forma „${next}” nie pasuje do osoby „${token}” (poprawnie: ${BE_FORM_BY_SUBJECT[token]})`);
+      // Podmiot złożony przed pierwszym orzeczeniem: „Tom and I are” — forma to are.
+      const compoundSubject = tokens[i - 1] === "and" && firstBeIndex === i + 1;
+      const expected = compoundSubject ? "are" : BE_FORM_BY_SUBJECT[token];
+      if (expected !== next) {
+        errors.push(`${field}: forma „${next}” nie pasuje do osoby „${token}” (poprawnie: ${expected})`);
       }
     }
     if (BE_FORMS.has(token) && Object.hasOwn(BE_FORM_BY_SUBJECT, next)) {
       hasBe = true;
-      if (BE_FORM_BY_SUBJECT[next] !== token) {
-        errors.push(`${field}: forma „${token}” nie pasuje do osoby „${next}” (poprawnie: ${BE_FORM_BY_SUBJECT[next]})`);
+      // Podmiot złożony po inwersji: „Are he and Tom” — forma też musi być are.
+      const compoundSubject = tokens[i + 2] === "and";
+      const expected = compoundSubject ? "are" : BE_FORM_BY_SUBJECT[next];
+      if (expected !== token) {
+        errors.push(`${field}: forma „${token}” nie pasuje do osoby „${next}” (poprawnie: ${expected})`);
       }
     }
   }
   if (!hasBe) return;
   const marker = tokens[0] === "yes" || tokens[0] === "no" ? tokens[0] : undefined;
-  checkBePolarity(objective, tokens.includes("not"), marker, field, errors);
+  const polarityObjective = ex.transformId === "to_affirmative"
+    ? "affirmative_forms"
+    : ex.transformId === "to_negative"
+      ? "negative_forms"
+      : ex.transformId === "to_question"
+        ? ""
+        : objective;
+  checkBePolarity(polarityObjective, tokens.includes("not"), marker, field, errors);
 }
 
 export function validateEnglishGrammarExercise(
@@ -355,6 +406,10 @@ export function validateEnglishGrammarExercise(
   }
 
   if (topic.id === "to_be" && ex.exerciseType === "lesson_gap") {
+    const beHint = ex.hint?.trim().toLowerCase() ?? "";
+    if (beHint !== "" && beHint !== "be") {
+      errors.push("lesson_gap: hint dla tematu „to be” musi mieć wartość „be” albo być pusty");
+    }
     validateBeGapAnswer(ex, ex.answer, "lesson_gap", errors);
     for (const variant of ex.acceptedAnswers) validateBeGapAnswer(ex, variant, "acceptedAnswers", errors);
   } else if (topic.id === "to_be" && ex.exerciseType !== "lesson_card" && ex.exerciseType !== "lesson_notice") {
