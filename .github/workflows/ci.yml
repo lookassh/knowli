@@ -162,8 +162,23 @@ jobs:
           key: next-e2e-${{ runner.os }}-node22-${{ matrix.name }}-${{ hashFiles('pnpm-lock.yaml', 'apps/web/next.config.ts', 'apps/web/src/**', 'packages/**/src/**') }}
           restore-keys: |
             next-e2e-${{ runner.os }}-node22-${{ matrix.name }}-
+      # Przeglądarka jest cache'owana między runami (klucz = lockfile, więc zmiana wersji Playwrighta unieważnia cache). Bez tego każdy z 5 jobów e2e pobierał Chromium od zera, a `--with-deps` dokładał `apt-get update` i instalację pakietów z lustra Ubuntu — krok trwał 20 s do ~5 min zależnie od lustra i wyznaczał czas całego runu.
+      - name: Cache Playwright chromium
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-chromium-${{ hashFiles('pnpm-lock.yaml') }}
+      # Pełny install z zależnościami systemowymi tylko przy braku cache.
       - name: Install Playwright chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: pnpm exec playwright install --with-deps chromium
+      # Przy trafionym cache apt jest pomijany: obraz runnera ma biblioteki systemowe Chromium (apt dokładał głównie fonty CJK, których testy pl/en nie używają; brak też asercji screenshotów). Gdyby po zmianie obrazu runnera bibliotek zabrakło, probe launch się nie powiedzie i zależności zostaną dociągnięte jak przy pustym cache.
+      - name: Install Playwright chromium (cached)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: |
+          pnpm exec playwright install chromium
+          node --input-type=module -e "import { chromium } from '@playwright/test'; const browser = await chromium.launch(); await browser.close();" || pnpm exec playwright install --with-deps chromium
       - name: E2E tests
         env:
           UMIEM_E2E_BUCKET: ${{ matrix.bucket }}
