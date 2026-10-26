@@ -17,5 +17,5 @@ export { createLessonDraftFromPublished, deckIdOfLessonVersion, editLessonDraft,
 export { applyLessonExercises, createLesson, executeLessonGeneration, regenerateObjective, splitStages } from "./lessons/lesson-drafts";
 export { acceptVerdictAsVariant, decideLessonVerdict, lessonObjectiveProgress, listLessonVerdicts } from "./lessons/lesson-supervision";
 export { executeMediaAsset } from "./media-generation";
-export { omitRevisionAsset, readReadyMedia, reconcileDraftAssets, regenerateRevisionAsset } from "./media-reconciliation";
+export { omitRevisionAsset, readReadyMedia, readReadyMediaStream, reconcileDraftAssets, regenerateRevisionAsset, toDisplayIllustration, ILLUSTRATION_DISPLAY_MAX_PX, type ReadyMediaStream } from "./media-reconciliation";
 export { prepareUiAudio, readUiAudio } from "./ui-audio";

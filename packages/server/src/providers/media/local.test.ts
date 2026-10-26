@@ -50,6 +50,27 @@ describe("LocalMediaStore", () => {
     expect(await store.get("aa/missing.png")).toBeNull();
   });
 
+  it("getStream zwraca te same bajty w porcjach, z rozmiarem i typem", async () => {
+    const stored = await store.putImmutable(bytesB, "image/webp");
+    const streamed = await store.getStream!(stored.storageKey);
+    expect(streamed).not.toBeNull();
+    expect(streamed!.mimeType).toBe("image/webp");
+    expect(streamed!.byteCount).toBe(bytesB.byteLength);
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of streamed!.body) chunks.push(chunk);
+    expect(Buffer.concat(chunks).equals(Buffer.from(bytesB))).toBe(true);
+    expect(await store.getStream!("aa/missing.webp")).toBeNull();
+    expect(await store.getStream!("../escape.webp")).toBeNull();
+  });
+
+  it("getStream porzucone przed pierwszą porcją kończy się bez błędu i bez danych", async () => {
+    const stored = await store.putImmutable(Uint8Array.from(Buffer.from("audio-bytes-stream-cancel")), "audio/mpeg");
+    const streamed = await store.getStream!(stored.storageKey);
+    const iterator = streamed!.body[Symbol.asyncIterator]();
+    await iterator.return?.();
+    await expect(iterator.next()).resolves.toMatchObject({ done: true });
+  });
+
   it("obsługuje webp — domyślny format ilustracji", async () => {
     const stored = await store.putImmutable(bytesA, "image/webp");
     expect(stored.storageKey).toMatch(/\.webp$/);

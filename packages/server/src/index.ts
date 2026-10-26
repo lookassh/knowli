@@ -91,6 +91,8 @@ export {
   regenerateRevisionAsset,
   omitRevisionAsset,
   readReadyMedia,
+  readReadyMediaStream,
+  type ReadyMediaStream,
 } from "./modules/materials";
 export { prepareUiAudio, readUiAudio } from "./modules/materials";
 export {
@@ -195,7 +197,7 @@ export type {
   SessionActivityReviewTask,
   SessionActivityReviewer,
 } from "./ports/ai";
-export type { MediaStore, StoredBlob } from "./ports/media";
+export type { MediaStore, StoredBlob, StreamedBlob } from "./ports/media";
 export { createLocalMediaStore } from "./providers/media/local";
 export { setDeckCover, clearDeckCover, generateDeckCover, MAX_DECK_COVER_BYTES, MAX_DECK_COVER_SAMPLE_ITEMS } from "./modules/materials";
 export { createOpenAiLlmProvider } from "./providers/openai/llm";
