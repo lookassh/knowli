@@ -659,6 +659,26 @@ export async function queryMicrophonePermission(
 
 export interface BrowserMediaDeps extends BrowserRecorderDeps {}
 
+/**
+ * Ogrzanie cache obrazu przez `Image`: pobranie i dekodowanie poza ścieżką
+ * krytyczną przejścia między zadaniami. Rozstrzyga się zawsze (też przy
+ * błędzie sieci i braku konstruktora), bo to wyłącznie optymalizacja —
+ * właściwy `<img>` przy wyświetleniu zadania pobierze obraz samodzielnie.
+ */
+export function preloadImage(url: string): Promise<void> {
+  const ImageCtor = (globalThis as { Image?: typeof Image }).Image;
+  if (!ImageCtor) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const image = new ImageCtor();
+    image.onload = () => resolve();
+    image.onerror = () => resolve();
+    image.src = url;
+    // decode() domyka dekodowanie poza wątkiem renderu zadania; jego awaria
+    // nie unieważnia pobrania — obraz zdekoduje właściwy element <img>.
+    image.decode?.().then(() => resolve(), () => resolve());
+  });
+}
+
 /** Adaptery przeglądarkowe za portami PlatformMedia. */
 export function createBrowserMedia(deps: BrowserMediaDeps = {}): PlatformMedia {
   const getUserMedia = deps.getUserMedia ?? ((constraints: MediaStreamConstraints) => navigator.mediaDevices.getUserMedia(constraints));
@@ -670,6 +690,7 @@ export function createBrowserMedia(deps: BrowserMediaDeps = {}): PlatformMedia {
       stream.getTracks().forEach((track) => track.stop());
     },
     createRecorder: (options) => new BrowserRecorder({ ...deps, getUserMedia }, options),
+    preloadImage: (url) => preloadImage(url),
     player: new BrowserAudioPlayer(),
     playBeep: (kind, signal) => playBeepViaWebAudio(AudioContextCtor, kind, signal),
     getMicrophonePermission: () => queryMicrophonePermission(permissions),

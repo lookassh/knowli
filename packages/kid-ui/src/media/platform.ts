@@ -102,4 +102,12 @@ export interface PlatformMedia {
    * Awaria lub brak API rozstrzyga się jako “unknown” (bezpieczne domyślnie).
    */
   getMicrophonePermission(): Promise<MicrophonePermission>;
+  /**
+   * Wstępne pobranie obrazu następnego zadania w tle (gdy host to potrafi):
+   * kontroler woła je WYŁĄCZNIE dla już wydanego zadania, którego treść i tak
+   * trafi do dziecka po kliknięciu „Dalej” — pobranie tylko ogrzewa cache
+   * przeglądarki, niczego nie ujawnia na ekranie. Awaria jest cicha: obraz
+   * pobierze się ponownie przy wyświetleniu zadania.
+   */
+  preloadImage?(url: string): Promise<void>;
 }

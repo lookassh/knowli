@@ -552,6 +552,15 @@ test("popup wyniku mieści się w ekranie telefonu bez przewijania", async ({ pa
   expect(await currentTaskId(page)).toBe(taskId);
   expect(await page.evaluate(() => document.body.style.overflow)).not.toBe("hidden");
 
+  // Bramka /next stoi PRZED poprawną odpowiedzią: po niej kontroler pobiera
+  // następne zadanie w tle już przy feedbacku (prefetch), więc przechwycenie
+  // instalowane dopiero przed „Dalej” nie zobaczyłoby żadnego żądania.
+  let releaseRequest!: () => void;
+  const requestGate = new Promise<void>((resolve) => { releaseRequest = resolve; });
+  await page.route("**/api/v1/kid/sessions/*/next", async (route) => {
+    await requestGate;
+    await route.abort();
+  });
   await page.getByTestId("kid-input").fill(await answerTarget(taskId));
   await page.getByTestId("kid-input").press("Enter");
   await expect(feedback).toContainText("Świetnie");
@@ -585,13 +594,9 @@ test("popup wyniku mieści się w ekranie telefonu bez przewijania", async ({ pa
   await expect(next).toBeFocused();
 
   // An unavailable next step must expose the existing recovery action,
-  // rather than leave an inert error panel behind the modal.
-  let releaseRequest!: () => void;
-  const requestGate = new Promise<void>((resolve) => { releaseRequest = resolve; });
-  await page.route("**/api/v1/kid/sessions/*/next", async (route) => {
-    await requestGate;
-    await route.abort();
-  });
+  // rather than leave an inert error panel behind the modal. Bramka stoi
+  // od poprawnej odpowiedzi (wyżej); prefetch wisi na niej, a po zwolnieniu
+  // klik „Dalej” ponawia pobranie i też trafia w abort.
   await next.click();
   await expect(next).toBeDisabled();
   releaseRequest();
