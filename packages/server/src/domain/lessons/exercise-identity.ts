@@ -23,6 +23,11 @@ export function lessonExerciseStimulus(exercise: LessonExerciseDraft): string {
       return normalizeStimulus(exercise.prompt ?? exercise.stem ?? "");
     case "lesson_order":
       return JSON.stringify([...(exercise.items ?? []).map((item) => normalizeStimulus(item.text))].sort());
+    case "lesson_choice":
+      // Piktogram jest częścią bodźca: ten sam stem z innym obrazkiem to inne ćwiczenie.
+      return exercise.visualSubject === undefined
+        ? normalizeStimulus(exercise.stem ?? "")
+        : JSON.stringify([normalizeStimulus(exercise.stem ?? ""), exercise.visualSubject]);
     case "lesson_notice":
       return JSON.stringify((exercise.noticeSegments ?? []).map((sentence) => sentence.map(normalizeStimulus)));
     default:

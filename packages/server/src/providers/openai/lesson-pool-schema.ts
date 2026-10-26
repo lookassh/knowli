@@ -28,7 +28,7 @@ function lessonExerciseSchema(
     additionalProperties: false,
     required: [
       "exerciseType", "objectiveId", "answer", "acceptedAnswers", "focus", "instructionPl",
-      "stem", "statement", "prompt", "hint", "transformId", "noticeSegments", "options",
+      "stem", "statement", "prompt", "hint", "transformId", "noticeSegments", "visualSubject", "options",
       "correctOption", "items",
     ],
     properties: {
@@ -44,6 +44,7 @@ function lessonExerciseSchema(
       hint: { type: ["null", "string"] },
       transformId: { type: ["null", "string"], enum: [null, ...input.transforms.map((transform) => transform.id)] },
       noticeSegments: { type: ["null", "array"], items: { type: "array", items: { type: "string" } } },
+      visualSubject: { type: ["null", "string"], enum: [null, "boy", "girl", "man", "woman", "group", "dog"] },
       options: nullable({ type: "array", items: idTextItem }),
       correctOption: { type: ["null", "string"] },
       items: nullable({ type: "array", items: idTextItem }),

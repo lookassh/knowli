@@ -2,6 +2,7 @@ import { z } from "zod";
 import { InstantSchema, UuidSchema } from "./common";
 import { isVisualDataValid, RecordingModeSchema, VisualTypeSchema } from "./decks";
 import { SessionActivityResultDtoSchema } from "./reward-activity";
+import { LessonVisualSubjectSchema } from "./lessons";
 
 const visualPromptFields = {
   visualType: VisualTypeSchema.default("none"),
@@ -181,6 +182,7 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
   }).strict(),
   z.object({
     kind: z.literal("lesson_choice"),
+    visualSubject: LessonVisualSubjectSchema.optional(),
     instructionPl: z.string().min(1),
     stem: z.string().min(1),
     options: z.array(ChoiceOptionSchema).min(1),

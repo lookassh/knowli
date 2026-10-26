@@ -36,6 +36,15 @@ describe("lessonExerciseIdentity", () => {
     ] }));
   });
 
+  it("rozróżnia ćwiczenia wyboru po piktogramie bodźca", () => {
+    const girl = exercise({ exerciseType: "lesson_choice", stem: "___ is happy.", visualSubject: "girl" });
+    const boy = exercise({ exerciseType: "lesson_choice", stem: "___ is happy.", visualSubject: "boy" });
+    const plain = exercise({ exerciseType: "lesson_choice", stem: "___ is happy." });
+    expect(lessonExerciseIdentity(girl)).not.toBe(lessonExerciseIdentity(boy));
+    expect(lessonExerciseIdentity(girl)).not.toBe(lessonExerciseIdentity(plain));
+    expect(lessonExerciseIdentity(girl)).toBe(lessonExerciseIdentity({ ...girl }));
+  });
+
   it("uses the displayed question as the short-answer stimulus before a legacy stem", () => {
     const first = exercise({
       exerciseType: "lesson_short_answer",

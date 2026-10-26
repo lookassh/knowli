@@ -2206,6 +2206,19 @@
   transform: translateY(-50%);
 }
 
+.kid-lesson-visual {
+  margin: 0;
+  font-size: 4rem;
+  line-height: 1.1;
+  text-align: center;
+}
+
+@media (max-height: 480px) {
+  .kid-lesson-visual {
+    font-size: 2.25rem;
+  }
+}
+
 .kid-lesson-stem {
   margin: 0;
   font-size: 1.5rem;

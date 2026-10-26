@@ -138,9 +138,19 @@ describe("toLessonDraftPatch", () => {
       correctOption: "",
       items: null,
       noticeSegments: null,
+      visualSubject: "",
     });
     const patch = toLessonDraftPatch(snapshot);
     expect(patch.exercises?.map((ex) => ex.id)).toEqual(["00000000-0000-4000-8000-000000000011", "00000000-0000-4000-8000-000000000012", undefined]);
+  });
+
+  it("emits visualSubject only for lesson_choice exercises", () => {
+    const snapshot = createLessonSnapshot(draft(), () => "unused");
+    snapshot.form.exercises[0]!.visualSubject = "girl";
+    snapshot.form.exercises[1]!.visualSubject = "girl";
+    const patch = toLessonDraftPatch(snapshot);
+    expect(patch.exercises![0]!.visualSubject).toBe("girl");
+    expect(patch.exercises![1]).not.toHaveProperty("visualSubject");
   });
 
   it("splits acceptedAnswers into lines and focus into words, dropping empty entries", () => {

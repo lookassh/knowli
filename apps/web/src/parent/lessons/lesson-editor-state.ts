@@ -64,6 +64,7 @@ export interface EditableLessonExercise {
   correctOption: string;
   items: ExerciseItem[] | null;
   noticeSegments: string[][] | null;
+  visualSubject: string;
 }
 
 export interface EditableLessonForm {
@@ -114,6 +115,7 @@ function editableFromExercise(
     correctOption: exercise.correctOption ?? "",
     items: exercise.items ? exercise.items.map((o) => ({ ...o })) : null,
     noticeSegments: exercise.noticeSegments ? exercise.noticeSegments.map((s) => [...s]) : null,
+    visualSubject: exercise.visualSubject ?? "",
   };
 }
 
@@ -182,6 +184,9 @@ function exerciseToInput(exercise: EditableLessonExercise): LessonExerciseInput 
     if (exercise.correctOption.length > 0) {
       input.correctOption = exercise.correctOption;
     }
+  }
+  if (type === "lesson_choice" && exercise.visualSubject.length > 0) {
+    input.visualSubject = exercise.visualSubject as LessonExerciseInput["visualSubject"];
   }
   if (ITEM_TYPES.has(type) && exercise.items) {
     input.items = exercise.items.map((o) => ({ ...o }));

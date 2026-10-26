@@ -355,6 +355,7 @@ export function toExerciseDraft(raw: unknown): LessonExerciseDraft {
     ...(Array.isArray(r.noticeSegments)
       ? { noticeSegments: r.noticeSegments as readonly (readonly string[])[] }
       : {}),
+    ...(typeof r.visualSubject === "string" ? { visualSubject: r.visualSubject as LessonExerciseDraft["visualSubject"] } : {}),
     answer: String(r.answer ?? ""),
     acceptedAnswers: Array.isArray(r.acceptedAnswers) ? (r.acceptedAnswers as string[]) : [],
     focus: Array.isArray(r.focus) ? (r.focus as string[]) : [],
@@ -383,6 +384,7 @@ export function buildLessonPayload(
     ...(ex.hint === undefined ? {} : { hint: ex.hint }),
     ...(ex.transformId === undefined ? {} : { transformId: ex.transformId }),
     ...(ex.noticeSegments === undefined ? {} : { noticeSegments: ex.noticeSegments }),
+    ...(ex.visualSubject === undefined ? {} : { visualSubject: ex.visualSubject }),
     answer: ex.answer,
     acceptedAnswers: [...ex.acceptedAnswers],
     focus: [...ex.focus],
