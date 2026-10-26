@@ -64,6 +64,34 @@ describe("materializeExercise — correctOption po ID (P1-1)", () => {
     expect(evaluateChoice(key.correctOptionId!, key)).toBe(true);
   });
 
+  it("lesson_choice: visualSubject przechodzi z payloadu do promptu dziecka", () => {
+    const task = materializeExercise(
+      { independentCheck: false, reason: "practice" },
+      "seed-visual",
+      loaded({
+        exerciseType: "lesson_choice",
+        objectiveId: "english_grammar.to_be.affirmative_forms",
+        instructionPl: "Kto to jest? Wybierz.",
+        stem: "___ is happy.",
+        visualSubject: "girl",
+        options: [
+          { id: "a", text: "She" },
+          { id: "b", text: "He" },
+        ],
+        correctOption: "a",
+        answer: "She",
+        acceptedAnswers: [],
+        focus: ["She"],
+        answerLocale: subject.answerLocale,
+        promptLocale: subject.promptLocale,
+      }),
+      subject.topics.find((t) => t.id === "to_be")!,
+      subject,
+    );
+    expect(task.prompt.kind).toBe("lesson_choice");
+    expect(task.prompt.kind === "lesson_choice" ? task.prompt.visualSubject : undefined).toBe("girl");
+  });
+
   it("translation prompt is the Polish source and keeps answers private", () => {
     const task = materializeExercise(
       { independentCheck: false, reason: "practice" },

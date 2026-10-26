@@ -40,6 +40,16 @@ describe("lesson exercise Mantine views", () => {
     expect(screen.queryByTestId("kid-lesson-check")).toBeNull();
   });
 
+  it("choice with a person pictogram shows the pictogram above the stem", () => {
+    const props = makeExerciseProps(task({
+      kind: "lesson_choice", instructionPl: "Kto to jest? Wybierz", visualSubject: "girl", stem: "___ is happy.",
+      options: [{ id: id(3), text: "She" }, { id: id(4), text: "He" }],
+    }));
+    renderKid(<LessonChoiceView {...props} />);
+    expect(screen.getByTestId("kid-lesson-visual").textContent).toBe("👧");
+    expect(screen.getByTestId("kid-lesson-stem").textContent).toBe("___ is happy.");
+  });
+
   it("notice word sends its segment id without local grading", () => {
     const props = makeExerciseProps(task({ kind: "lesson_notice", instructionPl: "Dotknij", segments: [[{ id: id(3), text: "He" }]] }));
     renderKid(<LessonNoticeView {...props} />);

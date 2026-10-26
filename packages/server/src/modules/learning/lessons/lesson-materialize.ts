@@ -4,7 +4,7 @@ import { AppError } from "../../../errors";
 import { computeTargetKey } from "../../../domain/target-key";
 import { renderCard } from "../../../domain/lessons/card";
 import { answersEquivalent } from "../../../domain/lessons/pool-validation";
-import type { LearningObjective, LessonExerciseType, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
+import type { LearningObjective, LessonExerciseType, LessonTopic, LessonVisualSubject, SubjectModule } from "../../../domain/lessons/types";
 import type { LessonTaskPlan } from "../../../domain/lessons/scheduler";
 
 /**
@@ -26,6 +26,7 @@ export interface LessonExercisePayload {
   hint?: string;
   transformId?: string;
   noticeSegments?: string[][];
+  visualSubject?: LessonVisualSubject;
   answer: string;
   acceptedAnswers: string[];
   focus: string[];
@@ -181,6 +182,7 @@ export function materializeExercise(
       const correct = options.find((o) => o.correct);
       const prompt: TaskPrompt = {
         kind: "lesson_choice",
+        ...(payload.visualSubject ? { visualSubject: payload.visualSubject } : {}),
         instructionPl,
         stem: payload.stem ?? "",
         options: options.map((o) => ({ id: o.id, text: o.text })),

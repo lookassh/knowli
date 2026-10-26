@@ -2,6 +2,17 @@ import { ExerciseFrame } from "../ExerciseFrame";
 import type { ExerciseProps } from "../types";
 import { useChoiceKeyboard } from "../useChoiceKeyboard";
 import { AnswerGrid } from "../../components/AnswerGrid";
+import type { LessonVisualSubject } from "@learning/contracts";
+
+/** Piktogram osoby/zwierzęcia z bodźca obrazkowego — treść zadania, nie dekoracja. */
+const VISUAL_GLYPHS: Record<LessonVisualSubject, string> = {
+  boy: "👦",
+  girl: "👧",
+  man: "👨",
+  woman: "👩",
+  group: "👦👧",
+  dog: "🐶",
+};
 
 /**
  * Wybór (`lesson_choice`): zdanie z luką/pytaniem (`stem`) i opcje do wyboru;
@@ -23,6 +34,9 @@ export function LessonChoiceView({ task, busy, optionOutcomes, dock, handlers }:
       task={task}
       feedbackLayout="flow"
       content={<>
+        {task.prompt.visualSubject && (
+          <p className="kid-lesson-visual" data-testid="kid-lesson-visual" aria-hidden="true">{VISUAL_GLYPHS[task.prompt.visualSubject]}</p>
+        )}
         <p className="kid-lesson-stem" data-testid="kid-lesson-stem">{task.prompt.stem}</p>
         <AnswerGrid
           options={options.map((option) => ({ id: option.id, label: option.text, content: null }))}

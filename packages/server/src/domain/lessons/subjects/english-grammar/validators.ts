@@ -483,11 +483,42 @@ function validateBeAnswerText(ex: LessonExerciseDraft, answer: string, field: st
   checkBePolarity(polarityObjective, tokens.includes("not"), marker, field, errors);
 }
 
+/** Zaimek wymagany przez piktogram bodźca obrazkowego (kto jest na obrazku). */
+const VISUAL_SUBJECT_PRONOUN: Readonly<Record<string, string>> = {
+  boy: "he",
+  girl: "she",
+  man: "he",
+  woman: "she",
+  group: "they",
+  dog: "it",
+};
+
+/**
+ * Ćwiczenie z piktogramem: odpowiedź musi zaczynać się zaimkiem osoby z
+ * obrazka, a forma „to be” w bodźcu musi zgadzać się z tą osobą.
+ */
+function validateVisualPronoun(ex: LessonExerciseDraft, errors: string[]): void {
+  if (ex.visualSubject === undefined || !Object.hasOwn(VISUAL_SUBJECT_PRONOUN, ex.visualSubject)) return;
+  const pronoun = VISUAL_SUBJECT_PRONOUN[ex.visualSubject]!;
+  const answerPronoun = normalizeTokens(ex.answer)[0];
+  if (answerPronoun !== undefined && Object.hasOwn(BE_FORM_BY_SUBJECT, answerPronoun) && answerPronoun !== pronoun) {
+    errors.push(`visualSubject: odpowiedź zaczyna się od „${answerPronoun}”, a obrazek wymaga „${pronoun}”`);
+  }
+  const expectedForm = BE_FORM_BY_SUBJECT[pronoun]!;
+  for (const form of normalizeTokens(ex.stem ?? "").filter((token) => BE_FORMS.has(token))) {
+    if (form !== expectedForm) {
+      errors.push(`visualSubject: forma „${form}” w bodźcu nie pasuje do osoby z obrazka (poprawnie: ${expectedForm})`);
+    }
+  }
+}
+
 export function validateEnglishGrammarExercise(
   ex: LessonExerciseDraft,
   topic: LessonTopic,
 ): string[] {
   const errors: string[] = [];
+
+  validateVisualPronoun(ex, errors);
 
   if (ex.exerciseType === "lesson_open_answer" && ex.prompt !== undefined) {
     if ([ex.answer, ...ex.acceptedAnswers].some((answer) => equivalentText(ex.prompt!, answer))) {

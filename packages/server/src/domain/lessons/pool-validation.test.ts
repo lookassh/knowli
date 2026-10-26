@@ -59,6 +59,22 @@ describe("validateLessonExercise — cel i typ", () => {
       options: [{ id: "a", text: "plays" }, { id: "b", text: "play" }], ...overrides }), englishGrammarSubject, englishTopic);
     expect(errors.some((error) => error.includes("120"))).toBe(true);
   });
+  it("visualSubject jest dozwolony tylko dla lesson_choice", () => {
+    const gapErrors = validateLessonExercise(draft({ visualSubject: "girl" }), englishGrammarSubject, englishTopic);
+    expect(gapErrors.some((e) => e.includes("visualSubject"))).toBe(true);
+    const choiceErrors = validateLessonExercise(draft({
+      exerciseType: "lesson_choice",
+      stem: "___ is happy.",
+      visualSubject: "girl",
+      answer: "is",
+      focus: ["is"],
+      hint: undefined,
+      options: [{ id: "a", text: "is" }, { id: "b", text: "are" }],
+      correctOption: "a",
+    }), englishGrammarSubject, englishTopic);
+    expect(choiceErrors.some((e) => e.includes("visualSubject"))).toBe(false);
+  });
+
   it("odrzuca cel spoza tematu", () => {
     const errors = validateLessonExercise(
       draft({ objectiveId: "english_grammar.present_simple.nieistniejacy" }),

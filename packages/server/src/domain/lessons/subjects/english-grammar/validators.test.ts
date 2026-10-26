@@ -363,6 +363,41 @@ describe("validateEnglishGrammarExercise — lesson_gap, temat to_be", () => {
   });
 });
 
+describe("validateEnglishGrammarExercise — visualSubject (wybór z obrazkiem)", () => {
+  const visualChoice = (visualSubject: LessonExerciseDraft["visualSubject"], stem: string, answer: string): LessonExerciseDraft => ({
+    exerciseType: "lesson_choice",
+    objectiveId: "english_grammar.to_be.affirmative_forms",
+    stem,
+    visualSubject,
+    answer,
+    acceptedAnswers: [],
+    focus: [answer],
+    options: [
+      { id: "a", text: "She" },
+      { id: "b", text: "He" },
+      { id: "c", text: "They" },
+    ],
+    correctOption: "a",
+  });
+
+  it.each([
+    ["girl", "___ is happy.", "She"],
+    ["boy", "___ is happy.", "He"],
+    ["group", "___ are happy.", "They"],
+    ["dog", "___ is small.", "It"],
+  ] as const)("akceptuje piktogram %s z zaimkiem %s", (visualSubject, stem, answer) => {
+    expect(validateEnglishGrammarExercise(visualChoice(visualSubject, stem, answer), toBeV1)).toEqual([]);
+  });
+
+  it.each([
+    ["girl", "___ is happy.", "He"],
+    ["group", "___ are happy.", "She"],
+    ["girl", "___ are happy.", "She"],
+  ] as const)("odrzuca niezgodność piktogram/stem/odpowiedź: %s", (visualSubject, stem, answer) => {
+    expect(validateEnglishGrammarExercise(visualChoice(visualSubject, stem, answer), toBeV1)).not.toEqual([]);
+  });
+});
+
 describe("temat to_be — reprezentatywne ćwiczenia przechodzą walidację puli", () => {
   const base = { acceptedAnswers: [] as string[], focus: [] as string[] };
   const exercises: LessonExerciseDraft[] = [

@@ -533,6 +533,19 @@ export default function LessonEditor({
                           onChange={(e) => mutateExercise(ex.clientKey, { instructionPl: e.target.value })} />
                       </label>
 
+                      {ex.exerciseType === "lesson_choice" && (
+                        <label>
+                          {messages.lessons.exerciseVisualLabel}
+                          <select data-testid={`exercise-visual-${index}`} value={ex.visualSubject} disabled={!editable || busy}
+                            onChange={(e) => mutateExercise(ex.clientKey, { visualSubject: e.target.value })}>
+                            <option value="">{messages.lessons.exerciseVisualNone}</option>
+                            {Object.entries(messages.lessons.visualSubjects).map(([value, label]) => (
+                              <option key={value} value={value}>{label}</option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+
                       {STEM_LABEL_TYPES.has(ex.exerciseType) && (
                         <label>
                           {messages.lessons.exerciseStemLabel}

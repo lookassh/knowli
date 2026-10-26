@@ -42,5 +42,8 @@ export const englishGrammarPrompts: SubjectPromptProfile = {
     "(Is she happy?, Are they ready?) and never use do or does; short answers repeat the form (Yes, she is. / No, they aren't.). " +
     "Keep 'to be' sentences very short and concrete, reusing a small set of subjects and words from the material so the only new thing is the form of 'to be'. " +
     "In a lesson_gap for 'to be', the answer is only the form itself (am, is, are, isn't, aren't, am not, is not, are not, or not when the form already stands in the sentence) — never a full short answer such as 'No, she is not', which the sentence around the gap already supplies. " +
-    "Short answers to questions about 'you' answer as 'I': Are you ready? -> Yes, I am.",
+    "Short answers to questions about 'you' answer as 'I': Are you ready? -> Yes, I am. " +
+    "Picture choice (only for objectives whose id contains '.affirmative_forms'): some lesson_choice exercises set visualSubject to who is pictured (boy or man = he, girl or woman = she, group = they, dog = it); " +
+    "then the stem is a sentence frame with the pronoun missing (___ is happy. / ___ are happy.) and the options are pronouns (He, She, It, They), so the child picks the pronoun for the picture. " +
+    "In such exercises the be form in the stem must match the pictured subject, and never set visualSubject on other exercise types.",
 };
