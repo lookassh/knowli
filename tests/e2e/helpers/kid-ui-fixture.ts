@@ -90,7 +90,10 @@ export async function installKidUiFixture(page: Page, fixture: KidUiFixture): Pr
     }
     if (method === "POST" && path === `/api/v1/kid/sessions/${fixture.session.sessionId}/disable-microphone`) return json({ ...fixture.session, microphoneEnabled: false });
     if (method === "POST" && path === `/api/v1/kid/sessions/${fixture.session.sessionId}/next`) {
-      if (taskIndex >= fixture.tasks.length) return missing("task queue exhausted");
+      // Wyczerpana kolejka = koniec sesji (204 jak prawdziwe API): kontroler
+      // pobiera następne zadanie w tle już przy feedbacku (prefetch), więc
+      // specyfikacje samego feedbacku nie muszą dokładać pustego zadania.
+      if (taskIndex >= fixture.tasks.length) return route.fulfill({ status: 204 });
       const task = fixture.tasks[taskIndex++];
       if (task === null) return route.fulfill({ status: 204 });
       return json(task);
