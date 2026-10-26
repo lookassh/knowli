@@ -143,6 +143,7 @@ async function openKidLesson(page: Page, childId: string, deckId: string): Promi
   await expect(deck).toBeVisible();
   await page.getByTestId("kid-mic-settings").click();
   await page.getByTestId("kid-mic-toggle").uncheck();
+  await page.getByTestId("kid-mic-settings").click();
   const start = page.waitForResponse((response) =>
     response.request().method() === "POST" && /\/api\/v1\/kid\/sessions$/.test(new URL(response.url()).pathname),
   );

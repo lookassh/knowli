@@ -130,6 +130,7 @@ test("termin sprawdzianu prowadzi do pisemnego Recall przed nowym materiałem be
   }
   await page.getByTestId("kid-mic-settings").click();
   await page.getByTestId("kid-mic-toggle").uncheck();
+  await page.getByTestId("kid-mic-settings").click();
   await page.getByTestId("kid-deck").filter({ hasText: title }).click();
 
   await expect(page.getByTestId("kid-input")).toBeVisible();
