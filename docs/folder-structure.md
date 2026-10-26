@@ -223,7 +223,7 @@ Lekcje i moduły przedmiotów (moduł gramatyki, 2026-10-12): silnik i przedmiot
 | packages/server/src/domain/lessons/lesson-policy.ts | Parametry selektora/polityki lekcji |
 | packages/server/src/domain/lessons/pool-validation.ts | Walidacja ćwiczeń (ogólna + walidatory przedmiotu) |
 | packages/server/src/domain/lessons/mock-test-plan.ts | Plan kartkówki lekcji |
-| packages/server/src/domain/lessons/subjects/english-grammar/ | `module.ts`, `normalizer.ts`, `error-categories.ts`, `validators.ts`, `prompts.ts`, `topics/present-simple.ts` |
+| packages/server/src/domain/lessons/subjects/english-grammar/ | `module.ts`, `normalizer.ts`, `error-categories.ts`, `validators.ts`, `prompts.ts`, `topics/present-simple.ts`, `topics/to-be.ts` |
 | packages/server/src/domain/lessons/testing/history-like-subject.ts | Fixture przedmiotu nie-językowego (dowód niezależności silnika) |
 | packages/server/src/modules/materials/lessons/ | `lesson-api.ts`, `lesson-drafts.ts`, `lesson-supervision.ts`, `lesson-generation-{control,errors,policy}.ts` (autorstwo, generowanie i nadzór nad materiałem lekcji) |
 | packages/server/src/modules/learning/lessons/ | `lesson-sessions.ts`, `lesson-attempts.ts`, `lesson-materialize.ts`, `lesson-mock-tests.ts`, `lesson-deck-overview.ts` (sesje, próby i kartkówki lekcji) |
