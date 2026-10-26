@@ -207,7 +207,6 @@
   border-radius: var(--kid-shape-xl);
 }
 
-
 /* Keep neutral image choices quiet; focus and server outcomes remain explicit. */
 :global(.kid-ui) .grid[data-visual-only="true"] .option[data-outcome="pending"] {
   border-color: var(--kid-accent);
@@ -219,7 +218,6 @@
 
 :global(.kid-ui) .grid[data-visual-only="true"] .option[data-outcome="wrong"] {
   border-color: var(--kid-wrong);
-
 }
 
 .grid[data-visual-only="true"] .item {
