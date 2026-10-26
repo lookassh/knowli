@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { readCiJobBuckets } from "../ci-matrix";
 import { MOCKED_SPECS, REAL_BUCKETS, REAL_SPECS } from "./spec-projects";
 
 const E2E_DIR = join(process.cwd(), "tests/e2e");
@@ -65,8 +66,8 @@ describe("partycja speców E2E (spec-projects)", () => {
   });
 
   it("matrix CI obejmuje dokładnie kosze REAL_BUCKETS", () => {
-    const ci = readFileSync(join(process.cwd(), ".github/workflows/ci.yml"), "utf8");
-    const buckets = [...ci.matchAll(/bucket:\s*"(\d+)"/g)].map((m) => Number(m[1])).sort((a, b) => a - b);
+    // Zakres tylko joba e2e: klucz `bucket` występuje też w jobie integration.
+    const buckets = readCiJobBuckets("e2e");
     expect(buckets).toEqual(REAL_BUCKETS.map((_, i) => i + 1));
   });
 

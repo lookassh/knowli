@@ -4,7 +4,11 @@
 # Testy są samowystarczalne: integration i e2e stawiają własne kontenery
 # postgres:17-alpine w global-setup, e2e działa na fake providerach (bez kluczy).
 # E2e biegnie w 5 równoległych jobach (osobne runnery, każdy z własnym światem):
-# projekt mocked osobno, a real w koszach czasowych REAL_BUCKETS (spec-projects.ts),
+# projekt mocked osobno, a real w koszach czasowych REAL_BUCKETS (spec-projects.ts).
+# Integracja biegnie w koszach czasowych INTEGRATION_BUCKETS
+# (tests/integration-buckets.ts) jako równoległe joby z własnym kontenerem,
+# a `tests` jest bramką pod nazwą wymaganego checka: agreguje job `check`
+# (typecheck, unit, build) oraz kosze integracji.
 name: CI
 
 on:
@@ -28,10 +32,10 @@ env:
   NEXT_TELEMETRY_DISABLED: "1"
 
 jobs:
-  tests:
-    name: tests
+  check:
+    name: check (typecheck, unit, build)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -45,8 +49,6 @@ jobs:
         run: pnpm typecheck
       - name: Unit tests
         run: pnpm test:unit
-      - name: Integration tests
-        run: pnpm test:integration
       - name: Restore Next.js build cache
         uses: actions/cache@v4
         with:
@@ -60,6 +62,54 @@ jobs:
           # środowiska wymaga obecnej wartości.
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/knowli
         run: pnpm build
+
+  integration:
+    name: integration (${{ matrix.bucket }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      # Pierwszy failure nie zabiera pozostałych koszy — pełny obraz runu.
+      fail-fast: false
+      # Każdy job stawia własny kontener Postgresa (global-setup per proces),
+      # bo pliki integracyjne biegną sekwencyjnie na wspólnej bazie przebiegu
+      # i czyszczą tabele w beforeEach. Kosze INTEGRATION_BUCKETS równoważą
+      # czasy plików; zmiana liczby koszy: zaktualizuj INTEGRATION_BUCKETS
+      # i ten matrix — zgodności pilnuje test jednostkowy integration-buckets.
+      matrix:
+        include:
+          - bucket: "1"
+          - bucket: "2"
+          - bucket: "3"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Integration tests
+        env:
+          UMIEM_INTEGRATION_BUCKET: ${{ matrix.bucket }}
+        run: pnpm test:integration
+
+  tests:
+    name: tests
+    # Bramka pod nazwą wymaganego checka `tests`: sama niczego nie testuje,
+    # tylko agreguje wyniki jobów check i integration, żeby podział na
+    # równoległe joby nie wymagał zmian w regułach ochrony brancha.
+    needs: [check, integration]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify check and integration jobs
+        run: |
+          echo "check=${{ needs.check.result }} integration=${{ needs.integration.result }}"
+          if [ "${{ needs.check.result }}" != "success" ] || [ "${{ needs.integration.result }}" != "success" ]; then
+            exit 1
+          fi
 
   e2e:
     name: e2e (${{ matrix.name }})
