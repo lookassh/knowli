@@ -47,6 +47,7 @@ describe("lesson exercise Mantine views", () => {
     }));
     renderKid(<LessonChoiceView {...props} />);
     expect(screen.getByTestId("kid-lesson-visual").textContent).toBe("👧");
+    expect(screen.getByTestId("kid-lesson-visual").getAttribute("aria-label")).toBe("Dziewczynka");
     expect(screen.getByTestId("kid-lesson-stem").textContent).toBe("___ is happy.");
   });
 

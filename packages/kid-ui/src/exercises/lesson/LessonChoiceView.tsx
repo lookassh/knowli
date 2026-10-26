@@ -2,7 +2,7 @@ import { ExerciseFrame } from "../ExerciseFrame";
 import type { ExerciseProps } from "../types";
 import { useChoiceKeyboard } from "../useChoiceKeyboard";
 import { AnswerGrid } from "../../components/AnswerGrid";
-import type { LessonVisualSubject } from "@learning/contracts";
+import { messages, type LessonVisualSubject } from "@learning/contracts";
 
 /** Piktogram osoby/zwierzęcia z bodźca obrazkowego — treść zadania, nie dekoracja. */
 const VISUAL_GLYPHS: Record<LessonVisualSubject, string> = {
@@ -35,7 +35,7 @@ export function LessonChoiceView({ task, busy, optionOutcomes, dock, handlers }:
       feedbackLayout="flow"
       content={<>
         {task.prompt.visualSubject && (
-          <p className="kid-lesson-visual" data-testid="kid-lesson-visual" aria-hidden="true">{VISUAL_GLYPHS[task.prompt.visualSubject]}</p>
+          <p className="kid-lesson-visual" data-testid="kid-lesson-visual" role="img" aria-label={messages.kid.lessonVisualSubjects[task.prompt.visualSubject]}>{VISUAL_GLYPHS[task.prompt.visualSubject]}</p>
         )}
         <p className="kid-lesson-stem" data-testid="kid-lesson-stem">{task.prompt.stem}</p>
         <AnswerGrid

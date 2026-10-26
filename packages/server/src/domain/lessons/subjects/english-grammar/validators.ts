@@ -504,17 +504,27 @@ function validateVisualPronoun(ex: LessonExerciseDraft, errors: string[]): void 
   if (answerPronoun !== undefined && Object.hasOwn(BE_FORM_BY_SUBJECT, answerPronoun) && answerPronoun !== pronoun) {
     errors.push(`visualSubject: odpowiedź zaczyna się od „${answerPronoun}”, a obrazek wymaga „${pronoun}”`);
   }
+  // Opcja oznaczona jako poprawna musi nieść ten sam zaimek co odpowiedź kanoniczna.
+  const correctText = ex.options?.find((option) => option.id === ex.correctOption)?.text;
+  const correctPronoun = correctText === undefined ? undefined : normalizeTokens(correctText)[0];
+  if (correctPronoun !== undefined && Object.hasOwn(BE_FORM_BY_SUBJECT, correctPronoun) && correctPronoun !== pronoun) {
+    errors.push(`visualSubject: opcja poprawna zaczyna się od „${correctPronoun}”, a obrazek wymaga „${pronoun}”`);
+  }
   const stemTokens = normalizeTokens(ex.stem ?? "");
   stemTokens.forEach((token, index) => {
-    // Podmiotem jest tylko zaimek, po którym stoi forma „to be” —
-    // zaimki w dopełnieniu („see you”, „next to it”) nie liczą się.
+    // Podmiotem jest zaimek sąsiadujący z formą „to be” (przed nią albo po niej
+    // w pytaniu z inwersją) — zaimki w dopełnieniu („see you”) nie liczą się.
     const next = stemTokens[index + 1];
-    if (Object.hasOwn(BE_FORM_BY_SUBJECT, token) && token !== pronoun && next !== undefined && BE_FORMS.has(next)) {
+    const prev = stemTokens[index - 1];
+    const isSubject = (next !== undefined && BE_FORMS.has(next)) || (prev !== undefined && BE_FORMS.has(prev));
+    if (Object.hasOwn(BE_FORM_BY_SUBJECT, token) && token !== pronoun && isSubject) {
       errors.push(`visualSubject: zaimek „${token}” w bodźcu nie pasuje do obrazka (poprawnie: ${pronoun})`);
     }
   });
-  // Zaimek tuż przed luką (marker ___ znika w tokenizacji, więc czytamy część przed luką).
-  const beforeGapLast = normalizeTokens((ex.stem ?? "").split("___", 2)[0] ?? "").at(-1);
+  // Zaimek tuż przed luką (tylko gdy luka istnieje; marker ___ znika w tokenizacji).
+  const stemRaw = ex.stem ?? "";
+  const gapIndex = stemRaw.indexOf("___");
+  const beforeGapLast = gapIndex < 0 ? undefined : normalizeTokens(stemRaw.slice(0, gapIndex)).at(-1);
   if (beforeGapLast !== undefined && Object.hasOwn(BE_FORM_BY_SUBJECT, beforeGapLast) && beforeGapLast !== pronoun) {
     errors.push(`visualSubject: zaimek „${beforeGapLast}” w bodźcu nie pasuje do obrazka (poprawnie: ${pronoun})`);
   }

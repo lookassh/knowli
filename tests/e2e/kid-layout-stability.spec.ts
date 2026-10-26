@@ -305,11 +305,14 @@ test("lesson_choice pictogram keeps geometry across viewports", async ({ page })
     expect(material).not.toBeNull();
     expect(visual!.x).toBeGreaterThanOrEqual(material!.x - 1);
     expect(visual!.x + visual!.width).toBeLessThanOrEqual(material!.x + material!.width + 1);
+    expect(visual!.y).toBeGreaterThanOrEqual(material!.y - 1);
     expect(visual!.y + visual!.height).toBeLessThanOrEqual(stem!.y + 1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
     for (const option of await page.getByTestId("kid-option").all()) {
       const box = await option.boundingBox();
       expect(box!.height).toBeGreaterThanOrEqual(48);
+      await option.scrollIntoViewIfNeeded();
+      await expect(option).toBeInViewport({ ratio: 0.95 });
     }
   }
 });
