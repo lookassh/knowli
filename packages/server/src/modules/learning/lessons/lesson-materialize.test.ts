@@ -31,10 +31,10 @@ function answerKeyOf(task: ReturnType<typeof materializeExercise>): LessonAnswer
 }
 
 describe("materializeExercise — correctOption po ID (P1-1)", () => {
-  it("lesson_choice: correctOptionId wskazuje opcję o tekście poprawnej, a wybór tej opcji jest oceniony correct", () => {
-    const task = materializeExercise(
+  function choiceTask(seed: string, payload: Partial<LoadedExercise["payload"]>, forTopic = topic) {
+    return materializeExercise(
       { independentCheck: false, reason: "practice" },
-      "seed-choice",
+      seed,
       loaded({
         exerciseType: "lesson_choice",
         objectiveId: "english_grammar.present_simple.third_person_s",
@@ -44,17 +44,21 @@ describe("materializeExercise — correctOption po ID (P1-1)", () => {
           { id: "a", text: "plays" },
           { id: "b", text: "play" },
         ],
-        correctOption: "a", // ID opcji, nie tekst — zgodnie z pool-validation
+        correctOption: "a",
         answer: "plays",
         acceptedAnswers: [],
         focus: ["plays"],
         answerLocale: subject.answerLocale,
         promptLocale: subject.promptLocale,
+        ...payload,
       }),
-      topic,
+      forTopic,
       subject,
     );
+  }
 
+  it("lesson_choice: correctOptionId wskazuje opcję o tekście poprawnej, a wybór tej opcji jest oceniony correct", () => {
+    const task = choiceTask("seed-choice", {});
     const key = answerKeyOf(task);
     const options = task.prompt.kind === "lesson_choice" ? task.prompt.options : [];
     const correctRendered = options.find((o) => o.id === key.correctOptionId);
@@ -65,29 +69,18 @@ describe("materializeExercise — correctOption po ID (P1-1)", () => {
   });
 
   it("lesson_choice: visualSubject przechodzi z payloadu do promptu dziecka", () => {
-    const task = materializeExercise(
-      { independentCheck: false, reason: "practice" },
-      "seed-visual",
-      loaded({
-        exerciseType: "lesson_choice",
-        objectiveId: "english_grammar.to_be.affirmative_forms",
-        instructionPl: "Kto to jest? Wybierz.",
-        stem: "___ is happy.",
-        visualSubject: "girl",
-        options: [
-          { id: "a", text: "She" },
-          { id: "b", text: "He" },
-        ],
-        correctOption: "a",
-        answer: "She",
-        acceptedAnswers: [],
-        focus: ["She"],
-        answerLocale: subject.answerLocale,
-        promptLocale: subject.promptLocale,
-      }),
-      subject.topics.find((t) => t.id === "to_be")!,
-      subject,
-    );
+    const task = choiceTask("seed-visual", {
+      objectiveId: "english_grammar.to_be.affirmative_forms",
+      instructionPl: "Kto to jest? Wybierz.",
+      stem: "___ is happy.",
+      visualSubject: "girl",
+      options: [
+        { id: "a", text: "She" },
+        { id: "b", text: "He" },
+      ],
+      answer: "She",
+      focus: ["She"],
+    }, subject.topics.find((t) => t.id === "to_be")!);
     expect(task.prompt.kind).toBe("lesson_choice");
     expect(task.prompt.kind === "lesson_choice" ? task.prompt.visualSubject : undefined).toBe("girl");
   });
