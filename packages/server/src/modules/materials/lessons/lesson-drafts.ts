@@ -20,7 +20,7 @@ import {
   defaultPoolSize,
   type StageMix,
 } from "../../../domain/lessons/lesson-policy";
-import { MAX_TEXT_LENGTH, validatePool } from "../../../domain/lessons/pool-validation";
+import { MAX_TEXT_LENGTH, validatePool, withoutRedundantAcceptedVariants } from "../../../domain/lessons/pool-validation";
 import {
   lessonExerciseIdentity,
   lessonExerciseStimulusRecord,
@@ -684,7 +684,13 @@ export async function executeLessonGeneration(services: Services, runId: string,
     assertLessonGenerationFinalizationAllowed(runDeadlineAtMs, options.signal);
     const wellShaped = rawExercises.filter(isWellShapedRawExercise);
     const shapeRejected = rawExercises.length - wellShaped.length;
-    const drafts = wellShaped.map(toExerciseDraft);
+    // Warianty acceptedAnswers redundantne wobec odpowiedzi kanonicznej (np.
+    // skrótowa forma przeczenia „to be” przy pełnej) porzucamy przy przyjęciu
+    // puli — bez tego walidacja fazy 1 odrzucałaby całe ćwiczenie za wpis
+    // nieznoszący informacji (odpowiedź kanoniczna jest akceptowana automatycznie).
+    const drafts = wellShaped
+      .map(toExerciseDraft)
+      .map((draft) => withoutRedundantAcceptedVariants(draft, subject.normalizer));
     const { valid, rejected } = validatePool(drafts, subject, topic);
     // Duplikaty wobec odpowiedzi już w puli: odrzucamy valid, których odpowiedź
     // równa się istniejącej (dogenerowanie nie powiela odpowiedzi szkicu).

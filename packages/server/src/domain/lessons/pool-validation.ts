@@ -445,6 +445,27 @@ function validateAcceptedAnswers(
 }
 
 /**
+ * Kopia ćwiczenia bez wariantów `acceptedAnswers` redundantnych wobec odpowiedzi
+ * kanonicznej (równoważnych po normalizatorze przedmiotu — dokładnie ta sama
+ * relacja co reguła `validateAcceptedAnswers`). Redundantny wariant nie niesie
+ * informacji oceniania: odpowiedź kanoniczna jest akceptowana automatycznie,
+ * a normalizator i tak zrównuje je przy ocenie. Generacja porzuca takie
+ * warianty przy przyjęciu puli zamiast tracić CAŁE ćwiczenie (incydent prod
+ * 2026-10-26: przeczenia „to be” traciły wszystkie ćwiczenia samodzielne,
+ * bo model konsekwentnie podawał wariant skrótowy — „They're not…” przy
+ * odpowiedzi „They aren't…”). Walidacja pozostaje egzekwatorem przy edycji
+ * i publikacji. Ćwiczenie bez wariantów redundantnych zwracane bez kopii.
+ */
+export function withoutRedundantAcceptedVariants(
+  ex: LessonExerciseDraft,
+  normalizer: AnswerNormalizer,
+): LessonExerciseDraft {
+  if (ex.acceptedAnswers.length === 0) return ex;
+  const kept = ex.acceptedAnswers.filter((variant) => !answersEquivalent(variant, ex.answer, normalizer));
+  return kept.length === ex.acceptedAnswers.length ? ex : { ...ex, acceptedAnswers: kept };
+}
+
+/**
  * Grupuje INDEKSY odpowiedzi mających wspólny wariant znormalizowanej odpowiedzi
  * kanonicznej. Pierwszy element każdej grupy to pierwsze wystąpienie, kolejne —
  * duplikaty. Relacja „wspólny wariant” nie jest przechodnia, więc grupujemy

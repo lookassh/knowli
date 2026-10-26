@@ -14,6 +14,7 @@ import {
   poolCoverage,
   validateLessonExercise,
   validatePool,
+  withoutRedundantAcceptedVariants,
 } from "./pool-validation";
 import { englishGrammarSubject } from "./subjects/english-grammar/module";
 import { historyLikeSubject } from "./testing/history-like-subject";
@@ -544,6 +545,42 @@ describe("validateLessonExercise — długości i acceptedAnswers", () => {
       englishTopic,
     );
     expect(errors.length).toBeGreaterThan(0);
+  });
+});
+
+describe("withoutRedundantAcceptedVariants", () => {
+  it("porzuca wariant skrótowy równoważny odpowiedzi kanonicznej (przeczenia „to be”)", () => {
+    const ex = draft({
+      exerciseType: "lesson_open_answer",
+      objectiveId: "english_grammar.to_be.negative_forms",
+      stem: undefined,
+      hint: undefined,
+      prompt: "Oni nie są w mojej klasie.",
+      answer: "They aren't in my class.",
+      acceptedAnswers: ["They're not in my class."],
+      focus: ["aren't"],
+    });
+    const sanitized = withoutRedundantAcceptedVariants(ex, englishGrammarSubject.normalizer);
+    expect(sanitized.acceptedAnswers).toEqual([]);
+    expect(sanitized.answer).toBe("They aren't in my class.");
+  });
+
+  it("porzuca tylko redundantne warianty, różne zachowuje", () => {
+    const ex = draft({
+      acceptedAnswers: ["Plays", "does play on Mondays"],
+    });
+    const sanitized = withoutRedundantAcceptedVariants(ex, englishGrammarSubject.normalizer);
+    expect(sanitized.acceptedAnswers).toEqual(["does play on Mondays"]);
+  });
+
+  it("zwraca tę samą instancję, gdy nie ma wariantów redundantnych", () => {
+    const ex = draft({ acceptedAnswers: ["does play on Mondays"] });
+    expect(withoutRedundantAcceptedVariants(ex, englishGrammarSubject.normalizer)).toBe(ex);
+  });
+
+  it("zwraca tę samą instancję dla pustych acceptedAnswers", () => {
+    const ex = draft({ acceptedAnswers: [] });
+    expect(withoutRedundantAcceptedVariants(ex, englishGrammarSubject.normalizer)).toBe(ex);
   });
 });
 

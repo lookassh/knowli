@@ -242,6 +242,57 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect(new Set(revisions.map(({ payload }) => lessonExerciseIdentity(payload))).size).toBe(20);
   });
 
+  it("wariant acceptedAnswers redundantny wobec odpowiedzi (skrót przeczenia „to be”) jest porzucany, nie zabija ćwiczenia", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = lessonServices(fakes);
+    const objectiveId = "english_grammar.to_be.negative_forms";
+    // Incydent prod 2026-10-26: model regularnie podaje wariant skrótowy
+    // („They're not…”) przy odpowiedzi kanonicznej „They aren't…” — po
+    // normalizacji to ten sam tekst, więc bez sanityzacji walidacja fazy 1
+    // odrzucała CAŁE ćwiczenie i cel tracił ćwiczenia samodzielne.
+    fakes.llm.queueLesson({
+      exercises: [
+        {
+          exerciseType: "lesson_open_answer",
+          objectiveId,
+          instructionPl: "Przetłumacz zdanie na angielski.",
+          prompt: "Oni nie są w mojej klasie.",
+          answer: "They aren't in my class.",
+          acceptedAnswers: ["They're not in my class.", "They are not in my class."],
+          focus: ["aren't"],
+        },
+      ],
+    });
+
+    const { runId } = await createLesson(
+      services,
+      command({
+        topicId: "to_be",
+        objectiveIds: [objectiveId],
+        material: "They aren't in my class. We aren't late.",
+        clientRequestId: randomUUID(),
+      }),
+    );
+    await executeLessonGeneration(services, runId);
+
+    const run = await readGeneration(services, runId);
+    expect(run.state).toBe("succeeded");
+    const revisions = await query<{ payload: { answer: string; acceptedAnswers: string[] } }>(
+      "select payload from learning_app.item_revisions where deck_version_id = $1",
+      [run.deckVersionId!],
+    );
+    expect(revisions).toHaveLength(1);
+    expect(revisions[0]!.payload.answer).toBe("They aren't in my class.");
+    expect(revisions[0]!.payload.acceptedAnswers).toEqual([]);
+    // Sanityzacja nie jest odrzuceniem — licznik pozostaje zerowy.
+    const [version] = await query<{ lesson_context: { rejectedCount: number } }>(
+      "select lesson_context from learning_app.deck_versions where id = $1",
+      [run.deckVersionId!],
+    );
+    expect(version!.lesson_context.rejectedCount).toBe(0);
+  });
+
   it("częściowe odrzucenia: niepoprawne ćwiczenia odrzucone pojedynczo, licznik dostępny", async () => {
     const fakes = await fakeGeneration();
     disposers.push(fakes.dispose);
@@ -477,7 +528,10 @@ describe("generowanie puli lekcji (integracja)", () => {
     const services = lessonServices(fakes);
     fakes.llm.queueLesson({
       exercises: [
-        { exerciseType: "lesson_gap", objectiveId: "english_grammar.present_simple.third_person_s", answer: "plays", acceptedAnswers: ["plays"], focus: ["plays"], stem: "She ___ tennis." },
+        // Wariant „plays” równoważny odpowiedzi kanonicznej jest porzucany
+        // przez sanityzację przyjęcia puli, więc regułę acceptedAnswers
+        // wyzwala dopiero pusty wariant obok niego.
+        { exerciseType: "lesson_gap", objectiveId: "english_grammar.present_simple.third_person_s", answer: "plays", acceptedAnswers: ["plays", "   "], focus: ["plays"], stem: "She ___ tennis." },
         { exerciseType: "lesson_choice", objectiveId: "english_grammar.present_simple.third_person_s", answer: "runs", acceptedAnswers: [], focus: ["runs"], stem: "He ___ fast.", options: [{ id: "a", text: "runs" }, { id: "b", text: "run" }, { id: "c", text: "running" }, { id: "d", text: "ran" }, { id: "e", text: "to run" }], correctOption: "a" },
       ],
     });
