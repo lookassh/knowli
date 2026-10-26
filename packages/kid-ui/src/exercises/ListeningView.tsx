@@ -2,7 +2,6 @@ import { useEffect, useRef } from "react";
 import { messages } from "@learning/contracts";
 import { ActionButton } from "../components/ActionButton";
 import { AnswerGrid } from "../components/AnswerGrid";
-import { KidIcon } from "../components/KidIcon";
 import { ExerciseFrame } from "./ExerciseFrame";
 import type { ExerciseProps } from "./types";
 import { useChoiceKeyboard } from "./useChoiceKeyboard";
@@ -37,20 +36,9 @@ export function ListeningView({ task, busy, optionOutcomes, dock, handlers, mock
     <ExerciseFrame
       task={task}
       feedbackLayout="flow"
+      instructionAudio={{ ref: playRef, disabled: busy, onPlay: handlers.onPlay }}
       content={(
         <>
-          <ActionButton
-            fullWidth={false}
-            ref={playRef}
-            type="button"
-            className="kid-play-big"
-            data-testid="kid-play"
-            disabled={busy}
-            onClick={handlers.onPlay}
-            aria-label={messages.kid.listen}
-          >
-            <KidIcon name="volume" />
-          </ActionButton>
           <AnswerGrid
             className="kid-options"
             choiceList

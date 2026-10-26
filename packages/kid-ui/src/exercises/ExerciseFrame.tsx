@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { Box } from "@mantine/core";
 import type { TaskDto } from "@learning/contracts";
-import { KidIcon } from "../components/KidIcon";
+import { ExerciseInstruction, type ExerciseInstructionAudio } from "../components/ExerciseInstruction";
 import classes from "./ExerciseFrame.module.css";
 import { getExercisePresentation } from "./exercise-presentation";
 import {
@@ -11,9 +11,9 @@ import {
 } from "./feedback-dock-reveal";
 
 /**
- * Rama zadania: siatka instrukcja / materiał / akcje. Tylko obszar
- * materiału przewija się — instrukcja i akcje stoją poza scrollerem,
- * więc zawsze zostają na miejscu. AppShell Mantine nie przeszedł
+ * Rama zadania: siatka instrukcja / materiał / akcje. Zwykle przewija się
+ * tylko materiał; przy długiej odpowiedzi wyboru rama też może się przewinąć,
+ * aby zachować pełny tekst i czytelne minimum materiału. AppShell Mantine nie przeszedł
  * weryfikacji runtime (jego hooki wymagają `useEffectEvent`,
  * niedostępnego w przypiętym React), dlatego szkielet opiera się na
  * Box i module CSS. Wynik próby trafia do stopki jako `dock` — bodziec
@@ -27,6 +27,7 @@ export function ExerciseFrame({
   secondaryActions,
   dock,
   feedbackLayout = "overlay",
+  instructionAudio,
 }: {
   task: TaskDto;
   content: ReactNode;
@@ -35,6 +36,7 @@ export function ExerciseFrame({
   dock?: ReactNode;
   /** Choice tasks use a real footer instead of reserving space for an overlay. */
   feedbackLayout?: "overlay" | "flow";
+  instructionAudio?: ExerciseInstructionAudio;
 }): ReactElement {
   const presentation = getExercisePresentation(task);
   const materialRef = useRef<HTMLDivElement>(null);
@@ -52,7 +54,8 @@ export function ExerciseFrame({
 
   // Revealing is tied to a dock/task and viewport mode, never to the newly
   // allocated JSX node passed by LearnScreen on unrelated renders. Observe
-  // KidPage directly so rotation/zoom changes work without a child render.
+  // KidPage and frame geometry so rotation/zoom and growing feedback work
+  // without a child render. Manual scrolling never triggers another reveal.
   useEffect(() => {
     if (revealTaskIdRef.current !== task.taskId) {
       revealTaskIdRef.current = task.taskId;
@@ -64,12 +67,15 @@ export function ExerciseFrame({
     }
     const overlay = overlayRef.current;
     const page = overlay?.closest<HTMLElement>(".kid-page");
+    const frameRoot = overlay?.closest<HTMLElement>(".kid-exercise-frame");
     if (!overlay || !page) return;
     let active = true;
 
     const revealIfNeeded = () => {
       if (!active) return;
-      const required = page.dataset.zoomed === "true" || page.dataset.viewportVeryShort === "true";
+      const frameOverflows = flowFeedback && frameRoot !== null && frameRoot !== undefined
+        && frameRoot.scrollHeight > frameRoot.clientHeight + 1;
+      const required = page.dataset.zoomed === "true" || page.dataset.viewportVeryShort === "true" || frameOverflows;
       const shouldReveal = shouldRevealFeedbackDock(revealStateRef.current, overlay, required);
       if (!required) {
         revealCleanupRef.current?.();
@@ -84,16 +90,23 @@ export function ExerciseFrame({
     revealIfNeeded();
     const observer = new MutationObserver(revealIfNeeded);
     observer.observe(page, { attributes: true, attributeFilter: ["data-zoomed", "data-viewport-very-short"] });
+    const resizeObserver = flowFeedback && typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(revealIfNeeded) : null;
+    if (resizeObserver && frameRoot) {
+      resizeObserver.observe(frameRoot);
+      resizeObserver.observe(overlay);
+    }
     return () => {
       active = false;
       observer.disconnect();
+      resizeObserver?.disconnect();
       revealCleanupRef.current?.();
       revealCleanupRef.current = null;
       // Also allows React Strict Mode's setup/cleanup replay to schedule
       // the frame again after the first setup was cancelled.
       revealStateRef.current.required = false;
     };
-  }, [hasDock, task.taskId]);
+  }, [hasDock, task.taskId, flowFeedback]);
 
   // Dock zwykły i mowy rezerwuje w materiale dokładnie tyle, o ile
   // panel wystaje ponad stopkę w trybie overlay — ale tylko gdy treść naprawdę
@@ -174,10 +187,7 @@ export function ExerciseFrame({
 
   return (
     <Box className={`kid-exercise-frame ${classes.root}`} data-testid="kid-exercise" data-prompt-kind={task.prompt.kind} data-feedback-layout={feedbackLayout}>
-      <Box component="header" className={`kid-exercise-instruction ${classes.instruction}`} data-testid="kid-instruction">
-        <KidIcon name={presentation.icon} className="kid-exercise-instruction-icon" />
-        <span>{presentation.instruction}</span>
-      </Box>
+      <ExerciseInstruction instruction={presentation.instruction} icon={presentation.icon} audio={instructionAudio} />
       <Box ref={materialRef} className={`kid-material ${classes.material}`} data-testid="kid-material">
         <Box
           className={`kid-material-content ${classes.materialContent}`}

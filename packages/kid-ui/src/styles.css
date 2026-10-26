@@ -21,6 +21,7 @@
   --kid-warm: #493f2b;
   --kid-warm-text: #f3d8a4;
   --kid-warm-line: #79633e;
+  --kid-visual-choice-min-size: 112px;
   color-scheme: dark;
   color: var(--kid-text);
   background: var(--kid-bg);
