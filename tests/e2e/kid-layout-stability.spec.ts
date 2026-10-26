@@ -295,6 +295,13 @@ test("lesson_choice pictogram keeps geometry across viewports", async ({ page })
     { width: 1280, height: 800 },
   ]) {
     await page.setViewportSize(viewport);
+    // The previous viewport may have scrolled the material (options were
+    // scrolled into view) and scroll anchoring can re-apply that offset
+    // after the resize; let it settle, then measure from the top.
+    await page.evaluate(async () => {
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      document.querySelector<HTMLElement>("[data-testid=kid-material]")!.scrollTop = 0;
+    });
     const visual = await page.getByTestId("kid-lesson-visual").boundingBox();
     const material = await page.getByTestId("kid-material").boundingBox();
     const stem = await page.getByTestId("kid-lesson-stem").boundingBox();

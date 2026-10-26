@@ -201,7 +201,7 @@
   color: var(--md-sys-color-on-surface);
   text-align: center;
   touch-action: manipulation;
-  transition: background-color 150ms, border-color 150ms, transform 150ms;
+  transition: background-color 150ms, border-color 150ms;
 }
 
 :global(.kid-ui) .grid[data-visual-only="true"] .option {

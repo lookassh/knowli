@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { messages, type MockTestSummaryDto, type SessionActivityResultDto, type SessionDto } from "@learning/contracts";
 import { ActionButton } from "../components/ActionButton";
+import { ScoreStars } from "../components/ScoreStars";
 import { KidScreen } from "../layout/KidScreen";
 import { SessionActivityResultView } from "./SessionActivityResultView";
 import { KidIcon } from "../components/KidIcon";
@@ -41,7 +42,7 @@ export function MockTestSummaryScreen({ summary, activity, detailsLoading, detai
       <SessionActivityResultView activity={activity} />
       {score.total > 0 && <div className="kid-mock-score" data-testid="kid-mock-score" data-tone={tone}>
         <p className="kid-mock-score__value">{format(messages.kid.mockTestScore, { correct: score.correct, total: score.total, percent: score.percent })}</p>
-        <p className="kid-mock-score__stars" role="img" aria-label={format(messages.kid.mockTestStarsLabel, { n: score.stars })}>{"★".repeat(score.stars)}{"☆".repeat(6 - score.stars)}</p>
+        <ScoreStars stars={score.stars} label={format(messages.kid.mockTestStarsLabel, { n: score.stars })} />
       </div>}
     </KidScreen.Header>
     <KidScreen.Content>

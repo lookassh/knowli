@@ -1,9 +1,11 @@
 import type { ButtonHTMLAttributes, ReactElement, Ref } from "react";
+import { m } from "motion/react";
+import { kidSpringSnappy, kidTapScale } from "../motion/kid-motion";
 import classes from "./answer-controls.module.css";
 
 export type ActionButtonVariant = "filled" | "tonal" | "outlined" | "text";
 
-export interface ActionButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "size"> {
+export interface ActionButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "size" | "onAnimationStart" | "onAnimationEnd" | "onDrag" | "onDragStart" | "onDragEnd"> {
   /** Material 3 button style. Takes precedence over the legacy priority. */
   variant?: ActionButtonVariant;
   /** @deprecated Use variant: "primary" maps to filled, "secondary" to tonal. */
@@ -28,7 +30,7 @@ export function ActionButton({
 }: ActionButtonProps): ReactElement {
   const resolvedVariant: ActionButtonVariant = variant ?? (priority === "secondary" ? "tonal" : "filled");
   return (
-    <button
+    <m.button
       {...props}
       ref={ref}
       type={type}
@@ -38,6 +40,8 @@ export function ActionButton({
       data-full-width={fullWidth}
       style={{ borderRadius: radius, ...style }}
       className={["kid-action", classes.action, className].filter(Boolean).join(" ")}
+      whileTap={props.disabled ? undefined : { scale: kidTapScale }}
+      transition={kidSpringSnappy}
     />
   );
 }

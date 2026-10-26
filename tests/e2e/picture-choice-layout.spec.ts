@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { assertKidLayout, installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
+import { assertKidLayout, installKidUiFixture, silentWavBuffer, type KidUiFixture } from "./helpers/kid-ui-fixture";
 import { pictureChoiceLayoutFixture } from "./helpers/picture-fixtures";
 
 const viewports = [
@@ -28,21 +28,8 @@ function contrastRatio(foreground: string, background: string): number {
 async function openPictureChoices(page: Page, fixture: KidUiFixture, viewport = viewports[0]!) {
   await page.setViewportSize(viewport);
   await installKidUiFixture(page, fixture);
-  const audio = Buffer.alloc(204);
-  audio.write("RIFF", 0);
-  audio.writeUInt32LE(audio.length - 8, 4);
-  audio.write("WAVEfmt ", 8);
-  audio.writeUInt32LE(16, 16);
-  audio.writeUInt16LE(1, 20);
-  audio.writeUInt16LE(1, 22);
-  audio.writeUInt32LE(8000, 24);
-  audio.writeUInt32LE(16000, 28);
-  audio.writeUInt16LE(2, 32);
-  audio.writeUInt16LE(16, 34);
-  audio.write("data", 36);
-  audio.writeUInt32LE(audio.length - 44, 40);
   await page.route("**/api/v1/media/10000000-0000-4000-8000-000000000012", (route) =>
-    route.fulfill({ status: 200, contentType: "audio/wav", body: audio }));
+    route.fulfill({ status: 200, contentType: "audio/wav", body: silentWavBuffer() }));
   await page.goto("/");
   await page.getByTestId("kid-profile").click();
   await page.getByTestId("kid-deck").first().click();
@@ -284,7 +271,7 @@ test("cyfra działa z klawiatury w ciemnym motywie, pokazuje błąd i pozwala sp
   const firstAnswerStarted = new Promise<void>((resolve) => { signalFirstAnswer = resolve; });
   const submitted: unknown[] = [];
   let responseIndex = 0;
-  await page.emulateMedia({ colorScheme: "dark" });
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
   await openPictureChoices(page, fixture);
   await page.route(`**/api/v1/kid/tasks/${task.taskId}/attempts`, async (route) => {
     submitted.push(route.request().postDataJSON());
@@ -463,7 +450,7 @@ test("układ poziomy zachowuje dostęp do wszystkich odpowiedzi i końca sesji",
 });
 
 test("trzy odpowiedzi i cyfra pozostają czytelne w ciemnym motywie", async ({ page }, testInfo) => {
-  await page.emulateMedia({ colorScheme: "dark" });
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
   await openPictureChoices(page, pictureChoiceLayoutFixture());
   await assertKidLayout(page);
 
