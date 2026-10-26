@@ -74,7 +74,7 @@ describe("kid Material 3 tokens", () => {
   it("styles ActionButton variants through M3 state layers and disabled tokens", () => {
     const controls = read("components/answer-controls.module.css");
     for (const variant of ["filled", "tonal", "outlined", "text"]) {
-      expect(controls, variant).toContain(`[data-variant="${variant}"]`);
+      expect(controls, variant).toContain(`:where([data-variant="${variant}"])`);
     }
     expect(controls).toContain("var(--kid-state-hover-opacity)");
     expect(controls).toContain("var(--kid-state-pressed-opacity)");

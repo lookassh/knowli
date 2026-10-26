@@ -38,6 +38,14 @@ test("round audio buttons keep a readable icon on their resting background", asy
     await expect(control).toBeVisible();
     await expectReadable(control);
   }
+  /* The round audio button keeps its 64px circle and soft resting surface,
+     not the filled primary pill. */
+  const play = page.getByTestId("kid-play");
+  const box = await play.boundingBox();
+  expect(box).not.toBeNull();
+  expect(Math.round(box!.width)).toBe(64);
+  expect(Math.round(box!.height)).toBe(64);
+  await expect.poll(() => play.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgb(48, 63, 100)");
 });
 
 for (const colorScheme of ["light", "dark"] as const) {

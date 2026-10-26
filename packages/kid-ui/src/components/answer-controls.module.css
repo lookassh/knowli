@@ -27,25 +27,26 @@
 
 /* Material 3 variants. The state layer mixes the content color into the
    container at the M3 hover (8%) and pressed (10%) opacities. */
-:global(.kid-ui) .action[data-variant="filled"] {
+/* :where() keeps variant defaults below global .kid-* overrides in styles.css. */
+:global(.kid-ui) .action:where([data-variant="filled"]) {
   --action-bg: var(--md-sys-color-primary);
   --action-fg: var(--md-sys-color-on-primary);
   --action-border: var(--md-sys-color-primary);
 }
 
-:global(.kid-ui) .action[data-variant="tonal"] {
+:global(.kid-ui) .action:where([data-variant="tonal"]) {
   --action-bg: var(--md-sys-color-secondary-container);
   --action-fg: var(--md-sys-color-on-secondary-container);
   --action-border: transparent;
 }
 
-:global(.kid-ui) .action[data-variant="outlined"] {
+:global(.kid-ui) .action:where([data-variant="outlined"]) {
   --action-bg: transparent;
   --action-fg: var(--md-sys-color-primary);
   --action-border: var(--md-sys-color-outline);
 }
 
-:global(.kid-ui) .action[data-variant="text"] {
+:global(.kid-ui) .action:where([data-variant="text"]) {
   --action-bg: transparent;
   --action-fg: var(--md-sys-color-primary);
   --action-border: transparent;
@@ -79,12 +80,12 @@
   color: var(--kid-color-disabled-content);
 }
 
-:global(.kid-ui) .action[data-variant="outlined"]:disabled,
-:global(.kid-ui) .action[data-variant="text"]:disabled {
+:global(.kid-ui) .action:where([data-variant="outlined"]):disabled,
+:global(.kid-ui) .action:where([data-variant="text"]):disabled {
   background: transparent;
 }
 
-:global(.kid-ui) .action[data-variant="outlined"]:disabled {
+:global(.kid-ui) .action:where([data-variant="outlined"]):disabled {
   border-color: var(--kid-color-disabled-container);
 }
 

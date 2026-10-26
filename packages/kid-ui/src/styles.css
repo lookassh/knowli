@@ -568,13 +568,13 @@
   cursor: pointer;
 }
 
-.kid-deck-card__actions .action.kid-primary {
+.kid-deck-card__actions .kid-primary {
   border: 0;
   --action-bg: var(--kid-accent);
   --action-fg: var(--kid-on-accent);
 }
 
-.kid-deck-card__actions .action.kid-secondary {
+.kid-deck-card__actions .kid-secondary {
   border-width: 1px;
   --action-bg: var(--kid-soft);
   --action-fg: var(--kid-text);
@@ -731,7 +731,7 @@
 
 /* Okrągły odsłuch zamiast pastylki w rzędzie akcji (SPEC §12.1): widoczny
    przycisk dla zablokowanego autoodtwarzania, ale nie konkuruje z „Rozumiem”. */
-.kid-ui .action.kid-audio-round {
+.kid-ui .kid-audio-round {
   width: 64px;
   height: 64px;
   min-height: 64px;
@@ -893,7 +893,7 @@
   opacity: 0.55;
 }
 
-.kid-ui .action.kid-primary {
+.kid-ui .kid-primary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1383,7 +1383,7 @@
   color: var(--kid-good);
 }
 
-.kid-ui .action.kid-end {
+.kid-ui .kid-end {
   min-height: 48px;
   padding: 6px 16px;
   font-size: 1rem;
@@ -1599,7 +1599,7 @@
   min-height: 52px;
 }
 
-.kid-ui .kid-speech-feedback__actions .action.kid-secondary {
+.kid-ui .kid-speech-feedback__actions .kid-secondary {
   border-width: 1px;
   --action-fg: var(--kid-text);
   --action-bg: var(--kid-soft);
@@ -1974,7 +1974,7 @@
   font-weight: 700;
 }
 
-.kid-ui .action.kid-flow-secondary {
+.kid-ui .kid-flow-secondary {
   min-height: 52px;
   padding: 10px 16px;
   border: 2px solid var(--kid-line);
@@ -1986,7 +1986,7 @@
   cursor: pointer;
 }
 
-.kid-screen--mock-ready > .action.kid-end {
+.kid-screen--mock-ready > .kid-end {
   width: 100%;
   min-height: 52px;
   --action-border: var(--kid-line);
