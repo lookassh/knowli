@@ -237,6 +237,45 @@ test("long choice labels keep their geometry when feedback markers appear", asyn
   });
 });
 
+for (const kind of ["reading", "listening", "lesson_choice"] as const) {
+  test(`${kind}: long feedback leaves choices and actions reachable on short windows and with 200% text`, async ({ page }) => {
+    const fixture: KidUiFixture = completedReadingFixture();
+    const task = fixture.tasks[0]!;
+    if (task.prompt.kind !== "reading") throw new Error("reading fixture expected");
+    const options = task.prompt.options;
+    fixture.tasks = [{ ...task, exerciseType: kind, prompt: kind === "reading" ? task.prompt
+      : kind === "listening" ? { kind, options, audioAssetId: "10000000-0000-4000-8000-000000000012" }
+        : { kind, options, instructionPl: "Wybierz odpowiedź", stem: "He ___ a cat." } }];
+    fixture.attempts = [{ ...fixture.attempts![0]!, taskState: "issued",
+      feedback: { kind: "incorrect", correctText: "Poprawna odpowiedź wymaga przeczytania dłuższego objaśnienia. ".repeat(8) } }];
+    fixture.uiAudio = { ready: true, assets: {} };
+    await installKidUiFixture(page, fixture);
+    await page.setViewportSize({ width: 360, height: 500 });
+    await page.goto("/");
+    await page.getByTestId("kid-profile").click();
+    await page.getByTestId("kid-deck").click();
+    await expect(page.getByTestId("kid-exercise-actions")).toBeEmpty();
+    await page.getByTestId("kid-option").first().click();
+    await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
+
+    for (const enlarged of [false, true]) {
+      await page.evaluate((zoom) => { document.documentElement.style.fontSize = zoom ? "200%" : ""; }, enlarged);
+      await expect(page.locator(".kid-page")).toHaveAttribute("data-zoomed", String(enlarged));
+      for (const option of await page.getByTestId("kid-option").all()) {
+        await option.evaluate((element) => element.scrollIntoView({ block: "center" }));
+        await expect(option).toBeInViewport({ ratio: 0.98 });
+      }
+      const next = page.getByTestId("kid-next");
+      await next.evaluate((element) => element.scrollIntoView({ block: "center" }));
+      await expect(next).toBeInViewport({ ratio: 0.98 });
+      const material = await page.getByTestId("kid-material").boundingBox();
+      const dock = await page.getByTestId("kid-feedback-dock").boundingBox();
+      expect(material!.y + material!.height).toBeLessThanOrEqual(dock!.y + 1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+    }
+  });
+}
+
 for (const enlargedText of [false, true]) {
 test(`choice selection and transition feedback appear while the answer request is still pending${enlargedText ? " with 200% text" : ""}`, async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });

@@ -24,7 +24,7 @@
 }
 
 /* Obrazki: szeroka akcja pod odpowiedzią na telefonie; obok niej
-   dopiero przy szerokości medium. Materiał rezerwuje miejsce panelu. */
+   dopiero przy szerokości medium. Rama uwzględnia rzeczywistą wysokość. */
 .compact {
   flex-direction: column;
   align-items: stretch;

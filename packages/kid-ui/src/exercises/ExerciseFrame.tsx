@@ -17,7 +17,8 @@ import {
  * weryfikacji runtime (jego hooki wymagają `useEffectEvent`,
  * niedostępnego w przypiętym React), dlatego szkielet opiera się na
  * Box i module CSS. Wynik próby trafia do stopki jako `dock` — bodziec
- * i odpowiedzi nie zmieniają wtedy miejsca.
+ * i odpowiedzi pozostają zamontowane. W trybie flow stopka ma rzeczywistą
+ * wysokość; materiał może się zmniejszyć lub przewijać po werdykcie.
  */
 export function ExerciseFrame({
   task,
@@ -25,12 +26,15 @@ export function ExerciseFrame({
   actions,
   secondaryActions,
   dock,
+  feedbackLayout = "overlay",
 }: {
   task: TaskDto;
   content: ReactNode;
   actions?: ReactNode;
   secondaryActions?: ReactNode;
   dock?: ReactNode;
+  /** Choice tasks use a real footer instead of reserving space for an overlay. */
+  feedbackLayout?: "overlay" | "flow";
 }): ReactElement {
   const presentation = getExercisePresentation(task);
   const materialRef = useRef<HTMLDivElement>(null);
@@ -44,6 +48,7 @@ export function ExerciseFrame({
   const revealTaskIdRef = useRef<string | null>(null);
   const [dockPad, setDockPad] = useState(0);
   const hasDock = dock !== undefined;
+  const flowFeedback = feedbackLayout === "flow";
 
   // Revealing is tied to a dock/task and viewport mode, never to the newly
   // allocated JSX node passed by LearnScreen on unrelated renders. Observe
@@ -91,8 +96,7 @@ export function ExerciseFrame({
   }, [hasDock, task.taskId]);
 
   // Dock zwykły i mowy rezerwuje w materiale dokładnie tyle, o ile
-  // panel wystaje ponad stopkę (kompaktowy ma stałą rezerwę CSS niżej)
-  // — ale tylko gdy treść naprawdę
+  // panel wystaje ponad stopkę w trybie overlay — ale tylko gdy treść naprawdę
   // wchodzi pod panel; inaczej nie powstaje zbędny ogon scrolla. Rezerwa
   // jest wyliczana od zera przy każdej zmianie rozmiaru (materiał, panel,
   // okno/klawiatura), więc nie rośnie monotonicznie. Przewinięcie
@@ -100,7 +104,7 @@ export function ExerciseFrame({
   // korekcie znika, więc pomiary nie dokładają scrolla w pętli, a po
   // otwarciu klawiatury ekranowej albo rotacji liczy się jeszcze raz.
   useEffect(() => {
-    if (dock === undefined) {
+    if (dock === undefined || flowFeedback) {
       gatedDockRef.current = null;
       scrolledKeyRef.current = null;
       setDockPad(0);
@@ -110,14 +114,6 @@ export function ExerciseFrame({
     const anchor = anchorRef.current;
     const overlay = overlayRef.current;
     if (!material || !anchor || !overlay) return;
-    // Dock kompaktowy (obrazki) ma stałą rezerwę w materiale
-    // (picture_listening 56 px zawsze, picture_recognition 56 px przy
-    // docku), większą od wystawania panelu — dynamiczny padding tylko
-    // zmieniałby budżet wysokości kafelków.
-    if (overlay.querySelector("[data-compact='true']")) {
-      setDockPad(0);
-      return;
-    }
     const measure = () => {
       const excess = Math.max(0, Math.ceil(overlay.offsetHeight - anchor.offsetHeight));
       const content = material.querySelector<HTMLElement>(".kid-material-content");
@@ -166,7 +162,7 @@ export function ExerciseFrame({
       cancelAnimationFrame(frame);
       observer?.disconnect();
     };
-  }, [dock]);
+  }, [dock, flowFeedback]);
 
   // Po zmianie rezerwy zakres scrolla dopiero powstaje — pierwszy pomiar
   // mógł zostać przycięty, więc korekta powtarza się w następnej klatce.
@@ -177,7 +173,7 @@ export function ExerciseFrame({
   }, [dockPad]);
 
   return (
-    <Box className={`kid-exercise-frame ${classes.root}`} data-testid="kid-exercise" data-prompt-kind={task.prompt.kind}>
+    <Box className={`kid-exercise-frame ${classes.root}`} data-testid="kid-exercise" data-prompt-kind={task.prompt.kind} data-feedback-layout={feedbackLayout}>
       <Box component="header" className={`kid-exercise-instruction ${classes.instruction}`} data-testid="kid-instruction">
         <KidIcon name={presentation.icon} className="kid-exercise-instruction-icon" />
         <span>{presentation.instruction}</span>
@@ -189,7 +185,12 @@ export function ExerciseFrame({
         >{content}</Box>
       </Box>
       <Box className={`kid-exercise-actions ${classes.actions}`} data-testid="kid-exercise-actions">
-        {dock ? (
+        {flowFeedback ? (
+          dock ? <Box ref={overlayRef} className={classes.flowDock}>{dock}</Box> : <>
+            {actions && <Box data-testid="kid-primary-slot" className={classes.primary}>{actions}</Box>}
+            {secondaryActions && <Box data-testid="kid-secondary-slot" className={classes.secondary}>{secondaryActions}</Box>}
+          </>
+        ) : dock ? (
           <Box ref={anchorRef} className={classes.dockAnchor}>
             <Box data-testid="kid-primary-slot" className={classes.primary} aria-hidden="true" />
             <Box data-testid="kid-secondary-slot" className={classes.secondary} aria-hidden="true" />

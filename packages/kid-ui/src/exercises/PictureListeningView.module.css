@@ -1,15 +1,30 @@
-.play {
-  width: clamp(48px, 6svh, 60px);
-  min-width: clamp(48px, 6svh, 60px);
-  height: clamp(48px, 6svh, 60px);
-  min-height: clamp(48px, 6svh, 60px);
+:global(.kid-ui) .play {
   flex: none;
-  border: 1px solid #2c3d5e;
-  background: #17223d;
-  color: #f0f5ff;
+  border: 2px solid var(--kid-line);
+  border-radius: 50%;
+  background: var(--kid-soft);
+  color: var(--kid-text);
 }
 
-.play :global(.kid-icon) {
-  width: 32px;
-  height: 32px;
+:global(.kid-ui) .play :global(.kid-icon) {
+  width: 36px;
+  height: 36px;
+}
+
+/* The play button consumes its natural height; this box gives AnswerGrid
+   exactly the remaining rectangle, without subtracting guessed pixel budgets. */
+.answers {
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  container-type: size;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+:global(.kid-page[data-zoomed="true"]) .answers,
+:global(.kid-page[data-viewport-very-short="true"]) .answers {
+  container-type: inline-size;
+  flex: none;
 }

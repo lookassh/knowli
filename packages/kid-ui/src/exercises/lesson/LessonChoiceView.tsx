@@ -21,6 +21,7 @@ export function LessonChoiceView({ task, busy, optionOutcomes, dock, handlers }:
   return (
     <ExerciseFrame
       task={task}
+      feedbackLayout="flow"
       content={<>
         <p className="kid-lesson-stem" data-testid="kid-lesson-stem">{task.prompt.stem}</p>
         <AnswerGrid
