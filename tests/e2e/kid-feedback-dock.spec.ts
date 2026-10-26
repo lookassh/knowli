@@ -49,6 +49,27 @@ async function openTask(page: import("@playwright/test").Page) {
   await expect(page.getByTestId("kid-exercise")).toBeVisible();
 }
 
+test("confirming a revealed answer opens the next written task with an editable field", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const fixture = completedRecallFixture();
+  const nextId = "10000000-0000-4000-8000-000000000011";
+  await installKidUiFixture(page, {
+    ...fixture,
+    tasks: [fixture.tasks[0]!, { ...fixture.tasks[0]!, taskId: nextId, ordinal: 1 }],
+    attempts: [{ ...fixture.attempts[0]!, modality: "dont_remember", taskState: "answered", feedback: { kind: "incorrect", correctText: "cat" } }],
+    disclosure: { taskId, stepId: "hint", kind: "hint", reveal: { target: "cat" } },
+  });
+  await openTask(page);
+  await page.getByTestId("kid-not-remember").click();
+  await expect(page.getByTestId("kid-reveal")).toContainText("cat");
+  await page.getByTestId("kid-next").click();
+  await expect(page.locator(".kid-learning")).toHaveAttribute("data-task-id", nextId);
+  await expect(page.getByTestId("kid-feedback")).toHaveCount(0);
+  await expect(page.getByTestId("kid-input")).toBeEditable();
+  await page.getByTestId("kid-input").fill("cat");
+  await expect(page.getByTestId("kid-submit")).toBeEnabled();
+});
+
 test("written feedback appears in a dock without replacing the stimulus", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await installKidUiFixture(page, completedRecallFixture());

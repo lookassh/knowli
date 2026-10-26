@@ -737,15 +737,13 @@ test("recall z należnego sprawdzenia: pisemna pisownia, Nie pamiętam i Pomiń"
   await page.getByTestId("kid-not-remember").click();
   await expect(page.getByTestId("kid-reveal")).toContainText(target2);
   await page.getByTestId("kid-next").click();
-  await expect(page.getByTestId("kid-feedback")).toBeVisible();
-  // zadeklarowana trudność dostaje tło pomyłki, nie sukcesu (SPEC §16)
-  await expect(page.getByTestId("kid-feedback")).toHaveClass(/kid-feedback--retry/);
+  await expect(page.locator(".kid-learning")).not.toHaveAttribute("data-task-id", taskId2);
+  await expect(page.getByTestId("kid-feedback")).toHaveCount(0);
   const modality2 = await query<{ modality: string }>(
     `select modality from learning_app.attempts where task_id = $1`,
     [taskId2],
   );
   expect(modality2[0]!.modality).toBe("dont_remember");
-  await page.getByTestId("kid-next").click();
 
   // zadanie 3: „Pomiń” zamyka zadanie bez oceny wiedzy
   await driveUntil(page, () => page.getByTestId("kid-input").isVisible());

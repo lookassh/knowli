@@ -502,7 +502,9 @@ test("child can declare not-remembered in a lesson gap: difficulty then reveal t
   await page.getByTestId("kid-next").click();
 
   // Potwierdzenie ujawnienia zapisuje zadeklarowaną trudność (dont_remember),
-  // nie pomyłkę wiedzy — i prowadzi do feedbacku wsparcia.
-  await expect(page.getByTestId("kid-feedback")).toBeVisible();
+  // i przechodzi dalej bez ponownego pokazywania zakończonego formularza.
+  await expect(page.getByTestId("kid-reveal")).toHaveCount(0);
+  await expect(page.getByTestId("kid-feedback")).toHaveCount(0);
+  await expect(page.getByTestId("kid-summary")).toBeVisible();
   expect(attemptBodies.some((body) => /"modality"\s*:\s*"dont_remember"/.test(body))).toBe(true);
 });

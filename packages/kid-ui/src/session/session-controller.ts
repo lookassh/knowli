@@ -1145,6 +1145,13 @@ export class LearningSessionController {
       this.#setLearning({ feedback: null, reveal: null, processing: false, busy: true, answerSaved: true });
       await this.#loadNext(epoch, this.#screen.session.sessionId); return;
     }
+    // „Rozumiem” potwierdziło już pokazany wzorzec. Po zapisaniu trudności
+    // przechodzimy do wsparcia, bez drugiego feedbacku na zamkniętym formularzu.
+    if (attempt.modality === "dont_remember" && this.#screen.reveal !== null && attempt.taskState !== "issued") {
+      this.#setLearning({ feedback: null, reveal: null, processing: false, busy: true });
+      await this.#loadNext(epoch, this.#screen.session.sessionId);
+      return;
+    }
     this.#screen = {
       ...this.#screen,
       busy: false,
