@@ -6,7 +6,6 @@ import { ExerciseFrame } from "./ExerciseFrame";
 import type { ExerciseProps } from "./types";
 import { shouldIgnoreKeyboardShortcut } from "./useChoiceKeyboard";
 import { ActionButton } from "../components/ActionButton";
-import { Text } from "@mantine/core";
 
 /**
  * Poznanie słowa (SPEC §12.1): angielskie słowo, polskie znaczenie i pomoc
@@ -62,9 +61,9 @@ export function ExposureView({ task, busy, mediaUrl, dock, handlers }: ExerciseP
             />
           )}
           <div className="kid-word-row">
-              <Text component="p" className="kid-word" data-testid="kid-target">
+              <p className="kid-word" data-testid="kid-target">
               {task.prompt.target}
-              </Text>
+              </p>
             {task.prompt.audioAssetId !== null && (
               <ActionButton
                 fullWidth={false}
@@ -85,9 +84,9 @@ export function ExposureView({ task, busy, mediaUrl, dock, handlers }: ExerciseP
           </p>
           {task.prompt.example !== null && (
             <div className="kid-example-block">
-                <Text component="p" className="kid-example" data-testid="kid-example">
+                <p className="kid-example" data-testid="kid-example">
                 {task.prompt.example}
-                </Text>
+                </p>
               {task.prompt.exampleAudioAssetId !== null && (
                 <ActionButton
                   fullWidth={false}

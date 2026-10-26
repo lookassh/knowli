@@ -1,5 +1,4 @@
 import type { ReactElement, ReactNode } from "react";
-import { Box } from "@mantine/core";
 import classes from "./ExerciseFeedbackDock.module.css";
 
 export type FeedbackDockTone = "correct" | "incorrect" | "partial" | "technical" | "neutral";
@@ -27,24 +26,24 @@ export function ExerciseFeedbackDock({
   secondary?: ReactNode;
 }): ReactElement {
   return (
-    <Box
+    <div
       data-testid="kid-feedback-dock"
       data-tone={tone}
       data-dock-kind={kind}
       data-compact={compact || undefined}
       className={`${classes.dock} ${compact ? classes.compact : ""} ${tone === "correct" ? classes.correct : tone === "incorrect" ? classes.incorrect : tone === "partial" ? classes.partial : tone === "technical" ? classes.technical : ""}`}
     >
-      <Box className={classes.scroll}>
-        <Box className={classes.content}>{children}</Box>
-      </Box>
-      <Box className={classes.actions}>
+      <div className={classes.scroll}>
+        <div className={classes.content}>{children}</div>
+      </div>
+      <div className={classes.actions}>
         {primary}
-      </Box>
+      </div>
       {secondary !== undefined && secondary !== null && (
-        <Box className={classes.secondary}>
+        <div className={classes.secondary}>
           {secondary}
-        </Box>
+        </div>
       )}
-    </Box>
+    </div>
   );
 }

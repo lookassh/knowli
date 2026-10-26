@@ -1,130 +1,61 @@
 "use client";
 
-import {
-  Box,
-  createSafeContext,
-  factory,
-  type BoxProps,
-  type CompoundStylesApiProps,
-  type ElementProps,
-  type Factory,
-  type GetStylesApi,
-  type StylesApiProps,
-  useProps,
-  useStyles,
-} from "@mantine/core";
-import type { ReactNode } from "react";
+import type { HTMLAttributes, ReactElement, ReactNode, Ref } from "react";
 import classes from "./KidScreen.module.css";
 
-type KidScreenStylesNames = "root" | "header" | "content" | "actions" | "primary" | "secondary";
-
-interface KidScreenContextValue {
-  getStyles: GetStylesApi<KidScreenFactory>;
+export interface KidScreenProps extends HTMLAttributes<HTMLDivElement> {
+  ref?: Ref<HTMLDivElement>;
 }
 
-const [KidScreenProvider, useKidScreenContext] = createSafeContext<KidScreenContextValue>(
-  "KidScreen sub-components must be rendered inside KidScreen",
-);
+export interface KidScreenHeaderProps extends HTMLAttributes<HTMLDivElement> {
+  ref?: Ref<HTMLDivElement>;
+}
 
-export interface KidScreenProps extends BoxProps, StylesApiProps<KidScreenFactory>, ElementProps<"div"> {}
+export interface KidScreenContentProps extends HTMLAttributes<HTMLDivElement> {
+  ref?: Ref<HTMLDivElement>;
+}
 
-export interface KidScreenHeaderProps extends BoxProps, CompoundStylesApiProps<KidScreenHeaderFactory>, ElementProps<"div"> {}
-export interface KidScreenContentProps extends BoxProps, CompoundStylesApiProps<KidScreenContentFactory>, ElementProps<"div"> {}
-export interface KidScreenActionsProps extends BoxProps, CompoundStylesApiProps<KidScreenActionsFactory>, ElementProps<"div"> {
+export interface KidScreenActionsProps extends HTMLAttributes<HTMLDivElement> {
   secondary?: ReactNode;
+  ref?: Ref<HTMLDivElement>;
 }
 
-export type KidScreenHeaderFactory = Factory<{
-  props: KidScreenHeaderProps;
-  ref: HTMLDivElement;
-  stylesNames: KidScreenStylesNames;
-  compound: true;
-}>;
-
-export type KidScreenContentFactory = Factory<{
-  props: KidScreenContentProps;
-  ref: HTMLDivElement;
-  stylesNames: KidScreenStylesNames;
-  compound: true;
-}>;
-
-export type KidScreenActionsFactory = Factory<{
-  props: KidScreenActionsProps;
-  ref: HTMLDivElement;
-  stylesNames: KidScreenStylesNames;
-  compound: true;
-}>;
-
-export type KidScreenFactory = Factory<{
-  props: KidScreenProps;
-  ref: HTMLDivElement;
-  stylesNames: KidScreenStylesNames;
-  staticComponents: {
-    Header: typeof KidScreenHeader;
-    Content: typeof KidScreenContent;
-    Actions: typeof KidScreenActions;
-  };
-}>;
-
-export const KidScreenHeader = factory<KidScreenHeaderFactory>((_props) => {
-  const props = useProps("KidScreenHeader", {}, _props);
-  const { className, style, classNames, styles, children, ...others } = props;
-  const { getStyles } = useKidScreenContext();
-
-  return <Box {...getStyles("header", { className, style, classNames, styles, props })} {...others}>{children}</Box>;
-});
+export function KidScreenHeader({ className, ref, ...props }: KidScreenHeaderProps): ReactElement {
+  return <div {...props} ref={ref} className={[classes.header, className].filter(Boolean).join(" ")} />;
+}
 KidScreenHeader.displayName = "KidScreenHeader";
 
-export const KidScreenContent = factory<KidScreenContentFactory>((_props) => {
-  const props = useProps("KidScreenContent", {}, _props);
-  const { className, style, classNames, styles, children, ...others } = props;
-  const { getStyles } = useKidScreenContext();
-
-  return <Box data-testid="kid-content" {...getStyles("content", { className, style, classNames, styles, props })} {...others}>{children}</Box>;
-});
+export function KidScreenContent({ className, ref, ...props }: KidScreenContentProps): ReactElement {
+  return <div {...props} ref={ref} data-testid="kid-content" className={[classes.content, className].filter(Boolean).join(" ")} />;
+}
 KidScreenContent.displayName = "KidScreenContent";
 
-export const KidScreenActions = factory<KidScreenActionsFactory>((_props) => {
-  const props = useProps("KidScreenActions", {}, _props);
-  const { className, style, classNames, styles, children, secondary, ...others } = props;
-  const { getStyles } = useKidScreenContext();
-
+export function KidScreenActions({ className, children, secondary, ref, ...props }: KidScreenActionsProps): ReactElement {
   return (
-    <Box {...getStyles("actions", { className, style, classNames, styles, props })} {...others}>
-      <Box data-testid="kid-primary-slot" {...getStyles("primary", { classNames, styles, props })}>{children}</Box>
-      <Box data-testid="kid-secondary-slot" {...getStyles("secondary", { classNames, styles, props })}>{secondary}</Box>
-    </Box>
+    <div {...props} ref={ref} className={[classes.actions, className].filter(Boolean).join(" ")}>
+      <div data-testid="kid-primary-slot" className={classes.primary}>{children}</div>
+      <div data-testid="kid-secondary-slot" className={classes.secondary}>{secondary}</div>
+    </div>
   );
-});
+}
 KidScreenActions.displayName = "KidScreenActions";
 
-export const KidScreen = factory<KidScreenFactory>((_props) => {
-  const props = useProps("KidScreen", {}, _props);
-  const { classNames, className, style, styles, unstyled, vars, attributes, children, ...others } = props;
-  const getStyles = useStyles<KidScreenFactory>({
-    name: "KidScreen",
-    classes,
-    props,
-    className,
-    style,
-    classNames,
-    styles,
-    unstyled,
-    vars,
-    attributes,
-  });
-
+function KidScreenRoot({ className, ref, ...props }: KidScreenProps): ReactElement {
+  const dataTestId = (props as Record<string, unknown>)["data-testid"] ?? "kid-screen";
   return (
-    <KidScreenProvider value={{ getStyles }}>
-      <Box data-testid="kid-screen" data-kid-screen="true" {...getStyles("root")} {...others}>
-        {children}
-      </Box>
-    </KidScreenProvider>
+    <div
+      {...props}
+      ref={ref}
+      data-testid={dataTestId as string}
+      data-kid-screen="true"
+      className={[classes.root, className].filter(Boolean).join(" ")}
+    />
   );
-});
+}
+KidScreenRoot.displayName = "KidScreen";
 
-KidScreen.displayName = "KidScreen";
-KidScreen.classes = classes;
-KidScreen.Header = KidScreenHeader;
-KidScreen.Content = KidScreenContent;
-KidScreen.Actions = KidScreenActions;
+export const KidScreen = Object.assign(KidScreenRoot, {
+  Header: KidScreenHeader,
+  Content: KidScreenContent,
+  Actions: KidScreenActions,
+});

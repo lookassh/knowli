@@ -6,13 +6,11 @@
   "exports": {
     ".": "./src/index.ts",
     "./styles.css": "./src/styles.css",
-    "./theme.css": "./src/theme/mantine.css",
+    "./theme.css": "./src/theme/kid-theme.css",
     "./theme": "./src/theme/KidThemeProvider.tsx"
   },
   "dependencies": {
     "@learning/contracts": "workspace:*",
-    "@mantine/core": "9.7.3",
-    "@mantine/hooks": "9.7.3",
     "@orpc/client": "2.0.0-beta.45",
     "@orpc/contract": "2.0.0-beta.45",
     "@orpc/openapi": "2.0.0-beta.45"

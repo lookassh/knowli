@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "react";
-import { Paper, Text, Title } from "@mantine/core";
 import { messages } from "@learning/contracts";
 import { ActionButton } from "../../components/ActionButton";
 import { ExerciseFrame } from "../ExerciseFrame";
@@ -24,17 +23,17 @@ export function LessonCardView({ task, busy, dock, handlers }: ExerciseProps) {
       dock={dock}
       task={task}
       content={(
-        <Paper className="kid-lesson-card" data-testid="kid-lesson-card" radius="lg" p="md" withBorder>
-          <Title order={2} className="kid-lesson-card__title" data-testid="kid-lesson-card-title">{title}</Title>
-          <Text component="p" className="kid-lesson-card__body" data-testid="kid-lesson-card-body">{body}</Text>
+        <article className="kid-lesson-card" data-testid="kid-lesson-card">
+          <h2 className="kid-lesson-card__title" data-testid="kid-lesson-card-title">{title}</h2>
+          <p className="kid-lesson-card__body" data-testid="kid-lesson-card-body">{body}</p>
           {examples.length > 0 && (
             <ul className="kid-lesson-card__examples" data-testid="kid-lesson-card-examples">
               {examples.map((example, index) => (
-                <li key={index} lang="en-GB"><Text component="span">{example}</Text></li>
+                <li key={index} lang="en-GB"><span>{example}</span></li>
               ))}
             </ul>
           )}
-        </Paper>
+        </article>
       )}
       actions={(
         <ActionButton

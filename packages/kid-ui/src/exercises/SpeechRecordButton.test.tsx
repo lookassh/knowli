@@ -21,7 +21,7 @@ describe("SpeechRecordButton", () => {
     fireEvent.pointerUp(button, { pointerId: 7, pointerType: "touch" });
     expect(handlers.onStop).toHaveBeenCalledOnce();
     expect(handlers.onCancel).not.toHaveBeenCalled();
-    expect(button.className).toContain("mantine-UnstyledButton-root");
+    expect(button.tagName).toBe("BUTTON");
   });
 
   it("cancels a cancelled hold gesture without stopping it", () => {

@@ -1,4 +1,3 @@
-import { Paper, Switch, Text, Title } from "@mantine/core";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement } from "react";
 import { messages } from "@learning/contracts";
 import { useKidPageViewport } from "../layout/viewport";
@@ -21,7 +20,7 @@ export function MicrophoneSettingsButton({
   const panelId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const [panelPosition, setPanelPosition] = useState<CSSProperties>();
   const viewport = useKidPageViewport();
   const label = microphone ? messages.kid.microphoneSettingsOn : messages.kid.microphoneSettingsOff;
@@ -93,7 +92,7 @@ export function MicrophoneSettingsButton({
         >
           <KidIcon name={microphone ? "microphone" : "microphone-off"} />
         </IconActionButton>
-        {opened && <Paper
+        {opened && <section
           ref={panelRef}
           className="kid-microphone-settings"
           data-testid="kid-mic-settings-panel"
@@ -101,21 +100,22 @@ export function MicrophoneSettingsButton({
           role="dialog"
           aria-label={messages.kid.microphoneSettingsTitle}
           style={panelPosition}
-          withBorder
         >
-          <Title order={2} className="kid-microphone-settings__title">{messages.kid.microphoneSettingsTitle}</Title>
-          <Switch
-            className="kid-toggle"
-            data-testid="kid-mic-toggle"
-            checked={microphone}
-            label={messages.kid.microphone}
-            onChange={(event) => onToggleMicrophone(event.currentTarget.checked)}
-          />
-          <Text className="kid-microphone-hint" data-testid="kid-microphone-hint">
+          <h2 className="kid-microphone-settings__title">{messages.kid.microphoneSettingsTitle}</h2>
+          <label className="kid-toggle" data-testid="kid-mic-toggle">
+            <input
+              type="checkbox"
+              checked={microphone}
+              onChange={(event) => onToggleMicrophone(event.currentTarget.checked)}
+            />
+            <span className="kid-toggle__track" aria-hidden="true"><span className="kid-toggle__knob" /></span>
+            <span>{messages.kid.microphone}</span>
+          </label>
+          <p className="kid-microphone-hint" data-testid="kid-microphone-hint">
             {messages.kid.microphoneLearningHint}
-          </Text>
-          {micDenied && <Text className="kid-hint" data-testid="kid-mic-denied-hint">{messages.kid.microphoneDeniedHint}</Text>}
-        </Paper>}
+          </p>
+          {micDenied && <p className="kid-hint" data-testid="kid-mic-denied-hint">{messages.kid.microphoneDeniedHint}</p>}
+        </section>}
     </div>
   );
 }

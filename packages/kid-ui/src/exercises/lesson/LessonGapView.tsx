@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { Text } from "@mantine/core";
 import { messages } from "@learning/contracts";
 import { format } from "../../format";
 import { KidIcon } from "../../components/KidIcon";
@@ -48,11 +47,11 @@ export function LessonGapView({ task, busy, dock, handlers }: ExerciseProps) {
           onSubmit={(event) => { event.preventDefault(); submit(); }}
         >
           <div className="kid-lesson-gap__stem">
-            <Text component="span">{before}</Text>
+            <span>{before}</span>
             <AnswerField
               ref={inputRef}
               className="kid-lesson-gap__field"
-              classNames={{ input: "kid-lesson-gap__input" }}
+              inputClassName="kid-lesson-gap__input"
               data-testid="kid-lesson-gap-input"
               value={text}
               onChange={(event) => { setText(event.target.value); handlers.onEdit(); }}
@@ -64,12 +63,12 @@ export function LessonGapView({ task, busy, dock, handlers }: ExerciseProps) {
               spellCheck={false}
               disabled={disabled}
             />
-            <Text component="span">{after}</Text>
+            <span>{after}</span>
           </div>
           {hint !== undefined && (
-            <Text component="p" className="kid-lesson-gap__hint" data-testid="kid-lesson-gap-hint">
+            <p className="kid-lesson-gap__hint" data-testid="kid-lesson-gap-hint">
               {format(messages.kid.lessonGapHint, { hint })}
-            </Text>
+            </p>
           )}
           {hasAudio && (
             <ActionButton
@@ -78,7 +77,7 @@ export function LessonGapView({ task, busy, dock, handlers }: ExerciseProps) {
               priority="secondary"
               size="sm"
               fullWidth={false}
-              styles={{ root: { minHeight: 48 } }}
+              style={{ minHeight: 48 }}
               data-testid="kid-lesson-listen"
               disabled={disabled}
               onClick={handlers.onPlay}

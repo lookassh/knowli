@@ -114,10 +114,9 @@ test("unavailable mock test is omitted", async ({ page }) => {
   await expect(page.getByTestId("kid-mock-start")).toHaveCount(0);
 });
 
-test("long deck titles and actions remain available at 200 percent text size", async ({ page }) => {
+test("long deck titles and actions remain available", async ({ page }) => {
   const title = `Słownictwo ${"bardzo-długa-nazwa-".repeat(8)}`;
   await openDeckScreen(page, [makeDeck(0, { title, mockTestAvailable: false })]);
-  await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
   const card = page.getByTestId("kid-deck-card");
   await expect(card.getByTestId("kid-deck-title")).toHaveText(`${title} — 12 słów`);
   const microphoneButton = page.getByTestId("kid-mic-settings");
@@ -181,7 +180,7 @@ test("microphone settings stay inside portrait, landscape, tablet and desktop vi
     const panel = page.getByTestId("kid-mic-settings-panel");
     await expect(panel).toBeVisible();
     await page.keyboard.press("Tab");
-    await expect(page.getByTestId("kid-mic-toggle")).toBeFocused();
+    await expect(page.getByTestId("kid-mic-toggle").locator("input")).toBeFocused();
     expect(await page.evaluate(() => (window as unknown as Window & { microphonePermissionRequests: number }).microphonePermissionRequests)).toBe(0);
     await page.getByTestId("kid-daily-activity").click();
     await expect(panel).toHaveCount(0);

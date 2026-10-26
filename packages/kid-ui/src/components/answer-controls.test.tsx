@@ -90,8 +90,8 @@ describe("ActionButton and AnswerField", () => {
     expect(onKeyDown).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "Sprawdź" }).getAttribute("type")).toBe("submit");
     expect(screen.getByRole("button", { name: "Sprawdź" }).getAttribute("form")).toBe("answer");
-    expect(screen.getByRole("button", { name: "Sprawdź" }).className).toContain("mantine-UnstyledButton-root");
-    expect(screen.getByRole("button", { name: "Sprawdź" }).className).not.toContain("mantine-Button-root");
+    expect(screen.getByRole("button").className).toContain(styles.action);
+
     fireEvent.click(screen.getByRole("button", { name: "Sprawdź" }));
     expect(submit).toHaveBeenCalledTimes(1);
   });
@@ -142,8 +142,8 @@ describe("ActionButton and AnswerField", () => {
         autoCorrect="off"
         autoCapitalize="off"
         spellCheck={false}
-        label="Etykieta pola"
-        classNames={{ input: "custom-input", label: "custom-label" }}
+
+        inputClassName="custom-input"
       />,
     );
     const input = screen.getByLabelText("Wpisz słowo") as HTMLInputElement;
@@ -155,7 +155,7 @@ describe("ActionButton and AnswerField", () => {
     expect(input.getAttribute("spellcheck")).toBe("false");
     expect(input.classList.contains("custom-input")).toBe(true);
     expect(input.classList.contains(styles.input)).toBe(true);
-    expect(screen.getByText("Etykieta pola").classList.contains("custom-label")).toBe(true);
+
   });
 });
 

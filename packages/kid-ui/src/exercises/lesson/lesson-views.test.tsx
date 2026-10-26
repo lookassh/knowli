@@ -18,13 +18,13 @@ function task(prompt: TaskPrompt): TaskDto {
   return { taskId: id(1), sessionId: id(2), ordinal: 1, exerciseType: prompt.kind as TaskDto["exerciseType"], direction: null, state: "issued", prompt, remainingAssessed: 1 };
 }
 
-describe("lesson exercise Mantine views", () => {
-  it("lesson card completes the presentation and uses Mantine action", () => {
+describe("lesson exercise views", () => {
+  it("lesson card completes the presentation and uses the shared action button", () => {
     const props = makeExerciseProps(task({ kind: "lesson_card", card: { title: "Reguła", body: "Dodaj -s", examples: ["He plays."] } }));
     renderKid(<LessonCardView {...props} />);
     expect(screen.getByTestId("kid-lesson-card-title").textContent).toBe("Reguła");
     const next = screen.getByTestId("kid-lesson-next");
-    expect(next.className).toContain("mantine-UnstyledButton-root");
+    expect(next.tagName).toBe("BUTTON");
     fireEvent.click(next);
     expect(props.handlers.onComplete).toHaveBeenCalledOnce();
   });
@@ -121,7 +121,7 @@ describe("lesson exercise Mantine views", () => {
 
     const sentenceProps = makeExerciseProps(task({ kind: "lesson_error_fix", instructionPl: "Popraw", statement: "He play.", audioAssetId: id(9) }));
     renderKid(<LessonSentenceView {...sentenceProps} />);
-    expect(screen.getByTestId("kid-lesson-listen").className).toContain("mantine-UnstyledButton-root");
+    expect(screen.getByTestId("kid-lesson-listen").tagName).toBe("BUTTON");
     fireEvent.click(screen.getByTestId("kid-lesson-listen"));
     expect(sentenceProps.handlers.onPlay).toHaveBeenCalledOnce();
     fireEvent.change(screen.getByTestId("kid-lesson-input"), { target: { value: "He plays." } });

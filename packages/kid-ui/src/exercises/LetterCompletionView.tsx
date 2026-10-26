@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { messages } from "@learning/contracts";
 import { format } from "../format";
-import { TextInput } from "@mantine/core";
 import { ActionButton } from "../components/ActionButton";
 import { ExerciseFrame } from "./ExerciseFrame";
 import { useRetryReset } from "./useRetryReset";
@@ -55,10 +54,10 @@ export function LetterCompletionView({ task, busy, recording, handlers, letterDr
           >
             <div className="kid-letter-fragment" data-testid="kid-fragment" role="group" aria-label={messages.kid.fillLetters}>
               {characters.map((character, index) => character === "_" ? (
-                <TextInput
+                <input
                   key={index}
                   ref={(input) => { inputRefs.current[index] = input; }}
-                  classNames={{ input: "kid-letter-input" }}
+                  className="kid-letter-input"
                   data-testid="kid-letter-input"
                   aria-label={format(messages.kid.missingLetterPosition, { n: index + 1 })}
                   value={letters[index] ?? ""}

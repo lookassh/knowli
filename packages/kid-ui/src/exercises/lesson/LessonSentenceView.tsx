@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { Text } from "@mantine/core";
 import { messages } from "@learning/contracts";
 import { KidIcon } from "../../components/KidIcon";
 import { ActionButton } from "../../components/ActionButton";
@@ -44,7 +43,7 @@ export function LessonSentenceView({ task, busy, dock, handlers }: ExerciseProps
       task={task}
       content={(
         <>
-          <Text component="p" className="kid-lesson-source" data-testid="kid-lesson-source" lang="en-GB">{source}</Text>
+          <p className="kid-lesson-source" data-testid="kid-lesson-source" lang="en-GB">{source}</p>
           <form
             id={formId}
             className="kid-written"
@@ -74,7 +73,7 @@ export function LessonSentenceView({ task, busy, dock, handlers }: ExerciseProps
               priority="secondary"
               size="sm"
               fullWidth={false}
-              styles={{ root: { minHeight: 48 } }}
+              style={{ minHeight: 48 }}
               data-testid="kid-lesson-listen"
               disabled={disabled}
               onClick={handlers.onPlay}

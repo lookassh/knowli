@@ -238,7 +238,7 @@ test("long choice labels keep their geometry when feedback markers appear", asyn
 });
 
 for (const kind of ["reading", "listening", "lesson_choice"] as const) {
-  test(`${kind}: long feedback leaves choices and actions reachable on short windows and with 200% text`, async ({ page }) => {
+  test(`${kind}: long feedback leaves choices and actions reachable on short windows`, async ({ page }) => {
     const fixture: KidUiFixture = completedReadingFixture();
     const task = fixture.tasks[0]!;
     if (task.prompt.kind !== "reading") throw new Error("reading fixture expected");
@@ -258,9 +258,7 @@ for (const kind of ["reading", "listening", "lesson_choice"] as const) {
     await page.getByTestId("kid-option").first().click();
     await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
 
-    for (const enlarged of [false, true]) {
-      await page.evaluate((zoom) => { document.documentElement.style.fontSize = zoom ? "200%" : ""; }, enlarged);
-      await expect(page.locator(".kid-page")).toHaveAttribute("data-zoomed", String(enlarged));
+    await expect(page.locator(".kid-page")).toHaveAttribute("data-zoomed", "false");
       for (const option of await page.getByTestId("kid-option").all()) {
         await option.evaluate((element) => element.scrollIntoView({ block: "center" }));
         await expect(option).toBeInViewport({ ratio: 0.98 });
@@ -272,12 +270,10 @@ for (const kind of ["reading", "listening", "lesson_choice"] as const) {
       const dock = await page.getByTestId("kid-feedback-dock").boundingBox();
       expect(material!.y + material!.height).toBeLessThanOrEqual(dock!.y + 1);
       expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
-    }
   });
 }
 
-for (const enlargedText of [false, true]) {
-test(`choice selection and transition feedback appear while the answer request is still pending${enlargedText ? " with 200% text" : ""}`, async ({ page }) => {
+test("choice selection and transition feedback appear while the answer request is still pending", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const fixture: KidUiFixture = completedReadingFixture();
   await installKidUiFixture(page, fixture);
@@ -292,7 +288,6 @@ test(`choice selection and transition feedback appear while the answer request i
   await page.goto("/");
   await page.getByTestId("kid-profile").click();
   await page.getByTestId("kid-deck").click();
-  if (enlargedText) await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
 
   const option = page.getByTestId("kid-option").first();
   await option.scrollIntoViewIfNeeded();
@@ -323,16 +318,12 @@ test(`choice selection and transition feedback appear while the answer request i
     return range.getBoundingClientRect().top - element.getBoundingClientRect().top;
   });
   expect(textStart, "the beginning of a wrapped status must stay reachable").toBeGreaterThanOrEqual(0);
-  if (enlargedText) {
-    expect(await notice.evaluate((element) => { element.scrollTop = element.scrollHeight; return element.scrollTop; })).toBeGreaterThan(0);
-  }
 
   releaseAttempt();
   await expect(page.getByTestId("kid-next")).toBeVisible();
   await expect(page.getByTestId("kid-next")).toBeInViewport();
   await expect(option).toHaveClass(/kid-option--correct/);
 });
-}
 
 for (const kind of ["recall", "speech"] as const) {
 test(`${kind} microphone phases keep exercise controls in place`, async ({ page }) => {

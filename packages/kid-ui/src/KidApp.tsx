@@ -1,7 +1,6 @@
 "use client";
 
 import { type ReactNode } from "react";
-import { Text } from "@mantine/core";
 import { messages, type UiAudioKey } from "@learning/contracts";
 import type { KidApi } from "./api/KidApi";
 import type { PlatformMedia } from "./media/platform";
@@ -92,7 +91,7 @@ function KidAppContent({
       return (
         <KidPage mode="flow">
           <KidScreen role="main" className="kid-screen">
-            <KidScreen.Content><Text className="kid-hint" role="status">{messages.kid.loading}</Text></KidScreen.Content>
+            <KidScreen.Content><p className="kid-hint" role="status">{messages.kid.loading}</p></KidScreen.Content>
           </KidScreen>
         </KidPage>
       );
@@ -101,7 +100,7 @@ function KidAppContent({
         <KidPage mode="flow">
           <KidScreen role="main" className="kid-screen kid-init-error-screen">
             {actions && <KidScreen.Header><header className="kid-top-bar">{actions}</header></KidScreen.Header>}
-            <KidScreen.Content><Text className="kid-hint" data-testid="kid-init-error" role="alert">{screen.message}</Text></KidScreen.Content>
+            <KidScreen.Content><p className="kid-hint" data-testid="kid-init-error" role="alert">{screen.message}</p></KidScreen.Content>
             <KidScreen.Actions>
               <ActionButton type="button" className="kid-primary" data-testid="kid-back-decks" onClick={() => void controller.backToDecks()}>
                 {messages.kid.backToLearning}

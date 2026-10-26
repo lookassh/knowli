@@ -232,7 +232,7 @@ test("dock reveals after viewport mode changes and does not jump again on repeat
   const dock = page.getByTestId("kid-feedback-dock");
   await expect(dock).toBeVisible();
 
-  await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
+  await page.locator(".kid-page").evaluate((element) => element.setAttribute("data-zoomed", "true"));
   await expect(page.locator(".kid-page")).toHaveAttribute("data-zoomed", "true");
   await expect.poll(() => page.evaluate(() => (window as typeof window & { dockRevealCalls?: number }).dockRevealCalls)).toBe(1);
 

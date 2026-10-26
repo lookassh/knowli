@@ -17,7 +17,7 @@ const base = (kind: TaskDto["prompt"]["kind"], prompt: TaskDto["prompt"]): TaskD
 const options = [{ id: id("111"), text: "cat" }, { id: id("112"), text: "dog" }];
 afterEach(cleanup);
 
-describe("Mantine vocabulary views preserve exercise behavior", () => {
+describe("vocabulary views preserve exercise behavior", () => {
   it("exposure completion is a single complete-presentation action", () => {
     const task = base("exposure", { kind: "exposure", source: "kot", target: "cat", example: null, audioAssetId: null, exampleAudioAssetId: null, imageAssetId: null, visualType: "none" });
     const props = makeExerciseProps(task);
@@ -26,7 +26,7 @@ describe("Mantine vocabulary views preserve exercise behavior", () => {
     expect(props.handlers.onComplete).toHaveBeenCalledOnce();
     expect(props.handlers.onAnswerChoice).not.toHaveBeenCalled();
     expect(props.handlers.onSubmitText).not.toHaveBeenCalled();
-    expect(screen.getByTestId("kid-done").className).toContain("mantine-UnstyledButton-root");
+    expect(screen.getByTestId("kid-done").tagName).toBe("BUTTON");
   });
 
   it("picture exposure completes once and does not invent audio", () => {
@@ -36,7 +36,7 @@ describe("Mantine vocabulary views preserve exercise behavior", () => {
     expect(screen.queryByTestId("kid-play")?.getAttribute("disabled")).not.toBeNull();
     fireEvent.click(screen.getByTestId("kid-done"));
     expect(props.handlers.onComplete).toHaveBeenCalledOnce();
-    expect(screen.getByTestId("kid-done").className).toContain("mantine-UnstyledButton-root");
+    expect(screen.getByTestId("kid-done").tagName).toBe("BUTTON");
   });
 
   it.each([
@@ -44,7 +44,7 @@ describe("Mantine vocabulary views preserve exercise behavior", () => {
     ["reading", { kind: "reading", text: "Thursday", options }],
     ["reverse_recognition", { kind: "reverse_recognition", prompt: "czwartek", options }],
     ["picture_recognition", { kind: "picture_recognition", visual: { kind: "color", color: "#123456" }, source: "kolor", options }],
-  ] as const)("%s sends option id immediately, with Mantine answer controls", (_kind, prompt) => {
+  ] as const)("%s sends option id immediately, with shared answer controls", (_kind, prompt) => {
     const task = base(prompt.kind, prompt as TaskDto["prompt"]);
     const props = makeExerciseProps(task);
     const View = prompt.kind === "listening" ? ListeningView : prompt.kind === "picture_recognition" ? PictureRecognitionView : ReadingView;
@@ -56,7 +56,7 @@ describe("Mantine vocabulary views preserve exercise behavior", () => {
     expect(screen.queryByTestId("kid-submit")).toBeNull();
     expect(screen.getAllByTestId("kid-option")[1]?.textContent).toBe("dog");
     expect(screen.queryByTestId("kid-option-content")).toBeNull();
-    expect(screen.getAllByTestId("kid-option")[0]!.className).toContain("mantine-UnstyledButton");
+    expect(screen.getAllByTestId("kid-option")[0]!.tagName).toBe("BUTTON");
   });
 
   it("pending stays neutral and picture recognition audio is only rendered for the supplied correct result", () => {

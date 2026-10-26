@@ -5,7 +5,6 @@ import { isIncompleteWord, joinedText } from "./spelling-diff-view";
 import { lessonFeedbackView } from "./lesson-feedback-view";
 import { KidIcon } from "../components/KidIcon";
 import { useFeedbackCooldown } from "./useFeedbackCooldown";
-import { Box } from "@mantine/core";
 import { ActionButton } from "../components/ActionButton";
 
 export interface AnswerFeedbackProps {
@@ -89,7 +88,7 @@ export function AnswerFeedbackContent({ dto, busy }: Pick<AnswerFeedbackProps, "
   const feedback = dto ?? { kind: "not_assessed" as const };
   const lesson = lessonFeedbackView(dto);
   return (
-    <Box component="section"
+    <section
       className={["kid-answer-feedback", feedbackTone(dto)].filter(Boolean).join(" ")}
       data-testid="kid-feedback"
       role="status"
@@ -191,7 +190,7 @@ export function AnswerFeedbackContent({ dto, busy }: Pick<AnswerFeedbackProps, "
           </div>
         )}
       </div>
-    </Box>
+    </section>
   );
 }
 
