@@ -68,9 +68,10 @@ export function AnswerGrid({
           : outcome === "wrong"
             ? format(messages.kid.pictureChoiceWrong, { answer: option.label })
             : option.label;
+          {/* Picture options skip the item entrance: asynchronously loaded images inside a fading item (on top of the pane entrance) flicker. Text options keep the stagger wave. */}
 
         return (
-          <m.li className={[classes.item, itemClassName?.(option)].filter(Boolean).join(" ")} key={option.id} initial={kidEntranceInitial} animate={kidEntranceAnimate} transition={{ ...kidSpringGentle, delay: kidStaggerDelay(index) }}>
+          <m.li className={[classes.item, itemClassName?.(option)].filter(Boolean).join(" ")} key={option.id} initial={visualOnly ? false : kidEntranceInitial} animate={kidEntranceAnimate} transition={{ ...kidSpringGentle, delay: kidStaggerDelay(index) }}>
             <m.button
               ref={(element) => {
                 if (optionRefs) optionRefs.current[index] = element;
