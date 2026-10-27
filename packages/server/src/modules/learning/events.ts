@@ -15,6 +15,7 @@ import type { Services } from "../../config";
 import type { Tx } from "../../db/client";
 import {
   deckVersions,
+  decks,
   childProfiles,
   childTargetExposures,
   eventExposures,
@@ -93,10 +94,13 @@ export interface SealedEventInput {
 
 /**
  * Zapisuje zdarzenie z kompletem ekspozycji i pieczęcią w jednej transakcji:
- * insert (sealed=false) → event_exposures → update (sealed=true). Dopiero commit
- * zwalnia odpowiedź HTTP — utracona odpowiedź sieciowa nie usuwa ujawnienia.
+ * insert (sealed=false) → event_exposures → jedna instrukcja CTE z przejściem
+ * sealed=true i upsertem child_target_exposures. Dopiero commit zwalnia
+ * odpowiedź HTTP — utracona odpowiedź sieciowa nie usuwa ujawnienia. Kolejność
+ * pierwszych dwóch instrukcji wymuszają triggery guard_event_seal
+ * i guard_exposure_insert (migracja 0001).
  */
-export async function writeSealedEvent(tx: Tx, input: SealedEventInput): Promise<string> {
+export async function writeSealedEvent(tx: Tx, input: SealedEventInput): Promise<void> {
   const eventId = randomUUID();
   await tx.insert(learningEvents).values({
     id: eventId,
@@ -116,40 +120,75 @@ export async function writeSealedEvent(tx: Tx, input: SealedEventInput): Promise
       exposures.map((targetKey) => ({ childId: input.childId, eventId, targetKey })),
     );
   }
-  await tx.update(learningEvents).set({ sealed: true }).where(eq(learningEvents.id, eventId));
-  if (exposures.length > 0) {
-    await tx.insert(childTargetExposures).values(
-      exposures.map((targetKey) => ({ childId: input.childId, targetKey, firstExposureAt: input.occurredAt, lastExposureAt: input.occurredAt })),
-    ).onConflictDoUpdate({
-      target: [childTargetExposures.childId, childTargetExposures.targetKey],
-      set: {
-        firstExposureAt: sql`least(${childTargetExposures.firstExposureAt}, excluded.first_exposure_at)`,
-        lastExposureAt: sql`greatest(${childTargetExposures.lastExposureAt}, excluded.last_exposure_at)`,
-      },
-    });
+  if (exposures.length === 0) {
+    await tx.update(learningEvents).set({ sealed: true }).where(eq(learningEvents.id, eventId));
+  } else {
+    // Pieczęć i upsert child_target_exposures w jednej instrukcji (CTE z UPDATE):
+    // trigger guard_event_seal wymaga dokładnie jednego przejścia sealed=false→true,
+    // a guard_exposure_insert wpuszcza ekspozycje tylko do niezapieczętowanego
+    // zdarzenia — dlatego insert zdarzenia i ekspozycji muszą zostać osobnymi
+    // instrukcjami jak dotąd; łączymy tylko dwa ostatnie zapisy (4 → 3 instrukcje).
+    const occurredAt = input.occurredAt.toISOString();
+    await tx.execute(sql`
+      with sealed_ev as (
+        update ${learningEvents} set "sealed" = true where "id" = ${eventId} returning "id"
+      )
+      insert into ${childTargetExposures}
+        ("child_id", "target_key", "first_exposure_at", "last_exposure_at")
+      select ${input.childId}, unnest(${sql.param(exposures)}::text[]),
+             ${occurredAt}::timestamptz, ${occurredAt}::timestamptz
+      on conflict ("child_id", "target_key") do update
+        set "first_exposure_at" = least("child_target_exposures"."first_exposure_at", excluded.first_exposure_at),
+            "last_exposure_at" = greatest("child_target_exposures"."last_exposure_at", excluded.last_exposure_at)
+    `);
   }
-  return eventId;
 }
 
 /** Zadanie + blokada wiersza jego sesji — wspólna kolejność dla wszystkich operacji. */
 export async function lockTaskWithSession(tx: Tx, taskId: string) {
-  const task = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, taskId)))[0];
-  if (!task) {
+  // Jedno zapytanie z joinami daje zadanie oraz dane rewizji i rodzaj zestawu,
+  // po które gorące ścieżki prób sięgały osobnymi zapytaniami (itemId,
+  // targetKey, locale wersji, payload rewizji, decks.kind).
+  const joined = (
+    await tx
+      .select({
+        task: sessionTasks,
+        itemId: itemRevisions.itemId,
+        targetKey: itemRevisions.targetKey,
+        revisionPayload: itemRevisions.payload,
+        targetLocale: deckVersions.targetLocale,
+        lessonContext: deckVersions.lessonContext,
+        deckKind: decks.kind,
+      })
+      .from(sessionTasks)
+      .innerJoin(itemRevisions, eq(itemRevisions.id, sessionTasks.itemRevisionId))
+      .innerJoin(deckVersions, eq(deckVersions.id, itemRevisions.deckVersionId))
+      .innerJoin(decks, eq(decks.id, deckVersions.deckId))
+      .where(eq(sessionTasks.id, taskId))
+  )[0];
+  if (!joined) {
     throw new AppError("not_found");
   }
+  const { task } = joined;
   // Take the FK-compatible child lock before the session, including when a
   // concurrent profile deletion is about to cascade into its sessions.
   await tx.select({ id: childProfiles.id }).from(childProfiles).where(eq(childProfiles.id, task.childId)).for("key share");
   const session = (
     await tx.select().from(learningSessions).where(eq(learningSessions.id, task.sessionId)).for("update")
   )[0]!;
-  const revision = (
-    await tx.select({ itemId: itemRevisions.itemId }).from(itemRevisions).where(eq(itemRevisions.id, task.itemRevisionId))
-  )[0]!;
   // Stan zadania mógł zmienić się podczas oczekiwania na wspólną blokadę.
   // Snapshot treści jest niezmienny, ale drugi klient musi zobaczyć terminalny stan.
   const freshTask = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, taskId)))[0]!;
-  return { task: freshTask, session, itemId: revision.itemId };
+  return {
+    task: freshTask,
+    session,
+    itemId: joined.itemId,
+    targetKey: joined.targetKey,
+    revisionPayload: joined.revisionPayload,
+    targetLocale: joined.targetLocale,
+    lessonContext: joined.lessonContext,
+    deckKind: joined.deckKind,
+  };
 }
 
 /** Obserwacja klienta (display_confirmed/audio_played) — opcjonalna, idempotentna. */

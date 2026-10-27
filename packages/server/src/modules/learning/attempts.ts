@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray, max, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, max, or, sql } from "drizzle-orm";
 import {
   AttemptInputSchema,
   UuidSchema,
@@ -45,10 +45,10 @@ import { loadPolicy } from "../../policies/registry";
 import { lockTaskWithSession, writeSealedEvent, contextOf } from "./events";
 import { requestHashOf, discloseFeedbackEvent } from "./attempt-shared";
 import { submitLessonAttempt, readLessonAttempt } from "./lessons/lesson-attempts";
-import { readSkillHistory } from "./skill-history";
-import { persistSkillProjection } from "./skill-projections";
+import { readSkillHistories, skillHistoryKey } from "./skill-history";
+import { persistSkillProjections } from "./skill-projections";
 import { resolveTaskAssistance } from "../../domain/task-assistance";
-import { assertVocabularyDeck, readDeckKind } from "../materials";
+import { assertVocabularyDeck, type DeckKind } from "../materials";
 import { completeDisabledVoiceTask } from "./voice-task-lifecycle";
 
 /** Leniwa finalizacja przeterminowanych prób processing (arch §9.2a). */
@@ -87,23 +87,33 @@ function answerKeyOf(task: TaskRow): AnswerKey {
  * dyskwalifikuje oceny samej wymowy — wsparciem jest tylko tam, gdzie ujawnia
  * rozwiązanie (zadania przypominania i pisowni).
  */
-async function assistanceFor(tx: Tx, task: TaskRow, receivedAt: Date): Promise<AssistanceKind[]> {
+async function assistanceFor(
+  tx: Tx,
+  task: TaskRow,
+  receivedAt: Date,
+): Promise<{ assistance: AssistanceKind[]; feedbackCount: number }> {
+  // Jedno zapytanie o zdarzenia zadania daje i wsparcia (audio/hint), i liczbę
+  // wcześniejszych ujawnien feedbacku — tę drugą finalizacja wykorzystuje do
+  // stepId bez osobnego zapytania w discloseFeedbackEvent.
   const disclosures = await tx
     .select({ kind: learningEvents.kind, occurredAt: learningEvents.occurredAt })
     .from(learningEvents)
-    .where(and(eq(learningEvents.taskId, task.id), inArray(learningEvents.kind, ["audio_issued", "hint_issued"])));
+    .where(and(eq(learningEvents.taskId, task.id), inArray(learningEvents.kind, ["audio_issued", "hint_issued", "feedback_issued"])));
   const prompt = task.publicPrompt as { options?: { text?: string; labelPl?: string }[] };
   const distinctChoiceCount = Array.isArray(prompt.options)
     ? new Set(prompt.options.map((option) => (option.text ?? option.labelPl ?? "").normalize("NFC").trim().toLocaleLowerCase())).size
     : null;
-  return resolveTaskAssistance({
-    exerciseType: task.exerciseType as ExerciseType,
-    visibleLetterFragment: task.exerciseType === "letter_completion",
-    distinctChoiceCount,
-    disclosureKinds: disclosures
-      .filter((row) => row.occurredAt <= receivedAt)
-      .map((row) => row.kind as "audio_issued" | "hint_issued"),
-  });
+  return {
+    feedbackCount: disclosures.filter((row) => row.kind === "feedback_issued").length,
+    assistance: resolveTaskAssistance({
+      exerciseType: task.exerciseType as ExerciseType,
+      visibleLetterFragment: task.exerciseType === "letter_completion",
+      distinctChoiceCount,
+      disclosureKinds: disclosures
+        .filter((row) => row.kind !== "feedback_issued" && row.occurredAt <= receivedAt)
+        .map((row) => row.kind as "audio_issued" | "hint_issued"),
+    }),
+  };
 }
 
 /** Ostatnie ujawnienie rozwiązania elementu — także w innym ćwiczeniu (SPEC §18.1). */
@@ -116,22 +126,11 @@ async function lastExposureAt(tx: Tx, childId: string, targetKeys: readonly stri
   return row?.latest?.toISOString() ?? null;
 }
 
-async function solutionTargetKeys(tx: Tx, task: TaskRow): Promise<string[]> {
-  const [revision] = await tx.select({ payload: itemRevisions.payload, targetKey: itemRevisions.targetKey }).from(itemRevisions).where(eq(itemRevisions.id, task.itemRevisionId));
-  const locale = payloadToItem(revision!.payload).locales.target;
-  const key = answerKeyOf(task);
-  return [...new Set([revision!.targetKey, ...[key.target, ...key.acceptedAnswers].map(answer => computeTargetKey(answer, locale))])];
+function solutionTargetKeys(revisionPayload: unknown, revisionTargetKey: string, key: AnswerKey): string[] {
+  const locale = payloadToItem(revisionPayload as Record<string, unknown>).locales.target;
+  return [...new Set([revisionTargetKey, ...[key.target, ...key.acceptedAnswers].map(answer => computeTargetKey(answer, locale))])];
 }
 
-async function targetKeyOf(tx: Tx, task: TaskRow): Promise<string> {
-  const row = (
-    await tx
-      .select({ targetKey: itemRevisions.targetKey })
-      .from(itemRevisions)
-      .where(eq(itemRevisions.id, task.itemRevisionId))
-  )[0];
-  return row?.targetKey ?? "";
-}
 
 /** Rozwiązanie własnego zadania pokazywane dziecku w feedbacku (SPEC §16). */
 function correctTextOf(task: TaskRow, key: AnswerKey): string {
@@ -191,8 +190,10 @@ async function discloseFeedback(
   feedback: FeedbackDto,
   targetKey: string,
   now: Date,
+  knownLocale?: string,
+  knownFeedbackCount?: number,
 ): Promise<string> {
-  const locale = (await tx.select({ locale: deckVersions.targetLocale })
+  const locale = knownLocale ?? (await tx.select({ locale: deckVersions.targetLocale })
     .from(itemRevisions)
     .innerJoin(deckVersions, eq(deckVersions.id, itemRevisions.deckVersionId))
     .where(eq(itemRevisions.id, task.itemRevisionId)))[0]?.locale;
@@ -203,7 +204,10 @@ async function discloseFeedback(
     : feedback.kind === "not_assessed"
       ? []
       : [targetKey];
-  return discloseFeedbackEvent(tx, { task, childId, itemId, exposures, now });
+  return discloseFeedbackEvent(tx, {
+    task, childId, itemId, exposures, now,
+    ...(knownFeedbackCount === undefined ? {} : { knownPriorCount: knownFeedbackCount }),
+  });
 }
 
 /**
@@ -223,6 +227,8 @@ async function finalizeAttemptRow(
   policy: Policy,
   targetKey: string,
   now: Date,
+  revision: { targetLocale: string; revisionPayload: unknown },
+  knownCounts?: { feedbackPriorCount: number; priorIncorrectAttemptCount: number },
 ): Promise<AttemptDto> {
   grade = limitGradeToTaskSkills(task, grade);
   const key = answerKeyOf(task);
@@ -240,15 +246,9 @@ async function finalizeAttemptRow(
       : null;
   let feedback: FeedbackDto | null = session.mode === "mock_test" ? null : chooseFeedback(grade, correctText, diff);
   if (feedback?.speech && ["matched", "different"].includes(feedback.speech.recognition) && feedback.speech.referenceText !== undefined) {
-    const reference = (
-      await tx.select({ target: itemRevisions.payload, targetLocale: deckVersions.targetLocale })
-        .from(itemRevisions)
-        .innerJoin(deckVersions, eq(deckVersions.id, itemRevisions.deckVersionId))
-        .where(eq(itemRevisions.id, task.itemRevisionId))
-    )[0];
-    const canonical = (reference?.target as { target?: string } | undefined)?.target;
+    const canonical = (revision.revisionPayload as { target?: string } | undefined)?.target;
     const matchingCanonical = canonical !== undefined &&
-      computeTargetKey(feedback.speech.referenceText, reference!.targetLocale) === computeTargetKey(canonical, reference!.targetLocale);
+      computeTargetKey(feedback.speech.referenceText, revision.targetLocale) === computeTargetKey(canonical, revision.targetLocale);
     const audio = matchingCanonical
       ? (await tx.select({ id: mediaAssets.id })
           .from(revisionAssets)
@@ -300,6 +300,11 @@ async function finalizeAttemptRow(
       .where(eq(itemRevisionSkills.itemRevisionId, task.itemRevisionId));
     const versionBySkill = new Map(skillRows.map((row) => [row.skill as Skill, row.skillVersionId]));
 
+    // Oceny wszystkich umiejętności jednym insertem, historie jednym
+    // wywołaniem wsadowym i projekcje jednym upsertem — wcześniej pętla
+    // płaciła 4 zapytania na umiejętność (insert, 2x historia, projekcja).
+    const assessmentValues = [];
+    const projectionScopes: { childId: string; skillVersionId: string; skill: Skill }[] = [];
     for (const [skill, skillGrade] of Object.entries(grade.skills) as [Skill, SkillGrade][]) {
       const skillVersionId = versionBySkill.get(skill);
       if (!skillVersionId) {
@@ -316,41 +321,61 @@ async function finalizeAttemptRow(
         // transkrypcja trafia tutaj tylko przy wiarygodnym rozpoznaniu
         details.confusion = { expected: correctText, answered: chosenText };
       }
-      await tx.insert(assessments).values({
+      assessmentValues.push({
         childId: session.childId,
         attemptId: attempt.id,
         itemRevisionId: task.itemRevisionId,
         skill,
         skillVersionId,
         outcome: dbOutcome(skillGrade.outcome),
-        ...(skillGrade.reason === undefined ? {} : { reason: skillGrade.reason }),
+        reason: skillGrade.reason ?? null,
         independent: skillGrade.independent,
         confirmationEligible: skillGrade.confirmationEligible,
         details,
       });
       if (skillGrade.outcome !== "unevaluated") {
-        const scope = { childId: session.childId, skillVersionId, skill };
-        const history = await readSkillHistory(tx, scope);
-        await persistSkillProjection(tx, scope, history, policy, now, attempt.receivedAt);
+        projectionScopes.push({ childId: session.childId, skillVersionId, skill });
       }
+    }
+    if (assessmentValues.length > 0) {
+      await tx.insert(assessments).values(assessmentValues);
+    }
+    if (projectionScopes.length > 0) {
+      const histories = await readSkillHistories(tx, projectionScopes);
+      await persistSkillProjections(tx, projectionScopes.map((scope) => ({
+        scope,
+        history: histories.get(skillHistoryKey(scope)) ?? [],
+        policy,
+        now,
+        receivedAt: attempt.receivedAt,
+      })));
     }
   }
 
-  const incorrectAttempts = await tx
-    .selectDistinct({ id: attempts.id })
-    .from(attempts)
-    .innerJoin(assessments, eq(assessments.attemptId, attempts.id))
-    .where(and(eq(attempts.taskId, task.id), eq(assessments.outcome, "incorrect")));
+  // Gorąca ścieżka zna liczbę wcześniejszych niepoprawnych prób zadania ze
+  // wstępu (ta sama blokada sesji); bieżąca próba dokłada się sama, gdy choć
+  // jedna jej ocena jest niepoprawna i oceny faktycznie zapisano.
+  const currentIncorrect = modality !== "skip" &&
+    Object.values(grade.skills).some((skill) => skill.outcome === "incorrect");
+  const incorrectAttemptCount = knownCounts !== undefined
+    ? knownCounts.priorIncorrectAttemptCount + (currentIncorrect ? 1 : 0)
+    : (await tx
+        .selectDistinct({ id: attempts.id })
+        .from(attempts)
+        .innerJoin(assessments, eq(assessments.attemptId, attempts.id))
+        .where(and(eq(attempts.taskId, task.id), eq(assessments.outcome, "incorrect")))).length;
   const taskState = taskStateAfterAttempt({
     isMockTest: session.mode === "mock_test",
     action: modality === "skip" || modality === "dont_remember" ? modality : "answer",
     outcomes: Object.values(grade.skills).map((skill) => skill.outcome),
     attemptNumber: attempt.attemptNumber,
-    incorrectAttemptCount: incorrectAttempts.length,
+    incorrectAttemptCount,
     speechContentMatched: grade.speechAttempt?.contentMatched,
   });
+  let finalTaskState: string = task.state;
   if (taskState !== "issued") {
-    await tx.update(sessionTasks).set({ state: taskState }).where(eq(sessionTasks.id, task.id));
+    const [updated] = await tx.update(sessionTasks).set({ state: taskState }).where(eq(sessionTasks.id, task.id)).returning({ state: sessionTasks.state });
+    finalTaskState = updated?.state ?? taskState;
   }
 
   const completed = await tx
@@ -364,7 +389,10 @@ async function finalizeAttemptRow(
 
   // Aktywność sesji rozlicza wyłącznie raport FE na końcu sesji (spec
   // client-reward-time); próba zostawia tylko ocenę i ekspozycje.
-  const stepId = feedback === null ? null : await discloseFeedback(tx, task, session.childId, itemId, feedback, targetKey, now);
+  const stepId = feedback === null ? null : await discloseFeedback(
+    tx, task, session.childId, itemId, feedback, targetKey, now,
+    revision.targetLocale, knownCounts?.feedbackPriorCount,
+  );
   // picture_recognition: zgoda na odsłuch poprawnego słowa (feedback) to
   // ujawnienie rozwiązania — pieczęcimy audio_issued z ekspozycją celu w tej
   // samej transakcji, przed zwrotem oceny w HTTP (arch §9.2).
@@ -409,9 +437,9 @@ async function finalizeAttemptRow(
 
   if (contextOf(session).microphoneDisabledTaskIds.includes(task.id)) {
     await completeDisabledVoiceTask(tx, session.id, task.id);
+    // Tylko ta ścieżka zmienia stan zadania poza powyższym update'em.
+    finalTaskState = await rereadTaskState(tx, task.id);
   }
-
-  const finalTaskState = await rereadTaskState(tx, task.id);
   return {
     attemptId: attempt.id,
     taskId: task.id,
@@ -460,6 +488,10 @@ export type AttemptStart =
       frozen: FrozenContext;
       key: AnswerKey;
       targetKey: string;
+      targetLocale: string;
+      revisionPayload: unknown;
+      feedbackPriorCount: number;
+      priorIncorrectAttemptCount: number;
       attemptNumber: number;
       requestHash: string;
       receivedAt: Date;
@@ -475,27 +507,44 @@ export async function startAttempt(
   services: Services,
   valid: AttemptInput,
 ): Promise<AttemptStart> {
-  const { task, session, itemId } = await lockTaskWithSession(tx, valid.taskId);
+  const { task, session, itemId, targetKey, targetLocale, revisionPayload, deckKind } =
+    await lockTaskWithSession(tx, valid.taskId);
+  const revision = { targetKey, targetLocale, revisionPayload };
   const now = services.clock.now();
   if (session.mode === "daily_round") {
     throw new AppError("conflict", { message: "daily-round sessions are retired" });
   }
   // Izolacja lekcji (zadanie 9): próby słówek nie dotyczą lekcji. W praktyce
   // nieosiągalne (sesja lekcji nie powstaje), ale strzeżemy w jednym miejscu;
-  // delegację oceny lekcji doda zadanie 13/17.
-  assertVocabularyDeck(await readDeckKind(tx, session.deckId));
+  // delegację oceny lekcji doda zadanie 13/17. Rodzaj zestawu daje join locka.
+  assertVocabularyDeck(deckKind as DeckKind);
 
-  const existing = (
-    await tx
-      .select()
-      .from(attempts)
-      .where(and(eq(attempts.childId, task.childId), eq(attempts.clientAttemptId, valid.clientAttemptId)))
-  )[0];
+  // Jedno zapytanie daje próby tego zadania (z wynikami ocen do liczby
+  // wcześniejszych niepoprawnych prób) oraz ewentualną próbę o tym samym
+  // clientAttemptId na innym zadaniu — wcześniej 3–4 osobne zapytania.
+  const relatedRows = await tx
+    .select({ attempt: attempts, outcome: assessments.outcome })
+    .from(attempts)
+    .leftJoin(assessments, eq(assessments.attemptId, attempts.id))
+    .where(or(
+      eq(attempts.taskId, task.id),
+      and(eq(attempts.childId, task.childId), eq(attempts.clientAttemptId, valid.clientAttemptId)),
+    ));
+  const taskAttemptsById = new Map<string, AttemptRow>();
+  const incorrectAttemptIds = new Set<string>();
+  for (const row of relatedRows) {
+    if (row.attempt.taskId === task.id) {
+      taskAttemptsById.set(row.attempt.id, row.attempt);
+      if (row.outcome === "incorrect") incorrectAttemptIds.add(row.attempt.id);
+    }
+  }
+  const taskAttempts = [...taskAttemptsById.values()];
+  const existing = relatedRows.map((row) => row.attempt).find((attempt) => attempt.clientAttemptId === valid.clientAttemptId);
   if (existing) {
     if (existing.requestHash !== requestHashOf(valid)) {
       throw new AppError("conflict", { message: "clientAttemptId reused with different answer" });
     }
-    await lazyFinalizeProcessing(tx, task, session, itemId, now);
+    await lazyFinalizeProcessing(tx, task, session, itemId, now, revision);
     const fresh = (await tx.select().from(attempts).where(eq(attempts.id, existing.id)))[0]!;
     const state = await rereadTaskState(tx, task.id);
     if (session.mode !== "mock_test" && fresh.state === "completed" && fresh.feedback) {
@@ -505,8 +554,9 @@ export async function startAttempt(
         task.childId,
         itemId,
         fresh.feedback as FeedbackDto,
-        await targetKeyOf(tx, task),
+        targetKey,
         now,
+        targetLocale,
       );
       return { kind: "dto", dto: dtoOf(fresh, state, stepId) };
     }
@@ -514,9 +564,11 @@ export async function startAttempt(
   }
 
   // leniwa finalizacja najpierw: zwalnia jedyną próbę processing zadania
-  await lazyFinalizeProcessing(tx, task, session, itemId, now);
+  const lazy = await lazyFinalizeProcessing(tx, task, session, itemId, now, revision, taskAttempts);
+  let taskStateMayHaveChanged = lazy.finalizedAny;
   if (contextOf(session).microphoneDisabledTaskIds.includes(task.id)) {
     await completeDisabledVoiceTask(tx, session.id, task.id);
+    taskStateMayHaveChanged = true;
   }
 
   if (session.state !== "active") {
@@ -530,9 +582,11 @@ export async function startAttempt(
   if (task.exerciseType === "exposure") {
     throw new AppError("validation", { message: "presentation tasks take no attempts" });
   }
-  // `lazyFinalizeProcessing` and `completeDisabledVoiceTask` may terminalize
-  // this row. `task` is the pre-finalization snapshot from lockTaskWithSession.
-  if (await rereadTaskState(tx, task.id) !== "issued") {
+  // `lazyFinalizeProcessing` i `completeDisabledVoiceTask` mogły zakończyć to
+  // zadanie; poza tymi ścieżkami stan z locka jest aktualny, bo każdy zapis
+  // stanu zadania przechodzi przez tę samą blokadę sesji.
+  const currentTaskState = taskStateMayHaveChanged ? await rereadTaskState(tx, task.id) : task.state;
+  if (currentTaskState !== "issued") {
     throw new AppError("conflict", { message: "task is no longer issued" });
   }
   const sessionContext = contextOf(session);
@@ -554,29 +608,25 @@ export async function startAttempt(
 
   // świeża próba processing (audio) nie uruchamia drugiej analizy — klient
   // dostaje ten sam rekord do odpytywania (arch §9.2a)
-  const processing = (
-    await tx
-      .select()
-      .from(attempts)
-      .where(and(eq(attempts.taskId, task.id), eq(attempts.state, "processing")))
-  )[0];
+  const processing = taskAttempts.find(
+    (attempt) => attempt.state === "processing" && !lazy.finalizedIds.has(attempt.id),
+  );
   if (processing) {
-    return { kind: "dto", dto: dtoOf(processing, await rereadTaskState(tx, task.id)) };
+    return { kind: "dto", dto: dtoOf(processing, currentTaskState) };
   }
 
-  const priorAttempts = await tx.select({ id: attempts.id }).from(attempts).where(eq(attempts.taskId, task.id));
-  const attemptNumber = priorAttempts.length + 1;
-
+  const attemptNumber = taskAttempts.length + 1;
   const policy = await loadPolicy(tx, session.policyId);
-  const targetKey = await targetKeyOf(tx, task);
+  const key = answerKeyOf(task);
+  const assistanceInfo = await assistanceFor(tx, task, now);
   const frozen: FrozenContext = {
     receivedAt: now.toISOString(),
     policyVersion: policy.version,
     lastExposureAt: RECALL_LIKE.has(task.exerciseType)
-      ? await lastExposureAt(tx, task.childId, await solutionTargetKeys(tx, task))
+      ? await lastExposureAt(tx, task.childId, solutionTargetKeys(revisionPayload, targetKey, key))
       : null,
     firstTry: attemptNumber === 1,
-    assistance: await assistanceFor(tx, task, now),
+    assistance: assistanceInfo.assistance,
     previousSessionContactAt: sessionContext.previousContact[itemId] ?? null,
     timezone: sessionContext.timezone,
     ...((task.context as { assessmentSkills?: Skill[] } | null)?.assessmentSkills
@@ -591,8 +641,12 @@ export async function startAttempt(
     itemId,
     policy,
     frozen,
-    key: answerKeyOf(task),
+    key,
     targetKey,
+    targetLocale,
+    revisionPayload,
+    feedbackPriorCount: assistanceInfo.feedbackCount,
+    priorIncorrectAttemptCount: incorrectAttemptIds.size,
     attemptNumber,
     requestHash: requestHashOf(valid),
     receivedAt: now,
@@ -616,10 +670,13 @@ export async function submitAttempt(services: Services, input: AttemptInput): Pr
   // składa feedback. Rozstrzygamy to po stanie zadania, nie modalności: `sequence`
   // jest lekcyjne, ale zwykły `text`/`choice`/`skip`/`dont_remember` też musi trafić
   // do lekcji, gdy dotyczy zadania lekcji. Nieznane zadanie → `not_found` (jak słówka).
-  const routed = await services.db.transaction(async (tx) => {
-    const task = (await tx.select({ exerciseType: sessionTasks.exerciseType }).from(sessionTasks).where(eq(sessionTasks.id, valid.taskId)))[0];
-    return task ? (task.exerciseType as string).startsWith("lesson_") : null;
-  });
+  // Sam odczyt routujący nie potrzebuje transakcji (begin/commit to 2 z 3
+  // wywołań dawnej wersji) — blokadę i tak zakłada właściwa ścieżka.
+  const routedTask = (await services.db
+    .select({ exerciseType: sessionTasks.exerciseType })
+    .from(sessionTasks)
+    .where(eq(sessionTasks.id, valid.taskId)))[0];
+  const routed = routedTask ? (routedTask.exerciseType as string).startsWith("lesson_") : null;
   if (routed === null) {
     throw new AppError("not_found");
   }
@@ -641,7 +698,7 @@ export async function submitAttempt(services: Services, input: AttemptInput): Pr
           ? { optionId: valid.optionId, optionText: optionTextOf(started.task, valid.optionId) }
           : null;
     const attemptId = randomUUID();
-    await tx.insert(attempts).values({
+    const [attempt] = await tx.insert(attempts).values({
       id: attemptId,
       childId: started.task.childId,
       taskId: started.task.id,
@@ -655,19 +712,23 @@ export async function submitAttempt(services: Services, input: AttemptInput): Pr
       context: started.frozen as unknown as Record<string, unknown>,
       policyId: started.session.policyId,
       receivedAt: started.receivedAt,
-    });
-    const attempt = (await tx.select().from(attempts).where(eq(attempts.id, attemptId)))[0]!;
+    }).returning();
     return finalizeAttemptRow(
       tx,
       started.task,
       started.session,
       started.itemId,
-      attempt,
+      attempt!,
       valid.modality,
       grade,
       started.policy,
       started.targetKey,
       started.receivedAt,
+      { targetLocale: started.targetLocale, revisionPayload: started.revisionPayload },
+      {
+        feedbackPriorCount: started.feedbackPriorCount,
+        priorIncorrectAttemptCount: started.priorIncorrectAttemptCount,
+      },
     );
   });
 }
@@ -678,16 +739,13 @@ export async function submitAttempt(services: Services, input: AttemptInput): Pr
  */
 export async function readAttempt(services: Services, attemptId: string): Promise<AttemptDto> {
   const id = UuidSchema.parse(attemptId);
-  const routed = await services.db.transaction(async (tx) => {
-    const row = (
-      await tx
-        .select({ attempt: attempts, exerciseType: sessionTasks.exerciseType })
-        .from(attempts)
-        .innerJoin(sessionTasks, eq(sessionTasks.id, attempts.taskId))
-        .where(eq(attempts.id, id))
-    )[0];
-    return row ?? null;
-  });
+  const routed = (
+    await services.db
+      .select({ attempt: attempts, exerciseType: sessionTasks.exerciseType })
+      .from(attempts)
+      .innerJoin(sessionTasks, eq(sessionTasks.id, attempts.taskId))
+      .where(eq(attempts.id, id))
+  )[0] ?? null;
   if (routed && (routed.exerciseType as string).startsWith("lesson_")) {
     return readLessonAttempt(services, routed.attempt as unknown as typeof attempts.$inferSelect);
   }
@@ -696,11 +754,11 @@ export async function readAttempt(services: Services, attemptId: string): Promis
     if (!attempt) {
       throw new AppError("not_found");
     }
-    const { task, session, itemId } = await lockTaskWithSession(tx, attempt.taskId);
+    const { task, session, itemId, targetKey, targetLocale, revisionPayload } = await lockTaskWithSession(tx, attempt.taskId);
     if (session.mode === "daily_round") return dtoOf(attempt, task.state);
     const now = services.clock.now();
 
-    await lazyFinalizeProcessing(tx, task, session, itemId, now);
+    await lazyFinalizeProcessing(tx, task, session, itemId, now, { targetKey, targetLocale, revisionPayload });
 
     const fresh = (await tx.select().from(attempts).where(eq(attempts.id, id)))[0]!;
     const freshTask = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, task.id)))[0]!;
@@ -711,8 +769,9 @@ export async function readAttempt(services: Services, attemptId: string): Promis
         fresh.childId,
         itemId,
         fresh.feedback as FeedbackDto,
-        await targetKeyOf(tx, freshTask),
+        targetKey,
         now,
+        targetLocale,
       );
       return dtoOf(fresh, freshTask.state, stepId);
     }
@@ -748,7 +807,7 @@ export async function finalizeAttempt(
     if (!taskRef) {
       throw new AppError("not_found");
     }
-    const { task, session, itemId } = await lockTaskWithSession(tx, taskRef.taskId);
+    const { task, session, itemId, targetKey, targetLocale, revisionPayload } = await lockTaskWithSession(tx, taskRef.taskId);
     // odczyt dopiero pod blokadą sesji — równoległy finalizer mógł już zatwierdzić
     const attempt = (await tx.select().from(attempts).where(eq(attempts.id, id)))[0];
     if (!attempt) {
@@ -759,7 +818,6 @@ export async function finalizeAttempt(
       throw new AppError("conflict", { message: "daily-round sessions are retired" });
     }
     const now = services.clock.now();
-    const targetKey = await targetKeyOf(tx, task);
 
     if (attempt.state === "completed") {
       const freshTask = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, task.id)))[0]!;
@@ -772,6 +830,7 @@ export async function finalizeAttempt(
           attempt.feedback as FeedbackDto,
           targetKey,
           now,
+          targetLocale,
         );
         return dtoOf(attempt, freshTask.state, stepId);
       }
@@ -806,6 +865,7 @@ export async function finalizeAttempt(
       policy,
       targetKey,
       now,
+      { targetLocale, revisionPayload },
     );
   });
 }
@@ -821,18 +881,21 @@ async function lazyFinalizeProcessing(
   session: SessionRow,
   itemId: string,
   now: Date,
-): Promise<void> {
-  if (session.mode === "daily_round") return;
-  const stale = await tx
+  revision: { targetKey: string; targetLocale: string; revisionPayload: unknown },
+  preloadedTaskAttempts?: readonly AttemptRow[],
+): Promise<{ finalizedAny: boolean; finalizedIds: ReadonlySet<string> }> {
+  const finalizedIds = new Set<string>();
+  if (session.mode === "daily_round") return { finalizedAny: false, finalizedIds };
+  const taskAttempts = preloadedTaskAttempts ?? await tx
     .select()
     .from(attempts)
-    .where(and(eq(attempts.taskId, task.id), eq(attempts.state, "processing")));
+    .where(eq(attempts.taskId, task.id));
+  const stale = taskAttempts.filter((attempt) => attempt.state === "processing");
   for (const attempt of stale) {
     if (now.getTime() - attempt.receivedAt.getTime() <= ATTEMPT_PROCESSING_TIMEOUT_MS) {
       continue;
     }
     const policy = await loadPolicy(tx, attempt.policyId);
-    const targetKey = await targetKeyOf(tx, task);
     const frozen = attempt.context as Partial<FrozenContext>;
     const qualification = qualifyAttempt({
       receivedAt: attempt.receivedAt.toISOString(),
@@ -861,11 +924,14 @@ async function lazyFinalizeProcessing(
       attempt.modality as AnyModality,
       { skills, attempt: qualification },
       policy,
-      targetKey,
+      revision.targetKey,
       now,
+      revision,
     );
+    finalizedIds.add(attempt.id);
   }
   if (contextOf(session).microphoneDisabledTaskIds.includes(task.id)) {
     await completeDisabledVoiceTask(tx, session.id, task.id);
   }
+  return { finalizedAny: finalizedIds.size > 0, finalizedIds };
 }

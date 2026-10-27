@@ -3,6 +3,9 @@ import { messages, type KidProfileDto, type SessionSummaryDto } from "@learning/
 import { format } from "../format";
 import { KidIcon } from "../components/KidIcon";
 import { ActionButton } from "../components/ActionButton";
+import { CelebrationBurst } from "../components/CelebrationBurst";
+import { m } from "motion/react";
+import { kidEntranceAnimate, kidEntranceInitial, kidSpringGentle, kidStaggerDelay } from "../motion/kid-motion";
 import { KidScreen } from "../layout/KidScreen";
 import { SessionActivityResultView } from "./SessionActivityResultView";
 import { useAutoFocus } from "./useAutoFocus";
@@ -32,20 +35,20 @@ export function SummaryScreen({
   return (
     <KidScreen role="main" className="kid-screen kid-screen--summary">
       <KidScreen.Header>
-        <h1 data-testid="kid-summary">{messages.kid.summaryTitle}</h1>
+        <CelebrationBurst active={summary.tasksIssued > 0}><h1 data-testid="kid-summary">{messages.kid.summaryTitle}</h1></CelebrationBurst>
         {guidance}
         {summary.activity !== undefined && <SessionActivityResultView activity={summary.activity} />}
       </KidScreen.Header>
       <KidScreen.Content>
       {recall > 0 && (
-        <p className="kid-summary-counts" data-testid="kid-summary-recall">
+        <m.p className="kid-summary-counts" data-testid="kid-summary-recall" initial={kidEntranceInitial} animate={kidEntranceAnimate} transition={{ ...kidSpringGentle, delay: kidStaggerDelay(1) }}>
           {format(messages.kid.summaryRecall, { words: wordCount(recall) })}
-        </p>
+        </m.p>
       )}
       {spelling > 0 && (
-        <p className="kid-summary-counts" data-testid="kid-summary-spelling">
+        <m.p className="kid-summary-counts" data-testid="kid-summary-spelling" initial={kidEntranceInitial} animate={kidEntranceAnimate} transition={{ ...kidSpringGentle, delay: kidStaggerDelay(2) }}>
           {format(messages.kid.summarySpelling, { words: wordCount(spelling) })}
-        </p>
+        </m.p>
       )}
       {recall === 0 && spelling === 0 && (
         <p className="kid-hint" data-testid="kid-summary-neutral">

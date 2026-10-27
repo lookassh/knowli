@@ -44,13 +44,16 @@ export function requestHashOf(input: AttemptInput): string {
  */
 export async function discloseFeedbackEvent(
   tx: Tx,
-  args: { task: TaskRow; childId: string; itemId: string; exposures: readonly string[]; now: Date },
+  args: { task: TaskRow; childId: string; itemId: string; exposures: readonly string[]; now: Date; knownPriorCount?: number },
 ): Promise<string> {
-  const prior = await tx
+  // Gorąca ścieżka próby zna liczbę wcześniejszych feedbacków z zapytania
+  // o wsparcia zadania (ta sama blokada sesji — liczba nie może się zmienić
+  // między odczytem a zapisem), więc nie płaci osobnego zapytania.
+  const priorCount = args.knownPriorCount ?? (await tx
     .select({ id: learningEvents.id })
     .from(learningEvents)
-    .where(and(eq(learningEvents.taskId, args.task.id), eq(learningEvents.kind, "feedback_issued")));
-  const stepId = `${args.task.id}:f${prior.length + 1}`;
+    .where(and(eq(learningEvents.taskId, args.task.id), eq(learningEvents.kind, "feedback_issued")))).length;
+  const stepId = `${args.task.id}:f${priorCount + 1}`;
   await writeSealedEvent(tx, {
     childId: args.childId,
     taskId: args.task.id,

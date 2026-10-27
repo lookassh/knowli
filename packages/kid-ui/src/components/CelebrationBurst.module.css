@@ -1,0 +1,22 @@
+:global(.kid-ui) .wrap {
+  position: relative;
+  display: block;
+}
+
+:global(.kid-ui) .burst {
+  position: absolute;
+  inset: 0;
+  display: block;
+  pointer-events: none;
+}
+
+:global(.kid-ui) .particle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  display: block;
+}

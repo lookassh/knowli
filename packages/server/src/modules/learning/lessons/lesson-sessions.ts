@@ -276,8 +276,14 @@ export async function loadExercises(tx: Executor, deckVersionId: string): Promis
 
 /** Liczba wydanych i ocenianych zadań (karty nie liczą się do budżetu). */
 export async function lessonTaskCounts(tx: Tx, sessionId: string): Promise<{ total: number; assessed: number }> {
-  const rows = await tx.select({ exerciseType: sessionTasks.exerciseType }).from(sessionTasks).where(eq(sessionTasks.sessionId, sessionId));
-  return { total: rows.length, assessed: rows.filter((r) => r.exerciseType !== "lesson_card").length };
+  const [row] = await tx
+    .select({
+      total: sql<number>`count(*)::int`,
+      assessed: sql<number>`(count(*) filter (where ${sessionTasks.exerciseType} <> 'lesson_card'))::int`,
+    })
+    .from(sessionTasks)
+    .where(eq(sessionTasks.sessionId, sessionId));
+  return { total: row?.total ?? 0, assessed: row?.assessed ?? 0 };
 }
 
 /** Wynik oceny per zadanie tej sesji (z `assessments` przez `attempts`). */

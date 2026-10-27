@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, or } from "drizzle-orm";
 import {
   AttemptInputSchema,
   type AttemptDto,
@@ -133,7 +133,12 @@ async function answerPreviouslyExposed(tx: Tx, childId: string, targetKey: strin
 }
 
 /** Wsparcie użyte w zadaniu przed odpowiedzią (guided options / odsłuch / podpowiedź). */
-async function assistanceFor(tx: Tx, task: TaskRow, key: LessonTaskAnswerKey, receivedAt: Date): Promise<AssistanceKind[]> {
+async function assistanceFor(
+  tx: Tx,
+  task: TaskRow,
+  key: LessonTaskAnswerKey,
+  receivedAt: Date,
+): Promise<{ assistance: AssistanceKind[]; feedbackCount: number }> {
   const assistance = new Set<AssistanceKind>();
   // Typy prowadzone ujawniają rozwiązanie w prompt'cie: wybór z opcji
   // (choice/short_answer), zaznaczenie w segmencie (notice) oraz ułożenie
@@ -151,12 +156,14 @@ async function assistanceFor(tx: Tx, task: TaskRow, key: LessonTaskAnswerKey, re
     .select({ kind: learningEvents.kind, occurredAt: learningEvents.occurredAt })
     .from(learningEvents)
     .where(and(eq(learningEvents.taskId, task.id), eq(learningEvents.sealed, true)));
+  let feedbackCount = 0;
   for (const row of disclosures) {
+    if (row.kind === "feedback_issued") feedbackCount += 1;
     if (row.occurredAt > receivedAt) continue;
     if (row.kind === "hint_issued") assistance.add("hint");
     if (row.kind === "audio_issued") assistance.add("model_audio");
   }
-  return [...assistance];
+  return { assistance: [...assistance], feedbackCount };
 }
 
 /** Tekst rozwiązania własnego zadania pokazywany dziecku (design feedback). */
@@ -508,6 +515,8 @@ interface LessonAttemptStart {
   task: TaskRow;
   session: SessionRow;
   itemId: string;
+  lessonContext: unknown;
+  feedbackPriorCount: number;
   policy: Policy;
   key: LessonTaskAnswerKey;
   frozen: FrozenLessonContext;
@@ -526,18 +535,24 @@ async function startLessonAttempt(
   services: Services,
   valid: Extract<AttemptInput, { modality: LessonModality }>,
 ): Promise<{ kind: "dto"; dto: AttemptDto } | { kind: "conflict"; error: AppError } | ({ kind: "fresh" } & LessonAttemptStart)> {
-  const { task, session, itemId } = await lockTaskWithSession(tx, valid.taskId);
+  const { task, session, itemId, lessonContext } = await lockTaskWithSession(tx, valid.taskId);
   const now = services.clock.now();
   const requestHash = requestHashOf(valid);
 
-  const existing = (
-    await tx.select().from(attempts).where(and(eq(attempts.childId, task.childId), eq(attempts.clientAttemptId, valid.clientAttemptId)))
-  )[0];
+  // Jedno zapytanie o próby zadania i ewentualną próbę o tym samym
+  // clientAttemptId: istniejący wynik, próby processing i liczba prób —
+  // wcześniej do 4 osobnych zapytań.
+  const related = await tx.select().from(attempts).where(or(
+    eq(attempts.taskId, task.id),
+    and(eq(attempts.childId, task.childId), eq(attempts.clientAttemptId, valid.clientAttemptId)),
+  ));
+  const taskAttempts = related.filter((attempt) => attempt.taskId === task.id);
+  const existing = related.find((attempt) => attempt.clientAttemptId === valid.clientAttemptId);
   if (existing) {
     if (existing.requestHash !== requestHash) {
       throw new AppError("conflict", { message: "clientAttemptId reused with different answer" });
     }
-    await lazyFinalizeStale(tx, services, task, session, itemId, now);
+    await lazyFinalizeStale(tx, services, task, session, itemId, now, taskAttempts);
     const fresh = (await tx.select().from(attempts).where(eq(attempts.id, existing.id)))[0]!;
     const state = await rereadTaskState(tx, task.id);
     // Kartkówka: idempotentny odczyt NIE ujawnia feedbacku (omówienie po końcu).
@@ -548,7 +563,7 @@ async function startLessonAttempt(
     return { kind: "dto", dto: dtoOf(fresh, state) };
   }
 
-  await lazyFinalizeStale(tx, services, task, session, itemId, now);
+  const lazy = await lazyFinalizeStale(tx, services, task, session, itemId, now, taskAttempts);
 
   if (session.state !== "active") {
     return { kind: "conflict", error: new AppError("conflict", { message: "session is closed" }) };
@@ -557,7 +572,10 @@ async function startLessonAttempt(
   if (session.mode === "mock_test" && now.getTime() - session.startedAt.getTime() > 600_000) {
     return { kind: "conflict", error: new AppError("conflict", { message: "Czas kartkówki minął. Przejdź do omówienia." }) };
   }
-  if (await rereadTaskState(tx, task.id) !== "issued") {
+  // Poza ścieżką leniwej finalizacji kartkówki stan zadania z locka jest
+  // aktualny — każdy zapis stanu przechodzi przez tę samą blokadę sesji.
+  const currentTaskState = lazy.taskChanged ? await rereadTaskState(tx, task.id) : task.state;
+  if (currentTaskState !== "issued") {
     // Recovery musi zostać utrwalone nawet wtedy, gdy nowa próba jest odrzucona.
     return { kind: "conflict", error: new AppError("conflict", { message: "task is no longer issued" }) };
   }
@@ -565,28 +583,35 @@ async function startLessonAttempt(
   // Walidacja modalności vs typ ćwiczenia.
   assertModalityMatchesExercise(valid.modality, key.exerciseType);
 
-  const processing = (
-    await tx.select().from(attempts).where(and(eq(attempts.taskId, task.id), eq(attempts.state, "processing")))
-  )[0];
+  // Migawka taskAttempts jest sprzed leniwej finalizacji: próba właśnie
+  // domknięta jako techniczna nie jest już "processing" i nie blokuje
+  // nowej odpowiedzi (regresja wykryta w review — słówka mają finalizedIds).
+  const processing = taskAttempts.find(
+    (attempt) => attempt.state === "processing" && !lazy.finalizedIds.has(attempt.id),
+  );
   if (processing) {
-    return { kind: "dto", dto: dtoOf(processing, await rereadTaskState(tx, task.id)) };
+    return { kind: "dto", dto: dtoOf(processing, currentTaskState) };
   }
 
-  const priorAttempts = await tx.select({ id: attempts.id }).from(attempts).where(eq(attempts.taskId, task.id));
-  const attemptNumber = priorAttempts.length + 1;
+  const attemptNumber = taskAttempts.length + 1;
   const policy = await loadPolicy(tx, session.policyId);
   const sessionContext = lessonSessionContextOf(session);
+  const assistanceInfo = await assistanceFor(tx, task, key, now);
   const frozen: FrozenLessonContext = {
     receivedAt: now.toISOString(),
     policyVersion: policy.version,
     firstTry: attemptNumber === 1,
-    assistance: await assistanceFor(tx, task, key, now),
+    assistance: assistanceInfo.assistance,
     answerPreviouslyExposed: await answerPreviouslyExposed(tx, task.childId, key.targetKey, task),
     previousSessionContactAt: sessionContext.previousObjectiveContact[key.objectiveId] ?? null,
     timezone: sessionContext.timezone,
   };
 
-  return { kind: "fresh", task, session, itemId, policy, key, frozen, attemptNumber, requestHash, receivedAt: now };
+  return {
+    kind: "fresh", task, session, itemId, lessonContext,
+    feedbackPriorCount: assistanceInfo.feedbackCount,
+    policy, key, frozen, attemptNumber, requestHash, receivedAt: now,
+  };
 }
 
 /** Modalność musi pasować do typu ćwiczenia (jak walidacja słówek). */
@@ -623,12 +648,22 @@ async function rereadTaskState(tx: Tx, taskId: string): Promise<string> {
 }
 
 /** Zapis ekspozycji feedbacku lekcji przed odpowiedzią HTTP (jak słówka). */
-async function discloseLessonFeedback(tx: Tx, task: TaskRow, itemId: string, feedback: FeedbackDto, now: Date): Promise<string> {
+async function discloseLessonFeedback(
+  tx: Tx,
+  task: TaskRow,
+  itemId: string,
+  feedback: FeedbackDto,
+  now: Date,
+  knownFeedbackCount?: number,
+): Promise<string> {
   const key = keyOf(task);
   // not_assessed niczego nie ujawnia; w pozostałych pokazujemy rozwiązanie
   // własnego zadania (target_key celu) oraz, przy minor_typo, wariant correctText.
   const exposures = feedback.kind === "not_assessed" ? [] : [key.targetKey];
-  return discloseFeedbackEvent(tx, { task, childId: task.childId, itemId, exposures, now });
+  return discloseFeedbackEvent(tx, {
+    task, childId: task.childId, itemId, exposures, now,
+    ...(knownFeedbackCount === undefined ? {} : { knownPriorCount: knownFeedbackCount }),
+  });
 }
 
 /**
@@ -708,13 +743,15 @@ async function finalizeLessonAttempt(
 
     // Projekcja celu w tej samej transakcji (tylko gdy oceniono — unevaluated jest neutralne).
     if (result.grade.outcome !== "unevaluated") {
-      await projectAndUpsertObjective(tx, services, task, key, policy, receivedAt);
+      await projectAndUpsertObjective(tx, services, task, key, policy, receivedAt, start.lessonContext);
     }
   }
 
   const taskState = nextLessonTaskState(valid.modality, result.grade.outcome, mockTest);
+  let finalTaskState: string = task.state;
   if (taskState !== "issued") {
-    await tx.update(sessionTasks).set({ state: taskState }).where(eq(sessionTasks.id, task.id));
+    const [updated] = await tx.update(sessionTasks).set({ state: taskState }).where(eq(sessionTasks.id, task.id)).returning({ state: sessionTasks.state });
+    finalTaskState = updated?.state ?? taskState;
   }
 
   // Kartkówka: wynik niewidoczny dla dziecka — żadnego feedbacku ani ekspozycji
@@ -731,15 +768,14 @@ async function finalizeLessonAttempt(
 
   // Aktywność sesji rozlicza wyłącznie raport FE na końcu sesji (spec
   // client-reward-time); próba zostawia tylko ocenę i ekspozycje.
-  const stepId = feedback === null ? null : await discloseLessonFeedback(tx, task, itemId, feedback, receivedAt);
-  const freshTask = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, task.id)))[0]!;
+  const stepId = feedback === null ? null : await discloseLessonFeedback(tx, task, itemId, feedback, receivedAt, start.feedbackPriorCount);
   return {
     attemptId,
     taskId: task.id,
     state: "completed",
     modality: valid.modality,
     feedback,
-    taskState: freshTask.state as AttemptDto["taskState"],
+    taskState: finalTaskState as AttemptDto["taskState"],
     stepId,
     receivedAt: receivedAt.toISOString(),
     completedAt: receivedAt.toISOString(),
@@ -754,11 +790,12 @@ async function projectAndUpsertObjective(
   key: LessonTaskAnswerKey,
   policy: Policy,
   now: Date,
+  knownLessonContext?: unknown,
 ): Promise<void> {
   const history = await objectiveHistory(tx, task.childId, key.objectiveId);
   const projection = projectObjectiveProgress(history, policy, now.toISOString())[key.objectiveId];
   if (!projection) return;
-  const topicId = await objectiveTopicId(tx, task, key, services);
+  const topicId = await objectiveTopicId(tx, task, key, services, knownLessonContext);
   const lastIndependentAt = lastIndependentObjectiveAt(history, policy.version);
   await tx
     .insert(childObjectiveProgress)
@@ -788,9 +825,16 @@ async function projectAndUpsertObjective(
 }
 
 /** Temat celu z `lesson_context` wersji (dla klucza child_objective_progress). */
-async function objectiveTopicId(tx: Tx, task: TaskRow, key: LessonTaskAnswerKey, services: Services): Promise<string> {
-  const version = (await tx.select({ lessonContext: deckVersions.lessonContext }).from(deckVersions).where(eq(deckVersions.id, task.deckVersionId)))[0];
-  const topicId = (version?.lessonContext as { topicId?: string } | null)?.topicId;
+async function objectiveTopicId(
+  tx: Tx,
+  task: TaskRow,
+  key: LessonTaskAnswerKey,
+  services: Services,
+  knownLessonContext?: unknown,
+): Promise<string> {
+  const topicId = knownLessonContext !== undefined
+    ? (knownLessonContext as { topicId?: string } | null)?.topicId
+    : ((await tx.select({ lessonContext: deckVersions.lessonContext }).from(deckVersions).where(eq(deckVersions.id, task.deckVersionId)))[0]?.lessonContext as { topicId?: string } | null | undefined)?.topicId;
   if (topicId) return topicId;
   // zapas: znajdź temat zawierający cel w rejestrze
   const subject = services.subjects.getSubject(key.subjectId);
@@ -803,9 +847,20 @@ async function objectiveTopicId(tx: Tx, task: TaskRow, key: LessonTaskAnswerKey,
 }
 
 /** Leniwa finalizacja przeterminowanej próby processing lekcji (arch §9.2a). */
-async function lazyFinalizeStale(tx: Tx, services: Services, task: TaskRow, session: SessionRow, itemId: string, now: Date): Promise<void> {
+async function lazyFinalizeStale(
+  tx: Tx,
+  services: Services,
+  task: TaskRow,
+  session: SessionRow,
+  itemId: string,
+  now: Date,
+  preloadedTaskAttempts?: readonly AttemptRow[],
+): Promise<{ taskChanged: boolean; finalizedIds: ReadonlySet<string> }> {
   void services;
-  const stale = await tx.select().from(attempts).where(and(eq(attempts.taskId, task.id), eq(attempts.state, "processing")));
+  let taskChanged = false;
+  const finalizedIds = new Set<string>();
+  const taskAttempts = preloadedTaskAttempts ?? await tx.select().from(attempts).where(eq(attempts.taskId, task.id));
+  const stale = taskAttempts.filter((attempt) => attempt.state === "processing");
   for (const attempt of stale) {
     if (now.getTime() - attempt.receivedAt.getTime() <= LESSON_ATTEMPT_PROCESSING_TIMEOUT_MS) continue;
     // technical: żadnej oceny wiedzy; zadanie zostaje issued; feedback not_assessed bez ekspozycji
@@ -815,12 +870,17 @@ async function lazyFinalizeStale(tx: Tx, services: Services, task: TaskRow, sess
       .where(and(eq(attempts.id, attempt.id), eq(attempts.state, "processing")))
       .returning();
     if (completed.length === 0) continue;
+    finalizedIds.add(attempt.id);
     if (session.mode === "mock_test") {
-      if (session.state === "active") await tx.update(sessionTasks).set({ state: "answered" }).where(eq(sessionTasks.id, task.id));
+      if (session.state === "active") {
+        await tx.update(sessionTasks).set({ state: "answered" }).where(eq(sessionTasks.id, task.id));
+        taskChanged = true;
+      }
     } else {
       await discloseLessonFeedback(tx, task, itemId, { kind: "not_assessed" }, now);
     }
   }
+  return { taskChanged, finalizedIds };
 }
 
 /**
@@ -1006,7 +1066,7 @@ async function finalizeGradedAttempt(
   // utrwalić NIEZMIENNY raport, a spóźniony werdykt rozjechałby omówienie dziecka
   // z raportem rodzica. Blokada ustawia wspólną kolejność; po niej odczytujemy
   // aktualny stan próby i sesji.
-  const { session: freshSession } = await lockTaskWithSession(tx, task.id);
+  const { session: freshSession, lessonContext } = await lockTaskWithSession(tx, task.id);
   const reserved = (await tx.select().from(attempts).where(eq(attempts.id, attemptId)))[0];
   const mockTest = freshSession.mode === "mock_test";
 
@@ -1089,12 +1149,14 @@ async function finalizeGradedAttempt(
     details: result.details,
   });
   if (result.grade.outcome !== "unevaluated") {
-    await projectAndUpsertObjective(tx, services, task, key, policy, receivedAt);
+    await projectAndUpsertObjective(tx, services, task, key, policy, receivedAt, lessonContext);
   }
 
   const taskState = nextLessonTaskState("text", result.grade.outcome, mockTest);
+  let finalTaskState: string = task.state;
   if (taskState !== "issued") {
-    await tx.update(sessionTasks).set({ state: taskState }).where(eq(sessionTasks.id, task.id));
+    const [updated] = await tx.update(sessionTasks).set({ state: taskState }).where(eq(sessionTasks.id, task.id)).returning({ state: sessionTasks.state });
+    finalTaskState = updated?.state ?? taskState;
   }
 
   // Kartkówka: wynik niewidoczny — brak feedbacku/ekspozycji w trakcie.
@@ -1115,14 +1177,13 @@ async function finalizeGradedAttempt(
   // an unavailable grader changes mastery, not whether the child did the work.
   // Aktywność sesji rozlicza wyłącznie raport FE na końcu sesji.
   const stepId = feedback === null ? null : await discloseLessonFeedback(tx, task, itemId, feedback, receivedAt);
-  const freshTask = (await tx.select().from(sessionTasks).where(eq(sessionTasks.id, task.id)))[0]!;
   return {
     attemptId,
     taskId: task.id,
     state: "completed",
     modality: "text",
     feedback,
-    taskState: freshTask.state as AttemptDto["taskState"],
+    taskState: finalTaskState as AttemptDto["taskState"],
     stepId,
     receivedAt: receivedAt.toISOString(),
     completedAt: receivedAt.toISOString(),

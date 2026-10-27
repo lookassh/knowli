@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { messages } from "@learning/contracts";
+import { useStimulusBounce } from "./useStimulusBounce";
 import { ExerciseFrame } from "./ExerciseFrame";
 import { KidIcon } from "../components/KidIcon";
 import { MeaningVisualView } from "../visuals/MeaningVisualView";
@@ -9,6 +10,7 @@ import { ActionButton } from "../components/ActionButton";
 
 export function PictureExposureView({ task, busy, mediaUrl, dock, handlers }: ExerciseProps) {
   const doneRef = useRef<HTMLButtonElement>(null);
+  const [bounceKey, playWithBounce] = useStimulusBounce(handlers.onPlay);
 
   useEffect(() => {
     doneRef.current?.focus({ preventScroll: true });
@@ -24,7 +26,7 @@ export function PictureExposureView({ task, busy, mediaUrl, dock, handlers }: Ex
         if (active?.getAttribute("data-testid") === "kid-done") return;
         if (task.prompt.kind === "picture_exposure" && task.prompt.audioAssetId && !busy) {
           event.preventDefault();
-          handlers.onPlay();
+          playWithBounce();
         }
       }
     };
@@ -40,14 +42,14 @@ export function PictureExposureView({ task, busy, mediaUrl, dock, handlers }: Ex
       task={task}
       content={(
         <div className="kid-exposure-content">
-          <MeaningVisualView visual={task.prompt.visual} mediaUrl={mediaUrl} />
+          <MeaningVisualView visual={task.prompt.visual} mediaUrl={mediaUrl} bounceKey={bounceKey} />
           <ActionButton
             fullWidth={false}
             type="button"
             className="kid-play-big"
             data-testid="kid-play"
             disabled={busy || !task.prompt.audioAssetId}
-            onClick={handlers.onPlay}
+            onClick={playWithBounce}
             aria-label={messages.kid.listen}
           >
             <KidIcon name="volume" />

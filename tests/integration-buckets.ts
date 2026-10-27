@@ -73,6 +73,7 @@ export const INTEGRATION_BUCKETS: readonly (readonly string[])[] = [
     session-activity.test.ts
     sessions.test.ts
     speech.test.ts
+    task-transition-queries.test.ts
     ui-audio.test.ts
   `),
   bucket(`
