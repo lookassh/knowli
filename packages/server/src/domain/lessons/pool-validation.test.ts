@@ -599,6 +599,23 @@ describe("withoutRedundantAcceptedVariants", () => {
     expect(withoutRedundantAcceptedVariants(ex, englishGrammarSubject.normalizer).acceptedAnswers).toEqual([]);
   });
 
+  it("porzuca wariant dzielący NIE-pierwszą sekwencję odpowiedzi (regresja „tylko pierwsza sekwencja”)", () => {
+    const ex = draft({
+      exerciseType: "lesson_open_answer",
+      objectiveId: "english_grammar.to_be.affirmative_forms",
+      stem: undefined,
+      hint: undefined,
+      prompt: "Ona jest spóźniona.",
+      answer: "She's late.",
+      acceptedAnswers: ["she has late"],
+      focus: ["late"],
+    });
+    // Odpowiedź rozwija się do [she is late, she has late]; wariant dzieli DRUGĄ
+    // sekwencję — porównanie samych pierwszych sekwencji (klasa błędu
+    // acceptVerdictAsVariant z WR-01) zostawiłoby ten redundantny wariant.
+    expect(withoutRedundantAcceptedVariants(ex, englishGrammarSubject.normalizer).acceptedAnswers).toEqual([]);
+  });
+
   it("porzuca wariant różniący się tylko wielkością liter i interpunkcją", () => {
     const ex = draft({
       exerciseType: "lesson_open_answer",

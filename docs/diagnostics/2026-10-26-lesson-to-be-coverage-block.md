@@ -54,20 +54,30 @@ false`), wersja nie ma zasobów `revision_assets`.
   reguła walidacji. Generacja stosuje ją przy przyjęciu puli
   (lesson-drafts.ts), więc redundantny wariant przestaje zabijać całe
   ćwiczenie. Walidacja pozostaje egzekwatorem przy edycji i publikacji.
-- Prompt adaptera LLM doprecyzowany ogólnie („an expanded, contracted or
-  re-capitalized copy of the answer is not [a different formulation]”),
-  bez przykładów przedmiotowych — zgodnie z zasadą review C1.
+- Prompt adaptera LLM doprecyzowany ogólnie („a copy of the same words with
+  expanded or contracted spellings, or different capitalization, is not
+  [a different formulation]”), bez przykładów przedmiotowych — zgodnie z
+  zasadą review C1.
+- Fala poprawek po review (576814b): ta sama pełna relacja równoważności
+  chroni `acceptVerdictAsVariant` (decyzja rodzica nad werdyktem) przed
+  dopisaniem wariantu redundantnego; worker loguje licznik porzuconych
+  wariantów linią `[lesson]`, gdy >0; zduplikowany lokalnie predykat
+  równoważności scalony z eksportowanym `answersEquivalent`.
 
 ## Weryfikacja
 
-- Testy jednostkowe: 4 nowe przypadki sanityzacji (pool-validation.test.ts),
-  asercja promptu (llm.test.ts); pełny suit 2043/2043.
-- Integracyjne (lesson-generation.test.ts, PostgreSQL): nowy test — model
+- Testy jednostkowe: 5 nowych przypadków sanityzacji (pool-validation.test.ts),
+  asercja promptu (llm.test.ts); pełny suit 2046/2046.
+- Integracyjne (PostgreSQL): lesson-generation.test.ts — nowy test: model
   zwraca ćwiczenie z wariantem skrótowym, run kończy się `succeeded`,
-  ćwiczenie zapisane bez wariantu, `rejectedCount` bez zmian; 32/32.
+  ćwiczenie zapisane bez wariantu, `rejectedCount` bez zmian, linia logu z
+  licznikiem porzuconych; lesson-parent-supervision.test.ts — test
+  `acceptVerdictAsVariant` (kontrola pozytywna + wariant redundantny przez
+  drugą sekwencję skrótu dwuznacznego → `added=false`); 40/40 w obu plikach.
   Fixture testu logów przestawiony z duplikatu wariantu (znoszonego teraz
   sanityzacją) na pusty wariant.
-- Typecheck czysty; testy granic modułów zielone.
+- Typecheck czysty; testy granic modułów zielone; druga fala review (subagent)
+  potwierdziła rozstrzygnięcie wszystkich znalezisk.
 
 ## Pozostaje
 
