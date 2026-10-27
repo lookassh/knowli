@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { messages, type KidDeckDto, type UiAudioKey } from "@learning/contracts";
 import { GuidanceButton } from "../components/GuidanceButton";
 import { MicrophoneSettingsButton } from "../components/MicrophoneSettingsButton";
@@ -11,7 +11,7 @@ import { MASTERY_STAR_MAX, starsForFraction } from "./stars";
 import { MeaningVisualView } from "../visuals/MeaningVisualView";
 import { useAutoFocus } from "./useAutoFocus";
 import { m } from "motion/react";
-import { kidSpringGentle, kidStaggerDelay } from "../motion/kid-motion";
+import { kidCoverHoverScale, kidSpringGentle, kidStaggerDelay } from "../motion/kid-motion";
 
 function wordCount(count: number): string {
   const lastTwoDigits = count % 100;
@@ -135,12 +135,15 @@ export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive, but
   const date = formatDeckTestDate(deck.testDate, new Date().getFullYear());
   const stars = starsForFraction(deck.independentlyRecalledCount, deck.itemCount);
   const isLesson = deck.kind === "lesson";
+  // Cover zoom is a Motion effect, but only precise pointers get hover.
+  const [canHover] = useState(() => typeof window !== "undefined" && typeof window.matchMedia === "function"
+    && window.matchMedia("(hover: hover) and (pointer: fine)").matches);
   return (
     <m.li initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -3 }} transition={{ ...kidSpringGentle, delay: kidStaggerDelay(index) }}>
       <article className="kid-deck-card" data-testid="kid-deck-card" data-deck-id={deck.deckId} data-kind={deck.kind ?? "vocabulary"}>
         <div className="kid-deck-card__details">
           {deck.coverAssetId
-            ? <img className="kid-deck-cover" src={mediaUrl(deck.coverAssetId)} alt="" data-testid="kid-deck-cover" />
+            ? <m.img className="kid-deck-cover" src={mediaUrl(deck.coverAssetId)} alt="" data-testid="kid-deck-cover" whileHover={canHover ? { scale: kidCoverHoverScale } : undefined} transition={kidSpringGentle} />
             : deck.coverVisual && <MeaningVisualView visual={deck.coverVisual} mediaUrl={mediaUrl} />}
           <div className="kid-deck-card__info">
             <h3 data-testid="kid-deck-title">

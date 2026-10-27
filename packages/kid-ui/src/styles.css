@@ -540,23 +540,6 @@
   object-fit: cover;
 }
 
-/* Deck covers zoom gently on precise pointers only; touch keeps the calm tap. */
-@media (hover: hover) and (pointer: fine) {
-  .kid-deck-cover {
-    transition: transform 0.25s ease;
-  }
-
-  .kid-deck-card:hover .kid-deck-cover {
-    transform: scale(1.05);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .kid-deck-cover {
-    transition: none;
-  }
-}
-
 .kid-deck-card .kid-visual,
 .kid-deck-card .kid-illustration,
 .kid-deck-card .kid-visual-number {

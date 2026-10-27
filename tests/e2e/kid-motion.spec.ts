@@ -12,9 +12,9 @@ test("animated task switch and feedback dock keep the session flow working", asy
 
   await page.goto("/");
   await page.getByTestId("kid-profile").click();
-  // Flow screens switch through ScreenTransition: the deck screen fades in
-  // (sampled mid-transition) instead of appearing instantly.
-  await expect.poll(() => page.getByTestId("kid-screen-transition").evaluate((el) => Number.parseFloat(getComputedStyle(el).opacity)), { intervals: [20, 50, 100] }).toBeLessThan(1);
+  // Flow screens switch through ScreenTransition: measure the entering
+  // deck pane specifically, not the exiting profile pane.
+  await expect.poll(() => page.locator("[data-testid='kid-screen-transition']:has([data-testid='kid-deck-screen'])").evaluate((el) => Number.parseFloat(getComputedStyle(el).opacity)), { intervals: [20, 50, 100] }).toBeLessThan(1);
   await page.getByTestId("kid-deck").first().click();
   await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-prompt-kind", "picture_exposure");
 
