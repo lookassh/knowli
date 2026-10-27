@@ -241,27 +241,24 @@ describe("Parent supervision API (integracja HTTP)", () => {
         }),
       ],
     );
+    const seedVerdict = async (normalizedAnswer: string): Promise<string> => {
+      const id = randomUUID();
+      await pool.query(
+        `insert into learning_app.lesson_verdicts (id, item_revision_id, normalized_answer, prompt_version, grader_model, verdict)
+         values ($1, $2, $3, 'pv-test', 'fake-grader', 'correct')`,
+        [id, lesson.revisionId, normalizedAnswer],
+      );
+      return id;
+    };
 
     // Kontrola pozytywna: werdykt nie równoważny żadnej sekwencji → wariant dopisany.
-    const freshVerdictId = randomUUID();
-    await pool.query(
-      `insert into learning_app.lesson_verdicts (id, item_revision_id, normalized_answer, prompt_version, grader_model, verdict)
-       values ($1, $2, 'she is very late', 'pv-test', 'fake-grader', 'correct')`,
-      [freshVerdictId, lesson.revisionId],
-    );
-    const added = await acceptVerdictAsVariant(services, freshVerdictId);
+    const added = await acceptVerdictAsVariant(services, await seedVerdict("she is very late"));
     expect(added.added).toBe(true);
 
     // Werdykt równoważny DRUGIEJ sekwencji skrótu dwuznacznego: porównanie
     // pierwszej sekwencji (stare zachowanie) dopisałoby „she has late”, a taki
     // wariant zablokowałby publikację regułą duplikatu po normalizacji.
-    const redundantVerdictId = randomUUID();
-    await pool.query(
-      `insert into learning_app.lesson_verdicts (id, item_revision_id, normalized_answer, prompt_version, grader_model, verdict)
-       values ($1, $2, 'she has late', 'pv-test', 'fake-grader', 'correct')`,
-      [redundantVerdictId, lesson.revisionId],
-    );
-    const skipped = await acceptVerdictAsVariant(services, redundantVerdictId);
+    const skipped = await acceptVerdictAsVariant(services, await seedVerdict("she has late"));
     expect(skipped.added).toBe(false);
 
     const [row] = (await pool.query<{ payload: { answer: string; acceptedAnswers: string[] } }>(
