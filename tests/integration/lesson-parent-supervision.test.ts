@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
+  acceptVerdictAsVariant,
   completePresentation,
   createChild,
   createServices,
@@ -219,6 +220,53 @@ describe("Parent supervision API (integracja HTTP)", () => {
       `select parent_decision, parent_decided_at from learning_app.lesson_verdicts where id=$1`, [verdictId])).rows[0]!;
     expect(decisionRow.parent_decision).toBe("overridden_correct");
     expect(decisionRow.parent_decided_at).not.toBeNull();
+  });
+
+  it("acceptVerdictAsVariant nie dopisuje wariantu redundantnego wobec odpowiedzi kanonicznej (pełna relacja równoważności)", async () => {
+    const services = graderServices(null);
+    // Szkic z ćwiczeniem otwartym o odpowiedzi z DWUZACZNYM skrótem („She's” → is|has).
+    const lesson = await lessonWorld(pool, { now: new Date(), publish: false });
+    await pool.query(
+      `update learning_app.item_revisions set payload = $2::jsonb where id = $1`,
+      [
+        lesson.revisionId,
+        JSON.stringify({
+          exerciseType: "lesson_open_answer",
+          objectiveId: lesson.objectiveId,
+          instructionPl: "Przetłumacz zdanie na angielski.",
+          prompt: "Ona jest spóźniona.",
+          answer: "She's late.",
+          acceptedAnswers: [],
+          focus: ["late"],
+        }),
+      ],
+    );
+    const seedVerdict = async (normalizedAnswer: string): Promise<string> => {
+      const id = randomUUID();
+      await pool.query(
+        `insert into learning_app.lesson_verdicts (id, item_revision_id, normalized_answer, prompt_version, grader_model, verdict)
+         values ($1, $2, $3, 'pv-test', 'fake-grader', 'correct')`,
+        [id, lesson.revisionId, normalizedAnswer],
+      );
+      return id;
+    };
+
+    // Kontrola pozytywna: werdykt nie równoważny żadnej sekwencji → wariant dopisany.
+    const added = await acceptVerdictAsVariant(services, await seedVerdict("she is very late"));
+    expect(added.added).toBe(true);
+
+    // Werdykt równoważny DRUGIEJ sekwencji skrótu dwuznacznego: porównanie
+    // pierwszej sekwencji (stare zachowanie) dopisałoby „she has late”, a taki
+    // wariant zablokowałby publikację regułą duplikatu po normalizacji.
+    const skipped = await acceptVerdictAsVariant(services, await seedVerdict("she has late"));
+    expect(skipped.added).toBe(false);
+
+    const [row] = (await pool.query<{ payload: { answer: string; acceptedAnswers: string[] } }>(
+      "select payload from learning_app.item_revisions where id = $1",
+      [lesson.revisionId],
+    )).rows;
+    expect(row!.payload.answer).toBe("She's late.");
+    expect(row!.payload.acceptedAnswers).toEqual(["she is very late"]);
   });
 
   it.each([

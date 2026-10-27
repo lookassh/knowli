@@ -24,6 +24,7 @@ import {
 import { AppError } from "../../../errors";
 import { mapObjectiveStatus } from "../../../domain/lessons/progress-status";
 import { BASE_ERROR_CATEGORIES } from "../../../domain/lessons/base-error-categories";
+import { answersEquivalent } from "../../../domain/lessons/pool-validation";
 import type { LearningObjective, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
 import { reconcileDraftAssetsTx } from "../media-reconciliation";
 import { bumpEditNumber, lockVersion } from "../version-ops";
@@ -391,11 +392,14 @@ export async function acceptVerdictAsVariant(services: Services, verdictId: stri
     }
 
     const draft = toExerciseDraft(target.payload);
-    const normalize = (text: string): string => {
-      const seqs = subject.normalizer.normalize(text).filter((s) => s.length > 0);
-      return seqs[0]?.join(" ") ?? text.trim().toLowerCase();
-    };
-    const alreadyPresent = [draft.answer, ...draft.acceptedAnswers].some((v) => normalize(v) === normalized);
+    // Pełna relacja równoważności (każda wspólna sekwencja normalizacji — ta sama
+    // co `validateAcceptedAnswers` i sanityzacja generacji). Porównanie samej
+    // pierwszej sekwencji dopisywało wariant redundantny wobec odpowiedzi
+    // kanonicznej, gdy równoważność tkwiła w dalszej sekwencji skrótu
+    // dwuznacznego („She's…” → is|has), i twardo blokowało publikację szkicu.
+    const alreadyPresent = [draft.answer, ...draft.acceptedAnswers].some(
+      (v) => answersEquivalent(v, normalized, subject.normalizer),
+    );
     if (alreadyPresent) {
       return { deckVersionId: draftVersionId!, added: false };
     }
