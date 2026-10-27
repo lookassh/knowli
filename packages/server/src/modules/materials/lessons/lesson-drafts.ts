@@ -20,7 +20,7 @@ import {
   defaultPoolSize,
   type StageMix,
 } from "../../../domain/lessons/lesson-policy";
-import { MAX_TEXT_LENGTH, validatePool, withoutRedundantAcceptedVariants } from "../../../domain/lessons/pool-validation";
+import { answersEquivalent, MAX_TEXT_LENGTH, validatePool, withoutRedundantAcceptedVariants } from "../../../domain/lessons/pool-validation";
 import {
   lessonExerciseIdentity,
   lessonExerciseStimulusRecord,
@@ -688,9 +688,14 @@ export async function executeLessonGeneration(services: Services, runId: string,
     // skrótowa forma przeczenia „to be” przy pełnej) porzucamy przy przyjęciu
     // puli — bez tego walidacja fazy 1 odrzucałaby całe ćwiczenie za wpis
     // nieznoszący informacji (odpowiedź kanoniczna jest akceptowana automatycznie).
+    let droppedAcceptedVariants = 0;
     const drafts = wellShaped
       .map(toExerciseDraft)
-      .map((draft) => withoutRedundantAcceptedVariants(draft, subject.normalizer));
+      .map((draft) => {
+        const sanitized = withoutRedundantAcceptedVariants(draft, subject.normalizer);
+        droppedAcceptedVariants += draft.acceptedAnswers.length - sanitized.acceptedAnswers.length;
+        return sanitized;
+      });
     const { valid, rejected } = validatePool(drafts, subject, topic);
     // Duplikaty wobec odpowiedzi już w puli: odrzucamy valid, których odpowiedź
     // równa się istniejącej (dogenerowanie nie powiela odpowiedzi szkicu).
@@ -703,7 +708,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
     for (const ex of valid) {
       const clash = subject.poolDeduplication === "exercise"
         ? existingExerciseSet.has(lessonExerciseIdentity(ex))
-        : [...existingSet].some((a) => sameAnswer(a, ex.answer, subject));
+        : [...existingSet].some((a) => answersEquivalent(a, ex.answer, subject.normalizer));
       if (clash) {
         dupAgainstExisting += 1;
       } else {
@@ -723,6 +728,12 @@ export async function executeLessonGeneration(services: Services, runId: string,
         validCount: uniqueValid.length,
       })}`,
     );
+    // Porzucone warianty redundantne nie są odrzuceniem (nie trafiają do
+    // rejectedCount ani podsumowania) — sama linia z licznikiem, bez treści
+    // wariantów, żeby incydenty tej klasy były widoczne w logach workera.
+    if (droppedAcceptedVariants > 0) {
+      console.log(`[lesson] run=${runId} sanityzacja wariantów: porzucone=${droppedAcceptedVariants}`);
+    }
 
     if (uniqueValid.length === 0) {
       await markCurrentRun(services.db, "failed", "validation");
@@ -789,12 +800,6 @@ export async function executeLessonGeneration(services: Services, runId: string,
     }
     return;
   }
-}
-
-/** Czy dwie odpowiedzi są równoważne po normalizatorze przedmiotu. */
-function sameAnswer(a: string, b: string, subject: SubjectModule): boolean {
-  const keysB = new Set(subject.normalizer.normalize(b).map((seq) => seq.join("\u0000")));
-  return subject.normalizer.normalize(a).some((seq) => keysB.has(seq.join("\u0000")));
 }
 
 /**

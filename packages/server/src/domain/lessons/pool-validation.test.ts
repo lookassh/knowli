@@ -582,6 +582,51 @@ describe("withoutRedundantAcceptedVariants", () => {
     const ex = draft({ acceptedAnswers: [] });
     expect(withoutRedundantAcceptedVariants(ex, englishGrammarSubject.normalizer)).toBe(ex);
   });
+
+  it("porzuca wariant dzielący jedną sekwencję z odpowiedzią przez skrót dwuznaczny ('s → is|has)", () => {
+    const ex = draft({
+      exerciseType: "lesson_open_answer",
+      objectiveId: "english_grammar.to_be.affirmative_forms",
+      stem: undefined,
+      hint: undefined,
+      prompt: "Czy ona jest spóźniona?",
+      answer: "She is late.",
+      acceptedAnswers: ["She's late."],
+      focus: ["late"],
+    });
+    // „She's late.” rozwija się do [she is late, she has late] — wspólne
+    // „she is late” z odpowiedzią kanoniczną czyni wariant redundantnym.
+    expect(withoutRedundantAcceptedVariants(ex, englishGrammarSubject.normalizer).acceptedAnswers).toEqual([]);
+  });
+
+  it("porzuca wariant różniący się tylko wielkością liter i interpunkcją", () => {
+    const ex = draft({
+      exerciseType: "lesson_open_answer",
+      objectiveId: "english_grammar.to_be.negative_forms",
+      stem: undefined,
+      hint: undefined,
+      prompt: "Oni nie są w mojej klasie.",
+      answer: "They aren't in my class.",
+      acceptedAnswers: ["they aren't in my class"],
+      focus: ["aren't"],
+    });
+    expect(withoutRedundantAcceptedVariants(ex, englishGrammarSubject.normalizer).acceptedAnswers).toEqual([]);
+  });
+
+  it("zachowuje wariant skrótowy, gdy nie dzieli żadnej sekwencji z odpowiedzią", () => {
+    const ex = draft({
+      exerciseType: "lesson_open_answer",
+      objectiveId: "english_grammar.to_be.negative_forms",
+      stem: undefined,
+      hint: undefined,
+      prompt: "Czy on jest spóźniony?",
+      answer: "He is late.",
+      acceptedAnswers: ["He isn't late."],
+      focus: ["late"],
+    });
+    // „He isn't late.” → [he is not late] — brak wspólnej sekwencji z [he is late].
+    expect(withoutRedundantAcceptedVariants(ex, englishGrammarSubject.normalizer).acceptedAnswers).toEqual(["He isn't late."]);
+  });
 });
 
 describe("validateLessonExercise — delegacja do subject.validateExercise", () => {

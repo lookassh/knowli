@@ -274,7 +274,15 @@ describe("generowanie puli lekcji (integracja)", () => {
         clientRequestId: randomUUID(),
       }),
     );
-    await executeLessonGeneration(services, runId);
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(" "));
+    });
+    try {
+      await executeLessonGeneration(services, runId);
+    } finally {
+      spy.mockRestore();
+    }
 
     const run = await readGeneration(services, runId);
     expect(run.state).toBe("succeeded");
@@ -285,12 +293,14 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect(revisions).toHaveLength(1);
     expect(revisions[0]!.payload.answer).toBe("They aren't in my class.");
     expect(revisions[0]!.payload.acceptedAnswers).toEqual([]);
-    // Sanityzacja nie jest odrzuceniem — licznik pozostaje zerowy.
+    // Sanityzacja nie jest odrzuceniem — licznik pozostaje zerowy…
     const [version] = await query<{ lesson_context: { rejectedCount: number } }>(
       "select lesson_context from learning_app.deck_versions where id = $1",
       [run.deckVersionId!],
     );
     expect(version!.lesson_context.rejectedCount).toBe(0);
+    // …ale zostawia licznik w logach workera (bez treści wariantów).
+    expect(logs.filter((line) => line.includes("[lesson]")).join("\n")).toMatch(/sanityzacja wariantów: porzucone=2/);
   });
 
   it("częściowe odrzucenia: niepoprawne ćwiczenia odrzucone pojedynczo, licznik dostępny", async () => {

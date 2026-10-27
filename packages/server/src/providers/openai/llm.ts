@@ -181,7 +181,7 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
       "Never copy prompt-language words from the parent material into answer-language fields. " +
       "acceptedAnswers must NOT contain the canonical answer itself, nor trivial variants that differ only by case or punctuation — " +
       "the canonical answer is accepted automatically, so every listed variant must be a DIFFERENT acceptable formulation " +
-      "(a shortened wording without optional words is different; an expanded, contracted or re-capitalized copy of the answer is not). " +
+      "(a shortened wording without optional words is different; a copy of the same words with expanded or contracted spellings, or different capitalization, is not). " +
       "lesson_choice and lesson_short_answer must have exactly 2 to 4 options with distinct texts, and correctOption must be the id " +
       "of exactly one of the options. Use only the exerciseType values allowed for the exercise's objective (see the list above). " +
       "Required non-empty stimulus fields by type: lesson_choice requires stem; lesson_gap requires stem with exactly one ___ " +

@@ -196,8 +196,9 @@ describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", ()
     expect(system).toContain("acceptedAnswers must NOT contain the canonical answer");
     // Skrótowa forma tych samych słów to nie „inny wariant” (incydent prod
     // 2026-10-26: przeczenia „to be” — „They're not…” przy „They aren't…”);
-    // ogólne sformułowanie bez przykładów przedmiotowych (zasada review C1).
-    expect(system).toContain("an expanded, contracted or re-capitalized copy of the answer is not");
+    // ogólne sformułowanie bez przykładów przedmiotowych (zasada review C1),
+    // rozdzielone od klauzuli o skróconych sformułowaniach („shortened wording”).
+    expect(system).toContain("a copy of the same words with expanded or contracted spellings, or different capitalization, is not");
     expect(system).toContain("2 to 4 options");
     expect(system).toContain("correctOption must be the id of exactly one of the options");
 

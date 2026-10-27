@@ -31,7 +31,7 @@ publikacji, więc runy generowania kończyły się stanem `succeeded` z dziurą.
 ## Interwencja na produkcji (2026-10-26)
 
 Ręcznie dodano 2 brakujące ćwiczenia samodzielne do wersji szkicu
-`cc02737a-009b-4692-809a-704e44f67721` (deck `b7f2b942-…`), skryptem
+`cc02737a-…` (deck `b7f2b942-…`), skryptem
 wykonanym w kontenerze workera prawdziwym kodem aplikacji
 (`applyLessonExercises` — cztery tabele: learning_items, skill_versions,
 item_revisions, item_revision_skills) i podbiciem `edit_number` 9 → 10

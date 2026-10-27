@@ -447,13 +447,16 @@ function validateAcceptedAnswers(
 /**
  * Kopia ćwiczenia bez wariantów `acceptedAnswers` redundantnych wobec odpowiedzi
  * kanonicznej (równoważnych po normalizatorze przedmiotu — dokładnie ta sama
- * relacja co reguła `validateAcceptedAnswers`). Redundantny wariant nie niesie
- * informacji oceniania: odpowiedź kanoniczna jest akceptowana automatycznie,
- * a normalizator i tak zrównuje je przy ocenie. Generacja porzuca takie
- * warianty przy przyjęciu puli zamiast tracić CAŁE ćwiczenie (incydent prod
- * 2026-10-26: przeczenia „to be” traciły wszystkie ćwiczenia samodzielne,
- * bo model konsekwentnie podawał wariant skrótowy — „They're not…” przy
- * odpowiedzi „They aren't…”). Walidacja pozostaje egzekwatorem przy edycji
+ * relacja co reguła `validateAcceptedAnswers`). Generacja porzuca takie warianty
+ * przy przyjęciu puli zamiast tracić CAŁE ćwiczenie: odpowiedź kanoniczna jest
+ * akceptowana automatycznie, więc wariant równoważny nie zmienia werdyktu
+ * deterministycznego. Uwaga: przy skrócie dwuznacznym („She's” → is|has) wariant
+ * dzielący JEDNĄ sekwencję z odpowiedzią niesie też dodatkowe sekwencje — taki
+ * wpis i tak nigdy nie mógł zostać zapisany (reguła walidacji odrzucałaby całe
+ * ćwiczenie), więc porzucenie go jest ściśle lepsze od utraty ćwiczenia
+ * (incydent prod 2026-10-26: przeczenia „to be” traciły wszystkie ćwiczenia
+ * samodzielne, bo model konsekwentnie podawał wariant skrótowy — „They're not…”
+ * przy odpowiedzi „They aren't…”). Walidacja pozostaje egzekwatorem przy edycji
  * i publikacji. Ćwiczenie bez wariantów redundantnych zwracane bez kopii.
  */
 export function withoutRedundantAcceptedVariants(
