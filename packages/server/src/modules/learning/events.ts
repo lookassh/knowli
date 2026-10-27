@@ -122,27 +122,26 @@ export async function writeSealedEvent(tx: Tx, input: SealedEventInput): Promise
   }
   if (exposures.length === 0) {
     await tx.update(learningEvents).set({ sealed: true }).where(eq(learningEvents.id, eventId));
-    return;
+  } else {
+    // Pieczęć i upsert child_target_exposures w jednej instrukcji (CTE z UPDATE):
+    // trigger guard_event_seal wymaga dokładnie jednego przejścia sealed=false→true,
+    // a guard_exposure_insert wpuszcza ekspozycje tylko do niezapieczętowanego
+    // zdarzenia — dlatego insert zdarzenia i ekspozycji muszą zostać osobnymi
+    // instrukcjami jak dotąd; łączymy tylko dwa ostatnie zapisy (4 → 3 instrukcje).
+    const occurredAt = input.occurredAt.toISOString();
+    await tx.execute(sql`
+      with sealed_ev as (
+        update ${learningEvents} set "sealed" = true where "id" = ${eventId} returning "id"
+      )
+      insert into ${childTargetExposures}
+        ("child_id", "target_key", "first_exposure_at", "last_exposure_at")
+      select ${input.childId}, unnest(${sql.param(exposures)}::text[]),
+             ${occurredAt}::timestamptz, ${occurredAt}::timestamptz
+      on conflict ("child_id", "target_key") do update
+        set "first_exposure_at" = least("child_target_exposures"."first_exposure_at", excluded.first_exposure_at),
+            "last_exposure_at" = greatest("child_target_exposures"."last_exposure_at", excluded.last_exposure_at)
+    `);
   }
-  // Pieczęć i upsert child_target_exposures w jednej instrukcji (CTE z UPDATE):
-  // trigger guard_event_seal wymaga dokładnie jednego przejścia sealed=false→true,
-  // a guard_exposure_insert wpuszcza ekspozycje tylko do niezapieczętowanego
-  // zdarzenia — dlatego insert zdarzenia i ekspozycji muszą zostać osobnymi
-  // instrukcjami jak dotąd; łączymy tylko dwa ostatnie zapisy (4 → 3 instrukcje).
-  const occurredAt = input.occurredAt.toISOString();
-  await tx.execute(sql`
-    with sealed_ev as (
-      update ${learningEvents} set "sealed" = true where "id" = ${eventId} returning "id"
-    )
-    insert into ${childTargetExposures}
-      ("child_id", "target_key", "first_exposure_at", "last_exposure_at")
-    select ${input.childId}, unnest(${sql.param(exposures)}::text[]),
-           ${occurredAt}::timestamptz, ${occurredAt}::timestamptz
-    on conflict ("child_id", "target_key") do update
-      set "first_exposure_at" = least("child_target_exposures"."first_exposure_at", excluded.first_exposure_at),
-          "last_exposure_at" = greatest("child_target_exposures"."last_exposure_at", excluded.last_exposure_at)
-  `);
-  return;
 }
 
 /** Zadanie + blokada wiersza jego sesji — wspólna kolejność dla wszystkich operacji. */
