@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { messages } from "@learning/contracts";
+import { useStimulusBounce } from "./useStimulusBounce";
 import { ExerciseFrame } from "./ExerciseFrame";
 import { KidIcon } from "../components/KidIcon";
 import { MeaningVisualView } from "../visuals/MeaningVisualView";
@@ -9,11 +10,7 @@ import { ActionButton } from "../components/ActionButton";
 
 export function PictureExposureView({ task, busy, mediaUrl, dock, handlers }: ExerciseProps) {
   const doneRef = useRef<HTMLButtonElement>(null);
-  const [bounceKey, setBounceKey] = useState(0);
-  const playWithBounce = () => {
-    setBounceKey((key) => key + 1);
-    handlers.onPlay();
-  };
+  const [bounceKey, playWithBounce] = useStimulusBounce(handlers.onPlay);
 
   useEffect(() => {
     doneRef.current?.focus({ preventScroll: true });

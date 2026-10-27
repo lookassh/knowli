@@ -24,6 +24,8 @@ function ScreenPane({ children }: { children: ReactNode }): ReactElement {
 }
 
 /** Animated switch between flow screens (profile, decks, summaries).
+ * No initial={false}: this tree remounts after the session screen, and
+ * suppressing the first render would also skip the summary celebration.
  * The learning screen keeps its own TaskTransition. The exiting pane is
  * inert, so its controls cannot act while it fades out. Only transform
  * and opacity move, so layout geometry is untouched. */
@@ -32,7 +34,7 @@ export function ScreenTransition({ screenId, children }: {
   children: ReactNode;
 }): ReactElement {
   return (
-    <AnimatePresence mode="wait" initial={false}>
+    <AnimatePresence mode="wait">
       <ScreenPane key={screenId}>{children}</ScreenPane>
     </AnimatePresence>
   );

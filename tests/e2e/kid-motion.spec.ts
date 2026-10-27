@@ -32,6 +32,11 @@ test("animated task switch and feedback dock keep the session flow working", asy
   await expect(page.locator("[data-testid='kid-outcome-correct'], [data-testid='kid-outcome-wrong']")).toHaveCount(1);
 
   await page.getByTestId("kid-next").click();
+  // The summary mounts a fresh ScreenTransition after the session screen;
+  // its entrance (and the celebration burst) must still animate instead of
+  // being suppressed as a first render.
+  await expect.poll(() => page.getByTestId("kid-screen-transition").evaluate((el) => Number.parseFloat(getComputedStyle(el).opacity)), { intervals: [20, 50, 100] }).toBeLessThan(1);
+  await expect(page.getByTestId("kid-celebration")).toHaveCount(1);
   // The exiting pane is inert: a stray second activation must not advance again.
   await page.evaluate(() => { document.querySelector<HTMLElement>("[data-testid=kid-next]")?.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
   await expect(page.getByTestId("kid-summary-guidance")).toBeVisible();
