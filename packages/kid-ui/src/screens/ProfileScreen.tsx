@@ -3,7 +3,7 @@ import { messages, type KidProfileDto, type UiAudioKey } from "@learning/contrac
 import { GuidanceButton } from "../components/GuidanceButton";
 import { ProfileChoiceButton } from "../components/ProfileChoiceButton";
 import { m } from "motion/react";
-import { kidSpringGentle, kidStaggerSeconds } from "../motion/kid-motion";
+import { kidSpringGentle, kidStaggerDelay } from "../motion/kid-motion";
 import { format } from "../format";
 import { KidScreen } from "../layout/KidScreen";
 
@@ -48,7 +48,7 @@ export function ProfileScreen({
       ) : (
         <ul className="kid-list">
           {profiles.map((profile, index) => (
-            <m.li key={profile.childId} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ ...kidSpringGentle, delay: Math.min(index, 6) * kidStaggerSeconds }}>
+            <m.li key={profile.childId} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -3 }} transition={{ ...kidSpringGentle, delay: kidStaggerDelay(index) }}>
               <ProfileChoiceButton
                 type="button"
                 className="kid-profile"

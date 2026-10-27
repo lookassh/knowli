@@ -4,7 +4,20 @@ import { format } from "../format";
 import type { OptionOutcome } from "../exercises/option-outcome";
 import classes from "./answer-controls.module.css";
 import { m } from "motion/react";
-import { kidSpringSnappy, kidTapScale } from "../motion/kid-motion";
+import {
+  kidEntranceAnimate,
+  kidEntranceInitial,
+  kidOutcomeIconAnimate,
+  kidOutcomeIconInitial,
+  kidOutcomePop,
+  kidOutcomePopTransition,
+  kidOutcomeShake,
+  kidOutcomeShakeTransition,
+  kidSpringGentle,
+  kidSpringSnappy,
+  kidStaggerDelay,
+  kidTapScale,
+} from "../motion/kid-motion";
 
 export interface AnswerGridOption {
   id: string;
@@ -59,7 +72,7 @@ export function AnswerGrid({
             : option.label;
 
         return (
-          <li className={[classes.item, itemClassName?.(option)].filter(Boolean).join(" ")} key={option.id}>
+          <m.li className={[classes.item, itemClassName?.(option)].filter(Boolean).join(" ")} key={option.id} initial={kidEntranceInitial} animate={kidEntranceAnimate} transition={{ ...kidSpringGentle, delay: kidStaggerDelay(index) }}>
             <m.button
               ref={(element) => {
                 if (optionRefs) optionRefs.current[index] = element;
@@ -73,8 +86,9 @@ export function AnswerGrid({
               aria-label={accessibleName}
               aria-pressed={outcome === "pending" ? true : undefined}
               disabled={disabled}
+              animate={outcome === "correct" ? kidOutcomePop : outcome === "wrong" ? kidOutcomeShake : { scale: 1, x: 0 }}
               whileTap={disabled ? undefined : { scale: kidTapScale }}
-              transition={kidSpringSnappy}
+              transition={outcome === "correct" ? kidOutcomePopTransition : outcome === "wrong" ? kidOutcomeShakeTransition : kidSpringSnappy}
               onClick={() => {
                 if (!disabled) onChoose(option.id);
               }}
@@ -87,11 +101,11 @@ export function AnswerGrid({
               {option.content !== null && option.content !== undefined && (
                 <span className={classes.content} data-testid="kid-option-content">{option.content}</span>
               )}
-              {outcome === "correct" && <span className={`${classes.outcome} kid-picture-outcome kid-picture-outcome--correct`} aria-hidden="true" data-outcome={outcome} data-testid="kid-outcome-correct">✓</span>}
-              {outcome === "wrong" && <span className={`${classes.outcome} kid-picture-outcome kid-picture-outcome--wrong`} aria-hidden="true" data-outcome={outcome} data-testid="kid-outcome-wrong">×</span>}
+              {outcome === "correct" && <m.span className={`${classes.outcome} kid-picture-outcome kid-picture-outcome--correct`} aria-hidden="true" data-outcome={outcome} data-testid="kid-outcome-correct" initial={kidOutcomeIconInitial} animate={kidOutcomeIconAnimate} transition={kidSpringGentle} style={{ display: "inline-block" }}>✓</m.span>}
+              {outcome === "wrong" && <m.span className={`${classes.outcome} kid-picture-outcome kid-picture-outcome--wrong`} aria-hidden="true" data-outcome={outcome} data-testid="kid-outcome-wrong" initial={kidOutcomeIconInitial} animate={kidOutcomeIconAnimate} transition={kidSpringGentle} style={{ display: "inline-block" }}>×</m.span>}
             </m.button>
           {afterOption?.(option)}
-          </li>
+          </m.li>
         );
       })}
     </ul>

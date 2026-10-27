@@ -13,8 +13,8 @@ export function ScoreStars({ stars, label }: { stars: number; label: string }): 
           <m.span
             key={index}
             aria-hidden="true"
-            initial={{ opacity: 0, scale: 0.4 }}
-            animate={{ opacity: 1, scale: 1 }}
+            initial={{ opacity: 0, scale: 0.4, rotate: -24 }}
+            animate={{ opacity: 1, scale: 1, rotate: 0 }}
             transition={{ ...kidSpringGentle, delay: index * kidStaggerSeconds * 2 }}
             style={{ display: "inline-block" }}
           >
