@@ -100,7 +100,7 @@ export interface SealedEventInput {
  * pierwszych dwóch instrukcji wymuszają triggery guard_event_seal
  * i guard_exposure_insert (migracja 0001).
  */
-export async function writeSealedEvent(tx: Tx, input: SealedEventInput): Promise<string> {
+export async function writeSealedEvent(tx: Tx, input: SealedEventInput): Promise<void> {
   const eventId = randomUUID();
   await tx.insert(learningEvents).values({
     id: eventId,
@@ -122,7 +122,7 @@ export async function writeSealedEvent(tx: Tx, input: SealedEventInput): Promise
   }
   if (exposures.length === 0) {
     await tx.update(learningEvents).set({ sealed: true }).where(eq(learningEvents.id, eventId));
-    return eventId;
+    return;
   }
   // Pieczęć i upsert child_target_exposures w jednej instrukcji (CTE z UPDATE):
   // trigger guard_event_seal wymaga dokładnie jednego przejścia sealed=false→true,
@@ -142,7 +142,7 @@ export async function writeSealedEvent(tx: Tx, input: SealedEventInput): Promise
       set "first_exposure_at" = least("child_target_exposures"."first_exposure_at", excluded.first_exposure_at),
           "last_exposure_at" = greatest("child_target_exposures"."last_exposure_at", excluded.last_exposure_at)
   `);
-  return eventId;
+  return;
 }
 
 /** Zadanie + blokada wiersza jego sesji — wspólna kolejność dla wszystkich operacji. */
