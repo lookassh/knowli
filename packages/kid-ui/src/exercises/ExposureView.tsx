@@ -1,7 +1,4 @@
 import { useEffect, useRef } from "react";
-import { m } from "motion/react";
-import { useStimulusBounce } from "./useStimulusBounce";
-import { kidStimulusBounce, kidStimulusBounceTransition, kidStimulusInitial } from "../motion/kid-motion";
 import { messages } from "@learning/contracts";
 import { KidIcon } from "../components/KidIcon";
 import { Visual } from "../visuals/Visual";
@@ -17,7 +14,6 @@ import { ActionButton } from "../components/ActionButton";
  */
 export function ExposureView({ task, busy, mediaUrl, dock, handlers }: ExerciseProps) {
   const doneRef = useRef<HTMLButtonElement>(null);
-  const [bounceKey, playWithBounce] = useStimulusBounce(handlers.onPlay);
 
   useEffect(() => {
     doneRef.current?.focus({ preventScroll: true });
@@ -33,7 +29,7 @@ export function ExposureView({ task, busy, mediaUrl, dock, handlers }: ExerciseP
         if (active?.getAttribute("data-testid") === "kid-done") return;
         if (task.prompt.kind === "exposure" && task.prompt.audioAssetId !== null && !busy) {
           event.preventDefault();
-          playWithBounce();
+          handlers.onPlay();
         }
       }
     };
@@ -51,18 +47,14 @@ export function ExposureView({ task, busy, mediaUrl, dock, handlers }: ExerciseP
       content={(
         <div className="kid-exposure-content">
           {task.prompt.visualType === "image" && task.prompt.imageAssetId !== null ? (
-            <m.img
-              key={bounceKey}
+            <img
               className="kid-illustration"
               data-testid="kid-illustration"
               src={mediaUrl(task.prompt.imageAssetId)}
               alt={task.prompt.target}
-              initial={bounceKey > 0 ? { opacity: 1, scale: 0.96 } : kidStimulusInitial}
-              animate={bounceKey > 0 ? kidStimulusBounce : { opacity: 1, scale: 1 }}
-              transition={kidStimulusBounceTransition}
             />
           ) : (
-            <Visual key={bounceKey}
+            <Visual
               text={task.prompt.target}
               visualType={task.prompt.visualType}
               visualData={task.prompt.visualData}
@@ -80,7 +72,7 @@ export function ExposureView({ task, busy, mediaUrl, dock, handlers }: ExerciseP
                 className="kid-audio-round"
                 data-testid="kid-play"
                 disabled={busy}
-                onClick={playWithBounce}
+                onClick={handlers.onPlay}
                 aria-label={messages.kid.listen}
               >
                 <KidIcon name="volume" />

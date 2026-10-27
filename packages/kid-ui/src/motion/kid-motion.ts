@@ -22,9 +22,9 @@ export function kidStaggerDelay(index: number): number {
 export const kidEntranceInitial = { opacity: 0, y: 8 } as const;
 export const kidEntranceAnimate = { opacity: 1, y: 0 } as const;
 
-/** Correct answer: one cheerful pop. Wrong answer: a gentle shake, never a punishment. */
-export const kidOutcomePop = { scale: [1, 1.08, 1] };
-export const kidOutcomePopTransition: Transition = { duration: 0.45, ease: "easeOut", times: [0, 0.45, 1] };
+/** Correct answer: one small pop. A wrong choice stays still (colour and icon carry the feedback; shaking the whole picture read as noise). The shake token below is only for tiny spelling pills. */
+export const kidOutcomePop = { scale: [1, 1.04, 1] };
+export const kidOutcomePopTransition: Transition = { duration: 0.35, ease: "easeOut", times: [0, 0.45, 1] };
 export const kidOutcomeShake = { x: [0, -5, 5, -3, 0] };
 export const kidOutcomeShakeTransition: Transition = { duration: 0.35, ease: "easeInOut" };
 
@@ -44,12 +44,6 @@ export const kidLoadingDotAnimate = { opacity: [0.25, 1, 0.25], y: [0, -4, 0] };
 export function kidLoadingDotTransition(index: number): Transition {
   return { duration: 0.9, ease: "easeInOut", repeat: Infinity, delay: index * 0.15 };
 }
-
-/** Stimulus (picture/colour/number) settles in; on audio replay it bounces once. */
-export const kidStimulusInitial = { opacity: 0, scale: 0.96 } as const;
-export const kidStimulusAnimate = { opacity: 1, scale: 1 } as const;
-export const kidStimulusBounce = { opacity: 1, scale: [0.96, 1.05, 1] };
-export const kidStimulusBounceTransition: Transition = { duration: 0.45, ease: "easeOut", times: [0, 0.45, 1] };
 
 /** A typed letter pops once when it lands in its gap. */
 export const kidLetterPop = { scale: [1, 1.18, 1] };

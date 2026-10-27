@@ -11,8 +11,6 @@ import {
   kidOutcomeIconInitial,
   kidOutcomePop,
   kidOutcomePopTransition,
-  kidOutcomeShake,
-  kidOutcomeShakeTransition,
   kidSpringGentle,
   kidSpringSnappy,
   kidStaggerDelay,
@@ -70,9 +68,10 @@ export function AnswerGrid({
           : outcome === "wrong"
             ? format(messages.kid.pictureChoiceWrong, { answer: option.label })
             : option.label;
+          {/* Picture options skip the item entrance: asynchronously loaded images inside a fading item (on top of the pane entrance) flicker. Text options keep the stagger wave. */}
 
         return (
-          <m.li className={[classes.item, itemClassName?.(option)].filter(Boolean).join(" ")} key={option.id} initial={kidEntranceInitial} animate={kidEntranceAnimate} transition={{ ...kidSpringGentle, delay: kidStaggerDelay(index) }}>
+          <m.li className={[classes.item, itemClassName?.(option)].filter(Boolean).join(" ")} key={option.id} initial={visualOnly ? false : kidEntranceInitial} animate={kidEntranceAnimate} transition={{ ...kidSpringGentle, delay: kidStaggerDelay(index) }}>
             <m.button
               ref={(element) => {
                 if (optionRefs) optionRefs.current[index] = element;
@@ -86,9 +85,9 @@ export function AnswerGrid({
               aria-label={accessibleName}
               aria-pressed={outcome === "pending" ? true : undefined}
               disabled={disabled}
-              animate={outcome === "correct" ? kidOutcomePop : outcome === "wrong" ? kidOutcomeShake : { scale: 1, x: 0 }}
+              animate={outcome === "correct" ? kidOutcomePop : { scale: 1, x: 0 }}
               whileTap={disabled ? undefined : { scale: kidTapScale }}
-              transition={outcome === "correct" ? kidOutcomePopTransition : outcome === "wrong" ? kidOutcomeShakeTransition : kidSpringSnappy}
+              transition={outcome === "correct" ? kidOutcomePopTransition : kidSpringSnappy}
               onClick={() => {
                 if (!disabled) onChoose(option.id);
               }}
