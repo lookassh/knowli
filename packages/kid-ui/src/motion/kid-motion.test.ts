@@ -16,9 +16,6 @@ import {
   kidStaggerDelay,
   kidStaggerMaxIndex,
   kidStaggerSeconds,
-  kidStimulusAnimate,
-  kidStimulusBounce,
-  kidStimulusInitial,
 } from "./kid-motion";
 
 const ANIMATED_VALUES = [
@@ -30,9 +27,6 @@ const ANIMATED_VALUES = [
   kidOutcomeIconAnimate,
   kidProgressPopInitial,
   kidProgressPopAnimate,
-  kidStimulusInitial,
-  kidStimulusAnimate,
-  kidStimulusBounce,
   kidLetterPop,
   kidDockExit,
   kidLoadingDotAnimate,

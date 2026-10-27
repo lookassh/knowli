@@ -11,8 +11,6 @@ import {
   kidOutcomeIconInitial,
   kidOutcomePop,
   kidOutcomePopTransition,
-  kidOutcomeShake,
-  kidOutcomeShakeTransition,
   kidSpringGentle,
   kidSpringSnappy,
   kidStaggerDelay,
@@ -86,9 +84,9 @@ export function AnswerGrid({
               aria-label={accessibleName}
               aria-pressed={outcome === "pending" ? true : undefined}
               disabled={disabled}
-              animate={outcome === "correct" ? kidOutcomePop : outcome === "wrong" ? kidOutcomeShake : { scale: 1, x: 0 }}
+              animate={outcome === "correct" ? kidOutcomePop : { scale: 1, x: 0 }}
               whileTap={disabled ? undefined : { scale: kidTapScale }}
-              transition={outcome === "correct" ? kidOutcomePopTransition : outcome === "wrong" ? kidOutcomeShakeTransition : kidSpringSnappy}
+              transition={outcome === "correct" ? kidOutcomePopTransition : kidSpringSnappy}
               onClick={() => {
                 if (!disabled) onChoose(option.id);
               }}
