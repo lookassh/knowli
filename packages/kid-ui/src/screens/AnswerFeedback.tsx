@@ -58,6 +58,32 @@ export function feedbackTone(feedback: FeedbackDto | null): string {
 }
 
 /** Segmenty z zaznaczonymi pigułkami (reuse pisowni) — jedna etykietowana linia. */
+type SpellingSegment = { state: string; text: string };
+
+/** One spelling-diff segment: differing letters pop in (expected/lesson)
+ * or shake gently (the child's own), one after another. Plain segments
+ * stay quiet. Only transform and opacity move. */
+function SpellingPill({ segment, index, variant, animation }: {
+  segment: SpellingSegment;
+  index: number;
+  variant: "given" | "expected";
+  animation: "pop" | "shake";
+}): ReactElement {
+  const pill = segment.state === "pill";
+  return (
+    <m.span
+      className={pill ? `kid-spelling-pill kid-spelling-pill--${variant}` : "kid-spelling-plain"}
+      data-testid={pill ? "kid-spelling-pill" : undefined}
+      initial={pill ? (animation === "pop" ? kidOutcomeIconInitial : { opacity: 1, x: 0 }) : false}
+      animate={pill ? (animation === "pop" ? kidOutcomeIconAnimate : kidOutcomeShake) : undefined}
+      transition={animation === "pop" ? { ...kidSpringGentle, delay: kidStaggerDelay(index) } : kidOutcomeShakeTransition}
+      style={{ display: "inline-block" }}
+    >
+      {segment.text}
+    </m.span>
+  );
+}
+
 function AnswerSegments({ segments, label, testid }: {
   segments: FeedbackDto["answerSegments"];
   label: string;
@@ -68,17 +94,7 @@ function AnswerSegments({ segments, label, testid }: {
     <div className="kid-spelling-row" data-testid={testid}>
       <span className="kid-spelling-row-label">{label}</span>
       {segments.map((segment, index) => (
-        <m.span
-          key={index}
-          className={segment.state === "pill" ? "kid-spelling-pill kid-spelling-pill--given" : "kid-spelling-plain"}
-          data-testid={segment.state === "pill" ? "kid-spelling-pill" : undefined}
-          initial={segment.state === "pill" ? kidOutcomeIconInitial : false}
-          animate={segment.state === "pill" ? kidOutcomeIconAnimate : undefined}
-          transition={{ ...kidSpringGentle, delay: kidStaggerDelay(index) }}
-          style={{ display: "inline-block" }}
-        >
-          {segment.text}
-        </m.span>
+        <SpellingPill key={index} segment={segment} index={index} variant="given" animation="pop" />
       ))}
     </div>
   );
@@ -147,34 +163,14 @@ export function AnswerFeedbackContent({ dto, busy }: Pick<AnswerFeedbackProps, "
                 <div className="kid-spelling-row" data-testid="kid-spelling-given">
                   <span className="kid-spelling-row-label">{messages.kid.spellingYourAnswer}</span>
                   {feedback.spellingDiff.given.map((segment, index) => (
-                    <m.span
-                      key={index}
-                      className={segment.state === "pill" ? "kid-spelling-pill kid-spelling-pill--given" : "kid-spelling-plain"}
-                      data-testid={segment.state === "pill" ? "kid-spelling-pill" : undefined}
-                      initial={segment.state === "pill" ? { opacity: 1, x: 0 } : false}
-                      animate={segment.state === "pill" ? kidOutcomeShake : undefined}
-                      transition={kidOutcomeShakeTransition}
-                      style={{ display: "inline-block" }}
-                    >
-                      {segment.text}
-                    </m.span>
+                    <SpellingPill key={index} segment={segment} index={index} variant="given" animation="shake" />
                   ))}
                 </div>
               )}
               <div className="kid-spelling-row" data-testid="kid-spelling-expected">
                 {!incomplete && <span className="kid-spelling-row-label">{messages.kid.spellingCorrect}</span>}
                 {feedback.spellingDiff.expected.map((segment, index) => (
-                    <m.span
-                      key={index}
-                      className={segment.state === "pill" ? "kid-spelling-pill kid-spelling-pill--expected" : "kid-spelling-plain"}
-                      data-testid={segment.state === "pill" ? "kid-spelling-pill" : undefined}
-                      initial={segment.state === "pill" ? kidOutcomeIconInitial : false}
-                      animate={segment.state === "pill" ? kidOutcomeIconAnimate : undefined}
-                      transition={{ ...kidSpringGentle, delay: kidStaggerDelay(index) }}
-                      style={{ display: "inline-block" }}
-                    >
-                      {segment.text}
-                    </m.span>
+                    <SpellingPill key={index} segment={segment} index={index} variant="expected" animation="pop" />
                 ))}
               </div>
             </div>
