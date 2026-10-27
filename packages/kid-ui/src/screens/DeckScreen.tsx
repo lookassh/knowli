@@ -11,7 +11,7 @@ import { MASTERY_STAR_MAX, starsForFraction } from "./stars";
 import { MeaningVisualView } from "../visuals/MeaningVisualView";
 import { useAutoFocus } from "./useAutoFocus";
 import { m } from "motion/react";
-import { kidSpringGentle, kidStaggerSeconds } from "../motion/kid-motion";
+import { kidSpringGentle, kidStaggerDelay } from "../motion/kid-motion";
 
 function wordCount(count: number): string {
   const lastTwoDigits = count % 100;
@@ -136,7 +136,7 @@ export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive, but
   const stars = starsForFraction(deck.independentlyRecalledCount, deck.itemCount);
   const isLesson = deck.kind === "lesson";
   return (
-    <m.li initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ ...kidSpringGentle, delay: Math.min(index, 6) * kidStaggerSeconds }}>
+    <m.li initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -3 }} transition={{ ...kidSpringGentle, delay: kidStaggerDelay(index) }}>
       <article className="kid-deck-card" data-testid="kid-deck-card" data-deck-id={deck.deckId} data-kind={deck.kind ?? "vocabulary"}>
         <div className="kid-deck-card__details">
           {deck.coverAssetId

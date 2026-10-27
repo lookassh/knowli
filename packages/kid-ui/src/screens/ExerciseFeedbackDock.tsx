@@ -1,6 +1,6 @@
 import type { ReactElement, ReactNode } from "react";
-import { m } from "motion/react";
-import { kidSpringGentle } from "../motion/kid-motion";
+import { m, useIsPresent } from "motion/react";
+import { kidDockExit, kidDockExitTransition, kidSpringGentle } from "../motion/kid-motion";
 import classes from "./ExerciseFeedbackDock.module.css";
 
 export type FeedbackDockTone = "correct" | "incorrect" | "partial" | "technical" | "neutral";
@@ -26,11 +26,15 @@ export function ExerciseFeedbackDock({
   primary: ReactNode;
   secondary?: ReactNode;
 }): ReactElement {
+  const isPresent = useIsPresent();
   return (
     <m.div
       initial={{ opacity: 0, y: 24 }}
       animate={{ opacity: 1, y: 0 }}
+      exit={{ ...kidDockExit, transition: kidDockExitTransition }}
       transition={kidSpringGentle}
+      inert={!isPresent}
+      style={{ pointerEvents: isPresent ? "auto" : "none" }}
       data-testid="kid-feedback-dock"
       data-tone={tone}
       data-dock-kind={kind}

@@ -12,6 +12,9 @@ test("animated task switch and feedback dock keep the session flow working", asy
 
   await page.goto("/");
   await page.getByTestId("kid-profile").click();
+  // Flow screens switch through ScreenTransition: the deck screen fades in
+  // (sampled mid-transition) instead of appearing instantly.
+  await expect.poll(() => page.getByTestId("kid-screen-transition").evaluate((el) => Number.parseFloat(getComputedStyle(el).opacity)), { intervals: [20, 50, 100] }).toBeLessThan(1);
   await page.getByTestId("kid-deck").first().click();
   await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-prompt-kind", "picture_exposure");
 
@@ -25,6 +28,8 @@ test("animated task switch and feedback dock keep the session flow working", asy
 
   await page.getByTestId("kid-option").first().click();
   await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
+  // The chosen option reports its server outcome (pop/shake icon appears).
+  await expect(page.locator("[data-testid='kid-outcome-correct'], [data-testid='kid-outcome-wrong']")).toHaveCount(1);
 
   await page.getByTestId("kid-next").click();
   // The exiting pane is inert: a stray second activation must not advance again.

@@ -6,6 +6,8 @@ import { lessonFeedbackView } from "./lesson-feedback-view";
 import { KidIcon } from "../components/KidIcon";
 import { useFeedbackCooldown } from "./useFeedbackCooldown";
 import { ActionButton } from "../components/ActionButton";
+import { m } from "motion/react";
+import { kidOutcomeIconAnimate, kidOutcomeIconInitial, kidOutcomeShake, kidOutcomeShakeTransition, kidSpringGentle, kidStaggerDelay } from "../motion/kid-motion";
 
 export interface AnswerFeedbackProps {
   dto: FeedbackDto | null;
@@ -66,13 +68,17 @@ function AnswerSegments({ segments, label, testid }: {
     <div className="kid-spelling-row" data-testid={testid}>
       <span className="kid-spelling-row-label">{label}</span>
       {segments.map((segment, index) => (
-        <span
+        <m.span
           key={index}
           className={segment.state === "pill" ? "kid-spelling-pill kid-spelling-pill--given" : "kid-spelling-plain"}
           data-testid={segment.state === "pill" ? "kid-spelling-pill" : undefined}
+          initial={segment.state === "pill" ? kidOutcomeIconInitial : false}
+          animate={segment.state === "pill" ? kidOutcomeIconAnimate : undefined}
+          transition={{ ...kidSpringGentle, delay: kidStaggerDelay(index) }}
+          style={{ display: "inline-block" }}
         >
           {segment.text}
-        </span>
+        </m.span>
       ))}
     </div>
   );
@@ -97,14 +103,14 @@ export function AnswerFeedbackContent({ dto, busy }: Pick<AnswerFeedbackProps, "
       aria-busy={busy}
     >
       <div className="kid-feedback-content">
-        <h2 className="kid-feedback-text" id="kid-feedback-title" ref={titleRef} tabIndex={-1}>
+        <m.h2 className="kid-feedback-text" id="kid-feedback-title" ref={titleRef} tabIndex={-1} initial={kidOutcomeIconInitial} animate={kidOutcomeIconAnimate} transition={kidSpringGentle}>
           {feedback.kind === "incorrect" && feedback.correctText ? (
             <>
               <span className="kid-feedback-answer-label">{messages.kid.feedbackCorrectAnswer}</span>
               <strong className="kid-feedback-answer" data-testid="kid-feedback-correct-answer">{feedback.correctText}</strong>
             </>
           ) : feedbackText(dto)}
-        </h2>
+        </m.h2>
         {feedback.heardText && (
           <p className="kid-heard-text" data-testid="kid-heard-text">
             {format(messages.kid.feedbackHeard, { word: feedback.heardText })}
@@ -141,26 +147,34 @@ export function AnswerFeedbackContent({ dto, busy }: Pick<AnswerFeedbackProps, "
                 <div className="kid-spelling-row" data-testid="kid-spelling-given">
                   <span className="kid-spelling-row-label">{messages.kid.spellingYourAnswer}</span>
                   {feedback.spellingDiff.given.map((segment, index) => (
-                    <span
+                    <m.span
                       key={index}
                       className={segment.state === "pill" ? "kid-spelling-pill kid-spelling-pill--given" : "kid-spelling-plain"}
                       data-testid={segment.state === "pill" ? "kid-spelling-pill" : undefined}
+                      initial={segment.state === "pill" ? { opacity: 1, x: 0 } : false}
+                      animate={segment.state === "pill" ? kidOutcomeShake : undefined}
+                      transition={kidOutcomeShakeTransition}
+                      style={{ display: "inline-block" }}
                     >
                       {segment.text}
-                    </span>
+                    </m.span>
                   ))}
                 </div>
               )}
               <div className="kid-spelling-row" data-testid="kid-spelling-expected">
                 {!incomplete && <span className="kid-spelling-row-label">{messages.kid.spellingCorrect}</span>}
                 {feedback.spellingDiff.expected.map((segment, index) => (
-                  <span
-                    key={index}
-                    className={segment.state === "pill" ? "kid-spelling-pill kid-spelling-pill--expected" : "kid-spelling-plain"}
-                    data-testid={segment.state === "pill" ? "kid-spelling-pill" : undefined}
-                  >
-                    {segment.text}
-                  </span>
+                    <m.span
+                      key={index}
+                      className={segment.state === "pill" ? "kid-spelling-pill kid-spelling-pill--expected" : "kid-spelling-plain"}
+                      data-testid={segment.state === "pill" ? "kid-spelling-pill" : undefined}
+                      initial={segment.state === "pill" ? kidOutcomeIconInitial : false}
+                      animate={segment.state === "pill" ? kidOutcomeIconAnimate : undefined}
+                      transition={{ ...kidSpringGentle, delay: kidStaggerDelay(index) }}
+                      style={{ display: "inline-block" }}
+                    >
+                      {segment.text}
+                    </m.span>
                 ))}
               </div>
             </div>

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { AnimatePresence } from "motion/react";
 import type { TaskDto } from "@learning/contracts";
 import { ExerciseInstruction, type ExerciseInstructionAudio } from "../components/ExerciseInstruction";
 import classes from "./ExerciseFrame.module.css";
@@ -194,23 +195,25 @@ export function ExerciseFrame({
         >{content}</div>
       </div>
       <div className={`kid-exercise-actions ${classes.actions}`} data-testid="kid-exercise-actions">
+        <AnimatePresence mode="wait" initial={false}>
         {flowFeedback ? (
-          dock ? <div ref={overlayRef} className={classes.flowDock}>{dock}</div> : <>
+          dock ? <div key="kid-dock" ref={overlayRef} className={classes.flowDock}>{dock}</div> : <Fragment key="kid-actions">
             {actions && <div data-testid="kid-primary-slot" className={classes.primary}>{actions}</div>}
             {secondaryActions && <div data-testid="kid-secondary-slot" className={classes.secondary}>{secondaryActions}</div>}
-          </>
+          </Fragment>
         ) : dock ? (
-          <div ref={anchorRef} className={classes.dockAnchor}>
+          <div key="kid-dock" ref={anchorRef} className={classes.dockAnchor}>
             <div data-testid="kid-primary-slot" className={classes.primary} aria-hidden="true" />
             <div data-testid="kid-secondary-slot" className={classes.secondary} aria-hidden="true" />
             <div ref={overlayRef} className={`kid-feedback-overlay ${classes.dockOverlay}`}>{dock}</div>
           </div>
         ) : (
-          <>
+          <Fragment key="kid-actions">
             <div data-testid="kid-primary-slot" className={classes.primary}>{actions}</div>
             <div data-testid="kid-secondary-slot" className={classes.secondary}>{secondaryActions}</div>
-          </>
+          </Fragment>
         )}
+        </AnimatePresence>
       </div>
     </div>
   );

@@ -5,6 +5,8 @@ import { describeSpeechFeedback } from "./speech-feedback-view";
 import { KidIcon } from "../components/KidIcon";
 import { useFeedbackCooldown } from "./useFeedbackCooldown";
 import { ActionButton } from "../components/ActionButton";
+import { m } from "motion/react";
+import { kidOutcomeIconAnimate, kidOutcomeIconInitial, kidSpringGentle } from "../motion/kid-motion";
 
 export interface SpeechFeedbackCardProps {
   dto: FeedbackDto | null;
@@ -59,11 +61,11 @@ export function SpeechFeedbackContent(props: SpeechFeedbackCardProps & { inDock?
       aria-busy={props.busy}
     >
       <div className="kid-speech-feedback__body">
-        <h2 id="kid-speech-feedback-title" ref={headingRef} tabIndex={-1} className="kid-speech-feedback__heard">
+        <m.h2 id="kid-speech-feedback-title" ref={headingRef} tabIndex={-1} className="kid-speech-feedback__heard" initial={kidOutcomeIconInitial} animate={kidOutcomeIconAnimate} transition={kidSpringGentle}>
           {view.heardText
             ? format(messages.kid.feedbackHeard, { word: view.heardText })
             : view.message}
-        </h2>
+        </m.h2>
         {view.heardText && <p className="kid-speech-feedback__message">{view.message}</p>}
         {view.pronunciationMessage && (
           <p className="kid-speech-feedback__pronunciation" data-testid="kid-pronunciation-result">

@@ -3,6 +3,8 @@ import { messages } from "@learning/contracts";
 import { format } from "../format";
 import { ActionButton } from "../components/ActionButton";
 import { LetterField } from "../components/LetterField";
+import { m } from "motion/react";
+import { kidEntranceAnimate, kidEntranceInitial, kidSpringGentle, kidStaggerDelay } from "../motion/kid-motion";
 import { ExerciseFrame } from "./ExerciseFrame";
 import { useRetryReset } from "./useRetryReset";
 import type { ExerciseProps } from "./types";
@@ -105,7 +107,7 @@ export function LetterCompletionView({ task, busy, recording, handlers, letterDr
                   disabled={disabled}
                 />
               ) : (
-                <span key={index} className="kid-letter-fixed">{character}</span>
+                <m.span key={index} className="kid-letter-fixed" initial={kidEntranceInitial} animate={kidEntranceAnimate} transition={{ ...kidSpringGentle, delay: kidStaggerDelay(index) }} style={{ display: "inline-block" }}>{character}</m.span>
               ))}
             </div>
           </form>
