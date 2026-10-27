@@ -95,6 +95,21 @@ async function setDueCheck(childId: string, versionId: string, itemIndex: number
   }
 }
 
+/** Wydaje zadania, kończąc karty/prezentacje po drodze, aż trafi na oceniane. */
+async function firstAssessedTask(
+  services: ReturnType<typeof buildTestServices>["services"],
+  sessionId: string,
+  cardType: "exposure" | "lesson_card",
+): Promise<TaskDto> {
+  for (let step = 0; step < 20; step++) {
+    const issued = await nextTask(services, sessionId);
+    expect(issued).not.toBeNull();
+    if (issued!.exerciseType !== cardType) return issued!;
+    await completePresentation(services, { taskId: issued!.taskId });
+  }
+  throw new Error("nie wydano zadania ocenianego");
+}
+
 async function correctInput(task: TaskDto) {
   const { rows } = await pool.query(
     "select answer_key as key from learning_app.session_tasks where id = $1",
@@ -133,19 +148,9 @@ describe("przejście między ćwiczeniami — liczba sekwencyjnych SQL", () => {
     const { deckId } = await publishDeck(services, child.id);
     const session = await startSession(services, { childId: child.id, deckId, microphoneEnabled: false });
 
-    let task: TaskDto | null = null;
-    for (let step = 0; step < 10 && !task; step++) {
-      const issued = await nextTask(services, session.sessionId);
-      expect(issued).not.toBeNull();
-      if (issued!.exerciseType === "exposure") {
-        await completePresentation(services, { taskId: issued!.taskId });
-      } else {
-        task = issued;
-      }
-    }
-    expect(task).not.toBeNull();
+    const task = await firstAssessedTask(services, session.sessionId, "exposure");
 
-    const input = await correctInput(task!);
+    const input = await correctInput(task);
     const submitted = await capturePoolQueries(pool, () => submitAttempt(services, input));
     expect(submitted.value.state).toBe("completed");
     const submitCount = summarize(`submitAttempt (${input.modality})`, submitted.queries);
@@ -192,19 +197,9 @@ describe("przejście między ćwiczeniami — liczba sekwencyjnych SQL", () => {
     const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, now: clock.now() });
     const session = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
 
-    let task: TaskDto | null = null;
-    for (let step = 0; step < 20 && !task; step++) {
-      const issued = await nextTask(services, session.sessionId);
-      expect(issued).not.toBeNull();
-      if (issued!.exerciseType === "lesson_card") {
-        await completePresentation(services, { taskId: issued!.taskId });
-      } else {
-        task = issued;
-      }
-    }
-    expect(task).not.toBeNull();
+    const task = await firstAssessedTask(services, session.sessionId, "lesson_card");
 
-    const input = await correctInput(task!);
+    const input = await correctInput(task);
     const submitted = await capturePoolQueries(pool, () => submitAttempt(services, input));
     expect(submitted.value.state).toBe("completed");
     const submitCount = summarize("submitLessonAttempt (choice)", submitted.queries);
