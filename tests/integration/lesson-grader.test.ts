@@ -342,7 +342,10 @@ describe("rezerwacja, budżet i leniwa finalizacja", () => {
     clock.advanceMs(61_000);
     // Nowa odpowiedź na to samo zadanie: wstęp leniwie finalizuje osieroconą próbę.
     const after = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: "she play" });
-    void after;
+    // Regresja: migawka prób sprzed leniwej finalizacji zwracała DTO osieroconej
+    // próby (processing) zamiast przyjąć nową odpowiedź.
+    expect(after.state).toBe("completed");
+    expect(after.feedback?.kind).toBe("lesson_hint");
     const stale = await pool.query<{ state: string; feedback: { kind?: string } | null }>(
       "select state, feedback from learning_app.attempts where task_id = $1 order by received_at asc", [task.taskId]);
     expect(stale.rows[0]!.state).toBe("completed");

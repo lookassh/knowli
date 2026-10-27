@@ -44,6 +44,13 @@ export async function ensureLearningPolicy(exec: Executor): Promise<void> {
 
 /** Odczytuje i waliduje przypiętą politykę; sesja nigdy nie działa na nieznanej wersji. */
 export async function loadPolicy(exec: Executor, policyId: string): Promise<Policy> {
+  // Rejestr stałych TS jest źródłem konfiguracji (wiersze DB to ich kopia
+  // wstawiana przy migracji), więc znane wersje rozstrzygamy bez zapytania SQL
+  // — to gorąca ścieżka każdej próby. Nieznana wersja nadal idzie do bazy.
+  const known = [LEARNING_V1_POLICY, LEARNING_V2_POLICY].find((policy) => policy.version === policyId);
+  if (known) {
+    return PolicyConfigSchema.parse(known) as Policy;
+  }
   const row = (await exec.select().from(learningPolicies).where(eq(learningPolicies.id, policyId)))[0];
   if (!row) {
     throw new AppError("internal", { message: `unknown learning policy: ${policyId}` });

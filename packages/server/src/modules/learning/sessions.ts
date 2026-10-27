@@ -1,5 +1,5 @@
 import { randomInt, randomUUID } from "node:crypto";
-import { and, asc, eq, inArray, lte, max } from "drizzle-orm";
+import { and, asc, eq, inArray, lte, max, sql } from "drizzle-orm";
 import {
   PresentationCompletionInputSchema,
   SessionInputSchema,
@@ -57,7 +57,7 @@ import { deriveSupportStates, type SupportAttempt, type SupportTask } from "../.
 import { readTrainingSessionPlan, type TrainingSessionPlanSnapshot, type TrainingSessionSlot } from "../../domain/training-session-plan";
 import { readLearningSnapshot, type LearningSnapshotItem } from "./learning-snapshot";
 import { createMockTestPlan, issueMockTestTask, closeMockTest } from "./mock-tests";
-import { assertVocabularyDeck, readVersionDeckKind, type DeckKind } from "../materials";
+import { assertVocabularyDeck, type DeckKind } from "../materials";
 import {
   buildLessonSessionContext,
   createLessonTrainingSessionPlan,
@@ -109,7 +109,14 @@ export function mapStatus(dbStatus: string): ProgressStatus {
 }
 
 async function lockSession(tx: Tx, sessionId: string) {
-  const [identity] = await tx.select({ childId: learningSessions.childId }).from(learningSessions).where(eq(learningSessions.id, sessionId));
+  // Rodzaj zestawu dokładamy do zapytania o childId (join po FK decks), żeby
+  // gorąca ścieżka nextTask nie płaciła osobnego odczytu rodzaju zestawu.
+  const [identity] = await tx
+    .select({ childId: learningSessions.childId, deckKind: decks.kind, lessonContext: deckVersions.lessonContext })
+    .from(learningSessions)
+    .innerJoin(decks, eq(decks.id, learningSessions.deckId))
+    .innerJoin(deckVersions, eq(deckVersions.id, learningSessions.deckVersionId))
+    .where(eq(learningSessions.id, sessionId));
   if (!identity) throw new AppError("not_found");
   await tx.select({ id: childProfiles.id }).from(childProfiles).where(eq(childProfiles.id, identity.childId)).for("key share");
   const session = (
@@ -118,23 +125,18 @@ async function lockSession(tx: Tx, sessionId: string) {
   if (!session) {
     throw new AppError("not_found");
   }
-  return session;
-}
-
-/** Czy sesja dotyczy lekcji (rozstrzyga delegację `nextTask` do silnika lekcji). */
-async function sessionIsLesson(tx: Tx, deckVersionId: string): Promise<boolean> {
-  return (await readVersionDeckKind(tx, deckVersionId)) === "lesson";
+  return Object.assign(session, { deckKind: identity.deckKind as DeckKind, lessonContext: identity.lessonContext });
 }
 
 async function taskCounts(tx: Tx, sessionId: string): Promise<{ total: number; assessed: number }> {
-  const rows = await tx
-    .select({ exerciseType: sessionTasks.exerciseType })
+  const [row] = await tx
+    .select({
+      total: sql<number>`count(*)::int`,
+      assessed: sql<number>`(count(*) filter (where ${sessionTasks.exerciseType} <> 'exposure'))::int`,
+    })
     .from(sessionTasks)
     .where(eq(sessionTasks.sessionId, sessionId));
-  return {
-    total: rows.length,
-    assessed: rows.filter((r) => r.exerciseType !== "exposure").length,
-  };
+  return { total: row?.total ?? 0, assessed: row?.assessed ?? 0 };
 }
 
 /**
@@ -142,27 +144,60 @@ async function taskCounts(tx: Tx, sessionId: string): Promise<{ total: number; a
  * obserwacji) lub próba. Po przekroczeniu okna wznowienia sesja jest przeterminowana.
  */
 async function lastActivityAt(tx: Tx, sessionId: string, startedAt: Date): Promise<Date> {
-  const [taskRow] = await tx
-    .select({ latest: max(sessionTasks.issuedAt) })
-    .from(sessionTasks)
-    .where(eq(sessionTasks.sessionId, sessionId));
-  const [eventRow] = await tx
-    .select({ latest: max(learningEvents.occurredAt) })
-    .from(learningEvents)
-    .innerJoin(sessionTasks, eq(sessionTasks.id, learningEvents.taskId))
-    .where(eq(sessionTasks.sessionId, sessionId));
-  const [attemptRow] = await tx
-    .select({ latest: max(attempts.receivedAt) })
-    .from(attempts)
-    .innerJoin(sessionTasks, eq(sessionTasks.id, attempts.taskId))
-    .where(eq(sessionTasks.sessionId, sessionId));
-  const candidates = [taskRow?.latest, eventRow?.latest, attemptRow?.latest].filter(
-    (value): value is Date => value !== null && value !== undefined,
-  );
-  return candidates.reduce(
-    (latest, value) => (value.getTime() > latest.getTime() ? value : latest),
-    startedAt,
-  );
+  // Jedno zapytanie zamiast trzech sekwencyjnych max(): greatest() w Postgresie
+  // pomija NULL-e, a brak aktywności daje NULL → startedAt jak dotąd.
+  const rows = await tx.execute(sql`
+    select greatest(
+      (select max(${sessionTasks.issuedAt}) from ${sessionTasks} where ${sessionTasks.sessionId} = ${sessionId}),
+      (select max(${learningEvents.occurredAt}) from ${learningEvents}
+         inner join ${sessionTasks} on ${sessionTasks.id} = ${learningEvents.taskId}
+         where ${sessionTasks.sessionId} = ${sessionId}),
+      (select max(${attempts.receivedAt}) from ${attempts}
+         inner join ${sessionTasks} on ${sessionTasks.id} = ${attempts.taskId}
+         where ${sessionTasks.sessionId} = ${sessionId})
+    ) as latest
+  `);
+  const latest = (rows.rows[0] as { latest: Date | string | null } | undefined)?.latest;
+  if (latest === null || latest === undefined) return startedAt;
+  const latestDate = latest instanceof Date ? latest : new Date(latest);
+  return latestDate.getTime() > startedAt.getTime() ? latestDate : startedAt;
+}
+
+interface SessionActivityCounts {
+  total: number;
+  assessed: number;
+  lastActivity: Date;
+}
+
+/** Liczniki zadań i ostatnia aktywność sesji jednym zapytaniem (gorąca ścieżka nextTask). */
+async function sessionActivityAndCounts(
+  tx: Tx,
+  sessionId: string,
+  startedAt: Date,
+  nonAssessedType: "exposure" | "lesson_card" = "exposure",
+): Promise<SessionActivityCounts> {
+  const rows = await tx.execute(sql`
+    select
+      (select count(*)::int from ${sessionTasks} where ${sessionTasks.sessionId} = ${sessionId}) as total,
+      (select (count(*) filter (where ${sessionTasks.exerciseType} <> ${nonAssessedType}))::int
+         from ${sessionTasks} where ${sessionTasks.sessionId} = ${sessionId}) as assessed,
+      greatest(
+        (select max(${sessionTasks.issuedAt}) from ${sessionTasks} where ${sessionTasks.sessionId} = ${sessionId}),
+        (select max(${learningEvents.occurredAt}) from ${learningEvents}
+           inner join ${sessionTasks} on ${sessionTasks.id} = ${learningEvents.taskId}
+           where ${sessionTasks.sessionId} = ${sessionId}),
+        (select max(${attempts.receivedAt}) from ${attempts}
+           inner join ${sessionTasks} on ${sessionTasks.id} = ${attempts.taskId}
+           where ${sessionTasks.sessionId} = ${sessionId})
+      ) as latest
+  `);
+  const row = rows.rows[0] as { total: number; assessed: number; latest: Date | string | null };
+  const latest = row.latest === null ? null : row.latest instanceof Date ? row.latest : new Date(row.latest);
+  return {
+    total: row.total ?? 0,
+    assessed: row.assessed ?? 0,
+    lastActivity: latest !== null && latest.getTime() > startedAt.getTime() ? latest : startedAt,
+  };
 }
 
 async function sessionDto(tx: Tx, row: typeof learningSessions.$inferSelect, resumed: boolean): Promise<SessionDto> {
@@ -1020,7 +1055,7 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
     // Lekcja (zadanie 13): wspólne kroki (blokada, idempotencja wydanego zadania,
     // przeterminowanie, budżet, limit czasu, obietnica „Jeszcze N”) są te same co
     // słówka; różni się tylko plan i materializacja — delegacja do silnika lekcji.
-    const isLesson = await sessionIsLesson(tx, session.deckVersionId);
+    const isLesson = session.deckKind === "lesson";
     let issuedTask: typeof sessionTasks.$inferSelect | undefined = (
       await tx.select().from(sessionTasks).where(and(eq(sessionTasks.sessionId, id), eq(sessionTasks.state, "issued"))).limit(1)
     )[0];
@@ -1031,18 +1066,16 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
       if (issuedTask) {
         const counts = await lessonTaskCounts(tx, id);
         const assessedBefore = counts.assessed - (issuedTask.exerciseType !== "lesson_card" ? 1 : 0);
-        const version = (await tx.select({ lessonContext: deckVersions.lessonContext }).from(deckVersions)
-          .where(eq(deckVersions.id, session.deckVersionId)))[0];
-        const subjectId = (version?.lessonContext as { subjectId?: string } | null)?.subjectId;
+        const subjectId = (session.lessonContext as { subjectId?: string } | null)?.subjectId;
         const audioAllowed = subjectId ? services.subjects.getSubject(subjectId)?.ttsForAnswers === true : false;
         return issuedTaskDto(session, issuedTask, assessedBefore, audioAllowed);
       }
-      const lastActivity = await lastActivityAt(tx, id, session.startedAt);
-      if (now.getTime() - lastActivity.getTime() > RESUME_WINDOW_MS) {
+      const activity = await sessionActivityAndCounts(tx, id, session.startedAt, "lesson_card");
+      if (now.getTime() - activity.lastActivity.getTime() > RESUME_WINDOW_MS) {
         await tx.update(learningSessions).set({ state: "ended", endedAt: now }).where(eq(learningSessions.id, id));
         return null;
       }
-      const counts = await lessonTaskCounts(tx, id);
+      const counts = activity;
       const remaining = session.taskBudget - counts.assessed;
       if (remaining <= 0) return null;
       if (now.getTime() - session.startedAt.getTime() > sessionTimeLimitMs(session.taskBudget) && remaining > PROMISE_REMAINING) {
@@ -1065,8 +1098,8 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
       return issuedTaskDto(session, issued, assessedBefore, true, pending?.id);
     }
 
-    const lastActivity = await lastActivityAt(tx, id, session.startedAt);
-    if (now.getTime() - lastActivity.getTime() > RESUME_WINDOW_MS) {
+    const activity = await sessionActivityAndCounts(tx, id, session.startedAt);
+    if (now.getTime() - activity.lastActivity.getTime() > RESUME_WINDOW_MS) {
       await tx
         .update(learningSessions)
         .set({ state: "ended", endedAt: now })
@@ -1074,7 +1107,7 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
       return null;
     }
 
-    const counts = await taskCounts(tx, id);
+    const counts = activity;
     const remaining = session.taskBudget - counts.assessed;
     if (remaining <= 0) {
       return null;
@@ -1307,7 +1340,7 @@ async function closeSessionKnowledge(services: Services, sessionId: string): Pro
     }
     const counts = await taskCounts(tx, id);
     const saved = SessionSummaryDtoSchema.safeParse(session.context.summary);
-    const isLesson = await sessionIsLesson(tx, session.deckVersionId);
+    const isLesson = session.deckKind === "lesson";
     const rows = saved.success ? [] : await tx
       .select({
         itemId: itemRevisions.itemId, payload: itemRevisions.payload,
