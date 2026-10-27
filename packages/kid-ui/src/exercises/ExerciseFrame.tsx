@@ -195,7 +195,7 @@ export function ExerciseFrame({
         >{content}</div>
       </div>
       <div className={`kid-exercise-actions ${classes.actions}`} data-testid="kid-exercise-actions">
-        <AnimatePresence initial={false}>
+        <AnimatePresence mode="popLayout" initial={false}>
         {flowFeedback ? (
           dock ? <div key="kid-dock" ref={overlayRef} className={classes.flowDock}>{dock}</div> : <Fragment key="kid-actions">
             {actions && <div data-testid="kid-primary-slot" className={classes.primary}>{actions}</div>}
