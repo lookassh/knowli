@@ -5,6 +5,7 @@
 **Worktree:** `C:\Users\looka\IdeaProjects\knowli-worktrees\school-subjects`
 **Baza gałęzi:** `5163dfd` (`main` w momencie utworzenia worktree)
 **Stan przy przekazaniu:** Etapy 0–2 zaimplementowane; poprawki po niezależnym workflow code review wprowadzone; zmiany mają zostać przekazane Codexowi jako lokalny commit zawierający także ten dokument. Nie wykonano pusha ani PR.
+**Aktualizacja 2026-10-28 (wieczór):** Etap 2b (`lesson_calculation`) domknięty lokalnymi commitami na tej gałęzi — domena, walidacja, generowanie, edytor z podglądem, ocena prób i kartkówka, Kid UI; pełne bramki zielone (szczegóły w `tasks.md`). Nadal bez pusha i PR.
 
 ## 1. Po co jest ten dokument
 
@@ -48,7 +49,7 @@ Przepływ docelowy:
 | 0 | Specyfikacja, design, złoty zestaw, materiał pilotażowy | Zrobione |
 | 1 | Przedmiot `school`, temat dynamiczny, payload v3, generowanie, edytor i publikacja | Zrobione |
 | 2 | Dwuwymiarowa ocena odpowiedzi otwartej, cache, feedback, raport, harness | Zrobione; kalibracja kosztu otwarta |
-| 2b | Deterministyczne zadania rachunkowe `lesson_calculation` | Niezaimplementowane |
+| 2b | Deterministyczne zadania rachunkowe `lesson_calculation` | Zrobione (lokalnie, bez urządzenia fizycznego i bez sondy na prawdziwym LLM) |
 | 3 | Odpowiedź mówiona: polski STT i wspólna ocena tekstu | Niezaimplementowane; najpierw spike |
 | 4 | Trener precyzji: słowa kluczowe i skracanie odpowiedzi | Tylko szkic semantyki/kontraktów |
 | 5 | E2E, domknięcie dokumentacji i pełny przebieg końcowy | Niezaimplementowane jako etap domknięcia |
@@ -213,11 +214,11 @@ Nie traktuj wyniku fake gradera jako dowodu jakości. Jedyny rozjazd wiedzy w os
 
 - **Kalibracja limitu wywołań gradera.** Limit pozostaje domyślny: 20 wywołań na sesję. Nie zgaduj nowej wartości bez danych pilotażu. Parafrazy zwykle omijają cache, więc koszt rośnie niemal liniowo z liczbą odpowiedzi otwartych. Partie generowania puli na prawdziwym modelu trwały w sondach ok. 32–80 s przy timeoutcie 90 s; obserwuj to przy kolejnych zmianach providerów/promptów.
 
-### 9.2 Etap 2b — `lesson_calculation`
+### 9.2 Etap 2b — `lesson_calculation` (zrobione 2026-10-28)
 
-Cel: parametryczne zadania rachunkowe liczone wyłącznie deterministycznie przez kod.
+Zaimplementowane zgodnie z kontraktem w `design.md` pkt 3 (commity `e95808f`…`cd862af`). Edytor rodzica liczy podgląd wyłącznie przez serwerową operację `lessons.previewCalculation` (`POST /lessons/preview-calculation`, autoryzowana, bez zapisu i AI) i rewaliduje warianty tuż przed zapisem. Kid UI reużywa `LessonSentenceView`. Otwarte: sonda generowania rachunków na prawdziwym LLM, odbiór na fizycznym urządzeniu oraz drobna kosmetyka łamania „w m.” w kanonicznym pytaniu (zmiana renderera zmieniłaby kanoniczny tekst istniejących szkiców — tylko świadomie).
 
-Zalecana kolejność:
+Pierwotny plan (zachowany jako kontekst):
 
 1. Przeczytaj wymaganie 4.5 i sekcję zadań rachunkowych w `design.md` pkt 3 oraz przykłady z `pilot-material.md`.
 2. Najpierw doprecyzuj kontrakt payloadu, etap zadania, zasady samodzielności/ekspozycji i zachowanie dla nieparsowalnej odpowiedzi na podstawie istniejącego silnika; zapisz decyzje w `design.md`/`tasks.md`.

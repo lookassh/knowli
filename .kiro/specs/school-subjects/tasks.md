@@ -41,14 +41,25 @@ etap 2b zależy tylko od etapu 1 i może iść równolegle z etapem 2.
 
 ## Etap 2b — Zadania rachunkowe (`lesson_calculation`)
 
-- [ ] Domena: `computeCalculationAnswer` dla `scale_distance`,
+- [x] Domena: `computeCalculationAnswer` dla `scale_distance`,
       `height_difference`, `unit_conversion`; parser polskiego zapisu liczb
       i jednostek (testy jednostkowe, w tym przykłady z `pilot-material.md`).
-- [ ] Kontrakty i payload: pole `calculation`, warianty liczbowe w puli
+- [x] Kontrakty i payload: pole `calculation`, warianty liczbowe w puli
       (`templateFamilyId`); walidacja przelicza odpowiedzi i odrzuca niezgodne.
-- [ ] Generowanie i edytor rodzica: szablony z policzonymi odpowiedziami.
-- [ ] Kid UI: widok zadania rachunkowego na istniejącym polu odpowiedzi;
-      ocena deterministyczna w `lesson-attempts` bez gradera.
+- [x] Generowanie i edytor rodzica: szablony z policzonymi odpowiedziami
+      (podgląd przez serwerową operację `lessons.previewCalculation`, bez
+      liczenia w przeglądarce; zapis zablokowany do aktualnego podglądu).
+- [x] Kid UI: widok zadania rachunkowego na istniejącym polu odpowiedzi
+      (`LessonSentenceView`, `lang="pl-PL"`, bez audio); ocena deterministyczna
+      w `lesson-attempts` bez gradera, także w kartkówce.
+
+Weryfikacja Etapu 2b (2026-10-28, lokalnie): `typecheck` czysto; `test:unit`
+2214/2214; `test:integration` 533 zaliczone, 2 pominięte (opcjonalny benchmark
+nawigacji profili); `build` OK; `test:e2e:shards` 270/270 (mocked 156, real
+114), w tym `lesson-calculation.spec.ts` (edytor + przebieg dziecka)
+i `lesson-calculation-layout.spec.ts` (390×844, 844×390, 768×1024, 1280×800).
+Bez odbioru na fizycznym urządzeniu i bez przebiegu generowania rachunków na
+prawdziwym LLM (fake potwierdza tylko przepływ).
 
 ## Etap 3 — Odpowiedź mówiona
 

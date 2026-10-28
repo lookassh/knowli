@@ -1,6 +1,6 @@
 # Design — przedmioty szkolne i trener precyzji odpowiedzi
 
-**Status:** Etapy 1–2 zaimplementowane na gałęzi `feature/school-subjects-source-material` (2026-10-28); ewaluacja gradera na złotym zestawie: wiedza 19/20 (95%), przypadki twarde 100% wiedzy, brakujące elementy 19/20 (model `deepseek/deepseek-v4.1-flash`, prompt `school-grader-v2`; zapis przebiegu: `grader-eval-2026-10-28.md`). Etapy 2b–5 według `tasks.md`.
+**Status:** Etapy 1–2 zaimplementowane na gałęzi `feature/school-subjects-source-material` (2026-10-28); ewaluacja gradera na złotym zestawie: wiedza 19/20 (95%), przypadki twarde 100% wiedzy, brakujące elementy 19/20 (model `deepseek/deepseek-v4.1-flash`, prompt `school-grader-v2`; zapis przebiegu: `grader-eval-2026-10-28.md`). Etap 2b (zadania rachunkowe) zaimplementowany na tej samej gałęzi (2026-10-28), kontrakt poniżej w pkt 3. Etapy 3–5 według `tasks.md`.
 **Wymagania:** `requirements.md`. **Baza:** silnik lekcji (architecture.md §19, SPEC §29a).
 
 ## 1. Decyzja główna: przedmiot generyczny na silniku lekcji
@@ -116,7 +116,7 @@ pokazywane razem z policzonymi odpowiedziami; Kid UI używa istniejącego
 pola odpowiedzi z przyciskiem „Sprawdź” (odpowiedź pisemna). Przykłady
 z pilotażu: skala 1:25 000 i 3 cm → 750 m; 400 m n.p.m. − 150 m n.p.m. → 250 m.
 
-Kontrakt Etapu 2b (zadanie 1, 2026-10-28; bez deklaracji ukończenia integracji):
+Kontrakt Etapu 2b (2026-10-28; decyzje przyjęte i zaimplementowane w całym przepływie — domena, walidacja, generowanie, edytor z podglądem `lessons.previewCalculation`, ocena prób i kartkówka, Kid UI):
 
 - `CalculationSpecSchema` to ścisła unia po `kind`; ścisłe `params` zawierają
   odpowiednio `{scaleDenominator,mapDistanceCm}`, `{upperHeightM,lowerHeightM}`
