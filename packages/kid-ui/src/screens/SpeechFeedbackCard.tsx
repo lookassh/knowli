@@ -127,6 +127,7 @@ export function SpeechFeedbackActions(props: SpeechFeedbackCardProps): ReactElem
       type="button"
       className="kid-primary"
       data-testid="kid-feedback-retry"
+      idleNudge
       disabled={props.busy}
       onClick={props.onRetry}
     >
@@ -140,6 +141,7 @@ export function SpeechFeedbackActions(props: SpeechFeedbackCardProps): ReactElem
       type="button"
       className="kid-primary"
       data-testid="kid-next"
+      idleNudge
       disabled={props.busy}
       onClick={props.onNext}
     >

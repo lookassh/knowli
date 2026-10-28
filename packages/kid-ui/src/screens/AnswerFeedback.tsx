@@ -213,6 +213,7 @@ export function AnswerFeedbackActions({ dto, retry, busy, onNext }: Partial<Pick
       type="button"
       className="kid-primary"
       data-testid="kid-next"
+      idleNudge
       disabled={busy}
       onClick={onNext}
     >

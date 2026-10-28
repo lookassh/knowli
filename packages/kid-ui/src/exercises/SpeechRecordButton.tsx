@@ -2,6 +2,7 @@ import { useEffect, useReducer, useRef } from "react";
 import { messages } from "@learning/contracts";
 import type { RecordingModeDto } from "@learning/contracts";
 import { KidIcon } from "../components/KidIcon";
+import { SoundRing } from "../motion/SoundRing";
 import { reduceRecordingGesture, type GestureOwner, type GestureState } from "./recording-gesture";
 
 type RecordingPhase = "idle" | "preparing" | "starting" | "recording" | "stopping";
@@ -105,6 +106,7 @@ export function SpeechRecordButton({ phase, ready, disabled, level, notice = nul
         data-testid="kid-record"
         data-ready={ready}
         data-phase={phase}
+        data-sound-active={phase === "recording" || undefined}
         aria-pressed={phase === "recording"}
         disabled={nativeDisabled}
         aria-disabled={blocked && phase !== "starting"}
@@ -175,6 +177,7 @@ export function SpeechRecordButton({ phase, ready, disabled, level, notice = nul
       >
         <KidIcon name="microphone" />
         <span>{label}</span>
+        {phase === "recording" && <SoundRing testId="kid-recording-ring" />}
       </button>
       {(notice ?? status) !== null && <p className="kid-record-status" role="status" data-testid="kid-record-status">{notice ?? status}</p>}
       {active && (
@@ -182,7 +185,7 @@ export function SpeechRecordButton({ phase, ready, disabled, level, notice = nul
       )}
       {levelValue !== null && phase === "recording" && (
         <div className="kid-input-level" data-testid="kid-input-level" role="meter" aria-label={messages.kid.recordingLevel} aria-valuemin={0} aria-valuemax={100} aria-valuenow={levelValue}>
-          <span style={{ width: `${levelValue}%` }} />
+          <span style={{ transform: `scaleX(${levelValue / 100})` }} />
         </div>
       )}
     </div>

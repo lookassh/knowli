@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
+import { act } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, renderKid, screen } from "../test/render-kid";
-import { CelebrationBurst } from "./CelebrationBurst";
+import { BurstParticles, CelebrationBurst, particleOffset } from "./CelebrationBurst";
+import { kidBurstSeconds, kidBurstSizes } from "../motion/kid-motion";
 
 afterEach(cleanup);
 
@@ -18,6 +20,28 @@ describe("CelebrationBurst", () => {
     );
     const burst = screen.getByTestId("kid-celebration");
     expect(burst.getAttribute("aria-hidden")).toBe("true");
-    expect(burst.children).toHaveLength(10);
+    expect(burst.children).toHaveLength(kidBurstSizes.lg.count);
+    // Every other particle is a star glyph, still hidden from assistive tech.
+    expect(burst.textContent).toContain("★");
+  });
+
+  it("keeps the small answer burst compact and deterministic", () => {
+    renderKid(<BurstParticles size="sm" testId="kid-answer-burst" />);
+    expect(screen.getByTestId("kid-answer-burst").children).toHaveLength(kidBurstSizes.sm.count);
+    expect(particleOffset(3, "sm")).toEqual(particleOffset(3, "sm"));
+    const reach = Array.from({ length: kidBurstSizes.sm.count }, (_, index) => Math.hypot(particleOffset(index, "sm").x, particleOffset(index, "sm").y));
+    expect(Math.max(...reach)).toBeLessThanOrEqual(kidBurstSizes.sm.distance + 2 * kidBurstSizes.sm.spread);
+  });
+
+  it("removes a transient burst once its particles have faded", () => {
+    vi.useFakeTimers();
+    try {
+      renderKid(<BurstParticles size="sm" transient testId="kid-answer-burst" />);
+      expect(screen.getByTestId("kid-answer-burst")).toBeTruthy();
+      act(() => { vi.advanceTimersByTime(kidBurstSeconds("sm") * 1000 + 10); });
+      expect(screen.queryByTestId("kid-answer-burst")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

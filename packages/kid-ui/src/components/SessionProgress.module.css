@@ -8,6 +8,62 @@
   color: var(--md-sys-color-on-surface);
   border-radius: var(--kid-shape-full);
   background: #203653;
+  position: relative;
+  isolation: isolate;
+}
+
+:global(.kid-ui) .label {
+  position: relative;
+  z-index: 1;
+  display: inline-block;
+}
+
+/* Slim bar shown while the "Jeszcze N" label is not due yet. */
+:global(.kid-ui) .bar {
+  position: relative;
+  display: inline-block;
+  flex: 0 1 96px;
+  min-width: 48px;
+  height: 10px;
+  border-radius: var(--kid-shape-full);
+  background: var(--md-sys-color-surface-container-high);
+}
+
+/* Decorative fill layer; clipping it never clips the label. */
+:global(.kid-ui) .fillTrack {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+:global(.kid-ui) .fill {
+  position: absolute;
+  inset: 0;
+  display: block;
+  transform-origin: left center;
+  background: var(--md-sys-color-tertiary);
+}
+
+:global(.kid-ui) .root .fill {
+  background: var(--md-sys-color-tertiary-container);
+}
+
+/* Streak star rises from the top edge, so it never widens the pill. */
+:global(.kid-ui) .star {
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  width: 1em;
+  margin-left: -0.5em;
+  display: block;
+  text-align: center;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: #e3a008;
+  pointer-events: none;
+  z-index: 2;
 }
 
 /* Compact width: wrap instead of ellipsizing the remaining-task label. */

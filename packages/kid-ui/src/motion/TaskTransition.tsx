@@ -2,10 +2,11 @@
 
 import type { ReactElement, ReactNode } from "react";
 import { AnimatePresence } from "motion/react";
-import { kidTaskExit, kidTaskTransition } from "./kid-motion";
+import { kidTaskEnter, kidTaskExit, kidTaskExitTarget, kidTaskInitial, kidTaskTransition } from "./kid-motion";
 import { PresencePane } from "./PresencePane";
 
-/** Animated switch between tasks; the session header stays still. */
+/** Animated switch between tasks: the next task slides in from the right,
+ * the finished one leaves to the left; the session header stays still. */
 export function TaskTransition({ taskId, onPaneMount, children }: {
   taskId: string;
   onPaneMount?: (taskId: string) => void;
@@ -16,6 +17,9 @@ export function TaskTransition({ taskId, onPaneMount, children }: {
       <PresencePane
         key={taskId}
         testId="kid-task-transition"
+        from={kidTaskInitial}
+        to={kidTaskEnter}
+        away={kidTaskExitTarget}
         enter={kidTaskTransition}
         exit={kidTaskExit}
         fill
