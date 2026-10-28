@@ -1370,13 +1370,15 @@
   flex: 1 1 100%;
 }
 
-/* Błąd z akcjami działa jak banner: przykrywa pasek statusu i instrukcję,
-   ale nie przesuwa geometrii zadania ani nie chowa przycisków w scrollu. */
+/* Błąd z akcjami rozpycha pasek statusu zamiast przykrywać odpowiedzi:
+   dłuższy komunikat nie może zabrać celu dotykowego (PR #145), a materiał
+   przewija, więc treść i akcje pozostają osiągalne. Zagnieżdżone :has(> …)
+   jest wycinane przez pipeline CSS, dlatego pasek oznacza LearnScreen. */
+.kid-session-status[data-action-notice="true"] {
+  height: auto;
+}
+
 .kid-session-status > .kid-notice:has(> button) {
-  position: absolute;
-  inset-inline: 0;
-  top: 0;
-  z-index: 10;
   box-shadow: 0 4px 16px rgb(0 0 0 / 35%);
 }
 

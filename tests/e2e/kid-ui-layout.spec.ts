@@ -645,6 +645,18 @@ test(`${kind} choice keeps the highlighted option and readable success action in
   await page.goto("/");
   await page.getByTestId("kid-profile").click();
   await page.getByTestId("kid-deck").click();
+  if (kind === "listening") {
+    // Autoodtwarzanie w tym fixturze zawsze pada (media bez uiAudio wracają
+    // jako SVG): komunikat z akcjami ma rozpychać pasek statusu i nie może
+    // przykrywać celu dotykowego odpowiedzi (regresja dłuższego tekstu PR #145).
+    const notice = page.getByTestId("kid-task-audio-error");
+    await expect(notice).toBeVisible();
+    const noticeBox = await notice.boundingBox();
+    const materialBox = await page.getByTestId("kid-material").boundingBox();
+    expect(noticeBox).not.toBeNull();
+    expect(materialBox).not.toBeNull();
+    expect(noticeBox!.y + noticeBox!.height).toBeLessThanOrEqual(materialBox!.y + 1);
+  }
   const correct = page.getByTestId("kid-option").first();
   await correct.click();
   await expect(correct).toHaveClass(/kid-option--correct/);
