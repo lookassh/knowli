@@ -708,13 +708,10 @@ export async function lessonDeckListValues(
   return { itemCount: objectiveOrder.length, independentlyRecalledCount: masteredCount, recommended };
 }
 
-/** Tytuł celu z rejestru przedmiotu (dla podsumowania). Brak = malformed version. */
-function objectiveTitle(services: Services, subjectId: string, objectiveId: string): string {
-  const subject = services.subjects.getSubject(subjectId);
-  for (const topic of subject?.topics ?? []) {
-    const objective = topic.objectives.find((o) => o.id === objectiveId);
-    if (objective) return objective.titlePl;
-  }
+/** Tytuł celu z przypiętego tematu (katalogowego albo dynamicznego). */
+function objectiveTitle(topic: LessonTopic, subjectId: string, objectiveId: string): string {
+  const objective = topic.objectives.find((o) => o.id === objectiveId);
+  if (objective) return objective.titlePl;
   // Nigdy nie wpuszczamy surowego id celu do Kid DTO — brak tytułu to znak
   // uszkodzonej/niespójnej wersji lekcji, nie dane do pokazania dziecku.
   throw new AppError("internal", { message: `lesson objective title missing: ${subjectId}/${objectiveId}` });
@@ -747,6 +744,7 @@ export async function buildLessonSummaryObjectives(
     throw new AppError("internal", { message: `lesson session without subjectId: ${sessionId}` });
   }
 
+  const { topic } = requireTopic(services, lessonContextOf(version!));
   const byObjective = new Map<string, { practiced: number; correct: number }>();
   for (const row of rows) {
     const objectiveId = (row.details as { objectiveId?: string } | null)?.objectiveId;
@@ -759,7 +757,7 @@ export async function buildLessonSummaryObjectives(
   }
   return [...byObjective].map(([objectiveId, counts]) => ({
     objectiveId,
-    titlePl: objectiveTitle(services, subjectId, objectiveId),
+    titlePl: objectiveTitle(topic, subjectId, objectiveId),
     practiced: counts.practiced,
     correct: counts.correct,
   }));

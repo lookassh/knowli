@@ -87,3 +87,10 @@ describe("session activity lesson snapshot formatting", () => {
 
 
 
+
+
+it("describes a calculation in an activity report without exposing its private parameters", () => {
+  const prompt = TaskPromptSchema.parse({ kind: "lesson_calculation", instructionPl: "Oblicz.", prompt: "Przelicz 2 km na m." });
+  expect(describeTaskPrompt(prompt)).toEqual({ instruction: "Oblicz.", stimulus: "Przelicz 2 km na m.", options: [] });
+  expect(lessonAnswerValues({ answer: "2000 m", acceptedAnswers: [] }, prompt).acceptedAnswers).toEqual(["2000 m"]);
+});

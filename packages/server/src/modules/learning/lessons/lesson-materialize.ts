@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import type { TaskPrompt } from "@learning/contracts";
+import type { CalculationSpec, TaskPrompt } from "@learning/contracts";
 import { AppError } from "../../../errors";
 import { computeTargetKey } from "../../../domain/target-key";
+import { renderCalculationPrompt } from "../../../domain/lessons/calculation";
 import { renderCard } from "../../../domain/lessons/card";
 import { answersEquivalent } from "../../../domain/lessons/pool-validation";
 import type { LearningObjective, LessonExerciseType, LessonTopic, LessonVisualSubject, SubjectModule } from "../../../domain/lessons/types";
@@ -27,6 +28,7 @@ export interface LessonExercisePayload {
   transformId?: string;
   noticeSegments?: string[][];
   visualSubject?: LessonVisualSubject;
+  calculation?: CalculationSpec;
   answer: string;
   acceptedAnswers: string[];
   focus: string[];
@@ -252,6 +254,15 @@ export function materializeExercise(
     case "lesson_transform": {
       const prompt: TaskPrompt = { kind: "lesson_transform", instructionPl, statement: payload.statement ?? "", ...audio };
       return { ...common, prompt, answerKey: baseKey, exposures: [] };
+    }
+    case "lesson_calculation": {
+      try {
+        if (!payload.calculation) throw new Error("missing calculation");
+        const prompt: TaskPrompt = { kind: "lesson_calculation", instructionPl, prompt: renderCalculationPrompt(payload.calculation) };
+        return { ...common, prompt, answerKey: { ...baseKey, calculation: payload.calculation }, exposures: [] };
+      } catch {
+        throw new AppError("internal", { message: "invalid private calculation payload" });
+      }
     }
     case "lesson_open_answer": {
       const prompt: TaskPrompt = { kind: "lesson_open_answer", instructionPl, prompt: payload.prompt ?? "", ...audio };

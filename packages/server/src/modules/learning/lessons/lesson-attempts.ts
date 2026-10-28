@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq, or } from "drizzle-orm";
 import {
   AttemptInputSchema,
+  type CalculationSpec,
   type AttemptDto,
   type AttemptInput,
   type FeedbackDto,
@@ -21,6 +22,7 @@ import {
   lessonVerdicts,
   sessionTasks,
 } from "../../../db/schema";
+import { computeCalculationAnswer, evaluateCalculationAnswer } from "../../../domain/lessons/calculation";
 import { AppError } from "../../../errors";
 import type { AssistanceKind, Policy, SkillOutcome } from "../../../domain/types";
 import {
@@ -78,6 +80,7 @@ type LessonModality = "choice" | "text" | "dont_remember" | "skip" | "sequence";
 
 /** Prywatny `answer_key` zadania lekcji (materializowany w `lesson-sessions.ts`). */
 interface LessonTaskAnswerKey extends LessonAnswerKey {
+  calculation?: CalculationSpec;
   objectiveId: string;
   subjectId: string;
   targetKey: string;
@@ -233,6 +236,14 @@ function gradeLessonAnswer(
   }
 
   if (input.modality === "dont_remember") {
+    if (key.exerciseType === "lesson_calculation") {
+      try {
+        if (!key.calculation) throw new Error("missing calculation");
+        computeCalculationAnswer(key.calculation);
+      } catch {
+        throw new AppError("internal", { message: "invalid private calculation payload" });
+      }
+    }
     return {
       grade: { outcome: "incorrect", reason: "dont_remember", verdict: "closed_incorrect" },
       feedback: { kind: "incorrect", correctText },
@@ -255,6 +266,26 @@ function gradeLessonAnswer(
       return { grade: { outcome: "correct", verdict: "closed_correct" }, feedback: { kind: "great" }, exposures: [key.targetKey], details: { objectiveId, verdict: "closed_correct" } };
     }
     return { grade: { outcome: "incorrect", verdict: "closed_incorrect" }, feedback: { kind: "incorrect", correctText }, exposures: [key.targetKey], details: { objectiveId, verdict: "closed_incorrect" } };
+  }
+
+  if (key.exerciseType === "lesson_calculation") {
+    let outcome: "correct" | "incorrect" | "unevaluated";
+    try {
+      if (!key.calculation) throw new Error("missing calculation");
+      outcome = evaluateCalculationAnswer(input.text, key.calculation);
+    } catch {
+      throw new AppError("internal", { message: "invalid private calculation payload" });
+    }
+    if (outcome === "unevaluated") {
+      return { grade: { outcome, reason: "technical", verdict: "unavailable" }, feedback: { kind: "not_assessed" }, exposures: [], details: { objectiveId, verdict: "unavailable" } };
+    }
+    const verdict = outcome === "correct" ? "closed_correct" : "closed_incorrect";
+    const hints: Record<CalculationSpec["kind"], string> = {
+      scale_distance: "Pomnóż odległość na mapie przez mianownik skali i przelicz jednostkę.",
+      height_difference: "Od wysokości wyższego punktu odejmij wysokość niższego punktu.",
+      unit_conversion: "Sprawdź, ile mniejszych jednostek mieści się w większej jednostce.",
+    };
+    return { grade: { outcome, verdict }, feedback: outcome === "correct" ? { kind: "great" } : { kind: "lesson_hint", hintPl: hints[key.calculation!.kind] }, exposures: [key.targetKey], details: { objectiveId, verdict } };
   }
 
   // text: luka / error_fix / transform / open_answer → dopasowanie deterministyczne
@@ -786,7 +817,7 @@ async function startLessonAttempt(
 function assertModalityMatchesExercise(modality: LessonModality, exerciseType: string): void {
   if (modality === "skip" || modality === "dont_remember") return;
   const CHOICE_TYPES = ["lesson_choice", "lesson_short_answer", "lesson_notice"];
-  const TEXT_TYPES = ["lesson_gap", "lesson_error_fix", "lesson_transform", "lesson_open_answer"];
+  const TEXT_TYPES = ["lesson_gap", "lesson_error_fix", "lesson_transform", "lesson_open_answer", "lesson_calculation"];
   const ok =
     (modality === "choice" && CHOICE_TYPES.includes(exerciseType)) ||
     (modality === "sequence" && exerciseType === "lesson_order") ||
@@ -1073,7 +1104,7 @@ export async function submitLessonAttempt(services: Services, input: AttemptInpu
     const result = gradeLessonAnswer(typed, started.task, started.key, services);
 
     // Tylko niedopasowana odpowiedź TEKSTOWA eskaluje do zapisanego werdyktu / modelu.
-    const needsModel = typed.modality === "text" && result.grade.verdict === "unavailable";
+    const needsModel = typed.modality === "text" && started.key.exerciseType !== "lesson_calculation" && result.grade.verdict === "unavailable";
     if (!needsModel) {
       const dto = await finalizeLessonAttempt(tx, services, started, typed, result);
       return { kind: "done" as const, dto };

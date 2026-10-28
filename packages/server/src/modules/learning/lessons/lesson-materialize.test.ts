@@ -211,3 +211,19 @@ describe("materializeExercise — przedmiot szkolny (temat dynamiczny)", () => {
     expect(promptJson).not.toContain("requiredElements");
   });
 });
+
+it("materializes calculation from the closed template and keeps grading data private", () => {
+  const calculation = { kind: "scale_distance", params: { scaleDenominator: 25000, mapDistanceCm: 3 }, unit: "m", tolerance: 1, templateFamilyId: "scale" };
+  const payload = { exerciseType: "lesson_calculation", objectiveId: "school.scale", instructionPl: "Oblicz.", prompt: "unsafe free text", answer: "750 m", acceptedAnswers: [], focus: [], calculation,
+    requiredElements: [{ id: "e1", text: "private element" }], sourceRefs: [{ quote: "private quote" }], answerLocale: "pl-PL", promptLocale: "pl-PL" } as unknown as LoadedExercise["payload"];
+  const result = materializeExercise({ independentCheck: true, reason: "due_check" }, "calculation", loaded(payload), topic, schoolSubject);
+  expect(result.prompt).toEqual({ kind: "lesson_calculation", instructionPl: "Oblicz.", prompt: "Na mapie w skali 1:25 000 odcinek ma 3 cm. Oblicz odległość w terenie w m." });
+  expect(result.answerKey.calculation).toEqual(calculation);
+  expect(result.exposures).toEqual([]);
+  for (const forbidden of ['"answer"', '"calculation"', '"tolerance"', "sourceRefs", "requiredElements", "comment", "private", "750 m"]) expect(JSON.stringify(result.prompt)).not.toContain(forbidden);
+});
+
+it("rejects an invalid private calculation before issuing any public prompt", () => {
+  const exercise = loaded({ exerciseType: "lesson_calculation", objectiveId: "school.scale", instructionPl: "Oblicz.", answer: "750 m", acceptedAnswers: [], focus: [], calculation: { kind: "unknown" }, answerLocale: "pl-PL", promptLocale: "pl-PL" } as unknown as LoadedExercise["payload"]);
+  expect(() => materializeExercise({ independentCheck: true, reason: "due_check" }, "invalid", exercise, topic, schoolSubject)).toThrow();
+});
