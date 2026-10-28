@@ -8,11 +8,8 @@ export const poolExerciseTypes = (types: readonly string[]): string[] =>
 function lessonExerciseSchema(
   input: LessonPoolInput,
   objective: LessonPoolInput["objectives"][number],
+  allowedTypes: string[],
 ): Record<string, unknown> {
-  const allowedTypes = poolExerciseTypes(objective.exerciseTypes.filter((type) => input.exerciseTypes.includes(type)));
-  if (allowedTypes.length === 0) {
-    throw new Error(`objective ${objective.id} has no supported pool exercise types`);
-  }
   const quoteItem = { type: "object", additionalProperties: false, required: ["quote"], properties: { quote: { type: "string" } } };
   const idTextItem = {
     type: "object",
@@ -61,10 +58,44 @@ function lessonExerciseSchema(
   };
 }
 
+/** Strict discriminated parameters: neither free-text stimulus nor model answer. */
+function calculationExerciseSchema(objectiveId: string): Record<string, unknown> {
+  const units = { type: "string", enum: ["cm", "m", "km"] };
+  const parameter = { type: "number", minimum: -1000000, maximum: 1000000 };
+  const nonnegative = { ...parameter, minimum: 0 };
+  const strictObject = (properties: Record<string, unknown>) => ({
+    type: "object", additionalProperties: false, required: Object.keys(properties), properties,
+  });
+  const branch = (kind: string, params: Record<string, unknown>) => strictObject({
+    kind: { type: "string", enum: [kind] },
+    params: strictObject(params), unit: units,
+    tolerance: { type: "number", minimum: 0 },
+    templateFamilyId: { type: "string", minLength: 1, maxLength: 64, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+  });
+  return strictObject({
+    exerciseType: { type: "string", enum: ["lesson_calculation"] },
+    objectiveId: { type: "string", enum: [objectiveId] },
+    calculation: { anyOf: [
+      branch("scale_distance", { scaleDenominator: { type: "integer", minimum: 1, maximum: 1000000000 }, mapDistanceCm: nonnegative }),
+      branch("height_difference", { upperHeightM: parameter, lowerHeightM: parameter }),
+      branch("unit_conversion", { value: nonnegative, fromUnit: units }),
+    ] },
+    sourceRefs: { type: "array", minItems: 1, maxItems: 3, items: strictObject({ quote: { type: "string", minLength: 10, maxLength: 600 } }) },
+  });
+}
+
 /** Strict JSON Schema: każda gałąź wiąże typ ćwiczenia z jednym celem. */
 export function lessonPoolJsonSchema(input: LessonPoolInput): Record<string, unknown> {
   if (input.objectives.length === 0) throw new Error("lesson pool requires at least one objective");
-  const branches = input.objectives.map((objective) => lessonExerciseSchema(input, objective));
+  const branches = input.objectives.flatMap((objective) => {
+    const types = poolExerciseTypes(objective.exerciseTypes.filter((type) => input.exerciseTypes.includes(type)));
+    if (types.length === 0) throw new Error(`objective ${objective.id} has no supported pool exercise types`);
+    const regularTypes = types.filter((type) => type !== "lesson_calculation");
+    return [
+      ...(regularTypes.length > 0 ? [lessonExerciseSchema(input, objective, regularTypes)] : []),
+      ...(types.includes("lesson_calculation") ? [calculationExerciseSchema(objective.id)] : []),
+    ];
+  });
   const objectiveIds = input.objectives.map((objective) => objective.id);
   return {
     type: "object",

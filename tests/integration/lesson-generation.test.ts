@@ -987,6 +987,63 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect(Array.isArray(open!.payload.requiredElements)).toBe(true);
   });
 
+  it("rachunki: liczy parametry, odrzuca pojedyncze wadliwe rekordy i nie ufa parentAdded modelu", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = createServices({
+      db: testDatabase().db, clock: new ManualClock(), media: fakes.settings,
+      generation: fakes.deps, subjects: createSubjectRegistry([schoolSubject]),
+    });
+    const material = "Skala mapy pozwala przeliczyć odległość na mapie na odległość w terenie.";
+    const { runId, deckId } = await createSchoolLesson(services, {
+      subjectTitlePl: "Geografia", topicTitlePl: "Skala mapy", material,
+      poolSize: 40, clientRequestId: randomUUID(),
+    });
+    const objectiveId = `school.d${deckId}.skala_mapy`;
+    const raw = {
+      exerciseType: "lesson_calculation", objectiveId,
+      calculation: { kind: "scale_distance", params: { scaleDenominator: 25000, mapDistanceCm: 3 }, unit: "m", templateFamilyId: "map-scale" },
+      sourceRefs: [{ quote: material, parentAdded: true }],
+    };
+    const generate = fakes.llm.generateLessonPool.bind(fakes.llm);
+    fakes.deps.llm.generateLessonPool = async (input) => {
+      const regular = await new FakeLlmProvider().generateLessonPool(input);
+      fakes.llm.queueLesson({ exercises: [
+        ...regular.exercises, raw,
+        { ...raw, calculation: { ...raw.calculation, kind: "unknown" } },
+        { ...raw, calculation: { ...raw.calculation, params: { scaleDenominator: 25000, mapDistanceCm: 5 } },
+          sourceRefs: [{ quote: "Ten cytat nie występuje w materiale rodzica.", parentAdded: true }] },
+      ] });
+      return generate(input);
+    };
+    await executeLessonGeneration(services, runId);
+    expect((await readGeneration(services, runId)).state).toBe("succeeded");
+    const deck = await readLessonDeck(services, deckId);
+    const calculations = deck.draft!.exercises.filter((exercise) => exercise.exerciseType === "lesson_calculation");
+    expect(calculations).toHaveLength(1);
+    expect(calculations[0]).toMatchObject({ answer: "750 m", calculation: raw.calculation, sourceRefs: [{ quote: material }] });
+    expect(calculations[0]!.sourceRefs![0]).not.toHaveProperty("parentAdded");
+    expect(deck.draft!.rejectedCount).toBe(2);
+    expect(deck.draft!.coverage).toEqual([]);
+
+    // Ta sama metoda i parametry z inną rodziną nadal są duplikatem istniejącej puli.
+    fakes.deps.llm.generateLessonPool = async (input) => {
+      fakes.llm.queueLesson({ exercises: [
+        { ...raw, calculation: { ...raw.calculation, templateFamilyId: "renamed-family" } },
+        { ...raw, calculation: { ...raw.calculation, params: { scaleDenominator: 25000, mapDistanceCm: 4 } } },
+      ] });
+      return generate(input);
+    };
+    const topUp = await regenerateObjective(services, {
+      deckId, objectiveId, count: 2, expectedEditNumber: deck.draft!.editNumber, clientRequestId: randomUUID(),
+    });
+    await executeLessonGeneration(services, topUp.runId);
+    const after = await readLessonDeck(services, deckId);
+    const afterCalculations = after.draft!.exercises.filter((exercise) => exercise.exerciseType === "lesson_calculation");
+    expect(afterCalculations.map((exercise) => exercise.answer).sort()).toEqual(["1000 m", "750 m"]);
+    expect(after.draft!.exercises.length).toBe(deck.draft!.exercises.length + 1);
+  });
+
   it("zestaw szkolny: publikacja i sesja dziecka na typach zamkniętych", async () => {
     const fakes = await fakeGeneration();
     disposers.push(fakes.dispose);
@@ -1016,6 +1073,7 @@ describe("generowanie puli lekcji (integracja)", () => {
 
     const deck = await readLessonDeck(services, deckId);
     expect(deck.draft?.dynamicTopic?.objectives).toHaveLength(2);
+    expect(deck.draft!.exercises.some((exercise) => exercise.exerciseType === "lesson_calculation")).toBe(false);
     expect(deck.draft?.subjectTitlePl).toBe("Przyroda i historia");
     expect(deck.draft?.coverage).toEqual([]);
     await publishLessonDraft(services, deck.draft!.id, deck.draft!.editNumber);

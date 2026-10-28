@@ -20,6 +20,7 @@ import type {
 } from "../ports/ai";
 import type { MediaStore } from "../ports/media";
 import { letterGroups } from "../domain/pronunciation-fragments";
+import { materializeGeneratedCalculations } from "./lesson-calculations";
 
 /**
  * Deterministyczni providerzy bez sieci: te same dane wejściowe dają te same
@@ -369,7 +370,8 @@ export class FakeLlmProvider implements LlmProvider {
         ? this.#lessonBehaviors.shift()!
         : this.#lessonBehaviors[0] ?? null;
     if (!behavior) {
-      return fakeLessonExercises(input);
+      const result = fakeLessonExercises(input);
+      return { ...result, exercises: materializeGeneratedCalculations(result.exercises) };
     }
     if ("error" in behavior) {
       const error = new Error(behavior.error) as Error & { retryable?: boolean };
@@ -380,9 +382,9 @@ export class FakeLlmProvider implements LlmProvider {
       // Mieszanka: połowa poprawnych, połowa odrzucanych — dowód odrzuceń pojedynczych.
       const good = fakeLessonExercises(input);
       const bad = input.objectives.map((o) => fakeInvalidExercise(o.id));
-      return { exercises: [...good.exercises, ...bad], examples: good.examples };
+      return { exercises: materializeGeneratedCalculations([...good.exercises, ...bad]), examples: good.examples };
     }
-    return { exercises: behavior.exercises, examples: behavior.examples ?? {} };
+    return { exercises: materializeGeneratedCalculations(behavior.exercises), examples: behavior.examples ?? {} };
   }
 }
 

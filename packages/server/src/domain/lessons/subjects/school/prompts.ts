@@ -33,5 +33,10 @@ export const schoolPrompts: SubjectPromptProfile = {
     "lesson_gap: stem to zdanie z materiału z ONE luką ___ po fakcie (data, nazwa, pojęcie); odpowiedź maks. 3 słowa. " +
     "lesson_choice: stem to pytanie, options 2-4 krótkie odpowiedzi, dokładnie jedna poprawna. " +
     "lesson_order: items to etapy procesu lub wydarzenia w poprawnej kolejności. " +
-    "Pytanie (prompt/stem) maks. 120 znaków. Nie twórz zadań obliczeniowych.",
+    "Pytanie (prompt/stem) maks. 120 znaków. " +
+    "lesson_calculation: proponuj wyłącznie rodzaj i parametry metody jawnie opisanej w materiale (skala mapy, różnica wysokości, zamiana cm/m/km), " +
+    "z dokładnym cytatem potwierdzającym metodę. Model nie podaje prompt ani answer — treść i wynik buduje kod. " +
+    "Warianty liczbowe są abstrakcyjnymi przykładami tej samej metody, bez nowych nazw miejsc i pomiarów rzeczywistych obiektów. " +
+    "Rachunki mieszczą się w zamówionej liczbie ćwiczeń (globalnie maks. 160), uzupełniają pulę, ale nie zastępują minimów 3 prowadzonych, 2 produktywnych i 2 różnych otwartych. " +
+    "Jeśli materiał nie uczy metody rachunkowej, nie twórz rachunków.",
 };

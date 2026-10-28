@@ -103,15 +103,17 @@ export interface LlmProvider {
     input: LlmGenerateDeckInput,
     signal?: AbortSignal,
   ): Promise<{ items: LlmGeneratedItem[] }>;
-  /**
-   * Generacja surowej puli ćwiczeń jednego celu (design „Generowanie puli”).
-   * Zwraca surowe ćwiczenia (walidacja w domenie, `pool-validation.ts`) oraz
-   * przykłady per cel do kart lekcji. Port nie waliduje kształtu.
-   */
   generateLessonObjectives(
     input: LessonObjectivesInput,
     signal?: AbortSignal,
   ): Promise<{ objectives: unknown[] }>;
+  /**
+   * Generacja surowej puli ćwiczeń jednego celu (design „Generowanie puli”).
+   * Zwraca ćwiczenia do walidacji w domenie (`pool-validation.ts`) oraz
+   * przykłady per cel do kart lekcji. Adapter materializuje surowe parametry
+   * lesson_calculation do kanonicznego prompt/answer przed wspólną walidacją;
+   * wadliwe rekordy pozostawia do indywidualnego odrzucenia.
+   */
   generateLessonPool(
     input: LessonPoolInput,
     signal?: AbortSignal,

@@ -7,6 +7,7 @@ import type {
 } from "../../ports/ai";
 import { GenerationProviderError } from "../../ports/generation-error";
 import { lessonPoolJsonSchema, poolExerciseTypes } from "./lesson-pool-schema";
+import { materializeGeneratedCalculations } from "../lesson-calculations";
 
 export interface OpenAiLlmOptions {
   apiKey: string;
@@ -119,7 +120,7 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
     `Produce about ${input.countPerObjective} exercises per objective, split across stages: ` +
       `${input.stageCounts.guided} guided (${stageMenu(["lesson_choice", "lesson_order", "lesson_short_answer"])}), ` +
       `${input.stageCounts.productive} productive (${stageMenu(["lesson_gap", "lesson_error_fix", "lesson_transform"])}), ` +
-      `${input.stageCounts.independent} independent (${stageMenu(["lesson_open_answer"])}). ` +
+      `${input.stageCounts.independent} independent (${stageMenu(["lesson_open_answer", "lesson_calculation"])}). ` +
       "The stage type lists are a menu, not a per-exercise requirement: every exercise must use ONLY an exerciseType " +
       "from its objective's allowed list above — if none of a stage's listed types is allowed for the objective, " +
       "cover that stage with an allowed type (typically lesson_choice).",
@@ -128,6 +129,23 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
     parts.push(
       "The answer-grading model is unavailable, so prefer closed types (lesson_choice, " +
         "lesson_short_answer) and lesson_gap over free-text types.",
+    );
+  }
+  if (input.exerciseTypes.includes("lesson_calculation")) {
+    parts.push(
+      "lesson_calculation is a separate parameter-only branch: return ONLY exerciseType, objectiveId, calculation and sourceRefs. " +
+      "Never generate its answer, prompt, focus or acceptedAnswers; code computes the answer and renders a closed template. " +
+      "Use only a method explicitly taught in the quoted parent material: scale_distance, height_difference or unit_conversion (cm, m, km). " +
+      "Numbers may vary as abstract examples of that same method; never invent named places, measurements of real objects or new geographical facts. " +
+      "sourceRefs must quote the method, not a vaguely related fact. If the material teaches no supported calculation method, produce no calculations. " +
+      "Calculations supplement the pool within the requested count and the global 160-exercise limit. " +
+      "Keep at least 3 guided, 2 productive and 2 DISTINCT open-answer questions per school objective; calculations never replace these minima. " +
+      "calculation contains kind, params, unit, tolerance (use 0 unless needed), templateFamilyId (lowercase hyphenated slug). " +
+      "scale_distance.params: {scaleDenominator: integer 1..1000000000, mapDistanceCm: nonnegative number}; " +
+      "height_difference.params: {upperHeightM, lowerHeightM}, upperHeightM >= lowerHeightM; " +
+      "unit_conversion.params: {value: nonnegative number, fromUnit: cm|m|km}. " +
+      "unit: cm|m|km; numerical parameters have at most 3 decimal places and absolute value <=1000000. " +
+      "Variants of the same method and units share templateFamilyId, with different parameters; do not repeat existing parameters.",
     );
   }
   if (input.deduplication !== "exercise") {
@@ -170,7 +188,7 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
   }
   parts.push(
     'Return strict JSON of the shape {"exercises": [ ... ], "examples": [{"objectiveId": "<id>", "examples": ["<short example sentence>"]}]}. ' +
-      "Each exercise object has fields: exerciseType, objectiveId, instructionPl (child-facing instruction in the prompt language), " +
+      "Each non-calculation exercise object has fields: exerciseType, objectiveId, instructionPl (child-facing instruction in the prompt language), " +
       "optional stem (lesson_gap: the sentence with EXACTLY ONE gap marker ___), " +
       "optional statement (lesson_error_fix: the sentence with the checked mistake — it must NOT already equal the answer; " +
       "lesson_transform: the sentence to transform), " +
@@ -471,7 +489,7 @@ export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider 
         }
         const result = parsed as { exercises: unknown[]; examples?: unknown };
         return {
-          exercises: result.exercises,
+          exercises: materializeGeneratedCalculations(result.exercises),
           examples: lessonExamplesToRecord(result.examples),
         };
       } catch (error) {
