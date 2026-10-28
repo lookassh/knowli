@@ -349,10 +349,12 @@ function resolveObjective(services: Services, key: LessonTaskAnswerKey): { subje
       hints: { ...snap.hints },
       exerciseTypes: [],
     };
+    // Tytuł TEMATU (nie celu): grader dostaje go jako „Topic”, tak jak przed
+    // migawką — inaczej ten sam promptVersion mieszałby w cache dwa warianty promptu.
     const topic: LessonTopic = {
       id: snap.topicId ?? "dynamic",
       version: snap.topicVersion ?? 1,
-      titlePl: snap.objectiveTitlePl ?? snap.topicTitlePl,
+      titlePl: snap.topicTitlePl,
       extraErrorCategories: snap.extraErrorCategories.map((c) => ({ ...c })),
       transforms: [],
       objectives: [objective],
@@ -521,8 +523,9 @@ function schoolVerdictFromCacheRow(row: LessonVerdictRow, key: LessonTaskAnswerK
     row.verdict === "correct" ? "correct" : row.verdict === "almost" ? "partial" : "incorrect";
   const base: SchoolVerdict = {
     knowledge,
-    // Klamra formy reaplikowana dla BIEŻĄCEGO wariantu odpowiedzi (cache pamięta werdykt innego zapisu).
-    precision: (formOkFor(key, childAnswer) === false && row.precision === "concise" ? "verbose" : row.precision) as SchoolVerdict["precision"],
+    // Cache trzyma precyzję modelu bez klamry formy; klamrę dla BIEŻĄCEGO zapisu
+    // odpowiedzi nakłada dopiero resultFromSchoolVerdict.
+    precision: row.precision as SchoolVerdict["precision"],
     matchedElementIds: [...(row.matchedElements ?? [])],
     missingElementIds: [...(row.missingElements ?? [])],
     incorrectStatements: [...(row.incorrectStatements ?? [])],
@@ -576,7 +579,8 @@ function resultFromSchoolVerdict(
     objectiveId,
     verdict: grade.verdict,
     knowledge: verdict.knowledge,
-    precision: verdict.precision,
+    // Forma `one_sentence` liczona dla tego zapisu ogranicza precyzję (nigdy wiedzę).
+    precision: formOkFor(key, childAnswer) === false && verdict.precision === "concise" ? "verbose" : verdict.precision,
     ...(verdictId ? { verdictId } : {}),
     matchedElementIds: [...verdict.matchedElementIds],
     missingElementIds: [...verdict.missingElementIds],
@@ -1188,7 +1192,8 @@ export async function submitLessonAttempt(services: Services, input: AttemptInpu
       schoolVerdict = validateSchoolVerdict(raw, {
         requiredElementIds: graderInput.school.requiredElements.map((el) => el.id),
         childAnswer: phase1.childAnswer,
-        formOk: formOkFor(phase1.start.key, phase1.childAnswer),
+        // Bez klamry formy: do cache trafia precyzja modelu, klamra dotyczy tylko tej próby.
+        formOk: null,
       });
     } else {
       verdict = validateVerdict(raw, { allowedCategories: allowed, childAnswer: phase1.childAnswer });
@@ -1333,7 +1338,8 @@ async function finalizeGradedAttempt(
         promptVersion: args.promptVersion,
         graderModel: args.graderModel,
         verdict: sv.knowledge === "correct" ? "correct" : sv.knowledge === "partial" ? "almost" : "incorrect",
-        errorCategory: sv.knowledge === "correct" ? null : sv.knowledge === "partial" ? "missing_element" : "wrong_fact",
+        // Ta sama kategoria co w ocenie (np. incorrect bez błędnych stwierdzeń = incomplete).
+        errorCategory: gradeFromSchoolVerdict(sv).errorCategory ?? null,
         fragments: [...new Set([...sv.incorrectStatements, ...sv.redundantFragments])].slice(0, 4),
         precision: sv.precision,
         matchedElements: [...sv.matchedElementIds],

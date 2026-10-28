@@ -222,6 +222,12 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     instructionPl: z.string().min(1),
     prompt: z.string().min(1),
     audioAssetId: UuidSchema.optional(),
+    /**
+     * Język pytania, gdy jest jednoznaczny (przedmiot z jednym językiem, np.
+     * szkoła: `pl-PL`) — dla czytników ekranu. Brak = dotychczasowe `en-GB`;
+     * gramatyka go nie wysyła, więc starsze klienty dalej ją parsują.
+     */
+    promptLocale: z.enum(["pl-PL", "en-GB"]).optional(),
   }).strict(),
   z.object({
     kind: z.literal("lesson_calculation"),

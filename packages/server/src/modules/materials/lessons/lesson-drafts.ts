@@ -378,21 +378,26 @@ function sanitizeObjectiveSlug(raw: string, index: number, used: Set<string>): s
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .slice(0, 40);
-  let slug = base.length > 0 ? base : `zagadnienie_${index + 1}`;
-  if (used.has(slug)) slug = `${slug}_${index + 1}`;
+  const root = base.length > 0 ? base : `zagadnienie_${index + 1}`;
+  // A suffixed slug can itself be taken (e.g. "a", "a_3", "a"), so keep counting.
+  let slug = root;
+  for (let n = index + 1; used.has(slug); n += 1) slug = `${root}_${n}`;
   used.add(slug);
   return slug;
 }
 
 /**
  * Składa `DynamicTopicData` z surowych zagadnień modelu: identyfikatory celów
- * `school.d<deckId>.<slug>` nadaje serwer. Rekordy o złym kształcie są
- * odrzucane pojedynczo; zero poprawnych celów zwraca błędy zamiast danych.
+ * `school.d<deckId>.<slug>` nadaje serwer. Rekordy o złym kształcie albo
+ * niespełniające reguł przedmiotu (`validateObjective`, np. 2–4 karty, niepuste
+ * teksty) są odrzucane pojedynczo — jedno wadliwe zagadnienie nie przerywa
+ * całej generacji; zero poprawnych celów zwraca błędy zamiast danych.
  */
 export function buildDynamicTopicData(
   rawObjectives: unknown[],
   deckId: string,
   topicTitle: string,
+  validateObjective: (objective: DynamicTopicData["objectives"][number]) => string[] = () => [],
 ): { data?: DynamicTopicData; errors: string[] } {
   const errors: string[] = [];
   const used = new Set<string>();
@@ -404,7 +409,7 @@ export function buildDynamicTopicData(
       return;
     }
     const slug = sanitizeObjectiveSlug(parsed.data.slug || parsed.data.titlePl, index, used);
-    objectives.push({
+    const objective = {
       id: `school.d${deckId}.${slug}`,
       titlePl: [...parsed.data.titlePl.trim()].slice(0, 120).join(""),
       descriptionEn: [...parsed.data.descriptionEn.trim()].slice(0, 400).join(""),
@@ -412,7 +417,13 @@ export function buildDynamicTopicData(
         title: [...card.title.trim()].slice(0, 120).join(""),
         body: [...card.body.trim()].slice(0, 1200).join(""),
       })),
-    });
+    };
+    const objectiveErrors = validateObjective(objective);
+    if (objectiveErrors.length > 0) {
+      errors.push(`zagadnienie ${index + 1}: ${objectiveErrors.join("; ")}`);
+      return;
+    }
+    objectives.push(objective);
   });
   if (rawObjectives.length > 8) {
     errors.push(`pominięto ${rawObjectives.length - 8} zagadnień ponad limit 8`);
@@ -435,6 +446,42 @@ export function stripParentAddedFlags(drafts: readonly LessonExerciseDraft[]): L
       : { ...draft, sourceRefs: draft.sourceRefs.map((ref) => ({ quote: ref.quote })) },
   );
 }
+/**
+ * Strict structured output każe modelowi zwrócić każde pole v3, także dla
+ * gramatyki i dla typów zamkniętych szkoły. Pusta tablica znaczy tam „brak”
+ * (jak `null`), więc nie może odrzucać ćwiczenia jako „pole v3 niedozwolone”
+ * ani trafiać do payloadu (DTO wymaga np. co najmniej jednego cytatu).
+ * Braki wymagane przez przedmiot (cytat, elementy odpowiedzi otwartej) nadal
+ * zgłasza walidacja przedmiotu.
+ */
+export function withoutEmptyV3Fields(draft: LessonExerciseDraft): LessonExerciseDraft {
+  const out: LessonExerciseDraft = { ...draft };
+  for (const field of ["requiredElements", "supplementaryElements", "commonErrors", "sourceRefs"] as const) {
+    if (Array.isArray(out[field]) && out[field].length === 0) delete out[field];
+  }
+  return out;
+}
+
+/**
+ * Dogenerowanie to osobne wywołanie modelu, który nie zna rodzin już zapisanych
+ * w szkicu: slug zbieżny z istniejącą rodziną dołączyłby nowe pytanie (z inną
+ * odpowiedzią wzorcową) do starej rodziny i zablokował publikację. Rodziny
+ * nowej partii dostają więc sufiks runu i pozostają wewnątrz niej.
+ */
+export function scopeFamiliesToRun(draft: LessonExerciseDraft, runId: string): LessonExerciseDraft {
+  const suffix = `-r${runId.replace(/[^0-9a-f]/gi, "").slice(0, 6).toLowerCase()}`;
+  // Cut before the suffix without leaving a dangling "-" (templateFamilyId is a strict slug).
+  const scoped = (slug: string) => `${slug.slice(0, 64 - suffix.length).replace(/-+$/, "")}${suffix}`;
+  const templateFamilyId = draft.calculation?.templateFamilyId;
+  return {
+    ...draft,
+    ...(draft.familyId ? { familyId: scoped(draft.familyId) } : {}),
+    ...(draft.calculation && typeof templateFamilyId === "string"
+      ? { calculation: { ...draft.calculation, templateFamilyId: scoped(templateFamilyId) } }
+      : {}),
+  };
+}
+
 /** Dzieli szkice wg walidacji puli z materiałem przedmiotu (uziemienie itp.). */
 export function splitByPoolExtra(
   subject: SubjectModule,
@@ -910,7 +957,9 @@ export async function executeLessonGeneration(services: Services, runId: string,
         ),
       );
       await control.assertCurrent();
-      const built = buildDynamicTopicData(objectivesResult.objectives, input.deckId, input.topicTitlePl ?? "");
+      const topicTitle = input.topicTitlePl ?? "";
+      const built = buildDynamicTopicData(objectivesResult.objectives, input.deckId, topicTitle, (objective) =>
+        validateDynamicTopicData(subject, { titlePl: topicTitle, objectives: [objective] }));
       if (!built.data) {
         throw new AppError("validation", { message: `dynamic objectives invalid: ${built.errors.join("; ")}` });
       }
@@ -1011,6 +1060,8 @@ export async function executeLessonGeneration(services: Services, runId: string,
     let droppedAcceptedVariants = 0;
     const drafts = wellShaped
       .map(toExerciseDraft)
+      .map(withoutEmptyV3Fields)
+      .map((draft) => (input.regenerate ? scopeFamiliesToRun(draft, runId) : draft))
       .map((draft) => {
         const sanitized = withoutRedundantAcceptedVariants(draft, subject.normalizer);
         droppedAcceptedVariants += draft.acceptedAnswers.length - sanitized.acceptedAnswers.length;

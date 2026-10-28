@@ -140,6 +140,16 @@ describe("lesson exercise views", () => {
     expect(sentenceProps.handlers.onSubmitText).toHaveBeenCalledWith("He plays.");
   });
 
+  it("open answer uses the prompt locale when the server knows it, otherwise keeps en-GB", () => {
+    const school = renderKid(<LessonSentenceView {...makeExerciseProps(task({ kind: "lesson_open_answer", instructionPl: "Odpowiedz.", prompt: "Co to jest skala?", promptLocale: "pl-PL" }))} />);
+    expect(screen.getByTestId("kid-lesson-source").getAttribute("lang")).toBe("pl-PL");
+    expect(screen.getByTestId("kid-lesson-input").getAttribute("lang")).toBe("pl-PL");
+    school.unmount();
+    renderKid(<LessonSentenceView {...makeExerciseProps(task({ kind: "lesson_open_answer", instructionPl: "Napisz.", prompt: "Write about your day." }))} />);
+    expect(screen.getByTestId("kid-lesson-source").getAttribute("lang")).toBe("en-GB");
+    expect(screen.getByTestId("kid-lesson-input").hasAttribute("lang")).toBe(false);
+  });
+
   it("calculation shows the Polish prompt and sends the typed result verbatim by click or Enter", () => {
     const calculation = task({ kind: "lesson_calculation", instructionPl: "Oblicz.", prompt: "Na mapie w skali 1:25 000 odcinek ma 3 cm. Oblicz odległość w terenie w m." });
     const props = makeExerciseProps(calculation);

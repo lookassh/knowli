@@ -84,7 +84,7 @@ w `LessonExerciseDraft` i schemacie kontraktów (`packages/contracts/src/lessons
 | `supplementaryElements` | `string[]`, ≤4 | informacje poprawne, lecz niewymagane |
 | `commonErrors` | `string[]`, ≤4 | typowe błędne stwierdzenia; tylko dla gradera i rodzica |
 | `expectedForm` | `short \| one_sentence \| explanation \| list` | domyślnie `explanation` dla otwartej, `short` dla faktograficznej |
-| `familyId` | string (slug w obrębie zestawu) | grupa sformułowań tego samego pytania |
+| `familyId` | string (slug w obrębie celu) | grupa sformułowań tego samego pytania; ten sam slug w innym celu to inna rodzina |
 | `sourceRefs` | `[{ quote }]`, 1–3 | `quote` = dokładny fragment źródła; pola `documentId`/`page` zarezerwowane na przyszły import, dziś nieużywane |
 
 Walidacja (generowanie, edycja rodzica i publikacja — ta sama funkcja):
@@ -95,8 +95,16 @@ Walidacja (generowanie, edycja rodzica i publikacja — ta sama funkcja):
 - ćwiczenia otwarte mają 1–6 elementów wymaganych i odpowiedź wzorcową, która
   je wszystkie zawiera treściowo (sprawdza rodzic; automat sprawdza tylko
   obecność i limity — świadomie, bez kolejnego wywołania modelu);
-- rodzina pytań: wspólny `objectiveId`, identyczny zbiór identyfikatorów
-  elementów wymaganych i wspólna odpowiedź wzorcowa; różny tekst pytania;
+- rodzina pytań to para (`objectiveId`, `familyId`): identyczny zbiór
+  identyfikatorów elementów wymaganych i wspólna odpowiedź wzorcowa; różny
+  tekst pytania. Model generuje każdy cel osobną partią i nie zna slugów innych
+  partii, więc ten sam slug w dwóch celach to dwie rodziny; przy dogenerowaniu
+  slugi rodzin nowej partii dostają sufiks runu, by nie dołączyć do istniejącej
+  rodziny z inną odpowiedzią;
+- limity pól (odpowiedź ≤300, 1–6 elementów ≤120 znaków, ≤4 elementy
+  uzupełniające i typowe błędy, 1–3 cytaty ≤600) wymusza ten sam schemat
+  kontraktu co API rodzica; puste tablice v3 ze structured output traktujemy
+  jak brak pola;
 - typy zamknięte (`lesson_choice`, `lesson_gap`, `lesson_order`) używają
   istniejących pól i walidacji puli; `sourceRefs` wymagane także dla nich.
 
@@ -123,7 +131,7 @@ Kontrakt Etapu 2b (2026-10-28; decyzje przyjęte i zaimplementowane w całym prz
   odpowiednio `{scaleDenominator,mapDistanceCm}`, `{upperHeightM,lowerHeightM}`
   lub `{value,fromUnit}`. `unit` i `fromUnit` należą do `cm | m | km`.
   `templateFamilyId` to slug `[a-z0-9]+(?:-[a-z0-9]+)*`, 1–64 znaków,
-  identyfikujący rodzinę w obrębie zestawu.
+  identyfikujący rodzinę w obrębie celu (jak `familyId`).
 - Parametry są skończone, mają ≤3 miejsca dziesiętne i moduł ≤1 000 000;
   odległości i wartość konwersji są nieujemne, wysokości mogą być ujemne,
   `upperHeightM >= lowerHeightM`. Mianownik skali jest całkowity 1–1 000 000 000.

@@ -93,8 +93,8 @@ export function validateSchoolExercise(ex: LessonExerciseDraft, _topic: LessonTo
 /**
  * Walidacja puli z materiałem: (1) każdy cytat niepochodzący od rodzica musi
  * być dokładnym fragmentem materiału (po normalizacji), (2) ćwiczenia jednej
- * rodziny pytań muszą mieć ten sam cel, tę samą odpowiedź wzorcową i ten sam
- * zbiór identyfikatorów elementów wymaganych.
+ * rodziny pytań (cel + familyId) muszą mieć tę samą odpowiedź wzorcową i ten
+ * sam zbiór identyfikatorów elementów wymaganych.
  */
 export function validateSchoolPool(
   drafts: readonly LessonExerciseDraft[],
@@ -120,15 +120,19 @@ export function validateSchoolPool(
     }
   });
 
+  // Rodzina żyje w obrębie celu: model generuje każdy cel osobną partią i nie zna
+  // slugów innych partii, więc ten sam slug w dwóch celach to dwie różne rodziny.
   const families = new Map<string, number[]>();
   drafts.forEach((ex, index) => {
     if (!ex.familyId) return;
-    const list = families.get(ex.familyId) ?? [];
+    const key = JSON.stringify([ex.objectiveId, ex.familyId]);
+    const list = families.get(key) ?? [];
     list.push(index);
-    families.set(ex.familyId, list);
+    families.set(key, list);
   });
-  for (const [familyId, indexes] of families) {
+  for (const indexes of families.values()) {
     if (indexes.length < 2) continue;
+    const familyId = drafts[indexes[0]!]!.familyId!;
     const first = drafts[indexes[0]!]!;
     const firstElements = (first.requiredElements ?? []).map((el) => el.id).sort().join(",");
     for (const index of indexes.slice(1)) {
@@ -139,10 +143,10 @@ export function validateSchoolPool(
       if (samePrompt) {
         push(index, `familyId: ćwiczenie z rodziny „${familyId}” powiela tekst pytania innego członka rodziny`);
       }
-      if (ex.objectiveId !== first.objectiveId || ex.answer.trim() !== first.answer.trim() || elements !== firstElements) {
+      if (ex.answer.trim() !== first.answer.trim() || elements !== firstElements) {
         push(
           index,
-          `familyId: ćwiczenie z rodziny „${familyId}” różni się celem, odpowiedzią wzorcową lub elementami wymaganymi od reszty rodziny`,
+          `familyId: ćwiczenie z rodziny „${familyId}” różni się odpowiedzią wzorcową lub elementami wymaganymi od reszty rodziny`,
         );
       }
     }
@@ -152,23 +156,23 @@ export function validateSchoolPool(
   const calculationFamilies = new Map<string, number[]>();
   drafts.forEach((ex, index) => {
     if (ex.exerciseType !== "lesson_calculation" || !ex.calculation) return;
-    const id = ex.calculation.templateFamilyId;
-    const indexes = calculationFamilies.get(id) ?? [];
+    const key = JSON.stringify([ex.objectiveId, ex.calculation.templateFamilyId]);
+    const indexes = calculationFamilies.get(key) ?? [];
     indexes.push(index);
-    calculationFamilies.set(id, indexes);
+    calculationFamilies.set(key, indexes);
   });
-  for (const [familyId, indexes] of calculationFamilies) {
+  for (const indexes of calculationFamilies.values()) {
     const first = drafts[indexes[0]!]!;
     const firstCalculation = first.calculation!;
+    const familyId = firstCalculation.templateFamilyId;
     for (const index of indexes.slice(1)) {
       const ex = drafts[index]!;
       const calculation = ex.calculation!;
       const sameInputUnit = firstCalculation.kind !== "unit_conversion" || (
         calculation.kind === "unit_conversion" && calculation.params.fromUnit === firstCalculation.params.fromUnit
       );
-      if (ex.objectiveId !== first.objectiveId || calculation.kind !== firstCalculation.kind ||
-        calculation.unit !== firstCalculation.unit || !sameInputUnit) {
-        push(index, `templateFamilyId: ćwiczenie z rodziny „${familyId}” różni się celem, rodzajem obliczenia lub jednostkami od reszty rodziny`);
+      if (calculation.kind !== firstCalculation.kind || calculation.unit !== firstCalculation.unit || !sameInputUnit) {
+        push(index, `templateFamilyId: ćwiczenie z rodziny „${familyId}” różni się rodzajem obliczenia lub jednostkami od reszty rodziny`);
       }
     }
   }

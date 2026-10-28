@@ -41,6 +41,10 @@ export function LessonSentenceView({ task, busy, dock, handlers }: ExerciseProps
     ? task.prompt.prompt
     : task.prompt.statement;
   const hasAudio = task.prompt.kind !== "lesson_calculation" && task.prompt.audioAssetId !== undefined;
+  // Język pytania: rachunek zawsze po polsku; odpowiedź otwarta podaje go, gdy jest
+  // jednoznaczny (szkoła) — wtedy dziecko odpowiada w tym samym języku.
+  const knownLocale = calculation ? "pl-PL" : task.prompt.kind === "lesson_open_answer" ? task.prompt.promptLocale : undefined;
+  const sourceLang = knownLocale ?? "en-GB";
   const disabled = busy;
   const formId = `kid-lesson-sentence-${task.taskId}`;
 
@@ -50,7 +54,7 @@ export function LessonSentenceView({ task, busy, dock, handlers }: ExerciseProps
       task={task}
       content={(
         <>
-          <p className="kid-lesson-source" data-testid="kid-lesson-source" lang={calculation ? "pl-PL" : "en-GB"}>{source}</p>
+          <p className="kid-lesson-source" data-testid="kid-lesson-source" lang={sourceLang}>{source}</p>
           <form
             id={formId}
             className="kid-written"
@@ -66,7 +70,7 @@ export function LessonSentenceView({ task, busy, dock, handlers }: ExerciseProps
               onChange={(event) => { setText(event.target.value); handlers.onEdit(); }}
               placeholder={calculation ? messages.kid.lessonCalculationPlaceholder : messages.kid.typeWord}
               aria-label={calculation ? messages.kid.lessonCalculationInput : messages.kid.lessonSourceSentence}
-              {...(calculation ? { lang: "pl-PL" } : {})}
+              {...(knownLocale ? { lang: knownLocale } : {})}
               autoComplete="off"
               autoCorrect="off"
               autoCapitalize="off"

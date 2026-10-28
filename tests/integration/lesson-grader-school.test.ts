@@ -36,7 +36,7 @@ const OBJECTIVE_ID = "school.ddeck000.fotosynteza";
 const MATERIAL =
   "Fotosynteza to proces, w którym roślina z wody i dwutlenku węgla, przy udziale światła, wytwarza cukry.";
 
-async function seedSchoolDeck(childId: string): Promise<{ deckId: string }> {
+async function seedSchoolDeck(childId: string, options: { expectedForm?: string } = {}): Promise<{ deckId: string }> {
   const deckId = randomUUID();
   const versionId = randomUUID();
   const context = {
@@ -96,7 +96,7 @@ async function seedSchoolDeck(childId: string): Promise<{ deckId: string }> {
       prompt: "Co to jest fotosynteza?",
       answer: "Roślina z wody i dwutlenku węgla, przy udziale światła, wytwarza cukry.",
       acceptedAnswers: [], focus: ["wytwarza cukry"],
-      questionType: "definition", expectedForm: "explanation",
+      questionType: "definition", expectedForm: options.expectedForm ?? "explanation",
       requiredElements: [
         { id: "e1", text: "Roślina wytwarza cukry" },
         { id: "e2", text: "roślina wykorzystuje światło" },
@@ -273,6 +273,8 @@ describe("ocena szkolna dwuwymiarowa (integracja)", () => {
     expect(result.feedback!.hintPl).not.toContain("dwutlenku");
     // Typowe błędy zatwierdzone przez rodzica dochodzą do modelu (prywatny klucz zadania).
     expect(grader.requests.at(-1)?.school?.commonErrors).toEqual(["Fotosynteza to oddychanie rośliny."]);
+    // „Topic” to tytuł tematu, nie celu (ten sam wariant promptu dla wpisów cache).
+    expect(grader.requests.at(-1)?.topicTitle).toBe("Rośliny");
     // Nic nie zostało ujawnione, więc odpowiedź celu nie jest oznaczona jako wyeksponowana.
     const exposed = await pool.query(`select count(*)::int as count from learning_app.event_exposures x
       join learning_app.learning_events e on e.id = x.event_id where e.task_id = $1 and e.kind = 'feedback_issued'`, [openTask!.taskId]);
@@ -316,6 +318,39 @@ describe("ocena szkolna dwuwymiarowa (integracja)", () => {
     expect(assessments.rows[0]!.outcome).toBe("correct");
     expect(assessments.rows[0]!.details.knowledge).toBe("correct");
     expect(assessments.rows[0]!.details.precision).toBe("verbose");
+  });
+
+  it("forma one_sentence ogranicza precyzję tej próby, ale cache trzyma precyzję modelu", async () => {
+    const services = makeServices(new FakeAnswerGrader());
+    const child = await createChild(services, { displayName: "Dwuzdaniowy", avatarKey: "owl" });
+    const { deckId } = await seedSchoolDeck(child.id, { expectedForm: "one_sentence" });
+    const openTask = await reachOpenTask(services, child.id, deckId);
+
+    // Oba elementy trafione, krótko (fake: concise), ale w dwóch zdaniach.
+    const result = await submitAttempt(services, {
+      taskId: openTask.taskId, clientAttemptId: randomUUID(), modality: "text",
+      text: "Roślina wytwarza cukry. Roślina wykorzystuje światło.",
+    });
+    expect(result.feedback!.kind).toBe("great");
+    const assessment = await pool.query<{ details: { knowledge?: string; precision?: string; formOk?: boolean } }>(
+      "select details from learning_app.assessments where child_id = $1 and details ? 'knowledge'", [child.id]);
+    expect(assessment.rows[0]!.details).toMatchObject({ knowledge: "correct", precision: "verbose", formOk: false });
+    // Inny zapis tej samej odpowiedzi (jedno zdanie) może trafić w ten sam wpis cache — nie może dziedziczyć klamry.
+    const cached = await pool.query<{ precision: string }>("select precision from learning_app.lesson_verdicts");
+    expect(cached.rows.map((row) => row.precision)).toEqual(["concise"]);
+  });
+
+  it("kategoria błędu w cache jest ta sama co w ocenie (incorrect bez błędnych stwierdzeń = incomplete)", async () => {
+    const services = makeServices(new FakeAnswerGrader());
+    const child = await createChild(services, { displayName: "Niepełny", avatarKey: "cat" });
+    const { deckId } = await seedSchoolDeck(child.id);
+    const openTask = await reachOpenTask(services, child.id, deckId);
+    await submitAttempt(services, { taskId: openTask.taskId, clientAttemptId: randomUUID(), modality: "text", text: "Nie wiem, coś o liściach." });
+    const assessment = await pool.query<{ details: { knowledge?: string; errorCategory?: string } }>(
+      "select details from learning_app.assessments where child_id = $1 and details ? 'knowledge'", [child.id]);
+    expect(assessment.rows[0]!.details).toMatchObject({ knowledge: "incorrect", errorCategory: "incomplete" });
+    const cached = await pool.query<{ error_category: string }>("select error_category from learning_app.lesson_verdicts");
+    expect(cached.rows.map((row) => row.error_category)).toEqual(["incomplete"]);
   });
 
   it("bez skonfigurowanego gradera odpowiedź otwarta jest nieoceniona, bez kary", async () => {

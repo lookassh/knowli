@@ -80,6 +80,21 @@ pełny `createSchoolLesson` → `executeLessonGeneration` na materiale
 - Grader `school-grader-v2` (`eval:school-grader`): wiedza 19/20, brakujące
   elementy 19/20, 0 odrzuconych werdyktów, `BRAMKA: OK`.
 
+Po drugim review gałęzi (subagent; 2026-10-28) — rodziny w obrębie celu,
+sufiks rodzin przy dogenerowaniu, puste tablice v3, pomijanie wadliwych
+zagadnień, tytuł tematu dla gradera, kategoria i precyzja w cache, `lang`
+pytania szkolnego:
+- `eval:school-grader`: wiedza 20/20, brakujące elementy 19/20, precyzja
+  19/20, 0 odrzuconych werdyktów, `BRAMKA: OK`.
+- Trzy kolejne sondy generowania (pełny materiał ×2, zagadnienia 2–3 z pulą
+  30) zakończyły się `provider_timeout`: pojedyncza partia przekroczyła limit
+  90 s (`UMIEM_LESSON_GENERATION_REQUEST_TIMEOUT_MS`), przy innych partiach
+  14–86 s. Zapytanie do modelu (prompt i schemat) jest identyczne jak w sondzie 3
+  zakończonej publikacją, więc to zmienność czasu odpowiedzi providera; logika
+  po odpowiedzi modelu w tej rundzie zweryfikowana testami jednostkowymi
+  i integracyjnymi, nie sondą. Timeout partii kończy run bez automatycznego
+  ponowienia (zachowanie z `main`); limit wymaga decyzji operacyjnej.
+
 ## Etap 3 — Odpowiedź mówiona
 
 - [ ] Spike: polski STT (`pl-PL`) obecnego providera na głosie dziecka; decyzja

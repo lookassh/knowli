@@ -4,7 +4,8 @@ import { englishGrammarSubject } from "../../../domain/lessons/subjects/english-
 import { validatePool } from "../../../domain/lessons/pool-validation";
 import type { LessonExerciseDraft, LessonTopic } from "../../../domain/lessons/types";
 import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
-import { buildLessonPayload, buildObjectiveCriteria, collectBatchExerciseMetadata, countPerObjective, filterExercisesToRequestedObjective, isWellShapedRawExercise, lessonPayloadVersion, poolStageCounts, splitStages, stripParentAddedFlags, summarizeLessonPoolValidation, toExerciseDraft } from "./lesson-drafts";
+import { validateDynamicTopicData } from "../../../domain/lessons/topic-resolution";
+import { buildDynamicTopicData, buildLessonPayload, buildObjectiveCriteria, collectBatchExerciseMetadata, countPerObjective, filterExercisesToRequestedObjective, isWellShapedRawExercise, lessonPayloadVersion, poolStageCounts, scopeFamiliesToRun, splitStages, stripParentAddedFlags, summarizeLessonPoolValidation, toExerciseDraft, withoutEmptyV3Fields } from "./lesson-drafts";
 
 describe("calculation persistence and grading criteria", () => {
   const calculation = { kind: "scale_distance" as const, params: { scaleDenominator: 25000, mapDistanceCm: 3 }, unit: "m" as const, templateFamilyId: "scale" };
@@ -220,6 +221,63 @@ describe("countPerObjective (pula strukturalnie publikowalna, W3)", () => {
       expect(split.productive).toBeGreaterThanOrEqual(2);
       expect(split.independent).toBeGreaterThanOrEqual(2);
     }
+  });
+});
+
+describe("buildDynamicTopicData (wadliwe zagadnienie nie przerywa generacji)", () => {
+  const card = (n: number) => ({ title: `Karta ${n}`, body: `Treść karty ${n}.` });
+  const raw = (slug: string, cards = [card(1), card(2)], titlePl = `Zagadnienie ${slug}`) =>
+    ({ slug, titlePl, descriptionEn: "Topic description.", cards });
+  const validate = (objective: Parameters<NonNullable<Parameters<typeof buildDynamicTopicData>[3]>>[0]) =>
+    validateDynamicTopicData(schoolSubject, { titlePl: "Temat", objectives: [objective] });
+
+  it("pomija zagadnienie z jedną kartą albo pustym tytułem, a pozostałe zachowuje", () => {
+    const built = buildDynamicTopicData([raw("a"), raw("b", [card(1)]), raw("c", undefined, "  "), raw("d")], "deck", "Temat", validate);
+    expect(built.data?.objectives.map((o) => o.id)).toEqual(["school.ddeck.a", "school.ddeck.d"]);
+    expect(built.errors).toHaveLength(2);
+    expect(validateDynamicTopicData(schoolSubject, built.data!)).toEqual([]);
+  });
+
+  it("nadaje unikalne identyfikatory także wtedy, gdy sufiks koliduje z innym slugiem", () => {
+    const built = buildDynamicTopicData([raw("a"), raw("a_3"), raw("a")], "deck", "Temat", validate);
+    const ids = built.data!.objectives.map((o) => o.id);
+    expect(new Set(ids).size).toBe(3);
+    expect(validateDynamicTopicData(schoolSubject, built.data!)).toEqual([]);
+  });
+});
+
+describe("withoutEmptyV3Fields (puste tablice strict output to brak pola)", () => {
+  it("nie odrzuca poprawnego ćwiczenia gramatyki za puste tablice v3 z modelu", () => {
+    const grammarTopic = englishGrammarSubject.topics[0]!;
+    const objective = grammarTopic.objectives.find((o) => o.exerciseTypes.includes("lesson_gap"))!;
+    const raw = {
+      exerciseType: "lesson_gap", objectiveId: objective.id, instructionPl: "Uzupełnij.", stem: "He ___ football.",
+      answer: "plays", acceptedAnswers: [], focus: ["plays"],
+      requiredElements: [], supplementaryElements: [], commonErrors: [], sourceRefs: [],
+      questionType: null, expectedForm: null, familyId: null,
+    };
+    // Bez czyszczenia poprawne ćwiczenie gramatyki odpada (np. `sourceRefs: []` łamie minimum kontraktu).
+    expect(validatePool([toExerciseDraft(raw)], englishGrammarSubject, grammarTopic).rejected).toHaveLength(1);
+    const cleaned = withoutEmptyV3Fields(toExerciseDraft(raw));
+    for (const field of ["requiredElements", "supplementaryElements", "commonErrors", "sourceRefs"]) expect(cleaned).not.toHaveProperty(field);
+    const result = validatePool([cleaned], englishGrammarSubject, grammarTopic);
+    expect(result.rejected.flatMap((r) => r.errors)).toEqual([]);
+    expect(result.valid).toHaveLength(1);
+  });
+});
+
+describe("scopeFamiliesToRun (dogenerowanie nie dołącza do istniejących rodzin)", () => {
+  it("dodaje sufiks runu do familyId i templateFamilyId, zachowując poprawny slug", () => {
+    const runId = "3f2a9c1e-0000-4000-8000-000000000000";
+    const open = scopeFamiliesToRun({ exerciseType: "lesson_open_answer", objectiveId: "o", answer: "a", acceptedAnswers: [], focus: [], familyId: "f1" }, runId);
+    expect(open.familyId).toBe("f1-r3f2a9c");
+    const long = "a".repeat(56) + "-b";
+    const calc = scopeFamiliesToRun({ exerciseType: "lesson_calculation", objectiveId: "o", answer: "750 m", acceptedAnswers: [], focus: [],
+      calculation: { kind: "scale_distance", params: { scaleDenominator: 25000, mapDistanceCm: 3 }, unit: "m", templateFamilyId: long } }, runId);
+    const slug = calc.calculation!.templateFamilyId;
+    expect(slug.length).toBeLessThanOrEqual(64);
+    expect(slug).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+    expect(slug.endsWith("-r3f2a9c")).toBe(true);
   });
 });
 

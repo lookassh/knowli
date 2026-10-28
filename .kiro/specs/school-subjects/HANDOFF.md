@@ -275,13 +275,13 @@ Poniższe pozycje nie blokowały zamknięcia Etapów 1–2, ale Codex powinien o
 - Autor powinien zweryfikować fakty z `pilot-material.md` przed użyciem z dzieckiem. W materiale zauważono m.in. Merkatora w XVII zamiast XVI wieku oraz niespójne progi gór 300/500 m.
 - Minimalna długość cytatu 10 znaków i normalizacja małymi literami pozostały świadomie; bardzo krótki dokładny cytat, np. sama data, może zostać odrzucony.
 - Spójność rodziny jest sprawdzana głównie po identyfikatorach elementów, nie po pełnej treści każdego elementu; rodzina jednoelementowa jest możliwa.
-- Dogenerowanie nie ma tak pełnej walidacji rodziny względem całego istniejącego szkicu jak publikacja; publikacja pozostaje twardą bramką.
-- Jeden semantycznie wadliwy cel na etapie zagadnień nadal może zakończyć cały run, choć pominięcia ponad limit 8 i złe rekordy są liczone.
+- Rodzina pytań i rodzina rachunków żyją w obrębie celu, a dogenerowanie dokłada do slugów sufiks runu (2026-10-28, po drugim review), więc nowa partia nie dołącza do istniejącej rodziny; publikacja pozostaje twardą bramką.
+- Wadliwe zagadnienie z etapu zagadnień (np. jedna karta, pusty tytuł) jest pomijane i liczone w `droppedObjectiveCount` zamiast kończyć run (2026-10-28); run kończy się błędem tylko bez żadnego poprawnego zagadnienia.
 - Schematy structured output nie egzekwują wszystkich kardynalności; ostateczną ochroną jest walidacja serwerowa.
 - Fake provider uziemia ćwiczenia początkiem materiału i używa prostych heurystyk słownych/długości. Nie wykryje regresji jakości prawdziwego modelu.
-- W migawce celu tytuł tematu przekazywany graderowi może być tytułem celu; to kwestia jakości promptu, nie prywatności.
+- Grader dostaje jako „Topic” tytuł tematu, także z migawki celu (poprawione 2026-10-28; wcześniej tytuł celu, co zmieniało prompt gramatyki przy tym samym `promptVersion`).
 - W panelu/edytorze pozostały drobne kwestie UX z review, m.in. zachowanie pustych grup po usunięciu zagadnienia, textarea list oraz możliwy wyścig przy ładowaniu kartkówek.
-- Polska deterministyczna poprawna odpowiedź w części Kid UI może nadal korzystać z odziedziczonego `lang="en-GB"`; to drobna kwestia dostępności do poprawy przy pracy nad feedbackiem.
+- Pytanie otwarte szkoły dostaje w Kid DTO `promptLocale: "pl-PL"` i widok ustawia z niego `lang` (2026-10-28); gramatyka pola nie wysyła, bo język jej pytania bywa różny. Polska poprawna odpowiedź w feedbacku Kid UI może nadal dziedziczyć `lang="en-GB"`.
 - Snapshoty Drizzle dla migracji od 0018 są zaległym długiem repozytorium; runtime migrator działa na journalu i SQL, ale przyszłe `drizzle-kit generate` może pokazać dryf.
 - Zdanie w `design.md` o doklejaniu konkretnego brakującego elementu przy ujawnieniu jest starszym szkicem. Obecny kod po K2 używa szablonu kategorii i nie ujawnia wzorca przy pierwszej próbie; przy pracy nad feedbackiem uzgodnij tekst projektu z kodem i wymaganiem 5.7.
 

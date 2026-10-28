@@ -87,6 +87,15 @@ describe("materializeExercise — correctOption po ID (P1-1)", () => {
     expect(task.prompt.kind === "lesson_choice" ? task.prompt.visualSubject : undefined).toBe("girl");
   });
 
+  it("grammar open answer does not send a prompt locale (language of the prompt is ambiguous)", () => {
+    const objective = topic.objectives.find((o) => o.exerciseTypes.includes("lesson_open_answer"))!;
+    const task = materializeExercise({ independentCheck: true, reason: "due_check" }, "grammar-open", loaded({
+      exerciseType: "lesson_open_answer", objectiveId: objective.id, instructionPl: "Napisz.", prompt: "Write about your day.",
+      answer: "I play football.", acceptedAnswers: [], focus: ["play"], answerLocale: "en-GB", promptLocale: "pl-PL",
+    }), topic, subject);
+    expect(task.prompt).not.toHaveProperty("promptLocale");
+  });
+
   it("translation prompt is the Polish source and keeps answers private", () => {
     const task = materializeExercise(
       { independentCheck: false, reason: "practice" },
@@ -211,6 +220,8 @@ describe("materializeExercise — przedmiot szkolny (temat dynamiczny)", () => {
     expect((task.answerKey as { schoolCriteria?: { commonErrors?: string[] } }).schoolCriteria?.commonErrors)
       .toEqual(["Skala to wielkość mapy w centymetrach."]);
     const promptJson = JSON.stringify(task.prompt);
+    // Szkoła ma jeden język, więc pytanie dostaje jawny locale dla czytników ekranu.
+    expect(task.prompt).toMatchObject({ kind: "lesson_open_answer", promptLocale: "pl-PL" });
     expect(promptJson).not.toContain("Skala to wielkość mapy");
     expect(promptJson).not.toContain("informuje o pomniejszeniu");
     expect(promptJson).not.toContain("sourceRefs");

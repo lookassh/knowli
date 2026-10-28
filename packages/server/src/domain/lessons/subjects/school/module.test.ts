@@ -84,8 +84,11 @@ describe("school calculation validation", () => {
     expect(result.valid).toEqual([a, b]);
     expect(result.rejected.map((entry) => entry.exercise)).toEqual([duplicate]);
   });
+  it("treats the same template family slug in another objective as a separate family", () => {
+    const other = calculationDraft({ kind: "height_difference", params: { upperHeightM: 400, lowerHeightM: 150 }, unit: "m", templateFamilyId: "map-scale" }, { objectiveId: "school.other" });
+    expect(schoolSubject.validatePoolExtra!([calculationDraft(), other], { material: MATERIAL }).size).toBe(0);
+  });
   it.each([
-    { objectiveId: "school.other" },
     { calculation: { kind: "height_difference", params: { upperHeightM: 400, lowerHeightM: 150 }, unit: "m", templateFamilyId: "map-scale" } },
     { calculation: { ...scale, unit: "km" } },
   ] as const)("rejects inconsistent calculation template family %j", (overrides) => {
@@ -162,6 +165,20 @@ describe("przedmiot school", () => {
     expect(extra.size).toBe(0);
   });
 
+  it.each([
+    ["7 elementów wymaganych", { requiredElements: Array.from({ length: 7 }, (_, i) => ({ id: `e${i + 1}`, text: `element ${i + 1}` })) }],
+    ["odpowiedź wzorcowa ponad 300 znaków", { answer: "a".repeat(301) }],
+    ["cytat ponad 600 znaków", { sourceRefs: [{ quote: "b".repeat(601) }] }],
+    ["4 cytaty", { sourceRefs: Array.from({ length: 4 }, () => ({ quote: "wytwarza cukry" })) }],
+    ["5 typowych błędów", { commonErrors: ["a", "b", "c", "d", "e"] }],
+  ])("odrzuca ćwiczenie łamiące limit kontraktu DTO (%s), zanim trafi do szkicu", (_label, overrides) => {
+    // Szkic z polami ponad limit nie przeszedłby walidacji odpowiedzi API rodzica.
+    const topic = schoolSubject.buildDynamicTopic!(dynamicData);
+    const { valid, rejected } = validatePool([openDraft(overrides as Partial<LessonExerciseDraft>)], schoolSubject, topic);
+    expect(valid).toEqual([]);
+    expect(rejected).toHaveLength(1);
+  });
+
   it("odrzuca cytat spoza materiału, a cytat rodzica przepuszcza", () => {
     const forged = openDraft({ sourceRefs: [{ quote: "Rośliny jedzą słońce na śniadanie." }] });
     const extra = schoolSubject.validatePoolExtra!([forged], { material: MATERIAL });
@@ -197,6 +214,13 @@ describe("przedmiot school", () => {
     const { valid, rejected } = validatePool([a, b], schoolSubject, topic);
     expect(rejected).toEqual([]);
     expect(valid).toHaveLength(2);
+  });
+
+  it("ten sam slug rodziny w dwóch zagadnieniach to dwie niezależne rodziny (partie per cel)", () => {
+    // Model generuje każdy cel osobno i powtarza slugi typu „f1” — nie wolno przez to odrzucić drugiego celu.
+    const a = openDraft({ familyId: "f1", prompt: "Co to jest fotosynteza?" });
+    const b = openDraft({ familyId: "f1", objectiveId: "school.ddeck.chrzest", prompt: "Kiedy Mieszko przyjął chrzest?", answer: "W 966 roku.", focus: ["966"], requiredElements: [{ id: "e1", text: "966 rok" }] });
+    expect(schoolSubject.validatePoolExtra!([a, b], { material: MATERIAL }).size).toBe(0);
   });
 
   it("rodzina z identycznym tekstem pytania jest odrzucana", () => {

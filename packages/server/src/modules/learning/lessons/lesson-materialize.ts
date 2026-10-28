@@ -271,7 +271,12 @@ export function materializeExercise(
       }
     }
     case "lesson_open_answer": {
-      const prompt: TaskPrompt = { kind: "lesson_open_answer", instructionPl, prompt: payload.prompt ?? "", ...audio };
+      // Język pytania podajemy tylko, gdy przedmiot ma jeden język (szkoła); w gramatyce
+      // pytanie bywa angielskie albo jest polskim źródłem tłumaczenia — nie zgadujemy.
+      const locale = subject.promptLocale === subject.answerLocale ? subject.promptLocale : null;
+      const promptLocale: { promptLocale?: "pl-PL" | "en-GB" } =
+        locale === "pl-PL" || locale === "en-GB" ? { promptLocale: locale } : {};
+      const prompt: TaskPrompt = { kind: "lesson_open_answer", instructionPl, prompt: payload.prompt ?? "", ...audio, ...promptLocale };
       return { ...common, prompt, answerKey: baseKey, exposures: [] };
     }
     default:

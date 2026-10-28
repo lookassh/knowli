@@ -140,6 +140,9 @@ describe("model oceniający — mapowanie werdyktów", () => {
     expect(attempt.taskState).toBe("answered");
     expect(grader.callCount).toBe(1);
     expect((await verdictRows()).length).toBe(1);
+    // Regresja gramatyki: „Topic” w promptcie to tytuł tematu katalogu, jak przed migawką celu.
+    const catalogTopic = services.subjects.getTopic("english_grammar", "present_simple", 1);
+    expect(grader.requests[0]?.topicTitle).toBe(catalogTopic?.titlePl);
   });
 
   it("verdict almost → lesson_almost z fragmentami i correctText", async () => {
