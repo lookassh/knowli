@@ -139,4 +139,36 @@ describe("lesson exercise views", () => {
     fireEvent.click(screen.getByTestId("kid-lesson-check"));
     expect(sentenceProps.handlers.onSubmitText).toHaveBeenCalledWith("He plays.");
   });
+
+  it("calculation shows the Polish prompt and sends the typed result verbatim by click or Enter", () => {
+    const calculation = task({ kind: "lesson_calculation", instructionPl: "Oblicz.", prompt: "Na mapie w skali 1:25 000 odcinek ma 3 cm. Oblicz odległość w terenie w m." });
+    const props = makeExerciseProps(calculation);
+    const { unmount } = renderKid(<LessonSentenceView {...props} />);
+    const source = screen.getByTestId("kid-lesson-source");
+    expect(source.textContent).toContain("1:25 000");
+    expect(source.getAttribute("lang")).toBe("pl-PL");
+    const input = screen.getByTestId("kid-lesson-input") as HTMLInputElement;
+    expect(input.type).toBe("text");
+    expect(input.getAttribute("lang")).toBe("pl-PL");
+    expect(screen.queryByTestId("kid-lesson-listen")).toBeNull();
+    fireEvent.change(input, { target: { value: "0,75 km" } });
+    fireEvent.click(screen.getByTestId("kid-lesson-check"));
+    expect(props.handlers.onSubmitText).toHaveBeenCalledWith("0,75 km");
+    fireEvent.change(input, { target: { value: "1 250 m" } });
+    fireEvent.submit(input.closest("form")!);
+    expect(props.handlers.onSubmitText).toHaveBeenLastCalledWith("1 250 m");
+    fireEvent.click(screen.getByTestId("kid-skip"));
+    fireEvent.click(screen.getByTestId("kid-not-remember"));
+    expect(props.handlers.onSkip).toHaveBeenCalledOnce();
+    expect(props.handlers.onNotRemember).toHaveBeenCalledOnce();
+    unmount();
+
+    const busyProps = makeExerciseProps(calculation, { busy: true });
+    renderKid(<LessonSentenceView {...busyProps} />);
+    const busyInput = screen.getByTestId("kid-lesson-input") as HTMLInputElement;
+    expect(busyInput.disabled).toBe(true);
+    fireEvent.submit(busyInput.closest("form")!);
+    expect((screen.getByTestId("kid-lesson-check") as HTMLButtonElement).disabled).toBe(true);
+    expect(busyProps.handlers.onSubmitText).not.toHaveBeenCalled();
+  });
 });

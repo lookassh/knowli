@@ -571,6 +571,9 @@ export const messages = {
     lessonGapHint: "Podpowiedź: {hint}",
     // Zdanie wyjściowe (error_fix/transform/open_answer).
     lessonSourceSentence: "Zdanie",
+    // Zadanie rachunkowe (lesson_calculation): pole wyniku z jednostką.
+    lessonCalculationInput: "Twój wynik",
+    lessonCalculationPlaceholder: "Wpisz wynik, np. 750 m",
     // Podsumowanie lekcji (per cel), bez procentów.
     lessonSummaryTitle: "Ćwiczyłeś reguły",
     lessonSummaryObjective: "Ćwiczyłeś: {title}",

@@ -40,4 +40,10 @@ describe("getExercisePresentation — gałęzie lekcji", () => {
       kind: "lesson_short_answer", question: "Jaka to osoba?", options: [opt("3.", 7), opt("1.", 8)],
     })).instruction).toBe("Jaka to osoba?");
   });
+
+  it("lesson_calculation bierze polecenie z instructionPl", () => {
+    expect(getExercisePresentation(lessonTask({
+      kind: "lesson_calculation", instructionPl: "Oblicz.", prompt: "Przelicz 0,75 km na m.",
+    }))).toEqual({ instruction: "Oblicz.", icon: "pencil" });
+  });
 });

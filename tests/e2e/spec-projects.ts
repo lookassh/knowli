@@ -36,6 +36,7 @@ export const MOCKED_SPECS: readonly string[] = [
     "kid-responsive.spec.ts",
   "kid-theme-scope.spec.ts",
   "kid-ui-layout.spec.ts",
+  "lesson-calculation-layout.spec.ts",
   "lesson-kid.spec.ts",
   "parent-work-card.spec.ts",
   "picture-choice-layout.spec.ts",
