@@ -23,6 +23,14 @@ const input: LessonPoolInput = {
 };
 
 describe("lessonPoolJsonSchema", () => {
+  it("requires 1–3 quotes per exercise when grounding is required, keeps them optional otherwise", () => {
+    const grounded = lessonPoolJsonSchema({ ...input, groundingRequired: true }) as any;
+    expect(grounded.properties.exercises.items.properties.sourceRefs).toMatchObject({ type: "array", minItems: 1, maxItems: 3 });
+    const plain = lessonPoolJsonSchema(input) as any;
+    expect(plain.properties.exercises.items.properties.sourceRefs.type).toEqual(["null", "array"]);
+    expect(plain.properties.exercises.items.properties.sourceRefs).not.toHaveProperty("minItems");
+  });
+
   it("gives calculations a strict parameter-only branch, with all three closed kinds", () => {
     const schema = lessonPoolJsonSchema({
       ...input,

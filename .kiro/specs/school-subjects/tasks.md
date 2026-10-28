@@ -95,6 +95,44 @@ pytania szkolnego:
   i integracyjnymi, nie sondą. Timeout partii kończy run bez automatycznego
   ponowienia (zachowanie z `main`); limit wymaga decyzji operacyjnej.
 
+Wersja modelu (2026-10-28): alias OpenRouter `deepseek/deepseek-v4.1-flash`
+wskazuje na `deepseek-v4.1-flash-20260910` — wszystkie wyniki powyżej dotyczą
+tej wersji. Porównanie z `deepseek/deepseek-v4.1-flash-1017` (`20261017`,
+oba `UMIEM_*_MODEL` w `.env` worktree):
+- `eval:school-grader` ×3: wiedza 19/20, 18/20, 19/20; jeden przebieg
+  z odrzuconym werdyktem (G15) i `BRAMKA: NIE SPEŁNIONA`, dwa `BRAMKA: OK`.
+- Sonda generowania przy domyślnym limicie 90 s: `provider_timeout` na
+  pierwszej partii. Z limitem 240 s (tylko w sondzie): run udany, partie
+  7–160 s, run 468 s, ale z 57 surowych ćwiczeń 33 odrzucone (30 × `sourceRefs`)
+  i szkic niepublikowalny (luki w 6 z 8 zagadnień); 3 rachunki zgodne z kodem.
+  Trzy izolowane partie dla zagadnień z odrzuceniami dały 22 ćwiczenia
+  z poprawnymi cytatami, więc normalizacja uziemienia nie jest przyczyną.
+
+Przyczyna odrzuceń `sourceRefs` (diagnoza 2026-10-28): nie złe cytaty, tylko
+ich BRAK. W ok. połowie odpowiedzi model zwracał `sourceRefs: []` dla
+większości ćwiczeń (np. 9 z 10), a cytaty, które podawał, były zawsze dokładne
+(0 złych na ~48). Schemat structured output gałęzi zwykłych ćwiczeń nie miał
+`minItems`, więc pusta tablica była legalna. Poprawka: `minItems: 1,
+maxItems: 3` przy `groundingRequired` (jak w gałęzi rachunków). Ta sama
+konfiguracja (`-1017`, rozumowanie wyłączone, przypięty Nebius): przed — 3 z 6
+odpowiedzi z masowym brakiem cytatów; po — 6 z 6 kompletnych, 65 cytatów,
+0 złych. Partia „Skala mapy” (10 ćwiczeń) po poprawce, bez przypięcia
+dostawcy, po 2 przebiegi:
+- `-1017`, rozumowanie domyślne (~8 tys. tokenów rozumowania): 44–48 s, 10/10 ×2.
+- `-1017`, rozumowanie wyłączone (`reasoning: {enabled: false}`): 11–13 s, 11/12, 9/11.
+- wersja wrześniowa, rozumowanie wyłączone: 17–19 s, 9/10 ×2.
+- `z-ai/glm-5.3-flash` (rozumowania nie da się wyłączyć): 14–24 s, 1/11, 2/10 —
+  wypełnia pola v3 (`questionType`, `expectedForm` itd.) także w typach
+  zamkniętych, co walidacja odrzuca.
+
+Dostawcy OpenRouter: każdy z tych modeli ma ~40 endpointów (fp4/nvfp4/mxfp4/fp8),
+ale przypięcie do jednego (Nebius) nie usunęło dwubiegunowych wyników przed
+poprawką schematu — główną przyczyną był schemat, nie dostawca. Endpoint
+samego DeepSeek i Z.AI odpada przez ustawienie konta „Paid model training
+violation” (zakaz dostawców trenujących na danych) — zostawić, bo grader
+dostaje odpowiedzi dzieci. Wyłączanie rozumowania i wybór dostawcy nie są
+jeszcze opcją konfiguracji adaptera (testowano parametrami tylko w sondzie).
+
 ## Etap 3 — Odpowiedź mówiona
 
 - [ ] Spike: polski STT (`pl-PL`) obecnego providera na głosie dziecka; decyzja

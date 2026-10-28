@@ -53,7 +53,12 @@ function lessonExerciseSchema(
       commonErrors: { type: ["null", "array"], items: { type: "string" } },
       expectedForm: { type: ["null", "string"], enum: [null, "short", "one_sentence", "explanation", "list"] },
       familyId: { type: ["null", "string"] },
-      sourceRefs: input.groundingRequired ? { type: "array", items: quoteItem } : nullable({ type: "array", items: quoteItem }),
+      // Przy uziemieniu tablica cytatów musi być NIEPUSTA już w schemacie: bez
+      // minItems model w ok. połowie odpowiedzi zwracał `[]` dla większości ćwiczeń
+      // (sonda na prawdziwym LLM), a walidacja odrzucała je potem jako nieuziemione.
+      sourceRefs: input.groundingRequired
+        ? { type: "array", minItems: 1, maxItems: 3, items: quoteItem }
+        : nullable({ type: "array", items: quoteItem }),
     },
   };
 }
