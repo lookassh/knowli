@@ -74,6 +74,8 @@ export interface LessonPoolInput {
   readonly countPerObjective: number;
   readonly stageCounts: LlmLessonStageCounts;
   readonly graderAvailable: boolean;
+  /** Czy każde ćwiczenie MUSI nieść cytaty źródłowe z materiału (przedmioty z uziemieniem). */
+  readonly groundingRequired?: boolean;
   /** Tożsamość duplikatu w obrębie puli; domyślnie zgodność odpowiedzi. */
   readonly deduplication?: "answer" | "exercise";
   /** Odpowiedzi już w puli (dla dogenerowania bez duplikatów). */
@@ -82,6 +84,18 @@ export interface LessonPoolInput {
   readonly existingExercises?: readonly { objectiveId: string; exerciseType: string; stimulus: string }[];
 }
 
+/**
+ * Wejście generacji zagadnień tematu dynamicznego (przedmioty szkolne):
+ * model wyprowadza z materiału cele nauki z kartami. Zwraca surowe obiekty;
+ * kształt i semantykę waliduje serwer (Zod + reguły katalogu).
+ */
+export interface LessonObjectivesInput {
+  readonly subjectTitle: string;
+  readonly topicTitle: string;
+  readonly material: string;
+  readonly instruction?: string;
+  readonly generationRole: string;
+}
 export interface LlmProvider {
   readonly name: string;
   readonly model: string;
@@ -94,6 +108,10 @@ export interface LlmProvider {
    * Zwraca surowe ćwiczenia (walidacja w domenie, `pool-validation.ts`) oraz
    * przykłady per cel do kart lekcji. Port nie waliduje kształtu.
    */
+  generateLessonObjectives(
+    input: LessonObjectivesInput,
+    signal?: AbortSignal,
+  ): Promise<{ objectives: unknown[] }>;
   generateLessonPool(
     input: LessonPoolInput,
     signal?: AbortSignal,
@@ -208,8 +226,23 @@ export interface GraderInput {
   };
   /** Zatwierdzone warianty poprawnej odpowiedzi (dane referencyjne). */
   readonly acceptedAnswers: readonly string[];
-  /** Odpowiedź dziecka ≤ 200 znaków, przekazywana jako dane. */
+  /** Odpowiedź dziecka przekazywana jako dane: ≤ 200 znaków (lekcje), ≤ 600 (odpowiedzi szkolne). */
   readonly childAnswer: string;
+  /**
+   * Dane ścieżki szkolnej (Etap 2): elementy wymagane ćwiczenia, forma i cytaty
+   * źródłowe. Obecność przełącza adapter na werdykt dwuwymiarowy i prompt
+   * `school-grader-v2`; brak = dotychczasowy werdykt v1.
+   */
+  readonly school?: {
+    readonly question: string;
+    readonly modelAnswer: string;
+    readonly requiredElements: readonly { readonly id: string; readonly text: string }[];
+    readonly supplementaryElements: readonly string[];
+    /** Typowe błędne odpowiedzi/stwierdzenia (dane referencyjne oceny). */
+    readonly commonErrors: readonly string[];
+    readonly expectedForm: string;
+    readonly sourceQuotes: readonly string[];
+  };
 }
 
 /**
@@ -222,6 +255,8 @@ export interface AnswerGraderProvider {
   readonly name: string;
   readonly model: string;
   readonly promptVersion: string;
+  /** Wersja promptu dla konkretnego wejścia (szkoła/grupa); brak = `promptVersion`. */
+  promptVersionForInput?(input: GraderInput): string;
   grade(input: GraderInput, signal: AbortSignal): Promise<unknown>;
 }
 

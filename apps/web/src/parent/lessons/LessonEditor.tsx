@@ -20,6 +20,7 @@ import {
   createLessonSnapshot,
   groupExercisesByObjectiveAndStage,
   lessonExerciseChanged,
+  nextRequiredElementId,
   toLessonDraftPatch,
   type EditableLessonExercise,
   type EditableLessonForm,
@@ -179,6 +180,27 @@ export default function LessonEditor({
     );
   };
 
+  const mutateDynamicObjective = (objectiveId: string, patch: Partial<{ titlePl: string; cards: { title: string; body: string }[] }>) => {
+    markDirty();
+    setForm((current) =>
+      current?.dynamicObjectives
+        ? { ...current, dynamicObjectives: current.dynamicObjectives.map((o) => (o.id === objectiveId ? { ...o, ...patch } : o)) }
+        : current,
+    );
+  };
+
+  const removeDynamicObjective = (objectiveId: string) => {
+    markDirty();
+    setForm((current) =>
+      current?.dynamicObjectives
+        ? {
+            ...current,
+            dynamicObjectives: current.dynamicObjectives.filter((o) => o.id !== objectiveId),
+            exercises: current.exercises.filter((ex) => ex.objectiveId !== objectiveId),
+          }
+        : current,
+    );
+  };
   // Edycja jednej linii przykładu danego celu (wym. 3.3): rodzic poprawia błędny
   // przykład AI przed publikacją. Zmiana brudzi formularz jak każda inna edycja.
   const mutateExampleLine = (objectiveId: string, lineIndex: number, value: string) => {
@@ -379,6 +401,11 @@ export default function LessonEditor({
   const examples = editable ? (examplesForm ?? draft?.examples ?? {}) : (deck?.published?.examples ?? {});
   const topic = catalog?.subjects.find((subject) => subject.id === active?.subjectId)?.topics
     .find((candidate) => candidate.id === active?.topicId && candidate.version === active?.topicVersion);
+  // Cele i karty zestawów szkolnych pochodzą z DTO (temat dynamiczny), nie z katalogu.
+  const objectiveMeta = (objectiveId: string) =>
+    form?.dynamicObjectives?.find((objective) => objective.id === objectiveId)
+    ?? active?.dynamicTopic?.objectives.find((objective) => objective.id === objectiveId)
+    ?? topic?.objectives.find((objective) => objective.id === objectiveId);
   const indexByClientKey = new Map((form?.exercises ?? []).map((ex, index) => [ex.clientKey, index]));
   const groups = form ? groupExercisesByObjectiveAndStage(form.exercises, active?.objectiveIds ?? []) : [];
 
@@ -462,11 +489,38 @@ export default function LessonEditor({
           <p className="muted">{messages.lessons.exampleHint}</p>
           {active.objectiveIds.map((objectiveId) => (
             <div key={objectiveId} data-testid={`examples-${objectiveId}`}>
-              <strong>{topic?.objectives.find((objective) => objective.id === objectiveId)?.titlePl ?? objectiveId}</strong>
-              {topic?.objectives.find((objective) => objective.id === objectiveId)?.cards.map((card, index) => (
+              {editable && form?.dynamicObjectives?.some((o) => o.id === objectiveId) ? (
+                <>
+                  <label>
+                    {messages.lessons.dynamicObjectiveTitleLabel}
+                    <input data-testid={`dynamic-objective-title-${objectiveId}`} value={objectiveMeta(objectiveId)?.titlePl ?? ""} disabled={busy}
+                      onChange={(e) => mutateDynamicObjective(objectiveId, { titlePl: e.target.value })} />
+                  </label>
+                  <button type="button" data-testid={`dynamic-objective-remove-${objectiveId}`} disabled={busy}
+                    onClick={() => removeDynamicObjective(objectiveId)}>
+                    {messages.lessons.removeDynamicObjective}
+                  </button>
+                </>
+              ) : (
+                <strong>{objectiveMeta(objectiveId)?.titlePl ?? objectiveId}</strong>
+              )}
+              {objectiveMeta(objectiveId)?.cards.map((card, index) => (
                 <article key={index} className="card" data-testid={`lesson-card-preview-${objectiveId}`}>
-                  <h4>{card.title}</h4>
-                  <p>{card.body.split("{{examples}}").join(" ").replace(/\s+/g, " ").trim()}</p>
+                  {editable && form?.dynamicObjectives?.some((o) => o.id === objectiveId) ? (
+                    <>
+                      <input data-testid={`dynamic-card-title-${objectiveId}-${index}`} value={card.title} disabled={busy}
+                        aria-label={messages.lessons.dynamicCardTitleLabel}
+                        onChange={(e) => mutateDynamicObjective(objectiveId, { cards: objectiveMeta(objectiveId)!.cards.map((c, ci) => (ci === index ? { ...c, title: e.target.value } : c)) })} />
+                      <textarea data-testid={`dynamic-card-body-${objectiveId}-${index}`} value={card.body} disabled={busy}
+                        aria-label={messages.lessons.dynamicCardBodyLabel}
+                        onChange={(e) => mutateDynamicObjective(objectiveId, { cards: objectiveMeta(objectiveId)!.cards.map((c, ci) => (ci === index ? { ...c, body: e.target.value } : c)) })} />
+                    </>
+                  ) : (
+                    <>
+                      <h4>{card.title}</h4>
+                      <p>{card.body.split("{{examples}}").join(" ").replace(/\s+/g, " ").trim()}</p>
+                    </>
+                  )}
                   <ul>{(examples[objectiveId] ?? []).map((line, i) => line.trim() && <li key={i}>{line.trim()}</li>)}</ul>
                 </article>
               ))}
@@ -500,7 +554,7 @@ export default function LessonEditor({
 
       {groups.map((group) => (
         <section className="card" key={group.objectiveId} data-testid={`objective-group-${group.objectiveId}`}>
-          <h3>{group.objectiveId}</h3>
+          <h3>{objectiveMeta(group.objectiveId)?.titlePl ?? group.objectiveId}</h3>
           {group.stages.map((stageGroup) => (
             <div key={stageGroup.stage} data-testid={`stage-${group.objectiveId}-${stageGroup.stage}`}>
               <h4>{messages.lessons.stages[stageGroup.stage]}</h4>
@@ -619,7 +673,100 @@ export default function LessonEditor({
                           onChange={(e) => mutateExercise(ex.clientKey, { focusText: e.target.value })} />
                       </label>
 
-                      {audio && (
+                      {ex.familyId && (
+                        <p className="muted" data-testid={`exercise-family-${index}`}>
+                          {messages.lessons.familyLabel.replace("{family}", ex.familyId)}
+                        </p>
+                      )}
+                      {ex.exerciseType === "lesson_open_answer" && ex.questionType && (
+                        <label>
+                          {messages.lessons.questionTypeLabel}
+                          <select data-testid={`exercise-qtype-${index}`} value={ex.questionType} disabled={!editable || busy}
+                            onChange={(e) => mutateExercise(ex.clientKey, { questionType: e.target.value })}>
+                            {Object.entries(messages.lessons.questionTypes).map(([value, label]) => (
+                              <option key={value} value={value}>{label}</option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                      {ex.requiredElements && (
+                        <fieldset>
+                          <legend>{messages.lessons.requiredElementsLabel}</legend>
+                          {ex.requiredElements.map((el, ei) => (
+                            <span key={el.id} className="row">
+                              <input data-testid={`exercise-required-${index}-${ei}`} value={el.text} disabled={!editable || busy}
+                                aria-label={messages.lessons.requiredElementLabel.replace("{n}", String(ei + 1))}
+                                onChange={(e) => mutateExercise(ex.clientKey, { requiredElements: ex.requiredElements!.map((o) => (o.id === el.id ? { ...o, text: e.target.value } : o)) })} />
+                              {editable && ex.requiredElements!.length > 1 && (
+                                <button type="button" data-testid={`exercise-required-remove-${index}-${ei}`} disabled={busy}
+                                  onClick={() => mutateExercise(ex.clientKey, { requiredElements: ex.requiredElements!.filter((o) => o.id !== el.id) })}>
+                                  {messages.lessons.removeRequiredElement}
+                                </button>
+                              )}
+                            </span>
+                          ))}
+                          {editable && ex.requiredElements!.length < 6 && (
+                            <button type="button" data-testid={`exercise-required-add-${index}`} disabled={busy}
+                              onClick={() => mutateExercise(ex.clientKey, { requiredElements: [...ex.requiredElements!, { id: nextRequiredElementId(ex.requiredElements!), text: "" }] })}>
+                              {messages.lessons.addRequiredElement}
+                            </button>
+                          )}
+                        </fieldset>
+                      )}
+                      {ex.supplementaryElements && (
+                        <label>
+                          {messages.lessons.supplementaryLabel}
+                          <textarea data-testid={`exercise-supplementary-${index}`} value={ex.supplementaryElements.join("\n")} disabled={!editable || busy}
+                            onChange={(e) => mutateExercise(ex.clientKey, { supplementaryElements: e.target.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean) })} />
+                        </label>
+                      )}
+                      {ex.commonErrors && (
+                        <label>
+                          {messages.lessons.commonErrorsLabel}
+                          <textarea data-testid={`exercise-common-errors-${index}`} value={ex.commonErrors.join("\n")} disabled={!editable || busy}
+                            onChange={(e) => mutateExercise(ex.clientKey, { commonErrors: e.target.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean) })} />
+                        </label>
+                      )}
+                      {ex.exerciseType === "lesson_open_answer" && ex.expectedForm && (
+                        <label>
+                          {messages.lessons.expectedFormLabel}
+                          <select data-testid={`exercise-form-${index}`} value={ex.expectedForm} disabled={!editable || busy}
+                            onChange={(e) => mutateExercise(ex.clientKey, { expectedForm: e.target.value })}>
+                            {Object.entries(messages.lessons.expectedForms).map(([value, label]) => (
+                              <option key={value} value={value}>{label}</option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                      {ex.sourceRefs && (
+                        <fieldset data-testid={`exercise-sources-${index}`}>
+                          <legend>{messages.lessons.sourceRefsLabel}</legend>
+                          {ex.sourceRefs.map((ref, ri) => (
+                            <span key={ri} className="row">
+                              <input data-testid={`exercise-source-${index}-${ri}`} value={ref.quote} disabled={!editable || busy}
+                                aria-label={messages.lessons.sourceRefQuoteLabel.replace("{n}", String(ri + 1))}
+                                onChange={(e) => mutateExercise(ex.clientKey, { sourceRefs: ex.sourceRefs!.map((r, rj) => (rj === ri ? { ...r, quote: e.target.value } : r)) })} />
+                              <label>
+                                <input type="checkbox" data-testid={`exercise-source-parent-${index}-${ri}`} checked={ref.parentAdded === true} disabled={!editable || busy}
+                                  onChange={(e) => mutateExercise(ex.clientKey, { sourceRefs: ex.sourceRefs!.map((r, rj) => (rj === ri ? { quote: r.quote, ...(e.target.checked ? { parentAdded: true } : {}) } : r)) })} />
+                                {messages.lessons.parentSourceLabel}
+                              </label>
+                              {editable && ex.sourceRefs!.length > 1 && (
+                                <button type="button" data-testid={`exercise-source-remove-${index}-${ri}`} disabled={busy}
+                                  onClick={() => mutateExercise(ex.clientKey, { sourceRefs: ex.sourceRefs!.filter((_, rj) => rj !== ri) })}>
+                                  {messages.lessons.removeSourceRef}
+                                </button>
+                              )}
+                            </span>
+                          ))}
+                          {editable && ex.sourceRefs!.length < 3 && (
+                            <button type="button" data-testid={`exercise-source-add-${index}`} disabled={busy}
+                              onClick={() => mutateExercise(ex.clientKey, { sourceRefs: [...ex.sourceRefs!, { quote: "", parentAdded: true }] })}>
+                              {messages.lessons.addSourceRef}
+                            </button>
+                          )}
+                        </fieldset>
+                      )}                      {audio && (
                         <div className="row">
                           <span data-testid={`exercise-audio-state-${index}`}>{audioStateText(audio.state)}</span>
                           <button type="button" data-testid={`exercise-play-${index}`}

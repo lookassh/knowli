@@ -13,6 +13,7 @@ function lessonExerciseSchema(
   if (allowedTypes.length === 0) {
     throw new Error(`objective ${objective.id} has no supported pool exercise types`);
   }
+  const quoteItem = { type: "object", additionalProperties: false, required: ["quote"], properties: { quote: { type: "string" } } };
   const idTextItem = {
     type: "object",
     additionalProperties: false,
@@ -29,7 +30,8 @@ function lessonExerciseSchema(
     required: [
       "exerciseType", "objectiveId", "answer", "acceptedAnswers", "focus", "instructionPl",
       "stem", "statement", "prompt", "hint", "transformId", "noticeSegments", "visualSubject", "options",
-      "correctOption", "items",
+      "correctOption", "items", "questionType", "requiredElements", "supplementaryElements",
+      "commonErrors", "expectedForm", "familyId", "sourceRefs",
     ],
     properties: {
       exerciseType: { type: "string", enum: allowedTypes },
@@ -48,6 +50,13 @@ function lessonExerciseSchema(
       options: nullable({ type: "array", items: idTextItem }),
       correctOption: { type: ["null", "string"] },
       items: nullable({ type: "array", items: idTextItem }),
+      questionType: { type: ["null", "string"], enum: [null, "definition", "enumeration", "cause", "comparison", "fact", "process"] },
+      requiredElements: nullable({ type: "array", items: idTextItem }),
+      supplementaryElements: { type: ["null", "array"], items: { type: "string" } },
+      commonErrors: { type: ["null", "array"], items: { type: "string" } },
+      expectedForm: { type: ["null", "string"], enum: [null, "short", "one_sentence", "explanation", "list"] },
+      familyId: { type: ["null", "string"] },
+      sourceRefs: input.groundingRequired ? { type: "array", items: quoteItem } : nullable({ type: "array", items: quoteItem }),
     },
   };
 }

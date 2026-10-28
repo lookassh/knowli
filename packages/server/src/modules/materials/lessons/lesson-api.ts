@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import {
+  LessonDynamicTopicPatchSchema,
   LessonExerciseInputSchema,
   type AssignmentDto,
   type CoverageGapDto,
@@ -30,7 +31,8 @@ import { AppError } from "../../../errors";
 import { computeTargetKey } from "../../../domain/target-key";
 import { DEFAULT_LESSON_POLICY } from "../../../domain/lessons/lesson-policy";
 import { poolCoverage, validatePool } from "../../../domain/lessons/pool-validation";
-import type { LessonExerciseDraft, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
+import type { DynamicTopicData, LessonExerciseDraft, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
+import { resolveLessonTopic, validateDynamicTopicData } from "../../../domain/lessons/topic-resolution";
 import { assertAssetPublishable, reconcileDraftAssetsTx } from "../media-reconciliation";
 import { copyRevisionsSkillsAssets } from "../decks";
 import { supersedeLessonRuns } from "../generation-runs";
@@ -40,7 +42,7 @@ import {
   createVersionFromPublished,
   lockVersion,
 } from "../version-ops";
-import { buildLessonPayload, buildObjectiveCriteria, toExerciseDraft } from "./lesson-drafts";
+import { buildLessonPayload, buildObjectiveCriteria, lessonPayloadVersion, splitByPoolExtra, toExerciseDraft } from "./lesson-drafts";
 
 /**
  * API rodzica dla lekcji (zadanie 11). Cienka logika serwerowa za routerem:
@@ -61,6 +63,10 @@ interface LessonContextView {
   objectiveIds: string[];
   examples: Record<string, string[]>;
   rejectedCount: number;
+  droppedObjectiveCount?: number;
+  material: string;
+  subjectTitlePl?: string;
+  dynamicTopic?: DynamicTopicData;
 }
 
 function readLessonContext(raw: Record<string, unknown> | null): LessonContextView {
@@ -72,6 +78,10 @@ function readLessonContext(raw: Record<string, unknown> | null): LessonContextVi
     objectiveIds: ctx.objectiveIds ?? [],
     examples: ctx.examples ?? {},
     rejectedCount: ctx.rejectedCount ?? 0,
+    ...(ctx.droppedObjectiveCount ? { droppedObjectiveCount: ctx.droppedObjectiveCount } : {}),
+    material: ctx.material ?? "",
+    ...(ctx.subjectTitlePl ? { subjectTitlePl: ctx.subjectTitlePl } : {}),
+    ...(ctx.dynamicTopic ? { dynamicTopic: ctx.dynamicTopic } : {}),
   };
 }
 
@@ -84,11 +94,11 @@ function requireSubject(services: Services, subjectId: string): SubjectModule {
   return subject;
 }
 
-/** Temat przypięty w `lesson_context` wersji (version z rejestru), lub `validation`. */
-function requireTopic(services: Services, subjectId: string, topicId: string, version: number): LessonTopic {
-  const topic = services.subjects.getTopic(subjectId, topicId, version);
+/** Temat przypięty w `lesson_context` wersji (katalogowy lub dynamiczny), lub `validation`. */
+function requireTopic(services: Services, context: LessonContextView): LessonTopic {
+  const topic = resolveLessonTopic(services.subjects, context)?.topic;
   if (!topic) {
-    throw new AppError("validation", { message: `unknown topic: ${subjectId}/${topicId}@${version}` });
+    throw new AppError("validation", { message: `unknown topic: ${context.subjectId}/${context.topicId}@${context.topicVersion}` });
   }
   return topic;
 }
@@ -154,9 +164,49 @@ function exerciseDtoFromPayload(
     ...(draft.options === undefined ? {} : { options: draft.options.map((o) => ({ ...o })) }),
     ...(draft.correctOption === undefined ? {} : { correctOption: draft.correctOption }),
     ...(draft.items === undefined ? {} : { items: draft.items.map((o) => ({ ...o })) }),
+    ...(draft.questionType === undefined ? {} : { questionType: draft.questionType }),
+    ...(draft.requiredElements === undefined ? {} : { requiredElements: draft.requiredElements.map((el) => ({ ...el })) }),
+    ...(draft.supplementaryElements === undefined ? {} : { supplementaryElements: [...draft.supplementaryElements] }),
+    ...(draft.commonErrors === undefined ? {} : { commonErrors: [...draft.commonErrors] }),
+    ...(draft.expectedForm === undefined ? {} : { expectedForm: draft.expectedForm }),
+    ...(draft.familyId === undefined ? {} : { familyId: draft.familyId }),
+    ...(draft.sourceRefs === undefined ? {} : { sourceRefs: draft.sourceRefs.map((ref) => ({ ...ref })) }),
   };
 }
 
+/** Minima pokrycia publikacji przedmiotu (fallback: polityka domyślna lekcji). */
+function poolMinimumsOf(services: Services, subjectId: string) {
+  return services.subjects.getSubject(subjectId)?.poolMinimums ?? DEFAULT_LESSON_POLICY.poolMinimums;
+}
+
+/**
+ * Dodatkowa reguła szkoły: zagadnienie potrzebuje co najmniej dwóch RÓŻNYCH
+ * pytań otwartych (różne odpowiedzi wzorcowe), nie jednej rodziny sformułowań.
+ * Zwraca braki w kształcie CoverageGap (etap independent).
+ */
+function distinctOpenAnswerGaps(
+  subject: SubjectModule,
+  drafts: readonly LessonExerciseDraft[],
+  objectiveIds: readonly string[],
+): CoverageGapDto[] {
+  if (subject.usesV3Payload !== true) return [];
+  const gaps: CoverageGapDto[] = [];
+  for (const objectiveId of objectiveIds) {
+    const distinct = new Set(
+      drafts
+        .filter((d) => d.objectiveId === objectiveId && d.exerciseType === "lesson_open_answer")
+        .map((d) => (subject.normalizer.normalize(d.answer)[0] ?? []).join(" ")),
+    );
+    if (distinct.size < 2) {
+      gaps.push({ objectiveId, stage: "independent", required: 2, actual: distinct.size });
+    }
+  }
+  return gaps;
+}
+/** Łączy braki pokrycia etapów z brakami reguły różnych pytań otwartych bez duplikatów per cel+etap. */
+function mergeCoverage(base: CoverageGapDto[], extra: CoverageGapDto[]): CoverageGapDto[] {
+  return [...base, ...extra.filter((g) => !base.some((b) => b.objectiveId === g.objectiveId && b.stage === g.stage))];
+}
 /** Buduje `LessonDraftDto` wersji (szkic lub opublikowana): ćwiczenia, pokrycie, media. */
 async function readLessonDraftDto(
   db: Executor,
@@ -190,10 +240,10 @@ async function readLessonDraftDto(
 
   const exercises = revisions.map((r) => exerciseDtoFromPayload(r.itemId, r.id, r.payload));
   const drafts: LessonExerciseDraft[] = revisions.map((r) => toExerciseDraft(r.payload));
-  const coverage: CoverageGapDto[] = poolCoverage(
-    drafts,
-    context.objectiveIds,
-    DEFAULT_LESSON_POLICY.poolMinimums,
+  const draftSubject = services.subjects.getSubject(context.subjectId);
+  const coverage: CoverageGapDto[] = mergeCoverage(
+    poolCoverage(drafts, context.objectiveIds, poolMinimumsOf(services, context.subjectId)),
+    draftSubject ? distinctOpenAnswerGaps(draftSubject, drafts, context.objectiveIds) : [],
   );
 
   return {
@@ -206,6 +256,19 @@ async function readLessonDraftDto(
     topicId: context.topicId,
     topicVersion: context.topicVersion,
     objectiveIds: [...context.objectiveIds],
+    ...(context.subjectTitlePl === undefined ? {} : { subjectTitlePl: context.subjectTitlePl }),
+    ...(context.dynamicTopic === undefined
+      ? {}
+      : {
+          dynamicTopic: {
+            titlePl: context.dynamicTopic.titlePl,
+            objectives: context.dynamicTopic.objectives.map((o) => ({
+              id: o.id,
+              titlePl: o.titlePl,
+              cards: o.cards.map((card) => ({ title: card.title, body: card.body })),
+            })),
+          },
+        }),
     examples: context.examples,
     exercises,
     assets: assetRows.map((a) => ({
@@ -222,6 +285,7 @@ async function readLessonDraftDto(
       assetId: a.assetId,
     })),
     rejectedCount: context.rejectedCount,
+    ...(context.droppedObjectiveCount ? { droppedObjectiveCount: context.droppedObjectiveCount } : {}),
     coverage,
   };
 }
@@ -346,20 +410,28 @@ const LessonDraftPatchSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   exercises: z.array(LessonExerciseInputSchema).optional(),
   examples: z.record(z.string(), z.array(z.string())).optional(),
+  dynamicTopic: LessonDynamicTopicPatchSchema.optional(),
 }).refine(
-  (p) => p.title !== undefined || p.exercises !== undefined || p.examples !== undefined,
-  { message: "patch must change title, exercises or examples" },
+  (p) => p.title !== undefined || p.exercises !== undefined || p.examples !== undefined || p.dynamicTopic !== undefined,
+  { message: "patch must change title, exercises, examples or dynamicTopic" },
 );
 export type LessonDraftPatch = z.infer<typeof LessonDraftPatchSchema>;
 
-/** Czy zmiana treści ćwiczenia tworzy nowy `objective` (odpowiedź/warianty/focus). */
+/** Czy zmiana treści ćwiczenia tworzy nowy `objective` (odpowiedź/warianty/focus/kryteria v3). */
 function objectiveImpacted(oldDraft: LessonExerciseDraft, next: LessonExerciseInput): boolean {
   const sameAnswer = oldDraft.answer === next.answer;
   const sameAccepted =
     JSON.stringify([...oldDraft.acceptedAnswers].sort()) === JSON.stringify([...next.acceptedAnswers].sort());
   const sameFocus = JSON.stringify([...oldDraft.focus]) === JSON.stringify([...next.focus]);
   const sameObjective = oldDraft.objectiveId === next.objectiveId;
-  return !(sameAnswer && sameAccepted && sameFocus && sameObjective);
+  const sameRequired = JSON.stringify(oldDraft.requiredElements ?? null) === JSON.stringify(next.requiredElements ?? null);
+  const sameV3Criteria =
+    JSON.stringify(oldDraft.supplementaryElements ?? null) === JSON.stringify(next.supplementaryElements ?? null) &&
+    JSON.stringify(oldDraft.commonErrors ?? null) === JSON.stringify(next.commonErrors ?? null) &&
+    (oldDraft.expectedForm ?? null) === (next.expectedForm ?? null) &&
+    (oldDraft.questionType ?? null) === (next.questionType ?? null) &&
+    JSON.stringify((oldDraft.sourceRefs ?? []).map((r) => r.quote)) === JSON.stringify((next.sourceRefs ?? []).map((r) => r.quote));
+  return !(sameAnswer && sameAccepted && sameFocus && sameObjective && sameRequired && sameV3Criteria);
 }
 
 const TEMP_POSITION_OFFSET = 1000;
@@ -460,7 +532,7 @@ async function applyLessonExercisesEdit(
       }
       await tx
         .update(itemRevisions)
-        .set({ payload, targetKey, position: tempPosition, payloadVersion: 2 })
+        .set({ payload, targetKey, position: tempPosition, payloadVersion: lessonPayloadVersion(draft, subject) })
         .where(eq(itemRevisions.id, existing.revisionId));
       await tx.delete(itemRevisionSkills).where(eq(itemRevisionSkills.itemRevisionId, existing.revisionId));
       await tx.insert(itemRevisionSkills).values({
@@ -489,7 +561,7 @@ async function applyLessonExercisesEdit(
         deckId: version.deckId,
         deckVersionId: version.id,
         position: tempPosition,
-        payloadVersion: 2,
+        payloadVersion: lessonPayloadVersion(draft, subject),
         payload,
         targetKey,
       });
@@ -534,12 +606,50 @@ export async function editLessonDraft(
     assertEditable(version, patch.expectedEditNumber);
     const context = readLessonContext(version.lessonContext);
     const subject = requireSubject(services, context.subjectId);
-    const topic = requireTopic(services, context.subjectId, context.topicId, context.topicVersion);
+
+    // Patch tematu dynamicznego (zagadnienia z materiału): edycja tytułów/kart
+    // istniejących celów i usuwanie celów przez pominięcie. `descriptionEn`
+    // zachowujemy z zapisanego kontekstu; temat walidujemy regułami katalogu.
+    let nextDynamicTopic: DynamicTopicData | undefined;
+    let deletedObjectiveIds: string[] = [];
+    if (patch.dynamicTopic !== undefined) {
+      if (!subject.buildDynamicTopic || !context.dynamicTopic) {
+        throw new AppError("validation", { message: "dynamicTopic patch requires a dynamic lesson" });
+      }
+      const currentById = new Map(context.dynamicTopic.objectives.map((o) => [o.id, o]));
+      for (const objective of patch.dynamicTopic.objectives) {
+        if (!currentById.has(objective.id)) {
+          throw new AppError("validation", { message: `unknown dynamic objective: ${objective.id}` });
+        }
+      }
+      nextDynamicTopic = {
+        titlePl: context.dynamicTopic.titlePl,
+        objectives: patch.dynamicTopic.objectives.map((objective) => ({
+          id: objective.id,
+          titlePl: objective.titlePl,
+          descriptionEn: currentById.get(objective.id)!.descriptionEn,
+          cards: objective.cards.map((card) => ({ title: card.title, body: card.body })),
+        })),
+      };
+      const topicErrors = validateDynamicTopicData(subject, nextDynamicTopic);
+      if (topicErrors.length > 0) {
+        throw new AppError("validation", { message: topicErrors.join("; ") });
+      }
+      const keptIds = new Set(nextDynamicTopic.objectives.map((o) => o.id));
+      deletedObjectiveIds = context.dynamicTopic.objectives.map((o) => o.id).filter((id) => !keptIds.has(id));
+    }
+    const effectiveContext: LessonContextView = nextDynamicTopic
+      ? { ...context, dynamicTopic: nextDynamicTopic, objectiveIds: nextDynamicTopic.objectives.map((o) => o.id) }
+      : context;
 
     if (patch.exercises !== undefined) {
+      const topic = requireTopic(services, effectiveContext);
       // Walidacja per ćwiczenie — zbieramy wszystkie błędy, nie przerywamy na pierwszym.
       const drafts = patch.exercises.map(toExerciseDraft);
-      const errors = validatePool(drafts, subject, topic).rejected.map((rejection) => ({ index: drafts.indexOf(rejection.exercise), errors: rejection.errors }));
+      const grounded = splitByPoolExtra(subject, drafts, context.material);
+      const errors = [...grounded.extraRejected, ...validatePool(grounded.kept, subject, topic).rejected]
+        .map((rejection) => ({ index: drafts.indexOf(rejection.exercise), errors: rejection.errors }))
+        .sort((a, b) => a.index - b.index);
       if (errors.length > 0) {
         throw new AppError("validation", { details: { exercises: errors } });
       }
@@ -549,8 +659,28 @@ export async function editLessonDraft(
     if (patch.title !== undefined) {
       await tx.update(deckVersions).set({ title: patch.title }).where(eq(deckVersions.id, versionId));
     }
-    if (patch.examples !== undefined) {
-      const nextContext = { ...(version.lessonContext ?? {}), examples: patch.examples };
+    // Usunięte zagadnienia bez patcha ćwiczeń: ich ćwiczenia znikają ze szkicu
+    // w tej samej transakcji (z patcha ćwiczeń usuwa je applyLessonExercisesEdit).
+    if (deletedObjectiveIds.length > 0 && patch.exercises === undefined) {
+      const revisions = await tx
+        .select({ id: itemRevisions.id, payload: itemRevisions.payload })
+        .from(itemRevisions)
+        .where(eq(itemRevisions.deckVersionId, versionId));
+      for (const revision of revisions) {
+        if (!deletedObjectiveIds.includes(String(revision.payload.objectiveId ?? ""))) continue;
+        await tx.delete(revisionAssets).where(eq(revisionAssets.itemRevisionId, revision.id));
+        await tx.delete(itemRevisionSkills).where(eq(itemRevisionSkills.itemRevisionId, revision.id));
+        await tx.delete(itemRevisions).where(eq(itemRevisions.id, revision.id));
+      }
+    }
+    if (nextDynamicTopic !== undefined || patch.examples !== undefined) {
+      const nextContext = {
+        ...(version.lessonContext ?? {}),
+        ...(nextDynamicTopic
+          ? { dynamicTopic: nextDynamicTopic, objectiveIds: nextDynamicTopic.objectives.map((o) => o.id) }
+          : {}),
+        ...(patch.examples !== undefined ? { examples: patch.examples } : {}),
+      };
       await tx
         .update(deckVersions)
         .set({ lessonContext: nextContext as Record<string, unknown> })
@@ -598,10 +728,14 @@ export async function publishLessonDraft(
 
     // Pokrycie etapów ocenianych per cel.
     const drafts: LessonExerciseDraft[] = revisions.map((r) => toExerciseDraft(r.payload));
-    const topic = requireTopic(services, context.subjectId, context.topicId, context.topicVersion);
-    const invalid = validatePool(drafts, subject, topic).rejected;
+    const topic = requireTopic(services, context);
+    const groundedPublish = splitByPoolExtra(subject, drafts, context.material);
+    const invalid = [...groundedPublish.extraRejected, ...validatePool(groundedPublish.kept, subject, topic).rejected];
     if (invalid.length > 0) throw new AppError("validation", { details: { exercises: invalid.map((rejection) => ({ index: drafts.indexOf(rejection.exercise), errors: rejection.errors })) } });
-    const gaps = poolCoverage(drafts, context.objectiveIds, DEFAULT_LESSON_POLICY.poolMinimums);
+    const gaps = mergeCoverage(
+      poolCoverage(drafts, context.objectiveIds, poolMinimumsOf(services, context.subjectId)),
+      distinctOpenAnswerGaps(subject, drafts, context.objectiveIds),
+    );
     if (gaps.length > 0) {
       throw new AppError("conflict", {
         message: "lesson coverage incomplete",

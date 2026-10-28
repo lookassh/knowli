@@ -33,6 +33,14 @@ export interface LessonExercisePayload {
   options?: { id: string; text: string }[];
   correctOption?: string;
   items?: { id: string; text: string }[];
+  // Pola v3 (kryteria serwera; materializacja ich nie renderuje dziecku).
+  questionType?: string;
+  requiredElements?: { id: string; text: string }[];
+  supplementaryElements?: string[];
+  commonErrors?: string[];
+  expectedForm?: string;
+  familyId?: string;
+  sourceRefs?: { quote: string; parentAdded?: boolean }[];
   answerLocale: string;
   promptLocale: string;
 }
@@ -146,7 +154,18 @@ export function materializeExercise(
     focus: payload.focus,
     independentCheck: plan.independentCheck,
     reason: plan.reason,
+    // Migawka celu: ścieżka oceny nie musi szukać celu w katalogu (tematy dynamiczne).
+    ...(objective ? { objectiveSnapshot: { objectiveTitlePl: objective.titlePl, topicId: topic.id, topicVersion: topic.version, descriptionEn: objective.descriptionEn, errorCategories: [...objective.errorCategories], hints: { ...objective.hints }, topicTitlePl: topic.titlePl, extraErrorCategories: topic.extraErrorCategories.map((c) => ({ ...c })) } } : {}),
   };
+  // Kryteria v3 w kluczu prywatnym: ocena szkolna (Etap 2) ich potrzebuje, a prompt dziecka ich nie zawiera.
+  if (payload.requiredElements && payload.requiredElements.length > 0) {
+    baseKey.schoolCriteria = {
+      requiredElements: payload.requiredElements.map((el) => ({ ...el })),
+      supplementaryElements: [...(payload.supplementaryElements ?? [])],
+      ...(payload.expectedForm ? { expectedForm: payload.expectedForm } : {}),
+      sourceQuotes: (payload.sourceRefs ?? []).map((ref) => ref.quote),
+    };
+  }
   const taskContext: Record<string, unknown> = { reason: plan.reason, objectiveId: payload.objectiveId, independentCheck: plan.independentCheck };
   const common = { exerciseType: payload.exerciseType, itemRevisionId: exercise.revisionId, context: taskContext } as const;
 

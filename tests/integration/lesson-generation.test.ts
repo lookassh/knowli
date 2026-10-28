@@ -2,16 +2,25 @@ import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createDatabase,
+  completePresentation,
+  createChild,
   createLesson,
+  createSchoolLesson,
   claimQueuedRun,
   createServices,
   executeMediaAsset,
   createSubjectRegistry,
   englishGrammarSubject,
+  schoolSubject,
   editLessonDraft,
   executeLessonGeneration,
   historyLikeSubject,
+  nextTask,
+  publishLessonDraft,
   readGeneration,
+  readLessonDeck,
+  startSession,
+  submitAttempt,
   regenerateObjective,
   runDueGenerationWork,
   retryGeneration,
@@ -921,6 +930,189 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect(mediaRun?.state).toBe("superseded");
     expect(fakes.tts.requests).toHaveLength(0);
   });
+  it("zestaw szkolny: generacja wyprowadza zagadnienia z materiału i zapisuje ćwiczenia v3 z cytatami", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const { db } = testDatabase();
+    const services = createServices({
+      db,
+      clock: new ManualClock(),
+      media: fakes.settings,
+      generation: fakes.deps,
+      subjects: createSubjectRegistry([schoolSubject]),
+    });
+    const material = [
+      "Zagadnienie 1: Fotosynteza",
+      "Wyjaśnienie: Fotosynteza to proces, w którym roślina z wody i dwutlenku węgla, przy udziale światła, wytwarza cukry. Cukry są pokarmem rośliny.",
+      "Zagadnienie 2: Chrzest Polski",
+      "Wyjaśnienie: Mieszko I przyjął chrzest w 966 roku. Chrzest włączył państwo do chrześcijańskiej Europy i wzmocnił władzę księcia.",
+    ].join("\n");
+
+    const { runId, deckId } = await createSchoolLesson(services, {
+      subjectTitlePl: "Przyroda i historia",
+      topicTitlePl: "Materiał pilotażowy",
+      material,
+      poolSize: 40,
+      clientRequestId: randomUUID(),
+    });
+    await executeLessonGeneration(services, runId);
+
+    const run = await readGeneration(services, runId);
+    expect(run.state).toBe("succeeded");
+    expect(fakes.llm.objectiveRequests).toHaveLength(1);
+
+    const versionId = run.deckVersionId!;
+    const [version] = await query<{ state: string; lesson_context: { dynamicTopic?: { objectives: { id: string }[] }; objectiveIds: string[] } }>(
+      "select state, lesson_context from learning_app.deck_versions where id = $1",
+      [versionId],
+    );
+    expect(version!.state).toBe("review");
+    expect(version!.lesson_context.dynamicTopic?.objectives).toHaveLength(2);
+    expect(version!.lesson_context.objectiveIds).toHaveLength(2);
+    for (const id of version!.lesson_context.objectiveIds) {
+      expect(id.startsWith(`school.d${deckId}.`)).toBe(true);
+    }
+
+    const revisions = await query<{ payload_version: number; payload: Record<string, unknown> }>(
+      "select payload_version, payload from learning_app.item_revisions where deck_version_id = $1 order by position",
+      [versionId],
+    );
+    expect(revisions.length).toBeGreaterThan(0);
+    for (const r of revisions) {
+      expect(r.payload_version).toBe(3);
+      expect(Array.isArray(r.payload.sourceRefs)).toBe(true);
+    }
+    const open = revisions.find((r) => r.payload.exerciseType === "lesson_open_answer");
+    expect(open).toBeDefined();
+    expect(Array.isArray(open!.payload.requiredElements)).toBe(true);
+  });
+
+  it("zestaw szkolny: publikacja i sesja dziecka na typach zamkniętych", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const { db } = testDatabase();
+    const services = createServices({
+      db,
+      clock: new ManualClock(),
+      media: fakes.settings,
+      generation: fakes.deps,
+      subjects: createSubjectRegistry([schoolSubject]),
+    });
+    const material = [
+      "Zagadnienie 1: Fotosynteza",
+      "Wyjaśnienie: Fotosynteza to proces, w którym roślina z wody i dwutlenku węgla, przy udziale światła, wytwarza cukry. Cukry są pokarmem rośliny.",
+      "Zagadnienie 2: Chrzest Polski",
+      "Wyjaśnienie: Mieszko I przyjął chrzest w 966 roku. Chrzest włączył państwo do chrześcijańskiej Europy i wzmocnił władzę księcia.",
+    ].join("\n");
+
+    const { runId, deckId } = await createSchoolLesson(services, {
+      subjectTitlePl: "Przyroda i historia",
+      topicTitlePl: "Materiał pilotażowy",
+      material,
+      poolSize: 40,
+      clientRequestId: randomUUID(),
+    });
+    await executeLessonGeneration(services, runId);
+
+    const deck = await readLessonDeck(services, deckId);
+    expect(deck.draft?.dynamicTopic?.objectives).toHaveLength(2);
+    expect(deck.draft?.subjectTitlePl).toBe("Przyroda i historia");
+    expect(deck.draft?.coverage).toEqual([]);
+    await publishLessonDraft(services, deck.draft!.id, deck.draft!.editNumber);
+
+    const child = await createChild(services, { displayName: "Szkolny", avatarKey: "owl" });
+    await pool.query(
+      "insert into learning_app.assignments (id, child_id, deck_id, test_date, test_goals) values ($1, $2, $3, null, null)",
+      [randomUUID(), child.id, deckId],
+    );
+
+    const session = await startSession(services, { childId: child.id, deckId, microphoneEnabled: false });
+    let answered = false;
+    for (let i = 0; i < 20 && !answered; i++) {
+      const task = await nextTask(services, session.sessionId);
+      if (task === null) break;
+      if (task.exerciseType === "lesson_card") {
+        await completePresentation(services, { taskId: task.taskId });
+        continue;
+      }
+      if (task.exerciseType !== "lesson_choice") {
+        await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "skip" });
+        continue;
+      }
+      const [keyRow] = await query<{ answer_key: { correctOptionId?: string } }>(
+        "select answer_key from learning_app.session_tasks where id = $1",
+        [task.taskId],
+      );
+      await submitAttempt(services, {
+        taskId: task.taskId,
+        clientAttemptId: randomUUID(),
+        modality: "choice",
+        optionId: keyRow!.answer_key.correctOptionId!,
+      });
+      answered = true;
+    }
+    expect(answered).toBe(true);
+    const assessments = await query<{ count: number }>(
+      "select count(*)::int as count from learning_app.assessments where child_id = $1 and skill = 'objective' and outcome = 'correct'",
+      [child.id],
+    );
+    expect(assessments[0]!.count).toBeGreaterThan(0);
+  });
+
+  it("zestaw szkolny: patch dynamicTopic edytuje karty, usuwa zagadnienie; sfałszowany cytat odrzucany", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const { db } = testDatabase();
+    const services = createServices({
+      db,
+      clock: new ManualClock(),
+      media: fakes.settings,
+      generation: fakes.deps,
+      subjects: createSubjectRegistry([schoolSubject]),
+    });
+    const material = [
+      "Zagadnienie 1: Fotosynteza",
+      "Wyjaśnienie: Fotosynteza to proces, w którym roślina z wody i dwutlenku węgla, przy udziale światła, wytwarza cukry. Cukry są pokarmem rośliny.",
+      "Zagadnienie 2: Chrzest Polski",
+      "Wyjaśnienie: Mieszko I przyjął chrzest w 966 roku. Chrzest włączył państwo do chrześcijańskiej Europy i wzmocnił władzę księcia.",
+    ].join("\n");
+    const { runId, deckId } = await createSchoolLesson(services, {
+      subjectTitlePl: "Przyroda i historia",
+      topicTitlePl: "Materiał pilotażowy",
+      material,
+      poolSize: 40,
+      clientRequestId: randomUUID(),
+    });
+    await executeLessonGeneration(services, runId);
+    const deck = await readLessonDeck(services, deckId);
+    const kept = deck.draft!.dynamicTopic!.objectives[0]!;
+
+    const edited = await editLessonDraft(services, deck.draft!.id, {
+      expectedEditNumber: deck.draft!.editNumber,
+      dynamicTopic: {
+        objectives: [{
+          id: kept.id,
+          titlePl: "Fotosynteza (poprawiona)",
+          cards: [
+            { title: kept.cards[0]!.title, body: "Poprawiona treść karty przez rodzica." },
+            kept.cards[1]!,
+          ],
+        }],
+      },
+    });
+    expect(edited.dynamicTopic?.objectives).toHaveLength(1);
+    expect(edited.dynamicTopic?.objectives[0]?.cards[0]?.body).toBe("Poprawiona treść karty przez rodzica.");
+    expect(edited.objectiveIds).toEqual([kept.id]);
+    expect(edited.exercises.every((ex) => ex.objectiveId === kept.id)).toBe(true);
+
+    const forged = edited.exercises.map((ex, i) => {
+      const { revisionId: _revisionId, ...input } = ex;
+      return i === 0 ? { ...input, sourceRefs: [{ quote: "tego zdania z pewnością nie ma w materiale źródłowym" }] } : input;
+    });
+    await expect(
+      editLessonDraft(services, edited.id, { expectedEditNumber: edited.editNumber, exercises: forged }),
+    ).rejects.toMatchObject({ code: "validation" });
+  });
 });
 
 // Dowód, że fake LLM implementuje nowy port (bez sieci).
@@ -958,4 +1150,5 @@ describe("FakeLlmProvider.generateLessonPool", () => {
       if (ex.exerciseType === "lesson_transform") expect(ex.statement).toEqual(expect.any(String));
     }
   });
+
 });

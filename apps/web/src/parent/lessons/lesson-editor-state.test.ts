@@ -4,6 +4,7 @@ import {
   createLessonSnapshot,
   groupExercisesByObjectiveAndStage,
   lessonExerciseChanged,
+  nextRequiredElementId,
   stageOfExerciseType,
   toLessonDraftPatch,
 } from "./lesson-editor-state";
@@ -139,11 +140,32 @@ describe("toLessonDraftPatch", () => {
       items: null,
       noticeSegments: null,
       visualSubject: "",
+      questionType: "",
+      requiredElements: null,
+      supplementaryElements: null,
+      commonErrors: null,
+      expectedForm: "",
+      familyId: "",
+      sourceRefs: null,
     });
     const patch = toLessonDraftPatch(snapshot);
     expect(patch.exercises?.map((ex) => ex.id)).toEqual(["00000000-0000-4000-8000-000000000011", "00000000-0000-4000-8000-000000000012", undefined]);
   });
 
+it("zachowuje pola v3 ćwiczeń szkolnych w obie strony", () => {
+    const snapshot = createLessonSnapshot(draft(), () => "unused");
+    const first = snapshot.form.exercises[0]!;
+    first.questionType = "definition";
+    first.requiredElements = [{ id: "e1", text: "Roślina wytwarza cukry." }];
+    first.expectedForm = "one_sentence";
+    first.familyId = "fotosynteza-definicja";
+    first.sourceRefs = [{ quote: "wytwarza cukry" }];
+    const patch = toLessonDraftPatch(snapshot);
+    expect(patch.exercises![0]!.requiredElements).toEqual([{ id: "e1", text: "Roślina wytwarza cukry." }]);
+    expect(patch.exercises![0]!.expectedForm).toBe("one_sentence");
+    expect(patch.exercises![0]!.sourceRefs).toEqual([{ quote: "wytwarza cukry" }]);
+    expect(patch.exercises![1]).not.toHaveProperty("sourceRefs");
+  });
   it("emits visualSubject only for lesson_choice exercises", () => {
     const snapshot = createLessonSnapshot(draft(), () => "unused");
     snapshot.form.exercises[0]!.visualSubject = "girl";
@@ -247,5 +269,44 @@ describe("groupExercisesByObjectiveAndStage", () => {
     expect(stages.find((s) => s.stage === "guided")!.exercises.map((e) => e.answer)).toEqual(["plays"]);
     expect(stages.find((s) => s.stage === "productive")!.exercises.map((e) => e.answer)).toEqual(["watches"]);
     expect(stages.find((s) => s.stage === "independent")!.exercises).toEqual([]);
+  });
+});
+
+describe("poprawki review Etapu 2 (W11/W12/W13)", () => {
+  it("nextRequiredElementId nie koliduje po usunięciu elementu ze środka", () => {
+    expect(nextRequiredElementId([{ id: "e1" }, { id: "e3" }])).toBe("e4");
+    expect(nextRequiredElementId([])).toBe("e1");
+    expect(nextRequiredElementId([{ id: "custom" }])).toBe("e1");
+  });
+
+  it("porzucone puste elementy i cytaty nie trafiają do patcha", () => {
+    const snapshot = createLessonSnapshot(draft(), () => "unused");
+    const first = snapshot.form.exercises[0]!;
+    first.requiredElements = [{ id: "e1", text: "Roślina wytwarza cukry." }, { id: "e2", text: "  " }];
+    first.sourceRefs = [{ quote: "wytwarza cukry" }, { quote: "" }];
+    const patch = toLessonDraftPatch(snapshot);
+    expect(patch.exercises![0]!.requiredElements).toEqual([{ id: "e1", text: "Roślina wytwarza cukry." }]);
+    expect(patch.exercises![0]!.sourceRefs).toEqual([{ quote: "wytwarza cukry" }]);
+  });
+
+  it("lesson_short_answer: prompt wygrywa ze stem — payload ma jedną wersję pytania", () => {
+    const shortDraft = draft({
+      exercises: [{
+        id: "00000000-0000-4000-8000-000000000051",
+        revisionId: "00000000-0000-4000-8000-000000000061",
+        exerciseType: "lesson_short_answer",
+        objectiveId: "english_grammar.present_simple.third_person_s",
+        instructionPl: "Odpowiedz krótko",
+        stem: "Stare pytanie?",
+        answer: "Yes, he does.",
+        acceptedAnswers: [],
+        focus: ["does"],
+      }] as unknown as LessonDraftDto["exercises"],
+    });
+    const snapshot = createLessonSnapshot(shortDraft, () => "unused");
+    snapshot.form.exercises[0]!.prompt = "Nowe pytanie?";
+    const patch = toLessonDraftPatch(snapshot);
+    expect(patch.exercises![0]!.prompt).toBe("Nowe pytanie?");
+    expect(patch.exercises![0]).not.toHaveProperty("stem");
   });
 });

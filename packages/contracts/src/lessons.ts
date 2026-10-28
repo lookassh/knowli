@@ -17,6 +17,12 @@ import { GenerationDtoSchema } from "./generation";
 
 /** Limity współdzielone z `domain/lessons/pool-validation.ts`. */
 const MAX_TEXT_LENGTH = 120;
+/** Odpowiedź wzorcowa i warianty: dłuższy limit pod odpowiedzi przedmiotów szkolnych. */
+export const MAX_LESSON_ANSWER_LENGTH = 300;
+/** Maks. długość cytatu źródłowego ćwiczenia szkolnego (osobna stała od limitu odpowiedzi). */
+export const MAX_SOURCE_QUOTE_LENGTH = 600;
+/** Limit materiału zestawu szkolnego (gramatyka zostaje przy 8000). */
+export const MAX_SCHOOL_MATERIAL_LENGTH = 16000;
 const MAX_ACCEPTED_ANSWERS = 40;
 const MIN_OPTIONS = 2;
 const MAX_OPTIONS = 4;
@@ -63,7 +69,7 @@ export const SubjectCatalogDtoSchema = z.object({
       objectives: z.array(z.object({
         id: z.string().min(1),
         titlePl: z.string().min(1),
-        cards: z.array(z.object({ title: z.string().min(1), body: z.string().min(1) }).strict()),
+  cards: z.array(z.object({ title: z.string().min(1), body: z.string().min(1) }).strict()),
       }).strict()),
     }).strict()),
   }).strict()),
@@ -92,6 +98,46 @@ export const LessonCommandSchema = z.object({
 }).strict();
 export type LessonCommand = z.infer<typeof LessonCommandSchema>;
 
+/**
+ * Polecenie utworzenia zestawu przedmiotu szkolnego: zagadnienia powstają
+ * z materiału podczas generowania, więc w poleceniu nie ma celów ani tematu
+ * z katalogu — rodzic nazywa przedmiot i temat własnymi tytułami.
+ */
+export const SchoolLessonCommandSchema = z.object({
+  deckId: UuidSchema.optional(),
+  subjectTitlePl: z.string().trim().min(1).max(80),
+  topicTitlePl: z.string().trim().min(1).max(120),
+  material: z.string().trim().min(1).max(MAX_SCHOOL_MATERIAL_LENGTH),
+  instruction: z.string().max(500).optional(),
+  poolSize: z.number().int().min(20).max(160).optional(),
+  clientRequestId: UuidSchema,
+}).strict();
+export type SchoolLessonCommand = z.infer<typeof SchoolLessonCommandSchema>;
+
+/** Zagadnienie tematu dynamicznego w widoku rodzica (bez pól modelowych). */
+export const DynamicObjectiveDtoSchema = z.object({
+  id: z.string().min(1).max(200),
+  titlePl: z.string().min(1).max(120),
+  cards: z.array(z.object({ title: z.string().min(1).max(120), body: z.string().min(1).max(1200) }).strict()).min(2).max(4),
+}).strict();
+export type DynamicObjectiveDto = z.infer<typeof DynamicObjectiveDtoSchema>;
+
+export const DynamicTopicDtoSchema = z.object({
+  titlePl: z.string().min(1).max(200),
+  objectives: z.array(DynamicObjectiveDtoSchema).min(1).max(8),
+}).strict();
+export type DynamicTopicDto = z.infer<typeof DynamicTopicDtoSchema>;
+
+/**
+ * Patch zagadnień tematu dynamicznego w edycji szkicu: rodzic edytuje tytuły
+ * i karty istniejących zagadnień oraz usuwa zagadnienia (przez pominięcie).
+ * `descriptionEn` (pole modelowe) zachowuje serwer; identyfikatory są stałe.
+ */
+export const LessonDynamicTopicPatchSchema = z.object({
+  objectives: z.array(DynamicObjectiveDtoSchema).min(1).max(8),
+}).strict();
+export type LessonDynamicTopicPatch = z.infer<typeof LessonDynamicTopicPatchSchema>;
+
 const ExerciseOptionSchema = z.object({
   id: z.string().min(1),
   text: text,
@@ -119,6 +165,34 @@ const ExerciseItemSchema = z.object({
  * pól spoza payloadu. `noticeSegments`: 2–3 zdania po 1–15 segmentów;
  * `correctOption` dla notice = słowo do wskazania, bez `options`.
  */
+/**
+ * Pola payloadu v3 przedmiotów szkolnych (design „Przedmioty szkolne” pkt 3).
+ * Wszystkie opcjonalne na poziomie kształtu; wymagalność per typ i przedmiot
+ * egzekwuje walidacja puli w domenie. Gramatyka ich nie używa.
+ */
+export const LessonQuestionTypeSchema = z.enum([
+  "definition",
+  "enumeration",
+  "cause",
+  "comparison",
+  "fact",
+  "process",
+]);
+export type LessonQuestionTypeDto = z.infer<typeof LessonQuestionTypeSchema>;
+
+export const LessonExpectedFormSchema = z.enum(["short", "one_sentence", "explanation", "list"]);
+export type LessonExpectedFormDto = z.infer<typeof LessonExpectedFormSchema>;
+
+const RequiredElementSchema = z.object({
+  id: z.string().min(1).max(40),
+  text: text,
+}).strict();
+
+const SourceRefSchema = z.object({
+  quote: z.string().min(1).max(MAX_SOURCE_QUOTE_LENGTH),
+  /** Cytat dopisany przez rodzica (jego własne źródło), nie z materiału. */
+  parentAdded: z.boolean().optional(),
+}).strict();
 export const LessonExerciseInputSchema = z.object({
   id: UuidSchema.optional(),
   exerciseType: LessonExerciseTypeSchema,
@@ -133,12 +207,19 @@ export const LessonExerciseInputSchema = z.object({
   noticeSegments: z.array(
     z.array(text).min(MIN_NOTICE_SEGMENTS).max(MAX_NOTICE_SEGMENTS),
   ).min(MIN_NOTICE_SENTENCES).max(MAX_NOTICE_SENTENCES).optional(),
-  answer: z.string().min(1).max(MAX_TEXT_LENGTH),
-  acceptedAnswers: z.array(text).max(MAX_ACCEPTED_ANSWERS),
+  answer: z.string().min(1).max(MAX_LESSON_ANSWER_LENGTH),
+  acceptedAnswers: z.array(z.string().min(1).max(MAX_LESSON_ANSWER_LENGTH)).max(MAX_ACCEPTED_ANSWERS),
   focus: z.array(z.string().min(1).max(MAX_TEXT_LENGTH)),
   options: z.array(ExerciseOptionSchema).min(MIN_OPTIONS).max(MAX_OPTIONS).optional(),
   correctOption: z.string().min(1).optional(),
   items: z.array(ExerciseItemSchema).min(MIN_ORDER_ITEMS).max(MAX_ORDER_ITEMS).optional(),
+  questionType: LessonQuestionTypeSchema.optional(),
+  requiredElements: z.array(RequiredElementSchema).min(1).max(6).optional(),
+  supplementaryElements: z.array(text).max(4).optional(),
+  commonErrors: z.array(text).max(4).optional(),
+  expectedForm: LessonExpectedFormSchema.optional(),
+  familyId: z.string().min(1).max(64).optional(),
+  sourceRefs: z.array(SourceRefSchema).min(1).max(3).optional(),
 }).strict();
 export type LessonExerciseInput = z.infer<typeof LessonExerciseInputSchema>;
 
@@ -170,10 +251,16 @@ export const LessonDraftDtoSchema = z.object({
   topicId: z.string().min(1),
   topicVersion: z.number().int().positive(),
   objectiveIds: z.array(z.string().min(1)),
+  /** Nazwa przedmiotu nadana przez rodzica (tylko zestawy szkolne). */
+  subjectTitlePl: z.string().min(1).optional(),
+  /** Temat dynamiczny z materiału (tylko zestawy szkolne, po generacji). */
+  dynamicTopic: DynamicTopicDtoSchema.optional(),
   examples: z.record(z.string(), z.array(z.string())),
   exercises: z.array(LessonExerciseDraftDtoSchema),
   assets: z.array(RevisionAssetDtoSchema),
   rejectedCount: z.number().int().nonnegative(),
+  /** Zagadnienia odrzucone/pominięte na etapie generowania tematu (zestawy szkolne). */
+  droppedObjectiveCount: z.number().int().nonnegative().optional(),
   coverage: z.array(CoverageGapDtoSchema),
 });
 export type LessonDraftDto = z.infer<typeof LessonDraftDtoSchema>;
@@ -235,6 +322,32 @@ const ObjectiveStatusSchema = z.enum([
   "needs_reconfirmation",
   "mastered",
 ]);
+/**
+ * Agregat szkolny postępu celu (Etap 2): wiedza i precyzja OSOBNO; precyzja
+ * nigdy nie wpływa na status ani opanowanie. Tylko zestawy z odpowiedziami
+ * otwartymi szkoły; gramatyka pola nie niesie.
+ */
+export const SchoolProgressSchema = z.object({
+  knowledge: z.object({
+    correct: z.number().int().nonnegative(),
+    partial: z.number().int().nonnegative(),
+    incorrect: z.number().int().nonnegative(),
+  }),
+  precision: z.object({
+    concise: z.number().int().nonnegative(),
+    verbose: z.number().int().nonnegative(),
+    unfocused: z.number().int().nonnegative(),
+  }),
+  /** Najczęściej brakujące elementy wymagane (teksty), malejąco. */
+  topMissing: z.array(z.object({ text: z.string().min(1), count: z.number().int().nonnegative() })).max(5),
+  /** Ostatnie odpowiedzi dziecka (podgląd dla rodzica). */
+  recentAnswers: z.array(z.object({
+    text: z.string(),
+    knowledge: z.enum(["correct", "partial", "incorrect"]),
+    precision: z.enum(["concise", "verbose", "unfocused"]).nullable(),
+  })).max(5),
+});
+
 
 /** Postęp celu dla rodzica (design „Kwalifikacja i projekcja celów”). */
 export const ObjectiveProgressDtoSchema = z.object({
@@ -251,6 +364,7 @@ export const ObjectiveProgressDtoSchema = z.object({
     count: z.number().int().nonnegative(),
     examples: z.array(z.string()).max(3),
   })),
+  school: SchoolProgressSchema.optional(),
 });
 export type ObjectiveProgressDto = z.infer<typeof ObjectiveProgressDtoSchema>;
 
@@ -277,6 +391,13 @@ export const LessonVerdictDtoSchema = z.object({
   graderModel: z.string().min(1),
   parentDecision: LessonVerdictDecisionSchema.nullable(),
   createdAt: InstantSchema,
+  /** Wymiar szkolny werdyktu v2 (null dla werdyktów gramatyki). */
+  school: z.object({
+    knowledge: z.enum(["correct", "partial", "incorrect"]),
+    precision: z.enum(["concise", "verbose", "unfocused"]),
+    matchedElementIds: z.array(z.string()),
+    missingElementIds: z.array(z.string()),
+  }).nullable().optional(),
 });
 export type LessonVerdictDto = z.infer<typeof LessonVerdictDtoSchema>;
 

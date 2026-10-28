@@ -185,6 +185,47 @@ export default function LessonSupervisionPanel({
                   )}
                 </p>
               )}
+              {objective.school && (
+                <div data-testid={`school-progress-${objective.objectiveId}`}>
+                  <h4>{messages.lessons.schoolKnowledgeTitle}</h4>
+                  <p className="muted">
+                    {messages.lessons.schoolCounts
+                      .replace("{correct}", String(objective.school.knowledge.correct))
+                      .replace("{partial}", String(objective.school.knowledge.partial))
+                      .replace("{incorrect}", String(objective.school.knowledge.incorrect))}
+                  </p>
+                  <h4>{messages.lessons.schoolPrecisionTitle}</h4>
+                  <p className="muted">
+                    {messages.lessons.schoolPrecisionCounts
+                      .replace("{concise}", String(objective.school.precision.concise))
+                      .replace("{verbose}", String(objective.school.precision.verbose))
+                      .replace("{unfocused}", String(objective.school.precision.unfocused))}
+                  </p>
+                  {objective.school.topMissing.length > 0 && (
+                    <>
+                      <h4>{messages.lessons.schoolMissingTitle}</h4>
+                      <ul className="plain">
+                        {objective.school.topMissing.map((m) => (
+                          <li key={m.text}>{m.text} <span className="muted">({m.count})</span></li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                  {objective.school.recentAnswers.length > 0 && (
+                    <>
+                      <h4>{messages.lessons.schoolRecentTitle}</h4>
+                      <ul className="plain">
+                        {objective.school.recentAnswers.map((a, i) => (
+                          <li key={i} className="muted">
+                            <em>{a.text}</em> — {a.knowledge}
+                            {a.precision ? ` · ${a.precision}` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                </div>
+              )}
               {objective.topErrors.length === 0 ? (
                 <p className="muted">{messages.lessons.noErrors}</p>
               ) : (

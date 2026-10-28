@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { englishGrammarSubject } from "../../../domain/lessons/subjects/english-grammar/module";
+import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
 import { evaluateChoice, type LessonAnswerKey } from "../../../domain/lessons/evaluate";
 import { materializeExercise, type LoadedExercise } from "./lesson-materialize";
 
@@ -166,5 +167,47 @@ describe("materializeExercise — correctOption po ID (P1-1)", () => {
 
     expect(key.correctOptionId).toBeDefined();
     expect(correct?.text).toBe("plays");
+  });
+});
+
+describe("materializeExercise — przedmiot szkolny (temat dynamiczny)", () => {
+  it("dokłada migawkę celu do answer_key i nie ujawnia kryteriów v3 w prompcie dziecka", () => {
+    const schoolTopic = schoolSubject.buildDynamicTopic!({
+      titlePl: "Posługuję się mapą",
+      objectives: [{
+        id: "school.ddeck.skala",
+        titlePl: "Skala mapy",
+        descriptionEn: "Map scale basics.",
+        cards: [{ title: "Skala", body: "Skala mówi, ile razy mapa jest pomniejszona." }, { title: "Zastosowanie", body: "Ze skali liczysz odległości w terenie." }],
+      }],
+    });
+    const task = materializeExercise(
+      { independentCheck: true, reason: "independent_check" },
+      "seed-school",
+      loaded({
+        exerciseType: "lesson_open_answer",
+        objectiveId: "school.ddeck.skala",
+        instructionPl: "Odpowiedz własnymi słowami.",
+        prompt: "Co to jest skala mapy?",
+        answer: "Skala informuje, ile razy mapa została pomniejszona.",
+        acceptedAnswers: [],
+        focus: ["pomniejszona"],
+        answerLocale: "pl-PL",
+        promptLocale: "pl-PL",
+        questionType: "definition",
+        requiredElements: [{ id: "e1", text: "informuje o pomniejszeniu" }],
+        expectedForm: "one_sentence",
+        sourceRefs: [{ quote: "Skala informuje, ile razy obraz został pomniejszony." }],
+      }),
+      schoolTopic,
+      schoolSubject,
+    );
+    const snapshot = (task.answerKey as { objectiveSnapshot?: { objectiveTitlePl?: string; topicId?: string } }).objectiveSnapshot;
+    expect(snapshot?.objectiveTitlePl).toBe("Skala mapy");
+    expect(snapshot?.topicId).toBe("dynamic");
+    const promptJson = JSON.stringify(task.prompt);
+    expect(promptJson).not.toContain("informuje o pomniejszeniu");
+    expect(promptJson).not.toContain("sourceRefs");
+    expect(promptJson).not.toContain("requiredElements");
   });
 });

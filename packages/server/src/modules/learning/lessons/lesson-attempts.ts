@@ -28,11 +28,15 @@ import {
   closestApprovedVariant,
   evaluateChoice as evaluateLessonChoice,
   evaluateSequence,
+  countSentences,
   gradeFromMatch,
+  gradeFromSchoolVerdict,
   gradeFromVerdict,
   matchLessonAnswer,
+  validateSchoolVerdict,
   validateVerdict,
   type GraderVerdict,
+  type SchoolVerdict,
   type LessonAnswerKey,
   type ObjectiveGrade,
 } from "../../../domain/lessons/evaluate";
@@ -82,6 +86,24 @@ interface LessonTaskAnswerKey extends LessonAnswerKey {
   optionValues?: Record<string, string>;
   itemValues?: Record<string, string>;
   segmentValues?: Record<string, string>;
+  /** Kryteria v3 odpowiedzi otwartej szkoły (z payloadu rewizji; prywatne). */
+  schoolCriteria?: {
+    requiredElements: { id: string; text: string }[];
+    supplementaryElements: string[];
+    commonErrors?: string[];
+    expectedForm?: string;
+    sourceQuotes: string[];
+  };
+  objectiveSnapshot?: {
+    objectiveTitlePl?: string;
+    topicId?: string;
+    topicVersion?: number;
+    descriptionEn: string;
+    errorCategories: string[];
+    hints: Record<string, string>;
+    topicTitlePl: string;
+    extraErrorCategories: { code: string; labelPl: string }[];
+  };
 }
 
 /** Zamrożony przy received_at kontekst kwalifikacji próby lekcji (arch §9.2). */
@@ -258,8 +280,24 @@ function gradeLessonAnswer(
     };
     return { grade, feedback, exposures: [key.targetKey], details: { objectiveId, verdict: "minor_typo", typoToken: match.typoToken } };
   }
-  // exact
-  return { grade, feedback: { kind: "great" }, exposures: [key.targetKey], details: { objectiveId, verdict: "exact" } };
+  // exact — dla szkoły dokładne dopasowanie jest zwięzłą poprawną odpowiedzią (bez modelu).
+  return {
+    grade,
+    feedback: { kind: "great" },
+    exposures: [key.targetKey],
+    details: {
+      objectiveId,
+      verdict: "exact",
+      ...(key.schoolCriteria
+        ? {
+            knowledge: "correct",
+            precision: "concise",
+            matchedElementIds: key.schoolCriteria.requiredElements.map((el) => el.id),
+            missingElementIds: [] as string[],
+          }
+        : {}),
+    },
+  };
 }
 
 // ───────────────────────────── model oceniający (zadanie 15) ─────────────────────────────
@@ -269,6 +307,27 @@ function resolveObjective(services: Services, key: LessonTaskAnswerKey): { subje
   const subject = services.subjects.getSubject(key.subjectId);
   if (!subject) {
     throw new AppError("internal", { message: `lesson subject missing: ${key.subjectId}` });
+  }
+  if (key.objectiveSnapshot) {
+    const snap = key.objectiveSnapshot;
+    const objective: LearningObjective = {
+      id: key.objectiveId,
+      titlePl: snap.objectiveTitlePl ?? snap.topicTitlePl,
+      descriptionEn: snap.descriptionEn,
+      cards: [],
+      errorCategories: [...snap.errorCategories],
+      hints: { ...snap.hints },
+      exerciseTypes: [],
+    };
+    const topic: LessonTopic = {
+      id: snap.topicId ?? "dynamic",
+      version: snap.topicVersion ?? 1,
+      titlePl: snap.objectiveTitlePl ?? snap.topicTitlePl,
+      extraErrorCategories: snap.extraErrorCategories.map((c) => ({ ...c })),
+      transforms: [],
+      objectives: [objective],
+    };
+    return { subject, topic, objective };
   }
   for (const topic of subject.topics) {
     const objective = topic.objectives.find((o) => o.id === key.objectiveId);
@@ -311,6 +370,17 @@ function buildGraderInput(
   const prompt = task.publicPrompt as { instructionPl?: string; stem?: string; statement?: string; prompt?: string; stemWithGap?: string } | null;
   const instruction = prompt?.instructionPl ?? "";
   const stimulus = prompt?.stem ?? prompt?.stemWithGap ?? prompt?.statement ?? prompt?.prompt ?? null;
+  const school = key.schoolCriteria
+    ? {
+        question: stimulus ?? instruction,
+        modelAnswer: key.answer,
+        requiredElements: key.schoolCriteria.requiredElements.map((el) => ({ ...el })),
+        supplementaryElements: [...key.schoolCriteria.supplementaryElements],
+        commonErrors: [...(key.schoolCriteria.commonErrors ?? [])],
+        expectedForm: key.schoolCriteria.expectedForm ?? "explanation",
+        sourceQuotes: [...key.schoolCriteria.sourceQuotes],
+      }
+    : undefined;
   return {
     subjectTitle: subject.titlePl,
     topicTitle: topic.titlePl,
@@ -322,7 +392,9 @@ function buildGraderInput(
       errorCategories: objective.errorCategories.map((code) => ({ code, label: labels.get(code) ?? code })),
     },
     acceptedAnswers: [key.answer, ...key.acceptedAnswers],
-    childAnswer: childAnswer.slice(0, 200),
+    // Limit ścieżki szkolnej 600 znaków (odpowiedzi otwarte), lekcje bez zmian 200.
+    childAnswer: childAnswer.slice(0, school ? 600 : 200),
+    ...(school ? { school } : {}),
   };
 }
 
@@ -406,6 +478,102 @@ function resultFromVerdict(
   }
 }
 
+/** Czy forma zdaniowa odpowiedzi spełnia oczekiwanie (`one_sentence`); null = bez znaczenia. */
+function formOkFor(key: LessonTaskAnswerKey, childAnswer: string): boolean | null {
+  if (key.schoolCriteria?.expectedForm !== "one_sentence") return null;
+  return countSentences(childAnswer) <= 1;
+}
+
+/** Wiersz cache → werdykt szkolny; decyzja rodzica nadpisuje wiedzę jak w v1. */
+function schoolVerdictFromCacheRow(row: LessonVerdictRow, key: LessonTaskAnswerKey, childAnswer: string): SchoolVerdict | null {
+  if (row.precision === null) return null;
+  const knowledge: SchoolVerdict["knowledge"] =
+    row.verdict === "correct" ? "correct" : row.verdict === "almost" ? "partial" : "incorrect";
+  const base: SchoolVerdict = {
+    knowledge,
+    // Klamra formy reaplikowana dla BIEŻĄCEGO wariantu odpowiedzi (cache pamięta werdykt innego zapisu).
+    precision: (formOkFor(key, childAnswer) === false && row.precision === "concise" ? "verbose" : row.precision) as SchoolVerdict["precision"],
+    matchedElementIds: [...(row.matchedElements ?? [])],
+    missingElementIds: [...(row.missingElements ?? [])],
+    incorrectStatements: [...(row.incorrectStatements ?? [])],
+    redundantFragments: [...(row.redundantFragments ?? [])],
+    note: row.note ?? "",
+  };
+  if (row.parentDecision === "overridden_correct") {
+    return {
+      ...base,
+      knowledge: "correct",
+      matchedElementIds: (key.schoolCriteria?.requiredElements ?? []).map((el) => el.id),
+      missingElementIds: [],
+      incorrectStatements: [],
+    };
+  }
+  if (row.parentDecision === "overridden_incorrect") {
+    return { ...base, knowledge: "incorrect" };
+  }
+  return base;
+}
+
+/**
+ * Wynik próby z werdyktu szkolnego: wiedza → ocena celu (`gradeFromSchoolVerdict`),
+ * precyzja wyłącznie do `details` oceny (raport rodzica) — nigdy do oceny.
+ * Feedback (wym. 5.7): correct → great; partial/incorrect → lesson_hint
+ * z szablonów (co było dobre → jeden brak → zachęta) BEZ odpowiedzi wzorcowej
+ * i bez ekspozycji — nic nie jest ujawniane; ujawnienie następuje dopiero
+ * w istniejącym cyklu wsparcia. Segmenty zaznaczają wyłącznie fragmenty
+ * własnej odpowiedzi dziecka. Komentarz modelu (`note`) nie wchodzi do Kid DTO.
+ */
+function resultFromSchoolVerdict(
+  services: Services,
+  key: LessonTaskAnswerKey,
+  childAnswer: string,
+  verdict: SchoolVerdict | null,
+  verdictId: string | null,
+  authoritativeIncorrect = false,
+): LessonGradeResult {
+  const objectiveId = key.objectiveId;
+  if (verdict === null) {
+    return { grade: gradeFromSchoolVerdict(null), feedback: { kind: "not_assessed" }, exposures: [], details: { objectiveId, verdict: "unavailable" } };
+  }
+  const grade: ObjectiveGrade = authoritativeIncorrect
+    ? gradeFromSchoolVerdict({ ...verdict, knowledge: "incorrect" })
+    : gradeFromSchoolVerdict(verdict);
+  const criteria = key.schoolCriteria;
+  const elementText = new Map((criteria?.requiredElements ?? []).map((el) => [el.id, el.text]));
+  const fragments = [...verdict.incorrectStatements, ...verdict.redundantFragments];
+  const segments = fragments.length > 0 ? buildAnswerSegments(childAnswer, fragments) : null;
+  const details: Record<string, unknown> = {
+    objectiveId,
+    verdict: grade.verdict,
+    knowledge: verdict.knowledge,
+    precision: verdict.precision,
+    ...(verdictId ? { verdictId } : {}),
+    matchedElementIds: [...verdict.matchedElementIds],
+    missingElementIds: [...verdict.missingElementIds],
+    ...(verdict.missingElementIds.length > 0
+      ? { missingElementTexts: verdict.missingElementIds.map((id) => elementText.get(id) ?? id) }
+      : {}),
+    ...(verdict.incorrectStatements.length > 0 ? { incorrectStatements: [...verdict.incorrectStatements] } : {}),
+    ...(verdict.redundantFragments.length > 0 ? { redundantFragments: [...verdict.redundantFragments] } : {}),
+    ...(grade.errorCategory ? { errorCategory: grade.errorCategory } : {}),
+    ...(formOkFor(key, childAnswer) === false ? { formOk: false } : {}),
+    ...(criteria?.expectedForm ? { expectedForm: criteria.expectedForm } : {}),
+  };
+  if (grade.verdict === "model_correct") {
+    return { grade, feedback: { kind: "great" }, exposures: [key.targetKey], details };
+  }
+  // Szablon: dobra część (gdy jest) → jeden najważniejszy brak → zachęta w tytule/UI.
+  // Brakujący element nazywamy kategorią z modułu przedmiotu, nigdy treścią wzorca.
+  const category = grade.errorCategory ?? "incomplete";
+  const hint = hintTemplateFor(services, key, category) ?? "Pomyśl jeszcze raz i uzupełnij odpowiedź.";
+  const praise = verdict.matchedElementIds.length > 0 ? "Dobra część odpowiedzi już jest. " : "";
+  return {
+    grade,
+    feedback: { kind: "lesson_hint", hintPl: `${praise}${hint}`, ...(segments ? { answerSegments: segments } : {}) },
+    exposures: [],
+    details,
+  };
+}
 type LessonVerdictRow = typeof lessonVerdicts.$inferSelect;
 
 /**
@@ -913,16 +1081,26 @@ export async function submitLessonAttempt(services: Services, input: AttemptInpu
 
     const childAnswer = typed.text;
     const normalizedAnswer = normalizedAnswerKey(services, started.key, childAnswer);
-    const promptVersion = services.grader?.provider.promptVersion;
+    // Wersja promptu zależy od ścieżki (szkoła ma osobny klucz cache).
+    const earlyInput = services.grader ? buildGraderInput(services, started.task, started.key, childAnswer) : null;
+    const promptVersion = services.grader
+      ? (services.grader.provider.promptVersionForInput?.(earlyInput!) ?? services.grader.provider.promptVersion)
+      : undefined;
 
     // Krok 3: trafienie w cache (ten sam materiał) — finalizacja jak deterministyczna.
     if (promptVersion) {
       const cached = await readCachedVerdict(tx, started.task.itemRevisionId, normalizedAnswer, promptVersion);
       if (cached) {
-        const verdict = verdictFromCacheRow(cached);
-        const cachedResult = resultFromVerdict(services, started.task, started.key, childAnswer, verdict, cached.id, cached.parentDecision === "overridden_incorrect");
-        const dto = await finalizeLessonAttempt(tx, services, started, typed, cachedResult);
-        return { kind: "done" as const, dto };
+        const schoolVerdict = earlyInput?.school ? schoolVerdictFromCacheRow(cached, started.key, childAnswer) : null;
+        const cachedResult = earlyInput?.school
+          ? schoolVerdict
+            ? resultFromSchoolVerdict(services, started.key, childAnswer, schoolVerdict, cached.id, cached.parentDecision === "overridden_incorrect")
+            : null
+          : resultFromVerdict(services, started.task, started.key, childAnswer, verdictFromCacheRow(cached), cached.id, cached.parentDecision === "overridden_incorrect");
+        if (cachedResult) {
+          const dto = await finalizeLessonAttempt(tx, services, started, typed, cachedResult);
+          return { kind: "done" as const, dto };
+        }
       }
     }
 
@@ -961,12 +1139,24 @@ export async function submitLessonAttempt(services: Services, input: AttemptInpu
   const graderInput = buildGraderInput(services, phase1.start.task, phase1.start.key, phase1.childAnswer);
   const allowed = allowedCategoriesFor(services, phase1.start.key);
   let verdict: GraderVerdict | null = null;
+  let schoolVerdict: SchoolVerdict | null = null;
+  const effectivePromptVersion =
+    grader.provider.promptVersionForInput?.(graderInput) ?? grader.provider.promptVersion;
   try {
     const signal = AbortSignal.timeout(phase1.timeoutMs);
     const raw = await grader.provider.grade(graderInput, signal);
-    verdict = validateVerdict(raw, { allowedCategories: allowed, childAnswer: phase1.childAnswer });
+    if (graderInput.school) {
+      schoolVerdict = validateSchoolVerdict(raw, {
+        requiredElementIds: graderInput.school.requiredElements.map((el) => el.id),
+        childAnswer: phase1.childAnswer,
+        formOk: formOkFor(phase1.start.key, phase1.childAnswer),
+      });
+    } else {
+      verdict = validateVerdict(raw, { allowedCategories: allowed, childAnswer: phase1.childAnswer });
+    }
   } catch {
     verdict = null; // technical: timeout / 5xx / sieć / 429 → nieocenione, licznik zużyty
+    schoolVerdict = null;
   }
 
   // Faza 2 (CAS): zapis werdyktu do cache (ON CONFLICT DO NOTHING), odczyt wiersza,
@@ -976,9 +1166,10 @@ export async function submitLessonAttempt(services: Services, input: AttemptInpu
     return finalizeGradedAttempt(tx, services, phase1.start, phase1.attemptId, {
       childAnswer: phase1.childAnswer,
       normalizedAnswer: phase1.normalizedAnswer,
-      promptVersion: phase1.promptVersion,
+      promptVersion: effectivePromptVersion,
       graderModel: phase1.graderModel,
       verdict,
+      ...(schoolVerdict ? { schoolVerdict } : {}),
     });
   });
 }
@@ -1038,6 +1229,7 @@ async function reserveProcessingAttempt(
 
 interface GradedFinalizeArgs {
   childAnswer: string;
+  schoolVerdict?: SchoolVerdict | null;
   normalizedAnswer: string;
   promptVersion: string;
   graderModel: string;
@@ -1088,8 +1280,40 @@ async function finalizeGradedAttempt(
 
   // Zapis werdyktu do cache i odczyt wiersza (zbieżność równoległych odpowiedzi).
   let effectiveVerdict: GraderVerdict | null = args.verdict;
+  let effectiveSchoolVerdict: SchoolVerdict | null = args.schoolVerdict ?? null;
   let authoritativeIncorrect = false;
   let verdictId: string | null = null;
+  if (args.schoolVerdict) {
+    const sv = args.schoolVerdict;
+    await tx
+      .insert(lessonVerdicts)
+      .values({
+        id: randomUUID(),
+        itemRevisionId: task.itemRevisionId,
+        normalizedAnswer: args.normalizedAnswer,
+        promptVersion: args.promptVersion,
+        graderModel: args.graderModel,
+        verdict: sv.knowledge === "correct" ? "correct" : sv.knowledge === "partial" ? "almost" : "incorrect",
+        errorCategory: sv.knowledge === "correct" ? null : sv.knowledge === "partial" ? "missing_element" : "wrong_fact",
+        fragments: [...new Set([...sv.incorrectStatements, ...sv.redundantFragments])].slice(0, 4),
+        precision: sv.precision,
+        matchedElements: [...sv.matchedElementIds],
+        missingElements: [...sv.missingElementIds],
+        incorrectStatements: [...sv.incorrectStatements],
+        redundantFragments: [...sv.redundantFragments],
+        note: sv.note,
+        createdAt: receivedAt,
+      })
+      .onConflictDoNothing({
+        target: [lessonVerdicts.itemRevisionId, lessonVerdicts.normalizedAnswer, lessonVerdicts.promptVersion],
+      });
+    const row = await readCachedVerdict(tx, task.itemRevisionId, args.normalizedAnswer, args.promptVersion);
+    if (row) {
+      effectiveSchoolVerdict = schoolVerdictFromCacheRow(row, key, args.childAnswer) ?? effectiveSchoolVerdict;
+      verdictId = row.id;
+      authoritativeIncorrect = row.parentDecision === "overridden_incorrect";
+    }
+  }
   if (args.verdict !== null) {
     await tx
       .insert(lessonVerdicts)
@@ -1116,7 +1340,16 @@ async function finalizeGradedAttempt(
     }
   }
 
-  const result = resultFromVerdict(services, task, key, args.childAnswer, effectiveVerdict, verdictId, authoritativeIncorrect);
+  const result = args.schoolVerdict !== undefined || key.schoolCriteria
+    ? resultFromSchoolVerdict(
+        services,
+        key,
+        args.childAnswer,
+        effectiveSchoolVerdict,
+        verdictId,
+        authoritativeIncorrect,
+      )
+    : resultFromVerdict(services, task, key, args.childAnswer, effectiveVerdict, verdictId, authoritativeIncorrect);
   const qualification = qualifyLessonAttempt({
     receivedAt: frozen.receivedAt,
     policy,

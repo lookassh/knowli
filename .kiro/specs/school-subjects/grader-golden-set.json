@@ -1,0 +1,212 @@
+{
+  "version": 1,
+  "description": "Złoty zestaw ewaluacyjny gradera odpowiedzi otwartych przedmiotu szkolnego. Fikcyjne odpowiedzi dziecka; brak danych prawdziwych dzieci.",
+  "gate": {
+    "hardCategoriesMustPass": ["błędna zależność mimo słów kluczowych", "istotny błąd rzeczowy"],
+    "knowledgeAccuracyMin": 0.9
+  },
+  "questions": {
+    "fotosynteza": {
+      "prompt": "Co to jest fotosynteza?",
+      "questionType": "definition",
+      "expectedForm": "explanation",
+      "modelAnswer": "Fotosynteza to proces, w którym roślina z wody i dwutlenku węgla, przy udziale światła, wytwarza cukry.",
+      "requiredElements": [
+        { "id": "e1", "text": "Roślina wytwarza cukry (związki organiczne)." },
+        { "id": "e2", "text": "Roślina wykorzystuje wodę i dwutlenek węgla." },
+        { "id": "e3", "text": "Roślina wykorzystuje energię światła." }
+      ],
+      "supplementaryElements": ["Przy fotosyntezie tlenowej uwalniany jest tlen."],
+      "topicTitle": "Fotosynteza",
+      "sourceQuotes": ["Fotosynteza to proces, w którym roślina z wody i dwutlenku węgla, przy udziale światła, wytwarza cukry."],
+      "commonErrors": ["Roślina pobiera cukier z gleby.", "Fotosynteza zachodzi nocą, gdy nie ma światła."]
+    },
+    "chrzest": {
+      "prompt": "Dlaczego Mieszko I przyjął chrzest?",
+      "questionType": "cause",
+      "expectedForm": "explanation",
+      "modelAnswer": "Mieszko I przyjął chrzest, aby wzmocnić swoją władzę, włączyć państwo do chrześcijańskiej Europy i odebrać sąsiadom pretekst do wojny pod pozorem nawracania pogan.",
+      "requiredElements": [
+        { "id": "e1", "text": "Chrzest włączył państwo do chrześcijańskiej Europy (krąg łaciński)." },
+        { "id": "e2", "text": "Chrzest odebrał sąsiadom pretekst do wojny pod pozorem nawracania." },
+        { "id": "e3", "text": "Chrzest wzmocnił władzę Mieszka I." }
+      ],
+      "supplementaryElements": ["Chrzest przyjęto za pośrednictwem Czech w 966 roku."],
+      "topicTitle": "Chrzest Polski",
+      "sourceQuotes": ["Mieszko I przyjął chrzest, aby wzmocnić swoją władzę, włączyć państwo do chrześcijańskiej Europy i odebrać sąsiadom pretekst do wojny pod pozorem nawracania pogan."],
+      "commonErrors": ["Mieszko przyjął chrzest, bo przegrał wojnę z Czechami.", "Chrzest przyjął syn Mieszka, Bolesław Chrobry."]
+    },
+    "ssak-ptak": {
+      "prompt": "Czym ssaki różnią się od ptaków? Podaj dwie różnice.",
+      "questionType": "comparison",
+      "expectedForm": "explanation",
+      "modelAnswer": "Ssaki karmią młode mlekiem i mają sierść, a ptaki składają jaja i mają pióra.",
+      "requiredElements": [
+        { "id": "e1", "text": "Ssaki karmią młode mlekiem." },
+        { "id": "e2", "text": "Ptaki składają jaja." },
+        { "id": "e3", "text": "Ssaki mają sierść, a ptaki pióra." }
+      ],
+      "supplementaryElements": [],
+      "topicTitle": "Ssaki i ptaki",
+      "sourceQuotes": ["Ssaki karmią młode mlekiem i mają sierść, a ptaki składają jaja i mają pióra."],
+      "commonErrors": ["Ssaki składają jaja, a ptaki karmią młode mlekiem.", "Wszystkie ssaki potrafią latać."]
+    },
+    "fotosynteza-jedno-zdanie": {
+      "prompt": "Wyjaśnij w jednym zdaniu, na czym polega fotosynteza.",
+      "questionType": "definition",
+      "expectedForm": "one_sentence",
+      "modelAnswer": "W fotosyntezie roślina z wody i dwutlenku węgla, przy udziale światła, wytwarza cukry.",
+      "requiredElements": [
+        { "id": "e1", "text": "Roślina wytwarza cukry (związki organiczne)." },
+        { "id": "e2", "text": "Roślina wykorzystuje wodę i dwutlenek węgla." },
+        { "id": "e3", "text": "Roślina wykorzystuje energię światła." }
+      ],
+      "supplementaryElements": [],
+      "topicTitle": "Fotosynteza",
+      "sourceQuotes": ["W fotosyntezie roślina z wody i dwutlenku węgla, przy udziale światła, wytwarza cukry."],
+      "commonErrors": ["Roślina pobiera cukier z gleby."]
+    }
+  },
+  "cases": [
+    {
+      "id": "G01",
+      "question": "fotosynteza",
+      "category": "poprawna parafraza",
+      "childAnswer": "Roślina robi sobie jedzenie, czyli cukier, z wody i gazu z powietrza, a pomaga jej w tym słońce.",
+      "expected": { "knowledge": "correct", "precision": "concise", "missingElementIds": [] }
+    },
+    {
+      "id": "G02",
+      "question": "fotosynteza",
+      "category": "poprawna, lecz rozwlekła",
+      "childAnswer": "Rośliny rosną w ogrodzie u mojej babci i są zielone, a jak świeci słońce i mają wodę i dwutlenek węgla, to wytwarzają cukry, a w ogóle drzewa są bardzo wysokie i jesienią spadają z nich liście.",
+      "expected": { "knowledge": "correct", "precision": "verbose", "missingElementIds": [] }
+    },
+    {
+      "id": "G03",
+      "question": "fotosynteza",
+      "category": "częściowo poprawna — brak elementu",
+      "childAnswer": "Roślina bierze światło słoneczne i wodę.",
+      "expected": { "knowledge": "partial", "precision": "concise", "missingElementIds": ["e1", "e2"] }
+    },
+    {
+      "id": "G04",
+      "question": "fotosynteza",
+      "category": "częściowo poprawna — brak elementu",
+      "childAnswer": "To jest, jak roślina wytwarza cukier ze światła i wody.",
+      "expected": { "knowledge": "partial", "precision": "concise", "missingElementIds": ["e2"] }
+    },
+    {
+      "id": "G05",
+      "question": "fotosynteza",
+      "category": "błędna zależność mimo słów kluczowych",
+      "childAnswer": "Fotosynteza to jak roślina pobiera cukry ze światła słońca i zmienia je w dwutlenek węgla.",
+      "expected": { "knowledge": "incorrect", "precision": "concise", "missingElementIds": ["e1", "e2"] }
+    },
+    {
+      "id": "G06",
+      "question": "fotosynteza",
+      "category": "istotny błąd rzeczowy",
+      "childAnswer": "Fotosynteza zachodzi w nocy w korzeniach i roślina wtedy wytwarza dwutlenek węgla.",
+      "expected": { "knowledge": "incorrect", "precision": "concise", "missingElementIds": ["e1", "e2", "e3"] }
+    },
+    {
+      "id": "G07",
+      "question": "fotosynteza",
+      "category": "poprawna z elementem uzupełniającym",
+      "childAnswer": "Roślina ze światła, wody i dwutlenku węgla robi cukry i oddaje tlen.",
+      "expected": { "knowledge": "correct", "precision": "concise", "missingElementIds": [] }
+    },
+    {
+      "id": "G08",
+      "question": "fotosynteza",
+      "category": "poprawna, lecz nie na temat w większości",
+      "childAnswer": "W lesie żyje dużo zwierząt, na przykład sarny i dziki, a mój kolega widział lisa. A fotosynteza jest o tym, że roślina przy świetle z wody i dwutlenku węgla wytwarza cukry.",
+      "expected": { "knowledge": "correct", "precision": "unfocused", "missingElementIds": [] }
+    },
+    {
+      "id": "G09",
+      "question": "chrzest",
+      "category": "poprawna parafraza",
+      "childAnswer": "Żeby Polska dołączyła do chrześcijańskich krajów i żeby sąsiedzi nie mieli powodu jej atakować, że jest pogańska, a do tego jego władza była silniejsza.",
+      "expected": { "knowledge": "correct", "precision": "concise", "missingElementIds": [] }
+    },
+    {
+      "id": "G10",
+      "question": "chrzest",
+      "category": "poprawna, lecz rozwlekła",
+      "childAnswer": "Mieszko rządził dawno temu, a potem był Bolesław Chrobry i była koronacja i bitwa pod Cedynią i dużo innych rzeczy, ale chrzest przyjął, bo chciał być w chrześcijańskiej Europie, umocnić władzę i żeby Niemcy nie mieli pretekstu do wojny o nawracanie.",
+      "expected": { "knowledge": "correct", "precision": "verbose", "missingElementIds": [] }
+    },
+    {
+      "id": "G11",
+      "question": "chrzest",
+      "category": "częściowo poprawna — brak elementów",
+      "childAnswer": "Bo chciał, żeby jego państwo należało do chrześcijańskiej Europy.",
+      "expected": { "knowledge": "partial", "precision": "concise", "missingElementIds": ["e2", "e3"] }
+    },
+    {
+      "id": "G12",
+      "question": "chrzest",
+      "category": "istotny błąd rzeczowy",
+      "childAnswer": "Bo przegrał wojnę z Niemcami i musiał przyjąć chrzest, jak mu kazali.",
+      "expected": { "knowledge": "incorrect", "precision": "concise", "missingElementIds": ["e1", "e2", "e3"] }
+    },
+    {
+      "id": "G13",
+      "question": "chrzest",
+      "category": "błędna zależność mimo słów kluczowych",
+      "childAnswer": "Przyjął chrzest, żeby chrześcijańscy sąsiedzi mogli rządzić jego państwem i nawracać jego ludzi siłą.",
+      "expected": { "knowledge": "incorrect", "precision": "concise", "missingElementIds": ["e1", "e2", "e3"] }
+    },
+    {
+      "id": "G14",
+      "question": "ssak-ptak",
+      "category": "poprawna — porównanie",
+      "childAnswer": "Ssaki dają młodym mleko i mają futerko, a ptaki znoszą jajka i mają piórka.",
+      "expected": { "knowledge": "correct", "precision": "concise", "missingElementIds": [] }
+    },
+    {
+      "id": "G15",
+      "question": "ssak-ptak",
+      "category": "częściowo poprawna — tylko jedna strona",
+      "childAnswer": "Ssaki karmią młode mlekiem i mają sierść.",
+      "expected": { "knowledge": "partial", "precision": "concise", "missingElementIds": ["e2", "e3"] }
+    },
+    {
+      "id": "G16",
+      "question": "ssak-ptak",
+      "category": "błędna zależność mimo słów kluczowych",
+      "childAnswer": "Ssaki składają jaja i mają pióra, a ptaki karmią młode mlekiem i mają sierść.",
+      "expected": { "knowledge": "incorrect", "precision": "concise", "missingElementIds": ["e1", "e2", "e3"] }
+    },
+    {
+      "id": "G17",
+      "question": "fotosynteza-jedno-zdanie",
+      "category": "poprawna forma jednego zdania",
+      "childAnswer": "Roślina przy pomocy światła robi cukry z wody i dwutlenku węgla.",
+      "expected": { "knowledge": "correct", "precision": "concise", "missingElementIds": [], "formOk": true }
+    },
+    {
+      "id": "G18",
+      "question": "fotosynteza-jedno-zdanie",
+      "category": "naruszenie formy przy poprawnej treści",
+      "childAnswer": "Roślina bierze światło. Bierze też wodę i dwutlenek węgla. I z tego wytwarza cukry.",
+      "expected": { "knowledge": "correct", "precision": "verbose", "missingElementIds": [], "formOk": false }
+    },
+    {
+      "id": "G19",
+      "question": "chrzest",
+      "category": "odpowiedź spoza tematu",
+      "childAnswer": "Mieszko I był księciem i miał syna Bolesława.",
+      "expected": { "knowledge": "incorrect", "precision": "unfocused", "missingElementIds": ["e1", "e2", "e3"] }
+    },
+    {
+      "id": "G20",
+      "question": "ssak-ptak",
+      "category": "częściowo poprawna — elementy mieszane z błędem drobnym",
+      "childAnswer": "Ptaki składają jaja i mają pióra, a ssaki mają sierść i wszystkie żyją na lądzie.",
+      "expected": { "knowledge": "partial", "precision": "concise", "missingElementIds": ["e1"] }
+    }
+  ]
+}

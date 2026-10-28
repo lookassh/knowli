@@ -61,6 +61,34 @@ export interface LessonTopic {
   readonly objectives: readonly LearningObjective[];
 }
 
+/** Rodzaj pytania otwartego przedmiotów szkolnych (payload v3). */
+export type LessonQuestionType =
+  | "definition"
+  | "enumeration"
+  | "cause"
+  | "comparison"
+  | "fact"
+  | "process";
+
+/** Oczekiwana forma odpowiedzi otwartej (payload v3). */
+export type LessonExpectedForm = "short" | "one_sentence" | "explanation" | "list";
+
+/**
+ * Dane tematu dynamicznego: zagadnienia wyprowadzone z materiału rodzica,
+ * zapisane w `lesson_context.dynamicTopic`. Identyfikatory celów są pełne
+ * (`school.d<deckId>.<slug>`), nadawane przez serwer przy generowaniu.
+ */
+export interface DynamicObjectiveData {
+  readonly id: string;
+  readonly titlePl: string;
+  readonly descriptionEn: string;
+  readonly cards: readonly { readonly title: string; readonly body: string }[];
+}
+
+export interface DynamicTopicData {
+  readonly titlePl: string;
+  readonly objectives: readonly DynamicObjectiveData[];
+}
 /** Normalizator odpowiedzi przedmiotu. */
 export interface AnswerNormalizer {
   /** Zbiór równoważnych sekwencji tokenów (np. rozwinięcia skrótów). */
@@ -113,6 +141,14 @@ export interface LessonExerciseDraft {
   readonly options?: readonly { readonly id: string; readonly text: string }[];
   readonly correctOption?: string;
   readonly items?: readonly { readonly id: string; readonly text: string }[];
+  /** Pola payloadu v3 (przedmioty szkolne) — opcjonalne dla pozostałych. */
+  readonly questionType?: LessonQuestionType;
+  readonly requiredElements?: readonly { readonly id: string; readonly text: string }[];
+  readonly supplementaryElements?: readonly string[];
+  readonly commonErrors?: readonly string[];
+  readonly expectedForm?: LessonExpectedForm;
+  readonly familyId?: string;
+  readonly sourceRefs?: readonly { readonly quote: string; readonly parentAdded?: boolean }[];
 }
 
 /**
@@ -131,9 +167,28 @@ export interface SubjectModule {
   readonly normalizer: AnswerNormalizer;
   readonly topics: readonly LessonTopic[]; // wszystkie wersje tematów
   readonly prompts: SubjectPromptProfile;
+  /** Czy przedmiot używa pól payloadu v3 (przedmioty szkolne); inne przedmioty ich nie przyjmują. */
+  readonly usesV3Payload?: boolean;
+  /** Minima pokrycia publikacji per cel; brak = DEFAULT_LESSON_POLICY. */
+  readonly poolMinimums?: { readonly guided: number; readonly productive: number; readonly independent: number };
   /** Jak rozpoznawać duplikaty w puli; odpowiedzi pozostają osobną osią ekspozycji. */
   readonly poolDeduplication?: "answer" | "exercise";
   /** Błędy specyficzne dla przedmiotu (pusta lista = poprawne). */
   validateExercise(ex: LessonExerciseDraft, topic: LessonTopic): string[];
   readonly ttsForAnswers: boolean; // czy generować audio odpowiedzi kanonicznej
+  /**
+   * Przedmiot z tematami dynamicznymi (zagadnienia z materiału rodzica):
+   * składa `LessonTopic` z danych zapisanych w kontekście wersji. Brak =
+   * przedmiot katalogowy.
+   */
+  buildDynamicTopic?(data: DynamicTopicData): LessonTopic;
+  /**
+   * Dodatkowa walidacja CAŁEJ puli z dostępem do materiału (np. uziemienie
+   * cytatów, spójność rodzin pytań). Zwraca błędy per indeks ćwiczenia;
+   * pusta mapa = poprawne. Wołana obok `validatePool`, nie zamiast niej.
+   */
+  validatePoolExtra?(
+    drafts: readonly LessonExerciseDraft[],
+    ctx: { material: string },
+  ): ReadonlyMap<number, readonly string[]>;
 }

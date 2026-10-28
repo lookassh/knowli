@@ -17,7 +17,8 @@ import {
   sessionTasks,
 } from "../../../db/schema";
 import { AppError } from "../../../errors";
-import type { LearningObjective, LessonExerciseType, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
+import type { DynamicTopicData, LearningObjective, LessonExerciseType, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
+import { resolveLessonTopic } from "../../../domain/lessons/topic-resolution";
 import {
   selectLessonTask,
   type LessonExerciseCandidate,
@@ -77,6 +78,8 @@ export interface LessonContextShape {
   topicVersion: number;
   objectiveIds: string[];
   examples: Record<string, string[]>;
+  dynamicTopic?: DynamicTopicData;
+  subjectTitlePl?: string;
 }
 
 /** Odczyt `lesson_context` z wersji sesji; rzuca, gdy brak (nie powinno się zdarzyć dla lekcji). */
@@ -91,13 +94,16 @@ export function lessonContextOf(version: Pick<typeof deckVersions.$inferSelect, 
     topicVersion: typeof raw.topicVersion === "number" ? raw.topicVersion : 1,
     objectiveIds: Array.isArray(raw.objectiveIds) ? raw.objectiveIds : [],
     examples: raw.examples ?? {},
+    ...(raw.dynamicTopic ? { dynamicTopic: raw.dynamicTopic } : {}),
+    ...(typeof raw.subjectTitlePl === "string" ? { subjectTitlePl: raw.subjectTitlePl } : {}),
   };
 }
 
 /** Przypięta wersja tematu z rejestru (publikacja przypina `topicVersion`). */
 export function requireTopic(services: Services, ctx: LessonContextShape): { subject: SubjectModule; topic: LessonTopic } {
-  const subject = services.subjects.getSubject(ctx.subjectId);
-  const topic = subject ? services.subjects.getTopic(ctx.subjectId, ctx.topicId, ctx.topicVersion) : undefined;
+  const resolved = resolveLessonTopic(services.subjects, ctx);
+  const subject = resolved?.subject;
+  const topic = resolved?.topic;
   if (!subject || !topic) {
     throw new AppError("internal", { message: `lesson subject/topic missing: ${ctx.subjectId}/${ctx.topicId} v${ctx.topicVersion}` });
   }

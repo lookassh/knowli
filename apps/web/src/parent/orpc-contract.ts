@@ -16,6 +16,8 @@ import {
   GenerationCommandSchema,
   GenerationDtoSchema,
   LessonCommandSchema,
+  SchoolLessonCommandSchema,
+  LessonDynamicTopicPatchSchema,
   LessonDeckDtoSchema,
   LessonDraftDtoSchema,
   LessonExerciseInputSchema,
@@ -162,9 +164,10 @@ const LessonDraftPatchContractSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   exercises: z.array(LessonExerciseInputSchema).optional(),
   examples: z.record(z.string(), z.array(z.string())).optional(),
+  dynamicTopic: LessonDynamicTopicPatchSchema.optional(),
 }).refine(
-  (patch) => patch.title !== undefined || patch.exercises !== undefined || patch.examples !== undefined,
-  { message: "patch must change title, exercises or examples" },
+  (patch) => patch.title !== undefined || patch.exercises !== undefined || patch.examples !== undefined || patch.dynamicTopic !== undefined,
+  { message: "patch must change title, exercises, examples or dynamicTopic" },
 );
 
 /** Wejście PATCH /lesson-drafts/{lessonDraftId}: ścieżka + patch edycji. */
@@ -359,6 +362,11 @@ export const parentApiContract = {
       .input(LessonCommandSchema)
       .output(z.object({ runId: UuidSchema, deckId: UuidSchema }))
       .meta(openapi({ method: "POST", path: "/lessons", successStatus: 202 })),
+
+    createSchool: oc
+      .input(SchoolLessonCommandSchema)
+      .output(z.object({ runId: UuidSchema, deckId: UuidSchema }))
+      .meta(openapi({ method: "POST", path: "/lessons/school", successStatus: 202 })),
 
     get: oc
       .input(DeckPathSchema)

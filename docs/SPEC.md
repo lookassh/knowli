@@ -749,39 +749,25 @@ PWA musi umożliwiać dodanie aplikacji do ekranu głównego. Pełna praca offli
 
 W projekcie architektury trzeba opisać trwałość danych i zasobów, ich kopie zapasowe oraz odtworzenie po aktualizacji. Nie wymaga to rozbudowanego panelu administracyjnego.
 
-## 28. Przyszły moduł: nauka z materiałów źródłowych
+## 28. Przedmioty szkolne z materiału rodzica (2026-10-28; Etapy 1–2 zaimplementowane na gałęzi)
 
-Moduł jest poza MVP. Obecna architektura powinna umożliwiać jego dodanie bez przepisywania historii prób i profili.
+Moduł rozszerza silnik lekcji (§29a) o przedmioty szkolne — historię, biologię, język polski i inne — jako generyczny przedmiot `school`, którego zagadnienia powstają z materiału dostarczonego przez rodzica, a nie z katalogu w kodzie. Status: wymagania i projekt w `.kiro/specs/school-subjects/{requirements,design,tasks}.md`; Etapy 1–2 (przedmiot z tekstu wklejonego, typy zamknięte i odpowiedź otwarta z oceną dwuwymiarową) zaimplementowane na gałęzi `feature/school-subjects-source-material`, niezweryfikowane na produkcji; etapy 2b–5 (zadania rachunkowe, odpowiedź mówiona, trener precyzji, pilotaż) przed nami — opisy tych mechanik poniżej są projektem, nie stanem kodu. Zestaw szkolny jest lekcją; słówka i gramatyka pozostają bez zmian, a raport Hermesa nadal wyklucza lekcje.
 
-Docelowe wejścia: zdjęcia JPG/PNG, PDF, zdjęcia podręcznika, zeszytu, notatki i karty pracy, również wiele plików naraz.
+Wejściem jest wyłącznie tekst wklejony przez rodzica (jeden zestaw = jeden podrozdział; limit materiału dla przedmiotu szkolnego: 16 000 znaków), np. wierne opracowanie przygotowane w narzędziu zewnętrznym (NotebookLM) ze zdjęć podręcznika. Upload plików, OCR, analiza dokumentów i wyświetlanie obrazów z podręcznika są poza zakresem (decyzja właściciela); kształt powiązań ze źródłem ma pozwolić dopiąć je później bez zmiany znaczenia zapisanych prób.
 
-Docelowy przebieg:
+Przebieg: rodzic podaje przedmiot, temat i materiał → system wyprowadza zagadnienia z kartami nauki oraz pulę ćwiczeń (w tym rodziny pytań: kilka sformułowań tego samego pytania o wspólnych wymaganych elementach odpowiedzi, bez generowania pytań w trakcie sesji) → rodzic edytuje i zatwierdza → dziecko ćwiczy typami: karta nauki, wybór (też prawda/fałsz), luka, porządkowanie i odpowiedź otwarta (pisemna). Planowane, jeszcze niezaimplementowane: zadania rachunkowe z parametrami liczonymi deterministycznie przez kod (np. skala mapy, wysokość względna; Etap 2b), odpowiedź mówiona po polskiej transkrypcji STT bez oceny wymowy (Etap 3) oraz trener precyzji: „najpierw słowa kluczowe”, „odpowiedz w jednym zdaniu”, „skróć swoją odpowiedź” (Etap 4).
 
-1. Rodzic dodaje materiał i wskazuje temat.
-2. OCR lub model multimodalny odczytuje zawartość.
-3. System tworzy uporządkowaną reprezentację dokumentu.
-4. AI wskazuje najważniejsze informacje i cele nauki.
-5. Rodzic przegląda wynik.
-6. AI przygotowuje zadania oparte na zatwierdzonym materiale.
-7. Rodzic zatwierdza zestaw.
-8. Dziecko ćwiczy; kolejne sesje uwzględniają jego trudności.
+Odpowiedź otwarta ma odpowiedź wzorcową i listę wymaganych elementów. Ocena jest hybrydowa jak w lekcjach (warianty → cache werdyktów → model) i **dwuwymiarowa**: wiedza (`correct|partial|incorrect`) steruje postępem zagadnienia, a precyzja (`concise|verbose|unfocused` — na temat, uporządkowana, bez dygresji) jest tylko raportowana i dobiera ćwiczenia trenera. Rozwlekła, lecz poprawna odpowiedź zalicza wiedzę; odpowiedź z istotnym błędem rzeczowym nie jest zaliczana mimo właściwych słów kluczowych; poprawne parafrazy są uznawane. Awaria lub brak modelu to „nieocenione” bez kary. Panel rodzica pokazuje wiedzę i precyzję osobno. Ocena dwuwymiarowa działa od Etapu 2 na gałęzi modułu (limit odpowiedzi szkolnej do modelu: 600 znaków; lekcje gramatyki bez zmian — 200).
 
-Przykład: zdjęcia rozdziału o chrzcie Polski → pytania o datę, Mieszka I, znaczenie wydarzenia i związki przyczynowo-skutkowe.
+Przykład: wklejone opracowanie rozdziału o chrzcie Polski → zagadnienia o dacie, przyczynach i znaczeniu chrztu, pytania z wymaganymi elementami, próbny sprawdzian bez podpowiedzi.
 
-Docelowe typy zadań obejmują fiszki, wybór odpowiedzi, prawda/fałsz, krótką odpowiedź, odpowiedź ustną, porządkowanie i dopasowywanie. Nie implementujemy ich wszystkich teraz.
+## 29. Source grounding — wymaganie modułu przedmiotów szkolnych
 
-Ogólne zadanie z historii nie musi mieć umiejętności „wymowa” czy „pisownia angielska”. Model postępu ma pozwalać przypisać właściwe umiejętności do typu materiału.
+Pytania i odpowiedzi wzorcowe zestawu szkolnego powstają wyłącznie na podstawie materiału rodzica. Karty nauki mogą upraszczać wyjaśnienia własnymi słowami i dokładać przykłady pomocnicze, ale system nie dopisuje nowych faktów do treści sprawdzanej ćwiczeniami. Każde ćwiczenie nosi co najmniej jeden cytat źródłowy będący dokładnym fragmentem tego materiału (albo tekstu dopisanego i oznaczonego przez rodzica); walidacja puli odrzuca ćwiczenie bez pokrycia zamiast dopisywać fakt z wiedzy modelu. Rodzic może wybrać „Skąd to pytanie?” i zobaczyć cytat.
 
-## 29. Source grounding — wymaganie przyszłego modułu
+W odpowiedzi ustnej STT ustala tekst, a ocena merytoryczna odnosi go do wymaganych elementów i materiału. Ocena wymowy nie jest potrzebna do zaliczenia odpowiedzi historycznej, a niepewna transkrypcja kończy się „nieocenione”.
 
-Odpowiedzi i informacje w zestawie źródłowym powstają wyłącznie na podstawie dostarczonego materiału. Każdy element zawiera jedno lub więcej powiązań z odpowiednimi źródłami, np. identyfikator pliku, stronę i fragment tekstu; jeśli potrzebne, również położenie na stronie.
-
-Rodzic może wybrać „Skąd to pytanie?” i zobaczyć źródło. Jeśli fragment jest nieczytelny, niekompletny albo nie zawiera danej informacji, system oznacza problem zamiast dopisywać fakt z wiedzy modelu.
-
-W przyszłej odpowiedzi ustnej STT ustala tekst, a ocena merytoryczna odnosi go do oczekiwanej odpowiedzi i materiału. Ocena wymowy nie jest potrzebna do zaliczenia odpowiedzi historycznej.
-
-MVP nie zawiera uploadu dokumentów, OCR, analizy rozdziałów ani źródłowego interfejsu przeglądu.
-
+Aplikacja nadal nie zawiera uploadu dokumentów ani OCR; czytelność zdjęć i wierność opracowania weryfikuje rodzic przy przygotowaniu tekstu w narzędziu zewnętrznym.
 ## 29a. Lekcje i przedmioty (2026-10-12)
 
 Uzupełnienie wprowadza drugi rodzaj materiału obok zestawu słówek: **lekcję**. Lekcja uczy czasu/konstrukcji gramatycznej (tematy katalogu: Present Simple oraz czasownik „to be”, dodany 2026-10-26) na materiale, który dziecko przerabia w szkole. Szczegółowe wymagania i kryteria: `.kiro/specs/grammar-module/{requirements,design}.md`; poniżej opis produktu.
@@ -829,13 +815,13 @@ Nie implementujemy:
 - natywnych aplikacji Android/iOS;
 - rozbudowanej gamifikacji;
 - konfigurowalnego przez dziecko Anki/FSRS z dziesiątkami parametrów;
-- OCR, PDF i modułu historii;
+- OCR, PDF i uploadu dokumentów (moduł przedmiotów szkolnych z §28 pracuje na tekście wklejonym przez rodzica);
 - pełnej pracy offline;
 - trwałego przechowywania nagrań dziecka;
 - wszystkich potencjalnych providerów jednocześnie;
 - automatycznej oceny długich odpowiedzi otwartych.
 
-Zakres oceny modelem (2026-10-12): poza zakresem pozostaje automatyczna ocena DŁUGICH, swobodnych wypowiedzi (esejów, wieloaspektowych odpowiedzi). Ocena KRÓTKICH odpowiedzi w lekcjach (jedno zdanie w zakresie jednej reguły, np. tłumaczenie zdania, poprawienie błędu, przekształcenie) przez model oceniający jest w zakresie modułu lekcji — opisuje ją sekcja „Lekcje i przedmioty" i wyjątek §10.
+Zakres oceny modelem (2026-10-12, uzupełniono 2026-10-28): poza zakresem pozostaje automatyczna ocena DŁUGICH, swobodnych wypowiedzi (esejów, wieloaspektowych odpowiedzi). Ocena KRÓTKICH odpowiedzi w lekcjach (jedno zdanie w zakresie jednej reguły, np. tłumaczenie zdania, poprawienie błędu, przekształcenie) przez model oceniający jest w zakresie modułu lekcji — opisuje ją sekcja „Lekcje i przedmioty" i wyjątek §10. Zaprojektowany moduł przedmiotów szkolnych (§28) dokłada ocenę krótkich i średnich odpowiedzi otwartych względem zatwierdzonej listy wymaganych elementów, z osobnym wymiarem precyzji.
 
 Profile dzieci, historia prób, pisownia i działanie bez mikrofonu są częścią MVP i nie mogą zostać odłożone na podstawie poprzedniej wersji specyfikacji.
 

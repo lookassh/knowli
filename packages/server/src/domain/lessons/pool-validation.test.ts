@@ -52,7 +52,7 @@ describe("validateLessonExercise — cel i typ", () => {
     expect(errors.some((error) => /stem|prompt|statement/.test(error))).toBe(true);
   });
   it.each(["answer", "acceptedAnswers", "options"])("odrzuca przekroczenie limitu tekstu w %s", (field) => {
-    const long = "x".repeat(121);
+    const long = "x".repeat(121); // gramatyka: wszystkie pola ≤ 120 (limit 300 dotyczy tylko przedmiotów v3)
     const overrides = field === "answer" ? { answer: long, focus: [long] }
       : field === "acceptedAnswers" ? { acceptedAnswers: [long] }
       : { options: [{ id: "a", text: "plays" }, { id: "b", text: long }] };

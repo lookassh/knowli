@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { englishGrammarSubject } from "../../../domain/lessons/subjects/english-grammar/module";
 import { validatePool } from "../../../domain/lessons/pool-validation";
 import type { LessonTopic } from "../../../domain/lessons/types";
-import { collectBatchExerciseMetadata, filterExercisesToRequestedObjective, isWellShapedRawExercise, summarizeLessonPoolValidation, toExerciseDraft } from "./lesson-drafts";
+import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
+import { collectBatchExerciseMetadata, countPerObjective, filterExercisesToRequestedObjective, isWellShapedRawExercise, splitStages, stripParentAddedFlags, summarizeLessonPoolValidation, toExerciseDraft } from "./lesson-drafts";
 
 const OBJECTIVE_ID = "english_grammar.present_simple.third_person_s";
 
@@ -155,5 +156,34 @@ describe("P2-7: strażnik kształtu surowego ćwiczenia (isWellShapedRawExercise
     const wellShaped = raws.filter(isWellShapedRawExercise).map(toExerciseDraft);
     const { valid } = validatePool(wellShaped, englishGrammarSubject, topic);
     expect(valid.map((v) => v.answer)).toEqual(["plays"]);
+  });
+});
+
+describe("stripParentAddedFlags (generacja nie jest źródłem rodzica)", () => {
+  it("usuwa flagę parentAdded z cytatów ćwiczeń generowanych", () => {
+    const draft = toExerciseDraft({
+      exerciseType: "lesson_open_answer",
+      objectiveId: "school.dx.foto",
+      prompt: "Co to jest fotosynteza?",
+      answer: "Roślina wytwarza cukry.",
+      acceptedAnswers: [],
+      focus: ["cukry"],
+      sourceRefs: [{ quote: "cytat spoza materiału, wystarczająco długi", parentAdded: true }],
+    });
+    expect(draft.sourceRefs?.[0]?.parentAdded).toBe(true);
+    const [stripped] = stripParentAddedFlags([draft]);
+    expect(stripped!.sourceRefs).toEqual([{ quote: "cytat spoza materiału, wystarczająco długi" }]);
+  });
+});
+
+describe("countPerObjective (pula strukturalnie publikowalna, W3)", () => {
+  it("podział na etapy spełnia minima każdego etapu szkoły (3/2/2) także przy małej puli i wielu zagadnieniach", () => {
+    for (const objectiveCount of [1, 3, 8]) {
+      const count = countPerObjective(20, objectiveCount, schoolSubject);
+      const split = splitStages(count);
+      expect(split.guided).toBeGreaterThanOrEqual(3);
+      expect(split.productive).toBeGreaterThanOrEqual(2);
+      expect(split.independent).toBeGreaterThanOrEqual(2);
+    }
   });
 });

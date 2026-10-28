@@ -10,6 +10,7 @@ import {
   createDraftFromPublished,
   createEmptyDeck,
   createLesson,
+  createSchoolLesson,
   createLessonDraftFromPublished,
   decideLessonVerdict,
   deckIdOfLessonVersion,
@@ -89,6 +90,7 @@ vi.mock("@learning/server", async (importActual) => {
     getMockTestReportForSession: vi.fn(),
     listMockTestReportsForDeck: vi.fn(),
     createLesson: vi.fn(),
+    createSchoolLesson: vi.fn(),
     createLessonDraftFromPublished: vi.fn(),
     deckIdOfLessonVersion: vi.fn(),
     editLessonDraft: vi.fn(),
@@ -246,7 +248,7 @@ const verdictDto = {
   errorCategory: null,
   note: "",
   graderModel: "g-x",
-  parentDecision: null,
+  parentDecision: null, school: null,
   createdAt: instant,
 };
 const generationDto = {
@@ -972,6 +974,14 @@ describe("parent oRPC router — lesson-catalog i lessons", () => {
     poolSize: 20,
     clientRequestId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   };
+  const schoolCommand = {
+    deckId,
+    subjectTitlePl: "Przyroda",
+    topicTitlePl: "Rośliny",
+    material: "Fotosynteza to proces, w którym roślina wytwarza cukry.",
+    poolSize: 60,
+    clientRequestId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  };
 
   it("lesson-catalog zwraca katalog przedmiotów (200)", async () => {
     vi.mocked(lessonCatalog).mockReturnValueOnce(catalog);
@@ -991,6 +1001,23 @@ describe("parent oRPC router — lesson-catalog i lessons", () => {
     expect(response.status).toBe(202);
     await expect(response.json()).resolves.toEqual({ runId, deckId });
     expect(createLesson).toHaveBeenCalledWith(services, lessonCommand);
+  });
+
+  it("createSchool przyjmuje zestaw szkolny i zwraca 202 {runId, deckId} (W19)", async () => {
+    vi.mocked(createSchoolLesson).mockResolvedValueOnce({ runId, deckId });
+
+    const response = await call("/lessons/school", jsonInit(schoolCommand));
+
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toEqual({ runId, deckId });
+    expect(createSchoolLesson).toHaveBeenCalledWith(services, schoolCommand);
+  });
+
+  it("createSchool z pustą nazwą przedmiotu kończy się validation/400 bez wywołania usługi (W19)", async () => {
+    const response = await call("/lessons/school", jsonInit({ ...schoolCommand, subjectTitlePl: "  " }));
+
+    expect(response.status).toBe(400);
+    expect(createSchoolLesson).not.toHaveBeenCalled();
   });
 
   it("get zwraca widok zestawu lekcji (200)", async () => {
@@ -1275,6 +1302,18 @@ describe("parent oRPC router — CSRF (Origin)", () => {
           clientRequestId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         }, evil),
         vi.mocked(createLesson),
+      ],
+      [
+        "/lessons/school",
+        jsonInit({
+          deckId,
+          subjectTitlePl: "Przyroda",
+          topicTitlePl: "Rośliny",
+          material: "Fotosynteza to proces.",
+          poolSize: 60,
+          clientRequestId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        }, evil),
+        vi.mocked(createSchoolLesson),
       ],
       [`/lessons/${deckId}/draft`, { method: "POST", headers: { ...sessionCookie, ...evil } }, vi.mocked(createLessonDraftFromPublished)],
       [`/lesson-verdicts/${verdictId}/decision`, jsonInit({ decision: "confirmed" }, evil), vi.mocked(decideLessonVerdict)],

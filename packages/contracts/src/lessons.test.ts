@@ -4,6 +4,7 @@ import {
   LessonExerciseTypeSchema,
   SubjectCatalogDtoSchema,
   LessonCommandSchema,
+  SchoolLessonCommandSchema,
   LessonExerciseInputSchema,
   LessonDraftDtoSchema,
   LessonDeckDtoSchema,
@@ -334,6 +335,58 @@ describe("LessonMockTestSummaryDtoSchema", () => {
     }).success).toBe(false);
     expect(LessonMockTestSummaryDtoSchema.safeParse({
       ...base, solutions: [{ ...base.solutions[0], outcome: "not_tested" }],
+    }).success).toBe(false);
+  });
+});
+describe("SchoolLessonCommandSchema i pola v3", () => {
+  it("przyjmuje komendę szkolną z materiałem do 16000 znaków", () => {
+    const ok = SchoolLessonCommandSchema.safeParse({
+      subjectTitlePl: "Geografia",
+      topicTitlePl: "Posługuję się mapą",
+      material: "x".repeat(16000),
+      clientRequestId: UUID,
+    });
+    expect(ok.success).toBe(true);
+    const tooLong = SchoolLessonCommandSchema.safeParse({
+      subjectTitlePl: "Geografia",
+      topicTitlePl: "Mapa",
+      material: "x".repeat(16001),
+      clientRequestId: UUID,
+    });
+    expect(tooLong.success).toBe(false);
+  });
+
+  it("przyjmuje ćwiczenie otwarte z polami v3 i dłuższą odpowiedzią wzorcową", () => {
+    const parsed = LessonExerciseInputSchema.safeParse({
+      exerciseType: "lesson_open_answer",
+      objectiveId: "school.d1.fotosynteza",
+      prompt: "Co to jest fotosynteza?",
+      answer: "a".repeat(250),
+      acceptedAnswers: [],
+      focus: ["a"],
+      questionType: "definition",
+      requiredElements: [{ id: "e1", text: "Roślina wytwarza cukry." }],
+      supplementaryElements: ["Uwalniany jest tlen."],
+      expectedForm: "one_sentence",
+      familyId: "fotosynteza-definicja",
+      sourceRefs: [{ quote: "Roślina wytwarza cukry." }],
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("odrzuca nieznany questionType i zbyt wiele elementów wymaganych", () => {
+    const base = {
+      exerciseType: "lesson_open_answer",
+      objectiveId: "school.d1.x",
+      prompt: "P?",
+      answer: "odpowiedź",
+      acceptedAnswers: [],
+      focus: ["odpowiedź"],
+    };
+    expect(LessonExerciseInputSchema.safeParse({ ...base, questionType: "esej" }).success).toBe(false);
+    expect(LessonExerciseInputSchema.safeParse({
+      ...base,
+      requiredElements: Array.from({ length: 7 }, (_, i) => ({ id: `e${i}`, text: "el" })),
     }).success).toBe(false);
   });
 });

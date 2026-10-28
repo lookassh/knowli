@@ -61,6 +61,7 @@ export const INTEGRATION_BUCKETS: readonly (readonly string[])[] = [
     database-teardown.test.ts
     history.test.ts
     learning-overview-concurrency.test.ts
+    lesson-grader-school.test.ts
     lesson-grader.test.ts
     lesson-isolation.test.ts
     lesson-parent-api.test.ts

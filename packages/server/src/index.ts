@@ -2,6 +2,7 @@ export * from "./config";
 export { createProductionSubjectRegistry } from "./domain/lessons/subjects";
 export { createSubjectRegistry, type SubjectRegistry } from "./domain/lessons/registry";
 export { englishGrammarSubject } from "./domain/lessons/subjects/english-grammar/module";
+export { schoolSubject } from "./domain/lessons/subjects/school/module";
 export { historyLikeSubject } from "./domain/lessons/testing/history-like-subject";
 export { validatePool, findDuplicateAnswers, poolCoverage } from "./domain/lessons/pool-validation";
 export { DEFAULT_LESSON_POLICY, defaultPoolSize } from "./domain/lessons/lesson-policy";
@@ -67,6 +68,7 @@ export { errorCodeOf, requireGeneration, MAX_AUTOMATIC_ATTEMPTS } from "./module
 export { runDueGenerationWork, type WorkerLimits } from "./modules/materials";
 export {
   createLesson,
+  createSchoolLesson,
   executeLessonGeneration,
   regenerateObjective,
   applyLessonExercises,

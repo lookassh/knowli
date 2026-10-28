@@ -51,6 +51,7 @@ interface LessonContextView {
   topicId: string;
   topicVersion: number;
   objectiveIds: string[];
+  dynamicTopic?: import("../../../domain/lessons/types").DynamicTopicData;
 }
 
 function readLessonContext(raw: Record<string, unknown> | null): LessonContextView {
@@ -60,6 +61,7 @@ function readLessonContext(raw: Record<string, unknown> | null): LessonContextVi
     topicId: ctx.topicId ?? "",
     topicVersion: ctx.topicVersion ?? 1,
     objectiveIds: ctx.objectiveIds ?? [],
+    ...(ctx.dynamicTopic ? { dynamicTopic: ctx.dynamicTopic } : {}),
   };
 }
 
@@ -69,7 +71,8 @@ function requireSubject(services: Services, subjectId: string): SubjectModule {
   return subject;
 }
 
-function requireTopic(subject: SubjectModule, topicId: string, version: number): LessonTopic {
+function requireTopic(subject: SubjectModule, topicId: string, version: number, dynamicTopic?: import("../../../domain/lessons/types").DynamicTopicData): LessonTopic {
+  if (subject.buildDynamicTopic && dynamicTopic) return subject.buildDynamicTopic(dynamicTopic);
   const topic = subject.topics.find((t) => t.id === topicId && t.version === version)
     ?? subject.topics.find((t) => t.id === topicId);
   if (!topic) throw new AppError("internal", { message: `lesson topic missing: ${subject.id}/${topicId}@${version}` });
@@ -131,7 +134,9 @@ export async function lessonObjectiveProgress(
 
   const { versionId, context } = await activeLessonVersion(services.db, deck);
   const subject = requireSubject(services, context.subjectId);
-  const topic = requireTopic(subject, context.topicId, context.topicVersion);
+  // Szkic szkolny przed zakończeniem generacji nie ma jeszcze zagadnień — brak postępu do pokazania.
+  if (subject.buildDynamicTopic && !context.dynamicTopic) return [];
+  const topic = requireTopic(subject, context.topicId, context.topicVersion, context.dynamicTopic);
   const labels = categoryLabels(subject, topic);
   const objectiveById = new Map<string, LearningObjective>();
   for (const o of topic.objectives) objectiveById.set(o.id, o);
@@ -162,10 +167,16 @@ export async function lessonObjectiveProgress(
   const progressByObjective = new Map(progressRows.map((r) => [r.objectiveId, r]));
 
   // Kategorie błędów tego dziecka na ćwiczeniach tej lekcji (skill=objective),
-  // z odpowiedzią dziecka (attempts.answer->>text) jako przykładem. Scoped do
-  // rewizji tej wersji → nie miesza innych lekcji ani innych dzieci.
-  const revisionIds = revisions.map((r) => r.id);
-  const errorRows: ObjectiveErrorRow[] = revisionIds.length
+  // z odpowiedzią dziecka (attempts.answer->>text) jako przykładem. Zakres to
+  // rewizje WSZYSTKICH wersji zestawu: historia prób nie znika z raportu po
+  // republicacji (pula powyżej nadal liczona z wersji aktywnej).
+  const historyRevisionIds = (
+    await services.db
+      .select({ id: itemRevisions.id })
+      .from(itemRevisions)
+      .where(eq(itemRevisions.deckId, deck))
+  ).map((r) => r.id);
+  const errorRows: ObjectiveErrorRow[] = historyRevisionIds.length
     ? (await services.db.execute<{ objectiveId: string | null; category: string | null; answer: string | null; count: number }>(sql`
         select n.details->>'objectiveId' as "objectiveId",
                n.details->>'errorCategory' as category,
@@ -175,7 +186,7 @@ export async function lessonObjectiveProgress(
           join learning_app.attempts a on a.id = n.attempt_id
          where n.child_id = ${child}
            and n.skill = 'objective'
-           and n.item_revision_id = any(${sql.param(revisionIds)}::uuid[])
+           and n.item_revision_id = any(${sql.param(historyRevisionIds)}::uuid[])
            and n.details ? 'errorCategory'
          group by 1, 2, 3
       `)).rows.map((r) => ({ objectiveId: r.objectiveId ?? "", category: r.category ?? "", answer: r.answer, count: r.count }))
@@ -195,6 +206,80 @@ export async function lessonObjectiveProgress(
     byObjectiveCategory.set(row.objectiveId, perObjective);
   }
 
+  // Agregat szkolny (Etap 2): wiedza/precyzja/brakujące elementy z details ocen
+  // + ostatnie odpowiedzi dziecka. Tylko oceny z wymiarem wiedzy (details.knowledge).
+  type SchoolAssessmentRow = {
+    objectiveId: string;
+    knowledge: string;
+    precision: string | null;
+    missingTexts: string[];
+    answer: string | null;
+    receivedAt: Date;
+  };
+  const schoolRows: SchoolAssessmentRow[] = historyRevisionIds.length
+    ? (await services.db.execute<{
+        objectiveId: string | null; knowledge: string | null; precision: string | null;
+        missingTexts: string[] | null; answer: string | null; receivedAt: Date;
+      }>(sql`
+        select n.details->>'objectiveId' as "objectiveId",
+               n.details->>'knowledge' as knowledge,
+               n.details->>'precision' as precision,
+               n.details->'missingElementTexts' as "missingTexts",
+               a.answer->>'text' as answer,
+               a.received_at as "receivedAt"
+          from learning_app.assessments n
+          join learning_app.attempts a on a.id = n.attempt_id
+         where n.child_id = ${child}
+           and n.skill = 'objective'
+           and n.item_revision_id = any(${sql.param(historyRevisionIds)}::uuid[])
+           and n.details ? 'knowledge'
+         order by a.received_at desc
+      `)).rows.map((r) => ({
+        objectiveId: r.objectiveId ?? "",
+        knowledge: r.knowledge ?? "",
+        precision: r.precision,
+        missingTexts: Array.isArray(r.missingTexts) ? r.missingTexts.map(String) : [],
+        answer: r.answer,
+        receivedAt: r.receivedAt,
+      }))
+    : [];
+  const schoolByObjective = new Map<string, SchoolAssessmentRow[]>();
+  for (const row of schoolRows) {
+    const list = schoolByObjective.get(row.objectiveId) ?? [];
+    list.push(row);
+    schoolByObjective.set(row.objectiveId, list);
+  }
+  function schoolAggregate(objectiveId: string) {
+    const rows = schoolByObjective.get(objectiveId);
+    if (!rows || rows.length === 0) return undefined;
+    const missingCounts = new Map<string, number>();
+    for (const row of rows) {
+      for (const text of row.missingTexts) missingCounts.set(text, (missingCounts.get(text) ?? 0) + 1);
+    }
+    const count = (field: "knowledge" | "precision", value: string) =>
+      rows.filter((r) => r[field] === value).length;
+    return {
+      knowledge: {
+        correct: count("knowledge", "correct"),
+        partial: count("knowledge", "partial"),
+        incorrect: count("knowledge", "incorrect"),
+      },
+      precision: {
+        concise: count("precision", "concise"),
+        verbose: count("precision", "verbose"),
+        unfocused: count("precision", "unfocused"),
+      },
+      topMissing: [...missingCounts.entries()]
+        .map(([text, n]) => ({ text, count: n }))
+        .sort((a, b) => b.count - a.count || a.text.localeCompare(b.text, "pl"))
+        .slice(0, 5),
+      recentAnswers: rows.slice(0, 5).map((r) => ({
+        text: r.answer ?? "",
+        knowledge: (["correct", "partial", "incorrect"].includes(r.knowledge) ? r.knowledge : "incorrect") as "correct" | "partial" | "incorrect",
+        precision: (r.precision === "concise" || r.precision === "verbose" || r.precision === "unfocused" ? r.precision : null) as "concise" | "verbose" | "unfocused" | null,
+      })),
+    };
+  }
   // Pula wyczerpana: wszystkie target_key ćwiczeń celu były już ujawnione dziecku
   // (dowolna sesja/lekcja). Ekspozycje zapieczętowane.
   const allTargetKeys = [...new Set(revisions.map((r) => r.targetKey))];
@@ -237,6 +322,7 @@ export async function lessonObjectiveProgress(
       nextReviewAt: progress?.nextReviewAt?.toISOString() ?? null,
       poolExhausted,
       topErrors,
+      ...(schoolAggregate(objectiveId) ? { school: schoolAggregate(objectiveId)! } : {}),
     } satisfies ObjectiveProgressDto;
   });
 }
@@ -280,6 +366,14 @@ export async function listLessonVerdicts(services: Services, deckId: string): Pr
     graderModel: row.graderModel,
     parentDecision: (row.parentDecision as LessonVerdictDecision | null) ?? null,
     createdAt: row.createdAt.toISOString(),
+    school: row.precision === null
+      ? null
+      : {
+          knowledge: (row.verdict === "correct" ? "correct" : row.verdict === "almost" ? "partial" : "incorrect") as "correct" | "partial" | "incorrect",
+          precision: row.precision as "concise" | "verbose" | "unfocused",
+          matchedElementIds: [...(row.matchedElements ?? [])],
+          missingElementIds: [...(row.missingElements ?? [])],
+        },
   }));
 }
 
@@ -314,6 +408,14 @@ export async function decideLessonVerdict(
     graderModel: row.graderModel,
     parentDecision: (row.parentDecision as LessonVerdictDecision | null) ?? null,
     createdAt: row.createdAt.toISOString(),
+    school: row.precision === null
+      ? null
+      : {
+          knowledge: (row.verdict === "correct" ? "correct" : row.verdict === "almost" ? "partial" : "incorrect") as "correct" | "partial" | "incorrect",
+          precision: row.precision as "concise" | "verbose" | "unfocused",
+          matchedElementIds: [...(row.matchedElements ?? [])],
+          missingElementIds: [...(row.missingElements ?? [])],
+        },
   };
 }
 

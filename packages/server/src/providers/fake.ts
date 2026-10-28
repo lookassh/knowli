@@ -5,6 +5,7 @@ import type {
   AudioInput,
   GraderInput,
   ImageProvider,
+  LessonObjectivesInput,
   LessonPoolInput,
   LlmGeneratedItem,
   LlmGenerateDeckInput,
@@ -175,6 +176,7 @@ function fakeExercise(
     answer,
     acceptedAnswers: [],
     focus: [answer],
+    ...(input.subjectId === "school" ? schoolFieldsForFake(type, answer, input.material) : {}),
   };
   switch (type) {
     case "lesson_choice":
@@ -240,11 +242,74 @@ function fakeInvalidExercise(objectiveId: string): Record<string, unknown> {
   };
 }
 
+/** Slug zagadnienia z tytułu (ASCII, podkreślniki) — do fake celów dynamicznych. */
+function slugifyTitle(title: string, fallback: string): string {
+  const slug = title
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40);
+  return slug.length > 0 ? slug : fallback;
+}
+
+/**
+ * Deterministyczne zagadnienia fake: z nagłówków „Zagadnienie N:” materiału
+ * (format opracowań rodzica) albo jedno zagadnienie z początku materiału.
+ * Karty buduje z fragmentów materiału, więc cytaty ćwiczeń mają pokrycie.
+ */
+function fakeLessonObjectives(input: LessonObjectivesInput): Record<string, unknown>[] {
+  const headings = [...input.material.matchAll(/^Zagadnienie\s*\d+\s*:\s*(.+)$/gim)];
+  const sections: { title: string; body: string }[] = [];
+  if (headings.length > 0) {
+    headings.forEach((match, i) => {
+      const start = (match.index ?? 0) + match[0].length;
+      const end = i + 1 < headings.length ? (headings[i + 1]!.index ?? input.material.length) : input.material.length;
+      sections.push({ title: match[1]!.trim(), body: input.material.slice(start, end).trim() });
+    });
+  } else {
+    sections.push({ title: input.topicTitle, body: input.material.trim() });
+  }
+  return sections.map((section, i) => {
+    const sentences = section.body.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean);
+    const first = (sentences[0] ?? section.title).slice(0, 280);
+    const second = (sentences[1] ?? sentences[0] ?? section.title).slice(0, 280);
+    return {
+      slug: slugifyTitle(section.title, `zagadnienie_${i + 1}`),
+      titlePl: section.title.slice(0, 120),
+      descriptionEn: `School objective: ${section.title}`,
+      cards: [
+        { title: "Wyjaśnienie", body: first },
+        { title: "Do zapamiętania", body: second },
+      ],
+    };
+  });
+}
+
+/** Pola v3 dla fake puli przedmiotu szkolnego (uziemienie = początek materiału). */
+function schoolFieldsForFake(type: string, answer: string, material: string): Record<string, unknown> {
+  const quote = material.trim().slice(0, 120);
+  const base: Record<string, unknown> = { sourceRefs: [{ quote }] };
+  if (type === "lesson_open_answer") {
+    return {
+      ...base,
+      questionType: "fact",
+      requiredElements: [{ id: "e1", text: `Podaje: ${answer}`.slice(0, 120) }],
+      supplementaryElements: [],
+      commonErrors: [],
+      expectedForm: "short",
+    };
+  }
+  return base;
+}
+
 export class FakeLlmProvider implements LlmProvider {
   readonly name = "fake-llm";
   readonly model = "fake-llm-1";
   readonly requests: LlmGenerateDeckInput[] = [];
   readonly lessonRequests: LessonPoolInput[] = [];
+  readonly objectiveRequests: LessonObjectivesInput[] = [];
   #behaviors: LlmBehavior[] = [];
   #lessonBehaviors: LlmLessonBehavior[] = [];
   readonly #delayMs: number;
@@ -282,6 +347,14 @@ export class FakeLlmProvider implements LlmProvider {
       throw error;
     }
     return { items: behavior.items as unknown as LlmGeneratedItem[] };
+  }
+
+  async generateLessonObjectives(input: LessonObjectivesInput): Promise<{ objectives: unknown[] }> {
+    this.objectiveRequests.push(input);
+    if (this.#lessonDelayMs > 0) {
+      await sleep(this.#lessonDelayMs);
+    }
+    return { objectives: fakeLessonObjectives(input) };
   }
 
   async generateLessonPool(
@@ -492,6 +565,10 @@ export class FakeAnswerGrader implements AnswerGraderProvider {
     return this;
   }
 
+  promptVersionForInput(input: GraderInput): string {
+    return input.school ? "fake-school-grader-v1" : this.promptVersion;
+  }
+
   get callCount(): number {
     return this.requests.length;
   }
@@ -499,7 +576,7 @@ export class FakeAnswerGrader implements AnswerGraderProvider {
   async grade(input: GraderInput, signal: AbortSignal): Promise<unknown> {
     this.requests.push(input);
     const key = input.childAnswer.trim().toLowerCase();
-    const behavior = this.#byAnswer.get(key) ?? this.#default ?? this.#keywordVerdict(input);
+    const behavior = this.#byAnswer.get(key) ?? this.#default ?? (input.school ? this.#schoolVerdict(input) : this.#keywordVerdict(input));
     if (behavior.delayMs && behavior.delayMs > 0) {
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(resolve, behavior.delayMs);
@@ -520,6 +597,37 @@ export class FakeAnswerGrader implements AnswerGraderProvider {
    * zawierająca „almost” → almost z pierwszym tokenem jako fragment; „wrong” →
    * incorrect z pierwszą kategorią celu; inaczej correct.
    */
+/**
+   * Heurystyka fake dla ścieżki szkolnej: element trafiony, gdy większość jego
+   * dłuższych słów występuje w odpowiedzi. Tylko do testów integracyjnych —
+   * jakość ocenia ewaluacja na prawdziwym modelu, nie ten fake.
+   */
+  #schoolVerdict(input: GraderInput): FakeGraderBehavior {
+    const school = input.school!;
+    const answerTokens = new Set(
+      input.childAnswer.toLowerCase().normalize("NFC").split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 3),
+    );
+    const matchedElementIds: string[] = [];
+    const missingElementIds: string[] = [];
+    for (const element of school.requiredElements) {
+      const words = element.text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 3);
+      const hits = words.filter((w) => answerTokens.has(w)).length;
+      (words.length > 0 && hits / words.length >= 0.5 ? matchedElementIds : missingElementIds).push(element.id);
+    }
+    const knowledge = missingElementIds.length === 0 ? "correct" : matchedElementIds.length > 0 ? "partial" : "incorrect";
+    return {
+      raw: {
+        knowledge,
+        precision: input.childAnswer.length > 200 ? "verbose" : "concise",
+        matchedElementIds,
+        missingElementIds,
+        incorrectStatements: [],
+        redundantFragments: [],
+        note: "fake",
+      },
+    };
+  }
+
   #keywordVerdict(input: GraderInput): FakeGraderBehavior {
     if (!this.#keywordRouting) {
       return { raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok" } };
@@ -536,7 +644,6 @@ export class FakeAnswerGrader implements AnswerGraderProvider {
     return { raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok" } };
   }
 }
-
 /** Zależności gradera na fake'u — do integracji i trybu UMIEM_FAKE_PROVIDERS. */
 export function fakeGraderDeps(
   options: { provider?: FakeAnswerGrader; maxCallsPerSession?: number; timeoutMs?: number } = {},
@@ -571,6 +678,10 @@ export class FakeSessionActivityReviewer implements SessionActivityReviewer {
 
   queue(...behaviors: FakeSessionActivityBehavior[]): void {
     this.#behaviors = behaviors;
+  }
+
+  promptVersionForInput(input: GraderInput): string {
+    return input.school ? "fake-school-grader-v1" : this.promptVersion;
   }
 
   get callCount(): number {

@@ -260,6 +260,123 @@ export function validateVerdict(raw: unknown, ctx: VerdictContext): GraderVerdic
   return { verdict, errorCategory, fragments, note };
 }
 
+
+/**
+ * Werdykt dwuwymiarowy przedmiotów szkolnych (Etap 2): wiedza steruje wynikiem,
+ * precyzja tylko raportuje. `partial` jest odpowiedzią częściowo poprawną
+ * (część elementów wymaganych + brak istotnego błędu jako jedynej treści).
+ */
+export interface SchoolVerdict {
+  readonly knowledge: "correct" | "partial" | "incorrect";
+  readonly precision: "concise" | "verbose" | "unfocused";
+  readonly matchedElementIds: readonly string[];
+  readonly missingElementIds: readonly string[];
+  readonly incorrectStatements: readonly string[];
+  readonly redundantFragments: readonly string[];
+  readonly note: string;
+}
+
+export interface SchoolVerdictContext {
+  readonly requiredElementIds: readonly string[];
+  readonly childAnswer: string;
+  /** Czy odpowiedź spełnia oczekiwaną formę zdaniową (null = forma bez znaczenia / niezweryfikowana). */
+  readonly formOk?: boolean | null;
+}
+
+const schoolVerdictSchema = z.object({
+  knowledge: z.enum(["correct", "partial", "incorrect"]),
+  precision: z.enum(["concise", "verbose", "unfocused"]),
+  matchedElementIds: z.array(z.string().min(1)).max(6),
+  missingElementIds: z.array(z.string().min(1)).max(6),
+  incorrectStatements: z.array(z.string().min(1)).max(4),
+  redundantFragments: z.array(z.string().min(1)).max(4),
+  note: z.string().max(MAX_NOTE_LENGTH),
+});
+
+/**
+ * Deterministyczne liczenie zdań (forma `one_sentence`): podział po terminatorach
+ * `. ! ? …`; brak terminatora końcowego nadal liczy ostatnie zdanie; skróty typu
+ * „np.” mogą zawyżyć liczbę — dlatego wynik jest wskazówką, nie wyrokiem.
+ */
+export function countSentences(text: string): number {
+  const normalized = text.normalize("NFC").trim();
+  if (normalized === "") return 0;
+  const parts = normalized.split(/[.!?…]+/u).map((p) => p.trim()).filter((p) => p.length > 0);
+  return Math.max(1, parts.length);
+}
+
+/**
+ * Walidacja werdyktu szkolnego. Naruszenie którejkolwiek reguły → `null`
+ * (odpowiedź zostaje „nieoceniona”, bez kary): identyfikatory tylko z listy
+ * elementów ćwiczenia; KAŻDY element wymagany musi wystąpić w dokładnie
+ * jednej z list matched/missing (pełna partycja — element niewymieniony nie
+ * może po cichu zaliczyć wiedzy); `correct` bez braków i błędnych stwierdzeń;
+ * `partial` z co najmniej jednym trafionym elementem oraz brakiem lub
+ * nieścisłością; kompletna, poprawna treść nie może być partial/incorrect;
+ * fragmenty (błędne i zbędne) jako
+ * dokładne podciągi odpowiedzi po NFC; `formOk === false` ogranicza precyzję
+ * co najwyżej do `verbose` (klamp, nie odrzucenie).
+ */
+export function validateSchoolVerdict(raw: unknown, ctx: SchoolVerdictContext): SchoolVerdict | null {
+  const parsed = schoolVerdictSchema.safeParse(raw);
+  if (!parsed.success) return null;
+  const v = parsed.data;
+  const required = new Set(ctx.requiredElementIds);
+  const matched = [...new Set(v.matchedElementIds)];
+  const missing = [...new Set(v.missingElementIds)];
+  if (!matched.every((id) => required.has(id)) || !missing.every((id) => required.has(id))) return null;
+  if (matched.some((id) => missing.includes(id))) return null;
+  // Pełna partycja: rozłączne podzbiory listy wymaganej o sumie równej jej rozmiarowi.
+  if (matched.length + missing.length !== required.size) return null;
+  const hasGap = missing.length > 0 || v.incorrectStatements.length > 0;
+  if (v.knowledge === "correct" && hasGap) return null;
+  if (v.knowledge === "partial" && (matched.length === 0 || !hasGap)) return null;
+  if (v.knowledge === "incorrect" && !hasGap) return null;
+  const answerNfc = ctx.childAnswer.normalize("NFC");
+  for (const fragment of [...v.incorrectStatements, ...v.redundantFragments]) {
+    if (!answerNfc.includes(fragment.normalize("NFC"))) return null;
+  }
+  const precision = ctx.formOk === false && v.precision === "concise" ? "verbose" : v.precision;
+  return {
+    knowledge: v.knowledge,
+    precision,
+    matchedElementIds: matched,
+    missingElementIds: missing,
+    incorrectStatements: [...v.incorrectStatements],
+    redundantFragments: [...v.redundantFragments],
+    note: v.note,
+  };
+}
+
+/**
+ * Mapowanie wiedzy na ocenę celu: correct zalicza jak model_correct; partial
+ * jest „prawie” (`model_almost` w szczegółach) — nie zalicza opanowania
+ * i — jak każdy niepełny wynik samodzielnego sprawdzenia — przerywa serię
+ * (reguła silnika „błąd przerywa serię”); incorrect jak model_incorrect.
+ * Precyzja CELOWO nie występuje w tym mapowaniu (test jednostkowy).
+ */
+export function gradeFromSchoolVerdict(verdict: SchoolVerdict | null): ObjectiveGrade {
+  if (verdict === null) {
+    return { outcome: "unevaluated", reason: "technical", verdict: "unavailable" };
+  }
+  switch (verdict.knowledge) {
+    case "correct":
+      return { outcome: "correct", verdict: "model_correct" };
+    case "partial":
+      // Kategoria z faktycznego powodu: brak elementu vs nieścisłe stwierdzenie.
+      return {
+        outcome: "incorrect",
+        verdict: "model_almost",
+        errorCategory: verdict.missingElementIds.length > 0 ? "missing_element" : "wrong_fact",
+      };
+    case "incorrect":
+      return {
+        outcome: "incorrect",
+        verdict: "model_incorrect",
+        errorCategory: verdict.incorrectStatements.length > 0 ? "wrong_fact" : "incomplete",
+      };
+  }
+}
 /**
  * Mapowanie dopasowania deterministycznego na ocenę celu (design: tabela).
  * `no_match` NIE jest oceną — zwracamy `null`, żeby wywołujący musiał
