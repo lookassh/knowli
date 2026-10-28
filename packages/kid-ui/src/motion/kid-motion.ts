@@ -75,10 +75,14 @@ export function kidLoadingDotTransition(index: number): Transition {
 export const kidLetterPop = { scale: [1, 1.25, 0.95, 1] };
 export const kidLetterPopTransition: Transition = { duration: 0.4, ease: "easeOut", times: [0, 0.4, 0.75, 1] };
 
-/** Feedback dock slides up from the footer and leaves the same way, faster. */
-export const kidDockInitial = { opacity: 0, y: 40 } as const;
-export const kidDockAnimate = { opacity: 1, y: 0 } as const;
-export const kidDockExit = { opacity: 0, y: 24 } as const;
+/** Feedback dock grows up from its own bottom edge (transform origin at the
+ * bottom) and leaves the same way, faster. It never moves below its resting
+ * box: in the flow layout the exercise frame scrolls, and a dock translated
+ * downwards would flash a scrollbar for the length of the entrance. */
+export const kidDockOrigin = "50% 100%";
+export const kidDockInitial = { opacity: 0, scale: 0.9 } as const;
+export const kidDockAnimate = { opacity: 1, scale: 1 } as const;
+export const kidDockExit = { opacity: 0, scale: 0.94 } as const;
 export const kidDockExitTransition: Transition = { duration: 0.14, ease: "easeIn" };
 
 /** Idle nudge: after a pause the main action "breathes" to invite a tap.

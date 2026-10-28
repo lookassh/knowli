@@ -47,8 +47,25 @@ test("animated task switch and feedback dock keep the session flow working", asy
   expect(overflowFrames, "no horizontal scroll range during the slide").toBe(0);
   await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-prompt-kind", "picture_listening");
 
+  // The answer pop and the dock entrance must never give any scroller a
+  // transient range: a scrollbar flashing for a few frames reads as a glitch.
+  const answerSamples = page.evaluate(() => new Promise<string[]>((resolve) => {
+    const hits = new Set<string>();
+    const started = performance.now();
+    const frame = () => {
+      for (const scroller of document.querySelectorAll<HTMLElement>("[data-testid='kid-exercise'], [data-testid='kid-material'], .kid-page--session")) {
+        const style = getComputedStyle(scroller);
+        if (/auto|scroll/.test(style.overflowY) && scroller.scrollHeight > scroller.clientHeight + 1) hits.add(`${scroller.dataset.testid ?? scroller.className} Y`);
+        if (/auto|scroll/.test(style.overflowX) && scroller.scrollWidth > scroller.clientWidth + 1) hits.add(`${scroller.dataset.testid ?? scroller.className} X`);
+      }
+      if (performance.now() - started < 1000) requestAnimationFrame(frame);
+      else resolve([...hits]);
+    };
+    requestAnimationFrame(frame);
+  }));
   await page.getByTestId("kid-option").first().click();
   await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
+  expect(await answerSamples, "no transient scroll range while the answer animates").toEqual([]);
   // The chosen option reports its server outcome (pop/shake icon appears).
   await expect(page.locator("[data-testid='kid-outcome-correct'], [data-testid='kid-outcome-wrong']")).toHaveCount(1);
   // Only a tile the child chose correctly bursts (decoratively, then it is
