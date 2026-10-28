@@ -62,6 +62,19 @@ describe("AnswerGrid", () => {
     expect(screen.getByTestId("kid-outcome-wrong").getAttribute("aria-hidden")).toBe("true");
   });
 
+  it("celebrates only a tile the child chose correctly, never the revealed answer", () => {
+    const grid = (outcomes: Map<string, "correct" | "wrong">) => (
+      <AnswerGrid options={options} outcomes={outcomes} disabled onChoose={() => undefined} />
+    );
+    const { rerender } = renderKid(grid(new Map([["one", "correct"]])));
+    expect(screen.getAllByTestId("kid-answer-burst")).toHaveLength(1);
+
+    // Wrong choice: the server's correct option is lit green, but no burst.
+    rerender(grid(new Map([["two", "wrong"], ["one", "correct"]])));
+    expect(screen.getByTestId("kid-outcome-correct")).toBeTruthy();
+    expect(screen.queryByTestId("kid-answer-burst")).toBeNull();
+  });
+
   it("keeps visual-only labels accessible and writes the keyboard refs", () => {
     const optionRefs = { current: [] as (HTMLButtonElement | null)[] };
     renderKid(

@@ -19,17 +19,49 @@ test("animated task switch and feedback dock keep the session flow working", asy
   await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-prompt-kind", "picture_exposure");
 
   // Task switch animates (exit + enter); the next task must land and work.
+  // Sample every frame of the switch: the panes must move sideways, and that
+  // motion must never give the material scroller a horizontal range.
+  const switchSamples = page.evaluate(() => new Promise<{ maxShift: number; overflowFrames: number }>((resolve) => {
+    let maxShift = 0;
+    let overflowFrames = 0;
+    const started = performance.now();
+    const frame = () => {
+      for (const pane of document.querySelectorAll<HTMLElement>("[data-testid='kid-task-transition']")) {
+        maxShift = Math.max(maxShift, Math.abs(new DOMMatrixReadOnly(getComputedStyle(pane).transform).m41));
+      }
+      for (const scroller of document.querySelectorAll<HTMLElement>("[data-testid='kid-material'], .kid-page--session")) {
+        if (scroller.scrollWidth > scroller.clientWidth + 1) overflowFrames += 1;
+      }
+      if (performance.now() - started < 900) requestAnimationFrame(frame);
+      else resolve({ maxShift, overflowFrames });
+    };
+    requestAnimationFrame(frame);
+  }));
   await page.getByTestId("kid-done").click();
   // The exiting pane must be inert while it animates out, and the switch
   // must actually animate (sampled mid-transition, not just eventually).
   await expect.poll(() => page.getByTestId("kid-task-transition").evaluate((el) => el.hasAttribute("inert")), { intervals: [20, 50, 100] }).toBe(true);
   await expect.poll(() => page.getByTestId("kid-task-transition").evaluate((el) => Number.parseFloat(getComputedStyle(el).opacity)), { intervals: [50, 100, 200] }).toBeLessThan(1);
+  const { maxShift, overflowFrames } = await switchSamples;
+  expect(maxShift, "task panes slide sideways").toBeGreaterThan(8);
+  expect(overflowFrames, "no horizontal scroll range during the slide").toBe(0);
   await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-prompt-kind", "picture_listening");
 
   await page.getByTestId("kid-option").first().click();
   await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
   // The chosen option reports its server outcome (pop/shake icon appears).
   await expect(page.locator("[data-testid='kid-outcome-correct'], [data-testid='kid-outcome-wrong']")).toHaveCount(1);
+  // Only a tile the child chose correctly bursts (decoratively, then it is
+  // removed); a wrong choice never celebrates the revealed answer.
+  const choseWrong = await page.getByTestId("kid-outcome-wrong").count() > 0;
+  if (choseWrong) {
+    await expect(page.getByTestId("kid-answer-burst")).toHaveCount(0);
+  } else {
+    await expect(page.getByTestId("kid-answer-burst")).toHaveAttribute("aria-hidden", "true");
+    await expect(page.getByTestId("kid-answer-burst")).toHaveCount(0, { timeout: 3000 });
+  }
+  // The session header shows progress (bar or "Jeszcze N" pill with a fill).
+  await expect(page.getByTestId("kid-progress-fill")).toHaveCount(1);
 
   await page.getByTestId("kid-next").click();
   // The summary mounts a fresh ScreenTransition after the session screen;

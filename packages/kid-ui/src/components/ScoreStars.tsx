@@ -2,9 +2,9 @@
 
 import type { ReactElement } from "react";
 import { m } from "motion/react";
-import { kidSpringGentle, kidStaggerSeconds } from "../motion/kid-motion";
+import { kidOutcomeIconAnimate, kidOutcomeIconInitial, kidSpringBouncy, kidStarStaggerSeconds } from "../motion/kid-motion";
 
-/** Score stars: filled stars pop in one by one; empty stars stay quiet. */
+/** Score stars: filled stars bounce in one by one; empty stars stay quiet. */
 export function ScoreStars({ stars, label }: { stars: number; label: string }): ReactElement {
   return (
     <p className="kid-mock-score__stars" role="img" aria-label={label}>
@@ -13,9 +13,9 @@ export function ScoreStars({ stars, label }: { stars: number; label: string }): 
           <m.span
             key={index}
             aria-hidden="true"
-            initial={{ opacity: 0, scale: 0.4, rotate: -24 }}
-            animate={{ opacity: 1, scale: 1, rotate: 0 }}
-            transition={{ ...kidSpringGentle, delay: index * kidStaggerSeconds * 2 }}
+            initial={kidOutcomeIconInitial}
+            animate={kidOutcomeIconAnimate}
+            transition={{ ...kidSpringBouncy, delay: 0.2 + index * kidStarStaggerSeconds }}
             style={{ display: "inline-block" }}
           >
             ★

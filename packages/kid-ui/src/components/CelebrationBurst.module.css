@@ -8,15 +8,22 @@
   inset: 0;
   display: block;
   pointer-events: none;
+  z-index: 2;
 }
 
 :global(.kid-ui) .particle {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 9px;
-  height: 9px;
-  margin: -4px 0 0 -4px;
   border-radius: 50%;
   display: block;
+}
+
+:global(.kid-ui) .star {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  line-height: 1;
 }

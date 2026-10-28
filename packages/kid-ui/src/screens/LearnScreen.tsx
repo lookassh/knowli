@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useRef, useState } from "react";
 import { messages, type UiAudioKey } from "@learning/contracts";
 import { ExerciseView } from "../exercises/ExerciseView";
 import type { ExerciseHandlers } from "../exercises/types";
@@ -16,6 +16,8 @@ import { describeSpeechFeedback } from "./speech-feedback-view";
 import type { LearningSessionController, LearningScreen as LearningScreenState } from "../session/session-controller";
 import { useFeedbackCooldown } from "./useFeedbackCooldown";
 import { SessionProgress } from "../components/SessionProgress";
+import { advanceSessionProgress, initialSessionProgress, progressAttempt, progressFraction, resultOutcome } from "../components/session-progress-state";
+import { kidStreakLength } from "../motion/kid-motion";
 import { TaskTransition } from "../motion/TaskTransition";
 import { ActionButton } from "../components/ActionButton";
 import { IconActionButton } from "../components/IconActionButton";
@@ -32,6 +34,7 @@ function RevealActions({ onConfirm, busy }: { onConfirm: () => void; busy: boole
       type="button"
       className="kid-primary"
       data-testid="kid-next"
+      idleNudge
       disabled={busy}
       onClick={onConfirm}
     >
@@ -172,11 +175,35 @@ export function LearnScreen({
     : speechTone === "practice" ? "partial"
       : speechTone === "technical" ? "technical" : "neutral";
 
+  // The tone of the result actually shown drives every reward, so a burst or
+  // a streak never contradicts the dock (e.g. pronunciation to practise).
+  const shownTone: FeedbackDockTone | null = !hasFeedback || feedback === null ? null
+    : speechFeedback ? speechDockTone : answerDockTone(feedback.dto);
+  // Choice tiles burst on their own; written and spoken answers burst from the dock.
+  const celebrateInDock = feedback !== null && shownTone !== null && feedback.chosenOptionId === undefined
+    && resultOutcome(shownTone, feedback.modality) === "correct";
+
+  // Decorative progress fill and correct-answer streak; advancing is
+  // idempotent per attempt, so re-renders (and StrictMode) never double count.
+  const progressRef = useRef(initialSessionProgress);
+  progressRef.current = advanceSessionProgress(progressRef.current, {
+    sessionId: screen.session.sessionId,
+    remainingAssessed: task?.remainingAssessed ?? null,
+    attempt: progressAttempt({
+      taskId: task?.taskId ?? null,
+      feedback,
+      feedbackTone: shownTone,
+      revealShown: screen.reveal !== null,
+    }),
+  }, kidStreakLength);
+  const progress = progressRef.current;
+
   const dock = !hasFeedback || feedback === null ? undefined
     : speechFeedback && speechFeedbackProps !== null ? (
       <ExerciseFeedbackDock
         kind="speech"
         tone={speechDockTone}
+        celebrate={celebrateInDock}
         primary={<SpeechFeedbackActions {...speechFeedbackProps} />}
         secondary={speechFeedbackProps.audioAvailable || speechFeedbackProps.retry ? (
           <div className="kid-feedback-dock-secondary-actions">
@@ -191,6 +218,7 @@ export function LearnScreen({
       <ExerciseFeedbackDock
         compact={task?.prompt.kind === "picture_listening" || task?.prompt.kind === "picture_recognition"}
         tone={answerDockTone(feedback.dto)}
+        celebrate={celebrateInDock}
         primary={<AnswerFeedbackActions dto={feedback.dto} retry={feedback.retry} busy={busy}
           onNext={() => void controller.continueLearning()} />}
         secondary={lessonFeedbackView(feedback.dto)?.technical === true && feedback.retry ? (
@@ -206,7 +234,7 @@ export function LearnScreen({
     <main className="kid-screen kid-learning" data-task-id={task?.taskId ?? undefined} data-action-notice={actionNotice}>
       <header className="kid-header">
         {instructionAudioKey && <GuidanceButton audioKey={instructionAudioKey} onPlay={(key) => controller.playGuidance(key)} testId="kid-guidance-play" showError={false} />}
-        <SessionProgress remaining={remaining} />
+        <SessionProgress remaining={remaining} fraction={progressFraction(progress.total, task?.remainingAssessed ?? null)} milestone={progress.milestone} />
         <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" className="kid-end" data-testid="kid-end" disabled={busy} onClick={() => void controller.endNow()}>
           {messages.kid.end}
         </ActionButton>

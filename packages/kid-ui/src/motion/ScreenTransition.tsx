@@ -2,7 +2,7 @@
 
 import type { ReactElement, ReactNode } from "react";
 import { AnimatePresence } from "motion/react";
-import { kidScreenExit, kidScreenTransition } from "./kid-motion";
+import { kidScreenEnter, kidScreenExit, kidScreenExitTarget, kidScreenInitial, kidScreenTransition } from "./kid-motion";
 import { PresencePane } from "./PresencePane";
 
 /** Animated switch between flow screens (profile, decks, summaries).
@@ -15,7 +15,7 @@ export function ScreenTransition({ screenId, children }: {
 }): ReactElement {
   return (
     <AnimatePresence mode="wait">
-      <PresencePane key={screenId} testId="kid-screen-transition" enter={kidScreenTransition} exit={kidScreenExit}>
+      <PresencePane key={screenId} testId="kid-screen-transition" from={kidScreenInitial} to={kidScreenEnter} away={kidScreenExitTarget} enter={kidScreenTransition} exit={kidScreenExit}>
         {children}
       </PresencePane>
     </AnimatePresence>
