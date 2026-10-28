@@ -117,7 +117,7 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
   const stageMenu = (types: readonly string[]) =>
     types.filter((type) => input.exerciseTypes.includes(type)).join(", ") || "none available";
   parts.push(
-    `Produce about ${input.countPerObjective} exercises per objective, split across stages: ` +
+    `Return at most ${input.countPerObjective} exercises per objective in this batch, aiming for this stage split: ` +
       `${input.stageCounts.guided} guided (${stageMenu(["lesson_choice", "lesson_order", "lesson_short_answer"])}), ` +
       `${input.stageCounts.productive} productive (${stageMenu(["lesson_gap", "lesson_error_fix", "lesson_transform"])}), ` +
       `${input.stageCounts.independent} independent (${stageMenu(["lesson_open_answer", "lesson_calculation"])}). ` +
@@ -139,7 +139,8 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
       "Numbers may vary as abstract examples of that same method; never invent named places, measurements of real objects or new geographical facts. " +
       "sourceRefs must quote the method, not a vaguely related fact. If the material teaches no supported calculation method, produce no calculations. " +
       "Calculations supplement the pool within the requested count and the global 160-exercise limit. " +
-      "Keep at least 3 guided, 2 productive and 2 DISTINCT open-answer questions per school objective; calculations never replace these minima. " +
+      "Publication minima apply to the complete pool, including existing exercises: 3 guided, 2 productive and 2 DISTINCT open-answer questions per school objective. " +
+      "Calculations never replace these minima; never exceed this batch's requested count to satisfy them. " +
       "calculation contains kind, params, unit, tolerance (use 0 unless needed), templateFamilyId (lowercase hyphenated slug). " +
       "scale_distance.params: {scaleDenominator: integer 1..1000000000, mapDistanceCm: nonnegative number}; " +
       "height_difference.params: {upperHeightM, lowerHeightM}, upperHeightM >= lowerHeightM; " +

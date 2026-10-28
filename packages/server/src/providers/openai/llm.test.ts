@@ -3,6 +3,7 @@ import { createOpenAiLlmProvider } from "./llm";
 import type { LessonPoolInput } from "../../ports/ai";
 import type { LlmGenerateDeckInput } from "../../ports/ai";
 import { englishGrammarSubject } from "../../domain/lessons/subjects/english-grammar/module";
+import { schoolSubject } from "../../domain/lessons/subjects/school/module";
 import { GenerationProviderError } from "../../ports/generation-error";
 
 /**
@@ -53,6 +54,36 @@ afterEach(() => {
 });
 
 describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", () => {
+  it("keeps a school top-up of two exercises within its batch budget, with minima scoped to the complete pool", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => okResponse({ exercises: [], examples: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    await createOpenAiLlmProvider({ apiKey: "k" }).generateLessonPool({
+      ...INPUT,
+      subjectId: schoolSubject.id,
+      subjectTitle: schoolSubject.titlePl,
+      answerLocale: schoolSubject.answerLocale,
+      promptLocale: schoolSubject.promptLocale,
+      promptProfile: schoolSubject.prompts,
+      exerciseTypes: schoolSubject.exerciseTypes,
+      transforms: [],
+      objectives: [{ id: "school.scale", descriptionEn: "Map scale", exerciseTypes: schoolSubject.exerciseTypes, errorCategories: [] }],
+      material: "Skala mapy pozwala przeliczyć odległość na mapie na odległość w terenie.",
+      countPerObjective: 2,
+      stageCounts: { guided: 1, productive: 0, independent: 1 },
+      deduplication: "exercise",
+      existingExercises: [{ objectiveId: "school.scale", exerciseType: "lesson_calculation", stimulus: "existing-scale-variant" }],
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string) as { messages: Array<{ role: string; content: string }> };
+    const system = body.messages.find((message) => message.role === "system")!.content;
+    expect(system).toContain("Return at most 2 exercises per objective in this batch");
+    expect(system).toContain("Publication minima apply to the complete pool, including existing exercises");
+    expect(system).toContain("never exceed this batch's requested count to satisfy them");
+    expect(system).toContain("Minima publikacji dotyczą całej puli, łącznie z istniejącymi ćwiczeniami");
+    expect(system).toContain("nie przekraczaj zamówionej liczby ćwiczeń w tej partii");
+    expect(system).toContain("existing-scale-variant");
+    expect(system).not.toContain("Keep at least 3 guided, 2 productive and 2 DISTINCT open-answer questions per school objective");
+  });
+
   it("nie ponawia HTTP 400, nie ujawnia body i klasyfikuje konfigurację", async () => {
     const fetchMock = vi.fn(async () => new Response("secret provider body", { status: 400 }));
     vi.stubGlobal("fetch", fetchMock);
