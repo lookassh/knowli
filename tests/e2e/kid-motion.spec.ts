@@ -47,8 +47,31 @@ test("animated task switch and feedback dock keep the session flow working", asy
   expect(overflowFrames, "no horizontal scroll range during the slide").toBe(0);
   await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-prompt-kind", "picture_listening");
 
+  // The answer pop and the dock entrance must never give any scroller a
+  // transient range: a scrollbar flashing for a few frames reads as a glitch.
+  const answerSamples = page.evaluate(() => new Promise<string[]>((resolve) => {
+    const hits = new Set<string>();
+    // Keep sampling until the dock has been on screen for a full second,
+    // so a slow answer cannot end the window before its entrance.
+    const started = performance.now();
+    let dockSeen: number | null = null;
+    const frame = () => {
+      if (dockSeen === null && document.querySelector("[data-testid='kid-feedback-dock']")) dockSeen = performance.now();
+      for (const scroller of document.querySelectorAll<HTMLElement>("[data-testid='kid-exercise'], [data-testid='kid-material'], .kid-page--session")) {
+        const style = getComputedStyle(scroller);
+        if (/auto|scroll/.test(style.overflowY) && scroller.scrollHeight > scroller.clientHeight + 1) hits.add(`${scroller.dataset.testid ?? scroller.className} Y`);
+        if (/auto|scroll/.test(style.overflowX) && scroller.scrollWidth > scroller.clientWidth + 1) hits.add(`${scroller.dataset.testid ?? scroller.className} X`);
+      }
+      const now = performance.now();
+      if (dockSeen === null && now - started > 10_000) resolve(["dock never appeared"]);
+      else if (dockSeen === null || now - dockSeen < 1000) requestAnimationFrame(frame);
+      else resolve([...hits]);
+    };
+    requestAnimationFrame(frame);
+  }));
   await page.getByTestId("kid-option").first().click();
   await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
+  expect(await answerSamples, "no transient scroll range while the answer animates").toEqual([]);
   // The chosen option reports its server outcome (pop/shake icon appears).
   await expect(page.locator("[data-testid='kid-outcome-correct'], [data-testid='kid-outcome-wrong']")).toHaveCount(1);
   // Only a tile the child chose correctly bursts (decoratively, then it is
