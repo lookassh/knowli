@@ -9,11 +9,12 @@ const styles = read("styles.css");
 
 const colorRoles = [
   "primary", "on-primary", "primary-container", "on-primary-container",
-  "secondary-container", "on-secondary-container",
-  "tertiary", "on-tertiary", "tertiary-container",
-  "error", "on-error", "error-container",
-  "surface", "on-surface", "on-surface-variant",
+  "secondary", "on-secondary", "secondary-container", "on-secondary-container",
+  "tertiary", "on-tertiary", "tertiary-container", "on-tertiary-container",
+  "error", "on-error", "error-container", "on-error-container",
+  "surface-dim", "surface", "surface-bright", "on-surface", "on-surface-variant",
   "surface-container-lowest", "surface-container-low", "surface-container", "surface-container-high",
+  "surface-container-highest", "inverse-surface", "inverse-on-surface", "inverse-primary",
   "outline", "outline-variant",
 ];
 
@@ -24,12 +25,22 @@ const legacyAliases: Record<string, string> = {
   "--kid-muted": "--md-sys-color-on-surface-variant",
   "--kid-accent": "--md-sys-color-primary",
   "--kid-on-accent": "--md-sys-color-on-primary",
-  "--kid-line": "--md-sys-color-outline",
+  // Decorative boundaries; interactive controls use --md-sys-color-outline directly.
+  "--kid-line": "--md-sys-color-outline-variant",
   "--kid-soft": "--md-sys-color-surface-container-high",
-  "--kid-good": "--md-sys-color-tertiary",
-  "--kid-good-bg": "--md-sys-color-tertiary-container",
+  "--kid-good": "--kid-color-success",
+  "--kid-good-bg": "--kid-color-success-container",
   "--kid-wrong": "--md-sys-color-error",
   "--kid-wrong-bg": "--md-sys-color-error-container",
+  "--kid-warm": "--kid-color-warm-container",
+};
+
+/* Success has no M3 role: it is tertiary under a semantic name. */
+const successAliases: Record<string, string> = {
+  "--kid-color-success": "--md-sys-color-tertiary",
+  "--kid-color-on-success": "--md-sys-color-on-tertiary",
+  "--kid-color-success-container": "--md-sys-color-tertiary-container",
+  "--kid-color-on-success-container": "--md-sys-color-on-tertiary-container",
 };
 
 describe("kid Material 3 tokens", () => {
@@ -42,6 +53,15 @@ describe("kid Material 3 tokens", () => {
   it("keeps legacy --kid-* color tokens as aliases of M3 roles", () => {
     for (const [legacy, role] of Object.entries(legacyAliases)) {
       expect(styles, legacy).toContain(`${legacy}: var(${role});`);
+    }
+  });
+
+  it("maps the success aliases onto tertiary and defines the warm custom color group", () => {
+    for (const [alias, role] of Object.entries(successAliases)) {
+      expect(styles, alias).toContain(`${alias}: var(${role});`);
+    }
+    for (const token of ["warm", "on-warm", "warm-container", "on-warm-container"]) {
+      expect(styles, token).toContain(`--kid-color-${token}:`);
     }
   });
 
