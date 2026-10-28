@@ -219,13 +219,9 @@ async function answerGuided(page: Page, task: TaskDto): Promise<{ attempt: Attem
   }
   const attempt = AttemptDtoSchema.parse(await (await attemptResponse).json());
   await expect(page.getByTestId("kid-feedback")).toContainText("Świetnie!");
-  const next = page.waitForResponse((response) =>
-    response.request().method() === "POST" && /\/api\/v1\/kid\/sessions\/.+\/next$/.test(new URL(response.url()).pathname),
-  );
   await page.getByTestId("kid-next").click();
-  const nextTask = TaskDtoSchema.parse(await (await next).json());
-  expect(nextTask.taskId).not.toBe(task.taskId);
-  await expect(page.locator(`main[data-task-id="${nextTask.taskId}"]`)).toBeVisible();
+  await expect(page.locator("main[data-task-id]")).not.toHaveAttribute("data-task-id", task.taskId);
+  const nextTask = await currentTask(page);
   return { attempt, nextTask };
 }
 
@@ -349,11 +345,9 @@ test("approved lesson survives reload and support without duplicate or independe
         expect(wrongAttempt).toMatchObject({ taskId: taskAfterDifficulty.taskId, feedback: { kind: "incorrect" } });
         incorrectCount += 1;
         incorrectTaskIds.push(taskAfterDifficulty.taskId);
-        const nextTaskResponse = kid.waitForResponse((response) =>
-          response.request().method() === "POST" && /\/api\/v1\/kid\/sessions\/.+\/next$/.test(new URL(response.url()).pathname),
-        );
         await kid.getByTestId("kid-next").click();
-        taskAfterDifficulty = TaskDtoSchema.parse(await (await nextTaskResponse).json());
+        await expect(kid.locator("main[data-task-id]")).not.toHaveAttribute("data-task-id", taskAfterDifficulty.taskId);
+        taskAfterDifficulty = await currentTask(kid);
       } else {
         const { nextTask } = await answerGuided(kid, taskAfterDifficulty);
         taskAfterDifficulty = nextTask;

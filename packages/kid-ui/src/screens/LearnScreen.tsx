@@ -86,6 +86,9 @@ export function LearnScreen({
           : feedback.dto?.kind === "almost" || feedback.dto?.kind === "spelling_hint" || feedback.dto?.kind === "lesson_almost" || feedback.dto?.kind === "lesson_hint" ? "partial"
             : feedback.dto?.kind === "incorrect" ? "incorrect" : "unevaluated";
   const instructionAudioKey = feedbackGuidanceKey ?? taskGuidanceKey;
+  // Komunikaty błędu z akcjami (audio zadania / instrukcji) rozpychają pasek
+  // statusu i włączają przewijanie ramy ćwiczenia — styluje to styles.css.
+  const actionNotice = screen.taskAudioError != null || (screen.guidanceError && instructionAudioKey) ? "true" : "false";
   const micAvailable = screen.session.mode !== "mock_test" && screen.session.microphoneEnabled && !screen.micDenied;
   const micState = screen.session.mode === "mock_test" ? "off"
     : !screen.session.microphoneEnabled ? "off"
@@ -200,7 +203,7 @@ export function LearnScreen({
     );
 
   return (
-    <main className="kid-screen kid-learning" data-task-id={task?.taskId ?? undefined}>
+    <main className="kid-screen kid-learning" data-task-id={task?.taskId ?? undefined} data-action-notice={actionNotice}>
       <header className="kid-header">
         {instructionAudioKey && <GuidanceButton audioKey={instructionAudioKey} onPlay={(key) => controller.playGuidance(key)} testId="kid-guidance-play" showError={false} />}
         <SessionProgress remaining={remaining} />
@@ -223,9 +226,6 @@ export function LearnScreen({
           <p className="kid-notice" data-testid="kid-processing">
             {messages.kid.processing}
           </p>
-        )}
-        {screen.transitioning && !screen.processing && !offline && screen.error === null && (
-          <p className="kid-notice" data-testid="kid-transitioning">{messages.kid.transitioning}</p>
         )}
         {screen.guidanceError && instructionAudioKey && <div className="kid-notice" data-testid="kid-guidance-error"><p>{messages.errors.picture_guidance_unavailable}</p><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" onClick={() => void controller.playGuidance(instructionAudioKey).catch(() => undefined)}>{messages.errors.picture_audio_retry}</ActionButton><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" onClick={() => void controller.endNow()}>{messages.kid.end}</ActionButton></div>}
         {screen.taskAudioError && <div className="kid-notice" role="alert" data-testid="kid-task-audio-error"><p>{screen.taskAudioError === "blocked" ? messages.errors.picture_audio_blocked : messages.errors.picture_audio_unavailable}</p><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-task-audio-retry" onClick={() => void controller.playTaskAudio()}>{messages.errors.picture_audio_retry}</ActionButton><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" onClick={() => void controller.endNow()}>{messages.kid.end}</ActionButton></div>}
@@ -271,6 +271,7 @@ export function LearnScreen({
                 microphoneReady={screen.microphoneReady}
                 inputLevel={screen.inputLevel}
                 recordingNotice={screen.recordingNotice}
+                technicalRecordingIssue={screen.technicalRecordingIssue}
                 recordingMode={screen.recordingMode}
                 micAvailable={micAvailable}
                 mediaUrl={(assetId) => controller.mediaUrl(assetId)}

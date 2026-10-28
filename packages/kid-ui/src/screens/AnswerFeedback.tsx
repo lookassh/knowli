@@ -14,7 +14,7 @@ export interface AnswerFeedbackProps {
   retry: boolean;
   busy: boolean;
   onNext: () => void;
-  /** „Pomiń” przy komunikacie technicznym lekcji (`not_assessed`). */
+  /** Neutralne przejście przy komunikacie technicznym lekcji (`not_assessed`). */
   onSkip?: () => void;
 }
 
@@ -226,9 +226,9 @@ export function AnswerFeedbackSecondaryActions({ dto, retry, busy, onSkip }: Ans
   const lesson = lessonFeedbackView(dto);
   if (lesson?.technical !== true || !retry || onSkip === undefined) return null;
   return (
-    <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" className="kid-flow-secondary" data-testid="kid-lesson-skip" disabled={busy} onClick={onSkip}>
+    <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" className="kid-flow-secondary" data-testid="kid-technical-next" disabled={busy} onClick={onSkip}>
       <KidIcon name="arrow-right" />
-      {messages.kid.skip}
+      {messages.kid.feedbackNext}
     </ActionButton>
   );
 }

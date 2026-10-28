@@ -253,7 +253,7 @@ describe("Keyboard Navigation & Focus Management", () => {
 
       // Secondary actions has 'Nie pamiętam'
       const secondary = (result as any).props.secondaryActions;
-      const notRememberBtn = secondary.props.children[0];
+      const notRememberBtn = secondary.props.children;
       expect(notRememberBtn.props["data-testid"]).toBe("kid-not-remember");
       expect(notRememberBtn.props.disabled).toBe(false);
     });

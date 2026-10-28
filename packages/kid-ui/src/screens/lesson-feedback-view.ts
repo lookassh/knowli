@@ -12,7 +12,7 @@ import { messages, type FeedbackDto, type SpellingDiffSegmentDto } from "@learni
  *   poprawna odpowiedź; ton wsparcia.
  * - `not_assessed` → komunikat techniczny bez sugerowania błędu, bez segmentów
  *   i bez poprawnej odpowiedzi; ton neutralny, `technical=true` (widok daje
- *   „Spróbuj jeszcze raz” / „Pomiń”).
+ *   „Spróbuj jeszcze raz” / „Dalej”).
  *
  * Zwraca `null` dla rodzajów nie-lekcyjnych — te obsługuje istniejący widok.
  */

@@ -13,7 +13,7 @@ import { ActionButton } from "../components/ActionButton";
  * pisowni, autouzupełnianie i automatyczną kapitalizację w zakresie dostępnym
  * na urządzeniu. Odpowiedź ustna jest dostępna wyłącznie dla samodzielnego
  * Recall; wsparcie pisowni pozostaje zadaniem tekstowym. Dostępne są też
- * „Nie pamiętam — pokaż” i „Pomiń”.
+ * „Nie pamiętam”.
  */
 export function WrittenView({ task, busy, recording, recordingPhase, microphoneReady, inputLevel, recordingNotice, recordingMode, micAvailable, dock, handlers, mockTest }: ExerciseProps) {
   const [text, setText] = useState("");
@@ -30,6 +30,7 @@ export function WrittenView({ task, busy, recording, recordingPhase, microphoneR
   const disabled = busy || recording || recordingPhase !== "idle";
   return (
     <ExerciseFrame
+      actionLayout="inline"
       dock={dock}
       task={task}
       content={(
@@ -89,9 +90,6 @@ export function WrittenView({ task, busy, recording, recordingPhase, microphoneR
       secondaryActions={<div className="kid-secondary-actions">
         <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-not-remember" disabled={disabled} onClick={handlers.onNotRemember}>
           {mockTest ? messages.kid.mockTestNotRemember : messages.kid.notRemember}
-        </ActionButton>
-        <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-skip" disabled={disabled} onClick={handlers.onSkip}>
-          {messages.kid.skip}
         </ActionButton>
       </div>}
     />

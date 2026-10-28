@@ -330,17 +330,17 @@ async function driveUntil(page: Page, stop: () => Promise<boolean>): Promise<voi
       await stopFakeRecording(page);
       await expect(page.getByTestId("kid-fragment").first()).toHaveClass(/kid-fragment--good/);
       await expect(currentFeedback(page)).toBeVisible();
-      if (await page.getByTestId("kid-feedback-skip").count()) {
-        await page.getByTestId("kid-feedback-skip").click();
+      if (await page.getByTestId("kid-technical-next").count()) {
+        await page.getByTestId("kid-technical-next").click();
         await page.getByTestId("kid-next").click();
       } else {
         await page.getByTestId("kid-next").click();
       }
       continue;
     }
-    if ((await page.getByTestId("kid-input").count()) === 0 && (await page.getByTestId("kid-skip").count()) > 0) {
+    if ((await page.getByTestId("kid-input").count()) === 0 && (await page.getByTestId("kid-technical-next").count()) > 0) {
       // wymowa bez mikrofonu — pominięcie bez oceny
-      await page.getByTestId("kid-skip").click();
+      await page.getByTestId("kid-technical-next").click();
       await expect(currentFeedback(page)).toBeVisible();
       await page.getByTestId("kid-next").click();
       continue;
@@ -476,11 +476,11 @@ test("wybór profilu prowadzi sesję do obiecanego końca", async ({ page }) => 
       await stopFakeRecording(page);
     } else {
       // wymowa bez działającego mikrofonu — świadome pominięcie bez oceny
-      await page.getByTestId("kid-skip").click();
+      await page.getByTestId("kid-technical-next").click();
     }
     await expect(currentFeedback(page)).toBeVisible();
-    if (await page.getByTestId("kid-feedback-skip").count()) {
-      await page.getByTestId("kid-feedback-skip").click();
+    if (await page.getByTestId("kid-technical-next").count()) {
+      await page.getByTestId("kid-technical-next").click();
       await page.getByTestId("kid-next").click();
     } else {
       await page.getByTestId("kid-next").click();
@@ -629,6 +629,22 @@ test("odpowiedź obrazkowa pokazuje oba wyniki i czyści je po ponowieniu", asyn
   expect(wrongIndex).toBeGreaterThanOrEqual(0);
   const correct = options.nth(correctIndex);
   const wrong = options.nth(wrongIndex);
+  // Awarię nagrania pytania wymuszamy deterministycznie (CodeRabbit):
+  // zatwierdzone audio w realnym stackie zwykle gra, więc nie polegamy
+  // na przypadkowej awarii — blokujemy media właściwego assetu i ponawiamy
+  // odsłuch. Zadanie czytanego wyboru nie ma nagrania: komunikat ma wtedy
+  // nie istnieć.
+  const audioError = page.getByTestId("kid-task-audio-error");
+  const play = page.getByTestId("kid-play");
+  if ((await play.count()) > 0) {
+    const audioAssetId = ((await taskRow(taskId)).public_prompt as { audioAssetId?: string | null }).audioAssetId ?? null;
+    expect(audioAssetId).toBeTruthy();
+    await page.route(`**/api/v1/media/${audioAssetId}`, (route) => route.fulfill({ status: 500, contentType: "text/plain", body: "forced audio failure" }));
+    await play.click();
+    await expect(audioError).toBeVisible();
+  } else {
+    await expect(audioError).toHaveCount(0);
+  }
   await wrong.click();
   const feedback = page.getByTestId("kid-feedback");
   await expect(feedback).toBeVisible();
@@ -637,10 +653,22 @@ test("odpowiedź obrazkowa pokazuje oba wyniki i czyści je po ponowieniu", asyn
   await expect(correct).toHaveClass(/kid-option--correct/);
   const bar = await feedback.boundingBox();
   expect(bar).not.toBeNull();
-  const boxes = await Promise.all((await options.elementHandles()).map((option) => option.boundingBox()));
-  expect(boxes.length).toBeGreaterThanOrEqual(2);
-  expect(boxes.length).toBeLessThanOrEqual(4);
-  for (const box of boxes) {
+  // Komunikat rozpycha pasek statusu, więc materiał ma mniej wysokości.
+  // Opcje pozostają w pełni osiągalne przewijaniem nad paskiem feedbacku
+  // (pełny cel dotykowy), a sam komunikat nie może wchodzić na materiał.
+  if (await audioError.isVisible()) {
+    const noticeBox = await audioError.boundingBox();
+    const materialBox = await page.getByTestId("kid-material").boundingBox();
+    expect(noticeBox).not.toBeNull();
+    expect(materialBox).not.toBeNull();
+    expect(noticeBox!.y + noticeBox!.height).toBeLessThanOrEqual(materialBox!.y + 1);
+  }
+  const handles = await options.elementHandles();
+  expect(handles.length).toBeGreaterThanOrEqual(2);
+  expect(handles.length).toBeLessThanOrEqual(4);
+  for (const option of handles) {
+    await option.scrollIntoViewIfNeeded();
+    const box = await option.boundingBox();
     expect(box).not.toBeNull();
     expect(box!.y + box!.height).toBeLessThanOrEqual(bar!.y + 1);
   }
@@ -745,16 +773,16 @@ test("recall z należnego sprawdzenia: pisemna pisownia, Nie pamiętam i Pomiń"
   );
   expect(modality2[0]!.modality).toBe("dont_remember");
 
-  // zadanie 3: „Pomiń” zamyka zadanie bez oceny wiedzy
+  // Serwer nadal obsługuje historyczny wynik skip bez oceny wiedzy.
   await driveUntil(page, () => page.getByTestId("kid-input").isVisible());
   const taskId3 = await currentTaskId(page);
-  await page.getByTestId("kid-skip").click();
-  await expect(page.getByTestId("kid-feedback")).toBeVisible();
-  // brak oceny wiedzy nie jest ani sukcesem, ani pomyłką — tło neutralne
-  expect(await page.getByTestId("kid-feedback").getAttribute("class")).not.toContain("kid-feedback--");
+  await expect(page.getByTestId("kid-skip")).toHaveCount(0);
+  const skipped = await page.request.post(`/api/v1/kid/tasks/${taskId3}/attempts`, {
+    data: { modality: "skip", clientAttemptId: randomUUID() },
+  });
+  expect(skipped.status()).toBe(200);
   const task3 = await query<{ state: string }>(
-    `select state from learning_app.session_tasks where id = $1`,
-    [taskId3],
+    `select state from learning_app.session_tasks where id = $1`, [taskId3],
   );
   expect(task3[0]!.state).toBe("skipped");
 

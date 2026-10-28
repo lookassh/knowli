@@ -65,6 +65,7 @@ export interface LearningScreen {
   recordingPhase: "idle" | "preparing" | "starting" | "recording" | "stopping";
   inputLevel: number | null;
   recordingNotice: string | null;
+  technicalRecordingIssue?: boolean;
   recordingMode: RecordingModeDto;
   recording: boolean;
   /** Automatyczną próbę można porzucić, aby odsłuchać wzorzec lub pominąć. */
@@ -710,7 +711,7 @@ export class LearningSessionController {
         microphoneReady: false,
         recordingPhase: "idle",
         inputLevel: null,
-        recordingNotice: null,
+        recordingNotice: null, technicalRecordingIssue: false,
         recording: false,
         processing: false,
         error: null,
@@ -739,7 +740,7 @@ export class LearningSessionController {
     if (this.#screen.kind !== "mockTestReady") return;
     const session = this.#screen.session;
     this.#screen = { kind: "learning", session, task: null, feedback: null, reveal: null, offline: false, busy: true,
-      micDenied: false, microphoneReady: false, recordingPhase: "idle", inputLevel: null, recordingNotice: null,
+      micDenied: false, microphoneReady: false, recordingPhase: "idle", inputLevel: null, recordingNotice: null, technicalRecordingIssue: false,
       recordingMode: this.#recordingMode,
       recording: false, processing: false, error: null, guidanceError: false };
     this.#emit(); await this.#loadNext(this.#epoch, session.sessionId);
@@ -842,7 +843,7 @@ export class LearningSessionController {
         processing: false,
         recordingPhase: "idle",
         inputLevel: null,
-        recordingNotice: null,
+        recordingNotice: null, technicalRecordingIssue: false,
         error: null,
         taskAudioError: null,
       };
@@ -1349,13 +1350,13 @@ export class LearningSessionController {
     const isCurrent = () => preparation === this.#microphonePreparationGeneration &&
       epoch === this.#epoch && this.#learning()?.task?.taskId === taskId &&
       (!options.automatic || generation === this.#recordingGeneration);
-    this.#setLearning({ recordingPhase: "preparing", recordingNotice: null, inputLevel: null });
+    this.#setLearning({ recordingPhase: "preparing", recordingNotice: null, technicalRecordingIssue: false, inputLevel: null });
     try {
       await this.#media.prepareMicrophone();
       if (!isCurrent()) return;
       this.#micDenied = false;
       this.#storage.remove(MIC_DENIED_KEY);
-      this.#setLearning({ microphoneReady: true, recordingPhase: "idle", micDenied: false, recordingNotice: null });
+      this.#setLearning({ microphoneReady: true, recordingPhase: "idle", micDenied: false, recordingNotice: null, technicalRecordingIssue: false });
     } catch (error) {
       if (!isCurrent()) return;
       const denied = (error as { name?: unknown } | null)?.name === "NotAllowedError" ||
@@ -1374,6 +1375,7 @@ export class LearningSessionController {
         microphoneReady: false,
         micDenied: denied,
         recordingNotice: taskUnchanged ? denied ? messages.kid.micDenied : messages.kid.recordingUnavailable : null,
+        technicalRecordingIssue: taskUnchanged,
       });
     }
   }
@@ -1505,7 +1507,7 @@ export class LearningSessionController {
         // auto anuluje nagrywanie z komunikatem i zostawia przycisk; realna
         // wypowiedź (także ręczna) idzie normalną ścieżką stopRecording
         if (this.#autoCaptureActive && this.#vad?.speechDetected === false) {
-          this.cancelRecording(messages.kid.autoCaptureNoSpeech);
+          this.cancelRecording(messages.kid.autoCaptureNoSpeech, true);
         } else {
           void this.stopRecording();
         }
@@ -1517,12 +1519,12 @@ export class LearningSessionController {
         // pełny reset stanu auto (PR #109, P2 #3): zgubny #autoStartBeep i #vad
         // nie mogą przetrwać do ręcznej próby po awarii urządzenia (jak WR-01)
         this.#resetAutoCapture();
-        this.#setLearning({ recordingPhase: "idle", microphoneReady: false, inputLevel: null, recordingNotice: messages.kid.recordingUnavailable });
+        this.#setLearning({ recordingPhase: "idle", microphoneReady: false, inputLevel: null, recordingNotice: messages.kid.recordingUnavailable, technicalRecordingIssue: true });
       },
     };
     const recorder = this.#media.createRecorder(options);
     this.#recorder = recorder;
-    this.#setLearning({ recordingPhase: "starting", recordingNotice: null, inputLevel: null });
+    this.#setLearning({ recordingPhase: "starting", recordingNotice: null, technicalRecordingIssue: false, inputLevel: null });
     try {
       await recorder.start();
       const current = this.#learning();
@@ -1551,6 +1553,7 @@ export class LearningSessionController {
           inputLevel: null,
           micDenied: false,
           recordingNotice: abortedTaskUnchanged ? messages.kid.autoCaptureListenUnavailable : null,
+          technicalRecordingIssue: abortedTaskUnchanged,
         });
         return;
       }
@@ -1572,6 +1575,7 @@ export class LearningSessionController {
         inputLevel: null,
         micDenied: denied,
         recordingNotice: taskUnchanged ? denied ? messages.kid.micDenied : messages.kid.recordingUnavailable : null,
+        technicalRecordingIssue: taskUnchanged,
       });
     }
   }
@@ -1588,7 +1592,7 @@ export class LearningSessionController {
     // Każdy sposób zakończenia automatycznej próby musi respektować VAD,
     // także przycisk i klawiatura: sama cisza nigdy nie jest próbą dziecka.
     if (this.#autoCaptureActive && !this.#vad?.speechDetected) {
-      this.cancelRecording(messages.kid.autoCaptureNoSpeech);
+      this.cancelRecording(messages.kid.autoCaptureNoSpeech, true);
       return;
     }
     const epoch = this.#epoch;
@@ -1606,7 +1610,7 @@ export class LearningSessionController {
     if (Date.now() - this.#recordingStartedAt < 300) {
       this.#recorder = null;
       recorder.cancel();
-      this.#setLearning({ recordingPhase: "idle", recordingNotice: messages.kid.recordingTooShort });
+      this.#setLearning({ recordingPhase: "idle", recordingNotice: messages.kid.recordingTooShort, technicalRecordingIssue: false });
       return;
     }
     try {
@@ -1620,7 +1624,7 @@ export class LearningSessionController {
       // dla dziecka, nigdy w nagraniu i nigdy blokada submitSpeech
       if (autoCapture) void this.#media.playBeep("end").catch(() => undefined);
       this.#recorder = null;
-      this.#setLearning({ recordingPhase: "idle", recordingNotice: null, processing: true, busy: true });
+      this.#setLearning({ recordingPhase: "idle", recordingNotice: null, technicalRecordingIssue: false, processing: true, busy: true });
       const clientAttemptId = randomUUID();
       this.#activity?.recordInteraction();
       this.#activity?.pause("technical_wait");
@@ -1639,13 +1643,13 @@ export class LearningSessionController {
     }
   }
 
-  cancelRecording(notice: string | null = null): void {
+  cancelRecording(notice: string | null = null, technicalIssue = false): void {
     this.#recordingGeneration += 1;
     const recorder = this.#recorder;
     this.#recorder = null;
     this.#resetAutoCapture();
     recorder?.cancel();
-    this.#setLearning({ recordingPhase: "idle", inputLevel: null, recordingNotice: notice });
+    this.#setLearning({ recordingPhase: "idle", inputLevel: null, recordingNotice: notice, technicalRecordingIssue: technicalIssue });
   }
 
   async #disableSessionMicrophone(session: SessionDto, continueAfterDisable = false): Promise<void> {

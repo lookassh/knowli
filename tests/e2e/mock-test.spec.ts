@@ -26,15 +26,15 @@ test("written mock test keeps its three slots after errors, reload and transport
   const second = await page.locator("[data-task-id]").getAttribute("data-task-id");
   await page.reload();
   await expect(page.locator("[data-task-id]")).toHaveAttribute("data-task-id", second!);
-  await page.getByTestId("kid-skip").click();
+  await page.getByTestId("kid-not-remember").click();
   await page.getByTestId("kid-not-remember").click();
   await expect(page.getByTestId("kid-mock-summary")).toBeVisible();
   await expect(page.getByTestId("kid-mock-solution")).toHaveCount(3);
   await expect(page.getByTestId("kid-mock-score")).toContainText("0/3 · 0%");
   await expect(page.getByTestId("kid-mock-score")).toContainText("☆☆☆☆☆☆");
   await expect(page.getByTestId("kid-mock-score")).toHaveAttribute("data-tone", "low");
-  await expect(page.locator('[data-testid="kid-mock-solution"][data-status="incorrect"]')).toHaveCount(2);
-  await expect(page.locator('[data-testid="kid-mock-solution"][data-status="notAssessed"]')).toHaveCount(1);
+  await expect(page.locator('[data-testid="kid-mock-solution"][data-status="incorrect"]')).toHaveCount(3);
+  await expect(page.locator('[data-testid="kid-mock-solution"][data-status="notAssessed"]')).toHaveCount(0);
 });
 
 test("fully correct attempt shows green rows, six stars and replays audio from review", async ({ page }) => {
@@ -80,7 +80,7 @@ test("configured portion can exceed ten and ends after its thirteenth answer", a
   await page.getByTestId("kid-mock-confirm").click();
   for (let i = 0; i < 13; i++) {
     await expect(page.getByTestId("kid-input")).toBeVisible();
-    await page.getByTestId("kid-skip").click();
+    await page.getByTestId("kid-not-remember").click();
   }
   await expect(page.getByTestId("kid-mock-summary")).toBeVisible();
   await expect(page.getByTestId("kid-mock-solution")).toHaveCount(13);
@@ -93,9 +93,9 @@ test("two browsers resume the same test and stale answers refresh without extra 
   const first = await page.locator("[data-task-id]").getAttribute("data-task-id");
   const other = await context.newPage(); await other.goto(`/kids/${childId}/learn`);
   await expect(other.locator("[data-task-id]")).toHaveAttribute("data-task-id", first!);
-  await page.getByTestId("kid-skip").click();
+  await page.getByTestId("kid-not-remember").click();
   await expect(page.locator("[data-task-id]")).not.toHaveAttribute("data-task-id", first!);
-  await other.getByTestId("kid-skip").click();
+  await other.getByTestId("kid-not-remember").click();
   await expect(other.getByTestId("kid-error")).toBeVisible(); await other.getByTestId("kid-retry").click();
   await expect(other.locator("[data-task-id]")).toHaveAttribute("data-task-id", (await page.locator("[data-task-id]").getAttribute("data-task-id"))!);
   await other.getByTestId("kid-end").click(); await expect(other.getByTestId("kid-mock-summary")).toBeVisible();

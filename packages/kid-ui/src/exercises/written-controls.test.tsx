@@ -34,6 +34,15 @@ function letterTask(taskId = "10000000-0000-4000-8000-000000000015"): TaskDto {
 }
 
 describe("written exercise controls", () => {
+  it("offers a clear recall action without skipping or submitting an empty answer", () => {
+    const props = makeExerciseProps(task());
+    renderKid(<ExerciseView {...props} />);
+    expect(screen.queryByTestId("kid-skip")).toBeNull();
+    expect(screen.getByTestId("kid-not-remember").textContent).toBe("Nie pamiętam");
+    fireEvent.click(screen.getByTestId("kid-not-remember"));
+    expect(props.handlers.onNotRemember).toHaveBeenCalledTimes(1);
+    expect(props.handlers.onSubmitText).not.toHaveBeenCalled();
+  });
   it("submits the exact controlled value with Enter and the external form button", () => {
     const props = makeExerciseProps(task());
     const { rerender } = renderKid(<ExerciseView {...props} />);
@@ -65,7 +74,7 @@ describe("written exercise controls", () => {
     rerender(<ExerciseView {...makeExerciseProps(task(), { handlers, busy: true })} />);
     expect(screen.getByTestId("kid-input").hasAttribute("disabled")).toBe(true);
     expect(screen.getByTestId("kid-submit").hasAttribute("disabled")).toBe(true);
-    expect(screen.getByTestId("kid-skip").hasAttribute("disabled")).toBe(true);
+    expect(screen.getByTestId("kid-not-remember").hasAttribute("disabled")).toBe(true);
 
     for (const overrides of [{ recording: true }, { recordingPhase: "preparing" as const }]) {
       rerender(<ExerciseView {...makeExerciseProps(task(), { handlers, ...overrides })} />);

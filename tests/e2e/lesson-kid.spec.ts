@@ -494,7 +494,7 @@ test("child can declare not-remembered in a lesson gap: difficulty then reveal t
   await expect(page.getByTestId("kid-lesson-gap")).toBeVisible();
   const notRemember = page.getByTestId("kid-not-remember");
   await expect(notRemember).toBeVisible();
-  await expect(notRemember).toHaveText("Nie pamiętam — pokaż");
+  await expect(notRemember).toHaveText("Nie pamiętam");
 
   // Dotknięcie → ujawnienie poprawnego słowa (cykl wsparcia), bez zgadywania.
   await notRemember.click();
