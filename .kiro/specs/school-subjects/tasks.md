@@ -133,6 +133,25 @@ violation” (zakaz dostawców trenujących na danych) — zostawić, bo grader
 dostaje odpowiedzi dzieci. Wyłączanie rozumowania i wybór dostawcy nie są
 jeszcze opcją konfiguracji adaptera (testowano parametrami tylko w sondzie).
 
+Bezpośredni producenci (2026-10-29; po zezwoleniu na koncie OpenRouter na
+endpointy trenujące na danych, przypięcie `provider.order` bez fallbacku):
+- `deepseek/deepseek-v4.1-flash-1017` @DeepSeek: endpoint nie obsługuje
+  `json_schema`, tylko `json_object`; w tym trybie 0/10 ×4 (brak cytatów,
+  złe formaty pól) — nieużywalny z naszym adapterem.
+- `openai/gpt-6-luna` @OpenAI: partia 9/10 (37 s) i raz błąd wyjścia po 240 s
+  przy rozumowaniu domyślnym; bez rozumowania 9/10, 8/9 (17–20 s). Grader:
+  wiedza 19/20, 18/20, `BRAMKA: OK` ×2 (72–75 s na 20 ocen).
+- `google/gemini-3.8-flash` @Google AI Studio (rozumowania nie da się wyłączyć,
+  `effort: low` działa): partia 10/10 ×2 (31–32 s), z `low` 10/10 ×2 (22–23 s).
+  Grader: wiedza 20/20 ×2, 0 odrzuconych, `BRAMKA: OK` ×2 (83–92 s).
+  Pełna sonda (`UMIEM_LLM_MODEL` nadpisany tylko w sondzie, domyślne limity):
+  5 zagadnień, 60 ćwiczeń, 0 odrzuceń, 3 rachunki zgodne z kodem, szkic
+  opublikowany; run 238 s, partie 37–46 s. Najlepszy wynik ze wszystkich
+  testowanych modeli; cena wyjścia ok. 6× wyższa niż DeepSeek.
+- Uwaga prywatności: zgoda na koncie na endpointy trenujące na danych dotyczy
+  wszystkich zapytań klucza — routing bez przypięcia może wtedy trafić do
+  takiego dostawcy także z odpowiedziami dzieci (grader).
+
 ## Etap 3 — Odpowiedź mówiona
 
 - [ ] Spike: polski STT (`pl-PL`) obecnego providera na głosie dziecka; decyzja
