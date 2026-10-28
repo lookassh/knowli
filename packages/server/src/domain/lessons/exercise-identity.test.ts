@@ -15,6 +15,26 @@ function exercise(overrides: Partial<LessonExerciseDraft>): LessonExerciseDraft 
 }
 
 describe("lessonExerciseIdentity", () => {
+  it("identifies a calculation by kind, named parameters and unit, ignoring tolerance and family", () => {
+    const calculation = { kind: "scale_distance", params: { scaleDenominator: 25000, mapDistanceCm: 3 }, unit: "m", templateFamilyId: "map-scale" } as const;
+    const first = exercise({ exerciseType: "lesson_calculation", calculation, prompt: "Cosmetic prompt" });
+    expect(lessonExerciseIdentity(first)).toBe(lessonExerciseIdentity({ ...first, prompt: "Other prompt", calculation: {
+      ...calculation, params: { mapDistanceCm: 3, scaleDenominator: 25000 }, tolerance: 1, templateFamilyId: "other",
+    } }));
+    for (const changed of [
+      { ...calculation, params: { ...calculation.params, mapDistanceCm: 4 } },
+      { ...calculation, unit: "km" },
+      { kind: "height_difference", params: { upperHeightM: 400, lowerHeightM: 150 }, unit: "m", templateFamilyId: "map-scale" },
+    ] as const) {
+      expect(lessonExerciseIdentity(first)).not.toBe(lessonExerciseIdentity({ ...first, calculation: changed }));
+    }
+    const converted = exercise({ exerciseType: "lesson_calculation", calculation: {
+      kind: "unit_conversion", params: { value: 2, fromUnit: "km" }, unit: "m", templateFamilyId: "units",
+    } });
+    expect(lessonExerciseIdentity(converted)).not.toBe(lessonExerciseIdentity({ ...converted, calculation: {
+      kind: "unit_conversion", params: { value: 2, fromUnit: "cm" }, unit: "m", templateFamilyId: "units",
+    } }));
+  });
   it("uses normalized stimulus, objective, and exercise type", () => {
     expect(lessonExerciseIdentity(exercise({}))).toBe(lessonExerciseIdentity(exercise({
       stem: "  ___ SHE   play tennis? ", instructionPl: "Inne polecenie", hint: "play",

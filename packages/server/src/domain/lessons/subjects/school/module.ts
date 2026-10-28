@@ -24,6 +24,7 @@ export const SCHOOL_EXERCISE_TYPES: readonly LessonExerciseType[] = [
   "lesson_order",
   "lesson_gap",
   "lesson_open_answer",
+  "lesson_calculation",
 ];
 
 export const SCHOOL_ERROR_CATEGORIES: readonly ErrorCategory[] = [

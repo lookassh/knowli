@@ -17,6 +17,23 @@ const UUID2 = "22222222-2222-4222-8222-222222222222";
 
 const option = { id: UUID, text: "plays" };
 
+describe("public calculation prompt", () => {
+  const prompt = { kind: "lesson_calculation", instructionPl: "Oblicz.", prompt: "Przelicz 2 km na m." };
+  it("accepts the written question and registers its exercise type", () => {
+    expect(TaskPromptSchema.safeParse(prompt).success).toBe(true);
+    expect(EXERCISE_TYPES as readonly string[]).toContain("lesson_calculation");
+  });
+  it.each([
+    ["calculation", {
+      kind: "unit_conversion", params: { value: 2, fromUnit: "km" }, unit: "m", templateFamilyId: "units",
+    }],
+    ["answer", "2000 m"], ["acceptedAnswers", []], ["focus", []],
+    ["requiredElements", [{ id: "result", text: "2000 m" }]], ["audioAssetId", UUID],
+  ] as const)("rejects private or unsupported field %s", (field, value) => {
+    expect(TaskPromptSchema.safeParse({ ...prompt, [field]: value }).success).toBe(false);
+  });
+});
+
 describe("EXERCISE_TYPES includes the 9 lesson types", () => {
   it("contains every lesson_* type", () => {
     for (const t of [

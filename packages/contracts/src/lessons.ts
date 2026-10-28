@@ -2,6 +2,7 @@ import { z } from "zod";
 import { InstantSchema, UuidSchema } from "./common";
 import { AssignmentDtoSchema, DeckStateSchema, RevisionAssetDtoSchema, SessionTaskBudgetSchema } from "./decks";
 import { GenerationDtoSchema } from "./generation";
+import { CalculationSpecSchema } from "./lesson-calculation";
 
 /**
  * Kontrakty lekcji (`@learning/contracts`) — publiczne DTO silnika lekcji
@@ -33,7 +34,7 @@ const MAX_NOTICE_SENTENCES = 3;
 const MIN_NOTICE_SEGMENTS = 1;
 const MAX_NOTICE_SEGMENTS = 15;
 
-/** 9 typów ćwiczeń lekcji (design „Typy ćwiczeń i etapy”). */
+/** Typy ćwiczeń lekcji (design „Typy ćwiczeń i etapy”). */
 export const LESSON_EXERCISE_TYPES = [
   "lesson_card",
   "lesson_notice",
@@ -44,6 +45,7 @@ export const LESSON_EXERCISE_TYPES = [
   "lesson_error_fix",
   "lesson_transform",
   "lesson_open_answer",
+  "lesson_calculation",
 ] as const;
 export type LessonExerciseTypeDto = (typeof LESSON_EXERCISE_TYPES)[number];
 export const LessonExerciseTypeSchema = z.enum(LESSON_EXERCISE_TYPES);
@@ -220,6 +222,7 @@ export const LessonExerciseInputSchema = z.object({
   expectedForm: LessonExpectedFormSchema.optional(),
   familyId: z.string().min(1).max(64).optional(),
   sourceRefs: z.array(SourceRefSchema).min(1).max(3).optional(),
+  calculation: CalculationSpecSchema.optional(),
 }).strict();
 export type LessonExerciseInput = z.infer<typeof LessonExerciseInputSchema>;
 

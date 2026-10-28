@@ -46,6 +46,13 @@ function draft(overrides: Partial<LessonExerciseDraft>): LessonExerciseDraft {
 }
 
 describe("validateLessonExercise — cel i typ", () => {
+  it("rejects calculation payload in grammar, including on an existing grammar type", () => {
+    const calculation = { kind: "unit_conversion", params: { value: 2, fromUnit: "km" }, unit: "m", templateFamilyId: "units" } as const;
+    for (const exerciseType of ["lesson_gap", "lesson_calculation"] as const) {
+      const errors = validateLessonExercise(draft({ exerciseType, calculation }), englishGrammarSubject, englishTopic);
+      expect(errors.some((error) => error.includes("calculation") && error.includes("v3"))).toBe(true);
+    }
+  });
   it.each(["lesson_choice", "lesson_open_answer", "lesson_error_fix"] as const)("odrzuca %s bez treści bodźca", (exerciseType) => {
     const errors = validateLessonExercise(draft({ exerciseType, stem: undefined, prompt: undefined, statement: "",
       options: [{ id: "a", text: "plays" }, { id: "b", text: "play" }], correctOption: "a" }), englishGrammarSubject, englishTopic);

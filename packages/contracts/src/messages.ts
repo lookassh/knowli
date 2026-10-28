@@ -334,7 +334,7 @@ export const messages = {
     steps: "Kroki",
     remaining: "Niewydane kroki",
     stepState: { issued: "Wydano", answered: "Odpowiedziano", completed: "Zakończono", skipped: "Pominięto" },
-    stepType: { exposure: "Prezentacja", listening: "Słuchanie", recall: "Przypominanie", spelling: "Pisownia", pronunciation: "Wymowa", picture_listening: "Wybór obrazka", picture_recognition: "Słowo do obrazka", lesson_card: "Karta lekcji", lesson_gap: "Uzupełnianie luki", lesson_order: "Układanie", lesson_open_answer: "Odpowiedź otwarta", lesson_choice: "Wybór odpowiedzi", lesson_short_answer: "Krótka odpowiedź", lesson_transform: "Przekształcanie zdania", lesson_notice: "Zauważ różnicę" },
+    stepType: { exposure: "Prezentacja", listening: "Słuchanie", recall: "Przypominanie", spelling: "Pisownia", pronunciation: "Wymowa", picture_listening: "Wybór obrazka", picture_recognition: "Słowo do obrazka", lesson_card: "Karta lekcji", lesson_gap: "Uzupełnianie luki", lesson_order: "Układanie", lesson_open_answer: "Odpowiedź otwarta", lesson_calculation: "Zadanie rachunkowe", lesson_choice: "Wybór odpowiedzi", lesson_short_answer: "Krótka odpowiedź", lesson_transform: "Przekształcanie zdania", lesson_notice: "Zauważ różnicę" },
     response: "Odpowiedź",
     feedback: "Zapisany komunikat",
     skipped: "Pominięto",
@@ -677,6 +677,7 @@ export const messages = {
       lesson_error_fix: "Popraw błąd",
       lesson_transform: "Przekształcenie",
       lesson_open_answer: "Odpowiedź otwarta",
+      lesson_calculation: "Zadanie rachunkowe",
     } as Record<string, string>,
     stages: {
       intro: "Wprowadzenie",

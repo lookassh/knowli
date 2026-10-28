@@ -45,6 +45,7 @@ export const EXERCISE_TYPES = [
   "lesson_error_fix",
   "lesson_transform",
   "lesson_open_answer",
+  "lesson_calculation",
 ] as const;
 export type ExerciseTypeDto = (typeof EXERCISE_TYPES)[number];
 
@@ -221,6 +222,11 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     instructionPl: z.string().min(1),
     prompt: z.string().min(1),
     audioAssetId: UuidSchema.optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal("lesson_calculation"),
+    instructionPl: z.string().min(1),
+    prompt: z.string().min(1),
   }).strict(),
 ]).superRefine((prompt, ctx) => {
   if (prompt.kind === "exposure" || prompt.kind === "speech") {

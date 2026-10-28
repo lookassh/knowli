@@ -164,6 +164,7 @@ function v3FieldsPresent(ex: LessonExerciseDraft): string[] {
   if (ex.expectedForm !== undefined) fields.push("expectedForm");
   if (ex.familyId !== undefined) fields.push("familyId");
   if (ex.sourceRefs !== undefined) fields.push("sourceRefs");
+  if (ex.calculation !== undefined) fields.push("calculation");
   return fields;
 }
 export function validateLessonExercise(
@@ -212,6 +213,9 @@ export function validateLessonExercise(
   }
 
   validateVisualSubject(ex, errors);
+  if (ex.calculation !== undefined && ex.exerciseType !== "lesson_calculation") {
+    errors.push("calculation: parametry są dozwolone tylko dla „lesson_calculation”");
+  }
   validateTextFieldLengths(ex, errors);
   validateFocus(ex, normalizer, errors);
   validateByType(ex, topic, objective, normalizer, errors);

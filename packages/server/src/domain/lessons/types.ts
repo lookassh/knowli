@@ -1,3 +1,5 @@
+import type { CalculationSpec } from "@learning/contracts";
+
 /**
  * Typy silnika lekcji (design „Przedmiot i katalog”, „Typy ćwiczeń i etapy”).
  * Silnik jest niezależny od przedmiotu: nie zna angielskiego ani gramatyki.
@@ -14,7 +16,7 @@ export interface ErrorCategory {
   readonly labelPl: string;
 }
 
-/** Typy ćwiczeń lekcji (design: 9 typów `lesson_*`). */
+/** Typy ćwiczeń lekcji (design: typy `lesson_*`). */
 /** Piktogram bodźca obrazkowego wyboru — kto/co jest na obrazku. */
 export type LessonVisualSubject = "boy" | "girl" | "man" | "woman" | "group" | "dog";
 
@@ -27,7 +29,8 @@ export type LessonExerciseType =
   | "lesson_gap"
   | "lesson_error_fix"
   | "lesson_transform"
-  | "lesson_open_answer";
+  | "lesson_open_answer"
+  | "lesson_calculation";
 
 /** Etap nauki celu (design: tabela typów → etapy). */
 export type LessonStage = "intro" | "guided" | "productive" | "independent";
@@ -149,6 +152,7 @@ export interface LessonExerciseDraft {
   readonly expectedForm?: LessonExpectedForm;
   readonly familyId?: string;
   readonly sourceRefs?: readonly { readonly quote: string; readonly parentAdded?: boolean }[];
+  readonly calculation?: CalculationSpec;
 }
 
 /**

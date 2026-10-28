@@ -1,4 +1,5 @@
 import type { LessonExerciseDraft, LessonTopic } from "../../types";
+import { computeCalculationAnswer, renderCalculationPrompt } from "../../calculation";
 
 /**
  * Reguły przedmiotu szkolnego dokładane do walidacji ogólnej puli
@@ -22,6 +23,31 @@ export function validateSchoolExercise(ex: LessonExerciseDraft, _topic: LessonTo
   if (ex.exerciseType !== "lesson_card") {
     if (!ex.sourceRefs || ex.sourceRefs.length === 0) {
       errors.push("sourceRefs: ćwiczenie przedmiotu szkolnego wymaga co najmniej jednego cytatu źródłowego");
+    }
+  }
+
+  if (ex.exerciseType === "lesson_calculation") {
+    if (ex.calculation === undefined) {
+      errors.push("calculation: zadanie rachunkowe wymaga parametrów obliczenia");
+    } else {
+      try {
+        const expectedAnswer = computeCalculationAnswer(ex.calculation).answer;
+        const expectedPrompt = renderCalculationPrompt(ex.calculation);
+        if (ex.answer !== expectedAnswer) {
+          errors.push("answer: wynik rachunku musi być zgodny z odpowiedzią obliczoną przez kod");
+        }
+        if (ex.prompt !== expectedPrompt) {
+          errors.push("prompt: treść rachunku musi być zgodna z szablonem renderowanym przez kod");
+        }
+      } catch {
+        errors.push("calculation: nieprawidłowe parametry obliczenia lub tolerancja wyniku");
+      }
+    }
+    if (ex.acceptedAnswers.length > 0) {
+      errors.push("acceptedAnswers: zadanie rachunkowe wymaga pustej listy wariantów");
+    }
+    if (ex.focus.length > 0) {
+      errors.push("focus: zadanie rachunkowe wymaga pustej listy");
     }
   }
 
@@ -118,6 +144,31 @@ export function validateSchoolPool(
           index,
           `familyId: ćwiczenie z rodziny „${familyId}” różni się celem, odpowiedzią wzorcową lub elementami wymaganymi od reszty rodziny`,
         );
+      }
+    }
+  }
+
+  // Rodzina wariantów liczbowych współdzieli metodę i jednostki, nie wynik.
+  const calculationFamilies = new Map<string, number[]>();
+  drafts.forEach((ex, index) => {
+    if (ex.exerciseType !== "lesson_calculation" || !ex.calculation) return;
+    const id = ex.calculation.templateFamilyId;
+    const indexes = calculationFamilies.get(id) ?? [];
+    indexes.push(index);
+    calculationFamilies.set(id, indexes);
+  });
+  for (const [familyId, indexes] of calculationFamilies) {
+    const first = drafts[indexes[0]!]!;
+    const firstCalculation = first.calculation!;
+    for (const index of indexes.slice(1)) {
+      const ex = drafts[index]!;
+      const calculation = ex.calculation!;
+      const sameInputUnit = firstCalculation.kind !== "unit_conversion" || (
+        calculation.kind === "unit_conversion" && calculation.params.fromUnit === firstCalculation.params.fromUnit
+      );
+      if (ex.objectiveId !== first.objectiveId || calculation.kind !== firstCalculation.kind ||
+        calculation.unit !== firstCalculation.unit || !sameInputUnit) {
+        push(index, `templateFamilyId: ćwiczenie z rodziny „${familyId}” różni się celem, rodzajem obliczenia lub jednostkami od reszty rodziny`);
       }
     }
   }

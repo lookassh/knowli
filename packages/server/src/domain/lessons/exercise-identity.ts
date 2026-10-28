@@ -13,6 +13,14 @@ function normalizeStimulus(value: string): string {
 /** Wyciąga funkcjonalny bodziec, pomijając kosmetyczne pola prezentacji. */
 export function lessonExerciseStimulus(exercise: LessonExerciseDraft): string {
   switch (exercise.exerciseType) {
+    case "lesson_calculation": {
+      const calculation = exercise.calculation;
+      return calculation === undefined ? "" : JSON.stringify([
+        calculation.kind,
+        Object.entries(calculation.params).sort(([left], [right]) => left.localeCompare(right)),
+        calculation.unit,
+      ]);
+    }
     case "lesson_transform":
       return JSON.stringify([normalizeStimulus(exercise.statement ?? ""), exercise.transformId ?? ""]);
     case "lesson_error_fix":

@@ -20,9 +20,30 @@ const UUID2 = "22222222-2222-4222-8222-222222222222";
 const UUID3 = "33333333-3333-4333-8333-333333333333";
 const INSTANT = "2026-10-12T15:00:00.000Z";
 
+describe("calculation exercise input", () => {
+  const calculation = {
+    kind: "scale_distance", params: { scaleDenominator: 25000, mapDistanceCm: 3 },
+    unit: "m", templateFamilyId: "map-scale",
+  };
+  const input = {
+    exerciseType: "lesson_calculation", objectiveId: "school.map-scale",
+    prompt: "Na mapie w skali 1:25 000 odcinek ma 3 cm. Oblicz odległość w terenie w m.",
+    calculation, answer: "750 m", acceptedAnswers: [], focus: [],
+    sourceRefs: [{ quote: "Skala mapy określa stosunek odległości." }],
+  };
+  it("accepts the private parameters without open-answer grading fields", () => {
+    expect(LessonExerciseInputSchema.safeParse(input).success).toBe(true);
+  });
+  it("rejects an unknown calculation kind and extra parameters", () => {
+    expect(LessonExerciseInputSchema.safeParse({ ...input, calculation: { ...calculation, kind: "division" } }).success).toBe(false);
+    expect(LessonExerciseInputSchema.safeParse({ ...input, calculation: { ...calculation, params: { ...calculation.params, extra: 1 } } }).success).toBe(false);
+  });
+});
+
 describe("LESSON_EXERCISE_TYPES", () => {
-  it("has exactly the 9 lesson_* types", () => {
+  it("has exactly the 10 lesson_* types", () => {
     expect([...LESSON_EXERCISE_TYPES].sort()).toEqual([
+      "lesson_calculation",
       "lesson_card",
       "lesson_choice",
       "lesson_error_fix",

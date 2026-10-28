@@ -3,7 +3,7 @@ import type { LessonExerciseType, LessonStage } from "./types";
 /**
  * Mapa typu ćwiczenia na etap nauki (design: tabela „Typy ćwiczeń i etapy”).
  * Karta i wskazanie = intro; wybór, klocki, krótka odpowiedź = guided;
- * luka, error_fix, transform = productive; open_answer = independent.
+ * luka, error_fix, transform = productive; open_answer i calculation = independent.
  */
 export const STAGE_BY_TYPE: Readonly<Record<LessonExerciseType, LessonStage>> = {
   lesson_card: "intro",
@@ -15,6 +15,7 @@ export const STAGE_BY_TYPE: Readonly<Record<LessonExerciseType, LessonStage>> = 
   lesson_error_fix: "productive",
   lesson_transform: "productive",
   lesson_open_answer: "independent",
+  lesson_calculation: "independent",
 };
 
 /** Etapy oceniane (poza intro-kartą): guided, productive, independent. */
