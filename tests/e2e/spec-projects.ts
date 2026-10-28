@@ -57,6 +57,7 @@ export const REAL_BUCKETS: readonly (readonly string[])[] = [
   ],
   [
     "generation-request-retry.spec.ts",
+    "lesson-calculation.spec.ts",
     "kid-flow.spec.ts",
     "navigation.spec.ts",
     "privacy.spec.ts",

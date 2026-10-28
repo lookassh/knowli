@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   messages,
   AssignmentPutSchema,
+  CalculationSpecSchema,
+  type CalculationSpec,
   type ChildDto,
   type LessonDeckDto,
   type LessonDraftDto,
@@ -18,6 +20,8 @@ import LessonSupervisionPanel from "./LessonSupervisionPanel";
 import { DeckAssignmentsList } from "../DeckAssignmentsList";
 import {
   createLessonSnapshot,
+  applyCalculationPreview,
+  groupCalculationFamilies,
   groupExercisesByObjectiveAndStage,
   lessonExerciseChanged,
   nextRequiredElementId,
@@ -80,6 +84,31 @@ export default function LessonEditor({
   // przykłady dokładamy do ciała PATCH w `save()`. `null` = jeszcze nie zasiane.
   const [examplesForm, setExamplesForm] = useState<Record<string, string[]> | null>(null);
   const [catalog, setCatalog] = useState<SubjectCatalogDto | null>(null);
+
+  const [calculationInputs, setCalculationInputs] = useState<Record<string, string>>({});
+  const [calculationPreviews, setCalculationPreviews] = useState<Record<string, { fingerprint: string; status: "pending" | "ready" | "error" }>>({});
+  const calculationRequests = JSON.stringify((form?.exercises ?? []).filter(ex => ex.calculation).map(ex => ({ clientKey: ex.clientKey, calculation: ex.calculation })));
+  const calculationBlocked = (form?.exercises ?? []).some(ex => ex.exerciseType === "lesson_calculation" && (
+    !ex.calculation || !CalculationSpecSchema.safeParse(ex.calculation).success ||
+    calculationPreviews[ex.clientKey]?.fingerprint !== JSON.stringify(ex.calculation) || calculationPreviews[ex.clientKey]?.status !== "ready"
+  ));
+
+  useEffect(() => {
+    let cancelled = false;
+    const requests = JSON.parse(calculationRequests) as { clientKey: string; calculation: CalculationSpec }[];
+    setCalculationPreviews(Object.fromEntries(requests.map(({ clientKey, calculation }) => [clientKey, { fingerprint: JSON.stringify(calculation), status: "pending" }])));
+    for (const { clientKey, calculation } of requests) {
+      const fingerprint = JSON.stringify(calculation);
+      const fail = () => { if (!cancelled) setCalculationPreviews(current => ({ ...current, [clientKey]: { fingerprint, status: "error" } })); };
+      if (!CalculationSpecSchema.safeParse(calculation).success) { fail(); continue; }
+      void callParent(() => parentClient.lessons.previewCalculation(calculation)).then(preview => {
+        if (cancelled) return;
+        setForm(current => current ? { ...current, exercises: current.exercises.map(ex => ex.clientKey === clientKey ? applyCalculationPreview(ex, calculation, preview) : ex) } : current);
+        setCalculationPreviews(current => ({ ...current, [clientKey]: { fingerprint, status: "ready" } }));
+      }).catch(fail);
+    }
+    return () => { cancelled = true; };
+  }, [calculationRequests]);
 
   const dirty = useRef(false);
   const busyRef = useRef(false);
@@ -153,6 +182,7 @@ export default function LessonEditor({
     const snapshot = createLessonSnapshot(active, newKey);
     if (draft) baseSnapshot.current = snapshot;
     setForm(snapshot.form);
+    setCalculationInputs({});
     setExamplesForm(structuredClone(active.examples ?? {}));
   }, [active, draft, newKey]);
 
@@ -171,6 +201,15 @@ export default function LessonEditor({
         ? { ...current, exercises: current.exercises.map((ex) => (ex.clientKey === clientKey ? { ...ex, ...patch } : ex)) }
         : current,
     );
+  };
+
+  const mutateCalculation = (ex: EditableLessonExercise, calculation: CalculationSpec) => mutateExercise(ex.clientKey, { calculation });
+  const mutateCalculationNumber = (ex: EditableLessonExercise, field: string, text: string) => {
+    const calculation = ex.calculation!;
+    setCalculationInputs(current => ({ ...current, [ex.clientKey + ":" + field]: text }));
+    const value = text.trim() === "" ? Number.NaN : Number(text.replace(",", "."));
+    if (field === "tolerance") mutateCalculation(ex, { ...calculation, tolerance: text.trim() === "" ? undefined : value });
+    else mutateCalculation(ex, { ...calculation, params: { ...calculation.params, [field]: value } } as CalculationSpec);
   };
 
   const removeExercise = (clientKey: string) => {
@@ -215,7 +254,7 @@ export default function LessonEditor({
 
   const save = async () => {
     const base = baseSnapshot.current;
-    if (!draft || !form || !base || busyRef.current || !dirty.current || base.versionId !== draft.id) return;
+    if (!draft || !form || !base || busyRef.current || !dirty.current || base.versionId !== draft.id || calculationBlocked) return;
     if (form.title.trim().length === 0) {
       setError(messages.decks.titleIncomplete);
       return;
@@ -225,6 +264,10 @@ export default function LessonEditor({
     setError(null);
     setExerciseErrors({});
     try {
+      // Revalidate every variant through the same domain immediately before saving.
+      snapshot.form.exercises = await Promise.all(snapshot.form.exercises.map(async ex => ex.calculation
+        ? applyCalculationPreview(ex, ex.calculation, await callParent(() => parentClient.lessons.previewCalculation(ex.calculation!)))
+        : ex));
       const patch = toLessonDraftPatch(snapshot);
       // Przykłady serwer nadpisuje całością per cel; dokładamy aktualny stan,
       // bo serializacja ćwiczeń (lesson-editor-state) ich nie obejmuje.
@@ -561,7 +604,10 @@ export default function LessonEditor({
               {stageGroup.exercises.length === 0 ? (
                 <p className="muted">{messages.lessons.noExercisesInStage}</p>
               ) : (
-                stageGroup.exercises.map((ex) => {
+                groupCalculationFamilies(stageGroup.exercises).map(family => (
+                  <section key={family.key} data-testid={family.familyId ? `calculation-family-${family.familyId}` : undefined}>
+                    {family.familyId && <h5>{messages.lessons.calculationFamily.replace("{family}", family.familyId)}</h5>}
+                    {family.exercises.map((ex) => {
                   const index = indexByClientKey.get(ex.clientKey)!;
                   const errors = exerciseErrors[index];
                   const base = baseSnapshot.current?.form.exercises.find((b) => b.clientKey === ex.clientKey);
@@ -586,6 +632,45 @@ export default function LessonEditor({
                           {...(errors ? { "aria-describedby": errId } : {})}
                           onChange={(e) => mutateExercise(ex.clientKey, { instructionPl: e.target.value })} />
                       </label>
+
+                      {ex.calculation && (
+                        <fieldset disabled={!editable || busy}>
+                          <legend>{messages.lessons.exerciseTypes.lesson_calculation}</legend>
+                          <label>{messages.lessons.calculationKindLabel}
+                            <select data-testid={`calculation-kind-${index}`} value={ex.calculation.kind} onChange={e => {
+                              const kind = e.target.value as CalculationSpec["kind"];
+                              const common = { unit: ex.calculation!.unit, tolerance: ex.calculation!.tolerance, templateFamilyId: ex.calculation!.templateFamilyId };
+                              const calculation: CalculationSpec = kind === "scale_distance" ? { ...common, kind, params: { mapDistanceCm: 3, scaleDenominator: 25000 } }
+                                : kind === "height_difference" ? { ...common, kind, params: { upperHeightM: 400, lowerHeightM: 150 } }
+                                : { ...common, kind, params: { value: 1, fromUnit: "m" } };
+                              setCalculationInputs(current => Object.fromEntries(Object.entries(current).filter(([key]) => !key.startsWith(ex.clientKey + ":"))));
+                              mutateCalculation(ex, calculation);
+                            }}>
+                              {Object.entries(messages.lessons.calculationKinds).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                            </select>
+                          </label>
+                          {Object.entries(ex.calculation.params).map(([field, value]) => <label key={field}>
+                            {messages.lessons.calculationParams[field]}
+                            {field === "fromUnit" ? <select data-testid={`calculation-${field}-${index}`} value={value} onChange={e => mutateCalculation(ex, { ...ex.calculation!, params: { ...ex.calculation!.params, fromUnit: e.target.value } } as CalculationSpec)}>
+                              {["cm", "m", "km"].map(unit => <option key={unit} value={unit}>{unit}</option>)}
+                            </select> : <input data-testid={`calculation-${field}-${index}`} inputMode="decimal" value={calculationInputs[ex.clientKey + ":" + field] ?? String(value).replace(".", ",")} onChange={e => mutateCalculationNumber(ex, field, e.target.value)} />}
+                          </label>)}
+                          <label>{messages.lessons.calculationUnit}
+                            <select data-testid={`calculation-unit-${index}`} value={ex.calculation.unit} onChange={e => mutateCalculation(ex, { ...ex.calculation!, unit: e.target.value as CalculationSpec["unit"] })}>
+                              {["cm", "m", "km"].map(unit => <option key={unit} value={unit}>{unit}</option>)}
+                            </select>
+                          </label>
+                          <label>{messages.lessons.calculationTolerance}
+                            <input data-testid={`calculation-tolerance-${index}`} inputMode="decimal" value={calculationInputs[ex.clientKey + ":tolerance"] ?? String(ex.calculation.tolerance ?? "").replace(".", ",")} onChange={e => mutateCalculationNumber(ex, "tolerance", e.target.value)} />
+                          </label>
+                          <label>{messages.lessons.calculationFamilyId}
+                            <input data-testid={`calculation-family-${index}`} value={ex.calculation.templateFamilyId} onChange={e => mutateCalculation(ex, { ...ex.calculation!, templateFamilyId: e.target.value })} />
+                          </label>
+                          <p data-testid={`calculation-prompt-${index}`}>{ex.prompt}</p>
+                          <p role="status" data-testid={`calculation-status-${index}`}>{calculationPreviews[ex.clientKey]?.fingerprint !== JSON.stringify(ex.calculation) || calculationPreviews[ex.clientKey]?.status === "pending"
+                            ? messages.lessons.calculationPending : calculationPreviews[ex.clientKey]?.status === "ready" ? messages.lessons.calculationReady : messages.lessons.calculationInvalid}</p>
+                        </fieldset>
+                      )}
 
                       {ex.exerciseType === "lesson_choice" && (
                         <label>
@@ -629,7 +714,7 @@ export default function LessonEditor({
                       ) : (
                         <label>
                           {messages.lessons.exerciseAnswerLabel}
-                          <input data-testid={`exercise-answer-${index}`} value={ex.answer} disabled={!editable || busy}
+                          <input data-testid={`exercise-answer-${index}`} value={ex.answer} disabled={!editable || busy || ex.exerciseType === "lesson_calculation"}
                             {...(errors ? { "aria-describedby": errId } : {})}
                             onChange={(e) => mutateExercise(ex.clientKey, { answer: e.target.value })} />
                         </label>
@@ -664,12 +749,12 @@ export default function LessonEditor({
 
                       <label>
                         {messages.lessons.exerciseAcceptedLabel}
-                        <textarea data-testid={`exercise-accepted-${index}`} value={ex.acceptedText} disabled={!editable || busy}
+                        <textarea data-testid={`exercise-accepted-${index}`} value={ex.acceptedText} disabled={!editable || busy || ex.exerciseType === "lesson_calculation"}
                           onChange={(e) => mutateExercise(ex.clientKey, { acceptedText: e.target.value })} />
                       </label>
                       <label>
                         {messages.lessons.exerciseFocusLabel}
-                        <input data-testid={`exercise-focus-${index}`} value={ex.focusText} disabled={!editable || busy}
+                        <input data-testid={`exercise-focus-${index}`} value={ex.focusText} disabled={!editable || busy || ex.exerciseType === "lesson_calculation"}
                           onChange={(e) => mutateExercise(ex.clientKey, { focusText: e.target.value })} />
                       </label>
 
@@ -785,7 +870,9 @@ export default function LessonEditor({
                       )}
                     </article>
                   );
-                })
+                    })}
+                  </section>
+                ))
               )}
             </div>
           ))}
@@ -846,7 +933,7 @@ export default function LessonEditor({
 
       {editable && (
         <div className="row">
-          <button type="button" data-testid="save-lesson" onClick={save} disabled={busy || conflict}>
+          <button type="button" data-testid="save-lesson" onClick={save} disabled={busy || conflict || calculationBlocked}>
             {messages.decks.save}
           </button>
           <button type="button" data-testid="publish-lesson" onClick={publish}

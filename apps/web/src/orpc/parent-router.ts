@@ -1,5 +1,7 @@
 import {
   AppError,
+  computeCalculationAnswer,
+  renderCalculationPrompt,
   MAX_DECK_COVER_BYTES,
   acceptVerdictAsVariant,
   archiveDeck,
@@ -364,6 +366,16 @@ const lessonsVerdicts = parentOs.lessons.verdicts.handler(async ({ context, inpu
   noStore(await listLessonVerdicts(context.services, input.deckId)),
 );
 
+const lessonsPreviewCalculation = parentOs.lessons.previewCalculation
+  .use(sameOriginMiddleware)
+  .handler(async ({ input }) => {
+    try {
+      return { prompt: renderCalculationPrompt(input), answer: computeCalculationAnswer(input).answer };
+    } catch {
+      throw new AppError("validation");
+    }
+  });
+
 const lessonsDraft = parentOs.lessons.draft
   .use(sameOriginMiddleware)
   .handler(async ({ context, input }) => createLessonDraftFromPublished(context.services, input.deckId));
@@ -530,6 +542,7 @@ export const parentORpcRouter: Router<ORpcContext> = parentRootOs.router({
     get: lessonCatalogGet,
   },
   lessons: {
+    previewCalculation: lessonsPreviewCalculation,
     create: lessonsCreate,
     createSchool: lessonsCreateSchool,
     get: lessonsGet,

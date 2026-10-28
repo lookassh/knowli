@@ -1527,3 +1527,25 @@ describe("parent oRPC — pełne koło klient→handler (OpenAPILink)", () => {
     vi.unstubAllGlobals();
   });
 });
+
+
+describe("calculation preview", () => {
+  const calculation = { kind: "scale_distance", params: { mapDistanceCm: 4, scaleDenominator: 25000 }, unit: "m", templateFamilyId: "scale" };
+  it("requires a parent session", async () => {
+    const response = await call("/lessons/preview-calculation", authInit(calculation));
+    expect(response.status).toBe(401);
+  });
+  it("rejects an expired session and an untrusted origin", async () => {
+    vi.mocked(requireParent).mockRejectedValueOnce(new AppError("unauthorized"));
+    expect((await call("/lessons/preview-calculation", jsonInit(calculation))).status).toBe(401);
+    expect((await call("/lessons/preview-calculation", jsonInit(calculation, { origin: "https://evil.example" }))).status).toBe(403);
+  });
+  it("returns the real deterministic prompt and 1000 m without writes", async () => {
+    const response = await call("/lessons/preview-calculation", jsonInit(calculation));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ prompt: "Na mapie w skali 1:25 000 odcinek ma 4 cm. Oblicz odległość w terenie w m.", answer: "1000 m" });
+  });
+  it.each([{ ...calculation, params: { mapDistanceCm: 4, scaleDenominator: 0 } }, { ...calculation, tolerance: 11 }])("rejects invalid parameters or relational tolerance", async (input) => {
+    expect((await call("/lessons/preview-calculation", jsonInit(input))).status).toBe(400);
+  });
+});

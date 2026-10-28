@@ -1,3 +1,4 @@
+export { computeCalculationAnswer, renderCalculationPrompt } from "./domain/lessons/calculation";
 export * from "./config";
 export { createProductionSubjectRegistry } from "./domain/lessons/subjects";
 export { createSubjectRegistry, type SubjectRegistry } from "./domain/lessons/registry";

@@ -3,6 +3,7 @@ import { oc } from "@orpc/contract";
 import { openapi } from "@orpc/openapi";
 import {
   AssignmentPutSchema,
+  CalculationSpecSchema,
   ChildDtoSchema,
   ChildInputSchema,
   ChildPatchSchema,
@@ -358,6 +359,11 @@ export const parentApiContract = {
 
   /** Zestawy-lekcje: tworzenie, widok, postęp celów, werdykty, nowy szkic. */
   lessons: {
+    previewCalculation: oc
+      .input(CalculationSpecSchema)
+      .output(z.object({ prompt: z.string(), answer: z.string() }).strict())
+      .meta(openapi({ method: "POST", path: "/lessons/preview-calculation" })),
+
     create: oc
       .input(LessonCommandSchema)
       .output(z.object({ runId: UuidSchema, deckId: UuidSchema }))

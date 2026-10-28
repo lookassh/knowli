@@ -1,4 +1,5 @@
 import type {
+  CalculationSpec,
   LessonDraftDto,
   LessonExerciseInput,
   LessonExerciseTypeDto,
@@ -31,6 +32,7 @@ const STAGE_BY_TYPE: Readonly<Record<LessonExerciseTypeDto, LessonStage>> = {
   lesson_error_fix: "productive",
   lesson_transform: "productive",
   lesson_open_answer: "independent",
+  lesson_calculation: "independent",
 };
 
 /** Etap ćwiczenia danego typu (prezentacja przeglądu). */
@@ -72,6 +74,7 @@ export interface EditableLessonExercise {
   commonErrors: string[] | null;
   expectedForm: string;
   familyId: string;
+  calculation?: CalculationSpec;
   sourceRefs: { quote: string; parentAdded?: boolean }[] | null;
 }
 
@@ -150,6 +153,7 @@ function editableFromExercise(
     commonErrors: exercise.commonErrors ? [...exercise.commonErrors] : null,
     expectedForm: exercise.expectedForm ?? "",
     familyId: exercise.familyId ?? "",
+    ...(exercise.calculation ? { calculation: structuredClone(exercise.calculation) } : {}),
     sourceRefs: exercise.sourceRefs ? exercise.sourceRefs.map((ref) => ({ ...ref })) : null,
   };
 }
@@ -183,7 +187,7 @@ const STEM_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_choice",
 // `payload.statement`). Serializacja musi wysyłać `statement`, nie `prompt`,
 // inaczej PATCH gubi zdanie i materializacja daje pusty `statement`.
 const STATEMENT_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_error_fix", "lesson_transform"]);
-const PROMPT_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_open_answer", "lesson_short_answer"]);
+const PROMPT_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_open_answer", "lesson_short_answer", "lesson_calculation"]);
 const OPTION_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_choice", "lesson_short_answer"]);
 const ITEM_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_order"]);
 const NOTICE_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_notice"]);
@@ -262,6 +266,7 @@ function exerciseToInput(exercise: EditableLessonExercise): LessonExerciseInput 
   if (exercise.sourceRefs) {
     input.sourceRefs = exercise.sourceRefs.filter((ref) => ref.quote.trim().length > 0).map((ref) => ({ ...ref }));
   }
+  if (exercise.calculation) input.calculation = structuredClone(exercise.calculation);
   return input;
 }
 
@@ -324,4 +329,25 @@ export function groupExercisesByObjectiveAndStage(
       ),
     })),
   }));
+}
+
+
+/** Applies an API preview only while it still describes this variant. No arithmetic in the client. */
+export function applyCalculationPreview(exercise: EditableLessonExercise, requested: CalculationSpec, preview: { prompt: string; answer: string }): EditableLessonExercise {
+  return JSON.stringify(exercise.calculation) === JSON.stringify(requested)
+    ? { ...exercise, prompt: preview.prompt, answer: preview.answer }
+    : exercise;
+}
+
+/** Stable groups scoped by objective; ordinary exercises remain separate. */
+export function groupCalculationFamilies(exercises: readonly EditableLessonExercise[]): { key: string; familyId: string | null; exercises: EditableLessonExercise[] }[] {
+  const groups = new Map<string, { key: string; familyId: string | null; exercises: EditableLessonExercise[] }>();
+  for (const exercise of exercises) {
+    const familyId = exercise.calculation?.templateFamilyId ?? null;
+    const key = familyId ? JSON.stringify([exercise.objectiveId, familyId]) : exercise.clientKey;
+    const group = groups.get(key) ?? { key, familyId, exercises: [] };
+    group.exercises.push(exercise);
+    groups.set(key, group);
+  }
+  return [...groups.values()];
 }
