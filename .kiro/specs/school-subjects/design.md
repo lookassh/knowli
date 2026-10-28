@@ -106,7 +106,7 @@ Zadania rachunkowe (etap 2b, decyzja właściciela 2026-10-28): nowy typ
 `scale_distance` (skala mapy: mianownik skali × odległość na mapie, z wyborem
 jednostki wyniku), `height_difference` (wysokość względna: różnica wysokości
 bezwzględnych), `unit_conversion` (cm↔m↔km). Czysta funkcja domenowa
-`computeCalculationAnswer(kind, params)` jest jedynym źródłem poprawnej
+`computeCalculationAnswer(spec)` jest jedynym źródłem poprawnej
 odpowiedzi: walidacja puli przelicza każde ćwiczenie i odrzuca niezgodne
 (model proponuje szablon i parametry, nie wynik), a ocena próby parsuje polski
 zapis liczby (spacje tysięcy, przecinek dziesiętny), opcjonalną jednostkę
@@ -115,6 +115,47 @@ to osobne ćwiczenia w puli o wspólnym `templateFamilyId`, w edytorze
 pokazywane razem z policzonymi odpowiedziami; Kid UI używa istniejącego
 pola odpowiedzi z przyciskiem „Sprawdź” (odpowiedź pisemna). Przykłady
 z pilotażu: skala 1:25 000 i 3 cm → 750 m; 400 m n.p.m. − 150 m n.p.m. → 250 m.
+
+Kontrakt Etapu 2b (zadanie 1, 2026-10-28; bez deklaracji ukończenia integracji):
+
+- `CalculationSpecSchema` to ścisła unia po `kind`; ścisłe `params` zawierają
+  odpowiednio `{scaleDenominator,mapDistanceCm}`, `{upperHeightM,lowerHeightM}`
+  lub `{value,fromUnit}`. `unit` i `fromUnit` należą do `cm | m | km`.
+  `templateFamilyId` to slug `[a-z0-9]+(?:-[a-z0-9]+)*`, 1–64 znaków,
+  identyfikujący rodzinę w obrębie zestawu.
+- Parametry są skończone, mają ≤3 miejsca dziesiętne i moduł ≤1 000 000;
+  odległości i wartość konwersji są nieujemne, wysokości mogą być ujemne,
+  `upperHeightM >= lowerHeightM`. Mianownik skali jest całkowity 1–1 000 000 000.
+- Schemat sprawdza kształt i lokalne ograniczenia; domena oblicza dokładny
+  wynik i dopiero wtedy wymaga tolerancji absolutnej w jednostce wyniku od 0
+  do 1% modułu wyniku (domyślnie 0; przy wyniku 0 wyłącznie 0).
+- Domena udostępnia `computeCalculationAnswer(spec): {value,unit,answer}`,
+  `renderCalculationPrompt(spec): string`,
+  `parseCalculationAnswer(text): {value,unit:null|LengthUnit}|null` oraz
+  `evaluateCalculationAnswer(text,spec): correct|incorrect|unevaluated`.
+  Każda funkcja przyjmująca spec waliduje go również po odczycie z JSONB.
+  Ułamki `bigint` pozostają prywatne; `value:number` jest przybliżeniem do
+  wymiany JSON, nigdy podstawą obliczeń, renderowania ani oceny. `answer`
+  zachowuje wynik dokładny, przecinek dziesiętny, bez grupowania i zbędnych zer.
+- Parser czyta cały tekst: opcjonalny znak `+`/`-`, cyfry, opcjonalny przecinek
+  z 1–9 cyframi, opcjonalną jednostkę bez rozróżniania wielkości liter.
+  Grupy tysięcy mają po 3 cyfry (spacja, NBSP lub wąski NBSP). Kropki,
+  wykładniki i dodatkowy tekst są odrzucane. Ocenianie przelicza jawne
+  jednostki; brak jednostki oznacza jednostkę polecenia. Porównuje dokładne
+  ułamki z oryginalnego tekstu, bez poszerzającego tolerancję epsilonu.
+- Nieparsowalny niepusty tekst daje `unevaluated`/`not_assessed`, bez modelu
+  i zmiany serii; parsowalny błędny wynik daje `incorrect`. Pusta odpowiedź
+  nadal jest odrzucana przez kontrakt tekstu. Skip i „Nie pamiętam” zachowują
+  semantykę silnika. Rachunek nie ma wymiaru precyzji ani werdyktu modelu.
+- Etap `independent`, także w kartkówce, oznacza odpowiedź pisemną; nadal
+  obowiązuje kwalifikacja próby i ekspozycji. Minima puli 3/2/2 oraz dwa różne
+  otwarte pytania zostają; rachunki uzupełniają pulę. Zachowujemy globalny
+  `computeTargetKey(answer, answerLocale)` i konserwatywne wykluczanie wyniku
+  po ujawnieniu. Parametry rachunku pozostają prywatne poza Kid DTO.
+- Pytania renderuje kod z zamkniętych szablonów, model proponuje parametry
+  i rodzaj, nigdy swobodny tekst ani wynik. Warianty liczbowe są przykładami
+  metody ze źródła, bez nowych faktów czy nazw miejsc; wymagają cytatu
+  i zatwierdzenia rodzica. Brak uploadu, OCR i generowania pytań podczas sesji.
 
 Pokrycie minimalne publikacji na zagadnienie (do potwierdzenia na pilotażu):
 karty nauki w celu, ≥3 ćwiczenia prowadzone (wybór), ≥2 produktywne
