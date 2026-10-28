@@ -2682,7 +2682,7 @@ describe("LearningSessionController — automatyczna próba mowy z VAD (quick 26
       await harness.controller.prepareMicrophone();
       await harness.controller.autoCaptureSpeech();
       harness.recorder.hitLimit();
-      expect(harness.controller.getScreen()).toMatchObject({ recordingNotice: messages.kid.autoCaptureNoSpeech });
+      expect(harness.controller.getScreen()).toMatchObject({ recordingNotice: messages.kid.autoCaptureNoSpeech, technicalRecordingIssue: true });
       // przycisk pozostaje fallbackiem: ręczna próba po auto-anulowaniu
       await harness.controller.startRecording();
       await vi.advanceTimersByTimeAsync(301);

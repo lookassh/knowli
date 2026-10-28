@@ -150,11 +150,13 @@ export function SpeechFeedbackActions(props: SpeechFeedbackCardProps): ReactElem
 }
 
 export function SpeechFeedbackSecondaryActions(props: SpeechFeedbackCardProps): ReactElement | null {
-  if (!props.retry) return null;
+  const technical = describeSpeechFeedback(props.dto, props.exerciseType).tone === "technical"
+    || (props.dto?.kind === "not_assessed" && !props.dto.speech);
+  if (!props.retry || !technical) return null;
   return (
-    <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" className="kid-flow-secondary" data-testid="kid-feedback-skip" disabled={props.busy} onClick={props.onSkip}>
+    <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" className="kid-flow-secondary" data-testid="kid-technical-next" disabled={props.busy} onClick={props.onSkip}>
       <KidIcon name="arrow-right" />
-      {messages.kid.skip}
+      {messages.kid.feedbackNext}
     </ActionButton>
   );
 }

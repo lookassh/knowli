@@ -530,7 +530,7 @@ test("letter input preserves its value and focus when the viewport shrinks", asy
 test("written actions remain reachable at a 350px viewport height", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 350 });
   await openTask(page, taskFor("recall"));
-  for (const action of ["kid-submit", "kid-record", "kid-not-remember", "kid-skip"]) {
+  for (const action of ["kid-submit", "kid-record", "kid-not-remember"]) {
     if (action === "kid-record") continue; // This fixture disables the microphone.
     const button = page.getByTestId(action);
     await button.scrollIntoViewIfNeeded();

@@ -154,3 +154,16 @@
   bottom: 0;
   z-index: 3;
 }
+
+.root[data-action-layout="inline"] .actions,
+.root[data-action-layout="inline"] .dockAnchor {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  align-items: stretch;
+}
+.root[data-action-layout="inline"] .secondary > * { width: 100%; }
+.root[data-action-layout="inline"] .secondary :global(.kid-secondary-actions) { width: 100%; }
+.root[data-action-layout="inline"] .secondary :global(button) { width: 100%; min-height: 54px; }
+.root[data-action-layout="inline"] .dockAnchor { grid-column: 1 / -1; }
+
+.root[data-action-layout="inline"] .actions:has(.flowDock) { grid-template-columns: minmax(0, 1fr); }

@@ -6,7 +6,7 @@ import { SpeechRecordButton } from "./SpeechRecordButton";
 import type { ExerciseProps } from "./types";
 import { ActionButton } from "../components/ActionButton";
 
-export function PictureRecallView({ task, busy, mediaUrl, micAvailable, recordingPhase, microphoneReady, inputLevel, recordingNotice, recordingMode, dock, handlers }: ExerciseProps) {
+export function PictureRecallView({ task, busy, mediaUrl, micAvailable, recordingPhase, microphoneReady, inputLevel, recordingNotice, technicalRecordingIssue, recordingMode, dock, handlers, mockTest }: ExerciseProps) {
   if (task.prompt.kind !== "picture_recall") return null;
   return <ExerciseFrame task={task}
       dock={dock}
@@ -17,7 +17,7 @@ export function PictureRecallView({ task, busy, mediaUrl, micAvailable, recordin
     </>}
     actions={<ActionButton fullWidth={false} type="button" className="kid-audio-round" disabled={busy} onClick={handlers.onPlay} aria-label={messages.kid.listen}><KidIcon name="volume" /></ActionButton>}
     secondaryActions={<div className="kid-secondary-actions">
-      <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-not-remember" disabled={busy || recordingPhase !== "idle"} onClick={handlers.onNotRemember}><KidIcon name="question" />{messages.kid.mockTestNotRemember}</ActionButton>
-      <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-skip" disabled={busy || recordingPhase !== "idle"} onClick={handlers.onSkip}><KidIcon name="arrow-right" />{messages.kid.skip}</ActionButton>
+      <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-not-remember" disabled={busy || recordingPhase !== "idle"} onClick={handlers.onNotRemember}>{messages.kid.mockTestNotRemember}</ActionButton>
+      {!mockTest && (!micAvailable || technicalRecordingIssue) && <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-technical-next" disabled={busy || recordingPhase !== "idle"} onClick={handlers.onSkip}>{messages.kid.feedbackNext}</ActionButton>}
     </div>} />;
 }

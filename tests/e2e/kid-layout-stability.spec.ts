@@ -346,26 +346,12 @@ test("choice selection and transition feedback appear while the answer request i
   await expect(option).toHaveClass(/kid-option--pending/);
   await expect(option).toHaveAttribute("aria-pressed", "true");
   await expect(option).not.toHaveClass(/kid-option--correct|kid-option--wrong/);
-  await expect(page.getByTestId("kid-transitioning")).toBeVisible();
+  await expect(page.getByTestId("kid-transitioning")).toHaveCount(0);
   const during = await page.getByTestId("kid-exercise").boundingBox();
   expect(during).not.toBeNull();
   expect(Math.abs(during!.x - before!.x)).toBeLessThanOrEqual(2);
   expect(Math.abs(during!.y - before!.y)).toBeLessThanOrEqual(2);
   expect(Math.abs(during!.height - before!.height)).toBeLessThanOrEqual(2);
-
-  const status = await page.getByTestId("kid-session-status").boundingBox();
-  const notice = page.getByTestId("kid-transitioning");
-  const noticeBounds = await notice.boundingBox();
-  expect(noticeBounds!.y).toBeGreaterThanOrEqual(status!.y - 1);
-  expect(noticeBounds!.y + noticeBounds!.height).toBeLessThanOrEqual(status!.y + status!.height + 1);
-  const textStart = await notice.evaluate((element) => {
-    element.scrollTop = 0;
-    const range = document.createRange();
-    range.setStart(element.firstChild!, 0);
-    range.setEnd(element.firstChild!, 1);
-    return range.getBoundingClientRect().top - element.getBoundingClientRect().top;
-  });
-  expect(textStart, "the beginning of a wrapped status must stay reachable").toBeGreaterThanOrEqual(0);
 
   releaseAttempt();
   await expect(page.getByTestId("kid-next")).toBeVisible();

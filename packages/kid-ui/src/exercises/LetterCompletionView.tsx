@@ -40,6 +40,7 @@ export function LetterCompletionView({ task, busy, recording, handlers, letterDr
 
   return (
     <ExerciseFrame
+      actionLayout="inline"
       dock={dock}
       task={task}
       content={(
@@ -127,9 +128,6 @@ export function LetterCompletionView({ task, busy, recording, handlers, letterDr
       secondaryActions={<div className="kid-secondary-actions">
         <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-not-remember" disabled={disabled} onClick={handlers.onNotRemember}>
           {messages.kid.notRemember}
-        </ActionButton>
-        <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-skip" disabled={disabled} onClick={handlers.onSkip}>
-          {messages.kid.skip}
         </ActionButton>
       </div>}
     />

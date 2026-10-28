@@ -330,17 +330,17 @@ async function driveUntil(page: Page, stop: () => Promise<boolean>): Promise<voi
       await stopFakeRecording(page);
       await expect(page.getByTestId("kid-fragment").first()).toHaveClass(/kid-fragment--good/);
       await expect(currentFeedback(page)).toBeVisible();
-      if (await page.getByTestId("kid-feedback-skip").count()) {
-        await page.getByTestId("kid-feedback-skip").click();
+      if (await page.getByTestId("kid-technical-next").count()) {
+        await page.getByTestId("kid-technical-next").click();
         await page.getByTestId("kid-next").click();
       } else {
         await page.getByTestId("kid-next").click();
       }
       continue;
     }
-    if ((await page.getByTestId("kid-input").count()) === 0 && (await page.getByTestId("kid-skip").count()) > 0) {
+    if ((await page.getByTestId("kid-input").count()) === 0 && (await page.getByTestId("kid-technical-next").count()) > 0) {
       // wymowa bez mikrofonu — pominięcie bez oceny
-      await page.getByTestId("kid-skip").click();
+      await page.getByTestId("kid-technical-next").click();
       await expect(currentFeedback(page)).toBeVisible();
       await page.getByTestId("kid-next").click();
       continue;
@@ -476,11 +476,11 @@ test("wybór profilu prowadzi sesję do obiecanego końca", async ({ page }) => 
       await stopFakeRecording(page);
     } else {
       // wymowa bez działającego mikrofonu — świadome pominięcie bez oceny
-      await page.getByTestId("kid-skip").click();
+      await page.getByTestId("kid-technical-next").click();
     }
     await expect(currentFeedback(page)).toBeVisible();
-    if (await page.getByTestId("kid-feedback-skip").count()) {
-      await page.getByTestId("kid-feedback-skip").click();
+    if (await page.getByTestId("kid-technical-next").count()) {
+      await page.getByTestId("kid-technical-next").click();
       await page.getByTestId("kid-next").click();
     } else {
       await page.getByTestId("kid-next").click();
@@ -745,16 +745,16 @@ test("recall z należnego sprawdzenia: pisemna pisownia, Nie pamiętam i Pomiń"
   );
   expect(modality2[0]!.modality).toBe("dont_remember");
 
-  // zadanie 3: „Pomiń” zamyka zadanie bez oceny wiedzy
+  // Serwer nadal obsługuje historyczny wynik skip bez oceny wiedzy.
   await driveUntil(page, () => page.getByTestId("kid-input").isVisible());
   const taskId3 = await currentTaskId(page);
-  await page.getByTestId("kid-skip").click();
-  await expect(page.getByTestId("kid-feedback")).toBeVisible();
-  // brak oceny wiedzy nie jest ani sukcesem, ani pomyłką — tło neutralne
-  expect(await page.getByTestId("kid-feedback").getAttribute("class")).not.toContain("kid-feedback--");
+  await expect(page.getByTestId("kid-skip")).toHaveCount(0);
+  const skipped = await page.request.post(`/api/v1/kid/tasks/${taskId3}/attempts`, {
+    data: { modality: "skip", clientAttemptId: randomUUID() },
+  });
+  expect(skipped.status()).toBe(200);
   const task3 = await query<{ state: string }>(
-    `select state from learning_app.session_tasks where id = $1`,
-    [taskId3],
+    `select state from learning_app.session_tasks where id = $1`, [taskId3],
   );
   expect(task3[0]!.state).toBe("skipped");
 

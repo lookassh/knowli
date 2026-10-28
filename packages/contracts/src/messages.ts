@@ -456,7 +456,7 @@ export const messages = {
     fillLetters: "Uzupełnij brakujące litery",
     missingLetterPosition: "Brakująca litera, miejsce {n}",
     check: "Sprawdź",
-    notRemember: "Nie pamiętam — pokaż",
+    notRemember: "Nie pamiętam",
     skip: "Pomiń",
     record: "Nagraj",
     stopRecording: "Gotowe",
@@ -472,7 +472,6 @@ export const messages = {
     recordingLevel: "Poziom głosu",
     sayIt: "Powiedz na głos",
     processing: "Sprawdzam nagranie…",
-    transitioning: "Chwilka, przechodzimy dalej…",
     revealTitle: "To słowo to:",
     pictureRecallPrompt: "Jak jest po angielsku?",
     // picture_recognition: aria głośniczka odsłuchu poprawnego słowa w feedbackzie.

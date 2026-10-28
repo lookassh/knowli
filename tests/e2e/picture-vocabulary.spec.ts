@@ -76,7 +76,7 @@ test("mówione instrukcje prowadzą od profilu przez ćwiczenia i feedback do po
   };
   fixture.tasks = [fixture.tasks[0]!, listening, recall, null];
   fixture.attempts = [attempts[0], skipAttempt];
-  fixture.session.microphoneEnabled = true;
+  fixture.session.microphoneEnabled = false;
   const keys = ["profile_select", "deck_select", "exposure", "listening", "speech", "recall", "correct", "partial", "incorrect", "unevaluated", "skip", "dont_remember", "end", "retry", "mic_unavailable", "audio_unavailable", "summary"] as const;
   const audioIds = Object.fromEntries(keys.map((key, index) => [key, `20000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`]));
   fixture.uiAudio = { ready: true, assets: audioIds };
@@ -131,7 +131,7 @@ test("mówione instrukcje prowadzą od profilu przez ćwiczenia i feedback do po
   await page.getByTestId("kid-guidance-play").click();
   await expect.poll(() => requested).toContain(audioIds.recall);
   await waitForCompletedPlayback();
-  await page.getByTestId("kid-skip").click();
+  await page.getByTestId("kid-technical-next").click();
   await page.getByTestId("kid-guidance-play").click();
   await expect.poll(() => requested).toContain(audioIds.skip);
   await waitForCompletedPlayback();
@@ -158,7 +158,7 @@ test("awaria pliku dźwiękowego pokazuje ponowienie i pozwala zakończyć sesj�
   await expect(page.getByTestId("kid-summary")).toBeVisible();
 });
 
-test("mówione ćwiczenie obrazkowe można świadomie pominąć bez mikrofonu", async ({ page }) => {
+test("odmowa mikrofonu pozwala zakończyć obrazkowe ćwiczenie mowy bez oceny", async ({ page }) => {
   const fixture = pictureVocabularyFixture();
   const source = fixture.tasks[0];
   if (!source || source.prompt.kind !== "picture_exposure") throw new Error("picture exposure fixture missing");
@@ -175,19 +175,15 @@ test("mówione ćwiczenie obrazkowe można świadomie pominąć bez mikrofonu", 
   }, null];
   fixture.attempts = [{ ...attempt, taskId, modality: "skip" }];
   // WR-02: uprawnienie "prompt" (nienadane) blokuje auto-start próby — zgodnie
-  // z intencją testu dziecko jest na tym ekranie bez działającego mikrofonu
-  // i świadomie używa „Pomiń”, bez żadnego nagrywania.
+  // z intencją testu dziecko dopiero świadomie wywołuje próbę dostępu.
   await page.addInitScript(() => {
     let calls = 0;
     (window as unknown as { __gumCalls: () => number }).__gumCalls = () => calls;
-    const devices = navigator.mediaDevices;
-    const original = devices?.getUserMedia?.bind(devices);
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
       value: {
-        getUserMedia: async (constraints: MediaStreamConstraints) => {
+        getUserMedia: async () => {
           calls += 1;
-          if (original) return original(constraints);
           throw new DOMException("Unexpected getUserMedia call", "NotAllowedError");
         },
       },
@@ -209,14 +205,8 @@ test("mówione ćwiczenie obrazkowe można świadomie pominąć bez mikrofonu", 
   await page.waitForTimeout(1_500);
   expect(await page.evaluate(() => (window as unknown as { __gumCalls: () => number }).__gumCalls())).toBe(0);
   await expect(page.getByTestId("kid-record")).toHaveAttribute("data-phase", "idle");
-  // hint uprawnień w slocie nagrywania jest widoczny PRZED pominięciem; po
-  // „Pomiń” LearnScreen podmienia cały widok ćwiczenia na feedback, więc
-  // asercja elementów ćwiczenia po kliknięciu byłaby wyścigiem z odpowiedzią
   await expect(page.getByTestId("kid-record-status")).toBeVisible();
-  await page.getByTestId("kid-skip").click();
-  // deterministyczna asercja przejścia na widok feedbacku (z #110); „Dalej”
-  // pojawia się w tym widoku — klik sam oczekuje na podmianę
-  await expect(page.getByTestId("kid-feedback")).toBeVisible();
-  await page.getByTestId("kid-next").click();
+  await expect(page.getByTestId("kid-skip")).toHaveCount(0);
+  await page.getByTestId("kid-record").click();
   await expect(page.getByTestId("kid-summary")).toBeVisible();
 });
