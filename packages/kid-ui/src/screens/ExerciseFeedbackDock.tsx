@@ -1,6 +1,6 @@
 import type { ReactElement, ReactNode } from "react";
 import { m, useIsPresent } from "motion/react";
-import { kidDockAnimate, kidDockExit, kidDockExitTransition, kidDockInitial, kidSpringGentle } from "../motion/kid-motion";
+import { kidDockAnimate, kidDockExit, kidDockExitTransition, kidDockInitial, kidDockOrigin, kidSpringGentle } from "../motion/kid-motion";
 import { BurstParticles } from "../components/CelebrationBurst";
 import classes from "./ExerciseFeedbackDock.module.css";
 
@@ -39,7 +39,7 @@ export function ExerciseFeedbackDock({
       exit={{ ...kidDockExit, transition: kidDockExitTransition }}
       transition={kidSpringGentle}
       inert={!isPresent}
-      style={{ pointerEvents: isPresent ? "auto" : "none" }}
+      style={{ pointerEvents: isPresent ? "auto" : "none", transformOrigin: kidDockOrigin }}
       data-testid="kid-feedback-dock"
       data-tone={tone}
       data-dock-kind={kind}
