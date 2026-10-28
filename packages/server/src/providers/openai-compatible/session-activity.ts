@@ -1,5 +1,6 @@
 import type { SessionActivityReviewTask, SessionActivityReviewer } from "../../ports/ai";
 import { SessionActivityProviderError } from "../../ports/session-activity-error";
+import { withChatRequestExtras, type ChatRequestExtras } from "../chat-request-options";
 
 /**
  * Adapter oceny aktywności sesji zgodny z OpenAI (spec client-reward-time).
@@ -17,6 +18,8 @@ export interface OpenAiCompatibleSessionActivityOptions {
   baseUrl: string;
   apiKey: string;
   model: string;
+  /** Opcjonalne pola pośrednika (rozumowanie, routing dostawcy) — `UMIEM_GRADER_*`. */
+  requestExtras?: ChatRequestExtras;
   /** Wstrzykiwalny `fetch` dla testów. */
   fetchImpl?: (
     url: string,
@@ -100,7 +103,7 @@ export function createOpenAiCompatibleSessionActivityReviewer(
           authorization: `Bearer ${options.apiKey}`,
           "content-type": "application/json",
         },
-        body: JSON.stringify({
+        body: JSON.stringify(withChatRequestExtras(options.requestExtras, {
           model: options.model,
           temperature: 0,
           response_format: { type: "json_object" },
@@ -108,7 +111,7 @@ export function createOpenAiCompatibleSessionActivityReviewer(
             { role: "system", content: systemPrompt() },
             { role: "user", content: userMessage(input) },
           ],
-        }),
+        })),
         signal,
       });
       if (!response.ok) {

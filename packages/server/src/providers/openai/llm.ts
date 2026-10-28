@@ -8,12 +8,15 @@ import type {
 import { GenerationProviderError } from "../../ports/generation-error";
 import { lessonPoolJsonSchema, poolExerciseTypes } from "./lesson-pool-schema";
 import { materializeGeneratedCalculations } from "../lesson-calculations";
+import { withChatRequestExtras, type ChatRequestExtras } from "../chat-request-options";
 
 export interface OpenAiLlmOptions {
   apiKey: string;
   model?: string;
   baseUrl?: string;
   lessonRequestTimeoutMs?: number;
+  /** Opcjonalne pola pośrednika (rozumowanie, routing dostawcy) — `UMIEM_LLM_*`. */
+  requestExtras?: ChatRequestExtras;
 }
 
 const DEFAULT_MODEL = "gpt-4o-mini";
@@ -363,14 +366,14 @@ export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider 
           authorization: `Bearer ${options.apiKey}`,
           "content-type": "application/json",
         },
-        body: JSON.stringify({
+        body: JSON.stringify(withChatRequestExtras(options.requestExtras, {
           model,
           response_format: { type: "json_object" },
           messages: [
             { role: "system", content: systemPrompt(input) },
             { role: "user", content: input.prompt },
           ],
-        }),
+        })),
         signal,
       });
       if (!response.ok) {
@@ -402,7 +405,7 @@ export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider 
             authorization: `Bearer ${options.apiKey}`,
             "content-type": "application/json",
           },
-          body: JSON.stringify({
+          body: JSON.stringify(withChatRequestExtras(options.requestExtras, {
             model,
             response_format: {
               type: "json_schema",
@@ -412,7 +415,7 @@ export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider 
               { role: "system", content: system },
               { role: "user", content: user },
             ],
-          }),
+          })),
           signal: requestSignal,
         });
         if (!response.ok) throw await lessonHttpError(response);
@@ -461,7 +464,7 @@ export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider 
             authorization: `Bearer ${options.apiKey}`,
             "content-type": "application/json",
           },
-          body: JSON.stringify({
+          body: JSON.stringify(withChatRequestExtras(options.requestExtras, {
             model,
             response_format: {
               type: "json_schema",
@@ -475,7 +478,7 @@ export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider 
               { role: "system", content: system },
               { role: "user", content: user },
             ],
-          }),
+          })),
           signal: requestSignal,
         });
         if (!response.ok) throw await lessonHttpError(response);

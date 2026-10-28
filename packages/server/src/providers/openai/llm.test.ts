@@ -53,6 +53,31 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe("createOpenAiLlmProvider — opcje pośrednika z konfiguracji", () => {
+  it("dokłada rozumowanie i routing dostawcy do puli lekcji, bez nadpisywania modelu i schematu", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => okResponse({ exercises: [], examples: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    await createOpenAiLlmProvider({
+      apiKey: "k", model: "deepseek/deepseek-v4.1-flash-1017",
+      requestExtras: { reasoning: { enabled: false }, provider: { quantizations: ["fp8"], require_parameters: true }, response_format: { type: "text" } },
+    }).generateLessonPool(INPUT);
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string) as Record<string, any>;
+    expect(body.model).toBe("deepseek/deepseek-v4.1-flash-1017");
+    expect(body.reasoning).toEqual({ enabled: false });
+    expect(body.provider).toEqual({ quantizations: ["fp8"], require_parameters: true });
+    expect(body.response_format.type).toBe("json_schema");
+  });
+
+  it("bez konfiguracji nie wysyła pól pośrednika (zwykłe API OpenAI)", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => okResponse({ exercises: [], examples: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    await createOpenAiLlmProvider({ apiKey: "k" }).generateLessonPool(INPUT);
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string) as Record<string, unknown>;
+    expect(body).not.toHaveProperty("reasoning");
+    expect(body).not.toHaveProperty("provider");
+  });
+});
+
 describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", () => {
   it("keeps a school top-up of two exercises within its batch budget, with minima scoped to the complete pool", async () => {
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => okResponse({ exercises: [], examples: [] }));

@@ -1,4 +1,5 @@
 import type { AnswerGraderProvider, GraderInput } from "../../ports/ai";
+import { withChatRequestExtras, type ChatRequestExtras } from "../chat-request-options";
 
 /**
  * Adapter modelu oceniającego zgodnego z OpenAI (design „Model oceniający”).
@@ -18,6 +19,8 @@ export interface OpenAiCompatibleGraderOptions {
   baseUrl: string;
   apiKey: string;
   model: string;
+  /** Opcjonalne pola pośrednika (rozumowanie, routing dostawcy) — `UMIEM_GRADER_*`. */
+  requestExtras?: ChatRequestExtras;
   /** Wstrzykiwalny `fetch` dla testów (jak adaptery Azure). */
   fetchImpl?: (
     url: string,
@@ -152,7 +155,7 @@ export function createOpenAiCompatibleGrader(options: OpenAiCompatibleGraderOpti
           authorization: `Bearer ${options.apiKey}`,
           "content-type": "application/json",
         },
-        body: JSON.stringify({
+        body: JSON.stringify(withChatRequestExtras(options.requestExtras, {
           model: options.model,
           temperature: 0,
           response_format: { type: "json_object" },
@@ -160,7 +163,7 @@ export function createOpenAiCompatibleGrader(options: OpenAiCompatibleGraderOpti
             { role: "system", content: input.school ? schoolSystemPrompt(input) : systemPrompt(input) },
             { role: "user", content: input.school ? schoolUserMessage(input) : userMessage(input) },
           ],
-        }),
+        })),
         signal,
       });
       if (!response.ok) {

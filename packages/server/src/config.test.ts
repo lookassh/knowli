@@ -46,6 +46,12 @@ describe("graderFromEnv", () => {
     expect(grader!.timeoutMs).toBe(8000);
   });
 
+  it("błędna opcja pośrednika (UMIEM_GRADER_REASONING) zatrzymuje start zamiast cicho ją pominąć", () => {
+    expect(() => graderFromEnv({ ...base, UMIEM_GRADER_REASONING: "turbo" })).toThrow(/UMIEM_GRADER_REASONING/);
+    expect(() => sessionActivityFromEnv({ ...base, UMIEM_GRADER_PROVIDER_DATA_COLLECTION: "maybe" })).toThrow(/DATA_COLLECTION/);
+    expect(graderFromEnv({ ...base, UMIEM_GRADER_REASONING: "low", UMIEM_GRADER_PROVIDER_DATA_COLLECTION: "deny" })).toBeDefined();
+  });
+
   it("UMIEM_GRADER_TIMEOUT_MS i MAX_CALLS_PER_SESSION nadpisują domyślne", () => {
     const grader = graderFromEnv({ ...base, UMIEM_GRADER_TIMEOUT_MS: "3000", UMIEM_GRADER_MAX_CALLS_PER_SESSION: "5" });
     expect(grader!.timeoutMs).toBe(3000);
