@@ -51,14 +51,20 @@ test("animated task switch and feedback dock keep the session flow working", asy
   // transient range: a scrollbar flashing for a few frames reads as a glitch.
   const answerSamples = page.evaluate(() => new Promise<string[]>((resolve) => {
     const hits = new Set<string>();
+    // Keep sampling until the dock has been on screen for a full second,
+    // so a slow answer cannot end the window before its entrance.
     const started = performance.now();
+    let dockSeen: number | null = null;
     const frame = () => {
+      if (dockSeen === null && document.querySelector("[data-testid='kid-feedback-dock']")) dockSeen = performance.now();
       for (const scroller of document.querySelectorAll<HTMLElement>("[data-testid='kid-exercise'], [data-testid='kid-material'], .kid-page--session")) {
         const style = getComputedStyle(scroller);
         if (/auto|scroll/.test(style.overflowY) && scroller.scrollHeight > scroller.clientHeight + 1) hits.add(`${scroller.dataset.testid ?? scroller.className} Y`);
         if (/auto|scroll/.test(style.overflowX) && scroller.scrollWidth > scroller.clientWidth + 1) hits.add(`${scroller.dataset.testid ?? scroller.className} X`);
       }
-      if (performance.now() - started < 1000) requestAnimationFrame(frame);
+      const now = performance.now();
+      if (dockSeen === null && now - started > 10_000) resolve(["dock never appeared"]);
+      else if (dockSeen === null || now - dockSeen < 1000) requestAnimationFrame(frame);
       else resolve([...hits]);
     };
     requestAnimationFrame(frame);
