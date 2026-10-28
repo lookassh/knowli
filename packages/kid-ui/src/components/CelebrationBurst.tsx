@@ -5,7 +5,7 @@ import { m } from "motion/react";
 import { kidBurstSeconds, kidBurstSizes, kidCelebrationTransition, type KidBurstSize } from "../motion/kid-motion";
 import classes from "./CelebrationBurst.module.css";
 
-const PARTICLE_COLORS = ["#79d3a0", "#e3a008", "#aec0ff", "#ff9fb3", "#e3a008"] as const;
+const PARTICLE_COLORS = ["var(--kid-color-success)", "var(--kid-color-warm)", "var(--md-sys-color-primary)", "var(--md-sys-color-error)", "var(--kid-color-warm)"] as const;
 
 /** Deterministic burst offsets: no randomness, so tests and replays stay stable. */
 export function particleOffset(index: number, size: KidBurstSize = "lg"): { x: number; y: number } {
