@@ -59,7 +59,7 @@
   margin-left: -0.5em;
   display: block;
   text-align: center;
-  font-size: 1.1rem;
+  font-size: var(--kid-type-title-sm-size);
   line-height: 1;
   color: #e3a008;
   pointer-events: none;
