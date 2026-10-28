@@ -30,7 +30,7 @@ export const messages = {
     vocabulary_requires_reading: "Ten zestaw wymaga umiejętności czytania.",
     non_reader_mock_test_unavailable: "Kartkówka nie jest dostępna dla tego zestawu.",
     picture_guidance_unavailable: "Instrukcje głosowe są chwilowo niedostępne. Spróbuj ponownie lub zakończ naukę.",
-    picture_audio_unavailable: "Nagranie jest chwilowo niedostępne. Spróbuj ponownie lub pomiń.",
+    picture_audio_unavailable: "Nagranie jest chwilowo niedostępne. Spróbuj ponownie lub zakończ naukę.",
     picture_audio_blocked: "Naciśnij ikonę głośnika, aby odtworzyć nagranie.",
     picture_microphone_disable_failed: "Nie udało się przełączyć nauki na ćwiczenia bez mikrofonu. Spróbuj ponownie.",
     picture_audio_retry: "Odtwórz instrukcję ponownie",

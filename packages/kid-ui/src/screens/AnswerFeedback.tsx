@@ -14,7 +14,7 @@ export interface AnswerFeedbackProps {
   retry: boolean;
   busy: boolean;
   onNext: () => void;
-  /** „Pomiń” przy komunikacie technicznym lekcji (`not_assessed`). */
+  /** Neutralne przejście przy komunikacie technicznym lekcji (`not_assessed`). */
   onSkip?: () => void;
 }
 

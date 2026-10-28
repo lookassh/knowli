@@ -153,6 +153,7 @@ test("awaria pliku dźwiękowego pokazuje ponowienie i pozwala zakończyć sesj�
   await page.getByTestId("kid-profile").click();
   await page.getByTestId("kid-deck").first().click();
   await expect(page.getByTestId("kid-task-audio-error")).toContainText("Nagranie jest chwilowo niedostępne");
+  await expect(page.getByTestId("kid-task-audio-error")).toContainText("Spróbuj ponownie lub zakończ naukę.");
   await expect(page.getByTestId("kid-task-audio-retry")).toBeVisible();
   await page.getByTestId("kid-task-audio-error").getByText("Koniec").click();
   await expect(page.getByTestId("kid-summary")).toBeVisible();
