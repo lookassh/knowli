@@ -171,6 +171,7 @@ function exerciseDtoFromPayload(
     ...(draft.expectedForm === undefined ? {} : { expectedForm: draft.expectedForm }),
     ...(draft.familyId === undefined ? {} : { familyId: draft.familyId }),
     ...(draft.sourceRefs === undefined ? {} : { sourceRefs: draft.sourceRefs.map((ref) => ({ ...ref })) }),
+    ...(draft.calculation === undefined ? {} : { calculation: draft.calculation }),
   };
 }
 
@@ -418,7 +419,7 @@ const LessonDraftPatchSchema = z.object({
 export type LessonDraftPatch = z.infer<typeof LessonDraftPatchSchema>;
 
 /** Czy zmiana treści ćwiczenia tworzy nowy `objective` (odpowiedź/warianty/focus/kryteria v3). */
-function objectiveImpacted(oldDraft: LessonExerciseDraft, next: LessonExerciseInput): boolean {
+function objectiveImpacted(oldDraft: LessonExerciseDraft, next: LessonExerciseInput, subject: SubjectModule, topicVersion: number): boolean {
   const sameAnswer = oldDraft.answer === next.answer;
   const sameAccepted =
     JSON.stringify([...oldDraft.acceptedAnswers].sort()) === JSON.stringify([...next.acceptedAnswers].sort());
@@ -431,7 +432,9 @@ function objectiveImpacted(oldDraft: LessonExerciseDraft, next: LessonExerciseIn
     (oldDraft.expectedForm ?? null) === (next.expectedForm ?? null) &&
     (oldDraft.questionType ?? null) === (next.questionType ?? null) &&
     JSON.stringify((oldDraft.sourceRefs ?? []).map((r) => r.quote)) === JSON.stringify((next.sourceRefs ?? []).map((r) => r.quote));
-  return !(sameAnswer && sameAccepted && sameFocus && sameObjective && sameRequired && sameV3Criteria);
+  const sameGradingCriteria = buildObjectiveCriteria(oldDraft, subject, topicVersion).criteriaHash ===
+    buildObjectiveCriteria(toExerciseDraft(next), subject, topicVersion).criteriaHash;
+  return !(sameAnswer && sameAccepted && sameFocus && sameObjective && sameRequired && sameV3Criteria && sameGradingCriteria);
 }
 
 const TEMP_POSITION_OFFSET = 1000;
@@ -517,7 +520,7 @@ async function applyLessonExercisesEdit(
       const existing = byItemId.get(ex.id)!;
       const oldDraft = toExerciseDraft(existing.payload);
       let skillVersionId = existing.objectiveSkillVersionId;
-      if (objectiveImpacted(oldDraft, ex) || skillVersionId === "") {
+      if (objectiveImpacted(oldDraft, ex, subject, topicVersion) || skillVersionId === "") {
         const { criteria, criteriaHash } = buildObjectiveCriteria(draft, subject, topicVersion);
         skillVersionId = randomUUID();
         await tx.insert(skillVersions).values({

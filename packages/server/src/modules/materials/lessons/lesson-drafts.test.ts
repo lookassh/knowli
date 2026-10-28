@@ -1,9 +1,44 @@
 import { describe, expect, it } from "vitest";
+import type { CalculationSpec } from "@learning/contracts";
 import { englishGrammarSubject } from "../../../domain/lessons/subjects/english-grammar/module";
 import { validatePool } from "../../../domain/lessons/pool-validation";
-import type { LessonTopic } from "../../../domain/lessons/types";
+import type { LessonExerciseDraft, LessonTopic } from "../../../domain/lessons/types";
 import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
-import { collectBatchExerciseMetadata, countPerObjective, filterExercisesToRequestedObjective, isWellShapedRawExercise, splitStages, stripParentAddedFlags, summarizeLessonPoolValidation, toExerciseDraft } from "./lesson-drafts";
+import { buildLessonPayload, buildObjectiveCriteria, collectBatchExerciseMetadata, countPerObjective, filterExercisesToRequestedObjective, isWellShapedRawExercise, lessonPayloadVersion, splitStages, stripParentAddedFlags, summarizeLessonPoolValidation, toExerciseDraft } from "./lesson-drafts";
+
+describe("calculation persistence and grading criteria", () => {
+  const calculation = { kind: "scale_distance" as const, params: { scaleDenominator: 25000, mapDistanceCm: 3 }, unit: "m" as const, templateFamilyId: "scale" };
+  const draft: LessonExerciseDraft = {
+    exerciseType: "lesson_calculation", objectiveId: "school.dx.scale",
+    prompt: "Oblicz odległość.", answer: "750 m", acceptedAnswers: [], focus: [],
+    calculation,
+  };
+  const hash = (exercise: LessonExerciseDraft) => buildObjectiveCriteria(exercise, schoolSubject, 1).criteriaHash;
+
+  it("retains the private calculation through draft/payload conversion and marks payload v3", () => {
+    const mapped = toExerciseDraft(draft);
+    expect(mapped.calculation).toEqual(draft.calculation);
+    expect(buildLessonPayload(mapped, schoolSubject).calculation).toEqual(draft.calculation);
+    expect(toExerciseDraft(buildLessonPayload(mapped, schoolSubject)).calculation).toEqual(draft.calculation);
+    expect(lessonPayloadVersion(mapped, schoolSubject)).toBe(3);
+  });
+
+  it("changes the criteria hash for parameters, kind, result unit and tolerance", () => {
+    const spec = calculation;
+    const alternatives: CalculationSpec[] = [
+      { ...spec, params: { scaleDenominator: 25000, mapDistanceCm: 4 } },
+      { ...spec, unit: "km" as const },
+      { ...spec, tolerance: 1 },
+      { kind: "height_difference" as const, params: { upperHeightM: 900, lowerHeightM: 150 }, unit: "m" as const, templateFamilyId: "height" },
+    ];
+    for (const calculation of alternatives) expect(hash({ ...draft, calculation })).not.toBe(hash(draft));
+  });
+
+  it("ignores template family, parameter key order and an explicit default tolerance", () => {
+    expect(hash({ ...draft, calculation: { ...calculation, templateFamilyId: "another-family", tolerance: 0,
+      params: { mapDistanceCm: 3, scaleDenominator: 25000 } } })).toBe(hash(draft));
+  });
+});
 
 const OBJECTIVE_ID = "english_grammar.present_simple.third_person_s";
 

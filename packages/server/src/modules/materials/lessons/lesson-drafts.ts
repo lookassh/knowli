@@ -436,7 +436,7 @@ export function lessonPayloadVersion(ex: LessonExerciseDraft, subject: SubjectMo
   if (subject.usesV3Payload !== true) return 2;
   return ex.questionType !== undefined || ex.requiredElements !== undefined ||
     ex.supplementaryElements !== undefined || ex.commonErrors !== undefined ||
-    ex.expectedForm !== undefined || ex.familyId !== undefined || ex.sourceRefs !== undefined
+    ex.expectedForm !== undefined || ex.familyId !== undefined || ex.sourceRefs !== undefined || ex.calculation !== undefined
     ? 3
     : 2;
 }
@@ -558,6 +558,9 @@ function v3FieldsOf(r: Record<string, unknown>): Partial<LessonExerciseDraft> {
   }
   if (typeof r.expectedForm === "string") out.expectedForm = r.expectedForm;
   if (typeof r.familyId === "string") out.familyId = r.familyId;
+  // Preserve the submitted spec unchanged; subject validation rejects malformed
+  // or inconsistent calculations instead of silently repairing parent input.
+  if (r.calculation !== undefined && r.calculation !== null) out.calculation = r.calculation;
   if (Array.isArray(r.sourceRefs)) {
     out.sourceRefs = r.sourceRefs
       .filter(
@@ -627,6 +630,7 @@ export function buildLessonPayload(
     ...(ex.expectedForm === undefined ? {} : { expectedForm: ex.expectedForm }),
     ...(ex.familyId === undefined ? {} : { familyId: ex.familyId }),
     ...(ex.sourceRefs === undefined ? {} : { sourceRefs: ex.sourceRefs }),
+    ...(ex.calculation === undefined ? {} : { calculation: ex.calculation }),
     answerLocale: subject.answerLocale,
     promptLocale: subject.promptLocale,
   };
@@ -648,6 +652,12 @@ export function buildObjectiveCriteria(
     focus: [...ex.focus],
     acceptedAnswersHash,
     ...(ex.requiredElements === undefined ? {} : { requiredElements: ex.requiredElements.map((el) => ({ id: el.id, text: el.text })) }),
+    ...(ex.calculation === undefined ? {} : { calculation: {
+      kind: ex.calculation.kind,
+      params: Object.fromEntries(Object.entries(ex.calculation.params).sort(([a], [b]) => a.localeCompare(b))),
+      unit: ex.calculation.unit,
+      tolerance: ex.calculation.tolerance ?? 0,
+    } }),
     topicVersion,
   };
   const criteriaHash = createHash("sha256").update(JSON.stringify(criteria)).digest("hex");
