@@ -86,6 +86,9 @@ export function LearnScreen({
           : feedback.dto?.kind === "almost" || feedback.dto?.kind === "spelling_hint" || feedback.dto?.kind === "lesson_almost" || feedback.dto?.kind === "lesson_hint" ? "partial"
             : feedback.dto?.kind === "incorrect" ? "incorrect" : "unevaluated";
   const instructionAudioKey = feedbackGuidanceKey ?? taskGuidanceKey;
+  // Komunikaty błędu z akcjami (audio zadania / instrukcji) rozpychają pasek
+  // statusu i włączają przewijanie ramy ćwiczenia — styluje to styles.css.
+  const actionNotice = screen.taskAudioError != null || (screen.guidanceError && instructionAudioKey) ? "true" : "false";
   const micAvailable = screen.session.mode !== "mock_test" && screen.session.microphoneEnabled && !screen.micDenied;
   const micState = screen.session.mode === "mock_test" ? "off"
     : !screen.session.microphoneEnabled ? "off"
@@ -200,7 +203,7 @@ export function LearnScreen({
     );
 
   return (
-    <main className="kid-screen kid-learning" data-task-id={task?.taskId ?? undefined}>
+    <main className="kid-screen kid-learning" data-task-id={task?.taskId ?? undefined} data-action-notice={actionNotice}>
       <header className="kid-header">
         {instructionAudioKey && <GuidanceButton audioKey={instructionAudioKey} onPlay={(key) => controller.playGuidance(key)} testId="kid-guidance-play" showError={false} />}
         <SessionProgress remaining={remaining} />
@@ -216,7 +219,7 @@ export function LearnScreen({
           </p>
         </details>
       </header>
-      <div className="kid-session-status" data-testid="kid-session-status" data-mode={screen.session.mode} data-action-notice={screen.taskAudioError != null || (screen.guidanceError && instructionAudioKey) ? "true" : "false"} role="status" aria-live="polite">
+      <div className="kid-session-status" data-testid="kid-session-status" data-mode={screen.session.mode} role="status" aria-live="polite">
         {screen.session.mode === "mock_test" && <p className="kid-notice">{messages.kid.mockTestInfo}</p>}
         {screen.answerSaved && <p className="kid-notice">{messages.kid.answerSaved}</p>}
         {screen.processing && (

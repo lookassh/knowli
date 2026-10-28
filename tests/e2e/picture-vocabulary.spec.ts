@@ -211,3 +211,54 @@ test("odmowa mikrofonu pozwala zakończyć obrazkowe ćwiczenie mowy bez oceny",
   await page.getByTestId("kid-record").click();
   await expect(page.getByTestId("kid-summary")).toBeVisible();
 });
+
+test("dwa komunikaty błędu audio nie odcinają akcji ćwiczenia mowy na niskim ekranie", async ({ page }) => {
+  // 480 px celowo: progu trybu very-short (<=479) nie osiąga, a dwa długie
+  // komunikaty (instrukcja + nagranie zadania) zjadają wtedy budżet pionowy
+  // ramy — akcje mają pozostać w pełni osiągalne przewijaniem (CodeRabbit).
+  await page.setViewportSize({ width: 360, height: 480 });
+  const fixture = pictureVocabularyFixture();
+  const source = fixture.tasks[0];
+  if (!source || source.prompt.kind !== "picture_exposure") throw new Error("picture exposure fixture missing");
+  const taskId = "10000000-0000-4000-8000-000000000016";
+  const audioAssetId = "10000000-0000-4000-8000-000000000014";
+  const attempt = fixture.attempts?.[0];
+  if (!attempt) throw new Error("skip attempt fixture missing");
+  fixture.session.microphoneEnabled = false;
+  fixture.tasks = [{
+    ...source,
+    taskId,
+    exerciseType: "speech",
+    prompt: { kind: "picture_speech", audioAssetId, visual: source.prompt.visual },
+  }, null];
+  fixture.attempts = [{ ...attempt, taskId, modality: "skip" }];
+  fixture.disclosure = { taskId, stepId: "audio-disclosure-step", kind: "audio", reveal: null, audioAssetId };
+  await installKidUiFixture(page, fixture);
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").first().click();
+  await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-prompt-kind", "picture_speech");
+
+  // nagranie zadania: media bez uiAudio wracają jako SVG, więc dekodowanie pada
+  await page.getByTestId("kid-play").click();
+  await expect(page.getByTestId("kid-task-audio-error")).toBeVisible();
+  // instrukcja głosowa: katalog ui-audio niegotowy → guidanceError
+  await page.getByTestId("kid-guidance-play").click();
+  await expect(page.getByTestId("kid-guidance-error")).toBeVisible();
+
+  // Dwa komunikaty zjadają ~połowę ekranu, więc materiał się kurczy. Rama
+  // ćwiczenia ma być wtedy przewijalna dla gestu (overflow-y: auto), a nie
+  // przycinać stopki akcji; programowy scroll sam w sobie przerzucałby także
+  // overflow: hidden i nie dowodziłby osiągalności dla dziecka.
+  const frameScrollable = await page.getByTestId("kid-exercise").evaluate((element) => getComputedStyle(element).overflowY);
+  expect(frameScrollable).not.toBe("hidden");
+
+  for (const testId of ["kid-play", "kid-technical-next"]) {
+    const button = page.getByTestId(testId);
+    await button.scrollIntoViewIfNeeded();
+    const box = await button.boundingBox();
+    expect(box, testId).not.toBeNull();
+    expect(box!.y + box!.height, `${testId} mieści się na ekranie`).toBeLessThanOrEqual(480);
+    expect(box!.height, `${testId} zachowuje pełny cel dotykowy`).toBeGreaterThanOrEqual(48);
+  }
+});

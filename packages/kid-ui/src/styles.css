@@ -1372,10 +1372,22 @@
 
 /* Błąd z akcjami rozpycha pasek statusu zamiast przykrywać odpowiedzi:
    dłuższy komunikat nie może zabrać celu dotykowego (PR #145), a materiał
-   przewija, więc treść i akcje pozostają osiągalne. Zagnieżdżone :has(> …)
-   jest wycinane przez pipeline CSS, dlatego pasek oznacza LearnScreen. */
-.kid-session-status[data-action-notice="true"] {
+   przewija, więc treść i akcje pozostają osiągalne. Stan notice'u oznacza
+   LearnScreen atrybutem na <main>, bo zagnieżdżone :has(> …) wycina
+   pipeline CSS. */
+.kid-learning[data-action-notice="true"] .kid-session-status {
   height: auto;
+  /* dwa komunikaty naraz kładą się w pełne szerokości wierszy,
+     a nie wąskie wieże obok siebie */
+  flex-wrap: wrap;
+}
+
+/* Dwa komunikaty naraz (instrukcja + nagranie zadania) zjadają budżet
+   pionowy ramy — zwłaszcza nad progiem very-short, np. 480 px. Cała rama
+   przewija się wtedy jak przy flow-layout, zamiast trwale przycinać
+   stopkę akcji (wzorzec .root[data-feedback-layout="flow"]). */
+.kid-learning[data-action-notice="true"] .kid-exercise-frame {
+  overflow-y: auto;
 }
 
 .kid-session-status > .kid-notice:has(> button) {

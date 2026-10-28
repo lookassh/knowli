@@ -629,6 +629,22 @@ test("odpowiedź obrazkowa pokazuje oba wyniki i czyści je po ponowieniu", asyn
   expect(wrongIndex).toBeGreaterThanOrEqual(0);
   const correct = options.nth(correctIndex);
   const wrong = options.nth(wrongIndex);
+  // Awarię nagrania pytania wymuszamy deterministycznie (CodeRabbit):
+  // zatwierdzone audio w realnym stackie zwykle gra, więc nie polegamy
+  // na przypadkowej awarii — blokujemy media właściwego assetu i ponawiamy
+  // odsłuch. Zadanie czytanego wyboru nie ma nagrania: komunikat ma wtedy
+  // nie istnieć.
+  const audioError = page.getByTestId("kid-task-audio-error");
+  const play = page.getByTestId("kid-play");
+  if ((await play.count()) > 0) {
+    const audioAssetId = ((await taskRow(taskId)).public_prompt as { audioAssetId?: string | null }).audioAssetId ?? null;
+    expect(audioAssetId).toBeTruthy();
+    await page.route(`**/api/v1/media/${audioAssetId}`, (route) => route.fulfill({ status: 500, contentType: "text/plain", body: "forced audio failure" }));
+    await play.click();
+    await expect(audioError).toBeVisible();
+  } else {
+    await expect(audioError).toHaveCount(0);
+  }
   await wrong.click();
   const feedback = page.getByTestId("kid-feedback");
   await expect(feedback).toBeVisible();
@@ -637,12 +653,10 @@ test("odpowiedź obrazkowa pokazuje oba wyniki i czyści je po ponowieniu", asyn
   await expect(correct).toHaveClass(/kid-option--correct/);
   const bar = await feedback.boundingBox();
   expect(bar).not.toBeNull();
-  // Deck bez assetów audio deterministycznie pokazuje komunikat błędu
-  // odtwarzania; rozpycha on pasek statusu, więc materiał ma mniej wysokości.
+  // Komunikat rozpycha pasek statusu, więc materiał ma mniej wysokości.
   // Opcje pozostają w pełni osiągalne przewijaniem nad paskiem feedbacku
   // (pełny cel dotykowy), a sam komunikat nie może wchodzić na materiał.
-  const audioError = page.getByTestId("kid-task-audio-error");
-  if ((await audioError.count()) > 0) {
+  if (await audioError.isVisible()) {
     const noticeBox = await audioError.boundingBox();
     const materialBox = await page.getByTestId("kid-material").boundingBox();
     expect(noticeBox).not.toBeNull();
