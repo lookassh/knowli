@@ -703,7 +703,8 @@ test("microphone denial is available on request and leaves the written learning 
 });
 
 test("speech feedback stays inline, explains fragments and exposes only the available actions", async ({ page }) => {
-  await page.emulateMedia({ colorScheme: "dark" });
+  // Geometry is measured at rest: reduced motion skips the dock entrance.
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
   await createLearningTask(page, `Wynik ${randomUUID().slice(0, 6)}`);
   const taskId = await page.locator("[data-task-id]").getAttribute("data-task-id");
   expect(taskId).toBeTruthy();
