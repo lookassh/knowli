@@ -1,6 +1,7 @@
 import { expect, test, type Locator } from "@playwright/test";
 import { installKidUiFixture } from "./helpers/kid-ui-fixture";
 import { pictureVocabularyFixture } from "./helpers/picture-fixtures";
+import { kidTokenColor } from "./helpers/contrast";
 
 async function expectReadable(control: Locator) {
   const contrast = await control.evaluate((element) => {
@@ -45,7 +46,35 @@ test("round audio buttons keep a readable icon on their resting background", asy
   expect(box).not.toBeNull();
   expect(Math.round(box!.width)).toBe(64);
   expect(Math.round(box!.height)).toBe(64);
-  await expect.poll(() => play.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgb(48, 63, 100)");
+  const tonal = await kidTokenColor(page, "--md-sys-color-secondary-container");
+  await expect.poll(() => play.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(tonal);
+});
+
+test("round audio button stays tonal even on a filled ActionButton", async ({ page }) => {
+  /* PictureRecallView renders the round play as a default (filled)
+     ActionButton; .kid-audio-round must win regardless of stylesheet order. */
+  const fixture = pictureVocabularyFixture();
+  const listening = fixture.tasks[1]!;
+  fixture.tasks = [{ ...listening, exerciseType: "recall", prompt: { kind: "picture_recall", visual: { kind: "color", color: "#ff0000" } } }];
+  fixture.session.microphoneEnabled = false;
+  await installKidUiFixture(page, fixture);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").first().click();
+  const play = page.locator(".kid-audio-round");
+  await expect(play).toBeVisible();
+  await expect(play).toHaveAttribute("data-variant", "filled");
+  const [tonal, onTonal] = await Promise.all([
+    kidTokenColor(page, "--md-sys-color-secondary-container"),
+    kidTokenColor(page, "--md-sys-color-on-secondary-container"),
+  ]);
+  const style = await play.evaluate((element) => {
+    const computed = getComputedStyle(element);
+    return { background: computed.backgroundColor, color: computed.color, border: computed.borderTopColor };
+  });
+  expect(style).toEqual({ background: tonal, color: onTonal, border: "rgba(0, 0, 0, 0)" });
+  await expectReadable(play);
 });
 
 for (const colorScheme of ["light", "dark"] as const) {

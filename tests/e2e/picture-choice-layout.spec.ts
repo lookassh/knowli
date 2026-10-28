@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { assertKidLayout, installKidUiFixture, silentWavBuffer, type KidUiFixture } from "./helpers/kid-ui-fixture";
 import { pictureChoiceLayoutFixture } from "./helpers/picture-fixtures";
+import { kidTokenColor } from "./helpers/contrast";
 
 const viewports = [
   { width: 360, height: 640 },
@@ -459,7 +460,7 @@ test("trzy odpowiedzi i cyfra pozostają czytelne w ciemnym motywie", async ({ p
   await expect(page.locator(".kid-visual-number--digit text")).toHaveText("1");
   for (const option of await options.all()) await expect(option).toBeInViewport();
   const background = await page.locator(".kid-ui").evaluate((element) => getComputedStyle(element).backgroundColor);
-  expect(background).toBe("rgb(24, 33, 52)");
+  expect(background).toBe(await kidTokenColor(page, "--md-sys-color-surface"));
   const content = await page.locator(".kid-material-content").evaluate((element) => ({
     scrollHeight: element.scrollHeight,
     clientHeight: element.clientHeight,

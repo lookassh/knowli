@@ -1,7 +1,7 @@
 .root {
   color-scheme: dark;
-  color: #f0f5ff;
-  background: #080d1c;
+  color: var(--md-sys-color-on-surface);
+  background: var(--md-sys-color-surface-container-lowest);
   font-family: KnowliKidManrope, sans-serif;
   min-height: 100dvh;
   -webkit-tap-highlight-color: transparent;

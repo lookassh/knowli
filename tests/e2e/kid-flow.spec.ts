@@ -5,6 +5,7 @@ import { readTestRunConfig } from "../test-run-config";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { createDatabase } from "@learning/server";
 import { TaskDtoSchema } from "@learning/contracts";
+import { expectReadableOnDarkContainer } from "./helpers/contrast";
 
 // Kid-flow obejmuje krótkotrwałe testowe audio; nie zapisujemy trace, HAR ani video.
 test.use({ trace: "off" });
@@ -604,6 +605,7 @@ test("popup wyniku mieści się w ekranie telefonu bez przewijania", async ({ pa
   await expect(page.getByTestId("kid-offline")).toBeVisible();
   await expect(page.getByTestId('kid-offline')).toHaveClass(/kid-card/);
   await expect(page.getByTestId('kid-retry')).toHaveClass(/kid-action/);
+  await expectReadableOnDarkContainer(page.getByTestId("kid-offline"));
   await expect(feedback).toHaveCount(0);
   await page.unroute("**/api/v1/kid/sessions/*/next");
   await page.getByTestId("kid-retry").click();
