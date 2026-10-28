@@ -152,6 +152,25 @@ endpointy trenujące na danych, przypięcie `provider.order` bez fallbacku):
   wszystkich zapytań klucza — routing bez przypięcia może wtedy trafić do
   takiego dostawcy także z odpowiedziami dzieci (grader).
 
+Opcje pośrednika w `.env` (2026-10-29): `UMIEM_LLM_*` / `UMIEM_GRADER_*` —
+`REASONING`, `PROVIDER_ORDER`, `PROVIDER_QUANTIZATIONS`,
+`PROVIDER_ALLOW_FALLBACKS`, `PROVIDER_DATA_COLLECTION` (opis w `.env.example`).
+Pełne sondy `deepseek/deepseek-v4.1-flash-1017` z `PROVIDER_QUANTIZATIONS=fp8`
+i `PROVIDER_DATA_COLLECTION=deny`:
+- Rozumowanie wyłączone, przed poprawką pustych tablic: 37/60, odrzucenia
+  `noticeSegments`×22, `items`×22, `options`×14 — model zwracał `[]` w polach
+  innych typów ćwiczeń, a kontrakt wymaga minimum elementów. Poprawka:
+  `withoutEmptyOptionalArrays` traktuje pustą tablicę każdego opcjonalnego pola
+  jak brak (prawdziwy brak, np. wybór bez opcji, nadal odrzuca walidacja typu).
+- Rozumowanie wyłączone, po poprawce: run 123 s, partie 19–24 s, 58/65
+  poprawnych, 6 rachunków zgodnych z kodem; 1 luka pokrycia (zagadnienie
+  o kontynentach: 1/2 pytań otwartych — model wstawił tam rachunek wysokości).
+- Rozumowanie domyślne: raz 55/60 i luka pokrycia (run 267 s, partia do 85 s),
+  raz `provider_timeout` (partie 42–61 s, szósta ponad 90 s).
+Wniosek: przy DeepSeek generator powinien działać z wyłączonym rozumowaniem;
+Gemini 3.8 Flash pozostaje jedynym modelem z publikowalnym szkicem bez
+odrzuceń w pełnej sondzie.
+
 ## Etap 3 — Odpowiedź mówiona
 
 - [ ] Spike: polski STT (`pl-PL`) obecnego providera na głosie dziecka; decyzja

@@ -5,7 +5,7 @@ import { validatePool } from "../../../domain/lessons/pool-validation";
 import type { LessonExerciseDraft, LessonTopic } from "../../../domain/lessons/types";
 import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
 import { validateDynamicTopicData } from "../../../domain/lessons/topic-resolution";
-import { buildDynamicTopicData, buildLessonPayload, buildObjectiveCriteria, collectBatchExerciseMetadata, countPerObjective, filterExercisesToRequestedObjective, isWellShapedRawExercise, lessonPayloadVersion, poolStageCounts, scopeFamiliesToRun, splitStages, stripParentAddedFlags, summarizeLessonPoolValidation, toExerciseDraft, withoutEmptyV3Fields } from "./lesson-drafts";
+import { buildDynamicTopicData, buildLessonPayload, buildObjectiveCriteria, collectBatchExerciseMetadata, countPerObjective, filterExercisesToRequestedObjective, isWellShapedRawExercise, lessonPayloadVersion, poolStageCounts, scopeFamiliesToRun, splitStages, stripParentAddedFlags, summarizeLessonPoolValidation, toExerciseDraft, withoutEmptyOptionalArrays } from "./lesson-drafts";
 
 describe("calculation persistence and grading criteria", () => {
   const calculation = { kind: "scale_distance" as const, params: { scaleDenominator: 25000, mapDistanceCm: 3 }, unit: "m" as const, templateFamilyId: "scale" };
@@ -246,23 +246,36 @@ describe("buildDynamicTopicData (wadliwe zagadnienie nie przerywa generacji)", (
   });
 });
 
-describe("withoutEmptyV3Fields (puste tablice strict output to brak pola)", () => {
-  it("nie odrzuca poprawnego ćwiczenia gramatyki za puste tablice v3 z modelu", () => {
+describe("withoutEmptyOptionalArrays (puste tablice strict output to brak pola)", () => {
+  it("nie odrzuca poprawnej luki gramatyki za puste tablice innych typów i v3 z modelu", () => {
     const grammarTopic = englishGrammarSubject.topics[0]!;
     const objective = grammarTopic.objectives.find((o) => o.exerciseTypes.includes("lesson_gap"))!;
     const raw = {
       exerciseType: "lesson_gap", objectiveId: objective.id, instructionPl: "Uzupełnij.", stem: "He ___ football.",
       answer: "plays", acceptedAnswers: [], focus: ["plays"],
+      options: [], items: [], noticeSegments: [],
       requiredElements: [], supplementaryElements: [], commonErrors: [], sourceRefs: [],
       questionType: null, expectedForm: null, familyId: null,
     };
-    // Bez czyszczenia poprawne ćwiczenie gramatyki odpada (np. `sourceRefs: []` łamie minimum kontraktu).
+    // Bez czyszczenia poprawne ćwiczenie odpada (np. `options: []` łamie minimum kontraktu).
     expect(validatePool([toExerciseDraft(raw)], englishGrammarSubject, grammarTopic).rejected).toHaveLength(1);
-    const cleaned = withoutEmptyV3Fields(toExerciseDraft(raw));
-    for (const field of ["requiredElements", "supplementaryElements", "commonErrors", "sourceRefs"]) expect(cleaned).not.toHaveProperty(field);
+    const cleaned = withoutEmptyOptionalArrays(toExerciseDraft(raw));
+    for (const field of ["options", "items", "noticeSegments", "requiredElements", "supplementaryElements", "commonErrors", "sourceRefs"]) {
+      expect(cleaned).not.toHaveProperty(field);
+    }
     const result = validatePool([cleaned], englishGrammarSubject, grammarTopic);
     expect(result.rejected.flatMap((r) => r.errors)).toEqual([]);
     expect(result.valid).toHaveLength(1);
+  });
+
+  it("wybór bez opcji nadal jest odrzucany — pusta tablica nie ukrywa prawdziwego braku", () => {
+    const grammarTopic = englishGrammarSubject.topics[0]!;
+    const objective = grammarTopic.objectives.find((o) => o.exerciseTypes.includes("lesson_choice"))!;
+    const cleaned = withoutEmptyOptionalArrays(toExerciseDraft({
+      exerciseType: "lesson_choice", objectiveId: objective.id, instructionPl: "Wybierz.", stem: "He ___ football.",
+      answer: "plays", acceptedAnswers: [], focus: ["plays"], options: [], correctOption: "a",
+    }));
+    expect(validatePool([cleaned], englishGrammarSubject, grammarTopic).rejected).toHaveLength(1);
   });
 });
 

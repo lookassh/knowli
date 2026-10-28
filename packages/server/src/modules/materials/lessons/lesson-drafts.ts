@@ -447,17 +447,23 @@ export function stripParentAddedFlags(drafts: readonly LessonExerciseDraft[]): L
   );
 }
 /**
- * Strict structured output każe modelowi zwrócić każde pole v3, także dla
- * gramatyki i dla typów zamkniętych szkoły. Pusta tablica znaczy tam „brak”
- * (jak `null`), więc nie może odrzucać ćwiczenia jako „pole v3 niedozwolone”
- * ani trafiać do payloadu (DTO wymaga np. co najmniej jednego cytatu).
- * Braki wymagane przez przedmiot (cytat, elementy odpowiedzi otwartej) nadal
- * zgłasza walidacja przedmiotu.
+ * Strict structured output każe modelowi zwrócić każde pole, także pola innych
+ * typów ćwiczeń (np. `options` w luce, `noticeSegments` w wyborze, pola v3
+ * w gramatyce). Pusta tablica znaczy tam „brak” (jak `null`), więc nie może
+ * odrzucać ćwiczenia przez minimum kontraktu ani trafiać do payloadu.
+ * Braki naprawdę wymagane (opcje wyboru, klocki, cytat, elementy odpowiedzi
+ * otwartej) nadal zgłasza walidacja typu i przedmiotu.
  */
-export function withoutEmptyV3Fields(draft: LessonExerciseDraft): LessonExerciseDraft {
+const OPTIONAL_ARRAY_FIELDS = [
+  "options", "items", "noticeSegments",
+  "requiredElements", "supplementaryElements", "commonErrors", "sourceRefs",
+] as const;
+
+export function withoutEmptyOptionalArrays(draft: LessonExerciseDraft): LessonExerciseDraft {
   const out: LessonExerciseDraft = { ...draft };
-  for (const field of ["requiredElements", "supplementaryElements", "commonErrors", "sourceRefs"] as const) {
-    if (Array.isArray(out[field]) && out[field].length === 0) delete out[field];
+  for (const field of OPTIONAL_ARRAY_FIELDS) {
+    const value = out[field];
+    if (Array.isArray(value) && value.length === 0) delete out[field];
   }
   return out;
 }
@@ -1060,7 +1066,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
     let droppedAcceptedVariants = 0;
     const drafts = wellShaped
       .map(toExerciseDraft)
-      .map(withoutEmptyV3Fields)
+      .map(withoutEmptyOptionalArrays)
       .map((draft) => (input.regenerate ? scopeFamiliesToRun(draft, runId) : draft))
       .map((draft) => {
         const sanitized = withoutRedundantAcceptedVariants(draft, subject.normalizer);
