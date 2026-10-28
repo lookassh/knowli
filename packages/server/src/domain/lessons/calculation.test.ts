@@ -45,11 +45,21 @@ describe("Polish calculation answer parser", () => {
     ["-0,001", { value: -0.001, unit: null }],
     ["750m", { value: 750, unit: "m" }],
     ["0", { value: 0, unit: null }],
+    // School notation children actually write.
+    ["750 m.", { value: 750, unit: "m" }],
+    ["750.", { value: 750, unit: null }],
+    ["250 m n.p.m.", { value: 250, unit: "m" }],
+    ["250m npm", { value: 250, unit: "m" }],
+    ["750 metrów", { value: 750, unit: "m" }],
+    ["0,75 kilometra", { value: 0.75, unit: "km" }],
+    ["12 Centymetrów.", { value: 12, unit: "cm" }],
+    ["−250 m", { value: -250, unit: "m" }],
   ])("parses the entire answer %j", (text, expected) => {
     expect(parseCalculationAnswer(text as string)).toEqual(expected);
   });
 
-  it.each(["1,2,3", "12 34", "750 m bo tak", "NaN", "Infinity", "1e3", "1.234", "1.5", "1,", ",5", "1,1234567890", "750 mm", "", " ", "--1", "1 2345", "1\n234", "750 m\nbo tak"])("rejects ambiguous or partial input %j", (text) => {
+  it.each(["1,2,3", "12 34", "750 m bo tak", "NaN", "Infinity", "1e3", "1.234", "1.5", "1,", ",5", "1,1234567890", "750 mm", "", " ", "--1", "1 2345", "1\n234", "750 m\nbo tak",
+    "750 m..", "750 m bo tak.", "750 metrami bo tak", "n.p.m. 250", "250 n.p.m.", "750 milimetrów"])("rejects ambiguous or partial input %j", (text) => {
     expect(parseCalculationAnswer(text)).toBeNull();
   });
 });
@@ -59,6 +69,7 @@ describe("deterministic calculation evaluation", () => {
     ["750", "correct"], ["0,75 km", "correct"], ["75 000 cm", "correct"],
     ["750 km", "incorrect"], ["-750 m", "incorrect"], ["749,999999999 m", "incorrect"],
     ["nie wiem", "unevaluated"], ["750 m bo tak", "unevaluated"],
+    ["750 m.", "correct"], ["750 metrów", "correct"], ["0,75 kilometra", "correct"], ["749 metrów", "incorrect"],
   ])("evaluates %j as %s", (text, result) => {
     expect(evaluateCalculationAnswer(text, scale)).toBe(result);
   });

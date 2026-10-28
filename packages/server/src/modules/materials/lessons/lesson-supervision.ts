@@ -208,74 +208,68 @@ export async function lessonObjectiveProgress(
 
   // Agregat szkolny (Etap 2): wiedza/precyzja/brakujące elementy z details ocen
   // + ostatnie odpowiedzi dziecka. Tylko oceny z wymiarem wiedzy (details.knowledge).
-  type SchoolAssessmentRow = {
-    objectiveId: string;
-    knowledge: string;
-    precision: string | null;
-    missingTexts: string[];
-    answer: string | null;
-    receivedAt: Date;
-  };
-  const schoolRows: SchoolAssessmentRow[] = historyRevisionIds.length
-    ? (await services.db.execute<{
-        objectiveId: string | null; knowledge: string | null; precision: string | null;
-        missingTexts: string[] | null; answer: string | null; receivedAt: Date;
-      }>(sql`
-        select n.details->>'objectiveId' as "objectiveId",
-               n.details->>'knowledge' as knowledge,
-               n.details->>'precision' as precision,
-               n.details->'missingElementTexts' as "missingTexts",
-               a.answer->>'text' as answer,
-               a.received_at as "receivedAt"
+  // Liczniki i braki liczy baza; do aplikacji trafia najwyżej 5 odpowiedzi na cel.
+  const schoolFrom = sql`
           from learning_app.assessments n
-          join learning_app.attempts a on a.id = n.attempt_id
+          join learning_app.attempts a on a.id = n.attempt_id`;
+  const schoolWhere = sql`
          where n.child_id = ${child}
            and n.skill = 'objective'
            and n.item_revision_id = any(${sql.param(historyRevisionIds)}::uuid[])
-           and n.details ? 'knowledge'
-         order by a.received_at desc
-      `)).rows.map((r) => ({
-        objectiveId: r.objectiveId ?? "",
-        knowledge: r.knowledge ?? "",
-        precision: r.precision,
-        missingTexts: Array.isArray(r.missingTexts) ? r.missingTexts.map(String) : [],
-        answer: r.answer,
-        receivedAt: r.receivedAt,
-      }))
-    : [];
-  const schoolByObjective = new Map<string, SchoolAssessmentRow[]>();
-  for (const row of schoolRows) {
-    const list = schoolByObjective.get(row.objectiveId) ?? [];
-    list.push(row);
-    schoolByObjective.set(row.objectiveId, list);
-  }
+           and n.details ? 'knowledge'`;
+  const [countsResult, missingResult, recentResult] = historyRevisionIds.length
+    ? await Promise.all([
+        services.db.execute<{
+          objectiveId: string | null; correct: number; partial: number; incorrect: number;
+          concise: number; verbose: number; unfocused: number;
+        }>(sql`
+        select n.details->>'objectiveId' as "objectiveId",
+               count(*) filter (where n.details->>'knowledge' = 'correct')::int as correct,
+               count(*) filter (where n.details->>'knowledge' = 'partial')::int as partial,
+               count(*) filter (where n.details->>'knowledge' = 'incorrect')::int as incorrect,
+               count(*) filter (where n.details->>'precision' = 'concise')::int as concise,
+               count(*) filter (where n.details->>'precision' = 'verbose')::int as verbose,
+               count(*) filter (where n.details->>'precision' = 'unfocused')::int as unfocused
+        ${schoolFrom}
+        ${schoolWhere}
+         group by 1`),
+        services.db.execute<{ objectiveId: string | null; text: string; count: number }>(sql`
+        select n.details->>'objectiveId' as "objectiveId", m.text, count(*)::int as count
+        ${schoolFrom}
+         cross join lateral jsonb_array_elements_text(
+           case when jsonb_typeof(n.details->'missingElementTexts') = 'array'
+                then n.details->'missingElementTexts' else '[]'::jsonb end) as m(text)
+        ${schoolWhere}
+         group by 1, 2`),
+        services.db.execute<{ objectiveId: string | null; knowledge: string | null; precision: string | null; answer: string | null }>(sql`
+        select "objectiveId", knowledge, precision, answer from (
+          select n.details->>'objectiveId' as "objectiveId",
+                 n.details->>'knowledge' as knowledge,
+                 n.details->>'precision' as precision,
+                 a.answer->>'text' as answer,
+                 row_number() over (partition by n.details->>'objectiveId' order by a.received_at desc, a.id) as rank
+          ${schoolFrom}
+          ${schoolWhere}
+        ) recent
+         where rank <= 5
+         order by "objectiveId", rank`),
+      ])
+    : [null, null, null];
   function schoolAggregate(objectiveId: string) {
-    const rows = schoolByObjective.get(objectiveId);
-    if (!rows || rows.length === 0) return undefined;
-    const missingCounts = new Map<string, number>();
-    for (const row of rows) {
-      for (const text of row.missingTexts) missingCounts.set(text, (missingCounts.get(text) ?? 0) + 1);
-    }
-    const count = (field: "knowledge" | "precision", value: string) =>
-      rows.filter((r) => r[field] === value).length;
+    const counts = countsResult?.rows.find((row) => row.objectiveId === objectiveId);
+    if (!counts) return undefined;
+    const missing = (missingResult?.rows ?? []).filter((row) => row.objectiveId === objectiveId);
+    const recent = (recentResult?.rows ?? []).filter((row) => row.objectiveId === objectiveId);
     return {
-      knowledge: {
-        correct: count("knowledge", "correct"),
-        partial: count("knowledge", "partial"),
-        incorrect: count("knowledge", "incorrect"),
-      },
-      precision: {
-        concise: count("precision", "concise"),
-        verbose: count("precision", "verbose"),
-        unfocused: count("precision", "unfocused"),
-      },
-      topMissing: [...missingCounts.entries()]
-        .map(([text, n]) => ({ text, count: n }))
+      knowledge: { correct: counts.correct, partial: counts.partial, incorrect: counts.incorrect },
+      precision: { concise: counts.concise, verbose: counts.verbose, unfocused: counts.unfocused },
+      topMissing: missing
+        .map((row) => ({ text: row.text, count: row.count }))
         .sort((a, b) => b.count - a.count || a.text.localeCompare(b.text, "pl"))
         .slice(0, 5),
-      recentAnswers: rows.slice(0, 5).map((r) => ({
+      recentAnswers: recent.map((r) => ({
         text: r.answer ?? "",
-        knowledge: (["correct", "partial", "incorrect"].includes(r.knowledge) ? r.knowledge : "incorrect") as "correct" | "partial" | "incorrect",
+        knowledge: (["correct", "partial", "incorrect"].includes(r.knowledge ?? "") ? r.knowledge : "incorrect") as "correct" | "partial" | "incorrect",
         precision: (r.precision === "concise" || r.precision === "verbose" || r.precision === "unfocused" ? r.precision : null) as "concise" | "verbose" | "unfocused" | null,
       })),
     };

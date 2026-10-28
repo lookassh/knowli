@@ -272,6 +272,27 @@ export function splitStages(count: number, mix: StageMix = DEFAULT_LESSON_POLICY
   return { guided, productive, independent };
 }
 
+/** Publikacja zestawu v3 wymaga tylu różnych pytań otwartych na zagadnienie. */
+export const DISTINCT_OPEN_ANSWERS_PER_OBJECTIVE = 2;
+
+/**
+ * Podział partii na etapy dla jednego celu. Rachunek dzieli etap samodzielny
+ * z pytaniami otwartymi, a te mają twarde minimum publikacji — gdy etap
+ * samodzielny ma tylko tyle miejsc, ile wynosi minimum, jedno miejsce przechodzi
+ * z etapu produktywnego (o ile ten zachowa swoje minimum). Budżet partii bez zmian.
+ */
+export function poolStageCounts(
+  subject: SubjectModule,
+  objectiveTypes: readonly LessonExerciseType[],
+  count: number,
+): LlmLessonStageCounts {
+  const split = splitStages(count);
+  const minimums = subject.poolMinimums ?? DEFAULT_LESSON_POLICY.poolMinimums;
+  if (!objectiveTypes.includes("lesson_calculation") || split.independent > minimums.independent) return split;
+  if (split.productive - 1 < minimums.productive) return split;
+  return { ...split, productive: split.productive - 1, independent: split.independent + 1 };
+}
+
 /**
  * Liczba ćwiczeń per cel: ceil(poolSize / liczba celów), ale nie mniej niż
  * najmniejsza liczba, której podział na etapy spełnia minima KAŻDEGO etapu
@@ -329,7 +350,8 @@ function buildPoolInput(
     material,
     ...(instruction === undefined ? {} : { instruction }),
     countPerObjective: count,
-    stageCounts: splitStages(count),
+    stageCounts: poolStageCounts(subject, objective.exerciseTypes, count),
+    ...(subject.usesV3Payload === true ? { minDistinctOpenAnswers: DISTINCT_OPEN_ANSWERS_PER_OBJECTIVE } : {}),
     graderAvailable,
     groundingRequired: subject.validatePoolExtra !== undefined,
     deduplication: subject.poolDeduplication ?? "answer",

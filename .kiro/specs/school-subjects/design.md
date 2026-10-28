@@ -50,8 +50,9 @@ Rozwiązanie:
 4. Kategorie błędów przedmiotu `school` są stałe i generyczne
    (`missing_element`, `wrong_fact`, `confused_concept`, `incomplete` + kategorie
    bazowe); szablony podpowiedzi żyją w module przedmiotu, nie pochodzą z modelu.
-   Konkretny brakujący element dokleja do feedbacku serwer przy ujawnieniu
-   (z zapisem ekspozycji), nie szablon katalogu.
+   Po odpowiedzi częściowej/błędnej feedback to wyłącznie szablon kategorii,
+   bez treści wzorca i bez zapisu ekspozycji (wym. 5.7); wzorzec pokazuje
+   dopiero istniejący cykl wsparcia (np. „Nie pamiętam”), z ekspozycją.
 5. `validateExercise` przedmiotu `school` sprawdza reguły szkolne z pkt 3;
    `ttsForAnswers = false`; `poolDeduplication = 'exercise'` (rodziny pytań współdzielą odpowiedź wzorcową — deduplikacja po odpowiedzi odrzucałaby każdego kolejnego członka rodziny; korekta po code review Etapu 1); normalizator bazowy
    (polska odpowiedź: NFC, wielkość liter, interpunkcja, spacje).
@@ -137,16 +138,24 @@ Kontrakt Etapu 2b (2026-10-28; decyzje przyjęte i zaimplementowane w całym prz
   Ułamki `bigint` pozostają prywatne; `value:number` jest przybliżeniem do
   wymiany JSON, nigdy podstawą obliczeń, renderowania ani oceny. `answer`
   zachowuje wynik dokładny, przecinek dziesiętny, bez grupowania i zbędnych zer.
-- Parser czyta cały tekst: opcjonalny znak `+`/`-`, cyfry, opcjonalny przecinek
-  z 1–9 cyframi, opcjonalną jednostkę bez rozróżniania wielkości liter.
-  Grupy tysięcy mają po 3 cyfry (spacja, NBSP lub wąski NBSP). Kropki,
-  wykładniki i dodatkowy tekst są odrzucane. Ocenianie przelicza jawne
-  jednostki; brak jednostki oznacza jednostkę polecenia. Porównuje dokładne
-  ułamki z oryginalnego tekstu, bez poszerzającego tolerancję epsilonu.
+- Parser czyta cały tekst: opcjonalny znak `+`/`-`/`−`, cyfry, opcjonalny
+  przecinek z 1–9 cyframi, opcjonalną jednostkę bez rozróżniania wielkości
+  liter — symbol `cm|m|km` albo polską nazwę (`metr`, `metry`, `metrów`,
+  `metra`, analogicznie centymetr i kilometr). Po jednostce wolno dopisać
+  `n.p.m.` (zapis przepisany z polecenia wysokości), a na końcu jedną kropkę
+  („750 m.”). Grupy tysięcy mają po 3 cyfry (spacja, NBSP lub wąski NBSP).
+  Kropka dziesiętna, wykładniki i dodatkowy tekst są odrzucane. Ocenianie
+  przelicza jawne jednostki; brak jednostki oznacza jednostkę polecenia.
+  Porównuje dokładne ułamki z oryginalnego tekstu, bez poszerzającego
+  tolerancję epsilonu.
 - Nieparsowalny niepusty tekst daje `unevaluated`/`not_assessed`, bez modelu
-  i zmiany serii; parsowalny błędny wynik daje `incorrect`. Pusta odpowiedź
-  nadal jest odrzucana przez kontrakt tekstu. Skip i „Nie pamiętam” zachowują
-  semantykę silnika. Rachunek nie ma wymiaru precyzji ani werdyktu modelu.
+  i zmiany serii; parsowalny błędny wynik daje `incorrect` z podpowiedzią
+  metody z `messages.kid.lessonCalculationHints`, bez wyniku i bez ekspozycji
+  odpowiedzi (ekspozycję zapisuje wyłącznie feedback pokazujący odpowiedź:
+  `great` oraz feedback z `correctText`). Pusta odpowiedź nadal jest
+  odrzucana przez kontrakt tekstu. Skip i „Nie pamiętam” zachowują semantykę
+  silnika. Rachunek nie ma wymiaru precyzji ani werdyktu modelu. Rachunek bez
+  własnego polecenia (np. z generacji) dostaje `messages.kid.lessonCalculationInstruction`.
 - Etap `independent`, także w kartkówce, oznacza odpowiedź pisemną; nadal
   obowiązuje kwalifikacja próby i ekspozycji. Minima puli 3/2/2 oraz dwa różne
   otwarte pytania zostają; rachunki uzupełniają pulę. Zachowujemy globalny

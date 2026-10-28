@@ -101,7 +101,7 @@ async function seedSchoolDeck(childId: string): Promise<{ deckId: string }> {
         { id: "e1", text: "Roślina wytwarza cukry" },
         { id: "e2", text: "roślina wykorzystuje światło" },
       ],
-      supplementaryElements: [], commonErrors: [],
+      supplementaryElements: [], commonErrors: ["Fotosynteza to oddychanie rośliny."],
       sourceRefs: [{ quote: "przy udziale światła, wytwarza cukry" }],
     },
   ];
@@ -271,6 +271,12 @@ describe("ocena szkolna dwuwymiarowa (integracja)", () => {
     expect(result.feedback!.correctText).toBeUndefined();
     expect(result.feedback!.hintPl).toContain("Dobra część odpowiedzi");
     expect(result.feedback!.hintPl).not.toContain("dwutlenku");
+    // Typowe błędy zatwierdzone przez rodzica dochodzą do modelu (prywatny klucz zadania).
+    expect(grader.requests.at(-1)?.school?.commonErrors).toEqual(["Fotosynteza to oddychanie rośliny."]);
+    // Nic nie zostało ujawnione, więc odpowiedź celu nie jest oznaczona jako wyeksponowana.
+    const exposed = await pool.query(`select count(*)::int as count from learning_app.event_exposures x
+      join learning_app.learning_events e on e.id = x.event_id where e.task_id = $1 and e.kind = 'feedback_issued'`, [openTask!.taskId]);
+    expect(exposed.rows[0]!.count).toBe(0);
 
     const assessments = await pool.query<{ outcome: string; details: { knowledge?: string; errorCategory?: string; missingElementIds?: string[] } }>(
       "select outcome, details from learning_app.assessments where child_id = $1 and details ? 'knowledge'",

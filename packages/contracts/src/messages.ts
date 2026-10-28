@@ -574,6 +574,13 @@ export const messages = {
     // Zadanie rachunkowe (lesson_calculation): pole wyniku z jednostką.
     lessonCalculationInput: "Twój wynik",
     lessonCalculationPlaceholder: "Wpisz wynik, np. 750 m",
+    lessonCalculationInstruction: "Oblicz i wpisz wynik z jednostką.",
+    // Podpowiedź po błędnym wyniku: metoda, nigdy sam wynik.
+    lessonCalculationHints: {
+      scale_distance: "Pomnóż odległość na mapie przez mianownik skali i przelicz jednostkę.",
+      height_difference: "Od wysokości wyższego punktu odejmij wysokość niższego punktu.",
+      unit_conversion: "Sprawdź, ile mniejszych jednostek mieści się w większej jednostce.",
+    },
     // Podsumowanie lekcji (per cel), bez procentów.
     lessonSummaryTitle: "Ćwiczyłeś reguły",
     lessonSummaryObjective: "Ćwiczyłeś: {title}",

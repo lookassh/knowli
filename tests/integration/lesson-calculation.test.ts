@@ -220,6 +220,10 @@ describe("calculation grading on PostgreSQL", () => {
     expect(assessments[0]!.details).not.toHaveProperty("precision");
     expect(grade).not.toHaveBeenCalled();
     expect((await pool.query("select count(*)::int as count from learning_app.lesson_verdicts")).rows[0]!.count).toBe(1);
+    // Only a correct answer shows the result; a method hint or not_assessed reveals nothing.
+    const exposed = (await pool.query(`select count(*)::int as count from learning_app.event_exposures x
+      join learning_app.learning_events e on e.id = x.event_id where e.task_id = $1 and e.kind = 'feedback_issued'`, [task.taskId])).rows[0]!.count;
+    expect(exposed).toBe(outcome === "correct" ? 1 : 0);
     if (outcome === "unevaluated") {
       expect(await progressOf(child.id)).toEqual(before);
       expect(result.taskState).toBe("issued");

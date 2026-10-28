@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { messages } from "@learning/contracts";
 import { FakeLlmProvider } from "./fake";
 import { createOpenAiLlmProvider } from "./openai/llm";
 import type { LessonPoolInput } from "../ports/ai";
@@ -31,6 +32,7 @@ describe("calculation generation adapters", () => {
     expect(result.exercises[0]).toMatchObject({
       ...raw, answer: "750 m", focus: [], acceptedAnswers: [],
       prompt: "Na mapie w skali 1:25 000 odcinek ma 3 cm. Oblicz odległość w terenie w m.",
+      instructionPl: messages.kid.lessonCalculationInstruction,
     });
   });
 

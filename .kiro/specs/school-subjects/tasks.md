@@ -54,12 +54,31 @@ etap 2b zależy tylko od etapu 1 i może iść równolegle z etapem 2.
       w `lesson-attempts` bez gradera, także w kartkówce.
 
 Weryfikacja Etapu 2b (2026-10-28, lokalnie): `typecheck` czysto; `test:unit`
-2214/2214; `test:integration` 533 zaliczone, 2 pominięte (opcjonalny benchmark
+2237/2237; `test:integration` 533 zaliczone, 2 pominięte (opcjonalny benchmark
 nawigacji profili); `build` OK; `test:e2e:shards` 270/270 (mocked 156, real
 114), w tym `lesson-calculation.spec.ts` (edytor + przebieg dziecka)
 i `lesson-calculation-layout.spec.ts` (390×844, 844×390, 768×1024, 1280×800).
-Bez odbioru na fizycznym urządzeniu i bez przebiegu generowania rachunków na
-prawdziwym LLM (fake potwierdza tylko przepływ).
+Bez odbioru na fizycznym urządzeniu.
+
+Sondy na prawdziwych modelach z `.env` (2026-10-28, po poprawkach z review):
+pełny `createSchoolLesson` → `executeLessonGeneration` na materiale
+`pilot-material.md` (pula 60) i testowym PostgreSQL, z produkcyjną fabryką
+`createGenerationDepsFromEnv`.
+- Sonda 1 (przed poprawką etapu samodzielnego): 6 zagadnień, 59 ćwiczeń,
+  3 rachunki zgodne z kodem i uziemione, ale szkic niepublikowalny — w obu
+  zagadnieniach z rachunkiem rachunek zajął miejsce drugiego pytania
+  otwartego. Naprawione: `poolStageCounts` przesuwa jedno miejsce
+  z produktywnego do samodzielnego, gdy cel dopuszcza rachunki, a prompt
+  rezerwuje pierwsze 2 miejsca samodzielne na różne pytania otwarte.
+- Sonda 2: zagadnienia z rachunkami miały już po 2 różne pytania otwarte;
+  szkic niepublikowalny z innego powodu — ósme zagadnienie (limit 8) dostało
+  0 ćwiczeń przy 10 odrzuceniach walidacji. Przyczyny nie ustalono (logi
+  workera nie zostały przechwycone); rodzic może dogenerować zagadnienie.
+- Sonda 3: 5 zagadnień, 60 ćwiczeń, 0 odrzuceń, 4 rachunki zgodne z kodem,
+  szkic opublikowany. Jeden rachunek wysokości trafił do zagadnienia
+  o kontynentach — przypisanie celu wymaga przeglądu rodzica.
+- Grader `school-grader-v2` (`eval:school-grader`): wiedza 19/20, brakujące
+  elementy 19/20, 0 odrzuconych werdyktów, `BRAMKA: OK`.
 
 ## Etap 3 — Odpowiedź mówiona
 

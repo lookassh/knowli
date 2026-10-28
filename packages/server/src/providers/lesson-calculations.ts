@@ -1,4 +1,4 @@
-import { CalculationSpecSchema } from "@learning/contracts";
+import { CalculationSpecSchema, messages } from "@learning/contracts";
 import { computeCalculationAnswer, renderCalculationPrompt } from "../domain/lessons/calculation";
 
 /** Convert parameter-only model output before the common draft-shape guard. */
@@ -11,6 +11,8 @@ export function materializeGeneratedCalculations(exercises: unknown[]): unknown[
       return {
         exerciseType: "lesson_calculation",
         objectiveId: record.objectiveId,
+        // The model branch has no instruction; the code supplies the shared one.
+        instructionPl: messages.kid.lessonCalculationInstruction,
         calculation,
         prompt: renderCalculationPrompt(calculation),
         answer: computeCalculationAnswer(calculation).answer,

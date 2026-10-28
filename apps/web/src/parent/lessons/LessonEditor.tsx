@@ -93,22 +93,29 @@ export default function LessonEditor({
     calculationPreviews[ex.clientKey]?.fingerprint !== JSON.stringify(ex.calculation) || calculationPreviews[ex.clientKey]?.status !== "ready"
   ));
 
+  // Last requested parameters per variant: only changed variants are previewed
+  // again, and a late response for older parameters is ignored.
+  const previewRequested = useRef<Record<string, string>>({});
+  const calculationsEditable = deck?.draft != null;
   useEffect(() => {
-    let cancelled = false;
+    if (!calculationsEditable) return;
     const requests = JSON.parse(calculationRequests) as { clientKey: string; calculation: CalculationSpec }[];
-    setCalculationPreviews(Object.fromEntries(requests.map(({ clientKey, calculation }) => [clientKey, { fingerprint: JSON.stringify(calculation), status: "pending" }])));
     for (const { clientKey, calculation } of requests) {
       const fingerprint = JSON.stringify(calculation);
-      const fail = () => { if (!cancelled) setCalculationPreviews(current => ({ ...current, [clientKey]: { fingerprint, status: "error" } })); };
-      if (!CalculationSpecSchema.safeParse(calculation).success) { fail(); continue; }
+      if (previewRequested.current[clientKey] === fingerprint) continue;
+      previewRequested.current[clientKey] = fingerprint;
+      const current = () => previewRequested.current[clientKey] === fingerprint;
+      const settle = (status: "pending" | "ready" | "error") =>
+        setCalculationPreviews(previews => ({ ...previews, [clientKey]: { fingerprint, status } }));
+      if (!CalculationSpecSchema.safeParse(calculation).success) { settle("error"); continue; }
+      settle("pending");
       void callParent(() => parentClient.lessons.previewCalculation(calculation)).then(preview => {
-        if (cancelled) return;
-        setForm(current => current ? { ...current, exercises: current.exercises.map(ex => ex.clientKey === clientKey ? applyCalculationPreview(ex, calculation, preview) : ex) } : current);
-        setCalculationPreviews(current => ({ ...current, [clientKey]: { fingerprint, status: "ready" } }));
-      }).catch(fail);
+        if (!current()) return;
+        setForm(form => form ? { ...form, exercises: form.exercises.map(ex => ex.clientKey === clientKey ? applyCalculationPreview(ex, calculation, preview) : ex) } : form);
+        settle("ready");
+      }).catch(() => { if (current()) settle("error"); });
     }
-    return () => { cancelled = true; };
-  }, [calculationRequests]);
+  }, [calculationRequests, calculationsEditable]);
 
   const dirty = useRef(false);
   const busyRef = useRef(false);

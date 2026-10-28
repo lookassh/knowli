@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq, or } from "drizzle-orm";
 import {
   AttemptInputSchema,
+  messages,
   type CalculationSpec,
   type AttemptDto,
   type AttemptInput,
@@ -280,12 +281,10 @@ function gradeLessonAnswer(
       return { grade: { outcome, reason: "technical", verdict: "unavailable" }, feedback: { kind: "not_assessed" }, exposures: [], details: { objectiveId, verdict: "unavailable" } };
     }
     const verdict = outcome === "correct" ? "closed_correct" : "closed_incorrect";
-    const hints: Record<CalculationSpec["kind"], string> = {
-      scale_distance: "Pomnóż odległość na mapie przez mianownik skali i przelicz jednostkę.",
-      height_difference: "Od wysokości wyższego punktu odejmij wysokość niższego punktu.",
-      unit_conversion: "Sprawdź, ile mniejszych jednostek mieści się w większej jednostce.",
-    };
-    return { grade: { outcome, verdict }, feedback: outcome === "correct" ? { kind: "great" } : { kind: "lesson_hint", hintPl: hints[key.calculation!.kind] }, exposures: [key.targetKey], details: { objectiveId, verdict } };
+    // Błędny wynik: podpowiedź metody bez wyniku, więc bez ekspozycji odpowiedzi.
+    return outcome === "correct"
+      ? { grade: { outcome, verdict }, feedback: { kind: "great" }, exposures: [key.targetKey], details: { objectiveId, verdict } }
+      : { grade: { outcome, verdict }, feedback: { kind: "lesson_hint", hintPl: messages.kid.lessonCalculationHints[key.calculation!.kind] }, exposures: [], details: { objectiveId, verdict } };
   }
 
   // text: luka / error_fix / transform / open_answer → dopasowanie deterministyczne
@@ -846,6 +845,13 @@ async function rereadTaskState(tx: Tx, taskId: string): Promise<string> {
   return row.state;
 }
 
+/** Czy feedback lekcji pokazuje odpowiedź celu (dla zapisu ekspozycji). */
+export function revealsAnswer(feedback: FeedbackDto): boolean {
+  if (feedback.kind === "not_assessed") return false;
+  if (feedback.kind === "lesson_hint" && feedback.correctText === undefined) return false;
+  return true;
+}
+
 /** Zapis ekspozycji feedbacku lekcji przed odpowiedzią HTTP (jak słówka). */
 async function discloseLessonFeedback(
   tx: Tx,
@@ -856,9 +862,11 @@ async function discloseLessonFeedback(
   knownFeedbackCount?: number,
 ): Promise<string> {
   const key = keyOf(task);
-  // not_assessed niczego nie ujawnia; w pozostałych pokazujemy rozwiązanie
-  // własnego zadania (target_key celu) oraz, przy minor_typo, wariant correctText.
-  const exposures = feedback.kind === "not_assessed" ? [] : [key.targetKey];
+  // not_assessed niczego nie ujawnia; podpowiedź bez correctText (szkoła:
+  // partial/incorrect, błędny rachunek) pokazuje tylko szablon metody i fragmenty
+  // własnej odpowiedzi dziecka — też bez ujawnienia. W pozostałych pokazujemy
+  // rozwiązanie własnego zadania (target_key celu) oraz, przy minor_typo, wariant correctText.
+  const exposures = revealsAnswer(feedback) ? [key.targetKey] : [];
   return discloseFeedbackEvent(tx, {
     task, childId: task.childId, itemId, exposures, now,
     ...(knownFeedbackCount === undefined ? {} : { knownPriorCount: knownFeedbackCount }),

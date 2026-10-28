@@ -73,6 +73,8 @@ export interface LessonPoolInput {
   /** Łączna liczba ćwiczeń per cel i jej rozkład na etapy. */
   readonly countPerObjective: number;
   readonly stageCounts: LlmLessonStageCounts;
+  /** Ile miejsc etapu samodzielnego zastrzec dla różnych pytań otwartych (przedmioty v3). */
+  readonly minDistinctOpenAnswers?: number;
   readonly graderAvailable: boolean;
   /** Czy każde ćwiczenie MUSI nieść cytaty źródłowe z materiału (przedmioty z uziemieniem). */
   readonly groundingRequired?: boolean;

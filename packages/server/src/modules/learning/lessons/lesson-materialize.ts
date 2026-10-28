@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { CalculationSpec, TaskPrompt } from "@learning/contracts";
+import { messages, type CalculationSpec, type TaskPrompt } from "@learning/contracts";
 import { AppError } from "../../../errors";
 import { computeTargetKey } from "../../../domain/target-key";
 import { renderCalculationPrompt } from "../../../domain/lessons/calculation";
@@ -164,6 +164,7 @@ export function materializeExercise(
     baseKey.schoolCriteria = {
       requiredElements: payload.requiredElements.map((el) => ({ ...el })),
       supplementaryElements: [...(payload.supplementaryElements ?? [])],
+      commonErrors: [...(payload.commonErrors ?? [])],
       ...(payload.expectedForm ? { expectedForm: payload.expectedForm } : {}),
       sourceQuotes: (payload.sourceRefs ?? []).map((ref) => ref.quote),
     };
@@ -258,7 +259,12 @@ export function materializeExercise(
     case "lesson_calculation": {
       try {
         if (!payload.calculation) throw new Error("missing calculation");
-        const prompt: TaskPrompt = { kind: "lesson_calculation", instructionPl, prompt: renderCalculationPrompt(payload.calculation) };
+        // Bez własnego polecenia rachunek dostaje wspólne polecenie, nie tytuł zagadnienia.
+        const prompt: TaskPrompt = {
+          kind: "lesson_calculation",
+          instructionPl: payload.instructionPl ?? messages.kid.lessonCalculationInstruction,
+          prompt: renderCalculationPrompt(payload.calculation),
+        };
         return { ...common, prompt, answerKey: { ...baseKey, calculation: payload.calculation }, exposures: [] };
       } catch {
         throw new AppError("internal", { message: "invalid private calculation payload" });

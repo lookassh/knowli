@@ -84,7 +84,8 @@ Zależności: `1 → 2 → 3`, `1 → 2 → 4 → 5`; etap 2b zależy tylko od e
 - Limit odpowiedzi dziecka wysyłanej do modelu dla szkoły to 600 znaków; gramatyka pozostaje przy 200.
 - Do modelu trafiają wyłącznie dane lekcji/ćwiczenia i odpowiedź dziecka jako dane. Nie wolno dodawać imienia, wieku ani identyfikatorów dziecka.
 - Werdykt zawiera wiedzę (`correct|partial|incorrect`), precyzję (`concise|verbose|unfocused`), elementy trafione/brakujące, dokładne fragmenty błędnych i zbędnych stwierdzeń oraz komentarz wyłącznie dla rodzica.
-- `commonErrors` są podłączone do materiału zadania, wejścia gradera i promptu; nie są już martwym polem.
+- `commonErrors` są podłączone do materiału zadania, wejścia gradera i promptu; nie są już martwym polem. (Korekta 2026-10-28 po review gałęzi: materializacja zadania gubiła je w prywatnym kluczu, więc w produkcji do gradera trafiała pusta lista — naprawione i pokryte testem jednostkowym oraz integracyjnym.)
+- Feedback bez ujawnionej odpowiedzi (`not_assessed`, `lesson_hint` bez `correctText`, czyli szkolne `partial`/`incorrect` i błędny rachunek) nie zapisuje ekspozycji celu (od 2026-10-28; wcześniej zapisywał ją każdy feedback poza `not_assessed`).
 - Zmiana kryteriów v3 wpływa na `skill_version`, aby stare próby nie awansowały nowych kryteriów.
 - Tylko wiedza steruje wynikiem i projekcją celu. Precyzja trafia do szczegółów oceny, cache i raportów. Test pilnuje braku ścieżki precyzja → wiedza.
 - `partial` mapuje się na wynik `incorrect` z werdyktem `model_almost`: nie zalicza opanowania i przerywa serię, ponieważ brakujący element jest sprawdzaną treścią.

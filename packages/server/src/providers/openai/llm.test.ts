@@ -84,6 +84,27 @@ describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", ()
     expect(system).not.toContain("Keep at least 3 guided, 2 productive and 2 DISTINCT open-answer questions per school objective");
   });
 
+  it.each([
+    [{ guided: 4, productive: 3, independent: 3 }, "the first 2 MUST be lesson_open_answer", "At most 1 independent slot(s) may be lesson_calculation"],
+    [{ guided: 4, productive: 4, independent: 2 }, "the first 2 MUST be lesson_open_answer", "No independent slot is left for lesson_calculation in this batch"],
+  ])("reserves independent slots for distinct open answers before calculations (%j)", async (stageCounts, open, calculations) => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => okResponse({ exercises: [], examples: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    await createOpenAiLlmProvider({ apiKey: "k" }).generateLessonPool({
+      ...INPUT,
+      subjectId: schoolSubject.id, subjectTitle: schoolSubject.titlePl,
+      answerLocale: schoolSubject.answerLocale, promptLocale: schoolSubject.promptLocale,
+      promptProfile: schoolSubject.prompts, exerciseTypes: schoolSubject.exerciseTypes, transforms: [],
+      objectives: [{ id: "school.scale", descriptionEn: "Map scale", exerciseTypes: schoolSubject.exerciseTypes, errorCategories: [] }],
+      material: "Skala mapy pozwala przeliczyć odległość na mapie na odległość w terenie.",
+      countPerObjective: 10, stageCounts, minDistinctOpenAnswers: 2, deduplication: "exercise",
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string) as { messages: Array<{ role: string; content: string }> };
+    const system = body.messages.find((message) => message.role === "system")!.content;
+    expect(system).toContain(open);
+    expect(system).toContain(calculations);
+  });
+
   it("nie ponawia HTTP 400, nie ujawnia body i klasyfikuje konfigurację", async () => {
     const fetchMock = vi.fn(async () => new Response("secret provider body", { status: 400 }));
     vi.stubGlobal("fetch", fetchMock);

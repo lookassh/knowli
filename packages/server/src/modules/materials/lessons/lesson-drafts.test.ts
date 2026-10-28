@@ -4,7 +4,7 @@ import { englishGrammarSubject } from "../../../domain/lessons/subjects/english-
 import { validatePool } from "../../../domain/lessons/pool-validation";
 import type { LessonExerciseDraft, LessonTopic } from "../../../domain/lessons/types";
 import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
-import { buildLessonPayload, buildObjectiveCriteria, collectBatchExerciseMetadata, countPerObjective, filterExercisesToRequestedObjective, isWellShapedRawExercise, lessonPayloadVersion, splitStages, stripParentAddedFlags, summarizeLessonPoolValidation, toExerciseDraft } from "./lesson-drafts";
+import { buildLessonPayload, buildObjectiveCriteria, collectBatchExerciseMetadata, countPerObjective, filterExercisesToRequestedObjective, isWellShapedRawExercise, lessonPayloadVersion, poolStageCounts, splitStages, stripParentAddedFlags, summarizeLessonPoolValidation, toExerciseDraft } from "./lesson-drafts";
 
 describe("calculation persistence and grading criteria", () => {
   const calculation = { kind: "scale_distance" as const, params: { scaleDenominator: 25000, mapDistanceCm: 3 }, unit: "m" as const, templateFamilyId: "scale" };
@@ -220,5 +220,20 @@ describe("countPerObjective (pula strukturalnie publikowalna, W3)", () => {
       expect(split.productive).toBeGreaterThanOrEqual(2);
       expect(split.independent).toBeGreaterThanOrEqual(2);
     }
+  });
+});
+
+describe("poolStageCounts (rachunek nie zabiera miejsca wymaganym pytaniom otwartym)", () => {
+  it("przy celu z rachunkami przesuwa jedno miejsce z produktywnego do samodzielnego, zachowując budżet i minima", () => {
+    // 60 ćwiczeń na 6 zagadnień (sonda na prawdziwym LLM): 4/4/2 — oba samodzielne potrzebne pytaniom otwartym.
+    expect(splitStages(10)).toEqual({ guided: 4, productive: 4, independent: 2 });
+    expect(poolStageCounts(schoolSubject, ["lesson_open_answer", "lesson_calculation"], 10)).toEqual({ guided: 4, productive: 3, independent: 3 });
+  });
+
+  it("nie zmienia podziału bez rachunków, przy zapasie samodzielnym ani kosztem minimum produktywnego", () => {
+    expect(poolStageCounts(schoolSubject, ["lesson_open_answer"], 10)).toEqual(splitStages(10));
+    expect(poolStageCounts(schoolSubject, ["lesson_open_answer", "lesson_calculation"], 15)).toEqual(splitStages(15));
+    // 5 → 2/2/1: przesunięcie zabrałoby produktywnemu minimum 2, więc podział zostaje.
+    expect(poolStageCounts(schoolSubject, ["lesson_open_answer", "lesson_calculation"], 5)).toEqual(splitStages(5));
   });
 });

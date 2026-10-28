@@ -108,14 +108,33 @@ export function renderCalculationPrompt(input: CalculationSpec): string {
   }
 }
 
+/** Unit symbol or its Polish word form (metr, metry, metr\u00f3w, metra\u2026). */
+const UNIT_PATTERN = "cm|centymetr(?:a|y|\u00f3w)?|km|kilometr(?:a|y|\u00f3w)?|m|metr(?:a|y|\u00f3w)?";
+// Only the listed spaces can group digits. No partial parsing, decimal dot,
+// exponent or free-form explanation is accepted as a numeric answer. Accepted
+// school notation around the number: a typographic minus, "m n.p.m." (copied
+// from height prompts) and one closing period, as in "750 m.".
+const ANSWER_PATTERN = new RegExp(
+  "^([+\\-\\u2212]?(?:[0-9]{1,3}(?:[ \\u00a0\\u202f][0-9]{3})+|[0-9]+)(?:,[0-9]{1,9})?)" +
+    `[ \\u00a0\\u202f]*(?:(${UNIT_PATTERN})(?:[ \\u00a0\\u202f]*n\\.?[ \\u00a0\\u202f]*p\\.?[ \\u00a0\\u202f]*m)?)?` +
+    "[ \\u00a0\\u202f]*\\.?$",
+  "iu",
+);
+
+function unitOf(token: string | undefined): LengthUnit | null {
+  if (token === undefined) return null;
+  const lower = token.toLowerCase();
+  if (lower.startsWith("c")) return "cm";
+  if (lower.startsWith("k")) return "km";
+  return "m";
+}
+
 function parseExactAnswer(text: string): { value: Fraction; unit: LengthUnit | null } | null {
-  // Only the listed spaces can group digits. No partial parsing, dot, exponent
-  // or free-form explanation is accepted as a numeric answer.
-  const match = /^([+-]?(?:[0-9]{1,3}(?:[ \u00a0\u202f][0-9]{3})+|[0-9]+)(?:,[0-9]{1,9})?)[ \u00a0\u202f]*(cm|m|km)?$/i.exec(text.trim());
+  const match = ANSWER_PATTERN.exec(text.trim());
   if (!match) return null;
-  const numberText = match[1].replace(/[ \u00a0\u202f]/g, "").replace(",", ".");
+  const numberText = match[1].replace(/[ \u00a0\u202f]/g, "").replace("\u2212", "-").replace(",", ".");
   if (!Number.isFinite(Number(numberText))) return null;
-  return { value: decimalFraction(numberText), unit: match[2]?.toLowerCase() as LengthUnit | undefined ?? null };
+  return { value: decimalFraction(numberText), unit: unitOf(match[2]) };
 }
 
 export function parseCalculationAnswer(text: string): { value: number; unit: LengthUnit | null } | null {

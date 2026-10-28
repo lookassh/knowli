@@ -80,6 +80,24 @@ function systemPrompt(input: LlmGenerateDeckInput): string {
 }
 
 /**
+ * Jawny przydział etapu samodzielnego, gdy przedmiot wymaga różnych pytań
+ * otwartych: najpierw one, rachunki tylko w nadwyżce miejsc (model traktował
+ * menu typów jako wymienne i rachunek zajmował miejsce wymaganego pytania).
+ */
+function independentReservation(input: LessonPoolInput): string {
+  if (input.minDistinctOpenAnswers === undefined) return "";
+  const open = Math.min(input.stageCounts.independent, input.minDistinctOpenAnswers);
+  const spare = input.stageCounts.independent - open;
+  const calculations = !input.exerciseTypes.includes("lesson_calculation")
+    ? ""
+    : spare > 0
+      ? `At most ${spare} independent slot(s) may be lesson_calculation, and only when the material teaches the method. `
+      : "No independent slot is left for lesson_calculation in this batch: produce no calculations. ";
+  return `Independent slots: the first ${open} MUST be lesson_open_answer questions with DIFFERENT model answers (not one family). ` +
+    calculations;
+}
+
+/**
  * Prompt systemowy generacji puli lekcji: złożony WYŁĄCZNIE z danych wejścia
  * (opis przedmiotu, profil promptów, cele, dozwolone typy, przekształcenia,
  * liczby etapów). Adapter nie zna gramatyki — każdy fakt o przedmiocie pochodzi
@@ -121,6 +139,7 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
       `${input.stageCounts.guided} guided (${stageMenu(["lesson_choice", "lesson_order", "lesson_short_answer"])}), ` +
       `${input.stageCounts.productive} productive (${stageMenu(["lesson_gap", "lesson_error_fix", "lesson_transform"])}), ` +
       `${input.stageCounts.independent} independent (${stageMenu(["lesson_open_answer", "lesson_calculation"])}). ` +
+      independentReservation(input) +
       "The stage type lists are a menu, not a per-exercise requirement: every exercise must use ONLY an exerciseType " +
       "from its objective's allowed list above — if none of a stage's listed types is allowed for the objective, " +
       "cover that stage with an allowed type (typically lesson_choice).",
