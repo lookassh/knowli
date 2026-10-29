@@ -465,7 +465,9 @@ Punkty 1–3 i 6 wdrożone; punkty 4 i 5 odłożone na krok po pilotażu.
 
 ## 8. Raport kartkówki z wymiarem precyzji (Etap 5) — kontrakt
 
-Status: projekt do akceptacji właściciela (2026-10-29), przed kodem. Moduł
+Status: zaakceptowany przez właściciela 2026-10-29 (decyzje 8.4 z
+proponowanymi tekstami) i zaimplementowany na gałęzi
+`feature/school-mock-test-precision`. Moduł
 odpowiedzialny: kartkówka lekcji (`learning/lessons/lesson-mock-tests.ts`);
 kontrakty w `packages/contracts/src/lessons.ts`. Słówka i gramatyka bez zmian.
 

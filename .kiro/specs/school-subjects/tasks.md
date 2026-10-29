@@ -202,9 +202,11 @@ odrzuceń w pełnej sondzie.
 
 ## Etap 5 — Domknięcie
 
-- [ ] Raport kartkówki z wymiarem precyzji; przegląd API → MCP → skill
-      (oczekiwany brak wpływu — odnotować w opisie PR).
-- [ ] Dokumentacja: SPEC i architektura od „zaprojektowano” do stanu kodu.
+- [x] Raport kartkówki z wymiarem precyzji (design §8: raport rodzica,
+      wskazówki precyzji i „Warto powtórzyć” w omówieniu dziecka); przegląd
+      API → MCP → skill: brak wpływu, lekcje są poza `learning-overview`.
+- [x] Dokumentacja: SPEC §28 i architektura §22 przepisane na stan kodu
+      (Etap 3 nadal tylko zaprojektowany).
 - [ ] Pełny przebieg: `pnpm typecheck`, `pnpm test:unit`,
       `pnpm test:integration` (pliki lekcji), `pnpm build`,
       `pnpm test:e2e:shards`.
