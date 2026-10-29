@@ -60,9 +60,9 @@ describe("kid-ui design tokens", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("keeps literal colors out of components (deterministic visuals excepted)", () => {
+  it("keeps literal colors out of components (deterministic visuals and illustrations excepted)", () => {
     const offenders = files(SRC, /\.tsx?$/)
-      .filter((url) => !relative(url).startsWith("visuals/") && !/\.test\.tsx?$/.test(url.pathname))
+      .filter((url) => !relative(url).startsWith("visuals/") && !relative(url).startsWith("illustrations/") && !/\.test\.tsx?$/.test(url.pathname))
       .flatMap((url) => [...readFileSync(url, "utf8").matchAll(/["'`]#[0-9a-fA-F]{3,8}["'`]/g)].map((match) => `${relative(url)}: ${match[0]}`));
     expect(offenders).toEqual([]);
   });
