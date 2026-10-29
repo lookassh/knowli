@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { Accordion, Alert, Group, Loader, Paper, Stack, Text, TextInput, Title } from "@mantine/core";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { messages, type ChildDto, type ParentWorkCardDto } from "@learning/contracts";
 import { errorMessage } from "./api";
 import { ChildPicker } from "./ChildPicker";
@@ -41,6 +41,9 @@ function stepTypeLabel(type: string): string {
 }
 
 type Session = ParentWorkCardDto["sessions"][number];
+
+/** Stała funkcja `select` — TanStack nie przelicza jej przy każdym renderze. */
+const selectBody = (response: { body: ParentWorkCardDto }): ParentWorkCardDto => response.body;
 
 /** Wynik oceny aktywności jednej sesji: czasy, punkty i wyjaśnienie. */
 function SessionActivityCard({ activity }: { activity: Session["activity"] }) {
@@ -148,12 +151,23 @@ export default function WorkCardPanel({ childrenList }: { childrenList: ChildDto
 
   // datę wysyłamy tylko niepustą — pusty string nie przeszedłby walidacji
   // granicy (DaySchema), a semantycznie znaczy „dzień dzisiejszy”
-  const query = useQuery({
-    ...orpc.workCard.get.queryOptions({ input: { childId, ...(date ? { date } : {}) } }),
-    enabled: childId !== "",
-    select: (response) => response.body,
-  });
+  const queryClient = useQueryClient();
+  const options = orpc.workCard.get.queryOptions({ input: { childId, ...(date ? { date } : {}) } });
+  const query = useQuery({ ...options, enabled: childId !== "", select: selectBody });
   const report = query.data;
+
+  // Po pierwszym wczytaniu „dziś” staje się konkretnym dniem z API: zmiana
+  // dziecka (także po północy) pyta o ten sam dzień, który rodzic ogląda.
+  // Odpowiedź kopiujemy pod klucz z datą, więc raport nie znika na czas
+  // odświeżenia pod nowym kluczem.
+  useEffect(() => {
+    if (date || !report) return;
+    const raw = queryClient.getQueryData(options.queryKey);
+    if (raw) {
+      queryClient.setQueryData(orpc.workCard.get.queryKey({ input: { childId, date: report.date } }), raw);
+    }
+    setDate(report.date);
+  }, [date, report, queryClient, options.queryKey, childId]);
 
   if (childrenList.length === 0) {
     return (
@@ -174,7 +188,7 @@ export default function WorkCardPanel({ childrenList }: { childrenList: ChildDto
           type="date"
           label={messages.workCard.dateLabel}
           className="pp-work-date"
-          value={date || report?.date || ""}
+          value={date}
           onChange={event => setDate(event.currentTarget.value)}
         />
       </Group>

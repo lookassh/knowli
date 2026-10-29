@@ -45,7 +45,7 @@ function Card({ testId, title, icon, children, label }: {
   return (
     <Paper component="section" withBorder radius="lg" p="md" data-testid={testId} aria-label={label}>
       {title && (
-        <Title order={3} fz="md" mb="sm" className="pp-prog-cardtitle">
+        <Title order={2} fz="md" mb="sm" className="pp-prog-cardtitle">
           {icon && <ParentIcon name={icon} />}
           {title}
         </Title>
@@ -227,11 +227,13 @@ export default function ProgressPanel({
     );
   }
 
-  const selectedChild = childrenList.find((child) => child.id === childId);
+  // notka profilu obrazkowego dotyczy dziecka z pokazanego raportu (podczas
+  // wczytywania nowego filtra na ekranie zostaje jeszcze poprzedni raport)
+  const reportChild = progress ? childrenList.find((child) => child.id === progress.childId) : undefined;
   const due = progress ? dueEntries(progress.items) : [];
 
   return (
-    <Stack gap="md" className="pp-prog">
+    <Stack gap="md" className="pp-prog" aria-busy={query.isFetching}>
       <Title order={1} fz={26}>{messages.progress.title}</Title>
       <Stack gap="sm">
         <ChildPicker
@@ -279,7 +281,7 @@ export default function ProgressPanel({
             currentDeckVersionId={published.find((deck) => deck.deckId === progress.deckId)?.publishedVersionId}
           />
           <ActivityCard progress={progress} />
-          {selectedChild?.canRead === false && (
+          {reportChild?.canRead === false && (
             <Alert color="blue" variant="light" data-testid="progress-picture-note">{messages.progress.pictureProfileNote}</Alert>
           )}
           <div>

@@ -44,7 +44,7 @@ function statusDot(status: ItemSkillStatus): ReactElement {
 export default function ProgressItems({ items }: { items: ProgressItemDto[] }) {
   return (
     <Paper component="section" withBorder radius="lg" p="md" className="pp-prog-items" aria-labelledby="progress-items-heading">
-      <Title order={3} fz="md" id="progress-items-heading" mb="xs">{messages.progress.allWords}</Title>
+      <Title order={2} fz="md" id="progress-items-heading" mb="xs">{messages.progress.allWords}</Title>
       <StatusLegend testId="progress-legend" />
       {items.length === 0 ? <Text mt="sm">{messages.progress.wordsEmpty}</Text> : (
         <>

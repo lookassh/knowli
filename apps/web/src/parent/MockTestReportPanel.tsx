@@ -39,6 +39,9 @@ function parentLine(word: MockReportWord): string {
 
 const OUTCOME_TONE = { correct: "success", incorrect: "danger" } as const;
 
+/** Stała funkcja `select`: walidacja Zod nie powtarza się przy każdym renderze. */
+const parseReports = (result: { body: unknown }) => MockTestReportDtoSchema.array().parse(result.body);
+
 /**
  * Próbne kartkówki dziecka w zestawie. Komponent dostaje `key` z parą
  * dziecko × zestaw, więc wybór próby wraca do najnowszej po zmianie filtra.
@@ -50,7 +53,7 @@ export default function MockTestReportPanel({ childId, deckId, currentDeckVersio
 }) {
   const query = useQuery({
     ...orpc.mockTests.list.queryOptions({ input: { childId, deckId } }),
-    select: (result) => MockTestReportDtoSchema.array().parse(result.body),
+    select: parseReports,
   });
   const reports = query.data ?? [];
   const [chosen, setChosen] = useState<string | null>(null);
@@ -62,7 +65,7 @@ export default function MockTestReportPanel({ childId, deckId, currentDeckVersio
   return (
     <Paper component="section" withBorder radius="lg" p="md" aria-label={messages.progress.mockTestsTitle}>
       <Group justify="space-between" align="flex-end" gap="sm" mb="sm">
-        <Title order={3} fz="md" className="pp-prog-cardtitle">
+        <Title order={2} fz="md" className="pp-prog-cardtitle">
           <ParentIcon name="clipboard-check" />
           {messages.progress.mockTestsTitle}
         </Title>

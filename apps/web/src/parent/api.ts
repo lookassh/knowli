@@ -93,6 +93,11 @@ export function errorMessage(error: unknown): string {
     const envelope = (error.data as { envelope?: { message?: string } } | undefined)?.envelope;
     return envelope?.message || messages.errors.internal;
   }
+  // jak w `callParent`: niezrozumiała odpowiedź (np. strona HTML proxy) albo
+  // dane niezgodne ze schematem to ogólny polski komunikat, nie tekst techniczny
+  if (error instanceof MalformedResponseError || error instanceof SyntaxError || (error instanceof Error && error.name === "ZodError")) {
+    return messages.errors.internal;
+  }
   if (error instanceof ApiCallError || error instanceof Error) {
     return error.message || messages.errors.internal;
   }

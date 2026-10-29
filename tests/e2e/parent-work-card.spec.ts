@@ -45,8 +45,11 @@ test("karta pracy odświeża raport po zmianie dziecka i daty", async ({ page })
   await expect(page.getByText("1 min 30 s")).toBeVisible();
   await expect(page.getByText("Brak zapisanej pracy tego dnia.")).toBeVisible();
 
+  // pierwsze wczytanie ustala dzień z API; zmiana dziecka pyta o ten sam dzień
+  await expect(page.getByLabel("Dzień")).toHaveValue("2026-10-16");
   await page.getByRole("button", { name: "Bartek" }).click();
   await expect(page.getByText("3 min 0 s")).toBeVisible();
+  expect(requested.filter((value) => value.childId === secondChild)).toEqual([{ childId: secondChild, date: "2026-10-16" }]);
 
   const date = "2026-10-15";
   await page.getByLabel("Dzień").fill(date);

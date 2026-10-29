@@ -100,6 +100,13 @@ test("Karta pracy na telefonie: bez przewijania w poziomie, szczegóły oceny ro
   await page.goto("/parent/work-card");
   await expect(page.getByTestId("work-card-credited")).toHaveText("3 min 0 s");
   await expect(page.getByLabel(messages.workCard.dateLabel)).toHaveValue("2026-10-16");
+  // pole daty ma własną ramkę Mantine (stara reguła panelu bez zakresu ją zdejmowała)
+  const border = await page.getByLabel(messages.workCard.dateLabel).evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { width: style.borderTopWidth, color: style.borderTopColor };
+  });
+  expect(border.width).toBe("1px");
+  expect(border.color).not.toBe("rgba(0, 0, 0, 0)");
   await expectNoHorizontalOverflow(page);
 
   const toggle = page.getByRole("button", { name: messages.workCard.activityExcludedTitle });
