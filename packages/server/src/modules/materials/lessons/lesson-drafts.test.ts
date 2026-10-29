@@ -5,7 +5,7 @@ import { validatePool } from "../../../domain/lessons/pool-validation";
 import type { LessonExerciseDraft, LessonTopic } from "../../../domain/lessons/types";
 import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
 import { validateDynamicTopicData } from "../../../domain/lessons/topic-resolution";
-import { buildDynamicTopicData, buildLessonPayload, buildObjectiveCriteria, collectBatchExerciseMetadata, countPerObjective, filterExercisesToRequestedObjective, isWellShapedRawExercise, lessonPayloadVersion, poolStageCounts, scopeFamiliesToRun, splitStages, stripParentAddedFlags, summarizeLessonPoolValidation, toExerciseDraft, withoutEmptyOptionalArrays } from "./lesson-drafts";
+import { buildDynamicTopicData, buildLessonPayload, buildObjectiveCriteria, collectBatchExerciseMetadata, filterExercisesToRequestedObjective, minimumCountPerObjective, objectiveBatchCounts, isWellShapedRawExercise, lessonPayloadVersion, poolStageCounts, scopeFamiliesToRun, splitStages, stripParentAddedFlags, summarizeLessonPoolValidation, toExerciseDraft, withoutEmptyOptionalArrays } from "./lesson-drafts";
 
 describe("calculation persistence and grading criteria", () => {
   const calculation = { kind: "scale_distance" as const, params: { scaleDenominator: 25000, mapDistanceCm: 3 }, unit: "m" as const, templateFamilyId: "scale" };
@@ -212,15 +212,34 @@ describe("stripParentAddedFlags (generacja nie jest źródłem rodzica)", () => 
   });
 });
 
-describe("countPerObjective (pula strukturalnie publikowalna, W3)", () => {
-  it("podział na etapy spełnia minima każdego etapu szkoły (3/2/2) także przy małej puli i wielu zagadnieniach", () => {
+describe("objectiveBatchCounts (pula strukturalnie publikowalna i nieprzekraczana, W3)", () => {
+  it("każda partia spełnia minima każdego etapu szkoły (3/2/2), także przy małej puli i wielu zagadnieniach", () => {
     for (const objectiveCount of [1, 3, 8]) {
-      const count = countPerObjective(20, objectiveCount, schoolSubject);
-      const split = splitStages(count);
-      expect(split.guided).toBeGreaterThanOrEqual(3);
-      expect(split.productive).toBeGreaterThanOrEqual(2);
-      expect(split.independent).toBeGreaterThanOrEqual(2);
+      for (const count of objectiveBatchCounts(20, objectiveCount, schoolSubject)) {
+        const split = splitStages(count);
+        expect(split.guided).toBeGreaterThanOrEqual(3);
+        expect(split.productive).toBeGreaterThanOrEqual(2);
+        expect(split.independent).toBeGreaterThanOrEqual(2);
+      }
     }
+  });
+
+  it("suma partii równa się zamówionej puli, gdy pula mieści minima (bez nadwyżki z zaokrągleń)", () => {
+    const minimum = minimumCountPerObjective(schoolSubject);
+    for (const poolSize of [20, 30, 60, 100, 120, 160]) {
+      for (const objectiveCount of [1, 2, 3, 5, 6, 7, 8]) {
+        const counts = objectiveBatchCounts(poolSize, objectiveCount, schoolSubject);
+        const sum = counts.reduce((a, b) => a + b, 0);
+        expect(counts).toHaveLength(objectiveCount);
+        expect(sum, `pula ${poolSize}, cele ${objectiveCount}`).toBe(Math.max(poolSize, minimum * objectiveCount));
+      }
+    }
+  });
+
+  it("przy puli mniejszej niż minima podnosi ją do minimum publikacji (8 celów × minimum)", () => {
+    const minimum = minimumCountPerObjective(schoolSubject);
+    expect(objectiveBatchCounts(20, 8, schoolSubject)).toEqual(Array(8).fill(minimum));
+    expect(objectiveBatchCounts(160, 3, schoolSubject).reduce((a, b) => a + b, 0)).toBe(160);
   });
 });
 

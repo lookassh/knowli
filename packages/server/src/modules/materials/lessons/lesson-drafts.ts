@@ -293,24 +293,56 @@ export function poolStageCounts(
   return { ...split, productive: split.productive - 1, independent: split.independent + 1 };
 }
 
-/**
- * Liczba ćwiczeń per cel: ceil(poolSize / liczba celów), ale nie mniej niż
- * najmniejsza liczba, której podział na etapy spełnia minima KAŻDEGO etapu
- * pokrycia przedmiotu — sama suma minimów nie wystarcza, bo zaokrąglenia
- * miksu potrafią dać np. independent=1 przy minimum 2 (pula strukturalnie
- * niepublikowalna mimo idealnej odpowiedzi modelu).
- */
-export function countPerObjective(poolSize: number, objectiveCount: number, subject: SubjectModule): number {
+function meetsStageMinimums(count: number, subject: SubjectModule): boolean {
   const minimums = subject.poolMinimums ?? DEFAULT_LESSON_POLICY.poolMinimums;
-  const floor = minimums.guided + minimums.productive + minimums.independent;
-  const requested = Math.max(floor, Math.ceil(poolSize / Math.max(1, objectiveCount)));
-  let count = requested;
-  while (count < requested + 24) {
-    const split = splitStages(count);
-    if (split.guided >= minimums.guided && split.productive >= minimums.productive && split.independent >= minimums.independent) break;
-    count += 1;
-  }
+  const split = splitStages(count);
+  return split.guided >= minimums.guided && split.productive >= minimums.productive && split.independent >= minimums.independent;
+}
+
+/**
+ * Najmniejsza liczba ćwiczeń celu, której podział na etapy spełnia minima
+ * KAŻDEGO etapu pokrycia przedmiotu — sama suma minimów nie wystarcza, bo
+ * zaokrąglenia miksu potrafią dać np. independent=1 przy minimum 2 (pula
+ * strukturalnie niepublikowalna mimo idealnej odpowiedzi modelu).
+ */
+export function minimumCountPerObjective(subject: SubjectModule): number {
+  const minimums = subject.poolMinimums ?? DEFAULT_LESSON_POLICY.poolMinimums;
+  let count = minimums.guided + minimums.productive + minimums.independent;
+  while (!meetsStageMinimums(count, subject)) count += 1;
   return count;
+}
+
+/**
+ * Liczby ćwiczeń partii per cel. Zamówiona pula dzieli się dokładnie (część
+ * całkowita + reszta), więc suma partii jej nie przekracza. Wyjątek: gdy pula
+ * jest mniejsza niż (liczba celów × minimum publikacji), każdy cel dostaje
+ * minimum — inaczej szkic byłby niepublikowalny; nadwyżkę loguje wywołujący.
+ */
+export function objectiveBatchCounts(poolSize: number, objectiveCount: number, subject: SubjectModule): number[] {
+  const objectives = Math.max(1, objectiveCount);
+  const total = Math.max(poolSize, minimumCountPerObjective(subject) * objectives);
+  const base = Math.floor(total / objectives);
+  const remainder = total % objectives;
+  return Array.from({ length: objectives }, (_, index) => {
+    let count = base + (index < remainder ? 1 : 0);
+    while (!meetsStageMinimums(count, subject)) count += 1;
+    return count;
+  });
+}
+
+/** Partie pełnej generacji; nadwyżkę ponad zamówioną pulę (minimum publikacji) zapisuje w logu. */
+function batchesForObjectives(
+  objectiveIds: readonly string[],
+  poolSize: number,
+  subject: SubjectModule,
+  runId: string,
+): { objectiveId: string; count: number; existingAnswers: string[]; existingExercises: LessonExerciseStimulus[] }[] {
+  const counts = objectiveBatchCounts(poolSize, objectiveIds.length, subject);
+  const total = counts.reduce((sum, count) => sum + count, 0);
+  if (total > poolSize) {
+    console.log(`[lesson] run=${runId} pula podniesiona do minimum publikacji: ${total} zamiast ${poolSize} (cele=${objectiveIds.length})`);
+  }
+  return objectiveIds.map((objectiveId, index) => ({ objectiveId, count: counts[index]!, existingAnswers: [], existingExercises: [] }));
 }
 
 /** Składa `LessonPoolInput` dla jednego celu z danych rejestru (port nie zna przedmiotu). */
@@ -918,12 +950,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
       ]
     : needsDynamicObjectives
       ? []
-      : input.objectiveIds.map((objectiveId) => ({
-        objectiveId,
-        count: countPerObjective(input.poolSize, input.objectiveIds.length, subject),
-        existingAnswers: [],
-        existingExercises: [],
-      }));
+      : batchesForObjectives(input.objectiveIds, input.poolSize, subject, runId);
 
   const rawExercises: unknown[] = [];
   let rawExerciseCount = 0;
@@ -981,12 +1008,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
       }
       dynamicTopicData = built.data;
       topic = subject.buildDynamicTopic!(built.data);
-      batches = built.data.objectives.map((objective) => ({
-        objectiveId: objective.id,
-        count: countPerObjective(input.poolSize, built.data!.objectives.length, subject),
-        existingAnswers: [],
-        existingExercises: [],
-      }));
+      batches = batchesForObjectives(built.data.objectives.map((objective) => objective.id), input.poolSize, subject, runId);
       console.log(`[lesson] run=${runId} etap zagadnień: cele=${batches.length}`);
       droppedObjectiveCount = built.errors.length;
       if (droppedObjectiveCount > 0) {
