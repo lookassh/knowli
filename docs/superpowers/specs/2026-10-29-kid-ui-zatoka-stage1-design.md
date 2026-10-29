@@ -1,6 +1,6 @@
 # Redesign Kid UI „Zatoka” — etap 1: język wizualny i ekrany wokół sesji
 
-**Status:** projekt zatwierdzony w rozmowie 2026-10-29 (kierunek, sekcje 1–3). Ten zapis czeka na przegląd właściciela; dopiero po nim powstaje plan implementacji. Zastępuje kolorystykę i wymuszony ciemny motyw z `2026-10-11-kid-ui-redesign-design.md` oraz paletę z #148; ramę sesji, zasady ekranu zadania i viewportu z tamtego specu zachowuje.
+**Status:** projekt zatwierdzony w rozmowie 2026-10-29 (kierunek, sekcje 1–3); przy akceptacji specu właściciel zdecydował: **tylko ciemny motyw** — jasny schemat nie powstaje w tym etapie. Zastępuje paletę z #148 i kolorystykę z `2026-10-11-kid-ui-redesign-design.md`; ramę sesji, zasady ekranu zadania i viewportu z tamtego specu zachowuje.
 
 ## 1. Cel, odbiorca, kryteria
 
@@ -9,7 +9,7 @@ Kid UI ma wyglądać na aplikację dla ok. 8-letniego dziecka: ciepło i spokojn
 Kryteria sukcesu:
 
 - Na każdym ekranie jedna oczywista główna akcja; drugorzędne akcje nadal osiągalne.
-- Jasny i ciemny motyw według `prefers-color-scheme`, oba z kontrastem WCAG AA (tekst 4,5:1, duży tekst, granice kontrolek i istotna grafika 3:1).
+- Jeden ciemny motyw Zatoka, niezależny od `prefers-color-scheme` systemu (jak dziś), z kontrastem WCAG AA (tekst 4,5:1, duży tekst, granice kontrolek i istotna grafika 3:1).
 - Brak poziomego przepełnienia i cele dotykowe ≥ 48 px (główna akcja ≥ 54 px) w portrait, landscape telefonu, tablecie i desktopie — potwierdzone testami geometrii Playwright.
 - Istniejące zachowanie, `data-testid`, kontrakty i przepływy bez zmian.
 
@@ -17,25 +17,25 @@ Kryteria sukcesu:
 
 Redesign ma dwa etapy, każdy z własnym specem, planem i PR do scalenia przez właściciela.
 
-- **Etap 1 (ten dokument):** język wizualny (tokeny obu motywów, typografia, kształty, ilustracje) oraz ekrany: wybór profilu (`ProfileScreen`), wybór zestawu (`DeckScreen`), podsumowanie sesji (`SummaryScreen` z `SessionActivityResultView`), start i podsumowanie kartkówki (`MockTestReadyScreen`, `MockTestSummaryScreen`), podsumowanie kartkówki lekcji (`LessonMockTestSummaryScreen`), konflikt sesji (`SessionConflictScreen`) i puste stany tych ekranów.
-- **Etap 2 (osobno):** rama sesji, widoki ćwiczeń słownictwa i lekcji, panel wyniku (`ExerciseFeedbackDock`, `AnswerFeedback*`, `SpeechFeedback*`). W etapie 1 te ekrany dostają wyłącznie nowe tokeny, czcionki i kształty przez istniejące aliasy — bez zmian układu — i muszą przejść obecne testy geometrii i kontrastu w obu motywach.
+- **Etap 1 (ten dokument):** język wizualny (tokeny ciemnego motywu, typografia, kształty, ilustracje) oraz ekrany: wybór profilu (`ProfileScreen`), wybór zestawu (`DeckScreen`), podsumowanie sesji (`SummaryScreen` z `SessionActivityResultView`), start i podsumowanie kartkówki (`MockTestReadyScreen`, `MockTestSummaryScreen`), podsumowanie kartkówki lekcji (`LessonMockTestSummaryScreen`), konflikt sesji (`SessionConflictScreen`) i puste stany tych ekranów.
+- **Etap 2 (osobno):** rama sesji, widoki ćwiczeń słownictwa i lekcji, panel wyniku (`ExerciseFeedbackDock`, `AnswerFeedback*`, `SpeechFeedback*`). W etapie 1 te ekrany dostają wyłącznie nowe tokeny, czcionki i kształty przez istniejące aliasy — bez zmian układu — i muszą przejść obecne testy geometrii i kontrastu (także z emulacją jasnego i ciemnego motywu systemu).
 
 Poza zakresem: zmiany Kid API, DTO, bazy, ocen, harmonogramu, ekspozycji, kartkówki i panelu rodzica; przełącznik motywu w UI; gamifikacja; maskotka reagująca na wyniki. MCP i `SKILL.md` nie są dotknięte (brak zmian API) — uzasadnienie trafia do opisu PR.
 
 ## 3. Referencja wizualna
 
-Zatwierdzony kierunek **B · Zatoka** na canvasie [Umiem! — kierunki Kid UI](https://claude.ai/artifact/RFfcE7SPiNsjppeMjYFJkj) (artboard `Zatoka.dc.html`, motyw jasny i ciemny ekranu „Co dziś robimy?”). Makieta jest pomocniczym szkicem, nie kodem ani zależnością: przykładowe dane (imię „Ola”, zestawy, liczby, 3 gwiazdki zamiast `MASTERY_STAR_MAX = 6`), kolory szkicu i ilustracje okładek nie trafiają do produkcji jako wartości. Okładki zestawów pozostają z `coverAssetId`/`coverVisual`.
+Zatwierdzony kierunek **B · Zatoka** na canvasie [Umiem! — kierunki Kid UI](https://claude.ai/artifact/RFfcE7SPiNsjppeMjYFJkj) (artboard `Zatoka.dc.html`; obowiązuje telefon „Ciemny”, wersja jasna z makiety nie jest wdrażana). Makieta jest pomocniczym szkicem, nie kodem ani zależnością: przykładowe dane (imię „Ola”, zestawy, liczby, 3 gwiazdki zamiast `MASTERY_STAR_MAX = 6`), kolory szkicu i ilustracje okładek nie trafiają do produkcji jako wartości. Okładki zestawów pozostają z `coverAssetId`/`coverVisual`.
 
 ## 4. Język wizualny
 
 ### 4.1 Kolory
 
-- Dwa pełne schematy Material 3 (`DynamicScheme`, wariant tonal spot) z tych samych parametrów, jasny i ciemny. Parametry wyjściowe: primary — morski błękit, hue ≈ 240, chroma ≈ 40; secondary — ten sam hue, niższa chroma; tertiary (sukces) — zieleń, hue ≈ 150; neutral i neutral variant — piasek, hue ≈ 85, chroma odpowiednio ≈ 6 i ≈ 12; error — łagodna czerwień jak dziś (hue 25, chroma 56). Grupa „warm” (bursztyn, hue 75) zostaje dla gwiazdek, chipu terminu kartkówki i stanu „prawie”. Dokładne wartości chroma dobiera się tak, aby test kontrastu (§7) przechodził; zmienia się parametry i regeneruje całość, nie pojedyncze role.
+- Jeden pełny ciemny schemat Material 3 (`DynamicScheme`, wariant tonal spot, `isDark: true`). Parametry wyjściowe: primary — morski błękit, hue ≈ 240, chroma ≈ 40; secondary — ten sam hue, niższa chroma; tertiary (sukces) — zieleń, hue ≈ 150; neutral i neutral variant — morski granat, hue ≈ 225, chroma odpowiednio ≈ 10 i ≈ 16 (zamiast obecnego fioletowawego hue 268); error — łagodna czerwień jak dziś (hue 25, chroma 56). Grupa „warm” (bursztyn, hue 75) zostaje dla gwiazdek, chipu terminu kartkówki i stanu „prawie”; ciepło ciemnego motywu dają warm, okładki i ilustracje, nie tło. Dokładne wartości chroma dobiera się tak, aby test kontrastu (§7) przechodził; zmienia się parametry i regeneruje całość, nie pojedyncze role.
 - Sukces musi różnić się od primary także jasnością, nie samym odcieniem (sprawdza test kontrastu par ról, §7).
-- Nowy skrypt deweloperski `scripts/kid-palette.mjs` z `@material/material-color-utilities` (devDependency w root) wypisuje oba bloki tokenów; parametry są w komentarzu bloku i w skrypcie. Wynik wkleja się do `styles.css`; skrypt nie jest częścią buildu.
-- Struktura `styles.css`: blok `.kid-theme, .kid-ui { … }` z tokenami jasnymi oraz `@media (prefers-color-scheme: dark) { .kid-theme, .kid-ui { … } }` z ciemnymi. Tylko te dwa bloki mogą zawierać literały koloru, rozmiaru fontu i promienia.
+- Nowy skrypt deweloperski `scripts/kid-palette.mjs` z `@material/material-color-utilities` (devDependency w root) wypisuje blok tokenów kolorów; parametry są w komentarzu bloku i w skrypcie. Wynik wkleja się do `styles.css`; skrypt nie jest częścią buildu. Później może wygenerować też schemat jasny, gdyby właściciel go zechciał — poza tym etapem.
+- Struktura `styles.css` bez zmian: jeden blok `.kid-theme, .kid-ui { … }` jest jedynym miejscem literałów koloru, rozmiaru fontu i promienia.
 - Nowa rola: `--kid-color-header` / `--kid-color-on-header` (z `primary-container` / `on-primary-container`) dla pasa nagłówka. Aliasy `--kid-*` pozostają.
-- Usuwamy wymuszenie nocy: `color-scheme: light dark` w `.kid-ui` i `kid-theme.module.css`, `KidThemeProvider` oznacza korzeń `data-kid-theme="zatoka"` zamiast `"night"` (nazwa motywu, nie trybu; tryb wynika z media query). `KidThemeProvider.test.tsx` i `tests/e2e/kid-theme-scope.spec.ts` przechodzą na nową wartość, zachowując sprawdzenie, że atrybut nie trafia na `<html>`. Kid UI nadal nie zależy od Mantine ani motywu rodzica.
+- Wymuszony ciemny motyw zostaje: `color-scheme: dark` w `.kid-ui` i `kid-theme.module.css`, `KidThemeProvider` z `data-kid-theme="night"` (bez zmian testów zakresu motywu). Kid UI nadal nie zależy od Mantine ani motywu rodzica.
 
 ### 4.2 Typografia
 
@@ -54,7 +54,7 @@ Zatwierdzony kierunek **B · Zatoka** na canvasie [Umiem! — kierunki Kid UI](h
   - `HeaderWave` — fala dolnej krawędzi pasa nagłówka, kolor z `--kid-color-header`;
   - `ProfileAvatar` — sześć zwierzątek dla `avatarKey`: `fox`, `bear`, `cat`, `dog`, `owl`, `rabbit`; nieznany klucz → neutralna buzia SVG (zastępuje emoji i fallback 🙂);
   - `EmptyScene` — prosta scena dla pustych stanów (brak profili, brak zestawów) i ekranu konfliktu.
-- Ilustracje mogą mieć literały kolorów, jak deterministyczne `visuals/`; wyjątek dopisany do `tests/kid-design-tokens.test.ts`. Kolory ilustracji muszą być czytelne na obu tłach (sprawdzane wizualnie zrzutami E2E w obu motywach).
+- Ilustracje mogą mieć literały kolorów, jak deterministyczne `visuals/`; wyjątek dopisany do `tests/kid-design-tokens.test.ts`. Kolory ilustracji muszą być czytelne na ciemnych powierzchniach (sprawdzane zrzutami E2E).
 
 ### 4.5 Ruch
 
@@ -81,13 +81,13 @@ Bez zmian zasad: Motion (`m.*`, `LazyMotion` + `domAnimation`), wyłącznie `tra
 
 ## 7. Weryfikacja
 
-- **Jednostkowe:** `tests/kid-design-tokens.test.ts` akceptuje dwa bloki tokenów (jasny i `prefers-color-scheme: dark`) i wyjątek `illustrations/`; nowy test kontrastu parsuje oba bloki i liczy WCAG dla par: `on-surface`/`surface` i kontenery, `on-surface-variant`/powierzchnie, `on-primary`/`primary`, `on-header`/`header`, `on-*-container`/`*-container` (sukces, błąd, warm), `outline`/powierzchnie (3:1), sukces vs primary (różnica jasności). Testy komponentów: `ProfileAvatar` (znane klucze + fallback), `RowList`, wariant `band`. Istniejące testy `kid-no-mantine`, zakresu motywu i Mantine rodzica przechodzą.
-- **E2E (Playwright):** rozszerzyć `kid-flow-screens.spec.ts` i `kid-answer-contrast.spec.ts` o ekrany etapu 1 w motywach jasnym i ciemnym; `kid-decks-layout.spec.ts`, `kid-responsive.spec.ts` i `kid-ui-layout.spec.ts` — asercje prostokątów pasa, kafelków profili, kart i wierszy zestawów względem viewportu i kontenera, brak poziomego przepełnienia, cele ≥ 48 px, główna akcja ≥ 54 px, w portrait, landscape, tablecie i desktopie. Zrzuty obu motywów jako artefakty do przeglądu. Nowe specy dopisane do partycji w `tests/e2e/spec-projects.ts`.
+- **Jednostkowe:** `tests/kid-design-tokens.test.ts` akceptuje wyjątek `illustrations/`; nowy test kontrastu parsuje blok tokenów i liczy WCAG dla par: `on-surface`/`surface` i kontenery, `on-surface-variant`/powierzchnie, `on-primary`/`primary`, `on-header`/`header`, `on-*-container`/`*-container` (sukces, błąd, warm), `outline`/powierzchnie (3:1), sukces vs primary (różnica jasności). Testy komponentów: `ProfileAvatar` (znane klucze + fallback), `RowList`, wariant `band`. Istniejące testy `kid-no-mantine`, zakresu motywu i Mantine rodzica przechodzą.
+- **E2E (Playwright):** rozszerzyć `kid-flow-screens.spec.ts` i `kid-answer-contrast.spec.ts` o ekrany etapu 1; istniejące przebiegi z emulacją jasnego i ciemnego motywu systemu nadal sprawdzają, że Kid UI pozostaje ciemny i czytelny niezależnie od systemu; `kid-decks-layout.spec.ts`, `kid-responsive.spec.ts` i `kid-ui-layout.spec.ts` — asercje prostokątów pasa, kafelków profili, kart i wierszy zestawów względem viewportu i kontenera, brak poziomego przepełnienia, cele ≥ 48 px, główna akcja ≥ 54 px, w portrait, landscape, tablecie i desktopie. Zrzuty ekranów jako artefakty do przeglądu. Nowe specy dopisane do partycji w `tests/e2e/spec-projects.ts`.
 - **Przed PR:** `pnpm typecheck`, `pnpm test:unit`, `pnpm build`, pełne `pnpm test:e2e:shards`.
 - **Niezweryfikowane testami:** odbiór na fizycznym telefonie i tablecie oraz subiektywny odbiór przez dziecko — raportowane jawnie.
 
 ## 8. Ryzyka
 
-- Jasny motyw ujawni miejsca zakładające ciemne tło (np. ręczne mieszanki `color-mix`, ilustracje, `visuals/`); test kontrastu i zrzuty obu motywów mają je wyłapać, także w zadaniach etapu 2.
+- Nowa paleta zmienia kontrast w zadaniach etapu 2 (stany `AnswerGrid`, feedback, `visuals/`); test kontrastu ról i istniejący `kid-answer-contrast.spec.ts` mają to wyłapać.
 - Wariant `band` dodaje wysokość nad treścią; w niskiej wysokości (< 480 px) pas jest kompaktowy (mniejsze powitanie, fala niższa), aby akcje pozostały osiągalne.
 - Zmiana czcionki może przesunąć szerokości tekstu w istniejących testach geometrii; korekty tylko w tokenach.
