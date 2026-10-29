@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { Alert, Button, Center, Group, Loader, Modal, Paper, Stack, Text, Title } from "@mantine/core";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { hashKey, useQuery, useQueryClient } from "@tanstack/react-query";
 import { messages } from "@learning/contracts";
 import { ApiCallError, callParent, errorMessage, parentClient } from "./api";
 import ChildEditor from "./ChildEditor";
@@ -20,6 +20,7 @@ import "./parent.css";
 
 const SIGNED_OUT = { authenticated: false, setupRequired: false };
 const AUTH_KEY = orpc.auth.state.queryOptions().queryKey;
+const AUTH_HASH = hashKey(AUTH_KEY);
 const CHILDREN_KEY = orpc.children.list.queryOptions().queryKey;
 const DECKS_KEY = orpc.decks.list.queryOptions().queryKey;
 
@@ -45,8 +46,8 @@ export default function ParentApp() {
   const leaveGuard = useParentLeaveGuard();
   const { route, navigate } = useParentNavigation(leaveGuard);
   const section = route.section;
-  // przepisana na Mantine jest na razie lista zestawów; reszta sekcji i edytory — stare style
-  const legacyContent = !(section === "decks" && route.deckId === undefined && !route.newLesson);
+  // sekcje są już na Mantine; stare style mają tylko edytory zestawu i lekcji (fazy 5–6)
+  const legacyContent = route.deckId !== undefined || route.newLesson === true;
   const [reauthOpen, setReauthOpen] = useState(false);
 
   // Stan sesji czytamy raz przy starcie panelu. Później o wygaśnięciu mówią
@@ -75,16 +76,16 @@ export default function ParentApp() {
 
   const signOutLocally = useCallback(() => {
     queryClient.setQueryData(AUTH_KEY, SIGNED_OUT);
-    queryClient.removeQueries({ queryKey: CHILDREN_KEY, exact: true });
-    queryClient.removeQueries({ queryKey: DECKS_KEY, exact: true });
+    // dane dzieci (listy, postępy, karty pracy, progi) nie zostają w pamięci po wylogowaniu
+    queryClient.removeQueries({ predicate: (query) => query.queryHash !== AUTH_HASH });
   }, [queryClient]);
 
   /**
    * Wygasła sesja (401). Z niezapisanymi zmianami w edytorze logowanie otwiera
    * się w oknie nad bieżącym widokiem — formularz zostaje (plan §3.2).
    */
-  // stabilna tożsamość: ProgressPanel i WorkCardPanel mają onAuthExpired
-  // w zależnościach efektu wczytania (obiekt leaveGuard jest nowy co render)
+  // stabilna tożsamość: rejestracja w globalnym handlerze 401 i propsy edytorów
+  // (obiekt leaveGuard jest nowy co render)
   const editorState = leaveGuard.current;
   const toLogin = useCallback(() => {
     if (editorState().dirty) {
@@ -211,11 +212,11 @@ export default function ParentApp() {
             onNavigate={navigate}
           />
         ) : section === "children" ? (
-          <ChildEditor childrenList={childrenList} onChanged={refreshChildren} />
+          <ChildEditor childrenList={childrenList} onChanged={refreshChildren} registerEditorState={leaveGuard.register} />
         ) : section === "progress" ? (
-          <ProgressPanel childrenList={childrenList} decks={decks} onAuthExpired={toLogin} />
+          <ProgressPanel childrenList={childrenList} decks={decks} />
         ) : (
-          <WorkCardPanel childrenList={childrenList} onAuthExpired={toLogin} />
+          <WorkCardPanel childrenList={childrenList} />
         )}
       </ParentShell>
       <LeaveEditorDialog open={leaveGuard.pending} onStay={leaveGuard.stay} onLeave={() => void leaveGuard.leave()} />

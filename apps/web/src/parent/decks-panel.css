@@ -98,26 +98,6 @@
   margin-right: 8px;
 }
 
-.pp-status-badge {
-  display: inline-block;
-  padding: 2px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.6;
-  color: var(--pp-status-neutral-fg);
-  background: var(--pp-status-neutral-bg);
-}
-
-.pp-status-badge[data-tone="success"] {
-  color: var(--pp-status-success-fg);
-  background: var(--pp-status-success-bg);
-}
-
-.pp-status-badge[data-tone="warning"] {
-  color: var(--pp-status-warning-fg);
-  background: var(--pp-status-warning-bg);
-}
 
 .pp-decks-fab {
   box-shadow: 0 6px 18px rgba(23, 25, 48, 0.28);

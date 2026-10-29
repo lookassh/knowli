@@ -1,9 +1,13 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
+import { Accordion, Alert, Group, Loader, Paper, Stack, Text, TextInput, Title } from "@mantine/core";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { messages, type ChildDto, type ParentWorkCardDto } from "@learning/contracts";
-import { callParent, errorMessage, parentClient } from "./api";
-import { avatarEmoji } from "./avatars";
+import { errorMessage } from "./api";
+import { ChildPicker } from "./ChildPicker";
+import { orpc } from "./query-client";
+import "./progress-panel.css";
 
 function duration(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
@@ -36,168 +40,190 @@ function stepTypeLabel(type: string): string {
   return messages.workCard.stepType[type as keyof typeof messages.workCard.stepType] ?? "Ćwiczenie";
 }
 
-/** Karta wyniku oceny aktywności jednej sesji: czasy, punkty i wyjaśnienie. */
-function SessionActivityCard({ activity }: { activity: ParentWorkCardDto["sessions"][number]["activity"] }) {
+type Session = ParentWorkCardDto["sessions"][number];
+
+/** Stała funkcja `select` — TanStack nie przelicza jej przy każdym renderze. */
+const selectBody = (response: { body: ParentWorkCardDto }): ParentWorkCardDto => response.body;
+
+/** Wynik oceny aktywności jednej sesji: czasy, punkty i wyjaśnienie. */
+function SessionActivityCard({ activity }: { activity: Session["activity"] }) {
+  const excluded = activity.excludedTasks ?? [];
   return (
     <div className="pp-work-activity" data-testid="work-card-activity" data-status={activity.status}>
       {activity.status === "evaluated" ? (
-        <>
-          <p>{messages.workCard.activityDuration.replace("{time}", duration(activity.durationSeconds))}</p>
-          <p>{messages.workCard.activityActive.replace("{time}", duration(activity.activeSeconds))}</p>
-          <p>{messages.workCard.activityApproved.replace("{time}", duration(activity.approvedSeconds))}</p>
-          <p>{messages.workCard.activityPoints.replace("{n}", String(activity.pointsAwarded))}</p>
-        </>
+        <div className="pp-work-times">
+          <Text size="sm">{messages.workCard.activityDuration.replace("{time}", duration(activity.durationSeconds))}</Text>
+          <Text size="sm">{messages.workCard.activityActive.replace("{time}", duration(activity.activeSeconds))}</Text>
+          <Text size="sm">{messages.workCard.activityApproved.replace("{time}", duration(activity.approvedSeconds))}</Text>
+          <Text size="sm" fw={600}>{messages.workCard.activityPoints.replace("{n}", String(activity.pointsAwarded))}</Text>
+        </div>
       ) : activity.status === "error" ? (
-        <p>{messages.workCard.activityError}</p>
+        <Text size="sm">{messages.workCard.activityError}</Text>
       ) : (
-        <p>{messages.workCard.activityNotDelivered}</p>
+        <Text size="sm">{messages.workCard.activityNotDelivered}</Text>
       )}
       {activity.status === "evaluated" && activity.reason && (
-        <p>{messages.workCard.activityReasonLabel}: {activity.reason}</p>
+        <Text size="sm" mt="xs">{messages.workCard.activityReasonLabel}: {activity.reason}</Text>
       )}
-      {activity.excludedTasks !== null && activity.excludedTasks.length > 0 && (
-        <details>
-          <summary>{messages.workCard.activityExcludedTitle}</summary>
-          <ul>{activity.excludedTasks.map((excluded, index) => (
-            <li key={index}>{messages.workCard.activityExcludedTask.replace("{n}", String(excluded.taskOrdinal + 1)).replace("{reason}", excluded.reason)}</li>
-          ))}</ul>
-        </details>
-      )}
-      {activity.details && (
-        <details>
-          <summary>{messages.workCard.activityTaskDetails}</summary>
-          <p>{activity.details.modelReason}</p>
-          <ol>{activity.details.tasks.map((task) => (
-            <li key={task.taskOrdinal}>
-              <strong>{task.instruction}</strong>
-              {task.stimulus && <p>{task.stimulus}</p>}
-              {task.options.length > 0 && <p>{messages.workCard.activityOptions}: {task.options.join(" · ")}</p>}
-              {task.acceptedAnswers.length > 0 && <p>{messages.workCard.activityExpectedAnswers}: {task.acceptedAnswers.join(" / ")}</p>}
-              {task.submittedAnswers.length > 0 && <p>{messages.workCard.activityAnswers}: {task.submittedAnswers.join(" / ")}</p>}
-              <p>{messages.workCard.activityMeasured}: {duration(Math.floor(task.activeMilliseconds / 1000))}; {messages.workCard.activityEdits}: {task.editCount}; {messages.workCard.activityPlaybacks}: {task.playbackCount}</p>
-              {task.modelNote && <p>Uwaga oceny: {task.modelNote}</p>}
-            </li>
-          ))}</ol>
-        </details>
+      {(excluded.length > 0 || activity.details) && (
+        <Accordion multiple variant="separated" radius="md" mt="sm" className="pp-work-accordion">
+          {excluded.length > 0 && (
+            <Accordion.Item value="excluded">
+              <Accordion.Control>{messages.workCard.activityExcludedTitle}</Accordion.Control>
+              <Accordion.Panel>
+                <ul className="pp-prog-plain">{excluded.map((task, index) => (
+                  <li key={index}>
+                    {messages.workCard.activityExcludedTask.replace("{n}", String(task.taskOrdinal + 1)).replace("{reason}", task.reason)}
+                  </li>
+                ))}</ul>
+              </Accordion.Panel>
+            </Accordion.Item>
+          )}
+          {activity.details && (
+            <Accordion.Item value="details">
+              <Accordion.Control>{messages.workCard.activityTaskDetails}</Accordion.Control>
+              <Accordion.Panel>
+                <Text size="sm" mb="xs">{activity.details.modelReason}</Text>
+                <ol className="pp-work-tasks">{activity.details.tasks.map((task) => (
+                  <li key={task.taskOrdinal}>
+                    <strong>{task.instruction}</strong>
+                    {task.stimulus && <p>{task.stimulus}</p>}
+                    {task.options.length > 0 && <p>{messages.workCard.activityOptions}: {task.options.join(" · ")}</p>}
+                    {task.acceptedAnswers.length > 0 && <p>{messages.workCard.activityExpectedAnswers}: {task.acceptedAnswers.join(" / ")}</p>}
+                    {task.submittedAnswers.length > 0 && <p>{messages.workCard.activityAnswers}: {task.submittedAnswers.join(" / ")}</p>}
+                    <p className="pp-prog-muted">
+                      {messages.workCard.activityMeasured}: {duration(Math.floor(task.activeMilliseconds / 1000))}; {messages.workCard.activityEdits}: {task.editCount}; {messages.workCard.activityPlaybacks}: {task.playbackCount}
+                    </p>
+                    {task.modelNote && <p>{messages.workCard.activityModelNote}: {task.modelNote}</p>}
+                  </li>
+                ))}</ol>
+              </Accordion.Panel>
+            </Accordion.Item>
+          )}
+        </Accordion>
       )}
       {activity.status === "evaluated" && activity.excludedTasks === null && (
-        <p className="info">{messages.workCard.activityDetailsExpired}</p>
+        <Text size="sm" mt="xs" className="pp-prog-muted">{messages.workCard.activityDetailsExpired}</Text>
       )}
     </div>
   );
 }
 
-export default function WorkCardPanel({ childrenList, onAuthExpired }: { childrenList: ChildDto[]; onAuthExpired: () => void }) {
+function SessionCard({ session }: { session: Session }) {
+  return (
+    <Paper component="article" withBorder radius="lg" p="md">
+      <Title order={3} fz="md" className="pp-prog-heading">{session.deckTitle}</Title>
+      <Text size="sm" className="pp-prog-muted" mb="sm">
+        {sessionLabel(session.mode)} · v{session.deckVersionNumber} · {stateLabel(session.state)}
+      </Text>
+      <SessionActivityCard activity={session.activity} />
+      <Text size="sm" mt="sm">{messages.workCard.steps}: {session.steps.length} · {messages.workCard.remaining}: {session.remainingSteps}</Text>
+      {session.steps.length > 0 && <ol className="pp-work-steps">{session.steps.map(step => <li key={step.taskId}>
+        <span className="pp-work-step-title">{stepTypeLabel(step.exerciseType)} · {messages.workCard.stepState[step.state]}</span>
+        {step.responses.map((response, index) => <React.Fragment key={`${response.modality}-${index}`}>
+          {response.answerExample && <span>{messages.workCard.response}: „{response.answerExample}”</span>}
+          {feedbackLabel(response.feedbackKind) && <span>{feedbackLabel(response.feedbackKind)}</span>}
+          {response.modality === "skip" && <span>{messages.workCard.skipped}</span>}
+          {response.modality === "dont_remember" && <span>{messages.workCard.dontRemember}</span>}
+          {response.assessment === "assessed" && <span>{messages.workCard.assessed}</span>}
+          {response.assessment === "unassessed" && <span>{messages.workCard.unassessed}</span>}
+          {response.assessment === "mixed" && <span>{messages.workCard.mixedAssessment}</span>}
+          {response.assessment === "none" && <span>{messages.workCard.noAssessment}</span>}
+          <span>{messages.workCard.answeredAfter.replace("{seconds}", String(response.responseSeconds))}</span>
+        </React.Fragment>)}
+      </li>)}</ol>}
+    </Paper>
+  );
+}
+
+/**
+ * Karta pracy dziecka na wybrany dzień. Pusta data oznacza „dziś” w strefie
+ * rodziny — dzień podaje API i pokazujemy go w polu daty. Wygasłą sesję
+ * (401) obsługuje globalny handler zapytań.
+ */
+export default function WorkCardPanel({ childrenList }: { childrenList: ChildDto[] }) {
   const [childId, setChildId] = useState(childrenList[0]?.id ?? "");
-  // Empty on first load: the API supplies today's date in the family timezone.
   const [date, setDate] = useState("");
-  const [report, setReport] = useState<ParentWorkCardDto | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const requestSeq = useRef(0);
-  const selection = useRef({ childId, date });
-  selection.current = { childId, date };
 
   useEffect(() => {
     if (!childrenList.some(child => child.id === childId)) setChildId(childrenList[0]?.id ?? "");
   }, [childrenList, childId]);
 
-  const load = useCallback(async () => {
-    if (!childId) { setReport(null); setError(null); setLoading(false); requestSeq.current++; return; }
-    const seq = ++requestSeq.current;
-    setLoading(true); setError(null);
-    try {
-      // date wysyłamy tylko niepuste — pusty string z inputa nie przeszedłby
-      // walidacji granicy (DaySchema), a semantycznie znaczy „dzień dzisiejszy”.
-      const response = await callParent(() => parentClient.workCard.get({
-        childId,
-        ...(date ? { date } : {}),
-      }));
-      if (seq === requestSeq.current) {
-        const result: ParentWorkCardDto = response.body;
-        setReport(result);
-        if (!date) {
-          selection.current = { childId, date: result.date };
-          setDate(result.date);
-        }
-      }
-    } catch (cause) {
-      if (seq !== requestSeq.current) return;
-      if ((cause as { status?: number }).status === 401) { onAuthExpired(); return; }
-      setReport(null); setError(errorMessage(cause));
-    } finally {
-      if (seq === requestSeq.current) setLoading(false);
+  // datę wysyłamy tylko niepustą — pusty string nie przeszedłby walidacji
+  // granicy (DaySchema), a semantycznie znaczy „dzień dzisiejszy”
+  const queryClient = useQueryClient();
+  const options = orpc.workCard.get.queryOptions({ input: { childId, ...(date ? { date } : {}) } });
+  const query = useQuery({ ...options, enabled: childId !== "", select: selectBody });
+  const report = query.data;
+
+  // Po pierwszym wczytaniu „dziś” staje się konkretnym dniem z API: zmiana
+  // dziecka (także po północy) pyta o ten sam dzień, który rodzic ogląda.
+  // Dzień bierzemy tylko z odpowiedzi pobranej teraz (nie ze starego wpisu
+  // pamięci podręcznej, np. sprzed północy). Odpowiedź przenosimy pod klucz
+  // z datą — raport nie znika na czas odświeżenia, a wpis „dziś” bez daty
+  // usuwamy, więc wyczyszczenie pola zawsze pyta API o bieżący dzień.
+  const fresh = query.isFetchedAfterMount && !query.isFetching;
+  useEffect(() => {
+    if (date || !report || !fresh) return;
+    const undated = queryClient.getQueryState(options.queryKey);
+    const datedKey = orpc.workCard.get.queryKey({ input: { childId, date: report.date } });
+    const dated = queryClient.getQueryState(datedKey);
+    // wpis z datą zostaje tylko wtedy, gdy jest nowszy od właśnie pobranej odpowiedzi
+    if (undated?.data && (dated?.data === undefined || dated.dataUpdatedAt < undated.dataUpdatedAt)) {
+      queryClient.setQueryData(datedKey, undated.data, { updatedAt: undated.dataUpdatedAt });
     }
-  }, [childId, date, onAuthExpired]);
+    queryClient.removeQueries({ queryKey: options.queryKey, exact: true });
+    setDate(report.date);
+  }, [date, report, fresh, queryClient, options.queryKey, childId]);
 
-  useEffect(() => { void load(); return () => { requestSeq.current++; }; }, [load]);
-
-  const selectChild = (nextChildId: string) => {
-    if (nextChildId === childId) return;
-    selection.current = { ...selection.current, childId: nextChildId };
-    requestSeq.current++;
-    setChildId(nextChildId);
-  };
-  const selectDate = (nextDate: string) => {
-    selection.current = { ...selection.current, date: nextDate };
-    requestSeq.current++;
-    setDate(nextDate);
-  };
-
-  if (childrenList.length === 0) return <section><h2>{messages.workCard.title}</h2><p className="info">{messages.workCard.emptyChildren}</p></section>;
+  if (childrenList.length === 0) {
+    return (
+      <Stack gap="md">
+        <Title order={1} fz={26}>{messages.workCard.title}</Title>
+        <Text>{messages.workCard.emptyChildren}</Text>
+      </Stack>
+    );
+  }
 
   return (
-    <section className="pp-work-card" data-testid="work-card">
-      <h2>{messages.workCard.title}</h2>
-      <div className="pp-work-filters">
-        <div className="pp-childpick" role="group" aria-label={messages.workCard.childLabel}>
-          {childrenList.map(child => <button key={child.id} type="button" aria-pressed={child.id === childId}
-            className={child.id === childId ? "is-on" : undefined} onClick={() => selectChild(child.id)}>
-            <span className="pp-childpick-emoji" aria-hidden="true">{avatarEmoji(child.avatarKey)}</span>{child.displayName}
-          </button>)}
-        </div>
-        <label className="pp-selectwrap">{messages.workCard.dateLabel}
-          <input aria-label={messages.workCard.dateLabel} type="date" value={date} onChange={event => selectDate(event.target.value)} />
-        </label>
-      </div>
-      {loading && <p className="pp-loading" role="status">{messages.workCard.loading}</p>}
-      {error && <p className="pp-error" role="alert">{error}</p>}
-      {report && !loading && (
+    <Stack gap="md" data-testid="work-card">
+      <Title order={1} fz={26}>{messages.workCard.title}</Title>
+      <Group gap="sm" align="flex-end" justify="space-between" className="pp-work-filters">
+        <ChildPicker childrenList={childrenList} value={childId} onChange={setChildId} label={messages.workCard.childLabel} />
+        <TextInput
+          size="md"
+          type="date"
+          label={messages.workCard.dateLabel}
+          className="pp-work-date"
+          value={date}
+          onChange={event => setDate(event.currentTarget.value)}
+        />
+      </Group>
+      {query.isFetching && (
+        <Group gap="xs" role="status" data-testid="work-card-loading">
+          <Loader size="xs" />
+          <Text size="sm">{messages.workCard.loading}</Text>
+        </Group>
+      )}
+      {query.isError && <Alert color="red" variant="light" role="alert" data-testid="work-card-error">{errorMessage(query.error)}</Alert>}
+      {report && (
         <>
-          <section className="pp-work-summary card" aria-label={messages.workCard.creditedTime}>
-            <h3>{messages.workCard.creditedTime}</h3>
-            <p data-testid="work-card-credited">{duration(report.creditedSeconds)}</p>
-            <p className="info" data-testid="work-card-review-service">
+          <Paper component="section" withBorder radius="lg" p="md" aria-label={messages.workCard.creditedTime}>
+            <Title order={2} fz="md">{messages.workCard.creditedTime}</Title>
+            <Text fz="xl" fw={700} data-testid="work-card-credited">{duration(report.creditedSeconds)}</Text>
+            <Text size="sm" className="pp-prog-muted" data-testid="work-card-review-service">
               {report.reviewService ? messages.workCard.activityService.replace("{service}", report.reviewService) : messages.workCard.activityServiceUnavailable}
-            </p>
+            </Text>
             {report.unevaluatedSessions > 0 && (
-              <p className="info">{messages.workCard.unevaluatedSessions.replace("{n}", String(report.unevaluatedSessions))}</p>
+              <Text size="sm" className="pp-prog-muted">{messages.workCard.unevaluatedSessions.replace("{n}", String(report.unevaluatedSessions))}</Text>
             )}
-          </section>
-          <h3>{messages.workCard.sessions}</h3>
-          {report.sessions.length === 0 ? <p className="info">{messages.workCard.emptyDay}</p> : <div className="pp-work-sessions">
-            {report.sessions.map(session => <article className="card pp-work-session" key={session.sessionId}>
-              <header><div><h4>{session.deckTitle}</h4><p>{sessionLabel(session.mode)} · v{session.deckVersionNumber} · {stateLabel(session.state)}</p></div></header>
-              <SessionActivityCard activity={session.activity} />
-              <p>{messages.workCard.steps}: {session.steps.length} · {messages.workCard.remaining}: {session.remainingSteps}</p>
-              {session.steps.length > 0 && <ol>{session.steps.map(step => <li key={step.taskId}>
-                <span>{stepTypeLabel(step.exerciseType)} · {messages.workCard.stepState[step.state]}</span>
-                {step.responses.map((response, index) => <React.Fragment key={`${response.modality}-${index}`}>
-                  {response.answerExample && <span>{messages.workCard.response}: „{response.answerExample}”</span>}
-                  {feedbackLabel(response.feedbackKind) && <span>{feedbackLabel(response.feedbackKind)}</span>}
-                  {response.modality === "skip" && <span>{messages.workCard.skipped}</span>}
-                  {response.modality === "dont_remember" && <span>{messages.workCard.dontRemember}</span>}
-                  {response.assessment === "assessed" && <span>{messages.workCard.assessed}</span>}
-                  {response.assessment === "unassessed" && <span>{messages.workCard.unassessed}</span>}
-                  {response.assessment === "mixed" && <span>{messages.workCard.mixedAssessment}</span>}
-                  {response.assessment === "none" && <span>{messages.workCard.noAssessment}</span>}
-                  <span>{messages.workCard.answeredAfter.replace("{seconds}", String(response.responseSeconds))}</span>
-                </React.Fragment>)}
-              </li>)}</ol>}
-            </article>)}
-          </div>}
+          </Paper>
+          <Title order={2} fz="lg">{messages.workCard.sessions}</Title>
+          {report.sessions.length === 0
+            ? <Text>{messages.workCard.emptyDay}</Text>
+            : <Stack gap="sm">{report.sessions.map(session => <SessionCard key={session.sessionId} session={session} />)}</Stack>}
         </>
       )}
-    </section>
+    </Stack>
   );
 }
