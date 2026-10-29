@@ -121,6 +121,8 @@ Stan (2026-10-29): faza 0 scalona (#151, razem z Next 16). Faza 1 zrealizowana z
 - domyślny rozmiar `md` przycisków i pól Mantine ma 44 px (cel dotykowy);
 - ponowne logowanie w oknie przy niezapisanych zmianach działa: zapis w edytorze zestawu i lekcji zgłasza 401 przez `onAuthExpired` (review #154), test e2e w `parent-edit-protection.spec.ts`; po przejściu edytorów na zapytania (fazy 5a/6b) to samo zrobi globalny handler.
 
+Faza 2 (2026-10-29): lista zestawów, „Nowy materiał” (na telefonie pływający przycisk nad dolnym paskiem, okno na pełny ekran) i potwierdzenie usunięcia lekcji na Mantine, z oboma schematami kolorów; otwarty zestaw i nowa lekcja mają adresy (`/parent/decks/{id}`, `/parent/lessons/new`), `DecksPanel` nie jest już routerem. Po zgodzie na wyjście przy zablokowanym „wstecz” panel cofa się na istniejący wpis historii (bez dopisywania nowego). Edytory zostają na starych stylach do faz 5–6.
+
 Adresy URL weszły do fazy 1 (zamiast osobnej fazy na końcu), bo `DecksPanel` jest dziś jednocześnie routerem edytorów — przepisywanie go dwa razy byłoby droższe.
 
 Kolejność 5a → 5b: najpierw zmiana warstwy danych przy niezmienionym wyglądzie, żeby regresje konfliktów i odpytywania dało się odróżnić od regresji układu.

@@ -373,9 +373,12 @@ test("browser Back with a dirty editor asks first; Stay keeps the address and th
   await page.getByTestId("item-source-0").fill("kot");
   await page.getByTestId("item-target-0").fill("local correction");
 
+  // otwarty zestaw ma własny adres; „wstecz” prowadzi do listy zestawów
+  const editorUrl = /\/parent\/decks\/[0-9a-f-]{36}$/;
+  await expect(page).toHaveURL(editorUrl);
   await page.goBack();
   await expect(page.getByTestId("leave-editor-dialog")).toBeVisible();
-  await expect(page).toHaveURL(/\/parent\/decks$/);
+  await expect(page).toHaveURL(editorUrl);
   await page.getByTestId("leave-editor-stay").click();
   await expect(page.getByTestId("leave-editor-dialog")).not.toBeVisible();
   await expect(page.getByTestId("item-target-0")).toHaveValue("local correction");
@@ -384,6 +387,10 @@ test("browser Back with a dirty editor asks first; Stay keeps the address and th
   await page.goBack();
   await expect(page.getByTestId("leave-editor-dialog")).toBeVisible();
   await page.getByTestId("leave-editor-leave").click();
+  await expect(page).toHaveURL(/\/parent\/decks$/);
+  await expect(page.getByTestId("new-material-open")).toBeVisible();
+
+  await page.goBack();
   await expect(page).toHaveURL(/\/parent\/children$/);
   await expect(page.getByTestId("tab-children")).toHaveAttribute("aria-current", "true");
 });

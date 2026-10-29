@@ -21,7 +21,8 @@ test("parent configures count and sees partial pinned coverage", async ({ page }
   }
   await row.getByTestId("mock-task-count").fill("25");
   await row.locator('[data-testid^="assign-submit-"]').click();
-  await page.reload(); await page.locator('[data-testid^="deck-row-"]').filter({ hasText: title }).click();
+  // odświeżenie zostawia otwarty zestaw (adres /parent/decks/{id})
+  await page.reload();
   await expect(row.getByTestId("mock-task-count")).toHaveValue("25");
   const saved = await (await page.request.get(`/api/v1/parent/decks/${deckId}`)).json();
   expect(saved.assignments.find((a: { childId: string }) => a.childId === childId).mockTestTaskCount).toBe(25);

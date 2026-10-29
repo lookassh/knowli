@@ -94,6 +94,8 @@ export const messages = {
     newMaterial: "Nowy materiał",
     newMaterialSubtitle: "Wybierz, jak chcesz przygotować materiał.",
     newMaterialClose: "Zamknij",
+    notFound: "Nie ma takiego zestawu. Mógł zostać usunięty albo link jest niepełny.",
+    backToList: "Wróć do listy zestawów",
     newGenerate: "Generuj z opisem",
     newGenerateDescription: "Opisz, czego ma się nauczyć dziecko — AI przygotuje zestaw do Twojego sprawdzenia",
     newEmpty: "Pusty zestaw",

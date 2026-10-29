@@ -37,13 +37,16 @@ function Brand() {
 
 /**
  * Panel rodzica Umiem!: pierwsze uruchomienie (PIN), logowanie, rama z sekcjami
- * w adresie (/parent/decks, /parent/children, …). Stan sesji pochodzi z API —
+ * w adresie (/parent/decks, /parent/decks/{id}, /parent/children, …). Stan sesji pochodzi z API —
  * przyciski nie są "zabezpieczeniem".
  */
 export default function ParentApp() {
   const queryClient = useQueryClient();
   const leaveGuard = useParentLeaveGuard();
-  const { section, navigate } = useParentNavigation(leaveGuard);
+  const { route, navigate } = useParentNavigation(leaveGuard);
+  const section = route.section;
+  // przepisana na Mantine jest na razie lista zestawów; reszta sekcji i edytory — stare style
+  const legacyContent = !(section === "decks" && route.deckId === undefined && !route.newLesson);
   const [reauthOpen, setReauthOpen] = useState(false);
 
   // Stan sesji czytamy raz przy starcie panelu. Później o wygaśnięciu mówią
@@ -167,7 +170,8 @@ export default function ParentApp() {
     <>
       <ParentShell
         section={section}
-        onNavigate={navigate}
+        onNavigate={(next) => navigate({ section: next })}
+        legacyContent={legacyContent}
         onToLearning={() => leaveGuard.requestLeave(() => { window.location.href = "/"; })}
         onLogout={() => leaveGuard.requestLeave(logout)}
       >
@@ -198,12 +202,13 @@ export default function ParentApp() {
           </Center>
         ) : section === "decks" ? (
           <DecksPanel
+            route={route}
             decks={decks}
             childrenList={childrenList}
             onChanged={refreshDecks}
             registerEditorState={leaveGuard.register}
-            requestLeave={leaveGuard.requestLeave}
             onAuthExpired={toLogin}
+            onNavigate={navigate}
           />
         ) : section === "children" ? (
           <ChildEditor childrenList={childrenList} onChanged={refreshChildren} />
