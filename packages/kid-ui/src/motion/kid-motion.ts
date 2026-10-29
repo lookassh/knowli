@@ -39,6 +39,10 @@ export const kidEntranceAnimate = { opacity: 1, y: 0, scale: 1 } as const;
  * The shake token below is only for tiny spelling pills. */
 export const kidOutcomePop = { scale: [1, 1.12, 0.97, 1] };
 export const kidOutcomePopTransition: Transition = { duration: 0.5, ease: "easeOut", times: [0, 0.35, 0.7, 1] };
+/** Text options span the whole material column, so a scale pop would push
+ * them past the scroller's sides and flash a horizontal scrollbar. They hop
+ * upwards instead: moving up never extends a scroll range. */
+export const kidOutcomeHop = { y: [0, -8, 2, 0] };
 export const kidOutcomeShake = { x: [0, -6, 6, -4, 3, 0] };
 export const kidOutcomeShakeTransition: Transition = { duration: 0.42, ease: "easeInOut" };
 
@@ -47,6 +51,12 @@ export const kidOutcomeIconAnimate = { opacity: 1, scale: 1, rotate: 0 } as cons
 /** Wrong-choice icon: pops in, then gives one gentle "no" wobble. */
 export const kidWrongIconAnimate = { opacity: 1, scale: 1, rotate: [-30, 16, -12, 6, 0] };
 export const kidWrongIconTransition: Transition = { duration: 0.55, ease: "easeOut", times: [0, 0.35, 0.6, 0.8, 1] };
+/** Feedback heading inside the dock's scrolling card: it only fades and
+ * grows towards its resting size (no rotation, no overshoot), so its box
+ * never exceeds the card and never opens a transient scroll range. */
+export const kidFeedbackTitleInitial = { opacity: 0, scale: 0.85 } as const;
+export const kidFeedbackTitleAnimate = { opacity: 1, scale: 1 } as const;
+export const kidFeedbackTitleTransition: Transition = { type: "spring", stiffness: 300, damping: 40 };
 
 /** Remaining-tasks pill pops whenever the count changes. */
 export const kidProgressPopInitial = { opacity: 0, scale: 0.6 } as const;
