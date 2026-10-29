@@ -91,6 +91,19 @@ export function seededShuffle<T>(items: readonly T[], seed: string): T[] {
   return out;
 }
 
+/**
+ * Tasowanie, które nigdy nie pokazuje układu rozwiązanego (design szkoły §10.4):
+ * gdy `seededShuffle` zwróci układ, dla którego `isSolved` jest prawdą,
+ * wynik przesuwamy cyklicznie o jedną pozycję — deterministycznie, bez nowej
+ * losowości. Przy n ≥ 2 różnych elementach przesunięcie układu rozwiązanego
+ * nie jest już rozwiązane dla reguł porównujących pozycje.
+ */
+export function shuffleUnsolved<T>(items: readonly T[], seed: string, isSolved: (arranged: readonly T[]) => boolean): T[] {
+  const shuffled = seededShuffle(items, seed);
+  if (shuffled.length < 2 || !isSolved(shuffled)) return shuffled;
+  return [...shuffled.slice(1), shuffled[0]!];
+}
+
 /** Polecenie przekształcenia z tematu, gdy payload go nie niesie. */
 function transformInstruction(topic: LessonTopic, payload: LessonExercisePayload): string | undefined {
   if (payload.exerciseType !== "lesson_transform" || !payload.transformId) return undefined;
@@ -244,7 +257,8 @@ export function materializeExercise(
     }
     case "lesson_order": {
       const canonical = (payload.items ?? []).map((item) => ({ id: randomUUID(), text: item.text }));
-      const shuffled = seededShuffle(canonical, taskId);
+      // bloki nigdy nie startują w kolejności kanonicznej (już ułożone)
+      const shuffled = shuffleUnsolved(canonical, taskId, (arranged) => arranged.every((item, i) => item.id === canonical[i]!.id));
       const prompt: TaskPrompt = { kind: "lesson_order", instructionPl, items: shuffled.map((item) => ({ id: item.id, text: item.text })) };
       return {
         ...common,

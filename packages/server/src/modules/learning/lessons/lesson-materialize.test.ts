@@ -3,7 +3,7 @@ import { messages } from "@learning/contracts";
 import { englishGrammarSubject } from "../../../domain/lessons/subjects/english-grammar/module";
 import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
 import { evaluateChoice, type LessonAnswerKey } from "../../../domain/lessons/evaluate";
-import { materializeExercise, type LoadedExercise } from "./lesson-materialize";
+import { materializeExercise, seededShuffle, shuffleUnsolved, type LoadedExercise } from "./lesson-materialize";
 
 /**
  * P1-1: `correctOption` kontraktu (pool-validation) niesie ID OPCJI dla
@@ -251,4 +251,47 @@ it("gives a calculation without its own instruction the shared calculation instr
 it("rejects an invalid private calculation before issuing any public prompt", () => {
   const exercise = loaded({ exerciseType: "lesson_calculation", objectiveId: "school.scale", instructionPl: "Oblicz.", answer: "750 m", acceptedAnswers: [], focus: [], calculation: { kind: "unknown" }, answerLocale: "pl-PL", promptLocale: "pl-PL" } as unknown as LoadedExercise["payload"]);
   expect(() => materializeExercise({ independentCheck: true, reason: "due_check" }, "invalid", exercise, topic, schoolSubject)).toThrow();
+});
+
+describe("tasowanie bez rozwiązanego układu (design szkoły §10.4)", () => {
+  const canonical = ["a", "b", "c"];
+  const inOrder = (arranged: readonly string[]) => arranged.every((value, i) => value === canonical[i]);
+
+  it("ziarno, przy którym zwykłe tasowanie zwraca układ kanoniczny, daje przesunięty układ", () => {
+    const seed = Array.from({ length: 200 }, (_, i) => `task-${i}`).find((candidate) => inOrder(seededShuffle(canonical, candidate)));
+    expect(seed).toBeDefined();
+    const arranged = shuffleUnsolved(canonical, seed!, inOrder);
+    expect(arranged).toEqual(["b", "c", "a"]);
+  });
+
+  it("nigdy nie zwraca układu rozwiązanego i zachowuje elementy", () => {
+    for (let i = 0; i < 200; i++) {
+      const arranged = shuffleUnsolved(canonical, `seed-${i}`, inOrder);
+      expect(inOrder(arranged)).toBe(false);
+      expect([...arranged].sort()).toEqual(canonical);
+    }
+  });
+
+  it("lesson_order: bloki zadania nie stoją w kolejności odpowiedzi", () => {
+    for (let i = 0; i < 60; i++) {
+      const task = materializeExercise(
+        { independentCheck: false, reason: "practice" },
+        `order-${i}`,
+        loaded({
+          exerciseType: "lesson_order",
+          objectiveId: "english_grammar.present_simple.third_person_s",
+          instructionPl: "Ułóż zdanie.",
+          items: [{ id: "1", text: "She" }, { id: "2", text: "plays" }, { id: "3", text: "football" }],
+          answer: "She plays football",
+          acceptedAnswers: [],
+          answerLocale: subject.answerLocale,
+          promptLocale: subject.promptLocale,
+        }),
+        topic,
+        subject,
+      );
+      const prompt = task.prompt as { items: { id: string }[] };
+      expect(prompt.items.map((item) => item.id)).not.toEqual(answerKeyOf(task).itemIds);
+    }
+  });
 });
