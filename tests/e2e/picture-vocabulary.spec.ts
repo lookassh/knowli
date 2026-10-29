@@ -149,6 +149,34 @@ test("mówione instrukcje prowadzą od profilu przez ćwiczenia i feedback do po
   await waitForCompletedPlayback();
 });
 
+test("karta odsłonięcia po „Nie pamiętam” odtwarza polecenie zadania, nie komunikat wyniku", async ({ page }) => {
+  const fixture = pictureVocabularyFixture();
+  const listening = fixture.tasks[1]!;
+  const taskId = "10000000-0000-4000-8000-000000000017";
+  fixture.tasks = [{ ...listening, taskId, exerciseType: "recall", remainingAssessed: 1,
+    prompt: { kind: "picture_recall", visual: { kind: "color", color: "#ff0000" } } }];
+  fixture.session.microphoneEnabled = false;
+  fixture.disclosure = { taskId, stepId: "hint", kind: "hint", reveal: { target: "red" } };
+  const audioIds = { recall: "20000000-0000-4000-8000-000000000101", dont_remember: "20000000-0000-4000-8000-000000000102" };
+  fixture.uiAudio = { ready: true, assets: audioIds };
+  const requested: string[] = [];
+  page.on("request", (request) => {
+    const match = request.url().match(/\/api\/v1\/media\/([^/?]+)/);
+    if (match) requested.push(match[1]!);
+  });
+  await installKidUiFixture(page, fixture);
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").first().click();
+  await page.getByTestId("kid-not-remember").click();
+  await expect(page.getByTestId("kid-reveal")).toContainText("red");
+  const guidance = page.getByTestId("kid-instruction").getByTestId("kid-guidance-play");
+  await expect(guidance).toHaveAttribute("aria-label", "Posłuchaj polecenia");
+  await guidance.click();
+  await expect.poll(() => requested).toContain(audioIds.recall);
+  expect(requested).not.toContain(audioIds.dont_remember);
+});
+
 test("awaria pliku dźwiękowego pokazuje ponowienie i pozwala zakończyć sesję", async ({ page }) => {
   const fixture = pictureVocabularyFixture();
   const badAudioId = "30000000-0000-4000-8000-000000000001";

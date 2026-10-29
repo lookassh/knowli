@@ -265,16 +265,16 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* The target word keeps the shared stimulus scale of .kid-word (at least
+   display-sm on phones), as in every other exercise. */
 .kid-ui .kid-exposure-content .kid-word {
   min-width: 0;
-  font-size: clamp(var(--kid-type-headline-sm-size), 6vw, var(--kid-type-display-lg-size));
   line-height: 1.2;
-  font-weight: 700;
 }
 
-/* In an exposure the target word is the stimulus; the Polish translation under
-   it stays one step smaller than the stimulus scale of .kid-source, so the
-   hierarchy holds and the whole card fits a 360x540 phone without scrolling. */
+/* The Polish translation under the target word stays one step smaller than the
+   stimulus scale of .kid-source, so the hierarchy holds and the whole card fits
+   a 360x540 phone without scrolling. */
 .kid-ui .kid-exposure-content .kid-source {
   font-size: clamp(var(--kid-type-headline-sm-size), 6vw, var(--kid-type-display-sm-size));
 }
@@ -1473,9 +1473,13 @@
   color: var(--kid-text);
 }
 
+/* The 4px inset keeps the heading's focus outline (3px + 1px offset) inside
+   this scrolling box instead of clipped at its edge. */
 .kid-speech-feedback__body {
+  box-sizing: border-box;
   flex: 1 1 auto;
   min-height: 0;
+  padding: 4px;
   overflow-y: auto;
   overflow-wrap: anywhere;
   width: 100%;
@@ -1493,7 +1497,7 @@
 
 .kid-speech-feedback__heard:focus {
   outline: 3px solid var(--kid-accent);
-  outline-offset: 4px;
+  outline-offset: 1px;
   border-radius: var(--kid-shape-xs);
 }
 
@@ -1528,7 +1532,8 @@
   overflow-wrap: anywhere;
 }
 
-.kid-speech-feedback__word .kid-fragment {
+.kid-speech-feedback__word .kid-fragment,
+.kid-speech-feedback__legend .kid-fragment {
   font-size: inherit;
   letter-spacing: normal;
   font-family: inherit;
@@ -1538,12 +1543,14 @@
   text-underline-offset: 0.12em;
 }
 
-.kid-speech-feedback__word .kid-fragment--almost {
+.kid-speech-feedback__word .kid-fragment--almost,
+.kid-speech-feedback__legend .kid-fragment--almost {
   text-decoration-line: underline;
   text-decoration-color: var(--kid-color-warm);
 }
 
-.kid-speech-feedback__word .kid-fragment--unknown {
+.kid-speech-feedback__word .kid-fragment--unknown,
+.kid-speech-feedback__legend .kid-fragment--unknown {
   background: var(--kid-soft);
   color: var(--kid-text);
 }
@@ -1556,22 +1563,21 @@
   flex-wrap: wrap;
   justify-content: center;
   gap: 6px 12px;
-  color: var(--kid-muted);
+  color: var(--kid-text);
   font-size: var(--kid-type-body-sm-size);
 }
 
-.kid-speech-feedback__legend--good {
-  color: var(--kid-good);
+/* The key is the sample, styled like its fragment in the word; the label next
+   to it stays in the text colour, so it reads on every dock tone. */
+.kid-speech-feedback__legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
-.kid-speech-feedback__legend--almost {
-  color: var(--kid-warm-text);
-  text-decoration: underline;
-  text-decoration-thickness: 2px;
-}
-
-.kid-speech-feedback__legend--unknown {
-  color: var(--kid-muted);
+.kid-speech-feedback__legend-sample {
+  line-height: 1.2;
 }
 
 .kid-speech-feedback__actions {

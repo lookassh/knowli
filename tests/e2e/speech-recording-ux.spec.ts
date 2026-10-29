@@ -769,7 +769,43 @@ test("speech feedback stays inline, explains fragments and exposes only the avai
   await expect(page.getByTestId("kid-target")).toHaveCount(0);
   await expect(card).toContainText("Usłyszałem:");
   await expect(page.getByTestId("kid-reference-text")).toContainText("Thursday");
-  await expect(page.getByRole("list", { name: "Legenda wymowy" })).toContainText("poćwicz go");
+  const legend = page.getByRole("list", { name: "Legenda wymowy" });
+  await expect(legend).toContainText("poćwicz go");
+  // The focused heading's outline stays inside the scrolling box that holds it.
+  const outlineClipped = await page.locator("#kid-speech-feedback-title").evaluate((heading) => {
+    const style = getComputedStyle(heading);
+    const reach = parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
+    let scroller = heading.parentElement;
+    while (scroller && !/(auto|scroll|hidden|clip)/.test(getComputedStyle(scroller).overflowY + getComputedStyle(scroller).overflowX)) {
+      scroller = scroller.parentElement;
+    }
+    scroller!.scrollTop = 0;
+    const box = heading.getBoundingClientRect();
+    const frame = scroller!.getBoundingClientRect();
+    const left = frame.left + scroller!.clientLeft;
+    const top = frame.top + scroller!.clientTop;
+    return {
+      top: box.top - reach < top - 0.5,
+      left: box.left - reach < left - 0.5,
+      right: box.right + reach > left + scroller!.clientWidth + 0.5,
+    };
+  });
+  expect(outlineClipped).toEqual({ top: false, left: false, right: false });
+  // Scrolled into view, the legend ends above the dock's action row.
+  await legend.scrollIntoViewIfNeeded();
+  const [legendBox, actionBox] = await Promise.all([legend.boundingBox(), page.getByTestId("kid-feedback-retry").boundingBox()]);
+  expect(legendBox!.y + legendBox!.height, "legend hidden under the action row").toBeLessThanOrEqual(actionBox!.y + 1);
+  // Each legend entry carries a sample styled exactly like its fragment in the word.
+  const fragmentLook = (locator: Locator) => locator.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { background: style.backgroundColor, decoration: style.textDecorationLine, color: style.color };
+  });
+  for (const verdict of ["almost", "unknown"] as const) {
+    const fragment = page.getByTestId("kid-reference-text").locator(`.kid-fragment--${verdict}`);
+    const sample = legend.locator(`.kid-speech-feedback__legend--${verdict} .kid-fragment--${verdict}`);
+    await expect(sample).toHaveCount(1);
+    expect(await fragmentLook(sample), `legend sample for ${verdict}`).toEqual(await fragmentLook(fragment));
+  }
   await expect(page.locator("dialog")).toHaveCount(0);
   expect(await page.evaluate(() => document.activeElement?.id)).toBe("kid-speech-feedback-title");
   const retryBounds = await page.getByTestId("kid-feedback-retry").boundingBox();
