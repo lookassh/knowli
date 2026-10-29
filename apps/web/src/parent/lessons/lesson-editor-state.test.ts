@@ -6,6 +6,7 @@ import {
   groupCalculationFamilies,
   groupExercisesByObjectiveAndStage,
   lessonExerciseChanged,
+  nextGroupId,
   nextRequiredElementId,
   stageOfExerciseType,
   toLessonDraftPatch,
@@ -74,6 +75,8 @@ describe("stageOfExerciseType", () => {
     expect(stageOfExerciseType("lesson_open_answer")).toBe("independent");
     expect(stageOfExerciseType("lesson_calculation")).toBe("independent");
     expect(stageOfExerciseType("lesson_keywords")).toBe("guided");
+    expect(stageOfExerciseType("lesson_match")).toBe("guided");
+    expect(stageOfExerciseType("lesson_group")).toBe("guided");
   });
 });
 
@@ -125,6 +128,43 @@ describe("toLessonDraftPatch", () => {
     const input = toLessonDraftPatch(snapshot).exercises![0]!;
     expect(input).toMatchObject({ exerciseType: "lesson_keywords", familyId: "def", answer: "cukry, światło", acceptedAnswers: [], focus: [], keyOptionIds: ["k2", "k1"] });
     expect(input.keywordOptions).toHaveLength(4);
+  });
+
+  it("pary: odpowiedź z lewych stron, puste wiersze i dystraktory pominięte, bez wariantów i focus", () => {
+    const source = draft();
+    source.exercises[0] = {
+      ...source.exercises[0]!, exerciseType: "lesson_match", answer: "stara", acceptedAnswers: ["x"], focus: ["y"],
+      options: undefined, correctOption: undefined,
+      pairs: [{ left: "równik", right: "dzieli półkule" }, { left: "południk", right: "łączy bieguny" }, { left: "biegun", right: "koniec osi" }],
+      extraRight: ["leży nad morzem"],
+    };
+    const snapshot = createLessonSnapshot(source, () => "unused");
+    snapshot.form.exercises[0]!.pairs!.push({ left: "", right: "" });
+    snapshot.form.exercises[0]!.extraRight!.push(" ");
+    const input = toLessonDraftPatch(snapshot).exercises![0]!;
+    expect(input).toMatchObject({ exerciseType: "lesson_match", answer: "równik, południk, biegun", acceptedAnswers: [], focus: [], extraRight: ["leży nad morzem"] });
+    expect(input.pairs).toHaveLength(3);
+    expect(input.options).toBeUndefined();
+  });
+
+  it("grupy: odpowiedź z etykiet, elementy z przynależnością", () => {
+    const source = draft();
+    source.exercises[0] = {
+      ...source.exercises[0]!, exerciseType: "lesson_group", answer: "stara", acceptedAnswers: [], focus: [],
+      options: undefined, correctOption: undefined,
+      groups: [{ id: "g1", label: "ssaki" }, { id: "g2", label: "ptaki" }],
+      groupItems: [{ text: "pies", groupId: "g1" }, { text: "kot", groupId: "g1" }, { text: "sowa", groupId: "g2" }, { text: "wróbel", groupId: "g2" }],
+    };
+    const snapshot = createLessonSnapshot(source, () => "unused");
+    snapshot.form.exercises[0]!.groups![1]!.label = "ptaszki";
+    const input = toLessonDraftPatch(snapshot).exercises![0]!;
+    expect(input).toMatchObject({ exerciseType: "lesson_group", answer: "ssaki / ptaszki", acceptedAnswers: [], focus: [] });
+    expect(input.groupItems).toEqual(source.exercises[0]!.groupItems);
+  });
+
+  it("nextGroupId omija zajęte identyfikatory", () => {
+    expect(nextGroupId([{ id: "g1" }, { id: "g3" }])).toBe("g2");
+    expect(nextGroupId([])).toBe("g1");
   });
 
   it("zachowuje pytanie short_answer zapisane w prompt", () => {

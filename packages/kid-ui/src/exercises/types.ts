@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { RecordingModeDto, TaskDto } from "@learning/contracts";
+import type { Assignment, RecordingModeDto, TaskDto } from "@learning/contracts";
 import type { OptionOutcome } from "./option-outcome";
 
 export interface ExerciseHandlers {
@@ -17,6 +17,8 @@ export interface ExerciseHandlers {
   onAnswerSequence(itemIds: string[]): void;
   /** Zaznaczone pojęcia (`lesson_keywords`) — odpowiedź `selection`, kolejność bez znaczenia. */
   onAnswerSelection(itemIds: string[]): void;
+  /** Przypisania (`lesson_match`, `lesson_group`) — odpowiedź `assignment`. */
+  onAnswerAssignment(assignments: Assignment[]): void;
   onNotRemember(): void;
   onSkip(): void;
   /** „Rozumiem” — zamknięcie prezentacji przez complete-presentation. */

@@ -4,6 +4,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { ActionIcon, Alert, Button, Checkbox, Group, Menu, NativeSelect, Paper, Radio, Stack, Text, TextInput, Textarea } from "@mantine/core";
 import { messages, type CalculationSpec } from "@learning/contracts";
 import { ParentIcon } from "../ParentIcon";
+import AssignmentFields from "./AssignmentFields";
 import { keywordsAnswerOf, nextRequiredElementId, type EditableLessonExercise } from "./lesson-editor-state";
 
 /** Typy z polem „Zdanie” (stem) w edycji. */
@@ -85,7 +86,8 @@ export default function LessonExerciseCard({
     focusAfterToggle.current = target;
     onToggle();
   };
-  const derived = ex.exerciseType === "lesson_calculation" || ex.exerciseType === "lesson_keywords";
+  // odpowiedź wyliczana z pól typu (rachunek, słowa kluczowe, pary, grupy) — rodzic jej nie wpisuje
+  const derived = ["lesson_calculation", "lesson_keywords", "lesson_match", "lesson_group"].includes(ex.exerciseType);
   const errId = `exercise-errors-${index}`;
   const described = errors ? { "aria-describedby": errId } : {};
   const forcedOpen = changed || errors !== undefined;
@@ -282,6 +284,10 @@ export default function LessonExerciseCard({
                   ))}
                 </Stack>
               </fieldset>
+            )}
+
+            {(ex.exerciseType === "lesson_match" || ex.exerciseType === "lesson_group") && (
+              <AssignmentFields exercise={ex} index={index} disabled={disabled} onChange={onMutate} />
             )}
 
             {ex.exerciseType === "lesson_keywords" && ex.keywordOptions && (

@@ -39,6 +39,20 @@ export const MAX_KEYWORD_OPTIONS = 6;
 export const MIN_KEY_OPTIONS = 2;
 export const MAX_KEY_OPTIONS = 3;
 export const MAX_KEYWORD_LENGTH = 40;
+/** „Połącz w pary” (`lesson_match`, design szkoły §10.1): 3–5 par + 0–2 dystraktory po prawej. */
+export const MIN_MATCH_PAIRS = 3;
+export const MAX_MATCH_PAIRS = 5;
+export const MAX_MATCH_EXTRA = 2;
+export const MAX_MATCH_LEFT_LENGTH = 40;
+export const MAX_MATCH_RIGHT_LENGTH = 100;
+/** „Pogrupuj” (`lesson_group`, design szkoły §10.2): 2–3 grupy, 4–8 elementów, min. 2 na grupę. */
+export const MIN_GROUPS = 2;
+export const MAX_GROUPS = 3;
+export const MIN_GROUP_ITEMS = 4;
+export const MAX_GROUP_ITEMS = 8;
+export const MIN_ITEMS_PER_GROUP = 2;
+export const MAX_GROUP_LABEL_LENGTH = 30;
+export const MAX_GROUP_ITEM_LENGTH = 40;
 
 /** Typy ćwiczeń lekcji (design „Typy ćwiczeń i etapy”). */
 export const LESSON_EXERCISE_TYPES = [
@@ -53,6 +67,8 @@ export const LESSON_EXERCISE_TYPES = [
   "lesson_open_answer",
   "lesson_calculation",
   "lesson_keywords",
+  "lesson_match",
+  "lesson_group",
 ] as const;
 export type LessonExerciseTypeDto = (typeof LESSON_EXERCISE_TYPES)[number];
 export const LessonExerciseTypeSchema = z.enum(LESSON_EXERCISE_TYPES);
@@ -237,6 +253,23 @@ export const LessonExerciseInputSchema = z.object({
   keywordOptions: z.array(z.object({ id: z.string().min(1), text: z.string().min(1).max(MAX_KEYWORD_LENGTH) }).strict())
     .min(MIN_KEYWORD_OPTIONS).max(MAX_KEYWORD_OPTIONS).optional(),
   keyOptionIds: z.array(z.string().min(1)).min(MIN_KEY_OPTIONS).max(MAX_KEY_OPTIONS).optional(),
+  /** `lesson_match`: pary w kolejności materiału (klucz tylko dla serwera i rodzica). */
+  pairs: z.array(z.object({
+    left: z.string().min(1).max(MAX_MATCH_LEFT_LENGTH),
+    right: z.string().min(1).max(MAX_MATCH_RIGHT_LENGTH),
+  }).strict()).min(MIN_MATCH_PAIRS).max(MAX_MATCH_PAIRS).optional(),
+  /** `lesson_match`: dystraktory po prawej (bez pary). */
+  extraRight: z.array(z.string().min(1).max(MAX_MATCH_RIGHT_LENGTH)).max(MAX_MATCH_EXTRA).optional(),
+  /** `lesson_group`: grupy (`id` — slug w obrębie ćwiczenia). */
+  groups: z.array(z.object({
+    id: z.string().min(1).max(40),
+    label: z.string().min(1).max(MAX_GROUP_LABEL_LENGTH),
+  }).strict()).min(MIN_GROUPS).max(MAX_GROUPS).optional(),
+  /** `lesson_group`: elementy z przynależnością do grupy (klucz tylko dla serwera i rodzica). */
+  groupItems: z.array(z.object({
+    text: z.string().min(1).max(MAX_GROUP_ITEM_LENGTH),
+    groupId: z.string().min(1).max(40),
+  }).strict()).min(MIN_GROUP_ITEMS).max(MAX_GROUP_ITEMS).optional(),
 }).strict();
 export type LessonExerciseInput = z.infer<typeof LessonExerciseInputSchema>;
 

@@ -110,17 +110,63 @@ function keywordsExerciseSchema(objectiveId: string): Record<string, unknown> {
   });
 }
 
+const strictObject = (properties: Record<string, unknown>) => ({
+  type: "object", additionalProperties: false, required: Object.keys(properties), properties,
+});
+const groundedQuotes = { type: "array", minItems: 1, maxItems: 3, items: strictObject({ quote: { type: "string", minLength: 10, maxLength: 600 } }) };
+
+/**
+ * „Połącz w pary” (design szkoły §10.6): tylko teksty par i dystraktorów —
+ * odpowiedź składa kod, model jej nie podaje.
+ */
+function matchExerciseSchema(objectiveId: string): Record<string, unknown> {
+  return strictObject({
+    exerciseType: { type: "string", enum: ["lesson_match"] },
+    objectiveId: { type: "string", enum: [objectiveId] },
+    instructionPl: { type: "string", minLength: 1, maxLength: 120 },
+    pairs: {
+      type: "array", minItems: 3, maxItems: 5,
+      items: strictObject({ left: { type: "string", minLength: 1, maxLength: 40 }, right: { type: "string", minLength: 1, maxLength: 100 } }),
+    },
+    extraRight: { type: "array", maxItems: 2, items: { type: "string", minLength: 1, maxLength: 100 } },
+    sourceRefs: groundedQuotes,
+  });
+}
+
+/** „Pogrupuj”: grupy i elementy z przynależnością; odpowiedź składa kod. */
+function groupExerciseSchema(objectiveId: string): Record<string, unknown> {
+  return strictObject({
+    exerciseType: { type: "string", enum: ["lesson_group"] },
+    objectiveId: { type: "string", enum: [objectiveId] },
+    instructionPl: { type: "string", minLength: 1, maxLength: 120 },
+    groups: {
+      type: "array", minItems: 2, maxItems: 3,
+      items: strictObject({ id: { type: "string", minLength: 1, maxLength: 40 }, label: { type: "string", minLength: 1, maxLength: 30 } }),
+    },
+    groupItems: {
+      type: "array", minItems: 4, maxItems: 8,
+      items: strictObject({ text: { type: "string", minLength: 1, maxLength: 40 }, groupId: { type: "string", minLength: 1, maxLength: 40 } }),
+    },
+    sourceRefs: groundedQuotes,
+  });
+}
+
+/** Typy z własną ścisłą gałęzią (bez pól wspólnej gałęzi „regularnej”). */
+const DEDICATED_BRANCH_TYPES: ReadonlySet<string> = new Set(["lesson_calculation", "lesson_keywords", "lesson_match", "lesson_group"]);
+
 /** Strict JSON Schema: każda gałąź wiąże typ ćwiczenia z jednym celem. */
 export function lessonPoolJsonSchema(input: LessonPoolInput): Record<string, unknown> {
   if (input.objectives.length === 0) throw new Error("lesson pool requires at least one objective");
   const branches = input.objectives.flatMap((objective) => {
     const types = poolExerciseTypes(objective.exerciseTypes.filter((type) => input.exerciseTypes.includes(type)));
     if (types.length === 0) throw new Error(`objective ${objective.id} has no supported pool exercise types`);
-    const regularTypes = types.filter((type) => type !== "lesson_calculation" && type !== "lesson_keywords");
+    const regularTypes = types.filter((type) => !DEDICATED_BRANCH_TYPES.has(type));
     return [
       ...(regularTypes.length > 0 ? [lessonExerciseSchema(input, objective, regularTypes)] : []),
       ...(types.includes("lesson_calculation") ? [calculationExerciseSchema(objective.id)] : []),
       ...(types.includes("lesson_keywords") ? [keywordsExerciseSchema(objective.id)] : []),
+      ...(types.includes("lesson_match") ? [matchExerciseSchema(objective.id)] : []),
+      ...(types.includes("lesson_group") ? [groupExerciseSchema(objective.id)] : []),
     ];
   });
   const objectiveIds = input.objectives.map((objective) => objective.id);

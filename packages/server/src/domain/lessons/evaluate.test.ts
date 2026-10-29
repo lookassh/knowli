@@ -5,6 +5,8 @@ import {
   TYPO_TOLERANCE,
   buildAnswerSegments,
   closestApprovedVariant,
+  assignmentText,
+  evaluateAssignment,
   evaluateChoice,
   evaluateSequence,
   evaluateKeywordSelection,
@@ -516,5 +518,54 @@ describe("werdykt szkolny v3: kategorie fragmentów i pomylone pojęcia (Etap 6)
       { text: " ", state: "plain" },
       { text: "Grałem w piłkę.", state: "offtopic" },
     ]);
+  });
+});
+
+describe("evaluateAssignment (design szkoły §10.3)", () => {
+  const base = { exerciseType: "lesson_match" as const, objectiveId: "o", answer: "a", acceptedAnswers: [], focus: [] };
+  const matchKey = {
+    ...base,
+    assignments: [{ itemId: "l1", targetId: "r1" }, { itemId: "l2", targetId: "r2" }, { itemId: "l3", targetId: "r3" }],
+    targetIds: ["r1", "r2", "r3", "rx"],
+    targetOnce: true,
+  };
+
+  it("komplet zgodnych przypisań jest poprawny, a jedna zamiana — błędna", () => {
+    expect(evaluateAssignment([{ itemId: "l2", targetId: "r2" }, { itemId: "l1", targetId: "r1" }, { itemId: "l3", targetId: "r3" }], matchKey)).toBe(true);
+    expect(evaluateAssignment([{ itemId: "l1", targetId: "r2" }, { itemId: "l2", targetId: "r1" }, { itemId: "l3", targetId: "r3" }], matchKey)).toBe(false);
+    expect(evaluateAssignment([{ itemId: "l1", targetId: "rx" }, { itemId: "l2", targetId: "r2" }, { itemId: "l3", targetId: "r3" }], matchKey)).toBe(false);
+  });
+
+  it("kształt niezgodny z zadaniem daje null (błąd klienta, nie wiedzy)", () => {
+    expect(evaluateAssignment([{ itemId: "l1", targetId: "r1" }, { itemId: "l2", targetId: "r2" }], matchKey)).toBeNull();
+    expect(evaluateAssignment([{ itemId: "l1", targetId: "r1" }, { itemId: "l2", targetId: "r2" }, { itemId: "l9", targetId: "r3" }], matchKey)).toBeNull();
+    expect(evaluateAssignment([{ itemId: "l1", targetId: "r1" }, { itemId: "l2", targetId: "r2" }, { itemId: "l3", targetId: "r9" }], matchKey)).toBeNull();
+    expect(evaluateAssignment([{ itemId: "l1", targetId: "r1" }, { itemId: "l2", targetId: "r1" }, { itemId: "l3", targetId: "r3" }], matchKey)).toBeNull();
+    expect(evaluateAssignment([{ itemId: "l1", targetId: "r1" }], { ...base })).toBeNull();
+  });
+
+  it("w grupach cel można użyć wielokrotnie", () => {
+    const groupKey = {
+      ...base, exerciseType: "lesson_group" as const,
+      assignments: [{ itemId: "i1", targetId: "g1" }, { itemId: "i2", targetId: "g1" }, { itemId: "i3", targetId: "g2" }, { itemId: "i4", targetId: "g2" }],
+      targetIds: ["g1", "g2"],
+    };
+    expect(evaluateAssignment([{ itemId: "i1", targetId: "g1" }, { itemId: "i2", targetId: "g1" }, { itemId: "i3", targetId: "g2" }, { itemId: "i4", targetId: "g2" }], groupKey)).toBe(true);
+    expect(evaluateAssignment([{ itemId: "i1", targetId: "g1" }, { itemId: "i2", targetId: "g2" }, { itemId: "i3", targetId: "g2" }, { itemId: "i4", targetId: "g2" }], groupKey)).toBe(false);
+  });
+});
+
+describe("assignmentText", () => {
+  const values = { l1: "woda", l2: "światło", r1: "korzenie", r2: "energia", g1: "substraty", g2: "produkty" };
+  it("pary w kolejności lewej kolumny", () => {
+    expect(assignmentText([{ itemId: "l2", targetId: "r2" }, { itemId: "l1", targetId: "r1" }], values, { itemOrder: ["l1", "l2"] }))
+      .toBe("woda → korzenie; światło → energia");
+  });
+  it("grupy w kolejności grup, z pominięciem pustych", () => {
+    expect(assignmentText([{ itemId: "l1", targetId: "g2" }, { itemId: "l2", targetId: "g2" }], values, { grouped: true, targetOrder: ["g1", "g2"], itemOrder: ["l2", "l1"] }))
+      .toBe("produkty: światło, woda");
+  });
+  it("pomija przypisania z nieznanym tekstem", () => {
+    expect(assignmentText([{ itemId: "x", targetId: "r1" }], values)).toBe("");
   });
 });

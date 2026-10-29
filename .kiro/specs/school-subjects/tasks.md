@@ -230,3 +230,38 @@ odrzuceń w pełnej sondzie.
       (`grader-eval-2026-10-29-v3.md`).
 - [ ] Pilotaż z dzieckiem: skuteczność wykrywania pomyleń i rozróżnienia
       kategorii na prawdziwych odpowiedziach.
+
+## Etap 7 — „Połącz w pary” i „Pogrupuj” (design §10)
+
+Zależy od etapów 1–2 (pula, edytor, silnik lekcji); niezależny od 3–6.
+
+- [x] Kontrakt i decyzje (design §10, akceptacja właściciela 2026-10-29); requirements:
+      zakres (bez wyłączenia „dopasowywania par”) i wym. 4.1 z nowymi typami.
+- [x] Tasowanie bez rozwiązanego układu w `lesson_order` (design 10.4) —
+      osobny mały commit z testem jednostkowym materializacji.
+- [x] Kontrakty: `lesson_match`, `lesson_group` w listach typów, gałęzie
+      `TaskPromptSchema`, modalność `assignment`, pola wejścia edytora;
+      migracja `0026` (`attempts_modality_allowed`).
+- [x] Domena: typy, etap `guided`, walidacja puli, tożsamość ćwiczenia,
+      ocena przypisań; `SCHOOL_EXERCISE_TYPES`.
+- [x] Silnik: materializacja (UUID, tasowanie 10.4), próby (strażnik
+      modalności, pomoc `options`, `correctText`), kartkówka, raport
+      aktywności, karta pracy rodzica.
+- [x] Generator: ścisłe gałęzie structured output, prompt szkoły, walidacja
+      szkicu (fake generator bez par i grup — design 10.9).
+- [x] Edytor rodzica: pola par, dystraktorów i grup, dodawanie/usuwanie
+      wierszy, wyliczany `answer` (widoczny w zablokowanym polu odpowiedzi).
+- [x] Kid UI: `LessonMatchView`, `LessonGroupView` z czystymi funkcjami stanu
+      i testami; komunikaty; specy geometrii (portrait, landscape, tablet,
+      desktop) w partycji `mocked`.
+- [x] Testy integracyjne: edycja rodzica → publikacja → zadanie → próba
+      (poprawna, błędna, niepełna `400`, idempotencja), kartkówka, brak klucza
+      w Kid DTO; wpis do kosza w `tests/integration-buckets.ts`.
+- [x] Dokumentacja: SPEC, architektura §19/§22, `AGENTS.md` jeśli zmienia się
+      lista typów; przegląd API → MCP → skill (brak wpływu, lekcje poza
+      `learning-overview`).
+- [ ] Pełny przebieg: `pnpm typecheck`, `pnpm test:unit`,
+      `pnpm test:integration`, `pnpm build`, `pnpm test:e2e:shards`;
+      niezależny review przed PR.
+- [ ] Pilotaż z dzieckiem: czytelność na fizycznym telefonie/tablecie
+      i jakość par/grup generowanych z prawdziwego materiału.
