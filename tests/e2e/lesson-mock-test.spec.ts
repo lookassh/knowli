@@ -98,7 +98,7 @@ async function openLessonMock(page: Page): Promise<void> {
   await page.goto("/");
 }
 
-test("child solves a lesson mock test with no feedback, then reviews per-task answers", async ({ page }) => {
+test("child solves a lesson mock test with no feedback, then reviews per-task answers", async ({ page }, testInfo) => {
   test.setTimeout(30_000);
   await page.setViewportSize({ width: 390, height: 844 });
 
@@ -136,6 +136,7 @@ test("child solves a lesson mock test with no feedback, then reviews per-task an
 
   // Omówienie po zamknięciu: wynik prosty + lista slotów z odpowiedzią dziecka i poprawną.
   await expect(page.getByTestId("kid-lesson-mock-summary")).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("lesson-mock-summary.png"), fullPage: true });
   await expect(page.getByTestId("kid-lesson-mock-score")).toContainText("1/2 · 50%");
   await expect(page.getByTestId("kid-lesson-mock-solution")).toHaveCount(2);
   await expect(page.locator('[data-testid="kid-lesson-mock-solution"][data-status="correct"]')).toHaveCount(1);

@@ -99,7 +99,7 @@ test("profile keeps child and parent navigation within the blue theme", async ({
   await expect(page.locator(".kid-ui")).toHaveCount(0, { timeout: 10_000 });
 });
 
-test("mock-test ready screen styles start and cancel as clear actions", async ({ page }) => {
+test("mock-test ready screen styles start and cancel as clear actions", async ({ page }, testInfo) => {
   await page.emulateMedia({ colorScheme: "dark" });
   await setup(page, { decks: [deck({ mockTestAvailable: true })], session: session("mock_test") });
   await page.getByTestId("kid-profile").click();
@@ -112,6 +112,8 @@ test("mock-test ready screen styles start and cancel as clear actions", async ({
   const info = page.getByTestId("kid-mock-info");
   await expect(info).toContainText("Odpowiedzi omówimy na końcu.");
   await expectThemeToken(page, info);
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.screenshot({ path: testInfo.outputPath("mock-ready-360x800.png") });
   const cancel = page.getByRole("button", { name: "Koniec" });
   // Regresja kaskady: reset przycisku nie może kasować lokalnych
   // stylów przycisku drugorzędnego (ramka, wypełnienie, tło).
@@ -126,7 +128,7 @@ test("mock-test ready screen styles start and cancel as clear actions", async ({
   await expect(page.getByTestId("kid-deck-card")).toBeVisible();
 });
 
-test("session conflict resumes the already active task", async ({ page }) => {
+test("session conflict resumes the already active task", async ({ page }, testInfo) => {
   await page.emulateMedia({ colorScheme: "dark" });
   await setup(page, {
     decks: [deck({ activeSession: { sessionId, mode: "training" } })],
@@ -147,6 +149,8 @@ test("session conflict resumes the already active task", async ({ page }) => {
   const conflictInfo = page.getByTestId("kid-conflict-info");
   await expect(conflictInfo).toContainText("Masz rozpoczętą sesję. Wróć do niej lub zakończ ją przed nową.");
   await expectThemeToken(page, conflictInfo);
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.screenshot({ path: testInfo.outputPath("conflict-360x800.png") });
   const resume = page.getByRole("button", { name: "Wróć do sesji" });
   await expectThemeToken(page, resume, "accent");
   await resume.click();
