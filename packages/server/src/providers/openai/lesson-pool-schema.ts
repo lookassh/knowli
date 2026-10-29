@@ -89,16 +89,38 @@ function calculationExerciseSchema(objectiveId: string): Record<string, unknown>
   });
 }
 
+/**
+ * Słowa kluczowe (trener precyzji): tylko pojęcia, ich klucz i rodzina pytań —
+ * odpowiedź (`answer`) składa kod z pojęć kluczowych, model jej nie podaje.
+ */
+function keywordsExerciseSchema(objectiveId: string): Record<string, unknown> {
+  const strictObject = (properties: Record<string, unknown>) => ({
+    type: "object", additionalProperties: false, required: Object.keys(properties), properties,
+  });
+  return strictObject({
+    exerciseType: { type: "string", enum: ["lesson_keywords"] },
+    objectiveId: { type: "string", enum: [objectiveId] },
+    familyId: { type: "string", minLength: 1, maxLength: 64 },
+    keywordOptions: {
+      type: "array", minItems: 4, maxItems: 6,
+      items: strictObject({ id: { type: "string", minLength: 1 }, text: { type: "string", minLength: 1, maxLength: 40 } }),
+    },
+    keyOptionIds: { type: "array", minItems: 2, maxItems: 3, items: { type: "string", minLength: 1 } },
+    sourceRefs: { type: "array", minItems: 1, maxItems: 3, items: strictObject({ quote: { type: "string", minLength: 10, maxLength: 600 } }) },
+  });
+}
+
 /** Strict JSON Schema: każda gałąź wiąże typ ćwiczenia z jednym celem. */
 export function lessonPoolJsonSchema(input: LessonPoolInput): Record<string, unknown> {
   if (input.objectives.length === 0) throw new Error("lesson pool requires at least one objective");
   const branches = input.objectives.flatMap((objective) => {
     const types = poolExerciseTypes(objective.exerciseTypes.filter((type) => input.exerciseTypes.includes(type)));
     if (types.length === 0) throw new Error(`objective ${objective.id} has no supported pool exercise types`);
-    const regularTypes = types.filter((type) => type !== "lesson_calculation");
+    const regularTypes = types.filter((type) => type !== "lesson_calculation" && type !== "lesson_keywords");
     return [
       ...(regularTypes.length > 0 ? [lessonExerciseSchema(input, objective, regularTypes)] : []),
       ...(types.includes("lesson_calculation") ? [calculationExerciseSchema(objective.id)] : []),
+      ...(types.includes("lesson_keywords") ? [keywordsExerciseSchema(objective.id)] : []),
     ];
   });
   const objectiveIds = input.objectives.map((objective) => objective.id);

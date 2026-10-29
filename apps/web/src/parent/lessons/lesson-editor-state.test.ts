@@ -73,6 +73,7 @@ describe("stageOfExerciseType", () => {
     expect(stageOfExerciseType("lesson_transform")).toBe("productive");
     expect(stageOfExerciseType("lesson_open_answer")).toBe("independent");
     expect(stageOfExerciseType("lesson_calculation")).toBe("independent");
+    expect(stageOfExerciseType("lesson_keywords")).toBe("guided");
   });
 });
 
@@ -110,6 +111,20 @@ describe("toLessonDraftPatch", () => {
     const snapshot = createLessonSnapshot(source, () => "unused");
     snapshot.form.title = "Nowy tytuł";
     expect(toLessonDraftPatch(snapshot).exercises![1]!.acceptedAnswers).toEqual(source.exercises[1]!.acceptedAnswers);
+  });
+
+  it("słowa kluczowe: odpowiedź z zaznaczonych pojęć, bez wariantów i focus", () => {
+    const source = draft();
+    source.exercises[0] = {
+      ...source.exercises[0]!, exerciseType: "lesson_keywords", familyId: "def", answer: "stara", acceptedAnswers: ["x"], focus: ["y"],
+      options: undefined, correctOption: undefined,
+      keywordOptions: [{ id: "k1", text: "światło" }, { id: "k2", text: "cukry" }, { id: "k3", text: "tlen" }, { id: "k4", text: "korzenie" }],
+      keyOptionIds: ["k2", "k1"],
+    };
+    const snapshot = createLessonSnapshot(source, () => "unused");
+    const input = toLessonDraftPatch(snapshot).exercises![0]!;
+    expect(input).toMatchObject({ exerciseType: "lesson_keywords", familyId: "def", answer: "cukry, światło", acceptedAnswers: [], focus: [], keyOptionIds: ["k2", "k1"] });
+    expect(input.keywordOptions).toHaveLength(4);
   });
 
   it("zachowuje pytanie short_answer zapisane w prompt", () => {

@@ -363,6 +363,22 @@ export const SchoolProgressSchema = z.object({
     knowledge: z.enum(["correct", "partial", "incorrect"]),
     precision: z.enum(["concise", "verbose", "unfocused"]).nullable(),
   })).max(5),
+  /**
+   * Trener precyzji: zaproponowane skrócenia (zadania następcze), podjęte
+   * poprawki i udane (krótsze, bez utraty elementu wymaganego) oraz ostatnie
+   * pary oryginał → poprawka. Poprawki nie wchodzą do liczników wiedzy wyżej.
+   */
+  shortening: z.object({
+    offered: z.number().int().nonnegative(),
+    attempted: z.number().int().nonnegative(),
+    successful: z.number().int().nonnegative(),
+    recent: z.array(z.object({
+      original: z.string(),
+      revision: z.string(),
+      lostElements: z.array(z.string()).max(6),
+      successful: z.boolean(),
+    })).max(3),
+  }).optional(),
 });
 
 

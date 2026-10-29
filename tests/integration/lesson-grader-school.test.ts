@@ -485,6 +485,15 @@ describe("trener precyzji: „Skróć odpowiedź” (integracja)", () => {
     // Po poprawce plan sesji toczy się dalej; zadanie następcze nie zjadło budżetu.
     const after = await nextTask(services, openTask.sessionId);
     if (after) expect(after.remainingAssessed).toBe(openTask.remainingAssessed - 1);
+
+    // Raport rodzica: para oryginał → poprawka osobno; poprawka nie zawyża liczników wiedzy.
+    const report = (await lessonObjectiveProgress(services, deckId, child.id)).find((row) => row.objectiveId === OBJECTIVE_ID)!;
+    expect(report.school?.shortening).toEqual({
+      offered: 1, attempted: 1, successful: 1,
+      recent: [{ original: verboseAnswer, revision: shortened, lostElements: [], successful: true }],
+    });
+    expect(report.school?.knowledge.correct).toBe(1);
+    expect(report.school?.recentAnswers.map((answer) => answer.text)).not.toContain(shortened);
   });
 
   it("wykrywa utratę elementu wymaganego w poprawce, bez treści elementu w feedbacku", async () => {
@@ -506,6 +515,11 @@ describe("trener precyzji: „Skróć odpowiedź” (integracja)", () => {
     expect(rows.rows[0]!.details.lostElementIds).toEqual(["e2"]);
     // Poprawka jest wspomagana: nie zmienia serii ani statusu celu.
     expect(await progressOf()).toEqual(beforeRevision);
+    // Rodzic widzi utracony element; poprawka nie jest błędem wiedzy w raporcie.
+    const report = (await lessonObjectiveProgress(services, deckId, child.id)).find((row) => row.objectiveId === OBJECTIVE_ID)!;
+    expect(report.school?.shortening?.recent[0]).toMatchObject({ lostElements: ["roślina wykorzystuje światło"], successful: false });
+    expect(report.school?.knowledge).toMatchObject({ partial: 0, incorrect: 0 });
+    expect(report.topErrors).toEqual([]);
   });
 
   it("poprawka identyczna z oryginałem nie jest oceniana i czeka na krótszą wersję", async () => {

@@ -33,6 +33,7 @@ const STAGE_BY_TYPE: Readonly<Record<LessonExerciseTypeDto, LessonStage>> = {
   lesson_transform: "productive",
   lesson_open_answer: "independent",
   lesson_calculation: "independent",
+  lesson_keywords: "guided",
 };
 
 /** Etap ćwiczenia danego typu (prezentacja przeglądu). */
@@ -76,6 +77,9 @@ export interface EditableLessonExercise {
   familyId: string;
   calculation?: CalculationSpec;
   sourceRefs: { quote: string; parentAdded?: boolean }[] | null;
+  /** `lesson_keywords`: pojęcia do wyboru i identyfikatory kluczowych (null = inny typ). */
+  keywordOptions?: { id: string; text: string }[] | null;
+  keyOptionIds?: string[] | null;
 }
 
 export interface EditableDynamicObjective {
@@ -155,7 +159,15 @@ function editableFromExercise(
     familyId: exercise.familyId ?? "",
     ...(exercise.calculation ? { calculation: structuredClone(exercise.calculation) } : {}),
     sourceRefs: exercise.sourceRefs ? exercise.sourceRefs.map((ref) => ({ ...ref })) : null,
+    ...(exercise.keywordOptions ? { keywordOptions: exercise.keywordOptions.map((o) => ({ ...o })) } : {}),
+    ...(exercise.keyOptionIds ? { keyOptionIds: [...exercise.keyOptionIds] } : {}),
   };
+}
+
+/** Odpowiedź `lesson_keywords` liczona z zaznaczonych pojęć (jak w domenie serwera). */
+export function keywordsAnswerOf(exercise: Pick<EditableLessonExercise, "keywordOptions" | "keyOptionIds">): string {
+  const textById = new Map((exercise.keywordOptions ?? []).map((o) => [o.id, o.text] as const));
+  return (exercise.keyOptionIds ?? []).map((id) => textById.get(id) ?? "").join(", ");
 }
 
 /** Migawka formularza z `LessonDraftDto` (szkic lub opublikowana do wglądu). */
@@ -267,6 +279,14 @@ function exerciseToInput(exercise: EditableLessonExercise): LessonExerciseInput 
     input.sourceRefs = exercise.sourceRefs.filter((ref) => ref.quote.trim().length > 0).map((ref) => ({ ...ref }));
   }
   if (exercise.calculation) input.calculation = structuredClone(exercise.calculation);
+  if (type === "lesson_keywords") {
+    // Odpowiedź, warianty i focus wynikają z zaznaczonych pojęć — rodzic ich nie wpisuje.
+    input.keywordOptions = (exercise.keywordOptions ?? []).map((o) => ({ ...o }));
+    input.keyOptionIds = [...(exercise.keyOptionIds ?? [])];
+    input.answer = keywordsAnswerOf(exercise);
+    input.acceptedAnswers = [];
+    input.focus = [];
+  }
   return input;
 }
 

@@ -188,6 +188,8 @@ export async function lessonObjectiveProgress(
            and n.skill = 'objective'
            and n.item_revision_id = any(${sql.param(historyRevisionIds)}::uuid[])
            and n.details ? 'errorCategory'
+           -- Poprawka po informacji zwrotnej („Skróć odpowiedź”) nie jest błędem wiedzy.
+           and not (n.details ? 'revisionOf')
          group by 1, 2, 3
       `)).rows.map((r) => ({ objectiveId: r.objectiveId ?? "", category: r.category ?? "", answer: r.answer, count: r.count }))
     : [];
@@ -216,7 +218,58 @@ export async function lessonObjectiveProgress(
          where n.child_id = ${child}
            and n.skill = 'objective'
            and n.item_revision_id = any(${sql.param(historyRevisionIds)}::uuid[])
-           and n.details ? 'knowledge'`;
+           and n.details ? 'knowledge'
+           and not (n.details ? 'revisionOf')`;
+  // Trener precyzji: poprawki („Skróć odpowiedź”) raportujemy osobno, z oryginałem.
+  const [offeredResult, revisionResult] = historyRevisionIds.length
+    ? await Promise.all([
+        services.db.execute<{ objectiveId: string | null; count: number }>(sql`
+        select t.context->>'objectiveId' as "objectiveId", count(*)::int as count
+          from learning_app.session_tasks t
+         where t.child_id = ${child}
+           and t.item_revision_id = any(${sql.param(historyRevisionIds)}::uuid[])
+           and t.context ? 'followUpOf'
+         group by 1`),
+        services.db.execute<{
+          objectiveId: string | null; outcome: string; details: Record<string, unknown>;
+          revision: string | null; original: string | null;
+        }>(sql`
+        select n.details->>'objectiveId' as "objectiveId", n.outcome, n.details,
+               a.answer->>'text' as revision, o.answer->>'text' as original
+          from learning_app.assessments n
+          join learning_app.attempts a on a.id = n.attempt_id
+          left join learning_app.attempts o on o.id::text = n.details->'revisionOf'->>'attemptId'
+         where n.child_id = ${child}
+           and n.skill = 'objective'
+           and n.item_revision_id = any(${sql.param(historyRevisionIds)}::uuid[])
+           and n.details ? 'revisionOf'
+         order by a.received_at desc, a.id`),
+      ])
+    : [null, null];
+  function shorteningAggregate(objectiveId: string) {
+    const offered = offeredResult?.rows.find((row) => row.objectiveId === objectiveId)?.count ?? 0;
+    const revisions = (revisionResult?.rows ?? []).filter((row) => row.objectiveId === objectiveId);
+    if (offered === 0 && revisions.length === 0) return undefined;
+    const summarized = revisions.map((row) => {
+      const lostIds = Array.isArray(row.details.lostElementIds) ? row.details.lostElementIds : [];
+      const missingIds = Array.isArray(row.details.missingElementIds) ? row.details.missingElementIds : [];
+      const missingTexts = Array.isArray(row.details.missingElementTexts) ? row.details.missingElementTexts : [];
+      const lostElements = missingIds.flatMap((id, index) =>
+        lostIds.includes(id) && typeof missingTexts[index] === "string" ? [missingTexts[index] as string] : []).slice(0, 6);
+      return {
+        original: row.original ?? "",
+        revision: row.revision ?? "",
+        lostElements,
+        successful: row.outcome === "correct" && lostIds.length === 0 && row.details.shorter === true,
+      };
+    });
+    return {
+      offered,
+      attempted: revisions.length,
+      successful: summarized.filter((revision) => revision.successful).length,
+      recent: summarized.slice(0, 3),
+    };
+  }
   const [countsResult, missingResult, recentResult] = historyRevisionIds.length
     ? await Promise.all([
         services.db.execute<{
@@ -272,6 +325,7 @@ export async function lessonObjectiveProgress(
         knowledge: (["correct", "partial", "incorrect"].includes(r.knowledge ?? "") ? r.knowledge : "incorrect") as "correct" | "partial" | "incorrect",
         precision: (r.precision === "concise" || r.precision === "verbose" || r.precision === "unfocused" ? r.precision : null) as "concise" | "verbose" | "unfocused" | null,
       })),
+      ...(shorteningAggregate(objectiveId) ? { shortening: shorteningAggregate(objectiveId)! } : {}),
     };
   }
   // Pula wyczerpana: wszystkie target_key ćwiczeń celu były już ujawnione dziecku
