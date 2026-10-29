@@ -23,7 +23,6 @@ import { modals } from "@mantine/modals";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   messages,
-  AssignmentPutSchema,
   type ChildDto,
   type DeckDto,
   type DraftDto,
@@ -39,15 +38,16 @@ import {
 } from "./deck-editor-state";
 import { callParent, errorMessage, parentClient } from "./api";
 import { orpc } from "./query-client";
-import AssignmentTestGoalFields, { type AssignmentTestSettings } from "./AssignmentTestGoalFields";
+import type { AssignmentTestSettings } from "./AssignmentTestGoalFields";
 import DeckSessionTaskBudgetSettings from "./DeckSessionTaskBudgetSettings";
 import type { EditorLeaveState } from "./useParentLeaveGuard";
 import DeckConflictPanel, { type EditorConflict } from "./DeckConflictPanel";
 import { DeckCoverSettings } from "./DeckCoverSettings";
 import { ParentIcon } from "./ParentIcon";
 import { runOnce } from "./run-once";
-import { avatarEmoji } from "./avatars";
 import { polishPlural } from "./deck-list-grouping";
+import { formatFamilyDate } from "./family-date";
+import { EditorActionBar, EditorAssignments, EditorErrorText } from "./EditorAssignments";
 import "./deck-editor.css";
 
 const VISUAL_TYPES: VisualType[] = ["image", "color", "number", "sequence", "none"];
@@ -69,10 +69,6 @@ function mediaTone(state: string): "success" | "info" | "danger" | "neutral" {
   return "neutral";
 }
 
-/** Termin sprawdzianu (YYYY-MM-DD, dzień rodziny) jako DD.MM.RRRR. */
-export function formatFamilyDate(iso: string): string {
-  return `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`;
-}
 
 /** DTO używa "approved", katalog komunikatów kluczem "ready". */
 function mediaStateText(catalogue: Record<string, string>, state: string): string {
@@ -708,12 +704,7 @@ export default function DeckEditor({
   const publishBlocked = editable && (isDirty || (draft?.items.length ?? 0) === 0);
   const showActionBar = editable || (deck?.state === "published" && !draft);
   const itemCount = form?.items.length ?? 0;
-  const errorAlert = (
-    <Text size="sm" role="alert" data-testid="api-error" className="pp-editor-bar-error">
-      <ParentIcon name="alert-triangle" />
-      {error}
-    </Text>
-  );
+  const errorAlert = <EditorErrorText error={error ?? ""} />;
 
   const settings = deck && (
     <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
@@ -994,100 +985,44 @@ export default function DeckEditor({
         {deck?.state === "published" && (
           <>
             <Title order={2} fz="lg" mt="md">{messages.decks.assignTitle}</Title>
-            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-              {childrenList.map((child, index) => {
-                const assignment = deck.assignments.find((a) => a.childId === child.id);
-                return (
-                  <Paper withBorder radius="lg" p="md" key={child.id} data-testid={`assign-row-${index}`}>
-                    <Stack gap="sm">
-                      <Group gap="sm" wrap="nowrap" data-testid={assignment ? `assignment-row-${index}` : undefined}>
-                        <span className="pp-editor-avatar" aria-hidden="true">{avatarEmoji(child.avatarKey)}</span>
-                        <Text fw={600} className="pp-editor-grow" data-child-id={child.id}>{child.displayName}</Text>
-                        {assignment && (
-                          <span className="pp-status-badge" data-tone="success">
-                            {assignment.testDate
-                              ? messages.decks.assignedBadge.replace("{date}", formatFamilyDate(assignment.testDate))
-                              : messages.decks.assignedNoDate}
-                          </span>
-                        )}
-                      </Group>
-                      {child.canRead === false && deck.published?.vocabularyFormat !== "picture" && (
-                        <Alert color="yellow" variant="light" data-testid={`non-reader-assignment-warning-${index}`}>
-                          {messages.decks.nonReaderStandardAssignment}
-                        </Alert>
-                      )}
-                      <TextInput
-                        size="md"
-                        type="date"
-                        label={messages.decks.assignDate}
-                        data-testid={`assign-date-${index}`}
-                        aria-label={`${messages.decks.assignDate} ${child.displayName}`}
-                        maw={260}
-                        value={assignDates[child.id] ?? assignment?.testDate ?? ""}
-                        onChange={(event) => {
-                          const value = event.currentTarget.value;
-                          setAssignDates((current) => ({ ...current, [child.id]: value }));
-                        }}
-                      />
-                      <AssignmentTestGoalFields {...assignmentSettings(child.id)} onChange={(value) => setAssignSettings((current) => ({ ...current, [child.id]: value }))} />
-                      {assignErrors[child.id] && (
-                        <Alert color="red" variant="light" role="alert" data-testid={`assign-error-${index}`}>{assignErrors[child.id]}</Alert>
-                      )}
-                      <Group gap="xs">
-                        <Button size="md" variant="light" data-testid={`assign-submit-${index}`}
-                          disabled={!AssignmentPutSchema.safeParse({ testDate: null, ...assignmentSettings(child.id) }).success}
-                          onClick={() => assign(child.id)}>
-                          {messages.decks.assign}
-                        </Button>
-                        {assignment && (
-                          <Button size="md" variant="subtle" color="red" data-testid={`unassign-submit-${index}`}
-                            disabled={unassigningChildId === child.id} onClick={() => confirmUnassign(child.id)}>
-                            {messages.decks.unassign}
-                          </Button>
-                        )}
-                      </Group>
-                    </Stack>
-                  </Paper>
-                );
-              })}
-            </SimpleGrid>
+            <EditorAssignments
+              kind="vocabulary"
+              childrenList={childrenList}
+              assignments={deck.assignments}
+              dates={assignDates}
+              errors={assignErrors}
+              unassigningChildId={unassigningChildId}
+              settings={assignmentSettings}
+              warning={(child, index) => child.canRead === false && deck.published?.vocabularyFormat !== "picture" && (
+                <Alert color="yellow" variant="light" data-testid={`non-reader-assignment-warning-${index}`}>
+                  {messages.decks.nonReaderStandardAssignment}
+                </Alert>
+              )}
+              onDateChange={(childId, value) => setAssignDates((current) => ({ ...current, [childId]: value }))}
+              onSettingsChange={(childId, value) => setAssignSettings((current) => ({ ...current, [childId]: value }))}
+              onAssign={(childId) => void assign(childId)}
+              onUnassign={confirmUnassign}
+            />
           </>
         )}
       </Stack>
 
       {showActionBar && (
-        <div className="pp-editor-bar" data-testid="editor-action-bar">
-          <div className="pp-editor-bar-in">
-            <div className="pp-editor-bar-status">
-              {error && errorAlert}
-              {publishBlocked && (
-                <Text size="sm" className="pp-editor-bar-note" data-testid="publish-blocked-reason">
-                  {isDirty && itemCount > 0
-                    ? `${messages.decks.unsavedChanges} · ${messages.decks.saveBeforePublish}`
-                    : messages.decks.emptyPublish}
-                </Text>
-              )}
-            </div>
-            {editable ? (
-              <div className="pp-editor-bar-actions">
-                <Button size="md" variant={isDirty ? "filled" : "default"} data-testid="save-items" onClick={save}
-                  disabled={busy || (conflict !== null && !remoteApplied)}>
-                  {messages.decks.save}
-                </Button>
-                <Button size="md" variant={isDirty ? "default" : "filled"} data-testid="publish-deck" onClick={publish}
-                  disabled={busy || isDirty || conflict !== null || (draft?.items.length ?? 0) === 0}>
-                  {messages.decks.publish}
-                </Button>
-              </div>
-            ) : (
-              <div className="pp-editor-bar-actions pp-editor-bar-single">
-                <Button size="md" data-testid="new-version" onClick={startNewVersion} disabled={busy}>
-                  {messages.decks.newVersion}
-                </Button>
-              </div>
-            )}
-          </div>
-        </div>
+        <EditorActionBar
+          error={error}
+          blockedReason={publishBlocked
+            ? (isDirty && itemCount > 0 ? `${messages.decks.unsavedChanges} · ${messages.decks.saveBeforePublish}` : messages.decks.emptyPublish)
+            : null}
+          editable={editable}
+          isDirty={isDirty}
+          busy={busy}
+          testIds={{ save: "save-items", publish: "publish-deck" }}
+          saveDisabled={busy || (conflict !== null && !remoteApplied)}
+          publishDisabled={busy || isDirty || conflict !== null || (draft?.items.length ?? 0) === 0}
+          onSave={() => void save()}
+          onPublish={() => void publish()}
+          onNewVersion={() => void startNewVersion()}
+        />
       )}
     </div>
   );

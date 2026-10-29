@@ -126,6 +126,7 @@ async function createAssignedLesson(
   const versionId = publishedDeck.published?.id;
   expect(versionId).toBeTruthy();
 
+  await page.getByTestId("lesson-tab-children").click();
   const childAssignment = page.locator('[data-testid^="assign-row-"]').filter({ hasText: childName });
   await expect(childAssignment).toBeVisible();
   const assignment = page.waitForResponse((response) =>
@@ -440,6 +441,7 @@ test("approved lesson survives reload and support without duplicate or independe
       response.request().method() === "GET" && new URL(response.url()).pathname === `/api/v1/parent/lessons/${deckId}/progress` && new URL(response.url()).searchParams.get("childId") === childId,
     );
     await lessonRow.click();
+    await page.getByTestId("lesson-tab-children").click();
     await expect(page.getByTestId("supervision-panel")).toBeVisible();
     const selectedChild = page.getByTestId("supervision-child");
     if (await selectedChild.inputValue() !== childId) await selectedChild.selectOption(childId);
@@ -456,6 +458,7 @@ test("approved lesson survives reload and support without duplicate or independe
       response.request().method() === "GET" && new URL(response.url()).pathname === `/api/v1/parent/lessons/${deckId}/progress` && new URL(response.url()).searchParams.get("childId") === childId,
     );
     await page.locator('[data-testid^="deck-row-"]').filter({ hasText: LESSON_TITLE }).click();
+    await page.getByTestId("lesson-tab-children").click();
     await expect(page.getByTestId("supervision-panel")).toBeVisible();
     const persistedSelectedChild = page.getByTestId("supervision-child");
     if (await persistedSelectedChild.inputValue() !== childId) await persistedSelectedChild.selectOption(childId);
@@ -547,6 +550,7 @@ test("question, negative and short-answer objectives complete a no-audio child a
     const lessonRow = page.locator('[data-testid^="deck-row-"]').filter({ hasText: lessonTitle });
     await expect(lessonRow).toBeVisible();
     await lessonRow.click();
+    await page.getByTestId("lesson-tab-children").click();
     await expect(page.getByTestId("supervision-panel")).toBeVisible();
     const selectedChild = page.getByTestId("supervision-child");
     if (await selectedChild.inputValue() !== childId) await selectedChild.selectOption(childId);
