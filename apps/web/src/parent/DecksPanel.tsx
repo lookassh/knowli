@@ -86,13 +86,13 @@ const STATE_TONE: Record<DeckSummaryDto["state"], string> = {
 /**
  * Sekcja Zestawy: lista pogrupowana po stanie, tworzenie materiału oraz —
  * według adresu — edytor zestawu (`/parent/decks/{id}`) albo formularz nowej
- * lekcji (`/parent/lessons/new`). Edytory są jeszcze na starych stylach
- * (fazy 5–6 planu 2026-10-29-parent-ui-mantine).
+ * lekcji (`/parent/lessons/new`). Edytor lekcji jest jeszcze na starych stylach
+ * (faza 6b planu 2026-10-29-parent-ui-mantine).
  */
 /**
- * Widoki lekcji jeszcze na starych stylach (fazy 6a/6b): stały jasny obszar
+ * Edytor lekcji jeszcze na starych stylach (faza 6b): stały jasny obszar
  * z tokenami `pp-*`. Komponenty Mantine w środku (wspólne pola przypisań
- * i liczby pytań) czytają schemat z `<html>`, więc na czas widoku lekcji
+ * i liczby pytań, panel nadzoru) czytają schemat z `<html>`, więc na czas edytora lekcji
  * cała strona przechodzi na jasny schemat; wybór rodzica wraca po wyjściu
  * (zapamiętane ustawienie się nie zmienia).
  */
@@ -348,9 +348,8 @@ export default function DecksPanel({
 
   if (route.newLesson) {
     return (
-      <LegacyArea>
       <NewLessonForm
-        onAuthExpired={onAuthExpired}
+        registerEditorState={registerEditorState}
         onCancel={openList}
         onCreated={(createdDeckId) => {
           // formularz znika z historii — „wstecz” z nowej lekcji prowadzi do listy, nie do pustego formularza
@@ -358,7 +357,6 @@ export default function DecksPanel({
           void onChanged().catch(() => undefined);
         }}
       />
-      </LegacyArea>
     );
   }
 

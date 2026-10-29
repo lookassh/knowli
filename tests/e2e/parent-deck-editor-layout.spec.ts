@@ -173,15 +173,28 @@ test("tryb ciemny obejmuje edytor", async ({ page }) => {
   expect(br! + bg! + bb!).toBeLessThan(3 * 80);
 });
 
-test("widok lekcji (stare style) zostaje jasny także po wybraniu trybu ciemnego w menu", async ({ page }) => {
+test("edytor lekcji (stare style) zostaje jasny także po wybraniu trybu ciemnego w menu", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.emulateMedia({ colorScheme: "dark" });
   await openEditor(page);
   const html = page.locator("html");
   await expect(html).toHaveAttribute("data-mantine-color-scheme", "dark");
 
+  // nowa lekcja jest już na Mantine (faza 6a) — ciemna jak reszta panelu
   await page.goto("/parent/lessons/new");
+  await expect(page.getByTestId("new-lesson-form")).toBeVisible();
+  await expect(html).toHaveAttribute("data-mantine-color-scheme", "dark");
+
+  // edytor lekcji do fazy 6b: odczyt lekcji nieistotny, liczy się jasna wyspa
+  const lessonId = "00000000-0000-4000-8000-0000000000e1";
+  await page.route("**/api/v1/parent/decks", (route) => route.fulfill({ json: [
+    { deckId: lessonId, title: "Present Simple", state: "draft", kind: "lesson", editableVersionId: draftId, publishedVersionId: null },
+  ] }));
+  await page.route(`**/api/v1/parent/lessons/${lessonId}`, (route) =>
+    route.fulfill({ status: 404, json: { code: "not_found", message: "Brak", retryable: false, requestId: "r" } }));
+  await page.goto(`/parent/decks/${lessonId}`);
   await expect(page.getByTestId("tab-decks")).toBeVisible();
+  await expect(page.getByTestId("deck-not-found")).toHaveCount(0);
   await expect(html).toHaveAttribute("data-mantine-color-scheme", "light");
   // jawny wybór „Ciemny” przy schemacie systemu już ciemnym: wyliczony schemat się nie zmienia
   await page.getByTestId("color-scheme-menu").click();

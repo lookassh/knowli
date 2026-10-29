@@ -1,0 +1,65 @@
+/* Nowa lekcja i panel nadzoru na Mantine (plan 2026-10-29-parent-ui-mantine, faza 6a).
+   Tekst pomocniczy: .pp-editor-muted (deck-editor.css); kolory stanów z --pp-status-* (theme.ts). */
+
+/* --- nowa lekcja --- */
+
+.pp-lesson-objectives {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.pp-lesson-objectives legend {
+  margin-bottom: 8px;
+  padding: 0;
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 500;
+}
+
+.pp-lesson-pool {
+  max-width: 320px;
+}
+
+@media (max-width: 37.49em) {
+  .pp-lesson-submit {
+    width: 100%;
+  }
+}
+
+/* --- panel nadzoru --- */
+
+.pp-sup-child {
+  max-width: 320px;
+}
+
+.pp-sup-card {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pp-sup-subtitle {
+  margin: 4px 0 2px;
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 600;
+}
+
+.pp-sup-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* listy kart: tylko reset listy, odstęp daje Stack */
+.pp-sup-cards {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pp-sup-list .pp-sup-list {
+  margin-top: 2px;
+  padding-left: 14px;
+}
