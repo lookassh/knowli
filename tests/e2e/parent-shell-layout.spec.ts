@@ -107,3 +107,25 @@ test("nieudane pierwsze wczytanie list pokazuje błąd z ponowieniem, nie pusty 
   await expect(page.getByTestId("panel-load-error")).toHaveCount(0);
   await expect(page.getByText(messages.children.empty)).toBeVisible();
 });
+
+test("powrót sieci nie przełącza panelu na logowanie (sesję sprawdzają tylko odpowiedzi 401)", async ({ page, context }) => {
+  let authStateCalls = 0;
+  await page.route("**/api/v1/parent/**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/login")) {
+      authStateCalls += 1;
+      return route.fulfill({ json: { authenticated: authStateCalls === 1, setupRequired: false } });
+    }
+    return route.fulfill({ json: [] });
+  });
+  await page.goto("/parent/decks");
+  await expect(page.getByTestId("tab-decks")).toBeVisible();
+
+  await context.setOffline(true);
+  await context.setOffline(false);
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await page.waitForTimeout(500);
+  await expect(page.getByTestId("tab-decks")).toBeVisible();
+  await expect(page.getByTestId("auth-secret")).toHaveCount(0);
+  expect(authStateCalls).toBe(1);
+});

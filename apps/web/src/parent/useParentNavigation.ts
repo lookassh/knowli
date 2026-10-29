@@ -21,7 +21,9 @@ export function useParentNavigation(guard: LeaveGuard) {
   const currentPath = useRef(sectionPath(DEFAULT_SECTION));
   // obiekt guard powstaje przy każdym renderze; nasłuch historii rejestrujemy raz
   const guardRef = useRef(guard);
-  guardRef.current = guard;
+  useEffect(() => {
+    guardRef.current = guard;
+  });
 
   const show = useCallback((next: ParentSection) => {
     currentPath.current = sectionPath(next);

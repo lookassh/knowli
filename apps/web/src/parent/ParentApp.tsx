@@ -46,7 +46,16 @@ export default function ParentApp() {
   const { section, navigate } = useParentNavigation(leaveGuard);
   const [reauthOpen, setReauthOpen] = useState(false);
 
-  const auth = useQuery({ ...orpc.auth.state.queryOptions(), retry: false });
+  // Stan sesji czytamy raz przy starcie panelu. Później o wygaśnięciu mówią
+  // wyłącznie odpowiedzi 401 (toLogin) — samoczynne odświeżenie auth.state
+  // (np. po powrocie sieci) odmontowałoby edytor z niezapisanymi zmianami.
+  const auth = useQuery({
+    ...orpc.auth.state.queryOptions(),
+    retry: false,
+    staleTime: Infinity,
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
+  });
   const authenticated = auth.data?.authenticated === true;
   const childrenQuery = useQuery({ ...orpc.children.list.queryOptions(), enabled: authenticated });
   const decksQuery = useQuery({ ...orpc.decks.list.queryOptions(), enabled: authenticated });
