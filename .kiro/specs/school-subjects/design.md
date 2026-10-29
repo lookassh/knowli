@@ -248,14 +248,258 @@ i skonfigurowany model. Twarde wymaganie: wszystkie przypadki klasy
 
 ## 5. Odpowiedź mówiona (Etap 3)
 
-Dziś `lesson-attempts.ts` odrzuca modalność audio. Etap 3 otwiera ją wyłącznie
-dla `lesson_open_answer` przedmiotów, które to zadeklarują: transkrypcja
-istniejącym portem STT z locale `pl-PL`, potem ta sama finalizacja co tekstu,
-z modalnością zapisaną przy próbie. Niska pewność transkrypcji lub awaria STT
-= „nieocenione” (bez oceny, bez pomyłki). Przed implementacją krótki spike:
-jakość polskiego STT obecnego providera na głosie dziecka; wynik spike'a
-decyduje o ewentualnej zmianie adaptera. Kid UI reużywa `SpeechRecordButton`
-w widoku odpowiedzi otwartej lekcji.
+Status: **szkic do akceptacji właściciela** (2026-10-29). Moduł odpowiedzialny:
+silnik lekcji (`learning/lessons/`, nowy plik ścieżki mowy lekcji) z czystymi
+regułami w `domain/lessons/` i deklaracją w przedmiocie `school`
+(`domain/lessons/subjects/school/`); port `SttProvider` i adapter
+`providers/azure/stt` współdzielone ze słówkami. Gramatyka i słówka bez zmian.
+
+Pierwotny szkic: dziś `lesson-attempts.ts` odrzuca modalność audio. Etap 3
+otwiera ją wyłącznie dla `lesson_open_answer` przedmiotów, które to zadeklarują:
+transkrypcja istniejącym portem STT z locale `pl-PL`, potem ta sama finalizacja
+co tekstu, z modalnością zapisaną przy próbie. Niska pewność transkrypcji lub
+awaria STT = „nieocenione” (bez oceny, bez pomyłki).
+
+### 5.1. Spike STT `pl-PL` (2026-10-29)
+
+Skrypt próby `spike/school-stt/run.mts` (poza kodem produktu, usuwany po
+próbie jak w `docs/speech-spike.md`) porównuje na tych samych bajtach WAV PCM
+16 kHz mono cztery warianty Azure (region `germanywestcentral`):
+
+| Wariant | Opis |
+| --- | --- |
+| A | produkcyjny adapter `createAzureSttProvider` (REST short-audio, `conversation`, `DisplayText`) |
+| B | ten sam REST, forma leksykalna `NBest[0].Lexical` (liczby słownie, bez interpunkcji) |
+| C | Azure Fast Transcription (`transcriptions:transcribe`, cały plik, frazy z confidence) |
+| D | C z listą fraz z materiału rodzica (`phraseList`, api `2025-10-15`) |
+
+Tryb `synth`: polski neuronowy TTS Azure (Zofia, Marek, Agnieszka) z prozodią
+podniesioną o 35% i zwolnioną o 12% — **przybliżenie** głosu dziecka, nie jego
+zastępstwo — na 11 fikcyjnych odpowiedziach do materiału pilotażowego
+(pojęcia, liczby, nazwy własne, pauzy 1–4 s w środku odpowiedzi, „yyy”,
+odpowiedź błędna, lista 7 nazw) oraz cisza i szum. Tryb `live`: lokalna strona
+`http://127.0.0.1:5180` do nagrań przy urządzeniu; nagranie żyje tylko
+w pamięci żądania, konsola wypisuje wyłącznie statusy i czasy.
+
+Wyniki macierzy syntetycznej (33 nagrania z mową + cisza i szum; „pojęcia” =
+odsetek oczekiwanych pojęć obecnych w transkrypcji):
+
+| Wariant | Pojęcia | Confidence (min / mediana) | Czas (mediana / max) | Cisza 3 s | Szum 3 s |
+| --- | --- | --- | --- | --- | --- |
+| A | 137/150 (91%) | 0,60 / 0,91 | 1,36 s / 2,51 s | pusty tekst, 0,00 | pusty tekst, 0,00 |
+| B | 146/150 (97%) | 0,60 / 0,91 | 1,24 s / 2,36 s | pusty tekst, 0,00 | pusty tekst, 0,00 |
+| C | 141/150 (94%) | 0,63 / 0,82 | 0,69 s / 1,45 s | **„I'm going to do that.”, 0,31** | `no_speech` |
+| D | 141/150 (94%) | 0,63 / 0,89 | 0,58 s / 1,17 s | **„I'm going to do that.”, 0,31** | `no_speech` |
+
+Wnioski:
+
+1. **Pauzy nie ucinają odpowiedzi.** REST short-audio przepisał całość także
+   przy pauzach 2 s i 4 s w środku odpowiedzi; stawia za to kropkę w miejscu
+   pauzy („…powierzchni ziemi.Pomniejszeniu…”). Liczenie zdań z transkrypcji
+   karałoby namysł, nie formę.
+2. **Pewność nie odróżnia przekłamań zmieniających sens.** „niziny” →
+   „zimy” (conf 0,88–0,91), „Vasco da Gama” → „was Skoda gama” (0,77),
+   „1 : 25 000, 3 cm” → „jeden do 25003 cm” (0,92–0,96 we wszystkich trzech
+   głosach). Próg pewności odsiewa śmieci i ciszę, ale nie uchroni poprawnej
+   odpowiedzi przed oceną „błąd” — to główny wniosek spike'u.
+3. **Forma leksykalna (B) usuwa sklejanie liczb** („dwudziestu pięciu tysięcy
+   trzy centymetry”) i podnosi trafienie pojęć do 97%, kosztem braku
+   interpunkcji i wielkich liter. Nazw własnych nie poprawia.
+4. **Fast Transcription (C) lepiej zapisuje nazwy** (Vasco da Gama, Marco
+   Polo) i jest 2× szybsze, ale **na ciszy halucynuje angielskie zdanie**
+   przy locale `pl-PL`, przekręca „James Cook” → „Dzień Skok” i ma niski limit
+   wywołań na minutę w obecnej warstwie (HTTP 429 przy kilku żądaniach).
+5. **Lista fraz (D) podnosi confidence (0,78 → 0,97) bez poprawy treści** —
+   zafałszowuje próg i wysyła treść materiału do usługi. Odrzucona.
+6. Odpowiedź błędna („Południk zero przechodzi przez Paryż”) przepisana
+   wiernie przez wszystkie warianty — brak biasu w stronę poprawnej odpowiedzi.
+7. Czas: pełne żądanie STT ≤ 2,5 s dla nagrań do 13 s; deadline 30 s
+   z dużym zapasem.
+
+Ograniczenia: syntetyczny głos z podniesioną wysokością **nie jest głosem
+dziecka** (artykulacja, tempo, wahania, szum domowy). Próba `live` na głosie
+dziecka nie została jeszcze wykonana — patrz 5.9 pkt 1.
+
+### 5.2. Decyzja o adapterze
+
+Zostajemy przy **produkcyjnym adapterze REST short-audio** (A) z locale
+`pl-PL`: nie halucynuje na ciszy, nie ucina pauz, mieści 45 s nagrania
+i nie wymaga nowej integracji. Fast Transcription odrzucone (halucynacja na
+ciszy, limit wywołań); lista fraz odrzucona (fałszuje pewność, wysyła
+materiał). Forma leksykalna nie jest potrzebna w rekomendowanym przepływie
+(5.3) — wróci tylko przy wariancie z 5.9 pkt 2. Decyzję potwierdza lub
+koryguje próba `live` na głosie dziecka (5.9 pkt 1).
+
+### 5.3. Przepływ: dyktowanie do pola z potwierdzeniem (rekomendacja)
+
+Wniosek 2 rozstrzyga kształt funkcji: skoro pewna transkrypcja potrafi
+zmienić sens, dziecko widzi tekst **przed** oceną. Mowa jest sposobem
+wpisania odpowiedzi, a ocena dotyczy tekstu, który dziecko zatwierdziło:
+
+1. Dziecko dotyka mikrofonu, mówi (do 45 s), dotyka ponownie.
+2. Klient wysyła nagranie do nowego endpointu dyktowania; serwer zwraca
+   transkrypcję albo powód braku tekstu. **Nie powstaje próba ani ocena.**
+3. Tekst trafia do pola odpowiedzi („Sprawdź, czy dobrze cię usłyszałem”).
+   Dziecko może poprawić tekst, nagrać ponownie albo od razu „Sprawdź”.
+4. „Sprawdź” wysyła istniejącą odpowiedź tekstową z oznaczeniem sposobu
+   wprowadzenia; dalej ścieżka tekstu bez zmian (warianty → cache → grader).
+
+Skutki: niepewna lub nieudana transkrypcja nigdy nie dochodzi do oceny, więc
+nie może stać się błędem wiedzy ani pomyłką pojęć (wym. 6.2) — dziecko
+po prostu nie dostaje tekstu i może powtórzyć albo pisać. Pewne przekłamanie
+(„zimy”) dziecko widzi i poprawia. Bez nowego wariantu promptu gradera
+i bez nowego klucza cache — oceniany jest tekst, jak dziś. Alternatywa
+(ocena bezpośrednio z nagrania) — 5.9 pkt 2.
+
+### 5.4. Kontrakt endpointu dyktowania i DTO
+
+- **Endpoint**: `POST /api/v1/kid/tasks/{taskId}/dictation` (oRPC
+  `kid.tasks.dictation`), multipart z polem `audio` (WAV PCM 16 kHz mono),
+  ten sam `sameOriginMiddleware` i pre-check rozmiaru co próby mowy.
+- **Wynik** (`.strict()`, bez confidence i innych score'ów):
+  `{ status: "heard", text: string /* 1–600 */ }` albo
+  `{ status: "no_speech" | "uncertain" | "too_long" | "unavailable" }`.
+- **Autoryzacja (T1, blokada sesji)**: zadanie `issued`, sesja aktywna
+  i treningowa, `microphoneEnabled`, przedmiot deklaruje mowę, typ
+  `lesson_open_answer` (także zadanie następcze `lesson_shorten`),
+  limit dyktowań sesji nieprzekroczony. Naruszenie → błąd walidacji albo
+  konfliktu jak przy innych operacjach zadania. Brak `services.speech`
+  → `unavailable`.
+- **Deklaracja przedmiotu**: `SubjectModule.spokenAnswers?: { locale: "pl-PL",
+  exerciseTypes: ["lesson_open_answer"] }`. Ma ją tylko `school`. Locale
+  wybiera serwer, nie klient. Gramatyka, `lesson_calculation`,
+  `lesson_short_answer` i pozostałe typy — bez mowy.
+- **Kid DTO zadania**: opcjonalne `speechInput: { maxSeconds: 45 }` w promptach
+  odpowiedzi otwartej szkoły i `lesson_shorten`, obecne tylko gdy powyższe
+  warunki są spełnione i STT jest skonfigurowany. Brak pola = brak mikrofonu.
+- **Limit nagrania**: 45 s (słówka bez zmian: 15 s). WAV 32 kB/s → 45 s
+  ≈ 1,44 MB < `MAX_AUDIO_BYTES` = 2 MB; REST short-audio przyjmuje do 60 s.
+  `normalizeAudioInput` dostaje limit czasu od wywołującego (15 s / 45 s),
+  `BrowserRecorder` — `maxRecordingMs` z `speechInput.maxSeconds`.
+- **Limit kosztu**: `dictationCalls` w kontekście sesji lekcji (wzorzec
+  `graderCalls`), domyślnie 40 na sesję; po wyczerpaniu `unavailable`
+  i klient zostawia samo pisanie.
+- **Odpowiedź z dyktowania**: istniejące wejście tekstowe dostaje opcjonalne
+  `inputMethod: "keyboard" | "speech"` (domyślnie `keyboard`).
+
+### 5.5. Progi i klasyfikacja transkrypcji
+
+Czysta funkcja domenowa `classifyDictation(transcription, policy)`:
+
+| Wynik STT | Status | Uwagi |
+| --- | --- | --- |
+| `failed` (awaria, timeout, 401/403, przerwanie) | `unavailable` | |
+| `no_speech` albo pusty tekst | `no_speech` | |
+| `ok`, confidence < 0,5 | `uncertain` | tekstu nie zwracamy (jak w słówkach) |
+| `ok`, tekst > 600 znaków | `too_long` | „Powiedz krócej” |
+| `ok`, confidence ≥ 0,5 | `heard` | tekst = `DisplayText` |
+
+Próg 0,5 to parametr polityki lekcji (wersjonowany jak pasma wymowy).
+Uzasadnienie: śmieci, cisza i szum w obu próbach 0,00–0,12, poprawna mowa
+w zdaniach ≥ 0,60; w słówkach poprawne pojedyncze słowa schodziły do 0,21,
+ale tu tekst i tak oceni dziecko wzrokiem przed wysłaniem. Wartość do
+kalibracji na nagraniach dziecka. Pole dostaje `DisplayText` (czytelne
+zdania); sklejone liczby („25003”) dziecko widzi i może poprawić.
+
+### 5.6. Zapis modalności, ocena i raport rodzica
+
+- **Zapis**: próba odpowiedzi z dyktowania ma `attempts.modality = 'text'`
+  i `answer = { text, inputMethod: "speech", edited: boolean }`; brak
+  `inputMethod` = klawiatura (wszystkie dotychczasowe próby). Kolumny
+  `modality` nie zmieniamy, bo `audio` ma w kodzie słówek inny kształt
+  odpowiedzi (`transcript`), a cache, raporty i oryginał `lesson_shorten`
+  czytają `answer.text` — modalność mówiona jest zapisana przy próbie bez
+  rozgałęzień ani migracji.
+- **Weryfikacja deklaracji**: serwer przyjmuje `inputMethod: "speech"` tylko
+  dla zadania, dla którego w tej sesji zwrócił `heard`. Kontekst sesji trzyma
+  `dictations[taskId] = sha256(NFC(tekst))` — skrót, nie tekst. `edited`
+  liczy serwer (skrót odpowiedzi ≠ skrót transkrypcji). Deklaracja bez
+  dyktowania → zapis jako klawiatura (bez błędu: dziecko niczego nie traci).
+- **Ocena**: identyczna jak tekstu — obie modalności liczą się do wiedzy,
+  samodzielności, ekspozycji i projekcji celu tak samo (wym. 6.3). Jedyna
+  różnica: dla `inputMethod: "speech"` bez edycji forma `one_sentence` nie
+  jest liczona z kropek (`formOk = null`, wniosek 1); precyzję nadal ocenia
+  model. Bez nowego promptu i klucza cache.
+- **Raport rodzica** (`SchoolProgress`): opcjonalne `byInputMethod:
+  { keyboard: { correct, partial, incorrect }, speech: { correct, partial,
+  incorrect, edited } }`; `recentAnswers[].inputMethod` opcjonalne (ikonka
+  mikrofonu przy odpowiedzi). Dotychczasowe liczniki pozostają sumą.
+  Nieudane dyktowania nie są próbami, więc raport ich nie liczy.
+- **Karta pracy rodzica i raport kartkówki**: bez zmian w tym etapie
+  (kartkówka — 5.9 pkt 4).
+
+### 5.7. Transakcje
+
+- **Dyktowanie**: T1 (blokada sesji) — autoryzacja i inkrement
+  `dictationCalls`; poza transakcją STT z deadlinem `SPEECH_ANALYSIS_TIMEOUT_MS`
+  (30 s) i sygnałem przerwania żądania; T2 — zapis skrótu `dictations[taskId]`
+  tylko dla `heard` i tylko gdy zadanie nadal jest `issued` (inaczej wynik
+  wraca do klienta, ale skrót nie powstaje). Żadnych zapisów prób, ocen ani
+  ekspozycji: dyktowanie niczego nie ujawnia.
+- **Odpowiedź**: bez zmian — jedna transakcja finalizacji (ocena + ekspozycje
+  + projekcja celu + przejście zadania + ewentualne zadanie następcze), grader
+  poza transakcją przez `processing` i CAS. Kontekst kwalifikacji zamraża się
+  przy `received_at` odpowiedzi, jak dla tekstu.
+
+### 5.8. Awarie i prywatność
+
+- Awaria, timeout, brak kluczy, limit → `unavailable`: Kid UI pokazuje
+  „Nie udało się rozpoznać. Napisz odpowiedź albo spróbuj jeszcze raz”, pole
+  tekstowe zostaje aktywne. `no_speech`/`uncertain` → „Nie usłyszałem
+  wyraźnie. Powiedz jeszcze raz”. Po dwóch nieudanych dyktowaniach z rzędu
+  klient eksponuje pisanie. Nic z tego nie tworzy próby ani oceny.
+- Utrata sieci nie tworzy lokalnego sukcesu; ocena pochodzi wyłącznie
+  z serwera.
+- Nagranie istnieje wyłącznie w pamięci żądania: nie trafia do bazy, kolejki,
+  plików, logów, fixture ani backupu; transkrypcja nie trafia do logów. Do
+  Azure idą tylko bajty audio i locale — bez imienia, wieku, identyfikatorów
+  i treści materiału.
+- Transkrypcja przed „Sprawdź” żyje tylko w polu klienta; po wysłaniu jest
+  zwykłą odpowiedzią dziecka (zapisaną w próbie, usuwaną z profilem,
+  wysyłaną do gradera jako dane).
+- Klient zwalnia mikrofon i bufory po wysłaniu, błędzie, anulowaniu,
+  odmontowaniu widoku i przejściu dalej (istniejący `BrowserRecorder`
+  + test każdej ścieżki).
+- Panel rodzica przy zestawie szkolnym informuje, że odpowiedzi głosem trafiają
+  do usługi rozpoznawania mowy (Azure, region z konfiguracji), obok informacji
+  o usłudze oceniającej.
+
+### 5.9. Decyzje do akceptacji właściciela
+
+1. **Próba na głosie dziecka** (`live`) przed scaleniem — kalibracja progu 0,5
+   i potwierdzenie adaptera. Wymaga udziału właściciela z dzieckiem przy
+   komputerze (strona lokalna, nic nie jest zapisywane). Bez niej PR
+   jawnie raportuje brak tej próby.
+2. **Przepływ**: dyktowanie do pola z potwierdzeniem (5.3, rekomendacja)
+   zamiast oceny bezpośrednio z nagrania. Alternatywa „jak słówka” (jeden
+   krok, transkrypcja od razu do gradera z asymetrią pewności, formą
+   leksykalną i promptem `school-grader-v2-spoken`) jest szybsza dla
+   dziecka, ale spike pokazał pewne przekłamania sensu (conf ~0,9), których
+   próg nie wyłapie — poprawna odpowiedź dostałaby „błąd”.
+3. **Zapis**: `modality = 'text'` + `answer.inputMethod = 'speech'` (5.6)
+   zamiast `modality = 'audio'` — bez migracji i rozgałęzień w raportach.
+4. **Kartkówka**: bez mikrofonu (symuluje pisemny sprawdzian). Alternatywa:
+   mikrofon także w kartkówce.
+5. **`lesson_shorten`**: mikrofon także w „Skróć odpowiedź” — dyktowanie
+   zastępuje treść pola (oryginał zostaje widoczny nad polem).
+6. **Limity**: nagranie 45 s, 40 dyktowań na sesję, tryb przełącznika
+   (dotknij — mów — dotknij) niezależnie od ustawienia „przytrzymaj” profilu.
+
+### 5.10. Klienci i integracje
+
+- Kid UI: `SpeechRecordButton` w `LessonSentenceView` (tylko gdy prompt ma
+  `speechInput`) i w `LessonShortenView`, obok `AnswerField`; tryb
+  przełącznika z odliczaniem ostatnich 10 s; stany dyktowania (nagrywanie,
+  rozpoznawanie, „Sprawdź, czy dobrze cię usłyszałem”, błędy) przez wspólne
+  komponenty (`ExerciseFrame`, `AnswerField`, `SpeechRecordButton`,
+  `ActionButton`). Testy jednostkowe widoków i testy geometrii Playwright
+  (portrait, landscape, tablet, desktop, cele ≥ 48 px, klawiatura) w nowym
+  specu w partycji `mocked` `tests/e2e/spec-projects.ts`. Odbiór na
+  fizycznym urządzeniu — jawnie w raporcie.
+- Panel rodzica: liczniki `byInputMethod` i ikonka przy ostatnich
+  odpowiedziach w nadzorze lekcji; informacja o usłudze mowy.
+- API → MCP → skill: lekcje są poza `learning-overview`, więc brak wpływu
+  (do odnotowania w PR).
 
 ## 6. Trener precyzji (Etap 4) — kontrakty
 
