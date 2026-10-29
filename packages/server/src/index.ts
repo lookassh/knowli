@@ -231,6 +231,8 @@ export {
   fakeGenerationDeps,
   fakeMediaSettings,
   fakeSpeechDeps,
+  fakeLessonSpeechDeps,
+  FakeDictationSttProvider,
   fakeGraderDeps,
   fakeSessionActivityDeps,
   FakeAnswerGrader,
