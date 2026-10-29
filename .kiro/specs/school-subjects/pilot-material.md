@@ -23,7 +23,7 @@ Definicje:
 - Sposoby zapisu skali: skala liczbowa (np. 1 : 400 000), skala mianowana (np. 1 cm – 4 km) oraz podziałka liniowa (graficzne przedstawienie skali).
 - Im większa liczba po prawej stronie w skali liczbowej (mianownik), tym skala jest mniejsza.
 - Ze zmniejszaniem skali maleje szczegółowość mapy, co nazywamy generalizacją mapy.
-- Kartograf Gerard Merkator pochodzący z Belgii użył skali do tworzenia mapy i wykorzystał jednostki miary w XVII wieku.
+- Kartograf Gerard Merkator pochodzący z Belgii użył skali do tworzenia mapy i wykorzystał jednostki miary w XVI wieku.
   Zależności przyczynowe: Im większa skala mapy, tym więcej szczegółów można przedstawić (np. zarysy budynków). Im mniejsza skala, tym mniej szczegółów zawiera mapa, ale umożliwia przedstawienie większego obszaru.
   Przykład ze źródła: W skali 1 : 25 000 odcinek 3 cm na mapie odpowiada odległości 750 m w terenie (3 cm pomnożone przez 25 000 daje 75 000 cm, czyli 750 m).
 
@@ -71,7 +71,7 @@ Definicje:
 - Oceany od największego do najmniejszego: Ocean Spokojny (Pacyfik), Ocean Atlantycki (Atlantyk), Ocean Indyjski, Ocean Południowy, Ocean Arktyczny.
 - Formy ukształtowania lądów: niziny (do 300 m n.p.m.), wyżyny (powyżej 300 m n.p.m., małe wysokości względne do 300 m), góry (wysokości powyżej 300 m n.p.m., duże wysokości względne i znaczne nachylenie stoków).
 - Odkrywcy geograficzni i ich dokonania:
-    - Marco Polo — wielka podróż drogą lądową z Wenecji do Chin (dotarł do Chin i Japonii).
+    - Marco Polo — wielka podróż drogą lądową z Wenecji do Chin (dotarł do Chin; Japonię opisał z relacji, ale do niej nie dotarł).
     - Krzysztof Kolumb — odkrycie Ameryki.
     - Vasco da Gama — odnalezienie morskiej drogi do Indii wokół Afryki.
     - Ferdynand Magellan — opłynięcie Ziemi dookoła (jego statki opłynęły Ziemię).

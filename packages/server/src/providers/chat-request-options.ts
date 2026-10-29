@@ -12,20 +12,23 @@
  * - `<P>_PROVIDER_DATA_COLLECTION`: `deny` wyklucza dostawców zbierających
  *   dane z zapytań niezależnie od ustawień konta (odpowiedzi dzieci w graderze).
  *
- * Ustawienie dowolnej opcji dostawcy dokłada `require_parameters: true`, żeby
- * routing trafiał tylko do dostawców obsługujących wysyłane parametry
- * (np. ścisły `json_schema` puli lekcji).
+ * Ustawienie dowolnej opcji dostawcy albo `REASONING` dokłada
+ * `require_parameters: true`, żeby routing trafiał tylko do dostawców
+ * obsługujących wysyłane parametry (np. ścisły `json_schema` puli lekcji,
+ * wybrany poziom rozumowania) — bez takiego dostawcy zapytanie jawnie się nie uda.
  */
 export type ChatRequestExtras = Readonly<Record<string, unknown>>;
 
 const REASONING_EFFORTS = new Set(["minimal", "low", "medium", "high"]);
 const SLUG = /^[a-z0-9][a-z0-9._ -]*$/i;
+/** Provider order also accepts endpoint slugs such as `deepinfra/turbo` or `google-vertex/us-east5`. */
+const PROVIDER_ENDPOINT_SLUG = /^[a-z0-9][a-z0-9._ -]*(?:\/[a-z0-9][a-z0-9._ -]*)*$/i;
 
-function list(name: string, value: string | undefined): string[] | undefined {
+function list(name: string, value: string | undefined, pattern: RegExp = SLUG): string[] | undefined {
   if (value === undefined || value.trim() === "") return undefined;
   const items = value.split(",").map((item) => item.trim()).filter((item) => item !== "");
   for (const item of items) {
-    if (!SLUG.test(item)) throw new Error(`${name}: niedozwolona wartość „${item}”`);
+    if (!pattern.test(item)) throw new Error(`${name}: niedozwolona wartość „${item}”`);
   }
   return items.length > 0 ? items : undefined;
 }
@@ -44,7 +47,7 @@ export function chatRequestExtrasFromEnv(
   }
 
   const provider: Record<string, unknown> = {};
-  const order = list(`${prefix}_PROVIDER_ORDER`, env[`${prefix}_PROVIDER_ORDER`]);
+  const order = list(`${prefix}_PROVIDER_ORDER`, env[`${prefix}_PROVIDER_ORDER`], PROVIDER_ENDPOINT_SLUG);
   if (order) provider.order = order;
   const quantizations = list(`${prefix}_PROVIDER_QUANTIZATIONS`, env[`${prefix}_PROVIDER_QUANTIZATIONS`]);
   if (quantizations) provider.quantizations = quantizations.map((q) => q.toLowerCase());
@@ -58,7 +61,9 @@ export function chatRequestExtrasFromEnv(
     if (dataCollection !== "deny" && dataCollection !== "allow") throw new Error(`${prefix}_PROVIDER_DATA_COLLECTION must be deny or allow`);
     provider.data_collection = dataCollection;
   }
-  if (Object.keys(provider).length > 0) {
+  // A configured reasoning level must be honoured too, so it also requires
+  // providers that support every sent parameter (it may then fail loudly).
+  if (Object.keys(provider).length > 0 || extras.reasoning !== undefined) {
     provider.require_parameters = true;
     extras.provider = provider;
   }

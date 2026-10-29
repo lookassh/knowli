@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { messages, MAX_SCHOOL_MATERIAL_LENGTH, type LessonCommand, type SchoolLessonCommand, type SubjectCatalogDto } from "@learning/contracts";
+import { messages, MAX_SCHOOL_MATERIAL_LENGTH, MAX_SCHOOL_SUBJECT_TITLE_LENGTH, MAX_SCHOOL_TOPIC_TITLE_LENGTH, type LessonCommand, type SchoolLessonCommand, type SubjectCatalogDto } from "@learning/contracts";
 import { callParent, errorMessage, parentClient } from "../api";
 import { isDefinitiveGenerationRejection, readLessonAcceptance } from "../generation-request";
 
@@ -115,7 +115,9 @@ export default function NewLessonForm({
   const poolMax = isSchool ? SCHOOL_POOL_MAX : POOL_MAX;
   const poolValid = Number.isInteger(poolSize) && poolSize >= POOL_MIN && poolSize <= poolMax;
   const canSubmit = poolValid && (isSchool
-    ? schoolSubjectName.trim().length > 0 && schoolTopicName.trim().length > 0 && materialLength > 0 && materialLength <= materialMax
+    ? schoolSubjectName.trim().length > 0 && schoolSubjectName.trim().length <= MAX_SCHOOL_SUBJECT_TITLE_LENGTH &&
+      schoolTopicName.trim().length > 0 && schoolTopicName.trim().length <= MAX_SCHOOL_TOPIC_TITLE_LENGTH &&
+      materialLength > 0 && materialLength <= materialMax
     : subject !== null && topic !== null && selectedObjectives.length > 0 && materialLength > 0 && materialLength <= MATERIAL_MAX);
 
   const createSchool = async (): Promise<void> => {
@@ -252,12 +254,12 @@ export default function NewLessonForm({
             <div>
               <label htmlFor="school-subject-name">{messages.lessons.schoolSubjectNameLabel}</label>
               <input id="school-subject-name" data-testid="school-subject-name" value={schoolSubjectName} disabled={creating}
-                onChange={(e) => setSchoolSubjectName(e.target.value)} />
+                maxLength={MAX_SCHOOL_SUBJECT_TITLE_LENGTH} onChange={(e) => setSchoolSubjectName(e.target.value)} />
             </div>
             <div>
               <label htmlFor="school-topic-name">{messages.lessons.schoolTopicNameLabel}</label>
               <input id="school-topic-name" data-testid="school-topic-name" value={schoolTopicName} disabled={creating}
-                onChange={(e) => setSchoolTopicName(e.target.value)} />
+                maxLength={MAX_SCHOOL_TOPIC_TITLE_LENGTH} onChange={(e) => setSchoolTopicName(e.target.value)} />
             </div>
           </>
         )}

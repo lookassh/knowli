@@ -178,6 +178,8 @@ describe("lesson exercise views", () => {
     renderKid(<LessonSentenceView {...busyProps} />);
     const busyInput = screen.getByTestId("kid-lesson-input") as HTMLInputElement;
     expect(busyInput.disabled).toBe(true);
+    // Non-empty text, so only the busy guard can stop the submission.
+    fireEvent.change(busyInput, { target: { value: "0,75 km" } });
     fireEvent.submit(busyInput.closest("form")!);
     expect((screen.getByTestId("kid-lesson-check") as HTMLButtonElement).disabled).toBe(true);
     expect(busyProps.handlers.onSubmitText).not.toHaveBeenCalled();

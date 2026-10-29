@@ -56,7 +56,15 @@ interface GoldenSet {
 const useFake = process.argv.includes("--fake");
 // .env jest potrzebny tylko ramieniu real; --fake działa w czystym worktree.
 if (!useFake) {
-  for (const line of readFileSync(new URL("../.env", import.meta.url), "utf8").split(/\r?\n/)) {
+  // Missing .env is fine when UMIEM_GRADER_* come from the environment (e.g. CI);
+  // graderFromEnv below then decides whether the configuration is complete.
+  let envText = "";
+  try {
+    envText = readFileSync(new URL("../.env", import.meta.url), "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  for (const line of envText.split(/\r?\n/)) {
     const m = /^(?:export\s+)?([A-Z_]+)=(.*)$/.exec(line.trim());
     if (m && process.env[m[1]!] === undefined) {
       process.env[m[1]!] = m[2]!.replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1");
@@ -125,6 +133,7 @@ for (const testCase of golden.cases) {
   const question = golden.questions[testCase.question]!;
   const input = inputFor(question, testCase.childAnswer);
   let verdict: SchoolVerdict | null = null;
+  let providerError: string | null = null;
   try {
     const raw = await provider.grade(input, AbortSignal.timeout(60_000));
     verdict = validateSchoolVerdict(raw, {
@@ -132,13 +141,15 @@ for (const testCase of golden.cases) {
       childAnswer: testCase.childAnswer,
       formOk: question.expectedForm === "one_sentence" ? countSentences(testCase.childAnswer) <= 1 : null,
     });
-  } catch {
-    verdict = null;
+  } catch (error) {
+    // Transport/provider failure (401, 429, timeout, network) — not a validator rejection.
+    providerError = error instanceof Error ? error.message : String(error);
   }
   const hard = golden.gate.hardCategoriesMustPass.includes(testCase.category);
   if (verdict === null) {
     invalid += 1;
-    failures.push(`${testCase.id} (${testCase.category})${hard ? " [TWARDA]" : ""}: werdykt odrzucony/brak (oczekiwano wiedzy ${testCase.expected.knowledge})`);
+    const reason = providerError === null ? "werdykt odrzucony przez walidator" : `błąd dostawcy: ${providerError}`;
+    failures.push(`${testCase.id} (${testCase.category})${hard ? " [TWARDA]" : ""}: ${reason} (oczekiwano wiedzy ${testCase.expected.knowledge})`);
     continue;
   }
   const knowledgeMatch = verdict.knowledge === testCase.expected.knowledge;

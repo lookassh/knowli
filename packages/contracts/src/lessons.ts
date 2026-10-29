@@ -105,10 +105,13 @@ export type LessonCommand = z.infer<typeof LessonCommandSchema>;
  * z materiału podczas generowania, więc w poleceniu nie ma celów ani tematu
  * z katalogu — rodzic nazywa przedmiot i temat własnymi tytułami.
  */
+export const MAX_SCHOOL_SUBJECT_TITLE_LENGTH = 80;
+export const MAX_SCHOOL_TOPIC_TITLE_LENGTH = 120;
+
 export const SchoolLessonCommandSchema = z.object({
   deckId: UuidSchema.optional(),
-  subjectTitlePl: z.string().trim().min(1).max(80),
-  topicTitlePl: z.string().trim().min(1).max(120),
+  subjectTitlePl: z.string().trim().min(1).max(MAX_SCHOOL_SUBJECT_TITLE_LENGTH),
+  topicTitlePl: z.string().trim().min(1).max(MAX_SCHOOL_TOPIC_TITLE_LENGTH),
   material: z.string().trim().min(1).max(MAX_SCHOOL_MATERIAL_LENGTH),
   instruction: z.string().max(500).optional(),
   poolSize: z.number().int().min(20).max(160).optional(),

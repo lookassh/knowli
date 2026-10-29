@@ -8,10 +8,19 @@ describe("chatRequestExtrasFromEnv", () => {
     expect(chatRequestExtrasFromEnv({ UMIEM_LLM_REASONING: "default" }, "UMIEM_LLM")).toEqual({});
   });
 
-  it("maps reasoning to OpenRouter's reasoning object", () => {
-    expect(chatRequestExtrasFromEnv({ UMIEM_LLM_REASONING: "off" }, "UMIEM_LLM")).toEqual({ reasoning: { enabled: false } });
-    expect(chatRequestExtrasFromEnv({ UMIEM_GRADER_REASONING: "Low" }, "UMIEM_GRADER")).toEqual({ reasoning: { effort: "low" } });
+  it("maps reasoning to OpenRouter's reasoning object and requires a provider that honours it", () => {
+    expect(chatRequestExtrasFromEnv({ UMIEM_LLM_REASONING: "off" }, "UMIEM_LLM"))
+      .toEqual({ reasoning: { enabled: false }, provider: { require_parameters: true } });
+    expect(chatRequestExtrasFromEnv({ UMIEM_GRADER_REASONING: "Low" }, "UMIEM_GRADER"))
+      .toEqual({ reasoning: { effort: "low" }, provider: { require_parameters: true } });
     expect(() => chatRequestExtrasFromEnv({ UMIEM_LLM_REASONING: "max" }, "UMIEM_LLM")).toThrow(/UMIEM_LLM_REASONING/);
+  });
+
+  it("accepts OpenRouter endpoint slugs in the provider order, but not in quantizations", () => {
+    expect(chatRequestExtrasFromEnv({ UMIEM_LLM_PROVIDER_ORDER: "deepinfra/turbo, google-vertex/us-east5" }, "UMIEM_LLM"))
+      .toEqual({ provider: { order: ["deepinfra/turbo", "google-vertex/us-east5"], require_parameters: true } });
+    expect(() => chatRequestExtrasFromEnv({ UMIEM_LLM_PROVIDER_ORDER: "deepinfra//turbo" }, "UMIEM_LLM")).toThrow(/PROVIDER_ORDER/);
+    expect(() => chatRequestExtrasFromEnv({ UMIEM_LLM_PROVIDER_QUANTIZATIONS: "fp8/turbo" }, "UMIEM_LLM")).toThrow(/QUANTIZATIONS/);
   });
 
   it("builds provider routing and always requires the sent parameters", () => {

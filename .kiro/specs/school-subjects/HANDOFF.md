@@ -273,7 +273,7 @@ Poniższe pozycje nie blokowały zamknięcia Etapów 1–2, ale Codex powinien o
 - Brak E2E dla nowych ekranów rodzica; to nadal luka Etapu 5.
 - Brak odbioru na fizycznym urządzeniu i brak weryfikacji produkcyjnej.
 - Złoty zestaw ma 20 przypadków i 4 pytania; brakuje klas granicznych, m.in. pustej odpowiedzi, odpowiedzi >600 znaków, próby injekcji, dosłownej kopii wzorca i odpowiedzi mieszanej językowo.
-- Autor powinien zweryfikować fakty z `pilot-material.md` przed użyciem z dzieckiem. W materiale zauważono m.in. Merkatora w XVII zamiast XVI wieku oraz niespójne progi gór 300/500 m.
+- Autor powinien zweryfikować fakty z `pilot-material.md` przed użyciem z dzieckiem. Poprawiono Merkatora (XVI wiek) i Marco Polo (nie dotarł do Japonii); pozostają niespójne progi gór 300/500 m.
 - Minimalna długość cytatu 10 znaków i normalizacja małymi literami pozostały świadomie; bardzo krótki dokładny cytat, np. sama data, może zostać odrzucony.
 - Spójność rodziny jest sprawdzana głównie po identyfikatorach elementów, nie po pełnej treści każdego elementu; rodzina jednoelementowa jest możliwa.
 - Rodzina pytań i rodzina rachunków żyją w obrębie celu, a dogenerowanie dokłada do slugów sufiks runu (2026-10-28, po drugim review), więc nowa partia nie dołącza do istniejącej rodziny; publikacja pozostaje twardą bramką.

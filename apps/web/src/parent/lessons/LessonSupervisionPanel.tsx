@@ -217,8 +217,8 @@ export default function LessonSupervisionPanel({
                       <ul className="plain">
                         {objective.school.recentAnswers.map((a, i) => (
                           <li key={i} className="muted">
-                            <em>{a.text}</em> — {a.knowledge}
-                            {a.precision ? ` · ${a.precision}` : ""}
+                            <em>{a.text}</em> — {messages.lessons.schoolKnowledgeValue[a.knowledge] ?? a.knowledge}
+                            {a.precision ? ` · ${messages.lessons.schoolPrecisionValue[a.precision] ?? a.precision}` : ""}
                           </li>
                         ))}
                       </ul>
