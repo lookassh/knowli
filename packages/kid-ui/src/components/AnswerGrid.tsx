@@ -11,6 +11,7 @@ import {
   kidEntranceInitial,
   kidOutcomeIconAnimate,
   kidOutcomeIconInitial,
+  kidOutcomeHop,
   kidOutcomePop,
   kidOutcomePopTransition,
   kidSpringBouncy,
@@ -120,7 +121,7 @@ export function AnswerGrid({
               aria-pressed={selection ? selected : outcome === "pending" ? true : undefined}
               data-selected={selection ? selected : undefined}
               disabled={optionDisabled}
-              animate={outcome === "correct" ? kidOutcomePop : { scale: 1, x: 0 }}
+              animate={outcome === "correct" ? (visualOnly ? kidOutcomePop : kidOutcomeHop) : { scale: 1, x: 0, y: 0 }}
               whileTap={optionDisabled ? undefined : { scale: visualOnly ? kidTileTapScale : kidTapScale }}
               transition={outcome === "correct" ? kidOutcomePopTransition : kidSpringSnappy}
               onClick={() => {

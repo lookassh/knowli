@@ -8,7 +8,7 @@ import { useFeedbackCooldown } from "./useFeedbackCooldown";
 import { ActionButton } from "../components/ActionButton";
 import { AnswerSegments, SpellingPill } from "../components/AnswerSegments";
 import { m } from "motion/react";
-import { kidOutcomeIconAnimate, kidOutcomeIconInitial, kidSpringGentle } from "../motion/kid-motion";
+import { kidFeedbackTitleAnimate, kidFeedbackTitleInitial, kidFeedbackTitleTransition } from "../motion/kid-motion";
 
 export interface AnswerFeedbackProps {
   dto: FeedbackDto | null;
@@ -81,7 +81,7 @@ export function AnswerFeedbackContent({ dto, busy }: Pick<AnswerFeedbackProps, "
       aria-busy={busy}
     >
       <div className="kid-feedback-content">
-        <m.h2 className="kid-feedback-text" id="kid-feedback-title" ref={titleRef} tabIndex={-1} initial={kidOutcomeIconInitial} animate={kidOutcomeIconAnimate} transition={kidSpringGentle}>
+        <m.h2 className="kid-feedback-text" id="kid-feedback-title" ref={titleRef} tabIndex={-1} initial={kidFeedbackTitleInitial} animate={kidFeedbackTitleAnimate} transition={kidFeedbackTitleTransition}>
           {feedback.kind === "incorrect" && feedback.correctText ? (
             <>
               <span className="kid-feedback-answer-label">{messages.kid.feedbackCorrectAnswer}</span>
