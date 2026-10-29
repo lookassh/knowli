@@ -147,6 +147,7 @@ describe("kid Material 3 tokens", () => {
     ["on-primary-container", "primary-container"], ["kid-color-on-header", "kid-color-header"],
     ["on-tertiary-container", "tertiary-container"], ["on-error-container", "error-container"],
     ["kid-color-on-warm-container", "kid-color-warm-container"],
+    ["on-surface", "surface-container-highest"],
   ])("text %s on %s reaches 4.5:1", (fg, bg) => {
     expect(contrast(role(fg), role(bg))).toBeGreaterThanOrEqual(4.5);
   });
@@ -154,6 +155,7 @@ describe("kid Material 3 tokens", () => {
   it.each([
     ["outline", "surface"], ["outline", "surface-container"],
     ["primary", "surface-container"], ["kid-color-warm", "surface-container"],
+    ["primary", "surface"],
   ])("graphic %s on %s reaches 3:1", (fg, bg) => {
     expect(contrast(role(fg), role(bg))).toBeGreaterThanOrEqual(3);
   });

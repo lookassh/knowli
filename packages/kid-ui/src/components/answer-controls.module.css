@@ -9,7 +9,7 @@
   min-height: 48px;
   padding: 8px 16px;
   border: 2px solid var(--action-border, var(--md-sys-color-outline));
-  background: var(--action-bg, var(--md-sys-color-surface-container));
+  background: var(--action-bg, var(--md-sys-color-surface-container-high));
   color: var(--action-fg, var(--md-sys-color-on-surface));
   font-weight: var(--kid-type-label-weight);
   font-size: var(--kid-type-label-size);
@@ -101,13 +101,31 @@
   width: 100%;
   box-sizing: border-box;
   padding: 10px 14px;
-  border: 1px solid var(--md-sys-color-outline);
+  border: 2px solid var(--md-sys-color-outline);
   font: inherit;
-  font-size: var(--kid-type-body-size);
-  min-height: 54px;
+  font-family: var(--kid-font-display);
+  font-weight: 600;
+  font-size: var(--kid-type-headline-sm-size);
+  text-align: center;
+  min-height: 60px;
   background: var(--md-sys-color-surface-container-highest);
   color: var(--md-sys-color-on-surface);
   border-radius: var(--kid-shape-l);
+}
+
+:global(.kid-ui) .input.sentence {
+  font-size: var(--kid-type-title-lg-size);
+  text-align: start;
+}
+
+:global(.kid-ui) .input::placeholder {
+  color: var(--md-sys-color-on-surface-variant);
+  opacity: 1;
+}
+
+:global(.kid-ui) .input:focus-visible {
+  outline: 3px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
 }
 
 /* Long answers: grow with the text (field-sizing where supported), then scroll
@@ -120,6 +138,7 @@
   field-sizing: content;
   resize: none;
   overflow-y: auto;
+  font-size: var(--kid-type-title-lg-size);
   text-align: start;
   overflow-wrap: anywhere;
 }
@@ -163,12 +182,65 @@
 :global(.kid-ui) .choiceList .option {
   min-height: 64px;
   padding-inline: 44px;
-  border-radius: var(--kid-shape-xl);
-  font-size: var(--kid-type-title-size);
+}
+
+@media (max-height: 780px) {
+  :global(.kid-ui) .choiceList .option {
+    min-height: 56px;
+  }
+}
+
+/* Same floor as the shared .kid-options rule in styles.css: below 560px a
+   card still has to fit whole in the scrolling material window. */
+@media (max-height: 560px) {
+  :global(.kid-ui) .choiceList .option {
+    min-height: 48px;
+  }
 }
 
 .choiceList .item {
   width: 100%;
+}
+
+/* Four short text options: 2×2 on compact widths. Medium and expanded keep
+   the single choiceList column. The outcome badge sits in a reserved top band
+   of the card (so it never covers the label and the card height does not change
+   when an outcome appears); an equal bottom band keeps the label in the vertical
+   centre of the card (≈76px). Labels never break mid-word: cards pair up in a
+   wrapping row, and a label too wide for half the row (wide glyphs pass the
+   length check) takes the full row instead of being clipped. */
+@media (max-width: 599px) {
+  .choiceList.shortChoiceGrid {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .choiceList.shortChoiceGrid .item {
+    flex: 1 1 calc(50% - 4px);
+    width: auto;
+    min-width: max-content;
+  }
+
+  :global(.kid-ui) .choiceList.shortChoiceGrid .option {
+    padding: 26px 8px;
+  }
+
+  .choiceList.shortChoiceGrid .label {
+    overflow-wrap: normal;
+  }
+
+  .choiceList.shortChoiceGrid .outcome {
+    width: 22px;
+    height: 22px;
+    top: 4px;
+    right: 4px;
+  }
+
+  :global(.kid-ui) .choiceList.shortChoiceGrid .outcome :global(.kid-icon) {
+    width: 14px;
+    height: 14px;
+  }
 }
 
 :global(.kid-ui .kid-options).compactChoiceGrid {
@@ -188,13 +260,9 @@
   flex: 1 1 auto;
   min-height: 48px;
   padding-inline: 12px;
+  font-family: var(--kid-font-body);
   font-size: var(--kid-type-label-size);
-}
-
-@media (max-height: 780px) {
-  :global(.kid-ui) .choiceList .option {
-    min-height: 48px;
-  }
+  font-weight: var(--kid-type-label-weight);
 }
 
 @media (max-height: 780px) {
@@ -206,7 +274,7 @@
 :global(.kid-ui) .option {
   width: 100%;
   min-width: 0;
-  min-height: 76px;
+  min-height: 56px;
   padding: 12px;
   position: relative;
   display: flex;
@@ -214,12 +282,41 @@
   justify-content: center;
   overflow: hidden;
   border: 1px solid var(--md-sys-color-outline);
-  border-radius: var(--kid-shape-xl);
-  background: var(--md-sys-color-surface-container);
+  border-radius: var(--kid-shape-l);
+  background: var(--md-sys-color-surface-container-high);
   color: var(--md-sys-color-on-surface);
+  font-family: var(--kid-font-display);
+  font-weight: 600;
+  font-size: var(--kid-type-title-md-size);
   text-align: center;
   touch-action: manipulation;
   transition: background-color 150ms, border-color 150ms;
+}
+
+@media (max-height: 560px) {
+  :global(.kid-ui) .option {
+    padding-block: 8px;
+  }
+}
+
+/* Very short portrait window: the band would make the card taller than the
+   48px scrolling window, so the badge shrinks into the corner instead. */
+@media (max-width: 599px) and (max-height: 560px) {
+  :global(.kid-ui) .choiceList.shortChoiceGrid .option {
+    padding-block: 8px;
+  }
+
+  .choiceList.shortChoiceGrid .outcome {
+    width: 18px;
+    height: 18px;
+    top: 2px;
+    right: 2px;
+  }
+
+  :global(.kid-ui) .choiceList.shortChoiceGrid .outcome :global(.kid-icon) {
+    width: 12px;
+    height: 12px;
+  }
 }
 
 :global(.kid-ui) .grid[data-visual-only="true"] .option {
@@ -267,17 +364,17 @@
 /* M3 state layer: on-surface at the hover opacity over the container. */
 .option:hover:not(:disabled) {
   border-color: var(--md-sys-color-primary);
-  background: color-mix(in srgb, var(--md-sys-color-on-surface) calc(var(--kid-state-hover-opacity) * 100%), var(--md-sys-color-surface-container));
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) calc(var(--kid-state-hover-opacity) * 100%), var(--md-sys-color-surface-container-high));
 }
 
 .option:focus-visible {
-  background: color-mix(in srgb, var(--md-sys-color-on-surface) calc(var(--kid-state-focus-opacity) * 100%), var(--md-sys-color-surface-container));
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) calc(var(--kid-state-focus-opacity) * 100%), var(--md-sys-color-surface-container-high));
   outline: 2px solid var(--md-sys-color-primary);
   outline-offset: 3px;
 }
 
 .option:active:not(:disabled) {
-  background: color-mix(in srgb, var(--md-sys-color-on-surface) calc(var(--kid-state-pressed-opacity) * 100%), var(--md-sys-color-surface-container));
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) calc(var(--kid-state-pressed-opacity) * 100%), var(--md-sys-color-surface-container-high));
 }
 
 .option:disabled {
@@ -351,7 +448,14 @@
   height: 18px;
 }
 
-.label,
+.label {
+  min-width: 0;
+  /* Type comes from the card (.option): display 600 title-md by default. */
+  font: inherit;
+  line-height: var(--kid-type-label-line-height);
+  overflow-wrap: anywhere;
+}
+
 .visualOnly,
 .content {
   min-width: 0;

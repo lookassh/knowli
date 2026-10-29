@@ -119,10 +119,18 @@ test("mówione instrukcje prowadzą od profilu przez ćwiczenia i feedback do po
   await expect.poll(() => requested).toContain(audioIds.exposure);
   await waitForCompletedPlayback();
   await page.getByTestId("kid-done").click();
+  // Odsłuch zadania stoi w wierszu instrukcji; po odpowiedzi przechodzi do panelu wyniku.
+  await expect(page.getByTestId("kid-guidance-play")).toHaveCount(1);
+  await expect(page.getByTestId("kid-instruction").getByTestId("kid-guidance-play")).toHaveCount(1);
+  await expect(page.getByTestId("kid-feedback-dock")).toHaveCount(0);
   await page.getByTestId("kid-guidance-play").click();
   await expect.poll(() => requested).toContain(audioIds.listening);
   await waitForCompletedPlayback();
   await page.getByTestId("kid-option").first().click();
+  await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
+  await expect(page.getByTestId("kid-guidance-play")).toHaveCount(1);
+  await expect(page.getByTestId("kid-feedback-dock").getByTestId("kid-guidance-play")).toHaveCount(1);
+  await expect(page.getByTestId("kid-instruction").getByTestId("kid-guidance-play")).toHaveCount(0);
   await page.getByTestId("kid-guidance-play").click();
   await expect.poll(() => requested).toContain(audioIds.correct);
   await waitForCompletedPlayback();

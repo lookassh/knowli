@@ -7,6 +7,7 @@ import { IconActionButton } from "./IconActionButton";
 import { AnswerField, AnswerTextArea } from "./AnswerField";
 import { AnswerGrid } from "./AnswerGrid";
 import { SessionProgress } from "./SessionProgress";
+import { GuidanceButton } from "./GuidanceButton";
 import styles from "./answer-controls.module.css";
 
 afterEach(cleanup);
@@ -60,6 +61,26 @@ describe("AnswerGrid", () => {
     expect(screen.getAllByTestId("kid-option")[0]!.getAttribute("aria-label")).toContain("błędny wybór: Jeden");
     expect(screen.getAllByTestId("kid-outcome-correct")).toHaveLength(1);
     expect(screen.getByTestId("kid-outcome-wrong").getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("shows outcome icons as SVG, not text glyphs, and marks the short grid", () => {
+    const { container } = renderKid(
+      <AnswerGrid
+        options={options}
+        outcomes={new Map([["one", "wrong"], ["two", "correct"]])}
+        disabled={false}
+        onChoose={vi.fn()}
+        choiceList
+        shortChoiceGrid
+      />,
+    );
+
+    for (const testId of ["kid-outcome-correct", "kid-outcome-wrong"]) {
+      const outcome = screen.getByTestId(testId);
+      expect(outcome.querySelector("svg.kid-icon")).not.toBeNull();
+      expect(outcome.textContent).toBe("");
+    }
+    expect(container.querySelector("ul")!.className).toContain(styles.shortChoiceGrid);
   });
 
   it("celebrates only a tile the child chose correctly, never the revealed answer", () => {
@@ -266,5 +287,37 @@ describe("SessionProgress", () => {
     rerender(<SessionProgress remaining={2} />);
     expect(screen.getByTestId("kid-remaining").textContent).toContain("2");
     expect(screen.queryByText(/%/)).toBeNull();
+  });
+});
+
+describe("sentence field and instruction guidance", () => {
+  it("AnswerField sentence variant uses its own class; the default stays a word field", () => {
+    renderKid(<><AnswerField aria-label="Słowo" /><AnswerField aria-label="Zdanie" variant="sentence" /></>);
+    const word = screen.getByRole("textbox", { name: "Słowo" });
+    const sentence = screen.getByRole("textbox", { name: "Zdanie" });
+    expect(word.getAttribute("data-variant")).toBe("word");
+    expect(word.className).not.toContain(styles.sentence);
+    expect(sentence.getAttribute("data-variant")).toBe("sentence");
+    expect(sentence.className).toContain(styles.input);
+    expect(sentence.className).toContain(styles.sentence);
+  });
+
+  it("GuidanceButton in the instruction row is an outlined question with its own name; the dock keeps the speaker", () => {
+    const onPlay = vi.fn(async () => {});
+    renderKid(<GuidanceButton audioKey="listening" onPlay={onPlay} testId="kid-guidance-play" placement="instruction" />);
+    const instruction = screen.getByTestId("kid-guidance-play");
+    expect(instruction.getAttribute("aria-label")).toBe("Posłuchaj polecenia");
+    expect(instruction.getAttribute("data-variant")).toBe("outlined");
+    // The question icon is the only one drawn with a circle; the speaker has none.
+    expect(instruction.querySelector("svg circle")).not.toBeNull();
+    fireEvent.click(instruction);
+    expect(onPlay).toHaveBeenCalledWith("listening");
+    cleanup();
+
+    renderKid(<GuidanceButton audioKey="correct" onPlay={onPlay} testId="kid-guidance-play" />);
+    const dock = screen.getByTestId("kid-guidance-play");
+    expect(dock.getAttribute("aria-label")).toBe("Posłuchaj");
+    expect(dock.getAttribute("data-variant")).toBe("tonal");
+    expect(dock.querySelector("svg circle")).toBeNull();
   });
 });

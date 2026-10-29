@@ -1,14 +1,40 @@
+/* Panel w kolorze tonu wyniku: tło i kolor tekstu to para ról `*-container`
+   / `on-*-container`, więc kontrast każdego tonu wynika z palety M3. */
 .dock {
+  --dock-bg: var(--md-sys-color-surface-container-high);
+  --dock-fg: var(--md-sys-color-on-surface);
   box-sizing: border-box;
   width: 100%;
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 10px;
-  border: 1px solid var(--kid-line);
-  border-radius: var(--kid-shape-xl) var(--kid-shape-xl) var(--kid-shape-none) var(--kid-shape-none);
-  background: var(--kid-surface);
+  border: 0;
+  border-radius: var(--kid-shape-xxl) var(--kid-shape-xxl) var(--kid-shape-none) var(--kid-shape-none);
+  background: var(--dock-bg);
+  color: var(--dock-fg);
   position: relative;
+}
+
+.correct {
+  --dock-bg: var(--kid-color-success-container);
+  --dock-fg: var(--kid-color-on-success-container);
+}
+
+.partial {
+  --dock-bg: var(--kid-color-warm-container);
+  --dock-fg: var(--kid-color-on-warm-container);
+}
+
+.incorrect {
+  --dock-bg: var(--md-sys-color-error-container);
+  --dock-fg: var(--md-sys-color-on-error-container);
+}
+
+.technical,
+.neutral {
+  --dock-bg: var(--md-sys-color-surface-container-high);
+  --dock-fg: var(--md-sys-color-on-surface);
 }
 
 /* Origin of the celebration burst: a point on the dock's top edge. */
@@ -50,6 +76,20 @@
   line-height: 1.15;
 }
 
+.compact .badge {
+  width: 32px;
+  height: 32px;
+}
+
+.compact .badge :global(.kid-icon) {
+  width: 22px;
+  height: 22px;
+}
+
+.compact .content {
+  min-height: 32px;
+}
+
 .compact .actions {
   flex: none;
   width: 100%;
@@ -70,37 +110,47 @@
   display: none;
 }
 
-.correct {
-  border-color: var(--kid-good);
-  background: var(--kid-good-bg);
-}
-
-.incorrect {
-  border-color: var(--kid-wrong);
-  background: var(--kid-wrong-bg);
-}
-
-.partial {
-  border-color: var(--kid-warm-line);
-  background: var(--kid-warm);
-}
-
-.technical {
-  border-color: var(--kid-accent);
-  background: var(--kid-soft);
-}
-
 /* Mantine ScrollArea wymaga useEffectEvent (niedostępne w przypiętym
    React), dlatego długa treść przewija się wewnątrz kart feedbacku,
    których wysokość ogranicza dock. */
+/* Górny wiersz: odznaka tonu, treść wyniku i (opcjonalnie) odsłuch. */
 .scroll {
   min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+/* Odznaka: koło w kolorze tekstu panelu z ikoną w kolorze tła. */
+.badge {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--kid-shape-full);
+  background: var(--dock-fg);
+  color: var(--dock-bg);
+}
+
+.badge :global(.kid-icon) {
+  width: 26px;
+  height: 26px;
+  stroke-width: 2.4;
+}
+
+.guidance {
+  flex: none;
+  display: flex;
 }
 
 .content {
   min-width: 0;
+  min-height: 40px;
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
+  justify-content: center;
 }
 
 .content :global(.kid-answer-feedback) {
@@ -130,6 +180,39 @@
 .content :global(.kid-answer-feedback) {
   border: 0;
   padding: 4px;
+  background: transparent;
+  color: inherit;
+}
+
+/* Treść karty dziedziczy kolor panelu (`on-*-container`), nie własne role
+   stanu, które były dobrane do szarej powierzchni. */
+.dock .content :global(.kid-speech-feedback),
+.dock .content :global(.kid-speech-feedback__heard),
+.dock .content :global(.kid-speech-feedback__message),
+.dock .content :global(.kid-speech-feedback__pronunciation),
+.dock .content :global(.kid-speech-feedback__local),
+.dock .content :global(.kid-speech-feedback__error),
+.dock .content :global(.kid-speech-feedback__reference h3),
+.dock .content :global(.kid-speech-feedback__legend li),
+.dock .content :global(.kid-lesson-feedback__hint) {
+  color: inherit;
+}
+
+/* Fokus nagłówka mowy w kolorze treści panelu: akcent (primary) może mieć
+   kontrast <3:1 na tłach error/warm. */
+.dock .content :global(.kid-speech-feedback__heard:focus) {
+  outline-color: currentColor;
+}
+
+.dock .content :global(.kid-spelling-row-label) {
+  opacity: 1;
+}
+
+/* Fragment w tonie panelu zlałby się z tłem — ma przezroczystą nakładkę. */
+.correct :global(.kid-fragment--good),
+.partial :global(.kid-fragment--almost) {
+  background: color-mix(in srgb, var(--dock-fg) 16%, transparent);
+  color: inherit;
 }
 
 .actions,

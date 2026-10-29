@@ -200,6 +200,14 @@
   flex: 1;
 }
 
+/* The 56px session header is 8px taller than the 48px buttons it holds; on
+   short windows that spare goes to the top padding so the task keeps its room. */
+@media (max-height: 700px) {
+  .kid-page:not([data-viewport-very-short="true"]) .kid-learning {
+    padding-top: max(4px, env(safe-area-inset-top));
+  }
+}
+
 .kid-page[data-zoomed="true"] .kid-learning {
   height: auto;
 }
@@ -261,13 +269,14 @@
   min-width: 0;
   font-size: clamp(var(--kid-type-headline-sm-size), 6vw, var(--kid-type-display-lg-size));
   line-height: 1.2;
-  font-weight: 800;
+  font-weight: 700;
 }
 
-@media (max-height: 700px) {
-  .kid-ui .kid-options button {
-    min-height: 48px;
-  }
+/* In an exposure the target word is the stimulus; the Polish translation under
+   it stays one step smaller than the stimulus scale of .kid-source, so the
+   hierarchy holds and the whole card fits a 360x540 phone without scrolling. */
+.kid-ui .kid-exposure-content .kid-source {
+  font-size: clamp(var(--kid-type-headline-sm-size), 6vw, var(--kid-type-display-sm-size));
 }
 
 @media (max-height: 420px) {
@@ -278,8 +287,13 @@
 
 }
 
-.kid-page--session[data-viewport-short="true"] .kid-options button {
-  min-height: 48px;
+/* Answer cards keep 56px down to phones in portrait; only windows under 560px
+   (landscape, keyboard, long feedback dock) fall back to the 48px touch minimum
+   so a card still fits whole in the scrolling material window. */
+@media (max-height: 560px) {
+  .kid-ui .kid-options button {
+    min-height: 48px;
+  }
 }
 
 .kid-page--session[data-viewport-very-short="true"] .kid-learning > .kid-task {
@@ -392,10 +406,7 @@
 
 .kid-profile:focus-visible,
 .kid-screen button:focus-visible,
-.kid-written input:focus-visible,
-.kid-letter-input:focus-visible,
-.kid-lesson-gap__input:focus-visible,
-.kid-lesson-input:focus-visible {
+.kid-letter-input:focus-visible {
   outline: 3px solid var(--kid-accent);
   outline-offset: 3px;
 }
@@ -723,17 +734,23 @@
   margin-bottom: auto;
 }
 
+/* Stimulus: at least display-sm (28px) on phones, so the word always reads
+   larger than the answer cards (title-md) and the typed answer (headline-sm). */
 .kid-ui .kid-word {
-  font-size: var(--kid-type-display-lg-size);
-  font-weight: 800;
+  font-family: var(--kid-font-display);
+  font-size: clamp(var(--kid-type-display-sm-size), 10vw, var(--kid-type-display-lg-size));
+  font-weight: 700;
+  color: var(--md-sys-color-on-surface);
   margin: 0;
   word-break: break-word;
   text-align: center;
 }
 
 .kid-source {
-  font-size: var(--kid-type-title-lg-size);
-  color: var(--kid-muted);
+  font-family: var(--kid-font-display);
+  font-size: clamp(var(--kid-type-display-sm-size), 9vw, var(--kid-type-display-size));
+  font-weight: 700;
+  color: var(--md-sys-color-on-surface);
   margin: 0;
   text-align: center;
 }
@@ -768,7 +785,8 @@
 /* Okrągły odsłuch zamiast pastylki w rzędzie akcji (SPEC §12.1): widoczny
    przycisk dla zablokowanego autoodtwarzania, ale nie konkuruje z „Rozumiem”.
    .kid-action podnosi specyficzność ponad warianty ActionButton (.action:where),
-   więc tonal wygrywa niezależnie od kolejności arkuszy (np. filled w PictureRecallView). */
+   więc tonal wygrywa niezależnie od kolejności arkuszy (np. domyślny filled
+   ActionButton odsłuchu w ExposureView). */
 .kid-ui .kid-action.kid-audio-round {
   width: 64px;
   height: 64px;
@@ -829,8 +847,8 @@
   width: min(60vw, 260px);
   height: min(36svh, 260px);
   object-fit: contain;
-  border-radius: var(--kid-shape-l);
-  border: 3px solid var(--kid-line);
+  border-radius: var(--kid-shape-xl);
+  border: 0;
   background: var(--kid-surface);
 }
 
@@ -1038,24 +1056,6 @@
   width: 100%;
 }
 
-.kid-written input {
-  width: 100%;
-  box-sizing: border-box;
-  min-height: 60px;
-  font-size: var(--kid-type-headline-sm-size);
-  text-align: center;
-  border: 2px solid var(--md-sys-color-outline);
-  border-radius: var(--kid-shape-l);
-  padding: 8px 12px;
-  color: var(--kid-text);
-  background: var(--kid-surface);
-}
-
-.kid-written input::placeholder {
-  color: var(--kid-muted);
-  opacity: 1;
-}
-
 .kid-letter-fragment {
   display: flex;
   flex-wrap: wrap;
@@ -1073,10 +1073,15 @@
 .kid-written .kid-letter-input {
   width: 48px;
   min-height: 60px;
+  box-sizing: border-box;
   flex-shrink: 0;
   padding: 4px;
   font: inherit;
+  text-align: center;
+  border: 2px solid var(--md-sys-color-outline);
   border-radius: var(--kid-shape-m);
+  color: var(--md-sys-color-on-surface);
+  background: var(--md-sys-color-surface-container-highest);
 }
 
 .kid-secondary-actions {
@@ -1208,12 +1213,22 @@
   }
 }
 
+/* Session header: ✕ | progress pebbles | microphone status. Buttons sit at
+   the top so their centres line up with the pebble row; the compact "Jeszcze N"
+   pill under the pebbles fits inside the same 56px, so the header never grows. */
 .kid-header {
-  display: flex;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 48px;
+  align-items: start;
+  column-gap: 12px;
+  min-height: 56px;
+}
+
+.kid-page[data-viewport-very-short="true"] .kid-header {
   align-items: center;
-  justify-content: space-between;
   min-height: 48px;
-  gap: 12px;
+  padding-block: 0;
 }
 
 .kid-session-status {
@@ -1297,8 +1312,8 @@
 
 .kid-microphone-status {
   position: relative;
-  flex: none;
-  margin-inline-start: auto;
+  grid-column: 3;
+  justify-self: end;
   color: var(--kid-muted);
 }
 
@@ -1349,12 +1364,6 @@
   font-size: var(--kid-type-label-sm-size);
   line-height: 1.45;
   text-align: start;
-}
-
-.kid-remaining {
-  margin: 0;
-  font-weight: 700;
-  color: var(--kid-good);
 }
 
 .kid-ui .kid-end {
@@ -1475,8 +1484,10 @@
 
 .kid-speech-feedback__heard {
   margin: 0;
-  font-size: clamp(var(--kid-type-title-lg-size), 6vw, var(--kid-type-display-size));
-  line-height: 1.25;
+  font-family: var(--kid-font-display);
+  font-size: var(--kid-type-headline-sm-size);
+  font-weight: 700;
+  line-height: var(--kid-type-headline-line-height);
   overflow-wrap: anywhere;
 }
 
@@ -1511,6 +1522,7 @@
   flex-wrap: wrap;
   gap: 4px;
   margin: 8px 0 0;
+  font-family: var(--kid-font-display);
   font-size: clamp(var(--kid-type-display-sm-size), 9vw, var(--kid-type-display-lg-size));
   font-weight: 800;
   overflow-wrap: anywhere;
@@ -1588,8 +1600,10 @@
 }
 
 .kid-feedback-text {
-  font-size: var(--kid-type-title-size);
+  font-family: var(--kid-font-display);
+  font-size: var(--kid-type-headline-sm-size);
   font-weight: 700;
+  line-height: var(--kid-type-headline-line-height);
   margin: 0;
   text-align: center;
 }
@@ -1610,7 +1624,9 @@
 .kid-feedback-answer {
   display: block;
   margin-top: 4px;
-  font-size: var(--kid-type-title-lg-size);
+  font-family: var(--kid-font-display);
+  font-size: var(--kid-type-headline-sm-size);
+  font-weight: 700;
   line-height: 1.2;
 }
 
@@ -1646,6 +1662,7 @@
 }
 
 .kid-spelling-row {
+  font-family: var(--kid-font-display);
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -1671,6 +1688,9 @@
   border: 2px solid currentColor;
   border-radius: var(--kid-shape-l);
   padding: 0 0.2em;
+  /* Podkreślenie to trzeci kanał (obok koloru i obwódki) dla błędnych miejsc. */
+  text-decoration: underline 2px currentColor;
+  text-underline-offset: 0.12em;
 }
 
 .kid-spelling-pill--given {
@@ -2169,9 +2189,9 @@
 .kid-ui .kid-lesson-card {
   box-sizing: border-box;
   padding: 16px;
-  border: 1px solid var(--kid-line);
+  border: 1px solid var(--md-sys-color-outline);
   border-radius: var(--kid-shape-l);
-  background: var(--kid-surface);
+  background: var(--md-sys-color-surface-container-high);
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -2181,7 +2201,10 @@
 
 .kid-lesson-card__title {
   margin: 0;
+  font-family: var(--kid-font-display);
   font-size: var(--kid-type-title-size);
+  font-weight: 700;
+  color: var(--md-sys-color-on-surface);
   text-align: center;
 }
 
@@ -2197,6 +2220,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  font-family: var(--kid-font-display);
   font-size: var(--kid-type-title-md-size);
   font-weight: 600;
 }
@@ -2222,52 +2246,83 @@
 
 .kid-ui .kid-lesson-notice__word {
   position: relative;
-  min-height: 48px;
-  padding: 6px calc(12px + 0.8em);
+  min-height: 56px;
+  padding: 6px 32px;
   font: inherit;
-  font-size: var(--kid-type-title-size);
-  border: 2px solid var(--md-sys-color-outline);
+  font-family: var(--kid-font-display);
+  font-size: var(--kid-type-title-md-size);
+  font-weight: 600;
+  border: 1px solid var(--md-sys-color-outline);
   border-radius: var(--kid-shape-l);
-  background: var(--kid-surface);
-  color: var(--kid-text);
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
   cursor: pointer;
 }
 
+/* Same floor as the answer cards: below 560px a card still has to fit whole. */
+@media (max-height: 560px) {
+  .kid-ui .kid-lesson-notice__word {
+    min-height: 48px;
+  }
+}
+
 .kid-ui .kid-lesson-notice__word:active {
-  background: var(--kid-soft);
+  background: var(--md-sys-color-surface-container-highest);
 }
 
-/* Dziedziczymy znaczniki ✓/✗ i paletę z .kid-option--* na przyciskach wskazania. */
-.kid-lesson-notice__word.kid-option--correct {
-  border-color: var(--kid-good);
-  background: var(--kid-good-bg);
+.kid-ui .kid-lesson-notice__word:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 3px;
 }
 
-.kid-lesson-notice__word.kid-option--correct::before {
-  content: "✓ ";
+/* Stany jak w AnswerGrid (.option): oczekiwanie, poprawna, błędna. */
+.kid-ui .kid-lesson-notice__word.kid-option--pending {
+  border-color: var(--md-sys-color-primary);
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+  box-shadow: 0 0 0 1px var(--md-sys-color-primary);
+}
+
+.kid-ui .kid-lesson-notice__word.kid-option--correct {
+  border-color: var(--kid-color-success);
+  background: var(--kid-color-success-container);
+  color: var(--kid-color-on-success-container);
+}
+
+.kid-ui .kid-lesson-notice__word.kid-option--wrong {
+  border-color: var(--md-sys-color-error);
+  background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container);
+}
+
+/* Znacznik wyniku (ikona, nie tylko kolor) w zarezerwowanym pasie po lewej. */
+.kid-lesson-notice__outcome {
   position: absolute;
-  inset-inline-start: 8px;
+  inset-inline-start: 6px;
   top: 50%;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
   transform: translateY(-50%);
+  border-radius: var(--kid-shape-full);
+  pointer-events: none;
 }
 
-.kid-lesson-notice__word.kid-option--wrong {
-  border-color: var(--kid-wrong);
-  background: var(--kid-wrong-bg);
+.kid-ui .kid-lesson-notice__outcome .kid-icon {
+  width: 14px;
+  height: 14px;
 }
 
-.kid-lesson-notice__word.kid-option--pending {
+.kid-lesson-notice__outcome[data-outcome="correct"] {
+  background: var(--kid-color-success);
+  color: var(--kid-color-on-success);
+}
+
+.kid-lesson-notice__outcome[data-outcome="wrong"] {
   border-radius: var(--kid-shape-s);
-  outline: 2px solid var(--kid-accent);
-  outline-offset: 2px;
-}
-
-.kid-lesson-notice__word.kid-option--wrong::before {
-  content: "✗ ";
-  position: absolute;
-  inset-inline-start: 8px;
-  top: 50%;
-  transform: translateY(-50%);
+  background: var(--md-sys-color-error);
+  color: var(--md-sys-color-on-error);
 }
 
 .kid-lesson-visual {
@@ -2285,8 +2340,10 @@
 
 .kid-lesson-stem {
   margin: 0;
+  font-family: var(--kid-font-display);
   font-size: var(--kid-type-headline-sm-size);
   font-weight: 700;
+  color: var(--md-sys-color-on-surface);
   text-align: center;
   overflow-wrap: anywhere;
 }
@@ -2307,9 +2364,9 @@
   align-items: center;
   justify-content: center;
   padding: 10px;
-  border: 2px dashed var(--kid-line);
+  border: 2px dashed var(--md-sys-color-outline);
   border-radius: var(--kid-shape-l);
-  background: var(--kid-soft);
+  background: var(--md-sys-color-surface-container-low);
 }
 
 .kid-lesson-order__pool {
@@ -2324,29 +2381,31 @@
   min-width: 48px;
   max-width: 100%;
   overflow-wrap: anywhere;
-  min-height: 52px;
+  min-height: 56px;
   padding: 8px 16px;
   font: inherit;
-  font-size: var(--kid-type-title-size);
+  font-family: var(--kid-font-display);
+  font-size: var(--kid-type-title-md-size);
   font-weight: 600;
-  border: 2px solid var(--md-sys-color-outline);
+  border: 1px solid var(--md-sys-color-outline);
   border-radius: var(--kid-shape-l);
-  background: var(--kid-surface);
-  color: var(--kid-text);
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
   cursor: pointer;
 }
 
 .kid-ui .kid-lesson-block:active {
-  background: var(--kid-soft);
+  background: var(--md-sys-color-surface-container-highest);
 }
 
 .kid-ui .kid-lesson-block--placed {
-  border-color: var(--kid-accent);
-  background: var(--kid-surface);
+  border-color: var(--md-sys-color-primary);
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
 }
 
 .kid-ui .kid-lesson-block:focus-visible {
-  outline: 3px solid var(--kid-accent);
+  outline: 2px solid var(--md-sys-color-primary);
   outline-offset: 3px;
 }
 
@@ -2491,8 +2550,11 @@
   align-items: baseline;
   justify-content: center;
   gap: 6px;
+  font-family: var(--kid-font-display);
   font-size: var(--kid-type-headline-sm-size);
+  font-weight: 700;
   line-height: 1.5;
+  color: var(--md-sys-color-on-surface);
   text-align: center;
 }
 
@@ -2507,21 +2569,6 @@
   line-height: inherit;
 }
 
-.kid-lesson-gap__input {
-  min-width: 120px;
-  max-width: 100%;
-  min-height: 52px;
-  box-sizing: border-box;
-  padding: 4px 10px;
-  font: inherit;
-  font-size: var(--kid-type-title-lg-size);
-  text-align: center;
-  border: 2px solid var(--kid-accent);
-  border-radius: var(--kid-shape-m);
-  color: var(--kid-text);
-  background: var(--kid-surface);
-}
-
 .kid-lesson-gap__hint {
   margin: 0;
   font-size: var(--kid-type-title-sm-size);
@@ -2531,10 +2578,20 @@
 
 .kid-lesson-source {
   margin: 0;
-  font-size: var(--kid-type-title-lg-size);
+  font-family: var(--kid-font-display);
+  font-size: clamp(var(--kid-type-headline-sm-size), 6vw, var(--kid-type-display-sm-size));
   font-weight: 700;
+  color: var(--md-sys-color-on-surface);
   text-align: center;
   overflow-wrap: anywhere;
+}
+
+/* Niskie okno (landscape telefonu): bodziec o stopień mniejszy, by kafelki
+   i akcja zmieściły się w oknie materiału. */
+@media (max-height: 480px) {
+  .kid-lesson-source {
+    font-size: var(--kid-type-title-lg-size);
+  }
 }
 
 /* Trener precyzji: pojęcia kluczowe (multi-select) i „Skróć odpowiedź”. */
@@ -2586,8 +2643,10 @@
 .kid-answer-segments-text__body {
   margin: 0;
   padding: 10px 14px;
+  border: 1px solid var(--md-sys-color-outline);
   border-radius: var(--kid-shape-l);
-  background: var(--kid-soft);
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
   font-size: var(--kid-type-title-md-size);
   line-height: 1.6;
   text-align: start;
@@ -2688,13 +2747,4 @@
 .kid-page[data-viewport-very-short="true"] .kid-exercise-frame .kid-material,
 .kid-page[data-viewport-very-short="true"] .kid-exercise-frame .kid-material-content {
   overflow: visible;
-}
-
-.kid-page[data-zoomed="true"] .kid-header {
-  flex-wrap: wrap;
-}
-
-.kid-page[data-zoomed="true"] .kid-header .kid-remaining {
-  flex: 1 1 100%;
-  order: 4;
 }

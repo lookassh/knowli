@@ -7,6 +7,7 @@ import { format } from "../format";
 import { AnswerFeedbackActions, AnswerFeedbackContent, AnswerFeedbackSecondaryActions, feedbackTone } from "./AnswerFeedback";
 import { ExerciseFeedbackDock, type FeedbackDockTone } from "./ExerciseFeedbackDock";
 import { ExerciseFrame } from "../exercises/ExerciseFrame";
+import { ExerciseGuidanceProvider } from "../exercises/exercise-guidance";
 import { KidIcon } from "../components/KidIcon";
 import { GuidanceButton } from "../components/GuidanceButton";
 import { MeaningVisualView } from "../visuals/MeaningVisualView";
@@ -16,7 +17,7 @@ import { describeSpeechFeedback } from "./speech-feedback-view";
 import type { LearningSessionController, LearningScreen as LearningScreenState } from "../session/session-controller";
 import { useFeedbackCooldown } from "./useFeedbackCooldown";
 import { SessionProgress } from "../components/SessionProgress";
-import { advanceSessionProgress, initialSessionProgress, progressAttempt, progressFraction, resultOutcome } from "../components/session-progress-state";
+import { advanceSessionProgress, initialSessionProgress, progressAttempt, progressDone, resultOutcome } from "../components/session-progress-state";
 import { kidStreakLength } from "../motion/kid-motion";
 import { TaskTransition } from "../motion/TaskTransition";
 import { ActionButton } from "../components/ActionButton";
@@ -90,6 +91,13 @@ export function LearnScreen({
           : feedback.dto?.kind === "almost" || feedback.dto?.kind === "spelling_hint" || feedback.dto?.kind === "lesson_almost" || feedback.dto?.kind === "lesson_hint" ? "partial"
             : feedback.dto?.kind === "incorrect" ? "incorrect" : "unevaluated";
   const instructionAudioKey = feedbackGuidanceKey ?? taskGuidanceKey;
+  const guidanceButton = instructionAudioKey
+    ? <GuidanceButton audioKey={instructionAudioKey} onPlay={(key) => controller.playGuidance(key)} testId="kid-guidance-play" showError={false} />
+    : null;
+  // W wierszu instrukcji obok odsłuchu słowa: obrysowany „?”, nie drugi głośnik.
+  const instructionGuidanceButton = instructionAudioKey
+    ? <GuidanceButton audioKey={instructionAudioKey} onPlay={(key) => controller.playGuidance(key)} testId="kid-guidance-play" showError={false} placement="instruction" />
+    : null;
   // Komunikaty błędu z akcjami (audio zadania / instrukcji) rozpychają pasek
   // statusu i włączają przewijanie ramy ćwiczenia — styluje to styles.css.
   const actionNotice = screen.taskAudioError != null || (screen.guidanceError && instructionAudioKey) ? "true" : "false";
@@ -201,12 +209,17 @@ export function LearnScreen({
   }, kidStreakLength);
   const progress = progressRef.current;
 
+  // Odsłuch stoi w panelu wyniku, gdy ten jest widoczny; w pozostałych stanach
+  // (zadanie, odsłonięcie wzorca) — obok tekstu instrukcji.
+  const guidanceInDock = hasFeedback && feedback !== null && screen.reveal === null;
+
   const dock = !hasFeedback || feedback === null ? undefined
     : speechFeedback && speechFeedbackProps !== null ? (
       <ExerciseFeedbackDock
         kind="speech"
         tone={speechDockTone}
         celebrate={celebrateInDock}
+        guidance={guidanceButton}
         primary={<SpeechFeedbackActions {...speechFeedbackProps} />}
         secondary={speechFeedbackProps.audioAvailable || speechFeedbackProps.retry ? (
           <div className="kid-feedback-dock-secondary-actions">
@@ -222,6 +235,7 @@ export function LearnScreen({
         compact={task?.prompt.kind === "picture_listening" || task?.prompt.kind === "picture_recognition"}
         tone={answerDockTone(feedback.dto)}
         celebrate={celebrateInDock}
+        guidance={guidanceButton}
         primary={<AnswerFeedbackActions dto={feedback.dto} retry={feedback.retry} busy={busy}
           onNext={() => void controller.continueLearning()} />}
         secondary={lessonFeedbackView(feedback.dto)?.technical === true && feedback.retry ? (
@@ -236,11 +250,10 @@ export function LearnScreen({
   return (
     <main className="kid-screen kid-learning" data-task-id={task?.taskId ?? undefined} data-action-notice={actionNotice}>
       <header className="kid-header">
-        {instructionAudioKey && <GuidanceButton audioKey={instructionAudioKey} onPlay={(key) => controller.playGuidance(key)} testId="kid-guidance-play" showError={false} />}
-        <SessionProgress remaining={remaining} fraction={progressFraction(progress.total, task?.remainingAssessed ?? null)} milestone={progress.milestone} />
-        <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" className="kid-end" data-testid="kid-end" disabled={busy} onClick={() => void controller.endNow()}>
-          {messages.kid.end}
-        </ActionButton>
+        <IconActionButton variant="text" data-testid="kid-end" aria-label={messages.kid.end} title={messages.kid.end} disabled={busy} onClick={() => void controller.endNow()}>
+          <KidIcon name="close" />
+        </IconActionButton>
+        <SessionProgress remaining={remaining} total={progress.total} done={progressDone(progress.total, task?.remainingAssessed ?? null)} milestone={progress.milestone} />
         <details className="kid-microphone-status" data-microphone-state={micState}>
           <summary aria-label={micLabel} data-testid="kid-microphone-status">
             <KidIcon name={micState === "off" || micState === "unavailable" ? "microphone-off" : "microphone"} />
@@ -280,6 +293,7 @@ export function LearnScreen({
         task !== null && (
           <div className="kid-task">
             <TaskTransition taskId={task.taskId} onPaneMount={handlePaneMount}>
+            <ExerciseGuidanceProvider value={guidanceInDock ? null : instructionGuidanceButton}>
             {screen.reveal !== null ? (
               <ExerciseFrame task={task} content={(
                 <section className="kid-card kid-reveal" data-testid="kid-reveal">
@@ -315,6 +329,7 @@ export function LearnScreen({
                 handlers={handlers}
               />
             )}
+            </ExerciseGuidanceProvider>
             </TaskTransition>
           </div>
         )
