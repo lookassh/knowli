@@ -5,7 +5,8 @@
 **Worktree:** `C:\Users\looka\IdeaProjects\knowli-worktrees\school-subjects`
 **Baza gałęzi:** `5163dfd` (`main` w momencie utworzenia worktree)
 **Stan przy przekazaniu:** Etapy 0–2 zaimplementowane; poprawki po niezależnym workflow code review wprowadzone; zmiany mają zostać przekazane Codexowi jako lokalny commit zawierający także ten dokument. Nie wykonano pusha ani PR.
-**Aktualizacja 2026-10-28 (wieczór):** Etap 2b (`lesson_calculation`) domknięty lokalnymi commitami na tej gałęzi — domena, walidacja, generowanie, edytor z podglądem, ocena prób i kartkówka, Kid UI; pełne bramki zielone (szczegóły w `tasks.md`). Nadal bez pusha i PR.
+**Aktualizacja 2026-10-28 (wieczór):** Etap 2b (`lesson_calculation`) domknięty lokalnymi commitami na tej gałęzi — domena, walidacja, generowanie, edytor z podglądem, ocena prób i kartkówka, Kid UI; pełne bramki zielone (szczegóły w `tasks.md`).
+**Aktualizacja 2026-10-29:** dwie rundy review gałęzi (ręczna i niezależny subagent) z poprawkami; sondy na prawdziwych modelach ujawniły i naprawiły błędy uziemienia (`minItems` cytatów w schemacie, puste tablice ze structured output). Dodano opcjonalne opcje pośrednika OpenRouter w `.env` (`UMIEM_LLM_*` / `UMIEM_GRADER_*`: `REASONING`, `PROVIDER_*`). Zalecana konfiguracja po porównaniu modeli (`tasks.md`): `google/gemini-3.8-flash` dla generatora i gradera oraz `UMIEM_GRADER_PROVIDER_DATA_COLLECTION=deny`. Gałąź scalona z `origin/main` (#145–#148) i wystawiona jako PR do `main`.
 
 ## 1. Po co jest ten dokument
 
