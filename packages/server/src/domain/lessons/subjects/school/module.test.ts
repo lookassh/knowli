@@ -332,3 +332,15 @@ describe("słowa kluczowe (lesson_keywords)", () => {
     expect(gaps).toEqual([{ objectiveId: "school.ddeck.fotosynteza", stage: "guided", required: 1, actual: 0 }]);
   });
 });
+
+describe("generacja: pytania porównawcze i odpowiedź mówiona (Etapy 3 i 6)", () => {
+  it("reguły pól proszą o pytanie porównawcze dla par łatwo mylonych pojęć", () => {
+    const rules = schoolSubject.prompts.fieldRules ?? "";
+    expect(rules).toContain("łatwo mylonych pojęć");
+    expect(rules).toContain("questionType: comparison");
+  });
+
+  it("szkoła przyjmuje dyktowanie wyłącznie dla odpowiedzi otwartej po polsku", () => {
+    expect(schoolSubject.spokenAnswers).toEqual({ locale: "pl-PL", exerciseTypes: ["lesson_open_answer"] });
+  });
+});

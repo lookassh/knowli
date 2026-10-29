@@ -748,4 +748,31 @@ describe("selectLessonTask — trener precyzji (Etap 4)", () => {
     const concise = selectLessonTask(input({ ...base, exercises, precisionHistory: { [O1]: { knowledge: "correct", precision: "concise" } } }));
     expect(concise).toMatchObject({ itemId: "item:subj.topic.o1:independent:a" });
   });
+
+  describe("pomylone pojęcia → pytanie porównawcze (Etap 6, design §9.3)", () => {
+    const comparison = (variant: string, searchText: string, expectedForm = "explanation"): LessonExerciseCandidate =>
+      ({ ...open(variant, `cmp-${variant}`, expectedForm), questionType: "comparison", searchText });
+    const confused = { knowledge: "incorrect", precision: "concise", confusedConcepts: [{ said: "Równoleżnik", meant: "południk" }] } as const;
+
+    it("po pomyleniu preferuje pytanie porównawcze wymieniające tę parę", () => {
+      const exercises = [open("a", "def"), comparison("b", "Czym różni się zwrotnik od koła podbiegunowego?"), comparison("c", "Czym różni się południk od równoleżnika?")];
+      const plan = selectLessonTask(input({ ...base, exercises, precisionHistory: { [O1]: confused } }));
+      expect(plan).toMatchObject({ itemId: "item:subj.topic.o1:independent:c" });
+    });
+
+    it("bez pasującej pary bierze dowolne pytanie porównawcze celu, bez pytań porównawczych — bez zmian", () => {
+      const other = selectLessonTask(input({ ...base, exercises: [open("a", "def"), comparison("b", "Czym różni się nizina od wyżyny?")], precisionHistory: { [O1]: confused } }));
+      expect(other).toMatchObject({ itemId: "item:subj.topic.o1:independent:b" });
+      const none = selectLessonTask(input({ ...base, exercises: [open("a", "def"), open("b", "inna")], precisionHistory: { [O1]: confused } }));
+      expect(none).toMatchObject({ itemId: "item:subj.topic.o1:independent:a" });
+    });
+
+    it("pomylenie ma pierwszeństwo przed formą zwięzłą, a bez pomylenia porównanie nie jest preferowane", () => {
+      const exercises = [open("a", "zwiezle", "one_sentence"), comparison("b", "Czym różni się południk od równoleżnika?")];
+      const withConfusion = selectLessonTask(input({ ...base, exercises, precisionHistory: { [O1]: { ...confused, knowledge: "partial", precision: "verbose" } } }));
+      expect(withConfusion).toMatchObject({ itemId: "item:subj.topic.o1:independent:b" });
+      const plain = selectLessonTask(input({ ...base, exercises: [open("a", "def"), comparison("b", "Czym różni się południk od równoleżnika?")], precisionHistory: { [O1]: { knowledge: "incorrect", precision: "concise" } } }));
+      expect(plain).toMatchObject({ itemId: "item:subj.topic.o1:independent:a" });
+    });
+  });
 });

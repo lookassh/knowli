@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mockPrecisionHint, objectivesWorthReviewing, schoolMockAggregate } from "./mock-test-precision";
+import { countConfusions, mockPrecisionHint, objectivesWorthReviewing, schoolMockAggregate } from "./mock-test-precision";
 
 describe("schoolMockAggregate", () => {
   it("counts knowledge, precision, form violations and the most frequent missing elements", () => {
@@ -52,5 +52,25 @@ describe("objectivesWorthReviewing", () => {
       { objectiveId: "d", outcome: "correct" },
       { objectiveId: "a", outcome: "incorrect" },
     ], ["a", "b", "c", "d"])).toEqual(["a", "b"]);
+  });
+});
+
+describe("countConfusions i agregat kartkówki — pomylone pojęcia (Etap 6)", () => {
+  const confused = (said: string, meant: string) => ({ knowledge: "incorrect", precision: "concise", confusedConcepts: [{ said, meant }] });
+
+  it("zlicza pary bez wielkości liter, malejąco, z limitem", () => {
+    expect(countConfusions([
+      confused("Równoleżnik", "południk"), confused("równoleżnik", "Południk"), confused("nizina", "wyżyna"),
+      { knowledge: "correct", precision: "concise" }, { confusedConcepts: [{ said: 1, meant: "x" }] },
+    ], 5)).toEqual([
+      { said: "Równoleżnik", meant: "południk", count: 2 },
+      { said: "nizina", meant: "wyżyna", count: 1 },
+    ]);
+    expect(countConfusions([confused("a", "b"), confused("c", "d")], 1)).toHaveLength(1);
+  });
+
+  it("agregat kartkówki ma `confusions` tylko przy pomyleniu", () => {
+    expect(schoolMockAggregate([confused("równoleżnik", "południk")])?.confusions).toEqual([{ said: "równoleżnik", meant: "południk", count: 1 }]);
+    expect(schoolMockAggregate([{ knowledge: "correct", precision: "concise" }])).not.toHaveProperty("confusions");
   });
 });

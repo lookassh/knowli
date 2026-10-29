@@ -10,6 +10,8 @@ export interface MockAnswerDetails {
   readonly formOk?: unknown;
   readonly missingElementTexts?: unknown;
   readonly missingElementIds?: unknown;
+  /** Pary pomylonych pojęć (werdykt v3, design §9.4). */
+  readonly confusedConcepts?: unknown;
 }
 
 export interface SchoolMockAggregate {
@@ -17,7 +19,39 @@ export interface SchoolMockAggregate {
   precision: { concise: number; verbose: number; unfocused: number };
   formViolations: number;
   missingElements: { text: string; count: number }[];
+  /** Pomylone pojęcia; pole tylko przy co najmniej jednej parze (raporty sprzed Etapu 6 go nie mają). */
+  confusions?: ConfusionCount[];
 }
+
+export interface ConfusionCount {
+  said: string;
+  meant: string;
+  count: number;
+}
+
+/**
+ * Zlicza pary pomylonych pojęć z ocen (bez wielkości liter; zapis z pierwszego
+ * wystąpienia), malejąco po liczbie, potem alfabetycznie; najwyżej `limit`.
+ */
+export function countConfusions(answers: readonly MockAnswerDetails[], limit: number): ConfusionCount[] {
+  const counts = new Map<string, ConfusionCount>();
+  for (const details of answers) {
+    if (!Array.isArray(details.confusedConcepts)) continue;
+    for (const raw of details.confusedConcepts as unknown[]) {
+      const pair = raw as { said?: unknown; meant?: unknown } | null;
+      if (typeof pair?.said !== "string" || typeof pair.meant !== "string") continue;
+      const key = `${pair.said.toLocaleLowerCase("pl-PL")}|${pair.meant.toLocaleLowerCase("pl-PL")}`;
+      const entry = counts.get(key) ?? { said: pair.said, meant: pair.meant, count: 0 };
+      entry.count += 1;
+      counts.set(key, entry);
+    }
+  }
+  return [...counts.values()]
+    .sort((a, b) => b.count - a.count || a.said.localeCompare(b.said, "pl") || a.meant.localeCompare(b.meant, "pl"))
+    .slice(0, limit);
+}
+
+const MAX_MOCK_CONFUSIONS = 3;
 
 const KNOWLEDGE = ["correct", "partial", "incorrect"] as const;
 const PRECISION = ["concise", "verbose", "unfocused"] as const;
@@ -56,6 +90,8 @@ export function schoolMockAggregate(answers: readonly MockAnswerDetails[]): Scho
     .map(([text, count]) => ({ text, count }))
     .sort((a, b) => b.count - a.count || a.text.localeCompare(b.text, "pl"))
     .slice(0, MAX_MISSING);
+  const confusions = countConfusions(graded, MAX_MOCK_CONFUSIONS);
+  if (confusions.length > 0) aggregate.confusions = confusions;
   return aggregate;
 }
 

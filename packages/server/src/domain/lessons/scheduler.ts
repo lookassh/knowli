@@ -44,12 +44,18 @@ export interface LessonExerciseCandidate {
   readonly familyId?: string;
   /** Oczekiwana forma odpowiedzi otwartej (`one_sentence`, `short`, …). */
   readonly expectedForm?: string;
+  /** Typ pytania otwartego (`comparison`, …) — reguła pomylonych pojęć (design §9.3). */
+  readonly questionType?: string;
+  /** Tekst pytania i elementów wymaganych (dopasowanie pomylonej pary do pytania porównawczego). */
+  readonly searchText?: string;
 }
 
 /** Ostatnia ocena odpowiedzi otwartej celu sprzed sesji (wiedza i precyzja; trener precyzji). */
 export interface ObjectivePrecisionSnapshot {
   readonly knowledge: "correct" | "partial" | "incorrect";
   readonly precision: "concise" | "verbose" | "unfocused";
+  /** Pomylone pojęcia z tej oceny (werdykt v3); brak = bez pomylenia. */
+  readonly confusedConcepts?: readonly { readonly said: string; readonly meant: string }[];
 }
 
 /** Postęp jednego celu — podzbiór `ObjectiveProgress` czytany przez selektor. */
@@ -364,7 +370,36 @@ function pickExercise(
   }
   const unseen = effective.filter(({ candidate }) => !isExposed(candidate, input));
   const chosen = unseen.length > 0 ? unseen : effective;
-  return preferConciseForms(orderBySeen(chosen, input), objectiveId, input)[0]?.candidate ?? null;
+  return preferComparison(preferConciseForms(orderBySeen(chosen, input), objectiveId, input), objectiveId, input)[0]?.candidate ?? null;
+}
+
+/** Porównanie pojęć: NFC, bez wielkości liter, pojedyncze odstępy. */
+function conceptKey(text: string): string {
+  return text.normalize("NFC").toLocaleLowerCase("pl-PL").replace(/\s+/gu, " ").trim();
+}
+
+/**
+ * Pomylone pojęcia (design §9.3, 6.4 pkt 4): gdy ostatnia ocena odpowiedzi
+ * otwartej celu z poprzednich sesji wskazała pomylenie, preferuj pytania
+ * porównawcze celu — najpierw te, których treść wymienia `said` albo `meant`.
+ * Stabilny podział (reszta porządku zostaje); ma pierwszeństwo przed formami
+ * zwięzłymi, bo stosowany jest na ich wyniku. Bez pytań porównawczych — bez zmian.
+ */
+function preferComparison<T extends { candidate: LessonExerciseCandidate }>(
+  ordered: readonly T[],
+  objectiveId: string,
+  input: LessonScheduleInput,
+): T[] {
+  const pairs = input.precisionHistory?.[objectiveId]?.confusedConcepts ?? [];
+  if (pairs.length === 0) return [...ordered];
+  const terms = pairs.flatMap((pair) => [conceptKey(pair.said), conceptKey(pair.meant)]).filter((term) => term !== "");
+  const comparison = (entry: T) => entry.candidate.exerciseType === "lesson_open_answer" && entry.candidate.questionType === "comparison";
+  const mentions = (entry: T) => terms.some((term) => conceptKey(entry.candidate.searchText ?? "").includes(term));
+  const rank = (entry: T) => (comparison(entry) ? (mentions(entry) ? 0 : 1) : 2);
+  return ordered
+    .map((entry, position) => ({ entry, position }))
+    .sort((a, b) => rank(a.entry) - rank(b.entry) || a.position - b.position)
+    .map(({ entry }) => entry);
 }
 
 const CONCISE_FORMS: ReadonlySet<string> = new Set(["one_sentence", "short"]);

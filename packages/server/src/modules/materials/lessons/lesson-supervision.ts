@@ -272,12 +272,13 @@ export async function lessonObjectiveProgress(
       recent: summarized.slice(0, 3),
     };
   }
-  const [countsResult, missingResult, recentResult] = historyRevisionIds.length
+  const [countsResult, missingResult, recentResult, confusionResult] = historyRevisionIds.length
     ? await Promise.all([
         services.db.execute<{
           objectiveId: string | null; correct: number; partial: number; incorrect: number;
           concise: number; verbose: number; unfocused: number;
           speechCorrect: number; speechPartial: number; speechIncorrect: number; speechEdited: number;
+          withRedundant: number; withOffTopic: number;
         }>(sql`
         select n.details->>'objectiveId' as "objectiveId",
                count(*) filter (where n.details->>'knowledge' = 'correct')::int as correct,
@@ -290,7 +291,12 @@ export async function lessonObjectiveProgress(
                count(*) filter (where n.details->>'knowledge' = 'correct' and a.answer->>'inputMethod' = 'speech')::int as "speechCorrect",
                count(*) filter (where n.details->>'knowledge' = 'partial' and a.answer->>'inputMethod' = 'speech')::int as "speechPartial",
                count(*) filter (where n.details->>'knowledge' = 'incorrect' and a.answer->>'inputMethod' = 'speech')::int as "speechIncorrect",
-               count(*) filter (where a.answer->>'inputMethod' = 'speech' and a.answer->>'edited' = 'true')::int as "speechEdited"
+               count(*) filter (where a.answer->>'inputMethod' = 'speech' and a.answer->>'edited' = 'true')::int as "speechEdited",
+               -- werdykt v3: oceny z fragmentami „poprawne, ale zbędne” i „nie na temat”
+               count(*) filter (where jsonb_typeof(n.details->'redundantFragments') = 'array'
+                                  and jsonb_array_length(n.details->'redundantFragments') > 0)::int as "withRedundant",
+               count(*) filter (where jsonb_typeof(n.details->'offTopicFragments') = 'array'
+                                  and jsonb_array_length(n.details->'offTopicFragments') > 0)::int as "withOffTopic"
         ${schoolFrom}
         ${schoolWhere}
          group by 1`),
@@ -315,8 +321,20 @@ export async function lessonObjectiveProgress(
         ) recent
          where rank <= 5
          order by "objectiveId", rank`),
+        // Pomylone pojęcia (werdykt v3, design §9.4): pary bez wielkości liter; zapis — pierwszy alfabetycznie wariant.
+        services.db.execute<{ objectiveId: string | null; said: string; meant: string; count: number }>(sql`
+        select "objectiveId", min(said) as said, min(meant) as meant, count(*)::int as count from (
+          select n.details->>'objectiveId' as "objectiveId", c->>'said' as said, c->>'meant' as meant
+          ${schoolFrom}
+           cross join lateral jsonb_array_elements(
+             case when jsonb_typeof(n.details->'confusedConcepts') = 'array'
+                  then n.details->'confusedConcepts' else '[]'::jsonb end) as c
+          ${schoolWhere}
+            and jsonb_typeof(c->'said') = 'string' and jsonb_typeof(c->'meant') = 'string'
+        ) pairs
+         group by "objectiveId", lower(said), lower(meant)`),
       ])
-    : [null, null, null];
+    : [null, null, null, null];
   function schoolAggregate(objectiveId: string) {
     const counts = countsResult?.rows.find((row) => row.objectiveId === objectiveId);
     if (!counts) return undefined;
@@ -344,6 +362,12 @@ export async function lessonObjectiveProgress(
         speech: { correct: counts.speechCorrect, partial: counts.speechPartial, incorrect: counts.speechIncorrect, edited: counts.speechEdited },
       },
       speechService: services.lessonSpeech?.publicService ?? null,
+      topConfusions: (confusionResult?.rows ?? [])
+        .filter((row) => row.objectiveId === objectiveId && row.said.length <= 60 && row.meant.length <= 60)
+        .map((row) => ({ said: row.said, meant: row.meant, count: row.count }))
+        .sort((a, b) => b.count - a.count || a.said.localeCompare(b.said, "pl") || a.meant.localeCompare(b.meant, "pl"))
+        .slice(0, 5),
+      fragmentKinds: { redundant: counts.withRedundant, offTopic: counts.withOffTopic },
       ...(shorteningAggregate(objectiveId) ? { shortening: shorteningAggregate(objectiveId)! } : {}),
     };
   }
