@@ -135,6 +135,16 @@ describe("profile and deck screens", () => {
     expect(rows[0]!.getAttribute("data-kind")).toBe("vocabulary");
   });
 
+  it("shows the Rekomendowane label on every recommended card with one heading and one testid", () => {
+    renderKid(<DeckScreen decks={[deck(10, { recommended: true }), deck(12, { recommended: true })]} childName="Ola" microphone={false} micDenied={false} onToggleMicrophone={vi.fn()} onStart={vi.fn()} />);
+    const cards = screen.getAllByTestId("kid-deck-card");
+    expect(cards).toHaveLength(2);
+    for (const card of cards) expect(card.querySelector(".kid-deck-card__label")?.textContent).toBe("Rekomendowane");
+    expect(screen.getAllByTestId("kid-section-recommended")).toHaveLength(1);
+    expect(document.querySelectorAll("section[data-kind='recommended'] h2")).toHaveLength(1);
+    expect(cards[1]!.querySelector(".kid-deck-card__label")?.tagName).toBe("P");
+  });
+
   it("names each row's arrow button after its deck and runs the row's own actions", () => {
     const onStart = vi.fn();
     const onMockTest = vi.fn();

@@ -143,7 +143,8 @@ export function DeckScreen({
                       onEndActive={onEndActive}
                       buttonRef={index === 0 ? firstButtonRef : undefined}
                       index={index}
-                      sectionLabel={index === 0 ? messages.kid.recommendedTitle : undefined}
+                      sectionLabel={messages.kid.recommendedTitle}
+                      sectionHeading={index === 0}
                     />
                   ))}
                 </ul>
@@ -184,9 +185,11 @@ interface DeckActionProps {
 }
 
 /** Duża karta zestawu rekomendowanego; `sectionLabel` to etykieta sekcji wewnątrz karty. */
-export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive, buttonRef, index = 0, sectionLabel }: DeckActionProps & {
+export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive, buttonRef, index = 0, sectionLabel, sectionHeading = true }: DeckActionProps & {
   index?: number;
   sectionLabel?: string;
+  /** Tylko jedna karta w grupie niesie nagłówek sekcji; pozostałe pokazują ten sam napis jako zwykły tekst. */
+  sectionHeading?: boolean;
 }) {
   // Cover zoom is a Motion effect, but only precise pointers get hover.
   const [canHover] = useState(() => typeof window !== "undefined" && typeof window.matchMedia === "function"
@@ -194,7 +197,9 @@ export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive, but
   return (
     <m.li initial={kidEntranceInitial} animate={kidEntranceAnimate} whileHover={{ y: -4 }} transition={{ ...kidSpringGentle, delay: kidStaggerDelay(index) }}>
       <article className="kid-deck-card" data-testid="kid-deck-card" data-deck-id={deck.deckId} data-kind={deck.kind ?? "vocabulary"}>
-        {sectionLabel && <h2 className="kid-deck-card__label" data-testid="kid-section-recommended">{sectionLabel}</h2>}
+        {sectionLabel && (sectionHeading
+          ? <h2 className="kid-deck-card__label" data-testid="kid-section-recommended">{sectionLabel}</h2>
+          : <p className="kid-deck-card__label">{sectionLabel}</p>)}
         <div className="kid-deck-card__details">
           <DeckCover deck={deck} mediaUrl={mediaUrl} canHover={canHover} />
           <div className="kid-deck-card__info">
