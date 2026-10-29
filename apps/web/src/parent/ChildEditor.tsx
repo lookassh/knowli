@@ -219,7 +219,9 @@ function AddChildForm({
       try {
         await onAdded();
       } catch {
-        setRefreshFailed(true);
+        // rodzic mógł już wyjść z sekcji — wtedy komunikat trafia do powiadomienia
+        if (mounted.current) setRefreshFailed(true);
+        else notifications.show({ color: "yellow", message: messages.children.addedRefreshFailed });
       }
     },
   });
