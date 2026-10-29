@@ -73,6 +73,7 @@ const kidOs = implement({
     disclosures: kidApiContract.tasks.disclosures,
     completePresentation: kidApiContract.tasks.completePresentation,
     attempts: kidApiContract.tasks.attempts,
+    dictation: kidApiContract.tasks.dictation,
   },
 })
   .$context<ORpcContext>()
