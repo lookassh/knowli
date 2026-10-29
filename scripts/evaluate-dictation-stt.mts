@@ -417,6 +417,26 @@ function wavSeconds(wav: Uint8Array): number {
   return (wav.length - 44) / 32_000;
 }
 
+/**
+ * Czas nagrania z nagłówka WAV, wyłącznie dla formatu, który wysyła strona próby
+ * (kanoniczny nagłówek 44 B: PCM, mono, 16 bit, 16 kHz). Inny format albo
+ * uszkodzony nagłówek → null, żeby spreparowany plik nie ominął limitu czasu.
+ */
+function trialWavSeconds(wav: Uint8Array): number | null {
+  if (wav.length < 44) return null;
+  const view = new DataView(wav.buffer, wav.byteOffset, wav.byteLength);
+  const ascii = (offset: number) => String.fromCharCode(...wav.subarray(offset, offset + 4));
+  if (ascii(0) !== "RIFF" || ascii(8) !== "WAVE" || ascii(12) !== "fmt " || ascii(36) !== "data") return null;
+  const pcm = view.getUint16(20, true) === 1;
+  const mono = view.getUint16(22, true) === 1;
+  const rate16k = view.getUint32(24, true) === 16_000;
+  const bits16 = view.getUint16(34, true) === 16;
+  if (!pcm || !mono || !rate16k || !bits16) return null;
+  const dataBytes = view.getUint32(40, true);
+  if (dataBytes !== wav.length - 44) return null;
+  return dataBytes / 32_000;
+}
+
 function fmtConf(c: number | null | undefined): string {
   return c === null || c === undefined ? "  –  " : c.toFixed(2).padStart(5);
 }
@@ -710,9 +730,10 @@ function live(): void {
     chunks.length = 0;
     const caseId = String(req.headers["x-case-id"] ?? "");
     const c = CASES.find((x) => x.id === caseId);
-    const seconds = wavSeconds(wav);
-    // limit czasu jak na stronie (pół sekundy zapasu na dekodowanie) — przed płatnymi wywołaniami STT
-    if (!Number.isFinite(seconds) || seconds <= 0 || seconds > MAX_LIVE_SECONDS + 0.5) {
+    const seconds = trialWavSeconds(wav);
+    // tylko format strony próby i limit czasu jak na stronie (pół sekundy zapasu na
+    // dekodowanie nagrania zatrzymanego przy 60 s) — przed płatnymi wywołaniami STT
+    if (seconds === null || seconds <= 0 || seconds > MAX_LIVE_SECONDS + 0.5) {
       wav = null;
       res.writeHead(413, { "content-type": "application/json" }).end(JSON.stringify({ results: [] }));
       return;
