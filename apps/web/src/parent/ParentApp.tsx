@@ -80,13 +80,16 @@ export default function ParentApp() {
    * Wygasła sesja (401). Z niezapisanymi zmianami w edytorze logowanie otwiera
    * się w oknie nad bieżącym widokiem — formularz zostaje (plan §3.2).
    */
+  // stabilna tożsamość: ProgressPanel i WorkCardPanel mają onAuthExpired
+  // w zależnościach efektu wczytania (obiekt leaveGuard jest nowy co render)
+  const editorState = leaveGuard.current;
   const toLogin = useCallback(() => {
-    if (leaveGuard.current().dirty) {
+    if (editorState().dirty) {
       setReauthOpen(true);
       return;
     }
     signOutLocally();
-  }, [leaveGuard, signOutLocally]);
+  }, [editorState, signOutLocally]);
   useAuthExpiredHandler(toLogin);
 
   const login = useCallback(
