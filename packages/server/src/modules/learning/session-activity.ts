@@ -199,7 +199,7 @@ export function describeTaskPrompt(p: TaskPrompt): { instruction: string; stimul
 /** Resolves canonical lesson answers from the same answer-key shapes used by materialization. */
 export const LessonAnswerSnapshotSchema = z.object({
   answer: z.string().optional(), target: z.string().optional(), acceptedAnswers: z.array(z.string()).optional(),
-  correctOptionId: z.string().optional(), optionValues: z.record(z.string(), z.string()).optional(),
+  correctOptionId: z.string().optional(), correctOptionIds: z.array(z.string()).optional(), optionValues: z.record(z.string(), z.string()).optional(),
   segmentValues: z.record(z.string(), z.string()).optional(), itemIds: z.array(z.string()).optional(),
   itemValues: z.record(z.string(), z.string()).optional(),
 });
@@ -207,7 +207,7 @@ type LessonAnswerSnapshot = z.infer<typeof LessonAnswerSnapshotSchema>;
 
 export function lessonAnswerValues(key: LessonAnswerSnapshot, prompt: TaskPrompt | null): { valuesById: Map<string, string>; acceptedAnswers: string[] } {
   const valuesById = new Map<string, string>();
-  if (prompt?.kind === "lesson_choice" || prompt?.kind === "lesson_short_answer" || prompt?.kind === "reading" || prompt?.kind === "reverse_recognition") {
+  if (prompt?.kind === "lesson_choice" || prompt?.kind === "lesson_short_answer" || prompt?.kind === "lesson_keywords" || prompt?.kind === "reading" || prompt?.kind === "reverse_recognition") {
     for (const option of prompt.options) valuesById.set(option.id, option.text);
   }
   if (prompt?.kind === "lesson_order") for (const item of prompt.items) valuesById.set(item.id, item.text);
@@ -224,6 +224,8 @@ export function lessonAnswerValues(key: LessonAnswerSnapshot, prompt: TaskPrompt
     ...(key?.acceptedAnswers ?? []),
     ...(key?.correctOptionId ? [valuesById.get(key.correctOptionId) ?? ""] : []),
     ...(sequence.length > 0 ? [sequence.join(" ")] : []),
+    // Słowa kluczowe: zbiór pojęć kluczowych, każde także osobno (wybór bez kolejności).
+    ...(key?.correctOptionIds ? key.correctOptionIds.map((id) => valuesById.get(id) ?? "") : []),
   ].filter((answer) => answer.length > 0);
   return { valuesById, acceptedAnswers: [...new Set(acceptedAnswers)] };
 }
