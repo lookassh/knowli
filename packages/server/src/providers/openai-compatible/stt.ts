@@ -64,9 +64,16 @@ function confidenceOf(payload: TranscriptionPayload): number | null {
   return words.length > 0 ? words.reduce((sum, value) => sum + value, 0) / words.length : null;
 }
 
+/** Adres bazowy bez końcowych „/” — pętla zamiast wyrażenia z cofaniem. */
+function withoutTrailingSlashes(url: string): string {
+  let end = url.length;
+  while (end > 0 && url[end - 1] === "/") end -= 1;
+  return url.slice(0, end);
+}
+
 export function createOpenAiCompatibleSttProvider(options: OpenAiCompatibleSttOptions): SttProvider {
   const doFetch = options.fetchImpl ?? ((url, init) => fetch(url, init as RequestInit));
-  const endpoint = `${options.baseUrl.replace(/\/+$/, "")}/audio/transcriptions`;
+  const endpoint = `${withoutTrailingSlashes(options.baseUrl)}/audio/transcriptions`;
   const openRouter = isOpenRouterEndpoint(options.baseUrl);
   return {
     name: options.model,

@@ -455,7 +455,7 @@ async function synth(): Promise<void> {
     const ms = speech.map((r) => r.ms).sort((a, b) => a - b);
     console.log(
       `${engine.padEnd(20)} pojęcia ${hits}/${total} (${((100 * hits) / total).toFixed(0)}%), ucięte ${truncated}, bez wyniku ${failed}, ` +
-        `conf min ${Math.min(...confs).toFixed(2)} med ${confs.sort()[Math.floor(confs.length / 2)]?.toFixed(2)}, ` +
+        `conf min ${Math.min(...confs).toFixed(2)} med ${[...confs].sort((x, y) => x - y)[Math.floor(confs.length / 2)]?.toFixed(2)}, ` +
         `czas med ${ms[Math.floor(ms.length / 2)]} ms max ${ms.at(-1)} ms`,
     );
   }
@@ -537,7 +537,8 @@ function live(): void {
       wav = null; // bajty nagrania nie żyją dłużej niż żądanie
       // konsola: wyłącznie metadane — bez transkrypcji i bez bajtów
       console.log(
-        `[live] ${caseId || "swobodna"} ${seconds.toFixed(1)} s | ` +
+        // tylko znany identyfikator przypadku — nagłówek żądania nie trafia do logu
+        `[live] ${c?.id ?? "swobodna"} ${seconds.toFixed(1)} s | ` +
           results.map((r) => `${r.engine.split(" ")[0]}:${r.status}${r.keyTotal ? ` ${r.keyHits}/${r.keyTotal}` : ""}${r.truncated ? "!" : ""} ${r.ms}ms`).join(" | "),
       );
       res.writeHead(200, { "content-type": "application/json" });
