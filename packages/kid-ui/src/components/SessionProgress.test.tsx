@@ -42,6 +42,21 @@ describe("SessionProgress", () => {
     expect(pebbles[2]!.contains(star)).toBe(true);
   });
 
+  it("plays the star entrance when a milestone moves it to a new pebble", () => {
+    const { rerender } = renderKid(<SessionProgress remaining={null} total={6} done={0} />);
+    rerender(<SessionProgress remaining={null} total={6} done={3} milestone={1} />);
+    const star = screen.getByTestId("kid-streak-star");
+    expect(screen.getAllByTestId("kid-progress-pebble")[2]!.contains(star)).toBe(true);
+    // Skipping the entrance would start the star on its last, invisible keyframe.
+    expect(star.style.transform).not.toContain("-26px");
+    expect(star.style.transform).toContain("scale(0.3)");
+  });
+
+  it("does not replay a star that was already shown when the progress mounts", () => {
+    renderKid(<SessionProgress remaining={null} total={6} done={3} milestone={1} />);
+    expect(screen.getByTestId("kid-streak-star").style.transform).not.toContain("scale(0.3)");
+  });
+
   it("shows no current pebble when the session is done", () => {
     renderKid(<SessionProgress remaining={null} total={4} done={4} />);
     const states = screen.getAllByTestId("kid-progress-pebble").map((pebble) => pebble.getAttribute("data-state"));

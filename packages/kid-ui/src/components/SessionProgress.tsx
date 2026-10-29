@@ -35,6 +35,7 @@ export function SessionProgress({ remaining, total = 0, done = 0, milestone = 0 
   const [scope, animate] = useAnimate<HTMLSpanElement>();
   const reduceMotion = useReducedMotion() === true;
   const seenMilestone = useRef(milestone);
+  const mountedMilestone = useRef(milestone);
   const pebbles = total >= 1 && total <= PEBBLE_LIMIT;
   useEffect(() => {
     if (milestone <= seenMilestone.current) return;
@@ -51,8 +52,11 @@ export function SessionProgress({ remaining, total = 0, done = 0, milestone = 0 
   if (starAnchor.current.milestone !== milestone) {
     starAnchor.current = { milestone, index: Math.max(0, finished - 1) };
   }
+  // A new anchor remounts the presence in another pebble, so the entrance must
+  // play there; only a star already shown at mount skips it (its last keyframe
+  // is invisible).
   const star = (
-    <AnimatePresence initial={false}>
+    <AnimatePresence initial={milestone > mountedMilestone.current}>
       {milestone > 0 && (
         <m.span
           key={milestone}
