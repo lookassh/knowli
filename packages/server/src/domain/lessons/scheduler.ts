@@ -40,6 +40,16 @@ export interface LessonExerciseCandidate {
   readonly objectiveId: string;
   readonly exerciseType: LessonExerciseType;
   readonly targetKey: string;
+  /** Rodzina pytań (odpowiedź otwarta i powiązane słowa kluczowe przedmiotu szkolnego). */
+  readonly familyId?: string;
+  /** Oczekiwana forma odpowiedzi otwartej (`one_sentence`, `short`, …). */
+  readonly expectedForm?: string;
+}
+
+/** Ostatnia ocena odpowiedzi otwartej celu sprzed sesji (wiedza i precyzja; trener precyzji). */
+export interface ObjectivePrecisionSnapshot {
+  readonly knowledge: "correct" | "partial" | "incorrect";
+  readonly precision: "concise" | "verbose" | "unfocused";
 }
 
 /** Postęp jednego celu — podzbiór `ObjectiveProgress` czytany przez selektor. */
@@ -90,6 +100,8 @@ export interface LessonScheduleInput {
   readonly testWindowOpen: boolean;
   readonly graderAvailable: boolean;
   readonly graderCallsLeft: number;
+  /** Ostatnia ocena odpowiedzi otwartej per cel z poprzednich sesji (bez zadań następczych). */
+  readonly precisionHistory?: Readonly<Record<string, ObjectivePrecisionSnapshot>>;
   readonly policy: LessonPolicy;
   readonly now: string;
 }
@@ -101,7 +113,8 @@ export type LessonTaskReason =
   | "test_preparation"
   | "continue"
   | "introduce"
-  | "reinforce";
+  | "reinforce"
+  | "precision_practice";
 
 /** Decyzja selektora: karta prezentacji/wsparcia albo konkretne ćwiczenie. */
 export type LessonTaskPlan =
@@ -114,6 +127,11 @@ export type LessonTaskPlan =
       readonly exerciseType: LessonExerciseType;
       readonly reason: LessonTaskReason;
       readonly independentCheck: boolean;
+      /**
+       * `lesson_keywords`: odpowiedź otwarta tej samej rodziny, którą plan wydaje
+       * bezpośrednio po wyborze pojęć (para trenera precyzji, design 6.1).
+       */
+      readonly pairedWith?: { readonly itemId: string; readonly itemRevisionId: string };
     };
 
 /** Typy wymagające modelu-oceniającego (otwarta/wytwórcza ocena). */
@@ -313,9 +331,11 @@ function pickExercise(
 ): LessonExerciseCandidate | null {
   const indexed = input.exercises.map((candidate, index) => ({ candidate, index }));
 
+  // Słowa kluczowe wydaje wyłącznie para trenera precyzji (precisionPracticePlan).
   const matching = indexed.filter(
     ({ candidate }) =>
-      candidate.objectiveId === objectiveId && stageOf(candidate.exerciseType) === stage,
+      candidate.objectiveId === objectiveId && stageOf(candidate.exerciseType) === stage &&
+      candidate.exerciseType !== "lesson_keywords",
   );
   if (matching.length === 0) return null;
 
@@ -340,11 +360,30 @@ function pickExercise(
   const effective = closedFirst.length > 0 ? closedFirst : seenPool;
 
   if (options.requireUnseen === true) {
-    return orderBySeen(effective, input)[0]?.candidate ?? null;
+    return preferConciseForms(orderBySeen(effective, input), objectiveId, input)[0]?.candidate ?? null;
   }
   const unseen = effective.filter(({ candidate }) => !isExposed(candidate, input));
   const chosen = unseen.length > 0 ? unseen : effective;
-  return orderBySeen(chosen, input)[0]?.candidate ?? null;
+  return preferConciseForms(orderBySeen(chosen, input), objectiveId, input)[0]?.candidate ?? null;
+}
+
+const CONCISE_FORMS: ReadonlySet<string> = new Set(["one_sentence", "short"]);
+
+/**
+ * Trener precyzji (design 6.4, reguła 1): po poprawnej, lecz rozwlekłej
+ * odpowiedzi otwartej celu preferuj pytania o formie zwięzłej (`one_sentence`,
+ * `short`). Stabilny podział — reszta porządku (niewidziane, najdawniej
+ * widziane) zostaje; bez takich pytań kolejność się nie zmienia.
+ */
+function preferConciseForms<T extends { candidate: LessonExerciseCandidate }>(
+  ordered: readonly T[],
+  objectiveId: string,
+  input: LessonScheduleInput,
+): T[] {
+  const last = input.precisionHistory?.[objectiveId];
+  if (!last || last.knowledge !== "correct" || last.precision === "concise") return [...ordered];
+  const concise = (entry: T) => entry.candidate.exerciseType === "lesson_open_answer" && CONCISE_FORMS.has(entry.candidate.expectedForm ?? "");
+  return [...ordered.filter(concise), ...ordered.filter((entry) => !concise(entry))];
 }
 
 /** Porządek: najdawniej widziane (brak wpisu = najstarszy), potem indeks puli. */
@@ -384,6 +423,37 @@ function dueObjectives(input: LessonScheduleInput): string[] {
       hasExercises(id, input)
     );
   });
+}
+
+/**
+ * Trener precyzji (design 6.1 i 6.4, reguła 2): gdy ostatnia odpowiedź otwarta
+ * celu była nie na temat albo niepełna, plan dokłada ćwiczenie „najpierw słowa
+ * kluczowe”: wybór pojęć, a zaraz po nim odpowiedź otwarta tej samej rodziny
+ * (wspomagana przez ekspozycję listy pojęć). Raz na cel w sesji, tylko w planie
+ * (para to dwa sloty), przy graderze i budżecie na oba. Należne samodzielne
+ * sprawdzenia plan rezerwuje wcześniej, więc para ich nie wypiera.
+ */
+function precisionPracticePlan(input: LessonScheduleInput): LessonTaskPlan | null {
+  if (!input.planningMode || input.assessedRemaining < 2 || noGraderAvailable(input)) return null;
+  for (const objectiveId of input.objectiveOrder) {
+    const last = input.precisionHistory?.[objectiveId];
+    if (!last || (last.precision !== "unfocused" && last.knowledge !== "partial")) continue;
+    const practicedThisSession = input.sessionHistory.some((task) =>
+      task.objectiveId === objectiveId && task.kind === "exercise" && task.exerciseType === "lesson_keywords");
+    if (practicedThisSession) continue;
+    for (const keywords of input.exercises) {
+      if (keywords.exerciseType !== "lesson_keywords" || keywords.objectiveId !== objectiveId || !keywords.familyId) continue;
+      const family = input.exercises
+        .map((candidate, index) => ({ candidate, index }))
+        .filter(({ candidate }) =>
+          candidate.exerciseType === "lesson_open_answer" && candidate.objectiveId === objectiveId &&
+          candidate.familyId === keywords.familyId && !itemIssuedThisSession(candidate.itemId, input.sessionHistory));
+      const open = orderBySeen(family, input)[0]?.candidate;
+      if (!open) continue;
+      return { ...exercisePlan(keywords, "precision_practice", false), pairedWith: { itemId: open.itemId, itemRevisionId: open.itemRevisionId } };
+    }
+  }
+  return null;
 }
 
 export function selectLessonTask(input: LessonScheduleInput): LessonTaskPlan | null {
@@ -448,6 +518,10 @@ export function selectLessonTask(input: LessonScheduleInput): LessonTaskPlan | n
       }
     }
   }
+
+  // Priorytet 3b: trener precyzji — para „słowa kluczowe → odpowiedź otwarta”.
+  const precisionPractice = precisionPracticePlan(input);
+  if (precisionPractice) return precisionPractice;
 
   // Priorytet 4: kontynuacja celu w toku na jego bieżącym etapie.
   for (const id of input.objectiveOrder) {
@@ -605,7 +679,7 @@ function exercisePlan(
   candidate: LessonExerciseCandidate,
   reason: LessonTaskReason,
   independentCheck: boolean,
-): LessonTaskPlan {
+): Extract<LessonTaskPlan, { kind: "exercise" }> {
   return {
     kind: "exercise",
     itemId: candidate.itemId,

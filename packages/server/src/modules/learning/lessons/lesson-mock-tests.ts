@@ -462,6 +462,8 @@ function promptText(prompt: TaskPrompt): string {
       return prompt.statement;
     case "lesson_open_answer":
     case "lesson_calculation":
+    case "lesson_keywords":
+    case "lesson_shorten":
       return prompt.prompt;
     case "lesson_short_answer":
       return prompt.question;

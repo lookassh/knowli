@@ -12,6 +12,8 @@ import { LessonShortAnswerView } from "./lesson/LessonShortAnswerView";
 import { LessonOrderView } from "./lesson/LessonOrderView";
 import { LessonGapView } from "./lesson/LessonGapView";
 import { LessonSentenceView } from "./lesson/LessonSentenceView";
+import { LessonKeywordsView } from "./lesson/LessonKeywordsView";
+import { LessonShortenView } from "./lesson/LessonShortenView";
 import { PictureExposureView } from "./PictureExposureView";
 import { PictureListeningView } from "./PictureListeningView";
 import { PictureRecallView } from "./PictureRecallView";
@@ -70,6 +72,12 @@ export function ExerciseView(props: ExerciseProps) {
     case "lesson_open_answer":
     case "lesson_calculation":
       return <LessonSentenceView key={props.task.taskId} {...props} />;
+    // Trener precyzji: wybór pojęć kluczowych i „Skróć odpowiedź” (zadanie
+    // `lesson_open_answer` z promptem `lesson_shorten`).
+    case "lesson_keywords":
+      return <LessonKeywordsView key={props.task.taskId} {...props} />;
+    case "lesson_shorten":
+      return <LessonShortenView key={props.task.taskId} {...props} />;
     default: {
       // Strażnik wyczerpania: dodanie nowego typu bez gałęzi wyżej nie skompiluje się.
       const exhaustive: never = kind;

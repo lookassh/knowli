@@ -151,14 +151,22 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
         const sequenceAnswer = attempt.modality === "sequence" && Array.isArray(rawAnswer?.itemIds)
           ? rawAnswer.itemIds.map(id => typeof id === "string" && typeof itemValues?.[id] === "string" ? itemValues[id] as string : "").filter(Boolean).join(" ").trim().slice(0, 160) || null
           : null;
+        const optionValues = (task.answerKey as { optionValues?: Record<string, unknown> } | null)?.optionValues;
+        // Wybór z nieznanym identyfikatorem jest nieoceniony: nie pokazujemy go jako częściowej odpowiedzi.
+        const selectionTexts = attempt.modality === "selection" && Array.isArray(rawAnswer?.itemIds)
+          ? rawAnswer.itemIds.map(id => typeof id === "string" && typeof optionValues?.[id] === "string" ? optionValues[id] as string : null)
+          : null;
+        const selectionAnswer = selectionTexts && selectionTexts.length > 0 && selectionTexts.every((text): text is string => text !== null)
+          ? selectionTexts.join(", ").trim().slice(0, 160) || null
+          : null;
         const feedbackKind = typeof attempt.feedback?.kind === "string" ? attempt.feedback.kind : null;
         const assessment = attempt.modality === "skip" || attempt.modality === "dont_remember" ? "none"
             : assessmentByAttempt.get(attempt.id)?.has("unassessed") && [...assessmentByAttempt.get(attempt.id)!].some(outcome => outcome !== "unassessed") ? "mixed"
               : assessmentByAttempt.get(attempt.id)?.has("unassessed") ? "unassessed"
                 : assessmentByAttempt.has(attempt.id) ? "assessed" : "none";
         return {
-          modality: attempt.modality as "choice" | "text" | "audio" | "dont_remember" | "skip" | "sequence",
-          answerExample: attempt.modality === "dont_remember" ? "Nie pamiętam" : textAnswer ?? optionAnswer ?? sequenceAnswer,
+          modality: attempt.modality as "choice" | "text" | "audio" | "dont_remember" | "skip" | "sequence" | "selection",
+          answerExample: attempt.modality === "dont_remember" ? "Nie pamiętam" : textAnswer ?? optionAnswer ?? sequenceAnswer ?? selectionAnswer,
           feedbackKind, assessment,
           responseSeconds: Math.max(0, Math.ceil((attempt.receivedAt.getTime() - task.issuedAt.getTime()) / 1000)),
         };
@@ -172,7 +180,10 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
       sessionId, mode: session.mode as "training" | "mock_test" | "daily_round", state: session.state as "active" | "completed" | "ended",
       startedAt: session.startedAt.toISOString(), endedAt: session.endedAt?.toISOString() ?? null,
       deckTitle: session.deckTitle, deckVersionNumber: session.deckVersionNumber,
-      remainingSteps: Math.max(0, session.taskBudget - tasks.filter(task => task.sessionId === sessionId && (session.mode === "daily_round" || (task.exerciseType !== "exposure" && task.exerciseType !== "lesson_card"))).length),
+      // Zadania następcze lekcji („Skróć odpowiedź”) są poza budżetem sesji.
+      remainingSteps: Math.max(0, session.taskBudget - tasks.filter(task => task.sessionId === sessionId &&
+        (task.context as { followUpOf?: unknown } | null)?.followUpOf === undefined &&
+        (session.mode === "daily_round" || (task.exerciseType !== "exposure" && task.exerciseType !== "lesson_card"))).length),
       activity: reviewOf(session),
       steps,
     };

@@ -7,6 +7,7 @@ import {
   closestApprovedVariant,
   evaluateChoice,
   evaluateSequence,
+  evaluateKeywordSelection,
   gradeFromMatch,
   countSentences,
   gradeFromSchoolVerdict,
@@ -115,6 +116,17 @@ describe("evaluateChoice / evaluateSequence (typy zamknięte)", () => {
     expect(evaluateSequence(["a", "c", "b"], key)).toBe(false); // zła kolejność
     expect(evaluateSequence(["a", "b"], key)).toBe(false); // brakujący
     expect(evaluateSequence(["a", "b", "c", "d"], key)).toBe(false); // nadmiarowy
+  });
+
+  it("keywords: poprawne tylko gdy każde wybrane pojęcie jest kluczowe, zakres wyborów nieoceniany", () => {
+    const key = writtenKey({ exerciseType: "lesson_keywords", correctOptionIds: ["k1", "k2", "k3"], minSelected: 2, maxSelected: 3 });
+    expect(evaluateKeywordSelection(["k2", "k1"], key)).toBe(true); // 2 z 3 kluczowych, kolejność bez znaczenia
+    expect(evaluateKeywordSelection(["k1", "k2", "k3"], key)).toBe(true);
+    expect(evaluateKeywordSelection(["k1", "d1"], key)).toBe(false); // dystraktor
+    expect(evaluateKeywordSelection(["k1"], key)).toBeNull(); // za mało
+    expect(evaluateKeywordSelection(["k1", "k2", "k3", "d1"], key)).toBeNull(); // za dużo
+    expect(evaluateKeywordSelection(["k1", "k1"], key)).toBeNull(); // powtórzenie
+    expect(evaluateKeywordSelection(["k1", "k2"], writtenKey({ exerciseType: "lesson_keywords" }))).toBeNull(); // brak klucza
   });
 });
 

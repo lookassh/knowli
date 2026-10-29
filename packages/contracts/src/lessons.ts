@@ -33,6 +33,12 @@ const MIN_NOTICE_SENTENCES = 2;
 const MAX_NOTICE_SENTENCES = 3;
 const MIN_NOTICE_SEGMENTS = 1;
 const MAX_NOTICE_SEGMENTS = 15;
+/** Trener precyzji (`lesson_keywords`): 4–6 pojęć do wyboru, z czego 2–3 kluczowe, każde ≤ 40 znaków. */
+export const MIN_KEYWORD_OPTIONS = 4;
+export const MAX_KEYWORD_OPTIONS = 6;
+export const MIN_KEY_OPTIONS = 2;
+export const MAX_KEY_OPTIONS = 3;
+export const MAX_KEYWORD_LENGTH = 40;
 
 /** Typy ćwiczeń lekcji (design „Typy ćwiczeń i etapy”). */
 export const LESSON_EXERCISE_TYPES = [
@@ -46,6 +52,7 @@ export const LESSON_EXERCISE_TYPES = [
   "lesson_transform",
   "lesson_open_answer",
   "lesson_calculation",
+  "lesson_keywords",
 ] as const;
 export type LessonExerciseTypeDto = (typeof LESSON_EXERCISE_TYPES)[number];
 export const LessonExerciseTypeSchema = z.enum(LESSON_EXERCISE_TYPES);
@@ -226,6 +233,10 @@ export const LessonExerciseInputSchema = z.object({
   familyId: z.string().min(1).max(64).optional(),
   sourceRefs: z.array(SourceRefSchema).min(1).max(3).optional(),
   calculation: CalculationSpecSchema.optional(),
+  /** `lesson_keywords`: pojęcia do wyboru i identyfikatory kluczowych (klucz tylko dla serwera i rodzica). */
+  keywordOptions: z.array(z.object({ id: z.string().min(1), text: z.string().min(1).max(MAX_KEYWORD_LENGTH) }).strict())
+    .min(MIN_KEYWORD_OPTIONS).max(MAX_KEYWORD_OPTIONS).optional(),
+  keyOptionIds: z.array(z.string().min(1)).min(MIN_KEY_OPTIONS).max(MAX_KEY_OPTIONS).optional(),
 }).strict();
 export type LessonExerciseInput = z.infer<typeof LessonExerciseInputSchema>;
 
@@ -352,6 +363,22 @@ export const SchoolProgressSchema = z.object({
     knowledge: z.enum(["correct", "partial", "incorrect"]),
     precision: z.enum(["concise", "verbose", "unfocused"]).nullable(),
   })).max(5),
+  /**
+   * Trener precyzji: zaproponowane skrócenia (zadania następcze), podjęte
+   * poprawki i udane (krótsze, bez utraty elementu wymaganego) oraz ostatnie
+   * pary oryginał → poprawka. Poprawki nie wchodzą do liczników wiedzy wyżej.
+   */
+  shortening: z.object({
+    offered: z.number().int().nonnegative(),
+    attempted: z.number().int().nonnegative(),
+    successful: z.number().int().nonnegative(),
+    recent: z.array(z.object({
+      original: z.string(),
+      revision: z.string(),
+      lostElements: z.array(z.string()).max(6),
+      successful: z.boolean(),
+    })).max(3),
+  }).optional(),
 });
 
 

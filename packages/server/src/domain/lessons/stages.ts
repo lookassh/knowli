@@ -16,6 +16,8 @@ export const STAGE_BY_TYPE: Readonly<Record<LessonExerciseType, LessonStage>> = 
   lesson_transform: "productive",
   lesson_open_answer: "independent",
   lesson_calculation: "independent",
+  // Wybór pojęć przed odpowiedzią otwartą: zawsze wspomagany.
+  lesson_keywords: "guided",
 };
 
 /** Etapy oceniane (poza intro-kartą): guided, productive, independent. */

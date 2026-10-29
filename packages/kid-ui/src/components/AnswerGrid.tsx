@@ -5,6 +5,7 @@ import type { OptionOutcome } from "../exercises/option-outcome";
 import classes from "./answer-controls.module.css";
 import { m } from "motion/react";
 import { BurstParticles } from "./CelebrationBurst";
+import { KidIcon } from "./KidIcon";
 import {
   kidEntranceAnimate,
   kidEntranceInitial,
@@ -29,6 +30,18 @@ export interface AnswerGridOption {
   content: ReactNode;
 }
 
+/**
+ * Multi-select mode (e.g. key concepts before an open answer): a tap toggles
+ * a tile instead of answering, `selectedIds` marks the chosen tiles
+ * (`aria-pressed` plus a check mark, never colour alone) and once
+ * `maxSelected` tiles are chosen the remaining ones are disabled. The owner
+ * keeps the selection and submits it with its own action.
+ */
+export interface AnswerGridSelection {
+  selectedIds: ReadonlySet<string>;
+  maxSelected: number;
+}
+
 export interface AnswerGridProps {
   options: readonly AnswerGridOption[];
   outcomes: ReadonlyMap<string, OptionOutcome>;
@@ -45,6 +58,10 @@ export interface AnswerGridProps {
   choiceList?: boolean;
   compactChoiceGrid?: boolean;
   optionLang?: string;
+  /** Toggle tiles instead of answering on tap; see `AnswerGridSelection`. */
+  selection?: AnswerGridSelection;
+  /** Accessible name of the option list. */
+  listLabel?: string;
 }
 
 export function AnswerGrid({
@@ -63,13 +80,17 @@ export function AnswerGrid({
   choiceList = false,
   compactChoiceGrid = false,
   optionLang,
+  selection,
+  listLabel,
 }: AnswerGridProps) {
   // After a wrong choice the server's correct option is also lit green to
   // show the answer; that reveal must never look like praise, so only a
   // tile the child chose correctly (no wrong outcome anywhere) celebrates.
   const choseCorrectly = !Array.from(outcomes.values()).includes("wrong");
+  const selectionFull = selection !== undefined && selection.selectedIds.size >= selection.maxSelected;
   return (
     <ul className={[classes.grid, choiceList ? classes.choiceList : undefined, compactChoiceGrid ? classes.compactChoiceGrid : undefined, className].filter(Boolean).join(" ")} data-visual-only={visualOnly || undefined} data-testid={listTestId}
+      data-selection={selection ? "multiple" : undefined} aria-label={listLabel}
       style={visualOnly ? { "--visual-choice-count": options.length, "--visual-choice-rows": Math.ceil(options.length / 2) } as CSSProperties : undefined}>
       {options.map((option, index) => {
         const outcome = outcomes.get(option.id);
@@ -78,6 +99,10 @@ export function AnswerGrid({
           : outcome === "wrong"
             ? format(messages.kid.pictureChoiceWrong, { answer: option.label })
             : option.label;
+        const selected = selection?.selectedIds.has(option.id) ?? false;
+        // Multi-select: a tile outside a full selection cannot be added; a
+        // chosen tile always stays enabled so the child can take it back.
+        const optionDisabled = disabled || (selectionFull && !selected);
           {/* Picture options skip the item entrance: asynchronously loaded images inside a fading item (on top of the pane entrance) flicker. Text options keep the stagger wave. */}
 
         return (
@@ -93,15 +118,25 @@ export function AnswerGrid({
               data-outcome={outcome}
               lang={optionLang}
               aria-label={accessibleName}
-              aria-pressed={outcome === "pending" ? true : undefined}
-              disabled={disabled}
+              aria-pressed={selection ? selected : outcome === "pending" ? true : undefined}
+              data-selected={selection ? selected : undefined}
+              disabled={optionDisabled}
               animate={outcome === "correct" ? (visualOnly ? kidOutcomePop : kidOutcomeHop) : { scale: 1, x: 0, y: 0 }}
-              whileTap={disabled ? undefined : { scale: visualOnly ? kidTileTapScale : kidTapScale }}
+              whileTap={optionDisabled ? undefined : { scale: visualOnly ? kidTileTapScale : kidTapScale }}
               transition={outcome === "correct" ? kidOutcomePopTransition : kidSpringSnappy}
               onClick={() => {
-                if (!disabled) onChoose(option.id);
+                if (!optionDisabled) onChoose(option.id);
               }}
             >
+              {selection && (
+                <span className={classes.selectMark} data-selected={selected} data-testid="kid-option-select-mark" aria-hidden="true">
+                  {selected && (
+                    <m.span className={classes.selectMarkIcon} initial={kidOutcomeIconInitial} animate={kidOutcomeIconAnimate} transition={kidSpringBouncy}>
+                      <KidIcon name="check" />
+                    </m.span>
+                  )}
+                </span>
+              )}
               {visualOnly ? (
                 <span className={[classes.visualOnly, labelClassName].filter(Boolean).join(" ")} data-testid="kid-option-label" aria-hidden="true">{option.label}</span>
               ) : (

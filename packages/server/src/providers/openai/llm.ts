@@ -8,6 +8,7 @@ import type {
 import { GenerationProviderError } from "../../ports/generation-error";
 import { lessonPoolJsonSchema, poolExerciseTypes } from "./lesson-pool-schema";
 import { materializeGeneratedCalculations } from "../lesson-calculations";
+import { materializeGeneratedKeywords } from "../lesson-keywords";
 import { withChatRequestExtras, type ChatRequestExtras } from "../chat-request-options";
 
 export interface OpenAiLlmOptions {
@@ -169,6 +170,16 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
       "unit_conversion.params: {value: nonnegative number, fromUnit: cm|m|km}. " +
       "unit: cm|m|km; numerical parameters have at most 3 decimal places and absolute value <=1000000. " +
       "Variants of the same method and units share templateFamilyId, with different parameters; do not repeat existing parameters.",
+    );
+  }
+  if (input.exerciseTypes.includes("lesson_keywords")) {
+    parts.push(
+      "lesson_keywords is an OPTIONAL extra (precision trainer), outside the stage split and the requested count: at most ONE per objective in this batch, " +
+      "and only for a lesson_open_answer family of this same batch. Return ONLY exerciseType, objectiveId, familyId (exactly the familyId of that open answer), " +
+      "keywordOptions (4 to 6 objects {id: k1..k6, text}: short concepts, one word or a short phrase of at most 40 characters, taken from the parent material), " +
+      "keyOptionIds (2 or 3 ids of the concepts a precise answer to that question must use; each key concept appears in that family model answer) and sourceRefs. " +
+      "The other options are real concepts from the material that are NOT essential for this answer. Never put the answer sentence or a definition into keywordOptions; " +
+      "code computes the answer from keyOptionIds. Skip lesson_keywords when the open answer has fewer than two essential concepts.",
     );
   }
   if (input.deduplication !== "exercise") {
@@ -512,7 +523,7 @@ export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider 
         }
         const result = parsed as { exercises: unknown[]; examples?: unknown };
         return {
-          exercises: materializeGeneratedCalculations(result.exercises),
+          exercises: materializeGeneratedKeywords(materializeGeneratedCalculations(result.exercises)),
           examples: lessonExamplesToRecord(result.examples),
         };
       } catch (error) {

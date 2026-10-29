@@ -23,6 +23,10 @@ export interface LessonAnswerKey {
   readonly focus: readonly string[];
   readonly correctOptionId?: string;
   readonly itemIds?: readonly string[];
+  /** `lesson_keywords`: identyfikatory pojęć kluczowych i dozwolona liczba wyborów. */
+  readonly correctOptionIds?: readonly string[];
+  readonly minSelected?: number;
+  readonly maxSelected?: number;
 }
 
 /** Wynik dopasowania deterministycznego. */
@@ -205,6 +209,21 @@ export function evaluateChoice(optionId: string, key: LessonAnswerKey): boolean 
 }
 
 /** Ocena układania z klocków: ta sama długość i kolejność co `key.itemIds`. */
+/**
+ * Wybór pojęć kluczowych (`lesson_keywords`): poprawny, gdy każde wskazane
+ * pojęcie jest kluczowe. Liczba wyborów spoza [min, max] nie jest oceniana
+ * (`null`) — klient pilnuje zakresu, serwer nie karze za błąd transportu.
+ */
+export function evaluateKeywordSelection(itemIds: readonly string[], key: LessonAnswerKey): boolean | null {
+  const correct = new Set(key.correctOptionIds ?? []);
+  const min = key.minSelected ?? 1;
+  const max = key.maxSelected ?? correct.size;
+  if (correct.size === 0 || itemIds.length < min || itemIds.length > max || new Set(itemIds).size !== itemIds.length) {
+    return null;
+  }
+  return itemIds.every((id) => correct.has(id));
+}
+
 export function evaluateSequence(itemIds: readonly string[], key: LessonAnswerKey): boolean {
   const expected = key.itemIds;
   if (expected === undefined || expected.length !== itemIds.length) {

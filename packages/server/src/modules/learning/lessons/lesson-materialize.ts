@@ -43,6 +43,8 @@ export interface LessonExercisePayload {
   expectedForm?: string;
   familyId?: string;
   sourceRefs?: { quote: string; parentAdded?: boolean }[];
+  keywordOptions?: { id: string; text: string }[];
+  keyOptionIds?: string[];
   answerLocale: string;
   promptLocale: string;
 }
@@ -118,6 +120,12 @@ export function materializeCard(
 export interface MaterializeExerciseInput {
   independentCheck: boolean;
   reason: string;
+  /**
+   * `lesson_keywords`: odpowiedź otwarta zaplanowana zaraz po wyborze pojęć —
+   * jej pytanie trafia do promptu, a jej `targetKey` do ekspozycji (lista pojęć
+   * wspiera tę odpowiedź, więc nie jest ona samodzielna).
+   */
+  pairedOpenAnswer?: { prompt: string; targetKey: string };
 }
 
 /**
@@ -269,6 +277,28 @@ export function materializeExercise(
       } catch {
         throw new AppError("internal", { message: "invalid private calculation payload" });
       }
+    }
+    case "lesson_keywords": {
+      const keyIds = new Set(payload.keyOptionIds ?? []);
+      const options = seededShuffle((payload.keywordOptions ?? []).map((o) => ({ id: randomUUID(), text: o.text, key: keyIds.has(o.id) })), taskId);
+      const correctOptionIds = options.filter((o) => o.key).map((o) => o.id);
+      // Dziecko wybiera od 2 do liczby pojęć kluczowych (2–3): wybór ponad nią
+      // zawsze zawierałby dystraktor.
+      const maxSelected = Math.max(2, correctOptionIds.length);
+      const prompt: TaskPrompt = {
+        kind: "lesson_keywords",
+        instructionPl: payload.instructionPl ?? messages.kid.lessonKeywordsInstruction,
+        prompt: plan.pairedOpenAnswer?.prompt || objective?.titlePl || instructionPl,
+        options: options.map((o) => ({ id: o.id, text: o.text })),
+        minSelected: 2,
+        maxSelected,
+      };
+      return {
+        ...common,
+        prompt,
+        answerKey: { ...baseKey, correctOptionIds, minSelected: 2, maxSelected, optionValues: Object.fromEntries(options.map((o) => [o.id, o.text])) },
+        exposures: [exercise.targetKey, ...(plan.pairedOpenAnswer ? [plan.pairedOpenAnswer.targetKey] : [])],
+      };
     }
     case "lesson_open_answer": {
       // Język pytania podajemy tylko, gdy przedmiot ma jeden język (szkoła); w gramatyce

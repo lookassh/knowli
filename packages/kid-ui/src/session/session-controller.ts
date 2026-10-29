@@ -119,6 +119,7 @@ type AnswerPayload =
   | { modality: "choice"; optionId: string }
   | { modality: "text"; text: string }
   | { modality: "sequence"; itemIds: string[] }
+  | { modality: "selection"; itemIds: string[] }
   | { modality: "dont_remember" }
   | { modality: "skip" };
 
@@ -1025,6 +1026,11 @@ export class LearningSessionController {
   /** Odpowiedź `sequence` (ułożone klocki `lesson_order`). */
   async answerSequence(itemIds: string[]): Promise<void> {
     await this.#submitAnswer({ modality: "sequence", itemIds });
+  }
+
+  /** Odpowiedź `selection` (zaznaczone pojęcia `lesson_keywords`; zbiór bez kolejności). */
+  async answerSelection(itemIds: string[]): Promise<void> {
+    await this.#submitAnswer({ modality: "selection", itemIds: [...new Set(itemIds)] });
   }
 
   /** „Nie pamiętam — pokaż”: ujawnienie z zapisem ekspozycji przed treścią (SPEC §15.1). */

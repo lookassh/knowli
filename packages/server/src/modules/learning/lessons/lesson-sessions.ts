@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, inArray, lte, max, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lte, max, sql } from "drizzle-orm";
 import type { TaskDto, TaskPrompt } from "@learning/contracts";
 import type { Services } from "../../../config";
 import type { Executor, Tx } from "../../../db/client";
@@ -26,6 +26,7 @@ import {
   type LessonSessionOutcome,
   type LessonSessionTask,
   type LessonTaskPlan,
+  type ObjectivePrecisionSnapshot,
   type ObjectiveProgressSnapshot,
 } from "../../../domain/lessons/scheduler";
 import { DEFAULT_LESSON_POLICY } from "../../../domain/lessons/lesson-policy";
@@ -161,6 +162,8 @@ async function historicalSupportObjectives(
     .where(and(
       eq(learningSessions.childId, args.childId), eq(learningSessions.mode, "training"),
       lte(learningSessions.startedAt, args.before),
+      // Poprawka po informacji zwrotnej („Skróć odpowiedź”) nie jest trudnością celu.
+      sql`${sessionTasks.context}->'followUpOf' is null`,
       sql`${deckVersions.lessonContext}->>'subjectId' = ${args.subjectId}`,
       inArray(sql<string>`${itemRevisions.payload}->>'objectiveId'`, args.objectiveIds),
     ));
@@ -281,15 +284,21 @@ export async function loadExercises(tx: Executor, deckVersionId: string): Promis
 }
 
 /** Liczba wydanych i ocenianych zadań (karty nie liczą się do budżetu). */
-export async function lessonTaskCounts(tx: Tx, sessionId: string): Promise<{ total: number; assessed: number }> {
+/**
+ * Liczniki zadań sesji lekcji: `total` wyznacza kolejny ordinal, a `assessed`
+ * budżet — bez zadań następczych (`context.followUpOf`), które są dodatkiem
+ * trenera precyzji poza planem.
+ */
+export async function lessonTaskCounts(tx: Tx, sessionId: string): Promise<{ total: number; assessed: number; planned: number }> {
   const [row] = await tx
     .select({
       total: sql<number>`count(*)::int`,
-      assessed: sql<number>`(count(*) filter (where ${sessionTasks.exerciseType} <> 'lesson_card'))::int`,
+      planned: sql<number>`(count(*) filter (where ${sessionTasks.context}->'followUpOf' is null))::int`,
+      assessed: sql<number>`(count(*) filter (where ${sessionTasks.exerciseType} <> 'lesson_card' and ${sessionTasks.context}->'followUpOf' is null))::int`,
     })
     .from(sessionTasks)
     .where(eq(sessionTasks.sessionId, sessionId));
-  return { total: row?.total ?? 0, assessed: row?.assessed ?? 0 };
+  return { total: row?.total ?? 0, assessed: row?.assessed ?? 0, planned: row?.planned ?? 0 };
 }
 
 /** Wynik oceny per zadanie tej sesji (z `assessments` przez `attempts`). */
@@ -336,6 +345,46 @@ interface LessonPlanningSnapshot {
   cardIndexByObjective: Map<string, number>;
   sessionContext: LessonSessionContext;
   testWindowOpen: boolean;
+  precisionHistory: Record<string, ObjectivePrecisionSnapshot>;
+}
+
+const KNOWLEDGE_VALUES = new Set(["correct", "partial", "incorrect"]);
+const PRECISION_VALUES = new Set(["concise", "verbose", "unfocused"]);
+
+/**
+ * Trener precyzji (design 6.4): ostatnia ocena dwuwymiarowa odpowiedzi otwartej
+ * per cel sprzed startu sesji. Zadania następcze („Skróć odpowiedź”) się nie
+ * liczą — to poprawka po informacji zwrotnej, nie odpowiedź na pytanie.
+ */
+async function objectivePrecisionHistory(
+  tx: Tx,
+  args: { childId: string; objectiveIds: readonly string[]; before: Date },
+): Promise<Record<string, ObjectivePrecisionSnapshot>> {
+  if (args.objectiveIds.length === 0) return {};
+  const rows = await tx
+    .select({ details: assessments.details })
+    .from(assessments)
+    .innerJoin(attempts, eq(attempts.id, assessments.attemptId))
+    .innerJoin(sessionTasks, eq(sessionTasks.id, attempts.taskId))
+    .where(and(
+      eq(assessments.childId, args.childId),
+      eq(assessments.skill, "objective"),
+      sql`${assessments.details} ? 'precision'`,
+      sql`${sessionTasks.context}->'followUpOf' is null`,
+      lte(attempts.receivedAt, args.before),
+      inArray(sql<string>`${assessments.details}->>'objectiveId'`, [...args.objectiveIds]),
+    ))
+    .orderBy(desc(attempts.receivedAt), desc(attempts.id));
+  const result: Record<string, ObjectivePrecisionSnapshot> = {};
+  for (const row of rows) {
+    const details = row.details as { objectiveId?: unknown; knowledge?: unknown; precision?: unknown } | null;
+    const objectiveId = typeof details?.objectiveId === "string" ? details.objectiveId : null;
+    if (!objectiveId || objectiveId in result) continue;
+    if (KNOWLEDGE_VALUES.has(String(details?.knowledge)) && PRECISION_VALUES.has(String(details?.precision))) {
+      result[objectiveId] = { knowledge: details!.knowledge, precision: details!.precision } as ObjectivePrecisionSnapshot;
+    }
+  }
+  return result;
 }
 
 /** Odczytuje raz stan potrzebny do zaplanowania całej sesji lekcji. */
@@ -388,7 +437,9 @@ async function loadLessonPlanningSnapshot(
   const exerciseByRevision = new Map(exercises.map((e) => [e.revisionId, e] as const));
   const outcomeByTask = await loadSessionOutcomes(tx, session.id);
   const cardIndexByObjective = new Map<string, number>();
-  const sessionHistory: LessonSessionTask[] = taskRows.map((row) => {
+  // Zadania następcze są poza planem: selektor ich nie widzi (design 6.3).
+  const plannedRows = taskRows.filter((row) => (row.context as { followUpOf?: unknown } | null)?.followUpOf === undefined);
+  const sessionHistory: LessonSessionTask[] = plannedRows.map((row) => {
     const taskContext = row.context as { objectiveId?: string; cardPurpose?: string } | null;
     const exercise = exerciseByRevision.get(row.itemRevisionId);
     const type = row.exerciseType as LessonExerciseType;
@@ -423,10 +474,12 @@ async function loadLessonPlanningSnapshot(
   const testWindowOpen =
     sessionContext.testDate != null && isTestPreparationWindow({ now: now.toISOString(), testDate: sessionContext.testDate, timezone: sessionContext.timezone });
 
+  const precisionHistory = await objectivePrecisionHistory(tx, { childId: session.childId, objectiveIds: objectiveOrder, before: session.startedAt });
+
   return {
     exercises, topic, subject, context, objectiveOrder, progress, exposedTargetKeys,
     sessionHistory, lastSeenAt, cardCountByObjective, cardIndexByObjective,
-    sessionContext, testWindowOpen,
+    sessionContext, testWindowOpen, precisionHistory,
   };
 }
 
@@ -463,7 +516,11 @@ function planLessonTaskFromSnapshot(
 
   const input: LessonScheduleInput = {
     exercises: exercises.map(
-      (e): LessonExerciseCandidate => ({ itemId: e.itemId, itemRevisionId: e.revisionId, objectiveId: e.payload.objectiveId, exerciseType: e.payload.exerciseType, targetKey: e.targetKey }),
+      (e): LessonExerciseCandidate => ({
+        itemId: e.itemId, itemRevisionId: e.revisionId, objectiveId: e.payload.objectiveId, exerciseType: e.payload.exerciseType, targetKey: e.targetKey,
+        ...(e.payload.familyId ? { familyId: e.payload.familyId } : {}),
+        ...(e.payload.expectedForm ? { expectedForm: e.payload.expectedForm } : {}),
+      }),
     ),
     objectiveOrder: snapshot.objectiveOrder,
     progress: snapshot.progress,
@@ -484,6 +541,7 @@ function planLessonTaskFromSnapshot(
       (services.grader?.maxCallsPerSession ?? GRADER_CALLS_PER_SESSION_FALLBACK) - snapshot.sessionContext.graderCalls -
       plannedPrefix.filter((slot) => slot.exerciseType === "lesson_error_fix" || slot.exerciseType === "lesson_transform" || slot.exerciseType === "lesson_open_answer").length,
     ),
+    precisionHistory: snapshot.precisionHistory,
     policy: DEFAULT_LESSON_POLICY,
     now: now.toISOString(),
   };
@@ -517,6 +575,16 @@ export async function createLessonTrainingSessionPlan(
   const planningSnapshot = await loadLessonPlanningSnapshot(services, tx, session, now);
   const slots: LessonTrainingSessionSlot[] = [];
   let assessed = 0;
+  const pushSlot = (taskId: string, materialized: MaterializedLessonTask, taskKind: LessonTrainingSessionSlot["taskKind"], reason: string): void => {
+    const itemId = planningSnapshot!.exercises.find((e) => e.revisionId === materialized.itemRevisionId)!.itemId;
+    slots.push({
+      taskId, itemId, itemRevisionId: materialized.itemRevisionId, ordinal: slots.length,
+      exerciseType: materialized.exerciseType, direction: null, assessed: materialized.exerciseType !== "lesson_card",
+      prompt: materialized.prompt, answerKey: materialized.answerKey, reason, taskKind,
+      context: materialized.context, revealsTargetKeys: materialized.exposures,
+    });
+    if (materialized.exerciseType !== "lesson_card") assessed += 1;
+  };
   const maxSlots = session.taskBudget * 2 + 32;
   while (assessed < session.taskBudget && slots.length < maxSlots) {
     const planned = planningSnapshot
@@ -535,20 +603,23 @@ export async function createLessonTrainingSessionPlan(
       materialized = materializeCard(plan, Math.min(cardIndex, objective.cards.length - 1), objective, subject, context.examples[plan.objectiveId] ?? [], anchor.revisionId);
       taskKind = plan.cardPurpose === "support" ? "support_card" : "card";
       reason = plan.cardPurpose === "support" ? "support" : "introduce";
+    } else if (plan.pairedWith) {
+      // Para trenera precyzji: wybór pojęć, a zaraz po nim odpowiedź otwarta tej
+      // samej rodziny (dwa sloty; selektor sprawdził budżet na oba).
+      const keywords = exercises.find((e) => e.revisionId === plan.itemRevisionId)!;
+      const paired = exercises.find((e) => e.revisionId === plan.pairedWith!.itemRevisionId)!;
+      const pairedOpenAnswer = { prompt: paired.payload.prompt ?? "", targetKey: paired.targetKey };
+      pushSlot(taskId, materializeExercise({ ...plan, pairedOpenAnswer }, taskId, keywords, topic, subject), "exercise", plan.reason);
+      const pairedTaskId = randomUUID();
+      pushSlot(pairedTaskId, materializeExercise({ independentCheck: false, reason: plan.reason }, pairedTaskId, paired, topic, subject), "exercise", plan.reason);
+      continue;
     } else {
       const exercise = exercises.find((e) => e.revisionId === plan.itemRevisionId)!;
       materialized = materializeExercise(plan, taskId, exercise, topic, subject);
       taskKind = "exercise";
       reason = plan.reason;
     }
-    const itemId = exercises.find((e) => e.revisionId === materialized.itemRevisionId)!.itemId;
-    slots.push({
-      taskId, itemId, itemRevisionId: materialized.itemRevisionId, ordinal: slots.length,
-      exerciseType: materialized.exerciseType, direction: null, assessed: materialized.exerciseType !== "lesson_card",
-      prompt: materialized.prompt, answerKey: materialized.answerKey, reason, taskKind,
-      context: materialized.context, revealsTargetKeys: materialized.exposures,
-    });
-    if (materialized.exerciseType !== "lesson_card") assessed += 1;
+    pushSlot(taskId, materialized, taskKind, reason);
   }
   const snapshot = { version: 1 as const, kind: "lesson" as const, taskBudget: Math.max(1, assessed), slots };
   const validated = readLessonTrainingSessionPlan(snapshot);
@@ -636,13 +707,15 @@ export async function issueNextLessonPlanTask(
   session: typeof learningSessions.$inferSelect,
   now: Date,
   nextOrdinal: number,
+  /** Indeks slotu planu: wydane zadania planu, bez zadań następczych. */
+  planIndex: number,
   assessedBefore: number,
 ): Promise<TaskDto | null> {
   let plan: LessonTrainingSessionPlanSnapshot | null;
   try { plan = readLessonTrainingSessionPlan(session.trainingPlan); }
   catch { throw new AppError("conflict", { message: "Ta sesja wymaga nowszej wersji aplikacji." }); }
   if (!plan) return null;
-  const slot = plan.slots[nextOrdinal];
+  const slot = plan.slots[planIndex];
   if (!slot || (slot.assessed && assessedBefore >= plan.taskBudget)) return null;
   await tx.insert(sessionTasks).values({
     id: slot.taskId, sessionId: session.id, childId: session.childId, deckVersionId: session.deckVersionId,
@@ -655,7 +728,7 @@ export async function issueNextLessonPlanTask(
     stepId: `${slot.taskId}:prompt`, occurredAt: now, exposures: slot.revealsTargetKeys,
   });
   return lessonTaskDto(session, {
-    id: slot.taskId, ordinal: slot.ordinal, exerciseType: slot.exerciseType as LessonExerciseType, prompt: slot.prompt,
+    id: slot.taskId, ordinal: nextOrdinal, exerciseType: slot.exerciseType as LessonExerciseType, prompt: slot.prompt,
   }, assessedBefore);
 }
 
@@ -734,7 +807,11 @@ export async function buildLessonSummaryObjectives(
     .from(assessments)
     .innerJoin(attempts, eq(attempts.id, assessments.attemptId))
     .innerJoin(sessionTasks, eq(sessionTasks.id, attempts.taskId))
-    .where(and(eq(sessionTasks.sessionId, sessionId), eq(assessments.skill, "objective"), eq(attempts.state, "completed")))
+    .where(and(
+      eq(sessionTasks.sessionId, sessionId), eq(assessments.skill, "objective"), eq(attempts.state, "completed"),
+      // Poprawka („Skróć odpowiedź”) to druga próba tego samego pytania, nie osobne ćwiczenie celu.
+      sql`${sessionTasks.context}->'followUpOf' is null`,
+    ))
     .orderBy(asc(attempts.receivedAt));
   const version = (await tx.select({ lessonContext: deckVersions.lessonContext }).from(deckVersions)
     .innerJoin(learningSessions, eq(learningSessions.deckVersionId, deckVersions.id))

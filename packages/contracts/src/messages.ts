@@ -580,6 +580,17 @@ export const messages = {
       height_difference: "Od wysokości wyższego punktu odejmij wysokość niższego punktu.",
       unit_conversion: "Sprawdź, ile mniejszych jednostek mieści się w większej jednostce.",
     },
+    // Trener precyzji (Etap 4): słowa kluczowe i skracanie odpowiedzi.
+    lessonKeywordsInstruction: "Wybierz 2–3 najważniejsze pojęcia do tej odpowiedzi.",
+    lessonKeywordsSelected: "Wybrane: {count} z {max}",
+    lessonKeywordsOptions: "Pojęcia do wyboru",
+    lessonShortenRemove: "Do usunięcia: {fragments}",
+    lessonShortenInstruction: "Skróć odpowiedź. Usuń zaznaczone fragmenty, zostaw to, co najważniejsze.",
+    lessonShortenInput: "Krótsza odpowiedź",
+    lessonShortenOriginal: "Twoja odpowiedź",
+    lessonPrecisionHint: "Wiesz to! Teraz spróbuj powiedzieć to krócej, bez dodatkowych historii.",
+    lessonShortenLostElement: "Krócej, ale zgubiła się ważna informacja. Porównaj z poprzednią odpowiedzią.",
+    lessonShortenUnchanged: "To ta sama odpowiedź. Usuń zaznaczone fragmenty.",
     // Podsumowanie lekcji (per cel), bez procentów.
     lessonSummaryTitle: "Ćwiczyłeś reguły",
     lessonSummaryObjective: "Ćwiczyłeś: {title}",
@@ -629,6 +640,11 @@ export const messages = {
     schoolPrecisionCounts: "zwięzłe: {concise} · rozwlekłe: {verbose} · nie na temat: {unfocused}",
     schoolMissingTitle: "Najczęściej brakuje",
     schoolRecentTitle: "Ostatnie odpowiedzi dziecka",
+    schoolShorteningTitle: "Skracanie odpowiedzi",
+    schoolShorteningCounts: "zaproponowane: {offered} · podjęte: {attempted} · udane: {successful}",
+    schoolShorteningSuccess: "krócej, bez utraty treści",
+    schoolShorteningNotYet: "jeszcze nie",
+    schoolShorteningLost: "zgubione: {elements}",
     schoolKnowledgeValue: {
       correct: "poprawna",
       partial: "częściowa",
@@ -687,6 +703,7 @@ export const messages = {
       lesson_transform: "Przekształcenie",
       lesson_open_answer: "Odpowiedź otwarta",
       lesson_calculation: "Zadanie rachunkowe",
+      lesson_keywords: "Słowa kluczowe",
     } as Record<string, string>,
     stages: {
       intro: "Wprowadzenie",
@@ -749,6 +766,9 @@ export const messages = {
     supplementaryLabel: "Elementy uzupełniające (każdy w osobnym wierszu)",
     commonErrorsLabel: "Typowe błędy (każdy w osobnym wierszu)",
     familyLabel: "Rodzina pytań: {family}",
+    keywordsLegend: "Pojęcia do wyboru (zaznacz 2–3 kluczowe dla odpowiedzi tej rodziny)",
+    keywordOptionLabel: "Pojęcie {n}",
+    keywordKeyLabel: "kluczowe",
     questionTypeLabel: "Rodzaj pytania",
     questionTypes: {
       definition: "Definicja",
