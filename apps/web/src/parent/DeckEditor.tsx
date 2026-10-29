@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   messages,
   AssignmentPutSchema,
@@ -18,6 +19,7 @@ import {
   type EditorSnapshot,
 } from "./deck-editor-state";
 import { callParent, errorMessage, parentClient } from "./api";
+import { orpc } from "./query-client";
 import AssignmentTestGoalFields, { type AssignmentTestSettings } from "./AssignmentTestGoalFields";
 import DeckSessionTaskBudgetSettings from "./DeckSessionTaskBudgetSettings";
 import type { EditorLeaveState } from "./useParentLeaveGuard";
@@ -26,6 +28,15 @@ import { DeckCoverSettings } from "./DeckCoverSettings";
 import { DeckAssignmentsList } from "./DeckAssignmentsList";
 
 const VISUAL_TYPES: VisualType[] = ["image", "color", "number", "sequence", "none"];
+
+/** Odpytywanie co sekundę tylko wtedy, gdy trwa generowanie albo media czekają. */
+export function deckPollInterval(deck: DeckDto | undefined): number | false {
+  if (!deck) return false;
+  const generating = deck.generation?.state === "queued" || deck.generation?.state === "running";
+  const visible = deck.draft ?? deck.published;
+  const assetsPending = visible?.assets.some((asset) => asset.state === "pending") ?? false;
+  return generating || assetsPending ? 1000 : false;
+}
 
 /** DTO używa "approved", katalog komunikatów kluczem "ready". */
 function mediaStateText(catalogue: Record<string, string>, state: string): string {
@@ -37,19 +48,23 @@ function mediaStateText(catalogue: Record<string, string>, state: string): strin
  * i wariantów, podgląd audio/obrazów, świadome pominięcie obrazu, publikacja
  * i przypisania dzieci. Polling prowadzi dalej po odświeżeniu strony;
  * kosztowna regeneracja wymaga zawsze jawnego kliknięcia.
+ *
+ * Dane (plan 2026-10-29-parent-ui-mantine, faza 5a): `decks.get` przez
+ * TanStack Query z `refetchInterval`, polecenia przez jedną mutację (401 łapie
+ * globalny handler, po sukcesie odświeża się lista zestawów). Stan `deck`
+ * pozostaje lokalną bazą formularza: odczyt z zapytania trafia do niej tylko
+ * bez niezapisanych zmian i bez konfliktu wersji.
  */
 export default function DeckEditor({
   deckId,
   childrenList,
   onBack,
   onEditorStateChange,
-  onAuthExpired,
 }: {
   deckId: string;
   childrenList: ChildDto[];
   onBack: () => void;
   onEditorStateChange: (state: EditorLeaveState) => void;
-  onAuthExpired: () => void;
 }) {
   const [deck, setDeck] = useState<DeckDto | null>(null);
   const [form, setForm] = useState<EditableDeckForm | null>(null);
@@ -79,10 +94,21 @@ export default function DeckEditor({
   const busyRef = useRef(false);
   const baseSnapshot = useRef<EditorSnapshot | null>(null);
   const baseRevisionIds = useRef(new Map<string, string>());
-  const loadVersion = useRef(0);
   const deckIdRef = useRef(deckId);
   deckIdRef.current = deckId;
   const newKey = useCallback(() => crypto.randomUUID(), []);
+  const queryClient = useQueryClient();
+
+  // Polecenia edytora idą przez mutację TanStack: 401 obsługuje globalny
+  // handler (logowanie w oknie przy niezapisanych zmianach), a sukces odświeża
+  // listę zestawów. Każde wywołanie ma własną obietnicę i obsługę błędu.
+  const command = useMutation({
+    mutationFn: (call: () => Promise<unknown>) => callParent(call),
+    // w tle — polecenie nie czeka na pobranie listy (zwrócona obietnica wstrzymałaby mutateAsync)
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: orpc.decks.list.queryKey() }); },
+  });
+  const { mutateAsync } = command;
+  const run = useCallback(<T,>(call: () => Promise<T>): Promise<T> => mutateAsync(call) as Promise<T>, [mutateAsync]);
 
   const clearGeneratedCover = () => {
     coverGenerationToken.current += 1;
@@ -116,7 +142,7 @@ export default function DeckEditor({
     setCoverBusy(true);
     setError(null);
     try {
-      const result = await callParent(() => parentClient.decks.setCover({
+      const result = await run(() => parentClient.decks.setCover({
         params: { deckId },
         headers: { "content-type": contentType },
         // File (Blob) przepuszczany przez serializator linku; serwer czyta
@@ -143,7 +169,7 @@ export default function DeckEditor({
     setCoverBusy(true);
     setError(null);
     try {
-      await callParent(() => parentClient.decks.clearCover({ deckId }));
+      await run(() => parentClient.decks.clearCover({ deckId }));
       if (deckIdRef.current === requestDeckId) {
         setDeck((current) => current?.id === requestDeckId ? { ...current, coverAssetId: null } : current);
       }
@@ -160,7 +186,7 @@ export default function DeckEditor({
     const requestToken = coverGenerationToken.current;
     setCoverBusy(true); setCoverGenerating(true); setError(null);
     try {
-      const output = await callParent(() => parentClient.decks.generateCover({ deckId: requestDeckId }));
+      const output = await run(() => parentClient.decks.generateCover({ deckId: requestDeckId }));
       const blob = output.body;
       if (deckIdRef.current !== requestDeckId || coverGenerationToken.current !== requestToken) return;
       const mimeType = typeof output.headers?.["content-type"] === "string" ? output.headers["content-type"] : blob.type;
@@ -191,39 +217,86 @@ export default function DeckEditor({
     return () => onEditorStateChange({ dirty: false, busy: false });
   }, [onEditorStateChange, isDirty, busy, conflict]);
 
-  const load = useCallback(async (): Promise<boolean> => {
-    const requestVersion = ++loadVersion.current;
-    try {
-      const result = await callParent(() => parentClient.decks.get({ deckId }));
-      if (requestVersion === loadVersion.current && deckIdRef.current === deckId && !dirty.current && !conflictActive.current) {
-        setDeck(result);
-        return true;
+  // Odczyt zestawu (TanStack Query). Odpowiedź trafia do lokalnej bazy
+  // formularza w chwili nadejścia — w funkcji zapytania, z warunkami dawnego
+  // `load()` sprawdzanymi wtedy, a nie w efekcie po renderze (efekt nie
+  // odpaliłby się przy danych identycznych z pamięcią podręczną i widziałby
+  // stan `dirty` z późniejszej chwili). Odpowiedź anulowanego odczytu
+  // (`refetch()` po poleceniu anuluje trwające odpytanie) nie trafia nigdzie,
+  // jak dawniej dzięki wersji żądania.
+  const manualLoads = useRef(0);
+  const arrival = useRef({ data: (_: DeckDto) => {}, error: (_: unknown) => {} });
+  arrival.current = {
+    data: (result) => {
+      if (!dirty.current && !conflictActive.current) setDeck(result);
+    },
+    // błąd odczytu po poleceniu obsługuje samo polecenie (np. „zapisano, ale
+    // nie udało się odświeżyć”); tu tylko pierwszy odczyt i odpytywanie
+    error: (cause) => {
+      if (manualLoads.current === 0 && !dirty.current && !conflictActive.current) setError(errorMessage(cause));
+    },
+  };
+  const deckOptions = orpc.decks.get.queryOptions({ input: { deckId } });
+  const baseQueryFn = deckOptions.queryFn!;
+  const deckQuery = useQuery({
+    ...deckOptions,
+    queryFn: async (context) => {
+      try {
+        const result = await baseQueryFn(context);
+        if (!context.signal.aborted) arrival.current.data(result);
+        return result;
+      } catch (cause) {
+        if (!context.signal.aborted) arrival.current.error(cause);
+        throw cause;
       }
-      return true;
-    } catch (cause) {
-      if (requestVersion === loadVersion.current && deckIdRef.current === deckId && !dirty.current && !conflictActive.current) {
-        setError(errorMessage(cause));
-      }
-      return false;
-    }
-  }, [deckId]);
+    },
+    retry: false,
+    // ponowne otwarcie zestawu zaczyna od świeżego odczytu, nie od pamięci podręcznej
+    gcTime: 0,
+    // Odstęp liczony z lokalnej bazy formularza (jak dawny setInterval): przy
+    // niezapisanych zmianach baza jest zamrożona, więc odpytywanie trwa, dopóki
+    // pokazany stan ma oczekujące media — odpowiedzi nie zmieniają jednak bazy.
+    refetchInterval: deckPollInterval(deck ?? undefined),
+    refetchIntervalInBackground: true,
+  });
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  /** Ponowny odczyt po poleceniu; `false` = odczyt się nie udał (dane mogły się zmienić). */
+  const { refetch } = deckQuery;
+  const load = useCallback(async (): Promise<boolean> => {
+    manualLoads.current += 1;
+    try {
+      const result = await refetch();
+      if (!result.isError) return true;
+      if (!dirty.current && !conflictActive.current) setError(errorMessage(result.error));
+      return false;
+    } finally {
+      manualLoads.current -= 1;
+    }
+  }, [refetch]);
+
+  /**
+   * Świeży odczyt zestawu poza bazą formularza (porównanie przy konflikcie).
+   * Trwające odpytanie jest najpierw anulowane — inaczej `fetchQuery` zwróciłby
+   * jego (starszą) odpowiedź zamiast nowego odczytu.
+   */
+  const fetchRemote = useCallback(async () => {
+    const options = orpc.decks.get.queryOptions({ input: { deckId } });
+    await queryClient.cancelQueries({ queryKey: options.queryKey, exact: true });
+    return queryClient.fetchQuery({ ...options, retry: false, staleTime: 0 });
+  }, [queryClient, deckId]);
 
   const refreshConflict = useCallback(async (local: EditorSnapshot) => {
     conflictActive.current = true;
     setConflict({ local, remote: null, loadError: null });
     try {
-      const remote = await callParent(() => parentClient.decks.get({ deckId }));
+      const remote = await fetchRemote();
       setConflict((current) => current ? { ...current, remote, loadError: null } : current);
       setError(null);
     } catch {
       setConflict((current) => current ? { ...current, loadError: messages.decks.conflictLoadFailed } : current);
       setError(messages.decks.conflictDetected);
     }
-  }, [deckId]);
+  }, [fetchRemote]);
 
   const applyRemoteConflict = async (remote: DeckDto) => {
     setBusyState(true);
@@ -231,8 +304,8 @@ export default function DeckEditor({
     try {
       let current = remote;
       if (!current.draft && current.published) {
-        await callParent(() => parentClient.decks.createDraft({ deckId }));
-        current = await callParent(() => parentClient.decks.get({ deckId }));
+        await run(() => parentClient.decks.createDraft({ deckId }));
+        current = await fetchRemote();
       }
       if (!current.draft) {
         setConflict((existing) => existing ? { ...existing, remote: current, loadError: messages.decks.conflictNotFound } : existing);
@@ -281,16 +354,6 @@ export default function DeckEditor({
   const editable = draft !== null;
 
   const generating = deck?.generation?.state === "queued" || deck?.generation?.state === "running";
-  const assetsPending = active?.assets.some((asset) => asset.state === "pending") ?? false;
-  useEffect(() => {
-    if (!generating && !assetsPending) {
-      return;
-    }
-    const timer = setInterval(() => {
-      void load();
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [generating, assetsPending, load]);
 
   // formularz podąża za widoczną wersją (szkic albo opublikowana do wglądu),
   // dopóki rodzic nie zaczął pisać
@@ -306,10 +369,6 @@ export default function DeckEditor({
       setForm(createEditorSnapshot(active, newKey).form);
     }
   }, [active, draft, newKey]);
-
-  useEffect(() => () => {
-    loadVersion.current += 1;
-  }, [deckId]);
 
   const mutate = (field: "source" | "target" | "accepted" | "example" | "title", value: string, index?: number) => {
     markDirty();
@@ -404,7 +463,7 @@ export default function DeckEditor({
     setBusyState(true);
     setError(null);
     try {
-      const saved = await callParent(() => parentClient.drafts.edit({ draftId: snapshot.draftId, ...toDraftPatch(snapshot) }));
+      const saved = await run(() => parentClient.drafts.edit({ draftId: snapshot.draftId, ...toDraftPatch(snapshot) }));
       baseSnapshot.current = createEditorSnapshot(saved, newKey);
       baseRevisionIds.current = new Map(saved.items.flatMap((item) => item.id ? [[item.id, item.revisionId] as const] : []));
       setForm(baseSnapshot.current.form);
@@ -426,8 +485,7 @@ export default function DeckEditor({
         void refreshConflict(localSnapshot);
       } else {
         setError(errorMessage(cause));
-        // wygasła sesja: formularz zostaje, panel otwiera logowanie nad edytorem
-        if ((cause as { status?: number }).status === 401) onAuthExpired();
+        // wygasła sesja (401): globalny handler otwiera logowanie nad edytorem, formularz zostaje
       }
     } finally {
       setBusyState(false);
@@ -441,7 +499,7 @@ export default function DeckEditor({
     setBusyState(true);
     setError(null);
     try {
-      await callParent(() => parentClient.drafts.publish({
+      await run(() => parentClient.drafts.publish({
         draftId: draft.id,
         expectedEditNumber: draft.editNumber,
       }));
@@ -459,7 +517,7 @@ export default function DeckEditor({
     setBusyState(true);
     setError(null);
     try {
-      await callParent(() => parentClient.decks.archive({ deckId }));
+      await run(() => parentClient.decks.archive({ deckId }));
       await load();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -474,7 +532,7 @@ export default function DeckEditor({
     setBusyState(true);
     setError(null);
     try {
-      await callParent(() => parentClient.decks.createDraft({ deckId }));
+      await run(() => parentClient.decks.createDraft({ deckId }));
       dirty.current = false;
       await load();
     } catch (cause) {
@@ -491,7 +549,7 @@ export default function DeckEditor({
     const runId = deck.generation.id;
     setError(null);
     try {
-      await callParent(() => parentClient.generation.retry({ runId }));
+      await run(() => parentClient.generation.retry({ runId }));
       await load();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -504,7 +562,7 @@ export default function DeckEditor({
     }
     setError(null);
     try {
-      await callParent(() => parentClient.drafts.regenerateAsset({
+      await run(() => parentClient.drafts.regenerateAsset({
         draftId: draft.id,
         itemRevisionId,
         role,
@@ -521,7 +579,7 @@ export default function DeckEditor({
     }
     setError(null);
     try {
-      await callParent(() => parentClient.drafts.omitAsset({ draftId: draft.id, itemRevisionId }));
+      await run(() => parentClient.drafts.omitAsset({ draftId: draft.id, itemRevisionId }));
       await load();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -536,7 +594,7 @@ export default function DeckEditor({
   const assign = async (childId: string) => {
     setError(null);
     try {
-      await callParent(() => parentClient.assignments.put({
+      await run(() => parentClient.assignments.put({
         childId,
         deckId,
         testDate: (assignDates[childId] ?? deck?.assignments.find(a => a.childId === childId)?.testDate) || null,
@@ -553,7 +611,7 @@ export default function DeckEditor({
     setError(null);
     setUnassigningChildId(childId);
     try {
-      await callParent(() => parentClient.assignments.remove({ childId, deckId }));
+      await run(() => parentClient.assignments.remove({ childId, deckId }));
       await load();
     } catch (cause) {
       setError(errorMessage(cause));

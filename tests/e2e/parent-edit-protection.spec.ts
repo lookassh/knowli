@@ -134,6 +134,15 @@ test("polling conflict sends the form's base edit number and keeps local correct
   await expect(page.getByTestId("conflict-confirm")).toBeVisible();
   await page.getByTestId("conflict-confirm").click();
   await expect(page.getByTestId("deck-conflict-panel")).toHaveCount(0);
+  // po zamknięciu porównania baza formularza wraca do odczytów serwera: media
+  // dochodzą do „gotowe”, a odpytywanie ustaje (nie wisi na starej wersji z porównania)
+  await expect(page.getByTestId("item-audio-state-0")).toContainText("gotowe", { timeout: 30_000 });
+  let pollsAfterReady = 0;
+  page.on("request", (request) => {
+    if (request.method() === "GET" && request.url().includes("/api/v1/parent/decks/")) pollsAfterReady += 1;
+  });
+  await page.waitForTimeout(2_500);
+  expect(pollsAfterReady).toBe(0);
   await pageB.close();
 });
 
