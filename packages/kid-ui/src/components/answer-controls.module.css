@@ -72,6 +72,10 @@
   padding-block: 8px;
 }
 
+:global(.kid-ui) .action[data-variant="filled"][data-size="lg"] {
+  font-family: var(--kid-font-display);
+}
+
 /* M3 disabled: container at 12% and content at 38% of on-surface. */
 :global(.kid-ui) .action:disabled {
   cursor: default;

@@ -19,6 +19,36 @@
   min-width: 0;
 }
 
+/* Pas sięga krawędzi ekranu: odbija padding .root ujemnym marginesem i taką samą wypukłością paddingu. */
+.band {
+  --band-top: max(16px, env(safe-area-inset-top));
+  --band-left: max(16px, env(safe-area-inset-left));
+  --band-right: max(16px, env(safe-area-inset-right));
+  --band-pad-block: 12px;
+  --band-wave-height: 24px;
+  margin-top: calc(-1 * var(--band-top));
+  margin-right: calc(-1 * var(--band-right));
+  margin-left: calc(-1 * var(--band-left));
+  padding-top: calc(var(--band-top) + var(--band-pad-block));
+  padding-right: var(--band-right);
+  padding-bottom: 0;
+  padding-left: var(--band-left);
+  /* Tło tylko nad falą: sama fala (ostatnie dziecko) maluje dolną krawędź, a 1 px nakładki zamyka szew. */
+  background: linear-gradient(var(--kid-color-header), var(--kid-color-header)) top / 100% calc(100% - var(--band-wave-height) + 1px) no-repeat;
+  color: var(--kid-color-on-header);
+}
+
+.wave {
+  display: block;
+  width: calc(100% + var(--band-left) + var(--band-right));
+  height: var(--band-wave-height);
+  margin-top: var(--band-pad-block);
+  margin-right: calc(-1 * var(--band-right));
+  margin-bottom: 0;
+  margin-left: calc(-1 * var(--band-left));
+  color: var(--kid-color-header);
+}
+
 .content {
   display: flex;
   flex-direction: column;
@@ -58,6 +88,11 @@
     padding-right: max(12px, env(safe-area-inset-right));
     padding-left: max(12px, env(safe-area-inset-left));
   }
+
+  .band {
+    --band-left: max(12px, env(safe-area-inset-left));
+    --band-right: max(12px, env(safe-area-inset-right));
+  }
 }
 
 @media (max-height: 700px) {
@@ -65,5 +100,18 @@
     gap: 4px;
     padding-top: max(12px, env(safe-area-inset-top));
     padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-height: 700px) {
+  .band {
+    --band-top: max(12px, env(safe-area-inset-top));
+  }
+}
+
+@media (max-height: 479px) {
+  .band {
+    --band-pad-block: 6px;
+    --band-wave-height: 12px;
   }
 }

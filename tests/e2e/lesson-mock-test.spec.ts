@@ -98,7 +98,7 @@ async function openLessonMock(page: Page): Promise<void> {
   await page.goto("/");
 }
 
-test("child solves a lesson mock test with no feedback, then reviews per-task answers", async ({ page }) => {
+test("child solves a lesson mock test with no feedback, then reviews per-task answers", async ({ page }, testInfo) => {
   test.setTimeout(30_000);
   await page.setViewportSize({ width: 390, height: 844 });
 
@@ -142,6 +142,8 @@ test("child solves a lesson mock test with no feedback, then reviews per-task an
   await expect(page.locator('[data-testid="kid-lesson-mock-solution"][data-status="incorrect"]')).toHaveCount(1);
   await expect(page.getByTestId("kid-lesson-mock-summary")).toContainText("He ___ football every day.");
   await expect(page.getByTestId("kid-lesson-mock-summary")).toContainText("Poprawna odpowiedź: watches");
+  // Zrzut po asercjach: gwiazdki wyniku kończą wtedy animację wejścia.
+  await page.screenshot({ path: testInfo.outputPath("lesson-mock-summary.png"), fullPage: true });
 
   expect(leaks, leaks.join("; ")).toHaveLength(0);
 });

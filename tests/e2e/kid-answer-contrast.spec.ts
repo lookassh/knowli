@@ -21,7 +21,7 @@ async function expectReadable(control: Locator) {
   expect(contrast.ratio, JSON.stringify(contrast)).toBeGreaterThanOrEqual(4.5);
 }
 
-test("round audio buttons keep a readable icon on their resting background", async ({ page }) => {
+test("round audio buttons keep a readable icon on their resting background", async ({ page }, testInfo) => {
   const fixture = pictureVocabularyFixture();
   const assetId = "10000000-0000-4000-8000-000000000012";
   fixture.tasks = [{ ...fixture.tasks[0]!, exerciseType: "exposure", direction: null, prompt: {
@@ -48,9 +48,10 @@ test("round audio buttons keep a readable icon on their resting background", asy
   expect(Math.round(box!.height)).toBe(64);
   const tonal = await kidTokenColor(page, "--md-sys-color-secondary-container");
   await expect.poll(() => play.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(tonal);
+  await page.screenshot({ path: testInfo.outputPath("exposure-1366x768.png") });
 });
 
-test("round audio button stays tonal even on a filled ActionButton", async ({ page }) => {
+test("round audio button stays tonal even on a filled ActionButton", async ({ page }, testInfo) => {
   /* PictureRecallView renders the round play as a default (filled)
      ActionButton; .kid-audio-round must win regardless of stylesheet order. */
   const fixture = pictureVocabularyFixture();
@@ -75,6 +76,7 @@ test("round audio button stays tonal even on a filled ActionButton", async ({ pa
   });
   expect(style).toEqual({ background: tonal, color: onTonal, border: "rgba(0, 0, 0, 0)" });
   await expectReadable(play);
+  await page.screenshot({ path: testInfo.outputPath("picture-recall-390x844.png") });
 });
 
 for (const colorScheme of ["light", "dark"] as const) {
