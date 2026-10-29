@@ -791,24 +791,20 @@ test("speech feedback stays inline, explains fragments and exposes only the avai
     };
   });
   expect(outlineClipped).toEqual({ top: false, left: false, right: false });
-  // The long heard text overflows the box that holds the legend; a wheel gesture
-  // over it scrolls that box, and the legend then ends inside it, above the
-  // dock's action row.
-  const legendScrollTop = () => legend.evaluate((element) => {
-    let box = element.parentElement;
-    while (box && !(/(auto|scroll)/.test(getComputedStyle(box).overflowY) && box.scrollHeight > box.clientHeight + 1)) {
-      box = box.parentElement;
-    }
-    box?.setAttribute("data-e2e-legend-scroller", "");
-    return box ? box.scrollTop : null;
-  });
-  const startTop = await legendScrollTop();
-  expect(startTop, "legend sits in an overflowing scroll box").not.toBeNull();
-  const scroller = page.locator("[data-e2e-legend-scroller]");
+  // The long heard text overflows the card body, which is the scrolling box for
+  // the legend (not the outer card); a wheel gesture over it scrolls the body,
+  // and the legend then ends inside it, above the dock's action row.
+  const scroller = card.locator(".kid-speech-feedback__body");
+  expect(await scroller.evaluate((body) => ({
+    scrolls: /(auto|scroll)/.test(getComputedStyle(body).overflowY),
+    overflows: body.scrollHeight > body.clientHeight + 1,
+  })), "card body is the overflowing scroll box").toEqual({ scrolls: true, overflows: true });
+  await expect(scroller.locator(".kid-speech-feedback__legend")).toHaveCount(1);
+  const startTop = await scroller.evaluate((body) => body.scrollTop);
   const scrollerBox = (await scroller.boundingBox())!;
   await page.mouse.move(scrollerBox.x + scrollerBox.width / 2, scrollerBox.y + scrollerBox.height / 2);
   await page.mouse.wheel(0, 4000);
-  await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBeGreaterThan(startTop!);
+  await expect.poll(() => scroller.evaluate((body) => body.scrollTop)).toBeGreaterThan(startTop);
   const [legendBox, actionBox] = await Promise.all([legend.boundingBox(), page.getByTestId("kid-feedback-retry").boundingBox()]);
   expect(legendBox!.y, "legend top inside its scroll box").toBeGreaterThanOrEqual(scrollerBox.y - 1);
   expect(legendBox!.y + legendBox!.height, "legend bottom inside its scroll box").toBeLessThanOrEqual(scrollerBox.y + scrollerBox.height + 1);
