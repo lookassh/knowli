@@ -97,6 +97,22 @@
   min-width: 0;
 }
 
+/* Odsłuch komunikatu o wyniku stoi w górnym wierszu, obok tytułu. */
+.withGuidance {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.withGuidance .content {
+  flex: 1 1 auto;
+}
+
+.guidance {
+  flex: none;
+  display: flex;
+}
+
 .content {
   min-width: 0;
   display: flex;

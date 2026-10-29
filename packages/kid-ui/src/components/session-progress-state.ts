@@ -80,8 +80,8 @@ export function advanceSessionProgress(
   return { ...next, lastAttemptId: attempt.attemptId, streak: attempt.outcome === "wrong" ? 0 : next.streak };
 }
 
-/** Share of the session already done, 0..1. */
-export function progressFraction(total: number, remainingAssessed: number | null): number {
+/** Assessed tasks already done: total minus the tasks still waiting, within 0..total. */
+export function progressDone(total: number, remainingAssessed: number | null): number {
   if (total <= 0 || remainingAssessed === null) return 0;
-  return Math.min(1, Math.max(0, (total - remainingAssessed) / total));
+  return Math.min(total, Math.max(0, total - remainingAssessed));
 }

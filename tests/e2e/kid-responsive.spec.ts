@@ -1,7 +1,15 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
-import { expectBandSpansRoot, measure, resizeAndSettle } from "./helpers/kid-layout";
+import { expectBandSpansRoot, expectInsideRoot, measure, resizeAndSettle } from "./helpers/kid-layout";
 import { pictureChoiceLayoutFixture } from "./helpers/picture-fixtures";
+
+const SESSION_HEADER_VIEWPORTS = [
+  { width: 360, height: 800 },
+  { width: 320, height: 640 },
+  { width: 844, height: 390 },
+  { width: 768, height: 1024 },
+  { width: 1280, height: 800 },
+];
 
 function recallLayoutFixture(): KidUiFixture {
   const childId = "10000000-0000-4000-8000-000000000101";
@@ -18,6 +26,90 @@ function recallLayoutFixture(): KidUiFixture {
       direction: "source_to_target", state: "issued", prompt: { kind: "recall", prompt: "kot" }, remainingAssessed: 1 }],
   };
 }
+
+/** ✕, pebble row and microphone status share one row; vertical centres line up. */
+async function expectSessionHeaderRow(page: Page, expectedPebbles: number, pillShown: boolean) {
+  for (const viewport of SESSION_HEADER_VIEWPORTS) {
+    const name = `${viewport.width}x${viewport.height}`;
+    await resizeAndSettle(page, viewport);
+    const layout = await measure(page, {
+      root: ".kid-learning",
+      header: ".kid-header",
+      end: "[data-testid='kid-end']",
+      pebbles: "[data-testid='kid-progress-pebbles']",
+      mic: "[data-testid='kid-microphone-status']",
+    });
+    const centreY = (rect: { top: number; height: number }) => rect.top + rect.height / 2;
+    expect(Math.abs(centreY(layout.end) - centreY(layout.pebbles)), `close vs pebbles centre: ${name}`).toBeLessThanOrEqual(4);
+    expect(Math.abs(centreY(layout.mic) - centreY(layout.pebbles)), `microphone vs pebbles centre: ${name}`).toBeLessThanOrEqual(4);
+    for (const [label, rect] of Object.entries({ end: layout.end, pebbles: layout.pebbles, mic: layout.mic })) {
+      expectInsideRoot(rect, layout.root, `${label}: ${name}`);
+      expect(rect.left, `${label} left in viewport: ${name}`).toBeGreaterThanOrEqual(0);
+      expect(rect.right, `${label} right in viewport: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
+    }
+    expect(layout.scrollWidth, `horizontal overflow: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
+    expect(layout.end.width, `close width: ${name}`).toBeGreaterThanOrEqual(48);
+    expect(layout.end.height, `close height: ${name}`).toBeGreaterThanOrEqual(48);
+    const pebbles = await page.getByTestId("kid-progress-pebble").evaluateAll((elements) => elements.map((element) => {
+      const { left, right, width } = element.getBoundingClientRect();
+      return { left, right, width };
+    }));
+    expect(pebbles, `pebble count: ${name}`).toHaveLength(expectedPebbles);
+    for (const [index, pebble] of pebbles.entries()) {
+      expect(pebble.width, `pebble ${index} width: ${name}`).toBeGreaterThanOrEqual(expectedPebbles > 20 ? 4 : 5);
+      // The current pebble is scaled 1.25x, so it may poke out of the row by up to 2px.
+      expect(pebble.left, `pebble ${index} inside row: ${name}`).toBeGreaterThanOrEqual(layout.pebbles.left - 2);
+      expect(pebble.right, `pebble ${index} inside row: ${name}`).toBeLessThanOrEqual(layout.pebbles.right + 2);
+    }
+    if (pillShown) {
+      const pill = await measure(page, { pill: "[data-testid='kid-remaining']" });
+      expectInsideRoot(pill.pill, layout.root, `pill: ${name}`);
+      expect(pill.pill.right, `pill right in viewport: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
+      expect(pill.pill.bottom, `pill inside header: ${name}`).toBeLessThanOrEqual(layout.header.bottom + 1);
+      if (viewport.height < 480) {
+        // Very short: the pill sits beside the pebbles, not under them.
+        expect(Math.abs(centreY(pill.pill) - centreY(layout.pebbles)), `pill beside pebbles: ${name}`).toBeLessThanOrEqual(4);
+        expect(pill.pill.left, `pill after pebbles: ${name}`).toBeGreaterThanOrEqual(layout.pebbles.left);
+      } else {
+        expect(pill.pill.top, `pill under pebbles: ${name}`).toBeGreaterThanOrEqual(layout.pebbles.bottom - 1);
+      }
+    }
+  }
+}
+
+function openHeaderFixture(remainingAssessed: number): KidUiFixture {
+  const fixture = recallLayoutFixture();
+  fixture.tasks = [{ ...fixture.tasks[0]!, remainingAssessed }];
+  return fixture;
+}
+
+test("session header keeps close, pebbles and microphone in one row", async ({ page }) => {
+  await installKidUiFixture(page, openHeaderFixture(20));
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+  await expect(page.getByTestId("kid-input")).toBeVisible();
+  await expect(page.getByTestId("kid-remaining")).toHaveCount(0);
+  await expectSessionHeaderRow(page, 20, false);
+});
+
+test("session header fits the longest pebble row on every viewport", async ({ page }) => {
+  await installKidUiFixture(page, openHeaderFixture(24));
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+  await expect(page.getByTestId("kid-input")).toBeVisible();
+  await expectSessionHeaderRow(page, 24, false);
+});
+
+test("session header keeps the Jeszcze pill beside or under the pebbles", async ({ page }) => {
+  await installKidUiFixture(page, openHeaderFixture(3));
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+  await expect(page.getByTestId("kid-remaining")).toBeVisible();
+  await expectSessionHeaderRow(page, 3, true);
+});
 
 test("exposure keeps the complete word card above its action without scrolling on phones", async ({ page }, testInfo) => {
   const fixture = recallLayoutFixture();

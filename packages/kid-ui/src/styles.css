@@ -1208,12 +1208,23 @@
   }
 }
 
+/* Session header: ✕ | progress pebbles | microphone status. Buttons sit at
+   the top so their centres line up with the pebble row; the "Jeszcze N" pill
+   under the pebbles may make the header taller. */
 .kid-header {
-  display: flex;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 48px;
+  align-items: start;
+  column-gap: 12px;
+  min-height: 56px;
+  padding-block: 4px;
+}
+
+.kid-page[data-viewport-very-short="true"] .kid-header {
   align-items: center;
-  justify-content: space-between;
   min-height: 48px;
-  gap: 12px;
+  padding-block: 0;
 }
 
 .kid-session-status {
@@ -1297,8 +1308,8 @@
 
 .kid-microphone-status {
   position: relative;
-  flex: none;
-  margin-inline-start: auto;
+  grid-column: 3;
+  justify-self: end;
   color: var(--kid-muted);
 }
 
@@ -1349,12 +1360,6 @@
   font-size: var(--kid-type-label-sm-size);
   line-height: 1.45;
   text-align: start;
-}
-
-.kid-remaining {
-  margin: 0;
-  font-weight: 700;
-  color: var(--kid-good);
 }
 
 .kid-ui .kid-end {
@@ -2529,13 +2534,4 @@
 .kid-page[data-viewport-very-short="true"] .kid-exercise-frame .kid-material,
 .kid-page[data-viewport-very-short="true"] .kid-exercise-frame .kid-material-content {
   overflow: visible;
-}
-
-.kid-page[data-zoomed="true"] .kid-header {
-  flex-wrap: wrap;
-}
-
-.kid-page[data-zoomed="true"] .kid-header .kid-remaining {
-  flex: 1 1 100%;
-  order: 4;
 }

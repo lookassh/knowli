@@ -22,6 +22,7 @@ export function ExerciseFeedbackDock({
   primary,
   secondary,
   celebrate = false,
+  guidance,
 }: {
   tone: FeedbackDockTone;
   kind?: "answer" | "speech";
@@ -30,6 +31,8 @@ export function ExerciseFeedbackDock({
   primary: ReactNode;
   secondary?: ReactNode;
   celebrate?: boolean;
+  /** Przycisk odsłuchu komunikatu o wyniku, obok tytułu w górnym wierszu treści. */
+  guidance?: ReactNode;
 }): ReactElement {
   const isPresent = useIsPresent();
   return (
@@ -46,8 +49,9 @@ export function ExerciseFeedbackDock({
       data-compact={compact || undefined}
       className={`${classes.dock} ${compact ? classes.compact : ""} ${tone === "correct" ? classes.correct : tone === "incorrect" ? classes.incorrect : tone === "partial" ? classes.partial : tone === "technical" ? classes.technical : ""}`}
     >
-      <div className={classes.scroll}>
+      <div className={`${classes.scroll} ${guidance ? classes.withGuidance : ""}`}>
         <div className={classes.content}>{children}</div>
+        {guidance && <div className={classes.guidance}>{guidance}</div>}
       </div>
       <div className={classes.actions}>
         {primary}

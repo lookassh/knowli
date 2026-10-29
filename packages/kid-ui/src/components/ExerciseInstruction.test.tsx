@@ -30,3 +30,13 @@ it("keeps instructions without audio free of playback controls", () => {
   expect(screen.queryByRole("button")).toBeNull();
   expect(screen.getByTestId("kid-instruction").textContent).toBe("Wpisz odpowiedź");
 });
+
+it("puts the guidance slot after the instruction text", () => {
+  renderKid(<ExerciseInstruction instruction="Wpisz odpowiedź" icon="pencil"
+    guidance={<button type="button" data-testid="kid-guidance-play">Odsłuchaj</button>} />);
+  const header = screen.getByTestId("kid-instruction");
+  const text = header.querySelector("span")!;
+  const guidance = screen.getByTestId("kid-guidance-play");
+  expect(header.contains(guidance)).toBe(true);
+  expect(text.compareDocumentPosition(guidance) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});

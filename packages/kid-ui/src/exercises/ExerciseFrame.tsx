@@ -3,6 +3,7 @@ import { AnimatePresence } from "motion/react";
 import type { TaskDto } from "@learning/contracts";
 import { ExerciseInstruction, type ExerciseInstructionAudio } from "../components/ExerciseInstruction";
 import classes from "./ExerciseFrame.module.css";
+import { useExerciseGuidance } from "./exercise-guidance";
 import { getExercisePresentation } from "./exercise-presentation";
 import {
   scheduleFeedbackDockReveal,
@@ -41,6 +42,7 @@ export function ExerciseFrame({
   instructionAudio?: ExerciseInstructionAudio;
 }): ReactElement {
   const presentation = getExercisePresentation(task);
+  const guidance = useExerciseGuidance();
   const materialRef = useRef<HTMLDivElement>(null);
   const anchorRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -189,7 +191,7 @@ export function ExerciseFrame({
 
   return (
     <div className={`kid-exercise-frame ${classes.root}`} data-testid="kid-exercise" data-prompt-kind={task.prompt.kind} data-feedback-layout={feedbackLayout} data-action-layout={actionLayout}>
-      <ExerciseInstruction instruction={presentation.instruction} icon={presentation.icon} audio={instructionAudio} />
+      <ExerciseInstruction instruction={presentation.instruction} icon={presentation.icon} audio={instructionAudio} guidance={guidance} />
       <div ref={materialRef} className={`kid-material ${classes.material}`} data-testid="kid-material">
         <div
           className={`kid-material-content ${classes.materialContent}`}

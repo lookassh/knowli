@@ -1,35 +1,72 @@
+/* Centre column of the session header: the pebble row sits level with the
+   centre of the 48px header buttons, the "Jeszcze N" pill under it. */
 :global(.kid-ui) .root {
-  min-height: 36px;
-  padding-inline: 14px;
-  display: inline-flex;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding-top: 20px;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  font-size: var(--kid-type-label-sm-size);
-  font-weight: var(--kid-type-label-sm-weight);
-  color: var(--md-sys-color-on-surface);
+  gap: 6px;
+}
+
+/* One pebble per assessed task. Width is elastic (5-16px) so the row fills
+   the column; a growing session adds pebbles without animating sizes. */
+:global(.kid-ui) .pebbles {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+
+:global(.kid-ui) .pebble {
+  box-sizing: border-box;
+  position: relative;
+  flex: 1 1 0;
+  min-width: 5px;
+  max-width: 16px;
+  height: 8px;
   border-radius: var(--kid-shape-full);
-  background: var(--md-sys-color-surface-container-highest);
-  position: relative;
-  isolation: isolate;
+  background: var(--md-sys-color-outline-variant);
 }
 
-:global(.kid-ui) .label {
-  position: relative;
-  z-index: 1;
-  display: inline-block;
+:global(.kid-ui) .pebble[data-state="done"] {
+  background: var(--md-sys-color-primary);
 }
 
-/* Slim bar shown while the "Jeszcze N" label is not due yet. */
+:global(.kid-ui) .pebble[data-state="current"] {
+  border: 2px solid var(--md-sys-color-primary);
+  background: transparent;
+  transform: scale(1.25);
+}
+
+/* Longer sessions: tighter pebbles so up to 24 fit the narrowest phone column. */
+:global(.kid-ui) .pebbles[data-dense] {
+  gap: 2px;
+}
+
+:global(.kid-ui) .pebbles[data-dense] .pebble {
+  min-width: 4px;
+}
+
+/* Continuous bar for sessions longer than the pebble limit. */
 :global(.kid-ui) .bar {
   position: relative;
-  display: inline-block;
-  flex: 0 1 96px;
-  min-width: 48px;
-  height: 10px;
+  display: block;
+  width: 100%;
+  max-width: 240px;
+  height: 8px;
+  margin-top: 0;
   border-radius: var(--kid-shape-full);
-  background: var(--md-sys-color-surface-container-high);
+  background: var(--md-sys-color-outline-variant);
 }
 
-/* Decorative fill layer; clipping it never clips the label. */
+/* Decorative fill layer; clipping it never clips the star. */
 :global(.kid-ui) .fillTrack {
   position: absolute;
   inset: 0;
@@ -43,17 +80,31 @@
   inset: 0;
   display: block;
   transform-origin: left center;
-  background: var(--md-sys-color-tertiary);
+  background: var(--md-sys-color-primary);
 }
 
-:global(.kid-ui) .root .fill {
-  background: var(--md-sys-color-tertiary-container);
+/* "Jeszcze N i koniec!" - a small warm pill; wraps instead of ellipsizing. */
+:global(.kid-ui) .label {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-height: 22px;
+  padding: 2px 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--kid-type-label-sm-size);
+  font-weight: var(--kid-type-label-sm-weight);
+  line-height: var(--kid-type-label-sm-line-height);
+  text-align: center;
+  color: var(--kid-color-on-warm-container);
+  border-radius: var(--kid-shape-full);
+  background: var(--kid-color-warm-container);
 }
 
-/* Streak star rises from the top edge, so it never widens the pill. */
+/* Streak star rises from the top edge of the last done pebble. */
 :global(.kid-ui) .star {
   position: absolute;
-  top: -14px;
+  bottom: 100%;
   left: 50%;
   width: 1em;
   margin-left: -0.5em;
@@ -66,18 +117,21 @@
   z-index: 2;
 }
 
-/* Compact width: wrap instead of ellipsizing the remaining-task label. */
-@media (max-width: 599px) {
-  :global(.kid-ui) .root {
-    height: auto;
-    padding-block: 6px;
-    line-height: 1.15;
-    text-align: center;
-  }
+/* Low viewport: one row, the pill beside the pebbles. */
+:global(.kid-page[data-viewport-very-short="true"]) .root {
+  height: 100%;
+  padding-top: 0;
+  flex-direction: row;
+  justify-content: center;
+  gap: 8px;
+}
 
-  :global(.kid-ui) .root {
-    overflow: visible;
-    white-space: normal;
-    text-overflow: clip;
-  }
+:global(.kid-page[data-viewport-very-short="true"]) .pebbles,
+:global(.kid-page[data-viewport-very-short="true"]) .bar {
+  flex: 1 1 auto;
+  width: auto;
+}
+
+:global(.kid-page[data-viewport-very-short="true"]) .label {
+  flex: none;
 }
