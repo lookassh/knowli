@@ -36,7 +36,7 @@ const OBJECTIVE_ID = "school.ddeck000.fotosynteza";
 const MATERIAL =
   "Fotosynteza to proces, w którym roślina z wody i dwutlenku węgla, przy udziale światła, wytwarza cukry.";
 
-async function seedSchoolDeck(childId: string, options: { expectedForm?: string } = {}): Promise<{ deckId: string }> {
+async function seedSchoolDeck(childId: string, options: { expectedForm?: string; openAcceptedAnswers?: string[] } = {}): Promise<{ deckId: string }> {
   const deckId = randomUUID();
   const versionId = randomUUID();
   const context = {
@@ -95,7 +95,7 @@ async function seedSchoolDeck(childId: string, options: { expectedForm?: string 
       exerciseType: "lesson_open_answer", objectiveId: OBJECTIVE_ID, instructionPl: "Odpowiedz własnymi słowami.",
       prompt: "Co to jest fotosynteza?",
       answer: "Roślina z wody i dwutlenku węgla, przy udziale światła, wytwarza cukry.",
-      acceptedAnswers: [], focus: ["wytwarza cukry"],
+      acceptedAnswers: options.openAcceptedAnswers ?? [], focus: ["wytwarza cukry"],
       questionType: "definition", expectedForm: options.expectedForm ?? "explanation",
       requiredElements: [
         { id: "e1", text: "Roślina wytwarza cukry" },
@@ -338,6 +338,28 @@ describe("ocena szkolna dwuwymiarowa (integracja)", () => {
     // Inny zapis tej samej odpowiedzi (jedno zdanie) może trafić w ten sam wpis cache — nie może dziedziczyć klamry.
     const cached = await pool.query<{ precision: string }>("select precision from learning_app.lesson_verdicts");
     expect(cached.rows.map((row) => row.precision)).toEqual(["concise"]);
+  });
+
+  it("forma one_sentence ogranicza precyzję także przy dokładnym dopasowaniu wariantu", async () => {
+    const services = makeServices(new FakeAnswerGrader());
+    const child = await createChild(services, { displayName: "Dokładny", avatarKey: "owl" });
+    const twoSentences = "Roślina wytwarza cukry. Roślina wykorzystuje światło.";
+    const { deckId } = await seedSchoolDeck(child.id, { expectedForm: "one_sentence", openAcceptedAnswers: [twoSentences] });
+    const openTask = await reachOpenTask(services, child.id, deckId);
+
+    const result = await submitAttempt(services, {
+      taskId: openTask.taskId, clientAttemptId: randomUUID(), modality: "text", text: twoSentences,
+    });
+    expect(result.feedback!.kind).toBe("great");
+    const assessment = await pool.query<{ outcome: string; details: Record<string, unknown> }>(
+      "select outcome, details from learning_app.assessments where child_id = $1 and details ? 'knowledge'", [child.id]);
+    expect(assessment.rows[0]!.outcome).toBe("correct");
+    expect(assessment.rows[0]!.details).toMatchObject({
+      verdict: "exact", knowledge: "correct", precision: "verbose", formOk: false, expectedForm: "one_sentence",
+    });
+    // Dokładne dopasowanie nie woła modelu, więc nie ma wpisu cache.
+    const verdicts = await pool.query<{ n: number }>("select count(*)::int as n from learning_app.lesson_verdicts");
+    expect(verdicts.rows[0]!.n).toBe(0);
   });
 
   it("kategoria błędu w cache jest ta sama co w ocenie (incorrect bez błędnych stwierdzeń = incomplete)", async () => {

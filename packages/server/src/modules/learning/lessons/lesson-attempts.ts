@@ -310,7 +310,9 @@ function gradeLessonAnswer(
     };
     return { grade, feedback, exposures: [key.targetKey], details: { objectiveId, verdict: "minor_typo", typoToken: match.typoToken } };
   }
-  // exact — dla szkoły dokładne dopasowanie jest zwięzłą poprawną odpowiedzią (bez modelu).
+  // exact — dla szkoły dokładne dopasowanie jest poprawną odpowiedzią (bez modelu); forma
+  // `one_sentence` nadal ogranicza precyzję, nigdy wiedzę.
+  const formOk = formOkFor(key, input.text);
   return {
     grade,
     feedback: { kind: "great" },
@@ -321,9 +323,11 @@ function gradeLessonAnswer(
       ...(key.schoolCriteria
         ? {
             knowledge: "correct",
-            precision: "concise",
+            precision: formOk === false ? "verbose" : "concise",
             matchedElementIds: key.schoolCriteria.requiredElements.map((el) => el.id),
             missingElementIds: [] as string[],
+            ...(formOk === false ? { formOk: false } : {}),
+            ...(key.schoolCriteria.expectedForm ? { expectedForm: key.schoolCriteria.expectedForm } : {}),
           }
         : {}),
     },
