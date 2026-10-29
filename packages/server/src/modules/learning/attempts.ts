@@ -432,7 +432,7 @@ async function finalizeAttemptRow(
     const settledChecks = [...new Set([...context.settledChecks, targetKey])];
     await tx
       .update(learningSessions)
-      .set({ context: { ...context, reservations, settledChecks } as unknown as Record<string, unknown> })
+      .set({ context: { ...session.context, reservations, settledChecks } as unknown as Record<string, unknown> })
       .where(eq(learningSessions.id, session.id));
   }
 

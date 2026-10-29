@@ -88,7 +88,12 @@ export async function dictateLessonAnswer(
     .transcribe({ bytes: normalized.bytes, mimeType: normalized.mimeType, locale: reserved.locale }, deadline)
     .then(
       (result) => (deadline.aborted ? { status: "failed" as const, text: null, confidence: null } : result),
-      () => ({ status: "failed" as const, text: null, confidence: null }),
+      (error: unknown) => {
+        // Odrzucony klucz wygląda dla dziecka jak „nie usłyszałem” — operator dostaje
+        // jedną linię bez treści, nagrania i identyfikatorów.
+        if (error instanceof AppError) console.error(`[lesson-dictation] STT ${deps.publicService}: ${error.message}`);
+        return { status: "failed" as const, text: null, confidence: null };
+      },
     );
   const result = classifyDictation(transcription);
   if (result.status !== "heard") return result;

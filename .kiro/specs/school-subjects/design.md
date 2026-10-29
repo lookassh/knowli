@@ -582,6 +582,14 @@ i może poprawić.
   licznika gradera nie gubił stanu dyktowania.
 - Mikrofon w zadaniu zależy od `speechInput` zamrożonego w prompcie; endpoint
   sprawdza dodatkowo aktywną sesję treningową z włączonym mikrofonem.
+- Review: zapisy kontekstu sesji przy rezerwacjach (`events.ts` — podpowiedź
+  „Nie pamiętam” w lekcji, `attempts.ts`, `feedback-audio.ts`,
+  `voice-task-lifecycle.ts`, `vocabulary-task-issuance.ts`) budowały kontekst
+  z `contextOf` i gubiły klucze lekcji (`dictationCalls`, `dictations`, ale też
+  wcześniejsze `graderCalls`); teraz scalają się z surowym kontekstem sesji.
+- Znane ograniczenie: po wyczerpaniu 40 dyktowań mikrofon zostaje widoczny,
+  a każde nagranie kończy się „Nie udało się rozpoznać. Napisz odpowiedź…”
+  (bez osobnego statusu limitu w kontrakcie).
 - Konfiguracja: `UMIEM_LESSON_STT_BASE_URL`, `UMIEM_LESSON_STT_API_KEY`,
   opcjonalnie `UMIEM_LESSON_STT_MODEL` (domyślnie `elevenlabs/scribe-v2`);
   w trybie `UMIEM_FAKE_PROVIDERS=1` stały polski tekst z fake STT.

@@ -88,7 +88,10 @@ export function createOpenAiCompatibleSttProvider(options: OpenAiCompatibleSttOp
       try {
         let response = await request("verbose_json");
         // część modeli nie zwraca verbose_json (np. gpt-4o-transcribe) — wtedy sam tekst
-        if (response.status === 400) response = await request("json");
+        if (response.status === 400) {
+          await response.body?.cancel().catch(() => undefined);
+          response = await request("json");
+        }
         if (response.status === 401 || response.status === 403) {
           throw new AppError("internal", { message: "speech-to-text credentials rejected" });
         }

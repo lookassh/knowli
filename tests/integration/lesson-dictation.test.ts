@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   AppError,
+  authorizeDisclosure,
   completePresentation,
   computeTargetKey,
   createChild,
@@ -404,6 +405,27 @@ describe("dyktowanie odpowiedzi otwartej (Etap 3)", () => {
 
     await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: DICTATED });
     await expect(dictateLessonAnswer(services, { taskId: task.taskId }, wav(3))).rejects.toMatchObject({ code: "conflict" });
+  });
+
+  it("„Nie pamiętam” (ujawnienie podpowiedzi) nie kasuje stanu dyktowania ani licznika gradera w kontekście sesji", async () => {
+    const services = makeServices();
+    const child = await createChild(services, { displayName: "Kasia", avatarKey: "owl" });
+    const { deckId } = await seedSchoolDeck(child.id);
+    const task = await reachOpenTask(services, child.id, deckId);
+    await dictateLessonAnswer(services, { taskId: task.taskId }, wav(3));
+    await pool.query(
+      `update learning_app.learning_sessions s set context = s.context || '{"graderCalls": 3}'::jsonb
+        from learning_app.session_tasks t where t.session_id = s.id and t.id = $1`,
+      [task.taskId],
+    );
+
+    await authorizeDisclosure(services, { taskId: task.taskId, kind: "hint" });
+
+    const context = await sessionContextOf(task.taskId);
+    expect(context.dictationCalls).toBe(1);
+    expect(Object.keys(context.dictations as object)).toEqual([task.taskId]);
+    expect(context.graderCalls).toBe(3);
+    expect(context.settledChecks).toEqual(expect.any(Array));
   });
 
   it("HTTP: multipart POST /tasks/{taskId}/dictation zwraca tekst bez cache", async () => {

@@ -1683,6 +1683,11 @@ export class LearningSessionController {
     } catch (error) {
       if (generation !== this.#recordingGeneration || epoch !== this.#epoch || this.#screen.kind !== "learning") return;
       this.#recorder = null;
+      if (dictation) {
+        // nieudane zebranie nagrania (np. konwersja) to brak tekstu, nie błąd sesji
+        this.#setLearning({ recordingPhase: "idle", inputLevel: null, recordingNotice: messages.kid.dictationUnavailable, technicalRecordingIssue: true });
+        return;
+      }
       this.#setLearning({ recordingPhase: "idle", inputLevel: null });
       this.#handleFailure(error);
     }
@@ -1726,7 +1731,8 @@ export class LearningSessionController {
   #dictationLimitMs(screen: LearningScreen): number | null {
     const prompt = screen.task?.prompt;
     if (!prompt || (prompt.kind !== "lesson_open_answer" && prompt.kind !== "lesson_shorten")) return null;
-    if (!prompt.speechInput || screen.session.mode === "mock_test" || !this.#api.dictate) return null;
+    // Brak `dictate` w hoście nie przełącza na próbę mowy: `#dictate` zwróci wtedy „unavailable”.
+    if (!prompt.speechInput || screen.session.mode === "mock_test") return null;
     return prompt.speechInput.maxSeconds * 1000;
   }
 

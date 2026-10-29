@@ -328,7 +328,7 @@ export async function authorizeDisclosure(services: Services, input: DisclosureI
       if (reservations.length !== context.reservations.length || settledChecks.length !== context.settledChecks.length) {
         await tx
           .update(learningSessions)
-          .set({ context: { ...context, reservations, settledChecks } as unknown as Record<string, unknown> })
+          .set({ context: { ...session.context, reservations, settledChecks } as unknown as Record<string, unknown> })
           .where(eq(learningSessions.id, session.id));
       }
     }

@@ -134,6 +134,9 @@ export default function LessonSupervisionPanel({
 
   const formatDate = (iso: string | null): string => (iso ? new Date(iso).toLocaleDateString("pl-PL") : "—");
 
+  // Usługa rozpoznawania mowy jest wspólna dla zestawu — informacja raz, nie przy każdym celu.
+  const speechService = progress.find((objective) => objective.school?.speechService)?.school?.speechService ?? null;
+
   return (
     <section className="card" data-testid="supervision-panel" aria-labelledby="supervision-title">
       <h3 id="supervision-title">{messages.lessons.progressTitle}</h3>
@@ -167,6 +170,11 @@ export default function LessonSupervisionPanel({
         <p className="muted">{messages.lessons.loadChild}</p>
       ) : (
         <div data-testid="objective-progress">
+          {speechService && (
+            <p className="muted" data-testid="school-speech-service">
+              {messages.lessons.schoolSpeechService.replace("{service}", speechService)}
+            </p>
+          )}
           {progress.map((objective) => (
             <article className="card" key={objective.objectiveId} data-testid={`progress-${objective.objectiveId}`}>
               <div className="row space">
@@ -215,11 +223,6 @@ export default function LessonSupervisionPanel({
                           .replace("{edited}", String(objective.school.byInputMethod.speech.edited))}
                       </p>
                     </div>
-                  )}
-                  {objective.school.speechService && (
-                    <p className="muted" data-testid={`school-speech-service-${objective.objectiveId}`}>
-                      {messages.lessons.schoolSpeechService.replace("{service}", objective.school.speechService)}
-                    </p>
                   )}
                   <h4>{messages.lessons.schoolPrecisionTitle}</h4>
                   <p className="muted">

@@ -3174,6 +3174,32 @@ describe("LearningSessionController — dyktowanie odpowiedzi lekcji (Etap 3 szk
     expect(keyboard.answers[0]).not.toHaveProperty("inputMethod");
   });
 
+  it("host bez `dictate` nie wysyła nagrania lekcji jako próby ustnej — dziecko dostaje „nie udało się”", async () => {
+    vi.useFakeTimers();
+    try {
+      const state = baseState();
+      state.tasks = [openAnswer()];
+      const { dictate: _omitted, ...api } = makeApi(state);
+      const harness = makeHarness(state, { api: api as KidApi });
+      await harness.controller.start();
+      await harness.controller.selectProfile(state.profiles[0]!.childId);
+      harness.controller.setMicrophone(true);
+      await harness.controller.startLearning(DECK.deckId);
+      await harness.controller.prepareMicrophone();
+      await harness.controller.startRecording();
+      await vi.advanceTimersByTimeAsync(400);
+      await harness.controller.stopRecording();
+      expect(state.speechSubmissions).toEqual([]);
+      expect(harness.controller.getScreen()).toMatchObject({
+        recordingPhase: "idle",
+        recordingNotice: messages.kid.dictationUnavailable,
+        dictation: { taskId: "dict-1", status: "unavailable" },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("bez speechInput nagranie idzie zwykłą ścieżką próby ustnej, nie do dyktowania", async () => {
     vi.useFakeTimers();
     try {
