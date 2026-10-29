@@ -96,3 +96,56 @@ test("animated task switch and feedback dock keep the session flow working", asy
   await page.evaluate(() => { document.querySelector<HTMLElement>("[data-testid=kid-next]")?.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
   await expect(page.getByTestId("kid-summary-guidance")).toBeVisible();
 });
+
+// Full-width text options and the dock's scrolling feedback card: the answer
+// animation must not give any scroller on the page a transient range (the
+// tile pop and the heading entrance used to flash both scrollbars).
+test("text choice answer animates without a transient scroll range anywhere", async ({ page }) => {
+  await page.setViewportSize({ width: 812, height: 1262 });
+  const ids = { childId: "20000000-0000-4000-8000-000000000001", deckId: "20000000-0000-4000-8000-000000000002",
+    sessionId: "20000000-0000-4000-8000-000000000003", taskId: "20000000-0000-4000-8000-000000000004" };
+  const options = ["zmniejszaniem skali", "powiększaniem szczegółowości", "podziałem na warstwy"]
+    .map((text, index) => ({ id: `20000000-0000-4000-8000-00000000000${index + 7}`, text }));
+  await installKidUiFixture(page, {
+    profiles: [{ childId: ids.childId, displayName: "Szymon", avatarKey: "cat", recordingMode: "hold" }],
+    decks: [{ deckId: ids.deckId, title: "Mapy", itemCount: 3, independentlyRecalledCount: 0, testDate: null,
+      recommended: true, mockTestAvailable: false, activeSession: null }],
+    session: { mode: "training", sessionId: ids.sessionId, childId: ids.childId, deckId: ids.deckId,
+      deckVersionId: "20000000-0000-4000-8000-000000000005", policyId: "default", microphoneEnabled: false, state: "active",
+      taskBudget: 1, tasksIssued: 1, assessedTasksIssued: 1, startedAt: "2026-10-11T10:00:00.000Z", resumed: false },
+    tasks: [{ taskId: ids.taskId, sessionId: ids.sessionId, ordinal: 0, exerciseType: "reading", direction: "target_to_source",
+      state: "issued", prompt: { kind: "reading", text: "Generalizacja mapy wiąże się ze:", options }, remainingAssessed: 1 }],
+    attempts: [{ attemptId: "20000000-0000-4000-8000-000000000010", taskId: ids.taskId, state: "completed", modality: "choice",
+      feedback: { kind: "incorrect", correctText: "zmniejszaniem skali" }, taskState: "completed", stepId: null,
+      receivedAt: "2026-10-11T10:00:00.000Z", completedAt: "2026-10-11T10:00:01.000Z" }],
+  }, { reducedMotion: false });
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+  await expect(page.getByTestId("kid-option")).toHaveCount(3);
+  // Let the option entrance stagger settle; only the answer is sampled.
+  await expect.poll(() => page.getByTestId("kid-option").last().evaluate((el) => getComputedStyle(el.parentElement!).opacity)).toBe("1");
+
+  const samples = page.evaluate(() => new Promise<string[]>((resolve) => {
+    const hits = new Set<string>();
+    const started = performance.now();
+    let dockSeen: number | null = null;
+    const frame = () => {
+      if (dockSeen === null && document.querySelector("[data-testid='kid-feedback-dock']")) dockSeen = performance.now();
+      for (const el of document.querySelectorAll<HTMLElement>("body *")) {
+        const style = getComputedStyle(el);
+        const name = el.dataset.testid ?? el.className;
+        if (/auto|scroll/.test(style.overflowY) && el.scrollHeight > el.clientHeight + 1) hits.add(`${name} Y`);
+        if (/auto|scroll/.test(style.overflowX) && el.scrollWidth > el.clientWidth + 1) hits.add(`${name} X`);
+      }
+      const now = performance.now();
+      if (dockSeen === null && now - started > 10_000) resolve(["dock never appeared"]);
+      else if (dockSeen === null || now - dockSeen < 1000) requestAnimationFrame(frame);
+      else resolve([...hits]);
+    };
+    requestAnimationFrame(frame);
+  }));
+  await page.getByTestId("kid-option").nth(1).click();
+  await expect(page.getByTestId("kid-feedback-correct-answer")).toHaveText("zmniejszaniem skali");
+  expect(await samples, "no transient scroll range while the answer animates").toEqual([]);
+});
