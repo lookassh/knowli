@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { DEFAULT_SECTION, sectionFromPath, sectionPath, type ParentSection } from "./parent-routes";
+import { DEFAULT_SECTION, PARENT_ROOT, sectionFromPath, sectionPath, type ParentSection } from "./parent-routes";
 import type { EditorLeaveState } from "./useParentLeaveGuard";
 
 interface LeaveGuard {
@@ -38,6 +38,12 @@ export function useParentNavigation(guard: LeaveGuard) {
     show(initial ?? DEFAULT_SECTION);
 
     const onPopState = () => {
+      // Panel jest osobnym dokumentem: wchodzi się do niego zwykłym linkiem
+      // (Kid UI) i wychodzi przez `window.location`, więc w historii tego
+      // dokumentu są tylko wpisy sekcji. Wpis spoza /parent należałby do
+      // routera Next — nie przywracamy go własnym pushState (stan Next
+      // pochodziłby z obcego wpisu); wyjście z dokumentu chroni `beforeunload`.
+      if (!window.location.pathname.startsWith(PARENT_ROOT)) return;
       const target = sectionFromPath(window.location.pathname) ?? DEFAULT_SECTION;
       const editor = guardRef.current.current();
       if (!editor.dirty && !editor.busy) {
