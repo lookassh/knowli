@@ -253,3 +253,20 @@ test("zagadnienie szkolne przy 320 px: pola z przyciskami bez przepełnienia, us
   await page.getByTestId("dynamic-objective-remove-confirm").click();
   await expect(page.getByTestId("exercise-0")).toHaveCount(0);
 });
+
+test("ćwiczenie z gotowym audio: odsłuch w menu ⋯, po zmianie zapowiedź nowych mediów", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const withAudio = {
+    ...lesson,
+    draft: { ...lesson.draft, assets: [{ itemRevisionId: uuid(51), role: "target_audio", state: "approved", assetId: uuid(90) }] },
+  };
+  await openLesson(page, { data: withAudio as unknown as typeof lesson });
+  await expect(page.getByTestId("exercise-audio-state-0")).toBeVisible();
+  await page.getByTestId("exercise-menu-0").click();
+  await expect(page.getByTestId("exercise-play-0")).toBeEnabled();
+  await page.keyboard.press("Escape");
+  await page.getByTestId("exercise-edit-0").click();
+  await page.getByTestId("exercise-instruction-0").fill("Wybierz właściwą formę.");
+  await expect(page.getByTestId("exercise-0")).toContainText(messages.decks.changedMediaAfterSave);
+  await expect(page.getByTestId("exercise-audio-state-0")).toHaveCount(0);
+});

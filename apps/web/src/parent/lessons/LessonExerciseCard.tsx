@@ -44,6 +44,7 @@ export default function LessonExerciseCard({
   busy,
   open,
   changed,
+  hadAudio,
   errors,
   audio,
   calculation,
@@ -58,6 +59,8 @@ export default function LessonExerciseCard({
   busy: boolean;
   open: boolean;
   changed: boolean;
+  /** Zapisana wersja ćwiczenia ma audio — zmiana oznacza nowe media po zapisie. */
+  hadAudio: boolean;
   errors: string[] | undefined;
   audio: { state: string; assetId: string | null } | null;
   calculation: CalculationControls | null;
@@ -424,7 +427,7 @@ export default function LessonExerciseCard({
             )}
           </div>
           <Group justify="space-between" gap="xs">
-            {changed ? <Text size="sm" className="pp-editor-bar-note">{audio ? messages.decks.changedMediaAfterSave : messages.lessons.exerciseChanged}</Text> : <span />}
+            {changed ? <Text size="sm" className="pp-editor-bar-note">{hadAudio ? messages.decks.changedMediaAfterSave : messages.lessons.exerciseChanged}</Text> : <span />}
             {!forcedOpen && (
               <Button size="md" variant="subtle" data-testid={`exercise-collapse-${index}`} aria-expanded="true" onClick={() => toggle("close")}
                 aria-label={messages.lessons.collapseExerciseLabel.replace("{n}", number)}>

@@ -334,6 +334,8 @@ export default function LessonEditor({
 
   const removeDynamicObjective = (objectiveId: string) => {
     markDirty();
+    // błędy 400 są kluczowane indeksem — po usunięciu ćwiczeń zagadnienia wskazywałyby inne karty
+    setExerciseErrors({});
     setForm((current) =>
       current?.dynamicObjectives
         ? {
@@ -670,8 +672,10 @@ export default function LessonEditor({
     const base = baseSnapshot.current?.form.exercises.find((b) => b.clientKey === ex.clientKey);
     const unchanged = base !== undefined && !lessonExerciseChanged(ex, base);
     const changed = editable && !unchanged;
-    const revisionId = unchanged ? (active?.exercises.find((e) => e.id === ex.id)?.revisionId ?? "") : "";
-    const asset = active?.assets.find((a) => a.itemRevisionId === revisionId && a.role === "target_audio") ?? null;
+    // audio zapisanej wersji ćwiczenia: odtwarzane tylko bez zmian, a po zmianie zapowiada nowe media po zapisie
+    const baseRevisionId = active?.exercises.find((e) => e.id === ex.id)?.revisionId ?? "";
+    const savedAudio = active?.assets.find((a) => a.itemRevisionId === baseRevisionId && a.role === "target_audio") ?? null;
+    const asset = unchanged ? savedAudio : null;
     return (
       <LessonExerciseCard
         key={ex.clientKey}
@@ -681,6 +685,7 @@ export default function LessonEditor({
         busy={busy}
         open={openCards.has(ex.id ?? ex.clientKey) || changed || errors !== undefined}
         changed={changed}
+        hadAudio={savedAudio !== null}
         errors={errors}
         audio={asset ? { state: asset.state, assetId: asset.assetId ?? null } : null}
         calculation={calculationControls(ex)}
