@@ -37,6 +37,8 @@ export interface ExerciseProps {
   microphoneReady: boolean;
   inputLevel: number | null;
   recordingNotice: string | null;
+  /** Nagrywanie nie powiodło się technicznie lub nie wykryto mowy. */
+  technicalRecordingIssue?: boolean;
   recordingMode: RecordingModeDto;
   /** Mikrofon dostępny: sesja włączona i brak odmowy. */
   micAvailable: boolean;

@@ -25,6 +25,7 @@ export function ExerciseFrame({
   content,
   actions,
   secondaryActions,
+  actionLayout = "stacked",
   dock,
   feedbackLayout = "overlay",
   instructionAudio,
@@ -33,6 +34,7 @@ export function ExerciseFrame({
   content: ReactNode;
   actions?: ReactNode;
   secondaryActions?: ReactNode;
+  actionLayout?: "stacked" | "inline";
   dock?: ReactNode;
   /** Choice tasks use a real footer instead of reserving space for an overlay. */
   feedbackLayout?: "overlay" | "flow";
@@ -186,7 +188,7 @@ export function ExerciseFrame({
   }, [dockPad]);
 
   return (
-    <div className={`kid-exercise-frame ${classes.root}`} data-testid="kid-exercise" data-prompt-kind={task.prompt.kind} data-feedback-layout={feedbackLayout}>
+    <div className={`kid-exercise-frame ${classes.root}`} data-testid="kid-exercise" data-prompt-kind={task.prompt.kind} data-feedback-layout={feedbackLayout} data-action-layout={actionLayout}>
       <ExerciseInstruction instruction={presentation.instruction} icon={presentation.icon} audio={instructionAudio} />
       <div ref={materialRef} className={`kid-material ${classes.material}`} data-testid="kid-material">
         <div

@@ -183,8 +183,17 @@ async function completeSpokenRecall(page: Page): Promise<void> {
   await page.waitForTimeout(400);
   await record.click({ timeout: 15_000 });
   await expect(currentFeedback(page)).toBeVisible({ timeout: 30_000 });
-  if (await page.getByTestId("kid-feedback-skip").count()) {
-    await page.getByTestId("kid-feedback-skip").click({ timeout: 15_000 });
+  if (await page.getByTestId("kid-feedback-retry").isVisible() && !(await page.getByTestId("kid-technical-next").isVisible())) {
+    await page.getByTestId("kid-feedback-retry").click();
+    await expect(currentFeedback(page)).toHaveCount(0);
+    await record.click({ timeout: 15_000 });
+    await expect(record).toHaveAttribute("data-phase", "recording", { timeout: 10_000 });
+    await page.waitForTimeout(400);
+    await record.click({ timeout: 15_000 });
+    await expect(currentFeedback(page)).toBeVisible({ timeout: 30_000 });
+  }
+  if (await page.getByTestId("kid-technical-next").count()) {
+    await page.getByTestId("kid-technical-next").click({ timeout: 15_000 });
   }
   await page.getByTestId("kid-next").click({ timeout: 15_000 });
   await expect(currentFeedback(page)).toHaveCount(0);
@@ -621,9 +630,9 @@ for (const action of ["click", "Escape", "hold-touch", "hold-silent", "Space", "
       await page.waitForTimeout(500);
       expect(submissions).toBe(0);
     } else if (action === "skip") {
-      await page.getByTestId("kid-skip").click();
-      await expect(page.getByTestId("kid-feedback")).toBeVisible();
-      expect(submissions).toBe(1);
+      await expect(page.getByTestId("kid-skip")).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      expect(submissions).toBe(0);
     } else {
       if (action === "hold-silent") await button.tap();
       else { await button.focus(); await page.keyboard.press("Escape"); }
@@ -694,7 +703,8 @@ test("microphone denial is available on request and leaves the written learning 
 });
 
 test("speech feedback stays inline, explains fragments and exposes only the available actions", async ({ page }) => {
-  await page.emulateMedia({ colorScheme: "dark" });
+  // Geometry is measured at rest: reduced motion skips the dock entrance.
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
   await createLearningTask(page, `Wynik ${randomUUID().slice(0, 6)}`);
   const taskId = await page.locator("[data-task-id]").getAttribute("data-task-id");
   expect(taskId).toBeTruthy();
@@ -798,7 +808,8 @@ test("speech feedback stays inline, explains fragments and exposes only the avai
   expect(Math.abs(retryBounds!.width - (dockBounds!.width - 20)), "speech retry width fills the dock").toBeLessThanOrEqual(2);
   await expect(page.getByTestId("kid-feedback-dock")).toHaveAttribute("data-dock-kind", "speech");
 
-  for (const selector of ["[data-testid='kid-play-reference']", "[data-testid='kid-feedback-skip']"]) {
+  await expect(page.getByTestId("kid-technical-next")).toHaveCount(0);
+  for (const selector of ["[data-testid='kid-play-reference']"]) {
     const button = page.locator(selector);
     const ratio = await button.evaluate((element) => {
       const luminance = (value: string) => {
@@ -824,7 +835,7 @@ test("speech feedback stays inline, explains fragments and exposes only the avai
   await page.getByTestId("kid-submit").click();
   await expect(card).toBeVisible();
   await expect(page.getByTestId("kid-feedback-retry")).toHaveCount(0);
-  await expect(page.getByTestId("kid-feedback-skip")).toHaveCount(0);
+  await expect(page.getByTestId("kid-technical-next")).toHaveCount(0);
   await expect(page.getByTestId("kid-next")).toBeVisible();
   for (const width of [390, 768]) {
     await page.setViewportSize({ width, height: 844 });

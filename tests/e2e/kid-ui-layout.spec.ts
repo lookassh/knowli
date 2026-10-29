@@ -1,6 +1,7 @@
 import { expect as baseExpect, test } from "@playwright/test";
 import type { TaskDto } from "@learning/contracts";
 import { assertKidLayout, installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
+import { expectReadableOnDarkContainer } from "./helpers/contrast";
 
 const expect = baseExpect.configure({ timeout: 1_500 });
 
@@ -134,6 +135,11 @@ for (const colorScheme of ["light", "dark"] as const) {
     expect(colors.contrast).toBeGreaterThanOrEqual(4.5);
     await expect(page.getByTestId("kid-option").nth(0)).toHaveClass(/kid-option--correct/);
     await expect(page.getByTestId("kid-option").nth(1)).toHaveClass(/kid-option--wrong/);
+    // Outcome colors come from AnswerGrid's M3 containers, never a light card.
+    await expectReadableOnDarkContainer(page.getByTestId("kid-option").nth(0));
+    await expectReadableOnDarkContainer(page.getByTestId("kid-option").nth(1));
+    await expect(page.getByTestId("kid-option").nth(1).getByTestId("kid-outcome-wrong")).toHaveCount(1);
+    expect(await page.getByTestId("kid-option").nth(1).evaluate((element) => getComputedStyle(element, "::before").content)).toBe("none");
     await page.screenshot({ path: testInfo.outputPath(`feedback-${colorScheme}.png`) });
   });
 }
@@ -530,7 +536,7 @@ test("letter input preserves its value and focus when the viewport shrinks", asy
 test("written actions remain reachable at a 350px viewport height", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 350 });
   await openTask(page, taskFor("recall"));
-  for (const action of ["kid-submit", "kid-record", "kid-not-remember", "kid-skip"]) {
+  for (const action of ["kid-submit", "kid-record", "kid-not-remember"]) {
     if (action === "kid-record") continue; // This fixture disables the microphone.
     const button = page.getByTestId(action);
     await button.scrollIntoViewIfNeeded();
@@ -645,11 +651,26 @@ test(`${kind} choice keeps the highlighted option and readable success action in
   await page.goto("/");
   await page.getByTestId("kid-profile").click();
   await page.getByTestId("kid-deck").click();
+  if (kind === "listening") {
+    // Autoodtwarzanie w tym fixturze zawsze pada (media bez uiAudio wracają
+    // jako SVG): komunikat z akcjami ma rozpychać pasek statusu i nie może
+    // przykrywać celu dotykowego odpowiedzi (regresja dłuższego tekstu PR #145).
+    const notice = page.getByTestId("kid-task-audio-error");
+    await expect(notice).toBeVisible();
+    const noticeBox = await notice.boundingBox();
+    const materialBox = await page.getByTestId("kid-material").boundingBox();
+    expect(noticeBox).not.toBeNull();
+    expect(materialBox).not.toBeNull();
+    expect(noticeBox!.y + noticeBox!.height).toBeLessThanOrEqual(materialBox!.y + 1);
+  }
   const correct = page.getByTestId("kid-option").first();
   await correct.click();
   await expect(correct).toHaveClass(/kid-option--correct/);
   await expect(correct).toBeDisabled();
-  await expect.poll(() => correct.evaluate((element) => getComputedStyle(element, "::before").content)).toBe('"✓ "');
+  // One non-color outcome marker: AnswerGrid's ✓ badge, no legacy ::before copy.
+  await expect(correct.getByTestId("kid-outcome-correct")).toBeVisible();
+  expect(await correct.evaluate((element) => getComputedStyle(element, "::before").content)).toBe("none");
+  await expectReadableOnDarkContainer(correct);
   await expect(page.getByTestId("kid-feedback-dock")).toContainText("Świetnie");
   await expect(page.getByTestId("kid-next")).toBeInViewport();
 });

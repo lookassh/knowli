@@ -106,6 +106,14 @@
   container-type: size;
 }
 
+/* The correct-answer pop briefly scales an edge picture tile past the
+   material; clip that sideways instead of opening a horizontal scroll range.
+   Only picture grids: text exercises must never clip their content. */
+.root[data-prompt-kind="picture_listening"] .material,
+.root[data-prompt-kind="picture_recognition"] .material {
+  overflow-x: hidden;
+}
+
 .root[data-prompt-kind="picture_listening"] .materialContent {
   flex: none;
   height: 100%;
@@ -127,10 +135,16 @@
   height: clamp(112px, 38cqh, 220px);
 }
 
-/* With page scrolling there is no definite material height to contain. */
+/* With page scrolling there is no definite material height to contain,
+   and the material must stay unclipped (overflow visible). */
 :global(.kid-page[data-zoomed="true"]) .material,
 :global(.kid-page[data-viewport-very-short="true"]) .material {
   container-type: inline-size;
+}
+
+:global(.kid-page[data-zoomed="true"]) .root .material,
+:global(.kid-page[data-viewport-very-short="true"]) .root .material {
+  overflow: visible;
 }
 
 :global(.kid-page[data-zoomed="true"]) .root[data-prompt-kind="picture_listening"] .materialContent,
@@ -154,3 +168,16 @@
   bottom: 0;
   z-index: 3;
 }
+
+.root[data-action-layout="inline"] .actions,
+.root[data-action-layout="inline"] .dockAnchor {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  align-items: stretch;
+}
+.root[data-action-layout="inline"] .secondary > * { width: 100%; }
+.root[data-action-layout="inline"] .secondary :global(.kid-secondary-actions) { width: 100%; }
+.root[data-action-layout="inline"] .secondary :global(button) { width: 100%; min-height: 54px; }
+.root[data-action-layout="inline"] .dockAnchor { grid-column: 1 / -1; }
+
+.root[data-action-layout="inline"] .actions:has(.flowDock) { grid-template-columns: minmax(0, 1fr); }

@@ -167,9 +167,9 @@ describe("lesson exercise views", () => {
     fireEvent.change(input, { target: { value: "1 250 m" } });
     fireEvent.submit(input.closest("form")!);
     expect(props.handlers.onSubmitText).toHaveBeenLastCalledWith("1 250 m");
-    fireEvent.click(screen.getByTestId("kid-skip"));
+    // Uproszczone akcje sesji (#145): w zadaniu zostaje tylko „Nie pamiętam”.
+    expect(screen.queryByTestId("kid-skip")).toBeNull();
     fireEvent.click(screen.getByTestId("kid-not-remember"));
-    expect(props.handlers.onSkip).toHaveBeenCalledOnce();
     expect(props.handlers.onNotRemember).toHaveBeenCalledOnce();
     unmount();
 

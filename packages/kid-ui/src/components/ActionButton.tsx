@@ -1,6 +1,6 @@
 import type { ButtonHTMLAttributes, ReactElement, Ref } from "react";
-import { m } from "motion/react";
-import { kidSpringSnappy, kidTapScale } from "../motion/kid-motion";
+import { m, useReducedMotion } from "motion/react";
+import { kidIdleBreath, kidIdleBreathTransition, kidSpringSnappy, kidTapScale } from "../motion/kid-motion";
 import classes from "./answer-controls.module.css";
 
 export type ActionButtonVariant = "filled" | "tonal" | "outlined" | "text";
@@ -13,6 +13,8 @@ export interface ActionButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonE
   size?: "sm" | "md" | "lg";
   radius?: number | string;
   fullWidth?: boolean;
+  /** Main next step: after a pause the button "breathes" to invite a tap. */
+  idleNudge?: boolean;
   ref?: Ref<HTMLButtonElement>;
 }
 
@@ -23,12 +25,15 @@ export function ActionButton({
   size = "lg",
   radius = "var(--kid-shape-xl)",
   fullWidth = true,
+  idleNudge = false,
   ref,
   className,
   style,
   ...props
 }: ActionButtonProps): ReactElement {
   const resolvedVariant: ActionButtonVariant = variant ?? (priority === "secondary" ? "tonal" : "filled");
+  const reduceMotion = useReducedMotion();
+  const breathe = idleNudge && !props.disabled && reduceMotion !== true;
   return (
     <m.button
       {...props}
@@ -40,6 +45,8 @@ export function ActionButton({
       data-full-width={fullWidth}
       style={{ borderRadius: radius, ...style }}
       className={["kid-action", classes.action, className].filter(Boolean).join(" ")}
+      data-idle-nudge={breathe || undefined}
+      animate={breathe ? { ...kidIdleBreath, transition: kidIdleBreathTransition() } : { scale: 1 }}
       whileTap={props.disabled ? undefined : { scale: kidTapScale }}
       transition={kidSpringSnappy}
     />

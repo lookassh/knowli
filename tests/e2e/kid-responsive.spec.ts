@@ -192,7 +192,7 @@ test("recall keeps the exact draft and focus through viewport changes", async ({
   await expect(input).toHaveValue("ca");
   await page.getByTestId("kid-submit").scrollIntoViewIfNeeded();
   await expect(page.getByTestId("kid-submit")).toBeInViewport();
-  await expect(page.getByTestId("kid-skip")).toBeAttached();
+  await expect(page.getByTestId("kid-skip")).toHaveCount(0);
 });
 
 test("deck flow stays within the viewport matrix and keeps all decks reachable", async ({ page }, testInfo) => {
@@ -316,14 +316,20 @@ test("Material window classes keep written answers reachable with 48px targets",
       "[data-testid='kid-input']",
       "[data-testid='kid-submit']",
       "[data-testid='kid-not-remember']",
-      "[data-testid='kid-skip']",
       "[data-testid='kid-end']",
     ]);
-    for (const testId of ["kid-input", "kid-submit", "kid-not-remember", "kid-skip", "kid-end"]) {
+    for (const testId of ["kid-input", "kid-submit", "kid-not-remember", "kid-end"]) {
       const control = page.getByTestId(testId);
       await control.scrollIntoViewIfNeeded();
       await expect(control, `${testId}: ${viewport.name}`).toBeInViewport();
     }
+    const submitBox = await page.getByTestId("kid-submit").boundingBox();
+    const rememberBox = await page.getByTestId("kid-not-remember").boundingBox();
+    expect(submitBox).not.toBeNull();
+    expect(rememberBox).not.toBeNull();
+    expect(Math.abs(submitBox!.y - rememberBox!.y)).toBeLessThanOrEqual(2);
+    expect(submitBox!.width).toBeGreaterThan(rememberBox!.width);
+    expect(submitBox!.height).toBeGreaterThanOrEqual(54);
     await expect(page.getByTestId("kid-input")).toHaveValue("cat");
     const progressClipped = await page.getByTestId("kid-remaining").evaluate((element) =>
       element.scrollWidth > element.clientWidth + 1 || element.scrollHeight > element.clientHeight + 1);

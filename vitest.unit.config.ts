@@ -13,7 +13,7 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["packages/*/src/**/*.test.ts", "packages/*/src/**/*.test.tsx", "apps/*/src/**/*.test.ts", "apps/*/src/**/*.test.tsx", "tests/test-run-config.test.ts", "tests/integration-buckets.test.ts", "tests/kid-tokens.test.ts", "tests/kid-no-mantine.test.ts", "tests/e2e/spec-projects.test.ts"],
+    include: ["packages/*/src/**/*.test.ts", "packages/*/src/**/*.test.tsx", "apps/*/src/**/*.test.ts", "apps/*/src/**/*.test.tsx", "tests/test-run-config.test.ts", "tests/integration-buckets.test.ts", "tests/kid-tokens.test.ts", "tests/kid-no-mantine.test.ts", "tests/kid-design-tokens.test.ts", "tests/e2e/spec-projects.test.ts"],
     passWithNoTests: true,
     environment: "node",
   },

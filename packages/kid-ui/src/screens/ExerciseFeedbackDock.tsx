@@ -1,6 +1,7 @@
 import type { ReactElement, ReactNode } from "react";
 import { m, useIsPresent } from "motion/react";
-import { kidDockExit, kidDockExitTransition, kidSpringGentle } from "../motion/kid-motion";
+import { kidDockAnimate, kidDockExit, kidDockExitTransition, kidDockInitial, kidDockOrigin, kidSpringGentle } from "../motion/kid-motion";
+import { BurstParticles } from "../components/CelebrationBurst";
 import classes from "./ExerciseFeedbackDock.module.css";
 
 export type FeedbackDockTone = "correct" | "incorrect" | "partial" | "technical" | "neutral";
@@ -10,6 +11,8 @@ export type FeedbackDockTone = "correct" | "incorrect" | "partial" | "technical"
  * nie podmienia bodźca ani odpowiedzi. Treść i akcje pochodzą z istniejących
  * kart feedbacku; dock odpowiada wyłącznie za prezentację i jedną akcję główną.
  * Animacja wejścia: Motion (sprężyna, tylko transform i opacity).
+ * `celebrate` dodaje mały wybuch gwiazdek z górnej krawędzi — dla poprawnych
+ * odpowiedzi bez kafla wyboru (pismo, mowa), który ma własny wybuch.
  */
 export function ExerciseFeedbackDock({
   tone,
@@ -18,6 +21,7 @@ export function ExerciseFeedbackDock({
   children,
   primary,
   secondary,
+  celebrate = false,
 }: {
   tone: FeedbackDockTone;
   kind?: "answer" | "speech";
@@ -25,16 +29,17 @@ export function ExerciseFeedbackDock({
   children: ReactNode;
   primary: ReactNode;
   secondary?: ReactNode;
+  celebrate?: boolean;
 }): ReactElement {
   const isPresent = useIsPresent();
   return (
     <m.div
-      initial={{ opacity: 0, y: 24 }}
-      animate={{ opacity: 1, y: 0 }}
+      initial={kidDockInitial}
+      animate={kidDockAnimate}
       exit={{ ...kidDockExit, transition: kidDockExitTransition }}
       transition={kidSpringGentle}
       inert={!isPresent}
-      style={{ pointerEvents: isPresent ? "auto" : "none" }}
+      style={{ pointerEvents: isPresent ? "auto" : "none", transformOrigin: kidDockOrigin }}
       data-testid="kid-feedback-dock"
       data-tone={tone}
       data-dock-kind={kind}
@@ -47,6 +52,11 @@ export function ExerciseFeedbackDock({
       <div className={classes.actions}>
         {primary}
       </div>
+      {celebrate && (
+        <span className={classes.burstAnchor} aria-hidden="true">
+          <BurstParticles size="sm" transient testId="kid-answer-burst" />
+        </span>
+      )}
       {secondary !== undefined && secondary !== null && (
         <div className={classes.secondary}>
           {secondary}

@@ -11,7 +11,7 @@ import { MASTERY_STAR_MAX, starsForFraction } from "./stars";
 import { MeaningVisualView } from "../visuals/MeaningVisualView";
 import { useAutoFocus } from "./useAutoFocus";
 import { m } from "motion/react";
-import { kidCoverHoverScale, kidSpringGentle, kidStaggerDelay } from "../motion/kid-motion";
+import { kidCoverHoverScale, kidEntranceAnimate, kidEntranceInitial, kidSpringGentle, kidStaggerDelay } from "../motion/kid-motion";
 
 function wordCount(count: number): string {
   const lastTwoDigits = count % 100;
@@ -139,7 +139,7 @@ export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive, but
   const [canHover] = useState(() => typeof window !== "undefined" && typeof window.matchMedia === "function"
     && window.matchMedia("(hover: hover) and (pointer: fine)").matches);
   return (
-    <m.li initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -3 }} transition={{ ...kidSpringGentle, delay: kidStaggerDelay(index) }}>
+    <m.li initial={kidEntranceInitial} animate={kidEntranceAnimate} whileHover={{ y: -4 }} transition={{ ...kidSpringGentle, delay: kidStaggerDelay(index) }}>
       <article className="kid-deck-card" data-testid="kid-deck-card" data-deck-id={deck.deckId} data-kind={deck.kind ?? "vocabulary"}>
         <div className="kid-deck-card__details">
           {deck.coverAssetId

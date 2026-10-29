@@ -55,7 +55,7 @@ test("calculation keeps the Polish prompt, result field and actions inside the f
     expect(material.x, `material left at ${viewport.width}x${viewport.height}`).toBeGreaterThanOrEqual(frame.x - 1);
     expect(material.x + material.width).toBeLessThanOrEqual(frame.x + frame.width + 1);
 
-    for (const testId of ["kid-lesson-source", "kid-lesson-input", "kid-lesson-check", "kid-skip", "kid-not-remember"]) {
+    for (const testId of ["kid-lesson-source", "kid-lesson-input", "kid-lesson-check", "kid-not-remember"]) {
       const element = page.getByTestId(testId);
       await element.scrollIntoViewIfNeeded();
       const bounds = (await element.boundingBox())!;

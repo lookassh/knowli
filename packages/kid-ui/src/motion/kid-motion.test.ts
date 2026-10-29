@@ -1,6 +1,23 @@
 import { describe, expect, it } from "vitest";
 import {
+  kidBurstSizes,
   kidCelebrationTransition,
+  kidDockAnimate,
+  kidDockInitial,
+  kidIdleBreath,
+  kidIdleBreathTransition,
+  kidScreenEnter,
+  kidScreenExitTarget,
+  kidScreenInitial,
+  kidSoundRingAnimate,
+  kidSpringBouncy,
+  kidSpringGentle,
+  kidSpringSnappy,
+  kidStreakJump,
+  kidTaskEnter,
+  kidTaskExitTarget,
+  kidTaskInitial,
+  kidWrongIconAnimate,
   kidDockExit,
   kidEntranceAnimate,
   kidEntranceInitial,
@@ -30,7 +47,23 @@ const ANIMATED_VALUES = [
   kidLetterPop,
   kidDockExit,
   kidLoadingDotAnimate,
+  kidWrongIconAnimate,
+  kidStreakJump,
+  kidTaskInitial,
+  kidTaskEnter,
+  kidTaskExitTarget,
+  kidScreenInitial,
+  kidScreenEnter,
+  kidScreenExitTarget,
+  kidDockInitial,
+  kidDockAnimate,
+  kidIdleBreath,
+  kidSoundRingAnimate,
 ];
+
+function dampingRatio(spring: { stiffness?: number; damping?: number }): number {
+  return spring.damping! / (2 * Math.sqrt(spring.stiffness!));
+}
 
 describe("kid motion tokens", () => {
   it("animates only transform and opacity, never layout geometry", () => {
@@ -39,6 +72,26 @@ describe("kid motion tokens", () => {
         expect(["opacity", "scale", "x", "y", "rotate"]).toContain(key);
       }
     }
+  });
+
+  it("lets every spring overshoot a little, rewards the most", () => {
+    for (const spring of [kidSpringSnappy, kidSpringGentle]) {
+      expect(dampingRatio(spring)).toBeGreaterThan(0.45);
+      expect(dampingRatio(spring)).toBeLessThan(0.65);
+    }
+    expect(dampingRatio(kidSpringBouncy)).toBeLessThan(dampingRatio(kidSpringGentle));
+  });
+
+  it("keeps idle nudges mostly at rest so the button is easy to hit", () => {
+    const breath = kidIdleBreathTransition();
+    expect(breath.repeat).toBe(Infinity);
+    expect(breath.repeatDelay!).toBeGreaterThan(breath.duration!);
+    expect(breath.delay!).toBeGreaterThanOrEqual(2);
+  });
+
+  it("keeps the answer burst smaller than the summary burst", () => {
+    expect(kidBurstSizes.sm.count).toBeLessThan(kidBurstSizes.lg.count);
+    expect(kidBurstSizes.sm.distance).toBeLessThan(kidBurstSizes.lg.distance);
   });
 
   it("caps stagger delays so long lists never lag behind the child", () => {

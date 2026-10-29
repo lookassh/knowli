@@ -9,10 +9,10 @@ import { ActionButton } from "../components/ActionButton";
 /**
  * Ćwiczenie wymowy (SPEC §12.6): dziecko widzi angielskie słowo, może
  * usłyszeć wzorzec (oczekiwana część nauki — §13.2), potem je wypowiada.
- * Bez działającego mikrofonu pozostaje komunikat i „Pomiń” — bez oceny.
+ * Przy problemie z mikrofonem dostępna jest neutralna kontynuacja bez oceny.
  */
 export function SpeechView(props: ExerciseProps) {
-  const { task, busy, recordingPhase, automaticRecording, microphoneReady, inputLevel, recordingNotice, recordingMode, micAvailable, mediaUrl, dock, handlers } = props;
+  const { task, busy, recordingPhase, automaticRecording, microphoneReady, inputLevel, recordingNotice, technicalRecordingIssue, recordingMode, micAvailable, mediaUrl, dock, handlers } = props;
   if (task.prompt.kind !== "speech") {
     return null;
   }
@@ -73,11 +73,11 @@ export function SpeechView(props: ExerciseProps) {
           </ActionButton>
         )}
       </div>}
-      secondaryActions={<div className="kid-secondary-actions">
+      secondaryActions={(!micAvailable || technicalRecordingIssue) && <div className="kid-secondary-actions">
         {/* świadome pominięcie bez oceny — także po awarii technicznej próby,
             żeby dziecko nie utknęło na jednym słowie (SPEC §15.3) */}
-        <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-skip" disabled={busy || (recordingPhase !== "idle" && !automaticRecording)} onClick={handlers.onSkip}>
-          {messages.kid.skip}
+        <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-technical-next" disabled={busy || (recordingPhase !== "idle" && !automaticRecording)} onClick={handlers.onSkip}>
+          {messages.kid.feedbackNext}
         </ActionButton>
       </div>}
     />

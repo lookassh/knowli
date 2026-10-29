@@ -76,7 +76,7 @@ test("mówione instrukcje prowadzą od profilu przez ćwiczenia i feedback do po
   };
   fixture.tasks = [fixture.tasks[0]!, listening, recall, null];
   fixture.attempts = [attempts[0], skipAttempt];
-  fixture.session.microphoneEnabled = true;
+  fixture.session.microphoneEnabled = false;
   const keys = ["profile_select", "deck_select", "exposure", "listening", "speech", "recall", "correct", "partial", "incorrect", "unevaluated", "skip", "dont_remember", "end", "retry", "mic_unavailable", "audio_unavailable", "summary"] as const;
   const audioIds = Object.fromEntries(keys.map((key, index) => [key, `20000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`]));
   fixture.uiAudio = { ready: true, assets: audioIds };
@@ -131,7 +131,7 @@ test("mówione instrukcje prowadzą od profilu przez ćwiczenia i feedback do po
   await page.getByTestId("kid-guidance-play").click();
   await expect.poll(() => requested).toContain(audioIds.recall);
   await waitForCompletedPlayback();
-  await page.getByTestId("kid-skip").click();
+  await page.getByTestId("kid-technical-next").click();
   await page.getByTestId("kid-guidance-play").click();
   await expect.poll(() => requested).toContain(audioIds.skip);
   await waitForCompletedPlayback();
@@ -153,12 +153,13 @@ test("awaria pliku dźwiękowego pokazuje ponowienie i pozwala zakończyć sesj�
   await page.getByTestId("kid-profile").click();
   await page.getByTestId("kid-deck").first().click();
   await expect(page.getByTestId("kid-task-audio-error")).toContainText("Nagranie jest chwilowo niedostępne");
+  await expect(page.getByTestId("kid-task-audio-error")).toContainText("Spróbuj ponownie lub zakończ naukę.");
   await expect(page.getByTestId("kid-task-audio-retry")).toBeVisible();
   await page.getByTestId("kid-task-audio-error").getByText("Koniec").click();
   await expect(page.getByTestId("kid-summary")).toBeVisible();
 });
 
-test("mówione ćwiczenie obrazkowe można świadomie pominąć bez mikrofonu", async ({ page }) => {
+test("odmowa mikrofonu pozwala zakończyć obrazkowe ćwiczenie mowy bez oceny", async ({ page }) => {
   const fixture = pictureVocabularyFixture();
   const source = fixture.tasks[0];
   if (!source || source.prompt.kind !== "picture_exposure") throw new Error("picture exposure fixture missing");
@@ -175,19 +176,15 @@ test("mówione ćwiczenie obrazkowe można świadomie pominąć bez mikrofonu", 
   }, null];
   fixture.attempts = [{ ...attempt, taskId, modality: "skip" }];
   // WR-02: uprawnienie "prompt" (nienadane) blokuje auto-start próby — zgodnie
-  // z intencją testu dziecko jest na tym ekranie bez działającego mikrofonu
-  // i świadomie używa „Pomiń”, bez żadnego nagrywania.
+  // z intencją testu dziecko dopiero świadomie wywołuje próbę dostępu.
   await page.addInitScript(() => {
     let calls = 0;
     (window as unknown as { __gumCalls: () => number }).__gumCalls = () => calls;
-    const devices = navigator.mediaDevices;
-    const original = devices?.getUserMedia?.bind(devices);
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
       value: {
-        getUserMedia: async (constraints: MediaStreamConstraints) => {
+        getUserMedia: async () => {
           calls += 1;
-          if (original) return original(constraints);
           throw new DOMException("Unexpected getUserMedia call", "NotAllowedError");
         },
       },
@@ -209,14 +206,59 @@ test("mówione ćwiczenie obrazkowe można świadomie pominąć bez mikrofonu", 
   await page.waitForTimeout(1_500);
   expect(await page.evaluate(() => (window as unknown as { __gumCalls: () => number }).__gumCalls())).toBe(0);
   await expect(page.getByTestId("kid-record")).toHaveAttribute("data-phase", "idle");
-  // hint uprawnień w slocie nagrywania jest widoczny PRZED pominięciem; po
-  // „Pomiń” LearnScreen podmienia cały widok ćwiczenia na feedback, więc
-  // asercja elementów ćwiczenia po kliknięciu byłaby wyścigiem z odpowiedzią
   await expect(page.getByTestId("kid-record-status")).toBeVisible();
-  await page.getByTestId("kid-skip").click();
-  // deterministyczna asercja przejścia na widok feedbacku (z #110); „Dalej”
-  // pojawia się w tym widoku — klik sam oczekuje na podmianę
-  await expect(page.getByTestId("kid-feedback")).toBeVisible();
-  await page.getByTestId("kid-next").click();
+  await expect(page.getByTestId("kid-skip")).toHaveCount(0);
+  await page.getByTestId("kid-record").click();
   await expect(page.getByTestId("kid-summary")).toBeVisible();
+});
+
+test("dwa komunikaty błędu audio nie odcinają akcji ćwiczenia mowy na niskim ekranie", async ({ page }) => {
+  // 480 px celowo: progu trybu very-short (<=479) nie osiąga, a dwa długie
+  // komunikaty (instrukcja + nagranie zadania) zjadają wtedy budżet pionowy
+  // ramy — akcje mają pozostać w pełni osiągalne przewijaniem (CodeRabbit).
+  await page.setViewportSize({ width: 360, height: 480 });
+  const fixture = pictureVocabularyFixture();
+  const source = fixture.tasks[0];
+  if (!source || source.prompt.kind !== "picture_exposure") throw new Error("picture exposure fixture missing");
+  const taskId = "10000000-0000-4000-8000-000000000016";
+  const audioAssetId = "10000000-0000-4000-8000-000000000014";
+  const attempt = fixture.attempts?.[0];
+  if (!attempt) throw new Error("skip attempt fixture missing");
+  fixture.session.microphoneEnabled = false;
+  fixture.tasks = [{
+    ...source,
+    taskId,
+    exerciseType: "speech",
+    prompt: { kind: "picture_speech", audioAssetId, visual: source.prompt.visual },
+  }, null];
+  fixture.attempts = [{ ...attempt, taskId, modality: "skip" }];
+  fixture.disclosure = { taskId, stepId: "audio-disclosure-step", kind: "audio", reveal: null, audioAssetId };
+  await installKidUiFixture(page, fixture);
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").first().click();
+  await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-prompt-kind", "picture_speech");
+
+  // nagranie zadania: media bez uiAudio wracają jako SVG, więc dekodowanie pada
+  await page.getByTestId("kid-play").click();
+  await expect(page.getByTestId("kid-task-audio-error")).toBeVisible();
+  // instrukcja głosowa: katalog ui-audio niegotowy → guidanceError
+  await page.getByTestId("kid-guidance-play").click();
+  await expect(page.getByTestId("kid-guidance-error")).toBeVisible();
+
+  // Dwa komunikaty zjadają ~połowę ekranu, więc materiał się kurczy. Rama
+  // ćwiczenia ma być wtedy przewijalna dla gestu (overflow-y: auto), a nie
+  // przycinać stopki akcji; programowy scroll sam w sobie przerzucałby także
+  // overflow: hidden i nie dowodziłby osiągalności dla dziecka.
+  const frameScrollable = await page.getByTestId("kid-exercise").evaluate((element) => getComputedStyle(element).overflowY);
+  expect(frameScrollable).not.toBe("hidden");
+
+  for (const testId of ["kid-play", "kid-technical-next"]) {
+    const button = page.getByTestId(testId);
+    await button.scrollIntoViewIfNeeded();
+    const box = await button.boundingBox();
+    expect(box, testId).not.toBeNull();
+    expect(box!.y + box!.height, `${testId} mieści się na ekranie`).toBeLessThanOrEqual(480);
+    expect(box!.height, `${testId} zachowuje pełny cel dotykowy`).toBeGreaterThanOrEqual(48);
+  }
 });

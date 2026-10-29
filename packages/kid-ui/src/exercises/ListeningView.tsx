@@ -53,7 +53,6 @@ export function ListeningView({ task, busy, optionOutcomes, dock, handlers, mock
       dock={dock}
       secondaryActions={mockTest && <div className="kid-secondary-actions">
         <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-not-remember" disabled={busy} onClick={handlers.onNotRemember}>{messages.kid.mockTestNotRemember}</ActionButton>
-        <ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-skip" disabled={busy} onClick={handlers.onSkip}>{messages.kid.skip}</ActionButton>
       </div>}
     />
   );

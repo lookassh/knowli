@@ -50,6 +50,7 @@ export function LessonSentenceView({ task, busy, dock, handlers }: ExerciseProps
 
   return (
     <ExerciseFrame
+      actionLayout="inline"
       dock={dock}
       task={task}
       content={(
@@ -110,9 +111,6 @@ export function LessonSentenceView({ task, busy, dock, handlers }: ExerciseProps
       secondaryActions={<div className="kid-secondary-actions">
         <ActionButton priority="secondary" size="sm" fullWidth={false} type="button" data-testid="kid-not-remember" disabled={disabled} onClick={handlers.onNotRemember}>
           {messages.kid.notRemember}
-        </ActionButton>
-        <ActionButton priority="secondary" size="sm" fullWidth={false} type="button" data-testid="kid-skip" disabled={disabled} onClick={handlers.onSkip}>
-          {messages.kid.skip}
         </ActionButton>
       </div>}
     />
