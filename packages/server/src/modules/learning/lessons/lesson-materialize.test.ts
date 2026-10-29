@@ -358,6 +358,15 @@ describe("materializeExercise — pary i grupy (design szkoły §10)", () => {
     }
   });
 
+  it("kolejności nie da się wyliczyć z publicznego taskId: domyślnie ziarno ma losowy składnik", () => {
+    const orders = new Set<string>();
+    for (let i = 0; i < 12; i++) {
+      const prompt = match("ten-sam-task").prompt as { left: { text: string }[]; right: { text: string }[] };
+      orders.add(JSON.stringify([prompt.left.map((item) => item.text), prompt.right.map((item) => item.text)]));
+    }
+    expect(orders.size).toBeGreaterThan(1);
+  });
+
   it("lesson_group: elementy nie startują ułożone grupami, a klucz przypisuje je do UUID grup", () => {
     for (let i = 0; i < 60; i++) {
       const task = group(`group-${i}`);

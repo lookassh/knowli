@@ -150,9 +150,13 @@ export interface MaterializeExerciseInput {
 /**
  * Składa publiczny prompt (bez odpowiedzi, wariantów, focus, celu, kategorii),
  * prywatny `answer_key` i listę ekspozycji dla ćwiczenia. Czysta poza
- * `randomUUID` (nieznaczące id opcji/klocków/segmentów) i zdeterminowanym
- * tasowaniem na ziarnie `taskId`. `mockTest` wycina podpowiedź luki (bez
- * ujawnienia odpowiedzi w kartkówce).
+ * `randomUUID` (nieznaczące id opcji/klocków/segmentów) i tasowaniem.
+ * Ziarno tasowania nie może dać się wyliczyć z publicznego `taskId` — inaczej
+ * klient odwróciłby tasowanie i odczytał kolejność z payloadu (kolejność
+ * „Ułóż”, pary, grupy, pozycję poprawnej opcji); domyślnie zawiera losowy
+ * składnik, a testy mogą podać własne `shuffleSeed`. Prompt zapisuje się przy
+ * wydaniu, więc nie musi być odtwarzalny. `mockTest` wycina podpowiedź luki
+ * (bez ujawnienia odpowiedzi w kartkówce).
  */
 export function materializeExercise(
   plan: MaterializeExerciseInput,
@@ -160,9 +164,10 @@ export function materializeExercise(
   exercise: LoadedExercise,
   topic: LessonTopic,
   subject: SubjectModule,
-  options: { mockTest?: boolean; speechInput?: SpeechInputDto } = {},
+  options: { mockTest?: boolean; speechInput?: SpeechInputDto; shuffleSeed?: string } = {},
 ): MaterializedLessonTask {
   const payload = exercise.payload;
+  const shuffleSeed = options.shuffleSeed ?? `${taskId}:${randomUUID()}`;
   const objective = topic.objectives.find((o) => o.id === payload.objectiveId);
   const instructionPl = payload.instructionPl ?? transformInstruction(topic, payload) ?? objective?.titlePl ?? "";
   const mockTest = options.mockTest ?? false;
@@ -227,7 +232,7 @@ export function materializeExercise(
       // `correctOption` to ID opcji ŹRÓDŁOWEJ (kontrakt pool-validation:
       // `options.some(o => o.id === correctOption)`). Nadajemy nowe UUID, więc
       // poprawność wyznaczamy po ID źródłowym PRZED podmianą, nie po tekście.
-      const options = seededShuffle((payload.options ?? []).map((o) => ({ id: randomUUID(), text: o.text, correct: o.id === payload.correctOption })), taskId);
+      const options = seededShuffle((payload.options ?? []).map((o) => ({ id: randomUUID(), text: o.text, correct: o.id === payload.correctOption })), shuffleSeed);
       const correct = options.find((o) => o.correct);
       const prompt: TaskPrompt = {
         kind: "lesson_choice",
@@ -245,7 +250,7 @@ export function materializeExercise(
     }
     case "lesson_short_answer": {
       // Jak w lesson_choice: `correctOption` = ID opcji źródłowej, nie tekst.
-      const options = seededShuffle((payload.options ?? []).map((o) => ({ id: randomUUID(), text: o.text, correct: o.id === payload.correctOption })), taskId);
+      const options = seededShuffle((payload.options ?? []).map((o) => ({ id: randomUUID(), text: o.text, correct: o.id === payload.correctOption })), shuffleSeed);
       const correct = options.find((o) => o.correct);
       const prompt: TaskPrompt = {
         kind: "lesson_short_answer",
@@ -262,7 +267,8 @@ export function materializeExercise(
     case "lesson_order": {
       const canonical = (payload.items ?? []).map((item) => ({ id: randomUUID(), text: item.text }));
       // bloki nigdy nie startują w kolejności kanonicznej (już ułożone)
-      const shuffled = shuffleUnsolved(canonical, taskId, (arranged) => arranged.every((item, i) => item.id === canonical[i]!.id));
+      // porównanie po tekście: zamiana dwóch identycznych klocków też wygląda na ułożone zdanie
+      const shuffled = shuffleUnsolved(canonical, shuffleSeed, (arranged) => arranged.every((item, i) => item.text === canonical[i]!.text));
       const prompt: TaskPrompt = { kind: "lesson_order", instructionPl, items: shuffled.map((item) => ({ id: item.id, text: item.text })) };
       return {
         ...common,
@@ -300,7 +306,7 @@ export function materializeExercise(
     }
     case "lesson_keywords": {
       const keyIds = new Set(payload.keyOptionIds ?? []);
-      const options = seededShuffle((payload.keywordOptions ?? []).map((o) => ({ id: randomUUID(), text: o.text, key: keyIds.has(o.id) })), taskId);
+      const options = seededShuffle((payload.keywordOptions ?? []).map((o) => ({ id: randomUUID(), text: o.text, key: keyIds.has(o.id) })), shuffleSeed);
       const correctOptionIds = options.filter((o) => o.key).map((o) => o.id);
       // Dziecko wybiera od 2 do liczby pojęć kluczowych (2–3): wybór ponad nią
       // zawsze zawierałby dystraktor.
@@ -326,8 +332,8 @@ export function materializeExercise(
       const pairs = (payload.pairs ?? []).map((pair) => ({ left: { id: randomUUID(), text: pair.left }, right: { id: randomUUID(), text: pair.right } }));
       const extras = (payload.extraRight ?? []).map((text) => ({ id: randomUUID(), text }));
       const partnerOf = new Map(pairs.map((pair) => [pair.left.id, pair.right.id] as const));
-      const left = seededShuffle(pairs.map((pair) => pair.left), taskId);
-      const right = shuffleUnsolved([...pairs.map((pair) => pair.right), ...extras], `${taskId}:right`,
+      const left = seededShuffle(pairs.map((pair) => pair.left), shuffleSeed);
+      const right = shuffleUnsolved([...pairs.map((pair) => pair.right), ...extras], `${shuffleSeed}:right`,
         (arranged) => left.every((item, i) => arranged[i]?.id === partnerOf.get(item.id)));
       const prompt: TaskPrompt = { kind: "lesson_match", instructionPl: payload.instructionPl ?? messages.kid.lessonMatchInstruction, left, right };
       return {
@@ -351,7 +357,7 @@ export function materializeExercise(
       const groupIdOf = new Map(groups.map((group) => [group.sourceId, group.id] as const));
       const canonical = (payload.groupItems ?? []).map((item) => ({ id: randomUUID(), text: item.text, groupId: groupIdOf.get(item.groupId) ?? "" }));
       const rank = new Map<string, number>(groups.map((group, index) => [group.id, index] as const));
-      const items = shuffleUnsolved(canonical, taskId,
+      const items = shuffleUnsolved(canonical, shuffleSeed,
         (arranged) => arranged.every((item, i) => i === 0 || (rank.get(arranged[i - 1]!.groupId) ?? 0) <= (rank.get(item.groupId) ?? 0)));
       const prompt: TaskPrompt = {
         kind: "lesson_group",

@@ -56,21 +56,21 @@ export function LessonGroupView({ task, busy, dock, handlers }: ExerciseProps) {
                   >
                     {group.text}
                   </LessonBlockButton>
+                  {members.length === 0 && <span className="kid-hint">{messages.kid.lessonGroupEmpty}</span>}
                   <div className="kid-lesson-group__members" role="list" aria-label={group.text}>
-                    {members.length === 0 && <span className="kid-hint">{messages.kid.lessonGroupEmpty}</span>}
                     {members.map((item) => (
-                      <LessonBlockButton
-                        key={item.id}
-                        type="button"
-                        role="listitem"
-                        className="kid-lesson-block kid-lesson-block--placed"
-                        data-testid="kid-lesson-group-member"
-                        disabled={disabled}
-                        aria-label={format(messages.kid.lessonGroupRemove, { item: item.text, group: group.text })}
-                        onClick={() => { setState((current) => removeFromGroup(current, item.id)); handlers.onEdit(); }}
-                      >
-                        {item.text}
-                      </LessonBlockButton>
+                      <div key={item.id} role="listitem" className="kid-lesson-assign__entry">
+                        <LessonBlockButton
+                          type="button"
+                          className="kid-lesson-block kid-lesson-block--placed"
+                          data-testid="kid-lesson-group-member"
+                          disabled={disabled}
+                          aria-label={format(messages.kid.lessonGroupRemove, { item: item.text, group: group.text })}
+                          onClick={() => { setState((current) => removeFromGroup(current, item.id)); handlers.onEdit(); }}
+                        >
+                          {item.text}
+                        </LessonBlockButton>
+                      </div>
                     ))}
                   </div>
                 </section>
@@ -84,18 +84,18 @@ export function LessonGroupView({ task, busy, dock, handlers }: ExerciseProps) {
           )}
           <div className="kid-lesson-group__pool" data-testid="kid-lesson-group-pool" role="list" aria-label={messages.kid.lessonGroupPool}>
             {pool.map((item) => (
-              <LessonBlockButton
-                key={item.id}
-                type="button"
-                role="listitem"
-                className="kid-lesson-block"
-                data-testid="kid-lesson-group-item"
-                disabled={disabled || activeGroup === null}
-                aria-label={activeGroup ? format(messages.kid.lessonGroupAdd, { item: item.text, group: activeGroup.text }) : item.text}
-                onClick={() => { setState((current) => addToGroup(current, item.id)); handlers.onEdit(); }}
-              >
-                {item.text}
-              </LessonBlockButton>
+              <div key={item.id} role="listitem" className="kid-lesson-assign__entry">
+                <LessonBlockButton
+                  type="button"
+                  className="kid-lesson-block"
+                  data-testid="kid-lesson-group-item"
+                  disabled={disabled || activeGroup === null}
+                  aria-label={activeGroup ? format(messages.kid.lessonGroupAdd, { item: item.text, group: activeGroup.text }) : item.text}
+                  onClick={() => { setState((current) => addToGroup(current, item.id)); handlers.onEdit(); }}
+                >
+                  {item.text}
+                </LessonBlockButton>
+              </div>
             ))}
           </div>
         </div>

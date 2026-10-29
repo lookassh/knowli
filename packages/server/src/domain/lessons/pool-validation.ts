@@ -382,13 +382,22 @@ function comparableText(text: string): string {
   return text.normalize("NFC").trim().replace(/\s+/gu, " ").toLocaleLowerCase("pl-PL");
 }
 
-/** Teksty powtórzone albo zawarte jeden w drugim (nie do odróżnienia dla dziecka). */
+/** Słowa tekstu (litery i cyfry Unicode) po porównywalnej normalizacji. */
+function wordsOfText(text: string): string[] {
+  return comparableText(text).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+}
+
+/**
+ * Teksty powtórzone albo zawierające drugi jako ciąg CAŁYCH słów („dostarcza
+ * energii” w „dostarcza energii słonecznej”) — nie do odróżnienia dla dziecka.
+ * Fragment słowa się nie liczy: „tlen” obok „dwutlenek węgla” jest poprawny.
+ */
 function confusableTexts(texts: readonly string[]): [string, string][] {
   const found: [string, string][] = [];
-  const comparable = texts.map(comparableText);
+  const words = texts.map(wordsOfText);
   for (let i = 0; i < texts.length; i++) {
     for (let j = i + 1; j < texts.length; j++) {
-      if (comparable[i]!.includes(comparable[j]!) || comparable[j]!.includes(comparable[i]!)) {
+      if (isContiguousSubsequence(words[i]!, words[j]!) || isContiguousSubsequence(words[j]!, words[i]!)) {
         found.push([texts[i]!, texts[j]!]);
       }
     }

@@ -229,13 +229,15 @@ export function lessonAnswerValues(key: LessonAnswerSnapshot, prompt: TaskPrompt
     ? key.itemIds.map((id) => valuesById.get(id)).filter((value): value is string => Boolean(value))
     : [];
   const acceptedAnswers = [
-    ...(key?.answer ? [key.answer] : []),
+    // Pary i grupy: `answer` to tylko lewe strony / etykiety (klucz celu), nie odpowiedź.
+    ...(key?.answer && !key.assignments ? [key.answer] : []),
     ...(key?.target ? [key.target] : []),
     ...(key?.acceptedAnswers ?? []),
     ...(key?.correctOptionId ? [valuesById.get(key.correctOptionId) ?? ""] : []),
     ...(sequence.length > 0 ? [sequence.join(" ")] : []),
     // Pary i grupy: pełny komplet przypisań w tym samym zapisie co odpowiedź dziecka.
-    ...(key?.assignments ? [assignmentText(key.assignments, valuesById, { itemOrder: key.itemIds ?? [] })] : []),
+    // Ten sam zapis i limit 200 znaków co odpowiedź dziecka (`answerTextOf`).
+    ...(key?.assignments ? [assignmentText(key.assignments, valuesById, { itemOrder: key.itemIds ?? [] }).slice(0, 200)] : []),
     // Słowa kluczowe: wyłącznie pełny zbiór pojęć kluczowych — pojedyncze pojęcie
     // nie jest poprawną odpowiedzią (wybór niepełny nie jest oceniany).
     ...(key?.correctOptionIds && key.correctOptionIds.every((id) => valuesById.has(id))

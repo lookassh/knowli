@@ -72,7 +72,11 @@ export default function AssignmentFields({ exercise, index, disabled, onChange }
               onChange={(e) => setGroups(groups.map((g) => (g.id === group.id ? { ...g, label: e.target.value } : g)))} />
             {groups.length > MIN_GROUPS && (
               <button type="button" data-testid={`group-remove-${index}-${gi}`} disabled={disabled}
-                onClick={() => setGroups(groups.filter((g) => g.id !== group.id), items.filter((item) => item.groupId !== group.id))}>{t.removeRow}</button>
+                onClick={() => {
+                  // Elementy usuwanej grupy przechodzą do pierwszej pozostałej — rodzic ich nie traci.
+                  const remaining = groups.filter((g) => g.id !== group.id);
+                  setGroups(remaining, items.map((item) => (item.groupId === group.id ? { ...item, groupId: remaining[0]!.id } : item)));
+                }}>{t.removeRow}</button>
             )}
           </div>
         ))}

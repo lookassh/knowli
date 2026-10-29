@@ -404,6 +404,15 @@ describe("połącz w pary (lesson_match)", () => {
     expect(errors.some((error) => error.includes(field))).toBe(true);
   });
 
+  it("fragment słowa nie jest powtórzeniem: „tlen” obok „dwutlenek węgla” przechodzi", () => {
+    const draft = matchDraft({
+      pairs: [{ left: "tlen", right: "powstaje w liściach" }, { left: "dwutlenek węgla", right: "roślina pobiera z powietrza" }, { left: "woda", right: "pobierana korzeniami" }],
+      extraRight: [],
+      answer: "tlen, dwutlenek węgla, woda",
+    });
+    expect(validateLessonExercise(draft, schoolSubject, topic)).toEqual([]);
+  });
+
   it("odrzuca pary w innym typie", () => {
     const errors = validateLessonExercise(groupDraft({ pairs: matchDraft().pairs }), schoolSubject, topic);
     expect(errors.some((error) => error.includes("pairs"))).toBe(true);

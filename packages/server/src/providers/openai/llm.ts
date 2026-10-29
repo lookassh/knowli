@@ -192,7 +192,7 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
       "right-side texts from the material that match none of the left items). Use it when the material pairs concepts with definitions, places " +
       "with features or causes with effects. lesson_group: groups (2 or 3 objects {id: g1..g3, label of at most 30 characters}) and groupItems " +
       "(4 to 8 objects {text of at most 40 characters, groupId}, at least 2 per group). Use it when the material classifies things (e.g. mammals/birds, " +
-      "lowlands/uplands). Texts on one side must be distinct and none may contain another; an item must not repeat a group label. " +
+      "lowlands/uplands). Texts on one side must be distinct and none may contain another as whole words; an item must not repeat a group label. " +
       "Skip these types when the material has no such pairs or classification.",
     );
   }

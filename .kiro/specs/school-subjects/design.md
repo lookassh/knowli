@@ -1257,3 +1257,15 @@ widoków, jak `block-order.ts`.
   tworzy nowe kryterium, więc stara próba nie awansuje nowego.
 - Przełącznik grupy w Kid UI to nagłówek (bez obwódki, aktywny wypełniony rolą
   `secondary-container`), żeby nie wyglądał jak element do przeniesienia.
+- Review przed PR: ziarno tasowania nie może dać się wyliczyć z publicznego
+  `taskId` (klient odwróciłby tasowanie i odczytał pary, grupy, kolejność
+  „Ułóż” i pozycję poprawnej opcji) — materializacja dokłada losowy składnik
+  dla wszystkich typów lekcji; prompt zapisuje się przy wydaniu. Kontrola
+  powtórzeń par i grup porównuje całe słowa („tlen” obok „dwutlenek węgla”
+  jest poprawny). Sprawdzenie „Ułóż nie startuje ułożone” porównuje widoczne
+  teksty (identyczne klocki). Odrzucenie przypisań (400) nie cofa leniwej
+  finalizacji zawieszonej próby. Ocena aktywności sesji nie dostaje `answer`
+  par/grup jako odpowiedzi wzorcowej. Usunięcie grupy w edytorze przenosi jej
+  elementy do pierwszej pozostałej grupy. Odpowiedzi z tymi samymi lewymi
+  stronami albo etykietami grup dzielą `targetKey` — dotyczy tylko flagi
+  wcześniejszej ekspozycji typu zawsze wspomaganego (świadomie bez zmian).

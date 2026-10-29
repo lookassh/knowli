@@ -875,9 +875,10 @@ async function startLessonAttempt(
   // Walidacja modalności vs typ ćwiczenia.
   assertModalityMatchesExercise(valid.modality, key.exerciseType);
   // Przypisania niepasujące do zadania (brak, obcy element, nieznany cel) to
-  // błąd klienta: 400 bez próby (design szkoły §10.3).
+  // błąd klienta: 400 bez próby (design szkoły §10.3). Zwracane, nie rzucane —
+  // leniwa finalizacja wyżej musi zostać utrwalona.
   if (valid.modality === "assignment" && evaluateAssignment(valid.assignments, key) === null) {
-    throw new AppError("validation", { message: "assignments do not match the task" });
+    return { kind: "conflict", error: new AppError("validation", { message: "assignments do not match the task" }) };
   }
   // Poprawka („Skróć odpowiedź”): tylko tekst albo „Dalej”; „Nie pamiętam” przy
   // własnej odpowiedzi na ekranie ujawniałoby wzorzec bez sensu dydaktycznego.

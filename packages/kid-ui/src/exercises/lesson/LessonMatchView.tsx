@@ -65,20 +65,20 @@ export function LessonMatchView({ task, busy, dock, handlers }: ExerciseProps) {
           )}
           <div className="kid-lesson-match__pool" data-testid="kid-lesson-match-pool" role="list" aria-label={messages.kid.lessonMatchPool}>
             {pool.map((item) => (
-              <LessonBlockButton
-                key={item.id}
-                type="button"
-                role="listitem"
-                className="kid-lesson-block"
-                data-testid="kid-lesson-match-option"
-                disabled={disabled || state.active === null}
-                aria-label={activeLeft
-                  ? format(messages.kid.lessonMatchPlace, { item: activeLeft.text, answer: item.text })
-                  : item.text}
-                onClick={() => { setState((current) => placeRight(current, item.id)); handlers.onEdit(); }}
-              >
-                {item.text}
-              </LessonBlockButton>
+              <div key={item.id} role="listitem" className="kid-lesson-assign__entry">
+                <LessonBlockButton
+                  type="button"
+                  className="kid-lesson-block"
+                  data-testid="kid-lesson-match-option"
+                  disabled={disabled || state.active === null}
+                  aria-label={activeLeft
+                    ? format(messages.kid.lessonMatchPlace, { item: activeLeft.text, answer: item.text })
+                    : item.text}
+                  onClick={() => { setState((current) => placeRight(current, item.id)); handlers.onEdit(); }}
+                >
+                  {item.text}
+                </LessonBlockButton>
+              </div>
             ))}
           </div>
         </div>
