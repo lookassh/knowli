@@ -206,10 +206,14 @@ function AddChildForm({
     },
   });
 
-  const dirty = form.values.displayName !== "" || form.values.birthYear !== "" || form.values.avatarKey !== EMPTY_CHILD.avatarKey;
+  // Wysłane dodanie nie blokuje wyjścia z sekcji: kończy się samo (wywołania
+  // zwrotne w opcjach hooka), a lista dzieci odświeża się niezależnie od
+  // widoku. Chronimy tylko wpisane, jeszcze niewysłane dane.
+  const dirty = !create.isPending
+    && (form.values.displayName !== "" || form.values.birthYear !== "" || form.values.avatarKey !== EMPTY_CHILD.avatarKey);
   useEffect(() => {
-    onStateChange({ dirty, busy: create.isPending });
-  }, [onStateChange, dirty, create.isPending]);
+    onStateChange({ dirty, busy: false });
+  }, [onStateChange, dirty]);
   useEffect(() => () => onStateChange(null), [onStateChange]);
 
   return (

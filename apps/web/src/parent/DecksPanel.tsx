@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ActionIcon,
   Affix,
@@ -88,6 +88,14 @@ const STATE_TONE: Record<DeckSummaryDto["state"], string> = {
  * lekcji (`/parent/lessons/new`). Edytory są jeszcze na starych stylach
  * (fazy 5–6 planu 2026-10-29-parent-ui-mantine).
  */
+/**
+ * Widoki lekcji jeszcze na starych stylach (fazy 6a/6b): stały jasny obszar
+ * z tokenami `pp-*` także w trybie ciemnym.
+ */
+function LegacyArea({ children }: { children: ReactNode }) {
+  return <div className="pp-app pp-legacy-area">{children}</div>;
+}
+
 export default function DecksPanel({
   route,
   decks,
@@ -294,14 +302,16 @@ export default function DecksPanel({
       );
     }
     return kind === "lesson" ? (
-      <LessonEditor
-        key={deckId}
-        deckId={deckId}
-        childrenList={childrenList}
-        onEditorStateChange={registerEditorState}
-        onAuthExpired={onAuthExpired}
-        onBack={openList}
-      />
+      <LegacyArea>
+        <LessonEditor
+          key={deckId}
+          deckId={deckId}
+          childrenList={childrenList}
+          onEditorStateChange={registerEditorState}
+          onAuthExpired={onAuthExpired}
+          onBack={openList}
+        />
+      </LegacyArea>
     ) : (
       <DeckEditor
         key={deckId}
@@ -315,6 +325,7 @@ export default function DecksPanel({
 
   if (route.newLesson) {
     return (
+      <LegacyArea>
       <NewLessonForm
         onAuthExpired={onAuthExpired}
         onCancel={openList}
@@ -324,6 +335,7 @@ export default function DecksPanel({
           void onChanged().catch(() => undefined);
         }}
       />
+      </LegacyArea>
     );
   }
 

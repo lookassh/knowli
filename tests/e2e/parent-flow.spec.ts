@@ -28,10 +28,16 @@ async function playTargetAudio(page: Page, deckId: string, itemIndex: number): P
   const played = page.waitForResponse((entry) =>
     new URL(entry.url()).pathname === `/api/v1/media/${audio!.assetId}`,
   );
+  await page.getByTestId(`item-menu-${itemIndex}`).click();
   await page.getByTestId(`item-play-${itemIndex}`).click();
   const audioResponse = await played;
   expect(audioResponse.status()).toBe(200);
   expect(audioResponse.headers()["content-type"]).toContain("audio/mpeg");
+}
+
+/** Termin w karcie przypisania: DD.MM.RRRR. */
+function displayDate(iso: string): string {
+  return `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`;
 }
 
 function isoDate(daysAhead: number): string {
@@ -370,6 +376,7 @@ test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page,
   await playTargetAudio(page, deckId, 3);
 
   // Zły obraz świadomie pominięty — publikacja bez niego jest dozwolona.
+  await page.getByTestId("item-menu-3").click();
   await page.getByTestId("item-omit-image-3").click();
   await expect(page.getByTestId("item-image-state-3")).toContainText("pominięty");
 
@@ -387,11 +394,11 @@ test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page,
   const alaAssignRow = page.locator('[data-testid^="assign-row-"]').filter({ hasText: alaName });
   await alaAssignRow.locator('[data-testid^="assign-date-"]').fill(alaDate);
   await alaAssignRow.locator('[data-testid^="assign-submit-"]').click();
-  await expect(page.locator('[data-testid^="assignment-row-"]').filter({ hasText: alaName })).toContainText(alaDate);
+  await expect(page.locator('[data-testid^="assignment-row-"]').filter({ hasText: alaName })).toContainText(displayDate(alaDate));
   const bartekAssignRow = page.locator('[data-testid^="assign-row-"]').filter({ hasText: bartekName });
   await bartekAssignRow.locator('[data-testid^="assign-date-"]').fill(bartekDate);
   await bartekAssignRow.locator('[data-testid^="assign-submit-"]').click();
-  await expect(page.locator('[data-testid^="assignment-row-"]').filter({ hasText: bartekName })).toContainText(bartekDate);
+  await expect(page.locator('[data-testid^="assignment-row-"]').filter({ hasText: bartekName })).toContainText(displayDate(bartekDate));
   // Kid API exposes a published deck only after assignment to that child.
   const assignedKidDecks = await request.get(`/api/v1/kid/decks?childId=${alaId}`);
   expect(assignedKidDecks.ok()).toBe(true);
@@ -399,8 +406,8 @@ test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page,
 
   // Przypisania przeżywają odświeżenie strony (edytor zostaje otwarty pod swoim adresem).
   await page.reload();
-  await expect(page.locator('[data-testid^="assignment-row-"]').filter({ hasText: alaName })).toContainText(alaDate);
-  await expect(page.locator('[data-testid^="assignment-row-"]').filter({ hasText: bartekName })).toContainText(bartekDate);
+  await expect(page.locator('[data-testid^="assignment-row-"]').filter({ hasText: alaName })).toContainText(displayDate(alaDate));
+  await expect(page.locator('[data-testid^="assignment-row-"]').filter({ hasText: bartekName })).toContainText(displayDate(bartekDate));
 
   // Nowa wersja opublikowanego materiału (SPEC §84): wgląd w opublikowane
   // elementy, szkic v2 z kopią treści i mediów, zmiana znaczenia słowa,
@@ -482,6 +489,7 @@ test("ręczna edycja zestawu: dodaj element, usuń element, zmień tytuł", asyn
   await expect(page.getByTestId("item-audio-state-2")).toContainText("gotowe", { timeout: 60_000 });
 
   // Usunięcie karty jest częścią formularza: znika po zapisie jako element wersji.
+  await page.getByTestId("item-menu-0").click();
   await page.getByTestId("item-remove-0").click();
   await expect(page.getByTestId("item-card-2")).toHaveCount(0);
   await expect(page.getByTestId("item-source-0")).toHaveValue("wtorek");
