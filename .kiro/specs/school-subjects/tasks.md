@@ -184,14 +184,19 @@ odrzuceń w pełnej sondzie.
 
 ## Etap 4 — Trener precyzji
 
-- [ ] Dopisanie szczegółowych kontraktów DTO typów `lesson_keywords`
-      i zadania „skróć odpowiedź” do `design.md` (przed kodem).
-- [ ] Kontrakty, walidacja puli, silnik (plan sesji, ekspozycje, powiązanie
-      oryginał–poprawka), edytor rodzica.
+- [x] Dopisanie szczegółowych kontraktów DTO typów `lesson_keywords`
+      i zadania „skróć odpowiedź” do `design.md` (przed kodem; akceptacja
+      właściciela 2026-10-29).
+- [x] Kontrakty, walidacja puli, silnik (plan sesji, ekspozycje, powiązanie
+      oryginał–poprawka), edytor rodzica; migracja `0024` (modalność
+      `selection`), generator (gałąź `lesson_keywords` w structured output),
+      raport nadzoru `school.shortening`.
 - [ ] Kid UI: widoki przez wspólne komponenty; specyfikacje geometrii Playwright
       (portrait/landscape/tablet/desktop, cele ≥48 px), dopisanie speców
       do partycji w `tests/e2e/spec-projects.ts`.
-- [ ] Selektor: reguły doboru ćwiczeń trenera z wymiaru precyzji i braków.
+- [x] Selektor: reguły doboru ćwiczeń trenera z wymiaru precyzji i braków
+      (preferencja form zwięzłych, para słów kluczowych; pomyłka pojęć
+      odłożona — design 6.5 pkt 5).
 
 ## Etap 5 — Domknięcie
 

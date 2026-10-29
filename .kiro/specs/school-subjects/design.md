@@ -1,6 +1,6 @@
 # Design — przedmioty szkolne i trener precyzji odpowiedzi
 
-**Status:** Etapy 1–2 zaimplementowane na gałęzi `feature/school-subjects-source-material` (2026-10-28); ewaluacja gradera na złotym zestawie: wiedza 19/20 (95%), przypadki twarde 100% wiedzy, brakujące elementy 19/20 (model `deepseek/deepseek-v4.1-flash`, prompt `school-grader-v2`; zapis przebiegu: `grader-eval-2026-10-28.md`). Etap 2b (zadania rachunkowe) zaimplementowany na tej samej gałęzi (2026-10-28), kontrakt poniżej w pkt 3. Etapy 3–5 według `tasks.md`.
+**Status:** Etapy 1–2 zaimplementowane na gałęzi `feature/school-subjects-source-material` (2026-10-28); ewaluacja gradera na złotym zestawie: wiedza 19/20 (95%), przypadki twarde 100% wiedzy, brakujące elementy 19/20 (model `deepseek/deepseek-v4.1-flash`, prompt `school-grader-v2`; zapis przebiegu: `grader-eval-2026-10-28.md`). Etap 2b (zadania rachunkowe) zaimplementowany na tej samej gałęzi (2026-10-28), kontrakt poniżej w pkt 3; Etapy 1–2b scalone do `main` (PR #149). Etap 4 (trener precyzji) zaimplementowany na gałęzi `feature/school-precision-trainer` (2026-10-29), kontrakt w pkt 6. Etapy 3 i 5 według `tasks.md`.
 **Wymagania:** `requirements.md`. **Baza:** silnik lekcji (architecture.md §19, SPEC §29a).
 
 ## 1. Decyzja główna: przedmiot generyczny na silniku lekcji
@@ -259,7 +259,9 @@ w widoku odpowiedzi otwartej lekcji.
 
 ## 6. Trener precyzji (Etap 4) — kontrakty
 
-Status: projekt do akceptacji właściciela (2026-10-29), przed kodem. Moduł
+Status: zaakceptowany przez właściciela 2026-10-29 (decyzje 6.5 z
+rekomendacjami) i zaimplementowany na gałęzi `feature/school-precision-trainer`;
+korekty wprowadzone przy implementacji opisuje 6.7. Moduł
 odpowiedzialny: silnik lekcji (`learning/lessons/`) i przedmiot `school`
 (`domain/lessons/subjects/school/`); zapis treści — `materials/lessons/`.
 Gramatyka i słówka bez zmian.
@@ -284,8 +286,10 @@ otwartych przez `familyId`:
 | `answer` | string | pojęcia kluczowe złączone `", "` (dla `targetKey` i podglądu rodzica) |
 | `instructionPl`, `sourceRefs` | jak w innych typach | `sourceRefs` wymagane |
 
-Walidacja puli: każde pojęcie kluczowe występuje (NFC, bez wielkości liter)
-w odpowiedzi wzorcowej rodziny albo w materiale; ćwiczenie bez rodziny otwartej
+Walidacja puli: każde pojęcie kluczowe występuje (NFC, bez wielkości liter,
+z tolerancją polskiej odmiany — każde słowo pojęcia ma w tekście słowo o tym
+samym początku bez dwóch ostatnich liter, min. 4 znaki: „światło” pasuje do
+„światła”) w odpowiedzi wzorcowej rodziny albo w materiale; ćwiczenie bez rodziny otwartej
 w celu jest odrzucane. Dobór dystraktorów (z materiału, nie kluczowe) sprawdza
 rodzic — automat pilnuje kształtu, unikalności i obecności pojęć kluczowych.
 Publikacja nie wymaga `lesson_keywords` (minima puli bez zmian).
@@ -295,7 +299,7 @@ Kid DTO (`.strict()`, bez klucza):
 ```ts
 { kind: "lesson_keywords", instructionPl: string, prompt: string,
   options: ChoiceOption[] /* 4–6, UUID nadane przy materializacji */,
-  minSelected: 2, maxSelected: 3 }
+  minSelected: 2, maxSelected: /* liczba pojęć kluczowych: 2 albo 3 */ }
 ```
 
 `prompt` to tekst pytania otwartego zaplanowanego bezpośrednio po tym zadaniu
@@ -313,9 +317,13 @@ Plan i ekspozycje: selektor wydaje parę slotów — `lesson_keywords`, a zaraz 
 nim pytanie otwarte z tej samej rodziny (powód `precision_practice`). Wydanie
 `lesson_keywords` zapisuje ekspozycję `targetKey` tej rodziny przed
 ujawnieniem listy pojęć, więc następująca odpowiedź otwarta jest wspomagana
-istniejącą regułą ekspozycji (wym. 7.1, N09). Pary nie planujemy, gdy cel ma
-należne samodzielne sprawdzenie, gdy brak gradera albo limit wywołań nie
-pokrywa odpowiedzi otwartej, ani w kartkówce.
+istniejącą regułą ekspozycji (wym. 7.1, N09); sam wybór pojęć ma zawsze
+`independent = false`. Para to osobny priorytet planu (po należnych
+sprawdzeniach, wsparciu i oknie sprawdzianu, przed kontynuacją), raz na cel
+w sesji, tylko w planie zamrożonym (sesje bez planu jej nie dostają), przy
+graderze z wolnym wywołaniem i budżecie na oba sloty; nigdy w kartkówce.
+Zwykły wybór ćwiczeń prowadzonych nie wydaje `lesson_keywords`, a słowa
+kluczowe nie liczą się do minimów pokrycia puli.
 
 ### 6.2. „Odpowiedz w jednym zdaniu”
 
@@ -332,8 +340,9 @@ treningowej (nie w kartkówce):
 - wiedza `correct` i precyzja `verbose` lub `unfocused`, z co najmniej jednym
   fragmentem zbędnym (`redundantFragments`) albo z `formOk = false`;
 - zostało co najmniej jedno wywołanie gradera;
-- sesja nie jest w fazie obietnicy „Jeszcze 3 i koniec!” (zostały więcej niż
-  3 ocenione zadania).
+- sesja nie była w fazie obietnicy „Jeszcze 3 i koniec!”, gdy dziecko
+  odpowiadało (`remainingAssessed` tego zadania > 3, czyli baner jeszcze się
+  nie pokazał).
 
 Dokładne dopasowanie wariantu nie ma fragmentów, więc skrócenie proponujemy
 w nim tylko przy `formOk = false`.
@@ -341,7 +350,9 @@ w nim tylko przy `formOk = false`.
 Oryginał finalizuje się bez zmian (ocena, ekspozycje, projekcja), z nowym
 rodzajem feedbacku `lesson_precision_hint` z szablonu („Wiesz to! Teraz spróbuj
 powiedzieć to krócej”). W tej samej transakcji powstaje zadanie następcze
-`lesson_shorten` w stanie `issued`:
+`lesson_shorten` w stanie `issued` — technicznie odpowiedź otwarta
+(`exerciseType: lesson_open_answer`, ta sama rewizja i klucz z dopisanym
+`revisionOf`), rozpoznawana przez Kid UI po `prompt.kind`:
 
 - `session_tasks.context.followUpOf = { taskId, attemptId }`, ordinal = kolejny
   wolny. Zadanie następcze nie jest slotem planu, nie liczy się do budżetu
@@ -354,7 +365,8 @@ powiedzieć to krócej”). W tej samej transakcji powstaje zadanie następcze
   Prompt niczego nie ujawnia (to tekst dziecka), więc nie zapisuje ekspozycji.
 - Odpowiedź: modalność `text` (mowa po Etapie 3) albo `skip` („Dalej” bez
   skracania — zadanie `skipped`, bez oceny). Tekst identyczny z oryginałem po
-  normalizacji → `not_assessed` bez modelu, zadanie zostaje `issued`.
+  normalizacji → podpowiedź „To ta sama odpowiedź…” bez oceny i bez modelu,
+  zadanie zostaje `issued`.
 - Ocena: ten sam grader i kryteria oryginału (`school-grader-v2`, cache
   `lesson_verdicts`), z `independent = false` i `confirmationEligible = false`,
   więc bez wpływu na serię opanowania. `details` dostają
@@ -363,9 +375,11 @@ powiedzieć to krócej”). W tej samej transakcji powstaje zadanie następcze
   `correct` tylko przy zachowaniu wszystkich elementów wymaganych; utrata
   elementu (N07) → `incorrect` z podpowiedzią z szablonu („Krócej, ale
   zgubiła się ważna informacja”), bez treści elementu i odpowiedzi wzorcowej.
-- Raport rodzica (nadzór lekcji): per zagadnienie liczba odpowiedzi poprawnych,
-  ale rozwlekłych, liczba prób i udanych skróceń oraz ostatnie pary
-  oryginał → poprawka z utraconymi elementami (wym. 8.2).
+- Raport rodzica (nadzór lekcji, `school.shortening`): per zagadnienie liczba
+  zaproponowanych, podjętych i udanych skróceń (krócej, bez utraty elementu)
+  oraz do 3 ostatnich par oryginał → poprawka z utraconymi elementami
+  (wym. 8.2). Poprawki nie wchodzą do liczników wiedzy i precyzji, ostatnich
+  odpowiedzi ani najczęstszych błędów celu.
 
 ### 6.4. Selektor trenera (wym. 7.4)
 
@@ -376,7 +390,7 @@ per cel z poprzednich sesji (bez zadań następczych):
    otwartej tego celu preferuj członka rodziny z `expectedForm`
    `one_sentence` lub `short`; skracanie i tak zaproponuje 6.3;
 2. precyzja `unfocused` albo wiedza `partial` → jeśli cel ma `lesson_keywords`,
-   zaplanuj parę 6.1 zamiast samej odpowiedzi otwartej (nie zamiast należnego
+   dołóż parę 6.1 (osobny priorytet planu, nie zamiast należnego
    samodzielnego sprawdzenia);
 3. brakujący element → bez nowej reguły: `partial` mapuje się na `incorrect`,
    więc działa istniejąca ścieżka wsparcia (karta wsparcia i ćwiczenie
@@ -384,7 +398,9 @@ per cel z poprzednich sesji (bez zadań następczych):
 4. pomyłka pojęć → odłożone (6.5, punkt 5);
 5. samodzielnie i zwięźle → bez zmian (rzadsza powtórka po przerwie).
 
-### 6.5. Decyzje do akceptacji właściciela
+### 6.5. Decyzje właściciela (zaakceptowane 2026-10-29)
+
+Punkty 1–3 i 6 wdrożone; punkty 4 i 5 odłożone na krok po pilotażu.
 
 1. `lesson_shorten` jako zadanie następcze poza planem i budżetem, wyłączone
    w fazie „Jeszcze 3 i koniec!” i w kartkówce.
@@ -411,6 +427,22 @@ per cel z poprzednich sesji (bez zadań następczych):
   powiązanej rodziny; generator: opcjonalne `lesson_keywords` w partii celu.
 - API → MCP → skill: lekcje są poza `learning-overview`, więc brak wpływu
   (do odnotowania w PR).
+
+### 6.7. Korekty przy implementacji (2026-10-29)
+
+- Para słów kluczowych: pierwotny szkic zamieniał na parę odpowiedź otwartą,
+  która nie jest samodzielnym sprawdzeniem. W planie zamrożonym etap nie
+  awansuje bez prawdziwych wyników, więc odpowiedzi otwarte trafiają do planu
+  prawie wyłącznie jako sprawdzenia — reguła nie działałaby. Para jest więc
+  osobnym priorytetem (6.1).
+- Obietnica końca sesji liczona przed odpowiedzią (6.3), zgodnie z banerem
+  Kid UI (`remainingAssessed ≤ 3`). Przy jednym zagadnieniu plan bywa krótki,
+  więc skrócenie pojawia się głównie w dłuższych sesjach — do obserwacji na
+  pilotażu.
+- Kryteria `lesson_keywords` (`skill_versions.criteria`) zawierają pojęcia
+  kluczowe (`keyTerms`): zmiana klucza to nowa wersja kryteriów.
+- Fake grader zaznacza przy rozwlekłej odpowiedzi zdania bez słów elementów
+  wymaganych jako zbędne, żeby testy i tryb fake przechodziły ścieżkę skracania.
 
 ## 7. Transakcje, prywatność, kontrakty publiczne
 
