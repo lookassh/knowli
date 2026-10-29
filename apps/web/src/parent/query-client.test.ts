@@ -50,6 +50,11 @@ describe("createParentQueryClient", () => {
     expect(onAuthExpired).toHaveBeenCalledTimes(1);
   });
 
+  it("runs mutations offline instead of pausing them until the network returns", () => {
+    const client = createParentQueryClient(vi.fn());
+    expect(client.getDefaultOptions().mutations).toMatchObject({ retry: false, networkMode: "always" });
+  });
+
   it("ignores other errors", async () => {
     const onAuthExpired = vi.fn();
     const client = createParentQueryClient(onAuthExpired);
