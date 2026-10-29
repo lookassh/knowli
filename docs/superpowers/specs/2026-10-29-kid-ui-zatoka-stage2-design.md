@@ -35,7 +35,7 @@ Obowiązują ustalenia etapu 1: tylko ciemny motyw, paleta z `scripts/kid-palett
 - **Odsłuch instrukcji** wychodzi z paska. Dla zadania (`taskGuidanceKey`) przycisk stoi w wierszu instrukcji obok jej tekstu (48 px, tonalny) — `ExerciseInstruction` ma już do tego `audio`. Dla wyniku (`feedbackGuidanceKey`) przycisk stoi w panelu wyniku obok tytułu. `data-testid="kid-guidance-play"` i obsługa błędu odsłuchu zostają.
 - **Kamyki** (`SessionProgress`): jeden kamyk = jedno oceniane zadanie, liczba = `progress.total` z `session-progress-state.ts` (te same dane co dzisiejszy pasek, bez nowych informacji o budżecie).
   - zrobione: wypełnione `primary`; bieżące: obrys `primary` i powiększenie przez `transform: scale`; przyszłe: `outline-variant`,
-  - kamyk ma wysokość 8 px i elastyczną szerokość 5–16 px (odstęp 3 px), więc rząd wypełnia środek paska; kamyki pokazujemy dla `total` ≤ 24 (domyślny budżet sesji to 20 — `DEFAULT_TASK_BUDGET`), powyżej wskaźnik przechodzi w ciągły pasek (dzisiejszy `scaleX`); 24 kamyki mieszczą się przy szerokości 320 px,
+  - kamyk ma wysokość 8 px i elastyczną szerokość 5–16 px (odstęp 3 px), więc rząd wypełnia środek paska; kamyki pokazujemy dla `total` ≤ 20 (`PEBBLE_LIMIT`, równy domyślnemu budżetowi sesji `DEFAULT_TASK_BUDGET`), powyżej wskaźnik przechodzi w ciągły pasek (dzisiejszy `scaleX`); 20 kamyków mieści się przy szerokości 320 px (zob. §8),
   - kamyki są dekoracją (`aria-hidden`); dostępny tekst to etykieta „Jeszcze N”, jak dziś,
   - seria poprawnych: podskok i gwiazdka wychodząca z ostatniego wypełnionego kamyka (dzisiejsze `kidStreakJump`, `kid-streak-star`).
 - **„Jeszcze N i koniec!”** to mała pigułka w tonie `warm` pod kamykami (obok nich przy wysokości <480 px). Reguła pokazywania bez zmian: `remainingFor` (od 3 zadań do końca, w kartkówce zawsze).
@@ -54,7 +54,7 @@ Obowiązują ustalenia etapu 1: tylko ciemny motyw, paleta z `scripts/kid-palett
   - wysokość ≥60 px dla pola jednowierszowego.
 - **Odpowiedzi wyboru** (`AnswerGrid`, `WordChoiceButton`, przyciski lekcji):
   - wypełnione karty `surface-container-high` z obramowaniem 1 px `outline`, wysokość ≥56 px, tekst Fredoka 600 `title-md`,
-  - siatka 2×2 na szerokości compact, gdy opcji jest 4 i każda ma ≤14 znaków; w przeciwnym razie kolumna; medium/expanded jak dziś,
+  - siatka 2×2 na szerokości compact, gdy opcji jest 4 i każda ma ≤10 znaków (punktów kodowych), a etykiety nie łamią się w środku słowa; w przeciwnym razie kolumna (zob. §8); medium/expanded jak dziś,
   - stany oczekiwania, poprawnej i błędnej pozostają wyłącznie w `AnswerGrid`; poprawna i błędna dostają ikonę ✓/✕ obok koloru.
 - **Akcje** bez zmian w hierarchii: „Sprawdź” wypełniony, „Nie pamiętam” tonalny, „Dalej”/„Pomiń” tekstowe.
 - **Lekcje**: luki, kolejność bloków (`LessonBlockButton`), słowa kluczowe, skracanie, krótka odpowiedź i karta lekcji korzystają z tych samych kart, pola i typografii; dyktando (`useDictation`) bez zmian zachowania.
@@ -80,7 +80,7 @@ Obowiązują ustalenia etapu 1: tylko ciemny motyw, paleta z `scripts/kid-palett
 
 ## 6. Weryfikacja
 
-- Jednostkowe: `SessionProgress` (kamyki dla `total` ≤24, przejście w pasek, bieżący kamyk, etykieta „Jeszcze N”), `ExerciseFeedbackDock` (ikona i ton), `AnswerField` (klasa stylu); `tests/kid-design-tokens.test.ts` i `tests/kid-tokens.test.ts` bez wyjątków.
+- Jednostkowe: `SessionProgress` (kamyki dla `total` ≤20, przejście w pasek, bieżący kamyk, etykieta „Jeszcze N”), `ExerciseFeedbackDock` (ikona i ton), `AnswerField` (klasa stylu); `tests/kid-design-tokens.test.ts` i `tests/kid-tokens.test.ts` bez wyjątków.
 - Kontrast WCAG: tekst pola wpisywania na `surface-container-highest`, tytuł i odpowiedź na każdym tle tonu panelu, kamyk zrobiony vs tło (≥3:1) — test tokenów oraz rozszerzenie `kid-answer-contrast.spec.ts` o kolor i rozmiar tekstu w polu (≥24 px obliczonego `font-size`).
 - Geometria Playwright w 360×800, 320×640, 844×390, 768×1024, 1280×800 (`tests/e2e/helpers/kid-layout.ts`): pasek w jednym rzędzie, kamyki w kolumnie `KidScreen`, brak przepełnienia poziomego, cele ≥48 px, siatka 2×2 bez wyjścia poza kolumnę, panel wyniku nie zasłania akcji; aktualizacja istniejących speców (`kid-responsive`, `kid-feedback-dock`, `kid-feedback-layout`, `kid-ui-layout`, `lesson-*-layout`) zamiast nowych duplikatów.
 - Przed PR: `pnpm typecheck`, `pnpm test:unit`, `pnpm build`, `pnpm test:e2e:shards`; zrzuty ekranów sesji (wybór, pisanie, mowa, lekcja, każdy ton panelu) w 360×800 i 844×390.
@@ -89,6 +89,25 @@ Obowiązują ustalenia etapu 1: tylko ciemny motyw, paleta z `scripts/kid-palett
 ## 7. Ryzyka
 
 - Przeniesienie odsłuchu z paska zmienia selektory w testach E2E (`kid-guidance-play`) — test ID zostaje, zmienia się tylko położenie.
-- Siatka 2×2 przy długich słowach polskich: próg 14 znaków i powrót do kolumny; geometria sprawdza najdłuższe opcje fixture.
+- Siatka 2×2 przy długich słowach polskich: próg 10 znaków i powrót do kolumny; geometria sprawdza najdłuższe opcje fixture.
 - Kamyki przy dużym `total` (kartkówki) — przejście w pasek; `total` może urosnąć w trakcie sesji (największe widziane `remainingAssessed`), kamyki wtedy przeliczają się bez animacji wymiarów.
 - Duża liczba widoków lekcji — wspólne style kart i pola w komponentach, nie w każdym widoku osobno.
+
+## 8. Ustalenia z implementacji (2026-10-29)
+
+Rozstrzygnięcia podjęte podczas wykonania planu; zastępują odpowiednie fragmenty §3–§6.
+
+- Górny pasek ma stałe 56 px (48 px przy bardzo niskim oknie) także wtedy, gdy widać „Jeszcze N i koniec!”: pigułka jest kompaktowa i mieści się w środkowej kolumnie pod kamykami. Nagłówek nie rośnie przy końcu sesji, a viewport testu stabilności układu pozostaje 360×500 — podniesienie go ukryłoby regresję, a nie ją naprawiło.
+- `PEBBLE_LIMIT` wynosi 20 (domyślny budżet sesji), bez gęstego trybu 4 px; powyżej 20 wskaźnik przechodzi w ciągły pasek. Poprawia to §3: 24 kamyki przy 320 px nie mieszczą się (189 px wobec 168 px dostępnych przy minimalnej szerokości 5 px), więc budżety 21–24 pokazują pasek zamiast kamyków.
+- Próg siatki 2×2 dla krótkich opcji to 10 punktów kodowych, nie 14 (poprawia §4), a etykiety w siatce nigdy nie łamią się w środku słowa (`overflow-wrap: normal`). 14 znaków Fredoki 600 `title-md` nie mieści się w ok. 120 px kolumny przy szerokości 320 px; opcje 11–14-znakowe używają kolumny.
+- W siatce 2×2 znacznik wyniku (✓/✕) stoi w zarezerwowanym paśmie górnego dopełnienia karty (ok. 26 px u góry, 6 px u dołu przy karcie 56 px), więc nie nachodzi na etykietę, a wysokość karty nie zmienia się po ocenie. Skutek uboczny: etykieta w kartach siatki leży odrobinę niżej.
+- Karty opcji mają 48 px (nie 56 px) przy wysokości okna poniżej 560 px: wymóg „treść i akcje osiągalne” z AGENTS.md wygrywa na niskich oknach, a 48 px to nadal minimum celu dotykowego.
+- Obrazek bodźca nie ma ramki (3 px obramowanie usunięte); zachowuje zaokrąglenie `--kid-shape-xl` i tło-podkładkę (backdrop). Wiąże §4 „bez karty i ramki”; testy geometrii przechodzą bez luzowania.
+- Tekst na tłach tonów panelu wyniku używa ról `on-*-container` (`on-success-container`, `on-warm-container`, `on-error-container`, a dla tonu neutralnego `on-surface` na `surface-container-high`), nie `on-surface`; kontrast tytułu i odpowiedzi na każdym tle ≥4,5:1 sprawdza `kid-feedback-dock.spec.ts`.
+- Test ponawiania w `kid-ui-layout.spec.ts` zakładał niebieski panel sprzed etapu 2. Przepisano go na zatwierdzony projekt: ton `incorrect` to `error-container` z ikoną `close`, kontrast tytułu i odpowiedzi ≥4,5:1; asercje wyników opcji bez zmian. To była luka pokrycia po Zadaniu 5, wykryta przy Zadaniu 6.
+- Źródło w ćwiczeniu lekcji (`.kid-source`) schodzi o jeden rozmiar typografii przy wysokości poniżej 480 px, żeby bodziec i pole mieściły się obok siebie w landscape telefonu.
+- Przy niskim oknie górne dopełnienie ekranu zmniejszono z 12 do 4 px, żeby oddać wysokość treści i akcjom bez przycinania.
+- Karta odsłonięcia odpowiedzi („Nie pamiętam”) zachowuje przycisk odsłuchu w wierszu instrukcji, nie w panelu wyniku: odsłonięcie nie jest feedbackiem po próbie, więc §3 (odsłuch przy tytule panelu) dotyczy tylko `feedbackGuidanceKey`.
+- Test kontrastu przycisku audio sprawdza wariant tonalny zamiast wypełnionego, bo odsłuch w wierszu instrukcji jest tonalnym `IconActionButton`; asercje kolorów bez zmian.
+- Zmiana jest wyłącznie prezentacyjna: bez wpływu na API, MCP i skill.
+- Brak odbioru na fizycznym urządzeniu. Wszystkie sprawdzenia to symulacja w Chromium (Playwright, widoki 360×800, 320×640, 844×390, 768×1024, 1280×800) i nie zastępują testu na telefonie i tablecie.
