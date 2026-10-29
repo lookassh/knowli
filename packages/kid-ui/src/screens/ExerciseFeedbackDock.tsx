@@ -2,9 +2,19 @@ import type { ReactElement, ReactNode } from "react";
 import { m, useIsPresent } from "motion/react";
 import { kidDockAnimate, kidDockExit, kidDockExitTransition, kidDockInitial, kidDockOrigin, kidSpringGentle } from "../motion/kid-motion";
 import { BurstParticles } from "../components/CelebrationBurst";
+import { KidIcon, type KidIconName } from "../components/KidIcon";
 import classes from "./ExerciseFeedbackDock.module.css";
 
 export type FeedbackDockTone = "correct" | "incorrect" | "partial" | "technical" | "neutral";
+
+/** Ikona odznaki w kółku: drugi kanał informacji o wyniku obok koloru panelu. */
+export const FEEDBACK_TONE_ICONS: Record<FeedbackDockTone, KidIconName> = {
+  correct: "check",
+  partial: "almost",
+  incorrect: "close",
+  technical: "info",
+  neutral: "info",
+};
 
 /**
  * Wspólny dolny panel wyniku ćwiczenia: wysuwa się w stopce ramy zadania,
@@ -22,6 +32,7 @@ export function ExerciseFeedbackDock({
   primary,
   secondary,
   celebrate = false,
+  guidance,
 }: {
   tone: FeedbackDockTone;
   kind?: "answer" | "speech";
@@ -30,6 +41,8 @@ export function ExerciseFeedbackDock({
   primary: ReactNode;
   secondary?: ReactNode;
   celebrate?: boolean;
+  /** Przycisk odsłuchu komunikatu o wyniku, za treścią w górnym wierszu (po odznace tonu). */
+  guidance?: ReactNode;
 }): ReactElement {
   const isPresent = useIsPresent();
   return (
@@ -44,10 +57,14 @@ export function ExerciseFeedbackDock({
       data-tone={tone}
       data-dock-kind={kind}
       data-compact={compact || undefined}
-      className={`${classes.dock} ${compact ? classes.compact : ""} ${tone === "correct" ? classes.correct : tone === "incorrect" ? classes.incorrect : tone === "partial" ? classes.partial : tone === "technical" ? classes.technical : ""}`}
+      className={`${classes.dock} ${compact ? classes.compact : ""} ${classes[tone]}`}
     >
       <div className={classes.scroll}>
+        <span className={classes.badge} data-testid="kid-feedback-tone-icon" data-icon={FEEDBACK_TONE_ICONS[tone]} aria-hidden="true">
+          <KidIcon name={FEEDBACK_TONE_ICONS[tone]} />
+        </span>
         <div className={classes.content}>{children}</div>
+        {guidance && <div className={classes.guidance}>{guidance}</div>}
       </div>
       <div className={classes.actions}>
         {primary}

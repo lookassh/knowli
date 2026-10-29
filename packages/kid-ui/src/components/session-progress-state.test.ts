@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { advanceSessionProgress, initialSessionProgress, progressAttempt, progressFraction, resultOutcome, type FeedbackOutcome } from "./session-progress-state";
+import { advanceSessionProgress, initialSessionProgress, progressAttempt, progressDone, resultOutcome, type FeedbackOutcome } from "./session-progress-state";
 
 const correct = (attemptId: string) => ({ attemptId, outcome: "correct" as FeedbackOutcome });
 
@@ -8,8 +8,8 @@ describe("session progress state", () => {
     let state = advanceSessionProgress(initialSessionProgress, { sessionId: "s1", remainingAssessed: 8, attempt: null }, 3);
     state = advanceSessionProgress(state, { sessionId: "s1", remainingAssessed: 7, attempt: null }, 3);
     expect(state.total).toBe(8);
-    expect(progressFraction(state.total, 7)).toBeCloseTo(1 / 8);
-    expect(progressFraction(state.total, 1)).toBeCloseTo(7 / 8);
+    expect(progressDone(state.total, 7)).toBe(1);
+    expect(progressDone(state.total, 1)).toBe(7);
   });
 
   it("starts over for a new session", () => {
@@ -61,9 +61,10 @@ describe("session progress state", () => {
     expect(progressAttempt({ taskId: "t1", feedback: null, feedbackTone: null, revealShown: false })).toBeNull();
   });
 
-  it("never reports progress outside 0..1", () => {
-    expect(progressFraction(0, 3)).toBe(0);
-    expect(progressFraction(4, null)).toBe(0);
-    expect(progressFraction(4, 9)).toBe(0);
+  it("never reports done tasks outside 0..total", () => {
+    expect(progressDone(0, 3)).toBe(0);
+    expect(progressDone(4, null)).toBe(0);
+    expect(progressDone(4, 9)).toBe(0);
+    expect(progressDone(4, 0)).toBe(4);
   });
 });

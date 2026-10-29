@@ -3,6 +3,7 @@ import { AnimatePresence } from "motion/react";
 import type { TaskDto } from "@learning/contracts";
 import { ExerciseInstruction, type ExerciseInstructionAudio } from "../components/ExerciseInstruction";
 import classes from "./ExerciseFrame.module.css";
+import { useExerciseGuidance } from "./exercise-guidance";
 import { getExercisePresentation } from "./exercise-presentation";
 import {
   scheduleFeedbackDockReveal,
@@ -41,6 +42,7 @@ export function ExerciseFrame({
   instructionAudio?: ExerciseInstructionAudio;
 }): ReactElement {
   const presentation = getExercisePresentation(task);
+  const guidance = useExerciseGuidance();
   const materialRef = useRef<HTMLDivElement>(null);
   const anchorRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -52,6 +54,8 @@ export function ExerciseFrame({
   const revealTaskIdRef = useRef<string | null>(null);
   const [dockPad, setDockPad] = useState(0);
   const hasDock = dock !== undefined;
+  // A task without a primary action gets no empty 54px slot (before or under the dock).
+  const hasActions = actions !== undefined && actions !== null && actions !== false;
   const flowFeedback = feedbackLayout === "flow";
 
   // Revealing is tied to a dock/task and viewport mode, never to the newly
@@ -189,7 +193,7 @@ export function ExerciseFrame({
 
   return (
     <div className={`kid-exercise-frame ${classes.root}`} data-testid="kid-exercise" data-prompt-kind={task.prompt.kind} data-feedback-layout={feedbackLayout} data-action-layout={actionLayout}>
-      <ExerciseInstruction instruction={presentation.instruction} icon={presentation.icon} audio={instructionAudio} />
+      <ExerciseInstruction instruction={presentation.instruction} icon={presentation.icon} audio={instructionAudio} guidance={guidance} />
       <div ref={materialRef} className={`kid-material ${classes.material}`} data-testid="kid-material">
         <div
           className={`kid-material-content ${classes.materialContent}`}
@@ -205,13 +209,13 @@ export function ExerciseFrame({
           </Fragment>
         ) : dock ? (
           <div key="kid-dock" ref={anchorRef} className={classes.dockAnchor}>
-            <div data-testid="kid-primary-slot" className={classes.primary} aria-hidden="true" />
+            {hasActions && <div data-testid="kid-primary-slot" className={classes.primary} aria-hidden="true" />}
             <div data-testid="kid-secondary-slot" className={classes.secondary} aria-hidden="true" />
             <div ref={overlayRef} className={`kid-feedback-overlay ${classes.dockOverlay}`}>{dock}</div>
           </div>
         ) : (
           <Fragment key="kid-actions">
-            <div data-testid="kid-primary-slot" className={classes.primary}>{actions}</div>
+            {hasActions && <div data-testid="kid-primary-slot" className={classes.primary}>{actions}</div>}
             <div data-testid="kid-secondary-slot" className={classes.secondary}>{secondaryActions}</div>
           </Fragment>
         )}

@@ -1,7 +1,15 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
-import { expectBandSpansRoot, measure, resizeAndSettle } from "./helpers/kid-layout";
+import { expectBandSpansRoot, expectInsideRoot, measure, resizeAndSettle, type Rect } from "./helpers/kid-layout";
 import { pictureChoiceLayoutFixture } from "./helpers/picture-fixtures";
+
+const SESSION_HEADER_VIEWPORTS = [
+  { width: 360, height: 800 },
+  { width: 320, height: 640 },
+  { width: 844, height: 390 },
+  { width: 768, height: 1024 },
+  { width: 1280, height: 800 },
+];
 
 function recallLayoutFixture(): KidUiFixture {
   const childId = "10000000-0000-4000-8000-000000000101";
@@ -18,6 +26,103 @@ function recallLayoutFixture(): KidUiFixture {
       direction: "source_to_target", state: "issued", prompt: { kind: "recall", prompt: "kot" }, remainingAssessed: 1 }],
   };
 }
+
+/** ✕, pebble row and microphone status share one row; vertical centres line up. */
+async function expectSessionHeaderRow(page: Page, expectedPebbles: number, pillShown: boolean) {
+  for (const viewport of SESSION_HEADER_VIEWPORTS) {
+    const name = `${viewport.width}x${viewport.height}`;
+    await resizeAndSettle(page, viewport);
+    const layout = await measure(page, {
+      root: ".kid-learning",
+      header: ".kid-header",
+      end: "[data-testid='kid-end']",
+      pebbles: "[data-testid='kid-progress-pebbles']",
+      mic: "[data-testid='kid-microphone-status']",
+    });
+    const centreY = (rect: { top: number; height: number }) => rect.top + rect.height / 2;
+    expect(Math.abs(centreY(layout.end) - centreY(layout.pebbles)), `close vs pebbles centre: ${name}`).toBeLessThanOrEqual(4);
+    expect(Math.abs(centreY(layout.mic) - centreY(layout.pebbles)), `microphone vs pebbles centre: ${name}`).toBeLessThanOrEqual(4);
+    for (const [label, rect] of Object.entries({ end: layout.end, pebbles: layout.pebbles, mic: layout.mic })) {
+      expectInsideRoot(rect, layout.root, `${label}: ${name}`);
+      expect(rect.left, `${label} left in viewport: ${name}`).toBeGreaterThanOrEqual(0);
+      expect(rect.right, `${label} right in viewport: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
+    }
+    expect(layout.scrollWidth, `horizontal overflow: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
+    expect(layout.end.width, `close width: ${name}`).toBeGreaterThanOrEqual(48);
+    expect(layout.end.height, `close height: ${name}`).toBeGreaterThanOrEqual(48);
+    const pebbles = await page.getByTestId("kid-progress-pebble").evaluateAll((elements) => elements.map((element) => {
+      const { left, right, width } = element.getBoundingClientRect();
+      return { left, right, width };
+    }));
+    expect(pebbles, `pebble count: ${name}`).toHaveLength(expectedPebbles);
+    for (const [index, pebble] of pebbles.entries()) {
+      expect(pebble.width, `pebble ${index} width: ${name}`).toBeGreaterThanOrEqual(5);
+      // The current pebble is scaled 1.25x, so it may poke out of the row by up to 2px.
+      expect(pebble.left, `pebble ${index} inside row: ${name}`).toBeGreaterThanOrEqual(layout.pebbles.left - 2);
+      expect(pebble.right, `pebble ${index} inside row: ${name}`).toBeLessThanOrEqual(layout.pebbles.right + 2);
+    }
+    if (pillShown) {
+      const pill = await measure(page, { pill: "[data-testid='kid-remaining']" });
+      expectInsideRoot(pill.pill, layout.root, `pill: ${name}`);
+      expect(pill.pill.right, `pill right in viewport: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
+      expect(pill.pill.bottom, `pill inside header: ${name}`).toBeLessThanOrEqual(layout.header.bottom + 1);
+      if (viewport.height < 480) {
+        // Very short: the pill sits beside the pebbles, not under them.
+        expect(Math.abs(centreY(pill.pill) - centreY(layout.pebbles)), `pill beside pebbles: ${name}`).toBeLessThanOrEqual(4);
+        expect(pill.pill.left, `pill after pebbles: ${name}`).toBeGreaterThanOrEqual(layout.pebbles.left);
+      } else {
+        expect(pill.pill.top, `pill under pebbles: ${name}`).toBeGreaterThanOrEqual(layout.pebbles.bottom - 1);
+      }
+    }
+  }
+}
+
+function openHeaderFixture(remainingAssessed: number): KidUiFixture {
+  const fixture = recallLayoutFixture();
+  fixture.tasks = [{ ...fixture.tasks[0]!, remainingAssessed }];
+  return fixture;
+}
+
+test("session header keeps close, pebbles and microphone in one row", async ({ page }) => {
+  await installKidUiFixture(page, openHeaderFixture(20));
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+  await expect(page.getByTestId("kid-input")).toBeVisible();
+  await expect(page.getByTestId("kid-remaining")).toHaveCount(0);
+  await expectSessionHeaderRow(page, 20, false);
+});
+
+test("session header keeps the same height with and without the Jeszcze pill", async ({ page, context }) => {
+  const heights = async (target: Page, remainingAssessed: number) => {
+    await installKidUiFixture(target, openHeaderFixture(remainingAssessed));
+    await target.goto("/");
+    await target.getByTestId("kid-profile").click();
+    await target.getByTestId("kid-deck").click();
+    await expect(target.getByTestId("kid-input")).toBeVisible();
+    await expect(target.getByTestId("kid-remaining")).toHaveCount(remainingAssessed <= 3 ? 1 : 0);
+    const result: number[] = [];
+    for (const viewport of [{ width: 360, height: 800 }, { width: 360, height: 500 }]) {
+      await resizeAndSettle(target, viewport);
+      result.push((await measure(target, { header: ".kid-header" })).header.height);
+    }
+    return result;
+  };
+  const without = await heights(page, 20);
+  const withPill = await heights(await context.newPage(), 3);
+  for (const [index, name] of ["360x800", "360x500"].entries()) {
+    expect(Math.abs(withPill[index]! - without[index]!), `header height with vs without pill: ${name}`).toBeLessThanOrEqual(1);
+  }
+});
+
+test("session header keeps the Jeszcze pill beside or under the pebbles", async ({ page }) => {
+  await installKidUiFixture(page, openHeaderFixture(3));
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+  await expect(page.getByTestId("kid-remaining")).toBeVisible();
+  await expectSessionHeaderRow(page, 3, true);
+});
 
 test("exposure keeps the complete word card above its action without scrolling on phones", async ({ page }, testInfo) => {
   const fixture = recallLayoutFixture();
@@ -430,6 +535,287 @@ test("profile tiles fit portrait, landscape, tablet and desktop", async ({ page 
     await page.evaluate(() => window.scrollTo(0, 0));
     if (viewport.width === 360) {
       await page.screenshot({ path: testInfo.outputPath("profile-360x800.png") });
+    }
+  }
+});
+
+function readingChoiceFixture(labels: readonly string[], wrongChoice = false): KidUiFixture {
+  const fixture = recallLayoutFixture();
+  const task = fixture.tasks[0]!;
+  fixture.tasks = [{
+    ...task,
+    exerciseType: "reading",
+    direction: "target_to_source",
+    prompt: {
+      kind: "reading",
+      text: "leg",
+      options: labels.map((text, index) => ({ id: `10000000-0000-4000-8000-0000000002${String(index).padStart(2, "0")}`, text })),
+    },
+  }];
+  if (wrongChoice) {
+    // Choosing the first option is wrong; the server reveals the second as the correct one.
+    fixture.attempts = [{ attemptId: "10000000-0000-4000-8000-000000000210", taskId: task.taskId, state: "completed",
+      modality: "choice", feedback: { kind: "incorrect", correctText: labels[1]! }, taskState: "issued", stepId: null,
+      receivedAt: "2026-10-24T10:00:00.000Z", completedAt: "2026-10-24T10:00:01.000Z" }];
+  }
+  return fixture;
+}
+
+async function openReadingChoices(page: Page, labels: readonly string[], wrongChoice = false) {
+  await installKidUiFixture(page, readingChoiceFixture(labels, wrongChoice));
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+  await expect(page.getByTestId("kid-option")).toHaveCount(labels.length);
+}
+
+/** Option cards: rectangles, whether the label is clipped and whether it stays on a single line. */
+async function measureOptions(page: Page) {
+  return page.getByTestId("kid-option").evaluateAll((elements) => elements.map((element) => {
+    const { left, right, top, width, height } = element.getBoundingClientRect();
+    const label = element.querySelector("span") as HTMLElement;
+    const labelRect = label.getBoundingClientRect();
+    const lineHeight = Number.parseFloat(getComputedStyle(label).lineHeight);
+    return { left, right, top, width, height, labelClipped: label.scrollWidth > label.clientWidth + 1,
+      labelHeight: labelRect.height, labelCentre: labelRect.top + labelRect.height / 2, lineHeight };
+  }));
+}
+
+test("short reading options form a 2x2 grid on phones", async ({ page }) => {
+  await openReadingChoices(page, ["noga", "ręka", "głowa", "pomarańcza"]);
+  for (const viewport of [{ width: 360, height: 800 }, { width: 320, height: 640 }]) {
+    const name = `${viewport.width}x${viewport.height}`;
+    await resizeAndSettle(page, viewport);
+    const root = (await measure(page, { root: ".kid-learning" })).root;
+    const options = await measureOptions(page);
+    expect(new Set(options.map((option) => Math.round(option.left))).size, `two columns: ${name}`).toBe(2);
+    expect(new Set(options.map((option) => Math.round(option.top))).size, `two rows: ${name}`).toBe(2);
+    for (const [index, option] of options.entries()) {
+      expectInsideRoot(option as never, root, `option ${index}: ${name}`);
+      expect(option.height, `option ${index} height: ${name}`).toBeGreaterThanOrEqual(56);
+      expect(option.labelClipped, `option ${index} label clipped: ${name}`).toBe(false);
+      expect(option.labelHeight, `option ${index} label on a single line: ${name}`).toBeLessThanOrEqual(option.lineHeight * 1.5);
+      // Symmetric badge band: the label sits in the vertical centre of the card.
+      expect(Math.abs(option.labelCentre - (option.top + option.height / 2)), `option ${index} label centred: ${name}`).toBeLessThanOrEqual(2);
+    }
+    expect((await measure(page, { root: ".kid-learning" })).scrollWidth, `horizontal overflow: ${name}`).toBeLessThanOrEqual(viewport.width);
+  }
+});
+
+test("short reading options keep the outcome badge clear of the label without changing card height", async ({ page }) => {
+  await openReadingChoices(page, ["pomarańcza", "przyjaciel", "głowa", "oko"], true);
+  for (const viewport of [{ width: 360, height: 800 }, { width: 320, height: 640 }]) {
+    const name = `${viewport.width}x${viewport.height}`;
+    await resizeAndSettle(page, viewport);
+    const options = page.getByTestId("kid-option");
+    const heights = async () => (await measureOptions(page)).map((option) => option.height);
+    const before = await heights();
+    await options.first().click();
+    await expect(page.getByTestId("kid-outcome-wrong")).toBeVisible();
+    await expect(page.getByTestId("kid-outcome-correct")).toBeVisible();
+    // Let the badge pop animation settle (reduced motion in the fixture makes it instant).
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    const outcomes = await options.evaluateAll((elements) => elements.map((element) => {
+      const label = element.querySelector("span") as HTMLElement;
+      const badge = element.querySelector("[data-outcome]:not(button)") as HTMLElement | null;
+      const l = label.getBoundingClientRect();
+      const b = badge?.getBoundingClientRect();
+      return { outcome: element.getAttribute("data-outcome"),
+        overlap: b ? !(b.right <= l.left || b.left >= l.right || b.bottom <= l.top || b.top >= l.bottom) : null };
+    }));
+    const withOutcome = outcomes.filter((entry) => entry.outcome === "wrong" || entry.outcome === "correct");
+    expect(withOutcome, `cards with an outcome: ${name}`).toHaveLength(2);
+    for (const entry of withOutcome) {
+      expect(entry.overlap, `${entry.outcome} badge overlaps label: ${name}`).toBe(false);
+    }
+    const after = await heights();
+    for (const [index, height] of after.entries()) {
+      expect(Math.abs(height - before[index]!), `option ${index} height change after outcome: ${name}`).toBeLessThanOrEqual(1);
+    }
+    await page.reload();
+    await page.getByTestId("kid-profile").click();
+    await page.getByTestId("kid-deck").click();
+    await expect(options).toHaveCount(4);
+  }
+});
+
+test("a wide short label takes a full row instead of being clipped", async ({ page }) => {
+  // Ten wide glyphs pass the length check but do not fit half of a phone row.
+  await openReadingChoices(page, ["WWWWWWWWWW", "noga", "ręka", "oko"]);
+  for (const viewport of [{ width: 360, height: 800 }, { width: 320, height: 640 }]) {
+    const name = `${viewport.width}x${viewport.height}`;
+    await resizeAndSettle(page, viewport);
+    const root = (await measure(page, { root: ".kid-learning" })).root;
+    const options = await measureOptions(page);
+    for (const [index, option] of options.entries()) {
+      expectInsideRoot(option as never, root, `option ${index}: ${name}`);
+      expect(option.labelClipped, `option ${index} label clipped: ${name}`).toBe(false);
+      expect(option.labelHeight, `option ${index} label on a single line: ${name}`).toBeLessThanOrEqual(option.lineHeight * 1.5);
+    }
+    const others = options.slice(1);
+    // A short option left alone on the last row may stretch too; the paired ones stay half-width.
+    expect(options[0]!.width, `wide option spans the row: ${name}`).toBeGreaterThan(Math.min(...others.map((option) => option.width)) * 1.5);
+    expect(new Set(others.map((option) => Math.round(option.left))).size, `short options still pair up: ${name}`).toBe(2);
+    expect((await measure(page, { root: ".kid-learning" })).scrollWidth, `horizontal overflow: ${name}`).toBeLessThanOrEqual(viewport.width);
+  }
+});
+
+test("long reading options stay in one column", async ({ page }) => {
+  await openReadingChoices(page, ["noga", "ręka", "głowa", "poniedziałek"]);
+  for (const viewport of [{ width: 360, height: 800 }, { width: 320, height: 640 }]) {
+    const name = `${viewport.width}x${viewport.height}`;
+    await resizeAndSettle(page, viewport);
+    const options = await measureOptions(page);
+    expect(new Set(options.map((option) => Math.round(option.left))).size, `one column: ${name}`).toBe(1);
+  }
+});
+
+test("short reading options keep one column on tablets and desktops", async ({ page }) => {
+  await openReadingChoices(page, ["noga", "ręka", "głowa", "oko"]);
+  for (const viewport of [{ width: 768, height: 1024 }, { width: 1280, height: 800 }]) {
+    const name = `${viewport.width}x${viewport.height}`;
+    await resizeAndSettle(page, viewport);
+    const options = await measureOptions(page);
+    expect(new Set(options.map((option) => Math.round(option.left))).size, `one column: ${name}`).toBe(1);
+    for (const [index, option] of options.entries()) {
+      expect(option.height, `option ${index} height: ${name}`).toBeGreaterThanOrEqual(56);
+    }
+  }
+});
+
+/** Two recall tasks: the client first sees 20 assessed tasks left, then 3, so the
+ * header shows 20 pebbles together with the "Jeszcze 3" pill. */
+function longSessionEndFixture(): KidUiFixture {
+  const fixture = recallLayoutFixture();
+  const first = fixture.tasks[0]!;
+  fixture.tasks = [
+    { ...first, remainingAssessed: 20 },
+    { ...first, taskId: "10000000-0000-4000-8000-000000000106", ordinal: 1, remainingAssessed: 3 },
+  ];
+  fixture.attempts = [{ attemptId: "10000000-0000-4000-8000-000000000110", taskId: first.taskId, state: "completed",
+    modality: "text", feedback: { kind: "great" }, taskState: "completed", stepId: null,
+    receivedAt: "2026-10-24T10:00:00.000Z", completedAt: "2026-10-24T10:00:01.000Z" }];
+  return fixture;
+}
+
+test("portrait keyboard height keeps 20 pebbles and the Jeszcze pill inside the header centre column", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await installKidUiFixture(page, longSessionEndFixture());
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+  await page.getByTestId("kid-input").fill("cat");
+  await page.getByTestId("kid-submit").click();
+  await page.getByTestId("kid-next").click();
+  await expect(page.getByTestId("kid-remaining")).toBeVisible();
+  await expect(page.getByTestId("kid-progress-pebble")).toHaveCount(20);
+  // 360x420 / 320x420: a phone in portrait with the on-screen keyboard open.
+  for (const viewport of [{ width: 360, height: 420 }, { width: 320, height: 420 }]) {
+    const name = `${viewport.width}x${viewport.height}`;
+    await resizeAndSettle(page, viewport);
+    await expect(page.locator(".kid-page")).toHaveAttribute("data-viewport-very-short", "true");
+    const layout = await measure(page, {
+      root: ".kid-learning",
+      header: ".kid-header",
+      column: ".kid-session-progress",
+      end: "[data-testid='kid-end']",
+      mic: "[data-testid='kid-microphone-status']",
+      pebbles: "[data-testid='kid-progress-pebbles']",
+      pill: "[data-testid='kid-remaining']",
+    });
+    const centreY = (rect: { top: number; height: number }) => rect.top + rect.height / 2;
+    // The progress block (pebbles over the pill) is centred on the header row.
+    const blockCentre = (Math.min(layout.pebbles.top, layout.pill.top) + Math.max(layout.pebbles.bottom, layout.pill.bottom)) / 2;
+    expect(Math.abs(blockCentre - centreY(layout.end)), `progress block centred on the row: ${name}`).toBeLessThanOrEqual(4);
+    expect(layout.pill.top, `pill under the pebbles: ${name}`).toBeGreaterThanOrEqual(layout.pebbles.bottom - 1);
+    for (const [label, rect] of Object.entries({ pebbles: layout.pebbles, pill: layout.pill })) {
+      expect(rect.left, `${label} inside centre column: ${name}`).toBeGreaterThanOrEqual(layout.column.left - 1);
+      expect(rect.right, `${label} inside centre column: ${name}`).toBeLessThanOrEqual(layout.column.right + 1);
+      expect(rect.left, `${label} clear of close: ${name}`).toBeGreaterThanOrEqual(layout.end.right);
+      expect(rect.right, `${label} clear of microphone: ${name}`).toBeLessThanOrEqual(layout.mic.left);
+      expect(rect.top, `${label} inside header: ${name}`).toBeGreaterThanOrEqual(layout.header.top - 1);
+      expect(rect.bottom, `${label} inside header: ${name}`).toBeLessThanOrEqual(layout.header.bottom + 1);
+      expectInsideRoot(rect, layout.root, `${label}: ${name}`);
+      expect(rect.left, `${label} left in viewport: ${name}`).toBeGreaterThanOrEqual(0);
+      expect(rect.right, `${label} right in viewport: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
+    }
+    const pebbles = await page.getByTestId("kid-progress-pebble").evaluateAll((elements) => elements.map((element) => {
+      const { left, right, width } = element.getBoundingClientRect();
+      return { left, right, width };
+    }));
+    for (const [index, pebble] of pebbles.entries()) {
+      expect(pebble.width, `pebble ${index} width: ${name}`).toBeGreaterThanOrEqual(5);
+      expect(pebble.left, `pebble ${index} inside row: ${name}`).toBeGreaterThanOrEqual(layout.pebbles.left - 2);
+      expect(pebble.right, `pebble ${index} inside row: ${name}`).toBeLessThanOrEqual(layout.pebbles.right + 2);
+    }
+    expect(layout.scrollWidth, `horizontal overflow: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
+  }
+});
+
+test("stimulus words stay larger than the answers on phones", async ({ page }) => {
+  await openReadingChoices(page, ["noga", "ręka", "głowa", "oko"]);
+  await resizeAndSettle(page, { width: 360, height: 800 });
+  const reading = await page.evaluate(() => ({
+    word: Number.parseFloat(getComputedStyle(document.querySelector("[data-testid='kid-word']")!).fontSize),
+    option: Number.parseFloat(getComputedStyle(document.querySelector("[data-testid='kid-option'] span")!).fontSize),
+  }));
+  expect(reading.word, "reading word font size at 360x800").toBeGreaterThanOrEqual(28);
+  expect(reading.word, "reading word larger than the option label").toBeGreaterThan(reading.option);
+
+  const recall = await page.context().newPage();
+  await installKidUiFixture(recall, recallLayoutFixture());
+  await recall.goto("/");
+  await recall.getByTestId("kid-profile").click();
+  await recall.getByTestId("kid-deck").click();
+  await resizeAndSettle(recall, { width: 360, height: 800 });
+  const written = await recall.evaluate(() => ({
+    source: Number.parseFloat(getComputedStyle(document.querySelector("[data-testid='kid-source']")!).fontSize),
+    input: Number.parseFloat(getComputedStyle(document.querySelector("[data-testid='kid-input']")!).fontSize),
+  }));
+  expect(written.source, "recall source font size at 360x800").toBeGreaterThanOrEqual(28);
+  expect(written.source, "recall source larger than the typed answer").toBeGreaterThan(written.input);
+});
+
+test("picture listening keeps the instruction guidance distinct and clear of the instruction text", async ({ page }) => {
+  await installKidUiFixture(page, pictureChoiceLayoutFixture());
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").first().click();
+  await page.getByTestId("kid-done").click();
+  await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-prompt-kind", "picture_listening");
+  const guidance = page.getByTestId("kid-instruction").getByTestId("kid-guidance-play");
+  await expect(guidance).toHaveCount(1);
+  await expect(guidance).toHaveAttribute("aria-label", "Posłuchaj polecenia");
+  await expect(guidance).toHaveAttribute("data-variant", "outlined");
+  await expect(page.getByTestId("kid-instruction").getByTestId("kid-play")).toHaveAttribute("aria-label", "Posłuchaj");
+  // The real instruction, then a long one (stress text) that has to wrap.
+  const long = "Posłuchaj uważnie nagrania i wybierz obrazek, który do niego pasuje";
+  for (const text of [null, long]) {
+    if (text !== null) {
+      await page.evaluate((value) => {
+        document.querySelector("[data-testid='kid-instruction'] > span")!.textContent = value;
+      }, text);
+    }
+    for (const viewport of [{ width: 360, height: 800 }, { width: 320, height: 640 }]) {
+      const name = `${viewport.width}x${viewport.height}${text === null ? "" : " long"}`;
+      await resizeAndSettle(page, viewport);
+      const layout = await measure(page, {
+        row: "[data-testid='kid-instruction']",
+        text: "[data-testid='kid-instruction'] > span",
+        guidance: "[data-testid='kid-instruction'] [data-testid='kid-guidance-play']",
+        play: "[data-testid='kid-instruction'] [data-testid='kid-play']",
+      });
+      const intersects = (a: Rect, b: Rect) => !(a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom);
+      for (const [label, rect] of Object.entries({ guidance: layout.guidance, play: layout.play })) {
+        expect(rect.width, `${label} width: ${name}`).toBeGreaterThanOrEqual(48);
+        expect(rect.height, `${label} height: ${name}`).toBeGreaterThanOrEqual(48);
+        expect(rect.left, `${label} inside instruction: ${name}`).toBeGreaterThanOrEqual(layout.row.left - 1);
+        expect(rect.right, `${label} inside instruction: ${name}`).toBeLessThanOrEqual(layout.row.right + 1);
+        expect(rect.top, `${label} inside instruction: ${name}`).toBeGreaterThanOrEqual(layout.row.top - 1);
+        expect(rect.bottom, `${label} inside instruction: ${name}`).toBeLessThanOrEqual(layout.row.bottom + 1);
+        expect(intersects(rect, layout.text), `${label} intersects the instruction text: ${name}`).toBe(false);
+      }
+      expect(layout.scrollWidth, `horizontal overflow: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
     }
   }
 });

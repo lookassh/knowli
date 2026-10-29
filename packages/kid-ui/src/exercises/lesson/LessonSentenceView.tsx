@@ -106,6 +106,7 @@ export function LessonSentenceView({ task, busy, dock, handlers, mockTest, micAv
             ) : (
               <AnswerField
                 ref={inputRef}
+                variant="sentence"
                 {...fieldProps}
                 onChange={(event) => changeText(event.target.value)}
                 placeholder={calculation ? messages.kid.lessonCalculationPlaceholder : messages.kid.typeWord}

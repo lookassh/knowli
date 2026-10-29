@@ -83,8 +83,10 @@ test("animated task switch and feedback dock keep the session flow working", asy
     await expect(page.getByTestId("kid-answer-burst")).toHaveAttribute("aria-hidden", "true");
     await expect(page.getByTestId("kid-answer-burst")).toHaveCount(0, { timeout: 3000 });
   }
-  // The session header shows progress (bar or "Jeszcze N" pill with a fill).
-  await expect(page.getByTestId("kid-progress-fill")).toHaveCount(1);
+  // The session header shows progress as pebbles: one per assessed task, one of them current.
+  await expect(page.getByTestId("kid-progress-pebbles")).toHaveCount(1);
+  await expect(page.getByTestId("kid-progress-pebble").first()).toBeVisible();
+  await expect(page.locator("[data-testid='kid-progress-pebble'][data-state='current']")).toHaveCount(1);
 
   await page.getByTestId("kid-next").click();
   // The summary mounts a fresh ScreenTransition after the session screen;

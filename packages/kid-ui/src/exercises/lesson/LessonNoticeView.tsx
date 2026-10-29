@@ -1,5 +1,6 @@
 import { messages } from "@learning/contracts";
 import { ExerciseFrame } from "../ExerciseFrame";
+import { KidIcon } from "../../components/KidIcon";
 import { WordChoiceButton } from "../../components/WordChoiceButton";
 import type { ExerciseProps } from "../types";
 
@@ -31,6 +32,16 @@ export function LessonNoticeView({ task, busy, optionOutcomes, dock, handlers }:
                     onClick={() => handlers.onAnswerChoice(segment.id)}
                   >
                     {segment.text}
+                    {(outcome === "correct" || outcome === "wrong") && (
+                      <span
+                        className="kid-lesson-notice__outcome"
+                        aria-hidden="true"
+                        data-outcome={outcome}
+                        data-testid="kid-lesson-notice-outcome"
+                      >
+                        <KidIcon name={outcome === "correct" ? "check" : "close"} />
+                      </span>
+                    )}
                   </WordChoiceButton>
                 );
               })}

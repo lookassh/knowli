@@ -1,7 +1,7 @@
 import { expect as baseExpect, test } from "@playwright/test";
 import type { TaskDto } from "@learning/contracts";
 import { assertKidLayout, installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
-import { expectReadableOnDarkContainer } from "./helpers/contrast";
+import { expectReadableOnDarkContainer, kidTokenColor } from "./helpers/contrast";
 
 const expect = baseExpect.configure({ timeout: 1_500 });
 
@@ -103,7 +103,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     expect(bounds!.height).toBeGreaterThanOrEqual(44);
   });
 
-  test(`retry feedback uses readable blue support in ${colorScheme} theme`, async ({ page }, testInfo) => {
+  test(`retry feedback uses the incorrect tone dock in ${colorScheme} theme`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 390, height: 700 });
     await page.emulateMedia({ colorScheme });
     const task = taskFor("reading");
@@ -121,18 +121,29 @@ for (const colorScheme of ["light", "dark"] as const) {
     const feedback = page.getByTestId("kid-feedback");
     await expect(feedback.getByTestId("kid-feedback-correct-answer")).toHaveText("kot");
     await expect(page.getByTestId("kid-next")).toBeInViewport();
-    const colors = await feedback.evaluate((element) => {
-      const style = getComputedStyle(element);
-      const channels = (color: string) => color.match(/[\d.]+/g)!.slice(0, 3).map(Number);
-      const background = channels(style.backgroundColor);
-      const luminance = (rgb: number[]) => rgb.map((c) => c / 255).map((c) => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
-        .reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i]!, 0);
-      const fg = luminance(channels(style.color));
+    // The incorrect tone is the error-container dock with a close icon; the
+    // correct answer stays readable on that dock (measured against the dock).
+    const dock = page.getByTestId("kid-feedback-dock");
+    await expect(dock).toHaveAttribute("data-tone", "incorrect");
+    await expect(dock.getByTestId("kid-feedback-tone-icon")).toHaveAttribute("data-icon", "close");
+    const answer = feedback.getByTestId("kid-feedback-correct-answer");
+    const colors = await Promise.all([
+      answer.evaluate((element) => getComputedStyle(element).color),
+      dock.evaluate((element) => getComputedStyle(element).backgroundColor),
+    ]).then(([color, background]) => {
+      const luminance = (value: string) => {
+        const [red, green, blue] = value.match(/[\d.]+/g)!.slice(0, 3).map(Number).map((channel) => {
+          const unit = channel / 255;
+          return unit <= 0.04045 ? unit / 12.92 : ((unit + 0.055) / 1.055) ** 2.4;
+        });
+        return red! * 0.2126 + green! * 0.7152 + blue! * 0.0722;
+      };
+      const fg = luminance(color);
       const bg = luminance(background);
-      return { blue: background[2]!, red: background[0]!, contrast: (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05) };
+      return { background, color, contrast: (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05) };
     });
-    expect(colors.blue).toBeGreaterThan(colors.red);
-    expect(colors.contrast).toBeGreaterThanOrEqual(4.5);
+    expect(colors.background).toBe(await kidTokenColor(page, "--md-sys-color-error-container"));
+    expect(colors.contrast, JSON.stringify(colors)).toBeGreaterThanOrEqual(4.5);
     await expect(page.getByTestId("kid-option").nth(0)).toHaveClass(/kid-option--correct/);
     await expect(page.getByTestId("kid-option").nth(1)).toHaveClass(/kid-option--wrong/);
     // Outcome colors come from AnswerGrid's M3 containers, never a light card.

@@ -66,6 +66,8 @@ export const kidProgressFillTransition: Transition = { type: "spring", stiffness
 /** A streak of correct answers makes the progress pill jump once. */
 export const kidStreakLength = 3;
 export const kidStreakJump = { scale: [1, 1.18, 0.95, 1], y: [0, -4, 0, 0] };
+/** Pebble row hops (no scaling: the row spans the header column). */
+export const kidStreakHop = { y: [0, -4, 0, 0] };
 export const kidStreakJumpTransition: Transition = { duration: 0.6, ease: "easeOut", times: [0, 0.35, 0.7, 1] };
 
 /** Flow-screen switch (profile -> decks -> summary); the session screen keeps TaskTransition. */

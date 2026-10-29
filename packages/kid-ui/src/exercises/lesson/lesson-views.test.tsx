@@ -61,6 +61,27 @@ describe("lesson exercise views", () => {
     expect(screen.getByTestId("kid-lesson-notice-word").className).not.toMatch(/correct|wrong/);
   });
 
+  it("notice word marks a server outcome with an icon, never a text glyph", () => {
+    const outcomes = new Map<string, "correct" | "wrong">([[id(3), "correct"], [id(4), "wrong"]]);
+    const props = makeExerciseProps(
+      task({ kind: "lesson_notice", instructionPl: "Dotknij", segments: [[{ id: id(3), text: "He" }, { id: id(4), text: "plays" }, { id: id(5), text: "ball" }]] }),
+      { optionOutcomes: outcomes },
+    );
+    renderKid(<LessonNoticeView {...props} />);
+    const words = screen.getAllByTestId("kid-lesson-notice-word");
+    const markers = screen.getAllByTestId("kid-lesson-notice-outcome");
+    expect(markers).toHaveLength(2);
+    for (const marker of markers) {
+      expect(marker.getAttribute("aria-hidden")).toBe("true");
+      expect(marker.querySelector("svg.kid-icon")).not.toBeNull();
+      expect(marker.textContent).toBe("");
+    }
+    expect(markers[0]!.getAttribute("data-outcome")).toBe("correct");
+    expect(markers[1]!.getAttribute("data-outcome")).toBe("wrong");
+    expect(words[2]!.querySelector("[data-testid='kid-lesson-notice-outcome']")).toBeNull();
+    expect(words.map((word) => word.textContent)).toEqual(["He", "plays", "ball"]);
+  });
+
   it("short answer sends a choice immediately", () => {
     const props = makeExerciseProps(task({ kind: "lesson_short_answer", question: "Does he play?", options: [{ id: id(5), text: "Yes" }] }));
     renderKid(<LessonShortAnswerView {...props} />);

@@ -1,7 +1,8 @@
 import { expect, test, type Locator } from "@playwright/test";
 import { installKidUiFixture } from "./helpers/kid-ui-fixture";
 import { pictureVocabularyFixture } from "./helpers/picture-fixtures";
-import { kidTokenColor } from "./helpers/contrast";
+import { kidTokenColor, ownColorContrast } from "./helpers/contrast";
+import { resizeAndSettle } from "./helpers/kid-layout";
 
 async function expectReadable(control: Locator) {
   const contrast = await control.evaluate((element) => {
@@ -51,9 +52,9 @@ test("round audio buttons keep a readable icon on their resting background", asy
   await page.screenshot({ path: testInfo.outputPath("exposure-1366x768.png") });
 });
 
-test("round audio button stays tonal even on a filled ActionButton", async ({ page }, testInfo) => {
-  /* PictureRecallView renders the round play as a default (filled)
-     ActionButton; .kid-audio-round must win regardless of stylesheet order. */
+test("round audio button under the picture stays tonal", async ({ page }, testInfo) => {
+  /* PictureRecallView renders the round play as an IconActionButton under the
+     picture; .kid-audio-round must keep the tonal surface regardless of stylesheet order. */
   const fixture = pictureVocabularyFixture();
   const listening = fixture.tasks[1]!;
   fixture.tasks = [{ ...listening, exerciseType: "recall", prompt: { kind: "picture_recall", visual: { kind: "color", color: "#ff0000" } } }];
@@ -65,7 +66,7 @@ test("round audio button stays tonal even on a filled ActionButton", async ({ pa
   await page.getByTestId("kid-deck").first().click();
   const play = page.locator(".kid-audio-round");
   await expect(play).toBeVisible();
-  await expect(play).toHaveAttribute("data-variant", "filled");
+  await expect(play).toHaveAttribute("data-variant", "tonal");
   const [tonal, onTonal] = await Promise.all([
     kidTokenColor(page, "--md-sys-color-secondary-container"),
     kidTokenColor(page, "--md-sys-color-on-secondary-container"),
@@ -77,6 +78,16 @@ test("round audio button stays tonal even on a filled ActionButton", async ({ pa
   expect(style).toEqual({ background: tonal, color: onTonal, border: "rgba(0, 0, 0, 0)" });
   await expectReadable(play);
   await page.screenshot({ path: testInfo.outputPath("picture-recall-390x844.png") });
+  // The playback stays below the picture in portrait, landscape and tablet.
+  const visual = page.locator(".kid-material .kid-visual");
+  for (const viewport of [{ width: 360, height: 800 }, { width: 844, height: 390 }, { width: 768, height: 1024 }]) {
+    await resizeAndSettle(page, viewport);
+    await play.scrollIntoViewIfNeeded();
+    const [picture, button] = [(await visual.boundingBox())!, (await play.boundingBox())!];
+    const name = `${viewport.width}x${viewport.height}`;
+    expect(button.y, `playback below the picture: ${name}`).toBeGreaterThanOrEqual(picture.y + picture.height - 1);
+    expect(Math.abs((button.x + button.width / 2) - (picture.x + picture.width / 2)), `playback centred under the picture: ${name}`).toBeLessThanOrEqual(2);
+  }
 });
 
 for (const colorScheme of ["light", "dark"] as const) {
@@ -106,3 +117,65 @@ for (const colorScheme of ["light", "dark"] as const) {
     });
   }
 }
+
+async function openWrittenRecall(page: import("@playwright/test").Page, viewport: { width: number; height: number }) {
+  const fixture = pictureVocabularyFixture();
+  fixture.tasks = [{ ...fixture.tasks[0]!, exerciseType: "recall", direction: "source_to_target", prompt: { kind: "recall", prompt: "kot" } }];
+  fixture.session.microphoneEnabled = false;
+  await installKidUiFixture(page, fixture);
+  await page.setViewportSize(viewport);
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").first().click();
+  await expect(page.getByTestId("kid-input")).toBeVisible();
+}
+
+for (const viewport of [{ width: 360, height: 800 }, { width: 844, height: 390 }]) {
+  test(`written answer text is large and readable at ${viewport.width}x${viewport.height}`, async ({ page }, testInfo) => {
+    await openWrittenRecall(page, viewport);
+    const input = page.getByTestId("kid-input");
+    await input.fill("leg");
+    const style = await input.evaluate((element) => {
+      const computed = getComputedStyle(element);
+      return { fontSize: parseFloat(computed.fontSize), fontWeight: Number(computed.fontWeight), fontFamily: computed.fontFamily };
+    });
+    expect(style.fontSize).toBeGreaterThanOrEqual(24);
+    expect(style.fontWeight).toBeGreaterThanOrEqual(600);
+    expect(style.fontFamily).toContain("KnowliKidFredoka");
+    const contrast = await ownColorContrast(input);
+    expect(contrast.ratio, JSON.stringify(contrast)).toBeGreaterThanOrEqual(4.5);
+    await page.screenshot({ path: testInfo.outputPath(`written-${viewport.width}x${viewport.height}.png`) });
+  });
+}
+
+test("stimulus word uses the strongest text color", async ({ page }) => {
+  await openWrittenRecall(page, { width: 360, height: 800 });
+  const onSurface = await kidTokenColor(page, "--md-sys-color-on-surface");
+  await expect(page.getByTestId("kid-source")).toBeVisible();
+  expect(await page.getByTestId("kid-source").evaluate((element) => getComputedStyle(element).color)).toBe(onSurface);
+
+  const reading = pictureVocabularyFixture();
+  reading.profiles[0]!.canRead = true;
+  reading.session.canRead = true;
+  reading.tasks = [{ ...reading.tasks[0]!, exerciseType: "reading", direction: null, prompt: { kind: "reading", text: "leg", options: [
+    { id: "10000000-0000-4000-8000-000000000081", text: "noga" },
+    { id: "10000000-0000-4000-8000-000000000082", text: "ręka" },
+    { id: "10000000-0000-4000-8000-000000000083", text: "głowa" },
+  ] } }];
+  await installKidUiFixture(page, reading);
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").first().click();
+  await expect(page.getByTestId("kid-word")).toBeVisible();
+  expect(await page.getByTestId("kid-word").evaluate((element) => getComputedStyle(element).color)).toBe(onSurface);
+});
+
+test("focused answer field and primary slot stay in the viewport on a short screen", async ({ page }) => {
+  await openWrittenRecall(page, { width: 360, height: 800 });
+  const input = page.getByTestId("kid-input");
+  await input.focus();
+  await resizeAndSettle(page, { width: 360, height: 400 });
+  await expect(input).toBeFocused();
+  await expect(input).toBeInViewport();
+  await expect(page.getByTestId("kid-primary-slot")).toBeInViewport();
+});

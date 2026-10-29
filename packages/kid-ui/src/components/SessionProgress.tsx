@@ -7,70 +7,107 @@ import {
   kidProgressPopAnimate,
   kidProgressPopInitial,
   kidSpringGentle,
+  kidStreakHop,
   kidStreakJump,
   kidStreakJumpTransition,
 } from "../motion/kid-motion";
 import classes from "./SessionProgress.module.css";
 
-/** Session progress in the header: a fill that grows as tasks are done.
- * Near the end (and in mock tests) the fill sits behind the "Jeszcze N"
- * label; otherwise it is a slim bar. A streak of correct answers makes it
- * jump once and drops a star. Decorative fill and star are aria-hidden;
- * the label stays the accessible text. Only transform and opacity move.
- * One stable root: switching from bar to label never replays a reward. */
-export function SessionProgress({ remaining, fraction = 0, milestone = 0 }: {
+/** Up to this many assessed tasks the progress is one pebble per task. */
+export const PEBBLE_LIMIT = 20;
+
+/** Session progress in the header: one pebble per assessed task (done,
+ * current, upcoming), or a slim bar for very long sessions, plus the
+ * "Jeszcze N" pill once the end is near. A streak of correct answers makes
+ * the row hop once and drops a star from the last done pebble. Pebbles and
+ * star are decorative (aria-hidden); the pill stays the accessible text.
+ * Only transform and opacity move; a growing `total` just adds pebbles. */
+export function SessionProgress({ remaining, total = 0, done = 0, milestone = 0 }: {
   /** Label count, or null when the label is not shown yet. */
   remaining: number | null;
-  /** Share of the session already done, 0..1. */
-  fraction?: number;
+  /** Assessed tasks in the session, 0 while still unknown. */
+  total?: number;
+  /** Assessed tasks already finished. */
+  done?: number;
   /** Changes when a streak milestone is reached. */
   milestone?: number;
 }): ReactElement {
   const [scope, animate] = useAnimate<HTMLSpanElement>();
   const reduceMotion = useReducedMotion() === true;
   const seenMilestone = useRef(milestone);
+  const mountedMilestone = useRef(milestone);
+  const pebbles = total >= 1 && total <= PEBBLE_LIMIT;
   useEffect(() => {
     if (milestone <= seenMilestone.current) return;
     seenMilestone.current = milestone;
-    if (!reduceMotion && scope.current) void animate(scope.current, kidStreakJump, kidStreakJumpTransition);
-  }, [milestone, reduceMotion, animate, scope]);
+    if (!reduceMotion && scope.current) {
+      void animate(scope.current, pebbles ? kidStreakHop : kidStreakJump, kidStreakJumpTransition);
+    }
+  }, [milestone, reduceMotion, pebbles, animate, scope]);
+
+  const finished = total > 0 ? Math.min(total, Math.max(0, done)) : 0;
+  // The star stays over the pebble that was last done when the milestone hit,
+  // so it never jumps to the next one while it fades out.
+  const starAnchor = useRef({ milestone: -1, index: 0 });
+  if (starAnchor.current.milestone !== milestone) {
+    starAnchor.current = { milestone, index: Math.max(0, finished - 1) };
+  }
+  // A new anchor remounts the presence in another pebble, so the entrance must
+  // play there; only a star already shown at mount skips it (its last keyframe
+  // is invisible).
+  const star = (
+    <AnimatePresence initial={milestone > mountedMilestone.current}>
+      {milestone > 0 && (
+        <m.span
+          key={milestone}
+          className={classes.star}
+          aria-hidden="true"
+          data-testid="kid-streak-star"
+          initial={{ opacity: 0, scale: 0.3, y: 0, rotate: -40 }}
+          animate={{ opacity: [0, 1, 1, 0], scale: [0.3, 1.35, 1, 0.9], y: [0, -8, -12, -26], rotate: [-40, 10, 0, 0] }}
+          transition={{ duration: 1.3, ease: "easeOut", times: [0, 0.3, 0.7, 1] }}
+        >
+          ★
+        </m.span>
+      )}
+    </AnimatePresence>
+  );
 
   const labelled = remaining !== null;
   return (
-    <span
-      ref={scope}
-      className={labelled ? [classes.root, "kid-remaining"].join(" ") : [classes.bar, "kid-progress-bar"].join(" ")}
-      data-testid={labelled ? "kid-remaining" : "kid-progress-bar"}
-      aria-hidden={labelled ? undefined : "true"}
-    >
-      <span className={classes.fillTrack} aria-hidden="true">
-        <m.span
-          className={classes.fill}
-          data-testid="kid-progress-fill"
-          initial={false}
-          animate={{ scaleX: fraction }}
-          transition={kidProgressFillTransition}
-        />
-      </span>
-      <AnimatePresence initial={false}>
-        {milestone > 0 && (
-          <m.span
-            key={milestone}
-            className={classes.star}
-            aria-hidden="true"
-            data-testid="kid-streak-star"
-            initial={{ opacity: 0, scale: 0.3, y: 0, rotate: -40 }}
-            animate={{ opacity: [0, 1, 1, 0], scale: [0.3, 1.35, 1, 0.9], y: [0, -8, -12, -26], rotate: [-40, 10, 0, 0] }}
-            transition={{ duration: 1.3, ease: "easeOut", times: [0, 0.3, 0.7, 1] }}
-          >
-            ★
-          </m.span>
-        )}
-      </AnimatePresence>
+    <span className={`${classes.root} kid-session-progress`}>
+      {pebbles ? (
+        <span ref={scope} className={classes.pebbles} data-testid="kid-progress-pebbles" aria-hidden="true">
+          {Array.from({ length: total }, (_, index) => (
+            <span
+              key={index}
+              className={classes.pebble}
+              data-testid="kid-progress-pebble"
+              data-state={index < finished ? "done" : index === finished ? "current" : "upcoming"}
+            >
+              {index === starAnchor.current.index && star}
+            </span>
+          ))}
+        </span>
+      ) : (
+        <span ref={scope} className={classes.bar} data-testid="kid-progress-bar" aria-hidden="true">
+          <span className={classes.fillTrack}>
+            <m.span
+              className={classes.fill}
+              data-testid="kid-progress-fill"
+              initial={false}
+              animate={{ scaleX: total > 0 ? finished / total : 0 }}
+              transition={kidProgressFillTransition}
+            />
+          </span>
+          {star}
+        </span>
+      )}
       {labelled && (
         <m.span
           key={remaining}
-          className={classes.label}
+          className={`${classes.label} kid-remaining`}
+          data-testid="kid-remaining"
           initial={kidProgressPopInitial}
           animate={kidProgressPopAnimate}
           transition={kidSpringGentle}

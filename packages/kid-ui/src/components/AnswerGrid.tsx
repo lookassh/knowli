@@ -57,6 +57,8 @@ export interface AnswerGridProps {
   listTestId?: string;
   choiceList?: boolean;
   compactChoiceGrid?: boolean;
+  /** Four short text options: 2×2 on compact widths instead of a single column (see `isShortChoiceSet`). */
+  shortChoiceGrid?: boolean;
   optionLang?: string;
   /** Toggle tiles instead of answering on tap; see `AnswerGridSelection`. */
   selection?: AnswerGridSelection;
@@ -79,6 +81,7 @@ export function AnswerGrid({
   listTestId,
   choiceList = false,
   compactChoiceGrid = false,
+  shortChoiceGrid = false,
   optionLang,
   selection,
   listLabel,
@@ -89,7 +92,7 @@ export function AnswerGrid({
   const choseCorrectly = !Array.from(outcomes.values()).includes("wrong");
   const selectionFull = selection !== undefined && selection.selectedIds.size >= selection.maxSelected;
   return (
-    <ul className={[classes.grid, choiceList ? classes.choiceList : undefined, compactChoiceGrid ? classes.compactChoiceGrid : undefined, className].filter(Boolean).join(" ")} data-visual-only={visualOnly || undefined} data-testid={listTestId}
+    <ul className={[classes.grid, choiceList ? classes.choiceList : undefined, compactChoiceGrid ? classes.compactChoiceGrid : undefined, shortChoiceGrid ? classes.shortChoiceGrid : undefined, className].filter(Boolean).join(" ")} data-visual-only={visualOnly || undefined} data-testid={listTestId}
       data-selection={selection ? "multiple" : undefined} aria-label={listLabel}
       style={visualOnly ? { "--visual-choice-count": options.length, "--visual-choice-rows": Math.ceil(options.length / 2) } as CSSProperties : undefined}>
       {options.map((option, index) => {
@@ -145,8 +148,8 @@ export function AnswerGrid({
               {option.content !== null && option.content !== undefined && (
                 <span className={classes.content} data-testid="kid-option-content">{option.content}</span>
               )}
-              {outcome === "correct" && <m.span className={`${classes.outcome} kid-picture-outcome kid-picture-outcome--correct`} aria-hidden="true" data-outcome={outcome} data-testid="kid-outcome-correct" initial={kidOutcomeIconInitial} animate={kidOutcomeIconAnimate} transition={kidSpringBouncy} style={{ display: "inline-block" }}>✓</m.span>}
-              {outcome === "wrong" && <m.span className={`${classes.outcome} kid-picture-outcome kid-picture-outcome--wrong`} aria-hidden="true" data-outcome={outcome} data-testid="kid-outcome-wrong" initial={kidOutcomeIconInitial} animate={kidWrongIconAnimate} transition={kidWrongIconTransition} style={{ display: "inline-block" }}>×</m.span>}
+              {outcome === "correct" && <m.span className={`${classes.outcome} kid-picture-outcome kid-picture-outcome--correct`} aria-hidden="true" data-outcome={outcome} data-testid="kid-outcome-correct" initial={kidOutcomeIconInitial} animate={kidOutcomeIconAnimate} transition={kidSpringBouncy} style={{ display: "inline-block" }}><KidIcon name="check" /></m.span>}
+              {outcome === "wrong" && <m.span className={`${classes.outcome} kid-picture-outcome kid-picture-outcome--wrong`} aria-hidden="true" data-outcome={outcome} data-testid="kid-outcome-wrong" initial={kidOutcomeIconInitial} animate={kidWrongIconAnimate} transition={kidWrongIconTransition} style={{ display: "inline-block" }}><KidIcon name="close" /></m.span>}
             </m.button>
           {/* Chosen correct tile: a small star burst out of the tile (outside
               the button, whose overflow is clipped). Decorative only. */}
