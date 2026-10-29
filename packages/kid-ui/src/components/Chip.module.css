@@ -1,0 +1,27 @@
+:global(.kid-ui) .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 12px;
+  max-width: 100%;
+  border-radius: var(--kid-shape-m);
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  font-family: var(--kid-font-body);
+  font-size: var(--kid-type-label-sm-size);
+  font-weight: var(--kid-type-label-sm-weight);
+  line-height: var(--kid-type-label-sm-line-height);
+  overflow-wrap: anywhere;
+}
+
+:global(.kid-ui) .chip[data-tone="warm"] {
+  background: var(--kid-color-warm-container);
+  color: var(--kid-color-on-warm-container);
+}
+
+:global(.kid-ui) .chip .icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
