@@ -16,7 +16,8 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pl">
+    // atrybut schematu Mantine ustawia skrypt layoutu /parent przed hydratacją
+    <html lang="pl" suppressHydrationWarning>
       <body>{children}</body>
     </html>
   );

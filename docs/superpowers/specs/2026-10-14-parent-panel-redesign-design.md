@@ -2,6 +2,8 @@
 
 Data: 2026-10-14. Stan: design zaakceptowany przez właściciela na podstawie interaktywnej makiety (przełącznik „Jak jest teraz ↔ Propozycja", zakładki Zestawy/Dzieci/Postępy, modal „Nowy materiał"). Plan implementacji: `docs/superpowers/plans/2026-10-14-parent-panel-redesign.md`.
 
+> Zmiana decyzji 2026-10-29: zasada „bez nowego systemu stylowania, zero zależności” (§4) przestaje obowiązywać. Panel rodzica przechodzi na Mantine 9 i TanStack Query, z trybem ciemnym i adresami URL sekcji — plan `docs/superpowers/plans/2026-10-29-parent-ui-mantine.md`. Decyzje treściowe tego speca (grupy zestawów, karty postępów, teksty, `data-testid`, dostępność) pozostają punktem odniesienia.
+
 ## 1. Cel i zakres
 
 Panel rodzica jest funkcjonalny, ale nieczytelny: płaska hierarchia jednakowych białych kart, listy tekstowe zamiast wizualizacji, formularz tworzenia zestawu wypycha listę w dół, tabela słów to 35 chipów tekstowych. Redesign zmienia wyłącznie warstwę prezentacji panelu rodzica (`apps/web/src/parent/**`, style panelu) oraz — jedną, jawnie wydzieloną zmianą — rozszerza `DeckSummaryDto` o opcjonalne pola meta dla wiersza zestawu.

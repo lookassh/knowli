@@ -10,6 +10,7 @@ import ProgressPanel from "./ProgressPanel";
 import WorkCardPanel from "./WorkCardPanel";
 import { useParentLeaveGuard } from "./useParentLeaveGuard";
 import { ParentIcon } from "./ParentIcon";
+import { useAuthExpiredHandler } from "./ParentProviders";
 import "./parent.css";
 
 type Phase = "loading" | "setup" | "login" | "panel";
@@ -28,6 +29,7 @@ export default function ParentApp() {
   const [decks, setDecks] = useState<DeckSummaryDto[]>([]);
   const leaveGuard = useParentLeaveGuard();
   const toLogin = useCallback(() => setPhase("login"), []);
+  useAuthExpiredHandler(toLogin);
 
   const refreshChildren = useCallback(async () => {
     setChildrenList(await callParent(() => parentClient.children.list()));

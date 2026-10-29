@@ -63,6 +63,7 @@ W celu przyspieszenia pracy agentów i wyeliminowania powtarzalnych, kosztownych
 - Next.js App Router, React i TypeScript w trybie strict; runtime serwera Node.js.
 - PostgreSQL, Drizzle ORM i Drizzle Kit; Zod do walidacji granic i wyników AI.
 - Tailwind CSS, PWA, pnpm workspaces, Vitest i Playwright.
+- Panel rodzica (od 2026-10-29, plan `docs/superpowers/plans/2026-10-29-parent-ui-mantine.md`): Mantine 9 (komponenty, formularze, modale, powiadomienia, tryb jasny/ciemny) i TanStack Query przez `@orpc/tanstack-query`. Mantine, jego style i providery żyją wyłącznie w `apps/web/src/parent` i layoucie `app/parent` (pilnuje `tests/parent-mantine-scope.test.ts`); Kid UI nie zależy od Mantine. Mantine 9 wymaga Reacta 19.2+ także w kopii wbudowanej w Next.js — stąd Next 16.
 - Modularny monolit w jednym repozytorium: proces `web`, proces `worker`, jedna baza PostgreSQL. Kolejka Graphile Worker korzysta z tej samej instancji bazy.
 - Docker Compose/Coolify, prywatny trwały wolumen mediów; konkretne stabilne wersje przypnij podczas implementacji.
 
