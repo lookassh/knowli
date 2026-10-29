@@ -371,9 +371,11 @@ test("long exposure remains readable from the start of its scrollable material",
   task.prompt.imageAssetId = null;
   await openTask(page, task);
 
+  // The material slot is the scrolling box; the long card must start at its top
+  // and end inside it once scrolled through.
   const material = page.getByTestId("kid-material");
-  const materialContent = page.locator(".kid-material-content");
-  await materialContent.evaluate((element) => { element.scrollTop = 0; });
+  expect(await material.evaluate((element) => element.scrollHeight > element.clientHeight), "long card scrolls").toBe(true);
+  await material.evaluate((element) => { element.scrollTop = 0; });
   const [materialBox, targetBox] = await Promise.all([
     material.boundingBox(),
     page.getByTestId("kid-target").boundingBox(),
@@ -381,7 +383,7 @@ test("long exposure remains readable from the start of its scrollable material",
   expect(materialBox).not.toBeNull();
   expect(targetBox).not.toBeNull();
   expect(targetBox!.y).toBeGreaterThanOrEqual(materialBox!.y);
-  await materialContent.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  await material.evaluate((element) => { element.scrollTop = element.scrollHeight; });
   const sourceBox = await page.getByTestId("kid-source").boundingBox();
   expect(sourceBox).not.toBeNull();
   expect(sourceBox!.y + sourceBox!.height).toBeLessThanOrEqual(materialBox!.y + materialBox!.height);
