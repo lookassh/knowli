@@ -95,6 +95,7 @@ for (const viewport of VIEWPORTS) {
     // Wskazówka leży w wierszu swojego rozwiązania.
     const row = (await page.getByTestId("kid-lesson-mock-solution").boundingBox())!;
     const hint = (await page.getByTestId("kid-lesson-mock-hint").boundingBox())!;
+    expect(hint.y, `hint inside row at ${label}`).toBeGreaterThanOrEqual(row.y - 1);
     expect(hint.x, `hint inside row at ${label}`).toBeGreaterThanOrEqual(row.x - 1);
     expect(hint.x + hint.width, `hint inside row at ${label}`).toBeLessThanOrEqual(row.x + row.width + 1);
     expect(hint.y + hint.height, `hint inside row at ${label}`).toBeLessThanOrEqual(row.y + row.height + 1);
@@ -103,6 +104,18 @@ for (const viewport of VIEWPORTS) {
       await expectInsideWidth(page, testId, viewport.width, label);
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), `page overflow at ${label}`).toBe(false);
+
+    // „Warto powtórzyć” osiągalne przez scroll i w całości na ekranie.
+    const reviewSection = page.getByTestId("kid-lesson-mock-review");
+    await reviewSection.scrollIntoViewIfNeeded();
+    await expect(reviewSection).toBeInViewport();
+
+    // Akcja dodatkowa (zmiana profilu) z celem ≥48 px.
+    const profiles = page.getByRole("button", { name: "Kto się dziś uczy?" });
+    await profiles.scrollIntoViewIfNeeded();
+    const secondary = (await profiles.boundingBox())!;
+    expect(secondary.height, `profiles height at ${label}`).toBeGreaterThanOrEqual(48);
+    expect(secondary.width, `profiles width at ${label}`).toBeGreaterThanOrEqual(48);
 
     // Główna akcja osiągalna (scroll) i duża.
     const practice = page.getByTestId("kid-lesson-mock-practice");

@@ -9,6 +9,7 @@ export interface MockAnswerDetails {
   readonly precision?: unknown;
   readonly formOk?: unknown;
   readonly missingElementTexts?: unknown;
+  readonly missingElementIds?: unknown;
 }
 
 export interface SchoolMockAggregate {
@@ -62,12 +63,17 @@ export function schoolMockAggregate(answers: readonly MockAnswerDetails[]): Scho
 export type MockPrecisionHint = "shorter" | "focus" | "missing";
 
 /**
- * Jedna wskazówka do rozwiązania (design §8.2): niepełna wiedza → brak
- * informacji; poprawna, ale nie na temat → trzymaj się pytania; poprawna,
- * ale rozwlekła albo w więcej niż jednym zdaniu → krócej. Inaczej brak.
+ * Jedna wskazówka do rozwiązania (design §8.2): niepełna wiedza z brakującym
+ * elementem → brak informacji; poprawna, ale nie na temat → trzymaj się
+ * pytania; poprawna, ale rozwlekła albo w więcej niż jednym zdaniu → krócej.
+ * Częściowa ocena bez braków (komplet elementów plus błędne stwierdzenie) nie
+ * dostaje wskazówki o brakach — byłaby nieprawdziwa. Inaczej brak.
  */
 export function mockPrecisionHint(details: MockAnswerDetails): MockPrecisionHint | null {
-  if (details.knowledge === "partial") return "missing";
+  if (details.knowledge === "partial") {
+    const missing = Array.isArray(details.missingElementIds) && details.missingElementIds.length > 0;
+    return missing ? "missing" : null;
+  }
   if (details.knowledge !== "correct") return null;
   if (details.precision === "unfocused") return "focus";
   if (details.precision === "verbose" || details.formOk === false) return "shorter";

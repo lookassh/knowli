@@ -260,6 +260,23 @@ describe("kartkówka lekcji — raport, ekspozycje, omówienie", () => {
     expect(summary.state).toBe("completed");
   });
 
+  it("gramatyka bez zmian (design §8): pominięte odpowiedzi nie dają wskazówek ani „Warto powtórzyć”", async () => {
+    const { services } = buildTestServices();
+    const child = await createChild(services, { displayName: "G", avatarKey: "owl" });
+    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, testDate: "2026-10-20" });
+    const session = await startMock(services, child.id, lesson.deckId);
+    for (let i = 0; i < 30; i++) {
+      const t = await nextTask(services, session.sessionId);
+      if (!t) break;
+      await submitAttempt(services, { taskId: t.taskId, clientAttemptId: randomUUID(), modality: "skip" });
+    }
+    const summary = await readLessonMockTestSummary(services, session.sessionId);
+    expect(summary.solutions.every((solution) => solution.outcome === "skipped")).toBe(true);
+    expect(summary.reviewObjectives).toBeUndefined();
+    expect(summary.solutions.some((solution) => solution.hintPl !== undefined)).toBe(false);
+    expect((await getLessonMockTestReport(services, session.sessionId)).objectives[0]!.school).toBeUndefined();
+  });
+
   it("timeout (niepełna) utrwala state=ended i summary=ended", async () => {
     const { services, clock } = buildTestServices();
     const child = await createChild(services, { displayName: "L", avatarKey: "owl" });

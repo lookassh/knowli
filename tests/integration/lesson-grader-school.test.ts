@@ -678,4 +678,30 @@ describe("kartkówka szkolna z wymiarem precyzji (Etap 5, integracja)", () => {
     // Wskazówka nie ujawnia treści brakującego elementu.
     expect(JSON.stringify(summary)).not.toContain("roślina potrzebuje światła");
   });
+
+  it("odpowiedź z drobną literówką liczy się w wiedzy szkolnej raportu jak dokładne dopasowanie", async () => {
+    const services = makeServices(new FakeAnswerGrader());
+    const child = await createChild(services, { displayName: "Literówka", avatarKey: "cat" });
+    const { deckId } = await seedSchoolDeck(child.id);
+    const session = await startSession(services, { childId: child.id, deckId, microphoneEnabled: false, mode: "mock_test" });
+    for (let i = 0; i < 20; i++) {
+      const task = await nextTask(services, session.sessionId);
+      if (task === null) break;
+      if (task.exerciseType === "lesson_card") { await completePresentation(services, { taskId: task.taskId }); continue; }
+      if (task.exerciseType === "lesson_open_answer") {
+        // „światla” zamiast „światła” — literówka poza elementem sprawdzanym.
+        await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: "Roślina z wody i dwutlenku węgla, przy udziale światla, wytwarza cukry." });
+        continue;
+      }
+      await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "skip" });
+    }
+    const details = (await pool.query<{ details: Record<string, unknown> }>(
+      "select a.details from learning_app.assessments a where a.child_id = $1 and a.details->>'verdict' = 'minor_typo'", [child.id])).rows;
+    expect(details).toHaveLength(1);
+    expect(details[0]!.details).toMatchObject({ knowledge: "correct", precision: "concise", missingElementIds: [] });
+    const report = await getLessonMockTestReport(services, session.sessionId);
+    const objective = report.objectives.find((row) => row.objectiveId === OBJECTIVE_ID)!;
+    expect(objective.correct).toBe(1);
+    expect(objective.school?.knowledge).toEqual({ correct: 1, partial: 0, incorrect: 0 });
+  });
 });

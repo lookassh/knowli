@@ -515,7 +515,7 @@ spoza omówienia:
 | --- | --- |
 | wiedza poprawna, precyzja `verbose` albo `formOk = false` | „Dobrze! Następnym razem spróbuj krócej.” |
 | wiedza poprawna, precyzja `unfocused` | „Dobrze! Trzymaj się samego pytania.” |
-| wiedza `partial` | „Zabrakło ważnej informacji. Porównaj z poprawną odpowiedzią.” |
+| wiedza `partial` z brakującym elementem | „Zabrakło ważnej informacji. Porównaj z poprawną odpowiedzią.” |
 | pozostałe | brak wskazówki |
 
 Omówienie i tak pokazuje poprawną odpowiedź po zakończeniu kartkówki, więc
@@ -546,8 +546,9 @@ harmonogramu: powtórki nadal planuje selektor z historii ocen.
 ### 8.5. Klienci i integracje
 
 - Kid UI: `LessonMockTestSummaryScreen` — wskazówka pod odpowiedziami
-  rozwiązania i lista „Warto powtórzyć”; wspólne komponenty `KidScreen`,
-  test geometrii w istniejącym specu omówienia (portrait, landscape, tablet,
+  rozwiązania i lista „Warto powtórzyć” (tylko przedmiot szkolny);
+  wspólne komponenty `KidScreen`, test geometrii w nowym specu
+  `lesson-mock-precision-layout.spec.ts` (portrait, landscape, tablet,
   desktop).
 - Panel rodzica: `LessonSupervisionPanel` — sekcja kartkówek.
 - API → MCP → skill: raport kartkówek lekcji nie wchodzi do

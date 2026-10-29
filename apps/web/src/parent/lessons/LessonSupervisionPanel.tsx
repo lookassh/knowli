@@ -317,8 +317,9 @@ export default function LessonSupervisionPanel({
                               <p className="muted">{messages.lessons.mockTestSchoolForm.replace("{n}", String(objective.school.formViolations))}</p>
                             )}
                             {objective.school.missingElements.length > 0 && (
+                              // Funkcja zamiany: teksty z materiału rodzica mogą zawierać „$”.
                               <p className="muted">{messages.lessons.mockTestSchoolMissing.replace("{elements}",
-                                objective.school.missingElements.map((element) => `${element.text} (${element.count})`).join(", "))}</p>
+                                () => objective.school!.missingElements.map((element) => `${element.text} (${element.count})`).join(", "))}</p>
                             )}
                           </div>
                         )}

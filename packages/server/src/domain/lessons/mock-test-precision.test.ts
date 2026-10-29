@@ -32,7 +32,9 @@ describe("mockPrecisionHint", () => {
     [{ knowledge: "correct", precision: "verbose" }, "shorter"],
     [{ knowledge: "correct", precision: "concise", formOk: false }, "shorter"],
     [{ knowledge: "correct", precision: "unfocused" }, "focus"],
-    [{ knowledge: "partial", precision: "concise" }, "missing"],
+    [{ knowledge: "partial", precision: "concise", missingElementIds: ["e2"] }, "missing"],
+    // Komplet elementów i błędne stwierdzenie: o brakach mówić nie wolno.
+    [{ knowledge: "partial", precision: "concise", missingElementIds: [] }, null],
     [{ knowledge: "correct", precision: "concise" }, null],
     [{ knowledge: "incorrect", precision: "verbose" }, null],
     [{}, null],

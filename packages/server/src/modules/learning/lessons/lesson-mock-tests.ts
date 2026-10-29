@@ -391,11 +391,6 @@ export async function getLessonMockTestReport(services: Services, sessionId: str
   return services.db.transaction(async (tx) => (await terminalLessonSession(tx, services, sessionId)).report);
 }
 
-/**
- * Omówienie kartkówki lekcji dla dziecka po zamknięciu (req 9.4, SPEC §19.1).
- * Pieczętuje ekspozycje (`feedback_issued` z `target_key`) PRZED zwróceniem, tak
- * jak słówka. Odpowiedź dziecka i poprawna odpowiedź jako tekst, prosty wynik.
- */
 /** Teksty wskazówek precyzji w omówieniu (katalog komunikatów dziecka). */
 const HINT_TEXT: Readonly<Record<MockPrecisionHint, string>> = {
   shorter: messages.kid.mockTestHintShorter,
@@ -403,6 +398,12 @@ const HINT_TEXT: Readonly<Record<MockPrecisionHint, string>> = {
   missing: messages.kid.mockTestHintMissing,
 };
 
+/**
+ * Omówienie kartkówki lekcji dla dziecka po zamknięciu (req 9.4, SPEC §19.1).
+ * Pieczętuje ekspozycje (`feedback_issued` z `target_key`) PRZED zwróceniem, tak
+ * jak słówka. Odpowiedź dziecka i poprawna odpowiedź jako tekst, prosty wynik;
+ * przedmiot szkolny dokłada wskazówki precyzji i „Warto powtórzyć” (design §8).
+ */
 export async function readLessonMockTestSummary(services: Services, sessionId: string): Promise<LessonMockTestSummaryDto> {
   return services.db.transaction(async (tx) => {
     const { session, report } = await terminalLessonSession(tx, services, sessionId);
@@ -412,8 +413,10 @@ export async function readLessonMockTestSummary(services: Services, sessionId: s
     const byTask = await loadMockAssessments(tx, session.id);
     const version = (await tx.select().from(deckVersions).where(eq(deckVersions.id, session.deckVersionId)))[0]!;
     const context = lessonContextOf(version);
-    const { topic } = requireTopic(services, context);
+    const { subject, topic } = requireTopic(services, context);
     const titleOf = (objectiveId: string): string => topic.objectives.find((o) => o.id === objectiveId)?.titlePl ?? objectiveId;
+    // Wskazówki i „Warto powtórzyć” dotyczą przedmiotów szkolnych (payload v3); gramatyka bez zmian.
+    const schoolSubject = subject.usesV3Payload === true;
 
     const solutions: LessonMockTestSummaryDto["solutions"] = [];
     const reviewInputs: { objectiveId: string; outcome: LessonMockTestSummaryDto["solutions"][number]["outcome"]; knowledge: unknown }[] = [];
@@ -440,7 +443,7 @@ export async function readLessonMockTestSummary(services: Services, sessionId: s
             : row?.outcome === "incorrect" ? "incorrect"
               : "unassessed";
       if (task.state !== "issued" && task.state !== "skipped") answeredCount += 1;
-      const hint = row ? mockPrecisionHint(row.details) : null;
+      const hint = schoolSubject && row ? mockPrecisionHint(row.details) : null;
       solutions.push({
         taskId: task.id,
         objectiveId: slot.objectiveId,
@@ -457,7 +460,7 @@ export async function readLessonMockTestSummary(services: Services, sessionId: s
     // Stan jak utrwalony przez `closeLessonMockTest`: komplet → `completed`,
     // niepełna → `ended`; sesja już zamknięta zachowuje swój stan.
     const state: "completed" | "ended" = session.state === "active" ? (report.complete ? "completed" : "ended") : (session.state as "completed" | "ended");
-    const review = objectivesWorthReviewing(reviewInputs, topic.objectives.map((objective) => objective.id));
+    const review = schoolSubject ? objectivesWorthReviewing(reviewInputs, topic.objectives.map((objective) => objective.id)) : [];
     return LessonMockTestSummaryDtoSchema.parse({
       sessionId: session.id,
       deckId: session.deckId,
