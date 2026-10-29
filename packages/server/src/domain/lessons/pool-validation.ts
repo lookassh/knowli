@@ -9,7 +9,13 @@
  * eksportowanymi stałymi — żadnych rozsianych literałów.
  */
 
-import { LessonExerciseInputSchema } from "@learning/contracts";
+import {
+  LessonExerciseInputSchema,
+  MAX_KEY_OPTIONS,
+  MAX_KEYWORD_OPTIONS,
+  MIN_KEY_OPTIONS,
+  MIN_KEYWORD_OPTIONS,
+} from "@learning/contracts";
 import { ASSESSED_STAGES, stageOf } from "./stages";
 import type {
   AnswerNormalizer,
@@ -216,6 +222,9 @@ export function validateLessonExercise(
   if (ex.calculation !== undefined && ex.exerciseType !== "lesson_calculation") {
     errors.push("calculation: parametry są dozwolone tylko dla „lesson_calculation”");
   }
+  if ((ex.keywordOptions !== undefined || ex.keyOptionIds !== undefined) && ex.exerciseType !== "lesson_keywords") {
+    errors.push("keywordOptions: pojęcia do wyboru są dozwolone tylko dla „lesson_keywords”");
+  }
   validateTextFieldLengths(ex, errors);
   validateFocus(ex, normalizer, errors);
   validateByType(ex, topic, objective, normalizer, errors);
@@ -289,10 +298,61 @@ function validateByType(
     case "lesson_open_answer":
       if (!ex.prompt?.trim()) errors.push("prompt: wymagane pytanie dla „lesson_open_answer”");
       break;
+    case "lesson_keywords":
+      validateKeywords(ex, normalizer, errors);
+      break;
     default:
       break;
   }
   void objective;
+}
+
+/**
+ * `lesson_keywords`: 4–6 unikalnych pojęć, 2–3 kluczowe spośród nich, a
+ * `answer` to pojęcia kluczowe złączone „, ” w kolejności `keyOptionIds`
+ * (źródło `targetKey`; ocena porównuje wyłącznie identyfikatory).
+ */
+function validateKeywords(
+  ex: LessonExerciseDraft,
+  normalizer: AnswerNormalizer,
+  errors: string[],
+): void {
+  const options = ex.keywordOptions ?? [];
+  const keyIds = ex.keyOptionIds ?? [];
+  if (options.length < MIN_KEYWORD_OPTIONS || options.length > MAX_KEYWORD_OPTIONS) {
+    errors.push(`keywordOptions: liczba pojęć (${options.length}) poza zakresem ${MIN_KEYWORD_OPTIONS}–${MAX_KEYWORD_OPTIONS}`);
+  }
+  if (new Set(options.map((option) => option.id)).size !== options.length) {
+    errors.push("keywordOptions: identyfikatory pojęć muszą być unikalne");
+  }
+  for (let i = 0; i < options.length; i++) {
+    for (let j = i + 1; j < options.length; j++) {
+      if (answersEquivalent(options[i]!.text, options[j]!.text, normalizer)) {
+        errors.push(`keywordOptions: pojęcie „${options[j]!.text}” powiela „${options[i]!.text}” po normalizacji`);
+      }
+    }
+  }
+  if (keyIds.length < MIN_KEY_OPTIONS || keyIds.length > MAX_KEY_OPTIONS) {
+    errors.push(`keyOptionIds: liczba pojęć kluczowych (${keyIds.length}) poza zakresem ${MIN_KEY_OPTIONS}–${MAX_KEY_OPTIONS}`);
+  }
+  if (new Set(keyIds).size !== keyIds.length) {
+    errors.push("keyOptionIds: pojęcia kluczowe nie mogą się powtarzać");
+  }
+  const textById = new Map(options.map((option) => [option.id, option.text] as const));
+  if (keyIds.some((id) => !textById.has(id))) {
+    errors.push("keyOptionIds: każde pojęcie kluczowe musi być jednym z pojęć do wyboru");
+  } else if (keyIds.length > 0 && ex.answer !== keywordsAnswer(ex)) {
+    errors.push("answer: musi być listą pojęć kluczowych złączonych „, ”");
+  }
+  if (keyIds.length >= options.length && options.length > 0) {
+    errors.push("keywordOptions: wśród pojęć musi być co najmniej jeden dystraktor");
+  }
+}
+
+/** Kanoniczna odpowiedź `lesson_keywords`: pojęcia kluczowe złączone „, ”. */
+export function keywordsAnswer(ex: Pick<LessonExerciseDraft, "keywordOptions" | "keyOptionIds">): string {
+  const textById = new Map((ex.keywordOptions ?? []).map((option) => [option.id, option.text] as const));
+  return (ex.keyOptionIds ?? []).map((id) => textById.get(id) ?? "").join(", ");
 }
 
 function validateOrder(
@@ -663,7 +723,8 @@ export function poolCoverage(
     const forObjective = exercises.filter((ex) => ex.objectiveId === objectiveId);
     for (const stage of ASSESSED_STAGES) {
       const required = minimums[stage as keyof PoolMinimums];
-      const actual = forObjective.filter((ex) => stageOf(ex.exerciseType) === stage).length;
+      // Słowa kluczowe są dodatkiem trenera precyzji, nie pokrywają minimum etapu.
+      const actual = forObjective.filter((ex) => ex.exerciseType !== "lesson_keywords" && stageOf(ex.exerciseType) === stage).length;
       if (actual < required) {
         gaps.push({ objectiveId, stage, required, actual });
       }

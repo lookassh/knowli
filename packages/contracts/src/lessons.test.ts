@@ -41,13 +41,14 @@ describe("calculation exercise input", () => {
 });
 
 describe("LESSON_EXERCISE_TYPES", () => {
-  it("has exactly the 10 lesson_* types", () => {
+  it("has exactly the 11 lesson_* types", () => {
     expect([...LESSON_EXERCISE_TYPES].sort()).toEqual([
       "lesson_calculation",
       "lesson_card",
       "lesson_choice",
       "lesson_error_fix",
       "lesson_gap",
+      "lesson_keywords",
       "lesson_notice",
       "lesson_open_answer",
       "lesson_order",

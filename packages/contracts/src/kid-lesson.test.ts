@@ -35,6 +35,49 @@ describe("public calculation prompt", () => {
   });
 });
 
+describe("precision trainer prompts (Etap 4)", () => {
+  const options = [UUID, UUID2, "33333333-3333-4333-8333-333333333333", "44444444-4444-4444-8444-444444444444"]
+    .map((id, index) => ({ id, text: `pojęcie ${index}` }));
+  const keywords = { kind: "lesson_keywords", instructionPl: "Wybierz.", prompt: "Co to jest fotosynteza?", options, minSelected: 2, maxSelected: 3 };
+  const shorten = {
+    kind: "lesson_shorten", instructionPl: "Skróć.", prompt: "Co to jest fotosynteza?",
+    originalAnswer: "Roślina robi cukry i jest zielona.",
+    answerSegments: [{ text: "Roślina robi cukry", state: "plain" }, { text: " i jest zielona.", state: "pill" }],
+  };
+  it("accepts both prompts and registers lesson_keywords", () => {
+    expect(TaskPromptSchema.safeParse(keywords).success).toBe(true);
+    expect(TaskPromptSchema.safeParse(shorten).success).toBe(true);
+    expect(EXERCISE_TYPES as readonly string[]).toContain("lesson_keywords");
+  });
+  it.each([
+    ["keyOptionIds", [UUID]], ["answer", "pojęcie 0"], ["familyId", "fam"],
+  ] as const)("keywords prompt never carries the key (%s)", (field, value) => {
+    expect(TaskPromptSchema.safeParse({ ...keywords, [field]: value }).success).toBe(false);
+  });
+  it("rejects selection bounds that do not fit the options", () => {
+    expect(TaskPromptSchema.safeParse({ ...keywords, minSelected: 3, maxSelected: 2 }).success).toBe(false);
+    expect(TaskPromptSchema.safeParse({ ...keywords, maxSelected: 5 }).success).toBe(false);
+    expect(TaskPromptSchema.safeParse({ ...keywords, options: options.slice(0, 3) }).success).toBe(false);
+  });
+  it("shorten prompt carries only the child own answer, never the model answer", () => {
+    expect(TaskPromptSchema.safeParse({ ...shorten, answer: "Roślina robi cukry." }).success).toBe(false);
+    expect(TaskPromptSchema.safeParse({ ...shorten, requiredElements: [] }).success).toBe(false);
+    expect(TaskPromptSchema.safeParse({ ...shorten, originalAnswer: "a".repeat(MAX_TEXT_ATTEMPT_LENGTH + 1) }).success).toBe(false);
+  });
+  it("accepts an unordered selection of unique ids", () => {
+    const base = { taskId: UUID, clientAttemptId: UUID2, modality: "selection" };
+    expect(AttemptInputSchema.safeParse({ ...base, itemIds: [UUID, UUID2] }).success).toBe(true);
+    expect(AttemptInputSchema.safeParse({ ...base, itemIds: [UUID, UUID] }).success).toBe(false);
+    expect(AttemptInputSchema.safeParse({ ...base, itemIds: [] }).success).toBe(false);
+    expect(AttemptModalitySchema.safeParse("selection").success).toBe(true);
+  });
+  it("lesson_precision_hint requires the template text", () => {
+    expect(FeedbackDtoSchema.safeParse({ kind: "lesson_precision_hint", hintPl: "Wiesz to!" }).success).toBe(true);
+    expect(FeedbackDtoSchema.safeParse({ kind: "lesson_precision_hint" }).success).toBe(false);
+    expect(FeedbackDtoSchema.safeParse({ kind: "great", hintPl: "Wiesz to!" }).success).toBe(false);
+  });
+});
+
 describe("EXERCISE_TYPES includes the 9 lesson types", () => {
   it("contains every lesson_* type", () => {
     for (const t of [

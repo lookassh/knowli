@@ -580,6 +580,15 @@ export const messages = {
       height_difference: "Od wysokości wyższego punktu odejmij wysokość niższego punktu.",
       unit_conversion: "Sprawdź, ile mniejszych jednostek mieści się w większej jednostce.",
     },
+    // Trener precyzji (Etap 4): słowa kluczowe i skracanie odpowiedzi.
+    lessonKeywordsInstruction: "Wybierz 2–3 najważniejsze pojęcia do tej odpowiedzi.",
+    lessonKeywordsSelected: "Wybrane: {count} z {max}",
+    lessonShortenInstruction: "Skróć odpowiedź. Usuń zaznaczone fragmenty, zostaw to, co najważniejsze.",
+    lessonShortenInput: "Krótsza odpowiedź",
+    lessonShortenOriginal: "Twoja odpowiedź",
+    lessonPrecisionHint: "Wiesz to! Teraz spróbuj powiedzieć to krócej, bez dodatkowych historii.",
+    lessonShortenLostElement: "Krócej, ale zgubiła się ważna informacja. Porównaj z poprzednią odpowiedzią.",
+    lessonShortenUnchanged: "To ta sama odpowiedź. Usuń zaznaczone fragmenty.",
     // Podsumowanie lekcji (per cel), bez procentów.
     lessonSummaryTitle: "Ćwiczyłeś reguły",
     lessonSummaryObjective: "Ćwiczyłeś: {title}",
