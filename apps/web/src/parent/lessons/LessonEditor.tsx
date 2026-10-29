@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Accordion, ActionIcon, Alert, Button, Group, Loader, Menu, Modal, NumberInput, Paper, SimpleGrid, Stack, Tabs, Text, TextInput, Textarea, Title } from "@mantine/core";
+import { useMediaQuery } from "@mantine/hooks";
+import { modals } from "@mantine/modals";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   messages,
@@ -18,7 +21,15 @@ import DeckSessionTaskBudgetSettings from "../DeckSessionTaskBudgetSettings";
 import type { EditorLeaveState } from "../useParentLeaveGuard";
 import { orpc } from "../query-client";
 import LessonSupervisionPanel from "./LessonSupervisionPanel";
-import { DeckAssignmentsList } from "../DeckAssignmentsList";
+import LessonExerciseCard, { type CalculationControls } from "./LessonExerciseCard";
+import ArchiveLessonDialog from "./ArchiveLessonDialog";
+import { formatFamilyDate } from "../DeckEditor";
+import { ParentIcon } from "../ParentIcon";
+import { runOnce } from "../run-once";
+import { avatarEmoji } from "../avatars";
+import { polishPlural } from "../deck-list-grouping";
+import "../deck-editor.css";
+import "./lesson-panels.css";
 import {
   createLessonSnapshot,
   applyCalculationPreview,
@@ -33,14 +44,16 @@ import {
   type LessonEditorSnapshot,
 } from "./lesson-editor-state";
 
-/** Pola payloadu edytowalne per typ ćwiczenia (reszta jest tylko do odczytu dla danego typu). */
-const STEM_LABEL_TYPES = new Set(["lesson_choice", "lesson_gap"]);
-
 /** Czy zapisany werdykt dowolnych odpowiedzi jest wyłączony (brak modelu oceniającego). */
 function gradingDisabled(deck: LessonDeckDto | null): boolean {
   // Typowane pole `grading` (zadanie 16) zastąpiło rzutowanie
   // `deck as unknown as {gradingAvailable?: boolean}`.
   return deck?.grading.available === false;
+}
+
+/** Liczba ćwiczeń do dogenerowania: całkowita 1–60 (kontrakt polecenia). */
+export function regenCountValid(count: number): boolean {
+  return Number.isInteger(count) && count >= 1 && count <= 60;
 }
 
 /** Odstęp odpytywania lekcji: co 1 s, gdy trwa generowanie albo media pokazanej wersji czekają. */
@@ -66,11 +79,14 @@ export default function LessonEditor({
   childrenList,
   onBack,
   onEditorStateChange,
+  onArchived,
 }: {
   deckId: string;
   childrenList: ChildDto[];
   onBack: () => void;
   onEditorStateChange: (state: EditorLeaveState) => void;
+  /** Lekcja usunięta z listy z menu ⋯ — panel oznacza ją od razu i wraca do listy. */
+  onArchived: () => void;
 }) {
   const [deck, setDeck] = useState<LessonDeckDto | null>(null);
   const [form, setForm] = useState<EditableLessonForm | null>(null);
@@ -92,6 +108,27 @@ export default function LessonEditor({
   // PATCH-a ćwiczeń żyje w `lesson-editor-state.ts` (poza zakresem tej edycji);
   // przykłady dokładamy do ciała PATCH w `save()`. `null` = jeszcze nie zasiane.
   const [examplesForm, setExamplesForm] = useState<Record<string, string[]> | null>(null);
+  // Układ (szkic 6b): zakładka, otwarte karty ćwiczeń i grupy (null = domyślne dla szerokości ekranu).
+  const compact = useMediaQuery("(max-width: 37.49em)", false, { getInitialValueInEffect: false });
+  const [tab, setTab] = useState("exercises");
+  const [openCards, setOpenCards] = useState<ReadonlySet<string>>(new Set());
+  const [openObjectives, setOpenObjectives] = useState<string[] | null>(null);
+  const [openStages, setOpenStages] = useState<string[] | null>(null);
+  const [regenTarget, setRegenTarget] = useState<string | null>(null);
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+  // błędy przy sekcji, której dotyczą (jak w edytorze zestawu): liczba pytań, przypisanie dziecka
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [assignErrors, setAssignErrors] = useState<Record<string, string>>({});
+  const setAssignError = (childId: string, message: string | null) =>
+    setAssignErrors((current) => {
+      const next = { ...current };
+      if (message) next[childId] = message; else delete next[childId];
+      return next;
+    });
+  const confirmIds = useRef<string[]>([]);
+  const lessonMenuRef = useRef<HTMLButtonElement>(null);
 
   const [calculationInputs, setCalculationInputs] = useState<Record<string, string>>({});
   const [calculationPreviews, setCalculationPreviews] = useState<Record<string, { fingerprint: string; status: "pending" | "ready" | "error" }>>({});
@@ -282,6 +319,7 @@ export default function LessonEditor({
 
   const removeExercise = (clientKey: string) => {
     markDirty();
+    setExerciseErrors({});
     setForm((current) =>
       current ? { ...current, exercises: current.exercises.filter((ex) => ex.clientKey !== clientKey) } : current,
     );
@@ -358,6 +396,7 @@ export default function LessonEditor({
         const map: Record<number, string[]> = {};
         for (const entry of parsed.exercises ?? []) map[entry.index] = entry.errors;
         setExerciseErrors(map);
+        setTab("exercises");
         setError(messages.errors.validation);
       } else if (cause instanceof ApiCallError && (cause.code === "conflict" || cause.code === "immutable")) {
         enterConflict(true);
@@ -475,7 +514,7 @@ export default function LessonEditor({
   };
 
   const assign = async (childId: string) => {
-    setError(null);
+    setAssignError(childId, null);
     try {
       await run(() => parentClient.assignments.put({
         childId,
@@ -485,19 +524,18 @@ export default function LessonEditor({
       }));
       await load();
     } catch (cause) {
-      setError(errorMessage(cause));
+      setAssignError(childId, errorMessage(cause));
     }
   };
 
   const unassign = async (childId: string) => {
-    if (!window.confirm(messages.decks.unassignConfirm)) return;
-    setError(null);
+    setAssignError(childId, null);
     setUnassigningChildId(childId);
     try {
       await run(() => parentClient.assignments.remove({ childId, deckId }));
       await load();
     } catch (cause) {
-      setError(errorMessage(cause));
+      setAssignError(childId, errorMessage(cause));
     } finally {
       setUnassigningChildId(null);
     }
@@ -521,558 +559,641 @@ export default function LessonEditor({
   const indexByClientKey = new Map((form?.exercises ?? []).map((ex, index) => [ex.clientKey, index]));
   const groups = form ? groupExercisesByObjectiveAndStage(form.exercises, active?.objectiveIds ?? []) : [];
 
-  const audioStateText = (state: string): string =>
-    messages.decks.audioState[state === "approved" ? "ready" : state] ?? "";
+  // Okna potwierdzeń nie przeżywają edytora (powrót do listy, inna lekcja).
+  useEffect(() => () => {
+    for (const id of confirmIds.current) modals.close(id);
+  }, []);
+
+  // Błąd walidacji (400): pierwsza karta z błędem trafia na ekran.
+  useEffect(() => {
+    const indexes = Object.keys(exerciseErrors).map(Number);
+    if (indexes.length === 0) return;
+    const first = Math.min(...indexes);
+    const frame = requestAnimationFrame(() => {
+      document.querySelector(`[data-testid="exercise-${first}"]`)?.scrollIntoView({ block: "center" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [exerciseErrors]);
+
+  const confirmUnassign = (childId: string) => {
+    confirmIds.current.push(modals.openConfirmModal({
+      title: messages.decks.unassignTitle,
+      centered: true,
+      radius: "lg",
+      children: <Text size="sm">{messages.decks.unassignConfirm}</Text>,
+      labels: { confirm: messages.decks.unassign, cancel: messages.decks.archiveCancel },
+      confirmProps: { color: "red", size: "md", "data-testid": "unassign-confirm" } as Record<string, unknown>,
+      cancelProps: { size: "md", variant: "default", "data-autofocus": true } as Record<string, unknown>,
+      onConfirm: runOnce(() => { void unassign(childId); }),
+    }));
+  };
+
+  const archive = async () => {
+    if (archiveBusy || busyRef.current) return;
+    setArchiveBusy(true);
+    setBusyState(true);
+    setArchiveError(null);
+    try {
+      await run(() => parentClient.decks.archive({ deckId }));
+      setBusyState(false);
+      setArchiveOpen(false);
+      onArchived();
+    } catch (cause) {
+      // wygasła sesja: logowanie otwiera globalny handler, okno archiwizacji nie zostaje pod spodem
+      if (cause instanceof ApiCallError && cause.status === 401) setArchiveOpen(false);
+      else setArchiveError(cause instanceof ApiCallError ? errorMessage(cause) : messages.lessons.archiveFailed);
+    } finally {
+      setArchiveBusy(false);
+      if (busyRef.current) setBusyState(false);
+    }
+  };
+
+  const confirmRemoveObjective = (objectiveId: string) => {
+    confirmIds.current.push(modals.openConfirmModal({
+      title: messages.lessons.removeDynamicObjectiveTitle,
+      centered: true,
+      radius: "lg",
+      children: <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+        {messages.lessons.removeDynamicObjectiveConfirm.replace("{title}", objectiveMeta(objectiveId)?.titlePl ?? objectiveId)}
+      </Text>,
+      labels: { confirm: messages.lessons.removeDynamicObjective, cancel: messages.lessons.removeDynamicObjectiveCancel },
+      confirmProps: { color: "red", size: "md", "data-testid": "dynamic-objective-remove-confirm" } as Record<string, unknown>,
+      cancelProps: { size: "md", variant: "default", "data-autofocus": true } as Record<string, unknown>,
+      onConfirm: runOnce(() => removeDynamicObjective(objectiveId)),
+    }));
+  };
+
+  const subject = catalog?.subjects.find((candidate) => candidate.id === active?.subjectId);
+  const subjectLine = [subject?.titlePl, topic?.titlePl ?? active?.dynamicTopic?.titlePl].filter(Boolean).join(" · ");
+  const isDynamic = (objectiveId: string) => editable && (form?.dynamicObjectives?.some((o) => o.id === objectiveId) ?? false);
+  const errorIndexes = new Set(Object.keys(exerciseErrors).map(Number));
+  const stageKey = (objectiveId: string, stage: string) => `${objectiveId}:${stage}`;
+  const errorsIn = (exercises: readonly EditableLessonExercise[]) =>
+    exercises.filter((ex) => errorIndexes.has(indexByClientKey.get(ex.clientKey)!)).length;
+  // Domyślnie (decyzja B): na telefonie pierwsza reguła rozwinięta, etapy zwinięte; na desktopie wszystko rozwinięte.
+  const objectivesOpen = openObjectives ?? (compact ? groups.slice(0, 1).map((g) => g.objectiveId) : groups.map((g) => g.objectiveId));
+  const stagesOpen = openStages ?? (compact ? [] : groups.flatMap((g) => g.stages.map((s) => stageKey(g.objectiveId, s.stage))));
+  // Grupa z błędem walidacji zawsze rozwinięta.
+  const forcedObjectives = groups.filter((g) => g.stages.some((s) => errorsIn(s.exercises) > 0)).map((g) => g.objectiveId);
+  const forcedStages = groups.flatMap((g) => g.stages.filter((s) => errorsIn(s.exercises) > 0).map((s) => stageKey(g.objectiveId, s.stage)));
+  const exerciseCount = form?.exercises.length ?? 0;
+  const regenDisabled = busy || generating || isDirty;
+
+  // klucz: identyfikator ćwiczenia (przeżywa zapis, który nadaje nowe klucze klienta), dla nowych — klucz klienta
+  const toggleCard = (key: string) => setOpenCards((current) => {
+    const next = new Set(current);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+
+  const calculationControls = (ex: EditableLessonExercise): CalculationControls | null => {
+    if (!ex.calculation) return null;
+    const preview = calculationPreviews[ex.clientKey];
+    const status = preview?.fingerprint !== JSON.stringify(ex.calculation) || preview?.status === "pending" ? "pending" : preview.status;
+    return {
+      input: (field) => calculationInputs[ex.clientKey + ":" + field],
+      status,
+      onChange: (calculation) => mutateCalculation(ex, calculation),
+      onNumber: (field, text) => mutateCalculationNumber(ex, field, text),
+      onKind: (kind) => {
+        const common = { unit: ex.calculation!.unit, tolerance: ex.calculation!.tolerance, templateFamilyId: ex.calculation!.templateFamilyId };
+        const calculation: CalculationSpec = kind === "scale_distance" ? { ...common, kind, params: { mapDistanceCm: 3, scaleDenominator: 25000 } }
+          : kind === "height_difference" ? { ...common, kind, params: { upperHeightM: 400, lowerHeightM: 150 } }
+          : { ...common, kind, params: { value: 1, fromUnit: "m" } };
+        setCalculationInputs((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !key.startsWith(ex.clientKey + ":"))));
+        mutateCalculation(ex, calculation);
+      },
+    };
+  };
+
+  const exerciseCard = (ex: EditableLessonExercise) => {
+    const index = indexByClientKey.get(ex.clientKey)!;
+    const errors = exerciseErrors[index];
+    const base = baseSnapshot.current?.form.exercises.find((b) => b.clientKey === ex.clientKey);
+    const unchanged = base !== undefined && !lessonExerciseChanged(ex, base);
+    const changed = editable && !unchanged;
+    const revisionId = unchanged ? (active?.exercises.find((e) => e.id === ex.id)?.revisionId ?? "") : "";
+    const asset = active?.assets.find((a) => a.itemRevisionId === revisionId && a.role === "target_audio") ?? null;
+    return (
+      <LessonExerciseCard
+        key={ex.clientKey}
+        ex={ex}
+        index={index}
+        editable={editable}
+        busy={busy}
+        open={openCards.has(ex.id ?? ex.clientKey) || changed || errors !== undefined}
+        changed={changed}
+        errors={errors}
+        audio={asset ? { state: asset.state, assetId: asset.assetId ?? null } : null}
+        calculation={calculationControls(ex)}
+        onToggle={() => toggleCard(ex.id ?? ex.clientKey)}
+        onMutate={(patch) => mutateExercise(ex.clientKey, patch)}
+        onRemove={() => removeExercise(ex.clientKey)}
+        onPlay={playAsset}
+      />
+    );
+  };
+
+  /** Karta wyjaśnienia reguły z edytowalnymi przykładami (wym. 3.3) — na początku grupy reguły. */
+  const explanation = (objectiveId: string) => {
+    const dynamic = isDynamic(objectiveId);
+    const lines = examples[objectiveId] ?? [];
+    return (
+      <Paper withBorder radius="md" p="sm" className="pp-lesson-explain" data-testid={`examples-${objectiveId}`}>
+        <Stack gap="xs">
+          <Text size="sm" fw={600}>{messages.lessons.examplesTitle}</Text>
+          {dynamic && (
+            <Group gap="xs" align="flex-end">
+              <TextInput size="md" className="pp-lesson-grow" label={messages.lessons.dynamicObjectiveTitleLabel}
+                data-testid={`dynamic-objective-title-${objectiveId}`} value={objectiveMeta(objectiveId)?.titlePl ?? ""} disabled={busy}
+                onChange={(e) => mutateDynamicObjective(objectiveId, { titlePl: e.currentTarget.value })} />
+              <Button size="md" variant="subtle" color="red" data-testid={`dynamic-objective-remove-${objectiveId}`} disabled={busy}
+                onClick={() => confirmRemoveObjective(objectiveId)}>
+                {messages.lessons.removeDynamicObjective}
+              </Button>
+            </Group>
+          )}
+          {objectiveMeta(objectiveId)?.cards.map((card, cardIndex) => (
+            <article key={cardIndex} className="pp-lesson-card" data-testid={`lesson-card-preview-${objectiveId}`}>
+              {dynamic ? (
+                <Stack gap="xs">
+                  <TextInput size="md" data-testid={`dynamic-card-title-${objectiveId}-${cardIndex}`} value={card.title} disabled={busy}
+                    aria-label={messages.lessons.dynamicCardTitleLabel}
+                    onChange={(e) => {
+                      const title = e.currentTarget.value;
+                      mutateDynamicObjective(objectiveId, { cards: objectiveMeta(objectiveId)!.cards.map((c, ci) => (ci === cardIndex ? { ...c, title } : c)) });
+                    }} />
+                  <Textarea size="md" autosize minRows={2} data-testid={`dynamic-card-body-${objectiveId}-${cardIndex}`} value={card.body} disabled={busy}
+                    aria-label={messages.lessons.dynamicCardBodyLabel}
+                    onChange={(e) => {
+                      const body = e.currentTarget.value;
+                      mutateDynamicObjective(objectiveId, { cards: objectiveMeta(objectiveId)!.cards.map((c, ci) => (ci === cardIndex ? { ...c, body } : c)) });
+                    }} />
+                </Stack>
+              ) : (
+                <>
+                  <Text fw={600}>{card.title}</Text>
+                  <Text size="sm">{card.body.split("{{examples}}").join(" ").replace(/\s+/g, " ").trim()}</Text>
+                </>
+              )}
+              <ul className="pp-lesson-examples">{lines.map((line, i) => line.trim() && <li key={i}>{line.trim()}</li>)}</ul>
+            </article>
+          ))}
+          {!dynamic && <Text size="sm" className="pp-editor-muted">{messages.lessons.exampleHint}</Text>}
+          {editable ? (
+            <Stack gap="xs">
+              {lines.map((line, i) => (
+                <TextInput key={i} size="md" data-testid={`example-line-${objectiveId}-${i}`} value={line} disabled={busy}
+                  aria-label={messages.lessons.exampleLineLabel.replace("{n}", String(i + 1))}
+                  onChange={(e) => mutateExampleLine(objectiveId, i, e.currentTarget.value)} />
+              ))}
+              <Button size="md" variant="light" className="pp-lesson-start" data-testid={`example-add-${objectiveId}`}
+                disabled={busy || lines.length >= 3} onClick={() => mutateExampleLine(objectiveId, lines.length, "")}>
+                {messages.lessons.addExample}
+              </Button>
+            </Stack>
+          ) : (
+            <ul className="pp-lesson-examples">{lines.map((line, i) => <li key={i}>{line}</li>)}</ul>
+          )}
+        </Stack>
+      </Paper>
+    );
+  };
+
+  const objectiveBadge = (objectiveId: string, exercises: readonly EditableLessonExercise[]) => {
+    const errorCount = errorsIn(exercises);
+    if (errorCount > 0) {
+      return <span className="pp-status-badge" data-tone="danger">{messages.lessons.groupErrors[polishPlural(errorCount)]!.replace("{n}", String(errorCount))}</span>;
+    }
+    const gap = active?.coverage.find((candidate) => candidate.objectiveId === objectiveId);
+    if (gap) {
+      return (
+        <span className="pp-status-badge" data-tone="warning">
+          {messages.lessons.stageCoverage.replace("{stage}", messages.lessons.stages[gap.stage] ?? gap.stage)
+            .replace("{actual}", String(gap.actual)).replace("{required}", String(gap.required))}
+        </span>
+      );
+    }
+    return active && active.coverage.length === 0 ? <span className="pp-status-badge" data-tone="success">{messages.lessons.coverageFull}</span> : null;
+  };
+
+  const objectiveGroups = form && groups.length > 0 && (
+    <Accordion multiple order={3} variant="separated" radius="lg" chevronPosition="right" className="pp-lesson-objectives-list" data-testid="lesson-examples"
+      value={[...new Set([...objectivesOpen, ...forcedObjectives])]} onChange={setOpenObjectives}>
+      {groups.map((group) => {
+        const all = group.stages.flatMap((s) => s.exercises);
+        const count = all.length;
+        return (
+          <Accordion.Item key={group.objectiveId} value={group.objectiveId} data-testid={`objective-group-${group.objectiveId}`}>
+            <Group gap={4} wrap="nowrap" pr={compact ? 4 : "sm"}>
+              <Accordion.Control className="pp-lesson-control">
+                <Text fw={600} className="pp-lesson-objtitle">{objectiveMeta(group.objectiveId)?.titlePl ?? group.objectiveId}</Text>
+                <Group gap={6} mt={4}>
+                  <Text size="sm" className="pp-editor-muted">{messages.decks.itemCount.lesson![polishPlural(count)]!.replace("{n}", String(count))}</Text>
+                  {objectiveBadge(group.objectiveId, all)}
+                </Group>
+              </Accordion.Control>
+              {editable && (compact ? (
+                <Menu position="bottom-end" withinPortal>
+                  <Menu.Target>
+                    <ActionIcon variant="subtle" color="gray" size={44} radius="md" aria-label={messages.lessons.objectiveActions} data-testid={`objective-menu-${group.objectiveId}`}>
+                      <ParentIcon name="more-vertical" />
+                    </ActionIcon>
+                  </Menu.Target>
+                  <Menu.Dropdown>
+                    <Menu.Item leftSection={<ParentIcon name="refresh" />} data-testid={`regen-open-${group.objectiveId}`} disabled={regenDisabled}
+                      onClick={() => setRegenTarget(group.objectiveId)}>
+                      {messages.lessons.regenerateMenu}
+                    </Menu.Item>
+                  </Menu.Dropdown>
+                </Menu>
+              ) : (
+                <Button size="md" variant="subtle" leftSection={<ParentIcon name="refresh" />} data-testid={`regen-open-${group.objectiveId}`}
+                  disabled={regenDisabled} onClick={() => setRegenTarget(group.objectiveId)}>
+                  {messages.lessons.regenerateMenu}
+                </Button>
+              ))}
+            </Group>
+            <Accordion.Panel>
+              <Stack gap="sm">
+                {active?.objectiveIds.includes(group.objectiveId) && explanation(group.objectiveId)}
+                {/* etapy bez animacji: rozwinięte razem z regułą (np. przez błąd) mierzyłyby wysokość ukrytej grupy */}
+                <Accordion multiple order={4} variant="contained" radius="md" chevronPosition="right" transitionDuration={0}
+                  value={[...new Set([...stagesOpen, ...forcedStages])]} onChange={setOpenStages}>
+                  {group.stages.map((stageGroup) => {
+                    const gap = active?.coverage.find((c) => c.objectiveId === group.objectiveId && c.stage === stageGroup.stage);
+                    const stageErrors = errorsIn(stageGroup.exercises);
+                    return (
+                      <Accordion.Item key={stageGroup.stage} value={stageKey(group.objectiveId, stageGroup.stage)} data-testid={`stage-${group.objectiveId}-${stageGroup.stage}`}>
+                        <Accordion.Control className="pp-lesson-control">
+                          <Group gap="xs" wrap="nowrap">
+                            <Text fw={600} size="sm" className="pp-editor-grow">{messages.lessons.stages[stageGroup.stage]}</Text>
+                            {stageErrors > 0 && <span className="pp-status-badge" data-tone="danger">{stageErrors}</span>}
+                            <span className="pp-status-badge" data-tone={gap ? "warning" : "neutral"}>
+                              {gap ? messages.lessons.stageCount.replace("{actual}", String(gap.actual)).replace("{required}", String(gap.required)) : stageGroup.exercises.length}
+                            </span>
+                          </Group>
+                        </Accordion.Control>
+                        <Accordion.Panel>
+                          {stageGroup.exercises.length === 0 ? (
+                            <Text size="sm" className="pp-editor-muted">{messages.lessons.noExercisesInStage}</Text>
+                          ) : (
+                            <Stack gap="sm">
+                              {groupCalculationFamilies(stageGroup.exercises).map((family) => (
+                                <section key={family.key} className="pp-lesson-family" data-testid={family.familyId ? `calculation-family-${family.familyId}` : undefined}>
+                                  {family.familyId && <Text size="sm" fw={600} mb={6}>{messages.lessons.calculationFamily.replace("{family}", family.familyId)}</Text>}
+                                  <Stack gap="sm">{family.exercises.map(exerciseCard)}</Stack>
+                                </section>
+                              ))}
+                            </Stack>
+                          )}
+                        </Accordion.Panel>
+                      </Accordion.Item>
+                    );
+                  })}
+                </Accordion>
+              </Stack>
+            </Accordion.Panel>
+          </Accordion.Item>
+        );
+      })}
+    </Accordion>
+  );
+
+  const coverage = active && (
+    <Paper withBorder radius="lg" p="md" data-testid="coverage-section">
+      <Title order={2} fz="md" mb={6}>{messages.lessons.coverageTitle}</Title>
+      {active.coverage.length === 0 ? (
+        <Text size="sm" data-testid="coverage-ok">{messages.lessons.coverageOk}</Text>
+      ) : (
+        <ul className="pp-sup-list" data-testid="coverage-gaps">
+          {active.coverage.map((gap, i) => (
+            <li key={i} data-testid={`coverage-gap-${i}`}>
+              <Text size="sm">
+                {messages.lessons.coverageGap
+                  .replace("{objective}", objectiveMeta(gap.objectiveId)?.titlePl ?? gap.objectiveId)
+                  .replace("{stage}", messages.lessons.stages[gap.stage] ?? gap.stage)
+                  .replace("{actual}", String(gap.actual))
+                  .replace("{required}", String(gap.required))}
+              </Text>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Paper>
+  );
+
+  const budget = deck && (
+    <Paper withBorder radius="lg" p="md">
+      <DeckSessionTaskBudgetSettings
+        deckId={deckId}
+        value={sessionBudgetEdit ?? deck.sessionTaskBudget}
+        edited={sessionBudgetEdit !== null}
+        archived={deck.state === "archived"}
+        busy={settingsBusy}
+        error={settingsError}
+        onChange={(value) => { setSettingsError(null); setSessionBudgetEdit(value); }}
+        onBusyChange={setSettingsBusy}
+        onSaved={(savedDeckId, saved) => {
+          // deckId żądania (z chwili kliknięcia zapisu), nie bieżący widok:
+          // nawigacja do innej lekcji w locie nie wbije cudzej wartości.
+          setSessionBudgetEdit(null);
+          setDeck((current) =>
+            current && current.id === savedDeckId ? { ...current, sessionTaskBudget: saved } : current,
+          );
+        }}
+        onError={setSettingsError}
+      />
+    </Paper>
+  );
+
+  const settings = deck && (compact ? (
+    <Accordion variant="separated" radius="lg">
+      <Accordion.Item value="settings">
+        <Accordion.Control>
+          <Text fw={600}>{messages.lessons.settingsTitle}</Text>
+          <Text size="sm" className="pp-editor-muted">{messages.lessons.settingsSummary.replace("{n}", String(sessionBudgetEdit ?? deck.sessionTaskBudget))}</Text>
+        </Accordion.Control>
+        <Accordion.Panel>{budget}</Accordion.Panel>
+      </Accordion.Item>
+    </Accordion>
+  ) : (
+    <>
+      <Title order={2} fz="lg" mt="xs">{messages.lessons.settingsTitle}</Title>
+      {budget}
+    </>
+  ));
+
+  const publishBlocked = editable && (isDirty || (draft?.exercises.length ?? 0) === 0 || (draft?.coverage.length ?? 0) > 0);
+  const showActionBar = editable || (deck?.state === "published" && !draft);
+  const errorAlert = (
+    <Text size="sm" role="alert" data-testid="api-error" className="pp-editor-bar-error">
+      <ParentIcon name="alert-triangle" />
+      {error}
+    </Text>
+  );
+
+  const exercisesContent = (
+    <Stack gap="md">
+      {form && (
+        <TextInput size="md" label={messages.decks.titleLabel} data-testid="editor-title" className="pp-editor-titlefield"
+          value={form.title} disabled={!editable || busy}
+          onChange={(e) => {
+            const title = e.currentTarget.value;
+            markDirty();
+            setForm((current) => (current ? { ...current, title } : current));
+          }} />
+      )}
+      {form && (
+        <Group justify="space-between" align="baseline" mt="xs">
+          <Title order={2} fz="lg">{messages.lessons.exercisesTitle}</Title>
+          <Text size="sm" className="pp-editor-muted">{messages.decks.itemCount.lesson![polishPlural(exerciseCount)]!.replace("{n}", String(exerciseCount))}</Text>
+        </Group>
+      )}
+      {objectiveGroups}
+      {coverage}
+      {settings}
+    </Stack>
+  );
+
+  const childrenContent = deck?.published && (
+    <Stack gap="md">
+      {deck.state === "published" && (
+        <>
+          <Title order={2} fz="lg">{messages.decks.assignTitle}</Title>
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+            {childrenList.map((child, index) => {
+              const assignment = deck.assignments.find((a) => a.childId === child.id);
+              return (
+                <Paper withBorder radius="lg" p="md" key={child.id} data-testid={`assign-row-${index}`}>
+                  <Stack gap="sm">
+                    <Group gap="sm" wrap="nowrap" data-testid={assignment ? `assignment-row-${index}` : undefined}>
+                      <span className="pp-editor-avatar" aria-hidden="true">{avatarEmoji(child.avatarKey)}</span>
+                      <Text fw={600} className="pp-editor-grow" data-child-id={child.id}>{child.displayName}</Text>
+                      {assignment && (
+                        <span className="pp-status-badge" data-tone="success">
+                          {assignment.testDate
+                            ? messages.decks.assignedBadge.replace("{date}", formatFamilyDate(assignment.testDate))
+                            : messages.decks.assignedNoDate}
+                        </span>
+                      )}
+                    </Group>
+                    {child.canRead === false && (
+                      <Alert color="yellow" variant="light" data-testid={`non-reader-lesson-warning-${index}`}>
+                        {messages.decks.nonReaderLessonAssignment}
+                      </Alert>
+                    )}
+                    <TextInput size="md" type="date" label={messages.decks.assignDate} data-testid={`assign-date-${index}`}
+                      aria-label={`${messages.decks.assignDate} ${child.displayName}`} maw={260}
+                      value={assignDates[child.id] ?? assignment?.testDate ?? ""}
+                      onChange={(e) => {
+                        const value = e.currentTarget.value;
+                        setAssignDates((current) => ({ ...current, [child.id]: value }));
+                      }} />
+                    <AssignmentTestGoalFields kind="lesson" {...assignmentSettings(child.id)}
+                      onChange={(value) => setAssignSettings((current) => ({ ...current, [child.id]: value }))} />
+                    {assignErrors[child.id] && (
+                      <Alert color="red" variant="light" role="alert" data-testid={`assign-error-${index}`}>{assignErrors[child.id]}</Alert>
+                    )}
+                    <Group gap="xs">
+                      <Button size="md" variant="light" data-testid={`assign-submit-${index}`}
+                        disabled={!AssignmentPutSchema.safeParse({ testDate: null, ...assignmentSettings(child.id) }).success}
+                        onClick={() => assign(child.id)}>
+                        {messages.decks.assign}
+                      </Button>
+                      {assignment && (
+                        <Button size="md" variant="subtle" color="red" data-testid={`unassign-submit-${index}`}
+                          disabled={unassigningChildId === child.id} onClick={() => confirmUnassign(child.id)}>
+                          {messages.decks.unassign}
+                        </Button>
+                      )}
+                    </Group>
+                  </Stack>
+                </Paper>
+              );
+            })}
+          </SimpleGrid>
+        </>
+      )}
+      <LessonSupervisionPanel
+        deckId={deckId}
+        childrenList={childrenList}
+        gradingModel={deck.grading.available ? (deck.grading.model ?? null) : null}
+        onRegenerate={draft ? (objectiveId) => void regenerate(objectiveId) : undefined}
+      />
+    </Stack>
+  );
 
   return (
-    <section data-testid="lesson-editor">
-      <div className="row space">
-        <button type="button" data-testid="editor-back" onClick={onBack}>{messages.decks.back}</button>
-        <h2>{deck?.title ?? ""}</h2>
-        {deck?.state === "published" && <span className="badge ok" data-testid="publish-status">{messages.decks.published}</span>}
-      </div>
+    <div className="pp-editor pp-lesson-editor" data-testid="lesson-editor">
+      <Button component="button" variant="subtle" size="md" px={4} className="pp-editor-back" data-testid="editor-back" onClick={onBack}
+        leftSection={<ParentIcon name="chevron-left" />}>
+        {messages.decks.backToList}
+      </Button>
+      <Group align="flex-start" gap="xs" wrap="nowrap" mt={4}>
+        <Title order={1} fz={{ base: 22, sm: 26 }} className="pp-editor-title">{deck?.title ?? ""}</Title>
+        {deck && deck.state !== "archived" && (
+          <Menu position="bottom-end" withinPortal>
+            <Menu.Target>
+              <ActionIcon ref={lessonMenuRef} variant="subtle" color="gray" size={44} radius="md" aria-label={messages.lessons.lessonActions} data-testid="lesson-menu">
+                <ParentIcon name="more-vertical" />
+              </ActionIcon>
+            </Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Item color="red" leftSection={<ParentIcon name="archive" />} data-testid="archive-lesson"
+                disabled={busy || isDirty || conflict} onClick={() => { setArchiveError(null); setArchiveOpen(true); }}>
+                {messages.lessons.archive}
+              </Menu.Item>
+            </Menu.Dropdown>
+          </Menu>
+        )}
+      </Group>
+      <Group gap="xs" mt={6} mb="md" className="pp-editor-meta">
+        <span className="pp-status-badge" data-tone="info">{messages.lessons.kindLabel.lesson}</span>
+        {deck?.state === "published" && <span className="pp-status-badge" data-tone="success" data-testid="publish-status">{messages.decks.published}</span>}
+        {draft && deck?.state === "published" && <span className="pp-status-badge" data-tone="warning">{messages.decks.states.draft}</span>}
+        {deck?.state === "archived" && <span className="pp-status-badge">{messages.decks.states.archived}</span>}
+        {subjectLine && <Text size="sm" className="pp-editor-muted">{subjectLine}</Text>}
+      </Group>
 
-      {generating && <div className="info" data-testid="generation-banner">
-        <p>{messages.lessons.generating}</p>
-        {deck?.generation?.state === "running" && <p>{messages.lessons.stalledGenerationHint}{" "}
-          <button type="button" data-testid="retry-stalled-generation" disabled={busy || isDirty || conflict} onClick={retry}>{messages.lessons.retryGeneration}</button>
-        </p>}
-      </div>}
-      {deck?.generation?.state === "failed" && (
-        <p className="error" data-testid="generation-failed">
-          {generationFailure}{" "}
-          <button type="button" onClick={retry}>{messages.lessons.retryGeneration}</button>
-        </p>
-      )}
-      {gradingDisabled(deck) && <p className="info" data-testid="grading-disabled">{messages.lessons.gradingDisabled}</p>}
-      {active && active.rejectedCount > 0 && (
-        <p className="muted" data-testid="rejected-count">{messages.lessons.rejectedCount.replace("{n}", String(active.rejectedCount))}</p>
-      )}
-      {error && <p className="error" data-testid="api-error" role="alert">{error}</p>}
-
-      {conflict && (
-        <section className="card" data-testid="lesson-conflict-panel" aria-labelledby="lesson-conflict-title">
-          <h3 id="lesson-conflict-title">{messages.decks.conflictTitle}</h3>
-          <p>{messages.decks.conflictDescription}</p>
-          <button type="button" data-testid="conflict-load-remote" disabled={busy} onClick={loadCurrentVersion}>
-            {messages.decks.conflictLoad}
-          </button>
-        </section>
-      )}
-
-      {form && (
-        <label>
-          {messages.decks.titleLabel}
-          <input
-            data-testid="editor-title"
-            value={form.title}
-            disabled={!editable || busy}
-            onChange={(e) => { markDirty(); setForm((c) => (c ? { ...c, title: e.target.value } : c)); }}
-          />
-        </label>
-      )}
-
-      {deck && (
-        <section className="card">
-        <DeckSessionTaskBudgetSettings
-          deckId={deckId}
-          value={sessionBudgetEdit ?? deck.sessionTaskBudget}
-          edited={sessionBudgetEdit !== null}
-          archived={deck.state === "archived"}
-          busy={settingsBusy}
-          onChange={setSessionBudgetEdit}
-          onBusyChange={setSettingsBusy}
-          onSaved={(savedDeckId, saved) => {
-            // deckId żądania (z chwili kliknięcia zapisu), nie bieżący widok:
-            // nawigacja do innej lekcji w locie nie wbije cudzej wartości.
-            setSessionBudgetEdit(null);
-            setDeck((current) =>
-              current && current.id === savedDeckId ? { ...current, sessionTaskBudget: saved } : current,
-            );
-          }}
-          onError={setError}
-        />
-        </section>
-      )}
-
-      {/* Karty wyjaśnienia: tekst reguły z katalogu (read-only); przykłady AI
-          rodzic może poprawić przed publikacją (wym. 3.3). */}
-      {active && active.objectiveIds.length > 0 && (
-        <section className="card" data-testid="lesson-examples">
-          <h3>{messages.lessons.examplesTitle}</h3>
-          <p className="muted">{messages.lessons.exampleHint}</p>
-          {active.objectiveIds.map((objectiveId) => (
-            <div key={objectiveId} data-testid={`examples-${objectiveId}`}>
-              {editable && form?.dynamicObjectives?.some((o) => o.id === objectiveId) ? (
+      <Stack gap="md">
+        {generating && (
+          <Alert color="blue" variant="light" data-testid="generation-banner" icon={<Loader size="xs" />}>
+            <Stack gap="xs" align="flex-start">
+              <Text size="sm">{messages.lessons.generating}</Text>
+              {deck?.generation?.state === "running" && (
                 <>
-                  <label>
-                    {messages.lessons.dynamicObjectiveTitleLabel}
-                    <input data-testid={`dynamic-objective-title-${objectiveId}`} value={objectiveMeta(objectiveId)?.titlePl ?? ""} disabled={busy}
-                      onChange={(e) => mutateDynamicObjective(objectiveId, { titlePl: e.target.value })} />
-                  </label>
-                  <button type="button" data-testid={`dynamic-objective-remove-${objectiveId}`} disabled={busy}
-                    onClick={() => removeDynamicObjective(objectiveId)}>
-                    {messages.lessons.removeDynamicObjective}
-                  </button>
+                  <Text size="sm">{messages.lessons.stalledGenerationHint}</Text>
+                  <Button size="md" variant="default" data-testid="retry-stalled-generation" leftSection={<ParentIcon name="refresh" />}
+                    disabled={busy || isDirty || conflict} onClick={retry}>
+                    {messages.lessons.retryGeneration}
+                  </Button>
                 </>
-              ) : (
-                <strong>{objectiveMeta(objectiveId)?.titlePl ?? objectiveId}</strong>
               )}
-              {objectiveMeta(objectiveId)?.cards.map((card, index) => (
-                <article key={index} className="card" data-testid={`lesson-card-preview-${objectiveId}`}>
-                  {editable && form?.dynamicObjectives?.some((o) => o.id === objectiveId) ? (
-                    <>
-                      <input data-testid={`dynamic-card-title-${objectiveId}-${index}`} value={card.title} disabled={busy}
-                        aria-label={messages.lessons.dynamicCardTitleLabel}
-                        onChange={(e) => mutateDynamicObjective(objectiveId, { cards: objectiveMeta(objectiveId)!.cards.map((c, ci) => (ci === index ? { ...c, title: e.target.value } : c)) })} />
-                      <textarea data-testid={`dynamic-card-body-${objectiveId}-${index}`} value={card.body} disabled={busy}
-                        aria-label={messages.lessons.dynamicCardBodyLabel}
-                        onChange={(e) => mutateDynamicObjective(objectiveId, { cards: objectiveMeta(objectiveId)!.cards.map((c, ci) => (ci === index ? { ...c, body: e.target.value } : c)) })} />
-                    </>
-                  ) : (
-                    <>
-                      <h4>{card.title}</h4>
-                      <p>{card.body.split("{{examples}}").join(" ").replace(/\s+/g, " ").trim()}</p>
-                    </>
-                  )}
-                  <ul>{(examples[objectiveId] ?? []).map((line, i) => line.trim() && <li key={i}>{line.trim()}</li>)}</ul>
-                </article>
-              ))}
-              {editable ? (
-                <ul className="plain">
-                  {(examples[objectiveId] ?? []).map((line, i) => (
-                    <li key={i}>
-                      <input
-                        data-testid={`example-line-${objectiveId}-${i}`}
-                        value={line}
-                        disabled={busy}
-                        aria-label={messages.lessons.exampleLineLabel.replace("{n}", String(i + 1))}
-                        onChange={(e) => mutateExampleLine(objectiveId, i, e.target.value)}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <ul className="plain">
-                  {(examples[objectiveId] ?? []).map((line, i) => (
-                    <li key={i}>{line}</li>
-                  ))}
-                </ul>
-              )}
-              {editable && <button type="button" data-testid={`example-add-${objectiveId}`} disabled={busy || (examples[objectiveId]?.length ?? 0) >= 3}
-                onClick={() => mutateExampleLine(objectiveId, examples[objectiveId]?.length ?? 0, "")}>{messages.lessons.addExample}</button>}
-            </div>
-          ))}
-        </section>
-      )}
+            </Stack>
+          </Alert>
+        )}
+        {deck?.generation?.state === "failed" && (
+          <Alert color="red" variant="light" data-testid="generation-failed">
+            <Stack gap="xs" align="flex-start">
+              <Text size="sm">{generationFailure}</Text>
+              <Button size="md" variant="default" data-testid="generation-retry" leftSection={<ParentIcon name="refresh" />} onClick={retry}>
+                {messages.lessons.retryGeneration}
+              </Button>
+            </Stack>
+          </Alert>
+        )}
+        {gradingDisabled(deck) && <Alert color="gray" variant="light" data-testid="grading-disabled">{messages.lessons.gradingDisabled}</Alert>}
+        {active && active.rejectedCount > 0 && (
+          <Text size="sm" className="pp-editor-muted" data-testid="rejected-count">{messages.lessons.rejectedCount.replace("{n}", String(active.rejectedCount))}</Text>
+        )}
+        {error && !showActionBar && errorAlert}
 
-      {groups.map((group) => (
-        <section className="card" key={group.objectiveId} data-testid={`objective-group-${group.objectiveId}`}>
-          <h3>{objectiveMeta(group.objectiveId)?.titlePl ?? group.objectiveId}</h3>
-          {group.stages.map((stageGroup) => (
-            <div key={stageGroup.stage} data-testid={`stage-${group.objectiveId}-${stageGroup.stage}`}>
-              <h4>{messages.lessons.stages[stageGroup.stage]}</h4>
-              {stageGroup.exercises.length === 0 ? (
-                <p className="muted">{messages.lessons.noExercisesInStage}</p>
-              ) : (
-                groupCalculationFamilies(stageGroup.exercises).map(family => (
-                  <section key={family.key} data-testid={family.familyId ? `calculation-family-${family.familyId}` : undefined}>
-                    {family.familyId && <h5>{messages.lessons.calculationFamily.replace("{family}", family.familyId)}</h5>}
-                    {family.exercises.map((ex) => {
-                  const index = indexByClientKey.get(ex.clientKey)!;
-                  const errors = exerciseErrors[index];
-                  const base = baseSnapshot.current?.form.exercises.find((b) => b.clientKey === ex.clientKey);
-                  const unchanged = base !== undefined && !lessonExerciseChanged(ex, base);
-                  const revisionId = unchanged ? (active?.exercises.find((e) => e.id === ex.id)?.revisionId ?? "") : "";
-                  const audio = active?.assets.find((a) => a.itemRevisionId === revisionId && a.role === "target_audio") ?? null;
-                  const errId = `exercise-errors-${index}`;
-                  return (
-                    <article className="card" key={ex.clientKey} data-testid={`exercise-${index}`}>
-                      <div className="row space">
-                        <span className="badge" data-testid={`exercise-type-${index}`}>{messages.lessons.exerciseTypes[ex.exerciseType]}</span>
-                        {editable && (
-                          <button type="button" data-testid={`exercise-remove-${index}`} disabled={busy} onClick={() => removeExercise(ex.clientKey)}>
-                            {messages.lessons.removeExercise}
-                          </button>
-                        )}
-                      </div>
+        {conflict && (
+          <Paper withBorder radius="lg" p="md" className="pp-editor-conflict" data-testid="lesson-conflict-panel" aria-labelledby="lesson-conflict-title">
+            <Stack gap="xs" align="flex-start">
+              <Title order={2} fz="md" id="lesson-conflict-title" className="pp-editor-conflict-title">
+                <ParentIcon name="alert-triangle" />
+                {messages.decks.conflictTitle}
+              </Title>
+              <Text size="sm">{messages.decks.conflictDescription}</Text>
+              <Button size="md" data-testid="conflict-load-remote" disabled={busy} onClick={loadCurrentVersion}>
+                {messages.decks.conflictLoad}
+              </Button>
+            </Stack>
+          </Paper>
+        )}
 
-                      <label>
-                        {messages.lessons.exerciseInstructionLabel}
-                        <input data-testid={`exercise-instruction-${index}`} value={ex.instructionPl} disabled={!editable || busy}
-                          {...(errors ? { "aria-describedby": errId } : {})}
-                          onChange={(e) => mutateExercise(ex.clientKey, { instructionPl: e.target.value })} />
-                      </label>
+        {childrenContent ? (
+          <Tabs value={tab} onChange={(value) => setTab(value ?? "exercises")} keepMounted={false} styles={{ tab: { minHeight: 48 } }}>
+            <Tabs.List grow={compact} mb="md">
+              <Tabs.Tab value="exercises" data-testid="lesson-tab-exercises">{messages.lessons.tabExercises}</Tabs.Tab>
+              <Tabs.Tab value="children" data-testid="lesson-tab-children">{messages.lessons.tabChildren}</Tabs.Tab>
+            </Tabs.List>
+            <Tabs.Panel value="exercises">
+              {exercisesContent}
+              <Text size="sm" mt="md" className="pp-editor-muted">{messages.lessons.assignmentsInChildrenTab}</Text>
+            </Tabs.Panel>
+            <Tabs.Panel value="children">{childrenContent}</Tabs.Panel>
+          </Tabs>
+        ) : exercisesContent}
+      </Stack>
 
-                      {ex.calculation && (
-                        <fieldset disabled={!editable || busy}>
-                          <legend>{messages.lessons.exerciseTypes.lesson_calculation}</legend>
-                          <label>{messages.lessons.calculationKindLabel}
-                            <select data-testid={`calculation-kind-${index}`} value={ex.calculation.kind} onChange={e => {
-                              const kind = e.target.value as CalculationSpec["kind"];
-                              const common = { unit: ex.calculation!.unit, tolerance: ex.calculation!.tolerance, templateFamilyId: ex.calculation!.templateFamilyId };
-                              const calculation: CalculationSpec = kind === "scale_distance" ? { ...common, kind, params: { mapDistanceCm: 3, scaleDenominator: 25000 } }
-                                : kind === "height_difference" ? { ...common, kind, params: { upperHeightM: 400, lowerHeightM: 150 } }
-                                : { ...common, kind, params: { value: 1, fromUnit: "m" } };
-                              setCalculationInputs(current => Object.fromEntries(Object.entries(current).filter(([key]) => !key.startsWith(ex.clientKey + ":"))));
-                              mutateCalculation(ex, calculation);
-                            }}>
-                              {Object.entries(messages.lessons.calculationKinds).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                            </select>
-                          </label>
-                          {Object.entries(ex.calculation.params).map(([field, value]) => <label key={field}>
-                            {messages.lessons.calculationParams[field]}
-                            {field === "fromUnit" ? <select data-testid={`calculation-${field}-${index}`} value={value} onChange={e => mutateCalculation(ex, { ...ex.calculation!, params: { ...ex.calculation!.params, fromUnit: e.target.value } } as CalculationSpec)}>
-                              {["cm", "m", "km"].map(unit => <option key={unit} value={unit}>{unit}</option>)}
-                            </select> : <input data-testid={`calculation-${field}-${index}`} inputMode="decimal" value={calculationInputs[ex.clientKey + ":" + field] ?? String(value).replace(".", ",")} onChange={e => mutateCalculationNumber(ex, field, e.target.value)} />}
-                          </label>)}
-                          <label>{messages.lessons.calculationUnit}
-                            <select data-testid={`calculation-unit-${index}`} value={ex.calculation.unit} onChange={e => mutateCalculation(ex, { ...ex.calculation!, unit: e.target.value as CalculationSpec["unit"] })}>
-                              {["cm", "m", "km"].map(unit => <option key={unit} value={unit}>{unit}</option>)}
-                            </select>
-                          </label>
-                          <label>{messages.lessons.calculationTolerance}
-                            <input data-testid={`calculation-tolerance-${index}`} inputMode="decimal" value={calculationInputs[ex.clientKey + ":tolerance"] ?? String(ex.calculation.tolerance ?? "").replace(".", ",")} onChange={e => mutateCalculationNumber(ex, "tolerance", e.target.value)} />
-                          </label>
-                          <label>{messages.lessons.calculationFamilyId}
-                            <input data-testid={`calculation-family-${index}`} value={ex.calculation.templateFamilyId} onChange={e => mutateCalculation(ex, { ...ex.calculation!, templateFamilyId: e.target.value })} />
-                          </label>
-                          <p data-testid={`calculation-prompt-${index}`}>{ex.prompt}</p>
-                          <p role="status" data-testid={`calculation-status-${index}`}>{calculationPreviews[ex.clientKey]?.fingerprint !== JSON.stringify(ex.calculation) || calculationPreviews[ex.clientKey]?.status === "pending"
-                            ? messages.lessons.calculationPending : calculationPreviews[ex.clientKey]?.status === "ready" ? messages.lessons.calculationReady : messages.lessons.calculationInvalid}</p>
-                        </fieldset>
-                      )}
-
-                      {ex.exerciseType === "lesson_choice" && (
-                        <label>
-                          {messages.lessons.exerciseVisualLabel}
-                          <select data-testid={`exercise-visual-${index}`} value={ex.visualSubject} disabled={!editable || busy}
-                            onChange={(e) => mutateExercise(ex.clientKey, { visualSubject: e.target.value })}>
-                            <option value="">{messages.lessons.exerciseVisualNone}</option>
-                            {Object.entries(messages.lessons.visualSubjects).map(([value, label]) => (
-                              <option key={value} value={value}>{label}</option>
-                            ))}
-                          </select>
-                        </label>
-                      )}
-
-                      {STEM_LABEL_TYPES.has(ex.exerciseType) && (
-                        <label>
-                          {messages.lessons.exerciseStemLabel}
-                          <input data-testid={`exercise-stem-${index}`} value={ex.stem} disabled={!editable || busy}
-                            onChange={(e) => mutateExercise(ex.clientKey, { stem: e.target.value })} />
-                        </label>
-                      )}
-                      {(ex.exerciseType === "lesson_error_fix" || ex.exerciseType === "lesson_transform") && (
-                        <label>
-                          {messages.lessons.exerciseStatementLabel}
-                          <input data-testid={`exercise-statement-${index}`} value={ex.statement} disabled={!editable || busy}
-                            onChange={(e) => mutateExercise(ex.clientKey, { statement: e.target.value })} />
-                        </label>
-                      )}
-                      {(ex.exerciseType === "lesson_open_answer" || ex.exerciseType === "lesson_short_answer") && (
-                        <label>
-                          {messages.lessons.exercisePromptLabel}
-                          <input data-testid={`exercise-prompt-${index}`} value={ex.prompt || (ex.exerciseType === "lesson_short_answer" ? ex.stem : "")} disabled={!editable || busy}
-                            onChange={(e) => mutateExercise(ex.clientKey, { prompt: e.target.value })} />
-                        </label>
-                      )}
-
-                      {ex.exerciseType === "lesson_notice" ? (
-                        <p className="muted" data-testid={`exercise-notice-word-${index}`}>
-                          {messages.lessons.exerciseNoticeWord}: {ex.correctOption}
-                        </p>
-                      ) : (
-                        <label>
-                          {messages.lessons.exerciseAnswerLabel}
-                          <input data-testid={`exercise-answer-${index}`} value={ex.answer} disabled={!editable || busy || ex.exerciseType === "lesson_calculation" || ex.exerciseType === "lesson_keywords"}
-                            {...(errors ? { "aria-describedby": errId } : {})}
-                            onChange={(e) => mutateExercise(ex.clientKey, { answer: e.target.value })} />
-                        </label>
-                      )}
-
-                      {ex.options && (
-                        <fieldset>
-                          <legend>{messages.lessons.exerciseCorrectOptionLabel}</legend>
-                          {ex.options.map((opt, oi) => (
-                            <label key={opt.id} style={{ display: "block" }}>
-                              <input type="radio" name={`correct-${index}`} data-testid={`exercise-correct-${index}-${opt.id}`}
-                                checked={ex.correctOption === opt.id} disabled={!editable || busy}
-                                onChange={() => mutateExercise(ex.clientKey, { correctOption: opt.id })} />{" "}
-                              <input data-testid={`exercise-option-${index}-${oi}`} value={opt.text} disabled={!editable || busy}
-                                aria-label={messages.lessons.exerciseOptionLabel.replace("{n}", String(oi + 1))}
-                                onChange={(e) => mutateExercise(ex.clientKey, { options: ex.options!.map((o) => (o.id === opt.id ? { ...o, text: e.target.value } : o)) })} />
-                            </label>
-                          ))}
-                        </fieldset>
-                      )}
-
-                      {ex.items && (
-                        <fieldset>
-                          <legend>{messages.lessons.exerciseItemLabel.replace("{n}", "")}</legend>
-                          {ex.items.map((item, ii) => (
-                            <input key={item.id} data-testid={`exercise-item-${index}-${ii}`} value={item.text} disabled={!editable || busy}
-                              aria-label={messages.lessons.exerciseItemLabel.replace("{n}", String(ii + 1))}
-                              onChange={(e) => mutateExercise(ex.clientKey, { items: ex.items!.map((o) => (o.id === item.id ? { ...o, text: e.target.value } : o)) })} />
-                          ))}
-                        </fieldset>
-                      )}
-
-                      {ex.exerciseType === "lesson_keywords" && ex.keywordOptions && (
-                        <fieldset data-testid={`keywords-${index}`}>
-                          <legend>{messages.lessons.keywordsLegend}</legend>
-                          {ex.keywordOptions.map((opt, oi) => {
-                            const isKey = (ex.keyOptionIds ?? []).includes(opt.id);
-                            return (
-                              <label key={opt.id} style={{ display: "block" }}>
-                                <input type="checkbox" data-testid={`keyword-key-${index}-${opt.id}`} checked={isKey} disabled={!editable || busy}
-                                  aria-label={`${messages.lessons.keywordOptionLabel.replace("{n}", String(oi + 1))}: ${messages.lessons.keywordKeyLabel}`}
-                                  onChange={() => {
-                                    const current = ex.keyOptionIds ?? [];
-                                    const keyOptionIds = isKey ? current.filter((id) => id !== opt.id) : [...current, opt.id];
-                                    mutateExercise(ex.clientKey, { keyOptionIds, answer: keywordsAnswerOf({ keywordOptions: ex.keywordOptions, keyOptionIds }) });
-                                  }} />{" "}
-                                <input data-testid={`keyword-option-${index}-${oi}`} value={opt.text} disabled={!editable || busy} maxLength={40}
-                                  aria-label={messages.lessons.keywordOptionLabel.replace("{n}", String(oi + 1))}
-                                  onChange={(e) => {
-                                    const keywordOptions = ex.keywordOptions!.map((o) => (o.id === opt.id ? { ...o, text: e.target.value } : o));
-                                    mutateExercise(ex.clientKey, { keywordOptions, answer: keywordsAnswerOf({ keywordOptions, keyOptionIds: ex.keyOptionIds }) });
-                                  }} />
-                              </label>
-                            );
-                          })}
-                        </fieldset>
-                      )}
-
-                      <label>
-                        {messages.lessons.exerciseAcceptedLabel}
-                        <textarea data-testid={`exercise-accepted-${index}`} value={ex.acceptedText} disabled={!editable || busy || ex.exerciseType === "lesson_calculation" || ex.exerciseType === "lesson_keywords"}
-                          onChange={(e) => mutateExercise(ex.clientKey, { acceptedText: e.target.value })} />
-                      </label>
-                      <label>
-                        {messages.lessons.exerciseFocusLabel}
-                        <input data-testid={`exercise-focus-${index}`} value={ex.focusText} disabled={!editable || busy || ex.exerciseType === "lesson_calculation" || ex.exerciseType === "lesson_keywords"}
-                          onChange={(e) => mutateExercise(ex.clientKey, { focusText: e.target.value })} />
-                      </label>
-
-                      {ex.familyId && (
-                        <p className="muted" data-testid={`exercise-family-${index}`}>
-                          {messages.lessons.familyLabel.replace("{family}", ex.familyId)}
-                        </p>
-                      )}
-                      {ex.exerciseType === "lesson_open_answer" && ex.questionType && (
-                        <label>
-                          {messages.lessons.questionTypeLabel}
-                          <select data-testid={`exercise-qtype-${index}`} value={ex.questionType} disabled={!editable || busy}
-                            onChange={(e) => mutateExercise(ex.clientKey, { questionType: e.target.value })}>
-                            {Object.entries(messages.lessons.questionTypes).map(([value, label]) => (
-                              <option key={value} value={value}>{label}</option>
-                            ))}
-                          </select>
-                        </label>
-                      )}
-                      {ex.requiredElements && (
-                        <fieldset>
-                          <legend>{messages.lessons.requiredElementsLabel}</legend>
-                          {ex.requiredElements.map((el, ei) => (
-                            <span key={el.id} className="row">
-                              <input data-testid={`exercise-required-${index}-${ei}`} value={el.text} disabled={!editable || busy}
-                                aria-label={messages.lessons.requiredElementLabel.replace("{n}", String(ei + 1))}
-                                onChange={(e) => mutateExercise(ex.clientKey, { requiredElements: ex.requiredElements!.map((o) => (o.id === el.id ? { ...o, text: e.target.value } : o)) })} />
-                              {editable && ex.requiredElements!.length > 1 && (
-                                <button type="button" data-testid={`exercise-required-remove-${index}-${ei}`} disabled={busy}
-                                  onClick={() => mutateExercise(ex.clientKey, { requiredElements: ex.requiredElements!.filter((o) => o.id !== el.id) })}>
-                                  {messages.lessons.removeRequiredElement}
-                                </button>
-                              )}
-                            </span>
-                          ))}
-                          {editable && ex.requiredElements!.length < 6 && (
-                            <button type="button" data-testid={`exercise-required-add-${index}`} disabled={busy}
-                              onClick={() => mutateExercise(ex.clientKey, { requiredElements: [...ex.requiredElements!, { id: nextRequiredElementId(ex.requiredElements!), text: "" }] })}>
-                              {messages.lessons.addRequiredElement}
-                            </button>
-                          )}
-                        </fieldset>
-                      )}
-                      {ex.supplementaryElements && (
-                        <label>
-                          {messages.lessons.supplementaryLabel}
-                          <textarea data-testid={`exercise-supplementary-${index}`} value={ex.supplementaryElements.join("\n")} disabled={!editable || busy}
-                            onChange={(e) => mutateExercise(ex.clientKey, { supplementaryElements: e.target.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean) })} />
-                        </label>
-                      )}
-                      {ex.commonErrors && (
-                        <label>
-                          {messages.lessons.commonErrorsLabel}
-                          <textarea data-testid={`exercise-common-errors-${index}`} value={ex.commonErrors.join("\n")} disabled={!editable || busy}
-                            onChange={(e) => mutateExercise(ex.clientKey, { commonErrors: e.target.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean) })} />
-                        </label>
-                      )}
-                      {ex.exerciseType === "lesson_open_answer" && ex.expectedForm && (
-                        <label>
-                          {messages.lessons.expectedFormLabel}
-                          <select data-testid={`exercise-form-${index}`} value={ex.expectedForm} disabled={!editable || busy}
-                            onChange={(e) => mutateExercise(ex.clientKey, { expectedForm: e.target.value })}>
-                            {Object.entries(messages.lessons.expectedForms).map(([value, label]) => (
-                              <option key={value} value={value}>{label}</option>
-                            ))}
-                          </select>
-                        </label>
-                      )}
-                      {ex.sourceRefs && (
-                        <fieldset data-testid={`exercise-sources-${index}`}>
-                          <legend>{messages.lessons.sourceRefsLabel}</legend>
-                          {ex.sourceRefs.map((ref, ri) => (
-                            <span key={ri} className="row">
-                              <input data-testid={`exercise-source-${index}-${ri}`} value={ref.quote} disabled={!editable || busy}
-                                aria-label={messages.lessons.sourceRefQuoteLabel.replace("{n}", String(ri + 1))}
-                                onChange={(e) => mutateExercise(ex.clientKey, { sourceRefs: ex.sourceRefs!.map((r, rj) => (rj === ri ? { ...r, quote: e.target.value } : r)) })} />
-                              <label>
-                                <input type="checkbox" data-testid={`exercise-source-parent-${index}-${ri}`} checked={ref.parentAdded === true} disabled={!editable || busy}
-                                  onChange={(e) => mutateExercise(ex.clientKey, { sourceRefs: ex.sourceRefs!.map((r, rj) => (rj === ri ? { quote: r.quote, ...(e.target.checked ? { parentAdded: true } : {}) } : r)) })} />
-                                {messages.lessons.parentSourceLabel}
-                              </label>
-                              {editable && ex.sourceRefs!.length > 1 && (
-                                <button type="button" data-testid={`exercise-source-remove-${index}-${ri}`} disabled={busy}
-                                  onClick={() => mutateExercise(ex.clientKey, { sourceRefs: ex.sourceRefs!.filter((_, rj) => rj !== ri) })}>
-                                  {messages.lessons.removeSourceRef}
-                                </button>
-                              )}
-                            </span>
-                          ))}
-                          {editable && ex.sourceRefs!.length < 3 && (
-                            <button type="button" data-testid={`exercise-source-add-${index}`} disabled={busy}
-                              onClick={() => mutateExercise(ex.clientKey, { sourceRefs: [...ex.sourceRefs!, { quote: "", parentAdded: true }] })}>
-                              {messages.lessons.addSourceRef}
-                            </button>
-                          )}
-                        </fieldset>
-                      )}                      {audio && (
-                        <div className="row">
-                          <span data-testid={`exercise-audio-state-${index}`}>{audioStateText(audio.state)}</span>
-                          <button type="button" data-testid={`exercise-play-${index}`}
-                            disabled={!(audio.state === "approved" && audio.assetId)}
-                            onClick={() => audio.assetId && playAsset(audio.assetId)}>
-                            {messages.decks.listen}
-                          </button>
-                        </div>
-                      )}
-
-                      {errors && (
-                        <div className="error" id={errId} data-testid={`exercise-errors-${index}`} role="alert">
-                          <p>{messages.lessons.exerciseErrorsTitle}</p>
-                          <ul className="plain">{errors.map((msg, i) => <li key={i}>{msg}</li>)}</ul>
-                        </div>
-                      )}
-                    </article>
-                  );
-                    })}
-                  </section>
-                ))
-              )}
-            </div>
-          ))}
-
-          {editable && (
-            <div className="row">
-              <label htmlFor={`regen-count-${group.objectiveId}`}>{messages.lessons.regenerateCount}</label>
-              <input id={`regen-count-${group.objectiveId}`} type="number" min={1} max={60} step={1}
-                data-testid={`regen-count-${group.objectiveId}`}
-                value={regenCounts[group.objectiveId] ?? 4} disabled={busy || generating || isDirty}
-                onChange={(e) => setRegenCounts((c) => ({ ...c, [group.objectiveId]: Number(e.target.value) }))} />
-              <button type="button" data-testid={`regen-submit-${group.objectiveId}`} disabled={busy || generating || isDirty}
-                onClick={() => regenerate(group.objectiveId)}>
+      <Modal
+        opened={regenTarget !== null}
+        onClose={() => setRegenTarget(null)}
+        title={messages.lessons.regenerateTitle}
+        centered
+        radius="lg"
+        fullScreen={compact}
+      >
+        {regenTarget && (
+          <Stack gap="md">
+            <Text size="sm" fw={600}>{objectiveMeta(regenTarget)?.titlePl ?? regenTarget}</Text>
+            <NumberInput size="md" label={messages.lessons.regenerateCount} description={messages.lessons.regenerateHint}
+              data-testid={`regen-count-${regenTarget}`} min={1} max={60} allowDecimal={false} allowNegative={false} clampBehavior="none" maw={200}
+              value={regenCounts[regenTarget] ?? 4}
+              onChange={(value) => setRegenCounts((current) => ({ ...current, [regenTarget]: value === "" ? Number.NaN : Number(value) }))} />
+            <Group justify="flex-end" gap="sm">
+              <Button size="md" variant="default" onClick={() => setRegenTarget(null)}>{messages.lessons.regenerateCancel}</Button>
+              <Button size="md" data-testid={`regen-submit-${regenTarget}`} disabled={regenDisabled || !regenCountValid(regenCounts[regenTarget] ?? 4)}
+                onClick={() => {
+                  const objectiveId = regenTarget;
+                  setRegenTarget(null);
+                  void regenerate(objectiveId);
+                }}>
                 {messages.lessons.regenerateSubmit}
-              </button>
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
+
+      <ArchiveLessonDialog
+        lesson={archiveOpen && deck ? { title: deck.title } : null}
+        busy={archiveBusy}
+        error={archiveError}
+        onCancel={() => setArchiveOpen(false)}
+        onConfirm={() => void archive()}
+        onClosed={() => lessonMenuRef.current?.focus()}
+      />
+
+      {showActionBar && (
+        <div className="pp-editor-bar" data-testid="editor-action-bar">
+          <div className="pp-editor-bar-in">
+            <div className="pp-editor-bar-status">
+              {error && errorAlert}
+              {publishBlocked && (
+                <Text size="sm" className="pp-editor-bar-note" data-testid="publish-blocked-reason">
+                  {isDirty
+                    ? `${messages.decks.unsavedChanges} · ${messages.lessons.saveBeforePublish}`
+                    : (draft?.exercises.length ?? 0) === 0
+                      ? messages.lessons.emptyLesson
+                      : messages.lessons.publishBlockedCoverage}
+                </Text>
+              )}
             </div>
-          )}
-        </section>
-      ))}
-
-      {active && (
-        <section className="card" data-testid="coverage-section">
-          <h3>{messages.lessons.coverageTitle}</h3>
-          {active.coverage.length === 0 ? (
-            <p data-testid="coverage-ok">{messages.lessons.coverageOk}</p>
-          ) : (
-            <ul className="plain" data-testid="coverage-gaps">
-              {active.coverage.map((gap, i) => (
-                <li key={i} data-testid={`coverage-gap-${i}`}>
-                  {messages.lessons.coverageGap
-                    .replace("{objective}", gap.objectiveId)
-                    .replace("{stage}", messages.lessons.stages[gap.stage] ?? gap.stage)
-                    .replace("{actual}", String(gap.actual))
-                    .replace("{required}", String(gap.required))}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
-
-      {deck?.state === "published" && !draft && (
-        <div className="row">
-          <button type="button" data-testid="new-version" onClick={startNewVersion} disabled={busy}>
-            {messages.decks.newVersion}
-          </button>
+            {editable ? (
+              <div className="pp-editor-bar-actions">
+                <Button size="md" variant={isDirty ? "filled" : "default"} data-testid="save-lesson" onClick={save}
+                  disabled={busy || conflict || calculationBlocked}>
+                  {messages.decks.save}
+                </Button>
+                <Button size="md" variant={isDirty ? "default" : "filled"} data-testid="publish-lesson" onClick={publish}
+                  disabled={busy || isDirty || conflict || (draft?.exercises.length ?? 0) === 0 || (draft?.coverage.length ?? 0) > 0}>
+                  {messages.decks.publish}
+                </Button>
+              </div>
+            ) : (
+              <div className="pp-editor-bar-actions pp-editor-bar-single">
+                <Button size="md" data-testid="new-version" onClick={startNewVersion} disabled={busy}>
+                  {messages.decks.newVersion}
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
       )}
-
-      {deck && deck.published && (
-        <LessonSupervisionPanel
-          deckId={deckId}
-          childrenList={childrenList}
-          gradingModel={deck.grading.available ? (deck.grading.model ?? null) : null}
-          onRegenerate={draft ? (objectiveId) => void regenerate(objectiveId) : undefined}
-        />
-      )}
-
-      {editable && (
-        <div className="row">
-          <button type="button" data-testid="save-lesson" onClick={save} disabled={busy || conflict || calculationBlocked}>
-            {messages.decks.save}
-          </button>
-          <button type="button" data-testid="publish-lesson" onClick={publish}
-            disabled={busy || isDirty || conflict || (draft?.exercises.length ?? 0) === 0 || (draft?.coverage.length ?? 0) > 0}>
-            {messages.decks.publish}
-          </button>
-        </div>
-      )}
-
-      {editable && (isDirty || (draft?.exercises.length ?? 0) === 0 || (draft?.coverage.length ?? 0) > 0) && (
-        <p className="info" data-testid="publish-blocked-reason">
-          {isDirty
-            ? messages.lessons.saveBeforePublish
-            : (draft?.exercises.length ?? 0) === 0
-              ? messages.lessons.emptyLesson
-              : messages.lessons.publishBlockedCoverage}
-        </p>
-      )}
-
-      {deck?.state === "published" && (
-        <section className="card">
-          <h3>{messages.decks.assignTitle}</h3>
-          {childrenList.map((child, index) => (
-            <div className="row space" key={child.id} data-testid={`assign-row-${index}`}>
-              <span data-child-id={child.id}>{child.displayName}</span>
-              {child.canRead === false && <p className="info" data-testid={`non-reader-lesson-warning-${index}`}>{messages.decks.nonReaderLessonAssignment}</p>}
-              <input type="date" data-testid={`assign-date-${index}`}
-                aria-label={`${messages.decks.assignDate} ${child.displayName}`}
-                value={assignDates[child.id] ?? deck.assignments.find((a) => a.childId === child.id)?.testDate ?? ""}
-                onChange={(e) => setAssignDates((c) => ({ ...c, [child.id]: e.target.value }))} />
-              <button type="button" data-testid={`assign-submit-${index}`}
-                disabled={!AssignmentPutSchema.safeParse({ testDate: null, ...assignmentSettings(child.id) }).success}
-                onClick={() => assign(child.id)}>
-                {messages.decks.assign}
-              </button>
-              <AssignmentTestGoalFields kind="lesson" {...assignmentSettings(child.id)}
-                onChange={(value) => setAssignSettings((c) => ({ ...c, [child.id]: value }))} />
-            </div>
-          ))}
-          <DeckAssignmentsList assignments={deck.assignments} onUnassign={unassign} busyChildId={unassigningChildId} />
-        </section>
-      )}
-    </section>
+    </div>
   );
 }

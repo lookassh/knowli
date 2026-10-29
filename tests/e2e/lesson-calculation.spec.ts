@@ -33,6 +33,8 @@ async function openCalculationDraft(page: Page) {
   await page.locator('[data-deck-id="' + deckId + '"]').click();
   await expect(page.getByTestId("lesson-editor")).toBeVisible();
   await expect(page.getByTestId("save-lesson")).toBeEnabled();
+  // karty ćwiczeń domyślnie w podglądzie (szkic 6b) — oba warianty do edycji
+  for (const index of [0, 1]) await page.getByTestId(`exercise-edit-${index}`).click();
   return { versionId, deckId };
 }
 
@@ -61,6 +63,7 @@ test("edits decimal parameters, computes and persists preview, rejects invalid s
   const draft = LessonDraftDtoSchema.parse((await response.json()).draft);
   expect(draft.exercises[0]).toMatchObject({ answer: "1000 m", calculation: { params: { mapDistanceCm: 4, scaleDenominator: 25000 } } });
   expect(draft.exercises[0]!.prompt).toContain("4 cm");
+  await page.getByTestId("exercise-menu-0").click();
   await page.getByTestId("exercise-remove-0").click();
   await expect(page.getByTestId("calculation-family-scale")).toHaveCount(1);
   await expect(page.getByTestId("exercise-answer-0")).toHaveValue("1250 m");

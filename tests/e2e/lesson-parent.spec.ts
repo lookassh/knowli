@@ -177,6 +177,8 @@ test("creates a lesson, reviews it grouped by objective and stage, fixes a valid
   const firstProductive = productiveStage.locator('[data-testid^="exercise-"]').first();
   const exerciseTestId = (await firstProductive.getAttribute("data-testid"))!; // exercise-<index>
   const idx = exerciseTestId.replace("exercise-", "");
+  // karta ćwiczenia domyślnie w podglądzie (szkic 6b) — pola po „Edytuj”
+  await page.getByTestId(`exercise-edit-${idx}`).click();
   const originalFocus = await page.getByTestId(`exercise-focus-${idx}`).inputValue();
   await page.getByTestId(`exercise-focus-${idx}`).fill("");
   await page.getByTestId("save-lesson").click();
@@ -190,9 +192,11 @@ test("creates a lesson, reviews it grouped by objective and stage, fixes a valid
   const objectiveGroup = page.locator('[data-testid^="objective-group-"]').first();
   const objectiveId = (await objectiveGroup.getAttribute("data-testid"))!.replace("objective-group-", "");
   const independentStage = page.getByTestId(`stage-${objectiveId}-independent`);
-  let removeButtons = independentStage.locator('[data-testid^="exercise-remove-"]');
-  while (await removeButtons.count()) {
-    await removeButtons.first().click();
+  // „Usuń ćwiczenie” jest w menu ⋯ karty
+  const menus = independentStage.locator('[data-testid^="exercise-menu-"]');
+  while (await menus.count()) {
+    await menus.first().click();
+    await page.locator('[data-testid^="exercise-remove-"]').click();
   }
   await page.getByTestId("save-lesson").click();
   // Pokrycie pokazuje brak etapu samodzielnego; publikacja zablokowana.
@@ -200,6 +204,7 @@ test("creates a lesson, reviews it grouped by objective and stage, fixes a valid
   await expect(page.getByTestId("publish-lesson")).toBeDisabled();
 
   // Dogeneruj dla reguły, aby domknąć brak (polling do końca generowania).
+  await page.getByTestId(`regen-open-${objectiveId}`).click();
   await page.getByTestId(`regen-count-${objectiveId}`).fill("12");
   await page.getByTestId(`regen-submit-${objectiveId}`).click();
   await expect(page.getByTestId("generation-banner")).toBeHidden({ timeout: 120_000 });
@@ -215,6 +220,7 @@ test("creates a lesson, reviews it grouped by objective and stage, fixes a valid
   await expect(page.getByTestId("publish-status")).toBeVisible({ timeout: 120_000 });
 
   // Przypisanie z celem kartkówki „Gramatyka".
+  await page.getByTestId("lesson-tab-children").click();
   const assignRow = page.locator('[data-testid^="assign-row-"]').filter({ hasText: childName });
   await expect(assignRow.locator('[data-testid^="non-reader-lesson-warning-"]')).toContainText("może wymagać czytania");
   await assignRow.getByTestId("mock-enable").check();

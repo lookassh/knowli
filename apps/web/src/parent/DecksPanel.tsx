@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActionIcon,
   Affix,
@@ -19,7 +19,6 @@ import {
   VisuallyHidden,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
-import { useComputedColorScheme } from "@mantine/core";
 import {
   messages,
   type ChildDto,
@@ -86,39 +85,8 @@ const STATE_TONE: Record<DeckSummaryDto["state"], string> = {
 /**
  * Sekcja Zestawy: lista pogrupowana po stanie, tworzenie materiału oraz —
  * według adresu — edytor zestawu (`/parent/decks/{id}`) albo formularz nowej
- * lekcji (`/parent/lessons/new`). Edytor lekcji jest jeszcze na starych stylach
- * (faza 6b planu 2026-10-29-parent-ui-mantine).
+ * lekcji (`/parent/lessons/new`).
  */
-/**
- * Edytor lekcji jeszcze na starych stylach (faza 6b): stały jasny obszar
- * z tokenami `pp-*`. Komponenty Mantine w środku (wspólne pola przypisań
- * i liczby pytań, panel nadzoru) czytają schemat z `<html>`, więc na czas edytora lekcji
- * cała strona przechodzi na jasny schemat; wybór rodzica wraca po wyjściu
- * (zapamiętane ustawienie się nie zmienia).
- */
-function LegacyArea({ children }: { children: ReactNode }) {
-  const scheme = useComputedColorScheme("light");
-  const schemeRef = useRef(scheme);
-  schemeRef.current = scheme;
-  useEffect(() => {
-    // Mantine ustawia atrybut przy każdej zmianie wyboru rodzica (także gdy
-    // wyliczony schemat się nie zmienia) — obserwator przywraca jasny od razu
-    const root = document.documentElement;
-    const attribute = "data-mantine-color-scheme";
-    const forceLight = () => {
-      if (root.getAttribute(attribute) !== "light") root.setAttribute(attribute, "light");
-    };
-    forceLight();
-    const observer = new MutationObserver(forceLight);
-    observer.observe(root, { attributes: true, attributeFilter: [attribute] });
-    return () => {
-      observer.disconnect();
-      root.setAttribute(attribute, schemeRef.current);
-    };
-  }, []);
-  return <div className="pp-app pp-legacy-area">{children}</div>;
-}
-
 export default function DecksPanel({
   route,
   decks,
@@ -325,15 +293,22 @@ export default function DecksPanel({
       );
     }
     return kind === "lesson" ? (
-      <LegacyArea>
-        <LessonEditor
-          key={deckId}
-          deckId={deckId}
-          childrenList={childrenList}
-          onEditorStateChange={registerEditorState}
-          onBack={openList}
-        />
-      </LegacyArea>
+      <LessonEditor
+        key={deckId}
+        deckId={deckId}
+        childrenList={childrenList}
+        onEditorStateChange={registerEditorState}
+        onBack={openList}
+        onArchived={() => {
+          // jak archiwizacja z listy: lekcja znika od razu, nieudane odświeżenie listy daje komunikat
+          setArchivedIds((current) => new Set([...current, deckId]));
+          setArchiveNotice(null);
+          openList();
+          void onChanged().catch((cause: unknown) => {
+            if (mounted.current && (cause as { status?: number }).status !== 401) setArchiveNotice(messages.lessons.archiveRefreshFailed);
+          });
+        }}
+      />
     ) : (
       <DeckEditor
         key={deckId}

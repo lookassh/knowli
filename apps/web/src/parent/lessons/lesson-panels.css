@@ -63,3 +63,109 @@
   margin-top: 2px;
   padding-left: 14px;
 }
+
+/* --- edytor lekcji (faza 6b, szkic zaakceptowany 2026-10-29) --- */
+
+.pp-lesson-control {
+  min-height: 48px;
+}
+
+.pp-lesson-objtitle {
+  overflow-wrap: anywhere;
+}
+
+.pp-lesson-explain {
+  background: var(--mantine-color-default-hover);
+}
+
+.pp-lesson-card {
+  padding: 8px 10px;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: 10px;
+  background: var(--mantine-color-body);
+  overflow-wrap: anywhere;
+}
+
+.pp-lesson-examples {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: var(--mantine-font-size-sm);
+}
+
+.pp-lesson-start {
+  align-self: flex-start;
+}
+
+/* karta ćwiczenia: podgląd albo pola */
+.pp-lesson-ex {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pp-lesson-ex[data-error="true"] {
+  border-color: var(--pp-status-danger-fg);
+}
+
+.pp-lesson-ex-head {
+  margin: -4px -6px 8px 0;
+}
+
+.pp-lesson-ex-num {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pp-lesson-ex-preview {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pp-lesson-ex-answer {
+  color: var(--pp-status-success-fg);
+}
+
+/* telefon: pola jedno pod drugim; desktop: dwie kolumny */
+.pp-lesson-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+}
+
+.pp-lesson-field {
+  min-width: 0;
+}
+
+.pp-lesson-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: 10px;
+}
+
+.pp-lesson-fieldset legend {
+  padding: 0 4px;
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 600;
+}
+
+@media (min-width: 52.5em) {
+  .pp-lesson-fields {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 14px;
+  }
+
+  .pp-lesson-wide {
+    grid-column: 1 / -1;
+  }
+}
+
+/* pole obok przycisku: na wąskim ekranie przycisk schodzi pod pole */
+.pp-lesson-grow {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
