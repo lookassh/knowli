@@ -250,9 +250,7 @@ for (const kind of ["reading", "listening", "lesson_choice"] as const) {
       feedback: { kind: "incorrect", correctText: "Poprawna odpowiedź wymaga przeczytania dłuższego objaśnienia. ".repeat(8) } }];
     fixture.uiAudio = { ready: true, assets: {} };
     await installKidUiFixture(page, fixture);
-    // 540 px: the session header is 16 px taller than before while the "Jeszcze N" pill sits
-    // under the pebbles, and the material window must still fit one 48 px option.
-    await page.setViewportSize({ width: 360, height: 540 });
+    await page.setViewportSize({ width: 360, height: 500 });
     await page.goto("/");
     await page.getByTestId("kid-profile").click();
     await page.getByTestId("kid-deck").click();

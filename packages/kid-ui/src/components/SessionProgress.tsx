@@ -14,9 +14,7 @@ import {
 import classes from "./SessionProgress.module.css";
 
 /** Up to this many assessed tasks the progress is one pebble per task. */
-export const PEBBLE_LIMIT = 24;
-/** Above this many pebbles the row tightens (4px pebbles, 2px gaps) so 24 fit a 320px phone. */
-const DENSE_FROM = 20;
+export const PEBBLE_LIMIT = 20;
 
 /** Session progress in the header: one pebble per assessed task (done,
  * current, upcoming), or a slim bar for very long sessions, plus the
@@ -75,7 +73,7 @@ export function SessionProgress({ remaining, total = 0, done = 0, milestone = 0 
   return (
     <span className={`${classes.root} kid-session-progress`}>
       {pebbles ? (
-        <span ref={scope} className={classes.pebbles} data-testid="kid-progress-pebbles" data-dense={total > DENSE_FROM || undefined} aria-hidden="true">
+        <span ref={scope} className={classes.pebbles} data-testid="kid-progress-pebbles" aria-hidden="true">
           {Array.from({ length: total }, (_, index) => (
             <span
               key={index}

@@ -200,6 +200,14 @@
   flex: 1;
 }
 
+/* The 56px session header is 8px taller than the 48px buttons it holds; on
+   short windows that spare goes to the top padding so the task keeps its room. */
+@media (max-height: 700px) {
+  .kid-page:not([data-viewport-very-short="true"]) .kid-learning {
+    padding-top: max(4px, env(safe-area-inset-top));
+  }
+}
+
 .kid-page[data-zoomed="true"] .kid-learning {
   height: auto;
 }
@@ -1209,8 +1217,8 @@
 }
 
 /* Session header: ✕ | progress pebbles | microphone status. Buttons sit at
-   the top so their centres line up with the pebble row; the "Jeszcze N" pill
-   under the pebbles may make the header taller. */
+   the top so their centres line up with the pebble row; the compact "Jeszcze N"
+   pill under the pebbles fits inside the same 56px, so the header never grows. */
 .kid-header {
   box-sizing: border-box;
   display: grid;
@@ -1218,7 +1226,6 @@
   align-items: start;
   column-gap: 12px;
   min-height: 56px;
-  padding-block: 4px;
 }
 
 .kid-page[data-viewport-very-short="true"] .kid-header {

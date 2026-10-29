@@ -18,8 +18,8 @@ describe("SessionProgress", () => {
   });
 
   it("falls back to a continuous bar above the pebble limit", () => {
-    expect(PEBBLE_LIMIT).toBe(24);
-    renderKid(<SessionProgress remaining={null} total={25} done={5} />);
+    expect(PEBBLE_LIMIT).toBe(20);
+    renderKid(<SessionProgress remaining={null} total={21} done={5} />);
     expect(screen.queryByTestId("kid-progress-pebble")).toBeNull();
     expect(screen.getByTestId("kid-progress-fill")).toBeTruthy();
   });

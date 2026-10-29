@@ -56,7 +56,7 @@ async function expectSessionHeaderRow(page: Page, expectedPebbles: number, pillS
     }));
     expect(pebbles, `pebble count: ${name}`).toHaveLength(expectedPebbles);
     for (const [index, pebble] of pebbles.entries()) {
-      expect(pebble.width, `pebble ${index} width: ${name}`).toBeGreaterThanOrEqual(expectedPebbles > 20 ? 4 : 5);
+      expect(pebble.width, `pebble ${index} width: ${name}`).toBeGreaterThanOrEqual(5);
       // The current pebble is scaled 1.25x, so it may poke out of the row by up to 2px.
       expect(pebble.left, `pebble ${index} inside row: ${name}`).toBeGreaterThanOrEqual(layout.pebbles.left - 2);
       expect(pebble.right, `pebble ${index} inside row: ${name}`).toBeLessThanOrEqual(layout.pebbles.right + 2);
@@ -93,13 +93,26 @@ test("session header keeps close, pebbles and microphone in one row", async ({ p
   await expectSessionHeaderRow(page, 20, false);
 });
 
-test("session header fits the longest pebble row on every viewport", async ({ page }) => {
-  await installKidUiFixture(page, openHeaderFixture(24));
-  await page.goto("/");
-  await page.getByTestId("kid-profile").click();
-  await page.getByTestId("kid-deck").click();
-  await expect(page.getByTestId("kid-input")).toBeVisible();
-  await expectSessionHeaderRow(page, 24, false);
+test("session header keeps the same height with and without the Jeszcze pill", async ({ page, context }) => {
+  const heights = async (target: Page, remainingAssessed: number) => {
+    await installKidUiFixture(target, openHeaderFixture(remainingAssessed));
+    await target.goto("/");
+    await target.getByTestId("kid-profile").click();
+    await target.getByTestId("kid-deck").click();
+    await expect(target.getByTestId("kid-input")).toBeVisible();
+    await expect(target.getByTestId("kid-remaining")).toHaveCount(remainingAssessed <= 3 ? 1 : 0);
+    const result: number[] = [];
+    for (const viewport of [{ width: 360, height: 800 }, { width: 360, height: 500 }]) {
+      await resizeAndSettle(target, viewport);
+      result.push((await measure(target, { header: ".kid-header" })).header.height);
+    }
+    return result;
+  };
+  const without = await heights(page, 20);
+  const withPill = await heights(await context.newPage(), 3);
+  for (const [index, name] of ["360x800", "360x500"].entries()) {
+    expect(Math.abs(withPill[index]! - without[index]!), `header height with vs without pill: ${name}`).toBeLessThanOrEqual(1);
+  }
 });
 
 test("session header keeps the Jeszcze pill beside or under the pebbles", async ({ page }) => {
