@@ -62,6 +62,18 @@ async function setup(page: Parameters<typeof installKidUiFixture>[0], options: {
   await page.goto("/");
 }
 
+async function screenshotAt360(page: Page, path: string) {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await expect.poll(() => page.evaluate(() => {
+    const { right, width } = document.querySelector("[data-kid-screen]")!.getBoundingClientRect();
+    return window.innerWidth === 360 && width > 300 && Math.round(right) <= 360;
+  })).toBe(true);
+  await page.evaluate(async () => {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+  });
+  await page.screenshot({ path });
+}
+
 async function expectThemeToken(page: Page, locator: Locator, token: "surface" | "accent" | "good-bg" = "surface") {
   const colors = await locator.evaluate((element, tokenName) => ({
     background: getComputedStyle(element).backgroundColor,
@@ -99,7 +111,7 @@ test("profile keeps child and parent navigation within the blue theme", async ({
   await expect(page.locator(".kid-ui")).toHaveCount(0, { timeout: 10_000 });
 });
 
-test("mock-test ready screen styles start and cancel as clear actions", async ({ page }, testInfo) => {
+test("mock-test ready screen styles start and cancel as clear actions", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "dark" });
   await setup(page, { decks: [deck({ mockTestAvailable: true })], session: session("mock_test") });
   await page.getByTestId("kid-profile").click();
@@ -112,8 +124,6 @@ test("mock-test ready screen styles start and cancel as clear actions", async ({
   const info = page.getByTestId("kid-mock-info");
   await expect(info).toContainText("Odpowiedzi omówimy na końcu.");
   await expectThemeToken(page, info);
-  await page.setViewportSize({ width: 360, height: 800 });
-  await page.screenshot({ path: testInfo.outputPath("mock-ready-360x800.png") });
   const cancel = page.getByRole("button", { name: "Koniec" });
   // Regresja kaskady: reset przycisku nie może kasować lokalnych
   // stylów przycisku drugorzędnego (ramka, wypełnienie, tło).
@@ -128,7 +138,7 @@ test("mock-test ready screen styles start and cancel as clear actions", async ({
   await expect(page.getByTestId("kid-deck-card")).toBeVisible();
 });
 
-test("session conflict resumes the already active task", async ({ page }, testInfo) => {
+test("session conflict resumes the already active task", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "dark" });
   await setup(page, {
     decks: [deck({ activeSession: { sessionId, mode: "training" } })],
@@ -149,13 +159,42 @@ test("session conflict resumes the already active task", async ({ page }, testIn
   const conflictInfo = page.getByTestId("kid-conflict-info");
   await expect(conflictInfo).toContainText("Masz rozpoczętą sesję. Wróć do niej lub zakończ ją przed nową.");
   await expectThemeToken(page, conflictInfo);
-  await page.setViewportSize({ width: 360, height: 800 });
-  await page.screenshot({ path: testInfo.outputPath("conflict-360x800.png") });
   const resume = page.getByRole("button", { name: "Wróć do sesji" });
   await expectThemeToken(page, resume, "accent");
   await resume.click();
   await expect(page.getByTestId("kid-input")).toBeVisible();
   await expect(page.getByTestId("kid-source")).toHaveText("kot");
+});
+
+test("mock-test ready screen screenshot at 360x800", async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await setup(page, { decks: [deck({ mockTestAvailable: true })], session: session("mock_test") });
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-mock-start").click();
+  await expect(page.getByTestId("kid-mock-confirm")).toBeVisible();
+  await screenshotAt360(page, testInfo.outputPath("mock-ready-360x800.png"));
+});
+
+test("session conflict screenshot at 360x800", async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await setup(page, {
+    decks: [deck({ activeSession: { sessionId, mode: "training" } })],
+    session: session("training", { tasksIssued: 1, assessedTasksIssued: 1, resumed: true }),
+    tasks: [recallTask()],
+  });
+  let conflictSent = false;
+  await page.route("**/api/v1/kid/sessions", async (route) => {
+    if (route.request().method() === "POST" && !conflictSent) {
+      conflictSent = true;
+      await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ code: "conflict", retryable: false }) });
+      return;
+    }
+    await route.fallback();
+  });
+  await page.getByTestId("kid-profile").click();
+  await page.getByRole("button", { name: "Ucz się" }).click();
+  await expect(page.getByTestId("kid-conflict-info")).toBeVisible();
+  await screenshotAt360(page, testInfo.outputPath("conflict-360x800.png"));
 });
 
 test("long session summary remains readable and its actions stay reachable", async ({ page }) => {
