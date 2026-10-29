@@ -152,8 +152,12 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
           ? rawAnswer.itemIds.map(id => typeof id === "string" && typeof itemValues?.[id] === "string" ? itemValues[id] as string : "").filter(Boolean).join(" ").trim().slice(0, 160) || null
           : null;
         const optionValues = (task.answerKey as { optionValues?: Record<string, unknown> } | null)?.optionValues;
-        const selectionAnswer = attempt.modality === "selection" && Array.isArray(rawAnswer?.itemIds)
-          ? rawAnswer.itemIds.map(id => typeof id === "string" && typeof optionValues?.[id] === "string" ? optionValues[id] as string : "").filter(Boolean).join(", ").trim().slice(0, 160) || null
+        // Wybór z nieznanym identyfikatorem jest nieoceniony: nie pokazujemy go jako częściowej odpowiedzi.
+        const selectionTexts = attempt.modality === "selection" && Array.isArray(rawAnswer?.itemIds)
+          ? rawAnswer.itemIds.map(id => typeof id === "string" && typeof optionValues?.[id] === "string" ? optionValues[id] as string : null)
+          : null;
+        const selectionAnswer = selectionTexts && selectionTexts.length > 0 && selectionTexts.every((text): text is string => text !== null)
+          ? selectionTexts.join(", ").trim().slice(0, 160) || null
           : null;
         const feedbackKind = typeof attempt.feedback?.kind === "string" ? attempt.feedback.kind : null;
         const assessment = attempt.modality === "skip" || attempt.modality === "dont_remember" ? "none"

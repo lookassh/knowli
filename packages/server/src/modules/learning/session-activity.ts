@@ -249,7 +249,9 @@ function answerTextOf(modality: string, answer: Record<string, unknown> | null, 
     return answer.itemIds.map((id) => (typeof id === "string" ? promptOptions.get(id) ?? "" : "")).filter(Boolean).join(" ").slice(0, 200) || null;
   }
   if (modality === "selection" && Array.isArray(answer?.itemIds)) {
-    return answer.itemIds.map((id) => (typeof id === "string" ? promptOptions.get(id) ?? "" : "")).filter(Boolean).join(", ").slice(0, 200) || null;
+    // Nieznany identyfikator: brak wiarygodnej treści wyboru, zamiast częściowej odpowiedzi.
+    const texts = answer.itemIds.map((id) => (typeof id === "string" ? promptOptions.get(id) ?? null : null));
+    return texts.length > 0 && texts.every((text) => text !== null) ? texts.join(", ").slice(0, 200) || null : null;
   }
   if (modality === "audio" && typeof answer?.transcript === "string") return answer.transcript.slice(0, 200);
   return null;
