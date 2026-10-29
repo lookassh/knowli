@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   messages,
   AssignmentPutSchema,
@@ -10,12 +11,12 @@ import {
   type LessonDeckDto,
   type LessonDraftDto,
   type LessonExerciseErrors,
-  type SubjectCatalogDto,
 } from "@learning/contracts";
 import { callParent, ApiCallError, errorMessage, parentClient } from "../api";
 import AssignmentTestGoalFields, { type AssignmentTestSettings } from "../AssignmentTestGoalFields";
 import DeckSessionTaskBudgetSettings from "../DeckSessionTaskBudgetSettings";
 import type { EditorLeaveState } from "../useParentLeaveGuard";
+import { orpc } from "../query-client";
 import LessonSupervisionPanel from "./LessonSupervisionPanel";
 import { DeckAssignmentsList } from "../DeckAssignmentsList";
 import {
@@ -42,6 +43,15 @@ function gradingDisabled(deck: LessonDeckDto | null): boolean {
   return deck?.grading.available === false;
 }
 
+/** Odstęp odpytywania lekcji: co 1 s, gdy trwa generowanie albo media pokazanej wersji czekają. */
+export function lessonPollInterval(deck: LessonDeckDto | undefined): number | false {
+  if (!deck) return false;
+  const generating = deck.generation?.state === "queued" || deck.generation?.state === "running";
+  const visible = deck.draft ?? deck.published;
+  const assetsPending = visible?.assets.some((asset) => asset.state === "pending") ?? false;
+  return generating || assetsPending ? 1000 : false;
+}
+
 /**
  * Przegląd i edycja jednej lekcji: ćwiczenia pogrupowane wg reguł i etapów
  * z etykietami typów, edycja pól zależnie od typu, usuwanie, walidacja per
@@ -56,13 +66,11 @@ export default function LessonEditor({
   childrenList,
   onBack,
   onEditorStateChange,
-  onAuthExpired,
 }: {
   deckId: string;
   childrenList: ChildDto[];
   onBack: () => void;
   onEditorStateChange: (state: EditorLeaveState) => void;
-  onAuthExpired: () => void;
 }) {
   const [deck, setDeck] = useState<LessonDeckDto | null>(null);
   const [form, setForm] = useState<EditableLessonForm | null>(null);
@@ -84,7 +92,6 @@ export default function LessonEditor({
   // PATCH-a ćwiczeń żyje w `lesson-editor-state.ts` (poza zakresem tej edycji);
   // przykłady dokładamy do ciała PATCH w `save()`. `null` = jeszcze nie zasiane.
   const [examplesForm, setExamplesForm] = useState<Record<string, string[]> | null>(null);
-  const [catalog, setCatalog] = useState<SubjectCatalogDto | null>(null);
 
   const [calculationInputs, setCalculationInputs] = useState<Record<string, string>>({});
   const [calculationPreviews, setCalculationPreviews] = useState<Record<string, { fingerprint: string; status: "pending" | "ready" | "error" }>>({});
@@ -119,11 +126,31 @@ export default function LessonEditor({
   }, [calculationRequests, calculationsEditable]);
 
   const dirty = useRef(false);
+  const conflictActive = useRef(false);
   const busyRef = useRef(false);
   const regenLock = useRef(false);
   const baseSnapshot = useRef<LessonEditorSnapshot | null>(null);
-  const loadVersion = useRef(0);
   const newKey = useCallback(() => crypto.randomUUID(), []);
+  const queryClient = useQueryClient();
+  const enterConflict = (value: boolean) => {
+    conflictActive.current = value;
+    setConflict(value);
+  };
+
+  // Polecenia edytora idą przez mutację TanStack: 401 obsługuje globalny
+  // handler (logowanie w oknie przy niezapisanych zmianach), a sukces odświeża
+  // listę zestawów. Każde wywołanie ma własną obietnicę i obsługę błędu.
+  const command = useMutation({
+    mutationFn: (call: () => Promise<unknown>) => callParent(call),
+    // w tle — polecenie nie czeka na pobranie listy (zwrócona obietnica wstrzymałaby mutateAsync)
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: orpc.decks.list.queryKey() }); },
+  });
+  const { mutateAsync } = command;
+  const run = useCallback(<T,>(call: () => Promise<T>): Promise<T> => mutateAsync(call) as Promise<T>, [mutateAsync]);
+  // podgląd rachunku przed zapisem: odczyt bez zmiany danych — bez odświeżania listy zestawów, 401 jak w poleceniach
+  const { mutateAsync: previewCalculation } = useMutation({
+    mutationFn: (calculation: CalculationSpec) => callParent(() => parentClient.lessons.previewCalculation(calculation)),
+  });
 
   const setBusyState = (value: boolean) => {
     busyRef.current = value;
@@ -141,33 +168,76 @@ export default function LessonEditor({
     return () => onEditorStateChange({ dirty: false, busy: false });
   }, [onEditorStateChange, isDirty, busy, conflict]);
 
+  // Odczyt lekcji (TanStack Query, jak edytor zestawu w fazie 5a). Odpowiedź
+  // trafia do lokalnej bazy formularza w chwili nadejścia — w funkcji
+  // zapytania, z warunkami dawnego `load()` (bez niezapisanych zmian i bez
+  // konfliktu) sprawdzanymi wtedy, a nie w efekcie po renderze. Odpowiedź
+  // anulowanego odczytu nie trafia nigdzie (jak dawniej wersja żądania).
+  const manualLoads = useRef(0);
+  const arrival = useRef({ data: (_: LessonDeckDto) => {}, error: (_: unknown) => {} });
+  arrival.current = {
+    data: (result) => {
+      if (!dirty.current && !conflictActive.current) setDeck(result);
+    },
+    // błąd odczytu po poleceniu obsługuje samo polecenie; tu tylko pierwszy odczyt i odpytywanie
+    error: (cause) => {
+      if (manualLoads.current === 0 && !dirty.current && !conflictActive.current) setError(errorMessage(cause));
+    },
+  };
+  const lessonOptions = orpc.lessons.get.queryOptions({ input: { deckId } });
+  const baseQueryFn = lessonOptions.queryFn!;
+  const lessonQuery = useQuery({
+    ...lessonOptions,
+    queryFn: async (context) => {
+      try {
+        const result = await baseQueryFn(context);
+        if (!context.signal.aborted) arrival.current.data(result);
+        return result;
+      } catch (cause) {
+        if (!context.signal.aborted) arrival.current.error(cause);
+        throw cause;
+      }
+    },
+    retry: false,
+    // ponowne otwarcie lekcji zaczyna od świeżego odczytu, nie od pamięci podręcznej
+    gcTime: 0,
+    // odstęp z lokalnej bazy formularza (jak dawny setInterval): przy niezapisanych
+    // zmianach odpytywanie trwa, ale odpowiedzi nie zmieniają bazy
+    refetchInterval: lessonPollInterval(deck ?? undefined),
+    refetchIntervalInBackground: true,
+  });
+
+  /** Ponowny odczyt po poleceniu; `false` = odczyt się nie udał. */
+  const { refetch } = lessonQuery;
   const load = useCallback(async (): Promise<boolean> => {
-    const requestVersion = ++loadVersion.current;
+    manualLoads.current += 1;
     try {
-      const result = await callParent(() => parentClient.lessons.get({ deckId }));
-      if (requestVersion === loadVersion.current && !dirty.current && !conflict) {
-        setDeck(result);
-      }
-      return true;
-    } catch (cause) {
-      if (requestVersion === loadVersion.current && !dirty.current && !conflict) {
-        setError(errorMessage(cause));
-      }
+      const result = await refetch();
+      if (!result.isError) return true;
+      if (!dirty.current && !conflictActive.current) setError(errorMessage(result.error));
       return false;
+    } finally {
+      manualLoads.current -= 1;
     }
-  }, [deckId, conflict]);
+  }, [refetch]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  /**
+   * Świeży odczyt lekcji poza bazą formularza (konflikt wersji). Trwające
+   * odpytanie jest najpierw anulowane — inaczej `fetchQuery` zwróciłby jego
+   * (starszą) odpowiedź zamiast nowego odczytu.
+   */
+  const fetchRemote = useCallback(async () => {
+    const options = orpc.lessons.get.queryOptions({ input: { deckId } });
+    await queryClient.cancelQueries({ queryKey: options.queryKey, exact: true });
+    return queryClient.fetchQuery({ ...options, retry: false, staleTime: 0, gcTime: 0 });
+  }, [queryClient, deckId]);
 
+  const catalogQuery = useQuery(orpc.lessonCatalog.get.queryOptions());
+  const catalog = catalogQuery.data ?? null;
+  const catalogError = catalogQuery.error;
   useEffect(() => {
-    let cancelled = false;
-    void callParent(() => parentClient.lessonCatalog.get())
-      .then((result) => { if (!cancelled) setCatalog(result); })
-      .catch((cause) => { if (!cancelled) setError(errorMessage(cause)); });
-    return () => { cancelled = true; };
-  }, [deckId]);
+    if (catalogError) setError(errorMessage(catalogError));
+  }, [catalogError]);
 
   const draft = deck?.draft ?? null;
   const active: LessonDraftDto | null = draft ?? deck?.published ?? null;
@@ -177,12 +247,6 @@ export default function LessonEditor({
   const generationFailure = deck?.generation?.errorCode
     ? messages.lessons.generationErrors[deck.generation.errorCode] ?? messages.lessons.generationFailed
     : messages.lessons.generationFailed;
-  const assetsPending = active?.assets.some((a) => a.state === "pending") ?? false;
-  useEffect(() => {
-    if (!generating && !assetsPending) return;
-    const timer = setInterval(() => void load(), 1000);
-    return () => clearInterval(timer);
-  }, [generating, assetsPending, load]);
 
   // Formularz podąża za widoczną wersją, dopóki rodzic nie zaczął edytować.
   useEffect(() => {
@@ -193,10 +257,6 @@ export default function LessonEditor({
     setCalculationInputs({});
     setExamplesForm(structuredClone(active.examples ?? {}));
   }, [active, draft, newKey]);
-
-  useEffect(() => () => {
-    loadVersion.current += 1;
-  }, [deckId]);
 
   useEffect(() => {
     setSessionBudgetEdit(null);
@@ -274,13 +334,13 @@ export default function LessonEditor({
     try {
       // Revalidate every variant through the same domain immediately before saving.
       snapshot.form.exercises = await Promise.all(snapshot.form.exercises.map(async ex => ex.calculation
-        ? applyCalculationPreview(ex, ex.calculation, await callParent(() => parentClient.lessons.previewCalculation(ex.calculation!)))
+        ? applyCalculationPreview(ex, ex.calculation, await previewCalculation(ex.calculation!))
         : ex));
       const patch = toLessonDraftPatch(snapshot);
       // Przykłady serwer nadpisuje całością per cel; dokładamy aktualny stan,
       // bo serializacja ćwiczeń (lesson-editor-state) ich nie obejmuje.
       if (examplesForm) patch.examples = examplesForm;
-      const saved = await callParent(() => parentClient.lessonDrafts.edit({
+      const saved = await run(() => parentClient.lessonDrafts.edit({
         lessonDraftId: snapshot.versionId,
         ...patch,
       }));
@@ -300,12 +360,11 @@ export default function LessonEditor({
         setExerciseErrors(map);
         setError(messages.errors.validation);
       } else if (cause instanceof ApiCallError && (cause.code === "conflict" || cause.code === "immutable")) {
-        setConflict(true);
+        enterConflict(true);
         setError(messages.decks.conflictDetected);
       } else {
+        // wygasła sesja: formularz zostaje, globalny handler otwiera logowanie nad edytorem
         setError(errorMessage(cause));
-        // wygasła sesja: formularz zostaje, panel otwiera logowanie nad edytorem
-        if (cause instanceof ApiCallError && cause.status === 401) onAuthExpired();
       }
     } finally {
       setBusyState(false);
@@ -317,10 +376,10 @@ export default function LessonEditor({
   const loadCurrentVersion = async () => {
     setBusyState(true);
     try {
-      const result = await callParent(() => parentClient.lessons.get({ deckId }));
+      const result = await fetchRemote();
       dirty.current = false;
       setIsDirty(false);
-      setConflict(false);
+      enterConflict(false);
       setDeck(result);
       const next = result.draft ?? result.published;
       if (next) {
@@ -342,7 +401,7 @@ export default function LessonEditor({
     setBusyState(true);
     setError(null);
     try {
-      await callParent(() => parentClient.lessonDrafts.publish({
+      await run(() => parentClient.lessonDrafts.publish({
         lessonDraftId: draft.id,
         expectedEditNumber: draft.editNumber,
       }));
@@ -362,7 +421,7 @@ export default function LessonEditor({
     setBusyState(true);
     setError(null);
     try {
-      await callParent(() => parentClient.lessons.draft({ deckId }));
+      await run(() => parentClient.lessons.draft({ deckId }));
       dirty.current = false;
       await load();
     } catch (cause) {
@@ -378,7 +437,7 @@ export default function LessonEditor({
     setBusyState(true);
     setError(null);
     try {
-      await callParent(() => parentClient.generation.retry({ runId }));
+      await run(() => parentClient.generation.retry({ runId }));
       await load();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -394,7 +453,7 @@ export default function LessonEditor({
     setBusyState(true);
     setError(null);
     try {
-      await callParent(() => parentClient.lessonDrafts.regenerate({
+      await run(() => parentClient.lessonDrafts.regenerate({
         lessonDraftId: draft.id,
         objectiveId,
         count,
@@ -418,7 +477,7 @@ export default function LessonEditor({
   const assign = async (childId: string) => {
     setError(null);
     try {
-      await callParent(() => parentClient.assignments.put({
+      await run(() => parentClient.assignments.put({
         childId,
         deckId,
         testDate: (assignDates[childId] ?? deck?.assignments.find((a) => a.childId === childId)?.testDate) || null,
@@ -435,7 +494,7 @@ export default function LessonEditor({
     setError(null);
     setUnassigningChildId(childId);
     try {
-      await callParent(() => parentClient.assignments.remove({ childId, deckId }));
+      await run(() => parentClient.assignments.remove({ childId, deckId }));
       await load();
     } catch (cause) {
       setError(errorMessage(cause));
