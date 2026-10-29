@@ -2,7 +2,7 @@
   color-scheme: dark;
   color: var(--md-sys-color-on-surface);
   background: var(--md-sys-color-surface-container-lowest);
-  font-family: KnowliKidManrope, sans-serif;
+  font-family: var(--kid-font-body);
   min-height: 100dvh;
   -webkit-tap-highlight-color: transparent;
 }
