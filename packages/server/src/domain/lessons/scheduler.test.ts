@@ -767,6 +767,13 @@ describe("selectLessonTask — trener precyzji (Etap 4)", () => {
       expect(none).toMatchObject({ itemId: "item:subj.topic.o1:independent:a" });
     });
 
+    it("należne samodzielne sprawdzenie celu też wybiera pytanie porównawcze", () => {
+      const due = { [O1]: prog("needs_confirmation", "2000-01-01T00:00:00Z") };
+      const exercises = [open("a", "inna"), comparison("b", "Czym różni się południk od równoleżnika?")];
+      const plan = selectLessonTask(input({ objectiveOrder: [O1], progress: due, initialProgress: due, planningMode: true, exercises, precisionHistory: { [O1]: confused } }));
+      expect(plan).toMatchObject({ itemId: "item:subj.topic.o1:independent:b", independentCheck: true });
+    });
+
     it("pomylenie ma pierwszeństwo przed formą zwięzłą, a bez pomylenia porównanie nie jest preferowane", () => {
       const exercises = [open("a", "zwiezle", "one_sentence"), comparison("b", "Czym różni się południk od równoleżnika?")];
       const withConfusion = selectLessonTask(input({ ...base, exercises, precisionHistory: { [O1]: { ...confused, knowledge: "partial", precision: "verbose" } } }));

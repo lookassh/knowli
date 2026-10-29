@@ -365,12 +365,14 @@ function pickExercise(
     : seenPool;
   const effective = closedFirst.length > 0 ? closedFirst : seenPool;
 
+  // Kolejność preferencji obu ścieżek: pomylone pojęcia przed formą zwięzłą (design §9.3).
+  const preferred = (entries: typeof effective) =>
+    preferComparison(preferConciseForms(orderBySeen(entries, input), objectiveId, input), objectiveId, input)[0]?.candidate ?? null;
   if (options.requireUnseen === true) {
-    return preferConciseForms(orderBySeen(effective, input), objectiveId, input)[0]?.candidate ?? null;
+    return preferred(effective);
   }
   const unseen = effective.filter(({ candidate }) => !isExposed(candidate, input));
-  const chosen = unseen.length > 0 ? unseen : effective;
-  return preferComparison(preferConciseForms(orderBySeen(chosen, input), objectiveId, input), objectiveId, input)[0]?.candidate ?? null;
+  return preferred(unseen.length > 0 ? unseen : effective);
 }
 
 /** Porównanie pojęć: NFC, bez wielkości liter, pojedyncze odstępy. */
