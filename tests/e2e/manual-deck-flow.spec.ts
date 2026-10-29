@@ -362,6 +362,8 @@ test("creates and publishes a manually entered word without generating content",
   await childRow.getByTestId("child-edit").click();
   await childRow.getByTestId("child-edit-can-read").check();
   await childRow.getByTestId("child-edit-save").click();
+  // trwający zapis profilu wstrzymuje przejście do innej sekcji (leave guard)
+  await expect(childRow.getByTestId("child-edit-name")).toHaveCount(0);
   const childHref = await childRow.getByTestId("child-learn-link").getAttribute("href");
   const childId = childHref?.match(/\/kids\/([0-9a-f-]{36})\//)?.[1];
   expect(childId).toBeTruthy();
