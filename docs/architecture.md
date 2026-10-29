@@ -35,7 +35,8 @@ To jawne doprecyzowanie SPEC §27: „jeden deploy aplikacji” oznacza wspólne
 | Web | Next.js App Router, React, TypeScript strict, runtime Node.js |
 | Kid UI | Biblioteka React/TypeScript, bez importów z Next.js |
 | Kontrakty wejścia/wyjścia | Zod + jawne DTO HTTP/JSON |
-| UI | Panel rodzica: Tailwind CSS; Kid UI: własne komponenty React, CSS Modules i tokeny Material 3 |
+| UI | Panel rodzica (od 2026-10-29): Mantine 9 — komponenty, formularze (`@mantine/form`), modale, powiadomienia, schemat jasny i ciemny; Kid UI: własne komponenty React, CSS Modules i tokeny Material 3, bez Mantine |
+| Dane panelu rodzica | TanStack Query przez `@orpc/tanstack-query` (odczyty jako zapytania, polecenia jako mutacje, globalna obsługa 401) |
 | Baza i zapytania | PostgreSQL, Drizzle ORM, sterownik pg |
 | Migracje | Drizzle Kit generujący SQL do przeglądu i zatwierdzenia |
 | Kolejka | Graphile Worker w tej samej instancji PostgreSQL, własny schemat narzędzia |
@@ -72,7 +73,8 @@ Nie budujemy ogólnego frameworka repozytoriów ani osobnego pakietu na każdą 
 ### Trasy web rodzica i dziecka
 
 - `/` renderuje aplikację dziecka (KidApp osadzony przez KidLearningHost). Dziecko zawsze zaczyna od ekranu wyboru profilu (także przy jednym profilu). Ekrany wyboru profilu oraz talii zawierają link do panelu rodzica `/parent`, ukryty podczas sesji ćwiczeń. Jest to także `start_url` PWA.
-- `/parent` renderuje panel rodzica (ParentApp) chroniony PIN-em, z linkiem powrotnym „Do nauki” (`/`).
+- `/parent` renderuje panel rodzica (ParentApp) chroniony PIN-em, z linkiem powrotnym „Do nauki” (`/`). Sekcje mają adresy `/parent/decks`, `/parent/children`, `/parent/progress`, `/parent/work-card`; otwarty zestaw lub lekcja `/parent/decks/{deckId}`, nowa lekcja `/parent/lessons/new`. Jedna strona Next (`app/parent/[[...path]]`) renderuje panel, a routing sekcji działa po stronie klienta nad History API z blokadą wyjścia przy niezapisanych zmianach (SPEC §4).
+- Mantine, jego style (warstwa CSS `mantine`) i providery są ładowane wyłącznie przez layout `app/parent` i kod `apps/web/src/parent`; pilnuje tego `tests/parent-mantine-scope.test.ts`. Wspólny `globals.css` (warstwa `legacy`, niższa niż `mantine`) zawiera już tylko font, tło i reguły elementów, na których opiera się host Kid UI.
 - `/kids/{childId}/learn` otwiera naukę z wybranym profilem. Trasa używa trwałego UUID profilu, a host przekazuje go do KidApp jako `initialChildId`. Nieznany lub usunięty identyfikator wraca do listy dostępnych profili.
 - Panel rodzica pokazuje przy każdym profilu link do jego trasy nauki (`/kids/{childId}/learn`).
 
