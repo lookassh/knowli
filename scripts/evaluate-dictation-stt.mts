@@ -684,6 +684,9 @@ function live(): void {
   };
   // jedna analiza naraz — token w rękach innej osoby nie uruchomi lawiny płatnych wywołań STT
   let analyzing = false;
+  // Limit na odbiór całego żądania (domyślnie w Node 300 s): klient, który wyśle
+  // tylko część nagrania, nie zablokuje na długo jedynego slotu analizy.
+  const requestTimeout = 120_000;
   const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     // adres bazowy służy wyłącznie do parsowania ścieżki i zapytania żądania
     const url = new URL(req.url ?? "/", "https://trial.local");
@@ -757,7 +760,7 @@ function live(): void {
   };
 
   if (!lan) {
-    createServer(serve).listen(port, "127.0.0.1", () => {
+    createServer({ requestTimeout }, serve).listen(port, "127.0.0.1", () => {
       console.log(`Próba dyktowania: http://127.0.0.1:${port}/?t=${token}`);
       console.log("Ctrl+C kończy; nic nie jest zapisywane. Na telefonie: dodaj --lan.");
     });
@@ -765,7 +768,7 @@ function live(): void {
   }
   const addresses = lanAddresses();
   const certificate = temporaryCertificate(addresses);
-  const server = createHttpsServer({ key: certificate.key, cert: certificate.cert }, serve);
+  const server = createHttpsServer({ key: certificate.key, cert: certificate.cert, requestTimeout }, serve);
   server.listen(port, "0.0.0.0", () => {
     console.log("Próba dyktowania na telefonie — otwórz w przeglądarce telefonu (ta sama sieć Wi-Fi):");
     for (const ip of addresses) console.log(`  https://${ip}:${port}/?t=${token}${addressLabel(ip)}`);

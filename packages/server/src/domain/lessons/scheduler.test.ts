@@ -776,7 +776,8 @@ describe("selectLessonTask — trener precyzji (Etap 4)", () => {
 
     it("pomylenie ma pierwszeństwo przed formą zwięzłą, a bez pomylenia porównanie nie jest preferowane", () => {
       const exercises = [open("a", "zwiezle", "one_sentence"), comparison("b", "Czym różni się południk od równoleżnika?")];
-      const withConfusion = selectLessonTask(input({ ...base, exercises, precisionHistory: { [O1]: { ...confused, knowledge: "partial", precision: "verbose" } } }));
+      // wiedza „correct” + rozwlekłość włącza preferencję formy zwięzłej — pomylenie i tak wygrywa
+      const withConfusion = selectLessonTask(input({ ...base, exercises, precisionHistory: { [O1]: { ...confused, knowledge: "correct", precision: "verbose" } } }));
       expect(withConfusion).toMatchObject({ itemId: "item:subj.topic.o1:independent:b" });
       const plain = selectLessonTask(input({ ...base, exercises: [open("a", "def"), comparison("b", "Czym różni się południk od równoleżnika?")], precisionHistory: { [O1]: { knowledge: "incorrect", precision: "concise" } } }));
       expect(plain).toMatchObject({ itemId: "item:subj.topic.o1:independent:a" });
