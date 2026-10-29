@@ -539,10 +539,11 @@ test("profile tiles fit portrait, landscape, tablet and desktop", async ({ page 
   }
 });
 
-function readingChoiceFixture(labels: readonly string[]): KidUiFixture {
+function readingChoiceFixture(labels: readonly string[], wrongChoice = false): KidUiFixture {
   const fixture = recallLayoutFixture();
+  const task = fixture.tasks[0]!;
   fixture.tasks = [{
-    ...fixture.tasks[0]!,
+    ...task,
     exerciseType: "reading",
     direction: "target_to_source",
     prompt: {
@@ -551,28 +552,37 @@ function readingChoiceFixture(labels: readonly string[]): KidUiFixture {
       options: labels.map((text, index) => ({ id: `10000000-0000-4000-8000-0000000002${String(index).padStart(2, "0")}`, text })),
     },
   }];
+  if (wrongChoice) {
+    // Choosing the first option is wrong; the server reveals the second as the correct one.
+    fixture.attempts = [{ attemptId: "10000000-0000-4000-8000-000000000210", taskId: task.taskId, state: "completed",
+      modality: "choice", feedback: { kind: "incorrect", correctText: labels[1]! }, taskState: "issued", stepId: null,
+      receivedAt: "2026-10-24T10:00:00.000Z", completedAt: "2026-10-24T10:00:01.000Z" }];
+  }
   return fixture;
 }
 
-async function openReadingChoices(page: Page, labels: readonly string[]) {
-  await installKidUiFixture(page, readingChoiceFixture(labels));
+async function openReadingChoices(page: Page, labels: readonly string[], wrongChoice = false) {
+  await installKidUiFixture(page, readingChoiceFixture(labels, wrongChoice));
   await page.goto("/");
   await page.getByTestId("kid-profile").click();
   await page.getByTestId("kid-deck").click();
   await expect(page.getByTestId("kid-option")).toHaveCount(labels.length);
 }
 
-/** Option cards: rectangles plus whether the label text is clipped inside its card. */
+/** Option cards: rectangles, whether the label is clipped and whether it stays on a single line. */
 async function measureOptions(page: Page) {
   return page.getByTestId("kid-option").evaluateAll((elements) => elements.map((element) => {
     const { left, right, top, width, height } = element.getBoundingClientRect();
     const label = element.querySelector("span") as HTMLElement;
-    return { left, right, top, width, height, labelClipped: label.scrollWidth > label.clientWidth + 1 };
+    const labelRect = label.getBoundingClientRect();
+    const lineHeight = Number.parseFloat(getComputedStyle(label).lineHeight);
+    return { left, right, top, width, height, labelClipped: label.scrollWidth > label.clientWidth + 1,
+      labelHeight: labelRect.height, lineHeight };
   }));
 }
 
 test("short reading options form a 2x2 grid on phones", async ({ page }) => {
-  await openReadingChoices(page, ["noga", "ręka", "głowa", "abcdefghijklmn"]);
+  await openReadingChoices(page, ["noga", "ręka", "głowa", "pomarańcza"]);
   for (const viewport of [{ width: 360, height: 800 }, { width: 320, height: 640 }]) {
     const name = `${viewport.width}x${viewport.height}`;
     await resizeAndSettle(page, viewport);
@@ -584,13 +594,51 @@ test("short reading options form a 2x2 grid on phones", async ({ page }) => {
       expectInsideRoot(option as never, root, `option ${index}: ${name}`);
       expect(option.height, `option ${index} height: ${name}`).toBeGreaterThanOrEqual(56);
       expect(option.labelClipped, `option ${index} label clipped: ${name}`).toBe(false);
+      expect(option.labelHeight, `option ${index} label on a single line: ${name}`).toBeLessThanOrEqual(option.lineHeight * 1.5);
     }
     expect((await measure(page, { root: ".kid-learning" })).scrollWidth, `horizontal overflow: ${name}`).toBeLessThanOrEqual(viewport.width);
   }
 });
 
+test("short reading options keep the outcome badge clear of the label without changing card height", async ({ page }) => {
+  await openReadingChoices(page, ["pomarańcza", "przyjaciel", "głowa", "oko"], true);
+  for (const viewport of [{ width: 360, height: 800 }, { width: 320, height: 640 }]) {
+    const name = `${viewport.width}x${viewport.height}`;
+    await resizeAndSettle(page, viewport);
+    const options = page.getByTestId("kid-option");
+    const heights = async () => (await measureOptions(page)).map((option) => option.height);
+    const before = await heights();
+    await options.first().click();
+    await expect(page.getByTestId("kid-outcome-wrong")).toBeVisible();
+    await expect(page.getByTestId("kid-outcome-correct")).toBeVisible();
+    // Let the badge pop animation settle (reduced motion in the fixture makes it instant).
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    const outcomes = await options.evaluateAll((elements) => elements.map((element) => {
+      const label = element.querySelector("span") as HTMLElement;
+      const badge = element.querySelector("[data-outcome]:not(button)") as HTMLElement | null;
+      const l = label.getBoundingClientRect();
+      const b = badge?.getBoundingClientRect();
+      return { outcome: element.getAttribute("data-outcome"),
+        overlap: b ? !(b.right <= l.left || b.left >= l.right || b.bottom <= l.top || b.top >= l.bottom) : null };
+    }));
+    const withOutcome = outcomes.filter((entry) => entry.outcome === "wrong" || entry.outcome === "correct");
+    expect(withOutcome, `cards with an outcome: ${name}`).toHaveLength(2);
+    for (const entry of withOutcome) {
+      expect(entry.overlap, `${entry.outcome} badge overlaps label: ${name}`).toBe(false);
+    }
+    const after = await heights();
+    for (const [index, height] of after.entries()) {
+      expect(Math.abs(height - before[index]!), `option ${index} height change after outcome: ${name}`).toBeLessThanOrEqual(1);
+    }
+    await page.reload();
+    await page.getByTestId("kid-profile").click();
+    await page.getByTestId("kid-deck").click();
+    await expect(options).toHaveCount(4);
+  }
+});
+
 test("long reading options stay in one column", async ({ page }) => {
-  await openReadingChoices(page, ["noga", "ręka", "głowa", "abcdefghijklmno"]);
+  await openReadingChoices(page, ["noga", "ręka", "głowa", "poniedziałek"]);
   for (const viewport of [{ width: 360, height: 800 }, { width: 320, height: 640 }]) {
     const name = `${viewport.width}x${viewport.height}`;
     await resizeAndSettle(page, viewport);

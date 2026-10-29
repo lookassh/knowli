@@ -6,9 +6,9 @@ describe("isShortChoiceSet", () => {
     expect(isShortChoiceSet(["noga", "ręka", "głowa", "oko"])).toBe(true);
   });
 
-  it("accepts a label of exactly 14 characters and rejects 15", () => {
-    expect(isShortChoiceSet(["abcdefghijklmn", "a", "b", "c"])).toBe(true);
-    expect(isShortChoiceSet(["abcdefghijklmno", "a", "b", "c"])).toBe(false);
+  it("accepts a label of exactly 10 characters and rejects 11", () => {
+    expect(isShortChoiceSet(["pomarańcza", "a", "b", "c"])).toBe(true);
+    expect(isShortChoiceSet(["abcdefghijk", "a", "b", "c"])).toBe(false);
   });
 
   it("requires exactly four options", () => {
@@ -18,8 +18,8 @@ describe("isShortChoiceSet", () => {
   });
 
   it("counts Polish letters as one character each and ignores surrounding whitespace", () => {
-    expect(isShortChoiceSet(["żółć".repeat(3) + "żół", "a", "b", "c"])).toBe(false);
-    expect(isShortChoiceSet(["żółć".repeat(3) + "żó", "a", "b", "c"])).toBe(true);
-    expect(isShortChoiceSet(["  abcdefghijklmn  ", "a", "b", "c"])).toBe(true);
+    expect(isShortChoiceSet(["żółć".repeat(2) + "żół", "a", "b", "c"])).toBe(false);
+    expect(isShortChoiceSet(["żółć".repeat(2) + "żó", "a", "b", "c"])).toBe(true);
+    expect(isShortChoiceSet(["  abcdefghij  ", "a", "b", "c"])).toBe(true);
   });
 });

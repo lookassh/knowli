@@ -1,5 +1,5 @@
-/** Longest option label (in characters) that still fits a half-width card on a phone. */
-const SHORT_CHOICE_MAX_CHARS = 14;
+/** Longest option label (in characters) that still fits a half-width card on a 320px phone without breaking mid-word. */
+const SHORT_CHOICE_MAX_CHARS = 10;
 const SHORT_CHOICE_COUNT = 4;
 
 /**

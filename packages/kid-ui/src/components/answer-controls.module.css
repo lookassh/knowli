@@ -198,8 +198,9 @@
 }
 
 /* Four short text options: 2×2 on compact widths. Medium and expanded keep
-   the single choiceList column. The outcome badge shrinks into the card
-   corner, so the label keeps nearly the whole half-width card. */
+   the single choiceList column. The outcome badge sits in a reserved top band
+   of the card (so it never covers the label and the card height does not change
+   when an outcome appears); labels never break mid-word. */
 @media (max-width: 599px) {
   .choiceList.shortChoiceGrid {
     display: grid;
@@ -208,7 +209,11 @@
   }
 
   :global(.kid-ui) .choiceList.shortChoiceGrid .option {
-    padding-inline: 10px;
+    padding: 26px 8px 6px;
+  }
+
+  .choiceList.shortChoiceGrid .label {
+    overflow-wrap: normal;
   }
 
   .choiceList.shortChoiceGrid .outcome {
@@ -277,6 +282,26 @@
 @media (max-height: 560px) {
   :global(.kid-ui) .option {
     padding-block: 8px;
+  }
+}
+
+/* Very short portrait window: the band would make the card taller than the
+   48px scrolling window, so the badge shrinks into the corner instead. */
+@media (max-width: 599px) and (max-height: 560px) {
+  :global(.kid-ui) .choiceList.shortChoiceGrid .option {
+    padding-block: 8px;
+  }
+
+  .choiceList.shortChoiceGrid .outcome {
+    width: 18px;
+    height: 18px;
+    top: 2px;
+    right: 2px;
+  }
+
+  :global(.kid-ui) .choiceList.shortChoiceGrid .outcome :global(.kid-icon) {
+    width: 12px;
+    height: 12px;
   }
 }
 
