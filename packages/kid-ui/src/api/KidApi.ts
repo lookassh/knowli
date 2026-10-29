@@ -4,6 +4,7 @@ import type {
   LessonMockTestSummaryDto,
   AttemptDto,
   AttemptInput,
+  DictationDto,
   DisclosureDto,
   FeedbackAudioDto,
   EventInput,
@@ -45,6 +46,11 @@ export interface KidApi {
   submitAnswer(input: Exclude<AttemptInput, { modality: "audio" }>): Promise<AttemptDto>;
   /** Odpowiedź ustna: multipart z bajtami nagrania, 202 dla processing. */
   submitSpeech(taskId: string, clientAttemptId: string, audio: RecordedAudio): Promise<AttemptDto>;
+  /**
+   * Dyktowanie odpowiedzi lekcji: tekst do pola albo powód jego braku. Nie
+   * tworzy próby ani oceny. Opcjonalne dla hostów bez tej ścieżki.
+   */
+  dictate?(taskId: string, audio: RecordedAudio): Promise<DictationDto>;
   readAttempt(attemptId: string): Promise<AttemptDto>;
   /** Zapis ekspozycji i zgoda na podpowiedź/odtworzenie wzorca (arch §9.2). */
   authorizeDisclosure(taskId: string, kind: "audio" | "hint"): Promise<DisclosureDto>;

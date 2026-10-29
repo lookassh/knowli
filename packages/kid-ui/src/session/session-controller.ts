@@ -3,6 +3,7 @@ import {
   type MockTestSummaryDto,
   type LessonMockTestSummaryDto,
   type AttemptDto,
+  type DictationDto,
   type FeedbackDto,
   type KidDeckDto,
   type KidProfileDto,
@@ -16,6 +17,7 @@ import {
   type SessionSummaryDto,
   type TaskDto,
 } from "@learning/contracts";
+import { format } from "../format";
 import type { KidApi } from "../api/KidApi";
 import { isNetworkError, KidApiError } from "../api/client";
 import { LevelMonitorUnavailableError, type MicrophonePermission, type PlatformMedia, type RecorderOptions, type SpeechRecorder } from "../media/platform";
@@ -40,6 +42,22 @@ import { createMemoryActivityDraftStore, type PendingActivityResult, type Sessio
  * - po obiecanej liczbie zadań nie dokładamy nowych (banner „Jeszcze N”);
  * - opuszczenie widoku zatrzymuje nagrywanie i odtwarzanie (RF5).
  */
+
+/**
+ * Ostatni wynik dyktowania odpowiedzi lekcji (design szkoły §5.3): tekst do
+ * pola albo powód jego braku. `seq` rośnie z każdym wynikiem, aby widok
+ * wstawił tekst tylko raz; `failures` liczy nieudane dyktowania z rzędu.
+ */
+export interface DictationState {
+  taskId: string;
+  seq: number;
+  status: DictationDto["status"];
+  text?: string;
+  failures: number;
+}
+
+/** Sposób wprowadzenia odpowiedzi tekstowej zgłaszany serwerowi. */
+export type TextInputMethod = "keyboard" | "speech";
 
 export interface LearningScreen {
   answerSaved?: boolean;
@@ -76,6 +94,8 @@ export interface LearningScreen {
   error: string | null;
   guidanceError?: boolean;
   taskAudioError?: "blocked" | "failed" | null;
+  /** Dyktowanie odpowiedzi lekcji; brak = zadanie bez dyktowania. */
+  dictation?: DictationState | null;
 }
 
 export type KidScreen =
@@ -117,7 +137,7 @@ export interface LearningSessionDeps {
 /** Payload odpowiedzi bez kluczy transportowych — audio ma osobną ścieżkę. */
 type AnswerPayload =
   | { modality: "choice"; optionId: string }
-  | { modality: "text"; text: string }
+  | { modality: "text"; text: string; inputMethod?: TextInputMethod }
   | { modality: "sequence"; itemIds: string[] }
   | { modality: "selection"; itemIds: string[] }
   | { modality: "dont_remember" }
@@ -232,6 +252,9 @@ export class LearningSessionController {
   #profileRefreshPromise: Promise<boolean> | null = null;
   #recordingGeneration = 0;
   #recordingStartedAt = 0;
+  #dictationSeq = 0;
+  /** Odliczanie ostatnich sekund nagrania dyktowania; null poza nim. */
+  #countdownHandle: ReturnType<typeof setInterval> | null = null;
   #playbackGeneration = 0;
   #uiAudio: UiAudioCatalogDto = { ready: false, assets: {} };
   #guidance: ReturnType<typeof createGuidanceAudio> | null = null;
@@ -1019,8 +1042,12 @@ export class LearningSessionController {
     await this.#submitAnswer({ modality: "choice", optionId });
   }
 
-  async answerText(text: string): Promise<void> {
-    await this.#submitAnswer({ modality: "text", text: text.trim() });
+  /**
+   * Odpowiedź tekstowa; `speech` = tekst pochodzi z dyktowania w tym zadaniu
+   * (serwer sprawdza, że dyktowanie było, i sam liczy, czy tekst poprawiono).
+   */
+  async answerText(text: string, inputMethod: TextInputMethod = "keyboard"): Promise<void> {
+    await this.#submitAnswer({ modality: "text", text: text.trim(), ...(inputMethod === "speech" ? { inputMethod } : {}) });
   }
 
   /** Odpowiedź `sequence` (ułożone klocki `lesson_order`). */
@@ -1490,7 +1517,10 @@ export class LearningSessionController {
     const epoch = this.#epoch;
     const taskId = screen.task.taskId;
     const generation = ++this.#recordingGeneration;
+    const dictationLimitMs = this.#dictationLimitMs(screen);
     const options: RecorderOptions = {
+      // dyktowanie lekcji ma własny limit nagrania (speechInput.maxSeconds)
+      ...(dictationLimitMs !== null ? { maxDurationMs: dictationLimitMs } : {}),
       // auto-próba: bip startu gra wewnątrz BrowserRecorder.start — PO udanym
       // getUserMedia i PRZED MediaRecorder.start; ścieżka ręczna (pole null)
       // nie przekazuje hooka i nie gra bipu (D-04). Auto wymaga też sprawnego
@@ -1522,6 +1552,7 @@ export class LearningSessionController {
         if (generation !== this.#recordingGeneration) return;
         this.#recordingGeneration += 1;
         this.#recorder = null;
+        this.#stopCountdown();
         // pełny reset stanu auto (PR #109, P2 #3): zgubny #autoStartBeep i #vad
         // nie mogą przetrwać do ręcznej próby po awarii urządzenia (jak WR-01)
         this.#resetAutoCapture();
@@ -1539,6 +1570,7 @@ export class LearningSessionController {
       }
       this.#recordingStartedAt = Date.now();
       this.#setLearning({ recordingPhase: "recording", micDenied: false });
+      if (dictationLimitMs !== null) this.#startCountdown(dictationLimitMs, generation);
     } catch (error) {
       if (generation !== this.#recordingGeneration || epoch !== this.#epoch) return;
       this.#recorder = null;
@@ -1604,6 +1636,8 @@ export class LearningSessionController {
     const epoch = this.#epoch;
     const taskId = screen.task.taskId;
     const generation = ++this.#recordingGeneration;
+    const dictation = this.#dictationLimitMs(screen) !== null;
+    this.#stopCountdown();
     // auto-próba konsumowana na początku zatrzymania — dotyczy także ręcznego
     // domknięcia auto-nagrania (toggle), nie dotyczy czysto ręcznych nagrań.
     // Pełny reset stanu auto (vad, bip startu): ręczna próba po udanej auto
@@ -1616,7 +1650,7 @@ export class LearningSessionController {
     if (Date.now() - this.#recordingStartedAt < 300) {
       this.#recorder = null;
       recorder.cancel();
-      this.#setLearning({ recordingPhase: "idle", recordingNotice: messages.kid.recordingTooShort, technicalRecordingIssue: false });
+      this.#setLearning({ recordingPhase: "idle", recordingNotice: dictation ? messages.kid.dictationNotHeard : messages.kid.recordingTooShort, technicalRecordingIssue: false });
       return;
     }
     try {
@@ -1624,6 +1658,11 @@ export class LearningSessionController {
       const current = this.#learning();
       if (generation !== this.#recordingGeneration || epoch !== this.#epoch || !current || current.task?.taskId !== taskId) {
         audio.bytes.fill(0);
+        return;
+      }
+      if (dictation) {
+        this.#recorder = null;
+        await this.#dictate(taskId, audio, epoch);
         return;
       }
       // bip końca PO zebraniu bajtów nagrania i przed wysyłką — sygnał „koniec"
@@ -1644,12 +1683,79 @@ export class LearningSessionController {
     } catch (error) {
       if (generation !== this.#recordingGeneration || epoch !== this.#epoch || this.#screen.kind !== "learning") return;
       this.#recorder = null;
+      if (dictation) {
+        // nieudane zebranie nagrania (np. konwersja) to brak tekstu, nie błąd sesji
+        this.#setLearning({ recordingPhase: "idle", inputLevel: null, recordingNotice: messages.kid.dictationUnavailable, technicalRecordingIssue: true });
+        return;
+      }
       this.#setLearning({ recordingPhase: "idle", inputLevel: null });
       this.#handleFailure(error);
     }
   }
 
+  /**
+   * Dyktowanie (design szkoły §5.3): nagranie idzie do serwera wyłącznie po
+   * tekst do pola — bez próby, oceny i ponowienia. Bajty są zerowane po
+   * wysłaniu; awaria sieci lub serwera kończy się komunikatem, nigdy lokalnym
+   * sukcesem ani zapamiętanym nagraniem.
+   */
+  async #dictate(taskId: string, audio: { bytes: Uint8Array; mimeType: string }, epoch: number): Promise<void> {
+    this.#setLearning({ recordingPhase: "stopping", recordingNotice: messages.kid.dictationRecognizing, technicalRecordingIssue: false, inputLevel: null });
+    this.#activity?.recordInteraction();
+    let result: DictationDto;
+    try {
+      result = this.#api.dictate ? await this.#api.dictate(taskId, audio) : { status: "unavailable" };
+    } catch {
+      result = { status: "unavailable" };
+    } finally {
+      audio.bytes.fill(0);
+    }
+    const current = this.#learning();
+    if (epoch !== this.#epoch || !current || current.task?.taskId !== taskId) return;
+    const previousFailures = current.dictation?.taskId === taskId ? current.dictation.failures : 0;
+    const failures = result.status === "heard" ? 0 : previousFailures + 1;
+    const base = result.status === "heard" ? messages.kid.dictationHeard
+      : result.status === "too_long" ? messages.kid.dictationTooLong
+        : result.status === "unavailable" ? messages.kid.dictationUnavailable : messages.kid.dictationNotHeard;
+    // po dwóch nieudanych dyktowaniach z rzędu wskazujemy pisanie (pole zostaje aktywne)
+    const notice = failures >= 2 && result.status !== "unavailable" ? `${base} ${messages.kid.dictationTypeInstead}` : base;
+    this.#setLearning({
+      recordingPhase: "idle",
+      recordingNotice: notice,
+      technicalRecordingIssue: result.status === "unavailable",
+      dictation: { taskId, seq: ++this.#dictationSeq, status: result.status, ...(result.status === "heard" ? { text: result.text } : {}), failures },
+    });
+  }
+
+  /** Limit nagrania dyktowania bieżącego zadania (ms) albo null, gdy to nie dyktowanie. */
+  #dictationLimitMs(screen: LearningScreen): number | null {
+    const prompt = screen.task?.prompt;
+    if (!prompt || (prompt.kind !== "lesson_open_answer" && prompt.kind !== "lesson_shorten")) return null;
+    // Brak `dictate` w hoście nie przełącza na próbę mowy: `#dictate` zwróci wtedy „unavailable”.
+    if (!prompt.speechInput || screen.session.mode === "mock_test") return null;
+    return prompt.speechInput.maxSeconds * 1000;
+  }
+
+  #startCountdown(limitMs: number, generation: number): void {
+    this.#stopCountdown();
+    const startedAt = this.#recordingStartedAt;
+    this.#countdownHandle = globalThis.setInterval(() => {
+      if (generation !== this.#recordingGeneration || this.#learning()?.recordingPhase !== "recording") {
+        this.#stopCountdown();
+        return;
+      }
+      const left = Math.ceil((limitMs - (Date.now() - startedAt)) / 1000);
+      if (left > 0 && left <= 10) this.#setLearning({ recordingNotice: format(messages.kid.dictationCountdown, { seconds: left }) });
+    }, 1000);
+  }
+
+  #stopCountdown(): void {
+    if (this.#countdownHandle !== null) globalThis.clearInterval(this.#countdownHandle);
+    this.#countdownHandle = null;
+  }
+
   cancelRecording(notice: string | null = null, technicalIssue = false): void {
+    this.#stopCountdown();
     this.#recordingGeneration += 1;
     const recorder = this.#recorder;
     this.#recorder = null;
@@ -1844,6 +1950,7 @@ export class LearningSessionController {
   }
 
   #teardownRecording(): void {
+    this.#stopCountdown();
     this.#recordingGeneration += 1;
     const recorder = this.#recorder;
     this.#recorder = null;

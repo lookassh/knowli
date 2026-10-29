@@ -185,6 +185,11 @@ export interface SubjectModule {
   validateExercise(ex: LessonExerciseDraft, topic: LessonTopic): string[];
   readonly ttsForAnswers: boolean; // czy generować audio odpowiedzi kanonicznej
   /**
+   * Odpowiedź mówiona (dyktowanie do pola, design szkoły §5): język nagrania
+   * i typy ćwiczeń, które ją przyjmują. Brak = przedmiot bez mikrofonu.
+   */
+  readonly spokenAnswers?: { readonly locale: string; readonly exerciseTypes: readonly LessonExerciseType[] };
+  /**
    * Przedmiot z tematami dynamicznymi (zagadnienia z materiału rodzica):
    * składa `LessonTopic` z danych zapisanych w kontekście wersji. Brak =
    * przedmiot katalogowy.

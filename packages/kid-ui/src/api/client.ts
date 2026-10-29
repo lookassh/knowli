@@ -4,6 +4,7 @@ import {
   KidValidationReasonSchema,
   LessonMockTestSummaryDtoSchema,
   AttemptDtoSchema,
+  DictationDtoSchema,
   DisclosureDtoSchema,
   FeedbackAudioDtoSchema,
   KidDeckDtoSchema,
@@ -16,6 +17,7 @@ import {
   kidApiContract,
   type AttemptDto,
   type AttemptInput,
+  type DictationDto,
   type DisclosureDto,
   type EventInput,
   type FeedbackAudioDto,
@@ -152,6 +154,7 @@ export function createKidApiClient(options: KidClientOptions = {}): KidApi {
 
   const parseTask = parseWith(TaskDtoSchema);
   const parseAttempt = parseWith(AttemptDtoSchema);
+  const parseDictation = parseWith(DictationDtoSchema);
   const parseSession = parseWith(SessionDtoSchema);
   const parseSummary = parseWith(SessionSummaryDtoSchema);
   const parseActivityResult = parseWith(SessionActivityResultDtoSchema);
@@ -221,6 +224,17 @@ export function createKidApiClient(options: KidClientOptions = {}): KidApi {
           audio: new File([audio.bytes as BlobPart], "recording.webm", { type: audio.mimeType }),
         }) as Detailed<unknown>;
         return parseAttempt(output.body);
+      });
+    },
+    async dictate(taskId: string, audio: RecordedAudio): Promise<DictationDto> {
+      // dyktowanie lekcji: to samo kodowanie multipart co próba ustna, ale bez
+      // klucza idempotencji — wynik to tekst do pola, nie próba (design szkoły §5.4)
+      return call(async () => {
+        const output = await client.tasks.dictation({
+          taskId,
+          audio: new File([audio.bytes as BlobPart], "recording.webm", { type: audio.mimeType }),
+        }) as Detailed<unknown>;
+        return parseDictation(output.body);
       });
     },
     readAttempt(attemptId: string): Promise<AttemptDto> {

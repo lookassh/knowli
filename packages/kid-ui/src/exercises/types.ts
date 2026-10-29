@@ -11,7 +11,8 @@ export interface ExerciseHandlers {
   /** Odsłuch zdania przykładowego prezentacji (SPEC §22). */
   onPlayExample(): void;
   onAnswerChoice(optionId: string): void;
-  onSubmitText(text: string): void;
+  /** `speech` = tekst pochodzi z dyktowania w tym zadaniu (domyślnie klawiatura). */
+  onSubmitText(text: string, inputMethod?: "keyboard" | "speech"): void;
   /** Ułożona kolejność klocków (`lesson_order`) — odpowiedź `sequence`. */
   onAnswerSequence(itemIds: string[]): void;
   /** Zaznaczone pojęcia (`lesson_keywords`) — odpowiedź `selection`, kolejność bez znaczenia. */
@@ -53,6 +54,11 @@ export interface ExerciseProps {
    * ujawniony serwerowo dopiero wraz z oceną (audio_issued przed HTTP).
    */
   feedbackAudio?: { assetId: string; onPlay: () => void } | null;
+  /**
+   * Ostatni wynik dyktowania tego zadania (lekcje z `speechInput`): widok
+   * wstawia `text` do pola raz na `seq`.
+   */
+  dictation?: { taskId: string; seq: number; status: string; text?: string; failures: number } | null;
   /** Panel wyniku w stopce ramy; bodziec i odpowiedzi pozostają w treści zadania. */
   dock?: ReactNode;
   handlers: ExerciseHandlers;

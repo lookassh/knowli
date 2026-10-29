@@ -1,0 +1,351 @@
+/* Edytor zestawu na Mantine (plan 2026-10-29-parent-ui-mantine, faza 5b; szkic zaakceptowany 2026-10-29).
+   Tekst pomocniczy: kontrast ≥ 4,5:1 w obu schematach; kolory stanów z --pp-status-* (theme.ts). */
+
+.pp-editor {
+  --pp-editor-muted: #565a70;
+}
+
+[data-mantine-color-scheme="dark"] .pp-editor {
+  --pp-editor-muted: #a8abb9;
+}
+
+/* wartość zapasowa: wspólne pola przypisań są też w edytorze lekcji (poza .pp-editor) */
+.pp-editor-muted {
+  color: var(--pp-editor-muted, #565a70);
+}
+
+.pp-editor-back {
+  margin-left: -4px;
+}
+
+.pp-editor-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+
+.pp-editor-meta {
+  row-gap: 6px;
+}
+
+.pp-editor-titlefield {
+  max-width: 480px;
+}
+
+/* --- karty słówek --- */
+
+.pp-editor-item {
+  min-width: 0;
+}
+
+.pp-editor-item-head {
+  margin: -4px -6px 8px 0;
+}
+
+.pp-editor-num {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--mantine-primary-color-light-color);
+  background: var(--mantine-primary-color-light);
+}
+
+.pp-editor-item-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* telefon: media (miniatura + odznaki) nad polami, pola jedno pod drugim */
+.pp-editor-item-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.pp-editor-media {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pp-editor-image {
+  flex: 0 0 auto;
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid var(--mantine-color-default-border);
+}
+
+.pp-editor-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pp-editor-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+}
+
+/* desktop: siatka 2 kolumn pól, po prawej kolumna mediów z podglądem */
+@media (min-width: 52.5em) {
+  .pp-editor-item-body {
+    grid-template-columns: minmax(0, 1fr) 172px;
+  }
+
+  .pp-editor-media {
+    order: 2;
+    flex-direction: column;
+    padding-left: 16px;
+    border-left: 1px solid var(--mantine-color-default-border);
+  }
+
+  .pp-editor-image {
+    width: 156px;
+    height: 156px;
+    border-radius: 14px;
+  }
+
+  .pp-editor-badges {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .pp-editor-fields {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 14px;
+  }
+
+  .pp-editor-wide {
+    grid-column: 1 / -1;
+  }
+}
+
+.pp-editor-add {
+  align-self: flex-start;
+  border-style: dashed;
+}
+
+/* --- ustawienia, okładka --- */
+
+.pp-editor-cover {
+  display: block;
+  width: 96px;
+  height: 96px;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid var(--mantine-color-default-border);
+}
+
+/* natywne pole pliku pod przyciskiem: dostępne dla czytników i testów */
+.pp-editor-file {
+  position: relative;
+  cursor: pointer;
+}
+
+.pp-editor-file input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.pp-editor-file:focus-within {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 2px;
+}
+
+/* --- przypisania --- */
+
+.pp-editor-avatar {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  font-size: 22px;
+  background: var(--mantine-primary-color-light);
+}
+
+.pp-editor-grow {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* --- konflikt wersji --- */
+
+.pp-editor-conflict {
+  border-color: var(--pp-status-warning-fg);
+}
+
+.pp-editor-conflict-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.pp-editor-conflict-title svg {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  color: var(--pp-status-warning-fg);
+}
+
+.pp-editor-compare {
+  display: grid;
+  gap: 6px;
+}
+
+.pp-editor-compare-head {
+  display: none;
+}
+
+.pp-editor-compare-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: 10px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.pp-editor-compare-row[data-differs="true"] {
+  color: var(--pp-status-warning-fg);
+  background: var(--pp-status-warning-bg);
+}
+
+.pp-editor-compare-row small {
+  display: block;
+  font-size: 12px;
+  color: var(--pp-editor-muted);
+}
+
+.pp-editor-compare-row[data-differs="true"] small {
+  color: inherit;
+}
+
+@media (min-width: 37.5em) {
+  .pp-editor-compare-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 12px;
+    padding: 0 10px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .pp-editor-compare-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  /* nagłówek kolumn jest wizualny; podpis wersji przy wartości zostaje dla czytników */
+  .pp-editor-compare-row small {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
+
+/* --- przypięty pasek akcji: nad dolną nawigacją na telefonie, przy dole okna na desktopie --- */
+
+.pp-editor-bar {
+  position: sticky;
+  bottom: var(--app-shell-footer-offset, 0px);
+  z-index: 5;
+  margin: 24px -16px -32px;
+  padding: 10px 16px;
+  background: var(--mantine-color-body);
+  border-top: 1px solid var(--mantine-color-default-border);
+  box-shadow: 0 -4px 16px rgba(23, 25, 48, 0.1);
+}
+
+[data-mantine-color-scheme="dark"] .pp-editor-bar {
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.45);
+}
+
+.pp-editor-bar-in {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pp-editor-bar-status {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pp-editor-bar-note {
+  color: var(--pp-status-warning-fg);
+}
+
+.pp-editor-bar-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--pp-status-danger-fg);
+}
+
+.pp-editor-bar-error svg {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+}
+
+.pp-editor-bar-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+}
+
+@media (max-width: 37.49em) {
+  /* treść strony kończy się nad paskiem; pasek przyklejony nad dolną nawigacją */
+  .pp-editor-bar {
+    margin-bottom: -96px;
+    padding: 8px 12px 10px;
+  }
+
+  .pp-editor-bar-in {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .pp-editor-bar-status:empty {
+    display: none;
+  }
+
+  .pp-editor-bar-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .pp-editor-bar-single {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,115 +1,269 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { messages, type ChildDto, type ChildPatch, type PronunciationSettingsDto } from "@learning/contracts";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Alert,
+  Button,
+  Checkbox,
+  Divider,
+  Group,
+  NativeSelect,
+  NumberInput,
+  Paper,
+  SimpleGrid,
+  Stack,
+  Text,
+  TextInput,
+  Title,
+} from "@mantine/core";
+import { useForm } from "@mantine/form";
+import { modals } from "@mantine/modals";
+import { notifications } from "@mantine/notifications";
+import { useMutation } from "@tanstack/react-query";
+import { messages, type ChildDto, type ChildPatch } from "@learning/contracts";
+import { childPatch, type EditValues } from "./children-forms";
+import { runOnce } from "./run-once";
 import { callParent, errorMessage, parentClient } from "./api";
 import { ParentIcon } from "./ParentIcon";
+import PronunciationSettings from "./PronunciationSettings";
 import { AVATARS, avatarEmoji } from "./avatars";
+import type { EditorLeaveState } from "./useParentLeaveGuard";
+import "./children-panel.css";
 
-function PronunciationSettings({ childId }: { childId: string }) {
-  const [settings, setSettings] = useState<PronunciationSettingsDto | null>(null);
-  const [good, setGood] = useState("");
-  const [almost, setAlmost] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+type LeaveReporter = (key: string, state: EditorLeaveState | null) => void;
 
-  const applyData = useCallback((data: PronunciationSettingsDto) => {
-    setSettings(data);
-    if (data.thresholds) {
-      setGood(String(data.thresholds.correctMinScore));
-      setAlmost(String(data.thresholds.partialMinScore));
+/**
+ * Sekcja ma kilka niezależnych formularzy (edycja profilu, progi wymowy,
+ * nowe dziecko), a leave guard trzyma jeden stan — składamy go z części:
+ * dowolna niezapisana zmiana lub trwający zapis zatrzymuje wyjście.
+ */
+function useCombinedLeaveState(register: (state: EditorLeaveState) => void): LeaveReporter {
+  const parts = useRef(new Map<string, EditorLeaveState>());
+  const report = useCallback<LeaveReporter>((key, state) => {
+    if (state) parts.current.set(key, state);
+    else parts.current.delete(key);
+    let dirty = false;
+    let busy = false;
+    for (const part of parts.current.values()) {
+      dirty ||= part.dirty;
+      busy ||= part.busy;
     }
-  }, []);
+    register({ dirty, busy });
+  }, [register]);
+  useEffect(() => () => register({ dirty: false, busy: false }), [register]);
+  return report;
+}
 
-  const load = useCallback(async () => {
-    const data = await callParent(() => parentClient.children.getPronunciation({ childId }));
-    applyData(data);
-    return data;
-  }, [childId, applyData]);
+const avatarOptions = (current: string) => [
+  ...(AVATARS.some((option) => option.key === current) ? [] : [{ value: current, label: "🙂" }]),
+  ...AVATARS.map((option) => ({ value: option.key, label: option.emoji })),
+];
+
+/** Edycja profilu w karcie dziecka. Zapis zachowuje historię nauki. */
+function ChildEditForm({
+  child,
+  onSaved,
+  onCancel,
+  onStateChange,
+}: {
+  child: ChildDto;
+  onSaved: () => void;
+  onCancel: () => void;
+  onStateChange: (state: EditorLeaveState | null) => void;
+}) {
+  const nameField = useRef<HTMLInputElement>(null);
+  const lock = useRef(false);
+  const form = useForm<EditValues>({
+    initialValues: {
+      displayName: child.displayName,
+      avatarKey: child.avatarKey,
+      recordingMode: child.recordingMode,
+      canRead: child.canRead,
+    },
+  });
+  const update = useMutation({
+    mutationFn: (patch: ChildPatch) => callParent(() => parentClient.children.update({ childId: child.id, ...patch })),
+  });
+
+  const patch = childPatch(child, form.values);
+  const changed = Object.keys(patch).length > 0;
+  const busy = update.isPending;
+  const canSave = !busy && form.values.displayName.trim().length > 0 && changed;
 
   useEffect(() => {
-    let cancelled = false;
-    callParent(() => parentClient.children.getPronunciation({ childId }))
-      .then((data) => {
-        if (!cancelled) applyData(data);
-      })
-      .catch((cause) => {
-        if (!cancelled) setError(errorMessage(cause));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [childId, applyData]);
+    nameField.current?.focus();
+  }, []);
+  useEffect(() => {
+    onStateChange({ dirty: changed, busy });
+  }, [onStateChange, changed, busy]);
+  useEffect(() => () => onStateChange(null), [onStateChange]);
 
-  const save = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await callParent(() => parentClient.children.putPronunciation({
-        childId,
-        correctMinScore: Number(good),
-        partialMinScore: Number(almost),
-      }));
-      await load();
-    } catch (cause) {
-      setError(errorMessage(cause));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const submit = form.onSubmit(() => {
+    // blokada synchroniczna: drugi submit (Enter, requestSubmit) w trakcie żądania nic nie wysyła
+    if (lock.current || !canSave) return;
+    lock.current = true;
+    update.mutate(patch, {
+      onSuccess: onSaved,
+      onSettled: () => { lock.current = false; },
+    });
+  });
 
-  if (!settings) return <p className="hint">…</p>;
   return (
-    <section className="card" data-testid="child-pronunciation-settings">
-      <h3>{messages.children.pronunciationTitle}</h3>
-      {!settings.pronunciationAvailable || !settings.thresholds ? (
-        <p>{messages.children.pronunciationUnavailable}</p>
-      ) : (
-        <>
-          <label>
-            {messages.children.pronunciationThresholdGood}
-            <input
-              data-testid="child-threshold-good"
-              type="number"
-              min={0}
-              max={100}
-              value={good}
-              onChange={(event) => setGood(event.target.value)}
-            />
-          </label>
-          <label>
-            {messages.children.pronunciationThresholdAlmost}
-            <input
-              data-testid="child-threshold-almost"
-              type="number"
-              min={0}
-              max={100}
-              value={almost}
-              onChange={(event) => setAlmost(event.target.value)}
-            />
-          </label>
-          <button type="button" data-testid="child-settings-save" onClick={save} disabled={busy}>
-            {messages.children.pronunciationSave}
-          </button>
-          <h4>{messages.children.pronunciationAttemptsTitle}</h4>
-          <ul className="plain" data-testid="child-attempts">
-            {settings.attempts.length === 0 && <li>{messages.children.pronunciationEmpty}</li>}
-            {settings.attempts.map((attempt, index) => (
-              <li data-testid="child-attempt-row" key={`${attempt.attemptedAt}-${index}`}>
-                {attempt.word} — {Math.round(attempt.score)} ({
-                  attempt.band === "correct"
-                    ? messages.children.pronunciationBandCorrect
-                    : attempt.band === "partial"
-                      ? messages.children.pronunciationBandPartial
-                      : messages.children.pronunciationBandBelow
-                }) · {attempt.attemptedAt}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-      {error && <p className="error" role="alert">{error}</p>}
-    </section>
+    <form id={`child-edit-form-${child.id}`} className="pp-children-edit" onSubmit={submit}>
+      <Divider my="md" />
+      <Stack gap="sm">
+        <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="sm">
+          <TextInput
+            ref={nameField}
+            size="md"
+            label={messages.children.displayName}
+            data-testid="child-edit-name"
+            maxLength={80}
+            disabled={busy}
+            {...form.getInputProps("displayName")}
+          />
+          <NativeSelect
+            size="md"
+            label={messages.children.avatar}
+            data-testid="child-edit-avatar"
+            disabled={busy}
+            data={avatarOptions(child.avatarKey)}
+            {...form.getInputProps("avatarKey")}
+          />
+        </SimpleGrid>
+        <NativeSelect
+          size="md"
+          label={messages.children.recordingMode}
+          data-testid="child-edit-recording-mode"
+          disabled={busy}
+          data={[
+            { value: "hold", label: messages.children.recordingModeHold },
+            { value: "toggle", label: messages.children.recordingModeToggle },
+          ]}
+          {...form.getInputProps("recordingMode")}
+        />
+        <Checkbox
+          size="md"
+          label={messages.children.canRead}
+          data-testid="child-edit-can-read"
+          disabled={busy}
+          checked={!form.values.canRead}
+          onChange={(event) => form.setFieldValue("canRead", !event.currentTarget.checked)}
+        />
+        {update.isError && <Alert color="red" variant="light" role="alert">{errorMessage(update.error)}</Alert>}
+        <Group gap="sm" grow>
+          <Button type="button" variant="default" size="md" data-testid="child-edit-cancel" disabled={busy} onClick={onCancel}>
+            {messages.children.cancel}
+          </Button>
+          <Button type="submit" size="md" data-testid="child-edit-save" disabled={!canSave}>
+            {messages.children.save}
+          </Button>
+        </Group>
+      </Stack>
+    </form>
+  );
+}
+
+interface AddValues {
+  displayName: string;
+  avatarKey: string;
+  birthYear: number | string;
+}
+
+const EMPTY_CHILD: AddValues = { displayName: "", avatarKey: AVATARS[0]!.key, birthYear: "" };
+
+function AddChildForm({
+  onAdded,
+  onStateChange,
+}: {
+  onAdded: () => Promise<unknown>;
+  onStateChange: (state: EditorLeaveState | null) => void;
+}) {
+  const form = useForm<AddValues>({
+    initialValues: EMPTY_CHILD,
+    validate: {
+      displayName: (value) => (value.trim().length === 0 ? messages.children.nameRequired : null),
+      birthYear: (value) =>
+        value === "" || (typeof value === "number" && Number.isInteger(value) && value >= 1900 && value <= 2200)
+          ? null
+          : messages.children.birthYearInvalid,
+    },
+  });
+  const [refreshFailed, setRefreshFailed] = useState(false);
+  const mounted = useRef(true);
+  // true także po ponownym montażu (Strict Mode: mount → cleanup → mount)
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const create = useMutation({
+    mutationFn: (values: AddValues) => callParent(() => parentClient.children.create({
+      displayName: values.displayName,
+      avatarKey: values.avatarKey,
+      ...(values.birthYear === "" ? {} : { birthYear: Number(values.birthYear) }),
+    })),
+    // wysłane dodanie nie blokuje wyjścia z sekcji: gdy rodzic już wyszedł,
+    // błąd trafia do powiadomienia (formularz z komunikatem zniknął)
+    onError: (cause, values) => {
+      if (!mounted.current) {
+        notifications.show({
+          color: "red",
+          title: messages.children.addFailedTitle.replace("{name}", values.displayName),
+          message: errorMessage(cause),
+        });
+      }
+    },
+    // dziecko jest już zapisane: nieudane odświeżenie listy to osobny komunikat,
+    // a nie błąd dodania (rodzic nie powinien dodawać go drugi raz)
+    onSuccess: async () => {
+      form.reset();
+      try {
+        await onAdded();
+      } catch {
+        // rodzic mógł już wyjść z sekcji — wtedy komunikat trafia do powiadomienia
+        if (mounted.current) setRefreshFailed(true);
+        else notifications.show({ color: "yellow", message: messages.children.addedRefreshFailed });
+      }
+    },
+  });
+
+  // Wysłane dodanie nie blokuje wyjścia z sekcji: kończy się samo (wywołania
+  // zwrotne w opcjach hooka), a lista dzieci odświeża się niezależnie od
+  // widoku. Chronimy tylko wpisane, jeszcze niewysłane dane.
+  const dirty = !create.isPending
+    && (form.values.displayName !== "" || form.values.birthYear !== "" || form.values.avatarKey !== EMPTY_CHILD.avatarKey);
+  useEffect(() => {
+    onStateChange({ dirty, busy: false });
+  }, [onStateChange, dirty]);
+  useEffect(() => () => onStateChange(null), [onStateChange]);
+
+  return (
+    <Paper component="form" radius="lg" p="md" className="pp-children-add" noValidate
+      onSubmit={form.onSubmit((values) => { setRefreshFailed(false); create.mutate(values); })}>
+      <Group gap="xs" mb="xs" className="pp-children-muted">
+        <ParentIcon name="plus" />
+        <Text fw={600}>{messages.children.add}</Text>
+      </Group>
+      <Stack gap="sm">
+        <SimpleGrid cols={2} spacing="sm">
+          <TextInput size="md" label={messages.children.displayName} data-testid="child-name" maxLength={80}
+            disabled={create.isPending} {...form.getInputProps("displayName")} />
+          <NativeSelect size="md" label={messages.children.avatar} data-testid="child-avatar"
+            disabled={create.isPending} data={avatarOptions(AVATARS[0]!.key)} {...form.getInputProps("avatarKey")} />
+        </SimpleGrid>
+        <NumberInput size="md" label={messages.children.birthYear} data-testid="child-year" min={1900} max={2200}
+          allowDecimal={false} allowNegative={false} clampBehavior="none" hideControls disabled={create.isPending}
+          {...form.getInputProps("birthYear")} />
+        {create.isError && (
+          <Alert color="red" variant="light" role="alert" data-testid="api-error">{errorMessage(create.error)}</Alert>
+        )}
+        {refreshFailed && <Text size="sm" role="status">{messages.children.addedRefreshFailed}</Text>}
+        <Button type="submit" size="md" variant="light" data-testid="child-add"
+          disabled={create.isPending || form.values.displayName.length === 0}>
+          {messages.children.add}
+        </Button>
+      </Stack>
+    </Paper>
   );
 }
 
@@ -117,284 +271,198 @@ function PronunciationSettings({ childId }: { childId: string }) {
 export default function ChildEditor({
   childrenList,
   onChanged,
+  registerEditorState,
 }: {
   childrenList: ChildDto[];
-  onChanged: () => Promise<void>;
+  onChanged: () => Promise<unknown>;
+  registerEditorState: (state: EditorLeaveState) => void;
 }) {
-  const [name, setName] = useState("");
-  const [avatar, setAvatar] = useState(AVATARS[0]!.key);
-  const [birthYear, setBirthYear] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [openSettings, setOpenSettings] = useState<string | null>(null);
-  const [editing, setEditing] = useState<ChildDto | null>(null);
-  const [editName, setEditName] = useState("");
-  const [editAvatar, setEditAvatar] = useState("");
-  const [editRecordingMode, setEditRecordingMode] = useState<ChildDto["recordingMode"]>("hold");
-  const [editCanRead, setEditCanRead] = useState(true);
-  const [editError, setEditError] = useState<string | null>(null);
+  const reportLeaveState = useCombinedLeaveState(registerEditorState);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [editBusy, setEditBusy] = useState(false);
-  const [editStatus, setEditStatus] = useState<string | null>(null);
-  const editLock = useRef(false);
-  const editNameRef = useRef<HTMLInputElement>(null);
+  const [openSettings, setOpenSettings] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<ReadonlySet<string>>(new Set());
+  const heading = useRef<HTMLHeadingElement>(null);
   const editButtons = useRef(new Map<string, HTMLButtonElement>());
   const restoreFocus = useRef<string | null>(null);
 
-  useEffect(() => {
-    if (editing) editNameRef.current?.focus();
-  }, [editing?.id]);
+  const reportEdit = useCallback((state: EditorLeaveState | null) => {
+    setEditBusy(state?.busy ?? false);
+    reportLeaveState("edit", state);
+  }, [reportLeaveState]);
+  const [settingsBusy, setSettingsBusy] = useState(false);
+  const reportSettings = useCallback((state: EditorLeaveState | null) => {
+    setSettingsBusy(state?.busy ?? false);
+    reportLeaveState("settings", state);
+  }, [reportLeaveState]);
+  const reportAdd = useCallback((state: EditorLeaveState | null) => reportLeaveState("add", state), [reportLeaveState]);
 
+  // profil usunięty gdzie indziej znika razem z formularzem edycji
+  const editing = childrenList.find((child) => child.id === editingId) ?? null;
   useEffect(() => {
-    if (editing && !childrenList.some((child) => child.id === editing.id)) {
-      setEditing(null);
-      setEditError(null);
-    }
-  }, [childrenList, editing]);
+    if (editingId !== null && editing === null) setEditingId(null);
+  }, [editingId, editing]);
 
+  // przycisk „Edytuj” jest wyłączony do końca zapisu — fokus wraca dopiero po odblokowaniu
   useEffect(() => {
-    if (!editing && !editBusy && restoreFocus.current) {
+    if (editingId === null && !editBusy && restoreFocus.current) {
       editButtons.current.get(restoreFocus.current)?.focus();
       restoreFocus.current = null;
     }
-  }, [editing, editBusy]);
+  }, [editingId, editBusy]);
 
   const startEdit = (child: ChildDto) => {
-    if (editLock.current) return;
-    setEditing(child);
-    setEditName(child.displayName);
-    setEditAvatar(child.avatarKey);
-    setEditRecordingMode(child.recordingMode);
-    setEditCanRead(child.canRead);
-    setEditError(null);
-    setEditStatus(null);
+    if (editBusy) return;
+    setStatus(null);
+    setEditingId(child.id);
   };
 
-  const cancelEdit = () => {
-    if (editLock.current) return;
-    restoreFocus.current = editing?.id ?? null;
-    setEditing(null);
-    setEditError(null);
+  const closeEdit = () => {
+    restoreFocus.current = editingId;
+    setEditingId(null);
   };
 
-  const trimmedName = editName.trim();
-  const nameChanged = editing !== null && trimmedName !== editing.displayName.trim();
-  const editChanged = editing !== null && (nameChanged || editAvatar !== editing.avatarKey || editRecordingMode !== editing.recordingMode || editCanRead !== editing.canRead);
-
-  const saveEdit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!editing || editLock.current || !trimmedName || !editChanged) return;
-    const patch: ChildPatch = {
-      ...(nameChanged ? { displayName: trimmedName } : {}),
-      ...(editAvatar !== editing.avatarKey ? { avatarKey: editAvatar } : {}),
-      ...(editRecordingMode !== editing.recordingMode ? { recordingMode: editRecordingMode } : {}),
-      ...(editCanRead !== editing.canRead ? { canRead: editCanRead } : {}),
-    };
-    editLock.current = true;
-    setEditBusy(true);
-    setEditError(null);
-    setEditStatus(null);
+  const afterSave = async () => {
+    closeEdit();
+    setStatus(messages.children.saved);
     try {
-      await callParent(() => parentClient.children.update({ childId: editing.id, ...patch }));
-      restoreFocus.current = editing.id;
-      setEditing(null);
-      setEditStatus(messages.children.saved);
+      await onChanged();
+    } catch {
+      setStatus(messages.children.savedRefreshFailed);
+    }
+  };
+
+  // wywołania zwrotne w opcjach hooka (nie w `mutate`) działają dla każdego
+  // usunięcia, także równoległych i po opuszczeniu sekcji — lista dzieci w
+  // ParentApp zawsze się odświeży
+  const remove = useMutation({
+    mutationFn: (childId: string) => callParent(() => parentClient.children.remove({ childId })),
+    onSuccess: async () => {
       try {
         await onChanged();
       } catch {
-        setEditStatus(messages.children.savedRefreshFailed);
+        setRemoveError(messages.children.removedRefreshFailed);
       }
-    } catch (cause) {
-      setEditError(errorMessage(cause));
-    } finally {
-      editLock.current = false;
-      setEditBusy(false);
-    }
-  };
+    },
+    onError: (cause) => setRemoveError(errorMessage(cause)),
+    onSettled: (_data, _error, childId) => {
+      setRemoving((current) => {
+        const next = new Set(current);
+        next.delete(childId);
+        return next;
+      });
+    },
+  });
+  // trwające usunięcie wstrzymuje wyjście z sekcji jak każdy zapis
+  useEffect(() => {
+    reportLeaveState("remove", removing.size > 0 ? { dirty: false, busy: true } : null);
+  }, [reportLeaveState, removing]);
+  useEffect(() => () => reportLeaveState("remove", null), [reportLeaveState]);
 
-  const add = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await callParent(() => parentClient.children.create({
-        displayName: name,
-        avatarKey: avatar,
-        ...(birthYear ? { birthYear: Number(birthYear) } : {}),
-      }));
-      setName("");
-      setBirthYear("");
-      await onChanged();
-    } catch (cause) {
-      setError(errorMessage(cause));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const remove = async (childId: string) => {
-    if (editLock.current && editing?.id === childId) return;
-    if (!window.confirm(messages.children.removeConfirm)) {
-      return;
-    }
-    setError(null);
-    try {
-      await callParent(() => parentClient.children.remove({ childId }));
-      await onChanged();
-    } catch (cause) {
-      setError(errorMessage(cause));
-    }
+  const confirmRemove = (child: ChildDto) => {
+    if ((editBusy && editingId === child.id) || removing.has(child.id)) return;
+    setRemoveError(null);
+    modals.openConfirmModal({
+      title: messages.children.removeTitle.replace("{name}", child.displayName),
+      centered: true,
+      radius: "lg",
+      children: <Text size="sm">{messages.children.removeConfirm}</Text>,
+      labels: { confirm: messages.children.remove, cancel: messages.children.cancel },
+      confirmProps: { color: "red", size: "md", "data-testid": "child-remove-confirm" } as Record<string, unknown>,
+      cancelProps: { size: "md", variant: "default", "data-autofocus": true, "data-testid": "child-remove-cancel" } as Record<string, unknown>,
+      attributes: { content: { "data-testid": "child-remove-dialog" } },
+      // karta zaraz zniknie, a przycisk „Usuń” jest zajęty — fokus na nagłówek sekcji
+      returnFocus: false,
+      onConfirm: runOnce(() => {
+        setRemoving((current) => new Set(current).add(child.id));
+        heading.current?.focus();
+        remove.mutate(child.id);
+      }),
+    });
   };
 
   const avatarCounts = new Map<string, number>();
   for (const child of childrenList) avatarCounts.set(child.avatarKey, (avatarCounts.get(child.avatarKey) ?? 0) + 1);
 
   return (
-    <section>
-      <div className="pp-pagehead">
-        <h2 className="pp-pagehead-title">{messages.children.title}</h2>
-      </div>
-      {editStatus && <p role="status">{editStatus}</p>}
-      {childrenList.length === 0 && <p className="pp-empty">{messages.children.empty}</p>}
-      <ul className="pp-plain pp-children-grid">
-        {childrenList.map((child, index) => (
-          <li className="pp-child-card" key={child.id} data-testid={`child-row-${index}`}>
-            <div className="pp-child-avatar" aria-hidden="true">{avatarEmoji(child.avatarKey)}</div>
-            <div className="pp-child-name">{child.displayName}</div>
-            <div className="pp-child-meta">
-              {child.birthYear ? `ur. ${child.birthYear}` : ""}
-              {child.birthYear ? " · " : ""}
-              {messages.children.recordingMode}:{" "}
-              {child.recordingMode === "hold" ? messages.children.recordingModeHold : messages.children.recordingModeToggle}
-            </div>
-            {avatarCounts.get(child.avatarKey)! > 1 && <p className="info" data-testid={`duplicate-avatar-warning-${index}`}>{messages.children.duplicateAvatarWarning}</p>}
-            <div className="pp-child-actions">
-              <a
-                className="pp-btn pp-btn-primary pp-child-learn"
-                data-testid="child-learn-link"
-                href={`/kids/${child.id}/learn`}
-              >
-                <ParentIcon name="play" />
-                {messages.children.startLearning}
-              </a>
-              <div className="pp-child-row2">
-                <button
-                  type="button"
-                  className="pp-btn pp-btn-quiet pp-btn-sm"
-                  data-testid="child-edit"
-                  ref={(button) => { if (button) editButtons.current.set(child.id, button); else editButtons.current.delete(child.id); }}
-                  aria-expanded={editing?.id === child.id}
-                  aria-controls={`child-edit-form-${child.id}`}
-                  disabled={editBusy}
-                  onClick={() => editing?.id === child.id ? cancelEdit() : startEdit(child)}
+    <Stack gap="md">
+      <Title ref={heading} tabIndex={-1} order={1} fz={26} className="pp-children-heading">{messages.children.title}</Title>
+      {status && <Text role="status">{status}</Text>}
+      {removeError && <Alert color="red" variant="light" role="alert" data-testid="children-error">{removeError}</Alert>}
+      {childrenList.length === 0 && <Text className="pp-children-muted">{messages.children.empty}</Text>}
+      <SimpleGrid component="ul" cols={{ base: 1, xs: 2, md: 3 }} spacing="md" className="pp-children-grid">
+        {childrenList.map((child, index) => {
+          const isEditing = editing?.id === child.id;
+          return (
+            <Paper component="li" withBorder radius="lg" p="md" key={child.id} data-testid={`child-row-${index}`} className="pp-children-card">
+              <Stack gap={4} align="center" ta="center">
+                <div className="pp-child-avatar" aria-hidden="true">{avatarEmoji(child.avatarKey)}</div>
+                <Text fw={700} fz="lg" className="pp-children-name">{child.displayName}</Text>
+                <Text size="sm" className="pp-children-muted">
+                  {child.birthYear ? `ur. ${child.birthYear} · ` : ""}
+                  {messages.children.recordingMode}:{" "}
+                  {child.recordingMode === "hold" ? messages.children.recordingModeHold : messages.children.recordingModeToggle}
+                </Text>
+                {avatarCounts.get(child.avatarKey)! > 1 && (
+                  <Text size="sm" className="pp-children-warning" data-testid={`duplicate-avatar-warning-${index}`}>
+                    {messages.children.duplicateAvatarWarning}
+                  </Text>
+                )}
+              </Stack>
+              <Stack gap="xs" mt="md">
+                <Button component="a" size="md" href={`/kids/${child.id}/learn`} data-testid="child-learn-link"
+                  leftSection={<ParentIcon name="play" />}>
+                  {messages.children.startLearning}
+                </Button>
+                <SimpleGrid cols={2} spacing="xs">
+                  <Button
+                    variant="default"
+                    size="md"
+                    data-testid="child-edit"
+                    ref={(button) => { if (button) editButtons.current.set(child.id, button); else editButtons.current.delete(child.id); }}
+                    aria-expanded={isEditing}
+                    aria-controls={`child-edit-form-${child.id}`}
+                    disabled={editBusy}
+                    leftSection={<ParentIcon name="pencil" />}
+                    onClick={() => (isEditing ? closeEdit() : startEdit(child))}
+                  >
+                    {messages.children.edit}
+                  </Button>
+                  <Button
+                    variant="default"
+                    size="md"
+                    data-testid={`child-settings-${index}`}
+                    aria-expanded={openSettings === child.id}
+                    leftSection={<ParentIcon name="mic" />}
+                    disabled={settingsBusy}
+                    onClick={() => setOpenSettings(openSettings === child.id ? null : child.id)}
+                  >
+                    {messages.children.pronunciationOpen}
+                  </Button>
+                </SimpleGrid>
+                <Button
+                  variant="subtle"
+                  size="md"
+                  className="pp-children-remove"
+                  disabled={(editBusy && isEditing) || removing.has(child.id)}
+                  onClick={() => confirmRemove(child)}
                 >
-                  <ParentIcon name="pencil" />
-                  {messages.children.edit}
-                </button>
-                <button
-                  type="button"
-                  className="pp-btn pp-btn-quiet pp-btn-sm"
-                  data-testid={`child-settings-${index}`}
-                  aria-expanded={openSettings === child.id}
-                  onClick={() => setOpenSettings(openSettings === child.id ? null : child.id)}
-                >
-                  <ParentIcon name="mic" />
-                  {messages.children.pronunciationTitle}
-                </button>
-              </div>
-              <button
-                type="button"
-                className="pp-btn pp-btn-ghost pp-btn-sm pp-btn-danger"
-                disabled={editBusy && editing?.id === child.id}
-                onClick={() => remove(child.id)}
-              >
-                {messages.children.remove}
-              </button>
-            </div>
-            {editing?.id === child.id && (
-              <form id={`child-edit-form-${child.id}`} className="pp-child-edit-form" onSubmit={saveEdit}>
-                <div className="grid-2">
-                  <label>
-                    {messages.children.displayName}
-                    <input ref={editNameRef} data-testid="child-edit-name" value={editName} maxLength={80}
-                      disabled={editBusy} onChange={(event) => setEditName(event.target.value)} />
-                  </label>
-                  <div>
-                    <label htmlFor={`child-edit-avatar-${child.id}`}>{messages.children.avatar}</label>
-                    <select id={`child-edit-avatar-${child.id}`} data-testid="child-edit-avatar" value={editAvatar} disabled={editBusy}
-                      onChange={(event) => setEditAvatar(event.target.value)}>
-                      {!AVATARS.some((option) => option.key === editAvatar) && <option value={editAvatar}>🙂</option>}
-                      {AVATARS.map((option) => <option key={option.key} value={option.key}>{option.emoji}</option>)}
-                    </select>
-                  </div>
-                </div>
-                <div className="row">
-                  <label htmlFor={`child-edit-recording-mode-${child.id}`}>{messages.children.recordingMode}</label>
-                  <select id={`child-edit-recording-mode-${child.id}`} data-testid="child-edit-recording-mode" value={editRecordingMode} disabled={editBusy}
-                    onChange={(event) => setEditRecordingMode(event.target.value as ChildDto["recordingMode"])}>
-                    <option value="hold">{messages.children.recordingModeHold}</option>
-                    <option value="toggle">{messages.children.recordingModeToggle}</option>
-                  </select>
-                </div>
-                <label className="row">
-                  <input data-testid="child-edit-can-read" type="checkbox" checked={!editCanRead} disabled={editBusy}
-                    onChange={(event) => setEditCanRead(!event.target.checked)} />
-                  {messages.children.canRead}
-                </label>
-                <div className="row">
-                  <button type="submit" data-testid="child-edit-save" disabled={editBusy || !trimmedName || !editChanged}>
-                    {messages.children.save}
-                  </button>
-                  <button type="button" data-testid="child-edit-cancel" disabled={editBusy} onClick={cancelEdit}>
-                    {messages.children.cancel}
-                  </button>
-                </div>
-                {editError && <p className="error" role="alert">{editError}</p>}
-              </form>
-            )}
-            {openSettings === child.id && <PronunciationSettings childId={child.id} />}
-          </li>
-        ))}
-      </ul>
-      <section className="pp-child-card pp-add-child">
-        <div className="pp-add-child-title">
-          <ParentIcon name="plus" />
-          {messages.children.add}
-        </div>
-        <div className="grid-2">
-          <label>
-            {messages.children.displayName}
-            <input data-testid="child-name" value={name} onChange={(event) => setName(event.target.value)} />
-          </label>
-          <label>
-            {messages.children.avatar}
-            <select data-testid="child-avatar" value={avatar} onChange={(event) => setAvatar(event.target.value)}>
-              {AVATARS.map((option) => (
-                <option key={option.key} value={option.key}>
-                  {option.emoji}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <label>
-          {messages.children.birthYear}
-          <input
-            data-testid="child-year"
-            type="number"
-            min={1900}
-            max={2200}
-            value={birthYear}
-            onChange={(event) => setBirthYear(event.target.value)}
-          />
-        </label>
-        <button type="button" data-testid="child-add" className="pp-btn pp-btn-quiet" onClick={add} disabled={busy || name.length === 0}>
-          {messages.children.add}
-        </button>
-        {error && (
-          <p className="error" data-testid="api-error" role="alert">
-            {error}
-          </p>
-        )}
-      </section>
-    </section>
+                  {removing.has(child.id) ? messages.children.removing : messages.children.remove}
+                </Button>
+              </Stack>
+              {isEditing && (
+                <ChildEditForm child={child} onSaved={() => void afterSave()} onCancel={closeEdit} onStateChange={reportEdit} />
+              )}
+              {openSettings === child.id && <PronunciationSettings childId={child.id} onStateChange={reportSettings} />}
+            </Paper>
+          );
+        })}
+        <li className="pp-children-add-cell">
+          <AddChildForm onAdded={onChanged} onStateChange={reportAdd} />
+        </li>
+      </SimpleGrid>
+    </Stack>
   );
 }

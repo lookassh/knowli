@@ -24,6 +24,7 @@ import {
   startSession,
   submitAttempt,
   submitSpeechAttempt,
+  dictateLessonAnswer,
 } from "@learning/server";
 import { implement, type Router } from "@orpc/server";
 import { appErrorMiddleware, sameOriginMiddleware, type ORpcContext, type PassthroughMiddleware } from "./base";
@@ -72,6 +73,7 @@ const kidOs = implement({
     disclosures: kidApiContract.tasks.disclosures,
     completePresentation: kidApiContract.tasks.completePresentation,
     attempts: kidApiContract.tasks.attempts,
+    dictation: kidApiContract.tasks.dictation,
   },
 })
   .$context<ORpcContext>()
@@ -247,11 +249,33 @@ const attempts = kidOs.tasks.attempts
     return { status: attempt.state === "processing" ? 202 as const : 200 as const, body: attempt };
   });
 
+/**
+ * Dyktowanie odpowiedzi lekcji (design szkoły §5.4): nagranie → tekst do pola,
+ * bez próby i oceny. Ten sam guard rozmiaru co próby mowy; `signal` przerywa
+ * płatne STT po zerwaniu połączenia. Wynik nie jest cache'owany.
+ */
+const dictation = kidOs.tasks.dictation
+  .use(sameOriginMiddleware)
+  .use(audioCapGuard)
+  .handler(async ({ context, input, signal }) => {
+    const body = await dictateLessonAnswer(
+      context.services,
+      { taskId: input.taskId },
+      {
+        bytes: new Uint8Array(await input.audio.arrayBuffer()),
+        mimeType: input.audio.type || "application/octet-stream",
+        locale: "pl-PL",
+      },
+      signal,
+    );
+    return noStore(body);
+  });
+
 export const kidRouter: Router<ORpcContext> = kidOs.router({
   uiAudio,
   profiles,
   decks,
   sessions: { create: createSession, next, end, disableMicrophone, activityResult, mockTestSummary },
   attempts: { get: getAttempt, feedbackAudio },
-  tasks: { events, disclosures, completePresentation: completePresentationProcedure, attempts },
+  tasks: { events, disclosures, completePresentation: completePresentationProcedure, attempts, dictation },
 });

@@ -168,6 +168,28 @@ describe("AttemptInput text modality", () => {
   });
 });
 
+describe("spoken answers (Etap 3)", () => {
+  const open = { kind: "lesson_open_answer", instructionPl: "Odpowiedz", prompt: "Co to jest poziomica?", promptLocale: "pl-PL" };
+  it("open answer and shorten prompts may offer dictation with a recording limit only", () => {
+    expect(TaskPromptSchema.safeParse({ ...open, speechInput: { maxSeconds: 45 } }).success).toBe(true);
+    expect(TaskPromptSchema.safeParse({
+      kind: "lesson_shorten", instructionPl: "Skróć.", prompt: "Co to jest poziomica?", originalAnswer: "Linia.",
+      answerSegments: [{ text: "Linia.", state: "plain" }], speechInput: { maxSeconds: 45 },
+    }).success).toBe(true);
+    // język nagrania wybiera serwer; prompt nie niesie locale ani innych pól
+    expect(TaskPromptSchema.safeParse({ ...open, speechInput: { maxSeconds: 45, locale: "pl-PL" } }).success).toBe(false);
+    expect(TaskPromptSchema.safeParse({ ...open, speechInput: { maxSeconds: 600 } }).success).toBe(false);
+    expect(TaskPromptSchema.safeParse({ kind: "lesson_calculation", instructionPl: "i", prompt: "2+2", speechInput: { maxSeconds: 45 } }).success).toBe(false);
+  });
+  it("text attempts may declare dictation as their input method", () => {
+    const base = { taskId: UUID, clientAttemptId: UUID2, modality: "text", text: "Linia na mapie." };
+    expect(AttemptInputSchema.safeParse({ ...base, inputMethod: "speech" }).success).toBe(true);
+    expect(AttemptInputSchema.safeParse({ ...base, inputMethod: "keyboard" }).success).toBe(true);
+    expect(AttemptInputSchema.safeParse(base).success).toBe(true);
+    expect(AttemptInputSchema.safeParse({ ...base, inputMethod: "handwriting" }).success).toBe(false);
+  });
+});
+
 describe("AttemptInput sequence modality", () => {
   it("accepts a sequence of unique item ids", () => {
     expect(AttemptInputSchema.safeParse({

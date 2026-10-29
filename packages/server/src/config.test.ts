@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultMediaSettings, graderFromEnv, mediaSettingsFromEnv, sessionActivityFromEnv } from "./config";
+import { DEFAULT_LESSON_STT_MODEL, defaultMediaSettings, graderFromEnv, lessonSpeechFromEnv, mediaSettingsFromEnv, sessionActivityFromEnv } from "./config";
 
 describe("mediaSettingsFromEnv", () => {
   it("bez env zwraca domyślne ustawienia (low + webp)", () => {
@@ -119,5 +119,31 @@ describe("sessionActivityFromEnv", () => {
     expect(sessionActivityFromEnv({ ...base, UMIEM_SESSION_ACTIVITY_TIMEOUT_MS: "" })!.timeoutMs).toBe(60_000);
     expect(sessionActivityFromEnv({ ...base, UMIEM_SESSION_ACTIVITY_TIMEOUT_MS: "45000" })!.timeoutMs).toBe(45_000);
     expect(() => sessionActivityFromEnv({ ...base, UMIEM_SESSION_ACTIVITY_TIMEOUT_MS: "-1" })).toThrow();
+  });
+});
+
+describe("lessonSpeechFromEnv", () => {
+  it("bez zmiennych lekcje nie mają dyktowania", () => {
+    expect(lessonSpeechFromEnv({})).toBeUndefined();
+  });
+
+  it("adres i klucz dają STT z domyślnym modelem Scribe v2, nazwa publiczna bez sekretów", () => {
+    const deps = lessonSpeechFromEnv({ UMIEM_LESSON_STT_BASE_URL: "https://openrouter.ai/api/v1", UMIEM_LESSON_STT_API_KEY: "sk-or-secret" });
+    expect(deps?.stt.name).toBe(DEFAULT_LESSON_STT_MODEL);
+    expect(deps?.publicService).toBe("elevenlabs/scribe-v2");
+    expect(JSON.stringify(deps?.publicService)).not.toContain("sk-or");
+  });
+
+  it("model z env nadpisuje domyślny", () => {
+    const deps = lessonSpeechFromEnv({
+      UMIEM_LESSON_STT_BASE_URL: "https://openrouter.ai/api/v1", UMIEM_LESSON_STT_API_KEY: "k", UMIEM_LESSON_STT_MODEL: "mistralai/voxtral-small-transcribe-3-0",
+    });
+    expect(deps?.publicService).toBe("mistralai/voxtral-small-transcribe-3-0");
+  });
+
+  it("niepełna konfiguracja i http poza dev/test to błąd startu", () => {
+    expect(() => lessonSpeechFromEnv({ UMIEM_LESSON_STT_API_KEY: "k" })).toThrow(/BASE_URL and API_KEY/);
+    expect(() => lessonSpeechFromEnv({ UMIEM_LESSON_STT_BASE_URL: "http://stt.local/v1", UMIEM_LESSON_STT_API_KEY: "k" })).toThrow(/https/);
+    expect(lessonSpeechFromEnv({ NODE_ENV: "test", UMIEM_LESSON_STT_BASE_URL: "http://stt.local/v1", UMIEM_LESSON_STT_API_KEY: "k" })).toBeDefined();
   });
 });

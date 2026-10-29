@@ -59,7 +59,7 @@ export async function issueVocabularyTask(
   const context = contextOf(session);
   if (JSON.stringify(context.reservations) !== JSON.stringify(task.keepsReservations)) {
     await tx.update(learningSessions)
-      .set({ context: { ...context, reservations: [...task.keepsReservations] } })
+      .set({ context: { ...session.context, reservations: [...task.keepsReservations] } })
       .where(eq(learningSessions.id, session.id));
   }
 }

@@ -362,7 +362,33 @@ export const SchoolProgressSchema = z.object({
     text: z.string(),
     knowledge: z.enum(["correct", "partial", "incorrect"]),
     precision: z.enum(["concise", "verbose", "unfocused"]).nullable(),
+    /** Sposób wprowadzenia (Etap 3); brak = starszy serwer, czyli klawiatura. */
+    inputMethod: z.enum(["keyboard", "speech"]).optional(),
   })).max(5),
+  /**
+   * Wiedza osobno dla odpowiedzi pisanych i dyktowanych (wym. 6.3). Suma obu
+   * równa się `knowledge`; `speech.edited` liczy dyktowania poprawione przed
+   * wysłaniem. Brak = starszy serwer.
+   */
+  byInputMethod: z.object({
+    keyboard: z.object({
+      correct: z.number().int().nonnegative(),
+      partial: z.number().int().nonnegative(),
+      incorrect: z.number().int().nonnegative(),
+    }),
+    speech: z.object({
+      correct: z.number().int().nonnegative(),
+      partial: z.number().int().nonnegative(),
+      incorrect: z.number().int().nonnegative(),
+      edited: z.number().int().nonnegative(),
+    }),
+  }).optional(),
+  /**
+   * Usługa rozpoznawania mowy obecnej konfiguracji (nazwa modelu, bez adresu
+   * i klucza), do której trafia głos dziecka przy dyktowaniu; null = dyktowanie
+   * wyłączone. Brak = starszy serwer.
+   */
+  speechService: z.string().min(1).nullable().optional(),
   /**
    * Trener precyzji: zaproponowane skrócenia (zadania następcze), podjęte
    * poprawki i udane (krótsze, bez utraty elementu wymaganego) oraz ostatnie

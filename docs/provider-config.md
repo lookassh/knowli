@@ -23,6 +23,21 @@ score 100): `≥ 70` dobrze (sukces), `50–69` „prawie", `< 50`/`no_speech`
 `audio/webm;codecs=opus` (tablet — `audio/mp4` na Safari — do potwierdzenia
 w zadaniu 11); konwersja do WAV jest kodekowo-agnostyczna.
 
+## Dyktowanie odpowiedzi lekcji (web)
+
+Odpowiedzi otwarte zestawów szkolnych można podyktować (design przedmiotów
+szkolnych §5). Ocena wymowy nie jest tu potrzebna, więc ścieżka nie używa
+Azure; wybór providera po spike'u 2026-10-29 (design §5.1–5.2).
+
+| Element | Wartość | Uzasadnienie |
+| --- | --- | --- |
+| Endpoint | `POST {UMIEM_LESSON_STT_BASE_URL}/audio/transcriptions`, JSON z `input_audio` (base64 WAV), `language: "pl"`, `temperature: 0`, `response_format: "verbose_json"` (przy 400 ponowienie z `json`) | format OpenAI, obsługiwany przez OpenRouter |
+| Model | `UMIEM_LESSON_STT_MODEL`, domyślnie `elevenlabs/scribe-v2` | 150/150 pojęć na syntetycznym polskim głosie, nazwy i liczby bez sklejania, cisza bez halucynacji |
+| Prywatność | dla OpenRouter zawsze `provider: { zdr: true, data_collection: "deny" }`; brak endpointu ZDR = `unavailable` | bez `user`, `session_id`, `keyterms` i treści materiału; nagranie tylko w pamięci żądania |
+| Wynik | znaczniki zdarzeń `[…]` usuwane; tekst ≥ 0,5 confidence (gdy podana) trafia do pola odpowiedzi | dziecko widzi tekst przed oceną |
+| Limity | nagranie ≤ 45 s, 40 dyktowań na sesję, deadline 30 s | stałe `DEFAULT_DICTATION_POLICY` |
+| Env | `UMIEM_LESSON_STT_BASE_URL`, `UMIEM_LESSON_STT_API_KEY` (oba albo żaden), opcjonalnie `UMIEM_LESSON_STT_MODEL` | `https://` poza NODE_ENV test/development; brak = lekcje bez mikrofonu; może to być ten sam klucz OpenRouter co grader |
+
 ## Generowanie materiału (worker)
 
 | Element | Wartość | Uwagi |

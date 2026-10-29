@@ -58,6 +58,8 @@ import { loadPolicy } from "../../../policies/registry";
 import { lockTaskWithSession } from "../events";
 import { discloseFeedbackEvent, requestHashOf } from "../attempt-shared";
 import { lessonSessionContextOf, type LessonSessionContext } from "./lesson-sessions";
+import { dictationFingerprint, dictationStateOf } from "./lesson-dictation";
+import { resolveInputMethod } from "../../../domain/lessons/dictation";
 import {
   offerShortenFollowUp,
   precisionTrainerQualification,
@@ -237,6 +239,7 @@ function gradeLessonAnswer(
   task: TaskRow,
   key: LessonTaskAnswerKey,
   services: Services,
+  skipFormCheck = false,
 ): LessonGradeResult {
   const objectiveId = key.objectiveId;
   const correctText = correctTextFor(task, key);
@@ -338,7 +341,7 @@ function gradeLessonAnswer(
     };
     return {
       grade, feedback, exposures: [key.targetKey],
-      details: { objectiveId, verdict: "minor_typo", typoToken: match.typoToken, ...matchedSchoolDetails(key, input.text) },
+      details: { objectiveId, verdict: "minor_typo", typoToken: match.typoToken, ...matchedSchoolDetails(key, input.text, skipFormCheck) },
     };
   }
   // exact — dla szkoły dokładne dopasowanie jest poprawną odpowiedzią (bez modelu).
@@ -346,7 +349,7 @@ function gradeLessonAnswer(
     grade,
     feedback: { kind: "great" },
     exposures: [key.targetKey],
-    details: { objectiveId, verdict: "exact", ...matchedSchoolDetails(key, input.text) },
+    details: { objectiveId, verdict: "exact", ...matchedSchoolDetails(key, input.text, skipFormCheck) },
   };
 }
 
@@ -355,9 +358,9 @@ function gradeLessonAnswer(
  * albo z drobną literówką): wiedza poprawna, wszystkie elementy trafione;
  * forma `one_sentence` ogranicza precyzję, nigdy wiedzę. Bez kryteriów szkoły → `{}`.
  */
-function matchedSchoolDetails(key: LessonTaskAnswerKey, childAnswer: string): Record<string, unknown> {
+function matchedSchoolDetails(key: LessonTaskAnswerKey, childAnswer: string, skipFormCheck: boolean): Record<string, unknown> {
   if (!key.schoolCriteria) return {};
-  const formOk = formOkFor(key, childAnswer);
+  const formOk = formOkFor(key, childAnswer, skipFormCheck);
   return {
     knowledge: "correct",
     precision: formOk === false ? "verbose" : "concise",
@@ -548,9 +551,13 @@ function resultFromVerdict(
   }
 }
 
-/** Czy forma zdaniowa odpowiedzi spełnia oczekiwanie (`one_sentence`); null = bez znaczenia. */
-function formOkFor(key: LessonTaskAnswerKey, childAnswer: string): boolean | null {
-  if (key.schoolCriteria?.expectedForm !== "one_sentence") return null;
+/**
+ * Czy forma zdaniowa odpowiedzi spełnia oczekiwanie (`one_sentence`); null = bez
+ * znaczenia. Niepoprawiony tekst z dyktowania pomija liczenie: STT stawia kropki
+ * w miejscach pauz, więc liczba zdań mierzyłaby namysł, nie formę (design §5.6).
+ */
+function formOkFor(key: LessonTaskAnswerKey, childAnswer: string, skipFormCheck = false): boolean | null {
+  if (skipFormCheck || key.schoolCriteria?.expectedForm !== "one_sentence") return null;
   return countSentences(childAnswer) <= 1;
 }
 
@@ -601,6 +608,7 @@ function resultFromSchoolVerdict(
   verdict: SchoolVerdict | null,
   verdictId: string | null,
   authoritativeIncorrect = false,
+  skipFormCheck = false,
 ): LessonGradeResult {
   const objectiveId = key.objectiveId;
   if (verdict === null) {
@@ -618,7 +626,7 @@ function resultFromSchoolVerdict(
     verdict: grade.verdict,
     knowledge: verdict.knowledge,
     // Forma `one_sentence` liczona dla tego zapisu ogranicza precyzję (nigdy wiedzę).
-    precision: formOkFor(key, childAnswer) === false && verdict.precision === "concise" ? "verbose" : verdict.precision,
+    precision: formOkFor(key, childAnswer, skipFormCheck) === false && verdict.precision === "concise" ? "verbose" : verdict.precision,
     ...(verdictId ? { verdictId } : {}),
     matchedElementIds: [...verdict.matchedElementIds],
     missingElementIds: [...verdict.missingElementIds],
@@ -628,7 +636,7 @@ function resultFromSchoolVerdict(
     ...(verdict.incorrectStatements.length > 0 ? { incorrectStatements: [...verdict.incorrectStatements] } : {}),
     ...(verdict.redundantFragments.length > 0 ? { redundantFragments: [...verdict.redundantFragments] } : {}),
     ...(grade.errorCategory ? { errorCategory: grade.errorCategory } : {}),
-    ...(formOkFor(key, childAnswer) === false ? { formOk: false } : {}),
+    ...(formOkFor(key, childAnswer, skipFormCheck) === false ? { formOk: false } : {}),
     ...(criteria?.expectedForm ? { expectedForm: criteria.expectedForm } : {}),
   };
   if (grade.verdict === "model_correct") {
@@ -763,6 +771,20 @@ interface LessonAttemptStart {
   attemptNumber: number;
   requestHash: string;
   receivedAt: Date;
+  /** Sposób wprowadzenia odpowiedzi tekstowej, zweryfikowany wobec dyktowania. */
+  answerSource: AnswerSource;
+}
+
+type AnswerSource = { inputMethod: "keyboard" } | { inputMethod: "speech"; edited: boolean };
+
+/** Niepoprawiony tekst z dyktowania nie ma wiarygodnej interpunkcji (formOkFor). */
+function skipsFormCheck(source: AnswerSource): boolean {
+  return source.inputMethod === "speech" && !source.edited;
+}
+
+/** Zapis odpowiedzi tekstowej z oznaczeniem dyktowania; brak pola = klawiatura. */
+function textAnswerOf(text: string, source: AnswerSource): Record<string, unknown> {
+  return source.inputMethod === "speech" ? { text, inputMethod: "speech", edited: source.edited } : { text };
 }
 
 /**
@@ -852,10 +874,18 @@ async function startLessonAttempt(
     timezone: sessionContext.timezone,
   };
 
+  const answerSource: AnswerSource = valid.modality === "text"
+    ? resolveInputMethod({
+      declared: valid.inputMethod,
+      answerFingerprint: dictationFingerprint(valid.text),
+      dictatedFingerprint: dictationStateOf(session.context).dictations[task.id],
+    })
+    : { inputMethod: "keyboard" };
+
   return {
     kind: "fresh", task, session, itemId, lessonContext,
     feedbackPriorCount: assistanceInfo.feedbackCount,
-    policy, key, frozen, attemptNumber, requestHash, receivedAt: now,
+    policy, key, frozen, attemptNumber, requestHash, receivedAt: now, answerSource,
   };
 }
 
@@ -934,7 +964,7 @@ async function finalizeLessonAttempt(
 ): Promise<AttemptDto> {
   const { task, session, itemId, policy, key, frozen, attemptNumber, requestHash, receivedAt } = start;
   const mockTest = session.mode === "mock_test";
-  const graded = precomputed ?? gradeLessonAnswer(valid, task, key, services);
+  const graded = precomputed ?? gradeLessonAnswer(valid, task, key, services, skipsFormCheck(start.answerSource));
   const result = valid.modality === "text" ? withRevisionComparison(key.revisionOf, valid.text, graded) : graded;
   const qualification = qualifyLessonAttempt({
     receivedAt: frozen.receivedAt,
@@ -949,7 +979,7 @@ async function finalizeLessonAttempt(
 
   const answer =
     valid.modality === "text"
-      ? { text: valid.text }
+      ? textAnswerOf(valid.text, start.answerSource)
       : valid.modality === "choice"
         ? { optionId: valid.optionId, optionText: key.optionValues?.[valid.optionId] ?? key.segmentValues?.[valid.optionId] ?? "" }
         : valid.modality === "sequence" || valid.modality === "selection"
@@ -1163,7 +1193,7 @@ export async function submitLessonAttempt(services: Services, input: AttemptInpu
     if (started.kind === "dto") {
       return { kind: "done" as const, dto: started.dto };
     }
-    const result = gradeLessonAnswer(typed, started.task, started.key, services);
+    const result = gradeLessonAnswer(typed, started.task, started.key, services, skipsFormCheck(started.answerSource));
 
     // Tylko niedopasowana odpowiedź TEKSTOWA eskaluje do zapisanego werdyktu / modelu.
     const needsModel = typed.modality === "text" && started.key.exerciseType !== "lesson_calculation" && result.grade.verdict === "unavailable";
@@ -1187,7 +1217,7 @@ export async function submitLessonAttempt(services: Services, input: AttemptInpu
         const schoolVerdict = earlyInput?.school ? schoolVerdictFromCacheRow(cached, started.key, childAnswer) : null;
         const cachedResult = earlyInput?.school
           ? schoolVerdict
-            ? resultFromSchoolVerdict(services, started.key, childAnswer, schoolVerdict, cached.id, cached.parentDecision === "overridden_incorrect")
+            ? resultFromSchoolVerdict(services, started.key, childAnswer, schoolVerdict, cached.id, cached.parentDecision === "overridden_incorrect", skipsFormCheck(started.answerSource))
             : null
           : resultFromVerdict(services, started.task, started.key, childAnswer, verdictFromCacheRow(cached), cached.id, cached.parentDecision === "overridden_incorrect");
         if (cachedResult) {
@@ -1313,7 +1343,7 @@ async function reserveProcessingAttempt(
     attemptNumber: start.attemptNumber,
     modality: "text",
     state: "processing",
-    answer: { text: childAnswer },
+    answer: textAnswerOf(childAnswer, start.answerSource),
     context: start.frozen as unknown as Record<string, unknown>,
     policyId: start.session.policyId,
     receivedAt: start.receivedAt,
@@ -1443,6 +1473,7 @@ async function finalizeGradedAttempt(
         effectiveSchoolVerdict,
         verdictId,
         authoritativeIncorrect,
+        skipsFormCheck(start.answerSource),
       )
     : resultFromVerdict(services, task, key, args.childAnswer, effectiveVerdict, verdictId, authoritativeIncorrect));
   const qualification = qualifyLessonAttempt({

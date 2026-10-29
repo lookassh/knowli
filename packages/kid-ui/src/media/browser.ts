@@ -122,7 +122,7 @@ const defaultTimers = {
  * not carry a Duration element, which the server needs for its duration cap.
  * Decode and resample in memory, then send mono 16 kHz PCM WAV.
  */
-async function convertToWav(bytes: Uint8Array, mimeType: string): Promise<RecordedAudio> {
+async function convertToWav(bytes: Uint8Array, mimeType: string, maxDurationMs: number = MAX_RECORDING_MS): Promise<RecordedAudio> {
   const AudioContextCtor = globalThis.AudioContext;
   const OfflineAudioContextCtor = globalThis.OfflineAudioContext;
   // Non-browser unit harnesses may not provide Web Audio APIs. Real browsers
@@ -132,7 +132,7 @@ async function convertToWav(bytes: Uint8Array, mimeType: string): Promise<Record
   const decoder = new AudioContextCtor();
   try {
     const decoded = await decoder.decodeAudioData(bytes.slice().buffer);
-    if (decoded.duration <= 0 || decoded.duration > MAX_RECORDING_MS / 1000 + 0.5) {
+    if (decoded.duration <= 0 || decoded.duration > maxDurationMs / 1000 + 0.5) {
       throw new Error("recording duration is outside the supported limit");
     }
     const sampleRate = 16_000;
@@ -333,7 +333,13 @@ export class BrowserRecorder implements SpeechRecorder {
         this.#recorder?.stop();
         this.#options.onLimitReached?.();
       }
-    }, MAX_RECORDING_MS);
+    }, this.#maxDurationMs);
+  }
+
+  /** Limit tego nagrania: z opcji (dyktowanie lekcji) albo limit słówek. */
+  get #maxDurationMs(): number {
+    const requested = this.#options.maxDurationMs;
+    return requested !== undefined && Number.isFinite(requested) && requested > 0 ? requested : MAX_RECORDING_MS;
   }
 
   async stop(): Promise<RecordedAudio> {
@@ -389,7 +395,7 @@ export class BrowserRecorder implements SpeechRecorder {
       const webmBytes = new Uint8Array(await blob.arrayBuffer());
       let audio: RecordedAudio;
       try {
-        audio = await convertToWav(webmBytes, this.#mimeType);
+        audio = await convertToWav(webmBytes, this.#mimeType, this.#maxDurationMs);
       } catch (error) {
         webmBytes.fill(0);
         throw error;

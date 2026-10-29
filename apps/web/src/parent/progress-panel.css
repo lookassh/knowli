@@ -1,0 +1,547 @@
+/* Postępy, raport kartkówki i karta pracy na Mantine (plan 2026-10-29-parent-ui-mantine, faza 4).
+   Tekst pomocniczy: kontrast ≥ 4,5:1 w obu schematach; kolory stanów z --pp-status-* (theme.ts). */
+
+:root,
+[data-mantine-color-scheme="light"] {
+  --pp-bar-mastered: #2ea06b;
+  --pp-bar-needs: #d9a92f;
+  --pp-bar-practicing: #6b8bdf;
+  --pp-bar-none: #cdd2e2;
+  --pp-prog-muted: #565a70;
+}
+
+[data-mantine-color-scheme="dark"] {
+  --pp-bar-mastered: #3fb37c;
+  --pp-bar-needs: #d9ad3f;
+  --pp-bar-practicing: #7f9be6;
+  --pp-bar-none: #4a4e63;
+  --pp-prog-muted: #a8abb9;
+}
+
+.pp-prog-muted {
+  color: var(--pp-prog-muted);
+}
+
+.pp-prog-warning {
+  color: var(--pp-status-warning-fg);
+}
+
+.pp-prog-heading {
+  overflow-wrap: anywhere;
+}
+
+.pp-prog-cardtitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pp-prog-cardtitle svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  color: var(--mantine-primary-color-filled);
+}
+
+.pp-prog-deck {
+  flex: 1 1 260px;
+  max-width: 420px;
+}
+
+.pp-prog-plain,
+.pp-prog-rows,
+.pp-prog-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pp-prog-plain {
+  display: grid;
+  gap: 4px;
+}
+
+.pp-prog-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* --- aktywność --- */
+
+.pp-prog-daily {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.pp-prog-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 2px;
+  border-radius: 10px;
+  background: var(--pp-status-neutral-bg);
+  text-align: center;
+}
+
+.pp-prog-day[data-active="true"] {
+  background: var(--pp-status-success-bg);
+}
+
+.pp-prog-day[data-today="true"] {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: -2px;
+}
+
+.pp-prog-day-label {
+  font-size: 12px;
+  color: var(--pp-prog-muted);
+}
+
+.pp-prog-day-time {
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.pp-prog-day[data-active="true"] .pp-prog-day-time {
+  color: var(--pp-status-success-fg);
+}
+
+.pp-prog-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pp-prog-stat {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--mantine-color-default-hover);
+}
+
+.pp-prog-stat-v {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.pp-prog-stat-v small {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pp-prog-stat-l {
+  font-size: 13px;
+  color: var(--pp-prog-muted);
+}
+
+@media (max-width: 37.49em) {
+  .pp-prog-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pp-prog-day-time {
+    font-size: 11px;
+  }
+}
+
+/* --- paski opanowania --- */
+
+.pp-prog-skill {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr) 56px;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.pp-prog-skill-name {
+  font-size: 14px;
+}
+
+.pp-prog-bar {
+  display: flex;
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--pp-bar-none);
+}
+
+.pp-prog-bar > span {
+  display: block;
+  height: 100%;
+}
+
+.pp-prog-bar > span[data-tone="mastered"] { background: var(--pp-bar-mastered); }
+.pp-prog-bar > span[data-tone="needs"] { background: var(--pp-bar-needs); }
+.pp-prog-bar > span[data-tone="practicing"] { background: var(--pp-bar-practicing); }
+.pp-prog-bar > span[data-tone="none"] { background: var(--pp-bar-none); }
+
+.pp-prog-skill-val {
+  text-align: right;
+  font-size: 14px;
+  color: var(--pp-prog-muted);
+}
+
+.pp-prog-skill-val strong {
+  color: var(--mantine-color-text);
+}
+
+/* telefon: nazwa i wynik nad paskiem zamiast stałej kolumny */
+@media (max-width: 37.49em) {
+  .pp-prog-skill {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 4px;
+  }
+
+  .pp-prog-bar {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+.pp-prog-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--pp-prog-muted);
+}
+
+.pp-prog-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pp-prog-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.pp-prog-dot[data-tone="mastered"] { background: var(--pp-bar-mastered); }
+.pp-prog-dot[data-tone="needs"] { background: var(--pp-bar-needs); }
+.pp-prog-dot[data-tone="practicing"] { background: var(--pp-bar-practicing); }
+.pp-prog-dot[data-tone="none"] { background: var(--pp-bar-none); }
+
+/* --- słowa: tabela od 901 px, karty poniżej --- */
+
+.pp-prog-table { display: none; }
+.pp-prog-cards { display: grid; gap: 8px; margin-top: 12px; }
+
+@media (min-width: 901px) {
+  .pp-prog-table { display: block; }
+  .pp-prog-cards { display: none; }
+}
+
+.pp-prog-word {
+  font-weight: 600;
+}
+
+.pp-prog-dotcell {
+  display: inline-flex;
+  align-items: center;
+}
+
+.pp-prog-wordcard {
+  padding: 12px;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: 12px;
+}
+
+.pp-prog-wordcard h4 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.pp-prog-wordcard dl {
+  margin: 6px 0 0;
+  display: grid;
+  gap: 4px;
+}
+
+.pp-prog-wordcard dl > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.pp-prog-wordcard dt {
+  font-size: 13px;
+  color: var(--pp-prog-muted);
+}
+
+.pp-prog-wordcard dd {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.pp-prog-status {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pp-status-neutral-fg);
+  background: var(--pp-status-neutral-bg);
+}
+
+.pp-prog-status[data-tone="mastered"] { color: var(--pp-status-success-fg); background: var(--pp-status-success-bg); }
+.pp-prog-status[data-tone="needs"] { color: var(--pp-status-warning-fg); background: var(--pp-status-warning-bg); }
+.pp-prog-status[data-tone="practicing"] { color: var(--pp-status-info-fg); background: var(--pp-status-info-bg); }
+
+/* --- wymowa, lista do ćwiczeń, wiersze --- */
+
+.pp-prog-pron {
+  display: grid;
+  grid-template-columns: minmax(80px, 140px) minmax(0, 1fr) 36px auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.pp-prog-pron-word {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.pp-prog-pron-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--pp-bar-none);
+}
+
+.pp-prog-pron-track span {
+  display: block;
+  height: 100%;
+  background: var(--mantine-primary-color-filled);
+}
+
+.pp-prog-pron-v {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.pp-prog-note {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  color: var(--pp-prog-muted);
+}
+
+.pp-prog-note svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.pp-prog-duelist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pp-prog-due {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--pp-status-warning-bg);
+  color: var(--pp-status-warning-fg);
+  font-weight: 600;
+}
+
+.pp-prog-due svg {
+  width: 14px;
+  height: 14px;
+}
+
+.pp-prog-due em {
+  font-weight: 400;
+}
+
+.pp-prog-rows > li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--mantine-color-default-border);
+}
+
+.pp-prog-rows > li:last-child {
+  border-bottom: 0;
+}
+
+.pp-prog-rows > li > svg {
+  width: 16px;
+  height: 16px;
+  margin-top: 3px;
+  flex: 0 0 auto;
+}
+
+.pp-prog-grow {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pp-prog-when {
+  flex: 0 0 auto;
+  font-size: 13px;
+}
+
+.pp-prog-outcome {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  color: var(--pp-status-neutral-fg);
+  background: var(--pp-status-neutral-bg);
+}
+
+.pp-prog-outcome[data-outcome="correct"] { color: var(--pp-status-success-fg); background: var(--pp-status-success-bg); }
+.pp-prog-outcome[data-outcome="incorrect"] { color: var(--pp-status-danger-fg); background: var(--pp-status-danger-bg); }
+
+.pp-prog-outcome svg {
+  width: 14px;
+  height: 14px;
+}
+
+@media (max-width: 37.49em) {
+  .pp-prog-rows > li {
+    flex-wrap: wrap;
+  }
+
+  .pp-prog-when {
+    flex-basis: 100%;
+    padding-left: 34px;
+  }
+
+  .pp-prog-pron {
+    grid-template-columns: minmax(0, 1fr) 36px auto;
+  }
+
+  .pp-prog-pron-track {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+/* --- raport kartkówki --- */
+
+.pp-prog-mockselect {
+  flex: 1 1 240px;
+  max-width: 360px;
+}
+
+.pp-prog-mockscore {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+
+.pp-prog-mockscore-big {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.pp-prog-mockscore[data-tone="good"] .pp-prog-mockscore-big { color: var(--pp-status-success-fg); }
+.pp-prog-mockscore[data-tone="mid"] .pp-prog-mockscore-big { color: var(--pp-status-warning-fg); }
+.pp-prog-mockscore[data-tone="low"] .pp-prog-mockscore-big { color: var(--pp-status-danger-fg); }
+
+.pp-prog-mockscore-stars {
+  color: var(--pp-status-warning-fg);
+  letter-spacing: 2px;
+}
+
+.pp-prog-mockbody {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pp-prog-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* --- karta pracy --- */
+
+.pp-work-filters > .pp-childpicker {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.pp-work-date {
+  flex: 0 0 auto;
+  width: 200px;
+}
+
+@media (max-width: 37.49em) {
+  .pp-work-date {
+    width: 100%;
+  }
+}
+
+.pp-work-times {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 2px 16px;
+}
+
+.pp-work-activity {
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--mantine-color-default-hover);
+}
+
+.pp-work-tasks,
+.pp-work-steps {
+  margin: 0;
+  padding-left: 22px;
+  font-size: 14px;
+}
+
+.pp-work-tasks li + li {
+  margin-top: 8px;
+}
+
+.pp-work-tasks p {
+  margin: 2px 0 0;
+}
+
+.pp-work-steps li {
+  padding: 6px 0;
+  border-top: 1px solid var(--mantine-color-default-border);
+  overflow-wrap: anywhere;
+}
+
+.pp-work-steps li > span {
+  display: inline-block;
+  margin-right: 12px;
+  color: var(--pp-prog-muted);
+}
+
+.pp-work-steps li > .pp-work-step-title {
+  color: var(--mantine-color-text);
+  font-weight: 600;
+}

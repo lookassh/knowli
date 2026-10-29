@@ -5,7 +5,10 @@ import {
   computeTargetKey,
   createChild,
   createServices,
+  dictateLessonAnswer,
   endSession,
+  FakeDictationSttProvider,
+  fakeLessonSpeechDeps,
   FakeAnswerGrader,
   getLessonMockTestReport,
   lessonObjectiveProgress,
@@ -180,6 +183,19 @@ async function seedSchoolDeck(
 
 type AnyServices = ReturnType<typeof createServices>;
 
+/** Cisza WAV PCM 16 kHz mono w pamięci — dla fake STT liczy się tylko poprawny kontener. */
+function wavBytes(seconds: number): Uint8Array {
+  const dataBytes = Math.round(seconds * 16_000) * 2;
+  const bytes = new Uint8Array(44 + dataBytes);
+  const view = new DataView(bytes.buffer);
+  const ascii = (offset: number, text: string) => [...text].forEach((ch, i) => view.setUint8(offset + i, ch.charCodeAt(0)));
+  ascii(0, "RIFF"); view.setUint32(4, 36 + dataBytes, true); ascii(8, "WAVE"); ascii(12, "fmt ");
+  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, 16_000, true); view.setUint32(28, 32_000, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+  ascii(36, "data"); view.setUint32(40, dataBytes, true);
+  return bytes;
+}
+
 function makeServices(grader?: FakeAnswerGrader): AnyServices {
   const { services: base, clock } = buildTestServices();
   return createServices({
@@ -195,7 +211,7 @@ function makeServices(grader?: FakeAnswerGrader): AnyServices {
  * więc nowy cel przechodzi etapy w kolejnych sesjach — helper startuje następne
  * sesje aż do wydania zadania otwartego.
  */
-async function reachOpenTask(services: AnyServices, childId: string, deckId: string): Promise<TaskDto> {
+async function reachOpenTask(services: AnyServices, childId: string, deckId: string, microphoneEnabled = false): Promise<TaskDto> {
   // Zadanie otwarte (etap independent) plan wydaje jako należne sprawdzenie:
   // seedujemy postęp z przeszłym terminem powtórki.
   await pool.query(
@@ -206,7 +222,7 @@ async function reachOpenTask(services: AnyServices, childId: string, deckId: str
     [childId, OBJECTIVE_ID],
   );
   for (let s = 0; s < 5; s++) {
-    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const session = await startSession(services, { childId, deckId, microphoneEnabled });
     for (let i = 0; i < 40; i++) {
       const task = await nextTask(services, session.sessionId);
       if (task === null) break;
@@ -502,6 +518,31 @@ describe("trener precyzji: „Skróć odpowiedź” (integracja)", () => {
     // Podsumowanie sesji dla dziecka: oryginał i poprawka to jedno ćwiczenie celu.
     const summary = await endSession(services, openTask.sessionId);
     expect(summary.objectives?.find((objective) => objective.objectiveId === OBJECTIVE_ID)).toMatchObject({ practiced: 1, correct: 1 });
+  });
+
+  it("poprawkę można podyktować: mikrofon w zadaniu następczym i zapis dyktowania przy próbie (Etap 3)", async () => {
+    const { services: base, clock } = buildTestServices();
+    const services = createServices({
+      db: (base as unknown as { db: Parameters<typeof createServices>[0]["db"] }).db,
+      clock,
+      grader: { provider: new FakeAnswerGrader(), maxCallsPerSession: 20, timeoutMs: 8000 },
+      lessonSpeech: fakeLessonSpeechDeps(new FakeDictationSttProvider({ status: "ok", text: shortened, confidence: 0.96 })),
+    });
+    const child = await createChild(services, { displayName: "Mówca", avatarKey: "owl" });
+    const { deckId } = await seedSchoolDeck(child.id, { secondObjective: true });
+    const openTask = await reachOpenTask(services, child.id, deckId, true);
+    await submitAttempt(services, { taskId: openTask.taskId, clientAttemptId: randomUUID(), modality: "text", text: verboseAnswer });
+
+    const followUp = (await nextTask(services, openTask.sessionId))!;
+    expect(followUp.prompt).toMatchObject({ kind: "lesson_shorten", speechInput: { maxSeconds: 45 } });
+    expect(await dictateLessonAnswer(services, { taskId: followUp.taskId }, {
+      bytes: wavBytes(3), mimeType: "audio/wav", locale: "pl-PL",
+    })).toEqual({ status: "heard", text: shortened });
+
+    const revision = await submitAttempt(services, { taskId: followUp.taskId, clientAttemptId: randomUUID(), modality: "text", text: shortened, inputMethod: "speech" });
+    expect(revision.feedback!.kind).toBe("great");
+    const answer = await pool.query<{ answer: Record<string, unknown> }>("select answer from learning_app.attempts where task_id = $1", [followUp.taskId]);
+    expect(answer.rows[0]!.answer).toEqual({ text: shortened, inputMethod: "speech", edited: false });
   });
 
   it("wykrywa utratę elementu wymaganego w poprawce, bez treści elementu w feedbacku", async () => {
