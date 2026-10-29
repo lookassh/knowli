@@ -444,7 +444,13 @@ async function synth(): Promise<void> {
   }
   // cisza i szum — każdy silnik musi dać no_speech/pusty tekst, nie treść
   const silence = wavFromSamples(new Float32Array(16_000 * 3));
-  const noise = wavFromSamples(Float32Array.from({ length: 16_000 * 3 }, () => (Math.random() * 2 - 1) * 0.15));
+  // szum z deterministycznego generatora (LCG z ziarnem): powtarzalny między przebiegami
+  let seed = 20261029;
+  const nextNoise = () => {
+    seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+    return seed / 0xffffffff;
+  };
+  const noise = wavFromSamples(Float32Array.from({ length: 16_000 * 3 }, () => (nextNoise() * 2 - 1) * 0.15));
   for (const [id, wav] of [["silence-3s", silence], ["noise-3s", noise]] as const) {
     const results = (await runEngines(wav)).map((r) => score(r, undefined));
     console.log(`\n# ${id}`);
@@ -653,7 +659,8 @@ function live(): void {
   // jedna analiza naraz — token w rękach innej osoby nie uruchomi lawiny płatnych wywołań STT
   let analyzing = false;
   const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
-    const url = new URL(req.url ?? "/", "http://trial.local");
+    // adres bazowy służy wyłącznie do parsowania ścieżki i zapytania żądania
+    const url = new URL(req.url ?? "/", "https://trial.local");
     if (req.method === "GET" && url.pathname === "/") {
       if (!tokenOk(url.searchParams.get("t"))) {
         res.writeHead(403, { "content-type": "text/plain; charset=utf-8" }).end("Brak dostępu — otwórz adres z konsoli (z tokenem).");
