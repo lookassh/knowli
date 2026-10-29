@@ -60,10 +60,26 @@ describe("kid-ui design tokens", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("keeps literal colors out of components (deterministic visuals excepted)", () => {
+  it("keeps literal colors out of components (deterministic visuals and illustrations excepted)", () => {
     const offenders = files(SRC, /\.tsx?$/)
-      .filter((url) => !relative(url).startsWith("visuals/") && !/\.test\.tsx?$/.test(url.pathname))
+      .filter((url) => !relative(url).startsWith("visuals/") && !relative(url).startsWith("illustrations/") && !/\.test\.tsx?$/.test(url.pathname))
       .flatMap((url) => [...readFileSync(url, "utf8").matchAll(/["'`]#[0-9a-fA-F]{3,8}["'`]/g)].map((match) => `${relative(url)}: ${match[0]}`));
     expect(offenders).toEqual([]);
+  });
+
+  it("loads only local kid fonts", () => {
+    const css = readFileSync(new URL("../apps/web/src/kid-fonts.css", import.meta.url), "utf8");
+    expect(css).toContain('url("/fonts/kid/Fredoka.ttf")');
+    expect(css).toContain('url("/fonts/kid/Nunito.ttf")');
+    expect(css).not.toMatch(/fonts\.googleapis|Manrope/);
+  });
+
+  it("applies the display font to headings and the main action, the body font to the root", () => {
+    const theme = readFileSync(new URL("theme/kid-theme.module.css", SRC), "utf8");
+    expect(theme).toContain("font-family: var(--kid-font-body)");
+    const headings = readFileSync(new URL("theme/kid-theme.css", SRC), "utf8");
+    expect(headings).toMatch(/\.kid-theme h1,[^{]*\.kid-theme h3\s*\{[^}]*font-family: var\(--kid-font-display\)/);
+    const action = readFileSync(new URL("components/answer-controls.module.css", SRC), "utf8");
+    expect(action).toMatch(/\.action\[data-variant="filled"\]\[data-size="lg"\]\s*\{[^}]*font-family: var\(--kid-font-display\)/);
   });
 });

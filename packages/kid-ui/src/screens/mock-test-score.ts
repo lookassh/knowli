@@ -1,9 +1,10 @@
 import { messages, type MockTestOutcome, type MockTestSummaryDto, type TestGoal } from "@learning/contracts";
+import type { KidIconName } from "../components/KidIcon";
 import { starsForFraction } from "./stars";
 
 export type MockTestWordStatus = "correct" | "incorrect" | "notAssessed";
 
-export const MOCK_TEST_SOLUTION_ICONS: Record<MockTestWordStatus, string> = { correct: "✓", incorrect: "✗", notAssessed: "–" };
+export const MOCK_TEST_SOLUTION_ICONS: Record<MockTestWordStatus, KidIconName> = { correct: "check", incorrect: "close", notAssessed: "question" };
 
 export interface MockTestScore {
   correct: number;

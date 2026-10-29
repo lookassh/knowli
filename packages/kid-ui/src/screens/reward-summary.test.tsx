@@ -54,6 +54,14 @@ describe("kid reward views", () => {
     expect(screen.getByTestId("kid-summary-reward").textContent).toContain("Zatwierdzony czas nauki: 2 min 5 s");
   });
 
+  it("renders the reward as a neutral chip that stays a polite status region", () => {
+    renderKid(<SummaryScreen summary={{ ...summary, activity: { status: "evaluated", pointsAwarded: 7, approvedSeconds: 125, errorCode: null } }} profiles={[profile]} onAgain={vi.fn()} onSwitchProfile={vi.fn()} />);
+    const reward = screen.getByTestId("kid-summary-reward");
+    expect(reward.getAttribute("data-tone")).toBe("neutral");
+    expect(reward.getAttribute("role")).toBe("status");
+    expect(reward.getAttribute("aria-live")).toBe("polite");
+  });
+
   it.each([
     ["error", "Nauka zapisana. Nie udało się naliczyć punktów."],
     ["already_started", "Punkty z tej nauki są jeszcze liczone."],
