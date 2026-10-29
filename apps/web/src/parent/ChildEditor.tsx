@@ -22,6 +22,7 @@ import { notifications } from "@mantine/notifications";
 import { useMutation } from "@tanstack/react-query";
 import { messages, type ChildDto, type ChildPatch } from "@learning/contracts";
 import { childPatch, type EditValues } from "./children-forms";
+import { runOnce } from "./run-once";
 import { callParent, errorMessage, parentClient } from "./api";
 import { ParentIcon } from "./ParentIcon";
 import PronunciationSettings from "./PronunciationSettings";
@@ -374,11 +375,11 @@ export default function ChildEditor({
       attributes: { content: { "data-testid": "child-remove-dialog" } },
       // karta zaraz zniknie, a przycisk „Usuń” jest zajęty — fokus na nagłówek sekcji
       returnFocus: false,
-      onConfirm: () => {
+      onConfirm: runOnce(() => {
         setRemoving((current) => new Set(current).add(child.id));
         heading.current?.focus();
         remove.mutate(child.id);
-      },
+      }),
     });
   };
 

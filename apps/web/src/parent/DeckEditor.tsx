@@ -45,6 +45,7 @@ import type { EditorLeaveState } from "./useParentLeaveGuard";
 import DeckConflictPanel, { type EditorConflict } from "./DeckConflictPanel";
 import { DeckCoverSettings } from "./DeckCoverSettings";
 import { ParentIcon } from "./ParentIcon";
+import { runOnce } from "./run-once";
 import { avatarEmoji } from "./avatars";
 import { polishPlural } from "./deck-list-grouping";
 import "./deck-editor.css";
@@ -687,7 +688,7 @@ export default function DeckEditor({
       labels: { confirm: messages.decks.archive, cancel: messages.decks.archiveCancel },
       confirmProps: { color: "red", size: "md", "data-testid": "archive-confirm" } as Record<string, unknown>,
       cancelProps: { size: "md", variant: "default", "data-autofocus": true } as Record<string, unknown>,
-      onConfirm: () => { void archive(); },
+      onConfirm: runOnce(() => { void archive(); }),
     }));
   };
 
@@ -700,7 +701,7 @@ export default function DeckEditor({
       labels: { confirm: messages.decks.unassign, cancel: messages.decks.archiveCancel },
       confirmProps: { color: "red", size: "md", "data-testid": "unassign-confirm" } as Record<string, unknown>,
       cancelProps: { size: "md", variant: "default", "data-autofocus": true } as Record<string, unknown>,
-      onConfirm: () => { void unassign(childId); },
+      onConfirm: runOnce(() => { void unassign(childId); }),
     }));
   };
 
@@ -720,7 +721,7 @@ export default function DeckEditor({
         <DeckCoverSettings coverAssetId={deck.coverAssetId} busy={coverBusy} generating={coverGenerating} generatedPreview={generatedCover?.objectUrl ?? null}
           error={coverError}
           onUpload={(file) => { void uploadCover(file); }} onRemove={() => { void removeCover(); }} onGenerate={() => { void generateCover(); }}
-          onAcceptGenerated={() => { void acceptGeneratedCover(); }} onRejectGenerated={() => setGeneratedCover(null)} />
+          onAcceptGenerated={() => { void acceptGeneratedCover(); }} onRejectGenerated={clearGeneratedCover} />
       </Paper>
       <Paper withBorder radius="lg" p="md">
         <DeckSessionTaskBudgetSettings
