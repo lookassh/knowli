@@ -17,6 +17,7 @@ import { useMediaQuery } from "@mantine/hooks";
 import { messages } from "@learning/contracts";
 import { ParentIcon, type ParentIconName } from "./ParentIcon";
 import { PARENT_SECTIONS, sectionPath, type ParentSection } from "./parent-routes";
+import { useVirtualKeyboardOpen } from "./virtual-keyboard";
 import "./parent-shell.css";
 
 const SECTION_META: Record<ParentSection, { label: string; icon: ParentIconName; testId: string }> = {
@@ -28,6 +29,8 @@ const SECTION_META: Record<ParentSection, { label: string; icon: ParentIconName;
 
 /** Klasa szerokości compact (< 600 px, plan §4): dolny pasek nawigacji. */
 const COMPACT_QUERY = "(max-width: 37.49em)";
+/** Niska wysokość (< 480 px, np. telefon poziomo): klawiatura zostawia mało miejsca nad sobą. */
+const SHORT_QUERY = "(max-height: 29.99em)";
 const SCHEME_ICON: Record<MantineColorScheme, ParentIconName> = { auto: "monitor", light: "sun", dark: "moon" };
 const HEADER_HEIGHT ={ compact: 64, regular: 116 } as const;
 const BOTTOM_NAV_HEIGHT = "calc(72px + env(safe-area-inset-bottom))";
@@ -80,6 +83,9 @@ export interface ParentShellProps {
  */
 export function ParentShell({ section, onNavigate, onToLearning, onLogout, children }: ParentShellProps) {
   const compact = useMediaQuery(COMPACT_QUERY, false, { getInitialValueInEffect: false }) ?? false;
+  const short = useMediaQuery(SHORT_QUERY, false, { getInitialValueInEffect: false }) ?? false;
+  // przy otwartej klawiaturze telefonu dolny pasek i przypięty pasek akcji edytora chowają się (data-keyboard-open)
+  const keyboardOpen = useVirtualKeyboardOpen(compact || short);
   const { colorScheme } = useMantineColorScheme();
 
   const navLinks = (variant: "tab" | "bottom") =>
@@ -118,8 +124,9 @@ export function ParentShell({ section, onNavigate, onToLearning, onLogout, child
   return (
     <AppShell
       header={{ height: compact ? HEADER_HEIGHT.compact : HEADER_HEIGHT.regular }}
-      footer={{ height: BOTTOM_NAV_HEIGHT, collapsed: !compact }}
+      footer={{ height: BOTTOM_NAV_HEIGHT, collapsed: !compact || keyboardOpen }}
       padding={0}
+      data-keyboard-open={keyboardOpen ? "true" : undefined}
     >
       <AppShell.Header className="pp-shell-header">
         <div className="pp-shell-header-in">

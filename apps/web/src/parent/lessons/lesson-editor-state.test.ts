@@ -224,6 +224,21 @@ it("zachowuje pola v3 ćwiczeń szkolnych w obie strony", () => {
     expect(patch.exercises![0]!.sourceRefs).toEqual([{ quote: "wytwarza cukry" }]);
     expect(patch.exercises![1]).not.toHaveProperty("sourceRefs");
   });
+  it("pola wielowierszowe: surowe wiersze z pisania przycinane dopiero w poleceniu", () => {
+    const snapshot = createLessonSnapshot(draft(), () => "unused");
+    const first = snapshot.form.exercises[0]!;
+    // stan w trakcie pisania: spacja na końcu wiersza i pusty wiersz po Enter
+    first.supplementaryElements = ["chlorofil ", "", "  światło"];
+    first.commonErrors = ["myli skalę ", ""];
+    const patch = toLessonDraftPatch(snapshot);
+    expect(patch.exercises![0]!.supplementaryElements).toEqual(["chlorofil", "światło"]);
+    expect(patch.exercises![0]!.commonErrors).toEqual(["myli skalę"]);
+    // pusty wiersz na końcu nie jest zmianą ćwiczenia
+    const base = createLessonSnapshot(draft(), () => "unused").form.exercises[0]!;
+    base.commonErrors = ["myli skalę"];
+    const typing = { ...base, commonErrors: ["myli skalę", ""] };
+    expect(lessonExerciseChanged(typing, base)).toBe(false);
+  });
   it("emits visualSubject only for lesson_choice exercises", () => {
     const snapshot = createLessonSnapshot(draft(), () => "unused");
     snapshot.form.exercises[0]!.visualSubject = "girl";

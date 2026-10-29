@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { memo, useEffect, useRef, type ReactNode } from "react";
 import { ActionIcon, Alert, Button, Checkbox, Group, Menu, NativeSelect, Paper, Radio, Stack, Text, TextInput, Textarea } from "@mantine/core";
 import { messages, type CalculationSpec } from "@learning/contracts";
 import { ParentIcon } from "../ParentIcon";
@@ -38,22 +38,7 @@ function Field({ wide, children }: { wide?: boolean; children: ReactNode }) {
  * albo z błędem walidacji jest zawsze otwarta. Indeks w `data-testid` to
  * pozycja w `form.exercises` (mapowanie błędów 400), nie kolejność na ekranie.
  */
-export default function LessonExerciseCard({
-  ex,
-  index,
-  editable,
-  busy,
-  open,
-  changed,
-  hadAudio,
-  errors,
-  audio,
-  calculation,
-  onToggle,
-  onMutate,
-  onRemove,
-  onPlay,
-}: {
+interface LessonExerciseCardProps {
   ex: EditableLessonExercise;
   index: number;
   editable: boolean;
@@ -65,12 +50,44 @@ export default function LessonExerciseCard({
   errors: string[] | undefined;
   audio: { state: string; assetId: string | null } | null;
   calculation: CalculationControls | null;
-  onToggle: () => void;
-  onMutate: (patch: Partial<EditableLessonExercise>) => void;
-  onRemove: () => void;
+  /** Stabilne funkcje edytora (wspólne dla wszystkich kart) — karta podaje swój klucz. */
+  onToggle: (cardKey: string) => void;
+  onMutate: (clientKey: string, patch: Partial<EditableLessonExercise>) => void;
+  onRemove: (clientKey: string) => void;
   onPlay: (assetId: string) => void;
-}) {
+}
+
+/**
+ * Karta renderuje się ponownie tylko przy zmianie własnych danych: edytor
+ * zmienia obiekt tylko edytowanego ćwiczenia, a funkcje są stabilne. Audio
+ * porównujemy po polach (obiekt powstaje przy każdym renderze edytora);
+ * karta rachunkowa ma sterowanie przeliczane na bieżąco, więc renderuje się zawsze.
+ */
+function sameCardProps(prev: LessonExerciseCardProps, next: LessonExerciseCardProps): boolean {
+  if (prev.calculation !== null || next.calculation !== null) return false;
+  if (prev.audio?.state !== next.audio?.state || prev.audio?.assetId !== next.audio?.assetId) return false;
+  return (Object.keys(next) as (keyof LessonExerciseCardProps)[])
+    .every((key) => key === "audio" || key === "calculation" || Object.is(prev[key], next[key]));
+}
+
+function LessonExerciseCard({
+  ex,
+  index,
+  editable,
+  busy,
+  open,
+  changed,
+  hadAudio,
+  errors,
+  audio,
+  calculation,
+  onToggle,
+  onMutate: mutate,
+  onRemove,
+  onPlay,
+}: LessonExerciseCardProps) {
   const disabled = !editable || busy;
+  const onMutate = (patch: Partial<EditableLessonExercise>) => mutate(ex.clientKey, patch);
   const number = String(index + 1);
   // „Edytuj” / „Zwiń” podmieniają zawartość karty — fokus idzie na pierwsze pole albo z powrotem na „Edytuj”
   const rootRef = useRef<HTMLElement>(null);
@@ -84,7 +101,7 @@ export default function LessonExerciseCard({
   }, [open]);
   const toggle = (target: "open" | "close") => {
     focusAfterToggle.current = target;
-    onToggle();
+    onToggle(ex.id ?? ex.clientKey);
   };
   // odpowiedź wyliczana z pól typu (rachunek, słowa kluczowe, pary, grupy) — rodzic jej nie wpisuje
   const derived = ["lesson_calculation", "lesson_keywords", "lesson_match", "lesson_group"].includes(ex.exerciseType);
@@ -123,7 +140,7 @@ export default function LessonExerciseCard({
                 </Menu.Item>
               )}
               {editable && (
-                <Menu.Item color="red" leftSection={<ParentIcon name="x" />} data-testid={`exercise-remove-${index}`} disabled={busy} onClick={onRemove}>
+                <Menu.Item color="red" leftSection={<ParentIcon name="x" />} data-testid={`exercise-remove-${index}`} disabled={busy} onClick={() => onRemove(ex.clientKey)}>
                   {messages.lessons.removeExercise}
                 </Menu.Item>
               )}
@@ -384,14 +401,14 @@ export default function LessonExerciseCard({
               <Field wide>
                 <Textarea size="md" autosize minRows={2} label={messages.lessons.supplementaryLabel} data-testid={`exercise-supplementary-${index}`}
                   value={ex.supplementaryElements.join("\n")} disabled={disabled}
-                  onChange={(e) => onMutate({ supplementaryElements: e.currentTarget.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean) })} />
+                  onChange={(e) => onMutate({ supplementaryElements: e.currentTarget.value.split(/\r?\n/) })} />
               </Field>
             )}
             {ex.commonErrors && (
               <Field wide>
                 <Textarea size="md" autosize minRows={2} label={messages.lessons.commonErrorsLabel} data-testid={`exercise-common-errors-${index}`}
                   value={ex.commonErrors.join("\n")} disabled={disabled}
-                  onChange={(e) => onMutate({ commonErrors: e.currentTarget.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean) })} />
+                  onChange={(e) => onMutate({ commonErrors: e.currentTarget.value.split(/\r?\n/) })} />
               </Field>
             )}
             {ex.sourceRefs && (
@@ -446,3 +463,5 @@ export default function LessonExerciseCard({
     </Paper>
   );
 }
+
+export default memo(LessonExerciseCard, sameCardProps);

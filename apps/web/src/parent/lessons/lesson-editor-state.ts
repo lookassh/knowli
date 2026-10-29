@@ -136,6 +136,10 @@ function commaSplit(value: string): string[] {
     .filter((part) => part.length > 0);
 }
 
+function nonEmptyLines(lines: readonly string[]): string[] {
+  return lines.map((line) => line.trim()).filter((line) => line.length > 0);
+}
+
 function editableFromExercise(
   exercise: LessonDraftDto["exercises"][number],
   newKey: () => string,
@@ -294,10 +298,11 @@ function exerciseToInput(exercise: EditableLessonExercise): LessonExerciseInput 
     input.requiredElements = exercise.requiredElements.filter((el) => el.text.trim().length > 0).map((el) => ({ ...el }));
   }
   if (exercise.supplementaryElements) {
-    input.supplementaryElements = [...exercise.supplementaryElements];
+    // pole wielowierszowe trzyma surowe wiersze (spacje i pusty wiersz w trakcie pisania) — przycinamy przy poleceniu
+    input.supplementaryElements = nonEmptyLines(exercise.supplementaryElements);
   }
   if (exercise.commonErrors) {
-    input.commonErrors = [...exercise.commonErrors];
+    input.commonErrors = nonEmptyLines(exercise.commonErrors);
   }
   if (exercise.expectedForm.length > 0) {
     input.expectedForm = exercise.expectedForm as LessonExerciseInput["expectedForm"];

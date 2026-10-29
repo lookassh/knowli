@@ -170,9 +170,11 @@ export default function NewLessonForm({
   const hasPending = pending.current !== null;
   const dirty = form.isDirty() || hasPending;
 
+  // W trakcie wysyłania polecenia wyjście jest zablokowane (jak zapis w edytorach):
+  // odpowiedź otwiera utworzoną lekcję, więc nawigacja w tej chwili by się z nią ścigała.
   useEffect(() => {
-    registerEditorState({ dirty, busy: false });
-  }, [registerEditorState, dirty]);
+    registerEditorState({ dirty, busy: creating });
+  }, [registerEditorState, dirty, creating]);
   useEffect(() => () => registerEditorState({ dirty: false, busy: false }), [registerEditorState]);
 
   const setObjectives = (objectiveIds: string[]) => {

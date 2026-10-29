@@ -232,7 +232,7 @@ test("zagadnienie szkolne przy 320 px: pola z przyciskami bez przepełnienia, us
       sourceRefs: [{ quote: "Skala mapy to stosunek odległości na mapie do odległości w terenie." }, { quote: "Własne wyjaśnienie", parentAdded: true }],
     }],
   };
-  await openLesson(page, { data: { ...lesson, draft: school, published: null, assignments: [] } as unknown as typeof lesson });
+  const calls = await openLesson(page, { data: { ...lesson, draft: school, published: null, assignments: [] } as unknown as typeof lesson });
   await expect(page.getByTestId(`examples-${OBJ}`)).toBeVisible();
   await page.getByTestId(`stage-${OBJ}-independent`).getByRole("button").first().click();
   await page.getByTestId("exercise-edit-0").click();
@@ -244,6 +244,22 @@ test("zagadnienie szkolne przy 320 px: pola z przyciskami bez przepełnienia, us
     expect(box.width, id).toBeGreaterThan(120);
   }
   await expectNoHorizontalOverflow(page);
+
+  // typowe błędy: spacja na końcu wiersza i nowy wiersz zostają w polu w trakcie pisania,
+  // a polecenie zapisu dostaje wiersze przycięte i bez pustych
+  const commonErrors = page.getByTestId("exercise-common-errors-0");
+  await commonErrors.click();
+  await commonErrors.press("Control+End");
+  await commonErrors.pressSequentially(" ");
+  await commonErrors.press("Enter");
+  await commonErrors.pressSequentially("brak jednostki ");
+  await expect(commonErrors).toHaveValue("myli skalę z legendą \nbrak jednostki ");
+  await commonErrors.press("Enter");
+  await expect(commonErrors).toHaveValue("myli skalę z legendą \nbrak jednostki \n");
+  await page.getByTestId("save-lesson").click();
+  await expect.poll(() => calls.requests.filter((request) => request.method === "PATCH").length).toBe(1);
+  const patch = calls.requests.find((request) => request.method === "PATCH")!.body as { exercises: Array<{ commonErrors?: string[] }> };
+  expect(patch.exercises[0]!.commonErrors).toEqual(["myli skalę z legendą", "brak jednostki"]);
 
   await page.getByTestId(`dynamic-objective-remove-${OBJ}`).click();
   await expect(page.getByTestId("dynamic-objective-remove-confirm")).toBeVisible();
@@ -285,4 +301,46 @@ test("opublikowana lekcja bez szkicu: stan audio i odsłuch w menu ⋯ karty", a
   await page.getByTestId("exercise-play-0").click();
   await played;
   await expect(page.getByTestId("new-version")).toBeVisible();
+});
+
+test.describe("telefon z klawiaturą ekranową", () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+
+  test("pisanie w polu chowa pasek akcji i dolną nawigację, po zamknięciu klawiatury wracają", async ({ page }) => {
+    await openLesson(page);
+    await page.getByTestId(`stage-${OBJ_A}-guided`).getByRole("button").first().click();
+    await expect(page.getByTestId("editor-action-bar")).toBeVisible();
+    await expect(page.getByTestId("tab-decks")).toBeInViewport();
+
+    // „Edytuj” przenosi fokus na pierwsze pole karty — na telefonie otwiera się klawiatura
+    await page.getByTestId("exercise-edit-0").click();
+    await expect(page.getByTestId("exercise-instruction-0")).toBeFocused();
+    await expect(page.getByTestId("editor-action-bar")).toBeHidden();
+    await expect(page.getByTestId("tab-decks")).not.toBeInViewport();
+
+    // przejście do kolejnego pola nie pokazuje paska na chwilę
+    await page.getByTestId("exercise-stem-0").focus();
+    await expect(page.getByTestId("editor-action-bar")).toBeHidden();
+
+    // Android: klawiatura wysunięta (widoczny obszar mniejszy), potem schowana przyciskiem „wstecz” —
+    // fokus zostaje w polu, a pasek i nawigacja wracają
+    const setVisualViewportHeight = (height: number) => page.evaluate((value) => {
+      Object.defineProperty(window.visualViewport!, "height", { configurable: true, get: () => value });
+      window.visualViewport!.dispatchEvent(new Event("resize"));
+    }, height);
+    await setVisualViewportHeight(844 - 320);
+    await expect(page.getByTestId("editor-action-bar")).toBeHidden();
+    await setVisualViewportHeight(844);
+    await expect(page.getByTestId("exercise-stem-0")).toBeFocused();
+    await expect(page.getByTestId("editor-action-bar")).toBeVisible();
+    await expect(page.getByTestId("tab-decks")).toBeInViewport();
+    // ponowne wysunięcie klawiatury w tym samym polu znów chowa pasek
+    await setVisualViewportHeight(844 - 320);
+    await expect(page.getByTestId("editor-action-bar")).toBeHidden();
+
+    await page.getByTestId("exercise-stem-0").blur();
+    await expect(page.getByTestId("editor-action-bar")).toBeVisible();
+    await expect(page.getByTestId("tab-decks")).toBeInViewport();
+    await expect(page.getByTestId("save-lesson")).toBeEnabled();
+  });
 });

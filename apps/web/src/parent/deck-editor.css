@@ -288,6 +288,12 @@
   box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.45);
 }
 
+/* Klawiatura ekranowa otwarta (ParentShell, telefon): pasek nie zasłania edytowanego pola;
+   wraca po zamknięciu klawiatury. */
+[data-keyboard-open] .pp-editor-bar {
+  display: none;
+}
+
 .pp-editor-bar-in {
   display: flex;
   align-items: center;

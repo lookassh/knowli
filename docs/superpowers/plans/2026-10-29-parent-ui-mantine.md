@@ -141,6 +141,8 @@ Adresy URL weszły do fazy 1 (zamiast osobnej fazy na końcu), bo `DecksPanel` j
 
 Kolejność 5a → 5b: najpierw zmiana warstwy danych przy niezmienionym wyglądzie, żeby regresje konfliktów i odpytywania dało się odróżnić od regresji układu.
 
+Po planie — usprawnienia edytorów (2026-10-29, z review faz 5b–6b): (1) klawiatura ekranowa na telefonie (wąski albo niski ekran) chowa przypięty pasek akcji edytora i dolną nawigację (`virtual-keyboard.ts`, atrybut `data-keyboard-open` na ramie): fokus w polu tekstowym i zmniejszony `visualViewport` albo dotykowy wskaźnik; klawiatura schowana przy aktywnym polu (obszar wrócił do pełnej wysokości) przywraca pasek; (2) karty ćwiczeń są `memo` ze stabilnymi funkcjami edytora — pisanie w jednej karcie nie renderuje pozostałych (karta rachunkowa renderuje się zawsze); (3) pola „elementy uzupełniające” i „typowe błędy” trzymają surowe wiersze w trakcie pisania (wcześniej spacja na końcu wiersza i Enter znikały), przycinanie i pomijanie pustych wierszy dzieje się w poleceniu zapisu; (4) w trakcie wysyłania polecenia „Nowa lekcja” wyjście jest zablokowane (`busy`), jak zapis w edytorach. Świadomie bez zmian: komunikat błędu edytora żyje w pasku akcji, więc na czas pisania znika razem z nim; zablokowane wyjście przy zawieszonym żądaniu trwa do jego zakończenia (bez limitu czasu, jak w edytorach).
+
 ## 6. Testy
 
 - Istniejące specy e2e panelu: `parent-flow`, `manual-deck-flow`, `parent-edit-protection`, `generation-request-retry`, `lesson-parent`, `lesson-archive`, `lesson-calculation`, `lesson-parent-supervision`, `lesson-mock-test`, `lesson-real-flow`, `mock-test-parent`, `deck-cover-image`, `navigation`, `kid-flow` (zakładka postępów), `progress-panel` i `parent-work-card` (mocked).
