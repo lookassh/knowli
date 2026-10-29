@@ -251,8 +251,8 @@ i skonfigurowany model. Twarde wymaganie: wszystkie przypadki klasy
 Status: **szkic do akceptacji właściciela** (2026-10-29). Moduł odpowiedzialny:
 silnik lekcji (`learning/lessons/`, nowy plik ścieżki mowy lekcji) z czystymi
 regułami w `domain/lessons/` i deklaracją w przedmiocie `school`
-(`domain/lessons/subjects/school/`); port `SttProvider` i adapter
-`providers/azure/stt` współdzielone ze słówkami. Gramatyka i słówka bez zmian.
+(`domain/lessons/subjects/school/`); port `SttProvider` współdzielony ze
+słówkami, adapter STT lekcji osobny (5.2). Gramatyka i słówka bez zmian.
 
 Pierwotny szkic: dziś `lesson-attempts.ts` odrzuca modalność audio. Etap 3
 otwiera ją wyłącznie dla `lesson_open_answer` przedmiotów, które to zadeklarują:
@@ -316,19 +316,72 @@ Wnioski:
 7. Czas: pełne żądanie STT ≤ 2,5 s dla nagrań do 13 s; deadline 30 s
    z dużym zapasem.
 
+**Runda 2 — OpenRouter `POST /api/v1/audio/transcriptions`** (te same
+nagrania, `language: "pl"`, `temperature: 0`, klucz z konfiguracji gradera).
+Najpierw z polityką `provider: { zdr: true, data_collection: "deny" }`
+(Zero Data Retention), potem — tylko na głosach syntetycznych — bez ZDR
+dla modeli, które endpointu ZDR nie mają:
+
+| Model (OpenRouter) | ZDR | Pojęcia | Czas (mediana / max) | Cisza 3 s | Szum 3 s | Uwagi |
+| --- | --- | --- | --- | --- | --- | --- |
+| `elevenlabs/scribe-v2` | tak | **150/150 (100%)** | 1,09 s / 2,42 s | pusty | „[szum]” (znacznik zdarzenia) | nazwy, liczby słownie bez sklejania, „yyy” zapisane; confidence 0,94–1,00 |
+| `mistralai/voxtral-small-transcribe-3-0` | tak | 148/150 (99%) | 1,14 s / **17,6 s** | pusty | pusty | „1:25003”; brak confidence |
+| `openai/whisper-large-v3` | tak | 142/150 (95%) | 1,57 s / 11,5 s | pusty | **„Dziękuję.”** | „równi kto?”, „Awasko Dagama”, „25003” |
+| `openai/gpt-transcribe` | **nie** | 150/150 (100%) | 0,99 s / 2,28 s | pusty | pusty | jakość jak Scribe, ale bez ZDR |
+| `google/gemini-3.5-transcribe` | **nie** | 148/150 (99%) | 2,51 s / 3,04 s | pusty | pusty | „1:250003” |
+| `openai/gpt-4o-transcribe` | **nie** | 149/150 (99%) | 1,09 s / 1,85 s | **„Siamo pronti.”** | „。” | **parafrazuje**: „równik” → „Ekwator” |
+| `assemblyai/universal-3-6-pro` | tak | — | — | — | — | HTTP 400 dla WAV/`pl` (niezbadane dalej) |
+
+Wnioski rundy 2:
+
+8. **`elevenlabs/scribe-v2` jest najlepszy w obu rundach**: jedyny bez
+   żadnego zgubionego pojęcia przy ZDR, poprawnie zapisuje nazwy własne
+   (Vasco da Gama, James Cook, Marco Polo), liczby słownie bez sklejania
+   i zachowuje „yyy”/„Ekke” (dosłowność — nie poprawia dziecka). Cisza → pusty
+   tekst. Szum → sam znacznik zdarzenia dźwiękowego „[szum]”, który adapter
+   musi usuwać (tekst złożony wyłącznie ze znaczników = `no_speech`).
+   Koszt ~0,0004 USD za 6 s (≈ 0,22 USD/h).
+9. **Confidence Scribe nie rozróżnia** (0,94–1,00 dla poprawnej mowy, 0,93
+   dla znacznika szumu) — w rekomendowanym przepływie (5.3) to akceptowalne,
+   bo tekst i tak ocenia wzrokiem dziecko; w wariancie bez potwierdzenia
+   (5.9 pkt 2) próg pewności byłby z tym providerem bezużyteczny.
+10. **Modele LLM-owe potrafią „poprawiać” wypowiedź** (gpt-4o-transcribe:
+    „równik” → „Ekwator”) i halucynować na ciszy w obcym języku. Dosłowność
+    jest warunkiem: model, który parafrazuje, ukrywa błąd albo go dokłada.
+11. Gemini i GPT Transcribe nie mają endpointów ZDR w OpenRouter — odpadają
+    z powodu prywatności, nie jakości.
+
 Ograniczenia: syntetyczny głos z podniesioną wysokością **nie jest głosem
 dziecka** (artykulacja, tempo, wahania, szum domowy). Próba `live` na głosie
-dziecka nie została jeszcze wykonana — patrz 5.9 pkt 1.
+dziecka nie została jeszcze wykonana — patrz 5.9 pkt 1. Tryb `live` porównuje
+wszystkie warianty naraz (`SPIKE_SET=openrouter`).
 
 ### 5.2. Decyzja o adapterze
 
-Zostajemy przy **produkcyjnym adapterze REST short-audio** (A) z locale
-`pl-PL`: nie halucynuje na ciszy, nie ucina pauz, mieści 45 s nagrania
-i nie wymaga nowej integracji. Fast Transcription odrzucone (halucynacja na
-ciszy, limit wywołań); lista fraz odrzucona (fałszuje pewność, wysyła
-materiał). Forma leksykalna nie jest potrzebna w rekomendowanym przepływie
-(5.3) — wróci tylko przy wariancie z 5.9 pkt 2. Decyzję potwierdza lub
-koryguje próba `live` na głosie dziecka (5.9 pkt 1).
+Ocena wymowy słówek zostaje na Azure (tam STT i Pronunciation Assessment
+działają w parze); **odpowiedzi szkolne nie potrzebują oceny wymowy**, więc
+nie muszą iść przez Azure. Rekomendacja: **`elevenlabs/scribe-v2` przez
+OpenRouter z wymuszonym ZDR** (`zdr: true`, `data_collection: "deny"`) jako
+STT lekcji:
+
+- nowy adapter `providers/openai-compatible/stt.ts` (endpoint
+  `audio/transcriptions` w formacie OpenAI, JSON z `input_audio` base64)
+  implementujący istniejący port `SttProvider` — bez nowego portu;
+- osobna zależność `services.lessonSpeech` (env `UMIEM_LESSON_STT_BASE_URL`,
+  `UMIEM_LESSON_STT_API_KEY`, `UMIEM_LESSON_STT_MODEL`, domyślnie
+  `elevenlabs/scribe-v2`; ZDR wymuszane w adapterze dla adresu OpenRouter);
+  może wskazywać ten sam klucz OpenRouter co grader. Brak konfiguracji →
+  lekcje bez mikrofonu (`speechInput` nie trafia do DTO);
+- adapter usuwa znaczniki zdarzeń `[…]`, traktuje tekst pusty po ich usunięciu
+  jako `no_speech`, a confidence bierze z `confidence` albo średniej `words[]`
+  (`verbose_json`), gdy provider je zwraca;
+- słówka bez zmian (`services.speech`, Azure).
+
+Alternatywa: zostać przy Azure (A) — działa, jest w regionie UE i nie
+halucynuje, ale gubi 9% pojęć (nazwy, sklejone liczby, „zimy”). Fast
+Transcription, Whisper, gpt-4o-transcribe odrzucone (halucynacje na ciszy
+lub szumie, parafrazowanie); Gemini i GPT Transcribe — brak ZDR. Decyzję
+potwierdza lub koryguje próba `live` na głosie dziecka (5.9 pkt 1).
 
 ### 5.3. Przepływ: dyktowanie do pola z potwierdzeniem (rekomendacja)
 
@@ -363,7 +416,7 @@ i bez nowego klucza cache — oceniany jest tekst, jak dziś. Alternatywa
   i treningowa, `microphoneEnabled`, przedmiot deklaruje mowę, typ
   `lesson_open_answer` (także zadanie następcze `lesson_shorten`),
   limit dyktowań sesji nieprzekroczony. Naruszenie → błąd walidacji albo
-  konfliktu jak przy innych operacjach zadania. Brak `services.speech`
+  konfliktu jak przy innych operacjach zadania. Brak `services.lessonSpeech`
   → `unavailable`.
 - **Deklaracja przedmiotu**: `SubjectModule.spokenAnswers?: { locale: "pl-PL",
   exerciseTypes: ["lesson_open_answer"] }`. Ma ją tylko `school`. Locale
@@ -371,7 +424,7 @@ i bez nowego klucza cache — oceniany jest tekst, jak dziś. Alternatywa
   `lesson_short_answer` i pozostałe typy — bez mowy.
 - **Kid DTO zadania**: opcjonalne `speechInput: { maxSeconds: 45 }` w promptach
   odpowiedzi otwartej szkoły i `lesson_shorten`, obecne tylko gdy powyższe
-  warunki są spełnione i STT jest skonfigurowany. Brak pola = brak mikrofonu.
+  warunki są spełnione i STT lekcji jest skonfigurowany. Brak pola = brak mikrofonu.
 - **Limit nagrania**: 45 s (słówka bez zmian: 15 s). WAV 32 kB/s → 45 s
   ≈ 1,44 MB < `MAX_AUDIO_BYTES` = 2 MB; REST short-audio przyjmuje do 60 s.
   `normalizeAudioInput` dostaje limit czasu od wywołującego (15 s / 45 s),
@@ -392,14 +445,16 @@ Czysta funkcja domenowa `classifyDictation(transcription, policy)`:
 | `no_speech` albo pusty tekst | `no_speech` | |
 | `ok`, confidence < 0,5 | `uncertain` | tekstu nie zwracamy (jak w słówkach) |
 | `ok`, tekst > 600 znaków | `too_long` | „Powiedz krócej” |
-| `ok`, confidence ≥ 0,5 | `heard` | tekst = `DisplayText` |
+| `ok`, confidence ≥ 0,5 (albo brak confidence) | `heard` | tekst providera po usunięciu znaczników `[…]` |
 
-Próg 0,5 to parametr polityki lekcji (wersjonowany jak pasma wymowy).
-Uzasadnienie: śmieci, cisza i szum w obu próbach 0,00–0,12, poprawna mowa
-w zdaniach ≥ 0,60; w słówkach poprawne pojedyncze słowa schodziły do 0,21,
-ale tu tekst i tak oceni dziecko wzrokiem przed wysłaniem. Wartość do
-kalibracji na nagraniach dziecka. Pole dostaje `DisplayText` (czytelne
-zdania); sklejone liczby („25003”) dziecko widzi i może poprawić.
+Próg 0,5 to parametr polityki lekcji (wersjonowany jak pasma wymowy),
+stosowany tylko, gdy provider zwraca confidence (brak = tylko reguły
+pustego tekstu). Uzasadnienie: dla Azure śmieci, cisza i szum 0,00–0,12,
+poprawna mowa w zdaniach ≥ 0,60; Scribe zwraca dla poprawnej mowy
+0,94–1,00, a szum odsiewa usunięcie znacznika „[szum]” (5.2). Tekst i tak
+ocenia dziecko wzrokiem przed wysłaniem. Wartość do kalibracji na nagraniach
+dziecka. Ewentualne sklejone liczby („25003” w Azure) dziecko widzi
+i może poprawić.
 
 ### 5.6. Zapis modalności, ocena i raport rodzica
 
@@ -452,8 +507,13 @@ zdania); sklejone liczby („25003”) dziecko widzi i może poprawić.
   z serwera.
 - Nagranie istnieje wyłącznie w pamięci żądania: nie trafia do bazy, kolejki,
   plików, logów, fixture ani backupu; transkrypcja nie trafia do logów. Do
-  Azure idą tylko bajty audio i locale — bez imienia, wieku, identyfikatorów
-  i treści materiału.
+  usługi STT idą tylko bajty audio i język — bez imienia, wieku,
+  identyfikatorów (także bez `user`/`session_id` OpenRouter) i treści
+  materiału (bez `keyterms`). Przy OpenRouter adapter zawsze wysyła
+  `zdr: true` i `data_collection: "deny"`; brak endpointu ZDR = błąd
+  (`unavailable`), nigdy cichy fallback na providera z retencją. Różnica
+  względem Azure: przetwarzanie poza deklarowanym regionem UE
+  (OpenRouter + ElevenLabs) — do świadomej decyzji (5.9 pkt 7).
 - Transkrypcja przed „Sprawdź” żyje tylko w polu klienta; po wysłaniu jest
   zwykłą odpowiedzią dziecka (zapisaną w próbie, usuwaną z profilem,
   wysyłaną do gradera jako dane).
@@ -461,7 +521,7 @@ zdania); sklejone liczby („25003”) dziecko widzi i może poprawić.
   odmontowaniu widoku i przejściu dalej (istniejący `BrowserRecorder`
   + test każdej ścieżki).
 - Panel rodzica przy zestawie szkolnym informuje, że odpowiedzi głosem trafiają
-  do usługi rozpoznawania mowy (Azure, region z konfiguracji), obok informacji
+  do usługi rozpoznawania mowy (nazwa modelu z konfiguracji), obok informacji
   o usłudze oceniającej.
 
 ### 5.9. Decyzje do akceptacji właściciela
@@ -484,6 +544,11 @@ zdania); sklejone liczby („25003”) dziecko widzi i może poprawić.
    zastępuje treść pola (oryginał zostaje widoczny nad polem).
 6. **Limity**: nagranie 45 s, 40 dyktowań na sesję, tryb przełącznika
    (dotknij — mów — dotknij) niezależnie od ustawienia „przytrzymaj” profilu.
+7. **Provider STT lekcji**: `elevenlabs/scribe-v2` przez OpenRouter z ZDR
+   (5.2, rekomendacja) zamiast Azure. Wymaga akceptacji przetwarzania głosu
+   dziecka poza regionem UE (OpenRouter + ElevenLabs, bez retencji);
+   alternatywa: Azure `germanywestcentral` kosztem ~9% zgubionych pojęć.
+   Słówka zostają na Azure niezależnie od wyboru.
 
 ### 5.10. Klienci i integracje
 
