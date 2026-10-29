@@ -336,29 +336,35 @@ function gradeLessonAnswer(
       correctText: variant,
       ...(segments ? { answerSegments: segments } : {}),
     };
-    return { grade, feedback, exposures: [key.targetKey], details: { objectiveId, verdict: "minor_typo", typoToken: match.typoToken } };
+    return {
+      grade, feedback, exposures: [key.targetKey],
+      details: { objectiveId, verdict: "minor_typo", typoToken: match.typoToken, ...matchedSchoolDetails(key, input.text) },
+    };
   }
-  // exact — dla szkoły dokładne dopasowanie jest poprawną odpowiedzią (bez modelu); forma
-  // `one_sentence` nadal ogranicza precyzję, nigdy wiedzę.
-  const formOk = formOkFor(key, input.text);
+  // exact — dla szkoły dokładne dopasowanie jest poprawną odpowiedzią (bez modelu).
   return {
     grade,
     feedback: { kind: "great" },
     exposures: [key.targetKey],
-    details: {
-      objectiveId,
-      verdict: "exact",
-      ...(key.schoolCriteria
-        ? {
-            knowledge: "correct",
-            precision: formOk === false ? "verbose" : "concise",
-            matchedElementIds: key.schoolCriteria.requiredElements.map((el) => el.id),
-            missingElementIds: [] as string[],
-            ...(formOk === false ? { formOk: false } : {}),
-            ...(key.schoolCriteria.expectedForm ? { expectedForm: key.schoolCriteria.expectedForm } : {}),
-          }
-        : {}),
-    },
+    details: { objectiveId, verdict: "exact", ...matchedSchoolDetails(key, input.text) },
+  };
+}
+
+/**
+ * Wymiar szkolny odpowiedzi dopasowanej do zatwierdzonego wariantu (dokładnie
+ * albo z drobną literówką): wiedza poprawna, wszystkie elementy trafione;
+ * forma `one_sentence` ogranicza precyzję, nigdy wiedzę. Bez kryteriów szkoły → `{}`.
+ */
+function matchedSchoolDetails(key: LessonTaskAnswerKey, childAnswer: string): Record<string, unknown> {
+  if (!key.schoolCriteria) return {};
+  const formOk = formOkFor(key, childAnswer);
+  return {
+    knowledge: "correct",
+    precision: formOk === false ? "verbose" : "concise",
+    matchedElementIds: key.schoolCriteria.requiredElements.map((el) => el.id),
+    missingElementIds: [] as string[],
+    ...(formOk === false ? { formOk: false } : {}),
+    ...(key.schoolCriteria.expectedForm ? { expectedForm: key.schoolCriteria.expectedForm } : {}),
   };
 }
 

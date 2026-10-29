@@ -304,6 +304,25 @@ export default function LessonSupervisionPanel({
                         {objective.modelGraded > 0 && (
                           <p className="muted">{messages.lessons.mockTestModelGraded.replace("{n}", String(objective.modelGraded))}</p>
                         )}
+                        {objective.school && (
+                          <div data-testid={`lesson-mock-school-${objective.objectiveId}`}>
+                            <p className="muted">{messages.lessons.mockTestSchoolLine
+                              .replace("{correct}", String(objective.school.knowledge.correct))
+                              .replace("{partial}", String(objective.school.knowledge.partial))
+                              .replace("{incorrect}", String(objective.school.knowledge.incorrect))
+                              .replace("{concise}", String(objective.school.precision.concise))
+                              .replace("{verbose}", String(objective.school.precision.verbose))
+                              .replace("{unfocused}", String(objective.school.precision.unfocused))}</p>
+                            {objective.school.formViolations > 0 && (
+                              <p className="muted">{messages.lessons.mockTestSchoolForm.replace("{n}", String(objective.school.formViolations))}</p>
+                            )}
+                            {objective.school.missingElements.length > 0 && (
+                              // Funkcja zamiany: teksty z materiału rodzica mogą zawierać „$”.
+                              <p className="muted">{messages.lessons.mockTestSchoolMissing.replace("{elements}",
+                                () => objective.school!.missingElements.map((element) => `${element.text} (${element.count})`).join(", "))}</p>
+                            )}
+                          </div>
+                        )}
                         {objective.errorCategories.length > 0 && (
                           <div>
                             <h5>{messages.lessons.mockTestErrorsTitle}</h5>

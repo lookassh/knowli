@@ -13,6 +13,8 @@ import { useAutoFocus } from "./useAutoFocus";
  * 9.4, SPEC §19.1). Lista rozwiązanych slotów z odpowiedzią dziecka i poprawną
  * odpowiedzią oraz prostym wynikiem per zadanie; wyjątek procentowy omówienia
  * jak w słówkach. Bez kategorii błędów i werdyktu modelu — te widzi rodzic.
+ * Przedmiot szkolny dokłada gotową wskazówkę precyzji przy odpowiedzi otwartej
+ * i listę „Warto powtórzyć” (design §8.2–8.3).
  */
 export function LessonMockTestSummaryScreen({ summary, activity, detailsLoading, detailsError, onRetryDetails, onPractice, onSwitchProfile }: {
   summary: LessonMockTestSummaryDto;
@@ -53,12 +55,17 @@ export function LessonMockTestSummaryScreen({ summary, activity, detailsLoading,
             <span className="kid-mock-answer kid-mock-answer--child">{messages.kid.mockTestYourAnswer}: {solution.childAnswer.trim() === "" ? messages.kid.mockTestNoAnswer : solution.childAnswer}</span>
             <span className="kid-mock-answer kid-mock-answer--correct">{messages.kid.mockTestCorrectAnswer}: {solution.correctAnswer}</span>
           </p>
+          {solution.hintPl && <p className="kid-mock-row__hint" data-testid="kid-lesson-mock-hint">{solution.hintPl}</p>}
           {status === "notAssessed" && <p className="kid-mock-row__detail">
             <span className="kid-mock-badge">{solution.outcome === "skipped" ? messages.kid.mockTestSkipped : messages.kid.mockTestNotTested}</span>
           </p>}
         </div>
       </li>;
     })}</ul>
+      {summary.reviewObjectives && summary.reviewObjectives.length > 0 && <section className="kid-mock-review" data-testid="kid-lesson-mock-review" aria-labelledby="kid-lesson-mock-review-title">
+        <h2 id="kid-lesson-mock-review-title">{messages.kid.mockTestReviewObjectives}</h2>
+        <ul className="kid-mock-review__list">{summary.reviewObjectives.map((objective) => <li key={objective.objectiveId}>{objective.titlePl}</li>)}</ul>
+      </section>}
     </KidScreen.Content>
     <KidScreen.Actions secondary={<ActionButton priority="secondary" fullWidth={false} className="kid-flow-secondary" onClick={() => run(onSwitchProfile())}>{messages.kid.profilesTitle}</ActionButton>}>
       <ActionButton ref={practiceRef} data-testid="kid-lesson-mock-practice" onClick={() => run(onPractice())}>{messages.kid.mockTestPractice}</ActionButton>
