@@ -16,7 +16,6 @@ import { ParentAuthForm } from "./ParentAuthForm";
 import { ParentShell } from "./ParentShell";
 import { useAuthExpiredHandler } from "./ParentProviders";
 import { orpc } from "./query-client";
-import "./parent.css";
 
 const SIGNED_OUT = { authenticated: false, setupRequired: false };
 const AUTH_KEY = orpc.auth.state.queryOptions().queryKey;
