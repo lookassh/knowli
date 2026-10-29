@@ -294,15 +294,38 @@ const schoolVerdictSchema = z.object({
 });
 
 /**
- * Deterministyczne liczenie zdań (forma `one_sentence`): podział po terminatorach
- * `. ! ? …`; brak terminatora końcowego nadal liczy ostatnie zdanie; skróty typu
- * „np.” mogą zawyżyć liczbę — dlatego wynik jest wskazówką, nie wyrokiem.
+ * Polskie skróty z kropką, które zwykle nie kończą zdania (porównanie bez
+ * końcowej kropki, małymi literami). Pojedyncza litera z kropką (inicjał,
+ * „r.”, „w.”) też nie kończy zdania.
+ */
+const NON_TERMINAL_ABBREVIATIONS = new Set([
+  "np", "itp", "itd", "tzn", "tj", "tzw", "m.in", "ok", "wg", "dr", "prof", "mgr", "inż",
+  "św", "ul", "al", "nr", "str", "zob", "por", "ww", "jw", "n.p.m", "p.n.e", "n.e",
+  "godz", "min", "tys", "mln", "mld", "ang", "łac", "gr", "ds", "im", "wyd", "rys",
+  "tab", "pkt", "ust", "art", "tel", "wsp", "pow",
+]);
+
+/**
+ * Deterministyczne liczenie zdań (forma `one_sentence`): granica zdania to
+ * słowo zakończone terminatorem `. ! ? …`, po którym następuje kolejne słowo;
+ * brak terminatora końcowego nadal liczy ostatnie zdanie. Kropka w skrócie
+ * („np.”, „m.in.”, inicjał) ani w liczbie („3.5”) nie kończy zdania. Wynik
+ * jest wskazówką ograniczającą precyzję, nigdy wiedzę.
  */
 export function countSentences(text: string): number {
-  const normalized = text.normalize("NFC").trim();
-  if (normalized === "") return 0;
-  const parts = normalized.split(/[.!?…]+/u).map((p) => p.trim()).filter((p) => p.length > 0);
-  return Math.max(1, parts.length);
+  const words = text.normalize("NFC").trim().split(/\s+/u).filter((w) => w !== "");
+  if (words.length === 0) return 0;
+  let sentences = 1;
+  for (const word of words.slice(0, -1)) {
+    // Zamykające cudzysłowy i nawiasy po terminatorze nie zmieniają granicy.
+    const bare = word.replace(/["”’»)\]]+$/u, "");
+    const terminator = /[.!?…]+$/u.exec(bare);
+    if (!terminator) continue;
+    const stem = bare.slice(0, terminator.index).toLowerCase();
+    const abbreviation = terminator[0] === "." && (NON_TERMINAL_ABBREVIATIONS.has(stem) || /^\p{L}$/u.test(stem));
+    if (!abbreviation && stem !== "") sentences += 1;
+  }
+  return sentences;
 }
 
 /**

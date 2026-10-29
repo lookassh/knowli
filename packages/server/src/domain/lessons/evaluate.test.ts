@@ -401,5 +401,12 @@ describe("werdykt szkolny dwuwymiarowy (Etap 2)", () => {
     expect(countSentences("")).toBe(0);
     expect(countSentences("Jedno zdanie")).toBe(1);
     expect(countSentences("Roślina bierze światło. Bierze też wodę. I robi cukry.")).toBe(3);
+    expect(countSentences("Roślina bierze światło! Robi cukry")).toBe(2);
+    expect(countSentences("Roślina wytwarza np. cukry.")).toBe(1);
+    expect(countSentences("Rośliny m.in. wytwarzają cukry, tzn. pokarm.")).toBe(1);
+    expect(countSentences("W 966 r. Mieszko I przyjął chrzest.")).toBe(1);
+    expect(countSentences("Szczyt ma 2499 m n.p.m. i jest najwyższy w Polsce.")).toBe(1);
+    expect(countSentences("Woda wrze w 99.5 stopnia na tej wysokości.")).toBe(1);
+    expect(countSentences("Rośliny rosną (szybko.) Potem kwitną.")).toBe(2);
   });
 });
