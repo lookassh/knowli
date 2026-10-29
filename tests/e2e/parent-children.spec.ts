@@ -16,9 +16,12 @@ interface MockApi {
   children: Array<Record<string, unknown>>;
 }
 
-async function openChildren(page: Page, options: { childStatus?: number } = {}): Promise<MockApi> {
+async function openChildren(
+  page: Page,
+  options: { childStatus?: number; deleteStatus?: number; deleteGate?: Promise<void> } = {},
+): Promise<MockApi> {
   const api: MockApi = { requests: [], children: [ALA, BARTEK] };
-  await page.route("**/api/v1/parent/**", (route) => {
+  await page.route("**/api/v1/parent/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     const method = request.method();
@@ -43,6 +46,10 @@ async function openChildren(page: Page, options: { childStatus?: number } = {}):
       return route.fulfill({ json: { ...ALA, ...request.postDataJSON() } });
     }
     if (method === "DELETE") {
+      await options.deleteGate;
+      if (options.deleteStatus) {
+        return route.fulfill({ status: options.deleteStatus, json: { code: "internal", message: "Nie udało się usunąć", retryable: true, requestId: "r" } });
+      }
       api.children = api.children.filter((child) => !url.pathname.endsWith(String(child.id)));
       return route.fulfill({ status: 204, body: "" });
     }
@@ -130,6 +137,12 @@ test("niezapisane progi wymowy i wpisane imię nowego dziecka też chronią prze
   await expect(page.getByTestId("leave-editor-dialog")).toBeVisible();
   await page.getByTestId("leave-editor-leave").click();
   await expect(page).toHaveURL(/\/parent\/decks$/);
+
+  // po wyjściu ochrona nie zostaje: kolejne przejścia bez okna
+  await page.getByTestId("tab-children").click();
+  await page.getByTestId("tab-progress").click();
+  await expect(page).toHaveURL(/\/parent\/progress$/);
+  await expect(page.getByTestId("leave-editor-dialog")).toHaveCount(0);
 });
 
 test("wygasła sesja przy zapisie profilu otwiera logowanie w oknie i zachowuje formularz", async ({ page }) => {
@@ -185,4 +198,50 @@ test("progi wymowy: błędna kolejność progów nie trafia do API", async ({ pa
   // zapisane progi nie blokują wyjścia
   await page.getByTestId("tab-decks").click();
   await expect(page).toHaveURL(/\/parent\/decks$/);
+});
+
+test("nieudane usunięcie profilu zostawia kartę i pokazuje błąd", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openChildren(page, { deleteStatus: 500 });
+  const remove = page.getByTestId("child-row-0").getByRole("button", { name: messages.children.remove, exact: true });
+  await remove.click();
+  await page.getByTestId("child-remove-confirm").click();
+  await expect(page.getByTestId("children-error")).toContainText("Nie udało się usunąć");
+  await expect(page.locator('[data-testid^="child-row-"]')).toHaveCount(2);
+  await expect(remove).toBeEnabled();
+});
+
+test("trwające usunięcie wstrzymuje wyjście z sekcji, a lista odświeża się po zakończeniu", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  await openChildren(page, { deleteGate: gate });
+  await page.getByTestId("child-row-0").getByRole("button", { name: messages.children.remove, exact: true }).click();
+  await page.getByTestId("child-remove-confirm").click();
+  await expect(page.getByTestId("child-row-0").getByRole("button", { name: messages.children.removing })).toBeDisabled();
+  await expect(page.getByRole("heading", { name: messages.children.title })).toBeFocused();
+
+  await page.getByTestId("tab-progress").click();
+  await expect(page).toHaveURL(/\/parent\/children$/);
+  release();
+  await expect(page.locator('[data-testid^="child-row-"]')).toHaveCount(1);
+  await page.getByTestId("tab-progress").click();
+  await expect(page).toHaveURL(/\/parent\/progress$/);
+});
+
+test("progi wymowy i rok urodzenia spoza zakresu dają komunikat zamiast cichej poprawki", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const api = await openChildren(page);
+  await page.getByTestId("child-settings-0").click();
+  await page.getByTestId("child-threshold-good").fill("150");
+  await page.getByTestId("child-settings-save").click();
+  await expect(page.getByText(messages.children.pronunciationThresholdRange)).toBeVisible();
+  await expect(page.getByTestId("child-threshold-good")).toHaveValue("150");
+  expect(mutations(api, "PUT")).toHaveLength(0);
+
+  await page.getByTestId("child-name").fill("Celina");
+  await page.getByTestId("child-year").fill("1800");
+  await page.getByTestId("child-add").click();
+  await expect(page.getByText(messages.children.birthYearInvalid)).toBeVisible();
+  expect(mutations(api, "POST")).toHaveLength(0);
 });

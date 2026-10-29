@@ -29,7 +29,10 @@ export default function PronunciationSettings({
 }) {
   const queryClient = useQueryClient();
   const queryOptions = orpc.children.getPronunciation.queryOptions({ input: { childId } });
-  const settings = useQuery(queryOptions);
+  // dane z pamięci podręcznej mogą być starsze (zapis przerwany zamknięciem,
+  // zmiana w innej przeglądarce) — formularz czeka na odczyt po otwarciu
+  const settings = useQuery({ ...queryOptions, refetchOnMount: "always" });
+  const ready = settings.isFetchedAfterMount;
   const form = useForm<ThresholdValues>({
     initialValues: { good: "", almost: "" },
     validate: validateThresholds,
@@ -37,9 +40,11 @@ export default function PronunciationSettings({
   const save = useMutation({
     mutationFn: (values: { correctMinScore: number; partialMinScore: number }) =>
       callParent(() => parentClient.children.putPronunciation({ childId, ...values })),
+    // w opcjach hooka: odświeżenie odczytu następuje także, gdy panel zamknięto w trakcie zapisu
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryOptions.queryKey }),
   });
 
-  const thresholds = settings.data?.thresholds;
+  const thresholds = ready ? settings.data?.thresholds : undefined;
   useEffect(() => {
     // dane serwera zasilają formularz raz; późniejsze odświeżenia (po zapisie)
     // nie nadpisują tego, co rodzic właśnie wpisuje
@@ -60,7 +65,6 @@ export default function PronunciationSettings({
         onSuccess: () => {
           form.setInitialValues(values);
           form.resetDirty(values);
-          void queryClient.invalidateQueries({ queryKey: queryOptions.queryKey });
         },
       },
     );
@@ -69,17 +73,19 @@ export default function PronunciationSettings({
   return (
     <Stack gap="sm" mt="md" className="pp-children-settings" data-testid="child-pronunciation-settings">
       <Title order={3} fz="md">{messages.children.pronunciationTitle}</Title>
-      {settings.isPending ? (
+      {!ready ? (
         <Group gap="xs" role="status">
           <Loader size="xs" />
           <Text size="sm">{messages.children.pronunciationLoading}</Text>
         </Group>
-      ) : settings.isError ? (
+      ) : settings.data === undefined ? (
         <Alert color="red" variant="light" role="alert">{errorMessage(settings.error)}</Alert>
       ) : !settings.data.pronunciationAvailable || !settings.data.thresholds ? (
         <Text size="sm">{messages.children.pronunciationUnavailable}</Text>
       ) : (
         <>
+          {/* nieudane odświeżenie przy istniejących danych nie chowa formularza */}
+          {settings.isError && <Alert color="red" variant="light" role="alert">{errorMessage(settings.error)}</Alert>}
           <form onSubmit={submit} noValidate>
             <Stack gap="sm">
               <NumberInput
@@ -90,6 +96,7 @@ export default function PronunciationSettings({
                 max={100}
                 allowDecimal={false}
                 allowNegative={false}
+                clampBehavior="none"
                 hideControls
                 disabled={save.isPending}
                 {...form.getInputProps("good")}
@@ -102,6 +109,7 @@ export default function PronunciationSettings({
                 max={100}
                 allowDecimal={false}
                 allowNegative={false}
+                clampBehavior="none"
                 hideControls
                 disabled={save.isPending}
                 {...form.getInputProps("almost")}

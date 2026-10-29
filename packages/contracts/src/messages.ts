@@ -79,6 +79,7 @@ export const messages = {
     removeConfirm: "Usunąć profil dziecka wraz z całą jego historią nauki? Tego nie da się cofnąć.",
     removeTitle: "Usunąć profil {name}?",
     removing: "Usuwanie…",
+    addedRefreshFailed: "Dodano dziecko, ale nie udało się odświeżyć listy. Odśwież stronę.",
     removedRefreshFailed: "Profil usunięto, ale nie udało się odświeżyć listy. Odśwież stronę.",
     birthYearInvalid: "Wpisz rok od 1900 do 2200.",
     nameRequired: "Wpisz imię.",

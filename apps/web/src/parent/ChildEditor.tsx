@@ -187,19 +187,26 @@ function AddChildForm({
           : messages.children.birthYearInvalid,
     },
   });
+  const [refreshFailed, setRefreshFailed] = useState(false);
   const create = useMutation({
-    mutationFn: async (values: AddValues) => {
-      await callParent(() => parentClient.children.create({
-        displayName: values.displayName,
-        avatarKey: values.avatarKey,
-        ...(values.birthYear === "" ? {} : { birthYear: Number(values.birthYear) }),
-      }));
+    mutationFn: (values: AddValues) => callParent(() => parentClient.children.create({
+      displayName: values.displayName,
+      avatarKey: values.avatarKey,
+      ...(values.birthYear === "" ? {} : { birthYear: Number(values.birthYear) }),
+    })),
+    // dziecko jest już zapisane: nieudane odświeżenie listy to osobny komunikat,
+    // a nie błąd dodania (rodzic nie powinien dodawać go drugi raz)
+    onSuccess: async () => {
       form.reset();
-      await onAdded();
+      try {
+        await onAdded();
+      } catch {
+        setRefreshFailed(true);
+      }
     },
   });
 
-  const dirty = form.values.displayName !== "" || form.values.birthYear !== "";
+  const dirty = form.values.displayName !== "" || form.values.birthYear !== "" || form.values.avatarKey !== EMPTY_CHILD.avatarKey;
   useEffect(() => {
     onStateChange({ dirty, busy: create.isPending });
   }, [onStateChange, dirty, create.isPending]);
@@ -207,7 +214,7 @@ function AddChildForm({
 
   return (
     <Paper component="form" radius="lg" p="md" className="pp-children-add" noValidate
-      onSubmit={form.onSubmit((values) => create.mutate(values))}>
+      onSubmit={form.onSubmit((values) => { setRefreshFailed(false); create.mutate(values); })}>
       <Group gap="xs" mb="xs" className="pp-children-muted">
         <ParentIcon name="plus" />
         <Text fw={600}>{messages.children.add}</Text>
@@ -220,11 +227,12 @@ function AddChildForm({
             disabled={create.isPending} data={avatarOptions(AVATARS[0]!.key)} {...form.getInputProps("avatarKey")} />
         </SimpleGrid>
         <NumberInput size="md" label={messages.children.birthYear} data-testid="child-year" min={1900} max={2200}
-          allowDecimal={false} allowNegative={false} hideControls disabled={create.isPending}
+          allowDecimal={false} allowNegative={false} clampBehavior="none" hideControls disabled={create.isPending}
           {...form.getInputProps("birthYear")} />
         {create.isError && (
           <Alert color="red" variant="light" role="alert" data-testid="api-error">{errorMessage(create.error)}</Alert>
         )}
+        {refreshFailed && <Text size="sm" role="status">{messages.children.addedRefreshFailed}</Text>}
         <Button type="submit" size="md" variant="light" data-testid="child-add"
           disabled={create.isPending || form.values.displayName.length === 0}>
           {messages.children.add}
@@ -250,7 +258,8 @@ export default function ChildEditor({
   const [openSettings, setOpenSettings] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
-  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<ReadonlySet<string>>(new Set());
+  const heading = useRef<HTMLHeadingElement>(null);
   const editButtons = useRef(new Map<string, HTMLButtonElement>());
   const restoreFocus = useRef<string | null>(null);
 
@@ -258,7 +267,11 @@ export default function ChildEditor({
     setEditBusy(state?.busy ?? false);
     reportLeaveState("edit", state);
   }, [reportLeaveState]);
-  const reportSettings = useCallback((state: EditorLeaveState | null) => reportLeaveState("settings", state), [reportLeaveState]);
+  const [settingsBusy, setSettingsBusy] = useState(false);
+  const reportSettings = useCallback((state: EditorLeaveState | null) => {
+    setSettingsBusy(state?.busy ?? false);
+    reportLeaveState("settings", state);
+  }, [reportLeaveState]);
   const reportAdd = useCallback((state: EditorLeaveState | null) => reportLeaveState("add", state), [reportLeaveState]);
 
   // profil usunięty gdzie indziej znika razem z formularzem edycji
@@ -296,12 +309,35 @@ export default function ChildEditor({
     }
   };
 
+  // wywołania zwrotne w opcjach hooka (nie w `mutate`) działają dla każdego
+  // usunięcia, także równoległych i po opuszczeniu sekcji — lista dzieci w
+  // ParentApp zawsze się odświeży
   const remove = useMutation({
     mutationFn: (childId: string) => callParent(() => parentClient.children.remove({ childId })),
+    onSuccess: async () => {
+      try {
+        await onChanged();
+      } catch {
+        setRemoveError(messages.children.removedRefreshFailed);
+      }
+    },
+    onError: (cause) => setRemoveError(errorMessage(cause)),
+    onSettled: (_data, _error, childId) => {
+      setRemoving((current) => {
+        const next = new Set(current);
+        next.delete(childId);
+        return next;
+      });
+    },
   });
+  // trwające usunięcie wstrzymuje wyjście z sekcji jak każdy zapis
+  useEffect(() => {
+    reportLeaveState("remove", removing.size > 0 ? { dirty: false, busy: true } : null);
+  }, [reportLeaveState, removing]);
+  useEffect(() => () => reportLeaveState("remove", null), [reportLeaveState]);
 
   const confirmRemove = (child: ChildDto) => {
-    if (editBusy && editingId === child.id) return;
+    if ((editBusy && editingId === child.id) || removing.has(child.id)) return;
     setRemoveError(null);
     modals.openConfirmModal({
       title: messages.children.removeTitle.replace("{name}", child.displayName),
@@ -312,19 +348,12 @@ export default function ChildEditor({
       confirmProps: { color: "red", size: "md", "data-testid": "child-remove-confirm" } as Record<string, unknown>,
       cancelProps: { size: "md", variant: "default", "data-autofocus": true, "data-testid": "child-remove-cancel" } as Record<string, unknown>,
       attributes: { content: { "data-testid": "child-remove-dialog" } },
+      // karta zaraz zniknie, a przycisk „Usuń” jest zajęty — fokus na nagłówek sekcji
+      returnFocus: false,
       onConfirm: () => {
-        setRemovingId(child.id);
-        remove.mutate(child.id, {
-          onSuccess: async () => {
-            try {
-              await onChanged();
-            } catch {
-              setRemoveError(messages.children.removedRefreshFailed);
-            }
-          },
-          onError: (cause) => setRemoveError(errorMessage(cause)),
-          onSettled: () => setRemovingId(null),
-        });
+        setRemoving((current) => new Set(current).add(child.id));
+        heading.current?.focus();
+        remove.mutate(child.id);
       },
     });
   };
@@ -334,7 +363,7 @@ export default function ChildEditor({
 
   return (
     <Stack gap="md">
-      <Title order={1} fz={26}>{messages.children.title}</Title>
+      <Title ref={heading} tabIndex={-1} order={1} fz={26} className="pp-children-heading">{messages.children.title}</Title>
       {status && <Text role="status">{status}</Text>}
       {removeError && <Alert color="red" variant="light" role="alert" data-testid="children-error">{removeError}</Alert>}
       {childrenList.length === 0 && <Text className="pp-children-muted">{messages.children.empty}</Text>}
@@ -382,6 +411,7 @@ export default function ChildEditor({
                     data-testid={`child-settings-${index}`}
                     aria-expanded={openSettings === child.id}
                     leftSection={<ParentIcon name="mic" />}
+                    disabled={settingsBusy}
                     onClick={() => setOpenSettings(openSettings === child.id ? null : child.id)}
                   >
                     {messages.children.pronunciationOpen}
@@ -391,10 +421,10 @@ export default function ChildEditor({
                   variant="subtle"
                   size="md"
                   className="pp-children-remove"
-                  disabled={(editBusy && isEditing) || removingId === child.id}
+                  disabled={(editBusy && isEditing) || removing.has(child.id)}
                   onClick={() => confirmRemove(child)}
                 >
-                  {removingId === child.id ? messages.children.removing : messages.children.remove}
+                  {removing.has(child.id) ? messages.children.removing : messages.children.remove}
                 </Button>
               </Stack>
               {isEditing && (

@@ -67,3 +67,7 @@
   font-size: var(--mantine-font-size-sm);
   overflow-wrap: anywhere;
 }
+
+.pp-children-heading:focus {
+  outline: none;
+}
