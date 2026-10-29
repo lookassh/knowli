@@ -45,6 +45,17 @@ export const messages = {
     setupHint: "Ustaw PIN lub hasło rodzica. Będzie potrzebny do wejścia w panel.",
     setupButton: "Ustaw PIN",
     toLearning: "Do nauki",
+    reauthTitle: "Sesja wygasła",
+    reauthHint: "Zaloguj się ponownie. Niezapisane zmiany czekają w edytorze.",
+  },
+  parentShell: {
+    sections: "Sekcje panelu",
+    more: "Więcej",
+    colorScheme: "Wygląd",
+    colorSchemeOptions: { auto: "Auto", light: "Jasny", dark: "Ciemny" } as Record<string, string>,
+    loading: "Wczytuję dane panelu…",
+    loadFailed: "Nie udało się wczytać danych panelu.",
+    retry: "Spróbuj ponownie",
   },
   children: {
     title: "Dzieci",

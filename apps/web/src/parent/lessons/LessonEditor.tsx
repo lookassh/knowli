@@ -304,6 +304,8 @@ export default function LessonEditor({
         setError(messages.decks.conflictDetected);
       } else {
         setError(errorMessage(cause));
+        // wygasła sesja: formularz zostaje, panel otwiera logowanie nad edytorem
+        if (cause instanceof ApiCallError && cause.status === 401) onAuthExpired();
       }
     } finally {
       setBusyState(false);

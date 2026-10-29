@@ -1,0 +1,133 @@
+/* Rama panelu rodzica na Mantine (plan 2026-10-29-parent-ui-mantine, faza 1).
+   Kolory tekstu pomocniczego dobrane pod kontrast ≥ 4,5:1 w obu schematach. */
+
+.pp-shell-header,
+.pp-auth-screen {
+  --pp-shell-muted: #565a70;
+}
+
+[data-mantine-color-scheme="dark"] .pp-shell-header,
+[data-mantine-color-scheme="dark"] .pp-auth-screen,
+[data-mantine-color-scheme="dark"] .pp-shell-bottomnav {
+  --pp-shell-muted: #a8abb9;
+}
+
+.pp-shell-header-in {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 8px 0 16px;
+}
+
+.pp-shell-logo {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--mantine-color-brand-6);
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 16px;
+}
+
+.pp-shell-subtle {
+  color: var(--pp-shell-muted);
+}
+
+.pp-shell-more {
+  width: 24px;
+  height: 24px;
+}
+
+.pp-shell-tabs {
+  display: flex;
+  gap: 4px;
+  height: 52px;
+  overflow-x: auto;
+}
+
+.pp-shell-tab,
+.pp-shell-navitem {
+  color: var(--pp-shell-muted);
+  text-decoration: none;
+  font-weight: 500;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pp-shell-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 16px;
+  border-bottom: 3px solid transparent;
+  white-space: nowrap;
+}
+
+.pp-shell-tab:hover {
+  color: var(--mantine-color-text);
+}
+
+.pp-shell-tab[aria-current="true"] {
+  color: var(--mantine-primary-color-light-color);
+  border-bottom-color: var(--mantine-primary-color-filled);
+  font-weight: 700;
+}
+
+.pp-shell-bottomnav {
+  --pp-shell-muted: #565a70;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 6px 4px env(safe-area-inset-bottom);
+}
+
+.pp-shell-navitem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 56px;
+  font-size: 12px;
+  text-align: center;
+}
+
+.pp-shell-pill {
+  width: 56px;
+  height: 32px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pp-shell-navitem[aria-current="true"] {
+  color: var(--mantine-primary-color-light-color);
+  font-weight: 700;
+}
+
+.pp-shell-navitem[aria-current="true"] .pp-shell-pill {
+  background: var(--mantine-primary-color-light);
+}
+
+.pp-shell-tab .pp-icon,
+.pp-shell-navitem .pp-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.pp-shell-tab:focus-visible,
+.pp-shell-navitem:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: -2px;
+  border-radius: 8px;
+}
+
+/* Sekcje jeszcze nieprzepisane na Mantine zostają jasne także w trybie
+   ciemnym (fazy 2–6 przenoszą je kolejno na komponenty z obu schematami). */
+.pp-app.pp-shell-content {
+  min-height: calc(100dvh - var(--app-shell-header-offset, 0px) - var(--app-shell-footer-offset, 0px));
+  color-scheme: light;
+}

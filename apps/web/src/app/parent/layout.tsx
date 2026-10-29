@@ -1,8 +1,9 @@
+import "./layers.css";
 import "@mantine/core/styles.layer.css";
 import "@mantine/notifications/styles.layer.css";
 import { ColorSchemeScript } from "@mantine/core";
 import { ParentProviders } from "@/parent/ParentProviders";
-import { PARENT_COLOR_SCHEME_KEY } from "@/parent/theme";
+import { PARENT_COLOR_SCHEME_KEY } from "@/parent/color-scheme-key";
 
 /**
  * Layout panelu rodzica: style Mantine (w warstwie CSS `mantine`) i providery

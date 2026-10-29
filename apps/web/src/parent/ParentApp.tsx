@@ -1,75 +1,113 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { messages, type ChildDto, type DeckSummaryDto } from "@learning/contracts";
-import { callParent, errorMessage, parentClient } from "./api";
+import { useCallback, useState } from "react";
+import { Alert, Button, Center, Group, Loader, Modal, Paper, Stack, Text, Title } from "@mantine/core";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { messages } from "@learning/contracts";
+import { ApiCallError, callParent, errorMessage, parentClient } from "./api";
 import ChildEditor from "./ChildEditor";
 import DecksPanel from "./DecksPanel";
 import LeaveEditorDialog from "./LeaveEditorDialog";
 import ProgressPanel from "./ProgressPanel";
 import WorkCardPanel from "./WorkCardPanel";
 import { useParentLeaveGuard } from "./useParentLeaveGuard";
-import { ParentIcon } from "./ParentIcon";
+import { useParentNavigation } from "./useParentNavigation";
+import { ParentAuthForm } from "./ParentAuthForm";
+import { ParentShell } from "./ParentShell";
 import { useAuthExpiredHandler } from "./ParentProviders";
+import { orpc } from "./query-client";
 import "./parent.css";
 
-type Phase = "loading" | "setup" | "login" | "panel";
-type Tab = "decks" | "children" | "progress" | "work";
+const SIGNED_OUT = { authenticated: false, setupRequired: false };
+const AUTH_KEY = orpc.auth.state.queryOptions().queryKey;
+const CHILDREN_KEY = orpc.children.list.queryOptions().queryKey;
+const DECKS_KEY = orpc.decks.list.queryOptions().queryKey;
+
+function Brand() {
+  return (
+    <Group gap="sm" wrap="nowrap">
+      <span className="pp-shell-logo" aria-hidden="true">U!</span>
+      <div>
+        <Text fw={700} lh={1.2}>{messages.app.name}</Text>
+        <Text fz="xs" className="pp-shell-subtle">{messages.app.parentPanel}</Text>
+      </div>
+    </Group>
+  );
+}
 
 /**
- * Panel rodzica Umiem!: pierwsze uruchomienie (PIN), logowanie, zestawy
- * i profile dzieci. Stan sesji pochodzi z API — przyciski nie są "zabezpieczeniem".
+ * Panel rodzica Umiem!: pierwsze uruchomienie (PIN), logowanie, rama z sekcjami
+ * w adresie (/parent/decks, /parent/children, …). Stan sesji pochodzi z API —
+ * przyciski nie są "zabezpieczeniem".
  */
 export default function ParentApp() {
-  const [phase, setPhase] = useState<Phase>("loading");
-  const [secret, setSecret] = useState("");
-  const [tab, setTab] = useState<Tab>("decks");
-  const [error, setError] = useState<string | null>(null);
-  const [childrenList, setChildrenList] = useState<ChildDto[]>([]);
-  const [decks, setDecks] = useState<DeckSummaryDto[]>([]);
+  const queryClient = useQueryClient();
   const leaveGuard = useParentLeaveGuard();
-  const toLogin = useCallback(() => setPhase("login"), []);
+  const { section, navigate } = useParentNavigation(leaveGuard);
+  const [reauthOpen, setReauthOpen] = useState(false);
+
+  // Stan sesji czytamy raz przy starcie panelu. Później o wygaśnięciu mówią
+  // wyłącznie odpowiedzi 401 (toLogin) — samoczynne odświeżenie auth.state
+  // (np. po powrocie sieci) odmontowałoby edytor z niezapisanymi zmianami.
+  const auth = useQuery({
+    ...orpc.auth.state.queryOptions(),
+    retry: false,
+    staleTime: Infinity,
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
+  });
+  const authenticated = auth.data?.authenticated === true;
+  const childrenQuery = useQuery({ ...orpc.children.list.queryOptions(), enabled: authenticated });
+  const decksQuery = useQuery({ ...orpc.decks.list.queryOptions(), enabled: authenticated });
+
+  // odświeżenie po zmianie: odrzucona obietnica pozwala ekranom zgłosić nieudane odświeżenie
+  const refreshChildren = useCallback(
+    () => queryClient.refetchQueries({ queryKey: CHILDREN_KEY, exact: true }, { throwOnError: true }),
+    [queryClient],
+  );
+  const refreshDecks = useCallback(
+    () => queryClient.refetchQueries({ queryKey: DECKS_KEY, exact: true }, { throwOnError: true }),
+    [queryClient],
+  );
+
+  const signOutLocally = useCallback(() => {
+    queryClient.setQueryData(AUTH_KEY, SIGNED_OUT);
+    queryClient.removeQueries({ queryKey: CHILDREN_KEY, exact: true });
+    queryClient.removeQueries({ queryKey: DECKS_KEY, exact: true });
+  }, [queryClient]);
+
+  /**
+   * Wygasła sesja (401). Z niezapisanymi zmianami w edytorze logowanie otwiera
+   * się w oknie nad bieżącym widokiem — formularz zostaje (plan §3.2).
+   */
+  // stabilna tożsamość: ProgressPanel i WorkCardPanel mają onAuthExpired
+  // w zależnościach efektu wczytania (obiekt leaveGuard jest nowy co render)
+  const editorState = leaveGuard.current;
+  const toLogin = useCallback(() => {
+    if (editorState().dirty) {
+      setReauthOpen(true);
+      return;
+    }
+    signOutLocally();
+  }, [editorState, signOutLocally]);
   useAuthExpiredHandler(toLogin);
 
-  const refreshChildren = useCallback(async () => {
-    setChildrenList(await callParent(() => parentClient.children.list()));
-  }, []);
-  const refreshDecks = useCallback(async () => {
-    setDecks(await callParent(() => parentClient.decks.list()));
-  }, []);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const state = await callParent(() => parentClient.auth.state());
-        if (state.authenticated) {
-          setPhase("panel");
-          await Promise.all([refreshChildren(), refreshDecks()]);
-        } else {
-          setPhase(state.setupRequired ? "setup" : "login");
+  const login = useCallback(
+    async (secret: string, setupFirst: boolean) => {
+      if (setupFirst) {
+        // pierwsze uruchomienie tworzy PIN i od razu nim loguje; po nieudanym
+        // logowaniu ponowna próba zastaje PIN już zapisany — wtedy tylko logujemy
+        try {
+          await callParent(() => parentClient.auth.setup({ secret }));
+        } catch (cause) {
+          if (!(cause instanceof ApiCallError && cause.code === "already_configured")) throw cause;
         }
-      } catch (cause) {
-        setError(errorMessage(cause));
-        setPhase("login");
-      }
-    })();
-  }, [refreshChildren, refreshDecks]);
-
-  const submitAuth = async () => {
-    setError(null);
-    try {
-      if (phase === "setup") {
-        // pierwsze uruchomienie tworzy PIN i od razu nim loguje
-        await callParent(() => parentClient.auth.setup({ secret }));
       }
       await callParent(() => parentClient.auth.login({ secret }));
-      setSecret("");
-      setPhase("panel");
-      await Promise.all([refreshChildren(), refreshDecks()]);
-    } catch (cause) {
-      setError(errorMessage(cause));
-    }
-  };
+      queryClient.setQueryData(AUTH_KEY, { authenticated: true, setupRequired: false });
+    },
+    [queryClient],
+  );
 
   const logout = async () => {
     try {
@@ -77,145 +115,88 @@ export default function ParentApp() {
     } catch {
       // brak sesji też kończy panel
     }
-    setPhase("login");
+    signOutLocally();
   };
 
-  if (phase === "loading") {
+  if (auth.isPending) {
     return (
-      <div className="pp-app">
-        <main className="pp-main">
-          <p>…</p>
-        </main>
-      </div>
+      <Center mih="100dvh">
+        <Text c="dimmed">…</Text>
+      </Center>
     );
   }
 
-  if (phase === "setup" || phase === "login") {
+  if (!authenticated) {
+    const setup = auth.data?.setupRequired === true;
     return (
-      <div className="pp-auth">
-        <section className="pp-auth-card">
-          <div className="pp-auth-brand">
-            <span className="pp-logo" aria-hidden="true">U!</span>
-            <div>
-              <div className="pp-brand-name">{messages.app.name}</div>
-              <div className="pp-brand-sub">{messages.app.parentPanel}</div>
-            </div>
-          </div>
-          <h1>{phase === "setup" ? messages.auth.setupTitle : messages.auth.loginTitle}</h1>
-          {phase === "setup" && <p className="pp-auth-hint">{messages.auth.setupHint}</p>}
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void submitAuth();
-            }}
-          >
-            <label htmlFor="auth-secret-input">
-              {messages.auth.pinLabel}
-              <input
-                id="auth-secret-input"
-                data-testid="auth-secret"
-                type="password"
-                autoComplete="current-password"
-                value={secret}
-                onChange={(event) => setSecret(event.target.value)}
-                required
-              />
-            </label>
-            <div className="pp-auth-actions">
-              <button type="submit" className="pp-btn pp-btn-primary" data-testid="auth-submit">
-                {phase === "setup" ? messages.auth.setupButton : messages.auth.loginButton}
-              </button>
-              <a href="/" className="pp-btn pp-btn-ghost" data-testid="to-learning">
+      <Center mih="100dvh" p="md" className="pp-auth-screen">
+        <Paper withBorder radius="lg" p="xl" w="100%" maw={420} shadow="sm">
+          <Brand />
+          <Title order={1} fz={26} mt="lg" mb={setup ? "xs" : "md"}>
+            {setup ? messages.auth.setupTitle : messages.auth.loginTitle}
+          </Title>
+          {setup && <Text c="dimmed" mb="md">{messages.auth.setupHint}</Text>}
+          <ParentAuthForm
+            key={setup ? "setup" : "login"}
+            idPrefix="auth"
+            submitLabel={setup ? messages.auth.setupButton : messages.auth.loginButton}
+            submit={(secret) => login(secret, setup)}
+            initialError={auth.isError ? errorMessage(auth.error) : null}
+            testIds={{ secret: "auth-secret", submit: "auth-submit", error: "api-error" }}
+            extraAction={
+              <Button component="a" href="/" variant="subtle" size="md" data-testid="to-learning">
                 {messages.auth.toLearning}
-              </a>
-            </div>
-          </form>
-          {error && (
-            <p className="pp-error" data-testid="api-error" role="alert">
-              {error}
-            </p>
-          )}
-        </section>
-      </div>
+              </Button>
+            }
+          />
+        </Paper>
+      </Center>
     );
   }
+
+  // Pierwsze wczytanie list: bez danych sekcje pokazałyby mylący pusty stan
+  // („Nie masz jeszcze…”). Nieudane odświeżenie przy istniejących danych
+  // zostawia je na ekranie — błąd zgłasza wtedy sama sekcja.
+  const listsWithoutData = [childrenQuery, decksQuery].filter((query) => query.data === undefined);
+  const listsError = listsWithoutData.find((query) => query.isError)?.error;
+  const listsPending = listsWithoutData.length > 0 && listsError === undefined;
+  const childrenList = childrenQuery.data ?? [];
+  const decks = decksQuery.data ?? [];
 
   return (
-    <div className="pp-app">
-      <header className="pp-topbar">
-        <div className="pp-topbar-in">
-          <div className="pp-brand">
-            <span className="pp-logo" aria-hidden="true">U!</span>
-            <div>
-              <div className="pp-brand-name">{messages.app.name}</div>
-              <div className="pp-brand-sub">{messages.app.parentPanel}</div>
-            </div>
-          </div>
-          <div className="pp-topbar-actions">
-            <a
-              href="/"
-              className="pp-btn pp-btn-ghost"
-              data-testid="to-learning"
-              onClick={(event) => {
-                event.preventDefault();
-                leaveGuard.requestLeave(() => {
-                  window.location.href = "/";
-                });
-              }}
-            >
-              <ParentIcon name="play" />
-              {messages.auth.toLearning}
-            </a>
-            <button
-              type="button"
-              className="pp-btn pp-btn-ghost"
-              data-testid="parent-logout"
-              onClick={() => leaveGuard.requestLeave(logout)}
-            >
-              <ParentIcon name="log-out" />
-              {messages.auth.logoutButton}
-            </button>
-          </div>
-        </div>
-        <nav className="pp-tabs" aria-label="panel">
-          <button
-            type="button"
-            className="pp-tab"
-            data-testid="tab-decks"
-            aria-current={tab === "decks"}
-            onClick={() => tab !== "decks" && leaveGuard.requestLeave(() => setTab("decks"))}
-          >
-            <ParentIcon name="layers" />
-            {messages.decks.title}
-          </button>
-          <button
-            type="button"
-            className="pp-tab"
-            data-testid="tab-children"
-            aria-current={tab === "children"}
-            onClick={() => tab !== "children" && leaveGuard.requestLeave(() => setTab("children"))}
-          >
-            <ParentIcon name="users" />
-            {messages.children.title}
-          </button>
-          <button
-            type="button"
-            className="pp-tab"
-            data-testid="tab-progress"
-            aria-current={tab === "progress"}
-            onClick={() => tab !== "progress" && leaveGuard.requestLeave(() => setTab("progress"))}
-          >
-            <ParentIcon name="trending-up" />
-            {messages.progress.title}
-          </button>
-          <button type="button" className="pp-tab" data-testid="tab-work-card" aria-current={tab === "work"}
-            onClick={() => tab !== "work" && leaveGuard.requestLeave(() => setTab("work"))}>
-            <ParentIcon name="clipboard-check" />{messages.workCard.title}
-          </button>
-        </nav>
-      </header>
-      <main className="pp-main">
-        {tab === "decks" ? (
+    <>
+      <ParentShell
+        section={section}
+        onNavigate={navigate}
+        onToLearning={() => leaveGuard.requestLeave(() => { window.location.href = "/"; })}
+        onLogout={() => leaveGuard.requestLeave(logout)}
+      >
+        {listsError !== undefined ? (
+          <Alert color="red" variant="light" role="alert" title={messages.parentShell.loadFailed} data-testid="panel-load-error">
+            <Stack gap="sm" align="flex-start">
+              <Text size="sm">{errorMessage(listsError)}</Text>
+              <Button
+                size="md"
+                variant="light"
+                color="red"
+                data-testid="panel-load-retry"
+                onClick={() => {
+                  void queryClient.refetchQueries({ queryKey: CHILDREN_KEY, exact: true });
+                  void queryClient.refetchQueries({ queryKey: DECKS_KEY, exact: true });
+                }}
+              >
+                {messages.parentShell.retry}
+              </Button>
+            </Stack>
+          </Alert>
+        ) : listsPending ? (
+          <Center py="xl" role="status" data-testid="panel-loading">
+            <Group gap="sm">
+              <Loader size="sm" />
+              <Text>{messages.parentShell.loading}</Text>
+            </Group>
+          </Center>
+        ) : section === "decks" ? (
           <DecksPanel
             decks={decks}
             childrenList={childrenList}
@@ -224,15 +205,37 @@ export default function ParentApp() {
             requestLeave={leaveGuard.requestLeave}
             onAuthExpired={toLogin}
           />
-        ) : tab === "children" ? (
+        ) : section === "children" ? (
           <ChildEditor childrenList={childrenList} onChanged={refreshChildren} />
-        ) : tab === "progress" ? (
+        ) : section === "progress" ? (
           <ProgressPanel childrenList={childrenList} decks={decks} onAuthExpired={toLogin} />
         ) : (
           <WorkCardPanel childrenList={childrenList} onAuthExpired={toLogin} />
         )}
-      </main>
+      </ParentShell>
       <LeaveEditorDialog open={leaveGuard.pending} onStay={leaveGuard.stay} onLeave={() => void leaveGuard.leave()} />
-    </div>
+      <Modal
+        opened={reauthOpen}
+        onClose={() => undefined}
+        withCloseButton={false}
+        closeOnClickOutside={false}
+        closeOnEscape={false}
+        centered
+        radius="lg"
+        title={messages.auth.reauthTitle}
+        attributes={{ content: { "data-testid": "reauth-dialog" } }}
+      >
+        <Text mb="md">{messages.auth.reauthHint}</Text>
+        <ParentAuthForm
+          idPrefix="reauth"
+          submitLabel={messages.auth.loginButton}
+          submit={async (secret) => {
+            await login(secret, false);
+            setReauthOpen(false);
+          }}
+          testIds={{ secret: "reauth-secret", submit: "reauth-submit", error: "reauth-error" }}
+        />
+      </Modal>
+    </>
   );
 }

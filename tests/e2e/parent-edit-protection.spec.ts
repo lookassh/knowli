@@ -360,3 +360,62 @@ test("a published remote draft requires creating a new version before local edit
   await page.getByTestId("conflict-confirm").click();
   await pageB.close();
 });
+
+test("browser Back with a dirty editor asks first; Stay keeps the address and the form", async ({ page }) => {
+  await enterParent(page);
+  await page.getByTestId("tab-children").click();
+  await expect(page).toHaveURL(/\/parent\/children$/);
+  await page.getByTestId("tab-decks").click();
+  await expect(page).toHaveURL(/\/parent\/decks$/);
+  await openNewMaterial(page, "empty");
+  await page.getByTestId("create-empty-submit").click();
+  await page.getByTestId("add-item").click();
+  await page.getByTestId("item-source-0").fill("kot");
+  await page.getByTestId("item-target-0").fill("local correction");
+
+  await page.goBack();
+  await expect(page.getByTestId("leave-editor-dialog")).toBeVisible();
+  await expect(page).toHaveURL(/\/parent\/decks$/);
+  await page.getByTestId("leave-editor-stay").click();
+  await expect(page.getByTestId("leave-editor-dialog")).not.toBeVisible();
+  await expect(page.getByTestId("item-target-0")).toHaveValue("local correction");
+  await expect(page.getByTestId("tab-decks")).toHaveAttribute("aria-current", "true");
+
+  await page.goBack();
+  await expect(page.getByTestId("leave-editor-dialog")).toBeVisible();
+  await page.getByTestId("leave-editor-leave").click();
+  await expect(page).toHaveURL(/\/parent\/children$/);
+  await expect(page.getByTestId("tab-children")).toHaveAttribute("aria-current", "true");
+});
+
+test("expired session on save keeps the dirty form and offers re-login above the editor", async ({ page }) => {
+  await enterParent(page);
+  await openNewMaterial(page, "empty");
+  await page.getByTestId("create-empty-submit").click();
+  await page.getByTestId("add-item").click();
+  await page.getByTestId("item-source-0").fill("kot");
+  await page.getByTestId("item-target-0").fill("local correction");
+  await page.getByTestId("item-visual-0").selectOption("none");
+
+  let expireNextSave = true;
+  await page.route("**/api/v1/parent/drafts/*", async (route: Route) => {
+    if (route.request().method() === "PATCH" && expireNextSave) {
+      expireNextSave = false;
+      await route.fulfill({ status: 401, json: { code: "unauthorized", message: "x", retryable: false, requestId: "r" } });
+      return;
+    }
+    await route.fallback();
+  });
+  await page.getByTestId("save-items").click();
+
+  await expect(page.getByTestId("reauth-dialog")).toBeVisible();
+  await expect(page.getByTestId("auth-secret")).toHaveCount(0);
+  await page.getByTestId("reauth-secret").fill("1234");
+  await page.getByTestId("reauth-submit").click();
+  await expect(page.getByTestId("reauth-dialog")).toHaveCount(0);
+  await expect(page.getByTestId("item-target-0")).toHaveValue("local correction");
+
+  const saved = page.waitForResponse((response) => response.request().method() === "PATCH" && response.url().includes("/api/v1/parent/drafts/"));
+  await page.getByTestId("save-items").click();
+  expect((await saved).status()).toBe(200);
+});

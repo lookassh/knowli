@@ -107,13 +107,19 @@ Każda faza: typecheck, testy jednostkowe, pełny `pnpm test:e2e:shards` na buil
 | **1. Rama, logowanie i adresy** | `AppShell`, nawigacja dolna/zakładki, przełącznik schematu, ekran PIN z powrotem do adresu docelowego, router sekcji nad History API z leave guardem (4.1), `ParentApp` na zapytaniach (`auth.state`, `children.list`, `decks.list`), `LeaveEditorDialog` na `Modal` | M | `parent-flow`, `navigation`, `parent-edit-protection` („wstecz” przy niezapisanych zmianach), overflow 390 px |
 | **2. Zestawy (lista + nowy materiał)** | `DecksPanel` (grupy, filtr, archiwum) bez roli routera — otwarcie zestawu to adres `/parent/decks/{id}`, `NewMaterialDialog`, `ArchiveLessonDialog`; polecenia idempotentne bez zmian | M | `manual-deck-flow`, `generation-request-retry`, `lesson-archive` |
 | **Punkt kontrolny** | Właściciel ogląda panel na telefonie; mierzymy ubytek kodu; decyzja o kontynuacji | — | — |
-| **3. Dzieci** | `ChildEditor` + `PronunciationSettings` na `@mantine/form`, `confirm` → modal | M | `parent-flow`, specy wymowy |
+| **3. Dzieci** | `ChildEditor` + `PronunciationSettings` na `@mantine/form`, `confirm` → modal; formularze profilu i progów wymowy rejestrują `dirty`/`busy` w leave guardzie (dziś chronione są tylko edytory zestawów i lekcji — uwaga z review #154) | M | `parent-flow`, specy wymowy |
 | **4. Postępy i karta pracy** | `ProgressPanel`, `ProgressItems`, `MockTestReportPanel`, `WorkCardPanel`; selektory CSS w specach → testid | M | `progress-panel` (1280/768/390), `parent-work-card`, `mock-test-parent` |
 | **5a. Edytor zestawu — dane** | `DeckEditor` na zapytaniach/mutacjach, `refetchInterval`, konflikt, okładka, przypisania — wygląd jeszcze stary | M | `manual-deck-flow`, `parent-edit-protection`, `deck-cover-image` |
 | **5b. Edytor zestawu — UI** | Kontrolki Mantine, układ mobilny, przypięty pasek akcji, `DeckConflictPanel`, `DeckCoverSettings`, `DeckSessionTaskBudgetSettings`, `AssignmentTestGoalFields` | L | j.w. + overflow 390 px + cele ≥ 44 px |
 | **6a. Nowa lekcja i nadzór** | `NewLessonForm`, `LessonSupervisionPanel` | M | `lesson-parent`, `lesson-parent-supervision`, `lesson-mock-test` |
 | **6b. Edytor lekcji** | `LessonEditor` (dane jak 5a, potem UI jak 5b; ewentualnie dwa PR) | L | `lesson-parent`, `lesson-calculation`, `lesson-real-flow` |
 | **7. Sprzątanie** | Usunięcie `parent.css` i klas panelu z `globals.css` (zostają reguły używane przez Kid UI), aktualizacja speca redesignu, `SPEC.md` §4 (adresy panelu) i `architecture.md` | S | pełny e2e |
+
+Stan (2026-10-29): faza 0 scalona (#151, razem z Next 16). Faza 1 zrealizowana z decyzjami:
+- `globals.css` w całości w warstwie `legacy` (`@layer legacy, mantine;`), więc stare reguły elementów nie nadpisują Mantine, a style bez warstwy (Kid UI, `parent.css`) pozostają nad obiema;
+- sekcje nieprzepisane na Mantine zostają jasne (`color-scheme: light` w obszarze treści) także w trybie ciemnym — rama, logowanie i okna dialogowe obsługują oba schematy;
+- domyślny rozmiar `md` przycisków i pól Mantine ma 44 px (cel dotykowy);
+- ponowne logowanie w oknie przy niezapisanych zmianach działa: zapis w edytorze zestawu i lekcji zgłasza 401 przez `onAuthExpired` (review #154), test e2e w `parent-edit-protection.spec.ts`; po przejściu edytorów na zapytania (fazy 5a/6b) to samo zrobi globalny handler.
 
 Adresy URL weszły do fazy 1 (zamiast osobnej fazy na końcu), bo `DecksPanel` jest dziś jednocześnie routerem edytorów — przepisywanie go dwa razy byłoby droższe.
 
