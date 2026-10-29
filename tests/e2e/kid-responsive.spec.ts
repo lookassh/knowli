@@ -446,7 +446,6 @@ test("profile tiles fit portrait, landscape, tablet and desktop", async ({ page 
     await page.evaluate(() => window.scrollTo(0, 0));
     if (viewport.width === 360) {
       await page.screenshot({ path: testInfo.outputPath("profile-360x800.png") });
-      await page.screenshot({ path: "C:/Users/looka/IdeaProjects/knowli/.claude/worktrees/kids-ui-animations-review-a19ef5/.superpowers/sdd/2026-10-29-kid-ui-zatoka-stage1/task-6-profile.png" });
     }
   }
 });
