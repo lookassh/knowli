@@ -237,7 +237,8 @@ if (useFake) {
 }
 const hardFailed = failures.some((f) => f.includes("[TWARDA]"));
 const confusionRate = confusionChecked > 0 ? confusionDetected / confusionChecked : 1;
+// Fałszywa para pojęć trafiłaby do raportu rodzica i selektora — blokuje bramkę.
 const gateOk = !hardFailed && accuracy >= golden.gate.knowledgeAccuracyMin && missingAccuracy >= golden.gate.knowledgeAccuracyMin && invalid === 0 &&
-  confusionRate >= (golden.gate.confusionDetectionMin ?? 0);
+  confusionRate >= (golden.gate.confusionDetectionMin ?? 0) && confusionFalsePositive === 0;
 console.log(gateOk ? "BRAMKA: OK" : "BRAMKA: NIE SPEŁNIONA");
 process.exit(gateOk ? 0 : 1);

@@ -503,6 +503,9 @@ describe("werdykt szkolny v3: kategorie fragmentów i pomylone pojęcia (Etap 6)
     const wrong = { ...base, knowledge: "incorrect", incorrectStatements: ["Równoleżnik łączy bieguny."] };
     expect(validateSchoolVerdict({ ...wrong, offTopicFragments: ["łączy bieguny"] }, CTX)).toBeNull();
     expect(validateSchoolVerdict({ ...wrong, redundantFragments: ["bieguny. To ważna"] }, CTX)).toBeNull();
+    // zakresy jak w segmentatorze: bez wielkości liter („Kot” i „kot” to to samo pierwsze słowo)
+    const cat = { requiredElementIds: ["e1"], childAnswer: "Kot kot" };
+    expect(validateSchoolVerdict({ ...base, knowledge: "incorrect", incorrectStatements: ["Kot"], offTopicFragments: ["kot"] }, cat)).toBeNull();
     // w obrębie jednej kategorii nachodzenie jest dozwolone (segmenty się scalają)
     expect(validateSchoolVerdict({ ...wrong, offTopicFragments: ["Wczoraj grałem", "grałem w piłkę."] }, CTX)).not.toBeNull();
   });

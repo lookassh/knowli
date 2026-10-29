@@ -448,14 +448,17 @@ export function validateSchoolVerdict(raw: unknown, ctx: SchoolVerdictContext): 
 }
 
 /**
- * Czy zakresy fragmentów różnych kategorii (pierwsze wystąpienie po NFC, jak
- * zaznacza `buildAnswerSegments`) na siebie nachodzą. Nachodzenie w obrębie
- * jednej kategorii jest dozwolone — segmenty scalają je w jeden.
+ * Czy zakresy fragmentów różnych kategorii na siebie nachodzą. Zakres to
+ * pierwsze wystąpienie bez rozróżniania wielkości liter — dokładnie tak, jak
+ * zaznacza je `buildAnswerSegments` (inaczej „Kot” i „kot” trafiłyby w dziecku
+ * na to samo słowo). Nachodzenie w obrębie jednej kategorii jest dozwolone —
+ * segmenty scalają je w jeden.
  */
 function categoriesOverlap(answerNfc: string, categories: readonly (readonly string[])[]): boolean {
+  const haystack = answerNfc.toLowerCase();
   const spans = categories.flatMap((fragments, category) => fragments.map((fragment) => {
-    const text = fragment.normalize("NFC");
-    const start = answerNfc.indexOf(text);
+    const text = fragment.normalize("NFC").toLowerCase();
+    const start = haystack.indexOf(text);
     return { category, start, end: start + text.length };
   }));
   return spans.some((a, i) => spans.some((b, j) => j > i && a.category !== b.category && a.start < b.end && b.start < a.end));
