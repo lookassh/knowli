@@ -58,6 +58,13 @@ import { loadPolicy } from "../../../policies/registry";
 import { lockTaskWithSession } from "../events";
 import { discloseFeedbackEvent, requestHashOf } from "../attempt-shared";
 import { lessonSessionContextOf, type LessonSessionContext } from "./lesson-sessions";
+import {
+  offerShortenFollowUp,
+  precisionTrainerQualification,
+  unchangedRevisionResult,
+  withRevisionComparison,
+  type RevisionOf,
+} from "./lesson-shorten";
 
 /**
  * Przyjęcie i ocena odpowiedzi w lekcji (design „Przyjęcie odpowiedzi” kroki 1–2,
@@ -91,6 +98,8 @@ interface LessonTaskAnswerKey extends LessonAnswerKey {
   optionValues?: Record<string, string>;
   itemValues?: Record<string, string>;
   segmentValues?: Record<string, string>;
+  /** Zadanie następcze „Skróć odpowiedź”: oryginał, do którego należy poprawka. */
+  revisionOf?: RevisionOf;
   /** Kryteria v3 odpowiedzi otwartej szkoły (z payloadu rewizji; prywatne). */
   schoolCriteria?: {
     requiredElements: { id: string; text: string }[];
@@ -281,6 +290,10 @@ function gradeLessonAnswer(
     }
     return { grade: { outcome: "incorrect", verdict: "closed_incorrect" }, feedback: { kind: "incorrect", correctText }, exposures: [key.targetKey], details: { objectiveId, verdict: "closed_incorrect" } };
   }
+
+  // Poprawka identyczna z oryginałem: bez oceny i modelu (trener precyzji).
+  const unchanged = unchangedRevisionResult(key.revisionOf, input.text, objectiveId);
+  if (unchanged) return unchanged;
 
   if (key.exerciseType === "lesson_calculation") {
     let outcome: "correct" | "incorrect" | "unevaluated";
@@ -908,7 +921,8 @@ async function finalizeLessonAttempt(
 ): Promise<AttemptDto> {
   const { task, session, itemId, policy, key, frozen, attemptNumber, requestHash, receivedAt } = start;
   const mockTest = session.mode === "mock_test";
-  const result = precomputed ?? gradeLessonAnswer(valid, task, key, services);
+  const graded = precomputed ?? gradeLessonAnswer(valid, task, key, services);
+  const result = valid.modality === "text" ? withRevisionComparison(key.revisionOf, valid.text, graded) : graded;
   const qualification = qualifyLessonAttempt({
     receivedAt: frozen.receivedAt,
     policy,
@@ -918,6 +932,7 @@ async function finalizeLessonAttempt(
     previousSessionContactAt: frozen.previousSessionContactAt,
     timezone: frozen.timezone,
   } satisfies LessonQualificationContext);
+  const effectiveQualification = precisionTrainerQualification(task, qualification);
 
   const answer =
     valid.modality === "text"
@@ -965,8 +980,8 @@ async function finalizeLessonAttempt(
       skillVersionId: skillRow.skillVersionId,
       outcome: dbOutcome(result.grade.outcome),
       ...(result.grade.reason ? { reason: result.grade.reason } : {}),
-      independent: qualification.independent,
-      confirmationEligible: confirmationEligibleFor(result.grade.outcome, qualification.confirmationEligible),
+      independent: effectiveQualification.independent,
+      confirmationEligible: confirmationEligibleFor(result.grade.outcome, effectiveQualification.confirmationEligible),
       details: result.details,
     });
 
@@ -985,7 +1000,11 @@ async function finalizeLessonAttempt(
 
   // Kartkówka: wynik niewidoczny dla dziecka — żadnego feedbacku ani ekspozycji
   // feedbacku w trakcie (omówienie dopiero po zamknięciu).
-  const feedback = mockTest || valid.modality === "skip" ? null : result.feedback;
+  // Trener precyzji: poprawna, lecz rozwlekła odpowiedź otwarta dostaje zadanie następcze.
+  const shortenOffer = !mockTest && valid.modality === "text" && taskState !== "issued"
+    ? await offerShortenFollowUp(tx, services, { task, session, itemId, attemptId, childAnswer: valid.text, result, now: receivedAt })
+    : null;
+  const feedback = mockTest || valid.modality === "skip" ? null : shortenOffer ?? result.feedback;
   const completed = await tx
     .update(attempts)
     .set({ state: "completed", completedAt: receivedAt, feedback: feedback as unknown as Record<string, unknown> })
@@ -1403,7 +1422,7 @@ async function finalizeGradedAttempt(
     }
   }
 
-  const result = args.schoolVerdict !== undefined || key.schoolCriteria
+  const result = withRevisionComparison(key.revisionOf, args.childAnswer, args.schoolVerdict !== undefined || key.schoolCriteria
     ? resultFromSchoolVerdict(
         services,
         key,
@@ -1412,7 +1431,7 @@ async function finalizeGradedAttempt(
         verdictId,
         authoritativeIncorrect,
       )
-    : resultFromVerdict(services, task, key, args.childAnswer, effectiveVerdict, verdictId, authoritativeIncorrect);
+    : resultFromVerdict(services, task, key, args.childAnswer, effectiveVerdict, verdictId, authoritativeIncorrect));
   const qualification = qualifyLessonAttempt({
     receivedAt: frozen.receivedAt,
     policy,
@@ -1422,6 +1441,7 @@ async function finalizeGradedAttempt(
     previousSessionContactAt: frozen.previousSessionContactAt,
     timezone: frozen.timezone,
   } satisfies LessonQualificationContext);
+  const effectiveQualification = precisionTrainerQualification(task, qualification);
 
   const skillRow = (
     await tx
@@ -1440,8 +1460,8 @@ async function finalizeGradedAttempt(
     skillVersionId: skillRow.skillVersionId,
     outcome: dbOutcome(result.grade.outcome),
     ...(result.grade.reason ? { reason: result.grade.reason } : {}),
-    independent: qualification.independent,
-    confirmationEligible: confirmationEligibleFor(result.grade.outcome, qualification.confirmationEligible),
+    independent: effectiveQualification.independent,
+    confirmationEligible: confirmationEligibleFor(result.grade.outcome, effectiveQualification.confirmationEligible),
     details: result.details,
   });
   if (result.grade.outcome !== "unevaluated") {
@@ -1456,7 +1476,10 @@ async function finalizeGradedAttempt(
   }
 
   // Kartkówka: wynik niewidoczny — brak feedbacku/ekspozycji w trakcie.
-  const feedback = mockTest ? null : result.feedback;
+  const shortenOffer = !mockTest && taskState !== "issued"
+    ? await offerShortenFollowUp(tx, services, { task, session: freshSession, itemId, attemptId, childAnswer: args.childAnswer, result, now: receivedAt })
+    : null;
+  const feedback = mockTest ? null : shortenOffer ?? result.feedback;
   const completed = await tx
     .update(attempts)
     .set({ state: "completed", completedAt: receivedAt, feedback: feedback as unknown as Record<string, unknown> })

@@ -614,20 +614,30 @@ export class FakeAnswerGrader implements AnswerGraderProvider {
     );
     const matchedElementIds: string[] = [];
     const missingElementIds: string[] = [];
+    const elementWords = new Set<string>();
     for (const element of school.requiredElements) {
       const words = element.text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 3);
+      for (const word of words) elementWords.add(word);
       const hits = words.filter((w) => answerTokens.has(w)).length;
       (words.length > 0 && hits / words.length >= 0.5 ? matchedElementIds : missingElementIds).push(element.id);
     }
     const knowledge = missingElementIds.length === 0 ? "correct" : matchedElementIds.length > 0 ? "partial" : "incorrect";
+    const verbose = input.childAnswer.length > 200;
+    // Rozwlekła odpowiedź: zbędne są zdania bez żadnego słowa elementów wymaganych
+    // (dokładne podciągi odpowiedzi, więc trener precyzji może je zaznaczyć).
+    const redundantFragments = verbose
+      ? input.childAnswer.split(/(?<=[.!?])\s+/u).map((sentence) => sentence.trim()).filter((sentence) =>
+          sentence.length > 0 &&
+          !sentence.toLowerCase().normalize("NFC").split(/[^\p{L}\p{N}]+/u).some((word) => elementWords.has(word))).slice(0, 4)
+      : [];
     return {
       raw: {
         knowledge,
-        precision: input.childAnswer.length > 200 ? "verbose" : "concise",
+        precision: verbose ? "verbose" : "concise",
         matchedElementIds,
         missingElementIds,
         incorrectStatements: [],
-        redundantFragments: [],
+        redundantFragments,
         note: "fake",
       },
     };

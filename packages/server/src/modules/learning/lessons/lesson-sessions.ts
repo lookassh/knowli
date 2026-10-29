@@ -162,6 +162,8 @@ async function historicalSupportObjectives(
     .where(and(
       eq(learningSessions.childId, args.childId), eq(learningSessions.mode, "training"),
       lte(learningSessions.startedAt, args.before),
+      // Poprawka po informacji zwrotnej („Skróć odpowiedź”) nie jest trudnością celu.
+      sql`${sessionTasks.context}->'followUpOf' is null`,
       sql`${deckVersions.lessonContext}->>'subjectId' = ${args.subjectId}`,
       inArray(sql<string>`${itemRevisions.payload}->>'objectiveId'`, args.objectiveIds),
     ));
@@ -282,11 +284,16 @@ export async function loadExercises(tx: Executor, deckVersionId: string): Promis
 }
 
 /** Liczba wydanych i ocenianych zadań (karty nie liczą się do budżetu). */
+/**
+ * Liczniki zadań sesji lekcji: `total` wyznacza kolejny ordinal, a `assessed`
+ * budżet — bez zadań następczych (`context.followUpOf`), które są dodatkiem
+ * trenera precyzji poza planem.
+ */
 export async function lessonTaskCounts(tx: Tx, sessionId: string): Promise<{ total: number; assessed: number }> {
   const [row] = await tx
     .select({
       total: sql<number>`count(*)::int`,
-      assessed: sql<number>`(count(*) filter (where ${sessionTasks.exerciseType} <> 'lesson_card'))::int`,
+      assessed: sql<number>`(count(*) filter (where ${sessionTasks.exerciseType} <> 'lesson_card' and ${sessionTasks.context}->'followUpOf' is null))::int`,
     })
     .from(sessionTasks)
     .where(eq(sessionTasks.sessionId, sessionId));
@@ -429,7 +436,9 @@ async function loadLessonPlanningSnapshot(
   const exerciseByRevision = new Map(exercises.map((e) => [e.revisionId, e] as const));
   const outcomeByTask = await loadSessionOutcomes(tx, session.id);
   const cardIndexByObjective = new Map<string, number>();
-  const sessionHistory: LessonSessionTask[] = taskRows.map((row) => {
+  // Zadania następcze są poza planem: selektor ich nie widzi (design 6.3).
+  const plannedRows = taskRows.filter((row) => (row.context as { followUpOf?: unknown } | null)?.followUpOf === undefined);
+  const sessionHistory: LessonSessionTask[] = plannedRows.map((row) => {
     const taskContext = row.context as { objectiveId?: string; cardPurpose?: string } | null;
     const exercise = exerciseByRevision.get(row.itemRevisionId);
     const type = row.exerciseType as LessonExerciseType;
@@ -697,13 +706,15 @@ export async function issueNextLessonPlanTask(
   session: typeof learningSessions.$inferSelect,
   now: Date,
   nextOrdinal: number,
+  /** Indeks slotu planu: wydane zadania planu, bez zadań następczych. */
+  planIndex: number,
   assessedBefore: number,
 ): Promise<TaskDto | null> {
   let plan: LessonTrainingSessionPlanSnapshot | null;
   try { plan = readLessonTrainingSessionPlan(session.trainingPlan); }
   catch { throw new AppError("conflict", { message: "Ta sesja wymaga nowszej wersji aplikacji." }); }
   if (!plan) return null;
-  const slot = plan.slots[nextOrdinal];
+  const slot = plan.slots[planIndex];
   if (!slot || (slot.assessed && assessedBefore >= plan.taskBudget)) return null;
   await tx.insert(sessionTasks).values({
     id: slot.taskId, sessionId: session.id, childId: session.childId, deckVersionId: session.deckVersionId,
@@ -716,7 +727,7 @@ export async function issueNextLessonPlanTask(
     stepId: `${slot.taskId}:prompt`, occurredAt: now, exposures: slot.revealsTargetKeys,
   });
   return lessonTaskDto(session, {
-    id: slot.taskId, ordinal: slot.ordinal, exerciseType: slot.exerciseType as LessonExerciseType, prompt: slot.prompt,
+    id: slot.taskId, ordinal: nextOrdinal, exerciseType: slot.exerciseType as LessonExerciseType, prompt: slot.prompt,
   }, assessedBefore);
 }
 

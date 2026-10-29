@@ -713,6 +713,28 @@ describe("selectLessonTask — trener precyzji (Etap 4)", () => {
     expect(plan).toMatchObject({ exerciseType: "lesson_open_answer", reason: "due_check", independentCheck: true });
   });
 
+  it("po należnym sprawdzeniu dokłada parę z innej rodziny tego samego celu, raz na sesję", () => {
+    const due = { [O1]: prog("learning", "2026-10-11T00:00:00.000Z") };
+    const exercises = [open("a", "def"), open("b", "inna"), keywords("inna")];
+    const history = { [O1]: { knowledge: "partial", precision: "concise" } } as const;
+    const first = selectLessonTask(input({ objectiveOrder: [O1], progress: due, initialProgress: due, planningMode: true, exercises, precisionHistory: history }));
+    expect(first).toMatchObject({ itemId: "item:subj.topic.o1:independent:a", reason: "due_check" });
+    const afterCheck = [task({ objectiveId: O1, itemId: "item:subj.topic.o1:independent:a", exerciseType: "lesson_open_answer" })];
+    const second = selectLessonTask(input({
+      objectiveOrder: [O1], progress: due, initialProgress: due, planningMode: true, exercises, precisionHistory: history,
+      sessionHistory: afterCheck, reservedDueCheckObjectives: new Set([O1]),
+    }));
+    expect(second).toMatchObject({ exerciseType: "lesson_keywords", reason: "precision_practice", pairedWith: { itemId: "item:subj.topic.o1:independent:b" } });
+    const afterPair = [...afterCheck,
+      task({ objectiveId: O1, itemId: "item:subj.topic.o1:keywords:kw", exerciseType: "lesson_keywords" }),
+      task({ objectiveId: O1, itemId: "item:subj.topic.o1:independent:b", exerciseType: "lesson_open_answer" })];
+    const third = selectLessonTask(input({
+      objectiveOrder: [O1], progress: due, initialProgress: due, planningMode: true, exercises: [...exercises, keywords("def", "kw2")], precisionHistory: history,
+      sessionHistory: afterPair, reservedDueCheckObjectives: new Set([O1]),
+    }));
+    expect(third?.kind === "exercise" ? third.exerciseType : null).not.toBe("lesson_keywords");
+  });
+
   it("nigdy nie wydaje słów kluczowych jako zwykłego ćwiczenia prowadzonego", () => {
     const plan = selectLessonTask(input({ objectiveOrder: [O1], exercises: [keywords("def"), ex(O1, "guided", "a")] }));
     expect(plan).toMatchObject({ exerciseType: "lesson_choice", reason: "introduce" });

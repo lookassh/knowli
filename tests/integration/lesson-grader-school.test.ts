@@ -5,6 +5,7 @@ import {
   computeTargetKey,
   createChild,
   createServices,
+  endSession,
   FakeAnswerGrader,
   lessonObjectiveProgress,
   nextTask,
@@ -33,17 +34,21 @@ beforeEach(async () => {
 afterAll(() => pool.end());
 
 const OBJECTIVE_ID = "school.ddeck000.fotosynteza";
+const SECOND_OBJECTIVE_ID = "school.ddeck000.korzenie";
 const MATERIAL =
   "Fotosynteza to proces, w którym roślina z wody i dwutlenku węgla, przy udziale światła, wytwarza cukry.";
 
-async function seedSchoolDeck(childId: string, options: { expectedForm?: string; openAcceptedAnswers?: string[] } = {}): Promise<{ deckId: string }> {
+async function seedSchoolDeck(
+  childId: string,
+  options: { expectedForm?: string; openAcceptedAnswers?: string[]; secondObjective?: boolean; precisionTrainer?: boolean } = {},
+): Promise<{ deckId: string }> {
   const deckId = randomUUID();
   const versionId = randomUUID();
   const context = {
     subjectId: "school",
     topicId: "dynamic",
     topicVersion: 1,
-    objectiveIds: [OBJECTIVE_ID],
+    objectiveIds: options.secondObjective ? [OBJECTIVE_ID, SECOND_OBJECTIVE_ID] : [OBJECTIVE_ID],
     poolSize: 20,
     examples: {},
     material: MATERIAL,
@@ -58,7 +63,12 @@ async function seedSchoolDeck(childId: string, options: { expectedForm?: string;
           { title: "Co to jest?", body: "Roślina wytwarza cukry z wody i dwutlenku węgla przy świetle." },
           { title: "Po co?", body: "Cukry są pokarmem rośliny." },
         ],
-      }],
+      }, ...(options.secondObjective ? [{
+        id: SECOND_OBJECTIVE_ID,
+        titlePl: "Korzenie",
+        descriptionEn: "Roots take water from the soil.",
+        cards: [{ title: "Korzenie", body: "Korzenie pobierają wodę z gleby." }],
+      }] : [])],
     },
   };
   await pool.query("insert into learning_app.decks (id, title, kind) values ($1, 'Przyroda: Rośliny', 'lesson')", [deckId]);
@@ -103,8 +113,39 @@ async function seedSchoolDeck(childId: string, options: { expectedForm?: string;
       ],
       supplementaryElements: [], commonErrors: ["Fotosynteza to oddychanie rośliny."],
       sourceRefs: [{ quote: "przy udziale światła, wytwarza cukry" }],
+      ...(options.precisionTrainer ? { familyId: "def" } : {}),
     },
   ];
+  if (options.precisionTrainer) {
+    // Trener precyzji: druga rodzina pytań (inne pytanie i odpowiedź) i słowa
+    // kluczowe rodziny „def” — para wybór pojęć → odpowiedź otwarta.
+    exercises.push({
+      exerciseType: "lesson_open_answer", objectiveId: OBJECTIVE_ID, instructionPl: "Odpowiedz własnymi słowami.",
+      prompt: "Czego roślina potrzebuje do fotosyntezy?",
+      answer: "Roślina potrzebuje wody, dwutlenku węgla i światła.",
+      acceptedAnswers: [], focus: ["światła"], questionType: "enumeration", expectedForm: "explanation", familyId: "potrzeby",
+      requiredElements: [{ id: "p1", text: "roślina potrzebuje wody" }, { id: "p2", text: "roślina potrzebuje światła" }],
+      supplementaryElements: [], commonErrors: [],
+      sourceRefs: [{ quote: "z wody i dwutlenku węgla" }],
+    }, {
+      exerciseType: "lesson_keywords", objectiveId: OBJECTIVE_ID, familyId: "def",
+      keywordOptions: [{ id: "k1", text: "światło" }, { id: "k2", text: "cukry" }, { id: "k3", text: "korzenie" }, { id: "k4", text: "tlen" }],
+      keyOptionIds: ["k1", "k2"], answer: "światło, cukry", acceptedAnswers: [], focus: [],
+      sourceRefs: [{ quote: "wytwarza cukry" }],
+    });
+  }
+  if (options.secondObjective) {
+    // Drugie zagadnienie wydłuża plan sesji (wprowadzenie nowego celu), żeby
+    // odpowiedź otwarta pierwszego celu nie trafiała w fazę „Jeszcze 3 i koniec!”.
+    for (const stem of ["Co pobierają korzenie?", "Skąd korzenie biorą wodę?", "Czym są korzenie dla rośliny?"]) {
+      exercises.push({
+        exerciseType: "lesson_choice", objectiveId: SECOND_OBJECTIVE_ID, instructionPl: "Wybierz.",
+        stem, answer: "wodę", acceptedAnswers: [], focus: ["wodę"],
+        options: [{ id: "a", text: "wodę" }, { id: "b", text: "cukier" }], correctOption: "a",
+        sourceRefs: [{ quote: "wytwarza cukry" }],
+      });
+    }
+  }
   let position = 0;
   for (const payload of exercises) {
     const itemId = randomUUID();
@@ -119,7 +160,7 @@ async function seedSchoolDeck(childId: string, options: { expectedForm?: string;
     await pool.query(
       `insert into learning_app.skill_versions (id, item_id, skill, revision_number, criteria, criteria_hash)
        values ($1, $2, 'objective', 1, $3::jsonb, $4)`,
-      [skillVersionId, itemId, JSON.stringify({ objectiveId: OBJECTIVE_ID }), `oc-${skillVersionId}`],
+      [skillVersionId, itemId, JSON.stringify({ objectiveId: payload.objectiveId }), `oc-${skillVersionId}`],
     );
     await pool.query(
       "insert into learning_app.item_revision_skills (item_revision_id, item_id, skill, skill_version_id) values ($1, $2, 'objective', $3)",
@@ -397,5 +438,150 @@ describe("ocena szkolna dwuwymiarowa (integracja)", () => {
     expect(assessments.rows.every((r) => r.outcome !== "incorrect")).toBe(true);
     const verdicts = await pool.query("select count(*)::int as n from learning_app.lesson_verdicts");
     expect((verdicts.rows[0] as { n: number }).n).toBe(0);
+  });
+});
+
+describe("trener precyzji: „Skróć odpowiedź” (integracja)", () => {
+  // Oba elementy trafione, ale z dygresją >200 znaków: fake daje precyzję verbose
+  // i zbędne zdania bez słów elementów wymaganych.
+  const verboseAnswer =
+    "Roślina wytwarza cukry, bo wykorzystuje światło. " +
+    "W ogóle rośliny są bardzo ciekawe i rosną w ogrodzie mojej babci, a wczoraj padał deszcz. " +
+    "Potem grałem w piłkę z kolegami na podwórku aż do wieczora i było super, naprawdę bardzo fajnie.";
+  const shortened = "Roślina wytwarza cukry, bo wykorzystuje światło.";
+
+  async function answerVerbosely(services: AnyServices, childId: string, deckId: string) {
+    const openTask = await reachOpenTask(services, childId, deckId);
+    const result = await submitAttempt(services, { taskId: openTask.taskId, clientAttemptId: randomUUID(), modality: "text", text: verboseAnswer });
+    return { openTask, result };
+  }
+
+  it("proponuje skrócenie, wydaje zadanie następcze poza budżetem i zapisuje poprawkę jako wspomaganą", async () => {
+    const services = makeServices(new FakeAnswerGrader());
+    const child = await createChild(services, { displayName: "Gaduła", avatarKey: "owl" });
+    const { deckId } = await seedSchoolDeck(child.id, { secondObjective: true });
+    const { openTask, result } = await answerVerbosely(services, child.id, deckId);
+    expect(result.feedback).toMatchObject({ kind: "lesson_precision_hint" });
+    expect(result.taskState).toBe("answered");
+
+    const followUp = await nextTask(services, openTask.sessionId);
+    expect(followUp).not.toBeNull();
+    expect(followUp!.exerciseType).toBe("lesson_open_answer");
+    expect(followUp!.remainingAssessed).toBe(openTask.remainingAssessed - 1);
+    expect(followUp!.prompt).toMatchObject({ kind: "lesson_shorten", prompt: "Co to jest fotosynteza?", originalAnswer: verboseAnswer });
+    const prompt = followUp!.prompt as { answerSegments: { text: string; state: string }[] };
+    expect(prompt.answerSegments.some((segment) => segment.state === "pill")).toBe(true);
+    expect(JSON.stringify(followUp!.prompt)).not.toContain("przy udziale");
+
+    const revision = await submitAttempt(services, { taskId: followUp!.taskId, clientAttemptId: randomUUID(), modality: "text", text: shortened });
+    expect(revision.feedback!.kind).toBe("great");
+    const rows = await pool.query<{ outcome: string; independent: boolean; confirmation_eligible: boolean; details: Record<string, unknown> }>(
+      `select a.outcome, a.independent, a.confirmation_eligible, a.details from learning_app.assessments a
+         join learning_app.attempts t on t.id = a.attempt_id where t.task_id = $1`, [followUp!.taskId]);
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0]).toMatchObject({ outcome: "correct", independent: false, confirmation_eligible: false });
+    expect(rows.rows[0]!.details).toMatchObject({ lostElementIds: [], shorter: true, revisionOf: { taskId: openTask.taskId } });
+
+    // Po poprawce plan sesji toczy się dalej; zadanie następcze nie zjadło budżetu.
+    const after = await nextTask(services, openTask.sessionId);
+    if (after) expect(after.remainingAssessed).toBe(openTask.remainingAssessed - 1);
+  });
+
+  it("wykrywa utratę elementu wymaganego w poprawce, bez treści elementu w feedbacku", async () => {
+    const services = makeServices(new FakeAnswerGrader());
+    const child = await createChild(services, { displayName: "Skracacz", avatarKey: "cat" });
+    const { deckId } = await seedSchoolDeck(child.id, { secondObjective: true });
+    const { openTask } = await answerVerbosely(services, child.id, deckId);
+    const progressOf = async () => (await pool.query<{ status: string; streak: number }>(
+      "select status, streak from learning_app.child_objective_progress where child_id = $1 and objective_id = $2", [child.id, OBJECTIVE_ID])).rows[0];
+    const beforeRevision = await progressOf();
+    const followUp = (await nextTask(services, openTask.sessionId))!;
+    const revision = await submitAttempt(services, { taskId: followUp.taskId, clientAttemptId: randomUUID(), modality: "text", text: "Roślina wytwarza cukry." });
+    expect(revision.feedback).toMatchObject({ kind: "lesson_hint" });
+    expect(JSON.stringify(revision.feedback)).not.toContain("światło");
+    const rows = await pool.query<{ outcome: string; independent: boolean; details: { lostElementIds?: string[] } }>(
+      `select a.outcome, a.independent, a.details from learning_app.assessments a
+         join learning_app.attempts t on t.id = a.attempt_id where t.task_id = $1`, [followUp.taskId]);
+    expect(rows.rows[0]).toMatchObject({ outcome: "incorrect", independent: false });
+    expect(rows.rows[0]!.details.lostElementIds).toEqual(["e2"]);
+    // Poprawka jest wspomagana: nie zmienia serii ani statusu celu.
+    expect(await progressOf()).toEqual(beforeRevision);
+  });
+
+  it("poprawka identyczna z oryginałem nie jest oceniana i czeka na krótszą wersję", async () => {
+    const grader = new FakeAnswerGrader();
+    const services = makeServices(grader);
+    const child = await createChild(services, { displayName: "Uparty", avatarKey: "dog" });
+    const { deckId } = await seedSchoolDeck(child.id, { secondObjective: true });
+    const { openTask } = await answerVerbosely(services, child.id, deckId);
+    const followUp = (await nextTask(services, openTask.sessionId))!;
+    const callsBefore = grader.callCount;
+    const same = await submitAttempt(services, { taskId: followUp.taskId, clientAttemptId: randomUUID(), modality: "text", text: `  ${verboseAnswer.toUpperCase()} ` });
+    expect(same.feedback).toMatchObject({ kind: "lesson_hint" });
+    expect(same.taskState).toBe("issued");
+    expect(grader.callCount).toBe(callsBefore);
+    const skipped = await submitAttempt(services, { taskId: followUp.taskId, clientAttemptId: randomUUID(), modality: "skip" });
+    expect(skipped.taskState).toBe("skipped");
+  });
+
+  it("zwięzła poprawna odpowiedź nie dostaje zadania następczego", async () => {
+    const services = makeServices(new FakeAnswerGrader());
+    const child = await createChild(services, { displayName: "Zwięzły", avatarKey: "owl" });
+    const { deckId } = await seedSchoolDeck(child.id);
+    const openTask = await reachOpenTask(services, child.id, deckId);
+    const result = await submitAttempt(services, { taskId: openTask.taskId, clientAttemptId: randomUUID(), modality: "text", text: shortened });
+    expect(result.feedback!.kind).toBe("great");
+    const rows = await pool.query("select count(*)::int as n from learning_app.session_tasks where context ? 'followUpOf'");
+    expect((rows.rows[0] as { n: number }).n).toBe(0);
+  });
+});
+
+describe("trener precyzji: „Najpierw słowa kluczowe” (integracja)", () => {
+  it("po niepełnej odpowiedzi kolejna sesja wydaje wybór pojęć, a potem wspomaganą odpowiedź tej rodziny", async () => {
+    const grader = new FakeAnswerGrader();
+    const partialAnswer = "Roślina coś robi ze słońcem.";
+    grader.onAnswer(partialAnswer, {
+      raw: {
+        knowledge: "partial", precision: "concise", matchedElementIds: ["e2"], missingElementIds: ["e1"],
+        incorrectStatements: [], redundantFragments: [], note: "brak cukrów",
+      },
+    });
+    const services = makeServices(grader);
+    const child = await createChild(services, { displayName: "Pojęcia", avatarKey: "owl" });
+    const { deckId } = await seedSchoolDeck(child.id, { precisionTrainer: true, secondObjective: true });
+    const openTask = await reachOpenTask(services, child.id, deckId);
+    expect(openTask.prompt).toMatchObject({ prompt: "Co to jest fotosynteza?" });
+    await submitAttempt(services, { taskId: openTask.taskId, clientAttemptId: randomUUID(), modality: "text", text: partialAnswer });
+    await endSession(services, openTask.sessionId);
+
+    const session = await startSession(services, { childId: child.id, deckId, microphoneEnabled: false });
+    let keywordsTask: TaskDto | null = null;
+    for (let i = 0; i < 40 && keywordsTask === null; i++) {
+      const task = await nextTask(services, session.sessionId);
+      if (task === null) break;
+      if (task.exerciseType === "lesson_keywords") { keywordsTask = task; break; }
+      if (task.exerciseType === "lesson_card") { await completePresentation(services, { taskId: task.taskId }); continue; }
+      await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "skip" });
+    }
+    expect(keywordsTask).not.toBeNull();
+    expect(keywordsTask!.prompt).toMatchObject({ kind: "lesson_keywords", prompt: "Co to jest fotosynteza?", minSelected: 2, maxSelected: 2 });
+    expect(JSON.stringify(keywordsTask!.prompt)).not.toContain("keyOptionIds");
+
+    const key = (await pool.query<{ answerKey: { correctOptionIds: string[] } }>(
+      `select answer_key as "answerKey" from learning_app.session_tasks where id = $1`, [keywordsTask!.taskId])).rows[0]!.answerKey;
+    const chosen = await submitAttempt(services, { taskId: keywordsTask!.taskId, clientAttemptId: randomUUID(), modality: "selection", itemIds: key.correctOptionIds });
+    expect(chosen.feedback!.kind).toBe("great");
+
+    const paired = (await nextTask(services, session.sessionId))!;
+    expect(paired.exerciseType).toBe("lesson_open_answer");
+    expect(paired.prompt).toMatchObject({ prompt: "Co to jest fotosynteza?" });
+    await submitAttempt(services, { taskId: paired.taskId, clientAttemptId: randomUUID(), modality: "text", text: "Roślina wytwarza cukry, wykorzystuje światło." });
+    const rows = await pool.query<{ task_id: string; independent: boolean; outcome: string }>(
+      `select t.task_id, a.independent, a.outcome from learning_app.assessments a
+         join learning_app.attempts t on t.id = a.attempt_id where t.task_id = any($1::uuid[])`,
+      [[keywordsTask!.taskId, paired.taskId]]);
+    expect(rows.rows.find((row) => row.task_id === keywordsTask!.taskId)?.independent).toBe(false);
+    expect(rows.rows.find((row) => row.task_id === paired.taskId)?.independent).toBe(false);
+    expect(rows.rows.find((row) => row.task_id === paired.taskId)?.outcome).toBe("correct");
   });
 });

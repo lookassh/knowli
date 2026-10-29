@@ -331,7 +331,7 @@ function pickExercise(
 ): LessonExerciseCandidate | null {
   const indexed = input.exercises.map((candidate, index) => ({ candidate, index }));
 
-  // Słowa kluczowe wydaje wyłącznie para trenera precyzji (withKeywordsPair).
+  // Słowa kluczowe wydaje wyłącznie para trenera precyzji (precisionPracticePlan).
   const matching = indexed.filter(
     ({ candidate }) =>
       candidate.objectiveId === objectiveId && stageOf(candidate.exerciseType) === stage &&
@@ -426,34 +426,37 @@ function dueObjectives(input: LessonScheduleInput): string[] {
 }
 
 /**
- * Wybór kolejnego zadania lekcji: reguły priorytetów, a na końcu para trenera
- * precyzji (słowa kluczowe przed odpowiedzią otwartą), gdy ją uzasadnia historia.
+ * Trener precyzji (design 6.1 i 6.4, reguła 2): gdy ostatnia odpowiedź otwarta
+ * celu była nie na temat albo niepełna, plan dokłada ćwiczenie „najpierw słowa
+ * kluczowe”: wybór pojęć, a zaraz po nim odpowiedź otwarta tej samej rodziny
+ * (wspomagana przez ekspozycję listy pojęć). Raz na cel w sesji, tylko w planie
+ * (para to dwa sloty), przy graderze i budżecie na oba. Należne samodzielne
+ * sprawdzenia plan rezerwuje wcześniej, więc para ich nie wypiera.
  */
+function precisionPracticePlan(input: LessonScheduleInput): LessonTaskPlan | null {
+  if (!input.planningMode || input.assessedRemaining < 2 || noGraderAvailable(input)) return null;
+  for (const objectiveId of input.objectiveOrder) {
+    const last = input.precisionHistory?.[objectiveId];
+    if (!last || (last.precision !== "unfocused" && last.knowledge !== "partial")) continue;
+    const practicedThisSession = input.sessionHistory.some((task) =>
+      task.objectiveId === objectiveId && task.kind === "exercise" && task.exerciseType === "lesson_keywords");
+    if (practicedThisSession) continue;
+    for (const keywords of input.exercises) {
+      if (keywords.exerciseType !== "lesson_keywords" || keywords.objectiveId !== objectiveId || !keywords.familyId) continue;
+      const family = input.exercises
+        .map((candidate, index) => ({ candidate, index }))
+        .filter(({ candidate }) =>
+          candidate.exerciseType === "lesson_open_answer" && candidate.objectiveId === objectiveId &&
+          candidate.familyId === keywords.familyId && !itemIssuedThisSession(candidate.itemId, input.sessionHistory));
+      const open = orderBySeen(family, input)[0]?.candidate;
+      if (!open) continue;
+      return { ...exercisePlan(keywords, "precision_practice", false), pairedWith: { itemId: open.itemId, itemRevisionId: open.itemRevisionId } };
+    }
+  }
+  return null;
+}
+
 export function selectLessonTask(input: LessonScheduleInput): LessonTaskPlan | null {
-  return withKeywordsPair(selectBaseLessonTask(input), input);
-}
-
-/**
- * Trener precyzji (design 6.1 i 6.4, reguła 2): odpowiedź otwartą, która nie
- * jest samodzielnym sprawdzeniem, poprzedź wyborem pojęć kluczowych tej samej
- * rodziny, gdy ostatnia odpowiedź celu była nie na temat albo niepełna. Tylko
- * w planie sesji (para to dwa sloty), przy dostępnym graderze i budżecie na oba.
- */
-function withKeywordsPair(plan: LessonTaskPlan | null, input: LessonScheduleInput): LessonTaskPlan | null {
-  if (!plan || plan.kind !== "exercise" || plan.exerciseType !== "lesson_open_answer" || plan.independentCheck) return plan;
-  if (!input.planningMode || input.assessedRemaining < 2 || noGraderAvailable(input)) return plan;
-  const last = input.precisionHistory?.[plan.objectiveId];
-  if (!last || (last.precision !== "unfocused" && last.knowledge !== "partial")) return plan;
-  const open = input.exercises.find((candidate) => candidate.itemRevisionId === plan.itemRevisionId);
-  if (!open?.familyId) return plan;
-  const keywords = input.exercises.find((candidate) =>
-    candidate.exerciseType === "lesson_keywords" && candidate.objectiveId === plan.objectiveId &&
-    candidate.familyId === open.familyId && !itemIssuedThisSession(candidate.itemId, input.sessionHistory));
-  if (!keywords) return plan;
-  return { ...exercisePlan(keywords, "precision_practice", false), pairedWith: { itemId: plan.itemId, itemRevisionId: plan.itemRevisionId } };
-}
-
-function selectBaseLessonTask(input: LessonScheduleInput): LessonTaskPlan | null {
   // Koniec sesji: brak puli albo wyczerpany budżet ocenianych (karty też nie).
   if (input.exercises.length === 0 || input.assessedRemaining <= 0) {
     return null;
@@ -515,6 +518,10 @@ function selectBaseLessonTask(input: LessonScheduleInput): LessonTaskPlan | null
       }
     }
   }
+
+  // Priorytet 3b: trener precyzji — para „słowa kluczowe → odpowiedź otwarta”.
+  const precisionPractice = precisionPracticePlan(input);
+  if (precisionPractice) return precisionPractice;
 
   // Priorytet 4: kontynuacja celu w toku na jego bieżącym etapie.
   for (const id of input.objectiveOrder) {
