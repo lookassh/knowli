@@ -37,17 +37,13 @@ import { filterByKind, groupDecksByState, polishPlural, type DeckKindFilter } fr
 import { ParentIcon } from "./ParentIcon";
 import type { ParentRoute } from "./parent-routes";
 import type { EditorLeaveState } from "./useParentLeaveGuard";
+import { formatFamilyDate } from "./family-date";
 import "./decks-panel.css";
 
 type DeckKind = "vocabulary" | "lesson";
 
 function fill(template: string, values: Record<string, string | number>): string {
   return template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ""));
-}
-
-/** Czytelny zapis ISO daty rodzinnej (YYYY-MM-DD) bez stref czasowych. */
-function formatFamilyDate(iso: string): string {
-  return `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`;
 }
 
 /** Części meta wiersza zestawu: liczba pozycji, przypisane dzieci, najbliższy sprawdzian. */
