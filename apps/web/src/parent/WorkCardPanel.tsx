@@ -158,16 +158,19 @@ export default function WorkCardPanel({ childrenList }: { childrenList: ChildDto
 
   // Po pierwszym wczytaniu „dziś” staje się konkretnym dniem z API: zmiana
   // dziecka (także po północy) pyta o ten sam dzień, który rodzic ogląda.
-  // Odpowiedź kopiujemy pod klucz z datą, więc raport nie znika na czas
-  // odświeżenia pod nowym kluczem.
+  // Dzień bierzemy tylko z odpowiedzi pobranej teraz (nie ze starego wpisu
+  // pamięci podręcznej, np. sprzed północy). Odpowiedź przenosimy pod klucz
+  // z datą — raport nie znika na czas odświeżenia, a wpis „dziś” bez daty
+  // usuwamy, więc wyczyszczenie pola zawsze pyta API o bieżący dzień.
+  const fresh = query.isFetchedAfterMount && !query.isFetching;
   useEffect(() => {
-    if (date || !report) return;
+    if (date || !report || !fresh) return;
     const raw = queryClient.getQueryData(options.queryKey);
-    if (raw) {
-      queryClient.setQueryData(orpc.workCard.get.queryKey({ input: { childId, date: report.date } }), raw);
-    }
+    const datedKey = orpc.workCard.get.queryKey({ input: { childId, date: report.date } });
+    if (raw && queryClient.getQueryData(datedKey) === undefined) queryClient.setQueryData(datedKey, raw);
+    queryClient.removeQueries({ queryKey: options.queryKey, exact: true });
     setDate(report.date);
-  }, [date, report, queryClient, options.queryKey, childId]);
+  }, [date, report, fresh, queryClient, options.queryKey, childId]);
 
   if (childrenList.length === 0) {
     return (

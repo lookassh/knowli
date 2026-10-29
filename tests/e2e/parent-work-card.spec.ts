@@ -56,6 +56,12 @@ test("karta pracy odświeża raport po zmianie dziecka i daty", async ({ page })
   await expect.poll(() => requested.at(-1)).toEqual({ childId: secondChild, date });
   await expect(page.getByText("3 min 0 s")).toBeVisible();
   expect(requested.some((value) => value.childId === firstChild)).toBe(true);
+
+  // wyczyszczenie pola znaczy „dziś”: zawsze nowe pytanie do API, nie stary wpis z pamięci
+  const before = requested.length;
+  await page.getByLabel("Dzień").fill("");
+  await expect.poll(() => requested.slice(before)).toContainEqual({ childId: secondChild, date: null });
+  await expect(page.getByLabel("Dzień")).toHaveValue("2026-10-16");
 });
 
 test("karta pracy pokazuje wynik oceny sesji, wykluczenia i sesje bez oceny", async ({ page }) => {
