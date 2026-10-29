@@ -224,8 +224,11 @@ export function lessonAnswerValues(key: LessonAnswerSnapshot, prompt: TaskPrompt
     ...(key?.acceptedAnswers ?? []),
     ...(key?.correctOptionId ? [valuesById.get(key.correctOptionId) ?? ""] : []),
     ...(sequence.length > 0 ? [sequence.join(" ")] : []),
-    // Słowa kluczowe: zbiór pojęć kluczowych, każde także osobno (wybór bez kolejności).
-    ...(key?.correctOptionIds ? key.correctOptionIds.map((id) => valuesById.get(id) ?? "") : []),
+    // Słowa kluczowe: wyłącznie pełny zbiór pojęć kluczowych — pojedyncze pojęcie
+    // nie jest poprawną odpowiedzią (wybór niepełny nie jest oceniany).
+    ...(key?.correctOptionIds && key.correctOptionIds.every((id) => valuesById.has(id))
+      ? [key.correctOptionIds.map((id) => valuesById.get(id)!).join(", ")]
+      : []),
   ].filter((answer) => answer.length > 0);
   return { valuesById, acceptedAnswers: [...new Set(acceptedAnswers)] };
 }
