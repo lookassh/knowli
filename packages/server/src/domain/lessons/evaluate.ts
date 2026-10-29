@@ -304,6 +304,15 @@ const NON_TERMINAL_ABBREVIATIONS = new Set([
   "godz", "min", "tys", "mln", "mld", "ang", "łac", "gr", "ds", "im", "wyd", "rys",
   "tab", "pkt", "ust", "art", "tel", "wsp", "pow",
 ]);
+const SENTENCE_TERMINATORS = new Set([".", "!", "?", "…"]);
+const CLOSING_MARKS = new Set(["\"", "”", "’", "»", ")", "]"]);
+
+/** Indeks początku końcowej serii znaków z `chars` (liniowo, bez regexu z backtrackingiem). */
+function trailingRunStart(word: string, chars: ReadonlySet<string>): number {
+  let start = word.length;
+  while (start > 0 && chars.has(word[start - 1]!)) start -= 1;
+  return start;
+}
 
 /**
  * Deterministyczne liczenie zdań (forma `one_sentence`): granica zdania to
@@ -318,11 +327,11 @@ export function countSentences(text: string): number {
   let sentences = 1;
   for (const word of words.slice(0, -1)) {
     // Zamykające cudzysłowy i nawiasy po terminatorze nie zmieniają granicy.
-    const bare = word.replace(/["”’»)\]]+$/u, "");
-    const terminator = /[.!?…]+$/u.exec(bare);
-    if (!terminator) continue;
-    const stem = bare.slice(0, terminator.index).toLowerCase();
-    const abbreviation = terminator[0] === "." && (NON_TERMINAL_ABBREVIATIONS.has(stem) || /^\p{L}$/u.test(stem));
+    const bare = word.slice(0, trailingRunStart(word, CLOSING_MARKS));
+    const terminatorStart = trailingRunStart(bare, SENTENCE_TERMINATORS);
+    if (terminatorStart === bare.length) continue;
+    const stem = bare.slice(0, terminatorStart).toLowerCase();
+    const abbreviation = bare.slice(terminatorStart) === "." && (NON_TERMINAL_ABBREVIATIONS.has(stem) || /^\p{L}$/u.test(stem));
     if (!abbreviation && stem !== "") sentences += 1;
   }
   return sentences;
