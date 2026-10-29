@@ -248,7 +248,7 @@ i skonfigurowany model. Twarde wymaganie: wszystkie przypadki klasy
 
 ## 5. Odpowiedź mówiona (Etap 3)
 
-Status: **szkic do akceptacji właściciela** (2026-10-29). Moduł odpowiedzialny:
+Status: **zaakceptowany przez właściciela 2026-10-29** (decyzje 5.9 według rekomendacji, provider STT: Scribe v2 przez OpenRouter) i zaimplementowany; korekty przy implementacji — 5.11. Moduł odpowiedzialny:
 silnik lekcji (`learning/lessons/`, nowy plik ścieżki mowy lekcji) z czystymi
 regułami w `domain/lessons/` i deklaracją w przedmiocie `school`
 (`domain/lessons/subjects/school/`); port `SttProvider` współdzielony ze
@@ -262,9 +262,10 @@ awaria STT = „nieocenione” (bez oceny, bez pomyłki).
 
 ### 5.1. Spike STT `pl-PL` (2026-10-29)
 
-Skrypt próby `spike/school-stt/run.mts` (poza kodem produktu, usuwany po
-próbie jak w `docs/speech-spike.md`) porównuje na tych samych bajtach WAV PCM
-16 kHz mono cztery warianty Azure (region `germanywestcentral`):
+Narzędzie próby `scripts/evaluate-dictation-stt.mts` (`corepack pnpm
+eval:dictation-stt`, poza kodem produktu; zostaje do próby na głosie dziecka
+i kalibracji) porównuje na tych samych bajtach WAV PCM 16 kHz mono cztery
+warianty Azure (region `germanywestcentral`):
 
 | Wariant | Opis |
 | --- | --- |
@@ -354,7 +355,8 @@ Wnioski rundy 2:
 Ograniczenia: syntetyczny głos z podniesioną wysokością **nie jest głosem
 dziecka** (artykulacja, tempo, wahania, szum domowy). Próba `live` na głosie
 dziecka nie została jeszcze wykonana — patrz 5.9 pkt 1. Tryb `live` porównuje
-wszystkie warianty naraz (`SPIKE_SET=openrouter`).
+wszystkie warianty naraz: `SPIKE_SET=openrouter corepack pnpm
+eval:dictation-stt live`.
 
 ### 5.2. Decyzja o adapterze
 
@@ -565,6 +567,24 @@ i może poprawić.
   odpowiedziach w nadzorze lekcji; informacja o usłudze mowy.
 - API → MCP → skill: lekcje są poza `learning-overview`, więc brak wpływu
   (do odnotowania w PR).
+
+### 5.11. Korekty przy implementacji (2026-10-29)
+
+- Próg pewności i limity (600 znaków, 45 s, 40 dyktowań) są stałą domenową
+  `DEFAULT_DICTATION_POLICY` (`domain/lessons/dictation.ts`), nie wpisem polityki
+  w bazie — zmiana wartości to zmiana kodu z testem.
+- Próg pewności stosujemy tylko, gdy provider zwraca confidence; adapter
+  liczy ją z `confidence` albo średniej `words[]` (Scribe), inne modele mogą
+  jej nie mieć.
+- `answer.edited` liczy serwer ze skrótu; skrót ostatniego dyktowania
+  nadpisuje poprzedni w tym samym zadaniu.
+- `lessonSessionContextOf` przenosi `dictationCalls` i `dictations`, żeby zapis
+  licznika gradera nie gubił stanu dyktowania.
+- Mikrofon w zadaniu zależy od `speechInput` zamrożonego w prompcie; endpoint
+  sprawdza dodatkowo aktywną sesję treningową z włączonym mikrofonem.
+- Konfiguracja: `UMIEM_LESSON_STT_BASE_URL`, `UMIEM_LESSON_STT_API_KEY`,
+  opcjonalnie `UMIEM_LESSON_STT_MODEL` (domyślnie `elevenlabs/scribe-v2`);
+  w trybie `UMIEM_FAKE_PROVIDERS=1` stały polski tekst z fake STT.
 
 ## 6. Trener precyzji (Etap 4) — kontrakty
 
