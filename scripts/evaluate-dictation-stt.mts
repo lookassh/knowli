@@ -711,6 +711,12 @@ function live(): void {
     const caseId = String(req.headers["x-case-id"] ?? "");
     const c = CASES.find((x) => x.id === caseId);
     const seconds = wavSeconds(wav);
+    // limit czasu jak na stronie (pół sekundy zapasu na dekodowanie) — przed płatnymi wywołaniami STT
+    if (!Number.isFinite(seconds) || seconds <= 0 || seconds > MAX_LIVE_SECONDS + 0.5) {
+      wav = null;
+      res.writeHead(413, { "content-type": "application/json" }).end(JSON.stringify({ results: [] }));
+      return;
+    }
     const results = (await runEngines(wav)).map((r) => score(r, c));
     wav = null; // bajty nagrania nie żyją dłużej niż żądanie
     // konsola: wyłącznie metadane — bez transkrypcji i bez bajtów
