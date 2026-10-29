@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
+import { expectBandSpansRoot, measure, resizeAndSettle } from "./helpers/kid-layout";
 import { pictureChoiceLayoutFixture } from "./helpers/picture-fixtures";
 
 function recallLayoutFixture(): KidUiFixture {
@@ -396,32 +397,15 @@ test("profile tiles fit portrait, landscape, tablet and desktop", async ({ page 
   ];
   for (const viewport of cases) {
     const name = `${viewport.width}x${viewport.height}`;
-    await page.setViewportSize({ width: viewport.width, height: viewport.height });
-    await page.evaluate(async () => {
-      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-    });
-    const layout = await page.evaluate(() => {
-      const rect = (element: Element) => {
-        const { left, top, right, bottom, width, height } = element.getBoundingClientRect();
-        return { left, top, right, bottom, width, height };
-      };
-      const root = document.querySelector("[data-kid-screen]")!;
-      const band = document.querySelector("[data-kid-header='band']")!;
-      return {
-        innerWidth: window.innerWidth,
-        scrollWidth: document.documentElement.scrollWidth,
-        root: rect(root),
-        band: rect(band),
-        tiles: [...document.querySelectorAll("[data-testid='kid-profile']")].map((tile) => ({
-          ...rect(tile),
-          overflowX: tile.scrollWidth > tile.clientWidth + 1,
-        })),
-      };
-    });
+    await resizeAndSettle(page, { width: viewport.width, height: viewport.height });
+    const frame = await measure(page, { root: "[data-kid-screen]", band: "[data-kid-header='band']" });
+    const tiles = await page.getByTestId("kid-profile").evaluateAll((elements) => elements.map((tile) => {
+      const { left, top, right, bottom, width, height } = tile.getBoundingClientRect();
+      return { left, top, right, bottom, width, height, overflowX: tile.scrollWidth > tile.clientWidth + 1 };
+    }));
+    const layout = { ...frame, tiles };
     expect(layout.scrollWidth, `horizontal overflow: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
-    expect(Math.round(layout.band.left), `band left: ${name}`).toBe(Math.round(layout.root.left));
-    expect(Math.round(layout.band.right), `band right: ${name}`).toBe(Math.round(layout.root.right));
-    expect(Math.round(layout.band.top), `band top: ${name}`).toBe(0);
+    expectBandSpansRoot(layout, name);
     // Wysokość nie jest ograniczona: niski viewport przewija listę, ale poziomo nic nie ucieka.
     for (const [index, tile] of layout.tiles.entries()) {
       expect(tile.height, `tile ${index} height: ${name}`).toBeGreaterThanOrEqual(48);

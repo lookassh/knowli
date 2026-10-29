@@ -1,6 +1,7 @@
 import type { KidDeckDto } from "@learning/contracts";
 import { expect as baseExpect, test, type Page } from "@playwright/test";
 import { installKidUiFixture } from "./helpers/kid-ui-fixture";
+import { expectBandSpansRoot, expectInsideRoot, resizeAndSettle } from "./helpers/kid-layout";
 
 const expect = baseExpect.configure({ timeout: 1_500 });
 test.use({ viewport: { width: 390, height: 844 } });
@@ -170,10 +171,7 @@ test("deck cards and rows fit portrait, landscape, tablet and desktop", async ({
   ];
   for (const viewport of cases) {
     const name = `${viewport.width}x${viewport.height}`;
-    await page.setViewportSize(viewport);
-    await page.evaluate(async () => {
-      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-    });
+    await resizeAndSettle(page, viewport);
     const layout = await page.evaluate(() => {
       const rect = (element: Element) => {
         const { left, top, right, bottom, width, height } = element.getBoundingClientRect();
@@ -193,12 +191,9 @@ test("deck cards and rows fit portrait, landscape, tablet and desktop", async ({
       };
     });
     expect(layout.scrollWidth, `horizontal overflow: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
-    expect(Math.round(layout.band.top), `band top: ${name}`).toBe(0);
-    expect(Math.abs(layout.band.left - layout.root.left), `band left: ${name}`).toBeLessThanOrEqual(1);
-    expect(Math.abs(layout.band.right - layout.root.right), `band right: ${name}`).toBeLessThanOrEqual(1);
+    expectBandSpansRoot(layout, name);
     for (const [index, card] of layout.cards.entries()) {
-      expect(card.left, `card ${index} left: ${name}`).toBeGreaterThanOrEqual(layout.root.left - 1);
-      expect(card.right, `card ${index} right: ${name}`).toBeLessThanOrEqual(layout.root.right + 1);
+      expectInsideRoot(card, layout.root, `card ${index}: ${name}`);
       expect(card.right, `card ${index} in viewport: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
       expect(card.overflowX, `card ${index} content overflow: ${name}`).toBe(false);
       expect(card.title, `card ${index} title clipped: ${name}`).toBe(false);
@@ -245,10 +240,7 @@ test("a deck with an active session is the first card with a prominent resume ac
 
   for (const viewport of [{ width: 360, height: 800 }, { width: 844, height: 390 }]) {
     const name = `${viewport.width}x${viewport.height}`;
-    await page.setViewportSize(viewport);
-    await page.evaluate(async () => {
-      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-    });
+    await resizeAndSettle(page, viewport);
     const resumeBox = (await resume.boundingBox())!;
     const endBox = (await cards.first().getByTestId("kid-end-active-session").boundingBox())!;
     expect(resumeBox.height, `resume main action height: ${name}`).toBeGreaterThanOrEqual(54);
