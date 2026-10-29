@@ -39,3 +39,19 @@ it("renders a precision hint as praise with the shortening tip and no neutral co
   renderKid(<AnswerFeedbackSecondaryActions dto={{ kind: "lesson_precision_hint", hintPl }} retry busy={false} onNext={vi.fn()} onSkip={vi.fn()} />);
   expect(screen.queryByTestId("kid-technical-next")).toBeNull();
 });
+
+it("marks off-topic fragments in lesson feedback with their own style and a spoken label", () => {
+  renderKid(<AnswerFeedbackContent busy={false} dto={{
+    kind: "lesson_hint",
+    hintPl: "Usuń to, co nie odpowiada na pytanie.",
+    answerSegments: [
+      { text: "Południk łączy bieguny. ", state: "plain" },
+      { text: "Wczoraj grałem w piłkę.", state: "offtopic" },
+    ],
+  }} />);
+  const segments = screen.getByTestId("kid-lesson-answer-segments");
+  const offTopic = screen.getByTestId("kid-spelling-offtopic");
+  expect(segments.contains(offTopic)).toBe(true);
+  expect(offTopic.className).toContain("kid-spelling-pill--offtopic");
+  expect(offTopic.textContent).toContain("nie na temat");
+});

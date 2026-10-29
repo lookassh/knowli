@@ -12,6 +12,11 @@ import {
 } from "@learning/contracts";
 import { callParent, errorMessage, parentClient } from "../api";
 
+/** „said” zamiast „meant” — funkcja zamiany, bo pojęcia z odpowiedzi mogą zawierać „$”. */
+function confusionText(pair: { said: string; meant: string }): string {
+  return messages.lessons.schoolConfusion.replace("{said}", () => pair.said).replace("{meant}", () => pair.meant);
+}
+
 /**
  * Panel nadzoru rodzica nad lekcją (zadanie 16): postęp celów dziecka (statusy po
  * polsku, kategorie błędów z przykładami TYLKO tego dziecka, podpowiedź o
@@ -226,6 +231,25 @@ export default function LessonSupervisionPanel({
                       .replace("{verbose}", String(objective.school.precision.verbose))
                       .replace("{unfocused}", String(objective.school.precision.unfocused))}
                   </p>
+                  {objective.school.fragmentKinds && (
+                    <p className="muted" data-testid={`school-fragment-kinds-${objective.objectiveId}`}>
+                      {messages.lessons.schoolFragmentKinds
+                        .replace("{redundant}", String(objective.school.fragmentKinds.redundant))
+                        .replace("{offTopic}", String(objective.school.fragmentKinds.offTopic))}
+                    </p>
+                  )}
+                  {objective.school.topConfusions && objective.school.topConfusions.length > 0 && (
+                    <div data-testid={`school-confusions-${objective.objectiveId}`}>
+                      <h4>{messages.lessons.schoolConfusionsTitle}</h4>
+                      <ul className="plain">
+                        {objective.school.topConfusions.map((pair) => (
+                          <li key={`${pair.said}|${pair.meant}`}>
+                            {confusionText(pair)} <span className="muted">({pair.count})</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   {objective.school.topMissing.length > 0 && (
                     <>
                       <h4>{messages.lessons.schoolMissingTitle}</h4>
@@ -346,6 +370,12 @@ export default function LessonSupervisionPanel({
                               // Funkcja zamiany: teksty z materiału rodzica mogą zawierać „$”.
                               <p className="muted">{messages.lessons.mockTestSchoolMissing.replace("{elements}",
                                 () => objective.school!.missingElements.map((element) => `${element.text} (${element.count})`).join(", "))}</p>
+                            )}
+                            {objective.school.confusions && objective.school.confusions.length > 0 && (
+                              <p className="muted" data-testid={`mock-school-confusions-${objective.objectiveId}`}>
+                                {messages.lessons.mockTestSchoolConfusions.replace("{pairs}",
+                                  () => objective.school!.confusions!.map((pair) => `${confusionText(pair)} (${pair.count})`).join(", "))}
+                              </p>
                             )}
                           </div>
                         )}

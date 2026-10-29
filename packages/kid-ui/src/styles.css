@@ -2429,6 +2429,39 @@
   box-decoration-break: clone;
 }
 
+/* Fragment nie na temat (design szkoły §9.2): przerywana obwódka i falista
+   linia zamiast prostego przekreślenia — kategoria nie zależy od koloru. */
+.kid-spelling-pill--offtopic {
+  color: var(--md-sys-color-on-error-container);
+  background: var(--md-sys-color-error-container);
+  border-style: dashed;
+  text-decoration-line: line-through;
+  text-decoration-style: wavy;
+  text-decoration-thickness: 1px;
+}
+
+/* Legenda zaznaczeń: próbka stylu i nazwa kategorii, zawija się na wąskim ekranie. */
+.kid-segment-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--kid-type-label-xs-size);
+}
+
+.kid-segment-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.kid-segment-legend__sample {
+  line-height: 1.2;
+}
+
 .kid-lesson-shorten__form {
   gap: 4px;
 }
