@@ -27,17 +27,12 @@ function stateLabel(state: ParentWorkCardDto["sessions"][number]["state"]): stri
 
 function feedbackLabel(kind: string | null): string | null {
   if (!kind) return null;
-  const labels: Record<string, string> = {
-    great: "Świetnie", capitalization_hint: "Wielka litera", almost: "Prawie", incorrect: "Spróbuj ponownie",
-    content_matched: "Treść rozpoznana", not_assessed: "Nie udało się ocenić", spelling_hint: "Popraw zapis",
-    lesson_hint: "Wskazówka", lesson_almost: "Prawie",
-  };
-  const label = labels[kind];
+  const label = messages.workCard.feedbackKind[kind];
   return label ? `${messages.workCard.feedback}: ${label}` : null;
 }
 
 function stepTypeLabel(type: string): string {
-  return messages.workCard.stepType[type as keyof typeof messages.workCard.stepType] ?? "Ćwiczenie";
+  return messages.workCard.stepType[type as keyof typeof messages.workCard.stepType] ?? messages.workCard.stepTypeFallback;
 }
 
 type Session = ParentWorkCardDto["sessions"][number];

@@ -163,6 +163,15 @@
   background: var(--mantine-primary-color-light);
 }
 
+/* Ikona panelu (ParentIcon): rozmiar bazowy. `:where()` zeruje specyficzność,
+   więc klasa rozmiaru przekazana ikonie (np. `pp-decks-kind-icon`) wygrywa
+   niezależnie od kolejności plików CSS. */
+:where(.pp-icon) {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
 .pp-shell-tab .pp-icon,
 .pp-shell-navitem .pp-icon {
   width: 20px;

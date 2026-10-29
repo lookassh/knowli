@@ -381,6 +381,8 @@ export const messages = {
     stepType: { exposure: "Prezentacja", listening: "Słuchanie", recall: "Przypominanie", spelling: "Pisownia", pronunciation: "Wymowa", picture_listening: "Wybór obrazka", picture_recognition: "Słowo do obrazka", lesson_card: "Karta lekcji", lesson_gap: "Uzupełnianie luki", lesson_order: "Układanie", lesson_open_answer: "Odpowiedź otwarta", lesson_calculation: "Zadanie rachunkowe", lesson_choice: "Wybór odpowiedzi", lesson_short_answer: "Krótka odpowiedź", lesson_transform: "Przekształcanie zdania", lesson_notice: "Zauważ różnicę", lesson_keywords: "Słowa kluczowe", lesson_match: "Połącz w pary", lesson_group: "Pogrupuj" },
     response: "Odpowiedź",
     feedback: "Zapisany komunikat",
+    feedbackKind: { great: "Świetnie", capitalization_hint: "Wielka litera", almost: "Prawie", incorrect: "Spróbuj ponownie", content_matched: "Treść rozpoznana", not_assessed: "Nie udało się ocenić", spelling_hint: "Popraw zapis", lesson_hint: "Wskazówka", lesson_almost: "Prawie" } as Record<string, string>,
+    stepTypeFallback: "Ćwiczenie",
     skipped: "Pominięto",
     dontRemember: "Nie pamiętam",
     assessed: "Oceniono odpowiedź",
