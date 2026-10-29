@@ -12,6 +12,7 @@ const ALL_TYPES: LessonExerciseType[] = [
   "lesson_error_fix",
   "lesson_transform",
   "lesson_open_answer",
+  "lesson_calculation",
 ];
 
 describe("stageOf / STAGE_BY_TYPE", () => {
@@ -25,9 +26,10 @@ describe("stageOf / STAGE_BY_TYPE", () => {
     expect(stageOf("lesson_error_fix")).toBe("productive");
     expect(stageOf("lesson_transform")).toBe("productive");
     expect(stageOf("lesson_open_answer")).toBe("independent");
+    expect(stageOf("lesson_calculation")).toBe("independent");
   });
 
-  it("definiuje etap dla każdego z 9 typów", () => {
+  it("definiuje etap dla każdego typu", () => {
     for (const type of ALL_TYPES) {
       expect(STAGE_BY_TYPE[type]).toBeDefined();
     }

@@ -1,4 +1,5 @@
 import type {
+  CalculationSpec,
   LessonDraftDto,
   LessonExerciseInput,
   LessonExerciseTypeDto,
@@ -31,6 +32,7 @@ const STAGE_BY_TYPE: Readonly<Record<LessonExerciseTypeDto, LessonStage>> = {
   lesson_error_fix: "productive",
   lesson_transform: "productive",
   lesson_open_answer: "independent",
+  lesson_calculation: "independent",
 };
 
 /** Etap ćwiczenia danego typu (prezentacja przeglądu). */
@@ -65,11 +67,28 @@ export interface EditableLessonExercise {
   items: ExerciseItem[] | null;
   noticeSegments: string[][] | null;
   visualSubject: string;
+  /** Pola v3 przedmiotów szkolnych (null = ćwiczenie ich nie niesie). */
+  questionType: string;
+  requiredElements: { id: string; text: string }[] | null;
+  supplementaryElements: string[] | null;
+  commonErrors: string[] | null;
+  expectedForm: string;
+  familyId: string;
+  calculation?: CalculationSpec;
+  sourceRefs: { quote: string; parentAdded?: boolean }[] | null;
+}
+
+export interface EditableDynamicObjective {
+  id: string;
+  titlePl: string;
+  cards: { title: string; body: string }[];
 }
 
 export interface EditableLessonForm {
   title: string;
   exercises: EditableLessonExercise[];
+  /** Zagadnienia tematu dynamicznego (null = lekcja katalogowa). */
+  dynamicObjectives: EditableDynamicObjective[] | null;
 }
 
 export interface LessonEditorSnapshot {
@@ -84,6 +103,18 @@ export interface LessonDraftPatch {
   title?: string;
   exercises?: LessonExerciseInput[];
   examples?: Record<string, string[]>;
+  dynamicTopic?: { objectives: EditableDynamicObjective[] };
+}
+
+/** Następny wolny identyfikator elementu wymaganego (`e<n>`) — bez kolizji po usunięciach (W11). */
+export function nextRequiredElementId(elements: readonly { id: string }[]): string {
+  const used = new Set(elements.map((el) => el.id));
+  let n = elements.reduce((max, el) => {
+    const m = /^e(\d+)$/.exec(el.id);
+    return m ? Math.max(max, Number.parseInt(m[1]!, 10)) : max;
+  }, 0) + 1;
+  while (used.has(`e${n}`)) n += 1;
+  return `e${n}`;
 }
 
 function commaSplit(value: string): string[] {
@@ -116,6 +147,14 @@ function editableFromExercise(
     items: exercise.items ? exercise.items.map((o) => ({ ...o })) : null,
     noticeSegments: exercise.noticeSegments ? exercise.noticeSegments.map((s) => [...s]) : null,
     visualSubject: exercise.visualSubject ?? "",
+    questionType: exercise.questionType ?? "",
+    requiredElements: exercise.requiredElements ? exercise.requiredElements.map((el) => ({ ...el })) : null,
+    supplementaryElements: exercise.supplementaryElements ? [...exercise.supplementaryElements] : null,
+    commonErrors: exercise.commonErrors ? [...exercise.commonErrors] : null,
+    expectedForm: exercise.expectedForm ?? "",
+    familyId: exercise.familyId ?? "",
+    ...(exercise.calculation ? { calculation: structuredClone(exercise.calculation) } : {}),
+    sourceRefs: exercise.sourceRefs ? exercise.sourceRefs.map((ref) => ({ ...ref })) : null,
   };
 }
 
@@ -130,6 +169,9 @@ export function createLessonSnapshot(
     form: {
       title: draft.title,
       exercises: draft.exercises.map((exercise) => editableFromExercise(exercise, newKey)),
+      dynamicObjectives: draft.dynamicTopic
+        ? draft.dynamicTopic.objectives.map((o) => ({ id: o.id, titlePl: o.titlePl, cards: o.cards.map((c) => ({ ...c })) }))
+        : null,
     },
   };
 }
@@ -145,7 +187,7 @@ const STEM_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_choice",
 // `payload.statement`). Serializacja musi wysyłać `statement`, nie `prompt`,
 // inaczej PATCH gubi zdanie i materializacja daje pusty `statement`.
 const STATEMENT_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_error_fix", "lesson_transform"]);
-const PROMPT_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_open_answer", "lesson_short_answer"]);
+const PROMPT_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_open_answer", "lesson_short_answer", "lesson_calculation"]);
 const OPTION_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_choice", "lesson_short_answer"]);
 const ITEM_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_order"]);
 const NOTICE_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_notice"]);
@@ -164,7 +206,10 @@ function exerciseToInput(exercise: EditableLessonExercise): LessonExerciseInput 
   if (trimmedInstruction.length > 0) {
     input.instructionPl = trimmedInstruction;
   }
-  if (STEM_TYPES.has(type) && exercise.stem.length > 0) {
+  // lesson_short_answer: edytor pokazuje jedno pole pytania (prompt z fallbackiem
+  // na stem) — wysyłamy tylko jedno pole, żeby payload nie niósł dwóch wersji pytania (W13).
+  const shortAnswerPromptWins = type === "lesson_short_answer" && exercise.prompt.length > 0;
+  if (STEM_TYPES.has(type) && exercise.stem.length > 0 && !shortAnswerPromptWins) {
     input.stem = exercise.stem;
   }
   if (STATEMENT_TYPES.has(type) && exercise.statement.length > 0) {
@@ -199,6 +244,29 @@ function exerciseToInput(exercise: EditableLessonExercise): LessonExerciseInput 
       input.correctOption = exercise.correctOption;
     }
   }
+  if (exercise.questionType.length > 0) {
+    input.questionType = exercise.questionType as LessonExerciseInput["questionType"];
+  }
+  if (exercise.requiredElements) {
+    // Porzucony pusty wpis („Dodaj” bez wypełnienia) nie blokuje zapisu całości (W12).
+    input.requiredElements = exercise.requiredElements.filter((el) => el.text.trim().length > 0).map((el) => ({ ...el }));
+  }
+  if (exercise.supplementaryElements) {
+    input.supplementaryElements = [...exercise.supplementaryElements];
+  }
+  if (exercise.commonErrors) {
+    input.commonErrors = [...exercise.commonErrors];
+  }
+  if (exercise.expectedForm.length > 0) {
+    input.expectedForm = exercise.expectedForm as LessonExerciseInput["expectedForm"];
+  }
+  if (exercise.familyId.length > 0) {
+    input.familyId = exercise.familyId;
+  }
+  if (exercise.sourceRefs) {
+    input.sourceRefs = exercise.sourceRefs.filter((ref) => ref.quote.trim().length > 0).map((ref) => ({ ...ref }));
+  }
+  if (exercise.calculation) input.calculation = structuredClone(exercise.calculation);
   return input;
 }
 
@@ -213,6 +281,9 @@ export function toLessonDraftPatch(snapshot: LessonEditorSnapshot): LessonDraftP
     expectedEditNumber: snapshot.editNumber,
     title: snapshot.form.title.trim(),
     exercises: snapshot.form.exercises.map(exerciseToInput),
+    ...(snapshot.form.dynamicObjectives
+      ? { dynamicTopic: { objectives: snapshot.form.dynamicObjectives.map((o) => ({ id: o.id, titlePl: o.titlePl, cards: o.cards.filter((c) => c.title.trim().length > 0 || c.body.trim().length > 0).map((c) => ({ ...c })) })) } }
+      : {}),
   };
 }
 
@@ -258,4 +329,25 @@ export function groupExercisesByObjectiveAndStage(
       ),
     })),
   }));
+}
+
+
+/** Applies an API preview only while it still describes this variant. No arithmetic in the client. */
+export function applyCalculationPreview(exercise: EditableLessonExercise, requested: CalculationSpec, preview: { prompt: string; answer: string }): EditableLessonExercise {
+  return JSON.stringify(exercise.calculation) === JSON.stringify(requested)
+    ? { ...exercise, prompt: preview.prompt, answer: preview.answer }
+    : exercise;
+}
+
+/** Stable groups scoped by objective; ordinary exercises remain separate. */
+export function groupCalculationFamilies(exercises: readonly EditableLessonExercise[]): { key: string; familyId: string | null; exercises: EditableLessonExercise[] }[] {
+  const groups = new Map<string, { key: string; familyId: string | null; exercises: EditableLessonExercise[] }>();
+  for (const exercise of exercises) {
+    const familyId = exercise.calculation?.templateFamilyId ?? null;
+    const key = familyId ? JSON.stringify([exercise.objectiveId, familyId]) : exercise.clientKey;
+    const group = groups.get(key) ?? { key, familyId, exercises: [] };
+    group.exercises.push(exercise);
+    groups.set(key, group);
+  }
+  return [...groups.values()];
 }

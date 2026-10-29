@@ -218,7 +218,8 @@ async function listKidDecksSnapshot(
       // Tytuł przedmiotu z wstrzykniętego rejestru (NIE import globalny); liczniki
       // lekcji z silnika lekcji (zadanie 13).
       const subjectId = (row.lessonContext as { subjectId?: string } | null)?.subjectId;
-      const subjectTitle = (subjectId ? services.subjects.getSubject(subjectId)?.titlePl : undefined) ?? null;
+      const parentSubjectTitle = (row.lessonContext as { subjectTitlePl?: string } | null)?.subjectTitlePl;
+      const subjectTitle = parentSubjectTitle ?? (subjectId ? services.subjects.getSubject(subjectId)?.titlePl : undefined) ?? null;
       const values = lessonValues.get(row.deckId) ?? { itemCount: 0, independentlyRecalledCount: 0, recommended: false, mockTestAvailable: false };
       return {
         kind: "lesson",

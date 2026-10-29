@@ -5,6 +5,7 @@
   "description": "Knowli / Umiem! — prywatna, self-hostowana aplikacja rodzinna do nauki",
   "packageManager": "pnpm@10.34.6",
   "scripts": {
+    "eval:school-grader": "node apps/worker/node_modules/tsx/dist/cli.mjs scripts/evaluate-school-grader.mts",
     "test:unit": "vitest run --config vitest.unit.config.ts",
     "contracts:export-learning-overview": "node apps/worker/node_modules/tsx/dist/cli.mjs scripts/export-learning-overview-schema.ts",
     "test:mcp": "uv sync --locked --project integrations/umiem-mcp --group hermes-test && uv run --locked --project integrations/umiem-mcp --group hermes-test python -m unittest discover -s integrations/umiem-mcp/tests -p test_*.py",

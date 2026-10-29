@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import type { TaskPrompt } from "@learning/contracts";
+import { messages, type CalculationSpec, type TaskPrompt } from "@learning/contracts";
 import { AppError } from "../../../errors";
 import { computeTargetKey } from "../../../domain/target-key";
+import { renderCalculationPrompt } from "../../../domain/lessons/calculation";
 import { renderCard } from "../../../domain/lessons/card";
 import { answersEquivalent } from "../../../domain/lessons/pool-validation";
 import type { LearningObjective, LessonExerciseType, LessonTopic, LessonVisualSubject, SubjectModule } from "../../../domain/lessons/types";
@@ -27,12 +28,21 @@ export interface LessonExercisePayload {
   transformId?: string;
   noticeSegments?: string[][];
   visualSubject?: LessonVisualSubject;
+  calculation?: CalculationSpec;
   answer: string;
   acceptedAnswers: string[];
   focus: string[];
   options?: { id: string; text: string }[];
   correctOption?: string;
   items?: { id: string; text: string }[];
+  // Pola v3 (kryteria serwera; materializacja ich nie renderuje dziecku).
+  questionType?: string;
+  requiredElements?: { id: string; text: string }[];
+  supplementaryElements?: string[];
+  commonErrors?: string[];
+  expectedForm?: string;
+  familyId?: string;
+  sourceRefs?: { quote: string; parentAdded?: boolean }[];
   answerLocale: string;
   promptLocale: string;
 }
@@ -146,7 +156,19 @@ export function materializeExercise(
     focus: payload.focus,
     independentCheck: plan.independentCheck,
     reason: plan.reason,
+    // Migawka celu: ścieżka oceny nie musi szukać celu w katalogu (tematy dynamiczne).
+    ...(objective ? { objectiveSnapshot: { objectiveTitlePl: objective.titlePl, topicId: topic.id, topicVersion: topic.version, descriptionEn: objective.descriptionEn, errorCategories: [...objective.errorCategories], hints: { ...objective.hints }, topicTitlePl: topic.titlePl, extraErrorCategories: topic.extraErrorCategories.map((c) => ({ ...c })) } } : {}),
   };
+  // Kryteria v3 w kluczu prywatnym: ocena szkolna (Etap 2) ich potrzebuje, a prompt dziecka ich nie zawiera.
+  if (payload.requiredElements && payload.requiredElements.length > 0) {
+    baseKey.schoolCriteria = {
+      requiredElements: payload.requiredElements.map((el) => ({ ...el })),
+      supplementaryElements: [...(payload.supplementaryElements ?? [])],
+      commonErrors: [...(payload.commonErrors ?? [])],
+      ...(payload.expectedForm ? { expectedForm: payload.expectedForm } : {}),
+      sourceQuotes: (payload.sourceRefs ?? []).map((ref) => ref.quote),
+    };
+  }
   const taskContext: Record<string, unknown> = { reason: plan.reason, objectiveId: payload.objectiveId, independentCheck: plan.independentCheck };
   const common = { exerciseType: payload.exerciseType, itemRevisionId: exercise.revisionId, context: taskContext } as const;
 
@@ -234,8 +256,27 @@ export function materializeExercise(
       const prompt: TaskPrompt = { kind: "lesson_transform", instructionPl, statement: payload.statement ?? "", ...audio };
       return { ...common, prompt, answerKey: baseKey, exposures: [] };
     }
+    case "lesson_calculation": {
+      try {
+        if (!payload.calculation) throw new Error("missing calculation");
+        // Bez własnego polecenia rachunek dostaje wspólne polecenie, nie tytuł zagadnienia.
+        const prompt: TaskPrompt = {
+          kind: "lesson_calculation",
+          instructionPl: payload.instructionPl ?? messages.kid.lessonCalculationInstruction,
+          prompt: renderCalculationPrompt(payload.calculation),
+        };
+        return { ...common, prompt, answerKey: { ...baseKey, calculation: payload.calculation }, exposures: [] };
+      } catch {
+        throw new AppError("internal", { message: "invalid private calculation payload" });
+      }
+    }
     case "lesson_open_answer": {
-      const prompt: TaskPrompt = { kind: "lesson_open_answer", instructionPl, prompt: payload.prompt ?? "", ...audio };
+      // Język pytania podajemy tylko, gdy przedmiot ma jeden język (szkoła); w gramatyce
+      // pytanie bywa angielskie albo jest polskim źródłem tłumaczenia — nie zgadujemy.
+      const locale = subject.promptLocale === subject.answerLocale ? subject.promptLocale : null;
+      const promptLocale: { promptLocale?: "pl-PL" | "en-GB" } =
+        locale === "pl-PL" || locale === "en-GB" ? { promptLocale: locale } : {};
+      const prompt: TaskPrompt = { kind: "lesson_open_answer", instructionPl, prompt: payload.prompt ?? "", ...audio, ...promptLocale };
       return { ...common, prompt, answerKey: baseKey, exposures: [] };
     }
     default:

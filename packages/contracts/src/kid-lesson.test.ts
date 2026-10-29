@@ -9,6 +9,7 @@ import {
   SessionSummaryDtoSchema,
   SessionInputSchema,
   KidValidationReasonSchema,
+  MAX_TEXT_ATTEMPT_LENGTH,
 } from "./kid";
 import { messages } from "./messages";
 
@@ -16,6 +17,23 @@ const UUID = "11111111-1111-4111-8111-111111111111";
 const UUID2 = "22222222-2222-4222-8222-222222222222";
 
 const option = { id: UUID, text: "plays" };
+
+describe("public calculation prompt", () => {
+  const prompt = { kind: "lesson_calculation", instructionPl: "Oblicz.", prompt: "Przelicz 2 km na m." };
+  it("accepts the written question and registers its exercise type", () => {
+    expect(TaskPromptSchema.safeParse(prompt).success).toBe(true);
+    expect(EXERCISE_TYPES as readonly string[]).toContain("lesson_calculation");
+  });
+  it.each([
+    ["calculation", {
+      kind: "unit_conversion", params: { value: 2, fromUnit: "km" }, unit: "m", templateFamilyId: "units",
+    }],
+    ["answer", "2000 m"], ["acceptedAnswers", []], ["focus", []],
+    ["requiredElements", [{ id: "result", text: "2000 m" }]], ["audioAssetId", UUID],
+  ] as const)("rejects private or unsupported field %s", (field, value) => {
+    expect(TaskPromptSchema.safeParse({ ...prompt, [field]: value }).success).toBe(false);
+  });
+});
 
 describe("EXERCISE_TYPES includes the 9 lesson types", () => {
   it("contains every lesson_* type", () => {
@@ -95,6 +113,15 @@ describe("TaskPrompt lesson branches never leak private fields", () => {
     ["correctOption", { kind: "lesson_notice", instructionPl: "i", segments: [[{ id: UUID, text: "He" }]], correctOption: "He" }],
   ])("rejects a lesson prompt carrying %s", (_label, prompt) => {
     expect(TaskPromptSchema.safeParse(prompt).success).toBe(false);
+  });
+});
+
+describe("AttemptInput text modality", () => {
+  it("accepts a school open answer up to the 600 characters the grader reads, and rejects longer", () => {
+    const attempt = (length: number) => ({ taskId: UUID, clientAttemptId: UUID2, modality: "text", text: "a".repeat(length) });
+    expect(MAX_TEXT_ATTEMPT_LENGTH).toBe(600);
+    expect(AttemptInputSchema.safeParse(attempt(600)).success).toBe(true);
+    expect(AttemptInputSchema.safeParse(attempt(601)).success).toBe(false);
   });
 });
 

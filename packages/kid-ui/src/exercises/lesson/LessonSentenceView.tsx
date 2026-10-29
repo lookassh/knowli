@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { messages } from "@learning/contracts";
+import { MAX_TEXT_ATTEMPT_LENGTH, messages } from "@learning/contracts";
 import { KidIcon } from "../../components/KidIcon";
 import { ActionButton } from "../../components/ActionButton";
 import { AnswerField } from "../../components/AnswerField";
@@ -8,7 +8,8 @@ import { useRetryReset } from "../useRetryReset";
 import type { ExerciseProps } from "../types";
 
 /**
- * Pole zdania dla `lesson_error_fix` / `lesson_transform` / `lesson_open_answer`:
+ * Pole zdania dla `lesson_error_fix` / `lesson_transform` / `lesson_open_answer`
+ * oraz wyniku `lesson_calculation`:
  * polecenie (z ramki), zdanie wyjściowe i pole tekstowe bez autokorekty.
  * „Sprawdź” wysyła odpowiedź `text`. `lesson_open_answer` nie ma deterministycznej
  * oceny do czasu zadania 15 — serwer odpowie wtedy `not_assessed`, a widok
@@ -28,12 +29,22 @@ export function LessonSentenceView({ task, busy, dock, handlers }: ExerciseProps
   if (
     task.prompt.kind !== "lesson_error_fix" &&
     task.prompt.kind !== "lesson_transform" &&
-    task.prompt.kind !== "lesson_open_answer"
+    task.prompt.kind !== "lesson_open_answer" &&
+    task.prompt.kind !== "lesson_calculation"
   ) {
     return null;
   }
-  const source = task.prompt.kind === "lesson_open_answer" ? task.prompt.prompt : task.prompt.statement;
-  const hasAudio = task.prompt.audioAssetId !== undefined;
+  // Rachunek: polskie polecenie i wynik z jednostką wpisany dosłownie (przecinek,
+  // spacje tysięcy); poprawność liczy wyłącznie serwer.
+  const calculation = task.prompt.kind === "lesson_calculation";
+  const source = task.prompt.kind === "lesson_open_answer" || task.prompt.kind === "lesson_calculation"
+    ? task.prompt.prompt
+    : task.prompt.statement;
+  const hasAudio = task.prompt.kind !== "lesson_calculation" && task.prompt.audioAssetId !== undefined;
+  // Język pytania: rachunek zawsze po polsku; odpowiedź otwarta podaje go, gdy jest
+  // jednoznaczny (szkoła) — wtedy dziecko odpowiada w tym samym języku.
+  const knownLocale = calculation ? "pl-PL" : task.prompt.kind === "lesson_open_answer" ? task.prompt.promptLocale : undefined;
+  const sourceLang = knownLocale ?? "en-GB";
   const disabled = busy;
   const formId = `kid-lesson-sentence-${task.taskId}`;
 
@@ -44,7 +55,7 @@ export function LessonSentenceView({ task, busy, dock, handlers }: ExerciseProps
       task={task}
       content={(
         <>
-          <p className="kid-lesson-source" data-testid="kid-lesson-source" lang="en-GB">{source}</p>
+          <p className="kid-lesson-source" data-testid="kid-lesson-source" lang={sourceLang}>{source}</p>
           <form
             id={formId}
             className="kid-written"
@@ -58,8 +69,11 @@ export function LessonSentenceView({ task, busy, dock, handlers }: ExerciseProps
               data-testid="kid-lesson-input"
               value={text}
               onChange={(event) => { setText(event.target.value); handlers.onEdit(); }}
-              placeholder={messages.kid.typeWord}
-              aria-label={messages.kid.lessonSourceSentence}
+              placeholder={calculation ? messages.kid.lessonCalculationPlaceholder : messages.kid.typeWord}
+              aria-label={calculation ? messages.kid.lessonCalculationInput : messages.kid.lessonSourceSentence}
+              {...(knownLocale ? { lang: knownLocale } : {})}
+              // Same cap as the server contract, so a long answer is never rejected after typing.
+              maxLength={MAX_TEXT_ATTEMPT_LENGTH}
               autoComplete="off"
               autoCorrect="off"
               autoCapitalize="off"

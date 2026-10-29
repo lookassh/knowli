@@ -786,6 +786,11 @@ export const lessonVerdicts = app.table(
     verdict: text("verdict").notNull(),
     errorCategory: text("error_category"),
     fragments: jsonb("fragments").$type<string[]>().notNull().default([]),
+    precision: text("precision"),
+    matchedElements: jsonb("matched_elements").$type<string[]>().notNull().default([]),
+    missingElements: jsonb("missing_elements").$type<string[]>().notNull().default([]),
+    incorrectStatements: jsonb("incorrect_statements").$type<string[]>().notNull().default([]),
+    redundantFragments: jsonb("redundant_fragments").$type<string[]>().notNull().default([]),
     note: text("note"),
     parentDecision: text("parent_decision"),
     parentDecidedAt: timestamps("parent_decided_at"),
@@ -793,6 +798,10 @@ export const lessonVerdicts = app.table(
   },
   (t) => [
     check("lesson_verdicts_verdict_allowed", sql`${t.verdict} in ('correct', 'almost', 'incorrect')`),
+    check(
+      "lesson_verdicts_precision_allowed",
+      sql`${t.precision} is null or ${t.precision} in ('concise', 'verbose', 'unfocused')`,
+    ),
     check(
       "lesson_verdicts_parent_decision_allowed",
       sql`${t.parentDecision} is null or ${t.parentDecision} in ('confirmed', 'overridden_correct', 'overridden_incorrect')`,

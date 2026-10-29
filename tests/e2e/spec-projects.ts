@@ -36,6 +36,7 @@ export const MOCKED_SPECS: readonly string[] = [
     "kid-responsive.spec.ts",
   "kid-theme-scope.spec.ts",
   "kid-ui-layout.spec.ts",
+  "lesson-calculation-layout.spec.ts",
   "lesson-kid.spec.ts",
   "parent-work-card.spec.ts",
   "picture-choice-layout.spec.ts",
@@ -57,6 +58,7 @@ export const REAL_BUCKETS: readonly (readonly string[])[] = [
   ],
   [
     "generation-request-retry.spec.ts",
+    "lesson-calculation.spec.ts",
     "kid-flow.spec.ts",
     "navigation.spec.ts",
     "privacy.spec.ts",

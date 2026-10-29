@@ -23,6 +23,38 @@ const input: LessonPoolInput = {
 };
 
 describe("lessonPoolJsonSchema", () => {
+  it("requires 1–3 quotes per exercise when grounding is required, keeps them optional otherwise", () => {
+    const grounded = lessonPoolJsonSchema({ ...input, groundingRequired: true }) as any;
+    expect(grounded.properties.exercises.items.properties.sourceRefs).toMatchObject({ type: "array", minItems: 1, maxItems: 3 });
+    const plain = lessonPoolJsonSchema(input) as any;
+    expect(plain.properties.exercises.items.properties.sourceRefs.type).toEqual(["null", "array"]);
+    expect(plain.properties.exercises.items.properties.sourceRefs).not.toHaveProperty("minItems");
+  });
+
+  it("gives calculations a strict parameter-only branch, with all three closed kinds", () => {
+    const schema = lessonPoolJsonSchema({
+      ...input,
+      exerciseTypes: ["lesson_gap", "lesson_calculation"],
+      objectives: [{ ...input.objectives[0]!, exerciseTypes: ["lesson_gap", "lesson_calculation"] }],
+    }) as any;
+    const branches = schema.properties.exercises.items.anyOf;
+    expect(branches).toHaveLength(2);
+    const calculation = branches.find((branch: any) => branch.properties.exerciseType.enum.includes("lesson_calculation"));
+    expect(calculation.required.sort()).toEqual(["exerciseType", "objectiveId", "calculation", "sourceRefs"].sort());
+    expect(calculation.properties).not.toHaveProperty("answer");
+    expect(calculation.properties).not.toHaveProperty("prompt");
+    expect(calculation.additionalProperties).toBe(false);
+    const kinds = calculation.properties.calculation.anyOf;
+    expect(kinds.map((kind: any) => kind.properties.kind.enum[0])).toEqual(["scale_distance", "height_difference", "unit_conversion"]);
+    expect(kinds[0].properties.params.required).toEqual(["scaleDenominator", "mapDistanceCm"]);
+    for (const kind of kinds) {
+      expect(kind.additionalProperties).toBe(false);
+      expect(kind.properties.params.additionalProperties).toBe(false);
+      expect(kind.required.sort()).toEqual(Object.keys(kind.properties).sort());
+    }
+    expect(branches[0].properties.exerciseType.enum).toEqual(["lesson_gap"]);
+  });
+
   it("keeps strict root, nullable required fields, and only the objective's pool types", () => {
     const schema = lessonPoolJsonSchema(input) as any;
     const item = schema.properties.exercises.items;

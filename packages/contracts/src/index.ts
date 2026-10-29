@@ -12,3 +12,4 @@ export * from "./progress";
 export * from "./reward-activity";
 export * from "./parent-work-card";
 export * from "./mock-tests";
+export * from "./lesson-calculation";

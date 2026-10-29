@@ -8,7 +8,10 @@ import {
   evaluateChoice,
   evaluateSequence,
   gradeFromMatch,
+  countSentences,
+  gradeFromSchoolVerdict,
   gradeFromVerdict,
+  validateSchoolVerdict,
   matchLessonAnswer,
   validateVerdict,
   type LessonAnswerKey,
@@ -334,5 +337,78 @@ describe("buildAnswerSegments — segmenty plain/pill po punktach kodowych", () 
   it("segmenty składają się dokładnie na childAnswer", () => {
     const segments = buildAnswerSegments("He play football", ["play"]);
     expect(segments?.map((s) => s.text).join("")).toBe("He play football");
+  });
+});
+
+describe("werdykt szkolny dwuwymiarowy (Etap 2)", () => {
+  const CTX = { requiredElementIds: ["e1", "e2"], childAnswer: "Roślina wytwarza cukry i uparcie opowiada o pogodzie" };
+
+  it("przyjmuje poprawny werdykt i zachowuje oba wymiary", () => {
+    const v = validateSchoolVerdict({
+      knowledge: "correct", precision: "verbose",
+      matchedElementIds: ["e1", "e2"], missingElementIds: [],
+      incorrectStatements: [], redundantFragments: ["opowiada o pogodzie"], note: "ok",
+    }, CTX);
+    expect(v?.knowledge).toBe("correct");
+    expect(v?.precision).toBe("verbose");
+  });
+
+  it("odrzuca correct z brakami, nieznanym elementem i fragmentem spoza odpowiedzi", () => {
+    const base = {
+      precision: "concise", matchedElementIds: ["e1"], missingElementIds: ["e2"],
+      incorrectStatements: [], redundantFragments: [], note: "",
+    };
+    expect(validateSchoolVerdict({ ...base, knowledge: "correct" }, CTX)).toBeNull();
+    expect(validateSchoolVerdict({ ...base, knowledge: "partial", matchedElementIds: ["e9"] }, CTX)).toBeNull();
+    expect(validateSchoolVerdict({ ...base, knowledge: "partial", redundantFragments: ["nie ma tego w odpowiedzi"] }, CTX)).toBeNull();
+  });
+
+  it("wymaga pełnego pokrycia elementów: correct bez wymienienia e2 jest odrzucany (K1)", () => {
+    const base = { precision: "concise", incorrectStatements: [], redundantFragments: [], note: "" };
+    // e2 ani w matched, ani w missing — werdykt nie może zaliczyć wiedzy.
+    expect(validateSchoolVerdict({ ...base, knowledge: "correct", matchedElementIds: ["e1"], missingElementIds: [] }, CTX)).toBeNull();
+    expect(validateSchoolVerdict({ ...base, knowledge: "correct", matchedElementIds: [], missingElementIds: [] }, CTX)).toBeNull();
+    expect(validateSchoolVerdict({ ...base, knowledge: "incorrect", matchedElementIds: ["e1"], missingElementIds: [] }, CTX)).toBeNull();
+  });
+
+  it("partial bez braków i bez błędnych stwierdzeń jest odrzucany, a z nieścisłością przyjmowany (W1)", () => {
+    const base = { precision: "concise", matchedElementIds: ["e1", "e2"], missingElementIds: [], redundantFragments: [], note: "" };
+    expect(validateSchoolVerdict({ ...base, knowledge: "partial", incorrectStatements: [] }, CTX)).toBeNull();
+    const v = validateSchoolVerdict({ ...base, knowledge: "partial", incorrectStatements: ["uparcie"] }, CTX);
+    expect(v?.knowledge).toBe("partial");
+  });
+
+  it("formOk=false klamruje precyzję concise do verbose, bez zmiany wiedzy", () => {
+    const v = validateSchoolVerdict({
+      knowledge: "correct", precision: "concise",
+      matchedElementIds: ["e1", "e2"], missingElementIds: [],
+      incorrectStatements: [], redundantFragments: [], note: "",
+    }, { ...CTX, formOk: false });
+    expect(v?.precision).toBe("verbose");
+    expect(v?.knowledge).toBe("correct");
+  });
+
+  it("precyzja nigdy nie zmienia mapowania wiedzy", () => {
+    for (const precision of ["concise", "verbose", "unfocused"] as const) {
+      const base = { precision, matchedElementIds: ["e1", "e2"], missingElementIds: [], incorrectStatements: [], redundantFragments: [], note: "" };
+      expect(gradeFromSchoolVerdict(validateSchoolVerdict({ ...base, knowledge: "correct" }, CTX)!).outcome).toBe("correct");
+      expect(gradeFromSchoolVerdict(validateSchoolVerdict({ ...base, knowledge: "partial", matchedElementIds: ["e1"], missingElementIds: ["e2"] }, CTX)!).outcome).toBe("incorrect");
+    }
+    expect(gradeFromSchoolVerdict(null)).toEqual({ outcome: "unevaluated", reason: "technical", verdict: "unavailable" });
+  });
+
+  it("liczy zdania deterministycznie", () => {
+    expect(countSentences("")).toBe(0);
+    expect(countSentences("Jedno zdanie")).toBe(1);
+    expect(countSentences("Roślina bierze światło. Bierze też wodę. I robi cukry.")).toBe(3);
+    expect(countSentences("Roślina bierze światło! Robi cukry")).toBe(2);
+    expect(countSentences("Roślina wytwarza np. cukry.")).toBe(1);
+    expect(countSentences("Roślina potrzebuje (np. światła).")).toBe(1);
+    expect(countSentences("Mówi się „m.in. o liściach”.")).toBe(1);
+    expect(countSentences("Rośliny m.in. wytwarzają cukry, tzn. pokarm.")).toBe(1);
+    expect(countSentences("W 966 r. Mieszko I przyjął chrzest.")).toBe(1);
+    expect(countSentences("Szczyt ma 2499 m n.p.m. i jest najwyższy w Polsce.")).toBe(1);
+    expect(countSentences("Woda wrze w 99.5 stopnia na tej wysokości.")).toBe(1);
+    expect(countSentences("Rośliny rosną (szybko.) Potem kwitną.")).toBe(2);
   });
 });

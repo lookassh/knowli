@@ -1,6 +1,7 @@
 import { createSubjectRegistry, type SubjectRegistry } from "../registry";
 import type { SubjectModule } from "../types";
 import { englishGrammarSubject } from "./english-grammar/module";
+import { schoolSubject } from "./school/module";
 
 /**
  * Rejestr przedmiotów produkcyjnych. To jedyne miejsce, w którym silnik „widzi”
@@ -9,7 +10,7 @@ import { englishGrammarSubject } from "./english-grammar/module";
  * niczego stąd nie importuje). Dodanie przedmiotu = import modułu tutaj i wpis
  * w `PRODUCTION_SUBJECTS`.
  */
-export const PRODUCTION_SUBJECTS: readonly SubjectModule[] = [englishGrammarSubject];
+export const PRODUCTION_SUBJECTS: readonly SubjectModule[] = [englishGrammarSubject, schoolSubject];
 
 /** Buduje rejestr przedmiotów produkcyjnych (waliduje każdy przez `validateSubject`). */
 export function createProductionSubjectRegistry(): SubjectRegistry {

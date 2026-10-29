@@ -68,6 +68,18 @@ describe("createOpenAiCompatibleGrader", () => {
     expect(raw).toEqual({ verdict: "incorrect", errorCategory: "missing_s", fragments: ["play"], note: "Brakuje końcówki -s." });
   });
 
+  it("dokłada opcje pośrednika z konfiguracji, ale nie pozwala im nadpisać modelu ani formatu", async () => {
+    const { fetchImpl, calls } = capturingFetch(() => chatResponse(VALID_JSON));
+    const grader = createOpenAiCompatibleGrader({
+      baseUrl: "https://g.example/v1", apiKey: "t", model: "cheap-1", fetchImpl,
+      requestExtras: { reasoning: { effort: "low" }, provider: { data_collection: "deny", require_parameters: true }, model: "other" },
+    });
+    await grader.grade(input, AbortSignal.timeout(1000));
+    const body = JSON.parse(calls[0]!.init.body) as Record<string, unknown>;
+    expect(body).toMatchObject({ model: "cheap-1", reasoning: { effort: "low" }, provider: { data_collection: "deny", require_parameters: true } });
+    expect(body.response_format).toEqual({ type: "json_object" });
+  });
+
   it("wyciąga JSON z bloku markdown", async () => {
     const fenced = "```json\n" + VALID_JSON + "\n```";
     const { fetchImpl } = capturingFetch(() => chatResponse(fenced));

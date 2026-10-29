@@ -68,6 +68,7 @@ export function ExerciseView(props: ExerciseProps) {
     case "lesson_error_fix":
     case "lesson_transform":
     case "lesson_open_answer":
+    case "lesson_calculation":
       return <LessonSentenceView key={props.task.taskId} {...props} />;
     default: {
       // Strażnik wyczerpania: dodanie nowego typu bez gałęzi wyżej nie skompiluje się.

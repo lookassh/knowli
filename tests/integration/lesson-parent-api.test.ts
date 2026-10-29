@@ -143,6 +143,23 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
     return { services, cookie: token };
   }
 
+  it("odrzuca rachunek w gramatyce przez HTTP i zachowuje cały szkic", async () => {
+    const fakes = await fakeGeneration(); disposers.push(fakes.dispose);
+    const { services, cookie } = await freshParent(fakes);
+    const { deckId } = await createAndGenerate(services, cookie);
+    const before = LessonDeckDtoSchema.parse(await (await call(services, "GET", `lessons/${deckId}`, { cookie })).json());
+    const response = await call(services, "PATCH", `lesson-drafts/${before.draft!.id}`, {
+      cookie, body: { expectedEditNumber: before.draft!.editNumber, title: "Nie zapisuj", exercises: [{
+        exerciseType: "lesson_calculation", objectiveId: OBJECTIVE, prompt: "Oblicz.", answer: "250 m", acceptedAnswers: [], focus: [],
+        calculation: { kind: "height_difference", params: { upperHeightM: 400, lowerHeightM: 150 }, unit: "m", templateFamilyId: "height" },
+      }] },
+    });
+    expect(response.status).toBe(400);
+    expect((await response.json()).code).toBe("validation");
+    const after = LessonDeckDtoSchema.parse(await (await call(services, "GET", `lessons/${deckId}`, { cookie })).json());
+    expect(after.draft).toEqual(before.draft);
+  });
+
   it("hides inactive assignments from the lesson editor response", async () => {
     const fakes = await fakeGeneration(); disposers.push(fakes.dispose);
     const { services, cookie } = await freshParent(fakes);

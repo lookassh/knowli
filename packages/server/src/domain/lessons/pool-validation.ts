@@ -154,6 +154,19 @@ function validateVisualSubject(ex: LessonExerciseDraft, errors: string[]): void 
   }
 }
 
+/** Pola v3 obecne w szkicu (nazwy do komunikatu walidacji). */
+function v3FieldsPresent(ex: LessonExerciseDraft): string[] {
+  const fields: string[] = [];
+  if (ex.questionType !== undefined) fields.push("questionType");
+  if (ex.requiredElements !== undefined) fields.push("requiredElements");
+  if (ex.supplementaryElements !== undefined) fields.push("supplementaryElements");
+  if (ex.commonErrors !== undefined) fields.push("commonErrors");
+  if (ex.expectedForm !== undefined) fields.push("expectedForm");
+  if (ex.familyId !== undefined) fields.push("familyId");
+  if (ex.sourceRefs !== undefined) fields.push("sourceRefs");
+  if (ex.calculation !== undefined) fields.push("calculation");
+  return fields;
+}
 export function validateLessonExercise(
   ex: LessonExerciseDraft,
   subject: SubjectModule,
@@ -185,7 +198,24 @@ export function validateLessonExercise(
     errors.push(`exerciseType: typ „${ex.exerciseType}” nie jest dozwolony dla celu „${objective.id}”`);
   }
 
+  // Payload v3 i dłuższy limit odpowiedzi tylko dla przedmiotów, które je deklarują
+  // (gramatyka zachowuje kontrakt v2: odpowiedź i warianty ≤ 120 znaków).
+  if (subject.usesV3Payload !== true) {
+    for (const field of v3FieldsPresent(ex)) {
+      errors.push(`${field}: pole v3 niedozwolone dla przedmiotu „${subject.id}”`);
+    }
+    if ([...ex.answer].length > MAX_TEXT_LENGTH) {
+      errors.push(`answer: przekracza ${MAX_TEXT_LENGTH} znaków`);
+    }
+    if (ex.acceptedAnswers.some((a) => [...a].length > MAX_TEXT_LENGTH)) {
+      errors.push(`acceptedAnswers: przekracza ${MAX_TEXT_LENGTH} znaków`);
+    }
+  }
+
   validateVisualSubject(ex, errors);
+  if (ex.calculation !== undefined && ex.exerciseType !== "lesson_calculation") {
+    errors.push("calculation: parametry są dozwolone tylko dla „lesson_calculation”");
+  }
   validateTextFieldLengths(ex, errors);
   validateFocus(ex, normalizer, errors);
   validateByType(ex, topic, objective, normalizer, errors);

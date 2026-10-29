@@ -4,6 +4,7 @@ import {
   LessonExerciseTypeSchema,
   SubjectCatalogDtoSchema,
   LessonCommandSchema,
+  SchoolLessonCommandSchema,
   LessonExerciseInputSchema,
   LessonDraftDtoSchema,
   LessonDeckDtoSchema,
@@ -19,9 +20,30 @@ const UUID2 = "22222222-2222-4222-8222-222222222222";
 const UUID3 = "33333333-3333-4333-8333-333333333333";
 const INSTANT = "2026-10-12T15:00:00.000Z";
 
+describe("calculation exercise input", () => {
+  const calculation = {
+    kind: "scale_distance", params: { scaleDenominator: 25000, mapDistanceCm: 3 },
+    unit: "m", templateFamilyId: "map-scale",
+  };
+  const input = {
+    exerciseType: "lesson_calculation", objectiveId: "school.map-scale",
+    prompt: "Na mapie w skali 1:25 000 odcinek ma 3 cm. Oblicz odległość w terenie w m.",
+    calculation, answer: "750 m", acceptedAnswers: [], focus: [],
+    sourceRefs: [{ quote: "Skala mapy określa stosunek odległości." }],
+  };
+  it("accepts the private parameters without open-answer grading fields", () => {
+    expect(LessonExerciseInputSchema.safeParse(input).success).toBe(true);
+  });
+  it("rejects an unknown calculation kind and extra parameters", () => {
+    expect(LessonExerciseInputSchema.safeParse({ ...input, calculation: { ...calculation, kind: "division" } }).success).toBe(false);
+    expect(LessonExerciseInputSchema.safeParse({ ...input, calculation: { ...calculation, params: { ...calculation.params, extra: 1 } } }).success).toBe(false);
+  });
+});
+
 describe("LESSON_EXERCISE_TYPES", () => {
-  it("has exactly the 9 lesson_* types", () => {
+  it("has exactly the 10 lesson_* types", () => {
     expect([...LESSON_EXERCISE_TYPES].sort()).toEqual([
+      "lesson_calculation",
       "lesson_card",
       "lesson_choice",
       "lesson_error_fix",
@@ -334,6 +356,58 @@ describe("LessonMockTestSummaryDtoSchema", () => {
     }).success).toBe(false);
     expect(LessonMockTestSummaryDtoSchema.safeParse({
       ...base, solutions: [{ ...base.solutions[0], outcome: "not_tested" }],
+    }).success).toBe(false);
+  });
+});
+describe("SchoolLessonCommandSchema i pola v3", () => {
+  it("przyjmuje komendę szkolną z materiałem do 16000 znaków", () => {
+    const ok = SchoolLessonCommandSchema.safeParse({
+      subjectTitlePl: "Geografia",
+      topicTitlePl: "Posługuję się mapą",
+      material: "x".repeat(16000),
+      clientRequestId: UUID,
+    });
+    expect(ok.success).toBe(true);
+    const tooLong = SchoolLessonCommandSchema.safeParse({
+      subjectTitlePl: "Geografia",
+      topicTitlePl: "Mapa",
+      material: "x".repeat(16001),
+      clientRequestId: UUID,
+    });
+    expect(tooLong.success).toBe(false);
+  });
+
+  it("przyjmuje ćwiczenie otwarte z polami v3 i dłuższą odpowiedzią wzorcową", () => {
+    const parsed = LessonExerciseInputSchema.safeParse({
+      exerciseType: "lesson_open_answer",
+      objectiveId: "school.d1.fotosynteza",
+      prompt: "Co to jest fotosynteza?",
+      answer: "a".repeat(250),
+      acceptedAnswers: [],
+      focus: ["a"],
+      questionType: "definition",
+      requiredElements: [{ id: "e1", text: "Roślina wytwarza cukry." }],
+      supplementaryElements: ["Uwalniany jest tlen."],
+      expectedForm: "one_sentence",
+      familyId: "fotosynteza-definicja",
+      sourceRefs: [{ quote: "Roślina wytwarza cukry." }],
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("odrzuca nieznany questionType i zbyt wiele elementów wymaganych", () => {
+    const base = {
+      exerciseType: "lesson_open_answer",
+      objectiveId: "school.d1.x",
+      prompt: "P?",
+      answer: "odpowiedź",
+      acceptedAnswers: [],
+      focus: ["odpowiedź"],
+    };
+    expect(LessonExerciseInputSchema.safeParse({ ...base, questionType: "esej" }).success).toBe(false);
+    expect(LessonExerciseInputSchema.safeParse({
+      ...base,
+      requiredElements: Array.from({ length: 7 }, (_, i) => ({ id: `e${i}`, text: "el" })),
     }).success).toBe(false);
   });
 });

@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { LessonDraftDto } from "@learning/contracts";
 import {
   createLessonSnapshot,
+  applyCalculationPreview,
+  groupCalculationFamilies,
   groupExercisesByObjectiveAndStage,
   lessonExerciseChanged,
+  nextRequiredElementId,
   stageOfExerciseType,
   toLessonDraftPatch,
 } from "./lesson-editor-state";
@@ -69,6 +72,7 @@ describe("stageOfExerciseType", () => {
     expect(stageOfExerciseType("lesson_error_fix")).toBe("productive");
     expect(stageOfExerciseType("lesson_transform")).toBe("productive");
     expect(stageOfExerciseType("lesson_open_answer")).toBe("independent");
+    expect(stageOfExerciseType("lesson_calculation")).toBe("independent");
   });
 });
 
@@ -139,11 +143,32 @@ describe("toLessonDraftPatch", () => {
       items: null,
       noticeSegments: null,
       visualSubject: "",
+      questionType: "",
+      requiredElements: null,
+      supplementaryElements: null,
+      commonErrors: null,
+      expectedForm: "",
+      familyId: "",
+      sourceRefs: null,
     });
     const patch = toLessonDraftPatch(snapshot);
     expect(patch.exercises?.map((ex) => ex.id)).toEqual(["00000000-0000-4000-8000-000000000011", "00000000-0000-4000-8000-000000000012", undefined]);
   });
 
+it("zachowuje pola v3 ćwiczeń szkolnych w obie strony", () => {
+    const snapshot = createLessonSnapshot(draft(), () => "unused");
+    const first = snapshot.form.exercises[0]!;
+    first.questionType = "definition";
+    first.requiredElements = [{ id: "e1", text: "Roślina wytwarza cukry." }];
+    first.expectedForm = "one_sentence";
+    first.familyId = "fotosynteza-definicja";
+    first.sourceRefs = [{ quote: "wytwarza cukry" }];
+    const patch = toLessonDraftPatch(snapshot);
+    expect(patch.exercises![0]!.requiredElements).toEqual([{ id: "e1", text: "Roślina wytwarza cukry." }]);
+    expect(patch.exercises![0]!.expectedForm).toBe("one_sentence");
+    expect(patch.exercises![0]!.sourceRefs).toEqual([{ quote: "wytwarza cukry" }]);
+    expect(patch.exercises![1]).not.toHaveProperty("sourceRefs");
+  });
   it("emits visualSubject only for lesson_choice exercises", () => {
     const snapshot = createLessonSnapshot(draft(), () => "unused");
     snapshot.form.exercises[0]!.visualSubject = "girl";
@@ -247,5 +272,89 @@ describe("groupExercisesByObjectiveAndStage", () => {
     expect(stages.find((s) => s.stage === "guided")!.exercises.map((e) => e.answer)).toEqual(["plays"]);
     expect(stages.find((s) => s.stage === "productive")!.exercises.map((e) => e.answer)).toEqual(["watches"]);
     expect(stages.find((s) => s.stage === "independent")!.exercises).toEqual([]);
+  });
+});
+
+describe("poprawki review Etapu 2 (W11/W12/W13)", () => {
+  it("nextRequiredElementId nie koliduje po usunięciu elementu ze środka", () => {
+    expect(nextRequiredElementId([{ id: "e1" }, { id: "e3" }])).toBe("e4");
+    expect(nextRequiredElementId([])).toBe("e1");
+    expect(nextRequiredElementId([{ id: "custom" }])).toBe("e1");
+  });
+
+  it("porzucone puste elementy i cytaty nie trafiają do patcha", () => {
+    const snapshot = createLessonSnapshot(draft(), () => "unused");
+    const first = snapshot.form.exercises[0]!;
+    first.requiredElements = [{ id: "e1", text: "Roślina wytwarza cukry." }, { id: "e2", text: "  " }];
+    first.sourceRefs = [{ quote: "wytwarza cukry" }, { quote: "" }];
+    const patch = toLessonDraftPatch(snapshot);
+    expect(patch.exercises![0]!.requiredElements).toEqual([{ id: "e1", text: "Roślina wytwarza cukry." }]);
+    expect(patch.exercises![0]!.sourceRefs).toEqual([{ quote: "wytwarza cukry" }]);
+  });
+
+  it("lesson_short_answer: prompt wygrywa ze stem — payload ma jedną wersję pytania", () => {
+    const shortDraft = draft({
+      exercises: [{
+        id: "00000000-0000-4000-8000-000000000051",
+        revisionId: "00000000-0000-4000-8000-000000000061",
+        exerciseType: "lesson_short_answer",
+        objectiveId: "english_grammar.present_simple.third_person_s",
+        instructionPl: "Odpowiedz krótko",
+        stem: "Stare pytanie?",
+        answer: "Yes, he does.",
+        acceptedAnswers: [],
+        focus: ["does"],
+      }] as unknown as LessonDraftDto["exercises"],
+    });
+    const snapshot = createLessonSnapshot(shortDraft, () => "unused");
+    snapshot.form.exercises[0]!.prompt = "Nowe pytanie?";
+    const patch = toLessonDraftPatch(snapshot);
+    expect(patch.exercises![0]!.prompt).toBe("Nowe pytanie?");
+    expect(patch.exercises![0]).not.toHaveProperty("stem");
+  });
+});
+
+describe("calculation editor", () => {
+  function calculationDraft(): LessonDraftDto {
+    const base = draft();
+    base.exercises = [{
+      ...base.exercises[1]!, exerciseType: "lesson_calculation", stem: undefined,
+      prompt: "Podgląd początkowy", answer: "750 m", acceptedAnswers: [], focus: [],
+      calculation: { kind: "scale_distance", params: { mapDistanceCm: 3.5, scaleDenominator: 25000 }, unit: "m", tolerance: 0.5, templateFamilyId: "scale" },
+      sourceRefs: [{ quote: "Skala 1:25 000 oznacza, że 1 cm odpowiada 250 m." }],
+    }];
+    return base;
+  }
+
+  it("round-trips decimal parameters, tolerance, family and source without comma splitting", () => {
+    const source = calculationDraft();
+    const snapshot = createLessonSnapshot(source, () => "unused");
+    const patch = toLessonDraftPatch(snapshot).exercises![0]!;
+    expect(patch.calculation).toEqual(source.exercises[0]!.calculation);
+    expect(patch.sourceRefs).toEqual(source.exercises[0]!.sourceRefs);
+    expect(patch.prompt).toBe("Podgląd początkowy");
+    expect(patch.acceptedAnswers).toEqual([]);
+    expect(patch.focus).toEqual([]);
+  });
+
+  it("applies a supplied preview only to matching parameters without computing in client state", () => {
+    const snapshot = createLessonSnapshot(calculationDraft(), () => "unused");
+    const exercise = snapshot.form.exercises[0]!;
+    const original = structuredClone(exercise.calculation!);
+    if (original.kind !== "scale_distance") throw new Error("Expected scale fixture");
+    exercise.calculation = { ...original, params: { mapDistanceCm: 4, scaleDenominator: 25000 } };
+    expect(applyCalculationPreview(exercise, original, { prompt: "Stary podgląd", answer: "875 m" })).toEqual(exercise);
+    const refreshed = applyCalculationPreview(exercise, exercise.calculation!, { prompt: "Dostarczony podgląd dla 4 cm", answer: "1000 m" });
+    expect(refreshed.prompt).toBe("Dostarczony podgląd dla 4 cm");
+    expect(refreshed.answer).toBe("1000 m");
+    snapshot.form.exercises[0] = refreshed;
+    expect(toLessonDraftPatch(snapshot).exercises![0]).toMatchObject({ prompt: "Dostarczony podgląd dla 4 cm", answer: "1000 m", acceptedAnswers: [], focus: [] });
+  });
+
+  it("keeps variants grouped by objective and template family after removing one", () => {
+    const ex = createLessonSnapshot(calculationDraft(), () => "unused").form.exercises[0]!;
+    const variants = [ex, { ...ex, clientKey: "variant-2" }, { ...ex, clientKey: "other-objective", objectiveId: "other" }];
+    expect(groupCalculationFamilies(variants).map(g => g.exercises.length)).toEqual([2, 1]);
+    expect(groupCalculationFamilies(variants.filter(e => e.clientKey !== ex.clientKey)).map(g => g.exercises.length)).toEqual([1, 1]);
   });
 });

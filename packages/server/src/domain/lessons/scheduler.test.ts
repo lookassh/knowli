@@ -651,3 +651,14 @@ describe("selectLessonTask — determinizm", () => {
     expect(selectLessonTask(build())).toEqual(selectLessonTask(build()));
   });
 });
+
+
+describe("calculation due checks", () => {
+  it("issues a calculation without a grader and protects previously exposed targets", () => {
+    const calculation = { ...ex(O1, "independent"), exerciseType: "lesson_calculation" as const };
+    const options = input({ exercises: [calculation], progress: { [O1]: prog("needs_confirmation", "2000-01-01T00:00:00Z") }, graderAvailable: false, graderCallsLeft: 0 });
+    expect(selectLessonTask(options)).toMatchObject({ kind: "exercise", exerciseType: "lesson_calculation", independentCheck: true, reason: "due_check" });
+    const exposed = selectLessonTask({ ...options, exposedTargetKeys: new Set([calculation.targetKey]) });
+    expect(exposed?.kind === "exercise" && exposed.independentCheck).not.toBe(true);
+  });
+});

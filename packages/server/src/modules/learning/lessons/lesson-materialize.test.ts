@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { messages } from "@learning/contracts";
 import { englishGrammarSubject } from "../../../domain/lessons/subjects/english-grammar/module";
+import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
 import { evaluateChoice, type LessonAnswerKey } from "../../../domain/lessons/evaluate";
 import { materializeExercise, type LoadedExercise } from "./lesson-materialize";
 
@@ -85,6 +87,15 @@ describe("materializeExercise — correctOption po ID (P1-1)", () => {
     expect(task.prompt.kind === "lesson_choice" ? task.prompt.visualSubject : undefined).toBe("girl");
   });
 
+  it("grammar open answer does not send a prompt locale (language of the prompt is ambiguous)", () => {
+    const objective = topic.objectives.find((o) => o.exerciseTypes.includes("lesson_open_answer"))!;
+    const task = materializeExercise({ independentCheck: true, reason: "due_check" }, "grammar-open", loaded({
+      exerciseType: "lesson_open_answer", objectiveId: objective.id, instructionPl: "Napisz.", prompt: "Write about your day.",
+      answer: "I play football.", acceptedAnswers: [], focus: ["play"], answerLocale: "en-GB", promptLocale: "pl-PL",
+    }), topic, subject);
+    expect(task.prompt).not.toHaveProperty("promptLocale");
+  });
+
   it("translation prompt is the Polish source and keeps answers private", () => {
     const task = materializeExercise(
       { independentCheck: false, reason: "practice" },
@@ -167,4 +178,77 @@ describe("materializeExercise — correctOption po ID (P1-1)", () => {
     expect(key.correctOptionId).toBeDefined();
     expect(correct?.text).toBe("plays");
   });
+});
+
+describe("materializeExercise — przedmiot szkolny (temat dynamiczny)", () => {
+  it("dokłada migawkę celu do answer_key i nie ujawnia kryteriów v3 w prompcie dziecka", () => {
+    const schoolTopic = schoolSubject.buildDynamicTopic!({
+      titlePl: "Posługuję się mapą",
+      objectives: [{
+        id: "school.ddeck.skala",
+        titlePl: "Skala mapy",
+        descriptionEn: "Map scale basics.",
+        cards: [{ title: "Skala", body: "Skala mówi, ile razy mapa jest pomniejszona." }, { title: "Zastosowanie", body: "Ze skali liczysz odległości w terenie." }],
+      }],
+    });
+    const task = materializeExercise(
+      { independentCheck: true, reason: "independent_check" },
+      "seed-school",
+      loaded({
+        exerciseType: "lesson_open_answer",
+        objectiveId: "school.ddeck.skala",
+        instructionPl: "Odpowiedz własnymi słowami.",
+        prompt: "Co to jest skala mapy?",
+        answer: "Skala informuje, ile razy mapa została pomniejszona.",
+        acceptedAnswers: [],
+        focus: ["pomniejszona"],
+        answerLocale: "pl-PL",
+        promptLocale: "pl-PL",
+        questionType: "definition",
+        requiredElements: [{ id: "e1", text: "informuje o pomniejszeniu" }],
+        commonErrors: ["Skala to wielkość mapy w centymetrach."],
+        expectedForm: "one_sentence",
+        sourceRefs: [{ quote: "Skala informuje, ile razy obraz został pomniejszony." }],
+      }),
+      schoolTopic,
+      schoolSubject,
+    );
+    const snapshot = (task.answerKey as { objectiveSnapshot?: { objectiveTitlePl?: string; topicId?: string } }).objectiveSnapshot;
+    expect(snapshot?.objectiveTitlePl).toBe("Skala mapy");
+    expect(snapshot?.topicId).toBe("dynamic");
+    // Typowe błędy zatwierdzone przez rodzica muszą dojść do gradera (prywatny klucz zadania).
+    expect((task.answerKey as { schoolCriteria?: { commonErrors?: string[] } }).schoolCriteria?.commonErrors)
+      .toEqual(["Skala to wielkość mapy w centymetrach."]);
+    const promptJson = JSON.stringify(task.prompt);
+    // Szkoła ma jeden język, więc pytanie dostaje jawny locale dla czytników ekranu.
+    expect(task.prompt).toMatchObject({ kind: "lesson_open_answer", promptLocale: "pl-PL" });
+    expect(promptJson).not.toContain("Skala to wielkość mapy");
+    expect(promptJson).not.toContain("informuje o pomniejszeniu");
+    expect(promptJson).not.toContain("sourceRefs");
+    expect(promptJson).not.toContain("requiredElements");
+  });
+});
+
+it("materializes calculation from the closed template and keeps grading data private", () => {
+  const calculation = { kind: "scale_distance", params: { scaleDenominator: 25000, mapDistanceCm: 3 }, unit: "m", tolerance: 1, templateFamilyId: "scale" };
+  const payload = { exerciseType: "lesson_calculation", objectiveId: "school.scale", instructionPl: "Oblicz.", prompt: "unsafe free text", answer: "750 m", acceptedAnswers: [], focus: [], calculation,
+    requiredElements: [{ id: "e1", text: "private element" }], sourceRefs: [{ quote: "private quote" }], answerLocale: "pl-PL", promptLocale: "pl-PL" } as unknown as LoadedExercise["payload"];
+  const result = materializeExercise({ independentCheck: true, reason: "due_check" }, "calculation", loaded(payload), topic, schoolSubject);
+  expect(result.prompt).toEqual({ kind: "lesson_calculation", instructionPl: "Oblicz.", prompt: "Na mapie w skali 1:25 000 odcinek ma 3 cm. Oblicz odległość w terenie w m." });
+  expect(result.answerKey.calculation).toEqual(calculation);
+  expect(result.exposures).toEqual([]);
+  for (const forbidden of ['"answer"', '"calculation"', '"tolerance"', "sourceRefs", "requiredElements", "comment", "private", "750 m"]) expect(JSON.stringify(result.prompt)).not.toContain(forbidden);
+});
+
+it("gives a calculation without its own instruction the shared calculation instruction, not the objective title", () => {
+  const calculation = { kind: "unit_conversion", params: { value: 0.75, fromUnit: "km" }, unit: "m", templateFamilyId: "units" };
+  const payload = { exerciseType: "lesson_calculation", objectiveId: "school.scale", answer: "750 m", acceptedAnswers: [], focus: [], calculation,
+    sourceRefs: [{ quote: "private quote" }], answerLocale: "pl-PL", promptLocale: "pl-PL" } as unknown as LoadedExercise["payload"];
+  const result = materializeExercise({ independentCheck: true, reason: "due_check" }, "calculation-default", loaded(payload), topic, schoolSubject);
+  expect(result.prompt).toEqual({ kind: "lesson_calculation", instructionPl: messages.kid.lessonCalculationInstruction, prompt: "Przelicz 0,75 km na m." });
+});
+
+it("rejects an invalid private calculation before issuing any public prompt", () => {
+  const exercise = loaded({ exerciseType: "lesson_calculation", objectiveId: "school.scale", instructionPl: "Oblicz.", answer: "750 m", acceptedAnswers: [], focus: [], calculation: { kind: "unknown" }, answerLocale: "pl-PL", promptLocale: "pl-PL" } as unknown as LoadedExercise["payload"]);
+  expect(() => materializeExercise({ independentCheck: true, reason: "due_check" }, "invalid", exercise, topic, schoolSubject)).toThrow();
 });

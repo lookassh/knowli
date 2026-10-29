@@ -3,6 +3,7 @@ import { fakeGenerationDeps } from "./fake";
 import { createLocalMediaStore } from "./media/local";
 import { createOpenAiImageProvider } from "./images/openai";
 import { createOpenAiLlmProvider } from "./openai/llm";
+import { chatRequestExtrasFromEnv } from "./chat-request-options";
 import { createOpenAiTtsProvider } from "./openai/tts";
 import { lessonGenerationPolicyFromEnv } from "../modules/materials/lessons/lesson-generation-policy";
 
@@ -61,6 +62,7 @@ export function createGenerationDepsFromEnv(env: Record<string, string | undefin
       model: env.UMIEM_LLM_MODEL === "" ? undefined : env.UMIEM_LLM_MODEL,
       baseUrl: llmBaseUrl,
       lessonRequestTimeoutMs: lessonExecution.requestTimeoutMs,
+      requestExtras: chatRequestExtrasFromEnv(env, "UMIEM_LLM"),
     }),
     tts: createOpenAiTtsProvider({ apiKey }),
     image: createOpenAiImageProvider({ apiKey }),

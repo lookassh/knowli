@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { LessonCommandSchema, type LessonCommand } from "@learning/contracts";
+import { LessonCommandSchema, SchoolLessonCommandSchema, type LessonCommand, type SchoolLessonCommand } from "@learning/contracts";
 import type { Clock, Services } from "../../../config";
 import type { Executor, Tx } from "../../../db/client";
 import {
@@ -27,12 +27,14 @@ import {
   type LessonExerciseStimulus,
 } from "../../../domain/lessons/exercise-identity";
 import type {
+  DynamicTopicData,
   LessonExerciseDraft,
   LessonExerciseType,
   LessonTopic,
   SubjectModule,
 } from "../../../domain/lessons/types";
 import type { LessonPoolInput, LlmLessonStageCounts } from "../../../ports/ai";
+import { resolveLessonTopic, validateDynamicTopicData } from "../../../domain/lessons/topic-resolution";
 import {
   claimQueuedRun,
   enqueueGenerationRun,
@@ -64,8 +66,14 @@ interface LessonContext {
   material: string;
   instruction?: string;
   examples: Record<string, string[]>;
+  /** Nazwa przedmiotu od rodzica (zestawy szkolne). */
+  subjectTitlePl?: string;
+  /** Temat dynamiczny z materiału (zestawy szkolne; uzupełniany przy generacji). */
+  dynamicTopic?: DynamicTopicData;
   /** Licznik ćwiczeń odrzuconych przy walidacji (dla panelu rodzica). */
   rejectedCount: number;
+  /** Zagadnienia odrzucone/pominięte na etapie generowania tematu (szkoła; panel rodzica). */
+  droppedObjectiveCount?: number;
 }
 
 /** Wejście runu `lesson` zapisane w `generation_runs.input`. */
@@ -79,6 +87,10 @@ interface LessonRunInput {
   poolSize: number;
   material: string;
   instruction?: string;
+  subjectTitlePl?: string;
+  topicTitlePl?: string;
+  /** Migawka tematu dynamicznego (dogenerowanie zestawu szkolnego). */
+  dynamicTopic?: DynamicTopicData;
   /** Dogenerowanie jednego celu: nowe ćwiczenia dopisujemy, nie czyścimy. */
   regenerate?: { objectiveId: string; count: number; existingAnswers: string[]; existingExercises?: LessonExerciseStimulus[] };
 }
@@ -180,6 +192,76 @@ export async function createLesson(
 }
 
 /**
+ * Tworzenie zestawu przedmiotu szkolnego: deck lekcji + szkic + run `lesson`
+ * bez celów — zagadnienia wyprowadzi etap generacji z materiału i zapisze
+ * w `lesson_context.dynamicTopic` oraz `objectiveIds` przy finalizacji runu.
+ */
+export async function createSchoolLesson(
+  services: Services,
+  cmd: SchoolLessonCommand,
+): Promise<{ runId: string; deckId: string }> {
+  const valid = SchoolLessonCommandSchema.parse(cmd);
+  const subject = requireSubject(services, "school");
+  if (!subject.buildDynamicTopic) {
+    throw new AppError("internal", { message: "school subject without dynamic topics" });
+  }
+  const poolSize = valid.poolSize ?? 60;
+  const title = [...`${valid.subjectTitlePl}: ${valid.topicTitlePl}`].slice(0, 120).join("");
+
+  return enqueueGenerationRun(services.db, `lesson:${valid.clientRequestId}`, async (tx) => {
+    const deckId = valid.deckId ?? randomUUID();
+    const versionId = randomUUID();
+    const runId = randomUUID();
+    const context: LessonContext = {
+      subjectId: subject.id,
+      topicId: "dynamic",
+      topicVersion: 1,
+      objectiveIds: [],
+      poolSize,
+      material: valid.material,
+      ...(valid.instruction === undefined ? {} : { instruction: valid.instruction }),
+      subjectTitlePl: valid.subjectTitlePl,
+      examples: {},
+      rejectedCount: 0,
+    };
+    await tx.insert(decks).values({ id: deckId, title, kind: "lesson" });
+    await tx.insert(deckVersions).values({
+      id: versionId,
+      deckId,
+      versionNumber: 1,
+      editNumber: 1,
+      state: "draft",
+      title,
+      sourceLocale: subject.promptLocale,
+      targetLocale: subject.answerLocale,
+      lessonContext: context as unknown as Record<string, unknown>,
+    });
+    const input: LessonRunInput = {
+      deckId,
+      deckVersionId: versionId,
+      subjectId: subject.id,
+      topicId: "dynamic",
+      topicVersion: 1,
+      objectiveIds: [],
+      poolSize,
+      material: valid.material,
+      ...(valid.instruction === undefined ? {} : { instruction: valid.instruction }),
+      subjectTitlePl: valid.subjectTitlePl,
+      topicTitlePl: valid.topicTitlePl,
+    };
+    await tx.insert(generationRuns).values({
+      id: runId,
+      deckVersionId: versionId,
+      expectedEditNumber: 1,
+      kind: "lesson",
+      dedupeKey: `lesson:${valid.clientRequestId}`,
+      state: "queued",
+      input: input as unknown as Record<string, unknown>,
+    });
+    return { runId, deckId };
+  });
+}
+/**
  * Rozkład liczby ćwiczeń celu na etapy wg `stageMix` (sumuje do `count`).
  * Reszta z zaokrągleń trafia do etapu produktywnego (największy udział).
  */
@@ -190,9 +272,77 @@ export function splitStages(count: number, mix: StageMix = DEFAULT_LESSON_POLICY
   return { guided, productive, independent };
 }
 
-/** Liczba ćwiczeń per cel: ceil(poolSize / liczba celów). */
-function countPerObjective(poolSize: number, objectiveCount: number): number {
-  return Math.max(1, Math.ceil(poolSize / Math.max(1, objectiveCount)));
+/** Publikacja zestawu v3 wymaga tylu różnych pytań otwartych na zagadnienie. */
+export const DISTINCT_OPEN_ANSWERS_PER_OBJECTIVE = 2;
+
+/**
+ * Podział partii na etapy dla jednego celu. Rachunek dzieli etap samodzielny
+ * z pytaniami otwartymi, a te mają twarde minimum publikacji — gdy etap
+ * samodzielny ma tylko tyle miejsc, ile wynosi minimum, jedno miejsce przechodzi
+ * z etapu produktywnego (o ile ten zachowa swoje minimum). Budżet partii bez zmian.
+ */
+export function poolStageCounts(
+  subject: SubjectModule,
+  objectiveTypes: readonly LessonExerciseType[],
+  count: number,
+): LlmLessonStageCounts {
+  const split = splitStages(count);
+  const minimums = subject.poolMinimums ?? DEFAULT_LESSON_POLICY.poolMinimums;
+  if (!objectiveTypes.includes("lesson_calculation") || split.independent > minimums.independent) return split;
+  if (split.productive - 1 < minimums.productive) return split;
+  return { ...split, productive: split.productive - 1, independent: split.independent + 1 };
+}
+
+function meetsStageMinimums(count: number, subject: SubjectModule): boolean {
+  const minimums = subject.poolMinimums ?? DEFAULT_LESSON_POLICY.poolMinimums;
+  const split = splitStages(count);
+  return split.guided >= minimums.guided && split.productive >= minimums.productive && split.independent >= minimums.independent;
+}
+
+/**
+ * Najmniejsza liczba ćwiczeń celu, której podział na etapy spełnia minima
+ * KAŻDEGO etapu pokrycia przedmiotu — sama suma minimów nie wystarcza, bo
+ * zaokrąglenia miksu potrafią dać np. independent=1 przy minimum 2 (pula
+ * strukturalnie niepublikowalna mimo idealnej odpowiedzi modelu).
+ */
+export function minimumCountPerObjective(subject: SubjectModule): number {
+  const minimums = subject.poolMinimums ?? DEFAULT_LESSON_POLICY.poolMinimums;
+  let count = minimums.guided + minimums.productive + minimums.independent;
+  while (!meetsStageMinimums(count, subject)) count += 1;
+  return count;
+}
+
+/**
+ * Liczby ćwiczeń partii per cel. Zamówiona pula dzieli się dokładnie (część
+ * całkowita + reszta), więc suma partii jej nie przekracza. Wyjątek: gdy pula
+ * jest mniejsza niż (liczba celów × minimum publikacji), każdy cel dostaje
+ * minimum — inaczej szkic byłby niepublikowalny; nadwyżkę loguje wywołujący.
+ */
+export function objectiveBatchCounts(poolSize: number, objectiveCount: number, subject: SubjectModule): number[] {
+  const objectives = Math.max(1, objectiveCount);
+  const total = Math.max(poolSize, minimumCountPerObjective(subject) * objectives);
+  const base = Math.floor(total / objectives);
+  const remainder = total % objectives;
+  return Array.from({ length: objectives }, (_, index) => {
+    let count = base + (index < remainder ? 1 : 0);
+    while (!meetsStageMinimums(count, subject)) count += 1;
+    return count;
+  });
+}
+
+/** Partie pełnej generacji; nadwyżkę ponad zamówioną pulę (minimum publikacji) zapisuje w logu. */
+function batchesForObjectives(
+  objectiveIds: readonly string[],
+  poolSize: number,
+  subject: SubjectModule,
+  runId: string,
+): { objectiveId: string; count: number; existingAnswers: string[]; existingExercises: LessonExerciseStimulus[] }[] {
+  const counts = objectiveBatchCounts(poolSize, objectiveIds.length, subject);
+  const total = counts.reduce((sum, count) => sum + count, 0);
+  if (total > poolSize) {
+    console.log(`[lesson] run=${runId} pula podniesiona do minimum publikacji: ${total} zamiast ${poolSize} (cele=${objectiveIds.length})`);
+  }
+  return objectiveIds.map((objectiveId, index) => ({ objectiveId, count: counts[index]!, existingAnswers: [], existingExercises: [] }));
 }
 
 /** Składa `LessonPoolInput` dla jednego celu z danych rejestru (port nie zna przedmiotu). */
@@ -232,14 +382,177 @@ function buildPoolInput(
     material,
     ...(instruction === undefined ? {} : { instruction }),
     countPerObjective: count,
-    stageCounts: splitStages(count),
+    stageCounts: poolStageCounts(subject, objective.exerciseTypes, count),
+    ...(subject.usesV3Payload === true ? { minDistinctOpenAnswers: DISTINCT_OPEN_ANSWERS_PER_OBJECTIVE } : {}),
     graderAvailable,
+    groundingRequired: subject.validatePoolExtra !== undefined,
     deduplication: subject.poolDeduplication ?? "answer",
     ...(existingAnswers.length > 0 ? { existingAnswers: [...existingAnswers] } : {}),
     ...(existingExercises.length > 0 ? { existingExercises: [...existingExercises] } : {}),
   };
 }
 
+const rawObjectiveSchema = z
+  .object({
+    slug: z.string(),
+    titlePl: z.string(),
+    descriptionEn: z.string(),
+    cards: z.array(z.object({ title: z.string(), body: z.string() }).passthrough()),
+  })
+  .passthrough();
+
+/** Slug celu dynamicznego z surowego sluga modelu: ASCII, unikalny w zestawie. */
+function sanitizeObjectiveSlug(raw: string, index: number, used: Set<string>): string {
+  const base = raw
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    // Runs are already collapsed to one "_", so trimming one per end is enough (no backtracking).
+    .replace(/^_/, "")
+    .replace(/_$/, "")
+    .slice(0, 40);
+  const root = base.length > 0 ? base : `zagadnienie_${index + 1}`;
+  // A suffixed slug can itself be taken (e.g. "a", "a_3", "a"), so keep counting.
+  let slug = root;
+  for (let n = index + 1; used.has(slug); n += 1) slug = `${root}_${n}`;
+  used.add(slug);
+  return slug;
+}
+
+/**
+ * Składa `DynamicTopicData` z surowych zagadnień modelu: identyfikatory celów
+ * `school.d<deckId>.<slug>` nadaje serwer. Rekordy o złym kształcie albo
+ * niespełniające reguł przedmiotu (`validateObjective`, np. 2–4 karty, niepuste
+ * teksty) są odrzucane pojedynczo — jedno wadliwe zagadnienie nie przerywa
+ * całej generacji; zero poprawnych celów zwraca błędy zamiast danych.
+ */
+export function buildDynamicTopicData(
+  rawObjectives: unknown[],
+  deckId: string,
+  topicTitle: string,
+  validateObjective: (objective: DynamicTopicData["objectives"][number]) => string[] = () => [],
+): { data?: DynamicTopicData; errors: string[] } {
+  const errors: string[] = [];
+  const used = new Set<string>();
+  const objectives: DynamicTopicData["objectives"][number][] = [];
+  rawObjectives.slice(0, 8).forEach((raw, index) => {
+    const parsed = rawObjectiveSchema.safeParse(raw);
+    if (!parsed.success) {
+      errors.push(`zagadnienie ${index + 1}: zły kształt`);
+      return;
+    }
+    const slug = sanitizeObjectiveSlug(parsed.data.slug || parsed.data.titlePl, index, used);
+    const objective = {
+      id: `school.d${deckId}.${slug}`,
+      titlePl: [...parsed.data.titlePl.trim()].slice(0, 120).join(""),
+      descriptionEn: [...parsed.data.descriptionEn.trim()].slice(0, 400).join(""),
+      cards: parsed.data.cards.slice(0, 4).map((card) => ({
+        title: [...card.title.trim()].slice(0, 120).join(""),
+        body: [...card.body.trim()].slice(0, 1200).join(""),
+      })),
+    };
+    const objectiveErrors = validateObjective(objective);
+    if (objectiveErrors.length > 0) {
+      errors.push(`zagadnienie ${index + 1}: ${objectiveErrors.join("; ")}`);
+      return;
+    }
+    objectives.push(objective);
+  });
+  if (rawObjectives.length > 8) {
+    errors.push(`pominięto ${rawObjectives.length - 8} zagadnień ponad limit 8`);
+  }
+  if (objectives.length === 0) {
+    return { errors: errors.length > 0 ? errors : ["model nie zwrócił żadnego zagadnienia"] };
+  }
+  return { data: { titlePl: topicTitle, objectives }, errors };
+}
+
+/**
+ * Generacja jest niezaufanym źródłem: flaga `parentAdded` (źródło rodzica)
+ * może pochodzić wyłącznie z edycji rodzica, nie z wyjścia modelu. Przyjęcie
+ * puli usuwa ją z każdego cytatu, zanim walidacja uziemienia ją zobaczy.
+ */
+export function stripParentAddedFlags(drafts: readonly LessonExerciseDraft[]): LessonExerciseDraft[] {
+  return drafts.map((draft) =>
+    draft.sourceRefs === undefined
+      ? draft
+      : { ...draft, sourceRefs: draft.sourceRefs.map((ref) => ({ quote: ref.quote })) },
+  );
+}
+/**
+ * Strict structured output każe modelowi zwrócić każde pole, także pola innych
+ * typów ćwiczeń (np. `options` w luce, `noticeSegments` w wyborze, pola v3
+ * w gramatyce). Pusta tablica znaczy tam „brak” (jak `null`), więc nie może
+ * odrzucać ćwiczenia przez minimum kontraktu ani trafiać do payloadu.
+ * Braki naprawdę wymagane (opcje wyboru, klocki, cytat, elementy odpowiedzi
+ * otwartej) nadal zgłasza walidacja typu i przedmiotu.
+ */
+const OPTIONAL_ARRAY_FIELDS = [
+  "options", "items", "noticeSegments",
+  "requiredElements", "supplementaryElements", "commonErrors", "sourceRefs",
+] as const;
+
+export function withoutEmptyOptionalArrays(draft: LessonExerciseDraft): LessonExerciseDraft {
+  const out: LessonExerciseDraft = { ...draft };
+  for (const field of OPTIONAL_ARRAY_FIELDS) {
+    const value = out[field];
+    if (Array.isArray(value) && value.length === 0) delete out[field];
+  }
+  return out;
+}
+
+/**
+ * Dogenerowanie to osobne wywołanie modelu, który nie zna rodzin już zapisanych
+ * w szkicu: slug zbieżny z istniejącą rodziną dołączyłby nowe pytanie (z inną
+ * odpowiedzią wzorcową) do starej rodziny i zablokował publikację. Rodziny
+ * nowej partii dostają więc sufiks runu i pozostają wewnątrz niej.
+ */
+export function scopeFamiliesToRun(draft: LessonExerciseDraft, runId: string): LessonExerciseDraft {
+  const suffix = `-r${runId.replace(/[^0-9a-f]/gi, "").slice(0, 6).toLowerCase()}`;
+  // Cut before the suffix without leaving a dangling "-" (templateFamilyId is a strict slug).
+  const scoped = (slug: string) => {
+    let base = slug.slice(0, 64 - suffix.length);
+    while (base.endsWith("-")) base = base.slice(0, -1);
+    return `${base}${suffix}`;
+  };
+  const templateFamilyId = draft.calculation?.templateFamilyId;
+  return {
+    ...draft,
+    ...(draft.familyId ? { familyId: scoped(draft.familyId) } : {}),
+    ...(draft.calculation && typeof templateFamilyId === "string"
+      ? { calculation: { ...draft.calculation, templateFamilyId: scoped(templateFamilyId) } }
+      : {}),
+  };
+}
+
+/** Dzieli szkice wg walidacji puli z materiałem przedmiotu (uziemienie itp.). */
+export function splitByPoolExtra(
+  subject: SubjectModule,
+  drafts: readonly LessonExerciseDraft[],
+  material: string,
+): { kept: LessonExerciseDraft[]; extraRejected: { exercise: LessonExerciseDraft; errors: string[] }[] } {
+  if (!subject.validatePoolExtra) return { kept: [...drafts], extraRejected: [] };
+  const extra = subject.validatePoolExtra(drafts, { material });
+  const kept: LessonExerciseDraft[] = [];
+  const extraRejected: { exercise: LessonExerciseDraft; errors: string[] }[] = [];
+  drafts.forEach((draft, index) => {
+    const errs = extra.get(index);
+    if (errs && errs.length > 0) extraRejected.push({ exercise: draft, errors: [...errs] });
+    else kept.push(draft);
+  });
+  return { kept, extraRejected };
+}
+
+/** Wersja payloadu rewizji: 3, gdy ćwiczenie niesie pola v3, inaczej 2. */
+export function lessonPayloadVersion(ex: LessonExerciseDraft, subject: SubjectModule): number {
+  if (subject.usesV3Payload !== true) return 2;
+  return ex.questionType !== undefined || ex.requiredElements !== undefined ||
+    ex.supplementaryElements !== undefined || ex.commonErrors !== undefined ||
+    ex.expectedForm !== undefined || ex.familyId !== undefined || ex.sourceRefs !== undefined || ex.calculation !== undefined
+    ? 3
+    : 2;
+}
 /**
  * Schemat KSZTAŁTU surowego ćwiczenia z portu (nie semantyki). Chroni dalszą
  * walidację semantyczną (`validatePool`) przed rekordami, których tablice mają
@@ -340,6 +653,37 @@ export function summarizeLessonPoolValidation(input: {
   return `surowe=${input.rawCount} zły_kształt=${input.shapeRejected} obcy_cel=${input.outOfScopeCount} odrzucone=${rejected} ważne=${input.validCount}; reguły: ${reasons}`;
 }
 
+/** Sanityzacja pól v3 surowego ćwiczenia: tylko poprawnie uformowane wpisy. */
+function v3FieldsOf(r: Record<string, unknown>): Partial<LessonExerciseDraft> {
+  const out: Record<string, unknown> = {};
+  if (typeof r.questionType === "string") out.questionType = r.questionType;
+  if (Array.isArray(r.requiredElements)) {
+    out.requiredElements = r.requiredElements.filter(
+      (el): el is { id: string; text: string } =>
+        el !== null && typeof el === "object" && typeof (el as { id?: unknown }).id === "string" && typeof (el as { text?: unknown }).text === "string",
+    );
+  }
+  if (Array.isArray(r.supplementaryElements)) {
+    out.supplementaryElements = r.supplementaryElements.filter((el): el is string => typeof el === "string");
+  }
+  if (Array.isArray(r.commonErrors)) {
+    out.commonErrors = r.commonErrors.filter((el): el is string => typeof el === "string");
+  }
+  if (typeof r.expectedForm === "string") out.expectedForm = r.expectedForm;
+  if (typeof r.familyId === "string") out.familyId = r.familyId;
+  // Preserve the submitted spec unchanged; subject validation rejects malformed
+  // or inconsistent calculations instead of silently repairing parent input.
+  if (r.calculation !== undefined && r.calculation !== null) out.calculation = r.calculation;
+  if (Array.isArray(r.sourceRefs)) {
+    out.sourceRefs = r.sourceRefs
+      .filter(
+        (ref): ref is { quote: string; parentAdded?: unknown } =>
+          ref !== null && typeof ref === "object" && typeof (ref as { quote?: unknown }).quote === "string",
+      )
+      .map((ref) => ({ quote: ref.quote, ...(ref.parentAdded === true ? { parentAdded: true } : {}) }));
+  }
+  return out as Partial<LessonExerciseDraft>;
+}
 /** Surowy obiekt z portu → `LessonExerciseDraft` (walidacja kształtu w domenie). */
 export function toExerciseDraft(raw: unknown): LessonExerciseDraft {
   const r = (raw ?? {}) as Record<string, unknown>;
@@ -366,6 +710,7 @@ export function toExerciseDraft(raw: unknown): LessonExerciseDraft {
     ...(Array.isArray(r.items)
       ? { items: r.items as readonly { id: string; text: string }[] }
       : {}),
+    ...v3FieldsOf(r),
   };
 }
 
@@ -391,6 +736,14 @@ export function buildLessonPayload(
     ...(ex.options === undefined ? {} : { options: ex.options }),
     ...(ex.correctOption === undefined ? {} : { correctOption: ex.correctOption }),
     ...(ex.items === undefined ? {} : { items: ex.items }),
+    ...(ex.questionType === undefined ? {} : { questionType: ex.questionType }),
+    ...(ex.requiredElements === undefined ? {} : { requiredElements: ex.requiredElements }),
+    ...(ex.supplementaryElements === undefined ? {} : { supplementaryElements: ex.supplementaryElements }),
+    ...(ex.commonErrors === undefined ? {} : { commonErrors: ex.commonErrors }),
+    ...(ex.expectedForm === undefined ? {} : { expectedForm: ex.expectedForm }),
+    ...(ex.familyId === undefined ? {} : { familyId: ex.familyId }),
+    ...(ex.sourceRefs === undefined ? {} : { sourceRefs: ex.sourceRefs }),
+    ...(ex.calculation === undefined ? {} : { calculation: ex.calculation }),
     answerLocale: subject.answerLocale,
     promptLocale: subject.promptLocale,
   };
@@ -411,6 +764,13 @@ export function buildObjectiveCriteria(
     objectiveId: ex.objectiveId,
     focus: [...ex.focus],
     acceptedAnswersHash,
+    ...(ex.requiredElements === undefined ? {} : { requiredElements: ex.requiredElements.map((el) => ({ id: el.id, text: el.text })) }),
+    ...(ex.calculation === undefined ? {} : { calculation: {
+      kind: ex.calculation.kind,
+      params: Object.fromEntries(Object.entries(ex.calculation.params).sort(([a], [b]) => a.localeCompare(b))),
+      unit: ex.calculation.unit,
+      tolerance: ex.calculation.tolerance ?? 0,
+    } }),
     topicVersion,
   };
   const criteriaHash = createHash("sha256").update(JSON.stringify(criteria)).digest("hex");
@@ -467,7 +827,7 @@ export async function applyLessonExercises(
       deckId: version.deckId,
       deckVersionId: version.id,
       position,
-      payloadVersion: 2,
+      payloadVersion: lessonPayloadVersion(ex, subject),
       payload: buildLessonPayload(ex, subject),
       targetKey: computeTargetKey(ex.answer, subject.answerLocale),
     });
@@ -552,8 +912,16 @@ export async function executeLessonGeneration(services: Services, runId: string,
 
   const input = run.input as unknown as LessonRunInput;
   const subject = services.subjects.getSubject(input.subjectId);
-  const topic = services.subjects.getTopic(input.subjectId, input.topicId, input.topicVersion);
-  if (!subject || !topic) {
+  // Temat dynamiczny: migawka z kontekstu (dogenerowanie) albo do wygenerowania
+  // w etapie zagadnień tego runu (pierwsza generacja zestawu szkolnego).
+  let dynamicTopicData: DynamicTopicData | undefined = input.dynamicTopic;
+  let droppedObjectiveCount = 0;
+  let topic: LessonTopic | undefined = subject
+    ? resolveLessonTopic(services.subjects, input)?.topic
+    : undefined;
+  const needsDynamicObjectives =
+    subject?.buildDynamicTopic !== undefined && !input.regenerate && dynamicTopicData === undefined;
+  if (!subject || (!topic && !needsDynamicObjectives)) {
     await markCurrentRun(services.db, "failed", "validation");
     return;
   }
@@ -571,7 +939,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
     : [];
 
   // Partie per cel: albo dogenerowanie jednego celu, albo pełna pula.
-  const batches: { objectiveId: string; count: number; existingAnswers: string[]; existingExercises: LessonExerciseStimulus[] }[] = input.regenerate
+  let batches: { objectiveId: string; count: number; existingAnswers: string[]; existingExercises: LessonExerciseStimulus[] }[] = input.regenerate
     ? [
         {
           objectiveId: input.regenerate.objectiveId,
@@ -580,12 +948,9 @@ export async function executeLessonGeneration(services: Services, runId: string,
           existingExercises: input.regenerate.existingExercises ?? legacyExistingExercises,
         },
       ]
-    : input.objectiveIds.map((objectiveId) => ({
-        objectiveId,
-        count: countPerObjective(input.poolSize, input.objectiveIds.length),
-        existingAnswers: [],
-        existingExercises: [],
-      }));
+    : needsDynamicObjectives
+      ? []
+      : batchesForObjectives(input.objectiveIds, input.poolSize, subject, runId);
 
   const rawExercises: unknown[] = [];
   let rawExerciseCount = 0;
@@ -616,12 +981,50 @@ export async function executeLessonGeneration(services: Services, runId: string,
           version?.editNumber === run.expectedEditNumber;
       },
     }, async (control) => {
+    if (needsDynamicObjectives) {
+      await control.assertCurrent();
+      const objectivesResult = await control.call((signal) =>
+        deps.llm.generateLessonObjectives(
+          {
+            subjectTitle: input.subjectTitlePl ?? subject.titlePl,
+            topicTitle: input.topicTitlePl ?? "",
+            material: input.material,
+            ...(input.instruction === undefined ? {} : { instruction: input.instruction }),
+            generationRole: subject.prompts.generationRole,
+          },
+          signal,
+        ),
+      );
+      await control.assertCurrent();
+      const topicTitle = input.topicTitlePl ?? "";
+      const built = buildDynamicTopicData(objectivesResult.objectives, input.deckId, topicTitle, (objective) =>
+        validateDynamicTopicData(subject, { titlePl: topicTitle, objectives: [objective] }));
+      if (!built.data) {
+        throw new AppError("validation", { message: `dynamic objectives invalid: ${built.errors.join("; ")}` });
+      }
+      const topicErrors = validateDynamicTopicData(subject, built.data);
+      if (topicErrors.length > 0) {
+        throw new AppError("validation", { message: `dynamic topic invalid: ${topicErrors.join("; ")}` });
+      }
+      dynamicTopicData = built.data;
+      topic = subject.buildDynamicTopic!(built.data);
+      batches = batchesForObjectives(built.data.objectives.map((objective) => objective.id), input.poolSize, subject, runId);
+      console.log(`[lesson] run=${runId} etap zagadnień: cele=${batches.length}`);
+      droppedObjectiveCount = built.errors.length;
+      if (droppedObjectiveCount > 0) {
+        console.log(`[lesson] run=${runId} etap zagadnień: porzucone=${droppedObjectiveCount}`);
+      }
+    }
+    const activeTopic = topic;
+    if (!activeTopic) {
+      throw new AppError("validation", { message: "lesson topic unresolved" });
+    }
     for (const batch of batches) {
       await control.assertCurrent();
       const batchStartedAtMs = Date.now();
       const poolInput = buildPoolInput(
         subject,
-        topic,
+        activeTopic,
         batch.objectiveId,
         batch.count,
         input.material,
@@ -691,12 +1094,23 @@ export async function executeLessonGeneration(services: Services, runId: string,
     let droppedAcceptedVariants = 0;
     const drafts = wellShaped
       .map(toExerciseDraft)
+      .map(withoutEmptyOptionalArrays)
+      .map((draft) => (input.regenerate ? scopeFamiliesToRun(draft, runId) : draft))
       .map((draft) => {
         const sanitized = withoutRedundantAcceptedVariants(draft, subject.normalizer);
         droppedAcceptedVariants += draft.acceptedAnswers.length - sanitized.acceptedAnswers.length;
         return sanitized;
       });
-    const { valid, rejected } = validatePool(drafts, subject, topic);
+    if (!topic) {
+      await markCurrentRun(services.db, "failed", "validation");
+      return;
+    }
+    // Walidacja puli z materiałem (przedmiot: uziemienie cytatów, rodziny pytań)
+    // przed walidacją semantyczną — odrzucone ćwiczenia liczą się do rejectedCount.
+    const grounded = splitByPoolExtra(subject, stripParentAddedFlags(drafts), input.material);
+    const poolResult = validatePool(grounded.kept, subject, topic);
+    const valid = poolResult.valid;
+    const rejected = [...grounded.extraRejected, ...poolResult.rejected];
     // Duplikaty wobec odpowiedzi już w puli: odrzucamy valid, których odpowiedź
     // równa się istniejącej (dogenerowanie nie powiela odpowiedzi szkicu).
     const existingSet = new Set(batches.flatMap((b) => b.existingAnswers));
@@ -736,7 +1150,27 @@ export async function executeLessonGeneration(services: Services, runId: string,
     }
 
     if (uniqueValid.length === 0) {
-      await markCurrentRun(services.db, "failed", "validation");
+      // Nawet przy porażce rodzic widzi skalę odrzuceń: zapisujemy liczniki
+      // do kontekstu (ta sama straż wersji co przy finalizacji).
+      await services.db.transaction(async (tx) => {
+        const version = (
+          await tx.select().from(deckVersions).where(eq(deckVersions.id, run.deckVersionId!)).for("update")
+        )[0];
+        if (version && version.state !== "published" && version.editNumber === run.expectedEditNumber) {
+          const prevContext = (version.lessonContext ?? {}) as unknown as LessonContext;
+          await tx
+            .update(deckVersions)
+            .set({
+              lessonContext: {
+                ...prevContext,
+                rejectedCount: (prevContext.rejectedCount ?? 0) + rejectedCount,
+                droppedObjectiveCount: (prevContext.droppedObjectiveCount ?? 0) + droppedObjectiveCount,
+              } as unknown as Record<string, unknown>,
+            })
+            .where(eq(deckVersions.id, version.id));
+        }
+        await markCurrentRun(tx, "failed", "validation");
+      });
       return;
     }
 
@@ -767,8 +1201,10 @@ export async function executeLessonGeneration(services: Services, runId: string,
       const prevContext = (version.lessonContext ?? {}) as unknown as LessonContext;
       const nextContext: LessonContext = {
         ...prevContext,
+        ...(dynamicTopicData ? { dynamicTopic: dynamicTopicData, objectiveIds: dynamicTopicData.objectives.map((o) => o.id) } : {}),
         examples: { ...prevContext.examples, ...examples },
         rejectedCount: (prevContext.rejectedCount ?? 0) + rejectedCount,
+        droppedObjectiveCount: (prevContext.droppedObjectiveCount ?? 0) + droppedObjectiveCount,
       };
       await tx
         .update(deckVersions)
@@ -863,6 +1299,8 @@ export async function regenerateObjective(
         poolSize: context.poolSize,
         material: context.material,
         ...(context.instruction === undefined ? {} : { instruction: context.instruction }),
+        ...(context.subjectTitlePl === undefined ? {} : { subjectTitlePl: context.subjectTitlePl }),
+        ...(context.dynamicTopic === undefined ? {} : { dynamicTopic: context.dynamicTopic }),
         regenerate: { objectiveId: args.objectiveId, count: args.count, existingAnswers, existingExercises },
       };
       await tx.insert(generationRuns).values({

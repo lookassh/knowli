@@ -51,6 +51,7 @@ interface LessonContextView {
   topicId: string;
   topicVersion: number;
   objectiveIds: string[];
+  dynamicTopic?: import("../../../domain/lessons/types").DynamicTopicData;
 }
 
 function readLessonContext(raw: Record<string, unknown> | null): LessonContextView {
@@ -60,6 +61,7 @@ function readLessonContext(raw: Record<string, unknown> | null): LessonContextVi
     topicId: ctx.topicId ?? "",
     topicVersion: ctx.topicVersion ?? 1,
     objectiveIds: ctx.objectiveIds ?? [],
+    ...(ctx.dynamicTopic ? { dynamicTopic: ctx.dynamicTopic } : {}),
   };
 }
 
@@ -69,7 +71,8 @@ function requireSubject(services: Services, subjectId: string): SubjectModule {
   return subject;
 }
 
-function requireTopic(subject: SubjectModule, topicId: string, version: number): LessonTopic {
+function requireTopic(subject: SubjectModule, topicId: string, version: number, dynamicTopic?: import("../../../domain/lessons/types").DynamicTopicData): LessonTopic {
+  if (subject.buildDynamicTopic && dynamicTopic) return subject.buildDynamicTopic(dynamicTopic);
   const topic = subject.topics.find((t) => t.id === topicId && t.version === version)
     ?? subject.topics.find((t) => t.id === topicId);
   if (!topic) throw new AppError("internal", { message: `lesson topic missing: ${subject.id}/${topicId}@${version}` });
@@ -131,7 +134,9 @@ export async function lessonObjectiveProgress(
 
   const { versionId, context } = await activeLessonVersion(services.db, deck);
   const subject = requireSubject(services, context.subjectId);
-  const topic = requireTopic(subject, context.topicId, context.topicVersion);
+  // Szkic szkolny przed zakończeniem generacji nie ma jeszcze zagadnień — brak postępu do pokazania.
+  if (subject.buildDynamicTopic && !context.dynamicTopic) return [];
+  const topic = requireTopic(subject, context.topicId, context.topicVersion, context.dynamicTopic);
   const labels = categoryLabels(subject, topic);
   const objectiveById = new Map<string, LearningObjective>();
   for (const o of topic.objectives) objectiveById.set(o.id, o);
@@ -162,10 +167,16 @@ export async function lessonObjectiveProgress(
   const progressByObjective = new Map(progressRows.map((r) => [r.objectiveId, r]));
 
   // Kategorie błędów tego dziecka na ćwiczeniach tej lekcji (skill=objective),
-  // z odpowiedzią dziecka (attempts.answer->>text) jako przykładem. Scoped do
-  // rewizji tej wersji → nie miesza innych lekcji ani innych dzieci.
-  const revisionIds = revisions.map((r) => r.id);
-  const errorRows: ObjectiveErrorRow[] = revisionIds.length
+  // z odpowiedzią dziecka (attempts.answer->>text) jako przykładem. Zakres to
+  // rewizje WSZYSTKICH wersji zestawu: historia prób nie znika z raportu po
+  // republicacji (pula powyżej nadal liczona z wersji aktywnej).
+  const historyRevisionIds = (
+    await services.db
+      .select({ id: itemRevisions.id })
+      .from(itemRevisions)
+      .where(eq(itemRevisions.deckId, deck))
+  ).map((r) => r.id);
+  const errorRows: ObjectiveErrorRow[] = historyRevisionIds.length
     ? (await services.db.execute<{ objectiveId: string | null; category: string | null; answer: string | null; count: number }>(sql`
         select n.details->>'objectiveId' as "objectiveId",
                n.details->>'errorCategory' as category,
@@ -175,7 +186,7 @@ export async function lessonObjectiveProgress(
           join learning_app.attempts a on a.id = n.attempt_id
          where n.child_id = ${child}
            and n.skill = 'objective'
-           and n.item_revision_id = any(${sql.param(revisionIds)}::uuid[])
+           and n.item_revision_id = any(${sql.param(historyRevisionIds)}::uuid[])
            and n.details ? 'errorCategory'
          group by 1, 2, 3
       `)).rows.map((r) => ({ objectiveId: r.objectiveId ?? "", category: r.category ?? "", answer: r.answer, count: r.count }))
@@ -195,6 +206,74 @@ export async function lessonObjectiveProgress(
     byObjectiveCategory.set(row.objectiveId, perObjective);
   }
 
+  // Agregat szkolny (Etap 2): wiedza/precyzja/brakujące elementy z details ocen
+  // + ostatnie odpowiedzi dziecka. Tylko oceny z wymiarem wiedzy (details.knowledge).
+  // Liczniki i braki liczy baza; do aplikacji trafia najwyżej 5 odpowiedzi na cel.
+  const schoolFrom = sql`
+          from learning_app.assessments n
+          join learning_app.attempts a on a.id = n.attempt_id`;
+  const schoolWhere = sql`
+         where n.child_id = ${child}
+           and n.skill = 'objective'
+           and n.item_revision_id = any(${sql.param(historyRevisionIds)}::uuid[])
+           and n.details ? 'knowledge'`;
+  const [countsResult, missingResult, recentResult] = historyRevisionIds.length
+    ? await Promise.all([
+        services.db.execute<{
+          objectiveId: string | null; correct: number; partial: number; incorrect: number;
+          concise: number; verbose: number; unfocused: number;
+        }>(sql`
+        select n.details->>'objectiveId' as "objectiveId",
+               count(*) filter (where n.details->>'knowledge' = 'correct')::int as correct,
+               count(*) filter (where n.details->>'knowledge' = 'partial')::int as partial,
+               count(*) filter (where n.details->>'knowledge' = 'incorrect')::int as incorrect,
+               count(*) filter (where n.details->>'precision' = 'concise')::int as concise,
+               count(*) filter (where n.details->>'precision' = 'verbose')::int as verbose,
+               count(*) filter (where n.details->>'precision' = 'unfocused')::int as unfocused
+        ${schoolFrom}
+        ${schoolWhere}
+         group by 1`),
+        services.db.execute<{ objectiveId: string | null; text: string; count: number }>(sql`
+        select n.details->>'objectiveId' as "objectiveId", m.text, count(*)::int as count
+        ${schoolFrom}
+         cross join lateral jsonb_array_elements_text(
+           case when jsonb_typeof(n.details->'missingElementTexts') = 'array'
+                then n.details->'missingElementTexts' else '[]'::jsonb end) as m(text)
+        ${schoolWhere}
+         group by 1, 2`),
+        services.db.execute<{ objectiveId: string | null; knowledge: string | null; precision: string | null; answer: string | null }>(sql`
+        select "objectiveId", knowledge, precision, answer from (
+          select n.details->>'objectiveId' as "objectiveId",
+                 n.details->>'knowledge' as knowledge,
+                 n.details->>'precision' as precision,
+                 a.answer->>'text' as answer,
+                 row_number() over (partition by n.details->>'objectiveId' order by a.received_at desc, a.id) as rank
+          ${schoolFrom}
+          ${schoolWhere}
+        ) recent
+         where rank <= 5
+         order by "objectiveId", rank`),
+      ])
+    : [null, null, null];
+  function schoolAggregate(objectiveId: string) {
+    const counts = countsResult?.rows.find((row) => row.objectiveId === objectiveId);
+    if (!counts) return undefined;
+    const missing = (missingResult?.rows ?? []).filter((row) => row.objectiveId === objectiveId);
+    const recent = (recentResult?.rows ?? []).filter((row) => row.objectiveId === objectiveId);
+    return {
+      knowledge: { correct: counts.correct, partial: counts.partial, incorrect: counts.incorrect },
+      precision: { concise: counts.concise, verbose: counts.verbose, unfocused: counts.unfocused },
+      topMissing: missing
+        .map((row) => ({ text: row.text, count: row.count }))
+        .sort((a, b) => b.count - a.count || a.text.localeCompare(b.text, "pl"))
+        .slice(0, 5),
+      recentAnswers: recent.map((r) => ({
+        text: r.answer ?? "",
+        knowledge: (["correct", "partial", "incorrect"].includes(r.knowledge ?? "") ? r.knowledge : "incorrect") as "correct" | "partial" | "incorrect",
+        precision: (r.precision === "concise" || r.precision === "verbose" || r.precision === "unfocused" ? r.precision : null) as "concise" | "verbose" | "unfocused" | null,
+      })),
+    };
+  }
   // Pula wyczerpana: wszystkie target_key ćwiczeń celu były już ujawnione dziecku
   // (dowolna sesja/lekcja). Ekspozycje zapieczętowane.
   const allTargetKeys = [...new Set(revisions.map((r) => r.targetKey))];
@@ -237,6 +316,7 @@ export async function lessonObjectiveProgress(
       nextReviewAt: progress?.nextReviewAt?.toISOString() ?? null,
       poolExhausted,
       topErrors,
+      ...(schoolAggregate(objectiveId) ? { school: schoolAggregate(objectiveId)! } : {}),
     } satisfies ObjectiveProgressDto;
   });
 }
@@ -280,6 +360,14 @@ export async function listLessonVerdicts(services: Services, deckId: string): Pr
     graderModel: row.graderModel,
     parentDecision: (row.parentDecision as LessonVerdictDecision | null) ?? null,
     createdAt: row.createdAt.toISOString(),
+    school: row.precision === null
+      ? null
+      : {
+          knowledge: (row.verdict === "correct" ? "correct" : row.verdict === "almost" ? "partial" : "incorrect") as "correct" | "partial" | "incorrect",
+          precision: row.precision as "concise" | "verbose" | "unfocused",
+          matchedElementIds: [...(row.matchedElements ?? [])],
+          missingElementIds: [...(row.missingElements ?? [])],
+        },
   }));
 }
 
@@ -314,6 +402,14 @@ export async function decideLessonVerdict(
     graderModel: row.graderModel,
     parentDecision: (row.parentDecision as LessonVerdictDecision | null) ?? null,
     createdAt: row.createdAt.toISOString(),
+    school: row.precision === null
+      ? null
+      : {
+          knowledge: (row.verdict === "correct" ? "correct" : row.verdict === "almost" ? "partial" : "incorrect") as "correct" | "partial" | "incorrect",
+          precision: row.precision as "concise" | "verbose" | "unfocused",
+          matchedElementIds: [...(row.matchedElements ?? [])],
+          missingElementIds: [...(row.missingElements ?? [])],
+        },
   };
 }
 

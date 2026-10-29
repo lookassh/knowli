@@ -182,6 +182,7 @@ export function describeTaskPrompt(p: TaskPrompt): { instruction: string; stimul
     case "lesson_transform":
       return { instruction: p.instructionPl, stimulus: p.statement, options: [] };
     case "lesson_open_answer":
+    case "lesson_calculation":
       return { instruction: p.instructionPl, stimulus: p.prompt, options: [] };
     default: {
       const exhaustive: never = p;

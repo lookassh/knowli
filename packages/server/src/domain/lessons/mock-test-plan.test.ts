@@ -163,3 +163,9 @@ describe("planLessonMockTest — notice, determinizm, przeplot", () => {
     expect(plan[0]!.objectiveId).toBe("obj-a");
   });
 });
+
+
+it("includes independent calculations in a mock test", () => {
+  const calculation = entry({ exerciseType: "lesson_calculation", stage: "independent" });
+  expect(planLessonMockTest({ pool: [calculation], objectiveIds: ["obj-a"], requestedCount: 1, exposedTargetKeys: [] })).toMatchObject([{ exerciseType: "lesson_calculation", itemId: calculation.itemId }]);
+});

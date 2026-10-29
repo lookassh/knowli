@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { messages, type LessonCommand, type SubjectCatalogDto } from "@learning/contracts";
+import { messages, MAX_SCHOOL_MATERIAL_LENGTH, MAX_SCHOOL_SUBJECT_TITLE_LENGTH, MAX_SCHOOL_TOPIC_TITLE_LENGTH, type LessonCommand, type SchoolLessonCommand, type SubjectCatalogDto } from "@learning/contracts";
 import { callParent, errorMessage, parentClient } from "../api";
 import { isDefinitiveGenerationRejection, readLessonAcceptance } from "../generation-request";
 
 const MATERIAL_MAX = 8000;
 const POOL_MIN = 20;
 const POOL_MAX = 120;
+/** Zestawy szkolne mają wyższy limit puli w kontrakcie (160). */
+const SCHOOL_POOL_MAX = 160;
 
 /** Domyślna wielkość puli: większa z 60 i 12 × liczba reguł (requirements 2.1). */
 export function defaultPoolSize(objectiveCount: number): number {
@@ -42,6 +44,9 @@ export default function NewLessonForm({
   const [creating, setCreating] = useState(false);
   const creatingRef = useRef(false);
   const pendingCommand = useRef<LessonCommand | null>(null);
+  const pendingSchoolCommand = useRef<SchoolLessonCommand | null>(null);
+  const [schoolSubjectName, setSchoolSubjectName] = useState("");
+  const [schoolTopicName, setSchoolTopicName] = useState("");
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -75,6 +80,9 @@ export default function NewLessonForm({
   const subject = useMemo(() => catalog?.subjects.find((s) => s.id === subjectId) ?? null, [catalog, subjectId]);
   const topic = useMemo(() => subject?.topics.find((t) => t.id === topicId) ?? null, [subject, topicId]);
   const objectives = topic?.objectives ?? [];
+  // Przedmiot bez tematów katalogowych = zestaw szkolny z materiału rodzica.
+  const isSchool = subject !== null && subject.topics.length === 0;
+  const materialMax = isSchool ? MAX_SCHOOL_MATERIAL_LENGTH : MATERIAL_MAX;
 
   // Domyślna pula podąża za liczbą reguł, dopóki rodzic jej ręcznie nie zmieni.
   useEffect(() => {
@@ -104,9 +112,68 @@ export default function NewLessonForm({
   };
 
   const materialLength = material.trim().length;
-  const canSubmit = subject !== null && topic !== null && selectedObjectives.length > 0 && materialLength > 0 && materialLength <= MATERIAL_MAX;
+  const poolMax = isSchool ? SCHOOL_POOL_MAX : POOL_MAX;
+  const poolValid = Number.isInteger(poolSize) && poolSize >= POOL_MIN && poolSize <= poolMax;
+  const canSubmit = poolValid && (isSchool
+    ? schoolSubjectName.trim().length > 0 && schoolSubjectName.trim().length <= MAX_SCHOOL_SUBJECT_TITLE_LENGTH &&
+      schoolTopicName.trim().length > 0 && schoolTopicName.trim().length <= MAX_SCHOOL_TOPIC_TITLE_LENGTH &&
+      materialLength > 0 && materialLength <= materialMax
+    : subject !== null && topic !== null && selectedObjectives.length > 0 && materialLength > 0 && materialLength <= MATERIAL_MAX);
 
-  const create = async () => {
+  const createSchool = async (): Promise<void> => {
+    // Niepewna komenda katalogowa ma pierwszeństwo: ponawiamy ją, nie tworzymy drugiego zestawu (W15).
+    if (!pendingSchoolCommand.current && pendingCommand.current) return create();
+    if (creatingRef.current) return;
+    if (!pendingSchoolCommand.current) {
+      if (schoolSubjectName.trim().length === 0 || schoolTopicName.trim().length === 0) {
+        setError(messages.lessons.schoolMaterialRequired);
+        return;
+      }
+      if (materialLength === 0 || materialLength > MAX_SCHOOL_MATERIAL_LENGTH) {
+        setError(messages.lessons.schoolMaterialRequired);
+        return;
+      }
+    }
+    creatingRef.current = true;
+    setCreating(true);
+    setError(null);
+    const command: SchoolLessonCommand = pendingSchoolCommand.current ?? {
+      deckId: crypto.randomUUID(),
+      subjectTitlePl: schoolSubjectName.trim(),
+      topicTitlePl: schoolTopicName.trim(),
+      material: material.trim(),
+      ...(instruction.trim() ? { instruction: instruction.trim() } : {}),
+      poolSize,
+      clientRequestId: crypto.randomUUID(),
+    };
+    pendingSchoolCommand.current = command;
+    try {
+      const response = await callParent(() => parentClient.lessons.createSchool(command));
+      const acceptance = readLessonAcceptance(response);
+      if (!acceptance) {
+        if (mounted.current) setError(messages.lessons.createUncertain);
+        return;
+      }
+      pendingSchoolCommand.current = null;
+      if (mounted.current) onCreated(acceptance.deckId);
+    } catch (cause) {
+      if (isDefinitiveGenerationRejection(cause)) {
+        pendingSchoolCommand.current = null;
+        if ((cause as { status?: number }).status === 401) {
+          if (mounted.current) onAuthExpired();
+          return;
+        }
+        if (mounted.current) setError(errorMessage(cause));
+      } else if (mounted.current) {
+        setError(messages.lessons.createUncertain);
+      }
+    } finally {
+      creatingRef.current = false;
+      if (mounted.current) setCreating(false);
+    }
+  };
+  const create = async (): Promise<void> => {
+    if (pendingSchoolCommand.current || (isSchool && !pendingCommand.current)) return createSchool();
     if (creatingRef.current) return;
     if (!pendingCommand.current) {
       if (selectedObjectives.length === 0) {
@@ -174,14 +241,31 @@ export default function NewLessonForm({
             {catalog?.subjects.map((s) => <option key={s.id} value={s.id}>{s.titlePl}</option>)}
           </select>
         </div>
-        <div>
-          <label htmlFor="lesson-topic">{messages.lessons.topicLabel}</label>
-          <select id="lesson-topic" data-testid="lesson-topic" value={topicId} disabled={creating} onChange={(e) => chooseTopic(e.target.value)}>
-            {subject?.topics.map((t) => <option key={t.id} value={t.id}>{t.titlePl}</option>)}
-          </select>
-        </div>
+        {!isSchool && (
+          <div>
+            <label htmlFor="lesson-topic">{messages.lessons.topicLabel}</label>
+            <select id="lesson-topic" data-testid="lesson-topic" value={topicId} disabled={creating} onChange={(e) => chooseTopic(e.target.value)}>
+              {subject?.topics.map((t) => <option key={t.id} value={t.id}>{t.titlePl}</option>)}
+            </select>
+          </div>
+        )}
+        {isSchool && (
+          <>
+            <div>
+              <label htmlFor="school-subject-name">{messages.lessons.schoolSubjectNameLabel}</label>
+              <input id="school-subject-name" data-testid="school-subject-name" value={schoolSubjectName} disabled={creating}
+                maxLength={MAX_SCHOOL_SUBJECT_TITLE_LENGTH} onChange={(e) => setSchoolSubjectName(e.target.value)} />
+            </div>
+            <div>
+              <label htmlFor="school-topic-name">{messages.lessons.schoolTopicNameLabel}</label>
+              <input id="school-topic-name" data-testid="school-topic-name" value={schoolTopicName} disabled={creating}
+                maxLength={MAX_SCHOOL_TOPIC_TITLE_LENGTH} onChange={(e) => setSchoolTopicName(e.target.value)} />
+            </div>
+          </>
+        )}
       </div>
 
+      {!isSchool && (
       <fieldset>
         <legend>{messages.lessons.objectivesLabel}</legend>
         {objectives.map((objective) => (
@@ -197,13 +281,15 @@ export default function NewLessonForm({
           </label>
         ))}
       </fieldset>
+      )}
+      {isSchool && <p className="muted" data-testid="school-objectives-auto">{messages.lessons.schoolObjectivesAuto}</p>}
 
       <label>
-        {messages.lessons.materialLabel}
+        {isSchool ? messages.lessons.schoolMaterialLabel : messages.lessons.materialLabel}
         <textarea
           data-testid="lesson-material"
           rows={6}
-          maxLength={MATERIAL_MAX}
+          maxLength={materialMax}
           placeholder={messages.lessons.materialPlaceholder}
           value={material}
           disabled={creating}
@@ -211,8 +297,9 @@ export default function NewLessonForm({
           onChange={(e) => setMaterial(e.target.value)}
         />
       </label>
+      {isSchool && <p className="muted" data-testid="school-material-hint">{messages.lessons.schoolMaterialHint}</p>}
       <p className="muted" id="lesson-material-counter" data-testid="lesson-material-counter">
-        {messages.lessons.materialCounter.replace("{n}", String(material.length))}
+        {(isSchool ? messages.lessons.schoolMaterialCounter : messages.lessons.materialCounter).replace("{n}", String(material.length))}
       </p>
 
       <label>
@@ -226,7 +313,7 @@ export default function NewLessonForm({
           type="number"
           data-testid="lesson-pool-size"
           min={POOL_MIN}
-          max={POOL_MAX}
+          max={poolMax}
           step={1}
           value={poolSize}
           disabled={creating}
@@ -243,9 +330,9 @@ export default function NewLessonForm({
         type="button"
         data-testid="lesson-create-submit"
         onClick={create}
-        disabled={creating || (!pendingCommand.current && !canSubmit)}
+        disabled={creating || (!pendingCommand.current && !pendingSchoolCommand.current && !canSubmit)}
       >
-        {creating ? messages.lessons.creating : pendingCommand.current ? messages.lessons.retryCreate : messages.lessons.createLesson}
+        {creating ? messages.lessons.creating : pendingCommand.current || pendingSchoolCommand.current ? messages.lessons.retryCreate : messages.lessons.createLesson}
       </button>
       {error && <p className="error" data-testid="api-error" role="alert">{error}</p>}
     </section>

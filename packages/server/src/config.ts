@@ -13,6 +13,7 @@ import { createAzurePronunciationProvider } from "./providers/azure/pronunciatio
 import { createAzureSttProvider } from "./providers/azure/stt";
 import { createOpenAiCompatibleGrader } from "./providers/openai-compatible/grader";
 import { createOpenAiCompatibleSessionActivityReviewer } from "./providers/openai-compatible/session-activity";
+import { chatRequestExtrasFromEnv } from "./providers/chat-request-options";
 import { createProductionSubjectRegistry } from "./domain/lessons/subjects";
 import type { SubjectRegistry } from "./domain/lessons/registry";
 import type { LessonGenerationPolicy } from "./modules/materials/lessons/lesson-generation-policy";
@@ -236,7 +237,9 @@ export function graderFromEnv(env: Record<string, string | undefined>): GraderDe
     DEFAULT_GRADER_MAX_CALLS_PER_SESSION,
   );
   return {
-    provider: createOpenAiCompatibleGrader({ baseUrl: baseUrl!, apiKey: apiKey!, model: model! }),
+    provider: createOpenAiCompatibleGrader({
+      baseUrl: baseUrl!, apiKey: apiKey!, model: model!, requestExtras: chatRequestExtrasFromEnv(env, "UMIEM_GRADER"),
+    }),
     maxCallsPerSession,
     timeoutMs,
   };
@@ -265,7 +268,9 @@ export function sessionActivityFromEnv(env: Record<string, string | undefined>):
     DEFAULT_SESSION_ACTIVITY_TIMEOUT_MS,
   );
   return {
-    provider: createOpenAiCompatibleSessionActivityReviewer({ baseUrl: baseUrl!, apiKey: apiKey!, model: model! }),
+    provider: createOpenAiCompatibleSessionActivityReviewer({
+      baseUrl: baseUrl!, apiKey: apiKey!, model: model!, requestExtras: chatRequestExtrasFromEnv(env, "UMIEM_GRADER"),
+    }),
     timeoutMs,
     publicService: `${new URL(baseUrl!).host} · ${model}`,
   };
