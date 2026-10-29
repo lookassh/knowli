@@ -639,6 +639,27 @@ test("short reading options keep the outcome badge clear of the label without ch
   }
 });
 
+test("a wide short label takes a full row instead of being clipped", async ({ page }) => {
+  // Ten wide glyphs pass the length check but do not fit half of a phone row.
+  await openReadingChoices(page, ["WWWWWWWWWW", "noga", "ręka", "oko"]);
+  for (const viewport of [{ width: 360, height: 800 }, { width: 320, height: 640 }]) {
+    const name = `${viewport.width}x${viewport.height}`;
+    await resizeAndSettle(page, viewport);
+    const root = (await measure(page, { root: ".kid-learning" })).root;
+    const options = await measureOptions(page);
+    for (const [index, option] of options.entries()) {
+      expectInsideRoot(option as never, root, `option ${index}: ${name}`);
+      expect(option.labelClipped, `option ${index} label clipped: ${name}`).toBe(false);
+      expect(option.labelHeight, `option ${index} label on a single line: ${name}`).toBeLessThanOrEqual(option.lineHeight * 1.5);
+    }
+    const others = options.slice(1);
+    // A short option left alone on the last row may stretch too; the paired ones stay half-width.
+    expect(options[0]!.width, `wide option spans the row: ${name}`).toBeGreaterThan(Math.min(...others.map((option) => option.width)) * 1.5);
+    expect(new Set(others.map((option) => Math.round(option.left))).size, `short options still pair up: ${name}`).toBe(2);
+    expect((await measure(page, { root: ".kid-learning" })).scrollWidth, `horizontal overflow: ${name}`).toBeLessThanOrEqual(viewport.width);
+  }
+});
+
 test("long reading options stay in one column", async ({ page }) => {
   await openReadingChoices(page, ["noga", "ręka", "głowa", "poniedziałek"]);
   for (const viewport of [{ width: 360, height: 800 }, { width: 320, height: 640 }]) {

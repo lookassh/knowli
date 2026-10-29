@@ -206,12 +206,20 @@
    the single choiceList column. The outcome badge sits in a reserved top band
    of the card (so it never covers the label and the card height does not change
    when an outcome appears); an equal bottom band keeps the label in the vertical
-   centre of the card (≈76px). Labels never break mid-word. */
+   centre of the card (≈76px). Labels never break mid-word: cards pair up in a
+   wrapping row, and a label too wide for half the row (wide glyphs pass the
+   length check) takes the full row instead of being clipped. */
 @media (max-width: 599px) {
   .choiceList.shortChoiceGrid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    flex-direction: row;
+    flex-wrap: wrap;
     gap: 8px;
+  }
+
+  .choiceList.shortChoiceGrid .item {
+    flex: 1 1 calc(50% - 4px);
+    width: auto;
+    min-width: max-content;
   }
 
   :global(.kid-ui) .choiceList.shortChoiceGrid .option {

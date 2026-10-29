@@ -78,6 +78,16 @@ test("round audio button under the picture stays tonal", async ({ page }, testIn
   expect(style).toEqual({ background: tonal, color: onTonal, border: "rgba(0, 0, 0, 0)" });
   await expectReadable(play);
   await page.screenshot({ path: testInfo.outputPath("picture-recall-390x844.png") });
+  // The playback stays below the picture in portrait, landscape and tablet.
+  const visual = page.locator(".kid-material .kid-visual");
+  for (const viewport of [{ width: 360, height: 800 }, { width: 844, height: 390 }, { width: 768, height: 1024 }]) {
+    await resizeAndSettle(page, viewport);
+    await play.scrollIntoViewIfNeeded();
+    const [picture, button] = [(await visual.boundingBox())!, (await play.boundingBox())!];
+    const name = `${viewport.width}x${viewport.height}`;
+    expect(button.y, `playback below the picture: ${name}`).toBeGreaterThanOrEqual(picture.y + picture.height - 1);
+    expect(Math.abs((button.x + button.width / 2) - (picture.x + picture.width / 2)), `playback centred under the picture: ${name}`).toBeLessThanOrEqual(2);
+  }
 });
 
 for (const colorScheme of ["light", "dark"] as const) {

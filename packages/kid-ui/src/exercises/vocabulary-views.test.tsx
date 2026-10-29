@@ -85,6 +85,9 @@ describe("vocabulary views preserve exercise behavior", () => {
     const { unmount } = renderKid(<PictureRecallView {...idle} />);
     const play = screen.getByRole("button", { name: "Posłuchaj" });
     expect(screen.getByTestId("kid-material").contains(play)).toBe(true);
+    // Playback follows the picture, never above it.
+    const picture = screen.getByTestId("kid-material").querySelector(".kid-visual")!;
+    expect(picture.compareDocumentPosition(play) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(play.hasAttribute("disabled")).toBe(false);
     fireEvent.click(play);
     expect(idle.handlers.onPlay).toHaveBeenCalledOnce();
@@ -105,6 +108,8 @@ describe("vocabulary views preserve exercise behavior", () => {
     const play = screen.getByTestId("kid-play");
     expect(play.getAttribute("aria-label")).toBe("Posłuchaj");
     expect(screen.getByTestId("kid-material").contains(play)).toBe(true);
+    const picture = screen.getByTestId("kid-material").querySelector(".kid-visual")!;
+    expect(picture.compareDocumentPosition(play) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByTestId("kid-exercise-actions").contains(play)).toBe(false);
     expect(play.getAttribute("data-variant")).toBe("tonal");
     expect(play.className).toContain("kid-audio-round");
