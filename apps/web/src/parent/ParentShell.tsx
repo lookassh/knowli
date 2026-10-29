@@ -69,8 +69,6 @@ export interface ParentShellProps {
   onNavigate: (section: ParentSection) => void;
   onToLearning: () => void;
   onLogout: () => void;
-  /** Treść jeszcze nieprzepisana na Mantine: stare style, zawsze jasna (plan §3.1). */
-  legacyContent: boolean;
   children: ReactNode;
 }
 
@@ -80,7 +78,7 @@ export interface ParentShellProps {
  * i menu ⋯ (Do nauki, Wygląd, Wyloguj), od 600 px zakładki pod nagłówkiem.
  * Sekcje są linkami z adresem — nawigację w panelu przejmuje `onNavigate`.
  */
-export function ParentShell({ section, onNavigate, onToLearning, onLogout, legacyContent, children }: ParentShellProps) {
+export function ParentShell({ section, onNavigate, onToLearning, onLogout, children }: ParentShellProps) {
   const compact = useMediaQuery(COMPACT_QUERY, false, { getInitialValueInEffect: false }) ?? false;
   const { colorScheme } = useMantineColorScheme();
 
@@ -180,8 +178,8 @@ export function ParentShell({ section, onNavigate, onToLearning, onLogout, legac
       <AppShell.Main>
         {/* ta sama struktura elementów dla obu wariantów — zmiana wariantu
             (np. lista zestawów ↔ edytor) nie może przemontować sekcji */}
-        <div className={legacyContent ? "pp-app pp-shell-content" : undefined}>
-          <div className={legacyContent ? "pp-main" : "pp-shell-page"}>{children}</div>
+        <div>
+          <div className="pp-shell-page">{children}</div>
         </div>
       </AppShell.Main>
 
