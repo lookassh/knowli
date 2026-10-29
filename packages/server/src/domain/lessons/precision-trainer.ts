@@ -12,6 +12,8 @@ export interface SchoolAssessmentDetails {
   readonly knowledge?: unknown;
   readonly precision?: unknown;
   readonly redundantFragments?: unknown;
+  /** Fragmenty niezwiązane z pytaniem (werdykt v3). */
+  readonly offTopicFragments?: unknown;
   readonly formOk?: unknown;
   readonly matchedElementIds?: unknown;
   readonly missingElementIds?: unknown;
@@ -34,16 +36,27 @@ export interface ShortenOfferInput {
 /**
  * Czy po tej odpowiedzi zaproponować skrócenie: wiedza poprawna, precyzja
  * rozwlekła lub nie na temat, a do usunięcia jest co najmniej jeden fragment
- * zbędny albo naruszona forma jednego zdania. Tylko w treningu, z wywołaniem
- * gradera na poprawkę i poza fazą obietnicy końca sesji.
+ * zbędny lub niezwiązany z pytaniem albo naruszona forma jednego zdania.
+ * Tylko w treningu, z wywołaniem gradera na poprawkę i poza fazą obietnicy
+ * końca sesji.
  */
 export function shouldOfferShorten(input: ShortenOfferInput): boolean {
   if (!input.trainingSession || input.followUp) return false;
   if (input.graderCallsLeft < 1 || input.remainingWithThisTask <= SESSION_PROMISE_REMAINING) return false;
   const { knowledge, precision } = input.details;
   if (knowledge !== "correct" || (precision !== "verbose" && precision !== "unfocused")) return false;
-  const fragments = Array.isArray(input.details.redundantFragments) ? input.details.redundantFragments : [];
-  return fragments.length > 0 || input.details.formOk === false;
+  return removableFragments(input.details).length > 0 || input.details.formOk === false;
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+/** Fragmenty do usunięcia w poprawce: zbędne i niezwiązane z pytaniem (design §9.2). */
+export function removableFragments(details: SchoolAssessmentDetails): { redundant: string[]; offTopic: string[]; length: number } {
+  const redundant = stringList(details.redundantFragments);
+  const offTopic = stringList(details.offTopicFragments);
+  return { redundant, offTopic, length: redundant.length + offTopic.length };
 }
 
 /** Porównanie poprawki z oryginałem: NFC, białe znaki, wielkość liter. */
@@ -61,10 +74,6 @@ export interface RevisionComparison {
   readonly lostElementIds: readonly string[];
   /** Czy poprawka jest krótsza od oryginału (w znakach, po przycięciu). */
   readonly shorter: boolean;
-}
-
-function stringList(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
 /** Porównuje ocenę poprawki z oceną oryginału. */

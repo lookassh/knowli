@@ -212,6 +212,21 @@ odrzuceń w pełnej sondzie.
       API → MCP → skill: brak wpływu, lekcje są poza `learning-overview`.
 - [x] Dokumentacja: SPEC §28 i architektura §22 przepisane na stan kodu
       (Etap 3 nadal tylko zaprojektowany).
-- [ ] Pełny przebieg: `pnpm typecheck`, `pnpm test:unit`,
+- [x] Pełny przebieg: `pnpm typecheck`, `pnpm test:unit`,
       `pnpm test:integration` (pliki lekcji), `pnpm build`,
-      `pnpm test:e2e:shards`.
+      `pnpm test:e2e:shards` (wykonany przy Etapie 3, PR #158).
+
+## Etap 6 — Precyzja v3 (design §9)
+
+- [x] Kontrakt i decyzje (design §9, akceptacja właściciela 2026-10-29).
+- [x] Werdykt `school-grader-v3`: `offTopicFragments`, `confusedConcepts`,
+      walidacja, kategoria `confused_concept`; migracja `0025`; cache v3.
+- [x] „Skróć odpowiedź”: dwie kategorie segmentów i podpowiedź „nie na temat”.
+- [x] Selektor: po pomyleniu pojęć pytanie porównawcze celu; generator
+      dokłada pytania porównawcze dla par mylonych pojęć.
+- [x] Raport rodzica: „Myli pojęcia”, liczniki kategorii fragmentów, pary
+      w raporcie kartkówki.
+- [x] Golden set v2 i ewaluacja na `google/gemini-3.8-flash`
+      (`grader-eval-2026-10-29-v3.md`).
+- [ ] Pilotaż z dzieckiem: skuteczność wykrywania pomyleń i rozróżnienia
+      kategorii na prawdziwych odpowiedziach.

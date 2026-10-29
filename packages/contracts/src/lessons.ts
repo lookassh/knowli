@@ -344,6 +344,14 @@ const ObjectiveStatusSchema = z.enum([
  * nigdy nie wpływa na status ani opanowanie. Tylko zestawy z odpowiedziami
  * otwartymi szkoły; gramatyka pola nie niesie.
  */
+/** Para pomylonych pojęć z liczbą wystąpień (raport rodzica, design szkoły §9.4). */
+export const ConfusionCountSchema = z.object({
+  said: z.string().min(1).max(60),
+  meant: z.string().min(1).max(60),
+  count: z.number().int().positive(),
+}).strict();
+export type ConfusionCountDto = z.infer<typeof ConfusionCountSchema>;
+
 export const SchoolProgressSchema = z.object({
   knowledge: z.object({
     correct: z.number().int().nonnegative(),
@@ -389,6 +397,13 @@ export const SchoolProgressSchema = z.object({
    * wyłączone. Brak = starszy serwer.
    */
   speechService: z.string().min(1).nullable().optional(),
+  /** Pomylone pojęcia z ocen odpowiedzi otwartych (werdykt v3), malejąco; brak = starszy serwer. */
+  topConfusions: z.array(ConfusionCountSchema).max(5).optional(),
+  /** Oceny z fragmentami „poprawne, ale zbędne” i „nie na temat” (v3); brak = starszy serwer. */
+  fragmentKinds: z.object({
+    redundant: z.number().int().nonnegative(),
+    offTopic: z.number().int().nonnegative(),
+  }).optional(),
   /**
    * Trener precyzji: zaproponowane skrócenia (zadania następcze), podjęte
    * poprawki i udane (krótsze, bez utraty elementu wymaganego) oraz ostatnie
@@ -496,6 +511,8 @@ export const LessonMockTestReportDtoSchema = z.object({
       }).strict(),
       formViolations: z.number().int().nonnegative(),
       missingElements: z.array(z.object({ text: z.string().min(1), count: z.number().int().positive() }).strict()).max(5),
+      /** Pomylone pojęcia w tej kartkówce (werdykt v3, design §9.4); brak = raport sprzed Etapu 6. */
+      confusions: z.array(ConfusionCountSchema).max(3).optional(),
     }).strict().optional(),
   })),
   complete: z.boolean(),

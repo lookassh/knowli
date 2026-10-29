@@ -235,7 +235,7 @@ export interface GraderInput {
   /**
    * Dane ścieżki szkolnej (Etap 2): elementy wymagane ćwiczenia, forma i cytaty
    * źródłowe. Obecność przełącza adapter na werdykt dwuwymiarowy i prompt
-   * `school-grader-v2`; brak = dotychczasowy werdykt v1.
+   * `school-grader-v3` (design §9.1); brak = dotychczasowy werdykt v1.
    */
   readonly school?: {
     readonly question: string;

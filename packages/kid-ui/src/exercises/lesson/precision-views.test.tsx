@@ -179,3 +179,36 @@ describe("lesson_shorten — skracanie własnej odpowiedzi", () => {
     expect(document.activeElement).toBe(input());
   });
 });
+
+describe("lesson_shorten — kategorie zaznaczeń (Etap 6)", () => {
+  const categorizedPrompt: TaskPrompt = {
+    ...(shortenPrompt as Extract<TaskPrompt, { kind: "lesson_shorten" }>),
+    originalAnswer: "Południk łączy bieguny. Jest na każdej mapie. Wczoraj grałem w piłkę.",
+    answerSegments: [
+      { text: "Południk łączy bieguny. ", state: "plain" },
+      { text: "Jest na każdej mapie.", state: "pill" },
+      { text: " ", state: "plain" },
+      { text: "Wczoraj grałem w piłkę.", state: "offtopic" },
+    ],
+  };
+
+  it("odróżnia zbędne od nie na temat stylem, etykietą i legendą", () => {
+    renderKid(<LessonShortenView {...makeExerciseProps(task(categorizedPrompt, "lesson_open_answer"))} />);
+    const offTopic = screen.getByTestId("kid-spelling-offtopic");
+    expect(offTopic.className).toContain("kid-spelling-pill--offtopic");
+    expect(offTopic.textContent).toContain("nie na temat");
+    expect(screen.getByTestId("kid-spelling-pill").textContent).toContain("zbędne");
+    const legend = screen.getByTestId("kid-segment-legend");
+    expect(legend.textContent).toContain("zbędne");
+    expect(legend.textContent).toContain("nie na temat");
+    // opis dla czytników ekranu wymienia oba fragmenty do usunięcia
+    expect(screen.getByTestId("kid-lesson-shorten-original").textContent).toContain("Wczoraj grałem w piłkę.");
+  });
+
+  it("same fragmenty zbędne zostają bez legendy i bez dodatkowych etykiet", () => {
+    renderKid(<LessonShortenView {...makeExerciseProps(task(shortenPrompt, "lesson_open_answer"))} />);
+    expect(screen.queryByTestId("kid-segment-legend")).toBeNull();
+    expect(screen.queryByTestId("kid-spelling-offtopic")).toBeNull();
+    expect(screen.getByTestId("kid-spelling-pill").textContent).toBe("Wczoraj w ogrodzie widziałem, że ");
+  });
+});

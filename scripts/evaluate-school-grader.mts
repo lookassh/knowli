@@ -45,10 +45,21 @@ interface GoldenCase {
     precision: string;
     missingElementIds?: string[];
     formOk?: boolean;
+    /**
+     * v3: czy odpowiedź myli pojęcia (bramka wykrywania, design §9.1). Brak pola =
+     * przypadek bez pomylenia (liczy się do fałszywych pomyleń).
+     */
+    confused?: boolean;
+    /** Dopuszczalne warianty pary: wykrycie liczy się, gdy `said`/`meant` zawierają któryś z nich. */
+    confusedPair?: { said: string[]; meant: string[] };
+    /** Fragment oczekiwanej kategorii musi zawierać ten tekst. */
+    fragmentContains?: string;
+    /** v3: oczekiwana kategoria treści poza elementami wymaganymi (raportowana, nie bramkuje). */
+    fragments?: "redundant" | "offTopic";
   };
 }
 interface GoldenSet {
-  gate: { hardCategoriesMustPass: string[]; knowledgeAccuracyMin: number };
+  gate: { hardCategoriesMustPass: string[]; knowledgeAccuracyMin: number; confusionDetectionMin?: number };
   questions: Record<string, GoldenQuestion>;
   cases: GoldenCase[];
 }
@@ -127,6 +138,12 @@ let missingChecked = 0;
 let formOkCount = 0;
 let formChecked = 0;
 let invalid = 0;
+let confusionDetected = 0;
+let confusionChecked = 0;
+let confusionFalsePositive = 0;
+let confusionNegatives = 0;
+let fragmentsOk = 0;
+let fragmentsChecked = 0;
 const failures: string[] = [];
 
 for (const testCase of golden.cases) {
@@ -172,6 +189,31 @@ for (const testCase of golden.cases) {
       );
     }
   }
+  if (testCase.expected.confused === true) {
+    confusionChecked += 1;
+    const expectedPair = testCase.expected.confusedPair;
+    const lower = (text: string) => text.toLocaleLowerCase("pl-PL");
+    const matchesPair = (pair: { said: string; meant: string }) => expectedPair === undefined ||
+      (expectedPair.said.some((v) => lower(pair.said).includes(lower(v))) && expectedPair.meant.some((v) => lower(pair.meant).includes(lower(v))));
+    if (verdict.confusedConcepts.some(matchesPair)) confusionDetected += 1;
+    else failures.push(`${testCase.id} (${testCase.category}): pomylenie pojęć niewykryte albo zła para ${JSON.stringify(verdict.confusedConcepts)}`);
+    // pomylenie pojęć nigdy nie może zaliczyć wiedzy (twarde wymaganie v3)
+    if (verdict.knowledge === "correct") failures.push(`${testCase.id} (${testCase.category}) [TWARDA]: pomylenie pojęć ocenione jako correct`);
+  } else {
+    confusionNegatives += 1;
+    if (verdict.confusedConcepts.length > 0) {
+      confusionFalsePositive += 1;
+      failures.push(`${testCase.id} (${testCase.category}): fałszywe pomylenie ${JSON.stringify(verdict.confusedConcepts)}`);
+    }
+  }
+  if (testCase.expected.fragments !== undefined) {
+    fragmentsChecked += 1;
+    const list = testCase.expected.fragments === "offTopic" ? verdict.offTopicFragments : verdict.redundantFragments;
+    const needle = testCase.expected.fragmentContains?.toLocaleLowerCase("pl-PL");
+    const has = list.some((fragment) => needle === undefined || fragment.toLocaleLowerCase("pl-PL").includes(needle));
+    if (has) fragmentsOk += 1;
+    else failures.push(`${testCase.id} (${testCase.category}): brak fragmentu kategorii ${testCase.expected.fragments}`);
+  }
   if (testCase.expected.formOk !== undefined) {
     formChecked += 1;
     const actualFormOk = question.expectedForm === "one_sentence" ? countSentences(testCase.childAnswer) <= 1 : null;
@@ -184,7 +226,8 @@ const accuracy = knowledgeOk / total;
 const missingAccuracy = missingChecked > 0 ? missingOk / missingChecked : 1;
 console.log(
   `przypadki=${total} wiedzaZgodna=${knowledgeOk} (${(accuracy * 100).toFixed(0)}%) precyzjaZgodna=${precisionOk} ` +
-  `brakujaceElementyZgodne=${missingOk}/${missingChecked} formaZgodna=${formOkCount}/${formChecked} odrzucone=${invalid}`,
+  `brakujaceElementyZgodne=${missingOk}/${missingChecked} formaZgodna=${formOkCount}/${formChecked} odrzucone=${invalid} ` +
+  `pomylenieWykryte=${confusionDetected}/${confusionChecked} falszywePomylenie=${confusionFalsePositive}/${confusionNegatives} kategorieFragmentow=${fragmentsOk}/${fragmentsChecked}`,
 );
 for (const failure of failures) console.log(` - ${failure}`);
 
@@ -193,6 +236,9 @@ if (useFake) {
   process.exit(0);
 }
 const hardFailed = failures.some((f) => f.includes("[TWARDA]"));
-const gateOk = !hardFailed && accuracy >= golden.gate.knowledgeAccuracyMin && missingAccuracy >= golden.gate.knowledgeAccuracyMin && invalid === 0;
+const confusionRate = confusionChecked > 0 ? confusionDetected / confusionChecked : 1;
+// Fałszywa para pojęć trafiłaby do raportu rodzica i selektora — blokuje bramkę.
+const gateOk = !hardFailed && accuracy >= golden.gate.knowledgeAccuracyMin && missingAccuracy >= golden.gate.knowledgeAccuracyMin && invalid === 0 &&
+  confusionRate >= (golden.gate.confusionDetectionMin ?? 0) && confusionFalsePositive === 0;
 console.log(gateOk ? "BRAMKA: OK" : "BRAMKA: NIE SPEŁNIONA");
 process.exit(gateOk ? 0 : 1);

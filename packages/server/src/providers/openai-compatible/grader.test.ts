@@ -153,6 +153,20 @@ describe("createOpenAiCompatibleGrader", () => {
     await expect(grader.grade(input, AbortSignal.timeout(10))).rejects.toThrow();
   });
 
+  it("ścieżka szkolna używa werdyktu v3 z kategoriami fragmentów i pomylonymi pojęciami (design §9.1)", async () => {
+    const { calls, fetchImpl } = capturingFetch(() => chatResponse(VALID_JSON));
+    const grader = createOpenAiCompatibleGrader({ baseUrl: "https://g.example/v1", apiKey: "t", model: "m", fetchImpl });
+    const school = {
+      question: "Co to jest południk?", modelAnswer: "Linia łącząca bieguny.", requiredElements: [{ id: "e1", text: "łączy bieguny" }],
+      supplementaryElements: [], commonErrors: [], expectedForm: "short", sourceQuotes: [],
+    };
+    expect(grader.promptVersionForInput?.({ ...input, school })).toBe("school-grader-v3");
+    await grader.grade({ ...input, school }, AbortSignal.timeout(1000));
+    const system = (JSON.parse(calls[0]!.init.body) as { messages: { role: string; content: string }[] }).messages[0]!.content;
+    expect(system).toContain("offTopicFragments");
+    expect(system).toContain("confusedConcepts");
+  });
+
   it("promptVersion jest stałą adaptera", () => {
     const grader = createOpenAiCompatibleGrader({ baseUrl: "https://g.example/v1", apiKey: "t", model: "m" });
     expect(typeof grader.promptVersion).toBe("string");

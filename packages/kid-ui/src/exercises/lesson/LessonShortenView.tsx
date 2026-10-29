@@ -34,7 +34,8 @@ export function LessonShortenView({ task, busy, dock, handlers, mockTest, micAva
   const disabled = busy || (showMic && recordingPhase !== "idle");
   const formId = `kid-lesson-shorten-${task.taskId}`;
   const inputId = `${formId}-input`;
-  const removed = task.prompt.answerSegments.filter((segment) => segment.state === "pill").map((segment) => segment.text.trim());
+  // Do usunięcia są oba rodzaje zaznaczeń: zbędne i nie na temat (design §9.2).
+  const removed = task.prompt.answerSegments.filter((segment) => segment.state !== "plain").map((segment) => segment.text.trim());
 
   return (
     <ExerciseFrame

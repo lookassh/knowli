@@ -237,6 +237,52 @@ test("shorten: question, marked original, prefilled field and actions fit every 
   await expectReachable(page, { width: 844, height: 390 }, [{ testId: "kid-lesson-check", minHeight: 54 }]);
 });
 
+// Werdykt v3 (design szkoły §9.2): zbędne i nie na temat w jednym tekście.
+const CATEGORIZED_ORIGINAL = "Roślina w świetle robi z wody i dwutlenku węgla cukier. Liście są zielone przez chlorofil. Wczoraj z kolegami graliśmy w piłkę na boisku za szkołą.";
+const categorizedShortenTask: TaskDto = {
+  ...base(shortenTaskId, "lesson_open_answer"),
+  prompt: {
+    kind: "lesson_shorten",
+    instructionPl: "Skróć odpowiedź. Usuń zaznaczone fragmenty, zostaw to, co najważniejsze.",
+    prompt: QUESTION,
+    originalAnswer: CATEGORIZED_ORIGINAL,
+    answerSegments: [
+      { text: "Roślina w świetle robi z wody i dwutlenku węgla cukier. ", state: "plain" },
+      { text: "Liście są zielone przez chlorofil.", state: "pill" },
+      { text: " ", state: "plain" },
+      { text: "Wczoraj z kolegami graliśmy w piłkę na boisku za szkołą.", state: "offtopic" },
+    ],
+  },
+};
+
+test("shorten: redundant and off-topic marks with a legend fit every form factor", async ({ page }, testInfo) => {
+  await open(page, fixture([categorizedShortenTask]), "kid-lesson-shorten");
+  await expect(page.getByTestId("kid-spelling-pill")).toContainText("Liście są zielone przez chlorofil.");
+  await expect(page.getByTestId("kid-spelling-offtopic")).toContainText("Wczoraj z kolegami graliśmy w piłkę");
+  const legend = page.getByTestId("kid-segment-legend");
+  await expect(legend).toBeVisible();
+  await expect(legend).toContainText("zbędne");
+  await expect(legend).toContainText("nie na temat");
+  // kategoria nie zależy od koloru: inny styl obwódki i etykieta dla czytników ekranu
+  const borders = await Promise.all(["kid-spelling-pill", "kid-spelling-offtopic"].map((id) =>
+    page.getByTestId(id).evaluate((element) => getComputedStyle(element).borderTopStyle)));
+  expect(borders[0]).not.toBe(borders[1]);
+
+  for (const viewport of VIEWPORTS) {
+    await page.setViewportSize(viewport);
+    await expectReachable(page, viewport, [
+      { testId: "kid-lesson-shorten-original" },
+      { testId: "kid-segment-legend" },
+      { testId: "kid-lesson-input", minHeight: 48 },
+      { testId: "kid-lesson-check", minHeight: 54 },
+      { testId: "kid-skip", minHeight: 48 },
+    ]);
+    await expectNotClipped(page, "kid-lesson-shorten-original");
+    await expectNotClipped(page, "kid-segment-legend");
+    await page.screenshot({ path: testInfo.outputPath(`shorten-categories-${viewport.width}x${viewport.height}.png`) });
+  }
+});
+
 test("open answer: precision hint praises the answer, shows the shortening tip, then the shorten step is submitted", async ({ page }, testInfo) => {
   const posted: unknown[] = [];
   page.on("request", (request) => {

@@ -575,15 +575,19 @@ function schoolVerdictFromCacheRow(row: LessonVerdictRow, key: LessonTaskAnswerK
     missingElementIds: [...(row.missingElements ?? [])],
     incorrectStatements: [...(row.incorrectStatements ?? [])],
     redundantFragments: [...(row.redundantFragments ?? [])],
+    offTopicFragments: [...(row.offTopicFragments ?? [])],
+    confusedConcepts: (row.confusedConcepts ?? []).map((pair) => ({ said: pair.said, meant: pair.meant })),
     note: row.note ?? "",
   };
   if (row.parentDecision === "overridden_correct") {
+    // decyzja rodzica „poprawne” znosi błąd treści, więc i pomylenie pojęć
     return {
       ...base,
       knowledge: "correct",
       matchedElementIds: (key.schoolCriteria?.requiredElements ?? []).map((el) => el.id),
       missingElementIds: [],
       incorrectStatements: [],
+      confusedConcepts: [],
     };
   }
   if (row.parentDecision === "overridden_incorrect") {
@@ -620,7 +624,9 @@ function resultFromSchoolVerdict(
   const criteria = key.schoolCriteria;
   const elementText = new Map((criteria?.requiredElements ?? []).map((el) => [el.id, el.text]));
   const fragments = [...verdict.incorrectStatements, ...verdict.redundantFragments];
-  const segments = fragments.length > 0 ? buildAnswerSegments(childAnswer, fragments) : null;
+  const segments = fragments.length + verdict.offTopicFragments.length > 0
+    ? buildAnswerSegments(childAnswer, fragments, verdict.offTopicFragments)
+    : null;
   const details: Record<string, unknown> = {
     objectiveId,
     verdict: grade.verdict,
@@ -635,6 +641,9 @@ function resultFromSchoolVerdict(
       : {}),
     ...(verdict.incorrectStatements.length > 0 ? { incorrectStatements: [...verdict.incorrectStatements] } : {}),
     ...(verdict.redundantFragments.length > 0 ? { redundantFragments: [...verdict.redundantFragments] } : {}),
+    // v3 (design §9.1): kategorie fragmentów i pomylone pojęcia — dla rodzica i selektora
+    ...(verdict.offTopicFragments.length > 0 ? { offTopicFragments: [...verdict.offTopicFragments] } : {}),
+    ...(verdict.confusedConcepts.length > 0 ? { confusedConcepts: verdict.confusedConcepts.map((pair) => ({ ...pair })) } : {}),
     ...(grade.errorCategory ? { errorCategory: grade.errorCategory } : {}),
     ...(formOkFor(key, childAnswer, skipFormCheck) === false ? { formOk: false } : {}),
     ...(criteria?.expectedForm ? { expectedForm: criteria.expectedForm } : {}),
@@ -1420,12 +1429,14 @@ async function finalizeGradedAttempt(
         verdict: sv.knowledge === "correct" ? "correct" : sv.knowledge === "partial" ? "almost" : "incorrect",
         // Ta sama kategoria co w ocenie (np. incorrect bez błędnych stwierdzeń = incomplete).
         errorCategory: gradeFromSchoolVerdict(sv).errorCategory ?? null,
-        fragments: [...new Set([...sv.incorrectStatements, ...sv.redundantFragments])].slice(0, 4),
+        fragments: [...new Set([...sv.incorrectStatements, ...sv.redundantFragments, ...sv.offTopicFragments])].slice(0, 4),
         precision: sv.precision,
         matchedElements: [...sv.matchedElementIds],
         missingElements: [...sv.missingElementIds],
         incorrectStatements: [...sv.incorrectStatements],
         redundantFragments: [...sv.redundantFragments],
+        offTopicFragments: [...sv.offTopicFragments],
+        confusedConcepts: sv.confusedConcepts.map((pair) => ({ ...pair })),
         note: sv.note,
         createdAt: receivedAt,
       })
