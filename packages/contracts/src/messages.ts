@@ -420,7 +420,7 @@ export const messages = {
     decksTitle: "Co dziś robimy?",
     kidDailyActivity: "Zatwierdzono dziś: {time}",
     kidDailyActivityUnavailable: "Zatwierdzony czas: —",
-    greeting: "Cześć, {name}! 👋",
+    greeting: "Cześć, {name}!",
     recommendedTitle: "Rekomendowane",
     otherDecksTitle: "Wszystkie zestawy",
     deckStart: "Ucz się",

@@ -60,7 +60,8 @@ test("all assigned decks render in one scrollable list in group order", async ({
   await openDeckScreen(page, decks);
 
   await expect(page.getByTestId("kid-deck-card")).toHaveCount(4);
-  await expect(page.getByTestId("kid-deck-title")).toHaveText(expectedOrder.map((deck) => `${deck.title} — 12 słów`));
+  await expect(page.getByTestId("kid-deck-title")).toHaveText(expectedOrder.map((deck) => deck.title));
+  await expect(page.getByTestId("kid-deck-meta")).toHaveText(expectedOrder.map(() => "12 słów"));
   await expect(page.getByTestId("kid-section-recommended")).toBeVisible();
   await expect(page.getByTestId("kid-section-other")).toBeVisible();
   await expect(page.getByTestId("kid-decks-next")).toHaveCount(0);
@@ -118,7 +119,10 @@ test("long deck titles and actions remain available", async ({ page }) => {
   const title = `Słownictwo ${"bardzo-długa-nazwa-".repeat(8)}`;
   await openDeckScreen(page, [makeDeck(0, { title, mockTestAvailable: false })]);
   const card = page.getByTestId("kid-deck-card");
-  await expect(card.getByTestId("kid-deck-title")).toHaveText(`${title} — 12 słów`);
+  await expect(card.getByTestId("kid-deck-title")).toHaveText(title);
+  await expect(card.getByTestId("kid-deck-meta")).toHaveText("12 słów");
+  const titleFits = await card.getByTestId("kid-deck-title").evaluate((element) => element.scrollWidth <= element.clientWidth + 1);
+  expect(titleFits, "long title wraps instead of being clipped").toBe(true);
   const microphoneButton = page.getByTestId("kid-mic-settings");
   await microphoneButton.click();
   const microphonePanel = page.getByTestId("kid-mic-settings-panel");
@@ -144,6 +148,82 @@ test("empty decks and a denied microphone still offer recovery", async ({ page }
   await page.getByTestId("kid-mic-toggle").check();
   await expect(page.getByTestId("kid-mic-denied-hint")).toHaveCount(0);
   await expect(page.getByTestId("kid-parent-link")).toBeVisible();
+});
+
+test("deck cards and rows fit portrait, landscape, tablet and desktop", async ({ page }, testInfo) => {
+  const longTitle = `Słownictwo ${"bardzo-długa-nazwa-".repeat(4)}`;
+  const decks = [
+    makeDeck(0, { recommended: true, title: "Dni tygodnia i pory roku" }),
+    makeDeck(2, { recommended: true, title: longTitle, resumeOnly: true, activeSession: { sessionId, mode: "training" } }),
+    makeDeck(1, { recommended: false }),
+    makeDeck(3, { recommended: false, testDate: null, mockTestAvailable: false }),
+    makeDeck(5, { recommended: false, title: longTitle }),
+  ];
+  await openDeckScreen(page, decks);
+  await expect(page.getByTestId("kid-deck-card")).toHaveCount(5);
+
+  const cases = [
+    { width: 360, height: 800 },
+    { width: 844, height: 390 },
+    { width: 820, height: 1180 },
+    { width: 1440, height: 900 },
+  ];
+  for (const viewport of cases) {
+    const name = `${viewport.width}x${viewport.height}`;
+    await page.setViewportSize(viewport);
+    await page.evaluate(async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    });
+    const layout = await page.evaluate(() => {
+      const rect = (element: Element) => {
+        const { left, top, right, bottom, width, height } = element.getBoundingClientRect();
+        return { left, top, right, bottom, width, height };
+      };
+      return {
+        innerWidth: window.innerWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        root: rect(document.querySelector("[data-kid-screen]")!),
+        band: rect(document.querySelector("[data-kid-header='band']")!),
+        cards: [...document.querySelectorAll("[data-testid='kid-deck-card']")].map((card) => ({
+          ...rect(card),
+          overflowX: card.scrollWidth > card.clientWidth + 1,
+          buttons: [...card.querySelectorAll("button")].map((button) => ({ testId: button.dataset.testid ?? "", ...rect(button) })),
+          title: (() => { const title = card.querySelector("[data-testid='kid-deck-title']")!; return title.scrollWidth > title.clientWidth + 1; })(),
+        })),
+      };
+    });
+    expect(layout.scrollWidth, `horizontal overflow: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
+    expect(Math.round(layout.band.top), `band top: ${name}`).toBe(0);
+    expect(Math.abs(layout.band.left - layout.root.left), `band left: ${name}`).toBeLessThanOrEqual(1);
+    expect(Math.abs(layout.band.right - layout.root.right), `band right: ${name}`).toBeLessThanOrEqual(1);
+    for (const [index, card] of layout.cards.entries()) {
+      expect(card.left, `card ${index} left: ${name}`).toBeGreaterThanOrEqual(layout.root.left - 1);
+      expect(card.right, `card ${index} right: ${name}`).toBeLessThanOrEqual(layout.root.right + 1);
+      expect(card.right, `card ${index} in viewport: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
+      expect(card.overflowX, `card ${index} content overflow: ${name}`).toBe(false);
+      expect(card.title, `card ${index} title clipped: ${name}`).toBe(false);
+      for (const button of card.buttons) {
+        expect(button.height, `card ${index} ${button.testId} height: ${name}`).toBeGreaterThanOrEqual(48);
+        expect(button.width, `card ${index} ${button.testId} width: ${name}`).toBeGreaterThanOrEqual(48);
+        expect(button.right, `card ${index} ${button.testId} right: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
+        if (index < 2 && button.testId !== "kid-mock-start" && button.testId !== "kid-end-active-session") {
+          expect(button.height, `recommended ${index} main action height: ${name}`).toBeGreaterThanOrEqual(54);
+        }
+      }
+    }
+    // Karta rekomendowana nie dzieli się na kolumny: kolumna ekranu jest ograniczona do 560 px.
+    expect(layout.cards[0]!.top, `recommended cards stack: ${name}`).toBeLessThan(layout.cards[1]!.top);
+    expect(Math.abs(layout.cards[0]!.left - layout.cards[1]!.left), `recommended cards share a column: ${name}`).toBeLessThanOrEqual(1);
+    if (viewport.width === 360 || viewport.width === 844) {
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await expect.poll(() => page.evaluate(() => [...document.querySelectorAll("li:has([data-testid='kid-deck-card'])")].every((item) => getComputedStyle(item).opacity === "1"))).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`decks-${name}.png`) });
+    }
+    const last = page.getByTestId("kid-deck-card").last();
+    await last.scrollIntoViewIfNeeded();
+    await expect(last, `last deck reachable: ${name}`).toBeInViewport({ ratio: 0.98 });
+    await page.evaluate(() => window.scrollTo(0, 0));
+  }
 });
 
 test("microphone settings stay inside portrait, landscape, tablet and desktop viewports", async ({ page }) => {

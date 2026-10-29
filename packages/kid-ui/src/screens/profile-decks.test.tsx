@@ -66,7 +66,8 @@ describe("profile and deck screens", () => {
     expect(screen.getByTestId("kid-section-recommended")).toBeTruthy();
     expect(screen.getByTestId("kid-section-other")).toBeTruthy();
     expect(screen.getByText(/2 lis/)).toBeTruthy();
-    expect(screen.getAllByTestId("kid-deck-title")[2]!.textContent).toContain("Język angielski");
+    expect(screen.getAllByTestId("kid-deck-title").map((title) => title.textContent)).toEqual(["Zestaw 10", "Zestaw 11", "Zestaw 12"]);
+    expect(screen.getAllByTestId("kid-deck-meta").map((meta) => meta.textContent)).toEqual(["7 słów", "7 słów", "Lekcja: Język angielski"]);
     expect(screen.getAllByTestId("kid-deck")[0]!.tagName).toBe("BUTTON");
     screen.getAllByTestId("kid-deck").forEach(button => fireEvent.click(button));
     fireEvent.click(screen.getByTestId("kid-mock-start"));
@@ -107,8 +108,66 @@ describe("profile and deck screens", () => {
     const view = renderKid(<DeckScreen {...props} />);
     expect(screen.getByTestId("kid-no-decks")).toBeTruthy();
     expect(screen.getByRole("main")).toBeTruthy();
+    expect(document.querySelector('[data-kid-header="band"]')).toBeTruthy();
+    expect(screen.getByTestId("kid-no-decks").parentElement?.querySelector("svg[aria-hidden]")).toBeTruthy();
     view.rerender(<DeckScreen {...props} decks={[deck(20, { title: "Bardzo długi tytuł zestawu do nauki słownictwa" })]} />);
-    expect(screen.getByTestId("kid-deck-title").textContent).toContain("Bardzo długi tytuł zestawu do nauki słownictwa");
+    expect(screen.getByTestId("kid-deck-title").textContent).toBe("Bardzo długi tytuł zestawu do nauki słownictwa");
+  });
+
+  it("greets the child inside the band without an emoji", () => {
+    renderKid(<DeckScreen decks={[deck(10)]} childName="Ola" microphone={false} micDenied={false} onToggleMicrophone={vi.fn()} onStart={vi.fn()} />);
+    const band = document.querySelector('[data-kid-header="band"]')!;
+    expect(band.querySelector(".kid-greeting")?.textContent).toBe("Cześć, Ola!");
+    expect(band.querySelector("h1")?.textContent).toBe("Co dziś robimy?");
+    expect(band.querySelector("[data-testid='kid-daily-activity']")).toBeTruthy();
+    expect(band.querySelector("[data-testid='kid-mic-settings']")).toBeTruthy();
+  });
+
+  it("puts the section label inside the first recommended card and keeps other decks in one divided list", () => {
+    renderKid(<DeckScreen decks={[deck(10, { recommended: true }), deck(11, { recommended: false }), deck(12, { recommended: false })]} childName="Ola" microphone={false} micDenied={false} onToggleMicrophone={vi.fn()} onStart={vi.fn()} />);
+    const recommended = screen.getByTestId("kid-section-recommended");
+    expect(recommended.closest("article")?.getAttribute("data-testid")).toBe("kid-deck-card");
+    expect(recommended.closest("article")?.getAttribute("data-deck-id")).toBe(id(10));
+    const rows = screen.getByTestId("kid-section-other").closest("section")!.querySelectorAll("ul > li");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.getAttribute("data-testid")).toBe("kid-deck-card");
+    expect(rows[0]!.getAttribute("data-deck-id")).toBe(id(11));
+    expect(rows[0]!.getAttribute("data-kind")).toBe("vocabulary");
+  });
+
+  it("names each row's arrow button after its deck and runs the row's own actions", () => {
+    const onStart = vi.fn();
+    const onMockTest = vi.fn();
+    const onEndActive = vi.fn();
+    const assigned = [
+      deck(11, { recommended: false, mockTestAvailable: true }),
+      deck(12, { recommended: false, resumeOnly: true, activeSession: { sessionId: id(30), mode: "training" } }),
+    ];
+    renderKid(<DeckScreen decks={assigned} childName="Ola" microphone={false} micDenied={false} onToggleMicrophone={vi.fn()} onStart={onStart} onMockTest={onMockTest} onEndActive={onEndActive} />);
+    expect(screen.queryByTestId("kid-section-recommended")).toBeNull();
+    const start = screen.getByRole("button", { name: "Ucz się: Zestaw 11" });
+    expect(start.getAttribute("data-testid")).toBe("kid-deck");
+    const resume = screen.getByRole("button", { name: "Wznów naukę: Zestaw 12" });
+    expect(resume.getAttribute("data-testid")).toBe("kid-resume-session");
+    fireEvent.click(start);
+    fireEvent.click(resume);
+    fireEvent.click(screen.getByTestId("kid-mock-start"));
+    fireEvent.click(screen.getByTestId("kid-end-active-session"));
+    expect(onStart).toHaveBeenCalledWith(id(11));
+    expect(onStart).toHaveBeenCalledWith(id(12));
+    expect(onMockTest).toHaveBeenCalledTimes(1);
+    expect(onMockTest).toHaveBeenCalledWith(id(11));
+    expect(onEndActive).toHaveBeenCalledTimes(1);
+    expect(onEndActive).toHaveBeenCalledWith(id(12));
+    expect(screen.getByTestId("kid-mock-start").closest("li")?.getAttribute("data-deck-id")).toBe(id(11));
+  });
+
+  it("shows the test date as a warm chip and the real stars on a recommended card", () => {
+    renderKid(<DeckScreen decks={[deck(10, { recommended: true, testDate: "2026-11-02", independentlyRecalledCount: 4 })]} childName="Ola" microphone={false} micDenied={false} onToggleMicrophone={vi.fn()} onStart={vi.fn()} />);
+    const card = screen.getByTestId("kid-deck-card");
+    expect(card.querySelector('[data-tone="warm"]')?.textContent).toContain("Sprawdzian: 2 lis");
+    expect(screen.getByTestId("kid-deck-stars").textContent).toBe("★★★☆☆☆");
+    expect(screen.getByRole("button", { name: /Ucz się/ }).getAttribute("data-testid")).toBe("kid-deck");
   });
 
   it("renders the assigned cover visual when there is no media cover", () => {

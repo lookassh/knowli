@@ -4,6 +4,10 @@ import { GuidanceButton } from "../components/GuidanceButton";
 import { MicrophoneSettingsButton } from "../components/MicrophoneSettingsButton";
 import { KidIcon } from "../components/KidIcon";
 import { ActionButton } from "../components/ActionButton";
+import { Chip } from "../components/Chip";
+import { IconActionButton } from "../components/IconActionButton";
+import { RowList, RowListItem } from "../components/RowList";
+import { EmptyScene } from "../illustrations/EmptyScene";
 import { format } from "../format";
 import { KidScreen } from "../layout/KidScreen";
 import { formatDeckTestDate, groupDecks } from "./deck-presentation";
@@ -25,7 +29,41 @@ function wordCount(count: number): string {
   return `${count} ${noun}`;
 }
 
-/** Ekran wyboru zestawu: wszystkie przypisane zestawy w jednej przewijanej liście. */
+/** Opis zestawu pod tytułem: liczba słów albo przedmiot lekcji. */
+function deckMeta(deck: KidDeckDto): string {
+  return deck.kind === "lesson" && deck.subjectTitle
+    ? format(messages.kid.lessonSubjectLabel, { subject: deck.subjectTitle })
+    : wordCount(deck.itemCount);
+}
+
+function hasCover(deck: KidDeckDto): boolean {
+  return Boolean(deck.coverAssetId || deck.coverVisual);
+}
+
+function DeckCover({ deck, mediaUrl, canHover = false }: { deck: KidDeckDto; mediaUrl: (assetId: string) => string; canHover?: boolean }) {
+  if (deck.coverAssetId) {
+    return <m.img className="kid-deck-cover" src={mediaUrl(deck.coverAssetId)} alt="" data-testid="kid-deck-cover" whileHover={canHover ? { scale: kidCoverHoverScale } : undefined} transition={kidSpringGentle} />;
+  }
+  return deck.coverVisual ? <MeaningVisualView visual={deck.coverVisual} mediaUrl={mediaUrl} /> : null;
+}
+
+function DeckStars({ deck }: { deck: KidDeckDto }) {
+  const stars = starsForFraction(deck.independentlyRecalledCount, deck.itemCount);
+  return (
+    <p className="kid-deck-stars" data-testid="kid-deck-stars" role="img" aria-label={format(messages.kid.deckStarsLabel, { n: stars })}>
+      {"★".repeat(stars)}{"☆".repeat(MASTERY_STAR_MAX - stars)}
+    </p>
+  );
+}
+
+function DeckTestDate({ deck }: { deck: KidDeckDto }) {
+  const date = formatDeckTestDate(deck.testDate, new Date().getFullYear());
+  return date === null ? null : (
+    <Chip tone="warm" icon="calendar" className="kid-deck-test-date" data-testid="kid-deck-test-date">{`${messages.kid.testDateLabel}: ${date}`}</Chip>
+  );
+}
+
+/** Ekran wyboru zestawu: rekomendowane jako duże karty, pozostałe w jednej liście z podziałem na wiersze. */
 export function DeckScreen({
   decks,
   childName,
@@ -56,11 +94,7 @@ export function DeckScreen({
   onGuidance?: (key: UiAudioKey) => Promise<void>;
 }) {
   const groups = groupDecks(decks);
-  const sections = [
-    { kind: "recommended", title: messages.kid.recommendedTitle, items: groups.recommended },
-    { kind: "other", title: messages.kid.otherDecksTitle, items: groups.other },
-  ].filter((section) => section.items.length > 0);
-
+  const resolveMediaUrl = mediaUrl ?? ((id: string) => `/api/v1/media/${id}`);
   const firstButtonRef = useAutoFocus<HTMLButtonElement>(true);
   const approvedSecondsToday = todayActivitySeconds ?? 0;
   const approvedMinutes = Math.floor(approvedSecondsToday / 60);
@@ -68,104 +102,114 @@ export function DeckScreen({
   const approvedTime = approvedMinutes > 0
     ? `${approvedMinutes} min${approvedRemainder ? ` ${approvedRemainder} s` : ""}`
     : `${approvedRemainder} s`;
+  const rowsAreFirst = groups.recommended.length === 0;
 
   return (
     <KidScreen role="main" className="kid-screen kid-deck-screen" data-testid="kid-deck-screen">
-      <KidScreen.Header>
-      <header className="kid-top-bar">
-        <span className="kid-daily-activity" data-testid="kid-daily-activity">
-          {todayActivityUnavailable || todayActivitySeconds === undefined
-            ? messages.kid.kidDailyActivityUnavailable
-            : format(messages.kid.kidDailyActivity, { time: approvedTime })}
-        </span>
-        {headerActions}
-        <div className="kid-deck-screen__header-actions">
-          <MicrophoneSettingsButton microphone={microphone} micDenied={micDenied} onToggleMicrophone={onToggleMicrophone} />
-          {onGuidance && <GuidanceButton audioKey="deck_select" onPlay={onGuidance} testId="kid-deck-guidance" />}
-        </div>
-      </header>
-      <h1>{messages.kid.decksTitle}</h1>
-      {childName && <p className="kid-greeting">{format(messages.kid.greeting, { name: childName })}</p>}
+      <KidScreen.Header variant="band">
+        <header className="kid-top-bar">
+          <Chip icon="calendar" className="kid-daily-activity" data-testid="kid-daily-activity">
+            {todayActivityUnavailable || todayActivitySeconds === undefined
+              ? messages.kid.kidDailyActivityUnavailable
+              : format(messages.kid.kidDailyActivity, { time: approvedTime })}
+          </Chip>
+          <div className="kid-deck-screen__header-actions">
+            {headerActions}
+            <MicrophoneSettingsButton microphone={microphone} micDenied={micDenied} onToggleMicrophone={onToggleMicrophone} />
+            {onGuidance && <GuidanceButton audioKey="deck_select" onPlay={onGuidance} testId="kid-deck-guidance" />}
+          </div>
+        </header>
+        {childName && <p className="kid-greeting">{format(messages.kid.greeting, { name: childName })}</p>}
+        <h1>{messages.kid.decksTitle}</h1>
       </KidScreen.Header>
       <KidScreen.Content className="kid-deck-content">
-
-      {decks.length === 0 ? (
-        <p className="kid-hint" data-testid="kid-no-decks">{messages.kid.noDecks}</p>
-      ) : (
-        sections.map((section, sectionIndex) => (
-          <section key={section.kind} aria-label={section.title} data-kind={section.kind}>
-            <h2 className="kid-deck-group-title" data-testid={section.kind === "recommended" ? "kid-section-recommended" : "kid-section-other"}>
-              {section.title}
-            </h2>
-            <ul className="kid-deck-list">
-              {section.items.map((deck, itemIndex) => {
-                const isFirst = sectionIndex === 0 && itemIndex === 0;
-                return (
-                  <DeckCard
-                    key={deck.deckId}
-                    deck={deck}
-                    mediaUrl={mediaUrl ?? ((id) => `/api/v1/media/${id}`)}
-                    onStart={onStart}
-                    onMockTest={onMockTest}
-                    onEndActive={onEndActive}
-                    buttonRef={isFirst ? firstButtonRef : undefined}
-                    index={itemIndex}
-                  />
-                );
-              })}
-            </ul>
-          </section>
-        ))
-      )}
-
+        {decks.length === 0 ? (
+          <div className="kid-deck-empty">
+            <EmptyScene className="kid-deck-empty__scene" />
+            <p className="kid-hint" data-testid="kid-no-decks">{messages.kid.noDecks}</p>
+          </div>
+        ) : (
+          <>
+            {groups.recommended.length > 0 && (
+              <section aria-label={messages.kid.recommendedTitle} data-kind="recommended">
+                <ul className="kid-deck-list">
+                  {groups.recommended.map((deck, index) => (
+                    <DeckCard
+                      key={deck.deckId}
+                      deck={deck}
+                      mediaUrl={resolveMediaUrl}
+                      onStart={onStart}
+                      onMockTest={onMockTest}
+                      onEndActive={onEndActive}
+                      buttonRef={index === 0 ? firstButtonRef : undefined}
+                      index={index}
+                      sectionLabel={index === 0 ? messages.kid.recommendedTitle : undefined}
+                    />
+                  ))}
+                </ul>
+              </section>
+            )}
+            {groups.other.length > 0 && (
+              <section aria-label={messages.kid.otherDecksTitle} data-kind="other">
+                <h2 className="kid-deck-group-title" data-testid="kid-section-other">{messages.kid.otherDecksTitle}</h2>
+                <RowList className="kid-deck-rows">
+                  {groups.other.map((deck, index) => (
+                    <DeckRow
+                      key={deck.deckId}
+                      deck={deck}
+                      mediaUrl={resolveMediaUrl}
+                      onStart={onStart}
+                      onMockTest={onMockTest}
+                      onEndActive={onEndActive}
+                      buttonRef={rowsAreFirst && index === 0 ? firstButtonRef : undefined}
+                    />
+                  ))}
+                </RowList>
+              </section>
+            )}
+          </>
+        )}
       </KidScreen.Content>
     </KidScreen>
   );
 }
 
-export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive, buttonRef, index = 0 }: {
+interface DeckActionProps {
   deck: KidDeckDto;
   mediaUrl: (assetId: string) => string;
   onStart: (deckId: string) => void;
   onMockTest?: (deckId: string) => void;
   onEndActive?: (deckId: string) => void;
   buttonRef?: React.Ref<HTMLButtonElement>;
+}
+
+/** Duża karta zestawu rekomendowanego; `sectionLabel` to etykieta sekcji wewnątrz karty. */
+export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive, buttonRef, index = 0, sectionLabel }: DeckActionProps & {
   index?: number;
+  sectionLabel?: string;
 }) {
-  const date = formatDeckTestDate(deck.testDate, new Date().getFullYear());
-  const stars = starsForFraction(deck.independentlyRecalledCount, deck.itemCount);
-  const isLesson = deck.kind === "lesson";
   // Cover zoom is a Motion effect, but only precise pointers get hover.
   const [canHover] = useState(() => typeof window !== "undefined" && typeof window.matchMedia === "function"
     && window.matchMedia("(hover: hover) and (pointer: fine)").matches);
   return (
     <m.li initial={kidEntranceInitial} animate={kidEntranceAnimate} whileHover={{ y: -4 }} transition={{ ...kidSpringGentle, delay: kidStaggerDelay(index) }}>
       <article className="kid-deck-card" data-testid="kid-deck-card" data-deck-id={deck.deckId} data-kind={deck.kind ?? "vocabulary"}>
+        {sectionLabel && <h2 className="kid-deck-card__label" data-testid="kid-section-recommended">{sectionLabel}</h2>}
         <div className="kid-deck-card__details">
-          {deck.coverAssetId
-            ? <m.img className="kid-deck-cover" src={mediaUrl(deck.coverAssetId)} alt="" data-testid="kid-deck-cover" whileHover={canHover ? { scale: kidCoverHoverScale } : undefined} transition={kidSpringGentle} />
-            : deck.coverVisual && <MeaningVisualView visual={deck.coverVisual} mediaUrl={mediaUrl} />}
+          <DeckCover deck={deck} mediaUrl={mediaUrl} canHover={canHover} />
           <div className="kid-deck-card__info">
-            <h3 data-testid="kid-deck-title">
-              {deck.title}{" "}
-              <span>{isLesson && deck.subjectTitle
-                ? `— ${format(messages.kid.lessonSubjectLabel, { subject: deck.subjectTitle })}`
-                : `— ${wordCount(deck.itemCount)}`}</span>
-            </h3>
-            <div className="kid-deck-card__meta">
-              <p className="kid-deck-stars" data-testid="kid-deck-stars" role="img"
-                aria-label={format(messages.kid.deckStarsLabel, { n: stars })}>
-                {"★".repeat(stars)}{"☆".repeat(MASTERY_STAR_MAX - stars)}
-              </p>
-              {date !== null && <p className="kid-badge">{messages.kid.testDateLabel}: {date}</p>}
-            </div>
+            <h3 className="kid-deck-card__title" data-testid="kid-deck-title">{deck.title}</h3>
+            <p className="kid-deck-card__description" data-testid="kid-deck-meta">{deckMeta(deck)}</p>
+            <DeckStars deck={deck} />
+            <DeckTestDate deck={deck} />
           </div>
         </div>
         <div className="kid-deck-card__actions">
           <ActionButton
             ref={buttonRef}
             type="button"
-            className="kid-primary"
+            variant="filled"
+            radius="var(--kid-shape-l)"
             data-testid={deck.resumeOnly ? "kid-resume-session" : "kid-deck"}
             onClick={() => onStart(deck.deckId)}
           >
@@ -173,17 +217,69 @@ export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive, but
             <KidIcon name="arrow-right" />
           </ActionButton>
           {deck.resumeOnly && deck.activeSession && onEndActive && (
-            <ActionButton type="button" priority="secondary" className="kid-secondary" data-testid="kid-end-active-session" onClick={() => onEndActive(deck.deckId)}>
+            <ActionButton type="button" variant="tonal" size="sm" radius="var(--kid-shape-l)" data-testid="kid-end-active-session" onClick={() => onEndActive(deck.deckId)}>
               <span className="kid-visually-hidden">{deck.title}: </span>{messages.kid.endSession}
             </ActionButton>
           )}
           {!deck.resumeOnly && deck.mockTestAvailable && onMockTest && (
-            <ActionButton type="button" priority="secondary" className="kid-secondary" data-testid="kid-mock-start" onClick={() => onMockTest(deck.deckId)}>
+            <ActionButton type="button" variant="tonal" size="sm" radius="var(--kid-shape-l)" data-testid="kid-mock-start" onClick={() => onMockTest(deck.deckId)}>
               <span className="kid-visually-hidden">{deck.title}: </span>{messages.kid.mockTest}
             </ActionButton>
           )}
         </div>
       </article>
     </m.li>
+  );
+}
+
+/** Wiersz zestawu z listy „Wszystkie zestawy”: kafelkowa strzałka i drugorzędna akcja pod opisem. */
+export function DeckRow({ deck, mediaUrl, onStart, onMockTest, onEndActive, buttonRef }: DeckActionProps) {
+  const startLabel = deck.resumeOnly ? messages.kid.resumeSession : messages.kid.deckStart;
+  let secondary: ReactNode = null;
+  if (deck.resumeOnly && deck.activeSession && onEndActive) {
+    secondary = (
+      <ActionButton type="button" variant="tonal" size="sm" fullWidth={false} radius="var(--kid-shape-l)" data-testid="kid-end-active-session" onClick={() => onEndActive(deck.deckId)}>
+        <span className="kid-visually-hidden">{deck.title}: </span>{messages.kid.endSession}
+      </ActionButton>
+    );
+  } else if (!deck.resumeOnly && deck.mockTestAvailable && onMockTest) {
+    secondary = (
+      <ActionButton type="button" variant="tonal" size="sm" fullWidth={false} radius="var(--kid-shape-l)" data-testid="kid-mock-start" onClick={() => onMockTest(deck.deckId)}>
+        <span className="kid-visually-hidden">{deck.title}: </span>{messages.kid.mockTest}
+      </ActionButton>
+    );
+  }
+  return (
+    <RowListItem
+      className="kid-deck-row"
+      data-testid="kid-deck-card"
+      data-deck-id={deck.deckId}
+      data-kind={deck.kind ?? "vocabulary"}
+      leading={hasCover(deck) ? <DeckCover deck={deck} mediaUrl={mediaUrl} /> : null}
+      title={<h3 className="kid-deck-row__title" data-testid="kid-deck-title">{deck.title}</h3>}
+      description={
+        <>
+          <p className="kid-deck-row__description" data-testid="kid-deck-meta">{deckMeta(deck)}</p>
+          <div className="kid-deck-row__progress">
+            <DeckStars deck={deck} />
+            <DeckTestDate deck={deck} />
+          </div>
+        </>
+      }
+      trailing={
+        <IconActionButton
+          ref={buttonRef}
+          variant="outlined"
+          className="kid-deck-row__start"
+          data-testid={deck.resumeOnly ? "kid-resume-session" : "kid-deck"}
+          aria-label={`${startLabel}: ${deck.title}`}
+          onClick={() => onStart(deck.deckId)}
+        >
+          <span className="kid-visually-hidden">{deck.title}</span>
+          <KidIcon name="arrow-right" />
+        </IconActionButton>
+      }
+      below={secondary}
+    />
   );
 }

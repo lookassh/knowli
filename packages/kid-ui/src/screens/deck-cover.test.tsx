@@ -18,7 +18,8 @@ describe("DeckCard cover", () => {
     const { container } = renderKid(<DeckCard deck={{ ...base, coverAssetId: "10000000-0000-4000-8000-000000000002", coverVisual: { kind: "color", color: "#ff0000" } }} mediaUrl={(id) => `/media/${id}`} {...callbacks} />);
     expect(screen.getByTestId("kid-deck-cover").getAttribute("src")).toBe("/media/10000000-0000-4000-8000-000000000002");
     expect(container.querySelector(".kid-visual")).toBeNull();
-    expect(screen.getByTestId("kid-deck-title").textContent).toContain("Dni tygodnia");
+    expect(screen.getByTestId("kid-deck-title").textContent).toBe("Dni tygodnia");
+    expect(screen.getByTestId("kid-deck-meta").textContent).toBe("7 słów");
     expect(screen.getByTestId("kid-deck-stars")).toBeTruthy();
     expect(screen.getByTestId("kid-deck")).toBeTruthy();
     expect(screen.getByTestId("kid-mock-start")).toBeTruthy();
