@@ -45,10 +45,8 @@ export default function ParentApp() {
   const leaveGuard = useParentLeaveGuard();
   const { route, navigate } = useParentNavigation(leaveGuard);
   const section = route.section;
-  // na Mantine są już lista zestawów i Dzieci; pozostałe sekcje i edytory — stare style
-  const legacyContent = !(
-    (section === "decks" && route.deckId === undefined && !route.newLesson) || section === "children"
-  );
+  // sekcje są już na Mantine; stare style mają tylko edytory zestawu i lekcji (fazy 5–6)
+  const legacyContent = route.deckId !== undefined || route.newLesson === true;
   const [reauthOpen, setReauthOpen] = useState(false);
 
   // Stan sesji czytamy raz przy starcie panelu. Później o wygaśnięciu mówią
@@ -215,9 +213,9 @@ export default function ParentApp() {
         ) : section === "children" ? (
           <ChildEditor childrenList={childrenList} onChanged={refreshChildren} registerEditorState={leaveGuard.register} />
         ) : section === "progress" ? (
-          <ProgressPanel childrenList={childrenList} decks={decks} onAuthExpired={toLogin} />
+          <ProgressPanel childrenList={childrenList} decks={decks} />
         ) : (
-          <WorkCardPanel childrenList={childrenList} onAuthExpired={toLogin} />
+          <WorkCardPanel childrenList={childrenList} />
         )}
       </ParentShell>
       <LeaveEditorDialog open={leaveGuard.pending} onStay={leaveGuard.stay} onLeave={() => void leaveGuard.leave()} />

@@ -1,77 +1,91 @@
 import type { ReactElement } from "react";
+import { Paper, Table, Text, Title, VisuallyHidden } from "@mantine/core";
 import { messages, REPORT_SKILLS, type ItemSkillStatus, type ProgressItemDto } from "@learning/contracts";
 
-/** Klasa kropek statusu; tekst statusu czytelnik ekranu dostaje obok kropki. */
-const STATUS_DOT: Record<ItemSkillStatus, string> = {
-  mastered: "pp-dot-m",
-  needs_confirmation: "pp-dot-n",
-  needs_reconfirmation: "pp-dot-n",
-  practicing: "pp-dot-p",
-  not_assessed: "pp-dot-x",
+/** Kolor kropki i odznaki statusu (zmienne `--pp-bar-*` w progress-panel.css). */
+export const STATUS_TONE: Record<ItemSkillStatus, "mastered" | "needs" | "practicing" | "none"> = {
+  mastered: "mastered",
+  needs_confirmation: "needs",
+  needs_reconfirmation: "needs",
+  practicing: "practicing",
+  not_assessed: "none",
 };
+
+/** Legenda kropek: cztery stany opanowania. */
+export function StatusLegend({ testId }: { testId?: string }) {
+  const entries = [
+    ["mastered", messages.progress.legendMastered],
+    ["needs", messages.progress.legendNeeds],
+    ["practicing", messages.progress.legendPracticing],
+    ["none", messages.progress.legendNotAssessed],
+  ] as const;
+  return (
+    <div className="pp-prog-legend" data-testid={testId}>
+      {entries.map(([tone, label]) => (
+        <span key={tone}><i className="pp-prog-dot" data-tone={tone} aria-hidden="true" />{label}</span>
+      ))}
+    </div>
+  );
+}
 
 function statusDot(status: ItemSkillStatus): ReactElement {
   return (
-    <span className="pp-dotcell">
-      <i className={`pp-dot ${STATUS_DOT[status]}`} aria-hidden="true" />
-      <span className="pp-sr-only">{messages.progress.itemStatus[status]}</span>
+    <span className="pp-prog-dotcell">
+      <i className="pp-prog-dot" data-tone={STATUS_TONE[status]} aria-hidden="true" />
+      <VisuallyHidden>{messages.progress.itemStatus[status]}</VisuallyHidden>
     </span>
   );
 }
 
-/** Dwa układy tego samego raportu; ukryty układ nie trafia do drzewa dostępności. */
+/**
+ * Lista słów w dwóch układach tego samego raportu: tabela od 901 px, karty
+ * poniżej. Ukryty układ (display: none) nie trafia do drzewa dostępności.
+ */
 export default function ProgressItems({ items }: { items: ProgressItemDto[] }) {
   return (
-    <section className="progress-items pp-card" aria-labelledby="progress-items-heading">
-      <h3 className="pp-card-title" id="progress-items-heading">
-        {messages.progress.allWords}
-      </h3>
-      <div className="pp-legend">
-        <span><i className="pp-dot pp-dot-m" />{messages.progress.legendMastered}</span>
-        <span><i className="pp-dot pp-dot-n" />{messages.progress.legendNeeds}</span>
-        <span><i className="pp-dot pp-dot-p" />{messages.progress.legendPracticing}</span>
-        <span><i className="pp-dot pp-dot-x" />{messages.progress.legendNotAssessed}</span>
-      </div>
-      {items.length === 0 ? <p>{messages.progress.wordsEmpty}</p> : (
+    <Paper component="section" withBorder radius="lg" p="md" className="pp-prog-items" aria-labelledby="progress-items-heading">
+      <Title order={3} fz="md" id="progress-items-heading" mb="xs">{messages.progress.allWords}</Title>
+      <StatusLegend testId="progress-legend" />
+      {items.length === 0 ? <Text mt="sm">{messages.progress.wordsEmpty}</Text> : (
         <>
-          <div className="pp-tablewrap">
-            <table className="pp-words">
-              <thead>
-                <tr>
-                  <th scope="col">{messages.progress.targetWord}</th>
-                  <th scope="col">{messages.progress.sourceWord}</th>
+          <Table.ScrollContainer minWidth={720} className="pp-prog-table" mt="sm">
+            <Table verticalSpacing="xs" highlightOnHover>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th scope="col">{messages.progress.targetWord}</Table.Th>
+                  <Table.Th scope="col">{messages.progress.sourceWord}</Table.Th>
                   {REPORT_SKILLS.map((skill) => (
-                    <th scope="col" key={skill}>{messages.progress.skills[skill]}</th>
+                    <Table.Th scope="col" key={skill}>{messages.progress.skills[skill]}</Table.Th>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
                 {items.map((item) => (
-                  <tr key={item.itemId}>
-                    <th scope="row">
-                      <span lang="en-GB" className="pp-en">{item.target}</span>
-                      {item.meaningChanged && <small className="pp-mini">{messages.progress.materialChanged}</small>}
-                    </th>
-                    <td>{item.source}</td>
+                  <Table.Tr key={item.itemId}>
+                    <Table.Th scope="row">
+                      <span lang="en-GB" className="pp-prog-word">{item.target}</span>
+                      {item.meaningChanged && <Text component="small" size="xs" display="block" className="pp-prog-muted">{messages.progress.materialChanged}</Text>}
+                    </Table.Th>
+                    <Table.Td>{item.source}</Table.Td>
                     {REPORT_SKILLS.map((skill) => (
-                      <td key={skill}>{statusDot(item.skills[skill])}</td>
+                      <Table.Td key={skill}>{statusDot(item.skills[skill])}</Table.Td>
                     ))}
-                  </tr>
+                  </Table.Tr>
                 ))}
-              </tbody>
-            </table>
-          </div>
-          <ul className="plain progress-items-cards">
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+          <ul className="pp-prog-cards">
             {items.map((item) => (
-              <li className="pp-card" key={item.itemId}>
+              <li className="pp-prog-wordcard" key={item.itemId}>
                 <h4><span lang="en-GB">{item.target}</span> — {item.source}</h4>
-                {item.meaningChanged && <p className="pp-mini">{messages.progress.materialChanged}</p>}
+                {item.meaningChanged && <Text size="xs" className="pp-prog-muted">{messages.progress.materialChanged}</Text>}
                 <dl>
                   {REPORT_SKILLS.map((skill) => (
                     <div key={skill}>
                       <dt>{messages.progress.skills[skill]}</dt>
                       <dd>
-                        <span className={`progress-status progress-status-${item.skills[skill]}`}>
+                        <span className="pp-prog-status" data-tone={STATUS_TONE[item.skills[skill]]}>
                           {messages.progress.itemStatus[item.skills[skill]]}
                         </span>
                       </dd>
@@ -83,6 +97,6 @@ export default function ProgressItems({ items }: { items: ProgressItemDto[] }) {
           </ul>
         </>
       )}
-    </section>
+    </Paper>
   );
 }

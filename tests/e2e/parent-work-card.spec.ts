@@ -38,7 +38,7 @@ test("karta pracy odświeża raport po zmianie dziecka i daty", async ({ page })
   await childrenLoaded;
   await page.getByTestId("tab-work-card").click();
   await expect(page.getByRole("button", { name: "Ala" })).toBeVisible();
-  await expect(page.locator(".pp-work-card .pp-loading")).toHaveText("Wczytuję kartę pracy…");
+  await expect(page.getByTestId("work-card-loading")).toHaveText("Wczytuję kartę pracy…");
   // Clicking the selected child must not invalidate the in-flight response.
   await page.getByRole("button", { name: "Ala" }).click();
   releaseFirstReport();
@@ -180,5 +180,6 @@ test("karta pracy pokazuje błąd ładowania raportu", async ({ page }) => {
   await page.goto("/parent");
   await childrenLoaded;
   await page.getByTestId("tab-work-card").click();
-  await expect(page.locator(".pp-work-card .pp-error")).toHaveText("Błąd raportu");
+  // błąd 5xx przychodzi po dwóch ponowieniach zapytania (polityka query-client)
+  await expect(page.getByTestId("work-card-error")).toHaveText("Błąd raportu", { timeout: 15_000 });
 });

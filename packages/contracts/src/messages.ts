@@ -262,6 +262,7 @@ export const messages = {
     mockTestMasteryLine: "Opanowanie: {status}",
     mockTestReason: { not_known: "Materiał jeszcze niepoznany", missing_audio: "Brak gotowego nagrania", insufficient_options: "Brak różnych odpowiedzi do wyboru", outside_portion: "Poza tą porcją", interrupted: "Próba zakończona przed odpowiedzią", recent_exposure: "Niedawno pokazano wzorzec", assisted: "Ze wsparciem", not_first_try: "Kolejne podejście", capitalization: "Wielka litera", dont_remember: "Nie pamiętam", skipped: "Pominięte", ambiguous: "Brak wiarygodnej odpowiedzi", technical: "Problem techniczny" } as Record<string, string>,
     title: "Postępy",
+    pronunciationTitle: "Wymowa",
     childLabel: "Dziecko",
     deckLabel: "Zestaw",
     empty: "Brak opublikowanych zestawów — najpierw wygeneruj i opublikuj materiał.",

@@ -118,13 +118,13 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 768, height: 1024
     await expect(tiles.first()).toContainText("—");
     // 4 liczby kluczowe zamiast listy; kliknięcia (interactions) celowo poza widokiem
     await expect(activity).toContainText("38 min");
-    const stats = activity.locator(".pp-stat");
-    await expect(stats.nth(1)).toContainText("3");
-    await expect(stats.nth(1)).toContainText("dni z nauką");
-    await expect(stats.nth(2)).toContainText("5");
-    await expect(stats.nth(2)).toContainText("podejścia");
-    await expect(stats.nth(3)).toContainText("84");
-    await expect(stats.nth(3)).toContainText("odpowiedzi");
+    const stat = (id: string) => activity.getByTestId(`progress-stat-${id}`);
+    await expect(stat("days")).toContainText("3");
+    await expect(stat("days")).toContainText("dni z nauką");
+    await expect(stat("sessions")).toContainText("5");
+    await expect(stat("sessions")).toContainText("podejścia");
+    await expect(stat("answers")).toContainText("84");
+    await expect(stat("answers")).toContainText("odpowiedzi");
     await expect(activity).toContainText("czas nauki");
     await expect(activity).toContainText("dni z nauką");
     await expect(activity).toContainText("podejścia");
@@ -135,7 +135,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 768, height: 1024
     const list = page.getByRole("region", { name: "Wszystkie słowa" });
     await expect(list).toBeVisible();
     // legenda kropek (4 statusy) widoczna nad tabelą/kartami
-    const legend = list.locator(".pp-legend");
+    const legend = list.getByTestId("progress-legend");
     await expect(legend).toContainText("Opanowane");
     await expect(legend).toContainText("Do potwierdzenia");
     await expect(legend).toContainText("W trakcie nauki");
