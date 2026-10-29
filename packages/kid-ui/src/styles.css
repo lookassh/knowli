@@ -841,7 +841,7 @@
   height: min(36svh, 260px);
   object-fit: contain;
   border-radius: var(--kid-shape-xl);
-  border: 3px solid var(--kid-line);
+  border: 0;
   background: var(--kid-surface);
 }
 
