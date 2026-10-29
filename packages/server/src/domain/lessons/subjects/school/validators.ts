@@ -10,9 +10,12 @@ import { computeCalculationAnswer, renderCalculationPrompt } from "../../calcula
 
 const OPEN_TYPE = "lesson_open_answer";
 
-/** Normalizacja do porównania cytatu z materiałem: NFC, białe znaki, wielkość liter. */
+/**
+ * Normalizacja do porównania cytatu z materiałem: tylko NFC i białe znaki —
+ * cytat pokazywany rodzicowi ma być dokładnym fragmentem, z wielkością liter.
+ */
 function normalizeForGrounding(text: string): string {
-  return text.normalize("NFC").toLowerCase().replace(/\s+/g, " ").trim();
+  return text.normalize("NFC").replace(/\s+/g, " ").trim();
 }
 
 export function validateSchoolExercise(ex: LessonExerciseDraft, _topic: LessonTopic): string[] {

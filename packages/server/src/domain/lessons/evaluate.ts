@@ -306,6 +306,14 @@ const NON_TERMINAL_ABBREVIATIONS = new Set([
 ]);
 const SENTENCE_TERMINATORS = new Set([".", "!", "?", "…"]);
 const CLOSING_MARKS = new Set(["\"", "”", "’", "»", ")", "]"]);
+const OPENING_MARKS = new Set(["\"", "„", "“", "‘", "«", "(", "["]);
+
+/** Indeks końca początkowej serii znaków z `chars`. */
+function leadingRunEnd(word: string, chars: ReadonlySet<string>): number {
+  let end = 0;
+  while (end < word.length && chars.has(word[end]!)) end += 1;
+  return end;
+}
 
 /** Indeks początku końcowej serii znaków z `chars` (liniowo, bez regexu z backtrackingiem). */
 function trailingRunStart(word: string, chars: ReadonlySet<string>): number {
@@ -326,11 +334,11 @@ export function countSentences(text: string): number {
   if (words.length === 0) return 0;
   let sentences = 1;
   for (const word of words.slice(0, -1)) {
-    // Zamykające cudzysłowy i nawiasy po terminatorze nie zmieniają granicy.
+    // Cudzysłowy i nawiasy wokół słowa („(np.”, „cukry.)”) nie zmieniają granicy.
     const bare = word.slice(0, trailingRunStart(word, CLOSING_MARKS));
     const terminatorStart = trailingRunStart(bare, SENTENCE_TERMINATORS);
     if (terminatorStart === bare.length) continue;
-    const stem = bare.slice(0, terminatorStart).toLowerCase();
+    const stem = bare.slice(leadingRunEnd(bare, OPENING_MARKS), terminatorStart).toLowerCase();
     const abbreviation = bare.slice(terminatorStart) === "." && (NON_TERMINAL_ABBREVIATIONS.has(stem) || /^\p{L}$/u.test(stem));
     if (!abbreviation && stem !== "") sentences += 1;
   }

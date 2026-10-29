@@ -188,6 +188,13 @@ describe("przedmiot school", () => {
     expect(schoolSubject.validatePoolExtra!([parent], { material: MATERIAL }).size).toBe(0);
   });
 
+  it("porównuje cytat z materiałem z wielkością liter, ale bez różnic białych znaków", () => {
+    const spaced = openDraft({ sourceRefs: [{ quote: "przy  udziale\nświatła, wytwarza cukry" }] });
+    expect(schoolSubject.validatePoolExtra!([spaced], { material: MATERIAL }).size).toBe(0);
+    const recased = openDraft({ sourceRefs: [{ quote: "Przy udziale światła, wytwarza cukry" }] });
+    expect(schoolSubject.validatePoolExtra!([recased], { material: MATERIAL }).get(0)?.some((e) => e.includes("sourceRefs"))).toBe(true);
+  });
+
   it("wymaga elementów wymaganych i formy dla odpowiedzi otwartej", () => {
     const topic = schoolSubject.buildDynamicTopic!(dynamicData);
     const { rejected } = validatePool(
