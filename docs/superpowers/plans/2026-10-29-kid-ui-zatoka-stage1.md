@@ -251,7 +251,7 @@ Run: `pnpm vitest run --config vitest.unit.config.ts packages/kid-ui/src/screens
 
 - [ ] **Step 2: Implementacja** — nagłówek `variant="band"` z `kid-top-bar` (headerActions + odsłuch) i `<h1>`; siatka `repeat(2, minmax(0,1fr))`, od 600 px 3, od 840 px 4; w `max-height: 479px` kafelek poziomy (awatar obok imienia). Kafelek: awatar 72 px, imię (`--kid-font-display`), tag nieczytającego i chip punktów pod spodem. Zachowaj `m.li` z wejściem i `whileHover`.
 
-- [ ] **Step 3: Testy** — unit jak w Step 1, E2E: `UMIEM_E2E_WEB_MODE=dev pnpm exec playwright test tests/e2e/kid-responsive.spec.ts tests/e2e/kid-flow-screens.spec.ts` → PASS.
+- [ ] **Step 3: Testy** — unit jak w Step 1, E2E: `pnpm build`, potem `UMIEM_E2E_SKIP_BUILD=1 pnpm exec playwright test tests/e2e/kid-responsive.spec.ts tests/e2e/kid-flow-screens.spec.ts` → PASS.
 
 - [ ] **Step 4: Commit** — `feat(kid-ui): kafelki profili z awatarami w motywie Zatoka`
 
@@ -277,7 +277,7 @@ Run: `pnpm vitest run --config vitest.unit.config.ts packages/kid-ui/src/screens
 
 - [ ] **Step 2: Implementacja** — `variant="band"`: `kid-top-bar` z `Chip` czasu (`kid-daily-activity`, ikona `calendar`), headerActions, mikrofon, odsłuch; powitanie i `<h1>`. Sekcja „Rekomendowane”: każdy rekomendowany jako `DeckCard` (etykieta sekcji w karcie, okładka 88 px, tytuł Fredoka, meta, gwiazdki `MASTERY_STAR_MAX`, `Chip tone="warm"` terminu, główna akcja pełnej szerokości, drugorzędna `variant="tonal"`). Sekcja „Wszystkie zestawy”: `RowList` z `DeckRow`. Od 840 px dwie kolumny kart rekomendowanych w granicach kontenera. Autofocus pierwszej głównej akcji jak dziś.
 
-- [ ] **Step 3: Testy** — unit (Step 1) i `UMIEM_E2E_WEB_MODE=dev pnpm exec playwright test tests/e2e/kid-decks-layout.spec.ts tests/e2e/kid-flow-screens.spec.ts tests/e2e/kid-responsive.spec.ts` → PASS.
+- [ ] **Step 3: Testy** — unit (Step 1) i `pnpm build`, potem `UMIEM_E2E_SKIP_BUILD=1 pnpm exec playwright test tests/e2e/kid-decks-layout.spec.ts tests/e2e/kid-flow-screens.spec.ts tests/e2e/kid-responsive.spec.ts` → PASS.
 
 - [ ] **Step 4: Commit** — `feat(kid-ui): ekran zestawów Zatoka — karty rekomendowane i lista`
 
@@ -297,7 +297,7 @@ Run: `pnpm vitest run --config vitest.unit.config.ts packages/kid-ui/src/screens
 
 - [ ] **Step 2: Implementacja** zgodnie z Interfaces; `CelebrationBurst` wokół `<h1>` jak dziś.
 
-- [ ] **Step 3: Testy** → PASS (unit + `kid-flow-screens.spec.ts` w trybie dev).
+- [ ] **Step 3: Testy** → PASS (unit + `kid-flow-screens.spec.ts` na buildzie produkcyjnym: `pnpm build`, potem `UMIEM_E2E_SKIP_BUILD=1 pnpm exec playwright test …`).
 
 - [ ] **Step 4: Commit** — `feat(kid-ui): podsumowanie sesji z kafelkami wyników`
 
@@ -317,7 +317,7 @@ Run: `pnpm vitest run --config vitest.unit.config.ts packages/kid-ui/src/screens
 
 - [ ] **Step 2: Implementacja** zgodnie z Interfaces.
 
-- [ ] **Step 3: Testy** → PASS (unit + `kid-flow-screens.spec.ts`, `lesson-kid.spec.ts` w trybie dev).
+- [ ] **Step 3: Testy** → PASS (unit + `kid-flow-screens.spec.ts`, `lesson-kid.spec.ts` na buildzie produkcyjnym: `pnpm build`, potem `UMIEM_E2E_SKIP_BUILD=1 pnpm exec playwright test …`).
 
 - [ ] **Step 4: Commit** — `feat(kid-ui): kartkówki i konflikt sesji w motywie Zatoka`
 
