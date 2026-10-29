@@ -63,5 +63,7 @@ describe("GET /api/openapi.json — spec OpenAPI Kid API", () => {
     const spec = await fetchSpec();
 
     expect(Object.keys(spec.paths)).not.toContain("/tasks/{taskId}/attempts");
+    // dyktowanie (multipart z File) ma to samo ograniczenie generatora
+    expect(Object.keys(spec.paths)).not.toContain("/tasks/{taskId}/dictation");
   });
 });

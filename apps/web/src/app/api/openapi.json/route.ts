@@ -19,7 +19,10 @@ import { OpenAPIGenerator } from "@orpc/openapi";
  * them from") i cała generacja pada — dlatego procedura jest wyłączona
  * jawnym `filter` (dokumentowane rozszerzenie generatora), a endpoint
  * pozostaje na wire bez zmian. Nie zniekształcamy kontraktu pod spekę.
+ * Ten sam błąd generator zgłasza dla `tasks.dictation` (multipart z `File`
+ * i parametrem `{taskId}`, Etap 3 szkoły) — wyłączony tak samo.
  */
+const EXCLUDED_PROCEDURES: ReadonlySet<string> = new Set(["tasks.attempts", "tasks.dictation"]);
 
 const generator = new OpenAPIGenerator();
 
@@ -34,7 +37,7 @@ function kidOpenApiSpec(): Promise<unknown> {
       // /api/v1/kid, więc speka resolvuje pełne adresy przez serwer bazowy.
       servers: [{ url: "/api/v1/kid" }],
     },
-    filter: (_procedure, path) => path.join(".") !== "tasks.attempts",
+    filter: (_procedure, path) => !EXCLUDED_PROCEDURES.has(path.join(".")),
   });
   return specPromise;
 }
