@@ -136,6 +136,7 @@ export function LearnScreen({
     onSubmitText: (text, inputMethod) => void controller.answerText(text, inputMethod),
     onAnswerSequence: (itemIds) => void controller.answerSequence(itemIds),
     onAnswerSelection: (itemIds) => void controller.answerSelection(itemIds),
+    onAnswerAssignment: (assignments) => void controller.answerAssignment(assignments),
     onNotRemember: () => void controller.notRemember(),
     onSkip: () => void controller.skip(),
     onComplete: () => void controller.completePresentation(),

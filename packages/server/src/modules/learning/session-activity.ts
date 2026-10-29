@@ -25,6 +25,7 @@ import {
   sessionTasks,
 } from "../../db/schema";
 import { AppError } from "../../errors";
+import { assignmentText } from "../../domain/lessons/evaluate";
 import type { SessionActivityReviewTask } from "../../ports/ai";
 import { SessionActivityProviderError } from "../../ports/session-activity-error";
 
@@ -173,6 +174,11 @@ export function describeTaskPrompt(p: TaskPrompt): { instruction: string; stimul
       return { instruction: p.instructionPl, stimulus: p.stem, options: options(p.options) };
     case "lesson_order":
       return { instruction: p.instructionPl, stimulus: null, options: options(p.items) };
+    case "lesson_match":
+      // Pary: lewa kolumna jako bodziec, prawa jako opcje do przypisania.
+      return { instruction: p.instructionPl, stimulus: p.left.map((item) => item.text).join(" | "), options: options(p.right) };
+    case "lesson_group":
+      return { instruction: p.instructionPl, stimulus: p.groups.map((group) => group.text).join(" | "), options: options(p.items) };
     case "lesson_short_answer":
       return { instruction: "Krótka odpowiedź", stimulus: p.question, options: options(p.options) };
     case "lesson_gap":
@@ -202,6 +208,7 @@ export const LessonAnswerSnapshotSchema = z.object({
   correctOptionId: z.string().optional(), correctOptionIds: z.array(z.string()).optional(), optionValues: z.record(z.string(), z.string()).optional(),
   segmentValues: z.record(z.string(), z.string()).optional(), itemIds: z.array(z.string()).optional(),
   itemValues: z.record(z.string(), z.string()).optional(),
+  assignments: z.array(z.object({ itemId: z.string(), targetId: z.string() })).optional(),
 });
 type LessonAnswerSnapshot = z.infer<typeof LessonAnswerSnapshotSchema>;
 
@@ -211,19 +218,26 @@ export function lessonAnswerValues(key: LessonAnswerSnapshot, prompt: TaskPrompt
     for (const option of prompt.options) valuesById.set(option.id, option.text);
   }
   if (prompt?.kind === "lesson_order") for (const item of prompt.items) valuesById.set(item.id, item.text);
+  if (prompt?.kind === "lesson_match") for (const item of [...prompt.left, ...prompt.right]) valuesById.set(item.id, item.text);
+  if (prompt?.kind === "lesson_group") for (const item of [...prompt.groups, ...prompt.items]) valuesById.set(item.id, item.text);
   if (prompt?.kind === "lesson_notice") for (const sentence of prompt.segments) for (const segment of sentence) valuesById.set(segment.id, segment.text);
   for (const values of [key?.optionValues, key?.segmentValues, key?.itemValues]) {
     for (const [id, value] of Object.entries(values ?? {})) valuesById.set(id, value);
   }
-  const sequence = key?.itemIds
+  // Pary i grupy mają `itemIds` (kolejność lewej kolumny/elementów), ale nie są sekwencją.
+  const sequence = key?.itemIds && !key.assignments
     ? key.itemIds.map((id) => valuesById.get(id)).filter((value): value is string => Boolean(value))
     : [];
   const acceptedAnswers = [
-    ...(key?.answer ? [key.answer] : []),
+    // Pary i grupy: `answer` to tylko lewe strony / etykiety (klucz celu), nie odpowiedź.
+    ...(key?.answer && !key.assignments ? [key.answer] : []),
     ...(key?.target ? [key.target] : []),
     ...(key?.acceptedAnswers ?? []),
     ...(key?.correctOptionId ? [valuesById.get(key.correctOptionId) ?? ""] : []),
     ...(sequence.length > 0 ? [sequence.join(" ")] : []),
+    // Pary i grupy: pełny komplet przypisań w tym samym zapisie co odpowiedź dziecka.
+    // Ten sam zapis i limit 200 znaków co odpowiedź dziecka (`answerTextOf`).
+    ...(key?.assignments ? [assignmentText(key.assignments, valuesById, { itemOrder: key.itemIds ?? [] }).slice(0, 200)] : []),
     // Słowa kluczowe: wyłącznie pełny zbiór pojęć kluczowych — pojedyncze pojęcie
     // nie jest poprawną odpowiedzią (wybór niepełny nie jest oceniany).
     ...(key?.correctOptionIds && key.correctOptionIds.every((id) => valuesById.has(id))
@@ -242,7 +256,7 @@ function describeVisual(visual: MeaningVisual): string {
   }
 }
 
-function answerTextOf(modality: string, answer: Record<string, unknown> | null, promptOptions: Map<string, string>): string | null {
+function answerTextOf(modality: string, answer: Record<string, unknown> | null, promptOptions: Map<string, string>, itemOrder?: readonly string[]): string | null {
   if (modality === "dont_remember") return "Nie pamiętam";
   if (modality === "skip") return "Pomiń";
   if (modality === "text" && typeof answer?.text === "string") return answer.text.slice(0, 200);
@@ -257,6 +271,11 @@ function answerTextOf(modality: string, answer: Record<string, unknown> | null, 
     // Nieznany identyfikator: brak wiarygodnej treści wyboru, zamiast częściowej odpowiedzi.
     const texts = answer.itemIds.map((id) => (typeof id === "string" ? promptOptions.get(id) ?? null : null));
     return texts.length > 0 && texts.every((text) => text !== null) ? texts.join(", ").slice(0, 200) || null : null;
+  }
+  if (modality === "assignment" && Array.isArray(answer?.assignments)) {
+    const entries = answer.assignments.filter((entry): entry is { itemId: string; targetId: string } =>
+      typeof entry === "object" && entry !== null && typeof (entry as { itemId?: unknown }).itemId === "string" && typeof (entry as { targetId?: unknown }).targetId === "string");
+    return assignmentText(entries, promptOptions, { itemOrder: itemOrder ?? [] }).slice(0, 200) || null;
   }
   if (modality === "audio" && typeof answer?.transcript === "string") return answer.transcript.slice(0, 200);
   return null;
@@ -329,7 +348,7 @@ async function buildTaskSnapshot(tx: Tx, sessionId: string, report: SessionActiv
         .map((attempt) => ({
           attemptId: attempt.id,
           modality: attempt.modality,
-          text: answerTextOf(attempt.modality, attempt.answer, promptOptions),
+          text: answerTextOf(attempt.modality, attempt.answer, promptOptions, answerSnapshot.success ? answerSnapshot.data.itemIds : undefined),
           uncertain: uncertainAttempt(attempt),
           supportDisclosedBefore: disclosures.some((occurredAt) => occurredAt.getTime() <= attempt.receivedAt.getTime()),
           receivedAt: attempt.receivedAt.toISOString(),

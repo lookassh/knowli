@@ -20,7 +20,9 @@ export const schoolPrompts: SubjectPromptProfile = {
     "Wszystkie pola tekstowe są po polsku (prompt language = answer language). " +
     "lesson_open_answer.prompt to pytanie do dziecka; answer to krótka odpowiedź wzorcowa (maks. 300 znaków) " +
     "sformułowana na podstawie materiału; acceptedAnswers to inne poprawne sformułowania tej samej odpowiedzi. " +
-    "questionType: definition|enumeration|cause|comparison|fact|process. requiredElements: 1-6 elementów " +
+    "questionType: definition|enumeration|cause|comparison|fact|process. Gdy materiał zawiera pary łatwo mylonych pojęć " +
+    "(np. południk/równoleżnik, wysokość względna/bezwzględna), dodaj co najmniej jedno pytanie porównawcze " +
+    "(questionType: comparison) wymieniające obie nazwy tej pary. requiredElements: 1-6 elementów " +
     "{id: e1, e2, ..., text} — pojedyncze informacje, które poprawna odpowiedź musi zawierać; każdy element " +
     "jest jedną informacją, nie całym zdaniem wzorca. supplementaryElements: informacje poprawne, ale niewymagane. " +
     "commonErrors: typowe błędne stwierdzenia dzieci w tym pytaniu. expectedForm: short (sam fakt/data/nazwa), " +
@@ -33,6 +35,9 @@ export const schoolPrompts: SubjectPromptProfile = {
     "lesson_gap: stem to zdanie z materiału z ONE luką ___ po fakcie (data, nazwa, pojęcie); odpowiedź maks. 3 słowa. " +
     "lesson_choice: stem to pytanie, options 2-4 krótkie odpowiedzi, dokładnie jedna poprawna. " +
     "lesson_order: items to etapy procesu lub wydarzenia w poprawnej kolejności. " +
+    "lesson_match: pary z materiału — pojęcie i definicja, miejsce i cecha, przyczyna i skutek; lewa strona krótka (maks. 40 znaków), " +
+    "prawa maks. 100 znaków, 0-2 dystraktory po prawej z materiału. lesson_group: klasyfikacja z materiału (np. ssaki/ptaki, niziny/wyżyny), " +
+    "2-3 grupy i 4-8 krótkich elementów, co najmniej 2 w każdej grupie. Twórz je tylko, gdy materiał zawiera takie pary lub podział. " +
     "Pytanie (prompt/stem) maks. 120 znaków. " +
     "lesson_calculation: proponuj wyłącznie rodzaj i parametry metody jawnie opisanej w materiale (skala mapy, różnica wysokości, zamiana cm/m/km), " +
     "z dokładnym cytatem potwierdzającym metodę. Model nie podaje prompt ani answer — treść i wynik buduje kod. " +

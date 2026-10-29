@@ -47,6 +47,8 @@ export const EXERCISE_TYPES = [
   "lesson_open_answer",
   "lesson_calculation",
   "lesson_keywords",
+  "lesson_match",
+  "lesson_group",
 ] as const;
 export type ExerciseTypeDto = (typeof EXERCISE_TYPES)[number];
 
@@ -70,11 +72,15 @@ export const PictureChoiceOptionSchema = z.object({
 }).strict();
 export type PictureChoiceOption = z.infer<typeof PictureChoiceOptionSchema>;
 
-/** Publiczny element do ułożenia (`lesson_order`) — identyfikator i widoczny tekst. */
+/**
+ * Publiczny element (`lesson_order`, `lesson_match`, `lesson_group`) —
+ * identyfikator i widoczny tekst; `.strict()`, by nic z klucza (np. grupa
+ * elementu) nie przeszło do dziecka.
+ */
 export const LessonItemSchema = z.object({
   id: UuidSchema,
   text: z.string().min(1),
-});
+}).strict();
 export type LessonItem = z.infer<typeof LessonItemSchema>;
 
 /** Segment zdania `lesson_notice` do wskazania — bez informacji, który jest poprawny. */
@@ -87,7 +93,12 @@ export type LessonSegment = z.infer<typeof LessonSegmentSchema>;
 /** Fragment zapisu w porównaniu pisowni; `pill` = fragment do wyróżnienia (issue #9). */
 export const SpellingDiffSegmentSchema = z.object({
   text: z.string().min(1),
-  state: z.enum(["plain", "pill"]),
+  /**
+   * `pill` = fragment do wyróżnienia (w lekcjach szkolnych: poprawny, ale
+   * zbędny); `offtopic` = niezwiązany z pytaniem — tylko segmenty odpowiedzi
+   * lekcji (design szkoły §9.2), nigdy diff pisowni słówek.
+   */
+  state: z.enum(["plain", "pill", "offtopic"]),
 });
 export type SpellingDiffSegmentDto = z.infer<typeof SpellingDiffSegmentSchema>;
 
@@ -285,6 +296,22 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     minSelected: z.number().int().min(1),
     maxSelected: z.number().int().min(1),
   }).strict(),
+  // „Połącz w pary” (design szkoły §10.1): obie kolumny tasowane niezależnie,
+  // prawa z dystraktorami; DTO nie zdradza, co do czego pasuje.
+  z.object({
+    kind: z.literal("lesson_match"),
+    instructionPl: z.string().min(1),
+    left: z.array(LessonItemSchema).min(3).max(5),
+    right: z.array(LessonItemSchema).min(3).max(7),
+  }).strict(),
+  // „Pogrupuj” (design szkoły §10.2): grupy w kolejności materiału, elementy
+  // tasowane; przynależność zna tylko serwer.
+  z.object({
+    kind: z.literal("lesson_group"),
+    instructionPl: z.string().min(1),
+    groups: z.array(LessonItemSchema).min(2).max(3),
+    items: z.array(LessonItemSchema).min(4).max(8),
+  }).strict(),
   // Zadanie następcze „Skróć odpowiedź” (technicznie odpowiedź otwarta): własny
   // tekst dziecka z zaznaczonymi fragmentami do usunięcia — nic z klucza.
   z.object({
@@ -298,6 +325,9 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
 ]).superRefine((prompt, ctx) => {
   if (prompt.kind === "lesson_keywords" && (prompt.minSelected > prompt.maxSelected || prompt.maxSelected > prompt.options.length)) {
     ctx.addIssue({ code: "custom", path: ["maxSelected"], message: "selection bounds must fit the options" });
+  }
+  if (prompt.kind === "lesson_match" && prompt.right.length < prompt.left.length) {
+    ctx.addIssue({ code: "custom", path: ["right"], message: "every left item needs a right candidate" });
   }
   if (prompt.kind === "exposure" || prompt.kind === "speech") {
     validateVisualPrompt({
@@ -541,9 +571,14 @@ export type SpeechFeedbackDto = z.infer<typeof SpeechFeedbackDtoSchema>;
  * Segmenty `expected` składają się dokładnie na `correctText`; bez odległości
  * i technicznych score'ów (dziecko nie widzi liczb).
  */
+/** Segment diffu pisowni: tylko `plain`/`pill` (kategoria „nie na temat” dotyczy lekcji). */
+const SpellingSegmentSchema = SpellingDiffSegmentSchema.refine((segment) => segment.state !== "offtopic", {
+  message: "spelling diff segments are plain or pill",
+});
+
 export const SpellingDiffSchema = z.object({
-  given: z.array(SpellingDiffSegmentSchema).min(1).max(32),
-  expected: z.array(SpellingDiffSegmentSchema).min(1).max(32),
+  given: z.array(SpellingSegmentSchema).min(1).max(32),
+  expected: z.array(SpellingSegmentSchema).min(1).max(32),
   capitalizationHint: z.boolean().optional(),
 });
 export type SpellingDiff = z.infer<typeof SpellingDiffSchema>;
@@ -615,7 +650,14 @@ export const FeedbackDtoSchema = z.object({
 });
 export type FeedbackDto = z.infer<typeof FeedbackDtoSchema>;
 
-export const AttemptModalitySchema = z.enum(["choice", "text", "audio", "dont_remember", "skip", "sequence", "selection"]);
+export const AttemptModalitySchema = z.enum(["choice", "text", "audio", "dont_remember", "skip", "sequence", "selection", "assignment"]);
+
+/**
+ * Przypisanie (`lesson_match`: lewy element → prawy, `lesson_group`: element →
+ * grupa). Kompletność i zgodność z zadaniem sprawdza serwer.
+ */
+export const AssignmentSchema = z.object({ itemId: UuidSchema, targetId: UuidSchema }).strict();
+export type Assignment = z.infer<typeof AssignmentSchema>;
 export type AttemptModality = z.infer<typeof AttemptModalitySchema>;
 
 /**
@@ -672,6 +714,16 @@ export const AttemptInputSchema = z.discriminatedUnion("modality", [
     itemIds: z.array(UuidSchema).min(1).max(6).refine(
       (ids) => new Set(ids).size === ids.length,
       { message: "itemIds must be unique" },
+    ),
+  }),
+  z.object({
+    taskId: UuidSchema,
+    clientAttemptId: UuidSchema,
+    modality: z.literal("assignment"),
+    /** Przypisania dziecka (`lesson_match`, `lesson_group`): 3–8, każdy element raz. */
+    assignments: z.array(AssignmentSchema).min(3).max(8).refine(
+      (list) => new Set(list.map((entry) => entry.itemId)).size === list.length,
+      { message: "each item can be assigned once" },
     ),
   }),
 ]);

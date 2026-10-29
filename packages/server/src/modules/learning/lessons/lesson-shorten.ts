@@ -9,6 +9,7 @@ import {
   compareRevision,
   isUnchangedRevision,
   matchedElementIdsOf,
+  removableFragments,
   shouldOfferShorten,
   type SchoolAssessmentDetails,
 } from "../../../domain/lessons/precision-trainer";
@@ -150,10 +151,8 @@ export async function offerShortenFollowUp(
 
   const publicPrompt = task.publicPrompt as { prompt?: unknown } | null;
   const question = typeof publicPrompt?.prompt === "string" ? publicPrompt.prompt : "";
-  const fragments = Array.isArray(details.redundantFragments)
-    ? details.redundantFragments.filter((fragment): fragment is string => typeof fragment === "string")
-    : [];
-  const segments = (fragments.length > 0 ? buildAnswerSegments(args.childAnswer, fragments) : null)
+  const fragments = removableFragments(details);
+  const segments = (fragments.length > 0 ? buildAnswerSegments(args.childAnswer, fragments.redundant, fragments.offTopic) : null)
     ?? [{ text: args.childAnswer, state: "plain" as const }];
   const prompt: TaskPrompt = {
     kind: "lesson_shorten",
@@ -191,5 +190,9 @@ export async function offerShortenFollowUp(
     childId: task.childId, taskId: followUpId, itemId: args.itemId, kind: "prompt_issued",
     stepId: `${followUpId}:prompt`, occurredAt: args.now, exposures: [],
   });
-  return { kind: "lesson_precision_hint", hintPl: messages.kid.lessonPrecisionHint };
+  // Treść nie na temat ma własną podpowiedź; same zbędne informacje — „krócej” (design §9.2).
+  return {
+    kind: "lesson_precision_hint",
+    hintPl: fragments.offTopic.length > 0 ? messages.kid.lessonPrecisionHintOffTopic : messages.kid.lessonPrecisionHint,
+  };
 }

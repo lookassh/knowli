@@ -286,3 +286,37 @@ describe("KidDeckDto kind/subjectTitle backward compat", () => {
     expect(KidDeckDtoSchema.safeParse({ ...base, kind: "vocabulary", subjectTitle: null }).success).toBe(true);
   });
 });
+
+describe("pary i grupy (design szkoły §10)", () => {
+  const ids = Array.from({ length: 8 }, (_, i) => `${String(i + 1).repeat(8)}-1111-4111-8111-111111111111`);
+  const item = (i: number, text: string) => ({ id: ids[i]!, text });
+  const match = { kind: "lesson_match", instructionPl: "Połącz w pary.", left: [item(0, "a"), item(1, "b"), item(2, "c")], right: [item(3, "x"), item(4, "y"), item(5, "z"), item(6, "w")] };
+  const group = { kind: "lesson_group", instructionPl: "Pogrupuj.", groups: [item(0, "g1"), item(1, "g2")], items: [item(2, "a"), item(3, "b"), item(4, "c"), item(5, "d")] };
+
+  it("przyjmuje prompty bez klucza i rejestruje typy", () => {
+    expect(TaskPromptSchema.safeParse(match).success).toBe(true);
+    expect(TaskPromptSchema.safeParse(group).success).toBe(true);
+    expect(EXERCISE_TYPES as readonly string[]).toEqual(expect.arrayContaining(["lesson_match", "lesson_group"]));
+  });
+
+  it.each([
+    ["pairs", [{ left: "a", right: "x" }]], ["assignments", []], ["answer", "a"],
+  ] as const)("odrzuca prywatne pole %s", (field, value) => {
+    expect(TaskPromptSchema.safeParse({ ...match, [field]: value }).success).toBe(false);
+    expect(TaskPromptSchema.safeParse({ ...group, [field]: value }).success).toBe(false);
+  });
+
+  it("odrzuca prawą kolumnę krótszą od lewej i elementy z grupą", () => {
+    expect(TaskPromptSchema.safeParse({ ...match, right: match.right.slice(0, 2) }).success).toBe(false);
+    expect(TaskPromptSchema.safeParse({ ...group, items: group.items.map((entry) => ({ ...entry, groupId: "g1" })) }).success).toBe(false);
+  });
+
+  it("odpowiedź `assignment`: 3–8 przypisań, każdy element raz", () => {
+    const base = { taskId: UUID, clientAttemptId: UUID2, modality: "assignment" };
+    const assignments = [0, 1, 2].map((i) => ({ itemId: ids[i]!, targetId: ids[i + 3]! }));
+    expect(AttemptModalitySchema.safeParse("assignment").success).toBe(true);
+    expect(AttemptInputSchema.safeParse({ ...base, assignments }).success).toBe(true);
+    expect(AttemptInputSchema.safeParse({ ...base, assignments: assignments.slice(0, 2) }).success).toBe(false);
+    expect(AttemptInputSchema.safeParse({ ...base, assignments: [...assignments, { itemId: ids[0]!, targetId: ids[6]! }] }).success).toBe(false);
+  });
+});

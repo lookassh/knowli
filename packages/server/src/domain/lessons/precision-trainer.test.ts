@@ -55,3 +55,11 @@ describe("poprawka odpowiedzi", () => {
     })).toEqual({ lostElementIds: [], shorter: false });
   });
 });
+
+describe("shouldOfferShorten — fragmenty nie na temat (werdykt v3)", () => {
+  it("proponuje skrócenie także wtedy, gdy do usunięcia jest wyłącznie treść nie na temat", () => {
+    const offTopicOnly = { knowledge: "correct", precision: "unfocused", redundantFragments: [], offTopicFragments: ["wczoraj padał deszcz"] };
+    expect(shouldOfferShorten({ ...offer, details: offTopicOnly })).toBe(true);
+    expect(shouldOfferShorten({ ...offer, details: { ...offTopicOnly, offTopicFragments: [] } })).toBe(false);
+  });
+});

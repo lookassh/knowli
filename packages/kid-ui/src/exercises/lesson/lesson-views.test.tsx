@@ -6,6 +6,8 @@ import { makeExerciseProps } from "../../test/exercise-fixtures";
 import { LessonCardView } from "./LessonCardView";
 import { LessonChoiceView } from "./LessonChoiceView";
 import { LessonGapView } from "./LessonGapView";
+import { LessonGroupView } from "./LessonGroupView";
+import { LessonMatchView } from "./LessonMatchView";
 import { LessonNoticeView } from "./LessonNoticeView";
 import { LessonOrderView } from "./LessonOrderView";
 import { LessonSentenceView } from "./LessonSentenceView";
@@ -95,6 +97,71 @@ describe("lesson exercise views", () => {
     fireEvent.click(screen.getAllByTestId("kid-lesson-order-block")[0]!);
     fireEvent.click(screen.getByTestId("kid-lesson-check"));
     expect(props.handlers.onAnswerSequence).toHaveBeenCalledWith([id(4), id(3)]);
+  });
+
+  it("match: miejsca przyjmują elementy z puli, „Sprawdź” dopiero po komplecie, przypisania lewy → prawy", () => {
+    const props = makeExerciseProps(task({
+      kind: "lesson_match", instructionPl: "Połącz",
+      left: [{ id: id(3), text: "równik" }, { id: id(4), text: "południk" }, { id: id(5), text: "biegun" }],
+      right: [{ id: id(6), text: "łączy bieguny" }, { id: id(7), text: "dzieli półkule" }, { id: id(8), text: "koniec osi" }, { id: id(9), text: "nad morzem" }],
+    }));
+    renderKid(<LessonMatchView {...props} />);
+    const check = screen.getByTestId("kid-lesson-check") as HTMLButtonElement;
+    expect(screen.getAllByTestId("kid-lesson-match-slot")[0]!.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByText("dzieli półkule"));
+    fireEvent.click(screen.getByText("łączy bieguny"));
+    expect(check.disabled).toBe(true);
+    fireEvent.click(screen.getByText("koniec osi"));
+    expect(screen.getAllByTestId("kid-lesson-match-option").map((el) => el.textContent)).toEqual(["nad morzem"]);
+    expect(check.disabled).toBe(false);
+    fireEvent.click(check);
+    expect(props.handlers.onAnswerAssignment).toHaveBeenCalledWith([
+      { itemId: id(3), targetId: id(7) }, { itemId: id(4), targetId: id(6) }, { itemId: id(5), targetId: id(8) },
+    ]);
+  });
+
+  it("match: dotknięcie zajętego miejsca oddaje element do puli", () => {
+    const props = makeExerciseProps(task({
+      kind: "lesson_match", instructionPl: "Połącz",
+      left: [{ id: id(3), text: "a" }, { id: id(4), text: "b" }, { id: id(5), text: "c" }],
+      right: [{ id: id(6), text: "x" }, { id: id(7), text: "y" }, { id: id(8), text: "z" }],
+    }));
+    renderKid(<LessonMatchView {...props} />);
+    fireEvent.click(screen.getByText("x"));
+    expect(screen.getAllByTestId("kid-lesson-match-option")).toHaveLength(2);
+    fireEvent.click(screen.getAllByTestId("kid-lesson-match-slot")[0]!);
+    expect(screen.getAllByTestId("kid-lesson-match-option")).toHaveLength(3);
+  });
+
+  it("group: elementy trafiają do aktywnej grupy, a „Sprawdź” wysyła przypisania element → grupa", () => {
+    const props = makeExerciseProps(task({
+      kind: "lesson_group", instructionPl: "Pogrupuj",
+      groups: [{ id: id(3), text: "ssaki" }, { id: id(4), text: "ptaki" }],
+      items: [{ id: id(5), text: "sowa" }, { id: id(6), text: "pies" }, { id: id(7), text: "kot" }, { id: id(8), text: "wróbel" }],
+    }));
+    renderKid(<LessonGroupView {...props} />);
+    const check = screen.getByTestId("kid-lesson-check") as HTMLButtonElement;
+    fireEvent.click(screen.getByText("pies"));
+    fireEvent.click(screen.getByText("kot"));
+    fireEvent.click(screen.getAllByTestId("kid-lesson-group-target")[1]!);
+    expect(screen.getAllByTestId("kid-lesson-group-target")[1]!.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByText("sowa"));
+    expect(check.disabled).toBe(true);
+    fireEvent.click(screen.getByText("wróbel"));
+    fireEvent.click(check);
+    expect(props.handlers.onAnswerAssignment).toHaveBeenCalledWith([
+      { itemId: id(5), targetId: id(4) }, { itemId: id(6), targetId: id(3) }, { itemId: id(7), targetId: id(3) }, { itemId: id(8), targetId: id(4) },
+    ]);
+  });
+
+  it("group: po wyniku (dock) przyciski są wyłączone", () => {
+    const props = makeExerciseProps(task({
+      kind: "lesson_group", instructionPl: "Pogrupuj",
+      groups: [{ id: id(3), text: "ssaki" }, { id: id(4), text: "ptaki" }],
+      items: [{ id: id(5), text: "sowa" }, { id: id(6), text: "pies" }, { id: id(7), text: "kot" }, { id: id(8), text: "wróbel" }],
+    }));
+    renderKid(<LessonGroupView {...props} dock={<span>wynik</span>} />);
+    expect(screen.getAllByTestId("kid-lesson-group-item").every((el) => (el as HTMLButtonElement).disabled)).toBe(true);
   });
 
   it("order keeps placed blocks when the same task arrives as a fresh prompt object", () => {

@@ -332,3 +332,125 @@ describe("słowa kluczowe (lesson_keywords)", () => {
     expect(gaps).toEqual([{ objectiveId: "school.ddeck.fotosynteza", stage: "guided", required: 1, actual: 0 }]);
   });
 });
+
+describe("generacja: pytania porównawcze i odpowiedź mówiona (Etapy 3 i 6)", () => {
+  it("reguły pól proszą o pytanie porównawcze dla par łatwo mylonych pojęć", () => {
+    const rules = schoolSubject.prompts.fieldRules ?? "";
+    expect(rules).toContain("łatwo mylonych pojęć");
+    expect(rules).toContain("questionType: comparison");
+  });
+
+  it("szkoła przyjmuje dyktowanie wyłącznie dla odpowiedzi otwartej po polsku", () => {
+    expect(schoolSubject.spokenAnswers).toEqual({ locale: "pl-PL", exerciseTypes: ["lesson_open_answer"] });
+  });
+});
+
+function matchDraft(overrides: Partial<LessonExerciseDraft> = {}): LessonExerciseDraft {
+  return {
+    exerciseType: "lesson_match",
+    objectiveId: "school.ddeck.fotosynteza",
+    instructionPl: "Połącz w pary.",
+    pairs: [
+      { left: "światło", right: "dostarcza energii" },
+      { left: "woda", right: "pobierana korzeniami" },
+      { left: "cukry", right: "powstają w liściach" },
+    ],
+    extraRight: ["oddycha skrzelami"],
+    answer: "światło, woda, cukry",
+    acceptedAnswers: [],
+    focus: [],
+    sourceRefs: [{ quote: "wytwarza cukry" }],
+    ...overrides,
+  };
+}
+
+function groupDraft(overrides: Partial<LessonExerciseDraft> = {}): LessonExerciseDraft {
+  return {
+    exerciseType: "lesson_group",
+    objectiveId: "school.ddeck.fotosynteza",
+    instructionPl: "Pogrupuj.",
+    groups: [{ id: "in", label: "substraty" }, { id: "out", label: "produkty" }],
+    groupItems: [
+      { text: "woda", groupId: "in" }, { text: "dwutlenek węgla", groupId: "in" },
+      { text: "cukry", groupId: "out" }, { text: "tlen", groupId: "out" },
+    ],
+    answer: "substraty / produkty",
+    acceptedAnswers: [],
+    focus: [],
+    sourceRefs: [{ quote: "wytwarza cukry" }],
+    ...overrides,
+  };
+}
+
+describe("połącz w pary (lesson_match)", () => {
+  const topic = schoolSubject.buildDynamicTopic!(dynamicData);
+
+  it("przechodzi walidację ćwiczenia i liczy się do etapu prowadzonego", () => {
+    expect(validateLessonExercise(matchDraft(), schoolSubject, topic)).toEqual([]);
+    expect(validateLessonExercise(matchDraft({ extraRight: undefined }), schoolSubject, topic)).toEqual([]);
+    expect(poolCoverage([matchDraft()], ["school.ddeck.fotosynteza"], { guided: 1, productive: 0, independent: 0 })).toEqual([]);
+  });
+
+  it.each([
+    ["za mało par", { pairs: [{ left: "a", right: "b" }, { left: "c", right: "d" }], answer: "a, c" }, "pairs"],
+    ["powtórzona lewa strona", { pairs: [{ left: "woda", right: "x1" }, { left: "Woda", right: "x2" }, { left: "cukry", right: "x3" }], answer: "woda, Woda, cukry" }, "powiela"],
+    ["prawa zawiera inną prawą", { extraRight: ["dostarcza energii słonecznej"] }, "powiela"],
+    ["trzy dystraktory", { extraRight: ["a1", "a2", "a3"] }, "extraRight"],
+    ["odpowiedź niezgodna z parami", { answer: "woda, światło, cukry" }, "answer"],
+    ["warianty odpowiedzi", { acceptedAnswers: ["światło"] }, "acceptedAnswers"],
+    ["za długa lewa strona", { pairs: [{ left: "x".repeat(41), right: "b" }, { left: "c", right: "d" }, { left: "e", right: "f" }] }, "pairs"],
+  ] as const)("odrzuca: %s", (_label, overrides, field) => {
+    const errors = validateLessonExercise(matchDraft(overrides as Partial<LessonExerciseDraft>), schoolSubject, topic);
+    expect(errors.some((error) => error.includes(field))).toBe(true);
+  });
+
+  it("fragment słowa nie jest powtórzeniem: „tlen” obok „dwutlenek węgla” przechodzi", () => {
+    const draft = matchDraft({
+      pairs: [{ left: "tlen", right: "powstaje w liściach" }, { left: "dwutlenek węgla", right: "roślina pobiera z powietrza" }, { left: "woda", right: "pobierana korzeniami" }],
+      extraRight: [],
+      answer: "tlen, dwutlenek węgla, woda",
+    });
+    expect(validateLessonExercise(draft, schoolSubject, topic)).toEqual([]);
+  });
+
+  it("odrzuca pary w innym typie", () => {
+    const errors = validateLessonExercise(groupDraft({ pairs: matchDraft().pairs }), schoolSubject, topic);
+    expect(errors.some((error) => error.includes("pairs"))).toBe(true);
+  });
+});
+
+describe("pogrupuj (lesson_group)", () => {
+  const topic = schoolSubject.buildDynamicTopic!(dynamicData);
+
+  it("przechodzi walidację ćwiczenia", () => {
+    expect(validateLessonExercise(groupDraft(), schoolSubject, topic)).toEqual([]);
+  });
+
+  it.each([
+    ["jedna grupa", { groups: [{ id: "in", label: "substraty" }], answer: "substraty" }, "groups"],
+    ["grupa z jednym elementem", { groupItems: [
+      { text: "woda", groupId: "in" }, { text: "dwutlenek węgla", groupId: "in" }, { text: "światło", groupId: "in" }, { text: "tlen", groupId: "out" },
+    ] }, "minimum"],
+    ["nieznana grupa", { groupItems: [
+      { text: "woda", groupId: "in" }, { text: "dwutlenek węgla", groupId: "in" }, { text: "cukry", groupId: "out" }, { text: "tlen", groupId: "xx" },
+    ] }, "jednej z grup"],
+    ["powtórzony element", { groupItems: [
+      { text: "woda", groupId: "in" }, { text: "Woda ", groupId: "in" }, { text: "cukry", groupId: "out" }, { text: "tlen", groupId: "out" },
+    ] }, "powtarza"],
+    ["element jest etykietą", { groupItems: [
+      { text: "woda", groupId: "in" }, { text: "produkty", groupId: "in" }, { text: "cukry", groupId: "out" }, { text: "tlen", groupId: "out" },
+    ] }, "etykietą"],
+    ["odpowiedź niezgodna z grupami", { answer: "produkty / substraty" }, "answer"],
+  ] as const)("odrzuca: %s", (_label, overrides, field) => {
+    const errors = validateLessonExercise(groupDraft(overrides as Partial<LessonExerciseDraft>), schoolSubject, topic);
+    expect(errors.some((error) => error.includes(field))).toBe(true);
+  });
+
+  it("kolejność par i grup nie zmienia tożsamości ćwiczenia (deduplikacja puli)", () => {
+    const reversed = groupDraft({ groups: [{ id: "out", label: "produkty" }, { id: "in", label: "substraty" }], answer: "produkty / substraty" });
+    const { valid } = validatePool([groupDraft(), reversed], schoolSubject, topic);
+    expect(valid).toHaveLength(1);
+    const shuffledPairs = matchDraft({ pairs: [...matchDraft().pairs!].reverse(), answer: "cukry, woda, światło" });
+    expect(validatePool([matchDraft(), shuffledPairs], schoolSubject, topic).valid).toHaveLength(1);
+  });
+});

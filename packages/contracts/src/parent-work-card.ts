@@ -71,7 +71,7 @@ export const ParentWorkCardDtoSchema = z.object({
       state: z.enum(["issued", "answered", "completed", "skipped"]),
       issuedAt: InstantSchema,
       responses: z.array(z.object({
-        modality: z.enum(["choice", "text", "audio", "dont_remember", "skip", "sequence", "selection"]),
+        modality: z.enum(["choice", "text", "audio", "dont_remember", "skip", "sequence", "selection", "assignment"]),
         answerExample: z.string().max(160).nullable(),
         feedbackKind: z.string().nullable(),
         assessment: z.enum(["assessed", "unassessed", "mixed", "none"]).nullable(),

@@ -2409,6 +2409,131 @@
   outline-offset: 3px;
 }
 
+/* „Połącz w pary” (design szkoły §10.5): wiersz = lewy element i miejsce na
+   pasujący; compact jeden pod drugim, od 600 px obok siebie. */
+.kid-lesson-match,
+.kid-lesson-group {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.kid-lesson-match__pairs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kid-lesson-match__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+}
+
+.kid-lesson-match__left {
+  font-size: var(--kid-type-title-size);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.kid-ui .kid-lesson-match__slot {
+  width: 100%;
+  border-style: dashed;
+  background: var(--kid-soft);
+  color: var(--kid-text);
+}
+
+.kid-ui .kid-lesson-match__slot.kid-lesson-block--placed {
+  border-style: solid;
+  background: var(--kid-surface);
+}
+
+.kid-ui .kid-lesson-match__slot--active {
+  border-color: var(--kid-accent);
+  border-style: solid;
+  outline: 2px solid var(--kid-accent);
+  outline-offset: 2px;
+}
+
+.kid-lesson-match__pool,
+.kid-lesson-group__pool {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (min-width: 600px) {
+  .kid-lesson-match__row {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    gap: 12px;
+  }
+}
+
+/* „Pogrupuj”: grupa = przełącznik + zawartość; aktywna grupa z obwódką akcentu,
+   nie tylko kolorem (aria-pressed na przełączniku). */
+.kid-lesson-group__bins {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.kid-lesson-group__bin {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 2px dashed var(--kid-line);
+  border-radius: var(--kid-shape-l);
+  background: var(--kid-soft);
+}
+
+.kid-lesson-group__bin--active {
+  border-style: solid;
+  border-color: var(--kid-accent);
+}
+
+/* Przełącznik grupy to nagłówek, nie element: bez obwódki, aktywny wypełniony
+   rolą secondary-container (stan niesie też aria-pressed i obwódka grupy). */
+.kid-ui .kid-lesson-group__target {
+  width: 100%;
+  border-color: transparent;
+  background: transparent;
+  font-weight: 700;
+}
+
+.kid-ui .kid-lesson-group__bin--active .kid-lesson-group__target {
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+}
+
+.kid-lesson-group__members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Element listy wokół przycisku (przycisk zachowuje rolę button). */
+.kid-lesson-assign__entry {
+  display: flex;
+  max-width: 100%;
+  min-width: 0;
+}
+
+@media (min-width: 600px) {
+  .kid-lesson-group__bins {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+}
+
 /* Luka: zdanie z polem edycji dokładnie w miejscu luki. */
 .kid-lesson-gap {
   width: 100%;
@@ -2529,14 +2654,48 @@
   white-space: pre-wrap;
 }
 
-/* Fragment do usunięcia: obwódka i przekreślenie, nie tylko kolor. */
+/* Fragment do usunięcia (poprawny, ale zbędny): obwódka i przekreślenie, nie tylko
+   kolor; łagodniejsza rola niż „nie na temat” (design szkoły §9.2). */
 .kid-spelling-pill--remove {
-  color: var(--md-sys-color-on-error-container);
-  background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-secondary-container);
+  background: var(--md-sys-color-secondary-container);
   text-decoration: line-through;
   text-decoration-thickness: 2px;
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
+}
+
+/* Fragment nie na temat (design szkoły §9.2): przerywana obwódka i falista
+   linia zamiast prostego przekreślenia — kategoria nie zależy od koloru. */
+.kid-spelling-pill--offtopic {
+  color: var(--md-sys-color-on-error-container);
+  background: var(--md-sys-color-error-container);
+  border-style: dashed;
+  text-decoration-line: line-through;
+  text-decoration-style: wavy;
+  text-decoration-thickness: 1px;
+}
+
+/* Legenda zaznaczeń: próbka stylu i nazwa kategorii, zawija się na wąskim ekranie. */
+.kid-segment-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--kid-type-label-xs-size);
+}
+
+.kid-segment-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.kid-segment-legend__sample {
+  line-height: 1.2;
 }
 
 .kid-lesson-shorten__form {

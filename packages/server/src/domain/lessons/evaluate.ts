@@ -27,6 +27,13 @@ export interface LessonAnswerKey {
   readonly correctOptionIds?: readonly string[];
   readonly minSelected?: number;
   readonly maxSelected?: number;
+  /**
+   * `lesson_match` / `lesson_group` (design szkoły §10.3): poprawne przypisania
+   * (element → cel), dozwolone cele i czy cel można użyć tylko raz (pary).
+   */
+  readonly assignments?: readonly { readonly itemId: string; readonly targetId: string }[];
+  readonly targetIds?: readonly string[];
+  readonly targetOnce?: boolean;
 }
 
 /** Wynik dopasowania deterministycznego. */
@@ -224,6 +231,54 @@ export function evaluateKeywordSelection(itemIds: readonly string[], key: Lesson
   return itemIds.every((id) => correct.has(id));
 }
 
+/**
+ * Ocena przypisań (design szkoły §10.3): `true`, gdy każde przypisanie zgadza
+ * się z kluczem. `null`, gdy odpowiedź nie pasuje kształtem do zadania (brak
+ * lub obcy element, nieznany cel, cel pary użyty dwukrotnie) — to błąd
+ * klienta, nie wiedzy dziecka.
+ */
+export function evaluateAssignment(
+  given: readonly { readonly itemId: string; readonly targetId: string }[],
+  key: LessonAnswerKey,
+): boolean | null {
+  const expected = new Map((key.assignments ?? []).map((entry) => [entry.itemId, entry.targetId] as const));
+  const targets = new Set(key.targetIds ?? []);
+  if (expected.size === 0 || given.length !== expected.size) return null;
+  if (new Set(given.map((entry) => entry.itemId)).size !== given.length) return null;
+  if (given.some((entry) => !expected.has(entry.itemId) || !targets.has(entry.targetId))) return null;
+  if (key.targetOnce === true && new Set(given.map((entry) => entry.targetId)).size !== given.length) return null;
+  return given.every((entry) => expected.get(entry.itemId) === entry.targetId);
+}
+
+/**
+ * Tekst przypisań do feedbacku, omówienia i raportów (design szkoły §10.3).
+ * Pary: `element → cel` w kolejności `itemOrder` (domyślnie kolejność wejścia),
+ * złączone „; ”. Grupy (`grouped`): `cel: elementy` w kolejności `targetOrder`.
+ * Przypisania z nieznanym tekstem są pomijane.
+ */
+export function assignmentText(
+  assignments: readonly { readonly itemId: string; readonly targetId: string }[],
+  values: ReadonlyMap<string, string> | Readonly<Record<string, string>>,
+  options: { readonly grouped?: boolean; readonly targetOrder?: readonly string[]; readonly itemOrder?: readonly string[] } = {},
+): string {
+  const valueOf = (id: string): string | undefined => (values instanceof Map ? values.get(id) : (values as Readonly<Record<string, string>>)[id]);
+  const position = new Map((options.itemOrder ?? []).map((id, index) => [id, index] as const));
+  const ordered = [...assignments].sort((a, b) => (position.get(a.itemId) ?? 0) - (position.get(b.itemId) ?? 0));
+  if (options.grouped) {
+    const targets = options.targetOrder ?? [...new Set(ordered.map((entry) => entry.targetId))];
+    return targets.flatMap((targetId) => {
+      const label = valueOf(targetId);
+      const items = ordered.filter((entry) => entry.targetId === targetId).map((entry) => valueOf(entry.itemId)).filter((text): text is string => Boolean(text));
+      return label && items.length > 0 ? [`${label}: ${items.join(", ")}`] : [];
+    }).join("; ");
+  }
+  return ordered.flatMap((entry) => {
+    const item = valueOf(entry.itemId);
+    const target = valueOf(entry.targetId);
+    return item && target ? [`${item} → ${target}`] : [];
+  }).join("; ");
+}
+
 export function evaluateSequence(itemIds: readonly string[], key: LessonAnswerKey): boolean {
   const expected = key.itemIds;
   if (expected === undefined || expected.length !== itemIds.length) {
@@ -291,8 +346,18 @@ export interface SchoolVerdict {
   readonly matchedElementIds: readonly string[];
   readonly missingElementIds: readonly string[];
   readonly incorrectStatements: readonly string[];
+  /** Poprawne, ale zbędne (źródło §5.5). */
   readonly redundantFragments: readonly string[];
+  /** Niezwiązane z pytaniem (v3, design §9.1); werdykty v2 mają pustą listę. */
+  readonly offTopicFragments: readonly string[];
+  /** Pomylone pojęcia: `said` z odpowiedzi zamiast `meant` (v3); wyłącznie dla rodzica i selektora. */
+  readonly confusedConcepts: readonly ConfusedConcept[];
   readonly note: string;
+}
+
+export interface ConfusedConcept {
+  readonly said: string;
+  readonly meant: string;
 }
 
 export interface SchoolVerdictContext {
@@ -309,6 +374,12 @@ const schoolVerdictSchema = z.object({
   missingElementIds: z.array(z.string().min(1)).max(6),
   incorrectStatements: z.array(z.string().min(1)).max(4),
   redundantFragments: z.array(z.string().min(1)).max(4),
+  // v3 (design §9.1): brak pól = werdykt v2, czyli puste listy
+  offTopicFragments: z.array(z.string().min(1)).max(4).default([]),
+  confusedConcepts: z.array(z.object({
+    said: z.string().min(1).max(60),
+    meant: z.string().min(1).max(60),
+  })).max(2).default([]),
   note: z.string().max(MAX_NOTE_LENGTH),
 });
 
@@ -387,13 +458,35 @@ export function validateSchoolVerdict(raw: unknown, ctx: SchoolVerdictContext): 
   if (matched.some((id) => missing.includes(id))) return null;
   // Pełna partycja: rozłączne podzbiory listy wymaganej o sumie równej jej rozmiarowi.
   if (matched.length + missing.length !== required.size) return null;
-  const hasGap = missing.length > 0 || v.incorrectStatements.length > 0;
+  // Pomylenie pojęć to luka w treści nawet przy komplecie elementów (design §9.1).
+  const hasGap = missing.length > 0 || v.incorrectStatements.length > 0 || v.confusedConcepts.length > 0;
   if (v.knowledge === "correct" && hasGap) return null;
   if (v.knowledge === "partial" && (matched.length === 0 || !hasGap)) return null;
   if (v.knowledge === "incorrect" && !hasGap) return null;
   const answerNfc = ctx.childAnswer.normalize("NFC");
-  for (const fragment of [...v.incorrectStatements, ...v.redundantFragments]) {
+  for (const fragment of [...v.incorrectStatements, ...v.redundantFragments, ...v.offTopicFragments]) {
     if (!answerNfc.includes(fragment.normalize("NFC"))) return null;
+  }
+  // Kategorie fragmentów są rozłączne: ten sam tekst nie może być naraz błędem, zbędnym i nie na temat
+  // — także częściowo (fragment jednej kategorii zawarty w fragmencie innej albo nachodzący na niego).
+  const categorized = [...v.incorrectStatements, ...v.redundantFragments, ...v.offTopicFragments].map((f) => f.normalize("NFC"));
+  if (new Set(categorized).size !== categorized.length) return null;
+  if (categoriesOverlap(answerNfc, [v.incorrectStatements, v.redundantFragments, v.offTopicFragments])) return null;
+  // Pomylenie pojęć to błąd treści: nigdy przy wiedzy poprawnej; `said` pochodzi z odpowiedzi.
+  if (v.confusedConcepts.length > 0 && v.knowledge === "correct") return null;
+  const confusedConcepts: ConfusedConcept[] = [];
+  const seenPairs = new Set<string>();
+  for (const pair of v.confusedConcepts) {
+    const said = pair.said.normalize("NFC").trim();
+    const meant = pair.meant.normalize("NFC").trim();
+    const saidKey = said.toLocaleLowerCase("pl-PL");
+    const meantKey = meant.toLocaleLowerCase("pl-PL");
+    if (said === "" || meant === "" || saidKey === meantKey) return null;
+    if (!answerNfc.toLocaleLowerCase("pl-PL").includes(saidKey)) return null;
+    // ta sama para dwa razy to jedno pomylenie (raport liczy oceny, nie powtórzenia)
+    if (seenPairs.has(`${saidKey}|${meantKey}`)) continue;
+    seenPairs.add(`${saidKey}|${meantKey}`);
+    confusedConcepts.push({ said, meant });
   }
   const precision = ctx.formOk === false && v.precision === "concise" ? "verbose" : v.precision;
   return {
@@ -403,8 +496,27 @@ export function validateSchoolVerdict(raw: unknown, ctx: SchoolVerdictContext): 
     missingElementIds: missing,
     incorrectStatements: [...v.incorrectStatements],
     redundantFragments: [...v.redundantFragments],
+    offTopicFragments: [...v.offTopicFragments],
+    confusedConcepts,
     note: v.note,
   };
+}
+
+/**
+ * Czy zakresy fragmentów różnych kategorii na siebie nachodzą. Zakres to
+ * pierwsze wystąpienie bez rozróżniania wielkości liter — dokładnie tak, jak
+ * zaznacza je `buildAnswerSegments` (inaczej „Kot” i „kot” trafiłyby w dziecku
+ * na to samo słowo). Nachodzenie w obrębie jednej kategorii jest dozwolone —
+ * segmenty scalają je w jeden.
+ */
+function categoriesOverlap(answerNfc: string, categories: readonly (readonly string[])[]): boolean {
+  const haystack = answerNfc.toLowerCase();
+  const spans = categories.flatMap((fragments, category) => fragments.map((fragment) => {
+    const text = fragment.normalize("NFC").toLowerCase();
+    const start = haystack.indexOf(text);
+    return { category, start, end: start + text.length };
+  }));
+  return spans.some((a, i) => spans.some((b, j) => j > i && a.category !== b.category && a.start < b.end && b.start < a.end));
 }
 
 /**
@@ -422,17 +534,19 @@ export function gradeFromSchoolVerdict(verdict: SchoolVerdict | null): Objective
     case "correct":
       return { outcome: "correct", verdict: "model_correct" };
     case "partial":
-      // Kategoria z faktycznego powodu: brak elementu vs nieścisłe stwierdzenie.
+      // Kategoria z faktycznego powodu: pomylone pojęcia, brak elementu albo nieścisłe stwierdzenie.
       return {
         outcome: "incorrect",
         verdict: "model_almost",
-        errorCategory: verdict.missingElementIds.length > 0 ? "missing_element" : "wrong_fact",
+        errorCategory: verdict.confusedConcepts.length > 0 ? "confused_concept"
+          : verdict.missingElementIds.length > 0 ? "missing_element" : "wrong_fact",
       };
     case "incorrect":
       return {
         outcome: "incorrect",
         verdict: "model_incorrect",
-        errorCategory: verdict.incorrectStatements.length > 0 ? "wrong_fact" : "incomplete",
+        errorCategory: verdict.confusedConcepts.length > 0 ? "confused_concept"
+          : verdict.incorrectStatements.length > 0 ? "wrong_fact" : "incomplete",
       };
   }
 }
@@ -537,10 +651,10 @@ export function closestApprovedVariant(
   return best;
 }
 
-/** Segment feedbacku: `pill` = fragment do wyróżnienia. */
+/** Segment feedbacku: `pill` = fragment do wyróżnienia, `offtopic` = niezwiązany z pytaniem (v3). */
 export interface AnswerSegment {
   readonly text: string;
-  readonly state: "plain" | "pill";
+  readonly state: "plain" | "pill" | "offtopic";
 }
 
 /**
@@ -558,18 +672,23 @@ export interface AnswerSegment {
 export function buildAnswerSegments(
   childAnswer: string,
   fragments: readonly string[],
+  offTopicFragments: readonly string[] = [],
 ): AnswerSegment[] | null {
   const chars = [...childAnswer];
   const n = chars.length;
 
-  if (!casefoldStable(childAnswer) || fragments.some((fragment) => !casefoldStable(fragment))) {
+  if (!casefoldStable(childAnswer) || [...fragments, ...offTopicFragments].some((fragment) => !casefoldStable(fragment))) {
     return null;
   }
 
   const lowerChars = chars.map((char) => char.toLowerCase());
-  const pill = new Array<boolean>(n).fill(false);
+  const marks = new Array<AnswerSegment["state"]>(n).fill("plain");
 
-  for (const fragment of fragments) {
+  const tagged = [
+    ...fragments.map((fragment) => ({ fragment, state: "pill" as const })),
+    ...offTopicFragments.map((fragment) => ({ fragment, state: "offtopic" as const })),
+  ];
+  for (const { fragment, state: mark } of tagged) {
     const fragChars = [...fragment].map((char) => char.toLowerCase());
     if (fragChars.length === 0) {
       continue;
@@ -585,7 +704,8 @@ export function buildAnswerSegments(
       }
       if (matched) {
         for (let k = 0; k < fragChars.length; k++) {
-          pill[start + k] = true; // nakładające się fragmenty naturalnie scalone
+          // nakładające się fragmenty naturalnie scalone; „nie na temat” wygrywa z „zbędne”
+          if (marks[start + k] !== "offtopic") marks[start + k] = mark;
         }
         break;
       }
@@ -594,7 +714,7 @@ export function buildAnswerSegments(
 
   const segments: AnswerSegment[] = [];
   for (let i = 0; i < n; i++) {
-    const state: "plain" | "pill" = pill[i] ? "pill" : "plain";
+    const state = marks[i]!;
     const last = segments[segments.length - 1];
     if (last !== undefined && last.state === state) {
       segments[segments.length - 1] = { text: last.text + chars[i], state };

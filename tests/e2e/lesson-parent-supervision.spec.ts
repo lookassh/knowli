@@ -202,5 +202,6 @@ test("parent supervises objective progress and model verdicts: changes a decisio
   await childSelect.selectOption(selectedChildId!);
   expect((await unavailableProgressResponse).status()).toBe(503);
   await expect(page.getByTestId(`progress-status-${OBJECTIVE_ID}`)).toHaveCount(0);
-  await expect(page.getByTestId("supervision-progress-error")).toBeVisible();
+  // odczyt 5xx ponawiany dwukrotnie (globalny klient zapytań) — błąd po kilku sekundach
+  await expect(page.getByTestId("supervision-progress-error")).toBeVisible({ timeout: 15_000 });
 });

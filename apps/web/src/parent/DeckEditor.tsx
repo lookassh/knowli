@@ -330,7 +330,7 @@ export default function DeckEditor({
   const fetchRemote = useCallback(async () => {
     const options = orpc.decks.get.queryOptions({ input: { deckId } });
     await queryClient.cancelQueries({ queryKey: options.queryKey, exact: true });
-    return queryClient.fetchQuery({ ...options, retry: false, staleTime: 0 });
+    return queryClient.fetchQuery({ ...options, retry: false, staleTime: 0, gcTime: 0 });
   }, [queryClient, deckId]);
 
   const refreshConflict = useCallback(async (local: EditorSnapshot) => {

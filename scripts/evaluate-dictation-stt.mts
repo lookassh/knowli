@@ -10,20 +10,27 @@
  *   D  fast+phrases       C z listą fraz z materiału (bias — mierzymy też fałszywe trafienia)
  *
  * Tryby:
- *   corepack pnpm eval:dictation-stt synth            (SPIKE_SET=openrouter: Azure A + modele OpenRouter)
+ *   corepack pnpm eval:dictation-stt synth [--engines=openrouter]   (Azure A + modele OpenRouter)
  *       syntetyczny polski głos Azure TTS z podniesioną wysokością (przybliżenie
  *       głosu dziecka), pauzy w środku odpowiedzi, liczby, nazwy, cisza i szum.
- *   corepack pnpm eval:dictation-stt live [--port=5180]
- *       lokalna strona http://127.0.0.1:5180 do nagrania odpowiedzi przy urządzeniu.
+ *   corepack pnpm eval:dictation-stt live [--lan] [--engines=openrouter] [--port=5180]
+ *       strona do nagrań przy urządzeniu: bez `--lan` http://127.0.0.1 (komputer),
+ *       z `--lan` HTTPS w sieci lokalnej z certyfikatem tymczasowym (telefon/tablet).
+ *       Adres zawiera jednorazowy token wypisany w konsoli.
  *
  * Prywatność: nagrania żyją wyłącznie w pamięci żądania. Skrypt nie zapisuje
  * plików, a konsola trybu live pokazuje tylko statusy, czasy i liczby trafień —
  * transkrypcje widzi wyłącznie strona w przeglądarce prowadzącego próbę.
  * Wymaga AZURE_SPEECH_KEY i AZURE_SPEECH_REGION (synteza i wariant A) oraz
- * UMIEM_GRADER_API_KEY (klucz OpenRouter) dla SPIKE_SET=openrouter w .env.
+ * UMIEM_GRADER_API_KEY (klucz OpenRouter) dla --engines=openrouter w .env.
  */
-import { readFileSync } from "node:fs";
-import { createServer } from "node:http";
+import { spawnSync } from "node:child_process";
+import { randomBytes, timingSafeEqual } from "node:crypto";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
+import { networkInterfaces, tmpdir } from "node:os";
+import { join } from "node:path";
 import { createAzureSttProvider } from "../packages/server/src/providers/azure/stt";
 
 // ---------- env ----------
@@ -273,8 +280,11 @@ async function engineFast(wav: Uint8Array, phrases?: string[]): Promise<EngineRe
 
 // ---------- OpenRouter /audio/transcriptions (klucz gradera; ZDR, bez zbierania danych) ----------
 const OR_KEY = process.env.UMIEM_GRADER_API_KEY;
+/** Zestaw silników: `--engines=openrouter` (Azure A + modele OpenRouter) albo domyślnie warianty Azure. */
+const ENGINE_SET = process.argv.find((a) => a.startsWith("--engines="))?.slice(10) ?? process.env.SPIKE_SET;
 const OR_MODELS = (process.env.SPIKE_OR_MODELS ??
-  "google/gemini-3.5-transcribe,openai/gpt-transcribe,elevenlabs/scribe-v2,mistralai/voxtral-small-transcribe-3-0,openai/whisper-large-v3,assemblyai/universal-3-6-pro")
+  // modele z endpointem Zero Data Retention (spike 2026-10-29); inne przez SPIKE_OR_MODELS
+  "elevenlabs/scribe-v2,mistralai/voxtral-small-transcribe-3-0,openai/whisper-large-v3")
   .split(",").filter(Boolean);
 
 async function engineOpenRouter(wav: Uint8Array, model: string): Promise<EngineResult> {
@@ -325,7 +335,7 @@ async function engineOpenRouter(wav: Uint8Array, model: string): Promise<EngineR
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function runEngines(wav: Uint8Array): Promise<EngineResult[]> {
-  if (process.env.SPIKE_SET === "openrouter") {
+  if (ENGINE_SET === "openrouter") {
     // Azure A jako punkt odniesienia + modele OpenRouter równolegle
     await sleep(1500);
     if (process.env.SPIKE_SKIP_AZURE === "1") return Promise.all(OR_MODELS.map((m) => engineOpenRouter(wav, m)));
@@ -407,6 +417,26 @@ function wavSeconds(wav: Uint8Array): number {
   return (wav.length - 44) / 32_000;
 }
 
+/**
+ * Czas nagrania z nagłówka WAV, wyłącznie dla formatu, który wysyła strona próby
+ * (kanoniczny nagłówek 44 B: PCM, mono, 16 bit, 16 kHz). Inny format albo
+ * uszkodzony nagłówek → null, żeby spreparowany plik nie ominął limitu czasu.
+ */
+function trialWavSeconds(wav: Uint8Array): number | null {
+  if (wav.length < 44) return null;
+  const view = new DataView(wav.buffer, wav.byteOffset, wav.byteLength);
+  const ascii = (offset: number) => String.fromCharCode(...wav.subarray(offset, offset + 4));
+  if (ascii(0) !== "RIFF" || ascii(8) !== "WAVE" || ascii(12) !== "fmt " || ascii(36) !== "data") return null;
+  const pcm = view.getUint16(20, true) === 1;
+  const mono = view.getUint16(22, true) === 1;
+  const rate16k = view.getUint32(24, true) === 16_000;
+  const bits16 = view.getUint16(34, true) === 16;
+  if (!pcm || !mono || !rate16k || !bits16) return null;
+  const dataBytes = view.getUint32(40, true);
+  if (dataBytes !== wav.length - 44) return null;
+  return dataBytes / 32_000;
+}
+
 function fmtConf(c: number | null | undefined): string {
   return c === null || c === undefined ? "  –  " : c.toFixed(2).padStart(5);
 }
@@ -434,7 +464,13 @@ async function synth(): Promise<void> {
   }
   // cisza i szum — każdy silnik musi dać no_speech/pusty tekst, nie treść
   const silence = wavFromSamples(new Float32Array(16_000 * 3));
-  const noise = wavFromSamples(Float32Array.from({ length: 16_000 * 3 }, () => (Math.random() * 2 - 1) * 0.15));
+  // szum z deterministycznego generatora (LCG z ziarnem): powtarzalny między przebiegami
+  let seed = 20261029;
+  const nextNoise = () => {
+    seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+    return seed / 0xffffffff;
+  };
+  const noise = wavFromSamples(Float32Array.from({ length: 16_000 * 3 }, () => (nextNoise() * 2 - 1) * 0.15));
   for (const [id, wav] of [["silence-3s", silence], ["noise-3s", noise]] as const) {
     const results = (await runEngines(wav)).map((r) => score(r, undefined));
     console.log(`\n# ${id}`);
@@ -465,90 +501,279 @@ async function synth(): Promise<void> {
 const MAX_LIVE_SECONDS = 60;
 const MAX_LIVE_BYTES = 2_100_000;
 
+/**
+ * Strona próby: działa na komputerze i na telefonie (układ jednokolumnowy, duże
+ * cele dotyku). Token z adresu dołączany do każdego żądania — inne urządzenia
+ * w sieci nie wywołają płatnej analizy bez adresu z konsoli.
+ */
 function livePage(): string {
   const cases = JSON.stringify(CASES.map(({ id, question, keys }) => ({ id, question, keys })));
-  return `<!doctype html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Spike STT pl-PL</title>
-<style>body{font:16px system-ui;margin:16px;max-width:900px}button{font:inherit;padding:12px 18px;margin:4px;min-height:48px}
-table{border-collapse:collapse;width:100%;margin-top:8px}td,th{border:1px solid #ccc;padding:4px 6px;font-size:14px;vertical-align:top}
-.rec{background:#c62828;color:#fff}.miss{color:#c62828}.q{font-size:20px;font-weight:600;margin:12px 0}</style></head><body>
-<h1>Próba polskiego STT (nic nie jest zapisywane)</h1>
-<p>Wybierz pytanie, naciśnij „Nagrywaj”, odpowiedz własnymi słowami (pauzy i „yyy” są OK), potem „Stop”. Limit ${MAX_LIVE_SECONDS} s.
-Nagranie trafia tylko do pamięci lokalnego skryptu i dalej do Azure; wyniki widać tylko tutaj.</p>
-<label>Pytanie: <select id="case"></select></label> <label><input type="checkbox" id="free"> swobodna wypowiedź (bez pytania)</label>
-<div class="q" id="question"></div>
-<button id="rec">Nagrywaj</button><button id="stop" disabled>Stop</button> <span id="status"></span>
+  return `<!doctype html><html lang="pl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Próba dyktowania</title>
+<style>
+:root{--bg:#fff;--fg:#1b1b1f;--muted:#5f6368;--card:#f3f4f6;--line:#d0d4da;--accent:#1a5fb4;--on-accent:#fff;--rec:#c62828;--on-rec:#fff;--ok:#2e7d32;--warn:#b26a00}
+@media (prefers-color-scheme:dark){:root{--bg:#121316;--fg:#e6e6ea;--muted:#a3a7ad;--card:#1e2025;--line:#3a3d44;--accent:#8ab4f8;--on-accent:#0b1d3a;--rec:#ef5350;--on-rec:#1a0505;--ok:#81c995;--warn:#fdd663}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;
+  padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+main{max-width:720px;margin:0 auto}
+h1{font-size:22px;margin:0 0 4px}
+.note{color:var(--muted);font-size:14px;margin:0 0 16px}
+label{display:block;font-weight:600;margin:12px 0 6px}
+select{width:100%;min-height:52px;font:inherit;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+.check{display:flex;gap:10px;align-items:center;min-height:48px;font-weight:400}
+.check input{width:24px;height:24px}
+.q{font-size:22px;font-weight:700;margin:16px 0;padding:16px;border-radius:16px;background:var(--card)}
+button{font:inherit;font-weight:700;width:100%;min-height:64px;border:0;border-radius:32px;background:var(--accent);color:var(--on-accent);cursor:pointer}
+button.recording{background:var(--rec);color:var(--on-rec)}
+button:disabled{opacity:.55}
+#status{min-height:28px;margin:12px 0;font-weight:600;text-align:center}
+.result{border:1px solid var(--line);border-radius:16px;padding:12px;margin:16px 0}
+.result h2{font-size:18px;margin:0 0 8px}
+.engine{border-top:1px solid var(--line);padding:10px 0}
+.engine:first-of-type{border-top:0}
+.row{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:14px;color:var(--muted)}
+.name{font-weight:700;color:var(--fg)}
+.text{margin:6px 0 0;font-size:17px;word-break:break-word}
+.miss{color:var(--rec);font-size:14px}
+.full{color:var(--ok)}.part{color:var(--warn)}
+</style></head><body><main>
+<h1>Próba dyktowania po polsku</h1>
+<p class="note">Nagranie trafia tylko do pamięci skryptu na komputerze i dalej do usług rozpoznawania mowy. Nic nie jest zapisywane. Limit ${MAX_LIVE_SECONDS} s.</p>
+<label for="case">Pytanie</label>
+<select id="case"></select>
+<label class="check"><input type="checkbox" id="free"> swobodna wypowiedź (bez pytania)</label>
+<div class="q" id="question" aria-live="polite"></div>
+<button id="rec" type="button">Nagrywaj</button>
+<div id="status" role="status" aria-live="polite"></div>
 <div id="out"></div>
+</main>
 <script>
 const CASES=${cases};
-const sel=document.getElementById('case');CASES.forEach(c=>{const o=document.createElement('option');o.value=c.id;o.textContent=c.id;sel.append(o)});
-const q=document.getElementById('question');const show=()=>{q.textContent=CASES.find(c=>c.id===sel.value).question};sel.onchange=show;show();
-let rec,stream,chunks=[],timer,t0;
-const status=s=>document.getElementById('status').textContent=s;
-document.getElementById('rec').onclick=async()=>{
-  stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
-  chunks=[];rec=new MediaRecorder(stream);rec.ondataavailable=e=>chunks.push(e.data);
-  rec.onstop=send;rec.start();t0=Date.now();
-  document.getElementById('rec').disabled=true;document.getElementById('rec').classList.add('rec');document.getElementById('stop').disabled=false;
-  timer=setInterval(()=>{const s=(Date.now()-t0)/1000;status('nagrywanie '+s.toFixed(0)+' s');if(s>=${MAX_LIVE_SECONDS})stop()},250);
-};
-function stop(){clearInterval(timer);if(rec&&rec.state!=='inactive')rec.stop();stream&&stream.getTracks().forEach(t=>t.stop());
-  document.getElementById('rec').disabled=false;document.getElementById('rec').classList.remove('rec');document.getElementById('stop').disabled=true;}
-document.getElementById('stop').onclick=stop;
-async function toWav(blob){const ctx=new AudioContext();try{const d=await ctx.decodeAudioData(await blob.arrayBuffer());
+const TOKEN=new URLSearchParams(location.search).get('t')||'';
+const $=id=>document.getElementById(id);
+const sel=$('case'),btn=$('rec');
+CASES.forEach(c=>{const o=document.createElement('option');o.value=c.id;o.textContent=c.question;sel.append(o)});
+const show=()=>{$('question').textContent=$('free').checked?'Powiedz cokolwiek o temacie mapy.':CASES.find(c=>c.id===sel.value).question};
+sel.onchange=show;$('free').onchange=show;show();
+const status=s=>{$('status').textContent=s};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let rec=null,stream=null,chunks=[],timer=null,t0=0;
+function release(){if(timer){clearInterval(timer);timer=null}if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}}
+let starting=false;
+async function start(){
+  if(starting)return;
+  if(!window.isSecureContext||!navigator.mediaDevices){status('Ta strona potrzebuje HTTPS (uruchom z --lan) albo localhost.');return}
+  starting=true;btn.disabled=true;
+  try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}})}
+  catch(e){starting=false;btn.disabled=false;status('Brak dostępu do mikrofonu: '+e.name);return}
+  try{
+    chunks=[];rec=new MediaRecorder(stream);rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+    rec.onstop=()=>{release();send(rec.mimeType)};rec.start();t0=Date.now();
+  }catch(e){release();rec=null;starting=false;btn.disabled=false;status('Nagrywanie niedostępne: '+e.name);return}
+  starting=false;btn.disabled=false;
+  btn.textContent='Zakończ';btn.classList.add('recording');
+  timer=setInterval(()=>{const s=Math.floor((Date.now()-t0)/1000);status('Nagrywanie… '+s+' s');if(s>=${MAX_LIVE_SECONDS})stop()},250);
+}
+function stop(){if(rec&&rec.state!=='inactive')rec.stop();btn.textContent='Nagrywaj';btn.classList.remove('recording');btn.disabled=true}
+btn.onclick=()=>{rec&&rec.state==='recording'?stop():start()};
+async function toWav(blob){const ctx=new (window.AudioContext||window.webkitAudioContext)();try{const d=await ctx.decodeAudioData(await blob.arrayBuffer());
   const sr=16000,n=Math.ceil(d.duration*sr),off=new OfflineAudioContext(1,n,sr),src=off.createBufferSource();src.buffer=d;src.connect(off.destination);src.start(0);
   const s=(await off.startRendering()).getChannelData(0),b=new ArrayBuffer(44+s.length*2),v=new DataView(b),w=(o,t)=>[...t].forEach((c,i)=>v.setUint8(o+i,c.charCodeAt(0)));
   w(0,'RIFF');v.setUint32(4,36+s.length*2,true);w(8,'WAVE');w(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');v.setUint32(40,s.length*2,true);
   for(let i=0;i<s.length;i++){const x=Math.max(-1,Math.min(1,s[i]));v.setInt16(44+i*2,x<0?x*0x8000:x*0x7fff,true)}return {wav:b,seconds:d.duration}}finally{ctx.close()}}
-async function send(){status('analiza…');let wav,seconds;({wav,seconds}=await toWav(new Blob(chunks)));chunks=[];
-  const caseId=document.getElementById('free').checked?'':sel.value;
-  const res=await fetch('/analyze',{method:'POST',headers:{'content-type':'audio/wav','x-case-id':caseId},body:wav});wav=null;
-  const data=await res.json();status('gotowe ('+seconds.toFixed(1)+' s nagrania)');
-  const rows=data.results.map(r=>'<tr><td>'+r.engine+'</td><td>'+r.status+(r.error?' '+r.error:'')+'</td><td>'+(r.confidence==null?'–':r.confidence.toFixed(2))+(r.minPhraseConfidence!=null?' / min '+r.minPhraseConfidence.toFixed(2):'')+'</td><td>'+(r.keyTotal?r.keyHits+'/'+r.keyTotal+(r.truncated?' UCIĘTE':''):'–')+'</td><td>'+r.ms+' ms</td><td>'+(r.text||'')+(r.missingKeys.length?'<div class=miss>brak: '+r.missingKeys.join(', ')+'</div>':'')+'</td></tr>').join('');
-  document.getElementById('out').insertAdjacentHTML('afterbegin','<h3>'+(caseId||'swobodna')+' — '+seconds.toFixed(1)+' s</h3><table><tr><th>silnik</th><th>status</th><th>conf</th><th>pojęcia</th><th>czas</th><th>transkrypcja</th></tr>'+rows+'</table>');}
+async function send(mime){
+  status('Rozpoznawanie…');
+  try{
+    let {wav,seconds}=await toWav(new Blob(chunks,{type:mime||'audio/webm'}));chunks=[];
+    const caseId=$('free').checked?'':sel.value;
+    const res=await fetch('/analyze',{method:'POST',headers:{'content-type':'audio/wav','x-case-id':caseId,'x-trial-token':TOKEN},body:wav});wav=null;
+    if(!res.ok){status('Błąd serwera: HTTP '+res.status);return}
+    const data=await res.json();status('Gotowe ('+seconds.toFixed(1)+' s nagrania)');
+    const items=data.results.map(r=>{
+      const keys=r.keyTotal?'<span class="'+(r.keyHits===r.keyTotal?'full':'part')+'">pojęcia '+r.keyHits+'/'+r.keyTotal+'</span>':'';
+      const conf=r.confidence==null?'':'<span>pewność '+r.confidence.toFixed(2)+'</span>';
+      return '<div class="engine"><div class="row"><span class="name">'+esc(r.engine)+'</span><span>'+esc(r.status)+(r.error?' '+esc(r.error):'')+'</span>'+keys+conf+'<span>'+r.ms+' ms</span></div>'
+        +'<p class="text">'+esc(r.text||'—')+'</p>'+(r.missingKeys.length?'<div class="miss">brak: '+esc(r.missingKeys.join(', '))+'</div>':'')+'</div>';
+    }).join('');
+    $('out').insertAdjacentHTML('afterbegin','<section class="result"><h2>'+esc(caseId?CASES.find(c=>c.id===caseId).question:'Swobodna wypowiedź')+' · '+seconds.toFixed(1)+' s</h2>'+items+'</section>');
+  }catch(e){status('Nie udało się wysłać nagrania: '+e.name)}
+  finally{chunks=[];btn.disabled=false}
+}
 </script></body></html>`;
+}
+
+/** Adresy IPv4 komputera w sieci (bez pętli zwrotnej) — do certyfikatu i instrukcji. */
+function lanAddresses(): string[] {
+  return Object.values(networkInterfaces())
+    .flat()
+    .filter((net): net is NonNullable<typeof net> => !!net && net.family === "IPv4" && !net.internal)
+    .map((net) => net.address)
+    // najpierw typowe sieci domowe, potem Tailscale (100.64/10), na końcu adaptery wirtualne
+    .sort((x, y) => addressRank(x) - addressRank(y));
+}
+
+function addressRank(ip: string): number {
+  if (ip.startsWith("192.168.")) return 0;
+  if (ip.startsWith("10.")) return 1;
+  const [a, b] = ip.split(".").map(Number);
+  if (a === 100 && b! >= 64 && b! <= 127) return 2;
+  return 3;
+}
+
+function addressLabel(ip: string): string {
+  const rank = addressRank(ip);
+  return rank === 2 ? "  (Tailscale)" : rank === 3 ? "  (adapter wirtualny? zwykle nie ten)" : "";
+}
+
+/**
+ * Certyfikat tylko na czas próby, z adresami komputera w SAN: openssl zapisuje
+ * go w katalogu tymczasowym, który kasujemy zaraz po wczytaniu do pamięci.
+ * Pozostałości po przerwanym uruchomieniu (zabity proces w trakcie openssl)
+ * usuwa następny start. Telefon pokaże ostrzeżenie o niezaufanym
+ * certyfikacie — to oczekiwane.
+ */
+function temporaryCertificate(addresses: string[]): { key: Buffer; cert: Buffer } {
+  for (const leftover of readdirSync(tmpdir()).filter((name) => name.startsWith("umiem-trial-"))) {
+    rmSync(join(tmpdir(), leftover), { recursive: true, force: true });
+  }
+  const dir = mkdtempSync(join(tmpdir(), "umiem-trial-"));
+  const keyPath = join(dir, "key.pem");
+  const certPath = join(dir, "cert.pem");
+  const san = ["DNS:localhost", "IP:127.0.0.1", ...addresses.map((ip) => `IP:${ip}`)].join(",");
+  const args = [
+    "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", keyPath, "-out", certPath,
+    "-days", "2", "-subj", "/CN=umiem-dictation-trial", "-addext", `subjectAltName=${san}`,
+  ];
+  // `openssl` z PATH, a na Windows także z typowej instalacji Git for Windows
+  // (PowerShell często nie ma go w PATH); OPENSSL_BIN wskazuje inny plik.
+  const candidates = [
+    process.env.OPENSSL_BIN,
+    "openssl",
+    ...(process.platform === "win32"
+      ? [process.env.ProgramFiles, process.env["ProgramFiles(x86)"], process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, "Programs")]
+        .filter((base): base is string => !!base)
+        .flatMap((base) => [join(base, "Git", "mingw64", "bin", "openssl.exe"), join(base, "Git", "usr", "bin", "openssl.exe")])
+      : []),
+  ].filter((bin): bin is string => !!bin);
+  const ok = candidates.some((bin) => spawnSync(bin, args, { stdio: "ignore" }).status === 0);
+  try {
+    if (!ok) {
+      throw new Error(
+        "Nie udało się wygenerować certyfikatu: brak `openssl` albo wersja bez opcji -addext " +
+          "(potrzebny OpenSSL 1.1.1+, np. z Git for Windows). Ustaw OPENSSL_BIN na pełną ścieżkę do openssl.",
+      );
+    }
+    return { key: readFileSync(keyPath), cert: readFileSync(certPath) };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 function live(): void {
   const port = Number(process.argv.find((a) => a.startsWith("--port="))?.slice(7) ?? 5180);
-  const server = createServer(async (req, res) => {
-    if (req.method === "GET" && req.url === "/") {
-      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+  const lan = process.argv.includes("--lan");
+  const token = randomBytes(12).toString("base64url");
+  const tokenOk = (value: unknown): boolean => {
+    if (typeof value !== "string") return false;
+    const given = Buffer.from(value);
+    const expected = Buffer.from(token);
+    return given.length === expected.length && timingSafeEqual(given, expected);
+  };
+  // jedna analiza naraz — token w rękach innej osoby nie uruchomi lawiny płatnych wywołań STT
+  let analyzing = false;
+  // Limit na odbiór całego żądania (domyślnie w Node 300 s): klient, który wyśle
+  // tylko część nagrania, nie zablokuje na długo jedynego slotu analizy.
+  const requestTimeout = 120_000;
+  const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    // adres bazowy służy wyłącznie do parsowania ścieżki i zapytania żądania
+    const url = new URL(req.url ?? "/", "https://trial.local");
+    if (req.method === "GET" && url.pathname === "/") {
+      if (!tokenOk(url.searchParams.get("t"))) {
+        res.writeHead(403, { "content-type": "text/plain; charset=utf-8" }).end("Brak dostępu — otwórz adres z konsoli (z tokenem).");
+        return;
+      }
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
       res.end(livePage());
       return;
     }
-    if (req.method === "POST" && req.url === "/analyze") {
-      const chunks: Buffer[] = [];
-      let size = 0;
-      for await (const chunk of req) {
-        size += (chunk as Buffer).length;
-        if (size > MAX_LIVE_BYTES) {
-          res.writeHead(413).end();
-          return;
-        }
-        chunks.push(chunk as Buffer);
+    if (req.method === "POST" && url.pathname === "/analyze") {
+      if (!tokenOk(req.headers["x-trial-token"])) {
+        res.writeHead(403).end();
+        return;
       }
-      let wav: Uint8Array | null = new Uint8Array(Buffer.concat(chunks));
-      chunks.length = 0;
-      const caseId = String(req.headers["x-case-id"] ?? "");
-      const c = CASES.find((x) => x.id === caseId);
-      const seconds = wavSeconds(wav);
-      const results = (await runEngines(wav)).map((r) => score(r, c));
-      wav = null; // bajty nagrania nie żyją dłużej niż żądanie
-      // konsola: wyłącznie metadane — bez transkrypcji i bez bajtów
-      console.log(
-        // tylko znany identyfikator przypadku — nagłówek żądania nie trafia do logu
-        `[live] ${c?.id ?? "swobodna"} ${seconds.toFixed(1)} s | ` +
-          results.map((r) => `${r.engine.split(" ")[0]}:${r.status}${r.keyTotal ? ` ${r.keyHits}/${r.keyTotal}` : ""}${r.truncated ? "!" : ""} ${r.ms}ms`).join(" | "),
-      );
-      res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ results }));
+      if (analyzing) {
+        res.writeHead(429, { "content-type": "application/json" }).end(JSON.stringify({ results: [] }));
+        return;
+      }
+      analyzing = true;
+      try {
+        await analyze(req, res);
+      } finally {
+        analyzing = false;
+      }
       return;
     }
     res.writeHead(404).end();
-  });
-  server.listen(port, "127.0.0.1", () => {
-    console.log(`Spike live: http://127.0.0.1:${port}  (Ctrl+C kończy; nic nie jest zapisywane)`);
+  };
+  const analyze = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of req) {
+      size += (chunk as Buffer).length;
+      if (size > MAX_LIVE_BYTES) {
+        res.writeHead(413).end();
+        return;
+      }
+      chunks.push(chunk as Buffer);
+    }
+    let wav: Uint8Array | null = new Uint8Array(Buffer.concat(chunks));
+    chunks.length = 0;
+    const caseId = String(req.headers["x-case-id"] ?? "");
+    const c = CASES.find((x) => x.id === caseId);
+    const seconds = trialWavSeconds(wav);
+    // tylko format strony próby i limit czasu jak na stronie (pół sekundy zapasu na
+    // dekodowanie nagrania zatrzymanego przy 60 s) — przed płatnymi wywołaniami STT
+    if (seconds === null || seconds <= 0 || seconds > MAX_LIVE_SECONDS + 0.5) {
+      wav = null;
+      res.writeHead(413, { "content-type": "application/json" }).end(JSON.stringify({ results: [] }));
+      return;
+    }
+    const results = (await runEngines(wav)).map((r) => score(r, c));
+    wav = null; // bajty nagrania nie żyją dłużej niż żądanie
+    // konsola: wyłącznie metadane — bez transkrypcji i bez bajtów
+    console.log(
+      // tylko znany identyfikator przypadku — nagłówek żądania nie trafia do logu
+      `[live] ${c?.id ?? "swobodna"} ${seconds.toFixed(1)} s | ` +
+        results.map((r) => `${r.engine.replace(/^OR /, "").split(" ")[0]}:${r.status}${r.keyTotal ? ` ${r.keyHits}/${r.keyTotal}` : ""}${r.truncated ? "!" : ""} ${r.ms}ms`).join(" | "),
+    );
+    res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+    res.end(JSON.stringify({ results }));
+  };
+  const serve = (req: IncomingMessage, res: ServerResponse) => {
+    handler(req, res).catch(() => {
+      if (!res.headersSent) res.writeHead(500);
+      res.end();
+    });
+  };
+
+  if (!lan) {
+    createServer({ requestTimeout }, serve).listen(port, "127.0.0.1", () => {
+      console.log(`Próba dyktowania: http://127.0.0.1:${port}/?t=${token}`);
+      console.log("Ctrl+C kończy; nic nie jest zapisywane. Na telefonie: dodaj --lan.");
+    });
+    return;
+  }
+  const addresses = lanAddresses();
+  const certificate = temporaryCertificate(addresses);
+  const server = createHttpsServer({ key: certificate.key, cert: certificate.cert, requestTimeout }, serve);
+  server.listen(port, "0.0.0.0", () => {
+    console.log("Próba dyktowania na telefonie — otwórz w przeglądarce telefonu (ta sama sieć Wi-Fi):");
+    for (const ip of addresses) console.log(`  https://${ip}:${port}/?t=${token}${addressLabel(ip)}`);
+    console.log("Telefon ostrzeże o niezaufanym certyfikacie (tymczasowy, tylko na tę próbę) — wybierz „Pokaż szczegóły” → „Odwiedź stronę”.");
+    console.log("Ctrl+C kończy; certyfikat i nagrania żyją tylko w pamięci procesu.");
   });
 }
 
@@ -556,6 +781,6 @@ const mode = process.argv[2];
 if (mode === "synth") await synth();
 else if (mode === "live") live();
 else {
-  console.error("Użycie: evaluate-dictation-stt.mts synth [--voices=pl-PL-ZofiaNeural,...] | live [--port=5180]");
+  console.error("Użycie: evaluate-dictation-stt.mts synth [--voices=pl-PL-ZofiaNeural,...] [--engines=openrouter] | live [--lan] [--port=5180] [--engines=openrouter]");
   process.exit(1);
 }

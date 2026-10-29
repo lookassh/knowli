@@ -2,6 +2,7 @@ import { and, asc, eq, gte, inArray, isNull, lt, lte, or } from "drizzle-orm";
 import { ParentWorkCardDtoSchema, ParentWorkCardQuerySchema, SessionActivityReviewRecordSchema, taskActiveMs, type ParentSessionActivityDto, type ParentWorkCardDto } from "@learning/contracts";
 import type { Services } from "../../config";
 import { localDateAt, validRewardTimezone } from "../../domain/reward-activity";
+import { assignmentText } from "../../domain/lessons/evaluate";
 import { AppError } from "../../errors";
 import { attempts, assessments, childProfiles, deckVersions, familySettings, learningSessions, sessionTasks } from "../../db/schema";
 import { activityDetailsAvailable, resolveInterruptedSessionActivity, SESSION_ACTIVITY_REVIEW_DEADLINE_MS, type StoredReport } from "../learning";
@@ -159,14 +160,27 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
         const selectionAnswer = selectionTexts && selectionTexts.length > 0 && selectionTexts.every((text): text is string => text !== null)
           ? selectionTexts.join(", ").trim().slice(0, 160) || null
           : null;
+        const assignmentKey = task.answerKey as { itemIds?: unknown; targetIds?: unknown } | null;
+        const assignmentAnswer = attempt.modality === "assignment" && Array.isArray(rawAnswer?.assignments) && itemValues
+          ? assignmentText(
+            rawAnswer.assignments.filter((entry): entry is { itemId: string; targetId: string } =>
+              typeof entry === "object" && entry !== null && typeof (entry as { itemId?: unknown }).itemId === "string" && typeof (entry as { targetId?: unknown }).targetId === "string"),
+            Object.fromEntries(Object.entries(itemValues).filter((entry): entry is [string, string] => typeof entry[1] === "string")),
+            {
+              grouped: task.exerciseType === "lesson_group",
+              ...(Array.isArray(assignmentKey?.targetIds) ? { targetOrder: assignmentKey.targetIds.filter((id): id is string => typeof id === "string") } : {}),
+              ...(Array.isArray(assignmentKey?.itemIds) ? { itemOrder: assignmentKey.itemIds.filter((id): id is string => typeof id === "string") } : {}),
+            },
+          ).trim().slice(0, 160) || null
+          : null;
         const feedbackKind = typeof attempt.feedback?.kind === "string" ? attempt.feedback.kind : null;
         const assessment = attempt.modality === "skip" || attempt.modality === "dont_remember" ? "none"
             : assessmentByAttempt.get(attempt.id)?.has("unassessed") && [...assessmentByAttempt.get(attempt.id)!].some(outcome => outcome !== "unassessed") ? "mixed"
               : assessmentByAttempt.get(attempt.id)?.has("unassessed") ? "unassessed"
                 : assessmentByAttempt.has(attempt.id) ? "assessed" : "none";
         return {
-          modality: attempt.modality as "choice" | "text" | "audio" | "dont_remember" | "skip" | "sequence" | "selection",
-          answerExample: attempt.modality === "dont_remember" ? "Nie pamiętam" : textAnswer ?? optionAnswer ?? sequenceAnswer ?? selectionAnswer,
+          modality: attempt.modality as "choice" | "text" | "audio" | "dont_remember" | "skip" | "sequence" | "selection" | "assignment",
+          answerExample: attempt.modality === "dont_remember" ? "Nie pamiętam" : textAnswer ?? optionAnswer ?? sequenceAnswer ?? selectionAnswer ?? assignmentAnswer,
           feedbackKind, assessment,
           responseSeconds: Math.max(0, Math.ceil((attempt.receivedAt.getTime() - task.issuedAt.getTime()) / 1000)),
         };

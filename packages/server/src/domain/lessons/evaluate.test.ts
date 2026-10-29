@@ -5,6 +5,8 @@ import {
   TYPO_TOLERANCE,
   buildAnswerSegments,
   closestApprovedVariant,
+  assignmentText,
+  evaluateAssignment,
   evaluateChoice,
   evaluateSequence,
   evaluateKeywordSelection,
@@ -422,5 +424,148 @@ describe("werdykt szkolny dwuwymiarowy (Etap 2)", () => {
     expect(countSentences("Szczyt ma 2499 m n.p.m. i jest najwyższy w Polsce.")).toBe(1);
     expect(countSentences("Woda wrze w 99.5 stopnia na tej wysokości.")).toBe(1);
     expect(countSentences("Rośliny rosną (szybko.) Potem kwitną.")).toBe(2);
+  });
+});
+describe("werdykt szkolny v3: kategorie fragmentów i pomylone pojęcia (Etap 6)", () => {
+  const CTX = {
+    requiredElementIds: ["e1"],
+    childAnswer: "Równoleżnik łączy bieguny. To ważna linia na mapie. Wczoraj grałem w piłkę.",
+  };
+  const base = {
+    precision: "unfocused", matchedElementIds: [], missingElementIds: ["e1"],
+    incorrectStatements: [], redundantFragments: [], note: "",
+  };
+
+  it("werdykt v2 bez nowych pól ma puste listy v3", () => {
+    const v = validateSchoolVerdict({ ...base, knowledge: "incorrect", incorrectStatements: ["Równoleżnik łączy bieguny."] }, CTX);
+    expect(v?.offTopicFragments).toEqual([]);
+    expect(v?.confusedConcepts).toEqual([]);
+  });
+
+  it("przyjmuje fragment nie na temat i parę pomylonych pojęć z odpowiedzi", () => {
+    const v = validateSchoolVerdict({
+      ...base, knowledge: "incorrect",
+      incorrectStatements: ["Równoleżnik łączy bieguny."],
+      redundantFragments: ["To ważna linia na mapie."],
+      offTopicFragments: ["Wczoraj grałem w piłkę."],
+      confusedConcepts: [{ said: "równoleżnik", meant: "południk" }],
+    }, CTX);
+    expect(v?.offTopicFragments).toEqual(["Wczoraj grałem w piłkę."]);
+    expect(v?.confusedConcepts).toEqual([{ said: "równoleżnik", meant: "południk" }]);
+    expect(gradeFromSchoolVerdict(v)).toMatchObject({ outcome: "incorrect", errorCategory: "confused_concept" });
+  });
+
+  it("pomylenie pojęć przy częściowej wiedzy też ma kategorię confused_concept", () => {
+    const v = validateSchoolVerdict({
+      knowledge: "partial", precision: "concise", matchedElementIds: ["e1"], missingElementIds: [],
+      incorrectStatements: ["Równoleżnik łączy bieguny."], redundantFragments: [], note: "",
+      confusedConcepts: [{ said: "Równoleżnik", meant: "południk" }],
+    }, CTX);
+    expect(gradeFromSchoolVerdict(v)).toMatchObject({ verdict: "model_almost", errorCategory: "confused_concept" });
+  });
+
+  it("odrzuca pomylenie przy wiedzy poprawnej, `said` spoza odpowiedzi i parę identycznych pojęć", () => {
+    const correct = { knowledge: "correct", precision: "concise", matchedElementIds: ["e1"], missingElementIds: [], incorrectStatements: [], redundantFragments: [], note: "" };
+    expect(validateSchoolVerdict({ ...correct, confusedConcepts: [{ said: "równoleżnik", meant: "południk" }] }, CTX)).toBeNull();
+    const wrong = { ...base, knowledge: "incorrect", incorrectStatements: ["Równoleżnik łączy bieguny."] };
+    expect(validateSchoolVerdict({ ...wrong, confusedConcepts: [{ said: "zwrotnik", meant: "południk" }] }, CTX)).toBeNull();
+    expect(validateSchoolVerdict({ ...wrong, confusedConcepts: [{ said: "Równoleżnik", meant: "równoleżnik" }] }, CTX)).toBeNull();
+  });
+
+  it("odrzuca ten sam fragment w dwóch kategoriach i fragment nie na temat spoza odpowiedzi", () => {
+    const wrong = { ...base, knowledge: "incorrect", incorrectStatements: ["Równoleżnik łączy bieguny."] };
+    expect(validateSchoolVerdict({ ...wrong, redundantFragments: ["Wczoraj grałem w piłkę."], offTopicFragments: ["Wczoraj grałem w piłkę."] }, CTX)).toBeNull();
+    expect(validateSchoolVerdict({ ...wrong, offTopicFragments: ["Równoleżnik łączy bieguny."] }, CTX)).toBeNull();
+    expect(validateSchoolVerdict({ ...wrong, offTopicFragments: ["Grałem w szachy."] }, CTX)).toBeNull();
+  });
+
+  it("wiedza częściowa z samym pomyleniem pojęć (komplet elementów) jest przyjmowana", () => {
+    const v = validateSchoolVerdict({
+      knowledge: "partial", precision: "concise", matchedElementIds: ["e1"], missingElementIds: [],
+      incorrectStatements: [], redundantFragments: [], note: "",
+      confusedConcepts: [{ said: "Równoleżnik", meant: "południk" }],
+    }, CTX);
+    expect(v?.knowledge).toBe("partial");
+    expect(gradeFromSchoolVerdict(v)).toMatchObject({ errorCategory: "confused_concept" });
+  });
+
+  it("pary pomylonych pojęć są przycinane i liczone raz", () => {
+    const v = validateSchoolVerdict({
+      ...base, knowledge: "incorrect", incorrectStatements: ["Równoleżnik łączy bieguny."],
+      confusedConcepts: [{ said: " Równoleżnik ", meant: "południk" }, { said: "równoleżnik", meant: "Południk" }],
+    }, CTX);
+    expect(v?.confusedConcepts).toEqual([{ said: "Równoleżnik", meant: "południk" }]);
+    expect(validateSchoolVerdict({
+      ...base, knowledge: "incorrect", incorrectStatements: ["Równoleżnik łączy bieguny."],
+      confusedConcepts: [{ said: "południk", meant: "południk " }],
+    }, { ...CTX, childAnswer: `${CTX.childAnswer} południk` })).toBeNull();
+  });
+
+  it("odrzuca fragment jednej kategorii zawarty w fragmencie innej (zakresy nachodzą)", () => {
+    const wrong = { ...base, knowledge: "incorrect", incorrectStatements: ["Równoleżnik łączy bieguny."] };
+    expect(validateSchoolVerdict({ ...wrong, offTopicFragments: ["łączy bieguny"] }, CTX)).toBeNull();
+    expect(validateSchoolVerdict({ ...wrong, redundantFragments: ["bieguny. To ważna"] }, CTX)).toBeNull();
+    // zakresy jak w segmentatorze: bez wielkości liter („Kot” i „kot” to to samo pierwsze słowo)
+    const cat = { requiredElementIds: ["e1"], childAnswer: "Kot kot" };
+    expect(validateSchoolVerdict({ ...base, knowledge: "incorrect", incorrectStatements: ["Kot"], offTopicFragments: ["kot"] }, cat)).toBeNull();
+    // w obrębie jednej kategorii nachodzenie jest dozwolone (segmenty się scalają)
+    expect(validateSchoolVerdict({ ...wrong, offTopicFragments: ["Wczoraj grałem", "grałem w piłkę."] }, CTX)).not.toBeNull();
+  });
+
+  it("segmenty rozróżniają zbędne (pill) i nie na temat (offtopic)", () => {
+    expect(buildAnswerSegments("Linia na mapie. Grałem w piłkę.", ["Linia na mapie."], ["Grałem w piłkę."])).toEqual([
+      { text: "Linia na mapie.", state: "pill" },
+      { text: " ", state: "plain" },
+      { text: "Grałem w piłkę.", state: "offtopic" },
+    ]);
+  });
+});
+
+describe("evaluateAssignment (design szkoły §10.3)", () => {
+  const base = { exerciseType: "lesson_match" as const, objectiveId: "o", answer: "a", acceptedAnswers: [], focus: [] };
+  const matchKey = {
+    ...base,
+    assignments: [{ itemId: "l1", targetId: "r1" }, { itemId: "l2", targetId: "r2" }, { itemId: "l3", targetId: "r3" }],
+    targetIds: ["r1", "r2", "r3", "rx"],
+    targetOnce: true,
+  };
+
+  it("komplet zgodnych przypisań jest poprawny, a jedna zamiana — błędna", () => {
+    expect(evaluateAssignment([{ itemId: "l2", targetId: "r2" }, { itemId: "l1", targetId: "r1" }, { itemId: "l3", targetId: "r3" }], matchKey)).toBe(true);
+    expect(evaluateAssignment([{ itemId: "l1", targetId: "r2" }, { itemId: "l2", targetId: "r1" }, { itemId: "l3", targetId: "r3" }], matchKey)).toBe(false);
+    expect(evaluateAssignment([{ itemId: "l1", targetId: "rx" }, { itemId: "l2", targetId: "r2" }, { itemId: "l3", targetId: "r3" }], matchKey)).toBe(false);
+  });
+
+  it("kształt niezgodny z zadaniem daje null (błąd klienta, nie wiedzy)", () => {
+    expect(evaluateAssignment([{ itemId: "l1", targetId: "r1" }, { itemId: "l2", targetId: "r2" }], matchKey)).toBeNull();
+    expect(evaluateAssignment([{ itemId: "l1", targetId: "r1" }, { itemId: "l2", targetId: "r2" }, { itemId: "l9", targetId: "r3" }], matchKey)).toBeNull();
+    expect(evaluateAssignment([{ itemId: "l1", targetId: "r1" }, { itemId: "l2", targetId: "r2" }, { itemId: "l3", targetId: "r9" }], matchKey)).toBeNull();
+    expect(evaluateAssignment([{ itemId: "l1", targetId: "r1" }, { itemId: "l2", targetId: "r1" }, { itemId: "l3", targetId: "r3" }], matchKey)).toBeNull();
+    expect(evaluateAssignment([{ itemId: "l1", targetId: "r1" }], { ...base })).toBeNull();
+  });
+
+  it("w grupach cel można użyć wielokrotnie", () => {
+    const groupKey = {
+      ...base, exerciseType: "lesson_group" as const,
+      assignments: [{ itemId: "i1", targetId: "g1" }, { itemId: "i2", targetId: "g1" }, { itemId: "i3", targetId: "g2" }, { itemId: "i4", targetId: "g2" }],
+      targetIds: ["g1", "g2"],
+    };
+    expect(evaluateAssignment([{ itemId: "i1", targetId: "g1" }, { itemId: "i2", targetId: "g1" }, { itemId: "i3", targetId: "g2" }, { itemId: "i4", targetId: "g2" }], groupKey)).toBe(true);
+    expect(evaluateAssignment([{ itemId: "i1", targetId: "g1" }, { itemId: "i2", targetId: "g2" }, { itemId: "i3", targetId: "g2" }, { itemId: "i4", targetId: "g2" }], groupKey)).toBe(false);
+  });
+});
+
+describe("assignmentText", () => {
+  const values = { l1: "woda", l2: "światło", r1: "korzenie", r2: "energia", g1: "substraty", g2: "produkty" };
+  it("pary w kolejności lewej kolumny", () => {
+    expect(assignmentText([{ itemId: "l2", targetId: "r2" }, { itemId: "l1", targetId: "r1" }], values, { itemOrder: ["l1", "l2"] }))
+      .toBe("woda → korzenie; światło → energia");
+  });
+  it("grupy w kolejności grup, z pominięciem pustych", () => {
+    expect(assignmentText([{ itemId: "l1", targetId: "g2" }, { itemId: "l2", targetId: "g2" }], values, { grouped: true, targetOrder: ["g1", "g2"], itemOrder: ["l2", "l1"] }))
+      .toBe("produkty: światło, woda");
+  });
+  it("pomija przypisania z nieznanym tekstem", () => {
+    expect(assignmentText([{ itemId: "x", targetId: "r1" }], values)).toBe("");
   });
 });
