@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { MockTestSummaryDto } from "@learning/contracts";
-import { computeMockTestScore, mockTestScoreTone, mockTestSolutionDetail, mockTestWordStatus } from "./mock-test-score";
+import { computeMockTestScore, MOCK_TEST_SOLUTION_ICONS, mockTestScoreTone, mockTestSolutionDetail, mockTestWordStatus } from "./mock-test-score";
 
 type Solution = MockTestSummaryDto["solutions"][number];
 type Results = Solution["results"];
@@ -107,5 +107,11 @@ describe("mockTestScoreTone", () => {
     expect(mockTestScoreTone({ percent: 50 })).toBe("mid");
     expect(mockTestScoreTone({ percent: 49 })).toBe("low");
     expect(mockTestScoreTone({ percent: 0 })).toBe("low");
+  });
+});
+
+describe("MOCK_TEST_SOLUTION_ICONS", () => {
+  test("statusy słów mapują się na nazwy ikon SVG, nie na znaki tekstowe", () => {
+    expect(MOCK_TEST_SOLUTION_ICONS).toEqual({ correct: "check", incorrect: "close", notAssessed: "question" });
   });
 });

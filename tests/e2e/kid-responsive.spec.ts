@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
+import { expectBandSpansRoot, measure, resizeAndSettle } from "./helpers/kid-layout";
 import { pictureChoiceLayoutFixture } from "./helpers/picture-fixtures";
 
 function recallLayoutFixture(): KidUiFixture {
@@ -374,5 +375,61 @@ test("Material window classes keep every picture choice reachable", async ({ pag
       const rect = clipped.getBoundingClientRect();
       return JSON.stringify({ inner: [window.innerWidth, window.innerHeight], content: [content.x, content.y, content.width, content.height], option: [rect.x, rect.y, rect.width, rect.height] });
     }), { message: `picture option clipped: ${viewport.name}` }).toBe("ok");
+  }
+});
+
+test("profile tiles fit portrait, landscape, tablet and desktop", async ({ page }, testInfo) => {
+  const fixture = recallLayoutFixture();
+  fixture.profiles = [
+    { childId: "10000000-0000-4000-8000-000000000201", displayName: "Ola", avatarKey: "cat", recordingMode: "hold", canRead: true, rewardPoints: 12 },
+    { childId: "10000000-0000-4000-8000-000000000202", displayName: "Maksymilian-Aleksander Bardzo-Długie-Imię", avatarKey: "owl", recordingMode: "hold", canRead: false, rewardPoints: 3 },
+    { childId: "10000000-0000-4000-8000-000000000203", displayName: "Jaś", avatarKey: "fox", recordingMode: "hold", canRead: true, rewardPoints: 0 },
+  ];
+  await installKidUiFixture(page, fixture);
+  await page.goto("/");
+  await expect(page.getByTestId("kid-profile")).toHaveCount(3);
+
+  const cases = [
+    { width: 360, height: 800, columns: 2 },
+    { width: 844, height: 390, columns: null },
+    { width: 820, height: 1180, columns: 3 },
+    { width: 1440, height: 900, columns: 3 },
+  ];
+  for (const viewport of cases) {
+    const name = `${viewport.width}x${viewport.height}`;
+    await resizeAndSettle(page, { width: viewport.width, height: viewport.height });
+    const frame = await measure(page, { root: "[data-kid-screen]", band: "[data-kid-header='band']" });
+    const tiles = await page.getByTestId("kid-profile").evaluateAll((elements) => elements.map((tile) => {
+      const { left, top, right, bottom, width, height } = tile.getBoundingClientRect();
+      return { left, top, right, bottom, width, height, overflowX: tile.scrollWidth > tile.clientWidth + 1 };
+    }));
+    const layout = { ...frame, tiles };
+    expect(layout.scrollWidth, `horizontal overflow: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
+    expectBandSpansRoot(layout, name);
+    // Wysokość nie jest ograniczona: niski viewport przewija listę, ale poziomo nic nie ucieka.
+    for (const [index, tile] of layout.tiles.entries()) {
+      expect(tile.height, `tile ${index} height: ${name}`).toBeGreaterThanOrEqual(48);
+      expect(tile.left, `tile ${index} left: ${name}`).toBeGreaterThanOrEqual(0);
+      expect(tile.right, `tile ${index} right: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
+      expect(tile.left, `tile ${index} inside root: ${name}`).toBeGreaterThanOrEqual(layout.root.left - 1);
+      expect(tile.right, `tile ${index} inside root: ${name}`).toBeLessThanOrEqual(layout.root.right + 1);
+      expect(tile.overflowX, `tile ${index} content overflow: ${name}`).toBe(false);
+      if (viewport.height >= 480) {
+        expect(tile.top, `tile ${index} top: ${name}`).toBeGreaterThanOrEqual(0);
+        expect(tile.bottom, `tile ${index} bottom: ${name}`).toBeLessThanOrEqual(viewport.height);
+      }
+    }
+    if (viewport.columns) {
+      const firstRow = layout.tiles.filter((tile) => Math.abs(tile.top - layout.tiles[0]!.top) <= 1).length;
+      expect(firstRow, `tiles in the first row: ${name}`).toBe(Math.min(viewport.columns, layout.tiles.length));
+    }
+    for (const tile of await page.getByTestId("kid-profile").all()) {
+      await tile.scrollIntoViewIfNeeded();
+      await expect(tile, `tile reachable: ${name}`).toBeInViewport({ ratio: 0.98 });
+    }
+    await page.evaluate(() => window.scrollTo(0, 0));
+    if (viewport.width === 360) {
+      await page.screenshot({ path: testInfo.outputPath("profile-360x800.png") });
+    }
   }
 });

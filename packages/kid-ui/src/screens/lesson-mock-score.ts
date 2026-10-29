@@ -9,8 +9,6 @@ type LessonOutcome = LessonSolution["outcome"];
  * a pominięte i nieocenione nie są błędem wiedzy (jak w słówkach). */
 export type LessonMockStatus = "correct" | "incorrect" | "notAssessed";
 
-export const LESSON_MOCK_STATUS_ICONS: Record<LessonMockStatus, string> = { correct: "✓", incorrect: "✗", notAssessed: "–" };
-
 export function lessonMockOutcomeStatus(outcome: LessonOutcome): LessonMockStatus {
   if (outcome === "correct") return "correct";
   if (outcome === "incorrect") return "incorrect";

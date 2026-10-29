@@ -28,11 +28,23 @@ describe("mock test screens", () => {
     const props: ComponentProps<typeof MockTestReadyScreen> = { session, onStart: vi.fn(async () => {}), onCancel: vi.fn(async () => {}) };
     renderKid(<MockTestReadyScreen {...props} />);
     expect(screen.getByTestId("kid-mock-budget").textContent).toContain("3");
+    expect(screen.getByTestId("kid-mock-budget").querySelector(".kid-stat__value")?.textContent).toBe("3");
+    expect(screen.getByTestId("kid-mock-budget").textContent).toBe("W tej kartkówce 3 zadania");
+    expect(document.querySelector('[data-kid-header="band"]')?.textContent).toContain("Próbna kartkówka");
     expect(screen.getByTestId("kid-mock-confirm").tagName).toBe("BUTTON");
     fireEvent.click(screen.getByTestId("kid-mock-confirm"));
     fireEvent.click(screen.getByText(/Koniec/));
     expect(props.onStart).toHaveBeenCalledOnce();
     expect(props.onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("declines the task unit with Polish plural rules for the budget", () => {
+    const expected: Array<[number, string]> = [[1, "zadanie"], [2, "zadania"], [5, "zadań"], [12, "zadań"], [22, "zadania"]];
+    for (const [taskBudget, unit] of expected) {
+      const view = renderKid(<MockTestReadyScreen session={{ ...session, taskBudget }} onStart={vi.fn(async () => {})} onCancel={vi.fn(async () => {})} />);
+      expect(screen.getByTestId("kid-mock-budget").textContent, String(taskBudget)).toBe(`W tej kartkówce ${taskBudget} ${unit}`);
+      view.unmount();
+    }
   });
 
   it("keeps verdicts in the summary and wires details, audio, practice and profile callbacks", () => {
@@ -55,6 +67,59 @@ describe("mock test screens", () => {
     expect(onPractice).toHaveBeenCalledOnce();
     expect(onSwitchProfile).toHaveBeenCalledOnce();
     expect(screen.getByTestId("kid-mock-practice").tagName).toBe("BUTTON");
+  });
+
+  it("marks every word status with an icon and badge text, not just colour", () => {
+    renderKid(<MockTestSummaryScreen summary={summary} activity={null} detailsLoading={false} detailsError={false} onRetryDetails={vi.fn(async () => {})} onPlay={vi.fn(async () => {})} onPractice={vi.fn(async () => {})} onSwitchProfile={vi.fn(async () => {})} />);
+    const rows = screen.getAllByTestId("kid-mock-solution");
+    expect(document.querySelector('[data-kid-header="band"]')?.textContent).toContain("Kartkówka zakończona");
+    expect(rows.map((row) => row.getAttribute("data-status"))).toEqual(["correct", "incorrect", "notAssessed"]);
+    expect(rows.map((row) => row.querySelector('[data-testid="kid-mock-status"]')?.textContent)).toEqual(["Poprawnie", "Do poprawy", "Pominięte"]);
+    for (const row of rows) {
+      expect(row.querySelector(".kid-mock-row__icon svg")).toBeTruthy();
+      expect(row.querySelector('[data-testid="kid-mock-status"] svg')).toBeTruthy();
+    }
+    expect(rows[0]!.textContent).toContain("kot");
+    expect(rows[0]!.textContent).toContain("cat");
+  });
+
+  it("renders the listen action as a 48px icon button", () => {
+    renderKid(<MockTestSummaryScreen summary={summary} activity={null} detailsLoading={false} detailsError={false} onRetryDetails={vi.fn(async () => {})} onPlay={vi.fn(async () => {})} onPractice={vi.fn(async () => {})} onSwitchProfile={vi.fn(async () => {})} />);
+    const audio = screen.getByRole("button", { name: "Posłuchaj" });
+    expect(audio.style.width).toBe("48px");
+    expect(audio.style.height).toBe("48px");
+    expect(audio.classList.contains("kid-mock-row__audio")).toBe(true);
+  });
+
+  it("shows per-skill badges next to the word status for mixed results", () => {
+    const mixed: ComponentProps<typeof MockTestSummaryScreen>["summary"] = {
+      ...summary,
+      solutions: [{ taskId: id(5), source: "kot", target: "cat", audioAssetId: null, results: [{ skill: "recall", outcome: "correct" }, { skill: "spelling", outcome: "incorrect" }] }],
+    };
+    renderKid(<MockTestSummaryScreen summary={mixed} activity={null} detailsLoading={false} detailsError={false} onRetryDetails={vi.fn(async () => {})} onPlay={vi.fn(async () => {})} onPractice={vi.fn(async () => {})} onSwitchProfile={vi.fn(async () => {})} />);
+    const row = screen.getByTestId("kid-mock-solution");
+    expect(row.getAttribute("data-status")).toBe("incorrect");
+    expect(row.querySelector('[data-testid="kid-mock-status"]')?.textContent).toBe("Do poprawy");
+    expect(row.textContent).toContain("Tłumaczenie ✓");
+    expect(row.textContent).toContain("Pisownia ✗");
+  });
+
+  it("uses the shared alert class instead of inline colour", async () => {
+    renderKid(<MockTestSummaryScreen summary={summary} activity={null} detailsLoading={false} detailsError={false} onRetryDetails={vi.fn(async () => {})} onPlay={vi.fn(async () => { throw new Error("offline"); })} onPractice={vi.fn(async () => {})} onSwitchProfile={vi.fn(async () => {})} />);
+    fireEvent.click(screen.getByRole("button", { name: "Posłuchaj" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.className).toContain("kid-alert");
+    expect(alert.getAttribute("style")).toBeNull();
+  });
+
+  it("renders the conflict illustration above the message with both actions", () => {
+    renderKid(<SessionConflictScreen onResume={vi.fn(async () => {})} onClose={vi.fn(async () => {})} />);
+    const info = screen.getByTestId("kid-conflict-info");
+    const scene = document.querySelector("svg.kid-conflict-scene");
+    expect(scene).toBeTruthy();
+    expect(scene!.compareDocumentPosition(info) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Wróć do sesji" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Zakończ rozpoczętą sesję" })).toBeTruthy();
   });
 
   it("wires conflict resume and close", () => {
@@ -81,6 +146,12 @@ describe("mock test screens", () => {
     expect(screen.getByTestId("kid-lesson-mock-solution").textContent).toContain("play");
     expect(screen.getByTestId("kid-lesson-mock-solution").querySelector(".kid-mock-row__detail--answers")).toBeTruthy();
     expect(screen.getByTestId("kid-lesson-mock-solution").textContent).toContain("plays");
+    const lessonRow = screen.getByTestId("kid-lesson-mock-solution");
+    expect(lessonRow.getAttribute("data-status")).toBe("incorrect");
+    expect(lessonRow.querySelector(".kid-mock-row__icon svg")).toBeTruthy();
+    expect(lessonRow.querySelector('[data-testid="kid-lesson-mock-status"]')?.textContent).toBe("Do poprawy");
+    expect(lessonRow.querySelector('[data-testid="kid-lesson-mock-status"] svg')).toBeTruthy();
+    expect(document.querySelector('[data-kid-header="band"]')).toBeTruthy();
     expect(screen.getByTestId("kid-lesson-mock-practice").tagName).toBe("BUTTON");
     fireEvent.click(screen.getByTestId("kid-lesson-mock-practice"));
     expect(props.onPractice).toHaveBeenCalledOnce();

@@ -23,7 +23,7 @@ export function ActionButton({
   priority,
   type = "button",
   size = "lg",
-  radius = "var(--kid-shape-xl)",
+  radius = "var(--kid-shape-l)",
   fullWidth = true,
   idleNudge = false,
   ref,

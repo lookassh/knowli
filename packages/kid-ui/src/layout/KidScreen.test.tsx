@@ -65,4 +65,31 @@ describe("KidScreen", () => {
     expect(screen.getByTestId("kid-primary-slot")).toBeTruthy();
     expect(screen.getByTestId("kid-secondary-slot")).toBeTruthy();
   });
+
+  it("renders the band header with a decorative wave", () => {
+    renderKid(
+      <KidScreen>
+        <KidScreen.Header variant="band" data-testid="hdr">
+          <h1>Tytuł</h1>
+        </KidScreen.Header>
+      </KidScreen>,
+    );
+
+    const header = screen.getByTestId("hdr");
+    expect(header.getAttribute("data-kid-header")).toBe("band");
+    expect(header.querySelector("svg[aria-hidden='true']")).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Tytuł" })).toBeTruthy();
+  });
+
+  it("keeps the plain header unchanged by default", () => {
+    renderKid(
+      <KidScreen>
+        <KidScreen.Header data-testid="hdr">x</KidScreen.Header>
+      </KidScreen>,
+    );
+
+    const header = screen.getByTestId("hdr");
+    expect(header.hasAttribute("data-kid-header")).toBe(false);
+    expect(header.querySelector("svg")).toBeNull();
+  });
 });

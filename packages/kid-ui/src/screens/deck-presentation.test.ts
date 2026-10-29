@@ -29,6 +29,19 @@ describe("groupDecks", () => {
     expect(groupDecks([])).toEqual({ recommended: [], other: [] });
   });
 
+  it("promotes a deck with an active session to the first card even when the server does not recommend it", () => {
+    const resume: KidDeckDto = { ...deck("05", false), resumeOnly: true, activeSession: { sessionId: "20000000-0000-4000-8000-000000000001", mode: "training" } };
+    const input = [deck("01", false), deck("02", true), resume];
+
+    expect(groupDecks(input)).toEqual({ recommended: [resume, input[1]], other: [input[0]] });
+    expect(groupDecks([resume, deck("03", false)]).recommended).toEqual([resume]);
+  });
+
+  it("does not promote a resumeOnly deck without an active session", () => {
+    const stale: KidDeckDto = { ...deck("06", false), resumeOnly: true };
+    expect(groupDecks([stale])).toEqual({ recommended: [], other: [stale] });
+  });
+
   it("keeps a pure split when every deck is recommended", () => {
     const input = [deck("01", true), deck("02", true)];
     expect(groupDecks(input)).toEqual({ recommended: input, other: [] });

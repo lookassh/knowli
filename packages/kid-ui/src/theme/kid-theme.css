@@ -3,10 +3,8 @@
 
 .kid-theme h1,
 .kid-theme h2,
-.kid-theme h3,
-.kid-theme h1,
-.kid-theme h2,
 .kid-theme h3 {
+  font-family: var(--kid-font-display);
   font-weight: 800;
 }
 
