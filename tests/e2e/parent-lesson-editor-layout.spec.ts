@@ -270,3 +270,19 @@ test("ćwiczenie z gotowym audio: odsłuch w menu ⋯, po zmianie zapowiedź now
   await expect(page.getByTestId("exercise-0")).toContainText(messages.decks.changedMediaAfterSave);
   await expect(page.getByTestId("exercise-audio-state-0")).toHaveCount(0);
 });
+
+test("opublikowana lekcja bez szkicu: stan audio i odsłuch w menu ⋯ karty", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const publishedOnly = {
+    ...lesson,
+    draft: null,
+    published: { ...lesson.published, assets: [{ itemRevisionId: uuid(51), role: "target_audio", state: "approved", assetId: uuid(90) }] },
+  };
+  await openLesson(page, { data: publishedOnly as unknown as typeof lesson });
+  await expect(page.getByTestId("exercise-audio-state-0")).toBeVisible();
+  await page.getByTestId("exercise-menu-0").click();
+  const played = page.waitForRequest((request) => new URL(request.url()).pathname === `/api/v1/media/${uuid(90)}`);
+  await page.getByTestId("exercise-play-0").click();
+  await played;
+  await expect(page.getByTestId("new-version")).toBeVisible();
+});

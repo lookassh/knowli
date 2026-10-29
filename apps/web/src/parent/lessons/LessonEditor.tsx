@@ -670,7 +670,8 @@ export default function LessonEditor({
     const index = indexByClientKey.get(ex.clientKey)!;
     const errors = exerciseErrors[index];
     const base = baseSnapshot.current?.form.exercises.find((b) => b.clientKey === ex.clientKey);
-    const unchanged = base !== undefined && !lessonExerciseChanged(ex, base);
+    // wersja tylko do odczytu (opublikowana, bez szkicu) nie ma bazy formularza — jej ćwiczenia są niezmienione
+    const unchanged = !editable || (base !== undefined && !lessonExerciseChanged(ex, base));
     const changed = editable && !unchanged;
     // audio zapisanej wersji ćwiczenia: odtwarzane tylko bez zmian, a po zmianie zapowiada nowe media po zapisie
     const baseRevisionId = active?.exercises.find((e) => e.id === ex.id)?.revisionId ?? "";
