@@ -28,6 +28,7 @@ describe("illustrations", () => {
   it("paints the wave with the current text color", () => {
     const { container } = renderKid(<HeaderWave />);
     expect(container.querySelector("path")?.getAttribute("fill")).toBe("currentColor");
+    expect(container.querySelector("path")?.getAttribute("d")?.startsWith("M0 0")).toBe(true);
     expect(container.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
   });
 

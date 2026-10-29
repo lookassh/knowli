@@ -41,8 +41,8 @@ const AVATARS: Record<AvatarKey | "fallback", ReactNode> = {
   ),
   dog: (
     <>
-      <ellipse cx="9" cy="23" rx="5.5" ry="11" fill="#8A5A32" transform="rotate(12 9 23)" />
-      <ellipse cx="39" cy="23" rx="5.5" ry="11" fill="#8A5A32" transform="rotate(-12 39 23)" />
+      <ellipse cx="9" cy="23" rx="5.5" ry="11" fill="#A06E3F" transform="rotate(12 9 23)" />
+      <ellipse cx="39" cy="23" rx="5.5" ry="11" fill="#A06E3F" transform="rotate(-12 39 23)" />
       <path d="M12 10 Q24 4 36 10 Q40 26 34 38 Q24 46 14 38 Q8 26 12 10 Z" fill="#D9A76A" />
       <ellipse cx="24" cy="32" rx="8.5" ry="6.5" fill="#F6E3C8" />
       <circle cx="18" cy="22" r="2.2" fill="#2B1B12" />
@@ -53,7 +53,7 @@ const AVATARS: Record<AvatarKey | "fallback", ReactNode> = {
   owl: (
     <>
       <path d="M8 6 L19 13 L29 13 L40 6 L42 28 Q24 50 6 28 Z" fill="#A27B5C" />
-      <ellipse cx="24" cy="36" rx="9" ry="7" fill="#D9BFA0" />
+      <ellipse cx="24" cy="32" rx="9" ry="5.5" fill="#D9BFA0" />
       <circle cx="16.5" cy="23" r="7" fill="#FFF3E6" />
       <circle cx="31.5" cy="23" r="7" fill="#FFF3E6" />
       <circle cx="17" cy="24" r="3.2" fill="#2B1B12" />
