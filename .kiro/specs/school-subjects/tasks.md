@@ -235,7 +235,7 @@ odrzuceń w pełnej sondzie.
 
 Zależy od etapów 1–2 (pula, edytor, silnik lekcji); niezależny od 3–6.
 
-- [ ] Kontrakt i decyzje (design §10, akceptacja właściciela); requirements:
+- [x] Kontrakt i decyzje (design §10, akceptacja właściciela 2026-10-29); requirements:
       zakres (bez wyłączenia „dopasowywania par”) i wym. 4.1 z nowymi typami.
 - [ ] Tasowanie bez rozwiązanego układu w `lesson_order` (design 10.4) —
       osobny mały commit z testem jednostkowym i regresją integracyjną.

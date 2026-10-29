@@ -1054,7 +1054,8 @@ nie ocenia cech dziecka — tylko treść odpowiedzi.
 
 ## 10. Ćwiczenia „Połącz w pary” i „Pogrupuj” (Etap 7) — kontrakt
 
-Status: **projekt do akceptacji właściciela** (decyzje 10.8). Zmienia zakres
+Status: **zaakceptowany przez właściciela 2026-10-29** (decyzje 10.8 bez
+zmian). Zmienia zakres
 z 2026-10-28: „dopasowywanie par” przestaje być wyłączeniem (requirements,
 „Zakres i świadome wyłączenia”). Moduły: typy i ocena w domenie
 (`domain/lessons/types.ts`, `pool-validation.ts`, `evaluate.ts`,
