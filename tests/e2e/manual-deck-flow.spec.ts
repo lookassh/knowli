@@ -361,7 +361,22 @@ test("creates and publishes a manually entered word without generating content",
   await expect(childRow).toHaveCount(1);
   await childRow.getByTestId("child-edit").click();
   await childRow.getByTestId("child-edit-can-read").check();
+  // trwający zapis profilu wstrzymuje przejście do innej sekcji (leave guard):
+  // PATCH czeka, próba zmiany zakładki nic nie robi, formularz zostaje
+  let releasePatch!: () => void;
+  const patchGate = new Promise<void>((resolve) => { releasePatch = resolve; });
+  await page.route("**/api/v1/parent/children/*", async (route) => {
+    if (route.request().method() === "PATCH") await patchGate;
+    await route.continue();
+  });
   await childRow.getByTestId("child-edit-save").click();
+  await expect(childRow.getByTestId("child-edit-save")).toBeDisabled();
+  await page.getByTestId("tab-decks").click();
+  await expect(page).toHaveURL(/\/parent\/children$/);
+  await expect(childRow.getByTestId("child-edit-name")).toBeVisible();
+  releasePatch();
+  await expect(childRow.getByTestId("child-edit-name")).toHaveCount(0);
+  await page.unroute("**/api/v1/parent/children/*");
   const childHref = await childRow.getByTestId("child-learn-link").getAttribute("href");
   const childId = childHref?.match(/\/kids\/([0-9a-f-]{36})\//)?.[1];
   expect(childId).toBeTruthy();

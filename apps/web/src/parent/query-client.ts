@@ -35,7 +35,10 @@ export function shouldRetryQuery(failureCount: number, error: unknown): boolean 
  * Klient zapytań panelu. Każdy 401 z zapytania lub mutacji woła
  * `onAuthExpired` (powrót do logowania) — jedno miejsce zamiast obsługi
  * per ekran. Mutacje nigdy nie są ponawiane automatycznie: ponowienie
- * polecenia z kluczem idempotencji jest świadomą akcją rodzica.
+ * polecenia z kluczem idempotencji jest świadomą akcją rodzica. Dlatego też
+ * `networkMode: "always"`: bez sieci polecenie od razu kończy się błędem,
+ * zamiast wstrzymania, które zostawiłoby ekran „zajęty” i wykonało polecenie
+ * samo po powrocie sieci.
  */
 export function createParentQueryClient(onAuthExpired: () => void): QueryClient {
   const handleError = (error: unknown) => {
@@ -46,7 +49,7 @@ export function createParentQueryClient(onAuthExpired: () => void): QueryClient 
     mutationCache: new MutationCache({ onError: handleError }),
     defaultOptions: {
       queries: { retry: shouldRetryQuery, refetchOnWindowFocus: false },
-      mutations: { retry: false },
+      mutations: { retry: false, networkMode: "always" },
     },
   });
 }
