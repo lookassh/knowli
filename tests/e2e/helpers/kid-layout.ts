@@ -3,11 +3,12 @@ import { expect, type Page } from "@playwright/test";
 export interface Rect { left: number; top: number; right: number; bottom: number; width: number; height: number }
 export interface Viewport { width: number; height: number }
 
-/** Resizes the page and waits two frames, so KidPage has re-measured the viewport. */
+/** Resizes the page and waits two frames (KidPage re-measures) and the web fonts, so geometry is not taken with fallback fonts under font-display: swap. */
 export async function resizeAndSettle(page: Page, viewport: Viewport): Promise<void> {
   await page.setViewportSize(viewport);
   await page.evaluate(async () => {
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    await document.fonts.ready;
   });
 }
 
