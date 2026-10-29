@@ -217,30 +217,48 @@ export default function DeckEditor({
     return () => onEditorStateChange({ dirty: false, busy: false });
   }, [onEditorStateChange, isDirty, busy, conflict]);
 
-  // Odczyt zestawu. Bez ponowień: błąd pokazujemy od razu, a trwające
-  // generowanie i tak odpyta serwer ponownie za sekundę.
-  // Odstęp liczony z lokalnej bazy formularza (jak dawny setInterval): przy
-  // niezapisanych zmianach baza jest zamrożona, więc odpytywanie trwa, dopóki
-  // pokazany stan ma oczekujące media — odpowiedzi nie zmieniają jednak bazy.
-  const deckQuery = useQuery({
-    ...orpc.decks.get.queryOptions({ input: { deckId } }),
-    retry: false,
-    refetchInterval: deckPollInterval(deck ?? undefined),
-  });
-
-  // nowe dane zasilają bazę formularza tylko bez niezapisanych zmian i konfliktu
-  useEffect(() => {
-    if (deckQuery.data && !dirty.current && !conflictActive.current) setDeck(deckQuery.data);
-  }, [deckQuery.data]);
-
-  // Błąd odczytu po poleceniu obsługuje samo polecenie (np. „zapisano, ale nie
-  // udało się odświeżyć”); efekt pokazuje tylko błędy pierwszego odczytu i odpytywania.
+  // Odczyt zestawu (TanStack Query). Odpowiedź trafia do lokalnej bazy
+  // formularza w chwili nadejścia — w funkcji zapytania, z warunkami dawnego
+  // `load()` sprawdzanymi wtedy, a nie w efekcie po renderze (efekt nie
+  // odpaliłby się przy danych identycznych z pamięcią podręczną i widziałby
+  // stan `dirty` z późniejszej chwili). Odpowiedź anulowanego odczytu
+  // (`refetch()` po poleceniu anuluje trwające odpytanie) nie trafia nigdzie,
+  // jak dawniej dzięki wersji żądania.
   const manualLoads = useRef(0);
-  const handledErrorAt = useRef(0);
-  useEffect(() => {
-    if (!deckQuery.error || manualLoads.current > 0 || deckQuery.errorUpdatedAt === handledErrorAt.current) return;
-    if (!dirty.current && !conflictActive.current) setError(errorMessage(deckQuery.error));
-  }, [deckQuery.error, deckQuery.errorUpdatedAt]);
+  const arrival = useRef({ data: (_: DeckDto) => {}, error: (_: unknown) => {} });
+  arrival.current = {
+    data: (result) => {
+      if (!dirty.current && !conflictActive.current) setDeck(result);
+    },
+    // błąd odczytu po poleceniu obsługuje samo polecenie (np. „zapisano, ale
+    // nie udało się odświeżyć”); tu tylko pierwszy odczyt i odpytywanie
+    error: (cause) => {
+      if (manualLoads.current === 0 && !dirty.current && !conflictActive.current) setError(errorMessage(cause));
+    },
+  };
+  const deckOptions = orpc.decks.get.queryOptions({ input: { deckId } });
+  const baseQueryFn = deckOptions.queryFn!;
+  const deckQuery = useQuery({
+    ...deckOptions,
+    queryFn: async (context) => {
+      try {
+        const result = await baseQueryFn(context);
+        if (!context.signal.aborted) arrival.current.data(result);
+        return result;
+      } catch (cause) {
+        if (!context.signal.aborted) arrival.current.error(cause);
+        throw cause;
+      }
+    },
+    retry: false,
+    // ponowne otwarcie zestawu zaczyna od świeżego odczytu, nie od pamięci podręcznej
+    gcTime: 0,
+    // Odstęp liczony z lokalnej bazy formularza (jak dawny setInterval): przy
+    // niezapisanych zmianach baza jest zamrożona, więc odpytywanie trwa, dopóki
+    // pokazany stan ma oczekujące media — odpowiedzi nie zmieniają jednak bazy.
+    refetchInterval: deckPollInterval(deck ?? undefined),
+    refetchIntervalInBackground: true,
+  });
 
   /** Ponowny odczyt po poleceniu; `false` = odczyt się nie udał (dane mogły się zmienić). */
   const { refetch } = deckQuery;
@@ -249,7 +267,6 @@ export default function DeckEditor({
     try {
       const result = await refetch();
       if (!result.isError) return true;
-      handledErrorAt.current = result.errorUpdatedAt;
       if (!dirty.current && !conflictActive.current) setError(errorMessage(result.error));
       return false;
     } finally {
@@ -257,11 +274,16 @@ export default function DeckEditor({
     }
   }, [refetch]);
 
-  /** Świeży odczyt zestawu poza bazą formularza (porównanie przy konflikcie wersji). */
-  const fetchRemote = useCallback(
-    () => queryClient.fetchQuery({ ...orpc.decks.get.queryOptions({ input: { deckId } }), retry: false, staleTime: 0 }),
-    [queryClient, deckId],
-  );
+  /**
+   * Świeży odczyt zestawu poza bazą formularza (porównanie przy konflikcie).
+   * Trwające odpytanie jest najpierw anulowane — inaczej `fetchQuery` zwróciłby
+   * jego (starszą) odpowiedź zamiast nowego odczytu.
+   */
+  const fetchRemote = useCallback(async () => {
+    const options = orpc.decks.get.queryOptions({ input: { deckId } });
+    await queryClient.cancelQueries({ queryKey: options.queryKey, exact: true });
+    return queryClient.fetchQuery({ ...options, retry: false, staleTime: 0 });
+  }, [queryClient, deckId]);
 
   const refreshConflict = useCallback(async (local: EditorSnapshot) => {
     conflictActive.current = true;
