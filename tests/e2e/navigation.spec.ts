@@ -135,3 +135,38 @@ test("panel rodzica: sekcje mają adresy, odświeżenie i wstecz/dalej zachowuj�
   await expect(page).toHaveURL(/\/parent\/decks$/);
   await expect(page.getByTestId("tab-decks")).toHaveAttribute("aria-current", "true");
 });
+
+test("pierwsze uruchomienie: po nieudanym logowaniu ponowna próba loguje zapisanym PIN-em", async ({ page }) => {
+  // Świat ma już PIN 1234 — prawdziwy setup przy ponowieniu odpowie already_configured.
+  await page.request.post("/api/v1/parent/setup", { data: { secret: "1234" } });
+  await page.route("**/api/v1/parent/login", (route) => {
+    if (route.request().method() === "GET") {
+      return route.fulfill({ json: { authenticated: false, setupRequired: true } });
+    }
+    return route.fallback();
+  });
+  let setupCalls = 0;
+  await page.route("**/api/v1/parent/setup", (route) => {
+    setupCalls += 1;
+    // pierwszy zapis PIN-u „udany” (jak w czystym świecie), kolejne idą do serwera
+    return setupCalls === 1 ? route.fulfill({ status: 201, json: { ok: true } }) : route.fallback();
+  });
+  let loginCalls = 0;
+  await page.route("**/api/v1/parent/login", (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    loginCalls += 1;
+    return loginCalls === 1
+      ? route.fulfill({ status: 503, json: { code: "internal", message: "x", retryable: true, requestId: "r" } })
+      : route.fallback();
+  });
+
+  await page.goto("/parent");
+  await page.getByTestId("auth-secret").fill("1234");
+  await page.getByTestId("auth-submit").click();
+  await expect(page.getByTestId("api-error")).toBeVisible();
+
+  await page.getByTestId("auth-secret").fill("1234");
+  await page.getByTestId("auth-submit").click();
+  await expect(page.getByTestId("tab-decks")).toBeVisible();
+  expect(setupCalls).toBe(2);
+});

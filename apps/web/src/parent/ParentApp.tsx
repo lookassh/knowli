@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import { Alert, Button, Center, Group, Loader, Modal, Paper, Stack, Text, Title } from "@mantine/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { messages } from "@learning/contracts";
-import { callParent, errorMessage, parentClient } from "./api";
+import { ApiCallError, callParent, errorMessage, parentClient } from "./api";
 import ChildEditor from "./ChildEditor";
 import DecksPanel from "./DecksPanel";
 import LeaveEditorDialog from "./LeaveEditorDialog";
@@ -92,8 +92,13 @@ export default function ParentApp() {
   const login = useCallback(
     async (secret: string, setupFirst: boolean) => {
       if (setupFirst) {
-        // pierwsze uruchomienie tworzy PIN i od razu nim loguje
-        await callParent(() => parentClient.auth.setup({ secret }));
+        // pierwsze uruchomienie tworzy PIN i od razu nim loguje; po nieudanym
+        // logowaniu ponowna próba zastaje PIN już zapisany — wtedy tylko logujemy
+        try {
+          await callParent(() => parentClient.auth.setup({ secret }));
+        } catch (cause) {
+          if (!(cause instanceof ApiCallError && cause.code === "already_configured")) throw cause;
+        }
       }
       await callParent(() => parentClient.auth.login({ secret }));
       queryClient.setQueryData(AUTH_KEY, { authenticated: true, setupRequired: false });

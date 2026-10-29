@@ -19,7 +19,9 @@ export function sectionPath(section: ParentSection): string {
  * panel zastępuje je adresem domyślnej sekcji (bez nowego wpisu historii).
  */
 export function sectionFromPath(pathname: string): ParentSection | null {
-  const [root, section] = pathname.split("/").filter(Boolean);
-  if (`/${root}` !== PARENT_ROOT || section === undefined) return null;
+  const segments = pathname.split("/").filter(Boolean);
+  if (segments.length !== 2) return null;
+  const [root, section] = segments as [string, string];
+  if (`/${root}` !== PARENT_ROOT) return null;
   return (PARENT_SECTIONS as readonly string[]).includes(section) ? (section as ParentSection) : null;
 }

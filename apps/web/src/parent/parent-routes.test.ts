@@ -13,6 +13,7 @@ describe("parent routes", () => {
     expect(sectionFromPath("/parent")).toBeNull();
     expect(sectionFromPath("/parent/")).toBeNull();
     expect(sectionFromPath("/parent/unknown")).toBeNull();
+    expect(sectionFromPath("/parent/decks/extra")).toBeNull();
     expect(sectionFromPath("/kids/x/learn")).toBeNull();
   });
 
