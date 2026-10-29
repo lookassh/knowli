@@ -604,7 +604,8 @@ test("short reading options form a 2x2 grid on phones", async ({ page }) => {
 
 test("short reading options keep the outcome badge clear of the label without changing card height", async ({ page }) => {
   await openReadingChoices(page, ["pomarańcza", "przyjaciel", "głowa", "oko"], true);
-  for (const viewport of [{ width: 360, height: 800 }, { width: 320, height: 640 }]) {
+  // 320×420 runs the short-window branch (≤560 px high), where the badge drops its band.
+  for (const viewport of [{ width: 360, height: 800 }, { width: 320, height: 640 }, { width: 320, height: 420 }]) {
     const name = `${viewport.width}x${viewport.height}`;
     await resizeAndSettle(page, viewport);
     const options = page.getByTestId("kid-option");

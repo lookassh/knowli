@@ -299,11 +299,14 @@
   }
 }
 
-/* Very short portrait window: the band would make the card taller than the
-   48px scrolling window, so the badge shrinks into the corner instead. */
+/* Very short portrait window: a badge band would make the card taller than the
+   48px scrolling window, so the smaller badge sits in an equal side gutter and
+   never meets the centred label (a label that no longer fits half the row
+   wraps to a full row). */
 @media (max-width: 599px) and (max-height: 560px) {
   :global(.kid-ui) .choiceList.shortChoiceGrid .option {
     padding-block: 8px;
+    padding-inline: 24px;
   }
 
   .choiceList.shortChoiceGrid .outcome {
