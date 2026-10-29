@@ -426,6 +426,8 @@ export default function DeckEditor({
         void refreshConflict(localSnapshot);
       } else {
         setError(errorMessage(cause));
+        // wygasła sesja: formularz zostaje, panel otwiera logowanie nad edytorem
+        if ((cause as { status?: number }).status === 401) onAuthExpired();
       }
     } finally {
       setBusyState(false);

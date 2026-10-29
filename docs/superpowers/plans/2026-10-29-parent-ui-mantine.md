@@ -119,7 +119,7 @@ Stan (2026-10-29): faza 0 scalona (#151, razem z Next 16). Faza 1 zrealizowana z
 - `globals.css` w całości w warstwie `legacy` (`@layer legacy, mantine;`), więc stare reguły elementów nie nadpisują Mantine, a style bez warstwy (Kid UI, `parent.css`) pozostają nad obiema;
 - sekcje nieprzepisane na Mantine zostają jasne (`color-scheme: light` w obszarze treści) także w trybie ciemnym — rama, logowanie i okna dialogowe obsługują oba schematy;
 - domyślny rozmiar `md` przycisków i pól Mantine ma 44 px (cel dotykowy);
-- ponowne logowanie w oknie przy niezapisanych zmianach jest gotowe, ale edytory zgłaszają 401 przez globalny handler dopiero po przejściu na zapytania (fazy 5a/6b) — test e2e wygaśnięcia sesji w trakcie edycji wchodzi wtedy.
+- ponowne logowanie w oknie przy niezapisanych zmianach działa: zapis w edytorze zestawu i lekcji zgłasza 401 przez `onAuthExpired` (review #154), test e2e w `parent-edit-protection.spec.ts`; po przejściu edytorów na zapytania (fazy 5a/6b) to samo zrobi globalny handler.
 
 Adresy URL weszły do fazy 1 (zamiast osobnej fazy na końcu), bo `DecksPanel` jest dziś jednocześnie routerem edytorów — przepisywanie go dwa razy byłoby droższe.
 
