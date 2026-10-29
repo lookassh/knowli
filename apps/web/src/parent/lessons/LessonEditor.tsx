@@ -17,6 +17,7 @@ import AssignmentTestGoalFields, { type AssignmentTestSettings } from "../Assign
 import DeckSessionTaskBudgetSettings from "../DeckSessionTaskBudgetSettings";
 import type { EditorLeaveState } from "../useParentLeaveGuard";
 import LessonSupervisionPanel from "./LessonSupervisionPanel";
+import AssignmentFields from "./AssignmentFields";
 import { DeckAssignmentsList } from "../DeckAssignmentsList";
 import {
   createLessonSnapshot,
@@ -726,7 +727,7 @@ export default function LessonEditor({
                       ) : (
                         <label>
                           {messages.lessons.exerciseAnswerLabel}
-                          <input data-testid={`exercise-answer-${index}`} value={ex.answer} disabled={!editable || busy || ex.exerciseType === "lesson_calculation" || ex.exerciseType === "lesson_keywords"}
+                          <input data-testid={`exercise-answer-${index}`} value={ex.answer} disabled={!editable || busy || ex.exerciseType === "lesson_calculation" || ex.exerciseType === "lesson_keywords" || ex.exerciseType === "lesson_match" || ex.exerciseType === "lesson_group"}
                             {...(errors ? { "aria-describedby": errId } : {})}
                             onChange={(e) => mutateExercise(ex.clientKey, { answer: e.target.value })} />
                         </label>
@@ -759,6 +760,11 @@ export default function LessonEditor({
                         </fieldset>
                       )}
 
+                      {(ex.exerciseType === "lesson_match" || ex.exerciseType === "lesson_group") && (
+                        <AssignmentFields exercise={ex} index={index} disabled={!editable || busy}
+                          onChange={(patch) => mutateExercise(ex.clientKey, patch)} />
+                      )}
+
                       {ex.exerciseType === "lesson_keywords" && ex.keywordOptions && (
                         <fieldset data-testid={`keywords-${index}`}>
                           <legend>{messages.lessons.keywordsLegend}</legend>
@@ -787,12 +793,12 @@ export default function LessonEditor({
 
                       <label>
                         {messages.lessons.exerciseAcceptedLabel}
-                        <textarea data-testid={`exercise-accepted-${index}`} value={ex.acceptedText} disabled={!editable || busy || ex.exerciseType === "lesson_calculation" || ex.exerciseType === "lesson_keywords"}
+                        <textarea data-testid={`exercise-accepted-${index}`} value={ex.acceptedText} disabled={!editable || busy || ex.exerciseType === "lesson_calculation" || ex.exerciseType === "lesson_keywords" || ex.exerciseType === "lesson_match" || ex.exerciseType === "lesson_group"}
                           onChange={(e) => mutateExercise(ex.clientKey, { acceptedText: e.target.value })} />
                       </label>
                       <label>
                         {messages.lessons.exerciseFocusLabel}
-                        <input data-testid={`exercise-focus-${index}`} value={ex.focusText} disabled={!editable || busy || ex.exerciseType === "lesson_calculation" || ex.exerciseType === "lesson_keywords"}
+                        <input data-testid={`exercise-focus-${index}`} value={ex.focusText} disabled={!editable || busy || ex.exerciseType === "lesson_calculation" || ex.exerciseType === "lesson_keywords" || ex.exerciseType === "lesson_match" || ex.exerciseType === "lesson_group"}
                           onChange={(e) => mutateExercise(ex.clientKey, { focusText: e.target.value })} />
                       </label>
 

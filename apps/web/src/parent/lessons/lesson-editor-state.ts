@@ -82,6 +82,12 @@ export interface EditableLessonExercise {
   /** `lesson_keywords`: pojęcia do wyboru i identyfikatory kluczowych (null = inny typ). */
   keywordOptions?: { id: string; text: string }[] | null;
   keyOptionIds?: string[] | null;
+  /** `lesson_match`: pary i dystraktory po prawej (design szkoły §10.1). */
+  pairs?: { left: string; right: string }[] | null;
+  extraRight?: string[] | null;
+  /** `lesson_group`: grupy i elementy z przynależnością (design szkoły §10.2). */
+  groups?: { id: string; label: string }[] | null;
+  groupItems?: { text: string; groupId: string }[] | null;
 }
 
 export interface EditableDynamicObjective {
@@ -163,7 +169,29 @@ function editableFromExercise(
     sourceRefs: exercise.sourceRefs ? exercise.sourceRefs.map((ref) => ({ ...ref })) : null,
     ...(exercise.keywordOptions ? { keywordOptions: exercise.keywordOptions.map((o) => ({ ...o })) } : {}),
     ...(exercise.keyOptionIds ? { keyOptionIds: [...exercise.keyOptionIds] } : {}),
+    ...(exercise.pairs ? { pairs: exercise.pairs.map((pair) => ({ ...pair })) } : {}),
+    ...(exercise.extraRight ? { extraRight: [...exercise.extraRight] } : {}),
+    ...(exercise.groups ? { groups: exercise.groups.map((group) => ({ ...group })) } : {}),
+    ...(exercise.groupItems ? { groupItems: exercise.groupItems.map((item) => ({ ...item })) } : {}),
   };
+}
+
+/** Odpowiedź `lesson_match` liczona z par (jak w domenie serwera): lewe strony złączone „, ”. */
+export function matchAnswerOf(exercise: Pick<EditableLessonExercise, "pairs">): string {
+  return (exercise.pairs ?? []).map((pair) => pair.left).join(", ");
+}
+
+/** Odpowiedź `lesson_group` liczona z grup: etykiety złączone „ / ”. */
+export function groupAnswerOf(exercise: Pick<EditableLessonExercise, "groups">): string {
+  return (exercise.groups ?? []).map((group) => group.label).join(" / ");
+}
+
+/** Następny wolny identyfikator grupy (`g<n>`), bez kolizji po usunięciach. */
+export function nextGroupId(groups: readonly { id: string }[]): string {
+  const used = new Set(groups.map((group) => group.id));
+  let n = 1;
+  while (used.has(`g${n}`)) n += 1;
+  return `g${n}`;
 }
 
 /** Odpowiedź `lesson_keywords` liczona z zaznaczonych pojęć (jak w domenie serwera). */
@@ -281,6 +309,22 @@ function exerciseToInput(exercise: EditableLessonExercise): LessonExerciseInput 
     input.sourceRefs = exercise.sourceRefs.filter((ref) => ref.quote.trim().length > 0).map((ref) => ({ ...ref }));
   }
   if (exercise.calculation) input.calculation = structuredClone(exercise.calculation);
+  if (type === "lesson_match") {
+    // Odpowiedź, warianty i focus wynikają z par — rodzic ich nie wpisuje; puste wiersze nie blokują zapisu.
+    input.pairs = (exercise.pairs ?? []).filter((pair) => pair.left.trim() || pair.right.trim()).map((pair) => ({ ...pair }));
+    const extraRight = (exercise.extraRight ?? []).filter((text) => text.trim().length > 0);
+    if (extraRight.length > 0) input.extraRight = extraRight;
+    input.answer = matchAnswerOf({ pairs: input.pairs });
+    input.acceptedAnswers = [];
+    input.focus = [];
+  }
+  if (type === "lesson_group") {
+    input.groups = (exercise.groups ?? []).map((group) => ({ ...group }));
+    input.groupItems = (exercise.groupItems ?? []).filter((item) => item.text.trim().length > 0).map((item) => ({ ...item }));
+    input.answer = groupAnswerOf(exercise);
+    input.acceptedAnswers = [];
+    input.focus = [];
+  }
   if (type === "lesson_keywords") {
     // Odpowiedź, warianty i focus wynikają z zaznaczonych pojęć — rodzic ich nie wpisuje.
     input.keywordOptions = (exercise.keywordOptions ?? []).map((o) => ({ ...o }));
