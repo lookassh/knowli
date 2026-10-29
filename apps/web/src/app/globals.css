@@ -7,6 +7,11 @@
    Style bez warstwy (Kid UI, parent.css) mają pierwszeństwo przed obiema. */
 @layer legacy, mantine;
 
+/* Reguły elementów pomijają elementy Mantine (statyczne klasy `mantine-*`):
+   w panelu rodzica warstwa `mantine` nie ustawia wszystkich właściwości
+   (np. min-height checkboksa), więc bez wykluczenia stare reguły by przeciekały.
+   `:where()` nie zmienia specyficzności — stare ekrany wyglądają jak dotąd. */
+
 @layer legacy {
 
 :root {
@@ -27,26 +32,26 @@ body {
   padding: 16px;
 }
 
-h1 {
+h1:where(:not([class*="mantine-"])) {
   font-size: 1.5rem;
 }
-h2 {
+h2:where(:not([class*="mantine-"])) {
   font-size: 1.25rem;
 }
-h3 {
+h3:where(:not([class*="mantine-"])) {
   font-size: 1.1rem;
 }
 
-label {
+label:where(:not([class*="mantine-"])) {
   display: block;
   margin: 8px 0;
   font-weight: 600;
   font-size: 0.95rem;
 }
 
-input,
-select,
-textarea {
+input:where(:not([class*="mantine-"])),
+select:where(:not([class*="mantine-"])),
+textarea:where(:not([class*="mantine-"])) {
   display: block;
   width: 100%;
   box-sizing: border-box;
@@ -59,7 +64,7 @@ textarea {
   background: #fff;
 }
 
-button {
+button:where(:not([class*="mantine-"])) {
   min-height: 44px;
   padding: 8px 16px;
   font-size: 16px;
@@ -83,13 +88,13 @@ button {
   text-decoration: none;
 }
 
-button:disabled {
+button:where(:not([class*="mantine-"])):disabled {
   opacity: 0.55;
   cursor: default;
 }
 
-button[type="submit"],
-form button {
+button:where(:not([class*="mantine-"]))[type="submit"],
+form button:where(:not([class*="mantine-"])) {
   background: #3b5bdb;
   border-color: #3b5bdb;
   color: #fff;
