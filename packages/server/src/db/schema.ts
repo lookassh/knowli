@@ -791,6 +791,9 @@ export const lessonVerdicts = app.table(
     missingElements: jsonb("missing_elements").$type<string[]>().notNull().default([]),
     incorrectStatements: jsonb("incorrect_statements").$type<string[]>().notNull().default([]),
     redundantFragments: jsonb("redundant_fragments").$type<string[]>().notNull().default([]),
+    // werdykt school-grader-v3 (migracja 0025)
+    offTopicFragments: jsonb("off_topic_fragments").$type<string[]>().notNull().default([]),
+    confusedConcepts: jsonb("confused_concepts").$type<{ said: string; meant: string }[]>().notNull().default([]),
     note: text("note"),
     parentDecision: text("parent_decision"),
     parentDecidedAt: timestamps("parent_decided_at"),

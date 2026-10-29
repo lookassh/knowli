@@ -55,3 +55,12 @@ describe("FeedbackDto — spelling_hint i spellingDiff (issue #9)", () => {
     expect(parsed.success).toBe(false);
   });
 });
+
+describe("segmenty odpowiedzi lekcji — kategoria „nie na temat” (Etap 6 szkoły)", () => {
+  it("feedback lekcji przyjmuje segmenty offtopic, diff pisowni słówek — nie", () => {
+    const answerSegments = [{ text: "Linia na mapie.", state: "pill" }, { text: " Grałem w piłkę.", state: "offtopic" }];
+    expect(FeedbackDtoSchema.safeParse({ kind: "lesson_hint", hintPl: "Usuń to, co nie odpowiada na pytanie.", answerSegments }).success).toBe(true);
+    const spellingDiff = { ...diff, given: [{ text: "Wendsday", state: "offtopic" }] };
+    expect(FeedbackDtoSchema.safeParse({ kind: "spelling_hint", correctText: "Wednesday", spellingDiff }).success).toBe(false);
+  });
+});

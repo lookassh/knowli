@@ -588,7 +588,7 @@ export class FakeAnswerGrader implements AnswerGraderProvider {
   }
 
   promptVersionForInput(input: GraderInput): string {
-    return input.school ? "fake-school-grader-v1" : this.promptVersion;
+    return input.school ? "fake-school-grader-v3" : this.promptVersion;
   }
 
   get callCount(): number {
@@ -640,13 +640,17 @@ export class FakeAnswerGrader implements AnswerGraderProvider {
     }
     const knowledge = missingElementIds.length === 0 ? "correct" : matchedElementIds.length > 0 ? "partial" : "incorrect";
     const verbose = input.childAnswer.length > 200;
-    // Rozwlekła odpowiedź: zbędne są zdania bez żadnego słowa elementów wymaganych
-    // (dokładne podciągi odpowiedzi, więc trener precyzji może je zaznaczyć).
-    const redundantFragments = verbose
+    // Rozwlekła odpowiedź: do usunięcia są zdania bez żadnego słowa elementów
+    // wymaganych (dokładne podciągi odpowiedzi, więc trener precyzji może je
+    // zaznaczyć). Zdanie z rdzeniem słowa pytania lub odpowiedzi wzorcowej jest
+    // „poprawne, ale zbędne”, inne — „nie na temat” (v3, design §9.1).
+    const words = (text: string) => text.toLowerCase().normalize("NFC").split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 3);
+    const topicStems = new Set([...words(school.question), ...words(school.modelAnswer)].map((w) => w.slice(0, 5)));
+    const extra = verbose
       ? input.childAnswer.split(/(?<=[.!?])\s+/u).map((sentence) => sentence.trim()).filter((sentence) =>
-          sentence.length > 0 &&
-          !sentence.toLowerCase().normalize("NFC").split(/[^\p{L}\p{N}]+/u).some((word) => elementWords.has(word))).slice(0, 4)
+          sentence.length > 0 && !words(sentence).some((word) => elementWords.has(word))).slice(0, 4)
       : [];
+    const onTopic = (sentence: string) => words(sentence).some((word) => topicStems.has(word.slice(0, 5)));
     return {
       raw: {
         knowledge,
@@ -654,7 +658,9 @@ export class FakeAnswerGrader implements AnswerGraderProvider {
         matchedElementIds,
         missingElementIds,
         incorrectStatements: [],
-        redundantFragments,
+        redundantFragments: extra.filter(onTopic),
+        offTopicFragments: extra.filter((sentence) => !onTopic(sentence)),
+        confusedConcepts: [],
         note: "fake",
       },
     };
@@ -713,7 +719,7 @@ export class FakeSessionActivityReviewer implements SessionActivityReviewer {
   }
 
   promptVersionForInput(input: GraderInput): string {
-    return input.school ? "fake-school-grader-v1" : this.promptVersion;
+    return input.school ? "fake-school-grader-v3" : this.promptVersion;
   }
 
   get callCount(): number {

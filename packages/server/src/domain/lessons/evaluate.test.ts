@@ -424,3 +424,64 @@ describe("werdykt szkolny dwuwymiarowy (Etap 2)", () => {
     expect(countSentences("Rośliny rosną (szybko.) Potem kwitną.")).toBe(2);
   });
 });
+describe("werdykt szkolny v3: kategorie fragmentów i pomylone pojęcia (Etap 6)", () => {
+  const CTX = {
+    requiredElementIds: ["e1"],
+    childAnswer: "Równoleżnik łączy bieguny. To ważna linia na mapie. Wczoraj grałem w piłkę.",
+  };
+  const base = {
+    precision: "unfocused", matchedElementIds: [], missingElementIds: ["e1"],
+    incorrectStatements: [], redundantFragments: [], note: "",
+  };
+
+  it("werdykt v2 bez nowych pól ma puste listy v3", () => {
+    const v = validateSchoolVerdict({ ...base, knowledge: "incorrect", incorrectStatements: ["Równoleżnik łączy bieguny."] }, CTX);
+    expect(v?.offTopicFragments).toEqual([]);
+    expect(v?.confusedConcepts).toEqual([]);
+  });
+
+  it("przyjmuje fragment nie na temat i parę pomylonych pojęć z odpowiedzi", () => {
+    const v = validateSchoolVerdict({
+      ...base, knowledge: "incorrect",
+      incorrectStatements: ["Równoleżnik łączy bieguny."],
+      redundantFragments: ["To ważna linia na mapie."],
+      offTopicFragments: ["Wczoraj grałem w piłkę."],
+      confusedConcepts: [{ said: "równoleżnik", meant: "południk" }],
+    }, CTX);
+    expect(v?.offTopicFragments).toEqual(["Wczoraj grałem w piłkę."]);
+    expect(v?.confusedConcepts).toEqual([{ said: "równoleżnik", meant: "południk" }]);
+    expect(gradeFromSchoolVerdict(v)).toMatchObject({ outcome: "incorrect", errorCategory: "confused_concept" });
+  });
+
+  it("pomylenie pojęć przy częściowej wiedzy też ma kategorię confused_concept", () => {
+    const v = validateSchoolVerdict({
+      knowledge: "partial", precision: "concise", matchedElementIds: ["e1"], missingElementIds: [],
+      incorrectStatements: ["Równoleżnik łączy bieguny."], redundantFragments: [], note: "",
+      confusedConcepts: [{ said: "Równoleżnik", meant: "południk" }],
+    }, CTX);
+    expect(gradeFromSchoolVerdict(v)).toMatchObject({ verdict: "model_almost", errorCategory: "confused_concept" });
+  });
+
+  it("odrzuca pomylenie przy wiedzy poprawnej, `said` spoza odpowiedzi i parę identycznych pojęć", () => {
+    const correct = { knowledge: "correct", precision: "concise", matchedElementIds: ["e1"], missingElementIds: [], incorrectStatements: [], redundantFragments: [], note: "" };
+    expect(validateSchoolVerdict({ ...correct, confusedConcepts: [{ said: "równoleżnik", meant: "południk" }] }, CTX)).toBeNull();
+    const wrong = { ...base, knowledge: "incorrect", incorrectStatements: ["Równoleżnik łączy bieguny."] };
+    expect(validateSchoolVerdict({ ...wrong, confusedConcepts: [{ said: "zwrotnik", meant: "południk" }] }, CTX)).toBeNull();
+    expect(validateSchoolVerdict({ ...wrong, confusedConcepts: [{ said: "Równoleżnik", meant: "równoleżnik" }] }, CTX)).toBeNull();
+  });
+
+  it("odrzuca ten sam fragment w dwóch kategoriach i fragment nie na temat spoza odpowiedzi", () => {
+    const wrong = { ...base, knowledge: "incorrect", incorrectStatements: ["Równoleżnik łączy bieguny."] };
+    expect(validateSchoolVerdict({ ...wrong, redundantFragments: ["Wczoraj grałem w piłkę."], offTopicFragments: ["Wczoraj grałem w piłkę."] }, CTX)).toBeNull();
+    expect(validateSchoolVerdict({ ...wrong, offTopicFragments: ["Równoleżnik łączy bieguny."] }, CTX)).toBeNull();
+    expect(validateSchoolVerdict({ ...wrong, offTopicFragments: ["Grałem w szachy."] }, CTX)).toBeNull();
+  });
+
+  it("segmenty rozróżniają zbędne (pill) i nie na temat (offtopic)", () => {
+    expect(buildAnswerSegments("Linia na mapie. Grałem w piłkę.", ["Linia na mapie."], ["Grałem w piłkę."])).toEqual([
+      { text: "Linia na mapie.", state: "pill" },
+      { text: " ", state: "plain" },
+      { text: "Grałem w piłkę.", state: "offtopic" },
+    ]);
+  });
+});

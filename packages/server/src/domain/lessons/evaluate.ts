@@ -291,8 +291,18 @@ export interface SchoolVerdict {
   readonly matchedElementIds: readonly string[];
   readonly missingElementIds: readonly string[];
   readonly incorrectStatements: readonly string[];
+  /** Poprawne, ale zbędne (źródło §5.5). */
   readonly redundantFragments: readonly string[];
+  /** Niezwiązane z pytaniem (v3, design §9.1); werdykty v2 mają pustą listę. */
+  readonly offTopicFragments: readonly string[];
+  /** Pomylone pojęcia: `said` z odpowiedzi zamiast `meant` (v3); wyłącznie dla rodzica i selektora. */
+  readonly confusedConcepts: readonly ConfusedConcept[];
   readonly note: string;
+}
+
+export interface ConfusedConcept {
+  readonly said: string;
+  readonly meant: string;
 }
 
 export interface SchoolVerdictContext {
@@ -309,6 +319,12 @@ const schoolVerdictSchema = z.object({
   missingElementIds: z.array(z.string().min(1)).max(6),
   incorrectStatements: z.array(z.string().min(1)).max(4),
   redundantFragments: z.array(z.string().min(1)).max(4),
+  // v3 (design §9.1): brak pól = werdykt v2, czyli puste listy
+  offTopicFragments: z.array(z.string().min(1)).max(4).default([]),
+  confusedConcepts: z.array(z.object({
+    said: z.string().min(1).max(60),
+    meant: z.string().min(1).max(60),
+  })).max(2).default([]),
   note: z.string().max(MAX_NOTE_LENGTH),
 });
 
@@ -392,8 +408,18 @@ export function validateSchoolVerdict(raw: unknown, ctx: SchoolVerdictContext): 
   if (v.knowledge === "partial" && (matched.length === 0 || !hasGap)) return null;
   if (v.knowledge === "incorrect" && !hasGap) return null;
   const answerNfc = ctx.childAnswer.normalize("NFC");
-  for (const fragment of [...v.incorrectStatements, ...v.redundantFragments]) {
+  for (const fragment of [...v.incorrectStatements, ...v.redundantFragments, ...v.offTopicFragments]) {
     if (!answerNfc.includes(fragment.normalize("NFC"))) return null;
+  }
+  // Kategorie fragmentów są rozłączne: ten sam tekst nie może być naraz błędem, zbędnym i nie na temat.
+  const categorized = [...v.incorrectStatements, ...v.redundantFragments, ...v.offTopicFragments].map((f) => f.normalize("NFC"));
+  if (new Set(categorized).size !== categorized.length) return null;
+  // Pomylenie pojęć to błąd treści: nigdy przy wiedzy poprawnej; `said` pochodzi z odpowiedzi.
+  if (v.confusedConcepts.length > 0 && v.knowledge === "correct") return null;
+  for (const pair of v.confusedConcepts) {
+    const said = pair.said.normalize("NFC");
+    if (!answerNfc.toLocaleLowerCase("pl-PL").includes(said.toLocaleLowerCase("pl-PL"))) return null;
+    if (said.toLocaleLowerCase("pl-PL") === pair.meant.normalize("NFC").toLocaleLowerCase("pl-PL")) return null;
   }
   const precision = ctx.formOk === false && v.precision === "concise" ? "verbose" : v.precision;
   return {
@@ -403,6 +429,8 @@ export function validateSchoolVerdict(raw: unknown, ctx: SchoolVerdictContext): 
     missingElementIds: missing,
     incorrectStatements: [...v.incorrectStatements],
     redundantFragments: [...v.redundantFragments],
+    offTopicFragments: [...v.offTopicFragments],
+    confusedConcepts: v.confusedConcepts.map((pair) => ({ said: pair.said, meant: pair.meant })),
     note: v.note,
   };
 }
@@ -422,17 +450,19 @@ export function gradeFromSchoolVerdict(verdict: SchoolVerdict | null): Objective
     case "correct":
       return { outcome: "correct", verdict: "model_correct" };
     case "partial":
-      // Kategoria z faktycznego powodu: brak elementu vs nieścisłe stwierdzenie.
+      // Kategoria z faktycznego powodu: pomylone pojęcia, brak elementu albo nieścisłe stwierdzenie.
       return {
         outcome: "incorrect",
         verdict: "model_almost",
-        errorCategory: verdict.missingElementIds.length > 0 ? "missing_element" : "wrong_fact",
+        errorCategory: verdict.confusedConcepts.length > 0 ? "confused_concept"
+          : verdict.missingElementIds.length > 0 ? "missing_element" : "wrong_fact",
       };
     case "incorrect":
       return {
         outcome: "incorrect",
         verdict: "model_incorrect",
-        errorCategory: verdict.incorrectStatements.length > 0 ? "wrong_fact" : "incomplete",
+        errorCategory: verdict.confusedConcepts.length > 0 ? "confused_concept"
+          : verdict.incorrectStatements.length > 0 ? "wrong_fact" : "incomplete",
       };
   }
 }
@@ -537,10 +567,10 @@ export function closestApprovedVariant(
   return best;
 }
 
-/** Segment feedbacku: `pill` = fragment do wyróżnienia. */
+/** Segment feedbacku: `pill` = fragment do wyróżnienia, `offtopic` = niezwiązany z pytaniem (v3). */
 export interface AnswerSegment {
   readonly text: string;
-  readonly state: "plain" | "pill";
+  readonly state: "plain" | "pill" | "offtopic";
 }
 
 /**
@@ -558,18 +588,23 @@ export interface AnswerSegment {
 export function buildAnswerSegments(
   childAnswer: string,
   fragments: readonly string[],
+  offTopicFragments: readonly string[] = [],
 ): AnswerSegment[] | null {
   const chars = [...childAnswer];
   const n = chars.length;
 
-  if (!casefoldStable(childAnswer) || fragments.some((fragment) => !casefoldStable(fragment))) {
+  if (!casefoldStable(childAnswer) || [...fragments, ...offTopicFragments].some((fragment) => !casefoldStable(fragment))) {
     return null;
   }
 
   const lowerChars = chars.map((char) => char.toLowerCase());
-  const pill = new Array<boolean>(n).fill(false);
+  const marks = new Array<AnswerSegment["state"]>(n).fill("plain");
 
-  for (const fragment of fragments) {
+  const tagged = [
+    ...fragments.map((fragment) => ({ fragment, state: "pill" as const })),
+    ...offTopicFragments.map((fragment) => ({ fragment, state: "offtopic" as const })),
+  ];
+  for (const { fragment, state: mark } of tagged) {
     const fragChars = [...fragment].map((char) => char.toLowerCase());
     if (fragChars.length === 0) {
       continue;
@@ -585,7 +620,8 @@ export function buildAnswerSegments(
       }
       if (matched) {
         for (let k = 0; k < fragChars.length; k++) {
-          pill[start + k] = true; // nakładające się fragmenty naturalnie scalone
+          // nakładające się fragmenty naturalnie scalone; „nie na temat” wygrywa z „zbędne”
+          if (marks[start + k] !== "offtopic") marks[start + k] = mark;
         }
         break;
       }
@@ -594,7 +630,7 @@ export function buildAnswerSegments(
 
   const segments: AnswerSegment[] = [];
   for (let i = 0; i < n; i++) {
-    const state: "plain" | "pill" = pill[i] ? "pill" : "plain";
+    const state = marks[i]!;
     const last = segments[segments.length - 1];
     if (last !== undefined && last.state === state) {
       segments[segments.length - 1] = { text: last.text + chars[i], state };
