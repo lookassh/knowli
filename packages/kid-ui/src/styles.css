@@ -272,12 +272,6 @@
   font-weight: 700;
 }
 
-@media (max-height: 700px) {
-  .kid-ui .kid-options button {
-    min-height: 48px;
-  }
-}
-
 @media (max-height: 420px) {
   .kid-learning > .kid-task {
     min-height: max-content;
@@ -286,8 +280,13 @@
 
 }
 
-.kid-page--session[data-viewport-short="true"] .kid-options button {
-  min-height: 48px;
+/* Answer cards keep 56px down to phones in portrait; only windows under 560px
+   (landscape, keyboard, long feedback dock) fall back to the 48px touch minimum
+   so a card still fits whole in the scrolling material window. */
+@media (max-height: 560px) {
+  .kid-ui .kid-options button {
+    min-height: 48px;
+  }
 }
 
 .kid-page--session[data-viewport-very-short="true"] .kid-learning > .kid-task {
@@ -2227,16 +2226,18 @@
   min-height: 48px;
   padding: 6px calc(12px + 0.8em);
   font: inherit;
-  font-size: var(--kid-type-title-size);
-  border: 2px solid var(--md-sys-color-outline);
+  font-family: var(--kid-font-display);
+  font-size: var(--kid-type-title-md-size);
+  font-weight: 600;
+  border: 1px solid var(--md-sys-color-outline);
   border-radius: var(--kid-shape-l);
-  background: var(--kid-surface);
+  background: var(--md-sys-color-surface-container-high);
   color: var(--kid-text);
   cursor: pointer;
 }
 
 .kid-ui .kid-lesson-notice__word:active {
-  background: var(--kid-soft);
+  background: var(--md-sys-color-surface-container-highest);
 }
 
 /* Dziedziczymy znaczniki ✓/✗ i paletę z .kid-option--* na przyciskach wskazania. */
@@ -2326,25 +2327,26 @@
   min-width: 48px;
   max-width: 100%;
   overflow-wrap: anywhere;
-  min-height: 52px;
+  min-height: 56px;
   padding: 8px 16px;
   font: inherit;
-  font-size: var(--kid-type-title-size);
+  font-family: var(--kid-font-display);
+  font-size: var(--kid-type-title-md-size);
   font-weight: 600;
-  border: 2px solid var(--md-sys-color-outline);
+  border: 1px solid var(--md-sys-color-outline);
   border-radius: var(--kid-shape-l);
-  background: var(--kid-surface);
+  background: var(--md-sys-color-surface-container-high);
   color: var(--kid-text);
   cursor: pointer;
 }
 
 .kid-ui .kid-lesson-block:active {
-  background: var(--kid-soft);
+  background: var(--md-sys-color-surface-container-highest);
 }
 
 .kid-ui .kid-lesson-block--placed {
   border-color: var(--kid-accent);
-  background: var(--kid-surface);
+  background: var(--md-sys-color-surface-container-high);
 }
 
 .kid-ui .kid-lesson-block:focus-visible {

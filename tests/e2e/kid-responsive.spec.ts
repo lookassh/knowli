@@ -538,3 +538,76 @@ test("profile tiles fit portrait, landscape, tablet and desktop", async ({ page 
     }
   }
 });
+
+function readingChoiceFixture(labels: readonly string[]): KidUiFixture {
+  const fixture = recallLayoutFixture();
+  fixture.tasks = [{
+    ...fixture.tasks[0]!,
+    exerciseType: "reading",
+    direction: "target_to_source",
+    prompt: {
+      kind: "reading",
+      text: "leg",
+      options: labels.map((text, index) => ({ id: `10000000-0000-4000-8000-0000000002${String(index).padStart(2, "0")}`, text })),
+    },
+  }];
+  return fixture;
+}
+
+async function openReadingChoices(page: Page, labels: readonly string[]) {
+  await installKidUiFixture(page, readingChoiceFixture(labels));
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+  await expect(page.getByTestId("kid-option")).toHaveCount(labels.length);
+}
+
+/** Option cards: rectangles plus whether the label text is clipped inside its card. */
+async function measureOptions(page: Page) {
+  return page.getByTestId("kid-option").evaluateAll((elements) => elements.map((element) => {
+    const { left, right, top, width, height } = element.getBoundingClientRect();
+    const label = element.querySelector("span") as HTMLElement;
+    return { left, right, top, width, height, labelClipped: label.scrollWidth > label.clientWidth + 1 };
+  }));
+}
+
+test("short reading options form a 2x2 grid on phones", async ({ page }) => {
+  await openReadingChoices(page, ["noga", "ręka", "głowa", "abcdefghijklmn"]);
+  for (const viewport of [{ width: 360, height: 800 }, { width: 320, height: 640 }]) {
+    const name = `${viewport.width}x${viewport.height}`;
+    await resizeAndSettle(page, viewport);
+    const root = (await measure(page, { root: ".kid-learning" })).root;
+    const options = await measureOptions(page);
+    expect(new Set(options.map((option) => Math.round(option.left))).size, `two columns: ${name}`).toBe(2);
+    expect(new Set(options.map((option) => Math.round(option.top))).size, `two rows: ${name}`).toBe(2);
+    for (const [index, option] of options.entries()) {
+      expectInsideRoot(option as never, root, `option ${index}: ${name}`);
+      expect(option.height, `option ${index} height: ${name}`).toBeGreaterThanOrEqual(56);
+      expect(option.labelClipped, `option ${index} label clipped: ${name}`).toBe(false);
+    }
+    expect((await measure(page, { root: ".kid-learning" })).scrollWidth, `horizontal overflow: ${name}`).toBeLessThanOrEqual(viewport.width);
+  }
+});
+
+test("long reading options stay in one column", async ({ page }) => {
+  await openReadingChoices(page, ["noga", "ręka", "głowa", "abcdefghijklmno"]);
+  for (const viewport of [{ width: 360, height: 800 }, { width: 320, height: 640 }]) {
+    const name = `${viewport.width}x${viewport.height}`;
+    await resizeAndSettle(page, viewport);
+    const options = await measureOptions(page);
+    expect(new Set(options.map((option) => Math.round(option.left))).size, `one column: ${name}`).toBe(1);
+  }
+});
+
+test("short reading options keep one column on tablets and desktops", async ({ page }) => {
+  await openReadingChoices(page, ["noga", "ręka", "głowa", "oko"]);
+  for (const viewport of [{ width: 768, height: 1024 }, { width: 1280, height: 800 }]) {
+    const name = `${viewport.width}x${viewport.height}`;
+    await resizeAndSettle(page, viewport);
+    const options = await measureOptions(page);
+    expect(new Set(options.map((option) => Math.round(option.left))).size, `one column: ${name}`).toBe(1);
+    for (const [index, option] of options.entries()) {
+      expect(option.height, `option ${index} height: ${name}`).toBeGreaterThanOrEqual(56);
+    }
+  }
+});

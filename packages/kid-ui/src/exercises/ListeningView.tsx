@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { messages } from "@learning/contracts";
 import { ActionButton } from "../components/ActionButton";
 import { AnswerGrid } from "../components/AnswerGrid";
+import { isShortChoiceSet } from "./choice-layout";
 import { ExerciseFrame } from "./ExerciseFrame";
 import type { ExerciseProps } from "./types";
 import { useChoiceKeyboard } from "./useChoiceKeyboard";
@@ -42,6 +43,7 @@ export function ListeningView({ task, busy, optionOutcomes, dock, handlers, mock
           <AnswerGrid
             className="kid-options"
             choiceList
+            shortChoiceGrid={isShortChoiceSet(options.map((option) => option.text))}
             options={options.map((option) => ({ id: option.id, label: option.text, content: null }))}
             outcomes={optionOutcomes}
             disabled={busy}

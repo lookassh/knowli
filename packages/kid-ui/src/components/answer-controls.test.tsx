@@ -62,6 +62,26 @@ describe("AnswerGrid", () => {
     expect(screen.getByTestId("kid-outcome-wrong").getAttribute("aria-hidden")).toBe("true");
   });
 
+  it("shows outcome icons as SVG, not text glyphs, and marks the short grid", () => {
+    const { container } = renderKid(
+      <AnswerGrid
+        options={options}
+        outcomes={new Map([["one", "wrong"], ["two", "correct"]])}
+        disabled={false}
+        onChoose={vi.fn()}
+        choiceList
+        shortChoiceGrid
+      />,
+    );
+
+    for (const testId of ["kid-outcome-correct", "kid-outcome-wrong"]) {
+      const outcome = screen.getByTestId(testId);
+      expect(outcome.querySelector("svg.kid-icon")).not.toBeNull();
+      expect(outcome.textContent).toBe("");
+    }
+    expect(container.querySelector("ul")!.className).toContain(styles.shortChoiceGrid);
+  });
+
   it("celebrates only a tile the child chose correctly, never the revealed answer", () => {
     const grid = (outcomes: Map<string, "correct" | "wrong">) => (
       <AnswerGrid options={options} outcomes={outcomes} disabled onChoose={() => undefined} />

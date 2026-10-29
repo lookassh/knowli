@@ -3,6 +3,7 @@ import type { ExerciseProps } from "./types";
 import { ExerciseFrame } from "./ExerciseFrame";
 import { useChoiceKeyboard } from "./useChoiceKeyboard";
 import { AnswerGrid } from "../components/AnswerGrid";
+import { isShortChoiceSet } from "./choice-layout";
 
 /**
  * Rozpoznawanie tekstu i odwrotne (SPEC §12.3–12.4): widoczne słowo/prompt
@@ -30,6 +31,7 @@ export function ReadingView({ task, busy, optionOutcomes, dock, handlers }: Exer
         <AnswerGrid
           className="kid-options"
           choiceList
+          shortChoiceGrid={isShortChoiceSet(options.map((option) => option.text))}
           options={options.map((option) => ({ id: option.id, label: option.text, content: null }))}
           outcomes={optionOutcomes}
           disabled={busy}
