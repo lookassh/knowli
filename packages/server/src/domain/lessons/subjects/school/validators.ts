@@ -18,6 +18,11 @@ function normalizeForGrounding(text: string): string {
   return text.normalize("NFC").replace(/\s+/g, " ").trim();
 }
 
+/** Porównanie sformułowań w rodzinie pytań: jak wyżej, ale bez wielkości liter. */
+function normalizeForPromptComparison(text: string): string {
+  return normalizeForGrounding(text).toLocaleLowerCase("pl-PL");
+}
+
 export function validateSchoolExercise(ex: LessonExerciseDraft, _topic: LessonTopic): string[] {
   const errors: string[] = [];
 
@@ -142,7 +147,7 @@ export function validateSchoolPool(
       const ex = drafts[index]!;
       const elements = (ex.requiredElements ?? []).map((el) => el.id).sort((a, b) => a.localeCompare(b)).join(",");
       const samePrompt =
-        normalizeForGrounding(ex.prompt ?? "") === normalizeForGrounding(first.prompt ?? "") && (ex.prompt ?? "") !== "";
+        normalizeForPromptComparison(ex.prompt ?? "") === normalizeForPromptComparison(first.prompt ?? "") && (ex.prompt ?? "") !== "";
       if (samePrompt) {
         push(index, `familyId: ćwiczenie z rodziny „${familyId}” powiela tekst pytania innego członka rodziny`);
       }

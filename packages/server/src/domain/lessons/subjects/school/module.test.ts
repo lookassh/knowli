@@ -235,6 +235,9 @@ describe("przedmiot school", () => {
     const b = openDraft({ familyId: "fam", prompt: "Co to jest fotosynteza?" });
     const extra = schoolSubject.validatePoolExtra!([a, b], { material: MATERIAL });
     expect(extra.get(1)?.some((e) => e.includes("familyId"))).toBe(true);
+    // Różnica samej wielkości liter to nadal to samo pytanie (w odróżnieniu od cytatów).
+    const lower = openDraft({ familyId: "fam", prompt: "co to jest  FOTOSYNTEZA?" });
+    expect(schoolSubject.validatePoolExtra!([a, lower], { material: MATERIAL }).get(1)?.some((e) => e.includes("powiela"))).toBe(true);
   });
 
   it("za krótki cytat nie uziemia ćwiczenia", () => {
