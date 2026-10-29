@@ -12,7 +12,7 @@
  * - `<P>_PROVIDER_DATA_COLLECTION`: `deny` wyklucza dostawców zbierających
  *   dane z zapytań niezależnie od ustawień konta (odpowiedzi dzieci w graderze).
  *
- * Opcje wymagają `<P>_BASE_URL` na hoście `openrouter.ai` — inaczej start
+ * Opcje wymagają `<P>_BASE_URL` na hoście OpenRouter (`openrouter.ai`, `eu.`/`us.openrouter.ai`) — inaczej start
  * kończy się błędem konfiguracji zamiast wysyłać nieznane pola do zwykłego API.
  *
  * Ustawienie dowolnej opcji dostawcy albo `REASONING` dokłada
@@ -27,13 +27,14 @@ const SLUG = /^[a-z0-9][a-z0-9._ -]*$/i;
 /** Provider order also accepts endpoint slugs such as `deepinfra/turbo` or `google-vertex/us-east5`. */
 const PROVIDER_ENDPOINT_SLUG = /^[a-z0-9][a-z0-9._ -]*(?:\/[a-z0-9][a-z0-9._ -]*)*$/i;
 
-const OPENROUTER_HOST = "openrouter.ai";
+/** OpenRouter hosts, including the regional (in-region routing) endpoints. */
+const OPENROUTER_HOSTS: ReadonlySet<string> = new Set(["openrouter.ai", "eu.openrouter.ai", "us.openrouter.ai"]);
 
 /** Missing base URL means the adapter default (api.openai.com), which is not OpenRouter. */
 function isOpenRouterEndpoint(baseUrl: string | undefined): boolean {
   if (baseUrl === undefined || baseUrl.trim() === "") return false;
   try {
-    return new URL(baseUrl.trim()).hostname.toLowerCase() === OPENROUTER_HOST;
+    return OPENROUTER_HOSTS.has(new URL(baseUrl.trim()).hostname.toLowerCase());
   } catch {
     return false;
   }
@@ -82,7 +83,7 @@ export function chatRequestExtrasFromEnv(
     // These fields are OpenRouter's; a plain OpenAI-compatible API may reject
     // the whole request, so a mismatched configuration stops startup instead.
     if (!isOpenRouterEndpoint(env[`${prefix}_BASE_URL`])) {
-      throw new Error(`${prefix}_REASONING and ${prefix}_PROVIDER_* require ${prefix}_BASE_URL on ${OPENROUTER_HOST}`);
+      throw new Error(`${prefix}_REASONING and ${prefix}_PROVIDER_* require ${prefix}_BASE_URL on ${[...OPENROUTER_HOSTS].join(", ")}`);
     }
     provider.require_parameters = true;
     extras.provider = provider;

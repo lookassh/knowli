@@ -47,6 +47,15 @@ describe("chatRequestExtrasFromEnv", () => {
     expect(chatRequestExtrasFromEnv({ UMIEM_LLM_BASE_URL: "https://api.openai.com/v1" }, "UMIEM_LLM")).toEqual({});
   });
 
+  it("accepts the regional OpenRouter endpoints", () => {
+    for (const host of ["eu.openrouter.ai", "us.openrouter.ai", "OpenRouter.ai"]) {
+      expect(chatRequestExtrasFromEnv({ UMIEM_GRADER_BASE_URL: `https://${host}/api/v1`, UMIEM_GRADER_PROVIDER_DATA_COLLECTION: "deny" }, "UMIEM_GRADER"))
+        .toEqual({ provider: { data_collection: "deny", require_parameters: true } });
+    }
+    expect(() => chatRequestExtrasFromEnv({ UMIEM_GRADER_BASE_URL: "https://xx.openrouter.ai/api/v1", UMIEM_GRADER_REASONING: "low" }, "UMIEM_GRADER"))
+      .toThrow(/UMIEM_GRADER_BASE_URL/);
+  });
+
   it("reads only its own prefix and rejects malformed values", () => {
     expect(chatRequestExtrasFromEnv({ UMIEM_LLM_PROVIDER_QUANTIZATIONS: "fp8" }, "UMIEM_GRADER")).toEqual({});
     expect(() => chatRequestExtrasFromEnv({ ...GRADER_OR, UMIEM_GRADER_PROVIDER_ALLOW_FALLBACKS: "no" }, "UMIEM_GRADER")).toThrow(/ALLOW_FALLBACKS/);
