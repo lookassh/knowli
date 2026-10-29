@@ -95,6 +95,16 @@ test("defaults the pool size to max(60, 12 × selected objectives)", async ({ pa
   await expect(page.getByTestId("lesson-pool-size")).toHaveValue(String(Math.max(60, 12 * objectiveCount)));
 });
 
+test("browser Back from a newly created lesson returns to the list, not to the empty form", async ({ page }) => {
+  await enterParent(page);
+  const deckId = await createLesson(page, `Wstecz ${randomUUID().slice(0, 8)}`, false);
+  await expect(page).toHaveURL(new RegExp(`/parent/decks/${deckId}$`));
+  await page.goBack();
+  await expect(page).toHaveURL(/\/parent\/decks$/);
+  await expect(page.getByTestId("new-lesson-form")).toHaveCount(0);
+  await expect(page.locator(`[data-deck-id="${deckId}"]`)).toBeVisible();
+});
+
 test("parent can safely restart a running lesson generation", async ({ page }) => {
   await enterParent(page);
   await createLesson(page, `Restart ${randomUUID().slice(0, 8)}`, false);

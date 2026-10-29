@@ -103,7 +103,7 @@ export default function DecksPanel({
   onChanged: () => Promise<void>;
   registerEditorState: (state: EditorLeaveState) => void;
   onAuthExpired: () => void;
-  onNavigate: (route: ParentRoute) => void;
+  onNavigate: (route: ParentRoute, options?: { replace?: boolean }) => void;
 }) {
   const compact = useMediaQuery("(max-width: 37.49em)", false, { getInitialValueInEffect: false }) ?? false;
   const [prompt, setPrompt] = useState("");
@@ -148,9 +148,9 @@ export default function DecksPanel({
     wasEditorOpen.current = editorOpen;
   }, [editorOpen, onChanged]);
 
-  const openDeck = (deckId: string, kind: DeckKind) => {
+  const openDeck = (deckId: string, kind: DeckKind, options?: { replace?: boolean }) => {
     knownKinds.current.set(deckId, kind);
-    onNavigate({ section: "decks", deckId });
+    onNavigate({ section: "decks", deckId }, options);
   };
   const openList = () => onNavigate({ section: "decks" });
 
@@ -320,7 +320,8 @@ export default function DecksPanel({
         onAuthExpired={onAuthExpired}
         onCancel={openList}
         onCreated={(createdDeckId) => {
-          openDeck(createdDeckId, "lesson");
+          // formularz znika z historii — „wstecz” z nowej lekcji prowadzi do listy, nie do pustego formularza
+          openDeck(createdDeckId, "lesson", { replace: true });
           void onChanged().catch(() => undefined);
         }}
       />
@@ -356,6 +357,7 @@ export default function DecksPanel({
           gap={4}
           p={4}
           wrap="nowrap"
+          w={compact ? "100%" : undefined}
           className="pp-decks-segmented"
           data-testid="deck-kind-filter"
           role="group"
@@ -371,6 +373,8 @@ export default function DecksPanel({
               aria-pressed={kindFilter === kind}
               onClick={() => setKindFilter(kind)}
               className="pp-decks-segment"
+              px="sm"
+              style={compact ? { flex: "1 1 0", minWidth: 0 } : undefined}
             >
               {messages.decks.kindFilter[kind]}
             </Button>

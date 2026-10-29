@@ -69,12 +69,17 @@ export function useParentNavigation(guard: LeaveGuard) {
     return () => window.removeEventListener("popstate", onPopState);
   }, [show]);
 
-  /** Przejście do widoku z panelu — przez leave guard, z nowym wpisem historii. */
+  /**
+   * Przejście do widoku z panelu — przez leave guard, z nowym wpisem historii.
+   * `replace` podmienia bieżący wpis: widok, do którego nie ma sensu wracać
+   * „wstecz” (np. wysłany formularz nowej lekcji), znika z historii.
+   */
   const navigate = useCallback(
-    (next: ParentRoute) => {
+    (next: ParentRoute, options: { replace?: boolean } = {}) => {
       if (routePath(next) === currentPath.current) return;
       guardRef.current.requestLeave(() => {
-        window.history.pushState(null, "", routePath(next));
+        if (options.replace) window.history.replaceState(null, "", routePath(next));
+        else window.history.pushState(null, "", routePath(next));
         show(next);
       });
     },

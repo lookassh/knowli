@@ -28,7 +28,7 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
 const TABS = ["tab-decks", "tab-children", "tab-progress", "tab-work-card"];
 
 test("telefon: dolny pasek sekcji przy dolnej krawędzi i menu z akcjami", async ({ page }) => {
-  for (const viewport of [{ width: 390, height: 844 }, { width: 360, height: 640 }]) {
+  for (const viewport of [{ width: 390, height: 844 }, { width: 360, height: 640 }, { width: 320, height: 568 }]) {
     await page.setViewportSize(viewport);
     await openSignedInPanel(page);
     await expectNoHorizontalOverflow(page);
