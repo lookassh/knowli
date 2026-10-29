@@ -210,7 +210,9 @@ test("delayed save locks the entire editor until the PATCH completes", async ({ 
   await expect(page.getByTestId("item-source-0")).toBeDisabled();
   await expect(page.getByTestId("item-target-1")).toBeDisabled();
   await expect(page.getByTestId("item-visual-0")).toBeDisabled();
+  await page.getByTestId("item-menu-1").click();
   await expect(page.getByTestId("item-remove-1")).toBeDisabled();
+  await page.keyboard.press("Escape");
   await expect(page.getByTestId("add-item")).toBeDisabled();
   await expect(page.getByTestId("save-items")).toBeDisabled();
 

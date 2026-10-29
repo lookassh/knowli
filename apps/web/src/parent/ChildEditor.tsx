@@ -18,9 +18,11 @@ import {
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { modals } from "@mantine/modals";
+import { notifications } from "@mantine/notifications";
 import { useMutation } from "@tanstack/react-query";
 import { messages, type ChildDto, type ChildPatch } from "@learning/contracts";
 import { childPatch, type EditValues } from "./children-forms";
+import { runOnce } from "./run-once";
 import { callParent, errorMessage, parentClient } from "./api";
 import { ParentIcon } from "./ParentIcon";
 import PronunciationSettings from "./PronunciationSettings";
@@ -188,12 +190,29 @@ function AddChildForm({
     },
   });
   const [refreshFailed, setRefreshFailed] = useState(false);
+  const mounted = useRef(true);
+  // true także po ponownym montażu (Strict Mode: mount → cleanup → mount)
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   const create = useMutation({
     mutationFn: (values: AddValues) => callParent(() => parentClient.children.create({
       displayName: values.displayName,
       avatarKey: values.avatarKey,
       ...(values.birthYear === "" ? {} : { birthYear: Number(values.birthYear) }),
     })),
+    // wysłane dodanie nie blokuje wyjścia z sekcji: gdy rodzic już wyszedł,
+    // błąd trafia do powiadomienia (formularz z komunikatem zniknął)
+    onError: (cause, values) => {
+      if (!mounted.current) {
+        notifications.show({
+          color: "red",
+          title: messages.children.addFailedTitle.replace("{name}", values.displayName),
+          message: errorMessage(cause),
+        });
+      }
+    },
     // dziecko jest już zapisane: nieudane odświeżenie listy to osobny komunikat,
     // a nie błąd dodania (rodzic nie powinien dodawać go drugi raz)
     onSuccess: async () => {
@@ -201,15 +220,21 @@ function AddChildForm({
       try {
         await onAdded();
       } catch {
-        setRefreshFailed(true);
+        // rodzic mógł już wyjść z sekcji — wtedy komunikat trafia do powiadomienia
+        if (mounted.current) setRefreshFailed(true);
+        else notifications.show({ color: "yellow", message: messages.children.addedRefreshFailed });
       }
     },
   });
 
-  const dirty = form.values.displayName !== "" || form.values.birthYear !== "" || form.values.avatarKey !== EMPTY_CHILD.avatarKey;
+  // Wysłane dodanie nie blokuje wyjścia z sekcji: kończy się samo (wywołania
+  // zwrotne w opcjach hooka), a lista dzieci odświeża się niezależnie od
+  // widoku. Chronimy tylko wpisane, jeszcze niewysłane dane.
+  const dirty = !create.isPending
+    && (form.values.displayName !== "" || form.values.birthYear !== "" || form.values.avatarKey !== EMPTY_CHILD.avatarKey);
   useEffect(() => {
-    onStateChange({ dirty, busy: create.isPending });
-  }, [onStateChange, dirty, create.isPending]);
+    onStateChange({ dirty, busy: false });
+  }, [onStateChange, dirty]);
   useEffect(() => () => onStateChange(null), [onStateChange]);
 
   return (
@@ -350,11 +375,11 @@ export default function ChildEditor({
       attributes: { content: { "data-testid": "child-remove-dialog" } },
       // karta zaraz zniknie, a przycisk „Usuń” jest zajęty — fokus na nagłówek sekcji
       returnFocus: false,
-      onConfirm: () => {
+      onConfirm: runOnce(() => {
         setRemoving((current) => new Set(current).add(child.id));
         heading.current?.focus();
         remove.mutate(child.id);
-      },
+      }),
     });
   };
 

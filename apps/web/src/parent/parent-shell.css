@@ -176,10 +176,12 @@
   border-radius: 8px;
 }
 
-/* Sekcje jeszcze nieprzepisane na Mantine zostają jasne także w trybie
-   ciemnym (fazy 2–6 przenoszą je kolejno na komponenty z obu schematami). */
-.pp-app.pp-shell-content {
-  min-height: calc(100dvh - var(--app-shell-header-offset, 0px) - var(--app-shell-footer-offset, 0px));
+/* Widoki lekcji jeszcze nieprzepisane na Mantine (fazy 6a/6b) zostają jasne
+   także w trybie ciemnym: wyspa ze starymi tokenami pp-* wewnątrz strony. */
+.pp-app.pp-legacy-area {
+  min-height: 0;
+  margin: -20px -16px 0;
+  padding: 20px 16px 28px;
   color-scheme: light;
 }
 

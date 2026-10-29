@@ -1,11 +1,18 @@
-import React from "react";
+"use client";
+import { Alert, Button, Group, Stack, Text } from "@mantine/core";
 import { messages } from "@learning/contracts";
+import { ParentIcon } from "./ParentIcon";
 
-export function DeckCoverSettings({ coverAssetId, busy, generating, generatedPreview, onUpload, onRemove, onGenerate, onAcceptGenerated, onRejectGenerated }: {
+/**
+ * Obraz okładkowy zestawu: zapis od razu, poza szkicem wersji. Pole pliku
+ * zostaje natywne (ukryte za przyciskiem) — wybór pliku na telefonie i testy.
+ */
+export function DeckCoverSettings({ coverAssetId, busy, generating, generatedPreview, error, onUpload, onRemove, onGenerate, onAcceptGenerated, onRejectGenerated }: {
   coverAssetId: string | null;
   busy: boolean;
   generating: boolean;
   generatedPreview: string | null;
+  error?: string | null;
   onUpload: (file: File | undefined) => void;
   onRemove: () => void;
   onGenerate: () => void;
@@ -13,22 +20,45 @@ export function DeckCoverSettings({ coverAssetId, busy, generating, generatedPre
   onRejectGenerated: () => void;
 }) {
   return (
-    <section style={{ border: "1px solid #d7dce5", borderRadius: "0.75rem", padding: "1rem", marginBlock: "1rem" }} aria-label={messages.decks.coverLabel} data-testid="deck-cover-settings">
-      <h3>{messages.decks.coverLabel}</h3>
-      <p>{messages.decks.coverHelp}</p>
-      {coverAssetId
-        ? <img style={{ display: "block", width: "9rem", height: "9rem", borderRadius: "0.75rem", objectFit: "cover" }} src={`/api/v1/media/${coverAssetId}`} alt={messages.decks.coverLabel} data-testid="deck-cover-preview" />
-        : <p data-testid="deck-cover-empty">{messages.decks.coverEmpty}</p>}
-      {generatedPreview
-        ? <div data-testid="generated-cover-preview"><img style={{ display: "block", width: "9rem", height: "9rem", borderRadius: "0.75rem", objectFit: "cover" }} src={generatedPreview} alt={messages.decks.coverLabel} /><button type="button" disabled={busy} onClick={onAcceptGenerated}>{messages.decks.coverAccept}</button><button type="button" disabled={busy} onClick={onRejectGenerated}>{messages.decks.coverReject}</button></div>
-        : <button type="button" data-testid="deck-cover-generate" disabled={busy} onClick={onGenerate}>{messages.decks.coverGenerate}</button>}
-      <label>
-        {messages.decks.coverChoose}
-        <input data-testid="deck-cover-input" type="file" accept="image/png,image/jpeg,image/webp" disabled={busy}
-          onChange={(event) => { onUpload(event.target.files?.[0]); event.currentTarget.value = ""; }} />
-      </label>
-      {coverAssetId && <button type="button" data-testid="deck-cover-remove" disabled={busy} onClick={onRemove}>{messages.decks.coverRemove}</button>}
-      {busy && <p role="status" data-testid="deck-cover-busy">{generating ? messages.decks.coverGenerating : messages.decks.coverBusy}</p>}
-    </section>
+    <Stack gap="sm" aria-label={messages.decks.coverLabel} data-testid="deck-cover-settings" component="section">
+      <div>
+        <Text fw={600}>{messages.decks.coverLabel}</Text>
+        <Text size="sm" className="pp-editor-muted">{messages.decks.coverHelp}</Text>
+      </div>
+      <Group align="flex-start" gap="md">
+        {coverAssetId
+          ? <img className="pp-editor-cover" src={`/api/v1/media/${coverAssetId}`} alt={messages.decks.coverLabel} data-testid="deck-cover-preview" />
+          : <Text size="sm" className="pp-editor-muted" data-testid="deck-cover-empty">{messages.decks.coverEmpty}</Text>}
+        {generatedPreview && (
+          <Stack gap="xs" data-testid="generated-cover-preview">
+            <img className="pp-editor-cover" src={generatedPreview} alt={messages.decks.coverLabel} />
+            <Group gap="xs">
+              <Button size="md" data-testid="deck-cover-accept" disabled={busy} onClick={onAcceptGenerated}>{messages.decks.coverAccept}</Button>
+              <Button size="md" variant="default" data-testid="deck-cover-reject" disabled={busy} onClick={onRejectGenerated}>{messages.decks.coverReject}</Button>
+            </Group>
+          </Stack>
+        )}
+      </Group>
+      <Group gap="xs">
+        {!generatedPreview && (
+          <Button size="md" variant="light" data-testid="deck-cover-generate" disabled={busy} onClick={onGenerate}
+            leftSection={<ParentIcon name="sparkles" />}>
+            {messages.decks.coverGenerate}
+          </Button>
+        )}
+        <Button size="md" variant="default" component="label" data-disabled={busy || undefined} className="pp-editor-file">
+          {messages.decks.coverChoose}
+          <input data-testid="deck-cover-input" type="file" accept="image/png,image/jpeg,image/webp" disabled={busy}
+            onChange={(event) => { onUpload(event.target.files?.[0]); event.currentTarget.value = ""; }} />
+        </Button>
+        {coverAssetId && (
+          <Button size="md" variant="subtle" color="red" data-testid="deck-cover-remove" disabled={busy} onClick={onRemove}>
+            {messages.decks.coverRemove}
+          </Button>
+        )}
+      </Group>
+      {busy && <Text size="sm" role="status" data-testid="deck-cover-busy">{generating ? messages.decks.coverGenerating : messages.decks.coverBusy}</Text>}
+      {error && <Alert color="red" variant="light" role="alert" data-testid="deck-cover-error">{error}</Alert>}
+    </Stack>
   );
 }

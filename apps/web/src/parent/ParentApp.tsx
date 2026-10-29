@@ -46,8 +46,6 @@ export default function ParentApp() {
   const leaveGuard = useParentLeaveGuard();
   const { route, navigate } = useParentNavigation(leaveGuard);
   const section = route.section;
-  // sekcje są już na Mantine; stare style mają tylko edytory zestawu i lekcji (fazy 5–6)
-  const legacyContent = route.deckId !== undefined || route.newLesson === true;
   const [reauthOpen, setReauthOpen] = useState(false);
 
   // Stan sesji czytamy raz przy starcie panelu. Później o wygaśnięciu mówią
@@ -172,7 +170,6 @@ export default function ParentApp() {
       <ParentShell
         section={section}
         onNavigate={(next) => navigate({ section: next })}
-        legacyContent={legacyContent}
         onToLearning={() => leaveGuard.requestLeave(() => { window.location.href = "/"; })}
         onLogout={() => leaveGuard.requestLeave(logout)}
       >
