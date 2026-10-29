@@ -399,9 +399,7 @@
 
 .kid-profile:focus-visible,
 .kid-screen button:focus-visible,
-.kid-letter-input:focus-visible,
-.kid-lesson-gap__input:focus-visible,
-.kid-lesson-input:focus-visible {
+.kid-letter-input:focus-visible {
   outline: 3px solid var(--kid-accent);
   outline-offset: 3px;
 }
@@ -2181,9 +2179,9 @@
 .kid-ui .kid-lesson-card {
   box-sizing: border-box;
   padding: 16px;
-  border: 1px solid var(--kid-line);
+  border: 1px solid var(--md-sys-color-outline);
   border-radius: var(--kid-shape-l);
-  background: var(--kid-surface);
+  background: var(--md-sys-color-surface-container-high);
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -2193,7 +2191,10 @@
 
 .kid-lesson-card__title {
   margin: 0;
+  font-family: var(--kid-font-display);
   font-size: var(--kid-type-title-size);
+  font-weight: 700;
+  color: var(--md-sys-color-on-surface);
   text-align: center;
 }
 
@@ -2209,6 +2210,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  font-family: var(--kid-font-display);
   font-size: var(--kid-type-title-md-size);
   font-weight: 600;
 }
@@ -2234,8 +2236,8 @@
 
 .kid-ui .kid-lesson-notice__word {
   position: relative;
-  min-height: 48px;
-  padding: 6px calc(12px + 0.8em);
+  min-height: 56px;
+  padding: 6px 32px;
   font: inherit;
   font-family: var(--kid-font-display);
   font-size: var(--kid-type-title-md-size);
@@ -2243,45 +2245,74 @@
   border: 1px solid var(--md-sys-color-outline);
   border-radius: var(--kid-shape-l);
   background: var(--md-sys-color-surface-container-high);
-  color: var(--kid-text);
+  color: var(--md-sys-color-on-surface);
   cursor: pointer;
+}
+
+/* Same floor as the answer cards: below 560px a card still has to fit whole. */
+@media (max-height: 560px) {
+  .kid-ui .kid-lesson-notice__word {
+    min-height: 48px;
+  }
 }
 
 .kid-ui .kid-lesson-notice__word:active {
   background: var(--md-sys-color-surface-container-highest);
 }
 
-/* Dziedziczymy znaczniki ✓/✗ i paletę z .kid-option--* na przyciskach wskazania. */
-.kid-lesson-notice__word.kid-option--correct {
-  border-color: var(--kid-good);
-  background: var(--kid-good-bg);
+.kid-ui .kid-lesson-notice__word:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 3px;
 }
 
-.kid-lesson-notice__word.kid-option--correct::before {
-  content: "✓ ";
+/* Stany jak w AnswerGrid (.option): oczekiwanie, poprawna, błędna. */
+.kid-ui .kid-lesson-notice__word.kid-option--pending {
+  border-color: var(--md-sys-color-primary);
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+  box-shadow: 0 0 0 1px var(--md-sys-color-primary);
+}
+
+.kid-ui .kid-lesson-notice__word.kid-option--correct {
+  border-color: var(--kid-color-success);
+  background: var(--kid-color-success-container);
+  color: var(--kid-color-on-success-container);
+}
+
+.kid-ui .kid-lesson-notice__word.kid-option--wrong {
+  border-color: var(--md-sys-color-error);
+  background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container);
+}
+
+/* Znacznik wyniku (ikona, nie tylko kolor) w zarezerwowanym pasie po lewej. */
+.kid-lesson-notice__outcome {
   position: absolute;
-  inset-inline-start: 8px;
+  inset-inline-start: 6px;
   top: 50%;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
   transform: translateY(-50%);
+  border-radius: var(--kid-shape-full);
+  pointer-events: none;
 }
 
-.kid-lesson-notice__word.kid-option--wrong {
-  border-color: var(--kid-wrong);
-  background: var(--kid-wrong-bg);
+.kid-ui .kid-lesson-notice__outcome .kid-icon {
+  width: 14px;
+  height: 14px;
 }
 
-.kid-lesson-notice__word.kid-option--pending {
+.kid-lesson-notice__outcome[data-outcome="correct"] {
+  background: var(--kid-color-success);
+  color: var(--kid-color-on-success);
+}
+
+.kid-lesson-notice__outcome[data-outcome="wrong"] {
   border-radius: var(--kid-shape-s);
-  outline: 2px solid var(--kid-accent);
-  outline-offset: 2px;
-}
-
-.kid-lesson-notice__word.kid-option--wrong::before {
-  content: "✗ ";
-  position: absolute;
-  inset-inline-start: 8px;
-  top: 50%;
-  transform: translateY(-50%);
+  background: var(--md-sys-color-error);
+  color: var(--md-sys-color-on-error);
 }
 
 .kid-lesson-visual {
@@ -2299,8 +2330,10 @@
 
 .kid-lesson-stem {
   margin: 0;
+  font-family: var(--kid-font-display);
   font-size: var(--kid-type-headline-sm-size);
   font-weight: 700;
+  color: var(--md-sys-color-on-surface);
   text-align: center;
   overflow-wrap: anywhere;
 }
@@ -2321,9 +2354,9 @@
   align-items: center;
   justify-content: center;
   padding: 10px;
-  border: 2px dashed var(--kid-line);
+  border: 2px dashed var(--md-sys-color-outline);
   border-radius: var(--kid-shape-l);
-  background: var(--kid-soft);
+  background: var(--md-sys-color-surface-container-low);
 }
 
 .kid-lesson-order__pool {
@@ -2347,7 +2380,7 @@
   border: 1px solid var(--md-sys-color-outline);
   border-radius: var(--kid-shape-l);
   background: var(--md-sys-color-surface-container-high);
-  color: var(--kid-text);
+  color: var(--md-sys-color-on-surface);
   cursor: pointer;
 }
 
@@ -2356,12 +2389,13 @@
 }
 
 .kid-ui .kid-lesson-block--placed {
-  border-color: var(--kid-accent);
-  background: var(--md-sys-color-surface-container-high);
+  border-color: var(--md-sys-color-primary);
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
 }
 
 .kid-ui .kid-lesson-block:focus-visible {
-  outline: 3px solid var(--kid-accent);
+  outline: 2px solid var(--md-sys-color-primary);
   outline-offset: 3px;
 }
 
@@ -2381,8 +2415,11 @@
   align-items: baseline;
   justify-content: center;
   gap: 6px;
+  font-family: var(--kid-font-display);
   font-size: var(--kid-type-headline-sm-size);
+  font-weight: 700;
   line-height: 1.5;
+  color: var(--md-sys-color-on-surface);
   text-align: center;
 }
 
@@ -2397,21 +2434,6 @@
   line-height: inherit;
 }
 
-.kid-lesson-gap__input {
-  min-width: 120px;
-  max-width: 100%;
-  min-height: 52px;
-  box-sizing: border-box;
-  padding: 4px 10px;
-  font: inherit;
-  font-size: var(--kid-type-title-lg-size);
-  text-align: center;
-  border: 2px solid var(--kid-accent);
-  border-radius: var(--kid-shape-m);
-  color: var(--kid-text);
-  background: var(--kid-surface);
-}
-
 .kid-lesson-gap__hint {
   margin: 0;
   font-size: var(--kid-type-title-sm-size);
@@ -2421,10 +2443,20 @@
 
 .kid-lesson-source {
   margin: 0;
-  font-size: var(--kid-type-title-lg-size);
+  font-family: var(--kid-font-display);
+  font-size: clamp(var(--kid-type-headline-sm-size), 6vw, var(--kid-type-display-sm-size));
   font-weight: 700;
+  color: var(--md-sys-color-on-surface);
   text-align: center;
   overflow-wrap: anywhere;
+}
+
+/* Niskie okno (landscape telefonu): bodziec o stopień mniejszy, by kafelki
+   i akcja zmieściły się w oknie materiału. */
+@media (max-height: 480px) {
+  .kid-lesson-source {
+    font-size: var(--kid-type-title-lg-size);
+  }
 }
 
 /* Trener precyzji: pojęcia kluczowe (multi-select) i „Skróć odpowiedź”. */
@@ -2476,8 +2508,10 @@
 .kid-answer-segments-text__body {
   margin: 0;
   padding: 10px 14px;
+  border: 1px solid var(--md-sys-color-outline);
   border-radius: var(--kid-shape-l);
-  background: var(--kid-soft);
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
   font-size: var(--kid-type-title-md-size);
   line-height: 1.6;
   text-align: start;

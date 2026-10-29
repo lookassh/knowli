@@ -179,8 +179,16 @@ test("child works a whole lesson: card → notice → choice → blocks → gap 
   });
   expect(shortWordSize.width).toBeGreaterThanOrEqual(44);
   expect(shortWordSize.height).toBeGreaterThanOrEqual(44);
+  // Karta słowa jak karty odpowiedzi: 56 px na wysokim ekranie.
+  expect(shortWordSize.height).toBeGreaterThanOrEqual(56);
   await page.getByTestId("kid-lesson-notice-word").filter({ hasText: "plays" }).click();
   await expect(page.getByTestId("kid-feedback")).toContainText("Świetnie!");
+  // Wynik na słowie to ikona (svg), nie znak tekstowy ✓/✗.
+  const pickedWord = page.getByTestId("kid-lesson-notice-word").filter({ hasText: "plays" });
+  const outcomeMarker = pickedWord.getByTestId("kid-lesson-notice-outcome");
+  await expect(outcomeMarker).toHaveAttribute("data-outcome", "correct");
+  await expect(outcomeMarker.locator("svg.kid-icon")).toHaveCount(1);
+  await expect(pickedWord).not.toContainText(/[✓✗✔✕]/);
   await page.getByTestId("kid-next").click();
 
   // Wybór.
