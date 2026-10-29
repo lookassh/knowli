@@ -462,3 +462,93 @@ Punkty 1–3 i 6 wdrożone; punkty 4 i 5 odłożone na krok po pilotażu.
   i `payload` są JSONB walidowanym w kontraktach/domenie); jeśli walidacja
   kształtu `dynamicTopic` będzie wymagała więzów bazowych, decyzja zapada
   w Etapie 1 na podstawie istniejącego triggera kontekstu lekcji.
+
+## 8. Raport kartkówki z wymiarem precyzji (Etap 5) — kontrakt
+
+Status: projekt do akceptacji właściciela (2026-10-29), przed kodem. Moduł
+odpowiedzialny: kartkówka lekcji (`learning/lessons/lesson-mock-tests.ts`);
+kontrakty w `packages/contracts/src/lessons.ts`. Słówka i gramatyka bez zmian.
+
+Stan dziś: raport rodzica (`LessonMockTestReportDto`) liczy per zagadnienie
+wynik zamknięty (poprawne, błędne, nieocenione, pominięte, kategorie błędów),
+a omówienie dziecka (`LessonMockTestSummaryDto`) pokazuje odpowiedź dziecka,
+poprawną odpowiedź i wynik. Wymiar precyzji odpowiedzi otwartych jest
+zapisany w ocenach (`assessments.details`), ale żaden z raportów go nie
+pokazuje. Źródło (§5.6) oczekuje po kartkówce: poprawności, opanowanych
+zagadnień, brakujących informacji, wskazówek dotyczących precyzji
+i propozycji powtórek.
+
+### 8.1. Raport rodzica — `objectives[].school` (opcjonalne)
+
+```ts
+school?: {
+  knowledge: { correct: number; partial: number; incorrect: number };
+  precision: { concise: number; verbose: number; unfocused: number };
+  /** Odpowiedzi z naruszoną formą jednego zdania (`formOk = false`). */
+  formViolations: number;
+  /** Najczęściej brakujące elementy wymagane (tekst, liczba), malejąco, ≤5. */
+  missingElements: { text: string; count: number }[];
+}
+```
+
+- Tylko dla zagadnień przedmiotu `school`, gdy co najmniej jedna odpowiedź
+  otwarta tej kartkówki ma ocenę z wymiarem wiedzy. Liczy kod z
+  `assessments.details`; „nieocenione” i pominięte nie wchodzą.
+- Raport jest zamrażany przy zamknięciu kartkówki (jak dziś,
+  `context.lessonMockTestReport`). Raporty zamknięte przed wdrożeniem nie
+  mają pola i pozostają bez zmian — bez przeliczania historii.
+- Panel rodzica (lista kartkówek w nadzorze lekcji) pokazuje pod wynikiem
+  zagadnienia jedną linię wiedzy i precyzji oraz brakujące elementy.
+
+### 8.2. Omówienie dziecka — wskazówka przy rozwiązaniu (opcjonalna)
+
+```ts
+solutions[].hintPl?: string  // gotowy tekst z katalogu komunikatów
+```
+
+Serwer dobiera jedną wskazówkę z szablonów, bez kategorii, liczb i treści
+spoza omówienia:
+
+| Ocena odpowiedzi otwartej | Wskazówka (propozycja) |
+| --- | --- |
+| wiedza poprawna, precyzja `verbose` albo `formOk = false` | „Dobrze! Następnym razem spróbuj krócej.” |
+| wiedza poprawna, precyzja `unfocused` | „Dobrze! Trzymaj się samego pytania.” |
+| wiedza `partial` | „Zabrakło ważnej informacji. Porównaj z poprawną odpowiedzią.” |
+| pozostałe | brak wskazówki |
+
+Omówienie i tak pokazuje poprawną odpowiedź po zakończeniu kartkówki, więc
+wskazówka niczego nowego nie ujawnia; nie podaje treści brakującego
+elementu ani komentarza modelu.
+
+### 8.3. Omówienie dziecka — „Warto powtórzyć” (opcjonalne)
+
+```ts
+reviewObjectives?: { objectiveId: string; titlePl: string }[]
+```
+
+Zagadnienia z co najmniej jedną odpowiedzią błędną, niepełną albo
+pominiętą, w kolejności tematu (≤8). Ekran omówienia pokazuje je jako krótką
+listę nad przyciskiem „Poćwicz”. To informacja dla dziecka, nie zmiana
+harmonogramu: powtórki nadal planuje selektor z historii ocen.
+
+### 8.4. Decyzje do akceptacji właściciela
+
+1. Wymiar precyzji w raporcie rodzica tylko dla nowych kartkówek (bez
+   przeliczania zamrożonych raportów).
+2. Dziecko dostaje gotowe zdania-wskazówki z katalogu, nie kategorie ani
+   liczby precyzji.
+3. „Warto powtórzyć” liczone z wyników tej kartkówki (błędne, niepełne,
+   pominięte), bez zmian w harmonogramie.
+4. Teksty wskazówek z tabeli 8.2 — do korekty, jeśli brzmią nienaturalnie.
+
+### 8.5. Klienci i integracje
+
+- Kid UI: `LessonMockTestSummaryScreen` — wskazówka pod odpowiedziami
+  rozwiązania i lista „Warto powtórzyć”; wspólne komponenty `KidScreen`,
+  test geometrii w istniejącym specu omówienia (portrait, landscape, tablet,
+  desktop).
+- Panel rodzica: `LessonSupervisionPanel` — sekcja kartkówek.
+- API → MCP → skill: raport kartkówek lekcji nie wchodzi do
+  `learning-overview`, więc brak wpływu (do odnotowania w PR).
+- Etap 5 obejmuje też przepisanie SPEC §28 i architektury §22 na stan kodu
+  oraz pełny przebieg bramek.
