@@ -732,12 +732,12 @@ per cel z poprzednich sesji (bez zadań następczych):
 3. brakujący element → bez nowej reguły: `partial` mapuje się na `incorrect`,
    więc działa istniejąca ścieżka wsparcia (karta wsparcia i ćwiczenie
    prowadzone celu); nie ma mapowania element → ćwiczenie;
-4. pomyłka pojęć → odłożone (6.5, punkt 5);
+4. pomyłka pojęć → pytanie porównawcze celu (Etap 6, §9.3);
 5. samodzielnie i zwięźle → bez zmian (rzadsza powtórka po przerwie).
 
 ### 6.5. Decyzje właściciela (zaakceptowane 2026-10-29)
 
-Punkty 1–3 i 6 wdrożone; punkty 4 i 5 odłożone na krok po pilotażu.
+Punkty 1–3 i 6 wdrożone w Etapie 4; punkty 4 i 5 — w Etapie 6 (§9).
 
 1. `lesson_shorten` jako zadanie następcze poza planem i budżetem, wyłączone
    w fazie „Jeszcze 3 i koniec!” i w kartkówce.
@@ -895,7 +895,9 @@ harmonogramu: powtórki nadal planuje selektor z historii ocen.
 
 ## 9. Precyzja v3: kategorie fragmentów i pomylone pojęcia (Etap 6) — kontrakt
 
-Status: **szkic do akceptacji właściciela** (2026-10-29). Realizuje punkty 4 i 5
+Status: **zaakceptowany przez właściciela 2026-10-29** (decyzje 9.6 bez zmian)
+i zaimplementowany; ewaluacja gradera v3 w `grader-eval-2026-10-29-v3.md`,
+korekta przy implementacji w 9.7. Realizuje punkty 4 i 5
 odłożone w 6.5 (źródło §5.5 i reguła „myli dwa pojęcia → ćwiczenie ich
 porównywania”, wym. 7.3–7.4). Moduły: werdykt i reguły w domenie
 (`domain/lessons/evaluate.ts`, `precision-trainer.ts`, `scheduler.ts`), ścieżka
@@ -1031,3 +1033,16 @@ nie ocenia cech dziecka — tylko treść odpowiedzi.
    fragmentów zbędnych / nie na temat.
 7. **Bramka jakości**: ewaluacja golden setu na prawdziwym modelu
    (`google/gemini-3.8-flash`) przed PR; próg dla pomylenia pojęć ≥ 80%.
+
+### 9.7. Korekty przy implementacji (2026-10-29)
+
+- Reguła pytań porównawczych działa w obu ścieżkach wyboru odpowiedzi
+  otwartej: także przy należnym samodzielnym sprawdzeniu (wykrył to test
+  integracyjny — pierwotnie tylko ścieżka utrwalania).
+- Pary pojęć w raporcie grupowane bez wielkości liter; zapis — pierwszy
+  alfabetycznie wariant z ocen.
+- Decyzja rodzica „uznaj za poprawne” na werdykcie v3 zeruje także
+  `confusedConcepts` (znika błąd treści, więc i pomylenie).
+- Fake grader dzieli zdania bez elementów wymaganych: z rdzeniem słowa pytania
+  albo odpowiedzi wzorcowej → „zbędne”, pozostałe → „nie na temat”;
+  `fake-school-grader-v3`.

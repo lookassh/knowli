@@ -813,6 +813,27 @@ describe("werdykt v3: pomylone pojęcia i fragmenty nie na temat (Etap 6, integr
     expect(next.prompt).toMatchObject({ prompt: "Czym różni się fotosynteza od oddychania rośliny?" });
   });
 
+  it("raport kartkówki pokazuje pomylone pojęcia zagadnienia", async () => {
+    const grader = new FakeAnswerGrader().onAnswer(confusedAnswer, confusedVerdict);
+    const services = makeServices(grader);
+    const child = await createChild(services, { displayName: "Kartkówka v3", avatarKey: "owl" });
+    const { deckId } = await seedSchoolDeck(child.id);
+    const session = await startSession(services, { childId: child.id, deckId, microphoneEnabled: false, mode: "mock_test" });
+    for (let i = 0; i < 20; i++) {
+      const task = await nextTask(services, session.sessionId);
+      if (task === null) break;
+      if (task.exerciseType === "lesson_card") { await completePresentation(services, { taskId: task.taskId }); continue; }
+      const text = task.exerciseType === "lesson_open_answer" ? confusedAnswer : null;
+      await submitAttempt(services, text === null
+        ? { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "skip" }
+        : { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text });
+    }
+    await endSession(services, session.sessionId);
+    const report = await getLessonMockTestReport(services, session.sessionId);
+    const objective = report.objectives.find((row) => row.objectiveId === OBJECTIVE_ID)!;
+    expect(objective.school?.confusions).toEqual([{ said: "Oddychanie", meant: "fotosynteza", count: 1 }]);
+  });
+
   it("„Skróć odpowiedź” zaznacza treść nie na temat osobno i dobiera do niej podpowiedź; raport liczy kategorie", async () => {
     const services = makeServices(new FakeAnswerGrader());
     const child = await createChild(services, { displayName: "Dygresja", avatarKey: "cat" });
