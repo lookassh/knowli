@@ -9,6 +9,7 @@ import { GenerationProviderError } from "../../ports/generation-error";
 import { lessonPoolJsonSchema, poolExerciseTypes } from "./lesson-pool-schema";
 import { materializeGeneratedCalculations } from "../lesson-calculations";
 import { materializeGeneratedKeywords } from "../lesson-keywords";
+import { materializeGeneratedAssignments } from "../lesson-assignments";
 import { withChatRequestExtras, type ChatRequestExtras } from "../chat-request-options";
 
 export interface OpenAiLlmOptions {
@@ -140,7 +141,7 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
     types.filter((type) => input.exerciseTypes.includes(type)).join(", ") || "none available";
   parts.push(
     `Return at most ${input.countPerObjective} exercises per objective in this batch, aiming for this stage split: ` +
-      `${input.stageCounts.guided} guided (${stageMenu(["lesson_choice", "lesson_order", "lesson_short_answer"])}), ` +
+      `${input.stageCounts.guided} guided (${stageMenu(["lesson_choice", "lesson_order", "lesson_short_answer", "lesson_match", "lesson_group"])}), ` +
       `${input.stageCounts.productive} productive (${stageMenu(["lesson_gap", "lesson_error_fix", "lesson_transform"])}), ` +
       `${input.stageCounts.independent} independent (${stageMenu(["lesson_open_answer", "lesson_calculation"])}). ` +
       independentReservation(input) +
@@ -180,6 +181,19 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
       "keyOptionIds (2 or 3 ids of the concepts a precise answer to that question must use; each key concept appears in that family model answer) and sourceRefs. " +
       "The other options are real concepts from the material that are NOT essential for this answer. Never put the answer sentence or a definition into keywordOptions; " +
       "code computes the answer from keyOptionIds. Skip lesson_keywords when the open answer has fewer than two essential concepts.",
+    );
+  }
+  if (input.exerciseTypes.includes("lesson_match") || input.exerciseTypes.includes("lesson_group")) {
+    parts.push(
+      "lesson_match and lesson_group are guided types with their own strict branches: return ONLY exerciseType, objectiveId, instructionPl " +
+      "(a short child-facing instruction in the prompt language, e.g. which things to connect or sort) and their fields below plus sourceRefs; " +
+      "code computes the answer. lesson_match: pairs (3 to 5 objects {left, right}: left is a concept, place or cause of at most 40 characters, " +
+      "right is its definition, feature or effect of at most 100 characters, both taken from the parent material) and extraRight (0 to 2 extra " +
+      "right-side texts from the material that match none of the left items). Use it when the material pairs concepts with definitions, places " +
+      "with features or causes with effects. lesson_group: groups (2 or 3 objects {id: g1..g3, label of at most 30 characters}) and groupItems " +
+      "(4 to 8 objects {text of at most 40 characters, groupId}, at least 2 per group). Use it when the material classifies things (e.g. mammals/birds, " +
+      "lowlands/uplands). Texts on one side must be distinct and none may contain another; an item must not repeat a group label. " +
+      "Skip these types when the material has no such pairs or classification.",
     );
   }
   if (input.deduplication !== "exercise") {
@@ -523,7 +537,7 @@ export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider 
         }
         const result = parsed as { exercises: unknown[]; examples?: unknown };
         return {
-          exercises: materializeGeneratedKeywords(materializeGeneratedCalculations(result.exercises)),
+          exercises: materializeGeneratedAssignments(materializeGeneratedKeywords(materializeGeneratedCalculations(result.exercises))),
           examples: lessonExamplesToRecord(result.examples),
         };
       } catch (error) {
