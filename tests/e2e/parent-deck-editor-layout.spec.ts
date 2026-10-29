@@ -61,6 +61,7 @@ async function openEditor(page: Page): Promise<Calls> {
       return route.fulfill({ status: 204, body: "" });
     }
     if (path.endsWith("/login")) return route.fulfill({ json: { authenticated: true, setupRequired: false } });
+    if (path.endsWith("/lesson-catalog")) return route.fulfill({ json: { subjects: [] } });
     if (path.endsWith("/children")) return route.fulfill({ json: [{ id: childId, displayName: "Ala", avatarKey: "fox", recordingMode: "hold", canRead: true }] });
     if (path.endsWith("/decks")) return route.fulfill({ json: [{ deckId, title: deck.title, state: "published", kind: "vocabulary", editableVersionId: draftId, publishedVersionId: draftId }] });
     if (path.endsWith(`/decks/${deckId}`)) return route.fulfill({ json: current });
@@ -170,4 +171,25 @@ test("tryb ciemny obejmuje edytor", async ({ page }) => {
   const bar = await page.getByTestId("editor-action-bar").evaluate((element) => getComputedStyle(element).backgroundColor);
   const [br, bg, bb] = bar.match(/\d+/g)!.map(Number);
   expect(br! + bg! + bb!).toBeLessThan(3 * 80);
+});
+
+test("widok lekcji (stare style) zostaje jasny także po wybraniu trybu ciemnego w menu", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await openEditor(page);
+  const html = page.locator("html");
+  await expect(html).toHaveAttribute("data-mantine-color-scheme", "dark");
+
+  await page.goto("/parent/lessons/new");
+  await expect(page.getByTestId("tab-decks")).toBeVisible();
+  await expect(html).toHaveAttribute("data-mantine-color-scheme", "light");
+  // jawny wybór „Ciemny” przy schemacie systemu już ciemnym: wyliczony schemat się nie zmienia
+  await page.getByTestId("color-scheme-menu").click();
+  await page.getByTestId("color-scheme-control").getByText("Ciemny").click();
+  await expect(html).toHaveAttribute("data-mantine-color-scheme", "light");
+
+  await page.keyboard.press("Escape");
+  await page.getByTestId("tab-children").click();
+  await expect(page).toHaveURL(/\/parent\/children$/);
+  await expect(html).toHaveAttribute("data-mantine-color-scheme", "dark");
 });

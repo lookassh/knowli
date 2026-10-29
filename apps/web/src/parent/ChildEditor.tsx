@@ -190,7 +190,11 @@ function AddChildForm({
   });
   const [refreshFailed, setRefreshFailed] = useState(false);
   const mounted = useRef(true);
-  useEffect(() => () => { mounted.current = false; }, []);
+  // true także po ponownym montażu (Strict Mode: mount → cleanup → mount)
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   const create = useMutation({
     mutationFn: (values: AddValues) => callParent(() => parentClient.children.create({
       displayName: values.displayName,

@@ -98,11 +98,24 @@ const STATE_TONE: Record<DeckSummaryDto["state"], string> = {
  */
 function LegacyArea({ children }: { children: ReactNode }) {
   const scheme = useComputedColorScheme("light");
+  const schemeRef = useRef(scheme);
+  schemeRef.current = scheme;
   useEffect(() => {
+    // Mantine ustawia atrybut przy każdej zmianie wyboru rodzica (także gdy
+    // wyliczony schemat się nie zmienia) — obserwator przywraca jasny od razu
     const root = document.documentElement;
-    root.setAttribute("data-mantine-color-scheme", "light");
-    return () => root.setAttribute("data-mantine-color-scheme", scheme);
-  }, [scheme]);
+    const attribute = "data-mantine-color-scheme";
+    const forceLight = () => {
+      if (root.getAttribute(attribute) !== "light") root.setAttribute(attribute, "light");
+    };
+    forceLight();
+    const observer = new MutationObserver(forceLight);
+    observer.observe(root, { attributes: true, attributeFilter: [attribute] });
+    return () => {
+      observer.disconnect();
+      root.setAttribute(attribute, schemeRef.current);
+    };
+  }, []);
   return <div className="pp-app pp-legacy-area">{children}</div>;
 }
 
