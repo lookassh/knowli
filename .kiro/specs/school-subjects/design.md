@@ -1051,3 +1051,187 @@ nie ocenia cech dziecka — tylko treść odpowiedzi.
 - Fake grader dzieli zdania bez elementów wymaganych: z rdzeniem słowa pytania
   albo odpowiedzi wzorcowej → „zbędne”, pozostałe → „nie na temat”;
   `fake-school-grader-v3`.
+
+## 10. Ćwiczenia „Połącz w pary” i „Pogrupuj” (Etap 7) — kontrakt
+
+Status: **projekt do akceptacji właściciela** (decyzje 10.8). Zmienia zakres
+z 2026-10-28: „dopasowywanie par” przestaje być wyłączeniem (requirements,
+„Zakres i świadome wyłączenia”). Moduły: typy i ocena w domenie
+(`domain/lessons/types.ts`, `pool-validation.ts`, `evaluate.ts`,
+`subjects/school/`), materializacja i próby w `learning/lessons/`, generowanie
+i szkic w `materials/lessons/`, widoki w `packages/kid-ui`, edytor
+w `apps/web/src/parent/lessons`. Gramatyka i słówka bez zmian.
+
+Zasada: model generuje wyłącznie dane (teksty i przypisania), serwer je
+waliduje, rodzic zatwierdza, a Kid UI rysuje je wspólnymi komponentami. Ocena
+jest deterministyczna, bez modelu w trakcie sesji; klucz zostaje na serwerze.
+Żadnego HTML ani kodu generowanego przez model.
+
+### 10.1. „Połącz w pary” — typ `lesson_match`
+
+Ćwiczenie w puli (tylko `school`), etap `guided` (jak `lesson_order`):
+
+| Pole | Kształt | Zasada |
+| --- | --- | --- |
+| `exerciseType` | `"lesson_match"` | etap `guided` |
+| `pairs` | `[{ left, right }]`, 3–5 | `left` ≤60 znaków (pojęcie, miejsce, przyczyna), `right` ≤120 (definicja, cecha, skutek) |
+| `extraRight` | `string[]`, 0–2, ≤120 znaków | dystraktory po prawej, żeby ostatniej pary nie dało się dobrać eliminacją |
+| `answer` | string | pary złączone `"; "`, każda jako `left — right` (`targetKey`, podgląd rodzica) |
+| `instructionPl`, `sourceRefs` | jak w innych typach | `sourceRefs` wymagane |
+
+Walidacja puli: liczby i długości jak wyżej; lewe i prawe teksty unikalne po
+normalizacji (NFC, białe znaki, wielkość liter) w obrębie ćwiczenia, także
+dystraktory względem prawych stron par; żaden tekst nie jest podciągiem innego
+po tej samej stronie (dwie prawie identyczne definicje są nie do odróżnienia).
+Merytoryczną poprawność par sprawdza rodzic.
+
+Kid DTO (`.strict()`, bez klucza):
+
+```ts
+{ kind: "lesson_match", instructionPl: string,
+  left: LessonItem[]  /* 3–5, UUID nadane przy materializacji, tasowane */,
+  right: LessonItem[] /* pary + dystraktory, UUID, tasowane niezależnie */ }
+```
+
+### 10.2. „Pogrupuj” — typ `lesson_group`
+
+| Pole | Kształt | Zasada |
+| --- | --- | --- |
+| `exerciseType` | `"lesson_group"` | etap `guided` |
+| `groups` | `[{ id, label }]`, 2–3 | `id` slug unikalny w ćwiczeniu, `label` ≤40 znaków („ssaki”, „ptaki”) |
+| `items` | `[{ text, groupId }]`, 4–8 | tekst ≤60 znaków; każda grupa ma co najmniej 2 elementy |
+| `answer` | string | grupy złączone `"; "`, każda jako `label: element, element` |
+| `instructionPl`, `sourceRefs` | jak w innych typach | `sourceRefs` wymagane |
+
+Walidacja puli: liczby i długości jak wyżej; `groupId` wskazuje istniejącą
+grupę; etykiety grup i teksty elementów unikalne po normalizacji; element nie
+może być równy etykiecie żadnej grupy.
+
+Kid DTO (`.strict()`, bez klucza):
+
+```ts
+{ kind: "lesson_group", instructionPl: string,
+  groups: LessonItem[] /* 2–3, UUID, kolejność z materiału */,
+  items: LessonItem[]  /* 4–8, UUID, tasowane */ }
+```
+
+### 10.3. Odpowiedź i ocena
+
+Jedna nowa modalność `assignment` dla obu typów (migracja `0026` rozszerza
+`attempts_modality_allowed`, wzór `0024`):
+
+```ts
+{ modality: "assignment", assignments: { itemId: Uuid, targetId: Uuid }[] /* 3–8 */ }
+```
+
+- `lesson_match`: `itemId` = element lewej kolumny, `targetId` = element
+  prawej. Każdy lewy dokładnie raz, każdy prawy co najwyżej raz (bijekcja na
+  parach, dystraktory zostają nieużyte).
+- `lesson_group`: `itemId` = element, `targetId` = grupa. Każdy element
+  dokładnie raz.
+- Kształt niezgodny z zadaniem (brakujący lub obcy identyfikator, powtórzenie)
+  → `400`, bez próby — jak dzisiejsze strażniki modalności.
+- Hash żądania (idempotencja) liczony z przypisań posortowanych po `itemId`;
+  kolejność stukania nie ma znaczenia.
+
+Ocena deterministyczna, bez modelu: `correct`, gdy wszystkie przypisania są
+zgodne z kluczem; inaczej `incorrect` z `correctText` = poprawne pary lub
+grupy (format jak `answer`). Bez oceny częściowej i bez „prawie” — jeden błąd
+w parach zawsze psuje dwie pary, więc liczenie trafień myliłoby dziecko.
+Pomoc `options` jak w `lesson_order` (elementy widoczne), więc pierwsza
+poprawna odpowiedź nie jest samodzielnym przypomnieniem i nie wchodzi do serii
+opanowania. Zadanie liczy się do budżetu sesji.
+
+Kartkówka: oba typy dopuszczone (jak `lesson_order`), z ekspozycją przy
+wydaniu; omówienie pokazuje odpowiedź dziecka i poprawne pary lub grupy
+tekstem. Raport aktywności sesji i karta pracy dla rodzica opisują odpowiedź
+jako `lewe → prawe` lub `grupa: elementy`.
+
+### 10.4. Tasowanie bez rozwiązanego układu (także `lesson_order`)
+
+Dziś `seededShuffle` (ziarno = id zadania) może zwrócić układ kanoniczny:
+przy 3 blokach `lesson_order` co szóste zadanie startuje już rozwiązane.
+Reguła wspólna dla trzech typów: gdy wynik tasowania jest równy układowi
+rozwiązanemu, materializacja przesuwa go cyklicznie o jedną pozycję
+(deterministycznie, bez nowej losowości):
+
+- `lesson_order`: kolejność bloków ≠ kolejność kanoniczna;
+- `lesson_match`: prawa kolumna nie stoi w całości naprzeciw swoich par
+  (porównanie pozycji par po tasowaniu obu kolumn);
+- `lesson_group`: elementy nie są ułożone grupami w kolejności grup.
+
+Dotyczy tylko nowo wydanych zadań; wydane zadania mają niezmienny prompt.
+
+### 10.5. Kid UI
+
+Dwa widoki w `exercises/lesson/` z istniejących klocków: `ExerciseFrame`,
+`LessonBlockButton`, `ActionButton` („Sprawdź”, aktywne dopiero przy
+komplecie przypisań), `useRetryReset`. Wyłącznie stukanie, bez przeciągania
+(dostępność, klawiatura, spójność z „Ułóż”). Czyste funkcje stanu obok
+widoków, jak `block-order.ts`.
+
+- **„Połącz w pary”**: każdy element lewej kolumny ma pod sobą puste
+  miejsce. Stuknięcie miejsca czyni je aktywnym (domyślnie pierwsze puste),
+  stuknięcie elementu z puli prawych wstawia go tam; stuknięcie wstawionego
+  elementu oddaje go do puli. Compact: lewy element i jego miejsce jeden pod
+  drugim, pula pod listą; expanded: dwie kolumny.
+- **„Pogrupuj”**: grupy jako przełączniki (jedna aktywna, domyślnie
+  pierwsza); stuknięcie elementu z puli dodaje go do aktywnej grupy;
+  stuknięcie elementu w grupie oddaje go do puli. Zawartość grup widoczna pod
+  przełącznikami; compact w jednej kolumnie, expanded grupy obok siebie.
+- Cele ≥48 px, główna akcja ≥54 px, teksty zawijają się (do 120 znaków po
+  prawej w parach), brak przepełnienia poziomego, klawiatura ekranowa nie
+  zasłania „Sprawdź”. Nowe specy geometrii (portrait, landscape, tablet,
+  desktop) w partycji `mocked`.
+- Feedback: dotychczasowa ścieżka `great` / `incorrect{correctText}`;
+  zaznaczanie pojedynczych błędnych par — poza etapem (10.8 pkt 4).
+- Nowe komunikaty w `messages.ts` (polecenia, etykiety puli, „Wybierz
+  miejsce”, „Dodaj do grupy …”, etykiety dostępności); ikony z istniejącego
+  zestawu.
+
+### 10.6. Generowanie, edytor i publikacja
+
+- Structured output: osobne ścisłe gałęzie `lesson_match` i `lesson_group`
+  w schemacie puli (wzór gałęzi `lesson_keywords`/`lesson_calculation`),
+  walidacja kształtu w szkicu (`lesson-drafts.ts`) i w puli.
+- Prompt szkoły: pary, gdy materiał zawiera pojęcia z definicjami, miejsca
+  z cechami, przyczyny ze skutkami; grupy, gdy materiał zawiera klasyfikację
+  (np. ssaki/ptaki, niziny/wyżyny). Teksty wyłącznie z materiału rodzica.
+  Dotyczy nowych generacji i dogenerowań; istniejące zestawy bez zmian.
+- Minima puli i pokrycie etapów bez zmian: oba typy liczą się jako `guided`,
+  ale publikacja ich nie wymaga.
+- Deduplikacja puli (`exercise-identity`): bodziec = posortowane pary lub
+  posortowane etykiety grup z elementami.
+- Edytor rodzica: pola tekstowe par (lewe/prawe) i dystraktorów; dla grup
+  pola etykiet i elementów z wyborem grupy (`NativeSelect`, Mantine);
+  dodawanie i usuwanie wierszy w granicach limitów; `answer` wyliczany
+  z pól (nie edytowany osobno, jak dziś przy `lesson_order`). Podgląd
+  pokazuje odpowiedź w formacie `answer`.
+- Fake generator: po jednym ćwiczeniu obu typów w etapie `guided`.
+
+### 10.7. Prywatność, transakcje, integracje
+
+- Kid DTO bez klucza: pary i przynależność do grup znane tylko serwerowi;
+  identyfikatory UUID nadawane przy materializacji (inne w każdym zadaniu).
+- Ocena bez modelu i bez danych dziecka poza przypisaniami; zapis próby,
+  oceny i ekspozycji w jednej transakcji jak w `lesson_order`.
+- API → MCP → skill: lekcje poza `learning-overview` — brak wpływu.
+
+### 10.8. Decyzje do akceptacji właściciela
+
+1. **Zmiana zakresu**: „dopasowywanie par” przestaje być wyłączeniem; dwa
+   nowe typy `lesson_match` i `lesson_group` tylko w przedmiotach szkolnych
+   (gramatyka bez nich).
+2. **Limity**: pary 3–5 + 0–2 dystraktory; grupy 2–3, elementy 4–8, min. 2
+   na grupę.
+3. **Modalność `assignment`** wspólna dla obu typów + migracja `0026`.
+4. **Ocena zero-jedynkowa** z poprawnymi parami/grupami w feedbacku; bez
+   oceny częściowej i bez zaznaczania pojedynczych błędów (możliwe później).
+5. **Etap `guided`**, dopuszczone w kartkówce, nie wymagane do publikacji.
+6. **Interakcja tylko stukaniem** (bez przeciągania), układy compact/expanded
+   jak w 10.5.
+7. **Poprawka tasowania** (10.4) również dla istniejącego `lesson_order`.
+8. **Poza etapem**: powiązanie z pomylonymi pojęciami z Etapu 6 (np. selektor
+   wybierający „Pogrupuj” z grupami nazwanymi jak pomylona para) — do
+   rozważenia po pilotażu, gdy będzie wiadomo, jak często generator tworzy
+   takie grupy.
