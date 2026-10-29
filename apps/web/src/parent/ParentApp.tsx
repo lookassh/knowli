@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { Button, Center, Group, Modal, Paper, Text, Title } from "@mantine/core";
+import { Alert, Button, Center, Group, Loader, Modal, Paper, Stack, Text, Title } from "@mantine/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { messages } from "@learning/contracts";
 import { callParent, errorMessage, parentClient } from "./api";
@@ -137,6 +137,12 @@ export default function ParentApp() {
     );
   }
 
+  // Pierwsze wczytanie list: bez danych sekcje pokazałyby mylący pusty stan
+  // („Nie masz jeszcze…”). Nieudane odświeżenie przy istniejących danych
+  // zostawia je na ekranie — błąd zgłasza wtedy sama sekcja.
+  const listsWithoutData = [childrenQuery, decksQuery].filter((query) => query.data === undefined);
+  const listsError = listsWithoutData.find((query) => query.isError)?.error;
+  const listsPending = listsWithoutData.length > 0 && listsError === undefined;
   const childrenList = childrenQuery.data ?? [];
   const decks = decksQuery.data ?? [];
 
@@ -148,7 +154,32 @@ export default function ParentApp() {
         onToLearning={() => leaveGuard.requestLeave(() => { window.location.href = "/"; })}
         onLogout={() => leaveGuard.requestLeave(logout)}
       >
-        {section === "decks" ? (
+        {listsError !== undefined ? (
+          <Alert color="red" variant="light" role="alert" title={messages.parentShell.loadFailed} data-testid="panel-load-error">
+            <Stack gap="sm" align="flex-start">
+              <Text size="sm">{errorMessage(listsError)}</Text>
+              <Button
+                size="md"
+                variant="light"
+                color="red"
+                data-testid="panel-load-retry"
+                onClick={() => {
+                  void queryClient.refetchQueries({ queryKey: CHILDREN_KEY, exact: true });
+                  void queryClient.refetchQueries({ queryKey: DECKS_KEY, exact: true });
+                }}
+              >
+                {messages.parentShell.retry}
+              </Button>
+            </Stack>
+          </Alert>
+        ) : listsPending ? (
+          <Center py="xl" role="status" data-testid="panel-loading">
+            <Group gap="sm">
+              <Loader size="sm" />
+              <Text>{messages.parentShell.loading}</Text>
+            </Group>
+          </Center>
+        ) : section === "decks" ? (
           <DecksPanel
             decks={decks}
             childrenList={childrenList}

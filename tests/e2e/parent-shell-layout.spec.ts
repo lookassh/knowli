@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { messages } from "@learning/contracts";
 
 /**
  * Geometria ramy panelu rodzica (plan 2026-10-29-parent-ui-mantine, faza 1):
@@ -83,4 +84,26 @@ test("wybrany tryb ciemny przeżywa odświeżenie strony", async ({ page }) => {
   await page.getByTestId("color-scheme-menu").click();
   await page.getByTestId("color-scheme-control").getByText("Jasny").click();
   await expect(page.locator("html")).toHaveAttribute("data-mantine-color-scheme", "light");
+});
+
+test("nieudane pierwsze wczytanie list pokazuje błąd z ponowieniem, nie pusty stan", async ({ page }) => {
+  let failLists = true;
+  await page.route("**/api/v1/parent/**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/login")) {
+      return route.fulfill({ json: { authenticated: true, setupRequired: false } });
+    }
+    if (failLists) {
+      return route.fulfill({ status: 503, json: { code: "internal", message: "x", retryable: true, requestId: "r" } });
+    }
+    return route.fulfill({ json: [] });
+  });
+  await page.goto("/parent/children");
+  await expect(page.getByTestId("panel-load-error")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(messages.children.empty)).toHaveCount(0);
+
+  failLists = false;
+  await page.getByTestId("panel-load-retry").click();
+  await expect(page.getByTestId("panel-load-error")).toHaveCount(0);
+  await expect(page.getByText(messages.children.empty)).toBeVisible();
 });
