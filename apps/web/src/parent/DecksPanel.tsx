@@ -331,7 +331,6 @@ export default function DecksPanel({
           deckId={deckId}
           childrenList={childrenList}
           onEditorStateChange={registerEditorState}
-          onAuthExpired={onAuthExpired}
           onBack={openList}
         />
       </LegacyArea>
