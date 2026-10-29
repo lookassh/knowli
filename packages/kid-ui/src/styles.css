@@ -2338,6 +2338,83 @@
   overflow-wrap: anywhere;
 }
 
+/* Trener precyzji: pojęcia kluczowe (multi-select) i „Skróć odpowiedź”. */
+.kid-lesson-keywords,
+.kid-lesson-shorten {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.kid-lesson-keywords__count {
+  margin: 0;
+  text-align: center;
+  font-size: var(--kid-type-title-sm-size);
+  font-weight: 600;
+  color: var(--kid-muted);
+}
+
+.kid-ui .kid-lesson-keywords__options button {
+  min-height: 64px;
+}
+
+.kid-page--session[data-viewport-short="true"] .kid-lesson-keywords__options button {
+  min-height: 52px;
+}
+
+@media (max-height: 480px) {
+  .kid-ui .kid-lesson-keywords__options button {
+    min-height: 52px;
+    padding-block: 6px;
+  }
+
+  .kid-lesson-keywords,
+  .kid-lesson-shorten {
+    gap: 8px;
+  }
+}
+
+/* Własna odpowiedź jako akapit: zawija się jak zwykły tekst. */
+.kid-answer-segments-text {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.kid-answer-segments-text__body {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--kid-shape-l);
+  background: var(--kid-soft);
+  font-size: var(--kid-type-title-md-size);
+  line-height: 1.6;
+  text-align: start;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+/* Fragment do usunięcia: obwódka i przekreślenie, nie tylko kolor. */
+.kid-spelling-pill--remove {
+  color: var(--md-sys-color-on-error-container);
+  background: var(--md-sys-color-error-container);
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.kid-lesson-shorten__form {
+  gap: 4px;
+}
+
+.kid-answer-segments-text > .kid-spelling-row-label,
+.kid-lesson-shorten__form > .kid-spelling-row-label {
+  text-align: start;
+}
+
 /* Feedback lekcji: podpowiedź, odpowiedź dziecka z pigułkami, poprawna odpowiedź. */
 .kid-lesson-feedback {
   display: grid;

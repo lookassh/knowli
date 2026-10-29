@@ -35,6 +35,17 @@ describe("lessonFeedbackView — mapowanie feedbacku lekcji na model widoku", ()
     expect(view!.tone).toBe("retry");
   });
 
+  it("lesson_precision_hint: pochwała „Świetnie!” + zachęta do skrócenia, ton sukcesu, bez poprawnej odpowiedzi", () => {
+    const dto: FeedbackDto = { kind: "lesson_precision_hint", hintPl: "Wiesz to! Teraz spróbuj powiedzieć to krócej, bez dodatkowych historii." };
+    const view = lessonFeedbackView(dto);
+    expect(view!.title).toBe("Świetnie!");
+    expect(view!.tone).toBe("correct");
+    expect(view!.hint).toBe("Wiesz to! Teraz spróbuj powiedzieć to krócej, bez dodatkowych historii.");
+    expect(view!.answerSegments).toBeNull();
+    expect(view!.correctText).toBeNull();
+    expect(view!.technical).toBe(false);
+  });
+
   it("not_assessed: komunikat techniczny, bez segmentów i bez sugestii błędu", () => {
     const dto: FeedbackDto = { kind: "not_assessed" };
     const view = lessonFeedbackView(dto);

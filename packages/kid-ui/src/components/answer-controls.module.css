@@ -106,6 +106,20 @@
   border-radius: var(--kid-shape-l);
 }
 
+/* Long answers: grow with the text (field-sizing where supported), then scroll
+   inside the field so nothing is clipped and the actions stay reachable. */
+:global(.kid-ui) .textarea {
+  display: block;
+  line-height: 1.4;
+  min-height: calc(4.2em + 22px);
+  max-height: max(calc(4.2em + 22px), min(16.8em, 40dvh));
+  field-sizing: content;
+  resize: none;
+  overflow-y: auto;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+
 .grid {
   width: 100%;
   min-width: 0;
@@ -283,6 +297,54 @@
   border-color: var(--md-sys-color-error);
   background: var(--md-sys-color-error-container);
   color: var(--md-sys-color-on-error-container);
+}
+
+/* Multi-select tiles: the chosen state is a filled check mark and a
+   stronger outline, so colour is never the only channel. */
+.grid[data-selection="multiple"] .option {
+  gap: 10px;
+}
+
+.option[data-selected="true"] {
+  border-color: var(--md-sys-color-primary);
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+  box-shadow: 0 0 0 1px var(--md-sys-color-primary);
+}
+
+.option[data-selected="true"]:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--md-sys-color-on-secondary-container) calc(var(--kid-state-hover-opacity) * 100%), var(--md-sys-color-secondary-container));
+}
+
+.grid[data-selection="multiple"] .option:disabled {
+  color: var(--kid-color-disabled-content);
+  border-color: var(--kid-color-disabled-container);
+}
+
+.selectMark {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 2px solid currentColor;
+  border-radius: var(--kid-shape-full);
+}
+
+.selectMark[data-selected="true"] {
+  border-color: var(--md-sys-color-primary);
+  background: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+}
+
+.selectMarkIcon {
+  display: grid;
+  place-items: center;
+}
+
+:global(.kid-ui) .selectMarkIcon :global(.kid-icon) {
+  width: 18px;
+  height: 18px;
 }
 
 .label,

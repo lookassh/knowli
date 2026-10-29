@@ -6,8 +6,9 @@ import { lessonFeedbackView } from "./lesson-feedback-view";
 import { KidIcon } from "../components/KidIcon";
 import { useFeedbackCooldown } from "./useFeedbackCooldown";
 import { ActionButton } from "../components/ActionButton";
+import { AnswerSegments, SpellingPill } from "../components/AnswerSegments";
 import { m } from "motion/react";
-import { kidOutcomeIconAnimate, kidOutcomeIconInitial, kidOutcomeShake, kidOutcomeShakeTransition, kidSpringGentle, kidStaggerDelay } from "../motion/kid-motion";
+import { kidOutcomeIconAnimate, kidOutcomeIconInitial, kidSpringGentle } from "../motion/kid-motion";
 
 export interface AnswerFeedbackProps {
   dto: FeedbackDto | null;
@@ -38,6 +39,9 @@ function feedbackText(feedback: FeedbackDto | null): string {
     // Lekcje: tytuł bez odwołania do odsłuchu (lekcje są tekstowe).
     case "lesson_almost": return messages.kid.lessonAlmostTitle;
     case "lesson_hint": return messages.kid.lessonHintTitle;
+    // Trener precyzji: odpowiedź poprawna — pochwała, a zachęta do skrócenia
+    // jest osobnym wierszem (`hintPl`), nie korektą.
+    case "lesson_precision_hint": return messages.kid.feedbackGreat;
   }
 }
 
@@ -54,50 +58,8 @@ export function feedbackTone(feedback: FeedbackDto | null): string {
     case "not_assessed": return "";
     case "lesson_almost": return "kid-feedback--retry";
     case "lesson_hint": return "kid-feedback--retry";
+    case "lesson_precision_hint": return "kid-feedback--correct";
   }
-}
-
-/** Segmenty z zaznaczonymi pigułkami (reuse pisowni) — jedna etykietowana linia. */
-type SpellingSegment = { state: string; text: string };
-
-/** One spelling-diff segment: differing letters pop in (expected/lesson)
- * or shake gently (the child's own), one after another. Plain segments
- * stay quiet. Only transform and opacity move. */
-function SpellingPill({ segment, index, variant, animation }: {
-  segment: SpellingSegment;
-  index: number;
-  variant: "given" | "expected";
-  animation: "pop" | "shake";
-}): ReactElement {
-  const pill = segment.state === "pill";
-  return (
-    <m.span
-      className={pill ? `kid-spelling-pill kid-spelling-pill--${variant}` : "kid-spelling-plain"}
-      data-testid={pill ? "kid-spelling-pill" : undefined}
-      initial={pill ? (animation === "pop" ? kidOutcomeIconInitial : { opacity: 1, x: 0 }) : false}
-      animate={pill ? (animation === "pop" ? kidOutcomeIconAnimate : kidOutcomeShake) : undefined}
-      transition={animation === "pop" ? { ...kidSpringGentle, delay: kidStaggerDelay(index) } : kidOutcomeShakeTransition}
-      style={{ display: "inline-block" }}
-    >
-      {segment.text}
-    </m.span>
-  );
-}
-
-function AnswerSegments({ segments, label, testid }: {
-  segments: FeedbackDto["answerSegments"];
-  label: string;
-  testid: string;
-}): ReactElement | null {
-  if (segments === undefined || segments.length === 0) return null;
-  return (
-    <div className="kid-spelling-row" data-testid={testid}>
-      <span className="kid-spelling-row-label">{label}</span>
-      {segments.map((segment, index) => (
-        <SpellingPill key={index} segment={segment} index={index} variant="given" animation="pop" />
-      ))}
-    </div>
-  );
 }
 
 export function AnswerFeedbackContent({ dto, busy }: Pick<AnswerFeedbackProps, "dto" | "busy">): ReactElement {

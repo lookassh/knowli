@@ -14,6 +14,8 @@ export interface ExerciseHandlers {
   onSubmitText(text: string): void;
   /** Ułożona kolejność klocków (`lesson_order`) — odpowiedź `sequence`. */
   onAnswerSequence(itemIds: string[]): void;
+  /** Zaznaczone pojęcia (`lesson_keywords`) — odpowiedź `selection`, kolejność bez znaczenia. */
+  onAnswerSelection(itemIds: string[]): void;
   onNotRemember(): void;
   onSkip(): void;
   /** „Rozumiem” — zamknięcie prezentacji przez complete-presentation. */

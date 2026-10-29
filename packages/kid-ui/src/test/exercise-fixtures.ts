@@ -11,6 +11,7 @@ export function makeExerciseHandlers(): ExerciseHandlers {
     onAnswerChoice: vi.fn(),
     onSubmitText: vi.fn(),
     onAnswerSequence: vi.fn(),
+    onAnswerSelection: vi.fn(),
     onNotRemember: vi.fn(),
     onSkip: vi.fn(),
     onComplete: vi.fn(),

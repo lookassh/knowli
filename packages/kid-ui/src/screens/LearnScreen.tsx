@@ -46,7 +46,8 @@ function RevealActions({ onConfirm, busy }: { onConfirm: () => void; busy: boole
 function answerDockTone(dto: Parameters<typeof feedbackTone>[0]): FeedbackDockTone {
   switch (dto?.kind) {
     case "great":
-    case "capitalization_hint": return "correct";
+    case "capitalization_hint":
+    case "lesson_precision_hint": return "correct";
     case "incorrect": return "incorrect";
     case "almost":
     case "spelling_hint":
@@ -85,7 +86,7 @@ export function LearnScreen({
   const feedbackGuidanceKey: UiAudioKey | null = feedback === null ? null
     : feedback.modality === "skip" ? "skip"
       : feedback.modality === "dont_remember" ? "dont_remember"
-        : feedback.dto?.kind === "great" || feedback.dto?.kind === "capitalization_hint" || feedback.dto?.kind === "content_matched" ? "correct"
+        : feedback.dto?.kind === "great" || feedback.dto?.kind === "capitalization_hint" || feedback.dto?.kind === "content_matched" || feedback.dto?.kind === "lesson_precision_hint" ? "correct"
           : feedback.dto?.kind === "almost" || feedback.dto?.kind === "spelling_hint" || feedback.dto?.kind === "lesson_almost" || feedback.dto?.kind === "lesson_hint" ? "partial"
             : feedback.dto?.kind === "incorrect" ? "incorrect" : "unevaluated";
   const instructionAudioKey = feedbackGuidanceKey ?? taskGuidanceKey;
@@ -126,6 +127,7 @@ export function LearnScreen({
     onAnswerChoice: (optionId) => void controller.answerChoice(optionId),
     onSubmitText: (text) => void controller.answerText(text),
     onAnswerSequence: (itemIds) => void controller.answerSequence(itemIds),
+    onAnswerSelection: (itemIds) => void controller.answerSelection(itemIds),
     onNotRemember: () => void controller.notRemember(),
     onSkip: () => void controller.skip(),
     onComplete: () => void controller.completePresentation(),

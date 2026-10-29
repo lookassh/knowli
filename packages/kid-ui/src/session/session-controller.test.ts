@@ -587,6 +587,18 @@ describe("LearningSessionController", () => {
     expect(harness.media.playUrls).toEqual(["https://media.test/reference-audio"]);
   });
 
+  it("wysyła zaznaczone pojęcia kluczowe jako odpowiedź selection bez duplikatów", async () => {
+    const keywords = taskDto("keywords-task", { kind: "lesson_keywords", instructionPl: "Wybierz.", prompt: "Na czym polega fotosynteza?",
+      options: ["a", "b", "c", "d"].map((letter) => ({ id: `opt-${letter}`, text: letter })), minSelected: 2, maxSelected: 3 });
+    const harness = await startAtTask(baseState(), keywords);
+    const submit = vi.spyOn(harness.api, "submitAnswer");
+    await harness.controller.answerSelection(["opt-c", "opt-a", "opt-c"]);
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(submit.mock.calls[0]![0]).toMatchObject({ taskId: "keywords-task", modality: "selection", itemIds: ["opt-c", "opt-a"] });
+    expect(harness.state.submissions.at(-1)).toMatchObject({ modality: "selection" });
+    harness.controller.teardown();
+  });
+
   it("deklaruje wsparcie zestawów obrazkowych i odtwarza słuchanie po jawnej akcji", async () => {
     const listening = taskDto("picture-listening", { kind: "picture_listening", audioAssetId: "asset-listening", options: [
       { id: "option-1", labelPl: "czerwony", visual: { kind: "color", color: "#ff0000" } },

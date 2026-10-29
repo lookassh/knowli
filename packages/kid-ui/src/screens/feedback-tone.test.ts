@@ -11,6 +11,10 @@ describe("feedbackTone — tło feedbacku odpowiada wynikowi (SPEC §16)", () =>
     );
   });
 
+  it("trener precyzji: poprawna, ale rozwlekła odpowiedź to sukces", () => {
+    expect(feedbackTone({ kind: "lesson_precision_hint", hintPl: "Wiesz to! Teraz krócej." })).toBe("kid-feedback--correct");
+  });
+
   it("błąd i „prawie” dostają tło pomyłki, nie sukcesu", () => {
     expect(feedbackTone({ kind: "incorrect", correctText: "march" })).toBe("kid-feedback--retry");
     expect(feedbackTone({ kind: "almost" })).toBe("kid-feedback--retry");
