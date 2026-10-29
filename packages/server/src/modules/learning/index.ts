@@ -11,6 +11,7 @@ export { getPronunciationSettings, updatePronunciationBands } from "./learning-s
 export { readLessonDeckOverviews } from "./lessons/lesson-deck-overview";
 export { getLessonMockTestReport, isLessonMockPlan, listLessonMockTests, readLessonMockTestSummary } from "./lessons/lesson-mock-tests";
 export { lessonContextOf } from "./lessons/lesson-sessions";
+export { dictateLessonAnswer } from "./lessons/lesson-dictation";
 export { getMockTestReportForSession, listMockTestReportsForDeck, readMockTestSummaryForSession } from "./mock-test-reports";
 export { getMockTestReport, listMockTests, readMockTestSummary } from "./mock-tests";
 export { rebuildProgress } from "./progress-rebuild";
