@@ -30,6 +30,7 @@ import {
   buildAnswerSegments,
   closestApprovedVariant,
   evaluateChoice as evaluateLessonChoice,
+  evaluateKeywordSelection,
   evaluateSequence,
   countSentences,
   gradeFromMatch,
@@ -77,7 +78,7 @@ export const LESSON_ATTEMPT_PROCESSING_TIMEOUT_MS = 60_000;
 type TaskRow = typeof sessionTasks.$inferSelect;
 type SessionRow = typeof learningSessions.$inferSelect;
 type AttemptRow = typeof attempts.$inferSelect;
-type LessonModality = "choice" | "text" | "dont_remember" | "skip" | "sequence";
+type LessonModality = "choice" | "text" | "dont_remember" | "skip" | "sequence" | "selection";
 
 /** Prywatny `answer_key` zadania lekcji (materializowany w `lesson-sessions.ts`). */
 interface LessonTaskAnswerKey extends LessonAnswerKey {
@@ -255,6 +256,18 @@ function gradeLessonAnswer(
 
   if (input.modality === "choice") {
     const correct = evaluateLessonChoice(input.optionId, key);
+    if (correct) {
+      return { grade: { outcome: "correct", verdict: "closed_correct" }, feedback: { kind: "great" }, exposures: [key.targetKey], details: { objectiveId, verdict: "closed_correct" } };
+    }
+    return { grade: { outcome: "incorrect", verdict: "closed_incorrect" }, feedback: { kind: "incorrect", correctText }, exposures: [key.targetKey], details: { objectiveId, verdict: "closed_incorrect" } };
+  }
+
+  if (input.modality === "selection") {
+    // Słowa kluczowe: wybór pojęć oceniany po identyfikatorach, bez modelu.
+    const correct = evaluateKeywordSelection(input.itemIds, key);
+    if (correct === null) {
+      return { grade: { outcome: "unevaluated", reason: "technical", verdict: "unavailable" }, feedback: { kind: "not_assessed" }, exposures: [], details: { objectiveId, verdict: "unavailable" } };
+    }
     if (correct) {
       return { grade: { outcome: "correct", verdict: "closed_correct" }, feedback: { kind: "great" }, exposures: [key.targetKey], details: { objectiveId, verdict: "closed_correct" } };
     }
@@ -828,6 +841,7 @@ function assertModalityMatchesExercise(modality: LessonModality, exerciseType: s
   const ok =
     (modality === "choice" && CHOICE_TYPES.includes(exerciseType)) ||
     (modality === "sequence" && exerciseType === "lesson_order") ||
+    (modality === "selection" && exerciseType === "lesson_keywords") ||
     (modality === "text" && TEXT_TYPES.includes(exerciseType));
   if (!ok) {
     throw new AppError("validation", { message: "attempt modality does not match exercise" });
@@ -910,7 +924,7 @@ async function finalizeLessonAttempt(
       ? { text: valid.text }
       : valid.modality === "choice"
         ? { optionId: valid.optionId, optionText: key.optionValues?.[valid.optionId] ?? key.segmentValues?.[valid.optionId] ?? "" }
-        : valid.modality === "sequence"
+        : valid.modality === "sequence" || valid.modality === "selection"
           ? { itemIds: valid.itemIds }
           : null;
 

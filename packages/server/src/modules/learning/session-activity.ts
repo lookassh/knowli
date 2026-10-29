@@ -184,6 +184,11 @@ export function describeTaskPrompt(p: TaskPrompt): { instruction: string; stimul
     case "lesson_open_answer":
     case "lesson_calculation":
       return { instruction: p.instructionPl, stimulus: p.prompt, options: [] };
+    case "lesson_keywords":
+      return { instruction: p.instructionPl, stimulus: p.prompt, options: options(p.options) };
+    case "lesson_shorten":
+      // Poprawka własnej odpowiedzi: bodźcem jest pytanie i tekst oryginału dziecka.
+      return { instruction: p.instructionPl, stimulus: `${p.prompt} | ${p.originalAnswer}`, options: [] };
     default: {
       const exhaustive: never = p;
       return exhaustive;
@@ -242,6 +247,9 @@ function answerTextOf(modality: string, answer: Record<string, unknown> | null, 
   }
   if (modality === "sequence" && Array.isArray(answer?.itemIds)) {
     return answer.itemIds.map((id) => (typeof id === "string" ? promptOptions.get(id) ?? "" : "")).filter(Boolean).join(" ").slice(0, 200) || null;
+  }
+  if (modality === "selection" && Array.isArray(answer?.itemIds)) {
+    return answer.itemIds.map((id) => (typeof id === "string" ? promptOptions.get(id) ?? "" : "")).filter(Boolean).join(", ").slice(0, 200) || null;
   }
   if (modality === "audio" && typeof answer?.transcript === "string") return answer.transcript.slice(0, 200);
   return null;

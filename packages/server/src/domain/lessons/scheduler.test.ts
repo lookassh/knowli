@@ -88,6 +88,7 @@ function input(overrides: Partial<LessonScheduleInput> = {}): LessonScheduleInpu
     ...(overrides.planningMode === undefined ? {} : { planningMode: overrides.planningMode }),
     ...(overrides.reservedDueCheckObjectives === undefined ? {} : { reservedDueCheckObjectives: overrides.reservedDueCheckObjectives }),
     ...(overrides.supportObjectives === undefined ? {} : { supportObjectives: overrides.supportObjectives }),
+    ...(overrides.precisionHistory === undefined ? {} : { precisionHistory: overrides.precisionHistory }),
     exposedTargetKeys: overrides.exposedTargetKeys ?? new Set<string>(),
     sessionHistory: overrides.sessionHistory ?? [],
     lastSeenAt: overrides.lastSeenAt ?? {},
@@ -660,5 +661,69 @@ describe("calculation due checks", () => {
     expect(selectLessonTask(options)).toMatchObject({ kind: "exercise", exerciseType: "lesson_calculation", independentCheck: true, reason: "due_check" });
     const exposed = selectLessonTask({ ...options, exposedTargetKeys: new Set([calculation.targetKey]) });
     expect(exposed?.kind === "exercise" && exposed.independentCheck).not.toBe(true);
+  });
+});
+
+describe("selectLessonTask — trener precyzji (Etap 4)", () => {
+  function open(variant: string, familyId: string, expectedForm = "explanation"): LessonExerciseCandidate {
+    return { ...ex(O1, "independent", variant), familyId, expectedForm };
+  }
+  function keywords(familyId: string, variant = "kw"): LessonExerciseCandidate {
+    const key = `${O1}:keywords:${variant}`;
+    return { itemId: `item:${key}`, itemRevisionId: `rev:${key}`, objectiveId: O1, exerciseType: "lesson_keywords", targetKey: key, familyId };
+  }
+  // Cel opanowany bez należnej powtórki: utrwalanie wybiera odpowiedź otwartą bez samodzielnego sprawdzenia.
+  const mastered = { [O1]: prog("mastered") };
+  const base = { objectiveOrder: [O1], progress: mastered, initialProgress: mastered, planningMode: true };
+
+  it("po odpowiedzi nie na temat poprzedza odpowiedź otwartą słowami kluczowymi tej samej rodziny", () => {
+    const plan = selectLessonTask(input({
+      ...base, exercises: [open("a", "def"), keywords("inna", "x"), keywords("def")],
+      precisionHistory: { [O1]: { knowledge: "correct", precision: "unfocused" } },
+    }));
+    expect(plan).toEqual({
+      kind: "exercise", itemId: "item:subj.topic.o1:keywords:kw", itemRevisionId: "rev:subj.topic.o1:keywords:kw",
+      objectiveId: O1, exerciseType: "lesson_keywords", reason: "precision_practice", independentCheck: false,
+      pairedWith: { itemId: "item:subj.topic.o1:independent:a", itemRevisionId: "rev:subj.topic.o1:independent:a" },
+    });
+  });
+
+  it("para także po odpowiedzi niepełnej", () => {
+    const plan = selectLessonTask(input({ ...base, exercises: [open("a", "def"), keywords("def")], precisionHistory: { [O1]: { knowledge: "partial", precision: "concise" } } }));
+    expect(plan).toMatchObject({ exerciseType: "lesson_keywords", pairedWith: { itemRevisionId: "rev:subj.topic.o1:independent:a" } });
+  });
+
+  it.each([
+    ["zwięzła poprawna odpowiedź", { precisionHistory: { [O1]: { knowledge: "correct", precision: "concise" } } }],
+    ["brak historii precyzji", {}],
+    ["sesja bez planu (legacy)", { planningMode: false, precisionHistory: { [O1]: { knowledge: "correct", precision: "unfocused" } } }],
+    ["budżet tylko na jedno zadanie", { assessedRemaining: 1, precisionHistory: { [O1]: { knowledge: "correct", precision: "unfocused" } } }],
+    ["brak gradera", { graderAvailable: false, precisionHistory: { [O1]: { knowledge: "correct", precision: "unfocused" } } }],
+  ] as const)("bez pary: %s", (_label, overrides) => {
+    const plan = selectLessonTask(input({ ...base, exercises: [open("a", "def"), keywords("def")], ...overrides } as Partial<LessonScheduleInput>));
+    expect(plan).toMatchObject({ exerciseType: "lesson_open_answer", itemId: "item:subj.topic.o1:independent:a" });
+  });
+
+  it("nie paruje samodzielnego sprawdzenia należnego celu", () => {
+    const due = { [O1]: prog("learning", "2026-10-11T00:00:00.000Z") };
+    const plan = selectLessonTask(input({
+      objectiveOrder: [O1], progress: due, initialProgress: due, planningMode: true,
+      exercises: [open("a", "def"), keywords("def")], precisionHistory: { [O1]: { knowledge: "correct", precision: "unfocused" } },
+    }));
+    expect(plan).toMatchObject({ exerciseType: "lesson_open_answer", reason: "due_check", independentCheck: true });
+  });
+
+  it("nigdy nie wydaje słów kluczowych jako zwykłego ćwiczenia prowadzonego", () => {
+    const plan = selectLessonTask(input({ objectiveOrder: [O1], exercises: [keywords("def"), ex(O1, "guided", "a")] }));
+    expect(plan).toMatchObject({ exerciseType: "lesson_choice", reason: "introduce" });
+    expect(selectLessonTask(input({ objectiveOrder: [O1], exercises: [keywords("def")] }))).toBeNull();
+  });
+
+  it("po poprawnej, rozwlekłej odpowiedzi preferuje pytanie o formie zwięzłej", () => {
+    const exercises = [open("a", "def"), open("b", "zwiezle", "one_sentence")];
+    const verbose = selectLessonTask(input({ ...base, exercises, precisionHistory: { [O1]: { knowledge: "correct", precision: "verbose" } } }));
+    expect(verbose).toMatchObject({ itemId: "item:subj.topic.o1:independent:b" });
+    const concise = selectLessonTask(input({ ...base, exercises, precisionHistory: { [O1]: { knowledge: "correct", precision: "concise" } } }));
+    expect(concise).toMatchObject({ itemId: "item:subj.topic.o1:independent:a" });
   });
 });

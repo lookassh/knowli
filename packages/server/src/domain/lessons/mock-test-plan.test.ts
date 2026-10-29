@@ -121,6 +121,13 @@ describe("planLessonMockTest — notice, determinizm, przeplot", () => {
     expect(plan[0]!.exerciseType).not.toBe("lesson_notice");
   });
 
+  it("pomija lesson_keywords (wsparcie trenera precyzji, nie sprawdzenie)", () => {
+    const keywords = entry({ objectiveId: "obj-a", exerciseType: "lesson_keywords", stage: "guided", targetKey: "kw" });
+    const gap = entry({ objectiveId: "obj-a", exerciseType: "lesson_gap", stage: "productive" });
+    const plan = planLessonMockTest({ pool: [keywords, gap], objectiveIds: ["obj-a"], requestedCount: 5, exposedTargetKeys: [] });
+    expect(plan.map((slot) => slot.exerciseType)).toEqual(["lesson_gap"]);
+  });
+
   it("jest deterministyczny (tie-break po kolejności w puli)", () => {
     const a1 = entry({ objectiveId: "obj-a", stage: "productive", targetKey: "a1" });
     const a2 = entry({ objectiveId: "obj-a", stage: "productive", targetKey: "a2" });

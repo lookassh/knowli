@@ -19,7 +19,7 @@ type TaskRow = typeof sessionTasks.$inferSelect;
 /**
  * Deterministyczny hasz treści próby dla idempotencji `clientAttemptId`
  * (arch §10): ta sama treść → ten sam hasz; inna treść pod tym samym kluczem
- * → 409. Obejmuje `optionId` (choice), `text` (text) i `itemIds` (sequence);
+ * → 409. Obejmuje `optionId` (choice), `text` (text) i `itemIds` (sequence, selection);
  * pozostałe modalności nie niosą treści.
  */
 export function requestHashOf(input: AttemptInput): string {
@@ -28,7 +28,7 @@ export function requestHashOf(input: AttemptInput): string {
       ? { optionId: input.optionId }
       : input.modality === "text"
         ? { text: input.text }
-        : input.modality === "sequence"
+        : input.modality === "sequence" || input.modality === "selection"
           ? { itemIds: input.itemIds }
           : {};
   return createHash("sha256")

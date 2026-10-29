@@ -151,14 +151,18 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
         const sequenceAnswer = attempt.modality === "sequence" && Array.isArray(rawAnswer?.itemIds)
           ? rawAnswer.itemIds.map(id => typeof id === "string" && typeof itemValues?.[id] === "string" ? itemValues[id] as string : "").filter(Boolean).join(" ").trim().slice(0, 160) || null
           : null;
+        const optionValues = (task.answerKey as { optionValues?: Record<string, unknown> } | null)?.optionValues;
+        const selectionAnswer = attempt.modality === "selection" && Array.isArray(rawAnswer?.itemIds)
+          ? rawAnswer.itemIds.map(id => typeof id === "string" && typeof optionValues?.[id] === "string" ? optionValues[id] as string : "").filter(Boolean).join(", ").trim().slice(0, 160) || null
+          : null;
         const feedbackKind = typeof attempt.feedback?.kind === "string" ? attempt.feedback.kind : null;
         const assessment = attempt.modality === "skip" || attempt.modality === "dont_remember" ? "none"
             : assessmentByAttempt.get(attempt.id)?.has("unassessed") && [...assessmentByAttempt.get(attempt.id)!].some(outcome => outcome !== "unassessed") ? "mixed"
               : assessmentByAttempt.get(attempt.id)?.has("unassessed") ? "unassessed"
                 : assessmentByAttempt.has(attempt.id) ? "assessed" : "none";
         return {
-          modality: attempt.modality as "choice" | "text" | "audio" | "dont_remember" | "skip" | "sequence",
-          answerExample: attempt.modality === "dont_remember" ? "Nie pamiętam" : textAnswer ?? optionAnswer ?? sequenceAnswer,
+          modality: attempt.modality as "choice" | "text" | "audio" | "dont_remember" | "skip" | "sequence" | "selection",
+          answerExample: attempt.modality === "dont_remember" ? "Nie pamiętam" : textAnswer ?? optionAnswer ?? sequenceAnswer ?? selectionAnswer,
           feedbackKind, assessment,
           responseSeconds: Math.max(0, Math.ceil((attempt.receivedAt.getTime() - task.issuedAt.getTime()) / 1000)),
         };

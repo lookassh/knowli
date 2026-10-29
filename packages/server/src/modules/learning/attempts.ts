@@ -171,9 +171,10 @@ function gradeOf(input: AttemptInput, key: AnswerKey, ctx: EvaluationContext): G
       // nieosiągalne: ścieżka audio przechodzi przez submitSpeechAttempt
       throw new AppError("validation", { message: "speech attempts require the audio path" });
     case "sequence":
-      // nieosiągalne tutaj: próby lekcji (w tym `sequence`) obsługuje
+    case "selection":
+      // nieosiągalne tutaj: próby lekcji (w tym `sequence` i `selection`) obsługuje
       // `modules/lessons/lesson-attempts.ts` (design „Przyjęcie odpowiedzi”).
-      throw new AppError("validation", { message: "sequence attempts require the lesson path" });
+      throw new AppError("validation", { message: `${input.modality} attempts require the lesson path` });
   }
 }
 
