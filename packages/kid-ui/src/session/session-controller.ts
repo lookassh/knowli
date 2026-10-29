@@ -1,5 +1,6 @@
 import {
   messages,
+  type Assignment,
   type MockTestSummaryDto,
   type LessonMockTestSummaryDto,
   type AttemptDto,
@@ -140,6 +141,7 @@ type AnswerPayload =
   | { modality: "text"; text: string; inputMethod?: TextInputMethod }
   | { modality: "sequence"; itemIds: string[] }
   | { modality: "selection"; itemIds: string[] }
+  | { modality: "assignment"; assignments: Assignment[] }
   | { modality: "dont_remember" }
   | { modality: "skip" };
 
@@ -1058,6 +1060,11 @@ export class LearningSessionController {
   /** Odpowiedź `selection` (zaznaczone pojęcia `lesson_keywords`; zbiór bez kolejności). */
   async answerSelection(itemIds: string[]): Promise<void> {
     await this.#submitAnswer({ modality: "selection", itemIds: [...new Set(itemIds)] });
+  }
+
+  /** Przypisania „Połącz w pary” / „Pogrupuj”; kompletność i poprawność sprawdza serwer. */
+  async answerAssignment(assignments: Assignment[]): Promise<void> {
+    await this.#submitAnswer({ modality: "assignment", assignments: assignments.map((entry) => ({ itemId: entry.itemId, targetId: entry.targetId })) });
   }
 
   /** „Nie pamiętam — pokaż”: ujawnienie z zapisem ekspozycji przed treścią (SPEC §15.1). */
