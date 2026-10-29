@@ -159,6 +159,7 @@ describe("lesson exercise views", () => {
     expect(source.getAttribute("lang")).toBe("pl-PL");
     const input = screen.getByTestId("kid-lesson-input") as HTMLInputElement;
     expect(input.type).toBe("text");
+    expect(input.maxLength).toBe(600);
     expect(input.getAttribute("lang")).toBe("pl-PL");
     expect(screen.queryByTestId("kid-lesson-listen")).toBeNull();
     fireEvent.change(input, { target: { value: "0,75 km" } });

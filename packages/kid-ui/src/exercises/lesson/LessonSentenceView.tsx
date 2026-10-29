@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { messages } from "@learning/contracts";
+import { MAX_TEXT_ATTEMPT_LENGTH, messages } from "@learning/contracts";
 import { KidIcon } from "../../components/KidIcon";
 import { ActionButton } from "../../components/ActionButton";
 import { AnswerField } from "../../components/AnswerField";
@@ -72,6 +72,8 @@ export function LessonSentenceView({ task, busy, dock, handlers }: ExerciseProps
               placeholder={calculation ? messages.kid.lessonCalculationPlaceholder : messages.kid.typeWord}
               aria-label={calculation ? messages.kid.lessonCalculationInput : messages.kid.lessonSourceSentence}
               {...(knownLocale ? { lang: knownLocale } : {})}
+              // Same cap as the server contract, so a long answer is never rejected after typing.
+              maxLength={MAX_TEXT_ATTEMPT_LENGTH}
               autoComplete="off"
               autoCorrect="off"
               autoCapitalize="off"

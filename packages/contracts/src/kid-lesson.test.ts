@@ -9,6 +9,7 @@ import {
   SessionSummaryDtoSchema,
   SessionInputSchema,
   KidValidationReasonSchema,
+  MAX_TEXT_ATTEMPT_LENGTH,
 } from "./kid";
 import { messages } from "./messages";
 
@@ -112,6 +113,15 @@ describe("TaskPrompt lesson branches never leak private fields", () => {
     ["correctOption", { kind: "lesson_notice", instructionPl: "i", segments: [[{ id: UUID, text: "He" }]], correctOption: "He" }],
   ])("rejects a lesson prompt carrying %s", (_label, prompt) => {
     expect(TaskPromptSchema.safeParse(prompt).success).toBe(false);
+  });
+});
+
+describe("AttemptInput text modality", () => {
+  it("accepts a school open answer up to the 600 characters the grader reads, and rejects longer", () => {
+    const attempt = (length: number) => ({ taskId: UUID, clientAttemptId: UUID2, modality: "text", text: "a".repeat(length) });
+    expect(MAX_TEXT_ATTEMPT_LENGTH).toBe(600);
+    expect(AttemptInputSchema.safeParse(attempt(600)).success).toBe(true);
+    expect(AttemptInputSchema.safeParse(attempt(601)).success).toBe(false);
   });
 });
 

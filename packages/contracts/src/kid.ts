@@ -559,6 +559,12 @@ export const AttemptModalitySchema = z.enum(["choice", "text", "audio", "dont_re
 export type AttemptModality = z.infer<typeof AttemptModalitySchema>;
 
 /**
+ * Najdłuższa odpowiedź pisemna dziecka: odpowiedź otwarta przedmiotu szkolnego
+ * trafia do gradera w całości do 600 znaków (gramatyka nadal tylko do 200).
+ */
+export const MAX_TEXT_ATTEMPT_LENGTH = 600;
+
+/**
  * Odpowiedź dziecka na zadanie (arch §12). `clientAttemptId` zabezpiecza retry
  * transportowy; ponowne użycie tego samego klucza z inną treścią daje 409.
  * Odpowiedź audio idzie multipartem (bajty nagrania poza JSON) i jest
@@ -575,7 +581,7 @@ export const AttemptInputSchema = z.discriminatedUnion("modality", [
     taskId: UuidSchema,
     clientAttemptId: UuidSchema,
     modality: z.literal("text"),
-    text: z.string().max(500),
+    text: z.string().max(MAX_TEXT_ATTEMPT_LENGTH),
   }),
   z.object({
     taskId: UuidSchema,
