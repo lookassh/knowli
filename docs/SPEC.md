@@ -93,7 +93,7 @@ Rodzic może:
 - wycofać zestaw z nauki;
 - zobaczyć postępy i najczęstsze trudności wybranego dziecka.
 
-Panel rodzica (redesign 2026-10) ma wspólną ramę: pasek aplikacji z nazwą i wylogowaniem oraz zakładki Zestawy/Dzieci/Postępy ze stanem aktywnym. Tworzenie materiału (generacja, pusty zestaw, nowa lekcja) żyje w oknie modalnym „Nowy materiał"; lista zestawów jest pogrupowana po stanie (Wymaga Twojej uwagi → Gotowe do nauki → Szkice → Archiwum) z meta pozycji i przypisanych dzieci. Filtry dziecka w Postępach ładują dane automatycznie; wygaśnięcie sesji wraca do logowania.
+Panel rodzica (redesign 2026-10) ma wspólną ramę: pasek aplikacji z nazwą i wylogowaniem oraz zakładki Zestawy/Dzieci/Postępy ze stanem aktywnym. Tworzenie materiału (generacja, pusty zestaw, nowa lekcja) żyje w oknie modalnym „Nowy materiał"; lista zestawów jest pogrupowana po stanie (Wymaga Twojej uwagi → Gotowe do nauki → Szkice → Archiwum) z meta pozycji i przypisanych dzieci. Filtry dziecka w Postępach ładują dane automatycznie; wygaśnięcie sesji wraca do logowania. Sekcja Dzieci pokazuje karty profili (na telefonie w jednej kolumnie) z edycją profilu i progami wymowy w karcie; usunięcie profilu wymaga potwierdzenia w oknie, a niezapisany formularz profilu, progów albo nowego dziecka chroni przed wyjściem z sekcji tak jak edytory.
 
 Szkic wygenerowany przez AI nie jest automatycznie dostępny dziecku. Po edycji opublikowanej treści nowa wersja również wymaga zatwierdzenia. Historyczne odpowiedzi muszą nadal odnosić się do treści, którą dziecko faktycznie widziało.
 
