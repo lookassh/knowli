@@ -3,6 +3,8 @@
 Data: 2026-10-14. Stan: design zaakceptowany przez właściciela na podstawie interaktywnej makiety (przełącznik „Jak jest teraz ↔ Propozycja", zakładki Zestawy/Dzieci/Postępy, modal „Nowy materiał"). Plan implementacji: `docs/superpowers/plans/2026-10-14-parent-panel-redesign.md`.
 
 > Zmiana decyzji 2026-10-29: zasada „bez nowego systemu stylowania, zero zależności” (§4) przestaje obowiązywać. Panel rodzica przechodzi na Mantine 9 i TanStack Query, z trybem ciemnym i adresami URL sekcji — plan `docs/superpowers/plans/2026-10-29-parent-ui-mantine.md`. Decyzje treściowe tego speca (grupy zestawów, karty postępów, teksty, `data-testid`, dostępność) pozostają punktem odniesienia.
+>
+> Stan 2026-10-29 (faza 7 planu Mantine): migracja zakończona — wszystkie sekcje i oba edytory są na Mantine, w schemacie jasnym i ciemnym. Style tego redesignu (`parent.css`, tokeny `--pp-*` z bloku `.pp-app`) i klasy dawnego panelu w `globals.css` zostały usunięte; kolory stanów pochodzą z motywu (`theme.ts`, pary `--pp-status-*`), a wygląd sekcji z plików CSS przy komponentach (`parent-shell.css`, `decks-panel.css`, `children-panel.css`, `progress-panel.css`, `deck-editor.css`, `lessons/lesson-panels.css`). Opisy wyglądu poniżej (natywny `<dialog>`, wymiary, kolory, zakres „edytory tylko tokeny”) są historyczne; edytory zestawu i lekcji przeszły pełną przebudowę według szkiców zaakceptowanych w fazach 5b i 6b.
 
 ## 1. Cel i zakres
 

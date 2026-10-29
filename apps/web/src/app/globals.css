@@ -1,16 +1,19 @@
-/* Panel rodzica Umiem! — mobile first, duże pola dotykowe, zero zależności.
-   Kid UI (packages/kid-ui) wprowadzi właściwy system stylowania. */
+/* Style bazowe aplikacji Umiem! (root layout): font, tło i reguły elementów,
+   na których opiera się host Kid UI (surowe nagłówki, etykiety i pola Kid UI
+   dziedziczą stąd to, czego nie nadpisują ich własne style).
+   Klasy dawnego panelu rodzica usunięto w fazie 7 planu
+   2026-10-29-parent-ui-mantine — panel rodzica ma własne style Mantine. */
 
-/* Warstwy (plan 2026-10-29-parent-ui-mantine, faza 1): style tego pliku są w
-   warstwie `legacy`, niższej niż `mantine`, żeby reguły elementów (button,
-   label, input…) nie nadpisywały komponentów Mantine w panelu rodzica.
-   Style bez warstwy (Kid UI, parent.css) mają pierwszeństwo przed obiema. */
+/* Warstwy: style tego pliku są w warstwie `legacy`, niższej niż `mantine`,
+   żeby reguły elementów (button, label, input…) nie nadpisywały komponentów
+   Mantine w panelu rodzica. Style bez warstwy (Kid UI) mają pierwszeństwo
+   przed obiema. */
 @layer legacy, mantine;
 
 /* Reguły elementów pomijają elementy Mantine (statyczne klasy `mantine-*`):
    w panelu rodzica warstwa `mantine` nie ustawia wszystkich właściwości
    (np. min-height checkboksa), więc bez wykluczenia stare reguły by przeciekały.
-   `:where()` nie zmienia specyficzności — stare ekrany wyglądają jak dotąd. */
+   `:where()` nie zmienia specyficzności, więc Kid UI wygląda jak dotąd. */
 
 @layer legacy {
 
@@ -24,12 +27,6 @@ body {
   margin: 0;
   background: #f6f6fb;
   color: #1d1d2b;
-}
-
-.container {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 16px;
 }
 
 h1:where(:not([class*="mantine-"])) {
@@ -74,20 +71,6 @@ button:where(:not([class*="mantine-"])) {
   cursor: pointer;
 }
 
-.button-link {
-  min-height: 44px;
-  padding: 8px 16px;
-  box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid #3b5bdb;
-  border-radius: 12px;
-  background: #3b5bdb;
-  color: #fff;
-  text-decoration: none;
-}
-
 button:where(:not([class*="mantine-"])):disabled {
   opacity: 0.55;
   cursor: default;
@@ -98,309 +81,6 @@ form button:where(:not([class*="mantine-"])) {
   background: #3b5bdb;
   border-color: #3b5bdb;
   color: #fff;
-}
-
-.card {
-  background: #fff;
-  border: 1px solid #e4e4ee;
-  border-radius: 16px;
-  padding: 16px;
-  margin: 12px 0;
-}
-
-.row {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.row.space {
-  justify-content: space-between;
-}
-
-.grid-2 {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-@media (max-width: 480px) {
-  .grid-2 {
-    grid-template-columns: 1fr;
-  }
-}
-
-.tabs {
-  display: flex;
-  gap: 8px;
-  margin: 12px 0;
-}
-
-.tabs button[aria-current="true"] {
-  background: #3b5bdb;
-  border-color: #3b5bdb;
-  color: #fff;
-}
-
-.badge {
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: #eef0fb;
-  font-size: 0.85rem;
-}
-
-.badge.ok {
-  background: #d9f0e2;
-  color: #1d6a3f;
-}
-
-.brand {
-  font-weight: 700;
-  font-size: 1.2rem;
-}
-
-.deck-row {
-  width: 100%;
-  text-align: left;
-}
-
-.error {
-  color: #b02a37;
-  background: #fbe9eb;
-  border-radius: 12px;
-  padding: 10px 12px;
-}
-
-.info {
-  background: #e8f0fd;
-  border-radius: 12px;
-  padding: 10px 12px;
-}
-
-.illustration {
-  max-width: 180px;
-  border-radius: 12px;
-  display: block;
-  margin: 8px 0;
-}
-
-ul.plain {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.progress-items {
-  overflow-wrap: anywhere;
-}
-
-@media (min-width: 901px) {
-  .container:has(.progress-items) { max-width: 1040px; }
-}
-
-.progress-items-table {
-  width: 100%;
-  table-layout: fixed;
-  border-collapse: collapse;
-  background: #fff;
-  font-size: 0.8rem;
-}
-
-.progress-items-table th,
-.progress-items-table td {
-  padding: 10px 6px;
-  border-bottom: 1px solid #e4e4ee;
-  text-align: left;
-  vertical-align: top;
-}
-
-.progress-items-table thead {
-  background: #eef0fb;
-}
-
-.progress-status {
-  display: inline-block;
-  padding: 3px 6px;
-  border-radius: 8px;
-  background: #eef0fb;
-  color: #293b77;
-}
-
-.progress-status-mastered {
-  background: #d9f0e2;
-  color: #1d6a3f;
-}
-
-.progress-status-needs_confirmation,
-.progress-status-needs_reconfirmation {
-  background: #fff0cf;
-  color: #735012;
-}
-
-.progress-status-not_assessed {
-  background: #f0f0f4;
-  color: #51515f;
-}
-
-.leave-editor-dialog {
-  width: min(480px, calc(100vw - 40px));
-  box-sizing: border-box;
-  border: 1px solid #c9c9d6;
-  border-radius: 16px;
-  padding: 20px;
-  color: #1d1d2b;
-}
-
-.leave-editor-dialog::backdrop {
-  background: rgb(20 20 35 / 45%);
-}
-
-.conflict-columns {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 8px;
-  overflow-wrap: anywhere;
-}
-
-.conflict-row {
-  display: contents;
-}
-
-.conflict-row span {
-  padding: 8px;
-  border-top: 1px solid #e4e4ee;
-}
-
-.progress-material-changed {
-  display: block;
-  margin-top: 8px;
-  font-weight: 400;
-  color: #735012;
-}
-
-.progress-items-cards {
-  display: none;
-}
-
-.progress-items-cards h4 {
-  margin: 0;
-}
-
-.progress-items-cards dl {
-  margin: 12px 0 0;
-}
-
-.progress-items-cards dl > div {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  align-items: start;
-  padding: 8px 0;
-  border-top: 1px solid #e4e4ee;
-}
-
-.progress-items-cards dd {
-  margin: 0;
-}
-
-@media (max-width: 900px) {
-  .progress-items-table { display: none; }
-  .progress-items-cards { display: block; }
-}
-
-/* Edytor lekcji: długie identyfikatory celów łamią się, a opcje/elementy
-   nie rozpychają layoutu (globalny input{width:100%} wymaga wyjątku dla radio). */
-[data-testid="lesson-editor"] h3,
-[data-testid="lesson-editor"] h4,
-[data-testid="lesson-editor"] strong,
-[data-testid="lesson-editor"] li,
-[data-testid="lesson-editor"] .badge {
-  overflow-wrap: anywhere;
-  min-width: 0;
-}
-
-[data-testid="lesson-editor"] fieldset label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-[data-testid="lesson-editor"] fieldset input[type="radio"] {
-  width: auto;
-  min-height: 0;
-  margin-top: 0;
-  flex: 0 0 auto;
-}
-
-[data-testid="lesson-editor"] fieldset input[type="text"],
-[data-testid="lesson-editor"] fieldset > input {
-  flex: 1 1 180px;
-  min-width: 0;
-}
-
-/* Kafelki dziennej aktywności w karcie aktywności panelu rodzica */
-.progress-activity-daily {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 6px;
-  margin: 10px 0 16px 0;
-}
-
-.progress-activity-day {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 8px 4px;
-  background: #f1f2f8;
-  border: 1px solid #e0e2ee;
-  border-radius: 10px;
-  text-align: center;
-  min-width: 0;
-  transition: all 0.15s ease;
-}
-
-.progress-activity-day-active {
-  background: #eef8f1;
-  border-color: #b7e4c7;
-}
-
-.progress-activity-day-today {
-  border-color: #3b5bdb;
-  box-shadow: 0 0 0 1px #3b5bdb;
-}
-
-.progress-activity-day-label {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: #626477;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-}
-
-.progress-activity-day-today .progress-activity-day-label {
-  color: #3b5bdb;
-  font-weight: 700;
-}
-
-.progress-activity-day-time {
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: #1d1d2b;
-  margin-top: 4px;
-  white-space: nowrap;
-}
-
-.progress-activity-day-active .progress-activity-day-time {
-  color: #1b6a38;
-}
-
-.progress-activity-day-empty .progress-activity-day-time {
-  color: #8c8ea0;
-  font-weight: 500;
 }
 
 }
