@@ -791,9 +791,27 @@ test("speech feedback stays inline, explains fragments and exposes only the avai
     };
   });
   expect(outlineClipped).toEqual({ top: false, left: false, right: false });
-  // Scrolled into view, the legend ends above the dock's action row.
-  await legend.scrollIntoViewIfNeeded();
+  // The long heard text overflows the box that holds the legend; a wheel gesture
+  // over it scrolls that box, and the legend then ends inside it, above the
+  // dock's action row.
+  const legendScrollTop = () => legend.evaluate((element) => {
+    let box = element.parentElement;
+    while (box && !(/(auto|scroll)/.test(getComputedStyle(box).overflowY) && box.scrollHeight > box.clientHeight + 1)) {
+      box = box.parentElement;
+    }
+    box?.setAttribute("data-e2e-legend-scroller", "");
+    return box ? box.scrollTop : null;
+  });
+  const startTop = await legendScrollTop();
+  expect(startTop, "legend sits in an overflowing scroll box").not.toBeNull();
+  const scroller = page.locator("[data-e2e-legend-scroller]");
+  const scrollerBox = (await scroller.boundingBox())!;
+  await page.mouse.move(scrollerBox.x + scrollerBox.width / 2, scrollerBox.y + scrollerBox.height / 2);
+  await page.mouse.wheel(0, 4000);
+  await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBeGreaterThan(startTop!);
   const [legendBox, actionBox] = await Promise.all([legend.boundingBox(), page.getByTestId("kid-feedback-retry").boundingBox()]);
+  expect(legendBox!.y, "legend top inside its scroll box").toBeGreaterThanOrEqual(scrollerBox.y - 1);
+  expect(legendBox!.y + legendBox!.height, "legend bottom inside its scroll box").toBeLessThanOrEqual(scrollerBox.y + scrollerBox.height + 1);
   expect(legendBox!.y + legendBox!.height, "legend hidden under the action row").toBeLessThanOrEqual(actionBox!.y + 1);
   // Each legend entry carries a sample styled exactly like its fragment in the word.
   const fragmentLook = (locator: Locator) => locator.evaluate((element) => {
