@@ -88,6 +88,8 @@ export default function NewMaterialDialog({
   const generateSubmit = useRef<HTMLButtonElement>(null);
   const emptySubmit = useRef<HTMLButtonElement>(null);
   const firstOption = useRef<HTMLButtonElement>(null);
+  const generateTitleField = useRef<HTMLInputElement>(null);
+  const emptyTitleField = useRef<HTMLInputElement>(null);
 
   // Powrót z formularza do menu jest blokowany, gdy wisi niepotwierdzone
   // polecenie — przycisk ponowienia nie może zostać ukryty.
@@ -97,12 +99,17 @@ export default function NewMaterialDialog({
   const fieldDisabled = generating || pendingGeneration || creatingEmpty;
   const optionsDisabled = generating || creatingEmpty || pendingGeneration;
 
-  // fokus prowadzi za zmieniającym się krokiem (menu ↔ formularz)
+  // fokus prowadzi za zmieniającym się krokiem (menu ↔ formularz); gdy przycisk
+  // kroku jest wyłączony (np. pusty opis), trafia na pierwsze pole formularza,
+  // żeby nie zostać na usuniętej opcji menu
   useEffect(() => {
     if (!open) return;
     const frame = window.requestAnimationFrame(() => {
-      const target = step === "generate" ? generateSubmit.current : step === "empty" ? emptySubmit.current : firstOption.current;
-      if (target && !target.disabled) target.focus();
+      const candidates: Array<HTMLButtonElement | HTMLInputElement | null> =
+        step === "generate" ? [generateSubmit.current, generateTitleField.current]
+          : step === "empty" ? [emptySubmit.current, emptyTitleField.current]
+            : [firstOption.current];
+      candidates.find((element) => element !== null && !element.disabled)?.focus();
     });
     return () => window.cancelAnimationFrame(frame);
   }, [open, step]);
@@ -178,6 +185,7 @@ export default function NewMaterialDialog({
           <Stack gap="md">
             <Text className="pp-decks-muted">{messages.decks.newGenerateDescription}</Text>
             <TextInput
+              ref={generateTitleField}
               id="new-material-deck-title"
               size="md"
               label={messages.decks.titleLabel}
@@ -236,6 +244,7 @@ export default function NewMaterialDialog({
           <Stack gap="md">
             <Text className="pp-decks-muted">{messages.decks.newEmptyStepDescription}</Text>
             <TextInput
+              ref={emptyTitleField}
               id="new-material-empty-title"
               size="md"
               label={messages.decks.titleLabel}

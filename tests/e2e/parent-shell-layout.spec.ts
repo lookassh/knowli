@@ -181,3 +181,16 @@ test("lista zestawów: na desktopie przycisk w nagłówku sekcji, tryb ciemny ob
   const [r, g, b] = background.match(/\d+/g)!.map(Number);
   expect(r! + g! + b!).toBeLessThan(3 * 80);
 });
+
+test("nowy materiał: przejście do pustego formularza generowania przenosi fokus do pola w oknie", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openDeckList(page);
+  await page.getByTestId("new-material-open").click();
+  await page.getByTestId("new-material-generate").click();
+  await expect(page.getByTestId("generate-submit")).toBeDisabled();
+  await expect(page.getByTestId("deck-title")).toBeFocused();
+  for (let step = 0; step < 6; step += 1) {
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => document.activeElement?.closest('[data-testid="new-material-dialog"]') !== null)).toBe(true);
+  }
+});
