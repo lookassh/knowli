@@ -170,3 +170,38 @@ test("pierwsze uruchomienie: po nieudanym logowaniu ponowna próba loguje zapisa
   await expect(page.getByTestId("tab-decks")).toBeVisible();
   expect(setupCalls).toBe(2);
 });
+
+test("panel rodzica: otwarty zestaw ma adres — głęboki link, odświeżenie i wstecz", async ({ page }) => {
+  const request = page.request;
+  await request.post("/api/v1/parent/setup", { data: { secret: "1234" } });
+  expect((await request.post("/api/v1/parent/login", { data: { secret: "1234" } })).status()).toBe(200);
+  const deckId = randomUUID();
+  const title = `Adres ${deckId.slice(0, 8)}`;
+  expect((await request.post("/api/v1/parent/decks", { data: { deckId, title } })).status()).toBe(201);
+
+  await page.goto(`/parent/decks/${deckId}`);
+  await expect(page.getByTestId("editor-title")).toHaveValue(title);
+  await expect(page.getByTestId("tab-decks")).toHaveAttribute("aria-current", "true");
+  await page.reload();
+  await expect(page.getByTestId("editor-title")).toHaveValue(title);
+
+  await page.getByTestId("editor-back").click();
+  await expect(page).toHaveURL(/\/parent\/decks$/);
+  await expect(page.locator(`[data-deck-id="${deckId}"]`)).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`/parent/decks/${deckId}$`));
+  await expect(page.getByTestId("editor-title")).toHaveValue(title);
+  await page.goForward();
+  await expect(page).toHaveURL(/\/parent\/decks$/);
+
+  await page.locator(`[data-deck-id="${deckId}"]`).click();
+  await expect(page).toHaveURL(new RegExp(`/parent/decks/${deckId}$`));
+
+  await page.goto(`/parent/decks/${randomUUID()}`);
+  await expect(page.getByTestId("deck-not-found")).toBeVisible();
+  await page.getByTestId("deck-not-found").getByRole("button").click();
+  await expect(page).toHaveURL(/\/parent\/decks$/);
+
+  await page.goto("/parent/lessons/new");
+  await expect(page.getByTestId("new-lesson-form")).toBeVisible();
+});

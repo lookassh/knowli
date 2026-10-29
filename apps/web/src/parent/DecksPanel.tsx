@@ -2,6 +2,24 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  ActionIcon,
+  Affix,
+  Alert,
+  Badge,
+  Box,
+  Button,
+  Checkbox,
+  Group,
+  Paper,
+  Stack,
+  Text,
+  ThemeIcon,
+  Title,
+  UnstyledButton,
+  VisuallyHidden,
+} from "@mantine/core";
+import { useMediaQuery } from "@mantine/hooks";
+import {
   messages,
   type ChildDto,
   type CreateEmptyDeckCommand,
@@ -17,7 +35,11 @@ import ArchiveLessonDialog from "./lessons/ArchiveLessonDialog";
 import NewMaterialDialog, { type NewMaterialStep } from "./NewMaterialDialog";
 import { filterByKind, groupDecksByState, polishPlural, type DeckKindFilter } from "./deck-list-grouping";
 import { ParentIcon } from "./ParentIcon";
+import type { ParentRoute } from "./parent-routes";
 import type { EditorLeaveState } from "./useParentLeaveGuard";
+import "./decks-panel.css";
+
+type DeckKind = "vocabulary" | "lesson";
 
 function fill(template: string, values: Record<string, string | number>): string {
   return template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ""));
@@ -52,31 +74,44 @@ function deckMetaParts(deck: DeckSummaryDto): string[] {
   return parts;
 }
 
-/** Lista zestawów pogrupowana po stanie i uruchomienie generacji nowego materiału. */
+/** Ton koloru stanu zestawu — pary `--pp-status-*` z motywu (oba schematy). */
+const STATE_TONE: Record<DeckSummaryDto["state"], string> = {
+  review: "warning",
+  published: "success",
+  draft: "neutral",
+  archived: "neutral",
+};
+
+/**
+ * Sekcja Zestawy: lista pogrupowana po stanie, tworzenie materiału oraz —
+ * według adresu — edytor zestawu (`/parent/decks/{id}`) albo formularz nowej
+ * lekcji (`/parent/lessons/new`). Edytory są jeszcze na starych stylach
+ * (fazy 5–6 planu 2026-10-29-parent-ui-mantine).
+ */
 export default function DecksPanel({
+  route,
   decks,
   childrenList,
   onChanged,
   registerEditorState,
-  requestLeave,
   onAuthExpired,
+  onNavigate,
 }: {
+  route: ParentRoute;
   decks: DeckSummaryDto[];
   childrenList: ChildDto[];
   onChanged: () => Promise<void>;
   registerEditorState: (state: EditorLeaveState) => void;
-  requestLeave: (action: () => void | Promise<void>) => void;
   onAuthExpired: () => void;
+  onNavigate: (route: ParentRoute, options?: { replace?: boolean }) => void;
 }) {
+  const compact = useMediaQuery("(max-width: 37.49em)", false, { getInitialValueInEffect: false }) ?? false;
   const [prompt, setPrompt] = useState("");
   const [title, setTitle] = useState("");
   const [vocabularyFormat, setVocabularyFormat] = useState<"standard" | "picture">("standard");
   const [generating, setGenerating] = useState(false);
   const [creatingEmpty, setCreatingEmpty] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeDeckId, setActiveDeckId] = useState<string | null>(null);
-  const [activeDeckKind, setActiveDeckKind] = useState<"vocabulary" | "lesson">("vocabulary");
-  const [creatingLesson, setCreatingLesson] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [newMaterialOpen, setNewMaterialOpen] = useState(false);
   const [newMaterialStep, setNewMaterialStep] = useState<NewMaterialStep>("menu");
@@ -89,10 +124,13 @@ export default function DecksPanel({
   const [archivedIds, setArchivedIds] = useState<ReadonlySet<string>>(new Set());
   const archiveBusyRef = useRef(false);
   const archiveFilter = useRef<HTMLInputElement>(null);
+  const archiveTrigger = useRef<HTMLElement | null>(null);
   const pendingEmptyCommand = useRef<CreateEmptyDeckCommand | null>(null);
   const creatingEmptyRef = useRef(false);
   const pendingGenerationCommand = useRef<GenerationCommand | null>(null);
   const generatingRef = useRef(false);
+  // Rodzaj zestawów utworzonych w tej sesji panelu — lista może się jeszcze nie odświeżyć.
+  const knownKinds = useRef(new Map<string, DeckKind>());
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -101,6 +139,20 @@ export default function DecksPanel({
       mounted.current = false;
     };
   }, []);
+
+  // Powrót z edytora lub formularza lekcji do listy odświeża listę (jak dawny „Wróć”).
+  const editorOpen = route.deckId !== undefined || route.newLesson === true;
+  const wasEditorOpen = useRef(editorOpen);
+  useEffect(() => {
+    if (wasEditorOpen.current && !editorOpen) void onChanged().catch(() => undefined);
+    wasEditorOpen.current = editorOpen;
+  }, [editorOpen, onChanged]);
+
+  const openDeck = (deckId: string, kind: DeckKind, options?: { replace?: boolean }) => {
+    knownKinds.current.set(deckId, kind);
+    onNavigate({ section: "decks", deckId }, options);
+  };
+  const openList = () => onNavigate({ section: "decks" });
 
   const archive = async () => {
     if (!archiveLesson || archiveBusyRef.current) return;
@@ -172,9 +224,8 @@ export default function DecksPanel({
         setPrompt("");
         setTitle("");
         setVocabularyFormat("standard");
-        setActiveDeckKind("vocabulary");
-        setActiveDeckId(acceptance.deckId);
         setNewMaterialOpen(false);
+        openDeck(acceptance.deckId, "vocabulary");
         void onChanged().catch(() => undefined);
       }
     } catch (cause) {
@@ -212,9 +263,8 @@ export default function DecksPanel({
       pendingEmptyCommand.current = null;
       setPrompt("");
       setTitle("");
-      setActiveDeckKind("vocabulary");
-      setActiveDeckId(created.body.deckId);
       setNewMaterialOpen(false);
+      openDeck(created.body.deckId, "vocabulary");
       // Utworzenie już się powiodło; problem odświeżenia listy nie może wyglądać
       // jak błąd tworzenia i nie może uruchomić nowego UUID przy kolejnym kliknięciu.
       void onChanged().catch(() => undefined);
@@ -231,40 +281,47 @@ export default function DecksPanel({
     }
   };
 
-  if (activeDeckId) {
-    const back = () =>
-      requestLeave(() => {
-        setActiveDeckId(null);
-        void onChanged();
-      });
-    return activeDeckKind === "lesson" ? (
+  if (route.deckId !== undefined) {
+    const deckId = route.deckId;
+    const kind = knownKinds.current.get(deckId)
+      ?? decks.find((deck) => deck.deckId === deckId)?.kind;
+    if (kind === undefined) {
+      return (
+        <Stack gap="md" align="flex-start" data-testid="deck-not-found">
+          <Alert color="gray" variant="light" w="100%">{messages.decks.notFound}</Alert>
+          <Button variant="default" size="md" onClick={openList}>{messages.decks.backToList}</Button>
+        </Stack>
+      );
+    }
+    return kind === "lesson" ? (
       <LessonEditor
-        deckId={activeDeckId}
+        key={deckId}
+        deckId={deckId}
         childrenList={childrenList}
         onEditorStateChange={registerEditorState}
         onAuthExpired={onAuthExpired}
-        onBack={back}
+        onBack={openList}
       />
     ) : (
       <DeckEditor
-        deckId={activeDeckId}
+        key={deckId}
+        deckId={deckId}
         childrenList={childrenList}
         onEditorStateChange={registerEditorState}
         onAuthExpired={onAuthExpired}
-        onBack={back}
+        onBack={openList}
       />
     );
   }
 
-  if (creatingLesson) {
+  if (route.newLesson) {
     return (
       <NewLessonForm
         onAuthExpired={onAuthExpired}
-        onCancel={() => setCreatingLesson(false)}
+        onCancel={openList}
         onCreated={(createdDeckId) => {
-          setCreatingLesson(false);
-          setActiveDeckKind("lesson");
-          setActiveDeckId(createdDeckId);
+          // formularz znika z historii — „wstecz” z nowej lekcji prowadzi do listy, nie do pustego formularza
+          openDeck(createdDeckId, "lesson", { replace: true });
           void onChanged().catch(() => undefined);
         }}
       />
@@ -275,126 +332,139 @@ export default function DecksPanel({
   const groups = groupDecksByState(filterByKind(visibleDecks, kindFilter));
   let rowIndex = 0;
 
-  return (
-    <section>
-      <div className="pp-pagehead">
-        <h2 className="pp-pagehead-title">{messages.decks.title}</h2>
-        <button
-          type="button"
-          className="pp-btn pp-btn-primary"
-          data-testid="new-material-open"
-          onClick={openNewMaterial}
-        >
-          <ParentIcon name="plus" />
-          {messages.decks.newMaterial}
-        </button>
-      </div>
+  const newMaterialButton = (
+    <Button
+      size={compact ? "lg" : "md"}
+      radius="lg"
+      leftSection={<ParentIcon name="plus" />}
+      data-testid="new-material-open"
+      onClick={openNewMaterial}
+      className={compact ? "pp-decks-fab" : undefined}
+    >
+      {messages.decks.newMaterial}
+    </Button>
+  );
 
-      <div className="pp-filterbar">
-        <div className="pp-filter-segmented" data-testid="deck-kind-filter" role="group" aria-label={messages.decks.kindFilterLabel}>
+  return (
+    <Stack component="section" gap="lg">
+      <Group justify="space-between" align="center" wrap="wrap" gap="md">
+        <Title order={1} fz={26}>{messages.decks.title}</Title>
+        {!compact && newMaterialButton}
+      </Group>
+
+      <Group gap="md" wrap="wrap" justify="space-between">
+        <Group
+          gap={4}
+          p={4}
+          wrap="nowrap"
+          w={compact ? "100%" : undefined}
+          className="pp-decks-segmented"
+          data-testid="deck-kind-filter"
+          role="group"
+          aria-label={messages.decks.kindFilterLabel}
+        >
           {(["all", "vocabulary", "lesson"] as const).map((kind) => (
-            <button
+            <Button
               key={kind}
-              type="button"
-              className={kindFilter === kind ? "is-on" : undefined}
+              size="md"
+              radius="md"
+              variant={kindFilter === kind ? "default" : "subtle"}
+              color="gray"
               aria-pressed={kindFilter === kind}
               onClick={() => setKindFilter(kind)}
+              className="pp-decks-segment"
+              px="sm"
+              style={compact ? { flex: "1 1 0", minWidth: 0 } : undefined}
             >
               {messages.decks.kindFilter[kind]}
-            </button>
+            </Button>
           ))}
-        </div>
+        </Group>
         {decks.some((deck) => deck.kind === "lesson") && (
-          <label className="pp-check">
-            <input
-              ref={archiveFilter}
-              type="checkbox"
-              checked={showArchived}
-              onChange={(event) => setShowArchived(event.target.checked)}
-            />
-            {messages.lessons.showArchived}
-          </label>
+          <Checkbox
+            ref={archiveFilter}
+            size="md"
+            label={messages.lessons.showArchived}
+            checked={showArchived}
+            onChange={(event) => setShowArchived(event.currentTarget.checked)}
+          />
         )}
-      </div>
+      </Group>
 
-      {archiveNotice && <p role="status">{archiveNotice}</p>}
-      {visibleDecks.length === 0 && <p className="pp-empty">{messages.decks.empty}</p>}
+      {archiveNotice && <Text role="status">{archiveNotice}</Text>}
+      {visibleDecks.length === 0 && <Text className="pp-decks-muted">{messages.decks.empty}</Text>}
 
       {groups.map((group) => (
-        <section key={group.id} data-testid={`deck-group-${group.id}`}>
-          <h3 className="pp-group-label">
-            {messages.decks.groups[group.id]}
-            <span className="pp-group-count">{group.decks.length}</span>
-          </h3>
-          <ul className="pp-plain">
+        <Stack key={group.id} component="section" gap="xs" data-testid={`deck-group-${group.id}`}>
+          <Group gap="xs">
+            <Title order={2} fz="sm" tt="uppercase" className="pp-decks-group-label">
+              {messages.decks.groups[group.id]}
+            </Title>
+            <Badge variant="light" color="gray" size="sm" radius="xl">{group.decks.length}</Badge>
+          </Group>
+          <Stack gap="xs" component="ul" className="pp-decks-list">
             {group.decks.map((deck) => {
               const index = rowIndex++;
-              const kind = deck.kind === "lesson" ? "lesson" : "vocabulary";
+              const kind: DeckKind = deck.kind === "lesson" ? "lesson" : "vocabulary";
               const metaParts = deckMetaParts(deck);
-              const chipTone =
-                deck.state === "published"
-                  ? "pp-chip-green"
-                  : deck.state === "review"
-                    ? "pp-chip-amber"
-                    : "pp-chip-gray";
               return (
-                <li key={deck.deckId} className="pp-deck-li">
-                  <button
-                    type="button"
-                    className="pp-deck"
+                <Paper key={deck.deckId} component="li" radius="lg" withBorder className="pp-decks-card">
+                  <UnstyledButton
+                    className="pp-decks-row"
                     data-testid={`deck-row-${index}`}
                     data-deck-id={deck.deckId}
-                    onClick={() => {
-                      setActiveDeckKind(kind);
-                      setActiveDeckId(deck.deckId);
-                    }}
+                    onClick={() => openDeck(deck.deckId, kind)}
                   >
-                    <span className={`pp-deck-icon ${kind === "lesson" ? "pp-deck-icon-purple" : "pp-deck-icon-blue"}`}>
-                      <ParentIcon name={kind === "lesson" ? "graduation-cap" : "book-open"} />
-                    </span>
-                    <span className="pp-deck-body">
-                      <span className="pp-deck-title">{deck.title}</span>
-                      <span className="pp-deck-meta">
-                        <span className="pp-sr-only" data-testid={`deck-kind-${index}`}>
-                          {messages.lessons.kindLabel[kind]}
-                        </span>
-                        {metaParts.map((part, partIndex) => (
-                          <span key={partIndex}>
-                            {partIndex > 0 && <span className="pp-meta-dot" aria-hidden="true">·</span>}
-                            {part}
-                          </span>
-                        ))}
+                    <ThemeIcon size={40} radius="md" variant="light" color={kind === "lesson" ? "violet" : "brand"} aria-hidden="true">
+                      <ParentIcon name={kind === "lesson" ? "graduation-cap" : "book-open"} className="pp-decks-kind-icon" />
+                    </ThemeIcon>
+                    <Box className="pp-decks-body">
+                      <Text fw={600} className="pp-decks-title">{deck.title}</Text>
+                      <Text size="sm" className="pp-decks-muted">
+                        <VisuallyHidden data-testid={`deck-kind-${index}`}>{messages.lessons.kindLabel[kind]}</VisuallyHidden>
+                        {metaParts.join(" · ")}
+                      </Text>
+                      <span className="pp-status-badge" data-tone={STATE_TONE[deck.state]}>
+                        {messages.decks.states[deck.state]}
                       </span>
-                    </span>
-                    <span className="pp-deck-side">
-                      <span className={`pp-chip ${chipTone}`}>{messages.decks.states[deck.state]}</span>
-                      <ParentIcon name="chevron-right" className="pp-deck-chevron" />
-                    </span>
-                  </button>
+                    </Box>
+                    <ParentIcon name="chevron-right" className="pp-decks-chevron" />
+                  </UnstyledButton>
                   {deck.kind === "lesson" && deck.state !== "archived" && (
-                    <button
-                      type="button"
-                      className="pp-btn pp-btn-quiet pp-btn-icon pp-deck-remove"
+                    <ActionIcon
+                      variant="subtle"
+                      color="gray"
+                      size={44}
+                      radius="md"
+                      className="pp-decks-remove"
                       disabled={archiveBusy}
                       aria-label={messages.lessons.archiveLabel.replace("{title}", deck.title)}
-                      onClick={() => {
+                      onClick={(event) => {
+                        archiveTrigger.current = event.currentTarget;
                         setArchiveError(null);
                         setArchiveNotice(null);
                         setArchiveLesson(deck);
                       }}
                     >
                       <ParentIcon name="trash-2" />
-                    </button>
+                    </ActionIcon>
                   )}
-                </li>
+                </Paper>
               );
             })}
-          </ul>
-        </section>
+          </Stack>
+        </Stack>
       ))}
+
+      {compact && (
+        <Affix position={{ right: 16, bottom: "calc(88px + env(safe-area-inset-bottom))" }} zIndex={150}>
+          {newMaterialButton}
+        </Affix>
+      )}
 
       <NewMaterialDialog
         open={newMaterialOpen}
+        fullScreen={compact}
         step={newMaterialStep}
         onStepChange={setNewMaterialStep}
         onRequestClose={() => setNewMaterialOpen(false)}
@@ -417,15 +487,23 @@ export default function DecksPanel({
         onCreateEmpty={createEmpty}
         onLesson={() => {
           setNewMaterialOpen(false);
-          setCreatingLesson(true);
+          onNavigate({ section: "decks", newLesson: true });
         }}
         error={error}
       />
 
-      <ArchiveLessonDialog lesson={archiveLesson} busy={archiveBusy} error={archiveError}
+      <ArchiveLessonDialog
+        lesson={archiveLesson}
+        busy={archiveBusy}
+        error={archiveError}
         onConfirm={() => { void archive(); }}
-        onFocusFallback={() => archiveFilter.current?.focus()}
-        onCancel={() => { if (!archiveBusyRef.current) setArchiveLesson(null); }} />
-    </section>
+        onCancel={() => { if (!archiveBusyRef.current) setArchiveLesson(null); }}
+        onClosed={() => {
+          // fokus wraca do kosza, a gdy wiersz zniknął (lekcja w archiwum) — do filtra archiwum
+          if (archiveTrigger.current?.isConnected) archiveTrigger.current.focus();
+          else archiveFilter.current?.focus();
+        }}
+      />
+    </Stack>
   );
 }

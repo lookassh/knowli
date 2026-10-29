@@ -1,57 +1,46 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { Alert, Button, Group, Modal, Text } from "@mantine/core";
 import { messages } from "@learning/contracts";
 
-export default function ArchiveLessonDialog({ lesson, busy, error, onCancel, onConfirm, onFocusFallback }: {
+/**
+ * Potwierdzenie usunięcia lekcji z listy. Fokus po zamknięciu oddaje
+ * wywołujący (`onClosed`) — wiersz z koszem może już nie istnieć.
+ */
+export default function ArchiveLessonDialog({ lesson, busy, error, onCancel, onConfirm, onClosed }: {
   lesson: { title: string } | null;
   busy: boolean;
   error: string | null;
   onCancel: () => void;
   onConfirm: () => void;
-  onFocusFallback: () => void;
+  onClosed: () => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  const cancelButton = useRef<HTMLButtonElement>(null);
-  const returnFocus = useRef<HTMLElement | null>(null);
-  const open = lesson !== null;
-
-  useEffect(() => {
-    const element = dialog.current;
-    if (!element) return;
-    if (open && !element.open) {
-      returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-      element.showModal();
-      cancelButton.current?.focus();
-    } else if (!open && element.open) {
-      element.close();
-      if (returnFocus.current?.isConnected) returnFocus.current.focus();
-      else onFocusFallback();
-    }
-  }, [open, onFocusFallback]);
-
-  useEffect(() => {
-    const element = dialog.current;
-    return () => { if (element?.open) element.close(); };
-  }, []);
-
   return (
-    <dialog ref={dialog} className="leave-editor-dialog" aria-labelledby="archive-lesson-title"
-      aria-describedby="archive-lesson-description" aria-busy={busy}
-      onCancel={(event) => { event.preventDefault(); if (!busy) onCancel(); }}>
-      <h2 id="archive-lesson-title">{messages.lessons.archiveTitle}</h2>
-      <p id="archive-lesson-description" style={{ overflowWrap: "anywhere" }}>
+    <Modal
+      opened={lesson !== null}
+      onClose={() => { if (!busy) onCancel(); }}
+      title={messages.lessons.archiveTitle}
+      centered
+      radius="lg"
+      withCloseButton={false}
+      closeOnEscape={!busy}
+      closeOnClickOutside={!busy}
+      returnFocus={false}
+      onExitTransitionEnd={onClosed}
+      attributes={{ content: { "aria-busy": busy ? "true" : "false" } }}
+    >
+      <Text id="archive-lesson-description" style={{ overflowWrap: "anywhere" }}>
         {messages.lessons.archiveDescription.replace("{title}", lesson?.title ?? "")}
-      </p>
-      {error && <p className="error" role="alert">{error}</p>}
-      <div className="row">
-        <button ref={cancelButton} type="button" onClick={onCancel} disabled={busy}>
+      </Text>
+      {error && <Alert color="red" variant="light" role="alert" mt="md">{error}</Alert>}
+      <Group justify="flex-end" gap="sm" mt="lg">
+        <Button variant="default" size="md" data-autofocus onClick={onCancel} disabled={busy}>
           {messages.lessons.archiveCancel}
-        </button>
-        <button type="button" onClick={onConfirm} disabled={busy}>
+        </Button>
+        <Button color="red" size="md" onClick={onConfirm} disabled={busy}>
           {busy ? messages.lessons.archiving : messages.lessons.archive}
-        </button>
-      </div>
-    </dialog>
+        </Button>
+      </Group>
+    </Modal>
   );
 }

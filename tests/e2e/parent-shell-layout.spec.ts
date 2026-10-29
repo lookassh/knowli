@@ -28,7 +28,7 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
 const TABS = ["tab-decks", "tab-children", "tab-progress", "tab-work-card"];
 
 test("telefon: dolny pasek sekcji przy dolnej krawędzi i menu z akcjami", async ({ page }) => {
-  for (const viewport of [{ width: 390, height: 844 }, { width: 360, height: 640 }]) {
+  for (const viewport of [{ width: 390, height: 844 }, { width: 360, height: 640 }, { width: 320, height: 568 }]) {
     await page.setViewportSize(viewport);
     await openSignedInPanel(page);
     await expectNoHorizontalOverflow(page);
@@ -128,4 +128,69 @@ test("powrót sieci nie przełącza panelu na logowanie (sesję sprawdzają tylk
   await expect(page.getByTestId("tab-decks")).toBeVisible();
   await expect(page.getByTestId("auth-secret")).toHaveCount(0);
   expect(authStateCalls).toBe(1);
+});
+
+const SAMPLE_DECKS = [
+  { deckId: "10000000-0000-4000-8000-000000000001", title: "Dni tygodnia", state: "review", kind: "vocabulary", editableVersionId: null, publishedVersionId: null, itemCount: 7,
+    assignedChildren: [{ childId: "20000000-0000-4000-8000-000000000001", displayName: "Ola", testDate: "2026-11-05" }] },
+  { deckId: "10000000-0000-4000-8000-000000000002", title: `Bardzo długi tytuł zestawu ${"bezspacji".repeat(8)}`, state: "published", kind: "vocabulary", editableVersionId: null, publishedVersionId: null, itemCount: 10 },
+  { deckId: "10000000-0000-4000-8000-000000000003", title: "Past Simple", state: "published", kind: "lesson", editableVersionId: null, publishedVersionId: null, itemCount: 24 },
+  { deckId: "10000000-0000-4000-8000-000000000004", title: "Zwierzęta na farmie", state: "draft", kind: "vocabulary", editableVersionId: null, publishedVersionId: null, itemCount: 0 },
+];
+
+async function openDeckList(page: Page): Promise<void> {
+  await page.route("**/api/v1/parent/**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/login")) return route.fulfill({ json: { authenticated: true, setupRequired: false } });
+    if (url.pathname.endsWith("/decks")) return route.fulfill({ json: SAMPLE_DECKS });
+    return route.fulfill({ json: [] });
+  });
+  await page.goto("/parent/decks");
+  await expect(page.getByTestId("deck-row-0")).toBeVisible();
+}
+
+test("lista zestawów: na telefonie przycisk „Nowy materiał” nad dolnym paskiem, bez przewijania w poziomie", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openDeckList(page);
+  await expectNoHorizontalOverflow(page);
+  const fab = await page.getByTestId("new-material-open").boundingBox();
+  const nav = await page.getByTestId("tab-decks").boundingBox();
+  expect(fab!.height).toBeGreaterThanOrEqual(44);
+  expect(fab!.y + fab!.height).toBeLessThanOrEqual(nav!.y);
+  expect(fab!.x + fab!.width).toBeLessThanOrEqual(390);
+  for (let index = 0; index < SAMPLE_DECKS.length; index += 1) {
+    const row = await page.getByTestId(`deck-row-${index}`).boundingBox();
+    expect(row!.height).toBeGreaterThanOrEqual(44);
+    expect(row!.x + row!.width).toBeLessThanOrEqual(390);
+  }
+  await page.getByTestId("new-material-open").click();
+  const dialog = await page.getByTestId("new-material-dialog").boundingBox();
+  expect(dialog!.width).toBeGreaterThanOrEqual(389);
+  await expect(page.getByTestId("new-material-generate")).toBeVisible();
+});
+
+test("lista zestawów: na desktopie przycisk w nagłówku sekcji, tryb ciemny obejmuje listę", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await openDeckList(page);
+  await expectNoHorizontalOverflow(page);
+  const button = await page.getByTestId("new-material-open").boundingBox();
+  expect(button!.y).toBeLessThan(250);
+  const card = page.getByTestId("deck-row-0");
+  const background = await card.evaluate((element) => getComputedStyle(element.closest("li")!).backgroundColor);
+  const [r, g, b] = background.match(/\d+/g)!.map(Number);
+  expect(r! + g! + b!).toBeLessThan(3 * 80);
+});
+
+test("nowy materiał: przejście do pustego formularza generowania przenosi fokus do pola w oknie", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openDeckList(page);
+  await page.getByTestId("new-material-open").click();
+  await page.getByTestId("new-material-generate").click();
+  await expect(page.getByTestId("generate-submit")).toBeDisabled();
+  await expect(page.getByTestId("deck-title")).toBeFocused();
+  for (let step = 0; step < 6; step += 1) {
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => document.activeElement?.closest('[data-testid="new-material-dialog"]') !== null)).toBe(true);
+  }
 });

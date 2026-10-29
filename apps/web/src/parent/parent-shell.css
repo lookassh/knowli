@@ -131,3 +131,17 @@
   min-height: calc(100dvh - var(--app-shell-header-offset, 0px) - var(--app-shell-footer-offset, 0px));
   color-scheme: light;
 }
+
+/* Sekcje przepisane na Mantine: pełne schematy jasny i ciemny. */
+.pp-shell-page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 20px 16px 32px;
+}
+
+@media (max-width: 37.49em) {
+  /* miejsce na pływający przycisk nad dolnym paskiem */
+  .pp-shell-page {
+    padding-bottom: 96px;
+  }
+}

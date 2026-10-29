@@ -12,10 +12,6 @@ import { loginParent } from "./helpers/parent-session";
 
 const DECK_TITLE = `Dni tygodnia — obieg rodzica ${randomUUID().slice(0, 8)}`;
 
-function deckRow(page: Page) {
-  return page.locator('[data-testid^="deck-row"]').filter({ hasText: DECK_TITLE });
-}
-
 async function playTargetAudio(page: Page, deckId: string, itemIndex: number): Promise<void> {
   const response = await page.request.get(`/api/v1/parent/decks/${deckId}`);
   expect(response.status()).toBe(200);
@@ -344,9 +340,9 @@ test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page,
   await expect(page.getByTestId("generation-banner")).toBeVisible();
 
   // Odświeżenie strony w trakcie generowania: panel dalej prowadzi przegląd.
+  // Edytor ma własny adres, więc odświeżenie zostawia go otwartym.
   await page.reload();
-  await expect(deckRow(page)).toContainText(DECK_TITLE);
-  await deckRow(page).click();
+  await expect(page.getByTestId("editor-title")).toHaveValue(DECK_TITLE);
   // Worker may finish while the list is reloading; the banner is asserted
   // immediately after creation above, and either state should open the editor.
   await expect(page.getByTestId("item-card-0")).toBeVisible({ timeout: 60_000 });
@@ -401,9 +397,8 @@ test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page,
   expect(assignedKidDecks.ok()).toBe(true);
   expect((await assignedKidDecks.json() as { deckId: string }[]).some((entry) => entry.deckId === deckId)).toBe(true);
 
-  // Przypisania przeżywają odświeżenie strony.
+  // Przypisania przeżywają odświeżenie strony (edytor zostaje otwarty pod swoim adresem).
   await page.reload();
-  await deckRow(page).click();
   await expect(page.locator('[data-testid^="assignment-row-"]').filter({ hasText: alaName })).toContainText(alaDate);
   await expect(page.locator('[data-testid^="assignment-row-"]').filter({ hasText: bartekName })).toContainText(bartekDate);
 
@@ -510,7 +505,6 @@ test("ręczna edycja zestawu: dodaj element, usuń element, zmień tytuł", asyn
   expect((await retitled).status()).toBe(200);
 
   await page.reload();
-  await manualRow.click();
   await expect(page.getByTestId("editor-title")).toHaveValue(`${MANUAL_DECK_TITLE} v2`);
   await expect(page.getByTestId("item-card-1")).toBeVisible();
   await expect(page.getByTestId("item-card-2")).toHaveCount(0);
