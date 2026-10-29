@@ -72,7 +72,7 @@ Klasy szerokości jak w Kid UI (M3): compact < 600 px, medium 600–839 px, expa
 | Edytor zestawu | Elementy jako karty jedna pod drugą; akcje mediów (odsłuch, regeneracja, pominięcie obrazka) w menu ⋯; przypięty dolny pasek „Zapisz / Opublikuj”; przypisania jako karty per dziecko | Siatka 2 kolumn pól elementu |
 | Konflikt wersji | Lokalna i zdalna wersja jedna pod drugą (`SimpleGrid cols={{ base: 1, sm: 2 }}`) | Obok siebie |
 | Edytor lekcji | `Accordion` per cel → etap; ćwiczenie jako karta; pola opcji w pionie | Rozwinięte grupy |
-| Dzieci | Karty w jednej kolumnie, edycja w `Drawer` od dołu | Siatka kart |
+| Dzieci | Karty w jednej kolumnie, edycja w karcie (decyzja fazy 3 zamiast `Drawer`, patrz stan fazy 3) | Siatka kart |
 | Postępy | Filtr dziecka jako przewijany rząd avatarów; słowa jako karty (już są); paski umiejętności w pionie zamiast stałej kolumny 168 px | Tabela słów (≥ 901 px jak dziś) |
 | Karta pracy | `Accordion` sesji zamiast `<details>` | Bez zmian struktury |
 
@@ -122,6 +122,8 @@ Stan (2026-10-29): faza 0 scalona (#151, razem z Next 16). Faza 1 zrealizowana z
 - ponowne logowanie w oknie przy niezapisanych zmianach działa: zapis w edytorze zestawu i lekcji zgłasza 401 przez `onAuthExpired` (review #154), test e2e w `parent-edit-protection.spec.ts`; po przejściu edytorów na zapytania (fazy 5a/6b) to samo zrobi globalny handler.
 
 Faza 2 (2026-10-29): lista zestawów, „Nowy materiał” (na telefonie pływający przycisk nad dolnym paskiem, okno na pełny ekran) i potwierdzenie usunięcia lekcji na Mantine, z oboma schematami kolorów; otwarty zestaw i nowa lekcja mają adresy (`/parent/decks/{id}`, `/parent/lessons/new`), `DecksPanel` nie jest już routerem. Po zgodzie na wyjście przy zablokowanym „wstecz” panel cofa się na istniejący wpis historii (bez dopisywania nowego). Edytory zostają na starych stylach do faz 5–6.
+
+Faza 3 (2026-10-29): sekcja Dzieci na Mantine w obu schematach kolorów — karty profili (`SimpleGrid` 1/2/3 kolumny), edycja profilu, progi wymowy i nowe dziecko na `@mantine/form`, odczyt progów przez `useQuery`, zapisy przez `useMutation` (401 obsługuje globalny handler). Usunięcie profilu: `modals.openConfirmModal` zamiast `window.confirm`. Formularze sekcji składają jeden stan leave guardu (niezapisana zmiana w dowolnym z nich lub trwający zapis zatrzymuje wyjście; 401 przy niezapisanym profilu otwiera logowanie w oknie). Edycja profilu została w karcie zamiast `Drawer` od dołu: szuflada zasłaniała kontekst karty i dolny pasek, z klawiaturą telefonu zostawiała mało miejsca na pola, a obecne e2e (dwie przeglądarki, przełączanie formularzy, blokada podczas zapisu) opisują formularz w wierszu dziecka. Nowy spec `parent-children.spec.ts` (mocked): układ 390/320/1280, tryb ciemny, ochrona przed wyjściem, reauth, potwierdzenie usunięcia, walidacja progów.
 
 Adresy URL weszły do fazy 1 (zamiast osobnej fazy na końcu), bo `DecksPanel` jest dziś jednocześnie routerem edytorów — przepisywanie go dwa razy byłoby droższe.
 

@@ -1,0 +1,69 @@
+/* Sekcja Dzieci na Mantine (plan 2026-10-29-parent-ui-mantine, faza 3).
+   Tekst pomocniczy i ostrzeżenia: kontrast ≥ 4,5:1 w obu schematach. */
+
+.pp-children-muted {
+  color: #565a70;
+}
+
+.pp-children-warning {
+  color: var(--pp-status-warning-fg);
+}
+
+[data-mantine-color-scheme="dark"] .pp-children-muted {
+  color: #a8abb9;
+}
+
+.pp-children-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pp-children-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pp-children-name {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.pp-child-avatar {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  margin-bottom: 6px;
+  display: grid;
+  place-items: center;
+  font-size: 30px;
+  background: var(--mantine-primary-color-light);
+}
+
+.pp-children-remove {
+  color: var(--pp-status-danger-fg);
+}
+
+.pp-children-add {
+  border: 1.5px dashed var(--mantine-color-default-border);
+  background: transparent;
+}
+
+.pp-children-add-cell {
+  min-width: 0;
+}
+
+.pp-children-settings,
+.pp-children-edit {
+  text-align: left;
+}
+
+.pp-children-attempts {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+  font-size: var(--mantine-font-size-sm);
+  overflow-wrap: anywhere;
+}
