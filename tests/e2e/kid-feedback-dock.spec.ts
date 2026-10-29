@@ -1,5 +1,8 @@
 import { expect, test } from "@playwright/test";
 import { installKidUiFixture } from "./helpers/kid-ui-fixture";
+import { kidTokenColor } from "./helpers/contrast";
+import { measure, resizeAndSettle } from "./helpers/kid-layout";
+import { pictureVocabularyFixture } from "./helpers/picture-fixtures";
 
 const childId = "10000000-0000-4000-8000-000000000001";
 const deckId = "10000000-0000-4000-8000-000000000002";
@@ -274,4 +277,160 @@ test("dock reveals after viewport mode changes and does not jump again on repeat
   await page.locator(".kid-page").evaluate((element) => element.setAttribute("data-zoomed", "true"));
   await expect.poll(() => page.evaluate(() => (window as typeof window & { dockRevealCalls?: number }).dockRevealCalls)).toBe(1);
   expect(await page.locator(".kid-page").evaluate((element) => element.scrollTop)).toBe(pageScroll);
+});
+
+type ToneCase = {
+  tone: "correct" | "partial" | "incorrect" | "technical";
+  icon: "check" | "almost" | "close" | "info";
+  feedback: { kind: "great" } | { kind: "almost" } | { kind: "incorrect"; correctText: string } | { kind: "not_assessed" };
+  background: `--${string}`;
+  foreground: `--${string}`;
+};
+
+const toneCases: ToneCase[] = [
+  { tone: "correct", icon: "check", feedback: { kind: "great" }, background: "--kid-color-success-container", foreground: "--kid-color-on-success-container" },
+  { tone: "partial", icon: "almost", feedback: { kind: "almost" }, background: "--kid-color-warm-container", foreground: "--kid-color-on-warm-container" },
+  { tone: "incorrect", icon: "close", feedback: { kind: "incorrect", correctText: "cat" }, background: "--md-sys-color-error-container", foreground: "--md-sys-color-on-error-container" },
+  { tone: "technical", icon: "info", feedback: { kind: "not_assessed" }, background: "--md-sys-color-surface-container-high", foreground: "--md-sys-color-on-surface" },
+];
+
+/** WCAG contrast of the element's text against the dock behind it (the title itself is transparent). */
+async function titleContrastOnDock(title: import("@playwright/test").Locator, dock: import("@playwright/test").Locator) {
+  const [color, background] = await Promise.all([
+    title.evaluate((node) => getComputedStyle(node).color),
+    dock.evaluate((node) => getComputedStyle(node).backgroundColor),
+  ]);
+  const luminance = (value: string) => {
+    const [red, green, blue] = value.match(/[\d.]+/g)!.slice(0, 3).map(Number).map((channel) => {
+      const unit = channel / 255;
+      return unit <= 0.04045 ? unit / 12.92 : ((unit + 0.055) / 1.055) ** 2.4;
+    });
+    return red! * 0.2126 + green! * 0.7152 + blue! * 0.0722;
+  };
+  const text = luminance(color);
+  const back = luminance(background);
+  return { ratio: (Math.max(text, back) + 0.05) / (Math.min(text, back) + 0.05), color, background };
+}
+
+for (const viewport of [{ width: 360, height: 800 }, { width: 844, height: 390 }]) {
+  test(`each feedback tone keeps readable text and its icon (${viewport.width}x${viewport.height})`, async ({ page }) => {
+    for (const toneCase of toneCases) {
+      const fixture = completedRecallFixture();
+      fixture.attempts = [{ ...fixture.attempts[0]!, feedback: toneCase.feedback, taskState: "issued" as const }] as unknown as typeof fixture.attempts;
+      await installKidUiFixture(page, fixture);
+      await page.setViewportSize(viewport);
+      await openTask(page);
+      await page.getByTestId("kid-input").fill("cat");
+      await page.getByTestId("kid-submit").click();
+
+      const dock = page.getByTestId("kid-feedback-dock");
+      await expect(dock).toHaveAttribute("data-tone", toneCase.tone);
+      await resizeAndSettle(page, viewport);
+      const badge = dock.getByTestId("kid-feedback-tone-icon");
+      await expect(badge).toBeVisible();
+      await expect(badge).toHaveAttribute("data-icon", toneCase.icon);
+      // The badge is a circle: 40 px, or 32 px in the one-row compact dock.
+      const badgeBox = await badge.boundingBox();
+      expect(badgeBox!.width, `${toneCase.tone} badge`).toBeGreaterThanOrEqual(32);
+      expect(Math.abs(badgeBox!.width - badgeBox!.height)).toBeLessThanOrEqual(1);
+
+      const title = dock.getByTestId("kid-feedback").locator(".kid-feedback-text");
+      await expect.poll(() => title.evaluate((node) => getComputedStyle(node).opacity), { message: "title finishes its fade-in" }).toBe("1");
+      const contrast = await titleContrastOnDock(title, dock);
+      expect(contrast.ratio, `${toneCase.tone}: ${JSON.stringify(contrast)}`).toBeGreaterThanOrEqual(4.5);
+      // The dock carries the tone's container role pair, not the neutral surface.
+      expect(contrast.background).toBe(await kidTokenColor(page, toneCase.background));
+      expect(contrast.color).toBe(await kidTokenColor(page, toneCase.foreground));
+
+      const next = dock.getByTestId("kid-next");
+      await expect(next).toBeInViewport();
+      const action = await next.boundingBox();
+      expect(action!.height, `${toneCase.tone} primary action height`).toBeGreaterThanOrEqual(54);
+      expect(action!.y + action!.height).toBeLessThanOrEqual(viewport.height + 1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
+
+      if (process.env.UMIEM_FEEDBACK_SHOTS) {
+        await page.screenshot({ path: `${process.env.UMIEM_FEEDBACK_SHOTS}/dock-${toneCase.tone}-${viewport.width}x${viewport.height}.png` });
+      }
+    }
+  });
+}
+
+for (const viewport of [{ width: 360, height: 800 }, { width: 320, height: 640 }]) {
+  test(`the guidance button in the feedback dock keeps its geometry (${viewport.width}x${viewport.height})`, async ({ page }) => {
+    const fixture = pictureVocabularyFixture();
+    fixture.tasks = [fixture.tasks[1]!, null];
+    const audioId = "20000000-0000-4000-8000-000000000001";
+    fixture.uiAudio = { ready: true, assets: { listening: audioId, correct: audioId } };
+    await installKidUiFixture(page, fixture);
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    await page.getByTestId("kid-profile").click();
+    await page.getByTestId("kid-deck").first().click();
+    await page.getByTestId("kid-option").first().click();
+
+    const dock = page.getByTestId("kid-feedback-dock");
+    await expect(dock.getByTestId("kid-guidance-play")).toBeVisible();
+    await resizeAndSettle(page, viewport);
+    await expect.poll(async () => {
+      const box = await dock.boundingBox();
+      return box ? Math.round(box.y + box.height) : 99999;
+    }, { message: "dock settles within the viewport" }).toBeLessThanOrEqual(viewport.height + 1);
+    const layout = await measure(page, {
+      dock: "[data-testid='kid-feedback-dock']",
+      guidance: "[data-testid='kid-feedback-dock'] [data-testid='kid-guidance-play']",
+      title: "[data-testid='kid-feedback-dock'] .kid-feedback-text",
+    });
+    expect(layout.guidance.width, "guidance width").toBeGreaterThanOrEqual(48);
+    expect(layout.guidance.height, "guidance height").toBeGreaterThanOrEqual(48);
+    expect(layout.guidance.left).toBeGreaterThanOrEqual(layout.dock.left - 1);
+    expect(layout.guidance.right).toBeLessThanOrEqual(layout.dock.right + 1);
+    expect(layout.guidance.top).toBeGreaterThanOrEqual(layout.dock.top - 1);
+    expect(layout.guidance.bottom).toBeLessThanOrEqual(layout.dock.bottom + 1);
+    const apart = layout.guidance.left >= layout.title.right - 1 || layout.guidance.right <= layout.title.left + 1
+      || layout.guidance.top >= layout.title.bottom - 1 || layout.guidance.bottom <= layout.title.top + 1;
+    expect(apart, `guidance intersects the title: ${JSON.stringify({ guidance: layout.guidance, title: layout.title })}`).toBe(true);
+    const overflow = await dock.evaluate((node) => node.scrollWidth - node.clientWidth);
+    expect(overflow, "dock horizontal overflow").toBeLessThanOrEqual(0);
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.innerWidth);
+  });
+}
+
+test("spelling comparison uses the display font and underlines the wrong places", async ({ page }) => {
+  const fixture = completedRecallFixture();
+  const segment = (text: string, state: "plain" | "pill") => ({ text, state });
+  fixture.attempts = [{ ...fixture.attempts[0]!, taskState: "issued" as const,
+    feedback: { kind: "spelling_hint", correctText: "cat", spellingDiff: {
+      given: [segment("c", "plain"), segment("o", "pill"), segment("t", "plain")],
+      expected: [segment("c", "plain"), segment("a", "pill"), segment("t", "plain")],
+      capitalizationHint: false,
+    } } }] as unknown as typeof fixture.attempts;
+  await installKidUiFixture(page, fixture);
+  await page.setViewportSize({ width: 360, height: 800 });
+  await openTask(page);
+  await page.getByTestId("kid-input").fill("cot");
+  await page.getByTestId("kid-submit").click();
+
+  const dock = page.getByTestId("kid-feedback-dock");
+  await expect(dock).toHaveAttribute("data-tone", "partial");
+  const pills = dock.getByTestId("kid-spelling-pill");
+  await expect(pills).toHaveCount(2);
+  for (const pill of await pills.all()) {
+    const style = await pill.evaluate((node) => {
+      const computed = getComputedStyle(node);
+      return { family: computed.fontFamily, line: computed.textDecorationLine, thickness: computed.textDecorationThickness };
+    });
+    expect(style.family, "pill font").toContain("KnowliKidFredoka");
+    expect(style.line, "pill underline").toContain("underline");
+    expect(Number.parseFloat(style.thickness)).toBeGreaterThanOrEqual(2);
+  }
+  const layout = await measure(page, { dock: "[data-testid='kid-feedback-dock']", diff: "[data-testid='kid-spelling-diff']" });
+  expect(layout.diff.left).toBeGreaterThanOrEqual(layout.dock.left - 1);
+  expect(layout.diff.right).toBeLessThanOrEqual(layout.dock.right + 1);
+  expect(layout.scrollWidth).toBeLessThanOrEqual(layout.innerWidth);
+  await expect(dock.getByTestId("kid-next")).toBeInViewport();
+  if (process.env.UMIEM_FEEDBACK_SHOTS) {
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: `${process.env.UMIEM_FEEDBACK_SHOTS}/dock-spelling-360x800.png` });
+  }
 });
