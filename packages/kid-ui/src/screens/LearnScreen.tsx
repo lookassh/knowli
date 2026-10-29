@@ -125,7 +125,7 @@ export function LearnScreen({
     onPlay: () => void controller.playTaskAudio(),
     onPlayExample: () => void controller.playExampleAudio(),
     onAnswerChoice: (optionId) => void controller.answerChoice(optionId),
-    onSubmitText: (text) => void controller.answerText(text),
+    onSubmitText: (text, inputMethod) => void controller.answerText(text, inputMethod),
     onAnswerSequence: (itemIds) => void controller.answerSequence(itemIds),
     onAnswerSelection: (itemIds) => void controller.answerSelection(itemIds),
     onNotRemember: () => void controller.notRemember(),
@@ -304,6 +304,7 @@ export function LearnScreen({
                 technicalRecordingIssue={screen.technicalRecordingIssue}
                 recordingMode={screen.recordingMode}
                 micAvailable={micAvailable}
+                dictation={screen.dictation?.taskId === task.taskId ? screen.dictation : null}
                 mediaUrl={(assetId) => controller.mediaUrl(assetId)}
                 optionOutcomes={outcomes}
                 dock={screen.reveal === null ? dock : undefined}

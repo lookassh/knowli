@@ -19,6 +19,7 @@ import { LevelMonitorUnavailableError } from "../media/platform";
 import { createMemoryPreferences, MIC_DENIED_KEY, type LocalPreferences } from "../storage";
 import { createMemoryActivityDraftStore } from "./activity-draft-store";
 import { LearningSessionController, messageForError } from "./session-controller";
+import { format } from "../format";
 
 /**
  * Testy jednostkowe sterownika przepływu (RF5 i kontrakt e2e zadania 9):
@@ -3043,3 +3044,145 @@ function baseState(): ApiState {
     networkDown: false,
   };
 }
+
+describe("LearningSessionController — dyktowanie odpowiedzi lekcji (Etap 3 szkoły)", () => {
+  const openAnswer = (taskId = "dict-1", speechInput: { maxSeconds: number } | null = { maxSeconds: 45 }) => taskDto(taskId, {
+    kind: "lesson_open_answer", instructionPl: "Odpowiedz.", prompt: "Co to jest poziomica?", promptLocale: "pl-PL",
+    ...(speechInput ? { speechInput } : {}),
+  });
+
+  async function dictationHarness(results: Array<import("@learning/contracts").DictationDto | Error>, task = openAnswer()) {
+    const state = baseState();
+    state.tasks = [task];
+    const calls: { taskId: string; bytes: Uint8Array }[] = [];
+    const answers: unknown[] = [];
+    const base = makeApi(state);
+    const api: KidApi = {
+      ...base,
+      async dictate(taskId, audio) {
+        calls.push({ taskId, bytes: audio.bytes });
+        const next = results.shift() ?? { status: "unavailable" };
+        if (next instanceof Error) throw next;
+        return next;
+      },
+      async submitAnswer(input) {
+        answers.push(input);
+        return base.submitAnswer(input);
+      },
+    };
+    const harness = makeHarness(state, { api });
+    await harness.controller.start();
+    await harness.controller.selectProfile(state.profiles[0]!.childId);
+    harness.controller.setMicrophone(true);
+    await harness.controller.startLearning(DECK.deckId);
+    await harness.controller.prepareMicrophone();
+    return { ...harness, calls, answers };
+  }
+
+  async function record(harness: Awaited<ReturnType<typeof dictationHarness>>): Promise<void> {
+    await harness.controller.startRecording();
+    await vi.advanceTimersByTimeAsync(400);
+    await harness.controller.stopRecording();
+  }
+
+  it("rozpoznany tekst trafia do stanu ekranu bez próby; bajty są zerowane, limit nagrania to 45 s", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = await dictationHarness([{ status: "heard", text: "Poziomica to linia na mapie." }]);
+      await record(harness);
+      expect(harness.media.lastRecorderOptions?.maxDurationMs).toBe(45_000);
+      expect(harness.calls).toHaveLength(1);
+      expect([...harness.calls[0]!.bytes]).toEqual([0, 0, 0]);
+      expect(harness.state.speechSubmissions).toEqual([]);
+      expect(harness.state.submissions).toEqual([]);
+      expect(harness.controller.getScreen()).toMatchObject({
+        recordingPhase: "idle",
+        busy: false,
+        feedback: null,
+        recordingNotice: messages.kid.dictationHeard,
+        dictation: { taskId: "dict-1", status: "heard", text: "Poziomica to linia na mapie.", failures: 0 },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("niepewne i nieudane dyktowania liczą się z rzędu i po dwóch wskazują pisanie", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = await dictationHarness([{ status: "uncertain" }, { status: "no_speech" }, { status: "too_long" }]);
+      await record(harness);
+      expect(harness.controller.getScreen()).toMatchObject({ recordingNotice: messages.kid.dictationNotHeard, dictation: { status: "uncertain", failures: 1 } });
+      expect((harness.controller.getScreen() as { dictation?: { text?: string } }).dictation?.text).toBeUndefined();
+      await record(harness);
+      expect(harness.controller.getScreen()).toMatchObject({
+        recordingNotice: `${messages.kid.dictationNotHeard} ${messages.kid.dictationTypeInstead}`,
+        dictation: { status: "no_speech", failures: 2 },
+      });
+      await record(harness);
+      expect(harness.controller.getScreen()).toMatchObject({ dictation: { status: "too_long", failures: 3 } });
+      expect(harness.state.submissions).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("utrata sieci kończy się komunikatem, bez lokalnego sukcesu i bez zapamiętanego nagrania", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = await dictationHarness([new TypeError("fetch failed")]);
+      await record(harness);
+      expect([...harness.calls[0]!.bytes]).toEqual([0, 0, 0]);
+      expect(harness.controller.getScreen()).toMatchObject({
+        recordingPhase: "idle",
+        feedback: null,
+        recordingNotice: messages.kid.dictationUnavailable,
+        dictation: { status: "unavailable" },
+      });
+      expect(harness.state.submissions).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("odlicza ostatnie 10 sekund i zatrzymuje odliczanie po anulowaniu", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = await dictationHarness([]);
+      await harness.controller.startRecording();
+      await vi.advanceTimersByTimeAsync(34_000);
+      // przed ostatnimi 10 sekundami bez odliczania
+      expect((harness.controller.getScreen() as { recordingNotice: string | null }).recordingNotice).toBeNull();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect((harness.controller.getScreen() as { recordingNotice: string | null }).recordingNotice).toBe(format(messages.kid.dictationCountdown, { seconds: 10 }));
+      harness.controller.cancelRecording();
+      expect(harness.recorder.cancelled).toBe(1);
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "idle", recordingNotice: null });
+      expect(harness.calls).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("odpowiedź z dyktowania zgłasza sposób wprowadzenia, klawiatura go pomija", async () => {
+    const harness = await dictationHarness([]);
+    await harness.controller.answerText("  Linia na mapie. ", "speech");
+    expect(harness.answers[0]).toMatchObject({ modality: "text", text: "Linia na mapie.", inputMethod: "speech" });
+    const keyboard = await dictationHarness([]);
+    await keyboard.controller.answerText("Linia");
+    expect(keyboard.answers[0]).not.toHaveProperty("inputMethod");
+  });
+
+  it("bez speechInput nagranie idzie zwykłą ścieżką próby ustnej, nie do dyktowania", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = await dictationHarness([], openAnswer("plain-1", null));
+      await record(harness);
+      expect(harness.calls).toEqual([]);
+      expect(harness.media.lastRecorderOptions?.maxDurationMs).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

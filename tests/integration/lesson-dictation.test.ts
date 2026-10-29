@@ -413,7 +413,7 @@ describe("dyktowanie odpowiedzi otwartej (Etap 3)", () => {
     const task = await reachOpenTask(services, child.id, deckId);
 
     const form = new FormData();
-    form.append("audio", new File([wav(4).bytes], "answer.wav", { type: "audio/wav" }));
+    form.append("audio", new File([wav(4).bytes as Uint8Array<ArrayBuffer>], "answer.wav", { type: "audio/wav" }));
     const response = await handleKidApi(new Request(`http://localhost/api/v1/kid/tasks/${task.taskId}/dictation`, {
       method: "POST",
       headers: { origin: "http://localhost", host: "localhost", "sec-fetch-site": "same-origin" },
