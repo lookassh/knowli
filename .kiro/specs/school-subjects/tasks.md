@@ -237,27 +237,27 @@ Zależy od etapów 1–2 (pula, edytor, silnik lekcji); niezależny od 3–6.
 
 - [x] Kontrakt i decyzje (design §10, akceptacja właściciela 2026-10-29); requirements:
       zakres (bez wyłączenia „dopasowywania par”) i wym. 4.1 z nowymi typami.
-- [ ] Tasowanie bez rozwiązanego układu w `lesson_order` (design 10.4) —
-      osobny mały commit z testem jednostkowym i regresją integracyjną.
-- [ ] Kontrakty: `lesson_match`, `lesson_group` w listach typów, gałęzie
+- [x] Tasowanie bez rozwiązanego układu w `lesson_order` (design 10.4) —
+      osobny mały commit z testem jednostkowym materializacji.
+- [x] Kontrakty: `lesson_match`, `lesson_group` w listach typów, gałęzie
       `TaskPromptSchema`, modalność `assignment`, pola wejścia edytora;
       migracja `0026` (`attempts_modality_allowed`).
-- [ ] Domena: typy, etap `guided`, walidacja puli, tożsamość ćwiczenia,
+- [x] Domena: typy, etap `guided`, walidacja puli, tożsamość ćwiczenia,
       ocena przypisań; `SCHOOL_EXERCISE_TYPES`.
-- [ ] Silnik: materializacja (UUID, tasowanie 10.4), próby (strażnik
+- [x] Silnik: materializacja (UUID, tasowanie 10.4), próby (strażnik
       modalności, pomoc `options`, `correctText`), kartkówka, raport
       aktywności, karta pracy rodzica.
-- [ ] Generator: ścisłe gałęzie structured output, prompt szkoły, walidacja
-      szkicu; fake generator.
-- [ ] Edytor rodzica: pola par, dystraktorów i grup, dodawanie/usuwanie
-      wierszy, wyliczany `answer`, podgląd.
-- [ ] Kid UI: `LessonMatchView`, `LessonGroupView` z czystymi funkcjami stanu
+- [x] Generator: ścisłe gałęzie structured output, prompt szkoły, walidacja
+      szkicu (fake generator bez par i grup — design 10.9).
+- [x] Edytor rodzica: pola par, dystraktorów i grup, dodawanie/usuwanie
+      wierszy, wyliczany `answer` (widoczny w zablokowanym polu odpowiedzi).
+- [x] Kid UI: `LessonMatchView`, `LessonGroupView` z czystymi funkcjami stanu
       i testami; komunikaty; specy geometrii (portrait, landscape, tablet,
       desktop) w partycji `mocked`.
-- [ ] Testy integracyjne: generacja → zatwierdzenie → zadanie → próba
+- [x] Testy integracyjne: edycja rodzica → publikacja → zadanie → próba
       (poprawna, błędna, niepełna `400`, idempotencja), kartkówka, brak klucza
       w Kid DTO; wpis do kosza w `tests/integration-buckets.ts`.
-- [ ] Dokumentacja: SPEC, architektura §19/§22, `AGENTS.md` jeśli zmienia się
+- [x] Dokumentacja: SPEC, architektura §19/§22, `AGENTS.md` jeśli zmienia się
       lista typów; przegląd API → MCP → skill (brak wpływu, lekcje poza
       `learning-overview`).
 - [ ] Pełny przebieg: `pnpm typecheck`, `pnpm test:unit`,

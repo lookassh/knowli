@@ -1075,9 +1075,9 @@ jest deterministyczna, bez modelu w trakcie sesji; klucz zostaje na serwerze.
 | Pole | Kształt | Zasada |
 | --- | --- | --- |
 | `exerciseType` | `"lesson_match"` | etap `guided` |
-| `pairs` | `[{ left, right }]`, 3–5 | `left` ≤60 znaków (pojęcie, miejsce, przyczyna), `right` ≤120 (definicja, cecha, skutek) |
-| `extraRight` | `string[]`, 0–2, ≤120 znaków | dystraktory po prawej, żeby ostatniej pary nie dało się dobrać eliminacją |
-| `answer` | string | pary złączone `"; "`, każda jako `left — right` (`targetKey`, podgląd rodzica) |
+| `pairs` | `[{ left, right }]`, 3–5 | `left` ≤40 znaków (pojęcie, miejsce, przyczyna), `right` ≤100 (definicja, cecha, skutek) |
+| `extraRight` | `string[]`, 0–2, ≤100 znaków | dystraktory po prawej, żeby ostatniej pary nie dało się dobrać eliminacją |
+| `answer` | string | lewe strony par złączone `", "` (`targetKey`, podgląd rodzica; wylicza kod) |
 | `instructionPl`, `sourceRefs` | jak w innych typach | `sourceRefs` wymagane |
 
 Walidacja puli: liczby i długości jak wyżej; lewe i prawe teksty unikalne po
@@ -1099,9 +1099,9 @@ Kid DTO (`.strict()`, bez klucza):
 | Pole | Kształt | Zasada |
 | --- | --- | --- |
 | `exerciseType` | `"lesson_group"` | etap `guided` |
-| `groups` | `[{ id, label }]`, 2–3 | `id` slug unikalny w ćwiczeniu, `label` ≤40 znaków („ssaki”, „ptaki”) |
-| `items` | `[{ text, groupId }]`, 4–8 | tekst ≤60 znaków; każda grupa ma co najmniej 2 elementy |
-| `answer` | string | grupy złączone `"; "`, każda jako `label: element, element` |
+| `groups` | `[{ id, label }]`, 2–3 | `id` slug unikalny w ćwiczeniu, `label` ≤30 znaków („ssaki”, „ptaki”) |
+| `groupItems` | `[{ text, groupId }]`, 4–8 | tekst ≤40 znaków; każda grupa ma co najmniej 2 elementy |
+| `answer` | string | etykiety grup złączone `" / "` (wylicza kod) |
 | `instructionPl`, `sourceRefs` | jak w innych typach | `sourceRefs` wymagane |
 
 Walidacja puli: liczby i długości jak wyżej; `groupId` wskazuje istniejącą
@@ -1236,3 +1236,24 @@ widoków, jak `block-order.ts`.
    wybierający „Pogrupuj” z grupami nazwanymi jak pomylona para) — do
    rozważenia po pilotażu, gdy będzie wiadomo, jak często generator tworzy
    takie grupy.
+
+### 10.9. Korekty przy implementacji (2026-10-29)
+
+- Krótsze limity tekstów (pary: lewa ≤40, prawa ≤100; grupy: etykieta ≤30,
+  element ≤40) i zwięzła odpowiedź kanoniczna (lewe strony / etykiety grup):
+  pełny zapis par przekraczał limit `answer` (300 znaków), a krótkie teksty
+  lepiej mieszczą się na telefonie. Pełne pary i grupy dziecko widzi
+  w feedbacku (`correctText` z klucza zadania: `lewe → prawe`, `grupa: elementy`).
+- Pole elementów grup nazywa się `groupItems` (`items` należy do `lesson_order`
+  i ma inny kształt).
+- `LessonItemSchema` (elementy w Kid DTO) jest `.strict()` — nic z klucza nie
+  przejdzie do dziecka.
+- Fake generator nie tworzy par ani grup (jak słów kluczowych): zmiana
+  rozkładu typów zmieniłaby przebiegi istniejących testów; testy budują pule
+  z parami i grupami przez edycję rodzica.
+- Edytor rodzica dodaje pola w idiomie istniejącego edytora lekcji (natywne
+  `input`/`select`), nie Mantine — edytor lekcji jeszcze nie przeszedł na Mantine.
+- Kryterium celu (`skill_version`) obejmuje przypisania: zmiana par lub grup
+  tworzy nowe kryterium, więc stara próba nie awansuje nowego.
+- Przełącznik grupy w Kid UI to nagłówek (bez obwódki, aktywny wypełniony rolą
+  `secondary-container`), żeby nie wyglądał jak element do przeniesienia.
