@@ -505,6 +505,17 @@
         "confused": false,
         "fragments": "redundant"
       }
+    },
+    {
+      "id": "G27",
+      "question": "poludnik",
+      "category": "pomylenie pojęć przy komplecie elementów",
+      "childAnswer": "Równoleżnik to umowna linia na powierzchni Ziemi, która łączy biegun północny z biegunem południowym.",
+      "expected": {
+        "knowledge": "partial",
+        "precision": "concise",
+        "confused": true
+      }
     }
   ]
 }

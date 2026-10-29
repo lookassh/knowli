@@ -30,8 +30,9 @@ export interface ConfusionCount {
 }
 
 /**
- * Zlicza pary pomylonych pojęć z ocen (bez wielkości liter; zapis z pierwszego
- * wystąpienia), malejąco po liczbie, potem alfabetycznie; najwyżej `limit`.
+ * Zlicza pary pomylonych pojęć z ocen (bez wielkości liter; zapis — pierwszy
+ * wariant w porządku kodów znaków, jak w raporcie zagadnień), malejąco po liczbie,
+ * potem alfabetycznie; najwyżej `limit`.
  */
 export function countConfusions(answers: readonly MockAnswerDetails[], limit: number): ConfusionCount[] {
   const counts = new Map<string, ConfusionCount>();
@@ -42,6 +43,8 @@ export function countConfusions(answers: readonly MockAnswerDetails[], limit: nu
       if (typeof pair?.said !== "string" || typeof pair.meant !== "string") continue;
       const key = `${pair.said.toLocaleLowerCase("pl-PL")}|${pair.meant.toLocaleLowerCase("pl-PL")}`;
       const entry = counts.get(key) ?? { said: pair.said, meant: pair.meant, count: 0 };
+      if (pair.said < entry.said) entry.said = pair.said;
+      if (pair.meant < entry.meant) entry.meant = pair.meant;
       entry.count += 1;
       counts.set(key, entry);
     }

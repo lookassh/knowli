@@ -403,7 +403,8 @@ export function validateSchoolVerdict(raw: unknown, ctx: SchoolVerdictContext): 
   if (matched.some((id) => missing.includes(id))) return null;
   // Pełna partycja: rozłączne podzbiory listy wymaganej o sumie równej jej rozmiarowi.
   if (matched.length + missing.length !== required.size) return null;
-  const hasGap = missing.length > 0 || v.incorrectStatements.length > 0;
+  // Pomylenie pojęć to luka w treści nawet przy komplecie elementów (design §9.1).
+  const hasGap = missing.length > 0 || v.incorrectStatements.length > 0 || v.confusedConcepts.length > 0;
   if (v.knowledge === "correct" && hasGap) return null;
   if (v.knowledge === "partial" && (matched.length === 0 || !hasGap)) return null;
   if (v.knowledge === "incorrect" && !hasGap) return null;
@@ -416,10 +417,19 @@ export function validateSchoolVerdict(raw: unknown, ctx: SchoolVerdictContext): 
   if (new Set(categorized).size !== categorized.length) return null;
   // Pomylenie pojęć to błąd treści: nigdy przy wiedzy poprawnej; `said` pochodzi z odpowiedzi.
   if (v.confusedConcepts.length > 0 && v.knowledge === "correct") return null;
+  const confusedConcepts: ConfusedConcept[] = [];
+  const seenPairs = new Set<string>();
   for (const pair of v.confusedConcepts) {
-    const said = pair.said.normalize("NFC");
-    if (!answerNfc.toLocaleLowerCase("pl-PL").includes(said.toLocaleLowerCase("pl-PL"))) return null;
-    if (said.toLocaleLowerCase("pl-PL") === pair.meant.normalize("NFC").toLocaleLowerCase("pl-PL")) return null;
+    const said = pair.said.normalize("NFC").trim();
+    const meant = pair.meant.normalize("NFC").trim();
+    const saidKey = said.toLocaleLowerCase("pl-PL");
+    const meantKey = meant.toLocaleLowerCase("pl-PL");
+    if (said === "" || meant === "" || saidKey === meantKey) return null;
+    if (!answerNfc.toLocaleLowerCase("pl-PL").includes(saidKey)) return null;
+    // ta sama para dwa razy to jedno pomylenie (raport liczy oceny, nie powtórzenia)
+    if (seenPairs.has(`${saidKey}|${meantKey}`)) continue;
+    seenPairs.add(`${saidKey}|${meantKey}`);
+    confusedConcepts.push({ said, meant });
   }
   const precision = ctx.formOk === false && v.precision === "concise" ? "verbose" : v.precision;
   return {
@@ -430,7 +440,7 @@ export function validateSchoolVerdict(raw: unknown, ctx: SchoolVerdictContext): 
     incorrectStatements: [...v.incorrectStatements],
     redundantFragments: [...v.redundantFragments],
     offTopicFragments: [...v.offTopicFragments],
-    confusedConcepts: v.confusedConcepts.map((pair) => ({ said: pair.said, meant: pair.meant })),
+    confusedConcepts,
     note: v.note,
   };
 }

@@ -682,7 +682,7 @@ export const messages = {
     schoolKnowledgeTitle: "Wiedza",
     schoolPrecisionTitle: "Precyzja odpowiedzi",
     schoolCounts: "poprawne: {correct} · częściowe: {partial} · błędne: {incorrect}",
-    schoolPrecisionCounts: "zwięzłe: {concise} · rozwlekłe: {verbose} · nie na temat: {unfocused}",
+    schoolPrecisionCounts: "zwięzłe: {concise} · rozwlekłe: {verbose} · w większości nie na temat: {unfocused}",
     schoolMissingTitle: "Najczęściej brakuje",
     schoolConfusionsTitle: "Myli pojęcia",
     schoolConfusion: "„{said}” zamiast „{meant}”",

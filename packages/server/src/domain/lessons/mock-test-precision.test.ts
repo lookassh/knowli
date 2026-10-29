@@ -63,10 +63,13 @@ describe("countConfusions i agregat kartkówki — pomylone pojęcia (Etap 6)", 
       confused("Równoleżnik", "południk"), confused("równoleżnik", "Południk"), confused("nizina", "wyżyna"),
       { knowledge: "correct", precision: "concise" }, { confusedConcepts: [{ said: 1, meant: "x" }] },
     ], 5)).toEqual([
-      { said: "Równoleżnik", meant: "południk", count: 2 },
+      { said: "Równoleżnik", meant: "Południk", count: 2 },
       { said: "nizina", meant: "wyżyna", count: 1 },
     ]);
     expect(countConfusions([confused("a", "b"), confused("c", "d")], 1)).toHaveLength(1);
+    // zapis pary jak w raporcie zagadnień: pierwszy alfabetycznie wariant
+    expect(countConfusions([confused("równoleżnik", "południk"), confused("Równoleżnik", "Południk")], 5))
+      .toEqual([{ said: "Równoleżnik", meant: "Południk", count: 2 }]);
   });
 
   it("agregat kartkówki ma `confusions` tylko przy pomyleniu", () => {

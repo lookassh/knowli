@@ -321,9 +321,9 @@ export async function lessonObjectiveProgress(
         ) recent
          where rank <= 5
          order by "objectiveId", rank`),
-        // Pomylone pojęcia (werdykt v3, design §9.4): pary bez wielkości liter; zapis — pierwszy alfabetycznie wariant.
+        // Pomylone pojęcia (werdykt v3, design §9.4): pary bez wielkości liter; zapis — najmniejszy wariant w porządku kodów znaków (jak w JS).
         services.db.execute<{ objectiveId: string | null; said: string; meant: string; count: number }>(sql`
-        select "objectiveId", min(said) as said, min(meant) as meant, count(*)::int as count from (
+        select "objectiveId", min(said collate "C") as said, min(meant collate "C") as meant, count(*)::int as count from (
           select n.details->>'objectiveId' as "objectiveId", c->>'said' as said, c->>'meant' as meant
           ${schoolFrom}
            cross join lateral jsonb_array_elements(

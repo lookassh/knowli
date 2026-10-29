@@ -1043,6 +1043,11 @@ nie ocenia cech dziecka — tylko treść odpowiedzi.
   alfabetycznie wariant z ocen.
 - Decyzja rodzica „uznaj za poprawne” na werdykcie v3 zeruje także
   `confusedConcepts` (znika błąd treści, więc i pomylenie).
+- Review: pomylenie pojęć liczy się jako luka w treści (werdykt „częściowa”
+  z samym pomyleniem przy komplecie elementów jest poprawny); pary są
+  przycinane i liczone raz; zapis pary w raportach — najmniejszy wariant
+  w porządku kodów znaków (`collate "C"` w SQL). Kolory w „Skróć”: zbędne —
+  rola `secondary-container`, nie na temat — `error-container`.
 - Fake grader dzieli zdania bez elementów wymaganych: z rdzeniem słowa pytania
   albo odpowiedzi wzorcowej → „zbędne”, pozostałe → „nie na temat”;
   `fake-school-grader-v3`.

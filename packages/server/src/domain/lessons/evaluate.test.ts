@@ -477,6 +477,28 @@ describe("werdykt szkolny v3: kategorie fragmentów i pomylone pojęcia (Etap 6)
     expect(validateSchoolVerdict({ ...wrong, offTopicFragments: ["Grałem w szachy."] }, CTX)).toBeNull();
   });
 
+  it("wiedza częściowa z samym pomyleniem pojęć (komplet elementów) jest przyjmowana", () => {
+    const v = validateSchoolVerdict({
+      knowledge: "partial", precision: "concise", matchedElementIds: ["e1"], missingElementIds: [],
+      incorrectStatements: [], redundantFragments: [], note: "",
+      confusedConcepts: [{ said: "Równoleżnik", meant: "południk" }],
+    }, CTX);
+    expect(v?.knowledge).toBe("partial");
+    expect(gradeFromSchoolVerdict(v)).toMatchObject({ errorCategory: "confused_concept" });
+  });
+
+  it("pary pomylonych pojęć są przycinane i liczone raz", () => {
+    const v = validateSchoolVerdict({
+      ...base, knowledge: "incorrect", incorrectStatements: ["Równoleżnik łączy bieguny."],
+      confusedConcepts: [{ said: " Równoleżnik ", meant: "południk" }, { said: "równoleżnik", meant: "Południk" }],
+    }, CTX);
+    expect(v?.confusedConcepts).toEqual([{ said: "Równoleżnik", meant: "południk" }]);
+    expect(validateSchoolVerdict({
+      ...base, knowledge: "incorrect", incorrectStatements: ["Równoleżnik łączy bieguny."],
+      confusedConcepts: [{ said: "południk", meant: "południk " }],
+    }, { ...CTX, childAnswer: `${CTX.childAnswer} południk` })).toBeNull();
+  });
+
   it("segmenty rozróżniają zbędne (pill) i nie na temat (offtopic)", () => {
     expect(buildAnswerSegments("Linia na mapie. Grałem w piłkę.", ["Linia na mapie."], ["Grałem w piłkę."])).toEqual([
       { text: "Linia na mapie.", state: "pill" },

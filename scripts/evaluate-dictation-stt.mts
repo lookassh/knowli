@@ -25,8 +25,8 @@
  * UMIEM_GRADER_API_KEY (klucz OpenRouter) dla --engines=openrouter w .env.
  */
 import { spawnSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { randomBytes, timingSafeEqual } from "node:crypto";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { networkInterfaces, tmpdir } from "node:os";
@@ -598,11 +598,15 @@ function addressLabel(ip: string): string {
 
 /**
  * Certyfikat tylko na czas próby, z adresami komputera w SAN: openssl zapisuje
- * go w katalogu tymczasowym, który kasujemy zaraz po wczytaniu do pamięci —
- * nic nie zostaje na dysku nawet po nagłym zamknięciu. Telefon pokaże
- * ostrzeżenie o niezaufanym certyfikacie — to oczekiwane.
+ * go w katalogu tymczasowym, który kasujemy zaraz po wczytaniu do pamięci.
+ * Pozostałości po przerwanym uruchomieniu (zabity proces w trakcie openssl)
+ * usuwa następny start. Telefon pokaże ostrzeżenie o niezaufanym
+ * certyfikacie — to oczekiwane.
  */
 function temporaryCertificate(addresses: string[]): { key: Buffer; cert: Buffer } {
+  for (const leftover of readdirSync(tmpdir()).filter((name) => name.startsWith("umiem-trial-"))) {
+    rmSync(join(tmpdir(), leftover), { recursive: true, force: true });
+  }
   const dir = mkdtempSync(join(tmpdir(), "umiem-trial-"));
   const keyPath = join(dir, "key.pem");
   const certPath = join(dir, "cert.pem");
@@ -626,8 +630,8 @@ function temporaryCertificate(addresses: string[]): { key: Buffer; cert: Buffer 
   try {
     if (!ok) {
       throw new Error(
-        "Nie udało się wygenerować certyfikatu: nie znaleziono `openssl`. Zainstaluj Git for Windows " +
-          "albo ustaw OPENSSL_BIN na pełną ścieżkę do openssl.exe.",
+        "Nie udało się wygenerować certyfikatu: brak `openssl` albo wersja bez opcji -addext " +
+          "(potrzebny OpenSSL 1.1.1+, np. z Git for Windows). Ustaw OPENSSL_BIN na pełną ścieżkę do openssl.",
       );
     }
     return { key: readFileSync(keyPath), cert: readFileSync(certPath) };
@@ -640,10 +644,18 @@ function live(): void {
   const port = Number(process.argv.find((a) => a.startsWith("--port="))?.slice(7) ?? 5180);
   const lan = process.argv.includes("--lan");
   const token = randomBytes(12).toString("base64url");
+  const tokenOk = (value: unknown): boolean => {
+    if (typeof value !== "string") return false;
+    const given = Buffer.from(value);
+    const expected = Buffer.from(token);
+    return given.length === expected.length && timingSafeEqual(given, expected);
+  };
+  // jedna analiza naraz — token w rękach innej osoby nie uruchomi lawiny płatnych wywołań STT
+  let analyzing = false;
   const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const url = new URL(req.url ?? "/", "http://trial.local");
     if (req.method === "GET" && url.pathname === "/") {
-      if (url.searchParams.get("t") !== token) {
+      if (!tokenOk(url.searchParams.get("t"))) {
         res.writeHead(403, { "content-type": "text/plain; charset=utf-8" }).end("Brak dostępu — otwórz adres z konsoli (z tokenem).");
         return;
       }
@@ -652,38 +664,50 @@ function live(): void {
       return;
     }
     if (req.method === "POST" && url.pathname === "/analyze") {
-      if (req.headers["x-trial-token"] !== token) {
+      if (!tokenOk(req.headers["x-trial-token"])) {
         res.writeHead(403).end();
         return;
       }
-      const chunks: Buffer[] = [];
-      let size = 0;
-      for await (const chunk of req) {
-        size += (chunk as Buffer).length;
-        if (size > MAX_LIVE_BYTES) {
-          res.writeHead(413).end();
-          return;
-        }
-        chunks.push(chunk as Buffer);
+      if (analyzing) {
+        res.writeHead(429, { "content-type": "application/json" }).end(JSON.stringify({ results: [] }));
+        return;
       }
-      let wav: Uint8Array | null = new Uint8Array(Buffer.concat(chunks));
-      chunks.length = 0;
-      const caseId = String(req.headers["x-case-id"] ?? "");
-      const c = CASES.find((x) => x.id === caseId);
-      const seconds = wavSeconds(wav);
-      const results = (await runEngines(wav)).map((r) => score(r, c));
-      wav = null; // bajty nagrania nie żyją dłużej niż żądanie
-      // konsola: wyłącznie metadane — bez transkrypcji i bez bajtów
-      console.log(
-        // tylko znany identyfikator przypadku — nagłówek żądania nie trafia do logu
-        `[live] ${c?.id ?? "swobodna"} ${seconds.toFixed(1)} s | ` +
-          results.map((r) => `${r.engine.replace(/^OR /, "").split(" ")[0]}:${r.status}${r.keyTotal ? ` ${r.keyHits}/${r.keyTotal}` : ""}${r.truncated ? "!" : ""} ${r.ms}ms`).join(" | "),
-      );
-      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
-      res.end(JSON.stringify({ results }));
+      analyzing = true;
+      try {
+        await analyze(req, res);
+      } finally {
+        analyzing = false;
+      }
       return;
     }
     res.writeHead(404).end();
+  };
+  const analyze = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of req) {
+      size += (chunk as Buffer).length;
+      if (size > MAX_LIVE_BYTES) {
+        res.writeHead(413).end();
+        return;
+      }
+      chunks.push(chunk as Buffer);
+    }
+    let wav: Uint8Array | null = new Uint8Array(Buffer.concat(chunks));
+    chunks.length = 0;
+    const caseId = String(req.headers["x-case-id"] ?? "");
+    const c = CASES.find((x) => x.id === caseId);
+    const seconds = wavSeconds(wav);
+    const results = (await runEngines(wav)).map((r) => score(r, c));
+    wav = null; // bajty nagrania nie żyją dłużej niż żądanie
+    // konsola: wyłącznie metadane — bez transkrypcji i bez bajtów
+    console.log(
+      // tylko znany identyfikator przypadku — nagłówek żądania nie trafia do logu
+      `[live] ${c?.id ?? "swobodna"} ${seconds.toFixed(1)} s | ` +
+        results.map((r) => `${r.engine.replace(/^OR /, "").split(" ")[0]}:${r.status}${r.keyTotal ? ` ${r.keyHits}/${r.keyTotal}` : ""}${r.truncated ? "!" : ""} ${r.ms}ms`).join(" | "),
+    );
+    res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+    res.end(JSON.stringify({ results }));
   };
   const serve = (req: IncomingMessage, res: ServerResponse) => {
     handler(req, res).catch(() => {

@@ -2419,10 +2419,11 @@
   white-space: pre-wrap;
 }
 
-/* Fragment do usunięcia: obwódka i przekreślenie, nie tylko kolor. */
+/* Fragment do usunięcia (poprawny, ale zbędny): obwódka i przekreślenie, nie tylko
+   kolor; łagodniejsza rola niż „nie na temat” (design szkoły §9.2). */
 .kid-spelling-pill--remove {
-  color: var(--md-sys-color-on-error-container);
-  background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-secondary-container);
+  background: var(--md-sys-color-secondary-container);
   text-decoration: line-through;
   text-decoration-thickness: 2px;
   -webkit-box-decoration-break: clone;
