@@ -13,6 +13,8 @@ import { LessonOrderView } from "./lesson/LessonOrderView";
 import { LessonGapView } from "./lesson/LessonGapView";
 import { LessonSentenceView } from "./lesson/LessonSentenceView";
 import { LessonKeywordsView } from "./lesson/LessonKeywordsView";
+import { LessonMatchView } from "./lesson/LessonMatchView";
+import { LessonGroupView } from "./lesson/LessonGroupView";
 import { LessonShortenView } from "./lesson/LessonShortenView";
 import { PictureExposureView } from "./PictureExposureView";
 import { PictureListeningView } from "./PictureListeningView";
@@ -65,6 +67,11 @@ export function ExerciseView(props: ExerciseProps) {
       return <LessonShortAnswerView key={props.task.taskId} {...props} />;
     case "lesson_order":
       return <LessonOrderView key={props.task.taskId} {...props} />;
+    // Pary i grupy (design szkoły §10.5): przypisania stukaniem.
+    case "lesson_match":
+      return <LessonMatchView key={props.task.taskId} {...props} />;
+    case "lesson_group":
+      return <LessonGroupView key={props.task.taskId} {...props} />;
     case "lesson_gap":
       return <LessonGapView key={props.task.taskId} {...props} />;
     case "lesson_error_fix":

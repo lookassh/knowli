@@ -174,6 +174,10 @@ function exerciseDtoFromPayload(
     ...(draft.calculation === undefined ? {} : { calculation: draft.calculation }),
     ...(draft.keywordOptions === undefined ? {} : { keywordOptions: draft.keywordOptions.map((o) => ({ ...o })) }),
     ...(draft.keyOptionIds === undefined ? {} : { keyOptionIds: [...draft.keyOptionIds] }),
+    ...(draft.pairs === undefined ? {} : { pairs: draft.pairs.map((pair) => ({ ...pair })) }),
+    ...(draft.extraRight === undefined ? {} : { extraRight: [...draft.extraRight] }),
+    ...(draft.groups === undefined ? {} : { groups: draft.groups.map((group) => ({ ...group })) }),
+    ...(draft.groupItems === undefined ? {} : { groupItems: draft.groupItems.map((item) => ({ ...item })) }),
   };
 }
 

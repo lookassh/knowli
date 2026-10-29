@@ -11,10 +11,18 @@
 
 import {
   LessonExerciseInputSchema,
+  MAX_GROUP_ITEMS,
+  MAX_GROUPS,
   MAX_KEY_OPTIONS,
   MAX_KEYWORD_OPTIONS,
+  MAX_MATCH_EXTRA,
+  MAX_MATCH_PAIRS,
+  MIN_GROUP_ITEMS,
+  MIN_GROUPS,
+  MIN_ITEMS_PER_GROUP,
   MIN_KEY_OPTIONS,
   MIN_KEYWORD_OPTIONS,
+  MIN_MATCH_PAIRS,
 } from "@learning/contracts";
 import { ASSESSED_STAGES, stageOf } from "./stages";
 import type {
@@ -225,6 +233,12 @@ export function validateLessonExercise(
   if ((ex.keywordOptions !== undefined || ex.keyOptionIds !== undefined) && ex.exerciseType !== "lesson_keywords") {
     errors.push("keywordOptions: pojęcia do wyboru są dozwolone tylko dla „lesson_keywords”");
   }
+  if ((ex.pairs !== undefined || ex.extraRight !== undefined) && ex.exerciseType !== "lesson_match") {
+    errors.push("pairs: pary są dozwolone tylko dla „lesson_match”");
+  }
+  if ((ex.groups !== undefined || ex.groupItems !== undefined) && ex.exerciseType !== "lesson_group") {
+    errors.push("groups: grupy są dozwolone tylko dla „lesson_group”");
+  }
   validateTextFieldLengths(ex, errors);
   validateFocus(ex, normalizer, errors);
   validateByType(ex, topic, objective, normalizer, errors);
@@ -301,6 +315,14 @@ function validateByType(
     case "lesson_keywords":
       validateKeywords(ex, normalizer, errors);
       break;
+    case "lesson_match":
+      validateMatch(ex, errors);
+      validateNoTextAnswers(ex, errors);
+      break;
+    case "lesson_group":
+      validateGroup(ex, errors);
+      validateNoTextAnswers(ex, errors);
+      break;
     default:
       break;
   }
@@ -353,6 +375,124 @@ function validateKeywords(
 export function keywordsAnswer(ex: Pick<LessonExerciseDraft, "keywordOptions" | "keyOptionIds">): string {
   const textById = new Map((ex.keywordOptions ?? []).map((option) => [option.id, option.text] as const));
   return (ex.keyOptionIds ?? []).map((id) => textById.get(id) ?? "").join(", ");
+}
+
+/** Porównanie tekstów elementów: NFC, białe znaki, wielkość liter. */
+function comparableText(text: string): string {
+  return text.normalize("NFC").trim().replace(/\s+/gu, " ").toLocaleLowerCase("pl-PL");
+}
+
+/** Słowa tekstu (litery i cyfry Unicode) po porównywalnej normalizacji. */
+function wordsOfText(text: string): string[] {
+  return comparableText(text).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+}
+
+/**
+ * Teksty powtórzone albo zawierające drugi jako ciąg CAŁYCH słów („dostarcza
+ * energii” w „dostarcza energii słonecznej”) — nie do odróżnienia dla dziecka.
+ * Fragment słowa się nie liczy: „tlen” obok „dwutlenek węgla” jest poprawny.
+ */
+function confusableTexts(texts: readonly string[]): [string, string][] {
+  const found: [string, string][] = [];
+  const words = texts.map(wordsOfText);
+  for (let i = 0; i < texts.length; i++) {
+    for (let j = i + 1; j < texts.length; j++) {
+      if (isContiguousSubsequence(words[i]!, words[j]!) || isContiguousSubsequence(words[j]!, words[i]!)) {
+        found.push([texts[i]!, texts[j]!]);
+      }
+    }
+  }
+  return found;
+}
+
+/** Pary i grupy oceniane są z przypisań: bez wariantów tekstowych i fokusa. */
+function validateNoTextAnswers(ex: LessonExerciseDraft, errors: string[]): void {
+  if (ex.acceptedAnswers.length > 0) {
+    errors.push(`acceptedAnswers: „${ex.exerciseType}” wymaga pustej listy wariantów`);
+  }
+  if (ex.focus.length > 0) {
+    errors.push(`focus: „${ex.exerciseType}” wymaga pustej listy`);
+  }
+}
+
+/**
+ * Kanoniczna odpowiedź `lesson_match` (źródło `targetKey`, podgląd): lewe
+ * elementy par złączone „, ”. Ocena porównuje wyłącznie przypisania.
+ */
+export function matchAnswer(ex: Pick<LessonExerciseDraft, "pairs">): string {
+  return (ex.pairs ?? []).map((pair) => pair.left).join(", ");
+}
+
+/** Kanoniczna odpowiedź `lesson_group`: etykiety grup złączone „ / ”. */
+export function groupAnswer(ex: Pick<LessonExerciseDraft, "groups">): string {
+  return (ex.groups ?? []).map((group) => group.label).join(" / ");
+}
+
+/**
+ * `lesson_match` (design szkoły §10.1): 3–5 par, 0–2 dystraktory po prawej;
+ * teksty po każdej stronie unikalne i nie zawarte jeden w drugim.
+ */
+function validateMatch(ex: LessonExerciseDraft, errors: string[]): void {
+  const pairs = ex.pairs ?? [];
+  const extra = ex.extraRight ?? [];
+  if (pairs.length < MIN_MATCH_PAIRS || pairs.length > MAX_MATCH_PAIRS) {
+    errors.push(`pairs: liczba par (${pairs.length}) poza zakresem ${MIN_MATCH_PAIRS}–${MAX_MATCH_PAIRS}`);
+  }
+  if (extra.length > MAX_MATCH_EXTRA) {
+    errors.push(`extraRight: najwyżej ${MAX_MATCH_EXTRA} dystraktory`);
+  }
+  for (const [a, b] of confusableTexts(pairs.map((pair) => pair.left))) {
+    errors.push(`pairs: „${b}” powiela „${a}” albo się w nim zawiera`);
+  }
+  for (const [a, b] of confusableTexts([...pairs.map((pair) => pair.right), ...extra])) {
+    errors.push(`pairs: „${b}” powiela „${a}” albo się w nim zawiera`);
+  }
+  if (pairs.length > 0 && ex.answer !== matchAnswer(ex)) {
+    errors.push("answer: musi być listą lewych elementów par złączonych „, ”");
+  }
+}
+
+/**
+ * `lesson_group` (design szkoły §10.2): 2–3 grupy, 4–8 elementów, każda grupa
+ * z co najmniej 2 elementami; etykiety i elementy unikalne, element nie jest
+ * etykietą grupy.
+ */
+function validateGroup(ex: LessonExerciseDraft, errors: string[]): void {
+  const groups = ex.groups ?? [];
+  const items = ex.groupItems ?? [];
+  if (groups.length < MIN_GROUPS || groups.length > MAX_GROUPS) {
+    errors.push(`groups: liczba grup (${groups.length}) poza zakresem ${MIN_GROUPS}–${MAX_GROUPS}`);
+  }
+  if (items.length < MIN_GROUP_ITEMS || items.length > MAX_GROUP_ITEMS) {
+    errors.push(`groupItems: liczba elementów (${items.length}) poza zakresem ${MIN_GROUP_ITEMS}–${MAX_GROUP_ITEMS}`);
+  }
+  if (new Set(groups.map((group) => group.id)).size !== groups.length) {
+    errors.push("groups: identyfikatory grup muszą być unikalne");
+  }
+  const groupIds = new Set(groups.map((group) => group.id));
+  if (items.some((item) => !groupIds.has(item.groupId))) {
+    errors.push("groupItems: każdy element musi należeć do jednej z grup");
+  }
+  for (const group of groups) {
+    const count = items.filter((item) => item.groupId === group.id).length;
+    if (count < MIN_ITEMS_PER_GROUP) {
+      errors.push(`groupItems: grupa „${group.label}” ma ${count} elementów (minimum ${MIN_ITEMS_PER_GROUP})`);
+    }
+  }
+  for (const [a, b] of confusableTexts(groups.map((group) => group.label))) {
+    errors.push(`groups: etykieta „${b}” powiela „${a}” albo się w niej zawiera`);
+  }
+  const labels = new Set(groups.map((group) => comparableText(group.label)));
+  const seen = new Set<string>();
+  for (const item of items) {
+    const key = comparableText(item.text);
+    if (seen.has(key)) errors.push(`groupItems: element „${item.text}” się powtarza`);
+    if (labels.has(key)) errors.push(`groupItems: element „${item.text}” jest etykietą grupy`);
+    seen.add(key);
+  }
+  if (groups.length > 0 && ex.answer !== groupAnswer(ex)) {
+    errors.push("answer: musi być listą etykiet grup złączonych „ / ”");
+  }
 }
 
 function validateOrder(

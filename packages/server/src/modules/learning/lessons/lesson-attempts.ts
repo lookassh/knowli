@@ -30,6 +30,8 @@ import {
   buildAnswerSegments,
   closestApprovedVariant,
   evaluateChoice as evaluateLessonChoice,
+  assignmentText,
+  evaluateAssignment,
   evaluateKeywordSelection,
   evaluateSequence,
   countSentences,
@@ -87,7 +89,7 @@ export const LESSON_ATTEMPT_PROCESSING_TIMEOUT_MS = 60_000;
 type TaskRow = typeof sessionTasks.$inferSelect;
 type SessionRow = typeof learningSessions.$inferSelect;
 type AttemptRow = typeof attempts.$inferSelect;
-type LessonModality = "choice" | "text" | "dont_remember" | "skip" | "sequence" | "selection";
+type LessonModality = "choice" | "text" | "dont_remember" | "skip" | "sequence" | "selection" | "assignment";
 
 /** Prywatny `answer_key` zadania lekcji (materializowany w `lesson-sessions.ts`). */
 interface LessonTaskAnswerKey extends LessonAnswerKey {
@@ -186,7 +188,9 @@ async function assistanceFor(
     key.exerciseType === "lesson_choice" ||
     key.exerciseType === "lesson_short_answer" ||
     key.exerciseType === "lesson_notice" ||
-    key.exerciseType === "lesson_order"
+    key.exerciseType === "lesson_order" ||
+    key.exerciseType === "lesson_match" ||
+    key.exerciseType === "lesson_group"
   ) {
     assistance.add("options");
   }
@@ -211,6 +215,14 @@ function correctTextFor(task: TaskRow, key: LessonTaskAnswerKey): string {
   }
   if (key.exerciseType === "lesson_notice") {
     return key.segmentValues?.[key.correctOptionId ?? ""] ?? key.answer;
+  }
+  if (key.exerciseType === "lesson_match" || key.exerciseType === "lesson_group") {
+    const text = assignmentText(key.assignments ?? [], key.itemValues ?? {}, {
+      grouped: key.exerciseType === "lesson_group",
+      ...(key.targetIds ? { targetOrder: key.targetIds } : {}),
+      ...(key.itemIds ? { itemOrder: key.itemIds } : {}),
+    });
+    return text || key.answer;
   }
   if (key.exerciseType === "lesson_order") {
     const ids = key.itemIds ?? [];
@@ -282,6 +294,15 @@ function gradeLessonAnswer(
     if (correct === null) {
       return { grade: { outcome: "unevaluated", reason: "technical", verdict: "unavailable" }, feedback: { kind: "not_assessed" }, exposures: [], details: { objectiveId, verdict: "unavailable" } };
     }
+    if (correct) {
+      return { grade: { outcome: "correct", verdict: "closed_correct" }, feedback: { kind: "great" }, exposures: [key.targetKey], details: { objectiveId, verdict: "closed_correct" } };
+    }
+    return { grade: { outcome: "incorrect", verdict: "closed_incorrect" }, feedback: { kind: "incorrect", correctText }, exposures: [key.targetKey], details: { objectiveId, verdict: "closed_incorrect" } };
+  }
+
+  if (input.modality === "assignment") {
+    // Kształt sprawdzony przy przyjęciu próby (null → 400), tu tylko wynik.
+    const correct = evaluateAssignment(input.assignments, key) === true;
     if (correct) {
       return { grade: { outcome: "correct", verdict: "closed_correct" }, feedback: { kind: "great" }, exposures: [key.targetKey], details: { objectiveId, verdict: "closed_correct" } };
     }
@@ -853,6 +874,12 @@ async function startLessonAttempt(
   const key = keyOf(task);
   // Walidacja modalności vs typ ćwiczenia.
   assertModalityMatchesExercise(valid.modality, key.exerciseType);
+  // Przypisania niepasujące do zadania (brak, obcy element, nieznany cel) to
+  // błąd klienta: 400 bez próby (design szkoły §10.3). Zwracane, nie rzucane —
+  // leniwa finalizacja wyżej musi zostać utrwalona.
+  if (valid.modality === "assignment" && evaluateAssignment(valid.assignments, key) === null) {
+    return { kind: "conflict", error: new AppError("validation", { message: "assignments do not match the task" }) };
+  }
   // Poprawka („Skróć odpowiedź”): tylko tekst albo „Dalej”; „Nie pamiętam” przy
   // własnej odpowiedzi na ekranie ujawniałoby wzorzec bez sensu dydaktycznego.
   if (key.revisionOf && valid.modality !== "text" && valid.modality !== "skip") {
@@ -907,6 +934,7 @@ function assertModalityMatchesExercise(modality: LessonModality, exerciseType: s
     (modality === "choice" && CHOICE_TYPES.includes(exerciseType)) ||
     (modality === "sequence" && exerciseType === "lesson_order") ||
     (modality === "selection" && exerciseType === "lesson_keywords") ||
+    (modality === "assignment" && (exerciseType === "lesson_match" || exerciseType === "lesson_group")) ||
     (modality === "text" && TEXT_TYPES.includes(exerciseType));
   if (!ok) {
     throw new AppError("validation", { message: "attempt modality does not match exercise" });
@@ -993,7 +1021,9 @@ async function finalizeLessonAttempt(
         ? { optionId: valid.optionId, optionText: key.optionValues?.[valid.optionId] ?? key.segmentValues?.[valid.optionId] ?? "" }
         : valid.modality === "sequence" || valid.modality === "selection"
           ? { itemIds: valid.itemIds }
-          : null;
+          : valid.modality === "assignment"
+            ? { assignments: valid.assignments }
+            : null;
 
   const attemptId = randomUUID();
   await tx.insert(attempts).values({

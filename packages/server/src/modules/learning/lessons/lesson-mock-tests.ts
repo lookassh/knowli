@@ -5,6 +5,7 @@ import {
   LessonMockTestSummaryDtoSchema,
   messages,
   UuidSchema,
+  type Assignment,
   type LessonExerciseTypeDto,
   type LessonMockTestReportDto,
   type LessonMockTestSummaryDto,
@@ -15,6 +16,7 @@ import type { Services } from "../../../config";
 import type { Tx } from "../../../db/client";
 import { attempts, deckVersions, eventExposures, itemRevisions, learningEvents, learningSessions, sessionTasks } from "../../../db/schema";
 import { AppError } from "../../../errors";
+import { assignmentText } from "../../../domain/lessons/evaluate";
 import { BASE_ERROR_CATEGORIES } from "../../../domain/lessons/base-error-categories";
 import { planLessonMockTest, toLessonMockPoolEntry, type LessonMockPoolEntry } from "../../../domain/lessons/mock-test-plan";
 import { mockPrecisionHint, objectivesWorthReviewing, schoolMockAggregate, type MockAnswerDetails, type MockPrecisionHint } from "../../../domain/lessons/mock-test-precision";
@@ -214,7 +216,7 @@ export async function issueLessonMockTestTask(tx: Tx, services: Services, sessio
   });
   // Ekspozycja issue-time: typy prowadzone (notice/choice/short_answer/order)
   // ujawniają rozwiązanie w prompcie → pieczętujemy `target_key`; tekstowe nie.
-  const guided = ["lesson_notice", "lesson_choice", "lesson_short_answer", "lesson_order"].includes(slot.exerciseType);
+  const guided = ["lesson_notice", "lesson_choice", "lesson_short_answer", "lesson_order", "lesson_match", "lesson_group"].includes(slot.exerciseType);
   await writeSealedEvent(tx, {
     childId: session.childId,
     taskId: slot.taskId,
@@ -498,6 +500,8 @@ function promptText(prompt: TaskPrompt): string {
     case "lesson_notice":
       return prompt.instructionPl;
     case "lesson_order":
+    case "lesson_match":
+    case "lesson_group":
       return prompt.instructionPl;
     case "lesson_card":
     case "exposure":
@@ -524,7 +528,10 @@ function promptText(prompt: TaskPrompt): string {
 }
 
 /** Odpowiedź kanoniczna slotu pokazywana dziecku (jak `correctTextFor` lekcji). */
-function correctAnswerText(key: { answer?: string; correctOptionId?: string; optionValues?: Record<string, string>; segmentValues?: Record<string, string>; itemIds?: string[]; itemValues?: Record<string, string> }): string {
+function correctAnswerText(key: { exerciseType?: string; answer?: string; correctOptionId?: string; optionValues?: Record<string, string>; segmentValues?: Record<string, string>; itemIds?: string[]; itemValues?: Record<string, string>; assignments?: Assignment[]; targetIds?: string[] }): string {
+  if (key.assignments && key.itemValues) {
+    return assignmentText(key.assignments, key.itemValues, assignmentTextOptions(key)) || (key.answer ?? "");
+  }
   if (key.optionValues && key.correctOptionId) return key.optionValues[key.correctOptionId] ?? key.answer ?? "";
   if (key.segmentValues && key.correctOptionId) return key.segmentValues[key.correctOptionId] ?? key.answer ?? "";
   if (key.itemIds && key.itemValues) {
@@ -535,7 +542,16 @@ function correctAnswerText(key: { answer?: string; correctOptionId?: string; opt
 }
 
 /** Tekst odpowiedzi dziecka na slot (z completed attempt.answer), rozwiązany do tekstu. */
-async function childAnswerText(tx: Tx, taskId: string, key: { optionValues?: Record<string, string>; segmentValues?: Record<string, string>; itemValues?: Record<string, string> }): Promise<string> {
+/** Pary w kolejności lewej kolumny; grupy w kolejności grup. */
+function assignmentTextOptions(key: { exerciseType?: string; itemIds?: string[]; targetIds?: string[] }) {
+  return {
+    grouped: key.exerciseType === "lesson_group",
+    ...(key.targetIds ? { targetOrder: key.targetIds } : {}),
+    ...(key.itemIds ? { itemOrder: key.itemIds } : {}),
+  };
+}
+
+async function childAnswerText(tx: Tx, taskId: string, key: { exerciseType?: string; optionValues?: Record<string, string>; segmentValues?: Record<string, string>; itemIds?: string[]; itemValues?: Record<string, string>; targetIds?: string[] }): Promise<string> {
   const [attempt] = await tx
     .select({ modality: attempts.modality, answer: attempts.answer })
     .from(attempts)
@@ -543,7 +559,7 @@ async function childAnswerText(tx: Tx, taskId: string, key: { optionValues?: Rec
     .orderBy(desc(attempts.receivedAt))
     .limit(1);
   if (!attempt) return "";
-  const answer = attempt.answer as { text?: string; optionId?: string; optionText?: string; itemIds?: string[] } | null;
+  const answer = attempt.answer as { text?: string; optionId?: string; optionText?: string; itemIds?: string[]; assignments?: Assignment[] } | null;
   if (!answer) return "";
   if (attempt.modality === "text") return answer.text ?? "";
   if (attempt.modality === "choice") {
@@ -554,6 +570,9 @@ async function childAnswerText(tx: Tx, taskId: string, key: { optionValues?: Rec
   if (attempt.modality === "sequence") {
     const ids = answer.itemIds ?? [];
     return ids.map((id) => key.itemValues?.[id]).filter((t): t is string => Boolean(t)).join(" ");
+  }
+  if (attempt.modality === "assignment") {
+    return assignmentText(answer.assignments ?? [], key.itemValues ?? {}, assignmentTextOptions(key));
   }
   return "";
 }

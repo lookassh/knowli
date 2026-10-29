@@ -18,6 +18,9 @@ export const STAGE_BY_TYPE: Readonly<Record<LessonExerciseType, LessonStage>> = 
   lesson_calculation: "independent",
   // Wybór pojęć przed odpowiedzią otwartą: zawsze wspomagany.
   lesson_keywords: "guided",
+  // Pary i grupy: elementy widoczne, rozpoznanie zamiast przypomnienia (design szkoły §10.3).
+  lesson_match: "guided",
+  lesson_group: "guided",
 };
 
 /** Etapy oceniane (poza intro-kartą): guided, productive, independent. */

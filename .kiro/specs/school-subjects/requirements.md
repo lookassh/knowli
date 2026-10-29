@@ -44,7 +44,7 @@ raport rodzica rozdzielający wiedzę i precyzję, próbny sprawdzian.
 
 Poza zakresem (decyzja właściciela, 2026-10-28): upload zdjęć i PDF, OCR i analiza
 dokumentów w aplikacji, wyświetlanie obrazów z podręcznika, generowane ilustracje
-faktograficzne, generowanie pytań w trakcie sesji, dopasowywanie par, swobodny czat
+faktograficzne, generowanie pytań w trakcie sesji, swobodny czat
 AI z dzieckiem, ocena długich swobodnych wypowiedzi (esejów). Kształt `sourceRefs`
 ma pozwalać na późniejsze podpięcie dokumentów bez zmiany znaczenia zapisanych prób.
 
@@ -139,7 +139,10 @@ odpowiedzi, różnymi sposobami.
 1. THE przedmiot szkolny SHALL używać typów: `lesson_card`, `lesson_choice`
    (w tym prawda/fałsz jako wybór z dwiema opcjami), `lesson_gap`,
    `lesson_order`, `lesson_open_answer`, a od etapu 2b także
-   `lesson_calculation`. Typów gramatycznych (`lesson_notice`,
+   `lesson_calculation`, a od etapu 7 (decyzja właściciela 2026-10-29,
+   wcześniejsze wyłączenie „dopasowywania par” uchylone) `lesson_match`
+   („Połącz w pary”) i `lesson_group` („Pogrupuj”) — ocenianie
+   deterministycznie z przypisań, bez modelu (design §10). Typów gramatycznych (`lesson_notice`,
    `lesson_short_answer`, `lesson_error_fix`, `lesson_transform`) nie włącza się.
 2. `lesson_card` SHALL pozostawać ekspozycją bez próby, oceny i zużycia budżetu.
 3. Typy zamknięte i luka z dopasowaniem do zatwierdzonych wariantów SHALL być

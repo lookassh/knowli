@@ -112,3 +112,24 @@ describe("lessonPoolJsonSchema", () => {
     })).toThrow(/no supported pool exercise types/);
   });
 });
+
+describe("lessonPoolJsonSchema — pary i grupy (design szkoły §10.6)", () => {
+  it("dokłada ścisłe gałęzie lesson_match i lesson_group bez pola odpowiedzi", () => {
+    const schema = lessonPoolJsonSchema({
+      ...input,
+      exerciseTypes: ["lesson_choice", "lesson_match", "lesson_group"],
+      objectives: [{ ...input.objectives[0]!, exerciseTypes: ["lesson_choice", "lesson_match", "lesson_group"] }],
+    }) as any;
+    const branches = schema.properties.exercises.items.anyOf;
+    const byType = Object.fromEntries(branches.map((branch: any) => [branch.properties.exerciseType.enum.join(","), branch]));
+    expect(Object.keys(byType)).toEqual(["lesson_choice", "lesson_match", "lesson_group"]);
+    for (const type of ["lesson_match", "lesson_group"]) {
+      const branch = byType[type];
+      expect(branch.additionalProperties).toBe(false);
+      expect(branch.properties.answer).toBeUndefined();
+      expect(branch.required.sort()).toEqual(Object.keys(branch.properties).sort());
+    }
+    expect(byType.lesson_match.properties.pairs).toMatchObject({ minItems: 3, maxItems: 5 });
+    expect(byType.lesson_group.properties.groupItems).toMatchObject({ minItems: 4, maxItems: 8 });
+  });
+});

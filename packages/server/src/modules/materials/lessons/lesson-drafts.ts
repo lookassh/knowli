@@ -21,6 +21,7 @@ import {
   type StageMix,
 } from "../../../domain/lessons/lesson-policy";
 import { answersEquivalent, keywordsAnswer, MAX_TEXT_LENGTH, validatePool, withoutRedundantAcceptedVariants } from "../../../domain/lessons/pool-validation";
+import { lessonExerciseStimulus } from "../../../domain/lessons/exercise-identity";
 import {
   lessonExerciseIdentity,
   lessonExerciseStimulusRecord,
@@ -587,6 +588,10 @@ const rawExerciseShapeSchema = z
     keywordOptions: z.array(optionShapeSchema).nullish(),
     keyOptionIds: z.array(z.string()).nullish(),
     noticeSegments: z.array(z.array(z.string())).nullish(),
+    pairs: z.array(z.object({ left: z.string(), right: z.string() }).passthrough()).nullish(),
+    extraRight: z.array(z.string()).nullish(),
+    groups: z.array(z.object({ id: z.string(), label: z.string() }).passthrough()).nullish(),
+    groupItems: z.array(z.object({ text: z.string(), groupId: z.string() }).passthrough()).nullish(),
   })
   .passthrough();
 
@@ -680,6 +685,22 @@ function v3FieldsOf(r: Record<string, unknown>): Partial<LessonExerciseDraft> {
     ).map((el) => ({ id: el.id, text: el.text }));
   }
   if (Array.isArray(r.keyOptionIds)) out.keyOptionIds = r.keyOptionIds.filter((id): id is string => typeof id === "string");
+  // Pary i grupy (design szkoły §10): tylko poprawnie uformowane wpisy, bez pól dodatkowych.
+  const has = (value: unknown, fields: readonly string[]) => value !== null && typeof value === "object" &&
+    fields.every((field) => typeof (value as Record<string, unknown>)[field] === "string");
+  if (Array.isArray(r.pairs)) {
+    out.pairs = r.pairs.filter((pair) => has(pair, ["left", "right"]))
+      .map((pair) => ({ left: (pair as { left: string }).left, right: (pair as { right: string }).right }));
+  }
+  if (Array.isArray(r.extraRight)) out.extraRight = r.extraRight.filter((text): text is string => typeof text === "string");
+  if (Array.isArray(r.groups)) {
+    out.groups = r.groups.filter((group) => has(group, ["id", "label"]))
+      .map((group) => ({ id: (group as { id: string }).id, label: (group as { label: string }).label }));
+  }
+  if (Array.isArray(r.groupItems)) {
+    out.groupItems = r.groupItems.filter((item) => has(item, ["text", "groupId"]))
+      .map((item) => ({ text: (item as { text: string }).text, groupId: (item as { groupId: string }).groupId }));
+  }
   // Preserve the submitted spec unchanged; subject validation rejects malformed
   // or inconsistent calculations instead of silently repairing parent input.
   if (r.calculation !== undefined && r.calculation !== null) out.calculation = r.calculation;
@@ -755,6 +776,10 @@ export function buildLessonPayload(
     ...(ex.calculation === undefined ? {} : { calculation: ex.calculation }),
     ...(ex.keywordOptions === undefined ? {} : { keywordOptions: ex.keywordOptions.map((option) => ({ id: option.id, text: option.text })) }),
     ...(ex.keyOptionIds === undefined ? {} : { keyOptionIds: [...ex.keyOptionIds] }),
+    ...(ex.pairs === undefined ? {} : { pairs: ex.pairs.map((pair) => ({ left: pair.left, right: pair.right })) }),
+    ...(ex.extraRight === undefined ? {} : { extraRight: [...ex.extraRight] }),
+    ...(ex.groups === undefined ? {} : { groups: ex.groups.map((group) => ({ id: group.id, label: group.label })) }),
+    ...(ex.groupItems === undefined ? {} : { groupItems: ex.groupItems.map((item) => ({ text: item.text, groupId: item.groupId })) }),
     answerLocale: subject.answerLocale,
     promptLocale: subject.promptLocale,
   };
@@ -784,6 +809,8 @@ export function buildObjectiveCriteria(
     } }),
     // Słowa kluczowe: zmiana pojęć kluczowych to nowe kryterium oceny wyboru.
     ...(ex.keyOptionIds === undefined ? {} : { keyTerms: keywordsAnswer(ex) }),
+    // Pary i grupy: zmiana przypisań to nowe kryterium oceny (stara próba nie awansuje nowego).
+    ...(ex.exerciseType === "lesson_match" || ex.exerciseType === "lesson_group" ? { assignments: lessonExerciseStimulus(ex) } : {}),
     topicVersion,
   };
   const criteriaHash = createHash("sha256").update(JSON.stringify(criteria)).digest("hex");
