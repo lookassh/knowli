@@ -263,3 +263,72 @@ describe("przedmiot school", () => {
     const { rejected } = validatePool([choice], schoolSubject, topic);
     expect(rejected[0]?.errors.some((e) => e.includes("expectedForm"))).toBe(true);
   });});
+
+function keywordsDraft(overrides: Partial<LessonExerciseDraft> = {}): LessonExerciseDraft {
+  return {
+    exerciseType: "lesson_keywords",
+    objectiveId: "school.ddeck.fotosynteza",
+    familyId: "def",
+    keywordOptions: [
+      { id: "k1", text: "światło" }, { id: "k2", text: "cukry" }, { id: "k3", text: "tlen" }, { id: "k4", text: "korzenie" },
+    ],
+    keyOptionIds: ["k1", "k2"],
+    answer: "światło, cukry",
+    acceptedAnswers: [],
+    focus: [],
+    sourceRefs: [{ quote: "wytwarza cukry" }],
+    ...overrides,
+  };
+}
+
+describe("słowa kluczowe (lesson_keywords)", () => {
+  const topic = schoolSubject.buildDynamicTopic!(dynamicData);
+  const family = openDraft({ familyId: "def" });
+
+  it("przechodzi walidację ćwiczenia i puli z rodziną pytań otwartych", () => {
+    expect(validateLessonExercise(keywordsDraft(), schoolSubject, topic)).toEqual([]);
+    expect(schoolSubject.validatePoolExtra!([family, keywordsDraft()], { material: MATERIAL }).size).toBe(0);
+  });
+
+  it.each([
+    ["za mało pojęć", { keywordOptions: [{ id: "k1", text: "światło" }, { id: "k2", text: "cukry" }, { id: "k3", text: "tlen" }] }, "keywordOptions"],
+    ["powtórzone pojęcie", { keywordOptions: [{ id: "k1", text: "światło" }, { id: "k2", text: "cukry" }, { id: "k3", text: "Cukry" }, { id: "k4", text: "tlen" }] }, "powiela"],
+    ["jedno kluczowe", { keyOptionIds: ["k1"], answer: "światło" }, "keyOptionIds"],
+    ["kluczowe spoza listy", { keyOptionIds: ["k1", "k9"] }, "keyOptionIds"],
+    ["odpowiedź niezgodna z kluczem", { answer: "cukry, światło" }, "answer"],
+    ["brak rodziny", { familyId: undefined }, "familyId"],
+    ["warianty odpowiedzi", { acceptedAnswers: ["światło"] }, "acceptedAnswers"],
+  ] as const)("odrzuca: %s", (_label, overrides, field) => {
+    const errors = validateLessonExercise(keywordsDraft(overrides as Partial<LessonExerciseDraft>), schoolSubject, topic);
+    expect(errors.some((error) => error.includes(field))).toBe(true);
+  });
+
+  it("odrzuca pola słów kluczowych w innym typie", () => {
+    const errors = validateLessonExercise(openDraft({ keyOptionIds: ["k1", "k2"] }), schoolSubject, topic);
+    expect(errors.some((error) => error.includes("keywordOptions"))).toBe(true);
+  });
+
+  it("wymaga rodziny pytań otwartych w tym samym zagadnieniu", () => {
+    const extra = schoolSubject.validatePoolExtra!([openDraft({ familyId: "inna" }), keywordsDraft()], { material: MATERIAL });
+    expect(extra.get(1)?.some((error) => error.includes("brak rodziny"))).toBe(true);
+  });
+
+  it("wymaga pojęć kluczowych z odpowiedzi wzorcowej albo materiału, a dystraktory sprawdza rodzic", () => {
+    const outside = keywordsDraft({
+      keywordOptions: [{ id: "k1", text: "chlorofil" }, { id: "k2", text: "cukry" }, { id: "k3", text: "tlen" }, { id: "k4", text: "korzenie" }],
+      answer: "chlorofil, cukry",
+    });
+    const extra = schoolSubject.validatePoolExtra!([family, outside], { material: MATERIAL });
+    expect(extra.get(1)?.some((error) => error.includes("chlorofil"))).toBe(true);
+  });
+
+  it("nie łączy słów kluczowych z rodziną pytań w kontroli spójności rodziny", () => {
+    const extra = schoolSubject.validatePoolExtra!([family, openDraft({ familyId: "def", prompt: "Wyjaśnij fotosyntezę." }), keywordsDraft()], { material: MATERIAL });
+    expect(extra.size).toBe(0);
+  });
+
+  it("nie liczy słów kluczowych do minimum etapu prowadzonego", () => {
+    const gaps = poolCoverage([keywordsDraft(), keywordsDraft()], ["school.ddeck.fotosynteza"], { guided: 1, productive: 0, independent: 0 });
+    expect(gaps).toEqual([{ objectiveId: "school.ddeck.fotosynteza", stage: "guided", required: 1, actual: 0 }]);
+  });
+});

@@ -166,6 +166,8 @@ async function lastActivityAt(tx: Tx, sessionId: string, startedAt: Date): Promi
 interface SessionActivityCounts {
   total: number;
   assessed: number;
+  /** Zadania z planu sesji — bez zadań następczych lekcji (`context.followUpOf`). */
+  planned: number;
   lastActivity: Date;
 }
 
@@ -179,8 +181,10 @@ async function sessionActivityAndCounts(
   const rows = await tx.execute(sql`
     select
       (select count(*)::int from ${sessionTasks} where ${sessionTasks.sessionId} = ${sessionId}) as total,
-      (select (count(*) filter (where ${sessionTasks.exerciseType} <> ${nonAssessedType}))::int
+      (select (count(*) filter (where ${sessionTasks.exerciseType} <> ${nonAssessedType} and ${sessionTasks.context}->'followUpOf' is null))::int
          from ${sessionTasks} where ${sessionTasks.sessionId} = ${sessionId}) as assessed,
+      (select (count(*) filter (where ${sessionTasks.context}->'followUpOf' is null))::int
+         from ${sessionTasks} where ${sessionTasks.sessionId} = ${sessionId}) as planned,
       greatest(
         (select max(${sessionTasks.issuedAt}) from ${sessionTasks} where ${sessionTasks.sessionId} = ${sessionId}),
         (select max(${learningEvents.occurredAt}) from ${learningEvents}
@@ -191,11 +195,12 @@ async function sessionActivityAndCounts(
            where ${sessionTasks.sessionId} = ${sessionId})
       ) as latest
   `);
-  const row = rows.rows[0] as { total: number; assessed: number; latest: Date | string | null };
+  const row = rows.rows[0] as { total: number; assessed: number; planned: number; latest: Date | string | null };
   const latest = row.latest === null ? null : row.latest instanceof Date ? row.latest : new Date(row.latest);
   return {
     total: row.total ?? 0,
     assessed: row.assessed ?? 0,
+    planned: row.planned ?? 0,
     lastActivity: latest !== null && latest.getTime() > startedAt.getTime() ? latest : startedAt,
   };
 }
@@ -1065,6 +1070,9 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
     if (isLesson) {
       if (issuedTask) {
         const counts = await lessonTaskCounts(tx, id);
+        // Zadanie następcze („Skróć odpowiedź”) nie należy do budżetu, ale pokazuje
+        // licznik oryginału (`remainingAssessed` z bieżącym zadaniem): obietnica
+        // „Jeszcze N” nie zaczyna się na poprawce przed ostatnimi zadaniami planu.
         const assessedBefore = counts.assessed - (issuedTask.exerciseType !== "lesson_card" ? 1 : 0);
         const subjectId = (session.lessonContext as { subjectId?: string } | null)?.subjectId;
         const audioAllowed = subjectId ? services.subjects.getSubject(subjectId)?.ttsForAnswers === true : false;
@@ -1082,7 +1090,7 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
         return null;
       }
       if (session.trainingPlan && "kind" in session.trainingPlan && session.trainingPlan.kind === "lesson") {
-        return issueNextLessonPlanTask(tx, session, now, counts.total, counts.assessed);
+        return issueNextLessonPlanTask(tx, session, now, counts.total, counts.planned, counts.assessed);
       }
       return issueNextLessonTask(services, tx, session, now, remaining, counts.total);
     }

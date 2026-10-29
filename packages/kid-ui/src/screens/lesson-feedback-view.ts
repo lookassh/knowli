@@ -10,6 +10,9 @@ import { messages, type FeedbackDto, type SpellingDiffSegmentDto } from "@learni
  *   odpowiedź; ton wsparcia (niebieski).
  * - `lesson_hint` → zaznaczone segmenty + podpowiedź kategorii (`hintPl`) +
  *   poprawna odpowiedź; ton wsparcia.
+ * - `lesson_precision_hint` → odpowiedź poprawna, ale rozwlekła (trener
+ *   precyzji): „Świetnie!” + zachęta do skrócenia (`hintPl`); ton sukcesu,
+ *   bez segmentów i bez poprawnej odpowiedzi (dziecko odpowiedziało dobrze).
  * - `not_assessed` → komunikat techniczny bez sugerowania błędu, bez segmentów
  *   i bez poprawnej odpowiedzi; ton neutralny, `technical=true` (widok daje
  *   „Spróbuj jeszcze raz” / „Dalej”).
@@ -18,18 +21,18 @@ import { messages, type FeedbackDto, type SpellingDiffSegmentDto } from "@learni
  */
 export interface LessonFeedbackView {
   title: string;
-  tone: "retry" | "neutral";
+  tone: "retry" | "neutral" | "correct";
   /** Zaznaczone segmenty odpowiedzi dziecka (reuse pigułek pisowni); null, gdy brak. */
   answerSegments: SpellingDiffSegmentDto[] | null;
   /** Poprawna odpowiedź (najbliższy zatwierdzony wariant); null, gdy nieujawniona. */
   correctText: string | null;
-  /** Podpowiedź kategorii celu po polsku (tylko `lesson_hint`); null w innych. */
+  /** Podpowiedź po polsku (`lesson_hint`: kategoria celu, `lesson_precision_hint`: zachęta do skrócenia); null w innych. */
   hint: string | null;
   /** Komunikat techniczny bez winy dziecka (`not_assessed`). */
   technical: boolean;
 }
 
-const LESSON_KINDS = new Set(["lesson_almost", "lesson_hint", "not_assessed"]);
+const LESSON_KINDS = new Set(["lesson_almost", "lesson_hint", "lesson_precision_hint", "not_assessed"]);
 
 export function lessonFeedbackView(dto: FeedbackDto | null): LessonFeedbackView | null {
   if (dto === null || !LESSON_KINDS.has(dto.kind)) return null;
@@ -41,6 +44,16 @@ export function lessonFeedbackView(dto: FeedbackDto | null): LessonFeedbackView 
       correctText: null,
       hint: null,
       technical: true,
+    };
+  }
+  if (dto.kind === "lesson_precision_hint") {
+    return {
+      title: messages.kid.feedbackGreat,
+      tone: "correct",
+      answerSegments: null,
+      correctText: null,
+      hint: dto.hintPl ?? messages.kid.lessonPrecisionHint,
+      technical: false,
     };
   }
   return {

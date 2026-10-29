@@ -38,6 +38,9 @@ export function lessonExerciseStimulus(exercise: LessonExerciseDraft): string {
         : JSON.stringify([normalizeStimulus(exercise.stem ?? ""), exercise.visualSubject]);
     case "lesson_notice":
       return JSON.stringify((exercise.noticeSegments ?? []).map((sentence) => sentence.map(normalizeStimulus)));
+    case "lesson_keywords":
+      // Bodźcem jest rodzina pytań i zbiór pojęć (kolejność opcji bez znaczenia).
+      return JSON.stringify([exercise.familyId ?? "", (exercise.keywordOptions ?? []).map((option) => normalizeStimulus(option.text)).sort((a, b) => a.localeCompare(b))]);
     default:
       return normalizeStimulus(exercise.stem ?? exercise.prompt ?? exercise.statement ?? "");
   }

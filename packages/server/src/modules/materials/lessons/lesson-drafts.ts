@@ -20,7 +20,7 @@ import {
   defaultPoolSize,
   type StageMix,
 } from "../../../domain/lessons/lesson-policy";
-import { answersEquivalent, MAX_TEXT_LENGTH, validatePool, withoutRedundantAcceptedVariants } from "../../../domain/lessons/pool-validation";
+import { answersEquivalent, keywordsAnswer, MAX_TEXT_LENGTH, validatePool, withoutRedundantAcceptedVariants } from "../../../domain/lessons/pool-validation";
 import {
   lessonExerciseIdentity,
   lessonExerciseStimulusRecord,
@@ -584,6 +584,8 @@ const rawExerciseShapeSchema = z
     correctOption: z.string().nullish(),
     options: z.array(optionShapeSchema).nullish(),
     items: z.array(optionShapeSchema).nullish(),
+    keywordOptions: z.array(optionShapeSchema).nullish(),
+    keyOptionIds: z.array(z.string()).nullish(),
     noticeSegments: z.array(z.array(z.string())).nullish(),
   })
   .passthrough();
@@ -671,6 +673,13 @@ function v3FieldsOf(r: Record<string, unknown>): Partial<LessonExerciseDraft> {
   }
   if (typeof r.expectedForm === "string") out.expectedForm = r.expectedForm;
   if (typeof r.familyId === "string") out.familyId = r.familyId;
+  if (Array.isArray(r.keywordOptions)) {
+    out.keywordOptions = r.keywordOptions.filter(
+      (el): el is { id: string; text: string } =>
+        el !== null && typeof el === "object" && typeof (el as { id?: unknown }).id === "string" && typeof (el as { text?: unknown }).text === "string",
+    ).map((el) => ({ id: el.id, text: el.text }));
+  }
+  if (Array.isArray(r.keyOptionIds)) out.keyOptionIds = r.keyOptionIds.filter((id): id is string => typeof id === "string");
   // Preserve the submitted spec unchanged; subject validation rejects malformed
   // or inconsistent calculations instead of silently repairing parent input.
   if (r.calculation !== undefined && r.calculation !== null) out.calculation = r.calculation;
@@ -744,6 +753,8 @@ export function buildLessonPayload(
     ...(ex.familyId === undefined ? {} : { familyId: ex.familyId }),
     ...(ex.sourceRefs === undefined ? {} : { sourceRefs: ex.sourceRefs }),
     ...(ex.calculation === undefined ? {} : { calculation: ex.calculation }),
+    ...(ex.keywordOptions === undefined ? {} : { keywordOptions: ex.keywordOptions.map((option) => ({ id: option.id, text: option.text })) }),
+    ...(ex.keyOptionIds === undefined ? {} : { keyOptionIds: [...ex.keyOptionIds] }),
     answerLocale: subject.answerLocale,
     promptLocale: subject.promptLocale,
   };
@@ -771,6 +782,8 @@ export function buildObjectiveCriteria(
       unit: ex.calculation.unit,
       tolerance: ex.calculation.tolerance ?? 0,
     } }),
+    // Słowa kluczowe: zmiana pojęć kluczowych to nowe kryterium oceny wyboru.
+    ...(ex.keyOptionIds === undefined ? {} : { keyTerms: keywordsAnswer(ex) }),
     topicVersion,
   };
   const criteriaHash = createHash("sha256").update(JSON.stringify(criteria)).digest("hex");

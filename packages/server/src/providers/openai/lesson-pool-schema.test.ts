@@ -55,6 +55,23 @@ describe("lessonPoolJsonSchema", () => {
     expect(branches[0].properties.exerciseType.enum).toEqual(["lesson_gap"]);
   });
 
+  it("gives keywords a strict branch without answer, linked to an open-answer family", () => {
+    const schema = lessonPoolJsonSchema({
+      ...input,
+      exerciseTypes: ["lesson_gap", "lesson_open_answer", "lesson_keywords"],
+      objectives: [{ ...input.objectives[0]!, exerciseTypes: ["lesson_gap", "lesson_open_answer", "lesson_keywords"] }],
+    }) as any;
+    const branches = schema.properties.exercises.items.anyOf;
+    expect(branches).toHaveLength(2);
+    const keywords = branches.find((branch: any) => branch.properties.exerciseType.enum.includes("lesson_keywords"));
+    expect(keywords.required.sort()).toEqual(["exerciseType", "objectiveId", "familyId", "keywordOptions", "keyOptionIds", "sourceRefs"].sort());
+    expect(keywords.properties).not.toHaveProperty("answer");
+    expect(keywords.additionalProperties).toBe(false);
+    expect(keywords.properties.keywordOptions).toMatchObject({ minItems: 4, maxItems: 6 });
+    expect(keywords.properties.keyOptionIds).toMatchObject({ minItems: 2, maxItems: 3 });
+    expect(branches[0].properties.exerciseType.enum).toEqual(["lesson_gap", "lesson_open_answer"]);
+  });
+
   it("keeps strict root, nullable required fields, and only the objective's pool types", () => {
     const schema = lessonPoolJsonSchema(input) as any;
     const item = schema.properties.exercises.items;

@@ -27,6 +27,8 @@ describe("session activity lesson snapshot formatting", () => {
     { kind: "lesson_error_fix", instructionPl: "Popraw", statement: "He go." },
     { kind: "lesson_transform", instructionPl: "Zmień", statement: "I go." },
     { kind: "lesson_open_answer", instructionPl: "Odpowiedz", prompt: "Powiedz zdanie" },
+    { kind: "lesson_keywords", instructionPl: "Wybierz", prompt: "Co to jest fotosynteza?", options: ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222", "33333333-3333-4333-8333-333333333333", "44444444-4444-4444-8444-444444444444"].map((id, i) => ({ id, text: `p${i}` })), minSelected: 2, maxSelected: 2 },
+    { kind: "lesson_shorten", instructionPl: "Skróć", prompt: "Co to jest?", originalAnswer: "Długa odpowiedź.", answerSegments: [{ text: "Długa odpowiedź.", state: "plain" }] },
   ])("describes every TaskPromptSchema variant: $kind", (prompt) => {
     const parsed = TaskPromptSchema.parse(prompt);
     const described = describeTaskPrompt(parsed);
@@ -38,10 +40,23 @@ describe("session activity lesson snapshot formatting", () => {
     ["lesson_order", { kind: "lesson_order", instructionPl: "Ułóż zdanie", items: [{ id: "11111111-1111-4111-8111-111111111111", text: "She" }, { id: "22222222-2222-4222-8222-222222222222", text: "reads" }, { id: "33333333-3333-4333-8333-333333333333", text: "books" }] }, { itemIds: ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222", "33333333-3333-4333-8333-333333333333"], itemValues: { "11111111-1111-4111-8111-111111111111": "She", "22222222-2222-4222-8222-222222222222": "reads", "33333333-3333-4333-8333-333333333333": "books" } }, "She reads books"],
     ["lesson_gap", { kind: "lesson_gap", instructionPl: "Uzupełnij", stemWithGap: "She ___ books" }, { answer: "reads" }, "reads"],
     ["lesson_choice", { kind: "lesson_choice", instructionPl: "Wybierz", stem: "Present Simple", options: [{ id: "44444444-4444-4444-8444-444444444444", text: "do" }] }, { answer: "does", acceptedAnswers: [] }, "does"],
+    ["lesson_keywords", { kind: "lesson_keywords", instructionPl: "Wybierz", prompt: "Co to jest fotosynteza?", options: [{ id: "11111111-1111-4111-8111-111111111111", text: "światło" }, { id: "22222222-2222-4222-8222-222222222222", text: "cukry" }, { id: "33333333-3333-4333-8333-333333333333", text: "tlen" }, { id: "44444444-4444-4444-8444-444444444444", text: "korzenie" }], minSelected: 2, maxSelected: 2 }, { answer: "światło, cukry", correctOptionIds: ["22222222-2222-4222-8222-222222222222", "11111111-1111-4111-8111-111111111111"] }, "cukry, światło"],
   ])("keeps canonical answer for %s", (kind, prompt, key, expected) => {
     const parsedPrompt = TaskPromptSchema.parse(prompt);
     expect(lessonAnswerValues(LessonAnswerSnapshotSchema.parse(key), parsedPrompt).acceptedAnswers).toContain(expected);
     expect(describeTaskPrompt(parsedPrompt).instruction).not.toBe("");
+  });
+
+  it("keyword answers keep only the full key set, never a single concept", () => {
+    const prompt = TaskPromptSchema.parse({ kind: "lesson_keywords", instructionPl: "Wybierz", prompt: "Co to jest fotosynteza?", options: [{ id: "11111111-1111-4111-8111-111111111111", text: "światło" }, { id: "22222222-2222-4222-8222-222222222222", text: "cukry" }, { id: "33333333-3333-4333-8333-333333333333", text: "tlen" }, { id: "44444444-4444-4444-8444-444444444444", text: "korzenie" }], minSelected: 2, maxSelected: 2 });
+    const { acceptedAnswers } = lessonAnswerValues(LessonAnswerSnapshotSchema.parse({ answer: "światło, cukry", correctOptionIds: ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"] }), prompt);
+    expect(acceptedAnswers).toEqual(["światło, cukry"]);
+    expect(describeTaskPrompt(prompt)).toMatchObject({ stimulus: "Co to jest fotosynteza?", options: ["światło", "cukry", "tlen", "korzenie"] });
+  });
+
+  it("shorten prompts describe the question together with the child original answer", () => {
+    const prompt = TaskPromptSchema.parse({ kind: "lesson_shorten", instructionPl: "Skróć", prompt: "Co to jest?", originalAnswer: "Długa odpowiedź.", answerSegments: [{ text: "Długa odpowiedź.", state: "plain" }] });
+    expect(describeTaskPrompt(prompt)).toMatchObject({ instruction: "Skróć", stimulus: "Co to jest? | Długa odpowiedź.", options: [] });
   });
 
   it("includes card copy, notice segments, and safe visual descriptions without asset IDs", () => {

@@ -23,6 +23,7 @@ import {
   applyCalculationPreview,
   groupCalculationFamilies,
   groupExercisesByObjectiveAndStage,
+  keywordsAnswerOf,
   lessonExerciseChanged,
   nextRequiredElementId,
   toLessonDraftPatch,
@@ -721,7 +722,7 @@ export default function LessonEditor({
                       ) : (
                         <label>
                           {messages.lessons.exerciseAnswerLabel}
-                          <input data-testid={`exercise-answer-${index}`} value={ex.answer} disabled={!editable || busy || ex.exerciseType === "lesson_calculation"}
+                          <input data-testid={`exercise-answer-${index}`} value={ex.answer} disabled={!editable || busy || ex.exerciseType === "lesson_calculation" || ex.exerciseType === "lesson_keywords"}
                             {...(errors ? { "aria-describedby": errId } : {})}
                             onChange={(e) => mutateExercise(ex.clientKey, { answer: e.target.value })} />
                         </label>
@@ -754,14 +755,40 @@ export default function LessonEditor({
                         </fieldset>
                       )}
 
+                      {ex.exerciseType === "lesson_keywords" && ex.keywordOptions && (
+                        <fieldset data-testid={`keywords-${index}`}>
+                          <legend>{messages.lessons.keywordsLegend}</legend>
+                          {ex.keywordOptions.map((opt, oi) => {
+                            const isKey = (ex.keyOptionIds ?? []).includes(opt.id);
+                            return (
+                              <label key={opt.id} style={{ display: "block" }}>
+                                <input type="checkbox" data-testid={`keyword-key-${index}-${opt.id}`} checked={isKey} disabled={!editable || busy}
+                                  aria-label={`${messages.lessons.keywordOptionLabel.replace("{n}", String(oi + 1))}: ${messages.lessons.keywordKeyLabel}`}
+                                  onChange={() => {
+                                    const current = ex.keyOptionIds ?? [];
+                                    const keyOptionIds = isKey ? current.filter((id) => id !== opt.id) : [...current, opt.id];
+                                    mutateExercise(ex.clientKey, { keyOptionIds, answer: keywordsAnswerOf({ keywordOptions: ex.keywordOptions, keyOptionIds }) });
+                                  }} />{" "}
+                                <input data-testid={`keyword-option-${index}-${oi}`} value={opt.text} disabled={!editable || busy} maxLength={40}
+                                  aria-label={messages.lessons.keywordOptionLabel.replace("{n}", String(oi + 1))}
+                                  onChange={(e) => {
+                                    const keywordOptions = ex.keywordOptions!.map((o) => (o.id === opt.id ? { ...o, text: e.target.value } : o));
+                                    mutateExercise(ex.clientKey, { keywordOptions, answer: keywordsAnswerOf({ keywordOptions, keyOptionIds: ex.keyOptionIds }) });
+                                  }} />
+                              </label>
+                            );
+                          })}
+                        </fieldset>
+                      )}
+
                       <label>
                         {messages.lessons.exerciseAcceptedLabel}
-                        <textarea data-testid={`exercise-accepted-${index}`} value={ex.acceptedText} disabled={!editable || busy || ex.exerciseType === "lesson_calculation"}
+                        <textarea data-testid={`exercise-accepted-${index}`} value={ex.acceptedText} disabled={!editable || busy || ex.exerciseType === "lesson_calculation" || ex.exerciseType === "lesson_keywords"}
                           onChange={(e) => mutateExercise(ex.clientKey, { acceptedText: e.target.value })} />
                       </label>
                       <label>
                         {messages.lessons.exerciseFocusLabel}
-                        <input data-testid={`exercise-focus-${index}`} value={ex.focusText} disabled={!editable || busy || ex.exerciseType === "lesson_calculation"}
+                        <input data-testid={`exercise-focus-${index}`} value={ex.focusText} disabled={!editable || busy || ex.exerciseType === "lesson_calculation" || ex.exerciseType === "lesson_keywords"}
                           onChange={(e) => mutateExercise(ex.clientKey, { focusText: e.target.value })} />
                       </label>
 

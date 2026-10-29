@@ -19,7 +19,7 @@ type TaskRow = typeof sessionTasks.$inferSelect;
 /**
  * Deterministyczny hasz treści próby dla idempotencji `clientAttemptId`
  * (arch §10): ta sama treść → ten sam hasz; inna treść pod tym samym kluczem
- * → 409. Obejmuje `optionId` (choice), `text` (text) i `itemIds` (sequence);
+ * → 409. Obejmuje `optionId` (choice), `text` (text) i `itemIds` (sequence, selection);
  * pozostałe modalności nie niosą treści.
  */
 export function requestHashOf(input: AttemptInput): string {
@@ -30,6 +30,9 @@ export function requestHashOf(input: AttemptInput): string {
         ? { text: input.text }
         : input.modality === "sequence"
           ? { itemIds: input.itemIds }
+          : input.modality === "selection"
+            // Zbiór bez kolejności: ten sam wybór w innej kolejności to ta sama treść.
+            ? { itemIds: [...input.itemIds].sort((a, b) => a.localeCompare(b)) }
           : {};
   return createHash("sha256")
     .update(JSON.stringify({ taskId: input.taskId, modality: input.modality, ...payload }))

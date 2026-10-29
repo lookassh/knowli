@@ -99,10 +99,11 @@ export function planLessonMockTest(input: LessonMockTestInput): LessonMockTestIt
   const exposed = new Set(exposedTargetKeys);
   const inScope = new Set(objectiveIds);
 
-  // Kandydaci per cel, uporządkowani preferencją. Pomijamy notice i cele spoza lekcji.
+  // Kandydaci per cel, uporządkowani preferencją. Pomijamy notice, słowa kluczowe
+  // (wsparcie trenera precyzji, nie sprawdzenie) i cele spoza lekcji.
   const byObjective = new Map<string, RankedEntry[]>();
   pool.forEach((entry, order) => {
-    if (entry.exerciseType === "lesson_notice" || stageOf(entry.exerciseType) === "intro") {
+    if (entry.exerciseType === "lesson_notice" || entry.exerciseType === "lesson_keywords" || stageOf(entry.exerciseType) === "intro") {
       return;
     }
     if (!inScope.has(entry.objectiveId)) {

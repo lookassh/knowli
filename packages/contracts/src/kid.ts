@@ -46,6 +46,7 @@ export const EXERCISE_TYPES = [
   "lesson_transform",
   "lesson_open_answer",
   "lesson_calculation",
+  "lesson_keywords",
 ] as const;
 export type ExerciseTypeDto = (typeof EXERCISE_TYPES)[number];
 
@@ -82,6 +83,19 @@ export const LessonSegmentSchema = z.object({
   text: z.string().min(1),
 });
 export type LessonSegment = z.infer<typeof LessonSegmentSchema>;
+
+/** Fragment zapisu w porównaniu pisowni; `pill` = fragment do wyróżnienia (issue #9). */
+export const SpellingDiffSegmentSchema = z.object({
+  text: z.string().min(1),
+  state: z.enum(["plain", "pill"]),
+});
+export type SpellingDiffSegmentDto = z.infer<typeof SpellingDiffSegmentSchema>;
+
+/**
+ * Najdłuższa odpowiedź pisemna dziecka: odpowiedź otwarta przedmiotu szkolnego
+ * trafia do gradera w całości do 600 znaków (gramatyka nadal tylko do 200).
+ */
+export const MAX_TEXT_ATTEMPT_LENGTH = 600;
 
 /** Publiczna treść zadania — discriminated union po polu kind = typ ćwiczenia. */
 export const TaskPromptSchema = z.discriminatedUnion("kind", [
@@ -234,7 +248,30 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     instructionPl: z.string().min(1),
     prompt: z.string().min(1),
   }).strict(),
+  // Trener precyzji: wybór 2–3 pojęć kluczowych przed odpowiedzią otwartą.
+  // `prompt` to pytanie zaplanowanej zaraz potem odpowiedzi; DTO nie zdradza,
+  // które pojęcia są kluczowe.
+  z.object({
+    kind: z.literal("lesson_keywords"),
+    instructionPl: z.string().min(1),
+    prompt: z.string().min(1),
+    options: z.array(ChoiceOptionSchema).min(4).max(6),
+    minSelected: z.number().int().min(1),
+    maxSelected: z.number().int().min(1),
+  }).strict(),
+  // Zadanie następcze „Skróć odpowiedź” (technicznie odpowiedź otwarta): własny
+  // tekst dziecka z zaznaczonymi fragmentami do usunięcia — nic z klucza.
+  z.object({
+    kind: z.literal("lesson_shorten"),
+    instructionPl: z.string().min(1),
+    prompt: z.string().min(1),
+    originalAnswer: z.string().min(1).max(MAX_TEXT_ATTEMPT_LENGTH),
+    answerSegments: z.array(SpellingDiffSegmentSchema).min(1).max(32),
+  }).strict(),
 ]).superRefine((prompt, ctx) => {
+  if (prompt.kind === "lesson_keywords" && (prompt.minSelected > prompt.maxSelected || prompt.maxSelected > prompt.options.length)) {
+    ctx.addIssue({ code: "custom", path: ["maxSelected"], message: "selection bounds must fit the options" });
+  }
   if (prompt.kind === "exposure" || prompt.kind === "speech") {
     validateVisualPrompt({
       visualType: prompt.visualType,
@@ -472,13 +509,6 @@ export const SpeechFeedbackDtoSchema = z.object({
 });
 export type SpeechFeedbackDto = z.infer<typeof SpeechFeedbackDtoSchema>;
 
-/** Fragment zapisu w porównaniu pisowni; `pill` = fragment do wyróżnienia (issue #9). */
-export const SpellingDiffSegmentSchema = z.object({
-  text: z.string().min(1),
-  state: z.enum(["plain", "pill"]),
-});
-export type SpellingDiffSegmentDto = z.infer<typeof SpellingDiffSegmentSchema>;
-
 /**
  * Porównanie zapisu dziecka z właściwym wariantem: dwa zsegmentowane wiersze.
  * Segmenty `expected` składają się dokładnie na `correctText`; bez odległości
@@ -492,7 +522,7 @@ export const SpellingDiffSchema = z.object({
 export type SpellingDiff = z.infer<typeof SpellingDiffSchema>;
 
 export const FeedbackDtoSchema = z.object({
-  kind: z.enum(["great", "capitalization_hint", "almost", "incorrect", "content_matched", "not_assessed", "spelling_hint", "lesson_hint", "lesson_almost"]),
+  kind: z.enum(["great", "capitalization_hint", "almost", "incorrect", "content_matched", "not_assessed", "spelling_hint", "lesson_hint", "lesson_almost", "lesson_precision_hint"]),
   correctText: z.string().min(1).optional(),
   heardText: z.string().min(1).max(200).optional(),
   fragments: z.array(PronunciationFragmentDtoSchema).max(6).optional(),
@@ -534,11 +564,14 @@ export const FeedbackDtoSchema = z.object({
   if (feedback.answerSegments !== undefined && !LESSON_SEGMENT_KINDS.includes(feedback.kind)) {
     ctx.addIssue({ code: "custom", path: ["answerSegments"], message: "answerSegments is only allowed with lesson_almost or lesson_hint" });
   }
-  if (feedback.kind === "lesson_hint" && feedback.hintPl === undefined) {
-    ctx.addIssue({ code: "custom", path: ["hintPl"], message: "lesson_hint requires hintPl" });
+  // `lesson_precision_hint` = poprawna wiedza, ale odpowiedź do skrócenia
+  // (trener precyzji); niesie szablon zachęty jak lesson_hint.
+  const HINT_KINDS = ["lesson_hint", "lesson_precision_hint"];
+  if (HINT_KINDS.includes(feedback.kind) && feedback.hintPl === undefined) {
+    ctx.addIssue({ code: "custom", path: ["hintPl"], message: `${feedback.kind} requires hintPl` });
   }
-  if (feedback.hintPl !== undefined && feedback.kind !== "lesson_hint") {
-    ctx.addIssue({ code: "custom", path: ["hintPl"], message: "hintPl is only allowed with lesson_hint" });
+  if (feedback.hintPl !== undefined && !HINT_KINDS.includes(feedback.kind)) {
+    ctx.addIssue({ code: "custom", path: ["hintPl"], message: "hintPl is only allowed with lesson_hint or lesson_precision_hint" });
   }
   if (feedback.speech && ["uncertain", "no_speech", "unavailable"].includes(feedback.speech.recognition)) {
     for (const field of ["heardText", "correctText", "fragments"] as const) {
@@ -555,14 +588,8 @@ export const FeedbackDtoSchema = z.object({
 });
 export type FeedbackDto = z.infer<typeof FeedbackDtoSchema>;
 
-export const AttemptModalitySchema = z.enum(["choice", "text", "audio", "dont_remember", "skip", "sequence"]);
+export const AttemptModalitySchema = z.enum(["choice", "text", "audio", "dont_remember", "skip", "sequence", "selection"]);
 export type AttemptModality = z.infer<typeof AttemptModalitySchema>;
-
-/**
- * Najdłuższa odpowiedź pisemna dziecka: odpowiedź otwarta przedmiotu szkolnego
- * trafia do gradera w całości do 600 znaków (gramatyka nadal tylko do 200).
- */
-export const MAX_TEXT_ATTEMPT_LENGTH = 600;
 
 /**
  * Odpowiedź dziecka na zadanie (arch §12). `clientAttemptId` zabezpiecza retry
@@ -604,6 +631,16 @@ export const AttemptInputSchema = z.discriminatedUnion("modality", [
     modality: z.literal("sequence"),
     /** Kolejność wskazana przez dziecko (`lesson_order`): 1–10 unikalnych id. */
     itemIds: z.array(UuidSchema).min(1).max(10).refine(
+      (ids) => new Set(ids).size === ids.length,
+      { message: "itemIds must be unique" },
+    ),
+  }),
+  z.object({
+    taskId: UuidSchema,
+    clientAttemptId: UuidSchema,
+    modality: z.literal("selection"),
+    /** Zbiór wskazany przez dziecko (`lesson_keywords`): 1–6 unikalnych id, kolejność bez znaczenia. */
+    itemIds: z.array(UuidSchema).min(1).max(6).refine(
       (ids) => new Set(ids).size === ids.length,
       { message: "itemIds must be unique" },
     ),

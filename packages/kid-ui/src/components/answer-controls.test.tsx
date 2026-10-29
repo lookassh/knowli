@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, renderKid, screen } from "../test/render-kid";
 import { ActionButton } from "./ActionButton";
 import { IconActionButton } from "./IconActionButton";
-import { AnswerField } from "./AnswerField";
+import { AnswerField, AnswerTextArea } from "./AnswerField";
 import { AnswerGrid } from "./AnswerGrid";
 import { SessionProgress } from "./SessionProgress";
 import styles from "./answer-controls.module.css";
@@ -85,6 +85,93 @@ describe("AnswerGrid", () => {
     expect(screen.getAllByTestId("kid-option-label")[0]!.getAttribute("aria-hidden")).toBe("true");
     expect(optionRefs.current[0]).toBe(screen.getAllByTestId("kid-option")[0]);
     expect(screen.getAllByTestId("kid-option")).toHaveLength(3);
+  });
+});
+
+describe("AnswerGrid multi-select", () => {
+  const grid = (selected: string[], onChoose = vi.fn(), disabled = false) => (
+    <AnswerGrid
+      options={options}
+      outcomes={new Map()}
+      disabled={disabled}
+      onChoose={onChoose}
+      selection={{ selectedIds: new Set(selected), maxSelected: 2 }}
+      listLabel="Pojęcia do wyboru"
+    />
+  );
+
+  it("marks chosen tiles with aria-pressed and a check mark, not colour alone", () => {
+    renderKid(grid(["two"]));
+    const [one, two] = screen.getAllByTestId("kid-option");
+    expect(one!.getAttribute("aria-pressed")).toBe("false");
+    expect(two!.getAttribute("aria-pressed")).toBe("true");
+    expect(two!.getAttribute("data-selected")).toBe("true");
+    const marks = screen.getAllByTestId("kid-option-select-mark");
+    expect(marks).toHaveLength(3);
+    expect(marks[1]!.getAttribute("data-selected")).toBe("true");
+    expect(marks[1]!.querySelector("svg")).not.toBeNull();
+    expect(marks[0]!.querySelector("svg")).toBeNull();
+    expect(screen.getByRole("list").getAttribute("aria-label")).toBe("Pojęcia do wyboru");
+    expect(screen.getByRole("list").getAttribute("data-selection")).toBe("multiple");
+  });
+
+  it("reports toggles and disables only unselected tiles once maxSelected is reached", () => {
+    const onChoose = vi.fn();
+    const { rerender } = renderKid(grid(["one"], onChoose));
+    fireEvent.click(screen.getAllByTestId("kid-option")[2]!);
+    expect(onChoose).toHaveBeenLastCalledWith("three");
+
+    rerender(grid(["one", "three"], onChoose));
+    const tiles = screen.getAllByTestId("kid-option") as HTMLButtonElement[];
+    expect(tiles[1]!.disabled).toBe(true);
+    expect(tiles[0]!.disabled).toBe(false);
+    fireEvent.click(tiles[1]!);
+    expect(onChoose).toHaveBeenCalledTimes(1);
+    fireEvent.click(tiles[0]!);
+    expect(onChoose).toHaveBeenLastCalledWith("one");
+
+    rerender(grid(["one"], onChoose, true));
+    expect((screen.getAllByTestId("kid-option") as HTMLButtonElement[]).every((tile) => tile.disabled)).toBe(true);
+  });
+
+  it("single-choice grids keep their previous semantics", () => {
+    renderKid(<AnswerGrid options={options} outcomes={new Map()} disabled={false} onChoose={vi.fn()} />);
+    expect(screen.getAllByTestId("kid-option")[0]!.getAttribute("aria-pressed")).toBeNull();
+    expect(screen.getAllByTestId("kid-option")[0]!.getAttribute("data-selected")).toBeNull();
+    expect(screen.queryByTestId("kid-option-select-mark")).toBeNull();
+  });
+});
+
+describe("AnswerTextArea", () => {
+  it("renders a styled multi-line field that forwards refs and submits its form on Enter only", () => {
+    const ref = createRef<HTMLTextAreaElement>();
+    const submit = vi.fn();
+    renderKid(
+      <form onSubmit={(event) => { event.preventDefault(); submit(); }}>
+        <AnswerTextArea ref={ref} aria-label="Krótsza odpowiedź" defaultValue="Ala ma kota" submitOnEnter />
+      </form>,
+    );
+    const field = screen.getByRole("textbox", { name: "Krótsza odpowiedź" }) as HTMLTextAreaElement;
+    expect(ref.current).toBe(field);
+    expect(field.tagName).toBe("TEXTAREA");
+    expect(field.value).toBe("Ala ma kota");
+    expect(field.className).toContain(styles.input);
+    expect(field.className).toContain(styles.textarea);
+    fireEvent.keyDown(field, { key: "Enter", shiftKey: true });
+    expect(submit).not.toHaveBeenCalled();
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(submit).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps Enter as a new line without submitOnEnter", () => {
+    const submit = vi.fn();
+    renderKid(
+      <form onSubmit={(event) => { event.preventDefault(); submit(); }}>
+        <AnswerTextArea aria-label="Notatka" />
+      </form>,
+    );
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Notatka" }), { key: "Enter" });
+    expect(submit).not.toHaveBeenCalled();
   });
 });
 

@@ -57,5 +57,9 @@ export function getExercisePresentation(task: TaskDto): ExercisePresentation {
       return { instruction: task.prompt.instructionPl, icon: "pencil" };
     case "lesson_calculation":
       return { instruction: task.prompt.instructionPl, icon: "pencil" };
+    case "lesson_keywords":
+      return { instruction: task.prompt.instructionPl, icon: "sparkles" };
+    case "lesson_shorten":
+      return { instruction: task.prompt.instructionPl, icon: "pencil" };
   }
 }

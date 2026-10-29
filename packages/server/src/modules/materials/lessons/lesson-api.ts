@@ -172,6 +172,8 @@ function exerciseDtoFromPayload(
     ...(draft.familyId === undefined ? {} : { familyId: draft.familyId }),
     ...(draft.sourceRefs === undefined ? {} : { sourceRefs: draft.sourceRefs.map((ref) => ({ ...ref })) }),
     ...(draft.calculation === undefined ? {} : { calculation: draft.calculation }),
+    ...(draft.keywordOptions === undefined ? {} : { keywordOptions: draft.keywordOptions.map((o) => ({ ...o })) }),
+    ...(draft.keyOptionIds === undefined ? {} : { keyOptionIds: [...draft.keyOptionIds] }),
   };
 }
 

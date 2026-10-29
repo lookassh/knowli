@@ -224,6 +224,24 @@ export default function LessonSupervisionPanel({
                       </ul>
                     </>
                   )}
+                  {objective.school.shortening && (
+                    <div data-testid={`supervision-shortening-${objective.objectiveId}`}>
+                      <h4>{messages.lessons.schoolShorteningTitle}</h4>
+                      <p>{messages.lessons.schoolShorteningCounts
+                        .replace("{offered}", String(objective.school.shortening.offered))
+                        .replace("{attempted}", String(objective.school.shortening.attempted))
+                        .replace("{successful}", String(objective.school.shortening.successful))}</p>
+                      <ul className="plain">
+                        {objective.school.shortening.recent.map((pair, i) => (
+                          <li key={i} className="muted">
+                            <em>{pair.original}</em> → <em>{pair.revision}</em>
+                            {" — "}{pair.successful ? messages.lessons.schoolShorteningSuccess : messages.lessons.schoolShorteningNotYet}
+                            {pair.lostElements.length > 0 && ` · ${messages.lessons.schoolShorteningLost.replace("{elements}", pair.lostElements.join(", "))}`}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               )}
               {objective.topErrors.length === 0 ? (

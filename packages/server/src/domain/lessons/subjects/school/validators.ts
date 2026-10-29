@@ -9,6 +9,7 @@ import { computeCalculationAnswer, renderCalculationPrompt } from "../../calcula
  */
 
 const OPEN_TYPE = "lesson_open_answer";
+const KEYWORDS_TYPE = "lesson_keywords";
 
 /**
  * Normalizacja do porównania cytatu z materiałem: tylko NFC i białe znaki —
@@ -21,6 +22,27 @@ function normalizeForGrounding(text: string): string {
 /** Porównanie sformułowań w rodzinie pytań: jak wyżej, ale bez wielkości liter. */
 function normalizeForPromptComparison(text: string): string {
   return normalizeForGrounding(text).toLocaleLowerCase("pl-PL");
+}
+
+/** Słowa tekstu po NFC i małymi literami (litery i cyfry). */
+function wordsOf(text: string): string[] {
+  return text.normalize("NFC").toLocaleLowerCase("pl-PL").match(/[\p{L}\p{N}]+/gu) ?? [];
+}
+
+/**
+ * Czy pojęcie występuje w tekście z tolerancją polskiej odmiany: każde słowo
+ * pojęcia ma w tekście słowo o tym samym początku (słowo bez dwóch ostatnich
+ * liter, co najmniej 4 znaki; krótsze słowa muszą wystąpić w całości).
+ * „światło” pasuje do „światła”, „cukry” do „cukrów”. Heurystyka uziemienia,
+ * nie ocena — rodzic i tak zatwierdza pojęcia.
+ */
+function termOccursIn(term: string, words: readonly string[]): boolean {
+  const termWords = wordsOf(term);
+  return termWords.length > 0 && termWords.every((word) => {
+    if (word.length <= 4) return words.includes(word);
+    const stem = word.slice(0, Math.max(4, word.length - 2));
+    return words.some((candidate) => candidate.startsWith(stem));
+  });
 }
 
 export function validateSchoolExercise(ex: LessonExerciseDraft, _topic: LessonTopic): string[] {
@@ -90,8 +112,22 @@ export function validateSchoolExercise(ex: LessonExerciseDraft, _topic: LessonTo
     if (ex.expectedForm !== undefined) {
       errors.push("expectedForm: oczekiwana forma dotyczy tylko odpowiedzi otwartej");
     }
-    if (ex.familyId !== undefined) {
-      errors.push("familyId: rodziny pytań dotyczą tylko odpowiedzi otwartej");
+    if (ex.familyId !== undefined && ex.exerciseType !== KEYWORDS_TYPE) {
+      errors.push("familyId: rodziny pytań dotyczą tylko odpowiedzi otwartej i słów kluczowych");
+    }
+  }
+
+  if (ex.exerciseType === KEYWORDS_TYPE) {
+    // Słowa kluczowe poprzedzają konkretną rodzinę pytań otwartych (design 6.1);
+    // istnienie tej rodziny w celu sprawdza validateSchoolPool.
+    if (!ex.familyId) {
+      errors.push("familyId: słowa kluczowe muszą wskazywać rodzinę pytań otwartych");
+    }
+    if (ex.acceptedAnswers.length > 0) {
+      errors.push("acceptedAnswers: słowa kluczowe wymagają pustej listy wariantów");
+    }
+    if (ex.focus.length > 0) {
+      errors.push("focus: słowa kluczowe wymagają pustej listy");
     }
   }
 
@@ -132,7 +168,7 @@ export function validateSchoolPool(
   // slugów innych partii, więc ten sam slug w dwóch celach to dwie różne rodziny.
   const families = new Map<string, number[]>();
   drafts.forEach((ex, index) => {
-    if (!ex.familyId) return;
+    if (!ex.familyId || ex.exerciseType !== OPEN_TYPE) return;
     const key = JSON.stringify([ex.objectiveId, ex.familyId]);
     const list = families.get(key) ?? [];
     list.push(index);
@@ -159,6 +195,27 @@ export function validateSchoolPool(
       }
     }
   }
+
+  // Słowa kluczowe: rodzina pytań otwartych musi istnieć w tym samym celu, a
+  // każde pojęcie kluczowe występuje w jej odpowiedzi wzorcowej albo w materiale
+  // (dobór dystraktorów sprawdza rodzic).
+  drafts.forEach((ex, index) => {
+    if (ex.exerciseType !== KEYWORDS_TYPE || !ex.familyId) return;
+    const familyIndexes = families.get(JSON.stringify([ex.objectiveId, ex.familyId])) ?? [];
+    const family = familyIndexes[0] === undefined ? undefined : drafts[familyIndexes[0]];
+    if (!family) {
+      push(index, `familyId: brak rodziny pytań otwartych „${ex.familyId}” w tym zagadnieniu`);
+      return;
+    }
+    const haystack = [...wordsOf(family.answer), ...wordsOf(ctx.material)];
+    const textById = new Map((ex.keywordOptions ?? []).map((option) => [option.id, option.text] as const));
+    for (const id of ex.keyOptionIds ?? []) {
+      const term = textById.get(id);
+      if (term !== undefined && !termOccursIn(term, haystack)) {
+        push(index, `keyOptionIds: pojęcie kluczowe „${term}” nie występuje w odpowiedzi wzorcowej ani w materiale`);
+      }
+    }
+  });
 
   // Rodzina wariantów liczbowych współdzieli metodę i jednostki, nie wynik.
   const calculationFamilies = new Map<string, number[]>();

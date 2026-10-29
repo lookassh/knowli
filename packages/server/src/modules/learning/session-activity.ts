@@ -184,6 +184,11 @@ export function describeTaskPrompt(p: TaskPrompt): { instruction: string; stimul
     case "lesson_open_answer":
     case "lesson_calculation":
       return { instruction: p.instructionPl, stimulus: p.prompt, options: [] };
+    case "lesson_keywords":
+      return { instruction: p.instructionPl, stimulus: p.prompt, options: options(p.options) };
+    case "lesson_shorten":
+      // Poprawka własnej odpowiedzi: bodźcem jest pytanie i tekst oryginału dziecka.
+      return { instruction: p.instructionPl, stimulus: `${p.prompt} | ${p.originalAnswer}`, options: [] };
     default: {
       const exhaustive: never = p;
       return exhaustive;
@@ -194,7 +199,7 @@ export function describeTaskPrompt(p: TaskPrompt): { instruction: string; stimul
 /** Resolves canonical lesson answers from the same answer-key shapes used by materialization. */
 export const LessonAnswerSnapshotSchema = z.object({
   answer: z.string().optional(), target: z.string().optional(), acceptedAnswers: z.array(z.string()).optional(),
-  correctOptionId: z.string().optional(), optionValues: z.record(z.string(), z.string()).optional(),
+  correctOptionId: z.string().optional(), correctOptionIds: z.array(z.string()).optional(), optionValues: z.record(z.string(), z.string()).optional(),
   segmentValues: z.record(z.string(), z.string()).optional(), itemIds: z.array(z.string()).optional(),
   itemValues: z.record(z.string(), z.string()).optional(),
 });
@@ -202,7 +207,7 @@ type LessonAnswerSnapshot = z.infer<typeof LessonAnswerSnapshotSchema>;
 
 export function lessonAnswerValues(key: LessonAnswerSnapshot, prompt: TaskPrompt | null): { valuesById: Map<string, string>; acceptedAnswers: string[] } {
   const valuesById = new Map<string, string>();
-  if (prompt?.kind === "lesson_choice" || prompt?.kind === "lesson_short_answer" || prompt?.kind === "reading" || prompt?.kind === "reverse_recognition") {
+  if (prompt?.kind === "lesson_choice" || prompt?.kind === "lesson_short_answer" || prompt?.kind === "lesson_keywords" || prompt?.kind === "reading" || prompt?.kind === "reverse_recognition") {
     for (const option of prompt.options) valuesById.set(option.id, option.text);
   }
   if (prompt?.kind === "lesson_order") for (const item of prompt.items) valuesById.set(item.id, item.text);
@@ -219,6 +224,11 @@ export function lessonAnswerValues(key: LessonAnswerSnapshot, prompt: TaskPrompt
     ...(key?.acceptedAnswers ?? []),
     ...(key?.correctOptionId ? [valuesById.get(key.correctOptionId) ?? ""] : []),
     ...(sequence.length > 0 ? [sequence.join(" ")] : []),
+    // Słowa kluczowe: wyłącznie pełny zbiór pojęć kluczowych — pojedyncze pojęcie
+    // nie jest poprawną odpowiedzią (wybór niepełny nie jest oceniany).
+    ...(key?.correctOptionIds && key.correctOptionIds.every((id) => valuesById.has(id))
+      ? [key.correctOptionIds.map((id) => valuesById.get(id)!).join(", ")]
+      : []),
   ].filter((answer) => answer.length > 0);
   return { valuesById, acceptedAnswers: [...new Set(acceptedAnswers)] };
 }
@@ -242,6 +252,11 @@ function answerTextOf(modality: string, answer: Record<string, unknown> | null, 
   }
   if (modality === "sequence" && Array.isArray(answer?.itemIds)) {
     return answer.itemIds.map((id) => (typeof id === "string" ? promptOptions.get(id) ?? "" : "")).filter(Boolean).join(" ").slice(0, 200) || null;
+  }
+  if (modality === "selection" && Array.isArray(answer?.itemIds)) {
+    // Nieznany identyfikator: brak wiarygodnej treści wyboru, zamiast częściowej odpowiedzi.
+    const texts = answer.itemIds.map((id) => (typeof id === "string" ? promptOptions.get(id) ?? null : null));
+    return texts.length > 0 && texts.every((text) => text !== null) ? texts.join(", ").slice(0, 200) || null : null;
   }
   if (modality === "audio" && typeof answer?.transcript === "string") return answer.transcript.slice(0, 200);
   return null;
