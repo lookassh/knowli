@@ -607,13 +607,28 @@ function temporaryCertificate(addresses: string[]): { key: Buffer; cert: Buffer 
   const keyPath = join(dir, "key.pem");
   const certPath = join(dir, "cert.pem");
   const san = ["DNS:localhost", "IP:127.0.0.1", ...addresses.map((ip) => `IP:${ip}`)].join(",");
-  const result = spawnSync("openssl", [
+  const args = [
     "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", keyPath, "-out", certPath,
     "-days", "2", "-subj", "/CN=umiem-dictation-trial", "-addext", `subjectAltName=${san}`,
-  ], { stdio: "ignore" });
+  ];
+  // `openssl` z PATH, a na Windows także z typowej instalacji Git for Windows
+  // (PowerShell często nie ma go w PATH); OPENSSL_BIN wskazuje inny plik.
+  const candidates = [
+    process.env.OPENSSL_BIN,
+    "openssl",
+    ...(process.platform === "win32"
+      ? [process.env.ProgramFiles, process.env["ProgramFiles(x86)"], process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, "Programs")]
+        .filter((base): base is string => !!base)
+        .flatMap((base) => [join(base, "Git", "mingw64", "bin", "openssl.exe"), join(base, "Git", "usr", "bin", "openssl.exe")])
+      : []),
+  ].filter((bin): bin is string => !!bin);
+  const ok = candidates.some((bin) => spawnSync(bin, args, { stdio: "ignore" }).status === 0);
   try {
-    if (result.status !== 0) {
-      throw new Error("Nie udało się wygenerować certyfikatu: potrzebny `openssl` w PATH (jest w Git for Windows).");
+    if (!ok) {
+      throw new Error(
+        "Nie udało się wygenerować certyfikatu: nie znaleziono `openssl`. Zainstaluj Git for Windows " +
+          "albo ustaw OPENSSL_BIN na pełną ścieżkę do openssl.exe.",
+      );
     }
     return { key: readFileSync(keyPath), cert: readFileSync(certPath) };
   } finally {
