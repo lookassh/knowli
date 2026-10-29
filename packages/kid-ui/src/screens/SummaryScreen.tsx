@@ -4,6 +4,7 @@ import { format } from "../format";
 import { KidIcon } from "../components/KidIcon";
 import { ActionButton } from "../components/ActionButton";
 import { CelebrationBurst } from "../components/CelebrationBurst";
+import { RowList, RowListItem } from "../components/RowList";
 import { m } from "motion/react";
 import { kidEntranceAnimate, kidEntranceInitial, kidSpringGentle, kidStaggerDelay } from "../motion/kid-motion";
 import { KidScreen } from "../layout/KidScreen";
@@ -27,28 +28,33 @@ export function SummaryScreen({
   const againRef = useAutoFocus<HTMLButtonElement>(true);
 
   const { recall, spelling } = summary.independentSuccesses;
-  const wordCount = (n: number) => {
+  const wordUnit = (n: number) => {
     const plural = new Intl.PluralRules("pl-PL").select(n);
     return format(plural === "one" ? messages.kid.summaryWordOne
-      : plural === "few" ? messages.kid.summaryWordFew : messages.kid.summaryWordMany, { n });
+      : plural === "few" ? messages.kid.summaryWordFew : messages.kid.summaryWordMany, { n: "" }).trim();
   };
+  const stat = (testId: string, label: string, n: number, order: number) => (
+    <m.div className="kid-stat" data-testid={testId} initial={kidEntranceInitial} animate={kidEntranceAnimate} transition={{ ...kidSpringGentle, delay: kidStaggerDelay(order) }}>
+      <span className="kid-stat__figure">
+        <span className="kid-stat__value">{n}</span>{" "}
+        <span className="kid-stat__unit">{wordUnit(n)}</span>
+      </span>
+      <span className="kid-stat__label">{label}</span>
+    </m.div>
+  );
   return (
     <KidScreen role="main" className="kid-screen kid-screen--summary">
-      <KidScreen.Header>
+      <KidScreen.Header variant="band">
+        {guidance && <header className="kid-top-bar">{guidance}</header>}
         <CelebrationBurst active={summary.tasksIssued > 0}><h1 data-testid="kid-summary">{messages.kid.summaryTitle}</h1></CelebrationBurst>
-        {guidance}
-        {summary.activity !== undefined && <SessionActivityResultView activity={summary.activity} />}
       </KidScreen.Header>
       <KidScreen.Content>
-      {recall > 0 && (
-        <m.p className="kid-summary-counts" data-testid="kid-summary-recall" initial={kidEntranceInitial} animate={kidEntranceAnimate} transition={{ ...kidSpringGentle, delay: kidStaggerDelay(1) }}>
-          {format(messages.kid.summaryRecall, { words: wordCount(recall) })}
-        </m.p>
-      )}
-      {spelling > 0 && (
-        <m.p className="kid-summary-counts" data-testid="kid-summary-spelling" initial={kidEntranceInitial} animate={kidEntranceAnimate} transition={{ ...kidSpringGentle, delay: kidStaggerDelay(2) }}>
-          {format(messages.kid.summarySpelling, { words: wordCount(spelling) })}
-        </m.p>
+      {summary.activity !== undefined && <SessionActivityResultView activity={summary.activity} />}
+      {(recall > 0 || spelling > 0) && (
+        <div className="kid-summary-stats">
+          {recall > 0 && stat("kid-summary-recall", messages.kid.summaryRecallLabel, recall, 1)}
+          {spelling > 0 && stat("kid-summary-spelling", messages.kid.summarySpellingLabel, spelling, 2)}
+        </div>
       )}
       {recall === 0 && spelling === 0 && (
         <p className="kid-hint" data-testid="kid-summary-neutral">
@@ -58,27 +64,31 @@ export function SummaryScreen({
       {summary.objectives !== undefined && summary.objectives.length > 0 && (
         <section className="kid-summary-practice" aria-labelledby="kid-summary-objectives-title" data-testid="kid-summary-objectives">
           <h2 id="kid-summary-objectives-title">{messages.kid.lessonSummaryTitle}</h2>
-          <ul className="kid-list">
+          <RowList aria-labelledby="kid-summary-objectives-title" className="kid-summary-rows">
             {summary.objectives.map(objective => (
-              <li key={objective.objectiveId} data-testid="kid-summary-objective">
-                {format(messages.kid.lessonSummaryObjective, { title: objective.titlePl })}
-              </li>
+              <RowListItem
+                key={objective.objectiveId}
+                data-testid="kid-summary-objective"
+                leading={<KidIcon name="check" className="kid-summary-row-icon" />}
+                title={format(messages.kid.lessonSummaryObjective, { title: objective.titlePl })}
+              />
             ))}
-          </ul>
+          </RowList>
         </section>
       )}
       {summary.practiceItems.length > 0 && (
         <section className="kid-summary-practice" aria-labelledby="kid-summary-practice-title" data-testid="kid-summary-practice">
           <h2 id="kid-summary-practice-title">{messages.kid.summaryPractice}</h2>
-          <ul className="kid-list">
+          <RowList aria-labelledby="kid-summary-practice-title" className="kid-summary-rows">
             {summary.practiceItems.map(item => (
-              <li key={item.itemId}>
-                <strong lang="en-GB">{item.target}</strong>
-                <span>{item.skills.map(skill => skill === "recall"
-                  ? messages.kid.summarySkillRecall : messages.kid.summarySkillSpelling).join(", ")}</span>
-              </li>
+              <RowListItem
+                key={item.itemId}
+                title={<strong lang="en-GB">{item.target}</strong>}
+                description={item.skills.map(skill => skill === "recall"
+                  ? messages.kid.summarySkillRecall : messages.kid.summarySkillSpelling).join(", ")}
+              />
             ))}
-          </ul>
+          </RowList>
         </section>
       )}
       </KidScreen.Content>

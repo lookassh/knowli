@@ -166,6 +166,81 @@ test("long session summary remains readable and its actions stay reachable", asy
   await expect(page.getByTestId("kid-again")).toBeVisible();
   await expect(page.getByTestId("kid-switch-profile")).toBeVisible();
   await expectThemeToken(page, page.getByTestId("kid-summary-practice"));
+  await expect(page.locator("[data-kid-header='band']")).toHaveCount(1);
+  const again = await page.getByTestId("kid-again").boundingBox();
+  expect(again?.height ?? 0).toBeGreaterThanOrEqual(54);
+});
+
+test("session summary tiles, band and actions fit portrait, landscape, tablet and desktop", async ({ page }, testInfo) => {
+  const richSummary: SessionSummaryDto = {
+    ...summary(3),
+    independentSuccesses: { recall: 3, spelling: 2 },
+    activity: { status: "evaluated", pointsAwarded: 4, approvedSeconds: 245, errorCode: null },
+  };
+  await setup(page, { profiles: [profile(), profile(otherChildId, "Maja")], tasks: [null], summary: richSummary });
+  await page.getByTestId("kid-profile").first().click();
+  await page.getByTestId("kid-deck").click();
+  await expect(page.getByTestId("kid-summary")).toBeVisible();
+  await expect(page.getByTestId("kid-summary-recall").locator(".kid-stat__value")).toHaveText("3");
+  await expect(page.getByTestId("kid-summary-spelling").locator(".kid-stat__value")).toHaveText("2");
+  await expect(page.getByRole("list", { name: "Jeszcze poćwiczymy" }).getByRole("listitem")).toHaveCount(3);
+  const cases = [
+    { width: 360, height: 800 },
+    { width: 320, height: 640 },
+    { width: 844, height: 390 },
+    { width: 768, height: 1024 },
+    { width: 1280, height: 800 },
+  ];
+  for (const viewport of cases) {
+    const name = `${viewport.width}x${viewport.height}`;
+    await page.setViewportSize(viewport);
+    await page.evaluate(async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    });
+    const layout = await page.evaluate(() => {
+      const rect = (element: Element) => {
+        const { left, top, right, bottom, width, height } = element.getBoundingClientRect();
+        return { left, top, right, bottom, width, height };
+      };
+      const label = document.querySelector<HTMLElement>("[data-testid='kid-summary-recall'] .kid-stat__label")!;
+      return {
+        innerWidth: window.innerWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        root: rect(document.querySelector("[data-kid-screen]")!),
+        band: rect(document.querySelector("[data-kid-header='band']")!),
+        tiles: [...document.querySelectorAll(".kid-stat")].map((tile) => ({ ...rect(tile), overflowX: tile.scrollWidth > tile.clientWidth + 1 })),
+        labelClipped: label.scrollWidth > label.clientWidth + 1,
+        reward: rect(document.querySelector("[data-testid='kid-summary-reward']")!),
+        again: rect(document.querySelector("[data-testid='kid-again']")!),
+        switchProfile: rect(document.querySelector("[data-testid='kid-switch-profile']")!),
+      };
+    });
+    expect(layout.scrollWidth, `horizontal overflow: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
+    expect(Math.round(layout.band.top), `band top: ${name}`).toBe(0);
+    expect(Math.abs(layout.band.left - layout.root.left), `band left: ${name}`).toBeLessThanOrEqual(1);
+    expect(Math.abs(layout.band.right - layout.root.right), `band right: ${name}`).toBeLessThanOrEqual(1);
+    expect(layout.tiles, `tiles: ${name}`).toHaveLength(2);
+    for (const [index, tile] of layout.tiles.entries()) {
+      expect(tile.left, `tile ${index} left: ${name}`).toBeGreaterThanOrEqual(layout.root.left - 1);
+      expect(tile.right, `tile ${index} right: ${name}`).toBeLessThanOrEqual(layout.root.right + 1);
+      expect(tile.overflowX, `tile ${index} content overflow: ${name}`).toBe(false);
+    }
+    expect(layout.labelClipped, `tile label clipped: ${name}`).toBe(false);
+    expect(layout.reward.right, `reward in viewport: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
+    expect(layout.again.height, `again height: ${name}`).toBeGreaterThanOrEqual(54);
+    expect(layout.switchProfile.height, `switch height: ${name}`).toBeGreaterThanOrEqual(48);
+    expect(layout.again.right, `again in viewport: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
+    await page.getByTestId("kid-again").scrollIntoViewIfNeeded();
+    await expect(page.getByTestId("kid-again"), `again reachable: ${name}`).toBeInViewport({ ratio: 0.98 });
+    await page.getByTestId("kid-switch-profile").scrollIntoViewIfNeeded();
+    await expect(page.getByTestId("kid-switch-profile"), `switch reachable: ${name}`).toBeInViewport({ ratio: 0.98 });
+    if (viewport.width === 360) {
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await expect.poll(() => page.evaluate(() => [...document.querySelectorAll(".kid-stat")].every((tile) => getComputedStyle(tile).opacity === "1"))).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`summary-${name}.png`) });
+    }
+    await page.evaluate(() => window.scrollTo(0, 0));
+  }
 });
 
 test("dark session summary keeps switch-profile text readable", async ({ page }) => {

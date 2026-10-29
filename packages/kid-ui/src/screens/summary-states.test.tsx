@@ -40,4 +40,56 @@ describe("summary screen states", () => {
     expect(screen.queryByTestId("kid-summary-reward")).toBeNull();
     expect(screen.queryByTestId("kid-switch-profile")).toBeNull();
   });
+
+  it("renders recall and spelling counts as stat tiles with a separate number and label", () => {
+    renderKid(<SummaryScreen summary={{ ...summary, independentSuccesses: { recall: 3, spelling: 1 } }} profiles={[profile]} onAgain={vi.fn()} onSwitchProfile={vi.fn()} />);
+    const recall = screen.getByTestId("kid-summary-recall");
+    expect(recall.querySelector(".kid-stat__value")?.textContent).toBe("3");
+    expect(recall.querySelector(".kid-stat__label")?.textContent).toBe("Samodzielne przypominanie");
+    expect(recall.textContent).toContain("3 słowa");
+    const spelling = screen.getByTestId("kid-summary-spelling");
+    expect(spelling.querySelector(".kid-stat__value")?.textContent).toBe("1");
+    expect(spelling.querySelector(".kid-stat__label")?.textContent).toBe("Samodzielna pisownia");
+    expect(spelling.textContent).toContain("1 słowo");
+  });
+
+  it("shows only the tile with a positive count and no neutral hint", () => {
+    renderKid(<SummaryScreen summary={{ ...summary, independentSuccesses: { recall: 2, spelling: 0 } }} profiles={[profile]} onAgain={vi.fn()} onSwitchProfile={vi.fn()} />);
+    expect(screen.getByTestId("kid-summary-recall")).toBeTruthy();
+    expect(screen.queryByTestId("kid-summary-spelling")).toBeNull();
+    expect(screen.queryByTestId("kid-summary-neutral")).toBeNull();
+  });
+
+  it("keeps the neutral hint and no tiles when there are no independent successes", () => {
+    renderKid(<SummaryScreen summary={{ ...summary, independentSuccesses: { recall: 0, spelling: 0 } }} profiles={[profile]} onAgain={vi.fn()} onSwitchProfile={vi.fn()} />);
+    expect(screen.getByTestId("kid-summary-neutral")).toBeTruthy();
+    expect(screen.queryByTestId("kid-summary-recall")).toBeNull();
+    expect(screen.queryByTestId("kid-summary-spelling")).toBeNull();
+    expect(document.querySelector(".kid-stat")).toBeNull();
+  });
+
+  it("uses the band header as the first child of the screen", () => {
+    renderKid(<SummaryScreen summary={summary} profiles={[profile]} onAgain={vi.fn()} onSwitchProfile={vi.fn()} />);
+    expect(screen.getByRole("main").firstElementChild?.getAttribute("data-kid-header")).toBe("band");
+  });
+
+  it("renders practice items and lesson objectives as named lists", () => {
+    renderKid(<SummaryScreen
+      summary={{
+        ...summary,
+        practiceItems: [{ itemId: "10000000-0000-4000-8000-000000000101", target: "cat", skills: ["recall", "spelling"] }],
+        objectives: [
+          { objectiveId: "10000000-0000-4000-8000-000000000201", titlePl: "-s w 3. osobie" },
+          { objectiveId: "10000000-0000-4000-8000-000000000202", titlePl: "have got" },
+        ],
+      } as SessionSummaryDto}
+      profiles={[profile]} onAgain={vi.fn()} onSwitchProfile={vi.fn()} />);
+    const practice = screen.getByRole("list", { name: "Jeszcze poćwiczymy" });
+    expect(practice.querySelectorAll("li")).toHaveLength(1);
+    expect(practice.textContent).toContain("cat");
+    expect(practice.textContent).toContain("przypominanie, pisownia");
+    const objectives = screen.getByRole("list", { name: "Ćwiczyłeś reguły" });
+    expect(objectives.querySelectorAll("li")).toHaveLength(2);
+    expect(screen.getAllByTestId("kid-summary-objective")).toHaveLength(2);
+  });
 });
