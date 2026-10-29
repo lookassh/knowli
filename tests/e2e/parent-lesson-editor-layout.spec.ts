@@ -351,5 +351,15 @@ test.describe("telefon z klawiaturą ekranową", () => {
     await expect(page.getByTestId("editor-action-bar")).toBeVisible();
     await expect(page.getByTestId("tab-decks")).toBeInViewport();
     await expect(page.getByTestId("save-lesson")).toBeEnabled();
+
+    // błąd zapisu zostaje widoczny przy pisaniu: pasek pokazuje sam wiersz błędu, bez przycisków
+    await page.getByTestId("exercise-stem-0").fill("He ___ tennis.");
+    await page.getByTestId("exercise-stem-0").blur();
+    await page.getByTestId("save-lesson").click();
+    await expect(page.getByTestId("api-error")).toBeVisible();
+    await page.getByTestId("exercise-stem-0").focus();
+    await expect(page.getByTestId("api-error")).toBeInViewport();
+    await expect(page.getByTestId("save-lesson")).toBeHidden();
+    await expect(page.getByTestId("tab-decks")).not.toBeInViewport();
   });
 });
