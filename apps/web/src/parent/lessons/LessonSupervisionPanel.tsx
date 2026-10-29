@@ -12,11 +12,6 @@ import {
 } from "@learning/contracts";
 import { callParent, errorMessage, parentClient } from "../api";
 
-/** Liczba ocenionych odpowiedzi dyktowanych (licznik poprawionych się nie sumuje). */
-function speechTotal(counts: { correct: number; partial: number; incorrect: number }): number {
-  return counts.correct + counts.partial + counts.incorrect;
-}
-
 /**
  * Panel nadzoru rodzica nad lekcją (zadanie 16): postęp celów dziecka (statusy po
  * polsku, kategorie błędów z przykładami TYLKO tego dziecka, podpowiedź o
@@ -207,7 +202,7 @@ export default function LessonSupervisionPanel({
                       .replace("{partial}", String(objective.school.knowledge.partial))
                       .replace("{incorrect}", String(objective.school.knowledge.incorrect))}
                   </p>
-                  {objective.school.byInputMethod && speechTotal(objective.school.byInputMethod.speech) > 0 && (
+                  {objective.school.byInputMethod && (
                     <div data-testid={`school-input-method-${objective.objectiveId}`}>
                       <p className="muted">
                         {messages.lessons.schoolInputKeyboard
