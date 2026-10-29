@@ -273,7 +273,9 @@ function gradeLessonAnswer(
 
   if (input.modality === "selection") {
     // Słowa kluczowe: wybór pojęć oceniany po identyfikatorach, bez modelu.
-    const correct = evaluateKeywordSelection(input.itemIds, key);
+    // Identyfikatory spoza opcji tego zadania to błąd transportu, nie odpowiedź.
+    const known = input.itemIds.every((id) => key.optionValues?.[id] !== undefined);
+    const correct = known ? evaluateKeywordSelection(input.itemIds, key) : null;
     if (correct === null) {
       return { grade: { outcome: "unevaluated", reason: "technical", verdict: "unavailable" }, feedback: { kind: "not_assessed" }, exposures: [], details: { objectiveId, verdict: "unavailable" } };
     }
@@ -814,6 +816,11 @@ async function startLessonAttempt(
   const key = keyOf(task);
   // Walidacja modalności vs typ ćwiczenia.
   assertModalityMatchesExercise(valid.modality, key.exerciseType);
+  // Poprawka („Skróć odpowiedź”): tylko tekst albo „Dalej”; „Nie pamiętam” przy
+  // własnej odpowiedzi na ekranie ujawniałoby wzorzec bez sensu dydaktycznego.
+  if (key.revisionOf && valid.modality !== "text" && valid.modality !== "skip") {
+    throw new AppError("validation", { message: "attempt modality does not match exercise" });
+  }
 
   // Migawka taskAttempts jest sprzed leniwej finalizacji: próba właśnie
   // domknięta jako techniczna nie jest już "processing" i nie blokuje

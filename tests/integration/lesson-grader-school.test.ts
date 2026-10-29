@@ -467,7 +467,8 @@ describe("trener precyzji: „Skróć odpowiedź” (integracja)", () => {
     const followUp = await nextTask(services, openTask.sessionId);
     expect(followUp).not.toBeNull();
     expect(followUp!.exerciseType).toBe("lesson_open_answer");
-    expect(followUp!.remainingAssessed).toBe(openTask.remainingAssessed - 1);
+    // Poprawka pokazuje licznik oryginału: obietnica „Jeszcze N” nie przesuwa się o zadanie.
+    expect(followUp!.remainingAssessed).toBe(openTask.remainingAssessed);
     expect(followUp!.prompt).toMatchObject({ kind: "lesson_shorten", prompt: "Co to jest fotosynteza?", originalAnswer: verboseAnswer });
     const prompt = followUp!.prompt as { answerSegments: { text: string; state: string }[] };
     expect(prompt.answerSegments.some((segment) => segment.state === "pill")).toBe(true);
@@ -484,7 +485,8 @@ describe("trener precyzji: „Skróć odpowiedź” (integracja)", () => {
 
     // Po poprawce plan sesji toczy się dalej; zadanie następcze nie zjadło budżetu.
     const after = await nextTask(services, openTask.sessionId);
-    if (after) expect(after.remainingAssessed).toBe(openTask.remainingAssessed - 1);
+    expect(after).not.toBeNull();
+    expect(after!.remainingAssessed).toBe(openTask.remainingAssessed - 1);
 
     // Raport rodzica: para oryginał → poprawka osobno; poprawka nie zawyża liczników wiedzy.
     const report = (await lessonObjectiveProgress(services, deckId, child.id)).find((row) => row.objectiveId === OBJECTIVE_ID)!;
@@ -534,8 +536,16 @@ describe("trener precyzji: „Skróć odpowiedź” (integracja)", () => {
     expect(same.feedback).toMatchObject({ kind: "lesson_hint" });
     expect(same.taskState).toBe("issued");
     expect(grader.callCount).toBe(callsBefore);
+    // „Nie pamiętam” przy własnej odpowiedzi na ekranie jest odrzucane (bez ujawnienia wzorca).
+    await expect(submitAttempt(services, { taskId: followUp.taskId, clientAttemptId: randomUUID(), modality: "dont_remember" }))
+      .rejects.toMatchObject({ code: "validation" });
     const skipped = await submitAttempt(services, { taskId: followUp.taskId, clientAttemptId: randomUUID(), modality: "skip" });
     expect(skipped.taskState).toBe("skipped");
+    // „Dalej” bez skracania: sesja wraca do kolejnego zadania planu z niezmienionym budżetem.
+    const next = await nextTask(services, openTask.sessionId);
+    expect(next).not.toBeNull();
+    expect(next!.taskId).not.toBe(followUp.taskId);
+    expect(next!.remainingAssessed).toBe(openTask.remainingAssessed - 1);
   });
 
   it("zwięzła poprawna odpowiedź nie dostaje zadania następczego", async () => {

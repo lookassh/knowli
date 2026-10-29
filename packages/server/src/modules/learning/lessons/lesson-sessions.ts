@@ -289,15 +289,16 @@ export async function loadExercises(tx: Executor, deckVersionId: string): Promis
  * budżet — bez zadań następczych (`context.followUpOf`), które są dodatkiem
  * trenera precyzji poza planem.
  */
-export async function lessonTaskCounts(tx: Tx, sessionId: string): Promise<{ total: number; assessed: number }> {
+export async function lessonTaskCounts(tx: Tx, sessionId: string): Promise<{ total: number; assessed: number; planned: number }> {
   const [row] = await tx
     .select({
       total: sql<number>`count(*)::int`,
+      planned: sql<number>`(count(*) filter (where ${sessionTasks.context}->'followUpOf' is null))::int`,
       assessed: sql<number>`(count(*) filter (where ${sessionTasks.exerciseType} <> 'lesson_card' and ${sessionTasks.context}->'followUpOf' is null))::int`,
     })
     .from(sessionTasks)
     .where(eq(sessionTasks.sessionId, sessionId));
-  return { total: row?.total ?? 0, assessed: row?.assessed ?? 0 };
+  return { total: row?.total ?? 0, assessed: row?.assessed ?? 0, planned: row?.planned ?? 0 };
 }
 
 /** Wynik oceny per zadanie tej sesji (z `assessments` przez `attempts`). */

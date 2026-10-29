@@ -11,6 +11,7 @@ import {
   shouldOfferShorten,
   type SchoolAssessmentDetails,
 } from "../../../domain/lessons/precision-trainer";
+import { readLessonTrainingSessionPlan } from "../../../domain/training-session-plan";
 import { writeSealedEvent } from "../events";
 import { lessonSessionContextOf, lessonTaskCounts } from "./lesson-sessions";
 
@@ -29,6 +30,9 @@ export interface RevisionOf {
 }
 
 type TaskRow = typeof sessionTasks.$inferSelect;
+
+/** Typy oceniane modelem (jak rezerwacja wywołań przy budowie planu). */
+const GRADER_TYPES: ReadonlySet<string> = new Set(["lesson_error_fix", "lesson_transform", "lesson_open_answer"]);
 type SessionRow = typeof learningSessions.$inferSelect;
 
 interface GradeShape {
@@ -51,7 +55,11 @@ export function unchangedRevisionResult(revisionOf: RevisionOf | undefined, text
     grade: { outcome: "unevaluated", reason: "technical", verdict: "no_match" },
     feedback: { kind: "lesson_hint", hintPl: messages.kid.lessonShortenUnchanged },
     exposures: [],
-    details: { objectiveId, verdict: "unchanged_revision" },
+    details: {
+      objectiveId, verdict: "unchanged_revision",
+      // Powiązanie z oryginałem: raporty pomijają poprawki, także te bez oceny.
+      revisionOf: { taskId: revisionOf.taskId, attemptId: revisionOf.attemptId },
+    },
   };
 }
 
@@ -111,7 +119,18 @@ export async function offerShortenFollowUp(
   const key = task.answerKey as { schoolCriteria?: unknown; exerciseType?: string } | null;
   if (!key?.schoolCriteria || task.exerciseType !== "lesson_open_answer" || result.feedback.kind !== "great") return null;
   const counts = await lessonTaskCounts(tx, session.id);
-  const graderCallsLeft = services.grader ? services.grader.maxCallsPerSession - lessonSessionContextOf(session).graderCalls : 0;
+  // Wywołania gradera zarezerwowane przez plan dla jeszcze niewydanych zadań
+  // ocenianych modelem: poprawka nie może ich zabrać (np. należnemu sprawdzeniu).
+  let reservedForPlan = 0;
+  try {
+    const plan = readLessonTrainingSessionPlan(session.trainingPlan);
+    reservedForPlan = plan ? plan.slots.slice(counts.planned).filter((slot) => GRADER_TYPES.has(slot.exerciseType)).length : 0;
+  } catch {
+    reservedForPlan = 0;
+  }
+  const graderCallsLeft = services.grader
+    ? services.grader.maxCallsPerSession - lessonSessionContextOf(session).graderCalls - reservedForPlan
+    : 0;
   const details = result.details as SchoolAssessmentDetails;
   if (!shouldOfferShorten({
     trainingSession: session.mode === "training",

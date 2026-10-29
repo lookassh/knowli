@@ -176,7 +176,10 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
       sessionId, mode: session.mode as "training" | "mock_test" | "daily_round", state: session.state as "active" | "completed" | "ended",
       startedAt: session.startedAt.toISOString(), endedAt: session.endedAt?.toISOString() ?? null,
       deckTitle: session.deckTitle, deckVersionNumber: session.deckVersionNumber,
-      remainingSteps: Math.max(0, session.taskBudget - tasks.filter(task => task.sessionId === sessionId && (session.mode === "daily_round" || (task.exerciseType !== "exposure" && task.exerciseType !== "lesson_card"))).length),
+      // Zadania następcze lekcji („Skróć odpowiedź”) są poza budżetem sesji.
+      remainingSteps: Math.max(0, session.taskBudget - tasks.filter(task => task.sessionId === sessionId &&
+        (task.context as { followUpOf?: unknown } | null)?.followUpOf === undefined &&
+        (session.mode === "daily_round" || (task.exerciseType !== "exposure" && task.exerciseType !== "lesson_card"))).length),
       activity: reviewOf(session),
       steps,
     };

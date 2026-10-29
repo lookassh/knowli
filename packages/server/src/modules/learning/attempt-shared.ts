@@ -28,8 +28,11 @@ export function requestHashOf(input: AttemptInput): string {
       ? { optionId: input.optionId }
       : input.modality === "text"
         ? { text: input.text }
-        : input.modality === "sequence" || input.modality === "selection"
+        : input.modality === "sequence"
           ? { itemIds: input.itemIds }
+          : input.modality === "selection"
+            // Zbiór bez kolejności: ten sam wybór w innej kolejności to ta sama treść.
+            ? { itemIds: [...input.itemIds].sort((a, b) => a.localeCompare(b)) }
           : {};
   return createHash("sha256")
     .update(JSON.stringify({ taskId: input.taskId, modality: input.modality, ...payload }))

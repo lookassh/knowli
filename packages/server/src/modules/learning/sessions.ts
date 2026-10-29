@@ -1070,9 +1070,10 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
     if (isLesson) {
       if (issuedTask) {
         const counts = await lessonTaskCounts(tx, id);
-        // Zadanie następcze („Skróć odpowiedź”) nie należy do budżetu sesji.
-        const followUp = (issuedTask.context as { followUpOf?: unknown } | null)?.followUpOf !== undefined;
-        const assessedBefore = counts.assessed - (issuedTask.exerciseType !== "lesson_card" && !followUp ? 1 : 0);
+        // Zadanie następcze („Skróć odpowiedź”) nie należy do budżetu, ale pokazuje
+        // licznik oryginału (`remainingAssessed` z bieżącym zadaniem): obietnica
+        // „Jeszcze N” nie zaczyna się na poprawce przed ostatnimi zadaniami planu.
+        const assessedBefore = counts.assessed - (issuedTask.exerciseType !== "lesson_card" ? 1 : 0);
         const subjectId = (session.lessonContext as { subjectId?: string } | null)?.subjectId;
         const audioAllowed = subjectId ? services.subjects.getSubject(subjectId)?.ttsForAnswers === true : false;
         return issuedTaskDto(session, issuedTask, assessedBefore, audioAllowed);
