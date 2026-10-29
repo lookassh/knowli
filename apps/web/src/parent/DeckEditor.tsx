@@ -114,7 +114,7 @@ export default function DeckEditor({
   // błędy przy sekcji, której dotyczą (szkic 5b): okładka, liczba pytań, media karty, przypisanie dziecka
   const [coverError, setCoverError] = useState<string | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
-  const [mediaError, setMediaError] = useState<{ index: number; message: string } | null>(null);
+  const [mediaError, setMediaError] = useState<{ key: string; message: string } | null>(null);
   const [assignErrors, setAssignErrors] = useState<Record<string, string>>({});
   const setAssignError = (childId: string, message: string | null) =>
     setAssignErrors((current) => {
@@ -122,7 +122,7 @@ export default function DeckEditor({
       if (message) next[childId] = message; else delete next[childId];
       return next;
     });
-  const compact = useMediaQuery("(max-width: 37.49em)") ?? false;
+  const compact = useMediaQuery("(max-width: 37.49em)", false, { getInitialValueInEffect: false });
   const [coverBusy, setCoverBusy] = useState(false);
   // Budżet sesji nauki (decks.session_task_budget): null = bez lokalnej zmiany,
   // wartość z DTO obowiązuje. Zapis osobnym PATCH, poza szkicem wersji.
@@ -514,6 +514,8 @@ export default function DeckEditor({
       baseSnapshot.current = createEditorSnapshot(saved, newKey);
       baseRevisionIds.current = new Map(saved.items.flatMap((item) => item.id ? [[item.id, item.revisionId] as const] : []));
       setForm(baseSnapshot.current.form);
+      // nowe klucze kart po zapisie: błąd mediów sprzed zapisu nie wisi pod inną kartą
+      setMediaError(null);
       dirty.current = false;
       onEditorStateChange({ dirty: false, busy: true });
       setIsDirty(false);
@@ -603,7 +605,7 @@ export default function DeckEditor({
     }
   };
 
-  const regenerate = async (itemRevisionId: string, role: "target_audio" | "illustration", index: number) => {
+  const regenerate = async (itemRevisionId: string, role: "target_audio" | "illustration", itemKey: string) => {
     if (!draft) {
       return;
     }
@@ -616,11 +618,11 @@ export default function DeckEditor({
       }));
       await load();
     } catch (cause) {
-      setMediaError({ index, message: errorMessage(cause) });
+      setMediaError({ key: itemKey, message: errorMessage(cause) });
     }
   };
 
-  const omitIllustration = async (itemRevisionId: string, index: number) => {
+  const omitIllustration = async (itemRevisionId: string, itemKey: string) => {
     if (!draft || draft.vocabularyFormat === "picture") {
       return;
     }
@@ -629,7 +631,7 @@ export default function DeckEditor({
       await run(() => parentClient.drafts.omitAsset({ draftId: draft.id, itemRevisionId }));
       await load();
     } catch (cause) {
-      setMediaError({ index, message: errorMessage(cause) });
+      setMediaError({ key: itemKey, message: errorMessage(cause) });
     }
   };
 
@@ -654,7 +656,6 @@ export default function DeckEditor({
   };
 
   const unassign = async (childId: string) => {
-    if (!window.confirm(messages.decks.unassignConfirm)) return;
     setAssignError(childId, null);
     setUnassigningChildId(childId);
     try {
@@ -670,8 +671,15 @@ export default function DeckEditor({
   const assetOf = (revisionId: string, role: string) =>
     active?.assets.find((asset) => asset.itemRevisionId === revisionId && asset.role === role) ?? null;
 
+  // okna potwierdzeń żyją nad edytorem (ModalsProvider): wyjście z edytora
+  // (np. „wstecz”) zamyka je, żeby nie zarchiwizować opuszczonego zestawu
+  const confirmIds = useRef<string[]>([]);
+  useEffect(() => () => {
+    for (const id of confirmIds.current) modals.close(id);
+  }, []);
+
   const confirmArchive = () => {
-    modals.openConfirmModal({
+    confirmIds.current.push(modals.openConfirmModal({
       title: messages.decks.archiveConfirmTitle,
       centered: true,
       radius: "lg",
@@ -680,11 +688,11 @@ export default function DeckEditor({
       confirmProps: { color: "red", size: "md", "data-testid": "archive-confirm" } as Record<string, unknown>,
       cancelProps: { size: "md", variant: "default", "data-autofocus": true } as Record<string, unknown>,
       onConfirm: () => { void archive(); },
-    });
+    }));
   };
 
   const confirmUnassign = (childId: string) => {
-    modals.openConfirmModal({
+    confirmIds.current.push(modals.openConfirmModal({
       title: messages.decks.unassignTitle,
       centered: true,
       radius: "lg",
@@ -693,7 +701,7 @@ export default function DeckEditor({
       confirmProps: { color: "red", size: "md", "data-testid": "unassign-confirm" } as Record<string, unknown>,
       cancelProps: { size: "md", variant: "default", "data-autofocus": true } as Record<string, unknown>,
       onConfirm: () => { void unassign(childId); },
-    });
+    }));
   };
 
   const publishBlocked = editable && (isDirty || (draft?.items.length ?? 0) === 0);
@@ -794,7 +802,7 @@ export default function DeckEditor({
             </Stack>
           </Alert>
         )}
-        {error && !showActionBar && <Alert color="red" variant="light">{errorAlert}</Alert>}
+        {error && !showActionBar && errorAlert}
 
         {conflict && (
           <DeckConflictPanel
@@ -869,19 +877,19 @@ export default function DeckEditor({
                       {editable && isDirty && (targetAudio || illustration) && <Menu.Label>{messages.decks.saveBeforePublish}</Menu.Label>}
                       {editable && targetAudio && (
                         <Menu.Item leftSection={<ParentIcon name="refresh" />} data-testid={`item-regen-audio-${index}`}
-                          disabled={busy || isDirty} onClick={() => regenerate(revisionId, "target_audio", index)}>
+                          disabled={busy || isDirty} onClick={() => regenerate(revisionId, "target_audio", item.clientKey)}>
                           {messages.decks.regenerateAudio}
                         </Menu.Item>
                       )}
                       {editable && illustration && (
                         <Menu.Item leftSection={<ParentIcon name="refresh" />} data-testid={`item-regen-image-${index}`}
-                          disabled={busy || isDirty} onClick={() => regenerate(revisionId, "illustration", index)}>
+                          disabled={busy || isDirty} onClick={() => regenerate(revisionId, "illustration", item.clientKey)}>
                           {messages.decks.regenerateImage}
                         </Menu.Item>
                       )}
                       {canOmit && (
                         <Menu.Item leftSection={<ParentIcon name="image-off" />} data-testid={`item-omit-image-${index}`}
-                          disabled={busy || isDirty} onClick={() => omitIllustration(revisionId, index)}>
+                          disabled={busy || isDirty} onClick={() => omitIllustration(revisionId, item.clientKey)}>
                           {messages.decks.omitImage}
                         </Menu.Item>
                       )}
@@ -943,7 +951,7 @@ export default function DeckEditor({
                   )}
                 </div>
               </div>
-              {mediaError?.index === index && (
+              {mediaError?.key === item.clientKey && (
                 <Alert color="red" variant="light" role="alert" mt="sm" data-testid={`item-error-${index}`}>{mediaError.message}</Alert>
               )}
             </Paper>
@@ -1050,13 +1058,14 @@ export default function DeckEditor({
         <div className="pp-editor-bar" data-testid="editor-action-bar">
           <div className="pp-editor-bar-in">
             <div className="pp-editor-bar-status">
-              {error ? errorAlert : publishBlocked ? (
+              {error && errorAlert}
+              {publishBlocked && (
                 <Text size="sm" className="pp-editor-bar-note" data-testid="publish-blocked-reason">
                   {isDirty && itemCount > 0
                     ? `${messages.decks.unsavedChanges} · ${messages.decks.saveBeforePublish}`
                     : messages.decks.emptyPublish}
                 </Text>
-              ) : null}
+              )}
             </div>
             {editable ? (
               <div className="pp-editor-bar-actions">

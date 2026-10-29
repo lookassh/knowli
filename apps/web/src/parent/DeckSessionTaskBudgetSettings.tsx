@@ -79,6 +79,7 @@ export default function DeckSessionTaskBudgetSettings({
         max={100}
         clampBehavior="none"
         allowDecimal={false}
+        allowNegative={false}
         maw={220}
         value={value}
         disabled={archived || busy}

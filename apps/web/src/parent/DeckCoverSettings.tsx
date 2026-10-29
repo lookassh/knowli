@@ -25,7 +25,7 @@ export function DeckCoverSettings({ coverAssetId, busy, generating, generatedPre
         <Text fw={600}>{messages.decks.coverLabel}</Text>
         <Text size="sm" className="pp-editor-muted">{messages.decks.coverHelp}</Text>
       </div>
-      <Group align="flex-start" gap="md" wrap="nowrap">
+      <Group align="flex-start" gap="md">
         {coverAssetId
           ? <img className="pp-editor-cover" src={`/api/v1/media/${coverAssetId}`} alt={messages.decks.coverLabel} data-testid="deck-cover-preview" />
           : <Text size="sm" className="pp-editor-muted" data-testid="deck-cover-empty">{messages.decks.coverEmpty}</Text>}

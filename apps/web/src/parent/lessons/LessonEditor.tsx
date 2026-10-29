@@ -514,6 +514,7 @@ export default function LessonEditor({
       )}
 
       {deck && (
+        <section className="card">
         <DeckSessionTaskBudgetSettings
           deckId={deckId}
           value={sessionBudgetEdit ?? deck.sessionTaskBudget}
@@ -532,6 +533,7 @@ export default function LessonEditor({
           }}
           onError={setError}
         />
+        </section>
       )}
 
       {/* Karty wyjaśnienia: tekst reguły z katalogu (read-only); przykłady AI

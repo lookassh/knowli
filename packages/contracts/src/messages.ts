@@ -80,6 +80,7 @@ export const messages = {
     removeTitle: "Usunąć profil {name}?",
     removing: "Usuwanie…",
     addedRefreshFailed: "Dodano dziecko, ale nie udało się odświeżyć listy. Odśwież stronę.",
+    addFailedTitle: "Nie udało się dodać dziecka: {name}",
     removedRefreshFailed: "Profil usunięto, ale nie udało się odświeżyć listy. Odśwież stronę.",
     birthYearInvalid: "Wpisz rok od 1900 do 2200.",
     nameRequired: "Wpisz imię.",

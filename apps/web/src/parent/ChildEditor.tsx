@@ -18,6 +18,7 @@ import {
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { modals } from "@mantine/modals";
+import { notifications } from "@mantine/notifications";
 import { useMutation } from "@tanstack/react-query";
 import { messages, type ChildDto, type ChildPatch } from "@learning/contracts";
 import { childPatch, type EditValues } from "./children-forms";
@@ -188,12 +189,25 @@ function AddChildForm({
     },
   });
   const [refreshFailed, setRefreshFailed] = useState(false);
+  const mounted = useRef(true);
+  useEffect(() => () => { mounted.current = false; }, []);
   const create = useMutation({
     mutationFn: (values: AddValues) => callParent(() => parentClient.children.create({
       displayName: values.displayName,
       avatarKey: values.avatarKey,
       ...(values.birthYear === "" ? {} : { birthYear: Number(values.birthYear) }),
     })),
+    // wysłane dodanie nie blokuje wyjścia z sekcji: gdy rodzic już wyszedł,
+    // błąd trafia do powiadomienia (formularz z komunikatem zniknął)
+    onError: (cause, values) => {
+      if (!mounted.current) {
+        notifications.show({
+          color: "red",
+          title: messages.children.addFailedTitle.replace("{name}", values.displayName),
+          message: errorMessage(cause),
+        });
+      }
+    },
     // dziecko jest już zapisane: nieudane odświeżenie listy to osobny komunikat,
     // a nie błąd dodania (rodzic nie powinien dodawać go drugi raz)
     onSuccess: async () => {

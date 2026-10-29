@@ -43,17 +43,32 @@ const deck = {
   assignments: [{ childId, displayName: "Ala", testDate: "2026-11-12", testGoals: ["recall"], mockTestTaskCount: 10, active: true }],
 };
 
-async function openEditor(page: Page): Promise<void> {
+interface Calls { requests: Array<{ method: string; path: string }> }
+
+async function openEditor(page: Page): Promise<Calls> {
+  const calls: Calls = { requests: [] };
+  let current = structuredClone(deck);
   await page.route("**/api/v1/parent/**", (route) => {
+    const method = route.request().method();
     const path = new URL(route.request().url()).pathname;
+    calls.requests.push({ method, path });
+    if (method === "DELETE" && path.endsWith(`/assignments/${childId}/${deckId}`)) {
+      current = { ...current, assignments: [] };
+      return route.fulfill({ status: 204, body: "" });
+    }
+    if (method === "POST" && path.endsWith(`/decks/${deckId}/archive`)) {
+      current = { ...current, state: "archived" };
+      return route.fulfill({ status: 204, body: "" });
+    }
     if (path.endsWith("/login")) return route.fulfill({ json: { authenticated: true, setupRequired: false } });
     if (path.endsWith("/children")) return route.fulfill({ json: [{ id: childId, displayName: "Ala", avatarKey: "fox", recordingMode: "hold", canRead: true }] });
     if (path.endsWith("/decks")) return route.fulfill({ json: [{ deckId, title: deck.title, state: "published", kind: "vocabulary", editableVersionId: draftId, publishedVersionId: draftId }] });
-    if (path.endsWith(`/decks/${deckId}`)) return route.fulfill({ json: deck });
+    if (path.endsWith(`/decks/${deckId}`)) return route.fulfill({ json: current });
     return route.fulfill({ json: [] });
   });
   await page.goto(`/parent/decks/${deckId}`);
   await expect(page.getByTestId("item-card-0")).toBeVisible();
+  return calls;
 }
 
 async function expectNoHorizontalOverflow(page: Page): Promise<void> {
@@ -112,18 +127,37 @@ test("zmiana pola pokazuje niezapisane zmiany w pasku i blokuje publikację", as
   await expect(page.getByTestId("deck-session-task-budget")).toBeVisible();
 });
 
-test("przypisanie pokazuje termin w karcie dziecka, usunięcie wymaga potwierdzenia", async ({ page }) => {
+test("przypisanie pokazuje termin w karcie dziecka, usunięcie wymaga potwierdzenia w oknie", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
-  await openEditor(page);
+  const calls = await openEditor(page);
+  // systemowe okno przeglądarki nie może się pojawić (zastąpione oknem panelu)
+  page.on("dialog", (dialog) => { throw new Error(`niespodziewane okno przeglądarki: ${dialog.message()}`); });
+  const deletes = () => calls.requests.filter((request) => request.method === "DELETE");
   const row = page.getByTestId("assign-row-0");
   await expect(row.getByTestId("assignment-row-0")).toContainText("12.11.2026");
-  let deletes = 0;
-  page.on("request", (request) => { if (request.method() === "DELETE") deletes += 1; });
+
   await row.getByTestId("unassign-submit-0").click();
   await expect(page.getByTestId("unassign-confirm")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("unassign-confirm")).toHaveCount(0);
-  expect(deletes).toBe(0);
+  expect(deletes()).toHaveLength(0);
+
+  await row.getByTestId("unassign-submit-0").click();
+  await page.getByTestId("unassign-confirm").click();
+  await expect(row.getByTestId("assignment-row-0")).toHaveCount(0);
+  expect(deletes()).toHaveLength(1);
+});
+
+test("archiwizacja z menu ⋯ zestawu wymaga potwierdzenia", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const calls = await openEditor(page);
+  const archives = () => calls.requests.filter((request) => request.method === "POST" && request.path.endsWith("/archive"));
+  await page.getByTestId("deck-menu").click();
+  await page.getByTestId("archive-deck").click();
+  await expect(page.getByTestId("archive-confirm")).toBeVisible();
+  expect(archives()).toHaveLength(0);
+  await page.getByTestId("archive-confirm").click();
+  await expect.poll(() => archives().length).toBe(1);
 });
 
 test("tryb ciemny obejmuje edytor", async ({ page }) => {

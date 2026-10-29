@@ -30,13 +30,15 @@ export default function AssignmentTestGoalFields({
       min={1}
       max={100}
       clampBehavior="none"
+      allowNegative={false}
       maw={260}
       value={mockTestTaskCount}
       onChange={(value) => onChange({ testGoals, mockTestTaskCount: Number(value) })}
     />
   );
   return (
-    <Stack gap="xs">
+    // w wierszu przypisania edytora lekcji (flex) pola kartkówki zajmują całą szerokość
+    <Stack gap="xs" style={{ flexBasis: "100%" }}>
       <Checkbox
         size="md"
         label={messages.decks.mockTestEnabled}

@@ -19,6 +19,7 @@ import {
   VisuallyHidden,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
+import { useComputedColorScheme } from "@mantine/core";
 import {
   messages,
   type ChildDto,
@@ -90,9 +91,18 @@ const STATE_TONE: Record<DeckSummaryDto["state"], string> = {
  */
 /**
  * Widoki lekcji jeszcze na starych stylach (fazy 6a/6b): stały jasny obszar
- * z tokenami `pp-*` także w trybie ciemnym.
+ * z tokenami `pp-*`. Komponenty Mantine w środku (wspólne pola przypisań
+ * i liczby pytań) czytają schemat z `<html>`, więc na czas widoku lekcji
+ * cała strona przechodzi na jasny schemat; wybór rodzica wraca po wyjściu
+ * (zapamiętane ustawienie się nie zmienia).
  */
 function LegacyArea({ children }: { children: ReactNode }) {
+  const scheme = useComputedColorScheme("light");
+  useEffect(() => {
+    const root = document.documentElement;
+    root.setAttribute("data-mantine-color-scheme", "light");
+    return () => root.setAttribute("data-mantine-color-scheme", scheme);
+  }, [scheme]);
   return <div className="pp-app pp-legacy-area">{children}</div>;
 }
 

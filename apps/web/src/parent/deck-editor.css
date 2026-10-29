@@ -9,8 +9,9 @@
   --pp-editor-muted: #a8abb9;
 }
 
+/* wartość zapasowa: wspólne pola przypisań są też w edytorze lekcji (poza .pp-editor) */
 .pp-editor-muted {
-  color: var(--pp-editor-muted);
+  color: var(--pp-editor-muted, #565a70);
 }
 
 .pp-editor-back {
@@ -259,8 +260,14 @@
     gap: 12px;
   }
 
+  /* nagłówek kolumn jest wizualny; podpis wersji przy wartości zostaje dla czytników */
   .pp-editor-compare-row small {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
 }
 
