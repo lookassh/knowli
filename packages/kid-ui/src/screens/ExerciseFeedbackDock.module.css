@@ -198,6 +198,12 @@
   color: inherit;
 }
 
+/* Fokus nagłówka mowy w kolorze treści panelu: akcent (primary) może mieć
+   kontrast <3:1 na tłach error/warm. */
+.dock .content :global(.kid-speech-feedback__heard:focus) {
+  outline-color: currentColor;
+}
+
 .dock .content :global(.kid-spelling-row-label) {
   opacity: 1;
 }

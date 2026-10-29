@@ -108,21 +108,30 @@
   z-index: 2;
 }
 
-/* Low viewport: one row, the pill beside the pebbles. */
+/* Low viewport (also a portrait phone with the keyboard open): the 48px header
+   has no top padding, so pebbles (8) + gap (2) + pill (20) are centred on the
+   header row as one block; the pill stays under the pebbles in the narrow
+   centre column, where 20 pebbles and the pill side by side would not fit. */
 :global(.kid-page[data-viewport-very-short="true"]) .root {
   height: 100%;
   padding-top: 0;
-  flex-direction: row;
   justify-content: center;
-  gap: 8px;
 }
 
-:global(.kid-page[data-viewport-very-short="true"]) .pebbles,
-:global(.kid-page[data-viewport-very-short="true"]) .bar {
-  flex: 1 1 auto;
-  width: auto;
-}
+/* Low and wide (landscape phone): one row, the pill beside the pebbles. */
+@media (min-width: 600px) {
+  :global(.kid-page[data-viewport-very-short="true"]) .root {
+    flex-direction: row;
+    gap: 8px;
+  }
 
-:global(.kid-page[data-viewport-very-short="true"]) .label {
-  flex: none;
+  :global(.kid-page[data-viewport-very-short="true"]) .pebbles,
+  :global(.kid-page[data-viewport-very-short="true"]) .bar {
+    flex: 1 1 auto;
+    width: auto;
+  }
+
+  :global(.kid-page[data-viewport-very-short="true"]) .label {
+    flex: none;
+  }
 }

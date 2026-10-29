@@ -272,6 +272,13 @@
   font-weight: 700;
 }
 
+/* In an exposure the target word is the stimulus; the Polish translation under
+   it stays one step smaller than the stimulus scale of .kid-source, so the
+   hierarchy holds and the whole card fits a 360x540 phone without scrolling. */
+.kid-ui .kid-exposure-content .kid-source {
+  font-size: clamp(var(--kid-type-headline-sm-size), 6vw, var(--kid-type-display-sm-size));
+}
+
 @media (max-height: 420px) {
   .kid-learning > .kid-task {
     min-height: max-content;
@@ -727,9 +734,11 @@
   margin-bottom: auto;
 }
 
+/* Stimulus: at least display-sm (28px) on phones, so the word always reads
+   larger than the answer cards (title-md) and the typed answer (headline-sm). */
 .kid-ui .kid-word {
   font-family: var(--kid-font-display);
-  font-size: clamp(var(--kid-type-headline-sm-size), 7vw, var(--kid-type-display-lg-size));
+  font-size: clamp(var(--kid-type-display-sm-size), 10vw, var(--kid-type-display-lg-size));
   font-weight: 700;
   color: var(--md-sys-color-on-surface);
   margin: 0;
@@ -739,7 +748,7 @@
 
 .kid-source {
   font-family: var(--kid-font-display);
-  font-size: clamp(var(--kid-type-headline-sm-size), 6vw, var(--kid-type-display-sm-size));
+  font-size: clamp(var(--kid-type-display-sm-size), 9vw, var(--kid-type-display-size));
   font-weight: 700;
   color: var(--md-sys-color-on-surface);
   margin: 0;
@@ -776,7 +785,8 @@
 /* Okrągły odsłuch zamiast pastylki w rzędzie akcji (SPEC §12.1): widoczny
    przycisk dla zablokowanego autoodtwarzania, ale nie konkuruje z „Rozumiem”.
    .kid-action podnosi specyficzność ponad warianty ActionButton (.action:where),
-   więc tonal wygrywa niezależnie od kolejności arkuszy (np. filled w PictureRecallView). */
+   więc tonal wygrywa niezależnie od kolejności arkuszy (np. domyślny filled
+   ActionButton odsłuchu w ExposureView). */
 .kid-ui .kid-action.kid-audio-round {
   width: 64px;
   height: 64px;

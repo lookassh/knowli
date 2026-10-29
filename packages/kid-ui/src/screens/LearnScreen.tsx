@@ -94,6 +94,10 @@ export function LearnScreen({
   const guidanceButton = instructionAudioKey
     ? <GuidanceButton audioKey={instructionAudioKey} onPlay={(key) => controller.playGuidance(key)} testId="kid-guidance-play" showError={false} />
     : null;
+  // W wierszu instrukcji obok odsłuchu słowa: obrysowany „?”, nie drugi głośnik.
+  const instructionGuidanceButton = instructionAudioKey
+    ? <GuidanceButton audioKey={instructionAudioKey} onPlay={(key) => controller.playGuidance(key)} testId="kid-guidance-play" showError={false} placement="instruction" />
+    : null;
   // Komunikaty błędu z akcjami (audio zadania / instrukcji) rozpychają pasek
   // statusu i włączają przewijanie ramy ćwiczenia — styluje to styles.css.
   const actionNotice = screen.taskAudioError != null || (screen.guidanceError && instructionAudioKey) ? "true" : "false";
@@ -288,7 +292,7 @@ export function LearnScreen({
         task !== null && (
           <div className="kid-task">
             <TaskTransition taskId={task.taskId} onPaneMount={handlePaneMount}>
-            <ExerciseGuidanceProvider value={guidanceInDock ? null : guidanceButton}>
+            <ExerciseGuidanceProvider value={guidanceInDock ? null : instructionGuidanceButton}>
             {screen.reveal !== null ? (
               <ExerciseFrame task={task} content={(
                 <section className="kid-card kid-reveal" data-testid="kid-reveal">

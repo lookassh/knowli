@@ -4,17 +4,24 @@ import classes from "./answer-controls.module.css";
 export interface AnswerFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "size"> {
   /** Extra class on the input element itself; className styles the wrapper. */
   inputClassName?: string;
+  /**
+   * `word` (default): one centred word in headline type. `sentence`: a whole
+   * sentence or a result with its unit, in title-lg type from the line start,
+   * so a typical answer fits a phone field without hiding its beginning.
+   */
+  variant?: "word" | "sentence";
   ref?: Ref<HTMLInputElement>;
 }
 
-export function AnswerField({ ref, className, inputClassName, type = "text", ...props }: AnswerFieldProps): ReactElement {
+export function AnswerField({ ref, className, inputClassName, variant = "word", type = "text", ...props }: AnswerFieldProps): ReactElement {
   return (
     <div className={[classes.field, className].filter(Boolean).join(" ")}>
       <input
         {...props}
         ref={ref}
         type={type}
-        className={[classes.input, inputClassName].filter(Boolean).join(" ")}
+        data-variant={variant}
+        className={[classes.input, variant === "sentence" ? classes.sentence : null, inputClassName].filter(Boolean).join(" ")}
       />
     </div>
   );

@@ -113,6 +113,11 @@
   border-radius: var(--kid-shape-l);
 }
 
+:global(.kid-ui) .input.sentence {
+  font-size: var(--kid-type-title-lg-size);
+  text-align: start;
+}
+
 :global(.kid-ui) .input::placeholder {
   color: var(--md-sys-color-on-surface-variant);
   opacity: 1;
@@ -200,7 +205,8 @@
 /* Four short text options: 2×2 on compact widths. Medium and expanded keep
    the single choiceList column. The outcome badge sits in a reserved top band
    of the card (so it never covers the label and the card height does not change
-   when an outcome appears); labels never break mid-word. */
+   when an outcome appears); an equal bottom band keeps the label in the vertical
+   centre of the card (≈76px). Labels never break mid-word. */
 @media (max-width: 599px) {
   .choiceList.shortChoiceGrid {
     display: grid;
@@ -209,7 +215,7 @@
   }
 
   :global(.kid-ui) .choiceList.shortChoiceGrid .option {
-    padding: 26px 8px 6px;
+    padding: 26px 8px;
   }
 
   .choiceList.shortChoiceGrid .label {

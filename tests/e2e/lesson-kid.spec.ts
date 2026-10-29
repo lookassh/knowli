@@ -517,3 +517,29 @@ test("child can declare not-remembered in a lesson gap: difficulty then reveal t
   await expect(page.getByTestId("kid-summary")).toBeVisible();
   expect(attemptBodies.some((body) => /"modality"\s*:\s*"dont_remember"/.test(body))).toBe(true);
 });
+
+test("a sentence answer stays fully visible in the lesson field on a phone", async ({ context }) => {
+  const errorFix: TaskDto = {
+    ...base(t(50), "lesson_error_fix"),
+    prompt: { kind: "lesson_error_fix", instructionPl: "Popraw błąd w zdaniu", statement: "He play football every day." },
+  };
+  const calculation: TaskDto = {
+    ...base(t(51), "lesson_calculation"),
+    prompt: { kind: "lesson_calculation", instructionPl: "Oblicz i wpisz wynik", prompt: "Ile to 12 345 + 1 000?" },
+  };
+  for (const task of [errorFix, calculation]) {
+    const page = await context.newPage();
+    await page.setViewportSize({ width: 360, height: 800 });
+    await installKidUiFixture(page, { profiles: [profile()], decks: [lessonDeck()], session: session(), tasks: [task, null], attempts: [], summary });
+    await page.goto("/");
+    await page.getByTestId("kid-profile").click();
+    await page.getByTestId("kid-deck").click();
+    const input = page.getByTestId("kid-lesson-input");
+    await input.fill("He plays football every day.");
+    const fit = await input.evaluate((element: HTMLInputElement) => ({
+      scrollWidth: element.scrollWidth, clientWidth: element.clientWidth, align: getComputedStyle(element).textAlign,
+    }));
+    expect(fit.scrollWidth, `${task.prompt.kind}: 28-char answer scrolls inside the field`).toBeLessThanOrEqual(fit.clientWidth);
+    expect(fit.align, `${task.prompt.kind}: sentence field starts at the line start`).toBe("start");
+  }
+});
