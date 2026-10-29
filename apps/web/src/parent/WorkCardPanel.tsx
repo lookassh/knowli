@@ -165,9 +165,13 @@ export default function WorkCardPanel({ childrenList }: { childrenList: ChildDto
   const fresh = query.isFetchedAfterMount && !query.isFetching;
   useEffect(() => {
     if (date || !report || !fresh) return;
-    const raw = queryClient.getQueryData(options.queryKey);
+    const undated = queryClient.getQueryState(options.queryKey);
     const datedKey = orpc.workCard.get.queryKey({ input: { childId, date: report.date } });
-    if (raw && queryClient.getQueryData(datedKey) === undefined) queryClient.setQueryData(datedKey, raw);
+    const dated = queryClient.getQueryState(datedKey);
+    // wpis z datą zostaje tylko wtedy, gdy jest nowszy od właśnie pobranej odpowiedzi
+    if (undated?.data && (dated?.data === undefined || dated.dataUpdatedAt < undated.dataUpdatedAt)) {
+      queryClient.setQueryData(datedKey, undated.data, { updatedAt: undated.dataUpdatedAt });
+    }
     queryClient.removeQueries({ queryKey: options.queryKey, exact: true });
     setDate(report.date);
   }, [date, report, fresh, queryClient, options.queryKey, childId]);

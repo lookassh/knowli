@@ -14,6 +14,9 @@ test("karta pracy odświeża raport po zmianie dziecka i daty", async ({ page })
   const requested: Array<{ childId: string | null; date: string | null }> = [];
   let releaseFirstReport!: () => void;
   const firstReportGate = new Promise<void>((resolve) => { releaseFirstReport = resolve; });
+  // po wyczyszczeniu daty: odpowiedź „dziś” ma nowsze dane, a pytania z datą wiszą,
+  // więc nowsze dane może pokazać tylko przeniesiona odpowiedź bez daty
+  let afterClear = false;
   await page.route("**/api/v1/parent/**", async (route) => {
     const url = new URL(route.request().url());
     let body: unknown;
@@ -28,7 +31,9 @@ test("karta pracy odświeża raport po zmianie dziecka i daty", async ({ page })
       const date = url.searchParams.get("date");
       requested.push({ childId, date });
       await firstReportGate;
-      body = workCardBody(childId!, date ?? "2026-10-16", { creditedSeconds: childId === firstChild ? 90 : 180 });
+      if (afterClear && date) await new Promise(() => undefined);
+      const seconds = afterClear ? 240 : childId === firstChild ? 90 : 180;
+      body = workCardBody(childId!, date ?? "2026-10-16", { creditedSeconds: seconds });
     } else throw new Error(`Nieoczekiwane API: ${url.pathname}`);
     await route.fulfill({ json: body });
   });
@@ -59,9 +64,12 @@ test("karta pracy odświeża raport po zmianie dziecka i daty", async ({ page })
 
   // wyczyszczenie pola znaczy „dziś”: zawsze nowe pytanie do API, nie stary wpis z pamięci
   const before = requested.length;
+  afterClear = true;
   await page.getByLabel("Dzień").fill("");
   await expect.poll(() => requested.slice(before)).toContainEqual({ childId: secondChild, date: null });
   await expect(page.getByLabel("Dzień")).toHaveValue("2026-10-16");
+  // świeższa odpowiedź „dziś” zastępuje starszy wpis tego dnia (180 s)
+  await expect(page.getByTestId("work-card-credited")).toHaveText("4 min 0 s");
 });
 
 test("karta pracy pokazuje wynik oceny sesji, wykluczenia i sesje bez oceny", async ({ page }) => {
