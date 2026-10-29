@@ -402,6 +402,8 @@ export const messages = {
     mockTestHintFocus: "Dobrze! Trzymaj się samego pytania.",
     mockTestHintMissing: "Zabrakło ważnej informacji. Porównaj z poprawną odpowiedzią.",
     mockTestReviewObjectives: "Warto powtórzyć",
+    mockTestStatusCorrect: "Poprawnie",
+    mockTestStatusIncorrect: "Do poprawy",
     mockTestNotTested: "Nie sprawdzono",
     mockTestSkipped: "Pominięte",
     mockTestScore: "{correct}/{total} · {percent}%",

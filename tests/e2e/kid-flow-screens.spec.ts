@@ -287,3 +287,196 @@ test("mock-test summary retains word outcomes and reachable follow-up actions", 
   await expectThemeToken(page, page.getByTestId("kid-mock-score"), "good-bg");
   await expectThemeToken(page, page.getByTestId("kid-mock-solution"), "good-bg");
 });
+
+function mockTaskId(index: number): string {
+  return `10000000-0000-4000-8000-${String(index + 200).padStart(12, "0")}`;
+}
+
+test("mock-test summary rows, band and actions fit portrait, landscape, tablet and desktop", async ({ page }, testInfo) => {
+  const mockSummary: MockTestSummaryDto = {
+    sessionId, deckId, state: "ended", complete: false, taskBudget: 5, answeredCount: 4,
+    solutions: [
+      { taskId: mockTaskId(1), source: "kot", target: "cat", audioAssetId: assetId, results: [{ skill: "recall", outcome: "correct" }] },
+      { taskId: mockTaskId(2), source: "pies", target: "dog", audioAssetId: assetId, results: [{ skill: "recall", outcome: "correct" }, { skill: "spelling", outcome: "incorrect" }] },
+      { taskId: mockTaskId(3), source: "ptak", target: "bird", audioAssetId: null, results: [{ skill: "spelling", outcome: "incorrect" }] },
+      { taskId: mockTaskId(4), source: "ryba", target: "fish", audioAssetId: assetId, results: [{ skill: "recall", outcome: "skipped" }] },
+      { taskId: mockTaskId(5), source: "koń", target: "horse", audioAssetId: null, results: [{ skill: "recall", outcome: "not_tested" }] },
+    ],
+  };
+  await setup(page, { decks: [deck({ mockTestAvailable: true })], session: session("mock_test", { taskBudget: 5 }), tasks: [null], mockSummary });
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-mock-start").click();
+  await page.getByTestId("kid-mock-confirm").click();
+  await expect(page.getByTestId("kid-mock-summary")).toBeVisible();
+  await expect(page.getByTestId("kid-mock-solution")).toHaveCount(5);
+  // Status rozpoznawalny bez koloru: ikona w kafelku i odznaka z tekstem w każdym wierszu.
+  await expect(page.locator("[data-testid='kid-mock-status']")).toHaveText(["Poprawnie", "Do poprawy", "Do poprawy", "Pominięte", "Nie sprawdzono"]);
+  await expect(page.locator("[data-testid='kid-mock-solution'] .kid-mock-row__icon svg")).toHaveCount(5);
+  const cases = [
+    { width: 360, height: 800 },
+    { width: 320, height: 640 },
+    { width: 844, height: 390 },
+    { width: 768, height: 1024 },
+    { width: 1280, height: 800 },
+  ];
+  for (const viewport of cases) {
+    const name = `${viewport.width}x${viewport.height}`;
+    await page.setViewportSize(viewport);
+    await page.evaluate(async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    });
+    const layout = await page.evaluate(() => {
+      const rect = (element: Element) => {
+        const { left, top, right, bottom, width, height } = element.getBoundingClientRect();
+        return { left, top, right, bottom, width, height };
+      };
+      return {
+        innerWidth: window.innerWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        root: rect(document.querySelector("[data-kid-screen]")!),
+        band: rect(document.querySelector("[data-kid-header='band']")!),
+        score: rect(document.querySelector("[data-testid='kid-mock-score']")!),
+        rows: [...document.querySelectorAll("[data-testid='kid-mock-solution']")].map((row) => ({
+          ...rect(row),
+          overflowX: row.scrollWidth > row.clientWidth + 1,
+          badges: [...row.querySelectorAll("[data-testid='kid-mock-status'], .kid-mock-badge")].map((badge) => rect(badge)),
+          audio: row.querySelector(".kid-mock-row__audio") ? rect(row.querySelector(".kid-mock-row__audio")!) : null,
+        })),
+        practice: rect(document.querySelector("[data-testid='kid-mock-practice']")!),
+      };
+    });
+    expect(layout.scrollWidth, `horizontal overflow: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
+    expect(Math.round(layout.band.top), `band top: ${name}`).toBe(0);
+    expect(Math.abs(layout.band.left - layout.root.left), `band left: ${name}`).toBeLessThanOrEqual(1);
+    expect(Math.abs(layout.band.right - layout.root.right), `band right: ${name}`).toBeLessThanOrEqual(1);
+    expect(layout.score.left, `score left: ${name}`).toBeGreaterThanOrEqual(layout.root.left - 1);
+    expect(layout.score.right, `score right: ${name}`).toBeLessThanOrEqual(layout.root.right + 1);
+    expect(layout.rows, `rows: ${name}`).toHaveLength(5);
+    for (const [index, row] of layout.rows.entries()) {
+      expect(row.left, `row ${index} left: ${name}`).toBeGreaterThanOrEqual(layout.root.left - 1);
+      expect(row.right, `row ${index} right: ${name}`).toBeLessThanOrEqual(layout.root.right + 1);
+      expect(row.height, `row ${index} height: ${name}`).toBeGreaterThanOrEqual(48);
+      expect(row.overflowX, `row ${index} content overflow: ${name}`).toBe(false);
+      for (const badge of row.badges) {
+        expect(badge.left, `row ${index} badge left: ${name}`).toBeGreaterThanOrEqual(row.left - 1);
+        expect(badge.right, `row ${index} badge right: ${name}`).toBeLessThanOrEqual(row.right + 1);
+      }
+      if (row.audio) {
+        expect(row.audio.width, `row ${index} audio width: ${name}`).toBeGreaterThanOrEqual(48);
+        expect(row.audio.height, `row ${index} audio height: ${name}`).toBeGreaterThanOrEqual(48);
+        expect(row.audio.right, `row ${index} audio inside row: ${name}`).toBeLessThanOrEqual(row.right + 1);
+      }
+    }
+    expect(layout.practice.height, `practice height: ${name}`).toBeGreaterThanOrEqual(54);
+    expect(layout.practice.right, `practice in viewport: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
+    await page.getByTestId("kid-mock-practice").scrollIntoViewIfNeeded();
+    await expect(page.getByTestId("kid-mock-practice"), `practice reachable: ${name}`).toBeInViewport({ ratio: 0.98 });
+    await page.getByRole("button", { name: "Kto się dziś uczy?" }).scrollIntoViewIfNeeded();
+    await expect(page.getByRole("button", { name: "Kto się dziś uczy?" }), `switch reachable: ${name}`).toBeInViewport({ ratio: 0.98 });
+    if (viewport.width === 360) {
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await expect.poll(() => page.evaluate(() => [...document.querySelectorAll(".kid-mock-score__stars span")].every((star) => getComputedStyle(star).opacity === "1"))).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`mock-summary-${name}.png`) });
+    }
+    await page.evaluate(() => window.scrollTo(0, 0));
+  }
+});
+
+test("mock-test ready and session conflict screens fit narrow and landscape viewports", async ({ page }) => {
+  await setup(page, {
+    decks: [deck({ mockTestAvailable: true })],
+    session: session("mock_test"),
+    tasks: [recallTask()],
+  });
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-mock-start").click();
+  await expect(page.getByTestId("kid-mock-budget").locator(".kid-stat__value")).toHaveText("1");
+  for (const viewport of [{ width: 360, height: 800 }, { width: 320, height: 640 }, { width: 844, height: 390 }]) {
+    const name = `${viewport.width}x${viewport.height}`;
+    await page.setViewportSize(viewport);
+    await page.evaluate(async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    });
+    const layout = await page.evaluate(() => {
+      const rect = (element: Element) => {
+        const { left, top, right, width, height } = element.getBoundingClientRect();
+        return { left, top, right, width, height };
+      };
+      return {
+        innerWidth: window.innerWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        root: rect(document.querySelector("[data-kid-screen]")!),
+        band: rect(document.querySelector("[data-kid-header='band']")!),
+        budget: rect(document.querySelector("[data-testid='kid-mock-budget']")!),
+        info: rect(document.querySelector("[data-testid='kid-mock-info']")!),
+        confirm: rect(document.querySelector("[data-testid='kid-mock-confirm']")!),
+      };
+    });
+    expect(layout.scrollWidth, `ready overflow: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
+    expect(Math.round(layout.band.top), `ready band top: ${name}`).toBe(0);
+    expect(Math.abs(layout.band.left - layout.root.left), `ready band left: ${name}`).toBeLessThanOrEqual(1);
+    expect(Math.abs(layout.band.right - layout.root.right), `ready band right: ${name}`).toBeLessThanOrEqual(1);
+    for (const tile of [layout.budget, layout.info]) {
+      expect(tile.left, `ready tile left: ${name}`).toBeGreaterThanOrEqual(layout.root.left - 1);
+      expect(tile.right, `ready tile right: ${name}`).toBeLessThanOrEqual(layout.root.right + 1);
+    }
+    expect(layout.confirm.height, `ready confirm height: ${name}`).toBeGreaterThanOrEqual(54);
+    await page.getByTestId("kid-mock-confirm").scrollIntoViewIfNeeded();
+    await expect(page.getByTestId("kid-mock-confirm"), `ready confirm reachable: ${name}`).toBeInViewport({ ratio: 0.98 });
+    await page.evaluate(() => window.scrollTo(0, 0));
+  }
+});
+
+test("session conflict keeps scene, message and both actions inside narrow and landscape viewports", async ({ page }) => {
+  await setup(page, {
+    decks: [deck({ activeSession: { sessionId, mode: "training" } })],
+    session: session("training", { tasksIssued: 1, assessedTasksIssued: 1, resumed: true }),
+    tasks: [recallTask()],
+  });
+  let conflictSent = false;
+  await page.route("**/api/v1/kid/sessions", async (route) => {
+    if (route.request().method() === "POST" && !conflictSent) {
+      conflictSent = true;
+      await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ code: "conflict", retryable: false }) });
+      return;
+    }
+    await route.fallback();
+  });
+  await page.getByTestId("kid-profile").click();
+  await page.getByRole("button", { name: "Ucz się" }).click();
+  await expect(page.getByTestId("kid-conflict-info")).toBeVisible();
+  await expect(page.locator("svg.kid-conflict-scene")).toBeVisible();
+  for (const viewport of [{ width: 360, height: 800 }, { width: 320, height: 640 }, { width: 844, height: 390 }]) {
+    const name = `${viewport.width}x${viewport.height}`;
+    await page.setViewportSize(viewport);
+    await page.evaluate(async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    });
+    const layout = await page.evaluate(() => {
+      const rect = (element: Element) => {
+        const { left, top, right, width, height } = element.getBoundingClientRect();
+        return { left, top, right, width, height };
+      };
+      const resume = [...document.querySelectorAll("button")].find((button) => button.textContent === "Wróć do sesji")!;
+      return {
+        innerWidth: window.innerWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        root: rect(document.querySelector("[data-kid-screen]")!),
+        scene: rect(document.querySelector(".kid-conflict-scene")!),
+        info: rect(document.querySelector("[data-testid='kid-conflict-info']")!),
+        resume: rect(resume),
+      };
+    });
+    expect(layout.scrollWidth, `conflict overflow: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
+    expect(layout.scene.left, `conflict scene left: ${name}`).toBeGreaterThanOrEqual(layout.root.left - 1);
+    expect(layout.scene.right, `conflict scene right: ${name}`).toBeLessThanOrEqual(layout.root.right + 1);
+    expect(layout.info.left, `conflict info left: ${name}`).toBeGreaterThanOrEqual(layout.root.left - 1);
+    expect(layout.info.right, `conflict info right: ${name}`).toBeLessThanOrEqual(layout.root.right + 1);
+    expect(layout.resume.height, `conflict resume height: ${name}`).toBeGreaterThanOrEqual(54);
+    await page.getByRole("button", { name: "Wróć do sesji" }).scrollIntoViewIfNeeded();
+    await expect(page.getByRole("button", { name: "Wróć do sesji" }), `conflict resume reachable: ${name}`).toBeInViewport({ ratio: 0.98 });
+    await page.getByRole("button", { name: "Zakończ rozpoczętą sesję" }).scrollIntoViewIfNeeded();
+    await expect(page.getByRole("button", { name: "Zakończ rozpoczętą sesję" }), `conflict close reachable: ${name}`).toBeInViewport({ ratio: 0.98 });
+    await page.evaluate(() => window.scrollTo(0, 0));
+  }
+});

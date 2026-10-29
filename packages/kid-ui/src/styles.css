@@ -1712,7 +1712,9 @@
   background: var(--kid-color-success-container);
 }
 
-.kid-screen--summary h1 {
+.kid-screen--summary h1,
+.kid-screen--mock-ready h1,
+.kid-screen--mock-summary h1 {
   margin: 0;
   font-family: var(--kid-font-display);
   font-weight: 600;
@@ -1817,66 +1819,56 @@
   background: var(--kid-surface);
 }
 
-/* Podsumowanie kartkówki (design 2026-10-10): wynik u góry, słowa jako kompaktowe
-   wiersze zamiast dużych kart. Osobna lista, bo .kid-list wymusza przyciski 72px.
-   Kolor wiersza odpowiada wynikowi słowa: wszystko poprawnie zielono, jakakolwiek
-   pomyłka czerwono, nic nie sprawdzono neutralnie; ikona ✓/✗/– dubluje kolor,
-   żeby kolor nie był jedyną informacją. */
-.kid-ui .kid-mock-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+/* Podsumowanie kartkówki: pas z wynikiem, rozwiązania jako RowList. Wiersz ma
+   trzy kanały statusu: kafelek z ikoną SVG, kolor roli (sukces/błąd/neutralny)
+   i odznakę z tekstem, więc kolor nigdy nie jest jedyną informacją. */
+.kid-ui .kid-mock-band {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: 8px;
+  text-align: center;
 }
 
-.kid-ui .kid-mock-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  border: 2px solid var(--kid-line);
-  border-radius: var(--kid-shape-l);
-  background: var(--kid-surface);
-  padding: 6px 10px;
+.kid-mock-band__note {
+  margin: 0;
+  font-size: var(--kid-type-body-sm-size);
 }
 
 .kid-ui .kid-mock-row--correct {
-  border-color: var(--kid-good);
   background: var(--kid-good-bg);
+  color: var(--kid-color-on-success-container);
 }
 
-.kid-ui .kid-mock-row--incorrect {
-  border-color: var(--kid-wrong);
-  background: var(--kid-wrong-bg);
-}
-
-.kid-mock-row__icon {
+/* Pomyłka nie dostaje czerwonego pola: dziecko widzi ją w kafelku i odznace, tło zostaje spokojne. */
+.kid-ui .kid-mock-row__icon {
   flex: none;
-  font-size: var(--kid-type-title-md-size);
-  font-weight: 800;
-  color: var(--kid-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--kid-shape-m);
+  background: var(--md-sys-color-surface-container-highest);
+  color: var(--md-sys-color-on-surface-variant);
 }
 
-.kid-mock-row--correct .kid-mock-row__icon {
-  color: var(--kid-good);
+.kid-ui .kid-mock-row__icon .kid-icon {
+  width: 24px;
+  height: 24px;
 }
 
-.kid-mock-row--incorrect .kid-mock-row__icon {
-  color: var(--kid-wrong);
+.kid-ui .kid-mock-row--correct .kid-mock-row__icon {
+  background: var(--kid-color-success);
+  color: var(--kid-color-on-success);
 }
 
-.kid-mock-row__body {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.kid-ui .kid-mock-row--incorrect .kid-mock-row__icon {
+  background: var(--md-sys-color-error);
+  color: var(--md-sys-color-on-error);
 }
 
 .kid-mock-row__words {
-  margin: 0;
-  font-size: var(--kid-type-title-sm-size);
   overflow-wrap: anywhere;
 }
 
@@ -1884,31 +1876,27 @@
   font-size: var(--kid-type-title-md-size);
 }
 
+.kid-mock-row__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .kid-ui .kid-mock-row__detail--answers {
+  display: flex;
   flex-direction: column;
   flex-wrap: nowrap;
   align-items: flex-start;
   gap: 4px;
-}
-
-.kid-mock-row__detail {
-  margin: 0;
+  margin: 0 0 6px;
   font-size: var(--kid-type-body-sm-size);
-  color: var(--kid-muted);
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 10px;
-}
-
-.kid-mock-badge {
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 /* Wskazówka precyzji odpowiedzi otwartej szkoły w omówieniu kartkówki. */
 .kid-ui .kid-mock-row__hint {
-  margin: 0;
+  margin: 0 0 6px;
   font-size: var(--kid-type-body-sm-size);
-  color: var(--md-sys-color-on-surface);
   overflow-wrap: anywhere;
 }
 
@@ -1927,31 +1915,35 @@
   overflow-wrap: anywhere;
 }
 
-.kid-ui .kid-mock-badge--correct {
-  color: var(--kid-good);
-  font-weight: 700;
-}
-
-.kid-ui .kid-mock-badge--incorrect {
-  color: var(--kid-wrong);
-  font-weight: 700;
-}
-
-.kid-mock-row__audio {
+/* Odznaki statusu: wypełnienie rolą statusu, tekst w kolorze „on” tej roli. */
+.kid-ui .kid-mock-row .kid-mock-status__icon {
+  width: 18px;
+  height: 18px;
   flex: none;
-  width: 48px;
-  height: 48px;
-  min-height: 48px;
-  padding: 0;
-  border: 2px solid var(--md-sys-color-outline);
-  border-radius: 50%;
-  font-size: var(--kid-type-title-md-size);
-  background: var(--kid-soft);
-  color: var(--kid-accent);
-  cursor: pointer;
 }
 
-/* Wynik próby: próg koloru 80%/50%, paleta jak feedback — zielony, bursztyn, czerwony. */
+.kid-ui .kid-mock-row .kid-mock-status--correct,
+.kid-ui .kid-mock-row .kid-mock-badge--correct {
+  background: var(--kid-color-success);
+  color: var(--kid-color-on-success);
+}
+
+.kid-ui .kid-mock-row .kid-mock-status--incorrect,
+.kid-ui .kid-mock-row .kid-mock-badge--incorrect {
+  background: var(--md-sys-color-error);
+  color: var(--md-sys-color-on-error);
+}
+
+.kid-mock-badge {
+  white-space: nowrap;
+}
+
+.kid-ui .kid-mock-row .kid-mock-badge--correct,
+.kid-ui .kid-mock-row .kid-mock-badge--incorrect {
+  font-weight: 700;
+}
+
+/* Wynik próby: próg koloru 80%/50%; zielony, bursztyn, a niski wynik zostaje neutralny (bez czerwieni). */
 .kid-ui .kid-details-error {
   padding: 16px;
   border: 1px solid var(--kid-line);
@@ -1990,7 +1982,7 @@
 
 .kid-ui .kid-mock-score[data-tone="good"] .kid-mock-score__value,
 .kid-ui .kid-mock-score[data-tone="good"] .kid-mock-score__stars {
-  color: var(--kid-good);
+  color: var(--kid-color-on-success-container);
 }
 
 .kid-ui .kid-mock-score[data-tone="mid"] {
@@ -2004,13 +1996,13 @@
 }
 
 .kid-ui .kid-mock-score[data-tone="low"] {
-  border-color: var(--kid-wrong);
-  background: var(--kid-wrong-bg);
+  border-color: var(--kid-line);
+  background: var(--md-sys-color-surface-container-high);
 }
 
 .kid-ui .kid-mock-score[data-tone="low"] .kid-mock-score__value,
 .kid-ui .kid-mock-score[data-tone="low"] .kid-mock-score__stars {
-  color: var(--kid-wrong);
+  color: var(--kid-text);
 }
 
 /* Ekrany nawigacyjne są treściowe i mogą przewijać raport; ich karty i akcje
@@ -2144,32 +2136,38 @@
   }
 }
 
-.kid-mock-budget {
-  margin: 0;
-  font-weight: 700;
-  text-align: center;
+/* Start kartkówki: kafelek z liczbą zadań i karta informacji. */
+.kid-ui .kid-mock-budget {
+  padding: 20px 16px;
+  background: var(--kid-surface);
+}
+
+.kid-ui .kid-mock-budget .kid-stat__value {
+  color: var(--kid-accent);
 }
 
 .kid-mock-info,
 .kid-conflict-info {
   margin: 0;
   padding: 16px;
-  border: 2px solid var(--kid-line);
+  border: 1px solid var(--kid-line);
   border-radius: var(--kid-shape-xl);
   background: var(--kid-surface);
   text-align: center;
   line-height: 1.5;
 }
 
-.kid-screen--mock-ready > .kid-primary,
-.kid-screen--conflict > .kid-primary,
-.kid-screen--mock-summary > .kid-primary {
-  width: 100%;
-  min-height: 56px;
-  border: 2px solid var(--kid-accent);
-  border-radius: var(--kid-shape-xl);
-  font-size: var(--kid-type-title-md-size);
-  font-weight: 700;
+/* Konflikt sesji: scena nad komunikatem. */
+.kid-ui .kid-conflict-scene {
+  align-self: center;
+  width: min(100%, 240px);
+  height: auto;
+}
+
+.kid-ui .kid-alert {
+  margin: 0;
+  color: var(--md-sys-color-error);
+  text-align: center;
 }
 
 .kid-ui .kid-flow-secondary {
@@ -2184,28 +2182,10 @@
   cursor: pointer;
 }
 
-.kid-screen--mock-ready > .kid-end {
-  width: 100%;
-  min-height: 52px;
-  --action-border: var(--kid-line);
-  --action-bg: var(--kid-surface);
-  --action-fg: var(--kid-text);
-}
-
-.kid-screen--mock-summary > .kid-flow-secondary {
-  width: 100%;
-  max-width: 320px;
-  align-self: center;
-}
-
-.kid-screen--mock-summary .kid-mock-row__audio svg {
-  color: var(--kid-accent);
-}
-
+/* Konflikt nie ma pasa, więc zachowuje zwężone marginesy roota na wąskich ekranach;
+   ekrany z pasem (kartkówki) zostawiają padding roota, bo pas sięga krawędzi. */
 @media (max-width: 420px) {
-  .kid-screen--mock-ready,
-  .kid-screen--conflict,
-  .kid-screen--mock-summary {
+  .kid-screen--conflict {
     gap: 10px;
     padding: 14px;
   }

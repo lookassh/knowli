@@ -161,7 +161,8 @@ test("child works a whole lesson: card → notice → choice → blocks → gap 
   await page.getByTestId("kid-profile").click();
   const card = page.getByTestId("kid-deck-card");
   await expect(card).toHaveAttribute("data-kind", "lesson");
-  await expect(page.getByTestId("kid-deck-title")).toContainText("Lekcja: Język angielski");
+  await expect(page.getByTestId("kid-deck-meta")).toContainText("Lekcja: Język angielski");
+  await expect(page.getByTestId("kid-deck-meta")).not.toContainText("%");
   await expect(page.getByTestId("kid-deck-title")).not.toContainText("%");
   await page.getByTestId("kid-deck").click();
 
