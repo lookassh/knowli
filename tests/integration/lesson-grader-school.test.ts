@@ -550,6 +550,9 @@ describe("trener precyzji: „Skróć odpowiedź” (integracja)", () => {
     expect(next).not.toBeNull();
     expect(next!.taskId).not.toBe(followUp.taskId);
     expect(next!.remainingAssessed).toBe(openTask.remainingAssessed - 1);
+    // Raport: poprawka bez zmian nie jest próbą skrócenia.
+    const report = (await lessonObjectiveProgress(services, deckId, child.id)).find((row) => row.objectiveId === OBJECTIVE_ID)!;
+    expect(report.school?.shortening).toEqual({ offered: 1, attempted: 0, successful: 0, recent: [] });
   });
 
   it("zwięzła poprawna odpowiedź nie dostaje zadania następczego", async () => {

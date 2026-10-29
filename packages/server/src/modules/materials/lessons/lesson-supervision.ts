@@ -238,11 +238,13 @@ export async function lessonObjectiveProgress(
                a.answer->>'text' as revision, o.answer->>'text' as original
           from learning_app.assessments n
           join learning_app.attempts a on a.id = n.attempt_id
-          left join learning_app.attempts o on o.id::text = n.details->'revisionOf'->>'attemptId'
+          left join learning_app.attempts o on o.id = (n.details->'revisionOf'->>'attemptId')::uuid
          where n.child_id = ${child}
            and n.skill = 'objective'
            and n.item_revision_id = any(${sql.param(historyRevisionIds)}::uuid[])
            and n.details ? 'revisionOf'
+           -- Poprawka bez oceny (ten sam tekst, awaria gradera) nie jest próbą skrócenia.
+           and n.outcome <> 'unassessed'
          order by a.received_at desc, a.id`),
       ])
     : [null, null];
