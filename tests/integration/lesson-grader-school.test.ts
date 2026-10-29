@@ -496,6 +496,10 @@ describe("trener precyzji: „Skróć odpowiedź” (integracja)", () => {
     });
     expect(report.school?.knowledge.correct).toBe(1);
     expect(report.school?.recentAnswers.map((answer) => answer.text)).not.toContain(shortened);
+
+    // Podsumowanie sesji dla dziecka: oryginał i poprawka to jedno ćwiczenie celu.
+    const summary = await endSession(services, openTask.sessionId);
+    expect(summary.objectives?.find((objective) => objective.objectiveId === OBJECTIVE_ID)).toMatchObject({ practiced: 1, correct: 1 });
   });
 
   it("wykrywa utratę elementu wymaganego w poprawce, bez treści elementu w feedbacku", async () => {

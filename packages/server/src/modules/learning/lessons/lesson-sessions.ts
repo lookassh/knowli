@@ -807,7 +807,11 @@ export async function buildLessonSummaryObjectives(
     .from(assessments)
     .innerJoin(attempts, eq(attempts.id, assessments.attemptId))
     .innerJoin(sessionTasks, eq(sessionTasks.id, attempts.taskId))
-    .where(and(eq(sessionTasks.sessionId, sessionId), eq(assessments.skill, "objective"), eq(attempts.state, "completed")))
+    .where(and(
+      eq(sessionTasks.sessionId, sessionId), eq(assessments.skill, "objective"), eq(attempts.state, "completed"),
+      // Poprawka („Skróć odpowiedź”) to druga próba tego samego pytania, nie osobne ćwiczenie celu.
+      sql`${sessionTasks.context}->'followUpOf' is null`,
+    ))
     .orderBy(asc(attempts.receivedAt));
   const version = (await tx.select({ lessonContext: deckVersions.lessonContext }).from(deckVersions)
     .innerJoin(learningSessions, eq(learningSessions.deckVersionId, deckVersions.id))
