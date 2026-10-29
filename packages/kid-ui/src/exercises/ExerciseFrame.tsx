@@ -54,6 +54,8 @@ export function ExerciseFrame({
   const revealTaskIdRef = useRef<string | null>(null);
   const [dockPad, setDockPad] = useState(0);
   const hasDock = dock !== undefined;
+  // A task without a primary action gets no empty 54px slot (before or under the dock).
+  const hasActions = actions !== undefined && actions !== null && actions !== false;
   const flowFeedback = feedbackLayout === "flow";
 
   // Revealing is tied to a dock/task and viewport mode, never to the newly
@@ -207,13 +209,13 @@ export function ExerciseFrame({
           </Fragment>
         ) : dock ? (
           <div key="kid-dock" ref={anchorRef} className={classes.dockAnchor}>
-            <div data-testid="kid-primary-slot" className={classes.primary} aria-hidden="true" />
+            {hasActions && <div data-testid="kid-primary-slot" className={classes.primary} aria-hidden="true" />}
             <div data-testid="kid-secondary-slot" className={classes.secondary} aria-hidden="true" />
             <div ref={overlayRef} className={`kid-feedback-overlay ${classes.dockOverlay}`}>{dock}</div>
           </div>
         ) : (
           <Fragment key="kid-actions">
-            <div data-testid="kid-primary-slot" className={classes.primary}>{actions}</div>
+            {hasActions && <div data-testid="kid-primary-slot" className={classes.primary}>{actions}</div>}
             <div data-testid="kid-secondary-slot" className={classes.secondary}>{secondaryActions}</div>
           </Fragment>
         )}

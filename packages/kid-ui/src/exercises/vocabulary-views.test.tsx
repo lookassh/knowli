@@ -8,6 +8,8 @@ import { PictureExposureView } from "./PictureExposureView";
 import { ListeningView } from "./ListeningView";
 import { ReadingView } from "./ReadingView";
 import { PictureRecognitionView } from "./PictureRecognitionView";
+import { PictureRecallView } from "./PictureRecallView";
+import { PictureSpeechView } from "./PictureSpeechView";
 
 const id = (suffix: string) => `10000000-0000-4000-8000-000000000${suffix}`;
 const base = (kind: TaskDto["prompt"]["kind"], prompt: TaskDto["prompt"]): TaskDto => ({
@@ -73,5 +75,59 @@ describe("vocabulary views preserve exercise behavior", () => {
     renderKid(<PictureRecognitionView {...makeExerciseProps(task)} />);
     expect(screen.getAllByTestId("kid-option")[0]?.getAttribute("lang")).toBe("en-GB");
     expect(screen.getAllByTestId("kid-option")[0]?.textContent).toBe("cat");
+  });
+
+  it("picture recall keeps playback under the picture but disables it while the result dock is shown", () => {
+    // After a final attempt the task is answered: a server-authorised replay would
+    // conflict and swap in the error card, so the dock must block it in the view.
+    const task = base("picture_recall", { kind: "picture_recall", visual: { kind: "color", color: "#123456" } });
+    const idle = makeExerciseProps(task);
+    const { unmount } = renderKid(<PictureRecallView {...idle} />);
+    const play = screen.getByRole("button", { name: "Posłuchaj" });
+    expect(screen.getByTestId("kid-material").contains(play)).toBe(true);
+    expect(play.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(play);
+    expect(idle.handlers.onPlay).toHaveBeenCalledOnce();
+    unmount();
+
+    const withDock = makeExerciseProps(task, { dock: <p>Świetnie!</p> });
+    renderKid(<PictureRecallView {...withDock} />);
+    const blocked = screen.getByRole("button", { name: "Posłuchaj" });
+    expect(blocked.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(blocked);
+    expect(withDock.handlers.onPlay).not.toHaveBeenCalled();
+  });
+
+  it("picture speech puts its round playback under the picture and disables it while the result dock is shown", () => {
+    const task = base("picture_speech", { kind: "picture_speech", visual: { kind: "color", color: "#123456" }, audioAssetId: id("130") });
+    const idle = makeExerciseProps(task);
+    const { unmount } = renderKid(<PictureSpeechView {...idle} />);
+    const play = screen.getByTestId("kid-play");
+    expect(play.getAttribute("aria-label")).toBe("Posłuchaj");
+    expect(screen.getByTestId("kid-material").contains(play)).toBe(true);
+    expect(screen.getByTestId("kid-exercise-actions").contains(play)).toBe(false);
+    expect(play.getAttribute("data-variant")).toBe("tonal");
+    expect(play.className).toContain("kid-audio-round");
+    expect(play.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(play);
+    expect(idle.handlers.onPlay).toHaveBeenCalledOnce();
+    unmount();
+
+    const withDock = makeExerciseProps(task, { dock: <p>Świetnie!</p> });
+    renderKid(<PictureSpeechView {...withDock} />);
+    expect(screen.getByTestId("kid-play").hasAttribute("disabled")).toBe(true);
+    fireEvent.click(screen.getByTestId("kid-play"));
+    expect(withDock.handlers.onPlay).not.toHaveBeenCalled();
+  });
+
+  it("picture recall without a primary action renders no empty primary slot, with or without the dock", () => {
+    const task = base("picture_recall", { kind: "picture_recall", visual: { kind: "color", color: "#123456" } });
+    const { unmount } = renderKid(<PictureRecallView {...makeExerciseProps(task)} />);
+    expect(screen.queryByTestId("kid-primary-slot")).toBeNull();
+    expect(screen.getByTestId("kid-secondary-slot").textContent).toContain("Nie pamiętam");
+    unmount();
+    renderKid(<PictureRecallView {...makeExerciseProps(task, { dock: <p>Świetnie!</p> })} />);
+    expect(screen.queryByTestId("kid-primary-slot")).toBeNull();
+    expect(screen.getByTestId("kid-secondary-slot")).toBeTruthy();
   });
 });
