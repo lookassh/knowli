@@ -35,7 +35,7 @@ Obowiązują ustalenia etapu 1: tylko ciemny motyw, paleta z `scripts/kid-palett
 - **Odsłuch instrukcji** wychodzi z paska. Dla zadania (`taskGuidanceKey`) przycisk stoi w wierszu instrukcji obok jej tekstu (48 px, tonalny) — `ExerciseInstruction` ma już do tego `audio`. Dla wyniku (`feedbackGuidanceKey`) przycisk stoi w panelu wyniku obok tytułu. `data-testid="kid-guidance-play"` i obsługa błędu odsłuchu zostają.
 - **Kamyki** (`SessionProgress`): jeden kamyk = jedno oceniane zadanie, liczba = `progress.total` z `session-progress-state.ts` (te same dane co dzisiejszy pasek, bez nowych informacji o budżecie).
   - zrobione: wypełnione `primary`; bieżące: obrys `primary` i powiększenie przez `transform: scale`; przyszłe: `outline-variant`,
-  - kamyk ma co najmniej 8 px; gdy `total` > 16 albo kamyki nie mieszczą się w dostępnej szerokości, wskaźnik przechodzi w ciągły pasek (dzisiejszy `scaleX`),
+  - kamyk ma wysokość 8 px i elastyczną szerokość 5–16 px (odstęp 3 px), więc rząd wypełnia środek paska; kamyki pokazujemy dla `total` ≤ 24 (domyślny budżet sesji to 20 — `DEFAULT_TASK_BUDGET`), powyżej wskaźnik przechodzi w ciągły pasek (dzisiejszy `scaleX`); 24 kamyki mieszczą się przy szerokości 320 px,
   - kamyki są dekoracją (`aria-hidden`); dostępny tekst to etykieta „Jeszcze N”, jak dziś,
   - seria poprawnych: podskok i gwiazdka wychodząca z ostatniego wypełnionego kamyka (dzisiejsze `kidStreakJump`, `kid-streak-star`).
 - **„Jeszcze N i koniec!”** to mała pigułka w tonie `warm` pod kamykami (obok nich przy wysokości <480 px). Reguła pokazywania bez zmian: `remainingFor` (od 3 zadań do końca, w kartkówce zawsze).
@@ -80,7 +80,7 @@ Obowiązują ustalenia etapu 1: tylko ciemny motyw, paleta z `scripts/kid-palett
 
 ## 6. Weryfikacja
 
-- Jednostkowe: `SessionProgress` (kamyki dla `total` ≤16, przejście w pasek, bieżący kamyk, etykieta „Jeszcze N”), `ExerciseFeedbackDock` (ikona i ton), `AnswerField` (klasa stylu); `tests/kid-design-tokens.test.ts` i `tests/kid-tokens.test.ts` bez wyjątków.
+- Jednostkowe: `SessionProgress` (kamyki dla `total` ≤24, przejście w pasek, bieżący kamyk, etykieta „Jeszcze N”), `ExerciseFeedbackDock` (ikona i ton), `AnswerField` (klasa stylu); `tests/kid-design-tokens.test.ts` i `tests/kid-tokens.test.ts` bez wyjątków.
 - Kontrast WCAG: tekst pola wpisywania na `surface-container-highest`, tytuł i odpowiedź na każdym tle tonu panelu, kamyk zrobiony vs tło (≥3:1) — test tokenów oraz rozszerzenie `kid-answer-contrast.spec.ts` o kolor i rozmiar tekstu w polu (≥24 px obliczonego `font-size`).
 - Geometria Playwright w 360×800, 320×640, 844×390, 768×1024, 1280×800 (`tests/e2e/helpers/kid-layout.ts`): pasek w jednym rzędzie, kamyki w kolumnie `KidScreen`, brak przepełnienia poziomego, cele ≥48 px, siatka 2×2 bez wyjścia poza kolumnę, panel wyniku nie zasłania akcji; aktualizacja istniejących speców (`kid-responsive`, `kid-feedback-dock`, `kid-feedback-layout`, `kid-ui-layout`, `lesson-*-layout`) zamiast nowych duplikatów.
 - Przed PR: `pnpm typecheck`, `pnpm test:unit`, `pnpm build`, `pnpm test:e2e:shards`; zrzuty ekranów sesji (wybór, pisanie, mowa, lekcja, każdy ton panelu) w 360×800 i 844×390.
