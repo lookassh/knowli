@@ -191,9 +191,11 @@ odrzuceń w pełnej sondzie.
       oryginał–poprawka), edytor rodzica; migracja `0024` (modalność
       `selection`), generator (gałąź `lesson_keywords` w structured output),
       raport nadzoru `school.shortening`.
-- [ ] Kid UI: widoki przez wspólne komponenty; specyfikacje geometrii Playwright
+- [x] Kid UI: widoki przez wspólne komponenty; specyfikacje geometrii Playwright
       (portrait/landscape/tablet/desktop, cele ≥48 px), dopisanie speców
-      do partycji w `tests/e2e/spec-projects.ts`.
+      do partycji w `tests/e2e/spec-projects.ts` (`lesson-precision-layout.spec.ts`,
+      `AnswerGrid` z wyborem wielokrotnym, `AnswerTextArea`; bez odbioru na
+      fizycznym urządzeniu).
 - [x] Selektor: reguły doboru ćwiczeń trenera z wymiaru precyzji i braków
       (preferencja form zwięzłych, para słów kluczowych; pomyłka pojęć
       odłożona — design 6.5 pkt 5).
