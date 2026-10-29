@@ -94,7 +94,7 @@ function SessionActivityCard({ activity }: { activity: Session["activity"] }) {
                     <p className="pp-prog-muted">
                       {messages.workCard.activityMeasured}: {duration(Math.floor(task.activeMilliseconds / 1000))}; {messages.workCard.activityEdits}: {task.editCount}; {messages.workCard.activityPlaybacks}: {task.playbackCount}
                     </p>
-                    {task.modelNote && <p>Uwaga oceny: {task.modelNote}</p>}
+                    {task.modelNote && <p>{messages.workCard.activityModelNote}: {task.modelNote}</p>}
                   </li>
                 ))}</ol>
               </Accordion.Panel>

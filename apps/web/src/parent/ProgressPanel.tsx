@@ -59,7 +59,7 @@ function ActivityCard({ progress }: { progress: ProgressDto }) {
   const { activity } = progress;
   const minutes = roundMinutes(activity.activeSeconds);
   const stats = [
-    { id: "time", value: <>{minutes}<small> min</small></>, label: messages.progress.activityStatTime },
+    { id: "time", value: <>{minutes}<small> {messages.progress.activityMinutesUnit}</small></>, label: messages.progress.activityStatTime },
     { id: "days", value: activity.activeDays, label: messages.progress.activityStatDays },
     { id: "sessions", value: activity.sessions, label: messages.progress.activityStatSessions },
     { id: "answers", value: activity.answers, label: messages.progress.activityStatAnswers },
