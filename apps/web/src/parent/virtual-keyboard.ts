@@ -18,11 +18,36 @@ export function isTextEntry(element: Element | null): boolean {
   return false;
 }
 
-/** Widoczny obszar mniejszy od okna o co najmniej {@link KEYBOARD_MIN_SHRINK_PX}, bez powiększenia gestem. */
-export function viewportShrunk(innerHeight: number, visualViewport: { height: number; scale?: number } | null): boolean {
-  if (!visualViewport || !Number.isFinite(visualViewport.height) || !Number.isFinite(innerHeight)) return false;
-  if (typeof visualViewport.scale === "number" && visualViewport.scale > 1.01) return false;
+/**
+ * Widoczny obszar mniejszy od okna o co najmniej {@link KEYBOARD_MIN_SHRINK_PX}.
+ * `null` — pomiar nieporównywalny z oknem: brak `visualViewport` albo
+ * powiększenie gestem (powiększony obszar jest mniejszy bez klawiatury).
+ */
+export function viewportShrunk(innerHeight: number, visualViewport: { height: number; scale?: number } | null): boolean | null {
+  if (!visualViewport || !Number.isFinite(visualViewport.height) || !Number.isFinite(innerHeight)) return null;
+  if (typeof visualViewport.scale === "number" && visualViewport.scale > 1.01) return null;
   return innerHeight - visualViewport.height >= KEYBOARD_MIN_SHRINK_PX;
+}
+
+/** Stan klawiatury przy bieżącym polu: obszar zmniejszony, czy się zmniejszył i czy potem wrócił. */
+export interface KeyboardTracking {
+  shrunk: boolean;
+  keyboardSeen: boolean;
+  dismissed: boolean;
+}
+
+/** Nowe pole: klawiatura wysunie się na nowo (albo zostaje otwarta — wtedy pomiar od razu to pokaże). */
+export const NEW_FIELD_TRACKING: KeyboardTracking = { shrunk: false, keyboardSeen: false, dismissed: false };
+
+/**
+ * Kolejny pomiar widocznego obszaru. Powrót do pełnej wysokości po wcześniejszym
+ * zmniejszeniu oznacza schowaną klawiaturę; pomiar nieporównywalny (powiększenie
+ * gestem przy otwartej klawiaturze) niczego nie zmienia.
+ */
+export function trackViewport(state: KeyboardTracking, shrunk: boolean | null): KeyboardTracking {
+  if (shrunk === null) return state;
+  if (shrunk) return { shrunk: true, keyboardSeen: true, dismissed: false };
+  return { shrunk: false, keyboardSeen: state.keyboardSeen, dismissed: state.keyboardSeen };
 }
 
 /**
@@ -63,29 +88,19 @@ export function useVirtualKeyboardOpen(enabled: boolean): boolean {
     }
     const pointer = window.matchMedia("(pointer: coarse)");
     const viewport = window.visualViewport;
-    // stan klawiatury przy bieżącym polu: czy obszar się zmniejszył i czy potem wrócił
-    let keyboardSeen = false;
-    let dismissed = false;
+    let tracking = NEW_FIELD_TRACKING;
     let frame = 0;
     const update = () => {
-      const shrunk = viewportShrunk(window.innerHeight, viewport ? { height: viewport.height, scale: viewport.scale } : null);
-      if (shrunk) {
-        keyboardSeen = true;
-        dismissed = false;
-      } else if (keyboardSeen) {
-        dismissed = true;
-      }
+      tracking = trackViewport(tracking, viewportShrunk(window.innerHeight, viewport ? { height: viewport.height, scale: viewport.scale } : null));
       setOpen(virtualKeyboardOpen({
         textEntryFocused: isTextEntry(document.activeElement),
         coarsePointer: pointer.matches,
-        shrunk,
-        dismissed,
+        shrunk: tracking.shrunk,
+        dismissed: tracking.dismissed,
       }));
     };
     const focused = () => {
-      // nowe pole: klawiatura wysunie się na nowo (albo zostaje otwarta — wtedy obszar jest już zmniejszony)
-      keyboardSeen = false;
-      dismissed = false;
+      tracking = NEW_FIELD_TRACKING;
       update();
     };
     // przejście fokusu między polami daje focusout przed focusin — sprawdzamy po klatce, bez mignięcia paska

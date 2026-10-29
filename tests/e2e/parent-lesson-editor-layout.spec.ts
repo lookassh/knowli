@@ -330,6 +330,15 @@ test.describe("telefon z klawiaturą ekranową", () => {
     }, height);
     await setVisualViewportHeight(844 - 320);
     await expect(page.getByTestId("editor-action-bar")).toBeHidden();
+    // powiększenie gestem przy otwartej klawiaturze: pomiar nieporównywalny, pasek zostaje schowany
+    await page.evaluate(() => {
+      Object.defineProperty(window.visualViewport!, "scale", { configurable: true, get: () => 2 });
+      window.visualViewport!.dispatchEvent(new Event("resize"));
+    });
+    await expect(page.getByTestId("editor-action-bar")).toBeHidden();
+    await page.evaluate(() => {
+      Object.defineProperty(window.visualViewport!, "scale", { configurable: true, get: () => 1 });
+    });
     await setVisualViewportHeight(844);
     await expect(page.getByTestId("exercise-stem-0")).toBeFocused();
     await expect(page.getByTestId("editor-action-bar")).toBeVisible();

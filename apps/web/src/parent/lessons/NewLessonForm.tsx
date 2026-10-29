@@ -17,6 +17,12 @@ const POOL_MIN = 20;
 const POOL_MAX = 120;
 /** Zestawy szkolne mają wyższy limit puli w kontrakcie (160). */
 const SCHOOL_POOL_MAX = 160;
+/**
+ * Limit czasu polecenia utworzenia lekcji (serwer tylko przyjmuje je do kolejki).
+ * Zawieszone żądanie nie trzyma blokady wyjścia bez końca: po limicie wynik jest
+ * niepewny, a ponowienie wysyła to samo polecenie (ten sam clientRequestId).
+ */
+const CREATE_TIMEOUT_MS = 30_000;
 
 /** Domyślna wielkość puli: większa z 60 i 12 × liczba reguł (requirements 2.1). */
 export function defaultPoolSize(objectiveCount: number): number {
@@ -156,9 +162,12 @@ export default function NewLessonForm({
   }, [catalog, initialize]);
 
   const create = useMutation({
-    mutationFn: (lesson: PendingLesson) => callParent(() => lesson.kind === "school"
-      ? parentClient.lessons.createSchool(lesson.command)
-      : parentClient.lessons.create(lesson.command)),
+    mutationFn: (lesson: PendingLesson) => callParent(() => {
+      const options = { signal: AbortSignal.timeout(CREATE_TIMEOUT_MS) };
+      return lesson.kind === "school"
+        ? parentClient.lessons.createSchool(lesson.command, options)
+        : parentClient.lessons.create(lesson.command, options);
+    }),
   });
   const creating = create.isPending;
 
