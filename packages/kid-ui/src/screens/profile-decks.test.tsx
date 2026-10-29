@@ -33,10 +33,23 @@ describe("profile and deck screens", () => {
     expect(onSelect).toHaveBeenCalledWith(id(3));
   });
 
-  it("shows the no-profile state without an empty profile list", () => {
+  it("draws the avatar illustration instead of an emoji and keeps the points chip", () => {
+    renderKid(<ProfileScreen profiles={[profile("owl", 1)]} onSelect={vi.fn()} />);
+    const tile = screen.getByTestId("kid-profile");
+    expect(tile.querySelector('svg[data-avatar="owl"]')).toBeTruthy();
+    expect(tile.textContent).not.toContain("🦉");
+    expect(screen.getByTestId("kid-profile-points").textContent).toBe("Punkty: 1");
+    expect(tile.closest("ul")?.className).toContain("kid-profile-grid");
+    expect(document.querySelector('[data-kid-header="band"]')).toBeTruthy();
+  });
+
+  it("shows the no-profile state with the bay scene and without a profile list", () => {
     renderKid(<ProfileScreen profiles={[]} onSelect={vi.fn()} />);
-    expect(screen.getByText("Poproś rodzica o dodanie profilu w panelu\.")).toBeTruthy();
+    const hint = screen.getByText("Poproś rodzica o dodanie profilu w panelu\.");
+    expect(hint.className).toContain("kid-hint");
+    expect(hint.parentElement?.querySelector("svg[aria-hidden]")).toBeTruthy();
     expect(screen.queryByTestId("kid-profile")).toBeNull();
+    expect(document.querySelector("ul.kid-profile-grid")).toBeNull();
   });
 
   it("keeps recommended and other assigned decks, their real metadata and actions", async () => {

@@ -430,17 +430,6 @@
   outline-offset: 3px;
 }
 
-.kid-ui .kid-avatar {
-  font-size: var(--kid-type-display-size);
-  display: inline-grid;
-  place-items: center;
-  width: 52px;
-  height: 52px;
-  flex: none;
-  border-radius: var(--kid-shape-xxl);
-  background: var(--md-sys-color-primary-container);
-}
-
 .kid-deck {
   flex-direction: column;
   gap: 6px;
@@ -887,16 +876,6 @@
   border-radius: var(--kid-shape-l);
   color: var(--kid-accent);
   background: var(--kid-surface);
-}
-
-.kid-ui .kid-profile-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  border-radius: var(--kid-shape-full);
-  background: var(--md-sys-color-secondary-container);
-  color: var(--md-sys-color-on-secondary-container);
-  font-size: var(--kid-type-body-sm-size);
 }
 
 .kid-visual-number {
@@ -2016,36 +1995,131 @@
 
 /* Ekrany nawigacyjne są treściowe i mogą przewijać raport; ich karty i akcje
    korzystają z tych samych tokenów co ćwiczenia, również w ciemnym motywie. */
-.kid-screen--profile .kid-list {
-  margin-top: 8px;
+.kid-screen--profile h1 {
+  font-family: var(--kid-font-display);
+  font-weight: 600;
+}
+
+.kid-profile-grid {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.kid-profile-grid > li {
+  min-width: 0;
+  display: flex;
 }
 
 .kid-screen--profile .kid-profile {
-  min-height: 76px;
-  border-radius: var(--kid-shape-xl);
-  font-weight: 700;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
-  align-items: stretch;
-  flex-direction: column;
-  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
   min-width: 0;
+  min-height: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 16px 12px;
+  border: 2px solid var(--md-sys-color-outline);
+  border-radius: var(--kid-shape-xl);
+  background: var(--kid-surface);
+  color: var(--kid-text);
+  font-family: var(--kid-font-body);
+  text-align: center;
   white-space: normal;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
-.kid-profile-identity,
-.kid-profile-rewards {
+.kid-screen--profile .kid-profile:active {
+  background: var(--kid-soft);
+}
+
+.kid-profile-avatar {
+  flex: none;
+  display: inline-flex;
+}
+
+.kid-profile-avatar svg {
+  display: block;
+}
+
+.kid-profile-body {
+  min-width: 0;
+  max-width: 100%;
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 8px;
-  min-width: 0;
 }
 
-.kid-profile-identity {
-  flex-wrap: wrap;
+.kid-profile-name {
+  max-width: 100%;
+  font-family: var(--kid-font-display);
+  font-size: var(--kid-type-title-md-size);
+  font-weight: 600;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
-.kid-profile-rewards {
+.kid-profile-chips {
+  max-width: 100%;
+  display: flex;
   flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.kid-profile-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding-top: 16px;
+}
+
+.kid-profile-empty__scene {
+  width: min(100%, 240px);
+  height: auto;
+}
+
+@media (min-width: 600px) {
+  .kid-profile-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Niska wysokość (telefon w poziomie): kafelek poziomy, awatar obok imienia. */
+@media (max-height: 479px) {
+  .kid-profile-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .kid-screen--profile .kid-profile {
+    flex-direction: row;
+    justify-content: flex-start;
+    text-align: left;
+    padding: 10px 12px;
+  }
+
+  .kid-profile-avatar svg {
+    width: 56px;
+    height: 56px;
+  }
+
+  .kid-profile-body {
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .kid-profile-chips {
+    justify-content: flex-start;
+  }
 }
 
 .kid-mock-budget {
@@ -2110,8 +2184,7 @@
   .kid-screen--mock-ready,
   .kid-screen--conflict,
   .kid-screen--mock-summary,
-  .kid-screen--summary,
-  .kid-screen--profile {
+  .kid-screen--summary {
     gap: 10px;
     padding: 14px;
   }

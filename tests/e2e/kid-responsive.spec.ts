@@ -376,3 +376,77 @@ test("Material window classes keep every picture choice reachable", async ({ pag
     }), { message: `picture option clipped: ${viewport.name}` }).toBe("ok");
   }
 });
+
+test("profile tiles fit portrait, landscape, tablet and desktop", async ({ page }, testInfo) => {
+  const fixture = recallLayoutFixture();
+  fixture.profiles = [
+    { childId: "10000000-0000-4000-8000-000000000201", displayName: "Ola", avatarKey: "cat", recordingMode: "hold", canRead: true, rewardPoints: 12 },
+    { childId: "10000000-0000-4000-8000-000000000202", displayName: "Maksymilian-Aleksander Bardzo-Długie-Imię", avatarKey: "owl", recordingMode: "hold", canRead: false, rewardPoints: 3 },
+    { childId: "10000000-0000-4000-8000-000000000203", displayName: "Jaś", avatarKey: "fox", recordingMode: "hold", canRead: true, rewardPoints: 0 },
+  ];
+  await installKidUiFixture(page, fixture);
+  await page.goto("/");
+  await expect(page.getByTestId("kid-profile")).toHaveCount(3);
+
+  const cases = [
+    { width: 360, height: 800, columns: 2 },
+    { width: 844, height: 390, columns: null },
+    { width: 820, height: 1180, columns: 3 },
+    { width: 1440, height: 900, columns: 3 },
+  ];
+  for (const viewport of cases) {
+    const name = `${viewport.width}x${viewport.height}`;
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.evaluate(async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    });
+    const layout = await page.evaluate(() => {
+      const rect = (element: Element) => {
+        const { left, top, right, bottom, width, height } = element.getBoundingClientRect();
+        return { left, top, right, bottom, width, height };
+      };
+      const root = document.querySelector("[data-kid-screen]")!;
+      const band = document.querySelector("[data-kid-header='band']")!;
+      return {
+        innerWidth: window.innerWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        root: rect(root),
+        band: rect(band),
+        tiles: [...document.querySelectorAll("[data-testid='kid-profile']")].map((tile) => ({
+          ...rect(tile),
+          overflowX: tile.scrollWidth > tile.clientWidth + 1,
+        })),
+      };
+    });
+    expect(layout.scrollWidth, `horizontal overflow: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
+    expect(Math.round(layout.band.left), `band left: ${name}`).toBe(Math.round(layout.root.left));
+    expect(Math.round(layout.band.right), `band right: ${name}`).toBe(Math.round(layout.root.right));
+    expect(Math.round(layout.band.top), `band top: ${name}`).toBe(0);
+    // Wysokość nie jest ograniczona: niski viewport przewija listę, ale poziomo nic nie ucieka.
+    for (const [index, tile] of layout.tiles.entries()) {
+      expect(tile.height, `tile ${index} height: ${name}`).toBeGreaterThanOrEqual(48);
+      expect(tile.left, `tile ${index} left: ${name}`).toBeGreaterThanOrEqual(0);
+      expect(tile.right, `tile ${index} right: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
+      expect(tile.left, `tile ${index} inside root: ${name}`).toBeGreaterThanOrEqual(layout.root.left - 1);
+      expect(tile.right, `tile ${index} inside root: ${name}`).toBeLessThanOrEqual(layout.root.right + 1);
+      expect(tile.overflowX, `tile ${index} content overflow: ${name}`).toBe(false);
+      if (viewport.height >= 480) {
+        expect(tile.top, `tile ${index} top: ${name}`).toBeGreaterThanOrEqual(0);
+        expect(tile.bottom, `tile ${index} bottom: ${name}`).toBeLessThanOrEqual(viewport.height);
+      }
+    }
+    if (viewport.columns) {
+      const firstRow = layout.tiles.filter((tile) => Math.abs(tile.top - layout.tiles[0]!.top) <= 1).length;
+      expect(firstRow, `tiles in the first row: ${name}`).toBe(Math.min(viewport.columns, layout.tiles.length));
+    }
+    for (const tile of await page.getByTestId("kid-profile").all()) {
+      await tile.scrollIntoViewIfNeeded();
+      await expect(tile, `tile reachable: ${name}`).toBeInViewport({ ratio: 0.98 });
+    }
+    await page.evaluate(() => window.scrollTo(0, 0));
+    if (viewport.width === 360) {
+      await page.screenshot({ path: testInfo.outputPath("profile-360x800.png") });
+      await page.screenshot({ path: "C:/Users/looka/IdeaProjects/knowli/.claude/worktrees/kids-ui-animations-review-a19ef5/.superpowers/sdd/2026-10-29-kid-ui-zatoka-stage1/task-6-profile.png" });
+    }
+  }
+});

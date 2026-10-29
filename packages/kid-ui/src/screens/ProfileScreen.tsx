@@ -6,19 +6,9 @@ import { m } from "motion/react";
 import { kidEntranceAnimate, kidEntranceInitial, kidSpringGentle, kidStaggerDelay } from "../motion/kid-motion";
 import { format } from "../format";
 import { KidScreen } from "../layout/KidScreen";
-
-const AVATARS: Record<string, string> = {
-  fox: "🦊",
-  bear: "🐻",
-  cat: "🐱",
-  dog: "🐶",
-  owl: "🦉",
-  rabbit: "🐰",
-};
-
-function avatarOf(avatarKey: string): string {
-  return AVATARS[avatarKey] ?? "🙂";
-}
+import { Chip } from "../components/Chip";
+import { EmptyScene } from "../illustrations/EmptyScene";
+import { ProfileAvatar } from "../illustrations/ProfileAvatar";
 
 /**
  * Ekran wyboru profilu — wybór nie jest zabezpieczeniem (arch §13). Pokazuje
@@ -38,15 +28,18 @@ export function ProfileScreen({
 }) {
   return (
     <KidScreen role="main" className="kid-screen kid-screen--profile" data-testid="kid-profile-screen">
-      <KidScreen.Header>
+      <KidScreen.Header variant="band">
         <header className="kid-top-bar">{headerActions}{onGuidance && <GuidanceButton audioKey="profile_select" onPlay={onGuidance} testId="kid-profile-guidance" />}</header>
         <h1>{messages.kid.profilesTitle}</h1>
       </KidScreen.Header>
       <KidScreen.Content>
       {profiles.length === 0 ? (
-        <p className="kid-hint">{messages.kid.noProfiles}</p>
+        <div className="kid-profile-empty">
+          <EmptyScene className="kid-profile-empty__scene" />
+          <p className="kid-hint">{messages.kid.noProfiles}</p>
+        </div>
       ) : (
-        <ul className="kid-list">
+        <ul className="kid-profile-grid">
           {profiles.map((profile, index) => (
             <m.li key={profile.childId} initial={kidEntranceInitial} animate={kidEntranceAnimate} whileHover={{ y: -4 }} transition={{ ...kidSpringGentle, delay: kidStaggerDelay(index) }}>
               <ProfileChoiceButton
@@ -55,13 +48,13 @@ export function ProfileScreen({
                 data-testid="kid-profile"
                 onClick={() => onSelect(profile.childId)}
               >
-                <div className="kid-profile-identity">
-                  <span className="kid-avatar" aria-hidden="true">{avatarOf(profile.avatarKey)}</span>
-                  <span>{profile.displayName}</span>
-                  {!profile.canRead && <span className="kid-profile-tag">{messages.kid.nonReaderProfileTag}</span>}
-                </div>
-                <span className="kid-profile-rewards">
-                  <span className="kid-profile-tag" data-testid="kid-profile-points">{format(messages.kid.rewardEarned, { n: profile.rewardPoints ?? 0 })}</span>
+                <span className="kid-profile-avatar"><ProfileAvatar avatarKey={profile.avatarKey} size={72} /></span>
+                <span className="kid-profile-body">
+                  <span className="kid-profile-name">{profile.displayName}</span>
+                  <span className="kid-profile-chips">
+                    {!profile.canRead && <Chip>{messages.kid.nonReaderProfileTag}</Chip>}
+                    <Chip tone="warm" icon="sparkles" data-testid="kid-profile-points">{format(messages.kid.rewardEarned, { n: profile.rewardPoints ?? 0 })}</Chip>
+                  </span>
                 </span>
               </ProfileChoiceButton>
             </m.li>
