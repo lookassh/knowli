@@ -385,11 +385,20 @@ async function objectivePrecisionHistory(
     .orderBy(desc(attempts.receivedAt), desc(attempts.id));
   const result: Record<string, ObjectivePrecisionSnapshot> = {};
   for (const row of rows) {
-    const details = row.details as { objectiveId?: unknown; knowledge?: unknown; precision?: unknown } | null;
+    const details = row.details as { objectiveId?: unknown; knowledge?: unknown; precision?: unknown; confusedConcepts?: unknown } | null;
     const objectiveId = typeof details?.objectiveId === "string" ? details.objectiveId : null;
     if (!objectiveId || objectiveId in result) continue;
     if (KNOWLEDGE_VALUES.has(String(details?.knowledge)) && PRECISION_VALUES.has(String(details?.precision))) {
-      result[objectiveId] = { knowledge: details!.knowledge, precision: details!.precision } as ObjectivePrecisionSnapshot;
+      const confusedConcepts = Array.isArray(details!.confusedConcepts)
+        ? (details!.confusedConcepts as unknown[]).flatMap((pair) => {
+            const candidate = pair as { said?: unknown; meant?: unknown } | null;
+            return typeof candidate?.said === "string" && typeof candidate.meant === "string" ? [{ said: candidate.said, meant: candidate.meant }] : [];
+          })
+        : [];
+      result[objectiveId] = {
+        knowledge: details!.knowledge, precision: details!.precision,
+        ...(confusedConcepts.length > 0 ? { confusedConcepts } : {}),
+      } as ObjectivePrecisionSnapshot;
     }
   }
   return result;
@@ -528,6 +537,10 @@ function planLessonTaskFromSnapshot(
         itemId: e.itemId, itemRevisionId: e.revisionId, objectiveId: e.payload.objectiveId, exerciseType: e.payload.exerciseType, targetKey: e.targetKey,
         ...(e.payload.familyId ? { familyId: e.payload.familyId } : {}),
         ...(e.payload.expectedForm ? { expectedForm: e.payload.expectedForm } : {}),
+        ...(e.payload.questionType ? { questionType: e.payload.questionType } : {}),
+        ...(e.payload.questionType === "comparison"
+          ? { searchText: [e.payload.prompt ?? "", ...(e.payload.requiredElements ?? []).map((el) => el.text)].join(" ") }
+          : {}),
       }),
     ),
     objectiveOrder: snapshot.objectiveOrder,

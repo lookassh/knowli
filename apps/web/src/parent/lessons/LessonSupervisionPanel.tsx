@@ -53,6 +53,23 @@ function SchoolProgress({ objective }: { objective: ObjectiveProgressDto }) {
       )}
       <Title order={5} className="pp-sup-subtitle">{messages.lessons.schoolPrecisionTitle}</Title>
       <Text size="sm" className="pp-editor-muted">{fill(messages.lessons.schoolPrecisionCounts, school.precision)}</Text>
+      {school.fragmentKinds && (
+        <Text size="sm" className="pp-editor-muted" data-testid={`school-fragment-kinds-${objective.objectiveId}`}>
+          {fill(messages.lessons.schoolFragmentKinds, school.fragmentKinds)}
+        </Text>
+      )}
+      {school.topConfusions && school.topConfusions.length > 0 && (
+        <div data-testid={`school-confusions-${objective.objectiveId}`}>
+          <Title order={5} className="pp-sup-subtitle">{messages.lessons.schoolConfusionsTitle}</Title>
+          <ul className="pp-sup-list">
+            {school.topConfusions.map((pair) => (
+              <li key={`${pair.said}|${pair.meant}`}>
+                <Text size="sm" span>{fill(messages.lessons.schoolConfusion, pair)}</Text> <Text size="sm" span className="pp-editor-muted">({pair.count})</Text>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {school.topMissing.length > 0 && (
         <>
           <Title order={5} className="pp-sup-subtitle">{messages.lessons.schoolMissingTitle}</Title>
@@ -315,6 +332,11 @@ export default function LessonSupervisionPanel({
                                 {objective.school.missingElements.length > 0 && (
                                   <Text size="sm" className="pp-editor-muted">{fill(messages.lessons.mockTestSchoolMissing, {
                                     elements: objective.school.missingElements.map((element) => `${element.text} (${element.count})`).join(", "),
+                                  })}</Text>
+                                )}
+                                {objective.school.confusions && objective.school.confusions.length > 0 && (
+                                  <Text size="sm" className="pp-editor-muted" data-testid={`mock-school-confusions-${objective.objectiveId}`}>{fill(messages.lessons.mockTestSchoolConfusions, {
+                                    pairs: objective.school.confusions.map((pair) => `${fill(messages.lessons.schoolConfusion, pair)} (${pair.count})`).join(", "),
                                   })}</Text>
                                 )}
                               </div>

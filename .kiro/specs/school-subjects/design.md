@@ -732,12 +732,12 @@ per cel z poprzednich sesji (bez zadań następczych):
 3. brakujący element → bez nowej reguły: `partial` mapuje się na `incorrect`,
    więc działa istniejąca ścieżka wsparcia (karta wsparcia i ćwiczenie
    prowadzone celu); nie ma mapowania element → ćwiczenie;
-4. pomyłka pojęć → odłożone (6.5, punkt 5);
+4. pomyłka pojęć → pytanie porównawcze celu (Etap 6, §9.3);
 5. samodzielnie i zwięźle → bez zmian (rzadsza powtórka po przerwie).
 
 ### 6.5. Decyzje właściciela (zaakceptowane 2026-10-29)
 
-Punkty 1–3 i 6 wdrożone; punkty 4 i 5 odłożone na krok po pilotażu.
+Punkty 1–3 i 6 wdrożone w Etapie 4; punkty 4 i 5 — w Etapie 6 (§9).
 
 1. `lesson_shorten` jako zadanie następcze poza planem i budżetem, wyłączone
    w fazie „Jeszcze 3 i koniec!” i w kartkówce.
@@ -892,3 +892,162 @@ harmonogramu: powtórki nadal planuje selektor z historii ocen.
   `learning-overview`, więc brak wpływu (do odnotowania w PR).
 - Etap 5 obejmuje też przepisanie SPEC §28 i architektury §22 na stan kodu
   oraz pełny przebieg bramek.
+
+## 9. Precyzja v3: kategorie fragmentów i pomylone pojęcia (Etap 6) — kontrakt
+
+Status: **zaakceptowany przez właściciela 2026-10-29** (decyzje 9.6 bez zmian)
+i zaimplementowany; ewaluacja gradera v3 w `grader-eval-2026-10-29-v3.md`,
+korekta przy implementacji w 9.7. Realizuje punkty 4 i 5
+odłożone w 6.5 (źródło §5.5 i reguła „myli dwa pojęcia → ćwiczenie ich
+porównywania”, wym. 7.3–7.4). Moduły: werdykt i reguły w domenie
+(`domain/lessons/evaluate.ts`, `precision-trainer.ts`, `scheduler.ts`), ścieżka
+oceny `learning/lessons/`, raport `materials/lessons/lesson-supervision.ts`,
+adapter gradera; gramatyka bez zmian (jej werdykt v1 się nie zmienia).
+
+### 9.1. Werdykt `school-grader-v3`
+
+Wyjście modelu rozszerza v2 o dwa pola:
+
+```json
+{
+  "knowledge": "correct | partial | incorrect",
+  "precision": "concise | verbose | unfocused",
+  "matchedElementIds": ["e1"],
+  "missingElementIds": ["e2"],
+  "incorrectStatements": ["<dokładny podciąg odpowiedzi>"],
+  "redundantFragments": ["<poprawne, ale zbędne — dokładny podciąg>"],
+  "offTopicFragments": ["<niezwiązane z pytaniem — dokładny podciąg>"],
+  "confusedConcepts": [{ "said": "<pojęcie użyte przez dziecko, podciąg odpowiedzi>", "meant": "<pojęcie właściwe>" }],
+  "note": "<krótki komentarz wyłącznie dla rodzica>"
+}
+```
+
+Zasady `validateSchoolVerdict` (naruszenie = odrzucenie werdyktu, próba
+„nieocenione”, jak dziś), dopisane do reguł v2:
+
+- `redundantFragments` i `offTopicFragments` — po maks. 4, każdy dokładnym
+  podciągiem odpowiedzi po NFC, rozłączne (ten sam fragment nie może być w obu
+  listach ani w `incorrectStatements`);
+- `confusedConcepts` — maks. 2 pary; `said` jest podciągiem odpowiedzi, `said`
+  ≠ `meant`, oba 1–60 znaków; para wymaga wiedzy `partial` albo `incorrect`
+  (pomylenie pojęć to błąd treści, nigdy `correct`);
+- kategoria błędu oceny: przy niepustym `confusedConcepts` →
+  `confused_concept` (kategoria istnieje w module szkoły od Etapu 1), poza tym
+  jak w v2 (`missing_element` / `wrong_fact` / `incomplete`).
+
+Prompt v3 opisuje trzy rodzaje treści zbędnej wprost ze źródła §5.5
+(niezbędne = elementy wymagane; poprawne, ale zbędne; niezwiązane z pytaniem)
+oraz definicję pomylenia: dziecko użyło jednego pojęcia z materiału zamiast
+drugiego (np. „równoleżnik” zamiast „południk”, „wysokość względna” zamiast
+„bezwzględna”). Wszystko nadal jako dane, bez danych dziecka.
+
+**Cache i historia.** Nowy `promptVersion = 'school-grader-v3'` to nowy klucz
+`lesson_verdicts`: werdykty v2 zostają w bazie (historia ocen i decyzje
+rodzica bez zmian), ale nie są używane dla nowych odpowiedzi — powtórzona
+odpowiedź raz jeszcze trafi do modelu. Decyzje rodzica na werdyktach v2 nie
+przechodzą na v3 (inny tekst oceny). Migracja `0025`: kolumny
+`off_topic_fragments` i `confused_concepts` (jsonb, domyślnie pusta lista)
+w `lesson_verdicts`; stare wiersze dostają puste listy. `assessments.details`
+dostaje `offTopicFragments` i `confusedConcepts` obok dzisiejszych pól.
+
+**Bramka jakości (golden set).** Złoty zestaw dostaje przypadki: fragment
+niezwiązany z pytaniem, fragment poprawny, ale zbędny, oraz pomylenie pojęć.
+Twarde wymagania v2 bez zmian (≥ 90% zgodności wiedzy, zero werdyktów
+odrzuconych, błędy rzeczowe zawsze `incorrect`); nowe: przypadki pomylenia
+pojęć dają niepusty `confusedConcepts` w ≥ 80% i nigdy wiedzę `correct`.
+Rozróżnienie zbędne/niezwiązane jest raportowane, nie bramkuje (jak precyzja).
+
+### 9.2. „Skróć odpowiedź” z dwiema kategoriami
+
+- Wyzwalacz 6.3 bez zmian poza jednym: fragment do usunięcia to
+  `redundantFragments` **albo** `offTopicFragments`.
+- Kid DTO `lesson_shorten.answerSegments`: stan segmentu rozszerzony o
+  `"offtopic"` (`plain | pill | offtopic`; `pill` = poprawne, ale zbędne —
+  bez zmiany znaczenia dla istniejących zadań). Rozszerzenie wspólnego
+  `SpellingDiffSegmentSchema` dotyczy wyłącznie segmentów lekcji; diff pisowni
+  słówek nie używa nowej wartości (test kontraktu).
+- Kid UI: dwa style zaznaczenia z tokenów M3 (zbędne — obecny styl pigułki,
+  nie na temat — rola `error-container`) i legenda pod tekstem: „zbędne”,
+  „nie na temat”. Kolor nie jest jedynym nośnikiem: segmenty mają etykiety
+  dostępności i różny obrys. Testy geometrii dopisane do
+  `lesson-precision-layout.spec.ts`.
+- Feedback `lesson_precision_hint` z szablonu zależnie od kategorii: tylko
+  zbędne — „Wiesz to! Teraz spróbuj powiedzieć to krócej”; są fragmenty nie na
+  temat — „Wiesz to! Usuń to, co nie odpowiada na pytanie”.
+- Poprawka: `lostElementIds` i ocena bez zmian.
+
+### 9.3. Pomylone pojęcia → pytanie porównawcze
+
+- **Sygnał:** ostatnia ocena odpowiedzi otwartej celu z poprzednich sesji
+  (ten sam odczyt co `precisionHistory`, bez zadań następczych) z niepustym
+  `confusedConcepts`. Snapshot selektora dostaje `confusedConcepts`.
+- **Reguła selektora (6.4 pkt 4):** przy wyborze odpowiedzi otwartej tego celu
+  preferuj ćwiczenia z `questionType = comparison`; wśród nich najpierw te,
+  których pytanie lub elementy wymagane zawierają (po normalizacji) `said`
+  albo `meant`. Stabilny podział jak `preferConciseForms`; bez pytań
+  porównawczych w puli kolejność się nie zmienia (działa istniejąca ścieżka
+  wsparcia, bo pomylenie daje wynik `incorrect`). Reguła pomylenia ma
+  pierwszeństwo przed preferencją form zwięzłych.
+- **Pula:** generator już zna `questionType: comparison`; prompt generowania
+  dostaje zdanie: „gdy materiał zawiera pary łatwo mylonych pojęć (np.
+  południk/równoleżnik), dodaj co najmniej jedno pytanie porównawcze dla tej
+  pary”. Dotyczy tylko nowych generacji i dogenerowań; istniejące zestawy
+  rodzic może uzupełnić w edytorze (pytanie otwarte z typem „porównanie”).
+- Bez nowego typu ćwiczenia, bez mapowania pojęć między celami.
+
+### 9.4. Raport rodzica
+
+`SchoolProgress` dostaje opcjonalne:
+
+- `topConfusions: [{ said, meant, count }]` (maks. 5, malejąco) — „Myli pojęcia”;
+- `fragmentKinds: { redundant, offTopic }` — liczba ocen z fragmentami każdej
+  kategorii (obok liczników precyzji).
+
+Para oryginał → poprawka w `shortening.recent` bez zmian. Raport kartkówki
+(`objectives[].school`) dostaje `confusions` (te same pary, maks. 3). Raport
+nie ocenia cech dziecka — tylko treść odpowiedzi.
+
+### 9.5. Prywatność, transakcje, integracje
+
+- Do gradera trafiają te same dane co w v2 (treść ćwiczenia, kryteria,
+  odpowiedź dziecka jako dane); komentarz modelu i pary pojęć wyłącznie dla
+  rodzica i selektora — Kid DTO dostaje tylko kategorie segmentów własnego
+  tekstu dziecka (bez `meant`, które ujawniałoby odpowiedź przed ponowieniem).
+- Finalizacja próby bez zmian (jedna transakcja; model poza transakcją, CAS).
+- API → MCP → skill: lekcje poza `learning-overview` — brak wpływu.
+
+### 9.6. Decyzje do akceptacji właściciela
+
+1. **Werdykt v3** z `offTopicFragments` i `confusedConcepts` (pary `said`/`meant`)
+   i nowym kluczem cache `school-grader-v3`: werdykty v2 i decyzje rodzica na
+   nich zostają w historii, ale nie są używane dla nowych odpowiedzi (koszt:
+   ponowne wywołania modelu dla powtarzanych odpowiedzi po wdrożeniu).
+2. **Migracja `0025`** (dwie kolumny jsonb w `lesson_verdicts`).
+3. **Kid UI „Skróć”**: dwa style zaznaczeń + legenda „zbędne” / „nie na temat”
+   (rozszerzenie stanu segmentu o `offtopic`).
+4. **Selektor**: po pomyleniu pojęć preferencja pytań porównawczych celu, bez
+   nowego typu ćwiczenia; pierwszeństwo przed formami zwięzłymi.
+5. **Generator**: zdanie o pytaniach porównawczych dla par mylonych pojęć
+   (tylko nowe generacje).
+6. **Raport**: „Myli pojęcia” per zagadnienie i w raporcie kartkówki, licznik
+   fragmentów zbędnych / nie na temat.
+7. **Bramka jakości**: ewaluacja golden setu na prawdziwym modelu
+   (`google/gemini-3.8-flash`) przed PR; próg dla pomylenia pojęć ≥ 80%.
+
+### 9.7. Korekty przy implementacji (2026-10-29)
+
+- Reguła pytań porównawczych działa w obu ścieżkach wyboru odpowiedzi
+  otwartej: także przy należnym samodzielnym sprawdzeniu (wykrył to test
+  integracyjny — pierwotnie tylko ścieżka utrwalania).
+- Pary pojęć w raporcie grupowane bez wielkości liter; zapis — pierwszy
+  alfabetycznie wariant z ocen.
+- Decyzja rodzica „uznaj za poprawne” na werdykcie v3 zeruje także
+  `confusedConcepts` (znika błąd treści, więc i pomylenie).
+- Review: pomylenie pojęć liczy się jako luka w treści (werdykt „częściowa”
+  z samym pomyleniem przy komplecie elementów jest poprawny); pary są
+  przycinane i liczone raz; zapis pary w raportach — najmniejszy wariant
+  w porządku kodów znaków (`collate "C"` w SQL). Kolory w „Skróć”: zbędne —
+  rola `secondary-container`, nie na temat — `error-container`.
+- Fake grader dzieli zdania bez elementów wymaganych: z rdzeniem słowa pytania
+  albo odpowiedzi wzorcowej → „zbędne”, pozostałe → „nie na temat”;
+  `fake-school-grader-v3`.

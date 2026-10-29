@@ -87,7 +87,12 @@ export type LessonSegment = z.infer<typeof LessonSegmentSchema>;
 /** Fragment zapisu w porównaniu pisowni; `pill` = fragment do wyróżnienia (issue #9). */
 export const SpellingDiffSegmentSchema = z.object({
   text: z.string().min(1),
-  state: z.enum(["plain", "pill"]),
+  /**
+   * `pill` = fragment do wyróżnienia (w lekcjach szkolnych: poprawny, ale
+   * zbędny); `offtopic` = niezwiązany z pytaniem — tylko segmenty odpowiedzi
+   * lekcji (design szkoły §9.2), nigdy diff pisowni słówek.
+   */
+  state: z.enum(["plain", "pill", "offtopic"]),
 });
 export type SpellingDiffSegmentDto = z.infer<typeof SpellingDiffSegmentSchema>;
 
@@ -541,9 +546,14 @@ export type SpeechFeedbackDto = z.infer<typeof SpeechFeedbackDtoSchema>;
  * Segmenty `expected` składają się dokładnie na `correctText`; bez odległości
  * i technicznych score'ów (dziecko nie widzi liczb).
  */
+/** Segment diffu pisowni: tylko `plain`/`pill` (kategoria „nie na temat” dotyczy lekcji). */
+const SpellingSegmentSchema = SpellingDiffSegmentSchema.refine((segment) => segment.state !== "offtopic", {
+  message: "spelling diff segments are plain or pill",
+});
+
 export const SpellingDiffSchema = z.object({
-  given: z.array(SpellingDiffSegmentSchema).min(1).max(32),
-  expected: z.array(SpellingDiffSegmentSchema).min(1).max(32),
+  given: z.array(SpellingSegmentSchema).min(1).max(32),
+  expected: z.array(SpellingSegmentSchema).min(1).max(32),
   capitalizationHint: z.boolean().optional(),
 });
 export type SpellingDiff = z.infer<typeof SpellingDiffSchema>;

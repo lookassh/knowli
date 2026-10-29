@@ -20,7 +20,9 @@ export const schoolPrompts: SubjectPromptProfile = {
     "Wszystkie pola tekstowe są po polsku (prompt language = answer language). " +
     "lesson_open_answer.prompt to pytanie do dziecka; answer to krótka odpowiedź wzorcowa (maks. 300 znaków) " +
     "sformułowana na podstawie materiału; acceptedAnswers to inne poprawne sformułowania tej samej odpowiedzi. " +
-    "questionType: definition|enumeration|cause|comparison|fact|process. requiredElements: 1-6 elementów " +
+    "questionType: definition|enumeration|cause|comparison|fact|process. Gdy materiał zawiera pary łatwo mylonych pojęć " +
+    "(np. południk/równoleżnik, wysokość względna/bezwzględna), dodaj co najmniej jedno pytanie porównawcze " +
+    "(questionType: comparison) wymieniające obie nazwy tej pary. requiredElements: 1-6 elementów " +
     "{id: e1, e2, ..., text} — pojedyncze informacje, które poprawna odpowiedź musi zawierać; każdy element " +
     "jest jedną informacją, nie całym zdaniem wzorca. supplementaryElements: informacje poprawne, ale niewymagane. " +
     "commonErrors: typowe błędne stwierdzenia dzieci w tym pytaniu. expectedForm: short (sam fakt/data/nazwa), " +

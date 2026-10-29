@@ -24,7 +24,7 @@ import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
  * Etap 2: ocena dwuwymiarowa odpowiedzi otwartej szkoły na prawdziwej ścieżce
  * prób (fake grader): wiedza steruje wynikiem, precyzja ląduje w szczegółach
  * oceny i w raporcie rodzica; werdykt zapisuje się do cache `lesson_verdicts`
- * z wersją `fake-school-grader-v1`.
+ * z wersją `fake-school-grader-v3`.
  */
 
 const { pool } = testDatabase();
@@ -45,7 +45,7 @@ const MATERIAL =
 
 async function seedSchoolDeck(
   childId: string,
-  options: { expectedForm?: string; openAcceptedAnswers?: string[]; secondObjective?: boolean; precisionTrainer?: boolean } = {},
+  options: { expectedForm?: string; openAcceptedAnswers?: string[]; secondObjective?: boolean; precisionTrainer?: boolean; comparison?: boolean } = {},
 ): Promise<{ deckId: string }> {
   const deckId = randomUUID();
   const versionId = randomUUID();
@@ -121,6 +121,25 @@ async function seedSchoolDeck(
       ...(options.precisionTrainer ? { familyId: "def" } : {}),
     },
   ];
+  if (options.comparison) {
+    // Etap 6: zwykłe pytanie otwarte innej rodziny PRZED pytaniem porównawczym w puli —
+    // wybór porównania po pomyleniu pojęć wynika wtedy z reguły selektora, nie z kolejności.
+    exercises.push({
+      exerciseType: "lesson_open_answer", objectiveId: OBJECTIVE_ID, instructionPl: "Odpowiedz własnymi słowami.",
+      prompt: "Czego roślina potrzebuje do fotosyntezy?",
+      answer: "Roślina potrzebuje wody, dwutlenku węgla i światła.",
+      acceptedAnswers: [], focus: ["światła"], questionType: "enumeration", expectedForm: "explanation", familyId: "potrzeby",
+      requiredElements: [{ id: "p1", text: "roślina potrzebuje wody" }, { id: "p2", text: "roślina potrzebuje światła" }],
+      supplementaryElements: [], commonErrors: [], sourceRefs: [{ quote: "z wody i dwutlenku węgla" }],
+    }, {
+      exerciseType: "lesson_open_answer", objectiveId: OBJECTIVE_ID, instructionPl: "Odpowiedz własnymi słowami.",
+      prompt: "Czym różni się fotosynteza od oddychania rośliny?",
+      answer: "Fotosynteza wytwarza cukry przy świetle, a oddychanie je rozkłada.",
+      acceptedAnswers: [], focus: ["wytwarza cukry"], questionType: "comparison", expectedForm: "explanation", familyId: "porownanie",
+      requiredElements: [{ id: "c1", text: "fotosynteza wytwarza cukry" }, { id: "c2", text: "oddychanie rozkłada cukry" }],
+      supplementaryElements: [], commonErrors: [], sourceRefs: [{ quote: "wytwarza cukry" }],
+    });
+  }
   if (options.precisionTrainer) {
     // Trener precyzji: druga rodzina pytań (inne pytanie i odpowiedź) i słowa
     // kluczowe rodziny „def” — para wybór pojęć → odpowiedź otwarta.
@@ -247,7 +266,7 @@ async function reachOpenTask(services: AnyServices, childId: string, deckId: str
 }
 
 describe("ocena szkolna dwuwymiarowa (integracja)", () => {
-  it("parafraza ze wszystkimi elementami: wiedza correct, precyzja w details i raporcie; werdykt v2 w cache", async () => {
+  it("parafraza ze wszystkimi elementami: wiedza correct, precyzja w details i raporcie; werdykt v3 w cache", async () => {
     const grader = new FakeAnswerGrader();
     const { services: base, clock } = buildTestServices();
     const services = createServices({
@@ -286,7 +305,7 @@ describe("ocena szkolna dwuwymiarowa (integracja)", () => {
       "select prompt_version, precision, verdict from learning_app.lesson_verdicts",
     );
     expect(verdicts.rows).toHaveLength(1);
-    expect(verdicts.rows[0]!.prompt_version).toBe("fake-school-grader-v1");
+    expect(verdicts.rows[0]!.prompt_version).toBe("fake-school-grader-v3");
     expect(verdicts.rows[0]!.precision).toBe("concise");
     expect(verdicts.rows[0]!.verdict).toBe("correct");
 
@@ -744,5 +763,98 @@ describe("kartkówka szkolna z wymiarem precyzji (Etap 5, integracja)", () => {
     const objective = report.objectives.find((row) => row.objectiveId === OBJECTIVE_ID)!;
     expect(objective.correct).toBe(1);
     expect(objective.school?.knowledge).toEqual({ correct: 1, partial: 0, incorrect: 0 });
+  });
+});
+
+describe("werdykt v3: pomylone pojęcia i fragmenty nie na temat (Etap 6, integracja)", () => {
+  const confusedAnswer = "Oddychanie to proces, w którym roślina wytwarza cukry przy świetle.";
+  const confusedVerdict = {
+    raw: {
+      knowledge: "partial", precision: "concise",
+      matchedElementIds: ["e1", "e2"], missingElementIds: [],
+      incorrectStatements: ["Oddychanie to proces"], redundantFragments: [], offTopicFragments: [],
+      confusedConcepts: [{ said: "Oddychanie", meant: "fotosynteza" }],
+      note: "Pomyliło oddychanie z fotosyntezą.",
+    },
+  };
+
+  it("pomylenie pojęć: kategoria confused_concept, para w cache i ocenie, raport „Myli pojęcia”, a potem pytanie porównawcze", async () => {
+    const grader = new FakeAnswerGrader().onAnswer(confusedAnswer, confusedVerdict);
+    const { services: base, clock } = buildTestServices();
+    const services = createServices({
+      db: (base as unknown as { db: Parameters<typeof createServices>[0]["db"] }).db,
+      clock,
+      grader: { provider: grader, maxCallsPerSession: 20, timeoutMs: 8000 },
+    });
+    const child = await createChild(services, { displayName: "Pomyłka", avatarKey: "owl" });
+    const { deckId } = await seedSchoolDeck(child.id, { comparison: true });
+
+    const first = await reachOpenTask(services, child.id, deckId);
+    expect(first.prompt).toMatchObject({ prompt: "Co to jest fotosynteza?" });
+    const result = await submitAttempt(services, { taskId: first.taskId, clientAttemptId: randomUUID(), modality: "text", text: confusedAnswer });
+    expect(result.feedback).toMatchObject({ kind: "lesson_hint" });
+    // para pojęć jest wyłącznie dla rodzica i selektora — nie w feedbacku dziecka
+    expect(JSON.stringify(result.feedback)).not.toContain("fotosynteza");
+
+    const cache = await pool.query<{ confused_concepts: unknown; error_category: string | null }>("select confused_concepts, error_category from learning_app.lesson_verdicts");
+    expect(cache.rows[0]).toEqual({ confused_concepts: [{ said: "Oddychanie", meant: "fotosynteza" }], error_category: "confused_concept" });
+    const assessment = await pool.query<{ details: Record<string, unknown> }>(
+      "select n.details from learning_app.assessments n join learning_app.attempts a on a.id = n.attempt_id where a.task_id = $1", [first.taskId]);
+    expect(assessment.rows[0]!.details).toMatchObject({ errorCategory: "confused_concept", confusedConcepts: [{ said: "Oddychanie", meant: "fotosynteza" }] });
+
+    const report = (await lessonObjectiveProgress(services, deckId, child.id)).find((row) => row.objectiveId === OBJECTIVE_ID)!;
+    expect(report.school?.topConfusions).toEqual([{ said: "Oddychanie", meant: "fotosynteza", count: 1 }]);
+
+    // Następna sesja: przy wyborze odpowiedzi otwartej celu wygrywa pytanie porównawcze,
+    // choć w puli przed nim jest niewidziane pytanie innej rodziny.
+    await endSession(services, first.sessionId);
+    clock.advanceHours(48);
+    const next = await reachOpenTask(services, child.id, deckId);
+    expect(next.prompt).toMatchObject({ prompt: "Czym różni się fotosynteza od oddychania rośliny?" });
+  });
+
+  it("raport kartkówki pokazuje pomylone pojęcia zagadnienia", async () => {
+    const grader = new FakeAnswerGrader().onAnswer(confusedAnswer, confusedVerdict);
+    const services = makeServices(grader);
+    const child = await createChild(services, { displayName: "Kartkówka v3", avatarKey: "owl" });
+    const { deckId } = await seedSchoolDeck(child.id);
+    const session = await startSession(services, { childId: child.id, deckId, microphoneEnabled: false, mode: "mock_test" });
+    for (let i = 0; i < 20; i++) {
+      const task = await nextTask(services, session.sessionId);
+      if (task === null) break;
+      if (task.exerciseType === "lesson_card") { await completePresentation(services, { taskId: task.taskId }); continue; }
+      const text = task.exerciseType === "lesson_open_answer" ? confusedAnswer : null;
+      await submitAttempt(services, text === null
+        ? { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "skip" }
+        : { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text });
+    }
+    await endSession(services, session.sessionId);
+    const report = await getLessonMockTestReport(services, session.sessionId);
+    const objective = report.objectives.find((row) => row.objectiveId === OBJECTIVE_ID)!;
+    expect(objective.school?.confusions).toEqual([{ said: "Oddychanie", meant: "fotosynteza", count: 1 }]);
+  });
+
+  it("„Skróć odpowiedź” zaznacza treść nie na temat osobno i dobiera do niej podpowiedź; raport liczy kategorie", async () => {
+    const services = makeServices(new FakeAnswerGrader());
+    const child = await createChild(services, { displayName: "Dygresja", avatarKey: "cat" });
+    const { deckId } = await seedSchoolDeck(child.id, { secondObjective: true });
+    const openTask = await reachOpenTask(services, child.id, deckId);
+    const verboseAnswer =
+      "Roślina wytwarza cukry, bo wykorzystuje światło. " +
+      "W ogóle rośliny są bardzo ciekawe i rosną w ogrodzie mojej babci, a wczoraj padał deszcz. " +
+      "Potem grałem w piłkę z kolegami na podwórku aż do wieczora i było super, naprawdę bardzo fajnie.";
+    const result = await submitAttempt(services, { taskId: openTask.taskId, clientAttemptId: randomUUID(), modality: "text", text: verboseAnswer });
+    expect(result.feedback).toEqual({ kind: "lesson_precision_hint", hintPl: "Wiesz to! Usuń to, co nie odpowiada na pytanie." });
+
+    const followUp = (await nextTask(services, openTask.sessionId))!;
+    const segments = (followUp.prompt as { answerSegments: { text: string; state: string }[] }).answerSegments;
+    expect(segments.find((segment) => segment.state === "pill")?.text).toContain("rośliny są bardzo ciekawe");
+    expect(segments.find((segment) => segment.state === "offtopic")?.text).toContain("grałem w piłkę");
+
+    const cache = await pool.query<{ off_topic_fragments: string[]; redundant_fragments: string[] }>("select off_topic_fragments, redundant_fragments from learning_app.lesson_verdicts");
+    expect(cache.rows[0]!.off_topic_fragments).toHaveLength(1);
+    expect(cache.rows[0]!.redundant_fragments).toHaveLength(1);
+    const report = (await lessonObjectiveProgress(services, deckId, child.id)).find((row) => row.objectiveId === OBJECTIVE_ID)!;
+    expect(report.school?.fragmentKinds).toEqual({ redundant: 1, offTopic: 1 });
   });
 });
