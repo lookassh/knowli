@@ -34,6 +34,8 @@ const STAGE_BY_TYPE: Readonly<Record<LessonExerciseTypeDto, LessonStage>> = {
   lesson_open_answer: "independent",
   lesson_calculation: "independent",
   lesson_keywords: "guided",
+  lesson_match: "guided",
+  lesson_group: "guided",
 };
 
 /** Etap ćwiczenia danego typu (prezentacja przeglądu). */

@@ -378,7 +378,7 @@ export const messages = {
     steps: "Kroki",
     remaining: "Niewydane kroki",
     stepState: { issued: "Wydano", answered: "Odpowiedziano", completed: "Zakończono", skipped: "Pominięto" },
-    stepType: { exposure: "Prezentacja", listening: "Słuchanie", recall: "Przypominanie", spelling: "Pisownia", pronunciation: "Wymowa", picture_listening: "Wybór obrazka", picture_recognition: "Słowo do obrazka", lesson_card: "Karta lekcji", lesson_gap: "Uzupełnianie luki", lesson_order: "Układanie", lesson_open_answer: "Odpowiedź otwarta", lesson_calculation: "Zadanie rachunkowe", lesson_choice: "Wybór odpowiedzi", lesson_short_answer: "Krótka odpowiedź", lesson_transform: "Przekształcanie zdania", lesson_notice: "Zauważ różnicę" },
+    stepType: { exposure: "Prezentacja", listening: "Słuchanie", recall: "Przypominanie", spelling: "Pisownia", pronunciation: "Wymowa", picture_listening: "Wybór obrazka", picture_recognition: "Słowo do obrazka", lesson_card: "Karta lekcji", lesson_gap: "Uzupełnianie luki", lesson_order: "Układanie", lesson_open_answer: "Odpowiedź otwarta", lesson_calculation: "Zadanie rachunkowe", lesson_choice: "Wybór odpowiedzi", lesson_short_answer: "Krótka odpowiedź", lesson_transform: "Przekształcanie zdania", lesson_notice: "Zauważ różnicę", lesson_keywords: "Słowa kluczowe", lesson_match: "Połącz w pary", lesson_group: "Pogrupuj" },
     response: "Odpowiedź",
     feedback: "Zapisany komunikat",
     skipped: "Pominięto",
@@ -636,6 +636,8 @@ export const messages = {
     },
     // Trener precyzji (Etap 4): słowa kluczowe i skracanie odpowiedzi.
     lessonKeywordsInstruction: "Wybierz 2–3 najważniejsze pojęcia do tej odpowiedzi.",
+    lessonMatchInstruction: "Połącz w pary.",
+    lessonGroupInstruction: "Pogrupuj.",
     lessonKeywordsSelected: "Wybrane: {count} z {max}",
     lessonKeywordsOptions: "Pojęcia do wyboru",
     lessonShortenRemove: "Do usunięcia: {fragments}",
@@ -782,6 +784,8 @@ export const messages = {
       lesson_open_answer: "Odpowiedź otwarta",
       lesson_calculation: "Zadanie rachunkowe",
       lesson_keywords: "Słowa kluczowe",
+      lesson_match: "Połącz w pary",
+      lesson_group: "Pogrupuj",
     } as Record<string, string>,
     stages: {
       intro: "Wprowadzenie",

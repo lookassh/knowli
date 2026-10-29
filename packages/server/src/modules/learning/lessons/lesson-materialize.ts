@@ -47,6 +47,10 @@ export interface LessonExercisePayload {
   sourceRefs?: { quote: string; parentAdded?: boolean }[];
   keywordOptions?: { id: string; text: string }[];
   keyOptionIds?: string[];
+  pairs?: { left: string; right: string }[];
+  extraRight?: string[];
+  groups?: { id: string; label: string }[];
+  groupItems?: { text: string; groupId: string }[];
   answerLocale: string;
   promptLocale: string;
 }
@@ -314,6 +318,58 @@ export function materializeExercise(
         prompt,
         answerKey: { ...baseKey, correctOptionIds, minSelected: 2, maxSelected, optionValues: Object.fromEntries(options.map((o) => [o.id, o.text])) },
         exposures: [exercise.targetKey, ...(plan.pairedOpenAnswer ? [plan.pairedOpenAnswer.targetKey] : [])],
+      };
+    }
+    case "lesson_match": {
+      // Design szkoły §10.1/10.4: UUID w każdym zadaniu, kolumny tasowane
+      // niezależnie, prawa nigdy nie stoi w całości naprzeciw swoich par.
+      const pairs = (payload.pairs ?? []).map((pair) => ({ left: { id: randomUUID(), text: pair.left }, right: { id: randomUUID(), text: pair.right } }));
+      const extras = (payload.extraRight ?? []).map((text) => ({ id: randomUUID(), text }));
+      const partnerOf = new Map(pairs.map((pair) => [pair.left.id, pair.right.id] as const));
+      const left = seededShuffle(pairs.map((pair) => pair.left), taskId);
+      const right = shuffleUnsolved([...pairs.map((pair) => pair.right), ...extras], `${taskId}:right`,
+        (arranged) => left.every((item, i) => arranged[i]?.id === partnerOf.get(item.id)));
+      const prompt: TaskPrompt = { kind: "lesson_match", instructionPl: payload.instructionPl ?? messages.kid.lessonMatchInstruction, left, right };
+      return {
+        ...common,
+        prompt,
+        answerKey: {
+          ...baseKey,
+          assignments: pairs.map((pair) => ({ itemId: pair.left.id, targetId: pair.right.id })),
+          targetIds: right.map((item) => item.id),
+          targetOnce: true,
+          itemIds: left.map((item) => item.id),
+          itemValues: Object.fromEntries([...left, ...right].map((item) => [item.id, item.text])),
+        },
+        exposures: [exercise.targetKey],
+      };
+    }
+    case "lesson_group": {
+      // Design szkoły §10.2/10.4: grupy w kolejności materiału, elementy tasowane
+      // tak, by nie startowały ułożone grupami.
+      const groups = (payload.groups ?? []).map((group) => ({ id: randomUUID(), text: group.label, sourceId: group.id }));
+      const groupIdOf = new Map(groups.map((group) => [group.sourceId, group.id] as const));
+      const canonical = (payload.groupItems ?? []).map((item) => ({ id: randomUUID(), text: item.text, groupId: groupIdOf.get(item.groupId) ?? "" }));
+      const rank = new Map<string, number>(groups.map((group, index) => [group.id, index] as const));
+      const items = shuffleUnsolved(canonical, taskId,
+        (arranged) => arranged.every((item, i) => i === 0 || (rank.get(arranged[i - 1]!.groupId) ?? 0) <= (rank.get(item.groupId) ?? 0)));
+      const prompt: TaskPrompt = {
+        kind: "lesson_group",
+        instructionPl: payload.instructionPl ?? messages.kid.lessonGroupInstruction,
+        groups: groups.map((group) => ({ id: group.id, text: group.text })),
+        items: items.map((item) => ({ id: item.id, text: item.text })),
+      };
+      return {
+        ...common,
+        prompt,
+        answerKey: {
+          ...baseKey,
+          assignments: canonical.map((item) => ({ itemId: item.id, targetId: item.groupId })),
+          targetIds: groups.map((group) => group.id),
+          itemIds: items.map((item) => item.id),
+          itemValues: Object.fromEntries([...groups, ...items].map((item) => [item.id, item.text])),
+        },
+        exposures: [exercise.targetKey],
       };
     }
     case "lesson_open_answer": {

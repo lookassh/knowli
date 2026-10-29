@@ -31,7 +31,9 @@ export type LessonExerciseType =
   | "lesson_transform"
   | "lesson_open_answer"
   | "lesson_calculation"
-  | "lesson_keywords";
+  | "lesson_keywords"
+  | "lesson_match"
+  | "lesson_group";
 
 /** Etap nauki celu (design: tabela typów → etapy). */
 export type LessonStage = "intro" | "guided" | "productive" | "independent";
@@ -157,6 +159,12 @@ export interface LessonExerciseDraft {
   /** `lesson_keywords` (trener precyzji): pojęcia do wyboru i identyfikatory kluczowych. */
   readonly keywordOptions?: readonly { readonly id: string; readonly text: string }[];
   readonly keyOptionIds?: readonly string[];
+  /** `lesson_match` (design szkoły §10.1): pary w kolejności materiału i dystraktory po prawej. */
+  readonly pairs?: readonly { readonly left: string; readonly right: string }[];
+  readonly extraRight?: readonly string[];
+  /** `lesson_group` (design szkoły §10.2): grupy i elementy z przynależnością. */
+  readonly groups?: readonly { readonly id: string; readonly label: string }[];
+  readonly groupItems?: readonly { readonly text: string; readonly groupId: string }[];
 }
 
 /**

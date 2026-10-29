@@ -38,6 +38,17 @@ export function lessonExerciseStimulus(exercise: LessonExerciseDraft): string {
         : JSON.stringify([normalizeStimulus(exercise.stem ?? ""), exercise.visualSubject]);
     case "lesson_notice":
       return JSON.stringify((exercise.noticeSegments ?? []).map((sentence) => sentence.map(normalizeStimulus)));
+    case "lesson_match":
+      // Bodźcem jest zbiór par (kolejność bez znaczenia); dystraktory nie zmieniają ćwiczenia.
+      return JSON.stringify((exercise.pairs ?? []).map((pair) => `${normalizeStimulus(pair.left)}=${normalizeStimulus(pair.right)}`).sort());
+    case "lesson_group": {
+      // Bodźcem są grupy z elementami (kolejność bez znaczenia).
+      const items = exercise.groupItems ?? [];
+      return JSON.stringify((exercise.groups ?? []).map((group) => [
+        normalizeStimulus(group.label),
+        items.filter((item) => item.groupId === group.id).map((item) => normalizeStimulus(item.text)).sort(),
+      ]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))));
+    }
     case "lesson_keywords":
       // Bodźcem jest rodzina pytań i zbiór pojęć (kolejność opcji bez znaczenia).
       return JSON.stringify([exercise.familyId ?? "", (exercise.keywordOptions ?? []).map((option) => normalizeStimulus(option.text)).sort((a, b) => a.localeCompare(b))]);

@@ -550,7 +550,7 @@ export const attempts = app.table(
     completedAt: timestamps("completed_at"),
   },
   (t) => [
-    check("attempts_modality_allowed", sql`${t.modality} in ('choice', 'text', 'audio', 'dont_remember', 'skip', 'sequence', 'selection')`),
+    check("attempts_modality_allowed", sql`${t.modality} in ('choice', 'text', 'audio', 'dont_remember', 'skip', 'sequence', 'selection', 'assignment')`),
     check("attempts_state_allowed", sql`${t.state} in ('processing', 'completed')`),
     check("attempts_number_positive", sql`${t.attemptNumber} > 0`),
     check("attempts_completed_iff_completed_at", sql`(${t.state} = 'completed') = (${t.completedAt} is not null)`),

@@ -282,6 +282,7 @@ describe("tasowanie bez rozwiązanego układu (design szkoły §10.4)", () => {
           objectiveId: "english_grammar.present_simple.third_person_s",
           instructionPl: "Ułóż zdanie.",
           items: [{ id: "1", text: "She" }, { id: "2", text: "plays" }, { id: "3", text: "football" }],
+          focus: [],
           answer: "She plays football",
           acceptedAnswers: [],
           answerLocale: subject.answerLocale,
@@ -292,6 +293,81 @@ describe("tasowanie bez rozwiązanego układu (design szkoły §10.4)", () => {
       );
       const prompt = task.prompt as { items: { id: string }[] };
       expect(prompt.items.map((item) => item.id)).not.toEqual(answerKeyOf(task).itemIds);
+    }
+  });
+});
+
+describe("materializeExercise — pary i grupy (design szkoły §10)", () => {
+  const schoolTopic = schoolSubject.buildDynamicTopic!({
+    titlePl: "Fotosynteza",
+    objectives: [{
+      id: "school.ddeck.fotosynteza",
+      titlePl: "Fotosynteza",
+      descriptionEn: "Photosynthesis.",
+      cards: [{ title: "Fotosynteza", body: "Roślina wytwarza cukry." }, { title: "Produkty", body: "Powstaje tlen." }],
+    }],
+  });
+  const base = {
+    objectiveId: "school.ddeck.fotosynteza",
+    instructionPl: "Ćwiczenie.",
+    acceptedAnswers: [],
+    focus: [],
+    answerLocale: "pl-PL",
+    promptLocale: "pl-PL",
+  };
+  const match = (seed: string) => materializeExercise(
+    { independentCheck: false, reason: "practice" },
+    seed,
+    loaded({
+      ...base,
+      exerciseType: "lesson_match",
+      pairs: [{ left: "światło", right: "energia" }, { left: "woda", right: "korzenie" }, { left: "cukry", right: "liście" }],
+      extraRight: ["skrzela"],
+      answer: "światło, woda, cukry",
+    }),
+    schoolTopic,
+    schoolSubject,
+  );
+  const group = (seed: string) => materializeExercise(
+    { independentCheck: false, reason: "practice" },
+    seed,
+    loaded({
+      ...base,
+      exerciseType: "lesson_group",
+      groups: [{ id: "in", label: "substraty" }, { id: "out", label: "produkty" }],
+      groupItems: [{ text: "woda", groupId: "in" }, { text: "CO2", groupId: "in" }, { text: "cukry", groupId: "out" }, { text: "tlen", groupId: "out" }],
+      answer: "substraty / produkty",
+    }),
+    schoolTopic,
+    schoolSubject,
+  );
+
+  it("lesson_match: prompt bez klucza, prawa kolumna z dystraktorem i nigdy w całości naprzeciw par", () => {
+    for (let i = 0; i < 60; i++) {
+      const task = match(`match-${i}`);
+      const prompt = task.prompt as { kind: string; left: { id: string; text: string }[]; right: { id: string; text: string }[] };
+      expect(prompt.kind).toBe("lesson_match");
+      expect(Object.keys(prompt).sort()).toEqual(["instructionPl", "kind", "left", "right"]);
+      expect(prompt.right.map((item) => item.text).sort()).toEqual(["energia", "korzenie", "liście", "skrzela"]);
+      const key = answerKeyOf(task);
+      const partner = new Map(key.assignments!.map((entry) => [entry.itemId, entry.targetId]));
+      expect(prompt.left.every((item, index) => prompt.right[index]?.id === partner.get(item.id))).toBe(false);
+      expect(key.targetOnce).toBe(true);
+      expect(key.targetIds).toHaveLength(4);
+      expect(task.exposures).toEqual(["tk-1"]);
+    }
+  });
+
+  it("lesson_group: elementy nie startują ułożone grupami, a klucz przypisuje je do UUID grup", () => {
+    for (let i = 0; i < 60; i++) {
+      const task = group(`group-${i}`);
+      const prompt = task.prompt as { groups: { id: string; text: string }[]; items: { id: string; text: string }[] };
+      expect(prompt.groups.map((g) => g.text)).toEqual(["substraty", "produkty"]);
+      const key = answerKeyOf(task);
+      const groupOf = new Map(key.assignments!.map((entry) => [entry.itemId, entry.targetId]));
+      const ranks = prompt.items.map((item) => prompt.groups.findIndex((g) => g.id === groupOf.get(item.id)));
+      expect(ranks.every((rank, index) => index === 0 || ranks[index - 1]! <= rank)).toBe(false);
+      expect(JSON.stringify(task.prompt)).not.toContain("groupId");
     }
   });
 });

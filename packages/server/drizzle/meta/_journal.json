@@ -183,6 +183,13 @@
       "when": 1792990000000,
       "tag": "0025_school_verdict_v3",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1793090000000,
+      "tag": "0026_assignment_modality",
+      "breakpoints": true
     }
   ]
 }

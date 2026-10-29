@@ -27,6 +27,13 @@ export interface LessonAnswerKey {
   readonly correctOptionIds?: readonly string[];
   readonly minSelected?: number;
   readonly maxSelected?: number;
+  /**
+   * `lesson_match` / `lesson_group` (design szkoły §10.3): poprawne przypisania
+   * (element → cel), dozwolone cele i czy cel można użyć tylko raz (pary).
+   */
+  readonly assignments?: readonly { readonly itemId: string; readonly targetId: string }[];
+  readonly targetIds?: readonly string[];
+  readonly targetOnce?: boolean;
 }
 
 /** Wynik dopasowania deterministycznego. */
@@ -222,6 +229,54 @@ export function evaluateKeywordSelection(itemIds: readonly string[], key: Lesson
     return null;
   }
   return itemIds.every((id) => correct.has(id));
+}
+
+/**
+ * Ocena przypisań (design szkoły §10.3): `true`, gdy każde przypisanie zgadza
+ * się z kluczem. `null`, gdy odpowiedź nie pasuje kształtem do zadania (brak
+ * lub obcy element, nieznany cel, cel pary użyty dwukrotnie) — to błąd
+ * klienta, nie wiedzy dziecka.
+ */
+export function evaluateAssignment(
+  given: readonly { readonly itemId: string; readonly targetId: string }[],
+  key: LessonAnswerKey,
+): boolean | null {
+  const expected = new Map((key.assignments ?? []).map((entry) => [entry.itemId, entry.targetId] as const));
+  const targets = new Set(key.targetIds ?? []);
+  if (expected.size === 0 || given.length !== expected.size) return null;
+  if (new Set(given.map((entry) => entry.itemId)).size !== given.length) return null;
+  if (given.some((entry) => !expected.has(entry.itemId) || !targets.has(entry.targetId))) return null;
+  if (key.targetOnce === true && new Set(given.map((entry) => entry.targetId)).size !== given.length) return null;
+  return given.every((entry) => expected.get(entry.itemId) === entry.targetId);
+}
+
+/**
+ * Tekst przypisań do feedbacku, omówienia i raportów (design szkoły §10.3).
+ * Pary: `element → cel` w kolejności `itemOrder` (domyślnie kolejność wejścia),
+ * złączone „; ”. Grupy (`grouped`): `cel: elementy` w kolejności `targetOrder`.
+ * Przypisania z nieznanym tekstem są pomijane.
+ */
+export function assignmentText(
+  assignments: readonly { readonly itemId: string; readonly targetId: string }[],
+  values: ReadonlyMap<string, string> | Readonly<Record<string, string>>,
+  options: { readonly grouped?: boolean; readonly targetOrder?: readonly string[]; readonly itemOrder?: readonly string[] } = {},
+): string {
+  const valueOf = (id: string): string | undefined => (values instanceof Map ? values.get(id) : (values as Readonly<Record<string, string>>)[id]);
+  const position = new Map((options.itemOrder ?? []).map((id, index) => [id, index] as const));
+  const ordered = [...assignments].sort((a, b) => (position.get(a.itemId) ?? 0) - (position.get(b.itemId) ?? 0));
+  if (options.grouped) {
+    const targets = options.targetOrder ?? [...new Set(ordered.map((entry) => entry.targetId))];
+    return targets.flatMap((targetId) => {
+      const label = valueOf(targetId);
+      const items = ordered.filter((entry) => entry.targetId === targetId).map((entry) => valueOf(entry.itemId)).filter((text): text is string => Boolean(text));
+      return label && items.length > 0 ? [`${label}: ${items.join(", ")}`] : [];
+    }).join("; ");
+  }
+  return ordered.flatMap((entry) => {
+    const item = valueOf(entry.itemId);
+    const target = valueOf(entry.targetId);
+    return item && target ? [`${item} → ${target}`] : [];
+  }).join("; ");
 }
 
 export function evaluateSequence(itemIds: readonly string[], key: LessonAnswerKey): boolean {
