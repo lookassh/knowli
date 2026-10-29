@@ -134,10 +134,10 @@ export function validateSchoolPool(
     if (indexes.length < 2) continue;
     const familyId = drafts[indexes[0]!]!.familyId!;
     const first = drafts[indexes[0]!]!;
-    const firstElements = (first.requiredElements ?? []).map((el) => el.id).sort().join(",");
+    const firstElements = (first.requiredElements ?? []).map((el) => el.id).sort((a, b) => a.localeCompare(b)).join(",");
     for (const index of indexes.slice(1)) {
       const ex = drafts[index]!;
-      const elements = (ex.requiredElements ?? []).map((el) => el.id).sort().join(",");
+      const elements = (ex.requiredElements ?? []).map((el) => el.id).sort((a, b) => a.localeCompare(b)).join(",");
       const samePrompt =
         normalizeForGrounding(ex.prompt ?? "") === normalizeForGrounding(first.prompt ?? "") && (ex.prompt ?? "") !== "";
       if (samePrompt) {

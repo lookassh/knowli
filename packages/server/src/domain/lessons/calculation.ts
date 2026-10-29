@@ -93,12 +93,19 @@ export function computeCalculationAnswer(spec: CalculationSpec): { value: number
   };
 }
 
+/** "25000" → "25 000": groups of three digits from the right, without a regex. */
+function groupThousands(digits: string): string {
+  const groups: string[] = [];
+  for (let end = digits.length; end > 0; end -= 3) groups.unshift(digits.slice(Math.max(0, end - 3), end));
+  return groups.join(" ");
+}
+
 export function renderCalculationPrompt(input: CalculationSpec): string {
   const { spec } = validatedCalculation(input);
   const format = (value: number) => formatFraction(fromNumber(value));
   switch (spec.kind) {
     case "scale_distance": {
-      const denominator = String(spec.params.scaleDenominator).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+      const denominator = groupThousands(String(spec.params.scaleDenominator));
       return `Na mapie w skali 1:${denominator} odcinek ma ${format(spec.params.mapDistanceCm)} cm. Oblicz odległość w terenie w ${spec.unit}.`;
     }
     case "height_difference":

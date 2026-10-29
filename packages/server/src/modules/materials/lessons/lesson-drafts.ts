@@ -376,7 +376,9 @@ function sanitizeObjectiveSlug(raw: string, index: number, used: Set<string>): s
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
+    // Runs are already collapsed to one "_", so trimming one per end is enough (no backtracking).
+    .replace(/^_/, "")
+    .replace(/_$/, "")
     .slice(0, 40);
   const root = base.length > 0 ? base : `zagadnienie_${index + 1}`;
   // A suffixed slug can itself be taken (e.g. "a", "a_3", "a"), so keep counting.
@@ -477,7 +479,11 @@ export function withoutEmptyOptionalArrays(draft: LessonExerciseDraft): LessonEx
 export function scopeFamiliesToRun(draft: LessonExerciseDraft, runId: string): LessonExerciseDraft {
   const suffix = `-r${runId.replace(/[^0-9a-f]/gi, "").slice(0, 6).toLowerCase()}`;
   // Cut before the suffix without leaving a dangling "-" (templateFamilyId is a strict slug).
-  const scoped = (slug: string) => `${slug.slice(0, 64 - suffix.length).replace(/-+$/, "")}${suffix}`;
+  const scoped = (slug: string) => {
+    let base = slug.slice(0, 64 - suffix.length);
+    while (base.endsWith("-")) base = base.slice(0, -1);
+    return `${base}${suffix}`;
+  };
   const templateFamilyId = draft.calculation?.templateFamilyId;
   return {
     ...draft,

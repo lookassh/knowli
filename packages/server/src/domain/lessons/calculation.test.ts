@@ -26,6 +26,11 @@ describe("exact calculation answers and prompts", () => {
     expect(renderCalculationPrompt(spec)).toBe(prompt);
   });
 
+  it.each([[1, "1:1 "], [500, "1:500 "], [1000, "1:1 000 "], [25000, "1:25 000 "], [1000000000, "1:1 000 000 000 "]])(
+    "groups the scale denominator %i into thousands", (scaleDenominator, expected) => {
+      expect(renderCalculationPrompt({ ...scale, params: { ...scale.params, scaleDenominator } })).toContain(`w skali ${expected}odcinek`);
+    });
+
   it("keeps fractional and large answers exact instead of formatting the approximate number", () => {
     const large: CalculationSpec = { ...scale, params: { mapDistanceCm: 999999.999, scaleDenominator: 999999999 } };
     expect(computeCalculationAnswer(large).answer).toBe("9999999980000,00001 m");

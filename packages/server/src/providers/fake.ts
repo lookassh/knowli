@@ -250,7 +250,9 @@ function slugifyTitle(title: string, fallback: string): string {
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
+    // Runs are already collapsed to one "_", so trimming one per end is enough (no backtracking).
+    .replace(/^_/, "")
+    .replace(/_$/, "")
     .slice(0, 40);
   return slug.length > 0 ? slug : fallback;
 }
@@ -261,7 +263,8 @@ function slugifyTitle(title: string, fallback: string): string {
  * Karty buduje z fragmentów materiału, więc cytaty ćwiczeń mają pokrycie.
  */
 function fakeLessonObjectives(input: LessonObjectivesInput): Record<string, unknown>[] {
-  const headings = [...input.material.matchAll(/^Zagadnienie\s*\d+\s*:\s*(.+)$/gim)];
+  // Disjoint classes around the colon keep matching linear on long whitespace runs.
+  const headings = [...input.material.matchAll(/^Zagadnienie[ \t]*\d+[ \t]*:[ \t]*(\S.*)$/gim)];
   const sections: { title: string; body: string }[] = [];
   if (headings.length > 0) {
     headings.forEach((match, i) => {
