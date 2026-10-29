@@ -91,3 +91,15 @@ Bez zmian zasad: Motion (`m.*`, `LazyMotion` + `domAnimation`), wyłącznie `tra
 - Nowa paleta zmienia kontrast w zadaniach etapu 2 (stany `AnswerGrid`, feedback, `visuals/`); test kontrastu ról i istniejący `kid-answer-contrast.spec.ts` mają to wyłapać.
 - Wariant `band` dodaje wysokość nad treścią; w niskiej wysokości (< 480 px) pas jest kompaktowy (mniejsze powitanie, fala niższa), aby akcje pozostały osiągalne.
 - Zmiana czcionki może przesunąć szerokości tekstu w istniejących testach geometrii; korekty tylko w tokenach.
+
+## 9. Ustalenia z implementacji (2026-10-29)
+
+Rozstrzygnięcia podjęte podczas wykonania planu; zastępują odpowiednie fragmenty §4–§6.
+
+- Sukces (tertiary) używa tonów 70/20/30/90 zamiast standardowego T80 — w ciemnym M3 primary i tertiary mają tę samą jasność (kontrast 1,00), a §4.1 wymaga różnicy jasności. Zapisane w `scripts/kid-palette.mjs` (`TERTIARY_TONES`) i w komentarzu bloku tokenów.
+- Pas nagłówka obejmuje kolumnę `KidScreen` (maks. 560 px), nie cały viewport na tablecie i desktopie. Z tego samego powodu ekran zestawów ma zawsze jedną kolumnę kart, a siatka profili ma 2 kolumny (compact) i 3 od 600 px.
+- Kafelki profili, jako kontrolki interaktywne, mają granicę `outline`, nie `outline-variant`.
+- Zestaw z aktywną sesją (`resumeOnly` + `activeSession`) jest pełną kartą na początku sekcji kart z główną akcją „Wznów naukę” i drugorzędnym „Zakończ sesję”, niezależnie od `recommended` z serwera. Sekcja kart pojawia się także wtedy, gdy nic innego nie jest rekomendowane.
+- Cele lekcji w podsumowaniu mają neutralną ikonę bez zieleni sukcesu — to ćwiczone reguły, nie zaliczone.
+- Nowe teksty: odznaki wyniku kartkówki „Poprawnie” / „Do poprawy”, liczba zadań kartkówki w trzech formach liczby mnogiej („zadanie”, „zadania”, „zadań”), etykiety kafelków podsumowania bez liczby. Bez zmian API, DTO i MCP.
+- Testy E2E uruchamiane lokalnie na buildzie produkcyjnym: `UMIEM_E2E_WEB_MODE=dev` nie hydratuje pod Next 16.4 (`allowedDevOrigins`) — problem istniał wcześniej i nie jest naprawiany w tym etapie.
