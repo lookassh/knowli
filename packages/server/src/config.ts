@@ -12,6 +12,7 @@ import type { MediaStore } from "./ports/media";
 import { createAzurePronunciationProvider } from "./providers/azure/pronunciation";
 import { createAzureSttProvider } from "./providers/azure/stt";
 import { createOpenAiCompatibleGrader } from "./providers/openai-compatible/grader";
+import { createOpenAiCompatibleSttProvider } from "./providers/openai-compatible/stt";
 import { createOpenAiCompatibleSessionActivityReviewer } from "./providers/openai-compatible/session-activity";
 import { chatRequestExtrasFromEnv } from "./providers/chat-request-options";
 import { createProductionSubjectRegistry } from "./domain/lessons/subjects";
@@ -81,6 +82,18 @@ export interface SpeechDeps {
 }
 
 /**
+ * Rozpoznawanie mowy dla dyktowania odpowiedzi lekcji (design szkoły §5.2).
+ * Osobne od `speech` słówek: odpowiedzi szkolne nie potrzebują oceny wymowy.
+ * Nieobecność = lekcje bez mikrofonu.
+ */
+export interface LessonSpeechDeps {
+  stt: SttProvider;
+  /** Publiczna nazwa usługi dla panelu rodzica (model, nigdy URL ani klucz). */
+  publicService: string;
+  timeoutMs?: number;
+}
+
+/**
  * Zależności modelu oceniającego odpowiedzi lekcji (design „Model oceniający”),
  * proces web. `maxCallsPerSession` ogranicza liczbę płatnych wywołań na sesję
  * (księgowane w `learning_sessions.context.graderCalls`); `timeoutMs` to łączny
@@ -121,6 +134,8 @@ export interface Services {
   /** Obraz provider dostępny w web dla jawnej propozycji okładki rodzica. */
   imageProvider?: ImageProvider;
   speech?: SpeechDeps;
+  /** Dyktowanie odpowiedzi otwartych lekcji (Etap 3 przedmiotów szkolnych). */
+  lessonSpeech?: LessonSpeechDeps;
   /**
    * Model oceniający otwarte odpowiedzi lekcji (zadanie 15). Nieobecny =
    * ocena dowolnych odpowiedzi wyłączona (niedopasowanie → nieocenione);
@@ -151,6 +166,7 @@ export function createServices(
     mediaStore?: MediaStore;
     imageProvider?: ImageProvider;
     speech?: SpeechDeps;
+    lessonSpeech?: LessonSpeechDeps;
     grader?: GraderDeps;
     sessionActivity?: SessionActivityDeps;
     subjects?: SubjectRegistry;
@@ -165,6 +181,7 @@ export function createServices(
     ...(input.mediaStore ? { mediaStore: input.mediaStore } : {}),
     ...(input.imageProvider ? { imageProvider: input.imageProvider } : {}),
     ...(input.speech ? { speech: input.speech } : {}),
+    ...(input.lessonSpeech ? { lessonSpeech: input.lessonSpeech } : {}),
     ...(input.grader ? { grader: input.grader } : {}),
     ...(input.sessionActivity ? { sessionActivity: input.sessionActivity } : {}),
   };
@@ -184,6 +201,36 @@ export function speechFromEnv(env: Record<string, string | undefined>): SpeechDe
   return {
     stt: createAzureSttProvider({ subscriptionKey, region }),
     pronunciation: createAzurePronunciationProvider({ subscriptionKey, region }),
+  };
+}
+
+/** Domyślny model dyktowania lekcji (spike 2026-10-29, design szkoły §5.2). */
+export const DEFAULT_LESSON_STT_MODEL = "elevenlabs/scribe-v2";
+
+/**
+ * Dyktowanie lekcji ze zmiennych `UMIEM_LESSON_STT_BASE_URL`, `_API_KEY`
+ * i opcjonalnego `_MODEL` (domyślnie {@link DEFAULT_LESSON_STT_MODEL}). Adres
+ * i klucz razem albo wcale; https poza test/development jak dla gradera.
+ */
+export function lessonSpeechFromEnv(env: Record<string, string | undefined>): LessonSpeechDeps | undefined {
+  const baseUrl = env.UMIEM_LESSON_STT_BASE_URL;
+  const apiKey = env.UMIEM_LESSON_STT_API_KEY;
+  const present = [baseUrl, apiKey].filter((v) => v !== undefined && v !== "").length;
+  if (present === 0) {
+    return undefined;
+  }
+  if (present < 2) {
+    throw new Error("UMIEM_LESSON_STT_* requires both BASE_URL and API_KEY, or none");
+  }
+  const nodeEnv = env.NODE_ENV ?? "production";
+  const insecureAllowed = nodeEnv === "test" || nodeEnv === "development";
+  if (!baseUrl!.startsWith("https://") && !(insecureAllowed && baseUrl!.startsWith("http://"))) {
+    throw new Error("UMIEM_LESSON_STT_BASE_URL must use https:// outside test/development");
+  }
+  const model = env.UMIEM_LESSON_STT_MODEL?.trim() || DEFAULT_LESSON_STT_MODEL;
+  return {
+    stt: createOpenAiCompatibleSttProvider({ baseUrl: baseUrl!, apiKey: apiKey!, model }),
+    publicService: model,
   };
 }
 

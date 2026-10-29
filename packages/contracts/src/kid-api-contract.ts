@@ -5,6 +5,7 @@ import { UuidSchema } from "./common";
 import {
   AttemptDtoSchema,
   AttemptInputSchema,
+  DictationDtoSchema,
   DisclosureDtoSchema,
   DisclosureInputSchema,
   EventInputSchema,
@@ -82,6 +83,16 @@ export const SpeechAttemptMultipartInputSchema = z.object({
   audio: z.instanceof(File),
 });
 export type SpeechAttemptMultipartInput = z.infer<typeof SpeechAttemptMultipartInputSchema>;
+
+/**
+ * Dyktowanie odpowiedzi lekcji (design szkoły §5.4): multipart z nagraniem,
+ * bez `clientAttemptId` — to nie jest próba, tylko tekst do pola odpowiedzi.
+ */
+export const DictationMultipartInputSchema = z.object({
+  taskId: UuidSchema,
+  audio: z.instanceof(File),
+});
+export type DictationMultipartInput = z.infer<typeof DictationMultipartInputSchema>;
 
 /** Parametr ścieżki `{sessionId}` dla operacji na konkretnej sesji. */
 const SessionPathInputSchema = z.object({ sessionId: UuidSchema });
@@ -215,6 +226,11 @@ export const kidApiContract = {
         path: "/tasks/{taskId}/attempts",
         outputStructure: "detailed",
       })),
+
+    dictation: oc
+      .input(DictationMultipartInputSchema)
+      .output(noStoreOutput(DictationDtoSchema))
+      .meta(openapi({ method: "POST", path: "/tasks/{taskId}/dictation", outputStructure: "detailed" })),
   },
 
   attempts: {

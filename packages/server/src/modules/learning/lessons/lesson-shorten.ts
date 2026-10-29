@@ -4,6 +4,7 @@ import type { Services } from "../../../config";
 import type { Tx } from "../../../db/client";
 import { sessionTasks, type learningSessions } from "../../../db/schema";
 import { buildAnswerSegments, type ObjectiveGrade } from "../../../domain/lessons/evaluate";
+import type { SubjectModule } from "../../../domain/lessons/types";
 import {
   compareRevision,
   isUnchangedRevision,
@@ -14,6 +15,7 @@ import {
 import { readLessonTrainingSessionPlan } from "../../../domain/training-session-plan";
 import { writeSealedEvent } from "../events";
 import { lessonSessionContextOf, lessonTaskCounts } from "./lesson-sessions";
+import { speechInputFor } from "./lesson-materialize";
 
 /**
  * Trener precyzji — zadanie następcze „Skróć swoją odpowiedź” (design 6.3).
@@ -110,6 +112,11 @@ export function precisionTrainerQualification<Q extends { independent: boolean; 
  * Prompt to tekst dziecka z zaznaczonymi fragmentami — bez ekspozycji klucza.
  * `null`, gdy reguły trenera nie proponują skrócenia.
  */
+function subjectOfTask(services: Services, task: TaskRow): { spokenAnswers?: SubjectModule["spokenAnswers"] } {
+  const subjectId = (task.answerKey as { subjectId?: unknown } | null)?.subjectId;
+  return (typeof subjectId === "string" ? services.subjects.getSubject(subjectId) : undefined) ?? {};
+}
+
 export async function offerShortenFollowUp(
   tx: Tx,
   services: Services,
@@ -154,6 +161,8 @@ export async function offerShortenFollowUp(
     prompt: question,
     originalAnswer: args.childAnswer,
     answerSegments: segments.slice(0, 32).map((segment) => ({ text: segment.text, state: segment.state })),
+    // Poprawkę też można podyktować (design szkoły §5.9 pkt 5).
+    ...speechInputFor(services, session, subjectOfTask(services, task), "lesson_open_answer"),
   };
   const revisionOf: RevisionOf = {
     taskId: task.id,

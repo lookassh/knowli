@@ -70,7 +70,7 @@ describe("kształt routera kontraktu kid API", () => {
       "activityResult", "create", "disableMicrophone", "end", "mockTestSummary", "next",
     ]);
     expect(Object.keys(kidApiContract.tasks).sort()).toEqual([
-      "attempts", "completePresentation", "disclosures", "events",
+      "attempts", "completePresentation", "dictation", "disclosures", "events",
     ]);
     expect(Object.keys(kidApiContract.attempts).sort()).toEqual(["feedbackAudio", "get"]);
   });
@@ -289,6 +289,24 @@ describe("zadania", () => {
     expect(out.safeParse({ status: 200, body: attemptDto }).success).toBe(true);
     expect(out.safeParse({ status: 202, body: processingAttemptDto }).success).toBe(true);
     expect(out.safeParse({ status: 204, body: attemptDto }).success).toBe(false);
+  });
+
+  it("dictation: POST /tasks/{taskId}/dictation, multipart bez clientAttemptId, wynik bez score'ów z no-store", () => {
+    const meta = metaOf(kidApiContract.tasks.dictation);
+    expect(meta.method).toBe("POST");
+    expect(meta.path).toBe("/tasks/{taskId}/dictation");
+    expect(meta.outputStructure).toBe("detailed");
+    const input = inputOf(kidApiContract.tasks.dictation);
+    expect(input.safeParse({ taskId: UUID, audio: newFile }).success).toBe(true);
+    expect(input.safeParse({ taskId: UUID }).success).toBe(false);
+    const out = outputOf(kidApiContract.tasks.dictation);
+    const noStore = { "cache-control": "no-store" };
+    expect(out.safeParse({ headers: noStore, body: { status: "heard", text: "Równik to najdłuższy równoleżnik." } }).success).toBe(true);
+    expect(out.safeParse({ headers: noStore, body: { status: "uncertain" } }).success).toBe(true);
+    // niepewne rozpoznanie nie może nieść tekstu ani pewności
+    expect(out.safeParse({ headers: noStore, body: { status: "uncertain", text: "When do we?" } }).success).toBe(false);
+    expect(out.safeParse({ headers: noStore, body: { status: "heard", text: "Azja", confidence: 0.9 } }).success).toBe(false);
+    expect(out.safeParse({ headers: noStore, body: { status: "heard", text: "a".repeat(601) } }).success).toBe(false);
   });
 });
 

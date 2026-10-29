@@ -106,4 +106,12 @@ describe("normalizeAudioInput — limity i format bez zapisu na dysk (arch §11)
   it("nagranie 15 sekund mieści się w limicie", () => {
     expect(() => normalizeAudioInput(webm(MAX_AUDIO_SECONDS))).not.toThrow();
   });
+
+  it("limit czasu podaje wywołujący (dyktowanie lekcji: 45 s w limicie bajtów)", () => {
+    const answer = wav(45);
+    expect(answer.bytes.byteLength).toBeLessThan(MAX_AUDIO_BYTES);
+    expect(normalizeAudioInput(answer, 45).durationSeconds).toBeCloseTo(45, 1);
+    expect(() => normalizeAudioInput(wav(46), 45)).toThrowError(/45 seconds/);
+    expect(() => normalizeAudioInput(answer)).toThrowError(/15 seconds/);
+  });
 });

@@ -24,7 +24,7 @@ export async function completeDisabledVoiceTask(tx: Tx, sessionId: string, taskI
   const context = contextOf(session);
   const reservations = key ? context.reservations.filter((reserved) => reserved !== key) : context.reservations;
   const settledChecks = key ? [...new Set([...context.settledChecks, key])] : context.settledChecks;
-  await tx.update(learningSessions).set({ context: { ...context, reservations, settledChecks } as unknown as Record<string, unknown> })
+  await tx.update(learningSessions).set({ context: { ...session.context, reservations, settledChecks } as unknown as Record<string, unknown> })
     .where(eq(learningSessions.id, sessionId));
   return "skipped";
 }

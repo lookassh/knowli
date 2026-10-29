@@ -32,6 +32,7 @@ function cloneSubject(): WritableSubject {
     exerciseTypes: cloneData(historyLikeSubject.exerciseTypes),
     errorCategories: cloneData(historyLikeSubject.errorCategories),
     topics: cloneData(historyLikeSubject.topics),
+    spokenAnswers: historyLikeSubject.spokenAnswers ? cloneData(historyLikeSubject.spokenAnswers) : undefined,
   };
 }
 

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { GenerationDeps, SessionActivityDeps, SpeechDeps } from "../config";
+import type { GenerationDeps, LessonSpeechDeps, SessionActivityDeps, SpeechDeps } from "../config";
 import type {
   AnswerGraderProvider,
   AudioInput,
@@ -15,6 +15,7 @@ import type {
   SessionActivityReviewTask,
   SessionActivityReviewer,
   SttProvider,
+  TranscriptionResult,
   TtsProvider,
   TtsSynthesizeInput,
 } from "../ports/ai";
@@ -507,6 +508,22 @@ export class FakePronunciationProvider implements PronunciationProvider {
 }
 
 /** Zależności ścieżki mowy na fake'ach — tryb bez kluczy (E2E, lokalny smoke). */
+/**
+ * Fake dyktowania lekcji (tryb E2E bez kluczy): stały polski tekst z wysoką
+ * pewnością, deterministyczny i bez zależności od bajtów nagrania.
+ */
+export class FakeDictationSttProvider implements SttProvider {
+  readonly name = "fake-dictation";
+  constructor(private readonly result: TranscriptionResult = { status: "ok", text: "Poziomica to linia łącząca punkty o tej samej wysokości.", confidence: 0.97 }) {}
+  async transcribe(): Promise<TranscriptionResult> {
+    return { ...this.result };
+  }
+}
+
+export function fakeLessonSpeechDeps(stt: SttProvider = new FakeDictationSttProvider()): LessonSpeechDeps {
+  return { stt, publicService: stt.name };
+}
+
 export function fakeSpeechDeps(): SpeechDeps {
   return {
     stt: new FakeSttProvider(),

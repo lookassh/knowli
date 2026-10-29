@@ -193,6 +193,54 @@ describe("BrowserRecorder — nagrywanie bez pozostawiania strumienia (arch §11
     expect(MAX_RECORDING_MS).toBe(15_000);
   });
 
+  it("dyktowanie lekcji uzbraja własny limit nagrania, słówka zostają przy 15 s", async () => {
+    const armed: number[] = [];
+    const timers = { set: (_fn: () => void, ms: number) => { armed.push(ms); return 1; }, clear: () => undefined };
+    const lesson = new BrowserRecorder({ ...deps(fakeStream().stream).deps, timers }, { maxDurationMs: 45_000 });
+    await lesson.start();
+    await lesson.stop();
+    const vocabulary = new BrowserRecorder({ ...deps(fakeStream().stream).deps, timers });
+    await vocabulary.start();
+    await vocabulary.stop();
+    expect(armed).toEqual([45_000, MAX_RECORDING_MS]);
+  });
+
+  describe("konwersja do WAV pilnuje limitu tego nagrania", () => {
+    function stubWebAudio(durationSeconds: number) {
+      const closed = vi.fn(async () => undefined);
+      class FakeAudioContext {
+        async decodeAudioData() { return { duration: durationSeconds } as AudioBuffer; }
+        close = closed;
+      }
+      class FakeOfflineAudioContext {
+        destination = {};
+        constructor(_channels: number, private frames: number) {}
+        createBufferSource() { return { buffer: null, connect: () => undefined, start: () => undefined }; }
+        async startRendering() { return { getChannelData: () => new Float32Array(Math.min(this.frames, 16)) }; }
+      }
+      vi.stubGlobal("AudioContext", FakeAudioContext);
+      vi.stubGlobal("OfflineAudioContext", FakeOfflineAudioContext);
+      return closed;
+    }
+
+    it("30 s mowy przechodzi przy limicie lekcji 45 s i jest odrzucone przy limicie słówek", async () => {
+      try {
+        stubWebAudio(30);
+        const lesson = new BrowserRecorder(deps(fakeStream().stream).deps, { maxDurationMs: 45_000 });
+        await lesson.start();
+        await expect(lesson.stop()).resolves.toMatchObject({ mimeType: "audio/wav" });
+        const { stream, stop } = fakeStream();
+        const vocabulary = new BrowserRecorder(deps(stream).deps);
+        await vocabulary.start();
+        await expect(vocabulary.stop()).rejects.toMatchObject({ cause: { message: expect.stringMatching(/duration/) } });
+        // mikrofon zwolniony także po odrzuceniu za długiego nagrania
+        expect(stop).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+  });
+
   it("zamyka spóźniony strumień, jeśli recorder anulowano podczas getUserMedia", async () => {
     let resolveStream!: (stream: MediaStream) => void;
     const getUserMedia = vi.fn(() => new Promise<MediaStream>((resolve) => { resolveStream = resolve; }));

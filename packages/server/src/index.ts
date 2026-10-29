@@ -210,6 +210,7 @@ export { createAzureSttProvider } from "./providers/azure/stt";
 export { createAzurePronunciationProvider } from "./providers/azure/pronunciation";
 export { createOpenAiCompatibleGrader } from "./providers/openai-compatible/grader";
 export { createOpenAiCompatibleSessionActivityReviewer } from "./providers/openai-compatible/session-activity";
+export { createOpenAiCompatibleSttProvider } from "./providers/openai-compatible/stt";
 export { sessionActivityFromEnv, DEFAULT_SESSION_ACTIVITY_TIMEOUT_MS, type SessionActivityDeps } from "./config";
 export {
   MAX_AUDIO_BYTES,
@@ -221,6 +222,7 @@ export {
   analyzeSpeech,
   assessSpeechEvidence,
   submitSpeechAttempt,
+  dictateLessonAnswer,
   MIN_STT_CONFIDENCE,
   SPEECH_ANALYSIS_TIMEOUT_MS,
   type SpeechAttemptInput,
@@ -231,6 +233,8 @@ export {
   fakeGenerationDeps,
   fakeMediaSettings,
   fakeSpeechDeps,
+  fakeLessonSpeechDeps,
+  FakeDictationSttProvider,
   fakeGraderDeps,
   fakeSessionActivityDeps,
   FakeAnswerGrader,

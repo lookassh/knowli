@@ -97,6 +97,30 @@ export type SpellingDiffSegmentDto = z.infer<typeof SpellingDiffSegmentSchema>;
  */
 export const MAX_TEXT_ATTEMPT_LENGTH = 600;
 
+/**
+ * Dyktowanie odpowiedzi otwartej (design szkoły §5.4): klient pokazuje
+ * mikrofon tylko z tym polem. Bez locale, klucza i kryteriów — serwer sam
+ * wybiera język nagrania.
+ */
+export const SpeechInputSchema = z.object({
+  maxSeconds: z.number().int().min(5).max(60),
+}).strict();
+export type SpeechInputDto = z.infer<typeof SpeechInputSchema>;
+
+/**
+ * Wynik dyktowania: tekst do pola odpowiedzi albo powód jego braku. Nie jest
+ * próbą ani oceną; bez confidence i innych score'ów.
+ */
+export const DictationDtoSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("heard"), text: z.string().min(1).max(MAX_TEXT_ATTEMPT_LENGTH) }).strict(),
+  z.object({ status: z.enum(["no_speech", "uncertain", "too_long", "unavailable"]) }).strict(),
+]);
+export type DictationDto = z.infer<typeof DictationDtoSchema>;
+
+/** Sposób wprowadzenia odpowiedzi tekstowej; brak = klawiatura. */
+export const InputMethodSchema = z.enum(["keyboard", "speech"]);
+export type InputMethodDto = z.infer<typeof InputMethodSchema>;
+
 /** Publiczna treść zadania — discriminated union po polu kind = typ ćwiczenia. */
 export const TaskPromptSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -242,6 +266,8 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
      * gramatyka go nie wysyła, więc starsze klienty dalej ją parsują.
      */
     promptLocale: z.enum(["pl-PL", "en-GB"]).optional(),
+    /** Dyktowanie odpowiedzi (przedmiot z mową, trening z mikrofonem); brak = bez mikrofonu. */
+    speechInput: SpeechInputSchema.optional(),
   }).strict(),
   z.object({
     kind: z.literal("lesson_calculation"),
@@ -267,6 +293,7 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     prompt: z.string().min(1),
     originalAnswer: z.string().min(1).max(MAX_TEXT_ATTEMPT_LENGTH),
     answerSegments: z.array(SpellingDiffSegmentSchema).min(1).max(32),
+    speechInput: SpeechInputSchema.optional(),
   }).strict(),
 ]).superRefine((prompt, ctx) => {
   if (prompt.kind === "lesson_keywords" && (prompt.minSelected > prompt.maxSelected || prompt.maxSelected > prompt.options.length)) {
@@ -609,6 +636,8 @@ export const AttemptInputSchema = z.discriminatedUnion("modality", [
     clientAttemptId: UuidSchema,
     modality: z.literal("text"),
     text: z.string().max(MAX_TEXT_ATTEMPT_LENGTH),
+    /** „speech” = tekst z dyktowania (serwer weryfikuje, że dyktowanie było). */
+    inputMethod: InputMethodSchema.optional(),
   }),
   z.object({
     taskId: UuidSchema,
