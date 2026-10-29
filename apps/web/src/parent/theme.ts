@@ -1,4 +1,4 @@
-import { createTheme, type CSSVariablesResolver, type MantineColorsTuple } from "@mantine/core";
+import { Button, Input, createTheme, rem, type CSSVariablesResolver, type MantineColorsTuple } from "@mantine/core";
 
 /**
  * Motyw Mantine panelu rodzica (plan 2026-10-29-parent-ui-mantine, faza 0).
@@ -31,6 +31,17 @@ export const parentTheme = createTheme({
   fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
   headings: { fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif' },
   cursorType: "pointer",
+  // klasy szerokości jak w Kid UI (Material 3): compact < 600 px, medium 600–839, expanded ≥ 840
+  breakpoints: { xs: "37.5em", sm: "52.5em", md: "62em", lg: "75em", xl: "88em" },
+  components: {
+    // cel dotykowy ≥ 44 px dla domyślnego rozmiaru kontrolek panelu (Mantine md = 42 px)
+    Button: Button.extend({
+      vars: (_theme, props) => (props.size === "md" ? { root: { "--button-height": rem(44) } } : { root: {} }),
+    }),
+    Input: Input.extend({
+      vars: (_theme, props) => (props.size === "md" ? { wrapper: { "--input-height": rem(44) } } : { wrapper: {} }),
+    }),
+  },
 });
 
 /**
@@ -66,6 +77,3 @@ export const parentCssVariablesResolver: CSSVariablesResolver = () => ({
   light: statusVariables("light"),
   dark: statusVariables("dark"),
 });
-
-/** Klucz `localStorage` wybranego schematu (Auto/Jasny/Ciemny). */
-export const PARENT_COLOR_SCHEME_KEY = "umiem-parent-color-scheme";

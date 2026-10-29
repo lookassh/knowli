@@ -10,7 +10,8 @@ test("domyślna nawigacja: strona główna otwiera wybór profilu dziecka, link 
 
   // 2. Kliknięcie w link do panelu rodzica
   await page.getByTestId("kid-parent-link").click();
-  await expect(page).toHaveURL(/\/parent$/);
+  // /parent wskazuje domyślną sekcję panelu (plan 2026-10-29, §4.1)
+  await expect(page).toHaveURL(/\/parent\/decks$/);
   await expect(page.getByTestId("auth-secret")).toBeVisible();
   await expect(page.getByTestId("to-learning")).toBeVisible();
 
@@ -108,4 +109,29 @@ test("panel rodzica: zakładki z ikonami i stanem aktywnym", async ({ page }) =>
   await expect(page.getByTestId("tab-progress")).toHaveAttribute("aria-current", "true");
   await expect(page.getByTestId("tab-decks")).toHaveAttribute("aria-current", "false");
   await expect(page.getByTestId("tab-progress").locator("svg")).toBeVisible();
+});
+
+test("panel rodzica: sekcje mają adresy, odświeżenie i wstecz/dalej zachowują sekcję", async ({ page }) => {
+  const request = page.request;
+  await request.post("/api/v1/parent/setup", { data: { secret: "1234" } });
+  expect((await request.post("/api/v1/parent/login", { data: { secret: "1234" } })).status()).toBe(200);
+
+  await page.goto("/parent/progress");
+  await expect(page.getByTestId("tab-progress")).toHaveAttribute("aria-current", "true");
+  await expect(page.getByTestId("tab-progress")).toHaveAttribute("href", "/parent/progress");
+
+  await page.getByTestId("tab-children").click();
+  await expect(page).toHaveURL(/\/parent\/children$/);
+  await page.reload();
+  await expect(page.getByTestId("tab-children")).toHaveAttribute("aria-current", "true");
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/parent\/progress$/);
+  await expect(page.getByTestId("tab-progress")).toHaveAttribute("aria-current", "true");
+  await page.goForward();
+  await expect(page.getByTestId("tab-children")).toHaveAttribute("aria-current", "true");
+
+  await page.goto("/parent/nieznana-sekcja");
+  await expect(page).toHaveURL(/\/parent\/decks$/);
+  await expect(page.getByTestId("tab-decks")).toHaveAttribute("aria-current", "true");
 });

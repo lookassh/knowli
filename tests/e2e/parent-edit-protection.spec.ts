@@ -360,3 +360,30 @@ test("a published remote draft requires creating a new version before local edit
   await page.getByTestId("conflict-confirm").click();
   await pageB.close();
 });
+
+test("browser Back with a dirty editor asks first; Stay keeps the address and the form", async ({ page }) => {
+  await enterParent(page);
+  await page.getByTestId("tab-children").click();
+  await expect(page).toHaveURL(/\/parent\/children$/);
+  await page.getByTestId("tab-decks").click();
+  await expect(page).toHaveURL(/\/parent\/decks$/);
+  await openNewMaterial(page, "empty");
+  await page.getByTestId("create-empty-submit").click();
+  await page.getByTestId("add-item").click();
+  await page.getByTestId("item-source-0").fill("kot");
+  await page.getByTestId("item-target-0").fill("local correction");
+
+  await page.goBack();
+  await expect(page.getByTestId("leave-editor-dialog")).toBeVisible();
+  await expect(page).toHaveURL(/\/parent\/decks$/);
+  await page.getByTestId("leave-editor-stay").click();
+  await expect(page.getByTestId("leave-editor-dialog")).not.toBeVisible();
+  await expect(page.getByTestId("item-target-0")).toHaveValue("local correction");
+  await expect(page.getByTestId("tab-decks")).toHaveAttribute("aria-current", "true");
+
+  await page.goBack();
+  await expect(page.getByTestId("leave-editor-dialog")).toBeVisible();
+  await page.getByTestId("leave-editor-leave").click();
+  await expect(page).toHaveURL(/\/parent\/children$/);
+  await expect(page.getByTestId("tab-children")).toHaveAttribute("aria-current", "true");
+});

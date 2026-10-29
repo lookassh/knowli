@@ -1,6 +1,14 @@
 /* Panel rodzica Umiem! — mobile first, duże pola dotykowe, zero zależności.
    Kid UI (packages/kid-ui) wprowadzi właściwy system stylowania. */
 
+/* Warstwy (plan 2026-10-29-parent-ui-mantine, faza 1): style tego pliku są w
+   warstwie `legacy`, niższej niż `mantine`, żeby reguły elementów (button,
+   label, input…) nie nadpisywały komponentów Mantine w panelu rodzica.
+   Style bez warstwy (Kid UI, parent.css) mają pierwszeństwo przed obiema. */
+@layer legacy, mantine;
+
+@layer legacy {
+
 :root {
   color-scheme: light;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -390,3 +398,4 @@ ul.plain {
   font-weight: 500;
 }
 
+}
