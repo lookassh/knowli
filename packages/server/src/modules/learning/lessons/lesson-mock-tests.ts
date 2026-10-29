@@ -3,6 +3,7 @@ import { and, asc, desc, eq, inArray, lt, lte, ne, or, sql } from "drizzle-orm";
 import {
   LessonMockTestReportDtoSchema,
   LessonMockTestSummaryDtoSchema,
+  messages,
   UuidSchema,
   type LessonExerciseTypeDto,
   type LessonMockTestReportDto,
@@ -16,6 +17,7 @@ import { attempts, deckVersions, eventExposures, itemRevisions, learningEvents, 
 import { AppError } from "../../../errors";
 import { BASE_ERROR_CATEGORIES } from "../../../domain/lessons/base-error-categories";
 import { planLessonMockTest, toLessonMockPoolEntry, type LessonMockPoolEntry } from "../../../domain/lessons/mock-test-plan";
+import { mockPrecisionHint, objectivesWorthReviewing, schoolMockAggregate, type MockAnswerDetails, type MockPrecisionHint } from "../../../domain/lessons/mock-test-precision";
 import type { LessonExerciseType, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
 import { writeSealedEvent } from "../events";
 import { lessonContextOf, loadExercises, requireTopic } from "./lesson-sessions";
@@ -251,6 +253,8 @@ interface AssessmentRow {
   verdict: string | null;
   verdictId: string | null;
   errorCategory: string | null;
+  /** Szczegóły oceny (wymiar wiedzy i precyzji odpowiedzi otwartej szkoły). */
+  details: MockAnswerDetails;
 }
 
 /** Zbiera oceny slotów kartkówki (jedna próba completed na slot). */
@@ -262,7 +266,7 @@ async function loadMockAssessments(tx: Tx, sessionId: string): Promise<Map<strin
   const byTask = new Map<string, AssessmentRow>();
   for (const t of tasks) {
     const objectiveId = (t.context as { objectiveId?: string } | null)?.objectiveId ?? "";
-    byTask.set(t.id, { taskId: t.id, objectiveId, state: t.state, outcome: null, verdict: null, verdictId: null, errorCategory: null });
+    byTask.set(t.id, { taskId: t.id, objectiveId, state: t.state, outcome: null, verdict: null, verdictId: null, errorCategory: null, details: {} });
   }
   const graded = await tx.execute<{ task_id: string; outcome: string; details: Record<string, unknown> }>(sql`
     select t.id as task_id, a.outcome, a.details
@@ -278,6 +282,7 @@ async function loadMockAssessments(tx: Tx, sessionId: string): Promise<Map<strin
     row.verdict = details.verdict ?? null;
     row.verdictId = details.verdictId ?? null;
     row.errorCategory = details.errorCategory ?? null;
+    row.details = g.details as MockAnswerDetails;
     if (details.objectiveId) row.objectiveId = details.objectiveId;
   }
   return byTask;
@@ -308,11 +313,12 @@ export async function closeLessonMockTest(tx: Tx, services: Services, session: t
   interface Acc {
     total: number; correct: number; incorrect: number; unassessed: number; skipped: number; modelGraded: number;
     errorCategories: Map<string, number>;
+    answers: MockAnswerDetails[];
   }
   const accByObjective = new Map<string, Acc>();
   const ensure = (objectiveId: string): Acc => {
     let acc = accByObjective.get(objectiveId);
-    if (!acc) { acc = { total: 0, correct: 0, incorrect: 0, unassessed: 0, skipped: 0, modelGraded: 0, errorCategories: new Map() }; accByObjective.set(objectiveId, acc); }
+    if (!acc) { acc = { total: 0, correct: 0, incorrect: 0, unassessed: 0, skipped: 0, modelGraded: 0, errorCategories: new Map(), answers: [] }; accByObjective.set(objectiveId, acc); }
     return acc;
   };
   for (const objectiveId of plan.objectiveIds) ensure(objectiveId);
@@ -324,6 +330,7 @@ export async function closeLessonMockTest(tx: Tx, services: Services, session: t
     acc.total += 1;
     if (!row || row.state === "issued") { complete = false; acc.unassessed += 1; continue; }
     if (row.state === "skipped") { acc.skipped += 1; continue; }
+    acc.answers.push(row.details);
     const modelGraded = row.verdictId !== null || (row.verdict !== null && row.verdict.startsWith("model_"));
     if (modelGraded) acc.modelGraded += 1;
     if (row.outcome === "correct") acc.correct += 1;
@@ -333,17 +340,22 @@ export async function closeLessonMockTest(tx: Tx, services: Services, session: t
     } else acc.unassessed += 1;
   }
 
-  const objectives = [...accByObjective].map(([objectiveId, acc]) => ({
-    objectiveId,
-    titlePl: titleOf(objectiveId),
-    total: acc.total,
-    correct: acc.correct,
-    incorrect: acc.incorrect,
-    unassessed: acc.unassessed,
-    skipped: acc.skipped,
-    modelGraded: acc.modelGraded,
-    errorCategories: [...acc.errorCategories].map(([category, count]) => ({ category, labelPl: labels.get(category) ?? category, count })),
-  }));
+  const objectives = [...accByObjective].map(([objectiveId, acc]) => {
+    // Wymiar precyzji odpowiedzi otwartych szkoły (design §8.1), zamrażany z raportem.
+    const school = schoolMockAggregate(acc.answers);
+    return {
+      objectiveId,
+      titlePl: titleOf(objectiveId),
+      total: acc.total,
+      correct: acc.correct,
+      incorrect: acc.incorrect,
+      unassessed: acc.unassessed,
+      skipped: acc.skipped,
+      modelGraded: acc.modelGraded,
+      errorCategories: [...acc.errorCategories].map(([category, count]) => ({ category, labelPl: labels.get(category) ?? category, count })),
+      ...(school ? { school } : {}),
+    };
+  });
 
   const endedAt = session.endedAt ?? services.clock.now();
   // Stan utrwalany jak w słówkach (`closeMockTest`): komplet → `completed`,
@@ -384,6 +396,13 @@ export async function getLessonMockTestReport(services: Services, sessionId: str
  * Pieczętuje ekspozycje (`feedback_issued` z `target_key`) PRZED zwróceniem, tak
  * jak słówka. Odpowiedź dziecka i poprawna odpowiedź jako tekst, prosty wynik.
  */
+/** Teksty wskazówek precyzji w omówieniu (katalog komunikatów dziecka). */
+const HINT_TEXT: Readonly<Record<MockPrecisionHint, string>> = {
+  shorter: messages.kid.mockTestHintShorter,
+  focus: messages.kid.mockTestHintFocus,
+  missing: messages.kid.mockTestHintMissing,
+};
+
 export async function readLessonMockTestSummary(services: Services, sessionId: string): Promise<LessonMockTestSummaryDto> {
   return services.db.transaction(async (tx) => {
     const { session, report } = await terminalLessonSession(tx, services, sessionId);
@@ -397,6 +416,7 @@ export async function readLessonMockTestSummary(services: Services, sessionId: s
     const titleOf = (objectiveId: string): string => topic.objectives.find((o) => o.id === objectiveId)?.titlePl ?? objectiveId;
 
     const solutions: LessonMockTestSummaryDto["solutions"] = [];
+    const reviewInputs: { objectiveId: string; outcome: LessonMockTestSummaryDto["solutions"][number]["outcome"]; knowledge: unknown }[] = [];
     let answeredCount = 0;
     const now = services.clock.now();
     for (const task of tasks) {
@@ -420,6 +440,7 @@ export async function readLessonMockTestSummary(services: Services, sessionId: s
             : row?.outcome === "incorrect" ? "incorrect"
               : "unassessed";
       if (task.state !== "issued" && task.state !== "skipped") answeredCount += 1;
+      const hint = row ? mockPrecisionHint(row.details) : null;
       solutions.push({
         taskId: task.id,
         objectiveId: slot.objectiveId,
@@ -429,11 +450,14 @@ export async function readLessonMockTestSummary(services: Services, sessionId: s
         childAnswer: await childAnswerText(tx, task.id, key),
         correctAnswer: correctAnswerText(key),
         outcome,
+        ...(hint ? { hintPl: HINT_TEXT[hint] } : {}),
       });
+      reviewInputs.push({ objectiveId: slot.objectiveId, outcome, knowledge: row?.details.knowledge });
     }
     // Stan jak utrwalony przez `closeLessonMockTest`: komplet → `completed`,
     // niepełna → `ended`; sesja już zamknięta zachowuje swój stan.
     const state: "completed" | "ended" = session.state === "active" ? (report.complete ? "completed" : "ended") : (session.state as "completed" | "ended");
+    const review = objectivesWorthReviewing(reviewInputs, topic.objectives.map((objective) => objective.id));
     return LessonMockTestSummaryDtoSchema.parse({
       sessionId: session.id,
       deckId: session.deckId,
@@ -442,6 +466,7 @@ export async function readLessonMockTestSummary(services: Services, sessionId: s
       taskBudget: session.taskBudget,
       answeredCount,
       solutions,
+      ...(review.length > 0 ? { reviewObjectives: review.map((objectiveId) => ({ objectiveId, titlePl: titleOf(objectiveId) })) } : {}),
     });
   });
 }
