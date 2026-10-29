@@ -149,6 +149,7 @@ test("parent supervises objective progress and model verdicts: changes a decisio
   await createAndPublishLesson(page, lessonTitle);
 
   // Panel nadzoru widoczny po publikacji; provider oceny i postęp celu.
+  await page.getByTestId("lesson-tab-children").click();
   await expect(page.getByTestId("supervision-panel")).toBeVisible();
   await expect(page.getByTestId("grading-provider")).toBeVisible();
   // Opóźnij odpowiedź domyślnego dziecka, wybierz drugie i upewnij się,

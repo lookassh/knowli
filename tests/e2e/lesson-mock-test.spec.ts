@@ -189,6 +189,8 @@ test("parent sees the per-objective lesson mock-test report in the supervision p
 
   await createAndPublishLesson(page, `Raport Present Simple ${Date.now()}`);
 
+  await page.getByTestId("lesson-tab-children").click();
+
   await expect(page.getByTestId("supervision-panel")).toBeVisible();
   await expect(page.getByTestId("lesson-mock-reports")).toBeVisible();
   await expect(page.getByTestId("lesson-mock-report")).toHaveCount(1);

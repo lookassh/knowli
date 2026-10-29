@@ -12,6 +12,7 @@ import { buildSkillRows } from "./build-skill-rows";
 import { dueEntries, historyRows } from "./progress-lists";
 import { ParentIcon, type ParentIconName } from "./ParentIcon";
 import { orpc } from "./query-client";
+import { formatFamilyDate } from "./family-date";
 import "./progress-panel.css";
 
 /**
@@ -23,11 +24,6 @@ import "./progress-panel.css";
 
 export function fill(template: string, values: Record<string, string | number>): string {
   return template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ""));
-}
-
-/** Czytelny zapis ISO daty rodzinnej (YYYY-MM-DD) bez stref czasowych. */
-function formatFamilyDate(iso: string): string {
-  return `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`;
 }
 
 /** Minuty do najbliższej pełnej, nie mniej niż 1, gdy był jakikolwiek czas. */

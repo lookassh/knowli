@@ -176,15 +176,6 @@
   border-radius: 8px;
 }
 
-/* Widoki lekcji jeszcze nieprzepisane na Mantine (fazy 6a/6b) zostają jasne
-   także w trybie ciemnym: wyspa ze starymi tokenami pp-* wewnątrz strony. */
-.pp-app.pp-legacy-area {
-  min-height: 0;
-  margin: -20px -16px 0;
-  padding: 20px 16px 28px;
-  color-scheme: light;
-}
-
 /* Sekcje przepisane na Mantine: pełne schematy jasny i ciemny. */
 .pp-shell-page {
   max-width: 960px;
