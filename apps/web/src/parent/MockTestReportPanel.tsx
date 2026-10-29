@@ -1,10 +1,14 @@
 "use client";
-import { useEffect, useState } from "react";
-import { messages, MockTestReportDtoSchema, type MockTestReportDto } from "@learning/contracts";
-import { mockTestResultBadgeClass, mockTestResultBadgeLabel, mockTestScoreTone } from "@learning/kid-ui";
-import { callParent, errorMessage, parentClient } from "./api";
+
+import { useState } from "react";
+import { Alert, Group, NativeSelect, Paper, Stack, Text, Title } from "@mantine/core";
+import { useQuery } from "@tanstack/react-query";
+import { messages, MockTestReportDtoSchema } from "@learning/contracts";
+import { mockTestResultBadgeLabel, mockTestScoreTone } from "@learning/kid-ui";
+import { errorMessage } from "./api";
 import { groupMockReportWords, type MockReportWord } from "./mock-report-words";
 import { ParentIcon } from "./ParentIcon";
+import { orpc } from "./query-client";
 
 function fill(template: string, values: Record<string, string | number>) {
   return template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ""));
@@ -33,69 +37,99 @@ function parentLine(word: MockReportWord): string {
   return parts.join(" · ");
 }
 
-export default function MockTestReportPanel({ childId, deckId, currentDeckVersionId }: { childId: string; deckId: string; currentDeckVersionId?: string | null }) {
-  const [reports, setReports] = useState<MockTestReportDto[]>([]), [selected, setSelected] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    setReports([]); setSelected(""); setError(null);
-    if (!childId || !deckId) return;
-    void callParent(() => parentClient.mockTests.list({ childId, deckId }))
-      .then(result => { const data = MockTestReportDtoSchema.array().parse(result.body); if (!cancelled) { setReports(data); setSelected(data[0]?.sessionId ?? ""); } })
-      .catch(cause => { if (!cancelled) setError(errorMessage(cause)); });
-    return () => { cancelled = true; };
-  }, [childId, deckId]);
+const OUTCOME_TONE = { correct: "success", incorrect: "danger" } as const;
+
+/** Stała funkcja `select`: walidacja Zod nie powtarza się przy każdym renderze. */
+const parseReports = (result: { body: unknown }) => MockTestReportDtoSchema.array().parse(result.body);
+
+/**
+ * Próbne kartkówki dziecka w zestawie. Komponent dostaje `key` z parą
+ * dziecko × zestaw, więc wybór próby wraca do najnowszej po zmianie filtra.
+ */
+export default function MockTestReportPanel({ childId, deckId, currentDeckVersionId }: {
+  childId: string;
+  deckId: string;
+  currentDeckVersionId?: string | null;
+}) {
+  const query = useQuery({
+    ...orpc.mockTests.list.queryOptions({ input: { childId, deckId } }),
+    select: parseReports,
+  });
+  const reports = query.data ?? [];
+  const [chosen, setChosen] = useState<string | null>(null);
+  const selected = chosen ?? reports[0]?.sessionId ?? "";
   const report = reports.find(r => r.sessionId === selected);
   const grouped = report ? groupMockReportWords(report.rows) : null;
   const tone = grouped ? mockTestScoreTone(grouped.score) : "low";
-  return <section className="pp-card" aria-label={messages.progress.mockTestsTitle}>
-    <h3 className="pp-card-title">
-      <ParentIcon name="clipboard-check" />
-      {messages.progress.mockTestsTitle}
-      {!!reports.length && <span className="pp-mock-select"><select data-testid="mock-report-select" aria-label={messages.progress.mockTestsRecent} value={selected} onChange={e => setSelected(e.target.value)}>{reports.map(r => <option key={r.sessionId} value={r.sessionId}>{new Date(r.startedAt).toLocaleString("pl-PL")} — {r.deckTitle}</option>)}</select></span>}
-    </h3>
-    {error && <p role="alert" className="pp-error">{error}</p>}
-    {!reports.length && !error && <p>{messages.progress.mockTestsEmpty}</p>}
-    {report && grouped && <div data-testid="mock-parent-report">
-      <div className="pp-mock-head">
-        {grouped.score.total > 0 && <div className="pp-mock-score" data-testid="mock-report-score" data-tone={tone}>
-          <span className="pp-mock-big">{fill(messages.kid.mockTestScore, { correct: grouped.score.correct, total: grouped.score.total, percent: grouped.score.percent })}</span>
-          <span className="pp-mock-stars" role="img" aria-label={fill(messages.kid.mockTestStarsLabel, { n: grouped.score.stars })}>{"★".repeat(grouped.score.stars)}{"☆".repeat(6 - grouped.score.stars)}</span>
+
+  return (
+    <Paper component="section" withBorder radius="lg" p="md" aria-label={messages.progress.mockTestsTitle}>
+      <Group justify="space-between" align="flex-end" gap="sm" mb="sm">
+        <Title order={2} fz="md" className="pp-prog-cardtitle">
+          <ParentIcon name="clipboard-check" />
+          {messages.progress.mockTestsTitle}
+        </Title>
+        {reports.length > 0 && (
+          <NativeSelect
+            size="md"
+            className="pp-prog-mockselect"
+            data-testid="mock-report-select"
+            aria-label={messages.progress.mockTestsRecent}
+            value={selected}
+            onChange={e => setChosen(e.currentTarget.value)}
+            data={reports.map(r => ({ value: r.sessionId, label: `${new Date(r.startedAt).toLocaleString("pl-PL")} — ${r.deckTitle}` }))}
+          />
+        )}
+      </Group>
+      {query.isError && <Alert color="red" variant="light" role="alert">{errorMessage(query.error)}</Alert>}
+      {query.isSuccess && reports.length === 0 && <Text>{messages.progress.mockTestsEmpty}</Text>}
+      {report && grouped && <Stack gap="sm" data-testid="mock-parent-report">
+        {grouped.score.total > 0 && <div className="pp-prog-mockscore" data-testid="mock-report-score" data-tone={tone}>
+          <span className="pp-prog-mockscore-big">{fill(messages.kid.mockTestScore, { correct: grouped.score.correct, total: grouped.score.total, percent: grouped.score.percent })}</span>
+          <span className="pp-prog-mockscore-stars" role="img" aria-label={fill(messages.kid.mockTestStarsLabel, { n: grouped.score.stars })}>{"★".repeat(grouped.score.stars)}{"☆".repeat(6 - grouped.score.stars)}</span>
         </div>}
-      </div>
-      <p className="pp-mock-meta">
-        {fill(messages.progress.mockTestVersion, { n: report.deckVersionNumber })}
-        {" · "}{fill(messages.progress.mockTestPortion, { actual: report.taskBudget, requested: report.requestedTaskCount })}
-        {" · "}{report.complete ? messages.progress.mockTestComplete : messages.progress.mockTestPartial}
-      </p>
-      {currentDeckVersionId && report.deckVersionId !== currentDeckVersionId && <p className="pp-mock-meta pp-mock-old">{messages.progress.mockTestOldVersion}</p>}
-      <ul className="pp-plain pp-mock-words">{grouped.words.map(word => {
-        const line = parentLine(word);
-        return <li className={`pp-mock-word pp-mock-word--${word.status}`} key={word.itemId} data-testid="mock-report-word" data-status={word.status}>
-          <span className={`pp-mock-ico ${word.status === "correct" ? "pp-mock-ico-ok" : word.status === "incorrect" ? "pp-mock-ico-bad" : "pp-mock-ico-neutral"}`} aria-hidden="true">
-            <ParentIcon name={word.status === "correct" ? "check" : word.status === "incorrect" ? "x" : "minus"} />
-          </span>
-          <span className="pp-mock-body">
-            <span className="pp-mock-pair">{word.source} → <strong>{word.target}</strong></span>
-            {word.detail.type === "label" && <span className="pp-mock-detail">
-              <span className="pp-chip pp-chip-gray">{word.detail.label === "skipped" ? messages.kid.mockTestSkipped : messages.kid.mockTestNotTested}</span>
-            </span>}
-            {word.detail.type === "perSkill" && <span className="pp-mock-detail">
-              {word.results.map(result => <span className={mockTestResultBadgeClass(result)} key={result.skill}>{mockTestResultBadgeLabel(result)}</span>)}
-            </span>}
-            {line && <span className="pp-hist-meta">{line}</span>}
-          </span>
-        </li>;
-      })}</ul>
-      <ul className="plain">{report.skills.map(skill => <li key={skill.skill} data-testid={`mock-report-${skill.skill}`}>
-        <strong>{messages.progress.skills[skill.skill]}</strong>: {fill(messages.progress.mockTestCounts, { correct: skill.independentCorrect, total: skill.totalItems, practice: skill.practiceNeeded, missing: skill.notTested })}
-        {skill.correctNotIndependent > 0 && <p>{fill(messages.progress.mockTestSupported, { n: skill.correctNotIndependent })}</p>}
-        <p className="muted">{fill(messages.progress.mockTestSkipped, { n: skill.skipped, unassessed: skill.unassessed })}</p>
-      </li>)}</ul>
-      {grouped.gaps.length > 0 && <p className="muted" data-testid="mock-report-gaps">{fill(messages.progress.mockTestGaps, {
-        reasons: grouped.gaps.map(gap => `${messages.progress.mockTestReason[gap.reason] ?? gap.reason}: ${gap.count}`).join(", "),
-      })}</p>}
-      <p className="pp-note"><ParentIcon name="info" />{messages.progress.mockTestNote}</p>
-    </div>}
-  </section>;
+        <Text size="sm" className="pp-prog-muted">
+          {fill(messages.progress.mockTestVersion, { n: report.deckVersionNumber })}
+          {" · "}{fill(messages.progress.mockTestPortion, { actual: report.taskBudget, requested: report.requestedTaskCount })}
+          {" · "}{report.complete ? messages.progress.mockTestComplete : messages.progress.mockTestPartial}
+        </Text>
+        {currentDeckVersionId && report.deckVersionId !== currentDeckVersionId && (
+          <Text size="sm" className="pp-prog-warning">{messages.progress.mockTestOldVersion}</Text>
+        )}
+        <ul className="pp-prog-rows">{grouped.words.map(word => {
+          const line = parentLine(word);
+          const outcome = word.status === "correct" || word.status === "incorrect" ? word.status : "neutral";
+          return <li key={word.itemId} data-testid="mock-report-word" data-status={word.status}>
+            <span className="pp-prog-outcome" data-outcome={outcome} aria-hidden="true">
+              <ParentIcon name={outcome === "correct" ? "check" : outcome === "incorrect" ? "x" : "minus"} />
+            </span>
+            <span className="pp-prog-grow pp-prog-mockbody">
+              <span>{word.source} → <strong>{word.target}</strong></span>
+              {word.detail.type === "label" && <span className="pp-prog-badges">
+                <span className="pp-status-badge" data-tone="neutral">{word.detail.label === "skipped" ? messages.kid.mockTestSkipped : messages.kid.mockTestNotTested}</span>
+              </span>}
+              {word.detail.type === "perSkill" && <span className="pp-prog-badges">
+                {word.results.map(result => (
+                  <span className="pp-status-badge" key={result.skill}
+                    data-tone={result.outcome === "correct" || result.outcome === "incorrect" ? OUTCOME_TONE[result.outcome] : "neutral"}>
+                    {mockTestResultBadgeLabel(result)}
+                  </span>
+                ))}
+              </span>}
+              {line && <Text component="span" size="sm" className="pp-prog-muted">{line}</Text>}
+            </span>
+          </li>;
+        })}</ul>
+        <ul className="pp-prog-plain">{report.skills.map(skill => <li key={skill.skill} data-testid={`mock-report-${skill.skill}`}>
+          <strong>{messages.progress.skills[skill.skill]}</strong>: {fill(messages.progress.mockTestCounts, { correct: skill.independentCorrect, total: skill.totalItems, practice: skill.practiceNeeded, missing: skill.notTested })}
+          {skill.correctNotIndependent > 0 && <Text size="sm">{fill(messages.progress.mockTestSupported, { n: skill.correctNotIndependent })}</Text>}
+          <Text size="sm" className="pp-prog-muted">{fill(messages.progress.mockTestSkipped, { n: skill.skipped, unassessed: skill.unassessed })}</Text>
+        </li>)}</ul>
+        {grouped.gaps.length > 0 && <Text size="sm" className="pp-prog-muted" data-testid="mock-report-gaps">{fill(messages.progress.mockTestGaps, {
+          reasons: grouped.gaps.map(gap => `${messages.progress.mockTestReason[gap.reason] ?? gap.reason}: ${gap.count}`).join(", "),
+        })}</Text>}
+        <Text size="sm" className="pp-prog-note"><ParentIcon name="info" />{messages.progress.mockTestNote}</Text>
+      </Stack>}
+    </Paper>
+  );
 }

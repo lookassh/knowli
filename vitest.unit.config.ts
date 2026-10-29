@@ -10,11 +10,20 @@ export default defineConfig({
       // Codacy nie ładuje typów Node dla konfiguracji Vitest poza tsconfigiem.
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
       "@": resolve(process.cwd(), "apps/web/src"),
+      // Mantine (panel rodzica) importuje react-dom, którego pnpm nie dowiązuje
+      // w jego katalogu — testy komponentów panelu biorą kopię aplikacji web.
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+      "react-dom": resolve(process.cwd(), "apps/web/node_modules/react-dom"),
     },
   },
   test: {
     include: ["packages/*/src/**/*.test.ts", "packages/*/src/**/*.test.tsx", "apps/*/src/**/*.test.ts", "apps/*/src/**/*.test.tsx", "tests/test-run-config.test.ts", "tests/integration-buckets.test.ts", "tests/kid-tokens.test.ts", "tests/kid-no-mantine.test.ts", "tests/parent-mantine-scope.test.ts", "tests/kid-design-tokens.test.ts", "tests/e2e/spec-projects.test.ts"],
     passWithNoTests: true,
     environment: "node",
+    server: { deps: { inline: [/@mantine\//] } },
+  },
+  // JSX jak w Next.js (automatyczny runtime) — komponenty nie importują Reacta
+  esbuild: {
+    jsx: "automatic",
   },
 });
