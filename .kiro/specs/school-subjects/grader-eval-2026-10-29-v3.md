@@ -49,3 +49,20 @@ przypadki=27 wiedzaZgodna=27 (100%) precyzjaZgodna=26 brakujaceElementyZgodne=19
 BRAMKA: OK
 ```
 
+## Ostrzejsza bramka po review CodeRabbit (2026-10-29)
+
+Harness sprawdza teraz także treść wyniku: wykrycie pomylenia liczy się tylko
+z właściwą parą (dopuszczalne warianty nazw w `expected.confusedPair`), każdy
+przypadek bez `confused: true` liczy się do fałszywych pomyleń, a kategoria
+fragmentu wymaga fragmentu z oczekiwaną treścią (`fragmentContains`).
+Pierwszy przebieg wskazał G16 (ssaki i ptaki zamienione cechami) jako
+„fałszywe pomylenie” — to w rzeczywistości pomylenie pojęć, więc przypadek
+oznaczono `confused: true` z parą w obu kierunkach. Wynik:
+
+```
+arm=real model=google/gemini-3.8-flash promptVersion=school-grader-v3
+przypadki=27 wiedzaZgodna=27 (100%) precyzjaZgodna=26 brakujaceElementyZgodne=19/20 formaZgodna=2/2 odrzucone=0 pomylenieWykryte=5/5 falszywePomylenie=0/22 kategorieFragmentow=2/2
+ - G05 (błędna zależność mimo słów kluczowych): brakujące elementy [e1,e2,e3] ≠ [e1,e2]
+BRAMKA: OK
+```
+

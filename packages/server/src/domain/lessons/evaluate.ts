@@ -412,9 +412,11 @@ export function validateSchoolVerdict(raw: unknown, ctx: SchoolVerdictContext): 
   for (const fragment of [...v.incorrectStatements, ...v.redundantFragments, ...v.offTopicFragments]) {
     if (!answerNfc.includes(fragment.normalize("NFC"))) return null;
   }
-  // Kategorie fragmentów są rozłączne: ten sam tekst nie może być naraz błędem, zbędnym i nie na temat.
+  // Kategorie fragmentów są rozłączne: ten sam tekst nie może być naraz błędem, zbędnym i nie na temat
+  // — także częściowo (fragment jednej kategorii zawarty w fragmencie innej albo nachodzący na niego).
   const categorized = [...v.incorrectStatements, ...v.redundantFragments, ...v.offTopicFragments].map((f) => f.normalize("NFC"));
   if (new Set(categorized).size !== categorized.length) return null;
+  if (categoriesOverlap(answerNfc, [v.incorrectStatements, v.redundantFragments, v.offTopicFragments])) return null;
   // Pomylenie pojęć to błąd treści: nigdy przy wiedzy poprawnej; `said` pochodzi z odpowiedzi.
   if (v.confusedConcepts.length > 0 && v.knowledge === "correct") return null;
   const confusedConcepts: ConfusedConcept[] = [];
@@ -443,6 +445,20 @@ export function validateSchoolVerdict(raw: unknown, ctx: SchoolVerdictContext): 
     confusedConcepts,
     note: v.note,
   };
+}
+
+/**
+ * Czy zakresy fragmentów różnych kategorii (pierwsze wystąpienie po NFC, jak
+ * zaznacza `buildAnswerSegments`) na siebie nachodzą. Nachodzenie w obrębie
+ * jednej kategorii jest dozwolone — segmenty scalają je w jeden.
+ */
+function categoriesOverlap(answerNfc: string, categories: readonly (readonly string[])[]): boolean {
+  const spans = categories.flatMap((fragments, category) => fragments.map((fragment) => {
+    const text = fragment.normalize("NFC");
+    const start = answerNfc.indexOf(text);
+    return { category, start, end: start + text.length };
+  }));
+  return spans.some((a, i) => spans.some((b, j) => j > i && a.category !== b.category && a.start < b.end && b.start < a.end));
 }
 
 /**

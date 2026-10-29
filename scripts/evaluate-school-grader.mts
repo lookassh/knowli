@@ -45,8 +45,15 @@ interface GoldenCase {
     precision: string;
     missingElementIds?: string[];
     formOk?: boolean;
-    /** v3: czy odpowiedź myli pojęcia (bramka wykrywania, design §9.1). */
+    /**
+     * v3: czy odpowiedź myli pojęcia (bramka wykrywania, design §9.1). Brak pola =
+     * przypadek bez pomylenia (liczy się do fałszywych pomyleń).
+     */
     confused?: boolean;
+    /** Dopuszczalne warianty pary: wykrycie liczy się, gdy `said`/`meant` zawierają któryś z nich. */
+    confusedPair?: { said: string[]; meant: string[] };
+    /** Fragment oczekiwanej kategorii musi zawierać ten tekst. */
+    fragmentContains?: string;
     /** v3: oczekiwana kategoria treści poza elementami wymaganymi (raportowana, nie bramkuje). */
     fragments?: "redundant" | "offTopic";
   };
@@ -134,6 +141,7 @@ let invalid = 0;
 let confusionDetected = 0;
 let confusionChecked = 0;
 let confusionFalsePositive = 0;
+let confusionNegatives = 0;
 let fragmentsOk = 0;
 let fragmentsChecked = 0;
 const failures: string[] = [];
@@ -183,17 +191,26 @@ for (const testCase of golden.cases) {
   }
   if (testCase.expected.confused === true) {
     confusionChecked += 1;
-    if (verdict.confusedConcepts.length > 0) confusionDetected += 1;
-    else failures.push(`${testCase.id} (${testCase.category}): pomylenie pojęć niewykryte`);
+    const expectedPair = testCase.expected.confusedPair;
+    const lower = (text: string) => text.toLocaleLowerCase("pl-PL");
+    const matchesPair = (pair: { said: string; meant: string }) => expectedPair === undefined ||
+      (expectedPair.said.some((v) => lower(pair.said).includes(lower(v))) && expectedPair.meant.some((v) => lower(pair.meant).includes(lower(v))));
+    if (verdict.confusedConcepts.some(matchesPair)) confusionDetected += 1;
+    else failures.push(`${testCase.id} (${testCase.category}): pomylenie pojęć niewykryte albo zła para ${JSON.stringify(verdict.confusedConcepts)}`);
     // pomylenie pojęć nigdy nie może zaliczyć wiedzy (twarde wymaganie v3)
     if (verdict.knowledge === "correct") failures.push(`${testCase.id} (${testCase.category}) [TWARDA]: pomylenie pojęć ocenione jako correct`);
-  } else if (testCase.expected.confused === false && verdict.confusedConcepts.length > 0) {
-    confusionFalsePositive += 1;
-    failures.push(`${testCase.id} (${testCase.category}): fałszywe pomylenie ${JSON.stringify(verdict.confusedConcepts)}`);
+  } else {
+    confusionNegatives += 1;
+    if (verdict.confusedConcepts.length > 0) {
+      confusionFalsePositive += 1;
+      failures.push(`${testCase.id} (${testCase.category}): fałszywe pomylenie ${JSON.stringify(verdict.confusedConcepts)}`);
+    }
   }
   if (testCase.expected.fragments !== undefined) {
     fragmentsChecked += 1;
-    const has = testCase.expected.fragments === "offTopic" ? verdict.offTopicFragments.length > 0 : verdict.redundantFragments.length > 0;
+    const list = testCase.expected.fragments === "offTopic" ? verdict.offTopicFragments : verdict.redundantFragments;
+    const needle = testCase.expected.fragmentContains?.toLocaleLowerCase("pl-PL");
+    const has = list.some((fragment) => needle === undefined || fragment.toLocaleLowerCase("pl-PL").includes(needle));
     if (has) fragmentsOk += 1;
     else failures.push(`${testCase.id} (${testCase.category}): brak fragmentu kategorii ${testCase.expected.fragments}`);
   }
@@ -210,7 +227,7 @@ const missingAccuracy = missingChecked > 0 ? missingOk / missingChecked : 1;
 console.log(
   `przypadki=${total} wiedzaZgodna=${knowledgeOk} (${(accuracy * 100).toFixed(0)}%) precyzjaZgodna=${precisionOk} ` +
   `brakujaceElementyZgodne=${missingOk}/${missingChecked} formaZgodna=${formOkCount}/${formChecked} odrzucone=${invalid} ` +
-  `pomylenieWykryte=${confusionDetected}/${confusionChecked} falszywePomylenie=${confusionFalsePositive} kategorieFragmentow=${fragmentsOk}/${fragmentsChecked}`,
+  `pomylenieWykryte=${confusionDetected}/${confusionChecked} falszywePomylenie=${confusionFalsePositive}/${confusionNegatives} kategorieFragmentow=${fragmentsOk}/${fragmentsChecked}`,
 );
 for (const failure of failures) console.log(` - ${failure}`);
 

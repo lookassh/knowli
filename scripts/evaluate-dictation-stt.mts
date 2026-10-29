@@ -542,12 +542,18 @@ const status=s=>{$('status').textContent=s};
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let rec=null,stream=null,chunks=[],timer=null,t0=0;
 function release(){if(timer){clearInterval(timer);timer=null}if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}}
+let starting=false;
 async function start(){
+  if(starting)return;
   if(!window.isSecureContext||!navigator.mediaDevices){status('Ta strona potrzebuje HTTPS (uruchom z --lan) albo localhost.');return}
+  starting=true;btn.disabled=true;
   try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}})}
-  catch(e){status('Brak dostępu do mikrofonu: '+e.name);return}
-  chunks=[];rec=new MediaRecorder(stream);rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
-  rec.onstop=()=>{release();send(rec.mimeType)};rec.start();t0=Date.now();
+  catch(e){starting=false;btn.disabled=false;status('Brak dostępu do mikrofonu: '+e.name);return}
+  try{
+    chunks=[];rec=new MediaRecorder(stream);rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+    rec.onstop=()=>{release();send(rec.mimeType)};rec.start();t0=Date.now();
+  }catch(e){release();rec=null;starting=false;btn.disabled=false;status('Nagrywanie niedostępne: '+e.name);return}
+  starting=false;btn.disabled=false;
   btn.textContent='Zakończ';btn.classList.add('recording');
   timer=setInterval(()=>{const s=Math.floor((Date.now()-t0)/1000);status('Nagrywanie… '+s+' s');if(s>=${MAX_LIVE_SECONDS})stop()},250);
 }

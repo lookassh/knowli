@@ -499,6 +499,14 @@ describe("werdykt szkolny v3: kategorie fragmentów i pomylone pojęcia (Etap 6)
     }, { ...CTX, childAnswer: `${CTX.childAnswer} południk` })).toBeNull();
   });
 
+  it("odrzuca fragment jednej kategorii zawarty w fragmencie innej (zakresy nachodzą)", () => {
+    const wrong = { ...base, knowledge: "incorrect", incorrectStatements: ["Równoleżnik łączy bieguny."] };
+    expect(validateSchoolVerdict({ ...wrong, offTopicFragments: ["łączy bieguny"] }, CTX)).toBeNull();
+    expect(validateSchoolVerdict({ ...wrong, redundantFragments: ["bieguny. To ważna"] }, CTX)).toBeNull();
+    // w obrębie jednej kategorii nachodzenie jest dozwolone (segmenty się scalają)
+    expect(validateSchoolVerdict({ ...wrong, offTopicFragments: ["Wczoraj grałem", "grałem w piłkę."] }, CTX)).not.toBeNull();
+  });
+
   it("segmenty rozróżniają zbędne (pill) i nie na temat (offtopic)", () => {
     expect(buildAnswerSegments("Linia na mapie. Grałem w piłkę.", ["Linia na mapie."], ["Grałem w piłkę."])).toEqual([
       { text: "Linia na mapie.", state: "pill" },

@@ -383,7 +383,18 @@
           "e1",
           "e2",
           "e3"
-        ]
+        ],
+        "confused": true,
+        "confusedPair": {
+          "said": [
+            "ssak",
+            "ptak"
+          ],
+          "meant": [
+            "ptak",
+            "ssak"
+          ]
+        }
       }
     },
     {
@@ -446,7 +457,16 @@
       "expected": {
         "knowledge": "incorrect",
         "precision": "concise",
-        "confused": true
+        "confused": true,
+        "confusedPair": {
+          "said": [
+            "południk"
+          ],
+          "meant": [
+            "równik",
+            "równoleżnik"
+          ]
+        }
       }
     },
     {
@@ -457,7 +477,17 @@
       "expected": {
         "knowledge": "incorrect",
         "precision": "concise",
-        "confused": true
+        "confused": true,
+        "confusedPair": {
+          "said": [
+            "względna"
+          ],
+          "meant": [
+            "bezwzględna",
+            "nad poziomem morza",
+            "n.p.m"
+          ]
+        }
       }
     },
     {
@@ -468,7 +498,15 @@
       "expected": {
         "knowledge": "incorrect",
         "precision": "concise",
-        "confused": true
+        "confused": true,
+        "confusedPair": {
+          "said": [
+            "południk"
+          ],
+          "meant": [
+            "równoleżnik"
+          ]
+        }
       }
     },
     {
@@ -491,7 +529,8 @@
         "knowledge": "correct",
         "precision": "verbose",
         "confused": false,
-        "fragments": "offTopic"
+        "fragments": "offTopic",
+        "fragmentContains": "piłkę"
       }
     },
     {
@@ -503,7 +542,8 @@
         "knowledge": "correct",
         "precision": "verbose",
         "confused": false,
-        "fragments": "redundant"
+        "fragments": "redundant",
+        "fragmentContains": "chlorofil"
       }
     },
     {
@@ -514,7 +554,15 @@
       "expected": {
         "knowledge": "partial",
         "precision": "concise",
-        "confused": true
+        "confused": true,
+        "confusedPair": {
+          "said": [
+            "równoleżnik"
+          ],
+          "meant": [
+            "południk"
+          ]
+        }
       }
     }
   ]
