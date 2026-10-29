@@ -232,6 +232,29 @@ describe("Kid API picture support transport", () => {
     expect(new Headers(init?.headers).get("content-type")).toBeNull();
   });
 
+  it("sends dictation as multipart without an idempotency key and parses the text result", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(response({ status: "heard", text: "Równik to najdłuższy równoleżnik." }));
+    const api = createKidApiClient({ fetchImpl });
+
+    await expect(api.dictate!(TASK_ID, { bytes: new Uint8Array([1, 2, 3]), mimeType: "audio/wav" }))
+      .resolves.toEqual({ status: "heard", text: "Równik to najdłuższy równoleżnik." });
+
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(String(url)).toBe(`/api/v1/kid/tasks/${TASK_ID}/dictation`);
+    expect(init?.method).toBe("POST");
+    const form = init?.body as FormData;
+    expect(form).toBeInstanceOf(FormData);
+    expect(form.has("clientAttemptId")).toBe(false);
+    expect(form.has("taskId")).toBe(false);
+    expect((form.get("audio") as File).type).toBe("audio/wav");
+  });
+
+  it("rejects a dictation result carrying more than the contract allows", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(response({ status: "uncertain", text: "When do we?" }));
+    const api = createKidApiClient({ fetchImpl });
+    await expect(api.dictate!(TASK_ID, { bytes: new Uint8Array([1]), mimeType: "audio/wav" })).rejects.toMatchObject({ code: "internal" });
+  });
+
   it("preserves known validation reasons from HTTP details and ignores unknown details", async () => {
     const reasons = ["picture_client_update_required", "vocabulary_requires_reading", "non_reader_mock_test_unavailable", "picture_guidance_unavailable", "picture_audio_unavailable", "activity_report_update_required"];
     const fetchImpl = vi.fn();

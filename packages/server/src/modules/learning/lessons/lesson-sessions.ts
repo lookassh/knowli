@@ -41,6 +41,7 @@ import { mapObjectiveStatus as mapStatus } from "../../../domain/lessons/progres
 import {
   materializeCard,
   materializeExercise,
+  speechInputFor,
   type LessonExercisePayload,
   type LoadedExercise,
   type MaterializedLessonTask,
@@ -70,6 +71,10 @@ export interface LessonSessionContext extends SessionContextShape {
   previousObjectiveContact: Record<string, string>;
   initialObjectiveProgress?: Record<string, ObjectiveProgressSnapshot>;
   supportObjectives?: string[];
+  /** Dyktowania w tej sesji (limit kosztu, design szkoły §5.4). */
+  dictationCalls?: number;
+  /** Skrót ostatniego dyktowania per zadanie — tekst dziecka nie jest tu zapisywany. */
+  dictations?: Record<string, string>;
 }
 
 /** `lesson_context` zapisany w `deck_versions.lesson_context`. */
@@ -240,6 +245,9 @@ export function lessonSessionContextOf(session: { context: Record<string, unknow
     previousObjectiveContact: raw.previousObjectiveContact ?? {},
     supportObjectives: Array.isArray(raw.supportObjectives) ? raw.supportObjectives.filter((id): id is string => typeof id === "string") : [],
     ...(raw.initialObjectiveProgress === undefined ? {} : { initialObjectiveProgress: raw.initialObjectiveProgress }),
+    // Zapis kontekstu z tej funkcji (np. licznik gradera) nie może gubić stanu dyktowania.
+    ...(typeof raw.dictationCalls === "number" ? { dictationCalls: raw.dictationCalls } : {}),
+    ...(raw.dictations && typeof raw.dictations === "object" ? { dictations: raw.dictations } : {}),
   };
 }
 
@@ -611,11 +619,11 @@ export async function createLessonTrainingSessionPlan(
       const pairedOpenAnswer = { prompt: paired.payload.prompt ?? "", targetKey: paired.targetKey };
       pushSlot(taskId, materializeExercise({ ...plan, pairedOpenAnswer }, taskId, keywords, topic, subject), "exercise", plan.reason);
       const pairedTaskId = randomUUID();
-      pushSlot(pairedTaskId, materializeExercise({ independentCheck: false, reason: plan.reason }, pairedTaskId, paired, topic, subject), "exercise", plan.reason);
+      pushSlot(pairedTaskId, materializeExercise({ independentCheck: false, reason: plan.reason }, pairedTaskId, paired, topic, subject, speechInputFor(services, session, subject, paired.payload.exerciseType)), "exercise", plan.reason);
       continue;
     } else {
       const exercise = exercises.find((e) => e.revisionId === plan.itemRevisionId)!;
-      materialized = materializeExercise(plan, taskId, exercise, topic, subject);
+      materialized = materializeExercise(plan, taskId, exercise, topic, subject, speechInputFor(services, session, subject, exercise.payload.exerciseType));
       taskKind = "exercise";
       reason = plan.reason;
     }
@@ -669,7 +677,7 @@ export async function issueNextLessonTask(
     materialized = materializeCard(plan, Math.min(cardIndex, objective.cards.length - 1), objective, subject, context.examples[plan.objectiveId] ?? [], anchorRevision.revisionId);
   } else {
     const exercise = exercises.find((e) => e.revisionId === plan.itemRevisionId)!;
-    materialized = materializeExercise(plan, taskId, exercise, topic, subject);
+    materialized = materializeExercise(plan, taskId, exercise, topic, subject, speechInputFor(services, session, subject, exercise.payload.exerciseType));
   }
 
   const counts = await lessonTaskCounts(tx, session.id);

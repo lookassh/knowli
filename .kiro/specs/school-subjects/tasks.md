@@ -173,14 +173,19 @@ odrzuceń w pełnej sondzie.
 
 ## Etap 3 — Odpowiedź mówiona
 
-- [ ] Spike: polski STT (`pl-PL`) obecnego providera na głosie dziecka; decyzja
-      o adapterze zapisana w tym pliku lub w `design.md`.
-- [ ] Serwer: modalność audio dla `lesson_open_answer` przedmiotu `school`
-      (transkrypcja → wspólna finalizacja), „nieocenione” przy niskiej pewności.
-- [ ] Kid UI: `SpeechRecordButton` w widoku odpowiedzi otwartej lekcji; raport
-      rodzica rozdziela modalności.
-- [ ] Walidacja: testy ścieżki audio z fake STT; jawny raport braku odbioru
-      na fizycznym urządzeniu, jeśli niewykonany.
+- [x] Spike: polski STT (`pl-PL`) — Azure (4 warianty) i 7 modeli OpenRouter na
+      syntetycznym polskim głosie; decyzja: `elevenlabs/scribe-v2` przez
+      OpenRouter z ZDR i przepływ „dyktowanie do pola” (design §5.1–5.3,
+      decyzje właściciela 2026-10-29). Próba `live` na głosie dziecka — otwarta
+      (design §5.9 pkt 1).
+- [x] Serwer: endpoint dyktowania (bez próby i oceny), `speechInput` w promptach
+      odpowiedzi otwartej i `lesson_shorten`, `inputMethod`/`edited` przy próbie,
+      forma `one_sentence` bez liczenia kropek z dyktowania, adapter STT lekcji.
+- [x] Kid UI: `SpeechRecordButton` w widoku odpowiedzi otwartej lekcji i „Skróć
+      odpowiedź”; raport rodzica rozdziela odpowiedzi pisane i dyktowane.
+- [x] Walidacja: testy jednostkowe, integracyjne z fake STT
+      (`lesson-dictation.test.ts`) i geometrii Playwright; brak odbioru na
+      fizycznym urządzeniu raportowany jawnie.
 
 ## Etap 4 — Trener precyzji
 

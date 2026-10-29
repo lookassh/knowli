@@ -277,6 +277,7 @@ export async function lessonObjectiveProgress(
         services.db.execute<{
           objectiveId: string | null; correct: number; partial: number; incorrect: number;
           concise: number; verbose: number; unfocused: number;
+          speechCorrect: number; speechPartial: number; speechIncorrect: number; speechEdited: number;
         }>(sql`
         select n.details->>'objectiveId' as "objectiveId",
                count(*) filter (where n.details->>'knowledge' = 'correct')::int as correct,
@@ -284,7 +285,12 @@ export async function lessonObjectiveProgress(
                count(*) filter (where n.details->>'knowledge' = 'incorrect')::int as incorrect,
                count(*) filter (where n.details->>'precision' = 'concise')::int as concise,
                count(*) filter (where n.details->>'precision' = 'verbose')::int as verbose,
-               count(*) filter (where n.details->>'precision' = 'unfocused')::int as unfocused
+               count(*) filter (where n.details->>'precision' = 'unfocused')::int as unfocused,
+               -- Etap 3: odpowiedzi z dyktowania (answer.inputMethod); reszta to klawiatura
+               count(*) filter (where n.details->>'knowledge' = 'correct' and a.answer->>'inputMethod' = 'speech')::int as "speechCorrect",
+               count(*) filter (where n.details->>'knowledge' = 'partial' and a.answer->>'inputMethod' = 'speech')::int as "speechPartial",
+               count(*) filter (where n.details->>'knowledge' = 'incorrect' and a.answer->>'inputMethod' = 'speech')::int as "speechIncorrect",
+               count(*) filter (where a.answer->>'inputMethod' = 'speech' and a.answer->>'edited' = 'true')::int as "speechEdited"
         ${schoolFrom}
         ${schoolWhere}
          group by 1`),
@@ -296,12 +302,13 @@ export async function lessonObjectiveProgress(
                 then n.details->'missingElementTexts' else '[]'::jsonb end) as m(text)
         ${schoolWhere}
          group by 1, 2`),
-        services.db.execute<{ objectiveId: string | null; knowledge: string | null; precision: string | null; answer: string | null }>(sql`
-        select "objectiveId", knowledge, precision, answer from (
+        services.db.execute<{ objectiveId: string | null; knowledge: string | null; precision: string | null; answer: string | null; inputMethod: string | null }>(sql`
+        select "objectiveId", knowledge, precision, answer, "inputMethod" from (
           select n.details->>'objectiveId' as "objectiveId",
                  n.details->>'knowledge' as knowledge,
                  n.details->>'precision' as precision,
                  a.answer->>'text' as answer,
+                 a.answer->>'inputMethod' as "inputMethod",
                  row_number() over (partition by n.details->>'objectiveId' order by a.received_at desc, a.id) as rank
           ${schoolFrom}
           ${schoolWhere}
@@ -326,7 +333,17 @@ export async function lessonObjectiveProgress(
         text: r.answer ?? "",
         knowledge: (["correct", "partial", "incorrect"].includes(r.knowledge ?? "") ? r.knowledge : "incorrect") as "correct" | "partial" | "incorrect",
         precision: (r.precision === "concise" || r.precision === "verbose" || r.precision === "unfocused" ? r.precision : null) as "concise" | "verbose" | "unfocused" | null,
+        inputMethod: r.inputMethod === "speech" ? "speech" as const : "keyboard" as const,
       })),
+      byInputMethod: {
+        keyboard: {
+          correct: counts.correct - counts.speechCorrect,
+          partial: counts.partial - counts.speechPartial,
+          incorrect: counts.incorrect - counts.speechIncorrect,
+        },
+        speech: { correct: counts.speechCorrect, partial: counts.speechPartial, incorrect: counts.speechIncorrect, edited: counts.speechEdited },
+      },
+      speechService: services.lessonSpeech?.publicService ?? null,
       ...(shorteningAggregate(objectiveId) ? { shortening: shorteningAggregate(objectiveId)! } : {}),
     };
   }

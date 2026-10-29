@@ -129,6 +129,9 @@ export default function LessonSupervisionPanel({
 
   const formatDate = (iso: string | null): string => (iso ? new Date(iso).toLocaleDateString("pl-PL") : "—");
 
+  // Usługa rozpoznawania mowy jest wspólna dla zestawu — informacja raz, nie przy każdym celu.
+  const speechService = progress.find((objective) => objective.school?.speechService)?.school?.speechService ?? null;
+
   return (
     <section className="card" data-testid="supervision-panel" aria-labelledby="supervision-title">
       <h3 id="supervision-title">{messages.lessons.progressTitle}</h3>
@@ -162,6 +165,11 @@ export default function LessonSupervisionPanel({
         <p className="muted">{messages.lessons.loadChild}</p>
       ) : (
         <div data-testid="objective-progress">
+          {speechService && (
+            <p className="muted" data-testid="school-speech-service">
+              {messages.lessons.schoolSpeechService.replace("{service}", speechService)}
+            </p>
+          )}
           {progress.map((objective) => (
             <article className="card" key={objective.objectiveId} data-testid={`progress-${objective.objectiveId}`}>
               <div className="row space">
@@ -194,6 +202,23 @@ export default function LessonSupervisionPanel({
                       .replace("{partial}", String(objective.school.knowledge.partial))
                       .replace("{incorrect}", String(objective.school.knowledge.incorrect))}
                   </p>
+                  {objective.school.byInputMethod && (
+                    <div data-testid={`school-input-method-${objective.objectiveId}`}>
+                      <p className="muted">
+                        {messages.lessons.schoolInputKeyboard
+                          .replace("{correct}", String(objective.school.byInputMethod.keyboard.correct))
+                          .replace("{partial}", String(objective.school.byInputMethod.keyboard.partial))
+                          .replace("{incorrect}", String(objective.school.byInputMethod.keyboard.incorrect))}
+                      </p>
+                      <p className="muted">
+                        {messages.lessons.schoolInputSpeech
+                          .replace("{correct}", String(objective.school.byInputMethod.speech.correct))
+                          .replace("{partial}", String(objective.school.byInputMethod.speech.partial))
+                          .replace("{incorrect}", String(objective.school.byInputMethod.speech.incorrect))
+                          .replace("{edited}", String(objective.school.byInputMethod.speech.edited))}
+                      </p>
+                    </div>
+                  )}
                   <h4>{messages.lessons.schoolPrecisionTitle}</h4>
                   <p className="muted">
                     {messages.lessons.schoolPrecisionCounts
@@ -219,6 +244,7 @@ export default function LessonSupervisionPanel({
                           <li key={i} className="muted">
                             <em>{a.text}</em> — {messages.lessons.schoolKnowledgeValue[a.knowledge] ?? a.knowledge}
                             {a.precision ? ` · ${messages.lessons.schoolPrecisionValue[a.precision] ?? a.precision}` : ""}
+                            {a.inputMethod === "speech" ? ` · ${messages.lessons.schoolSpokenMarker}` : ""}
                           </li>
                         ))}
                       </ul>

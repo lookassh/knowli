@@ -19,6 +19,7 @@ import {
   startSession,
   submitAttempt,
   submitSpeechAttempt,
+  dictateLessonAnswer,
   type Services,
 } from "@learning/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -45,6 +46,7 @@ vi.mock("@learning/server", async (importActual) => {
     completePresentation: vi.fn(),
     submitAttempt: vi.fn(),
     submitSpeechAttempt: vi.fn(),
+    dictateLessonAnswer: vi.fn(),
   };
 });
 
@@ -815,6 +817,37 @@ describe("kid oRPC router — zadania (POST)", () => {
     const body = ApiErrorSchema.parse(await response!.json());
     expect(body.code).toBe("validation");
     expect(submitSpeechAttempt).not.toHaveBeenCalled();
+  });
+
+  it("dictation multipart: tekst do pola z no-store; bajty/mime/signal do use case'a, bez clientAttemptId", async () => {
+    vi.mocked(dictateLessonAnswer).mockResolvedValueOnce({ status: "heard", text: "Poziomica to linia." });
+    const bytes = new Uint8Array([1, 2, 3]);
+    const response = await call(`/tasks/${taskId}/dictation`, {
+      method: "POST",
+      body: recordingForm(bytes, { withClientAttemptId: false }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    await expect(response.json()).resolves.toEqual({ status: "heard", text: "Poziomica to linia." });
+    expect(dictateLessonAnswer).toHaveBeenCalledWith(
+      services,
+      { taskId },
+      { bytes, mimeType: "audio/webm", locale: "pl-PL" },
+      expect.any(AbortSignal),
+    );
+  });
+
+  it("dictation z content-length ponad limit nagrania pada przed use case'em", async () => {
+    const response = await call(`/tasks/${taskId}/dictation`, {
+      method: "POST",
+      body: recordingForm(new Uint8Array([1, 2, 3]), { withClientAttemptId: false }),
+      headers: { "content-length": String(MAX_AUDIO_BYTES + MULTIPART_OVERHEAD_BYTES + 1) },
+    });
+
+    expect(response.status).toBe(400);
+    expect(ApiErrorSchema.parse(await response.json()).code).toBe("validation");
+    expect(dictateLessonAnswer).not.toHaveBeenCalled();
   });
 
   it("attempts multipart bez clientAttemptId daje validation", async () => {

@@ -5,7 +5,9 @@ import { ActionButton } from "../../components/ActionButton";
 import { AnswerTextArea } from "../../components/AnswerField";
 import { AnswerSegments } from "../../components/AnswerSegments";
 import { ExerciseFrame } from "../ExerciseFrame";
+import { SpeechRecordButton } from "../SpeechRecordButton";
 import { useRetryReset } from "../useRetryReset";
+import { useDictationField } from "./useDictation";
 import type { ExerciseProps } from "../types";
 
 /**
@@ -16,15 +18,20 @@ import type { ExerciseProps } from "../types";
  * części i wysyła `text` przez „Sprawdź”. Ponowna próba wraca do oryginału.
  * Pole nie dostaje fokusu przy starcie, aby klawiatura ekranowa nie zasłoniła
  * zaznaczeń, zanim dziecko je przeczyta. Skrócenie można pominąć („Pomiń”).
+ * Z `speechInput` dziecko może też powiedzieć krótszą wersję: dyktowanie
+ * zastępuje treść pola, a oryginał z zaznaczeniami zostaje widoczny wyżej.
  */
-export function LessonShortenView({ task, busy, dock, handlers }: ExerciseProps) {
+export function LessonShortenView({ task, busy, dock, handlers, mockTest, micAvailable, recordingPhase, microphoneReady, inputLevel, recordingNotice, dictation }: ExerciseProps) {
   const original = task.prompt.kind === "lesson_shorten" ? task.prompt.originalAnswer : "";
   const [text, setText] = useState(original);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  useRetryReset(dock, () => setText(original), () => inputRef.current?.focus({ preventScroll: true }));
+  const focusField = () => inputRef.current?.focus({ preventScroll: true });
+  const dictationField = useDictationField(dictation, setText, focusField);
+  useRetryReset(dock, () => { setText(original); dictationField.reset(); }, focusField);
 
   if (task.prompt.kind !== "lesson_shorten") return null;
-  const disabled = busy;
+  const showMic = task.prompt.speechInput !== undefined && micAvailable && !mockTest;
+  const disabled = busy || (showMic && recordingPhase !== "idle");
   const formId = `kid-lesson-shorten-${task.taskId}`;
   const inputId = `${formId}-input`;
   const removed = task.prompt.answerSegments.filter((segment) => segment.state === "pill").map((segment) => segment.text.trim());
@@ -49,7 +56,7 @@ export function LessonShortenView({ task, busy, dock, handlers }: ExerciseProps)
             className="kid-written kid-lesson-shorten__form"
             onSubmit={(event) => {
               event.preventDefault();
-              if (text.trim() !== "" && !disabled) handlers.onSubmitText(text);
+              if (text.trim() !== "" && !disabled) { if (showMic) handlers.onSubmitText(text, dictationField.inputMethod); else handlers.onSubmitText(text); }
             }}
           >
             <label className="kid-spelling-row-label" htmlFor={inputId}>{messages.kid.lessonShortenInput}</label>
@@ -58,7 +65,7 @@ export function LessonShortenView({ task, busy, dock, handlers }: ExerciseProps)
               id={inputId}
               data-testid="kid-lesson-input"
               value={text}
-              onChange={(event) => { setText(event.target.value); handlers.onEdit(); }}
+              onChange={(event) => { setText(event.target.value); dictationField.onTextChange(event.target.value); handlers.onEdit(); }}
               submitOnEnter
               // Same cap as the server contract, so the edited answer is never rejected.
               maxLength={MAX_TEXT_ATTEMPT_LENGTH}
@@ -69,6 +76,20 @@ export function LessonShortenView({ task, busy, dock, handlers }: ExerciseProps)
               disabled={disabled}
             />
           </form>
+          {showMic && (
+            <SpeechRecordButton
+              phase={recordingPhase}
+              ready={microphoneReady}
+              disabled={busy}
+              level={inputLevel}
+              notice={recordingNotice}
+              mode="toggle"
+              onPrepare={handlers.onPrepareRecording}
+              onStart={handlers.onRecord}
+              onStop={handlers.onStopRecording}
+              onCancel={handlers.onCancelRecording}
+            />
+          )}
         </div>
       )}
       actions={(

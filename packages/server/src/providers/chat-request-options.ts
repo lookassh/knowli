@@ -31,7 +31,7 @@ const PROVIDER_ENDPOINT_SLUG = /^[a-z0-9][a-z0-9._ -]*(?:\/[a-z0-9][a-z0-9._ -]*
 const OPENROUTER_HOSTS: ReadonlySet<string> = new Set(["openrouter.ai", "eu.openrouter.ai", "us.openrouter.ai"]);
 
 /** Missing base URL means the adapter default (api.openai.com), which is not OpenRouter. */
-function isOpenRouterEndpoint(baseUrl: string | undefined): boolean {
+export function isOpenRouterEndpoint(baseUrl: string | undefined): boolean {
   if (baseUrl === undefined || baseUrl.trim() === "") return false;
   try {
     return OPENROUTER_HOSTS.has(new URL(baseUrl.trim()).hostname.toLowerCase());

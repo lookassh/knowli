@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { messages, type CalculationSpec, type TaskPrompt } from "@learning/contracts";
+import { messages, type CalculationSpec, type SpeechInputDto, type TaskPrompt } from "@learning/contracts";
+import type { Services } from "../../../config";
+import { DEFAULT_DICTATION_POLICY } from "../../../domain/lessons/dictation";
 import { AppError } from "../../../errors";
 import { computeTargetKey } from "../../../domain/target-key";
 import { renderCalculationPrompt } from "../../../domain/lessons/calculation";
@@ -141,7 +143,7 @@ export function materializeExercise(
   exercise: LoadedExercise,
   topic: LessonTopic,
   subject: SubjectModule,
-  options: { mockTest?: boolean } = {},
+  options: { mockTest?: boolean; speechInput?: SpeechInputDto } = {},
 ): MaterializedLessonTask {
   const payload = exercise.payload;
   const objective = topic.objectives.find((o) => o.id === payload.objectiveId);
@@ -306,10 +308,28 @@ export function materializeExercise(
       const locale = subject.promptLocale === subject.answerLocale ? subject.promptLocale : null;
       const promptLocale: { promptLocale?: "pl-PL" | "en-GB" } =
         locale === "pl-PL" || locale === "en-GB" ? { promptLocale: locale } : {};
-      const prompt: TaskPrompt = { kind: "lesson_open_answer", instructionPl, prompt: payload.prompt ?? "", ...audio, ...promptLocale };
+      // Dyktowanie: tylko gdy wywołujący (trening) je zaoferował — kartkówka nie przekazuje.
+      const speech = !mockTest && options.speechInput ? { speechInput: options.speechInput } : {};
+      const prompt: TaskPrompt = { kind: "lesson_open_answer", instructionPl, prompt: payload.prompt ?? "", ...audio, ...promptLocale, ...speech };
       return { ...common, prompt, answerKey: baseKey, exposures: [] };
     }
     default:
       throw new AppError("internal", { message: `cannot materialize lesson type ${payload.exerciseType}` });
   }
+}
+
+/**
+ * `speechInput` promptu: tylko trening z włączonym mikrofonem, skonfigurowane
+ * STT lekcji i przedmiot deklarujący mowę dla tego typu ćwiczenia. Kartkówka
+ * zostaje pisemna (design §5.9 pkt 4).
+ */
+export function speechInputFor(
+  services: Pick<Services, "lessonSpeech">,
+  session: { mode: string; microphoneEnabled: boolean },
+  subject: Pick<SubjectModule, "spokenAnswers">,
+  exerciseType: string,
+): { speechInput: SpeechInputDto } | Record<string, never> {
+  if (!services.lessonSpeech || session.mode !== "training" || !session.microphoneEnabled) return {};
+  if (!subject.spokenAnswers?.exerciseTypes.some((type) => type === exerciseType)) return {};
+  return { speechInput: { maxSeconds: DEFAULT_DICTATION_POLICY.maxSeconds } };
 }

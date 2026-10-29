@@ -7,9 +7,11 @@ import {
   FakeAnswerGrader,
   fakeSessionActivityDeps,
   FakeSessionActivityReviewer,
+  fakeLessonSpeechDeps,
   fakeSpeechDeps,
   graderFromEnv,
   imageProviderFromEnv,
+  lessonSpeechFromEnv,
   mediaSettingsFromEnv,
   sessionActivityFromEnv,
   speechFromEnv,
@@ -34,6 +36,8 @@ function initialize(): { services: Services; pool: Pool } {
   // tryb fake (E2E/smoke bez kluczy): odpowiedzi ustne przechodzą pełny cykl
   // na deterministycznych providerach zamiast kończyć się wynikiem technicznym
   const speech = speechFromEnv(process.env) ?? (process.env.UMIEM_FAKE_PROVIDERS === "1" ? fakeSpeechDeps() : undefined);
+  // dyktowanie odpowiedzi lekcji (Etap 3 szkoły): osobny STT bez oceny wymowy
+  const lessonSpeech = lessonSpeechFromEnv(process.env) ?? (process.env.UMIEM_FAKE_PROVIDERS === "1" ? fakeLessonSpeechDeps() : undefined);
   // model oceniający: z env (produkcja) albo fake w trybie E2E (routing po słowach
   // kluczowych w odpowiedzi: „almost” → almost, „wrong” → incorrect, inaczej correct)
   const grader =
@@ -59,6 +63,7 @@ function initialize(): { services: Services; pool: Pool } {
       mediaStore: createLocalMediaStore(process.env.MEDIA_ROOT ?? "./data/media"),
       // ścieżka mowy to krótkie żądanie web → provider, bez kolejki (arch §11)
       ...(speech ? { speech } : {}),
+      ...(lessonSpeech ? { lessonSpeech } : {}),
       ...(grader ? { grader } : {}),
       ...(sessionActivity ? { sessionActivity } : {}),
     }),

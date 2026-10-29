@@ -163,7 +163,7 @@ function webmDuration(bytes: Uint8Array): number | null {
  * jest decyzją fazy 0 — dopóki nie zostanie potwierdzona, bajty przechodzą
  * bez translacji, a wymagamy formatu z jawnym czasem trwania.
  */
-export function normalizeAudioInput(audio: AudioInput): NormalizedAudio {
+export function normalizeAudioInput(audio: AudioInput, maxSeconds: number = MAX_AUDIO_SECONDS): NormalizedAudio {
   if (audio.bytes.byteLength === 0) {
     reject("empty audio recording");
   }
@@ -176,8 +176,8 @@ export function normalizeAudioInput(audio: AudioInput): NormalizedAudio {
     if (duration === null || duration <= 0) {
       reject("audio webm without duration metadata");
     }
-    if (duration > MAX_AUDIO_SECONDS + 0.5) {
-      reject("audio recording exceeds 15 seconds");
+    if (duration > maxSeconds + 0.5) {
+      reject(`audio recording exceeds ${maxSeconds} seconds`);
     }
     return { bytes: audio.bytes, mimeType: audio.mimeType, durationSeconds: duration };
   }
@@ -186,8 +186,8 @@ export function normalizeAudioInput(audio: AudioInput): NormalizedAudio {
     if (duration === null || duration <= 0) {
       reject("audio wav without duration metadata");
     }
-    if (duration > MAX_AUDIO_SECONDS + 0.5) {
-      reject("audio recording exceeds 15 seconds");
+    if (duration > maxSeconds + 0.5) {
+      reject(`audio recording exceeds ${maxSeconds} seconds`);
     }
     return { bytes: audio.bytes, mimeType: mime, durationSeconds: duration };
   }
