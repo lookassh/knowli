@@ -214,7 +214,7 @@ export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive, but
             ref={buttonRef}
             type="button"
             variant="filled"
-            radius="var(--kid-shape-l)"
+           
             data-testid={deck.resumeOnly ? "kid-resume-session" : "kid-deck"}
             onClick={() => onStart(deck.deckId)}
           >
@@ -222,12 +222,12 @@ export function DeckCard({ deck, mediaUrl, onStart, onMockTest, onEndActive, but
             <KidIcon name="arrow-right" />
           </ActionButton>
           {deck.resumeOnly && deck.activeSession && onEndActive && (
-            <ActionButton type="button" variant="tonal" size="sm" radius="var(--kid-shape-l)" data-testid="kid-end-active-session" onClick={() => onEndActive(deck.deckId)}>
+            <ActionButton type="button" variant="tonal" size="sm" data-testid="kid-end-active-session" onClick={() => onEndActive(deck.deckId)}>
               <span className="kid-visually-hidden">{deck.title}: </span>{messages.kid.endSession}
             </ActionButton>
           )}
           {!deck.resumeOnly && deck.mockTestAvailable && onMockTest && (
-            <ActionButton type="button" variant="tonal" size="sm" radius="var(--kid-shape-l)" data-testid="kid-mock-start" onClick={() => onMockTest(deck.deckId)}>
+            <ActionButton type="button" variant="tonal" size="sm" data-testid="kid-mock-start" onClick={() => onMockTest(deck.deckId)}>
               <span className="kid-visually-hidden">{deck.title}: </span>{messages.kid.mockTest}
             </ActionButton>
           )}
@@ -243,13 +243,13 @@ export function DeckRow({ deck, mediaUrl, onStart, onMockTest, onEndActive, butt
   let secondary: ReactNode = null;
   if (deck.resumeOnly && deck.activeSession && onEndActive) {
     secondary = (
-      <ActionButton type="button" variant="tonal" size="sm" fullWidth={false} radius="var(--kid-shape-l)" data-testid="kid-end-active-session" onClick={() => onEndActive(deck.deckId)}>
+      <ActionButton type="button" variant="tonal" size="sm" fullWidth={false} data-testid="kid-end-active-session" onClick={() => onEndActive(deck.deckId)}>
         <span className="kid-visually-hidden">{deck.title}: </span>{messages.kid.endSession}
       </ActionButton>
     );
   } else if (!deck.resumeOnly && deck.mockTestAvailable && onMockTest) {
     secondary = (
-      <ActionButton type="button" variant="tonal" size="sm" fullWidth={false} radius="var(--kid-shape-l)" data-testid="kid-mock-start" onClick={() => onMockTest(deck.deckId)}>
+      <ActionButton type="button" variant="tonal" size="sm" fullWidth={false} data-testid="kid-mock-start" onClick={() => onMockTest(deck.deckId)}>
         <span className="kid-visually-hidden">{deck.title}: </span>{messages.kid.mockTest}
       </ActionButton>
     );

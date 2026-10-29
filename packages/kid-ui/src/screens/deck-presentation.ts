@@ -5,10 +5,21 @@ export type DeckGroups = {
   other: readonly KidDeckDto[];
 };
 
+/** Zestaw z trwającą sesją: serwer nie oznacza go jako rekomendowanego, a dziecko musi dostać duży przycisk wznowienia. */
+export function hasActiveSessionDeck(deck: KidDeckDto): boolean {
+  return Boolean(deck.resumeOnly && deck.activeSession);
+}
+
+/**
+ * Karty (grupa `recommended`) dostają zestawy z trwającą sesją (zawsze na początku, niezależnie od `recommended`)
+ * i zestawy rekomendowane, każdą grupę w kolejności API. Reszta trafia do listy wierszy.
+ */
 export function groupDecks(decks: readonly KidDeckDto[]): DeckGroups {
+  const active = decks.filter(hasActiveSessionDeck);
+  const rest = decks.filter((deck) => !hasActiveSessionDeck(deck));
   return {
-    recommended: decks.filter((deck) => deck.recommended),
-    other: decks.filter((deck) => !deck.recommended),
+    recommended: [...active, ...rest.filter((deck) => deck.recommended)],
+    other: rest.filter((deck) => !deck.recommended),
   };
 }
 

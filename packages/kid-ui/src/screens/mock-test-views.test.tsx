@@ -29,12 +29,22 @@ describe("mock test screens", () => {
     renderKid(<MockTestReadyScreen {...props} />);
     expect(screen.getByTestId("kid-mock-budget").textContent).toContain("3");
     expect(screen.getByTestId("kid-mock-budget").querySelector(".kid-stat__value")?.textContent).toBe("3");
+    expect(screen.getByTestId("kid-mock-budget").textContent).toBe("W tej kartkówce 3 zadania");
     expect(document.querySelector('[data-kid-header="band"]')?.textContent).toContain("Próbna kartkówka");
     expect(screen.getByTestId("kid-mock-confirm").tagName).toBe("BUTTON");
     fireEvent.click(screen.getByTestId("kid-mock-confirm"));
     fireEvent.click(screen.getByText(/Koniec/));
     expect(props.onStart).toHaveBeenCalledOnce();
     expect(props.onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("declines the task unit with Polish plural rules for the budget", () => {
+    const expected: Array<[number, string]> = [[1, "zadanie"], [2, "zadania"], [5, "zadań"], [12, "zadań"], [22, "zadania"]];
+    for (const [taskBudget, unit] of expected) {
+      const view = renderKid(<MockTestReadyScreen session={{ ...session, taskBudget }} onStart={vi.fn(async () => {})} onCancel={vi.fn(async () => {})} />);
+      expect(screen.getByTestId("kid-mock-budget").textContent, String(taskBudget)).toBe(`W tej kartkówce ${taskBudget} ${unit}`);
+      view.unmount();
+    }
   });
 
   it("keeps verdicts in the summary and wires details, audio, practice and profile callbacks", () => {

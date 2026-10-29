@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { LessonMockTestSummaryDto } from "@learning/contracts";
-import { computeLessonMockScore, LESSON_MOCK_STATUS_ICONS, lessonMockOutcomeStatus } from "./lesson-mock-score";
+import { computeLessonMockScore, lessonMockOutcomeStatus } from "./lesson-mock-score";
 
 type Solution = LessonMockTestSummaryDto["solutions"][number];
 
@@ -46,11 +46,5 @@ describe("computeLessonMockScore", () => {
 
   test("pusta próba nie dzieli przez zero", () => {
     expect(computeLessonMockScore([])).toEqual({ correct: 0, total: 0, percent: 0, stars: 0 });
-  });
-});
-
-describe("LESSON_MOCK_STATUS_ICONS", () => {
-  test("statusy zadań mapują się na nazwy ikon SVG", () => {
-    expect(LESSON_MOCK_STATUS_ICONS).toEqual({ correct: "check", incorrect: "close", notAssessed: "question" });
   });
 });

@@ -21,6 +21,11 @@ describe("RowList", () => {
     expect(list.textContent).toContain("→");
   });
 
+  it("keeps explicit list semantics for assistive technology with list-style none", () => {
+    renderKid(<RowList aria-label="Zestawy"><RowListItem title="Kolory" /></RowList>);
+    expect(screen.getByRole("list", { name: "Zestawy" }).getAttribute("role")).toBe("list");
+  });
+
   it("renders leading and below content and tolerates omitted slots", () => {
     renderKid(
       <RowList aria-label="Wyniki">

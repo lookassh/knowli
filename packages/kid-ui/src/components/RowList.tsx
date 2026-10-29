@@ -2,7 +2,7 @@ import type { HTMLAttributes, LiHTMLAttributes, ReactElement, ReactNode } from "
 import styles from "./RowList.module.css";
 
 export function RowList({ className, ...rest }: HTMLAttributes<HTMLUListElement>): ReactElement {
-  return <ul {...rest} className={[styles.list, className].filter(Boolean).join(" ")} />;
+  return <ul role="list" {...rest} className={[styles.list, className].filter(Boolean).join(" ")} />;
 }
 
 export interface RowListItemProps extends Omit<LiHTMLAttributes<HTMLLIElement>, "title"> {

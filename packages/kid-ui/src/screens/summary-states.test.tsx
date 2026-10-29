@@ -47,6 +47,8 @@ describe("summary screen states", () => {
     expect(recall.querySelector(".kid-stat__value")?.textContent).toBe("3");
     expect(recall.querySelector(".kid-stat__label")?.textContent).toBe("Samodzielne przypominanie");
     expect(recall.textContent).toContain("3 słowa");
+    // Czytnik ekranu dostaje frazę „Etykieta: 3 słowa”: etykieta pierwsza w DOM, ukryty separator, potem liczba.
+    expect(recall.textContent).toBe("Samodzielne przypominanie: 3 słowa");
     const spelling = screen.getByTestId("kid-summary-spelling");
     expect(spelling.querySelector(".kid-stat__value")?.textContent).toBe("1");
     expect(spelling.querySelector(".kid-stat__label")?.textContent).toBe("Samodzielna pisownia");
@@ -91,5 +93,12 @@ describe("summary screen states", () => {
     const objectives = screen.getByRole("list", { name: "Ćwiczyłeś reguły" });
     expect(objectives.querySelectorAll("li")).toHaveLength(2);
     expect(screen.getAllByTestId("kid-summary-objective")).toHaveLength(2);
+    // Cele lekcji nie są wynikiem: neutralna ikona książki, nie znacznik sukcesu.
+    for (const row of screen.getAllByTestId("kid-summary-objective")) {
+      const icon = row.querySelector("svg.kid-summary-row-icon");
+      expect(icon).toBeTruthy();
+      expect(icon!.innerHTML).toContain("M4 5.5A2.5");
+      expect(icon!.innerHTML).not.toContain("m5 12 4 4L19 6");
+    }
   });
 });

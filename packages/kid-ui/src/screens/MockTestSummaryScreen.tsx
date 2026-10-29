@@ -17,16 +17,18 @@ import { useAutoFocus } from "./useAutoFocus";
 export function MockTestReadyScreen({ session, onStart, onCancel }: { session: SessionDto; onStart: () => Promise<void>; onCancel: () => Promise<void> }) {
   const [error, setError] = useState(false);
   const startRef = useAutoFocus<HTMLButtonElement>(true);
-  // Liczba zadań jako duża cyfra w kafelku; reszta komunikatu to jego podpisy.
-  const [budgetBefore = "", budgetAfter = ""] = messages.kid.mockTestBudget.split("{n}");
+  // Liczba zadań jako duża cyfra w kafelku; podpis nad nią i odmieniona jednostka pod nią.
+  const taskPlural = new Intl.PluralRules("pl-PL").select(session.taskBudget);
+  const taskUnit = taskPlural === "one" ? messages.kid.mockTestTaskOne
+    : taskPlural === "few" ? messages.kid.mockTestTaskFew : messages.kid.mockTestTaskMany;
 
   return <KidScreen className="kid-screen kid-screen--mock-ready">
     <KidScreen.Header variant="band"><h1>{messages.kid.mockTest}</h1></KidScreen.Header>
     <KidScreen.Content>
       <div className="kid-stat kid-mock-budget" data-testid="kid-mock-budget">
-        <span className="kid-stat__label">{budgetBefore}</span>
-        <span className="kid-stat__value">{session.taskBudget}</span>
-        <span className="kid-stat__label">{budgetAfter}</span>
+        <span className="kid-stat__label">{messages.kid.mockTestBudgetLead}</span>{" "}
+        <span className="kid-stat__value">{session.taskBudget}</span>{" "}
+        <span className="kid-stat__label">{taskUnit}</span>
       </div>
       <p className="kid-mock-info" data-testid="kid-mock-info">{messages.kid.mockTestInfo}</p>
       {error && <p role="alert" className="kid-alert">{messages.kid.offlineMessage}</p>}

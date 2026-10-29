@@ -1,5 +1,4 @@
 import type { LessonMockTestSummaryDto } from "@learning/contracts";
-import type { KidIconName } from "../components/KidIcon";
 import type { MockTestScore } from "./mock-test-score";
 import { starsForFraction } from "./stars";
 
@@ -9,8 +8,6 @@ type LessonOutcome = LessonSolution["outcome"];
 /** Prosty status zadania w omówieniu lekcji: ocenione poprawnie/błędnie,
  * a pominięte i nieocenione nie są błędem wiedzy (jak w słówkach). */
 export type LessonMockStatus = "correct" | "incorrect" | "notAssessed";
-
-export const LESSON_MOCK_STATUS_ICONS: Record<LessonMockStatus, KidIconName> = { correct: "check", incorrect: "close", notAssessed: "question" };
 
 export function lessonMockOutcomeStatus(outcome: LessonOutcome): LessonMockStatus {
   if (outcome === "correct") return "correct";

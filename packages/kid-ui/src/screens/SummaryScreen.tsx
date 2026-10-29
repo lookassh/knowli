@@ -35,11 +35,13 @@ export function SummaryScreen({
   };
   const stat = (testId: string, label: string, n: number, order: number) => (
     <m.div className="kid-stat" data-testid={testId} initial={kidEntranceInitial} animate={kidEntranceAnimate} transition={{ ...kidSpringGentle, delay: kidStaggerDelay(order) }}>
+      {/* Etykieta jest pierwsza w DOM (czytnik: „Etykieta: 3 słowa”); kolejność wizualną odwraca column-reverse. */}
+      <span className="kid-stat__label">{label}</span>
+      <span className="kid-visually-hidden">: </span>
       <span className="kid-stat__figure">
         <span className="kid-stat__value">{n}</span>{" "}
         <span className="kid-stat__unit">{wordUnit(n)}</span>
       </span>
-      <span className="kid-stat__label">{label}</span>
     </m.div>
   );
   return (
@@ -69,7 +71,7 @@ export function SummaryScreen({
               <RowListItem
                 key={objective.objectiveId}
                 data-testid="kid-summary-objective"
-                leading={<KidIcon name="check" className="kid-summary-row-icon" />}
+                leading={<KidIcon name="book" className="kid-summary-row-icon" />}
                 title={format(messages.kid.lessonSummaryObjective, { title: objective.titlePl })}
               />
             ))}

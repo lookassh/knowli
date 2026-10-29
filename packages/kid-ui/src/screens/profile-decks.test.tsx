@@ -66,9 +66,10 @@ describe("profile and deck screens", () => {
     expect(screen.getByTestId("kid-section-recommended")).toBeTruthy();
     expect(screen.getByTestId("kid-section-other")).toBeTruthy();
     expect(screen.getByText(/2 lis/)).toBeTruthy();
-    expect(screen.getAllByTestId("kid-deck-title").map((title) => title.textContent)).toEqual(["Zestaw 10", "Zestaw 11", "Zestaw 12"]);
+    expect(screen.getAllByTestId("kid-deck-title").map((title) => title.textContent)).toEqual(["Zestaw 11", "Zestaw 10", "Zestaw 12"]);
     expect(screen.getAllByTestId("kid-deck-meta").map((meta) => meta.textContent)).toEqual(["7 słów", "7 słów", "Lekcja: Język angielski"]);
     expect(screen.getAllByTestId("kid-deck")[0]!.tagName).toBe("BUTTON");
+    expect(screen.getByTestId("kid-section-recommended").closest("article")?.getAttribute("data-deck-id")).toBe(id(11));
     screen.getAllByTestId("kid-deck").forEach(button => fireEvent.click(button));
     fireEvent.click(screen.getByTestId("kid-mock-start"));
     fireEvent.click(screen.getByTestId("kid-resume-session"));
@@ -148,28 +149,56 @@ describe("profile and deck screens", () => {
   it("names each row's arrow button after its deck and runs the row's own actions", () => {
     const onStart = vi.fn();
     const onMockTest = vi.fn();
-    const onEndActive = vi.fn();
-    const assigned = [
-      deck(11, { recommended: false, mockTestAvailable: true }),
-      deck(12, { recommended: false, resumeOnly: true, activeSession: { sessionId: id(30), mode: "training" } }),
-    ];
-    renderKid(<DeckScreen decks={assigned} childName="Ola" microphone={false} micDenied={false} onToggleMicrophone={vi.fn()} onStart={onStart} onMockTest={onMockTest} onEndActive={onEndActive} />);
+    renderKid(<DeckScreen decks={[deck(11, { recommended: false, mockTestAvailable: true })]} childName="Ola" microphone={false} micDenied={false} onToggleMicrophone={vi.fn()} onStart={onStart} onMockTest={onMockTest} />);
     expect(screen.queryByTestId("kid-section-recommended")).toBeNull();
     const start = screen.getByRole("button", { name: "Ucz się: Zestaw 11" });
     expect(start.getAttribute("data-testid")).toBe("kid-deck");
-    const resume = screen.getByRole("button", { name: "Wznów naukę: Zestaw 12" });
-    expect(resume.getAttribute("data-testid")).toBe("kid-resume-session");
     fireEvent.click(start);
-    fireEvent.click(resume);
     fireEvent.click(screen.getByTestId("kid-mock-start"));
-    fireEvent.click(screen.getByTestId("kid-end-active-session"));
     expect(onStart).toHaveBeenCalledWith(id(11));
-    expect(onStart).toHaveBeenCalledWith(id(12));
-    expect(onMockTest).toHaveBeenCalledTimes(1);
     expect(onMockTest).toHaveBeenCalledWith(id(11));
-    expect(onEndActive).toHaveBeenCalledTimes(1);
-    expect(onEndActive).toHaveBeenCalledWith(id(12));
     expect(screen.getByTestId("kid-mock-start").closest("li")?.getAttribute("data-deck-id")).toBe(id(11));
+  });
+
+  it("shows a deck with an active session as the first full card with a filled resume action even when nothing is recommended", () => {
+    const onStart = vi.fn();
+    const onEndActive = vi.fn();
+    const assigned = [
+      deck(11, { recommended: false }),
+      deck(12, { recommended: false, resumeOnly: true, activeSession: { sessionId: id(30), mode: "training" } }),
+    ];
+    renderKid(<DeckScreen decks={assigned} childName="Ola" microphone={false} micDenied={false} onToggleMicrophone={vi.fn()} onStart={onStart} onEndActive={onEndActive} />);
+    const cards = document.querySelectorAll("section[data-kind='recommended'] article");
+    expect(cards).toHaveLength(1);
+    expect(cards[0]!.getAttribute("data-deck-id")).toBe(id(12));
+    expect(screen.getByTestId("kid-section-recommended").closest("article")).toBe(cards[0]);
+    const resume = screen.getByTestId("kid-resume-session");
+    expect(resume.closest("article")).toBe(cards[0]);
+    expect(resume.getAttribute("data-variant")).toBe("filled");
+    expect(resume.textContent).toContain("Wznów naukę");
+    expect(screen.getByTestId("kid-end-active-session").getAttribute("data-variant")).toBe("tonal");
+    expect(screen.getByTestId("kid-end-active-session").closest("article")).toBe(cards[0]);
+    // The other deck stays a row; the resume deck is not duplicated there.
+    const rows = screen.getByTestId("kid-section-other").closest("section")!.querySelectorAll("ul > li");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.getAttribute("data-deck-id")).toBe(id(11));
+    expect(document.activeElement).toBe(resume);
+    fireEvent.click(resume);
+    fireEvent.click(screen.getByTestId("kid-end-active-session"));
+    expect(onStart).toHaveBeenCalledWith(id(12));
+    expect(onEndActive).toHaveBeenCalledWith(id(12));
+  });
+
+  it("puts the active-session card before recommended cards and focuses its main action", () => {
+    const assigned = [
+      deck(10, { recommended: true }),
+      deck(12, { recommended: false, resumeOnly: true, activeSession: { sessionId: id(30), mode: "training" } }),
+    ];
+    renderKid(<DeckScreen decks={assigned} childName="Ola" microphone={false} micDenied={false} onToggleMicrophone={vi.fn()} onStart={vi.fn()} onEndActive={vi.fn()} />);
+    const cards = Array.from(document.querySelectorAll("section[data-kind='recommended'] article"));
+    expect(cards.map((card) => card.getAttribute("data-deck-id"))).toEqual([id(12), id(10)]);
+    expect(document.activeElement).toBe(screen.getByTestId("kid-resume-session"));
+    expect(screen.getAllByTestId("kid-section-recommended")).toHaveLength(1);
   });
 
   it("shows the test date as a warm chip and the real stars on a recommended card", () => {

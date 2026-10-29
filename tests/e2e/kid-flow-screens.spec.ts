@@ -116,7 +116,7 @@ test("mock-test ready screen styles start and cancel as clear actions", async ({
   await setup(page, { decks: [deck({ mockTestAvailable: true })], session: session("mock_test") });
   await page.getByTestId("kid-profile").click();
   await page.getByTestId("kid-mock-start").click();
-  await expect(page.getByTestId("kid-mock-budget")).toContainText("1 zadań");
+  await expect(page.getByTestId("kid-mock-budget")).toContainText("1 zadanie");
   const start = page.getByTestId("kid-mock-confirm");
   await expect(start).toBeVisible();
   await expect(start).toHaveClass(/kid-action/);

@@ -210,7 +210,7 @@ describe("ActionButton and AnswerField", () => {
     const outlined = screen.getByRole("button", { name: "Outlined" });
     expect(outlined.getAttribute("data-variant")).toBe("outlined");
     expect(outlined.getAttribute("data-priority")).toBe("secondary");
-    expect(outlined.style.borderRadius).toBe("var(--kid-shape-xl)");
+    expect(outlined.style.borderRadius).toBe("var(--kid-shape-l)");
     cleanup();
 
     renderKid(<ActionButton variant="text">Text</ActionButton>);

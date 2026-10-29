@@ -206,7 +206,6 @@
 
 .kid-ui .kid-screen,
 .kid-ui .kid-card,
-.kid-ui .kid-list button,
 .kid-ui .kid-options button {
   color: var(--kid-text);
 }
@@ -389,34 +388,6 @@
   border: 1px solid var(--kid-line);
   border-radius: var(--kid-shape-m);
   padding: 10px 12px;
-}
-
-.kid-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.kid-list button {
-  width: 100%;
-  min-height: 72px;
-  font-size: var(--kid-type-title-size);
-  border: 2px solid var(--md-sys-color-outline);
-  border-radius: var(--kid-shape-xl);
-  background: var(--kid-surface);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 12px 16px;
-  cursor: pointer;
-}
-
-.kid-list button:active {
-  background: var(--kid-soft);
 }
 
 .kid-profile:focus-visible,
@@ -1734,7 +1705,7 @@
   box-sizing: border-box;
   min-width: 0;
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
   align-items: center;
   justify-content: center;
   gap: 4px;
@@ -1794,10 +1765,11 @@
   border-radius: 0;
 }
 
+/* Cele lekcji to temat ćwiczeń, nie wynik: ikona jest neutralna, bez koloru sukcesu. */
 .kid-summary-row-icon {
   width: 24px;
   height: 24px;
-  color: var(--kid-color-success);
+  color: var(--md-sys-color-primary);
 }
 
 .kid-actions {
@@ -2138,6 +2110,7 @@
 
 /* Start kartkówki: kafelek z liczbą zadań i karta informacji. */
 .kid-ui .kid-mock-budget {
+  flex-direction: column;
   padding: 20px 16px;
   background: var(--kid-surface);
 }

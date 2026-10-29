@@ -154,7 +154,7 @@ test("deck cards and rows fit portrait, landscape, tablet and desktop", async ({
   const longTitle = `Słownictwo ${"bardzo-długa-nazwa-".repeat(4)}`;
   const decks = [
     makeDeck(0, { recommended: true, title: "Dni tygodnia i pory roku" }),
-    makeDeck(2, { recommended: true, title: longTitle, resumeOnly: true, activeSession: { sessionId, mode: "training" } }),
+    makeDeck(2, { recommended: false, title: longTitle, resumeOnly: true, activeSession: { sessionId, mode: "training" } }),
     makeDeck(1, { recommended: false }),
     makeDeck(3, { recommended: false, testDate: null, mockTestAvailable: false }),
     makeDeck(5, { recommended: false, title: longTitle }),
@@ -223,6 +223,45 @@ test("deck cards and rows fit portrait, landscape, tablet and desktop", async ({
     await last.scrollIntoViewIfNeeded();
     await expect(last, `last deck reachable: ${name}`).toBeInViewport({ ratio: 0.98 });
     await page.evaluate(() => window.scrollTo(0, 0));
+  }
+});
+
+test("a deck with an active session is the first card with a prominent resume action when nothing is recommended", async ({ page }, testInfo) => {
+  // Kształt z serwera: wznawiany zestaw nie jest rekomendowany (reporting/kid.ts).
+  const resumeDeck = makeDeck(1, { recommended: false, resumeOnly: true, mockTestAvailable: false, activeSession: { sessionId, mode: "training" } });
+  const decks = [makeDeck(0, { recommended: false }), resumeDeck, makeDeck(2, { recommended: false })];
+  await openDeckScreen(page, decks);
+
+  const cards = page.getByTestId("kid-deck-card");
+  await expect(cards).toHaveCount(3);
+  await expect(cards.first()).toHaveAttribute("data-deck-id", resumeDeck.deckId);
+  await expect(page.getByTestId("kid-section-recommended")).toBeVisible();
+  const resume = cards.first().getByTestId("kid-resume-session");
+  await expect(resume).toBeFocused();
+  await expect(resume).toContainText("Wznów naukę");
+  await expect(resume).toHaveAttribute("data-variant", "filled");
+  await expect(cards.first().getByTestId("kid-end-active-session")).toHaveAttribute("data-variant", "tonal");
+  await expect(cards.nth(1).getByTestId("kid-resume-session")).toHaveCount(0);
+
+  for (const viewport of [{ width: 360, height: 800 }, { width: 844, height: 390 }]) {
+    const name = `${viewport.width}x${viewport.height}`;
+    await page.setViewportSize(viewport);
+    await page.evaluate(async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    });
+    const resumeBox = (await resume.boundingBox())!;
+    const endBox = (await cards.first().getByTestId("kid-end-active-session").boundingBox())!;
+    expect(resumeBox.height, `resume main action height: ${name}`).toBeGreaterThanOrEqual(54);
+    expect(resumeBox.height, `resume is taller than end session: ${name}`).toBeGreaterThan(endBox.height);
+    expect(resumeBox.x + resumeBox.width, `resume inside viewport: ${name}`).toBeLessThanOrEqual(viewport.width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `no horizontal overflow: ${name}`).toBe(true);
+    const firstTop = (await cards.first().boundingBox())!.y;
+    expect(firstTop, `resume card is first: ${name}`).toBeLessThan((await cards.nth(1).boundingBox())!.y);
+    if (viewport.width === 360) {
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await expect.poll(() => page.evaluate(() => [...document.querySelectorAll("li:has([data-testid='kid-deck-card'])")].every((item) => getComputedStyle(item).opacity === "1"))).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`decks-resume-${name}.png`) });
+    }
   }
 });
 
