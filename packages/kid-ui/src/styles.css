@@ -1897,6 +1897,29 @@
   white-space: nowrap;
 }
 
+/* Wskazówka precyzji odpowiedzi otwartej szkoły w omówieniu kartkówki. */
+.kid-ui .kid-mock-row__hint {
+  margin: 0;
+  font-size: var(--kid-type-body-sm-size);
+  color: var(--md-sys-color-on-surface);
+  overflow-wrap: anywhere;
+}
+
+/* „Warto powtórzyć”: zagadnienia do kolejnych ćwiczeń po kartkówce. */
+.kid-ui .kid-mock-review {
+  margin-top: 16px;
+}
+
+.kid-ui .kid-mock-review h2 {
+  margin: 0 0 8px;
+}
+
+.kid-ui .kid-mock-review__list {
+  margin: 0;
+  padding-inline-start: 1.25em;
+  overflow-wrap: anywhere;
+}
+
 .kid-ui .kid-mock-badge--correct {
   color: var(--kid-good);
   font-weight: 700;

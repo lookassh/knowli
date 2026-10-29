@@ -452,6 +452,25 @@ export const LessonMockTestReportDtoSchema = z.object({
       labelPl: z.string().min(1),
       count: z.number().int().nonnegative(),
     })),
+    /**
+     * Przedmiot szkolny (design §8.1): wiedza i precyzja odpowiedzi otwartych
+     * tej kartkówki. Brak pola = brak ocenionych odpowiedzi otwartych albo
+     * raport zamrożony przed Etapem 5.
+     */
+    school: z.object({
+      knowledge: z.object({
+        correct: z.number().int().nonnegative(),
+        partial: z.number().int().nonnegative(),
+        incorrect: z.number().int().nonnegative(),
+      }).strict(),
+      precision: z.object({
+        concise: z.number().int().nonnegative(),
+        verbose: z.number().int().nonnegative(),
+        unfocused: z.number().int().nonnegative(),
+      }).strict(),
+      formViolations: z.number().int().nonnegative(),
+      missingElements: z.array(z.object({ text: z.string().min(1), count: z.number().int().positive() }).strict()).max(5),
+    }).strict().optional(),
   })),
   complete: z.boolean(),
   taskBudget: z.number().int().nonnegative(),
@@ -487,6 +506,10 @@ export const LessonMockTestSummaryDtoSchema = z.object({
     childAnswer: z.string(),
     correctAnswer: z.string(),
     outcome: z.enum(["correct", "incorrect", "skipped", "unassessed"]),
+    /** Wskazówka precyzji (design §8.2) — gotowe zdanie z katalogu, bez kategorii i liczb. */
+    hintPl: z.string().min(1).optional(),
   })),
+  /** „Warto powtórzyć” (design §8.3): zagadnienia z błędną, niepełną albo pominiętą odpowiedzią. */
+  reviewObjectives: z.array(z.object({ objectiveId: z.string().min(1), titlePl: z.string().min(1) }).strict()).max(8).optional(),
 });
 export type LessonMockTestSummaryDto = z.infer<typeof LessonMockTestSummaryDtoSchema>;

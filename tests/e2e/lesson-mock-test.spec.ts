@@ -158,6 +158,11 @@ const report: LessonMockTestReportDto = {
   objectives: [{
     objectiveId: "obj-s", titlePl: "-s w 3. osobie", total: 2, correct: 1, incorrect: 1, unassessed: 0, skipped: 0, modelGraded: 1,
     errorCategories: [{ category: "missing_ending", labelPl: "Brak końcówki -s", count: 1 }],
+    // Wymiar precyzji odpowiedzi otwartych (Etap 5) — panel pokazuje go pod wynikiem celu.
+    school: {
+      knowledge: { correct: 1, partial: 1, incorrect: 0 }, precision: { concise: 1, verbose: 1, unfocused: 0 },
+      formViolations: 1, missingElements: [{ text: "roślina wykorzystuje światło", count: 1 }],
+    },
   }],
 };
 
@@ -191,6 +196,11 @@ test("parent sees the per-objective lesson mock-test report in the supervision p
   await expect(objective).toContainText("1/2 poprawnie");
   await expect(objective).toContainText("Ocenione modelem: 1");
   await expect(objective).toContainText("Brak końcówki -s");
+  const school = page.getByTestId("lesson-mock-school-obj-s");
+  await expect(school).toContainText("częściowe 1");
+  await expect(school).toContainText("rozwlekłe 1");
+  await expect(school).toContainText("Więcej niż jedno zdanie tam, gdzie wystarczy jedno: 1");
+  await expect(school).toContainText("Brakowało: roślina wykorzystuje światło (1)");
 });
 
 /** Tworzy, przegląda i PUBLIKUJE lekcję; zwraca deckId (jak w lesson-parent-supervision). */

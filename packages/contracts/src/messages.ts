@@ -397,6 +397,11 @@ export const messages = {
     mockTestReview: "Sprawdźmy odpowiedzi",
     mockTestDetailsError: "Nie udało się wczytać omówienia. Spróbuj ponownie.",
     mockTestPractice: "Poćwicz ten zestaw",
+    // Omówienie kartkówki szkolnej (Etap 5): wskazówki precyzji i zagadnienia do powtórki.
+    mockTestHintShorter: "Dobrze! Następnym razem spróbuj krócej.",
+    mockTestHintFocus: "Dobrze! Trzymaj się samego pytania.",
+    mockTestHintMissing: "Zabrakło ważnej informacji. Porównaj z poprawną odpowiedzią.",
+    mockTestReviewObjectives: "Warto powtórzyć",
     mockTestNotTested: "Nie sprawdzono",
     mockTestSkipped: "Pominięte",
     mockTestScore: "{correct}/{total} · {percent}%",
@@ -658,6 +663,9 @@ export const messages = {
     schoolShorteningSuccess: "krócej, bez utraty treści",
     schoolShorteningNotYet: "jeszcze nie",
     schoolShorteningLost: "zgubione: {elements}",
+    mockTestSchoolLine: "Odpowiedzi otwarte — wiedza: poprawne {correct} · częściowe {partial} · błędne {incorrect}; precyzja: zwięzłe {concise} · rozwlekłe {verbose} · nie na temat {unfocused}",
+    mockTestSchoolForm: "Więcej niż jedno zdanie tam, gdzie wystarczy jedno: {n}",
+    mockTestSchoolMissing: "Brakowało: {elements}",
     schoolKnowledgeValue: {
       correct: "poprawna",
       partial: "częściowa",

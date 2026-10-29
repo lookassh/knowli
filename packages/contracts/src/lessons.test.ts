@@ -321,6 +321,13 @@ describe("LessonMockTestReportDtoSchema", () => {
   it("accepts a per-objective mock-test report with sessionId and dates", () => {
     expect(LessonMockTestReportDtoSchema.safeParse(base).success).toBe(true);
   });
+  it("accepts an optional school precision block and keeps old reports valid", () => {
+    const school = { knowledge: { correct: 1, partial: 1, incorrect: 0 }, precision: { concise: 1, verbose: 1, unfocused: 0 }, formViolations: 1, missingElements: [{ text: "Roślina wytwarza cukry", count: 1 }] };
+    expect(LessonMockTestReportDtoSchema.safeParse({ ...base, objectives: [{ ...base.objectives[0], school }] }).success).toBe(true);
+    expect(LessonMockTestReportDtoSchema.safeParse({ ...base, objectives: [{ ...base.objectives[0], school: { ...school, note: "x" } }] }).success).toBe(false);
+    expect(LessonMockTestReportDtoSchema.safeParse({ ...base, objectives: [{ ...base.objectives[0], school: { ...school, missingElements: Array.from({ length: 6 }, (_, i) => ({ text: `e${i}`, count: 1 })) } }] }).success).toBe(false);
+  });
+
   it("requires sessionId, startedAt and endedAt", () => {
     for (const field of ["sessionId", "startedAt", "endedAt"] as const) {
       const { [field]: _omit, ...rest } = base;
@@ -351,6 +358,13 @@ describe("LessonMockTestSummaryDtoSchema", () => {
       solutions: [{ ...base.solutions[0], outcome: "unassessed" }],
     }).success).toBe(true);
   });
+  it("accepts a precision hint and objectives worth reviewing, without extra fields", () => {
+    const withHints = { ...base, solutions: [{ ...base.solutions[0], hintPl: "Dobrze! Następnym razem spróbuj krócej." }], reviewObjectives: [{ objectiveId: "o1", titlePl: "-s w 3. osobie" }] };
+    expect(LessonMockTestSummaryDtoSchema.safeParse(withHints).success).toBe(true);
+    expect(LessonMockTestSummaryDtoSchema.safeParse({ ...withHints, reviewObjectives: [{ objectiveId: "o1", titlePl: "t", status: "weak" }] }).success).toBe(false);
+    expect(LessonMockTestSummaryDtoSchema.safeParse({ ...withHints, solutions: [{ ...base.solutions[0], hintPl: "" }] }).success).toBe(false);
+  });
+
   it("rejects a non-lesson exercise type and a not_tested outcome", () => {
     expect(LessonMockTestSummaryDtoSchema.safeParse({
       ...base, solutions: [{ ...base.solutions[0], exerciseType: "recall" }],

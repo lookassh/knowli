@@ -87,4 +87,23 @@ describe("mock test screens", () => {
     view.rerender(<LessonMockTestSummaryScreen {...props} detailsLoading={false} detailsError />);
     expect(screen.getByRole("button", { name: "Spróbuj ponownie" }).style.minHeight).toBe("48px");
   });
+
+  it("shows the school precision hint and objectives worth reviewing only when present", () => {
+    const base: ComponentProps<typeof LessonMockTestSummaryScreen> = {
+      summary: {
+        sessionId: id(1), deckId: id(3), state: "completed", complete: true, taskBudget: 1, answeredCount: 1,
+        solutions: [{ taskId: id(5), objectiveId: "o1", titlePl: "Fotosynteza", exerciseType: "lesson_open_answer", prompt: "Co to jest fotosynteza?", childAnswer: "Długa odpowiedź…", correctAnswer: "Roślina wytwarza cukry.", outcome: "correct", hintPl: "Dobrze! Następnym razem spróbuj krócej." }],
+        reviewObjectives: [{ objectiveId: "o2", titlePl: "Skala mapy" }],
+      },
+      activity: null, detailsLoading: false, detailsError: false,
+      onRetryDetails: vi.fn(async () => {}), onPractice: vi.fn(async () => {}), onSwitchProfile: vi.fn(async () => {}),
+    };
+    const view = renderKid(<LessonMockTestSummaryScreen {...base} />);
+    expect(screen.getByTestId("kid-lesson-mock-hint").textContent).toBe("Dobrze! Następnym razem spróbuj krócej.");
+    expect(screen.getByRole("region", { name: "Warto powtórzyć" }).textContent).toContain("Skala mapy");
+    const { reviewObjectives: _omit, ...plain } = base.summary;
+    view.rerender(<LessonMockTestSummaryScreen {...base} summary={{ ...plain, solutions: plain.solutions.map(({ hintPl: _hint, ...rest }) => rest) }} />);
+    expect(screen.queryByTestId("kid-lesson-mock-hint")).toBeNull();
+    expect(screen.queryByTestId("kid-lesson-mock-review")).toBeNull();
+  });
 });
