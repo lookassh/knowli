@@ -9,7 +9,8 @@ export type ParentIconName =
   | "book-open" | "graduation-cap" | "chevron-right" | "eye" | "check" | "x"
   | "minus" | "pencil" | "mic" | "calendar" | "target" | "clipboard-check"
   | "info" | "flame" | "lightbulb" | "shuffle" | "history" | "list"
-  | "sparkles" | "file-plus" | "trash-2" | "arrow-right" | "activity";
+  | "sparkles" | "file-plus" | "trash-2" | "arrow-right" | "activity"
+  | "more-vertical" | "sun" | "moon" | "monitor";
 
 const paths: Record<ParentIconName, ReactElement> = {
   layers: <><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.91a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></>,
@@ -41,6 +42,10 @@ const paths: Record<ParentIconName, ReactElement> = {
   "trash-2": <><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></>,
   "arrow-right": <><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></>,
   activity: <path d="M22 12h-2.5a2 2 0 0 0-1.9 1.5l-2.4 8.3a.25.25 0 0 1-.5 0L9.2 2.2a.25.25 0 0 0-.5 0l-2.3 8.3A2 2 0 0 1 4.5 12H2"/>,
+  "more-vertical": <><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></>,
+  sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></>,
+  moon: <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>,
+  monitor: <><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></>,
 };
 
 export function ParentIcon({ name, className }: { name: ParentIconName; className?: string }): ReactElement {

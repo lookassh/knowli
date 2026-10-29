@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { Button, Group, Modal, Text } from "@mantine/core";
+import { useMediaQuery } from "@mantine/hooks";
 import { messages } from "@learning/contracts";
 
+/** Pytanie o niezapisane zmiany edytora; Esc i kliknięcie obok znaczą „zostań”. */
 export default function LeaveEditorDialog({
   open,
   onStay,
@@ -12,44 +14,27 @@ export default function LeaveEditorDialog({
   onStay: () => void;
   onLeave: () => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  const stayButton = useRef<HTMLButtonElement>(null);
-  const returnFocus = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    const element = dialog.current;
-    if (!element) return;
-    if (open && !element.open) {
-      returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-      element.showModal();
-      stayButton.current?.focus();
-    } else if (!open && element.open) {
-      element.close();
-      returnFocus.current?.focus();
-    }
-  }, [open]);
-
+  const compact = useMediaQuery("(max-width: 37.49em)") ?? false;
   return (
-    <dialog
-      ref={dialog}
-      className="leave-editor-dialog"
-      data-testid="leave-editor-dialog"
-      aria-labelledby="leave-editor-title"
-      onCancel={(event) => {
-        event.preventDefault();
-        onStay();
-      }}
+    <Modal
+      opened={open}
+      onClose={onStay}
+      title={messages.decks.leaveTitle}
+      centered
+      fullScreen={false}
+      radius="lg"
+      size={compact ? "100%" : "md"}
+      attributes={{ content: { "data-testid": "leave-editor-dialog" } }}
     >
-      <h2 id="leave-editor-title">{messages.decks.leaveTitle}</h2>
-      <p>{messages.decks.leaveDescription}</p>
-      <div className="row">
-        <button ref={stayButton} type="button" data-testid="leave-editor-stay" onClick={onStay}>
+      <Text>{messages.decks.leaveDescription}</Text>
+      <Group justify="flex-end" mt="lg" gap="sm">
+        <Button variant="default" size="md" data-autofocus data-testid="leave-editor-stay" onClick={onStay}>
           {messages.decks.leaveStay}
-        </button>
-        <button type="button" data-testid="leave-editor-leave" onClick={onLeave}>
+        </Button>
+        <Button color="red" size="md" data-testid="leave-editor-leave" onClick={onLeave}>
           {messages.decks.leaveWithoutSaving}
-        </button>
-      </div>
-    </dialog>
+        </Button>
+      </Group>
+    </Modal>
   );
 }

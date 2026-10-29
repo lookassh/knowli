@@ -6,7 +6,8 @@ import { ModalsProvider } from "@mantine/modals";
 import { Notifications } from "@mantine/notifications";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createParentQueryClient } from "./query-client";
-import { PARENT_COLOR_SCHEME_KEY, parentCssVariablesResolver, parentTheme } from "./theme";
+import { PARENT_COLOR_SCHEME_KEY } from "./color-scheme-key";
+import { parentCssVariablesResolver, parentTheme } from "./theme";
 
 const colorSchemeManager = localStorageColorSchemeManager({ key: PARENT_COLOR_SCHEME_KEY });
 

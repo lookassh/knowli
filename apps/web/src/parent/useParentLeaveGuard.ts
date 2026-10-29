@@ -58,5 +58,8 @@ export function useParentLeaveGuard() {
     return () => window.removeEventListener("beforeunload", beforeUnload);
   }, [dirty]);
 
-  return { register, requestLeave, pending, stay, leave };
+  /** Bieżący stan edytora — odczyt synchroniczny dla obsługi „wstecz” i wygasłej sesji. */
+  const current = useCallback((): EditorLeaveState => editorState.current, []);
+
+  return { register, requestLeave, pending, stay, leave, current };
 }
