@@ -49,7 +49,11 @@ describe("graderFromEnv", () => {
   it("błędna opcja pośrednika (UMIEM_GRADER_REASONING) zatrzymuje start zamiast cicho ją pominąć", () => {
     expect(() => graderFromEnv({ ...base, UMIEM_GRADER_REASONING: "turbo" })).toThrow(/UMIEM_GRADER_REASONING/);
     expect(() => sessionActivityFromEnv({ ...base, UMIEM_GRADER_PROVIDER_DATA_COLLECTION: "maybe" })).toThrow(/DATA_COLLECTION/);
-    expect(graderFromEnv({ ...base, UMIEM_GRADER_REASONING: "low", UMIEM_GRADER_PROVIDER_DATA_COLLECTION: "deny" })).toBeDefined();
+    const openRouter = { ...base, UMIEM_GRADER_BASE_URL: "https://openrouter.ai/api/v1" };
+    expect(graderFromEnv({ ...openRouter, UMIEM_GRADER_REASONING: "low", UMIEM_GRADER_PROVIDER_DATA_COLLECTION: "deny" })).toBeDefined();
+    // Opcje OpenRouter dla innego endpointu też zatrzymują start (grader i ocena aktywności).
+    expect(() => graderFromEnv({ ...base, UMIEM_GRADER_PROVIDER_DATA_COLLECTION: "deny" })).toThrow(/openrouter/);
+    expect(() => sessionActivityFromEnv({ ...base, UMIEM_GRADER_REASONING: "off" })).toThrow(/openrouter/);
   });
 
   it("UMIEM_GRADER_TIMEOUT_MS i MAX_CALLS_PER_SESSION nadpisują domyślne", () => {

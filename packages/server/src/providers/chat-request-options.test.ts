@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { chatRequestExtrasFromEnv, withChatRequestExtras } from "./chat-request-options";
 
+const LLM_OR = { UMIEM_LLM_BASE_URL: "https://openrouter.ai/api/v1" };
+const GRADER_OR = { UMIEM_GRADER_BASE_URL: "https://openrouter.ai/api/v1" };
+
 describe("chatRequestExtrasFromEnv", () => {
   it("is empty without configuration, so plain OpenAI-compatible requests stay unchanged", () => {
     expect(chatRequestExtrasFromEnv({}, "UMIEM_LLM")).toEqual({});
@@ -9,22 +12,23 @@ describe("chatRequestExtrasFromEnv", () => {
   });
 
   it("maps reasoning to OpenRouter's reasoning object and requires a provider that honours it", () => {
-    expect(chatRequestExtrasFromEnv({ UMIEM_LLM_REASONING: "off" }, "UMIEM_LLM"))
+    expect(chatRequestExtrasFromEnv({ ...LLM_OR, UMIEM_LLM_REASONING: "off" }, "UMIEM_LLM"))
       .toEqual({ reasoning: { enabled: false }, provider: { require_parameters: true } });
-    expect(chatRequestExtrasFromEnv({ UMIEM_GRADER_REASONING: "Low" }, "UMIEM_GRADER"))
+    expect(chatRequestExtrasFromEnv({ ...GRADER_OR, UMIEM_GRADER_REASONING: "Low" }, "UMIEM_GRADER"))
       .toEqual({ reasoning: { effort: "low" }, provider: { require_parameters: true } });
-    expect(() => chatRequestExtrasFromEnv({ UMIEM_LLM_REASONING: "max" }, "UMIEM_LLM")).toThrow(/UMIEM_LLM_REASONING/);
+    expect(() => chatRequestExtrasFromEnv({ ...LLM_OR, UMIEM_LLM_REASONING: "max" }, "UMIEM_LLM")).toThrow(/UMIEM_LLM_REASONING/);
   });
 
   it("accepts OpenRouter endpoint slugs in the provider order, but not in quantizations", () => {
-    expect(chatRequestExtrasFromEnv({ UMIEM_LLM_PROVIDER_ORDER: "deepinfra/turbo, google-vertex/us-east5" }, "UMIEM_LLM"))
+    expect(chatRequestExtrasFromEnv({ ...LLM_OR, UMIEM_LLM_PROVIDER_ORDER: "deepinfra/turbo, google-vertex/us-east5" }, "UMIEM_LLM"))
       .toEqual({ provider: { order: ["deepinfra/turbo", "google-vertex/us-east5"], require_parameters: true } });
-    expect(() => chatRequestExtrasFromEnv({ UMIEM_LLM_PROVIDER_ORDER: "deepinfra//turbo" }, "UMIEM_LLM")).toThrow(/PROVIDER_ORDER/);
-    expect(() => chatRequestExtrasFromEnv({ UMIEM_LLM_PROVIDER_QUANTIZATIONS: "fp8/turbo" }, "UMIEM_LLM")).toThrow(/QUANTIZATIONS/);
+    expect(() => chatRequestExtrasFromEnv({ ...LLM_OR, UMIEM_LLM_PROVIDER_ORDER: "deepinfra//turbo" }, "UMIEM_LLM")).toThrow(/PROVIDER_ORDER/);
+    expect(() => chatRequestExtrasFromEnv({ ...LLM_OR, UMIEM_LLM_PROVIDER_QUANTIZATIONS: "fp8/turbo" }, "UMIEM_LLM")).toThrow(/QUANTIZATIONS/);
   });
 
   it("builds provider routing and always requires the sent parameters", () => {
     expect(chatRequestExtrasFromEnv({
+      ...LLM_OR,
       UMIEM_LLM_PROVIDER_ORDER: "Nebius, DeepInfra",
       UMIEM_LLM_PROVIDER_QUANTIZATIONS: "FP8,bf16",
       UMIEM_LLM_PROVIDER_ALLOW_FALLBACKS: "false",
@@ -34,11 +38,20 @@ describe("chatRequestExtrasFromEnv", () => {
     });
   });
 
+  it("rejects OpenRouter options for any other endpoint, including the OpenAI default", () => {
+    expect(() => chatRequestExtrasFromEnv({ UMIEM_LLM_REASONING: "off" }, "UMIEM_LLM")).toThrow(/openrouter.ai/);
+    expect(() => chatRequestExtrasFromEnv({ UMIEM_LLM_BASE_URL: "https://api.openai.com/v1", UMIEM_LLM_PROVIDER_ORDER: "Nebius" }, "UMIEM_LLM"))
+      .toThrow(/UMIEM_LLM_BASE_URL/);
+    expect(() => chatRequestExtrasFromEnv({ UMIEM_GRADER_BASE_URL: "https://openrouter.ai.evil.example/v1", UMIEM_GRADER_REASONING: "low" }, "UMIEM_GRADER"))
+      .toThrow(/UMIEM_GRADER_BASE_URL/);
+    expect(chatRequestExtrasFromEnv({ UMIEM_LLM_BASE_URL: "https://api.openai.com/v1" }, "UMIEM_LLM")).toEqual({});
+  });
+
   it("reads only its own prefix and rejects malformed values", () => {
     expect(chatRequestExtrasFromEnv({ UMIEM_LLM_PROVIDER_QUANTIZATIONS: "fp8" }, "UMIEM_GRADER")).toEqual({});
-    expect(() => chatRequestExtrasFromEnv({ UMIEM_GRADER_PROVIDER_ALLOW_FALLBACKS: "no" }, "UMIEM_GRADER")).toThrow(/ALLOW_FALLBACKS/);
-    expect(() => chatRequestExtrasFromEnv({ UMIEM_GRADER_PROVIDER_DATA_COLLECTION: "maybe" }, "UMIEM_GRADER")).toThrow(/DATA_COLLECTION/);
-    expect(() => chatRequestExtrasFromEnv({ UMIEM_LLM_PROVIDER_ORDER: "Nebius;rm" }, "UMIEM_LLM")).toThrow(/PROVIDER_ORDER/);
+    expect(() => chatRequestExtrasFromEnv({ ...GRADER_OR, UMIEM_GRADER_PROVIDER_ALLOW_FALLBACKS: "no" }, "UMIEM_GRADER")).toThrow(/ALLOW_FALLBACKS/);
+    expect(() => chatRequestExtrasFromEnv({ ...GRADER_OR, UMIEM_GRADER_PROVIDER_DATA_COLLECTION: "maybe" }, "UMIEM_GRADER")).toThrow(/DATA_COLLECTION/);
+    expect(() => chatRequestExtrasFromEnv({ ...LLM_OR, UMIEM_LLM_PROVIDER_ORDER: "Nebius;rm" }, "UMIEM_LLM")).toThrow(/PROVIDER_ORDER/);
   });
 });
 
