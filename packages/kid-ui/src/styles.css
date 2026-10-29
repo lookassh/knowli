@@ -269,7 +269,7 @@
   min-width: 0;
   font-size: clamp(var(--kid-type-headline-sm-size), 6vw, var(--kid-type-display-lg-size));
   line-height: 1.2;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 @media (max-height: 700px) {
@@ -400,7 +400,6 @@
 
 .kid-profile:focus-visible,
 .kid-screen button:focus-visible,
-.kid-written input:focus-visible,
 .kid-letter-input:focus-visible,
 .kid-lesson-gap__input:focus-visible,
 .kid-lesson-input:focus-visible {
@@ -732,16 +731,20 @@
 }
 
 .kid-ui .kid-word {
-  font-size: var(--kid-type-display-lg-size);
-  font-weight: 800;
+  font-family: var(--kid-font-display);
+  font-size: clamp(var(--kid-type-headline-sm-size), 7vw, var(--kid-type-display-lg-size));
+  font-weight: 700;
+  color: var(--md-sys-color-on-surface);
   margin: 0;
   word-break: break-word;
   text-align: center;
 }
 
 .kid-source {
-  font-size: var(--kid-type-title-lg-size);
-  color: var(--kid-muted);
+  font-family: var(--kid-font-display);
+  font-size: clamp(var(--kid-type-headline-sm-size), 6vw, var(--kid-type-display-sm-size));
+  font-weight: 700;
+  color: var(--md-sys-color-on-surface);
   margin: 0;
   text-align: center;
 }
@@ -837,7 +840,7 @@
   width: min(60vw, 260px);
   height: min(36svh, 260px);
   object-fit: contain;
-  border-radius: var(--kid-shape-l);
+  border-radius: var(--kid-shape-xl);
   border: 3px solid var(--kid-line);
   background: var(--kid-surface);
 }
@@ -1046,24 +1049,6 @@
   width: 100%;
 }
 
-.kid-written input {
-  width: 100%;
-  box-sizing: border-box;
-  min-height: 60px;
-  font-size: var(--kid-type-headline-sm-size);
-  text-align: center;
-  border: 2px solid var(--md-sys-color-outline);
-  border-radius: var(--kid-shape-l);
-  padding: 8px 12px;
-  color: var(--kid-text);
-  background: var(--kid-surface);
-}
-
-.kid-written input::placeholder {
-  color: var(--kid-muted);
-  opacity: 1;
-}
-
 .kid-letter-fragment {
   display: flex;
   flex-wrap: wrap;
@@ -1081,10 +1066,15 @@
 .kid-written .kid-letter-input {
   width: 48px;
   min-height: 60px;
+  box-sizing: border-box;
   flex-shrink: 0;
   padding: 4px;
   font: inherit;
+  text-align: center;
+  border: 2px solid var(--md-sys-color-outline);
   border-radius: var(--kid-shape-m);
+  color: var(--md-sys-color-on-surface);
+  background: var(--md-sys-color-surface-container-highest);
 }
 
 .kid-secondary-actions {
