@@ -359,6 +359,8 @@ test.describe("telefon z klawiaturą ekranową", () => {
     await expect(page.getByTestId("api-error")).toBeVisible();
     await page.getByTestId("exercise-stem-0").focus();
     await expect(page.getByTestId("api-error")).toBeInViewport();
+    // znacznik zmiany w karcie (ta sama klasa co powód blokady w pasku) zostaje widoczny
+    await expect(page.getByTestId("exercise-0").getByText(messages.lessons.exerciseChanged)).toBeVisible();
     await expect(page.getByTestId("save-lesson")).toBeHidden();
     await expect(page.getByTestId("tab-decks")).not.toBeInViewport();
   });

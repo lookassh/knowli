@@ -292,8 +292,8 @@
    wraca po zamknięciu klawiatury. Błąd polecenia zostaje widoczny — sam wiersz błędu,
    bez przycisków i powodu blokady publikacji. */
 [data-keyboard-open] .pp-editor-bar:not(:has(.pp-editor-bar-error)),
-[data-keyboard-open] .pp-editor-bar-actions,
-[data-keyboard-open] .pp-editor-bar-note {
+[data-keyboard-open] .pp-editor-bar .pp-editor-bar-actions,
+[data-keyboard-open] .pp-editor-bar .pp-editor-bar-note {
   display: none;
 }
 
