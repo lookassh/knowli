@@ -1604,8 +1604,12 @@ podniesieniu limitów karty nie wyślemy niekontrolowanie długiego tekstu.
 
 ### 12.5. Prywatność, koszty, integracje
 
-- Do TTS trafia wyłącznie treść karty zatwierdzona przez rodzica — bez
-  danych dziecka; ta sama usługa i konfiguracja co §11.2.
+- Do TTS trafia wyłącznie treść karty z materiału lekcji — bez danych
+  dziecka; ta sama usługa i konfiguracja co §11.2. Jak nagrania pytań
+  (§11), nagrania kart zleca już uzgodnienie szkicu po generacji, przed
+  zatwierdzeniem przez rodzica, żeby były gotowe przy publikacji; dziecko
+  dostaje je dopiero z opublikowaną wersją. Karta odrzucona lub zmieniona
+  przez rodzica kosztuje jedno zbędne nagranie (ok. 1 centa).
 - Koszt (MAI-Voice-2.1 Flash, 15 USD za 1 mln znaków): typowa karta
   400–700 znaków ≈ 0,6–1 centa; typowa lekcja (3–4 zagadnienia × 2–3 karty,
   ok. 6000 znaków) ≈ **0,09 USD** za wersję; najgorszy przypadek schematu
@@ -1651,6 +1655,10 @@ podniesieniu limitów karty nie wyślemy niekontrolowanie długiego tekstu.
   przed `complete-presentation` i czyści komunikat błędu odsłuchu.
 - Równoległy etap odsłuchu opcji też planuje §12 i migrację `0028`; kto scali
   drugi, przenumerowuje (sekcja → §13, migracja → `0029`).
+- Review PR (CodeRabbit): doprecyzowano 12.5 — nagrania kart, jak pytań,
+  powstają już ze szkicu po generacji, przed przeglądem rodzica (zasada
+  „TTS przy przygotowaniu materiału”); tekst nie zawiera danych dziecka.
+  Wstrzymanie TTS do zatwierdzenia byłoby zmianą dla obu rodzajów nagrań.
 - Review przed PR: wykrywanie wzorów rozszerzone poza listę z 12.1 o ułamki
   i kreskę ułamkową Unicode (`½`, `3⁄4`), `^` przy literze (`x^2`) oraz `*`,
   `<`, `>` i `x` między liczbami (`2 x 3`); `+` i `-` nie blokują (lektor
