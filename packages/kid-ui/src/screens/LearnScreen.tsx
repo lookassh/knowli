@@ -88,6 +88,12 @@ export function LearnScreen({
     setEndConfirmOpen(false);
     endButtonRef.current?.focus({ preventScroll: true });
   };
+  // The panel closes before ending, so a failed /end shows its error and retry.
+  const confirmEnd = () => {
+    controller.releaseEndConfirm();
+    setEndConfirmOpen(false);
+    void controller.endNow();
+  };
   // Leaving the session screen with the panel open must not keep auto-capture held.
   useEffect(() => () => controller.releaseEndConfirm(), [controller]);
   const activeLetterDraft = task?.prompt.kind === "letter_completion" && letterDraft?.taskId === task.taskId
@@ -361,7 +367,7 @@ export function LearnScreen({
         mockTest={screen.session.mode === "mock_test"}
         busy={busy}
         onContinue={closeEndConfirm}
-        onEnd={() => void controller.endNow()}
+        onEnd={confirmEnd}
       />
     </main>
   );

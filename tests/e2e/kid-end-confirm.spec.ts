@@ -76,6 +76,24 @@ test("✕ asks before ending; continuing keeps the task and returns focus to ✕
   expect(session.endRequests()).toBe(1);
 });
 
+test("a failed end request closes the sheet and shows its retry", async ({ page }) => {
+  const fixture = recallFixture();
+  fixture.dropFirstEndResponse = true;
+  await installKidUiFixture(page, fixture);
+  await page.setViewportSize({ width: 360, height: 640 });
+  const session = await openSession(page, fixture);
+
+  await page.getByTestId("kid-end").click();
+  await page.getByTestId("kid-end-confirm-end").click();
+  await expect(page.getByTestId("kid-end-confirm")).toHaveCount(0);
+  const retry = page.getByTestId("kid-retry");
+  await expect(retry).toBeVisible();
+  await expect(retry).toBeInViewport();
+  await retry.click();
+  await expect(page.getByTestId("kid-summary")).toBeVisible();
+  expect(session.endRequests()).toBe(2);
+});
+
 test("mock test confirmation says unanswered tasks stay unchecked", async ({ page }) => {
   const fixture = recallFixture();
   fixture.decks[0]!.mockTestAvailable = true;
