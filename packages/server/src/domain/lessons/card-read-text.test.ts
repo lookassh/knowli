@@ -19,7 +19,7 @@ describe("cardReadText — tekst nagrania „Posłuchaj karty” (design szkoły
   });
 
   it("karta z zapisem matematycznym nie ma nagrania", () => {
-    for (const body of ["Połowa to 1/2 całości.", "Pole kwadratu to a².", "Woda to H₂O.", "2 · 3 to sześć.", "Wzór: v = s / t", "x=5", "Skala 1:100.", "Woda wrze w 100°C.", "½ jabłka", "3⁄4 tortu", "x^2", "2 x 3 to sześć", "3 < 5", "4*2"]) {
+    for (const body of ["Połowa to 1/2 całości.", "Pole kwadratu to a².", "Woda to H₂O.", "2 · 3 to sześć.", "Wzór: v = s / t", "x=5", "Skala 1:100.", "Woda wrze w 100°C.", "½ jabłka", "3⁄4 tortu", "x^2", "2 x 3 to sześć", "3 < 5", "4*2", "12/03", "Data 12/03/2026, a połowa to 1/2."]) {
       expect(cardReadText({ title: "Matematyka", body, examples: [] }), body).toBeNull();
     }
     expect(cardReadText({ title: "Ułamki", body: "Ułamek to część całości.", examples: ["3/4 pizzy"] })).toBeNull();
@@ -27,7 +27,7 @@ describe("cardReadText — tekst nagrania „Posłuchaj karty” (design szkoły
   });
 
   it("daty, liczby, procenty i zwykła interpunkcja nie blokują nagrania", () => {
-    for (const text of ["W 1410 roku odbyła się bitwa.", "25% klasy to 6 osób.", "Uwaga: to ważne.", "Godzina dziewiąta, 3 lekcje.", "Słowo „równa się” po polsku."]) {
+    for (const text of ["W 1410 roku odbyła się bitwa.", "25% klasy to 6 osób.", "Uwaga: to ważne.", "Godzina dziewiąta, 3 lekcje.", "Słowo „równa się” po polsku.", "Bitwa odbyła się 15/07/1410.", "Termin: 12/03/2026 i 1/9/2026."]) {
       expect(hasMathNotation(text), text).toBe(false);
     }
   });

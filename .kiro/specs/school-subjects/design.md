@@ -1520,7 +1520,9 @@ matematyczny wykrywany konserwatywnie:
 - symbole `·`, `×`, `÷`, `√`, `π`, `≤`, `≥`, `≠`, `≈`, `±`, `∞`, `°`;
 - znak `=` między dwoma operandami (`2 + 3 = 5`, `v = s/t`).
 
-Daty, liczby i procenty („w 1410 roku”, „25%”) nie blokują nagrania.
+Daty, liczby i procenty („w 1410 roku”, „12/03/2026”, „25%”) nie blokują
+nagrania; data z ukośnikami tylko w pełnej postaci z czterocyfrowym rokiem
+(krótkie „12/03” jest nieodróżnialne od ułamka).
 Słowny odczyt wzorów pozostaje poza etapem.
 
 **Limit.** Schemat karty ogranicza tytuł do 120, treść do 1200, a przykłady

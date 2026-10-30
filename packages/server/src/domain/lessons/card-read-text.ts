@@ -44,8 +44,12 @@ export function cardReadText(card: RenderedCard): string | null {
   return spoken.length > CARD_READ_MAX_LENGTH ? null : spoken;
 }
 
+/** Pełna data z ukośnikami (`12/03/2026`) — jednoznacznie data, nie ułamek. */
+const SLASH_DATE = /\b\d{1,2}\/\d{1,2}\/\d{4}\b/g;
+
 export function hasMathNotation(text: string): boolean {
-  return MATH_NOTATION.some((pattern) => pattern.test(text));
+  const withoutDates = text.replace(SLASH_DATE, " ");
+  return MATH_NOTATION.some((pattern) => pattern.test(withoutDates));
 }
 
 function clean(text: string): string | undefined {
