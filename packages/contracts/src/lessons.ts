@@ -150,11 +150,25 @@ export const SchoolLessonCommandSchema = z.object({
 }).strict();
 export type SchoolLessonCommand = z.infer<typeof SchoolLessonCommandSchema>;
 
+/**
+ * Ton lektora nagrania pytania ćwiczenia lub karty nauki (spec TTS §4.1).
+ * Brak pola = styl domyślny roli nagrania; wartości „default” celowo nie ma.
+ * Ton nie trafia do Kid DTO ani do `SubjectCatalogDtoSchema` i nie wpływa
+ * na `payload_version`.
+ */
+export const LessonVoiceToneSchema = z.enum(["cheerful", "curious", "gentle", "mysterious"]);
+export type LessonVoiceTone = z.infer<typeof LessonVoiceToneSchema>;
+
 /** Zagadnienie tematu dynamicznego w widoku rodzica (bez pól modelowych). */
 export const DynamicObjectiveDtoSchema = z.object({
   id: z.string().min(1).max(200),
   titlePl: z.string().min(1).max(120),
-  cards: z.array(z.object({ title: z.string().min(1).max(120), body: z.string().min(1).max(1200) }).strict()).min(2).max(4),
+  cards: z.array(z.object({
+    title: z.string().min(1).max(120),
+    body: z.string().min(1).max(1200),
+    /** Ton lektora nagrania karty; brak = styl domyślny roli (spec TTS §4.1). */
+    voiceTone: LessonVoiceToneSchema.optional(),
+  }).strict()).min(2).max(4),
 }).strict();
 export type DynamicObjectiveDto = z.infer<typeof DynamicObjectiveDtoSchema>;
 
@@ -284,6 +298,8 @@ export const LessonExerciseInputSchema = z.object({
   gapAnswers: z.array(z.string().min(1).max(MAX_CLOZE_WORD_LENGTH)).min(MIN_CLOZE_GAPS).max(MAX_CLOZE_GAPS).optional(),
   /** `lesson_cloze`: dystraktory w banku słów. */
   extraWords: z.array(z.string().min(1).max(MAX_CLOZE_WORD_LENGTH)).min(MIN_CLOZE_EXTRA).max(MAX_CLOZE_EXTRA).optional(),
+  /** Ton lektora nagrania pytania; brak = styl domyślny roli (spec TTS §4.1). */
+  voiceTone: LessonVoiceToneSchema.optional(),
 }).strict();
 export type LessonExerciseInput = z.infer<typeof LessonExerciseInputSchema>;
 

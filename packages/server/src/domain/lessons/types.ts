@@ -1,4 +1,4 @@
-import type { CalculationSpec } from "@learning/contracts";
+import type { CalculationSpec, LessonVoiceTone } from "@learning/contracts";
 
 /**
  * Typy silnika lekcji (design „Przedmiot i katalog”, „Typy ćwiczeń i etapy”).
@@ -48,7 +48,12 @@ export interface LearningObjective {
   readonly id: string; // "english_grammar.present_simple.third_person_s"
   readonly titlePl: string; // „-s w 3. osobie”
   readonly descriptionEn: string; // opis dla promptów generacji i oceny
-  readonly cards: readonly { readonly title: string; readonly body: string }[];
+  readonly cards: readonly {
+    readonly title: string;
+    readonly body: string;
+    /** Ton lektora nagrania karty; brak = styl domyślny roli (spec TTS §4.1). */
+    readonly voiceTone?: LessonVoiceTone;
+  }[];
   readonly errorCategories: readonly ErrorCategoryCode[];
   readonly hints: Readonly<Record<ErrorCategoryCode, string>>;
   readonly exerciseTypes: readonly LessonExerciseType[];
@@ -89,7 +94,12 @@ export interface DynamicObjectiveData {
   readonly id: string;
   readonly titlePl: string;
   readonly descriptionEn: string;
-  readonly cards: readonly { readonly title: string; readonly body: string }[];
+  readonly cards: readonly {
+    readonly title: string;
+    readonly body: string;
+    /** Ton lektora nagrania karty; brak = styl domyślny roli (spec TTS §4.1). */
+    readonly voiceTone?: LessonVoiceTone;
+  }[];
 }
 
 export interface DynamicTopicData {
@@ -170,6 +180,8 @@ export interface LessonExerciseDraft {
   readonly clozeText?: string;
   readonly gapAnswers?: readonly string[];
   readonly extraWords?: readonly string[];
+  /** Ton lektora nagrania pytania; brak = styl domyślny roli (spec TTS §4.1). */
+  readonly voiceTone?: LessonVoiceTone;
 }
 
 /**
