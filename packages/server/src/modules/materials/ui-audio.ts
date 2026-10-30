@@ -6,11 +6,12 @@ import {
   type UiAudioCatalogDto,
   type UiAudioKey,
 } from "@learning/contracts";
-import { ttsInstructionsFor, ttsVoiceFor, type Services } from "../../config";
+import { ttsVoiceFor, type Services } from "../../config";
 import { generationRuns, mediaAssets } from "../../db/schema";
 import { AppError } from "../../errors";
 import { ttsFingerprint } from "../../domain/media-fingerprint";
-import { isUiAudioAssetMetadata, UI_AUDIO_TEXTS } from "../../domain/ui-audio-catalog";
+import { isUiAudioAssetMetadata, UI_AUDIO_STYLES, UI_AUDIO_TEXTS } from "../../domain/ui-audio-catalog";
+import { ttsRequestInstructions } from "../../providers/tts-style-profile";
 
 function settingsOf(services: Services) {
   if (!services.media) throw new AppError("internal", { message: "media settings not configured" });
@@ -21,7 +22,7 @@ function requestOf(services: Services, key: UiAudioKey) {
   const settings = settingsOf(services);
   const text = UI_AUDIO_TEXTS[key];
   const voice = ttsVoiceFor(settings, "pl-PL");
-  const instructions = ttsInstructionsFor(settings, "pl-PL");
+  const instructions = ttsRequestInstructions(settings, "pl-PL", UI_AUDIO_STYLES[key]);
   return {
     text,
     fingerprint: ttsFingerprint({
@@ -106,6 +107,23 @@ export async function readUiAudio(services: Services): Promise<UiAudioCatalogDto
       .orderBy(desc(mediaAssets.generationNumber)));
     const asset = ready.find((candidate) => isUiAudioAssetMetadata(candidate.metadata));
     if (asset) for (const key of keys) assets[key] = asset.id;
+  }
+  // Odczyt zapasowy (spec tonu TTS §3.4): dopóki nagranie o bieżącym fingerprincie nie jest gotowe (zmiana stylu,
+  // głosu lub instrukcji), dziecko słyszy ostatnie gotowe nagranie tego samego komunikatu i tego samego tekstu.
+  // Nagranie o bieżącym fingerprincie zawsze wygrywa; zasób pozostaje niezmienny, a zapytanie nic nie zleca.
+  for (const key of UiAudioKeySchema.options) {
+    if (assets[key]) continue;
+    const candidates = await services.db.select().from(mediaAssets)
+      .where(and(
+        eq(mediaAssets.kind, "tts"),
+        eq(mediaAssets.state, "ready"),
+        sql`${mediaAssets.metadata}->>'purpose' = 'kid_ui_guidance'`,
+        sql`${mediaAssets.metadata}->>'uiAudioKey' = ${key}`,
+        sql`${mediaAssets.metadata}->>'text' = ${UI_AUDIO_TEXTS[key]}`,
+      ))
+      .orderBy(desc(mediaAssets.createdAt));
+    const fallback = candidates.find((candidate) => isUiAudioAssetMetadata(candidate.metadata));
+    if (fallback) assets[key] = fallback.id;
   }
   return UiAudioCatalogDtoSchema.parse({
     ready: Object.keys(assets).length === UiAudioKeySchema.options.length,
