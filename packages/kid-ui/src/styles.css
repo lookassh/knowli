@@ -2588,7 +2588,7 @@
   display: inline;
   padding: 0 4px;
   border-bottom: 2px dashed var(--md-sys-color-outline);
-  font-weight: 700;
+  font-weight: var(--kid-type-title-weight);
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
@@ -2608,7 +2608,7 @@
   margin-inline-end: 4px;
   color: var(--md-sys-color-on-surface-variant);
   font-size: var(--kid-type-label-xs-size);
-  font-weight: 700;
+  font-weight: var(--kid-type-label-weight);
   vertical-align: super;
 }
 
