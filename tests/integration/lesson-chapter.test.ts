@@ -169,7 +169,7 @@ describe("lekcja Angielski — rozdział (integracja)", () => {
             options: [{ id: "a", text: "coat" }, { id: "b", text: "umbrella" }], correctOption: "a",
             answer: "coat", acceptedAnswers: [], focus: [],
           },
-          // odpowiedź złożona wyłącznie ze słów funkcyjnych → brak słowa treści
+          // odpowiedź złożona wyłącznie ze słów funkcyjnych → tylko słowa pomocnicze
           {
             exerciseType: "lesson_gap", objectiveId, instructionPl: "Mam to coś. Wpisz brakujące słowo.", stem: "I have ___ coat.",
             answer: "the", acceptedAnswers: [], focus: ["the"],
@@ -196,7 +196,7 @@ describe("lekcja Angielski — rozdział (integracja)", () => {
     expect(draft.rejectedCount).toBe(2 * objectiveCount);
     expect(draft.rejectedReasons).toEqual({
       "słowo spoza materiału: umbrella": objectiveCount,
-      "brak słowa treści: the": objectiveCount,
+      "tylko słowa pomocnicze: the": objectiveCount,
     });
     expect(draft.exercises.some((exercise) => exercise.options?.some((option) => option.text === "umbrella"))).toBe(false);
     expect(draft.exercises.some((exercise) => exercise.exerciseType === "lesson_gap" && exercise.answer === "the")).toBe(false);

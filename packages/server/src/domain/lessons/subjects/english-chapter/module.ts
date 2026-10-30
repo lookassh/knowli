@@ -52,7 +52,8 @@ const OBJECTIVE_CATEGORIES: readonly ErrorCategoryCode[] = ["wrong_word", "spell
 
 /** Podpowiedzi dla dziecka: krótko, po polsku, bez zdradzania odpowiedzi. */
 const OBJECTIVE_HINTS: Readonly<Record<ErrorCategoryCode, string>> = {
-  wrong_word: "To inne słowo. Zajrzyj na kartę ze słówkami.",
+  // Karty nie da się otworzyć w trakcie sesji — podpowiedź odsyła do pamięci, nie do karty.
+  wrong_word: "To inne słowo. Przypomnij sobie słowa z karty.",
   spelling: "Sprawdź litery w tym słowie.",
   incomplete: "Brakuje słowa. Dopisz je.",
   wrong_order: "Słowa są w złej kolejności.",

@@ -33,8 +33,8 @@ export const englishChapterPrompts: SubjectPromptProfile = {
   fieldRules:
     "Child-facing texts are in Polish: instructionPl, the prompt of lesson_open_answer, Polish meanings and group labels. " +
     "English texts: stem, options, items, answer, acceptedAnswers, focus and bank words. " +
-    "For lesson_choice, lesson_gap and lesson_order the meaning stimulus lives in instructionPl: a short natural Polish " +
-    "sentence that the English sentence means, then a short instruction, e.g. 'Dziś pada śnieg. Wybierz słowo.', " +
+    "For lesson_choice, lesson_gap, lesson_order and lesson_cloze the meaning stimulus lives in instructionPl: a short " +
+    "natural Polish sentence that the English sentence means, then a short instruction, e.g. 'Dziś pada śnieg. Wybierz słowo.', " +
     "'Mam na sobie zielony płaszcz. Wpisz brakujące słowo.', 'Ułóż zdanie: Mam na sobie różowy płaszcz.' " +
     "Never use a bare instruction such as 'Wybierz słowo' or 'Ułóż zdanie' — without the Polish sentence the child cannot " +
     "know the meaning. hint is always null. " +
@@ -57,7 +57,8 @@ export const englishChapterPrompts: SubjectPromptProfile = {
     "that could move, such as today at the start or at the end. Write the answer and the items WITHOUT sentence-final " +
     "punctuation: answer 'I'm wearing a pink coat' with the items I'm, wearing, a, pink, coat — never an item " +
     "such as 'coat.' or 'like?'. Use a sentence of 4 to 7 words only. " +
-    "lesson_open_answer: prompt is a short Polish sentence to translate; answer is its English translation using only " +
+    "lesson_open_answer: instructionPl is exactly 'Przetłumacz na angielski.' (never null or empty); " +
+    "prompt is a short Polish sentence to translate; answer is its English translation using only " +
     "chapter words; acceptedAnswers are other correct translations built from chapter words. focus is ONE contiguous " +
     "run of the answer's words, copied in order, never skipping a word in between: for the answer 'I'm wearing a green hat.' " +
     "use ['green', 'hat'] or ['wearing', 'a', 'green', 'hat'], never ['wearing', 'green'] — pick the run that holds the " +
@@ -71,16 +72,22 @@ export const englishChapterPrompts: SubjectPromptProfile = {
     lesson_match:
       "left is an English word, phrase or question from the chapter; right is its Polish meaning or, for a question " +
       "frame, its English answer from the chapter. extraRight distractors are plausible: the same category as right " +
-      "(another clothes item, colour, weather expression or day; for a question, another answer to the same kind of " +
-      "question), never an item of a trivially different class.",
+      "(another clothes item, colour, weather expression or day), never an item of a trivially different class. " +
+      "An extraRight item is never a correct partner of any left item: for words, not another meaning of a listed word; " +
+      "for questions and answers, never a valid answer to any listed question (e.g. with 'What's the weather like?' " +
+      "on the left, no weather answer may be an extra item).",
     lesson_group:
       "Use it only when the objective's words split naturally into 2 or 3 categories (e.g. clothes for hot and cold " +
       "weather); group labels are in Polish and items are English words from the chapter. Skip it otherwise.",
     lesson_cloze:
-      "Use 2 to 4 short sentences built on the chapter's frames. Gap words are content words of this objective, never " +
-      "only function words (articles, pronouns, be/do/can, prepositions, this/that, question words). extraWords are " +
-      "other chapter words of the same category as the gap words (another colour for a colour gap, another clothes item " +
-      "for a clothes gap, another weather word for a weather gap), never a word of a trivially different class. A word of the bank (a gap word or an extra word) appears nowhere else in " +
+      "Use 2 to 4 short sentences built on the chapter's frames. instructionPl gives the Polish meaning of the whole text, " +
+      "then a short command, like a workbook: 'W poniedziałek pada deszcz. W środę wieje wiatr. Uzupełnij tekst.' " +
+      "Every gap is fixed by that Polish meaning: exactly one bank word fits each gap, never two gaps whose words could " +
+      "be swapped, and no extra word may match the Polish meaning of any gap. Gap words are content words of this " +
+      "objective, never only function words (articles, pronouns, be/do/can, prepositions, this/that, question words). " +
+      "extraWords are other chapter words of the same category as the gap words (another colour for a colour gap, " +
+      "another clothes item for a clothes gap, another weather word for a weather gap), never a word of a trivially " +
+      "different class. A word of the bank (a gap word or an extra word) appears nowhere else in " +
       "the text: if the gap word is 'wearing', no other sentence of the text may contain 'wearing'.",
   },
   objectivesRules:
@@ -89,6 +96,7 @@ export const englishChapterPrompts: SubjectPromptProfile = {
     "(e.g. clothes, weather, days of the week); 'frame' — one sentence frame from the material (e.g. I'm wearing (a) ..., " +
     "What's the weather like? It's ...), where the checked part is the construction and words of the 'words' objectives " +
     "only fill it. Every word belongs mainly to one objective. Cards (2 to 4): for 'words' a list of lines 'English word — " +
-    "Polish meaning', split across the cards; for 'frame' the pattern with 1 to 3 English examples from the material and " +
-    "their Polish meaning.",
+    "Polish meaning', split across the cards; for 'frame' the pattern with 1 to 3 English examples from the material " +
+    "WITHOUT their Polish translations (the pattern may be explained in Polish). No card contains a Polish sentence " +
+    "together with its English translation — translating sentences is the child's exercise.",
 };

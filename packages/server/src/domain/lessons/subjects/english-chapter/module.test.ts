@@ -107,6 +107,23 @@ describe("przedmiot english_chapter", () => {
     expect(prompts.fieldRules).toContain("sourceRefs are ALWAYS null");
     expect(prompts.typeRules?.lesson_cloze).toContain("appears nowhere else in the text");
     expect(prompts.fieldRules).toContain("never only function words (articles, pronouns, be/do/can, prepositions such as in/on/at, this/that, question words)");
+    // Tłumaczenie zawsze ma stałe polecenie (próba: model zwracał null, dziecko widziało tylko tytuł zagadnienia).
+    expect(prompts.fieldRules).toContain("lesson_open_answer: instructionPl is exactly 'Przetłumacz na angielski.'");
+    // Tekst z lukami: polskie znaczenie całego tekstu w poleceniu, luki jednoznaczne, bez zamienialnych luk.
+    expect(prompts.fieldRules).toContain("For lesson_choice, lesson_gap, lesson_order and lesson_cloze the meaning stimulus lives in instructionPl");
+    expect(prompts.typeRules?.lesson_cloze).toContain("instructionPl gives the Polish meaning of the whole text, then a short command");
+    expect(prompts.typeRules?.lesson_cloze).toContain("W poniedziałek pada deszcz. W środę wieje wiatr. Uzupełnij tekst.");
+    expect(prompts.typeRules?.lesson_cloze).toContain("Every gap is fixed by that Polish meaning");
+    expect(prompts.typeRules?.lesson_cloze).toContain("never two gaps whose words could be swapped");
+    expect(prompts.typeRules?.lesson_cloze).toContain("no extra word may match the Polish meaning of any gap");
+    // Pary pytanie ↔ odpowiedź: dodatkowa odpowiedź nie pasuje do żadnego pytania.
+    expect(prompts.typeRules?.lesson_match).toContain("An extraRight item is never a correct partner of any left item");
+    expect(prompts.typeRules?.lesson_match).toContain("never a valid answer to any listed question");
+    expect(prompts.typeRules?.lesson_match).not.toContain("another answer to the same kind of question");
+    // Karty: wzór ramy z angielskimi przykładami bez tłumaczeń; żadna karta nie niesie pary zdań polskie → angielskie.
+    expect(prompts.objectivesRules).toContain("for 'frame' the pattern with 1 to 3 English examples from the material WITHOUT their Polish translations");
+    expect(prompts.objectivesRules).toContain("No card contains a Polish sentence together with its English translation");
+    expect(prompts.objectivesRules).not.toContain("and their Polish meaning");
     expect(prompts.gradingRole).toContain("at most 'almost'");
     expect(prompts.almostDefinition).toContain("errorCategory null");
   });
@@ -133,7 +150,8 @@ describe("przedmiot english_chapter", () => {
       }
     }
     expect(topic.objectives[0]!.hints).toMatchObject({
-      wrong_word: "To inne słowo. Zajrzyj na kartę ze słówkami.",
+      // Dziecko nie otworzy karty w trakcie sesji, więc podpowiedź odsyła do pamięci.
+      wrong_word: "To inne słowo. Przypomnij sobie słowa z karty.",
       spelling: "Sprawdź litery w tym słowie.",
       incomplete: "Brakuje słowa. Dopisz je.",
       wrong_order: "Słowa są w złej kolejności.",
@@ -188,7 +206,7 @@ describe("pula rozdziału przechodzi walidację silnika", () => {
       answer: "Na słońce / Na deszcz",
     },
     {
-      ...common, exerciseType: "lesson_cloze", objectiveId: WEATHER, instructionPl: "Uzupełnij tekst.",
+      ...common, exerciseType: "lesson_cloze", objectiveId: WEATHER, instructionPl: "Dziś jest słonecznie. Mam na sobie koszulkę. Uzupełnij tekst.",
       clozeText: "It's ___ today. I'm wearing my ___.", gapAnswers: ["sunny", "T-shirt"], extraWords: ["boots"],
       answer: "sunny, T-shirt",
     },
@@ -210,11 +228,11 @@ describe("pula rozdziału przechodzi walidację silnika", () => {
       stem: "It's ___.", answer: "raining", acceptedAnswers: [], focus: ["raining"],
     },
     {
-      exerciseType: "lesson_open_answer", objectiveId: WEATHER, prompt: "Dziś jest słonecznie.",
+      exerciseType: "lesson_open_answer", objectiveId: WEATHER, instructionPl: "Przetłumacz na angielski.", prompt: "Dziś jest słonecznie.",
       answer: "It's sunny today.", acceptedAnswers: ["Today it's sunny."], focus: ["sunny"],
     },
     {
-      exerciseType: "lesson_open_answer", objectiveId: WEATHER, prompt: "Jest wietrznie.",
+      exerciseType: "lesson_open_answer", objectiveId: WEATHER, instructionPl: "Przetłumacz na angielski.", prompt: "Jest wietrznie.",
       answer: "It's windy.", acceptedAnswers: [], focus: ["windy"],
     },
   ];

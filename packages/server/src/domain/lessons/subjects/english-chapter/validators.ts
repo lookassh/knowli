@@ -25,10 +25,22 @@ export const GENERIC_CHAPTER_INSTRUCTIONS: readonly string[] = [
   "Ułóż zdanie",
   "Uzupełnij",
   "Uzupełnij zdanie",
+  "Uzupełnij tekst",
 ];
 
 /** Najkrótsze polecenie niosące polskie zdanie-bodziec (znaki po przycięciu). */
 export const MIN_STIMULUS_INSTRUCTION_LENGTH = 12;
+
+/**
+ * Bodziec to polskie zdanie, po którym stoi polecenie („Dziś pada deszcz.
+ * Wybierz słowo.”, „Ułóż zdanie: Mam na sobie płaszcz.”): w poleceniu musi
+ * być granica zdania (`.!?:`) z dalszym tekstem. Samo polecenie („Wybierz
+ * właściwe słowo.”) jej nie ma.
+ */
+const SENTENCE_THEN_TEXT = /[.!?:]\s+\S/u;
+
+/** Stałe polecenie tłumaczenia (prompt i uzupełnianie brakującego polecenia z modelu). */
+export const TRANSLATION_INSTRUCTION = "Przetłumacz na angielski.";
 
 /** Najdłuższy powód odrzucenia w raporcie rodzica (słowo modelu nie tworzy dowolnie długich kluczy). */
 export const MAX_REJECTION_REASON_LENGTH = 80;
@@ -38,6 +50,7 @@ const STIMULUS_IN_INSTRUCTION: ReadonlySet<LessonExerciseType> = new Set<LessonE
   "lesson_choice",
   "lesson_gap",
   "lesson_order",
+  "lesson_cloze",
 ]);
 
 /** Luka w zdaniu wyboru (luka `lesson_gap` ma już regułę silnika). */
@@ -52,7 +65,13 @@ const GENERIC_INSTRUCTION_KEYS: ReadonlySet<string> = new Set(GENERIC_CHAPTER_IN
 
 function carriesStimulus(instruction: string | undefined): boolean {
   if (instruction === undefined) return false;
-  return [...instruction.trim()].length >= MIN_STIMULUS_INSTRUCTION_LENGTH && !GENERIC_INSTRUCTION_KEYS.has(comparableInstruction(instruction));
+  return [...instruction.trim()].length >= MIN_STIMULUS_INSTRUCTION_LENGTH
+    && !GENERIC_INSTRUCTION_KEYS.has(comparableInstruction(instruction))
+    && SENTENCE_THEN_TEXT.test(instruction);
+}
+
+function isBlank(text: string | undefined): boolean {
+  return text === undefined || text.trim() === "";
 }
 
 export function validateChapterExercise(ex: LessonExerciseDraft, _topic: LessonTopic): string[] {
@@ -67,6 +86,11 @@ export function validateChapterExercise(ex: LessonExerciseDraft, _topic: LessonT
 
   if (STIMULUS_IN_INSTRUCTION.has(ex.exerciseType) && !carriesStimulus(ex.instructionPl)) {
     errors.push("instructionPl: polecenie musi zawierać polskie zdanie, np. „Dziś pada deszcz. Wybierz słowo.”");
+  }
+
+  // Bez polecenia dziecko widziałoby tylko tytuł zagadnienia i nie wiedziałoby, że ma tłumaczyć.
+  if (ex.exerciseType === "lesson_open_answer" && isBlank(ex.instructionPl)) {
+    errors.push(`instructionPl: tłumaczenie wymaga polecenia, np. „${TRANSLATION_INSTRUCTION}”`);
   }
 
   // Bodziec jest w poleceniu: kartkówka usuwa podpowiedź z luki, więc nie może jej nieść.
@@ -132,9 +156,19 @@ function withoutUnsolicitedV3Fields(draft: LessonExerciseDraft): LessonExerciseD
   return copy as unknown as LessonExerciseDraft;
 }
 
+/**
+ * Tłumaczenie bez polecenia z modelu (próba: `instructionPl: null` w 20–50%
+ * tłumaczeń) dostaje stałe polecenie — jak usuwanie niezamówionych pól v3, to
+ * naprawa świeżego wyjścia modelu, a nie danych rodzica.
+ */
+function withTranslationInstruction(draft: LessonExerciseDraft): LessonExerciseDraft {
+  if (draft.exerciseType !== "lesson_open_answer" || !isBlank(draft.instructionPl)) return draft;
+  return { ...draft, instructionPl: TRANSLATION_INSTRUCTION };
+}
+
 /** Powód odrzucenia dla rodzica, przycięty do `MAX_REJECTION_REASON_LENGTH` znaków. */
 function rejectionReason(failure: Extract<ElementCheck, { ok: false }>): string {
-  const prefix = failure.noContentWord === true ? "brak słowa treści: " : "słowo spoza materiału: ";
+  const prefix = failure.noContentWord === true ? "tylko słowa pomocnicze: " : "słowo spoza materiału: ";
   const chars = [...`${prefix}${failure.unknown}`];
   return chars.length <= MAX_REJECTION_REASON_LENGTH ? chars.join("") : `${chars.slice(0, MAX_REJECTION_REASON_LENGTH - 1).join("")}…`;
 }
@@ -152,7 +186,8 @@ function firstFailure(elements: readonly string[], lexicon: ReadonlySet<string>)
  * sprawdzany (lewa strona pary, element grupy, słowo luki lub pułapka, opcja,
  * odpowiedź) ma słowo spoza materiału, jest odrzucane z powodem dla rodzica;
  * w luce i tłumaczeniu warianty spoza materiału są usuwane, a ćwiczenie zostaje.
- * Ćwiczenie zgodne wraca bez kopii.
+ * Zachowane ćwiczenie traci niezamówione pola v3, a tłumaczenie bez polecenia
+ * dostaje `TRANSLATION_INSTRUCTION`. Ćwiczenie zgodne wraca bez kopii.
  */
 export function refineChapterPool(
   drafts: readonly LessonExerciseDraft[],
@@ -167,7 +202,7 @@ export function refineChapterPool(
       rejected.push({ exercise: draft, reason: rejectionReason(failure) });
       continue;
     }
-    const clean = withoutUnsolicitedV3Fields(draft);
+    const clean = withTranslationInstruction(withoutUnsolicitedV3Fields(draft));
     if (!VARIANT_TYPES.has(clean.exerciseType)) {
       kept.push(clean);
       continue;
