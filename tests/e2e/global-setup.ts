@@ -101,6 +101,8 @@ async function assertBuildPresent(): Promise<void> {
   }
 }
 
+const READY_REQUEST_TIMEOUT_MS = 5_000;
+
 async function waitForHttp(
   url: string,
   timeoutMs: number,
@@ -114,7 +116,11 @@ async function waitForHttp(
       throw new Error(`Serwer web zakończył się przed gotowością (kod ${String(server.exitCode ?? server.signalCode)}). ${PARALLEL_RUN_HINT}`);
     }
     try {
-      const response = await fetch(url);
+      // Limit pojedynczego żądania: serwer, który przyjmie połączenie i nie
+      // odpowie, nie może zawiesić pętli ponad deadline ani przesłonić
+      // zakończenia procesu web.
+      const requestTimeoutMs = Math.max(1, Math.min(READY_REQUEST_TIMEOUT_MS, deadline - Date.now()));
+      const response = await fetch(url, { signal: AbortSignal.timeout(requestTimeoutMs) });
       if (isReady(response)) return;
     } catch {
       // serwer jeszcze się podnosi
