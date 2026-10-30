@@ -214,7 +214,7 @@ Skutki tej decyzji:
 
 - zadanie samodzielne = zdanie, którego rozwiązania dziecko jeszcze nie widziało;
 - słowo widoczne na karcie, w parach, grupach lub banku słów nie jest ekspozycją (jak dziś w lekcjach);
-- ekspozycje zdań z lekcji nie blokują słówek, a ekspozycje słówek nie blokują luk w lekcji (różne klucze);
+- ekspozycje zdań wielowyrazowych z lekcji nie blokują słówek, a ekspozycje słówek nie blokują luk w lekcji (różne klucze); świadomy przypadek brzegowy: tłumaczenie pojedynczego słowa (np. „poniedziałek” → „Monday”) ma ten sam `target_key` co słówko „Monday” (ten sam tekst i język `en-GB`, ekspozycje są wspólne dla dziecka), więc oba ujawnienia blokują się nawzajem — to ta sama umiejętność przypominania;
 - znane ograniczenie: słowo pokazane w lekcji nie chroni samodzielnego przypominania tego słowa w zestawie słówek.
 
 **Opanowanie:** jak dziś w lekcjach — trzy ostatnie kwalifikujące sukcesy na różnych ćwiczeniach, w tym jeden w późniejszej sesji innego dnia po ≥12 h.
@@ -242,7 +242,7 @@ Skutki tej decyzji:
 ### 4.7. Języki w Kid DTO i panel rodzica
 
 - Prompty `lesson_match`, `lesson_group`, `lesson_cloze`, `lesson_choice`, `lesson_order` i `lesson_gap` dostają opcjonalne `contentLocale`. Silnik ustawia je zawsze na `answerLocale` przedmiotu: dla każdego przedmiotu treść tych typów jest w języku odpowiedzi (szkoła `pl-PL`, gramatyka i rozdział `en-GB`), więc nie ma gałęzi po identyfikatorze przedmiotu.
-- `lesson_open_answer` dostaje opcjonalne `answerLocale` (język pola odpowiedzi), a `promptLocale` bierze z `openAnswerPromptLocale`, gdy przedmiot je ma (inaczej reguła jak dziś). Kid UI ustawia `lang` pola odpowiedzi z `answerLocale`, a nie z `promptLocale` jak dziś (`LessonSentenceView.tsx:58-71`). Starszy klient bez nowych pól działa jak dotąd.
+- `lesson_open_answer` dostaje opcjonalne `answerLocale` (język pola odpowiedzi), a `promptLocale` bierze z `openAnswerPromptLocale`, gdy przedmiot je ma (inaczej reguła jak dziś). Kid UI ustawia `lang` pola odpowiedzi z `answerLocale`, a nie z `promptLocale` jak dziś (`LessonSentenceView.tsx:58-71`). Nowy klient ze starszym serwerem (bez nowych pól) działa jak dotąd; w odwrotnym kierunku obowiązuje uwaga o wdrożeniu w sekcji 7.
 - Kid UI oznacza `lang` treść o pewnym języku: lewą kolumnę par, elementy grup, tekst cloze i bank słów, `stem` i opcje wyboru, klocki, zdanie z luką. Prawa kolumna par i etykiety grup nie dostają `lang` treści. Bez nowych widoków i wzorców interakcji.
 - Panel rodzica: przedmiot „Angielski — rozdział” w formularzu nowej lekcji (tytuł + materiał wklejony albo ze źródła); edytor bez nowych edytorów typów, z podsumowaniem powodów odrzuceń (4.4) i — gdy jest — rodzajem zagadnienia.
 
@@ -332,7 +332,7 @@ Po normalizacji (4.5) tekst nagrania jest równy `exposureText` ćwiczenia, wię
   - `sourceMaterialId` i `sourceMaterialRevision` w DTO zestawu dla rodzica;
   - `rejectedReasons` w DTO szkicu lekcji;
   - opcjonalne `contentLocale` i `answerLocale` w promptach lekcji Kid DTO.
-- Serwerowe schematy `.strict()` dostają nowe pola. Kid UI nie parsuje odpowiedzi schematem, więc nowe pola są zgodne wstecz.
+- Serwerowe schematy `.strict()` dostają nowe pola. Kid UI także waliduje zadania i sesje ścisłymi schematami z `@learning/contracts` (`parseWith(TaskDtoSchema/SessionDtoSchema)`, błąd daje ogólny `KidApiError("internal")`), a silnik ustawia `contentLocale` i `answerLocale` dla każdego przedmiotu lekcji. Pakiet Kid UI zbudowany przed zmianą odrzuci więc zadania lekcji (także gramatyki i szkoły), więc web i Kid UI/PWA wdrażamy razem, a po wdrożeniu otwartą kartę lub PWA trzeba odświeżyć — jak przy wcześniejszych dodaniach pól w ścisłych schematach (np. `promptLocale`). Nowy klient ze starszym serwerem działa, bo pola są opcjonalne.
 - Porty: `LessonObjectivesInput.objectivesRules`, `LlmGenerateDeckInput.material` i `instruction`; zmiany w adapterze OpenAI, schemacie puli (`sourceRefs` zależne od `sourceQuotes`) i fałszywym providerze.
 - Procedury oRPC rodzica dla źródeł i lekcji rozdziału. Kid API bez nowych endpointów.
 - MCP i `SKILL.md`: bez zmian. Raport Hermesa (`learning-overview`) filtruje do `kind='vocabulary'`, więc lekcje i źródła są poza nim. Słówka ze źródła to zwykłe zestawy słówek o niezmienionym znaczeniu danych. Uzasadnienie w opisie każdego PR.
@@ -409,7 +409,7 @@ Nowe pliki trafiają do `tests/e2e/spec-projects.ts` i `tests/integration-bucket
 
 Każdy etap kończy się osobnym PR do scalenia przez właściciela. Kolejność zmieniona po przeglądzie i potwierdzona przez właściciela (2026-10-30). Największe ryzyko (wykonalność generacji) idzie pierwsze, a źródła są dodatkiem do działającej lekcji:
 
-1. **Przedmiot „Angielski — rozdział”** z wklejonym materiałem (sekcja 4, bez `sourceMaterialId`) + próba z prawdziwym modelem na Unit 1–2. Z próby raportujemy liczbę zagadnień, odrzuceń według powodów i spełnienie minimów; materiał próby nie trafia do repozytorium. Ten PR zawiera też niniejszą specyfikację.
+1. **Przedmiot „Angielski — rozdział”** z wklejonym materiałem (sekcja 4, bez `sourceMaterialId`) + próba z prawdziwym modelem na Unit 1–2 (wykonano na odtworzonym Unit 1). Z próby raportujemy liczbę zagadnień, odrzuceń według powodów i spełnienie minimów; materiał próby nie trafia do repozytorium. Ten PR zawiera też niniejszą specyfikację.
 2. **Źródła** + lekcja rozdziału i lekcja szkolna ze źródła (sekcja 3).
 3. **Lektor po odpowiedzi** (sekcja 5).
 4. **Słówka ze źródła** (sekcja 6).
@@ -429,7 +429,7 @@ Dokumentacja w PR etapów: nowa sekcja `docs/SPEC.md` (§37), uzupełnienie `doc
 | 3–4 (po strojeniu promptów i usuwaniu pól v3) | 5 | 0 | tak | 3 zagadnienia `words` i 2 `frame`; 4/6/2 ćwiczenia na zagadnienie; odpowiedzi luk w ramie powtarzały „wearing” |
 | 5 (po strojeniu różnorodności luk i dystraktorów) | 4 | 2 z 60 (3,3%) | tak | odpowiedzi luk w ramie różne (najwyżej dwie takie same), klocki układanek bez interpunkcji |
 
-Strojenie obejmowało: ciągły `focus` tłumaczenia, zerowanie pól v3 w prompcie i ich usuwanie ze świeżego wyjścia, regułę banku uzupełniania (słowo banku nie występuje poza luką), różnorodność luk w ramach, dystraktory z tej samej kategorii oraz układanki bez interpunkcji końcowej. Po strojeniu trzy kolejne przebiegi (3, 4 i 5) były publikowalne, z 0%, 0% i 3,3% odrzuconych. Pierwsze dwa przebiegi pokazują, że jedno wadliwe pole w partii potrafi unieważnić całe zagadnienie, co uzasadnia czyszczenie świeżego wyjścia (4.4). Porównanie ze szkołą (po dwa przebiegi na `main` i na gałęzi, geografia): bez regresji; istniejąca, losowa usterka `questionType` na `lesson_choice` szkoły czyni mniej więcej co drugi przebieg szkoły niepublikowalnym także na `main`, i jest poza zakresem tego etapu.
+Strojenie obejmowało: ciągły `focus` tłumaczenia, zerowanie pól v3 w prompcie i ich usuwanie ze świeżego wyjścia, regułę banku uzupełniania (słowo banku nie występuje poza luką), różnorodność luk w ramach, dystraktory z tej samej kategorii oraz układanki bez interpunkcji końcowej. Po strojeniu trzy kolejne przebiegi (3, 4 i 5) były publikowalne, z 0%, 0% i 3,3% odrzuconych. Pierwsze dwa przebiegi pokazują, że jedno wadliwe pole w partii potrafi unieważnić całe zagadnienie, co uzasadnia czyszczenie świeżego wyjścia (4.4). Porównanie ze szkołą (po dwa przebiegi na `main` i na gałęzi, geografia): bez regresji; istniejąca, losowa usterka `questionType` na `lesson_choice` szkoły uczyniła niepublikowalnym jeden z dwóch przebiegów szkoły na `main` (próbka dwóch przebiegów, więc częstości nie szacujemy) i jest poza zakresem tego etapu.
 
 **Niezweryfikowane:**
 
