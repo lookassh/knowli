@@ -3,7 +3,7 @@ import sharp from "sharp";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { MediaPendingDetails } from "@learning/contracts";
-import { ttsInstructionsFor, ttsVoiceFor, type MediaSettings, type Services } from "../../config";
+import { ttsVoiceFor, type MediaSettings, type Services } from "../../config";
 import type { Executor, Tx } from "../../db/client";
 import {
   deckVersions,
@@ -15,6 +15,8 @@ import {
 } from "../../db/schema";
 import { AppError } from "../../errors";
 import { imageFingerprint, illustrationPrompt, ttsFingerprint } from "../../domain/media-fingerprint";
+import type { TtsStyle } from "../../domain/tts-style";
+import { ttsRequestInstructions } from "../../providers/tts-style-profile";
 import { payloadToItem } from "./item-payload";
 import { questionReadText } from "../../domain/lessons/question-read-text";
 import { renderCard } from "../../domain/lessons/card";
@@ -90,9 +92,14 @@ export interface LessonTtsFlags {
 /** Locale nagrania pytania: polecenia i pytania przedmiotów szkolnych są po polsku (design szkoły §11.2). */
 const PROMPT_AUDIO_LOCALE = "pl-PL";
 
-function ttsAsset(role: AssetRole, text: string, locale: string, settings: MediaSettings): RequiredAsset {
+/**
+ * Styl wypowiedzi (spec tonu TTS) przekazują tylko nagrania pytań i kart; słówka
+ * i `target_audio` bez stylu, więc ich fingerprinty się nie zmieniają. Sam styl
+ * nie trafia do metadanych — wchodzi do `instructions`.
+ */
+function ttsAsset(role: AssetRole, text: string, locale: string, settings: MediaSettings, style?: TtsStyle): RequiredAsset {
   const voice = ttsVoiceFor(settings.tts, locale);
-  const instructions = ttsInstructionsFor(settings.tts, locale);
+  const instructions = ttsRequestInstructions(settings.tts, locale, style);
   return {
     role,
     kind: "tts",
@@ -136,7 +143,7 @@ export function requiredAssetsForLessonExercise(
   }
   const question = flags.ttsForPrompts ? questionReadText(questionSourceOf(payload)) : null;
   if (question !== null) {
-    required.push(ttsAsset("prompt_audio", question, PROMPT_AUDIO_LOCALE, settings));
+    required.push(ttsAsset("prompt_audio", question, PROMPT_AUDIO_LOCALE, settings, "lesson_question"));
   }
   return required;
 }
@@ -194,7 +201,7 @@ export function requiredAssetsForLessonCards(
     objective.cards.forEach((card, cardIndex) => {
       const text = cardReadText(renderCard(card, [...(context.examples[objective.id] ?? [])]));
       if (text !== null) {
-        required.push({ objectiveId: objective.id, cardIndex, asset: ttsAsset("prompt_audio", text, PROMPT_AUDIO_LOCALE, settings) });
+        required.push({ objectiveId: objective.id, cardIndex, asset: ttsAsset("prompt_audio", text, PROMPT_AUDIO_LOCALE, settings, "lesson_card") });
       }
     });
   }

@@ -8,8 +8,10 @@ import type { TaskDto } from "@learning/contracts";
 import { ManualClock, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration } from "./fakes";
 import {
-  audioServices, FAKE_MEDIA, markTtsReady, publishAssignedSpiderLesson, seedSchoolDraft, SPIDER_OBJECTIVE, spiderExercises, truncateLessonAudioTables,
+  audioServices, FAKE_MEDIA, markTtsReady, PL_LANGUAGE_INSTRUCTION, publishAssignedSpiderLesson, seedSchoolDraft, SPIDER_OBJECTIVE, spiderExercises,
+  styledMedia, truncateLessonAudioTables,
 } from "./school-lesson-audio-helpers";
+import { STYLE_SENTENCES_PL } from "../../packages/server/src/providers/tts-style-profile";
 
 /**
  * „Posłuchaj karty” (design szkoły §12) na PostgreSQL: edycja szkicu szkoły
@@ -74,6 +76,34 @@ async function firstCard(active: ReturnType<typeof services>, sessionId: string)
 async function publishedWorld() {
   return publishAssignedSpiderLesson(await seedDraft(), "Karty");
 }
+
+describe("„Posłuchaj karty” — styl roli (UMIEM_TTS_STYLE)", () => {
+  async function cardMetadata(versionId: string): Promise<Record<string, unknown>[]> {
+    return (await pool.query<{ metadata: Record<string, unknown> }>(
+      `select ma.metadata from learning_app.lesson_card_assets ca join learning_app.media_assets ma on ma.id = ca.asset_id
+        where ca.deck_version_id = $1 order by ca.card_index`,
+      [versionId],
+    )).rows.map((row) => row.metadata);
+  }
+
+  it("nagranie karty dostaje instrukcję języka i zdanie stylu lesson_card; klucz stylu nie trafia do metadanych", async () => {
+    const { versionId } = await seedDraft();
+    await editLessonDraft(audioServices(styledMedia()), versionId, { expectedEditNumber: 1, exercises: exercises() });
+    const metadata = await cardMetadata(versionId);
+    expect(metadata).toHaveLength(2);
+    for (const entry of metadata) {
+      expect(entry.instructions).toBe(`${PL_LANGUAGE_INSTRUCTION} ${STYLE_SENTENCES_PL.lesson_card}`);
+      expect(entry).not.toHaveProperty("style");
+    }
+  });
+
+  it("bez stylu w ustawieniach nagranie karty ma samą instrukcję języka", async () => {
+    const plain = { ...MEDIA, tts: { ...MEDIA.tts, instructions: { "pl-PL": PL_LANGUAGE_INSTRUCTION } } };
+    const { versionId } = await seedDraft();
+    await editLessonDraft(audioServices(plain), versionId, { expectedEditNumber: 1, exercises: exercises() });
+    for (const entry of await cardMetadata(versionId)) expect(entry.instructions).toBe(PL_LANGUAGE_INSTRUCTION);
+  });
+});
 
 describe("„Posłuchaj karty” — przygotowanie nagrań", () => {
   it("edycja szkicu zleca polskie nagrania kart z przykładami; karta ze wzorem bez nagrania; zmiana karty = nowe nagranie tylko jej", async () => {
