@@ -1329,11 +1329,10 @@ z Etapu 6) nie mają gotowego nagrania — przycisk się nie pojawia. Wskazówka
   wymaga `https://`, jak `UMIEM_LLM_BASE_URL`) i `UMIEM_TTS_API_KEY` (fallback
   `OPENAI_API_KEY` wyłącznie bez własnego BASE_URL — własny endpoint wymaga
   własnego klucza), a model z `UMIEM_TTS_MODEL` (dotąd adapter go pomijał
-  i zawsze wysyłał model domyślny). Przykład: `UMIEM_TTS_PROVIDER=openrouter`,
-  `UMIEM_TTS_MODEL=microsoft/mai-voice-2.1-flash`,
+  i zawsze wysyłał model domyślny). Wybrana konfiguracja (decyzja 9):
+  `UMIEM_TTS_PROVIDER=openrouter`, `UMIEM_TTS_MODEL=microsoft/mai-voice-2.1-flash`,
   `UMIEM_TTS_VOICE=pl-PL-Harper:MAI-Voice-2.1-Flash` (głos z `supported_voices`
-  modelu; `alloy` działa tylko z modelami OpenAI). Wybór modelu po odsłuchu
-  próbek należy do właściciela.
+  modelu; `alloy` działa tylko z modelami OpenAI).
   To jedna konfiguracja TTS dla wszystkich nagrań (także słówek i komunikatów
   interfejsu): zmiana providera/modelu zmienia fingerprinty, więc gotowe
   nagrania zostają, a nowe powstają przy kolejnej edycji materiału; katalog
@@ -1400,6 +1399,14 @@ z Etapu 6) nie mają gotowego nagrania — przycisk się nie pojawia. Wskazówka
 8. **Nagrania przez OpenRouter** (decyzja właściciela 2026-10-30) — jedna
    konfiguracja TTS z `UMIEM_TTS_BASE_URL`/`UMIEM_TTS_API_KEY`/`UMIEM_TTS_MODEL`
    (11.2). Obrazy nadal wymagają `OPENAI_API_KEY`.
+9. **Model TTS: `microsoft/mai-voice-2.1-flash`, głos `pl-PL-Harper`**
+   (decyzja właściciela 2026-10-30 po odsłuchu próbek: 4 polskie zdania z lekcji
+   w 10 modelach OpenRouter). Ocenę 5/5 dostały też Gemini 3.8 Flash TTS,
+   ElevenLabs v4 i v4 Turbo oraz MAI-Voice-2.1; MAI-Voice-2.1 Flash wybrano jako
+   najtańszy z nich ($15 / 1 mln znaków) z natywnym polskim głosem i mp3
+   zgodnym z adapterem. Gemini TTS zwraca na OpenRouter wyłącznie PCM
+   (wymagałby zmiany adaptera). Pozostałe modele (Gemini Flash Lite, Fish
+   Audio Drama 3 i S2.1 Pro, Grok Voice, Voxtral TTS 3) oceniono 1/5.
 
 ### 11.7. Korekty przy implementacji (2026-10-30)
 
