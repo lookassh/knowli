@@ -174,6 +174,16 @@ Kontrakt Etapu 2b (2026-10-28; decyzje przyjęte i zaimplementowane w całym prz
   metody ze źródła, bez nowych faktów czy nazw miejsc; wymagają cytatu
   i zatwierdzenia rodzica. Brak uploadu, OCR i generowania pytań podczas sesji.
 
+Ton lektora (TTS etap B, 2026-10-30): opcjonalne pole `voiceTone`
+(`cheerful | curious | gentle | mysterious`) w `LessonExerciseDraft`, w payloadzie
+ćwiczenia v3 i w karcie zagadnienia (`DynamicObjectiveData.cards[]`). Autorem jest
+generator (zwykle `null`) albo rodzic w edytorze; brak pola = styl domyślny roli
+(`lesson_question` / `lesson_card`). Pole służy tylko nagraniu pytania lub karty:
+nie trafia do Kid DTO, nie wchodzi do kryteriów ani `payload_version` i nie tworzy
+nowej `skill_version`, więc nie resetuje postępu. Reguła szeptu: `mysterious` przy
+tekście nagrania krótszym niż dwa zdania daje efektywnie `curious`. Szczegóły:
+`docs/superpowers/specs/2026-10-30-tts-voice-style-design.md` §4 oraz §11 i §12 niżej.
+
 Pokrycie minimalne publikacji na zagadnienie (do potwierdzenia na pilotażu):
 karty nauki w celu, ≥3 ćwiczenia prowadzone (wybór), ≥2 produktywne
 (luka/porządkowanie), ≥2 otwarte. Pula musi zawierać co najmniej dwa różne

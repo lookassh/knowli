@@ -129,6 +129,8 @@ wchodzą do fingerprintów zasobów. `UMIEM_TTS_STYLE` (`instructions` albo `non
 
 Ponowne nagranie wybranych komunikatów Kid UI (np. gdy brzmienie się nie udało): CLI zleca nowy take dla podanych kluczy, a poprzedni gra dalej, aż nowy będzie gotowy. W kontenerze: `docker compose exec worker node apps/worker/node_modules/tsx/dist/cli.mjs apps/worker/src/regenerate-ui-audio.ts correct`; w dev: `pnpm media:regenerate-ui-audio <klucz…>`. Dozwolone klucze (`UiAudioKeySchema`): `profile_select`, `deck_select`, `exposure`, `listening`, `speech`, `recall`, `correct`, `partial`, `incorrect`, `unevaluated`, `skip`, `dont_remember`, `end`, `retry`, `mic_unavailable`, `audio_unavailable`, `summary`. CLI liczy fingerprinty ze swojego `process.env`, więc musi działać z środowiskiem workera (`UMIEM_TTS_*`, w tym `UMIEM_TTS_STYLE`); w innym środowisku powstanie nagranie pod złym fingerprintem albo wiersz z domyślnym `openai`/`gpt-4o-mini-tts`, którego worker nie wykona (zostaje oczekujący).
 
+Pojedyncze pytanie lub kartę lekcji w szkicu rodzic może nagrać ponownie w panelu („Nagraj ponownie”, np. po zmianie tonu lektora albo gdy brzmienie się nie udało): powstaje nowa generacja zasobu o tym samym fingerprincie, a poprzednia gra dalej, aż nowa będzie gotowa; opublikowanej wersji to nie dotyczy.
+
 Decyzja po próbie: domyślny głos pozostaje `alloy`. Ewentualna zmiana w
 `defaultMediaSettings` (np. `alloy` → `fable`) jest tania dopóki żaden realny
 materiał nie został wygenerowany — zastosować ją RAZ przed pierwszym
