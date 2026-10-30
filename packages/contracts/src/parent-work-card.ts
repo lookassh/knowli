@@ -75,6 +75,14 @@ export const ParentWorkCardDtoSchema = z.object({
         answerExample: z.string().max(160).nullable(),
         feedbackKind: z.string().nullable(),
         assessment: z.enum(["assessed", "unassessed", "mixed", "none"]).nullable(),
+        /**
+         * Wynik zapisanych ocen odpowiedzi: wszystkie ocenione umiejętności poprawne,
+         * wszystkie błędne albo `partial` — część poprawna (np. treść dobra, pisownia nie)
+         * albo ocena „prawie” (wymowa w paśmie „ćwicz”, „prawie” modelu, literówka w lekcji)
+         * — także gdy cel lekcji został zaliczony; postęp liczy się z ocen, nie z tego pola.
+         * `null` — brak oceny poprawności: pominięcie, „Nie pamiętam”, odpowiedź nieoceniona.
+         */
+        outcome: z.enum(["correct", "incorrect", "partial"]).nullable(),
         responseSeconds: NonNegativeInt,
       }).strict()),
     }).strict()),

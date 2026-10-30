@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import { completePresentation, createChild, createDraft, nextTask, publishDraft, readParentWorkCard, startSession, upsertAssignment } from "@learning/server";
+import { completePresentation, createChild, createDraft, nextTask, publishDraft, readParentWorkCard, startSession, submitAttempt, upsertAssignment } from "@learning/server";
 import { lessonWorld } from "../fixtures/lesson-world";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
 
@@ -64,6 +64,8 @@ describe("parent work card regressions", () => {
     await pool.query("update learning_app.attempts set state='completed',completed_at=$2 where id=$1", [attemptId, clock.now()]);
     const report = await readParentWorkCard(services, { childId: child.id, date: "2026-10-16" });
     expect(report.sessions[0]?.steps[0]?.responses[0]?.assessment).toBe("mixed");
+    // nieoceniona pisownia nie zmienia wyniku ocenionej poprawnie treści
+    expect(report.sessions[0]?.steps[0]?.responses[0]?.outcome).toBe("correct");
   });
 
   it("shows the ordered words as an answer example for lesson sequence responses", async () => {
@@ -84,6 +86,16 @@ describe("parent work card regressions", () => {
     const report = await readParentWorkCard(services, { childId: child.id, date: "2026-10-16" });
     const responses = report.sessions.find(row => row.sessionId === session.sessionId)?.steps.flatMap(step => step.responses) ?? [];
     expect(responses.map(response => response.answerExample)).toContain("She runs");
+  });
+
+  it("marks a wrong lesson answer with the outcome of its assessment", async () => {
+    const { services, child, session, task, key } = await lessonTask();
+    const wrongId = (task.prompt as { options: { id: string }[] }).options.find(option => option.id !== key.correctOptionId)!.id;
+    await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: wrongId });
+
+    const report = await readParentWorkCard(services, { childId: child.id, date: "2026-10-16" });
+    const step = report.sessions.find(row => row.sessionId === session.sessionId)?.steps.find(row => row.taskId === task.taskId);
+    expect(step?.responses.map(response => response.outcome)).toEqual(["incorrect"]);
   });
 
   it("counts only budgeted lesson exercises as remaining work", async () => {
