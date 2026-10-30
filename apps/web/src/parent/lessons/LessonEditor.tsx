@@ -57,13 +57,16 @@ export function regenCountValid(count: number): boolean {
   return Number.isInteger(count) && count >= 1 && count <= 60;
 }
 
-/** Odstęp odpytywania lekcji: co 1 s, gdy trwa generowanie albo media pokazanej wersji czekają. */
+/** Odstęp odpytywania lekcji: co 1 s, gdy trwa generowanie albo media pokazanej wersji (także nagrania pytań i kart) czekają. */
 export function lessonPollInterval(deck: LessonDeckDto | undefined): number | false {
   if (!deck) return false;
   const generating = deck.generation?.state === "queued" || deck.generation?.state === "running";
   const visible = deck.draft ?? deck.published;
   const assetsPending = visible?.assets.some((asset) => asset.state === "pending") ?? false;
-  return generating || assetsPending ? 1000 : false;
+  // nagrania pytań i kart nie są w `assets` (serwer je pomija) — ich stan niosą ćwiczenia i `cardAudio`
+  const promptAudioPending = visible?.exercises.some((exercise) => exercise.promptAudio?.state === "pending") ?? false;
+  const cardAudioPending = visible?.cardAudio?.some((card) => card.audio.state === "pending") ?? false;
+  return generating || assetsPending || promptAudioPending || cardAudioPending ? 1000 : false;
 }
 
 /**

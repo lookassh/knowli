@@ -49,8 +49,9 @@ export type PromptAudioTarget =
  * `ready` → „Posłuchaj” + „Nagraj ponownie”; `failed` → komunikat + „Nagraj
  * ponownie”; `pending` → „Nagrywanie…”. Nowe nagranie tylko w szkicu i bez
  * niezapisanych zmian (`locked`) — serwer generuje je z zapisanego tekstu
- * i tonu. Po sukcesie odświeżamy odczyt lekcji; stan „Nagrywanie…” znika
- * dopiero przy kolejnym odczycie (bez dodatkowego odpytywania).
+ * i tonu. Po sukcesie odświeżamy odczyt lekcji; dopóki nagranie jest
+ * `pending`, edytor odpytuje lekcję (`lessonPollInterval`), więc „Nagrywanie…”
+ * znika samo, gdy nagranie będzie gotowe albo nieudane.
  */
 export default function PromptAudioControls({ audio, target, lessonDraftId, deckId, canRegenerate, locked, testId, onPlay }: {
   audio: LessonPromptAudioDto;

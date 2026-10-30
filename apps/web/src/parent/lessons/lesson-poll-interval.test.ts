@@ -4,11 +4,21 @@ import { lessonPollInterval } from "./LessonEditor";
 
 type Version = NonNullable<LessonDeckDto["draft"]>;
 
-function lesson(overrides: { generation?: LessonDeckDto["generation"]; draftAssets?: string[]; publishedAssets?: string[] }): LessonDeckDto {
-  const version = (states: string[]) => ({ assets: states.map((state) => ({ state })) }) as unknown as Version;
+function lesson(overrides: {
+  generation?: LessonDeckDto["generation"];
+  draftAssets?: string[];
+  publishedAssets?: string[];
+  draftPromptAudio?: string[];
+  draftCardAudio?: string[];
+}): LessonDeckDto {
+  const version = (states: string[], promptAudio: string[] = [], cardAudio: string[] = []) => ({
+    assets: states.map((state) => ({ state })),
+    exercises: [{}, ...promptAudio.map((state) => ({ promptAudio: { state } }))],
+    cardAudio: cardAudio.map((state) => ({ audio: { state } })),
+  }) as unknown as Version;
   return {
     generation: overrides.generation ?? null,
-    draft: overrides.draftAssets ? version(overrides.draftAssets) : null,
+    draft: overrides.draftAssets ? version(overrides.draftAssets, overrides.draftPromptAudio, overrides.draftCardAudio) : null,
     published: overrides.publishedAssets ? version(overrides.publishedAssets) : null,
   } as unknown as LessonDeckDto;
 }
@@ -29,5 +39,11 @@ describe("lessonPollInterval", () => {
     expect(lessonPollInterval(undefined)).toBe(false);
     expect(lessonPollInterval(lesson({ draftAssets: ["approved", "failed"] }))).toBe(false);
     expect(lessonPollInterval(lesson({ generation: { state: "failed" } as LessonDeckDto["generation"], draftAssets: ["approved"] }))).toBe(false);
+  });
+
+  it("odpytuje, gdy nagranie pytania albo karty czeka (nie ma ich w assets)", () => {
+    expect(lessonPollInterval(lesson({ draftAssets: ["approved"], draftPromptAudio: ["ready", "pending"] }))).toBe(1000);
+    expect(lessonPollInterval(lesson({ draftAssets: ["approved"], draftCardAudio: ["pending"] }))).toBe(1000);
+    expect(lessonPollInterval(lesson({ draftAssets: ["approved"], draftPromptAudio: ["ready", "failed"], draftCardAudio: ["ready"] }))).toBe(false);
   });
 });
