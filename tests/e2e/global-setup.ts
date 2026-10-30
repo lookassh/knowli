@@ -4,6 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { migrateDatabase, waitUntilDatabaseReady } from "@learning/server";
+import {
+  classifyContainer,
+  currentOwnerContext,
+  findContainer,
+  OWNER_PID_LABEL,
+  ownerLabelArgs,
+} from "../test-containers";
 import { readTestRunConfig } from "../test-run-config";
 
 const exec = promisify(execFile);
@@ -118,6 +125,23 @@ function hostPort(portOutput: string): string {
 }
 
 /**
+ * Kontener o tej samej nazwie może należeć do równoległego przebiegu z innej
+ * sesji lub worktree (bez UMIEM_TEST_RUN_ID nazwa jest wspólna). Jego
+ * usunięcie wywróciłoby tamten przebieg, więc kończymy się jawnym błędem;
+ * osierocony kontener przerwanego przebiegu usuwa dalej zwykłe `rm -f`.
+ */
+async function assertContainerNotInUse(): Promise<void> {
+  const existing = await findContainer(CONTAINER);
+  if (existing && classifyContainer(existing, currentOwnerContext()) === "live") {
+    throw new Error(
+      `Kontener ${CONTAINER} należy do trwającego przebiegu E2E (pid ${existing.labels[OWNER_PID_LABEL]}). `
+      + "Równolegle uruchamiaj `pnpm test:e2e:shards` z własnym --base-port albo ustaw "
+      + "UMIEM_TEST_RUN_ID i UMIEM_E2E_PORT.",
+    );
+  }
+}
+
+/**
  * Jeden odizolowany świat na przebieg E2E: czysta baza, serwer web i worker
  * z fake providerami i regulowanym opóźnieniem generacji. Domyślnie web to
  * build produkcyjny pod `next start` (szybszy od `next dev`, bez kompilacji
@@ -125,6 +149,8 @@ function hostPort(portOutput: string): string {
  * przy szybkiej iteracji na pojedynczym specu.
  */
 export default async function globalSetup(): Promise<(() => Promise<void>) | void> {
+  // Przed rejestracją cleanupu: cudzego kontenera nie usuwamy także przy błędzie.
+  await assertContainerNotInUse();
   const cleanup: Array<() => Promise<void>> = [
     () => docker("rm", "-f", CONTAINER).then(() => undefined, () => undefined),
   ];
@@ -163,6 +189,7 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
         "-d",
         "--rm",
         "-P",
+        ...ownerLabelArgs(),
         "-e",
         "POSTGRES_USER=postgres",
         "-e",

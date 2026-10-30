@@ -1,12 +1,21 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { migrateDatabase, waitUntilDatabaseReady } from "@learning/server";
+import {
+  currentOwnerContext,
+  listContainersByPrefix,
+  ownerLabelArgs,
+  removeContainer,
+  selectStaleContainers,
+} from "../test-containers";
 import { readTestRunConfig } from "../test-run-config";
 
 const exec = promisify(execFile);
 
 const CONTAINER_PREFIX = readTestRunConfig(process.env).integrationContainerPrefix;
 const POSTGRES_IMAGE = "postgres:17-alpine";
+// Wspólny początek nazw wszystkich przebiegów (z UMIEM_TEST_RUN_ID i bez).
+const ALL_RUNS_PREFIX = "knowli-it-";
 
 function containerName(): string {
   return `${CONTAINER_PREFIX}${process.pid}`;
@@ -17,12 +26,12 @@ async function docker(...args: string[]): Promise<string> {
   return stdout;
 }
 
+// Sprząta osierocone kontenery przerwanych przebiegów (dowolnego run ID),
+// ale nigdy bazy przebiegu, którego proces wciąż żyje — równoległe
+// `pnpm test:integration` z innych sesji i worktree dzielą ten demon Dockera.
 async function removeStaleContainers(): Promise<void> {
-  const ids = (await docker("ps", "-aq", "--filter", `name=${CONTAINER_PREFIX}`)).trim();
-  if (!ids) return;
-  for (const id of ids.split(/\r?\n/)) {
-    if (id) await docker("rm", "-f", id).catch(() => undefined);
-  }
+  const stale = selectStaleContainers(await listContainersByPrefix(ALL_RUNS_PREFIX), currentOwnerContext());
+  for (const container of stale) await removeContainer(container.id);
 }
 
 function hostPort(portOutput: string): string {
@@ -64,6 +73,7 @@ export default async function globalSetup({
         "-d",
         "--rm",
         "-P",
+        ...ownerLabelArgs(),
         "-e",
         "POSTGRES_USER=postgres",
         "-e",
