@@ -184,6 +184,26 @@ test("exposure keeps the complete word card above its action without scrolling o
     await page.screenshot({ path: testInfo.outputPath(`exposure-${viewport.width}x${viewport.height}.png`) });
   }
 
+  // Zoomed narrow phones (320px at 160% and 200%): the speaker moves under its
+  // text instead of squeezing the word out between two 64px side columns.
+  for (const viewport of [{ width: 200, height: 640 }, { width: 160, height: 640 }]) {
+    await page.setViewportSize(viewport);
+    const material = await page.getByTestId("kid-material").boundingBox();
+    for (const [textId, playId] of [["kid-target", "kid-play"], ["kid-example", "kid-play-example"]] as const) {
+      const text = page.getByTestId(textId);
+      const play = page.getByTestId(playId);
+      await play.scrollIntoViewIfNeeded();
+      const [textBox, playBox] = await Promise.all([text.boundingBox(), play.boundingBox()]);
+      expect(textBox!.width, `${textId} keeps room at ${viewport.width}px`).toBeGreaterThan(60);
+      expect(playBox!.y, `${playId} under ${textId} at ${viewport.width}px`).toBeGreaterThanOrEqual(textBox!.y + textBox!.height - 1);
+      for (const bounds of [textBox!, playBox!]) {
+        expect(bounds.x).toBeGreaterThanOrEqual(material!.x - 1);
+        expect(bounds.x + bounds.width).toBeLessThanOrEqual(material!.x + material!.width + 1);
+      }
+      expect(playBox!.width).toBeGreaterThanOrEqual(48);
+    }
+  }
+
   // Accessibility and unusually short windows retain the complete card through scrolling.
   for (const viewport of [{ width: 640, height: 360 }, { width: 760, height: 450 }, { width: 360, height: 640 }]) {
     await page.setViewportSize(viewport);

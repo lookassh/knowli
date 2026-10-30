@@ -271,6 +271,8 @@
 .kid-ui .kid-exposure-content {
   flex: 1;
   min-height: 0;
+  /* Lets the word rows react to the material width, not the viewport (zoom). */
+  container-type: inline-size;
   justify-content: safe center;
 }
 
@@ -313,6 +315,21 @@
 .kid-ui .kid-exposure-content .kid-word-row:not(:has(button))::before,
 .kid-ui .kid-exposure-content .kid-example-block:not(:has(button))::before {
   content: none;
+}
+
+/* Very narrow material (e.g. a zoomed 320px phone): two side columns would
+   leave the text no room, so the speaker moves under the text instead. */
+@container (max-width: 280px) {
+  .kid-ui .kid-exposure-content .kid-word-row,
+  .kid-ui .kid-exposure-content .kid-example-block {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+  }
+
+  .kid-ui .kid-exposure-content .kid-word-row::before,
+  .kid-ui .kid-exposure-content .kid-example-block::before {
+    content: none;
+  }
 }
 
 /* The target word keeps the shared stimulus scale of .kid-word (at least
