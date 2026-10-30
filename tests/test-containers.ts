@@ -56,6 +56,23 @@ export function classifyContainer(container: TestContainer, context: OwnerContex
   return context.isProcessAlive(pid) ? "live" : "stale";
 }
 
+/**
+ * Czy kontener o wspólnej nazwie (E2E) wolno usunąć przed własnym startem.
+ * Blokuje żywy przebieg tutaj i oznaczony przebieg z innego hosta (jego pid
+ * jest nieweryfikowalny); kontener bez etykiet (sprzed nich) nie blokuje,
+ * bo nigdy nie stałby się „stale” i setup utknąłby do ręcznego usunięcia.
+ */
+export function isReservedByAnotherRun(container: TestContainer, context: OwnerContext): boolean {
+  const ownership = classifyContainer(container, context);
+  return ownership === "live" || (ownership === "unknown" && OWNER_HOST_LABEL in container.labels);
+}
+
+/** `docker run --name` przegrał wyścig o nazwę z równoległym przebiegiem. */
+export function isNameConflictError(error: unknown): boolean {
+  const stderr = (error as { stderr?: unknown } | null)?.stderr;
+  return typeof stderr === "string" && /container name .* is already in use/i.test(stderr);
+}
+
 export function selectStaleContainers(containers: readonly TestContainer[], context: OwnerContext): TestContainer[] {
   return containers.filter((container) => classifyContainer(container, context) === "stale");
 }
@@ -72,6 +89,11 @@ export function isProcessAlive(pid: number): boolean {
 
 export function currentOwnerContext(): OwnerContext {
   return { host: hostname(), now: Date.now(), isProcessAlive };
+}
+
+export function isOwnedByThisProcess(container: TestContainer): boolean {
+  return container.labels[OWNER_PID_LABEL] === String(process.pid)
+    && container.labels[OWNER_HOST_LABEL] === hostname();
 }
 
 export function ownerLabelArgs(): string[] {

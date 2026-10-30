@@ -5,11 +5,15 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { migrateDatabase, waitUntilDatabaseReady } from "@learning/server";
 import {
-  classifyContainer,
   currentOwnerContext,
   findContainer,
+  isNameConflictError,
+  isOwnedByThisProcess,
+  isReservedByAnotherRun,
+  OWNER_HOST_LABEL,
   OWNER_PID_LABEL,
   ownerLabelArgs,
+  removeContainer,
 } from "../test-containers";
 import { readTestRunConfig } from "../test-run-config";
 
@@ -124,21 +128,30 @@ function hostPort(portOutput: string): string {
   return port;
 }
 
+function containerInUseError(owner: string): Error {
+  return new Error(
+    `Kontener ${CONTAINER} należy do trwającego przebiegu E2E (${owner}). `
+    + "Równolegle uruchamiaj `pnpm test:e2e:shards` z własnym --base-port albo ustaw "
+    + "UMIEM_TEST_RUN_ID i UMIEM_E2E_PORT.",
+  );
+}
+
 /**
  * Kontener o tej samej nazwie może należeć do równoległego przebiegu z innej
- * sesji lub worktree (bez UMIEM_TEST_RUN_ID nazwa jest wspólna). Jego
- * usunięcie wywróciłoby tamten przebieg, więc kończymy się jawnym błędem;
- * osierocony kontener przerwanego przebiegu usuwa dalej zwykłe `rm -f`.
+ * sesji, worktree lub hosta (bez UMIEM_TEST_RUN_ID nazwa jest wspólna). Jego
+ * usunięcie wywróciłoby tamten przebieg, więc kończymy się jawnym błędem.
+ * Osierocony kontener usuwamy po sprawdzonym ID, nie po nazwie: nazwa mogła
+ * już przejść do kontenera, który właśnie postawił równoległy przebieg.
  */
-async function assertContainerNotInUse(): Promise<void> {
+async function removeOrphanedContainer(): Promise<void> {
   const existing = await findContainer(CONTAINER);
-  if (existing && classifyContainer(existing, currentOwnerContext()) === "live") {
-    throw new Error(
-      `Kontener ${CONTAINER} należy do trwającego przebiegu E2E (pid ${existing.labels[OWNER_PID_LABEL]}). `
-      + "Równolegle uruchamiaj `pnpm test:e2e:shards` z własnym --base-port albo ustaw "
-      + "UMIEM_TEST_RUN_ID i UMIEM_E2E_PORT.",
+  if (!existing) return;
+  if (isReservedByAnotherRun(existing, currentOwnerContext())) {
+    throw containerInUseError(
+      `pid ${existing.labels[OWNER_PID_LABEL] ?? "?"}, host ${existing.labels[OWNER_HOST_LABEL] ?? "?"}`,
     );
   }
+  await removeContainer(existing.id);
 }
 
 /**
@@ -149,11 +162,16 @@ async function assertContainerNotInUse(): Promise<void> {
  * przy szybkiej iteracji na pojedynczym specu.
  */
 export default async function globalSetup(): Promise<(() => Promise<void>) | void> {
-  // Przed rejestracją cleanupu: cudzego kontenera nie usuwamy także przy błędzie.
-  await assertContainerNotInUse();
-  const cleanup: Array<() => Promise<void>> = [
-    () => docker("rm", "-f", CONTAINER).then(() => undefined, () => undefined),
-  ];
+  await removeOrphanedContainer();
+  // Wszystkie dalsze `rm` dotyczą wyłącznie kontenera postawionego przez ten
+  // przebieg (ID z `docker run`), także przy błędzie i w teardownie.
+  let containerId: string | null = null;
+  const removeOwnContainer = async (): Promise<void> => {
+    if (containerId === null) return;
+    await removeContainer(containerId);
+    containerId = null;
+  };
+  const cleanup: Array<() => Promise<void>> = [removeOwnContainer];
   const fail = async (error: unknown): Promise<never> => {
     for (const fn of cleanup.reverse()) await fn();
     throw error;
@@ -179,12 +197,12 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
   let databaseUrl: string | null = null;
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts && databaseUrl === null; attempt += 1) {
-    await docker("rm", "-f", CONTAINER).catch(() => undefined);
+    await removeOwnContainer();
     if (attempt > 1) {
       await new Promise((resolve) => setTimeout(resolve, 2000));
     }
     try {
-      await docker(
+      containerId = (await docker(
         "run",
         "-d",
         "--rm",
@@ -197,8 +215,8 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
         "--name",
         CONTAINER,
         "postgres:17-alpine",
-      );
-      const port = hostPort(await docker("port", CONTAINER, "5432/tcp"));
+      )).trim();
+      const port = hostPort(await docker("port", containerId, "5432/tcp"));
       const url = `postgres://postgres:test@127.0.0.1:${port}/postgres`;
       // pg_isready wewnątrz kontenera pyta po unix sockecie i zgłasza gotowość już
       // podczas tymczasowego serwera entrypointa (listen_addresses=''), zanim port
@@ -208,6 +226,15 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
       await migrateDatabase(url, join(repoRoot, "packages/server/drizzle"));
       databaseUrl = url;
     } catch (error) {
+      // Równoległy przebieg zajął nazwę po naszej kontroli: nie ponawiamy
+      // i nie usuwamy jego kontenera.
+      if (isNameConflictError(error)) return fail(containerInUseError("start równoległy"));
+      // `docker run` mógł utworzyć kontener i paść przed zwróceniem ID;
+      // przejmujemy go do usunięcia tylko po etykiecie tego procesu.
+      if (containerId === null) {
+        const leftover = await findContainer(CONTAINER).catch(() => null);
+        if (leftover && isOwnedByThisProcess(leftover)) containerId = leftover.id;
+      }
       lastError = error;
       console.warn(`Kontener Postgres e2e nie wystartował (próba ${attempt}/${attempts}): ${String(error)}`);
     }

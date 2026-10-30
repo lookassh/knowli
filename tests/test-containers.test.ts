@@ -1,6 +1,10 @@
+import { hostname } from "node:os";
 import { describe, expect, it } from "vitest";
 import {
   classifyContainer,
+  isNameConflictError,
+  isOwnedByThisProcess,
+  isReservedByAnotherRun,
   MAX_CONTAINER_AGE_MS,
   OWNER_HOST_LABEL,
   OWNER_PID_LABEL,
@@ -73,6 +77,47 @@ describe("selectStaleContainers", () => {
   it("ignores malformed owner pids", () => {
     expect(classifyContainer(container("knowli-e2e", { [OWNER_PID_LABEL]: "abc" }), context)).toBe("unknown");
     expect(classifyContainer(container("knowli-e2e", { [OWNER_PID_LABEL]: "0" }), context)).toBe("unknown");
+  });
+});
+
+describe("isReservedByAnotherRun", () => {
+  it("blocks reuse of a container owned by a live run", () => {
+    expect(isReservedByAnotherRun(owned("knowli-e2e", 1111), context)).toBe(true);
+  });
+
+  it("blocks reuse of a labelled container from another host whose pid cannot be checked", () => {
+    // Np. WSL i Windows na jednym Docker Desktop: pid z WSL nic tu nie znaczy.
+    expect(isReservedByAnotherRun(owned("knowli-e2e", 3333, "wsl"), context)).toBe(true);
+  });
+
+  it("allows removing orphans, legacy unlabelled containers and day-old foreign containers", () => {
+    const oldForeign = owned("knowli-e2e", 3333, "wsl");
+    oldForeign.createdAt = NOW - MAX_CONTAINER_AGE_MS - 1;
+    expect(isReservedByAnotherRun(owned("knowli-e2e", 3333), context)).toBe(false);
+    expect(isReservedByAnotherRun(container("knowli-e2e"), context)).toBe(false);
+    expect(isReservedByAnotherRun(oldForeign, context)).toBe(false);
+  });
+});
+
+describe("isNameConflictError", () => {
+  it("recognises docker's name conflict only", () => {
+    const conflict = Object.assign(new Error("Command failed"), {
+      stderr: 'docker: Error response from daemon: Conflict. The container name "/knowli-e2e" is already in use by container "abc". You have to remove (or rename) that container to be able to reuse that name.',
+    });
+    expect(isNameConflictError(conflict)).toBe(true);
+    expect(isNameConflictError(Object.assign(new Error("x"), { stderr: "port is already allocated" }))).toBe(false);
+    expect(isNameConflictError(new Error("no stderr"))).toBe(false);
+    expect(isNameConflictError(null)).toBe(false);
+  });
+});
+
+describe("isOwnedByThisProcess", () => {
+  it("matches only this process's pid and host labels", () => {
+    const host = hostname();
+    expect(isOwnedByThisProcess(container("knowli-e2e", { [OWNER_PID_LABEL]: String(process.pid), [OWNER_HOST_LABEL]: host }))).toBe(true);
+    expect(isOwnedByThisProcess(container("knowli-e2e", { [OWNER_PID_LABEL]: String(process.pid), [OWNER_HOST_LABEL]: `${host}-x` }))).toBe(false);
+    expect(isOwnedByThisProcess(container("knowli-e2e", { [OWNER_PID_LABEL]: String(process.pid + 1), [OWNER_HOST_LABEL]: host }))).toBe(false);
+    expect(isOwnedByThisProcess(container("knowli-e2e"))).toBe(false);
   });
 });
 
