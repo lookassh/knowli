@@ -397,8 +397,12 @@ async function finalizeAttemptRow(
   );
   // picture_recognition: zgoda na odsłuch poprawnego słowa (feedback) to
   // ujawnienie rozwiązania — pieczęcimy audio_issued z ekspozycją celu w tej
-  // samej transakcji, przed zwrotem oceny w HTTP (arch §9.2).
+  // samej transakcji, przed zwrotem oceny w HTTP (arch §9.2). Odsłuch następuje
+  // PO odpowiedzi: czytniki liczą audio z occurredAt <= receivedAt jako wsparcie
+  // przed próbą, a w ścieżce świeżej próby `now` równa się receivedAt — stąd
+  // znacznik ściśle późniejszy (issue #187).
   if (feedback?.correctAudioAssetId !== undefined) {
+    const disclosedAt = new Date(Math.max(now.getTime(), attempt.receivedAt.getTime() + 1));
     const prior = await tx
       .select({ id: learningEvents.id })
       .from(learningEvents)
@@ -409,7 +413,7 @@ async function finalizeAttemptRow(
       itemId,
       kind: "audio_issued",
       stepId: `${task.id}:d${prior.length + 1}`,
-      occurredAt: now,
+      occurredAt: disclosedAt,
       exposures: [targetKey],
     });
   }
