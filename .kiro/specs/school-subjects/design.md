@@ -1435,3 +1435,9 @@ z Etapu 6) nie mają gotowego nagrania — przycisk się nie pojawia. Wskazówka
   odsłuch; ponowne dotknięcie nie gasi wskaźnika nowego odsłuchu; worker
   syntetyzuje model zapisany w rekordzie zasobu (fingerprint), nie bieżący
   `UMIEM_TTS_MODEL`.
+- Przełączenie dostawcy TTS: oczekujący zasób zlecony przy innym providerze
+  lub modelu niż bieżące ustawienia workera kończy się jako zastąpiony bez
+  wywołania providera (nowy endpoint nie zna starego modelu). Nagranie
+  z bieżącym fingerprintem zleca kolejna edycja szkicu albo start workera
+  (katalog komunikatów); opublikowane lekcje bez gotowego nagrania pytań
+  dostaną je po edycji i ponownej publikacji.

@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
-  completePresentation, createChild, createServices, editLessonDraft, endSession, nextTask, publishLessonDraft, readLessonDeck,
+  completePresentation, createChild, createServices, editLessonDraft, endSession, executeMediaAsset, nextTask, publishLessonDraft, readLessonDeck,
   startSession, submitAttempt,
 } from "@learning/server";
 import type { LessonExerciseInput, TaskDto } from "@learning/contracts";
 import { ManualClock, testDatabase, truncateCoreTables } from "./helpers";
+import { fakeGeneration } from "./fakes";
 
 /**
  * Etap 8 przedmiotów szkolnych (design §11): „Posłuchaj pytania” na
@@ -190,5 +191,32 @@ describe("„Posłuchaj pytania” — nagranie po publikacji", () => {
     const session = await startSession(active, { childId: child.id, deckId, microphoneEnabled: false });
     const task = await reach(active, session.sessionId, STEM);
     expect(task.prompt).toMatchObject({ questionAudioAssetId: replacement });
+  });
+});
+
+describe("„Posłuchaj pytania” — zmiana dostawcy TTS (OpenAI → OpenRouter)", () => {
+  it("worker nie wysyła zadania zleconego innym modelem do nowego dostawcy; kolejna edycja zleca nagranie z nowym fingerprintem", async () => {
+    const { versionId } = await seedDraft();
+    const draft = await editLessonDraft(services(), versionId, { expectedEditNumber: 1, exercises: exercises() });
+    const [stale] = await promptAudio(versionId);
+
+    const fakes = await fakeGeneration();
+    try {
+      const openRouter = { ...MEDIA, tts: { ...MEDIA.tts, provider: "openrouter", model: "openai/gpt-4o-mini-tts-2025-12-15" } };
+      const worker = createServices({ db, clock: new ManualClock(), media: openRouter, generation: fakes.deps });
+      await executeMediaAsset(worker, stale!.assetId);
+      expect(fakes.tts.requests).toHaveLength(0);
+      expect((await pool.query("select state from learning_app.media_assets where id = $1", [stale!.assetId])).rows[0].state).toBe("failed");
+      expect((await pool.query("select state from learning_app.generation_runs where asset_id = $1", [stale!.assetId])).rows.map((row) => row.state))
+        .toEqual(["superseded"]);
+
+      await editLessonDraft(worker, versionId, { expectedEditNumber: draft.editNumber, exercises: exercises() });
+      const [fresh] = await promptAudio(versionId);
+      expect(fresh!.assetId).not.toBe(stale!.assetId);
+      expect((await pool.query("select provider, model from learning_app.media_assets where id = $1", [fresh!.assetId])).rows[0])
+        .toEqual({ provider: "openrouter", model: "openai/gpt-4o-mini-tts-2025-12-15" });
+    } finally {
+      await fakes.dispose();
+    }
   });
 });
