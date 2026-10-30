@@ -91,6 +91,17 @@ describe("przedmiot english_chapter", () => {
     // focus tłumaczenia to jeden ciągły fragment odpowiedzi (inaczej walidacja ogólna odrzuca ćwiczenie).
     expect(prompts.fieldRules).toContain("focus is ONE contiguous run of the answer's words");
     expect(prompts.fieldRules).toContain("never ['wearing', 'green']");
+    // Różnorodność luk i wiarygodne dystraktory (próba na prawdziwym modelu: 6 luk „wearing”, dystraktory z innej klasy).
+    expect(prompts.fieldRules).toContain("no more than 2 lesson_gap exercises of one objective may have the same answer");
+    expect(prompts.fieldRules).toContain("which part of the frame the gap checks");
+    expect(prompts.fieldRules).toContain("never a function word alone");
+    expect(prompts.fieldRules).toContain("Distractors must be plausible: the same category as the correct option");
+    expect(prompts.typeRules?.lesson_match).toContain("extraRight distractors are plausible");
+    expect(prompts.typeRules?.lesson_cloze).toContain("same category as the gap words");
+    // Układanka: 4–7 klocków, bez końcowej kropki/pytajnika sklejonego z ostatnim klockiem.
+    expect(prompts.fieldRules).toContain("(4 to 7 items, no two items with the same text)");
+    expect(prompts.fieldRules).toContain("WITHOUT sentence-final punctuation");
+    expect(prompts.fieldRules).toContain("never an item such as 'coat.' or 'like?'");
     // Pola v3 są zawsze null; walidacja ogólna odrzuca ćwiczenie z niezamówionym cytatem.
     expect(prompts.fieldRules).toContain("sourceRefs are ALWAYS null");
     expect(prompts.typeRules?.lesson_cloze).toContain("appears nowhere else in the text");

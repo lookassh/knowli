@@ -39,14 +39,24 @@ export const englishChapterPrompts: SubjectPromptProfile = {
     "Never use a bare instruction such as 'Wybierz słowo' or 'Ułóż zdanie' — without the Polish sentence the child cannot " +
     "know the meaning. hint is always null. " +
     "lesson_choice: stem is a short English sentence with exactly one gap written as ___; 2 or 3 options, all words of " +
-    "the chapter of the same kind, exactly one correct for the Polish sentence. " +
+    "the chapter, exactly one correct for the Polish sentence. Distractors must be plausible: the same category as the " +
+    "correct option, taken from the material (another colour for a colour, another clothes item for clothes, another " +
+    "weather word for weather, another day for a day) — never a word of a trivially different class, such as a day " +
+    "among colours or a weather word among clothes. When the chapter has no second word of that category, check a " +
+    "different part of the sentence instead of padding the options. " +
     "lesson_gap: stem is a short English sentence with exactly one gap ___; answer is the missing chapter word or phrase " +
-    "(at most 3 words) and focus is that checked word. " +
+    "(at most 3 words) and focus is that checked word. Vary the answers: no more than 2 lesson_gap exercises of one " +
+    "objective may have the same answer. In an objective built on a sentence frame (e.g. I'm wearing (a) ...) vary " +
+    "which part of the frame the gap checks: the frame's key word (wearing, like), a short phrase that holds the key " +
+    "word together with a function word ('I'm wearing', 'are you wearing' — never a function word alone), " +
+    "or the word that fills the frame (the clothes item, the colour, the weather word). " +
     "A gap or an option is always a content word of the chapter, never only function words (articles, pronouns, " +
     "be/do/can, prepositions such as in/on/at, this/that, question words). " +
     "lesson_order: items are the words of one English sentence built on a chapter frame, in the correct order " +
-    "(3 to 10 items, no two items with the same text), and the sentence has exactly one correct word order — no parts " +
-    "that could move, such as today at the start or at the end. " +
+    "(4 to 7 items, no two items with the same text), and the sentence has exactly one correct word order — no parts " +
+    "that could move, such as today at the start or at the end. Write the answer and the items WITHOUT sentence-final " +
+    "punctuation: answer 'I'm wearing a pink coat' with the items I'm, wearing, a, pink, coat — never an item " +
+    "such as 'coat.' or 'like?'. Use a sentence of 4 to 7 words only. " +
     "lesson_open_answer: prompt is a short Polish sentence to translate; answer is its English translation using only " +
     "chapter words; acceptedAnswers are other correct translations built from chapter words. focus is ONE contiguous " +
     "run of the answer's words, copied in order, never skipping a word in between: for the answer 'I'm wearing a green hat.' " +
@@ -60,14 +70,17 @@ export const englishChapterPrompts: SubjectPromptProfile = {
   typeRules: {
     lesson_match:
       "left is an English word, phrase or question from the chapter; right is its Polish meaning or, for a question " +
-      "frame, its English answer from the chapter. extraRight distractors are of the same kind as right.",
+      "frame, its English answer from the chapter. extraRight distractors are plausible: the same category as right " +
+      "(another clothes item, colour, weather expression or day; for a question, another answer to the same kind of " +
+      "question), never an item of a trivially different class.",
     lesson_group:
       "Use it only when the objective's words split naturally into 2 or 3 categories (e.g. clothes for hot and cold " +
       "weather); group labels are in Polish and items are English words from the chapter. Skip it otherwise.",
     lesson_cloze:
       "Use 2 to 4 short sentences built on the chapter's frames. Gap words are content words of this objective, never " +
       "only function words (articles, pronouns, be/do/can, prepositions, this/that, question words). extraWords are " +
-      "other chapter words of the same kind. A word of the bank (a gap word or an extra word) appears nowhere else in " +
+      "other chapter words of the same category as the gap words (another colour for a colour gap, another clothes item " +
+      "for a clothes gap, another weather word for a weather gap), never a word of a trivially different class. A word of the bank (a gap word or an extra word) appears nowhere else in " +
       "the text: if the gap word is 'wearing', no other sentence of the text may contain 'wearing'.",
   },
   objectivesRules:
