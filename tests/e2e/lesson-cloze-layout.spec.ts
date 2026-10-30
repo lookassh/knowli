@@ -104,7 +104,12 @@ test("cloze: text with four gaps, slots, word bank and check fit every form fact
 
 test("cloze: check sends gap → word assignments and shows the completed text after a mistake", async ({ page }) => {
   const posted = recordAttemptPosts(page);
-  const correctText = "Roślina pobiera z powietrza dwutlenek węgla, a korzeniami czerpie z gleby wodę.";
+  // Pełny tekst zadania z poprawnymi słowami we wszystkich czterech lukach (jak `filledText` serwera).
+  const solution = ["dwutlenek węgla", "światła słonecznego", "cukry", "tlen"];
+  if (clozeTask.prompt.kind !== "lesson_cloze") throw new Error("cloze fixture expected");
+  let gap = 0;
+  const correctText = clozeTask.prompt.segments.map((segment) => ("gapId" in segment ? solution[gap++] : segment.text)).join("");
+  expect(gap).toBe(4);
   const kidFixture = lessonTaskFixture(ids, deck, [clozeTask], [assignmentAttempt(uid(90), clozeTaskId, { kind: "incorrect", correctText })]);
   await installKidUiFixture(page, kidFixture);
   await openLessonTask(page, VIEWPORTS[1]!, "kid-lesson-cloze");
