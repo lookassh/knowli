@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { endSessionFromHeader } from "./helpers/kid-session";
 import { installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
 import { expectBandSpansRoot, expectInsideRoot, measure, resizeAndSettle, type Rect } from "./helpers/kid-layout";
 import { pictureChoiceLayoutFixture } from "./helpers/picture-fixtures";
@@ -364,7 +365,7 @@ test("summary actions remain reachable without horizontal overflow on short phon
   await page.goto("/");
   await page.getByTestId("kid-profile").click();
   await page.getByTestId("kid-deck").click();
-  await page.getByTestId("kid-end").click();
+  await endSessionFromHeader(page);
   await expect(page.getByTestId("kid-summary")).toBeVisible();
 
   for (const viewport of [

@@ -97,6 +97,14 @@ export const kidDockAnimate = { opacity: 1, scale: 1 } as const;
 export const kidDockExit = { opacity: 0, scale: 0.94 } as const;
 export const kidDockExitTransition: Transition = { duration: 0.14, ease: "easeIn" };
 
+/** End-session confirmation: the scrim fades, the bottom sheet slides up. */
+export const kidSheetInitial = { opacity: 0, y: 64 } as const;
+export const kidSheetAnimate = { opacity: 1, y: 0 } as const;
+export const kidSheetExit = { opacity: 0, y: 64 } as const;
+export const kidSheetTransition: Transition = { type: "spring", stiffness: 380, damping: 34 };
+export const kidSheetExitTransition: Transition = { duration: 0.16, ease: "easeIn" };
+export const kidScrimTransition: Transition = { duration: 0.16, ease: "easeOut" };
+
 /** Idle nudge: after a pause the main action "breathes" to invite a tap.
  * The pause between breaths keeps the button still most of the time, so
  * pointer input (and test runners) always find it at rest. */

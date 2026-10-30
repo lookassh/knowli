@@ -15,6 +15,7 @@ import {
 } from "@learning/contracts";
 import { createDatabase } from "@learning/server";
 import { expect, test, type Browser, type Page } from "@playwright/test";
+import { endSessionFromHeader } from "./helpers/kid-session";
 import { readTestRunConfig } from "../test-run-config";
 
 const CHILD_NAME = `Obieg lekcji ${randomUUID().slice(0, 8)}`;
@@ -368,7 +369,7 @@ test("approved lesson survives reload and support without duplicate or independe
     const endFirstSession = kid.waitForResponse((response) =>
       response.request().method() === "POST" && new URL(response.url()).pathname === `/api/v1/kid/sessions/${sessionId}/end`,
     );
-    await kid.getByTestId("kid-end").click();
+    await endSessionFromHeader(kid);
     const firstSummary = SessionSummaryDtoSchema.parse(await (await endFirstSession).json());
     expect(firstSummary.sessionId).toBe(sessionId);
     expect((await tableCounts(sessionId)).attempts).toBe(beforeReload.attempts + 2);
@@ -414,7 +415,7 @@ test("approved lesson survives reload and support without duplicate or independe
     const endResponse = kid.waitForResponse((response) =>
       response.request().method() === "POST" && new URL(response.url()).pathname === `/api/v1/kid/sessions/${supportSessionId}/end`,
     );
-    await kid.getByTestId("kid-end").click();
+    await endSessionFromHeader(kid);
     const summary = SessionSummaryDtoSchema.parse(await (await endResponse).json());
     await expect(kid.getByTestId("kid-summary")).toBeVisible();
     expect(summary.sessionId).toBe(supportSessionId);

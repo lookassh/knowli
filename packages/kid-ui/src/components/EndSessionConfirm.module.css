@@ -1,0 +1,65 @@
+/* Scrim over the whole viewport; the sheet sits at its bottom edge. On very
+   short or zoomed viewports the scrim scrolls, so the actions stay reachable. */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  padding-top: max(16px, var(--kid-safe-top));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--kid-color-scrim);
+}
+
+.sheet {
+  box-sizing: border-box;
+  flex: none;
+  width: min(560px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px max(20px, var(--kid-safe-right)) max(20px, var(--kid-safe-bottom)) max(20px, var(--kid-safe-left));
+  border-radius: var(--kid-shape-xxl) var(--kid-shape-xxl) var(--kid-shape-none) var(--kid-shape-none);
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  box-shadow: var(--kid-shadow-level2);
+}
+
+.title,
+.body {
+  text-align: center;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--kid-type-headline-sm-size);
+  font-weight: var(--kid-type-headline-weight);
+  line-height: var(--kid-type-headline-line-height);
+  overflow-wrap: anywhere;
+}
+
+.body {
+  margin: 0;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--kid-type-body-size);
+  font-weight: var(--kid-type-body-weight);
+  line-height: var(--kid-type-body-line-height);
+  overflow-wrap: anywhere;
+}
+
+/* Side by side when both fit, stacked on phones in portrait. */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.actions > * {
+  flex: 1 1 200px;
+  min-width: 0;
+}

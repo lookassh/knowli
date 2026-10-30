@@ -539,6 +539,12 @@ export const messages = {
     listenCorrectWord: "Posłuchaj poprawnego słowa",
     remaining: "Jeszcze {n} i koniec!",
     end: "Koniec",
+    // Potwierdzenie ✕ „Koniec” w nagłówku sesji.
+    endConfirmTitle: "Kończymy na dziś?",
+    endConfirmSaved: "Twoje odpowiedzi są już zapisane.",
+    endConfirmMockTest: "Niezrobione zadania zostaną niesprawdzone.",
+    endConfirmContinue: "Ćwiczę dalej",
+    endConfirmEnd: "Zakończ",
     summaryTitle: "Gotowe!",
     summaryEmpty: "Na dziś wystarczy. Wróć później!",
     summaryNeutral: "Na dziś koniec ćwiczeń. Do następnego razu!",

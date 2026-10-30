@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { messages, type UiAudioKey } from "@learning/contracts";
 import { ExerciseView } from "../exercises/ExerciseView";
 import type { ExerciseHandlers } from "../exercises/types";
@@ -22,6 +22,7 @@ import { kidStreakLength } from "../motion/kid-motion";
 import { TaskTransition } from "../motion/TaskTransition";
 import { ActionButton } from "../components/ActionButton";
 import { IconActionButton } from "../components/IconActionButton";
+import { EndSessionConfirm } from "../components/EndSessionConfirm";
 
 /** Brak podświetleń poza feedbackem próby wyboru. */
 const EMPTY_OUTCOMES: ReadonlyMap<string, OptionOutcome> = new Map();
@@ -75,6 +76,26 @@ export function LearnScreen({
 }) {
   const { task, offline, busy } = screen;
   const [letterDraft, setLetterDraft] = useState<{ taskId: string; letters: Record<number, string> } | null>(null);
+  // ✕ w nagłówku pyta przed zakończeniem; „Koniec” w komunikatach o błędzie audio kończy od razu.
+  const [endConfirmOpen, setEndConfirmOpen] = useState(false);
+  const endButtonRef = useRef<HTMLButtonElement>(null);
+  const openEndConfirm = () => {
+    controller.holdForEndConfirm();
+    setEndConfirmOpen(true);
+  };
+  const closeEndConfirm = () => {
+    controller.releaseEndConfirm();
+    setEndConfirmOpen(false);
+    endButtonRef.current?.focus({ preventScroll: true });
+  };
+  // The panel closes before ending, so a failed /end shows its error and retry.
+  const confirmEnd = () => {
+    controller.releaseEndConfirm();
+    setEndConfirmOpen(false);
+    void controller.endNow();
+  };
+  // Leaving the session screen with the panel open must not keep auto-capture held.
+  useEffect(() => () => controller.releaseEndConfirm(), [controller]);
   const activeLetterDraft = task?.prompt.kind === "letter_completion" && letterDraft?.taskId === task.taskId
     ? letterDraft.letters
     : {};
@@ -250,7 +271,7 @@ export function LearnScreen({
   return (
     <main className="kid-screen kid-learning" data-task-id={task?.taskId ?? undefined} data-action-notice={actionNotice}>
       <header className="kid-header">
-        <IconActionButton variant="text" data-testid="kid-end" aria-label={messages.kid.end} title={messages.kid.end} disabled={busy} onClick={() => void controller.endNow()}>
+        <IconActionButton ref={endButtonRef} variant="text" data-testid="kid-end" aria-label={messages.kid.end} title={messages.kid.end} aria-haspopup="dialog" aria-expanded={endConfirmOpen} disabled={busy} onClick={openEndConfirm}>
           <KidIcon name="close" />
         </IconActionButton>
         <SessionProgress remaining={remaining} total={progress.total} done={progressDone(progress.total, task?.remainingAssessed ?? null)} milestone={progress.milestone} />
@@ -340,6 +361,14 @@ export function LearnScreen({
           {messages.kid.loading}
         </p>
       )}
+
+      <EndSessionConfirm
+        open={endConfirmOpen}
+        mockTest={screen.session.mode === "mock_test"}
+        busy={busy}
+        onContinue={closeEndConfirm}
+        onEnd={confirmEnd}
+      />
     </main>
   );
 }

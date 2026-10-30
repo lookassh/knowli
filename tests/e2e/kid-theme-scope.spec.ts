@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { endSessionFromHeader } from "./helpers/kid-session";
 
 test("child theme stays scoped while navigating between child and parent", async ({ page }) => {
   await page.goto("/parent");
@@ -83,7 +84,7 @@ test("parent styles remain unchanged after loading a full child session", async 
   await page.getByTestId("to-learning").click();
   await page.getByTestId("kid-profile").first().click();
   await page.getByTestId("kid-deck").first().click();
-  await page.getByTestId("kid-end").click();
+  await endSessionFromHeader(page);
   await expect(page.getByTestId("kid-summary")).toBeVisible();
   await page.getByTestId("kid-switch-profile").click();
   await page.getByTestId("kid-parent-link").click();

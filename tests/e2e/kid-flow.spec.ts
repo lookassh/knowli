@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { readTestRunConfig } from "../test-run-config";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { endSessionFromHeader } from "./helpers/kid-session";
 import { createDatabase } from "@learning/server";
 import { TaskDtoSchema } from "@learning/contracts";
 import { expectReadableOnDarkContainer } from "./helpers/contrast";
@@ -705,7 +706,7 @@ test("dwa profile mają osobne sesje", async ({ page }) => {
   // Zosia: krótka sesja zakończona wcześniej przez dziecko
   await page.getByTestId("kid-deck").first().click();
   await expect(page.locator("[data-task-id]")).toBeVisible();
-  await page.getByTestId("kid-end").click();
+  await endSessionFromHeader(page);
   await expect(page.getByTestId("kid-summary")).toBeVisible();
 
   // Ewa: własna, świeża sesja tego samego zestawu
@@ -847,7 +848,7 @@ test("odmowa mikrofonu przełącza na tryb bez nagrywania", async ({ page }) => 
   // odmowa zapamiętana lokalnie: kolejna sesja startuje bez mikrofonu
   await page.getByTestId("kid-next").click();
   await expect(page.getByTestId("kid-feedback")).toHaveCount(0);
-  await page.getByTestId("kid-end").click();
+  await endSessionFromHeader(page);
   await expect(page.getByTestId("kid-summary")).toBeVisible();
   await page.getByTestId("kid-again").click();
   await page.getByTestId("kid-deck").first().click();
@@ -1101,7 +1102,7 @@ test("opuszczenie widoku w trakcie nagrywania zatrzymuje strumień", async ({ pa
 
   // zakończenie sesji w trakcie nagrywania zatrzymuje strumień mikrofonu
   // (RF5); pełne przejście między dokumentami zwalnia strumień sam browser
-  await page.getByTestId("kid-end").click();
+  await endSessionFromHeader(page);
   await expect(page.getByTestId("kid-summary")).toBeVisible();
   expect(await page.evaluate(() => Number(sessionStorage.getItem("test.trackStops") ?? "0"))).toBeGreaterThanOrEqual(1);
 
@@ -1141,7 +1142,7 @@ test("szczegółowe podsumowanie pokazuje samodzielne wyniki i słowa do ćwicze
     await expect(page.getByTestId("kid-feedback")).toBeVisible();
     await page.getByTestId("kid-next").click();
     await expect(page.getByTestId("kid-feedback")).toHaveCount(0);
-    await page.getByTestId("kid-end").click();
+    await endSessionFromHeader(page);
     await expect(page.getByTestId("kid-summary-recall")).toContainText("1 słowo");
     await expect(page.getByTestId("kid-summary-spelling")).toHaveCount(0);
     await expect(page.getByTestId("kid-summary-practice")).toContainText(target);
@@ -1157,7 +1158,7 @@ test("szczegółowe podsumowanie pokazuje samodzielne wyniki i słowa do ćwicze
     await expect(page.getByTestId("kid-deck")).toBeVisible();
     await page.getByTestId("kid-deck").filter({ hasText: "Podsumowanie słów" }).click();
     await expect(page.locator("[data-task-id]")).toBeVisible();
-    await page.getByTestId("kid-end").click();
+    await endSessionFromHeader(page);
     await expect(page.getByTestId("kid-summary-neutral")).toBeVisible();
     await expect(page.getByTestId("kid-summary-recall")).toHaveCount(0);
     await expect(page.getByTestId("kid-summary-practice")).toHaveCount(0);

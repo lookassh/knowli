@@ -237,6 +237,10 @@ export class LearningSessionController {
   #autoStartBeep: (() => Promise<void>) | null = null;
   /** Zadanie, na którym auto-start już padł — raz na wyświetlenie zadania (SPEC §16). */
   #autoCaptureTaskId: string | null = null;
+  /** Sesja z otwartym potwierdzeniem „Koniec”: auto-start czeka na zamknięcie panelu. */
+  #endConfirmSessionId: string | null = null;
+  /** Otwarcie potwierdzenia „Koniec” unieważnia auto-start w toku, także po zamknięciu panelu. */
+  #autoCaptureGeneration = 0;
   /** Ostatnia operacja do ponowienia po powrocie sieci/błędzie aplikacji. */
   #resume: { run: () => Promise<void>; keepsTaskVisible: boolean } | null = null;
   /** Wybrana opcja próby w toku; do podświetlenia w feedbacku (design 2026-10-09). */
@@ -1018,6 +1022,32 @@ export class LearningSessionController {
     await this.#finishSession(this.#epoch);
   }
 
+  /**
+   * Otwarcie potwierdzenia „Koniec”: trwające nagranie przepada bez wysłania,
+   * odtwarzanie milknie. Wysyłane już nagranie („stopping”) kończy się zwykłym
+   * trybem, a mikrofon nie startuje ponownie sam po powrocie do zadania.
+   * Do `releaseEndConfirm` auto-start jest wstrzymany: także ten, który czeka
+   * na odczyt uprawnienia, bo po każdym oczekiwaniu ponownie pyta
+   * `#autoCaptureAllowed`, a osobna generacja auto-startu unieważnia go także
+   * wtedy, gdy panel zamknięto przed końcem oczekiwania. Generacja nagrania
+   * zostaje, żeby nie unieważnić obsługi błędu wysłanej już próby.
+   */
+  holdForEndConfirm(): void {
+    const screen = this.#learning();
+    if (!screen) return;
+    this.#endConfirmSessionId = screen.session.sessionId;
+    this.#autoCaptureGeneration += 1;
+    if (screen.recordingPhase === "preparing" || screen.recordingPhase === "starting" || screen.recordingPhase === "recording") {
+      this.cancelRecording();
+    }
+    this.#stopPlayback();
+  }
+
+  /** Zamknięcie potwierdzenia „Koniec”: znosi blokadę auto-startu, niczego nie uruchamia. */
+  releaseEndConfirm(): void {
+    this.#endConfirmSessionId = null;
+  }
+
   async completePresentation(): Promise<void> {
     const screen = this.#learning();
     if (!screen?.task || screen.busy || (screen.task.exerciseType !== "exposure" && screen.task.exerciseType !== "lesson_card")) return;
@@ -1445,6 +1475,7 @@ export class LearningSessionController {
     if (this.#autoCaptureTaskId === screen.task.taskId) return;
     const epoch = this.#epoch;
     const generation = this.#recordingGeneration;
+    const autoGeneration = this.#autoCaptureGeneration;
     const taskId = screen.task.taskId;
     if (!screen.microphoneReady) {
       // wyłącznie zapytanie o STAN uprawnienia (bez promptu, bez getUserMedia);
@@ -1456,7 +1487,7 @@ export class LearningSessionController {
         permission = "unknown";
       }
       const probed = this.#learning();
-      if (generation !== this.#recordingGeneration || !probed || epoch !== this.#epoch || probed.task?.taskId !== taskId) return;
+      if (generation !== this.#recordingGeneration || autoGeneration !== this.#autoCaptureGeneration || !probed || epoch !== this.#epoch || probed.task?.taskId !== taskId) return;
       // Odczyt uprawnienia mógł czekać na ręczne włączenie mikrofonu.
       // Takie przygotowanie pozostawia start pod kontrolą przycisku.
       if (probed.microphoneReady || !this.#autoCaptureAllowed(probed)) return;
@@ -1470,7 +1501,7 @@ export class LearningSessionController {
       // urządzenia zostaje przy istniejącej ścieżce micDenied, bez pętli ponowień
       await this.prepareMicrophone({ automatic: true });
       const current = this.#learning();
-      if (generation !== this.#recordingGeneration || !current || epoch !== this.#epoch || current.task?.taskId !== taskId) return;
+      if (generation !== this.#recordingGeneration || autoGeneration !== this.#autoCaptureGeneration || !current || epoch !== this.#epoch || current.task?.taskId !== taskId) return;
       if (!current.microphoneReady || !this.#autoCaptureAllowed(current)) return;
     }
     this.#autoCaptureTaskId = taskId;
@@ -1499,6 +1530,7 @@ export class LearningSessionController {
   #autoCaptureAllowed(screen: LearningScreen): boolean {
     if (screen.task?.prompt.kind !== "speech" && screen.task?.prompt.kind !== "picture_speech") return false;
     if (screen.session.mode === "mock_test" || !screen.session.microphoneEnabled || screen.micDenied) return false;
+    if (this.#endConfirmSessionId === screen.session.sessionId) return false;
     if (screen.offline || screen.busy || screen.processing) return false;
     if (screen.feedback !== null || screen.reveal !== null) return false;
     if (screen.recordingPhase !== "idle" || this.#recorder !== null) return false;
