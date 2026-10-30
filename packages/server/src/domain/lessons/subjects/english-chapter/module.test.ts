@@ -113,6 +113,9 @@ describe("przedmiot english_chapter", () => {
     expect(prompts.fieldRules).toContain("For lesson_choice, lesson_gap, lesson_order and lesson_cloze the meaning stimulus lives in instructionPl");
     expect(prompts.typeRules?.lesson_cloze).toContain("instructionPl gives the Polish meaning of the whole text, then a short command");
     expect(prompts.typeRules?.lesson_cloze).toContain("W poniedziałek pada deszcz. W środę wieje wiatr. Uzupełnij tekst.");
+    // Limit 120 znaków obejmuje całe polecenie (znaczenie + komenda): tekst z lukami to 2–3 krótkie zdania.
+    expect(prompts.typeRules?.lesson_cloze).toContain("Use 2 or 3 short sentences built on the chapter's frames");
+    expect(prompts.typeRules?.lesson_cloze).toContain("The whole instructionPl (Polish meaning plus command) is at most 120 characters in total");
     expect(prompts.typeRules?.lesson_cloze).toContain("Every gap is fixed by that Polish meaning");
     expect(prompts.typeRules?.lesson_cloze).toContain("never two gaps whose words could be swapped");
     expect(prompts.typeRules?.lesson_cloze).toContain("no extra word may match the Polish meaning of any gap");
