@@ -103,9 +103,10 @@ Nowe, opcjonalne i generyczne opcje `SubjectModule` (domyślne wartości zachowu
 |---|---|---|---|
 | `sourceQuotes` | czy ćwiczenia wymagają cytatów `sourceRefs`; steruje `groundingRequired` w generacji i wymaganiem `sourceRefs` w gałęziach schematu match/group/cloze (dziś wymagane zawsze, a dla przedmiotu bez v3 każde takie ćwiczenie byłoby odrzucone) | `true` | `false` |
 | `refineGeneratedPool(drafts, { material })` | walidacja i czyszczenie **tylko świeżo wygenerowanych** ćwiczeń (odrzuca ćwiczenie albo usuwa pojedyncze warianty lub niezamówione pola); nie działa przy edycji rodzica ani publikacji, w odróżnieniu od `validatePoolExtra` | brak | walidacja słownikowa i usuwanie niezamówionych pól v3 (4.4) |
-| `materialSubjectTitle` | skąd tytuł przedmiotu zestawu z materiału: `"parent"` — nazwę podaje rodzic, `"fixed"` — stały `titlePl`; brak = przedmiot katalogowy. Wspólny predykat z katalogiem przedmiotów i poleceniami tworzenia (4.6). Opcja dodana podczas wdrożenia | `"parent"` | `"fixed"` |
+| `materialSubjectTitle` | skąd tytuł przedmiotu zestawu z materiału: `"parent"` — nazwę podaje rodzic, `"fixed"` — stały `titlePl`; brak = przedmiot katalogowy. Wspólny predykat z katalogiem przedmiotów i poleceniami tworzenia (4.6). Opcja dodana podczas wdrożenia; `validateSubject` wymaga jej razem z `buildDynamicTopic` | `"parent"` | `"fixed"` |
 | `instructionIsStimulus` | polecenie niesie bodziec znaczenia: tożsamość ćwiczeń `lesson_choice`, `lesson_gap`, `lesson_order` (`exercise-identity.ts`) uwzględnia znormalizowane `instructionPl` | `false` | `true` |
 | `exposureText(draft)` | tekst, z którego liczony jest `targetKey` ćwiczenia (dziś zawsze `answer`) | brak | 4.5 |
+| `normalizeExposureText(text)` | normalizacja tekstu przed `computeTargetKey` dla każdej ekspozycji lekcji przedmiotu — ćwiczeń i przykładów kart (`lessonTextTargetKey`); dodana po końcowym przeglądzie Etapu 1 | brak | 4.5 |
 | `openAnswerPromptLocale` | język pytania `lesson_open_answer` wysyłany w Kid DTO | brak (reguła jak dziś) | `pl-PL` |
 | `ttsForFeedback` | nagranie poprawnego zdania w omówieniu (sekcja 5); dopiero w Etapie 3 | `false` | `true` |
 | `prompts.objectivesRules` | reguły etapu zagadnień (`LessonObjectivesInput` dostaje pole, adapter je dokleja) | brak | 4.2 |
@@ -116,12 +117,13 @@ Kategorie błędów (z polskimi szablonami podpowiedzi): przedmiotowe `wrong_wor
 `validateExercise` przedmiotu:
 
 - `lesson_choice` i `lesson_gap`: `stem` z dokładnie jedną luką (`/_{2,}/`);
-- `lesson_choice`, `lesson_gap`, `lesson_order`: `instructionPl` niesie polskie zdanie-bodziec — różne od stałych poleceń typów w `messages.kid` i dłuższe niż samo polecenie;
+- `lesson_choice`, `lesson_gap`, `lesson_order`, `lesson_cloze`: `instructionPl` niesie polskie zdanie-bodziec — różne od stałych poleceń typów w `messages.kid`, dłuższe niż samo polecenie i z granicą zdania, po której jest dalszy tekst (`/[.!?:]\s+\S/`, np. „Dziś pada deszcz. Wybierz słowo.”; samo „Wybierz właściwe słowo.” nie przechodzi) — uzupełnianie tekstu dołączono po końcowym przeglądzie;
+- `lesson_open_answer`: niepuste `instructionPl` (stałe „Przetłumacz na angielski.”) — bez niego dziecko widziało tylko tytuł zagadnienia;
 - pole `hint` niedozwolone (bodziec jest w poleceniu, bo kartkówka usuwa `hint` z luki — `lesson-materialize.ts:294`);
 - `lesson_order`: żadne dwa klocki nie mają tego samego tekstu po normalizacji (ocena porównuje identyfikatory klocków, więc zamiana dwóch „a” dałaby fałszywy błąd);
 - odpowiedź i warianty ≤120 znaków (limit przedmiotów bez v3).
 
-W kodzie `validateExercise` przedmiotu obejmuje pierwsze cztery reguły; jedną lukę `lesson_gap` i limit 120 znaków egzekwuje już walidacja ogólna silnika (`pool-validation.ts`), więc przedmiot ich nie powiela (jeden komunikat dla rodzica).
+W kodzie `validateExercise` przedmiotu obejmuje pierwsze pięć reguł; jedną lukę `lesson_gap` i limit 120 znaków egzekwuje już walidacja ogólna silnika (`pool-validation.ts`), więc przedmiot ich nie powiela (jeden komunikat dla rodzica).
 
 ### 4.2. Zagadnienia
 
@@ -137,7 +139,7 @@ Każde słowo należy głównie do jednego zagadnienia. `buildDynamicTopic` przy
 | words | card, match, group, choice, cloze, gap, open_answer |
 | frame | card, match (pytanie ↔ odpowiedź), order, choice, cloze, gap, open_answer |
 
-Karty (2–4): lista „słowo — polskie znaczenie” albo wzór ramy z 1–3 przykładami po angielsku. Identyfikatory zagadnień mają prefiks identyfikatora przedmiotu (`english_chapter.d<deckId>.<slug>`); dziś prefiks `school.d` jest wpisany na stałe (`lesson-drafts.ts:448`), a dla przedmiotu szkolnego pozostaje bez zmian.
+Karty (2–4): lista „słowo — polskie znaczenie” albo wzór ramy z 1–3 przykładami po angielsku **bez polskich tłumaczeń**; żadna karta nie niesie pary zdań polskie → angielskie (karta słów może wypisywać pojedyncze słowa z polskim znaczeniem). Treść karty nie jest ekspozycją, więc para zdań na karcie ujawniałaby rozwiązanie tłumaczenia bez zapisu (4.5). Identyfikatory zagadnień mają prefiks identyfikatora przedmiotu (`english_chapter.d<deckId>.<slug>`); dziś prefiks `school.d` jest wpisany na stałe (`lesson-drafts.ts:448`), a dla przedmiotu szkolnego pozostaje bez zmian.
 
 ### 4.3. Typy zadań i etapy
 
@@ -147,13 +149,13 @@ Mapowanie etapów w `STAGE_BY_TYPE` bez zmian.
 |---|---|---|---|
 | guided | `lesson_match` | lewa strona po angielsku (słowo, zwrot albo pytanie z rozdziału), prawa: polskie znaczenie albo angielska odpowiedź; 3–5 par + 0–2 dystraktory | strona polska / para pytanie–odpowiedź |
 | guided | `lesson_group` | tylko gdy słowa zagadnienia dzielą się naturalnie na 2–3 kategorie; polskie etykiety, 4–8 angielskich elementów | etykiety grup |
-| guided | `lesson_cloze` | 2–4 krótkie zdania z ram rozdziału, 2–4 luki na słowa z rozdziału, 1–2 słowa-pułapki z materiału | kontekst zdań |
+| guided | `lesson_cloze` | 2–4 krótkie zdania z ram rozdziału, 2–4 luki na słowa z rozdziału, 1–2 słowa-pułapki z materiału; każda luka jednoznaczna, luki niezamienialne, pułapka nie pasuje do znaczenia żadnej luki (ocena całościowa) | polskie znaczenie całego tekstu w `instructionPl` („W poniedziałek pada deszcz. W środę wieje wiatr. Uzupełnij tekst.”) |
 | guided | `lesson_choice` | angielskie zdanie z luką w `stem`, 2–3 opcje | polskie zdanie w `instructionPl` („Dziś pada śnieg. Wybierz słowo.”) |
 | guided | `lesson_order` | klocki-słowa zdania z ramy; zdania bez przestawnych części (jedna poprawna kolejność) | polskie zdanie w `instructionPl` („Ułóż zdanie: Mam na sobie różowy płaszcz.”) |
 | productive | `lesson_gap` | angielskie zdanie z jedną luką | polskie zdanie w `instructionPl` („Mam na sobie zielony płaszcz. Wpisz brakujące słowo.”) |
-| independent | `lesson_open_answer` | tłumaczenie krótkiego zdania; `prompt` = polskie zdanie, odpowiedź ≤120 znaków | polskie zdanie |
+| independent | `lesson_open_answer` | tłumaczenie krótkiego zdania; `prompt` = polskie zdanie, odpowiedź ≤120 znaków; `instructionPl` zawsze „Przetłumacz na angielski.” | polskie zdanie |
 
-`prompts.typeRules` i `fieldRules` przedmiotu opisują powyższe wprost (prawa strona par po polsku albo angielska odpowiedź, luki cloze na słowa z rozdziału, bodziec w `instructionPl`, brak `hint`). Test sprawdza złożony tekst promptu dla obu przedmiotów.
+`prompts.typeRules` i `fieldRules` przedmiotu opisują powyższe wprost (prawa strona par po polsku albo angielska odpowiedź, luki cloze na słowa z rozdziału, bodziec w `instructionPl`, brak `hint`). W parach dodatkowa pozycja po prawej nigdy nie jest poprawnym partnerem żadnej pozycji z lewej, a w parach pytanie ↔ odpowiedź nie jest poprawną odpowiedzią na żadne pytanie z listy (próba: „inna odpowiedź na to samo pytanie” dawała dwie poprawne odpowiedzi). Test sprawdza złożony tekst promptu dla obu przedmiotów.
 
 ### 4.4. Zgodność z materiałem (walidacja słownikowa, tylko generacja)
 
@@ -183,12 +185,15 @@ Działa w `refineGeneratedPool`, więc nie ogranicza rodzica: przy edycji i publ
 
 **Niezamówione pola v3 (dodane podczas strojenia po próbie).** `refineGeneratedPool` usuwa ze świeżego ćwiczenia pola v3, których przedmiot nie żąda (`questionType`, `requiredElements`, `supplementaryElements`, `commonErrors`, `expectedForm`, `familyId`, `sourceRefs`), zamiast je odrzucać. Prawdziwy model potrafił wypełnić je dla całej partii mimo polecenia „null” (w próbie cytaty `sourceRefs` w jednej z czterech partii), a walidacja ogólna odrzuca takie ćwiczenie jako „pole v3 niedozwolone”, więc tracona była cała partia zagadnienia. To niepożądany dodatek modelu, nie dane rodzica; lista pól pochodzi z walidacji ogólnej (`V3_EXERCISE_FIELDS`) bez `calculation` — specyfikacja rachunku to inny typ ćwiczenia, który ma zostać odrzucony przez walidację, a nie po cichu naprawiony. Dane rodzica (edycja, publikacja) tej naprawie nie podlegają.
 
-**Raport dla rodzica.** Powody odrzuceń są zliczane (np. „słowo spoza materiału: raining ×3”) w `lesson_context.rejectedReasons` obok dzisiejszego `rejectedCount` i pokazywane w edytorze lekcji, żeby rodzic wiedział, czy dogenerować. To zliczenia bez danych dziecka.
+**Brakujące polecenie tłumaczenia (dodane po końcowym przeglądzie).** Prawdziwy model zwracał `instructionPl: null` w 20–50% tłumaczeń, a materializacja pokazywała wtedy tytuł zagadnienia zamiast polecenia. Prompt każe dawać dokładnie „Przetłumacz na angielski.”, `refineGeneratedPool` uzupełnia brakujące lub puste polecenie tłumaczenia tym tekstem (jak usuwanie niezamówionych pól: naprawa świeżego wyjścia modelu), a `validateExercise` wymaga niepustego polecenia.
+
+**Raport dla rodzica.** Powody odrzuceń są zliczane (np. „słowo spoza materiału: raining ×3”, „tylko słowa pomocnicze: the ×1” — element złożony wyłącznie ze słów funkcyjnych) w `lesson_context.rejectedReasons` obok dzisiejszego `rejectedCount` i pokazywane w edytorze lekcji, żeby rodzic wiedział, czy dogenerować. To zliczenia bez danych dziecka. Powody dotyczą tylko sprawdzania słów z materiału, a `rejectedCount` liczy wszystkie odrzucenia generacji, więc edytor podpisuje listę „Powody odrzuceń przy sprawdzaniu słów z materiału” i dopisuje „inne powody: N”, gdy `rejectedCount` przekracza sumę wypisanych powodów.
 
 **Znane ograniczenia:**
 
 - słowa z poleceń podręcznika („listen”, „tick”) wklejone w materiał liczą się jako słownictwo;
-- przykłady na kartach i zdania-bodźce nie są sprawdzane (tylko reguła w prompcie i przegląd rodzica).
+- przykłady na kartach i zdania-bodźce nie są sprawdzane (tylko reguła w prompcie i przegląd rodzica);
+- rozdziału, którego kluczowym materiałem są słowa funkcyjne (przyimki in/on/under, can/can't, this/these, is/are, do/does, he/she), nie da się ćwiczyć na tych słowach jako opcjach, lukach ani słowach banku: reguła słownikowa wymaga w elemencie co najmniej jednego słowa treści, więc takie ćwiczenia odpadają z powodem „tylko słowa pomocnicze”. Przed użyciem z takim rozdziałem warto wykonać próbę (`pnpm probe:chapter`) na rozdziale o przyimkach albo o can/can't.
 
 ### 4.5. Ocena, samodzielność, opanowanie, kartkówka
 
@@ -208,14 +213,15 @@ Działa w `refineGeneratedPool`, więc nie ogranicza rodzica: przy edycji i publ
 | `lesson_order`, `lesson_open_answer` | `answer` |
 | `lesson_match`, `lesson_group` | jak dziś (złączona odpowiedź) |
 
-Tekst ekspozycji jest normalizowany przed `computeTargetKey`: wielokrotne spacje → jedna, bez końcowej interpunkcji. Dzięki temu „It's snowing.” i „It's snowing” to ta sama ekspozycja.
+Tekst ekspozycji jest normalizowany przed `computeTargetKey` (`normalizeChapterExposureText`, opcja `normalizeExposureText`): typograficzne apostrofy i cudzysłowy → proste, wielokrotne spacje → jedna, bez końcowej interpunkcji `.!?…`. Dzięki temu „It's snowing.” i „It’s snowing” to ta sama ekspozycja. Ta sama normalizacja obejmuje przykłady kart (`lessonTextTargetKey` w `materializeCard`), więc przykład „I’m wearing a pink coat.” i luka rozwiązana do „I'm wearing a pink coat” mają jeden klucz (przed końcowym przeglądem klucz przykładu zachowywał kropkę i luka po karcie liczyła się jako samodzielna). `exposureText` i `normalizeExposureText` są utrwalonym kontraktem: edycja rodzica przelicza klucze rewizji, a skopiowane szkice i opublikowane wersje zachowują zapisane, więc ich zmiana wymaga decyzji o migracji lub uzupełnieniu kluczy.
 
 Skutki tej decyzji:
 
 - zadanie samodzielne = zdanie, którego rozwiązania dziecko jeszcze nie widziało;
-- słowo widoczne na karcie, w parach, grupach lub banku słów nie jest ekspozycją (jak dziś w lekcjach);
-- ekspozycje zdań wielowyrazowych z lekcji nie blokują słówek, a ekspozycje słówek nie blokują luk w lekcji (różne klucze); świadomy przypadek brzegowy: tłumaczenie pojedynczego słowa (np. „poniedziałek” → „Monday”) ma ten sam `target_key` co słówko „Monday” (ten sam tekst i język `en-GB`, ekspozycje są wspólne dla dziecka), więc oba ujawnienia blokują się nawzajem — to ta sama umiejętność przypominania;
-- znane ograniczenie: słowo pokazane w lekcji nie chroni samodzielnego przypominania tego słowa w zestawie słówek.
+- treść karty i słowo widoczne w parach, grupach lub banku słów nie są ekspozycją (jak dziś w lekcjach); ekspozycją karty są wyłącznie jej przykłady (`lesson_context.examples`), dlatego karty nie niosą par zdań polskie → angielskie (4.2);
+- klucze lekcji i słówek pokrywają się dokładnie wtedy, gdy tekst po normalizacji i język są równe — dla pojedynczych słów i wielowyrazowych zwrotów (np. tłumaczenie „poniedziałek” → „Monday” i słówko „Monday” albo „Pada deszcz.” → „It's raining.” i słówko „It's raining”); ekspozycje są wspólne dla dziecka. Zwykle klucz zdania nie pokrywa się z celem słówka, więc zdania lekcji i słówka się nie blokują. Przy pokryciu blokada jest w praktyce asymetryczna: słówka liczą samodzielność w oknie 300 s od ujawnienia, lekcje — od jakiegokolwiek wcześniejszego ujawnienia, więc ekspozycja słówka trwale odbiera samodzielność tłumaczeniu rozdziału o identycznym tekście, a ekspozycja z lekcji blokuje słówko tylko na 300 s (do uwzględnienia w Etapie 4, słówkach ze źródła);
+- znane ograniczenie: słowo pokazane w lekcji tylko jako część treści karty, par, grupy, banku albo zdania nie chroni samodzielnego przypominania tego słowa w zestawie słówek;
+- znane ograniczenie (ziarnistość uzupełniania tekstu): kluczem tekstu z lukami jest cały uzupełniony tekst, więc zdanie rozwiązane wewnątrz uzupełniania nie blokuje luki ani tłumaczenia tego samego zdania.
 
 **Opanowanie:** jak dziś w lekcjach — trzy ostatnie kwalifikujące sukcesy na różnych ćwiczeniach, w tym jeden w późniejszej sesji innego dnia po ≥12 h.
 
@@ -243,7 +249,7 @@ Skutki tej decyzji:
 
 - Prompty `lesson_match`, `lesson_group`, `lesson_cloze`, `lesson_choice`, `lesson_order` i `lesson_gap` dostają opcjonalne `contentLocale`. Silnik ustawia je zawsze na `answerLocale` przedmiotu: dla każdego przedmiotu treść tych typów jest w języku odpowiedzi (szkoła `pl-PL`, gramatyka i rozdział `en-GB`), więc nie ma gałęzi po identyfikatorze przedmiotu.
 - `lesson_open_answer` dostaje opcjonalne `answerLocale` (język pola odpowiedzi), a `promptLocale` bierze z `openAnswerPromptLocale`, gdy przedmiot je ma (inaczej reguła jak dziś). Kid UI ustawia `lang` pola odpowiedzi z `answerLocale`, a nie z `promptLocale` jak dziś (`LessonSentenceView.tsx:58-71`). Nowy klient ze starszym serwerem (bez nowych pól) działa jak dotąd; w odwrotnym kierunku obowiązuje uwaga o wdrożeniu w sekcji 7.
-- Kid UI oznacza `lang` treść o pewnym języku: lewą kolumnę par, elementy grup, tekst cloze i bank słów, `stem` i opcje wyboru, klocki, zdanie z luką. Prawa kolumna par i etykiety grup nie dostają `lang` treści. Bez nowych widoków i wzorców interakcji.
+- Kid UI oznacza `lang` treść o pewnym języku: lewą kolumnę par, elementy grup, tekst cloze i bank słów, `stem` i opcje wyboru, klocki, zdanie z luką i samo pole luki (język odpowiedzi, jak pole tłumaczenia). Prawa kolumna par i etykiety grup nie dostają `lang` treści. Bez nowych widoków i wzorców interakcji. `lang` działa pewnie dla tekstu nieinteraktywnego; przycisk z polską etykietą `aria-label` wewnątrz elementu `lang="en-GB"` czytnik ekranu może przeczytać angielskim głosem (do poprawy w Kid UI, poza Etapem 1).
 - Panel rodzica: przedmiot „Angielski — rozdział” w formularzu nowej lekcji (tytuł + materiał wklejony albo ze źródła); edytor bez nowych edytorów typów, z podsumowaniem powodów odrzuceń (4.4) i — gdy jest — rodzajem zagadnienia.
 
 ## 5. Lektor po odpowiedzi
@@ -332,7 +338,7 @@ Po normalizacji (4.5) tekst nagrania jest równy `exposureText` ćwiczenia, wię
   - `sourceMaterialId` i `sourceMaterialRevision` w DTO zestawu dla rodzica;
   - `rejectedReasons` w DTO szkicu lekcji;
   - opcjonalne `contentLocale` i `answerLocale` w promptach lekcji Kid DTO.
-- Serwerowe schematy `.strict()` dostają nowe pola. Kid UI także waliduje zadania i sesje ścisłymi schematami z `@learning/contracts` (`parseWith(TaskDtoSchema/SessionDtoSchema)`, błąd daje ogólny `KidApiError("internal")`), a silnik ustawia `contentLocale` i `answerLocale` dla każdego przedmiotu lekcji. Pakiet Kid UI zbudowany przed zmianą odrzuci więc zadania lekcji (także gramatyki i szkoły), więc web i Kid UI/PWA wdrażamy razem, a po wdrożeniu otwartą kartę lub PWA trzeba odświeżyć — jak przy wcześniejszych dodaniach pól w ścisłych schematach (np. `promptLocale`). Nowy klient ze starszym serwerem działa, bo pola są opcjonalne.
+- Serwerowe schematy `.strict()` dostają nowe pola. Kid UI także waliduje zadania i sesje ścisłymi schematami z `@learning/contracts` (`parseWith(TaskDtoSchema/SessionDtoSchema)`, błąd daje ogólny `KidApiError("internal")`), a silnik ustawia `contentLocale` i `answerLocale` dla każdego przedmiotu lekcji. Pakiet Kid UI zbudowany przed zmianą odrzuci więc zadania lekcji typów, które niosą nowe pola — wybór, układankę, lukę, pary, grupy, uzupełnianie tekstu (`contentLocale`) i odpowiedź otwartą (`answerLocale`), także w gramatyce i szkole; karty i pozostałe typy lekcji nie są dotknięte — więc web i Kid UI/PWA wdrażamy razem, a po wdrożeniu otwartą kartę lub PWA trzeba odświeżyć — jak przy wcześniejszych dodaniach pól w ścisłych schematach (np. `promptLocale`). Nowy klient ze starszym serwerem działa, bo pola są opcjonalne.
 - Porty: `LessonObjectivesInput.objectivesRules`, `LlmGenerateDeckInput.material` i `instruction`; zmiany w adapterze OpenAI, schemacie puli (`sourceRefs` zależne od `sourceQuotes`) i fałszywym providerze.
 - Procedury oRPC rodzica dla źródeł i lekcji rozdziału. Kid API bez nowych endpointów.
 - MCP i `SKILL.md`: bez zmian. Raport Hermesa (`learning-overview`) filtruje do `kind='vocabulary'`, więc lekcje i źródła są poza nim. Słówka ze źródła to zwykłe zestawy słówek o niezmienionym znaczeniu danych. Uzasadnienie w opisie każdego PR.
@@ -418,7 +424,7 @@ Dokumentacja w PR etapów: nowa sekcja `docs/SPEC.md` (§37), uzupełnienie `doc
 
 ### Stan Etapu 1 (2026-10-30)
 
-**Zaimplementowane** (gałąź `claude/english-chapter-1-lesson`, plan `docs/superpowers/plans/2026-10-30-english-chapter-stage1.md`): przedmiot `english_chapter` w `subjects/english-chapter/` (moduł, słownik materiału, walidatory, tekst ekspozycji, prompty); normalizator angielski w `subjects/english/`; generyczne opcje `SubjectModule` (`sourceQuotes`, `materialSubjectTitle`, `instructionIsStimulus`, `exposureText`, `refineGeneratedPool`, `openAnswerPromptLocale`, `prompts.typeRules`, `prompts.objectivesRules`) i `DynamicObjectiveData.kind`; `contentLocale`/`answerLocale` w Kid DTO z atrybutami `lang` w Kid UI; `rejectedReasons` w szkicu i edytorze rodzica; `createMaterialLesson`, `createLessonFromMaterial`, `lessons.createFromMaterial` i `creation`/`subjectTitleRequired` w katalogu; fałszywy provider z gałęzią rozdziału; testy jednostkowe, integracyjne (`tests/integration/lesson-chapter.test.ts`) i narzędzie próby `pnpm probe:chapter`. Opis architektury: `docs/architecture.md` §19.9 i §22, produktu: SPEC §37. Odstępstwa od pierwszej wersji projektu: kategorie błędów (4.1), dodatkowa opcja `materialSubjectTitle`, `MaterialLessonCommand` zamiast `ChapterLessonCommand` i tytuł zestawu (4.6), usuwanie niezamówionych pól v3 (4.4). Nie ma jeszcze: źródeł, lektora (`ttsForFeedback`), słówek ze źródła ani osobnej specyfikacji E2E całego przebiegu rozdziału (Etap 2 i dalsze); formularz rodzica i edytor (rodzaje zagadnień, powody odrzuceń) pokrywają specyfikacje układu `parent-lessons-layout` i `parent-lesson-editor-layout`, a przebieg dziecka — testy integracyjne.
+**Zaimplementowane** (gałąź `claude/english-chapter-1-lesson`, plan `docs/superpowers/plans/2026-10-30-english-chapter-stage1.md`): przedmiot `english_chapter` w `subjects/english-chapter/` (moduł, słownik materiału, walidatory, tekst ekspozycji, prompty); normalizator angielski w `subjects/english/`; generyczne opcje `SubjectModule` (`sourceQuotes`, `materialSubjectTitle`, `instructionIsStimulus`, `exposureText`, `normalizeExposureText`, `refineGeneratedPool`, `openAnswerPromptLocale`, `prompts.typeRules`, `prompts.objectivesRules`) i `DynamicObjectiveData.kind`; `contentLocale`/`answerLocale` w Kid DTO z atrybutami `lang` w Kid UI; `rejectedReasons` w szkicu i edytorze rodzica; `createMaterialLesson`, `createLessonFromMaterial`, `lessons.createFromMaterial` i `creation`/`subjectTitleRequired` w katalogu; fałszywy provider z gałęzią rozdziału; testy jednostkowe, integracyjne (`tests/integration/lesson-chapter.test.ts`) i narzędzie próby `pnpm probe:chapter`. Opis architektury: `docs/architecture.md` §19.9 i §22, produktu: SPEC §37. Odstępstwa od pierwszej wersji projektu: kategorie błędów (4.1), dodatkowa opcja `materialSubjectTitle`, `MaterialLessonCommand` zamiast `ChapterLessonCommand` i tytuł zestawu (4.6), usuwanie niezamówionych pól v3 (4.4). Po końcowym przeglądzie (2026-10-31): wspólna normalizacja ekspozycji ćwiczeń i przykładów kart (`normalizeExposureText`, 4.5), stałe polecenie tłumaczenia i bodziec w uzupełnianiu tekstu (4.1, 4.4), jednoznaczne luki i pary w promptach (4.3), karty ram bez tłumaczeń (4.2), uczciwy raport odrzuceń w edytorze (4.4), `lang` pola luki (4.7), spójność `buildDynamicTopic`/`materialSubjectTitle` w rejestrze oraz test architektoniczny, że silnik i adaptery nie zawierają literałów identyfikatorów przedmiotów (jedyny nazwany wyjątek: `"school"` w `createSchoolLesson`). Nie ma jeszcze: źródeł, lektora (`ttsForFeedback`), słówek ze źródła ani osobnej specyfikacji E2E całego przebiegu rozdziału (Etap 2 i dalsze); formularz rodzica i edytor (rodzaje zagadnień, powody odrzuceń) pokrywają specyfikacje układu `parent-lessons-layout` i `parent-lesson-editor-layout`, a przebieg dziecka — testy integracyjne.
 
 **Próba na prawdziwym modelu** (`google/gemini-3.8-flash`, odtworzony materiał Unit 1, pula 60; `pnpm probe:chapter` z `UMIEM_PROBE_MATERIAL` wskazującym plik poza repozytorium):
 
@@ -428,15 +434,18 @@ Dokumentacja w PR etapów: nowa sekcja `docs/SPEC.md` (§37), uzupełnienie `doc
 | 2 (po poprawce `focus`) | 4 | 16 z 60 (26,7%) | nie | model wypełnił `sourceRefs` w całej partii; zagadnienie bez ćwiczeń |
 | 3–4 (po strojeniu promptów i usuwaniu pól v3) | 5 | 0 | tak | 3 zagadnienia `words` i 2 `frame`; 4/6/2 ćwiczenia na zagadnienie; odpowiedzi luk w ramie powtarzały „wearing” |
 | 5 (po strojeniu różnorodności luk i dystraktorów) | 4 | 2 z 60 (3,3%) | tak | odpowiedzi luk w ramie różne (najwyżej dwie takie same), klocki układanek bez interpunkcji |
+| 6 (po końcowym przeglądzie, 2026-10-31) | 4 | 1 z 60 (1,7%; „tylko słowa pomocnicze”) | tak | wszystkie 12 tłumaczeń z poleceniem „Przetłumacz na angielski.” już od modelu; 4 teksty z lukami z polskim znaczeniem całego tekstu w poleceniu, każda luka jednoznaczna; karty ram z angielskimi przykładami bez tłumaczeń; 0 z 60 z niezamówionymi polami v3; 16 z 59 ćwiczeń (m.in. 7 tłumaczeń) rozwiązuje zdanie z przykładu karty |
+
+Po końcowym przeglądzie (przebieg 6) przykład karty i ćwiczenie rozwiązujące to samo zdanie mają jeden klucz (4.5), więc te 16 ćwiczeń po pokazaniu karty nie liczy się już jako samodzielne — wcześniej żadne nie byłoby rozpoznane. Zmniejsza to pulę samodzielnych tłumaczeń; reguła promptu, by przykłady kart nie powtarzały odpowiedzi ćwiczeń, jest kandydatem na kolejne strojenie.
 
 Strojenie obejmowało: ciągły `focus` tłumaczenia, zerowanie pól v3 w prompcie i ich usuwanie ze świeżego wyjścia, regułę banku uzupełniania (słowo banku nie występuje poza luką), różnorodność luk w ramach, dystraktory z tej samej kategorii oraz układanki bez interpunkcji końcowej. Po strojeniu trzy kolejne przebiegi (3, 4 i 5) były publikowalne, z 0%, 0% i 3,3% odrzuconych. Pierwsze dwa przebiegi pokazują, że jedno wadliwe pole w partii potrafi unieważnić całe zagadnienie, co uzasadnia czyszczenie świeżego wyjścia (4.4). Porównanie ze szkołą (po dwa przebiegi na `main` i na gałęzi, geografia): bez regresji; istniejąca, losowa usterka `questionType` na `lesson_choice` szkoły uczyniła niepublikowalnym jeden z dwóch przebiegów szkoły na `main` (próbka dwóch przebiegów, więc częstości nie szacujemy) i jest poza zakresem tego etapu.
 
 **Niezweryfikowane:**
 
 - pilotaż z dzieckiem (czy dziecko odczytuje angielskie słowa w parach, grupach i klockach bez pomocy);
-- fizyczne urządzenie i czytniki ekranu z atrybutami `lang` (atrybuty sprawdzono tylko testami komponentów Kid UI); układ zadań rozdziału nie ma osobnej specyfikacji geometrii;
+- fizyczne urządzenie i czytniki ekranu z atrybutami `lang` (atrybuty sprawdzono tylko testami komponentów Kid UI; polskie `aria-label` przycisków wewnątrz `lang="en-GB"` mogą być czytane angielskim głosem); specyfikacja geometrii uzupełniania tekstu (`lesson-cloze-layout`) obejmuje wariant rozdziału z `contentLocale` i długim polskim poleceniem, ale pary, grupy i klocki rozdziału nie mają osobnej specyfikacji geometrii;
 - prawdziwy materiał właściciela (NotebookLM): próba objęła odtworzony Unit 1, nie tekst od właściciela;
-- odrzucanie słownikowe na prawdziwym modelu: ani razu nie odrzuciło ćwiczenia za słowo spoza materiału (jedyne odrzucenie słownikowe to luka z samym „It's” bez słowa treści w przebiegu 5), więc heurystyka odmiany i `FUNCTION_WORDS` nie były sprawdzone na żywo;
+- odrzucanie słownikowe na prawdziwym modelu: ani razu nie odrzuciło ćwiczenia za słowo spoza materiału (jedyne odrzucenia słownikowe to elementy bez słowa treści: luka z samym „It's” w przebiegu 5 i element z samym „What's” w przebiegu 6), więc heurystyka odmiany i `FUNCTION_WORDS` nie były sprawdzone na żywo; rozdział oparty na słowach funkcyjnych (przyimki, can/can't) nie był próbowany (4.4, znane ograniczenia);
 - jakość ćwiczeń poza próbkami: mało układanek na pulę (około 3), wybór bywa dwuopcyjny, pojedynczy dystraktor w parach bywa z innej kategorii.
 
 ## 11. Poza zakresem
