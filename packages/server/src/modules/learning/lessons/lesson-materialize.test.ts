@@ -347,7 +347,7 @@ describe("materializeExercise — pary i grupy (design szkoły §10)", () => {
       const task = match(`match-${i}`);
       const prompt = task.prompt as { kind: string; left: { id: string; text: string }[]; right: { id: string; text: string }[] };
       expect(prompt.kind).toBe("lesson_match");
-      expect(Object.keys(prompt).sort()).toEqual(["instructionPl", "kind", "left", "right"]);
+      expect(Object.keys(prompt).sort()).toEqual(["contentLocale", "instructionPl", "kind", "left", "right"]);
       expect(prompt.right.map((item) => item.text).sort()).toEqual(["energia", "korzenie", "liście", "skrzela"]);
       const key = answerKeyOf(task);
       const partner = new Map(key.assignments!.map((entry) => [entry.itemId, entry.targetId]));
@@ -415,7 +415,7 @@ describe("materializeExercise — luki z bankiem (design szkoły §13)", () => {
     const task = cloze("cloze-1");
     const prompt = task.prompt as { kind: string; instructionPl: string; segments: ({ text: string } | { gapId: string })[]; words: { id: string; text: string }[] };
     expect(prompt.kind).toBe("lesson_cloze");
-    expect(Object.keys(prompt).sort()).toEqual(["instructionPl", "kind", "segments", "words"]);
+    expect(Object.keys(prompt).sort()).toEqual(["contentLocale", "instructionPl", "kind", "segments", "words"]);
     expect(prompt.instructionPl).toBe(messages.kid.lessonClozeInstruction);
     const gapIds = prompt.segments.flatMap((segment) => ("gapId" in segment ? [segment.gapId] : []));
     expect(gapIds).toHaveLength(2);
@@ -493,5 +493,65 @@ describe("materializeExercise — nagranie „Posłuchaj pytania” (design szko
   it("przedmiot bez `ttsForPrompts` nie dołącza nagrania", () => {
     const task = materializeExercise({ independentCheck: false, reason: "practice" }, "q4", withAudio(choicePayload), schoolTopic, { ...schoolSubject, ttsForPrompts: false });
     expect(task.prompt).not.toHaveProperty("questionAudioAssetId");
+  });
+});
+
+describe("materializeExercise — język treści i odpowiedzi (angielski — rozdział)", () => {
+  const base = { objectiveId: "english_grammar.present_simple.third_person_s", instructionPl: "Ćwiczenie.", answer: "x", acceptedAnswers: [], focus: [] as string[] };
+  const payloads: Record<string, LoadedExercise["payload"]> = {
+    lesson_choice: { ...base, exerciseType: "lesson_choice", stem: "She ___ football.", options: [{ id: "a", text: "plays" }, { id: "b", text: "play" }], correctOption: "a", answerLocale: "en-GB", promptLocale: "pl-PL" },
+    lesson_order: { ...base, exerciseType: "lesson_order", items: [{ id: "1", text: "She" }, { id: "2", text: "plays" }, { id: "3", text: "football" }], answerLocale: "en-GB", promptLocale: "pl-PL" },
+    lesson_gap: { ...base, exerciseType: "lesson_gap", stem: "She ___ football.", answerLocale: "en-GB", promptLocale: "pl-PL" },
+    lesson_match: { ...base, exerciseType: "lesson_match", pairs: [{ left: "dog", right: "pies" }, { left: "cat", right: "kot" }, { left: "fish", right: "ryba" }], extraRight: ["ptak"], answerLocale: "en-GB", promptLocale: "pl-PL" },
+    lesson_group: { ...base, exerciseType: "lesson_group", groups: [{ id: "g1", label: "animals" }, { id: "g2", label: "food" }], groupItems: [{ text: "dog", groupId: "g1" }, { text: "cat", groupId: "g1" }, { text: "bread", groupId: "g2" }, { text: "milk", groupId: "g2" }], answerLocale: "en-GB", promptLocale: "pl-PL" },
+    lesson_cloze: { ...base, exerciseType: "lesson_cloze", clozeText: "I ___ a dog and ___ a cat.", gapAnswers: ["have", "like"], extraWords: ["has"], answerLocale: "en-GB", promptLocale: "pl-PL" },
+  };
+  const materialize = (type: string, moduleOfSubject: typeof subject) =>
+    materializeExercise({ independentCheck: false, reason: "practice" }, `locale-${type}`, loaded(payloads[type]!), topic, moduleOfSubject);
+
+  it.each(Object.keys(payloads))("%s: contentLocale z answerLocale przedmiotu (gramatyka en-GB, szkoła pl-PL)", (type) => {
+    const grammar = materialize(type, englishGrammarSubject);
+    const school = materialize(type, schoolSubject);
+    expect(grammar.prompt).toMatchObject({ kind: type, contentLocale: "en-GB" });
+    expect(school.prompt).toMatchObject({ kind: type, contentLocale: "pl-PL" });
+    expect(TaskPromptSchema.safeParse(grammar.prompt).success).toBe(true);
+    expect(TaskPromptSchema.safeParse(school.prompt).success).toBe(true);
+  });
+
+  it.each(Object.keys(payloads))("%s: język spoza pl-PL/en-GB nie daje contentLocale", (type) => {
+    expect(materialize(type, { ...subject, answerLocale: "de-DE" }).prompt).not.toHaveProperty("contentLocale");
+  });
+
+  it("lesson_short_answer nie dostaje contentLocale (poza zakresem sześciu typów)", () => {
+    const short = materializeExercise({ independentCheck: false, reason: "practice" }, "locale-short", loaded({ ...base, exerciseType: "lesson_short_answer", prompt: "Does she play?", options: [{ id: "a", text: "Yes" }], correctOption: "a", answerLocale: "en-GB", promptLocale: "pl-PL" }), topic, subject);
+    expect(short.prompt).not.toHaveProperty("contentLocale");
+  });
+
+  const openAnswer = (moduleOfSubject: typeof subject) => materializeExercise(
+    { independentCheck: false, reason: "practice" },
+    "locale-open",
+    loaded({ ...base, exerciseType: "lesson_open_answer", prompt: "Ona gra w piłkę.", answerLocale: "en-GB", promptLocale: "pl-PL" }),
+    topic,
+    moduleOfSubject,
+  );
+
+  it("lesson_open_answer: answerLocale z przedmiotu, promptLocale z openAnswerPromptLocale", () => {
+    const task = openAnswer({ ...englishGrammarSubject, openAnswerPromptLocale: "pl-PL" });
+    expect(task.prompt).toMatchObject({ kind: "lesson_open_answer", answerLocale: "en-GB", promptLocale: "pl-PL" });
+    expect(TaskPromptSchema.safeParse(task.prompt).success).toBe(true);
+  });
+
+  it("lesson_open_answer: gramatyka bez openAnswerPromptLocale nadal nie wysyła promptLocale, ale ma answerLocale", () => {
+    const task = openAnswer(englishGrammarSubject);
+    expect(task.prompt).not.toHaveProperty("promptLocale");
+    expect(task.prompt).toMatchObject({ answerLocale: "en-GB" });
+  });
+
+  it("lesson_open_answer: szkoła (jeden język) zachowuje promptLocale i dostaje answerLocale pl-PL", () => {
+    expect(openAnswer(schoolSubject).prompt).toMatchObject({ promptLocale: "pl-PL", answerLocale: "pl-PL" });
+  });
+
+  it("lesson_open_answer: język odpowiedzi spoza pl-PL/en-GB nie daje answerLocale", () => {
+    expect(openAnswer({ ...subject, answerLocale: "de-DE" }).prompt).not.toHaveProperty("answerLocale");
   });
 });

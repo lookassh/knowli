@@ -48,7 +48,7 @@ export function LessonGapView({ task, busy, dock, handlers }: ExerciseProps) {
           onSubmit={(event) => { event.preventDefault(); submit(); }}
         >
           <div className="kid-lesson-gap__stem">
-            <span>{before}</span>
+            <span data-testid="kid-lesson-gap-before" lang={task.prompt.contentLocale}>{before}</span>
             <AnswerField
               ref={inputRef}
               className="kid-lesson-gap__field"
@@ -64,7 +64,7 @@ export function LessonGapView({ task, busy, dock, handlers }: ExerciseProps) {
               spellCheck={false}
               disabled={disabled}
             />
-            <span>{after}</span>
+            <span data-testid="kid-lesson-gap-after" lang={task.prompt.contentLocale}>{after}</span>
           </div>
           {hint !== undefined && (
             <p className="kid-lesson-gap__hint" data-testid="kid-lesson-gap-hint">

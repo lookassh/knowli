@@ -64,6 +64,7 @@ export function LessonGroupView({ task, busy, dock, handlers }: ExerciseProps) {
                           type="button"
                           className="kid-lesson-block kid-lesson-block--placed"
                           data-testid="kid-lesson-group-member"
+                          lang={prompt.contentLocale}
                           disabled={disabled}
                           aria-label={format(messages.kid.lessonGroupRemove, { item: item.text, group: group.text })}
                           onClick={() => { setState((current) => removeFromGroup(current, item.id)); handlers.onEdit(); }}
@@ -89,6 +90,7 @@ export function LessonGroupView({ task, busy, dock, handlers }: ExerciseProps) {
             optionTestId="kid-lesson-group-item"
             label={messages.kid.lessonGroupPool}
             disabled={disabled || activeGroup === null}
+            lang={prompt.contentLocale}
             labelOf={(item) => (activeGroup ? format(messages.kid.lessonGroupAdd, { item: item.text, group: activeGroup.text }) : item.text)}
             onPick={(itemId) => { setState((current) => addToGroup(current, itemId)); handlers.onEdit(); }}
           />

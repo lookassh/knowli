@@ -203,6 +203,13 @@ export interface SubjectModule {
   readonly titlePl: string; // „Angielski — gramatyka”
   readonly answerLocale: string; // "en-GB" — język odpowiedzi dziecka
   readonly promptLocale: string; // "pl-PL" — język poleceń
+  /**
+   * Język pytania w `lesson_open_answer`, gdy przedmiot go zna (np. angielski
+   * rozdział: bodziec jest po polsku, odpowiedź po angielsku). Brak = reguła
+   * domyślna: pytanie dostaje język tylko, gdy `promptLocale` równa się
+   * `answerLocale`.
+   */
+  readonly openAnswerPromptLocale?: string;
   readonly exerciseTypes: readonly LessonExerciseType[]; // typy wspierane przez przedmiot
   readonly errorCategories: readonly ErrorCategory[]; // kategorie przedmiotu (poza bazowymi)
   readonly normalizer: AnswerNormalizer;

@@ -74,6 +74,14 @@ export const PictureChoiceOptionSchema = z.object({
 export type PictureChoiceOption = z.infer<typeof PictureChoiceOptionSchema>;
 
 /**
+ * Język treści zadania lekcji (atrybut `lang` w Kid UI, czytniki ekranu). Tylko
+ * języki, w których powstaje materiał; brak pola = klient zachowuje się jak
+ * dotąd (starsze serwery go nie wysyłają).
+ */
+export const LessonContentLocaleSchema = z.enum(["pl-PL", "en-GB"]);
+export type LessonContentLocale = z.infer<typeof LessonContentLocaleSchema>;
+
+/**
  * Publiczny element (`lesson_order`, `lesson_match`, `lesson_group`) —
  * identyfikator i widoczny tekst; `.strict()`, by nic z klucza (np. grupa
  * elementu) nie przeszło do dziecka.
@@ -254,12 +262,16 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     instructionPl: z.string().min(1),
     stem: z.string().min(1),
     options: z.array(ChoiceOptionSchema).min(1),
+    /** Język treści zadania (przedmiot ma jeden język odpowiedzi); brak = bez atrybutu `lang`. */
+    contentLocale: LessonContentLocaleSchema.optional(),
     questionAudioAssetId: QuestionAudioSchema,
   }).strict(),
   z.object({
     kind: z.literal("lesson_order"),
     instructionPl: z.string().min(1),
     items: z.array(LessonItemSchema).min(1),
+    /** Język treści zadania (przedmiot ma jeden język odpowiedzi); brak = bez atrybutu `lang`. */
+    contentLocale: LessonContentLocaleSchema.optional(),
     questionAudioAssetId: QuestionAudioSchema,
   }).strict(),
   z.object({
@@ -273,6 +285,8 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     stemWithGap: z.string().min(1),
     hint: z.string().min(1).optional(),
     audioAssetId: UuidSchema.optional(),
+    /** Język treści zadania (przedmiot ma jeden język odpowiedzi); brak = bez atrybutu `lang`. */
+    contentLocale: LessonContentLocaleSchema.optional(),
     questionAudioAssetId: QuestionAudioSchema,
   }).strict(),
   z.object({
@@ -298,7 +312,12 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
      * szkoła: `pl-PL`) — dla czytników ekranu. Brak = dotychczasowe `en-GB`;
      * gramatyka go nie wysyła, więc starsze klienty dalej ją parsują.
      */
-    promptLocale: z.enum(["pl-PL", "en-GB"]).optional(),
+    promptLocale: LessonContentLocaleSchema.optional(),
+    /**
+     * Język pola odpowiedzi (przedmiot z jednym językiem odpowiedzi); brak =
+     * pole dziedziczy `promptLocale`, jak dotąd.
+     */
+    answerLocale: LessonContentLocaleSchema.optional(),
     /** Dyktowanie odpowiedzi (przedmiot z mową, trening z mikrofonem); brak = bez mikrofonu. */
     speechInput: SpeechInputSchema.optional(),
   }).strict(),
@@ -326,6 +345,8 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     instructionPl: z.string().min(1),
     left: z.array(LessonItemSchema).min(3).max(5),
     right: z.array(LessonItemSchema).min(3).max(7),
+    /** Język treści zadania (przedmiot ma jeden język odpowiedzi); brak = bez atrybutu `lang`. */
+    contentLocale: LessonContentLocaleSchema.optional(),
     questionAudioAssetId: QuestionAudioSchema,
   }).strict(),
   // „Pogrupuj” (design szkoły §10.2): grupy w kolejności materiału, elementy
@@ -335,6 +356,8 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     instructionPl: z.string().min(1),
     groups: z.array(LessonItemSchema).min(2).max(3),
     items: z.array(LessonItemSchema).min(4).max(8),
+    /** Język treści zadania (przedmiot ma jeden język odpowiedzi); brak = bez atrybutu `lang`. */
+    contentLocale: LessonContentLocaleSchema.optional(),
     questionAudioAssetId: QuestionAudioSchema,
   }).strict(),
   // „Uzupełnij tekst” (design szkoły §13.2): tekst pocięty na luki, bank słów
@@ -344,6 +367,8 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     instructionPl: z.string().min(1),
     segments: z.array(ClozeSegmentSchema).min(2).max(9),
     words: z.array(LessonItemSchema).min(3).max(6),
+    /** Język treści zadania (przedmiot ma jeden język odpowiedzi); brak = bez atrybutu `lang`. */
+    contentLocale: LessonContentLocaleSchema.optional(),
     questionAudioAssetId: QuestionAudioSchema,
   }).strict(),
   // Zadanie następcze „Skróć odpowiedź” (technicznie odpowiedź otwarta): własny

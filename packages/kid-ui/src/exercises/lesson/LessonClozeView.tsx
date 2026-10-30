@@ -39,7 +39,11 @@ export function LessonClozeView({ task, busy, dock, handlers }: ExerciseProps) {
           <div className="kid-lesson-cloze__main">
             <p className="kid-lesson-cloze__text" data-testid="kid-lesson-cloze-text">
               {prompt.segments.map((segment, index) => {
-                if (!("gapId" in segment)) return <Fragment key={index}>{segment.text}</Fragment>;
+                if (!("gapId" in segment)) {
+                  return prompt.contentLocale
+                    ? <span key={index} data-testid="kid-lesson-cloze-segment" lang={prompt.contentLocale}>{segment.text}</span>
+                    : <Fragment key={index}>{segment.text}</Fragment>;
+                }
                 const n = numberOf.get(segment.gapId) ?? 0;
                 const word = rightOf(state, segment.gapId);
                 const active = state.active === segment.gapId;
@@ -52,7 +56,7 @@ export function LessonClozeView({ task, busy, dock, handlers }: ExerciseProps) {
                     <span className="kid-visually-hidden">
                       {word ? format(messages.kid.lessonClozeGapFilled, { n, word: word.text }) : format(messages.kid.lessonClozeGapEmpty, { n })}
                     </span>
-                    <span aria-hidden="true">
+                    <span aria-hidden="true" lang={prompt.contentLocale}>
                       <span className="kid-lesson-cloze__gap-number">{n}</span>
                       {word ? word.text : "…"}
                     </span>
@@ -72,6 +76,7 @@ export function LessonClozeView({ task, busy, dock, handlers }: ExerciseProps) {
                       active={active}
                       disabled={disabled}
                       testId="kid-lesson-cloze-slot"
+                      lang={word ? prompt.contentLocale : undefined}
                       label={word
                         ? format(messages.kid.lessonClozeRemove, { n, word: word.text })
                         : format(messages.kid.lessonClozeChooseSlot, { n })}
@@ -98,6 +103,7 @@ export function LessonClozeView({ task, busy, dock, handlers }: ExerciseProps) {
               optionTestId="kid-lesson-cloze-option"
               label={messages.kid.lessonClozePool}
               disabled={disabled || state.active === null}
+              lang={prompt.contentLocale}
               labelOf={(item) => (activeNumber !== null ? format(messages.kid.lessonClozePlace, { n: activeNumber, word: item.text }) : item.text)}
               onPick={(itemId) => { setState((current) => placeRight(current, itemId)); handlers.onEdit(); }}
             />
