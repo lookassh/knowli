@@ -149,3 +149,35 @@ describe("lessonPoolJsonSchema — pary i grupy (design szkoły §10.6)", () => 
     expect(cloze.properties.clozeText).toMatchObject({ maxLength: 300 });
   });
 });
+
+describe("lessonPoolJsonSchema — cytaty w gałęziach pary/grupy/luki zależą od groundingRequired", () => {
+  const dedicated = (groundingRequired: boolean | undefined) => {
+    const schema = lessonPoolJsonSchema({
+      ...input,
+      exerciseTypes: ["lesson_match", "lesson_group", "lesson_cloze"],
+      objectives: [{ ...input.objectives[0]!, exerciseTypes: ["lesson_match", "lesson_group", "lesson_cloze"] }],
+      ...(groundingRequired === undefined ? {} : { groundingRequired }),
+    }) as any;
+    return Object.fromEntries(
+      schema.properties.exercises.items.anyOf.map((branch: any) => [branch.properties.exerciseType.enum[0], branch]),
+    ) as Record<string, any>;
+  };
+
+  it.each(["lesson_match", "lesson_group", "lesson_cloze"])("%s: bez uziemienia sourceRefs jest nullowalne i bez minItems", (type) => {
+    for (const grounding of [false, undefined]) {
+      const branch = dedicated(grounding)[type];
+      expect(branch.properties.sourceRefs.type).toEqual(["array", "null"]);
+      expect(branch.properties.sourceRefs).not.toHaveProperty("minItems");
+      // Tryb strict: pole zostaje wymagane (model zwraca null), gałąź nadal zamknięta.
+      expect(branch.required).toContain("sourceRefs");
+      expect([...branch.required].sort()).toEqual(Object.keys(branch.properties).sort());
+      expect(branch.additionalProperties).toBe(false);
+    }
+  });
+
+  it.each(["lesson_match", "lesson_group", "lesson_cloze"])("%s: z uziemieniem wymaga 1–3 cytatów jak dotąd", (type) => {
+    const branch = dedicated(true)[type];
+    expect(branch.properties.sourceRefs).toMatchObject({ type: "array", minItems: 1, maxItems: 3 });
+    expect(branch.properties.sourceRefs.items.properties.quote).toMatchObject({ minLength: 10, maxLength: 600 });
+  });
+});

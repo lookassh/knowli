@@ -7,6 +7,7 @@ import {
   SchoolLessonCommandSchema,
   LessonExerciseInputSchema,
   LessonDraftDtoSchema,
+  DynamicObjectiveDtoSchema,
   LessonDeckDtoSchema,
   ObjectiveProgressDtoSchema,
   LessonVerdictDtoSchema,
@@ -234,6 +235,25 @@ describe("LessonDraftDtoSchema", () => {
       coverage: [{ objectiveId: "o1", stage: "guided", required: 1, actual: 0 }],
     });
     expect(parsed.success).toBe(true);
+  });
+});
+
+describe("DynamicObjectiveDtoSchema — rodzaj zagadnienia", () => {
+  const objective = {
+    id: "english_chapter.ddeck.clothes", titlePl: "Ubrania",
+    cards: [{ title: "Słowa", body: "coat — płaszcz" }, { title: "Zwroty", body: "I'm wearing a coat." }],
+  };
+
+  it("rodzaj jest opcjonalny: words, frame albo brak", () => {
+    expect(DynamicObjectiveDtoSchema.safeParse(objective).success).toBe(true);
+    expect(DynamicObjectiveDtoSchema.safeParse({ ...objective, kind: "words" }).success).toBe(true);
+    expect(DynamicObjectiveDtoSchema.safeParse({ ...objective, kind: "frame" }).success).toBe(true);
+    expect(DynamicObjectiveDtoSchema.safeParse({ ...objective, kind: "other" }).success).toBe(false);
+    expect(DynamicObjectiveDtoSchema.safeParse({ ...objective, kind: null }).success).toBe(false);
+  });
+
+  it("nadal odrzuca nieznane pola zagadnienia", () => {
+    expect(DynamicObjectiveDtoSchema.safeParse({ ...objective, descriptionEn: "x" }).success).toBe(false);
   });
 });
 

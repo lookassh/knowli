@@ -277,6 +277,7 @@ async function readLessonDraftDto(
               id: o.id,
               titlePl: o.titlePl,
               cards: o.cards.map((card) => ({ title: card.title, body: card.body })),
+              ...(o.kind === undefined ? {} : { kind: o.kind }),
             })),
           },
         }),
@@ -623,7 +624,8 @@ export async function editLessonDraft(
 
     // Patch tematu dynamicznego (zagadnienia z materiału): edycja tytułów/kart
     // istniejących celów i usuwanie celów przez pominięcie. `descriptionEn`
-    // zachowujemy z zapisanego kontekstu; temat walidujemy regułami katalogu.
+    // i `kind` (pola serwera) zachowujemy z zapisanego kontekstu; temat
+    // walidujemy regułami katalogu.
     let nextDynamicTopic: DynamicTopicData | undefined;
     let deletedObjectiveIds: string[] = [];
     if (patch.dynamicTopic !== undefined) {
@@ -638,12 +640,16 @@ export async function editLessonDraft(
       }
       nextDynamicTopic = {
         titlePl: context.dynamicTopic.titlePl,
-        objectives: patch.dynamicTopic.objectives.map((objective) => ({
-          id: objective.id,
-          titlePl: objective.titlePl,
-          descriptionEn: currentById.get(objective.id)!.descriptionEn,
-          cards: objective.cards.map((card) => ({ title: card.title, body: card.body })),
-        })),
+        objectives: patch.dynamicTopic.objectives.map((objective) => {
+          const current = currentById.get(objective.id)!;
+          return {
+            id: objective.id,
+            titlePl: objective.titlePl,
+            descriptionEn: current.descriptionEn,
+            cards: objective.cards.map((card) => ({ title: card.title, body: card.body })),
+            ...(current.kind === undefined ? {} : { kind: current.kind }),
+          };
+        }),
       };
       const topicErrors = validateDynamicTopicData(subject, nextDynamicTopic);
       if (topicErrors.length > 0) {

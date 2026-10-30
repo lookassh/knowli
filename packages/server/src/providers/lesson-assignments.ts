@@ -8,6 +8,14 @@ function isObjectWith(value: unknown, fields: readonly string[]): boolean {
 }
 
 /**
+ * Cytaty z modelu: przedmiot bez cytatów dostaje w trybie strict `null`, co
+ * oznacza brak pola (nie wartość `null` w ćwiczeniu).
+ */
+function quotesOf(record: Record<string, unknown>): { sourceRefs?: unknown } {
+  return record.sourceRefs === null || record.sourceRefs === undefined ? {} : { sourceRefs: record.sourceRefs };
+}
+
+/**
  * Pary, grupy (design szkoły §10.6) i luki z bankiem (§13.6) z modelu niosą
  * tylko teksty i przypisania.
  * Kod dopisuje polecenie (gdy model go nie podał) i kanoniczną odpowiedź,
@@ -36,7 +44,7 @@ export function materializeGeneratedAssignments(exercises: unknown[]): unknown[]
         answer: matchAnswer({ pairs: typedPairs }),
         acceptedAnswers: [],
         focus: [],
-        sourceRefs: record.sourceRefs,
+        ...quotesOf(record),
       };
     }
     if (record.exerciseType === "lesson_group") {
@@ -55,7 +63,7 @@ export function materializeGeneratedAssignments(exercises: unknown[]): unknown[]
         answer: groupAnswer({ groups: typedGroups }),
         acceptedAnswers: [],
         focus: [],
-        sourceRefs: record.sourceRefs,
+        ...quotesOf(record),
       };
     }
     if (record.exerciseType === "lesson_cloze") {
@@ -74,7 +82,7 @@ export function materializeGeneratedAssignments(exercises: unknown[]): unknown[]
         answer: clozeAnswer({ gapAnswers: gapAnswers as string[] }),
         acceptedAnswers: [],
         focus: [],
-        sourceRefs: record.sourceRefs,
+        ...quotesOf(record),
       };
     }
     return raw;

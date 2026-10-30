@@ -150,11 +150,19 @@ export const SchoolLessonCommandSchema = z.object({
 }).strict();
 export type SchoolLessonCommand = z.infer<typeof SchoolLessonCommandSchema>;
 
-/** Zagadnienie tematu dynamicznego w widoku rodzica (bez pól modelowych). */
+/** Rodzaj zagadnienia tematu dynamicznego: grupa słów albo rama zdaniowa (przedmioty, które go używają). */
+export const DynamicObjectiveKindSchema = z.enum(["words", "frame"]);
+export type DynamicObjectiveKind = z.infer<typeof DynamicObjectiveKindSchema>;
+
+/**
+ * Zagadnienie tematu dynamicznego w widoku rodzica (bez pól modelowych).
+ * `kind` jest opcjonalne i należy do serwera: patch rodzica go nie zmienia.
+ */
 export const DynamicObjectiveDtoSchema = z.object({
   id: z.string().min(1).max(200),
   titlePl: z.string().min(1).max(120),
   cards: z.array(z.object({ title: z.string().min(1).max(120), body: z.string().min(1).max(1200) }).strict()).min(2).max(4),
+  kind: DynamicObjectiveKindSchema.optional(),
 }).strict();
 export type DynamicObjectiveDto = z.infer<typeof DynamicObjectiveDtoSchema>;
 

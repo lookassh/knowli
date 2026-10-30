@@ -347,7 +347,7 @@ function batchesForObjectives(
 }
 
 /** Składa `LessonPoolInput` dla jednego celu z danych rejestru (port nie zna przedmiotu). */
-function buildPoolInput(
+export function buildPoolInput(
   subject: SubjectModule,
   topic: LessonTopic,
   objectiveId: string,
@@ -369,6 +369,7 @@ function buildPoolInput(
       gradingRole: subject.prompts.gradingRole,
       almostDefinition: subject.prompts.almostDefinition,
       ...(subject.prompts.fieldRules === undefined ? {} : { fieldRules: subject.prompts.fieldRules }),
+      ...(subject.prompts.typeRules === undefined ? {} : { typeRules: subject.prompts.typeRules }),
     },
     exerciseTypes: [...subject.exerciseTypes],
     transforms: topic.transforms.map((t) => ({ id: t.id, instructionPl: t.instructionPl })),
@@ -386,7 +387,7 @@ function buildPoolInput(
     stageCounts: poolStageCounts(subject, objective.exerciseTypes, count),
     ...(subject.usesV3Payload === true ? { minDistinctOpenAnswers: DISTINCT_OPEN_ANSWERS_PER_OBJECTIVE } : {}),
     graderAvailable,
-    groundingRequired: subject.validatePoolExtra !== undefined,
+    groundingRequired: subject.sourceQuotes === true,
     deduplication: subject.poolDeduplication ?? "answer",
     ...(existingAnswers.length > 0 ? { existingAnswers: [...existingAnswers] } : {}),
     ...(existingExercises.length > 0 ? { existingExercises: [...existingExercises] } : {}),
@@ -398,6 +399,8 @@ const rawObjectiveSchema = z
     slug: z.string(),
     titlePl: z.string(),
     descriptionEn: z.string(),
+    // Strict structured output zwraca `kind` zawsze (`null` = brak rodzaju); nieznana wartość to brak rodzaju, nie błąd kształtu.
+    kind: z.unknown().optional(),
     cards: z.array(z.object({ title: z.string(), body: z.string() }).passthrough()),
   })
   .passthrough();
@@ -423,13 +426,17 @@ function sanitizeObjectiveSlug(raw: string, index: number, used: Set<string>): s
 
 /**
  * Składa `DynamicTopicData` z surowych zagadnień modelu: identyfikatory celów
- * `school.d<deckId>.<slug>` nadaje serwer. Rekordy o złym kształcie albo
- * niespełniające reguł przedmiotu (`validateObjective`, np. 2–4 karty, niepuste
- * teksty) są odrzucane pojedynczo — jedno wadliwe zagadnienie nie przerywa
- * całej generacji; zero poprawnych celów zwraca błędy zamiast danych.
+ * `<subjectId>.d<deckId>.<slug>` nadaje serwer (prefiks to identyfikator
+ * przedmiotu, np. `school.d…`). Rodzaj zagadnienia (`kind`) przechodzi tylko
+ * jako `words`/`frame`; `null`, brak i nieznana wartość dają brak pola.
+ * Rekordy o złym kształcie albo niespełniające reguł przedmiotu
+ * (`validateObjective`, np. 2–4 karty, niepuste teksty) są odrzucane
+ * pojedynczo — jedno wadliwe zagadnienie nie przerywa całej generacji; zero
+ * poprawnych celów zwraca błędy zamiast danych.
  */
 export function buildDynamicTopicData(
   rawObjectives: unknown[],
+  subjectId: string,
   deckId: string,
   topicTitle: string,
   validateObjective: (objective: DynamicTopicData["objectives"][number]) => string[] = () => [],
@@ -444,14 +451,16 @@ export function buildDynamicTopicData(
       return;
     }
     const slug = sanitizeObjectiveSlug(parsed.data.slug || parsed.data.titlePl, index, used);
-    const objective = {
-      id: `school.d${deckId}.${slug}`,
+    const kind = parsed.data.kind === "words" || parsed.data.kind === "frame" ? parsed.data.kind : undefined;
+    const objective: DynamicTopicData["objectives"][number] = {
+      id: `${subjectId}.d${deckId}.${slug}`,
       titlePl: [...parsed.data.titlePl.trim()].slice(0, 120).join(""),
       descriptionEn: [...parsed.data.descriptionEn.trim()].slice(0, 400).join(""),
       cards: parsed.data.cards.slice(0, 4).map((card) => ({
         title: [...card.title.trim()].slice(0, 120).join(""),
         body: [...card.body.trim()].slice(0, 1200).join(""),
       })),
+      ...(kind === undefined ? {} : { kind }),
     };
     const objectiveErrors = validateObjective(objective);
     if (objectiveErrors.length > 0) {
@@ -1043,13 +1052,14 @@ export async function executeLessonGeneration(services: Services, runId: string,
             material: input.material,
             ...(input.instruction === undefined ? {} : { instruction: input.instruction }),
             generationRole: subject.prompts.generationRole,
+            ...(subject.prompts.objectivesRules === undefined ? {} : { objectivesRules: subject.prompts.objectivesRules }),
           },
           signal,
         ),
       );
       await control.assertCurrent();
       const topicTitle = input.topicTitlePl ?? "";
-      const built = buildDynamicTopicData(objectivesResult.objectives, input.deckId, topicTitle, (objective) =>
+      const built = buildDynamicTopicData(objectivesResult.objectives, subject.id, input.deckId, topicTitle, (objective) =>
         validateDynamicTopicData(subject, { titlePl: topicTitle, objectives: [objective] }));
       if (!built.data) {
         throw new AppError("validation", { message: `dynamic objectives invalid: ${built.errors.join("; ")}` });
