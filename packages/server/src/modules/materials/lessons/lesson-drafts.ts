@@ -624,19 +624,25 @@ export function refineGeneratedDrafts(
 ): { kept: LessonExerciseDraft[]; rejectedCount: number; rejectedReasons: Record<string, number> } {
   if (!subject.refineGeneratedPool) return { kept: [...drafts], rejectedCount: 0, rejectedReasons: {} };
   const refined = subject.refineGeneratedPool(drafts, { material });
-  const rejectedReasons: Record<string, number> = {};
-  for (const { reason } of refined.rejected) rejectedReasons[reason] = (rejectedReasons[reason] ?? 0) + 1;
-  return { kept: refined.kept, rejectedCount: refined.rejected.length, rejectedReasons };
+  const counts = new Map<string, number>();
+  for (const { reason } of refined.rejected) counts.set(reason, (counts.get(reason) ?? 0) + 1);
+  return { kept: refined.kept, rejectedCount: refined.rejected.length, rejectedReasons: Object.fromEntries(counts) };
 }
 
-/** Sumuje liczniki powodów odrzuceń (kolejne przebiegi generacji tej samej wersji). */
-function sumRejectedReasons(
+/**
+ * Sumuje liczniki powodów odrzuceń (kolejne przebiegi generacji tej samej
+ * wersji). Powód pochodzi od przedmiotu (pośrednio z wyjścia modelu), więc
+ * liczymy w `Map`, a obiekt składa `Object.fromEntries` (własne pola): powód
+ * „constructor”, „toString” czy „__proto__” nie czyta ani nie podmienia
+ * prototypu zwykłego obiektu.
+ */
+export function sumRejectedReasons(
   previous: Readonly<Record<string, number>> | undefined,
   added: Readonly<Record<string, number>>,
 ): Record<string, number> {
-  const total: Record<string, number> = { ...previous };
-  for (const [reason, count] of Object.entries(added)) total[reason] = (total[reason] ?? 0) + count;
-  return total;
+  const total = new Map<string, number>(Object.entries(previous ?? {}));
+  for (const [reason, count] of Object.entries(added)) total.set(reason, (total.get(reason) ?? 0) + count);
+  return Object.fromEntries(total);
 }
 
 /**

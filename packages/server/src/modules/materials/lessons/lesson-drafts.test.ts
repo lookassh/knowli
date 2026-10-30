@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { createServices } from "../../../config";
-import type { CalculationSpec } from "@learning/contracts";
+import { LessonDraftDtoSchema, type CalculationSpec } from "@learning/contracts";
 import { englishGrammarSubject } from "../../../domain/lessons/subjects/english-grammar/module";
 import { validatePool } from "../../../domain/lessons/pool-validation";
 import type { DynamicTopicData, LessonExerciseDraft, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
 import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
 import { validateDynamicTopicData } from "../../../domain/lessons/topic-resolution";
-import { buildDynamicTopicData, buildPoolInput, buildLessonPayload, createLessonFromMaterial, createMaterialLesson, buildObjectiveCriteria, collectBatchExerciseMetadata, filterExercisesToRequestedObjective, minimumCountPerObjective, objectiveBatchCounts, isWellShapedRawExercise, lessonPayloadVersion, poolStageCounts, refineGeneratedDrafts, scopeFamiliesToRun, splitStages, stripParentAddedFlags, summarizeLessonPoolValidation, toExerciseDraft, withoutEmptyOptionalArrays, withSubjectObjectiveKinds } from "./lesson-drafts";
+import { buildDynamicTopicData, buildPoolInput, buildLessonPayload, createLessonFromMaterial, createMaterialLesson, buildObjectiveCriteria, collectBatchExerciseMetadata, filterExercisesToRequestedObjective, minimumCountPerObjective, objectiveBatchCounts, isWellShapedRawExercise, lessonPayloadVersion, poolStageCounts, refineGeneratedDrafts, scopeFamiliesToRun, splitStages, stripParentAddedFlags, sumRejectedReasons, summarizeLessonPoolValidation, toExerciseDraft, withoutEmptyOptionalArrays, withSubjectObjectiveKinds } from "./lesson-drafts";
 
 describe("calculation persistence and grading criteria", () => {
   const calculation = { kind: "scale_distance" as const, params: { scaleDenominator: 25000, mapDistanceCm: 3 }, unit: "m" as const, templateFamilyId: "scale" };
@@ -396,6 +396,26 @@ describe("refineGeneratedDrafts (czyszczenie świeżo wygenerowanej puli)", () =
     refineGeneratedDrafts(withRefine((all, ctx) => { seen.push({ drafts: all, material: ctx.material }); return { kept: [...all], rejected: [] }; }),
       drafts, "Clothes: coat, hat");
     expect(seen).toEqual([{ drafts, material: "Clothes: coat, hat" }]);
+  });
+
+  it("powody o nazwach z prototypu obiektu (constructor, toString, __proto__) są liczone jak każde inne", () => {
+    const reasons = ["constructor", "toString", "__proto__", "__proto__", "hasOwnProperty"];
+    const drafts = reasons.map((_, index) => gap(`w${index}`));
+    const subject = withRefine((all) => ({ kept: [], rejected: all.map((exercise, index) => ({ exercise, reason: reasons[index]! })) }));
+    const result = refineGeneratedDrafts(subject, drafts, "m");
+    const expected: [string, number][] = [["constructor", 1], ["toString", 1], ["__proto__", 2], ["hasOwnProperty", 1]];
+    expect(Object.entries(result.rejectedReasons)).toEqual(expected);
+    expect(result.rejectedCount).toBe(5);
+    // Zwykły obiekt (JSONB, DTO), którego prototypu nie podmienił klucz „__proto__”.
+    expect(Object.getPrototypeOf(result.rejectedReasons)).toBe(Object.prototype);
+    expect(LessonDraftDtoSchema.shape.rejectedReasons.safeParse(result.rejectedReasons).success).toBe(true);
+
+    // Kolejny przebieg sumuje liczniki odczytane z JSONB (JSON.parse daje własne pola, także „__proto__”).
+    const stored = JSON.parse(JSON.stringify(result.rejectedReasons)) as Record<string, number>;
+    const summed = sumRejectedReasons(stored, result.rejectedReasons);
+    expect(Object.entries(summed)).toEqual(expected.map(([reason, count]) => [reason, 2 * count]));
+    expect(Object.getPrototypeOf(summed)).toBe(Object.prototype);
+    expect(Object.entries(sumRejectedReasons(undefined, result.rejectedReasons))).toEqual(expected);
   });
 
   it("hak bez odrzuceń zwraca puste zliczenie", () => {

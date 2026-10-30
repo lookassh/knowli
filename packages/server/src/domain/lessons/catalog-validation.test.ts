@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { validateSubject } from "./catalog-validation";
+import { createProductionSubjectRegistry, PRODUCTION_SUBJECTS } from "./subjects";
 import { historyLikeSubject } from "./testing/history-like-subject";
 import type { SubjectModule } from "./types";
 
@@ -155,5 +156,29 @@ describe("validateSubject — reguły (po jednym przypadku negatywnym)", () => {
     const subject = cloneSubject();
     firstTopic(subject).objectives = [];
     expect(validateSubject(subject).length).toBeGreaterThan(0);
+  });
+});
+
+describe("validateSubject — spójność opcji tworzenia z materiału", () => {
+  const buildDynamicTopic: SubjectModule["buildDynamicTopic"] = () => historyLikeSubject.topics[0]!;
+  const materialErrors = (subject: SubjectModule) => validateSubject(subject).filter((error) => error.includes("materialSubjectTitle"));
+
+  it("odrzuca buildDynamicTopic bez materialSubjectTitle", () => {
+    expect(materialErrors({ ...cloneSubject(), buildDynamicTopic })).toHaveLength(1);
+  });
+
+  it("odrzuca materialSubjectTitle bez buildDynamicTopic", () => {
+    expect(materialErrors({ ...cloneSubject(), materialSubjectTitle: "parent" })).toHaveLength(1);
+    expect(materialErrors({ ...cloneSubject(), materialSubjectTitle: "fixed" })).toHaveLength(1);
+  });
+
+  it("dopuszcza obie opcje razem albo żadną (przedmiot katalogowy)", () => {
+    expect(validateSubject({ ...cloneSubject(), buildDynamicTopic, materialSubjectTitle: "fixed" })).toEqual([]);
+    expect(validateSubject(historyLikeSubject)).toEqual([]);
+  });
+
+  it("przedmioty produkcyjne są spójne (rejestr się buduje)", () => {
+    for (const subject of PRODUCTION_SUBJECTS) expect(validateSubject(subject), subject.id).toEqual([]);
+    expect(() => createProductionSubjectRegistry()).not.toThrow();
   });
 });
