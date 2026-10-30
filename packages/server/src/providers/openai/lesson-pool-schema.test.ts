@@ -132,4 +132,20 @@ describe("lessonPoolJsonSchema — pary i grupy (design szkoły §10.6)", () => 
     expect(byType.lesson_match.properties.pairs).toMatchObject({ minItems: 3, maxItems: 5 });
     expect(byType.lesson_group.properties.groupItems).toMatchObject({ minItems: 4, maxItems: 8 });
   });
+
+  it("dokłada ścisłą gałąź lesson_cloze bez pola odpowiedzi (design szkoły §13.6)", () => {
+    const schema = lessonPoolJsonSchema({
+      ...input,
+      exerciseTypes: ["lesson_choice", "lesson_cloze"],
+      objectives: [{ ...input.objectives[0]!, exerciseTypes: ["lesson_choice", "lesson_cloze"] }],
+    }) as any;
+    const branches = schema.properties.exercises.items.anyOf;
+    const cloze = branches.find((branch: any) => branch.properties.exerciseType.enum[0] === "lesson_cloze");
+    expect(cloze.additionalProperties).toBe(false);
+    expect(cloze.properties.answer).toBeUndefined();
+    expect(cloze.required.sort()).toEqual(Object.keys(cloze.properties).sort());
+    expect(cloze.properties.gapAnswers).toMatchObject({ minItems: 2, maxItems: 4 });
+    expect(cloze.properties.extraWords).toMatchObject({ minItems: 1, maxItems: 2 });
+    expect(cloze.properties.clozeText).toMatchObject({ maxLength: 300 });
+  });
 });

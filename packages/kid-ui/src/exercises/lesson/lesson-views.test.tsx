@@ -6,6 +6,7 @@ import { makeExerciseProps } from "../../test/exercise-fixtures";
 import { ExerciseGuidanceProvider } from "../exercise-guidance";
 import { LessonCardView } from "./LessonCardView";
 import { LessonChoiceView } from "./LessonChoiceView";
+import { LessonClozeView } from "./LessonClozeView";
 import { LessonGapView } from "./LessonGapView";
 import { LessonGroupView } from "./LessonGroupView";
 import { LessonMatchView } from "./LessonMatchView";
@@ -180,6 +181,46 @@ describe("lesson exercise views", () => {
     }));
     renderKid(<LessonGroupView {...props} dock={<span>wynik</span>} />);
     expect(screen.getAllByTestId("kid-lesson-group-item").every((el) => (el as HTMLButtonElement).disabled)).toBe(true);
+  });
+
+  const clozeTask = () => task({
+    kind: "lesson_cloze", instructionPl: "Uzupełnij tekst",
+    segments: [{ text: "Roślina pobiera " }, { gapId: id(3) }, { text: " z powietrza i " }, { gapId: id(4) }, { text: " z gleby." }],
+    words: [{ id: id(5), text: "wodę" }, { id: id(6), text: "tlen" }, { id: id(7), text: "dwutlenek węgla" }],
+  });
+
+  it("cloze: luki w tekście nie są przyciskami, miejsca przyjmują słowa z banku, przypisania luka → słowo", () => {
+    const props = makeExerciseProps(clozeTask());
+    renderKid(<LessonClozeView {...props} />);
+    const text = screen.getByTestId("kid-lesson-cloze-text");
+    expect(text.querySelectorAll("button")).toHaveLength(0);
+    expect(text.textContent).toContain("luka 1, pusta");
+    const check = screen.getByTestId("kid-lesson-check") as HTMLButtonElement;
+    const slots = screen.getAllByTestId("kid-lesson-cloze-slot");
+    expect(slots).toHaveLength(2);
+    expect(slots[0]!.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByText("dwutlenek węgla"));
+    expect(screen.getAllByTestId("kid-lesson-cloze-slot")[1]!.getAttribute("aria-pressed")).toBe("true");
+    expect(check.disabled).toBe(true);
+    fireEvent.click(screen.getByText("wodę"));
+    expect(text.textContent).toContain("luka 2: wodę");
+    expect(screen.getAllByTestId("kid-lesson-cloze-option").map((el) => el.textContent)).toEqual(["tlen"]);
+    expect(check.disabled).toBe(false);
+    fireEvent.click(check);
+    expect(props.handlers.onAnswerAssignment).toHaveBeenCalledWith([
+      { itemId: id(3), targetId: id(7) }, { itemId: id(4), targetId: id(5) },
+    ]);
+  });
+
+  it("cloze: dotknięcie zajętego miejsca oddaje słowo do banku, a po wyniku przyciski są wyłączone", () => {
+    const props = makeExerciseProps(clozeTask());
+    const view = renderKid(<LessonClozeView {...props} />);
+    fireEvent.click(screen.getByText("tlen"));
+    expect(screen.getAllByTestId("kid-lesson-cloze-option")).toHaveLength(2);
+    fireEvent.click(screen.getAllByTestId("kid-lesson-cloze-slot")[0]!);
+    expect(screen.getAllByTestId("kid-lesson-cloze-option")).toHaveLength(3);
+    view.rerender(<LessonClozeView {...props} dock={<span>wynik</span>} />);
+    expect(screen.getAllByTestId("kid-lesson-cloze-option").every((el) => (el as HTMLButtonElement).disabled)).toBe(true);
   });
 
   it("order keeps placed blocks when the same task arrives as a fresh prompt object", () => {

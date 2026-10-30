@@ -38,6 +38,11 @@ export const schoolPrompts: SubjectPromptProfile = {
     "lesson_match: pary z materiału — pojęcie i definicja, miejsce i cecha, przyczyna i skutek; lewa strona krótka (maks. 40 znaków), " +
     "prawa maks. 100 znaków, 0-2 dystraktory po prawej z materiału. lesson_group: klasyfikacja z materiału (np. ssaki/ptaki, niziny/wyżyny), " +
     "2-3 grupy i 4-8 krótkich elementów, co najmniej 2 w każdej grupie. Twórz je tylko, gdy materiał zawiera takie pary lub podział. " +
+    "lesson_cloze: clozeText to 2-4 krótkie zdania bliskie materiałowi (maks. 300 znaków, słownictwo dziecka ok. 8 lat) z 2-4 lukami ___; " +
+    "gapAnswers to słowo do każdej luki w kolejności tekstu (1-3 słowa, maks. 30 znaków): pojęcia, nazwy, liczby z materiału — nigdy spójniki, " +
+    "przyimki ani słowa, które da się odgadnąć z gramatyki zdania; między lukami co najmniej jedno słowo. extraWords: 1-2 słowa-pułapki " +
+    "z tego samego materiału i tej samej kategorii, błędne w każdej luce. Do każdej luki pasuje dokładnie jedno słowo z banku " +
+    "(nie wstawiaj dwóch luk, w których słowa dałoby się zamienić), a żadne słowo z banku nie występuje w tekście poza lukami. " +
     "Pytanie (prompt/stem) maks. 120 znaków. " +
     "lesson_calculation: proponuj wyłącznie rodzaj i parametry metody jawnie opisanej w materiale (skala mapy, różnica wysokości, zamiana cm/m/km), " +
     "z dokładnym cytatem potwierdzającym metodę. Model nie podaje prompt ani answer — treść i wynik buduje kod. " +

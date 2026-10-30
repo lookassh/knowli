@@ -36,6 +36,7 @@ const STAGE_BY_TYPE: Readonly<Record<LessonExerciseTypeDto, LessonStage>> = {
   lesson_keywords: "guided",
   lesson_match: "guided",
   lesson_group: "guided",
+  lesson_cloze: "guided",
 };
 
 /** Etap ćwiczenia danego typu (prezentacja przeglądu). */
@@ -88,6 +89,10 @@ export interface EditableLessonExercise {
   /** `lesson_group`: grupy i elementy z przynależnością (design szkoły §10.2). */
   groups?: { id: string; label: string }[] | null;
   groupItems?: { text: string; groupId: string }[] | null;
+  /** `lesson_cloze`: tekst z lukami, słowa luk i słowa-pułapki (design szkoły §13.1). */
+  clozeText?: string;
+  gapAnswers?: string[] | null;
+  extraWords?: string[] | null;
 }
 
 export interface EditableDynamicObjective {
@@ -177,7 +182,48 @@ function editableFromExercise(
     ...(exercise.extraRight ? { extraRight: [...exercise.extraRight] } : {}),
     ...(exercise.groups ? { groups: exercise.groups.map((group) => ({ ...group })) } : {}),
     ...(exercise.groupItems ? { groupItems: exercise.groupItems.map((item) => ({ ...item })) } : {}),
+    ...(exercise.clozeText !== undefined ? { clozeText: exercise.clozeText } : {}),
+    ...(exercise.gapAnswers ? { gapAnswers: [...exercise.gapAnswers] } : {}),
+    ...(exercise.extraWords ? { extraWords: [...exercise.extraWords] } : {}),
   };
+}
+
+/** Luka w tekście `lesson_cloze`: ciąg 2+ podkreśleń (jak w domenie serwera i Kid UI). */
+const CLOZE_GAP = /_{2,}/gu;
+
+/** Liczba luk w tekście z lukami. */
+export function clozeGapCountOf(text: string): number {
+  return text.split(CLOZE_GAP).length - 1;
+}
+
+/** Liczba pól słów pokazywanych w edytorze: tyle, ile luk w tekście (najwyżej 4). */
+export function clozeFieldCountOf(text: string): number {
+  return Math.min(clozeGapCountOf(text), 4);
+}
+
+/**
+ * Pola słów luk po zmianie tekstu: dopisuje puste, ale nie ucina wpisanych —
+ * chwilowe usunięcie „___” w trakcie pisania nie kasuje słowa. Do payloadu
+ * i odpowiedzi idą tylko pola widocznych luk (`clozeWordsOf`).
+ */
+export function syncGapAnswers(text: string, answers: readonly string[]): string[] {
+  const count = clozeFieldCountOf(text);
+  return answers.length >= count ? [...answers] : [...answers, ...Array.from({ length: count - answers.length }, () => "")];
+}
+
+/** Słowa widocznych luk w kolejności tekstu. */
+export function clozeWordsOf(exercise: Pick<EditableLessonExercise, "clozeText" | "gapAnswers">): string[] {
+  return (exercise.gapAnswers ?? []).slice(0, clozeFieldCountOf(exercise.clozeText ?? ""));
+}
+
+/** Odpowiedź `lesson_cloze` liczona ze słów luk (jak w domenie serwera): złączone „, ”. */
+export function clozeAnswerOf(exercise: Pick<EditableLessonExercise, "clozeText" | "gapAnswers">): string {
+  return clozeWordsOf(exercise).map((word) => word.trim()).join(", ");
+}
+
+/** Podgląd rodzica: tekst ze słowami w lukach (puste słowo zostawia „___”). */
+export function filledClozeOf(text: string, answers: readonly string[]): string {
+  return text.split(CLOZE_GAP).reduce((filled, part, index) => (index === 0 ? part : `${filled}${answers[index - 1]?.trim() || "___"}${part}`), "");
 }
 
 /** Odpowiedź `lesson_match` liczona z par (jak w domenie serwera): lewe strony złączone „, ”. */
@@ -327,6 +373,16 @@ function exerciseToInput(exercise: EditableLessonExercise): LessonExerciseInput 
     input.groups = (exercise.groups ?? []).map((group) => ({ ...group }));
     input.groupItems = (exercise.groupItems ?? []).filter((item) => item.text.trim().length > 0).map((item) => ({ ...item }));
     input.answer = groupAnswerOf(exercise);
+    input.acceptedAnswers = [];
+    input.focus = [];
+  }
+  if (type === "lesson_cloze") {
+    // Odpowiedź wynika ze słów luk; puste pola słów-pułapek nie blokują zapisu.
+    input.clozeText = exercise.clozeText ?? "";
+    input.gapAnswers = clozeWordsOf(exercise).map((word) => word.trim());
+    const extraWords = (exercise.extraWords ?? []).map((word) => word.trim()).filter((word) => word.length > 0);
+    if (extraWords.length > 0) input.extraWords = extraWords;
+    input.answer = clozeAnswerOf(exercise);
     input.acceptedAnswers = [];
     input.focus = [];
   }

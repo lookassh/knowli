@@ -151,8 +151,21 @@ function groupExerciseSchema(objectiveId: string): Record<string, unknown> {
   });
 }
 
+/** „Uzupełnij tekst” (design szkoły §13.6): tekst z lukami, słowa luk i dystraktory; odpowiedź składa kod. */
+function clozeExerciseSchema(objectiveId: string): Record<string, unknown> {
+  return strictObject({
+    exerciseType: { type: "string", enum: ["lesson_cloze"] },
+    objectiveId: { type: "string", enum: [objectiveId] },
+    instructionPl: { type: "string", minLength: 1, maxLength: 120 },
+    clozeText: { type: "string", minLength: 1, maxLength: 300 },
+    gapAnswers: { type: "array", minItems: 2, maxItems: 4, items: { type: "string", minLength: 1, maxLength: 30 } },
+    extraWords: { type: "array", minItems: 1, maxItems: 2, items: { type: "string", minLength: 1, maxLength: 30 } },
+    sourceRefs: groundedQuotes,
+  });
+}
+
 /** Typy z własną ścisłą gałęzią (bez pól wspólnej gałęzi „regularnej”). */
-const DEDICATED_BRANCH_TYPES: ReadonlySet<string> = new Set(["lesson_calculation", "lesson_keywords", "lesson_match", "lesson_group"]);
+const DEDICATED_BRANCH_TYPES: ReadonlySet<string> = new Set(["lesson_calculation", "lesson_keywords", "lesson_match", "lesson_group", "lesson_cloze"]);
 
 /** Strict JSON Schema: każda gałąź wiąże typ ćwiczenia z jednym celem. */
 export function lessonPoolJsonSchema(input: LessonPoolInput): Record<string, unknown> {
@@ -167,6 +180,7 @@ export function lessonPoolJsonSchema(input: LessonPoolInput): Record<string, unk
       ...(types.includes("lesson_keywords") ? [keywordsExerciseSchema(objective.id)] : []),
       ...(types.includes("lesson_match") ? [matchExerciseSchema(objective.id)] : []),
       ...(types.includes("lesson_group") ? [groupExerciseSchema(objective.id)] : []),
+      ...(types.includes("lesson_cloze") ? [clozeExerciseSchema(objective.id)] : []),
     ];
   });
   const objectiveIds = input.objectives.map((objective) => objective.id);

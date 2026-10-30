@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { LessonDraftDto } from "@learning/contracts";
 import {
+  clozeGapCountOf,
+  clozeWordsOf,
   createLessonSnapshot,
+  filledClozeOf,
+  syncGapAnswers,
   applyCalculationPreview,
   groupCalculationFamilies,
   groupExercisesByObjectiveAndStage,
@@ -160,6 +164,36 @@ describe("toLessonDraftPatch", () => {
     const input = toLessonDraftPatch(snapshot).exercises![0]!;
     expect(input).toMatchObject({ exerciseType: "lesson_group", answer: "ssaki / ptaszki", acceptedAnswers: [], focus: [] });
     expect(input.groupItems).toEqual(source.exercises[0]!.groupItems);
+  });
+
+  it("luki: odpowiedź ze słów luk, puste słowa-pułapki pominięte, bez wariantów i focus", () => {
+    const source = draft();
+    source.exercises[0] = {
+      ...source.exercises[0]!, exerciseType: "lesson_cloze", answer: "stara", acceptedAnswers: ["x"], focus: ["y"],
+      options: undefined, correctOption: undefined,
+      clozeText: "Roślina pobiera ___ i ___.", gapAnswers: ["wodę", "sole"], extraWords: ["tlen"],
+    };
+    const snapshot = createLessonSnapshot(source, () => "unused");
+    snapshot.form.exercises[0]!.gapAnswers![1] = " sole mineralne ";
+    snapshot.form.exercises[0]!.extraWords!.push(" ");
+    const input = toLessonDraftPatch(snapshot).exercises![0]!;
+    expect(input).toMatchObject({
+      exerciseType: "lesson_cloze", clozeText: "Roślina pobiera ___ i ___.", gapAnswers: ["wodę", "sole mineralne"],
+      extraWords: ["tlen"], answer: "wodę, sole mineralne", acceptedAnswers: [], focus: [],
+    });
+    expect(input.options).toBeUndefined();
+    expect(lessonExerciseChanged(snapshot.form.exercises[0]!, createLessonSnapshot(source, () => "unused").form.exercises[0]!)).toBe(true);
+  });
+
+  it("luki: pola słów podążają za liczbą luk, a podgląd wstawia słowa w tekst", () => {
+    expect(clozeGapCountOf("a ___ b ____ c __")).toBe(3);
+    expect(syncGapAnswers("a ___ b ___ c ___", ["x"])).toEqual(["x", "", ""]);
+    expect(syncGapAnswers("a ___ b ___ c ___ d ___ e ___", [])).toHaveLength(4);
+    // Chwilowe usunięcie luki nie kasuje wpisanych słów; do payloadu idą tylko słowa widocznych luk.
+    expect(syncGapAnswers("a ___ b", ["x", "y"])).toEqual(["x", "y"]);
+    expect(clozeWordsOf({ clozeText: "a ___ b", gapAnswers: ["x", "y"] })).toEqual(["x"]);
+    expect(syncGapAnswers("a ___ b ___ c", ["x", "y"])).toEqual(["x", "y"]);
+    expect(filledClozeOf("Roślina pobiera ___ i ___.", ["wodę", " "])).toBe("Roślina pobiera wodę i ___.");
   });
 
   it("nextGroupId omija zajęte identyfikatory", () => {

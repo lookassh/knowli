@@ -15,6 +15,7 @@ import { LessonSentenceView } from "./lesson/LessonSentenceView";
 import { LessonKeywordsView } from "./lesson/LessonKeywordsView";
 import { LessonMatchView } from "./lesson/LessonMatchView";
 import { LessonGroupView } from "./lesson/LessonGroupView";
+import { LessonClozeView } from "./lesson/LessonClozeView";
 import { LessonShortenView } from "./lesson/LessonShortenView";
 import { PictureExposureView } from "./PictureExposureView";
 import { PictureListeningView } from "./PictureListeningView";
@@ -72,6 +73,9 @@ export function ExerciseView(props: ExerciseProps) {
       return <LessonMatchView key={props.task.taskId} {...props} />;
     case "lesson_group":
       return <LessonGroupView key={props.task.taskId} {...props} />;
+    // Luki z bankiem słów (design szkoły §13.5): te same reguły stukania co pary.
+    case "lesson_cloze":
+      return <LessonClozeView key={props.task.taskId} {...props} />;
     case "lesson_gap":
       return <LessonGapView key={props.task.taskId} {...props} />;
     case "lesson_error_fix":

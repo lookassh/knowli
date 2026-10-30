@@ -1,11 +1,11 @@
 import { useRef, useState } from "react";
 import { messages } from "@learning/contracts";
 import { format } from "../../format";
-import { ActionButton } from "../../components/ActionButton";
 import { LessonBlockButton } from "../../components/LessonBlockButton";
 import { ExerciseFrame } from "../ExerciseFrame";
 import { useRetryReset } from "../useRetryReset";
 import type { ExerciseProps } from "../types";
+import { AssignmentCheckButton, AssignmentPool } from "./AssignmentPool";
 import { addToGroup, groupAssignments, groupComplete, groupPool, groupState, itemsIn, removeFromGroup, selectGroup } from "./assignment-state";
 
 /**
@@ -82,34 +82,20 @@ export function LessonGroupView({ task, busy, dock, handlers }: ExerciseProps) {
               {format(messages.kid.lessonGroupActiveHint, { group: activeGroup.text })}
             </p>
           )}
-          <div className="kid-lesson-group__pool" data-testid="kid-lesson-group-pool" role="list" aria-label={messages.kid.lessonGroupPool}>
-            {pool.map((item) => (
-              <div key={item.id} role="listitem" className="kid-lesson-assign__entry">
-                <LessonBlockButton
-                  type="button"
-                  className="kid-lesson-block"
-                  data-testid="kid-lesson-group-item"
-                  disabled={disabled || activeGroup === null}
-                  aria-label={activeGroup ? format(messages.kid.lessonGroupAdd, { item: item.text, group: activeGroup.text }) : item.text}
-                  onClick={() => { setState((current) => addToGroup(current, item.id)); handlers.onEdit(); }}
-                >
-                  {item.text}
-                </LessonBlockButton>
-              </div>
-            ))}
-          </div>
+          <AssignmentPool
+            items={pool}
+            className="kid-lesson-group__pool"
+            testId="kid-lesson-group-pool"
+            optionTestId="kid-lesson-group-item"
+            label={messages.kid.lessonGroupPool}
+            disabled={disabled || activeGroup === null}
+            labelOf={(item) => (activeGroup ? format(messages.kid.lessonGroupAdd, { item: item.text, group: activeGroup.text }) : item.text)}
+            onPick={(itemId) => { setState((current) => addToGroup(current, itemId)); handlers.onEdit(); }}
+          />
         </div>
       )}
       actions={(
-        <ActionButton
-          type="button"
-          className="kid-primary"
-          data-testid="kid-lesson-check"
-          disabled={disabled || !complete}
-          onClick={() => { if (complete && !disabled) handlers.onAnswerAssignment(groupAssignments(state)); }}
-        >
-          {messages.kid.lessonCheck}
-        </ActionButton>
+        <AssignmentCheckButton disabled={disabled} complete={complete} onCheck={() => handlers.onAnswerAssignment(groupAssignments(state))} />
       )}
     />
   );

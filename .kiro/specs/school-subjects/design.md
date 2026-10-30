@@ -1672,3 +1672,243 @@ podniesieniu limitów karty nie wyślemy niekontrolowanie długiego tekstu.
   się odtworzyć karty…”, „Odtwórz kartę”). Wdrożenie: klient sprzed zmiany
   odrzuca kartę z nowym polem (ścisły schemat promptu, jak przy §11) —
   otwarta karta PWA wymaga odświeżenia.
+
+## 13. „Uzupełnij tekst” — luki z bankiem słów (Etap 10) — kontrakt
+
+Status: **zaakceptowany przez właściciela 2026-10-30** (decyzje 13.9 bez
+zmian; korekty przy implementacji w 13.10). Typ wybrany przez
+właściciela 2026-10-30 spośród: „Uzupełnij tekst”, „Oś czasu”, „Podpisz
+obrazek” (ten ostatni wymagałby obrazów wyłączonych w requirements, „Zakres
+i świadome wyłączenia”). Numer sekcji: §12 zajmują równoległe kontrakty
+odsłuchu kart i opcji — przy scalaniu numeracja może się przesunąć.
+
+Moduły jak w Etapie 7 (§10): typ, walidacja puli i ocena w domenie
+(`domain/lessons/types.ts`, `pool-validation.ts`, `evaluate.ts`,
+`question-read-text.ts`, `subjects/school/`), materializacja i próby
+w `learning/lessons/`, generowanie i szkic w `materials/lessons/`, widok
+w `packages/kid-ui`, edytor w `apps/web/src/parent/lessons`. Gramatyka
+i słówka bez zmian. Zasada bez zmian: model generuje wyłącznie dane, serwer
+waliduje, rodzic zatwierdza, ocena deterministyczna bez modelu w sesji,
+klucz zostaje na serwerze.
+
+Cel: dziecko czyta krótki tekst z materiału (2–4 zdania) i do każdej luki
+wybiera słowo z banku. Ćwiczy czytanie ze zrozumieniem i rozpoznanie pojęć
+w kontekście — w każdym przedmiocie, nie tylko tam, gdzie są daty czy
+klasyfikacje. Różnica wobec `lesson_gap`: tam jedna luka i odpowiedź
+wpisywana (etap `productive`), tu kilka luk i wybór z widocznego banku
+(etap `guided`).
+
+### 13.1. Payload — typ `lesson_cloze`
+
+Ćwiczenie w puli (tylko `school`):
+
+| Pole | Kształt | Zasada |
+| --- | --- | --- |
+| `exerciseType` | `"lesson_cloze"` | etap `guided` |
+| `clozeText` | string, ≤300 znaków | tekst z lukami; luka = ciąg 2+ podkreśleń (jak `splitGap` i `GAP_MARKER`) |
+| `gapAnswers` | `string[]`, 2–4 | słowo do każdej luki w kolejności tekstu; 1–3 słowa, ≤30 znaków |
+| `extraWords` | `string[]`, 1–2 | dystraktory w banku (ten sam rodzaj słów), ≤30 znaków; co najmniej jeden, żeby ostatniej luki nie dało się uzupełnić eliminacją |
+| `answer` | string | `gapAnswers` złączone `", "` (`targetKey`, podgląd rodzica; wylicza kod) |
+| `instructionPl`, `sourceRefs` | jak w innych typach | `sourceRefs` wymagane |
+
+Walidacja puli (`validateCloze`):
+
+- liczba luk w `clozeText` = liczba `gapAnswers`, 2–4; limity liczby
+  i długości jak wyżej;
+- między dwiema lukami stoi co najmniej jedno słowo (`___ ___` albo
+  `___, ___` są nie do rozróżnienia);
+- odpowiedzi i dystraktory unikalne po normalizacji (NFC, białe znaki,
+  wielkość liter); kontrola powtórzeń całymi słowami jak w §10.9 („tlen” obok
+  „dwutlenek węgla” jest poprawny);
+- żadna odpowiedź ani dystraktor nie występuje w `clozeText` poza lukami
+  (całymi słowami, po normalizacji) — tekst nie może podpowiadać ani
+  wykluczać słowa z banku;
+- tekst bez innych ciągów podkreśleń niż luki.
+
+Czy dwa słowa nie pasują zamiennie do dwóch luk („Rośliny potrzebują ___
+i ___”), walidacja nie rozstrzygnie: prompt tego zabrania (13.6), a podgląd
+rodzica pokazuje uzupełniony tekst do sprawdzenia.
+
+### 13.2. Kid DTO (`.strict()`, bez klucza)
+
+```ts
+{ kind: "lesson_cloze", instructionPl: string,
+  segments: ({ text: string } | { gapId: Uuid })[] /* tekst pocięty na luki */,
+  words: LessonItem[] /* odpowiedzi + dystraktory, UUID, tasowane */,
+  questionAudioAssetId?: Uuid }
+```
+
+- Segmenty tekstu i luk przygotowuje serwer (`.strict()` dla obu kształtów),
+  więc klient nie parsuje podkreśleń. `gapId` nadawane przy materializacji
+  (inne w każdym zadaniu). Numer luki (1–4) wynika z kolejności — klient go
+  wylicza, DTO go nie niesie.
+- `superRefine`: 2–4 luki, unikalne `gapId`, `words.length` > liczby luk.
+- Nic w DTO nie wskazuje, które słowo pasuje do której luki.
+
+### 13.3. Odpowiedź i ocena
+
+Modalność `assignment` z §10.3 — **bez migracji** (modalność jest w `0026`,
+typy ćwiczeń nie mają CHECK w bazie):
+
+- `itemId` = luka (`gapId`), `targetId` = słowo z banku. Każda luka dokładnie
+  raz, każde słowo co najwyżej raz (dystraktory zostają nieużyte). Kształt
+  niezgodny z zadaniem → `400` bez próby, jak w parach.
+- `AttemptInputSchema`: dolna granica przypisań zmienia się z 3 na 2
+  (dokładną liczbę dla zadania i tak sprawdza strażnik serwera). Zmiana
+  rozluźnia schemat, więc starsze klienty dalej działają.
+- Hash żądania z przypisań posortowanych po `itemId`, jak w §10.3.
+
+Ocena deterministyczna bez modelu: `correct`, gdy każde słowo stoi w swojej
+luce; inaczej `incorrect` z `correctText` = cały tekst z poprawnymi słowami
+(dziecko czyta gotowe zdania). Bez oceny częściowej i bez „prawie” — spójnie
+z decyzją 10.8 pkt 4. Pomoc `options` jak w `lesson_match` (bank widoczny),
+więc poprawna odpowiedź nie jest samodzielnym przypomnieniem i nie wchodzi do
+serii opanowania. Zadanie liczy się do budżetu sesji.
+
+Kartkówka: dopuszczone (jak pary i grupy), z ekspozycją przy wydaniu;
+omówienie pokazuje odpowiedź dziecka i uzupełniony tekst. Raport aktywności
+sesji i karta pracy rodzica opisują odpowiedź jako `1 → słowo, 2 → słowo`.
+Ocena aktywności sesji dostaje tekst z lukami, bank i odpowiedź dziecka
+w tym samym formacie, a jako wariant poprawny uzupełniony tekst.
+
+### 13.4. Tasowanie bez rozwiązanego układu
+
+Bank tasowany jak elementy w §10.4 (ziarno z losowym składnikiem, §10.9).
+Gdy odpowiedzi w banku (pomijając dystraktory) stoją w kolejności luk,
+materializacja przesuwa bank cyklicznie o jedną pozycję, aż ta kolejność się
+zmieni (deterministycznie, najwyżej tyle kroków, ile słów w banku).
+
+### 13.5. Kid UI — `LessonClozeView`
+
+Widok w `exercises/lesson/` z istniejących klocków: `ExerciseFrame`,
+`LessonBlockButton`, `ActionButton` („Sprawdź”, aktywne przy wszystkich
+lukach), `useRetryReset`. Stan stukania to istniejące czyste funkcje
+`matchState`/`selectSlot`/`placeRight`/`matchAssignments`
+z `assignment-state.ts` (luki = lewa kolumna, słowa = prawa) — bez nowych
+reguł stanu, ewentualnie tylko alias nazwy.
+
+- **Tekst** w akapicie; luka w tekście to **nieinteraktywny** znacznik
+  z numerem i wstawionym słowem albo pustym miejscem (np. „①”, „① tlen”),
+  z wyróżnieniem aktywnej luki. Klikalne luki wewnątrz tekstu nie spełnią
+  celów ≥48 px bez rozsadzania wierszy na 320 px. Czytnik ekranu czyta
+  „luka 1, pusta” / „luka 1: tlen”.
+- **Miejsca** pod tekstem: dla każdej luki `LessonBlockButton` „1 · tlen”
+  albo „1 · Wybierz słowo”. Stuknięcie czyni miejsce aktywnym (domyślnie
+  pierwsze puste), stuknięcie zajętego oddaje słowo do banku.
+- **Bank** pod miejscami: słowa jako `LessonBlockButton`; stuknięcie wstawia
+  słowo do aktywnej luki, a aktywna staje się następna pusta.
+- Układ: compact (<600) tekst, miejsca i bank jeden pod drugim; expanded
+  (≥840) tekst z miejscami po lewej, bank po prawej; niska wysokość (<480)
+  przewija treść w ramie, a „Sprawdź” pozostaje osiągalne. Cele ≥48 px,
+  główna akcja ≥54 px, teksty się zawijają, brak przepełnienia poziomego.
+  Bez surowych `<button>`; znaczniki luk w tekście to elementy tekstowe.
+- Feedback: dotychczasowa ścieżka `great` / `incorrect{correctText}`.
+- Komunikaty w `messages.ts`: polecenie domyślne („Uzupełnij tekst. Wybierz
+  słowo do każdej luki.”), „Wybierz słowo”, etykiety dostępności luk
+  i banku, nazwa typu „Uzupełnij tekst” w panelu rodzica.
+
+### 13.6. Generowanie
+
+- Structured output: osobna ścisła gałąź `lesson_cloze` w schemacie puli
+  (`lesson-pool-schema.ts`, wzór `lesson_match`): `objectiveId`,
+  `instructionPl?`, `clozeText`, `gapAnswers`, `extraWords`, `sourceRefs`.
+  `materializeGeneratedAssignments` dopisuje polecenie domyślne i `answer`,
+  potem wspólna walidacja kształtu (`lesson-drafts.ts`) i puli.
+- Prompt szkoły: tekst to 2–4 krótkie zdania bliskie materiałowi rodzica
+  (słownictwo dziecka ~8 lat); luki tylko na pojęciach z materiału
+  (rzeczowniki, nazwy, liczby z materiału), nigdy na spójnikach, przyimkach
+  i słowach, które da się odgadnąć z gramatyki zdania; do każdej luki pasuje
+  dokładnie jedno słowo z banku; dystraktory z tego samego materiału i tej
+  samej kategorii, ale błędne w danym zdaniu; słowa z banku nie występują
+  w tekście poza lukami. Dotyczy nowych generacji i dogenerowań.
+- Minima puli i pokrycie etapów bez zmian: typ liczy się jako `guided`,
+  publikacja go nie wymaga.
+- Deduplikacja (`exercise-identity`): bodziec = znormalizowany tekst
+  z lukami + odpowiedzi w kolejności luk.
+- Kryterium celu (`skill_version`) obejmuje tekst i odpowiedzi: zmiana luk
+  tworzy nowe kryterium.
+- Fake generator nie tworzy tego typu (jak par i grup, §10.9); testy budują
+  pule przez edycję rodzica.
+
+### 13.7. Edytor rodzica (Mantine) i „Posłuchaj pytania”
+
+- Edytor (`ClozeFields.tsx` obok `AssignmentFields.tsx`): `Textarea` na
+  tekst z podpowiedzią „Wpisz ___ w miejscu luki”; pola `TextInput`
+  „Luka 1…4” — ich liczba podąża za liczbą luk w tekście; dystraktory 1–2
+  z dodawaniem i usuwaniem; `answer` wyliczany z pól (bez osobnej edycji).
+  Podgląd pokazuje uzupełniony tekst z wyróżnionymi słowami. Błędy walidacji
+  z serwera (13.1) jak w innych typach.
+- `questionReadText`: polecenie (z payloadu albo domyślne) + `clozeText`
+  z „luka” w miejscu każdej luki; banku nie czyta (tasowany). Nagranie
+  pokazuje tylko to, co dziecko widzi, więc w kartkówce też jest dostępne.
+
+### 13.8. Prywatność, transakcje, integracje
+
+- Kid DTO bez klucza: przypisanie słów do luk znane tylko serwerowi; UUID
+  luk i słów inne w każdym zadaniu.
+- Ocena bez modelu i bez danych dziecka poza przypisaniami; zapis próby,
+  oceny i ekspozycji w jednej transakcji, jak w parach.
+- Do generatora trafia wyłącznie materiał rodzica — bez danych dziecka.
+- API → MCP → skill: lekcje poza `learning-overview` — brak wpływu; filtr
+  i nota w `SKILL.md` bez zmian.
+- Odsłuch słów banku: poza etapem. Jeśli kontrakt odsłuchu opcji (§12
+  równoległy) doda nagrania do `LessonItem`, bank może je przejąć osobną
+  zmianą.
+
+### 13.9. Decyzje do akceptacji właściciela
+
+1. **Nowy typ `lesson_cloze`** tylko w przedmiotach szkolnych, etap
+   `guided`, dopuszczony w kartkówce, niewymagany do publikacji.
+2. **Limity**: tekst ≤300 znaków, 2–4 luki, odpowiedź 1–3 słowa ≤30 znaków,
+   1–2 dystraktory (co najmniej jeden obowiązkowo).
+3. **Modalność `assignment` bez migracji**; dolna granica przypisań
+   w schemacie 3 → 2.
+4. **Ocena zero-jedynkowa** z uzupełnionym tekstem w feedbacku; bez oceny
+   per luka (możliwe później).
+5. **Luki w tekście nieinteraktywne**, stukanie w listę miejsc pod tekstem
+   i w bank (13.5).
+6. **Słowa z banku nie mogą występować w tekście poza lukami** (twarda
+   walidacja).
+7. **Nagranie pytania**: polecenie + tekst z „luka”; bez banku.
+8. **Poza etapem**: wariant bez banku (wpisywanie, etap `productive`), ocena
+   per luka, odsłuch słów banku, powiązanie z pomylonymi pojęciami z Etapu 6.
+
+### 13.10. Korekty przy implementacji (2026-10-30)
+
+- **Jedna kolumna na każdym ekranie** zamiast banku obok tekstu od 840 px:
+  kontener materiału ma ok. 530 px także na desktopie, więc dwie kolumny
+  ściskały tekst, a w niskim landscape bank lądował u góry, daleko od miejsc
+  luk. Kolejność: tekst, miejsca luk, tuż pod nimi bank i podpowiedź „Które
+  słowo pasuje do luki n?”. Spec geometrii sprawdza to na 320×640, 390×844,
+  844×390, 768×1024 i 1280×800.
+- **Omówienie kartkówki**: odpowiedź dziecka to tekst z jego słowami w lukach
+  (pusta luka jako „___”), obok poprawnego tekstu — klucz zadania trzyma też
+  `clozeText` (tylko serwer). Raport aktywności sesji i karta pracy rodzica
+  opisują odpowiedź jako `1 → słowo; 2 → słowo`, a ocena aktywności sesji
+  dostaje jako wariant poprawny ten sam zapis (nie uzupełniony tekst), żeby
+  porównywała odpowiedzi w jednym formacie; bodźcem jest tekst z „[1]”, „[2]”.
+- **Tasowanie (review przed PR) — zmiana reguły 13.4**: zakaz każdego układu
+  banku ze słowami luk w kolejności luk przy 2 lukach wymuszał zawsze odwrotną
+  kolejność, czyli zdradzał przypisanie. Układ „rozwiązany” to teraz bank,
+  który **zaczyna się** słowami luk w kolejności luk; poza tym kolejność słów
+  luk w banku jest losowa. `shuffleUnsolved` przesuwa układ cyklicznie aż do
+  nierozwiązanego (najwyżej n − 1 kroków) — dla par, grup i „Ułóż” wynik bez
+  zmian (wystarczał jeden krok).
+- **Walidacja (review)**: słowo luki i słowo-pułapka muszą mieć 1–3 słowa
+  z literami lub cyframi (limit z 13.1 egzekwowany, nie tylko w prompcie;
+  słowa z samych znaków jak „>” albo spacji omijały kontrolę powtórzeń).
+  Materializacja niespójnego payloadu (liczba luk ≠ liczba słów) to błąd
+  serwera, nie zadanie bez klucza.
+- **Edytor (review)**: pola słów nie są ucinane, gdy rodzic chwilowo usuwa
+  „___” w trakcie pisania; do payloadu, odpowiedzi i podglądu idą słowa
+  widocznych luk. Słowa są pozycyjne — przesunięcie luk w tekście przesuwa
+  przypisanie, co rodzic widzi w podglądzie uzupełnionego tekstu.
+- Luka w tekście ma dla czytnika ekranu ukryty opis („luka 1, pusta” /
+  „luka 1: tlen”), a widoczny znacznik (numer i słowo albo „…”) jest
+  `aria-hidden`; miejsca luk mają etykiety „Luka n: wybierz słowo” / „Luka n:
+  słowo. Dotknij, aby wyjąć słowo”.
+- Ocena aktywności, feedback i zapis próby nie wymagały nowych pól oprócz
+  `filledText` i `clozeText` w kluczu zadania; `evaluateAssignment` bez zmian
+  (luka = element, słowo = cel użyty co najwyżej raz).
+- Fake generator nie tworzy luk z bankiem (jak par i grup); testy budują pule
+  przez edycję rodzica.

@@ -6,6 +6,7 @@ import { AppError } from "../../../errors";
 import { computeTargetKey } from "../../../domain/target-key";
 import { renderCalculationPrompt } from "../../../domain/lessons/calculation";
 import { renderCard } from "../../../domain/lessons/card";
+import { clozeParts, fillCloze } from "../../../domain/lessons/cloze";
 import { answersEquivalent } from "../../../domain/lessons/pool-validation";
 import type { LearningObjective, LessonExerciseType, LessonTopic, LessonVisualSubject, SubjectModule } from "../../../domain/lessons/types";
 import type { LessonTaskPlan } from "../../../domain/lessons/scheduler";
@@ -51,6 +52,9 @@ export interface LessonExercisePayload {
   extraRight?: string[];
   groups?: { id: string; label: string }[];
   groupItems?: { text: string; groupId: string }[];
+  clozeText?: string;
+  gapAnswers?: string[];
+  extraWords?: string[];
   answerLocale: string;
   promptLocale: string;
 }
@@ -100,14 +104,17 @@ export function seededShuffle<T>(items: readonly T[], seed: string): T[] {
 /**
  * Tasowanie, które nigdy nie pokazuje układu rozwiązanego (design szkoły §10.4):
  * gdy `seededShuffle` zwróci układ, dla którego `isSolved` jest prawdą,
- * wynik przesuwamy cyklicznie o jedną pozycję — deterministycznie, bez nowej
- * losowości. Przy n ≥ 2 różnych elementach przesunięcie układu rozwiązanego
- * nie jest już rozwiązane dla reguł porównujących pozycje.
+ * wynik przesuwamy cyklicznie o jedną pozycję, aż przestanie być rozwiązany
+ * (najwyżej n − 1 kroków) — deterministycznie, bez nowej losowości. Dla reguł
+ * porównujących pozycje wystarcza jeden krok; luki z bankiem (§13.4) mogą
+ * potrzebować kilku, gdy na początku banku stoją dystraktory.
  */
 export function shuffleUnsolved<T>(items: readonly T[], seed: string, isSolved: (arranged: readonly T[]) => boolean): T[] {
-  const shuffled = seededShuffle(items, seed);
-  if (shuffled.length < 2 || !isSolved(shuffled)) return shuffled;
-  return [...shuffled.slice(1), shuffled[0]!];
+  let arranged = seededShuffle(items, seed);
+  for (let step = 1; step < arranged.length && isSolved(arranged); step++) {
+    arranged = [...arranged.slice(1), arranged[0]!];
+  }
+  return arranged;
 }
 
 /** Polecenie przekształcenia z tematu, gdy payload go nie niesie. */
@@ -387,6 +394,49 @@ export function materializeExercise(
           targetIds: groups.map((group) => group.id),
           itemIds: items.map((item) => item.id),
           itemValues: Object.fromEntries([...groups, ...items].map((item) => [item.id, item.text])),
+        },
+        exposures: [exercise.targetKey],
+      };
+    }
+    case "lesson_cloze": {
+      // Design szkoły §13.2/13.4: tekst pocięty na luki z UUID w każdym zadaniu,
+      // bank tasowany tak, by nie zaczynał się słowami luk w kolejności luk.
+      // Zakaz każdego układu „w kolejności luk” przy 2 lukach wymuszałby zawsze
+      // odwrotną kolejność i zdradzał przypisanie (korekta §13.10).
+      const text = payload.clozeText ?? "";
+      const answers = payload.gapAnswers ?? [];
+      const parts = clozeParts(text);
+      if (answers.length < 2 || parts.length - 1 !== answers.length) {
+        throw new AppError("internal", { message: "invalid private cloze payload" });
+      }
+      const gaps = answers.map((word, index) => ({ id: randomUUID(), number: String(index + 1), word: { id: randomUUID(), text: word } }));
+      const extras = (payload.extraWords ?? []).map((word) => ({ id: randomUUID(), text: word }));
+      const gapOrder = new Map(gaps.map((gap, index) => [gap.word.id, index] as const));
+      const words = shuffleUnsolved([...gaps.map((gap) => gap.word), ...extras], shuffleSeed,
+        (arranged) => gaps.every((_, index) => gapOrder.get(arranged[index]?.id ?? "") === index));
+      const segments = parts.flatMap((part, index) => [
+        ...(index === 0 ? [] : [{ gapId: gaps[index - 1]!.id }]),
+        ...(part === "" ? [] : [{ text: part }]),
+      ]);
+      const prompt: TaskPrompt = {
+        kind: "lesson_cloze",
+        instructionPl: payload.instructionPl ?? messages.kid.lessonClozeInstruction,
+        segments,
+        words,
+        ...questionAudio,
+      };
+      return {
+        ...common,
+        prompt,
+        answerKey: {
+          ...baseKey,
+          assignments: gaps.map((gap) => ({ itemId: gap.id, targetId: gap.word.id })),
+          targetIds: words.map((word) => word.id),
+          targetOnce: true,
+          itemIds: gaps.map((gap) => gap.id),
+          itemValues: Object.fromEntries([...gaps.map((gap) => [gap.id, gap.number] as const), ...words.map((word) => [word.id, word.text] as const)]),
+          filledText: fillCloze(text, answers),
+          clozeText: text,
         },
         exposures: [exercise.targetKey],
       };

@@ -155,6 +155,7 @@ function questionSourceOf(payload: Record<string, unknown>) {
     stem: optionalText(payload.stem),
     prompt: optionalText(payload.prompt),
     groups,
+    clozeText: optionalText(payload.clozeText),
   };
 }
 

@@ -49,6 +49,7 @@ export const EXERCISE_TYPES = [
   "lesson_keywords",
   "lesson_match",
   "lesson_group",
+  "lesson_cloze",
 ] as const;
 export type ExerciseTypeDto = (typeof EXERCISE_TYPES)[number];
 
@@ -88,6 +89,17 @@ export type LessonItem = z.infer<typeof LessonItemSchema>;
  * z widocznej treści. Odczyt nie jest ujawnieniem — bez zdarzenia i ekspozycji.
  */
 const QuestionAudioSchema = UuidSchema.optional();
+
+/**
+ * Fragment tekstu „Uzupełnij tekst” (`lesson_cloze`, design szkoły §13.2):
+ * tekst albo luka. Serwer tnie tekst na luki, więc klient nie parsuje
+ * podkreśleń; numer luki wynika z kolejności.
+ */
+export const ClozeSegmentSchema = z.union([
+  z.object({ text: z.string().min(1) }).strict(),
+  z.object({ gapId: UuidSchema }).strict(),
+]);
+export type ClozeSegment = z.infer<typeof ClozeSegmentSchema>;
 
 /** Segment zdania `lesson_notice` do wskazania — bez informacji, który jest poprawny. */
 export const LessonSegmentSchema = z.object({
@@ -327,6 +339,15 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     items: z.array(LessonItemSchema).min(4).max(8),
     questionAudioAssetId: QuestionAudioSchema,
   }).strict(),
+  // „Uzupełnij tekst” (design szkoły §13.2): tekst pocięty na luki, bank słów
+  // tasowany; które słowo pasuje do której luki, wie tylko serwer.
+  z.object({
+    kind: z.literal("lesson_cloze"),
+    instructionPl: z.string().min(1),
+    segments: z.array(ClozeSegmentSchema).min(2).max(9),
+    words: z.array(LessonItemSchema).min(3).max(6),
+    questionAudioAssetId: QuestionAudioSchema,
+  }).strict(),
   // Zadanie następcze „Skróć odpowiedź” (technicznie odpowiedź otwarta): własny
   // tekst dziecka z zaznaczonymi fragmentami do usunięcia — nic z klucza.
   z.object({
@@ -343,6 +364,15 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
   }
   if (prompt.kind === "lesson_match" && prompt.right.length < prompt.left.length) {
     ctx.addIssue({ code: "custom", path: ["right"], message: "every left item needs a right candidate" });
+  }
+  if (prompt.kind === "lesson_cloze") {
+    const gapIds = prompt.segments.flatMap((segment) => ("gapId" in segment ? [segment.gapId] : []));
+    if (gapIds.length < 2 || gapIds.length > 4 || new Set(gapIds).size !== gapIds.length) {
+      ctx.addIssue({ code: "custom", path: ["segments"], message: "cloze needs 2-4 unique gaps" });
+    }
+    if (prompt.words.length <= gapIds.length) {
+      ctx.addIssue({ code: "custom", path: ["words"], message: "the word bank needs a distractor" });
+    }
   }
   if (prompt.kind === "exposure" || prompt.kind === "speech") {
     validateVisualPrompt({
@@ -669,7 +699,7 @@ export const AttemptModalitySchema = z.enum(["choice", "text", "audio", "dont_re
 
 /**
  * Przypisanie (`lesson_match`: lewy element → prawy, `lesson_group`: element →
- * grupa). Kompletność i zgodność z zadaniem sprawdza serwer.
+ * grupa, `lesson_cloze`: luka → słowo). Kompletność i zgodność z zadaniem sprawdza serwer.
  */
 export const AssignmentSchema = z.object({ itemId: UuidSchema, targetId: UuidSchema }).strict();
 export type Assignment = z.infer<typeof AssignmentSchema>;
@@ -735,8 +765,11 @@ export const AttemptInputSchema = z.discriminatedUnion("modality", [
     taskId: UuidSchema,
     clientAttemptId: UuidSchema,
     modality: z.literal("assignment"),
-    /** Przypisania dziecka (`lesson_match`, `lesson_group`): 3–8, każdy element raz. */
-    assignments: z.array(AssignmentSchema).min(3).max(8).refine(
+    /**
+     * Przypisania dziecka (`lesson_match`, `lesson_group`, `lesson_cloze`):
+     * 2–8, każdy element raz; dokładną liczbę dla zadania sprawdza serwer.
+     */
+    assignments: z.array(AssignmentSchema).min(2).max(8).refine(
       (list) => new Set(list.map((entry) => entry.itemId)).size === list.length,
       { message: "each item can be assigned once" },
     ),

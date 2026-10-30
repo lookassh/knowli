@@ -1,6 +1,8 @@
-import { expect, test, type Page } from "@playwright/test";
-import type { AttemptDto, TaskDto } from "@learning/contracts";
-import { installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
+import { expect, test } from "@playwright/test";
+import type { TaskDto } from "@learning/contracts";
+import { installKidUiFixture } from "./helpers/kid-ui-fixture";
+import { assignmentAttempt, lessonTaskFixture, openLessonTask, recordAttemptPosts, tapPoolAndCheck } from "./helpers/lesson-assignment-task";
+import { expectButtonsNotClipped, expectTargetsReachable } from "./helpers/lesson-reach";
 
 /**
  * Geometria „Połącz w pary” (`lesson_match`) i „Pogrupuj” (`lesson_group`)
@@ -19,6 +21,9 @@ const versionId = "10000000-0000-4000-8000-000000000704";
 const matchTaskId = "10000000-0000-4000-8000-000000000711";
 const groupTaskId = "10000000-0000-4000-8000-000000000712";
 const uid = (n: number) => `10000000-0000-4000-8000-0000000007${String(n).padStart(2, "0")}`;
+
+const ids = { childId, deckId, sessionId, versionId };
+const deck = { title: "Siatka geograficzna", subjectTitle: "Geografia" };
 
 const VIEWPORTS = [
   { width: 390, height: 844 },
@@ -71,68 +76,9 @@ const groupTask: TaskDto = {
   },
 };
 
-const attempt = (attemptId: string, taskId: string, feedback: AttemptDto["feedback"]): AttemptDto => ({
-  attemptId, taskId, state: "completed", modality: "assignment", feedback, taskState: "answered", stepId: "s1",
-  receivedAt: "2026-10-29T10:00:01.000Z", completedAt: "2026-10-29T10:00:01.000Z",
-});
-
-function fixture(tasks: TaskDto[], attempts: AttemptDto[] = []): KidUiFixture {
-  return {
-    profiles: [{ childId, displayName: "Ola", avatarKey: "owl", recordingMode: "hold" }],
-    decks: [{ deckId, title: "Siatka geograficzna", itemCount: 6, independentlyRecalledCount: 0, testDate: null,
-      recommended: true, mockTestAvailable: false, activeSession: null, kind: "lesson", subjectTitle: "Geografia" }],
-    session: { mode: "training", sessionId, childId, deckId, deckVersionId: versionId,
-      policyId: "lesson-default", microphoneEnabled: false, state: "active", taskBudget: 3, tasksIssued: 1,
-      assessedTasksIssued: 1, startedAt: "2026-10-29T10:00:00.000Z", resumed: false },
-    tasks,
-    attempts,
-  };
-}
-
-async function open(page: Page, kidFixture: KidUiFixture, ready: string): Promise<void> {
-  await installKidUiFixture(page, kidFixture);
-  await page.setViewportSize(VIEWPORTS[0]!);
-  await page.goto("/");
-  await page.getByTestId("kid-profile").click();
-  await page.getByTestId("kid-deck").click();
-  await expect(page.getByTestId(ready)).toBeVisible();
-}
-
-interface Target { testId: string; nth?: number; minHeight?: number }
-
-/** Każdy element po przewinięciu do widoku mieści się w viewporcie i w kontenerze materiału. */
-async function expectReachable(page: Page, viewport: { width: number; height: number }, targets: readonly Target[]): Promise<void> {
-  const label = `${viewport.width}x${viewport.height}`;
-  await expect(page.getByTestId("kid-session-frame")).toHaveCSS("height", `${viewport.height}px`);
-  const material = (await page.getByTestId("kid-material").boundingBox())!;
-  for (const target of targets) {
-    const element = target.nth === undefined ? page.getByTestId(target.testId) : page.getByTestId(target.testId).nth(target.nth);
-    await element.scrollIntoViewIfNeeded();
-    const bounds = (await element.boundingBox())!;
-    const name = `${target.testId}${target.nth === undefined ? "" : `[${target.nth}]`} at ${label}`;
-    expect(bounds.x, name).toBeGreaterThanOrEqual(0);
-    expect(bounds.x + bounds.width, name).toBeLessThanOrEqual(viewport.width + 1);
-    expect(bounds.x, `${name} inside material`).toBeGreaterThanOrEqual(material.x - 1);
-    expect(bounds.x + bounds.width, `${name} inside material`).toBeLessThanOrEqual(material.x + material.width + 1);
-    expect(bounds.y, name).toBeGreaterThanOrEqual(-1);
-    expect(bounds.y + bounds.height, name).toBeLessThanOrEqual(viewport.height + 1);
-    if (target.minHeight !== undefined) {
-      expect(bounds.height, name).toBeGreaterThanOrEqual(target.minHeight);
-      expect(bounds.width, name).toBeGreaterThanOrEqual(48);
-    }
-  }
-  expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), `page overflow at ${label}`).toBe(false);
-  expect(await page.getByTestId("kid-material").evaluate((element) => element.scrollWidth > element.clientWidth + 1), `material overflow at ${label}`).toBe(false);
-}
-
-/** Przyciski nie ucinają tekstu: długi opis się zawija. */
-async function expectButtonsNotClipped(page: Page, testId: string, label: string): Promise<void> {
-  expect(await page.getByTestId(testId).evaluateAll((buttons) => buttons.every((button) =>
-    button.scrollWidth <= button.clientWidth + 1 && button.scrollHeight <= button.clientHeight + 1)), `${testId} clipped at ${label}`).toBe(true);
-}
-
 test("match: five pairs, long descriptions, pool and check fit every form factor", async ({ page }, testInfo) => {
-  await open(page, fixture([matchTask]), "kid-lesson-match");
+  await installKidUiFixture(page, lessonTaskFixture(ids, deck, [matchTask]));
+  await openLessonTask(page, VIEWPORTS[0]!, "kid-lesson-match");
   await expect(page.getByTestId("kid-instruction")).toContainText("Połącz pojęcie z jego opisem.");
   await expect(page.getByTestId("kid-lesson-match-slot")).toHaveCount(5);
   // Dwa miejsca zajęte przed pomiarem: najdłuższy opis stoi w miejscu, reszta w puli.
@@ -143,7 +89,7 @@ test("match: five pairs, long descriptions, pool and check fit every form factor
   for (const viewport of VIEWPORTS) {
     await page.setViewportSize(viewport);
     const label = `${viewport.width}x${viewport.height}`;
-    await expectReachable(page, viewport, [
+    await expectTargetsReachable(page, viewport, [
       ...Array.from({ length: 5 }, (_, nth) => ({ testId: "kid-lesson-match-left", nth })),
       ...Array.from({ length: 5 }, (_, nth) => ({ testId: "kid-lesson-match-slot", nth, minHeight: 48 })),
       ...Array.from({ length: 5 }, (_, nth) => ({ testId: "kid-lesson-match-option", nth, minHeight: 48 })),
@@ -161,7 +107,8 @@ test("match: five pairs, long descriptions, pool and check fit every form factor
 });
 
 test("group: three bins, eight items and check fit every form factor", async ({ page }, testInfo) => {
-  await open(page, fixture([groupTask]), "kid-lesson-group");
+  await installKidUiFixture(page, lessonTaskFixture(ids, deck, [groupTask]));
+  await openLessonTask(page, VIEWPORTS[0]!, "kid-lesson-group");
   await expect(page.getByTestId("kid-lesson-group-target")).toHaveCount(3);
   await page.getByTestId("kid-lesson-group-item").filter({ hasText: "nietoperz" }).click();
   await page.getByTestId("kid-lesson-group-target").nth(2).click();
@@ -171,7 +118,7 @@ test("group: three bins, eight items and check fit every form factor", async ({ 
   for (const viewport of VIEWPORTS) {
     await page.setViewportSize(viewport);
     const label = `${viewport.width}x${viewport.height}`;
-    await expectReachable(page, viewport, [
+    await expectTargetsReachable(page, viewport, [
       ...Array.from({ length: 3 }, (_, nth) => ({ testId: "kid-lesson-group-target", nth, minHeight: 48 })),
       ...Array.from({ length: 2 }, (_, nth) => ({ testId: "kid-lesson-group-member", nth, minHeight: 48 })),
       ...Array.from({ length: 6 }, (_, nth) => ({ testId: "kid-lesson-group-item", nth, minHeight: 48 })),
@@ -184,26 +131,13 @@ test("group: three bins, eight items and check fit every form factor", async ({ 
 });
 
 test("match: check sends complete left → right assignments and shows the correct pairs after a mistake", async ({ page }) => {
-  const posted: unknown[] = [];
-  page.on("request", (request) => {
-    const path = new URL(request.url()).pathname;
-    if (request.method() === "POST" && /\/tasks\/[^/]+\/attempts$/.test(path)) posted.push(request.postDataJSON());
-  });
+  const posted = recordAttemptPosts(page);
   const correctText = "równik → najdłuższy równoleżnik; południk zerowy → przechodzi przez Greenwich";
-  await open(page, fixture([matchTask], [attempt(uid(90), matchTaskId, { kind: "incorrect", correctText })]), "kid-lesson-match");
-  const check = page.getByTestId("kid-lesson-check");
-  for (let i = 0; i < 4; i += 1) {
-    await page.getByTestId("kid-lesson-match-option").first().click();
-    await expect(check).toBeDisabled();
-  }
-  await page.getByTestId("kid-lesson-match-option").first().click();
-  await expect(check).toBeEnabled();
-  await check.click();
-  await expect.poll(() => posted.length).toBe(1);
-  const body = posted[0] as { modality: string; assignments: { itemId: string; targetId: string }[] };
-  expect(body.modality).toBe("assignment");
-  expect(body.assignments.map((entry) => entry.itemId)).toEqual([uid(20), uid(21), uid(22), uid(23), uid(24)]);
-  expect(new Set(body.assignments.map((entry) => entry.targetId)).size).toBe(5);
+  const kidFixture = lessonTaskFixture(ids, deck, [matchTask], [assignmentAttempt(uid(90), matchTaskId, { kind: "incorrect", correctText })]);
+  await installKidUiFixture(page, kidFixture);
+  await openLessonTask(page, VIEWPORTS[0]!, "kid-lesson-match");
+  const assignments = await tapPoolAndCheck(page, "kid-lesson-match-option", 5, posted);
+  expect(assignments.map((entry) => entry.itemId)).toEqual([uid(20), uid(21), uid(22), uid(23), uid(24)]);
   await expect(page.getByText(correctText)).toBeVisible();
   await expect(page.getByTestId("kid-lesson-match-option").first()).toBeDisabled();
 });

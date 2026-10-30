@@ -179,6 +179,12 @@ export function describeTaskPrompt(p: TaskPrompt): { instruction: string; stimul
       return { instruction: p.instructionPl, stimulus: p.left.map((item) => item.text).join(" | "), options: options(p.right) };
     case "lesson_group":
       return { instruction: p.instructionPl, stimulus: p.groups.map((group) => group.text).join(" | "), options: options(p.items) };
+    case "lesson_cloze": {
+      // Tekst z numerami luk („[1]”) jak w odpowiedzi „1 → słowo”; bank jako opcje.
+      let gap = 0;
+      const stimulus = p.segments.map((segment) => ("gapId" in segment ? `[${++gap}]` : segment.text)).join("");
+      return { instruction: p.instructionPl, stimulus, options: options(p.words) };
+    }
     case "lesson_short_answer":
       return { instruction: "Krótka odpowiedź", stimulus: p.question, options: options(p.options) };
     case "lesson_gap":
@@ -220,6 +226,7 @@ export function lessonAnswerValues(key: LessonAnswerSnapshot, prompt: TaskPrompt
   if (prompt?.kind === "lesson_order") for (const item of prompt.items) valuesById.set(item.id, item.text);
   if (prompt?.kind === "lesson_match") for (const item of [...prompt.left, ...prompt.right]) valuesById.set(item.id, item.text);
   if (prompt?.kind === "lesson_group") for (const item of [...prompt.groups, ...prompt.items]) valuesById.set(item.id, item.text);
+  if (prompt?.kind === "lesson_cloze") for (const word of prompt.words) valuesById.set(word.id, word.text);
   if (prompt?.kind === "lesson_notice") for (const sentence of prompt.segments) for (const segment of sentence) valuesById.set(segment.id, segment.text);
   for (const values of [key?.optionValues, key?.segmentValues, key?.itemValues]) {
     for (const [id, value] of Object.entries(values ?? {})) valuesById.set(id, value);

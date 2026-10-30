@@ -33,7 +33,8 @@ export type LessonExerciseType =
   | "lesson_calculation"
   | "lesson_keywords"
   | "lesson_match"
-  | "lesson_group";
+  | "lesson_group"
+  | "lesson_cloze";
 
 /** Etap nauki celu (design: tabela typów → etapy). */
 export type LessonStage = "intro" | "guided" | "productive" | "independent";
@@ -165,6 +166,10 @@ export interface LessonExerciseDraft {
   /** `lesson_group` (design szkoły §10.2): grupy i elementy z przynależnością. */
   readonly groups?: readonly { readonly id: string; readonly label: string }[];
   readonly groupItems?: readonly { readonly text: string; readonly groupId: string }[];
+  /** `lesson_cloze` (design szkoły §13.1): tekst z lukami, słowa luk i dystraktory banku. */
+  readonly clozeText?: string;
+  readonly gapAnswers?: readonly string[];
+  readonly extraWords?: readonly string[];
 }
 
 /**

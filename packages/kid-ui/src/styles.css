@@ -2581,6 +2581,73 @@
   }
 }
 
+/* „Uzupełnij tekst” (design szkoły §13.5): luka w tekście to znacznik z numerem
+   (nie przycisk), miejsca luk i bank pod tekstem w jednej kolumnie — kontener
+   materiału ma ok. 530 px także na desktopie, a bank ma stać tuż pod miejscami. */
+.kid-lesson-cloze {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+
+.kid-lesson-cloze__main,
+.kid-lesson-cloze__bank {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.kid-lesson-cloze__text {
+  margin: 0;
+  font-size: var(--kid-type-title-size);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.kid-lesson-cloze__gap {
+  display: inline;
+  padding: 0 4px;
+  border-bottom: 2px dashed var(--md-sys-color-outline);
+  font-weight: var(--kid-type-title-weight);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.kid-lesson-cloze__gap--filled {
+  border-bottom-style: solid;
+  color: var(--md-sys-color-primary);
+}
+
+.kid-lesson-cloze__gap--active {
+  border-bottom-color: var(--kid-accent);
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+}
+
+.kid-lesson-cloze__gap-number {
+  margin-inline-end: 4px;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--kid-type-label-xs-size);
+  font-weight: var(--kid-type-label-weight);
+  vertical-align: super;
+}
+
+.kid-lesson-cloze__slots {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kid-lesson-cloze__slot-row {
+  display: flex;
+  min-width: 0;
+}
+
 /* Luka: zdanie z polem edycji dokładnie w miejscu luki. */
 .kid-lesson-gap {
   width: 100%;

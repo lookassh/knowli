@@ -7,6 +7,7 @@ export interface QuestionReadSource {
   readonly stem?: string;
   readonly prompt?: string;
   readonly groups?: readonly { readonly label: string }[];
+  readonly clozeText?: string;
 }
 
 /** Słowo czytane zamiast luki w zdaniu (`lesson_gap`). */
@@ -47,6 +48,13 @@ export function questionReadText(source: QuestionReadSource): string | null {
       parts = [
         instruction ?? messages.kid.lessonGroupInstruction,
         ...(source.groups ?? []).map((group) => clean(group.label)),
+      ];
+      break;
+    case "lesson_cloze":
+      // Tekst z „luka” w miejscu luk; bank słów jest tasowany, więc go nie czytamy.
+      parts = [
+        instruction ?? messages.kid.lessonClozeInstruction,
+        clean(source.clozeText?.replace(/_{2,}/g, SPOKEN_GAP)),
       ];
       break;
     default:
