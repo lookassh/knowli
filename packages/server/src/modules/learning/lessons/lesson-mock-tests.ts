@@ -16,6 +16,7 @@ import type { Services } from "../../../config";
 import type { Tx } from "../../../db/client";
 import { attempts, deckVersions, eventExposures, itemRevisions, learningEvents, learningSessions, sessionTasks } from "../../../db/schema";
 import { AppError } from "../../../errors";
+import { fillCloze } from "../../../domain/lessons/cloze";
 import { assignmentText } from "../../../domain/lessons/evaluate";
 import { BASE_ERROR_CATEGORIES } from "../../../domain/lessons/base-error-categories";
 import { planLessonMockTest, toLessonMockPoolEntry, type LessonMockPoolEntry } from "../../../domain/lessons/mock-test-plan";
@@ -554,7 +555,7 @@ function assignmentTextOptions(key: { exerciseType?: string; itemIds?: string[];
   };
 }
 
-async function childAnswerText(tx: Tx, taskId: string, key: { exerciseType?: string; optionValues?: Record<string, string>; segmentValues?: Record<string, string>; itemIds?: string[]; itemValues?: Record<string, string>; targetIds?: string[] }): Promise<string> {
+async function childAnswerText(tx: Tx, taskId: string, key: { exerciseType?: string; optionValues?: Record<string, string>; segmentValues?: Record<string, string>; itemIds?: string[]; itemValues?: Record<string, string>; targetIds?: string[]; clozeText?: string }): Promise<string> {
   const [attempt] = await tx
     .select({ modality: attempts.modality, answer: attempts.answer })
     .from(attempts)
@@ -573,6 +574,11 @@ async function childAnswerText(tx: Tx, taskId: string, key: { exerciseType?: str
   if (attempt.modality === "sequence") {
     const ids = answer.itemIds ?? [];
     return ids.map((id) => key.itemValues?.[id]).filter((t): t is string => Boolean(t)).join(" ");
+  }
+  if (attempt.modality === "assignment" && key.clozeText !== undefined) {
+    // Luki z bankiem: tekst ze słowami dziecka, jak poprawny tekst w omówieniu (design szkoły §13.3).
+    const wordOf = new Map((answer.assignments ?? []).map((entry) => [entry.itemId, key.itemValues?.[entry.targetId] ?? ""] as const));
+    return fillCloze(key.clozeText, (key.itemIds ?? []).map((gapId) => wordOf.get(gapId) || "___"));
   }
   if (attempt.modality === "assignment") {
     return assignmentText(answer.assignments ?? [], key.itemValues ?? {}, assignmentTextOptions(key));

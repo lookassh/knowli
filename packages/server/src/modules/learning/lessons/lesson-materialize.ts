@@ -426,6 +426,7 @@ export function materializeExercise(
           itemIds: gaps.map((gap) => gap.id),
           itemValues: Object.fromEntries([...gaps.map((gap) => [gap.id, gap.number] as const), ...words.map((word) => [word.id, word.text] as const)]),
           filledText: fillCloze(text, answers),
+          clozeText: text,
         },
         exposures: [exercise.targetKey],
       };
