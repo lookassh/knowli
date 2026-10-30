@@ -4,12 +4,14 @@ import { ListenButton } from "./ListenButton";
 import { SoundRing } from "../motion/SoundRing";
 
 /** „Posłuchaj pytania” (design szkoły §11.4): odsłuch nagrania polecenia
- * i pytania na żądanie, w wierszu instrukcji za tekstem. Ponowne dotknięcie
+ * i pytania na żądanie, w wierszu instrukcji za tekstem; na karcie nauki
+ * „Posłuchaj karty” w nagłówku za tytułem (§12.4). Ponowne dotknięcie
  * zaczyna od początku. Komunikat błędu pokazuje ekran nauki w pasku statusu
  * (`questionAudioError`), nie ten wiersz — jak odsłuch polecenia. */
-export function QuestionAudioButton({ onPlay, disabled }: {
+export function QuestionAudioButton({ onPlay, disabled, label = messages.kid.listenLessonQuestion }: {
   onPlay: () => Promise<void>;
   disabled: boolean;
+  label?: string;
 }) {
   const [playing, setPlaying] = useState(false);
   // Ponowne dotknięcie zatrzymuje poprzednie odtwarzanie i domyka jego obietnicę;
@@ -28,7 +30,7 @@ export function QuestionAudioButton({ onPlay, disabled }: {
   };
   return (
     <ListenButton data-testid="kid-question-audio" disabled={disabled}
-      aria-label={messages.kid.listenLessonQuestion} data-sound-active={playing || undefined} onClick={() => void play()}>
+      aria-label={label} data-sound-active={playing || undefined} onClick={() => void play()}>
       {playing && <SoundRing />}
     </ListenButton>
   );

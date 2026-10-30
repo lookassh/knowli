@@ -123,7 +123,11 @@ function transformInstruction(topic: LessonTopic, payload: LessonExercisePayload
   return topic.transforms.find((t) => t.id === payload.transformId)?.instructionPl;
 }
 
-/** Składa kartę (prezentacja): treść karty tematu z przykładami lekcji. */
+/**
+ * Składa kartę (prezentacja): treść karty tematu z przykładami lekcji oraz
+ * gotowe nagranie „Posłuchaj karty”, gdy przedmiot ma `ttsForPrompts`
+ * (design szkoły §12.3).
+ */
 export function materializeCard(
   plan: Extract<LessonTaskPlan, { kind: "card" }>,
   cardIndex: number,
@@ -131,11 +135,13 @@ export function materializeCard(
   subject: SubjectModule,
   examples: readonly string[],
   firstExerciseRevisionId: string,
+  cardAudioAssetId?: string | null,
 ): MaterializedLessonTask {
   const rendered = renderCard(objective.cards[cardIndex]!, [...examples]);
+  const questionAudio = subject.ttsForPrompts && cardAudioAssetId ? { questionAudioAssetId: cardAudioAssetId } : {};
   return {
     exerciseType: "lesson_card",
-    prompt: { kind: "lesson_card", card: rendered },
+    prompt: { kind: "lesson_card", card: rendered, ...questionAudio },
     answerKey: { exerciseType: "lesson_card", objectiveId: objective.id, subjectId: subject.id, cardPurpose: plan.cardPurpose },
     // Karta ujawnia przykłady → ekspozycje kluczy przykładów (znormalizowane w answerLocale).
     exposures: examples.map((example) => computeTargetKey(example, subject.answerLocale)),

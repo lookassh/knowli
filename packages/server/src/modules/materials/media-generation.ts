@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import type { Services } from "../../config";
 import type { Executor } from "../../db/client";
-import { deckVersions, decks, generationRuns, itemRevisions, mediaAssets, revisionAssets } from "../../db/schema";
+import { deckVersions, decks, generationRuns, itemRevisions, lessonCardAssets, mediaAssets, revisionAssets } from "../../db/schema";
 import { AppError } from "../../errors";
 import { isUiAudioAssetMetadata } from "../../domain/ui-audio-catalog";
 import { mp3DurationMs } from "../../providers/audio/mp3-duration";
@@ -62,9 +62,9 @@ async function requeueAbortedMediaAsset(services: Services, assetId: string, lea
 }
 
 /**
- * Pending TTS używany wyłącznie przez lekcje z wyłączonym audio nie powinien
- * już wywoływać providera. Wspólny fingerprint zostaje aktywny, jeśli odwołują
- * się do niego słówka lub przedmiot z włączonym TTS.
+ * Pending TTS używany wyłącznie przez lekcje z wyłączonym audio (także nagrania
+ * kart nauki) nie powinien już wywoływać providera. Wspólny fingerprint zostaje
+ * aktywny, jeśli odwołują się do niego słówka lub przedmiot z włączonym TTS.
  */
 async function supersedeDisabledLessonTts(services: Services, asset: typeof mediaAssets.$inferSelect): Promise<boolean> {
   if (asset.kind !== "tts") return false;
@@ -79,6 +79,12 @@ async function supersedeDisabledLessonTts(services: Services, asset: typeof medi
       .innerJoin(deckVersions, eq(deckVersions.id, itemRevisions.deckVersionId))
       .innerJoin(decks, eq(decks.id, itemRevisions.deckId))
       .where(eq(revisionAssets.assetId, asset.id));
+    // Nagranie karty nauki (design szkoły §12.2) zależy od `ttsForPrompts` jak nagranie pytania.
+    const cardReferences = await tx.select({ lessonContext: deckVersions.lessonContext })
+      .from(lessonCardAssets)
+      .innerJoin(deckVersions, eq(deckVersions.id, lessonCardAssets.deckVersionId))
+      .where(eq(lessonCardAssets.assetId, asset.id));
+    references.push(...cardReferences.map((card) => ({ kind: "lesson", lessonContext: card.lessonContext, role: "prompt_audio" as const })));
     if (references.length > 0 && !references.every(reference => {
       const subjectId = (reference.lessonContext as { subjectId?: string } | null)?.subjectId;
       const subject = typeof subjectId === "string" ? services.subjects.getSubject(subjectId) : undefined;

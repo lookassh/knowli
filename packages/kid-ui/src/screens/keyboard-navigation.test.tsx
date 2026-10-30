@@ -114,6 +114,8 @@ function renderWithHooks<T>(renderFn: () => T) {
     },
     useCallback: <F extends Function>(fn: F) => fn,
     useMemo: <V,>(fn: () => V) => fn(),
+    // Bez providera: wartość domyślna kontekstu (np. brak „Posłuchaj karty”).
+    useContext: <V,>(context: React.Context<V>) => (context as unknown as { _currentValue: V })._currentValue,
   };
 
   internals.H = dispatcher;
