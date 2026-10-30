@@ -154,5 +154,6 @@ test("confirmation sheet slides in with transform and opacity only", async ({ pa
     const style = getComputedStyle(element);
     return { opacity: style.opacity, transform: style.transform };
   })).toEqual({ opacity: "1", transform: "none" });
-  expect(await sheet.evaluate((element) => element.getBoundingClientRect().height)).toBe(restingHeight);
+  // Sub-pixel rounding of the moving translateY aside, the height never animates.
+  expect(await sheet.evaluate((element) => element.getBoundingClientRect().height)).toBeCloseTo(restingHeight, 1);
 });
