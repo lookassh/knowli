@@ -592,6 +592,9 @@ const rawExerciseShapeSchema = z
     extraRight: z.array(z.string()).nullish(),
     groups: z.array(z.object({ id: z.string(), label: z.string() }).passthrough()).nullish(),
     groupItems: z.array(z.object({ text: z.string(), groupId: z.string() }).passthrough()).nullish(),
+    clozeText: z.string().nullish(),
+    gapAnswers: z.array(z.string()).nullish(),
+    extraWords: z.array(z.string()).nullish(),
   })
   .passthrough();
 
@@ -701,6 +704,10 @@ function v3FieldsOf(r: Record<string, unknown>): Partial<LessonExerciseDraft> {
     out.groupItems = r.groupItems.filter((item) => has(item, ["text", "groupId"]))
       .map((item) => ({ text: (item as { text: string }).text, groupId: (item as { groupId: string }).groupId }));
   }
+  // Luki z bankiem (design szkoły §13).
+  if (typeof r.clozeText === "string") out.clozeText = r.clozeText;
+  if (Array.isArray(r.gapAnswers)) out.gapAnswers = r.gapAnswers.filter((text): text is string => typeof text === "string");
+  if (Array.isArray(r.extraWords)) out.extraWords = r.extraWords.filter((text): text is string => typeof text === "string");
   // Preserve the submitted spec unchanged; subject validation rejects malformed
   // or inconsistent calculations instead of silently repairing parent input.
   if (r.calculation !== undefined && r.calculation !== null) out.calculation = r.calculation;
@@ -780,6 +787,9 @@ export function buildLessonPayload(
     ...(ex.extraRight === undefined ? {} : { extraRight: [...ex.extraRight] }),
     ...(ex.groups === undefined ? {} : { groups: ex.groups.map((group) => ({ id: group.id, label: group.label })) }),
     ...(ex.groupItems === undefined ? {} : { groupItems: ex.groupItems.map((item) => ({ text: item.text, groupId: item.groupId })) }),
+    ...(ex.clozeText === undefined ? {} : { clozeText: ex.clozeText }),
+    ...(ex.gapAnswers === undefined ? {} : { gapAnswers: [...ex.gapAnswers] }),
+    ...(ex.extraWords === undefined ? {} : { extraWords: [...ex.extraWords] }),
     answerLocale: subject.answerLocale,
     promptLocale: subject.promptLocale,
   };
@@ -809,8 +819,10 @@ export function buildObjectiveCriteria(
     } }),
     // Słowa kluczowe: zmiana pojęć kluczowych to nowe kryterium oceny wyboru.
     ...(ex.keyOptionIds === undefined ? {} : { keyTerms: keywordsAnswer(ex) }),
-    // Pary i grupy: zmiana przypisań to nowe kryterium oceny (stara próba nie awansuje nowego).
-    ...(ex.exerciseType === "lesson_match" || ex.exerciseType === "lesson_group" ? { assignments: lessonExerciseStimulus(ex) } : {}),
+    // Pary, grupy i luki: zmiana przypisań to nowe kryterium oceny (stara próba nie awansuje nowego).
+    ...(ex.exerciseType === "lesson_match" || ex.exerciseType === "lesson_group" || ex.exerciseType === "lesson_cloze"
+      ? { assignments: lessonExerciseStimulus(ex) }
+      : {}),
     topicVersion,
   };
   const criteriaHash = createHash("sha256").update(JSON.stringify(criteria)).digest("hex");

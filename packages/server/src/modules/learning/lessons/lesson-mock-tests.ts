@@ -216,7 +216,7 @@ export async function issueLessonMockTestTask(tx: Tx, services: Services, sessio
   });
   // Ekspozycja issue-time: typy prowadzone (notice/choice/short_answer/order)
   // ujawniają rozwiązanie w prompcie → pieczętujemy `target_key`; tekstowe nie.
-  const guided = ["lesson_notice", "lesson_choice", "lesson_short_answer", "lesson_order", "lesson_match", "lesson_group"].includes(slot.exerciseType);
+  const guided = ["lesson_notice", "lesson_choice", "lesson_short_answer", "lesson_order", "lesson_match", "lesson_group", "lesson_cloze"].includes(slot.exerciseType);
   await writeSealedEvent(tx, {
     childId: session.childId,
     taskId: slot.taskId,
@@ -502,6 +502,7 @@ function promptText(prompt: TaskPrompt): string {
     case "lesson_order":
     case "lesson_match":
     case "lesson_group":
+    case "lesson_cloze":
       return prompt.instructionPl;
     case "lesson_card":
     case "exposure":
@@ -528,7 +529,9 @@ function promptText(prompt: TaskPrompt): string {
 }
 
 /** Odpowiedź kanoniczna slotu pokazywana dziecku (jak `correctTextFor` lekcji). */
-function correctAnswerText(key: { exerciseType?: string; answer?: string; correctOptionId?: string; optionValues?: Record<string, string>; segmentValues?: Record<string, string>; itemIds?: string[]; itemValues?: Record<string, string>; assignments?: Assignment[]; targetIds?: string[] }): string {
+function correctAnswerText(key: { exerciseType?: string; answer?: string; correctOptionId?: string; optionValues?: Record<string, string>; segmentValues?: Record<string, string>; itemIds?: string[]; itemValues?: Record<string, string>; assignments?: Assignment[]; targetIds?: string[]; filledText?: string }): string {
+  // Luki z bankiem: cały tekst z poprawnymi słowami (design szkoły §13.3).
+  if (key.filledText) return key.filledText;
   if (key.assignments && key.itemValues) {
     return assignmentText(key.assignments, key.itemValues, assignmentTextOptions(key)) || (key.answer ?? "");
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { messages } from "@learning/contracts";
+import { messages, TaskPromptSchema } from "@learning/contracts";
 import { englishGrammarSubject } from "../../../domain/lessons/subjects/english-grammar/module";
 import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
 import { evaluateChoice, type LessonAnswerKey } from "../../../domain/lessons/evaluate";
@@ -377,6 +377,68 @@ describe("materializeExercise — pary i grupy (design szkoły §10)", () => {
       const ranks = prompt.items.map((item) => prompt.groups.findIndex((g) => g.id === groupOf.get(item.id)));
       expect(ranks.every((rank, index) => index === 0 || ranks[index - 1]! <= rank)).toBe(false);
       expect(JSON.stringify(task.prompt)).not.toContain("groupId");
+    }
+  });
+});
+
+describe("materializeExercise — luki z bankiem (design szkoły §13)", () => {
+  const schoolTopic = schoolSubject.buildDynamicTopic!({
+    titlePl: "Fotosynteza",
+    objectives: [{
+      id: "school.ddeck.fotosynteza",
+      titlePl: "Fotosynteza",
+      descriptionEn: "Photosynthesis.",
+      cards: [{ title: "Fotosynteza", body: "Roślina wytwarza cukry." }, { title: "Produkty", body: "Powstaje tlen." }],
+    }],
+  });
+  const cloze = (seed: string, overrides: Record<string, unknown> = {}) => materializeExercise(
+    { independentCheck: false, reason: "practice" },
+    seed,
+    loaded({
+      objectiveId: "school.ddeck.fotosynteza",
+      acceptedAnswers: [],
+      focus: [],
+      answerLocale: "pl-PL",
+      promptLocale: "pl-PL",
+      exerciseType: "lesson_cloze",
+      clozeText: "___ pobiera z powietrza roślina, a korzeniami ___ i sole.",
+      gapAnswers: ["dwutlenek węgla", "wodę"],
+      extraWords: ["tlen", "cukry"],
+      answer: "dwutlenek węgla, wodę",
+      ...overrides,
+    }),
+    schoolTopic,
+    schoolSubject,
+  );
+
+  it("prompt bez klucza: tekst pocięty na luki z UUID, bank z dystraktorami", () => {
+    const task = cloze("cloze-1");
+    const prompt = task.prompt as { kind: string; instructionPl: string; segments: ({ text: string } | { gapId: string })[]; words: { id: string; text: string }[] };
+    expect(prompt.kind).toBe("lesson_cloze");
+    expect(Object.keys(prompt).sort()).toEqual(["instructionPl", "kind", "segments", "words"]);
+    expect(prompt.instructionPl).toBe(messages.kid.lessonClozeInstruction);
+    const gapIds = prompt.segments.flatMap((segment) => ("gapId" in segment ? [segment.gapId] : []));
+    expect(gapIds).toHaveLength(2);
+    expect(prompt.segments[0]).toEqual({ gapId: gapIds[0] });
+    expect(prompt.segments.flatMap((segment) => ("text" in segment ? [segment.text] : []))).toEqual([" pobiera z powietrza roślina, a korzeniami ", " i sole."]);
+    expect(prompt.words.map((word) => word.text).sort()).toEqual(["cukry", "dwutlenek węgla", "tlen", "wodę"]);
+    expect(TaskPromptSchema.safeParse(task.prompt).success).toBe(true);
+    const key = answerKeyOf(task) as ReturnType<typeof answerKeyOf> & { filledText?: string };
+    expect(key.assignments!.map((entry) => entry.itemId)).toEqual(gapIds);
+    expect(key.targetOnce).toBe(true);
+    expect(key.filledText).toBe("dwutlenek węgla pobiera z powietrza roślina, a korzeniami wodę i sole.");
+    expect(JSON.stringify(task.prompt)).not.toContain("filledText");
+    expect(task.exposures).toEqual(["tk-1"]);
+  });
+
+  it("bank nigdy nie stoi w kolejności luk, także gdy dystraktory są na początku", () => {
+    for (let i = 0; i < 80; i++) {
+      const task = cloze(`cloze-order-${i}`);
+      const prompt = task.prompt as { words: { id: string }[] };
+      const key = answerKeyOf(task);
+      const answerIds = key.assignments!.map((entry) => entry.targetId);
+      const positions = prompt.words.map((word) => answerIds.indexOf(word.id)).filter((position) => position >= 0);
+      expect(positions).not.toEqual([...positions].sort((a, b) => a - b));
     }
   });
 });

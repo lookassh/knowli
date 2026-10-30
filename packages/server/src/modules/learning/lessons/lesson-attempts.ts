@@ -102,6 +102,8 @@ interface LessonTaskAnswerKey extends LessonAnswerKey {
   optionValues?: Record<string, string>;
   itemValues?: Record<string, string>;
   segmentValues?: Record<string, string>;
+  /** `lesson_cloze`: tekst z poprawnymi słowami w lukach (feedback, omówienie). */
+  filledText?: string;
   /** Zadanie następcze „Skróć odpowiedź”: oryginał, do którego należy poprawka. */
   revisionOf?: RevisionOf;
   /** Kryteria v3 odpowiedzi otwartej szkoły (z payloadu rewizji; prywatne). */
@@ -190,7 +192,8 @@ async function assistanceFor(
     key.exerciseType === "lesson_notice" ||
     key.exerciseType === "lesson_order" ||
     key.exerciseType === "lesson_match" ||
-    key.exerciseType === "lesson_group"
+    key.exerciseType === "lesson_group" ||
+    key.exerciseType === "lesson_cloze"
   ) {
     assistance.add("options");
   }
@@ -215,6 +218,9 @@ function correctTextFor(task: TaskRow, key: LessonTaskAnswerKey): string {
   }
   if (key.exerciseType === "lesson_notice") {
     return key.segmentValues?.[key.correctOptionId ?? ""] ?? key.answer;
+  }
+  if (key.exerciseType === "lesson_cloze") {
+    return key.filledText || key.answer;
   }
   if (key.exerciseType === "lesson_match" || key.exerciseType === "lesson_group") {
     const text = assignmentText(key.assignments ?? [], key.itemValues ?? {}, {
@@ -934,7 +940,7 @@ function assertModalityMatchesExercise(modality: LessonModality, exerciseType: s
     (modality === "choice" && CHOICE_TYPES.includes(exerciseType)) ||
     (modality === "sequence" && exerciseType === "lesson_order") ||
     (modality === "selection" && exerciseType === "lesson_keywords") ||
-    (modality === "assignment" && (exerciseType === "lesson_match" || exerciseType === "lesson_group")) ||
+    (modality === "assignment" && ["lesson_match", "lesson_group", "lesson_cloze"].includes(exerciseType)) ||
     (modality === "text" && TEXT_TYPES.includes(exerciseType));
   if (!ok) {
     throw new AppError("validation", { message: "attempt modality does not match exercise" });

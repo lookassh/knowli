@@ -178,6 +178,9 @@ function exerciseDtoFromPayload(
     ...(draft.extraRight === undefined ? {} : { extraRight: [...draft.extraRight] }),
     ...(draft.groups === undefined ? {} : { groups: draft.groups.map((group) => ({ ...group })) }),
     ...(draft.groupItems === undefined ? {} : { groupItems: draft.groupItems.map((item) => ({ ...item })) }),
+    ...(draft.clozeText === undefined ? {} : { clozeText: draft.clozeText }),
+    ...(draft.gapAnswers === undefined ? {} : { gapAnswers: [...draft.gapAnswers] }),
+    ...(draft.extraWords === undefined ? {} : { extraWords: [...draft.extraWords] }),
   };
 }
 
