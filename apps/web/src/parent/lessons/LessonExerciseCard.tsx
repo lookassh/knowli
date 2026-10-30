@@ -5,7 +5,8 @@ import { ActionIcon, Alert, Button, Checkbox, Group, Menu, NativeSelect, Paper, 
 import { messages, type CalculationSpec } from "@learning/contracts";
 import { ParentIcon } from "../ParentIcon";
 import AssignmentFields from "./AssignmentFields";
-import { keywordsAnswerOf, nextRequiredElementId, type EditableLessonExercise } from "./lesson-editor-state";
+import ClozeFields from "./ClozeFields";
+import { filledClozeOf, keywordsAnswerOf, nextRequiredElementId, type EditableLessonExercise } from "./lesson-editor-state";
 
 /** Typy z polem „Zdanie” (stem) w edycji. */
 const STEM_LABEL_TYPES = new Set(["lesson_choice", "lesson_gap"]);
@@ -13,6 +14,10 @@ const UNITS = ["cm", "m", "km"].map((unit) => ({ value: unit, label: unit }));
 
 /** Treść i odpowiedź karty w podglądzie (bez pól edycji). */
 export function exercisePreview(ex: EditableLessonExercise): { text: string; answer: string } {
+  // Luki z bankiem: tekst z lukami i uzupełniony tekst do sprawdzenia (design szkoły §13.7).
+  if (ex.exerciseType === "lesson_cloze") {
+    return { text: ex.clozeText ?? "", answer: filledClozeOf(ex.clozeText ?? "", ex.gapAnswers ?? []) };
+  }
   const text = ex.stem || ex.statement || ex.prompt || ex.instructionPl;
   const option = ex.options?.find((candidate) => candidate.id === ex.correctOption)?.text;
   const answer = ex.exerciseType === "lesson_notice" ? ex.correctOption : option ?? ex.answer;
@@ -103,8 +108,8 @@ function LessonExerciseCard({
     focusAfterToggle.current = target;
     onToggle(ex.id ?? ex.clientKey);
   };
-  // odpowiedź wyliczana z pól typu (rachunek, słowa kluczowe, pary, grupy) — rodzic jej nie wpisuje
-  const derived = ["lesson_calculation", "lesson_keywords", "lesson_match", "lesson_group"].includes(ex.exerciseType);
+  // odpowiedź wyliczana z pól typu (rachunek, słowa kluczowe, pary, grupy, luki) — rodzic jej nie wpisuje
+  const derived = ["lesson_calculation", "lesson_keywords", "lesson_match", "lesson_group", "lesson_cloze"].includes(ex.exerciseType);
   const errId = `exercise-errors-${index}`;
   const described = errors ? { "aria-describedby": errId } : {};
   const forcedOpen = changed || errors !== undefined;
@@ -305,6 +310,10 @@ function LessonExerciseCard({
 
             {(ex.exerciseType === "lesson_match" || ex.exerciseType === "lesson_group") && (
               <AssignmentFields exercise={ex} index={index} disabled={disabled} onChange={onMutate} />
+            )}
+
+            {ex.exerciseType === "lesson_cloze" && (
+              <ClozeFields exercise={ex} index={index} disabled={disabled} onChange={onMutate} />
             )}
 
             {ex.exerciseType === "lesson_keywords" && ex.keywordOptions && (
