@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { messages, type UiAudioKey } from "@learning/contracts";
 import { ExerciseView } from "../exercises/ExerciseView";
 import type { ExerciseHandlers } from "../exercises/types";
@@ -84,9 +84,12 @@ export function LearnScreen({
     setEndConfirmOpen(true);
   };
   const closeEndConfirm = () => {
+    controller.releaseEndConfirm();
     setEndConfirmOpen(false);
     endButtonRef.current?.focus({ preventScroll: true });
   };
+  // Leaving the session screen with the panel open must not keep auto-capture held.
+  useEffect(() => () => controller.releaseEndConfirm(), [controller]);
   const activeLetterDraft = task?.prompt.kind === "letter_completion" && letterDraft?.taskId === task.taskId
     ? letterDraft.letters
     : {};

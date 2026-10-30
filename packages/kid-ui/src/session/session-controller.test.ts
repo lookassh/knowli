@@ -2492,6 +2492,35 @@ describe("LearningSessionController — automatyczna próba mowy z VAD (quick 26
     harness.controller.teardown();
   });
 
+  it("potwierdzenie „Koniec” unieważnia autostart czekający na odczyt uprawnienia", async () => {
+    const harness = await startAtTask(baseState(), speechTask());
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    harness.media.getMicrophonePermission = async () => { await gate; return "granted"; };
+    const autoCapture = harness.controller.autoCaptureSpeech();
+    harness.controller.holdForEndConfirm();
+    release();
+    await autoCapture;
+    expect(harness.recorder.started).toBe(0);
+    expect(harness.media.beeps).toEqual([]);
+    harness.controller.releaseEndConfirm();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(harness.recorder.started).toBe(0);
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "idle" });
+    harness.controller.teardown();
+  });
+
+  it("potwierdzenie „Koniec” blokuje autostart do zamknięcia panelu", async () => {
+    const harness = await startAtTask(baseState(), speechTask());
+    harness.controller.holdForEndConfirm();
+    await harness.controller.autoCaptureSpeech();
+    expect(harness.recorder.started).toBe(0);
+    harness.controller.releaseEndConfirm();
+    await harness.controller.autoCaptureSpeech();
+    expect(harness.recorder.started).toBe(1);
+    harness.controller.teardown();
+  });
+
   it("ręczne zakończenie cichego autostartu nie wysyła próby", async () => {
     const harness = await startAtTask(baseState(), speechTask());
     await harness.controller.autoCaptureSpeech();

@@ -237,6 +237,8 @@ export class LearningSessionController {
   #autoStartBeep: (() => Promise<void>) | null = null;
   /** Zadanie, na którym auto-start już padł — raz na wyświetlenie zadania (SPEC §16). */
   #autoCaptureTaskId: string | null = null;
+  /** Sesja z otwartym potwierdzeniem „Koniec”: auto-start czeka na zamknięcie panelu. */
+  #endConfirmSessionId: string | null = null;
   /** Ostatnia operacja do ponowienia po powrocie sieci/błędzie aplikacji. */
   #resume: { run: () => Promise<void>; keepsTaskVisible: boolean } | null = null;
   /** Wybrana opcja próby w toku; do podświetlenia w feedbacku (design 2026-10-09). */
@@ -1022,14 +1024,24 @@ export class LearningSessionController {
    * Otwarcie potwierdzenia „Koniec”: trwające nagranie przepada bez wysłania,
    * odtwarzanie milknie. Wysyłane już nagranie („stopping”) kończy się zwykłym
    * trybem, a mikrofon nie startuje ponownie sam po powrocie do zadania.
+   * Do `releaseEndConfirm` auto-start jest wstrzymany: także ten, który czeka
+   * na odczyt uprawnienia, bo po każdym oczekiwaniu ponownie pyta
+   * `#autoCaptureAllowed`. Generacja nagrania zostaje, żeby nie unieważnić
+   * obsługi błędu wysłanej już próby.
    */
   holdForEndConfirm(): void {
     const screen = this.#learning();
     if (!screen) return;
+    this.#endConfirmSessionId = screen.session.sessionId;
     if (screen.recordingPhase === "preparing" || screen.recordingPhase === "starting" || screen.recordingPhase === "recording") {
       this.cancelRecording();
     }
     this.#stopPlayback();
+  }
+
+  /** Zamknięcie potwierdzenia „Koniec”: znosi blokadę auto-startu, niczego nie uruchamia. */
+  releaseEndConfirm(): void {
+    this.#endConfirmSessionId = null;
   }
 
   async completePresentation(): Promise<void> {
@@ -1513,6 +1525,7 @@ export class LearningSessionController {
   #autoCaptureAllowed(screen: LearningScreen): boolean {
     if (screen.task?.prompt.kind !== "speech" && screen.task?.prompt.kind !== "picture_speech") return false;
     if (screen.session.mode === "mock_test" || !screen.session.microphoneEnabled || screen.micDenied) return false;
+    if (this.#endConfirmSessionId === screen.session.sessionId) return false;
     if (screen.offline || screen.busy || screen.processing) return false;
     if (screen.feedback !== null || screen.reveal !== null) return false;
     if (screen.recordingPhase !== "idle" || this.#recorder !== null) return false;
