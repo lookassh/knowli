@@ -69,9 +69,8 @@ describe("kid-ui design tokens", () => {
 
   it("loads only local kid fonts", () => {
     const css = readFileSync(new URL("../apps/web/src/kid-fonts.css", import.meta.url), "utf8");
-    expect(css).toContain('url("/fonts/kid/Fredoka.ttf")');
     expect(css).toContain('url("/fonts/kid/Nunito.ttf")');
-    expect(css).not.toMatch(/fonts\.googleapis|Manrope/);
+    expect(css).not.toMatch(/fonts\.googleapis|Manrope|Fredoka/);
   });
 
   it("applies the display font to headings and the main action, the body font to the root", () => {
@@ -81,5 +80,15 @@ describe("kid-ui design tokens", () => {
     expect(headings).toMatch(/\.kid-theme h1,[^{]*\.kid-theme h3\s*\{[^}]*font-family: var\(--kid-font-display\)/);
     const action = readFileSync(new URL("components/answer-controls.module.css", SRC), "utf8");
     expect(action).toMatch(/\.action\[data-variant="filled"\]\[data-size="lg"\]\s*\{[^}]*font-family: var\(--kid-font-display\)/);
+  });
+
+  it("sets every role in Nunito, which covers Polish diacritics (Fredoka lacks ą ć ę ń ś ź ż)", () => {
+    const styles = readFileSync(new URL("styles.css", SRC), "utf8");
+    expect(styles).toMatch(/--kid-font-display: KnowliKidNunito,/);
+    expect(styles).toMatch(/--kid-font-body: KnowliKidNunito,/);
+    const offenders = cssFiles.flatMap((url) => declarations(styleRules(url), "font-family")
+      .filter((value) => !/^(?:var\(--kid-font-(?:display|body)\)|inherit|ui-monospace, monospace)$/.test(value))
+      .map((value) => `${relative(url)}: font-family: ${value}`));
+    expect(offenders).toEqual([]);
   });
 });
