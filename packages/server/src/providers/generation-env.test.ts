@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createGenerationDepsFromEnv } from "./generation-env";
+import { createGenerationDepsFromEnv, imageProviderFromEnv } from "./generation-env";
 
 /**
  * Kontrakt konfiguracji LLM generującego materiał (zestawy + pule lekcji):
@@ -10,7 +10,24 @@ import { createGenerationDepsFromEnv } from "./generation-env";
  * obowiązkową zależnością workera, nie opcjonalnym feature'em jak grader).
  * `UMIEM_LLM_BASE_URL` dostaje klucz w nagłówku Authorization, więc poza
  * NODE_ENV test/development wymaga `https://` — jak `UMIEM_GRADER_BASE_URL`.
+ * Jak dla TTS: `OPENAI_API_KEY` trafia wyłącznie do api.openai.com — inny
+ * BASE_URL wymaga własnego klucza, a klucz OpenRouter wymaga BASE_URL.
  */
+
+/** Wywołuje fabrykę i zwraca komunikat błędu; sprawdza, że nie zawiera wartości kluczy. */
+function configError(env: Record<string, string | undefined>): string {
+  let message: string | undefined;
+  try {
+    createGenerationDepsFromEnv(env);
+  } catch (error) {
+    message = (error as Error).message;
+  }
+  expect(message, "oczekiwany błąd konfiguracji").toBeDefined();
+  for (const [name, value] of Object.entries(env)) {
+    if (name.endsWith("_KEY") && value) expect(message).not.toContain(value);
+  }
+  return message!;
+}
 
 function okDeckResponse(): Response {
   return new Response(
@@ -110,6 +127,7 @@ describe("createGenerationDepsFromEnv — konfiguracja LLM przez UMIEM_LLM_*", (
     const deps = createGenerationDepsFromEnv({
       OPENAI_API_KEY: "sk-main",
       UMIEM_LLM_BASE_URL: "http://localhost:9999/v1",
+      UMIEM_LLM_API_KEY: "sk-local",
       NODE_ENV: "development",
     });
 
@@ -122,9 +140,122 @@ describe("createGenerationDepsFromEnv — konfiguracja LLM przez UMIEM_LLM_*", (
     const deps = createGenerationDepsFromEnv({
       OPENAI_API_KEY: "sk-main",
       UMIEM_LLM_BASE_URL: "http://localhost:9999/v1",
+      UMIEM_LLM_API_KEY: "sk-local",
       NODE_ENV: "test",
     });
     expect(deps).toBeDefined();
+  });
+
+  it("własny UMIEM_LLM_BASE_URL bez UMIEM_LLM_API_KEY to błąd startu — OPENAI_API_KEY nie trafia do innego hosta", () => {
+    const fetchMock = vi.fn(async () => okDeckResponse());
+    vi.stubGlobal("fetch", fetchMock);
+    for (const baseUrl of [
+      "https://openrouter.ai/api/v1",
+      "https://api.openai.com.evil.example/v1",
+      "https://evil.example/api.openai.com/v1",
+    ]) {
+      expect(configError({ OPENAI_API_KEY: "sk-main", UMIEM_LLM_BASE_URL: baseUrl }))
+        .toBe("UMIEM_LLM_BASE_URL requires UMIEM_LLM_API_KEY (OPENAI_API_KEY is never sent to another endpoint)");
+    }
+    // także lokalny endpoint w development: klucz OpenAI nie idzie na http://localhost
+    expect(configError({ OPENAI_API_KEY: "sk-main", UMIEM_LLM_BASE_URL: "http://localhost:9999/v1", NODE_ENV: "development" }))
+      .toMatch(/^UMIEM_LLM_BASE_URL requires UMIEM_LLM_API_KEY/);
+    // http://api.openai.com nie jest uznawany za OpenAI (klucz jawnym tekstem)
+    expect(configError({ OPENAI_API_KEY: "sk-main", UMIEM_LLM_BASE_URL: "http://api.openai.com/v1", NODE_ENV: "development" }))
+      .toMatch(/^UMIEM_LLM_BASE_URL requires UMIEM_LLM_API_KEY/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("jawny UMIEM_LLM_BASE_URL na api.openai.com bez własnego klucza używa OPENAI_API_KEY", async () => {
+    const fetchMock = vi.fn(async () => okDeckResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const deps = createGenerationDepsFromEnv({ OPENAI_API_KEY: "sk-main", UMIEM_LLM_BASE_URL: "https://api.openai.com/v1" });
+
+    await deps!.llm.generateDeck(DECK_INPUT);
+    const [url, init] = lastCall(fetchMock);
+    expect(url).toBe("https://api.openai.com/v1/chat/completions");
+    expect((init.headers as Record<string, string>).authorization).toBe("Bearer sk-main");
+  });
+
+  it("własny UMIEM_LLM_API_KEY bez BASE_URL (np. osobny klucz OpenAI) idzie na api.openai.com", async () => {
+    const fetchMock = vi.fn(async () => okDeckResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const deps = createGenerationDepsFromEnv({ OPENAI_API_KEY: "sk-main", UMIEM_LLM_API_KEY: "sk-proj-llm" });
+
+    await deps!.llm.generateDeck(DECK_INPUT);
+    const [url, init] = lastCall(fetchMock);
+    expect(url).toBe("https://api.openai.com/v1/chat/completions");
+    expect((init.headers as Record<string, string>).authorization).toBe("Bearer sk-proj-llm");
+  });
+
+  it("klucz OpenRouter w UMIEM_LLM_API_KEY bez BASE_URL OpenRoutera to błąd startu — nie trafia do api.openai.com", () => {
+    const message = 'UMIEM_LLM_API_KEY for provider "openrouter" requires UMIEM_LLM_BASE_URL (the key is never sent to api.openai.com)';
+    expect(configError({ OPENAI_API_KEY: "sk-main", UMIEM_LLM_API_KEY: "sk-or-v1-secret" })).toBe(message);
+    expect(configError({ OPENAI_API_KEY: "sk-main", UMIEM_LLM_API_KEY: "sk-or-v1-secret", UMIEM_LLM_BASE_URL: "https://api.openai.com/v1" }))
+      .toBe(message);
+  });
+
+  it("klucz OpenRouter rozpoznawany też z wielką literą i spacjami", () => {
+    for (const key of ["SK-OR-v1-secret", "  sk-or-v1-secret"]) {
+      expect(configError({ OPENAI_API_KEY: "sk-main", UMIEM_LLM_API_KEY: key })).toMatch(/^UMIEM_LLM_API_KEY for provider "openrouter"/);
+    }
+  });
+
+  it("host api.openai.com rozpoznawany po sparsowanym URL (wielkość liter, port), nie po tekście", async () => {
+    const fetchMock = vi.fn(async () => okDeckResponse());
+    vi.stubGlobal("fetch", fetchMock);
+    for (const baseUrl of ["https://API.OpenAI.com/v1", "https://api.openai.com:443/v1"]) {
+      await createGenerationDepsFromEnv({ OPENAI_API_KEY: "sk-main", UMIEM_LLM_BASE_URL: baseUrl })!.llm.generateDeck(DECK_INPUT);
+    }
+    for (const [url, init] of fetchMock.mock.calls as unknown as [string, RequestInit][]) {
+      expect(new URL(url).hostname).toBe("api.openai.com");
+      expect((init.headers as Record<string, string>).authorization).toBe("Bearer sk-main");
+    }
+    // userinfo i kropka końcowa wskazują inny host albo są podejrzane → wymagany własny klucz
+    for (const baseUrl of ["https://api.openai.com@evil.example/v1", "https://api.openai.com./v1"]) {
+      expect(configError({ OPENAI_API_KEY: "sk-main", UMIEM_LLM_BASE_URL: baseUrl })).toMatch(/^UMIEM_LLM_BASE_URL requires UMIEM_LLM_API_KEY/);
+    }
+  });
+
+  it("klucz OpenRouter w OPENAI_API_KEY to błąd startu — OPENAI_API_KEY zawsze idzie do api.openai.com", () => {
+    const message = configError({
+      OPENAI_API_KEY: "sk-or-v1-secret",
+      UMIEM_LLM_BASE_URL: "https://openrouter.ai/api/v1",
+      UMIEM_LLM_API_KEY: "sk-or-v1-llm",
+    });
+    expect(message).toMatch(/^OPENAI_API_KEY holds an OpenRouter key/);
+    expect(() => imageProviderFromEnv({ OPENAI_API_KEY: "sk-or-v1-secret" })).toThrow(/^OPENAI_API_KEY holds an OpenRouter key/);
+    expect(imageProviderFromEnv({ OPENAI_API_KEY: "sk-proj-main" })).toBeDefined();
+    expect(imageProviderFromEnv({})).toBeUndefined();
+  });
+
+  it("konfiguracja produkcyjna (OpenRouter dla LLM i TTS, OPENAI_API_KEY dla obrazów) działa bez zmian", async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith("/audio/speech") ? new Response(new Uint8Array([1]), { status: 200 }) : okDeckResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const deps = createGenerationDepsFromEnv({
+      NODE_ENV: "production",
+      OPENAI_API_KEY: "sk-proj-main",
+      UMIEM_LLM_BASE_URL: "https://openrouter.ai/api/v1",
+      UMIEM_LLM_API_KEY: "sk-or-v1-llm",
+      UMIEM_LLM_MODEL: "google/gemini-3.8-flash",
+      UMIEM_LLM_REASONING: "low",
+      UMIEM_TTS_PROVIDER: "openrouter",
+      UMIEM_TTS_BASE_URL: "https://openrouter.ai/api/v1",
+      UMIEM_TTS_API_KEY: "sk-or-v1-tts",
+      UMIEM_TTS_MODEL: "microsoft/mai-voice-2.1-flash",
+    });
+
+    await deps!.llm.generateDeck(DECK_INPUT);
+    await deps!.tts.synthesize({ text: "kot", locale: "pl-PL", voice: "pl-PL-Harper:MAI-Voice-2.1-Flash", format: "mp3" });
+    const calls = fetchMock.mock.calls as unknown as [string, RequestInit][];
+    expect(calls.map(([url, init]) => [url, (init.headers as Record<string, string>).authorization])).toEqual([
+      ["https://openrouter.ai/api/v1/chat/completions", "Bearer sk-or-v1-llm"],
+      ["https://openrouter.ai/api/v1/audio/speech", "Bearer sk-or-v1-tts"],
+    ]);
   });
 
   it("UMIEM_FAKE_PROVIDERS=1 ignoruje UMIEM_LLM_* (deterministyczny fake)", () => {
@@ -187,7 +318,26 @@ describe("createGenerationDepsFromEnv — TTS przez UMIEM_TTS_* (np. OpenRouter)
   });
 
   it("własny UMIEM_TTS_BASE_URL bez UMIEM_TTS_API_KEY to błąd konfiguracji — klucz OpenAI nie trafia do innego hosta", () => {
-    expect(() => createGenerationDepsFromEnv({ OPENAI_API_KEY: "sk-main", UMIEM_TTS_BASE_URL: "https://openrouter.ai/api/v1" }))
-      .toThrow("UMIEM_TTS_BASE_URL requires UMIEM_TTS_API_KEY");
+    expect(configError({ OPENAI_API_KEY: "sk-main", UMIEM_TTS_BASE_URL: "https://openrouter.ai/api/v1" }))
+      .toBe("UMIEM_TTS_BASE_URL requires UMIEM_TTS_API_KEY (OPENAI_API_KEY is never sent to another endpoint)");
+  });
+
+  it("jawny UMIEM_TTS_BASE_URL na api.openai.com bez własnego klucza używa OPENAI_API_KEY", async () => {
+    const fetchMock = vi.fn(async () => new Response(new Uint8Array([1]), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const deps = createGenerationDepsFromEnv({ OPENAI_API_KEY: "sk-main", UMIEM_TTS_BASE_URL: "https://api.openai.com/v1" });
+
+    await deps!.tts.synthesize(SPEECH_INPUT);
+    const [url, init] = lastCall(fetchMock);
+    expect(url).toBe("https://api.openai.com/v1/audio/speech");
+    expect((init.headers as Record<string, string>).authorization).toBe("Bearer sk-main");
+  });
+
+  it("klucz OpenRouter w UMIEM_TTS_API_KEY przy domyślnym providerze bez BASE_URL to błąd konfiguracji", () => {
+    expect(configError({ OPENAI_API_KEY: "sk-main", UMIEM_TTS_API_KEY: "sk-or-v1-secret" }))
+      .toBe('UMIEM_TTS_API_KEY for provider "openrouter" requires UMIEM_TTS_BASE_URL (the key is never sent to api.openai.com)');
+    expect(configError({ OPENAI_API_KEY: "sk-main", UMIEM_TTS_API_KEY: "sk-or-v1-secret", UMIEM_TTS_BASE_URL: "https://api.openai.com/v1" }))
+      .toMatch(/^UMIEM_TTS_API_KEY for provider "openrouter"/);
   });
 });
