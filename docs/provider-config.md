@@ -115,7 +115,7 @@ Hermesa zachowują dotychczasowy kontrakt; konsument nie wymaga aktualizacji.
 ## Ustawienia medialne i fingerprinty
 
 `UMIEM_TTS_PROVIDER/MODEL/VOICE/FORMAT` (z `UMIEM_TTS_VOICE_*` i `UMIEM_TTS_INSTRUCTIONS_*`) oraz `UMIEM_IMAGE_PROVIDER/MODEL/SIZE/QUALITY/FORMAT`
-wchodzą do fingerprintów zasobów. Zasady potwierdzone próbą:
+wchodzą do fingerprintów zasobów. `UMIEM_TTS_STYLE` (`instructions` albo `none`; brak = `none`, inna wartość to błąd startu) włącza styl wypowiedzi TTS i też musi być identyczny w web i workerze. Zasady potwierdzone próbą:
 
 - web i worker muszą mieć **identyczne** wartości (fingerprint liczony w obu
   procesach);

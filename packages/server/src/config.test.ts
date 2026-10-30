@@ -34,6 +34,18 @@ describe("mediaSettingsFromEnv", () => {
     expect(() => mediaSettingsFromEnv({ UMIEM_TTS_FORMAT: "pcm" })).toThrow(/UMIEM_TTS_FORMAT/);
   });
 
+  it("UMIEM_TTS_STYLE=instructions włącza styl; brak, puste i none to brak pola", () => {
+    expect(mediaSettingsFromEnv({}).tts.style).toBeUndefined();
+    expect(mediaSettingsFromEnv({ UMIEM_TTS_STYLE: "" }).tts.style).toBeUndefined();
+    expect(mediaSettingsFromEnv({ UMIEM_TTS_STYLE: "instructions" }).tts.style).toBe("instructions");
+    // „none” nie zmienia kształtu ustawień, więc fingerprinty istniejących zasobów zostają.
+    expect(mediaSettingsFromEnv({ UMIEM_TTS_STYLE: "none" }).tts).not.toHaveProperty("style");
+    expect(mediaSettingsFromEnv({}).tts).not.toHaveProperty("style");
+    expect(() => mediaSettingsFromEnv({ UMIEM_TTS_STYLE: "loud" })).toThrow(
+      "UMIEM_TTS_STYLE must be instructions or none",
+    );
+  });
+
   it("UMIEM_TTS_INSTRUCTIONS_<LANG>_<REGION> przypisuje instrukcję wymowy do locale", () => {
     const settings = mediaSettingsFromEnv({
       UMIEM_TTS_INSTRUCTIONS_PL_PL: "Mów po polsku, z polską wymową.",
