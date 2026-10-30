@@ -3,6 +3,7 @@ import type {
   LessonDraftDto,
   LessonExerciseInput,
   LessonExerciseTypeDto,
+  LessonVoiceTone,
 } from "@learning/contracts";
 
 /**
@@ -93,12 +94,30 @@ export interface EditableLessonExercise {
   clozeText?: string;
   gapAnswers?: string[] | null;
   extraWords?: string[] | null;
+  /** Ton lektora nagrania pytania; brak = styl domyślny roli. Nagrania (`promptAudio`) są tylko do odczytu i nie wracają w patchu. */
+  voiceTone?: LessonVoiceTone;
+}
+
+/** Karta zagadnienia tematu dynamicznego w edytorze; brak `voiceTone` = styl domyślny. */
+export interface EditableDynamicCard {
+  title: string;
+  body: string;
+  voiceTone?: LessonVoiceTone;
+}
+
+/**
+ * Czy przedmiot nagrywa pytania i karty (flaga `ttsForPrompts` po stronie
+ * serwera, tu powtórzona jak mapa typ→etap: katalog nie niesie flagi, a serwer
+ * odrzuca ton dla pozostałych przedmiotów).
+ */
+export function lessonSubjectHasVoiceTones(subjectId: string | undefined): boolean {
+  return subjectId === "school";
 }
 
 export interface EditableDynamicObjective {
   id: string;
   titlePl: string;
-  cards: { title: string; body: string }[];
+  cards: EditableDynamicCard[];
 }
 
 export interface EditableLessonForm {
@@ -185,7 +204,12 @@ function editableFromExercise(
     ...(exercise.clozeText !== undefined ? { clozeText: exercise.clozeText } : {}),
     ...(exercise.gapAnswers ? { gapAnswers: [...exercise.gapAnswers] } : {}),
     ...(exercise.extraWords ? { extraWords: [...exercise.extraWords] } : {}),
+    ...(exercise.voiceTone ? { voiceTone: exercise.voiceTone } : {}),
   };
+}
+
+function editableCard(card: EditableDynamicCard): EditableDynamicCard {
+  return { title: card.title, body: card.body, ...(card.voiceTone ? { voiceTone: card.voiceTone } : {}) };
 }
 
 /** Luka w tekście `lesson_cloze`: ciąg 2+ podkreśleń (jak w domenie serwera i Kid UI). */
@@ -262,7 +286,7 @@ export function createLessonSnapshot(
       title: draft.title,
       exercises: draft.exercises.map((exercise) => editableFromExercise(exercise, newKey)),
       dynamicObjectives: draft.dynamicTopic
-        ? draft.dynamicTopic.objectives.map((o) => ({ id: o.id, titlePl: o.titlePl, cards: o.cards.map((c) => ({ ...c })) }))
+        ? draft.dynamicTopic.objectives.map((o) => ({ id: o.id, titlePl: o.titlePl, cards: o.cards.map(editableCard) }))
         : null,
     },
   };
@@ -360,6 +384,7 @@ function exerciseToInput(exercise: EditableLessonExercise): LessonExerciseInput 
     input.sourceRefs = exercise.sourceRefs.filter((ref) => ref.quote.trim().length > 0).map((ref) => ({ ...ref }));
   }
   if (exercise.calculation) input.calculation = structuredClone(exercise.calculation);
+  if (exercise.voiceTone) input.voiceTone = exercise.voiceTone;
   if (type === "lesson_match") {
     // Odpowiedź, warianty i focus wynikają z par — rodzic ich nie wpisuje; puste wiersze nie blokują zapisu.
     input.pairs = (exercise.pairs ?? []).filter((pair) => pair.left.trim() || pair.right.trim()).map((pair) => ({ ...pair }));
@@ -409,7 +434,7 @@ export function toLessonDraftPatch(snapshot: LessonEditorSnapshot): LessonDraftP
     title: snapshot.form.title.trim(),
     exercises: snapshot.form.exercises.map(exerciseToInput),
     ...(snapshot.form.dynamicObjectives
-      ? { dynamicTopic: { objectives: snapshot.form.dynamicObjectives.map((o) => ({ id: o.id, titlePl: o.titlePl, cards: o.cards.filter((c) => c.title.trim().length > 0 || c.body.trim().length > 0).map((c) => ({ ...c })) })) } }
+      ? { dynamicTopic: { objectives: snapshot.form.dynamicObjectives.map((o) => ({ id: o.id, titlePl: o.titlePl, cards: o.cards.filter((c) => c.title.trim().length > 0 || c.body.trim().length > 0).map(editableCard) })) } }
       : {}),
   };
 }
