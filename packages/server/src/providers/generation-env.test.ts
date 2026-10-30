@@ -133,3 +133,49 @@ describe("createGenerationDepsFromEnv — konfiguracja LLM przez UMIEM_LLM_*", (
     expect(deps!.llm.model).toBe("fake-llm-1");
   });
 });
+
+describe("createGenerationDepsFromEnv — TTS przez UMIEM_TTS_* (np. OpenRouter)", () => {
+  const SPEECH_INPUT = { text: "Ile nóg ma pająk?", locale: "pl-PL", voice: "alloy", format: "mp3" as const };
+
+  it("bez UMIEM_TTS_* wysyła domyślny model na api.openai.com z kluczem OPENAI_API_KEY", async () => {
+    const fetchMock = vi.fn(async () => new Response(new Uint8Array([1]), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const deps = createGenerationDepsFromEnv({ OPENAI_API_KEY: "sk-main" });
+
+    await deps!.tts.synthesize(SPEECH_INPUT);
+    const [url, init] = lastCall(fetchMock);
+    expect(url).toBe("https://api.openai.com/v1/audio/speech");
+    expect((init.headers as Record<string, string>).authorization).toBe("Bearer sk-main");
+    expect(JSON.parse(String(init.body))).toMatchObject({ model: "gpt-4o-mini-tts", voice: "alloy", input: "Ile nóg ma pająk?" });
+  });
+
+  it("UMIEM_TTS_BASE_URL, UMIEM_TTS_API_KEY i UMIEM_TTS_MODEL kierują nagrania do OpenRouter", async () => {
+    const fetchMock = vi.fn(async () => new Response(new Uint8Array([1]), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const deps = createGenerationDepsFromEnv({
+      OPENAI_API_KEY: "sk-main",
+      UMIEM_TTS_BASE_URL: "https://openrouter.ai/api/v1",
+      UMIEM_TTS_API_KEY: "sk-or",
+      UMIEM_TTS_MODEL: "openai/gpt-4o-mini-tts-2025-12-15",
+    });
+
+    expect(deps!.tts.model).toBe("openai/gpt-4o-mini-tts-2025-12-15");
+    await deps!.tts.synthesize(SPEECH_INPUT);
+    const [url, init] = lastCall(fetchMock);
+    expect(url).toBe("https://openrouter.ai/api/v1/audio/speech");
+    expect((init.headers as Record<string, string>).authorization).toBe("Bearer sk-or");
+    expect(JSON.parse(String(init.body)).model).toBe("openai/gpt-4o-mini-tts-2025-12-15");
+  });
+
+  it("puste UMIEM_TTS_* traktowane jak nieustawione", () => {
+    const deps = createGenerationDepsFromEnv({ OPENAI_API_KEY: "sk-main", UMIEM_TTS_BASE_URL: "", UMIEM_TTS_API_KEY: "", UMIEM_TTS_MODEL: "" });
+    expect(deps!.tts.model).toBe("gpt-4o-mini-tts");
+  });
+
+  it("http:// UMIEM_TTS_BASE_URL odrzucone poza test/development", () => {
+    expect(() => createGenerationDepsFromEnv({ OPENAI_API_KEY: "sk-main", UMIEM_TTS_BASE_URL: "http://tts.example/v1" }))
+      .toThrow("UMIEM_TTS_BASE_URL must use https:// outside test/development");
+  });
+});
