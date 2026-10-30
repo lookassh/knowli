@@ -1407,9 +1407,10 @@ z Etapu 6) nie mają gotowego nagrania — przycisk się nie pojawia. Wskazówka
    zgodnym z adapterem. Gemini TTS zwraca na OpenRouter wyłącznie PCM
    (wymagałby zmiany adaptera). Pozostałe modele (Gemini Flash Lite, Fish
    Audio Drama 3 i S2.1 Pro, Grok Voice, Voxtral TTS 3) oceniono 1/5.
-   Treść angielska (słówka) ma osobny głos tego samego modelu:
-   `UMIEM_TTS_VOICE_EN_GB=en-GB-Harry:MAI-Voice-2.1-Flash` (decyzja właściciela
-   2026-10-30), polska — `pl-PL-Harper`.
+   Treść angielska (słówka) ma osobny głos tego samego modelu. Właściciel
+   wybrał zestaw kobiecy dla całej aplikacji (2026-10-30, po odsłuchu zestawu
+   kobiecego i męskiego): polska treść `pl-PL-Harper`, angielska
+   `UMIEM_TTS_VOICE_EN_GB=en-GB-Emily:MAI-Voice-2.1-Flash`.
 
 ### 11.7. Korekty przy implementacji (2026-10-30)
 
@@ -1459,7 +1460,7 @@ z Etapu 6) nie mają gotowego nagrania — przycisk się nie pojawia. Wskazówka
   i ponownej publikacji.
 - Review przed wypchnięciem (2026-10-30): jeden głos dla wszystkich nagrań
   czytałby angielskie słówka polskim lektorem — głos zależy od locale treści
-  (`UMIEM_TTS_VOICE_<JĘZYK>_<REGION>`, np. `en-GB` → `en-GB-Harry`, w fingerprincie;
+  (`UMIEM_TTS_VOICE_<JĘZYK>_<REGION>`, np. `en-GB` → `en-GB-Emily`, w fingerprincie;
   bez tych zmiennych fingerprinty bez zmian). Nieudane nagranie pytania
   publikacja zleca ponownie (`keepFailed` z #176 nie dotyczy `prompt_audio`,
   bo rodzic go nie regeneruje). Worker zgłasza przy starcie liczbę zadań TTS

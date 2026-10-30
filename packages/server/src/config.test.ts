@@ -17,11 +17,11 @@ describe("mediaSettingsFromEnv", () => {
   it("UMIEM_TTS_VOICE_<LANG>_<REGION> przypisuje głos do locale; reszta używa UMIEM_TTS_VOICE", () => {
     const settings = mediaSettingsFromEnv({
       UMIEM_TTS_VOICE: "pl-PL-Harper:MAI-Voice-2.1-Flash",
-      UMIEM_TTS_VOICE_EN_GB: "en-GB-Harry:MAI-Voice-2.1-Flash",
+      UMIEM_TTS_VOICE_EN_GB: "en-GB-Emily:MAI-Voice-2.1-Flash",
       UMIEM_TTS_VOICE_DE_DE: "",
     });
-    expect(settings.tts.voices).toEqual({ "en-GB": "en-GB-Harry:MAI-Voice-2.1-Flash" });
-    expect(ttsVoiceFor(settings.tts, "en-GB")).toBe("en-GB-Harry:MAI-Voice-2.1-Flash");
+    expect(settings.tts.voices).toEqual({ "en-GB": "en-GB-Emily:MAI-Voice-2.1-Flash" });
+    expect(ttsVoiceFor(settings.tts, "en-GB")).toBe("en-GB-Emily:MAI-Voice-2.1-Flash");
     expect(ttsVoiceFor(settings.tts, "pl-PL")).toBe("pl-PL-Harper:MAI-Voice-2.1-Flash");
     // bez zmiennych per locale ustawienia (i fingerprinty) jak dotąd
     expect(mediaSettingsFromEnv({}).tts).not.toHaveProperty("voices");
