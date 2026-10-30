@@ -1,99 +1,127 @@
 # Ton wypowiedzi w nagraniach TTS — projekt
 
-Status: **zaakceptowany w rozmowie przez właściciela 2026-10-30** (sekcje A i B);
-spec do przeglądu. Zależność: etap 1 — TTS `google/gemini-3.8-flash-tts`, głos
-`Kore`, przez OpenRouter (PCM → WAV, instrukcja języka per locale
-w fingerprincie). Implementacja startuje dopiero po scaleniu etapu 1 do `main`.
+Status: **zaakceptowany w rozmowie przez właściciela 2026-10-30** (etapy A i B),
+po przeglądzie trzech krytyków (architektura, kontrakty, provider/awarie);
+spec do przeglądu właściciela.
+
+Zależność: etap 1 — PR #188 (`claude/english-word-audio-generation-c5689e`):
+TTS `google/gemini-3.8-flash-tts`, głos `Kore`, przez OpenRouter, WAV, oraz
+instrukcja wymowy per locale z env `UMIEM_TTS_INSTRUCTIONS_<LANG>_<REGION>`
+(`ttsInstructionsFor` w `config.ts`, opcjonalne `instructions` w
+`TtsFingerprintInput`, metadanych zasobu, porcie, adapterze i executorze).
+Implementacja startuje po scaleniu PR #188 do `main`; ten spec opiera się na
+jego kodzie.
 
 ## 1. Cel i decyzje
 
 Lektor ma brzmieć cieplej i żywiej dla dziecka tam, gdzie nie szkodzi to
-nauce wymowy. Pomiar z 2026-10-30: Gemini 3.8 Flash TTS (Kore) wykonuje
+nauce wymowy. Pomiar 2026-10-30: Gemini 3.8 Flash TTS (Kore) wykonuje
 instrukcje stylu (radośnie, łagodnie, z ciekawością, szeptem) i nie odczytuje
 ich na głos; szept jest o ok. 6 dB cichszy.
 
 Decyzje właściciela:
 
 1. **Dwa etapy, osobne PR.** A — stały styl według roli nagrania. B — ton per
-   ćwiczenie i per karta lekcji.
+   ćwiczenie i per karta lekcji oraz odsłuch i ponowne nagranie w panelu.
 2. **Zakres A:** stałe komunikaty Kid UI (`messages.uiAudio`), „Posłuchaj
    pytania” i „Posłuchaj karty” w lekcjach. **Słówka i zdania przykładowe
-   zestawów angielskich zostają neutralne** (wyraźna wymowa ważniejsza);
-   odsłuch słówka po próbie mowy (`feedback-audio.ts`) to to samo nagranie
-   słówka — też neutralne.
+   zestawów angielskich zostają neutralne**; odsłuch słówka po próbie mowy
+   (`feedback-audio.ts`) to to samo nagranie słówka — też neutralne.
 3. **Zakres B:** generator LLM wybiera ton z zamkniętej listy dla ćwiczeń
-   i kart (w tym ciekawostek typu „Czy wiesz, że…”); rodzic widzi ton
-   w edytorze i może go zmienić. Brak tonu = styl roli z etapu A.
-4. **Lista tonów B:** radośnie (`cheerful`), z ciekawością (`curious`),
-   łagodnie (`gentle`), tajemniczo/szeptem (`mysterious`).
-5. **Niezależność od providera:** domena, dane, kontrakty i UI znają tylko
-   semantyczny klucz stylu. Tłumaczenie na pola żądania konkretnego providera
-   (dla Gemini: tekst `instructions`) żyje przy adapterze w „profilu stylu”.
-   Zmiana providera = nowy profil, bez zmian w domenie, bazie i kontraktach.
-6. Ton nie jest znacznikiem w tekście (`[excited]`) — tekst nagrania pozostaje
-   identyczny z tekstem na ekranie.
+   i kart (w tym kart-ciekawostek „Czy wiesz, że…”, które wynikają
+   z materiału); rodzic widzi ton w edytorze i może go zmienić. Brak tonu =
+   styl roli z etapu A.
+4. **Lista tonów B:** `cheerful` (radośnie), `curious` (z ciekawością),
+   `gentle` (łagodnie), `mysterious` (tajemniczo, szept pierwszego zdania).
+5. **Szept tylko przy ≥ 2 zdaniach** tekstu nagrania; przy jednym zdaniu
+   serwer używa `curious` (§4.3).
+6. **Ponowne nagranie:** polecenie serwisowe dla komunikatów Kid UI (etap A)
+   oraz odsłuch i przycisk „Nagraj ponownie” dla pytań i kart w edytorze
+   lekcji (etap B).
+7. **Niezależność od providera:** domena, dane, kontrakty i UI znają tylko
+   semantyczny klucz stylu. Tekst instrukcji stylu żyje w profilu stylu przy
+   adapterze, włączanym jawnie env `UMIEM_TTS_STYLE` (§2.2).
+8. Ton nie jest znacznikiem w tekście — tekst nagrania pozostaje identyczny
+   z tekstem na ekranie.
 
-## 2. Architektura (wspólna dla A i B)
+## 2. Architektura (wspólna)
 
 ### 2.1. Semantyczny styl — domena
 
-Nowy plik `packages/server/src/domain/tts-style.ts` (czysty, bez importów
-infrastruktury):
+Nowy plik `packages/server/src/domain/tts-style.ts` (czysty):
 
 ```ts
 export type TtsRoleStyle =
   | "ui_praise" | "ui_gentle" | "ui_guidance" | "ui_closing"
   | "lesson_question" | "lesson_card";
-export type TtsTone = "cheerful" | "curious" | "gentle" | "mysterious"; // etap B
-export type TtsStyle = TtsRoleStyle | TtsTone;
+export type TtsStyle = TtsRoleStyle | LessonVoiceTone; // LessonVoiceTone — etap B (§4.1)
+
+/** Ton nagrania lekcji z regułą szeptu (§4.3). */
+export function lessonPromptStyle(role: "lesson_question" | "lesson_card",
+  tone: LessonVoiceTone | undefined, text: string): TtsStyle;
 ```
 
-Słówka nie mają stylu (`style` nieobecny) — nagranie wychodzi dokładnie jak po
-etapie 1. `TtsTone` pochodzi z kontraktu (etap B, §4.1); w etapie A typ
-istnieje tylko jako unia ról.
+Słówka nie mają stylu. W etapie A `TtsStyle` = `TtsRoleStyle`.
 
 ### 2.2. Profil stylu — przy adapterze
 
-Nowy plik `packages/server/src/providers/tts-style-profile.ts` — czysta
-funkcja:
+Nowy plik `packages/server/src/providers/tts-style-profile.ts`, czysta funkcja:
 
 ```ts
-ttsStyleRequest(tts: MediaSettings["tts"], locale: string, style?: TtsStyle)
-  : { instructions?: string }
+ttsRequestInstructions(tts: MediaSettings["tts"], locale: string, style?: TtsStyle): string | undefined
 ```
 
-- Profil wybierany po `tts.provider`/`tts.model`. Profil instrukcyjny (modele
-  TTS oparte na LLM: `google/gemini-*-tts`, `gpt-4o-mini-tts`) zwraca
-  `instructions` = instrukcja języka z etapu 1 + zdanie stylu (§3.2, §4.3).
-- Provider bez obsługi stylu dostaje profil bez instrukcji stylu (nagrania
-  neutralne, aplikacja działa).
-- Instrukcja języka z etapu 1 przenosi się do tego profilu, jeśli etap 1
-  umieścił ją gdzie indziej — jedno miejsce składania pól żądania. Dokładne
-  dopasowanie do kodu etapu 1 rozstrzyga plan implementacji po jego scaleniu.
+- `MediaSettings.tts.style: "instructions" | "none"` z env
+  `UMIEM_TTS_STYLE` (domyślnie `none`; nieznana wartość = błąd startu, jak
+  `UMIEM_TTS_FORMAT`). Wdrożenie Gemini ustawia `instructions`.
+  `.env.example` i `docs/provider-config.md` dostają wpis.
+- **Niezmiennik zgodności z etapem 1:** gdy `style` jest nieobecny, locale ≠
+  `pl-PL` albo `tts.style === "none"`, wynik to **dokładnie**
+  `ttsInstructionsFor(tts, locale)`. Słówka i dowolne nagranie bez stylu mają
+  więc fingerprint identyczny jak po etapie 1 (brak nowych nagrań słówek,
+  publikacja zestawów nie czeka na audio).
+- Gdy styl obowiązuje: `[ttsInstructionsFor(tts, locale), zdanieStylu]`
+  bez pustych elementów, złączone jedną spacją. Funkcja nigdy nie zwraca `""`
+  (pusty wynik → `undefined`).
+- Zdania stylu tylko dla `pl-PL` (§3.2, §4.3); każde ≤ 120 znaków (test).
+- `UMIEM_TTS_STYLE=none` działa jak wyłącznik awaryjny: fingerprinty wracają
+  do wartości etapu 1, więc odsłuch od razu używa starych gotowych nagrań.
 - Moduły `materials/` importują profil bezpośrednio (precedens:
-  `providers/audio/normalize`, `providers/audio/mp3-duration`).
+  `providers/audio/normalize`, `providers/audio/mp3-duration`; test granic
+  sprawdza kierunki między obszarami i czystość `domain/`).
 
 ### 2.3. Fingerprint, metadane, wykonanie
 
-- `ttsFingerprint` obejmuje **wynik profilu** (`instructions`, pusty = brak
-  pola), nie sam klucz stylu: fingerprint dalej opisuje pełne żądanie
-  generacji (architecture.md §8). Poprawka brzmienia instrukcji albo zmiana
-  providera daje nowe nagranie; gotowe zasoby pozostają niezmienne.
-- Metadane zasobu TTS dostają `instructions` (gdy niepuste) i `style` (klucz,
-  wyłącznie informacyjnie). Executor (`media-generation.ts`) przekazuje
-  `instructions` z rekordu zasobu do `TtsProvider.synthesize`, tak jak dziś
-  model — zmiana env między planowaniem a wykonaniem nie zmienia żądania.
-- Port `TtsSynthesizeInput` dostaje opcjonalne `instructions?: string`
-  (jeśli etap 1 go nie wprowadził). Adapter OpenAI-zgodny wysyła je w polu
-  `instructions` `/audio/speech`; nie zna ról ani tonów.
+Bez nowych pól: wynik `ttsRequestInstructions` trafia do istniejącego
+`instructions` z etapu 1 — w `ttsFingerprint`, metadanych zasobu i żądaniu
+executora (który bierze `instructions` z rekordu zasobu, więc zmiana env
+między planowaniem a wykonaniem nie zmienia żądania). Klucz stylu **nie**
+trafia do metadanych (zasób jest współdzielony po fingerprincie).
+`isUiAudioAssetMetadata` pozostaje bez zmian — odczyt i zlecanie filtrują po
+fingerprincie, a funkcja jest też wyjątkiem w `supersedeDisabledLessonTts`.
+
+### 2.4. Ponowne nagranie — wspólna reguła
+
+Ponowne nagranie = nowy wiersz `media_assets` z tym samym fingerprintem
+i kolejnym `generationNumber` (wzorzec `regenerateRevisionAsset`). Odsłuch
+komunikatów, pytań i kart wybiera najnowszą gotową generację danego
+fingerprintu, więc:
+
+- do gotowości nowego nagrania dziecko słyszy poprzednie (bez przerwy);
+- nowe ujęcie obowiązuje we **wszystkich wersjach** współdzielących
+  fingerprint, także opublikowanych. To świadoma decyzja: nagranie pytania
+  i karty nie jest decyzją rodzica ani częścią zatwierdzonej treści (design
+  szkoły §11.3), a celem jest naprawa złego ujęcia. Zadania już wydane
+  zachowują swój `questionAudioAssetId`. Gotowe zasoby i ich bajty pozostają
+  niezmienne.
 
 ## 3. Etap A — styl według roli
 
 ### 3.1. Mapowanie komunikatów Kid UI
 
 Mapa `UI_AUDIO_STYLES: Record<UiAudioKey, TtsRoleStyle>` w
-`domain/ui-audio-catalog.ts` (`satisfies` — nowy klucz bez stylu nie przejdzie
-typecheck). Klient jej nie potrzebuje, więc nie trafia do kontraktów.
+`domain/ui-audio-catalog.ts` (`satisfies`; nowy klucz bez stylu nie przejdzie
+typecheck). Klient jej nie potrzebuje — nie trafia do kontraktów.
 
 | Styl | Klucze (17 komunikatów) |
 | --- | --- |
@@ -102,156 +130,246 @@ typecheck). Klient jej nie potrzebuje, więc nie trafia do kontraktów.
 | `ui_guidance` | `profile_select`, `deck_select`, `exposure`, `listening`, `speech`, `recall` |
 | `ui_closing` | `end`, `summary` |
 
-### 3.2. Instrukcje stylu profilu instrukcyjnego (pl-PL)
+### 3.2. Zdania stylu ról (pl-PL)
 
-Wstępne brzmienie; ostateczne po odsłuchu próbek przed scaleniem PR A.
+Wstępne brzmienie; ostateczne po odsłuchu próbek (§3.6).
 
 | Styl | Zdanie stylu |
 | --- | --- |
 | `ui_praise` | Powiedz radośnie, z uśmiechem w głosie, jak do ośmiolatka. |
-| `ui_gentle` | Powiedz łagodnie i ciepło, bez rozczarowania w głosie. |
+| `ui_gentle` | Powiedz ciepło i spokojnie, bez rozczarowania w głosie. |
 | `ui_guidance` | Powiedz przyjaźnie i zachęcająco, wyraźnie. |
 | `ui_closing` | Powiedz ciepło i z zadowoleniem. |
-| `lesson_question` | Przeczytaj przyjaźnie, z lekką ciekawością, spokojnym tempem i wyraźnie. |
+| `lesson_question` | Przeczytaj przyjaźnie, spokojnym tempem i wyraźnie. |
 | `lesson_card` | Przeczytaj jak ciepły nauczyciel, który opowiada, spokojnym tempem. |
 
 ### 3.3. Miejsca zmian
 
-- `modules/materials/ui-audio.ts` — `requestOf` przekazuje styl klucza do
-  profilu; fingerprint i metadane z §2.3. `isUiAudioAssetMetadata` sprawdza
-  dodatkowo zgodność `instructions` z bieżącym żądaniem — inaczej stare
-  neutralne nagranie przeszłoby jako gotowe.
+- `config.ts` — `tts.style` z `UMIEM_TTS_STYLE`.
+- `modules/materials/ui-audio.ts` — `requestOf` liczy `instructions` przez
+  profil ze stylem klucza (zamiast samego `ttsInstructionsFor`).
 - `modules/materials/media-reconciliation.ts` — `ttsAsset` przyjmuje
   opcjonalny styl; `prompt_audio` pytań → `lesson_question`, kart →
   `lesson_card`; `target_audio`/`example_audio` bez stylu.
-- `media-generation.ts`, port i adapter — §2.3.
+- `providers/fake.ts` — `FakeTtsProvider` włącza `instructions` do
+  generowanych bajtów (nagranie stylowane ≠ neutralne w testach).
 
-### 3.4. Wdrożenie
+### 3.4. Odczyt zapasowy komunikatów Kid UI
 
-- Fingerprinty 17 komunikatów się zmieniają: worker przy starcie
-  (`prepareUiAudio`) zleca je od nowa (17 krótkich nagrań). Do ich gotowości
-  `readUiAudio` zwraca `ready: false` — krótka przerwa w odsłuchu poleceń
-  zaraz po wdrożeniu, jak przy każdej zmianie konfiguracji TTS.
-- Pytania i karty lekcji dostają nowe nagrania przy następnej edycji lub
-  publikacji — bez generowania wstecz (zasada z design szkoły §11.2, §12.2).
+Dziś `readUiAudio` zwraca `ready: true` tylko przy komplecie nagrań
+o bieżących fingerprintach, a bez tego każde dotknięcie odsłuchu w Kid UI
+kończy się błędem (`session-controller.ts`). Każda zmiana konfiguracji TTS
+(także ta) wyłącza więc odsłuch poleceń do czasu nagrania wszystkich 17
+komunikatów; trwała awaria jednego komunikatu wyłącza go do restartu workera.
+
+Zmiana: dla klucza bez gotowego nagrania o bieżącym fingerprincie
+`readUiAudio` bierze najnowsze gotowe nagranie TTS, którego metadane
+spełniają `isUiAudioAssetMetadata` z tym samym `uiAudioKey` i bieżącym
+tekstem (np. neutralne sprzed etapu A). Komunikat to stała fraza interfejsu,
+nie materiał nauki ani dowód — odtworzenie starszego ujęcia tej samej frazy
+jest bezpieczne. Nagranie innego tekstu nigdy nie jest używane. Kontrakt
+`UiAudioCatalogDto` bez zmian.
+
+### 3.5. Polecenie ponownego nagrania komunikatu
+
+`apps/worker/src/regenerate-ui-audio.ts` (wzór: `rebuild-progress.ts`)
+i skrypt `pnpm media:regenerate-ui-audio <klucz…>` — dla wskazanych
+`UiAudioKey` zleca nową generację wg §2.4 (bieżący fingerprint, nowy
+`generationNumber`) w kolejce `media_assets`. Przypadek użycia
+`regenerateUiAudio(services, keys)` w `materials/ui-audio.ts`, eksport przez
+barrel. Bez endpointu i UI.
+
+### 3.6. Próbki do odsłuchu
+
+`scripts/sample-tts-styles.mts` (`pnpm eval:tts-styles -- --out <katalog>`):
+z prawdziwym kluczem i bieżącą konfiguracją generuje do katalogu spoza repo
+17 komunikatów, po jednym pytaniu i karcie w każdej roli, a w etapie B po
+jednej próbce każdego tonu (z jednym i dwoma zdaniami dla `mysterious`).
+Nic nie trafia do bazy. W opisie PR: lista odsłuchanych plików i decyzja
+właściciela o brzmieniu.
+
+### 3.7. Wdrożenie i koszt
+
+- Fingerprinty 17 komunikatów się zmieniają; worker przy starcie
+  (`prepareUiAudio`) zleca je od nowa. Dzięki §3.4 odsłuch działa w tym
+  czasie na starych nagraniach. Web i worker wdrażane razem (fingerprint
+  w `readUiAudio` liczy web, zlecenie — worker).
+- Pierwsza edycja szkicu lekcji po wdrożeniu przelicza wszystkie rewizje
+  (`reconcileDraftAssetsTx`), więc zleca nowe nagrania **wszystkich** pytań
+  i kart tego szkicu, nie tylko edytowanego ćwiczenia. Bez generowania wstecz
+  dla nieedytowanych lekcji.
+- Oczekujące neutralne nagrania sprzed wdrożenia wykonają się normalnie
+  (`isForeignTts` porównuje provider i model).
 - Bez migracji, bez zmian Kid DTO i panelu rodzica.
 
-## 4. Etap B — ton per ćwiczenie i karta
+## 4. Etap B — ton per ćwiczenie i karta, odsłuch w panelu
 
-### 4.1. Kontrakty
+### 4.1. Kontrakty i typy
 
 `packages/contracts/src/lessons.ts`:
 
 - `LessonVoiceToneSchema = z.enum(["cheerful", "curious", "gentle", "mysterious"])`.
-- Opcjonalne `voiceTone` w `LessonExerciseInputSchema` (payload v3) oraz
-  w obiekcie karty `DynamicObjectiveDtoSchema.cards[]` i odpowiednio
-  w `DynamicObjectiveData.cards[]` (`domain/lessons/types.ts`,
-  `lesson_context.dynamicTopic`).
-- **Brak pola = styl roli z etapu A.** Enum nie ma wartości `default`; stare
-  payloady i tematy są poprawne bez migracji i bez zmiany `payload_version`.
-- Ton nie trafia do Kid DTO. Nie zawiera tekstu dla providera.
+- Opcjonalne `voiceTone` w `LessonExerciseInputSchema` i w karcie
+  `DynamicObjectiveDtoSchema.cards[]` (wspólne dla DTO szkicu i patcha
+  tematu). **Nie** w `SubjectCatalogDtoSchema` ani w Kid DTO.
+- Brak pola = styl roli z etapu A. Enum nie ma wartości `default`; stare
+  payloady i tematy są poprawne bez migracji. Ton **nie wpływa** na
+  `payload_version` (`lessonPayloadVersion` go nie liczy).
+- Typy domeny: `LessonExerciseDraft`, `DynamicObjectiveData.cards[]`
+  i `LearningObjective.cards[]` (`domain/lessons/types.ts`) dostają
+  opcjonalne `voiceTone`.
 
-### 4.2. Generator
+### 4.2. Przepływ pola — wszystkie miejsca przepisujące obiekty
 
-- Prompty generowania puli (`lessonSystemPrompt` + schemat ćwiczeń) i zagadnień (`lessonObjectivesSystemPrompt` + `lessonObjectivesJsonSchema`, `providers/openai/llm.ts`)
-  przedmiotu z `ttsForPrompts` dostają
-  regułę: „voiceTone: choose only when it clearly fits the content; usually
-  omit (null). `mysterious` only for curiosities/riddles such as »Czy wiesz,
-  że…«; `cheerful` for fun facts or playful examples; `gentle` for sensitive
-  or difficult content; `curious` for questions inviting the child to think.”
-  Generator nie dostaje polecenia tworzenia nowych kart-ciekawostek ani
-  faktów spoza materiału (obowiązująca reguła kart bez zmian).
-- Tryb `json_schema` strict wymaga pól wymaganych: `voiceTone` jako
-  `["string","null"]` z enumem tonów i `null`; `null` → pole pominięte.
-- Walidacja serwera (Zod): nieznana wartość tonu jest **usuwana** (styl
-  domyślny), nie odrzuca ćwiczenia ani karty.
-- Gramatyka (`ttsForPrompts: false`) nie dostaje pola w prompcie; jej
-  walidacja puli je pomija.
+Ton musi przetrwać każdą drogę: generacja → walidacja → szkic → DTO rodzica →
+patch → publikacja → rekonsyliacja. Miejsca, które dziś kopiują pola ręcznie:
 
-### 4.3. Instrukcje tonów (profil instrukcyjny, pl-PL)
+| Obszar | Miejsca |
+| --- | --- |
+| Schemat generatora ćwiczeń | `providers/openai/lesson-pool-schema.ts` — gałąź ogólna i gałęzie `lesson_keywords`, `lesson_match`, `lesson_group`, `lesson_cloze`; bez `lesson_calculation` |
+| Materializatory generatora | `providers/lesson-assignments.ts`, `lesson-keywords.ts` |
+| Schemat i prompt zagadnień | `providers/openai/llm.ts` — `lessonObjectivesJsonSchema` (karta: pole w `required`), `lessonObjectivesSystemPrompt`, `lessonSystemPrompt` |
+| Szkic serwera — ćwiczenia | `lesson-drafts.ts` `toExerciseDraft`/`v3FieldsOf`, `buildLessonPayload`; `lesson-api.ts` `exerciseDtoFromPayload` |
+| Szkic serwera — karty | `lesson-drafts.ts` `rawObjectiveSchema`, `buildDynamicTopicData`; `lesson-api.ts` DTO szkicu i patch tematu; `subjects/school/module.ts` `buildDynamicTopic` (rekonsyliacja kart czyta `resolveLessonTopic(...).topic`) |
+| Edytor rodzica | `lesson-editor-state.ts` `editableFromExercise`, `exerciseToInput`, `EditableDynamicObjective`, `lessonExerciseChanged`, `toLessonDraftPatch` |
+| Fake | `providers/fake.ts` — generator lekcji zwraca przykładowe tony |
+
+Schemat strict: `voiceTone: { type: ["null", "string"], enum: [null, …tony] }`
+(wzorzec z `lesson-pool-schema.ts`); `null` → pole pominięte.
+
+### 4.3. Generator, walidacja, reguła szeptu
+
+- Reguła w promptach przedmiotu z `ttsForPrompts`: „voiceTone: choose only
+  when it clearly fits; usually null. `mysterious` only for
+  curiosities/riddles such as »Czy wiesz, że…« with at least two sentences;
+  `cheerful` for fun facts or playful examples; `gentle` for sensitive or
+  difficult content; `curious` for questions that invite the child to think.”
+  Bez nowych kart ani faktów spoza materiału (reguła kart bez zmian).
+- `LessonPoolInput` i wejście zagadnień dostają flagę `voiceTones: boolean`
+  (= `ttsForPrompts` przedmiotu); bez niej schemat i prompt nie zawierają
+  pola (gramatyka).
+- **Sanityzacja wyniku LLM** w `toExerciseDraft` i `buildDynamicTopicData`,
+  przed ścisłą walidacją: `LessonVoiceToneSchema.safeParse`; nieznana
+  wartość → pole usunięte (dziś nieznany enum odrzuca całe ćwiczenie w
+  `validateLessonExercise` — ton nie ma takiej wagi).
+- Wejście rodzica: ścisły kontrakt (nieznany ton = błąd walidacji).
+  `validateLessonExercise` odrzuca `voiceTone`, gdy przedmiot nie ma
+  `ttsForPrompts` (wzór: `v3FieldsPresent`).
+- **Reguła szeptu** (`lessonPromptStyle`, §2.1): `mysterious` dla tekstu
+  nagrania z mniej niż dwoma zdaniami → `curious`. Zdanie = fragment
+  zakończony `.`, `!`, `?` lub `…` (albo końcem tekstu) po normalizacji
+  odstępów. Dotyczy pytań i kart.
+
+Zdania stylu tonów (pl-PL, wyraźnie różne od stylu ról):
 
 | Ton | Zdanie stylu |
 | --- | --- |
 | `cheerful` | Przeczytaj radośnie, z entuzjazmem i uśmiechem w głosie, wyraźnie. |
-| `curious` | Przeczytaj z ciekawością, pytająco i zachęcająco, wyraźnie. |
-| `gentle` | Przeczytaj łagodnie, spokojnie i ciepło. |
+| `curious` | Przeczytaj z wyraźną ciekawością, pytająco, jakbyś zapraszał do zgadywania. |
+| `gentle` | Przeczytaj bardzo łagodnie i wolniej, ciepłym, kojącym głosem. |
 | `mysterious` | Pierwsze zdanie powiedz szeptem, jak sekret; resztę tajemniczo, ale wyraźnie i spokojnie. |
 
-`mysterious` szepcze tylko pierwsze zdanie — szept w całości byłby dla
-dziecka gorzej słyszalny.
+### 4.4. Rekonsyliacja i niezmienność
 
-### 4.4. Rekonsyliacja
-
-- Pytanie: styl = `payload.voiceTone ?? "lesson_question"`.
-- Karta: styl = `card.voiceTone ?? "lesson_card"`.
-- Zmiana tonu to edycja szkicu: nowa rewizja / nowy `lesson_context`
-  i uzgodnienie nagrania w tej samej transakcji co dziś zmiana tekstu.
-  Opublikowana wersja i gotowe nagranie pozostają nietknięte.
+- Pytanie: styl = `lessonPromptStyle("lesson_question", payload.voiceTone, tekst)`.
+- Karta: styl = `lessonPromptStyle("lesson_card", card.voiceTone, tekst)`.
+- Zmiana tonu to edycja szkicu (aktualizacja rewizji szkicu / jego
+  `lesson_context`) z uzgodnieniem nagrania w tej samej transakcji co dziś
+  zmiana tekstu. Opublikowana wersja i gotowe nagranie pozostają nietknięte.
+- **Ton nie wpływa na kryteria ani postęp:** nie wchodzi do
+  `objectiveImpacted` ani `buildObjectiveCriteria`; zmiana samego tonu nie
+  tworzy nowej `skill_version` i nie resetuje postępu (test).
 
 ### 4.5. Panel rodzica
 
-- Pole „Ton lektora” (Mantine `Select`: Domyślny / Radośnie / Z ciekawością /
+- **„Ton lektora”** (Mantine `Select`: Domyślny / Radośnie / Z ciekawością /
   Łagodnie / Tajemniczo) w edytorze ćwiczenia (`LessonExerciseCard`) i karty
-  zagadnienia. „Domyślny” usuwa pole.
-- Widoczne tylko gdy przedmiot ma `ttsForPrompts` i ćwiczenie ma tekst do
-  odczytu (`questionReadText` ≠ null; np. `lesson_calculation` nie ma), a dla
-  karty — gdy `cardReadText` ≠ null.
+  zagadnienia. „Domyślny” usuwa pole. Widoczny dla przedmiotów z
+  `ttsForPrompts` we wszystkich typach poza `lesson_calculation` i dla
+  wszystkich kart; opis pod polem: „Ton działa, gdy pytanie ma nagranie.”
+  (panel nie liczy `questionReadText`/`cardReadText` — to funkcje serwera).
+- **Odsłuch i „Nagraj ponownie”:** DTO szkicu lekcji dostaje dla ćwiczenia
+  i karty opcjonalne `promptAudio: { state: "pending" | "ready" | "failed", assetId?: uuid }`
+  — stan najnowszej generacji o oczekiwanym fingerprincie
+  (`revision_assets.prompt_audio` / `lesson_card_assets`), `assetId` tylko
+  dla gotowej. Brak pola = brak nagrania dla tego tekstu. Przycisk
+  „Posłuchaj” odtwarza istniejącym `/api/v1/media/:id`. „Nagraj ponownie”
+  (dostępne dla `ready` i `failed`, tylko w szkicu) woła nowe procedury oRPC
+  rodzica `lessons.regeneratePromptAudio({ draftId, itemRevisionId })`
+  i `lessons.regenerateCardAudio({ draftId, objectiveId, cardIndex })` —
+  przypadki użycia w `materials/lessons/` wg §2.4, w transakcji z blokadą
+  wersji jak `regenerateRevisionAsset`; opublikowana wersja → `immutable`.
+- Stan „nagrywanie…” odświeżany zapytaniem TanStack Query po akcji
+  (bez pollingu w tle poza istniejącym wzorcem panelu).
 - Etykiety w katalogu komunikatów rodzica (`messages`), pl-PL.
-- Rodzic nie odsłuchuje nagrania pytania/karty w panelu (dziś `prompt_audio`
-  jest przed nim ukryte) — poza zakresem (§7).
 
 ## 5. Błędy i odporność
 
-- Awaria TTS: bez zmian — zasób `failed`, brak przycisku odsłuchu, publikacja
-  nie czeka (design szkoły §11.2).
-- Provider/model bez profilu instrukcyjnego: nagrania bez instrukcji stylu.
-- Nieprawidłowy ton od LLM: usuwany przy walidacji (§4.2).
-- Odrzucenie pola `instructions` przez providera (HTTP 4xx) skutkuje błędem
-  zasobu jak każda inna awaria — nie ma cichego ponowienia bez instrukcji
-  (żądanie musi odpowiadać fingerprintowi).
+- Awaria TTS: zasób `failed`, brak przycisku odsłuchu u dziecka, publikacja
+  nie czeka (design szkoły §11.2); w panelu stan `failed` z „Nagraj ponownie”.
+- Odrzucenie `instructions` przez providera (4xx): błąd zasobu jak każda
+  awaria, bez cichego ponowienia bez instrukcji (żądanie musi odpowiadać
+  fingerprintowi). Systematyczne 4xx naprawia `UMIEM_TTS_STYLE=none`.
+- Komunikaty Kid UI bez bieżącego nagrania: odczyt zapasowy (§3.4).
+- Nieprawidłowy ton od LLM: usuwany (§4.3).
 
 ## 6. Prywatność, koszty, integracje
 
 - Do usługi TTS trafia tekst materiału zatwierdzonego przez rodzica i stała
-  instrukcja stylu — bez danych dziecka.
-- Koszt: instrukcja nie jest czytana, więc długość nagrania praktycznie się
-  nie zmienia (Gemini ≈ $0,0002/s dźwięku). Jednorazowo 17 komunikatów; lekcje
-  przy kolejnych edycjach.
+  instrukcja — bez danych dziecka.
+- Koszt: instrukcja nie jest czytana (długość nagrania praktycznie bez zmian,
+  Gemini ≈ $0,0002/s dźwięku), za to liczona jako krótkie wejście tekstowe.
+  Jednorazowo 17 komunikatów; lekcje przy kolejnych edycjach (§3.7); ponowne
+  nagrania tylko na żądanie.
 - **API → MCP → skill: brak wpływu.** Jedyne narzędzie MCP to
-  `umiem_get_learning_overview`, które nie obejmuje lekcji ani mediów;
-  nie ma narzędzi tworzenia materiału. `SKILL.md` bez zmian.
-- Panel rodzica w etapie B pokazuje ton; informacja o usłudze TTS bez zmian.
+  `umiem_get_learning_overview` — bez lekcji i mediów; eksportowany schemat
+  w `integrations/umiem-mcp` nie obejmuje `lessons.ts`; nie ma narzędzi
+  tworzenia materiału. `SKILL.md` bez zmian. Nowe procedury rodzica (§4.5)
+  nie są udostępniane przez MCP.
 
 ## 7. Poza zakresem
 
-- Ton słówek i zdań przykładowych angielskich.
-- Odsłuch nagrania pytania/karty w panelu rodzica.
-- Ustawienie tonu per dziecko, wyłączenie stylu przez rodzica.
+- Ton słówek i zdań przykładowych angielskich; style dla innych locale niż
+  pl-PL.
+- Ustawienie tonu per dziecko; wyłączanie stylu przez rodzica (jest tylko
+  wyłącznik operatora `UMIEM_TTS_STYLE`).
 - Znaczniki w tekście, SSML i profile innych providerów (powstaną przy zmianie
   providera).
+- Automatyczna ocena jakości ujęcia (np. strażnik czasu trwania).
 - Wsteczne generowanie nagrań opublikowanych lekcji.
 
 ## 8. Testy
 
 Etap A:
-- Jednostkowe profilu: każda rola daje oczekiwane `instructions`; brak stylu
-  = sama instrukcja języka; provider spoza profilu instrukcyjnego = bez stylu.
-- Jednostkowe fingerprintu: różne `instructions` → różne fingerprinty; brak
-  instrukcji zgodny z etapem 1 dla słówek (słówka nie dostają nowych nagrań).
-- `ui-audio-catalog`: każdy `UiAudioKey` ma styl (typ + test).
-- Integracyjne (`media-reconciliation`, `ui-audio`): `prompt_audio` pytań
-  i kart ma styl roli, `target_audio`/`example_audio` bez; stare neutralne
-  nagranie komunikatu nie jest uznane za gotowe; executor wysyła
-  `instructions` z metadanych zasobu (fake TTS rejestruje wejście).
-- Adapter: `instructions` w ciele żądania tylko gdy podane.
+- Profil (jednostkowe): niezmiennik §2.2 (brak stylu / locale ≠ pl-PL /
+  `none` = dokładnie `ttsInstructionsFor`); stały wynik złożenia dla każdej
+  roli (snapshot tekstu); brak `""`; limit długości zdań.
+- `config`: `UMIEM_TTS_STYLE` domyślnie `none`, nieznana wartość = błąd.
+- Fingerprint: słówka bez zmian względem etapu 1; inne instrukcje = inny
+  fingerprint.
+- `ui-audio-catalog`: każdy `UiAudioKey` ma styl.
+- Integracyjne: `prompt_audio` pytań i kart ze stylem roli,
+  `target_audio`/`example_audio` bez; odczyt zapasowy §3.4 (stare nagranie
+  tego samego tekstu użyte, innego tekstu — nie; bieżące ma pierwszeństwo);
+  `regenerateUiAudio` tworzy kolejną generację, a odczyt bierze nowszą
+  gotową; executor wysyła `instructions` z metadanych (fake rejestruje
+  wejście). Fixture'y z policzonymi fingerprintami UI audio
+  (`tests/fixtures/profile-navigation-world.ts`) zaktualizowane.
 
 Etap B:
-- Kontrakty: `voiceTone` opcjonalne, nieznana wartość odrzucona przez schemat
-  edycji rodzica; strict JSON schema generatora zawiera nullable enum.
-- Walidacja puli/zagadnień: nieznany ton usunięty, `null` pominięty,
-  gramatyka bez pola.
-- Integracyjne: zmiana tonu w szkicu tworzy nowe żądanie nagrania i zachowuje
-  stare gotowe zasoby; brak tonu = styl roli.
-- Panel rodzica: test stanu edytora (pole widoczne/ukryte wg typu, „Domyślny”
-  usuwa pole); E2E tylko jeśli edytor ma istniejący spec, do którego pasuje.
-- Bez zmian geometrii Kid UI — brak nowych testów layoutu.
+- Kontrakty: `voiceTone` opcjonalne; nieznany ton odrzucony w edycji rodzica;
+  schematy strict generatora z nullable enum we wszystkich gałęziach poza
+  `lesson_calculation`; bez pola przy `voiceTones: false`.
+- Domena: sanityzacja nieznanego tonu; gramatyka odrzuca pole; reguła szeptu
+  (1 zdanie → `curious`, 2 zdania → `mysterious`).
+- Edytor (jednostkowe stanu): round-trip DTO → forma → patch zachowuje
+  `voiceTone` w ćwiczeniu i karcie; „Domyślny” usuwa pole; zmiana tonu
+  wykrywana przez `lessonExerciseChanged`.
+- Integracyjne: pełna ścieżka generacja (fake) → DTO → patch tonu →
+  publikacja → fingerprint pytania i karty; zmiana tonu zachowuje stare
+  gotowe zasoby i nie tworzy nowej `skill_version`; regeneracja pytania
+  i karty w szkicu tworzy nową generację, w wersji opublikowanej →
+  `immutable`; `promptAudio` w DTO szkicu odpowiada stanowi najnowszej
+  generacji.
+- Kid UI bez zmian geometrii — brak nowych testów layoutu. E2E panelu tylko,
+  jeśli istniejący spec edytora lekcji obejmuje kartę ćwiczenia.
