@@ -1208,7 +1208,7 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect(edited.exercises.every((ex) => ex.objectiveId === kept.id)).toBe(true);
 
     const forged = edited.exercises.map((ex, i) => {
-      const { revisionId: _revisionId, ...input } = ex;
+      const { revisionId: _revisionId, promptAudio: _promptAudio, ...input } = ex;
       return i === 0 ? { ...input, sourceRefs: [{ quote: "tego zdania z pewnością nie ma w materiale źródłowym" }] } : input;
     });
     await expect(

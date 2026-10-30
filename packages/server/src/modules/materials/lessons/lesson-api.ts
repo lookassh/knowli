@@ -43,6 +43,7 @@ import {
   lockVersion,
 } from "../version-ops";
 import { buildLessonPayload, buildObjectiveCriteria, lessonPayloadVersion, splitByPoolExtra, toExerciseDraft } from "./lesson-drafts";
+import { readLessonAudioStates } from "./lesson-prompt-audio";
 
 /**
  * API rodzica dla lekcji (zadanie 11). Cienka logika serwerowa za routerem:
@@ -250,7 +251,13 @@ async function readLessonDraftDto(
         .where(and(inArray(revisionAssets.itemRevisionId, revisionIds), eq(revisionAssets.role, "target_audio")))
     : [];
 
-  const exercises = revisions.map((r) => exerciseDtoFromPayload(r.itemId, r.id, r.payload));
+  // Stan nagrań pytań i kart do odsłuchu i „Nagraj ponownie” (spec tonu TTS §4.5) — nie są decyzją rodzica.
+  const audio = await readLessonAudioStates(db, versionId, context.objectiveIds);
+  const exercises = revisions.map((r) => {
+    const dto = exerciseDtoFromPayload(r.itemId, r.id, r.payload);
+    const promptAudio = audio.prompts.get(r.id);
+    return promptAudio ? { ...dto, promptAudio } : dto;
+  });
   const drafts: LessonExerciseDraft[] = revisions.map((r) => toExerciseDraft(r.payload));
   const draftSubject = services.subjects.getSubject(context.subjectId);
   const coverage: CoverageGapDto[] = mergeCoverage(
@@ -301,6 +308,7 @@ async function readLessonDraftDto(
               : "pending",
       assetId: a.assetId,
     }]),
+    ...(audio.cards.length > 0 ? { cardAudio: audio.cards } : {}),
     rejectedCount: context.rejectedCount,
     ...(context.droppedObjectiveCount ? { droppedObjectiveCount: context.droppedObjectiveCount } : {}),
     coverage,

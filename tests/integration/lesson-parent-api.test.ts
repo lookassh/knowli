@@ -790,7 +790,7 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
 // --- helpery testowe (SQL i mapowanie DTO→Input) ---
 
 function stripToInput(ex: Record<string, unknown>): LessonExerciseInput {
-  const { revisionId: _r, ...rest } = ex as { revisionId?: string } & Record<string, unknown>;
+  const { revisionId: _r, promptAudio: _a, ...rest } = ex as { revisionId?: string; promptAudio?: unknown } & Record<string, unknown>;
   return rest as LessonExerciseInput;
 }
 

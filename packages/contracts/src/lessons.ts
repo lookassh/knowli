@@ -303,9 +303,30 @@ export const LessonExerciseInputSchema = z.object({
 }).strict();
 export type LessonExerciseInput = z.infer<typeof LessonExerciseInputSchema>;
 
+/**
+ * Stan nagrania pytania lub karty w panelu rodzica (spec tonu TTS §4.5): stan
+ * najnowszej generacji o oczekiwanym fingerprincie; `assetId` tylko dla gotowej
+ * (odsłuch przez `/api/v1/media/:id`).
+ */
+export const LessonPromptAudioDtoSchema = z.object({
+  state: z.enum(["pending", "ready", "failed"]),
+  assetId: UuidSchema.optional(),
+}).strict();
+export type LessonPromptAudioDto = z.infer<typeof LessonPromptAudioDtoSchema>;
+
 const LessonExerciseDraftDtoSchema = LessonExerciseInputSchema.extend({
   revisionId: UuidSchema,
+  /** Nagranie pytania; brak = ćwiczenie nie ma nagrania dla tego tekstu. Tylko do odczytu. */
+  promptAudio: LessonPromptAudioDtoSchema.optional(),
 });
+
+/** Nagranie karty zagadnienia w szkicu (miejsce karty w temacie + stan). */
+export const LessonCardAudioDtoSchema = z.object({
+  objectiveId: z.string().min(1),
+  cardIndex: z.number().int().nonnegative(),
+  audio: LessonPromptAudioDtoSchema,
+}).strict();
+export type LessonCardAudioDto = z.infer<typeof LessonCardAudioDtoSchema>;
 
 /** Brak pokrycia publikacyjnego per cel i etap (design „Generowanie puli”). */
 export const CoverageGapDtoSchema = z.object({
@@ -338,6 +359,8 @@ export const LessonDraftDtoSchema = z.object({
   examples: z.record(z.string(), z.array(z.string())),
   exercises: z.array(LessonExerciseDraftDtoSchema),
   assets: z.array(RevisionAssetDtoSchema),
+  /** Nagrania kart zagadnień (tylko karty z wierszem nagrania); brak pola = brak nagrań kart. */
+  cardAudio: z.array(LessonCardAudioDtoSchema).optional(),
   rejectedCount: z.number().int().nonnegative(),
   /** Zagadnienia odrzucone/pominięte na etapie generowania tematu (zestawy szkolne). */
   droppedObjectiveCount: z.number().int().nonnegative().optional(),

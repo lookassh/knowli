@@ -82,6 +82,8 @@ export {
   publishLessonDraft,
   createLessonDraftFromPublished,
   deckIdOfLessonVersion,
+  regenerateLessonPromptAudio,
+  regenerateLessonCardAudio,
 } from "./modules/materials";
 export {
   lessonObjectiveProgress,
