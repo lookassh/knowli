@@ -124,8 +124,16 @@ describe("„Posłuchaj karty” — przygotowanie nagrań", () => {
 
   it("publikacja nie czeka na nagrania kart; rodzic ich nie widzi; wiersze opublikowanej wersji są niezmienne", async () => {
     const { active, deckId, versionId } = await publishedWorld();
-    expect((await cardAudio(versionId)).every((row) => row.state === "pending")).toBe(true);
-    expect(JSON.stringify(await readLessonDeck(active, deckId))).not.toContain("lesson_card_assets");
+    const rows = await cardAudio(versionId);
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.state === "pending")).toBe(true);
+    // DTO rodzica nie ujawnia nagrań kart ani w oczekiwaniu, ani po przygotowaniu.
+    for (const ready of [false, true]) {
+      if (ready) for (const row of rows) await markReady(row.assetId);
+      const parentDto = JSON.stringify(await readLessonDeck(active, deckId));
+      for (const row of rows) expect(parentDto).not.toContain(row.assetId);
+      expect(parentDto).not.toContain("questionAudioAssetId");
+    }
     await expect(pool.query("delete from learning_app.lesson_card_assets where deck_version_id = $1", [versionId]))
       .rejects.toThrow(/immutable/);
     await expect(pool.query("update learning_app.lesson_card_assets set asset_id = null where deck_version_id = $1", [versionId]))
