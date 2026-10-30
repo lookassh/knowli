@@ -22,6 +22,7 @@ import type {
 import type { MediaStore } from "../ports/media";
 import { letterGroups } from "../domain/pronunciation-fragments";
 import { checkElement, materialLexicon } from "../domain/lessons/subjects/english-chapter/lexicon";
+import { englishChapterSubject } from "../domain/lessons/subjects/english-chapter/module";
 import { materializeGeneratedCalculations } from "./lesson-calculations";
 
 /**
@@ -107,9 +108,6 @@ const FAKE_STAGE_TYPES: Record<"guided" | "productive" | "independent", readonly
   productive: ["lesson_gap", "lesson_error_fix", "lesson_transform"],
   independent: ["lesson_open_answer"],
 };
-
-/** Przedmiot z własną gałęzią fake'a (infrastruktura testowa, nie silnik). */
-const CHAPTER_SUBJECT_ID = "english_chapter";
 
 /**
  * Słowa treści materiału rozdziału w kolejności występowania, bez powtórzeń:
@@ -215,8 +213,8 @@ function fakeLessonExercises(input: LessonPoolInput): {
   exercises: Record<string, unknown>[];
   examples: Record<string, string[]>;
 } {
-  // Pula rozdziału musi przejść walidację słownikową, więc ma własną gałąź.
-  if (input.subjectId === CHAPTER_SUBJECT_ID) {
+  // Pula rozdziału musi przejść walidację słownikową, więc ma własną gałąź (infrastruktura testowa, nie silnik).
+  if (input.subjectId === englishChapterSubject.id) {
     return fakeChapterPool(input);
   }
   const exercises: Record<string, unknown>[] = [];

@@ -14,6 +14,7 @@ import {
   publishLessonDraft,
   readGeneration,
   readLessonDeck,
+  retryGeneration,
   startSession,
   submitAttempt,
   type Services,
@@ -22,6 +23,7 @@ import { LessonExerciseInputSchema, type LessonDraftDto, type TaskDto } from "@l
 import { stageOf } from "../../packages/server/src/domain/lessons/stages";
 import { fakeGeneration, FakeLlmProvider, type FakeGeneration } from "./fakes";
 import { ManualClock, testDatabase } from "./helpers";
+import { mockTestDeck } from "./mock-test-helpers";
 
 /**
  * Lekcja „Angielski — rozdział” na PostgreSQL z fałszywym generatorem (design
@@ -213,6 +215,71 @@ describe("lekcja Angielski — rozdział (integracja)", () => {
     expect(version!.lesson_context.rejectedReasons).toEqual(draft.rejectedReasons);
   });
 
+  it("pełne odrzucenie: run kończy się failed/validation, rodzic widzi powody w szkicu i może ponowić", async () => {
+    const { fakes, services } = await chapterWorld();
+    const regular = fakes.llm.generateLessonPool.bind(fakes.llm);
+    let everythingOutside = true;
+    fakes.deps.llm.generateLessonPool = async (input) => {
+      if (!everythingOutside) return regular(input);
+      const objectiveId = input.objectives[0]!.id;
+      const choice = (instructionPl: string, stem: string, outside: string) => ({
+        exerciseType: "lesson_choice", objectiveId, instructionPl, stem,
+        options: [{ id: "a", text: "coat" }, { id: "b", text: outside }], correctOption: "a",
+        answer: "coat", acceptedAnswers: [], focus: [],
+      });
+      return {
+        examples: {},
+        // Każde ćwiczenie partii ma słowo spoza materiału (opcja albo odpowiedź).
+        exercises: [
+          choice("Pada deszcz. Wybierz słowo.", "I have an ___.", "umbrella"),
+          choice("Jest zimno. Wybierz słowo.", "I wear a ___.", "hat"),
+          {
+            exerciseType: "lesson_gap", objectiveId, instructionPl: "Mam na sobie kurtkę. Wpisz brakujące słowo.",
+            stem: "I wear a ___.", answer: "jacket", acceptedAnswers: [], focus: ["jacket"],
+          },
+        ],
+      };
+    };
+
+    const { runId, deckId } = await createLessonFromMaterial(services, {
+      subjectId: "english_chapter",
+      topicTitlePl: "Unit 1",
+      material: CHAPTER_MATERIAL.split("Zagadnienie 3")[0]!,
+      poolSize: 40,
+      clientRequestId: randomUUID(),
+    });
+    await executeLessonGeneration(services, runId);
+
+    // Run kończy się błędem walidacji, a wersja zostaje szkicem bez ćwiczeń.
+    const run = await readGeneration(services, runId);
+    expect(run).toMatchObject({ state: "failed", errorCode: "validation" });
+    const [version] = await query<{ state: string; lesson_context: { rejectedCount: number; rejectedReasons: Record<string, number> } }>(
+      "select state, lesson_context from learning_app.deck_versions where deck_id = $1", [deckId],
+    );
+    expect(version!.state).toBe("draft");
+    expect(await query("select id from learning_app.item_revisions where deck_version_id = $1", [run.deckVersionId])).toHaveLength(0);
+
+    // Liczniki są zapisane mimo porażki: 3 ćwiczenia w każdej z 2 partii.
+    const reasons = { "słowo spoza materiału: umbrella": 2, "słowo spoza materiału: hat": 2, "słowo spoza materiału: jacket": 2 };
+    expect(version!.lesson_context.rejectedCount).toBe(6);
+    expect(version!.lesson_context.rejectedReasons).toEqual(reasons);
+
+    // Rodzic widzi w widoku zestawu, dlaczego nic nie powstało.
+    const seen = await readLessonDeck(services, deckId);
+    expect(seen.generation).toMatchObject({ state: "failed", errorCode: "validation" });
+    expect(seen.draft).toMatchObject({ rejectedCount: 6, rejectedReasons: reasons, exercises: [] });
+
+    // Ponowienie po poprawie generatora kończy się szkicem, a dotychczasowe powody zostają widoczne.
+    everythingOutside = false;
+    await retryGeneration(services, runId);
+    await executeLessonGeneration(services, runId);
+    expect((await readGeneration(services, runId)).state).toBe("succeeded");
+    const retried = (await readLessonDeck(services, deckId)).draft!;
+    expect(retried.exercises.length).toBeGreaterThan(0);
+    expect(retried.coverage).toEqual([]);
+    expect(retried.rejectedReasons).toEqual(reasons);
+  });
+
   it("rodzic: wariant luki spoza materiału przechodzi edycję i publikację", async () => {
     const { services } = await chapterWorld();
     const { deckId, draft } = await generateChapter(services);
@@ -362,7 +429,11 @@ describe("lekcja Angielski — rozdział (integracja)", () => {
     /**
      * Gra kolejne sesje (co godzinę) i odpowiada poprawnie. Plan sesji powstaje
      * z góry, więc nowy cel dostaje w pierwszej sesji tylko etap prowadzony;
-     * luki pojawiają się dopiero w kolejnych sesjach.
+     * luki pojawiają się dopiero w kolejnych sesjach. Tłumaczenia (etap
+     * samodzielny) w takich sesjach nie ma z powodu zegara, nie puli: należne
+     * sprawdzenie samodzielne wymaga upływu terminu powtórki (≥ 12 h dla
+     * `needs_confirmation`, ≥ 1 doby po sukcesie — `SUCCESS_INTERVALS_MS`),
+     * a krok godzinny go nie osiąga (patrz test należnego sprawdzenia).
      */
     async function playSessions(services: Services, clock: ManualClock, childId: string, deckId: string, sessions: number): Promise<PlayedTask[]> {
       const played: PlayedTask[] = [];
@@ -413,6 +484,7 @@ describe("lekcja Angielski — rozdział (integracja)", () => {
       const { services, clock, deckId } = await publishedChapter();
       const child = await createChild(services, { displayName: "Rozdział", avatarKey: "owl" });
       await assign(child.id, deckId);
+      // Sesje co godzinę: tłumaczenie nie pada, bo należne sprawdzenie czeka na termin powtórki (zegar), a nie na pulę.
       const played = await playSessions(services, clock, child.id, deckId, 3);
 
       // Sygnał silnika porównujemy z tym, co dziecko wcześniej widziało rozwiązane jako zdanie
@@ -448,6 +520,103 @@ describe("lekcja Angielski — rozdział (integracja)", () => {
       expect(first("We wear a ___ in winter.").played).toMatchObject({ answerPreviouslyExposed: false, independent: true });
     });
 
+    /** Słówka tego samego dziecka: zestaw „ze słówek” z tymi samymi słowami co rozdział. */
+    const VOCABULARY = [
+      { source: "płaszcz", target: "coat" },
+      { source: "buty", target: "boots" },
+      { source: "sukienka", target: "dress" },
+    ];
+
+    /**
+     * Usługi słówek bez providerów generacji: publikacja zestawu słówek z fixture'a
+     * (audio wstawione wprost) nie uzgadnia mediów z ustawieniami fałszywych providerów.
+     */
+    function vocabularyServices(clock: ManualClock): Services {
+      return createServices({ db: testDatabase().db, clock });
+    }
+
+    async function exposureCount(childId: string, target: string): Promise<number> {
+      const [row] = await query<{ count: number }>(
+        "select count(*)::int as count from learning_app.event_exposures where child_id = $1 and target_key = $2",
+        [childId, computeTargetKey(target, "en-GB")],
+      );
+      return row!.count;
+    }
+
+    it("ekspozycja słówka nie blokuje luki w zdaniu z tym samym słowem", async () => {
+      const { services, clock, deckId } = await publishedChapter();
+      // Słówka coat/boots/dress są już ujawnione dziecku (klucz = samo słowo).
+      const vocabulary = await mockTestDeck(vocabularyServices(clock), VOCABULARY.length, true, VOCABULARY);
+      for (const { target } of VOCABULARY) expect(await exposureCount(vocabulary.childId, target)).toBeGreaterThan(0);
+
+      await assign(vocabulary.childId, deckId);
+      const played = await playSessions(services, clock, vocabulary.childId, deckId, 3);
+
+      // Klucz luki to rozwiązane zdanie, więc ekspozycja słówka „coat” nie czyni zdania z „coat” widzianym.
+      const gap = played.find((entry) => (entry.task.prompt as { stemWithGap?: string }).stemWithGap === "We wear a ___ in winter.")!;
+      expect(gap.key.answer).toBe("coat");
+      expect(gap).toMatchObject({ answerPreviouslyExposed: false, independent: true });
+    });
+
+    it("rozwiązywanie zdań rozdziału nie ujawnia klucza słówka", async () => {
+      const { services, clock, deckId } = await publishedChapter();
+      // Słówka jeszcze nieujawnione: żaden klucz słowa nie jest w ekspozycjach.
+      const vocabulary = await mockTestDeck(vocabularyServices(clock), VOCABULARY.length, false, VOCABULARY);
+      for (const { target } of VOCABULARY) expect(await exposureCount(vocabulary.childId, target)).toBe(0);
+
+      await assign(vocabulary.childId, deckId);
+      const played = await playSessions(services, clock, vocabulary.childId, deckId, 3);
+
+      // Dziecko rozwiązało zdania z tymi słowami (zapis ekspozycji zdań działa), a klucze słówek zostały puste.
+      expect(played.some((entry) => entry.task.exerciseType === "lesson_gap")).toBe(true);
+      expect(await exposureCount(vocabulary.childId, "I wear a coat")).toBeGreaterThan(0);
+      for (const { target } of VOCABULARY) expect(await exposureCount(vocabulary.childId, target)).toBe(0);
+
+      // Zapytanie wykrywa ekspozycje słówek: sesja słówek je zapisuje przy wydaniu prezentacji.
+      const session = await startSession(vocabularyServices(clock), { childId: vocabulary.childId, deckId: vocabulary.deckId, microphoneEnabled: false });
+      expect((await nextTask(vocabularyServices(clock), session.sessionId))?.exerciseType).toBe("exposure");
+      const afterVocabulary = await Promise.all(VOCABULARY.map(({ target }) => exposureCount(vocabulary.childId, target)));
+      expect(afterVocabulary.reduce((sum, count) => sum + count, 0)).toBeGreaterThan(0);
+    });
+
+    it("tłumaczenie jest należnym sprawdzeniem samodzielnym po terminie powtórki", async () => {
+      const { services, clock, deckId } = await publishedChapter();
+      const child = await createChild(services, { displayName: "Powtórka", avatarKey: "owl" });
+      await assign(child.id, deckId);
+      const played = await playSessions(services, clock, child.id, deckId, 3);
+      expect(played.some((entry) => entry.task.exerciseType === "lesson_open_answer")).toBe(false);
+
+      // Po kwalifikujących sukcesach cel ma termin powtórki (najwcześniej doba po sukcesie); sesja przed nim
+      // nie wydaje należnego sprawdzenia, a zaraz po nim zaczyna się tłumaczeniem.
+      const [progress] = await query<{ next_review_at: Date | null; objective_id: string }>(
+        "select next_review_at, objective_id from learning_app.child_objective_progress where child_id = $1", [child.id],
+      );
+      expect(progress!.next_review_at).not.toBeNull();
+      const dueAt = progress!.next_review_at!.getTime();
+      expect(dueAt).toBeGreaterThan(clock.now().getTime());
+      clock.advanceMs(dueAt - clock.now().getTime() + 1_000);
+
+      const session = await startSession(services, { childId: child.id, deckId, microphoneEnabled: false });
+      let task = await nextTask(services, session.sessionId);
+      while (task !== null && task.exerciseType === "lesson_card") {
+        await completePresentation(services, { taskId: task.taskId });
+        task = await nextTask(services, session.sessionId);
+      }
+      expect(task?.exerciseType).toBe("lesson_open_answer");
+      const [taskRow] = await query<{ context: { reason: string; objectiveId: string; independentCheck: boolean } }>(
+        "select context from learning_app.session_tasks where id = $1", [task!.taskId],
+      );
+      expect(taskRow!.context).toMatchObject({ reason: "due_check", objectiveId: progress!.objective_id, independentCheck: true });
+
+      // Niewidziane tłumaczenie rozwiązane poprawnie jest samodzielnym sukcesem.
+      const attempt = await answerCorrectly(services, task!);
+      expect(attempt.feedback?.kind).toBe("great");
+      const [grade] = await query<{ independent: boolean }>(
+        "select a.independent from learning_app.assessments a join learning_app.attempts at on at.id = a.attempt_id where at.task_id = $1", [task!.taskId],
+      );
+      expect(grade!.independent).toBe(true);
+    });
+
     it("Kid DTO: wybór niesie język treści, a w kartkówce także luka i tłumaczenie (język pytania i odpowiedzi)", async () => {
       const { services, clock, deckId } = await publishedChapter();
       const child = await createChild(services, { displayName: "Języki", avatarKey: "owl" });
@@ -456,6 +625,8 @@ describe("lekcja Angielski — rozdział (integracja)", () => {
       const [firstTask] = await playSessions(services, clock, child.id, deckId, 1);
       expect(firstTask!.task.prompt).toMatchObject({ kind: "lesson_choice", contentLocale: "en-GB" });
 
+      // Tłumaczenie sprawdzamy w kartkówce: w sesjach nauki co godzinę go nie ma (należne sprawdzenie
+      // samodzielne czeka na termin powtórki, ≥ 12 h), a kartkówka wydaje wszystkie sloty puli.
       const mock = await playMockTest(services, child.id, deckId);
       const promptOf = (type: string) => mock.find((entry) => entry.task.exerciseType === type)?.task.prompt;
       expect(promptOf("lesson_choice")).toMatchObject({ contentLocale: "en-GB" });
