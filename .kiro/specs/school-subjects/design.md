@@ -1472,7 +1472,7 @@ z Etapu 6) nie mają gotowego nagrania — przycisk się nie pojawia. Wskazówka
 
 ## 12. „Posłuchaj” na kartach nauki (kontynuacja Etapu 8) — kontrakt
 
-Status: **projekt do akceptacji właściciela** (2026-10-30). Domyka lukę z 11.7:
+Status: **zaakceptowany przez właściciela 2026-10-30** (decyzje 12.6 w zalecanych wariantach). Domyka lukę z 11.7:
 karty nauki (`lesson_card`) przedmiotów szkolnych dostają ten sam odsłuch
 na żądanie co pytania. Moduły jak w §11: tekst do odczytu w domenie
 (`domain/lessons/`, czysta funkcja nad treścią karty), zlecanie i uzgadnianie
