@@ -18,6 +18,8 @@ export interface TtsFingerprintInput {
   model: string;
   voice: string;
   format: string;
+  /** Instrukcja wymowy (np. język); brak nie zmienia fingerprintów sprzed jej wprowadzenia. */
+  instructions?: string;
 }
 
 export function ttsFingerprint(input: TtsFingerprintInput): string {
@@ -29,6 +31,7 @@ export function ttsFingerprint(input: TtsFingerprintInput): string {
     model: input.model,
     voice: input.voice,
     format: input.format,
+    ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
   });
 }
 

@@ -6,6 +6,7 @@ import { deckVersions, decks, generationRuns, itemRevisions, lessonCardAssets, m
 import { AppError } from "../../errors";
 import { isUiAudioAssetMetadata } from "../../domain/ui-audio-catalog";
 import { mp3DurationMs } from "../../providers/audio/mp3-duration";
+import { wavDurationMs } from "../../providers/audio/wav";
 import { errorCodeOf, MAX_AUTOMATIC_ATTEMPTS, requireGeneration } from "./generation-runtime";
 
 /** Lease zasobu mediów; deck nie ma lease (CHECK generation_runs_deck_without_lease). */
@@ -171,6 +172,7 @@ export async function executeMediaAsset(services: Services, assetId: string, sig
     size?: string;
     quality?: string;
     format?: string;
+    instructions?: string;
   };
   try {
     const result =
@@ -179,10 +181,12 @@ export async function executeMediaAsset(services: Services, assetId: string, sig
             text: metadata.text!,
             locale: metadata.locale!,
             voice: metadata.voice!,
-            format: "mp3",
-            // Model z rekordu zasobu (wchodzi do jego fingerprintu), nie bieżący
-            // UMIEM_TTS_MODEL — zmiana env nie może zapisać nagrania pod starym fingerprintem.
+            // Format, model i instrukcja z rekordu zasobu (wchodzą do jego
+            // fingerprintu), nie z bieżącego env — zmiana konfiguracji nie może
+            // zapisać nagrania pod starym fingerprintem.
+            format: metadata.format === "wav" ? "wav" : "mp3",
             model: asset.model,
+            ...(metadata.instructions === undefined ? {} : { instructions: metadata.instructions }),
           }, signal)
         : await deps.image.generate({
             prompt: metadata.prompt!,
@@ -198,7 +202,10 @@ export async function executeMediaAsset(services: Services, assetId: string, sig
       return;
     }
     const stored = await deps.mediaStore.putImmutable(result.bytes, result.mimeType);
-    const durationMs = asset.kind === "tts" && result.mimeType.startsWith("audio/mpeg") ? mp3DurationMs(result.bytes) : null;
+    const durationMs = asset.kind !== "tts" ? null
+      : result.mimeType.startsWith("audio/mpeg") ? mp3DurationMs(result.bytes)
+      : result.mimeType.startsWith("audio/wav") ? wavDurationMs(result.bytes)
+      : null;
 
     await services.db.transaction(async (tx) => {
       const finalized = await tx
@@ -238,10 +245,12 @@ export async function executeMediaAsset(services: Services, assetId: string, sig
     });
   } catch (error) {
     // porażka providera wraca do kolejki; wyczerpany budżet zamyka zasób.
-    // Do logów trafia wyłącznie kod klasyfikacji; komunikat providera może
-    // zawierać treść odpowiedzi HTTP.
+    // Do logów trafia wyłącznie kod klasyfikacji i nasz własny kod adaptera
+    // (`provider_http_400`, `provider_unexpected_audio`) — dowolny komunikat
+    // providera może zawierać treść odpowiedzi HTTP.
+    const detail = error instanceof Error && /^provider_[a-z0-9_]+$/.test(error.message) ? `, ${error.message}` : "";
     console.warn(
-      `[generation] ${asset.kind} nie udało się (próba ${attempts ?? "?"}/${MAX_AUTOMATIC_ATTEMPTS}, asset ${assetId}, kod=${errorCodeOf(error)})`,
+      `[generation] ${asset.kind} nie udało się (próba ${attempts ?? "?"}/${MAX_AUTOMATIC_ATTEMPTS}, asset ${assetId}, kod=${errorCodeOf(error)}${detail})`,
     );
     if (signal?.aborted) {
       await requeueAbortedMediaAsset(services, assetId, leaseToken);
