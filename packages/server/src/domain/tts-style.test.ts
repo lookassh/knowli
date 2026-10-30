@@ -26,6 +26,27 @@ describe("sentenceCount", () => {
   it("nie dzieli na kropce w środku wyrazu lub liczby", () => {
     expect(sentenceCount("To kosztuje 3.5 zł.")).toBe(1);
   });
+
+  it("nie dzieli po polskich skrótach z odstępem", () => {
+    expect(sentenceCount("Ptaki, np. sowy, polują nocą.")).toBe(1);
+    expect(sentenceCount("Sowy, sikory itp. polują nocą.")).toBe(1);
+    expect(sentenceCount("Lisy, wilki itd. żyją w lesie.")).toBe(1);
+    expect(sentenceCount("Sowy, tzn. ptaki nocne, polują.")).toBe(1);
+    expect(sentenceCount("Ptaki, tj. sowy, polują.")).toBe(1);
+    expect(sentenceCount("Są tu m.in. sowy i lisy.")).toBe(1);
+    expect(sentenceCount("W 1990 r. powstał park.")).toBe(1);
+    expect(sentenceCount("Mamy ok. 5 sów.")).toBe(1);
+    expect(sentenceCount("Lekcja o godz. 8 się zaczyna.")).toBe(1);
+    expect(sentenceCount("Mówi Dr. Nowak.")).toBe(1);
+    expect(sentenceCount("Mówi dr Nowak. Sowy polują.")).toBe(2);
+  });
+
+  it("nadal liczy dwa zdania, gdy skrót nie jest przed odstępem lub tekst ma inne granice", () => {
+    expect(sentenceCount("Ptaki, np. sowy, polują. Śpią w dzień.")).toBe(2);
+    expect(sentenceCount("Lubię sowy itd. Ile ich jest?")).toBe(1);
+    expect(sentenceCount("Sowy.Ptaki. Lisy.")).toBe(2);
+    expect(sentenceCount("To mój kot. Potem sowa.")).toBe(2);
+  });
 });
 
 describe("lessonPromptStyle", () => {

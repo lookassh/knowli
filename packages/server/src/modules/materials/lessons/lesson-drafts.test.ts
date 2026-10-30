@@ -5,7 +5,7 @@ import { validatePool } from "../../../domain/lessons/pool-validation";
 import type { LessonExerciseDraft, LessonTopic } from "../../../domain/lessons/types";
 import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
 import { validateDynamicTopicData } from "../../../domain/lessons/topic-resolution";
-import { buildDynamicTopicData, buildLessonPayload, buildObjectiveCriteria, collectBatchExerciseMetadata, filterExercisesToRequestedObjective, minimumCountPerObjective, objectiveBatchCounts, isWellShapedRawExercise, lessonPayloadVersion, poolStageCounts, scopeFamiliesToRun, splitStages, stripParentAddedFlags, summarizeLessonPoolValidation, toExerciseDraft, withoutEmptyOptionalArrays } from "./lesson-drafts";
+import { buildDynamicTopicData, buildLessonPayload, buildObjectiveCriteria, collectBatchExerciseMetadata, filterExercisesToRequestedObjective, minimumCountPerObjective, objectiveBatchCounts, isWellShapedRawExercise, lessonPayloadVersion, poolStageCounts, scopeFamiliesToRun, splitStages, stripParentAddedFlags, summarizeLessonPoolValidation, toExerciseDraft, withoutEmptyOptionalArrays, withoutVoiceToneUnlessAllowed } from "./lesson-drafts";
 
 describe("calculation persistence and grading criteria", () => {
   const calculation = { kind: "scale_distance" as const, params: { scaleDenominator: 25000, mapDistanceCm: 3 }, unit: "m" as const, templateFamilyId: "scale" };
@@ -242,6 +242,19 @@ describe("ton lektora (voiceTone) z wyjścia modelu", () => {
     const cards = buildDynamicTopicData([raw], "deck", "Temat").data!.objectives[0]!.cards;
     expect(cards[0]!.voiceTone).toBe("cheerful");
     expect(cards.slice(1).every((card) => !("voiceTone" in card))).toBe(true);
+  });
+
+  it("przedmiot bez ttsForPrompts: ton z wyjścia modelu jest odrzucany, nie psuje ćwiczenia ani karty", () => {
+    const toned = toExerciseDraft({ ...rawExercise, voiceTone: "gentle" });
+    expect(toned.voiceTone).toBe("gentle");
+    expect("voiceTone" in withoutVoiceToneUnlessAllowed(toned, englishGrammarSubject)).toBe(false);
+    expect(withoutVoiceToneUnlessAllowed(toned, schoolSubject).voiceTone).toBe("gentle");
+    const plain = toExerciseDraft(rawExercise);
+    expect(withoutVoiceToneUnlessAllowed(plain, englishGrammarSubject)).toBe(plain);
+
+    const raw = { slug: "a", titlePl: "Zagadnienie", descriptionEn: "Topic description.", cards: [{ title: "K", body: "T.", voiceTone: "cheerful" }] };
+    const cards = buildDynamicTopicData([raw], "deck", "Temat", () => [], false).data!.objectives[0]!.cards;
+    expect("voiceTone" in cards[0]!).toBe(false);
   });
 });
 

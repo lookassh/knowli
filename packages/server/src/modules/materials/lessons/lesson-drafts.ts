@@ -410,6 +410,17 @@ function sanitizedVoiceTone(raw: unknown): { voiceTone?: LessonVoiceTone } {
   return parsed.success ? { voiceTone: parsed.data } : {};
 }
 
+/**
+ * Ton lektora ma sens tylko dla przedmiotu z nagraniami pytań (`ttsForPrompts`).
+ * Luźny dostawca mógłby go dopisać do ćwiczeń innego przedmiotu — wtedy pole
+ * jest po prostu odrzucane, a ćwiczenie nie przepada na walidacji puli.
+ */
+export function withoutVoiceToneUnlessAllowed(draft: LessonExerciseDraft, subject: Pick<SubjectModule, "ttsForPrompts">): LessonExerciseDraft {
+  if (subject.ttsForPrompts === true || draft.voiceTone === undefined) return draft;
+  const { voiceTone: _dropped, ...rest } = draft;
+  return rest;
+}
+
 const rawObjectiveSchema = z
   .object({
     slug: z.string(),
@@ -450,6 +461,7 @@ export function buildDynamicTopicData(
   deckId: string,
   topicTitle: string,
   validateObjective: (objective: DynamicTopicData["objectives"][number]) => string[] = () => [],
+  allowVoiceTone = true,
 ): { data?: DynamicTopicData; errors: string[] } {
   const errors: string[] = [];
   const used = new Set<string>();
@@ -468,7 +480,7 @@ export function buildDynamicTopicData(
       cards: parsed.data.cards.slice(0, 4).map((card) => ({
         title: [...card.title.trim()].slice(0, 120).join(""),
         body: [...card.body.trim()].slice(0, 1200).join(""),
-        ...sanitizedVoiceTone(card.voiceTone),
+        ...(allowVoiceTone ? sanitizedVoiceTone(card.voiceTone) : {}),
       })),
     };
     const objectiveErrors = validateObjective(objective);
@@ -1071,7 +1083,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
       await control.assertCurrent();
       const topicTitle = input.topicTitlePl ?? "";
       const built = buildDynamicTopicData(objectivesResult.objectives, input.deckId, topicTitle, (objective) =>
-        validateDynamicTopicData(subject, { titlePl: topicTitle, objectives: [objective] }));
+        validateDynamicTopicData(subject, { titlePl: topicTitle, objectives: [objective] }), subject.ttsForPrompts === true);
       if (!built.data) {
         throw new AppError("validation", { message: `dynamic objectives invalid: ${built.errors.join("; ")}` });
       }
@@ -1167,6 +1179,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
     let droppedAcceptedVariants = 0;
     const drafts = wellShaped
       .map(toExerciseDraft)
+      .map((draft) => withoutVoiceToneUnlessAllowed(draft, subject))
       .map(withoutEmptyOptionalArrays)
       .map((draft) => (input.regenerate ? scopeFamiliesToRun(draft, runId) : draft))
       .map((draft) => {

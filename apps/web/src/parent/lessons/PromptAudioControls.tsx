@@ -3,7 +3,8 @@
 import { Button, Group, NativeSelect, Text } from "@mantine/core";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { LessonVoiceToneSchema, messages, type LessonPromptAudioDto, type LessonVoiceTone } from "@learning/contracts";
-import { errorMessage } from "../api";
+import { ORPCError } from "@orpc/client";
+import { ApiCallError, errorMessage } from "../api";
 import { ParentIcon } from "../ParentIcon";
 import { orpc } from "../query-client";
 
@@ -23,20 +24,31 @@ const TONE_OPTIONS = [
  * „Ton lektora” ćwiczenia albo karty. „Domyślny” (wartość pusta) usuwa pole
  * z patcha. Wspólny dla karty ćwiczenia i karty zagadnienia.
  */
-export function VoiceToneSelect({ value, disabled, testId, onChange }: {
+export function VoiceToneSelect({ value, disabled, testId, hint = messages.lessons.voiceToneHint, onChange }: {
   value: LessonVoiceTone | undefined;
   disabled: boolean;
   testId: string;
+  /** Podpowiedź pod polem: pytanie (domyślnie) albo karta. */
+  hint?: string;
   onChange: (tone: LessonVoiceTone | undefined) => void;
 }) {
   return (
-    <NativeSelect size="md" label={messages.lessons.voiceToneLabel} description={messages.lessons.voiceToneHint}
+    <NativeSelect size="md" label={messages.lessons.voiceToneLabel} description={hint}
       data-testid={testId} value={value ?? ""} disabled={disabled} data={TONE_OPTIONS}
       onChange={(e) => {
         const parsed = LessonVoiceToneSchema.safeParse(e.currentTarget.value);
         onChange(parsed.success ? parsed.data : undefined);
       }} />
   );
+}
+
+/**
+ * „Nagraj ponownie” odrzucone konfliktem: od ostatniego zapisu szkicu zmieniła
+ * się konfiguracja TTS (`tts_config_changed`) — to jedyny konflikt tej operacji.
+ */
+export function isTtsConfigChangedError(error: unknown): boolean {
+  return (error instanceof ORPCError && error.code === "conflict")
+    || (error instanceof ApiCallError && error.code === "conflict");
 }
 
 /** Nagranie, którego dotyczą przyciski: pytanie ćwiczenia albo karta zagadnienia. */
@@ -95,7 +107,11 @@ export default function PromptAudioControls({ audio, target, lessonDraftId, deck
           {messages.lessons.promptAudioRegenerate}
         </Button>
       )}
-      {mutation.isError && <Text size="sm" c="red" role="alert">{errorMessage(mutation.error)}</Text>}
+      {mutation.isError && (
+        <Text size="sm" c="red" role="alert" data-testid={`${testId}-error`}>
+          {isTtsConfigChangedError(mutation.error) ? messages.lessons.promptAudioConfigChanged : errorMessage(mutation.error)}
+        </Text>
+      )}
     </Group>
   );
 }

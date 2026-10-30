@@ -72,13 +72,26 @@ async function lockDraft(tx: Tx, versionId: string): Promise<void> {
   }
 }
 
+/** Bieżące ustawienia TTS; bez konfiguracji mediów nie ma czym nagrywać. */
+function currentTts(services: Services): { provider: string; model: string } {
+  if (!services.media) throw new AppError("internal", { message: "media settings not configured" });
+  return services.media.tts;
+}
+
 /**
  * Kolejna generacja fingerprintu (spec tonu TTS §2.4): fingerprint i żądanie
  * (rodzaj, provider, model, metadane) z najnowszego zasobu — bez przeliczania
  * z bieżącej konfiguracji, więc nowe ujęcie odpowiada dokładnie temu samemu
  * tekstowi i instrukcji. Trwająca generacja → jej `assetId` bez nowego wiersza.
+ * Gdy najnowszy zasób powstał w innej konfiguracji TTS niż obecna, worker nie
+ * wykonałby nowego wiersza (obcy provider/model), więc zwracamy konflikt
+ * `tts_config_changed` przed zapisem — rodzic zapisuje szkic, co uzgadnia media.
  */
-async function enqueueNextGenerationTx(tx: Tx, fingerprint: string): Promise<string> {
+async function enqueueNextGenerationTx(
+  tx: Tx,
+  fingerprint: string,
+  tts: { provider: string; model: string },
+): Promise<string> {
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${fingerprint}))`);
   const generations = await tx
     .select()
@@ -88,6 +101,9 @@ async function enqueueNextGenerationTx(tx: Tx, fingerprint: string): Promise<str
   const newest = generations[0];
   if (!newest) {
     throw new AppError("not_found");
+  }
+  if (newest.provider !== tts.provider || newest.model !== tts.model) {
+    throw new AppError("conflict", { message: "tts_config_changed" });
   }
   const pending = generations.find((generation) => generation.state === "pending");
   if (pending) {
@@ -136,6 +152,7 @@ export async function regenerateLessonPromptAudio(
   input: z.infer<typeof PromptAudioInputSchema>,
 ): Promise<{ assetId: string }> {
   const valid = PromptAudioInputSchema.parse(input);
+  const tts = currentTts(services);
   return services.db.transaction(async (tx) => {
     await lockDraft(tx, valid.lessonDraftId);
     const row = (
@@ -152,7 +169,7 @@ export async function regenerateLessonPromptAudio(
     if (!row) {
       throw new AppError("not_found");
     }
-    const assetId = await enqueueNextGenerationTx(tx, row.expectedFingerprint);
+    const assetId = await enqueueNextGenerationTx(tx, row.expectedFingerprint, tts);
     await tx
       .update(revisionAssets)
       .set({ assetId, state: "pending" })
@@ -171,6 +188,7 @@ export async function regenerateLessonCardAudio(
   input: z.infer<typeof CardAudioInputSchema>,
 ): Promise<{ assetId: string }> {
   const valid = CardAudioInputSchema.parse(input);
+  const tts = currentTts(services);
   return services.db.transaction(async (tx) => {
     await lockDraft(tx, valid.lessonDraftId);
     const where = and(
@@ -182,7 +200,7 @@ export async function regenerateLessonCardAudio(
     if (!row) {
       throw new AppError("not_found");
     }
-    const assetId = await enqueueNextGenerationTx(tx, row.expectedFingerprint);
+    const assetId = await enqueueNextGenerationTx(tx, row.expectedFingerprint, tts);
     await tx.update(lessonCardAssets).set({ assetId }).where(where);
     return { assetId };
   });
