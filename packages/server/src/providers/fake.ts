@@ -21,6 +21,7 @@ import type {
 } from "../ports/ai";
 import type { MediaStore } from "../ports/media";
 import { letterGroups } from "../domain/pronunciation-fragments";
+import { checkElement, materialLexicon } from "../domain/lessons/subjects/english-chapter/lexicon";
 import { materializeGeneratedCalculations } from "./lesson-calculations";
 
 /**
@@ -100,6 +101,110 @@ function materialWord(material: string, index: number): string {
   return index === 0 ? base.toLowerCase() : `${base.toLowerCase()}${index}`;
 }
 
+/** Typy ćwiczeń fake'a według etapu: budowany jest pierwszy typ dozwolony przez cel. */
+const FAKE_STAGE_TYPES: Record<"guided" | "productive" | "independent", readonly string[]> = {
+  guided: ["lesson_choice", "lesson_short_answer", "lesson_order"],
+  productive: ["lesson_gap", "lesson_error_fix", "lesson_transform"],
+  independent: ["lesson_open_answer"],
+};
+
+/** Przedmiot z własną gałęzią fake'a (infrastruktura testowa, nie silnik). */
+const CHAPTER_SUBJECT_ID = "english_chapter";
+
+/**
+ * Słowa treści materiału rozdziału w kolejności występowania, bez powtórzeń:
+ * wyłącznie takie, które przechodzą walidację słownikową przedmiotu (są
+ * w słowniku materiału i nie są słowami funkcyjnymi), więc ćwiczenia fake'a
+ * nie są odrzucane przez `refineGeneratedPool`.
+ */
+function chapterContentWords(material: string): string[] {
+  const lexicon = materialLexicon(material);
+  const words: string[] = [];
+  for (const token of material.normalize("NFC").toLowerCase().match(/\p{L}{3,}/gu) ?? []) {
+    if (!words.includes(token) && checkElement(token, lexicon).ok) words.push(token);
+  }
+  return words;
+}
+
+/**
+ * Jedno ćwiczenie rozdziału zbudowane wyłącznie ze słów materiału: bez
+ * `sourceRefs` i `hint`, z unikalnym polskim zdaniem-bodźcem (numer ćwiczenia)
+ * w `instructionPl`, jedną luką w zdaniu i opcjami ze słów materiału.
+ */
+function fakeChapterExercise(
+  type: string,
+  objectiveId: string,
+  words: readonly string[],
+  index: number,
+  sequence: number,
+): Record<string, unknown> {
+  const answer = words[index % words.length]!;
+  const number = sequence + 1;
+  const base = { exerciseType: type, objectiveId, acceptedAnswers: [] as string[] };
+  switch (type) {
+    case "lesson_choice": {
+      const options = [0, 1, 2]
+        .map((step) => words[(index + step) % words.length]!)
+        .filter((word, position, all) => all.indexOf(word) === position);
+      return {
+        ...base,
+        instructionPl: `Zdanie numer ${number} ma lukę. Wybierz słowo.`,
+        stem: "I can see the ___.",
+        answer,
+        focus: [],
+        options: options.map((text, position) => ({ id: String.fromCharCode(97 + position), text })),
+        correctOption: "a",
+      };
+    }
+    case "lesson_gap":
+      return {
+        ...base,
+        instructionPl: `Zdanie numer ${number} ma lukę. Wpisz brakujące słowo.`,
+        stem: "I have the ___.",
+        answer,
+        focus: [answer],
+      };
+    default:
+      return {
+        ...base,
+        exerciseType: "lesson_open_answer",
+        instructionPl: "Przetłumacz na angielski.",
+        prompt: `Przetłumacz zdanie numer ${number}.`,
+        answer: `We have the ${answer}`,
+        focus: [answer],
+      };
+  }
+}
+
+/**
+ * Pula rozdziału: etapy guided/productive/independent dają wybór, lukę
+ * i tłumaczenie ze słów materiału; przykłady do kart to angielskie zdania.
+ */
+function fakeChapterPool(input: LessonPoolInput): {
+  exercises: Record<string, unknown>[];
+  examples: Record<string, string[]>;
+} {
+  const words = chapterContentWords(input.material);
+  const exercises: Record<string, unknown>[] = [];
+  const examples: Record<string, string[]> = {};
+  // Numeracja i dobór słów kontynuują partie wcześniejsze (dogenerowanie).
+  const offset = input.existingExercises?.length ?? 0;
+  let index = offset;
+  for (const objective of input.objectives) {
+    examples[objective.id] = words.slice(0, 3).map((word) => `I have the ${word}.`);
+    const allowed = new Set(objective.exerciseTypes);
+    for (const stage of ["guided", "productive", "independent"] as const) {
+      const type = FAKE_STAGE_TYPES[stage].find((candidate) => allowed.has(candidate));
+      if (type === undefined || words.length === 0) continue;
+      for (let i = 0; i < input.stageCounts[stage]; i++) {
+        exercises.push(fakeChapterExercise(type, objective.id, words, index, offset + exercises.length));
+        index += 1;
+      }
+    }
+  }
+  return { exercises, examples };
+}
+
 /**
  * Deterministyczna pula ćwiczeń dla jednego wejścia `generateLessonPool`.
  * Działa dla DOWOLNEGO przedmiotu: wybiera typy ćwiczeń z celu i etapu, buduje
@@ -110,6 +215,10 @@ function fakeLessonExercises(input: LessonPoolInput): {
   exercises: Record<string, unknown>[];
   examples: Record<string, string[]>;
 } {
+  // Pula rozdziału musi przejść walidację słownikową, więc ma własną gałąź.
+  if (input.subjectId === CHAPTER_SUBJECT_ID) {
+    return fakeChapterPool(input);
+  }
   const exercises: Record<string, unknown>[] = [];
   const examples: Record<string, string[]> = {};
   // Odpowiedzi już w puli, znormalizowane naiwnie (lowercase) — fake trzyma je,
@@ -128,12 +237,6 @@ function fakeLessonExercises(input: LessonPoolInput): {
     return answer;
   };
 
-  const stageTypes: Record<"guided" | "productive" | "independent", readonly string[]> = {
-    guided: ["lesson_choice", "lesson_short_answer", "lesson_order"],
-    productive: ["lesson_gap", "lesson_error_fix", "lesson_transform"],
-    independent: ["lesson_open_answer"],
-  };
-
   for (const objective of input.objectives) {
     examples[objective.id] = [`Example for ${objective.id}.`];
     const allowed = new Set(objective.exerciseTypes);
@@ -141,7 +244,7 @@ function fakeLessonExercises(input: LessonPoolInput): {
       const count = input.stageCounts[stage];
       // Preferuj najprostszy do poprawnego zbudowania typ danego etapu:
       // choice (guided), gap bez hintu (productive), open_answer (independent).
-      const type = stageTypes[stage].find((t) => allowed.has(t));
+      const type = FAKE_STAGE_TYPES[stage].find((t) => allowed.has(t));
       if (type === undefined) {
         continue;
       }
@@ -288,6 +391,9 @@ function fakeLessonObjectives(input: LessonObjectivesInput): Record<string, unkn
         { title: "Wyjaśnienie", body: first },
         { title: "Do zapamiętania", body: second },
       ],
+      // Rodzaj zagadnienia zwraca tylko model, któremu przedmiot dał reguły podziału (rozdział):
+      // pierwsze to grupa słów, kolejne to ramy zdaniowe.
+      ...(input.objectivesRules === undefined ? {} : { kind: i === 0 ? "words" : "frame" }),
     };
   });
 }
