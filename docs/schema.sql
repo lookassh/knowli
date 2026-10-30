@@ -40,12 +40,29 @@ CREATE TABLE learning_policies (
 );
 -- Wstawienie zweryfikowanej learning-v1 nastąpi w migracji/seed implementacji.
 
+-- Źródła (materiał źródłowy rodzica, design 2026-10-30 §3): wklejony tekst rozdziału.
+-- Zestaw kopiuje tekst przy tworzeniu; źródło nie jest czytane po utworzeniu zestawu.
+CREATE TABLE source_materials (
+  id uuid PRIMARY KEY,
+  client_request_id uuid NOT NULL UNIQUE, -- idempotencja tworzenia
+  request_hash text NOT NULL, -- sha256 z JSON {title, body} (po trim) z pierwszego żądania
+  title text NOT NULL CHECK (length(title) BETWEEN 1 AND 120),
+  body text NOT NULL CHECK (length(body) BETWEEN 1 AND 16000),
+  revision integer NOT NULL DEFAULT 1 CHECK (revision >= 1), -- rośnie przy każdej edycji
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE decks (
   id uuid PRIMARY KEY,
   title text NOT NULL,
   kind text NOT NULL DEFAULT 'vocabulary',
   -- budżet zadań ocenianych sesji nauki zestawu (konfiguracja runtime, 1–100)
   session_task_budget integer NOT NULL DEFAULT 20 CHECK (session_task_budget BETWEEN 1 AND 100),
+  -- pochodzenie zestawu: źródło i jego rewizja w chwili kopiowania tekstu;
+  -- usunięcie źródła zeruje odnośnik (treść zestawu zostaje)
+  source_material_id uuid REFERENCES source_materials(id) ON DELETE SET NULL,
+  source_material_revision integer,
   published_version_id uuid,
   archived_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now()
@@ -72,6 +89,7 @@ CREATE UNIQUE INDEX one_editable_version_per_deck
 ALTER TABLE decks ADD CONSTRAINT published_version_belongs_to_deck
   FOREIGN KEY (published_version_id, id) REFERENCES deck_versions(id, deck_id);
 -- Aplikacja ustawia published_version_id wyłącznie na state=published.
+CREATE INDEX decks_source_material_idx ON decks(source_material_id) WHERE source_material_id IS NOT NULL;
 
 CREATE TABLE learning_items (
   id uuid PRIMARY KEY,

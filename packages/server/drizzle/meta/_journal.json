@@ -204,6 +204,13 @@
       "when": 1793290000000,
       "tag": "0028_lesson_card_assets",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1793390000000,
+      "tag": "0029_source_materials",
+      "breakpoints": true
     }
   ]
 }

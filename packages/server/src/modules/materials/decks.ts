@@ -694,7 +694,7 @@ async function deckAssignments(db: Executor, deckId: string): Promise<Assignment
     .orderBy(asc(childProfiles.createdAt), asc(childProfiles.id));
 }
 
-function deckStateOf(deck: { archivedAt: Date | null; publishedVersionId: string | null }, editableState: "draft" | "review" | null): DeckState {
+export function deckStateOf(deck: { archivedAt: Date | null; publishedVersionId: string | null }, editableState: "draft" | "review" | null): DeckState {
   if (deck.archivedAt) {
     return "archived";
   }

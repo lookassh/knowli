@@ -102,6 +102,7 @@ export const INTEGRATION_BUCKETS: readonly (readonly string[])[] = [
     recording-mode-migration.test.ts
     revisions.test.ts
     session-activity-migration.test.ts
+    source-materials.test.ts
     training-session-plan.test.ts
   `),
 ];
