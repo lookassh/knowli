@@ -44,7 +44,7 @@ import { VOCABULARY_SKILLS, type VocabularySkill } from "../../domain/types";
 import { buildPayload, payloadToItem, validateItems } from "./item-payload";
 import { assertVocabularyDeck, readDeckKind, readVersionDeckKind } from "./deck-kind";
 import { validateVocabularyFormatItems } from "../../domain/picture-vocabulary";
-import { assertAssetPublishable, reconcileDraftAssetsTx, requiredAssetsFor } from "./media-reconciliation";
+import { assertAssetPublishable, reconcileBeforePublish, reconcileDraftAssetsTx, requiredAssetsFor } from "./media-reconciliation";
 import {
   assertEditable,
   bumpEditNumber,
@@ -512,6 +512,9 @@ export async function publishDraft(
   draftId: string,
   expectedEditNumber: number,
 ): Promise<{ deckVersionId: string }> {
+  // Brakujące media zlecamy w osobnej, zatwierdzanej transakcji: nieudana
+  // walidacja niżej nie może ich wycofać (issue #106).
+  await reconcileBeforePublish(services, draftId, expectedEditNumber);
   return services.db.transaction(async (tx) => {
     const version = await lockVersion(tx, draftId);
     assertVocabularyDeck(await readVersionDeckKind(tx, draftId));
@@ -522,9 +525,9 @@ export async function publishDraft(
       throw new AppError("conflict");
     }
     // Publikacja uzgadnia powiązania zasobów jak każda edycja: promuje gotowe
-    // bloby do approved i zleca brakujące, zanim walidator oceni gotowość.
-    // Bez tego zestaw opublikowany zaraz po generacji zostawiałby target_audio
-    // w stanie pending i sesje dziecka nie znajdowałyby gotowego audio.
+    // bloby do approved, zanim walidator oceni gotowość. Bez tego zestaw
+    // opublikowany zaraz po generacji zostawiałby target_audio w stanie
+    // pending i sesje dziecka nie znajdowałyby gotowego audio.
     await reconcileDraftAssetsTx(tx, services, version);
 
     const revisions = await tx

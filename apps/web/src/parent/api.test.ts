@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MalformedResponseError, ORPCError } from "@orpc/client";
 import { messages } from "@learning/contracts";
-import { ApiCallError, errorMessage } from "./api";
+import { ApiCallError, errorMessage, isMediaPendingError } from "./api";
 
 describe("errorMessage", () => {
   it("reads the server message from the envelope of a raw oRPC error (TanStack queries)", () => {
@@ -24,5 +24,18 @@ describe("errorMessage", () => {
   it("keeps messages of normalised and network errors", () => {
     expect(errorMessage(new ApiCallError("Sesja wygasła", "unauthorized", 401))).toBe("Sesja wygasła");
     expect(errorMessage(new TypeError("Failed to fetch"))).toBe("Failed to fetch");
+  });
+});
+
+describe("isMediaPendingError", () => {
+  it("recognises a publication rejected while required media are still generating", () => {
+    expect(isMediaPendingError(new ApiCallError("Sprawdź", "validation", 400, { media: "pending" }))).toBe(true);
+  });
+
+  it("leaves other validation errors and other codes to the generic message", () => {
+    expect(isMediaPendingError(new ApiCallError("Sprawdź", "validation", 400))).toBe(false);
+    expect(isMediaPendingError(new ApiCallError("Sprawdź", "validation", 400, { exercises: [] }))).toBe(false);
+    expect(isMediaPendingError(new ApiCallError("Konflikt", "conflict", 409, { media: "pending" }))).toBe(false);
+    expect(isMediaPendingError(new Error("x"))).toBe(false);
   });
 });

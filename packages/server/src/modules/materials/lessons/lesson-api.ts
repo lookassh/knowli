@@ -33,7 +33,7 @@ import { DEFAULT_LESSON_POLICY } from "../../../domain/lessons/lesson-policy";
 import { poolCoverage, validatePool } from "../../../domain/lessons/pool-validation";
 import type { DynamicTopicData, LessonExerciseDraft, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
 import { resolveLessonTopic, validateDynamicTopicData } from "../../../domain/lessons/topic-resolution";
-import { assertAssetPublishable, reconcileDraftAssetsTx } from "../media-reconciliation";
+import { assertAssetPublishable, reconcileBeforePublish, reconcileDraftAssetsTx } from "../media-reconciliation";
 import { copyRevisionsSkillsAssets } from "../decks";
 import { supersedeLessonRuns } from "../generation-runs";
 import {
@@ -715,6 +715,8 @@ export async function publishLessonDraft(
   versionId: string,
   expectedEditNumber: number,
 ): Promise<{ deckVersionId: string }> {
+  // Jak przy słówkach: zlecone media przetrwają nieudaną walidację (issue #106).
+  await reconcileBeforePublish(services, versionId, expectedEditNumber);
   return services.db.transaction(async (tx) => {
     const version = await lockVersion(tx, versionId);
     if (version.state === "published") {

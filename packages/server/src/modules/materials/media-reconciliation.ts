@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
+import type { MediaPendingDetails } from "@learning/contracts";
 import type { MediaSettings, Services } from "../../config";
 import type { Executor, Tx } from "../../db/client";
 import {
@@ -373,6 +374,30 @@ export async function reconcileDraftAssets(services: Services, draftId: string):
   });
 }
 
+/**
+ * Pierwszy krok publikacji (issue #106): uzgodnienie mediów w osobnej,
+ * zatwierdzanej transakcji, jak przy każdej edycji szkicu. Walidacja gotowości
+ * w transakcji publikacji może potem paść na zasobie `pending`, nie zabierając
+ * ze sobą świeżo zleconych zasobów i zadań generacji. Gdy wersja jest już
+ * opublikowana albo numer edycji się rozjechał, nic nie uzgadnia: właściwy
+ * błąd zgłasza transakcja publikacji.
+ */
+export async function reconcileBeforePublish(
+  services: Services,
+  versionId: string,
+  expectedEditNumber: number,
+): Promise<void> {
+  await services.db.transaction(async (tx) => {
+    const version = (
+      await tx.select().from(deckVersions).where(eq(deckVersions.id, versionId)).for("update")
+    )[0];
+    if (!version || version.state === "published" || version.editNumber !== expectedEditNumber) {
+      return;
+    }
+    await reconcileDraftAssetsTx(tx, services, version);
+  });
+}
+
 const RegenerateInputSchema = z.object({
   draftId: z.uuid(),
   itemRevisionId: z.uuid(),
@@ -700,6 +725,13 @@ export async function assertAssetPublishable(
       .from(mediaAssets)
       .where(eq(mediaAssets.id, input.assetId))
   )[0];
+  if (asset && asset.state === "pending" && asset.fingerprint === input.expectedFingerprint) {
+    // generacja jest zlecona i trwa: rodzic czeka i publikuje ponownie
+    throw new AppError("validation", {
+      message: `${input.role} pending for revision ${input.itemRevisionId}`,
+      details: { media: "pending" } satisfies MediaPendingDetails,
+    });
+  }
   if (!asset || asset.state !== "ready" || asset.fingerprint !== input.expectedFingerprint) {
     throw new AppError("validation", {
       message: `${input.role} not ready for revision ${input.itemRevisionId}`,

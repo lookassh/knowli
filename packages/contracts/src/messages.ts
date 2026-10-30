@@ -137,6 +137,8 @@ export const messages = {
     emptyDraft: "Dodaj pierwsze słówko",
     saveBeforePublish: "Najpierw zapisz zmiany",
     emptyPublish: "Dodaj i zapisz przynajmniej jedno słówko.",
+    // Publikacja zleciła brakujące nagrania lub obrazki (issue #106).
+    publishMediaPending: "Nagrania i obrazki jeszcze się przygotowują. Opublikuj ponownie, gdy będą gotowe.",
     promptLabel: "Czego ma się nauczyć?",
     promptPlaceholder: "np. angielskie dni tygodnia",
     vocabularyFormatLabel: "Rodzaj zestawu",

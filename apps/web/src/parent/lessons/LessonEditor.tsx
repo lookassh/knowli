@@ -14,7 +14,7 @@ import {
   type LessonDraftDto,
   type LessonExerciseErrors,
 } from "@learning/contracts";
-import { callParent, ApiCallError, errorMessage, parentClient } from "../api";
+import { callParent, ApiCallError, errorMessage, isMediaPendingError, parentClient } from "../api";
 import type { AssignmentTestSettings } from "../AssignmentTestGoalFields";
 import DeckSessionTaskBudgetSettings from "../DeckSessionTaskBudgetSettings";
 import type { EditorLeaveState } from "../useParentLeaveGuard";
@@ -461,8 +461,9 @@ export default function LessonEditor({
       setIsDirty(false);
       await load();
     } catch (cause) {
-      // 409 pokrycia: odśwież, by pokazać aktualną listę braków z DTO.
-      setError(errorMessage(cause));
+      // 409 pokrycia: odśwież, by pokazać aktualną listę braków z DTO;
+      // zlecone przy publikacji audio odczyt pokaże jako generowane.
+      setError(isMediaPendingError(cause) ? messages.decks.publishMediaPending : errorMessage(cause));
       await load();
     } finally {
       setBusyState(false);
