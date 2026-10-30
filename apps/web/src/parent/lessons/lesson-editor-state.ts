@@ -477,6 +477,16 @@ export function topRejectedReasons(
 }
 
 /**
+ * Odrzucenia, których nie wyjaśniają wypisane powody: `rejectedCount` liczy
+ * wszystkie odrzucenia generowania (kształt, walidacja puli, duplikaty), a
+ * `rejectedReasons` tylko sprawdzanie słów z materiału — do tego lista pokazuje
+ * najwyżej kilka powodów. Nigdy ujemna.
+ */
+export function otherRejectedCount(rejectedCount: number, listed: readonly { count: number }[]): number {
+  return Math.max(0, rejectedCount - listed.reduce((sum, { count }) => sum + count, 0));
+}
+
+/**
  * Wiersz raportu odrzuceń z szablonu komunikatu (`{reason}`, `{n}`). Jedno
  * przejście z funkcją podstawiającą: powód pochodzi z wyjścia modelu, więc
  * `$&`, `$$` ani `{n}` w jego treści nie mogą zmienić wyniku (podstawiany tekst

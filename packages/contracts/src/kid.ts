@@ -309,8 +309,12 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     questionAudioAssetId: QuestionAudioSchema,
     /**
      * Język pytania, gdy jest jednoznaczny (przedmiot z jednym językiem, np.
-     * szkoła: `pl-PL`) — dla czytników ekranu. Brak = dotychczasowe `en-GB`;
-     * gramatyka go nie wysyła, więc starsze klienty dalej ją parsują.
+     * szkoła: `pl-PL`, albo `openAnswerPromptLocale` przedmiotu, np. rozdział:
+     * polski bodziec) — dla czytników ekranu. Brak = dotychczasowe `en-GB`
+     * (gramatyka go nie wysyła). Schemat jest ścisły: starszy klient bez tego
+     * pola albo bez `answerLocale` odrzuca zadanie, które je niesie, a serwer
+     * dołącza `answerLocale` do pytań otwartych każdego przedmiotu o języku
+     * `pl-PL`/`en-GB` — web i Kid UI wdrażamy razem.
      */
     promptLocale: LessonContentLocaleSchema.optional(),
     /**

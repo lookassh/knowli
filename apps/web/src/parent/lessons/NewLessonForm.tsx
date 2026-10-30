@@ -382,7 +382,7 @@ export default function NewLessonForm({
             <NumberInput
               size="md"
               label={messages.lessons.poolSizeLabel}
-              description={messages.lessons.poolSizeHint}
+              description={path === "material" ? messages.lessons.chapterPoolSizeHint : messages.lessons.poolSizeHint}
               data-testid="lesson-pool-size"
               className="pp-lesson-pool"
               min={POOL_MIN}

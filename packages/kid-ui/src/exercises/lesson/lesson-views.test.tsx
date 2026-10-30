@@ -383,11 +383,14 @@ describe("lesson content language (lang attributes)", () => {
     expect(screen.getAllByTestId("kid-lesson-cloze-slot")[1]!.hasAttribute("lang")).toBe(false);
   });
 
-  it("gap marks the sentence parts around the field", () => {
+  it("gap marks the sentence parts around the field and the field itself (answer language)", () => {
     const props = makeExerciseProps(task({ kind: "lesson_gap", instructionPl: "Uzupełnij", stemWithGap: "He ___ (play) football.", contentLocale: en }));
     renderKid(<LessonGapView {...props} />);
     expect(langOf(screen.getByTestId("kid-lesson-gap-before"))).toBe(en);
     expect(langOf(screen.getByTestId("kid-lesson-gap-after"))).toBe(en);
+    const input = screen.getByTestId("kid-lesson-gap-input");
+    expect(input.tagName).toBe("INPUT");
+    expect(langOf(input)).toBe(en);
   });
 
   it("a pl-PL content locale marks the content with pl-PL", () => {

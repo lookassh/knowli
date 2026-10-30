@@ -221,7 +221,8 @@ test("rozdział angielskiego: powody odrzuceń pod licznikiem i rodzaj zagadnien
     title: "Angielski — rozdział: Unit 1", subjectId: "english_chapter", topicId: "dynamic",
     objectiveIds: [WORDS, FRAME],
     examples: {},
-    rejectedCount: 7,
+    // 12 odrzuceń, z czego 8 wyjaśnia pięć wypisanych powodów — reszta to „inne powody: 4”.
+    rejectedCount: 12,
     rejectedReasons: { "słowo spoza materiału: raining": 3, "zdanie bez słownictwa z materiału": 2, "inny powód": 1, "powód A": 1, "powód B": 1, "powód C": 1 },
     dynamicTopic: { titlePl: "Unit 1", objectives: [
       { id: WORDS, titlePl: "Ubrania", kind: "words", cards: card("Ubrania") },
@@ -230,12 +231,16 @@ test("rozdział angielskiego: powody odrzuceń pod licznikiem i rodzaj zagadnien
     exercises: [choice(1, WORDS), choice(2, FRAME)],
   };
   await openLesson(page, { data: { ...lesson, draft: chapter, published: null, assignments: [] } as unknown as typeof lesson });
-  await expect(page.getByTestId("rejected-count")).toContainText("7");
-  // do 5 najczęstszych, malejąco; remis alfabetycznie
+  await expect(page.getByTestId("rejected-count")).toContainText("12");
+  // Lista jest podpisana jako powody sprawdzania słów z materiału (nie wszystkie odrzucenia).
+  await expect(page.getByTestId("rejected-reasons-label")).toHaveText(messages.lessons.rejectedReasonsLabel);
+  await expect(page.getByRole("list", { name: messages.lessons.rejectedReasonsLabel })).toBeVisible();
+  // do 5 najczęstszych, malejąco; remis alfabetycznie; na końcu odrzucenia bez wypisanego powodu
   const reasons = page.getByTestId("rejected-reasons").getByRole("listitem");
-  await expect(reasons).toHaveCount(5);
+  await expect(reasons).toHaveCount(6);
   await expect(reasons.nth(0)).toHaveText("słowo spoza materiału: raining ×3");
   await expect(reasons.nth(1)).toHaveText("zdanie bez słownictwa z materiału ×2");
+  await expect(page.getByTestId("rejected-other")).toHaveText("inne powody: 4");
   await expect(page.getByTestId(`objective-kind-${WORDS}`)).toHaveText(messages.lessons.objectiveKind.words!);
   await expect(page.getByTestId(`objective-kind-${FRAME}`)).toHaveText(messages.lessons.objectiveKind.frame!);
   await expectNoHorizontalOverflow(page);

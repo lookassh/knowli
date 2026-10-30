@@ -155,6 +155,11 @@ describe("NewLessonForm", () => {
     expect(markup).toContain(messages.lessons.chapterMaterialHint);
     expect(markup).toContain("0/16000 znaków");
     expect(markup).toContain(messages.lessons.schoolObjectivesAuto);
+    // Podpowiedź puli zgodna z limitami ścieżki z materiału (20–160), bez wzoru z liczbą reguł.
+    expect(messages.lessons.chapterPoolSizeHint).toBe("Od 20 do 160 ćwiczeń. Domyślnie 60.");
+    expect(markup).toContain(messages.lessons.chapterPoolSizeHint);
+    expect(markup).not.toContain(messages.lessons.poolSizeHint);
+    expect(markup).not.toContain("liczba reguł");
   });
 
   it("szkoła: nadal nazwa przedmiotu i temat, podpowiedź szkolna i licznik do 16000", () => {
@@ -173,5 +178,7 @@ describe("NewLessonForm", () => {
     expect(markup).not.toContain('data-testid="school-subject-name"');
     expect(markup).not.toContain('data-testid="material-topic-name"');
     expect(markup).toContain("0/8000 znaków");
+    expect(markup).toContain(messages.lessons.poolSizeHint);
+    expect(markup).not.toContain(messages.lessons.chapterPoolSizeHint);
   });
 });

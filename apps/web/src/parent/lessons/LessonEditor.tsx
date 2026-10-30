@@ -32,6 +32,7 @@ import {
   createLessonSnapshot,
   applyCalculationPreview,
   formatRejectedReason,
+  otherRejectedCount,
   groupCalculationFamilies,
   groupExercisesByObjectiveAndStage,
   keywordsAnswerOf,
@@ -574,6 +575,8 @@ export default function LessonEditor({
     ?? topic?.objectives.find((objective) => objective.id === objectiveId);
   // Powody odrzuceń przy generowaniu (zliczenia bez danych dziecka) — rodzic widzi, czy dogenerować.
   const rejectedReasons = topRejectedReasons(active?.rejectedReasons);
+  // Odrzucenia spoza wypisanych powodów (inna walidacja albo powody poza listą) — rodzic widzi całą skalę.
+  const otherRejected = otherRejectedCount(active?.rejectedCount ?? 0, rejectedReasons);
   const indexByClientKey = new Map((form?.exercises ?? []).map((ex, index) => [ex.clientKey, index]));
   const groups = form ? groupExercisesByObjectiveAndStage(form.exercises, active?.objectiveIds ?? []) : [];
 
@@ -1077,11 +1080,17 @@ export default function LessonEditor({
           <Text size="sm" className="pp-editor-muted" data-testid="rejected-count">{messages.lessons.rejectedCount.replace("{n}", String(active.rejectedCount))}</Text>
         )}
         {rejectedReasons.length > 0 && (
-          <ul className="pp-lesson-rejected-reasons pp-editor-muted" aria-label={messages.lessons.rejectedReasonsLabel} data-testid="rejected-reasons">
-            {rejectedReasons.map(({ reason, count }) => (
-              <li key={reason}>{formatRejectedReason(messages.lessons.rejectedReason, reason, count)}</li>
-            ))}
-          </ul>
+          <div>
+            <Text size="sm" className="pp-editor-muted" id="rejected-reasons-label" data-testid="rejected-reasons-label">{messages.lessons.rejectedReasonsLabel}</Text>
+            <ul className="pp-lesson-rejected-reasons pp-editor-muted" aria-labelledby="rejected-reasons-label" data-testid="rejected-reasons">
+              {rejectedReasons.map(({ reason, count }) => (
+                <li key={reason}>{formatRejectedReason(messages.lessons.rejectedReason, reason, count)}</li>
+              ))}
+              {otherRejected > 0 && (
+                <li data-testid="rejected-other">{messages.lessons.rejectedOtherReasons.replace("{n}", String(otherRejected))}</li>
+              )}
+            </ul>
+          </div>
         )}
         {error && !showActionBar && errorAlert}
 

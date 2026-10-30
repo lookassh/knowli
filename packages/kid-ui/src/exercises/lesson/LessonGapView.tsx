@@ -57,6 +57,8 @@ export function LessonGapView({ task, busy, dock, handlers }: ExerciseProps) {
               value={text}
               onChange={(event) => { setText(event.target.value); handlers.onEdit(); }}
               aria-label={messages.kid.lessonGapInput}
+              // Język odpowiedzi (jak pole tłumaczenia): dziecko wpisuje słowo zdania.
+              lang={task.prompt.contentLocale}
               placeholder="…"
               autoComplete="off"
               autoCorrect="off"

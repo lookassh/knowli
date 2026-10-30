@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import type { TaskDto } from "@learning/contracts";
 import { installKidUiFixture } from "./helpers/kid-ui-fixture";
 import { assignmentAttempt, lessonTaskFixture, openLessonTask, recordAttemptPosts, tapPoolAndCheck } from "./helpers/lesson-assignment-task";
@@ -60,19 +60,43 @@ const clozeTask: TaskDto = {
   },
 };
 
-test("cloze: text with four gaps, slots, word bank and check fit every form factor", async ({ page }, testInfo) => {
-  await installKidUiFixture(page, lessonTaskFixture(ids, deck, [clozeTask]));
-  await openLessonTask(page, VIEWPORTS[1]!, "kid-lesson-cloze");
-  await expect(page.getByTestId("kid-instruction")).toContainText("Uzupełnij tekst.");
-  await expect(page.getByTestId("kid-lesson-cloze-gap")).toHaveCount(4);
-  await expect(page.getByTestId("kid-lesson-cloze-text").locator("button")).toHaveCount(0);
-  await expect(page.getByTestId("kid-lesson-cloze-slot")).toHaveCount(4);
-  // Dwie luki wypełnione przed pomiarem: najdłuższe słowo stoi w tekście i w miejscu, reszta w banku.
-  await page.getByTestId("kid-lesson-cloze-option").filter({ hasText: "dwutlenek węgla" }).click();
-  await page.getByTestId("kid-lesson-cloze-option").filter({ hasText: "światła słonecznego" }).click();
-  await expect(page.getByTestId("kid-lesson-cloze-option")).toHaveCount(4);
-  await expect(page.getByTestId("kid-lesson-cloze-text")).toContainText("światła słonecznego");
+/**
+ * Tekst z lukami rozdziału angielskiego: `contentLocale` „en-GB” — każdy
+ * fragment tekstu stoi w osobnym `<span lang>`, a słowa banku i wypełnione
+ * luki też niosą `lang`. Polecenie niesie polskie znaczenie całego tekstu
+ * (jak w zeszycie ćwiczeń), więc jest dłuższe niż w szkole.
+ */
+const chapterDeck = { title: "Angielski — rozdział: Unit 1", subjectTitle: "Angielski — rozdział" };
+const chapterClozeTask: TaskDto = {
+  taskId: uid(12), sessionId, ordinal: 0, exerciseType: "lesson_cloze", direction: null, state: "issued", remainingAssessed: 2,
+  prompt: {
+    kind: "lesson_cloze",
+    instructionPl: "W poniedziałek pada deszcz i mam na sobie kalosze. We wtorek wieje wiatr. W piątek jest słonecznie, więc mam na sobie koszulkę i szorty. Uzupełnij tekst.",
+    contentLocale: "en-GB",
+    segments: [
+      { text: "On Monday it's " },
+      { gapId: uid(40) },
+      { text: " and I'm wearing my " },
+      { gapId: uid(41) },
+      { text: ". On Tuesday it's " },
+      { gapId: uid(42) },
+      { text: ". On Friday it's sunny, so I'm wearing a " },
+      { gapId: uid(43) },
+      { text: " and shorts." },
+    ],
+    words: [
+      { id: uid(50), text: "wellington boots" },
+      { id: uid(51), text: "raining" },
+      { id: uid(52), text: "windy" },
+      { id: uid(53), text: "T-shirt" },
+      { id: uid(54), text: "snowing" },
+      { id: uid(55), text: "scarf" },
+    ],
+  },
+};
 
+/** Geometria tekstu z lukami na każdym ekranie (po wypełnieniu dwóch luk przez wywołującego). */
+async function expectClozeGeometry(page: Page, testInfo: TestInfo, shotPrefix: string): Promise<void> {
   for (const viewport of VIEWPORTS) {
     await page.setViewportSize(viewport);
     const label = `${viewport.width}x${viewport.height}`;
@@ -98,8 +122,45 @@ test("cloze: text with four gaps, slots, word bank and check fit every form fact
     expect(firstSlot.y, `slots below text at ${label}`).toBeGreaterThanOrEqual(text.y + text.height - 1);
     expect(pool.y, `bank below slots at ${label}`).toBeGreaterThanOrEqual(lastSlot.y + lastSlot.height - 1);
     expect(pool.y - (lastSlot.y + lastSlot.height), `bank right under slots at ${label}`).toBeLessThan(80);
-    await page.screenshot({ path: testInfo.outputPath(`cloze-${label}.png`) });
+    await page.screenshot({ path: testInfo.outputPath(`${shotPrefix}-${label}.png`) });
   }
+}
+
+test("cloze: text with four gaps, slots, word bank and check fit every form factor", async ({ page }, testInfo) => {
+  await installKidUiFixture(page, lessonTaskFixture(ids, deck, [clozeTask]));
+  await openLessonTask(page, VIEWPORTS[1]!, "kid-lesson-cloze");
+  await expect(page.getByTestId("kid-instruction")).toContainText("Uzupełnij tekst.");
+  await expect(page.getByTestId("kid-lesson-cloze-gap")).toHaveCount(4);
+  await expect(page.getByTestId("kid-lesson-cloze-text").locator("button")).toHaveCount(0);
+  await expect(page.getByTestId("kid-lesson-cloze-slot")).toHaveCount(4);
+  // Bez contentLocale tekst nie jest dzielony na fragmenty z `lang`.
+  await expect(page.getByTestId("kid-lesson-cloze-segment")).toHaveCount(0);
+  // Dwie luki wypełnione przed pomiarem: najdłuższe słowo stoi w tekście i w miejscu, reszta w banku.
+  await page.getByTestId("kid-lesson-cloze-option").filter({ hasText: "dwutlenek węgla" }).click();
+  await page.getByTestId("kid-lesson-cloze-option").filter({ hasText: "światła słonecznego" }).click();
+  await expect(page.getByTestId("kid-lesson-cloze-option")).toHaveCount(4);
+  await expect(page.getByTestId("kid-lesson-cloze-text")).toContainText("światła słonecznego");
+  await expectClozeGeometry(page, testInfo, "cloze");
+});
+
+test("cloze (English chapter, contentLocale en-GB): lang-wrapped text, slots and bank fit every form factor", async ({ page }, testInfo) => {
+  await installKidUiFixture(page, lessonTaskFixture(ids, chapterDeck, [chapterClozeTask]));
+  await openLessonTask(page, VIEWPORTS[1]!, "kid-lesson-cloze");
+  await expect(page.getByTestId("kid-instruction")).toContainText("Uzupełnij tekst.");
+  await expect(page.getByTestId("kid-lesson-cloze-gap")).toHaveCount(4);
+  await expect(page.getByTestId("kid-lesson-cloze-slot")).toHaveCount(4);
+  // Ścieżka z językiem treści: każdy fragment tekstu w osobnym `<span lang="en-GB">`, bank też z `lang`.
+  const segments = page.getByTestId("kid-lesson-cloze-segment");
+  await expect(segments).toHaveCount(5);
+  for (const segment of await segments.all()) await expect(segment).toHaveAttribute("lang", "en-GB");
+  for (const option of await page.getByTestId("kid-lesson-cloze-option").all()) await expect(option).toHaveAttribute("lang", "en-GB");
+  // Dwie luki wypełnione przed pomiarem (najdłuższe słowo banku w tekście i w miejscu luki).
+  await page.getByTestId("kid-lesson-cloze-option").filter({ hasText: "raining" }).click();
+  await page.getByTestId("kid-lesson-cloze-option").filter({ hasText: "wellington boots" }).click();
+  await expect(page.getByTestId("kid-lesson-cloze-option")).toHaveCount(4);
+  await expect(page.getByTestId("kid-lesson-cloze-text")).toContainText("wellington boots");
+  await expect(page.getByTestId("kid-lesson-cloze-slot").first()).toHaveAttribute("lang", "en-GB");
+  await expectClozeGeometry(page, testInfo, "chapter-cloze");
 });
 
 test("cloze: check sends gap → word assignments and shows the completed text after a mistake", async ({ page }) => {

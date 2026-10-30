@@ -6,6 +6,7 @@ import {
   createLessonSnapshot,
   filledClozeOf,
   formatRejectedReason,
+  otherRejectedCount,
   syncGapAnswers,
   applyCalculationPreview,
   groupCalculationFamilies,
@@ -492,6 +493,24 @@ describe("topRejectedReasons (powody odrzuceń przy generowaniu)", () => {
   });
 });
 
+describe("otherRejectedCount (odrzucenia spoza wypisanych powodów)", () => {
+  const listed = [{ reason: "słowo spoza materiału: raining", count: 3 }, { reason: "tylko słowa pomocnicze: the", count: 2 }];
+
+  it("to różnica liczby odrzuconych i sumy wypisanych powodów (inne powody walidacji, powody spoza pierwszej piątki)", () => {
+    expect(otherRejectedCount(12, listed)).toBe(7);
+    expect(otherRejectedCount(6, listed)).toBe(1);
+  });
+
+  it("gdy wypisane powody pokrywają wszystkie odrzucenia, nie ma innych powodów", () => {
+    expect(otherRejectedCount(5, listed)).toBe(0);
+    expect(otherRejectedCount(0, [])).toBe(0);
+  });
+
+  it("nigdy nie jest ujemna (liczniki z kilku przebiegów mogą się rozjechać)", () => {
+    expect(otherRejectedCount(3, listed)).toBe(0);
+  });
+});
+
 describe("formatRejectedReason (wiersz raportu odrzuceń)", () => {
   const TEMPLATE = "{reason} ×{n}";
 
@@ -502,7 +521,7 @@ describe("formatRejectedReason (wiersz raportu odrzuceń)", () => {
   it("powód z $&, $$, $` i {n} trafia do tekstu dosłownie (nie jest wzorcem podstawienia ani szablonem)", () => {
     expect(formatRejectedReason(TEMPLATE, "słowo spoza materiału: a$&b", 2)).toBe("słowo spoza materiału: a$&b ×2");
     expect(formatRejectedReason(TEMPLATE, "cena $$ i $` i $'", 1)).toBe("cena $$ i $` i $' ×1");
-    expect(formatRejectedReason(TEMPLATE, "brak słowa treści: {n}", 5)).toBe("brak słowa treści: {n} ×5");
+    expect(formatRejectedReason(TEMPLATE, "tylko słowa pomocnicze: {n}", 5)).toBe("tylko słowa pomocnicze: {n} ×5");
     expect(formatRejectedReason(TEMPLATE, "{reason}", 4)).toBe("{reason} ×4");
   });
 });

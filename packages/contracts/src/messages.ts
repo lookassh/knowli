@@ -726,8 +726,10 @@ export const messages = {
     gradingProviderNone: "Ocena dowolnych odpowiedzi jest wyłączona (brak modelu oceniającego).",
     coverageIncomplete: "Brak pokrycia — uzupełnij ćwiczenia brakujących etapów przed publikacją.",
     rejectedCount: "Odrzucono ćwiczeń przy generowaniu: {n}",
-    rejectedReasonsLabel: "Najczęstsze powody odrzuceń",
+    // Powody zlicza tylko sprawdzanie słów z materiału; resztę odrzuceń zbiera „inne powody”.
+    rejectedReasonsLabel: "Powody odrzuceń przy sprawdzaniu słów z materiału",
     rejectedReason: "{reason} ×{n}",
+    rejectedOtherReasons: "inne powody: {n}",
     droppedObjectiveCount: "Pominięto zagadnień z modelu: {n}",
     verdictConfirm: "Potwierdź",
     verdictOverrideCorrect: "Uznaj za poprawne",
@@ -868,6 +870,7 @@ export const messages = {
     // Przedmioty o stałym tytule tworzone z materiału (np. „Angielski — rozdział”): bez nazwy przedmiotu od rodzica.
     chapterTopicLabel: "Rozdział (np. Unit 1)",
     chapterMaterialHint: "Wklej słowa, zwroty i zdania z rozdziału (np. z NotebookLM).",
+    chapterPoolSizeHint: "Od 20 do 160 ćwiczeń. Domyślnie 60.",
     objectiveKind: { words: "Słowa", frame: "Rama zdaniowa" } as Record<string, string>,
     requiredElementsLabel: "Wymagane elementy odpowiedzi",
     requiredElementLabel: "Element {n}",
