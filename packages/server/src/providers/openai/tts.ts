@@ -1,5 +1,5 @@
 import type { TtsProvider, TtsSynthesizeInput } from "../../ports/ai";
-import { pcmToWav } from "../audio/wav";
+import { pcmToWav, wavDurationMs } from "../audio/wav";
 
 export interface OpenAiTtsOptions {
   apiKey: string;
@@ -10,10 +10,14 @@ export interface OpenAiTtsOptions {
 const DEFAULT_MODEL = "gpt-4o-mini-tts";
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 
-/** `audio/pcm;rate=24000;channels=1` → format próbek; brak częstotliwości = nieznany format. */
+/**
+ * `audio/pcm;rate=24000;channels=1` → format próbek; brak częstotliwości = nieznany
+ * format. `audio/L16` celowo odrzucony: jest big-endian, a nagłówek WAV deklaruje
+ * little-endian.
+ */
 function pcmFormatOf(contentType: string): { sampleRate: number; channels: number } | null {
   const [type, ...params] = contentType.split(";").map((part) => part.trim().toLowerCase());
-  if (type !== "audio/pcm" && type !== "audio/l16") return null;
+  if (type !== "audio/pcm") return null;
   const values = Object.fromEntries(params.map((param) => param.split("=") as [string, string]));
   const sampleRate = Number(values.rate);
   const channels = values.channels === undefined ? 1 : Number(values.channels);
@@ -55,11 +59,12 @@ export function createOpenAiTtsProvider(options: OpenAiTtsOptions): TtsProvider 
       const bytes = new Uint8Array(await response.arrayBuffer());
       if (input.format === "mp3") return { bytes, mimeType: "audio/mpeg" };
       const contentType = response.headers.get("content-type") ?? "";
-      if (/^audio\/(wav|x-wav|wave)\b/i.test(contentType)) return { bytes, mimeType: "audio/wav" };
       const pcm = pcmFormatOf(contentType);
-      // Do logów trafia tylko kod: zgadnięty format zapisałby szum jako gotowe nagranie.
-      if (pcm === null) throw new Error("provider_unexpected_audio");
-      return { bytes: pcmToWav(bytes, pcm), mimeType: "audio/wav" };
+      const wav = /^audio\/(wav|x-wav|wave)\b/i.test(contentType) ? bytes : pcm && pcmToWav(bytes, pcm);
+      // Do logów trafia tylko kod. Zgadnięty format albo ucięty/pusty plik
+      // zostałby zapisany jako gotowe nagranie bez ponowienia.
+      if (wav === null || wavDurationMs(wav) === null) throw new Error("provider_unexpected_audio");
+      return { bytes: wav, mimeType: "audio/wav" };
     },
   };
 }

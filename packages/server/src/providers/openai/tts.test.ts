@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createOpenAiTtsProvider } from "./tts";
+import { pcmToWav } from "../audio/wav";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -55,12 +56,27 @@ describe("createOpenAiTtsProvider", () => {
     expect([...result.bytes.subarray(44)]).toEqual([...pcm]);
   });
 
-  it("wav: odpowiedź już w WAV przechodzi bez zmian", async () => {
-    const wav = new Uint8Array([0x52, 0x49, 0x46, 0x46, 9, 9]);
+  it("wav: poprawna odpowiedź już w WAV przechodzi bez zmian", async () => {
+    const wav = pcmToWav(new Uint8Array(480), { sampleRate: 24000, channels: 1 });
     vi.stubGlobal("fetch", vi.fn(async () => new Response(wav, { status: 200, headers: { "content-type": "audio/wav" } })));
     const provider = createOpenAiTtsProvider({ apiKey: "test" });
     const result = await provider.synthesize({ text: "kot", locale: "pl-PL", voice: "Kore", format: "wav" });
     expect(result).toEqual({ bytes: wav, mimeType: "audio/wav" });
+  });
+
+  it("wav: ucięty WAV albo puste PCM to błąd — zasób nie może zostać gotowy bez dźwięku", async () => {
+    const provider = createOpenAiTtsProvider({ apiKey: "test" });
+    const full = pcmToWav(new Uint8Array(480), { sampleRate: 24000, channels: 1 });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(full.subarray(0, 100), { status: 200, headers: { "content-type": "audio/wav" } })));
+    await expect(provider.synthesize({ text: "kot", locale: "pl-PL", voice: "Kore", format: "wav" })).rejects.toThrow("provider_unexpected_audio");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array(0), { status: 200, headers: { "content-type": "audio/pcm;rate=24000;channels=1" } })));
+    await expect(provider.synthesize({ text: "kot", locale: "pl-PL", voice: "Kore", format: "wav" })).rejects.toThrow("provider_unexpected_audio");
+  });
+
+  it("wav: audio/L16 (big-endian) jest odrzucane, a nie zapisywane jako zniekształcony WAV", async () => {
+    const provider = createOpenAiTtsProvider({ apiKey: "test" });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([0, 1, 2, 3]), { status: 200, headers: { "content-type": "audio/L16;rate=24000" } })));
+    await expect(provider.synthesize({ text: "kot", locale: "pl-PL", voice: "Kore", format: "wav" })).rejects.toThrow("provider_unexpected_audio");
   });
 
   it("wav: inny typ odpowiedzi albo PCM bez częstotliwości to błąd, a nie zgadywanie formatu", async () => {
