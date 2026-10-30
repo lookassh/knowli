@@ -85,7 +85,9 @@ ttsRequestInstructions(tts: MediaSettings["tts"], locale: string, style?: TtsSty
   (pusty wynik → `undefined`).
 - Zdania stylu tylko dla `pl-PL` (§3.2, §4.3); każde ≤ 120 znaków (test).
 - `UMIEM_TTS_STYLE=none` działa jak wyłącznik awaryjny: fingerprinty wracają
-  do wartości etapu 1, więc odsłuch od razu używa starych gotowych nagrań.
+  do wartości etapu 1, więc odsłuch komunikatów Kid UI od razu używa starych
+  gotowych nagrań. Nagrania pytań i kart już opublikowanych lekcji zachowują
+  stylowy oczekiwany fingerprint do następnej edycji lub publikacji lekcji.
 - Moduły `materials/` importują profil bezpośrednio (precedens:
   `providers/audio/normalize`, `providers/audio/mp3-duration`; test granic
   sprawdza kierunki między obszarami i czystość `domain/`).
@@ -193,7 +195,12 @@ właściciela o brzmieniu.
 - Fingerprinty 17 komunikatów się zmieniają; worker przy starcie
   (`prepareUiAudio`) zleca je od nowa. Dzięki §3.4 odsłuch działa w tym
   czasie na starych nagraniach. Web i worker wdrażane razem (fingerprint
-  w `readUiAudio` liczy web, zlecenie — worker).
+  w `readUiAudio` liczy web, zlecenie — worker; worker liczy też fingerprinty
+  przy uzgadnianiu szkiców lekcji po generowaniu — `generation.ts`,
+  `lessons/lesson-drafts.ts`). Web i worker MUSZĄ mieć identyczne `UMIEM_TTS_STYLE`:
+  inaczej fingerprinty przeskakują między generowaniem a edycjami rodzica
+  (dodatkowe płatne nagrania), a niezgodność po stronie Kid UI jest niewidoczna
+  przez odczyt zapasowy.
 - Pierwsza edycja szkicu lekcji po wdrożeniu przelicza wszystkie rewizje
   (`reconcileDraftAssetsTx`), więc zleca nowe nagrania **wszystkich** pytań
   i kart tego szkicu, nie tylko edytowanego ćwiczenia. Bez generowania wstecz

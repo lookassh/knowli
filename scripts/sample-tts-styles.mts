@@ -2,12 +2,13 @@
  * Próbki do odsłuchu stylów wypowiedzi TTS (spec tonu TTS §3.6, etap A).
  *
  * Uruchomienie:
- *   corepack pnpm eval:tts-styles -- --out <katalog poza repozytorium>
+ *   corepack pnpm eval:tts-styles -- --out <katalog poza repozytorium> [--allow-none]
  *   UMIEM_FAKE_PROVIDERS=1 corepack pnpm eval:tts-styles -- --out <katalog>   # sanity pipeline'u (bajty fake)
  *
  * Generuje z bieżącą konfiguracją (.env: UMIEM_TTS_*, w tym UMIEM_TTS_STYLE) 17 komunikatów Kid UI oraz po jednym
  * przykładowym pytaniu i karcie lekcji (stałe teksty poniżej) i zapisuje `<rola>-<klucz>.wav|mp3` oraz `index.txt`
- * (plik, rola, głos, tekst, instrukcja). Narzędzie próby: nie dotyka bazy ani mediów aplikacji, a katalog wyjściowy
+ * (plik, rola, głos, tekst, instrukcja). Bez `UMIEM_TTS_STYLE=instructions` odmawia (próbki bez stylu nie mają sensu
+ * do odsłuchu stylów); `--allow-none` pozwala wygenerować je mimo to (np. sanity pipeline'u). Narzędzie próby: nie dotyka bazy ani mediów aplikacji, a katalog wyjściowy
  * musi leżeć poza repozytorium (próbki nie są częścią kodu). Do usługi TTS trafiają wyłącznie stałe teksty
  * interfejsu i przykładowe teksty z tego pliku — bez danych dziecka. Klucze nie są wypisywane.
  */
@@ -57,7 +58,7 @@ function argValue(name: string): string | undefined {
 
 const outArg = argValue("out");
 if (!outArg) {
-  console.error("Użycie: pnpm eval:tts-styles -- --out <katalog poza repozytorium>");
+  console.error("Użycie: pnpm eval:tts-styles -- --out <katalog poza repozytorium> [--allow-none]");
   process.exit(2);
 }
 const outDir = resolve(outArg);
@@ -74,6 +75,13 @@ if (fromRepo === "" || (!fromRepo.startsWith("..") && !isAbsolute(fromRepo))) {
 }
 
 const settings = mediaSettingsFromEnv(process.env);
+if (settings.tts.style !== "instructions" && !process.argv.includes("--allow-none")) {
+  console.error(
+    "Odmowa: UMIEM_TTS_STYLE nie jest ustawione na instructions, więc próbki byłyby bez stylu. " +
+      "Ustaw UMIEM_TTS_STYLE=instructions albo dodaj --allow-none.",
+  );
+  process.exit(2);
+}
 const deps = createGenerationDepsFromEnv(process.env);
 if (!deps) {
   console.error("Brak konfiguracji TTS (klucz w .env). Użyj UMIEM_FAKE_PROVIDERS=1 do sanity checku.");

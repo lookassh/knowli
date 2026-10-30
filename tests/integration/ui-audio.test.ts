@@ -117,8 +117,11 @@ describe("wskazówki głosowe Kid UI (integracja)", () => {
     );
     expect(ready).toMatchObject({ mime_type: "audio/wav", metadata: { durationMs: 250 } });
     expect((await readReadyMedia(wavServices, pending!.id))?.mimeType).toBe("audio/wav");
-    // inna instrukcja = inne nagranie; dotychczasowe mp3 bez instrukcji nie są unieważniane
-    expect(await readUiAudio(services)).toMatchObject({ ready: false });
+    // gotowy jest tylko jeden take wav, serwowany (przez odczyt zapasowy) dla swojego klucza; ready:false, bo brakuje
+    // pozostałych 16 kluczy — dotychczasowe mp3 bez instrukcji nie są unieważniane
+    const catalog = await readUiAudio(services);
+    expect(catalog).toMatchObject({ ready: false });
+    expect(Object.values(catalog.assets)).toEqual([pending!.id]);
   });
 
   it("po awarii TTS read pozostaje niegotowy, a kolejne prepare tworzy nową generację", async () => {
