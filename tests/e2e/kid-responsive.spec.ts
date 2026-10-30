@@ -174,6 +174,11 @@ test("exposure keeps the complete word card above its action without scrolling o
       expect(bounds!.x + bounds!.width, testId).toBeLessThanOrEqual(viewport.width);
       if (testId.startsWith("kid-play")) expect(bounds!.height).toBeGreaterThanOrEqual(48);
     }
+    // The target word is the stimulus: at least display-sm and larger than its translation.
+    const [targetSize, sourceSize] = await Promise.all(["kid-target", "kid-source"].map((testId) =>
+      page.getByTestId(testId).evaluate((element) => parseFloat(getComputedStyle(element).fontSize))));
+    expect(targetSize, `target word size at ${viewport.width}x${viewport.height}`).toBeGreaterThanOrEqual(28);
+    expect(targetSize).toBeGreaterThan(sourceSize!);
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
     await page.screenshot({ path: testInfo.outputPath(`exposure-${viewport.width}x${viewport.height}.png`) });
   }
