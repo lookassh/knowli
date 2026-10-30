@@ -1,6 +1,6 @@
 # Źródła i lekcja „Angielski — rozdział” — projekt
 
-Data: 2026-10-30 (wersja 2 po przeglądzie trzech krytyków — dziennik w sekcji 12). Podstawa: zestawienie typów zadań z zeszytu ćwiczeń 2. klasy (Starter, Unit 1–2) z typami ćwiczeń Umiem! oraz decyzje właściciela podjęte w rozmowie (wariant A zadań, wariant A lektora, przedmiot jako osobny `SubjectModule`, „źródło” jako osobny byt). Status: projekt zaakceptowany przez właściciela 2026-10-30; następny krok to plan wdrożenia Etapu 1.
+Data: 2026-10-30 (wersja 2 po przeglądzie trzech krytyków — dziennik w sekcji 12). Podstawa: zestawienie typów zadań z zeszytu ćwiczeń 2. klasy (Starter, Unit 1–2) z typami ćwiczeń Umiem! oraz decyzje właściciela podjęte w rozmowie (wariant A zadań, wariant A lektora, przedmiot jako osobny `SubjectModule`, „źródło” jako osobny byt). Status: projekt zaakceptowany przez właściciela 2026-10-30; Etap 1 (przedmiot z wklejonym materiałem) zaimplementowany — stan i wynik próby w sekcji 10; następne etapy czekają na osobne plany.
 
 ## 1. Cel
 
@@ -91,7 +91,7 @@ Edycja źródła nie zmienia istniejących zestawów.
 | `exerciseTypes` | `lesson_card`, `lesson_match`, `lesson_group`, `lesson_cloze`, `lesson_choice`, `lesson_order`, `lesson_gap`, `lesson_open_answer` |
 | `normalizer` | normalizator angielski przeniesiony z `english-grammar/` do `subjects/english/` (bez zmiany zachowania, więc klucze cache werdyktów gramatyki zostają; każda przyszła zmiana dotknie obu przedmiotów) |
 | `topics` | `[]` — temat dynamiczny z materiału (`buildDynamicTopic`) |
-| `usesV3Payload` | `false` — bez pól v3 i oceny dwuwymiarowej |
+| `usesV3Payload` | nie ustawione (domyślnie `false`) — bez pól v3 i oceny dwuwymiarowej |
 | `poolDeduplication` | `exercise` |
 | `poolMinimums` | `{ guided: 3, productive: 3, independent: 2 }` |
 | `ttsForAnswers` / `ttsForPrompts` | `false` / `false` |
@@ -102,15 +102,16 @@ Nowe, opcjonalne i generyczne opcje `SubjectModule` (domyślne wartości zachowu
 | Opcja | Znaczenie | `school` | `english_chapter` |
 |---|---|---|---|
 | `sourceQuotes` | czy ćwiczenia wymagają cytatów `sourceRefs`; steruje `groundingRequired` w generacji i wymaganiem `sourceRefs` w gałęziach schematu match/group/cloze (dziś wymagane zawsze, a dla przedmiotu bez v3 każde takie ćwiczenie byłoby odrzucone) | `true` | `false` |
-| `refineGeneratedPool(drafts, { material })` | walidacja i czyszczenie **tylko świeżo wygenerowanych** ćwiczeń (odrzuca ćwiczenie albo usuwa pojedyncze warianty); nie działa przy edycji rodzica ani publikacji, w odróżnieniu od `validatePoolExtra` | brak | walidacja słownikowa (4.4) |
+| `refineGeneratedPool(drafts, { material })` | walidacja i czyszczenie **tylko świeżo wygenerowanych** ćwiczeń (odrzuca ćwiczenie albo usuwa pojedyncze warianty lub niezamówione pola); nie działa przy edycji rodzica ani publikacji, w odróżnieniu od `validatePoolExtra` | brak | walidacja słownikowa i usuwanie niezamówionych pól v3 (4.4) |
+| `materialSubjectTitle` | skąd tytuł przedmiotu zestawu z materiału: `"parent"` — nazwę podaje rodzic, `"fixed"` — stały `titlePl`; brak = przedmiot katalogowy. Wspólny predykat z katalogiem przedmiotów i poleceniami tworzenia (4.6). Opcja dodana podczas wdrożenia | `"parent"` | `"fixed"` |
 | `instructionIsStimulus` | polecenie niesie bodziec znaczenia: tożsamość ćwiczeń `lesson_choice`, `lesson_gap`, `lesson_order` (`exercise-identity.ts`) uwzględnia znormalizowane `instructionPl` | `false` | `true` |
 | `exposureText(draft)` | tekst, z którego liczony jest `targetKey` ćwiczenia (dziś zawsze `answer`) | brak | 4.5 |
 | `openAnswerPromptLocale` | język pytania `lesson_open_answer` wysyłany w Kid DTO | brak (reguła jak dziś) | `pl-PL` |
-| `ttsForFeedback` | nagranie poprawnego zdania w omówieniu (sekcja 5) | `false` | `true` |
+| `ttsForFeedback` | nagranie poprawnego zdania w omówieniu (sekcja 5); dopiero w Etapie 3 | `false` | `true` |
 | `prompts.objectivesRules` | reguły etapu zagadnień (`LessonObjectivesInput` dostaje pole, adapter je dokleja) | brak | 4.2 |
 | `prompts.typeRules` | opisy typów match/group/cloze dla promptu puli — przeniesione z adaptera (`llm.ts`) do profilu przedmiotu | dzisiejszy tekst z adaptera bez zmian | 4.3 |
 
-Kategorie błędów przedmiotu (z polskimi szablonami podpowiedzi): `wrong_word` „Pomylone słowo”, `spelling` „Pisownia”, `word_order` „Szyk zdania”, `missing_word` „Brakujące słowo”, plus kategorie bazowe.
+Kategorie błędów (z polskimi szablonami podpowiedzi): przedmiotowe `wrong_word` „Pomylone słowo” i `spelling` „Pisownia” oraz bazowe `incomplete` „Niepełna odpowiedź” i `wrong_order` „Zła kolejność”, które każde zagadnienie dostaje z przedmiotem. Rozstrzygnięcie podczas wdrożenia: pierwsza wersja projektu zakładała własne `word_order` i `missing_word`, ale kategorie bazowe znaczą to samo, a zdublowane kody rozpraszałyby raport rodzica (koszt błędnej decyzji: dopisanie dwóch kodów później).
 
 `validateExercise` przedmiotu:
 
@@ -119,6 +120,8 @@ Kategorie błędów przedmiotu (z polskimi szablonami podpowiedzi): `wrong_word`
 - pole `hint` niedozwolone (bodziec jest w poleceniu, bo kartkówka usuwa `hint` z luki — `lesson-materialize.ts:294`);
 - `lesson_order`: żadne dwa klocki nie mają tego samego tekstu po normalizacji (ocena porównuje identyfikatory klocków, więc zamiana dwóch „a” dałaby fałszywy błąd);
 - odpowiedź i warianty ≤120 znaków (limit przedmiotów bez v3).
+
+W kodzie `validateExercise` przedmiotu obejmuje pierwsze cztery reguły; jedną lukę `lesson_gap` i limit 120 znaków egzekwuje już walidacja ogólna silnika (`pool-validation.ts`), więc przedmiot ich nie powiela (jeden komunikat dla rodzica).
 
 ### 4.2. Zagadnienia
 
@@ -178,6 +181,8 @@ Działa w `refineGeneratedPool`, więc nie ogranicza rodzica: przy edycji i publ
 | `lesson_gap`, `lesson_open_answer` | `answer` | odrzucenie ćwiczenia |
 | `lesson_gap`, `lesson_open_answer` | `acceptedAnswers` spoza materiału | usunięcie samego wariantu, ćwiczenie zostaje |
 
+**Niezamówione pola v3 (dodane podczas strojenia po próbie).** `refineGeneratedPool` usuwa ze świeżego ćwiczenia pola v3, których przedmiot nie żąda (`questionType`, `requiredElements`, `supplementaryElements`, `commonErrors`, `expectedForm`, `familyId`, `sourceRefs`), zamiast je odrzucać. Prawdziwy model potrafił wypełnić je dla całej partii mimo polecenia „null” (w próbie cytaty `sourceRefs` w jednej z czterech partii), a walidacja ogólna odrzuca takie ćwiczenie jako „pole v3 niedozwolone”, więc tracona była cała partia zagadnienia. To niepożądany dodatek modelu, nie dane rodzica; lista pól pochodzi z walidacji ogólnej (`V3_EXERCISE_FIELDS`) bez `calculation` — specyfikacja rachunku to inny typ ćwiczenia, który ma zostać odrzucony przez walidację, a nie po cichu naprawiony. Dane rodzica (edycja, publikacja) tej naprawie nie podlegają.
+
 **Raport dla rodzica.** Powody odrzuceń są zliczane (np. „słowo spoza materiału: raining ×3”) w `lesson_context.rejectedReasons` obok dzisiejszego `rejectedCount` i pokazywane w edytorze lekcji, żeby rodzic wiedział, czy dogenerować. To zliczenia bez danych dziecka.
 
 **Znane ograniczenia:**
@@ -222,15 +227,16 @@ Skutki tej decyzji:
 
 ### 4.6. Tworzenie lekcji
 
-- `createSchoolLesson` staje się cienką komendą nad wspólnym `createMaterialLesson(services, subjectId, …)` dla przedmiotów z `buildDynamicTopic`.
-- `SubjectCatalogDto` dostaje jawne `creation: "catalog" | "material"`. Formularz rodzica wybiera ścieżkę po tym polu, a nie po pustej liście tematów — dziś `isSchoolSubject` uznałby `english_chapter` za szkołę (`NewLessonForm.tsx:68-71`).
-- Nowa komenda `ChapterLessonCommand`:
+- `createSchoolLesson` jest cienką komendą nad wspólnym `createMaterialLesson(services, { subjectId, subjectTitlePl?, … })` dla przedmiotów z `buildDynamicTopic` (zaimplementowane w Etapie 1).
+- `SubjectCatalogDto` dostaje jawne `creation: "catalog" | "material"` oraz `subjectTitleRequired`. Formularz rodzica wybiera ścieżkę po tych polach, a nie po pustej liście tematów — dziś `isSchoolSubject` uznałby `english_chapter` za szkołę (`NewLessonForm.tsx:68-71`). Pola wyprowadza ten sam predykat co polecenia tworzenia (`domain/lessons/material-creation.ts`, opcja `materialSubjectTitle`), żeby formularz nie obiecywał ścieżki, którą serwer odrzuci.
+- Nowa komenda `MaterialLessonCommand` (zamiast pierwotnie planowanej `ChapterLessonCommand`: jest ogólna dla przedmiotów o stałym tytule, nie tylko dla rozdziału) z procedurą oRPC `lessons.createFromMaterial` (POST `/lessons/material`, 202 `{ runId, deckId }`):
   - `clientRequestId`,
+  - `subjectId` (przedmiot o `materialSubjectTitle: "fixed"`; przedmiot katalogowy i szkolny → `validation`),
   - `topicTitlePl` (np. „Unit 1”, 1–120),
-  - `material` albo `sourceMaterialId` (3.3),
+  - `material` (1–16 000 znaków); `sourceMaterialId` jako alternatywa (3.3) dojdzie w Etapie 2,
   - opcjonalnie `instruction` (≤500), `poolSize`, `deckId`.
 
-  Tytuł zestawu: „Angielski: <topicTitlePl>”.
+  Tytuł zestawu: „Angielski — rozdział: <topicTitlePl>” (tytuł przedmiotu z modułu, dwukropek, tytuł tematu; przycięty do 120 znaków), a nie pierwotne „Angielski: <topicTitlePl>”.
 - Fałszywy provider dostaje gałąź `english_chapter` (bez `sourceRefs`, z polskim bodźcem w poleceniu, z `kind` zagadnień).
 
 ### 4.7. Języki w Kid DTO i panel rodzica
@@ -319,10 +325,10 @@ Po normalizacji (4.5) tekst nagrania jest równy `exposureText` ćwiczenia, wię
 
 - `packages/contracts`:
   - schematy źródeł (`SourceMaterialInput`, `SourceMaterialPatch`, `SourceMaterialDto`, `SourceMaterialSummaryDto`);
-  - `ChapterLessonCommandSchema`;
+  - `MaterialLessonCommandSchema` (Etap 1; w pierwszej wersji projektu `ChapterLessonCommandSchema`, z `sourceMaterialId` dopiero w Etapie 2);
   - `sourceMaterialId` w `SchoolLessonCommandSchema` i `GenerationCommandSchema` (z regułą „dokładnie jedno źródło tekstu”) oraz `instruction` w `GenerationCommandSchema`;
   - `rejectedCount` w `GenerationDto`;
-  - `creation` w `SubjectCatalogDto`;
+  - `creation` i `subjectTitleRequired` w `SubjectCatalogDto`;
   - `sourceMaterialId` i `sourceMaterialRevision` w DTO zestawu dla rodzica;
   - `rejectedReasons` w DTO szkicu lekcji;
   - opcjonalne `contentLocale` i `answerLocale` w promptach lekcji Kid DTO.
@@ -409,6 +415,29 @@ Każdy etap kończy się osobnym PR do scalenia przez właściciela. Kolejność
 4. **Słówka ze źródła** (sekcja 6).
 
 Dokumentacja w PR etapów: nowa sekcja `docs/SPEC.md` (§37), uzupełnienie `docs/architecture.md` §19 (nowe opcje `SubjectModule`, `ttsForFeedback`, źródła) i §22 (temat dynamiczny poza przedmiotem szkolnym), `docs/schema.sql`.
+
+### Stan Etapu 1 (2026-10-30)
+
+**Zaimplementowane** (gałąź `claude/english-chapter-1-lesson`, plan `docs/superpowers/plans/2026-10-30-english-chapter-stage1.md`): przedmiot `english_chapter` w `subjects/english-chapter/` (moduł, słownik materiału, walidatory, tekst ekspozycji, prompty); normalizator angielski w `subjects/english/`; generyczne opcje `SubjectModule` (`sourceQuotes`, `materialSubjectTitle`, `instructionIsStimulus`, `exposureText`, `refineGeneratedPool`, `openAnswerPromptLocale`, `prompts.typeRules`, `prompts.objectivesRules`) i `DynamicObjectiveData.kind`; `contentLocale`/`answerLocale` w Kid DTO z atrybutami `lang` w Kid UI; `rejectedReasons` w szkicu i edytorze rodzica; `createMaterialLesson`, `createLessonFromMaterial`, `lessons.createFromMaterial` i `creation`/`subjectTitleRequired` w katalogu; fałszywy provider z gałęzią rozdziału; testy jednostkowe, integracyjne (`tests/integration/lesson-chapter.test.ts`) i narzędzie próby `pnpm probe:chapter`. Opis architektury: `docs/architecture.md` §19.9 i §22, produktu: SPEC §37. Odstępstwa od pierwszej wersji projektu: kategorie błędów (4.1), dodatkowa opcja `materialSubjectTitle`, `MaterialLessonCommand` zamiast `ChapterLessonCommand` i tytuł zestawu (4.6), usuwanie niezamówionych pól v3 (4.4). Nie ma jeszcze: źródeł, lektora (`ttsForFeedback`), słówek ze źródła ani osobnej specyfikacji E2E całego przebiegu rozdziału (Etap 2 i dalsze); formularz rodzica i edytor (rodzaje zagadnień, powody odrzuceń) pokrywają specyfikacje układu `parent-lessons-layout` i `parent-lesson-editor-layout`, a przebieg dziecka — testy integracyjne.
+
+**Próba na prawdziwym modelu** (`google/gemini-3.8-flash`, odtworzony materiał Unit 1, pula 60; `pnpm probe:chapter` z `UMIEM_PROBE_MATERIAL` wskazującym plik poza repozytorium):
+
+| Przebieg | Zagadnienia | Odrzucone | Publikowalny | Uwagi |
+| --- | --- | --- | --- | --- |
+| 1 (przed strojeniem) | 4 | 4 z 60 (6,7%) | nie | sprawdzany fragment tłumaczeń (`focus`) nie był ciągły; brak pokrycia samodzielnego w zagadnieniu-ramie |
+| 2 (po poprawce `focus`) | 4 | 16 z 60 (26,7%) | nie | model wypełnił `sourceRefs` w całej partii; zagadnienie bez ćwiczeń |
+| 3–4 (po strojeniu promptów i usuwaniu pól v3) | 5 | 0 | tak | 3 zagadnienia `words` i 2 `frame`; 4/6/2 ćwiczenia na zagadnienie; odpowiedzi luk w ramie powtarzały „wearing” |
+| 5 (po strojeniu różnorodności luk i dystraktorów) | 4 | 2 z 60 (3,3%) | tak | odpowiedzi luk w ramie różne (najwyżej dwie takie same), klocki układanek bez interpunkcji |
+
+Strojenie obejmowało: ciągły `focus` tłumaczenia, zerowanie pól v3 w prompcie i ich usuwanie ze świeżego wyjścia, regułę banku uzupełniania (słowo banku nie występuje poza luką), różnorodność luk w ramach, dystraktory z tej samej kategorii oraz układanki bez interpunkcji końcowej. Po strojeniu trzy kolejne przebiegi (3, 4 i 5) były publikowalne, z 0%, 0% i 3,3% odrzuconych. Pierwsze dwa przebiegi pokazują, że jedno wadliwe pole w partii potrafi unieważnić całe zagadnienie, co uzasadnia czyszczenie świeżego wyjścia (4.4). Porównanie ze szkołą (po dwa przebiegi na `main` i na gałęzi, geografia): bez regresji; istniejąca, losowa usterka `questionType` na `lesson_choice` szkoły czyni mniej więcej co drugi przebieg szkoły niepublikowalnym także na `main`, i jest poza zakresem tego etapu.
+
+**Niezweryfikowane:**
+
+- pilotaż z dzieckiem (czy dziecko odczytuje angielskie słowa w parach, grupach i klockach bez pomocy);
+- fizyczne urządzenie i czytniki ekranu z atrybutami `lang` (atrybuty sprawdzono tylko testami komponentów Kid UI); układ zadań rozdziału nie ma osobnej specyfikacji geometrii;
+- prawdziwy materiał właściciela (NotebookLM): próba objęła odtworzony Unit 1, nie tekst od właściciela;
+- odrzucanie słownikowe na prawdziwym modelu: ani razu nie odrzuciło ćwiczenia za słowo spoza materiału (jedyne odrzucenie słownikowe to luka z samym „It's” bez słowa treści w przebiegu 5), więc heurystyka odmiany i `FUNCTION_WORDS` nie były sprawdzone na żywo;
+- jakość ćwiczeń poza próbkami: mało układanek na pulę (około 3), wybór bywa dwuopcyjny, pojedynczy dystraktor w parach bywa z innej kategorii.
 
 ## 11. Poza zakresem
 
