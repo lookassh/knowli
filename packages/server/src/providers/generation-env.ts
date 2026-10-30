@@ -28,6 +28,24 @@ const OPENAI_HOST = "api.openai.com";
 /** Prefiks kluczy OpenRouter — taki klucz nigdy nie powinien trafić do api.openai.com. */
 const OPENROUTER_KEY_PREFIX = "sk-or-";
 
+function isOpenRouterKey(key: string): boolean {
+  return key.trim().toLowerCase().startsWith(OPENROUTER_KEY_PREFIX);
+}
+
+/**
+ * `OPENAI_API_KEY` trafia zawsze do api.openai.com (obrazy; zapas LLM i TTS),
+ * więc klucz OpenRouter w nim to błąd startu, a nie wysłanie go do OpenAI.
+ */
+function openAiKeyFromEnv(env: Record<string, string | undefined>): string | undefined {
+  const key = nonEmpty(env.OPENAI_API_KEY);
+  if (key !== undefined && isOpenRouterKey(key)) {
+    throw new Error(
+      "OPENAI_API_KEY holds an OpenRouter key; use UMIEM_LLM_API_KEY/UMIEM_TTS_API_KEY with their BASE_URL (the key is never sent to api.openai.com)",
+    );
+  }
+  return key;
+}
+
 function isOpenAiEndpoint(baseUrl: string): boolean {
   try {
     const url = new URL(baseUrl);
@@ -41,8 +59,9 @@ function isOpenAiEndpoint(baseUrl: string): boolean {
  * Endpoint i klucz usługi zgodnej z OpenAI (LLM materiału, TTS). Wspólna reguła:
  * - `<P>_BASE_URL` innego hosta niż api.openai.com wymaga własnego `<P>_API_KEY`
  *   — `OPENAI_API_KEY` nigdy nie trafia do innego hosta;
- * - klucz dostawcy innego niż OpenAI (`UMIEM_TTS_PROVIDER` albo klucz OpenRouter
- *   `sk-or-…`) wymaga BASE_URL tego dostawcy — nie trafia do api.openai.com.
+ * - klucz dostawcy innego niż OpenAI (`UMIEM_TTS_PROVIDER` inny niż `openai`
+ *   albo klucz OpenRouter `sk-or-…`) wymaga BASE_URL innego hosta niż
+ *   api.openai.com — nie trafia do OpenAI.
  * Bez BASE_URL: api.openai.com z `<P>_API_KEY` albo `OPENAI_API_KEY`.
  * Komunikaty błędów podają wyłącznie nazwy zmiennych, nigdy wartości.
  */
@@ -59,7 +78,7 @@ function openAiCompatibleEndpointFromEnv(
   }
   // Klucz innego dostawcy (np. OpenRouter) bez jego BASE_URL poszedłby do api.openai.com.
   const declaredProvider = prefix === "UMIEM_TTS" ? (nonEmpty(env.UMIEM_TTS_PROVIDER) ?? "openai") : "openai";
-  const provider = declaredProvider === "openai" && ownKey?.startsWith(OPENROUTER_KEY_PREFIX) ? "openrouter" : declaredProvider;
+  const provider = declaredProvider === "openai" && ownKey !== undefined && isOpenRouterKey(ownKey) ? "openrouter" : declaredProvider;
   if (towardOpenAi && ownKey !== undefined && provider !== "openai") {
     throw new Error(`${prefix}_API_KEY for provider "${provider}" requires ${prefix}_BASE_URL (the key is never sent to api.openai.com)`);
   }
@@ -69,7 +88,7 @@ function openAiCompatibleEndpointFromEnv(
 /** Opcjonalny provider obrazów dla procesu web; nie wymaga LLM ani TTS. */
 export function imageProviderFromEnv(env: Record<string, string | undefined>) {
   if (env.UMIEM_FAKE_PROVIDERS === "1") return fakeGenerationDeps(createLocalMediaStore(env.MEDIA_ROOT ?? "./data/media")).image;
-  const apiKey = env.OPENAI_API_KEY;
+  const apiKey = openAiKeyFromEnv(env);
   return apiKey ? createOpenAiImageProvider({ apiKey }) : undefined;
 }
 
@@ -106,7 +125,7 @@ export function createGenerationDepsFromEnv(env: Record<string, string | undefin
       lessonExecution,
     };
   }
-  const apiKey = env.OPENAI_API_KEY;
+  const apiKey = openAiKeyFromEnv(env);
   if (!apiKey) {
     return undefined;
   }
