@@ -123,12 +123,15 @@ export function LearnScreen({
     : null;
   // Komunikaty błędu z akcjami (audio zadania / instrukcji) rozpychają pasek
   // statusu i włączają przewijanie ramy ćwiczenia — styluje to styles.css.
-  // „Posłuchaj pytania” (design szkoły §11.4) w tym samym miejscu co odsłuch polecenia.
+  // „Posłuchaj pytania” (design szkoły §11.4) w tym samym miejscu co odsłuch polecenia;
+  // karta nauki stawia go w nagłówku za tytułem jako „Posłuchaj karty” (§12.4).
   const questionAudioButton = task !== null && questionAudioOf(task) !== null
     ? <QuestionAudioButton key={task.taskId} onPlay={() => controller.playQuestionAudio()}
+        label={task.prompt.kind === "lesson_card" ? messages.kid.listenLessonCard : messages.kid.listenLessonQuestion}
         disabled={offline || busy || screen.processing || screen.recordingPhase !== "idle"} />
     : null;
   const questionAudioError = questionAudioButton !== null && screen.questionAudioError === true;
+  const cardAudio = task?.prompt.kind === "lesson_card";
   const actionNotice = screen.taskAudioError != null || (screen.guidanceError && instructionAudioKey) || questionAudioError ? "true" : "false";
   const micAvailable = screen.session.mode !== "mock_test" && screen.session.microphoneEnabled && !screen.micDenied;
   const micState = screen.session.mode === "mock_test" ? "off"
@@ -301,7 +304,7 @@ export function LearnScreen({
           </p>
         )}
         {screen.guidanceError && instructionAudioKey && <div className="kid-notice" data-testid="kid-guidance-error"><p>{messages.errors.picture_guidance_unavailable}</p><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" onClick={() => void controller.playGuidance(instructionAudioKey).catch(() => undefined)}>{messages.errors.picture_audio_retry}</ActionButton><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" onClick={() => void controller.endNow()}>{messages.kid.end}</ActionButton></div>}
-        {questionAudioError && <div className="kid-notice" role="alert" data-testid="kid-question-audio-error"><p>{messages.kid.questionAudioUnavailable}</p><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-question-audio-retry" onClick={() => void controller.playQuestionAudio()}>{messages.kid.questionAudioRetry}</ActionButton></div>}
+        {questionAudioError && <div className="kid-notice" role="alert" data-testid="kid-question-audio-error"><p>{cardAudio ? messages.kid.cardAudioUnavailable : messages.kid.questionAudioUnavailable}</p><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-question-audio-retry" onClick={() => void controller.playQuestionAudio()}>{cardAudio ? messages.kid.cardAudioRetry : messages.kid.questionAudioRetry}</ActionButton></div>}
         {screen.taskAudioError && <div className="kid-notice" role="alert" data-testid="kid-task-audio-error"><p>{screen.taskAudioError === "blocked" ? messages.errors.picture_audio_blocked : messages.errors.picture_audio_unavailable}</p><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-task-audio-retry" onClick={() => void controller.playTaskAudio()}>{messages.errors.picture_audio_retry}</ActionButton><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" onClick={() => void controller.endNow()}>{messages.kid.end}</ActionButton></div>}
       </div>
 

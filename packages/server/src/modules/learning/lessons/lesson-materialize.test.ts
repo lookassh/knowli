@@ -3,7 +3,7 @@ import { messages, TaskPromptSchema } from "@learning/contracts";
 import { englishGrammarSubject } from "../../../domain/lessons/subjects/english-grammar/module";
 import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
 import { evaluateChoice, type LessonAnswerKey } from "../../../domain/lessons/evaluate";
-import { materializeExercise, seededShuffle, shuffleUnsolved, type LoadedExercise } from "./lesson-materialize";
+import { materializeCard, materializeExercise, seededShuffle, shuffleUnsolved, type LoadedExercise } from "./lesson-materialize";
 
 /**
  * P1-1: `correctOption` kontraktu (pool-validation) niesie ID OPCJI dla
@@ -492,6 +492,34 @@ describe("materializeExercise — nagranie „Posłuchaj pytania” (design szko
 
   it("przedmiot bez `ttsForPrompts` nie dołącza nagrania", () => {
     const task = materializeExercise({ independentCheck: false, reason: "practice" }, "q4", withAudio(choicePayload), schoolTopic, { ...schoolSubject, ttsForPrompts: false });
+    expect(task.prompt).not.toHaveProperty("questionAudioAssetId");
+  });
+});
+
+describe("materializeCard — nagranie „Posłuchaj karty” (design szkoły §12.3)", () => {
+  const topic = schoolSubject.buildDynamicTopic!({
+    titlePl: "Pająki",
+    objectives: [{
+      id: "school.ddeck.pajaki",
+      titlePl: "Pająki",
+      descriptionEn: "Spiders.",
+      cards: [{ title: "Pająki", body: "Pająk ma osiem nóg." }, { title: "Owady", body: "Owad ma sześć nóg." }],
+    }],
+  });
+  const objective = topic.objectives[0]!;
+  const plan = { kind: "card", objectiveId: objective.id, cardPurpose: "intro" } as Parameters<typeof materializeCard>[0];
+  const audioId = "22222222-2222-4222-8222-222222222222";
+
+  it("dołącza gotowe nagranie karty; nie zmienia ekspozycji karty", () => {
+    const withAudio = materializeCard(plan, 1, objective, schoolSubject, ["Mucha ma sześć nóg."], "rev-1", audioId);
+    const without = materializeCard(plan, 1, objective, schoolSubject, ["Mucha ma sześć nóg."], "rev-1");
+    expect(withAudio.prompt).toMatchObject({ kind: "lesson_card", card: { title: "Owady" }, questionAudioAssetId: audioId });
+    expect(without.prompt).not.toHaveProperty("questionAudioAssetId");
+    expect(withAudio.exposures).toEqual(without.exposures);
+  });
+
+  it("przedmiot bez `ttsForPrompts` nie dołącza nagrania", () => {
+    const task = materializeCard(plan, 0, objective, { ...schoolSubject, ttsForPrompts: false }, [], "rev-1", audioId);
     expect(task.prompt).not.toHaveProperty("questionAudioAssetId");
   });
 });

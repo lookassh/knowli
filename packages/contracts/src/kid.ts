@@ -242,6 +242,8 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
       body: z.string().min(1),
       examples: z.array(z.string().min(1)),
     }).strict(),
+    // „Posłuchaj karty” (design szkoły §12.3): nagranie widocznej treści karty.
+    questionAudioAssetId: QuestionAudioSchema,
   }).strict(),
   z.object({
     kind: z.literal("lesson_notice"),
