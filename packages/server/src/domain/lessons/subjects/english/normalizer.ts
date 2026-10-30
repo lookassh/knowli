@@ -3,7 +3,8 @@ import { baseNormalizer } from "../../normalize";
 import { CONTRACTIONS } from "./contractions";
 
 /**
- * Normalizator przedmiotu `english_grammar` (design „Normalizacja”). Dekoruje
+ * Normalizator przedmiotów angielskich (`english_grammar`, `english_chapter`;
+ * design „Normalizacja”). Dekoruje
  * `baseNormalizer` (kompozycja, nie kopia): bierze jego sekwencję tokenów, a
  * potem rozwija skróty angielskie z zamkniętej tabeli `contractions.ts`.
  *

@@ -1,0 +1,269 @@
+import { describe, expect, it } from "vitest";
+import { validateLessonExercise } from "../../pool-validation";
+import type { DynamicTopicData, LessonExerciseDraft } from "../../types";
+import { englishChapterSubject } from "./module";
+import { GENERIC_CHAPTER_INSTRUCTIONS, refineChapterPool, validateChapterExercise } from "./validators";
+
+const WEATHER = "english_chapter.ddeck.weather";
+const WEARING = "english_chapter.ddeck.wearing";
+
+const DATA: DynamicTopicData = {
+  titlePl: "Unit 1",
+  objectives: [
+    {
+      id: WEATHER,
+      titlePl: "Pogoda",
+      descriptionEn: "Weather words: raining, sunny, windy.",
+      kind: "words",
+      cards: [
+        { title: "Słówka", body: "raining — pada deszcz\nsunny — słonecznie" },
+        { title: "Jeszcze", body: "windy — wietrznie" },
+      ],
+    },
+    {
+      id: WEARING,
+      titlePl: "Co mam na sobie?",
+      descriptionEn: "Frame: I'm wearing (a) ...",
+      kind: "frame",
+      cards: [
+        { title: "Wzór", body: "I'm wearing (a) …" },
+        { title: "Przykład", body: "I'm wearing a coat. — Mam na sobie płaszcz." },
+      ],
+    },
+  ],
+};
+const TOPIC = englishChapterSubject.buildDynamicTopic!(DATA);
+
+function choice(overrides: Partial<LessonExerciseDraft> = {}): LessonExerciseDraft {
+  return {
+    exerciseType: "lesson_choice",
+    objectiveId: WEATHER,
+    instructionPl: "Dziś pada deszcz. Wybierz słowo.",
+    stem: "It's ___ today.",
+    options: [
+      { id: "a", text: "raining" },
+      { id: "b", text: "sunny" },
+    ],
+    correctOption: "a",
+    answer: "raining",
+    acceptedAnswers: [],
+    focus: [],
+    ...overrides,
+  };
+}
+
+function gap(overrides: Partial<LessonExerciseDraft> = {}): LessonExerciseDraft {
+  return {
+    exerciseType: "lesson_gap",
+    objectiveId: WEATHER,
+    instructionPl: "Dziś jest słonecznie. Wpisz brakujące słowo.",
+    stem: "It's ___ today.",
+    answer: "sunny",
+    acceptedAnswers: [],
+    focus: ["sunny"],
+    ...overrides,
+  };
+}
+
+function order(overrides: Partial<LessonExerciseDraft> = {}): LessonExerciseDraft {
+  return {
+    exerciseType: "lesson_order",
+    objectiveId: WEARING,
+    instructionPl: "Ułóż zdanie: Mam na sobie płaszcz.",
+    items: [
+      { id: "i1", text: "I'm" },
+      { id: "i2", text: "wearing" },
+      { id: "i3", text: "a" },
+      { id: "i4", text: "coat" },
+    ],
+    answer: "I'm wearing a coat",
+    acceptedAnswers: [],
+    focus: [],
+    ...overrides,
+  };
+}
+
+function openAnswer(overrides: Partial<LessonExerciseDraft> = {}): LessonExerciseDraft {
+  return {
+    exerciseType: "lesson_open_answer",
+    objectiveId: WEARING,
+    prompt: "Mam na sobie płaszcz.",
+    answer: "I'm wearing a coat.",
+    acceptedAnswers: [],
+    focus: ["coat"],
+    ...overrides,
+  };
+}
+
+describe("validateChapterExercise", () => {
+  it("przepuszcza poprawny wybór, lukę, układankę i tłumaczenie — także w pełnej walidacji ćwiczenia", () => {
+    for (const ex of [choice(), gap(), order(), openAnswer()]) {
+      expect(validateChapterExercise(ex, TOPIC), ex.exerciseType).toEqual([]);
+      expect(validateLessonExercise(ex, englishChapterSubject, TOPIC), ex.exerciseType).toEqual([]);
+    }
+  });
+
+  it("wymaga dokładnie jednej luki w zdaniu wyboru i luki", () => {
+    expect(validateChapterExercise(gap({ stem: "It's sunny today." }), TOPIC).some((e) => e.startsWith("stem:"))).toBe(true);
+    expect(validateChapterExercise(gap({ stem: "It's ___ and ___ today." }), TOPIC).some((e) => e.startsWith("stem:"))).toBe(true);
+    expect(validateChapterExercise(gap({ stem: undefined }), TOPIC).some((e) => e.startsWith("stem:"))).toBe(true);
+    expect(validateChapterExercise(choice({ stem: "It's ____ and __ today." }), TOPIC).some((e) => e.startsWith("stem:"))).toBe(true);
+    expect(validateChapterExercise(choice({ stem: "It's sunny today." }), TOPIC).some((e) => e.startsWith("stem:"))).toBe(true);
+  });
+
+  it("eksportuje stałe polecenia typów bez polskiego zdania-bodźca", () => {
+    expect(GENERIC_CHAPTER_INSTRUCTIONS).toEqual([
+      "Wybierz słowo",
+      "Wybierz",
+      "Wpisz brakujące słowo",
+      "Wpisz słowo",
+      "Ułóż zdanie",
+      "Uzupełnij",
+      "Uzupełnij zdanie",
+    ]);
+  });
+
+  it.each([
+    ["choice", choice],
+    ["gap", gap],
+    ["order", order],
+  ] as const)("%s: polecenie musi nieść polskie zdanie-bodziec", (_name, make) => {
+    const instructionErrors = (instructionPl: string | undefined) =>
+      validateChapterExercise(make({ instructionPl }), TOPIC).filter((e) => e.startsWith("instructionPl:"));
+    expect(instructionErrors(undefined)).toHaveLength(1);
+    expect(instructionErrors("  Wybierz.  ")).toHaveLength(1); // krótsze niż 12 znaków po trim
+    for (const generic of GENERIC_CHAPTER_INSTRUCTIONS) {
+      expect(instructionErrors(generic), generic).toHaveLength(1);
+      expect(instructionErrors(`  ${generic.toUpperCase()}. `), generic).toHaveLength(1);
+    }
+    expect(instructionErrors("Pada deszcz. Wybierz słowo.")).toEqual([]);
+  });
+
+  it("nie sprawdza polecenia w typach bez bodźca w poleceniu", () => {
+    expect(validateChapterExercise(openAnswer({ instructionPl: "Wpisz" }), TOPIC)).toEqual([]);
+  });
+
+  it("odrzuca pole hint (bodziec jest w poleceniu, kartkówka usuwa hint)", () => {
+    expect(validateChapterExercise(gap({ hint: "sun" }), TOPIC).some((e) => e.startsWith("hint:"))).toBe(true);
+    expect(validateChapterExercise(choice({ hint: "pogoda" }), TOPIC).some((e) => e.startsWith("hint:"))).toBe(true);
+  });
+
+  it("odrzuca dwa klocki o tym samym tekście po normalizacji", () => {
+    const twoA = order({
+      instructionPl: "Ułóż zdanie: Mam na sobie czapkę i płaszcz.",
+      items: [
+        { id: "i1", text: "I'm" },
+        { id: "i2", text: "wearing" },
+        { id: "i3", text: "a" },
+        { id: "i4", text: "hat" },
+        { id: "i5", text: "and" },
+        { id: "i6", text: "A" },
+        { id: "i7", text: "coat" },
+      ],
+      answer: "I'm wearing a hat and a coat",
+    });
+    expect(validateChapterExercise(twoA, TOPIC).some((e) => e.startsWith("items:"))).toBe(true);
+  });
+
+  it("odrzuca odpowiedź i wariant dłuższe niż 120 znaków", () => {
+    const long = `I'm wearing ${"a".repeat(121 - "I'm wearing ".length)}`;
+    expect([...long]).toHaveLength(121);
+    expect(validateChapterExercise(openAnswer({ answer: long }), TOPIC).some((e) => e.startsWith("answer:"))).toBe(true);
+    expect(validateChapterExercise(openAnswer({ acceptedAnswers: [long] }), TOPIC).some((e) => e.startsWith("acceptedAnswers:"))).toBe(true);
+    expect(validateChapterExercise(openAnswer({ answer: long.slice(0, 120) }), TOPIC)).toEqual([]);
+  });
+});
+
+describe("refineChapterPool (walidacja słownikowa świeżej puli)", () => {
+  const MATERIAL = "Weather: It's raining. It's sunny. It's windy. Clothes: boots, coat, hat, T-shirt. I'm wearing a coat.";
+
+  it("odrzuca wybór z opcją spoza materiału z powodem dla rodzica", () => {
+    const bad = choice({ options: [{ id: "a", text: "raining" }, { id: "b", text: "snowing" }] });
+    const result = refineChapterPool([bad], { material: MATERIAL });
+    expect(result.kept).toEqual([]);
+    expect(result.rejected).toEqual([{ exercise: bad, reason: "słowo spoza materiału: snowing" }]);
+  });
+
+  it("usuwa wariant tłumaczenia spoza materiału i zostawia ćwiczenie", () => {
+    const ex = openAnswer({ acceptedAnswers: ["I'm wearing my coat.", "I'm wearing a jacket."] });
+    const result = refineChapterPool([ex], { material: MATERIAL });
+    expect(result.rejected).toEqual([]);
+    expect(result.kept).toEqual([{ ...ex, acceptedAnswers: ["I'm wearing my coat."] }]);
+  });
+
+  it("usuwa wariant luki spoza materiału, a odpowiedź spoza materiału odrzuca ćwiczenie", () => {
+    const kept = refineChapterPool([gap({ acceptedAnswers: ["sunny", "bright"] })], { material: MATERIAL });
+    expect(kept.kept.map((ex) => ex.acceptedAnswers)).toEqual([["sunny"]]);
+    const rejected = refineChapterPool([gap({ answer: "foggy", focus: ["foggy"] })], { material: MATERIAL });
+    expect(rejected.rejected.map((r) => r.reason)).toEqual(["słowo spoza materiału: foggy"]);
+  });
+
+  it("zostawia ćwiczenia zgodne z materiałem bez zmian", () => {
+    const pool = [choice(), gap(), order(), openAnswer()];
+    const result = refineChapterPool(pool, { material: MATERIAL });
+    expect(result.rejected).toEqual([]);
+    expect(result.kept).toEqual(pool);
+  });
+
+  it("sprawdza lewe strony par, elementy grup, słowa luk i pułapki oraz zdanie układanki", () => {
+    const match: LessonExerciseDraft = {
+      exerciseType: "lesson_match", objectiveId: WEATHER, instructionPl: "Połącz w pary.",
+      pairs: [
+        { left: "raining", right: "pada deszcz" },
+        { left: "sunny", right: "słonecznie" },
+        { left: "cloudy", right: "pochmurno" },
+      ],
+      answer: "raining, sunny, cloudy", acceptedAnswers: [], focus: [],
+    };
+    const group: LessonExerciseDraft = {
+      exerciseType: "lesson_group", objectiveId: WEATHER, instructionPl: "Pogrupuj.",
+      groups: [{ id: "g1", label: "Ciepło" }, { id: "g2", label: "Zimno" }],
+      groupItems: [
+        { text: "T-shirt", groupId: "g1" }, { text: "hat", groupId: "g1" },
+        { text: "boots", groupId: "g2" }, { text: "scarf", groupId: "g2" },
+      ],
+      answer: "Ciepło / Zimno", acceptedAnswers: [], focus: [],
+    };
+    const cloze: LessonExerciseDraft = {
+      exerciseType: "lesson_cloze", objectiveId: WEATHER, instructionPl: "Uzupełnij tekst.",
+      clozeText: "It's ___ today. I'm wearing ___.", gapAnswers: ["sunny", "a T-shirt"], extraWords: ["gloves"],
+      answer: "sunny, a T-shirt", acceptedAnswers: [], focus: [],
+    };
+    const badOrder = order({
+      items: [{ id: "i1", text: "I'm" }, { id: "i2", text: "wearing" }, { id: "i3", text: "a" }, { id: "i4", text: "jacket" }],
+      answer: "I'm wearing a jacket",
+    });
+    const result = refineChapterPool([match, group, cloze, badOrder], { material: MATERIAL });
+    expect(result.kept).toEqual([]);
+    expect(result.rejected.map((r) => r.reason)).toEqual([
+      "słowo spoza materiału: cloudy",
+      "słowo spoza materiału: scarf",
+      "słowo spoza materiału: gloves",
+      "słowo spoza materiału: jacket",
+    ]);
+    // Prawa strona par i etykiety grup są po polsku — nie podlegają słownikowi.
+    const okMatch = { ...match, pairs: match.pairs!.slice(0, 2).concat({ left: "windy", right: "wietrznie" }) };
+    expect(refineChapterPool([okMatch], { material: MATERIAL }).kept).toEqual([okMatch]);
+  });
+
+  it("element bez słowa treści ma osobny powód", () => {
+    const articles = choice({ stem: "I'm wearing ___ coat.", options: [{ id: "a", text: "a" }, { id: "b", text: "the" }] });
+    expect(refineChapterPool([articles], { material: MATERIAL }).rejected.map((r) => r.reason)).toEqual([
+      "brak słowa z materiału: a",
+    ]);
+  });
+
+  it("ogranicza długość powodu do 80 znaków (słowo modelu nie tworzy dowolnie długich kluczy)", () => {
+    const word = "x".repeat(200);
+    const result = refineChapterPool([choice({ options: [{ id: "a", text: "raining" }, { id: "b", text: word }] })], { material: MATERIAL });
+    const reason = result.rejected[0]!.reason;
+    expect([...reason].length).toBeLessThanOrEqual(80);
+    expect(reason.startsWith("słowo spoza materiału: xxx")).toBe(true);
+    expect(reason.endsWith("…")).toBe(true);
+  });
+
+  it("nie wywraca się na szkicu bez pól typu (kształt sprawdza walidacja puli)", () => {
+    const bare = choice({ options: undefined });
+    expect(refineChapterPool([bare], { material: MATERIAL }).kept).toEqual([bare]);
+  });
+});
