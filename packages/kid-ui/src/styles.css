@@ -76,7 +76,9 @@
   --kid-shape-xl: 20px;
   --kid-shape-xxl: 24px;
   --kid-shape-full: 999px;
-  --kid-font-display: KnowliKidFredoka, KnowliKidNunito, sans-serif;
+  /* One family, two roles. Fredoka was dropped (2026-10-30): it has no
+     ą ć ę ń ś ź ż, so Polish words mixed two fonts, and its bold merged letters. */
+  --kid-font-display: KnowliKidNunito, sans-serif;
   --kid-font-body: KnowliKidNunito, sans-serif;
   --kid-type-display-lg-size: 2.4rem;
   --kid-type-display-size: 2rem;

@@ -23,7 +23,7 @@ W zakresie (jeden spec, jeden PR):
 
 Poza zakresem: potwierdzenie „Zakończ sesję”, ekrany wokół sesji (etap 1), zmiany kontraktów, API, MCP i skilla (zmiana jest wyłącznie prezentacyjna — brak wpływu na API → MCP → skill), jasny motyw, nowe ilustracje.
 
-Obowiązują ustalenia etapu 1: tylko ciemny motyw, paleta z `scripts/kid-palette.mjs`, Fredoka (display) i Nunito (body), literały wyłącznie w bloku tokenów, Motion tylko na `transform` i `opacity`, `KidPage` jedynym miernikiem viewportu, cele dotykowe ≥48 px, główna akcja ≥54 px.
+Obowiązują ustalenia etapu 1: tylko ciemny motyw, paleta z `scripts/kid-palette.mjs`, Fredoka (display) i Nunito (body) — od 2026-10-30 obie role w Nunito, zob. etap 1 § 4.2, literały wyłącznie w bloku tokenów, Motion tylko na `transform` i `opacity`, `KidPage` jedynym miernikiem viewportu, cele dotykowe ≥48 px, główna akcja ≥54 px.
 
 ## 3. Ramka sesji
 

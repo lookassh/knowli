@@ -40,6 +40,7 @@ Zatwierdzony kierunek **B · Zatoka** na canvasie [Umiem! — kierunki Kid UI](h
 ### 4.2 Typografia
 
 - **Fredoka** (nagłówki, tytuły kart, główne przyciski) i **Nunito** (treść, etykiety, chipy); obie na licencji SIL OFL. Pliki zmiennych czcionek w `apps/web/public/fonts/kid/` z `@font-face` w `apps/web/src/kid-fonts.css` (`font-display: swap`); Manrope wypada z Kid UI. Plik licencji OFL obok czcionek. Bez Google Fonts w runtime. Pobranie plików wymaga zgody właściciela przed wykonaniem.
+- **Zmiana 2026-10-30: tylko Nunito.** Fredoka wypadła z Kid UI: oficjalny plik (identyczny z google/fonts, źródło autorki bez zmian od 2022) nie ma liter ą ć ę ń ś ź ż, więc polskie słowa mieszały dwa kroje, a jej wagi 600–700 zlewały litery w pytaniach i odpowiedziach. Oba tokeny wskazują Nunito; pilnuje tego `tests/kid-design-tokens.test.ts`.
 - Tokeny: `--kid-font-display` i `--kid-font-body` w bloku tokenów; skala `--kid-type-*` bez zmian rozmiarów, chyba że test geometrii wymusi korektę (wtedy w bloku tokenów).
 - Tekst słówek po angielsku dalej z `lang="en-GB"`.
 

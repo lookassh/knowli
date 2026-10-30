@@ -141,7 +141,7 @@ for (const viewport of [{ width: 360, height: 800 }, { width: 844, height: 390 }
     });
     expect(style.fontSize).toBeGreaterThanOrEqual(24);
     expect(style.fontWeight).toBeGreaterThanOrEqual(600);
-    expect(style.fontFamily).toContain("KnowliKidFredoka");
+    expect(style.fontFamily).toContain("KnowliKidNunito");
     const contrast = await ownColorContrast(input);
     expect(contrast.ratio, JSON.stringify(contrast)).toBeGreaterThanOrEqual(4.5);
     await page.screenshot({ path: testInfo.outputPath(`written-${viewport.width}x${viewport.height}.png`) });
