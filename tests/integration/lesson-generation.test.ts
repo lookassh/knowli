@@ -6,6 +6,7 @@ import {
   computeTargetKey,
   createChild,
   createLesson,
+  createLessonFromMaterial,
   createSchoolLesson,
   claimQueuedRun,
   createServices,
@@ -1012,6 +1013,51 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect(asset?.state).toBe("failed");
     expect(mediaRun?.state).toBe("superseded");
     expect(fakes.tts.requests).toHaveLength(0);
+  });
+  it("rozdział angielskiego: zestaw z materiału ma stały tytuł przedmiotu, bez nazwy od rodzica, i jest idempotentny", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    // rejestr produkcyjny (gramatyka, szkoła, rozdział)
+    const services = createServices({ db: testDatabase().db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps });
+    const command = {
+      subjectId: "english_chapter",
+      topicTitlePl: "Unit 1",
+      material: "I like pizza. What do you like?",
+      poolSize: 40,
+      clientRequestId: randomUUID(),
+    };
+
+    const { runId, deckId } = await createLessonFromMaterial(services, command);
+    // ponowienie tego samego polecenia nie tworzy drugiego zestawu
+    await expect(createLessonFromMaterial(services, command)).resolves.toEqual({ runId, deckId });
+    const [created] = await query<{ versions: number; runs: number }>(
+      "select (select count(*)::int from learning_app.deck_versions where deck_id = $1) as versions, (select count(*)::int from learning_app.generation_runs where dedupe_key = $2) as runs",
+      [deckId, `lesson:${command.clientRequestId}`],
+    );
+    expect(created).toEqual({ versions: 1, runs: 1 });
+
+    const [deck] = await query<{ title: string; kind: string }>("select title, kind from learning_app.decks where id = $1", [deckId]);
+    expect(deck).toEqual({ title: "Angielski — rozdział: Unit 1", kind: "lesson" });
+    const [version] = await query<{
+      state: string; source_locale: string; target_locale: string;
+      lesson_context: Record<string, unknown>;
+    }>("select state, source_locale, target_locale, lesson_context from learning_app.deck_versions where deck_id = $1", [deckId]);
+    expect(version).toMatchObject({ state: "draft", source_locale: "pl-PL", target_locale: "en-GB" });
+    expect(version!.lesson_context).toMatchObject({
+      subjectId: "english_chapter", topicId: "dynamic", objectiveIds: [], poolSize: 40, material: command.material, rejectedCount: 0,
+    });
+    // przedmiot o stałym tytule: nazwy przedmiotu od rodzica nie zapisujemy
+    expect(version!.lesson_context).not.toHaveProperty("subjectTitlePl");
+    const [run] = await query<{ kind: string; state: string; input: Record<string, unknown> }>(
+      "select kind, state, input from learning_app.generation_runs where id = $1", [runId],
+    );
+    expect(run).toMatchObject({ kind: "lesson", state: "queued" });
+    expect(run!.input).toMatchObject({ subjectId: "english_chapter", topicId: "dynamic", topicTitlePl: "Unit 1", poolSize: 40 });
+    expect(run!.input).not.toHaveProperty("subjectTitlePl");
+
+    // szkoła i gramatyka nie przechodzą tą ścieżką
+    await expect(createLessonFromMaterial(services, { ...command, subjectId: "school", clientRequestId: randomUUID() })).rejects.toMatchObject({ code: "validation" });
+    await expect(createLessonFromMaterial(services, { ...command, subjectId: "english_grammar", clientRequestId: randomUUID() })).rejects.toMatchObject({ code: "validation" });
   });
   it("zestaw szkolny: generacja wyprowadza zagadnienia z materiału i zapisuje ćwiczenia v3 z cytatami", async () => {
     const fakes = await fakeGeneration();

@@ -95,6 +95,13 @@ export const SubjectCatalogDtoSchema = z.object({
   subjects: z.array(z.object({
     id: z.string().min(1),
     titlePl: z.string().min(1),
+    /**
+     * Sposób tworzenia zestawu: `catalog` — temat i reguły z katalogu,
+     * `material` — zagadnienia powstają z materiału rodzica (przedmiot bez tematów katalogowych).
+     */
+    creation: z.enum(["catalog", "material"]),
+    /** Czy rodzic nazywa przedmiot własnym tytułem (zestawy szkolne); `false` = stały tytuł przedmiotu. */
+    subjectTitleRequired: z.boolean(),
     topics: z.array(z.object({
       id: z.string().min(1),
       version: z.number().int().positive(),
@@ -149,6 +156,23 @@ export const SchoolLessonCommandSchema = z.object({
   clientRequestId: UuidSchema,
 }).strict();
 export type SchoolLessonCommand = z.infer<typeof SchoolLessonCommandSchema>;
+
+/**
+ * Polecenie utworzenia zestawu z materiału rodzica dla przedmiotu o stałym
+ * tytule (np. „Angielski — rozdział”): bez nazwy przedmiotu, bo tytuł zestawu
+ * bierze serwer z przedmiotu; rodzic podaje tylko tytuł tematu i materiał.
+ * Przedmiot z nazwą od rodzica (szkolny) zostaje przy `SchoolLessonCommandSchema`.
+ */
+export const MaterialLessonCommandSchema = z.object({
+  deckId: UuidSchema.optional(),
+  subjectId: z.string().min(1).max(64),
+  topicTitlePl: z.string().trim().min(1).max(MAX_SCHOOL_TOPIC_TITLE_LENGTH),
+  material: z.string().trim().min(1).max(MAX_SCHOOL_MATERIAL_LENGTH),
+  instruction: z.string().max(500).optional(),
+  poolSize: z.number().int().min(20).max(160).optional(),
+  clientRequestId: UuidSchema,
+}).strict();
+export type MaterialLessonCommand = z.infer<typeof MaterialLessonCommandSchema>;
 
 /** Rodzaj zagadnienia tematu dynamicznego: grupa słów albo rama zdaniowa (przedmioty, które go używają). */
 export const DynamicObjectiveKindSchema = z.enum(["words", "frame"]);

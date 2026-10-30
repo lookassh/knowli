@@ -14,6 +14,7 @@ import {
   nextRequiredElementId,
   stageOfExerciseType,
   toLessonDraftPatch,
+  topRejectedReasons,
 } from "./lesson-editor-state";
 
 function draft(overrides: Partial<LessonDraftDto> = {}): LessonDraftDto {
@@ -460,5 +461,32 @@ describe("calculation editor", () => {
     const variants = [ex, { ...ex, clientKey: "variant-2" }, { ...ex, clientKey: "other-objective", objectiveId: "other" }];
     expect(groupCalculationFamilies(variants).map(g => g.exercises.length)).toEqual([2, 1]);
     expect(groupCalculationFamilies(variants.filter(e => e.clientKey !== ex.clientKey)).map(g => g.exercises.length)).toEqual([1, 1]);
+  });
+});
+
+describe("topRejectedReasons (powody odrzuceń przy generowaniu)", () => {
+  it("zwraca najczęstsze powody malejąco, przy remisie alfabetycznie, do limitu 5", () => {
+    const reasons = {
+      "słowo spoza materiału: raining": 3,
+      "inny powód": 1,
+      "słowo spoza materiału: boots": 3,
+      "zdanie bez słownictwa z materiału": 2,
+      "powód A": 1,
+      "powód B": 1,
+      "powód C": 1,
+    };
+    expect(topRejectedReasons(reasons)).toEqual([
+      { reason: "słowo spoza materiału: boots", count: 3 },
+      { reason: "słowo spoza materiału: raining", count: 3 },
+      { reason: "zdanie bez słownictwa z materiału", count: 2 },
+      { reason: "inny powód", count: 1 },
+      { reason: "powód A", count: 1 },
+    ]);
+    expect(topRejectedReasons(reasons, 2)).toHaveLength(2);
+  });
+
+  it("brak powodów (undefined albo pusty obiekt) daje pustą listę", () => {
+    expect(topRejectedReasons(undefined)).toEqual([]);
+    expect(topRejectedReasons({})).toEqual([]);
   });
 });

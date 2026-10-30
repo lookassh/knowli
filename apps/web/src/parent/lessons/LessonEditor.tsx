@@ -37,6 +37,7 @@ import {
   lessonExerciseChanged,
   nextRequiredElementId,
   toLessonDraftPatch,
+  topRejectedReasons,
   type EditableLessonExercise,
   type EditableLessonForm,
   type LessonEditorSnapshot,
@@ -570,6 +571,8 @@ export default function LessonEditor({
     form?.dynamicObjectives?.find((objective) => objective.id === objectiveId)
     ?? active?.dynamicTopic?.objectives.find((objective) => objective.id === objectiveId)
     ?? topic?.objectives.find((objective) => objective.id === objectiveId);
+  // Powody odrzuceń przy generowaniu (zliczenia bez danych dziecka) — rodzic widzi, czy dogenerować.
+  const rejectedReasons = topRejectedReasons(active?.rejectedReasons);
   const indexByClientKey = new Map((form?.exercises ?? []).map((ex, index) => [ex.clientKey, index]));
   const groups = form ? groupExercisesByObjectiveAndStage(form.exercises, active?.objectiveIds ?? []) : [];
 
@@ -800,6 +803,8 @@ export default function LessonEditor({
       {groups.map((group) => {
         const all = group.stages.flatMap((s) => s.exercises);
         const count = all.length;
+        // Rodzaj zagadnienia nadaje serwer (przedmiot z rodzajami, np. rozdział); edycja rodzica go nie zmienia.
+        const kind = active?.dynamicTopic?.objectives.find((objective) => objective.id === group.objectiveId)?.kind;
         return (
           <Accordion.Item key={group.objectiveId} value={group.objectiveId} data-testid={`objective-group-${group.objectiveId}`}>
             <Group gap={4} wrap="nowrap" pr={compact ? 4 : "sm"}>
@@ -807,6 +812,11 @@ export default function LessonEditor({
                 <Text fw={600} className="pp-lesson-objtitle">{objectiveMeta(group.objectiveId)?.titlePl ?? group.objectiveId}</Text>
                 <Group gap={6} mt={4}>
                   <Text size="sm" className="pp-editor-muted">{messages.decks.itemCount.lesson![polishPlural(count)]!.replace("{n}", String(count))}</Text>
+                  {kind && (
+                    <span className="pp-status-badge" data-tone="neutral" data-testid={`objective-kind-${group.objectiveId}`}>
+                      {messages.lessons.objectiveKind[kind] ?? kind}
+                    </span>
+                  )}
                   {objectiveBadge(group.objectiveId, all)}
                 </Group>
               </Accordion.Control>
@@ -1064,6 +1074,13 @@ export default function LessonEditor({
         {gradingDisabled(deck) && <Alert color="gray" variant="light" data-testid="grading-disabled">{messages.lessons.gradingDisabled}</Alert>}
         {active && active.rejectedCount > 0 && (
           <Text size="sm" className="pp-editor-muted" data-testid="rejected-count">{messages.lessons.rejectedCount.replace("{n}", String(active.rejectedCount))}</Text>
+        )}
+        {rejectedReasons.length > 0 && (
+          <ul className="pp-lesson-rejected-reasons pp-editor-muted" aria-label={messages.lessons.rejectedReasonsLabel} data-testid="rejected-reasons">
+            {rejectedReasons.map(({ reason, count }) => (
+              <li key={reason}>{messages.lessons.rejectedReason.replace("{reason}", reason).replace("{n}", String(count))}</li>
+            ))}
+          </ul>
         )}
         {error && !showActionBar && errorAlert}
 

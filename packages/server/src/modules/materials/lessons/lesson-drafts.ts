@@ -1,7 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { LessonCommandSchema, SchoolLessonCommandSchema, type LessonCommand, type SchoolLessonCommand } from "@learning/contracts";
+import {
+  LessonCommandSchema,
+  MaterialLessonCommandSchema,
+  SchoolLessonCommandSchema,
+  type LessonCommand,
+  type MaterialLessonCommand,
+  type SchoolLessonCommand,
+} from "@learning/contracts";
 import type { Clock, Services } from "../../../config";
 import type { Executor, Tx } from "../../../db/client";
 import {
@@ -196,25 +203,39 @@ export async function createLesson(
   });
 }
 
+/** Polecenie utworzenia zestawu z materiału rodzica (wspólne dla szkoły i przedmiotów o stałym tytule). */
+export interface MaterialLessonInput {
+  subjectId: string;
+  /** Nazwa przedmiotu od rodzica; brak = tytuł przedmiotu z modułu (`subject.titlePl`). */
+  subjectTitlePl?: string;
+  topicTitlePl: string;
+  material: string;
+  instruction?: string;
+  poolSize?: number;
+  deckId?: string;
+  clientRequestId: string;
+}
+
 /**
- * Tworzenie zestawu przedmiotu szkolnego: deck lekcji + szkic + run `lesson`
+ * Tworzenie zestawu z materiału rodzica: deck lekcji + szkic + run `lesson`
  * bez celów — zagadnienia wyprowadzi etap generacji z materiału i zapisze
  * w `lesson_context.dynamicTopic` oraz `objectiveIds` przy finalizacji runu.
+ * Dotyczy przedmiotów z `buildDynamicTopic`; nazwę przedmiotu zapisuje tylko
+ * wtedy, gdy podał ją rodzic (szkoła) — inaczej tytuł pochodzi z przedmiotu.
  */
-export async function createSchoolLesson(
+export async function createMaterialLesson(
   services: Services,
-  cmd: SchoolLessonCommand,
+  cmd: MaterialLessonInput,
 ): Promise<{ runId: string; deckId: string }> {
-  const valid = SchoolLessonCommandSchema.parse(cmd);
-  const subject = requireSubject(services, "school");
+  const subject = requireSubject(services, cmd.subjectId);
   if (!subject.buildDynamicTopic) {
-    throw new AppError("internal", { message: "school subject without dynamic topics" });
+    throw new AppError("validation", { message: `subject does not create lessons from material: ${subject.id}` });
   }
-  const poolSize = valid.poolSize ?? 60;
-  const title = [...`${valid.subjectTitlePl}: ${valid.topicTitlePl}`].slice(0, 120).join("");
+  const poolSize = cmd.poolSize ?? 60;
+  const title = [...`${cmd.subjectTitlePl ?? subject.titlePl}: ${cmd.topicTitlePl}`].slice(0, 120).join("");
 
-  return enqueueGenerationRun(services.db, `lesson:${valid.clientRequestId}`, async (tx) => {
-    const deckId = valid.deckId ?? randomUUID();
+  return enqueueGenerationRun(services.db, `lesson:${cmd.clientRequestId}`, async (tx) => {
+    const deckId = cmd.deckId ?? randomUUID();
     const versionId = randomUUID();
     const runId = randomUUID();
     const context: LessonContext = {
@@ -223,9 +244,9 @@ export async function createSchoolLesson(
       topicVersion: 1,
       objectiveIds: [],
       poolSize,
-      material: valid.material,
-      ...(valid.instruction === undefined ? {} : { instruction: valid.instruction }),
-      subjectTitlePl: valid.subjectTitlePl,
+      material: cmd.material,
+      ...(cmd.instruction === undefined ? {} : { instruction: cmd.instruction }),
+      ...(cmd.subjectTitlePl === undefined ? {} : { subjectTitlePl: cmd.subjectTitlePl }),
       examples: {},
       rejectedCount: 0,
     };
@@ -249,23 +270,54 @@ export async function createSchoolLesson(
       topicVersion: 1,
       objectiveIds: [],
       poolSize,
-      material: valid.material,
-      ...(valid.instruction === undefined ? {} : { instruction: valid.instruction }),
-      subjectTitlePl: valid.subjectTitlePl,
-      topicTitlePl: valid.topicTitlePl,
+      material: cmd.material,
+      ...(cmd.instruction === undefined ? {} : { instruction: cmd.instruction }),
+      ...(cmd.subjectTitlePl === undefined ? {} : { subjectTitlePl: cmd.subjectTitlePl }),
+      topicTitlePl: cmd.topicTitlePl,
     };
     await tx.insert(generationRuns).values({
       id: runId,
       deckVersionId: versionId,
       expectedEditNumber: 1,
       kind: "lesson",
-      dedupeKey: `lesson:${valid.clientRequestId}`,
+      dedupeKey: `lesson:${cmd.clientRequestId}`,
       state: "queued",
       input: input as unknown as Record<string, unknown>,
     });
     return { runId, deckId };
   });
 }
+
+/**
+ * Tworzenie zestawu przedmiotu szkolnego: rodzic nazywa przedmiot własnym
+ * tytułem, a zestaw powstaje z materiału (`createMaterialLesson`).
+ */
+export async function createSchoolLesson(
+  services: Services,
+  cmd: SchoolLessonCommand,
+): Promise<{ runId: string; deckId: string }> {
+  const valid = SchoolLessonCommandSchema.parse(cmd);
+  return createMaterialLesson(services, { ...valid, subjectId: "school" });
+}
+
+/**
+ * Tworzenie zestawu z materiału dla przedmiotu o stałym tytule (np. „Angielski
+ * — rozdział”): rodzic podaje tytuł tematu i materiał, bez nazwy przedmiotu.
+ * Przedmiot bez tematów dynamicznych albo z nazwą od rodzica (szkoła) to
+ * `validation` — szkoła ma własne polecenie.
+ */
+export async function createLessonFromMaterial(
+  services: Services,
+  cmd: MaterialLessonCommand,
+): Promise<{ runId: string; deckId: string }> {
+  const valid = MaterialLessonCommandSchema.parse(cmd);
+  const subject = requireSubject(services, valid.subjectId);
+  if (!subject.buildDynamicTopic || subject.materialSubjectTitle !== "fixed") {
+    throw new AppError("validation", { message: `subject does not create lessons from parent material: ${subject.id}` });
+  }
+  return createMaterialLesson(services, valid);
+}
+
 /**
  * Rozkład liczby ćwiczeń celu na etapy wg `stageMix` (sumuje do `count`).
  * Reszta z zaokrągleń trafia do etapu produktywnego (największy udział).

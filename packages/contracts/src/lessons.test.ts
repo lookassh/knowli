@@ -5,6 +5,7 @@ import {
   SubjectCatalogDtoSchema,
   LessonCommandSchema,
   SchoolLessonCommandSchema,
+  MaterialLessonCommandSchema,
   LessonExerciseInputSchema,
   LessonDraftDtoSchema,
   DynamicObjectiveDtoSchema,
@@ -71,6 +72,8 @@ describe("SubjectCatalogDtoSchema", () => {
     subjects: [{
       id: "english_grammar",
       titlePl: "Angielski — gramatyka",
+      creation: "catalog",
+      subjectTitleRequired: false,
       topics: [{
         id: "present_simple",
         version: 1,
@@ -87,6 +90,18 @@ describe("SubjectCatalogDtoSchema", () => {
       subjects: [{ ...catalog.subjects[0], descriptionEn: "leak" }],
     });
     expect(parsed.success).toBe(false);
+  });
+  it("wymaga sposobu tworzenia (creation) i znacznika nazwy przedmiotu od rodzica", () => {
+    const { creation: _creation, ...withoutCreation } = catalog.subjects[0]!;
+    expect(SubjectCatalogDtoSchema.safeParse({ subjects: [withoutCreation] }).success).toBe(false);
+    const { subjectTitleRequired: _required, ...withoutRequired } = catalog.subjects[0]!;
+    expect(SubjectCatalogDtoSchema.safeParse({ subjects: [withoutRequired] }).success).toBe(false);
+    expect(SubjectCatalogDtoSchema.safeParse({ subjects: [{ ...catalog.subjects[0], creation: "dynamic" }] }).success).toBe(false);
+  });
+  it("przyjmuje przedmiot tworzony z materiału bez tematów katalogowych", () => {
+    const chapter = { id: "english_chapter", titlePl: "Angielski — rozdział", creation: "material", subjectTitleRequired: false, topics: [] };
+    const school = { id: "school", titlePl: "Przedmiot szkolny", creation: "material", subjectTitleRequired: true, topics: [] };
+    expect(SubjectCatalogDtoSchema.safeParse({ subjects: [chapter, school] }).success).toBe(true);
   });
 });
 
@@ -422,6 +437,47 @@ describe("LessonMockTestSummaryDtoSchema", () => {
     }).success).toBe(false);
   });
 });
+describe("MaterialLessonCommandSchema (zestaw z materiału bez nazwy przedmiotu od rodzica)", () => {
+  const base = {
+    subjectId: "english_chapter",
+    topicTitlePl: "Unit 1",
+    material: "I like pizza.",
+    clientRequestId: UUID,
+  };
+  it("przyjmuje materiał 16 000 znaków i odrzuca 16 001", () => {
+    expect(MaterialLessonCommandSchema.safeParse({ ...base, material: "x".repeat(16000) }).success).toBe(true);
+    expect(MaterialLessonCommandSchema.safeParse({ ...base, material: "x".repeat(16001) }).success).toBe(false);
+  });
+  it("przycina materiał i tytuł rozdziału, odrzuca puste", () => {
+    const parsed = MaterialLessonCommandSchema.parse({ ...base, topicTitlePl: "  Unit 1  ", material: "  I like pizza.  " });
+    expect(parsed.topicTitlePl).toBe("Unit 1");
+    expect(parsed.material).toBe("I like pizza.");
+    expect(MaterialLessonCommandSchema.safeParse({ ...base, topicTitlePl: "" }).success).toBe(false);
+    expect(MaterialLessonCommandSchema.safeParse({ ...base, topicTitlePl: "   " }).success).toBe(false);
+    expect(MaterialLessonCommandSchema.safeParse({ ...base, material: "   " }).success).toBe(false);
+    expect(MaterialLessonCommandSchema.safeParse({ ...base, topicTitlePl: "x".repeat(121) }).success).toBe(false);
+  });
+  it("wymaga niepustego subjectId do 64 znaków", () => {
+    expect(MaterialLessonCommandSchema.safeParse({ ...base, subjectId: "" }).success).toBe(false);
+    expect(MaterialLessonCommandSchema.safeParse({ ...base, subjectId: "x".repeat(65) }).success).toBe(false);
+    expect(MaterialLessonCommandSchema.safeParse({ ...base, subjectId: "x".repeat(64) }).success).toBe(true);
+  });
+  it("przyjmuje deckId, instrukcję do 500 znaków i pulę 20–160", () => {
+    expect(MaterialLessonCommandSchema.safeParse({ ...base, deckId: UUID2, instruction: "x".repeat(500), poolSize: 160 }).success).toBe(true);
+    expect(MaterialLessonCommandSchema.safeParse({ ...base, instruction: "x".repeat(501) }).success).toBe(false);
+    for (const poolSize of [19, 161, 20.5]) {
+      expect(MaterialLessonCommandSchema.safeParse({ ...base, poolSize }).success, String(poolSize)).toBe(false);
+    }
+    expect(MaterialLessonCommandSchema.safeParse({ ...base, poolSize: 20 }).success).toBe(true);
+  });
+  it("wymaga clientRequestId i jest ścisłe (bez nazwy przedmiotu i dodatkowych pól)", () => {
+    const { clientRequestId: _id, ...withoutId } = base;
+    expect(MaterialLessonCommandSchema.safeParse(withoutId).success).toBe(false);
+    expect(MaterialLessonCommandSchema.safeParse({ ...base, extra: 1 }).success).toBe(false);
+    expect(MaterialLessonCommandSchema.safeParse({ ...base, subjectTitlePl: "Angielski" }).success).toBe(false);
+  });
+});
+
 describe("SchoolLessonCommandSchema i pola v3", () => {
   it("przyjmuje komendę szkolną z materiałem do 16000 znaków", () => {
     const ok = SchoolLessonCommandSchema.safeParse({

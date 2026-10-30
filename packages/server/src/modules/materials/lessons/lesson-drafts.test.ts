@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { createServices } from "../../../config";
 import type { CalculationSpec } from "@learning/contracts";
 import { englishGrammarSubject } from "../../../domain/lessons/subjects/english-grammar/module";
 import { validatePool } from "../../../domain/lessons/pool-validation";
 import type { DynamicTopicData, LessonExerciseDraft, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
 import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
 import { validateDynamicTopicData } from "../../../domain/lessons/topic-resolution";
-import { buildDynamicTopicData, buildPoolInput, buildLessonPayload, buildObjectiveCriteria, collectBatchExerciseMetadata, filterExercisesToRequestedObjective, minimumCountPerObjective, objectiveBatchCounts, isWellShapedRawExercise, lessonPayloadVersion, poolStageCounts, refineGeneratedDrafts, scopeFamiliesToRun, splitStages, stripParentAddedFlags, summarizeLessonPoolValidation, toExerciseDraft, withoutEmptyOptionalArrays, withSubjectObjectiveKinds } from "./lesson-drafts";
+import { buildDynamicTopicData, buildPoolInput, buildLessonPayload, createLessonFromMaterial, createMaterialLesson, buildObjectiveCriteria, collectBatchExerciseMetadata, filterExercisesToRequestedObjective, minimumCountPerObjective, objectiveBatchCounts, isWellShapedRawExercise, lessonPayloadVersion, poolStageCounts, refineGeneratedDrafts, scopeFamiliesToRun, splitStages, stripParentAddedFlags, summarizeLessonPoolValidation, toExerciseDraft, withoutEmptyOptionalArrays, withSubjectObjectiveKinds } from "./lesson-drafts";
 
 describe("calculation persistence and grading criteria", () => {
   const calculation = { kind: "scale_distance" as const, params: { scaleDenominator: 25000, mapDistanceCm: 3 }, unit: "m" as const, templateFamilyId: "scale" };
@@ -465,5 +466,28 @@ describe("poolStageCounts (rachunek nie zabiera miejsca wymaganym pytaniom otwar
     expect(poolStageCounts(schoolSubject, ["lesson_open_answer", "lesson_calculation"], 15)).toEqual(splitStages(15));
     // 5 → 2/2/1: przesunięcie zabrałoby produktywnemu minimum 2, więc podział zostaje.
     expect(poolStageCounts(schoolSubject, ["lesson_open_answer", "lesson_calculation"], 5)).toEqual(splitStages(5));
+  });
+});
+
+describe("createLessonFromMaterial / createMaterialLesson (zestaw z materiału tylko dla przedmiotów o stałym tytule)", () => {
+  // Odrzucenie następuje przed jakimkolwiek zapisem, więc baza nie jest potrzebna.
+  const services = createServices({ db: {} as never });
+  const command = {
+    topicTitlePl: "Unit 1",
+    material: "I like pizza.",
+    clientRequestId: "11111111-1111-4111-8111-111111111111",
+  };
+
+  it("przedmiot katalogowy (bez buildDynamicTopic) kończy się validation", async () => {
+    await expect(createLessonFromMaterial(services, { ...command, subjectId: "english_grammar" })).rejects.toMatchObject({ code: "validation" });
+    await expect(createMaterialLesson(services, { ...command, subjectId: "english_grammar" })).rejects.toMatchObject({ code: "validation" });
+  });
+
+  it("przedmiot z nazwą od rodzica (szkoła) idzie ścieżką szkolną, nie tą", async () => {
+    await expect(createLessonFromMaterial(services, { ...command, subjectId: "school" })).rejects.toMatchObject({ code: "validation" });
+  });
+
+  it("nieznany przedmiot kończy się validation", async () => {
+    await expect(createLessonFromMaterial(services, { ...command, subjectId: "history" })).rejects.toMatchObject({ code: "validation" });
   });
 });

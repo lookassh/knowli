@@ -458,6 +458,23 @@ export function groupExercisesByObjectiveAndStage(
   }));
 }
 
+/** Liczba powodów odrzuceń pokazywanych rodzicowi pod licznikiem odrzuconych ćwiczeń. */
+export const MAX_REJECTED_REASONS_SHOWN = 5;
+
+/**
+ * Najczęstsze powody odrzucenia ćwiczeń przy generowaniu (`rejectedReasons`
+ * szkicu): malejąco po liczbie, przy remisie alfabetycznie (kolejność stabilna
+ * między odświeżeniami), do `limit`. Zliczenia nie niosą danych dziecka.
+ */
+export function topRejectedReasons(
+  reasons: Readonly<Record<string, number>> | undefined,
+  limit: number = MAX_REJECTED_REASONS_SHOWN,
+): { reason: string; count: number }[] {
+  return Object.entries(reasons ?? {})
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason, "pl"))
+    .slice(0, limit);
+}
 
 /** Applies an API preview only while it still describes this variant. No arithmetic in the client. */
 export function applyCalculationPreview(exercise: EditableLessonExercise, requested: CalculationSpec, preview: { prompt: string; answer: string }): EditableLessonExercise {

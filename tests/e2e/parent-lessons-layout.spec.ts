@@ -14,6 +14,8 @@ const catalog = {
     {
       id: "english_grammar",
       titlePl: "Gramatyka angielska",
+      creation: "catalog",
+      subjectTitleRequired: false,
       topics: [{
         id: "present_simple",
         titlePl: "Present Simple",
@@ -27,7 +29,8 @@ const catalog = {
         ],
       }],
     },
-    { id: "school", titlePl: "Przedmiot szkolny", topics: [] },
+    { id: "school", titlePl: "Przedmiot szkolny", creation: "material", subjectTitleRequired: true, topics: [] },
+    { id: "english_chapter", titlePl: "Angielski — rozdział", creation: "material", subjectTitleRequired: false, topics: [] },
   ],
 };
 
@@ -40,7 +43,7 @@ async function openNewLesson(page: Page, createStatus: () => number = () => 202,
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/login")) return route.fulfill({ json: { authenticated: true, setupRequired: false } });
     if (path.endsWith("/lesson-catalog")) return route.fulfill({ json: catalog });
-    if (request.method() === "POST" && /\/lessons(\/school)?$/.test(path)) {
+    if (request.method() === "POST" && /\/lessons(\/school|\/material)?$/.test(path)) {
       const body = request.postDataJSON() as Record<string, unknown>;
       api.creates.push({ path, body });
       await hold;
@@ -97,6 +100,28 @@ test("przedmiot szkolny: nazwy zamiast tematu i reguł, wysyłka na /lessons/sch
   expect(api.creates).toHaveLength(1);
   expect(api.creates[0]!.path).toMatch(/\/lessons\/school$/);
   expect(api.creates[0]!.body).toMatchObject({ subjectTitlePl: "Geografia", topicTitlePl: "Posługuję się mapą", poolSize: 60 });
+});
+
+test("rozdział angielskiego: tytuł rozdziału zamiast nazwy przedmiotu i reguł, wysyłka na /lessons/material", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const api = await openNewLesson(page);
+  await page.getByTestId("lesson-subject").selectOption("english_chapter");
+  await expect(page.getByTestId("lesson-topic")).toHaveCount(0);
+  await expect(page.getByTestId("school-subject-name")).toHaveCount(0);
+  await expect(page.getByTestId("school-objectives-auto")).toBeVisible();
+  await expect(page.getByTestId("material-topic-name")).toBeVisible();
+  await expect(page.getByTestId("material-hint")).toContainText(messages.lessons.chapterMaterialHint);
+  await expect(page.getByTestId("lesson-material-counter")).toContainText("/16000");
+  await expectNoHorizontalOverflow(page);
+  await page.getByTestId("lesson-material").fill("I like pizza. What do you like?");
+  await expect(page.getByTestId("lesson-create-submit")).toBeDisabled();
+  await page.getByTestId("material-topic-name").fill("Unit 1");
+  await page.getByTestId("lesson-create-submit").click();
+  await expect(page).toHaveURL(/\/parent\/decks\/[0-9a-f-]+$/);
+  expect(api.creates).toHaveLength(1);
+  expect(api.creates[0]!.path).toMatch(/\/lessons\/material$/);
+  expect(api.creates[0]!.body).toMatchObject({ subjectId: "english_chapter", topicTitlePl: "Unit 1", material: "I like pizza. What do you like?", poolSize: 60 });
+  expect(api.creates[0]!.body).not.toHaveProperty("subjectTitlePl");
 });
 
 test("wpisany materiał chroni wyjście; utworzenie lekcji przechodzi do edytora bez pytania", async ({ page }) => {

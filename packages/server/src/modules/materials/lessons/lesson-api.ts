@@ -120,9 +120,13 @@ export function lessonCatalog(services: Services): SubjectCatalogDto {
           latestByTopic.set(topic.id, topic);
         }
       }
+      const fromMaterial = subject.buildDynamicTopic !== undefined;
       return {
         id: subject.id,
         titlePl: subject.titlePl,
+        // Zagadnienia z materiału rodzica zamiast tematów katalogowych; nazwę przedmiotu podaje rodzic tylko tam, gdzie moduł tego chce.
+        creation: fromMaterial ? "material" as const : "catalog" as const,
+        subjectTitleRequired: fromMaterial && subject.materialSubjectTitle === "parent",
         topics: [...latestByTopic.values()].map((topic) => ({
           id: topic.id,
           version: topic.version,

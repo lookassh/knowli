@@ -69,6 +69,7 @@ export { errorCodeOf, requireGeneration, MAX_AUTOMATIC_ATTEMPTS } from "./module
 export { countForeignPendingTts, runDueGenerationWork, type WorkerLimits } from "./modules/materials";
 export {
   createLesson,
+  createLessonFromMaterial,
   createSchoolLesson,
   executeLessonGeneration,
   regenerateObjective,
