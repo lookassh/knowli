@@ -1,5 +1,54 @@
 import { describe, expect, it } from "vitest";
-import { pcmToWav, wavDurationMs } from "./wav";
+import { normalizeWav, pcmToWav, wavDurationMs } from "./wav";
+
+/** WAV z dowolnymi fragmentami: `fmt ` PCM, opcjonalny `LIST`, `data` z zadeklarowanym rozmiarem. */
+function riff(options: { pcm: Uint8Array; dataSize?: number; riffSize?: number; list?: boolean; audioFormat?: number; bits?: number }): Uint8Array {
+  const chunks: Array<[string, Uint8Array, number?]> = [];
+  const fmt = new Uint8Array(16);
+  const fv = new DataView(fmt.buffer);
+  fv.setUint16(0, options.audioFormat ?? 1, true);
+  fv.setUint16(2, 1, true);
+  fv.setUint32(4, 24000, true);
+  fv.setUint32(8, 48000, true);
+  fv.setUint16(12, 2, true);
+  fv.setUint16(14, options.bits ?? 16, true);
+  chunks.push(["fmt ", fmt]);
+  if (options.list) chunks.push(["LIST", new Uint8Array([1, 2, 3, 4, 5, 6])]);
+  chunks.push(["data", options.pcm, options.dataSize]);
+  const body = chunks.reduce((n, [, b]) => n + 8 + b.length, 4);
+  const out = new Uint8Array(8 + body);
+  const v = new DataView(out.buffer);
+  const ascii = (o: number, t: string) => { for (let i = 0; i < 4; i += 1) out[o + i] = t.charCodeAt(i); };
+  ascii(0, "RIFF"); v.setUint32(4, options.riffSize ?? body, true); ascii(8, "WAVE");
+  let o = 12;
+  for (const [id, b, size] of chunks) { ascii(o, id); v.setUint32(o + 4, size ?? b.length, true); out.set(b, o + 8); o += 8 + b.length; }
+  return out;
+}
+
+describe("normalizeWav", () => {
+  const pcm = new Uint8Array(480).map((_, i) => i % 251);
+
+  it("strumieniowy WAV z rozmiarami 0xFFFFFFFF dostaje nagłówek z prawdziwymi długościami", () => {
+    const wav = normalizeWav(riff({ pcm, dataSize: 0xffffffff, riffSize: 0xffffffff }));
+    expect(wav).not.toBeNull();
+    expect([...wav!.subarray(44)]).toEqual([...pcm]);
+    expect(wavDurationMs(wav!)).toBe(10);
+  });
+
+  it("pomija dodatkowe fragmenty (LIST) przed danymi", () => {
+    const wav = normalizeWav(riff({ pcm, list: true }));
+    expect(wav && [...wav.subarray(44)]).toEqual([...pcm]);
+  });
+
+  it("odrzuca ucięty plik, puste dane i format inny niż PCM 16-bit", () => {
+    expect(normalizeWav(riff({ pcm, dataSize: pcm.length + 100 }))).toBeNull();
+    expect(normalizeWav(riff({ pcm: new Uint8Array(0) }))).toBeNull();
+    expect(normalizeWav(riff({ pcm, audioFormat: 3 }))).toBeNull();
+    expect(normalizeWav(riff({ pcm, bits: 8 }))).toBeNull();
+    expect(normalizeWav(riff({ pcm }).subarray(0, 30))).toBeNull();
+    expect(normalizeWav(new Uint8Array([1, 2, 3, 4]))).toBeNull();
+  });
+});
 
 describe("pcmToWav", () => {
   it("opakowuje 16-bitowe PCM nagłówkiem RIFF/WAVE z częstotliwością i liczbą kanałów", () => {

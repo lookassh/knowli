@@ -1,5 +1,5 @@
 import type { TtsProvider, TtsSynthesizeInput } from "../../ports/ai";
-import { pcmToWav, wavDurationMs } from "../audio/wav";
+import { normalizeWav, pcmToWav, wavDurationMs } from "../audio/wav";
 
 export interface OpenAiTtsOptions {
   apiKey: string;
@@ -60,7 +60,7 @@ export function createOpenAiTtsProvider(options: OpenAiTtsOptions): TtsProvider 
       if (input.format === "mp3") return { bytes, mimeType: "audio/mpeg" };
       const contentType = response.headers.get("content-type") ?? "";
       const pcm = pcmFormatOf(contentType);
-      const wav = /^audio\/(wav|x-wav|wave)\b/i.test(contentType) ? bytes : pcm && pcmToWav(bytes, pcm);
+      const wav = /^audio\/(wav|x-wav|wave)\b/i.test(contentType) ? normalizeWav(bytes) : pcm && pcmToWav(bytes, pcm);
       // Do logów trafia tylko kod. Zgadnięty format albo ucięty/pusty plik
       // zostałby zapisany jako gotowe nagranie bez ponowienia.
       if (wav === null || wavDurationMs(wav) === null) throw new Error("provider_unexpected_audio");

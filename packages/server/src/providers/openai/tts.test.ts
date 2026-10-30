@@ -64,6 +64,17 @@ describe("createOpenAiTtsProvider", () => {
     expect(result).toEqual({ bytes: wav, mimeType: "audio/wav" });
   });
 
+  it("wav: strumieniowy WAV (rozmiary 0xFFFFFFFF) jest przyjmowany z poprawionym nagłówkiem", async () => {
+    const wav = pcmToWav(new Uint8Array(480), { sampleRate: 24000, channels: 1 });
+    const streamed = wav.slice();
+    new DataView(streamed.buffer).setUint32(4, 0xffffffff, true);
+    new DataView(streamed.buffer).setUint32(40, 0xffffffff, true);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(streamed, { status: 200, headers: { "content-type": "audio/wav" } })));
+    const provider = createOpenAiTtsProvider({ apiKey: "test" });
+    const result = await provider.synthesize({ text: "kot", locale: "pl-PL", voice: "Kore", format: "wav" });
+    expect(result).toEqual({ bytes: wav, mimeType: "audio/wav" });
+  });
+
   it("wav: ucięty WAV albo puste PCM to błąd — zasób nie może zostać gotowy bez dźwięku", async () => {
     const provider = createOpenAiTtsProvider({ apiKey: "test" });
     const full = pcmToWav(new Uint8Array(480), { sampleRate: 24000, channels: 1 });
