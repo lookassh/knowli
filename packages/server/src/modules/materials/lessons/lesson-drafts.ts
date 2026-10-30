@@ -27,6 +27,7 @@ import {
   defaultPoolSize,
   type StageMix,
 } from "../../../domain/lessons/lesson-policy";
+import { materialCreationMode } from "../../../domain/lessons/material-creation";
 import { answersEquivalent, keywordsAnswer, MAX_TEXT_LENGTH, validatePool, withoutRedundantAcceptedVariants } from "../../../domain/lessons/pool-validation";
 import {
   lessonExerciseIdentity,
@@ -228,7 +229,7 @@ export async function createMaterialLesson(
   cmd: MaterialLessonInput,
 ): Promise<{ runId: string; deckId: string }> {
   const subject = requireSubject(services, cmd.subjectId);
-  if (!subject.buildDynamicTopic) {
+  if (materialCreationMode(subject) === undefined) {
     throw new AppError("validation", { message: `subject does not create lessons from material: ${subject.id}` });
   }
   const poolSize = cmd.poolSize ?? 60;
@@ -312,7 +313,7 @@ export async function createLessonFromMaterial(
 ): Promise<{ runId: string; deckId: string }> {
   const valid = MaterialLessonCommandSchema.parse(cmd);
   const subject = requireSubject(services, valid.subjectId);
-  if (!subject.buildDynamicTopic || subject.materialSubjectTitle !== "fixed") {
+  if (materialCreationMode(subject) !== "fixed") {
     throw new AppError("validation", { message: `subject does not create lessons from parent material: ${subject.id}` });
   }
   return createMaterialLesson(services, valid);

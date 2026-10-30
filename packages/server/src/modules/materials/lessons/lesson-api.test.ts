@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { SubjectCatalogDtoSchema } from "@learning/contracts";
 import { createServices } from "../../../config";
+import { createSubjectRegistry } from "../../../domain/lessons/registry";
+import { englishChapterSubject } from "../../../domain/lessons/subjects/english-chapter/module";
 import { lessonCatalog } from "./lesson-api";
+import { createLessonFromMaterial, createMaterialLesson } from "./lesson-drafts";
 
 describe("lessonCatalog (sposób tworzenia zestawu per przedmiot)", () => {
   const catalog = lessonCatalog(createServices({ db: {} as never }));
@@ -27,5 +30,17 @@ describe("lessonCatalog (sposób tworzenia zestawu per przedmiot)", () => {
       subjectTitleRequired: false,
       topics: [],
     });
+  });
+
+  it("temat dynamiczny bez deklaracji tytułu: katalog nie obiecuje tworzenia z materiału, a polecenie je odrzuca", async () => {
+    const { materialSubjectTitle: _omitted, ...undeclared } = englishChapterSubject;
+    const services = createServices({
+      db: {} as never,
+      subjects: createSubjectRegistry([{ ...undeclared, id: "undeclared_title" }]),
+    });
+    expect(lessonCatalog(services).subjects[0]).toMatchObject({ id: "undeclared_title", creation: "catalog", subjectTitleRequired: false });
+    const command = { subjectId: "undeclared_title", topicTitlePl: "Unit 1", material: "I like pizza.", clientRequestId: "11111111-1111-4111-8111-111111111111" };
+    await expect(createLessonFromMaterial(services, command)).rejects.toMatchObject({ code: "validation" });
+    await expect(createMaterialLesson(services, command)).rejects.toMatchObject({ code: "validation" });
   });
 });

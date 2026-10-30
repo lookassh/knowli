@@ -30,6 +30,7 @@ import {
 import { AppError } from "../../../errors";
 import { lessonExerciseTargetKey } from "../../../domain/lessons/exposure-key";
 import { DEFAULT_LESSON_POLICY } from "../../../domain/lessons/lesson-policy";
+import { materialCreationMode, requiresParentSubjectTitle } from "../../../domain/lessons/material-creation";
 import { poolCoverage, validatePool } from "../../../domain/lessons/pool-validation";
 import type { DynamicTopicData, LessonExerciseDraft, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
 import { resolveLessonTopic, validateDynamicTopicData } from "../../../domain/lessons/topic-resolution";
@@ -120,13 +121,13 @@ export function lessonCatalog(services: Services): SubjectCatalogDto {
           latestByTopic.set(topic.id, topic);
         }
       }
-      const fromMaterial = subject.buildDynamicTopic !== undefined;
       return {
         id: subject.id,
         titlePl: subject.titlePl,
         // Zagadnienia z materiału rodzica zamiast tematów katalogowych; nazwę przedmiotu podaje rodzic tylko tam, gdzie moduł tego chce.
-        creation: fromMaterial ? "material" as const : "catalog" as const,
-        subjectTitleRequired: fromMaterial && subject.materialSubjectTitle === "parent",
+        // Te same reguły stosują polecenia tworzenia (`material-creation`), więc formularz nie obiecuje ścieżki odrzucanej przez serwer.
+        creation: materialCreationMode(subject) === undefined ? "catalog" as const : "material" as const,
+        subjectTitleRequired: requiresParentSubjectTitle(subject),
         topics: [...latestByTopic.values()].map((topic) => ({
           id: topic.id,
           version: topic.version,
