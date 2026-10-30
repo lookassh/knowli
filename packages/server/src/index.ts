@@ -66,7 +66,7 @@ export {
 export { claimQueuedRun, enqueueGenerationRun, markRun } from "./modules/materials";
 export { executeMediaAsset } from "./modules/materials";
 export { errorCodeOf, requireGeneration, MAX_AUTOMATIC_ATTEMPTS } from "./modules/materials";
-export { runDueGenerationWork, type WorkerLimits } from "./modules/materials";
+export { countForeignPendingTts, runDueGenerationWork, type WorkerLimits } from "./modules/materials";
 export {
   createLesson,
   createSchoolLesson,

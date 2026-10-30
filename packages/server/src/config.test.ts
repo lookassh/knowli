@@ -1,11 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_LESSON_STT_MODEL, defaultMediaSettings, graderFromEnv, lessonSpeechFromEnv, mediaSettingsFromEnv, sessionActivityFromEnv } from "./config";
+import { DEFAULT_LESSON_STT_MODEL, defaultMediaSettings, graderFromEnv, lessonSpeechFromEnv, mediaSettingsFromEnv, sessionActivityFromEnv, ttsVoiceFor } from "./config";
 
 describe("mediaSettingsFromEnv", () => {
   it("bez env zwraca domyślne ustawienia (low + webp)", () => {
     expect(mediaSettingsFromEnv({})).toEqual(defaultMediaSettings);
     expect(defaultMediaSettings.image).toMatchObject({ quality: "low", format: "webp" });
     expect(defaultMediaSettings.image.model).toBe("gpt-image-2.5-sunburst");
+  });
+
+  it("puste UMIEM_TTS_* jak nieustawione — fingerprint opisuje model faktycznie użyty przez adapter", () => {
+    expect(mediaSettingsFromEnv({ UMIEM_TTS_PROVIDER: "", UMIEM_TTS_MODEL: "", UMIEM_TTS_VOICE: "" }).tts).toEqual(defaultMediaSettings.tts);
+    expect(mediaSettingsFromEnv({ UMIEM_TTS_PROVIDER: "openrouter", UMIEM_TTS_MODEL: "openai/gpt-4o-mini-tts-2025-12-15" }).tts)
+      .toMatchObject({ provider: "openrouter", model: "openai/gpt-4o-mini-tts-2025-12-15", voice: "alloy" });
+  });
+
+  it("UMIEM_TTS_VOICE_<LANG>_<REGION> przypisuje głos do locale; reszta używa UMIEM_TTS_VOICE", () => {
+    const settings = mediaSettingsFromEnv({
+      UMIEM_TTS_VOICE: "pl-PL-Harper:MAI-Voice-2.1-Flash",
+      UMIEM_TTS_VOICE_EN_GB: "en-GB-Emily:MAI-Voice-2.1-Flash",
+      UMIEM_TTS_VOICE_DE_DE: "",
+    });
+    expect(settings.tts.voices).toEqual({ "en-GB": "en-GB-Emily:MAI-Voice-2.1-Flash" });
+    expect(ttsVoiceFor(settings.tts, "en-GB")).toBe("en-GB-Emily:MAI-Voice-2.1-Flash");
+    expect(ttsVoiceFor(settings.tts, "pl-PL")).toBe("pl-PL-Harper:MAI-Voice-2.1-Flash");
+    // bez zmiennych per locale ustawienia (i fingerprinty) jak dotąd
+    expect(mediaSettingsFromEnv({}).tts).not.toHaveProperty("voices");
   });
 
   it("zmienne UMIEM_IMAGE_* nadpisują model, rozmiar, jakość i format", () => {

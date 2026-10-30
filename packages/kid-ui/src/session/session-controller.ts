@@ -95,6 +95,8 @@ export interface LearningScreen {
   error: string | null;
   guidanceError?: boolean;
   taskAudioError?: "blocked" | "failed" | null;
+  /** „Posłuchaj pytania” nie odtworzyło nagrania (komunikat w pasku statusu, nie w wierszu instrukcji). */
+  questionAudioError?: boolean;
   /** Dyktowanie odpowiedzi lekcji; brak = zadanie bez dyktowania. */
   dictation?: DictationState | null;
 }
@@ -179,6 +181,12 @@ function audioAssetOf(task: TaskDto): string | null {
     return task.prompt.audioAssetId ?? null;
   }
   return null;
+}
+
+/** Gotowe nagranie „Posłuchaj pytania” zadania lekcji, jeśli serwer je dołączył. */
+export function questionAudioOf(task: TaskDto): string | null {
+  const prompt = task.prompt;
+  return "questionAudioAssetId" in prompt && typeof prompt.questionAudioAssetId === "string" ? prompt.questionAudioAssetId : null;
 }
 
 const AUDIO_DISCLOSURE_EXERCISES = new Set(["recall", "spelling", "letter_completion", "speech", "picture_speech", "lesson_gap", "lesson_error_fix", "lesson_transform", "lesson_open_answer"]);
@@ -876,6 +884,7 @@ export class LearningSessionController {
         recordingNotice: null, technicalRecordingIssue: false,
         error: null,
         taskAudioError: null,
+        questionAudioError: false,
       };
       this.#emit();
       // Pierwsze otrzymane zadanie uruchamia lokalny pomiar (design §2) — także
@@ -1105,7 +1114,9 @@ export class LearningSessionController {
     const epoch = this.#epoch;
     const taskId = screen.task.taskId;
     const task = screen.task;
-    this.#setLearning({ taskAudioError: null });
+    // Podpowiedź po „Nie pamiętam” nie może grać razem z nagraniem pytania.
+    this.#stopPlayback();
+    this.#setLearning({ taskAudioError: null, questionAudioError: false });
     this.#setLearning({ busy: true });
     const disclose = async (): Promise<void> => {
       const disclosure = await this.#api.authorizeDisclosure(taskId, "hint");
@@ -1153,7 +1164,7 @@ export class LearningSessionController {
     if (!screen?.task || screen.busy || screen.offline) return;
     const epoch = this.#epoch;
     const taskId = screen.task.taskId;
-    this.#setLearning({ busy: true, transitioning: true,
+    this.#setLearning({ busy: true, transitioning: true, questionAudioError: false,
       pendingChoiceId: input.modality === "choice" ? input.optionId : null });
     this.#activity?.recordInteraction();
     this.#activity?.pause("technical_wait");
@@ -1406,6 +1417,35 @@ export class LearningSessionController {
       if (isNetworkError(error)) {
         this.#handleFailure(error);
       }
+    }
+  }
+
+  /**
+   * „Posłuchaj pytania” (design szkoły §11): nagranie polecenia i pytania,
+   * które dziecko już widzi — bez zgody serwera, zdarzenia i ekspozycji.
+   * Błąd odtwarzania ustawia `questionAudioError` (komunikat w pasku statusu
+   * z przewijaniem ramy); awaria sieci idzie zwykłą ścieżką offline.
+   */
+  async playQuestionAudio(): Promise<void> {
+    if (this.#autoCaptureActive) this.cancelRecording();
+    const screen = this.#learning();
+    if (!screen?.task || screen.offline || screen.busy || screen.recordingPhase !== "idle" || screen.processing) return;
+    const assetId = questionAudioOf(screen.task);
+    if (assetId === null) return;
+    const epoch = this.#epoch;
+    const taskId = screen.task.taskId;
+    const playbackGeneration = this.#beginPlayback();
+    this.#setLearning({ questionAudioError: false });
+    try {
+      await this.#playCountedAudio(this.#api.mediaUrl(assetId), assetId);
+    } catch (error) {
+      const current = this.#learning();
+      if (playbackGeneration !== this.#playbackGeneration || epoch !== this.#epoch || current?.task?.taskId !== taskId) return;
+      if (isNetworkError(error)) {
+        this.#handleFailure(error);
+        return;
+      }
+      this.#setLearning({ questionAudioError: true });
     }
   }
 

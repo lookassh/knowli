@@ -252,7 +252,11 @@ export function lessonSessionContextOf(session: { context: Record<string, unknow
 }
 
 /** Ładuje pulę ćwiczeń przypiętej wersji w kolejności pozycji. */
-export async function loadExercises(tx: Executor, deckVersionId: string): Promise<LoadedExercise[]> {
+export async function loadExercises(
+  tx: Executor,
+  deckVersionId: string,
+  options: { questionAudio?: boolean } = {},
+): Promise<LoadedExercise[]> {
   const revisions = await tx
     .select({ id: itemRevisions.id, itemId: itemRevisions.itemId, position: itemRevisions.position, payload: itemRevisions.payload, targetKey: itemRevisions.targetKey })
     .from(itemRevisions)
@@ -280,6 +284,29 @@ export async function loadExercises(tx: Executor, deckVersionId: string): Promis
         )
     : [];
   const audioByRevision = new Map(audioRows.map((a) => [a.itemRevisionId, a.assetId] as const));
+  // Nagranie pytania (design szkoły §11.2): publikacja na nie nie czeka, a wiersz
+  // opublikowanej rewizji jest niezmienny — liczy się więc dowolny gotowy zasób
+  // o oczekiwanym fingerprincie tekstu (najnowsza generacja), także powstały po
+  // publikacji albo po porażce zasobu powiązanego przy edycji.
+  const promptAudioRows = revisionIds.length && options.questionAudio !== false
+    ? await tx
+        .select({ itemRevisionId: revisionAssets.itemRevisionId, assetId: mediaAssets.id })
+        .from(revisionAssets)
+        .innerJoin(mediaAssets, eq(mediaAssets.fingerprint, revisionAssets.expectedFingerprint))
+        .where(
+          and(
+            inArray(revisionAssets.itemRevisionId, revisionIds),
+            eq(revisionAssets.role, "prompt_audio"),
+            eq(mediaAssets.kind, "tts"),
+            eq(mediaAssets.state, "ready"),
+          ),
+        )
+        .orderBy(desc(mediaAssets.generationNumber))
+    : [];
+  const promptAudioByRevision = new Map<string, string>();
+  for (const row of promptAudioRows) {
+    if (!promptAudioByRevision.has(row.itemRevisionId)) promptAudioByRevision.set(row.itemRevisionId, row.assetId);
+  }
 
   return revisions.map((r) => ({
     revisionId: r.id,
@@ -288,6 +315,7 @@ export async function loadExercises(tx: Executor, deckVersionId: string): Promis
     payload: r.payload as unknown as LessonExercisePayload,
     targetKey: r.targetKey,
     audioAssetId: audioByRevision.get(r.id) ?? null,
+    questionAudioAssetId: promptAudioByRevision.get(r.id) ?? null,
   }));
 }
 
@@ -766,7 +794,8 @@ export async function lessonDeckListValues(
   const version = (await exec.select().from(deckVersions).where(eq(deckVersions.id, args.deckVersionId)))[0]!;
   const context = lessonContextOf(version);
   const { topic } = requireTopic(services, context);
-  const exercises = await loadExercises(exec, args.deckVersionId);
+  // Lista zestawów liczy tylko postęp — nagrania pytań są zbędne.
+  const exercises = await loadExercises(exec, args.deckVersionId, { questionAudio: false });
   const objectiveOrder = topic.objectives.map((o) => o.id).filter((id) => context.objectiveIds.includes(id));
 
   // Postęp celów: tylko cele z ćwiczeniami w puli liczą się do rekomendacji

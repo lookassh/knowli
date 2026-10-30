@@ -72,7 +72,7 @@ async function supersedeDisabledLessonTts(services: Services, asset: typeof medi
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${asset.fingerprint}))`);
     const current = (await tx.select().from(mediaAssets).where(eq(mediaAssets.id, asset.id)).for("update"))[0];
     if (current?.state !== "pending") return false;
-    const references = await tx.select({ kind: decks.kind, lessonContext: deckVersions.lessonContext })
+    const references = await tx.select({ kind: decks.kind, lessonContext: deckVersions.lessonContext, role: revisionAssets.role })
       .from(revisionAssets)
       .innerJoin(itemRevisions, eq(itemRevisions.id, revisionAssets.itemRevisionId))
       .innerJoin(deckVersions, eq(deckVersions.id, itemRevisions.deckVersionId))
@@ -80,8 +80,10 @@ async function supersedeDisabledLessonTts(services: Services, asset: typeof medi
       .where(eq(revisionAssets.assetId, asset.id));
     if (references.length > 0 && !references.every(reference => {
       const subjectId = (reference.lessonContext as { subjectId?: string } | null)?.subjectId;
-      return reference.kind === "lesson" && typeof subjectId === "string"
-        && services.subjects.getSubject(subjectId)?.ttsForAnswers === false;
+      const subject = typeof subjectId === "string" ? services.subjects.getSubject(subjectId) : undefined;
+      if (reference.kind !== "lesson" || !subject) return false;
+      // Nagranie pytania zależy od `ttsForPrompts`, nagranie odpowiedzi od `ttsForAnswers`.
+      return reference.role === "prompt_audio" ? !subject.ttsForPrompts : !subject.ttsForAnswers;
     })) return false;
     await tx.update(mediaAssets).set({ state: "failed", leaseToken: null, leaseUntil: null })
       .where(eq(mediaAssets.id, asset.id));
@@ -89,6 +91,19 @@ async function supersedeDisabledLessonTts(services: Services, asset: typeof medi
       .where(and(eq(generationRuns.assetId, asset.id), inArray(generationRuns.state, ["queued", "running"])));
     return true;
   });
+}
+
+/**
+ * TTS zlecony przy innym providerze lub modelu niż ustawienia tego workera
+ * (np. w trakcie przełączania z OpenAI na OpenRouter, design szkoły §11.7)
+ * nie trafia do bieżącego endpointu: nowy nie zna starego modelu, a stary
+ * worker nie może trwale unieważnić nagrań zleconych już z nową konfiguracją.
+ * Zadanie zostaje w kolejce bez zmiany stanu dla workera ze zgodną konfiguracją.
+ */
+function isForeignTts(services: Services, asset: typeof mediaAssets.$inferSelect): boolean {
+  const current = services.media?.tts;
+  return asset.kind === "tts" && current !== undefined
+    && (asset.provider !== current.provider || asset.model !== current.model);
 }
 
 /**
@@ -116,6 +131,7 @@ export async function executeMediaAsset(services: Services, assetId: string, sig
     return;
   }
   if (await supersedeDisabledLessonTts(services, asset)) return;
+  if (isForeignTts(services, asset)) return;
 
   const leaseToken = randomUUID();
   const now = services.clock.now();
@@ -158,6 +174,9 @@ export async function executeMediaAsset(services: Services, assetId: string, sig
             locale: metadata.locale!,
             voice: metadata.voice!,
             format: "mp3",
+            // Model z rekordu zasobu (wchodzi do jego fingerprintu), nie bieżący
+            // UMIEM_TTS_MODEL — zmiana env nie może zapisać nagrania pod starym fingerprintem.
+            model: asset.model,
           }, signal)
         : await deps.image.generate({
             prompt: metadata.prompt!,

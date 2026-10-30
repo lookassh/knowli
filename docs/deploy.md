@@ -23,8 +23,10 @@ każdym deploju.
 
 1. Przygotuj `.env` z korzenia repo na podstawie `.env.example`:
    - `POSTGRES_PASSWORD` — wymagane (baza w kontenerze),
-   - `OPENAI_API_KEY` (worker: LLM/TTS/obrazy), `AZURE_SPEECH_KEY` +
-     `AZURE_SPEECH_REGION` (web: próby ustne dziecka),
+   - `OPENAI_API_KEY` (worker: obrazy; domyślnie też LLM), `UMIEM_TTS_API_KEY`
+     (worker: klucz OpenRouter dla nagrań lektora — `.env.example` ma już
+     wybraną konfigurację TTS), `AZURE_SPEECH_KEY` + `AZURE_SPEECH_REGION`
+     (web: próby ustne dziecka),
    - opcjonalnie `WEB_PORT`.
 2. Zbuduj i uruchom stack:
 
@@ -70,7 +72,7 @@ repozytorium (`deploy/compose.yaml`; `build.context` wskazuje korzeń repo).
 ## Bezpieczeństwo wdrożenia
 
 - Tylko `web` ma port hosta; `db` i `worker` są w prywatnej sieci compose.
-- Sekrety (`OPENAI_API_KEY`, `AZURE_SPEECH_*`, `POSTGRES_PASSWORD`) żyją
+- Sekrety (`OPENAI_API_KEY`, `UMIEM_TTS_API_KEY`, `AZURE_SPEECH_*`, `POSTGRES_PASSWORD`) żyją
   wyłącznie w środowisku kontenerów (Coolify secrets / `.env` poza repo);
   web i worker dostają je z jednego pliku, żeby ustawienia medialne
   (fingerprinty) zawsze były identyczne — patrz `docs/provider-config.md`.

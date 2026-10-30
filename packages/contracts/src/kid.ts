@@ -83,6 +83,12 @@ export const LessonItemSchema = z.object({
 }).strict();
 export type LessonItem = z.infer<typeof LessonItemSchema>;
 
+/**
+ * „Posłuchaj pytania” (design szkoły §11): gotowe nagranie polecenia i pytania
+ * z widocznej treści. Odczyt nie jest ujawnieniem — bez zdarzenia i ekspozycji.
+ */
+const QuestionAudioSchema = UuidSchema.optional();
+
 /** Segment zdania `lesson_notice` do wskazania — bez informacji, który jest poprawny. */
 export const LessonSegmentSchema = z.object({
   id: UuidSchema,
@@ -236,11 +242,13 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     instructionPl: z.string().min(1),
     stem: z.string().min(1),
     options: z.array(ChoiceOptionSchema).min(1),
+    questionAudioAssetId: QuestionAudioSchema,
   }).strict(),
   z.object({
     kind: z.literal("lesson_order"),
     instructionPl: z.string().min(1),
     items: z.array(LessonItemSchema).min(1),
+    questionAudioAssetId: QuestionAudioSchema,
   }).strict(),
   z.object({
     kind: z.literal("lesson_short_answer"),
@@ -253,6 +261,7 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     stemWithGap: z.string().min(1),
     hint: z.string().min(1).optional(),
     audioAssetId: UuidSchema.optional(),
+    questionAudioAssetId: QuestionAudioSchema,
   }).strict(),
   z.object({
     kind: z.literal("lesson_error_fix"),
@@ -271,6 +280,7 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     instructionPl: z.string().min(1),
     prompt: z.string().min(1),
     audioAssetId: UuidSchema.optional(),
+    questionAudioAssetId: QuestionAudioSchema,
     /**
      * Język pytania, gdy jest jednoznaczny (przedmiot z jednym językiem, np.
      * szkoła: `pl-PL`) — dla czytników ekranu. Brak = dotychczasowe `en-GB`;
@@ -295,6 +305,7 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     options: z.array(ChoiceOptionSchema).min(4).max(6),
     minSelected: z.number().int().min(1),
     maxSelected: z.number().int().min(1),
+    questionAudioAssetId: QuestionAudioSchema,
   }).strict(),
   // „Połącz w pary” (design szkoły §10.1): obie kolumny tasowane niezależnie,
   // prawa z dystraktorami; DTO nie zdradza, co do czego pasuje.
@@ -303,6 +314,7 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     instructionPl: z.string().min(1),
     left: z.array(LessonItemSchema).min(3).max(5),
     right: z.array(LessonItemSchema).min(3).max(7),
+    questionAudioAssetId: QuestionAudioSchema,
   }).strict(),
   // „Pogrupuj” (design szkoły §10.2): grupy w kolejności materiału, elementy
   // tasowane; przynależność zna tylko serwer.
@@ -311,6 +323,7 @@ export const TaskPromptSchema = z.discriminatedUnion("kind", [
     instructionPl: z.string().min(1),
     groups: z.array(LessonItemSchema).min(2).max(3),
     items: z.array(LessonItemSchema).min(4).max(8),
+    questionAudioAssetId: QuestionAudioSchema,
   }).strict(),
   // Zadanie następcze „Skróć odpowiedź” (technicznie odpowiedź otwarta): własny
   // tekst dziecka z zaznaczonymi fragmentami do usunięcia — nic z klucza.

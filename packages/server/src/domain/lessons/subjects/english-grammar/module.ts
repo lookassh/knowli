@@ -40,4 +40,5 @@ export const englishGrammarSubject: SubjectModule = {
   validateExercise: validateEnglishGrammarExercise,
   // Gramatyka ćwiczy zastosowanie reguły; audio odpowiedzi ujawniałoby rozwiązanie.
   ttsForAnswers: false,
+  ttsForPrompts: false,
 };

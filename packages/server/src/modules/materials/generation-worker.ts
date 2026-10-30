@@ -81,6 +81,12 @@ export async function runDueGenerationWork(
           inArray(generationRuns.state, ["queued", "running"]),
           eq(mediaAssets.state, "pending"),
           or(isNull(mediaAssets.leaseToken), sql`${mediaAssets.leaseUntil} < ${services.clock.now()}`),
+          // TTS tylko z konfiguracji tego workera (design szkoły §11.7): zadania innego
+          // providera/modelu czekają w kolejce na zgodny worker, bez zmiany stanu.
+          ...(services.media ? [or(
+            not(eq(generationRuns.kind, "tts")),
+            and(eq(mediaAssets.provider, services.media.tts.provider), eq(mediaAssets.model, services.media.tts.model)),
+          )!] : []),
           ...(activeIds.length ? [notInArray(generationRuns.assetId, activeIds)] : []),
           ...(seenAttempts.length > 0
             ? [not(or(...seenAttempts.map(({ id, attempts }) => and(eq(generationRuns.assetId, id), eq(generationRuns.attempts, attempts))))!)]
@@ -111,3 +117,23 @@ export async function runDueGenerationWork(
 }
 
 let workerScheduleCursor = 0;
+
+/**
+ * Liczba oczekujących zadań TTS zleconych przy innym providerze/modelu niż
+ * ustawienia tego workera (design szkoły §11.7). Worker ich nie wykonuje,
+ * więc niezerowa wartość przy starcie oznacza rozjazd konfiguracji web
+ * i workera albo stare zlecenia sprzed przełączenia dostawcy.
+ */
+export async function countForeignPendingTts(services: Services): Promise<number> {
+  const current = services.media?.tts;
+  if (!current) return 0;
+  const rows = await services.db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(mediaAssets)
+    .where(and(
+      eq(mediaAssets.kind, "tts"),
+      eq(mediaAssets.state, "pending"),
+      not(and(eq(mediaAssets.provider, current.provider), eq(mediaAssets.model, current.model))!),
+    ));
+  return rows[0]?.count ?? 0;
+}
