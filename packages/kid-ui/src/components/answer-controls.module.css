@@ -132,6 +132,15 @@
   box-shadow: inset 0 0 0 1px var(--md-sys-color-primary);
 }
 
+/* Forced colors drop the shadow and repaint the border, so focus would vanish:
+   draw a system-colour outline inside the field instead (not clipped either). */
+@media (forced-colors: active) {
+  :global(.kid-ui) .input:focus-visible {
+    outline: 3px solid CanvasText;
+    outline-offset: -3px;
+  }
+}
+
 /* Long answers: grow with the text (field-sizing where supported), then scroll
    inside the field so nothing is clipped and the actions stay reachable. */
 :global(.kid-ui) .textarea {
