@@ -53,6 +53,27 @@ describe("kid-ui design tokens", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("uses the type scale for font weights", () => {
+    const offenders = cssFiles.flatMap((url) => declarations(styleRules(url), "font-weight")
+      .filter((value) => !/^var\(--kid-type-[a-z-]+-weight\)$/.test(value))
+      .map((value) => `${relative(url)}: font-weight: ${value}`));
+    expect(offenders).toEqual([]);
+  });
+
+  it("sets text upright, because Nunito ships no italic (browsers would slant it synthetically)", () => {
+    const offenders = cssFiles.flatMap((url) => declarations(styleRules(url), "font-style")
+      .filter((value) => value !== "normal")
+      .map((value) => `${relative(url)}: font-style: ${value}`));
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps the font shorthand to inherit, so it cannot bypass the weight and style rules", () => {
+    const offenders = cssFiles.flatMap((url) => declarations(styleRules(url), "font")
+      .filter((value) => value !== "inherit")
+      .map((value) => `${relative(url)}: font: ${value}`));
+    expect(offenders).toEqual([]);
+  });
+
   it("uses the shape scale for corners", () => {
     const offenders = cssFiles.flatMap((url) => declarations(styleRules(url), "border-radius")
       .filter((value) => LENGTH.test(withoutVars(value)))

@@ -104,7 +104,7 @@
   border: 2px solid var(--md-sys-color-outline);
   font: inherit;
   font-family: var(--kid-font-display);
-  font-weight: 600;
+  font-weight: var(--kid-type-answer-weight);
   font-size: var(--kid-type-headline-sm-size);
   text-align: center;
   min-height: 60px;
@@ -299,7 +299,7 @@
   background: var(--md-sys-color-surface-container-high);
   color: var(--md-sys-color-on-surface);
   font-family: var(--kid-font-display);
-  font-weight: 600;
+  font-weight: var(--kid-type-answer-weight);
   font-size: var(--kid-type-title-md-size);
   text-align: center;
   touch-action: manipulation;

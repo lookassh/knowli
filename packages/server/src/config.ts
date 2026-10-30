@@ -339,6 +339,12 @@ export function sessionActivityFromEnv(env: Record<string, string | undefined>):
   if (present < 3) {
     throw new Error("UMIEM_GRADER_* requires all of BASE_URL, API_KEY and MODEL, or none");
   }
+  // jak graderFromEnv — nie polegamy na tym, że kompozycja wywoła go wcześniej
+  const nodeEnv = env.NODE_ENV ?? "production";
+  const insecureAllowed = nodeEnv === "test" || nodeEnv === "development";
+  if (!baseUrl!.startsWith("https://") && !(insecureAllowed && baseUrl!.startsWith("http://"))) {
+    throw new Error("UMIEM_GRADER_BASE_URL must use https:// outside test/development");
+  }
   const timeoutMs = positiveIntEnv(
     "UMIEM_SESSION_ACTIVITY_TIMEOUT_MS",
     env.UMIEM_SESSION_ACTIVITY_TIMEOUT_MS,
